@@ -7,84 +7,231 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/taubyte/tau/p2p/rpc"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2/secretsv2connect"
+	"github.com/taubyte/tau/pkg/secrets/tdh"
 )
 
-// rpc.go is the whole wire surface: four calls, each one line of work and one
-// line of error mapping.
-//
-// NO HANDLER VALIDATES ANYTHING. The key grammar is vault.go's, checked there
-// once. A check repeated here would be a second opinion, and the day the two
-// disagreed the answer would depend on which door the request came through.
-
-// mount is the one handler rpc.Listen serves.
-func (s *Service) mount() http.Handler {
+// mount serves both generated services behind one listener.
+func (srv *Service) mount() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle(secretsv2connect.NewSecretsServiceHandler(&handler{s}))
+	mux.Handle(secretsv2connect.NewSecretsServiceHandler(&secretsHandler{srv}))
+	mux.Handle(secretsv2connect.NewDealerServiceHandler(&dealerHandler{srv}))
 	return mux
 }
 
-type handler struct{ s *Service }
+// secretsHandler is the storage surface. Its methods have exactly the
+// signatures of the generated client, so a Client on this node calls it
+// directly rather than over a stream to itself.
+type secretsHandler struct{ srv *Service }
 
-var _ secretsv2connect.SecretsServiceHandler = (*handler)(nil)
+var (
+	_ secretsv2connect.SecretsServiceHandler = (*secretsHandler)(nil)
+	_ secretsv2connect.SecretsServiceClient  = (*secretsHandler)(nil)
+)
 
-func (h *handler) Get(ctx context.Context, req *connect.Request[secretsv2.SecretRequest]) (*connect.Response[secretsv2.SecretValue], error) {
-	scope := req.Msg.GetScope()
-	value, err := h.s.vault.Get(ctx, scope.GetProject(), scope.GetEnvironment(), req.Msg.GetName())
+func (h *secretsHandler) Key(ctx context.Context, req *connect.Request[secretsv2.KeyRequest]) (*connect.Response[secretsv2.GroupKey], error) {
+	key, err := h.key(ctx, req.Msg.GetKeyId(), req.Msg.GetForm())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnavailable, err)
+	}
+	return connect.NewResponse(&secretsv2.GroupKey{
+		KeyId:     key.KeyID,
+		Epoch:     key.Epoch,
+		Public:    key.Public,
+		Threshold: uint32(key.Threshold),
+		Members:   key.Members,
+	}), nil
+}
+
+// key is a key by id, or the active one. A write asking for the active key
+// of a cluster that has none yet forms one now rather than failing until the
+// boot timer does: the round it starts is the one every member would start.
+func (h *secretsHandler) key(ctx context.Context, keyID string, form bool) (*KeyMeta, error) {
+	if keyID != "" {
+		return h.srv.keys.Get(ctx, keyID)
+	}
+	key, err := h.srv.ActiveKey(ctx)
+	if err == nil || !form {
+		return key, err
+	}
+	if err := h.srv.closing(); err != nil {
+		return nil, err
+	}
+	if err := h.srv.ensureKey(ctx); err != nil {
+		return nil, err
+	}
+	return h.srv.ActiveKey(ctx)
+}
+
+func (h *secretsHandler) Put(ctx context.Context, req *connect.Request[secretsv2.PutRequest]) (*connect.Response[secretsv2.Empty], error) {
+	if err := h.srv.closing(); err != nil {
+		return nil, connect.NewError(connect.CodeUnavailable, err)
+	}
+	ref, err := refOf(req.Msg.GetRef())
 	if err != nil {
 		return nil, wire(err)
 	}
-	return connect.NewResponse(&secretsv2.SecretValue{Value: value}), nil
-}
-
-// Set is an upsert: rotating is setting again.
-//
-// AUTHORIZATION IS NOT HERE, and the omission is stated rather than implied:
-// any peer that can reach this service can write any project's secrets, and
-// read them back. See the package doc and .notes/tee/v2-seam.md.
-func (h *handler) Set(ctx context.Context, req *connect.Request[secretsv2.SetRequest]) (*connect.Response[secretsv2.SetResponse], error) {
-	scope := req.Msg.GetScope()
-	if err := h.s.vault.Set(ctx, scope.GetProject(), scope.GetEnvironment(), req.Msg.GetName(), req.Msg.GetValue()); err != nil {
-		return nil, wire(err)
+	w := req.Msg.GetWrapping()
+	if w == nil || req.Msg.GetKeyId() == "" || len(req.Msg.GetCiphertext()) == 0 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("secrets: a put needs a key id, a ciphertext and a wrapping"))
 	}
-	return connect.NewResponse(&secretsv2.SetResponse{}), nil
-}
 
-func (h *handler) Delete(ctx context.Context, req *connect.Request[secretsv2.SecretRequest]) (*connect.Response[secretsv2.DeleteResponse], error) {
-	scope := req.Msg.GetScope()
-	if err := h.s.vault.Delete(ctx, scope.GetProject(), scope.GetEnvironment(), req.Msg.GetName()); err != nil {
-		return nil, wire(err)
-	}
-	return connect.NewResponse(&secretsv2.DeleteResponse{}), nil
-}
-
-func (h *handler) List(ctx context.Context, req *connect.Request[secretsv2.Scope]) (*connect.Response[secretsv2.SecretNames], error) {
-	names, err := h.s.vault.List(ctx, req.Msg.GetProject(), req.Msg.GetEnvironment())
+	err = h.srv.Set(ctx, ref, req.Msg.GetCiphertext(), req.Msg.GetKeyId(), &tdh.Wrapping{R: w.GetR(), WrappedDEK: w.GetWrappedDek()})
+	audit(ctx, "put", ref.String(), err)
 	if err != nil {
 		return nil, wire(err)
 	}
-	return connect.NewResponse(&secretsv2.SecretNames{Names: names}), nil
+	return connect.NewResponse(&secretsv2.Empty{}), nil
 }
 
-// wire is the one code table: every connect.NewError in this package goes
-// through it, so the mapping from a vault failure to a wire status is decided
-// once.
+func (h *secretsHandler) Get(ctx context.Context, req *connect.Request[secretsv2.Ref]) (*connect.Response[secretsv2.Sealed], error) {
+	ref, err := refOf(req.Msg)
+	if err != nil {
+		return nil, wire(err)
+	}
+
+	// A miss is reported as an answer, not an error. This node cannot tell an
+	// absent secret from one that has not replicated here yet, so it says only
+	// what it knows -- "not on me" -- and lets the caller, which can ask other
+	// members and wait, decide what that means.
+	record, err := h.srv.records.Get(ctx, ref)
+	if err != nil {
+		audit(ctx, "get", ref.String(), err)
+		return connect.NewResponse(&secretsv2.Sealed{}), nil
+	}
+
+	key, wrapping, writer, err := h.srv.readable(ctx, ref)
+	audit(ctx, "get", ref.String(), err)
+	if err != nil {
+		return nil, wire(err)
+	}
+
+	return connect.NewResponse(&secretsv2.Sealed{
+		Found:      true,
+		KeyId:      key.KeyID,
+		Epoch:      key.Epoch,
+		Writer:     writer,
+		Wrapping:   &secretsv2.Wrapping{R: wrapping.R, WrappedDek: wrapping.WrappedDEK},
+		Ciphertext: record.Ciphertext,
+	}), nil
+}
+
+func (h *secretsHandler) Partial(ctx context.Context, req *connect.Request[secretsv2.PartialRequest]) (*connect.Response[secretsv2.PartialDecryption], error) {
+	ref, err := refOf(req.Msg.GetRef())
+	if err != nil {
+		return nil, wire(err)
+	}
+
+	partial, err := h.srv.Partial(ctx, ref, req.Msg.GetKeyId(), req.Msg.GetWriter())
+	audit(ctx, "partial", ref.String(), err)
+	if err != nil {
+		return nil, wire(err)
+	}
+	return connect.NewResponse(&secretsv2.PartialDecryption{Id: partial.ID, D: partial.D}), nil
+}
+
+func (h *secretsHandler) Delete(ctx context.Context, req *connect.Request[secretsv2.Ref]) (*connect.Response[secretsv2.Empty], error) {
+	if err := h.srv.closing(); err != nil {
+		return nil, connect.NewError(connect.CodeUnavailable, err)
+	}
+	ref, err := refOf(req.Msg)
+	if err != nil {
+		return nil, wire(err)
+	}
+
+	err = h.srv.Delete(ctx, ref)
+	audit(ctx, "delete", ref.String(), err)
+	if err != nil {
+		return nil, wire(err)
+	}
+	return connect.NewResponse(&secretsv2.Empty{}), nil
+}
+
+func (h *secretsHandler) List(ctx context.Context, req *connect.Request[secretsv2.Scope]) (*connect.Response[secretsv2.Names], error) {
+	scope := req.Msg.GetProject() + "/" + req.Msg.GetEnvironment()
+	refs, err := h.srv.List(ctx, req.Msg.GetProject(), req.Msg.GetEnvironment())
+	audit(ctx, "list", scope, err)
+	if err != nil {
+		return nil, wire(err)
+	}
+
+	names := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		names = append(names, ref.Name)
+	}
+	return connect.NewResponse(&secretsv2.Names{Names: names}), nil
+}
+
+// dealerHandler is the key-generation surface between members.
+type dealerHandler struct{ srv *Service }
+
+var _ secretsv2connect.DealerServiceHandler = (*dealerHandler)(nil)
+
+func (h *dealerHandler) Contribute(ctx context.Context, req *connect.Request[secretsv2.Contribution]) (*connect.Response[secretsv2.Empty], error) {
+	if err := h.srv.closing(); err != nil {
+		return nil, connect.NewError(connect.CodeUnavailable, err)
+	}
+
+	err := h.srv.receive(ctx, req.Msg)
+	audit(ctx, "dkg-contribute", req.Msg.GetRound(), err)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	return connect.NewResponse(&secretsv2.Empty{}), nil
+}
+
+// Replay regenerates the contribution this node dealt to the caller in a
+// finished round, so a member that lost its share can rebuild it.
 //
-// THE DEFAULT IS Unavailable AND NOT Internal, for the reason services/register
-// gives: everything not named below came out of the store, and a store failure
-// is the caller's cue to retry somewhere else. Internal says "stop, this
-// request is broken", which for a replicated store is the wrong instruction.
+// The recipient is the caller's own authenticated identity, never a name in the
+// request. Serving somebody else's contribution would let one caller gather t of
+// them and reconstruct the group secret, which is strictly cheaper than the
+// partial-decryption path it would replace.
+func (h *dealerHandler) Replay(ctx context.Context, req *connect.Request[secretsv2.ReplayRequest]) (*connect.Response[secretsv2.Contribution], error) {
+	caller, err := rpc.RemotePeer(ctx)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("replay needs an identified caller"))
+	}
+
+	out, err := h.srv.replay(ctx, req.Msg.GetKeyId(), caller.String())
+	audit(ctx, "dkg-replay", req.Msg.GetKeyId(), err)
+	if err != nil {
+		return nil, connect.NewError(connect.CodePermissionDenied, err)
+	}
+	return connect.NewResponse(out), nil
+}
+
+func wireRef(ref Ref) *secretsv2.Ref {
+	return &secretsv2.Ref{Project: ref.Project, Environment: ref.Environment, Name: ref.Name}
+}
+
+func refOf(r *secretsv2.Ref) (Ref, error) {
+	ref := Ref{Project: r.GetProject(), Environment: r.GetEnvironment(), Name: r.GetName()}
+	return ref, ref.Validate()
+}
+
+// wire carries this package's sentinels across the transport.
 func wire(err error) error {
 	switch {
-	case errors.Is(err, ErrNoProject), errors.Is(err, ErrNoEnvironment),
-		errors.Is(err, ErrNoName), errors.Is(err, ErrSeparator):
+	case errors.Is(err, ErrInvalidRef):
 		return connect.NewError(connect.CodeInvalidArgument, err)
-
 	case errors.Is(err, ErrNotSet):
 		return connect.NewError(connect.CodeNotFound, err)
-
 	default:
 		return connect.NewError(connect.CodeUnavailable, err)
+	}
+}
+
+// unwire restores them on the other side.
+func unwire(err error) error {
+	switch connect.CodeOf(err) {
+	case connect.CodeInvalidArgument:
+		return errors.Join(ErrInvalidRef, err)
+	case connect.CodeNotFound:
+		return errors.Join(ErrNotSet, err)
+	default:
+		return err
 	}
 }

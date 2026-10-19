@@ -2,43 +2,12 @@
 //
 // Source: tau/secrets/v2/secrets.proto
 
-// secrets holds the values a config deliberately does not carry.
+// The secrets service's surface between tau nodes, over p2p/rpc.
 //
-// THE VOCABULARY DECIDED THIS SHAPE, not this file. A `secret` resource is "a
-// declaration and a reference, never a value", and the value "lives outside
-// git in the secrets service, keyed <project>/<environment>/<key>, so rotation
-// needs no push" — pkg/tcc/taubyte/v2/schema/definition.go, at the secret
-// group. Everything below is that sentence made callable.
-//
-// SO THE WRITER IS NOT CI. Every other v2 store is written by a push: the
-// register's only writer is the build service, because a deploy that can
-// happen from a laptop bypasses git and leaves no record. A secret is the one
-// thing that inverts — putting its value in git is the failure — so it is
-// written out of band, by whoever holds it, and a rotation is a Set with no
-// commit and no build behind it.
-//
-// A VALUE NEVER COMES BACK FROM A LIST. List answers with NAMES, which is what
-// "is this environment's DATABASE_URL set" needs and is the question an
-// operator actually asks. A list that returned values would turn one call into
-// an export of every secret an environment holds, and every caller that only
-// wanted to check would be making it.
-//
-// AUTHORIZATION IS NOT HERE, and here that is a larger statement than it is on
-// the register. Any peer that can reach this service can read every value in
-// it. That is the OSS trust model stated everywhere else in v2 — the swarm's
-// members are the trust boundary and the private swarm key is what enforces
-// it — and it is the reason a deployment that does not trust its own nodes
-// needs a different implementation of this service rather than a flag on this
-// one. What that implementation is (a caller identity per request, values
-// encrypted to a key no single node holds) is a design, not a field, and it is
-// not guessed at here.
-//
-// `source: oidc` IS NOT SERVED BY THIS SERVICE AND CANNOT BE. The vocabulary's
-// other secret source is "minted per request as a short-lived token, nothing
-// to rotate or leak" — so there is nothing to store, nothing to Set, and a
-// Get would have to mint rather than read. It is refused where the refusal can
-// be explained (services/worker, which can see the declaration) rather than
-// answered here with a miss that reads as "somebody forgot to set it".
+// No message here carries a plaintext. A client encrypts a secret under the
+// cluster's group public key before Put, and opens it after Get by combining a
+// threshold of Partial answers, each computed by one member from its own share.
+// See services/secrets' package doc for what that does and does not protect.
 package secretsv2connect
 
 import (
@@ -60,6 +29,8 @@ const _ = connect.IsAtLeastVersion1_13_0
 const (
 	// SecretsServiceName is the fully-qualified name of the SecretsService service.
 	SecretsServiceName = "tau.secrets.v2.SecretsService"
+	// DealerServiceName is the fully-qualified name of the DealerService service.
+	DealerServiceName = "tau.secrets.v2.DealerService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -70,35 +41,33 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// SecretsServiceKeyProcedure is the fully-qualified name of the SecretsService's Key RPC.
+	SecretsServiceKeyProcedure = "/tau.secrets.v2.SecretsService/Key"
+	// SecretsServicePutProcedure is the fully-qualified name of the SecretsService's Put RPC.
+	SecretsServicePutProcedure = "/tau.secrets.v2.SecretsService/Put"
 	// SecretsServiceGetProcedure is the fully-qualified name of the SecretsService's Get RPC.
 	SecretsServiceGetProcedure = "/tau.secrets.v2.SecretsService/Get"
-	// SecretsServiceSetProcedure is the fully-qualified name of the SecretsService's Set RPC.
-	SecretsServiceSetProcedure = "/tau.secrets.v2.SecretsService/Set"
+	// SecretsServicePartialProcedure is the fully-qualified name of the SecretsService's Partial RPC.
+	SecretsServicePartialProcedure = "/tau.secrets.v2.SecretsService/Partial"
 	// SecretsServiceDeleteProcedure is the fully-qualified name of the SecretsService's Delete RPC.
 	SecretsServiceDeleteProcedure = "/tau.secrets.v2.SecretsService/Delete"
 	// SecretsServiceListProcedure is the fully-qualified name of the SecretsService's List RPC.
 	SecretsServiceListProcedure = "/tau.secrets.v2.SecretsService/List"
+	// DealerServiceContributeProcedure is the fully-qualified name of the DealerService's Contribute
+	// RPC.
+	DealerServiceContributeProcedure = "/tau.secrets.v2.DealerService/Contribute"
+	// DealerServiceReplayProcedure is the fully-qualified name of the DealerService's Replay RPC.
+	DealerServiceReplayProcedure = "/tau.secrets.v2.DealerService/Replay"
 )
 
 // SecretsServiceClient is a client for the tau.secrets.v2.SecretsService service.
 type SecretsServiceClient interface {
-	// Get is the read on the request path: a workload's variable named a secret
-	// and the worker is resolving it.
-	//
-	// A MISS IS NotFound AND NEVER AN EMPTY VALUE. A workload handed "" for its
-	// database password does not fail where the password is missing; it fails
-	// somewhere else, later, as an application that looks broken.
-	Get(context.Context, *connect.Request[v2.SecretRequest]) (*connect.Response[v2.SecretValue], error)
-	// Set writes a value. It is an upsert: rotating is setting again, which is
-	// the whole reason the value is not in git.
-	Set(context.Context, *connect.Request[v2.SetRequest]) (*connect.Response[v2.SetResponse], error)
-	// Delete removes one. Deleting what is not there succeeds — the caller
-	// wanted it gone and it is gone.
-	Delete(context.Context, *connect.Request[v2.SecretRequest]) (*connect.Response[v2.DeleteResponse], error)
-	// List names what an environment has set, so "which of the secrets this
-	// project declares are missing" is answerable before a deploy rather than
-	// at the first request that needs one.
-	List(context.Context, *connect.Request[v2.Scope]) (*connect.Response[v2.SecretNames], error)
+	Key(context.Context, *connect.Request[v2.KeyRequest]) (*connect.Response[v2.GroupKey], error)
+	Put(context.Context, *connect.Request[v2.PutRequest]) (*connect.Response[v2.Empty], error)
+	Get(context.Context, *connect.Request[v2.Ref]) (*connect.Response[v2.Sealed], error)
+	Partial(context.Context, *connect.Request[v2.PartialRequest]) (*connect.Response[v2.PartialDecryption], error)
+	Delete(context.Context, *connect.Request[v2.Ref]) (*connect.Response[v2.Empty], error)
+	List(context.Context, *connect.Request[v2.Scope]) (*connect.Response[v2.Names], error)
 }
 
 // NewSecretsServiceClient constructs a client for the tau.secrets.v2.SecretsService service. By
@@ -112,25 +81,37 @@ func NewSecretsServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	secretsServiceMethods := v2.File_tau_secrets_v2_secrets_proto.Services().ByName("SecretsService").Methods()
 	return &secretsServiceClient{
-		get: connect.NewClient[v2.SecretRequest, v2.SecretValue](
+		key: connect.NewClient[v2.KeyRequest, v2.GroupKey](
+			httpClient,
+			baseURL+SecretsServiceKeyProcedure,
+			connect.WithSchema(secretsServiceMethods.ByName("Key")),
+			connect.WithClientOptions(opts...),
+		),
+		put: connect.NewClient[v2.PutRequest, v2.Empty](
+			httpClient,
+			baseURL+SecretsServicePutProcedure,
+			connect.WithSchema(secretsServiceMethods.ByName("Put")),
+			connect.WithClientOptions(opts...),
+		),
+		get: connect.NewClient[v2.Ref, v2.Sealed](
 			httpClient,
 			baseURL+SecretsServiceGetProcedure,
 			connect.WithSchema(secretsServiceMethods.ByName("Get")),
 			connect.WithClientOptions(opts...),
 		),
-		set: connect.NewClient[v2.SetRequest, v2.SetResponse](
+		partial: connect.NewClient[v2.PartialRequest, v2.PartialDecryption](
 			httpClient,
-			baseURL+SecretsServiceSetProcedure,
-			connect.WithSchema(secretsServiceMethods.ByName("Set")),
+			baseURL+SecretsServicePartialProcedure,
+			connect.WithSchema(secretsServiceMethods.ByName("Partial")),
 			connect.WithClientOptions(opts...),
 		),
-		delete: connect.NewClient[v2.SecretRequest, v2.DeleteResponse](
+		delete: connect.NewClient[v2.Ref, v2.Empty](
 			httpClient,
 			baseURL+SecretsServiceDeleteProcedure,
 			connect.WithSchema(secretsServiceMethods.ByName("Delete")),
 			connect.WithClientOptions(opts...),
 		),
-		list: connect.NewClient[v2.Scope, v2.SecretNames](
+		list: connect.NewClient[v2.Scope, v2.Names](
 			httpClient,
 			baseURL+SecretsServiceListProcedure,
 			connect.WithSchema(secretsServiceMethods.ByName("List")),
@@ -141,51 +122,52 @@ func NewSecretsServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // secretsServiceClient implements SecretsServiceClient.
 type secretsServiceClient struct {
-	get    *connect.Client[v2.SecretRequest, v2.SecretValue]
-	set    *connect.Client[v2.SetRequest, v2.SetResponse]
-	delete *connect.Client[v2.SecretRequest, v2.DeleteResponse]
-	list   *connect.Client[v2.Scope, v2.SecretNames]
+	key     *connect.Client[v2.KeyRequest, v2.GroupKey]
+	put     *connect.Client[v2.PutRequest, v2.Empty]
+	get     *connect.Client[v2.Ref, v2.Sealed]
+	partial *connect.Client[v2.PartialRequest, v2.PartialDecryption]
+	delete  *connect.Client[v2.Ref, v2.Empty]
+	list    *connect.Client[v2.Scope, v2.Names]
+}
+
+// Key calls tau.secrets.v2.SecretsService.Key.
+func (c *secretsServiceClient) Key(ctx context.Context, req *connect.Request[v2.KeyRequest]) (*connect.Response[v2.GroupKey], error) {
+	return c.key.CallUnary(ctx, req)
+}
+
+// Put calls tau.secrets.v2.SecretsService.Put.
+func (c *secretsServiceClient) Put(ctx context.Context, req *connect.Request[v2.PutRequest]) (*connect.Response[v2.Empty], error) {
+	return c.put.CallUnary(ctx, req)
 }
 
 // Get calls tau.secrets.v2.SecretsService.Get.
-func (c *secretsServiceClient) Get(ctx context.Context, req *connect.Request[v2.SecretRequest]) (*connect.Response[v2.SecretValue], error) {
+func (c *secretsServiceClient) Get(ctx context.Context, req *connect.Request[v2.Ref]) (*connect.Response[v2.Sealed], error) {
 	return c.get.CallUnary(ctx, req)
 }
 
-// Set calls tau.secrets.v2.SecretsService.Set.
-func (c *secretsServiceClient) Set(ctx context.Context, req *connect.Request[v2.SetRequest]) (*connect.Response[v2.SetResponse], error) {
-	return c.set.CallUnary(ctx, req)
+// Partial calls tau.secrets.v2.SecretsService.Partial.
+func (c *secretsServiceClient) Partial(ctx context.Context, req *connect.Request[v2.PartialRequest]) (*connect.Response[v2.PartialDecryption], error) {
+	return c.partial.CallUnary(ctx, req)
 }
 
 // Delete calls tau.secrets.v2.SecretsService.Delete.
-func (c *secretsServiceClient) Delete(ctx context.Context, req *connect.Request[v2.SecretRequest]) (*connect.Response[v2.DeleteResponse], error) {
+func (c *secretsServiceClient) Delete(ctx context.Context, req *connect.Request[v2.Ref]) (*connect.Response[v2.Empty], error) {
 	return c.delete.CallUnary(ctx, req)
 }
 
 // List calls tau.secrets.v2.SecretsService.List.
-func (c *secretsServiceClient) List(ctx context.Context, req *connect.Request[v2.Scope]) (*connect.Response[v2.SecretNames], error) {
+func (c *secretsServiceClient) List(ctx context.Context, req *connect.Request[v2.Scope]) (*connect.Response[v2.Names], error) {
 	return c.list.CallUnary(ctx, req)
 }
 
 // SecretsServiceHandler is an implementation of the tau.secrets.v2.SecretsService service.
 type SecretsServiceHandler interface {
-	// Get is the read on the request path: a workload's variable named a secret
-	// and the worker is resolving it.
-	//
-	// A MISS IS NotFound AND NEVER AN EMPTY VALUE. A workload handed "" for its
-	// database password does not fail where the password is missing; it fails
-	// somewhere else, later, as an application that looks broken.
-	Get(context.Context, *connect.Request[v2.SecretRequest]) (*connect.Response[v2.SecretValue], error)
-	// Set writes a value. It is an upsert: rotating is setting again, which is
-	// the whole reason the value is not in git.
-	Set(context.Context, *connect.Request[v2.SetRequest]) (*connect.Response[v2.SetResponse], error)
-	// Delete removes one. Deleting what is not there succeeds — the caller
-	// wanted it gone and it is gone.
-	Delete(context.Context, *connect.Request[v2.SecretRequest]) (*connect.Response[v2.DeleteResponse], error)
-	// List names what an environment has set, so "which of the secrets this
-	// project declares are missing" is answerable before a deploy rather than
-	// at the first request that needs one.
-	List(context.Context, *connect.Request[v2.Scope]) (*connect.Response[v2.SecretNames], error)
+	Key(context.Context, *connect.Request[v2.KeyRequest]) (*connect.Response[v2.GroupKey], error)
+	Put(context.Context, *connect.Request[v2.PutRequest]) (*connect.Response[v2.Empty], error)
+	Get(context.Context, *connect.Request[v2.Ref]) (*connect.Response[v2.Sealed], error)
+	Partial(context.Context, *connect.Request[v2.PartialRequest]) (*connect.Response[v2.PartialDecryption], error)
+	Delete(context.Context, *connect.Request[v2.Ref]) (*connect.Response[v2.Empty], error)
+	List(context.Context, *connect.Request[v2.Scope]) (*connect.Response[v2.Names], error)
 }
 
 // NewSecretsServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -195,16 +177,28 @@ type SecretsServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSecretsServiceHandler(svc SecretsServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	secretsServiceMethods := v2.File_tau_secrets_v2_secrets_proto.Services().ByName("SecretsService").Methods()
+	secretsServiceKeyHandler := connect.NewUnaryHandler(
+		SecretsServiceKeyProcedure,
+		svc.Key,
+		connect.WithSchema(secretsServiceMethods.ByName("Key")),
+		connect.WithHandlerOptions(opts...),
+	)
+	secretsServicePutHandler := connect.NewUnaryHandler(
+		SecretsServicePutProcedure,
+		svc.Put,
+		connect.WithSchema(secretsServiceMethods.ByName("Put")),
+		connect.WithHandlerOptions(opts...),
+	)
 	secretsServiceGetHandler := connect.NewUnaryHandler(
 		SecretsServiceGetProcedure,
 		svc.Get,
 		connect.WithSchema(secretsServiceMethods.ByName("Get")),
 		connect.WithHandlerOptions(opts...),
 	)
-	secretsServiceSetHandler := connect.NewUnaryHandler(
-		SecretsServiceSetProcedure,
-		svc.Set,
-		connect.WithSchema(secretsServiceMethods.ByName("Set")),
+	secretsServicePartialHandler := connect.NewUnaryHandler(
+		SecretsServicePartialProcedure,
+		svc.Partial,
+		connect.WithSchema(secretsServiceMethods.ByName("Partial")),
 		connect.WithHandlerOptions(opts...),
 	)
 	secretsServiceDeleteHandler := connect.NewUnaryHandler(
@@ -221,10 +215,14 @@ func NewSecretsServiceHandler(svc SecretsServiceHandler, opts ...connect.Handler
 	)
 	return "/tau.secrets.v2.SecretsService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case SecretsServiceKeyProcedure:
+			secretsServiceKeyHandler.ServeHTTP(w, r)
+		case SecretsServicePutProcedure:
+			secretsServicePutHandler.ServeHTTP(w, r)
 		case SecretsServiceGetProcedure:
 			secretsServiceGetHandler.ServeHTTP(w, r)
-		case SecretsServiceSetProcedure:
-			secretsServiceSetHandler.ServeHTTP(w, r)
+		case SecretsServicePartialProcedure:
+			secretsServicePartialHandler.ServeHTTP(w, r)
 		case SecretsServiceDeleteProcedure:
 			secretsServiceDeleteHandler.ServeHTTP(w, r)
 		case SecretsServiceListProcedure:
@@ -238,18 +236,122 @@ func NewSecretsServiceHandler(svc SecretsServiceHandler, opts ...connect.Handler
 // UnimplementedSecretsServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSecretsServiceHandler struct{}
 
-func (UnimplementedSecretsServiceHandler) Get(context.Context, *connect.Request[v2.SecretRequest]) (*connect.Response[v2.SecretValue], error) {
+func (UnimplementedSecretsServiceHandler) Key(context.Context, *connect.Request[v2.KeyRequest]) (*connect.Response[v2.GroupKey], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.secrets.v2.SecretsService.Key is not implemented"))
+}
+
+func (UnimplementedSecretsServiceHandler) Put(context.Context, *connect.Request[v2.PutRequest]) (*connect.Response[v2.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.secrets.v2.SecretsService.Put is not implemented"))
+}
+
+func (UnimplementedSecretsServiceHandler) Get(context.Context, *connect.Request[v2.Ref]) (*connect.Response[v2.Sealed], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.secrets.v2.SecretsService.Get is not implemented"))
 }
 
-func (UnimplementedSecretsServiceHandler) Set(context.Context, *connect.Request[v2.SetRequest]) (*connect.Response[v2.SetResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.secrets.v2.SecretsService.Set is not implemented"))
+func (UnimplementedSecretsServiceHandler) Partial(context.Context, *connect.Request[v2.PartialRequest]) (*connect.Response[v2.PartialDecryption], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.secrets.v2.SecretsService.Partial is not implemented"))
 }
 
-func (UnimplementedSecretsServiceHandler) Delete(context.Context, *connect.Request[v2.SecretRequest]) (*connect.Response[v2.DeleteResponse], error) {
+func (UnimplementedSecretsServiceHandler) Delete(context.Context, *connect.Request[v2.Ref]) (*connect.Response[v2.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.secrets.v2.SecretsService.Delete is not implemented"))
 }
 
-func (UnimplementedSecretsServiceHandler) List(context.Context, *connect.Request[v2.Scope]) (*connect.Response[v2.SecretNames], error) {
+func (UnimplementedSecretsServiceHandler) List(context.Context, *connect.Request[v2.Scope]) (*connect.Response[v2.Names], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.secrets.v2.SecretsService.List is not implemented"))
+}
+
+// DealerServiceClient is a client for the tau.secrets.v2.DealerService service.
+type DealerServiceClient interface {
+	Contribute(context.Context, *connect.Request[v2.Contribution]) (*connect.Response[v2.Empty], error)
+	Replay(context.Context, *connect.Request[v2.ReplayRequest]) (*connect.Response[v2.Contribution], error)
+}
+
+// NewDealerServiceClient constructs a client for the tau.secrets.v2.DealerService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewDealerServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) DealerServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	dealerServiceMethods := v2.File_tau_secrets_v2_secrets_proto.Services().ByName("DealerService").Methods()
+	return &dealerServiceClient{
+		contribute: connect.NewClient[v2.Contribution, v2.Empty](
+			httpClient,
+			baseURL+DealerServiceContributeProcedure,
+			connect.WithSchema(dealerServiceMethods.ByName("Contribute")),
+			connect.WithClientOptions(opts...),
+		),
+		replay: connect.NewClient[v2.ReplayRequest, v2.Contribution](
+			httpClient,
+			baseURL+DealerServiceReplayProcedure,
+			connect.WithSchema(dealerServiceMethods.ByName("Replay")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// dealerServiceClient implements DealerServiceClient.
+type dealerServiceClient struct {
+	contribute *connect.Client[v2.Contribution, v2.Empty]
+	replay     *connect.Client[v2.ReplayRequest, v2.Contribution]
+}
+
+// Contribute calls tau.secrets.v2.DealerService.Contribute.
+func (c *dealerServiceClient) Contribute(ctx context.Context, req *connect.Request[v2.Contribution]) (*connect.Response[v2.Empty], error) {
+	return c.contribute.CallUnary(ctx, req)
+}
+
+// Replay calls tau.secrets.v2.DealerService.Replay.
+func (c *dealerServiceClient) Replay(ctx context.Context, req *connect.Request[v2.ReplayRequest]) (*connect.Response[v2.Contribution], error) {
+	return c.replay.CallUnary(ctx, req)
+}
+
+// DealerServiceHandler is an implementation of the tau.secrets.v2.DealerService service.
+type DealerServiceHandler interface {
+	Contribute(context.Context, *connect.Request[v2.Contribution]) (*connect.Response[v2.Empty], error)
+	Replay(context.Context, *connect.Request[v2.ReplayRequest]) (*connect.Response[v2.Contribution], error)
+}
+
+// NewDealerServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewDealerServiceHandler(svc DealerServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	dealerServiceMethods := v2.File_tau_secrets_v2_secrets_proto.Services().ByName("DealerService").Methods()
+	dealerServiceContributeHandler := connect.NewUnaryHandler(
+		DealerServiceContributeProcedure,
+		svc.Contribute,
+		connect.WithSchema(dealerServiceMethods.ByName("Contribute")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dealerServiceReplayHandler := connect.NewUnaryHandler(
+		DealerServiceReplayProcedure,
+		svc.Replay,
+		connect.WithSchema(dealerServiceMethods.ByName("Replay")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/tau.secrets.v2.DealerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case DealerServiceContributeProcedure:
+			dealerServiceContributeHandler.ServeHTTP(w, r)
+		case DealerServiceReplayProcedure:
+			dealerServiceReplayHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedDealerServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedDealerServiceHandler struct{}
+
+func (UnimplementedDealerServiceHandler) Contribute(context.Context, *connect.Request[v2.Contribution]) (*connect.Response[v2.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.secrets.v2.DealerService.Contribute is not implemented"))
+}
+
+func (UnimplementedDealerServiceHandler) Replay(context.Context, *connect.Request[v2.ReplayRequest]) (*connect.Response[v2.Contribution], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.secrets.v2.DealerService.Replay is not implemented"))
 }

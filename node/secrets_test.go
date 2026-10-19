@@ -65,7 +65,7 @@ func TestTheWriteHalfGoesToWhicheverNodeHoldsTheVault(t *testing.T) {
 	// READ IT BACK ON THE NODE THAT HOLDS IT, not through the same stream that
 	// wrote it — that is what makes this a write to the vault rather than to a
 	// cache in front of one.
-	value, err := holder.Secrets().Local().Secret(t.Context(), "shop", "prod", secretID)
+	value, err := holder.Vault().Secret(t.Context(), "shop", "prod", secretID)
 	require.NoError(t, err)
 	require.Equal(t, "sk_live", value)
 
@@ -74,7 +74,7 @@ func TestTheWriteHalfGoesToWhicheverNodeHoldsTheVault(t *testing.T) {
 	require.Equal(t, []string{secretID}, names)
 
 	require.NoError(t, frontend.vault.Delete(t.Context(), "shop", "prod", secretID))
-	names, err = holder.Secrets().Local().List(t.Context(), "shop", "prod")
+	names, err = holder.Vault().List(t.Context(), "shop", "prod")
 	require.NoError(t, err)
 	require.Empty(t, names)
 }

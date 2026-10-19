@@ -99,7 +99,7 @@ func TestOneVaultServesTheWorkerAndTheTier(t *testing.T) {
 	require.NoError(t, n.Start(t.Context()))
 	ctx := t.Context()
 
-	require.NoError(t, n.Secrets().Local().Set(ctx, "shop", "prod", "QmStripe", []byte("sk_live")))
+	require.NoError(t, n.Vault().Set(ctx, "shop", "prod", "QmStripe", []byte("sk_live")))
 
 	grant := invoke.Grant{
 		Kind: "secret", Label: "stripe", Handle: "shop/prod/QmStripe", Ops: []string{"get"},
@@ -115,7 +115,7 @@ func TestOneVaultServesTheWorkerAndTheTier(t *testing.T) {
 	require.Equal(t, "sk_live", same)
 
 	// AND A ROTATION IS SEEN, which is the whole reason the tier reads per call.
-	require.NoError(t, n.Secrets().Local().Set(ctx, "shop", "prod", "QmStripe", []byte("rotated")))
+	require.NoError(t, n.Vault().Set(ctx, "shop", "prod", "QmStripe", []byte("rotated")))
 	value, err = n.vault.SecretFor(ctx, grant)
 	require.NoError(t, err)
 	require.Equal(t, "rotated", string(value))

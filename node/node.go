@@ -40,9 +40,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 
+	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/node/admit"
 	"github.com/taubyte/tau/node/cache"
 	"github.com/taubyte/tau/node/model"
@@ -149,10 +151,12 @@ type Node struct {
 	closers   []io.Closer
 
 	// public is what services added with WithService serve on the public
-	// listener, and addedVault the one vault reach they share. See extend.go.
-	public     public
-	publicMu   sync.Mutex
-	addedVault *vault
+	// listener. See extend.go.
+	public public
+
+	// shared is the vault Vault hands out, made on first use.
+	sharedMu sync.Mutex
+	shared   *vault
 
 	// THE THREE LOCATORS, each one rule: if this node runs the service, use it
 	// directly; otherwise ask discovery which node does and dial that one. The rule
@@ -354,18 +358,39 @@ func (n *Node) openSecrets() error {
 		return ErrNoDatabases
 	}
 
+	// A SHARE IS THE ONE PIECE OF KEY MATERIAL A NODE CANNOT RE-DERIVE, so
+	// it lives on this machine's disk, and a node with no directory of its
+	// own runs no secrets rather than holding shares that die with it.
+	if n.opts.root == "" {
+		return secretsService.ErrNoRoot
+	}
+
 	db, err := n.opts.databases.New(logger, Secrets, rebroadcastSeconds)
 	if err != nil {
 		return err
 	}
 	n.closers = append(n.closers, closerFunc(db.Close))
 
-	store, err := secretsService.NewKVStore(db)
-	if err != nil {
-		return err
+	options := []secretsService.Option{
+		secretsService.WithRoot(filepath.Join(n.opts.root, Secrets)),
+		secretsService.WithConfig(n.cfg.Secrets),
+	}
+	// WHO ELSE HOLDS A SHARE IS DISCOVERY'S ANSWER on a node that has one,
+	// asked each time a roster is formed; without it, the connected peers that
+	// speak the protocol.
+	if n.cfg.runs(Discovery) {
+		options = append(options, secretsService.WithMembers(func() []libp2ppeer.ID {
+			return (&fromDiscovery{node: n, name: Secrets}).Known()
+		}))
+	}
+	if n.opts.pubsub != nil {
+		options = append(options, secretsService.WithPubSub(n.opts.pubsub))
+	}
+	if n.opts.now != nil {
+		options = append(options, secretsService.WithClock(n.opts.now))
 	}
 
-	svc, err := secretsService.New(n.opts.host, secretsService.WithStore(store))
+	svc, err := secretsService.New(n.opts.host, db, options...)
 	if err != nil {
 		return err
 	}
@@ -1101,6 +1126,19 @@ func (n *Node) serving() []string {
 		out = append(out, sock.Host)
 	}
 	return dedupe(out)
+}
+
+// Vault is the cloud's secrets as this node reads and writes them: through
+// its own service when it runs one, otherwise through whichever nodes
+// discovery names. It is made once and closed with the node.
+func (n *Node) Vault() Vault {
+	n.sharedMu.Lock()
+	defer n.sharedMu.Unlock()
+	if n.shared == nil {
+		n.shared = newVault(n)
+		n.addCloser(n.shared)
+	}
+	return n.shared
 }
 
 // Services is what this node runs, for an operator asking.

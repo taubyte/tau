@@ -7,7 +7,6 @@ import (
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
-	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/specs"
@@ -28,9 +27,7 @@ import (
 // somewhere else, later, as an application that looks broken.
 var ErrNoSecrets = errors.New("node: no secrets service is reachable")
 
-// holder is what both halves offer: this node's own vault and a client onto
-// another node's answer with the same four methods, so nothing above knows
-// which it got.
+// holder is the vault as every caller on this node sees it.
 type holder = Vault
 
 // vault resolves a secret for whichever of this node's services needs one.
@@ -39,75 +36,57 @@ type holder = Vault
 // path — and services/build/frontend's Vault, which is the write. The write
 // half is deliberately NOT the read half's mirror: the frontend's interface has
 // no Get, because nothing on a public ingress reads a value back.
+//
+// IT IS THE SECRETS SERVICE'S OWN CLIENT, on every node alike: a write is
+// encrypted here before it leaves, and a read is opened here from a threshold
+// of members' partial decryptions, so no member — this node's own included,
+// when it runs one — is handed a plaintext.
 type vault struct {
-	node *Node
-
-	// reach is the one rule, as [rpc.Reach]: run it here, use it directly;
-	// otherwise ask discovery who does and dial that one.
-	//
-	// A LOCAL VAULT IS NOT A CACHE, IT IS THE ABSENCE OF A HOP — and here it
-	// is also the absence of a secret on the wire, which is the one place in
-	// this composition where the short-circuit is a security property and not
-	// only a latency one.
-	reach *rpc.Reacher[holder]
+	client *secretsService.Client
 }
 
-// newVault is the only way to make one: the reach is what a vault IS, and a
-// zero value would be a vault that opens nothing.
+// newVault is the only way to make one. Who runs the service is asked at
+// CALL time, so a vault made during composition finds services that start
+// after it.
 func newVault(n *Node) *vault {
-	v := &vault{node: n}
-	v.reach = rpc.Reach(n.opts.host, Secrets,
-		n.routeTo(Secrets, ErrNoSecrets, "this node runs neither a secrets service nor discovery to find one"),
-		func() (holder, bool) {
-			if n.secrets == nil {
-				return nil, false
-			}
-			return n.secrets.Local(), true
-		},
-		func(id libp2ppeer.ID) (holder, error) {
-			c, err := secretsService.NewClient(n.opts.host, id)
-			if err != nil {
-				return nil, err
-			}
-			return c, nil
-		})
-	return v
+	client, err := secretsService.NewClient(n.opts.host,
+		func() []libp2ppeer.ID { return (&fromDiscovery{node: n, name: Secrets}).Known() },
+		func() *secretsService.Service { return n.secrets })
+	if err != nil {
+		// NewClient refuses only a nil host, and New refused that first.
+		panic(err)
+	}
+	return &vault{client: client}
+}
+
+// absent turns a vault with nobody to ask into this node's own refusal.
+func absent(err error) error {
+	if errors.Is(err, secretsService.ErrNoMembers) {
+		return fmt.Errorf("%w: %w", ErrNoSecrets, err)
+	}
+	return err
 }
 
 // Secret is the read on the request path.
 func (v *vault) Secret(ctx context.Context, project, environment, secretID string) (string, error) {
-	h, err := v.reach.Now(ctx)
-	if err != nil {
-		return "", err
-	}
-	return h.Secret(ctx, project, environment, secretID)
+	value, err := v.client.Secret(ctx, project, environment, secretID)
+	return value, absent(err)
 }
 
 // Set, Delete and List are the developer's half, reached from the build
 // frontend. They are the one write in v2 that is not a git push, and the
 // frontend authorizes them exactly as it authorizes a deploy.
 func (v *vault) Set(ctx context.Context, project, environment, name string, value []byte) error {
-	h, err := v.reach.Now(ctx)
-	if err != nil {
-		return err
-	}
-	return h.Set(ctx, project, environment, name, value)
+	return absent(v.client.Set(ctx, project, environment, name, value))
 }
 
 func (v *vault) Delete(ctx context.Context, project, environment, name string) error {
-	h, err := v.reach.Now(ctx)
-	if err != nil {
-		return err
-	}
-	return h.Delete(ctx, project, environment, name)
+	return absent(v.client.Delete(ctx, project, environment, name))
 }
 
 func (v *vault) List(ctx context.Context, project, environment string) ([]string, error) {
-	h, err := v.reach.Now(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return h.List(ctx, project, environment)
+	names, err := v.client.List(ctx, project, environment)
+	return names, absent(err)
 }
 
 // Secret is pkg/invoke/wasm's Secrets: the value a grant names, read at the
@@ -135,5 +114,5 @@ func (v *vault) SecretFor(ctx context.Context, grant invoke.Grant) ([]byte, erro
 	return []byte(value), nil
 }
 
-// Close releases the stream to a remote vault, if one was opened.
-func (v *vault) Close() error { return v.reach.Close() }
+// Close releases the streams the vault opened.
+func (v *vault) Close() error { return v.client.Close() }

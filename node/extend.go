@@ -184,16 +184,7 @@ func (a *added) Peers(service string) []libp2ppeer.ID {
 	return (&fromDiscovery{node: a.node, name: service}).Known()
 }
 
-// Secrets builds its reach once per service and closes it with the node.
-func (a *added) Secrets() Vault {
-	a.node.publicMu.Lock()
-	defer a.node.publicMu.Unlock()
-	if a.node.addedVault == nil {
-		a.node.addedVault = newVault(a.node)
-		a.node.addCloser(a.node.addedVault)
-	}
-	return a.node.addedVault
-}
+func (a *added) Secrets() Vault { return a.node.Vault() }
 
 // public is what added services serve on the node's public listener, in front
 // of the gateway.

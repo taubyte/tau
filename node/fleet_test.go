@@ -67,6 +67,7 @@ func fleet(t *testing.T, configs ...Config) []*Node {
 			WithDatabases(&memFactory{}),
 			WithRuntimes(&tier{name: "wasm"}),
 			WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
+			WithRoot(t.TempDir()),
 			prebuilt(),
 		)
 		require.NoError(t, err)
@@ -285,7 +286,7 @@ func TestAWorkerResolvesASecretFromItsOwnVault(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}}, prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 
-	require.NoError(t, n.Secrets().Local().Set(t.Context(), "shop", "prod", secretID, []byte("sk_live")))
+	require.NoError(t, n.Vault().Set(t.Context(), "shop", "prod", secretID, []byte("sk_live")))
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: needsASecret(),
@@ -307,7 +308,7 @@ func TestAWorkerFindsAVaultOnAnotherNode(t *testing.T) {
 	)
 	holder, compute := nodes[0], nodes[1]
 
-	require.NoError(t, holder.Secrets().Local().Set(t.Context(), "shop", "prod", secretID, []byte("sk_live")))
+	require.NoError(t, holder.Vault().Set(t.Context(), "shop", "prod", secretID, []byte("sk_live")))
 
 	_, err := holder.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: needsASecret(),
@@ -346,7 +347,7 @@ func TestABuiltResourceWithNoBuildServiceIsRefused(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}})
 	require.NoError(t, n.Start(t.Context()))
 
-	require.NoError(t, n.Secrets().Local().Set(t.Context(), "shop", "prod", secretID, []byte("sk_live")))
+	require.NoError(t, n.Vault().Set(t.Context(), "shop", "prod", secretID, []byte("sk_live")))
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: needsBothSeams(),
 	})

@@ -141,7 +141,7 @@ func externalSQL(t *testing.T, name string, s server, port int) {
 	// sets one. Without it the open is refused, which the first exec proves by
 	// retrying until this has landed.
 	ctx := t.Context()
-	require.NoError(t, r.node.Secrets().Local().Set(ctx, "shop", "prod", r.idOf(t, "secret", "dbcreds"), []byte("tau:s3cret")))
+	require.NoError(t, r.node.Vault().Set(ctx, "shop", "prod", r.idOf(t, "secret", "dbcreds"), []byte("tau:s3cret")))
 
 	exec := func(statement string) {
 		t.Helper()

@@ -4,43 +4,12 @@
 // 	protoc        (unknown)
 // source: tau/secrets/v2/secrets.proto
 
-// secrets holds the values a config deliberately does not carry.
+// The secrets service's surface between tau nodes, over p2p/rpc.
 //
-// THE VOCABULARY DECIDED THIS SHAPE, not this file. A `secret` resource is "a
-// declaration and a reference, never a value", and the value "lives outside
-// git in the secrets service, keyed <project>/<environment>/<key>, so rotation
-// needs no push" — pkg/tcc/taubyte/v2/schema/definition.go, at the secret
-// group. Everything below is that sentence made callable.
-//
-// SO THE WRITER IS NOT CI. Every other v2 store is written by a push: the
-// register's only writer is the build service, because a deploy that can
-// happen from a laptop bypasses git and leaves no record. A secret is the one
-// thing that inverts — putting its value in git is the failure — so it is
-// written out of band, by whoever holds it, and a rotation is a Set with no
-// commit and no build behind it.
-//
-// A VALUE NEVER COMES BACK FROM A LIST. List answers with NAMES, which is what
-// "is this environment's DATABASE_URL set" needs and is the question an
-// operator actually asks. A list that returned values would turn one call into
-// an export of every secret an environment holds, and every caller that only
-// wanted to check would be making it.
-//
-// AUTHORIZATION IS NOT HERE, and here that is a larger statement than it is on
-// the register. Any peer that can reach this service can read every value in
-// it. That is the OSS trust model stated everywhere else in v2 — the swarm's
-// members are the trust boundary and the private swarm key is what enforces
-// it — and it is the reason a deployment that does not trust its own nodes
-// needs a different implementation of this service rather than a flag on this
-// one. What that implementation is (a caller identity per request, values
-// encrypted to a key no single node holds) is a design, not a field, and it is
-// not guessed at here.
-//
-// `source: oidc` IS NOT SERVED BY THIS SERVICE AND CANNOT BE. The vocabulary's
-// other secret source is "minted per request as a short-lived token, nothing
-// to rotate or leak" — so there is nothing to store, nothing to Set, and a
-// Get would have to mint rather than read. It is refused where the refusal can
-// be explained (services/worker, which can see the declaration) rather than
-// answered here with a miss that reads as "somebody forgot to set it".
+// No message here carries a plaintext. A client encrypts a secret under the
+// cluster's group public key before Put, and opens it after Get by combining a
+// threshold of Partial answers, each computed by one member from its own share.
+// See services/secrets' package doc for what that does and does not protect.
 
 package secretsv2
 
@@ -59,13 +28,68 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Scope is one environment of one project: the whole key space a workload can
-// ever read from.
-//
-// IT IS NOT A PREFIX A CALLER COMPOSES. The separator between the three
-// segments is this service's, and a name carrying one is refused — otherwise
-// a secret called "prod/DATABASE_URL" in a staging environment would be a
-// readable path into production's.
+// Ref names one secret.
+type Ref struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	Environment   string                 `protobuf:"bytes,2,opt,name=environment,proto3" json:"environment,omitempty"`
+	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Ref) Reset() {
+	*x = Ref{}
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Ref) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Ref) ProtoMessage() {}
+
+func (x *Ref) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Ref.ProtoReflect.Descriptor instead.
+func (*Ref) Descriptor() ([]byte, []int) {
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *Ref) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *Ref) GetEnvironment() string {
+	if x != nil {
+		return x.Environment
+	}
+	return ""
+}
+
+func (x *Ref) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+// Scope names every secret of one project environment.
 type Scope struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
@@ -76,7 +100,7 @@ type Scope struct {
 
 func (x *Scope) Reset() {
 	*x = Scope{}
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[0]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -88,7 +112,7 @@ func (x *Scope) String() string {
 func (*Scope) ProtoMessage() {}
 
 func (x *Scope) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[0]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -101,7 +125,7 @@ func (x *Scope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Scope.ProtoReflect.Descriptor instead.
 func (*Scope) Descriptor() ([]byte, []int) {
-	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{0}
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *Scope) GetProject() string {
@@ -118,90 +142,26 @@ func (x *Scope) GetEnvironment() string {
 	return ""
 }
 
-type SecretRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	Scope *Scope                 `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
-	// name is the secret resource's ID, not the string it was written as.
-	//
-	// A REFERENCE COMPILES TO AN ID — pkg/project/source.go says so where it
-	// reads `secret: {name: …}` — so what a worker and a build hand this service
-	// is the id, and keying on the written name would mean renaming a secret in
-	// git silently detached it from its value. The name is what a person types;
-	// resolving it to an id is a read of the compiled project, which is a thing
-	// the CLI has and this service does not.
-	Name          string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SecretRequest) Reset() {
-	*x = SecretRequest{}
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SecretRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SecretRequest) ProtoMessage() {}
-
-func (x *SecretRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SecretRequest.ProtoReflect.Descriptor instead.
-func (*SecretRequest) Descriptor() ([]byte, []int) {
-	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *SecretRequest) GetScope() *Scope {
-	if x != nil {
-		return x.Scope
-	}
-	return nil
-}
-
-func (x *SecretRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-// SecretValue is bytes rather than a string because a secret is not always
-// text: a supplied certificate is one secret holding a chain and a private
-// key, and a token minted elsewhere is whatever that elsewhere produced.
-type SecretValue struct {
+type Empty struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Value         []byte                 `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SecretValue) Reset() {
-	*x = SecretValue{}
+func (x *Empty) Reset() {
+	*x = Empty{}
 	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SecretValue) String() string {
+func (x *Empty) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SecretValue) ProtoMessage() {}
+func (*Empty) ProtoMessage() {}
 
-func (x *SecretValue) ProtoReflect() protoreflect.Message {
+func (x *Empty) ProtoReflect() protoreflect.Message {
 	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -213,41 +173,38 @@ func (x *SecretValue) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SecretValue.ProtoReflect.Descriptor instead.
-func (*SecretValue) Descriptor() ([]byte, []int) {
+// Deprecated: Use Empty.ProtoReflect.Descriptor instead.
+func (*Empty) Descriptor() ([]byte, []int) {
 	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *SecretValue) GetValue() []byte {
-	if x != nil {
-		return x.Value
-	}
-	return nil
-}
-
-type SetRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Scope         *Scope                 `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Value         []byte                 `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+// KeyRequest asks for a group key by id, or, with no id, for the newest one
+// the answering member holds a share of.
+type KeyRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	KeyId string                 `protobuf:"bytes,1,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	// form asks a member holding no key to form one now rather than answer
+	// that it has none. A writer sets it; a member asking another whether a
+	// key exists must not, or the question would start the round it asks about.
+	Form          bool `protobuf:"varint,2,opt,name=form,proto3" json:"form,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SetRequest) Reset() {
-	*x = SetRequest{}
+func (x *KeyRequest) Reset() {
+	*x = KeyRequest{}
 	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SetRequest) String() string {
+func (x *KeyRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SetRequest) ProtoMessage() {}
+func (*KeyRequest) ProtoMessage() {}
 
-func (x *SetRequest) ProtoReflect() protoreflect.Message {
+func (x *KeyRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -259,91 +216,127 @@ func (x *SetRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SetRequest.ProtoReflect.Descriptor instead.
-func (*SetRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use KeyRequest.ProtoReflect.Descriptor instead.
+func (*KeyRequest) Descriptor() ([]byte, []int) {
 	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *SetRequest) GetScope() *Scope {
+func (x *KeyRequest) GetKeyId() string {
 	if x != nil {
-		return x.Scope
-	}
-	return nil
-}
-
-func (x *SetRequest) GetName() string {
-	if x != nil {
-		return x.Name
+		return x.KeyId
 	}
 	return ""
 }
 
-func (x *SetRequest) GetValue() []byte {
+func (x *KeyRequest) GetForm() bool {
 	if x != nil {
-		return x.Value
+		return x.Form
+	}
+	return false
+}
+
+// GroupKey is the public half of one distributed key.
+type GroupKey struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	KeyId string                 `protobuf:"bytes,1,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	Epoch uint64                 `protobuf:"varint,2,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	// public is the group public key, compressed.
+	Public    []byte `protobuf:"bytes,3,opt,name=public,proto3" json:"public,omitempty"`
+	Threshold uint32 `protobuf:"varint,4,opt,name=threshold,proto3" json:"threshold,omitempty"`
+	// members are the peer ids holding a share, sorted.
+	Members       []string `protobuf:"bytes,5,rep,name=members,proto3" json:"members,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GroupKey) Reset() {
+	*x = GroupKey{}
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GroupKey) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GroupKey) ProtoMessage() {}
+
+func (x *GroupKey) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GroupKey.ProtoReflect.Descriptor instead.
+func (*GroupKey) Descriptor() ([]byte, []int) {
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *GroupKey) GetKeyId() string {
+	if x != nil {
+		return x.KeyId
+	}
+	return ""
+}
+
+func (x *GroupKey) GetEpoch() uint64 {
+	if x != nil {
+		return x.Epoch
+	}
+	return 0
+}
+
+func (x *GroupKey) GetPublic() []byte {
+	if x != nil {
+		return x.Public
 	}
 	return nil
 }
 
-// SetResponse is empty and stays a message rather than becoming
-// google.protobuf.Empty, so a field can be added later without every caller
-// recompiling against a different type.
-type SetResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SetResponse) Reset() {
-	*x = SetResponse{}
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SetResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SetResponse) ProtoMessage() {}
-
-func (x *SetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[4]
+func (x *GroupKey) GetThreshold() uint32 {
 	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
+		return x.Threshold
 	}
-	return mi.MessageOf(x)
+	return 0
 }
 
-// Deprecated: Use SetResponse.ProtoReflect.Descriptor instead.
-func (*SetResponse) Descriptor() ([]byte, []int) {
-	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{4}
+func (x *GroupKey) GetMembers() []string {
+	if x != nil {
+		return x.Members
+	}
+	return nil
 }
 
-type DeleteResponse struct {
+// Wrapping is a secret's data key sealed to one group key by one writer.
+type Wrapping struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	R             []byte                 `protobuf:"bytes,1,opt,name=r,proto3" json:"r,omitempty"`
+	WrappedDek    []byte                 `protobuf:"bytes,2,opt,name=wrapped_dek,json=wrappedDek,proto3" json:"wrapped_dek,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DeleteResponse) Reset() {
-	*x = DeleteResponse{}
+func (x *Wrapping) Reset() {
+	*x = Wrapping{}
 	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DeleteResponse) String() string {
+func (x *Wrapping) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DeleteResponse) ProtoMessage() {}
+func (*Wrapping) ProtoMessage() {}
 
-func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
+func (x *Wrapping) ProtoReflect() protoreflect.Message {
 	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -355,35 +348,315 @@ func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DeleteResponse.ProtoReflect.Descriptor instead.
-func (*DeleteResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use Wrapping.ProtoReflect.Descriptor instead.
+func (*Wrapping) Descriptor() ([]byte, []int) {
 	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{5}
 }
 
-// SecretNames is what an environment has set, sorted. Names only — see the
-// file doc.
-type SecretNames struct {
+func (x *Wrapping) GetR() []byte {
+	if x != nil {
+		return x.R
+	}
+	return nil
+}
+
+func (x *Wrapping) GetWrappedDek() []byte {
+	if x != nil {
+		return x.WrappedDek
+	}
+	return nil
+}
+
+type PutRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ref           *Ref                   `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	KeyId         string                 `protobuf:"bytes,2,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	Ciphertext    []byte                 `protobuf:"bytes,3,opt,name=ciphertext,proto3" json:"ciphertext,omitempty"`
+	Wrapping      *Wrapping              `protobuf:"bytes,4,opt,name=wrapping,proto3" json:"wrapping,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutRequest) Reset() {
+	*x = PutRequest{}
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutRequest) ProtoMessage() {}
+
+func (x *PutRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutRequest.ProtoReflect.Descriptor instead.
+func (*PutRequest) Descriptor() ([]byte, []int) {
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *PutRequest) GetRef() *Ref {
+	if x != nil {
+		return x.Ref
+	}
+	return nil
+}
+
+func (x *PutRequest) GetKeyId() string {
+	if x != nil {
+		return x.KeyId
+	}
+	return ""
+}
+
+func (x *PutRequest) GetCiphertext() []byte {
+	if x != nil {
+		return x.Ciphertext
+	}
+	return nil
+}
+
+func (x *PutRequest) GetWrapping() *Wrapping {
+	if x != nil {
+		return x.Wrapping
+	}
+	return nil
+}
+
+// Sealed is a stored secret as one member holds it. found is false when this
+// member holds no such record, which may only mean it has not replicated here.
+type Sealed struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Found bool                   `protobuf:"varint,1,opt,name=found,proto3" json:"found,omitempty"`
+	KeyId string                 `protobuf:"bytes,2,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	Epoch uint64                 `protobuf:"varint,3,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	// writer is the member whose wrapping this is. Every partial for one read
+	// must be taken against the same writer's wrapping.
+	Writer        string    `protobuf:"bytes,4,opt,name=writer,proto3" json:"writer,omitempty"`
+	Wrapping      *Wrapping `protobuf:"bytes,5,opt,name=wrapping,proto3" json:"wrapping,omitempty"`
+	Ciphertext    []byte    `protobuf:"bytes,6,opt,name=ciphertext,proto3" json:"ciphertext,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Sealed) Reset() {
+	*x = Sealed{}
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Sealed) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Sealed) ProtoMessage() {}
+
+func (x *Sealed) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Sealed.ProtoReflect.Descriptor instead.
+func (*Sealed) Descriptor() ([]byte, []int) {
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *Sealed) GetFound() bool {
+	if x != nil {
+		return x.Found
+	}
+	return false
+}
+
+func (x *Sealed) GetKeyId() string {
+	if x != nil {
+		return x.KeyId
+	}
+	return ""
+}
+
+func (x *Sealed) GetEpoch() uint64 {
+	if x != nil {
+		return x.Epoch
+	}
+	return 0
+}
+
+func (x *Sealed) GetWriter() string {
+	if x != nil {
+		return x.Writer
+	}
+	return ""
+}
+
+func (x *Sealed) GetWrapping() *Wrapping {
+	if x != nil {
+		return x.Wrapping
+	}
+	return nil
+}
+
+func (x *Sealed) GetCiphertext() []byte {
+	if x != nil {
+		return x.Ciphertext
+	}
+	return nil
+}
+
+type PartialRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ref           *Ref                   `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
+	KeyId         string                 `protobuf:"bytes,2,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	Writer        string                 `protobuf:"bytes,3,opt,name=writer,proto3" json:"writer,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PartialRequest) Reset() {
+	*x = PartialRequest{}
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PartialRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PartialRequest) ProtoMessage() {}
+
+func (x *PartialRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PartialRequest.ProtoReflect.Descriptor instead.
+func (*PartialRequest) Descriptor() ([]byte, []int) {
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *PartialRequest) GetRef() *Ref {
+	if x != nil {
+		return x.Ref
+	}
+	return nil
+}
+
+func (x *PartialRequest) GetKeyId() string {
+	if x != nil {
+		return x.KeyId
+	}
+	return ""
+}
+
+func (x *PartialRequest) GetWriter() string {
+	if x != nil {
+		return x.Writer
+	}
+	return ""
+}
+
+type PartialDecryption struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            []byte                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	D             []byte                 `protobuf:"bytes,2,opt,name=d,proto3" json:"d,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PartialDecryption) Reset() {
+	*x = PartialDecryption{}
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PartialDecryption) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PartialDecryption) ProtoMessage() {}
+
+func (x *PartialDecryption) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PartialDecryption.ProtoReflect.Descriptor instead.
+func (*PartialDecryption) Descriptor() ([]byte, []int) {
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *PartialDecryption) GetId() []byte {
+	if x != nil {
+		return x.Id
+	}
+	return nil
+}
+
+func (x *PartialDecryption) GetD() []byte {
+	if x != nil {
+		return x.D
+	}
+	return nil
+}
+
+type Names struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Names         []string               `protobuf:"bytes,1,rep,name=names,proto3" json:"names,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SecretNames) Reset() {
-	*x = SecretNames{}
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[6]
+func (x *Names) Reset() {
+	*x = Names{}
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SecretNames) String() string {
+func (x *Names) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SecretNames) ProtoMessage() {}
+func (*Names) ProtoMessage() {}
 
-func (x *SecretNames) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[6]
+func (x *Names) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -394,45 +667,232 @@ func (x *SecretNames) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SecretNames.ProtoReflect.Descriptor instead.
-func (*SecretNames) Descriptor() ([]byte, []int) {
-	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{6}
+// Deprecated: Use Names.ProtoReflect.Descriptor instead.
+func (*Names) Descriptor() ([]byte, []int) {
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *SecretNames) GetNames() []string {
+func (x *Names) GetNames() []string {
 	if x != nil {
 		return x.Names
 	}
 	return nil
 }
 
+// Contribution is one dealer's part of a DKG round, addressed to one member.
+type Contribution struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Round         string                 `protobuf:"bytes,1,opt,name=round,proto3" json:"round,omitempty"`
+	Epoch         uint64                 `protobuf:"varint,2,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	From          string                 `protobuf:"bytes,3,opt,name=from,proto3" json:"from,omitempty"`
+	Members       []string               `protobuf:"bytes,4,rep,name=members,proto3" json:"members,omitempty"`
+	Commitment    [][]byte               `protobuf:"bytes,5,rep,name=commitment,proto3" json:"commitment,omitempty"`
+	ShareId       []byte                 `protobuf:"bytes,6,opt,name=share_id,json=shareId,proto3" json:"share_id,omitempty"`
+	ShareValue    []byte                 `protobuf:"bytes,7,opt,name=share_value,json=shareValue,proto3" json:"share_value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Contribution) Reset() {
+	*x = Contribution{}
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Contribution) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Contribution) ProtoMessage() {}
+
+func (x *Contribution) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Contribution.ProtoReflect.Descriptor instead.
+func (*Contribution) Descriptor() ([]byte, []int) {
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *Contribution) GetRound() string {
+	if x != nil {
+		return x.Round
+	}
+	return ""
+}
+
+func (x *Contribution) GetEpoch() uint64 {
+	if x != nil {
+		return x.Epoch
+	}
+	return 0
+}
+
+func (x *Contribution) GetFrom() string {
+	if x != nil {
+		return x.From
+	}
+	return ""
+}
+
+func (x *Contribution) GetMembers() []string {
+	if x != nil {
+		return x.Members
+	}
+	return nil
+}
+
+func (x *Contribution) GetCommitment() [][]byte {
+	if x != nil {
+		return x.Commitment
+	}
+	return nil
+}
+
+func (x *Contribution) GetShareId() []byte {
+	if x != nil {
+		return x.ShareId
+	}
+	return nil
+}
+
+func (x *Contribution) GetShareValue() []byte {
+	if x != nil {
+		return x.ShareValue
+	}
+	return nil
+}
+
+type ReplayRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	KeyId         string                 `protobuf:"bytes,1,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReplayRequest) Reset() {
+	*x = ReplayRequest{}
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReplayRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReplayRequest) ProtoMessage() {}
+
+func (x *ReplayRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReplayRequest.ProtoReflect.Descriptor instead.
+func (*ReplayRequest) Descriptor() ([]byte, []int) {
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ReplayRequest) GetKeyId() string {
+	if x != nil {
+		return x.KeyId
+	}
+	return ""
+}
+
 var File_tau_secrets_v2_secrets_proto protoreflect.FileDescriptor
 
 const file_tau_secrets_v2_secrets_proto_rawDesc = "" +
 	"\n" +
-	"\x1ctau/secrets/v2/secrets.proto\x12\x0etau.secrets.v2\"C\n" +
+	"\x1ctau/secrets/v2/secrets.proto\x12\x0etau.secrets.v2\"U\n" +
+	"\x03Ref\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
+	"\venvironment\x18\x02 \x01(\tR\venvironment\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\"C\n" +
 	"\x05Scope\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
-	"\venvironment\x18\x02 \x01(\tR\venvironment\"P\n" +
-	"\rSecretRequest\x12+\n" +
-	"\x05scope\x18\x01 \x01(\v2\x15.tau.secrets.v2.ScopeR\x05scope\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"#\n" +
-	"\vSecretValue\x12\x14\n" +
-	"\x05value\x18\x01 \x01(\fR\x05value\"c\n" +
+	"\venvironment\x18\x02 \x01(\tR\venvironment\"\a\n" +
+	"\x05Empty\"7\n" +
 	"\n" +
-	"SetRequest\x12+\n" +
-	"\x05scope\x18\x01 \x01(\v2\x15.tau.secrets.v2.ScopeR\x05scope\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
-	"\x05value\x18\x03 \x01(\fR\x05value\"\r\n" +
-	"\vSetResponse\"\x10\n" +
-	"\x0eDeleteResponse\"#\n" +
-	"\vSecretNames\x12\x14\n" +
-	"\x05names\x18\x01 \x03(\tR\x05names2\x98\x02\n" +
-	"\x0eSecretsService\x12A\n" +
-	"\x03Get\x12\x1d.tau.secrets.v2.SecretRequest\x1a\x1b.tau.secrets.v2.SecretValue\x12>\n" +
-	"\x03Set\x12\x1a.tau.secrets.v2.SetRequest\x1a\x1b.tau.secrets.v2.SetResponse\x12G\n" +
-	"\x06Delete\x12\x1d.tau.secrets.v2.SecretRequest\x1a\x1e.tau.secrets.v2.DeleteResponse\x12:\n" +
-	"\x04List\x12\x15.tau.secrets.v2.Scope\x1a\x1b.tau.secrets.v2.SecretNamesB\xbb\x01\n" +
+	"KeyRequest\x12\x15\n" +
+	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x12\n" +
+	"\x04form\x18\x02 \x01(\bR\x04form\"\x87\x01\n" +
+	"\bGroupKey\x12\x15\n" +
+	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x14\n" +
+	"\x05epoch\x18\x02 \x01(\x04R\x05epoch\x12\x16\n" +
+	"\x06public\x18\x03 \x01(\fR\x06public\x12\x1c\n" +
+	"\tthreshold\x18\x04 \x01(\rR\tthreshold\x12\x18\n" +
+	"\amembers\x18\x05 \x03(\tR\amembers\"9\n" +
+	"\bWrapping\x12\f\n" +
+	"\x01r\x18\x01 \x01(\fR\x01r\x12\x1f\n" +
+	"\vwrapped_dek\x18\x02 \x01(\fR\n" +
+	"wrappedDek\"\xa0\x01\n" +
+	"\n" +
+	"PutRequest\x12%\n" +
+	"\x03ref\x18\x01 \x01(\v2\x13.tau.secrets.v2.RefR\x03ref\x12\x15\n" +
+	"\x06key_id\x18\x02 \x01(\tR\x05keyId\x12\x1e\n" +
+	"\n" +
+	"ciphertext\x18\x03 \x01(\fR\n" +
+	"ciphertext\x124\n" +
+	"\bwrapping\x18\x04 \x01(\v2\x18.tau.secrets.v2.WrappingR\bwrapping\"\xb9\x01\n" +
+	"\x06Sealed\x12\x14\n" +
+	"\x05found\x18\x01 \x01(\bR\x05found\x12\x15\n" +
+	"\x06key_id\x18\x02 \x01(\tR\x05keyId\x12\x14\n" +
+	"\x05epoch\x18\x03 \x01(\x04R\x05epoch\x12\x16\n" +
+	"\x06writer\x18\x04 \x01(\tR\x06writer\x124\n" +
+	"\bwrapping\x18\x05 \x01(\v2\x18.tau.secrets.v2.WrappingR\bwrapping\x12\x1e\n" +
+	"\n" +
+	"ciphertext\x18\x06 \x01(\fR\n" +
+	"ciphertext\"f\n" +
+	"\x0ePartialRequest\x12%\n" +
+	"\x03ref\x18\x01 \x01(\v2\x13.tau.secrets.v2.RefR\x03ref\x12\x15\n" +
+	"\x06key_id\x18\x02 \x01(\tR\x05keyId\x12\x16\n" +
+	"\x06writer\x18\x03 \x01(\tR\x06writer\"1\n" +
+	"\x11PartialDecryption\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\fR\x02id\x12\f\n" +
+	"\x01d\x18\x02 \x01(\fR\x01d\"\x1d\n" +
+	"\x05Names\x12\x14\n" +
+	"\x05names\x18\x01 \x03(\tR\x05names\"\xc4\x01\n" +
+	"\fContribution\x12\x14\n" +
+	"\x05round\x18\x01 \x01(\tR\x05round\x12\x14\n" +
+	"\x05epoch\x18\x02 \x01(\x04R\x05epoch\x12\x12\n" +
+	"\x04from\x18\x03 \x01(\tR\x04from\x12\x18\n" +
+	"\amembers\x18\x04 \x03(\tR\amembers\x12\x1e\n" +
+	"\n" +
+	"commitment\x18\x05 \x03(\fR\n" +
+	"commitment\x12\x19\n" +
+	"\bshare_id\x18\x06 \x01(\fR\ashareId\x12\x1f\n" +
+	"\vshare_value\x18\a \x01(\fR\n" +
+	"shareValue\"&\n" +
+	"\rReplayRequest\x12\x15\n" +
+	"\x06key_id\x18\x01 \x01(\tR\x05keyId2\xf5\x02\n" +
+	"\x0eSecretsService\x12;\n" +
+	"\x03Key\x12\x1a.tau.secrets.v2.KeyRequest\x1a\x18.tau.secrets.v2.GroupKey\x128\n" +
+	"\x03Put\x12\x1a.tau.secrets.v2.PutRequest\x1a\x15.tau.secrets.v2.Empty\x122\n" +
+	"\x03Get\x12\x13.tau.secrets.v2.Ref\x1a\x16.tau.secrets.v2.Sealed\x12L\n" +
+	"\aPartial\x12\x1e.tau.secrets.v2.PartialRequest\x1a!.tau.secrets.v2.PartialDecryption\x124\n" +
+	"\x06Delete\x12\x13.tau.secrets.v2.Ref\x1a\x15.tau.secrets.v2.Empty\x124\n" +
+	"\x04List\x12\x15.tau.secrets.v2.Scope\x1a\x15.tau.secrets.v2.Names2\x99\x01\n" +
+	"\rDealerService\x12A\n" +
+	"\n" +
+	"Contribute\x12\x1c.tau.secrets.v2.Contribution\x1a\x15.tau.secrets.v2.Empty\x12E\n" +
+	"\x06Replay\x12\x1d.tau.secrets.v2.ReplayRequest\x1a\x1c.tau.secrets.v2.ContributionB\xbb\x01\n" +
 	"\x12com.tau.secrets.v2B\fSecretsProtoP\x01Z=github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2;secretsv2\xa2\x02\x03TSX\xaa\x02\x0eTau.Secrets.V2\xca\x02\x0eTau\\Secrets\\V2\xe2\x02\x1aTau\\Secrets\\V2\\GPBMetadata\xea\x02\x10Tau::Secrets::V2b\x06proto3"
 
 var (
@@ -447,32 +907,48 @@ func file_tau_secrets_v2_secrets_proto_rawDescGZIP() []byte {
 	return file_tau_secrets_v2_secrets_proto_rawDescData
 }
 
-var file_tau_secrets_v2_secrets_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_tau_secrets_v2_secrets_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_tau_secrets_v2_secrets_proto_goTypes = []any{
-	(*Scope)(nil),          // 0: tau.secrets.v2.Scope
-	(*SecretRequest)(nil),  // 1: tau.secrets.v2.SecretRequest
-	(*SecretValue)(nil),    // 2: tau.secrets.v2.SecretValue
-	(*SetRequest)(nil),     // 3: tau.secrets.v2.SetRequest
-	(*SetResponse)(nil),    // 4: tau.secrets.v2.SetResponse
-	(*DeleteResponse)(nil), // 5: tau.secrets.v2.DeleteResponse
-	(*SecretNames)(nil),    // 6: tau.secrets.v2.SecretNames
+	(*Ref)(nil),               // 0: tau.secrets.v2.Ref
+	(*Scope)(nil),             // 1: tau.secrets.v2.Scope
+	(*Empty)(nil),             // 2: tau.secrets.v2.Empty
+	(*KeyRequest)(nil),        // 3: tau.secrets.v2.KeyRequest
+	(*GroupKey)(nil),          // 4: tau.secrets.v2.GroupKey
+	(*Wrapping)(nil),          // 5: tau.secrets.v2.Wrapping
+	(*PutRequest)(nil),        // 6: tau.secrets.v2.PutRequest
+	(*Sealed)(nil),            // 7: tau.secrets.v2.Sealed
+	(*PartialRequest)(nil),    // 8: tau.secrets.v2.PartialRequest
+	(*PartialDecryption)(nil), // 9: tau.secrets.v2.PartialDecryption
+	(*Names)(nil),             // 10: tau.secrets.v2.Names
+	(*Contribution)(nil),      // 11: tau.secrets.v2.Contribution
+	(*ReplayRequest)(nil),     // 12: tau.secrets.v2.ReplayRequest
 }
 var file_tau_secrets_v2_secrets_proto_depIdxs = []int32{
-	0, // 0: tau.secrets.v2.SecretRequest.scope:type_name -> tau.secrets.v2.Scope
-	0, // 1: tau.secrets.v2.SetRequest.scope:type_name -> tau.secrets.v2.Scope
-	1, // 2: tau.secrets.v2.SecretsService.Get:input_type -> tau.secrets.v2.SecretRequest
-	3, // 3: tau.secrets.v2.SecretsService.Set:input_type -> tau.secrets.v2.SetRequest
-	1, // 4: tau.secrets.v2.SecretsService.Delete:input_type -> tau.secrets.v2.SecretRequest
-	0, // 5: tau.secrets.v2.SecretsService.List:input_type -> tau.secrets.v2.Scope
-	2, // 6: tau.secrets.v2.SecretsService.Get:output_type -> tau.secrets.v2.SecretValue
-	4, // 7: tau.secrets.v2.SecretsService.Set:output_type -> tau.secrets.v2.SetResponse
-	5, // 8: tau.secrets.v2.SecretsService.Delete:output_type -> tau.secrets.v2.DeleteResponse
-	6, // 9: tau.secrets.v2.SecretsService.List:output_type -> tau.secrets.v2.SecretNames
-	6, // [6:10] is the sub-list for method output_type
-	2, // [2:6] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	0,  // 0: tau.secrets.v2.PutRequest.ref:type_name -> tau.secrets.v2.Ref
+	5,  // 1: tau.secrets.v2.PutRequest.wrapping:type_name -> tau.secrets.v2.Wrapping
+	5,  // 2: tau.secrets.v2.Sealed.wrapping:type_name -> tau.secrets.v2.Wrapping
+	0,  // 3: tau.secrets.v2.PartialRequest.ref:type_name -> tau.secrets.v2.Ref
+	3,  // 4: tau.secrets.v2.SecretsService.Key:input_type -> tau.secrets.v2.KeyRequest
+	6,  // 5: tau.secrets.v2.SecretsService.Put:input_type -> tau.secrets.v2.PutRequest
+	0,  // 6: tau.secrets.v2.SecretsService.Get:input_type -> tau.secrets.v2.Ref
+	8,  // 7: tau.secrets.v2.SecretsService.Partial:input_type -> tau.secrets.v2.PartialRequest
+	0,  // 8: tau.secrets.v2.SecretsService.Delete:input_type -> tau.secrets.v2.Ref
+	1,  // 9: tau.secrets.v2.SecretsService.List:input_type -> tau.secrets.v2.Scope
+	11, // 10: tau.secrets.v2.DealerService.Contribute:input_type -> tau.secrets.v2.Contribution
+	12, // 11: tau.secrets.v2.DealerService.Replay:input_type -> tau.secrets.v2.ReplayRequest
+	4,  // 12: tau.secrets.v2.SecretsService.Key:output_type -> tau.secrets.v2.GroupKey
+	2,  // 13: tau.secrets.v2.SecretsService.Put:output_type -> tau.secrets.v2.Empty
+	7,  // 14: tau.secrets.v2.SecretsService.Get:output_type -> tau.secrets.v2.Sealed
+	9,  // 15: tau.secrets.v2.SecretsService.Partial:output_type -> tau.secrets.v2.PartialDecryption
+	2,  // 16: tau.secrets.v2.SecretsService.Delete:output_type -> tau.secrets.v2.Empty
+	10, // 17: tau.secrets.v2.SecretsService.List:output_type -> tau.secrets.v2.Names
+	2,  // 18: tau.secrets.v2.DealerService.Contribute:output_type -> tau.secrets.v2.Empty
+	11, // 19: tau.secrets.v2.DealerService.Replay:output_type -> tau.secrets.v2.Contribution
+	12, // [12:20] is the sub-list for method output_type
+	4,  // [4:12] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_tau_secrets_v2_secrets_proto_init() }
@@ -486,9 +962,9 @@ func file_tau_secrets_v2_secrets_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_secrets_v2_secrets_proto_rawDesc), len(file_tau_secrets_v2_secrets_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   13,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_tau_secrets_v2_secrets_proto_goTypes,
 		DependencyIndexes: file_tau_secrets_v2_secrets_proto_depIdxs,

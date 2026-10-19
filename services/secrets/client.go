@@ -4,84 +4,162 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
+	"time"
 
 	"connectrpc.com/connect"
+	"github.com/cloudflare/circl/group"
 	"github.com/libp2p/go-libp2p/core/host"
-	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+	peerCore "github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/taubyte/tau/p2p/rpc"
-
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2/secretsv2connect"
+	"github.com/taubyte/tau/pkg/secrets/tdh"
 )
 
-// client.go is the other side of rpc.go, and it exists so a consumer holds ONE
-// shape whether the vault is on this node or another. The errors come back as
-// the same sentinels, so `errors.Is(err, secrets.ErrNotSet)` is true either
-// way — without that, a worker would carry two error paths for one question
-// and would get the remote one wrong, because a status code is easy to ignore.
-
-// Client calls a secrets service on another peer.
+// Client reads and writes secrets on any node, whether or not it runs the
+// service: it encrypts before a write leaves it, and opens a read itself from a
+// threshold of partial decryptions. No member it talks to sees a plaintext.
 type Client struct {
-	conn *rpc.Client
-	svc  secretsv2connect.SecretsServiceClient
+	host    host.Host
+	members func() []peerCore.ID
+	local   func() *Service
+	conns   peers
 }
 
-// NewClient prepares calls to the vault on p. Nothing is dialled until the
-// first call, and that call's context governs the dial.
-func NewClient(h host.Host, p libp2ppeer.ID) (*Client, error) {
-	conn, err := rpc.NewClient(h, p, Protocol)
-	if err != nil {
-		return nil, fmt.Errorf("secrets: dialling %s: %w", p, err)
+// ErrNoMembers is a client that can find no node running the service.
+var ErrNoMembers = errors.New("secrets: no secrets service is reachable")
+
+// settleWindow is how long a read keeps trying a secret that exists but
+// cannot be opened yet: a wrapping written on one member takes a moment to
+// replicate to the others whose partials the read needs.
+const settleWindow = 15 * time.Second
+
+// NewClient builds a client from h. members is who runs the service, asked on
+// every call; local is this node's own service, or nil, and is used instead of
+// a stream whenever a call is for this node.
+func NewClient(h host.Host, members func() []peerCore.ID, local func() *Service) (*Client, error) {
+	if h == nil {
+		return nil, ErrNoHost
 	}
-	return &Client{conn: conn, svc: secretsv2connect.NewSecretsServiceClient(conn.HTTP(), conn.URL())}, nil
-}
-
-// Close releases the stream. Calls after it fail.
-func (c *Client) Close() { c.conn.Close() }
-
-func (c *Client) Get(ctx context.Context, project, environment, name string) ([]byte, error) {
-	res, err := c.svc.Get(ctx, connect.NewRequest(&secretsv2.SecretRequest{
-		Scope: &secretsv2.Scope{Project: project, Environment: environment}, Name: name,
-	}))
-	if err != nil {
-		return nil, unwire(err)
+	if members == nil {
+		members = func() []peerCore.ID { return nil }
 	}
-	return res.Msg.GetValue(), nil
+	if local == nil {
+		local = func() *Service { return nil }
+	}
+	return &Client{host: h, members: members, local: local, conns: peers{host: h, open: map[peerCore.ID]*rpc.Client{}}}, nil
 }
 
+// Close releases the streams this client opened.
+func (c *Client) Close() error {
+	c.conns.close()
+	return nil
+}
+
+// targets are the members to ask, this node's own first when it runs one.
+func (c *Client) targets() []peerCore.ID {
+	var out []peerCore.ID
+	if c.local() != nil {
+		out = append(out, c.host.ID())
+	}
+	for _, p := range c.members() {
+		if p != c.host.ID() || c.local() != nil {
+			if !containsPeer(out, p) {
+				out = append(out, p)
+			}
+		}
+	}
+	return out
+}
+
+func containsPeer(ps []peerCore.ID, p peerCore.ID) bool {
+	for _, have := range ps {
+		if have == p {
+			return true
+		}
+	}
+	return false
+}
+
+// at is the service on one member: this node's own handler, or a stream.
+func (c *Client) at(to peerCore.ID) (secretsv2connect.SecretsServiceClient, error) {
+	if to == c.host.ID() {
+		if srv := c.local(); srv != nil {
+			return &secretsHandler{srv}, nil
+		}
+		return nil, ErrNoMembers
+	}
+	conn, err := c.conns.get(to)
+	if err != nil {
+		return nil, err
+	}
+	return secretsv2connect.NewSecretsServiceClient(conn.HTTP(), conn.URL()), nil
+}
+
+// first runs call against members in order until one answers.
+func (c *Client) first(call func(api secretsv2connect.SecretsServiceClient) error) error {
+	targets := c.targets()
+	if len(targets) == 0 {
+		return ErrNoMembers
+	}
+
+	var failures []error
+	for _, to := range targets {
+		api, err := c.at(to)
+		if err == nil {
+			err = call(api)
+		}
+		if err == nil {
+			return nil
+		}
+		// An answer about the request is the answer: another member would
+		// give the same one.
+		if code := connect.CodeOf(err); code == connect.CodeInvalidArgument || code == connect.CodeNotFound {
+			return unwire(err)
+		}
+		failures = append(failures, fmt.Errorf("%s: %w", to, err))
+	}
+	return fmt.Errorf("%w: %w", ErrUnavailable, errors.Join(failures...))
+}
+
+// Set encrypts value under the cluster's active key and stores it.
 func (c *Client) Set(ctx context.Context, project, environment, name string, value []byte) error {
-	_, err := c.svc.Set(ctx, connect.NewRequest(&secretsv2.SetRequest{
-		Scope: &secretsv2.Scope{Project: project, Environment: environment}, Name: name, Value: value,
-	}))
-	if err != nil {
-		return unwire(err)
+	ref := Ref{Project: project, Environment: environment, Name: name}
+	if err := ref.Validate(); err != nil {
+		return err
 	}
-	return nil
+
+	return c.first(func(api secretsv2connect.SecretsServiceClient) error {
+		resp, err := api.Key(ctx, connect.NewRequest(&secretsv2.KeyRequest{Form: true}))
+		if err != nil {
+			return err
+		}
+		key, err := groupKey(resp.Msg)
+		if err != nil {
+			return err
+		}
+
+		dek, ciphertext, err := tdh.Seal(value, contentAAD(ref))
+		if err != nil {
+			return fmt.Errorf("encrypting secret %s: %w", ref, err)
+		}
+		wrapping, err := tdh.Wrap(key.public, dek, wrapAAD(ref, key.id))
+		if err != nil {
+			return fmt.Errorf("wrapping the data key for %s: %w", ref, err)
+		}
+
+		_, err = api.Put(ctx, connect.NewRequest(&secretsv2.PutRequest{
+			Ref:        wireRef(ref),
+			KeyId:      key.id,
+			Ciphertext: ciphertext,
+			Wrapping:   &secretsv2.Wrapping{R: wrapping.R, WrappedDek: wrapping.WrappedDEK},
+		}))
+		return err
+	})
 }
 
-func (c *Client) Delete(ctx context.Context, project, environment, name string) error {
-	_, err := c.svc.Delete(ctx, connect.NewRequest(&secretsv2.SecretRequest{
-		Scope: &secretsv2.Scope{Project: project, Environment: environment}, Name: name,
-	}))
-	if err != nil {
-		return unwire(err)
-	}
-	return nil
-}
-
-func (c *Client) List(ctx context.Context, project, environment string) ([]string, error) {
-	res, err := c.svc.List(ctx, connect.NewRequest(&secretsv2.Scope{Project: project, Environment: environment}))
-	if err != nil {
-		return nil, unwire(err)
-	}
-	return res.Msg.GetNames(), nil
-}
-
-// Secret is services/worker's Secrets interface, so a worker composed against
-// a remote vault and one composed against a local *Vault differ in no code
-// path but the constructor.
+// Secret is the value a run-time variable refers to.
 func (c *Client) Secret(ctx context.Context, project, environment, secretID string) (string, error) {
 	value, err := c.Get(ctx, project, environment, secretID)
 	if err != nil {
@@ -90,27 +168,196 @@ func (c *Client) Secret(ctx context.Context, project, environment, secretID stri
 	return string(value), nil
 }
 
-// unwire turns a status back into the sentinel a local vault would have
-// returned.
-func unwire(err error) error {
-	var cerr *connect.Error
-	if !errors.As(err, &cerr) {
-		return err
+// Get opens a stored secret here, from a threshold of partial decryptions.
+//
+// A member that does not hold the record may only be behind, so every member
+// is asked before a secret is called absent. One that exists and cannot be
+// opened yet is retried until settleWindow or the caller's deadline.
+func (c *Client) Get(ctx context.Context, project, environment, name string) ([]byte, error) {
+	ref := Ref{Project: project, Environment: environment, Name: name}
+	if err := ref.Validate(); err != nil {
+		return nil, err
 	}
 
-	switch cerr.Code() {
-	case connect.CodeNotFound:
-		return fmt.Errorf("%w: %s", ErrNotSet, cerr.Message())
-	case connect.CodeInvalidArgument:
-		// Four sentinels share this code and they are different answers: a
-		// caller that omitted the environment and one that put a "/" in the
-		// name are told apart by which message came back, because rpc.go
-		// wraps rather than replaces.
-		for _, sentinel := range []error{ErrNoProject, ErrNoEnvironment, ErrNoName, ErrSeparator} {
-			if strings.HasPrefix(cerr.Message(), sentinel.Error()) {
-				return fmt.Errorf("%w: %s", sentinel, cerr.Message())
-			}
+	deadline := time.Now().Add(settleWindow)
+	if own, ok := ctx.Deadline(); ok && own.Before(deadline) {
+		deadline = own
+	}
+
+	for {
+		plaintext, err := c.tryGet(ctx, ref)
+		switch {
+		case err == nil:
+			return plaintext, nil
+		case errors.Is(err, ErrNotSet), errors.Is(err, ErrNoMembers), errors.Is(err, ErrInvalidRef):
+			return nil, err
+		case !time.Now().Before(deadline):
+			return nil, fmt.Errorf("secret %s: %w: %w", ref, ErrUnavailable, err)
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(250 * time.Millisecond):
 		}
 	}
-	return err
+}
+
+func (c *Client) tryGet(ctx context.Context, ref Ref) ([]byte, error) {
+	targets := c.targets()
+	if len(targets) == 0 {
+		return nil, ErrNoMembers
+	}
+
+	var failures []error
+	for _, to := range targets {
+		plaintext, err := c.openAt(ctx, to, ref)
+		if err == nil {
+			return plaintext, nil
+		}
+		if errors.Is(err, errMiss) {
+			continue
+		}
+		failures = append(failures, fmt.Errorf("%s: %w", to, err))
+	}
+	if len(failures) == 0 {
+		return nil, fmt.Errorf("secret %s: %w", ref, ErrNotSet)
+	}
+	return nil, errors.Join(failures...)
+}
+
+var errMiss = errors.New("this member holds no such secret")
+
+// openAt reads the sealed secret from one member and opens it.
+func (c *Client) openAt(ctx context.Context, to peerCore.ID, ref Ref) ([]byte, error) {
+	api, err := c.at(to)
+	if err != nil {
+		return nil, err
+	}
+
+	got, err := api.Get(ctx, connect.NewRequest(wireRef(ref)))
+	if err != nil {
+		return nil, err
+	}
+	sealed := got.Msg
+	if !sealed.GetFound() {
+		return nil, errMiss
+	}
+
+	resp, err := api.Key(ctx, connect.NewRequest(&secretsv2.KeyRequest{KeyId: sealed.GetKeyId()}))
+	if err != nil {
+		return nil, err
+	}
+	key, err := groupKey(resp.Msg)
+	if err != nil {
+		return nil, err
+	}
+
+	wrapping := &tdh.Wrapping{R: sealed.GetWrapping().GetR(), WrappedDEK: sealed.GetWrapping().GetWrappedDek()}
+	partials, err := c.partials(ctx, ref, key, sealed.GetWriter())
+	if err != nil {
+		return nil, err
+	}
+
+	dek, err := tdh.Unwrap(wrapping, key.public, partials, key.threshold, wrapAAD(ref, key.id))
+	if err != nil {
+		return nil, fmt.Errorf("unwrapping the data key for %s: %w", ref, err)
+	}
+
+	plaintext, err := tdh.Unseal(dek, sealed.GetCiphertext(), contentAAD(ref))
+	if err != nil {
+		return nil, fmt.Errorf("opening secret %s: %w", ref, err)
+	}
+	return plaintext, nil
+}
+
+// partials collects a threshold of partial decryptions against one writer's
+// wrapping, from the key's own members.
+func (c *Client) partials(ctx context.Context, ref Ref, key *groupKeyOf, writer string) ([]*tdh.Partial, error) {
+	partials := make([]*tdh.Partial, 0, key.threshold)
+	var failures []error
+
+	for _, member := range key.members {
+		if uint(len(partials)) == key.threshold {
+			break
+		}
+
+		api, err := c.at(member)
+		if err != nil {
+			failures = append(failures, fmt.Errorf("%s: %w", member, err))
+			continue
+		}
+		resp, err := api.Partial(ctx, connect.NewRequest(&secretsv2.PartialRequest{Ref: wireRef(ref), KeyId: key.id, Writer: writer}))
+		if err != nil {
+			failures = append(failures, fmt.Errorf("%s: %w", member, err))
+			continue
+		}
+		partials = append(partials, &tdh.Partial{ID: resp.Msg.GetId(), D: resp.Msg.GetD()})
+	}
+
+	if uint(len(partials)) < key.threshold {
+		return nil, fmt.Errorf("collected %d of %d partial decryptions for %s: %w",
+			len(partials), key.threshold, ref, errors.Join(failures...))
+	}
+	return partials, nil
+}
+
+// Delete removes a secret.
+func (c *Client) Delete(ctx context.Context, project, environment, name string) error {
+	ref := Ref{Project: project, Environment: environment, Name: name}
+	if err := ref.Validate(); err != nil {
+		return err
+	}
+	return c.first(func(api secretsv2connect.SecretsServiceClient) error {
+		_, err := api.Delete(ctx, connect.NewRequest(wireRef(ref)))
+		return err
+	})
+}
+
+// List names the secrets of one project environment, sorted.
+func (c *Client) List(ctx context.Context, project, environment string) ([]string, error) {
+	if err := validScope(project, environment); err != nil {
+		return nil, err
+	}
+	var names []string
+	err := c.first(func(api secretsv2connect.SecretsServiceClient) error {
+		resp, err := api.List(ctx, connect.NewRequest(&secretsv2.Scope{Project: project, Environment: environment}))
+		if err != nil {
+			return err
+		}
+		names = resp.Msg.GetNames()
+		return nil
+	})
+	return names, err
+}
+
+// groupKeyOf is a GroupKey a client can use.
+type groupKeyOf struct {
+	id        string
+	public    group.Element
+	threshold uint
+	members   []peerCore.ID
+}
+
+func groupKey(k *secretsv2.GroupKey) (*groupKeyOf, error) {
+	public := tdh.Group.NewElement()
+	if err := public.UnmarshalBinary(k.GetPublic()); err != nil {
+		return nil, fmt.Errorf("deserializing group public key: %w", err)
+	}
+
+	members := make([]peerCore.ID, 0, len(k.GetMembers()))
+	for _, name := range k.GetMembers() {
+		pid, err := peerCore.Decode(name)
+		if err != nil {
+			return nil, fmt.Errorf("decoding member %s: %w", name, err)
+		}
+		members = append(members, pid)
+	}
+
+	threshold := uint(k.GetThreshold())
+	if threshold == 0 || int(threshold) > len(members) {
+		return nil, fmt.Errorf("key %s reports threshold %d over %d members", k.GetKeyId(), threshold, len(members))
+	}
+
+	return &groupKeyOf{id: k.GetKeyId(), public: public, threshold: threshold, members: members}, nil
 }

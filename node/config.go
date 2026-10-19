@@ -23,6 +23,7 @@ import (
 	gateway "github.com/taubyte/tau/services/gateway"
 	"github.com/taubyte/tau/services/primitives"
 	proxy "github.com/taubyte/tau/services/proxy"
+	"github.com/taubyte/tau/services/secrets"
 	"github.com/taubyte/tau/services/worker"
 )
 
@@ -120,6 +121,7 @@ type Config struct {
 	Worker    worker.Config
 	Gateway   gateway.Config
 	Auth      auth.Config
+	Secrets   secrets.Config
 	Proxy     proxy.Config
 	DNS       dns.Config
 

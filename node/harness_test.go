@@ -233,6 +233,8 @@ func makeNode(t *testing.T, cfg Config, extra ...Option) (*Node, host.Host, *mem
 		// A raft cluster of one, in memory. What this composition is asked to
 		// prove is the wiring; that raft replicates is pkg/raft's own test.
 		WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
+		// A secrets node keeps its shares on this machine's disk.
+		WithRoot(t.TempDir()),
 	}, extra...)
 
 	n, err := New(cfg, opts...)
