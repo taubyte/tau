@@ -1,133 +1,83 @@
-import {
-  DriveRequest,
-  PlotRequest,
-  Drive as DriveMessage,
-  Course as CourseMessage,
-  DisplacementProgress,
-} from "../gen/drive/v1/drive_pb";
+import { PromiseClient, createPromiseClient } from "@connectrpc/connect";
+import { createConnectTransport } from "@connectrpc/connect-node";
 
-import { Config as ConfigMessage } from "../gen/config/v1/config_pb";
-
-import { RPCClient } from "./DriveClient";
-
-import { Config } from "./Config";
+import { DriveService } from "../gen/drive/v2/drive_connect";
+import { Course, PlanRequest, Progress } from "../gen/drive/v2/drive_pb";
+import { Document } from "./Document";
 
 type TauBinarySource =
-  | {
-      value: boolean;
-      case: "latest";
-    }
-  | {
-      value: string;
-      case: "version";
-    }
-  | {
-      value: string;
-      case: "url";
-    }
-  | {
-      value: string;
-      case: "path";
-    };
+  | { value: boolean; case: "latest" }
+  | { value: string; case: "version" }
+  | { value: string; case: "url" }
+  | { value: string; case: "path" };
 
 const TauLatest: TauBinarySource = { value: true, case: "latest" };
-const TauVersion = (version: string): TauBinarySource => ({
-  value: version,
-  case: "version",
-});
+const TauVersion = (version: string): TauBinarySource => ({ value: version, case: "version" });
 const TauUrl = (url: string): TauBinarySource => ({ value: url, case: "url" });
-const TauPath = (path: string): TauBinarySource => ({
-  value: path,
-  case: "path",
-});
+const TauPath = (path: string): TauBinarySource => ({ value: path, case: "path" });
 
 export { TauBinarySource, TauLatest, TauVersion, TauUrl, TauPath };
 
+export interface PlanOptions {
+  // tau is the binary every host is given; omitted is the latest release.
+  tau?: TauBinarySource;
+  // shapes are deployed in this order, one hop each; empty is every shape.
+  shapes?: string[];
+  // concurrency is how many hosts of one hop deploy at once; 0 is the default.
+  concurrency?: number;
+}
+
+export interface Validation {
+  errors: string[];
+  ignored: string[];
+  // document is the normalized form, with generated secrets written in.
+  // Keep it (Document.toDir) or the next validate generates different ones.
+  document: Document;
+}
+
+// Drive talks to a spore-drive service at baseUrl.
 export class Drive {
-  private client!: RPCClient;
-  private drive?: DriveMessage;
-  private config: Config;
-  private tau?: TauBinarySource;
+  private client: PromiseClient<typeof DriveService>;
 
-  constructor(config: Config, tau?: TauBinarySource) {
-    this.config = config;
-    this.tau = tau;
+  constructor(baseUrl: string) {
+    this.client = createPromiseClient(
+      DriveService,
+      createConnectTransport({ baseUrl, httpVersion: "1.1" })
+    );
   }
 
-  async init(url: string): Promise<void> {
-    this.client = new RPCClient(url);
-    this.drive = await this.client.new(
-      new DriveRequest({
-        config: new ConfigMessage({ id: this.config.id }),
-        tau: this.tau,
+  async validate(doc: Document): Promise<Validation> {
+    const res = await this.client.validate({ document: doc.toMessage() });
+    return {
+      errors: res.errors,
+      ignored: res.ignored,
+      document: Document.fromMessage(res.document),
+    };
+  }
+
+  // plan refuses a document missing generated secrets: validate it first.
+  async plan(doc: Document, options: PlanOptions = {}): Promise<Course> {
+    return await this.client.plan(
+      new PlanRequest({
+        document: doc.toMessage(),
+        tau: options.tau ?? TauLatest,
+        shapes: options.shapes ?? [],
+        concurrency: options.concurrency ?? 0,
       })
     );
   }
 
-  async free(): Promise<void> {
-    if (this.drive) {
-      await this.client.free(this.drive);
-    }
+  // apply runs the course; it ends with the stream. Breaking out of the loop
+  // (or passing an aborted signal) disconnects, which aborts the course.
+  apply(course: Course | string, signal?: AbortSignal): AsyncIterable<Progress> {
+    return this.client.apply({ course: idOf(course) }, { signal });
   }
 
-  async plot(config: CourseConfig): Promise<Course> {
-    if (!this.drive) {
-      throw new Error("drive has not been initialized");
-    }
-    return new Course(this.client, this.drive as DriveMessage, config).init();
+  async abort(course: Course | string): Promise<void> {
+    await this.client.abort({ course: idOf(course) });
   }
 }
 
-export class CourseConfig {
-  shapes: string[] = [];
-  concurrency: number = 0;
-
-  constructor(shapes: string[], concurrency?: number) {
-    this.shapes = shapes;
-    if (concurrency) this.concurrency = concurrency;
-  }
-}
-
-export class Course {
-  private client: RPCClient;
-  private drive: DriveMessage;
-  private course?: CourseMessage;
-  private config: CourseConfig;
-
-  constructor(client: RPCClient, drive: DriveMessage, config: CourseConfig) {
-    this.client = client;
-    this.drive = drive;
-    this.config = config;
-  }
-
-  async init(): Promise<Course> {
-    this.course = await this.client.plot(
-      new PlotRequest({
-        drive: this.drive,
-        shapes: this.config.shapes,
-        concurrency: this.config.concurrency,
-      })
-    );
-    return this;
-  }
-
-  async displace(): Promise<void> {
-    if (!this.course) {
-      throw new Error("course has not been initialized");
-    }
-    await this.client.displace(this.course);
-  }
-
-  async progress(): Promise<AsyncIterable<DisplacementProgress>> {
-    if (!this.course) {
-      throw new Error("course has not been initialized");
-    }
-    return await this.client.progress(this.course);
-  }
-
-  async abort(): Promise<void> {
-    if (this.course) {
-      await this.client.abort(this.course);
-    }
-  }
+function idOf(course: Course | string): string {
+  return typeof course === "string" ? course : course.id;
 }

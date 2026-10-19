@@ -26,13 +26,11 @@
     "@types/jest": "^29.5.13",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.5.2",
-    "@types/unzipper": "^0.10.10",
     "jest": "^29.7.0",
     "js-yaml": "^4.1.0",
     "ts-jest": "^29.2.5",
     "ts-node": "^10.9.2",
-    "tsx": "^4.19.1",
-    "unzipper": "^0.12.3"
+    "tsx": "^4.19.1"
   },
   "dependencies": {
     "@bufbuild/protobuf": "1.4.2",

@@ -1,39 +1,21 @@
-"""
-Spore Drive Python client library.
+"""Spore Drive Python client: deploy a cloud from its config directory."""
 
-This package provides a pythonic interface to the Spore Drive service,
-implementing all RPC calls available in the TypeScript client.
-"""
-
-from .types import TauBinarySource, CourseConfig, ServiceConfig, TauSourceType
-from .config import Config
-from .drive import Drive, Course
-from .utils import (
-    tau_latest,
-    tau_version,
-    tau_url,
-    tau_path,
-    start_spore_drive_service,
-    stop_spore_drive_service,
-    get_spore_drive_service_port
-)
+from .document import from_files, read_dir, write_dir
+from .drive import Drive
+from .proto.drive.v2.drive_pb2 import Course, Document, Progress
+from .service_manager import start_service, stop_service, get_existing_service_port
 
 __all__ = [
-    'Config',
-    'Drive',
-    'Course',
-    'TauBinarySource',
-    'CourseConfig',
-    'ServiceConfig',
-    'TauSourceType',
-    'tau_latest',
-    'tau_version',
-    'tau_url',
-    'tau_path',
-    'start_spore_drive_service',
-    'stop_spore_drive_service',
-    'get_spore_drive_service_port',
+    "Drive",
+    "Document",
+    "Course",
+    "Progress",
+    "from_files",
+    "read_dir",
+    "write_dir",
+    "start_service",
+    "stop_service",
+    "get_existing_service_port",
 ]
 
-# Version information
-__version__ = "0.1.2"
+__version__ = "0.2.0"

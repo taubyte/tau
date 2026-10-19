@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="spore-drive",
-    version="0.1.2",
+    version="0.2.0",
     author="Taubyte",
     author_email="dev@taubyte.com",
     description="Python client for Spore Drive",
@@ -35,6 +35,7 @@ setup(
             "pytest>=7.0.0",
             "pytest-asyncio>=0.21.0",
             "pytest-cov>=4.0.0",
+            "pyyaml>=6.0",
             "black>=22.0.0",
             "flake8>=5.0.0",
         ],
