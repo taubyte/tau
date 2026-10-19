@@ -138,8 +138,8 @@ Neither was visible from the Go side. Both fell out of compiling the yaml once.
 
 A project that must **fail** to compile is the only way a missing check surfaces. Two
 validators are named in the schema's own comments as enforcing sync constraints and are
-**defined nowhere** — `checkSyncOps` (`definition.go:1238`, `:1418`, `:2239`,
-`services/worker/consume.go:171`) and `checkDeadLetterIsAQueue` (`definition.go:1420`).
+**defined nowhere** — `checkSyncOps` (`definition.go:1317`, `:1500`, `:2321`,
+`services/worker/consume.go:171`) and `checkDeadLetterIsAQueue` (`definition.go:1499`).
 Today `ops: [append]` on a queue compiles clean, and so does a `dead_letter` pointing at
 a log. Nothing noticed, because nothing ever asked the compiler to refuse.
 
