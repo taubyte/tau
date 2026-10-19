@@ -69,8 +69,19 @@ func findingsTitled(found []schema.Finding, sev schema.Severity) []string {
 // config named another — once per resource, naming it — rather than dropping the
 // statement or refusing the project.
 func TestOneRegionWarnsAndPlacesInDefault(t *testing.T) {
-	r := schema.OneRegion()
+	for _, v := range []struct {
+		name     string
+		r        schema.Regions
+		severity schema.Severity
+	}{
+		{"strict", schema.OneRegion(), schema.Broken},
+		{"lenient", schema.OneRegionLenient(), schema.Check},
+	} {
+		t.Run(v.name, func(t *testing.T) { oneRegionPlaces(t, v.r, v.severity) })
+	}
+}
 
+func oneRegionPlaces(t *testing.T, r schema.Regions, severity schema.Severity) {
 	for _, tc := range []struct {
 		name  string
 		p     schema.Placement
@@ -87,7 +98,7 @@ func TestOneRegionWarnsAndPlacesInDefault(t *testing.T) {
 			got := r.Place(tc.p)
 			require.Equal(t, []string{schema.DefaultRegion}, got.In)
 			require.Len(t, got.Concerns, 1)
-			require.Equal(t, schema.Check, got.Concerns[0].Severity)
+			require.Equal(t, severity, got.Concerns[0].Severity)
 			require.Equal(t, tc.title, got.Concerns[0].Title)
 			require.Contains(t, got.Concerns[0].Detail, "serves one region")
 		})
@@ -104,7 +115,7 @@ func TestOneRegionWarnsAndPlacesInDefault(t *testing.T) {
 	require.Empty(t, r.Allow([]string{"default"}))
 	allow := r.Allow([]string{"eu", "eu", "default"})
 	require.Len(t, allow, 1)
-	require.Equal(t, schema.Check, allow[0].Severity)
+	require.Equal(t, severity, allow[0].Severity)
 	require.Equal(t, `allows region "eu", which this build does not serve; everything under it runs in "default"`, allow[0].Title)
 }
 
@@ -126,15 +137,20 @@ func TestTheAuditHearsOneRegionByDefault(t *testing.T) {
 		`environments/production: allows region "eu", which this build does not serve; everything under it runs in "default"`,
 		`cache/sessions: is placed in region "eu", which this build does not serve; it runs in "default"`,
 	}
+	// THE DEFAULT REFUSES: no validator, a nil one, and OneRegion are one answer.
 	for _, found := range [][]schema.Finding{
 		schema.Audit(obj, nil),
 		schema.Audit(obj, nil, schema.WithRegions(nil)),
 		schema.Audit(obj, nil, schema.WithRegions(schema.OneRegion())),
 	} {
-		require.ElementsMatch(t, want, findingsTitled(found, schema.Check))
-		require.Empty(t, findingsTitled(found, schema.Broken))
+		require.ElementsMatch(t, want, findingsTitled(found, schema.Broken))
 	}
-	require.ElementsMatch(t, want, findingsTitled(schema.Place(obj), schema.Check))
+	require.ElementsMatch(t, want, findingsTitled(schema.Place(obj), schema.Broken))
+
+	// A HARNESS IS LENIENT: the same statements are Checks, and nothing is Broken.
+	lenient := schema.Audit(obj, nil, schema.WithRegions(schema.OneRegionLenient()))
+	require.ElementsMatch(t, want, findingsTitled(lenient, schema.Check))
+	require.Empty(t, findingsTitled(lenient, schema.Broken))
 
 	// Nothing named anywhere: nothing to say, and nothing broken.
 	clean := compileDocs(t, "", map[string]string{

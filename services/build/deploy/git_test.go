@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
+
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
 
@@ -132,6 +134,7 @@ func TestAPushOfARealRepositoryDeploys(t *testing.T) {
 
 	clone := deploy.NewClone(nil, deploy.WithAddress(func(string) (forge.Address, error) { return forge.Address{URL: path}, nil }))
 	d, err := deploy.New(
+		deploy.WithRegions(schema.OneRegionLenient()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(clone),
 		deploy.WithLocalRegister(r),

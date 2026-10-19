@@ -125,7 +125,9 @@ func TestAuditOfTheExample(t *testing.T) {
 	obj, _, err := c.Compile(context.Background())
 	assert.NilError(t, err)
 
-	for _, f := range schema.Audit(obj.Flat(), nil) {
+	// LENIENT: the example is written for a cloud with more regions than one, to
+	// exercise the region syntax; what it must not be is broken in any other way.
+	for _, f := range schema.Audit(obj.Flat(), nil, schema.WithRegions(schema.OneRegionLenient())) {
 		assert.Assert(t, f.Severity != schema.Broken, "the example must compile to something that works: %v", f)
 	}
 }

@@ -148,7 +148,7 @@ func project(t *testing.T, name string, components artifacts) ([]byte, map[strin
 	// WHERE IT RUNS IS THE PLATFORM'S ANSWER, and this one serves one region: a
 	// corpus project writes no `regions` and is placed, which is the claim that
 	// lets it write none.
-	for _, f := range schema.Place(flat, schema.WithRegions(schema.OneRegion())) {
+	for _, f := range schema.Place(flat, schema.WithRegions(schema.OneRegionLenient())) {
 		require.NotEqual(t, schema.Broken, f.Severity, "%s: %s", name, f)
 	}
 

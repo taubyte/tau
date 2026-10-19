@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/register"
@@ -108,10 +110,13 @@ func work() backend.Work {
 func runner(t *testing.T, c *checkout, r deploy.Register, opts ...deploy.Option) *deploy.Deploy {
 	t.Helper()
 
+	// LENIENT, because these fixtures say where they run and these tests are
+	// about deploying, not placing: regions_test.go holds the strict default.
 	base := []deploy.Option{
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(c),
 		deploy.WithLocalRegister(r),
+		deploy.WithRegions(schema.OneRegionLenient()),
 	}
 	d, err := deploy.New(append(base, opts...)...)
 	require.NoError(t, err)
@@ -335,6 +340,7 @@ func TestAuthFailingIsNotARefusal(t *testing.T) {
 	dir := fixture(t, basicFixture)
 
 	d, err := deploy.New(
+		deploy.WithRegions(schema.OneRegionLenient()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config", err: errors.New("auth is down")}),
 		deploy.WithCheckout(&checkout{dir: dir}),
 		deploy.WithLocalRegister(registry(t)),
@@ -353,6 +359,7 @@ func TestNoRegisterFailsAfterTheCompile(t *testing.T) {
 	c := &checkout{dir: fixture(t, basicFixture)}
 
 	d, err := deploy.New(
+		deploy.WithRegions(schema.OneRegionLenient()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(c),
 		deploy.WithRegister(func(context.Context) (deploy.Register, error) {
@@ -373,6 +380,7 @@ func TestAPublishThatFails(t *testing.T) {
 	dir := fixture(t, basicFixture)
 
 	d, err := deploy.New(
+		deploy.WithRegions(schema.OneRegionLenient()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(&checkout{dir: dir}),
 		deploy.WithLocalRegister(refusing{}),
@@ -383,6 +391,7 @@ func TestAPublishThatFails(t *testing.T) {
 
 	// And a register that cannot even be read.
 	d, err = deploy.New(
+		deploy.WithRegions(schema.OneRegionLenient()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(&checkout{dir: dir}),
 		deploy.WithLocalRegister(unreadable{}),
@@ -418,6 +427,7 @@ func TestACodePushIsDelegated(t *testing.T) {
 	b := &builderStub{}
 
 	d, err := deploy.New(
+		deploy.WithRegions(schema.OneRegionLenient()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(&checkout{dir: dir}),
 		deploy.WithLocalRegister(registry(t)),
@@ -445,6 +455,7 @@ func TestACodePushIsDelegated(t *testing.T) {
 // doing nothing.
 func TestACodePushThatFails(t *testing.T) {
 	d, err := deploy.New(
+		deploy.WithRegions(schema.OneRegionLenient()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(&checkout{dir: fixture(t, basicFixture)}),
 		deploy.WithLocalRegister(registry(t)),

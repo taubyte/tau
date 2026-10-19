@@ -68,36 +68,41 @@ type Regions interface {
 const DefaultRegion = "default"
 
 // OneRegion is the Regions of a build that serves one region: DefaultRegion. Every
-// resource runs there. A placement or allowance naming any other region is kept — it is
-// the author's statement, and true on a cloud that serves it — and compiles with a
-// Check saying it is not served here, so it is never silently dropped and never a
-// reason the project cannot deploy.
+// resource runs there, and a placement or allowance naming any other region is
+// Broken: the author stated a place this build cannot put it, and deploying it
+// anyway would put it somewhere it was told not to be.
 //
-// IT IS THE DEFAULT, so an audit nobody configured is never the one that refuses a
-// project for regions: a project writing no `regions` anywhere compiles clean, which is
-// what "an absent block is anywhere the allowance permits" promises.
-func OneRegion() Regions { return oneRegion{} }
+// IT IS THE DEFAULT, so an audit nobody configured refuses what it cannot honour
+// rather than accepting it quietly. A project writing no `regions` anywhere — or
+// naming DefaultRegion — compiles clean, which is what "an absent block is anywhere
+// the allowance permits" promises.
+func OneRegion() Regions { return oneRegion{severity: Broken} }
 
-type oneRegion struct{}
+// OneRegionLenient is OneRegion for a harness that runs projects written for
+// clouds with more regions than it has: every placement still lands in
+// DefaultRegion, and naming another region is a Check rather than a refusal.
+func OneRegionLenient() Regions { return oneRegion{severity: Check} }
 
-func (oneRegion) Place(p Placement) Answer {
+type oneRegion struct{ severity Severity }
+
+func (o oneRegion) Place(p Placement) Answer {
 	placed := Answer{In: []string{DefaultRegion}}
 	if other := notDefault(p.Named()); len(other) > 0 {
-		placed.Concerns = []Concern{{Check,
+		placed.Concerns = []Concern{{o.severity,
 			fmt.Sprintf("is placed in %s, which this build does not serve; it runs in %q", quoted(other), DefaultRegion),
-			fmt.Sprintf("This build serves one region, %q, and places everything there. The placement is kept for a cloud that serves those regions.", DefaultRegion)}}
+			fmt.Sprintf("This build serves one region, %q.", DefaultRegion)}}
 	}
 	return placed
 }
 
-func (oneRegion) Allow(regions []string) []Concern {
+func (o oneRegion) Allow(regions []string) []Concern {
 	other := notDefault(regions)
 	if len(other) == 0 {
 		return nil
 	}
-	return []Concern{{Check,
+	return []Concern{{o.severity,
 		fmt.Sprintf("allows %s, which this build does not serve; everything under it runs in %q", quoted(other), DefaultRegion),
-		fmt.Sprintf("This build serves one region, %q, and places everything there. The allowance is kept for a cloud that serves those regions.", DefaultRegion)}}
+		fmt.Sprintf("This build serves one region, %q.", DefaultRegion)}}
 }
 
 func notDefault(regions []string) []string {
@@ -189,8 +194,11 @@ func place(root map[string]any, all []compiled, in auditOf) []Finding {
 			out = append(out, Finding{c.Severity, kind, name, s.parent, c.Title, c.Detail, s.id})
 		}
 	}
+	// ONLY THE ENVIRONMENT BEING PLACED, when the audit is told one: a deploy of
+	// preview is not refused for what production's line says. Told none, every
+	// environment's line is asked, which is the whole-project audit.
 	for _, env := range EnvironmentsIn(root) {
-		if len(env.Regions) == 0 {
+		if len(env.Regions) == 0 || (in.environment != "" && !placesIn(env, in.environment)) {
 			continue
 		}
 		for _, c := range regions.Allow(env.Regions) {
@@ -218,6 +226,20 @@ func place(root map[string]any, all []compiled, in auditOf) []Finding {
 		}
 	}
 	return out
+}
+
+// placesIn is whether deploying the named environment keeps state under env: env
+// itself, or a shadow of it, which is bounded by the environment it shadows.
+func placesIn(env Environment, name string) bool {
+	if env.Name == name {
+		return true
+	}
+	for _, shadow := range env.Shadows {
+		if shadow.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // environmentRegions is the regions the named environment keeps its state in, nil when
