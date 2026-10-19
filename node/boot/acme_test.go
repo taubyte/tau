@@ -47,6 +47,9 @@ type pebble struct {
 func startPebble(t *testing.T) *pebble {
 	t.Helper()
 	t.Setenv("PEBBLE_VA_NOSLEEP", "1")
+	// EVERY ORDER IS PROVED: pebble otherwise reuses a valid authorization at
+	// random, so whether a renewal reaches the challenge would be chance.
+	t.Setenv("PEBBLE_AUTHZREUSE", "0")
 	p := &pebble{db: db.NewMemoryStore(), logger: log.New(io.Discard, "", 0)}
 	p.ca = ca.New(p.logger, p.db, "", "ecdsa", 0, 1, map[string]ca.Profile{"default": {Description: "default"}})
 	p.server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
