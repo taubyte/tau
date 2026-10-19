@@ -1,3 +1,4 @@
 id: QmY1mqoocP6zwC55HCL2Et5nfJ2rWz15a2837TbJYLJXCD
 name: withdns
 description: a zone answered by a function rather than by a file - the arm of DNS nobody can write down in advance, where one label per tenant is decided when it is asked
+regions: [eu]

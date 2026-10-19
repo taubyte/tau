@@ -1,3 +1,4 @@
 id: QmWSaiwvAAmdwKX6HBUYQUDnNmWUWgFLk7SiJdyVrpdYrZ
 name: synclog
 description: one function on both ends of a log - it appends records and reads them back from a cursor, so the order a raft group decided is the order a guest is handed
+regions: [eu]

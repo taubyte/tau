@@ -1,3 +1,4 @@
 id: QmPE2e2tu1Ywdd2kp6SYWvVbQAixzQoXDEehxZEbagZH28
 name: containerworker
 description: a worker on the container tier - somebody else's image, run once per invocation, its exit the answer
+regions: [eu]

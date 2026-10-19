@@ -1,3 +1,4 @@
 id: QmafJQP8WiNvEUWo8GMxgAKtuHWU2nCCgaigYUvGnmjR3M
 name: oneapplication
 description: the smallest project a container answers - one application behind one route, and nothing else
+regions: [eu]

@@ -1,3 +1,4 @@
 id: QmdjPUXvMmeqYiBbEn6xfH7x8aAQZmoKYZQHwgUhYVh6Wp
 name: kvcrdtb
 description: kvcrdt's sibling, naming its kv the same thing - so the project is the only thing keeping the two stores, and the two gossip topics, apart
+regions: [eu]
