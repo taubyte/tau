@@ -65,6 +65,10 @@ func (s *Service) mount() http.Handler {
 	mux.HandleFunc("PUT /secrets/{projectId}/{environment}/{name}", s.admitted("projectId", s.handleSetSecret))
 	mux.HandleFunc("DELETE /secrets/{projectId}/{environment}/{name}", s.admitted("projectId", s.handleDeleteSecret))
 
+	// Linking a project: the one public door to auth's registration, authorized
+	// as write access to BOTH repositories it names (projectapi.go).
+	mux.HandleFunc("POST /projects/{name}", s.admitted("name", s.handleCreateProject))
+
 	// No /ping. v1 had one, unauthenticated, and a liveness endpoint is a
 	// decision about what this process will tell the internet about itself
 	// before anyone has asked for it — including that it is here. Nothing in

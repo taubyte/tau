@@ -1,6 +1,7 @@
 package node
 
 import (
+	"errors"
 	"fmt"
 
 	gossh "golang.org/x/crypto/ssh"
@@ -111,6 +112,26 @@ func parseHostKey(line string) (gossh.PublicKey, error) {
 // forges builds the registry every provider question in this node is asked
 // through. The zero Policy is the strict one: an instance that can only offer
 // an unbound scheme is refused here, at startup, rather than accepted quietly.
+// WithForges replaces the forges the config declares with a registry built
+// elsewhere — an in-memory forge in a test. Production binds forges from config.
+func WithForges(r *forge.Registry) Option {
+	return func(o *options) error {
+		if r == nil {
+			return errors.New("node: a nil forge registry")
+		}
+		o.forges = r
+		return nil
+	}
+}
+
+// forgeRegistry is the injected registry, or the one the config declares.
+func (n *Node) forgeRegistry() (*forge.Registry, error) {
+	if n.opts.forges != nil {
+		return n.opts.forges, nil
+	}
+	return forges(n.cfg.Forges)
+}
+
 func forges(declared []Forge) (*forge.Registry, error) {
 	if len(declared) == 0 {
 		declared = DefaultForges

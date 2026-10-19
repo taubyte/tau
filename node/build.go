@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -222,7 +223,7 @@ func (n *Node) openBuildBackend() error {
 	// SSH, BECAUSE A DEPLOY KEY IS AN SSH KEY. auth holds one per repository,
 	// and a cloud reaching a provider over https could only read what is
 	// already public. The address and its account are the forge's.
-	registry, err := forges(n.cfg.Forges)
+	registry, err := n.forgeRegistry()
 	if err != nil {
 		return err
 	}
@@ -345,7 +346,7 @@ func (n *Node) openBuildFrontend() error {
 	if err != nil {
 		return err
 	}
-	registry, err := forges(n.cfg.Forges)
+	registry, err := n.forgeRegistry()
 	if err != nil {
 		return err
 	}
@@ -359,7 +360,13 @@ func (n *Node) openBuildFrontend() error {
 		return err
 	}
 
+	registrar, err := clients.Registrar(auth)
+	if err != nil {
+		return err
+	}
+
 	frontendOptions := []frontend.Option{
+		frontend.WithRegistrar(registrar),
 		// WHO MAY USE THIS CLOUD IS AUTH'S TO SAY, from whatever identity
 		// its node was composed with — see identity.go.
 		frontend.WithAdmissions(&admissions{forges: registry, auth: identities}),
@@ -388,6 +395,15 @@ func (n *Node) openBuildFrontend() error {
 	n.buildFrontend = svc
 	n.closers = append(n.closers, svc)
 	return nil
+}
+
+// BuildFrontendAddr is where this node's build frontend listens, nil when it
+// runs none or has not started.
+func (n *Node) BuildFrontendAddr() net.Addr {
+	if n.buildFrontend == nil {
+		return nil
+	}
+	return n.buildFrontend.Addr()
 }
 
 // buildRegister is how a code build reads the configuration it builds against.

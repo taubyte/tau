@@ -302,6 +302,15 @@ type Vault interface {
 	List(ctx context.Context, project, environment string) ([]string, error)
 }
 
+// Registrar is auth's project and repository registration, as this role sees
+// it: the two writes linking a project takes. auth's own surface is p2p only;
+// this is the one public door to it, and it opens only after the caller is shown
+// to write to both repositories (projectapi.go).
+type Registrar interface {
+	Register(ctx context.Context, repositoryKey string) error
+	Create(ctx context.Context, name, configKey, codeKey string) (string, error)
+}
+
 // Backend is build's private half, as this role sees it: build.proto's five
 // RPCs and nothing else. It is an interface here rather than
 // services/build/clients' concrete client so that every route in this package

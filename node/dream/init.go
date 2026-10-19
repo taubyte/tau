@@ -329,6 +329,12 @@ type Config struct {
 	// Options are added to every node's own, such as services added with
 	// node.WithService, which Services may then name.
 	Options []node.Option
+
+	// Configure, when set, adjusts node index's config after the universe has
+	// filled it — the way a fleet gives different machines different roles,
+	// such as a build frontend on one node and its backend on another (a node
+	// refuses to run both halves).
+	Configure func(index int, c *node.Config)
 }
 
 // Universe is a running fleet of nodes.
@@ -426,6 +432,9 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int) error {
 	}
 	nodeConfig.DNSListen = "127.0.0.1:0"
 	nodeConfig.Discovery.Stabilize = dreamStabilize
+	if cfg.Configure != nil {
+		cfg.Configure(index, &nodeConfig)
+	}
 
 	engines, err := boot.DatabaseEngines(ctx)
 	if err != nil {

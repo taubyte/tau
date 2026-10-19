@@ -142,6 +142,11 @@ func TestTheFrontendHoldsNeitherStore(t *testing.T) {
 	require.Nil(t, n.auth, "the public role does not hold auth's store")
 	require.Nil(t, n.buildBackend, "nor the queue's writer")
 	require.NotNil(t, n.buildFrontend.Handler(), "and it is a handler somebody serves")
+	require.NotNil(t, n.BuildFrontendAddr(), "listening where a CLI can reach it")
+}
+
+func TestANodeWithNoFrontendHasNoFrontendAddress(t *testing.T) {
+	require.Nil(t, (&Node{}).BuildFrontendAddr())
 }
 
 // ── finding who runs what ────────────────────────────────────────────────

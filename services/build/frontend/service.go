@@ -33,6 +33,7 @@ type Service struct {
 	identity   Identity
 	admissions Admissions
 	vault      Vault
+	registrar  Registrar
 	tenancy    tenancy.Tenancy
 	cfg        Config
 
@@ -77,6 +78,7 @@ type options struct {
 	identity   Identity
 	admissions Admissions
 	vault      Vault
+	registrar  Registrar
 	tenancy    tenancy.Tenancy
 
 	tune func(*http.Server)
@@ -131,6 +133,19 @@ func WithVault(v Vault) Option {
 			return errors.New("build: no vault to write secrets into")
 		}
 		o.vault = v
+		return nil
+	}
+}
+
+// WithRegistrar is where a linked project is registered — auth, which this
+// public role may only forward to after authorizing the caller (projectapi.go).
+// Optional: without one the route answers the 404 a denial gets.
+func WithRegistrar(r Registrar) Option {
+	return func(o *options) error {
+		if r == nil {
+			return errors.New("build: no registrar to create projects with")
+		}
+		o.registrar = r
 		return nil
 	}
 }
@@ -273,6 +288,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		identity:   o.identity,
 		admissions: o.admissions,
 		vault:      o.vault,
+		registrar:  o.registrar,
 		tenancy:    o.tenancy,
 		cfg:        effective,
 		tune:       o.tune,

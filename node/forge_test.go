@@ -3,6 +3,9 @@ package node
 import (
 	"testing"
 
+	"github.com/taubyte/tau/pkg/forge"
+	"github.com/taubyte/tau/pkg/forge/fake"
+
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
 )
@@ -64,4 +67,21 @@ func TestHostKeys(t *testing.T) {
 
 	_, err = hostKeys([]Forge{{Host: "git.internal", Driver: ForgeGitHub, HostKeys: []string{"not a key"}}})
 	require.ErrorContains(t, err, `forge "git.internal" host key`)
+}
+
+func TestAnInjectedForgeRegistryWins(t *testing.T) {
+	var o options
+	require.Error(t, WithForges(nil)(&o))
+
+	reg, err := fake.New(fake.GitHubLike).Registry(forge.Policy{})
+	require.NoError(t, err)
+	require.NoError(t, WithForges(reg)(&o))
+
+	got, err := (&Node{opts: o}).forgeRegistry()
+	require.NoError(t, err)
+	require.Same(t, reg, got)
+
+	got, err = (&Node{}).forgeRegistry()
+	require.NoError(t, err)
+	require.NotSame(t, reg, got)
 }

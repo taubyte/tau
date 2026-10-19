@@ -12,6 +12,7 @@ import (
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/pkg/database"
+	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
@@ -184,6 +185,7 @@ type options struct {
 	extra     []Service
 	identity  func(Host) (auth.Identity, error)
 	regions   schema.Regions
+	forges    *forge.Registry
 	// destination is the region whose views this node reads; see AsDestination.
 	destination string
 
