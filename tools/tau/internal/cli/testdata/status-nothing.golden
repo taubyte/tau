@@ -1,0 +1,3 @@
+profile  default
+cloud    no profile "default": run `tau login --cloud <url>`
+linked   no — run `tau link`

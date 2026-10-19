@@ -1,0 +1,8 @@
+job job-1
+status      success
+repository  github.com/acme/pay
+ref         refs/heads/main
+commit      0123456789abcdef0123
+attempt     1
+queued      2023-11-14T22:13:20Z
+built       res-a → bafyA

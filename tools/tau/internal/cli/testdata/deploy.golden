@@ -1,0 +1,5 @@
+Deploys are push-driven. Push the configuration repository to deploy it:
+  github.com/acme/cfg
+and the code repository to build it:
+  github.com/acme/pay
+run `tau deploy --wait` to follow the build the push starts

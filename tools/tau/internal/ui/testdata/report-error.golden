@@ -1,0 +1,3 @@
+✗ does not compile
+  /function/a.yaml:1:1: required attribute 'x'
+  second line

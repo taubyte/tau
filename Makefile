@@ -29,9 +29,9 @@ DREAM_P ?= $(shell n=$$(nproc 2>/dev/null || echo 4); p=$$((n / 4)); [ $$p -lt 1
 # Files tagged `dreaming && ee` are dropped as well: a package whose dreaming
 # tests are all tagged that way has nothing to build in this sweep, and listing
 # it fails the package outright rather than skipping it.
-DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xargs grep -L '//go:build dreaming && ee' | sed 's|^\./||' | grep -vE '^(ee/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
+DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xargs grep -L '//go:build dreaming && ee' | sed 's|^\./||' | grep -vE '^(ee/|tools/tau/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
-.PHONY: test test-acme test-dreaming test-raft test-docker test-containerd test-application test-build test-external-databases test-containers test-taucorder test-all proto-v2 proto-v2-check
+.PHONY: test test-cli test-acme test-dreaming test-raft test-docker test-containerd test-application test-build test-external-databases test-containers test-taucorder test-all proto-v2 proto-v2-check
 
 # THE TIMEOUT IS EXPLICIT BECAUSE THE DEFAULT IS A GUESS ABOUT THE MACHINE.
 # go test allows a package 10 minutes unless told otherwise, and pkg/kvdb spends
@@ -47,6 +47,14 @@ TAU_PKGS = $(shell go list -e ./... 2>/dev/null | grep -v '/ee/')
 
 test:
 	go test -timeout 20m $(FLAGS) $(TAU_PKGS)
+
+# test-cli tests the developer CLI, which is its own module (tools/tau, so the
+# root module never imports it and `./...` here never sweeps it in): its unit
+# tests, then the end-to-end run against a dream fleet (tag dreaming, which is
+# why DREAM_PKGS leaves tools/tau/ out — the root module cannot build it).
+test-cli:
+	cd tools/tau && go vet ./... && go test -timeout 10m $(FLAGS) ./...
+	cd tools/tau && GOMEMLIMIT=$(GOMEMLIMIT) go test -tags dreaming -timeout 20m $(FLAGS) ./e2e/
 
 test-dreaming:
 	GOMEMLIMIT=$(GOMEMLIMIT) go test -tags dreaming -p $(DREAM_P) -timeout 30m $(FLAGS) $(DREAM_PKGS)

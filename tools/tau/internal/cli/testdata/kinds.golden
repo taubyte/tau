@@ -1,0 +1,25 @@
+kinds
+  agent
+  application
+  bus
+  cache
+  channel
+  component
+  cron
+  database
+  function
+  gateway
+  mcp
+  model
+  namespace (a scope: resources go inside it with --in)
+  proxy
+  sandbox
+  secret
+  storage
+  stream
+  sync
+  volume
+  website
+  worker
+  workflow
+  zone
