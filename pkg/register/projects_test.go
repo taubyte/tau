@@ -48,10 +48,10 @@ func TestALinkIsReadBackAsOneProject(t *testing.T) {
 	rec, err := r.LinkProject(ctx, Link{Project: pid, Config: "GitHub.com/Acme/Shop-Config/", Code: []string{code, code, cfg, ""}, Claimant: alice})
 	require.NoError(t, err)
 	require.Equal(t, pid, rec.ID)
-	require.Equal(t, cfg, rec.Config, "a repository key is normalised before it is a key")
+	require.Equal(t, "GitHub.com/Acme/Shop-Config", rec.Config, "a repository is kept as it was spelled")
 	require.Equal(t, []string{code}, rec.Code, "duplicates and the config repository itself are not code")
 	require.Equal(t, alice, rec.Claimant)
-	require.Equal(t, []string{cfg, code}, rec.Repositories())
+	require.Equal(t, []string{"GitHub.com/Acme/Shop-Config", code}, rec.Repositories())
 
 	got, err := r.Project(ctx, pid)
 	require.NoError(t, err)
@@ -63,7 +63,11 @@ func TestALinkIsReadBackAsOneProject(t *testing.T) {
 
 	repo, err = r.Repository(ctx, cfg)
 	require.NoError(t, err)
-	require.True(t, repo.Configures)
+	require.True(t, repo.Configures, "and is found however it is spelled")
+	require.Equal(t, "GitHub.com/Acme/Shop-Config", repo.Repository)
+
+	_, err = r.LinkProject(ctx, Link{Project: "QmOther", Config: cfg, Claimant: alice})
+	require.ErrorIs(t, err, ErrRepositoryClaimed, "a second spelling is the same repository")
 
 	mine, err := r.ProjectsOf(ctx, alice)
 	require.NoError(t, err)

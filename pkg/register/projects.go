@@ -86,7 +86,7 @@ type Link struct {
 }
 
 // ProjectRecord is what the register holds about a linked project, as every
-// node resolves it.
+// node resolves it. Repositories are as they were spelled when linked.
 type ProjectRecord struct {
 	ID     string
 	Config string
@@ -111,10 +111,14 @@ type RepositoryRecord struct {
 	Configures bool
 }
 
+// claimRow is every record's value. Repo is the repository as it was SPELLED
+// when linked — what a forge compares a delivery's repository against — while
+// the key holds the normalised form every comparison here uses.
 type claimRow struct {
 	At       int64  `json:"at"`
 	Claimant string `json:"claimant,omitempty"`
 	Config   string `json:"config,omitempty"`
+	Repo     string `json:"repo,omitempty"`
 }
 
 // NormaliseRepository is the spelling a repository key is stored under.
@@ -122,8 +126,17 @@ type claimRow struct {
 // Forges treat owner and name case-insensitively, so `Acme/Shop` and
 // `acme/shop` are one repository and must be one key, or every uniqueness
 // property built on it quietly fails.
-func NormaliseRepository(key string) string {
-	return strings.ToLower(strings.Trim(strings.TrimSpace(key), "/"))
+func NormaliseRepository(key string) string { return strings.ToLower(spelling(key)) }
+
+func spelling(key string) string { return strings.Trim(strings.TrimSpace(key), "/") }
+
+// spelt is a row's repository as linked, or the normalised form for a row
+// written without one.
+func spelt(row claimRow, normalised string) string {
+	if row.Repo != "" {
+		return row.Repo
+	}
+	return normalised
 }
 
 func segment(s string) string { return base64.RawURLEncoding.EncodeToString([]byte(s)) }
@@ -159,6 +172,7 @@ func (r *Register) LinkProject(ctx context.Context, l Link) (ProjectRecord, erro
 	if err := checkName(l.Project, ErrNoProject); err != nil {
 		return ProjectRecord{}, err
 	}
+	configSpelt := spelling(l.Config)
 	config := NormaliseRepository(l.Config)
 	if config == "" {
 		return ProjectRecord{}, ErrNoRepository
@@ -168,9 +182,11 @@ func (r *Register) LinkProject(ctx context.Context, l Link) (ProjectRecord, erro
 		return ProjectRecord{}, ErrNoClaimant
 	}
 	var code []string
+	codeSpelt := map[string]string{}
 	for _, c := range l.Code {
-		if c = NormaliseRepository(c); c != "" && c != config && !slices.Contains(code, c) {
-			code = append(code, c)
+		if n := NormaliseRepository(c); n != "" && n != config && !slices.Contains(code, n) {
+			code = append(code, n)
+			codeSpelt[n] = spelling(c)
 		}
 	}
 	slices.Sort(code)
@@ -182,7 +198,7 @@ func (r *Register) LinkProject(ctx context.Context, l Link) (ProjectRecord, erro
 	if err != nil {
 		return ProjectRecord{}, err
 	}
-	if found && owner.Config != config {
+	if found && NormaliseRepository(owner.Config) != config {
 		return ProjectRecord{}, claimedBy(l.Project, owner.Config)
 	}
 	for _, repo := range append([]string{config}, code...) {
@@ -203,17 +219,17 @@ func (r *Register) LinkProject(ctx context.Context, l Link) (ProjectRecord, erro
 	// THE CLAIM FIRST, so the repository rows below are valid the moment they
 	// land: a repository row only counts when its project's owning claim names
 	// the same configuration repository.
-	if err := r.putOnce(ctx, claimKey(l.Project, config), claimRow{At: at, Claimant: claimant}); err != nil {
+	if err := r.putOnce(ctx, claimKey(l.Project, config), claimRow{At: at, Claimant: claimant, Repo: configSpelt}); err != nil {
 		return ProjectRecord{}, err
 	}
-	if err := r.putOnce(ctx, repoKey(config, l.Project), claimRow{At: at, Config: config}); err != nil {
+	if err := r.putOnce(ctx, repoKey(config, l.Project), claimRow{At: at, Config: config, Repo: configSpelt}); err != nil {
 		return ProjectRecord{}, err
 	}
 	for _, c := range code {
-		if err := r.putOnce(ctx, codeKey(l.Project, config, c), claimRow{At: at}); err != nil {
+		if err := r.putOnce(ctx, codeKey(l.Project, config, c), claimRow{At: at, Repo: codeSpelt[c]}); err != nil {
 			return ProjectRecord{}, err
 		}
-		if err := r.putOnce(ctx, repoKey(c, l.Project), claimRow{At: at, Config: config}); err != nil {
+		if err := r.putOnce(ctx, repoKey(c, l.Project), claimRow{At: at, Config: config, Repo: codeSpelt[c]}); err != nil {
 			return ProjectRecord{}, err
 		}
 	}
@@ -225,11 +241,15 @@ func (r *Register) LinkProject(ctx context.Context, l Link) (ProjectRecord, erro
 	if err != nil {
 		return ProjectRecord{}, err
 	}
-	if rec.Config != config {
+	if NormaliseRepository(rec.Config) != config {
 		return ProjectRecord{}, claimedBy(l.Project, rec.Config)
 	}
+	owned := map[string]bool{}
+	for _, c := range rec.Code {
+		owned[NormaliseRepository(c)] = true
+	}
 	for _, c := range code {
-		if !slices.Contains(rec.Code, c) {
+		if !owned[c] {
 			held, _, err := r.repository(ctx, c)
 			if err != nil {
 				return ProjectRecord{}, err
@@ -282,7 +302,7 @@ func (r *Register) project(ctx context.Context, id string) (ProjectRecord, error
 		return ProjectRecord{}, fmt.Errorf("%w: project %s", ErrNotLinked, id)
 	}
 
-	prefix := codePrefix + id + sep + segment(owner.Config) + sep
+	prefix := codePrefix + id + sep + segment(NormaliseRepository(owner.Config)) + sep
 	keys, err := r.store.List(ctx, prefix)
 	if err != nil {
 		return ProjectRecord{}, fmt.Errorf("register: listing %s's code: %w", id, err)
@@ -296,6 +316,13 @@ func (r *Register) project(ctx context.Context, id string) (ProjectRecord, error
 		if err != nil {
 			continue
 		}
+		row, ok, err := r.row(ctx, codeKey(id, NormaliseRepository(owner.Config), code))
+		if err != nil {
+			return ProjectRecord{}, err
+		}
+		if !ok {
+			continue
+		}
 		// A CODE REPOSITORY ATTACHED HERE AND OWNED ELSEWHERE IS NOT THIS
 		// PROJECT'S: two projects attaching one repository resolve like two
 		// claims on one id.
@@ -304,7 +331,7 @@ func (r *Register) project(ctx context.Context, id string) (ProjectRecord, error
 			return ProjectRecord{}, err
 		}
 		if ok && held.Project == id {
-			owner.Code = append(owner.Code, code)
+			owner.Code = append(owner.Code, spelt(row, code))
 		}
 	}
 	slices.Sort(owner.Code)
@@ -338,8 +365,8 @@ func (r *Register) owner(ctx context.Context, id string) (ProjectRecord, bool, e
 			continue
 		}
 		at := time.Unix(0, row.At).UTC()
-		if !found || at.Before(best.CreatedAt) || (at.Equal(best.CreatedAt) && config < best.Config) {
-			best = ProjectRecord{ID: id, Config: config, Claimant: row.Claimant, CreatedAt: at}
+		if !found || at.Before(best.CreatedAt) || (at.Equal(best.CreatedAt) && config < NormaliseRepository(best.Config)) {
+			best = ProjectRecord{ID: id, Config: spelt(row, config), Claimant: row.Claimant, CreatedAt: at}
 			found = true
 		}
 	}
@@ -424,8 +451,8 @@ func (r *Register) repository(ctx context.Context, repository string) (Repositor
 		if err != nil {
 			return RepositoryRecord{}, false, err
 		}
-		if found && owner.Config == c.row.Config {
-			return RepositoryRecord{Project: c.project, Repository: repository, Configures: repository == owner.Config}, true, nil
+		if found && NormaliseRepository(owner.Config) == c.row.Config {
+			return RepositoryRecord{Project: c.project, Repository: spelt(c.row, repository), Configures: repository == c.row.Config}, true, nil
 		}
 	}
 	return RepositoryRecord{}, false, nil
@@ -465,7 +492,7 @@ func (r *Register) ProjectsOf(ctx context.Context, claimant string) ([]ProjectRe
 		}
 		// A claim this claimant made and lost is not theirs; a relink of the
 		// owning repository by a second maintainer is.
-		if rec.Config == row.Config {
+		if NormaliseRepository(rec.Config) == row.Config {
 			out = append(out, rec)
 		}
 	}
