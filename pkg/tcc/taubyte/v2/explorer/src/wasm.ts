@@ -102,8 +102,27 @@ export interface LoweredProject {
   relations: Relation[];
 }
 
+/** How a resource is held in one region. Decided by tcc — see schema/views.go. */
+export type Role =
+  | "anywhere" | "pinned" | "main" | "standby" | "seed" | "demand"
+  | "placed" | "needed" | "follows" | "scope";
+
+/** One view per region, cut by tcc from what runs: what a deploy publishes. */
+export interface Views {
+  destinations: string[];
+  named: string[];
+  views?: Record<string, { object: Compiled; roles: Record<string, Role>; empty: boolean }>;
+  notes: Finding[];
+  refused?: string;
+}
+
+/** Which regions to cut for — see wasm/views_js.go. */
+export type RegionsOption = undefined | "lenient" | "named" | string[];
+
 export interface CompileOk {
   findings?: Finding[];
+  /** One view per region. */
+  views?: Views;
   /** What each resource is reached at. Computed by tcc: a name is three places glued. */
   names?: Record<string, { name: string; zone: string; fqdn: string; generated: boolean }>;
   /** Every resource in the project, found by tcc: a walk that needs the schema. */
@@ -134,7 +153,7 @@ export interface CompileOk {
 export type CompileResult = CompileOk | { error: string };
 
 interface Tcc {
-  compile(files: Record<string, string>, opts?: { branch?: string }): CompileResult;
+  compile(files: Record<string, string>, opts?: { branch?: string; regions?: RegionsOption }): CompileResult;
   schema(): Record<string, unknown>;
   verbs(): KindVerbs[];
   kinds(): Kind[];

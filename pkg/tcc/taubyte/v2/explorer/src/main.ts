@@ -1,5 +1,5 @@
 import "./style.css";
-import { loadTcc, type CompileOk, type Kind, type KindVerbs } from "./wasm";
+import { loadTcc, type CompileOk, type Kind, type KindVerbs, type RegionsOption, type Views } from "./wasm";
 import { buildGraph, categoryOf, fileOf, iconOf, setCategories, setScopes, setShapes, type Graph } from "./graph";
 import { esc, jsonRoot } from "./render";
 import { graphHost, renderGraph } from "./graph-mount";
@@ -55,8 +55,31 @@ async function main() {
   render();
 }
 
+// WHICH VIEW IS SHOWN. A region holds only what is placed there, and the cut is tcc's —
+// the same one a deploy publishes — so the page asks for it and draws what it says.
+// "lenient" is the build with no regions: one view, `default`, the whole project, with
+// any region it names said rather than refused. "named" previews every region the
+// project names.
+let regionMode: "lenient" | "strict" | "named" = "lenient";
+let region: string | null = null;
+
+function regionsOption(): RegionsOption {
+  if (regionMode === "named") return "named";
+  if (regionMode === "lenient") return "lenient";
+  return undefined;
+}
+
 function compile(): CompileOk | { error: string } {
-  return window.tcc!.compile(files, { branch: "main" });
+  return window.tcc!.compile(files, { branch: "main", regions: regionsOption() });
+}
+
+// heldIn is every compiled id the selected view holds, or null when there is no cut to
+// filter by — the cut was refused, and the page then shows the whole project and why.
+function heldIn(views: Views | undefined): Set<string> | null {
+  if (!views?.views) return null;
+  if (!region || !(region in views.views)) region = views.destinations[0] ?? null;
+  if (!region) return null;
+  return new Set(Object.keys(views.views[region].roles));
 }
 
 // Which lowered resources are showing what they BECOME. A box flips; the state is the
@@ -102,11 +125,19 @@ function render() {
     // label and a document's path both need it, and both used to say `namespace` because
     // that was the only kind of scope there was.
     setScopes(lastResult.scopes ?? []);
+    // THE VIEW FILTERS, AND NOTHING ELSE DOES: a resource is drawn when the region's
+    // view holds it, and an arrow when both its ends are — which, with an edge across
+    // regions refused by tcc, is every arrow the region has.
+    const held = heldIn(lastResult.views);
+    const keep = <T extends { id: string }>(xs: T[]) => (held ? xs.filter((x) => held.has(x.id)) : xs);
+    const both = <T extends { from: string; to: string }>(xs: T[]) =>
+      held ? xs.filter((r) => held.has(r.from) && held.has(r.to)) : xs;
+    const low = lastResult.lowered ?? { produced: {}, granted: [], resources: [], relations: [] };
     graph = buildGraph(
-      lastResult.resources ?? [],
-      lastResult.relations ?? [],
+      keep(lastResult.resources ?? []),
+      both(lastResult.relations ?? []),
       lastResult.names ?? {},
-      lastResult.lowered ?? { produced: {}, granted: [], resources: [], relations: [] },
+      { ...low, resources: keep(low.resources), relations: both(low.relations) },
       flipped,
     );
     const g = graph;
@@ -177,12 +208,67 @@ function header(error: string | null): HTMLElement {
     tabs.appendChild(b);
   }
   h.appendChild(tabs);
+  h.appendChild(regionBar());
   if (error) {
     const e = div("err");
     e.innerHTML = `<b>compile failed</b><pre>${esc(error)}</pre>`;
     h.appendChild(e);
   }
   return h;
+}
+
+// regionBar is which cut is shown: the build with no regions, or a preview of the
+// regions the project names, and then which region's view.
+function regionBar(): HTMLElement {
+  const bar = div("tabs regions");
+  const views = lastResult && !("error" in lastResult) ? lastResult.views : undefined;
+  for (const [id, label] of [
+    ["lenient", "No regions (OSS)"],
+    ["strict", "No regions, strict"],
+    ["named", "Preview: regions it names"],
+  ] as const) {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.className = regionMode === id ? "on" : "";
+    b.onclick = () => {
+      regionMode = id;
+      region = null;
+      render();
+    };
+    bar.appendChild(b);
+  }
+  if (views?.views) {
+    for (const r of views.destinations) {
+      const v = views.views[r];
+      const b = document.createElement("button");
+      const n = Object.keys(v.roles).length;
+      b.textContent = `${r} · ${v.empty ? "empty" : n}`;
+      b.title = roleSummary(v.roles);
+      b.className = region === r ? "on" : "";
+      b.onclick = () => {
+        region = r;
+        render();
+      };
+      bar.appendChild(b);
+    }
+  }
+  if (views?.refused) {
+    const e = div("err");
+    e.innerHTML = `<b>no views: the whole project is shown</b><pre>${esc(views.refused)}</pre>`;
+    bar.appendChild(e);
+  }
+  return bar;
+}
+
+// roleSummary counts how a view holds what it holds — a failover's main and standby
+// are both "in" a region, and are not the same thing.
+function roleSummary(roles: Record<string, string>): string {
+  const count: Record<string, number> = {};
+  for (const r of Object.values(roles)) count[r] = (count[r] ?? 0) + 1;
+  return Object.entries(count)
+    .sort()
+    .map(([r, n]) => `${n} ${r}`)
+    .join(", ");
 }
 
 function filesPane(): HTMLElement {
@@ -375,6 +461,11 @@ function mainPane(result: CompileOk | { error: string }): HTMLElement {
       ),
     );
     pane.appendChild(jsonRoot(result.object, "project", 3));
+    const v = region ? result.views?.views?.[region] : undefined;
+    if (v) {
+      pane.appendChild(sectionTitle(`what ${region} holds`, "the view this region is published, and how each resource is in it"));
+      pane.appendChild(jsonRoot(v.roles, "roles", 2));
+    }
     if (result.validations?.length) {
       pane.appendChild(
         sectionTitle("deferred validations", "checks the compiler cannot answer alone"),
