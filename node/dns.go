@@ -65,6 +65,15 @@ func (n *Node) openDNS() error {
 		options = append(options, dns.WithZones(z), dns.WithResolvers(z))
 	}
 
+	// THE CLOUD'S GENERATED NAMES, when the node knows the cloud's zone: the
+	// register's host index says which are published, and the nodes reporting
+	// the gateway service answer them.
+	if zone := n.cfg.Gateway.CloudFqdn; zone != "" {
+		options = append(options, dns.WithGenerated(dns.Generated{
+			Zone: zone, Hosts: n.registerSource(), Service: Gateway,
+		}))
+	}
+
 	svc, err := dns.New(n.cfg.DNS, options...)
 	if err != nil {
 		return err

@@ -206,6 +206,12 @@ func (s *Service) AnswerContext(ctx context.Context, req *dns.Msg) *dns.Msg {
 		return reply
 	}
 
+	// A NAME UNDER THE CLOUD'S OWN ZONE is a generated one: published or not,
+	// and answered by the gateways. See generated.go.
+	if s.answerGenerated(ctx, reply, name, q) {
+		return reply
+	}
+
 	nodes := s.opts.router.Route(name, s.cfg.MaxAge)
 	if len(nodes) == 0 {
 		// A NAME A ZONE DECLARES BUT NOT AT THIS TYPE EXISTS. Asked for an A

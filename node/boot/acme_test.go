@@ -20,7 +20,6 @@ import (
 	"github.com/letsencrypt/pebble/v2/db"
 	"github.com/letsencrypt/pebble/v2/va"
 	"github.com/letsencrypt/pebble/v2/wfe"
-	mdns "github.com/miekg/dns"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/node"
@@ -30,7 +29,8 @@ import (
 )
 
 // acme_test is REAL ISSUANCE FROM A REAL ACME SERVER: pebble, Let's Encrypt's
-// test CA, runs in this process; it fetches the HTTP-01 answer from the node's own clear listener,
+// test CA, runs in this process; it resolves the generated name through the
+// node's own dns service, fetches the HTTP-01 answer from the node's own clear listener,
 // and signs a certificate the node then presents on its https listener to a
 // client that trusts pebble's root and nothing else.
 
@@ -88,24 +88,18 @@ func (p *pebble) roots(t *testing.T) *x509.CertPool {
 	return pool
 }
 
-// resolver answers every A query with loopback, over tcp, as the public DNS
-// does for a cloud whose zone is pointed at its gateways. The node's own dns
-// answers routed services, not generated gateway names, so it is not asked.
-func resolver(t *testing.T) string {
+// dnsOf is the node's own dns listener over tcp, which is how pebble asks:
+// the node answers its generated names itself, as it does for a cloud whose
+// zone is delegated to its dns nodes.
+func dnsOf(t *testing.T, running *Running) string {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	srv := &mdns.Server{Listener: l, Handler: mdns.HandlerFunc(func(w mdns.ResponseWriter, r *mdns.Msg) {
-		m := new(mdns.Msg)
-		m.SetReply(r)
-		if q := r.Question[0]; q.Qtype == mdns.TypeA {
-			m.Answer = []mdns.RR{&mdns.A{Hdr: mdns.RR_Header{Name: q.Name, Rrtype: mdns.TypeA, Class: mdns.ClassINET, Ttl: 1}, A: net.IPv4(127, 0, 0, 1)}}
+	for _, a := range running.Node.DNSAddrs() {
+		if tcp, ok := a.(*net.TCPAddr); ok {
+			return tcp.String()
 		}
-		w.WriteMsg(m)
-	})}
-	go srv.ActivateAndServe()
-	t.Cleanup(func() { srv.Shutdown() })
-	return l.Addr().String()
+	}
+	t.Fatal("the node serves no dns over tcp")
+	return ""
 }
 
 func handshake(t *testing.T, address, name string, roots *x509.CertPool) *http.Response {
@@ -131,7 +125,8 @@ func TestAGeneratedNameIsIssuedByACMEAndServedOverTLS(t *testing.T) {
 
 	f := File{
 		Node: node.Config{
-			Services: []string{node.Register, node.Discovery, node.Gateway},
+			Services:  []string{node.Register, node.Discovery, node.Gateway, node.DNS},
+			DNSListen: "127.0.0.1:0",
 			Gateway: gateway.Config{CloudFqdn: cloud, ACME: certificate.ACME{
 				Enabled:   true,
 				Directory: ca.server.URL + "/dir",
@@ -147,7 +142,7 @@ func TestAGeneratedNameIsIssuedByACMEAndServedOverTLS(t *testing.T) {
 	}
 	running, err := Start(t.Context(), f)
 	require.NoError(t, err)
-	ca.validate(t, running.Address(), resolver(t))
+	ca.validate(t, running.Address(), dnsOf(t, running))
 
 	_, err = running.Node.Register().Local().Publish(t.Context(), register.Publication{
 		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled, Hosts: hosts,

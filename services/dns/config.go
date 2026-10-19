@@ -126,6 +126,7 @@ type options struct {
 	router    Router
 	zones     Zones
 	resolvers Resolvers
+	generated *Generated
 }
 
 // WithRouter is where the answers come from. Required.
