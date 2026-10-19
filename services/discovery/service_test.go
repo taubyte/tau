@@ -452,3 +452,8 @@ func TestASocketWithAnImpossiblePortIsDropped(t *testing.T) {
 	require.Len(t, n.Sockets, 1, "the impossible one and the absent one are both gone")
 	require.Equal(t, "mysql", n.Sockets[0].Protocol)
 }
+
+func TestDecodeRefusesGarbage(t *testing.T) {
+	_, err := Decode([]byte{0xff, 0xff, 0xff})
+	require.Error(t, err)
+}

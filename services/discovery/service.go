@@ -178,28 +178,39 @@ func (s *Service) listen(ctx context.Context, reports <-chan []byte) {
 			if !ok {
 				return
 			}
-			var r discoveryv2.Report
-			if err := proto.Unmarshal(b, &r); err != nil {
+			r, err := Decode(b)
+			if err != nil {
 				continue
 			}
 			// Observe refuses a bad peer, a bad load and an older
 			// incarnation. Each refusal is about the sender, not about this
 			// node, so there is nothing here to do but keep listening.
-			s.view.Observe(stats.Report{
-				Peer:        r.GetPeer(),
-				Incarnation: r.GetIncarnation(),
-				Load:        r.GetLoad(),
-				Serving:     r.GetServing(),
-				Ready:       r.GetReady(),
-				Addresses:   r.GetAddresses(),
-				Sockets:     socketsOf(r.GetSockets()),
-
-				FleetRevision:    r.GetFleetRevision(),
-				DatabasesPending: int(r.GetDatabasesPending()),
-			})
-			s.beat(r.GetPeer(), r.GetIncarnation(), r.GetReady())
+			s.view.Observe(r)
+			s.beat(r.Peer, r.Incarnation, r.Ready)
 		}
 	}
+}
+
+// Decode is one report as it arrived on the bus. It is exported for readers
+// that watch the fleet without being part of it — a bridge that subscribes to
+// the topic and never publishes — so they fold reports exactly as a node does.
+func Decode(b []byte) (stats.Report, error) {
+	var r discoveryv2.Report
+	if err := proto.Unmarshal(b, &r); err != nil {
+		return stats.Report{}, err
+	}
+	return stats.Report{
+		Peer:        r.GetPeer(),
+		Incarnation: r.GetIncarnation(),
+		Load:        r.GetLoad(),
+		Serving:     r.GetServing(),
+		Ready:       r.GetReady(),
+		Addresses:   r.GetAddresses(),
+		Sockets:     socketsOf(r.GetSockets()),
+
+		FleetRevision:    r.GetFleetRevision(),
+		DatabasesPending: int(r.GetDatabasesPending()),
+	}, nil
 }
 
 // broadcast sends this node's own report on every tick, and once immediately so

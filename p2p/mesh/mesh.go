@@ -241,3 +241,7 @@ func (m *Mesh) Close() {
 
 	os.RemoveAll(m.root)
 }
+
+// SwarmKey is the key every peer in this mesh was started with — what an
+// outside peer needs to join it.
+func (m *Mesh) SwarmKey() []byte { return append([]byte(nil), m.swarmKey...) }

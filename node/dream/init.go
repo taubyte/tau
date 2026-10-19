@@ -368,6 +368,10 @@ func (u *Universe) Pids() []string { return append([]string(nil), u.pids...) }
 // Peers are the nodes' libp2p peers, in the order they started.
 func (u *Universe) Peers() []peer.Node { return u.mesh.Peers() }
 
+// SwarmKey is the universe's swarm key, which a peer from outside the
+// universe needs to join it.
+func (u *Universe) SwarmKey() []byte { return u.mesh.SwarmKey() }
+
 // Close stops every node, then their peers.
 func (u *Universe) Close() { u.mesh.Close() }
 
