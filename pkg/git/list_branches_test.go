@@ -19,8 +19,7 @@ func openTestRepository(t *testing.T, ops ...Option) (repo *Repository, defermen
 	}
 
 	repo, err = New(ctx, append([]Option{
-		URL(fmt.Sprintf("https://github.com/%s/%s.git", testRepoUser, testRepoName)),
-		Token(testRepoToken(t)),
+		URL(localRemote(t)),
 		Author(testRepoUser, testRepoEmail),
 		Temporary(),
 

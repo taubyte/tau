@@ -14,7 +14,6 @@ import (
 
 	gossh "golang.org/x/crypto/ssh"
 
-	"github.com/taubyte/tau/pkg/forge"
 	pkgregister "github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/pkg/tenancy"
@@ -166,9 +165,9 @@ func (n *Node) openAuth() error {
 
 // buildClone is the checkout the build backend clones with.
 //
-// SSH, BECAUSE A DEPLOY KEY IS AN SSH KEY, and a cloud reaching a provider over
-// https could only read what is already public. The address and its account
-// are the forge's, and the host it answers from is pinned.
+// SSH WHERE A DEPLOY KEY IS, HTTPS WHERE NONE IS: a deploy key is an ssh key,
+// and a repository without one is read anonymously or not at all. Both
+// addresses, and the ssh account, are the forge's; an ssh host is pinned.
 func (n *Node) buildClone(keys deploy.Credentials) (*deploy.Clone, error) {
 	registry, err := n.forgeRegistry()
 	if err != nil {
@@ -179,7 +178,7 @@ func (n *Node) buildClone(keys deploy.Credentials) (*deploy.Clone, error) {
 		return nil, err
 	}
 	return deploy.NewClone(keys,
-		deploy.WithAddress(deploy.Forged(registry, forge.SSH)),
+		deploy.WithAddress(deploy.Forged(registry)),
 		deploy.WithHostKeys(func(host string) []gossh.PublicKey { return pinned[host] })), nil
 }
 

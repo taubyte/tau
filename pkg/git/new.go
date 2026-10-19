@@ -11,7 +11,6 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/pterm/pterm"
 )
 
@@ -92,48 +91,20 @@ func (c *Repository) open_or_clone() error {
 		return c.clone()
 	}
 
-	// When token is passed and remote is SSH, switch origin to HTTPS so push/fetch use the token. Do not fail open.
-	if err := c.switchOriginToHTTPSIfTokenAndSSH(); err != nil {
-		Info("switchOriginToHTTPSIfTokenAndSSH: " + err.Error() + "\n")
-	}
-
 	return nil
 }
 
 func (c *Repository) clone() (err error) {
 	Info("Cloning from " + c.url + " on branch " + c.branches[0] + " into " + c.root + "\n")
 
-	if c.embedToken {
-		var cloneURL string
-		cloneURL, err = embedGitToken(c.url, c.auth)
-		if err != nil {
-			return fmt.Errorf("embedding token failed with: %s", err)
-		}
-
-		c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
-			URL:      cloneURL,
-			Progress: c.output,
-		})
-	} else if c.auth != nil {
-		c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
-			URL:      c.url,
-			Progress: c.output,
-			Auth:     c.auth,
-		})
-	} else {
-		c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
-			URL:      c.url,
-			Progress: c.output,
-		})
-	}
-
-	if err != nil && strings.Contains(err.Error(), "ssh: unable to authenticate") {
-		// repo might be public or we're in dev/test mode. try to clone with https
-		c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
-			URL:      ConvertSSHToHTTPS(c.url),
-			Progress: c.output,
-		})
-	}
+	// ONE TRANSPORT, ONE ATTEMPT. The caller chose the address and the
+	// credential together; a clone that fails is reported as it failed, never
+	// retried anonymously over another transport that might read something else.
+	c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
+		URL:      c.url,
+		Progress: c.output,
+		Auth:     c.auth,
+	})
 
 	if err == git.ErrRepositoryAlreadyExists {
 		err = nil
@@ -180,43 +151,5 @@ func (c *Repository) clone() (err error) {
 	pterm.Success.Printf("Cloning %s complete\n", c.url)
 	c.i_cloned_it = true
 
-	return nil
-}
-
-// switchOriginToHTTPSIfTokenAndSSH sets origin remote URL to HTTPS when c has token auth and origin is SSH.
-func (c *Repository) switchOriginToHTTPSIfTokenAndSSH() error {
-	if c.repo == nil {
-		return nil
-	}
-	if _, ok := c.auth.(*http.BasicAuth); !ok {
-		return nil
-	}
-	rem, err := c.repo.Remote(git.DefaultRemoteName)
-	if err != nil || rem == nil {
-		return nil
-	}
-	urls := rem.Config().URLs
-	if len(urls) == 0 {
-		return nil
-	}
-	url := urls[0]
-	if !strings.HasPrefix(url, "git@") || !strings.Contains(url, ":") {
-		return nil
-	}
-	newURL := ConvertSSHToHTTPS(url)
-	cfg, err := c.repo.Config()
-	if err != nil {
-		return fmt.Errorf("get config: %w", err)
-	}
-	origin, ok := cfg.Remotes[git.DefaultRemoteName]
-	if !ok || origin == nil || len(origin.URLs) == 0 {
-		return nil
-	}
-	for i := range origin.URLs {
-		origin.URLs[i] = newURL
-	}
-	if err := c.repo.SetConfig(cfg); err != nil {
-		return fmt.Errorf("set config: %w", err)
-	}
 	return nil
 }

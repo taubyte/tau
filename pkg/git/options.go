@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 
-	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	gossh "golang.org/x/crypto/ssh"
 )
@@ -32,37 +31,6 @@ func URL(url string) Option {
 func Output(output io.Writer) Option {
 	return func(c *Repository) error {
 		c.output = output
-		return nil
-	}
-}
-
-/* Token is an Option to set the repository token.
- *
- * token: The token to use.
- */
-func Token(token string) Option {
-	return func(c *Repository) error {
-		c.auth = &http.BasicAuth{
-			Username: fakeUserforTokenAuth,
-			Password: token,
-		}
-		return nil
-	}
-}
-
-/* EmbeddedToken is an Option to set the repository token.
- * the token will also be embedded in the remote url.
- *
- * token: The token to use.
- */
-func EmbeddedToken(token string) Option {
-	return func(c *Repository) error {
-		c.embedToken = true
-		c.auth = &http.BasicAuth{
-			Username: fakeUserforTokenAuth,
-			Password: token,
-		}
-
 		return nil
 	}
 }

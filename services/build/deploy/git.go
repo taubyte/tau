@@ -9,6 +9,7 @@ import (
 
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/taubyte/tau/pkg/forge"
@@ -32,7 +33,7 @@ import (
 // would be a key to every repository in it.
 //
 // nil means public repositories only, and a private one then fails at the
-// clone with git's own message rather than silently building nothing.
+// clone, named as unreadable, rather than silently building nothing.
 type Credentials interface {
 	// DeployKey is the repository's private key, in PEM. An empty string with
 	// no error means this repository needs none.
@@ -43,14 +44,15 @@ type Credentials interface {
 type Clone struct {
 	credentials Credentials
 
-	// address turns a repository key into where to clone it from, and as whom.
+	// address turns a repository key into where to clone it from over a
+	// protocol, and as whom.
 	//
-	// IT IS CLOUD POLICY AND NOT REPOSITORY FACT. A key is a host and a path
-	// under it and says nothing about transport, so whether this cloud reaches
-	// a host over https or ssh — or reaches it at all — is the operator's
-	// answer and not the pushed payload's. The ssh ACCOUNT is the forge's: see
-	// Forged.
-	address func(repositoryKey string) (forge.Address, error)
+	// THE PROTOCOL IS THE CREDENTIAL'S. A repository with a deploy key is read
+	// over ssh, because a deploy key is an ssh key; one without is read over
+	// https, anonymously, because what it can read is what is public. Checkout
+	// decides which, where the key is known; the address is the forge's answer
+	// to it, the ssh ACCOUNT included: see Forged.
+	address func(repositoryKey string, over forge.Protocol) (forge.Address, error)
 
 	// hostKeys are the ssh host keys a forge host may answer with. A clone over
 	// ssh to a host with none is refused: see git.SSHKeyAs.
@@ -71,8 +73,9 @@ func NewClone(credentials Credentials, opts ...CloneOption) *Clone {
 // CloneOption configures a Clone.
 type CloneOption func(*Clone)
 
-// WithAddress is how this cloud reaches a repository. Default HTTPS.
-func WithAddress(address func(repositoryKey string) (forge.Address, error)) CloneOption {
+// WithAddress is how this cloud reaches a repository over a protocol. Default
+// HTTPS, which reaches nothing over ssh.
+func WithAddress(address func(repositoryKey string, over forge.Protocol) (forge.Address, error)) CloneOption {
 	return func(c *Clone) {
 		if address != nil {
 			c.address = address
@@ -91,23 +94,28 @@ func WithHostKeys(keys func(host string) []gossh.PublicKey) CloneOption {
 }
 
 // HTTPS is `https://<key>.git`, which reads what is public and nothing else.
-func HTTPS(repositoryKey string) (forge.Address, error) {
+// Asked for ssh it refuses: it knows no forge, so no ssh address or account.
+func HTTPS(repositoryKey string, over forge.Protocol) (forge.Address, error) {
 	key, err := parse(repositoryKey)
 	if err != nil {
 		return forge.Address{}, err
+	}
+	if over != forge.HTTPS {
+		return forge.Address{}, fmt.Errorf("deploy: %s has a deploy key, and no forge is bound to give it an ssh address", repositoryKey)
 	}
 	return forge.Address{URL: "https://" + key.String() + ".git"}, nil
 }
 
 // Forged is the address the forge serving a key's host gives it, over the
-// given protocol. SSH is what a deploy key needs, and the account it
-// authenticates as is the driver's to say — not a `git@` spelled here.
+// protocol asked. SSH is what a deploy key needs, and the account it
+// authenticates as is the driver's to say — not a `git@` spelled here; HTTPS is
+// the forge's anonymous clone URL — not an ssh one rewritten here.
 //
 // ASKED ANONYMOUSLY, because an address is a host fact and not a permission:
 // the credential a clone uses is the repository's deploy key, handed to git,
 // never a caller's token.
-func Forged(forges *forge.Registry, over forge.Protocol) func(repositoryKey string) (forge.Address, error) {
-	return func(repositoryKey string) (forge.Address, error) {
+func Forged(forges *forge.Registry) func(repositoryKey string, over forge.Protocol) (forge.Address, error) {
+	return func(repositoryKey string, over forge.Protocol) (forge.Address, error) {
 		key, err := parse(repositoryKey)
 		if err != nil {
 			return forge.Address{}, err
@@ -130,9 +138,52 @@ func parse(repositoryKey string) (repokey.Key, error) {
 
 // Checkout clones into a directory this process owns and removes.
 func (c *Clone) Checkout(ctx context.Context, repositoryKey, branch, commit string) (string, func(), error) {
-	address, err := c.address(repositoryKey)
+	key, err := parse(repositoryKey)
 	if err != nil {
 		return "", nil, err
+	}
+
+	// THE KEY FIRST, BECAUSE IT DECIDES THE TRANSPORT. Auth failing is not a
+	// public repository: reading on anonymously would turn an outage into a
+	// build that cannot see the code and says the repository is empty.
+	var deployKey string
+	if c.credentials != nil {
+		deployKey, err = c.credentials.DeployKey(ctx, repositoryKey)
+		if err != nil {
+			return "", nil, fmt.Errorf("deploy: reading %s's key: %w", repositoryKey, err)
+		}
+	}
+
+	over := forge.HTTPS
+	if deployKey != "" {
+		over = forge.SSH
+	}
+	address, err := c.address(repositoryKey, over)
+	if err != nil {
+		return "", nil, err
+	}
+
+	options := []git.Option{
+		git.URL(address.URL),
+		git.Branch(branch),
+		git.Output(io.Discard),
+	}
+	if deployKey != "" {
+		// A KEY OVER HTTPS AUTHENTICATES NOTHING, and git would say so as a
+		// failed clone of what reads as a missing repository.
+		if address.SSHAccount == "" {
+			return "", nil, fmt.Errorf("deploy: %s has a deploy key and is reached by %q, which is not ssh", repositoryKey, address.URL)
+		}
+		// THE HOST IS PINNED, BY THE FORGE THE KEY NAMES. A deploy key proves
+		// who is cloning; only the host key proves who answered.
+		var pinned []gossh.PublicKey
+		if c.hostKeys != nil {
+			pinned = c.hostKeys(key.Host)
+		}
+		if len(pinned) == 0 {
+			return "", nil, fmt.Errorf("deploy: no ssh host key is pinned for %s, and a clone that accepts any host can be answered by anyone", repositoryKey)
+		}
+		options = append(options, git.SSHKeyAs(address.SSHAccount, deployKey, pinned))
 	}
 
 	// ITS OWN DIRECTORY, REMOVED WITH IT. A build reads a stranger's repository;
@@ -143,44 +194,15 @@ func (c *Clone) Checkout(ctx context.Context, repositoryKey, branch, commit stri
 	}
 	release := func() { os.RemoveAll(root) }
 
-	options := []git.Option{
-		git.URL(address.URL),
-		git.Root(root),
-		git.Branch(branch),
-		git.Output(io.Discard),
-	}
-	if c.credentials != nil {
-		key, err := c.credentials.DeployKey(ctx, repositoryKey)
-		if err != nil {
-			release()
-			return "", nil, fmt.Errorf("deploy: reading %s's key: %w", repositoryKey, err)
-		}
-		if key != "" {
-			// A KEY OVER HTTPS AUTHENTICATES NOTHING, and git would say so as a
-			// failed clone of what reads as a missing repository.
-			if address.SSHAccount == "" {
-				release()
-				return "", nil, fmt.Errorf("deploy: %s has a deploy key and is reached by %q, which is not ssh", repositoryKey, address.URL)
-			}
-			// THE HOST IS PINNED, BY THE FORGE THE KEY NAMES. A deploy key proves
-			// who is cloning; only the host key proves who answered.
-			var pinned []gossh.PublicKey
-			if c.hostKeys != nil {
-				if k, err := parse(repositoryKey); err == nil {
-					pinned = c.hostKeys(k.Host)
-				}
-			}
-			if len(pinned) == 0 {
-				release()
-				return "", nil, fmt.Errorf("deploy: no ssh host key is pinned for %s, and a clone that accepts any host can be answered by anyone", repositoryKey)
-			}
-			options = append(options, git.SSHKeyAs(address.SSHAccount, key, pinned))
-		}
-	}
-
-	repo, err := git.New(ctx, options...)
+	repo, err := git.New(ctx, append(options, git.Root(root))...)
 	if err != nil {
 		release()
+		// NO KEY MEANS PUBLIC OR NOTHING. A keyless clone the forge refuses is a
+		// private repository nobody linked, and saying so is the whole fix: no
+		// other transport is tried, because none holds a credential either.
+		if deployKey == "" && refused(err) {
+			return "", nil, fmt.Errorf("deploy: %s has no deploy key and is not publicly readable; run tau link: %w", repositoryKey, err)
+		}
 		return "", nil, err
 	}
 
@@ -190,6 +212,15 @@ func (c *Clone) Checkout(ctx context.Context, repositoryKey, branch, commit stri
 	}
 
 	return repo.Dir(), release, nil
+}
+
+// refused is a clone the host turned away for want of a credential. A forge
+// answers an anonymous read of a private repository either way: GitHub as
+// not-found, others as authentication required.
+func refused(err error) bool {
+	return errors.Is(err, transport.ErrAuthenticationRequired) ||
+		errors.Is(err, transport.ErrAuthorizationFailed) ||
+		errors.Is(err, transport.ErrRepositoryNotFound)
 }
 
 // checkoutCommit moves the worktree to one exact commit.

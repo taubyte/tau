@@ -88,7 +88,7 @@ func TestACloneReadsTheCommitAndNotTheBranch(t *testing.T) {
 	path, first, second := repository(t)
 	require.NotEqual(t, first, second)
 
-	clone := deploy.NewClone(nil, deploy.WithAddress(func(string) (forge.Address, error) { return forge.Address{URL: path}, nil }))
+	clone := deploy.NewClone(nil, deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) { return forge.Address{URL: path}, nil }))
 
 	for name, want := range map[string]string{first: "example.com", second: "moved.example"} {
 		dir, done, err := clone.Checkout(t.Context(), "local/repo", "main", name)
@@ -111,7 +111,7 @@ func TestACloneReadsTheCommitAndNotTheBranch(t *testing.T) {
 // instead would deploy a commit nobody pushed.
 func TestACommitThatIsNotThere(t *testing.T) {
 	path, _, _ := repository(t)
-	clone := deploy.NewClone(nil, deploy.WithAddress(func(string) (forge.Address, error) { return forge.Address{URL: path}, nil }))
+	clone := deploy.NewClone(nil, deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) { return forge.Address{URL: path}, nil }))
 
 	_, _, err := clone.Checkout(t.Context(), "local/repo", "main",
 		"1111111111111111111111111111111111111111")
@@ -132,7 +132,7 @@ func TestAPushOfARealRepositoryDeploys(t *testing.T) {
 	path, first, second := repository(t)
 	r := registry(t)
 
-	clone := deploy.NewClone(nil, deploy.WithAddress(func(string) (forge.Address, error) { return forge.Address{URL: path}, nil }))
+	clone := deploy.NewClone(nil, deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) { return forge.Address{URL: path}, nil }))
 	d, err := deploy.New(
 		deploy.WithRegions(schema.TryOneRegion()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
@@ -169,27 +169,34 @@ func TestAPushOfARealRepositoryDeploys(t *testing.T) {
 // address is the one the forge serving the host gives — the ssh account
 // included, which is the driver's to say and not a `git@` spelled here.
 func TestHowACloudReachesARepository(t *testing.T) {
-	address, err := deploy.HTTPS("github.com/acme/shop")
+	address, err := deploy.HTTPS("github.com/acme/shop", forge.HTTPS)
 	require.NoError(t, err)
 	require.Equal(t, forge.Address{URL: "https://github.com/acme/shop.git"}, address)
-	_, err = deploy.HTTPS("")
+	_, err = deploy.HTTPS("", forge.HTTPS)
 	require.Error(t, err)
+	_, err = deploy.HTTPS("github.com/acme/shop", forge.SSH)
+	require.ErrorContains(t, err, "no forge is bound", "a bare https address has no ssh answer to give")
 
 	f := fake.New(fake.GitHubLike)
 	forges, err := f.Registry(forge.Policy{})
 	require.NoError(t, err)
-	forged := deploy.Forged(forges, forge.SSH)
+	forged := deploy.Forged(forges)
 
-	address, err = forged(f.Keys().Writable.String())
+	address, err = forged(f.Keys().Writable.String(), forge.SSH)
 	require.NoError(t, err)
 	require.NotEmpty(t, address.SSHAccount, "an ssh address says which account a key authenticates as")
 	require.NotEmpty(t, address.URL)
 
-	_, err = forged("codeberg.org/acme/shop")
+	anonymous, err := forged(f.Keys().Writable.String(), forge.HTTPS)
+	require.NoError(t, err)
+	require.Empty(t, anonymous.SSHAccount, "an https address authenticates as nobody")
+	require.True(t, strings.HasPrefix(anonymous.URL, "https://"), "the forge's own https clone url, got %q", anonymous.URL)
+
+	_, err = forged("codeberg.org/acme/shop", forge.SSH)
 	var none *forge.NoDriverError
 	require.ErrorAs(t, err, &none, "a host no forge is bound to is not reached by guessing")
 
-	_, err = forged("")
+	_, err = forged("", forge.HTTPS)
 	require.ErrorContains(t, err, "not a repository")
 }
 
@@ -206,7 +213,7 @@ func (k keys) DeployKey(context.Context, string) (string, error) { return k.key,
 
 func TestReadingAPrivateRepository(t *testing.T) {
 	path, first, _ := repository(t)
-	local := deploy.WithAddress(func(string) (forge.Address, error) {
+	local := deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) {
 		return forge.Address{URL: path, SSHAccount: "git"}, nil
 	})
 
@@ -242,7 +249,7 @@ func TestReadingAPrivateRepository(t *testing.T) {
 
 	// A KEY OVER HTTPS AUTHENTICATES NOTHING, so it is refused by name rather
 	// than cloned anonymously and failed as a missing repository.
-	overHTTPS := deploy.WithAddress(func(string) (forge.Address, error) {
+	overHTTPS := deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) {
 		return forge.Address{URL: path}, nil
 	})
 	_, _, err = deploy.NewClone(keys{key: "any"}, overHTTPS).

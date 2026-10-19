@@ -2,7 +2,6 @@ package git
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 )
@@ -16,8 +15,7 @@ func TestBranch(t *testing.T) {
 	}(ctxC)
 	_, err := New(
 		ctx,
-		URL(fmt.Sprintf("https://github.com/%s/%s.git", testRepoUser, testRepoName)),
-		Token(testRepoToken(t)),
+		URL(localRemote(t)),
 		Author(testRepoUser, ""),
 		Branch("dream"),
 		Temporary(),
