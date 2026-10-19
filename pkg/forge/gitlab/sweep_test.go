@@ -290,6 +290,18 @@ var sweepOps = []sweepOp{
 		},
 	},
 	{
+		name: "ListDeployKeys", caps: []forge.Capability{forge.CapDeployKeys},
+		call: func(ctx context.Context, _ *forge.Registry, s *forge.Session, k repokey.Key, _ sweepArgs) (any, error) {
+			return s.ListDeployKeys(ctx, k)
+		},
+	},
+	{
+		name: "ListPushHooks", caps: []forge.Capability{forge.CapPushHooks},
+		call: func(ctx context.Context, _ *forge.Registry, s *forge.Session, k repokey.Key, _ sweepArgs) (any, error) {
+			return s.ListPushHooks(ctx, k)
+		},
+	},
+	{
 		name: "RemoveDeployKey", caps: []forge.Capability{forge.CapDeployKeys}, pastes: true,
 		call: func(ctx context.Context, _ *forge.Registry, s *forge.Session, k repokey.Key, a sweepArgs) (any, error) {
 			return nil, s.RemoveDeployKey(ctx, k, forge.Handle(a.handle))
@@ -642,6 +654,9 @@ func (in *sweepInstance) answer(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodDelete:
 		w.WriteHeader(http.StatusNoContent)
+	case r.Method == http.MethodGet && (strings.HasSuffix(path, "/hooks") || strings.HasSuffix(path, "/deploy_keys")):
+		// One page with no next, so a listing stops here.
+		sweepJSON(w, []any{map[string]any{"id": 991, "title": "tau", "key": "ssh-ed25519 AAAA", "url": "https://build.example.invalid/hook"}})
 	case r.Method == http.MethodPost && strings.HasSuffix(path, "/hooks"):
 		sweepJSON(w, map[string]any{"id": 991})
 	case r.Method == http.MethodPost && strings.HasSuffix(path, "/deploy_keys"):
@@ -747,6 +762,8 @@ var sweptShapes = []string{
 	"GET /api/v4/namespaces/victim",
 	"GET /api/v4/projects",
 	"GET /api/v4/projects/victim%2Fpay",
+	"GET /api/v4/projects/victim%2Fpay/deploy_keys",
+	"GET /api/v4/projects/victim%2Fpay/hooks",
 	"GET /api/v4/user",
 	"GET /api/v4/users",
 	"POST /api/graphql",
@@ -869,6 +886,8 @@ func TestTheSweepPinsEveryRequestBodyThisDriverComposes(t *testing.T) {
 // something else. per_page and the ordering are what make the pager
 // deterministic, and username is how the membership walk names a human at all.
 var sweptQueries = []string{
+	"GET /api/v4/projects/victim%2Fpay/deploy_keys?page=1&per_page=100",
+	"GET /api/v4/projects/victim%2Fpay/hooks?page=1&per_page=100",
 	"GET /api/v4/projects?membership=true&order_by=id&page=1&per_page=100&sort=asc",
 	"GET /api/v4/users?username=" + memberName,
 }

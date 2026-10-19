@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -244,7 +245,55 @@ func (b fKeys) RemoveDeployKey(_ context.Context, k repokey.Key, h forge.Handle)
 	return nil
 }
 
+// ListDeployKeys is every key on k, in handle order.
+func (b fKeys) ListDeployKeys(_ context.Context, k repokey.Key) ([]forge.InstalledDeployKey, error) {
+	if ok, err := b.c.callAbout("GET", "/api/repos/"+k.FullName()+"/keys", b.token, k); !ok {
+		return nil, err
+	}
+	b.c.mu.Lock()
+	defer b.c.mu.Unlock()
+	r, ok := b.c.lookup(k)
+	if !ok {
+		return nil, &forge.NotFoundError{Host: b.c.shape.Host, Key: k}
+	}
+	if !b.c.grant(r, b.token).CanAdmin() {
+		return nil, fmt.Errorf("fake: listing deploy keys on %q needs admin", k)
+	}
+	var out []forge.InstalledDeployKey
+	for h, rec := range b.c.deploy {
+		if rec.key == r.key {
+			out = append(out, forge.InstalledDeployKey{Handle: h, Title: rec.title, PublicKey: rec.pub})
+		}
+	}
+	slices.SortFunc(out, func(a, b forge.InstalledDeployKey) int { return strings.Compare(string(a.Handle), string(b.Handle)) })
+	return out, nil
+}
+
 type fHooks struct{ bound }
+
+// ListPushHooks is every hook on k, in handle order.
+func (b fHooks) ListPushHooks(_ context.Context, k repokey.Key) ([]forge.InstalledPushHook, error) {
+	if ok, err := b.c.callAbout("GET", "/api/repos/"+k.FullName()+"/hooks", b.token, k); !ok {
+		return nil, err
+	}
+	b.c.mu.Lock()
+	defer b.c.mu.Unlock()
+	r, ok := b.c.lookup(k)
+	if !ok {
+		return nil, &forge.NotFoundError{Host: b.c.shape.Host, Key: k}
+	}
+	if !b.c.grant(r, b.token).CanAdmin() {
+		return nil, fmt.Errorf("fake: listing hooks on %q needs admin", k)
+	}
+	var out []forge.InstalledPushHook
+	for h, rec := range b.c.hooks {
+		if rec.key == r.key {
+			out = append(out, forge.InstalledPushHook{Handle: h, Callback: rec.callback})
+		}
+	}
+	slices.SortFunc(out, func(a, b forge.InstalledPushHook) int { return strings.Compare(string(a.Handle), string(b.Handle)) })
+	return out, nil
+}
 
 func (b fHooks) RegisterPushHook(_ context.Context, k repokey.Key, callback *url.URL, wire string) (forge.Handle, error) {
 	if ok, err := b.c.callAbout("POST", "/api/repos/"+k.FullName()+"/hooks", b.token, k); !ok {

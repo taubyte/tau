@@ -1322,3 +1322,45 @@ func TestListRefusesAPagerThatNamesSomethingOtherThanAPage(t *testing.T) {
 func decodeInto(r *http.Request, out any) error {
 	return json.NewDecoder(r.Body).Decode(out)
 }
+
+// TestAListingRefusesWhatItCouldNotRemoveAndAPagerThatLies: a listed hook or
+// key with no id is one nothing could ever remove, and a pager naming itself
+// or prose as the next page is an unbounded loop or a forged query.
+func TestAListingRefusesWhatItCouldNotRemoveAndAPagerThatLies(t *testing.T) {
+	ctx := context.Background()
+	c, key := stubClient(t, answer(t, http.StatusOK, `[{"id":0,"url":"https://x.invalid/hook","title":"tau"}]`))
+	_, err := c.ListPushHooks(ctx, key)
+	require.ErrorContains(t, err, "with no id")
+	_, err = c.ListDeployKeys(ctx, key)
+	require.ErrorContains(t, err, "with no id")
+
+	c, key = stubClient(t, answer(t, http.StatusOK, `{"id":1}`))
+	_, err = c.ListPushHooks(ctx, key)
+	require.Error(t, err, "an object where a list belongs")
+	_, err = c.ListDeployKeys(ctx, key)
+	require.Error(t, err, "an object where a list belongs")
+
+	for next, says := range map[string]string{"1": "own successor", "two": "not a page number"} {
+		c, key = stubClient(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("X-Next-Page", next)
+			w.Write([]byte(`[]`))
+		})
+		_, err = c.ListPushHooks(ctx, key)
+		require.ErrorContains(t, err, says)
+	}
+
+	c, key = stubClient(t, answer(t, http.StatusInternalServerError, `{}`))
+	_, err = c.ListDeployKeys(ctx, key)
+	require.Error(t, err)
+
+	served := 0
+	c, key = stubClient(t, func(w http.ResponseWriter, r *http.Request) {
+		served++
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Next-Page", strconv.Itoa(served+1))
+		w.Write([]byte(`[]`))
+	})
+	_, err = c.ListPushHooks(ctx, key)
+	require.ErrorContains(t, err, "refusing to keep paging")
+}

@@ -255,6 +255,83 @@ func (c *client) RemoveDeployKey(ctx context.Context, key repokey.Key, h forge.H
 	return nil
 }
 
+type deployKeyJSON struct {
+	ID    int64  `json:"id"`
+	Title string `json:"title"`
+	Key   string `json:"key"`
+}
+
+// ListDeployKeys pages the repository's deploy keys.
+func (c *client) ListDeployKeys(ctx context.Context, key repokey.Key) ([]forge.InstalledDeployKey, error) {
+	var out []forge.InstalledDeployKey
+	err := pages(c.d.host, func(page int) (int, error) {
+		var got []deployKeyJSON
+		rq := routeListDeployKeys.at(key.Owner, key.Name).with(pageQuery(page))
+		if err := c.send(ctx, rq, nil, &got); err != nil {
+			return 0, c.classify(err, key)
+		}
+		for _, k := range got {
+			h, err := handle(k.ID)
+			if err != nil {
+				return 0, err
+			}
+			out = append(out, forge.InstalledDeployKey{Handle: h, Title: k.Title, PublicKey: k.Key})
+		}
+		return len(got), nil
+	})
+	return out, err
+}
+
+type hookJSON struct {
+	ID     int64 `json:"id"`
+	Config struct {
+		URL string `json:"url"`
+	} `json:"config"`
+}
+
+// ListPushHooks pages the repository's webhooks.
+func (c *client) ListPushHooks(ctx context.Context, key repokey.Key) ([]forge.InstalledPushHook, error) {
+	var out []forge.InstalledPushHook
+	err := pages(c.d.host, func(page int) (int, error) {
+		var got []hookJSON
+		rq := routeListPushHooks.at(key.Owner, key.Name).with(pageQuery(page))
+		if err := c.send(ctx, rq, nil, &got); err != nil {
+			return 0, c.classify(err, key)
+		}
+		for _, h := range got {
+			hd, err := handle(h.ID)
+			if err != nil {
+				return 0, err
+			}
+			out = append(out, forge.InstalledPushHook{Handle: hd, Callback: h.Config.URL})
+		}
+		return len(got), nil
+	})
+	return out, err
+}
+
+func pageQuery(page int) url.Values {
+	return url.Values{"per_page": {strconv.Itoa(listPageSize)}, "page": {strconv.Itoa(page)}}
+}
+
+// pages runs fetch on page 1, 2, ... until a short page, under the same bound
+// ListRepositories keeps.
+func pages(host string, fetch func(page int) (int, error)) error {
+	const maxPages = 1000
+	for page := 1; ; page++ {
+		if page > maxPages {
+			return fmt.Errorf("forge/github: %s is still answering a full page after %d of them; refusing to keep paging", host, maxPages)
+		}
+		n, err := fetch(page)
+		if err != nil {
+			return err
+		}
+		if n < listPageSize {
+			return nil
+		}
+	}
+}
+
 type createHookRequest struct {
 	Name   string     `json:"name"`
 	Active bool       `json:"active"`

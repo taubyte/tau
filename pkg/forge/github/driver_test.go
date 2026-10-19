@@ -1002,3 +1002,38 @@ func TestAHostDoesNotGetToChooseHowLongALogLineIs(t *testing.T) {
 		assert.Less(t, len(err.Error()), 600, "the forge chose the length of this error")
 	})
 }
+
+// TestAListingRefusesWhatItCouldNotRemoveAndPagesToTheEnd: a listed hook or key
+// with no id is one nothing could ever remove, a full page asks for the next,
+// and a forge that never stops answering full pages is refused.
+func TestAListingRefusesWhatItCouldNotRemoveAndPagesToTheEnd(t *testing.T) {
+	sess, k := sessionOn(t, answer(http.StatusOK, `[{"id":0}]`), "acme/pay")
+	_, err := sess.ListPushHooks(ctx(), k)
+	require.Error(t, err)
+	_, err = sess.ListDeployKeys(ctx(), k)
+	require.Error(t, err)
+
+	sess, k = sessionOn(t, answer(http.StatusNotFound, `{"message":"Not Found"}`), "acme/pay")
+	_, err = sess.ListPushHooks(ctx(), k)
+	require.Error(t, err)
+
+	full := "[" + strings.TrimSuffix(strings.Repeat(`{"id":5,"config":{"url":"https://x.invalid/h"}},`, 100), ",") + "]"
+	served := 0
+	sess, k = sessionOn(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		served++
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("page") == "2" {
+			io.WriteString(w, `[]`)
+			return
+		}
+		io.WriteString(w, full)
+	}), "acme/pay")
+	hooks, err := sess.ListPushHooks(ctx(), k)
+	require.NoError(t, err)
+	assert.Len(t, hooks, 100)
+	assert.Equal(t, 2, served, "a full page asks for the next one")
+
+	sess, k = sessionOn(t, answer(http.StatusOK, full), "acme/pay")
+	_, err = sess.ListPushHooks(ctx(), k)
+	require.ErrorContains(t, err, "refusing to keep paging")
+}

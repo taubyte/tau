@@ -2,6 +2,7 @@ package gitlab
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -480,6 +481,80 @@ func (c *client) InstallDeployKey(ctx context.Context, key repokey.Key, title, p
 		return "", fmt.Errorf("gitlab: %s installed a deploy key on %q that can push; it has been removed", c.cfg.host, key)
 	}
 	return handle, nil
+}
+
+// ListDeployKeys is the keys enabled on this project.
+func (c *client) ListDeployKeys(ctx context.Context, key repokey.Key) ([]forge.InstalledDeployKey, error) {
+	var out []forge.InstalledDeployKey
+	err := c.pages(ctx, routeListDeployKeys, key, func(raw json.RawMessage) error {
+		var got []struct {
+			ID    int64  `json:"id"`
+			Title string `json:"title"`
+			Key   string `json:"key"`
+		}
+		if err := json.Unmarshal(raw, &got); err != nil {
+			return err
+		}
+		for _, k := range got {
+			if k.ID == 0 {
+				return fmt.Errorf("gitlab: %s listed a deploy key on %q with no id", c.cfg.host, key)
+			}
+			out = append(out, forge.InstalledDeployKey{Handle: forge.Handle(strconv.FormatInt(k.ID, 10)), Title: k.Title, PublicKey: k.Key})
+		}
+		return nil
+	})
+	return out, err
+}
+
+// ListPushHooks is the webhooks on this project.
+func (c *client) ListPushHooks(ctx context.Context, key repokey.Key) ([]forge.InstalledPushHook, error) {
+	var out []forge.InstalledPushHook
+	err := c.pages(ctx, routeListPushHooks, key, func(raw json.RawMessage) error {
+		var got []struct {
+			ID  int64  `json:"id"`
+			URL string `json:"url"`
+		}
+		if err := json.Unmarshal(raw, &got); err != nil {
+			return err
+		}
+		for _, h := range got {
+			if h.ID == 0 {
+				return fmt.Errorf("gitlab: %s listed a hook on %q with no id", c.cfg.host, key)
+			}
+			out = append(out, forge.InstalledPushHook{Handle: forge.Handle(strconv.FormatInt(h.ID, 10)), Callback: h.URL})
+		}
+		return nil
+	})
+	return out, err
+}
+
+// pages walks a project sub-collection by X-Next-Page, with ListRepositories'
+// bound and its checks on the header.
+func (c *client) pages(ctx context.Context, rt *route, key repokey.Key, each func(json.RawMessage) error) error {
+	const maxPages = 1000
+	page := "1"
+	for n := 0; page != ""; n++ {
+		if n == maxPages {
+			return fmt.Errorf("gitlab: %s is still naming a next page after %d of them; refusing to keep paging", c.cfg.host, maxPages)
+		}
+		var raw json.RawMessage
+		r, err := c.get(ctx, rt.at(key.FullName()).with(url.Values{"per_page": {"100"}, "page": {page}}), &key, &raw)
+		if err != nil {
+			return err
+		}
+		if err := each(raw); err != nil {
+			return err
+		}
+		next := r.header.Get("X-Next-Page")
+		if next != "" && !isPageNumber(next) {
+			return fmt.Errorf("gitlab: %s named a next page that is not a page number", c.cfg.host)
+		}
+		if next == page {
+			return fmt.Errorf("gitlab: %s named page %q as its own successor", c.cfg.host, page)
+		}
+		page = next
+	}
+	return nil
 }
 
 // RemoveDeployKey names NO REPOSITORY to the taxonomy, and that is the whole of

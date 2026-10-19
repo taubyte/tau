@@ -294,6 +294,8 @@ func (f *fixture) handler() http.Handler {
 	mux.HandleFunc("DELETE "+apiPrefix+"repos/{owner}/{name}", f.deleteRepo)
 	mux.HandleFunc("POST "+apiPrefix+"repos/{owner}/{name}/keys", f.createKey)
 	mux.HandleFunc("DELETE "+apiPrefix+"repos/{owner}/{name}/keys/{id}", f.deleteKey)
+	mux.HandleFunc("GET "+apiPrefix+"repos/{owner}/{name}/keys", f.listKeys)
+	mux.HandleFunc("GET "+apiPrefix+"repos/{owner}/{name}/hooks", f.listHooks)
 	mux.HandleFunc("POST "+apiPrefix+"repos/{owner}/{name}/hooks", f.createHook)
 	mux.HandleFunc("DELETE "+apiPrefix+"repos/{owner}/{name}/hooks/{id}", f.deleteHook)
 	mux.HandleFunc("GET "+apiPrefix+"orgs/{org}/installation", f.getInstallation)
@@ -570,6 +572,52 @@ func (f *fixture) deleteKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (f *fixture) listKeys(w http.ResponseWriter, r *http.Request) {
+	if !f.user(w, r) {
+		return
+	}
+	full, ok := f.adminRepo(w, r)
+	if !ok {
+		return
+	}
+	out := []map[string]any{}
+	f.mu.Lock()
+	for id, k := range f.keys {
+		if k.full == full {
+			n, _ := strconv.ParseInt(id, 10, 64)
+			out = append(out, map[string]any{"id": n, "title": k.title, "key": k.pub})
+		}
+	}
+	f.mu.Unlock()
+	if r.URL.Query().Get("page") != "1" {
+		out = nil
+	}
+	f.ok(w, http.StatusOK, out)
+}
+
+func (f *fixture) listHooks(w http.ResponseWriter, r *http.Request) {
+	if !f.user(w, r) {
+		return
+	}
+	full, ok := f.adminRepo(w, r)
+	if !ok {
+		return
+	}
+	out := []map[string]any{}
+	f.mu.Lock()
+	for id, h := range f.hooks {
+		if h.full == full {
+			n, _ := strconv.ParseInt(id, 10, 64)
+			out = append(out, map[string]any{"id": n, "config": map[string]any{"url": h.callback}})
+		}
+	}
+	f.mu.Unlock()
+	if r.URL.Query().Get("page") != "1" {
+		out = nil
+	}
+	f.ok(w, http.StatusOK, out)
 }
 
 func (f *fixture) createHook(w http.ResponseWriter, r *http.Request) {

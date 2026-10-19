@@ -108,9 +108,11 @@ var (
 
 	routeInstallDeployKey = newRoute(http.MethodPost, "api/v4/projects/"+hole+"/deploy_keys")
 	routeRemoveDeployKey  = newRoute(http.MethodDelete, "api/v4/projects/"+hole+"/deploy_keys/"+hole)
+	routeListDeployKeys   = newRoute(http.MethodGet, "api/v4/projects/"+hole+"/deploy_keys", "per_page", "page")
 
 	routeRegisterPushHook = newRoute(http.MethodPost, "api/v4/projects/"+hole+"/hooks")
 	routeRemovePushHook   = newRoute(http.MethodDelete, "api/v4/projects/"+hole+"/hooks/"+hole)
+	routeListPushHooks    = newRoute(http.MethodGet, "api/v4/projects/"+hole+"/hooks", "per_page", "page")
 
 	// The two the DEPLOYMENT's own credential spends, on a client no session
 	// can reach.

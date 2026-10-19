@@ -1,6 +1,7 @@
 package forgetest
 
 import (
+	"slices"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -111,6 +112,8 @@ func (r *runner) deployKeys(t tb) {
 		_, err := sess.InstallDeployKey(r.ctx, r.s.Admin, "forgetest", pub)
 		r.absent(t, forge.CapDeployKeys, err, "InstallDeployKey")
 		r.absent(t, forge.CapDeployKeys, sess.RemoveDeployKey(r.ctx, r.s.Admin, "nope"), "RemoveDeployKey")
+		_, err = sess.ListDeployKeys(r.ctx, r.s.Admin)
+		r.absent(t, forge.CapDeployKeys, err, "ListDeployKeys")
 		return
 	}
 
@@ -118,6 +121,13 @@ func (r *runner) deployKeys(t tb) {
 	mustReach(t, r.note(err), "installing the deploy key the questions below are about")
 	require.NotEmpty(t, h, "an empty handle is a key nothing can ever remove")
 	assert.True(t, r.s.DeployKeyInstalled(h), "the handle names no key on the forge")
+
+	// THE LISTING NAMES WHAT WAS INSTALLED, by the handle the install answered
+	// with: it is how a consumer finds its own key again to replace it.
+	listed, err := sess.ListDeployKeys(r.ctx, r.s.Admin)
+	mustReach(t, r.note(err), "listing the deploy keys on the admin fixture")
+	assert.True(t, slices.ContainsFunc(listed, func(k forge.InstalledDeployKey) bool { return k.Handle == h && k.Title == "forgetest" }),
+		"the listing does not name the key just installed, under its handle and title: %v", listed)
 
 	// EVERY KEY THIS INSTALLS IS READ-ONLY. There is no parameter to change it,
 	// so a writable one means the driver reached past the interface.
@@ -151,6 +161,10 @@ func (r *runner) deployKeys(t tb) {
 	assert.NoError(t, r.note(sess.RemoveDeployKey(r.ctx, r.s.Admin, h)),
 		"removing the deploy key this driver just installed failed; the handle it answered with names nothing the forge will remove")
 	assert.False(t, r.s.DeployKeyInstalled(h), "the key is still installed after a successful removal")
+	listed, err = sess.ListDeployKeys(r.ctx, r.s.Admin)
+	mustReach(t, r.note(err), "listing the deploy keys after the removal")
+	assert.False(t, slices.ContainsFunc(listed, func(k forge.InstalledDeployKey) bool { return k.Handle == h }),
+		"the listing still names a key that was removed")
 }
 
 func (r *runner) cloneAddress(t tb) {
@@ -248,6 +262,8 @@ func (r *runner) pushHooks(t tb) {
 		r.absent(t, missing, err, "RegisterPushHook")
 		if !r.s.Expect.Has(forge.CapPushHooks) {
 			r.absent(t, forge.CapPushHooks, sess.RemovePushHook(r.ctx, r.s.Admin, "nope"), "RemovePushHook")
+			_, err := sess.ListPushHooks(r.ctx, r.s.Admin)
+			r.absent(t, forge.CapPushHooks, err, "ListPushHooks")
 		}
 		// A registry with no Signatures face must refuse to read a delivery at
 		// all, rather than read one it cannot have verified the shape of.
@@ -268,6 +284,14 @@ func (r *runner) pushHooks(t tb) {
 	// TestRegisterPushHookRefusesEveryUnsafeRegistration stand on that. What is
 	// the driver's is the handle naming something the forge will answer for.
 	assert.True(t, r.s.HookInstalled(hook.Handle), "the handle names no hook on the forge")
+
+	// The listing names it by handle AND by where it delivers, which is what a
+	// consumer replacing its own hook matches on.
+	hooks, err := sess.ListPushHooks(r.ctx, r.s.Admin)
+	mustReach(t, r.note(err), "listing the hooks on the admin fixture")
+	assert.True(t, slices.ContainsFunc(hooks, func(h forge.InstalledPushHook) bool {
+		return h.Handle == hook.Handle && h.Callback == callback.String()
+	}), "the listing does not name the hook just registered, under its handle and callback: %v", hooks)
 
 	// The forge must hold EXACTLY the wire string the scheme derives. A driver
 	// that re-encodes it registers a hook cleanly and then rejects every
@@ -291,6 +315,10 @@ func (r *runner) pushHooks(t tb) {
 	assert.NoError(t, r.note(sess.RemovePushHook(r.ctx, r.s.Admin, hook.Handle)),
 		"removing the hook this driver just registered failed; the handle it answered with names nothing the forge will remove")
 	assert.False(t, r.s.HookInstalled(hook.Handle), "the hook is still registered after a successful removal")
+	hooks, err = sess.ListPushHooks(r.ctx, r.s.Admin)
+	mustReach(t, r.note(err), "listing the hooks after the removal")
+	assert.False(t, slices.ContainsFunc(hooks, func(h forge.InstalledPushHook) bool { return h.Handle == hook.Handle }),
+		"the listing still names a hook that was removed")
 }
 
 // deliveries runs one correct delivery and then every wrong one. VerifyPush is

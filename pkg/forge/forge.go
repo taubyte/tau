@@ -240,6 +240,19 @@ type Deleter interface {
 type DeployKeys interface {
 	InstallDeployKey(ctx context.Context, key repokey.Key, title, publicKey string) (Handle, error)
 	RemoveDeployKey(ctx context.Context, key repokey.Key, h Handle) error
+
+	// ListDeployKeys is every deploy key on the repository, whoever installed
+	// it. It is how a consumer finds the key IT installed earlier — by the
+	// title or public half it chose — so that replacing one removes the old.
+	ListDeployKeys(ctx context.Context, key repokey.Key) ([]InstalledDeployKey, error)
+}
+
+// InstalledDeployKey is one deploy key a forge holds. PublicKey is the
+// authorized_keys form without a comment, which is all every forge keeps.
+type InstalledDeployKey struct {
+	Handle    Handle
+	Title     string
+	PublicKey string
 }
 
 // PushHooks registers and removes push webhooks.
@@ -257,6 +270,18 @@ type DeployKeys interface {
 type PushHooks interface {
 	RegisterPushHook(ctx context.Context, key repokey.Key, callback *url.URL, wire string) (Handle, error)
 	RemovePushHook(ctx context.Context, key repokey.Key, h Handle) error
+
+	// ListPushHooks is every webhook on the repository, whoever registered it,
+	// and only what a forge says about one without its secret: the handle and
+	// where it delivers. It is how a consumer finds a hook IT registered
+	// earlier, by its callback.
+	ListPushHooks(ctx context.Context, key repokey.Key) ([]InstalledPushHook, error)
+}
+
+// InstalledPushHook is one webhook a forge holds.
+type InstalledPushHook struct {
+	Handle   Handle
+	Callback string
 }
 
 // CloneAddresses answers "what address does a clone of this key use on this
@@ -655,6 +680,17 @@ func (s *Session) InstallDeployKey(ctx context.Context, key repokey.Key, title, 
 	return k.InstallDeployKey(ctx, key, title, publicKey)
 }
 
+func (s *Session) ListDeployKeys(ctx context.Context, key repokey.Key) ([]InstalledDeployKey, error) {
+	k, ok := s.client.(DeployKeys)
+	if !ok {
+		return nil, &UnsupportedError{Host: s.Host(), Capability: CapDeployKeys}
+	}
+	if err := s.check(key); err != nil {
+		return nil, err
+	}
+	return k.ListDeployKeys(ctx, key)
+}
+
 func (s *Session) RemoveDeployKey(ctx context.Context, key repokey.Key, h Handle) error {
 	k, ok := s.client.(DeployKeys)
 	if !ok {
@@ -705,6 +741,17 @@ func (s *Session) RegisterPushHook(ctx context.Context, key repokey.Key, callbac
 		return Hook{}, fmt.Errorf("forge: driver for %q returned an empty hook handle; nothing could ever remove that hook", s.Host())
 	}
 	return Hook{Key: key, Handle: handle, Scheme: scheme, Secret: secret}, nil
+}
+
+func (s *Session) ListPushHooks(ctx context.Context, key repokey.Key) ([]InstalledPushHook, error) {
+	p, ok := s.client.(PushHooks)
+	if !ok {
+		return nil, &UnsupportedError{Host: s.Host(), Capability: CapPushHooks}
+	}
+	if err := s.check(key); err != nil {
+		return nil, err
+	}
+	return p.ListPushHooks(ctx, key)
 }
 
 func (s *Session) RemovePushHook(ctx context.Context, key repokey.Key, h Handle) error {

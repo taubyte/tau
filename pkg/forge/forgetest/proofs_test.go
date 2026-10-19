@@ -316,6 +316,7 @@ func faultProofs() []proof {
 		"an empty handle is a key nothing can ever remove")
 	add("deploy-key-handle-names-nothing", fake.GitHubLike, []fake.Fault{fake.FaultDeployKeyHandleNamesNothing},
 		"the handle names no key on the forge",
+		"the listing does not name the key just installed",
 		"removing the deploy key this driver just installed failed")
 	add("removing-an-unknown-deploy-key-succeeds", fake.GitHubLike, []fake.Fault{fake.FaultRemovingAnUnknownDeployKeySucceeds},
 		"removing a key that is not there succeeded")
@@ -323,6 +324,7 @@ func faultProofs() []proof {
 		"the installed deploy key can push")
 	add("hook-handle-names-nothing", fake.GitHubLike, []fake.Fault{fake.FaultHookHandleNamesNothing},
 		"the handle names no hook on the forge",
+		"the listing does not name the hook just registered",
 		"removing the hook this driver just registered failed")
 	add("removing-an-unknown-hook-succeeds", fake.GitHubLike, []fake.Fault{fake.FaultRemovingAnUnknownHookSucceeds},
 		"removing a hook that is not there succeeded")
@@ -348,7 +350,9 @@ func faultProofs() []proof {
 		"a hook removal naming no handle went to the wire")
 	add("forgets-removal", fake.GitHubLike, []fake.Fault{fake.FaultForgetsRemoval},
 		"still installed after a successful removal",
-		"the hook is still registered after a successful removal")
+		"the hook is still registered after a successful removal",
+		"the listing still names a key that was removed",
+		"the listing still names a hook that was removed")
 
 	// ─── webhooks ───
 
@@ -437,12 +441,12 @@ func subjectProofs() []proof {
 		{forge.CapList, []string{"so ListRepositories must be"}},
 		{forge.CapCreate, []string{"so Create must be"}},
 		{forge.CapDelete, []string{"so Delete must be", "so Delete under a same-host redirect must be"}},
-		{forge.CapDeployKeys, []string{"so InstallDeployKey must be", "so RemoveDeployKey must be",
+		{forge.CapDeployKeys, []string{"so InstallDeployKey must be", "so RemoveDeployKey must be", "so ListDeployKeys must be",
 			"so InstallDeployKey under a same-host redirect must be"}},
 		{forge.CapCloneAddr, []string{"so CloneAddress must be"}},
 		{forge.CapPushProbe, []string{"so CanPush must be"}},
 		{forge.CapMembership, []string{"so IsActiveMember must be"}},
-		{forge.CapPushHooks, []string{"so RegisterPushHook must be", "so RemovePushHook must be",
+		{forge.CapPushHooks, []string{"so RegisterPushHook must be", "so RemovePushHook must be", "so ListPushHooks must be",
 			"so RegisterPushHook under a same-host redirect must be"}},
 		{forge.CapSignatures, []string{"so RegisterPushHook must be", "so VerifyPush must be",
 			"so RegisterPushHook under a same-host redirect must be"}},

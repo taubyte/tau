@@ -96,6 +96,12 @@ func (c *stubClient) InstallDeployKey(context.Context, repokey.Key, string, stri
 	return "k-1", nil
 }
 func (c *stubClient) RemoveDeployKey(context.Context, repokey.Key, Handle) error { return nil }
+func (c *stubClient) ListDeployKeys(context.Context, repokey.Key) ([]InstalledDeployKey, error) {
+	return nil, nil
+}
+func (c *stubClient) ListPushHooks(context.Context, repokey.Key) ([]InstalledPushHook, error) {
+	return nil, nil
+}
 
 // wanderer binds a client that answers for a different host.
 type wanderer struct{ host string }

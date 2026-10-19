@@ -304,6 +304,18 @@ var sweepOps = []sweepOp{
 		},
 	},
 	{
+		name: "ListDeployKeys", caps: []forge.Capability{forge.CapDeployKeys},
+		call: func(ctx context.Context, _ *forge.Registry, s *forge.Session, k repokey.Key, _ sweepArgs) (any, error) {
+			return s.ListDeployKeys(ctx, k)
+		},
+	},
+	{
+		name: "ListPushHooks", caps: []forge.Capability{forge.CapPushHooks},
+		call: func(ctx context.Context, _ *forge.Registry, s *forge.Session, k repokey.Key, _ sweepArgs) (any, error) {
+			return s.ListPushHooks(ctx, k)
+		},
+	},
+	{
 		name: "RemoveDeployKey", caps: []forge.Capability{forge.CapDeployKeys}, pastes: true,
 		call: func(ctx context.Context, _ *forge.Registry, s *forge.Session, k repokey.Key, a sweepArgs) (any, error) {
 			return nil, s.RemoveDeployKey(ctx, k, forge.Handle(a.handle))
@@ -636,6 +648,9 @@ func (f *sweepForge) answer(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodDelete:
 		w.WriteHeader(http.StatusNoContent)
+	case r.Method == http.MethodGet && (strings.HasSuffix(path, "/keys") || strings.HasSuffix(path, "/hooks")):
+		// A short page of one, so a listing stops here.
+		sweepJSON(w, `[{"id":991,"title":"tau","key":"ssh-ed25519 AAAA","config":{"url":"https://build.example.invalid/hook"}}]`)
 	case strings.HasSuffix(path, "/keys"), strings.HasSuffix(path, "/hooks"):
 		sweepJSON(w, `{"id":991}`)
 	case strings.HasSuffix(path, "/installation"):
@@ -754,6 +769,8 @@ var sweptShapes = []string{
 	"GET /api/v3/orgs/acme/installation",
 	"GET /api/v3/orgs/acme/memberships/alice",
 	"GET /api/v3/repos/acme/pay",
+	"GET /api/v3/repos/acme/pay/hooks",
+	"GET /api/v3/repos/acme/pay/keys",
 	"GET /api/v3/user",
 	"GET /api/v3/user/repos",
 	"POST /api/v3/app/installations/4242/access_tokens",
@@ -840,6 +857,8 @@ func TestTheSweepPinsEveryRequestBodyThisDriverComposes(t *testing.T) {
 // at GitHub's default thirty and stop after the first page believing it had
 // them all.
 var sweptQueries = []string{
+	"GET /api/v3/repos/acme/pay/hooks?page=1&per_page=100",
+	"GET /api/v3/repos/acme/pay/keys?page=1&per_page=100",
 	"GET /api/v3/user/repos?page=1&per_page=100",
 }
 

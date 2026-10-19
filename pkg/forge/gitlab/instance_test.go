@@ -71,6 +71,7 @@ type hookRecord struct {
 type deployKeyRecord struct {
 	project string
 	title   string
+	key     string
 	canPush bool
 }
 
@@ -507,6 +508,30 @@ func (in *instance) serveProject(w http.ResponseWriter, r *http.Request, token, 
 			}
 			return false
 		})
+	case len(segments) == 2 && segments[1] == "hooks" && r.Method == http.MethodGet:
+		if !level.CanAdmin() {
+			writeJSON(w, http.StatusForbidden, map[string]any{"message": "403 Forbidden"})
+			return
+		}
+		out := []map[string]any{}
+		for id, h := range in.hooks {
+			if h.project == full {
+				out = append(out, map[string]any{"id": id, "url": h.url})
+			}
+		}
+		writeJSON(w, http.StatusOK, out)
+	case len(segments) == 2 && segments[1] == "deploy_keys" && r.Method == http.MethodGet:
+		if !level.CanAdmin() {
+			writeJSON(w, http.StatusForbidden, map[string]any{"message": "403 Forbidden"})
+			return
+		}
+		out := []map[string]any{}
+		for id, k := range in.deployKeys {
+			if k.project == full {
+				out = append(out, map[string]any{"id": id, "title": k.title, "key": k.key})
+			}
+		}
+		writeJSON(w, http.StatusOK, out)
 	case len(segments) == 2 && segments[1] == "deploy_keys" && r.Method == http.MethodPost:
 		in.createDeployKey(w, r, full, level)
 	case len(segments) == 3 && segments[1] == "deploy_keys" && r.Method == http.MethodDelete:
@@ -566,7 +591,7 @@ func (in *instance) createDeployKey(w http.ResponseWriter, r *http.Request, full
 	in.lastCanPush = body.CanPush
 	in.seq++
 	id := 6000 + in.seq
-	in.deployKeys[id] = &deployKeyRecord{project: full, title: body.Title, canPush: body.CanPush}
+	in.deployKeys[id] = &deployKeyRecord{project: full, title: body.Title, key: body.Key, canPush: body.CanPush}
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "title": body.Title, "key": body.Key, "can_push": body.CanPush})
 }
 

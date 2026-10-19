@@ -90,7 +90,7 @@ func newRoute(method, template string, params ...string) *route {
 }
 
 // THE ROUTING TABLE. Everything this driver asks GitHub is here, and the whole
-// of it is thirteen requests — which is the number the package comment's "no
+// of it is fifteen requests — which is the number the package comment's "no
 // SDK" argument rests on, now countable rather than asserted.
 var (
 	routeCurrentUser = newRoute(http.MethodGet, "user")
@@ -106,9 +106,11 @@ var (
 
 	routeInstallDeployKey = newRoute(http.MethodPost, "repos/"+hole+"/"+hole+"/keys")
 	routeRemoveDeployKey  = newRoute(http.MethodDelete, "repos/"+hole+"/"+hole+"/keys/"+hole)
+	routeListDeployKeys   = newRoute(http.MethodGet, "repos/"+hole+"/"+hole+"/keys", "per_page", "page")
 
 	routeRegisterPushHook = newRoute(http.MethodPost, "repos/"+hole+"/"+hole+"/hooks")
 	routeRemovePushHook   = newRoute(http.MethodDelete, "repos/"+hole+"/"+hole+"/hooks/"+hole)
+	routeListPushHooks    = newRoute(http.MethodGet, "repos/"+hole+"/"+hole+"/hooks", "per_page", "page")
 
 	// The three the DEPLOYMENT's own credential spends, on a client no session
 	// can reach.
