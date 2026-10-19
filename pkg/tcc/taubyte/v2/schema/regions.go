@@ -64,17 +64,18 @@ type Regions interface {
 	Allow(regions []string) []Concern
 }
 
-// DefaultRegion is the one region a build that serves one region places everything in.
+// DefaultRegion is the destination a build with no regions places everything in. It
+// is a name for "where this build runs", not a region a cloud declares.
 const DefaultRegion = "default"
 
-// OneRegion is the Regions of a build that serves one region: DefaultRegion. It is
-// AsRegion(DefaultRegion).
+// NoRegion is the Regions of a build that has no regions — the OSS build. Everything
+// is placed in DefaultRegion; it behaves exactly as AsRegion(DefaultRegion).
 //
 // IT IS THE DEFAULT, so an audit nobody configured refuses what it cannot honour
 // rather than accepting it quietly. A project writing no `regions` anywhere — or
 // naming DefaultRegion — compiles clean, which is what "an absent block is anywhere
 // the allowance permits" promises.
-func OneRegion() Regions { return AsRegion(DefaultRegion) }
+func NoRegion() Regions { return AsRegion(DefaultRegion) }
 
 // AsRegion is the Regions of a build that serves the one region named. Every
 // resource runs there, and a placement or allowance naming any other region is
@@ -83,7 +84,7 @@ func OneRegion() Regions { return AsRegion(DefaultRegion) }
 // one region of a larger cloud passes that region's name.
 func AsRegion(region string) Regions { return oneRegion{region: region, severity: Broken} }
 
-// TryOneRegion is OneRegion for a harness that runs projects written for clouds
+// TryOneRegion is NoRegion for a harness that runs projects written for clouds
 // with more regions than it has: every placement still lands in DefaultRegion, and
 // naming another region is a Check rather than a refusal.
 func TryOneRegion() Regions { return oneRegion{region: DefaultRegion, severity: Check} }
@@ -135,7 +136,7 @@ func quoted(regions []string) string {
 	return noun + strings.Join(q, ", ")
 }
 
-// WithRegions is the Regions the audit asks. Omitted, it is OneRegion.
+// WithRegions is the Regions the audit asks. Omitted, it is NoRegion.
 func WithRegions(r Regions) AuditOption {
 	return func(a *auditOf) { a.regions = r }
 }

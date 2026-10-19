@@ -528,8 +528,8 @@ func (n *Node) publisher(ctx context.Context) (deploy.Register, error) {
 }
 
 // WithRegions is what this node's deploys answer about where a project runs. Without
-// it a deploy places everything in one region (schema.OneRegion) and says so for any
-// other a project names.
+// it a deploy reads no regions (schema.NoRegion): everything is placed in
+// schema.DefaultRegion, and any region a project names is said.
 func WithRegions(r schema.Regions) Option {
 	return func(o *options) error {
 		if r == nil {

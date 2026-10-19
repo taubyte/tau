@@ -10,7 +10,7 @@ import (
 )
 
 // A REGION THIS CLOUD DOES NOT SERVE IS REFUSED BY DEFAULT. The basic fixture says
-// where its scopes and resources run; a deploy given no Regions serves one region,
+// where its scopes and resources run; a deploy given no Regions has none (NoRegion),
 // so it refuses before publishing rather than running them somewhere they were not
 // told to be.
 func TestARegionThisCloudDoesNotServeIsRefusedByDefault(t *testing.T) {

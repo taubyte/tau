@@ -708,7 +708,7 @@ func TestAPerEnvironmentPlacementIsBoundedToo(t *testing.T) {
 // TestAnythingWithAFootprintIsPlaced.
 //
 // WHERE SOMETHING RUNS IS THE REGIONS' ANSWER, not an authored line: the default
-// places everything in one region, so a project that writes no `regions` anywhere is
+// (NoRegion) places everything in DefaultRegion, so a project that writes no `regions` anywhere is
 // placed, and only a Regions that places a resource nowhere makes it Broken.
 func TestAnythingWithAFootprintIsPlaced(t *testing.T) {
 	const bare = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"

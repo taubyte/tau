@@ -68,13 +68,13 @@ func findingsTitled(found []schema.Finding, sev schema.Severity) []string {
 // A BUILD THAT SERVES ONE REGION PLACES EVERYTHING THERE, and says so whenever the
 // config named another — once per resource, naming it — rather than dropping the
 // statement or refusing the project.
-func TestOneRegionWarnsAndPlacesInDefault(t *testing.T) {
+func TestNoRegionWarnsAndPlacesInDefault(t *testing.T) {
 	for _, v := range []struct {
 		name     string
 		r        schema.Regions
 		severity schema.Severity
 	}{
-		{"strict", schema.OneRegion(), schema.Broken},
+		{"strict", schema.NoRegion(), schema.Broken},
 		{"lenient", schema.TryOneRegion(), schema.Check},
 	} {
 		t.Run(v.name, func(t *testing.T) { oneRegionPlaces(t, v.r, v.severity) })
@@ -122,7 +122,7 @@ func oneRegionPlaces(t *testing.T, r schema.Regions, severity schema.Severity) {
 // THE AUDIT FILES WHAT ONEREGION SAYS against what said it: the resource, the
 // namespace, the project and the environment, each by name. It is the default, and
 // passing a nil Regions is the default too.
-func TestTheAuditHearsOneRegionByDefault(t *testing.T) {
+func TestTheAuditHearsNoRegionByDefault(t *testing.T) {
 	docs := map[string]string{
 		"/project.yaml": regionsProject + "regions: [eu]\n" +
 			"environments:\n    production:\n        branches: [main]\n        regions: [eu]\n",
@@ -137,11 +137,11 @@ func TestTheAuditHearsOneRegionByDefault(t *testing.T) {
 		`environments/production: allows region "eu", which this build does not serve; everything under it runs in "default"`,
 		`cache/sessions: is placed in region "eu", which this build does not serve; it runs in "default"`,
 	}
-	// THE DEFAULT REFUSES: no validator, a nil one, and OneRegion are one answer.
+	// THE DEFAULT REFUSES: no validator, a nil one, and NoRegion are one answer.
 	for _, found := range [][]schema.Finding{
 		schema.Audit(obj, nil),
 		schema.Audit(obj, nil, schema.WithRegions(nil)),
-		schema.Audit(obj, nil, schema.WithRegions(schema.OneRegion())),
+		schema.Audit(obj, nil, schema.WithRegions(schema.NoRegion())),
 	} {
 		require.ElementsMatch(t, want, findingsTitled(found, schema.Broken))
 	}
@@ -262,5 +262,5 @@ func TestAsRegionServesTheRegionItNames(t *testing.T) {
 	require.Len(t, allow, 1)
 	require.Equal(t, schema.Broken, allow[0].Severity)
 
-	require.Equal(t, schema.AsRegion(schema.DefaultRegion), schema.OneRegion())
+	require.Equal(t, schema.AsRegion(schema.DefaultRegion), schema.NoRegion())
 }

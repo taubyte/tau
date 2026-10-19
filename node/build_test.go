@@ -598,6 +598,6 @@ func TestAWorkerAsksTheBuildBackendOnAnotherNode(t *testing.T) {
 func TestWithRegions(t *testing.T) {
 	var o options
 	require.Error(t, WithRegions(nil)(&o))
-	require.NoError(t, WithRegions(schema.OneRegion())(&o))
-	require.Equal(t, schema.OneRegion(), o.regions)
+	require.NoError(t, WithRegions(schema.NoRegion())(&o))
+	require.Equal(t, schema.NoRegion(), o.regions)
 }
