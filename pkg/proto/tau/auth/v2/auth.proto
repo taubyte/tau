@@ -278,3 +278,29 @@ service CertificateService {
   rpc SetCache(SetCacheRequest) returns (Empty);
   rpc DeleteCache(CacheKeyRequest) returns (Empty);
 }
+
+// IdentityService answers whether someone a forge vouched for may use this
+// cloud's API. The public ingress asks it after the forge has said who holds a
+// credential; auth answers from whatever identity its node was composed with,
+// and a node composed with none admits every caller the forge vouched for.
+message Caller {
+  // forge is the host that answered for the credential, e.g. "github.com".
+  string forge = 1;
+  // subject is the forge's stable id for the account.
+  string subject = 2;
+  // login is the account's name on the forge, for messages.
+  string login = 3;
+}
+
+message Admission {
+  bool admitted = 1;
+  // reason says why a caller was not admitted, in words it can act on.
+  string reason = 2;
+  // accounts are what the caller resolved to. Auth carries them and does not
+  // read them.
+  repeated string accounts = 3;
+}
+
+service IdentityService {
+  rpc Admit(Caller) returns (Admission);
+}

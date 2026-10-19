@@ -1008,6 +1008,136 @@ func (x *SetCacheRequest) GetData() []byte {
 	return nil
 }
 
+// IdentityService answers whether someone a forge vouched for may use this
+// cloud's API. The public ingress asks it after the forge has said who holds a
+// credential; auth answers from whatever identity its node was composed with,
+// and a node composed with none admits every caller the forge vouched for.
+type Caller struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// forge is the host that answered for the credential, e.g. "github.com".
+	Forge string `protobuf:"bytes,1,opt,name=forge,proto3" json:"forge,omitempty"`
+	// subject is the forge's stable id for the account.
+	Subject string `protobuf:"bytes,2,opt,name=subject,proto3" json:"subject,omitempty"`
+	// login is the account's name on the forge, for messages.
+	Login         string `protobuf:"bytes,3,opt,name=login,proto3" json:"login,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Caller) Reset() {
+	*x = Caller{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Caller) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Caller) ProtoMessage() {}
+
+func (x *Caller) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Caller.ProtoReflect.Descriptor instead.
+func (*Caller) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *Caller) GetForge() string {
+	if x != nil {
+		return x.Forge
+	}
+	return ""
+}
+
+func (x *Caller) GetSubject() string {
+	if x != nil {
+		return x.Subject
+	}
+	return ""
+}
+
+func (x *Caller) GetLogin() string {
+	if x != nil {
+		return x.Login
+	}
+	return ""
+}
+
+type Admission struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Admitted bool                   `protobuf:"varint,1,opt,name=admitted,proto3" json:"admitted,omitempty"`
+	// reason says why a caller was not admitted, in words it can act on.
+	Reason string `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	// accounts are what the caller resolved to. Auth carries them and does not
+	// read them.
+	Accounts      []string `protobuf:"bytes,3,rep,name=accounts,proto3" json:"accounts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Admission) Reset() {
+	*x = Admission{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Admission) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Admission) ProtoMessage() {}
+
+func (x *Admission) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Admission.ProtoReflect.Descriptor instead.
+func (*Admission) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *Admission) GetAdmitted() bool {
+	if x != nil {
+		return x.Admitted
+	}
+	return false
+}
+
+func (x *Admission) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *Admission) GetAccounts() []string {
+	if x != nil {
+		return x.Accounts
+	}
+	return nil
+}
+
 var File_tau_auth_v2_auth_proto protoreflect.FileDescriptor
 
 const file_tau_auth_v2_auth_proto_rawDesc = "" +
@@ -1068,7 +1198,15 @@ const file_tau_auth_v2_auth_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\"7\n" +
 	"\x0fSetCacheRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x12\n" +
-	"\x04data\x18\x02 \x01(\fR\x04data2\xce\x01\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data\"N\n" +
+	"\x06Caller\x12\x14\n" +
+	"\x05forge\x18\x01 \x01(\tR\x05forge\x12\x18\n" +
+	"\asubject\x18\x02 \x01(\tR\asubject\x12\x14\n" +
+	"\x05login\x18\x03 \x01(\tR\x05login\"[\n" +
+	"\tAdmission\x12\x1a\n" +
+	"\badmitted\x18\x01 \x01(\bR\badmitted\x12\x16\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x1a\n" +
+	"\baccounts\x18\x03 \x03(\tR\baccounts2\xce\x01\n" +
 	"\x0eProjectService\x124\n" +
 	"\x03Get\x12\x17.tau.auth.v2.ProjectRef\x1a\x14.tau.auth.v2.Project\x125\n" +
 	"\x04List\x12\x12.tau.auth.v2.Empty\x1a\x17.tau.auth.v2.ProjectRef0\x01\x12O\n" +
@@ -1091,7 +1229,9 @@ const file_tau_auth_v2_auth_proto_rawDesc = "" +
 	"\x14SetStaticCertificate\x12\".tau.auth.v2.SetCertificateRequest\x1a\x12.tau.auth.v2.Empty\x12A\n" +
 	"\bGetCache\x12\x1c.tau.auth.v2.CacheKeyRequest\x1a\x17.tau.auth.v2.CacheEntry\x12<\n" +
 	"\bSetCache\x12\x1c.tau.auth.v2.SetCacheRequest\x1a\x12.tau.auth.v2.Empty\x12?\n" +
-	"\vDeleteCache\x12\x1c.tau.auth.v2.CacheKeyRequest\x1a\x12.tau.auth.v2.EmptyB\xa3\x01\n" +
+	"\vDeleteCache\x12\x1c.tau.auth.v2.CacheKeyRequest\x1a\x12.tau.auth.v2.Empty2G\n" +
+	"\x0fIdentityService\x124\n" +
+	"\x05Admit\x12\x13.tau.auth.v2.Caller\x1a\x16.tau.auth.v2.AdmissionB\xa3\x01\n" +
 	"\x0fcom.tau.auth.v2B\tAuthProtoP\x01Z7github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2;authv2\xa2\x02\x03TAX\xaa\x02\vTau.Auth.V2\xca\x02\vTau\\Auth\\V2\xe2\x02\x17Tau\\Auth\\V2\\GPBMetadata\xea\x02\rTau::Auth::V2b\x06proto3"
 
 var (
@@ -1106,7 +1246,7 @@ func file_tau_auth_v2_auth_proto_rawDescGZIP() []byte {
 	return file_tau_auth_v2_auth_proto_rawDescData
 }
 
-var file_tau_auth_v2_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_tau_auth_v2_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_tau_auth_v2_auth_proto_goTypes = []any{
 	(*Empty)(nil),                  // 0: tau.auth.v2.Empty
 	(*Project)(nil),                // 1: tau.auth.v2.Project
@@ -1125,6 +1265,8 @@ var file_tau_auth_v2_auth_proto_goTypes = []any{
 	(*SetCertificateRequest)(nil),  // 14: tau.auth.v2.SetCertificateRequest
 	(*CacheKeyRequest)(nil),        // 15: tau.auth.v2.CacheKeyRequest
 	(*SetCacheRequest)(nil),        // 16: tau.auth.v2.SetCacheRequest
+	(*Caller)(nil),                 // 17: tau.auth.v2.Caller
+	(*Admission)(nil),              // 18: tau.auth.v2.Admission
 }
 var file_tau_auth_v2_auth_proto_depIdxs = []int32{
 	2,  // 0: tau.auth.v2.ProjectService.Get:input_type -> tau.auth.v2.ProjectRef
@@ -1144,25 +1286,27 @@ var file_tau_auth_v2_auth_proto_depIdxs = []int32{
 	15, // 14: tau.auth.v2.CertificateService.GetCache:input_type -> tau.auth.v2.CacheKeyRequest
 	16, // 15: tau.auth.v2.CertificateService.SetCache:input_type -> tau.auth.v2.SetCacheRequest
 	15, // 16: tau.auth.v2.CertificateService.DeleteCache:input_type -> tau.auth.v2.CacheKeyRequest
-	1,  // 17: tau.auth.v2.ProjectService.Get:output_type -> tau.auth.v2.Project
-	2,  // 18: tau.auth.v2.ProjectService.List:output_type -> tau.auth.v2.ProjectRef
-	4,  // 19: tau.auth.v2.ProjectService.Create:output_type -> tau.auth.v2.CreateProjectResponse
-	5,  // 20: tau.auth.v2.RepositoryService.Get:output_type -> tau.auth.v2.Repository
-	6,  // 21: tau.auth.v2.RepositoryService.List:output_type -> tau.auth.v2.RepositoryRef
-	0,  // 22: tau.auth.v2.RepositoryService.Register:output_type -> tau.auth.v2.Empty
-	0,  // 23: tau.auth.v2.RepositoryService.Unregister:output_type -> tau.auth.v2.Empty
-	7,  // 24: tau.auth.v2.HookService.Get:output_type -> tau.auth.v2.Hook
-	8,  // 25: tau.auth.v2.HookService.List:output_type -> tau.auth.v2.HookRef
-	10, // 26: tau.auth.v2.DomainService.Register:output_type -> tau.auth.v2.RegisterDomainResponse
-	11, // 27: tau.auth.v2.CertificateService.GetCertificate:output_type -> tau.auth.v2.Certificate
-	0,  // 28: tau.auth.v2.CertificateService.SetCertificate:output_type -> tau.auth.v2.Empty
-	11, // 29: tau.auth.v2.CertificateService.GetStaticCertificate:output_type -> tau.auth.v2.Certificate
-	0,  // 30: tau.auth.v2.CertificateService.SetStaticCertificate:output_type -> tau.auth.v2.Empty
-	12, // 31: tau.auth.v2.CertificateService.GetCache:output_type -> tau.auth.v2.CacheEntry
-	0,  // 32: tau.auth.v2.CertificateService.SetCache:output_type -> tau.auth.v2.Empty
-	0,  // 33: tau.auth.v2.CertificateService.DeleteCache:output_type -> tau.auth.v2.Empty
-	17, // [17:34] is the sub-list for method output_type
-	0,  // [0:17] is the sub-list for method input_type
+	17, // 17: tau.auth.v2.IdentityService.Admit:input_type -> tau.auth.v2.Caller
+	1,  // 18: tau.auth.v2.ProjectService.Get:output_type -> tau.auth.v2.Project
+	2,  // 19: tau.auth.v2.ProjectService.List:output_type -> tau.auth.v2.ProjectRef
+	4,  // 20: tau.auth.v2.ProjectService.Create:output_type -> tau.auth.v2.CreateProjectResponse
+	5,  // 21: tau.auth.v2.RepositoryService.Get:output_type -> tau.auth.v2.Repository
+	6,  // 22: tau.auth.v2.RepositoryService.List:output_type -> tau.auth.v2.RepositoryRef
+	0,  // 23: tau.auth.v2.RepositoryService.Register:output_type -> tau.auth.v2.Empty
+	0,  // 24: tau.auth.v2.RepositoryService.Unregister:output_type -> tau.auth.v2.Empty
+	7,  // 25: tau.auth.v2.HookService.Get:output_type -> tau.auth.v2.Hook
+	8,  // 26: tau.auth.v2.HookService.List:output_type -> tau.auth.v2.HookRef
+	10, // 27: tau.auth.v2.DomainService.Register:output_type -> tau.auth.v2.RegisterDomainResponse
+	11, // 28: tau.auth.v2.CertificateService.GetCertificate:output_type -> tau.auth.v2.Certificate
+	0,  // 29: tau.auth.v2.CertificateService.SetCertificate:output_type -> tau.auth.v2.Empty
+	11, // 30: tau.auth.v2.CertificateService.GetStaticCertificate:output_type -> tau.auth.v2.Certificate
+	0,  // 31: tau.auth.v2.CertificateService.SetStaticCertificate:output_type -> tau.auth.v2.Empty
+	12, // 32: tau.auth.v2.CertificateService.GetCache:output_type -> tau.auth.v2.CacheEntry
+	0,  // 33: tau.auth.v2.CertificateService.SetCache:output_type -> tau.auth.v2.Empty
+	0,  // 34: tau.auth.v2.CertificateService.DeleteCache:output_type -> tau.auth.v2.Empty
+	18, // 35: tau.auth.v2.IdentityService.Admit:output_type -> tau.auth.v2.Admission
+	18, // [18:36] is the sub-list for method output_type
+	0,  // [0:18] is the sub-list for method input_type
 	0,  // [0:0] is the sub-list for extension type_name
 	0,  // [0:0] is the sub-list for extension extendee
 	0,  // [0:0] is the sub-list for field type_name
@@ -1179,9 +1323,9 @@ func file_tau_auth_v2_auth_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_auth_v2_auth_proto_rawDesc), len(file_tau_auth_v2_auth_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   19,
 			NumExtensions: 0,
-			NumServices:   5,
+			NumServices:   6,
 		},
 		GoTypes:           file_tau_auth_v2_auth_proto_goTypes,
 		DependencyIndexes: file_tau_auth_v2_auth_proto_depIdxs,

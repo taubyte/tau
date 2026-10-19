@@ -84,6 +84,8 @@ const (
 	DomainServiceName = "tau.auth.v2.DomainService"
 	// CertificateServiceName is the fully-qualified name of the CertificateService service.
 	CertificateServiceName = "tau.auth.v2.CertificateService"
+	// IdentityServiceName is the fully-qualified name of the IdentityService service.
+	IdentityServiceName = "tau.auth.v2.IdentityService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -137,6 +139,8 @@ const (
 	// CertificateServiceDeleteCacheProcedure is the fully-qualified name of the CertificateService's
 	// DeleteCache RPC.
 	CertificateServiceDeleteCacheProcedure = "/tau.auth.v2.CertificateService/DeleteCache"
+	// IdentityServiceAdmitProcedure is the fully-qualified name of the IdentityService's Admit RPC.
+	IdentityServiceAdmitProcedure = "/tau.auth.v2.IdentityService/Admit"
 )
 
 // ProjectServiceClient is a client for the tau.auth.v2.ProjectService service.
@@ -881,4 +885,74 @@ func (UnimplementedCertificateServiceHandler) SetCache(context.Context, *connect
 
 func (UnimplementedCertificateServiceHandler) DeleteCache(context.Context, *connect.Request[v2.CacheKeyRequest]) (*connect.Response[v2.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.CertificateService.DeleteCache is not implemented"))
+}
+
+// IdentityServiceClient is a client for the tau.auth.v2.IdentityService service.
+type IdentityServiceClient interface {
+	Admit(context.Context, *connect.Request[v2.Caller]) (*connect.Response[v2.Admission], error)
+}
+
+// NewIdentityServiceClient constructs a client for the tau.auth.v2.IdentityService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) IdentityServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	identityServiceMethods := v2.File_tau_auth_v2_auth_proto.Services().ByName("IdentityService").Methods()
+	return &identityServiceClient{
+		admit: connect.NewClient[v2.Caller, v2.Admission](
+			httpClient,
+			baseURL+IdentityServiceAdmitProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("Admit")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// identityServiceClient implements IdentityServiceClient.
+type identityServiceClient struct {
+	admit *connect.Client[v2.Caller, v2.Admission]
+}
+
+// Admit calls tau.auth.v2.IdentityService.Admit.
+func (c *identityServiceClient) Admit(ctx context.Context, req *connect.Request[v2.Caller]) (*connect.Response[v2.Admission], error) {
+	return c.admit.CallUnary(ctx, req)
+}
+
+// IdentityServiceHandler is an implementation of the tau.auth.v2.IdentityService service.
+type IdentityServiceHandler interface {
+	Admit(context.Context, *connect.Request[v2.Caller]) (*connect.Response[v2.Admission], error)
+}
+
+// NewIdentityServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	identityServiceMethods := v2.File_tau_auth_v2_auth_proto.Services().ByName("IdentityService").Methods()
+	identityServiceAdmitHandler := connect.NewUnaryHandler(
+		IdentityServiceAdmitProcedure,
+		svc.Admit,
+		connect.WithSchema(identityServiceMethods.ByName("Admit")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/tau.auth.v2.IdentityService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case IdentityServiceAdmitProcedure:
+			identityServiceAdmitHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedIdentityServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedIdentityServiceHandler struct{}
+
+func (UnimplementedIdentityServiceHandler) Admit(context.Context, *connect.Request[v2.Caller]) (*connect.Response[v2.Admission], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.IdentityService.Admit is not implemented"))
 }

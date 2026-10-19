@@ -30,6 +30,7 @@ type Service struct {
 	projects   Projects
 	backend    Backend
 	identity   Identity
+	admissions Admissions
 	vault      Vault
 	cfg        Config
 
@@ -72,6 +73,7 @@ type options struct {
 	projects   Projects
 	backend    Backend
 	identity   Identity
+	admissions Admissions
 	vault      Vault
 
 	tune func(*http.Server)
@@ -148,6 +150,18 @@ func WithIdentity(i Identity) Option {
 			return errors.New("build: no identity to resolve a caller with")
 		}
 		o.identity = i
+		return nil
+	}
+}
+
+// WithAdmissions asks the cloud whether a caller the forge granted may use it.
+// Optional.
+func WithAdmissions(a Admissions) Option {
+	return func(o *options) error {
+		if a == nil {
+			return errors.New("build: a nil admissions")
+		}
+		o.admissions = a
 		return nil
 	}
 }
@@ -245,6 +259,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		projects:   o.projects,
 		backend:    o.backend,
 		identity:   o.identity,
+		admissions: o.admissions,
 		vault:      o.vault,
 		cfg:        effective,
 		tune:       o.tune,

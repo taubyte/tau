@@ -26,6 +26,9 @@ type Service struct {
 	kv   Store
 	cfg  Config
 
+	// identity decides admission; see identity.go.
+	identity Identity
+
 	serverOptions []rpc.ServerOption
 
 	// startMu guards server: Start and Close both read-then-write it, and
@@ -85,7 +88,7 @@ func New(h host.Host, store Store, cfg Config, opts ...Option) (*Service, error)
 		return nil, errors.New("auth: domain validation needs both halves of a key pair")
 	}
 
-	s := &Service{host: h, kv: store, cfg: cfg}
+	s := &Service{host: h, kv: store, cfg: cfg, identity: AdmitAll{}}
 
 	for _, opt := range opts {
 		if err := opt(s); err != nil {

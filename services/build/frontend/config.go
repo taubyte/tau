@@ -362,3 +362,13 @@ type Identity interface {
 	// repositories in v1.
 	WriteAccess(ctx context.Context, token string, key repokey.Key) (Access, error)
 }
+
+// Admissions is the cloud's answer about a caller the forge has already
+// granted: whether the person holding the credential may use this cloud's API
+// at all. Optional; without it every caller a forge grants is admitted.
+type Admissions interface {
+	// Admit reports whether the holder of token, as the forge serving key
+	// knows them, is admitted, and if not, why — in words the caller can act
+	// on.
+	Admit(ctx context.Context, token string, key repokey.Key) (admitted bool, reason string, err error)
+}

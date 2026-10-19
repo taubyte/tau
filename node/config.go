@@ -176,6 +176,7 @@ type options struct {
 	secrets   worker.Secrets
 	now       func() time.Time
 	extra     []Service
+	identity  func(Host) (auth.Identity, error)
 
 	// terminates says whatever serves Handler serves it over TLS too, with
 	// TLSConfig. See WithTLS.

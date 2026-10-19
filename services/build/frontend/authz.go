@@ -122,7 +122,7 @@ func (s *Service) writesAny(ctx context.Context, token string, keys []string) er
 
 		switch access {
 		case AccessGranted:
-			return nil
+			return s.admit(ctx, token, key)
 		case AccessUnauthenticated:
 			// The credential itself is not usable, so the remaining keys would
 			// answer the same way. It is a 401 and not a 404 because the caller
@@ -138,6 +138,28 @@ func (s *Service) writesAny(ctx context.Context, token string, keys []string) er
 		return undecided
 	}
 	return errDenied
+}
+
+// admit asks the cloud whether a caller the forge granted may use it.
+//
+// IT IS ASKED AFTER THE GRANT, so a caller the forge refuses costs the cloud
+// nothing, and a refusal here is a 403 carrying the reason rather than the
+// 404 a denial is: the caller holds the repository, and what they lack is
+// something they can go and get.
+func (s *Service) admit(ctx context.Context, token string, key repokey.Key) error {
+	if s.admissions == nil {
+		return nil
+	}
+	admitted, reason, err := s.admissions.Admit(ctx, token, key)
+	switch {
+	case err != nil:
+		return fmt.Errorf("admitting a caller to %s: %w", key, err)
+	case admitted:
+		return nil
+	case reason == "":
+		reason = "not admitted to this cloud"
+	}
+	return problem(http.StatusForbidden, reason)
 }
 
 // parseRepositoryKey accepts only a key already in repokey's canonical form.

@@ -166,7 +166,16 @@ func (n *Node) openAuth() error {
 			"Put a pair in the config to keep them.")
 	}
 
-	svc, err := authService.New(n.opts.host, db, cfg)
+	var authOptions []authService.Option
+	identity, err := n.identityOption()
+	if err != nil {
+		return err
+	}
+	if identity != nil {
+		authOptions = append(authOptions, identity)
+	}
+
+	svc, err := authService.New(n.opts.host, db, cfg, authOptions...)
 	if err != nil {
 		return err
 	}
@@ -332,7 +341,15 @@ func (n *Node) openBuildFrontend() error {
 		return err
 	}
 
+	identities, err := clients.Identities(auth)
+	if err != nil {
+		return err
+	}
+
 	frontendOptions := []frontend.Option{
+		// WHO MAY USE THIS CLOUD IS AUTH'S TO SAY, from whatever identity
+		// its node was composed with — see identity.go.
+		frontend.WithAdmissions(&admissions{forges: registry, auth: identities}),
 		frontend.WithHooks(hooks),
 		frontend.WithProjects(projects),
 		frontend.WithBackend(builds),
