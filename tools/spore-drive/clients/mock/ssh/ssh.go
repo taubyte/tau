@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -13,6 +14,8 @@ import (
 	"log"
 	"net"
 	"os"
+	"path"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -31,6 +34,10 @@ type hostInst struct {
 
 	lock     sync.Mutex
 	commands []string
+
+	// fs is the host's disk: one per host, so what one connection writes the
+	// next one reads, as on a real machine, and Filesystem can hand it back.
+	fs afero.Fs
 }
 
 func generatePrivateKey(passphrase string) ([]byte, error) {
@@ -124,7 +131,7 @@ func newSSHServer(pctx context.Context, config *pb.HostConfig) (*hostInst, error
 
 	config.Port = int32(listener.Addr().(*net.TCPAddr).Port)
 
-	hi := &hostInst{config: config}
+	hi := &hostInst{config: config, fs: afero.NewMemMapFs()}
 
 	hi.ctx, hi.ctxC = context.WithCancel(pctx)
 
@@ -156,7 +163,7 @@ func (hi *hostInst) handleSSHConnection(nConn net.Conn, config *ssh.ServerConfig
 
 	go ssh.DiscardRequests(reqs)
 
-	fsHandler := &fileSystemHandler{hi: hi, fs: afero.NewMemMapFs()}
+	fsHandler := &fileSystemHandler{hi: hi, fs: hi.fs}
 
 	for newChannel := range chans {
 		if newChannel.ChannelType() != "session" {
@@ -214,7 +221,66 @@ func (hi *hostInst) handleCommand(c string) []byte {
 	if strings.HasPrefix(c, "dig ") && strings.Contains(c, "google.com") {
 		return []byte("142.250.190.78\n")
 	}
+	// A deploy uploads to /tmp over sftp and installs with `cp`, so the copy
+	// is carried out on the host's disk; without it nothing a deploy installs
+	// would be there to read back. Every other command only is recorded.
+	if args, ok := words(c); ok {
+		if len(args) > 0 && args[0] == "sudo" {
+			args = args[1:]
+		}
+		if len(args) > 0 && args[0] == "cp" {
+			if err := hi.copy(args[1:]); err != nil {
+				return []byte(err.Error() + "\n")
+			}
+		}
+	}
 	return []byte("\n")
+}
+
+// words splits a command line the way the deploy quotes it: each argument a
+// Go-quoted string, or a bare word.
+func words(line string) ([]string, bool) {
+	var out []string
+	for line = strings.TrimSpace(line); line != ""; line = strings.TrimSpace(line) {
+		if line[0] != '"' {
+			word, rest, _ := strings.Cut(line, " ")
+			out, line = append(out, word), rest
+			continue
+		}
+		quoted, err := strconv.QuotedPrefix(line)
+		if err != nil {
+			return nil, false
+		}
+		word, err := strconv.Unquote(quoted)
+		if err != nil {
+			return nil, false
+		}
+		out, line = append(out, word), line[len(quoted):]
+	}
+	return out, true
+}
+
+// copy is `cp [-f] src dst` on the host's disk; a dst ending in "/" is a
+// directory the file is copied into, created when missing.
+func (hi *hostInst) copy(args []string) error {
+	if len(args) > 0 && args[0] == "-f" {
+		args = args[1:]
+	}
+	if len(args) != 2 {
+		return fmt.Errorf("cp: want a source and a destination, got %q", args)
+	}
+	src, dst := args[0], args[1]
+	if strings.HasSuffix(dst, "/") {
+		dst = path.Join(dst, path.Base(src))
+	}
+	data, err := afero.ReadFile(hi.fs, src)
+	if err != nil {
+		return fmt.Errorf("cp: %w", err)
+	}
+	if err := hi.fs.MkdirAll(path.Dir(dst), 0755); err != nil {
+		return fmt.Errorf("cp: %w", err)
+	}
+	return afero.WriteFile(hi.fs, dst, data, 0644)
 }
 
 func generateServerKey(privateKeyPEM []byte) ([]byte, ssh.Signer, error) {
@@ -316,4 +382,28 @@ func (h *fileSystemHandler) Filecmd(r *sftp.Request) error {
 	default:
 		return sftp.ErrSSHFxOpUnsupported
 	}
+}
+
+// bundle writes every regular file on the host's disk into a tar archive, in
+// path order.
+func (hi *hostInst) bundle(w io.Writer) error {
+	tw := tar.NewWriter(w)
+	err := afero.Walk(hi.fs, "/", func(name string, info os.FileInfo, err error) error {
+		if err != nil || !info.Mode().IsRegular() {
+			return err
+		}
+		data, err := afero.ReadFile(hi.fs, name)
+		if err != nil {
+			return err
+		}
+		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0644, Size: int64(len(data)), ModTime: info.ModTime()}); err != nil {
+			return err
+		}
+		_, err = tw.Write(data)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	return tw.Close()
 }

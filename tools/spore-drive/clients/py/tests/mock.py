@@ -1,8 +1,10 @@
 """Starts the Go mock (DriveService + MockSSHService) and builds a config
 directory whose hosts are mock SSH servers."""
 
+import io
 import os
 import subprocess
+import tarfile
 import time
 from typing import Dict, List, Tuple
 
@@ -55,11 +57,21 @@ class MockSSH:
         )(ssh_pb2.Host(name=name))
         return [c.command async for c in call]
 
+    async def filesystem(self, name: str) -> Dict[str, bytes]:
+        """The host's disk: every file it holds, by absolute path."""
+        call = self.channel.unary_stream(
+            "/mock.v1.MockSSHService/Filesystem", request_serializer=_ser,
+            response_deserializer=ssh_pb2.BundleChunk.FromString,
+        )(ssh_pb2.Host(name=name))
+        bundle = b"".join([c.data async for c in call])
+        with tarfile.open(fileobj=io.BytesIO(bundle)) as tar:
+            return {m.name: tar.extractfile(m).read() for m in tar.getmembers() if m.isfile()}
+
     async def close(self):
         await self.channel.close()
 
 
-def config_files(ports: Dict[str, int], added: str = None) -> Dict[str, str]:
+def config_files(ports: Dict[str, int], added: str = None, tenancy: str = None) -> Dict[str, str]:
     """A minimal cloud: one shape, every host on it, secrets left to Validate."""
     hosts = {
         name: {
@@ -80,6 +92,8 @@ def config_files(ports: Dict[str, int], added: str = None) -> Dict[str, str]:
     }
     if added is not None:
         files["added.yaml"] = added
+    if tenancy is not None:
+        files["tenancy.yaml"] = tenancy
     return files
 
 

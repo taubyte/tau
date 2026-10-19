@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -56,9 +57,36 @@ streamCmds:
 	return nil
 }
 
-func (s *Service) Filesystem(context.Context, *connect.Request[pb.Host], *connect.ServerStream[pb.BundleChunk]) error {
-	return nil
+// Filesystem streams the host's disk as a tar archive, in chunks: every
+// regular file under its absolute path, directories implied.
+func (s *Service) Filesystem(ctx context.Context, in *connect.Request[pb.Host], stream *connect.ServerStream[pb.BundleChunk]) error {
+	s.lock.Lock()
+	hi, exist := s.hosts[in.Msg.GetName()]
+	s.lock.Unlock()
+	if !exist {
+		return connect.NewError(connect.CodeNotFound, errors.New("host does not exist"))
+	}
+
+	hi.lock.Lock()
+	var bundle bytes.Buffer
+	err := hi.bundle(&bundle)
+	hi.lock.Unlock()
+	if err != nil {
+		return connect.NewError(connect.CodeInternal, err)
+	}
+
+	for data := bundle.Bytes(); len(data) > 0; {
+		n := min(len(data), chunkSize)
+		if err := stream.Send(&pb.BundleChunk{Data: data[:n]}); err != nil {
+			return err
+		}
+		data = data[n:]
+	}
+	return ctx.Err()
 }
+
+// chunkSize keeps each message well under any transport's frame limit.
+const chunkSize = 64 << 10
 
 func (s *Service) Lookup(_ context.Context, in *connect.Request[pb.Query]) (*connect.Response[pb.HostConfig], error) {
 	s.lock.Lock()

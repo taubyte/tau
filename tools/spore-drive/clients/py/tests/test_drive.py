@@ -52,7 +52,8 @@ async def test_validate_plan_apply(mock_url, tmp_path):
     ssh, ports = await _cloud(mock_url)
     (name,) = ports
     cfg = tmp_path / "config"
-    write_dir(from_files(config_files(ports)), cfg)
+    write_dir(from_files(config_files(ports, added="example:\n  greeting: hello\n  replicas: 2\n",
+                                      tenancy="provider: github\nowner: Acme\n")), cfg)
 
     async with Drive(mock_url) as d:
         res = await d.validate(read_dir(cfg))
@@ -86,6 +87,17 @@ async def test_validate_plan_apply(mock_url, tmp_path):
     assert "SFTP Filewrite /tmp/node.yaml" in cmds
     assert 'sudo "cp" "-f" "/tmp/node.yaml" "/tb/config/"' in cmds
     assert 'sudo "cp" "-f" "/tmp/tau" "/tb/bin/"' in cmds
+
+    # what was installed is the node the config describes, read off the host
+    node = yaml.safe_load((await ssh.filesystem(name))["/tb/config/node.yaml"])
+    assert node["node"]["services"] == ["auth", "secrets", "discovery", "dns"]
+    assert node["node"]["cloud"] == "test.com"
+    assert node["node"]["tenancy"] == ["github.com/acme"]
+    assert node["node"]["added"] == {"example": {"greeting": "hello", "replicas": 2}}
+    assert node["swarmkey"] and node["privatekey"]
+    assert node["listen"] == ["/ip4/0.0.0.0/tcp/4242"]
+    assert node["bootstrap"] == []  # a fleet of one bootstraps from nobody
+    assert "PRIVATE KEY" in node["node"]["auth"]["domainvalidation"]["private"]
     await ssh.close()
 
 

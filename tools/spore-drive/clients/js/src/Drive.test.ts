@@ -5,6 +5,7 @@ import * as fs from "fs/promises";
 import * as os from "os";
 import * as path from "path";
 import * as yaml from "js-yaml";
+import * as tar from "tar";
 
 import { MockSSHService } from "../gen/mock/v1/ssh_connect";
 import { HostConfig, Host as Hostname } from "../gen/mock/v1/ssh_pb";
@@ -32,6 +33,18 @@ export function startMock(dir: string, signal: AbortSignal): Promise<{ url: stri
   });
 }
 
+// disk extracts a mock host's filesystem into a fresh directory and returns it.
+export async function disk(mock: PromiseClient<typeof MockSSHService>, name: string): Promise<string> {
+  const chunks: Uint8Array[] = [];
+  for await (const c of mock.filesystem(new Hostname({ name }))) chunks.push(c.data);
+  const out = await fs.mkdtemp(path.join(os.tmpdir(), "disk-"));
+  const bundle = path.join(out, ".bundle.tar");
+  await fs.writeFile(bundle, Buffer.concat(chunks));
+  await tar.x({ file: bundle, cwd: out });
+  await fs.rm(bundle);
+  return out;
+}
+
 // configDir writes a minimal v2 cloud config whose hosts ssh into mock ports.
 export async function configDir(dir: string, ports: Record<string, number>): Promise<void> {
   const hosts: Record<string, any> = {};
@@ -50,6 +63,8 @@ export async function configDir(dir: string, ports: Record<string, number>): Pro
     "shapes.yaml": { shape1: { services: ["auth", "seer"], ports: { main: 4242 } } },
     "hosts.yaml": hosts,
     "auth.yaml": { main: { username: "tau1", password: "testtest" } },
+    "added.yaml": { example: { greeting: "hello", replicas: 2 } },
+    "tenancy.yaml": { provider: "github", owner: "Acme" },
   };
   for (const [name, content] of Object.entries(files)) {
     await fs.writeFile(path.join(dir, name), yaml.dump(content));
@@ -136,6 +151,20 @@ describe("Drive against the mock", () => {
     expect(cmds).toContain("SFTP Filewrite /tmp/node.yaml");
     expect(cmds).toContain('sudo "cp" "-f" "/tmp/node.yaml" "/tb/config/"');
     expect(cmds).toContain('sudo "systemctl" "start" "tau@node"');
+
+    // What was installed is the node the config describes, read off the host.
+    const root = await disk(mock, names[0]);
+    const node = yaml.load(await fs.readFile(path.join(root, "tb/config/node.yaml"), "utf8")) as any;
+    await fs.rm(root, { recursive: true, force: true });
+    expect(node.node.services).toEqual(["auth", "secrets", "discovery", "dns"]);
+    expect(node.node.cloud).toBe("test.com");
+    expect(node.node.tenancy).toEqual(["github.com/acme"]);
+    expect(node.node.added).toEqual({ example: { greeting: "hello", replicas: 2 } });
+    expect(node.swarmkey).toBeTruthy();
+    expect(node.privatekey).toBeTruthy();
+    expect(node.listen).toEqual(["/ip4/0.0.0.0/tcp/4242"]);
+    expect(node.bootstrap).toHaveLength(1);
+    expect(node.node.auth.domainvalidation.private).toContain("PRIVATE KEY");
 
     // The course ended with the stream.
     await expect(drive.abort(course)).rejects.toMatchObject({ code: Code.NotFound });
