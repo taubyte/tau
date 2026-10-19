@@ -26,7 +26,7 @@ func runApp(t *testing.T, args ...string) (string, error) {
 	app := newApp(nil)
 	var out bytes.Buffer
 	app.Writer = &out
-	err := app.RunContext(t.Context(), append([]string{"tau"}, args...))
+	err := app.RunContext(t.Context(), append([]string{"taud"}, args...))
 	return out.String(), err
 }
 
@@ -104,7 +104,7 @@ func TestStartServesTheGatewayAndStops(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 			defer cancel()
 			done := make(chan error, 1)
-			go func() { done <- app.RunContext(ctx, []string{"tau", "start", "--config", config, "--root", root}) }()
+			go func() { done <- app.RunContext(ctx, []string{"taud", "start", "--config", config, "--root", root}) }()
 
 			var address string
 			select {
@@ -141,10 +141,10 @@ func TestStartServesTheGatewayAndStops(t *testing.T) {
 
 func TestRunIsMainsExitStatus(t *testing.T) {
 	var out, errs bytes.Buffer
-	require.Equal(t, 0, run([]string{"tau", "version"}, &out, &errs))
+	require.Equal(t, 0, run([]string{"taud", "version"}, &out, &errs))
 	require.Contains(t, out.String(), "tau dev")
 
 	out.Reset()
-	require.Equal(t, 1, run([]string{"tau", "start"}, &out, &errs))
+	require.Equal(t, 1, run([]string{"taud", "start"}, &out, &errs))
 	require.Contains(t, errs.String(), "config")
 }

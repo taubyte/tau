@@ -1,4 +1,4 @@
-// Command tau runs a v2 node from the file an operator wrote.
+// Command taud runs a v2 node from the file an operator wrote.
 //
 // It is node/boot and a signal handler. Everything a node is configured with
 // lives in that file (see boot.File); the only thing a flag adds is --root,
@@ -54,7 +54,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 // node once it serves, which is how a test learns the addresses it bound.
 func newApp(started func(*boot.Running)) *cli.App {
 	return &cli.App{
-		Name:     "tau",
+		Name:     "taud",
 		Usage:    "run a tau node",
 		Commands: []*cli.Command{startCommand(started), configCommand(), versionCommand()},
 	}
@@ -65,7 +65,7 @@ func startCommand(started func(*boot.Running)) *cli.Command {
 		Name:  "start",
 		Usage: "start a node",
 		Flags: []cli.Flag{
-			&cli.PathFlag{Name: "config", Aliases: []string{"c"}, Usage: "the node's config file (`tau config` prints one)", Required: true},
+			&cli.PathFlag{Name: "config", Aliases: []string{"c"}, Usage: "the node's config file (`taud config` prints one)", Required: true},
 			&cli.PathFlag{Name: "root", Usage: "where the node keeps its data; overrides the file's root"},
 		},
 		Action: func(ctx *cli.Context) error {

@@ -6,12 +6,13 @@ containers and data, and routes traffic to them.
 
 ## The node
 
-`cmd/tau` is the node binary.
+`cmd/taud` is the node binary. The developer CLI, `tau`, is its own module under
+`tools/tau` (`go install github.com/taubyte/tau/tools/tau@latest`).
 
 ```sh
-go build ./cmd/tau
-./tau config > node.yaml     # print an example node config
-./tau start -c node.yaml     # run a node from it (--root overrides the data directory)
+go build ./cmd/taud
+./taud config > node.yaml     # print an example node config
+./taud start -c node.yaml     # run a node from it (--root overrides the data directory)
 ```
 
 Everything a node runs is decided by its config file (`node/boot`). Its

@@ -35,7 +35,7 @@ func TestDownload(t *testing.T) {
 
 	// Add the fakeTau file to the tar archive
 	tarHeader := &tar.Header{
-		Name: "tau",
+		Name: "taud",
 		Mode: 0600,
 		Size: int64(fakeTau.Len()),
 	}

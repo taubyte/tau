@@ -1,7 +1,7 @@
-# .goreleaser.yml builds the node binary, cmd/tau.
+# .goreleaser.yml builds the node binary, cmd/taud.
 #
 # THE ARCHIVE NAMES ARE AN INTERFACE. tools/spore-drive downloads
-# tau_<version>_linux_<arch>.tar.gz and expects a `tau` binary inside, so the
+# tau_<version>_linux_<arch>.tar.gz and expects a `taud` binary inside, so the
 # project name, binary name and default archive template stay as they are.
 version: 2
 project_name: tau
@@ -17,9 +17,9 @@ release:
   skip_upload: false
 
 builds:
-  - main: ./cmd/tau
-    id: tau
-    binary: tau
+  - main: ./cmd/taud
+    id: taud
+    binary: taud
     goos:
       - linux
       - darwin

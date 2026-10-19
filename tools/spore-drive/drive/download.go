@@ -100,14 +100,14 @@ func httpDownload(downloadUrl string) ([]byte, error) {
 			return nil, fmt.Errorf("failed to read tar header: %w", err)
 		}
 
-		if header.Name == "tau" {
+		if header.Name == "taud" {
 			var buf bytes.Buffer
 			if _, err := io.Copy(&buf, tarReader); err != nil {
-				return nil, fmt.Errorf("failed to read 'tau' from tar: %w", err)
+				return nil, fmt.Errorf("failed to read 'taud' from tar: %w", err)
 			}
 			return buf.Bytes(), nil
 		}
 	}
 
-	return nil, errors.New("file 'tau' not found in archive")
+	return nil, errors.New("file 'taud' not found in archive")
 }
