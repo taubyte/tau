@@ -38,7 +38,7 @@ func configDir(t *testing.T, docs map[string]string) string {
 // heldIn is the ids of every cache the view a region reads holds.
 func heldIn(t *testing.T, r *register.Register, region string) []string {
 	t.Helper()
-	v, err := r.ResolveView(t.Context(), "shop", deploy.DefaultEnvironment, region)
+	v, err := r.ResolveView(t.Context(), shopID, deploy.DefaultEnvironment, region)
 	require.NoError(t, err)
 	body, err := r.Object(t.Context(), v.Object)
 	require.NoError(t, err)
@@ -65,7 +65,7 @@ func TestADeployPublishesOneViewPerRegion(t *testing.T) {
 	require.Contains(t, log.String(), "prod in eu: 1 resources")
 	require.Equal(t, []string{cacheA}, heldIn(t, r, "eu"))
 	require.Equal(t, []string{cacheB}, heldIn(t, r, "us"))
-	_, err := r.ResolveView(t.Context(), "shop", deploy.DefaultEnvironment, "ap")
+	_, err := r.ResolveView(t.Context(), shopID, deploy.DefaultEnvironment, "ap")
 	require.ErrorIs(t, err, register.ErrNoView)
 
 	as, err := r.Assigned(t.Context(), "us")
@@ -108,6 +108,6 @@ func TestADeployReachingAcrossRegionsIsRefused(t *testing.T) {
 	err := runner(t, co, r, deploy.WithRegions(schema.Preview("eu", "us"))).Run(t.Context(), work(), &log)
 	require.ErrorIs(t, err, deploy.ErrUnplaced)
 	require.ErrorContains(t, err, `function/f: reaches cache/a, which is not placed in "us" where this is`)
-	_, err = r.Resolve(t.Context(), "shop", deploy.DefaultEnvironment)
+	_, err = r.Resolve(t.Context(), shopID, deploy.DefaultEnvironment)
 	require.ErrorIs(t, err, register.ErrNotPublished)
 }

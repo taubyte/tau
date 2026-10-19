@@ -1,6 +1,7 @@
 package forgeauth
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -70,4 +71,24 @@ func TestAnUnservedHostIsNotADenial(t *testing.T) {
 
 	_, err = New(nil)
 	require.Error(t, err)
+}
+
+func TestTheClaimantIsTheForgesStableSubject(t *testing.T) {
+	f := fake.New(fake.GitHubLike)
+	reg, err := f.Registry(forge.Policy{})
+	require.NoError(t, err)
+	forges, err := New(reg)
+	require.NoError(t, err)
+
+	who, err := forges.Claimant(t.Context(), f.TokenString(), f.Host())
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(who, f.Host()+"/"), who)
+	require.Greater(t, len(who), len(f.Host())+1, "a subject follows the host")
+
+	_, err = forges.Claimant(t.Context(), f.BadTokenString(), f.Host())
+	require.ErrorIs(t, err, frontend.ErrBadCredential)
+	_, err = forges.Claimant(t.Context(), "", f.Host())
+	require.ErrorIs(t, err, frontend.ErrBadCredential)
+	_, err = forges.Claimant(t.Context(), f.TokenString(), "codeberg.org")
+	require.ErrorIs(t, err, frontend.ErrUnknownForge, "a token is never sent to a forge this cloud does not serve")
 }

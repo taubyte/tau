@@ -41,7 +41,7 @@ func (s *Service) mount() http.Handler {
 
 	// The one route a stranger reaches. Everything it does is in webhook.go, in
 	// the order it does it.
-	mux.HandleFunc("POST /hook/{hook}", s.handleWebhook)
+	mux.HandleFunc("POST /hook/{projectId}", s.handleWebhook)
 
 	// The four a forge-token holder reaches. Each authorizes on the resource
 	// before it acts (authz.go); a denial is a 404.
@@ -65,9 +65,11 @@ func (s *Service) mount() http.Handler {
 	mux.HandleFunc("PUT /secrets/{projectId}/{environment}/{name}", s.admitted("projectId", s.handleSetSecret))
 	mux.HandleFunc("DELETE /secrets/{projectId}/{environment}/{name}", s.admitted("projectId", s.handleDeleteSecret))
 
-	// Linking a project: the one public door to auth's registration, authorized
-	// as write access to BOTH repositories it names (projectapi.go).
-	mux.HandleFunc("POST /projects/{name}", s.admitted("name", s.handleCreateProject))
+	// Linking a project: the one public door to the register's project table,
+	// authorized as write access to EVERY repository it names, and the caller's
+	// own list of what they linked (projectapi.go).
+	mux.HandleFunc("POST /projects/{projectId}", s.admitted("projectId", s.handleLinkProject))
+	mux.HandleFunc("GET /forges/{forge}/projects", s.admitted("forge", s.handleListProjects))
 
 	// No /ping. v1 had one, unauthenticated, and a liveness endpoint is a
 	// decision about what this process will tell the internet about itself

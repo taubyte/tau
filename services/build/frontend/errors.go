@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+
+	"github.com/taubyte/tau/pkg/register"
 )
 
 // errors.go is this role's one code table (service-conventions.md §1), and it
@@ -106,6 +108,10 @@ func respond(w http.ResponseWriter, err error) {
 // error with %w, so the Unavailable underneath is still found and still becomes
 // a 503 rather than a 502.
 func translate(err error) (int, string) {
+	// A project the register has no record of is the same 404 a denial is.
+	if errors.Is(err, register.ErrNotLinked) {
+		return errDenied.status, errDenied.msg
+	}
 	switch connect.CodeOf(err) {
 	case connect.CodeNotFound, connect.CodePermissionDenied:
 		// PermissionDenied comes from the backend's own Authorizer and means

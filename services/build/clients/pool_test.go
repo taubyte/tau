@@ -54,8 +54,8 @@ func TestAPeerThatDoesNotServeTheProtocolIsUnavailable(t *testing.T) {
 
 	var seen error
 	err = p.Do(t.Context(), func(c *rpc.Client) error {
-		repos := authv2connect.NewRepositoryServiceClient(c.HTTP(), c.URL())
-		_, seen = repos.Get(t.Context(), connect.NewRequest(&authv2.RepositoryRef{RepositoryKey: "github.com/a/b"}))
+		identities := authv2connect.NewIdentityServiceClient(c.HTTP(), c.URL())
+		_, seen = identities.Admit(t.Context(), connect.NewRequest(&authv2.Caller{Forge: "github.com", Subject: "1"}))
 		return seen
 	})
 
@@ -216,9 +216,7 @@ func TestThePoolNeverHoldsMoreThanItsBound(t *testing.T) {
 func TestAClientIsReusedBetweenCalls(t *testing.T) {
 	mn := newMocknet(t)
 	caller := newHost(t, mn)
-	server := serveAuth(t, mn, func(string) (*authv2.Repository, error) {
-		return &authv2.Repository{ProjectId: "p"}, nil
-	})
+	server := serveAuth(t, mn)
 
 	p, err := NewPool(caller, discovery.Static(server.ID()), AuthProtocol, 4)
 	require.NoError(t, err)
@@ -248,9 +246,7 @@ func TestCloseIsIdempotentAndStopsDo(t *testing.T) {
 func TestADialThatCannotBeBuiltIsTriedPastRatherThanReturned(t *testing.T) {
 	mn := newMocknet(t)
 	caller := newHost(t, mn)
-	good := serveAuth(t, mn, func(string) (*authv2.Repository, error) {
-		return &authv2.Repository{ProjectId: "p"}, nil
-	})
+	good := serveAuth(t, mn)
 
 	// An empty peer id fails rpc.NewClient's Validate; the next peer answers.
 	p, err := NewPool(caller, discovery.Static(peer.ID(""), good.ID()), AuthProtocol, 4)

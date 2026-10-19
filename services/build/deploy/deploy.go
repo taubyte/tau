@@ -32,7 +32,7 @@
 // # It routes; it does not do both
 //
 // A push is one of two things and this is where that is decided, because the
-// decision is one question to auth and both answers need it. A push to the
+// decision is one question to the register's project table and both answers need it. A push to the
 // configuration repository is handled here. A push to a code repository is a
 // BUILD — services/build/artifact — and is delegated when this was given one.
 //
@@ -79,12 +79,20 @@ var (
 	ErrNoCheckout = errors.New("deploy: no way to read a repository")
 	ErrNoProjects = errors.New("deploy: no way to tell a configuration repository from a code one")
 	// ErrUnplaced is a deployment this cloud cannot place where it says it runs.
+	// ErrNotClaimed is a configuration whose project.yaml names an id the
+	// pushed repository has not claimed. The register's project table is the
+	// one thing that says which repository may publish under an id, and this
+	// is the read of it at publish time: a config copied from another project
+	// keeps that project's id, and publishing it would move that project's
+	// pointers.
+	ErrNotClaimed = errors.New("deploy: the project id is not claimed by this repository")
+
 	ErrUnplaced = errors.New("deploy: this cloud cannot place it")
 )
 
 // Projects answers what a repository IS to a project.
 //
-// It is one question and not auth's whole surface, because that is all this
+// It is one question and not the project table's whole surface, because that is all this
 // needs and a wider seam would be a wider thing to stand up in a test.
 type Projects interface {
 	// Configures reports whether this repository is the project's
@@ -203,7 +211,7 @@ func (d *Deploy) Run(ctx context.Context, w backend.Work, out backend.Output) er
 	}
 	if !configures {
 		// A CODE PUSH IS SOMEBODY ELSE'S JOB, and this is the only place that
-		// knows which of the two it is — the question costs one call to auth
+		// knows which of the two it is — the question costs one read of the project table
 		// and both answers need it, so asking it twice would be asking it
 		// twice.
 		if d.builder == nil {
@@ -243,6 +251,17 @@ func (d *Deploy) Run(ctx context.Context, w backend.Work, out backend.Output) er
 		}
 		plan = append(plan, compiled{name: name, bytes: bytes, project: p, views: views})
 		say(out, "compiled %s", name)
+	}
+
+	// THE ID IS THE AUTHOR'S, AND THE CLAIM IS WHAT LETS IT PUBLISH. w.ProjectID
+	// is the project this repository is linked as configuration of; every
+	// compiled deployment must name exactly that id, or it is refused before
+	// anything is written.
+	for _, c := range plan {
+		if id := c.project.ID(); id != w.ProjectID {
+			return fmt.Errorf("%w: project.yaml names %q, and %s is linked as the configuration of %q — run `tau link` for this id, or put %q back",
+				ErrNotClaimed, id, w.RepositoryKey, w.ProjectID, w.ProjectID)
+		}
 	}
 
 	r, err := d.register(ctx)

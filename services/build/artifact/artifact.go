@@ -99,7 +99,7 @@ type Register interface {
 //
 // IT IS ASKED RATHER THAN INFERRED because half of it is not in the config: a
 // resource whose source is a bare path is in the project's own code repository,
-// and which repository that IS lives in auth.
+// and which repository that IS is the register's project table to say.
 type Projects interface {
 	CodeRepository(ctx context.Context, projectID string) (string, error)
 }
@@ -370,7 +370,7 @@ func (b *Builder) plan(ctx context.Context, projectID string, deployments []stri
 // built from.
 //
 // A BARE PATH IS THE PROJECT'S OWN CODE REPOSITORY, which the config cannot
-// say — so `own` comes from auth, and a project with no code repository
+// say — so `own` comes from the project table, and a project with no code repository
 // registered has no bare-path resources to build.
 func backedBy(b specs.Buildable, pushed, own string) (bool, error) {
 	if b.Source.Git == "" {

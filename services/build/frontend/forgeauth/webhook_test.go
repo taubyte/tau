@@ -15,7 +15,6 @@ import (
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/services/build/frontend"
 )
 
@@ -26,9 +25,9 @@ import (
 
 const commit = "1111111111111111111111111111111111111111"
 
-type hooks struct{ hook *authv2.Hook }
+type hooks struct{ hook frontend.Hook }
 
-func (h hooks) Get(context.Context, string) (*authv2.Hook, error) { return h.hook, nil }
+func (h hooks) Hook(context.Context, string) (frontend.Hook, error) { return h.hook, nil }
 
 type projects struct{}
 
@@ -66,9 +65,11 @@ func TestEveryForgesDeliveriesReachTheSameRoute(t *testing.T) {
 
 			queue := &backend{}
 			svc, err := frontend.New(frontend.Config{},
-				frontend.WithHooks(hooks{&authv2.Hook{
-					Id: "hook-1", RepositoryKey: key.String(), Handle: "7",
-					Scheme: string(sig.Scheme()), Secret: secret.Expose(),
+				// TWO REPOSITORIES, the pushed one second, so the delivery is
+				// verified by trying the project's repositories in turn.
+				frontend.WithHooks(hooks{frontend.Hook{
+					Project: "hook-1", Repositories: []string{f.Keys().Admin.String(), key.String()},
+					Secret: secret.Expose(),
 				}}),
 				frontend.WithDeliveries(forges),
 				frontend.WithIdentity(forges),
@@ -132,12 +133,15 @@ func TestAHookThisCloudCannotCheckIsNotAnUnverifiedDelivery(t *testing.T) {
 	forges, err := New(reg)
 	require.NoError(t, err)
 
-	_, err = forges.Verify(&authv2.Hook{RepositoryKey: "codeberg.org/acme/pay", Scheme: "hub-sha256", Secret: bytes.Repeat([]byte("k"), 32)}, http.Header{}, []byte("{}"))
+	_, err = forges.Verify(frontend.Hook{Repositories: []string{"codeberg.org/acme/pay"}, Secret: bytes.Repeat([]byte("k"), 32)}, http.Header{}, []byte("{}"))
 	require.Error(t, err)
 	require.NotErrorIs(t, err, frontend.ErrUnverified)
 
-	_, err = forges.Verify(&authv2.Hook{RepositoryKey: "not a key"}, http.Header{}, nil)
+	_, err = forges.Verify(frontend.Hook{Repositories: []string{"not a key"}}, http.Header{}, nil)
 	require.ErrorContains(t, err, "names no repository")
+
+	_, err = forges.Verify(frontend.Hook{Project: "p"}, http.Header{}, nil)
+	require.ErrorContains(t, err, "no repositories")
 }
 
 // A GENUINE DELIVERY NAMING NO USABLE PUSH is the forge's malformed payload,
@@ -156,8 +160,8 @@ func TestAGenuineButUnreadableDeliveryIsMalformed(t *testing.T) {
 	require.NoError(t, err)
 	header.Set("X-Fake-Event", "push")
 
-	_, err = forges.Verify(&authv2.Hook{
-		RepositoryKey: f.Keys().Writable.String(), Scheme: string(forge.SchemeHubSHA256), Secret: secret.Expose(),
+	_, err = forges.Verify(frontend.Hook{
+		Repositories: []string{f.Keys().Writable.String()}, Secret: secret.Expose(),
 	}, header, body)
 	require.ErrorIs(t, err, frontend.ErrMalformed)
 }

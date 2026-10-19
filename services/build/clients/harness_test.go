@@ -1,18 +1,15 @@
 package clients
 
 import (
-	"context"
 	"net/http"
 	"testing"
 
-	"connectrpc.com/connect"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
 
@@ -36,38 +33,13 @@ func newHost(t testing.TB, mn mocknet.Mocknet) host.Host {
 	return h
 }
 
-// fakeRepositories is an auth RepositoryService that answers Get however the
-// test says and refuses everything else.
-type fakeRepositories struct {
-	get func(key string) (*authv2.Repository, error)
-}
-
-func (f *fakeRepositories) Get(_ context.Context, req *connect.Request[authv2.RepositoryRef]) (*connect.Response[authv2.Repository], error) {
-	r, err := f.get(req.Msg.GetRepositoryKey())
-	if err != nil {
-		return nil, err
-	}
-	return connect.NewResponse(r), nil
-}
-
-func (f *fakeRepositories) List(context.Context, *connect.Request[authv2.Empty], *connect.ServerStream[authv2.RepositoryRef]) error {
-	return connect.NewError(connect.CodeUnimplemented, nil)
-}
-
-func (f *fakeRepositories) Register(context.Context, *connect.Request[authv2.RepositoryRef]) (*connect.Response[authv2.Empty], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, nil)
-}
-
-func (f *fakeRepositories) Unregister(context.Context, *connect.Request[authv2.RepositoryRef]) (*connect.Response[authv2.Empty], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, nil)
-}
-
-// serveAuth mounts a RepositoryService on a fresh mocknet host and returns it.
-func serveAuth(t testing.TB, mn mocknet.Mocknet, get func(string) (*authv2.Repository, error)) host.Host {
+// serveAuth mounts auth's IdentityService on a fresh mocknet host and returns
+// it: any real service on AuthProtocol will do for what the pool tests ask.
+func serveAuth(t testing.TB, mn mocknet.Mocknet) host.Host {
 	t.Helper()
 	h := newHost(t, mn)
 	mux := http.NewServeMux()
-	mux.Handle(authv2connect.NewRepositoryServiceHandler(&fakeRepositories{get: get}))
+	mux.Handle(authv2connect.NewIdentityServiceHandler(fakeIdentity{}))
 	serve(t, h, AuthProtocol, mux)
 	return h
 }

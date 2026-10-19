@@ -207,22 +207,34 @@ func (n *Node) openBuildBackend() error {
 	}
 	n.closers = append(n.closers, closerFunc(func() { cluster.Close() }))
 
-	auth, err := n.dial(clients.AuthProtocol, Auth)
-	if err != nil {
-		return err
-	}
-	repositories, err := clients.Repositories(auth)
-	if err != nil {
-		return err
-	}
-	projects, err := clients.Projects(auth)
-	if err != nil {
-		return err
-	}
+	// WHO A PUSH BELONGS TO IS THE REGISTER'S PROJECT TABLE, and the deploy
+	// key that clones it is the vault's, under the name the developer's link
+	// stored it as (pkg/linkcreds).
+	projects := projectTable{n}
 
-	// SSH, BECAUSE A DEPLOY KEY IS AN SSH KEY. auth holds one per repository,
-	// and a cloud reaching a provider over https could only read what is
-	// already public. The address and its account are the forge's.
+	// ONE VAULT FOR THE BACKEND, made on first need: the deploy keys below and
+	// a code build's secrets read the same one, by the worker's rule — an
+	// injected resolver wins, then this node's own or one in the fleet.
+	var backendVault secretReader
+	vaults := func() secretReader {
+		if backendVault != nil {
+			return backendVault
+		}
+		switch {
+		case n.opts.secrets != nil:
+			backendVault = n.opts.secrets
+		case n.secrets != nil || n.discovery != nil:
+			v := newVault(n)
+			n.closers = append(n.closers, v)
+			backendVault = v
+		}
+		return backendVault
+	}
+	keys := linkSecrets{projects: projects, vault: vaults()}
+
+	// SSH, BECAUSE A DEPLOY KEY IS AN SSH KEY, and a cloud reaching a provider
+	// over https could only read what is already public. The address and its
+	// account are the forge's.
 	registry, err := n.forgeRegistry()
 	if err != nil {
 		return err
@@ -231,7 +243,7 @@ func (n *Node) openBuildBackend() error {
 	if err != nil {
 		return err
 	}
-	clone := deploy.NewClone(repositories,
+	clone := deploy.NewClone(keys,
 		deploy.WithAddress(deploy.Forged(registry, forge.SSH)),
 		deploy.WithHostKeys(func(host string) []gossh.PublicKey { return pinned[host] }))
 
@@ -271,12 +283,7 @@ func (n *Node) openBuildBackend() error {
 		// differs is which variables reach it: `at: build` says the value is
 		// baked into the artifact, and the config decides that, not this
 		// wiring.
-		switch {
-		case n.opts.secrets != nil:
-			buildOptions = append(buildOptions, artifact.WithSecrets(n.opts.secrets))
-		case n.secrets != nil || n.discovery != nil:
-			v := newVault(n)
-			n.closers = append(n.closers, v)
+		if v := vaults(); v != nil {
 			buildOptions = append(buildOptions, artifact.WithSecrets(v))
 		}
 
@@ -295,7 +302,7 @@ func (n *Node) openBuildBackend() error {
 	service := []backend.Option{
 		backend.WithHost(n.opts.host),
 		backend.WithStore(cluster),
-		backend.WithRepositories(repositories),
+		backend.WithRepositories(projects),
 		backend.WithRunner(runner),
 	}
 	if n.opts.assets != nil {
@@ -321,14 +328,7 @@ func (n *Node) openBuildFrontend() error {
 	if err != nil {
 		return err
 	}
-	hooks, err := clients.Hooks(auth)
-	if err != nil {
-		return err
-	}
-	projects, err := clients.Projects(auth)
-	if err != nil {
-		return err
-	}
+	projects := projectTable{n}
 
 	backends, err := n.dial(build.Protocol, BuildBackend)
 	if err != nil {
@@ -360,17 +360,14 @@ func (n *Node) openBuildFrontend() error {
 		return err
 	}
 
-	registrar, err := clients.Registrar(auth)
-	if err != nil {
-		return err
-	}
-
 	frontendOptions := []frontend.Option{
-		frontend.WithRegistrar(registrar),
+		// THE PROJECT TABLE IS THE REGISTER'S, and this role writes it only
+		// through the link route, after the caller is shown to write to every
+		// repository the link names.
+		frontend.WithLinker(projects),
 		// WHO MAY USE THIS CLOUD IS AUTH'S TO SAY, from whatever identity
 		// its node was composed with — see identity.go.
 		frontend.WithAdmissions(&admissions{forges: registry, auth: identities}),
-		frontend.WithHooks(hooks),
 		frontend.WithProjects(projects),
 		frontend.WithBackend(builds),
 		frontend.WithIdentity(forges),
@@ -382,11 +379,21 @@ func (n *Node) openBuildFrontend() error {
 	// backend for the same reason — so this is always the stream onto a node
 	// that does, and it exists at all only because a node running discovery can
 	// find one.
-	if n.discovery != nil {
+	//
+	// THE HOOK SECRET IS READ THROUGH IT, and only that: verifying a push needs
+	// the project's secret, which the developer's link stored there. Nothing a
+	// caller sends reads a value back.
+	var linked secretReader
+	switch {
+	case n.opts.secrets != nil:
+		linked = n.opts.secrets
+	case n.discovery != nil:
 		v := newVault(n)
 		n.closers = append(n.closers, v)
+		linked = v
 		frontendOptions = append(frontendOptions, frontend.WithVault(v))
 	}
+	frontendOptions = append(frontendOptions, frontend.WithHooks(linkSecrets{projects: projects, vault: linked}))
 
 	svc, err := frontend.New(n.cfg.BuildFrontend, frontendOptions...)
 	if err != nil {

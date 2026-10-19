@@ -2,15 +2,14 @@ package frontend
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
 	"connectrpc.com/connect"
-
-	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
 
-// secrets.go holds auth's answer about a hook for a little while, and the
+// secrets.go holds the cloud's answer about a hook for a little while, and the
 // bound on it is a security property rather than a performance one.
 //
 // v1 makes a p2p round trip to auth for a hook secret on EVERY unauthenticated
@@ -119,24 +118,28 @@ func (c *cache[V]) forget(key string) {
 	}
 }
 
-// hook resolves a hook id through the cache.
+// hook resolves a project's hook through the cache.
 //
 // WHICH FAILURES ARE REMEMBERED IS THE WHOLE OF IT. "No such hook" is a fact
 // about this cloud that will not change in the next minute, and remembering it
-// is what makes a flood of invented hook ids cost one round trip each instead
-// of one per request. "auth is unreachable" is the opposite: remembering it
-// would keep this node refusing real pushes for a minute after auth came back.
-func (s *Service) hook(ctx context.Context, hookID string) (*authv2.Hook, error) {
-	return s.secrets.do(hookID, func() (*authv2.Hook, error) {
+// is what makes a flood of invented project ids cost one round trip each
+// instead of one per request. "the vault is unreachable" is the opposite:
+// remembering it would keep this node refusing real pushes for a minute after
+// it came back.
+func (s *Service) hook(ctx context.Context, project string) (Hook, error) {
+	return s.secrets.do(project, func() (Hook, error) {
 		ctx, cancel := context.WithTimeout(ctx, s.cfg.BackendTimeout)
 		defer cancel()
-		return s.hooks.Get(ctx, hookID)
+		return s.hooks.Hook(ctx, project)
 	})
 }
 
 // terminal reports whether an error is an answer rather than a failure to get
 // one. Only an answer is worth caching.
 func terminal(err error) bool {
+	if errors.Is(err, ErrNoHook) {
+		return true
+	}
 	switch connect.CodeOf(err) {
 	case connect.CodeNotFound, connect.CodeInvalidArgument, connect.CodeFailedPrecondition, connect.CodePermissionDenied:
 		return true

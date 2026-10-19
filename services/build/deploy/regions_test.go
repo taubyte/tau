@@ -25,7 +25,7 @@ func TestARegionThisCloudDoesNotServeIsRefusedByDefault(t *testing.T) {
 	err = d.Run(t.Context(), work(), &log)
 	require.ErrorIs(t, err, deploy.ErrUnplaced)
 	require.ErrorContains(t, err, `cache/sessions in shop: is placed in region "eu", which this build does not serve`)
-	_, err = r.Resolve(t.Context(), "shop", deploy.DefaultEnvironment)
+	_, err = r.Resolve(t.Context(), shopID, deploy.DefaultEnvironment)
 	require.Error(t, err, "nothing was published")
 }
 
@@ -38,7 +38,7 @@ func TestARegionThisCloudDoesNotServeIsSaidWhenLenient(t *testing.T) {
 
 	require.Contains(t, log.String(),
 		`check: cache/sessions in shop: is placed in region "eu", which this build does not serve; it runs in "default"`)
-	_, err := r.Resolve(t.Context(), "shop", deploy.DefaultEnvironment)
+	_, err := r.Resolve(t.Context(), shopID, deploy.DefaultEnvironment)
 	require.NoError(t, err)
 }
 
@@ -58,7 +58,7 @@ func TestAnUnplaceableDeploymentPublishesNothing(t *testing.T) {
 	require.ErrorIs(t, err, deploy.ErrUnplaced)
 	require.Contains(t, err.Error(), "is not placed anywhere")
 
-	_, err = r.Resolve(t.Context(), "shop", deploy.DefaultEnvironment)
+	_, err = r.Resolve(t.Context(), shopID, deploy.DefaultEnvironment)
 	require.Error(t, err, "nothing was published")
 }
 

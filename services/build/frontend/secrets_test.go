@@ -9,8 +9,6 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
-
-	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
 
 // The cache is a security bound before it is a performance one: it is keyed by
@@ -35,8 +33,8 @@ func TestAHookIsBelievedForOneTTLAndNoLonger(t *testing.T) {
 // per request.
 func TestAnAnsweredMissIsRemembered(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.hooks.get = func(string) (*authv2.Hook, error) {
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such hook"))
+	h.hooks.get = func(string) (Hook, error) {
+		return Hook{}, ErrNoHook
 	}
 
 	for range 5 {
@@ -56,7 +54,7 @@ func TestAFailureToReachAuthIsNotRemembered(t *testing.T) {
 	} {
 		t.Run(connect.CodeOf(err).String(), func(t *testing.T) {
 			h := newHarness(t, Config{})
-			h.hooks.get = func(string) (*authv2.Hook, error) { return nil, err }
+			h.hooks.get = func(string) (Hook, error) { return Hook{}, err }
 
 			for range 3 {
 				h.do(t, webhookRequest(webhookOpts{}))
@@ -68,11 +66,11 @@ func TestAFailureToReachAuthIsNotRemembered(t *testing.T) {
 	// And once auth answers, the next push works — no stale refusal in the way.
 	h := newHarness(t, Config{})
 	failing := true
-	h.hooks.get = func(id string) (*authv2.Hook, error) {
+	h.hooks.get = func(id string) (Hook, error) {
 		if failing {
-			return nil, connect.NewError(connect.CodeUnavailable, errors.New("down"))
+			return Hook{}, connect.NewError(connect.CodeUnavailable, errors.New("down"))
 		}
-		return &authv2.Hook{Id: id, Secret: []byte(testSecret), RepositoryKey: testRepoKey}, nil
+		return Hook{Project: id, Secret: []byte(testSecret), Repositories: []string{testRepoKey}}, nil
 	}
 
 	require.Equal(t, http.StatusNotFound, h.do(t, webhookRequest(webhookOpts{})).Code)
@@ -90,8 +88,8 @@ func TestTheCacheHasACeiling(t *testing.T) {
 		WebhookRate:    Rate{Burst: 1000, Per: time.Minute},
 		HookRate:       Rate{Burst: 1000, Per: time.Minute},
 	})
-	h.hooks.get = func(id string) (*authv2.Hook, error) {
-		return &authv2.Hook{Id: id, Secret: []byte(testSecret), RepositoryKey: testRepoKey}, nil
+	h.hooks.get = func(id string) (Hook, error) {
+		return Hook{Project: id, Secret: []byte(testSecret), Repositories: []string{testRepoKey}}, nil
 	}
 
 	for i := range 8 {

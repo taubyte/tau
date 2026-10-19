@@ -58,7 +58,7 @@ func pathID(r *http.Request, name string) (string, error) {
 
 // mayTouchProject authorizes a project-scoped route.
 //
-// The subject is the project, and what gates it is auth's own answer about
+// The subject is the project, and what gates it is the project table's answer about
 // which repositories the project is made of — the same scoping
 // services/auth/github.go's authorizeProject applies when it lists projects, so
 // a project is reachable by id to exactly the people who already see it in
@@ -66,7 +66,7 @@ func pathID(r *http.Request, name string) (string, error) {
 func (s *Service) mayTouchProject(ctx context.Context, token, projectID string) error {
 	keys, err := s.projects.Repositories(ctx, projectID)
 	if err != nil {
-		// An unknown project and an unreachable auth are NOT the same answer,
+		// An unknown project and an unreachable register are NOT the same answer,
 		// and translate keeps them apart: NotFound becomes the same 404 a
 		// denial does, and a transport failure becomes a 502.
 		return err

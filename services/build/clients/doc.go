@@ -24,9 +24,9 @@
 // # It imports neither role
 //
 // The adapters below return their own concrete types rather than the interface
-// each consumer declared. Returning `backend.Repositories` would make every
-// frontend that dials auth depend on the backend package, which is the
-// dependency services/build/boundary_test.go exists to keep out. The interface
+// each consumer declared. Returning a role's interface would make every role
+// that dials auth depend on the other role's package, which is the dependency
+// services/build/boundary_test.go exists to keep out. The interface
 // satisfaction is asserted in this package's TEST files, where importing a
 // role costs nothing.
 //

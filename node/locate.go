@@ -62,6 +62,13 @@ type registerSeam interface {
 	registerReader
 	Environments(ctx context.Context, project string) ([]string, error)
 	Publish(ctx context.Context, p pkgregister.Publication) (pkgregister.ObjectID, error)
+
+	// The project table (projects.go): read by both build roles, written by
+	// the frontend's link.
+	LinkProject(ctx context.Context, l pkgregister.Link) (pkgregister.ProjectRecord, error)
+	Project(ctx context.Context, id string) (pkgregister.ProjectRecord, error)
+	Repository(ctx context.Context, repository string) (pkgregister.RepositoryRecord, error)
+	ProjectsOf(ctx context.Context, claimant string) ([]pkgregister.ProjectRecord, error)
 }
 
 // routeTo is the `pick` half of every reach on this node: WHICH node in the

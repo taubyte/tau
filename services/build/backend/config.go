@@ -320,13 +320,8 @@ var (
 	_ Store       = (*raft.MockCluster)(nil)
 )
 
-// Repositories is the one question this service asks auth.
-//
-// ONE FACT, not authv2connect's whole client: naming only this keeps
-// deploy_key out of this package's vocabulary until the Runner needs it, which
-// is also the security question auth.proto and services/auth/repositories.go
-// left open on purpose — "because nothing named the consumer". Build is that
-// consumer, and widening this interface is the change that answers it.
+// Repositories is the one question this service asks the register's project
+// table: which project a pushed repository was linked to.
 //
 // It doubles as admission control on stranger-authored input: a push for a
 // repository nobody registered with this cloud is refused before anything is

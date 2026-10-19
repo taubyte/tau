@@ -10,8 +10,6 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
-
-	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
 
 // A hostile caller gets one of these. The friendly case is one test; the rest
@@ -51,7 +49,7 @@ func TestEachAnswerAboutADeliveryHasItsOwnStatus(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t, Config{})
-			h.deliveries.verify = func(*authv2.Hook, http.Header, []byte) (Push, error) { return Push{}, tc.err }
+			h.deliveries.verify = func(Hook, http.Header, []byte) (Push, error) { return Push{}, tc.err }
 
 			w := h.do(t, webhookRequest(webhookOpts{}))
 
@@ -67,7 +65,7 @@ func TestEachAnswerAboutADeliveryHasItsOwnStatus(t *testing.T) {
 // role passes that on without reading the payload itself.
 func TestWhatIsQueuedIsWhatWasVerified(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.deliveries.verify = func(hook *authv2.Hook, _ http.Header, _ []byte) (Push, error) {
+	h.deliveries.verify = func(hook Hook, _ http.Header, _ []byte) (Push, error) {
 		return Push{Repository: "gitlab.example.com/group/sub/pay", Ref: "refs/heads/main", Commit: testSHA}, nil
 	}
 
@@ -78,9 +76,9 @@ func TestWhatIsQueuedIsWhatWasVerified(t *testing.T) {
 func TestAQueryParameterCannotChooseTheHook(t *testing.T) {
 	h := newHarness(t, Config{})
 	asked := []string{}
-	h.hooks.get = func(id string) (*authv2.Hook, error) {
+	h.hooks.get = func(id string) (Hook, error) {
 		asked = append(asked, id)
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("no such hook"))
+		return Hook{}, ErrNoHook
 	}
 
 	r := webhookRequest(webhookOpts{})
@@ -96,8 +94,8 @@ func TestAQueryParameterCannotChooseTheHook(t *testing.T) {
 // hook this cloud cannot authenticate must fail closed.
 func TestAnEmptySecretIsAFailureAndNeverASkippedMAC(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.hooks.get = func(id string) (*authv2.Hook, error) {
-		return &authv2.Hook{Id: id, RepositoryKey: testRepoKey}, nil
+	h.hooks.get = func(id string) (Hook, error) {
+		return Hook{Project: id, Repositories: []string{testRepoKey}}, nil
 	}
 
 	w := h.do(t, webhookRequest(webhookOpts{omitSig: true}))
@@ -273,17 +271,4 @@ func TestARedeliveredWebhookCostsOneLookupNotTwo(t *testing.T) {
 	// Three enqueues, and the backend deduplicates them: idempotency lives
 	// there, on the job id, and is not imitated here.
 	require.Len(t, h.backend.enqueues(), 3)
-}
-
-// A Hooks implementation that answers with neither a hook nor an error is a
-// bug in something else, and this role fails closed on it rather than reading a
-// zero-valued secret out of a nil message.
-func TestAHookThatIsNeitherAnAnswerNorAnErrorFailsClosed(t *testing.T) {
-	h := newHarness(t, Config{})
-	h.hooks.get = func(string) (*authv2.Hook, error) { return nil, nil }
-
-	w := h.do(t, webhookRequest(webhookOpts{}))
-
-	require.Equal(t, http.StatusInternalServerError, w.Code)
-	require.Empty(t, h.backend.enqueues())
 }

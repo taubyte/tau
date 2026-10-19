@@ -10,7 +10,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/pkg/tenancy"
 )
 
@@ -33,7 +32,7 @@ type Service struct {
 	identity   Identity
 	admissions Admissions
 	vault      Vault
-	registrar  Registrar
+	linker     Linker
 	tenancy    tenancy.Tenancy
 	cfg        Config
 
@@ -46,7 +45,7 @@ type Service struct {
 	// The keyed ones are all keyed by a string a stranger chooses, so all three
 	// are the same bounded, expiring map; the global ones are one bucket each
 	// and cannot be keyed at all. See secrets.go and ratelimit.go.
-	secrets       *cache[*authv2.Hook]
+	secrets       *cache[Hook]
 	hookBuckets   *cache[*bucket]
 	callerBuckets *cache[*bucket]
 	globalHooks   *bucket
@@ -78,7 +77,7 @@ type options struct {
 	identity   Identity
 	admissions Admissions
 	vault      Vault
-	registrar  Registrar
+	linker     Linker
 	tenancy    tenancy.Tenancy
 
 	tune func(*http.Server)
@@ -137,15 +136,15 @@ func WithVault(v Vault) Option {
 	}
 }
 
-// WithRegistrar is where a linked project is registered — auth, which this
+// WithLinker is where a linked project is recorded — the register, which this
 // public role may only forward to after authorizing the caller (projectapi.go).
-// Optional: without one the route answers the 404 a denial gets.
-func WithRegistrar(r Registrar) Option {
+// Optional: without one the project routes answer the 404 a denial gets.
+func WithLinker(l Linker) Option {
 	return func(o *options) error {
-		if r == nil {
-			return errors.New("build: no registrar to create projects with")
+		if l == nil {
+			return errors.New("build: no linker to record projects with")
 		}
-		o.registrar = r
+		o.linker = l
 		return nil
 	}
 }
@@ -288,7 +287,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		identity:   o.identity,
 		admissions: o.admissions,
 		vault:      o.vault,
-		registrar:  o.registrar,
+		linker:     o.linker,
 		tenancy:    o.tenancy,
 		cfg:        effective,
 		tune:       o.tune,
@@ -299,7 +298,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 	// A miss is remembered only when it is an ANSWER — see secrets.go's
 	// terminal. Remembering "auth is unreachable" would keep this node
 	// refusing real pushes for a whole TTL after auth came back.
-	s.secrets = newCache[*authv2.Hook](s.cfg.SecretCacheMax, s.cfg.SecretCacheTTL, s.now, terminal)
+	s.secrets = newCache[Hook](s.cfg.SecretCacheMax, s.cfg.SecretCacheTTL, s.now, terminal)
 	// A bucket's lifetime is one refill period, because a bucket untouched for
 	// that long has refilled to full and is indistinguishable from a new one.
 	//

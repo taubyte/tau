@@ -27,7 +27,6 @@ import (
 
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/services/build/frontend"
 )
 
@@ -108,17 +107,49 @@ func (i *Forges) WriteAccess(ctx context.Context, token string, key repokey.Key)
 //     that reads no deliveries, a key it cannot address) -> the error itself
 //   - anything else, which is a genuine delivery naming no usable push ->
 //     ErrMalformed
-func (i *Forges) Verify(hook *authv2.Hook, header http.Header, body []byte) (frontend.Push, error) {
-	key, err := repokey.Parse("https://" + hook.GetRepositoryKey())
-	if err != nil {
-		return frontend.Push{}, fmt.Errorf("build: hook %q names no repository: %w", hook.GetId(), err)
+func (i *Forges) Verify(hook frontend.Hook, header http.Header, body []byte) (frontend.Push, error) {
+	if len(hook.Repositories) == 0 {
+		return frontend.Push{}, fmt.Errorf("build: project %q has no repositories to verify a push for", hook.Project)
 	}
 
+	// EACH OF THE PROJECT'S REPOSITORIES IS TRIED, because the URL names the
+	// project and only the verified body names which of its repositories was
+	// pushed. Every attempt is the whole of VerifyPush — the signature and the
+	// repository check together — so a delivery verifies only as a push to a
+	// repository the project owns. A delivery whose signature is good for
+	// none of them is unverified; one that names a repository outside the
+	// project is the same.
+	var last error
+	for _, spelling := range hook.Repositories {
+		key, err := repokey.Parse("https://" + spelling)
+		if err != nil {
+			last = fmt.Errorf("build: project %q names no repository %q: %w", hook.Project, spelling, err)
+			continue
+		}
+		push, err := i.verifyOne(key, hook.Secret, header, body)
+		if err == nil || !errors.Is(err, frontend.ErrUnverified) {
+			return push, err
+		}
+		last = err
+	}
+	return frontend.Push{}, last
+}
+
+func (i *Forges) verifyOne(key repokey.Key, secret []byte, header http.Header, body []byte) (frontend.Push, error) {
+	// THE SCHEME IS THE FORGE'S, read from the driver that serves the host, and
+	// it is the same value forge.Session.RegisterPushHook stamped when the hook
+	// was installed — so what a hook was signed with and what it is checked
+	// against cannot drift apart.
+	var scheme forge.Scheme
+	if driver, err := i.forges.Driver(key.Host); err == nil {
+		if sig, ok := driver.(forge.Signatures); ok {
+			scheme = sig.Scheme()
+		}
+	}
 	push, err := i.forges.VerifyPush(forge.Hook{
 		Key:    key,
-		Handle: forge.Handle(hook.GetHandle()),
-		Scheme: forge.Scheme(hook.GetScheme()),
-		Secret: forge.SecretFrom(hook.GetSecret()),
+		Scheme: scheme,
+		Secret: forge.SecretFrom(secret),
 	}, forge.Delivery{Header: header, Body: body})
 
 	var (
@@ -140,4 +171,30 @@ func (i *Forges) Verify(hook *authv2.Hook, header http.Header, body []byte) (fro
 		return frontend.Push{}, fmt.Errorf("build: %w", err)
 	}
 	return frontend.Push{}, fmt.Errorf("%w: %v", frontend.ErrMalformed, err)
+}
+
+// Claimant is the token holder's stable identity on host.
+func (i *Forges) Claimant(ctx context.Context, token, host string) (string, error) {
+	if token == "" {
+		return "", frontend.ErrBadCredential
+	}
+	session, err := i.forges.Host(host, forge.Token(token))
+	var noDriver *forge.NoDriverError
+	if errors.As(err, &noDriver) {
+		return "", fmt.Errorf("%w: %s", frontend.ErrUnknownForge, host)
+	}
+	if err != nil {
+		return "", fmt.Errorf("build: %w", err)
+	}
+	id, err := session.Whoami(ctx)
+	var refused *forge.CredentialError
+	switch {
+	case errors.As(err, &refused):
+		return "", frontend.ErrBadCredential
+	case err != nil:
+		return "", fmt.Errorf("build: asking %s who this is: %w", host, err)
+	case id.Subject == "":
+		return "", fmt.Errorf("build: %s answered with no subject", host)
+	}
+	return session.Host() + "/" + id.Subject, nil
 }

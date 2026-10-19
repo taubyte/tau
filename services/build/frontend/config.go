@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
-	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	"github.com/taubyte/tau/pkg/register"
 )
 
 // Defaults. Fields on Config set through New, never mutable package globals —
@@ -221,18 +221,31 @@ func (c Config) withDefaults() (Config, error) {
 	return c, nil
 }
 
-// Hooks is what auth knows about one webhook.
+// Hook is what verifies a delivery addressed to one project: the
+// repositories a push to it may be for, and the secret its signature is made
+// with.
+//
+// THE FIELDS DECIDE AN AUTHENTICATION TOGETHER, which is why they travel as one
+// value: the secret verifies the body, and the repositories say which
+// repositories that signature is good for. v1 fetched only the secret and let
+// the BODY name the repository, so a signature under one hook authorized a job
+// for any repository the cloud had.
+type Hook struct {
+	Project      string
+	Repositories []string
+	Secret       []byte
+}
+
+// ErrNoHook is a project this cloud cannot verify a push for: nobody linked
+// it, or no hook secret is set for it. It is an answer, not a failure, and is
+// remembered as one (secrets.go).
+var ErrNoHook = errors.New("build: no hook for this project")
+
+// Hooks is what verifies a webhook addressed to a project: the register's
+// record of the project, and the hook secret its link stored in the vault.
 type Hooks interface {
-	// Get returns the hook registered under id.
-	//
-	// It hands back the generated message rather than bare strings because
-	// THE FIELDS DECIDE AN AUTHENTICATION TOGETHER: the scheme and secret
-	// verify the body, and `repository_key` says which repository that
-	// signature is good for. v1 fetched only the secret — v1's services/patrick/
-	// github.go's githubCheckHookAndExtractSecret sets exactly one context
-	// variable — which is the whole of how a signature under one hook came to
-	// authorize a job for any repository.
-	Get(ctx context.Context, hookID string) (*authv2.Hook, error)
+	// Hook returns project's hook, or ErrNoHook.
+	Hook(ctx context.Context, project string) (Hook, error)
 }
 
 // Deliveries authenticates a webhook delivery and says what it means.
@@ -242,15 +255,15 @@ type Hooks interface {
 // package names no host. forgeauth answers it through pkg/forge.
 type Deliveries interface {
 	// Verify checks one delivery against the hook it was addressed to, under
-	// the scheme and secret stored WITH the hook, and returns the push it
-	// proves. A push is always for the hook's own repository: a delivery
-	// naming any other does not verify.
+	// the scheme the repository's forge signs with and the secret stored for
+	// the project, and returns the push it proves. A push is always for one of
+	// the hook's own repositories: a delivery naming any other does not verify.
 	//
 	// ErrNotAPush and ErrRefDeleted are genuine deliveries this cloud does not
 	// build; ErrMalformed is a genuine delivery naming no usable push;
 	// ErrUnverified is a delivery that is not genuine. Anything else is a hook
 	// this cloud cannot check at all.
-	Verify(hook *authv2.Hook, header http.Header, body []byte) (Push, error)
+	Verify(hook Hook, header http.Header, body []byte) (Push, error)
 }
 
 // Push is what a verified delivery means: build.proto's PushEvent, and nothing
@@ -302,13 +315,13 @@ type Vault interface {
 	List(ctx context.Context, project, environment string) ([]string, error)
 }
 
-// Registrar is auth's project and repository registration, as this role sees
-// it: the two writes linking a project takes. auth's own surface is p2p only;
-// this is the one public door to it, and it opens only after the caller is shown
-// to write to both repositories (projectapi.go).
-type Registrar interface {
-	Register(ctx context.Context, repositoryKey string) error
-	Create(ctx context.Context, name, configKey, codeKey string) (string, error)
+// Linker is the register's project table, as this role sees it: the one write
+// linking a project takes, and the caller's own index. The register's surface is
+// p2p only; this is the one public door to it, and it opens only after the
+// caller is shown to write to every repository the link names (projectapi.go).
+type Linker interface {
+	LinkProject(ctx context.Context, l register.Link) (register.ProjectRecord, error)
+	ProjectsOf(ctx context.Context, claimant string) ([]register.ProjectRecord, error)
 }
 
 // Backend is build's private half, as this role sees it: build.proto's five
@@ -370,7 +383,23 @@ type Identity interface {
 	// is exactly what let an unrelated caller reach another project's
 	// repositories in v1.
 	WriteAccess(ctx context.Context, token string, key repokey.Key) (Access, error)
+
+	// Claimant is who the holder of token is on the forge serving host, as
+	// "<host>/<subject>": the stable id, never the login, which can be renamed
+	// and then claimed by somebody else.
+	//
+	// ErrUnknownForge is a host this cloud has no forge for; ErrBadCredential
+	// is a token that forge does not accept.
+	Claimant(ctx context.Context, token, host string) (string, error)
 }
+
+var (
+	// ErrUnknownForge is a forge host this cloud does not serve.
+	ErrUnknownForge = errors.New("build: no forge serves that host")
+
+	// ErrBadCredential is a token the forge refused outright.
+	ErrBadCredential = errors.New("build: the forge does not accept this token")
+)
 
 // Admissions is the cloud's answer about a caller the forge has already
 // granted: whether the person holding the credential may use this cloud's API

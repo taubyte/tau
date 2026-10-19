@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
-	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
@@ -41,10 +40,10 @@ const (
 type fakeHooks struct {
 	mu    sync.Mutex
 	calls int
-	get   func(id string) (*authv2.Hook, error)
+	get   func(id string) (Hook, error)
 }
 
-func (f *fakeHooks) Get(_ context.Context, id string) (*authv2.Hook, error) {
+func (f *fakeHooks) Hook(_ context.Context, id string) (Hook, error) {
 	f.mu.Lock()
 	f.calls++
 	f.mu.Unlock()
@@ -52,9 +51,9 @@ func (f *fakeHooks) Get(_ context.Context, id string) (*authv2.Hook, error) {
 		return f.get(id)
 	}
 	if id != testHookID {
-		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no hook %s", id))
+		return Hook{}, fmt.Errorf("%w: %s", ErrNoHook, id)
 	}
-	return &authv2.Hook{Id: id, Secret: []byte(testSecret), RepositoryKey: testRepoKey}, nil
+	return Hook{Project: id, Secret: []byte(testSecret), Repositories: []string{testRepoKey}}, nil
 }
 
 func (f *fakeHooks) count() int {
@@ -71,23 +70,23 @@ func (f *fakeHooks) count() int {
 // By default a delivery verifies when its test signature is the hook's secret,
 // and means the push its body names, for the hook's own repository.
 type fakeDeliveries struct {
-	verify func(hook *authv2.Hook, header http.Header, body []byte) (Push, error)
+	verify func(hook Hook, header http.Header, body []byte) (Push, error)
 }
 
 const testSignatureHeader = "X-Test-Signature"
 
-func (f *fakeDeliveries) Verify(hook *authv2.Hook, header http.Header, body []byte) (Push, error) {
+func (f *fakeDeliveries) Verify(hook Hook, header http.Header, body []byte) (Push, error) {
 	if f.verify != nil {
 		return f.verify(hook, header, body)
 	}
-	if header.Get(testSignatureHeader) != string(hook.GetSecret()) {
+	if header.Get(testSignatureHeader) != string(hook.Secret) {
 		return Push{}, fmt.Errorf("%w: wrong signature", ErrUnverified)
 	}
 	var p struct{ Ref, After string }
 	if err := json.Unmarshal(body, &p); err != nil {
 		return Push{}, err
 	}
-	return Push{Repository: hook.GetRepositoryKey(), Ref: p.Ref, Commit: p.After}, nil
+	return Push{Repository: hook.Repositories[0], Ref: p.Ref, Commit: p.After}, nil
 }
 
 type fakeProjects struct {
@@ -201,7 +200,18 @@ func (f *fakeBackend) enqueues() []enqueued {
 }
 
 type fakeIdentity struct {
-	write func(token string, key repokey.Key) (Access, error)
+	write    func(token string, key repokey.Key) (Access, error)
+	claimant func(token, host string) (string, error)
+}
+
+func (f *fakeIdentity) Claimant(_ context.Context, token, host string) (string, error) {
+	if f.claimant != nil {
+		return f.claimant(token, host)
+	}
+	if token != testToken {
+		return "", ErrBadCredential
+	}
+	return host + "/1001", nil
 }
 
 func (f *fakeIdentity) WriteAccess(_ context.Context, token string, key repokey.Key) (Access, error) {

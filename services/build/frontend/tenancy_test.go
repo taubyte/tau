@@ -6,7 +6,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/pkg/tenancy"
 )
 
@@ -26,7 +25,7 @@ func TestAPushOutsideTheTenancyIsNotBuilt(t *testing.T) {
 
 	// A verified push naming no key a tenancy can place is refused too.
 	h = newHarness(t, Config{}, servesOnly(t, "github.com/someone-else"))
-	h.deliveries.verify = func(*authv2.Hook, http.Header, []byte) (Push, error) {
+	h.deliveries.verify = func(Hook, http.Header, []byte) (Push, error) {
 		return Push{Repository: "GitHub.com/x/y", Ref: "refs/heads/main", Commit: testSHA}, nil
 	}
 	w = h.do(t, webhookRequest(webhookOpts{}))

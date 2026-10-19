@@ -9,73 +9,13 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 
-	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
 	"github.com/taubyte/tau/services/build"
 )
 
-// The servers the frontend's three adapters are tested against. Same fixture as
+// The servers the frontend's backend adapter are tested against. Same fixture as
 // harness_test.go's: mocknet, discovery.Static, and no port anywhere.
-
-// ── auth's HookService ───────────────────────────────────────────────────────
-
-type fakeHooks struct {
-	get func(id string) (*authv2.Hook, error)
-}
-
-func (f *fakeHooks) Get(_ context.Context, req *connect.Request[authv2.HookRef]) (*connect.Response[authv2.Hook], error) {
-	hook, err := f.get(req.Msg.GetId())
-	if err != nil {
-		return nil, err
-	}
-	return connect.NewResponse(hook), nil
-}
-
-func (f *fakeHooks) List(context.Context, *connect.Request[authv2.Empty], *connect.ServerStream[authv2.HookRef]) error {
-	return connect.NewError(connect.CodeUnimplemented, nil)
-}
-
-func serveHooks(t testing.TB, mn mocknet.Mocknet, get func(string) (*authv2.Hook, error)) host.Host {
-	t.Helper()
-	h := newHost(t, mn)
-	mux := http.NewServeMux()
-	mux.Handle(authv2connect.NewHookServiceHandler(&fakeHooks{get: get}))
-	serve(t, h, AuthProtocol, mux)
-	return h
-}
-
-// ── auth's ProjectService ────────────────────────────────────────────────────
-
-type fakeProjects struct {
-	get func(id string) (*authv2.Project, error)
-}
-
-func (f *fakeProjects) Get(_ context.Context, req *connect.Request[authv2.ProjectRef]) (*connect.Response[authv2.Project], error) {
-	project, err := f.get(req.Msg.GetId())
-	if err != nil {
-		return nil, err
-	}
-	return connect.NewResponse(project), nil
-}
-
-func (f *fakeProjects) List(context.Context, *connect.Request[authv2.Empty], *connect.ServerStream[authv2.ProjectRef]) error {
-	return connect.NewError(connect.CodeUnimplemented, nil)
-}
-
-func (f *fakeProjects) Create(context.Context, *connect.Request[authv2.CreateProjectRequest]) (*connect.Response[authv2.CreateProjectResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, nil)
-}
-
-func serveProjects(t testing.TB, mn mocknet.Mocknet, get func(string) (*authv2.Project, error)) host.Host {
-	t.Helper()
-	h := newHost(t, mn)
-	mux := http.NewServeMux()
-	mux.Handle(authv2connect.NewProjectServiceHandler(&fakeProjects{get: get}))
-	serve(t, h, AuthProtocol, mux)
-	return h
-}
 
 // ── build's own backend ──────────────────────────────────────────────────────
 

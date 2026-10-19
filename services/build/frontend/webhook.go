@@ -10,12 +10,11 @@ import (
 )
 
 // maxHookIDLength bounds the one caller-chosen string this route puts in a map.
-// A hook id is a generated identifier (services/auth/github.go mints it with
-// id.Generate over the repository's key row); nothing legitimate is long, and
-// the cache and the rate limiter are both keyed by it.
+// The path names a project id — a CID project.yaml carries — and nothing
+// legitimate is long; the cache and the rate limiter are both keyed by it.
 const maxHookIDLength = 256
 
-// handleWebhook is POST /hook/{hook}, and THE ORDER OF THE CHECKS IS THE
+// handleWebhook is POST /hook/{projectId}, and THE ORDER OF THE CHECKS IS THE
 // DESIGN. Each one is placed where it is because of what it costs and what it
 // is allowed to know, and the file reads top to bottom in the order a stranger's
 // bytes are believed:
@@ -40,14 +39,18 @@ const maxHookIDLength = 256
 // cache would add a third, weaker copy of a guarantee two mechanisms already
 // hold, keyed by yet another string a stranger chooses.
 func (s *Service) handleWebhook(w http.ResponseWriter, r *http.Request) {
-	// THE HOOK ID COMES FROM THE PATH AND FROM NOWHERE ELSE. net/http's own
+	// THE PROJECT ID COMES FROM THE PATH AND FROM NOWHERE ELSE. It is in the
+	// URL rather than looked up from the body because the body is not believed
+	// until it verifies, and verifying needs the project's secret: a project's
+	// very first push is verified from its link alone, before anything has been
+	// published for it. net/http's own
 	// ServeMux resolves a {wildcard} from the path only, and PathValue cannot
 	// be reached by a query parameter, a header or a body field. v1's
 	// pkg/http/context/helpers.go resolves query FIRST, then mux vars, then
 	// header, then body — so `?hook=` overrides the path on every patrick route
 	// that has one, and the string that selects the HMAC key is chosen by the
 	// caller twice over. ingress_test.go holds that this one is not.
-	hookID := r.PathValue("hook")
+	hookID := r.PathValue("projectId")
 	if hookID == "" || len(hookID) > maxHookIDLength {
 		respond(w, errDenied)
 		return
@@ -92,14 +95,14 @@ func (s *Service) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The cloud is asked. A hook nobody registered is a 404; a hook whose
-	// signature does not verify is a 403 below. That distinction admits, to
-	// somebody who can already name a hook id, that the hook exists — and a
-	// hook id is derived from a repository key the caller must already hold to
-	// compute it, so what leaks is "is this repository registered here" to
-	// somebody who named the repository. It is kept because the alternative
-	// makes a rotated secret indistinguishable from a deleted hook in the
-	// provider's delivery log, which is where an operator has to debug it.
+	// The cloud is asked. A project nobody linked, or one with no hook secret,
+	// is a 404; a delivery whose signature does not verify is a 403 below. That
+	// distinction admits, to somebody who can already name a project id, that
+	// the project is linked here — and a project id is in its project.yaml, so
+	// what leaks is "is this project linked" to somebody who read its config. It
+	// is kept because the alternative makes a rotated secret indistinguishable
+	// from an unlinked project in the provider's delivery log, which is where an
+	// operator has to debug it.
 	hook, err := s.hook(r.Context(), hookID)
 	if err != nil {
 		s.log("hook %s: %v", hookID, err)
@@ -110,18 +113,19 @@ func (s *Service) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	// AN EMPTY SECRET IS A 500, NEVER A SKIPPED MAC. It is a hook this cloud
 	// registered and cannot check, which is the operator's to see; forge refuses
 	// it too, but its refusal reads as a delivery that did not verify.
-	if len(hook.GetSecret()) == 0 {
+	if len(hook.Secret) == 0 {
 		s.log("hook %s has no secret; refusing to accept an unauthenticated push", hookID)
 		respond(w, problem(http.StatusInternalServerError, "hook is not configured"))
 		return
 	}
 
 	// THE BYTES ARE AUTHENTICATED, AND ONLY THEN INTERPRETED, by the forge that
-	// serves the hook's host, under the scheme stored WITH the hook. Verify also
-	// holds the check v1 does not have: the signature was made with a secret the
-	// URL chose, while the repository is named by the BODY, so a push is only
-	// ever for the hook's own repository — otherwise a signature under any hook
-	// this cloud has registered would authorize a job for any repository it has.
+	// serves the repository's host, under the scheme that forge signs with.
+	// Verify also holds the check v1 does not have: the signature was made with
+	// a secret the URL chose, while the repository is named by the BODY, so a
+	// push is only ever for one of the project's own repositories — otherwise a
+	// signature under any project's secret would authorize a job for any
+	// repository this cloud has.
 	event, err := s.deliveries.Verify(hook, r.Header, body)
 	switch {
 	case errors.Is(err, ErrNotAPush):

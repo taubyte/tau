@@ -96,13 +96,27 @@ func registry(t *testing.T) *register.Register {
 	return r
 }
 
+// shopID is the id every fixture's project.yaml carries: the CID of "shop".
+// The work a push becomes names the same project, because the repository was
+// linked under that id.
+const shopID = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
+
+// envsID is the envs fixture's own project id.
+const envsID = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"
+
+func envsWork() backend.Work {
+	w := work()
+	w.ProjectID = envsID
+	return w
+}
+
 func work() backend.Work {
 	return backend.Work{
 		JobID:         "job",
 		RepositoryKey: "github.com/acme/shop-config",
 		Ref:           "refs/heads/main",
 		CommitSHA:     "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c",
-		ProjectID:     "shop",
+		ProjectID:     shopID,
 		Attempt:       1,
 	}
 }
@@ -134,7 +148,7 @@ func TestAPushPublishes(t *testing.T) {
 	var log out
 	require.NoError(t, runner(t, c, r).Run(t.Context(), work(), &log))
 
-	pointer, err := r.Resolve(t.Context(), "shop", deploy.DefaultEnvironment)
+	pointer, err := r.Resolve(t.Context(), shopID, deploy.DefaultEnvironment)
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), pointer.Revision)
 	require.NotEmpty(t, pointer.Object)
@@ -156,23 +170,23 @@ func TestTheBranchDecidesTheDeployments(t *testing.T) {
 	r := registry(t)
 
 	var log out
-	require.NoError(t, runner(t, c, r).Run(t.Context(), work(), &log))
+	require.NoError(t, runner(t, c, r).Run(t.Context(), envsWork(), &log))
 
 	for _, name := range []string{"production", "ab", "preview"} {
-		pointer, err := r.Resolve(t.Context(), "shop", name)
+		pointer, err := r.Resolve(t.Context(), envsID, name)
 		require.NoError(t, err, name)
 		require.Equal(t, uint64(1), pointer.Revision, name)
 	}
 
-	_, err := r.Resolve(t.Context(), "shop", "staging")
+	_, err := r.Resolve(t.Context(), envsID, "staging")
 	require.ErrorIs(t, err, register.ErrNotPublished, "release/* is staging's, and main is not")
 
 	// A release branch feeds the other set.
-	w := work()
+	w := envsWork()
 	w.Ref = "refs/heads/release/1.4"
 	require.NoError(t, runner(t, c, r).Run(t.Context(), w, &log))
 
-	pointer, err := r.Resolve(t.Context(), "shop", "staging")
+	pointer, err := r.Resolve(t.Context(), envsID, "staging")
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), pointer.Revision)
 }
@@ -184,11 +198,11 @@ func TestEachDeploymentIsItsOwnObject(t *testing.T) {
 	r := registry(t)
 
 	var log out
-	require.NoError(t, runner(t, &checkout{dir: dir}, r).Run(t.Context(), work(), &log))
+	require.NoError(t, runner(t, &checkout{dir: dir}, r).Run(t.Context(), envsWork(), &log))
 
-	production, err := r.Resolve(t.Context(), "shop", "production")
+	production, err := r.Resolve(t.Context(), envsID, "production")
 	require.NoError(t, err)
-	preview, err := r.Resolve(t.Context(), "shop", "preview")
+	preview, err := r.Resolve(t.Context(), envsID, "preview")
 	require.NoError(t, err)
 
 	require.NotEqual(t, production.Object, preview.Object,
@@ -206,7 +220,7 @@ func TestAnUnchangedPushDoesNotMoveThePointer(t *testing.T) {
 	require.NoError(t, runner(t, c, r).Run(t.Context(), work(), &log))
 	require.NoError(t, runner(t, c, r).Run(t.Context(), work(), &log))
 
-	pointer, err := r.Resolve(t.Context(), "shop", deploy.DefaultEnvironment)
+	pointer, err := r.Resolve(t.Context(), shopID, deploy.DefaultEnvironment)
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), pointer.Revision)
 	require.Contains(t, log.String(), "unchanged at revision 1")
@@ -235,7 +249,7 @@ func TestAGeneratedNameNeedsTheCloudsZone(t *testing.T) {
 	// resolving a Host header finds it.
 	project, environment, err := told.ResolveHost(t.Context(), "storefront.tdw4ygm23gwgn.acme.example")
 	require.NoError(t, err)
-	require.Equal(t, "shop", project)
+	require.Equal(t, shopID, project)
 	require.Equal(t, deploy.DefaultEnvironment, environment)
 }
 
@@ -493,4 +507,23 @@ func (b *builderStub) Build(_ context.Context, w backend.Work, out backend.Outpu
 	}
 	fmt.Fprintln(out, "delegated")
 	return nil
+}
+
+// A CONFIGURATION NAMING ANOTHER PROJECT'S ID IS REFUSED BEFORE ANYTHING IS
+// WRITTEN. A config copied from another project keeps that project's id, and
+// the register's claim is what says this repository may not publish under it.
+func TestAConfigNamingAnIdItDidNotClaimPublishesNothing(t *testing.T) {
+	c := &checkout{dir: fixture(t, basicFixture)}
+	r := registry(t)
+
+	w := work()
+	w.ProjectID = "QmSomebodyElsesProject"
+	err := runner(t, c, r, deploy.WithProjects(projects{config: w.RepositoryKey})).Run(t.Context(), w, &out{})
+	require.ErrorIs(t, err, deploy.ErrNotClaimed)
+	require.Contains(t, err.Error(), shopID)
+
+	_, err = r.Resolve(t.Context(), shopID, deploy.DefaultEnvironment)
+	require.ErrorIs(t, err, register.ErrNotPublished)
+	_, err = r.Resolve(t.Context(), w.ProjectID, deploy.DefaultEnvironment)
+	require.ErrorIs(t, err, register.ErrNotPublished)
 }
