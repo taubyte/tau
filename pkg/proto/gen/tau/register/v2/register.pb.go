@@ -33,7 +33,16 @@
 // every read, forever, to answer a question whose answer usually did not
 // change. See pkg/register's package doc for the same argument at length.
 //
-// NOTHING HERE ENUMERATES. There is no List of projects, no List of
+// IT ALSO HOLDS WHO A PROJECT IS. Link, Project, Repository and ProjectsOf
+// are the project table: which configuration repository claimed a project id
+// (the author's, from project.yaml), which code repositories it attaches, and
+// who linked it. Those rows live under their own key prefix and no publication
+// writes them; a deploy only READS them, to check the id it is about to
+// publish is claimed by the repository it was pushed to. See pkg/register's
+// projects.go for the layout and the rule two racing claims resolve by.
+//
+// NOTHING ELSE ENUMERATES. ProjectsOf lists one claimant's own index and
+// nothing wider. There is no List of projects, no List of
 // environments and no history. Every call names exactly one row, which is what
 // the runtime needs; an operator's "what is deployed" question is a different
 // surface with different trust properties, and inventing it here would put a
@@ -950,6 +959,349 @@ func (x *HostAnswer) GetEnvironment() string {
 	return ""
 }
 
+// LinkRequest claims a project id for a configuration repository.
+type LinkRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Project          string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	ConfigRepository string                 `protobuf:"bytes,2,opt,name=config_repository,json=configRepository,proto3" json:"config_repository,omitempty"`
+	CodeRepositories []string               `protobuf:"bytes,3,rep,name=code_repositories,json=codeRepositories,proto3" json:"code_repositories,omitempty"`
+	// claimant is the forge identity of the caller the build frontend
+	// authorized, as "<forge host>/<subject>". It is never a node.
+	Claimant      string `protobuf:"bytes,4,opt,name=claimant,proto3" json:"claimant,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LinkRequest) Reset() {
+	*x = LinkRequest{}
+	mi := &file_tau_register_v2_register_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LinkRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LinkRequest) ProtoMessage() {}
+
+func (x *LinkRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v2_register_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LinkRequest.ProtoReflect.Descriptor instead.
+func (*LinkRequest) Descriptor() ([]byte, []int) {
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *LinkRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *LinkRequest) GetConfigRepository() string {
+	if x != nil {
+		return x.ConfigRepository
+	}
+	return ""
+}
+
+func (x *LinkRequest) GetCodeRepositories() []string {
+	if x != nil {
+		return x.CodeRepositories
+	}
+	return nil
+}
+
+func (x *LinkRequest) GetClaimant() string {
+	if x != nil {
+		return x.Claimant
+	}
+	return ""
+}
+
+// ProjectRecord is a linked project as every node resolves it.
+type ProjectRecord struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	ConfigRepository string                 `protobuf:"bytes,2,opt,name=config_repository,json=configRepository,proto3" json:"config_repository,omitempty"`
+	CodeRepositories []string               `protobuf:"bytes,3,rep,name=code_repositories,json=codeRepositories,proto3" json:"code_repositories,omitempty"`
+	Claimant         string                 `protobuf:"bytes,4,opt,name=claimant,proto3" json:"claimant,omitempty"`
+	// created_at is when the owning claim was made, unix nanoseconds.
+	CreatedAt     int64 `protobuf:"varint,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProjectRecord) Reset() {
+	*x = ProjectRecord{}
+	mi := &file_tau_register_v2_register_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectRecord) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectRecord) ProtoMessage() {}
+
+func (x *ProjectRecord) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v2_register_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectRecord.ProtoReflect.Descriptor instead.
+func (*ProjectRecord) Descriptor() ([]byte, []int) {
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ProjectRecord) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ProjectRecord) GetConfigRepository() string {
+	if x != nil {
+		return x.ConfigRepository
+	}
+	return ""
+}
+
+func (x *ProjectRecord) GetCodeRepositories() []string {
+	if x != nil {
+		return x.CodeRepositories
+	}
+	return nil
+}
+
+func (x *ProjectRecord) GetClaimant() string {
+	if x != nil {
+		return x.Claimant
+	}
+	return ""
+}
+
+func (x *ProjectRecord) GetCreatedAt() int64 {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return 0
+}
+
+type RepositoryRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Repository    string                 `protobuf:"bytes,1,opt,name=repository,proto3" json:"repository,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RepositoryRequest) Reset() {
+	*x = RepositoryRequest{}
+	mi := &file_tau_register_v2_register_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RepositoryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RepositoryRequest) ProtoMessage() {}
+
+func (x *RepositoryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v2_register_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RepositoryRequest.ProtoReflect.Descriptor instead.
+func (*RepositoryRequest) Descriptor() ([]byte, []int) {
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *RepositoryRequest) GetRepository() string {
+	if x != nil {
+		return x.Repository
+	}
+	return ""
+}
+
+// RepositoryRecord is which project owns a repository.
+type RepositoryRecord struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Project    string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	Repository string                 `protobuf:"bytes,2,opt,name=repository,proto3" json:"repository,omitempty"`
+	// configures is whether it is that project's configuration repository.
+	Configures    bool `protobuf:"varint,3,opt,name=configures,proto3" json:"configures,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RepositoryRecord) Reset() {
+	*x = RepositoryRecord{}
+	mi := &file_tau_register_v2_register_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RepositoryRecord) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RepositoryRecord) ProtoMessage() {}
+
+func (x *RepositoryRecord) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v2_register_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RepositoryRecord.ProtoReflect.Descriptor instead.
+func (*RepositoryRecord) Descriptor() ([]byte, []int) {
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *RepositoryRecord) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *RepositoryRecord) GetRepository() string {
+	if x != nil {
+		return x.Repository
+	}
+	return ""
+}
+
+func (x *RepositoryRecord) GetConfigures() bool {
+	if x != nil {
+		return x.Configures
+	}
+	return false
+}
+
+type ClaimantRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Claimant      string                 `protobuf:"bytes,1,opt,name=claimant,proto3" json:"claimant,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClaimantRequest) Reset() {
+	*x = ClaimantRequest{}
+	mi := &file_tau_register_v2_register_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClaimantRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClaimantRequest) ProtoMessage() {}
+
+func (x *ClaimantRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v2_register_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClaimantRequest.ProtoReflect.Descriptor instead.
+func (*ClaimantRequest) Descriptor() ([]byte, []int) {
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ClaimantRequest) GetClaimant() string {
+	if x != nil {
+		return x.Claimant
+	}
+	return ""
+}
+
+type ProjectRecords struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Projects      []*ProjectRecord       `protobuf:"bytes,1,rep,name=projects,proto3" json:"projects,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProjectRecords) Reset() {
+	*x = ProjectRecords{}
+	mi := &file_tau_register_v2_register_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectRecords) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectRecords) ProtoMessage() {}
+
+func (x *ProjectRecords) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v2_register_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectRecords.ProtoReflect.Descriptor instead.
+func (*ProjectRecords) Descriptor() ([]byte, []int) {
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ProjectRecords) GetProjects() []*ProjectRecord {
+	if x != nil {
+		return x.Projects
+	}
+	return nil
+}
+
 var File_tau_register_v2_register_proto protoreflect.FileDescriptor
 
 const file_tau_register_v2_register_proto_rawDesc = "" +
@@ -1004,8 +1356,42 @@ const file_tau_register_v2_register_proto_rawDesc = "" +
 	"\n" +
 	"HostAnswer\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
-	"\venvironment\x18\x02 \x01(\tR\venvironment2\xa4\x04\n" +
-	"\x0fRegisterService\x12L\n" +
+	"\venvironment\x18\x02 \x01(\tR\venvironment\"\x9d\x01\n" +
+	"\vLinkRequest\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x12+\n" +
+	"\x11config_repository\x18\x02 \x01(\tR\x10configRepository\x12+\n" +
+	"\x11code_repositories\x18\x03 \x03(\tR\x10codeRepositories\x12\x1a\n" +
+	"\bclaimant\x18\x04 \x01(\tR\bclaimant\"\xb4\x01\n" +
+	"\rProjectRecord\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12+\n" +
+	"\x11config_repository\x18\x02 \x01(\tR\x10configRepository\x12+\n" +
+	"\x11code_repositories\x18\x03 \x03(\tR\x10codeRepositories\x12\x1a\n" +
+	"\bclaimant\x18\x04 \x01(\tR\bclaimant\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x05 \x01(\x03R\tcreatedAt\"3\n" +
+	"\x11RepositoryRequest\x12\x1e\n" +
+	"\n" +
+	"repository\x18\x01 \x01(\tR\n" +
+	"repository\"l\n" +
+	"\x10RepositoryRecord\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x12\x1e\n" +
+	"\n" +
+	"repository\x18\x02 \x01(\tR\n" +
+	"repository\x12\x1e\n" +
+	"\n" +
+	"configures\x18\x03 \x01(\bR\n" +
+	"configures\"-\n" +
+	"\x0fClaimantRequest\x12\x1a\n" +
+	"\bclaimant\x18\x01 \x01(\tR\bclaimant\"L\n" +
+	"\x0eProjectRecords\x12:\n" +
+	"\bprojects\x18\x01 \x03(\v2\x1e.tau.register.v2.ProjectRecordR\bprojects2\xdc\x06\n" +
+	"\x0fRegisterService\x12D\n" +
+	"\x04Link\x12\x1c.tau.register.v2.LinkRequest\x1a\x1e.tau.register.v2.ProjectRecord\x12J\n" +
+	"\aProject\x12\x1f.tau.register.v2.ProjectRequest\x1a\x1e.tau.register.v2.ProjectRecord\x12S\n" +
+	"\n" +
+	"Repository\x12\".tau.register.v2.RepositoryRequest\x1a!.tau.register.v2.RepositoryRecord\x12O\n" +
+	"\n" +
+	"ProjectsOf\x12 .tau.register.v2.ClaimantRequest\x1a\x1f.tau.register.v2.ProjectRecords\x12L\n" +
 	"\aPublish\x12\x1f.tau.register.v2.PublishRequest\x1a .tau.register.v2.PublishResponse\x12D\n" +
 	"\aResolve\x12\x1f.tau.register.v2.ResolveRequest\x1a\x18.tau.register.v2.Pointer\x12J\n" +
 	"\x06Object\x12\x1e.tau.register.v2.ObjectRequest\x1a .tau.register.v2.CompiledProject\x12M\n" +
@@ -1027,7 +1413,7 @@ func file_tau_register_v2_register_proto_rawDescGZIP() []byte {
 	return file_tau_register_v2_register_proto_rawDescData
 }
 
-var file_tau_register_v2_register_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_tau_register_v2_register_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_tau_register_v2_register_proto_goTypes = []any{
 	(*Pointer)(nil),            // 0: tau.register.v2.Pointer
 	(*PublishRequest)(nil),     // 1: tau.register.v2.PublishRequest
@@ -1045,30 +1431,45 @@ var file_tau_register_v2_register_proto_goTypes = []any{
 	(*Deployments)(nil),        // 13: tau.register.v2.Deployments
 	(*HostRequest)(nil),        // 14: tau.register.v2.HostRequest
 	(*HostAnswer)(nil),         // 15: tau.register.v2.HostAnswer
+	(*LinkRequest)(nil),        // 16: tau.register.v2.LinkRequest
+	(*ProjectRecord)(nil),      // 17: tau.register.v2.ProjectRecord
+	(*RepositoryRequest)(nil),  // 18: tau.register.v2.RepositoryRequest
+	(*RepositoryRecord)(nil),   // 19: tau.register.v2.RepositoryRecord
+	(*ClaimantRequest)(nil),    // 20: tau.register.v2.ClaimantRequest
+	(*ProjectRecords)(nil),     // 21: tau.register.v2.ProjectRecords
 }
 var file_tau_register_v2_register_proto_depIdxs = []int32{
 	2,  // 0: tau.register.v2.PublishRequest.views:type_name -> tau.register.v2.View
 	4,  // 1: tau.register.v2.Assignment.view:type_name -> tau.register.v2.ViewPointer
 	6,  // 2: tau.register.v2.Assignments.assignments:type_name -> tau.register.v2.Assignment
-	1,  // 3: tau.register.v2.RegisterService.Publish:input_type -> tau.register.v2.PublishRequest
-	9,  // 4: tau.register.v2.RegisterService.Resolve:input_type -> tau.register.v2.ResolveRequest
-	10, // 5: tau.register.v2.RegisterService.Object:input_type -> tau.register.v2.ObjectRequest
-	12, // 6: tau.register.v2.RegisterService.Environments:input_type -> tau.register.v2.ProjectRequest
-	14, // 7: tau.register.v2.RegisterService.ResolveHost:input_type -> tau.register.v2.HostRequest
-	3,  // 8: tau.register.v2.RegisterService.ResolveView:input_type -> tau.register.v2.ViewRequest
-	5,  // 9: tau.register.v2.RegisterService.Assigned:input_type -> tau.register.v2.DestinationRequest
-	8,  // 10: tau.register.v2.RegisterService.Publish:output_type -> tau.register.v2.PublishResponse
-	0,  // 11: tau.register.v2.RegisterService.Resolve:output_type -> tau.register.v2.Pointer
-	11, // 12: tau.register.v2.RegisterService.Object:output_type -> tau.register.v2.CompiledProject
-	13, // 13: tau.register.v2.RegisterService.Environments:output_type -> tau.register.v2.Deployments
-	15, // 14: tau.register.v2.RegisterService.ResolveHost:output_type -> tau.register.v2.HostAnswer
-	4,  // 15: tau.register.v2.RegisterService.ResolveView:output_type -> tau.register.v2.ViewPointer
-	7,  // 16: tau.register.v2.RegisterService.Assigned:output_type -> tau.register.v2.Assignments
-	10, // [10:17] is the sub-list for method output_type
-	3,  // [3:10] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	17, // 3: tau.register.v2.ProjectRecords.projects:type_name -> tau.register.v2.ProjectRecord
+	16, // 4: tau.register.v2.RegisterService.Link:input_type -> tau.register.v2.LinkRequest
+	12, // 5: tau.register.v2.RegisterService.Project:input_type -> tau.register.v2.ProjectRequest
+	18, // 6: tau.register.v2.RegisterService.Repository:input_type -> tau.register.v2.RepositoryRequest
+	20, // 7: tau.register.v2.RegisterService.ProjectsOf:input_type -> tau.register.v2.ClaimantRequest
+	1,  // 8: tau.register.v2.RegisterService.Publish:input_type -> tau.register.v2.PublishRequest
+	9,  // 9: tau.register.v2.RegisterService.Resolve:input_type -> tau.register.v2.ResolveRequest
+	10, // 10: tau.register.v2.RegisterService.Object:input_type -> tau.register.v2.ObjectRequest
+	12, // 11: tau.register.v2.RegisterService.Environments:input_type -> tau.register.v2.ProjectRequest
+	14, // 12: tau.register.v2.RegisterService.ResolveHost:input_type -> tau.register.v2.HostRequest
+	3,  // 13: tau.register.v2.RegisterService.ResolveView:input_type -> tau.register.v2.ViewRequest
+	5,  // 14: tau.register.v2.RegisterService.Assigned:input_type -> tau.register.v2.DestinationRequest
+	17, // 15: tau.register.v2.RegisterService.Link:output_type -> tau.register.v2.ProjectRecord
+	17, // 16: tau.register.v2.RegisterService.Project:output_type -> tau.register.v2.ProjectRecord
+	19, // 17: tau.register.v2.RegisterService.Repository:output_type -> tau.register.v2.RepositoryRecord
+	21, // 18: tau.register.v2.RegisterService.ProjectsOf:output_type -> tau.register.v2.ProjectRecords
+	8,  // 19: tau.register.v2.RegisterService.Publish:output_type -> tau.register.v2.PublishResponse
+	0,  // 20: tau.register.v2.RegisterService.Resolve:output_type -> tau.register.v2.Pointer
+	11, // 21: tau.register.v2.RegisterService.Object:output_type -> tau.register.v2.CompiledProject
+	13, // 22: tau.register.v2.RegisterService.Environments:output_type -> tau.register.v2.Deployments
+	15, // 23: tau.register.v2.RegisterService.ResolveHost:output_type -> tau.register.v2.HostAnswer
+	4,  // 24: tau.register.v2.RegisterService.ResolveView:output_type -> tau.register.v2.ViewPointer
+	7,  // 25: tau.register.v2.RegisterService.Assigned:output_type -> tau.register.v2.Assignments
+	15, // [15:26] is the sub-list for method output_type
+	4,  // [4:15] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_tau_register_v2_register_proto_init() }
@@ -1082,7 +1483,7 @@ func file_tau_register_v2_register_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_register_v2_register_proto_rawDesc), len(file_tau_register_v2_register_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

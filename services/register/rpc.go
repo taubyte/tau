@@ -145,19 +145,24 @@ func wire(err error) error {
 		errors.Is(err, pkgregister.ErrNoEnvironment),
 		errors.Is(err, pkgregister.ErrEmptyObject),
 		errors.Is(err, pkgregister.ErrNoDestination),
+		errors.Is(err, pkgregister.ErrNoRepository),
+		errors.Is(err, pkgregister.ErrNoClaimant),
 		errors.Is(err, pkgregister.ErrSeparator):
 		return connect.NewError(connect.CodeInvalidArgument, err)
 
 	case errors.Is(err, pkgregister.ErrNotPublished),
 		errors.Is(err, pkgregister.ErrNoObject),
 		errors.Is(err, pkgregister.ErrNoView),
-		errors.Is(err, pkgregister.ErrNoHost):
+		errors.Is(err, pkgregister.ErrNoHost),
+		errors.Is(err, pkgregister.ErrNotLinked):
 		return connect.NewError(connect.CodeNotFound, err)
 
 	// A name another project holds is a well-formed publish the state refuses,
 	// and a retry with the same name will never succeed — which is exactly what
 	// AlreadyExists says and FailedPrecondition does not.
-	case errors.Is(err, pkgregister.ErrHostClaimed):
+	case errors.Is(err, pkgregister.ErrHostClaimed),
+		errors.Is(err, pkgregister.ErrProjectClaimed),
+		errors.Is(err, pkgregister.ErrRepositoryClaimed):
 		return connect.NewError(connect.CodeAlreadyExists, err)
 
 	// A revision that does not move forward is a well-formed request the

@@ -65,6 +65,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/taubyte/tau/pkg/storekey"
 )
@@ -240,6 +241,10 @@ type Register struct {
 	// The store is a key-value door with no compare-and-set, so the read of the
 	// current revision and the write of the new one have to be one step here.
 	mu sync.Mutex
+
+	// now timestamps a link's claim, which is what orders two claims on one
+	// project id (projects.go).
+	now func() time.Time
 }
 
 // New builds a register over a store.
@@ -253,13 +258,29 @@ func New(opts ...Option) (*Register, error) {
 	if o.store == nil {
 		return nil, errors.New("register: no store to publish into")
 	}
-	return &Register{store: guarded{o.store}}, nil
+	now := o.now
+	if now == nil {
+		now = time.Now
+	}
+	return &Register{store: guarded{o.store}, now: now}, nil
 }
 
 // Option configures a Register.
 type Option func(*options) error
 
-type options struct{ store Store }
+type options struct {
+	store Store
+	now   func() time.Time
+}
+
+// WithLinkClock is what a link's claim is timestamped with. The default is the
+// wall clock; a test that orders two claims sets it.
+func WithLinkClock(now func() time.Time) Option {
+	return func(o *options) error {
+		o.now = now
+		return nil
+	}
+}
 
 // WithStore is where objects and pointers live. Required.
 func WithStore(s Store) Option {

@@ -29,7 +29,16 @@ syntax = "proto3";
 // every read, forever, to answer a question whose answer usually did not
 // change. See pkg/register's package doc for the same argument at length.
 //
-// NOTHING HERE ENUMERATES. There is no List of projects, no List of
+// IT ALSO HOLDS WHO A PROJECT IS. Link, Project, Repository and ProjectsOf
+// are the project table: which configuration repository claimed a project id
+// (the author's, from project.yaml), which code repositories it attaches, and
+// who linked it. Those rows live under their own key prefix and no publication
+// writes them; a deploy only READS them, to check the id it is about to
+// publish is claimed by the repository it was pushed to. See pkg/register's
+// projects.go for the layout and the rule two racing claims resolve by.
+//
+// NOTHING ELSE ENUMERATES. ProjectsOf lists one claimant's own index and
+// nothing wider. There is no List of projects, no List of
 // environments and no history. Every call names exactly one row, which is what
 // the runtime needs; an operator's "what is deployed" question is a different
 // surface with different trust properties, and inventing it here would put a
@@ -183,7 +192,63 @@ message HostAnswer {
   string environment = 2;
 }
 
+// LinkRequest claims a project id for a configuration repository.
+message LinkRequest {
+  string project = 1;
+  string config_repository = 2;
+  repeated string code_repositories = 3;
+  // claimant is the forge identity of the caller the build frontend
+  // authorized, as "<forge host>/<subject>". It is never a node.
+  string claimant = 4;
+}
+
+// ProjectRecord is a linked project as every node resolves it.
+message ProjectRecord {
+  string id = 1;
+  string config_repository = 2;
+  repeated string code_repositories = 3;
+  string claimant = 4;
+  // created_at is when the owning claim was made, unix nanoseconds.
+  int64 created_at = 5;
+}
+
+message RepositoryRequest {
+  string repository = 1;
+}
+
+// RepositoryRecord is which project owns a repository.
+message RepositoryRecord {
+  string project = 1;
+  string repository = 2;
+  // configures is whether it is that project's configuration repository.
+  bool configures = 3;
+}
+
+message ClaimantRequest {
+  string claimant = 1;
+}
+
+message ProjectRecords {
+  repeated ProjectRecord projects = 1;
+}
+
 service RegisterService {
+  // Link claims a project id for a configuration repository and attaches
+  // code repositories. An id or repository another project owns is
+  // AlreadyExists, naming the owner.
+  rpc Link(LinkRequest) returns (ProjectRecord);
+
+  // Project is one linked project. An id nobody claimed is NotFound.
+  rpc Project(ProjectRequest) returns (ProjectRecord);
+
+  // Repository is which project owns a repository. One no project owns is
+  // NotFound.
+  rpc Repository(RepositoryRequest) returns (RepositoryRecord);
+
+  // ProjectsOf is every project one claimant linked and its repository still
+  // owns.
+  rpc ProjectsOf(ClaimantRequest) returns (ProjectRecords);
+
   // Publish stores a compiled project and points an environment at it.
   rpc Publish(PublishRequest) returns (PublishResponse);
 
