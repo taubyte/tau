@@ -31,7 +31,7 @@ DREAM_P ?= $(shell n=$$(nproc 2>/dev/null || echo 4); p=$$((n / 4)); [ $$p -lt 1
 # it fails the package outright rather than skipping it.
 DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xargs grep -L '//go:build dreaming && ee' | sed 's|^\./||' | grep -vE '^(ee/|tools/tau/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
-.PHONY: test test-cli test-acme test-dreaming test-raft test-docker test-containerd test-application test-build test-external-databases test-containers test-taucorder test-all proto-v2 proto-v2-check
+.PHONY: test test-cli test-acme test-dreaming test-raft test-docker test-containerd test-application test-build test-external-databases test-forges test-containers test-taucorder test-all proto-v2 proto-v2-check
 
 # THE TIMEOUT IS EXPLICIT BECAUSE THE DEFAULT IS A GUESS ABOUT THE MACHINE.
 # go test allows a package 10 minutes unless told otherwise, and pkg/kvdb spends
@@ -113,6 +113,15 @@ test-build:
 # server the TEST runs, so it needs a docker daemon and no sudo.
 test-external-databases:
 	go test -tags 'dreaming docker_integration' -run '^TestAnExternal' -count=1 -timeout 15m $(FLAGS) ./node/dream/
+
+# test-forges runs the forge drivers against real servers in docker: Gitea and
+# Forgejo for the gitea driver, GitLab CE for the gitlab driver, at the images
+# pinned in pkg/forge/live. Each walks one repository through identity,
+# access, membership, create, list, a deploy key, a hook, a real push whose
+# signed delivery pkg/forge verifies, and a clone with the deploy key. It needs
+# a docker daemon and no sudo; GitLab alone takes minutes to boot.
+test-forges:
+	go test -tags docker_integration -run '^TestAReal' -count=1 -v -p 1 -timeout 30m $(FLAGS) ./pkg/forge/live/
 
 # test-taucorder runs tools/taucorder, which is its own module (the root never
 # imports it, so `make test` does not sweep it). It includes the end-to-end
