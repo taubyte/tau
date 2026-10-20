@@ -205,6 +205,9 @@ func (c *channels) invoke(ctx context.Context, at specs.Address, req *invoke.Req
 }
 
 // unanswered is "the far end is not there", as against "the far end said no".
+// A deployment that holds no such resource is the far end not being there too:
+// the dialer can do nothing about it but ask again once something serves it.
 func unanswered(err error) bool {
-	return errors.Is(err, placement.ErrNoWorkers) || errors.Is(err, worker.ErrNoTarget)
+	return errors.Is(err, placement.ErrNoWorkers) || errors.Is(err, worker.ErrNoTarget) ||
+		errors.Is(err, specs.ErrNotFound)
 }

@@ -108,10 +108,9 @@ func TestAFailingServerIsAFailedChannel(t *testing.T) {
 }
 
 // A CONNECTED KIND IS DIALLED ON A PORT. A node that can reach no worker has
-// nowhere to dial and says no answer — the arm a caller retries; a worker that
-// holds no such resource is a dialling fault, because the composer resolved the
-// server and a grant naming one that is not deployed is not the far end being
-// away.
+// nowhere to dial, and a worker whose deployment holds no such resource has
+// nothing to dial: both are no answer — the arm a caller retries — and not a
+// dialling fault.
 func TestAConnectedKindIsDialled(t *testing.T) {
 	grant := channelGrant()
 	grant.Settings["serve/kind"] = "application"
@@ -124,7 +123,7 @@ func TestAConnectedKindIsDialled(t *testing.T) {
 
 	c := dialingNode(t, &answering{name: "wasm", status: 200})
 	_, err = c.Dial(t.Context(), grant, []byte("x"))
-	require.Error(t, err)
-	require.NotErrorIs(t, err, wasmtier.ErrNoAnswer)
-	require.Contains(t, err.Error(), "dialling reserve failed")
+	require.ErrorIs(t, err, wasmtier.ErrNoAnswer)
+	require.Contains(t, err.Error(), "application/absent")
+	require.NotContains(t, err.Error(), "dialling")
 }
