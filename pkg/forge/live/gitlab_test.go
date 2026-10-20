@@ -25,14 +25,15 @@ import (
 const gitlabImage = "gitlab/gitlab-ce:18.4.2-ce.0"
 
 // TestARealGitLabAnswersTheGitLabDriver is the gitlab driver against GitLab
-// CE, with hooks under the shared-token scheme (X-Gitlab-Token).
+// CE, WITHOUT HOOKS, and the walk asserts exactly that.
 //
-// NOT SIGNING, BECAUSE CE DOES NOT SIGN: 18.4.2 has no signing_token anywhere
-// in its rails source, ignores one sent to the API, and delivers with only
-// X-Gitlab-Token — so a binding with Signing() fails closed on every delivery
-// (measured). The token proves the sender knew it and nothing more: it is
-// replayed verbatim and covers no body, which is why the registry takes it only
-// under AllowUnboundSchemes. Signing() is for an instance that supports it.
+// CE DOES NOT SIGN: 18.4.2 has no signing_token anywhere in its rails source,
+// ignores one sent to the API, and delivers with only X-Gitlab-Token — so a
+// binding with Signing() fails closed on every delivery (measured). The token
+// is replayed verbatim and covers no body, and tau accepts no delivery it
+// cannot verify by a signature over the body, so the driver is bound without
+// Signing() and has no hook faces: every hook question is refused as
+// unsupported, and the rest of the walk runs as for any forge.
 //
 // IT IS THE HEAVY ONE: an omnibus GitLab is a dozen services and boots in
 // minutes, not seconds. The boot time is logged, so the cost of keeping it in
@@ -127,24 +128,18 @@ gitlab_rails['usage_ping_enabled'] = false
 
 	drv, err := gitlab.New(host, gitlab.BaseURL(base), gitlab.Deployment(forge.Token(admin)))
 	require.NoError(t, err)
-	reg, err := forge.New(forge.Policy{AllowInsecureCallback: true, AllowUnboundSchemes: true}, forge.Binding{Host: host, Driver: drv})
+	reg, err := forge.New(forge.Policy{}, forge.Binding{Host: host, Driver: drv})
 	require.NoError(t, err)
 
 	in := &instance{
 		name: "gitlab", host: host, reg: reg,
 		user: forge.Token(pat.Token), userLogin: user,
 		pushAs:     &githttp.BasicAuth{Username: user, Password: pat.Token},
-		adminLogin: "root", namespace: "acme-live",
+		adminLogin: "root", namespace: "acme-live", noHooks: true,
 		hostKeys: hostKeys,
 		asAdmin:  asAdmin,
 		branchURL: func(k repokey.Key, branch string) string {
 			return base + "/api/v4/projects/" + url.PathEscape(k.FullName()) + "/repository/branches/" + branch
-		},
-		hookLog: func(k repokey.Key, h forge.Handle) string {
-			project := base + "/api/v4/projects/" + url.PathEscape(k.FullName())
-			return fetch(t, project+"/hooks/"+string(h), asAdmin) + "\n" +
-				fetch(t, project+"/hooks/"+string(h)+"/events", asAdmin) + "\n" +
-				fetch(t, base+"/api/v4/application/settings", asAdmin)
 		},
 	}
 	in.public, in.private = keyOf(t, in, "root/public"), keyOf(t, in, "root/secret")

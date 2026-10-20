@@ -82,19 +82,6 @@ func TestAnAnonymousSessionSeesOnlyWhatIsPublic(t *testing.T) {
 	require.ErrorAs(t, err, &nf, "a private repository was described to nobody in particular")
 }
 
-// TestAShapeThatSignsNothingBindingIsRefusedByTheZeroPolicy: an instance older
-// than GitLab 19.0 offers only a replayed token, and accepting one has to be
-// said out loud.
-func TestAShapeThatSignsNothingBindingIsRefusedByTheZeroPolicy(t *testing.T) {
-	f := fake.New(fake.GitLabOldLike)
-	_, err := f.Registry(forge.Policy{})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "AllowUnboundSchemes")
-
-	_, err = f.Registry(forge.Policy{AllowUnboundSchemes: true})
-	require.NoError(t, err)
-}
-
 // TestDeliveriesNeedAHookAndNotAHandle: the builders sign for a hook that has a
 // secret and a scheme, so a test cannot accidentally verify against a zero
 // value.

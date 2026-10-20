@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,7 +28,7 @@ func advSess(t *testing.T, h http.Handler, full string) (*forge.Session, repokey
 	host := strings.TrimPrefix(srv.URL, "http://")
 	drv, err := New(host, BaseURL(srv.URL))
 	require.NoError(t, err)
-	reg, err := forge.New(forge.Policy{AllowUnboundSchemes: true}, forge.Binding{Host: host, Driver: drv})
+	reg, err := forge.New(forge.Policy{}, forge.Binding{Host: host, Driver: drv})
 	require.NoError(t, err)
 	k, err := repokey.Parse("https://" + host + "/" + full)
 	require.NoError(t, err)
@@ -122,25 +123,13 @@ func TestAdvAccessNeverReadsAFailureAsAVerdict(t *testing.T) {
 	}
 }
 
-// advWebhookSecret is A FIXED VECTOR AND NOT A MINT, and that is what makes the
-// table below a set of forgeries instead of a set of coin flips.
-//
-// Every case in it is DERIVED FROM THE WIRE STRING, and a derivation from a
-// random string sometimes derives the string itself. "x"+wire[1:] IS the honest
-// token whenever a freshly minted wire begins with an "x" — one run in 64,
-// measured here at 8 failures in 400 — and strings.ToLower(wire) is the honest
-// token whenever a wire happens to carry no uppercase letter. Neither failure
-// says anything about security, and a security suite that fails for a reason
-// that is not security teaches its reader to run it again until it is green,
-// which is the one thing this file has to sell.
-//
-// Nothing about arbitrary key material is given up for the determinism: the
-// honest delivery is asserted over a freshly minted secret as well, below.
-const advWebhookSecret = "gitlab-adversarial-hook-secret-#1"
+// advWebhookSecret is A FIXED VECTOR AND NOT A MINT, so every near miss in the
+// table below is a forgery by construction rather than by luck: a mutation of a
+// random signature sometimes is the signature. The honest delivery is asserted
+// over a freshly minted secret as well.
+const advWebhookSecret = "gitlab-adversarial-hook-secret-#1-padded-to-32b"
 
-// otherThan is a byte the given one is not, so that a near miss is a forgery BY
-// CONSTRUCTION rather than by luck — belt as well as braces, since the vector
-// above already fixes what wire[0] is.
+// otherThan is a byte the given one is not.
 func otherThan(b byte) byte {
 	if b == 'x' {
 		return 'y'
@@ -149,80 +138,75 @@ func otherThan(b byte) byte {
 }
 
 // TestAdvNoForgedDeliveryReachesAPush drives the whole VerifyPush path with a
-// real gitlab driver and every wrong token an attacker can present.
+// real signing gitlab driver and every wrong signature an attacker can present,
+// including the token GitLab replays when it does not sign.
 func TestAdvNoForgedDeliveryReachesAPush(t *testing.T) {
-	drv, err := New("gitlab.example.invalid")
+	drv, err := New("gitlab.example.invalid", Signing())
 	require.NoError(t, err)
-	reg, err := forge.New(forge.Policy{AllowUnboundSchemes: true},
+	reg, err := forge.New(forge.Policy{},
 		forge.Binding{Host: "gitlab.example.invalid", Driver: drv})
 	require.NoError(t, err)
 
 	k, err := repokey.Parse("https://gitlab.example.invalid/acme/team/pay")
 	require.NoError(t, err)
 	secret := forge.SecretFrom([]byte(advWebhookSecret))
-	wire, err := forge.SchemeSharedToken.Wire(secret)
+	wire, err := forge.SchemeStandardWebhooks.Wire(secret)
 	require.NoError(t, err)
-	t.Logf("the honest wire is %q", wire)
 
 	body := []byte(`{"object_kind":"push","ref":"refs/heads/main",
 		"checkout_sha":"1f0c9d2b3a4e5f60718293a4b5c6d7e8f9012345",
 		"project":{"git_http_url":"https://gitlab.example.invalid/acme/team/pay.git"}}`)
-	hook := forge.Hook{Key: k, Handle: "1", Scheme: forge.SchemeSharedToken, Secret: secret}
+	hook := forge.Hook{Key: k, Handle: "1", Scheme: forge.SchemeStandardWebhooks, Secret: secret}
 
-	deliver := func(h forge.Hook, token string) (forge.Push, error) {
-		header := http.Header{}
-		header.Set("X-Gitlab-Event", "Push Hook")
-		if token != "\x00absent" {
-			header.Set("X-Gitlab-Token", token)
-		}
-		return reg.VerifyPush(h, forge.Delivery{Header: header, Body: body})
+	signed := func(s forge.Secret) http.Header {
+		h, err := forge.Sign(forge.SchemeStandardWebhooks, s, body, "msg_1", time.Now())
+		require.NoError(t, err)
+		h.Set("X-Gitlab-Event", "Push Hook")
+		return h
 	}
+	honest := signed(secret)
+	sig := honest.Get("webhook-signature")
 
-	_, err = deliver(hook, wire)
+	_, err = reg.VerifyPush(hook, forge.Delivery{Header: honest, Body: body})
 	require.NoError(t, err, "the honest delivery must still pass")
 
-	// And once over key material nobody chose. The table needs a wire whose
-	// content is known; this needs one whose content is not.
 	minted, err := forge.NewSecret()
-	require.NoError(t, err)
-	mintedWire, err := forge.SchemeSharedToken.Wire(minted)
 	require.NoError(t, err)
 	mintedHook := hook
 	mintedHook.Secret = minted
-	_, err = deliver(mintedHook, mintedWire)
+	_, err = reg.VerifyPush(mintedHook, forge.Delivery{Header: signed(minted), Body: body})
 	require.NoError(t, err, "the honest delivery must pass for a freshly minted secret too")
 
-	for name, token := range map[string]string{
-		"absent":            "\x00absent",
-		"empty":             "",
-		"a prefix of it":    wire[:len(wire)-1],
-		"one character off": string(otherThan(wire[0])) + wire[1:],
-		"case folded":       strings.ToLower(wire),
-		"the raw secret":    string(secret.Expose()),
-		"a whsec_ spelling": "whsec_" + wire,
-		"a plausible guess": "glpat-guess",
+	for name, mutate := range map[string]func(http.Header){
+		"absent":            func(h http.Header) { h.Del("webhook-signature") },
+		"empty":             func(h http.Header) { h.Set("webhook-signature", "") },
+		"a prefix of it":    func(h http.Header) { h.Set("webhook-signature", sig[:len(sig)-1]) },
+		"one character off": func(h http.Header) { h.Set("webhook-signature", sig[:3]+string(otherThan(sig[3]))+sig[4:]) },
+		"the wire itself":   func(h http.Header) { h.Set("webhook-signature", "v1,"+wire) },
+		// What an instance that does not sign sends: the token, replayed.
+		"a replayed token instead": func(h http.Header) {
+			h.Del("webhook-signature")
+			h.Set("X-Gitlab-Token", wire)
+		},
+		"another message id": func(h http.Header) { h.Set("webhook-id", "msg_2") },
 	} {
 		t.Run(name, func(t *testing.T) {
-			// A case that IS the honest token asserts nothing about a forgery,
-			// and it fails as though a forgery had been accepted. Over a fixed
-			// vector this either always holds or never does, so it is a
-			// statement about the table and not a die roll.
-			require.NotEqual(t, wire, token, "this case is the honest token, not a near miss")
-			_, err := deliver(hook, token)
-			require.Error(t, err, "a delivery presenting %q was accepted", token)
+			h := honest.Clone()
+			mutate(h)
+			_, err := reg.VerifyPush(hook, forge.Delivery{Header: h, Body: body})
+			require.Error(t, err, "a forged delivery was accepted")
 			assert.NotContains(t, err.Error(), wire, "the error quoted the wire secret")
 			assert.NotContains(t, err.Error(), string(secret.Expose()))
 		})
 	}
 
-	t.Run("a hook whose scheme was recorded as the signing one", func(t *testing.T) {
-		signing := hook
-		signing.Scheme = forge.SchemeStandardWebhooks
-		h := http.Header{}
-		h.Set("X-Gitlab-Event", "Push Hook")
+	t.Run("a hook recorded under the token scheme GitLab replays", func(t *testing.T) {
+		token := hook
+		token.Scheme = "shared-token"
+		h := honest.Clone()
 		h.Set("X-Gitlab-Token", wire)
-		_, err := reg.VerifyPush(signing, forge.Delivery{Header: h, Body: body})
-		require.Error(t, err, "the scheme stored with the hook is what a delivery is checked under")
+		_, err := reg.VerifyPush(token, forge.Delivery{Header: h, Body: body})
+		require.Error(t, err, "a token-replay scheme is not one tau verifies")
 	})
 }
 
@@ -246,7 +230,7 @@ func TestAdvAKeySegmentCannotWalkOutOfItsPathSegment(t *testing.T) {
 	host := strings.TrimPrefix(srv.URL, "http://")
 	drv, err := New(host, BaseURL(srv.URL))
 	require.NoError(t, err)
-	reg, err := forge.New(forge.Policy{AllowUnboundSchemes: true}, forge.Binding{Host: host, Driver: drv})
+	reg, err := forge.New(forge.Policy{}, forge.Binding{Host: host, Driver: drv})
 	require.NoError(t, err)
 	crafted := repokey.Key{Host: host, Owner: k.Owner, Name: k.Name}
 	sess, err := reg.For(crafted, forge.Token(advToken))
@@ -343,9 +327,9 @@ func TestAdvAnInstanceCannotChooseHowLongATauLogLineIs(t *testing.T) {
 func TestAdvADeliveryIsAStrangersCloneURL(t *testing.T) {
 	const inThePayload = "glpat-RELAYED-8c31f0d5b7a2"
 
-	drv, err := New("gitlab.example.invalid")
+	drv, err := New("gitlab.example.invalid", Signing())
 	require.NoError(t, err)
-	reg, err := forge.New(forge.Policy{AllowUnboundSchemes: true},
+	reg, err := forge.New(forge.Policy{},
 		forge.Binding{Host: "gitlab.example.invalid", Driver: drv})
 	require.NoError(t, err)
 
@@ -353,13 +337,7 @@ func TestAdvADeliveryIsAStrangersCloneURL(t *testing.T) {
 	require.NoError(t, err)
 	secret, err := forge.NewSecret()
 	require.NoError(t, err)
-	wire, err := forge.SchemeSharedToken.Wire(secret)
-	require.NoError(t, err)
-	hook := forge.Hook{Key: k, Handle: "1", Scheme: forge.SchemeSharedToken, Secret: secret}
-
-	header := http.Header{}
-	header.Set("X-Gitlab-Event", "Push Hook")
-	header.Set("X-Gitlab-Token", wire)
+	hook := forge.Hook{Key: k, Handle: "1", Scheme: forge.SchemeStandardWebhooks, Secret: secret}
 
 	for name, cloneURL := range map[string]string{
 		"none at all": "",
@@ -372,7 +350,10 @@ func TestAdvADeliveryIsAStrangersCloneURL(t *testing.T) {
 			body := []byte(`{"object_kind":"push","ref":"refs/heads/main",
 				"checkout_sha":"1f0c9d2b3a4e5f60718293a4b5c6d7e8f9012345",
 				"project":{"git_http_url":"` + cloneURL + `"}}`)
-			_, err := reg.VerifyPush(hook, forge.Delivery{Header: header, Body: body})
+			header, err := forge.Sign(forge.SchemeStandardWebhooks, secret, body, "msg_1", time.Now())
+			require.NoError(t, err)
+			header.Set("X-Gitlab-Event", "Push Hook")
+			_, err = reg.VerifyPush(hook, forge.Delivery{Header: header, Body: body})
 			require.Error(t, err)
 			assert.Less(t, len(err.Error()), 2000,
 				"a delivery chose how long a tau log line is (%d bytes)", len(err.Error()))

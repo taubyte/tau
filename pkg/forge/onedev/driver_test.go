@@ -27,7 +27,7 @@ func session(t *testing.T, f *fixture, full string) (*forge.Session, repokey.Key
 
 func sessionOn(t *testing.T, f *fixture, full string) *forge.Session {
 	t.Helper()
-	s, err := f.registry(t, forge.Policy{AllowUnboundSchemes: true}).For(f.key(t, full), forge.Token(goodToken))
+	s, err := f.registry(t, forge.Policy{}).For(f.key(t, full), forge.Token(goodToken))
 	require.NoError(t, err)
 	return s
 }
@@ -65,12 +65,25 @@ func TestNewRefusesWhatItCannotServe(t *testing.T) {
 	assert.Equal(t, "http://127.0.0.1:6610/acme/pay.git", addr.URL, "Plaintext is what the clone address is spelled in")
 }
 
-func TestTheZeroPolicyRefusesThisDriver(t *testing.T) {
-	drv, err := onedev.New("onedev.example")
+// OneDev cannot sign a delivery, so the hook faces are absent and each hook
+// question is a refusal by name that never reaches the wire.
+func TestPushHooksAreUnsupported(t *testing.T) {
+	f := newFixture(t)
+	s, k := session(t, f, "acme/site")
+	assert.False(t, s.Capabilities().Has(forge.CapSignatures))
+	callback, err := url.Parse("https://build.example/hooks/a")
 	require.NoError(t, err)
-	assert.Equal(t, forge.SchemeOneDevToken, drv.(forge.Signatures).Scheme())
-	_, err = forge.New(forge.Policy{}, forge.Binding{Host: "onedev.example", Driver: drv})
-	require.Error(t, err, "OneDev cannot sign, and a deployment must say it accepts that")
+	secret, err := forge.NewSecret()
+	require.NoError(t, err)
+	f.Requests()
+	var un *forge.UnsupportedError
+	_, err = s.RegisterPushHook(t.Context(), k, callback, secret)
+	require.ErrorAs(t, err, &un)
+	assert.Equal(t, forge.CapPushHooks, un.Capability)
+	_, err = s.ListPushHooks(t.Context(), k)
+	require.ErrorAs(t, err, &un)
+	require.ErrorAs(t, s.RemovePushHook(t.Context(), k, "h"), &un)
+	assert.Empty(t, f.Requests())
 }
 
 func TestAddressableRefusesWhatAKeyCannotName(t *testing.T) {
@@ -189,7 +202,7 @@ func TestRepository(t *testing.T) {
 		assert.True(t, repo.Private)
 	})
 	t.Run("an anonymous session reads the public and not the private", func(t *testing.T) {
-		reg := f.registry(t, forge.Policy{AllowUnboundSchemes: true})
+		reg := f.registry(t, forge.Policy{})
 		k := f.key(t, "acme/public")
 		s, err := reg.For(k, forge.Anonymous())
 		require.NoError(t, err)
@@ -374,136 +387,4 @@ func TestDeleteOfAMissingProject(t *testing.T) {
 	s, k = session(t, f, "acme/site")
 	f.Answer(answerOn(http.MethodDelete, "", 404, ""))
 	require.ErrorAs(t, s.Delete(t.Context(), k), &nf)
-}
-
-func TestHooks(t *testing.T) {
-	f := newFixture(t)
-	ctx := t.Context()
-	s, k := session(t, f, "acme/site")
-	callback, err := url.Parse("https://build.example/hooks/a")
-	require.NoError(t, err)
-	secret, err := forge.NewSecret()
-	require.NoError(t, err)
-
-	hook, err := s.RegisterPushHook(ctx, k, callback, secret)
-	require.NoError(t, err)
-
-	t.Run("every other setting is written back as it was read", func(t *testing.T) {
-		f.mu.Lock()
-		last := f.saved[len(f.saved)-1]
-		f.mu.Unlock()
-		assert.JSONEq(t, `[{"enabled":true,"branches":"main"}]`, string(last["branchProtections"]))
-	})
-	t.Run("a second hook to one callback is refused", func(t *testing.T) {
-		_, err := s.RegisterPushHook(ctx, k, callback, secret)
-		require.ErrorContains(t, err, "already has a webhook")
-	})
-	t.Run("a path resolving to another project is not hooked", func(t *testing.T) {
-		f.Answer(answerOn(http.MethodGet, "/clone-url", 200, `{"http":"https://`+f.host+`/acme/pay.git"}`))
-		defer f.Answer(nil)
-		_, err := s.RegisterPushHook(ctx, k, callback, secret)
-		require.ErrorContains(t, err, "resolved it to")
-	})
-	for name, body := range map[string]string{
-		"null":              `null`,
-		"hooks not a list":  `{"webHooks":{}}`,
-		"a hook not a hook": `{"webHooks":[7]}`,
-		"no answer":         `<html>`,
-	} {
-		t.Run("settings answered as "+name, func(t *testing.T) {
-			f.Answer(answerOn(http.MethodGet, "/setting", 200, body))
-			defer f.Answer(nil)
-			_, err := s.RegisterPushHook(ctx, k, callback, secret)
-			require.Error(t, err)
-			_, err = s.ListPushHooks(ctx, k)
-			require.Error(t, err)
-			require.Error(t, s.RemovePushHook(ctx, k, hook.Handle))
-		})
-	}
-	t.Run("settings with no webhooks field at all", func(t *testing.T) {
-		f.Answer(answerOn(http.MethodGet, "/setting", 200, `{"branchProtections":[]}`))
-		defer f.Answer(nil)
-		hooks, err := s.ListPushHooks(ctx, k)
-		require.NoError(t, err)
-		assert.Empty(t, hooks)
-	})
-	t.Run("a save the forge refuses is an error", func(t *testing.T) {
-		f.Answer(answerOn(http.MethodPost, "/setting", 403, ""))
-		defer f.Answer(nil)
-		other, err := url.Parse("https://build.example/hooks/b")
-		require.NoError(t, err)
-		_, err = s.RegisterPushHook(ctx, k, other, secret)
-		require.Error(t, err)
-	})
-	t.Run("operations on a project that is not there", func(t *testing.T) {
-		s, k := session(t, f, "acme/nope")
-		_, err := s.ListPushHooks(ctx, k)
-		var nf *forge.NotFoundError
-		require.ErrorAs(t, err, &nf)
-		require.ErrorAs(t, s.RemovePushHook(ctx, k, "x"), &nf)
-		_, err = s.RegisterPushHook(ctx, k, callback, secret)
-		require.ErrorAs(t, err, &nf)
-	})
-	t.Run("a hook without the right to see the settings", func(t *testing.T) {
-		s, k := session(t, f, "acme/pay")
-		_, err := s.ListPushHooks(ctx, k)
-		require.Error(t, err)
-		_, err = s.RegisterPushHook(ctx, k, callback, secret)
-		require.Error(t, err)
-	})
-	t.Run("removing leaves the others", func(t *testing.T) {
-		other, err := url.Parse("https://build.example/hooks/c")
-		require.NoError(t, err)
-		second, err := s.RegisterPushHook(ctx, k, other, secret)
-		require.NoError(t, err)
-		require.NoError(t, s.RemovePushHook(ctx, k, hook.Handle))
-		hooks, err := s.ListPushHooks(ctx, k)
-		require.NoError(t, err)
-		assert.Equal(t, []forge.InstalledPushHook{{Handle: second.Handle, Callback: other.String()}}, hooks)
-	})
-}
-
-func TestPushReadsOnlyWhatTheHookWasRegisteredFor(t *testing.T) {
-	f := newFixture(t)
-	reg := f.registry(t, forge.Policy{AllowUnboundSchemes: true})
-	k := f.key(t, "acme/site")
-	s, err := reg.For(k, forge.Token(goodToken))
-	require.NoError(t, err)
-	callback, err := url.Parse("https://build.example/hooks/p")
-	require.NoError(t, err)
-	secret, err := forge.NewSecret()
-	require.NoError(t, err)
-	hook, err := s.RegisterPushHook(t.Context(), k, callback, secret)
-	require.NoError(t, err)
-
-	good, err := f.Delivery(hook, "refs/heads/main", strings.Repeat("a", 40))
-	require.NoError(t, err)
-	header := good.Header.Get("X-Tau-Repository")
-
-	deliver := func(body string, header string) error {
-		hdr, err := forge.Sign(hook.Scheme, hook.Secret, []byte(body), "", testNow)
-		require.NoError(t, err)
-		if header != "" {
-			hdr.Set("X-Tau-Repository", header)
-		}
-		_, err = reg.VerifyPush(hook, forge.Delivery{Header: hdr, Body: []byte(body)})
-		return err
-	}
-	id, _, ok := strings.Cut(header, " ")
-	require.True(t, ok)
-	push := `{"type":"RefUpdated","projectId":` + id + `,"refName":"refs/heads/main","newCommitId":"` + strings.Repeat("a", 40) + `"}`
-
-	require.NoError(t, deliver(push, header))
-	require.ErrorIs(t, deliver(`{"type":"IssueOpened"}`, header), forge.ErrNotAPush)
-	require.ErrorContains(t, deliver(`{`, header), "unreadable")
-	require.ErrorContains(t, deliver(push, ""), "no X-Tau-Repository")
-	require.ErrorContains(t, deliver(push, strings.Repeat("9", 400)), "implausibly long")
-	for _, bad := range []string{"no-space", "x https://a/b/c.git", "0 https://a/b/c.git", "-1 https://a/b/c.git"} {
-		require.ErrorContains(t, deliver(push, bad), "is not", bad)
-	}
-	require.ErrorContains(t, deliver(push, id+" not a url"), "no repository this layer can address")
-
-	descendant := strings.Replace(push, `"projectId":`+id, `"projectId":999`, 1)
-	err = deliver(descendant, header)
-	require.ErrorContains(t, err, "descendant", "a hook fires for its project's subtree, and a descendant is not this repository")
 }

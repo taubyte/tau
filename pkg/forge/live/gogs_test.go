@@ -3,15 +3,8 @@
 package live_test
 
 import (
-	"bytes"
-	"context"
-	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -22,9 +15,7 @@ import (
 	"github.com/taubyte/tau/pkg/containers/core"
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/gogs"
-	"github.com/taubyte/tau/pkg/git/gittest"
 	"github.com/taubyte/tau/pkg/git/repokey"
-	"github.com/taubyte/tau/services/build/deploy"
 )
 
 // gogsImage is pinned. Its entrypoint prepares /data and then runs the command
@@ -38,11 +29,9 @@ import (
 const gogsImage = "gogs/gogs:0.13.3"
 
 // TestARealGogsAnswersTheGogsDriver walks everything tau asks of a forge
-// against a real Gogs — except membership, which Gogs cannot answer and the
-// driver therefore does not offer. walk() requires CapMembership of every
-// forge, so this is walk() without that step, plus the step that proves the
-// absence is an *UnsupportedError rather than a false.
-func TestARealGogsAnswersTheGogsDriver(t *testing.T) { walkWithoutMembership(t, bootGogs(t)) }
+// against a real Gogs. Membership is absent: Gogs cannot answer it and the
+// driver does not offer it, so walk asserts it is refused.
+func TestARealGogsAnswersTheGogsDriver(t *testing.T) { walk(t, bootGogs(t)) }
 
 // gogsScript writes the whole configuration — install lock, sqlite, the
 // built-in ssh server, a webhook allow-list wide enough for the loopback
@@ -157,7 +146,7 @@ func bootGogs(t *testing.T) *instance {
 		name: "gogs", host: host, reg: reg,
 		user: forge.Token(minted.SHA1), userLogin: user,
 		pushAs:     &githttp.BasicAuth{Username: user, Password: minted.SHA1},
-		adminLogin: "warden", namespace: "acme-live",
+		adminLogin: "warden", namespace: "acme-live", noMembership: true,
 		hostKeys: hostKeys,
 		asAdmin:  asAdmin,
 		branchURL: func(k repokey.Key, branch string) string {
@@ -168,146 +157,4 @@ func bootGogs(t *testing.T) *instance {
 	in.listen = fmt.Sprintf("127.0.0.1:%d", freePort(t))
 	in.reach = in.listen
 	return in
-}
-
-// walkWithoutMembership is walk() with its membership step replaced by the
-// assertion that the question is refused as unsupported.
-func walkWithoutMembership(t *testing.T, in *instance) {
-	ctx := t.Context()
-
-	sess, err := in.reg.Host(in.host, in.user)
-	require.NoError(t, err)
-	require.NoError(t, sess.Require(
-		forge.CapList, forge.CapCreate, forge.CapDelete, forge.CapDeployKeys,
-		forge.CapPushHooks, forge.CapCloneAddr, forge.CapSignatures))
-	require.False(t, sess.Capabilities().Has(forge.CapMembership))
-
-	t.Log("identity")
-	who, err := sess.Whoami(ctx)
-	require.NoError(t, err)
-	require.Equal(t, in.userLogin, who.Login)
-	require.NotEmpty(t, who.Subject)
-
-	bad, err := in.reg.Host(in.host, forge.Token("not-a-token-this-forge-issued"))
-	require.NoError(t, err)
-	_, err = bad.Whoami(ctx)
-	var credErr *forge.CredentialError
-	require.ErrorAs(t, err, &credErr, "a token the forge never issued must read as a refused credential, not an outage")
-
-	t.Log("access")
-	require.Equal(t, forge.AccessRead, access(t, in, in.public),
-		"a public repository the user holds no grant on is readable and nothing more")
-	_, err = forSession(t, in, in.private).Access(ctx, in.private)
-	var missing *forge.NotFoundError
-	require.ErrorAs(t, err, &missing, "a private repository the user cannot see is indistinguishable from one that does not exist")
-
-	t.Log("membership is refused, not answered")
-	isMember, err := in.reg.IsActiveMember(ctx, in.host, in.namespace, in.adminLogin)
-	var unsupported *forge.UnsupportedError
-	require.ErrorAs(t, err, &unsupported)
-	require.False(t, isMember)
-
-	t.Log("create")
-	name := fmt.Sprintf("live-%d", time.Now().UnixNano())
-	key := keyOf(t, in, in.userLogin+"/"+name)
-	s := forSession(t, in, key)
-	created, err := s.Create(ctx, key, forge.CreateOptions{Description: "tau live harness", Private: true})
-	require.NoError(t, err)
-	require.Equal(t, key, created.Key)
-	require.True(t, created.Private)
-	t.Cleanup(func() {
-		// Deleted at the end of the walk; this is for a walk that failed first.
-		s.Delete(context.Background(), key)
-	})
-	require.Equal(t, forge.AccessAdmin, access(t, in, key), "the creator owns what it created")
-
-	t.Log("list")
-	listed := false
-	require.NoError(t, s.ListRepositories(ctx, func(r forge.Repository) bool {
-		listed = listed || r.Key == key
-		return !listed
-	}))
-	require.True(t, listed, "%s was created by this credential and its listing does not name it", key)
-
-	t.Log("deploy key")
-	private, public := gittest.KeyPair(t)
-	authorized := strings.TrimSpace(string(gossh.MarshalAuthorizedKey(public)))
-	dk, err := s.InstallDeployKey(ctx, key, "tau-live", authorized)
-	require.NoError(t, err)
-	keys, err := s.ListDeployKeys(ctx, key)
-	require.NoError(t, err)
-	require.True(t, holdsKey(keys, dk, public), "the deploy key just installed is not among %v", keys)
-
-	t.Log("hook")
-	rx := receive(t, in.listen)
-	callback, err := url.Parse("http://" + in.reach + rx.path)
-	require.NoError(t, err)
-	secret, err := forge.NewSecret()
-	require.NoError(t, err)
-	hook, err := s.RegisterPushHook(ctx, key, callback, secret)
-	require.NoError(t, err)
-	hooks, err := s.ListPushHooks(ctx, key)
-	require.NoError(t, err)
-	require.Contains(t, hooks, forge.InstalledPushHook{Handle: hook.Handle, Callback: callback.String()})
-
-	t.Log("push")
-	pushed := push(t, created.HTTPS, in.pushAs)
-
-	t.Log("delivery")
-	verified := rx.await(t, func(d forge.Delivery) bool {
-		p, err := in.reg.VerifyPush(hook, d)
-		if errors.Is(err, forge.ErrNotAPush) {
-			return false
-		}
-		require.NoError(t, err, "a delivery gogs signed and sent failed verification")
-		require.Equal(t, forge.Push{Key: key, Ref: "refs/heads/main", Commit: pushed}, p)
-
-		tampered := forge.Delivery{Header: d.Header, Body: bytes.Replace(d.Body, []byte(pushed), []byte(strings.Repeat("e", len(pushed))), 1)}
-		_, err = in.reg.VerifyPush(hook, tampered)
-		require.Error(t, err, "the same delivery naming another commit verified")
-		return true
-	})
-	require.True(t, verified, "gogs never delivered the push")
-
-	t.Log("clone with the deploy key")
-	repo, err := s.Repository(ctx, key)
-	require.NoError(t, err)
-	address := sshAddress(t, repo.SSH)
-	clone := deploy.NewClone(deployKey(private),
-		deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) { return address, nil }),
-		deploy.WithHostKeys(func(host string) []gossh.PublicKey {
-			if host == in.host {
-				return in.hostKeys
-			}
-			return nil
-		}))
-	dir, release, err := clone.Checkout(ctx, key.String(), "main", pushed)
-	require.NoError(t, err)
-	readme, err := os.ReadFile(filepath.Join(dir, "README"))
-	release()
-	require.NoError(t, err)
-	require.Equal(t, pushContent, string(readme))
-
-	t.Log("the deploy key cannot push")
-	require.Error(t, pushWithKey(t, address, private, in.hostKeys),
-		"a deploy key tau installed pushed to %s", key)
-	require.Equal(t, http.StatusNotFound, status(t, in.branchURL(key, "deploy-key-wrote-this"), in.asAdmin),
-		"the push with the deploy key reported an error and still created the branch")
-	require.Equal(t, http.StatusOK, status(t, in.branchURL(key, "main"), in.asAdmin),
-		"the branch probe cannot see the branch that was pushed, so its 404 above proves nothing")
-
-	t.Log("removal")
-	require.Error(t, s.RemovePushHook(ctx, key, "999999"),
-		"gogs answers 204 for a hook it does not have; the driver must not pass that on as a removal")
-	require.NoError(t, s.RemovePushHook(ctx, key, hook.Handle))
-	hooks, err = s.ListPushHooks(ctx, key)
-	require.NoError(t, err)
-	require.Empty(t, hooks)
-	require.NoError(t, s.RemoveDeployKey(ctx, key, dk))
-	keys, err = s.ListDeployKeys(ctx, key)
-	require.NoError(t, err)
-	require.False(t, holdsKey(keys, dk, public))
-	require.NoError(t, s.Delete(ctx, key))
-	_, err = s.Access(ctx, key)
-	require.ErrorAs(t, err, &missing, "a deleted repository is gone")
 }

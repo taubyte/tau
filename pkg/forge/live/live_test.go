@@ -86,24 +86,42 @@ type instance struct {
 	branchURL func(key repokey.Key, branch string) string
 	asAdmin   http.Header
 
-	// hookLog, when the forge has one, is what it says about a hook's
-	// deliveries — logged when a delivery never arrives, so the failure names
-	// the forge's reason rather than a timeout.
-	hookLog func(key repokey.Key, h forge.Handle) string
+	// noMembership and noHooks name the optional faces this forge's driver
+	// does not offer. They are declared rather than read off the session, so
+	// a driver that loses a face fails the walk instead of shrinking it: walk
+	// asserts each absent face is refused as *forge.UnsupportedError.
+	//
+	// noHooks is a forge that cannot sign a delivery. tau accepts no delivery
+	// it cannot verify by a signature over the body, so such a forge has no
+	// push hooks and its pushes trigger no build.
+	noMembership, noHooks bool
 }
 
 // ─────────────────────────────── the walk ───────────────────────────────
 
 // walk is everything tau asks of a forge, against a real one, in the order a
-// link and a build ask it.
+// link and a build ask it. Membership and hooks are optional faces: a forge
+// declares the ones it lacks (see instance), and walk then asserts each is
+// refused by name instead of answered.
 func walk(t *testing.T, in *instance) {
 	ctx := t.Context()
 
 	sess, err := in.reg.Host(in.host, in.user)
 	require.NoError(t, err)
 	require.NoError(t, sess.Require(
-		forge.CapList, forge.CapCreate, forge.CapDelete, forge.CapDeployKeys,
-		forge.CapPushHooks, forge.CapCloneAddr, forge.CapSignatures, forge.CapMembership))
+		forge.CapList, forge.CapCreate, forge.CapDelete, forge.CapDeployKeys, forge.CapCloneAddr))
+	var unsupported *forge.UnsupportedError
+	if in.noMembership {
+		require.ErrorAs(t, sess.Require(forge.CapMembership), &unsupported)
+	} else {
+		require.NoError(t, sess.Require(forge.CapMembership))
+	}
+	if in.noHooks {
+		require.ErrorAs(t, sess.Require(forge.CapPushHooks), &unsupported)
+		require.ErrorAs(t, sess.Require(forge.CapSignatures), &unsupported)
+	} else {
+		require.NoError(t, sess.Require(forge.CapPushHooks, forge.CapSignatures))
+	}
 
 	t.Log("identity")
 	who, err := sess.Whoami(ctx)
@@ -124,13 +142,20 @@ func walk(t *testing.T, in *instance) {
 	var missing *forge.NotFoundError
 	require.ErrorAs(t, err, &missing, "a private repository the user cannot see is indistinguishable from one that does not exist")
 
-	t.Log("membership")
-	isMember, err := in.reg.IsActiveMember(ctx, in.host, in.namespace, in.adminLogin)
-	require.NoError(t, err)
-	require.True(t, isMember, "%s owns %s", in.adminLogin, in.namespace)
-	isMember, err = in.reg.IsActiveMember(ctx, in.host, in.namespace, in.userLogin)
-	require.NoError(t, err, "a non-member is a definitive (false, nil), never an error")
-	require.False(t, isMember)
+	if in.noMembership {
+		t.Log("membership is refused, not answered")
+		isMember, err := in.reg.IsActiveMember(ctx, in.host, in.namespace, in.adminLogin)
+		require.ErrorAs(t, err, &unsupported)
+		require.False(t, isMember)
+	} else {
+		t.Log("membership")
+		isMember, err := in.reg.IsActiveMember(ctx, in.host, in.namespace, in.adminLogin)
+		require.NoError(t, err)
+		require.True(t, isMember, "%s owns %s", in.adminLogin, in.namespace)
+		isMember, err = in.reg.IsActiveMember(ctx, in.host, in.namespace, in.userLogin)
+		require.NoError(t, err, "a non-member is a definitive (false, nil), never an error")
+		require.False(t, isMember)
+	}
 
 	t.Log("create")
 	name := fmt.Sprintf("live-%d", time.Now().UnixNano())
@@ -163,56 +188,52 @@ func walk(t *testing.T, in *instance) {
 	require.NoError(t, err)
 	require.True(t, holdsKey(keys, dk, public), "the deploy key just installed is not among %v", keys)
 
-	t.Log("hook")
-	rx := receive(t, in.listen)
-	callback, err := url.Parse("http://" + in.reach + rx.path)
-	require.NoError(t, err)
-	secret, err := forge.NewSecret()
-	require.NoError(t, err)
-	hook, err := s.RegisterPushHook(ctx, key, callback, secret)
-	require.NoError(t, err)
-	hooks, err := s.ListPushHooks(ctx, key)
-	require.NoError(t, err)
-	require.Contains(t, hooks, forge.InstalledPushHook{Handle: hook.Handle, Callback: callback.String()})
+	var hook forge.Hook
+	var rx *receiver
+	if in.noHooks {
+		t.Log("hooks are refused, not registered")
+		callback, err := url.Parse("http://" + in.reach + "/never")
+		require.NoError(t, err)
+		secret, err := forge.NewSecret()
+		require.NoError(t, err)
+		_, err = s.RegisterPushHook(ctx, key, callback, secret)
+		require.ErrorAs(t, err, &unsupported)
+		_, err = s.ListPushHooks(ctx, key)
+		require.ErrorAs(t, err, &unsupported)
+	} else {
+		t.Log("hook")
+		rx = receive(t, in.listen)
+		callback, err := url.Parse("http://" + in.reach + rx.path)
+		require.NoError(t, err)
+		secret, err := forge.NewSecret()
+		require.NoError(t, err)
+		hook, err = s.RegisterPushHook(ctx, key, callback, secret)
+		require.NoError(t, err)
+		hooks, err := s.ListPushHooks(ctx, key)
+		require.NoError(t, err)
+		require.Contains(t, hooks, forge.InstalledPushHook{Handle: hook.Handle, Callback: callback.String()})
+	}
 
 	t.Log("push")
 	pushed := push(t, created.HTTPS, in.pushAs)
 
-	t.Log("delivery")
-	verified := rx.await(t, func(d forge.Delivery) bool {
-		p, err := in.reg.VerifyPush(hook, d)
-		if errors.Is(err, forge.ErrNotAPush) {
-			return false
-		}
-		require.NoError(t, err, "a delivery %s signed and sent failed verification", in.name)
-		require.Equal(t, forge.Push{Key: key, Ref: "refs/heads/main", Commit: pushed}, p)
+	if !in.noHooks {
+		t.Log("delivery")
+		verified := rx.await(t, func(d forge.Delivery) bool {
+			p, err := in.reg.VerifyPush(hook, d)
+			if errors.Is(err, forge.ErrNotAPush) {
+				return false
+			}
+			require.NoError(t, err, "a delivery %s signed and sent failed verification", in.name)
+			require.Equal(t, forge.Push{Key: key, Ref: "refs/heads/main", Commit: pushed}, p)
 
-		if hook.Scheme.BindsBody() {
 			tampered := forge.Delivery{Header: d.Header, Body: bytes.Replace(d.Body, []byte(pushed), []byte(strings.Repeat("e", len(pushed))), 1)}
 			_, err = in.reg.VerifyPush(hook, tampered)
 			require.Error(t, err, "the same delivery naming another commit verified")
 			return true
-		}
-		// A SHARED TOKEN BINDS NOTHING BUT ITSELF: the body is not covered and
-		// the same token comes on every delivery, so anyone who sees one can
-		// replay or rewrite it. What it does prove is the token, so a delivery
-		// carrying another one, or none, must be refused.
-		require.Equal(t, forge.SchemeSharedToken, hook.Scheme)
-		for _, token := range []string{"wrong-" + randomHex(t, 16), ""} {
-			forged := forge.Delivery{Header: d.Header.Clone(), Body: d.Body}
-			forged.Header.Set("X-Gitlab-Token", token)
-			if token == "" {
-				forged.Header.Del("X-Gitlab-Token")
-			}
-			_, err = in.reg.VerifyPush(hook, forged)
-			require.Error(t, err, "a delivery with token %q verified", token)
-		}
-		return true
-	})
-	if !verified && in.hookLog != nil {
-		t.Logf("%s on the hook's deliveries: %s", in.name, in.hookLog(key, hook.Handle))
+		})
+		require.True(t, verified, "%s never delivered the push", in.name)
 	}
-	require.True(t, verified, "%s never delivered the push", in.name)
 
 	t.Log("clone with the deploy key")
 	repo, err := s.Repository(ctx, key)
@@ -247,10 +268,15 @@ func walk(t *testing.T, in *instance) {
 		"the branch probe cannot see the branch that was pushed, so its 404 above proves nothing")
 
 	t.Log("removal")
-	require.NoError(t, s.RemovePushHook(ctx, key, hook.Handle))
-	hooks, err = s.ListPushHooks(ctx, key)
-	require.NoError(t, err)
-	require.Empty(t, hooks)
+	if !in.noHooks {
+		// Gogs answers 204 for a hook it does not have; no driver may pass
+		// that on as a removal.
+		require.Error(t, s.RemovePushHook(ctx, key, "999999"), "a hook the forge does not have was removed")
+		require.NoError(t, s.RemovePushHook(ctx, key, hook.Handle))
+		hooks, err := s.ListPushHooks(ctx, key)
+		require.NoError(t, err)
+		require.Empty(t, hooks)
+	}
 	require.NoError(t, s.RemoveDeployKey(ctx, key, dk))
 	keys, err = s.ListDeployKeys(ctx, key)
 	require.NoError(t, err)

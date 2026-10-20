@@ -88,15 +88,6 @@ var (
 		Scheme:                 forge.SchemeStandardWebhooks,
 		PayloadCarriesCloneURL: true,
 	}
-	// GitLabOldLike is an instance older than 19.0, which offers only a
-	// replayed shared token. The zero Policy refuses it; a registry that binds
-	// this shape has to say AllowUnboundSchemes out loud.
-	GitLabOldLike = Shape{
-		Host:                   "fake.gitlab18",
-		Nested:                 true,
-		Scheme:                 forge.SchemeSharedToken,
-		PayloadCarriesCloneURL: true,
-	}
 	GiteaLike = Shape{
 		Host:                   "fake.gitea",
 		Scheme:                 forge.SchemeHubSHA256,

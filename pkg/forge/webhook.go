@@ -5,7 +5,6 @@ import (
 	"crypto/hkdf"
 	"crypto/hmac"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -36,10 +35,14 @@ const DefaultTimestampTolerance = 5 * time.Minute
 // implementation between them. Bitbucket puts a SHA-256 MAC in X-Hub-Signature
 // — the header GitHub uses for SHA-1 — so it is a different scheme even though
 // the header name repeats, and a verifier dispatching on header names would
-// accept SHA-1 where SHA-256 was meant. And one forge has two: GitLab signs
-// Standard Webhooks when a signing token is set (19.0 and later) and otherwise
-// replays a plaintext token, so "the host is gitlab.com" does not determine the
-// procedure.
+// accept SHA-1 where SHA-256 was meant.
+//
+// EVERY SCHEME BINDS THE BODY. A delivery tau cannot verify by a signature over
+// its body is not accepted anywhere, so there is no token-replay scheme here: a
+// forge that can only replay a shared secret in a header (GitLab without a
+// signing token, OneDev, Azure DevOps) has no push hooks in tau at all, and its
+// driver says so with *UnsupportedError rather than registering a hook whose
+// deliveries anyone holding one header value could forge.
 //
 // THE SCHEME A HOOK WAS REGISTERED WITH IS STORED BESIDE ITS SECRET AND PINNED
 // AT VERIFICATION, so an instance upgraded later keeps verifying its older
@@ -69,32 +72,12 @@ const (
 	// GitLab 19.0 and later.
 	SchemeStandardWebhooks Scheme = "standard-webhooks"
 
-	// SchemeSharedToken is X-Gitlab-Token: the wire string replayed verbatim,
-	// compared for equality. It binds nothing — not the body, not a timestamp
-	// — and it hands the secret itself to the endpoint on every delivery, so
-	// anything that logs a request header logs the credential. GitLab before
-	// 19.0 offers only this, which is why it exists here and why the zero
-	// Policy refuses it.
-	SchemeSharedToken Scheme = "shared-token"
-
 	// SchemeGogsSHA256 is X-Gogs-Signature: lowercase hex of HMAC-SHA256 over
 	// the verbatim body, keyed by the wire string's bytes, with NO "sha256="
 	// prefix. Gogs sends nothing else — no X-Hub-Signature-256 beside it — so
 	// it cannot name SchemeHubSHA256, and a verifier that accepted either
 	// spelling in either header would be two schemes pretending to be one.
 	SchemeGogsSHA256 Scheme = "gogs-sha256"
-	// SchemeOneDevToken is X-OneDev-Signature, and despite the header's name it
-	// is NOT A SIGNATURE: OneDev sends the hook's stored secret verbatim in it
-	// on every delivery (WebHookManager sets the header to webHook.getSecret()
-	// and computes nothing over the body), so it is SchemeSharedToken's
-	// construction in another header. It is a scheme of its own rather than an
-	// alias for the reason SchemeBitbucketSHA256 is: a verifier keyed on the
-	// procedure must also know which header to read, and the derivation is
-	// domain-separated by the name, so a OneDev delivery that leaks its token
-	// leaks nothing about a GitLab hook holding the same Secret. OneDev offers
-	// no body-binding alternative, so a deployment accepts it only by setting
-	// Policy.AllowUnboundSchemes.
-	SchemeOneDevToken Scheme = "onedev-token"
 	// SchemePayloadEd25519 is X-Payload-Signature: std base64 of an Ed25519
 	// signature over the verbatim body followed by the X-Payload-Nonce
 	// header's value, made with the FORGE'S OWN private key. sourcehut.
@@ -143,22 +126,11 @@ const maxPayloadNonce = 256
 
 func (s Scheme) implemented() bool {
 	switch s {
-	case SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeSharedToken, SchemeGogsSHA256, SchemeOneDevToken, SchemePayloadEd25519:
+	case SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeGogsSHA256, SchemePayloadEd25519:
 		return true
 	}
 	return false
 }
-
-// BindsBody reports whether a match proves the body is the one that was signed.
-// It is false for the two token schemes, SchemeSharedToken and
-// SchemeOneDevToken, which replay a secret and bind nothing. Policy is written against this, so a
-// deployment refuses weak schemes in ONE place instead of per hook — and so
-// that a scheme added later is classified rather than grandfathered.
-func (s Scheme) BindsBody() bool { return !s.replaysToken() && s.implemented() }
-
-// replaysToken is the class of scheme whose "signature" is the wire string
-// itself, sent in a header and compared for equality.
-func (s Scheme) replaysToken() bool { return s == SchemeSharedToken || s == SchemeOneDevToken }
 
 // secretDomain is the KDF label every scheme's material is derived under. IT IS
 // A WIRE FORMAT — the string a forge stores is derived through it — so it is
@@ -170,15 +142,9 @@ const secretDomain = "taubyte/forge/webhook/v1/"
 // derives a DIFFERENT 32 bytes under every scheme, because HKDF's info string
 // carries the scheme's name.
 //
-// Without it the derivations collided in two ways that a reviewer found and
-// neither of which is theoretical. SchemeSharedToken's wire string was
-// byte-identical to SchemeHubSHA256's HMAC key — and a shared-token delivery
-// hands its wire string to the callback IN CLEARTEXT, on every delivery, in a
-// header anything that logs headers logs. So one Secret used for a GitLab
-// pre-19.0 hook and a GitHub hook meant that observing ONE GitLab delivery
-// handed you the forging key for the GitHub one. And SchemeHubSHA256 and
-// SchemeBitbucketSHA256 keyed identically, so a MAC captured under either was a
-// valid MAC under the other, in a different header.
+// Without it SchemeHubSHA256 and SchemeBitbucketSHA256 keyed identically, so a
+// MAC captured under either was a valid MAC under the other, in a different
+// header — a collision a reviewer found and not a theoretical one.
 //
 // It also stops the wire string from being a REVERSIBLE ENCODING of the Secret.
 // The old hub wire was base64 of the secret itself, so the string sitting in a
@@ -269,12 +235,8 @@ func (s Scheme) header() string {
 		return "X-Hub-Signature"
 	case SchemeStandardWebhooks:
 		return "webhook-signature"
-	case SchemeSharedToken:
-		return "X-Gitlab-Token"
 	case SchemeGogsSHA256:
 		return "X-Gogs-Signature"
-	case SchemeOneDevToken:
-		return "X-OneDev-Signature"
 	case SchemePayloadEd25519:
 		return "X-Payload-Signature"
 	}
@@ -379,9 +341,6 @@ func (r *Registry) VerifyPush(h Hook, d Delivery) (Push, error) {
 	if !h.Scheme.implemented() {
 		return Push{}, &VerificationError{Scheme: h.Scheme, Reason: "scheme is not implemented"}
 	}
-	if !h.Scheme.BindsBody() && !r.policy.AllowUnboundSchemes {
-		return Push{}, &VerificationError{Scheme: h.Scheme, Reason: "scheme does not bind the body and the policy does not accept it"}
-	}
 	if h.Secret.Empty() {
 		return Push{}, &VerificationError{Scheme: h.Scheme, Reason: "hook has no secret"}
 	}
@@ -484,12 +443,6 @@ func Sign(s Scheme, secret Secret, body []byte, id string, at time.Time) (http.H
 		hdr.Set("webhook-id", id)
 		hdr.Set("webhook-timestamp", ts)
 		hdr.Set("webhook-signature", "v1,"+base64.StdEncoding.EncodeToString(mac.Sum(nil)))
-	case SchemeSharedToken, SchemeOneDevToken:
-		wire, err := s.Wire(secret)
-		if err != nil {
-			return nil, err
-		}
-		hdr.Set(s.header(), wire)
 	case SchemePayloadEd25519:
 		return nil, fmt.Errorf("forge: %s is signed with the forge's own key and not with a secret; a fake forge signs with SignPayload", s)
 	default:
@@ -609,20 +562,6 @@ func verifyWith(s Scheme, secret Secret, d Delivery, now time.Time, tolerance ti
 			}
 		}
 		return fail("no signature matched")
-
-	case SchemeSharedToken, SchemeOneDevToken:
-		presented := d.Header.Get(s.header())
-		if presented == "" {
-			return fail("no token header")
-		}
-		wire, err := s.Wire(secret)
-		if err != nil {
-			return fail("secret cannot key this scheme")
-		}
-		if subtle.ConstantTimeCompare([]byte(presented), []byte(wire)) != 1 {
-			return fail("token does not match")
-		}
-		return nil
 
 	case SchemePayloadEd25519:
 		if len(signer) != ed25519.PublicKeySize {

@@ -23,12 +23,11 @@ var optional = []forge.Capability{
 
 func TestEveryShapeConforms(t *testing.T) {
 	for name, sh := range map[string]fake.Shape{
-		"github-like":     fake.GitHubLike,
-		"gitlab-like":     fake.GitLabLike,
-		"gitlab-old-like": fake.GitLabOldLike,
-		"gitea-like":      fake.GiteaLike,
-		"bitbucket-like":  fake.BitbucketLike,
-		"minimal":         fake.Minimal,
+		"github-like":    fake.GitHubLike,
+		"gitlab-like":    fake.GitLabLike,
+		"gitea-like":     fake.GiteaLike,
+		"bitbucket-like": fake.BitbucketLike,
+		"minimal":        fake.Minimal,
 	} {
 		forgetest.Run(t, subject(t, name, sh))
 	}
@@ -47,7 +46,7 @@ func TestEachAbsenceConforms(t *testing.T) {
 func subject(t *testing.T, name string, sh fake.Shape) forgetest.Subject {
 	t.Helper()
 	f := fake.New(sh)
-	reg, err := f.Registry(forge.Policy{AllowUnboundSchemes: sh.Scheme == forge.SchemeSharedToken})
+	reg, err := f.Registry(forge.Policy{})
 	require.NoError(t, err)
 
 	// Written from the shape, not read off the driver, so the suite can

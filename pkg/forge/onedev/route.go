@@ -78,10 +78,9 @@ var (
 	routeDelete       = newRoute(http.MethodDelete, "~api/projects/"+hole)
 	routeCloneURL     = newRoute(http.MethodGet, "~api/projects/"+hole+"/clone-url")
 
-	// The settings carry the webhooks, and reading them needs "manage
-	// project", which is why the same request is also the admin probe.
-	routeSetting     = newRoute(http.MethodGet, "~api/projects/"+hole+"/setting")
-	routeSaveSetting = newRoute(http.MethodPost, "~api/projects/"+hole+"/setting")
+	// Reading a project's settings needs "manage project", which is why the
+	// request is the admin probe.
+	routeSetting = newRoute(http.MethodGet, "~api/projects/"+hole+"/setting")
 
 	// Reading it needs "read code".
 	routeDefaultBranch = newRoute(http.MethodGet, "~api/repositories/"+hole+"/default-branch")

@@ -32,15 +32,3 @@ func TestEachPublicForgeSignsUnderItsOwnScheme(t *testing.T) {
 		require.Equal(t, want, s.Scheme(), host)
 	}
 }
-
-// TestNeitherBindingNeedsAnUnboundScheme: both schemes bind the body, so the
-// zero Policy — which refuses a replayed token — is enough for both.
-func TestNeitherBindingNeedsAnUnboundScheme(t *testing.T) {
-	r, err := Registry(forge.Policy{})
-	require.NoError(t, err)
-	for _, host := range r.Hosts() {
-		d, err := r.Driver(host)
-		require.NoError(t, err)
-		require.True(t, d.(forge.Signatures).Scheme().BindsBody(), host)
-	}
-}

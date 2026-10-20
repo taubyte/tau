@@ -53,7 +53,6 @@ func TestPayloadEd25519ExternalVectors(t *testing.T) {
 	wire, err := SchemePayloadEd25519.Wire(s)
 	require.NoError(t, err)
 	assert.Equal(t, payloadWire, wire)
-	assert.True(t, SchemePayloadEd25519.BindsBody())
 
 	hdr := SignPayload(priv, []byte(payloadBody), payloadNonce)
 	assert.Equal(t, payloadSig, hdr.Get("X-Payload-Signature"))

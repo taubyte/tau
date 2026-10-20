@@ -103,12 +103,12 @@ func TestAdvNoForgeryWithoutTheSecret(t *testing.T) {
 	})
 
 	t.Run("an empty secret verifies nothing, not everything", func(t *testing.T) {
-		for _, sc := range []Scheme{SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeSharedToken, SchemeOneDevToken} {
+		for _, sc := range []Scheme{SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeGogsSHA256, SchemePayloadEd25519} {
 			h := http.Header{}
 			h.Set("X-Hub-Signature-256", "sha256=")
 			h.Set("X-Hub-Signature", "sha256=")
-			h.Set("X-Gitlab-Token", "")
-			h.Set("X-OneDev-Signature", "")
+			h.Set("X-Gogs-Signature", "")
+			h.Set("X-Payload-Signature", "")
 			h.Set("Webhook-Id", "m")
 			h.Set("Webhook-Timestamp", fmt.Sprint(time.Now().Unix()))
 			h.Set("Webhook-Signature", "v1,")
@@ -149,43 +149,16 @@ func TestAdvNoForgeryWithoutTheSecret(t *testing.T) {
 		}
 	})
 
-	t.Run("shared token: near misses", func(t *testing.T) {
-		wire, err := SchemeSharedToken.Wire(advSecret)
-		require.NoError(t, err)
-		for name, presented := range map[string]string{
-			"empty":          "",
-			"a prefix":       wire[:len(wire)-1],
-			"a suffix added": wire + "x",
-			"padded":         " " + wire,
-			"case folded":    strings.ToUpper(wire),
-		} {
-			t.Run(name, func(t *testing.T) {
-				require.Error(t, verify(SchemeSharedToken, advSecret,
-					Delivery{Header: http.Header{"X-Gitlab-Token": {presented}}, Body: []byte(advBody)},
-					time.Now(), time.Minute))
-			})
-		}
-	})
 }
 
-// TestAdvTheSharedTokenWireIsExactlyTheHubSchemesHMACKey.
-//
-// Scheme.Wire derives the same string for SchemeHubSHA256, SchemeBitbucketSHA256
-// and SchemeSharedToken, and Scheme.key for the two hub schemes is THAT STRING'S
-// BYTES. There is no domain separation anywhere in the derivation, so one Secret
-// used for hooks under two schemes is one key used twice — and SchemeSharedToken
-// hands that key to the callback in cleartext on every single delivery.
-func TestAdvTheSharedTokenWireIsExactlyTheHubSchemesHMACKey(t *testing.T) {
-	shared, err := SchemeSharedToken.Wire(advSecret)
-	require.NoError(t, err)
+// TestAdvTheHubSchemesDoNotShareAKey. SchemeHubSHA256 and SchemeBitbucketSHA256
+// are one construction in two headers; keyed identically, a MAC captured for
+// one would be a MAC for the other.
+func TestAdvTheHubSchemesDoNotShareAKey(t *testing.T) {
 	hubKey, err := SchemeHubSHA256.key(advSecret)
 	require.NoError(t, err)
 	bitKey, err := SchemeBitbucketSHA256.key(advSecret)
 	require.NoError(t, err)
-
-	assert.NotEqual(t, shared, string(hubKey),
-		"the token replayed in cleartext by every shared-token delivery IS the HMAC key "+
-			"of a hub-scheme hook holding the same Secret")
 	assert.NotEqual(t, string(hubKey), string(bitKey),
 		"one MAC is valid under two schemes, so a signature captured for one is a signature for the other")
 }

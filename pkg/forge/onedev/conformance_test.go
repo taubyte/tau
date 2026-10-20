@@ -26,19 +26,17 @@ func expect() forge.Set {
 		forge.CapList:       {},
 		forge.CapCreate:     {},
 		forge.CapDelete:     {},
-		forge.CapPushHooks:  {},
 		forge.CapCloneAddr:  {},
-		forge.CapSignatures: {},
 	}
 }
 
-// TestConformance runs the suite under AllowUnboundSchemes, because OneDev
-// cannot sign: its X-OneDev-Signature is the stored secret replayed, so a
-// deployment must SAY it accepts that before this driver can even be bound.
-// See TestTheZeroPolicyRefusesThisDriver.
+// CapPushHooks and CapSignatures are absent because OneDev cannot sign a
+// delivery; see TestPushHooksAreUnsupported.
+//
+// TestConformance runs the suite under the zero policy, the only one.
 func TestConformance(t *testing.T) {
 	f := newFixture(t)
-	reg := f.registry(t, forge.Policy{AllowUnboundSchemes: true})
+	reg := f.registry(t, forge.Policy{})
 	forgetest.Run(t, f.subject(t, reg))
 }
 
@@ -85,12 +83,5 @@ func (f *fixture) subject(t *testing.T, reg *forge.Registry) forgetest.Subject {
 		Break:        f.Break,
 		Unbreak:      f.Unbreak,
 		RedirectOnce: f.RedirectOnce,
-
-		LastHookWire:  f.LastHookWire,
-		HookInstalled: f.HookInstalled,
-
-		Delivery:        f.Delivery,
-		DeliveryFor:     f.DeliveryFor,
-		NonPushDelivery: f.NonPushDelivery,
 	}
 }

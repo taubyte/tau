@@ -44,7 +44,6 @@ var (
 	_ forge.Lister         = (*client)(nil)
 	_ forge.Creator        = (*client)(nil)
 	_ forge.Deleter        = (*client)(nil)
-	_ forge.PushHooks      = (*client)(nil)
 	_ forge.CloneAddresses = (*client)(nil)
 )
 

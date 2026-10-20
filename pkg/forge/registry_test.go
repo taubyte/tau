@@ -182,9 +182,11 @@ func TestNewRefusesADeploymentThatIsWrong(t *testing.T) {
 			bindings: []Binding{{Host: stubHost, Driver: &stub{host: stubHost, scheme: "invented"}}},
 			saying:   "does not implement",
 		},
-		"a scheme that does not bind the body": {
-			bindings: []Binding{{Host: stubHost, Driver: &stub{host: stubHost, scheme: SchemeSharedToken}}},
-			saying:   "AllowUnboundSchemes",
+		// The token-replay schemes are gone: a driver naming one names a
+		// scheme this package does not implement, under every policy.
+		"a token-replay scheme": {
+			bindings: []Binding{{Host: stubHost, Driver: &stub{host: stubHost, scheme: "shared-token"}}},
+			saying:   "does not implement",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -194,14 +196,8 @@ func TestNewRefusesADeploymentThatIsWrong(t *testing.T) {
 		})
 	}
 
-	// Accepting a weak scheme is possible, and it is said out loud at one call
-	// site rather than per hook.
-	_, err := New(Policy{AllowUnboundSchemes: true},
-		Binding{Host: stubHost, Driver: &stub{host: stubHost, scheme: SchemeSharedToken}})
-	require.NoError(t, err)
-
 	// A driver with no Signatures face is bound with no scheme question at all.
-	_, err = New(Policy{}, Binding{Host: stubHost, Driver: &plain{host: stubHost}})
+	_, err := New(Policy{}, Binding{Host: stubHost, Driver: &plain{host: stubHost}})
 	require.NoError(t, err)
 }
 
@@ -470,20 +466,18 @@ func TestVerifyPushRefusesEveryWayADeliveryCanBeWrong(t *testing.T) {
 		assert.Contains(t, ve.Reason, "not implemented")
 	})
 
-	t.Run("a scheme the policy does not accept", func(t *testing.T) {
+	t.Run("a hook stored under a token-replay scheme", func(t *testing.T) {
 		reg := newRegistry(t, &stub{host: stubHost, scheme: SchemeHubSHA256, claim: claim}, Policy{})
-		weak := hook
-		weak.Scheme = SchemeSharedToken
-		var ve *VerificationError
-		_, err := reg.VerifyPush(weak, signed(t, SchemeSharedToken, body))
-		require.ErrorAs(t, err, &ve)
-		assert.Contains(t, ve.Reason, "does not bind the body")
-
-		// The same hook verifies on a deployment that said so out loud.
-		allowed := newRegistry(t, &stub{host: stubHost, scheme: SchemeHubSHA256, claim: claim},
-			Policy{AllowUnboundSchemes: true})
-		_, err = allowed.VerifyPush(weak, signed(t, SchemeSharedToken, body))
-		require.NoError(t, err)
+		for _, old := range []Scheme{"shared-token", "onedev-token", "basic-auth"} {
+			weak := hook
+			weak.Scheme = old
+			d := signed(t, SchemeHubSHA256, body)
+			d.Header.Set("X-Gitlab-Token", "anything")
+			var ve *VerificationError
+			_, err := reg.VerifyPush(weak, d)
+			require.ErrorAs(t, err, &ve, string(old))
+			assert.Contains(t, ve.Reason, "not implemented")
+		}
 	})
 
 	t.Run("a hook with no secret", func(t *testing.T) {
@@ -679,14 +673,11 @@ func TestEverySchemeRefusesEveryWayADeliveryCanBeWrong(t *testing.T) {
 	claim := PushClaim{Repository: k, Ref: "refs/heads/main", Commit: strings.Repeat("a", 40)}
 
 	for _, scheme := range []Scheme{
-		SchemeHubSHA256, SchemeStandardWebhooks, SchemeBitbucketSHA256, SchemeSharedToken, SchemeOneDevToken,
+		SchemeHubSHA256, SchemeStandardWebhooks, SchemeBitbucketSHA256, SchemeGogsSHA256,
 	} {
 		t.Run(string(scheme), func(t *testing.T) {
 			secret := vectorSecret()
-			// AllowUnboundSchemes so the one scheme that binds nothing is
-			// exercised here rather than refused by policy; the policy refusal
-			// is its own case above.
-			reg, err := New(Policy{AllowUnboundSchemes: true},
+			reg, err := New(Policy{},
 				Binding{Host: stubHost, Driver: &stub{host: stubHost, scheme: scheme, claim: claim}})
 			require.NoError(t, err)
 
@@ -710,14 +701,11 @@ func TestEverySchemeRefusesEveryWayADeliveryCanBeWrong(t *testing.T) {
 				name string
 				hook Hook
 				d    Delivery
-				skip bool
 			}{
 				{name: "a body with one byte changed", hook: hook,
-					d:    Delivery{Header: good.Header.Clone(), Body: flipOne(good.Body)},
-					skip: !scheme.BindsBody()},
+					d: Delivery{Header: good.Header.Clone(), Body: flipOne(good.Body)}},
 				{name: "a body with one byte appended", hook: hook,
-					d:    Delivery{Header: good.Header.Clone(), Body: append(append([]byte(nil), good.Body...), ' ')},
-					skip: !scheme.BindsBody()},
+					d: Delivery{Header: good.Header.Clone(), Body: append(append([]byte(nil), good.Body...), ' ')}},
 				{name: "a delivery with no headers at all", hook: hook,
 					d: Delivery{Body: good.Body}},
 				{name: "a delivery whose headers were each truncated by one character", hook: hook,
@@ -725,9 +713,6 @@ func TestEverySchemeRefusesEveryWayADeliveryCanBeWrong(t *testing.T) {
 				{name: "a signature under a different secret", hook: underOther, d: good},
 				{name: "a hook whose recorded scheme is a different one", hook: wrongScheme, d: good},
 			} {
-				if tc.skip {
-					continue
-				}
 				t.Run(tc.name, func(t *testing.T) {
 					got, err := reg.VerifyPush(tc.hook, tc.d)
 					assert.Error(t, err, "%s was accepted", tc.name)
@@ -743,7 +728,7 @@ func TestEverySchemeRefusesEveryWayADeliveryCanBeWrong(t *testing.T) {
 // asserted without naming a forge.
 func otherImplemented(s Scheme) Scheme {
 	for _, candidate := range []Scheme{
-		SchemeHubSHA256, SchemeStandardWebhooks, SchemeBitbucketSHA256, SchemeSharedToken, SchemeOneDevToken,
+		SchemeHubSHA256, SchemeStandardWebhooks, SchemeBitbucketSHA256, SchemeGogsSHA256,
 	} {
 		if candidate != s {
 			return candidate

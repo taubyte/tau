@@ -10,12 +10,21 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// Scheme names the procedure this driver registers NEW hooks with. It does not
-// implement one, and it is not the procedure a delivery is checked under: that
-// is the scheme stored with the hook, so an instance upgraded from a shared
-// token to a signing one keeps verifying its older hooks correctly and no
-// migration is needed to avoid dropping pushes.
-func (d *driver) Scheme() forge.Scheme { return d.cfg.scheme }
+// Scheme names the procedure this driver registers NEW hooks with: Standard
+// Webhooks, the only one GitLab offers that binds the body. It does not
+// implement one; the core verifies under the scheme stored with the hook.
+func (d *signingDriver) Scheme() forge.Scheme { return forge.SchemeStandardWebhooks }
+
+func (d *signingMemberDriver) Scheme() forge.Scheme { return forge.SchemeStandardWebhooks }
+
+// Push is the signing drivers' reading of a verified delivery; see push.
+func (d *signingDriver) Push(body forge.VerifiedBody, header http.Header) (forge.PushClaim, error) {
+	return push(body, header)
+}
+
+func (d *signingMemberDriver) Push(body forge.VerifiedBody, header http.Header) (forge.PushClaim, error) {
+	return push(body, header)
+}
 
 // pushPayload is the slice of GitLab's push event this driver reads, and reading
 // this little is deliberate. A delivery is a stranger's bytes that a signature
@@ -39,7 +48,7 @@ type pushPayload struct {
 	} `json:"project"`
 }
 
-// Push reads a delivery the core HAS ALREADY VERIFIED — the parameter type is
+// push reads a delivery the core HAS ALREADY VERIFIED — the parameter type is
 // the proof, since forge.VerifiedBody's fields are unexported and no package
 // outside forge can build a non-empty one — and returns what the payload CLAIMS.
 // It decides nothing: the core compares the claimed repository against the one
@@ -51,7 +60,7 @@ type pushPayload struct {
 // builds one. That the interface hands the raw http.Header to the driver rather
 // than a normalised event string is what makes both spellings the driver's
 // business and neither the core's.
-func (d *driver) Push(body forge.VerifiedBody, header http.Header) (forge.PushClaim, error) {
+func push(body forge.VerifiedBody, header http.Header) (forge.PushClaim, error) {
 	if header.Get("X-Gitlab-Event") != "Push Hook" {
 		return forge.PushClaim{}, forge.ErrNotAPush
 	}

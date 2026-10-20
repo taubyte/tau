@@ -25,9 +25,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
-	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/forgetest"
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
@@ -60,7 +58,6 @@ type fProject struct {
 	public   bool // readable with no credential
 	empty    bool // no branch yet
 	settings map[string]json.RawMessage
-	hooks    []map[string]any
 }
 
 type fixture struct {
@@ -75,11 +72,8 @@ type fixture struct {
 	mu             sync.Mutex
 	projects       map[int64]*fProject
 	seq            int64
-	lastWire       string
 	redirect       string
 	redirectStatus int
-	// saved is every settings body the driver posted, verbatim.
-	saved []map[string]json.RawMessage
 	// listPage overrides the page size the listing answers with, when set.
 	listPage int
 	// answer, when set, sees every request first and may answer it itself:
@@ -156,25 +150,6 @@ func (f *fixture) RedirectOnce(loc string, status int) {
 	f.mu.Unlock()
 }
 
-func (f *fixture) LastHookWire() string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.lastWire
-}
-
-func (f *fixture) HookInstalled(h forge.Handle) bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for _, p := range f.projects {
-		for _, hook := range p.hooks {
-			if hook["postUrl"] == string(h) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // byPath is the project at path, or nil. Callers hold f.mu.
 func (f *fixture) byPath(path string) *fProject {
 	for _, p := range f.projects {
@@ -233,7 +208,6 @@ func (f *fixture) handler() http.Handler {
 	mux.HandleFunc("DELETE /~api/projects/{id}", f.delete)
 	mux.HandleFunc("GET /~api/projects/{id}/clone-url", f.cloneURL)
 	mux.HandleFunc("GET /~api/projects/{id}/setting", f.getSetting)
-	mux.HandleFunc("POST /~api/projects/{id}/setting", f.saveSetting)
 	mux.HandleFunc("GET /~api/repositories/{id}/default-branch", f.defaultBranch)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -399,57 +373,8 @@ func (f *fixture) getSetting(w http.ResponseWriter, r *http.Request) {
 	for k, v := range p.settings {
 		out[k] = v
 	}
-	list := p.hooks
-	if list == nil {
-		list = []map[string]any{}
-	}
-	hooks, err := json.Marshal(list)
 	f.mu.Unlock()
-	if err != nil {
-		f.fail(w, http.StatusInternalServerError, "fixture")
-		return
-	}
-	out["webHooks"] = hooks
 	f.ok(w, out)
-}
-
-func (f *fixture) saveSetting(w http.ResponseWriter, r *http.Request) {
-	p, ok := f.manager(w, r)
-	if !ok {
-		return
-	}
-	var body map[string]json.RawMessage
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		f.fail(w, http.StatusBadRequest, "unreadable")
-		return
-	}
-	var hooks []map[string]any
-	if err := json.Unmarshal(body["webHooks"], &hooks); err != nil {
-		f.fail(w, http.StatusBadRequest, "unreadable webHooks")
-		return
-	}
-	for _, h := range hooks {
-		// OneDev's own validation: a post URL, at least one event type, and a
-		// secret, all non-empty.
-		if h["postUrl"] == "" || h["secret"] == "" || h["eventTypes"] == nil {
-			f.fail(w, http.StatusBadRequest, "invalid webhook")
-			return
-		}
-	}
-	f.mu.Lock()
-	f.saved = append(f.saved, body)
-	for _, h := range hooks {
-		if !slices.ContainsFunc(p.hooks, func(old map[string]any) bool { return old["postUrl"] == h["postUrl"] }) {
-			if s, ok := h["secret"].(string); ok {
-				f.lastWire = s
-			}
-		}
-	}
-	p.hooks = hooks
-	delete(body, "webHooks")
-	p.settings = body
-	f.mu.Unlock()
-	w.WriteHeader(http.StatusOK)
 }
 
 func (f *fixture) list(w http.ResponseWriter, r *http.Request) {
@@ -552,94 +477,3 @@ func (f *fixture) advertise(w http.ResponseWriter, r *http.Request, path string)
 		fmt.Fprint(w, "001f# service=git-receive-pack\n0000")
 	}
 }
-
-// ─────────────────────────────── deliveries ───────────────────────────────
-
-// Delivery is what OneDev sends: the RefUpdated event, the token in
-// X-OneDev-Signature, and the hook's custom headers AS THE DRIVER REGISTERED
-// THEM — read back out of the stored hook, so a driver that wrote a wrong
-// repository header is caught here rather than trusted.
-func (f *fixture) Delivery(h forge.Hook, ref, commit string) (forge.Delivery, error) {
-	f.mu.Lock()
-	p := f.byPath(h.Key.FullName())
-	var header string
-	if p != nil {
-		for _, hook := range p.hooks {
-			if hook["postUrl"] == string(h.Handle) {
-				header = customHeader(hook, "X-Tau-Repository")
-			}
-		}
-	}
-	f.mu.Unlock()
-	if p == nil || header == "" {
-		return forge.Delivery{}, fmt.Errorf("fixture: no hook %q on %q to deliver from", h.Handle, h.Key)
-	}
-	return f.deliver(h, p.id, header, ref, commit, "RefUpdated")
-}
-
-// DeliveryFor names another repository under this hook's own secret: the
-// header and the payload both speak for other, as a hook whose configuration
-// was edited to name it would.
-func (f *fixture) DeliveryFor(h forge.Hook, other repokey.Key, ref, commit string) (forge.Delivery, error) {
-	f.mu.Lock()
-	p := f.byPath(other.FullName())
-	f.mu.Unlock()
-	if p == nil {
-		return forge.Delivery{}, fmt.Errorf("fixture: no project %q", other)
-	}
-	header := strconv.FormatInt(p.id, 10) + " https://" + f.host + "/" + p.path + ".git"
-	return f.deliver(h, p.id, header, ref, commit, "RefUpdated")
-}
-
-func (f *fixture) NonPushDelivery(h forge.Hook) (forge.Delivery, error) {
-	d, err := f.Delivery(h, "", "")
-	if err != nil {
-		return forge.Delivery{}, err
-	}
-	d.Body = []byte(strings.Replace(string(d.Body), `"RefUpdated"`, `"PullRequestOpened"`, 1))
-	return d, nil
-}
-
-func (f *fixture) deliver(h forge.Hook, project int64, header, ref, commit, typ string) (forge.Delivery, error) {
-	body, err := json.Marshal(map[string]any{
-		"projectId":            project,
-		"userId":               userID,
-		"date":                 "2026-10-20T05:21:46.338+00:00",
-		"participatingUserIds": []int{userID},
-		"refName":              ref,
-		"oldCommitId":          strings.Repeat("0", 40),
-		"newCommitId":          commit,
-		"type":                 typ,
-	})
-	if err != nil {
-		return forge.Delivery{}, err
-	}
-	hdr, err := forge.Sign(h.Scheme, h.Secret, body, "", testNow)
-	if err != nil {
-		return forge.Delivery{}, err
-	}
-	hdr.Set("X-Tau-Repository", header)
-	hdr.Set("Content-Type", "application/json")
-	return forge.Delivery{Header: hdr, Body: body}, nil
-}
-
-func customHeader(hook map[string]any, name string) string {
-	headers, ok := hook["headers"].([]any)
-	if !ok {
-		return ""
-	}
-	for _, h := range headers {
-		m, ok := h.(map[string]any)
-		if !ok || m["name"] != name {
-			continue
-		}
-		if v, ok := m["value"].(string); ok {
-			return v
-		}
-	}
-	return ""
-}
-
-// testNow is when every fixture delivery says it was made. The token schemes
-// read no time; it is fixed so a delivery is the same bytes on every run.
-var testNow = time.Date(2026, 10, 20, 5, 21, 46, 0, time.UTC)

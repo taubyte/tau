@@ -359,17 +359,9 @@ type Binding struct {
 // Policy is what a deployment accepts. THE ZERO VALUE IS THE STRICT ONE, so
 // every loosening is opt-in and visible at one call site.
 type Policy struct {
-	// AllowUnboundSchemes accepts a scheme whose match does not prove the body
-	// is the one that was signed — today SchemeSharedToken, which is what a
-	// GitLab older than 19.0 offers, and SchemeOneDevToken, which is all any
-	// OneDev offers. Refusing by default is deliberate: it
-	// gives that operator materially weaker webhook authentication than a
-	// GitHub operator, and nothing in a config would otherwise say so.
-	AllowUnboundSchemes bool
-
 	// AllowInsecureCallback accepts a non-https webhook callback URL. The
-	// callback is where a forge sends a secret-bearing delivery, and one
-	// scheme replays the secret itself in cleartext on every one.
+	// callback is where a forge sends a signed delivery; over plain http
+	// anyone on the path reads every payload.
 	AllowInsecureCallback bool
 
 	// MaxDeliveryBody caps a delivery before any MAC is computed over it. Zero
@@ -400,7 +392,6 @@ type Registry struct {
 //     by map iteration order
 //   - a host that is not a repokey host spelling, so a key would never match it
 //   - a driver naming a scheme this package does not implement
-//   - a driver registering with an unbound scheme the policy does not accept
 func New(policy Policy, bindings ...Binding) (*Registry, error) {
 	r := &Registry{drivers: make(map[string]Driver, len(bindings)), policy: policy}
 	for _, b := range bindings {
@@ -429,9 +420,6 @@ func New(policy Policy, bindings ...Binding) (*Registry, error) {
 				if !ok || len(pk.PayloadKey()) != ed25519.PublicKeySize {
 					return nil, fmt.Errorf("forge: driver for %q registers hooks with scheme %q and names no Ed25519 key the forge signs with", b.Host, sch)
 				}
-			}
-			if !sch.BindsBody() && !policy.AllowUnboundSchemes {
-				return nil, fmt.Errorf("forge: driver for %q registers hooks with scheme %q, which does not bind the body; set Policy.AllowUnboundSchemes to accept it", b.Host, sch)
 			}
 		}
 		r.drivers[b.Host] = b.Driver

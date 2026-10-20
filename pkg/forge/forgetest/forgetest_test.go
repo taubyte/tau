@@ -23,7 +23,6 @@ func TestEveryShapePasses(t *testing.T) {
 	}{
 		{"github-like", fake.GitHubLike},
 		{"gitlab-like-nested-standard-webhooks", fake.GitLabLike},
-		{"gitlab-18-like-shared-token", fake.GitLabOldLike},
 		{"gitea-like", fake.GiteaLike},
 		{"bitbucket-like-uuid-handles-no-clone-url", fake.BitbucketLike},
 		{"a-host-with-nothing-but-the-three-mandatory-answers", fake.Minimal},

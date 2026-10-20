@@ -17,13 +17,7 @@ func subjectFor(t *testing.T, name string, sh fake.Shape) Subject {
 	t.Helper()
 	f := fake.New(sh)
 
-	policy := forge.Policy{}
-	if sh.Scheme == forge.SchemeSharedToken {
-		// An instance that offers only a replayed token is refused by the zero
-		// Policy, so accepting one is said out loud, once, here.
-		policy.AllowUnboundSchemes = true
-	}
-	reg, err := f.Registry(policy)
+	reg, err := f.Registry(forge.Policy{})
 	require.NoError(t, err)
 
 	k := f.Keys()

@@ -33,14 +33,16 @@ func stub(t *testing.T, h http.HandlerFunc, opts ...Option) (forge.Driver, strin
 	return d, srv.URL
 }
 
-func stubClient(t *testing.T, h http.HandlerFunc, opts ...Option) (*client, repokey.Key) {
+// stubClient is a signing instance's client, the one type with every client
+// face, so a test of any method can reach it.
+func stubClient(t *testing.T, h http.HandlerFunc, opts ...Option) (*hookClient, repokey.Key) {
 	t.Helper()
-	d, base := stub(t, h, opts...)
+	d, base := stub(t, h, append([]Option{Signing()}, opts...)...)
 	bound, err := d.Bind(forge.Token("stub-token"))
 	require.NoError(t, err)
 	key, err := repokey.Parse(base + "/acme/pay.git")
 	require.NoError(t, err)
-	return bound.(*client), key
+	return bound.(*hookClient), key
 }
 
 func answer(t *testing.T, status int, body string) http.HandlerFunc {
@@ -105,9 +107,9 @@ func TestNewDefaultsToTheHostOverHTTPS(t *testing.T) {
 	assert.Equal(t, "gitlab.com", d.Host())
 	assert.Equal(t, "https://gitlab.com", d.(*driver).cfg.base.String())
 
-	// And to the procedure every ordinary instance actually performs, which the
-	// zero policy then refuses out loud.
-	assert.Equal(t, forge.SchemeSharedToken, d.(*driver).Scheme())
+	// And to no hook faces: an instance is not assumed to sign.
+	_, has := d.(forge.Signatures)
+	assert.False(t, has, "a driver not told the instance signs claims it can verify deliveries")
 }
 
 func TestBaseURLRefusesWhatWouldAimTheCredentialElsewhere(t *testing.T) {
@@ -160,24 +162,34 @@ func TestMembershipIsATypeAndNotANilCheck(t *testing.T) {
 	assert.True(t, has)
 }
 
-// The zero forge.Policy is the strict one, and GitLab's decade-old webhook
-// procedure binds nothing. A deployment gets that instance's weaker webhook
-// authentication only by saying so at the one call site that registers it.
-func TestZeroPolicyRefusesAnUnboundScheme(t *testing.T) {
-	d, err := New("gitlab.com")
-	require.NoError(t, err)
-
-	_, err = forge.New(forge.Policy{}, forge.Binding{Host: "gitlab.com", Driver: d})
-	require.Error(t, err, "the zero policy accepted a driver whose hooks bind nothing")
-	assert.Contains(t, err.Error(), "does not bind the body")
-
-	_, err = forge.New(forge.Policy{AllowUnboundSchemes: true}, forge.Binding{Host: "gitlab.com", Driver: d})
-	assert.NoError(t, err)
-
-	signing, err := New("gitlab.com", Signing())
-	require.NoError(t, err)
-	_, err = forge.New(forge.Policy{}, forge.Binding{Host: "gitlab.com", Driver: signing})
-	assert.NoError(t, err, "the zero policy refused a scheme that binds the body")
+// GitLab's decade-old webhook procedure replays a token that binds nothing, so a
+// driver not told the instance signs has no hook faces: every hook question is
+// *forge.UnsupportedError, and the driver binds under the zero policy, the only
+// one there is.
+func TestWithoutSigningHooksAreUnsupported(t *testing.T) {
+	in := newInstance(t)
+	for _, opts := range [][]Option{nil, {Deployment(forge.Token(deployToken))}} {
+		d := in.driver(t, opts...)
+		_, has := d.(forge.Signatures)
+		assert.False(t, has)
+		registry, err := forge.New(forge.Policy{}, forge.Binding{Host: in.host, Driver: d})
+		require.NoError(t, err)
+		key := in.keys(t).Admin
+		session, err := registry.For(key, forge.Token(goodToken))
+		require.NoError(t, err)
+		assert.False(t, session.Capabilities().Has(forge.CapPushHooks))
+		callback, err := url.Parse("https://build.example.invalid/hooks")
+		require.NoError(t, err)
+		secret, err := forge.NewSecret()
+		require.NoError(t, err)
+		var unsupported *forge.UnsupportedError
+		_, err = session.RegisterPushHook(context.Background(), key, callback, secret)
+		require.ErrorAs(t, err, &unsupported)
+		assert.Equal(t, forge.CapPushHooks, unsupported.Capability)
+		_, err = registry.VerifyPush(forge.Hook{Key: key, Handle: "1", Scheme: forge.SchemeStandardWebhooks, Secret: secret}, forge.Delivery{})
+		require.ErrorAs(t, err, &unsupported)
+		assert.Equal(t, forge.CapSignatures, unsupported.Capability)
+	}
 }
 
 func TestBindRefusesAZeroCredential(t *testing.T) {
@@ -821,8 +833,8 @@ func TestInstallingOnARepositoryTheCredentialCannotAdministerFails(t *testing.T)
 
 // ─────────────────────────── hooks ───────────────────────────
 
-// One forge, two procedures, two attributes. The driver names the scheme and
-// passes the wire string through; it never derives one and never verifies one.
+// The wire string is the signing token, never the replayed `token`. The driver
+// passes it through; it never derives one and never verifies one.
 func TestTheWireStringGoesInTheAttributeTheSchemeNames(t *testing.T) {
 	for _, testCase := range []struct {
 		name      string
@@ -830,7 +842,6 @@ func TestTheWireStringGoesInTheAttributeTheSchemeNames(t *testing.T) {
 		attribute string
 		other     string
 	}{
-		{"shared token", nil, "token", "signing_token"},
 		{"standard webhooks", []Option{Signing()}, "signing_token", "token"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -877,7 +888,6 @@ func TestTheHookSubscribesToPushesAndNothingElse(t *testing.T) {
 		options   []Option
 		attribute string
 	}{
-		{"shared token", nil, "token"},
 		{"standard webhooks", []Option{Signing()}, "signing_token"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -977,7 +987,7 @@ func TestCloneAddressCarriesNoCredentialAndNamesTheAccount(t *testing.T) {
 // ─────────────────────────── payloads ───────────────────────────
 
 func TestPushReadsOnlyAPush(t *testing.T) {
-	d, err := New("gitlab.com")
+	d, err := New("gitlab.com", Signing())
 	require.NoError(t, err)
 	signatures := d.(forge.Signatures)
 
@@ -1006,8 +1016,8 @@ func TestPushReadsOnlyAPush(t *testing.T) {
 // naming no repository.
 func TestVerifyPushRejectsPayloadsThatOnlyLookLikePushes(t *testing.T) {
 	in := newInstance(t)
-	registry, err := forge.New(forge.Policy{AllowUnboundSchemes: true},
-		forge.Binding{Host: in.host, Driver: in.driver(t)})
+	registry, err := forge.New(forge.Policy{},
+		forge.Binding{Host: in.host, Driver: in.driver(t, Signing())})
 	require.NoError(t, err)
 
 	session, err := registry.For(in.keys(t).Admin, forge.Token(goodToken))

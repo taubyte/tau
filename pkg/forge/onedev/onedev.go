@@ -27,20 +27,14 @@
 //     and a project the credential reaches without code access is AccessNone,
 //     which is what it is for a builder.
 //
-//   - A WEBHOOK DELIVERY IS NOT SIGNED. OneDev puts the hook's stored secret,
-//     verbatim, in a header it calls X-OneDev-Signature, and computes nothing
-//     over the body. That is forge.SchemeOneDevToken, which binds nothing, so a
-//     registry accepts this driver only under Policy.AllowUnboundSchemes — the
-//     gitlab driver's shared-token mode, in another header.
-//
-//   - A DELIVERY NAMES ITS PROJECT ONLY BY NUMBER, and a hook fires for every
-//     descendant of the project it is set on. So the payload alone cannot name
-//     the repository, and VerifyPush may not make an API call to find out. The
-//     driver registers each hook with one custom header of its own,
-//     X-Tau-Repository: "<id> <clone url>", which OneDev replays beside the
-//     token on every delivery; Push names the repository from that header only
-//     when the payload's project id is the one the header was written for, and
-//     refuses a descendant's push rather than filing it under its ancestor.
+//   - THERE ARE NO PUSH HOOKS, BECAUSE ONEDEV CANNOT SIGN ONE. OneDev puts a
+//     hook's stored secret, verbatim, in a header it calls X-OneDev-Signature,
+//     and computes nothing over the body, so anyone who sees one delivery's
+//     headers can forge any push. tau accepts no delivery it cannot verify by a
+//     signature over the body, so this driver implements neither
+//     forge.PushHooks nor forge.Signatures and both answer
+//     *forge.UnsupportedError. A OneDev repository is reachable through every
+//     other face; its pushes do not trigger a build.
 //
 //   - THERE ARE NO DEPLOY KEYS AND NO NAMESPACE MEMBERSHIP. An SSH key in
 //     OneDev belongs to a user and reaches everything that user reaches, so
@@ -76,10 +70,7 @@ type driver struct {
 	scheme string            // "https", or "http" only for a loopback host
 }
 
-var (
-	_ forge.Driver     = (*driver)(nil)
-	_ forge.Signatures = (*driver)(nil)
-)
+var _ forge.Driver = (*driver)(nil)
 
 // Option is a deployment fact about one OneDev. There is no option for the API
 // base: the host decides it.

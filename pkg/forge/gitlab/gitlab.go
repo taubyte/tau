@@ -27,13 +27,13 @@
 //     not reach it, and the errors array has to be turned into the taxonomy by
 //     hand.
 //
-//   - A WEBHOOK IS NOT SIGNED. GitLab's decade-old procedure replays a shared
-//     token in a header and binds nothing — not the body, not a timestamp. It is
-//     forge.SchemeSharedToken, forge.Scheme.BindsBody reports false for it, and
-//     the zero forge.Policy REFUSES a driver that registers with it. That is not
-//     a bug in either package: it is the interface admitting, in a value a
-//     deployment must opt into, that a GitLab operator gets materially weaker
-//     webhook authentication than a GitHub one.
+//   - A WEBHOOK IS SIGNED ONLY WHEN THE INSTANCE CAN SIGN. GitLab's decade-old
+//     procedure replays a shared token in a header and binds nothing — not the
+//     body, not a timestamp — and tau accepts no delivery it cannot verify by a
+//     signature over the body. So push hooks exist only on a driver built with
+//     Signing, which registers Standard Webhooks; without it the driver
+//     implements neither forge.PushHooks nor forge.Signatures and the registry
+//     reports both as *forge.UnsupportedError. See Signing.
 //
 //   - CREATION IS NOT A PATH OPERATION. A project is created under a NAMESPACE
 //     ID, so Create resolves the namespace first. That integer is a namespace id,
@@ -71,10 +71,14 @@ import (
 // capability comparison are the two things that catch it.
 var (
 	_ forge.Driver      = (*driver)(nil)
-	_ forge.Signatures  = (*driver)(nil)
 	_ forge.Driver      = (*memberDriver)(nil)
-	_ forge.Signatures  = (*memberDriver)(nil)
 	_ forge.Memberships = (*memberDriver)(nil)
+	_ forge.Driver      = (*signingDriver)(nil)
+	_ forge.Signatures  = (*signingDriver)(nil)
+	_ forge.Driver      = (*signingMemberDriver)(nil)
+	_ forge.Signatures  = (*signingMemberDriver)(nil)
+	_ forge.Memberships = (*signingMemberDriver)(nil)
+	_ forge.PushHooks   = (*hookClient)(nil)
 )
 
 // Option configures a driver at construction. Every one of them can fail, and
@@ -82,9 +86,12 @@ var (
 type Option func(*config) error
 
 type config struct {
-	host   string
-	base   *url.URL
-	scheme forge.Scheme
+	host string
+	base *url.URL
+
+	// signing is whether the instance signs its deliveries. Without it this
+	// driver has no hook faces at all. See Signing.
+	signing bool
 
 	// oauth picks which of GitLab's two credential headers is used. See OAuth.
 	oauth bool
@@ -120,14 +127,7 @@ func New(host string, opts ...Option) (forge.Driver, error) {
 		return nil, err
 	}
 
-	cfg := &config{
-		host: host,
-		// SchemeSharedToken is what GitLab has done for a decade and what every
-		// instance still does unless it was told otherwise. Defaulting to the
-		// stronger scheme would mean a driver that registers hooks no ordinary
-		// instance can honour, and the failure would be silent deliveries.
-		scheme: forge.SchemeSharedToken,
-	}
+	cfg := &config{host: host}
 	for _, opt := range opts {
 		if err := opt(cfg); err != nil {
 			return nil, err
@@ -138,10 +138,15 @@ func New(host string, opts ...Option) (forge.Driver, error) {
 	}
 
 	d := &driver{cfg: cfg}
-	if cfg.deployment.IsZero() {
-		return d, nil
+	switch member := !cfg.deployment.IsZero(); {
+	case member && cfg.signing:
+		return &signingMemberDriver{memberDriver: &memberDriver{driver: d, api: cfg.httpClient(cfg.deployment)}}, nil
+	case member:
+		return &memberDriver{driver: d, api: cfg.httpClient(cfg.deployment)}, nil
+	case cfg.signing:
+		return &signingDriver{driver: d}, nil
 	}
-	return &memberDriver{driver: d, api: cfg.httpClient(cfg.deployment)}, nil
+	return d, nil
 }
 
 // BaseURL points the driver at the instance's API root. In production it is
@@ -184,22 +189,21 @@ func BaseURL(raw string) Option {
 	}
 }
 
-// Signing registers new hooks under forge.SchemeStandardWebhooks instead of
-// replaying a shared token, by giving the instance a signing token rather than a
-// plain one.
+// Signing says the instance signs deliveries with Standard Webhooks (GitLab 19.0
+// and later), and it is what gives this driver push hooks at all: they are
+// registered with a signing token and verified under
+// forge.SchemeStandardWebhooks. A driver built without it has no hook faces,
+// because the only other thing GitLab offers is a token replayed in a header,
+// which binds nothing and which tau does not accept.
 //
-// IT IS OPT-IN AND ITS FAILURE MODE IS CLOSED. Standard Webhooks signing is a
-// recent GitLab feature; an instance that does not know the attribute ignores it
-// and signs nothing, at which point every delivery fails verification and the
+// ITS FAILURE MODE IS CLOSED. An instance too old to know the attribute ignores
+// it and signs nothing, at which point every delivery fails verification and the
 // hook is visibly broken. There is no arrangement in which getting this wrong
-// causes a forged delivery to be accepted, which is why it is safe to offer at
-// all. Whether an operator's instance is new enough is the operator's to know,
-// and it is a per-instance fact, not a per-forge one — which is exactly why
-// forge.Scheme is stored with each hook and pinned at verification rather than
-// derived from the host.
+// causes a forged delivery to be accepted. Whether an instance is new enough is
+// the operator's to know, and it is a per-instance fact, not a per-forge one.
 func Signing() Option {
 	return func(c *config) error {
-		c.scheme = forge.SchemeStandardWebhooks
+		c.signing = true
 		return nil
 	}
 }
@@ -318,6 +322,30 @@ func (d *driver) Bind(cred forge.Credential) (forge.Client, error) {
 type memberDriver struct {
 	*driver
 	api *http.Client
+}
+
+// signingDriver is a driver for an instance that signs its deliveries: the only
+// kind with hook faces, and a separate type for memberDriver's reason. Its
+// clients are hookClients.
+type signingDriver struct{ *driver }
+
+func (d *signingDriver) Bind(cred forge.Credential) (forge.Client, error) {
+	return bindHooks(d.driver, cred)
+}
+
+// signingMemberDriver is both: membership and hooks.
+type signingMemberDriver struct{ *memberDriver }
+
+func (d *signingMemberDriver) Bind(cred forge.Credential) (forge.Client, error) {
+	return bindHooks(d.driver, cred)
+}
+
+func bindHooks(d *driver, cred forge.Credential) (forge.Client, error) {
+	c, err := d.Bind(cred)
+	if err != nil {
+		return nil, err
+	}
+	return &hookClient{client: c.(*client)}, nil
 }
 
 // ─────────────────────────── host and transport plumbing ───────────────────────────

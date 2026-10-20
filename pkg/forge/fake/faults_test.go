@@ -63,7 +63,7 @@ func o(v any, err error) string { return fmt.Sprintf("%v %s", v, kind(err)) }
 // verified is the push a correctly signed delivery for k reads as, through the
 // registry and so through the driver's Push.
 func (e env) verified(ref, commit string) (forge.Push, error) {
-	reg, err := e.f.Registry(forge.Policy{AllowUnboundSchemes: true})
+	reg, err := e.f.Registry(forge.Policy{})
 	require.NoError(e.t, err)
 	h := e.hook()
 	d, err := e.f.Delivery(h, ref, commit)

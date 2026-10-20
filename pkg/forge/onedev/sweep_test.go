@@ -20,7 +20,7 @@ import (
 // request that matches NO route is a path composed outside the table.
 func TestTheSuiteReachesEveryRouteThisDriverShips(t *testing.T) {
 	f := newFixture(t)
-	reg := f.registry(t, forge.Policy{AllowUnboundSchemes: true})
+	reg := f.registry(t, forge.Policy{})
 	forgetest.Run(t, f.subject(t, reg))
 
 	drv, err := reg.Driver(f.Host())

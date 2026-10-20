@@ -4,12 +4,9 @@ package live_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
-	"strings"
 	"testing"
 	"time"
 
@@ -26,16 +23,12 @@ const onedevImage = "1dev/server:16.9.4"
 
 // TestARealOneDevAnswersTheOneDevDriver is the onedev driver against OneDev.
 //
-// IT IS NOT walk, AND THE DIFFERENCES ARE OneDev's, NOT THE TEST'S. walk
-// requires deploy keys and membership, which OneDev has no spelling of, and it
-// asserts that a delivery with one byte of its body changed fails
-// verification — which a OneDev delivery cannot do, because OneDev signs
-// nothing: X-OneDev-Signature is the stored secret replayed. So this walks the
-// same path minus those two faces, and asserts instead what an unbound scheme
-// CAN be held to: the token is checked, the repository header the driver
-// registered is what names the repository, and a push to a descendant project
-// — which OneDev delivers through its ancestor's hook — is refused rather than
-// built as the ancestor.
+// IT IS NOT walk, AND THE DIFFERENCE IS OneDev's, NOT THE TEST'S. walk
+// requires deploy keys, which OneDev has no spelling of, and OneDev creates
+// projects under a parent project rather than a user namespace. Membership is
+// absent too, and so are hooks: OneDev signs nothing (X-OneDev-Signature is the
+// stored secret replayed), and tau accepts no delivery it cannot verify by a
+// signature over the body. Each absent face is asserted to be refused.
 func TestARealOneDevAnswersTheOneDevDriver(t *testing.T) {
 	ctx := t.Context()
 	od := bootOneDev(t)
@@ -44,11 +37,11 @@ func TestARealOneDevAnswersTheOneDevDriver(t *testing.T) {
 	sess, err := in.reg.Host(in.host, in.user)
 	require.NoError(t, err)
 	require.NoError(t, sess.Require(
-		forge.CapList, forge.CapCreate, forge.CapDelete,
-		forge.CapPushHooks, forge.CapCloneAddr, forge.CapSignatures))
+		forge.CapList, forge.CapCreate, forge.CapDelete, forge.CapCloneAddr))
 	var unsupported *forge.UnsupportedError
-	require.ErrorAs(t, sess.Require(forge.CapDeployKeys), &unsupported)
-	require.ErrorAs(t, sess.Require(forge.CapMembership), &unsupported)
+	for _, absent := range []forge.Capability{forge.CapDeployKeys, forge.CapMembership, forge.CapPushHooks, forge.CapSignatures} {
+		require.ErrorAs(t, sess.Require(absent), &unsupported, string(absent))
+	}
 
 	t.Log("identity")
 	who, err := sess.Whoami(ctx)
@@ -90,64 +83,16 @@ func TestARealOneDevAnswersTheOneDevDriver(t *testing.T) {
 	}))
 	require.True(t, listed, "%s was created by this credential and its listing does not name it", key)
 
-	t.Log("hook")
-	rx := receive(t, in.listen)
-	callback, err := url.Parse("http://" + in.reach + rx.path)
+	t.Log("hooks are refused, not registered")
+	callback, err := url.Parse("http://127.0.0.1:1/never")
 	require.NoError(t, err)
 	secret, err := forge.NewSecret()
 	require.NoError(t, err)
-	hook, err := s.RegisterPushHook(ctx, key, callback, secret)
-	require.NoError(t, err)
-	hooks, err := s.ListPushHooks(ctx, key)
-	require.NoError(t, err)
-	require.Contains(t, hooks, forge.InstalledPushHook{Handle: hook.Handle, Callback: callback.String()})
+	_, err = s.RegisterPushHook(ctx, key, callback, secret)
+	require.ErrorAs(t, err, &unsupported)
 
 	t.Log("push")
-	pushed := push(t, created.HTTPS, in.pushAs)
-
-	t.Log("delivery")
-	verified := rx.await(t, func(d forge.Delivery) bool {
-		p, err := in.reg.VerifyPush(hook, d)
-		if err != nil && strings.Contains(err.Error(), "descendant") {
-			return false
-		}
-		require.NoError(t, err, "a delivery OneDev sent failed verification")
-		require.Equal(t, forge.Push{Key: key, Ref: "refs/heads/main", Commit: pushed}, p)
-
-		forged := forge.Delivery{Header: d.Header.Clone(), Body: d.Body}
-		forged.Header.Set("X-OneDev-Signature", "not-the-token")
-		_, err = in.reg.VerifyPush(hook, forged)
-		require.Error(t, err, "a delivery with another token verified")
-		return true
-	})
-	require.True(t, verified, "OneDev never delivered the push")
-
-	t.Log("a descendant's push is not this repository's")
-	child := keyOf(t, in, key.FullName()+"/child")
-	cs := forSession(t, in, child)
-	childRepo, err := cs.Create(ctx, child, forge.CreateOptions{Private: true})
-	require.NoError(t, err)
-	t.Cleanup(func() { cs.Delete(context.Background(), child) })
-	push(t, childRepo.HTTPS, in.pushAs)
-	refused := rx.await(t, func(d forge.Delivery) bool {
-		// The receiver keeps every delivery, the parent's included, and the
-		// two pushes are the same commit. What tells the child's apart is the
-		// project it names against the one the hook's header was written for.
-		var body struct {
-			ProjectID int64 `json:"projectId"`
-		}
-		require.NoError(t, json.Unmarshal(d.Body, &body))
-		header := strings.Fields(d.Header.Get("X-Tau-Repository"))
-		require.Len(t, header, 2, "OneDev did not replay the repository header the driver registered")
-		if fmt.Sprint(body.ProjectID) == header[0] {
-			return false
-		}
-		_, err := in.reg.VerifyPush(hook, d)
-		require.ErrorContains(t, err, "descendant", "OneDev delivered %s's push through %s's hook and it was not refused", child, key)
-		return true
-	})
-	require.True(t, refused, "OneDev never delivered the descendant's push through the ancestor's hook, so the refusal is unexercised")
-	require.NoError(t, cs.Delete(ctx, child))
+	push(t, created.HTTPS, in.pushAs)
 
 	t.Log("repository")
 	repo, err := s.Repository(ctx, key)
@@ -157,10 +102,6 @@ func TestARealOneDevAnswersTheOneDevDriver(t *testing.T) {
 	require.NotEmpty(t, repo.SSH)
 
 	t.Log("removal")
-	require.NoError(t, s.RemovePushHook(ctx, key, hook.Handle))
-	hooks, err = s.ListPushHooks(ctx, key)
-	require.NoError(t, err)
-	require.Empty(t, hooks)
 	require.NoError(t, s.Delete(ctx, key))
 	_, err = s.Access(ctx, key)
 	require.ErrorAs(t, err, &missing, "a deleted project is gone")
@@ -276,7 +217,7 @@ func bootOneDev(t *testing.T) *onedevInstance {
 
 	drv, err := onedev.New(host, onedev.Plaintext())
 	require.NoError(t, err)
-	reg, err := forge.New(forge.Policy{AllowUnboundSchemes: true, AllowInsecureCallback: true},
+	reg, err := forge.New(forge.Policy{},
 		forge.Binding{Host: host, Driver: drv})
 	require.NoError(t, err)
 
@@ -288,8 +229,5 @@ func bootOneDev(t *testing.T) *onedevInstance {
 		asAdmin: asAdmin,
 	}
 	in.public, in.private = keyOf(t, in, "acme-live/public"), keyOf(t, in, "acme-live/secret")
-	gw := bridgeGateway(t)
-	in.listen = net.JoinHostPort(gw, fmt.Sprint(freePort(t)))
-	in.reach = in.listen
 	return &onedevInstance{in: in, writable: keyOf(t, in, "acme-live/pay"), noCode: keyOf(t, in, "acme-live/issues")}
 }

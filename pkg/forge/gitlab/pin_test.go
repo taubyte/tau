@@ -83,10 +83,10 @@ func (p *pinRecorder) RoundTrip(req *http.Request) (*http.Response, error) {
 // thing once, and this says it per operation.
 func TestACleartextInstanceIsNeverSentTheCredential(t *testing.T) {
 	rec := &pinRecorder{}
-	drv, err := New(pinHost, BaseURL("http://"+pinHost), HTTPTransport(rec), Deployment(forge.Token(pinDeploymentToken)))
+	drv, err := New(pinHost, BaseURL("http://"+pinHost), HTTPTransport(rec), Deployment(forge.Token(pinDeploymentToken)), Signing())
 	require.NoError(t, err, "BaseURL refused cleartext; if it now does, this test's premise is gone and so is the operator it protects")
 
-	reg, err := forge.New(forge.Policy{AllowUnboundSchemes: true}, forge.Binding{Host: pinHost, Driver: drv})
+	reg, err := forge.New(forge.Policy{}, forge.Binding{Host: pinHost, Driver: drv})
 	require.NoError(t, err)
 	key, err := repokey.Parse("https://" + pinHost + "/acme/pay.git")
 	require.NoError(t, err)
@@ -123,9 +123,9 @@ func TestACleartextInstanceIsNeverSentTheCredential(t *testing.T) {
 // a wrap dropped.
 func TestACleartextInstanceIsNeverSentTheDeploymentCredential(t *testing.T) {
 	rec := &pinRecorder{}
-	drv, err := New(pinHost, BaseURL("http://"+pinHost), HTTPTransport(rec), Deployment(forge.Token(pinDeploymentToken)))
+	drv, err := New(pinHost, BaseURL("http://"+pinHost), HTTPTransport(rec), Deployment(forge.Token(pinDeploymentToken)), Signing())
 	require.NoError(t, err)
-	reg, err := forge.New(forge.Policy{AllowUnboundSchemes: true}, forge.Binding{Host: pinHost, Driver: drv})
+	reg, err := forge.New(forge.Policy{}, forge.Binding{Host: pinHost, Driver: drv})
 	require.NoError(t, err)
 
 	member, err := reg.IsActiveMember(context.Background(), pinHost, "acme", "alice")

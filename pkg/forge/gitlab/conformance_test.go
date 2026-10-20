@@ -91,34 +91,40 @@ func subject(t *testing.T, in *instance, name string, driver forge.Driver, polic
 	}
 }
 
-// TestConformanceSharedToken is a GitLab as almost every instance is configured:
-// its webhooks replay a shared token that binds nothing, which is
-// forge.SchemeSharedToken, and a deployment must SAY SO by loosening the policy
-// before this driver can even be registered. See TestZeroPolicyRefusesAnUnboundScheme.
-func TestConformanceSharedToken(t *testing.T) {
-	in := newInstance(t)
-	forgetest.Run(t, subject(t, in, "gitlab/shared-token",
-		in.driver(t),
-		forge.Policy{AllowUnboundSchemes: true},
-		baseCapabilities()))
+// unsigned is what a driver for an instance that does not sign has: no hook
+// faces, because the only thing such an instance offers is a replayed token
+// that binds nothing.
+func unsigned(s forge.Set) forge.Set {
+	delete(s, forge.CapPushHooks)
+	delete(s, forge.CapSignatures)
+	return s
 }
 
-// TestConformanceSigning is the same driver against the same instance under the
-// other of GitLab's two webhook procedures, and it runs under the ZERO POLICY —
-// the strict one — because Standard Webhooks signing binds the body and a
-// timestamp. One forge, two schemes, one core implementation of each: the driver
-// names one and verifies neither.
-//
-// It is also the driver that holds the deployment's credential, so it is a
-// different Go type carrying forge.Memberships, and the suite's exact capability
-// comparison is what proves the two types differ in the one way they should.
-func TestConformanceSigning(t *testing.T) {
-	in := newInstance(t)
-	expect := baseCapabilities()
-	expect[forge.CapMembership] = struct{}{}
+func withMembership(s forge.Set) forge.Set {
+	s[forge.CapMembership] = struct{}{}
+	return s
+}
 
-	forgetest.Run(t, subject(t, in, "gitlab/signing+deployment",
-		in.driver(t, Signing(), Deployment(forge.Token(deployToken))),
-		forge.Policy{},
-		expect))
+// TestConformance runs the suite over all four of this driver's Go types: with
+// and without Signing, with and without the deployment's credential. Each is a
+// different type because each has different faces, and the suite's exact
+// capability comparison proves they differ in only the ways they should. All of
+// them run under the ZERO POLICY: there is no looser one.
+func TestConformance(t *testing.T) {
+	deploy := Deployment(forge.Token(deployToken))
+	for _, tc := range []struct {
+		name   string
+		opts   []Option
+		expect forge.Set
+	}{
+		{"gitlab/unsigned", nil, unsigned(baseCapabilities())},
+		{"gitlab/unsigned+deployment", []Option{deploy}, withMembership(unsigned(baseCapabilities()))},
+		{"gitlab/signing", []Option{Signing()}, baseCapabilities()},
+		{"gitlab/signing+deployment", []Option{Signing(), deploy}, withMembership(baseCapabilities())},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			in := newInstance(t)
+			forgetest.Run(t, subject(t, in, tc.name, in.driver(t, tc.opts...), forge.Policy{}, tc.expect))
+		})
+	}
 }

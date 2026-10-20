@@ -22,7 +22,6 @@ var (
 	_ forge.Creator        = (*client)(nil)
 	_ forge.Deleter        = (*client)(nil)
 	_ forge.DeployKeys     = (*client)(nil)
-	_ forge.PushHooks      = (*client)(nil)
 	_ forge.CloneAddresses = (*client)(nil)
 )
 
@@ -506,8 +505,12 @@ func (c *client) ListDeployKeys(ctx context.Context, key repokey.Key) ([]forge.I
 	return out, err
 }
 
+// hookClient is a client of a signing instance, and the only client with push
+// hooks. See signingDriver.
+type hookClient struct{ *client }
+
 // ListPushHooks is the webhooks on this project.
-func (c *client) ListPushHooks(ctx context.Context, key repokey.Key) ([]forge.InstalledPushHook, error) {
+func (c *hookClient) ListPushHooks(ctx context.Context, key repokey.Key) ([]forge.InstalledPushHook, error) {
 	var out []forge.InstalledPushHook
 	err := c.pages(ctx, routeListPushHooks, key, func(raw json.RawMessage) error {
 		var got []struct {
@@ -575,20 +578,15 @@ func (c *client) RemoveDeployKey(ctx context.Context, key repokey.Key, h forge.H
 	return c.send(ctx, routeRemoveDeployKey.at(key.FullName(), seg), nil, nil, nil)
 }
 
-// RegisterPushHook registers a webhook for pushes only.
-//
-// THE ATTRIBUTE THE WIRE STRING GOES IN DEPENDS ON THE SCHEME, and that is the
-// generalization this interface bought. GitLab's long-standing procedure takes
-// `token` and replays it verbatim in a header; Standard Webhooks signing takes
-// `signing_token` and derives a MAC from it. One forge, two attributes, two
-// procedures — which is why the driver names a scheme and the core owns both
-// derivation and verification, and why the scheme is stored with the hook rather
-// than inferred from the host later.
+// RegisterPushHook registers a webhook for pushes only, signed: the wire string
+// is the hook's `signing_token`, from which the instance derives a Standard
+// Webhooks MAC over every delivery. Never `token`, which GitLab would replay
+// verbatim in a header and which binds nothing.
 //
 // The driver never sees the secret. It is handed the already-derived wire string
 // and passes it through unaltered; re-encoding it here would register a hook
 // cleanly and then reject every delivery it ever received.
-func (c *client) RegisterPushHook(ctx context.Context, key repokey.Key, callback *url.URL, wire string) (forge.Handle, error) {
+func (c *hookClient) RegisterPushHook(ctx context.Context, key repokey.Key, callback *url.URL, wire string) (forge.Handle, error) {
 	body := map[string]any{
 		"url":                      callback.String(),
 		"push_events":              true,
@@ -598,12 +596,7 @@ func (c *client) RegisterPushHook(ctx context.Context, key repokey.Key, callback
 		"tag_push_events":          false,
 		"pipeline_events":          false,
 		"repository_update_events": false,
-	}
-	switch c.cfg.scheme {
-	case forge.SchemeStandardWebhooks:
-		body["signing_token"] = wire
-	default:
-		body["token"] = wire
+		"signing_token":            wire,
 	}
 
 	var registered struct {
@@ -620,7 +613,7 @@ func (c *client) RegisterPushHook(ctx context.Context, key repokey.Key, callback
 
 // RemovePushHook names no repository either, for the reason RemoveDeployKey
 // gives.
-func (c *client) RemovePushHook(ctx context.Context, key repokey.Key, h forge.Handle) error {
+func (c *hookClient) RemovePushHook(ctx context.Context, key repokey.Key, h forge.Handle) error {
 	seg, err := handleSegment(h)
 	if err != nil {
 		return err

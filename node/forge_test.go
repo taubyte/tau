@@ -24,9 +24,13 @@ func TestForges(t *testing.T) {
 	require.Equal(t, []string{"ghe.example.com", "git.internal:8443"}, reg.Hosts(),
 		"naming any replaces the defaults rather than adding to them")
 
-	_, err = forges([]Forge{{Host: "gitlab.example.com", Driver: ForgeGitLab}})
-	require.ErrorContains(t, err, "does not bind the body",
-		"a replayed shared token is refused at startup unless signing is on")
+	// A GitLab that does not sign is served without hooks, not refused.
+	reg, err = forges([]Forge{{Host: "gitlab.example.com", Driver: ForgeGitLab}})
+	require.NoError(t, err)
+	drv, err := reg.Driver("gitlab.example.com")
+	require.NoError(t, err)
+	_, signs := drv.(forge.Signatures)
+	require.False(t, signs, "a gitlab without Signing verifies no deliveries")
 
 	reg, err = forges([]Forge{
 		{Host: "codeberg.org", Driver: ForgeGitea},
@@ -34,13 +38,42 @@ func TestForges(t *testing.T) {
 	})
 	require.NoError(t, err, "a Gitea, a Forgejo or Codeberg is the gitea driver bound to its host")
 	require.Equal(t, []string{"codeberg.org", "git.internal:3000"}, reg.Hosts())
-	drv, err := reg.Driver("codeberg.org")
+	drv, err = reg.Driver("codeberg.org")
 	require.NoError(t, err)
 	require.Equal(t, forge.SchemeHubSHA256, drv.(forge.Signatures).Scheme(),
 		"a gitea hook signs like GitHub's, so the strict policy takes it with no opt-in")
 
-	_, err = forges([]Forge{{Host: "code.example.com", Driver: "gogs"}})
-	require.ErrorContains(t, err, `names driver "gogs"`)
+	_, err = forges([]Forge{{Host: "code.example.com", Driver: "fossil"}})
+	require.ErrorContains(t, err, `names driver "fossil"`)
+
+	// Every other driver binds, and only the ones whose forge signs verify
+	// deliveries: those are the forges whose pushes trigger a build.
+	reg, err = forges([]Forge{
+		{Host: "gogs.example.com", Driver: ForgeGogs},
+		{Host: "onedev.example.com", Driver: ForgeOneDev},
+		{Host: "review.example.com", Driver: ForgeGerrit},
+		{Host: "git.sr.ht", Driver: ForgeSourcehut},
+		{Host: "git.example.org", Driver: ForgeSourcehut},
+		{Host: "srht.example.org", Driver: ForgeSourcehut, PayloadKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="},
+		{Host: "bitbucket.org", Driver: ForgeBitbucket},
+		{Host: "dev.azure.com", Driver: ForgeAzure, Organizations: []string{"acme"}},
+	})
+	require.NoError(t, err)
+	for host, want := range map[string]bool{
+		"gogs.example.com": true, "onedev.example.com": false, "review.example.com": false,
+		"git.sr.ht": true, "git.example.org": false, "srht.example.org": true,
+		"bitbucket.org": true, "dev.azure.com": false,
+	} {
+		d, err := reg.Driver(host)
+		require.NoError(t, err)
+		_, signs := d.(forge.Signatures)
+		require.Equal(t, want, signs, host)
+	}
+
+	_, err = forges([]Forge{{Host: "dev.azure.com", Driver: ForgeAzure}})
+	require.ErrorContains(t, err, `forge "dev.azure.com"`, "azure names its organizations")
+	_, err = forges([]Forge{{Host: "srht.example.org", Driver: ForgeSourcehut, PayloadKey: "short"}})
+	require.ErrorContains(t, err, `forge "srht.example.org"`)
 
 	_, err = forges([]Forge{{Host: "Codeberg.org", Driver: ForgeGitea}})
 	require.ErrorContains(t, err, `forge "Codeberg.org"`)
@@ -70,6 +103,21 @@ func TestHostKeys(t *testing.T) {
 		}
 		require.Contains(t, got, want, "%s's published ed25519 fingerprint", host)
 	}
+
+	// bitbucket.org is not a default forge, but a node that names it with no
+	// keys of its own gets the three it publishes, each matched to the
+	// fingerprint Atlassian publishes separately.
+	keys, err = hostKeys([]Forge{{Host: "bitbucket.org", Driver: ForgeBitbucket}})
+	require.NoError(t, err)
+	var got []string
+	for _, k := range keys["bitbucket.org"] {
+		got = append(got, gossh.FingerprintSHA256(k))
+	}
+	require.Equal(t, []string{
+		"SHA256:ybgmFkzwOSotHTHLJgHO0QN8L0xErw6vd0VhFA9m3SM",
+		"SHA256:FC73VB6C4OQLSCrjEayhMp9UMxS97caD/Yyi2bhW/J0",
+		"SHA256:46OSHA1Rmj8E8ERTC6xkNcmGOw9oFxYr0WF6zWW8l1E",
+	}, got)
 
 	keys, err = hostKeys([]Forge{
 		{Host: "git.internal:8443", Driver: ForgeGitLab, Signing: true,

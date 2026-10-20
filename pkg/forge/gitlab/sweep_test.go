@@ -554,10 +554,11 @@ func newSweepInstanceNaming(t *testing.T, ownerSpelling, nameSpelling string) *s
 	w := &sweepWire{base: http.DefaultTransport}
 	// WITH the deployment credential, so this driver is a forge.Memberships and
 	// the membership walk — the one call made with a credential no session holds
-	// — is reachable from the operations above at all.
-	drv, err := New(host, BaseURL(in.srv.URL), HTTPTransport(w), Deployment(forge.Token(deployToken)))
+	// — is reachable from the operations above at all. And Signing, so the hook
+	// faces exist to be swept.
+	drv, err := New(host, BaseURL(in.srv.URL), HTTPTransport(w), Deployment(forge.Token(deployToken)), Signing())
 	require.NoError(t, err)
-	reg, err := forge.New(forge.Policy{AllowUnboundSchemes: true}, forge.Binding{Host: host, Driver: drv})
+	reg, err := forge.New(forge.Policy{}, forge.Binding{Host: host, Driver: drv})
 	require.NoError(t, err)
 	key, err := repokey.Parse(in.srv.URL + "/" + ownerSpelling + "/" + nameSpelling)
 	require.NoError(t, err)
@@ -574,6 +575,10 @@ func cfgOf(drv forge.Driver) *config {
 	case *driver:
 		return d.cfg
 	case *memberDriver:
+		return d.cfg
+	case *signingDriver:
+		return d.cfg
+	case *signingMemberDriver:
 		return d.cfg
 	}
 	panic("gitlab: the sweep was given a driver this package did not build")
@@ -830,7 +835,7 @@ var sweptBodies = []string{
 		"url": sweepCallback, "push_events": true, "tag_push_events": false,
 		"enable_ssl_verification": true, "merge_requests_events": false,
 		"issues_events": false, "pipeline_events": false,
-		"repository_update_events": false, "token": sweepHookWire(),
+		"repository_update_events": false, "signing_token": sweepHookWire(),
 	}),
 }
 
@@ -845,11 +850,11 @@ func sweepJSONOf(v map[string]any) string {
 }
 
 // sweepHookWire is the string the core derives from sweepSecret under this
-// driver's default scheme. It is derived rather than written down, because a
+// driver's scheme. It is derived rather than written down, because a
 // driver that mangled the wire string would otherwise be pinned to its own
 // mangling.
 func sweepHookWire() string {
-	wire, err := forge.SchemeSharedToken.Wire(forge.SecretFrom([]byte(sweepSecret)))
+	wire, err := forge.SchemeStandardWebhooks.Wire(forge.SecretFrom([]byte(sweepSecret)))
 	if err != nil {
 		panic(err)
 	}

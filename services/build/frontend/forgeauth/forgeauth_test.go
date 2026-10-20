@@ -19,7 +19,7 @@ func TestEveryForgeAnswersTheSameQuestionTheSameWay(t *testing.T) {
 	for _, shape := range []fake.Shape{fake.GitHubLike, fake.GitLabLike, fake.GiteaLike, fake.BitbucketLike} {
 		t.Run(shape.Host, func(t *testing.T) {
 			f := fake.New(shape)
-			reg, err := f.Registry(forge.Policy{AllowUnboundSchemes: true})
+			reg, err := f.Registry(forge.Policy{})
 			require.NoError(t, err)
 			id, err := New(reg)
 			require.NoError(t, err)
