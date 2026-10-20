@@ -193,7 +193,7 @@ func (r *runner) cloneAddress(t tb) {
 // .git/config, in process arguments and in every error quoting the remote.
 func (r *runner) assertAddress(t tb, spelling string, want repokey.Key, label string) {
 	t.Helper()
-	got, err := repokey.Parse(spelling)
+	got, err := r.s.Registry.Key(spelling)
 	if !assert.NoError(t, err, "the %s clone address handed to a builder, %q, does not parse to a key; repokey refuses a URL carrying a credential, so a token spliced into a remote arrives here", label, spelling) {
 		return
 	}

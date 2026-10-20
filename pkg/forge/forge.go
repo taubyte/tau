@@ -345,6 +345,31 @@ type Signatures interface {
 	Push(body VerifiedBody, header http.Header) (PushClaim, error)
 }
 
+// Spellings is how a forge says that several of its own addresses name ONE
+// repository. repokey has one grammar and keeps only host and path, which is
+// right for every forge serving https and ssh on one host under one path. Some
+// do not: a forge serving https under a path prefix and ssh on another port,
+// or ssh on another host under another path, hands out two clone addresses
+// that repokey reads as two repositories. The forge knows its own spellings,
+// so the forge says so, here, and repokey stays free of any forge's vocabulary.
+//
+// It hangs off the Driver because it is a fact about the forge's software and
+// deployment, not about a caller's credential, and it is consulted through
+// Registry.Key, the one function that turns an address into a key.
+type Spellings interface {
+	// SpellingHosts are the repokey hosts, OTHER than Host, this forge serves
+	// clone addresses on — an ssh endpoint on a port or a host of its own. The
+	// registry binds each to this driver for spelling alone: no credential is
+	// ever bound to one, and Hosts does not list them.
+	SpellingHosts() []string
+
+	// Canonical maps a key parsed from one of this forge's addresses, on Host
+	// or on a SpellingHosts host, to the key the repository is filed under. It
+	// must be idempotent: a canonical key maps to itself. ok is false for a key
+	// this forge does not spell, and the parse then stands as it is.
+	Canonical(parsed repokey.Key) (canonical repokey.Key, ok bool)
+}
+
 // ─────────────────────────────── the registry ───────────────────────────────
 
 // Binding is the WHOLE of "how a forge is added": a value, handed to New.
@@ -380,7 +405,10 @@ type Policy struct {
 // substitute the driver for a host.
 type Registry struct {
 	drivers map[string]Driver
-	policy  Policy
+	// spellings binds each SpellingHosts host to the driver that spells it.
+	// Key consults it; nothing that binds a credential does.
+	spellings map[string]Driver
+	policy    Policy
 }
 
 // New refuses, AT STARTUP, a deployment that is wrong in a way that would
@@ -392,8 +420,11 @@ type Registry struct {
 //     by map iteration order
 //   - a host that is not a repokey host spelling, so a key would never match it
 //   - a driver naming a scheme this package does not implement
+//   - a spelling host that is not a repokey host spelling, that is bound to a
+//     driver of its own, or that two drivers claim — one address would name
+//     two repositories, decided by map order
 func New(policy Policy, bindings ...Binding) (*Registry, error) {
-	r := &Registry{drivers: make(map[string]Driver, len(bindings)), policy: policy}
+	r := &Registry{drivers: make(map[string]Driver, len(bindings)), spellings: map[string]Driver{}, policy: policy}
 	for _, b := range bindings {
 		if b.Driver == nil {
 			return nil, fmt.Errorf("forge: binding for host %q has no driver", b.Host)
@@ -424,7 +455,61 @@ func New(policy Policy, bindings ...Binding) (*Registry, error) {
 		}
 		r.drivers[b.Host] = b.Driver
 	}
+	// After every binding, so a spelling host colliding with a bound host is
+	// refused whichever order the bindings came in.
+	for _, b := range bindings {
+		sp, ok := b.Driver.(Spellings)
+		if !ok {
+			continue
+		}
+		for _, h := range sp.SpellingHosts() {
+			if err := validHost(h); err != nil {
+				return nil, err
+			}
+			if _, bound := r.drivers[h]; bound {
+				return nil, fmt.Errorf("forge: driver for %q spells addresses on %q, which is bound to a driver of its own", b.Host, h)
+			}
+			if other, taken := r.spellings[h]; taken && other != b.Driver {
+				return nil, fmt.Errorf("forge: two drivers spell addresses on host %q", h)
+			}
+			r.spellings[h] = b.Driver
+		}
+	}
 	return r, nil
+}
+
+// Key is THE function that turns a clone address into a repository key:
+// repokey.Parse, and then — when the parsed host is one a driver serves or
+// spells addresses on, and that driver implements Spellings — the driver's
+// canonical key. A URL no driver claims keeps exactly repokey's parse, and so
+// does every URL on a nil Registry, so a consumer holding none still speaks the
+// one grammar.
+//
+// A canonical key on a host other than the driver's own is refused: a
+// spelling maps addresses onto the forge serving them, never onto another.
+func (r *Registry) Key(cloneURL string) (repokey.Key, error) {
+	k, err := repokey.Parse(cloneURL)
+	if err != nil || r == nil {
+		return k, err
+	}
+	d, ok := r.drivers[k.Host]
+	if !ok {
+		if d, ok = r.spellings[k.Host]; !ok {
+			return k, nil
+		}
+	}
+	sp, ok := d.(Spellings)
+	if !ok {
+		return k, nil
+	}
+	c, ok := sp.Canonical(k)
+	if !ok {
+		return k, nil
+	}
+	if c.Host != d.Host() {
+		return repokey.Key{}, fmt.Errorf("forge: driver for %q spelled an address on %q as a key on %q", d.Host(), k.Host, c.Host)
+	}
+	return c, nil
 }
 
 // validHost checks that a host string is the spelling repokey produces, so a

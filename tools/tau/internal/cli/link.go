@@ -71,7 +71,11 @@ func linkCommand(env Env) *cobra.Command {
 				return errors.New("no project id here: run `tau init` first, or pass --dir")
 			}
 
-			check := func(s string) error { _, err := repoKey(s); return err }
+			keyer, err := keysFor(env)
+			if err != nil {
+				return err
+			}
+			check := func(s string) error { _, err := repoKey(keyer, s); return err }
 			configRepo := flagString(cmd, "config-repo")
 			if configRepo == "" {
 				configRepo = originOf(cmd.Context(), dir)
@@ -85,11 +89,7 @@ func linkCommand(env Env) *cobra.Command {
 			repos = append(repos, flagStrings(cmd, "code-repo")...)
 			keys := make([]repokey.Key, 0, len(repos))
 			for _, r := range repos {
-				spelled, err := repoKey(r)
-				if err != nil {
-					return err
-				}
-				k, err := repokey.Parse("https://" + spelled)
+				k, err := repoKey(keyer, r)
 				if err != nil {
 					return err
 				}

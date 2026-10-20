@@ -294,8 +294,26 @@ func TestCloneAddresses(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, forge.Address{URL: "https://dev.azure.com/acme/pay/_git/pay", HTTPUsername: "pat"}, a)
 
-	_, err = c.CloneAddress(k, forge.SSH)
-	assert.ErrorContains(t, err, "ssh.dev.azure.com", "Services' SSH address names another host, so it is no address for this key")
+	a, err = c.CloneAddress(k, forge.SSH)
+	require.NoError(t, err)
+	assert.Equal(t, forge.Address{URL: "ssh://git@ssh.dev.azure.com/v3/acme/pay/pay", SSHAccount: "git"}, a)
+
+	// Both addresses, and the scp form Azure itself prints, are ONE repository
+	// through the registry, though repokey alone reads the ssh one as another.
+	reg, err := forge.New(forge.Policy{}, forge.Binding{Host: "dev.azure.com", Driver: drv})
+	require.NoError(t, err)
+	for _, spelling := range []string{a.URL, "git@ssh.dev.azure.com:v3/Acme/Pay/Pay", "https://acme@dev.azure.com/acme/pay/_git/pay"} {
+		got, err := reg.Key(spelling)
+		require.NoError(t, err)
+		assert.Equal(t, k, got, spelling)
+	}
+	raw, err := repokey.Parse(a.URL)
+	require.NoError(t, err)
+	assert.NotEqual(t, k, raw, "repokey has no vocabulary; the forge's spelling is the registry's to apply")
+	// A path on the ssh host that is not the v3 shape is not rewritten.
+	got, err := reg.Key("ssh://git@ssh.dev.azure.com/acme/pay/pay")
+	require.NoError(t, err)
+	assert.Equal(t, "ssh.dev.azure.com", got.Host)
 
 	server, err := azure.New("tfs.example.com", azure.Organizations("defaultcollection"))
 	require.NoError(t, err)
@@ -304,6 +322,11 @@ func TestCloneAddresses(t *testing.T) {
 	a, err = client(t, server).(forge.CloneAddresses).CloneAddress(sk, forge.SSH)
 	require.NoError(t, err)
 	assert.Equal(t, forge.Address{URL: "ssh://git@tfs.example.com/defaultcollection/pay/_git/pay", SSHAccount: "git"}, a)
+	sreg, err := forge.New(forge.Policy{}, forge.Binding{Host: "tfs.example.com", Driver: server})
+	require.NoError(t, err)
+	got, err = sreg.Key(a.URL)
+	require.NoError(t, err)
+	assert.Equal(t, sk, got, "a Server's ssh address is already its https key")
 
 	other, err := repokey.Parse("https://dev.azure.com/acme/pay/pay")
 	require.NoError(t, err)

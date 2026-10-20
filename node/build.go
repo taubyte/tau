@@ -251,11 +251,19 @@ func (n *Node) openBuildBackend() error {
 			return err
 		}
 
+		// A source's clone URL is keyed by the forge that serves it, the same
+		// function every push's repository key came out of.
+		registry, err := n.forgeRegistry()
+		if err != nil {
+			return err
+		}
+
 		buildOptions := []artifact.Option{
 			artifact.WithRegister(buildRegister{n}),
 			artifact.WithProjects(projects),
 			artifact.WithCheckout(clone),
 			artifact.WithEngine(engine),
+			artifact.WithKeys(registry),
 		}
 		// THE SAME VAULT THE WORKER READS, and by the same rule — an injected
 		// resolver wins, then this node's own or one in the fleet. What

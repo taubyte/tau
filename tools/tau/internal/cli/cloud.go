@@ -11,6 +11,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/taubyte/tau/pkg/forge"
+	"github.com/taubyte/tau/pkg/forge/public"
 	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/tools/tau/internal/api"
 	"github.com/taubyte/tau/tools/tau/internal/config"
@@ -19,17 +21,28 @@ import (
 )
 
 // repoKey is a repository key from whatever a developer pastes: a clone URL,
-// an scp-style git address, or the key itself.
-func repoKey(s string) (string, error) {
+// an scp-style git address, or the key itself. It is keyed through the forge
+// registry, so every address a forge hands out for one repository is that one
+// repository's key.
+func repoKey(forges *forge.Registry, s string) (repokey.Key, error) {
 	spelled := s
 	if !strings.Contains(s, "://") && !strings.Contains(s, "@") {
 		spelled = "https://" + s
 	}
-	k, err := repokey.Parse(spelled)
+	k, err := forges.Key(spelled)
 	if err != nil {
-		return "", fmt.Errorf("%q: %w", s, err)
+		return repokey.Key{}, fmt.Errorf("%q: %w", s, err)
 	}
-	return k.String(), nil
+	return k, nil
+}
+
+// keysFor is the registry repository addresses are keyed through: the
+// injected one, or the public forges. Keying asks nothing of a policy.
+func keysFor(env Env) (*forge.Registry, error) {
+	if env.Forges != nil {
+		return env.Forges, nil
+	}
+	return public.Registry(forge.Policy{})
 }
 
 // originOf is the directory's git origin, which is what a config repository

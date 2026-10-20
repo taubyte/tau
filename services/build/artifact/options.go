@@ -11,6 +11,21 @@ type options struct {
 	checkout Checkout
 	engine   Engine
 	secrets  Secrets
+	keys     Keys
+}
+
+// WithKeys is how a source's clone URL becomes the key a push is compared
+// against — the node's forge registry, so a source spelled by any of a
+// forge's addresses is the repository it names. Optional: without it a URL
+// keys by repokey's parse.
+func WithKeys(k Keys) Option {
+	return func(o *options) error {
+		if k == nil {
+			return errors.New("keys must not be nil")
+		}
+		o.keys = k
+		return nil
+	}
 }
 
 // WithRegister is where a build reads the configuration it builds against.

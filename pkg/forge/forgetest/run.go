@@ -816,7 +816,7 @@ func (r *runner) assertRecord(t tb, repo forge.Repository, about string) {
 	assert.NotEmpty(t, repo.DefaultBranch, "%s has no default branch; a builder has nothing to check out", about)
 	for label, spelling := range map[string]string{"HTTPS": repo.HTTPS, "SSH": repo.SSH} {
 		mustHold(t, spelling != "", "reading the %s clone address out of %s, %q", label, about, repo.Key)
-		got, err := repokey.Parse(spelling)
+		got, err := r.s.Registry.Key(spelling)
 		if !assert.NoError(t, err, "the %s clone address in %s, %q, does not parse to a key; repokey refuses a URL carrying a credential, so a token spliced into a record arrives here", label, about, spelling) {
 			continue
 		}

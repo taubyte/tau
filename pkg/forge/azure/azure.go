@@ -66,6 +66,13 @@ import (
 // this driver uses: its SSH endpoint is another host.
 const servicesHost = "dev.azure.com"
 
+// servicesSSHHost is where Services serves SSH, under a v3/ path that drops
+// the _git segment: ssh://git@ssh.dev.azure.com/v3/{org}/{project}/{repo}.
+const (
+	servicesSSHHost   = "ssh.dev.azure.com"
+	servicesSSHPrefix = "v3"
+)
+
 type driver struct {
 	host string
 	// base is the API root, absolute and ending in "/": the host's root, which
@@ -76,7 +83,33 @@ type driver struct {
 	bearer bool
 }
 
-var _ forge.Driver = (*driver)(nil)
+var (
+	_ forge.Driver    = (*driver)(nil)
+	_ forge.Spellings = (*driver)(nil)
+)
+
+// SpellingHosts is Services' SSH host. A Server serves SSH on its own host
+// under the https path, which repokey already reads as the same key.
+func (d *driver) SpellingHosts() []string {
+	if d.host == servicesHost {
+		return []string{servicesSSHHost}
+	}
+	return nil
+}
+
+// Canonical maps Services' SSH spelling, ssh.dev.azure.com/v3/{org}/{project}/{repo},
+// onto the https key dev.azure.com/{org}/{project}/_git/{repo}. Everything
+// else is not a spelling this driver rewrites.
+func (d *driver) Canonical(k repokey.Key) (repokey.Key, bool) {
+	if d.host != servicesHost || k.Host != servicesSSHHost {
+		return k, false
+	}
+	parts := strings.Split(k.Owner, "/")
+	if len(parts) != 3 || parts[0] != servicesSSHPrefix {
+		return k, false
+	}
+	return repokey.Key{Host: servicesHost, Owner: parts[1] + "/" + parts[2] + "/_git", Name: k.Name}, true
+}
 
 // Option is a deployment fact about one Azure DevOps host.
 type Option func(*driver) error

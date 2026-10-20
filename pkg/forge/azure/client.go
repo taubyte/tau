@@ -435,9 +435,8 @@ func (c *client) Delete(ctx context.Context, key repokey.Key) error {
 //
 // HTTPS authenticates a PAT as the password and ignores the user name, so the
 // one below is a label. SSH on a Server is ssh://{host}/{collection}/{project}/_git/{repo};
-// on Services it is a DIFFERENT HOST, ssh.dev.azure.com, under a v3/ path —
-// a good address, and a different repokey key, so it is refused here rather
-// than handed out as an address for this key. Repository().SSH carries it.
+// on Services it is ANOTHER HOST, ssh.dev.azure.com, under v3/{org}/{project}/{repo},
+// which the driver's Spellings maps back onto this key through Registry.Key.
 func (c *client) CloneAddress(key repokey.Key, over forge.Protocol) (forge.Address, error) {
 	at, err := c.d.coords(key)
 	if err != nil {
@@ -449,7 +448,11 @@ func (c *client) CloneAddress(key repokey.Key, over forge.Protocol) (forge.Addre
 	}
 	if over == forge.SSH {
 		if c.d.host == servicesHost {
-			return forge.Address{}, fmt.Errorf("forge/azure: Azure DevOps Services serves SSH from ssh.dev.azure.com, another host, so no SSH address names %q; use the address Repository reports", key)
+			v3, err := escapedSegments([]string{servicesSSHPrefix, at.org, at.project, at.repo})
+			if err != nil {
+				return forge.Address{}, err
+			}
+			return forge.Address{URL: "ssh://git@" + servicesSSHHost + "/" + v3, SSHAccount: "git"}, nil
 		}
 		return forge.Address{URL: "ssh://git@" + c.d.host + "/" + escaped, SSHAccount: "git"}, nil
 	}

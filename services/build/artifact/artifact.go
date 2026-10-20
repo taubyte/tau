@@ -162,6 +162,14 @@ type Engine interface {
 	Make(ctx context.Context, spec Spec, log io.Writer) (io.ReadCloser, error)
 }
 
+// Keys turns a clone URL into the repository key it is filed under. A forge
+// registry is one: it applies a forge's own spellings (an https path prefix,
+// an ssh port or host of its own) so every address of one repository is one
+// key. Without one, a URL keys by repokey's parse alone.
+type Keys interface {
+	Key(cloneURL string) (repokey.Key, error)
+}
+
 // Builder is a code repository's half of a push.
 type Builder struct {
 	register Register
@@ -169,6 +177,7 @@ type Builder struct {
 	checkout Checkout
 	engine   Engine
 	secrets  Secrets
+	keys     Keys
 }
 
 // New builds one.
@@ -194,6 +203,7 @@ func New(opts ...Option) (*Builder, error) {
 	return &Builder{
 		register: o.register, projects: o.projects,
 		checkout: o.checkout, engine: o.engine, secrets: o.secrets,
+		keys: o.keys,
 	}, nil
 }
 
@@ -336,7 +346,7 @@ func (b *Builder) plan(ctx context.Context, projectID string, deployments []stri
 		}
 
 		for _, buildable := range p.Buildables() {
-			backs, err := backedBy(buildable, pushed, main)
+			backs, err := b.backedBy(buildable, pushed, main)
 			if err != nil {
 				return nil, err
 			}
@@ -374,18 +384,22 @@ func (b *Builder) plan(ctx context.Context, projectID string, deployments []stri
 // A BARE PATH IS THE PROJECT'S MAIN REPOSITORY, the configuration repository
 // it is claimed by, which the config cannot say — so `main` comes from the
 // project table. A code repository backs only a source naming it.
-func backedBy(b specs.Buildable, pushed, main string) (bool, error) {
-	if b.Source.Git == "" {
+func (b *Builder) backedBy(res specs.Buildable, pushed, main string) (bool, error) {
+	if res.Source.Git == "" {
 		return main != "" && main == pushed, nil
 	}
 
-	key, err := repokey.Parse(b.Source.Git)
+	parse := repokey.Parse
+	if b.keys != nil {
+		parse = b.keys.Key
+	}
+	key, err := parse(res.Source.Git)
 	if err != nil {
 		// A CLONE URL THE CONFIG CARRIES AND THIS CANNOT PARSE IS AN ERROR AND
 		// NOT A SKIP. Skipping would silently stop building a resource whose
 		// author thinks it is wired up.
 		return false, fmt.Errorf("artifact: %s/%s names %q, which is not a repository: %w",
-			b.Kind, b.Name, b.Source.Git, err)
+			res.Kind, res.Name, res.Source.Git, err)
 	}
 	return key.String() == pushed, nil
 }
