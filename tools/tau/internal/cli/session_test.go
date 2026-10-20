@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -365,4 +367,66 @@ func TestRoleNames(t *testing.T) {
 func readFile(path string) (string, error) {
 	b, err := os.ReadFile(path)
 	return string(b), err
+}
+
+// A kept token is written the moment it is kept, against the file as it is
+// now: a newer token another process saved of the same session, or a new
+// sign-in, is never overwritten by an older one.
+func TestARenewalIsSavedNewestWinsOnDisk(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	t.Setenv(config.EnvToken, "")
+	start := fakeAccess("sid-1", 1, 100, 1)
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+	cfg.Profiles["p"] = config.Profile{Cloud: "https://c", Token: start}
+	require.NoError(t, cfg.Save())
+	read := func() string {
+		c, err := config.Load(path)
+		require.NoError(t, err)
+		return c.Profiles["p"].Token
+	}
+	write := func(token string) {
+		c, err := config.Load(path)
+		require.NoError(t, err)
+		p := c.Profiles["p"]
+		p.Token = token
+		c.Profiles["p"] = p
+		require.NoError(t, c.Save())
+	}
+	var stderr bytes.Buffer
+	save := profileSaver(Env{Stderr: &stderr}, cfg, "p", start)
+
+	// Nobody else wrote: kept, and 0600.
+	gen2 := fakeAccess("sid-1", 2, 100, 2)
+	save(gen2, 0, "r")
+	require.Equal(t, gen2, read())
+	st, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), st.Mode().Perm())
+
+	// Another process saved a newer one: an older renewal does not replace it.
+	gen4 := fakeAccess("sid-1", 4, 100, 4)
+	write(gen4)
+	save(fakeAccess("sid-1", 3, 100, 3), 0, "r")
+	require.Equal(t, gen4, read())
+	// A newer one of the same session does.
+	gen5 := fakeAccess("sid-1", 5, 100, 5)
+	save(gen5, 0, "r")
+	require.Equal(t, gen5, read())
+
+	// Another sign-in: no token of the old session replaces it.
+	other := fakeAccess("sid-2", 1, 50, 6)
+	write(other)
+	save(fakeAccess("sid-1", 9, 100, 7), 0, "r")
+	require.Equal(t, other, read())
+
+	// An unreadable file is a warning, not a crash.
+	require.NoError(t, os.WriteFile(path, []byte(":\n\t- ["), 0o600))
+	save(gen5, 0, "r")
+	require.Contains(t, stderr.String(), "saving the renewed token")
+
+	// A token from the environment is never saved.
+	t.Setenv(config.EnvToken, "x")
+	profileSaver(Env{Stderr: &stderr}, cfg, "p", start)(gen5, 0, "r")
 }

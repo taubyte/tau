@@ -39,24 +39,48 @@ func profileClient(env Env, cfg *config.Config, name string, p config.Profile) (
 	if err != nil {
 		return nil, err
 	}
-	fromEnv := os.Getenv(config.EnvToken) != ""
 	tokens := &api.Refreshing{
 		Token: p.Token, Expires: p.Expires, Refresh: p.Refresh,
 		Sessions: anon.Anonymous(),
 		Now:      func() int64 { return time.Now().Unix() },
-		Save: func(token string, expires int64, refresh string) {
-			if fromEnv {
-				return
-			}
-			cur := cfg.Profiles[name]
-			cur.Token, cur.Expires, cur.Refresh = token, expires, refresh
-			cfg.Profiles[name] = cur
-			if err := cfg.Save(); err != nil {
-				fmt.Fprintf(env.Stderr, "warning: saving the renewed token: %v\n", err)
-			}
-		},
+		Save:     profileSaver(env, cfg, name, p.Token),
 	}
 	return api.New(p.Cloud, tokens, env.HTTP)
+}
+
+// profileSaver writes each token Refreshing keeps to profile name, the moment
+// it is kept, unless the token came from $TAU_TOKEN. start is the token the
+// profile held when this process read it.
+//
+// THE FILE ON DISK, NOT THE COPY READ AT START: another tau process may have
+// saved a newer token of this session, or signed in again, since. While the
+// file still holds the token this process last saw there, nobody else has
+// written and the save stands; otherwise it stands only if it supersedes
+// what is there (api.Supersedes), the rule Refreshing applies in memory.
+func profileSaver(env Env, cfg *config.Config, name, start string) func(token string, expires int64, refresh string) {
+	if os.Getenv(config.EnvToken) != "" {
+		return func(string, int64, string) {}
+	}
+	ours := start
+	return func(token string, expires int64, refresh string) {
+		disk, err := config.Load(cfg.File())
+		if err != nil {
+			fmt.Fprintf(env.Stderr, "warning: saving the renewed token: %v\n", err)
+			return
+		}
+		cur := disk.Profiles[name]
+		if cur.Token != ours && !api.Supersedes(token, cur.Token) {
+			return
+		}
+		cur.Token, cur.Expires, cur.Refresh = token, expires, refresh
+		disk.Profiles[name] = cur
+		cfg.Profiles[name] = cur
+		if err := disk.Save(); err != nil {
+			fmt.Fprintf(env.Stderr, "warning: saving the renewed token: %v\n", err)
+			return
+		}
+		ours = token
+	}
 }
 
 // keep stores sess as profile name's token.

@@ -98,10 +98,10 @@ func (c *Client) Users() authv2connect.UserServiceClient {
 //
 // EVERY RENEWAL IS KEPT UNTIL THE NEXT REFRESH, newest or not, and sent with
 // it: two requests renewing two forge hosts each hold one renewal, and the
-// cloud merges them per host, so neither is lost. They are kept in memory;
-// a renewal handed to a process that exits before refreshing is what it
-// loses, and the forge renews again from the refresh token it still holds
-// (or, for a forge that rotates refresh tokens, says to reconnect).
+// cloud merges them per host, so neither is lost. The newest is handed to
+// Save the moment it arrives, so a process that exits before refreshing has
+// already written it; Save is where the same rule is applied against what
+// another process may have written since (see Supersedes).
 type Refreshing struct {
 	mu      sync.Mutex
 	Token   string
@@ -165,6 +165,22 @@ func (r *Refreshing) Renewed(token string) {
 		r.Expires = got.expires
 	}
 	r.Save(r.Token, r.Expires, r.Refresh)
+}
+
+// Supersedes says whether token may replace than in a profile: than is not a
+// tau token, or both are of one session and token is newer by its
+// generation, then its issue time. A token of another session never
+// replaces one: that is a sign-in this process did not make.
+func Supersedes(token, than string) bool {
+	got, ok := orderOf(token)
+	if !ok {
+		return false
+	}
+	cur, curOK := orderOf(than)
+	if !curOK {
+		return true
+	}
+	return got.session == cur.session && got.after(cur)
 }
 
 // order is what a tau access token says about where it stands in its

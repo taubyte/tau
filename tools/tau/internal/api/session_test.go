@@ -147,3 +147,14 @@ func TestATransportThatFails(t *testing.T) {
 	_, err = c.Job(t.Context(), "j")
 	require.ErrorContains(t, err, "offline")
 }
+
+func TestSupersedes(t *testing.T) {
+	a := jwt("s", 1, 10, 0)
+	require.True(t, Supersedes(a, ""))
+	require.True(t, Supersedes(a, "not-a-jwt"))
+	require.False(t, Supersedes("not-a-jwt", a))
+	require.True(t, Supersedes(jwt("s", 2, 1, 0), a))
+	require.True(t, Supersedes(jwt("s", 1, 11, 0), a))
+	require.False(t, Supersedes(a, a))
+	require.False(t, Supersedes(jwt("other", 9, 99, 0), a))
+}
