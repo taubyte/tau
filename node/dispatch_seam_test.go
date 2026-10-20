@@ -98,3 +98,23 @@ func TestAHandleThatNamesNoQueueHasNoDepth(t *testing.T) {
 	require.Zero(t, ready)
 	require.Zero(t, claimed)
 }
+
+// A STEP ON A NODE WITH NO SYNC BACKING HAS NOWHERE TO HAND ITS RESULT.
+func TestAStepWithNoBackingCannotSendOn(t *testing.T) {
+	err := (&dispatcher{node: &Node{}}).sendOn(t.Context(), invoke.Grant{Label: "next"}, "1", nil)
+	require.ErrorIs(t, err, ErrNoPrimitives)
+}
+
+// A STREAM BACKING SERVES THE TWO GOSSIP KINDS and refuses any other by name,
+// so nothing is registered with the closers for it.
+func TestAStreamBackingIsOneOfTwoKinds(t *testing.T) {
+	n := &Node{}
+	_, err := n.streamBacking("queue")
+	require.ErrorContains(t, err, `"queue"`)
+	require.Empty(t, n.closers)
+
+	s, err := n.streamBacking("bus")
+	require.NoError(t, err)
+	require.NotNil(t, s)
+	require.Len(t, n.closers, 1)
+}
