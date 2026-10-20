@@ -197,11 +197,12 @@ func (c *Clone) Checkout(ctx context.Context, repositoryKey, branch, commit stri
 	repo, err := git.New(ctx, append(options, git.Root(root))...)
 	if err != nil {
 		release()
-		// NO KEY MEANS PUBLIC OR NOTHING. A keyless clone the forge refuses is a
-		// private repository nobody linked, and saying so is the whole fix: no
-		// other transport is tried, because none holds a credential either.
+		// NO KEY MEANS PUBLIC OR NOTHING. A keyless clone the forge refuses is
+		// either a repository that does not exist or a private one nobody
+		// linked; an anonymous 404 cannot tell them apart, so both are named.
+		// No other transport is tried, because none holds a credential either.
 		if deployKey == "" && refused(err) {
-			return "", nil, fmt.Errorf("deploy: %s has no deploy key and is not publicly readable; run tau link: %w", repositoryKey, err)
+			return "", nil, fmt.Errorf("deploy: %s was not found or is not publicly readable; if it is private, run tau link: %w", repositoryKey, err)
 		}
 		return "", nil, err
 	}

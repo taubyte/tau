@@ -125,11 +125,19 @@ func TestAKeylessPrivateRepositoryIsNamed(t *testing.T) {
 	var a asked
 	_, _, err := deploy.NewClone(keys{}, a.address(forge.Address{}, forge.Address{URL: forgeHTTP.URL + "/acme/pay.git"})).
 		Checkout(t.Context(), "github.com/acme/pay", "main", "0123456789abcdef0123456789abcdef01234567")
-	require.ErrorContains(t, err, "github.com/acme/pay has no deploy key and is not publicly readable; run tau link")
+	require.ErrorContains(t, err, "github.com/acme/pay was not found or is not publicly readable; if it is private, run tau link")
 	require.Equal(t, []forge.Protocol{forge.HTTPS}, a.protocols(), "no ssh address is asked for without a key")
 	mu.Lock()
 	defer mu.Unlock()
 	require.Equal(t, 1, hits, "one anonymous attempt, never a second")
+
+	// A 404 is a missing repository or a hidden private one; over https the
+	// two look alike, so the message names both.
+	missing := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(missing.Close)
+	_, _, err = deploy.NewClone(keys{}, a.address(forge.Address{}, forge.Address{URL: missing.URL + "/acme/gone.git"})).
+		Checkout(t.Context(), "github.com/acme/gone", "main", "0123456789abcdef0123456789abcdef01234567")
+	require.ErrorContains(t, err, "github.com/acme/gone was not found or is not publicly readable; if it is private, run tau link")
 
 	// A failure that is not a refusal — a forge that is down — is passed
 	// through as it is.

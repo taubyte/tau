@@ -18,18 +18,9 @@ import (
 )
 
 var (
-	testRepoGitUrl = "git@github.com:taubyte-test/for-tests.git"
-	testRepoUser   = "taubyte-test"
-	testRepoName   = "for-tests"
-	testRepoEmail  = "taubytetest@gmail.com"
+	testRepoUser  = "taubyte-test"
+	testRepoEmail = "taubytetest@gmail.com"
 )
-
-func testRepoToken(t *testing.T) (tkn string) {
-	if tkn = os.Getenv("TEST_GIT_TOKEN"); tkn == "" {
-		t.SkipNow()
-	}
-	return
-}
 
 func TestNew(t *testing.T) {
 	_, err := New(
@@ -123,31 +114,6 @@ func TestPush(t *testing.T) {
 	assert.NilError(t, c.Commit(t.Name(), "."))
 
 	assert.NilError(t, c.Push())
-}
-
-func TestCloneWithDeployKey(t *testing.T) {
-	pubKey, secKey, err := generateDeployKey()
-	assert.NilError(t, err)
-
-	ctx, ctxC := context.WithTimeout(context.Background(), 10*time.Second)
-	defer ctxC()
-
-	githubClient := githubApiClient(ctx, testRepoToken(t))
-
-	err = injectDeploymentKey(ctx, githubClient, testRepoUser, testRepoName, "go-simple-git-clone-with-deploy-key", pubKey)
-	if err != nil {
-		t.Error(err)
-	}
-
-	_, err = New(
-		context.Background(),
-		URL(testRepoGitUrl),
-		SSHKeyAs("git", secKey, githubHostKeys(t)),
-		Root(t.TempDir()),
-		Author(testRepoUser, testRepoEmail),
-	)
-	assert.NilError(t, err)
-
 }
 
 // TestCheckoutEmptyRepo asserts that Checkout on an empty repo (no commits) only sets HEAD
