@@ -47,9 +47,8 @@
 // secret and NO signature, so no delivery it sends can be verified by any
 // forge.Scheme, and registering one would hand tau a callback anyone can
 // forge. What triggers a build on Gerrit instead is the event stream —
-// `gerrit stream-events` over ssh, or polling a project's branch heads — which
-// is a consumer this layer does not have. PUSH PROBE: there is no API for it;
-// it is a git-level question. All four are left unimplemented, so a Session
+// `gerrit stream-events` over ssh, the Events option (events.go). PUSH
+// PROBE: there is no API for it; it is a git-level question. All four are left unimplemented, so a Session
 // answers them with *forge.UnsupportedError.
 package gerrit
 
@@ -71,6 +70,7 @@ type driver struct {
 	rt     http.RoundTripper // under the pin; nil means http.DefaultTransport
 	scheme string            // "https", or "http" only for a loopback host
 	member *basic            // the deployment's credential; nil means none
+	stream *streamer         // the deployment's event stream; nil means none
 }
 
 // memberDriver is a driver that also answers membership. It is a separate type
@@ -154,7 +154,12 @@ func New(host string, opts ...Option) (forge.Driver, error) {
 			return nil, err
 		}
 	}
-	if d.member != nil {
+	switch {
+	case d.member != nil && d.stream != nil:
+		return &memberEventDriver{&memberDriver{d}, d.stream}, nil
+	case d.stream != nil:
+		return &eventDriver{d, d.stream}, nil
+	case d.member != nil:
 		return &memberDriver{d}, nil
 	}
 	return d, nil

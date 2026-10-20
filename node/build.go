@@ -361,6 +361,12 @@ func (n *Node) openBuildFrontend() error {
 		frontend.WithDeliveries(forges),
 		frontend.WithTenancy(served),
 	}
+	// A FORGE WITH NO SIGNED WEBHOOK REPORTS PUSHES ON ITS OWN FEED (Gerrit's
+	// stream-events), which this frontend subscribes to as a second source of
+	// the same push — see frontend/streams.go.
+	if len(registry.EventHosts()) > 0 {
+		frontendOptions = append(frontendOptions, frontend.WithStreams(forges, projects))
+	}
 	// THE PUBLIC ROLE NEVER HOLDS A VAULT ITSELF. It is the one process a
 	// stranger reaches, and withDefaults already refuses it running the
 	// backend for the same reason — so this is always the stream onto a node

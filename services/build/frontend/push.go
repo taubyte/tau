@@ -1,6 +1,9 @@
 package frontend
 
-import "net/http"
+import (
+	"fmt"
+	"net/http"
+)
 
 // eligible reports whether a ref is one this cloud builds.
 //
@@ -27,3 +30,28 @@ func (s *Service) eligible(ref string) bool {
 // delivery log shows it — this is a signed, genuine delivery, so saying why
 // costs nothing and is the only place an author finds out.
 func ignored(reason string) error { return problem(http.StatusAccepted, reason) }
+
+// refusal is why a genuine push — from a verified delivery or a forge's event
+// stream alike — is not built here, or nil. It is one function so that the two
+// sources of a push cannot come to disagree about which pushes build.
+func (s *Service) refusal(event Push) error {
+	// Branch eligibility, before Enqueue and nowhere else.
+	if !s.eligible(event.Ref) {
+		return ignored("ref is not built")
+	}
+
+	// A REPOSITORY OUTSIDE THE TENANCY IS NOT BUILT, even when its push is
+	// genuine: a hook registered before the tenancy was declared, or under
+	// another, must not deploy here.
+	if s.tenancy.Configured() {
+		key, ok := parseRepositoryKey(event.Repository)
+		err := fmt.Errorf("%q is not a repository key this cloud's tenancy can place", event.Repository)
+		if ok {
+			err = s.tenancy.Refuse(key)
+		}
+		if err != nil {
+			return problem(http.StatusForbidden, err.Error())
+		}
+	}
+	return nil
+}

@@ -42,6 +42,10 @@ var (
 	routeProjectHEAD   = newRoute(http.MethodGet, "projects/"+hole+"/HEAD")
 	routeProjectAccess = newRoute(http.MethodGet, "projects/"+hole+"/access")
 
+	// routeBranches lists a project's branches with the revision each points
+	// at — the heads a reconnecting event stream compares against.
+	routeBranches = newRoute(http.MethodGet, "projects/"+hole+"/branches/")
+
 	routeCreateProject   = newRoute(http.MethodPut, "projects/"+hole)
 	routeRestrictProject = newRoute(http.MethodPost, "projects/"+hole+"/access")
 

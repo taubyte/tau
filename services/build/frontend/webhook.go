@@ -3,7 +3,6 @@ package frontend
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -166,26 +165,10 @@ func (s *Service) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Branch eligibility, before Enqueue and nowhere else (push.go).
-	if !s.eligible(event.Ref) {
-		respond(w, ignored("ref is not built"))
+	if err := s.refusal(event); err != nil {
+		s.log("hook %s: %v", hookID, err)
+		respond(w, err)
 		return
-	}
-
-	// A REPOSITORY OUTSIDE THE TENANCY IS NOT BUILT, even when its hook
-	// verifies: a hook registered before the tenancy was declared, or under
-	// another, must not deploy here.
-	if s.tenancy.Configured() {
-		key, ok := parseRepositoryKey(event.Repository)
-		err := fmt.Errorf("%q is not a repository key this cloud's tenancy can place", event.Repository)
-		if ok {
-			err = s.tenancy.Refuse(key)
-		}
-		if err != nil {
-			s.log("hook %s: %v", hookID, err)
-			respond(w, problem(http.StatusForbidden, err.Error()))
-			return
-		}
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)

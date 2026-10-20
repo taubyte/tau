@@ -45,7 +45,8 @@ type Forge struct {
 	// whose forge cannot sign has no push hooks: onedev and azure never, a
 	// gitlab without Signing, a sourcehut with no PayloadKey (git.sr.ht has
 	// one built in), and gerrit, which has no webhook API. Such a forge is
-	// still served for everything else — identity, access, clones.
+	// still served for everything else — identity, access, clones. A gerrit
+	// with Events triggers builds from its event stream instead.
 	Driver string
 
 	// HostKeys are the ssh host keys this forge may answer a clone with, one per
@@ -79,6 +80,26 @@ type Forge struct {
 	// 7999. Its ssh addresses are keyed as the same repositories as its https
 	// ones. bitbucket-server only.
 	SSHPort int
+
+	// Membership is the deployment's own credential, "username:password",
+	// that answers whether an account belongs to a group — and, with Events,
+	// reads a project's branch heads. gerrit only.
+	Membership string
+
+	// Events subscribes this cloud to the forge's push feed over ssh, which is
+	// how a forge without signed webhooks triggers builds. The sshd is pinned
+	// to HostKeys. gerrit only.
+	Events *ForgeEvents
+}
+
+// ForgeEvents is the deployment's ssh account on a forge's event feed.
+type ForgeEvents struct {
+	// Address is the sshd, "gerrit.example.com:29418".
+	Address string
+	// User is the account; it needs Gerrit's Stream Events capability.
+	User string
+	// Key is the account's private key, PEM.
+	Key string
 }
 
 // The drivers a Forge may name.
@@ -216,7 +237,7 @@ func forges(declared []Forge) (*forge.Registry, error) {
 		case ForgeOneDev:
 			d, err = onedev.New(f.Host)
 		case ForgeGerrit:
-			d, err = gerrit.New(f.Host)
+			d, err = newGerrit(f)
 		case ForgeSourcehut:
 			var opts []sourcehut.Option
 			if f.PayloadKey != "" {
@@ -242,4 +263,20 @@ func forges(declared []Forge) (*forge.Registry, error) {
 		bindings = append(bindings, forge.Binding{Host: f.Host, Driver: d})
 	}
 	return forge.New(forge.Policy{}, bindings...)
+}
+
+// newGerrit is the one driver whose binding carries deployment credentials.
+func newGerrit(f Forge) (forge.Driver, error) {
+	var opts []gerrit.Option
+	if f.Membership != "" {
+		opts = append(opts, gerrit.Membership(f.Membership))
+	}
+	if f.Events != nil {
+		pinned, err := hostKeys([]Forge{f})
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, gerrit.Events(f.Events.Address, f.Events.User, []byte(f.Events.Key), pinned[f.Host]...))
+	}
+	return gerrit.New(f.Host, opts...)
 }

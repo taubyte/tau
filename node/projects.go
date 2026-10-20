@@ -116,6 +116,24 @@ func (p projectTable) ProjectsOf(ctx context.Context, claimant string) ([]pkgreg
 	return t.ProjectsOf(ctx, claimant)
 }
 
+// LinkedRepositories is every repository of every linked project: the
+// frontend's Linked, what a reconnected forge event stream compares heads for.
+func (p projectTable) LinkedRepositories(ctx context.Context) ([]string, error) {
+	t, err := p.table(ctx)
+	if err != nil {
+		return nil, err
+	}
+	recs, err := t.ListProjects(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, rec := range recs {
+		out = append(out, rec.Repositories()...)
+	}
+	return out, nil
+}
+
 // secretReader is the one call a link credential is read with.
 type secretReader interface {
 	Secret(ctx context.Context, project, environment, secretID string) (string, error)

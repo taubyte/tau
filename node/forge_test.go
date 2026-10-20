@@ -6,6 +6,7 @@ import (
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
 	publicforges "github.com/taubyte/tau/pkg/forge/public"
+	"github.com/taubyte/tau/pkg/git/gittest"
 
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
@@ -146,6 +147,29 @@ func TestHostKeys(t *testing.T) {
 
 	_, err = hostKeys([]Forge{{Host: "git.internal", Driver: ForgeGitHub, HostKeys: []string{"not a key"}}})
 	require.ErrorContains(t, err, `forge "git.internal" host key`)
+}
+
+func TestAGerritBindingCarriesItsDeploymentCredentials(t *testing.T) {
+	priv, pub := gittest.KeyPair(t)
+	hostKey := string(gossh.MarshalAuthorizedKey(pub))
+	events := &ForgeEvents{Address: "review.example.com:29418", User: "tau-bot", Key: priv}
+
+	reg, err := forges([]Forge{{Host: "review.example.com", Driver: ForgeGerrit, Membership: "admin:pw", Events: events, HostKeys: []string{hostKey}}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"review.example.com"}, reg.EventHosts())
+	drv, err := reg.Driver("review.example.com")
+	require.NoError(t, err)
+	_, members := drv.(forge.Memberships)
+	require.True(t, members)
+
+	reg, err = forges([]Forge{{Host: "review.example.com", Driver: ForgeGerrit}})
+	require.NoError(t, err)
+	require.Empty(t, reg.EventHosts(), "a gerrit with no Events triggers nothing")
+
+	_, err = forges([]Forge{{Host: "review.example.com", Driver: ForgeGerrit, Events: events}})
+	require.ErrorContains(t, err, "host key pinned", "a stream with no pinned host key is refused at boot")
+	_, err = forges([]Forge{{Host: "review.example.com", Driver: ForgeGerrit, Events: events, HostKeys: []string{"garbage"}}})
+	require.Error(t, err)
 }
 
 func TestAnInjectedForgeRegistryWins(t *testing.T) {

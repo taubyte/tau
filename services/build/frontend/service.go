@@ -34,6 +34,8 @@ type Service struct {
 	vault      Vault
 	linker     Linker
 	tenancy    tenancy.Tenancy
+	streams    Streams
+	linked     Linked
 	cfg        Config
 
 	now    func() time.Time
@@ -51,10 +53,12 @@ type Service struct {
 	globalHooks   *bucket
 	globalJobs    *bucket
 
-	startMu  sync.Mutex
-	server   *http.Server
-	listener net.Listener
-	serving  chan struct{}
+	startMu     sync.Mutex
+	stopStreams context.CancelFunc
+	streaming   sync.WaitGroup
+	server      *http.Server
+	listener    net.Listener
+	serving     chan struct{}
 
 	closeOnce sync.Once
 	closeErr  error
@@ -79,6 +83,8 @@ type options struct {
 	vault      Vault
 	linker     Linker
 	tenancy    tenancy.Tenancy
+	streams    Streams
+	linked     Linked
 
 	tune func(*http.Server)
 	now  func() time.Time
@@ -192,6 +198,19 @@ func WithTenancy(t tenancy.Tenancy) Option {
 	}
 }
 
+// WithStreams subscribes this frontend to every forge event stream s offers,
+// with linked as the repositories whose heads a reconnect compares. Optional:
+// without it only webhooks trigger builds. See streams.go.
+func WithStreams(s Streams, linked Linked) Option {
+	return func(o *options) error {
+		if s == nil || linked == nil {
+			return errors.New("build: event streams need both the streams and the linked repositories")
+		}
+		o.streams, o.linked = s, linked
+		return nil
+	}
+}
+
 // WithHTTPServer hands the caller the *http.Server before it serves, for the
 // knobs this package does not name — TLS, connection state hooks, a custom
 // ErrorLog. It mirrors p2p/rpc's own WithHTTPServer so the two roles are tuned
@@ -289,6 +308,8 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		vault:      o.vault,
 		linker:     o.linker,
 		tenancy:    o.tenancy,
+		streams:    o.streams,
+		linked:     o.linked,
 		cfg:        effective,
 		tune:       o.tune,
 		now:        o.now,
@@ -370,6 +391,7 @@ func (s *Service) Start(ctx context.Context) error {
 		}
 	}()
 
+	s.startStreams(ctx)
 	return nil
 }
 
@@ -398,8 +420,13 @@ func (s *Service) Close() error {
 		s.closed.Store(true)
 
 		s.startMu.Lock()
-		server, serving := s.server, s.serving
+		server, serving, stop := s.server, s.serving, s.stopStreams
 		s.startMu.Unlock()
+
+		if stop != nil {
+			stop()
+			s.streaming.Wait()
+		}
 
 		if server == nil {
 			return

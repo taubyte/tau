@@ -46,6 +46,18 @@ const (
 	// alike. Both are keyed by a string a stranger chooses, so both need a
 	// ceiling; see ratelimit.go for what that ceiling costs.
 	DefaultSecretCacheMax = 1024
+
+	// DefaultStreamBackoff and DefaultStreamBackoffMax bound how soon a forge
+	// event stream that broke is opened again: the first wait, doubled per
+	// failure up to the ceiling, and back to the first once one connects.
+	DefaultStreamBackoff    = time.Second
+	DefaultStreamBackoffMax = time.Minute
+	// DefaultStreamResync is how often a connected stream's linked
+	// repositories have their branch heads compared anyway. A stream has no
+	// replay, and a push it lost — to a disconnect, to the window before the
+	// forge registered the subscription, to a backend that refused the
+	// enqueue — is otherwise only found by the next push. See streams.go.
+	DefaultStreamResync = 5 * time.Minute
 )
 
 // The four limits, two per public surface, and they are four because the two
@@ -153,6 +165,12 @@ type Config struct {
 	// answer this process keeps. Zero means the matching default.
 	SecretCacheTTL time.Duration `yaml:"secretCacheTTL"`
 	SecretCacheMax int           `yaml:"secretCacheMax"`
+
+	// StreamBackoff, StreamBackoffMax and StreamResync pace the forge event
+	// streams (streams.go). Zero means the matching default.
+	StreamBackoff    time.Duration `yaml:"streamBackoff"`
+	StreamBackoffMax time.Duration `yaml:"streamBackoffMax"`
+	StreamResync     time.Duration `yaml:"streamResync"`
 }
 
 func (c Config) withDefaults() (Config, error) {
@@ -165,6 +183,9 @@ func (c Config) withDefaults() (Config, error) {
 		{"shutdownTimeout", c.ShutdownTimeout},
 		{"backendTimeout", c.BackendTimeout},
 		{"secretCacheTTL", c.SecretCacheTTL},
+		{"streamBackoff", c.StreamBackoff},
+		{"streamBackoffMax", c.StreamBackoffMax},
+		{"streamResync", c.StreamResync},
 	} {
 		if d.value < 0 {
 			return c, fmt.Errorf("build: %s must not be negative", d.name)
@@ -217,6 +238,18 @@ func (c Config) withDefaults() (Config, error) {
 	}
 	if c.EligibleRefs == nil {
 		c.EligibleRefs = DefaultEligibleRefs()
+	}
+	if c.StreamBackoff == 0 {
+		c.StreamBackoff = DefaultStreamBackoff
+	}
+	if c.StreamBackoffMax == 0 {
+		c.StreamBackoffMax = DefaultStreamBackoffMax
+	}
+	if c.StreamBackoffMax < c.StreamBackoff {
+		c.StreamBackoffMax = c.StreamBackoff
+	}
+	if c.StreamResync == 0 {
+		c.StreamResync = DefaultStreamResync
 	}
 	if c.HookRate == (Rate{}) {
 		c.HookRate = DefaultHookRate
@@ -334,6 +367,28 @@ type Vault interface {
 type Linker interface {
 	LinkProject(ctx context.Context, l register.Link) (register.ProjectRecord, error)
 	ProjectsOf(ctx context.Context, claimant string) ([]register.ProjectRecord, error)
+}
+
+// Streams is a forge's own authenticated push feed, for the forges that have
+// one and no webhook a signature covers (Gerrit). forgeauth answers it through
+// pkg/forge. A push read from a stream is the same Push a verified delivery
+// is, and goes the same way from here: eligibility, tenancy, Enqueue.
+type Streams interface {
+	// Hosts is every forge host with a feed.
+	Hosts() []string
+	// Stream holds one subscription to host's feed: ready once it is
+	// accepted, then emit per push — a nil error for a push, the reason for a
+	// claim the forge layer refused. It returns when ctx ends or the feed
+	// breaks, and never reconnects.
+	Stream(ctx context.Context, host string, ready func(), emit func(Push, error)) error
+	// Heads is one repository's branch heads, as pushes.
+	Heads(ctx context.Context, repository string) ([]Push, error)
+}
+
+// Linked is every repository linked to a project on this cloud, as spelled
+// when linked: the set a reconnected stream compares heads for.
+type Linked interface {
+	LinkedRepositories(ctx context.Context) ([]string, error)
 }
 
 // Backend is build's private half, as this role sees it: build.proto's five
