@@ -118,3 +118,17 @@ func TestAdmissionsAsksTheForgeWhoThenAuthWhether(t *testing.T) {
 	_, _, err = a.Admit(t.Context(), frontend.Credentials{Forge: f.TokenString()}, f.Keys().Writable)
 	require.Error(t, err)
 }
+
+func TestConsoleOriginsAreTheCallbacksOrigins(t *testing.T) {
+	require.Equal(t, []string{"https://console.example", "http://127.0.0.1:3000"},
+		consoleOrigins([]string{"https://console.example/cb", "https://console.example/other", "http://127.0.0.1:3000/x", "::"}))
+}
+
+func TestAuthConfigTakesEachForgesApp(t *testing.T) {
+	n := &Node{cfg: Config{Cloud: "example.com", Forges: []Forge{{Host: "github.com", OAuthClientID: "c1"}, {Host: "gitlab.com"}}}}
+	c := n.authConfig()
+	require.Equal(t, "tau:example.com", c.Issuer)
+	require.Equal(t, []authService.ForgeApp{{Host: "github.com", ClientID: "c1"}}, c.Forges)
+	n.cfg.Auth.Issuer = "tau:set"
+	require.Equal(t, "tau:set", n.authConfig().Issuer)
+}

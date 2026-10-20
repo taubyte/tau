@@ -333,7 +333,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 	s.callerBuckets = newCache[*bucket](s.cfg.SecretCacheMax, max(s.cfg.CallerRate.Per, time.Second), s.now)
 	s.globalHooks = newBucket(s.cfg.WebhookRate, s.now)
 	s.globalJobs = newBucket(s.cfg.JobRate, s.now)
-	s.router = s.mount()
+	s.router = s.cors(s.mount())
 
 	return s, nil
 }

@@ -156,6 +156,12 @@ type Config struct {
 	// out, and the two are not interchangeable: a webhook refused is a delivery
 	// a provider stops retrying, and a job route refused is a CLI that cannot
 	// read its own build.
+	// Origins are the browser origins (scheme://host[:port]) whose pages may
+	// call this ingress — the cloud's consoles. Every other origin gets no
+	// CORS headers, so a browser refuses it the answer. No cookie is ever
+	// accepted, so no credentialed request is allowed. See cors.go.
+	Origins []string `yaml:"origins"`
+
 	HookRate    Rate `yaml:"hookRate"`
 	WebhookRate Rate `yaml:"webhookRate"`
 	CallerRate  Rate `yaml:"callerRate"`

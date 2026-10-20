@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -412,7 +413,11 @@ func (n *Node) openBuildFrontend() error {
 	}
 	frontendOptions = append(frontendOptions, frontend.WithHooks(linkSecrets{projects: projects, vault: linked}))
 
-	svc, err := frontend.New(n.cfg.BuildFrontend, frontendOptions...)
+	// A CONSOLE AUTH MAY RETURN A SIGN-IN TO is a console that may call this
+	// ingress from a browser: its callbacks' origins are the CORS allow-list.
+	feCfg := n.cfg.BuildFrontend
+	feCfg.Origins = append(slices.Clone(feCfg.Origins), consoleOrigins(n.cfg.Auth.Redirects)...)
+	svc, err := frontend.New(feCfg, frontendOptions...)
 	if err != nil {
 		return err
 	}
