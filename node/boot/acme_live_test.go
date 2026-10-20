@@ -44,26 +44,27 @@ import (
 // in its own container, and it resolves through a bind9 recursive resolver
 // that finds the cloud's zone by real delegation — a bind9 parent for
 // example.test holding NS and glue for tau.example.test that point at the
-// node's own dns listener. Every container is host-networked, and a
-// delegation names port 53, so the node's dns needs root: make test-acme-live.
+// node's own dns listener. A delegation names port 53 and bind9 answers only
+// on an address an interface holds, so the two bind9s sit on a bridge of
+// their own, the node's dns listens on that bridge's gateway — which needs
+// root: make test-acme-live — and pebble is host-networked, reaching the
+// gateway's HTTP-01 port on loopback.
 
 const (
 	pebbleImage = "ghcr.io/letsencrypt/pebble:2.10.0"
 	bindImage   = "internetsystemsconsortium/bind9:9.20@sha256:071465f88068854d0ceadd9b985fb1acae4071e80754e545cd811fde57541ad0"
 
-	liveParent   = "example.test"
-	liveCloud    = "tau." + liveParent
-	parentNS     = "127.0.53.1"
-	resolverAddr = "127.0.53.2"
-	cloudNS      = "127.0.54.1"
+	liveParent = "example.test"
+	liveCloud  = "tau." + liveParent
 )
 
 func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 	sweepLive(t)
+	bridge, cloudNS := liveNetwork(t)
 	gatewayHTTP := freeLoopbackPort(t)
-	startBind(t, parentNS, parentConf, map[string]string{"example.test.zone": parentZone})
-	startBind(t, resolverAddr, resolverConf, nil)
-	ca := startLivePebble(t, gatewayHTTP)
+	parentNS := startBind(t, bridge, parentConf, map[string]string{"example.test.zone": parentZone(cloudNS)})
+	resolverAddr := startBind(t, bridge, resolverConf(parentNS), nil)
+	ca := startLivePebble(t, gatewayHTTP, resolverAddr)
 	roots := ca.roots(t)
 
 	compiled, hosts, name := fixtureWithHosts(t, liveCloud)
@@ -81,7 +82,7 @@ func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 		// NOTHING SERVES pebble's HTTP-01 port in this run, so only DNS-01 can
 		// prove anything.
 		frontendAddr := fmt.Sprintf("127.0.0.1:%d", freeLoopbackPort(t))
-		f := liveNode(t, ca, globals.CertificateConfig{Wildcard: true}, fmt.Sprintf("127.0.0.1:%d", freeLoopbackPort(t)))
+		f := liveNode(t, ca, cloudNS, globals.CertificateConfig{Wildcard: true}, fmt.Sprintf("127.0.0.1:%d", freeLoopbackPort(t)))
 		f.Node.Services = append(f.Node.Services, node.BuildFrontend)
 		f.Node.BuildFrontend = frontend.Config{Listen: frontendAddr}
 		running, err := Start(t.Context(), f)
@@ -98,7 +99,7 @@ func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 	})
 
 	t.Run("http-01", func(t *testing.T) {
-		running, err := Start(t.Context(), liveNode(t, ca, globals.CertificateConfig{Challenge: globals.ChallengeHTTP}, fmt.Sprintf("127.0.0.1:%d", gatewayHTTP)))
+		running, err := Start(t.Context(), liveNode(t, ca, cloudNS, globals.CertificateConfig{Challenge: globals.ChallengeHTTP}, fmt.Sprintf("127.0.0.1:%d", gatewayHTTP)))
 		require.NoError(t, err)
 		defer running.Close()
 		publish(running)
@@ -109,7 +110,7 @@ func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 	})
 }
 
-func liveNode(t *testing.T, ca *livePebble, cfg globals.CertificateConfig, httpAddr string) File {
+func liveNode(t *testing.T, ca *livePebble, cloudNS string, cfg globals.CertificateConfig, httpAddr string) File {
 	t.Helper()
 	minted, err := identity("")
 	require.NoError(t, err)
@@ -134,7 +135,6 @@ func liveNode(t *testing.T, ca *livePebble, cfg globals.CertificateConfig, httpA
 
 const parentConf = `options {
 	directory "/var/cache/bind";
-	listen-on port 53 { ` + parentNS + `; };
 	listen-on-v6 { none; };
 	recursion no;
 	allow-query { any; };
@@ -144,19 +144,21 @@ controls { };
 zone "` + liveParent + `" { type primary; file "/conf/example.test.zone"; };
 `
 
-const parentZone = `$TTL 60
+func parentZone(cloudNS string) string {
+	return `$TTL 60
 @	IN SOA	ns.` + liveParent + `. hostmaster.` + liveParent + `. 1 60 60 600 60
 @	IN NS	ns.` + liveParent + `.
-ns	IN A	` + parentNS + `
+ns	IN A	127.0.0.1
 tau	IN NS	ns1.tau.` + liveParent + `.
 ns1.tau	IN A	` + cloudNS + `
 `
+}
 
 // The resolver knows the parent and nothing else: the cloud's zone is found
 // only by following the parent's referral.
-const resolverConf = `options {
+func resolverConf(parentNS string) string {
+	return `options {
 	directory "/var/cache/bind";
-	listen-on port 53 { ` + resolverAddr + `; };
 	listen-on-v6 { none; };
 	recursion yes;
 	allow-recursion { any; };
@@ -166,23 +168,27 @@ const resolverConf = `options {
 controls { };
 zone "` + liveParent + `" { type static-stub; server-addresses { ` + parentNS + `; }; };
 `
+}
 
-func startBind(t *testing.T, addr, conf string, zones map[string]string) {
+// startBind runs named on the bridge and answers the address it holds there.
+func startBind(t *testing.T, bridge, conf string, zones map[string]string) string {
 	t.Helper()
 	dir := readableDir(t)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "named.conf"), []byte(conf), 0o644))
 	for file, body := range zones {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, file), []byte(body), 0o644))
 	}
-	startLive(t, &core.ContainerConfig{
+	id := startLive(t, &core.ContainerConfig{
 		Image:   bindImage,
 		Command: []string{"-g", "-c", "/conf/named.conf"},
 		Volumes: []core.VolumeMount{{Source: dir, Destination: "/conf", ReadOnly: true}},
-		Network: &core.NetworkConfig{Mode: "host"},
+		Network: &core.NetworkConfig{Mode: bridge},
 	})
+	addr := addressOn(t, id, bridge)
 	eventually(t, "bind9 at "+addr+" answers", time.Minute, func() bool {
 		return len(resolve(addr, liveParent, dns.TypeSOA)) > 0
 	})
+	return addr
 }
 
 func resolve(server, name string, qtype uint16) []dns.RR {
@@ -204,7 +210,7 @@ type livePebble struct {
 	pool                  *x509.CertPool
 }
 
-func startLivePebble(t *testing.T, httpPort int) *livePebble {
+func startLivePebble(t *testing.T, httpPort int, resolverAddr string) *livePebble {
 	t.Helper()
 	dir := readableDir(t)
 	serverCA := selfSigned(t, dir)
@@ -298,7 +304,7 @@ func selfSigned(t *testing.T, dir string) string {
 // run removes what it left only once its owner is gone.
 const liveOwner = "taubyte.acme-live.owner"
 
-func startLive(t *testing.T, cfg *core.ContainerConfig) {
+func startLive(t *testing.T, cfg *core.ContainerConfig) core.ContainerID {
 	t.Helper()
 	backend, err := docker.New(core.DockerConfig{})
 	require.NoError(t, err)
@@ -319,6 +325,51 @@ func startLive(t *testing.T, cfg *core.ContainerConfig) {
 		backend.Remove(context.Background(), id)
 	})
 	require.NoError(t, backend.Start(t.Context(), id))
+	return id
+}
+
+// liveNetwork is a bridge of this run's own, and the gateway address the host
+// holds on it.
+func liveNetwork(t *testing.T) (string, string) {
+	t.Helper()
+	cli, err := client.New(client.FromEnv)
+	require.NoError(t, err)
+	defer cli.Close()
+	name := fmt.Sprintf("tau-acme-live-%d", os.Getpid())
+	created, err := cli.NetworkCreate(t.Context(), name, client.NetworkCreateOptions{
+		Driver: "bridge",
+		Labels: map[string]string{liveOwner: fmt.Sprint(os.Getpid())},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		c, err := client.New(client.FromEnv)
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		c.NetworkRemove(context.Background(), created.ID, client.NetworkRemoveOptions{})
+	})
+	res, err := cli.NetworkInspect(t.Context(), created.ID, client.NetworkInspectOptions{})
+	require.NoError(t, err)
+	for _, c := range res.Network.IPAM.Config {
+		if c.Gateway.Is4() {
+			return name, c.Gateway.String()
+		}
+	}
+	t.Fatalf("network %s has no IPv4 gateway", name)
+	return "", ""
+}
+
+func addressOn(t *testing.T, id core.ContainerID, bridge string) string {
+	t.Helper()
+	cli, err := client.New(client.FromEnv)
+	require.NoError(t, err)
+	defer cli.Close()
+	res, err := cli.ContainerInspect(t.Context(), string(id), client.ContainerInspectOptions{})
+	require.NoError(t, err)
+	ep := res.Container.NetworkSettings.Networks[bridge]
+	require.NotNil(t, ep, "the container is on %s", bridge)
+	return ep.IPAddress.String()
 }
 
 func sweepLive(t *testing.T) {
@@ -337,6 +388,17 @@ func sweepLive(t *testing.T) {
 		}
 		t.Logf("removing %s (%s), left behind by test process %s", c.ID[:12], c.Image, c.Labels[liveOwner])
 		_, err := cli.ContainerRemove(ctx, c.ID, client.ContainerRemoveOptions{Force: true})
+		require.NoError(t, err)
+	}
+	nets, err := cli.NetworkList(ctx, client.NetworkListOptions{Filters: client.Filters{}.Add("label", liveOwner)})
+	require.NoError(t, err)
+	for _, n := range nets.Items {
+		var pid int
+		fmt.Sscan(n.Labels[liveOwner], &pid)
+		if pid > 0 && syscall.Kill(pid, 0) == nil {
+			continue
+		}
+		_, err := cli.NetworkRemove(ctx, n.ID, client.NetworkRemoveOptions{})
 		require.NoError(t, err)
 	}
 }
