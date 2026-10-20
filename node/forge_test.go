@@ -1,12 +1,15 @@
 package node
 
 import (
+	"net"
 	"testing"
+	"time"
 
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
 	publicforges "github.com/taubyte/tau/pkg/forge/public"
 	"github.com/taubyte/tau/pkg/git/gittest"
+	"github.com/taubyte/tau/services/build/frontend"
 
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
@@ -205,5 +208,41 @@ func TestTheCLIsPublicForgesSignAsTheDefaultCloudVerifies(t *testing.T) {
 		got, err := cli.Driver(host)
 		require.NoError(t, err)
 		require.Equal(t, want.(forge.Signatures).Scheme(), got.(forge.Signatures).Scheme(), host)
+	}
+}
+
+// A FRONTEND SERVING A FORGE WITH AN EVENT FEED SUBSCRIBES TO IT: the stream
+// is dialled at the address the operator declared, which is the only evidence
+// that the second source of a push was wired at all.
+func TestAFrontendFollowsAForgesEventStream(t *testing.T) {
+	sshd, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { sshd.Close() })
+	dialled := make(chan struct{}, 1)
+	go func() {
+		conn, err := sshd.Accept()
+		if err != nil {
+			return
+		}
+		conn.Close()
+		dialled <- struct{}{}
+	}()
+
+	priv, pub := gittest.KeyPair(t)
+	n, _, _ := makeNode(t, Config{
+		Services:      []string{Discovery, BuildFrontend},
+		BuildFrontend: frontend.Config{Listen: "127.0.0.1:0"},
+		Forges: []Forge{{
+			Host: "review.example.com", Driver: ForgeGerrit,
+			Events:   &ForgeEvents{Address: sshd.Addr().String(), User: "tau-bot", Key: priv},
+			HostKeys: []string{string(gossh.MarshalAuthorizedKey(pub))},
+		}},
+	})
+	require.NoError(t, n.Start(t.Context()))
+
+	select {
+	case <-dialled:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the frontend never dialled the forge's event stream")
 	}
 }

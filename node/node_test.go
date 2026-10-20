@@ -262,6 +262,7 @@ func TestWhatTheOptionsRefuse(t *testing.T) {
 	for _, opt := range []Option{
 		WithHost(nil), WithPubSub(nil), WithDatabases(nil),
 		WithRuntimes(nil), WithArtifacts(nil), WithSecrets(nil), WithClock(nil),
+		WithRoot(""),
 	} {
 		_, err := New(Config{Services: []string{Discovery}}, WithHost(h), WithPubSub(newPubSub(t, h)), opt)
 		require.Error(t, err)
@@ -377,4 +378,15 @@ func TestTheFleetIsReadFromTheLocalRegister(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoRegister)
 	_, _, err = s.ResolveHost(ctx, "shop.example.com")
 	require.ErrorIs(t, err, ErrNoRegister)
+}
+
+// A GATEWAY SERVED OVER TLS IS TOLD SO by the composer, which is the one that
+// binds the listener.
+func TestWithTLSReachesTheGateway(t *testing.T) {
+	var o options
+	require.NoError(t, WithTLS()(&o))
+	require.True(t, o.terminates)
+
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Discovery, Gateway}, Gateway: gatewayConfig()}, WithTLS())
+	require.NotNil(t, n.TLSConfig())
 }
