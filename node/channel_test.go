@@ -127,3 +127,13 @@ func TestAConnectedKindIsDialled(t *testing.T) {
 	require.Contains(t, err.Error(), "application/absent")
 	require.NotContains(t, err.Error(), "dialling")
 }
+
+// AN INVOKED KIND THE DEPLOYMENT DOES NOT HOLD is no answer too.
+func TestAFunctionNothingDeploysIsNoAnswer(t *testing.T) {
+	c := dialingNode(t, &answering{name: "wasm", status: 200})
+	grant := channelGrant()
+	grant.Settings["serve/name"] = "absent"
+
+	_, err := c.Dial(t.Context(), grant, []byte("x"))
+	require.ErrorIs(t, err, wasmtier.ErrNoAnswer)
+}
