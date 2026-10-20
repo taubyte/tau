@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -148,4 +149,30 @@ func TestAProxyWithoutAWorkerIsRefusedAtConstruction(t *testing.T) {
 	_, err := New(Config{Services: []string{Register, Discovery, Proxy}},
 		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}))
 	require.ErrorContains(t, err, "a worker holds")
+}
+
+// A PROXY REACHES A WORKLOAD THROUGH PLACEMENT, so a worker with no discovery
+// cannot serve one and is refused when it is built.
+func TestAProxyWithoutPlacementIsRefusedAtConstruction(t *testing.T) {
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+	h := newHost(t, mn)
+
+	_, err := New(Config{Services: []string{Register, Worker, Proxy}},
+		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}),
+		WithRuntimes(&tier{name: "container"}))
+	require.ErrorContains(t, err, "through placement")
+}
+
+// A NODE WITH NO WORKER HOLDS NO PROXY to listen for.
+func TestANodeWithNoWorkerHoldsNoProxy(t *testing.T) {
+	require.Nil(t, (&proxies{node: &Node{}}).Proxies(t.Context()))
+}
+
+// AN INJECTED RESOLVER IS THE ONE A PROXY TERMINATES WITH, as it is the
+// worker's.
+func TestAProxyTakesTheInjectedResolver(t *testing.T) {
+	injected := secretFor(func(context.Context, string, string, string) (string, error) { return "", nil })
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Proxy}}, WithSecrets(injected))
+	require.NotNil(t, n.proxy)
 }

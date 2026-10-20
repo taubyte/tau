@@ -344,3 +344,11 @@ func TestAFireIsPlacedWhereThereIsDiscovery(t *testing.T) {
 	require.Equal(t, 200, res.Status)
 	require.Len(t, answers.seen(), 1)
 }
+
+// A NODE THAT RUNS NO PRIMITIVES SERVICE HAS NOWHERE TO HAND A MINUTE, and
+// says which half it is missing.
+func TestAMinuteNeedsAPrimitivesService(t *testing.T) {
+	_, err := (&Node{}).clockNow(t.Context())
+	require.ErrorIs(t, err, ErrNoPrimitives)
+	require.ErrorContains(t, err, "runs no service to take one")
+}

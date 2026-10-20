@@ -137,3 +137,16 @@ func TestAFunctionNothingDeploysIsNoAnswer(t *testing.T) {
 	_, err := c.Dial(t.Context(), grant, []byte("x"))
 	require.ErrorIs(t, err, wasmtier.ErrNoAnswer)
 }
+
+// WITH DISCOVERY A CONNECTED KIND IS DIALLED THROUGH PLACEMENT, and one
+// nothing in the fleet deploys is still no answer.
+func TestAPlacedDialToNothingIsNoAnswer(t *testing.T) {
+	n, _ := consuming(t, &answering{name: "wasm", status: 200}, compiled())
+	require.NotNil(t, n.workers)
+	grant := channelGrant()
+	grant.Settings["serve/kind"] = "application"
+	grant.Settings["serve/name"] = "absent"
+
+	_, err := (&channels{node: n}).Dial(t.Context(), grant, []byte("x"))
+	require.ErrorIs(t, err, wasmtier.ErrNoAnswer)
+}
