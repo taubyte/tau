@@ -13,6 +13,7 @@ import (
 	"crypto/rand"
 	"encoding/pem"
 	"errors"
+	"io"
 	"net"
 	"strings"
 	"sync"
@@ -177,6 +178,13 @@ func (s *Server) uploadPack(ch gossh.Channel, path string) error {
 	}
 	req := packp.NewUploadPackRequest()
 	if err := req.Decode(ch); err != nil {
+		return err
+	}
+	// A client closes its input right after "done", and it fails the fetch
+	// with "closing input: EOF" if this side has closed the channel first —
+	// which a fast pack and a slow client scheduler make a race. Waiting for
+	// that close before answering puts it before ours, every time.
+	if _, err := io.Copy(io.Discard, ch); err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
