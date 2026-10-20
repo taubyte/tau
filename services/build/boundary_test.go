@@ -214,6 +214,8 @@ func TestTheIdentityAdapterKnowsNoProvider(t *testing.T) {
 		"the adapter asks by host; which driver answers is the node's binding")
 	requireNoImport(t, adapterImports, "github.com/taubyte/tau/pkg/forge/gitlab",
 		"the adapter asks by host; which driver answers is the node's binding")
+	requireNoImport(t, adapterImports, "github.com/taubyte/tau/pkg/forge/gitea",
+		"the adapter asks by host; which driver answers is the node's binding")
 	requireNoImport(t, adapterImports, backendPkg,
 		"the public role's own adapter must not reach the private role")
 	requireNoImport(t, adapterImports, "github.com/taubyte/tau/services/auth",

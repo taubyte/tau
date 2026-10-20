@@ -7,6 +7,7 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/taubyte/tau/pkg/forge"
+	"github.com/taubyte/tau/pkg/forge/gitea"
 	"github.com/taubyte/tau/pkg/forge/github"
 	"github.com/taubyte/tau/pkg/forge/gitlab"
 )
@@ -27,7 +28,8 @@ type Forge struct {
 	Host string
 
 	// Driver is the API the host speaks: "github" for github.com and GitHub
-	// Enterprise, "gitlab" for GitLab.
+	// Enterprise, "gitlab" for GitLab, "gitea" for Gitea, Forgejo and
+	// Codeberg, which share one API.
 	Driver string
 
 	// HostKeys are the ssh host keys this forge may answer a clone with, one per
@@ -41,7 +43,8 @@ type Forge struct {
 	// Signing registers a GitLab instance's hooks with Standard Webhooks, which
 	// binds the body, rather than a replayed shared token. An instance too old
 	// to know it signs nothing and every delivery fails verification — closed,
-	// and visibly broken. Meaningless for a github driver, which always signs.
+	// and visibly broken. Meaningless for a github or gitea driver, which
+	// always signs.
 	Signing bool
 }
 
@@ -49,6 +52,7 @@ type Forge struct {
 const (
 	ForgeGitHub = "github"
 	ForgeGitLab = "gitlab"
+	ForgeGitea  = "gitea"
 )
 
 // DefaultForges is what a node serves when its operator named none: the two
@@ -152,9 +156,11 @@ func forges(declared []Forge) (*forge.Registry, error) {
 				opts = append(opts, gitlab.Signing())
 			}
 			d, err = gitlab.New(f.Host, opts...)
+		case ForgeGitea:
+			d, err = gitea.New(f.Host)
 		default:
-			return nil, fmt.Errorf("node: forge %q names driver %q; a driver is one of %q, %q",
-				f.Host, f.Driver, ForgeGitHub, ForgeGitLab)
+			return nil, fmt.Errorf("node: forge %q names driver %q; a driver is one of %q, %q, %q",
+				f.Host, f.Driver, ForgeGitHub, ForgeGitLab, ForgeGitea)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("node: forge %q: %w", f.Host, err)

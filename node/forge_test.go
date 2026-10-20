@@ -28,8 +28,22 @@ func TestForges(t *testing.T) {
 	require.ErrorContains(t, err, "does not bind the body",
 		"a replayed shared token is refused at startup unless signing is on")
 
-	_, err = forges([]Forge{{Host: "code.example.com", Driver: "gitea"}})
-	require.ErrorContains(t, err, `names driver "gitea"`)
+	reg, err = forges([]Forge{
+		{Host: "codeberg.org", Driver: ForgeGitea},
+		{Host: "git.internal:3000", Driver: ForgeGitea},
+	})
+	require.NoError(t, err, "a Gitea, a Forgejo or Codeberg is the gitea driver bound to its host")
+	require.Equal(t, []string{"codeberg.org", "git.internal:3000"}, reg.Hosts())
+	drv, err := reg.Driver("codeberg.org")
+	require.NoError(t, err)
+	require.Equal(t, forge.SchemeHubSHA256, drv.(forge.Signatures).Scheme(),
+		"a gitea hook signs like GitHub's, so the strict policy takes it with no opt-in")
+
+	_, err = forges([]Forge{{Host: "code.example.com", Driver: "gogs"}})
+	require.ErrorContains(t, err, `names driver "gogs"`)
+
+	_, err = forges([]Forge{{Host: "Codeberg.org", Driver: ForgeGitea}})
+	require.ErrorContains(t, err, `forge "Codeberg.org"`)
 
 	_, err = forges([]Forge{{Host: "GitHub.com", Driver: ForgeGitHub}})
 	require.ErrorContains(t, err, `forge "GitHub.com"`)
