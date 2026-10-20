@@ -33,14 +33,14 @@ const gitlabImage = "gitlab/gitlab-ce:18.4.2-ce.0"
 // the suite is a number somebody can read.
 func TestARealGitLabAnswersTheGitLabDriver(t *testing.T) { walk(t, bootGitLab(t)) }
 
-// gitlabScript runs the image's own wrapper, waits for the web tier, and
+// gitlabScript runs the image's own init (its CMD), waits for the web tier, and
 // creates the administrator's token with gitlab-rails — GitLab's own console,
 // and the documented way to make a token without a browser. The token's value
 // is the test's, handed in, so nothing secret has to be read back out of a log;
 // the host keys are read off the server's own disk.
-const gitlabScript = `/assets/wrapper &
+const gitlabScript = `/assets/init-container &
 pid=$!
-until curl -fsS -o /dev/null http://127.0.0.1/users/sign_in; do sleep 5; done
+until curl -fs -o /dev/null http://127.0.0.1/users/sign_in; do sleep 5; done
 gitlab-rails runner "t = User.find_by_username('root').personal_access_tokens.create!(name: 'harness', scopes: [:api], expires_at: 7.days.from_now); t.set_token(ENV['TAU_ADMIN_TOKEN']); t.save!"
 for f in /etc/gitlab/ssh_host_*_key.pub; do echo "TAU-HOST-KEY $(cat "$f")"; done
 echo TAU-READY
@@ -62,14 +62,13 @@ func bootGitLab(t *testing.T) *instance {
 nginx['listen_port'] = 80
 nginx['listen_https'] = false
 gitlab_rails['gitlab_shell_ssh_port'] = %d
-gitlab_rails['initial_root_password'] = 'Root-%s'
 puma['worker_processes'] = 0
 sidekiq['concurrency'] = 5
 prometheus_monitoring['enable'] = false
 gitlab_kas['enable'] = false
 registry['enable'] = false
 gitlab_rails['usage_ping_enabled'] = false
-`, base, sshPort, randomHex(t, 12))
+`, base, sshPort)
 
 	booted := time.Now()
 	c := start(t, &core.ContainerConfig{
@@ -134,6 +133,12 @@ gitlab_rails['usage_ping_enabled'] = false
 		asAdmin:  asAdmin,
 		branchURL: func(k repokey.Key, branch string) string {
 			return base + "/api/v4/projects/" + url.PathEscape(k.FullName()) + "/repository/branches/" + branch
+		},
+		hookLog: func(k repokey.Key, h forge.Handle) string {
+			project := base + "/api/v4/projects/" + url.PathEscape(k.FullName())
+			return fetch(t, project+"/hooks/"+string(h), asAdmin) + "\n" +
+				fetch(t, project+"/hooks/"+string(h)+"/events", asAdmin) + "\n" +
+				fetch(t, base+"/api/v4/application/settings", asAdmin)
 		},
 	}
 	in.public, in.private = keyOf(t, in, "root/public"), keyOf(t, in, "root/secret")

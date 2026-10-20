@@ -83,6 +83,11 @@ type instance struct {
 	// trusting whatever error the client printed.
 	branchURL func(key repokey.Key, branch string) string
 	asAdmin   http.Header
+
+	// hookLog, when the forge has one, is what it says about a hook's
+	// deliveries — logged when a delivery never arrives, so the failure names
+	// the forge's reason rather than a timeout.
+	hookLog func(key repokey.Key, h forge.Handle) string
 }
 
 // ─────────────────────────────── the walk ───────────────────────────────
@@ -185,6 +190,9 @@ func walk(t *testing.T, in *instance) {
 		require.Error(t, err, "the same delivery naming another commit verified")
 		return true
 	})
+	if !verified && in.hookLog != nil {
+		t.Logf("%s on the hook's deliveries: %s", in.name, in.hookLog(key, hook.Handle))
+	}
 	require.True(t, verified, "%s never delivered the push", in.name)
 
 	t.Log("clone with the deploy key")
@@ -506,6 +514,24 @@ func eventually(t *testing.T, what string, limit time.Duration, ok func() bool) 
 
 func basic(user, password string) string {
 	return base64.StdEncoding.EncodeToString([]byte(user + ":" + password))
+}
+
+// fetch is a GET's body, for diagnostics.
+func fetch(t *testing.T, url string, header http.Header) string {
+	t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	require.NoError(t, err)
+	req.Header = header.Clone()
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err.Error()
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
+	if err != nil {
+		return resp.Status + " (body unreadable: " + err.Error() + ")"
+	}
+	return resp.Status + " " + string(b)
 }
 
 // status is the code a GET answers.
