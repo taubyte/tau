@@ -213,6 +213,17 @@ func (s *Service) Challenges(ctx context.Context, fqdn string) ([]string, error)
 	return s.challenges.Challenges(ctx, fqdn)
 }
 
+// KeyAuthorization is the HTTP-01 answer for a token this node's order is
+// proving.
+func (s *Service) KeyAuthorization(ctx context.Context, token string) (string, bool, error) {
+	issuer, err := s.acmeIssuer(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	answer, ok := issuer.Pending(token)
+	return answer, ok, nil
+}
+
 // Thumbprint is the account key's thumbprint.
 func (s *Service) Thumbprint(ctx context.Context) (string, error) {
 	issuer, err := s.acmeIssuer(ctx)

@@ -255,9 +255,8 @@ func TestAServiceNameAndAGeneratedNameAreIssuedByDNS01AndShared(t *testing.T) {
 	b, err := f.nodes[1].Thumbprint(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, a, b)
-	answer, ok := c.Challenge("tok")
-	require.True(t, ok)
-	require.Equal(t, "tok."+a, answer)
+	_, ok := c.Challenge("tok")
+	require.False(t, ok, "no order is proving that token, so no node answers it")
 
 	// NO TXT RECORD OUTLIVES ITS CHALLENGE.
 	values, err := c.Challenges(t.Context(), "build-frontend.tau.example.io")
@@ -509,7 +508,7 @@ func TestTheWireSaysWhatWentWrong(t *testing.T) {
 	f.vault.mu.Lock()
 	f.vault.fail = errors.New("down")
 	f.vault.mu.Unlock()
-	_, err = h.Thumbprint(t.Context(), connect.NewRequest(&globalsv2.Empty{}))
+	_, err = h.KeyAuthorization(t.Context(), connect.NewRequest(&globalsv2.KeyAuthorizationRequest{Token: "tok"}))
 	require.Equal(t, "unavailable", codeOf(err))
 	_, err = h.Certificate(t.Context(), connectRequest("down."+zone, true))
 	require.Equal(t, "unavailable", codeOf(err))

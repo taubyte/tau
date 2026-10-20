@@ -17,7 +17,6 @@ import (
 
 	"github.com/taubyte/tau/p2p/rpc"
 	pkgcertificate "github.com/taubyte/tau/pkg/certificate"
-	"github.com/taubyte/tau/pkg/certificate/acme"
 	globalsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/globals/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/globals/v2/globalsv2connect"
 )
@@ -46,7 +45,6 @@ type Client struct {
 
 	mu      sync.Mutex
 	cache   map[string]*tls.Certificate
-	thumb   string
 	conns   map[peer.ID]*rpc.Client
 	refresh map[string]bool
 }
@@ -256,29 +254,37 @@ func (c *Client) TLSConfig() *tls.Config {
 	return &tls.Config{GetCertificate: c.GetCertificate, MinVersion: tls.VersionTLS12}
 }
 
-// Challenge is the HTTP-01 answer for token, from the account's thumbprint.
+// Challenge is the HTTP-01 answer for token, from whichever certificate node
+// placed the order proving it: every one is asked, as for Challenges.
 func (c *Client) Challenge(token string) (string, bool) {
-	c.mu.Lock()
-	thumb := c.thumb
-	c.mu.Unlock()
-	if thumb == "" {
-		ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
-		defer cancel()
-		err := c.each("", func(svc globalsv2connect.CertificateServiceClient) error {
-			res, err := svc.Thumbprint(ctx, connect.NewRequest(&globalsv2.Empty{}))
-			if err == nil {
-				thumb = res.Msg.GetValue()
-			}
-			return err
-		})
-		if err != nil {
-			return "", false
-		}
-		c.mu.Lock()
-		c.thumb = thumb
-		c.mu.Unlock()
+	targets := c.targets("")
+	if len(targets) == 0 {
+		return "", false
 	}
-	return acme.Answer(thumb, token)
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+	answers := make(chan string, len(targets))
+	for _, p := range targets {
+		go func() {
+			svc, err := c.at(p)
+			if err != nil {
+				answers <- ""
+				return
+			}
+			res, err := svc.KeyAuthorization(ctx, connect.NewRequest(&globalsv2.KeyAuthorizationRequest{Token: token}))
+			if err != nil || !res.Msg.GetFound() {
+				answers <- ""
+				return
+			}
+			answers <- res.Msg.GetValue()
+		}()
+	}
+	for range targets {
+		if a := <-answers; a != "" {
+			return a, true
+		}
+	}
+	return "", false
 }
 
 // Challenges are the DNS-01 values for fqdn, from every certificate node: the

@@ -7,8 +7,7 @@ syntax = "proto3";
 // chain in its own database, the private key in the secrets service. A node
 // serving TLS asks one for a name's chain and the secret holding its key, and
 // opens the key from the vault itself. A dns node asks for the DNS-01 answers
-// of a name, and a gateway for the account's thumbprint, which is all an
-// HTTP-01 answer needs.
+// of a name, and a gateway for the HTTP-01 answer to a token.
 package tau.globals.v2;
 
 service CertificateService {
@@ -16,9 +15,11 @@ service CertificateService {
   // name nothing is kept for is issued now, by the node answering.
   rpc Certificate(CertificateRequest) returns (Issued);
 
-  // Thumbprint is the ACME account key's JWK thumbprint, base64url: an
-  // HTTP-01 answer is the token, a dot, and this.
-  rpc Thumbprint(Empty) returns (AccountThumbprint);
+  // KeyAuthorization is the HTTP-01 answer for a token the answering node's
+  // order is proving right now. It is asked of the node that placed the order
+  // and not derived from an account thumbprint, because two nodes that both
+  // minted an account before either saw the other's hold different ones.
+  rpc KeyAuthorization(KeyAuthorizationRequest) returns (KeyAuthorizationValue);
 
   // Challenges are the TXT values a dns node answers for
   // `_acme-challenge.<fqdn>` while an order for fqdn is being proved.
@@ -50,8 +51,14 @@ message SecretRef {
   string name = 3;
 }
 
-message AccountThumbprint {
-  string value = 1;
+message KeyAuthorizationRequest {
+  string token = 1;
+}
+
+message KeyAuthorizationValue {
+  // found is false when no order of the answering node is proving the token.
+  bool found = 1;
+  string value = 2;
 }
 
 message ChallengesRequest {

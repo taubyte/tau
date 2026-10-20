@@ -11,8 +11,7 @@
 // chain in its own database, the private key in the secrets service. A node
 // serving TLS asks one for a name's chain and the secret holding its key, and
 // opens the key from the vault itself. A dns node asks for the DNS-01 answers
-// of a name, and a gateway for the account's thumbprint, which is all an
-// HTTP-01 answer needs.
+// of a name, and a gateway for the HTTP-01 answer to a token.
 
 package globalsv2
 
@@ -252,27 +251,27 @@ func (x *SecretRef) GetName() string {
 	return ""
 }
 
-type AccountThumbprint struct {
+type KeyAuthorizationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Value         string                 `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
+	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *AccountThumbprint) Reset() {
-	*x = AccountThumbprint{}
+func (x *KeyAuthorizationRequest) Reset() {
+	*x = KeyAuthorizationRequest{}
 	mi := &file_tau_globals_v2_globals_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AccountThumbprint) String() string {
+func (x *KeyAuthorizationRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AccountThumbprint) ProtoMessage() {}
+func (*KeyAuthorizationRequest) ProtoMessage() {}
 
-func (x *AccountThumbprint) ProtoReflect() protoreflect.Message {
+func (x *KeyAuthorizationRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_tau_globals_v2_globals_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -284,12 +283,65 @@ func (x *AccountThumbprint) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AccountThumbprint.ProtoReflect.Descriptor instead.
-func (*AccountThumbprint) Descriptor() ([]byte, []int) {
+// Deprecated: Use KeyAuthorizationRequest.ProtoReflect.Descriptor instead.
+func (*KeyAuthorizationRequest) Descriptor() ([]byte, []int) {
 	return file_tau_globals_v2_globals_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *AccountThumbprint) GetValue() string {
+func (x *KeyAuthorizationRequest) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+type KeyAuthorizationValue struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// found is false when no order of the answering node is proving the token.
+	Found         bool   `protobuf:"varint,1,opt,name=found,proto3" json:"found,omitempty"`
+	Value         string `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KeyAuthorizationValue) Reset() {
+	*x = KeyAuthorizationValue{}
+	mi := &file_tau_globals_v2_globals_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KeyAuthorizationValue) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KeyAuthorizationValue) ProtoMessage() {}
+
+func (x *KeyAuthorizationValue) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_globals_v2_globals_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KeyAuthorizationValue.ProtoReflect.Descriptor instead.
+func (*KeyAuthorizationValue) Descriptor() ([]byte, []int) {
+	return file_tau_globals_v2_globals_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *KeyAuthorizationValue) GetFound() bool {
+	if x != nil {
+		return x.Found
+	}
+	return false
+}
+
+func (x *KeyAuthorizationValue) GetValue() string {
 	if x != nil {
 		return x.Value
 	}
@@ -306,7 +358,7 @@ type ChallengesRequest struct {
 
 func (x *ChallengesRequest) Reset() {
 	*x = ChallengesRequest{}
-	mi := &file_tau_globals_v2_globals_proto_msgTypes[5]
+	mi := &file_tau_globals_v2_globals_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -318,7 +370,7 @@ func (x *ChallengesRequest) String() string {
 func (*ChallengesRequest) ProtoMessage() {}
 
 func (x *ChallengesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_globals_v2_globals_proto_msgTypes[5]
+	mi := &file_tau_globals_v2_globals_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -331,7 +383,7 @@ func (x *ChallengesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChallengesRequest.ProtoReflect.Descriptor instead.
 func (*ChallengesRequest) Descriptor() ([]byte, []int) {
-	return file_tau_globals_v2_globals_proto_rawDescGZIP(), []int{5}
+	return file_tau_globals_v2_globals_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ChallengesRequest) GetFqdn() string {
@@ -350,7 +402,7 @@ type ChallengeValues struct {
 
 func (x *ChallengeValues) Reset() {
 	*x = ChallengeValues{}
-	mi := &file_tau_globals_v2_globals_proto_msgTypes[6]
+	mi := &file_tau_globals_v2_globals_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -362,7 +414,7 @@ func (x *ChallengeValues) String() string {
 func (*ChallengeValues) ProtoMessage() {}
 
 func (x *ChallengeValues) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_globals_v2_globals_proto_msgTypes[6]
+	mi := &file_tau_globals_v2_globals_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -375,7 +427,7 @@ func (x *ChallengeValues) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChallengeValues.ProtoReflect.Descriptor instead.
 func (*ChallengeValues) Descriptor() ([]byte, []int) {
-	return file_tau_globals_v2_globals_proto_rawDescGZIP(), []int{6}
+	return file_tau_globals_v2_globals_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ChallengeValues) GetValues() []string {
@@ -402,17 +454,19 @@ const file_tau_globals_v2_globals_proto_rawDesc = "" +
 	"\tSecretRef\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
 	"\venvironment\x18\x02 \x01(\tR\venvironment\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name\")\n" +
-	"\x11AccountThumbprint\x12\x14\n" +
-	"\x05value\x18\x01 \x01(\tR\x05value\"'\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\"/\n" +
+	"\x17KeyAuthorizationRequest\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\"C\n" +
+	"\x15KeyAuthorizationValue\x12\x14\n" +
+	"\x05found\x18\x01 \x01(\bR\x05found\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\"'\n" +
 	"\x11ChallengesRequest\x12\x12\n" +
 	"\x04fqdn\x18\x01 \x01(\tR\x04fqdn\")\n" +
 	"\x0fChallengeValues\x12\x16\n" +
-	"\x06values\x18\x01 \x03(\tR\x06values2\xf9\x01\n" +
+	"\x06values\x18\x01 \x03(\tR\x06values2\x95\x02\n" +
 	"\x12CertificateService\x12I\n" +
-	"\vCertificate\x12\".tau.globals.v2.CertificateRequest\x1a\x16.tau.globals.v2.Issued\x12F\n" +
-	"\n" +
-	"Thumbprint\x12\x15.tau.globals.v2.Empty\x1a!.tau.globals.v2.AccountThumbprint\x12P\n" +
+	"\vCertificate\x12\".tau.globals.v2.CertificateRequest\x1a\x16.tau.globals.v2.Issued\x12b\n" +
+	"\x10KeyAuthorization\x12'.tau.globals.v2.KeyAuthorizationRequest\x1a%.tau.globals.v2.KeyAuthorizationValue\x12P\n" +
 	"\n" +
 	"Challenges\x12!.tau.globals.v2.ChallengesRequest\x1a\x1f.tau.globals.v2.ChallengeValuesB\xbb\x01\n" +
 	"\x12com.tau.globals.v2B\fGlobalsProtoP\x01Z=github.com/taubyte/tau/pkg/proto/gen/tau/globals/v2;globalsv2\xa2\x02\x03TGX\xaa\x02\x0eTau.Globals.V2\xca\x02\x0eTau\\Globals\\V2\xe2\x02\x1aTau\\Globals\\V2\\GPBMetadata\xea\x02\x10Tau::Globals::V2b\x06proto3"
@@ -429,24 +483,25 @@ func file_tau_globals_v2_globals_proto_rawDescGZIP() []byte {
 	return file_tau_globals_v2_globals_proto_rawDescData
 }
 
-var file_tau_globals_v2_globals_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_tau_globals_v2_globals_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_tau_globals_v2_globals_proto_goTypes = []any{
-	(*Empty)(nil),              // 0: tau.globals.v2.Empty
-	(*CertificateRequest)(nil), // 1: tau.globals.v2.CertificateRequest
-	(*Issued)(nil),             // 2: tau.globals.v2.Issued
-	(*SecretRef)(nil),          // 3: tau.globals.v2.SecretRef
-	(*AccountThumbprint)(nil),  // 4: tau.globals.v2.AccountThumbprint
-	(*ChallengesRequest)(nil),  // 5: tau.globals.v2.ChallengesRequest
-	(*ChallengeValues)(nil),    // 6: tau.globals.v2.ChallengeValues
+	(*Empty)(nil),                   // 0: tau.globals.v2.Empty
+	(*CertificateRequest)(nil),      // 1: tau.globals.v2.CertificateRequest
+	(*Issued)(nil),                  // 2: tau.globals.v2.Issued
+	(*SecretRef)(nil),               // 3: tau.globals.v2.SecretRef
+	(*KeyAuthorizationRequest)(nil), // 4: tau.globals.v2.KeyAuthorizationRequest
+	(*KeyAuthorizationValue)(nil),   // 5: tau.globals.v2.KeyAuthorizationValue
+	(*ChallengesRequest)(nil),       // 6: tau.globals.v2.ChallengesRequest
+	(*ChallengeValues)(nil),         // 7: tau.globals.v2.ChallengeValues
 }
 var file_tau_globals_v2_globals_proto_depIdxs = []int32{
 	3, // 0: tau.globals.v2.Issued.key:type_name -> tau.globals.v2.SecretRef
 	1, // 1: tau.globals.v2.CertificateService.Certificate:input_type -> tau.globals.v2.CertificateRequest
-	0, // 2: tau.globals.v2.CertificateService.Thumbprint:input_type -> tau.globals.v2.Empty
-	5, // 3: tau.globals.v2.CertificateService.Challenges:input_type -> tau.globals.v2.ChallengesRequest
+	4, // 2: tau.globals.v2.CertificateService.KeyAuthorization:input_type -> tau.globals.v2.KeyAuthorizationRequest
+	6, // 3: tau.globals.v2.CertificateService.Challenges:input_type -> tau.globals.v2.ChallengesRequest
 	2, // 4: tau.globals.v2.CertificateService.Certificate:output_type -> tau.globals.v2.Issued
-	4, // 5: tau.globals.v2.CertificateService.Thumbprint:output_type -> tau.globals.v2.AccountThumbprint
-	6, // 6: tau.globals.v2.CertificateService.Challenges:output_type -> tau.globals.v2.ChallengeValues
+	5, // 5: tau.globals.v2.CertificateService.KeyAuthorization:output_type -> tau.globals.v2.KeyAuthorizationValue
+	7, // 6: tau.globals.v2.CertificateService.Challenges:output_type -> tau.globals.v2.ChallengeValues
 	4, // [4:7] is the sub-list for method output_type
 	1, // [1:4] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -465,7 +520,7 @@ func file_tau_globals_v2_globals_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_globals_v2_globals_proto_rawDesc), len(file_tau_globals_v2_globals_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

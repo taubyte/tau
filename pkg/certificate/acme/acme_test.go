@@ -153,7 +153,7 @@ func (c *cloud) issuer(t *testing.T, cfg certificate.ACME, dir string, opts ...O
 	}
 	i, err := New(cfg, dir, opts...)
 	require.NoError(t, err)
-	c.answer = i.Challenge
+	c.answer = i.Pending
 	return i
 }
 

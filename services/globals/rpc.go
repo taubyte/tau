@@ -41,12 +41,12 @@ func (h handler) Certificate(ctx context.Context, req *connect.Request[globalsv2
 	return connect.NewResponse(k.record), nil
 }
 
-func (h handler) Thumbprint(ctx context.Context, _ *connect.Request[globalsv2.Empty]) (*connect.Response[globalsv2.AccountThumbprint], error) {
-	value, err := h.s.Thumbprint(ctx)
+func (h handler) KeyAuthorization(ctx context.Context, req *connect.Request[globalsv2.KeyAuthorizationRequest]) (*connect.Response[globalsv2.KeyAuthorizationValue], error) {
+	value, found, err := h.s.KeyAuthorization(ctx, req.Msg.GetToken())
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnavailable, err)
 	}
-	return connect.NewResponse(&globalsv2.AccountThumbprint{Value: value}), nil
+	return connect.NewResponse(&globalsv2.KeyAuthorizationValue{Found: found, Value: value}), nil
 }
 
 func (h handler) Challenges(ctx context.Context, req *connect.Request[globalsv2.ChallengesRequest]) (*connect.Response[globalsv2.ChallengeValues], error) {

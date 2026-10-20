@@ -96,9 +96,10 @@ type Issuer struct {
 	regMu      sync.Mutex
 	registered bool
 
-	mu     sync.Mutex
-	certs  map[string]*tls.Certificate
-	flight singleflight.Group
+	mu      sync.Mutex
+	certs   map[string]*tls.Certificate
+	pending map[string]string
+	flight  singleflight.Group
 }
 
 // Option configures an Issuer.
@@ -351,6 +352,15 @@ func (i *Issuer) Challenge(token string) (string, bool) {
 	return answer, err == nil
 }
 
+// Pending is the HTTP-01 answer for a token one of this issuer's orders is
+// proving right now.
+func (i *Issuer) Pending(token string) (string, bool) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	answer, ok := i.pending[token]
+	return answer, ok
+}
+
 // Certificate is a certificate for name: the one kept, or one issued now.
 func (i *Issuer) Certificate(ctx context.Context, name string) (tls.Certificate, error) {
 	name = strings.ToLower(strings.TrimSuffix(name, "."))
@@ -565,13 +575,33 @@ func (i *Issuer) prove(ctx context.Context, name, url string) error {
 		if want == "dns-01" {
 			return i.proveDNS(ctx, z, c)
 		}
-		if _, err := i.client.Accept(ctx, c); err != nil {
-			return err
-		}
-		_, err := i.client.WaitAuthorization(ctx, z.URI)
-		return err
+		return i.proveHTTP(ctx, z, c)
 	}
 	return fmt.Errorf("the CA offers no %s challenge", want)
+}
+
+// proveHTTP holds the answer as pending while the CA looks.
+func (i *Issuer) proveHTTP(ctx context.Context, z *xacme.Authorization, c *xacme.Challenge) error {
+	answer, err := i.client.HTTP01ChallengeResponse(c.Token)
+	if err != nil {
+		return err
+	}
+	i.mu.Lock()
+	if i.pending == nil {
+		i.pending = map[string]string{}
+	}
+	i.pending[c.Token] = answer
+	i.mu.Unlock()
+	defer func() {
+		i.mu.Lock()
+		delete(i.pending, c.Token)
+		i.mu.Unlock()
+	}()
+	if _, err := i.client.Accept(ctx, c); err != nil {
+		return err
+	}
+	_, err = i.client.WaitAuthorization(ctx, z.URI)
+	return err
 }
 
 // proveDNS presents the TXT value, has the CA look, and withdraws it whatever
