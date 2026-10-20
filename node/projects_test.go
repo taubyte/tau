@@ -115,6 +115,8 @@ func TestWithNoRegisterAnywhereTheTableSaysSo(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoRegister)
 	_, err = p.ProjectsOf(ctx, "x")
 	require.ErrorIs(t, err, ErrNoRegister)
+	_, err = p.LinkedRepositories(ctx)
+	require.ErrorIs(t, err, ErrNoRegister)
 
 	l := linkSecrets{projects: p, vault: secretsMap{}}
 	_, err = l.DeployKey(ctx, linkedCode)
@@ -172,4 +174,42 @@ func TestADeployKeyIsReadFromTheVaultByRepository(t *testing.T) {
 
 	_, err = linkSecrets{projects: p, vault: brokenVault{}}.DeployKey(ctx, linkedCode)
 	require.Error(t, err)
+}
+
+// A RECONNECTED STREAM RESYNCS EVERY LINKED REPOSITORY: each project's
+// configuration and code, and nothing when nothing is linked.
+func TestLinkedRepositoriesIsEveryRepositoryOfEveryProject(t *testing.T) {
+	n, _, factory := makeNode(t, Config{Services: []string{Register, Discovery}})
+	require.NoError(t, n.Start(t.Context()))
+	p := projectTable{n}
+	ctx := t.Context()
+
+	repos, err := p.LinkedRepositories(ctx)
+	require.NoError(t, err)
+	require.Empty(t, repos, "an empty table links nothing")
+
+	_, err = p.LinkProject(ctx, pkgregister.Link{Project: linkedID, Config: linkedCfg, Code: []string{linkedCode}, Claimant: "github.com/1"})
+	require.NoError(t, err)
+	_, err = p.LinkProject(ctx, pkgregister.Link{Project: "QmConfigOnly", Config: "github.com/acme/other", Claimant: "github.com/2"})
+	require.NoError(t, err)
+
+	repos, err = p.LinkedRepositories(ctx)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{linkedCfg, linkedCode, "github.com/acme/other"}, repos)
+
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err = p.LinkedRepositories(cancelled)
+	require.ErrorIs(t, err, context.Canceled, "a listing that cannot finish is not an empty one")
+
+	// A table the register cannot scan is an error, not an empty listing a
+	// resync would read as "nothing to compare".
+	broken := errors.New("store unreachable")
+	db := factory.byPath[Register]
+	db.mu.Lock()
+	db.listErr = broken
+	db.mu.Unlock()
+	repos, err = p.LinkedRepositories(ctx)
+	require.ErrorIs(t, err, broken)
+	require.Nil(t, repos)
 }

@@ -93,6 +93,10 @@ type memKV struct {
 
 	mu   sync.Mutex
 	rows map[string][]byte
+
+	// listErr is a store that answers reads but cannot scan: what a listing
+	// over a failing database looks like to whoever asked for it.
+	listErr error
 }
 
 func (k *memKV) Get(_ context.Context, key string) ([]byte, error) {
@@ -110,6 +114,9 @@ func (k *memKV) Get(_ context.Context, key string) ([]byte, error) {
 func (k *memKV) List(_ context.Context, prefix string) ([]string, error) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
+	if k.listErr != nil {
+		return nil, k.listErr
+	}
 
 	at := datastoreKey(prefix)
 	var out []string
