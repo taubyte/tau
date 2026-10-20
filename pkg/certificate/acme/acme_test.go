@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"io"
 	"log"
 	"net"
@@ -17,8 +18,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -41,17 +44,56 @@ type cloud struct {
 	rootCA    string
 	ca        *ca.CAImpl
 	answer    func(token string) (string, bool)
+	txt       *presenter
 }
 
-func loopbackResolver(t *testing.T) string {
+// presenter is a zone's TXT records in memory, what the resolver answers
+// DNS-01 lookups from.
+type presenter struct {
+	mu      sync.Mutex
+	records map[string][]string
+	fail    error
+}
+
+func (p *presenter) Present(_ context.Context, fqdn, value string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.fail != nil {
+		return p.fail
+	}
+	p.records[fqdn] = append(p.records[fqdn], value)
+	return nil
+}
+
+func (p *presenter) CleanUp(_ context.Context, fqdn, value string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.records[fqdn] = slices.DeleteFunc(p.records[fqdn], func(v string) bool { return v == value })
+	return nil
+}
+
+func (p *presenter) lookup(fqdn string) []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.records[fqdn])
+}
+
+func loopbackResolver(t *testing.T, txt *presenter) string {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	srv := &mdns.Server{Listener: l, Handler: mdns.HandlerFunc(func(w mdns.ResponseWriter, r *mdns.Msg) {
 		m := new(mdns.Msg)
 		m.SetReply(r)
-		if q := r.Question[0]; q.Qtype == mdns.TypeA {
+		q := r.Question[0]
+		switch q.Qtype {
+		case mdns.TypeA:
 			m.Answer = []mdns.RR{&mdns.A{Hdr: mdns.RR_Header{Name: q.Name, Rrtype: mdns.TypeA, Class: mdns.ClassINET, Ttl: 1}, A: net.IPv4(127, 0, 0, 1)}}
+		case mdns.TypeTXT:
+			fqdn := strings.TrimSuffix(strings.TrimPrefix(q.Name, "_acme-challenge."), ".")
+			for _, v := range txt.lookup(fqdn) {
+				m.Answer = append(m.Answer, &mdns.TXT{Hdr: mdns.RR_Header{Name: q.Name, Rrtype: mdns.TypeTXT, Class: mdns.ClassINET, Ttl: 1}, Txt: []string{v}})
+			}
 		}
 		w.WriteMsg(m)
 	})}
@@ -72,7 +114,7 @@ func newCloud(t *testing.T, eab map[string]string) *cloud {
 	// EVERY ORDER IS PROVED: pebble otherwise reuses a valid authorization at
 	// random, so whether a renewal reaches the challenge would be chance.
 	t.Setenv("PEBBLE_AUTHZREUSE", "0")
-	c := &cloud{}
+	c := &cloud{txt: &presenter{records: map[string][]string{}}}
 	challenges := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token, _ := strings.CutPrefix(r.URL.Path, ChallengePrefix)
 		answer, ok := c.answer(token)
@@ -94,7 +136,7 @@ func newCloud(t *testing.T, eab map[string]string) *cloud {
 		require.NoError(t, store.AddExternalAccountKeyByID(kid, key))
 	}
 	c.ca = ca.New(logger, store, "", "ecdsa", 0, 1, map[string]ca.Profile{"default": {Description: "default"}})
-	v := va.New(logger, httpPort, 0, false, loopbackResolver(t), store)
+	v := va.New(logger, httpPort, 0, false, loopbackResolver(t, c.txt), store)
 	front := wfe.New(logger, store, v, c.ca, nil, false, len(eab) > 0, 0, 0)
 	srv := httptest.NewTLSServer(front.Handler())
 	t.Cleanup(srv.Close)
@@ -171,7 +213,7 @@ func TestADueCertificateIsServedAndRenewed(t *testing.T) {
 
 	// Past its end, a certificate is not served at all: it is reissued.
 	now = now.Add(10 * 365 * 24 * time.Hour)
-	require.Nil(t, i.kept("r.example.io"))
+	require.Nil(t, i.kept(t.Context(), "r.example.io"))
 }
 
 func TestAnExternalAccountBindingIsPresented(t *testing.T) {
@@ -344,5 +386,84 @@ func TestADirectoryThatCannotBeWrittenIsAnError(t *testing.T) {
 	file := filepath.Join(dir, "file")
 	require.NoError(t, os.WriteFile(file, nil, 0600))
 	_, err = New(certificate.ACME{Enabled: true}, filepath.Join(file, "sub"))
+	require.Error(t, err)
+}
+
+// memStore is a Store in memory, as services/certificate's is to the issuer.
+type memStore struct {
+	mu    sync.Mutex
+	blobs map[string][]byte
+}
+
+func (m *memStore) Load(_ context.Context, name string) ([]byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if b, ok := m.blobs[name]; ok {
+		return b, nil
+	}
+	return nil, ErrMiss
+}
+
+func (m *memStore) Keep(_ context.Context, name string, blob []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.blobs[name] = blob
+	return nil
+}
+
+func TestTheZoneItsNamesAndItsWildcardAreProvedByDNS01(t *testing.T) {
+	c := newCloud(t, nil)
+	key, _, err := MintKey()
+	require.NoError(t, err)
+	store := &memStore{blobs: map[string][]byte{}}
+	// NO DIRECTORY: the store and the key were both given.
+	i := c.issuer(t, certificate.ACME{}, "", WithStore(store), WithAccountKey(key), WithDNS("Tau.Example.IO.", c.txt))
+	// HTTP-01 answers nothing, so only DNS-01 can have proved these.
+	c.answer = func(string) (string, bool) { return "", false }
+
+	for _, name := range []string{"*.tau.example.io", "build-frontend.tau.example.io", "tau.example.io"} {
+		cert, err := i.Certificate(t.Context(), name)
+		require.NoError(t, err, name)
+		c.verify(t, cert.Certificate[0], strings.Replace(name, "*", "anything", 1))
+		require.Contains(t, store.blobs, name, "kept in the store given")
+	}
+	require.Empty(t, c.txt.lookup("tau.example.io"), "every record is withdrawn once its challenge is decided")
+
+	// A NAME OUTSIDE THE ZONE is still proved over HTTP-01.
+	c.answer = i.Challenge
+	cert, err := i.Certificate(t.Context(), "shop.example.com")
+	require.NoError(t, err)
+	c.verify(t, cert.Certificate[0], "shop.example.com")
+}
+
+func TestAPresenterThatFailsFailsTheIssuance(t *testing.T) {
+	c := newCloud(t, nil)
+	failing := &presenter{records: map[string][]string{}, fail: errors.New("no dns node")}
+	i := c.issuer(t, certificate.ACME{}, t.TempDir(), WithDNS("tau.example.io", failing))
+	_, err := i.Certificate(t.Context(), "*.tau.example.io")
+	require.ErrorContains(t, err, "no dns node")
+
+	// AND A WILDCARD WITHOUT DNS-01 is refused by the CA's offer, by name.
+	plain := c.issuer(t, certificate.ACME{}, t.TempDir())
+	_, err = plain.Certificate(t.Context(), "*.tau.example.io")
+	require.ErrorContains(t, err, "no http-01 challenge")
+}
+
+func TestAThumbprintAloneAnswersHTTP01(t *testing.T) {
+	i, err := New(certificate.ACME{Enabled: true}, t.TempDir())
+	require.NoError(t, err)
+	thumb, err := i.Thumbprint()
+	require.NoError(t, err)
+	want, ok := i.Challenge("tok")
+	require.True(t, ok)
+	got, ok := Answer(thumb, "tok")
+	require.True(t, ok)
+	require.Equal(t, want, got)
+	_, ok = Answer(thumb, "a/b")
+	require.False(t, ok)
+	_, ok = Answer("", "tok")
+	require.False(t, ok)
+
+	_, err = ParseKey([]byte("nope"))
 	require.Error(t, err)
 }

@@ -1,35 +1,31 @@
 // Package acme issues the certificates a cloud's own zone needs from an ACME
 // CA, with golang.org/x/crypto/acme speaking the protocol.
 //
-// # The challenge is HTTP-01, answered statelessly
+// # HTTP-01, answered statelessly, and DNS-01 for the cloud's own zone
 //
 // A generated name resolves to every gateway node serving it, and a CA
 // validating a challenge reaches whichever one its resolver picks — not
 // necessarily the node that asked. An HTTP-01 answer is the token and the
 // account key's thumbprint and nothing else, so a node holding the cloud's
-// account key answers ANY node's challenge from the token in the URL: no
-// shared state, no coordination, nothing to replicate. TLS-ALPN-01 carries no
-// token in the handshake, so its answer is per-order state on one node, and
-// DNS-01 would need the dns service to serve records written at issuance and
-// replicated to every dns node before the CA looks — new replicated state for
-// the one thing HTTP-01 already does.
+// account key — or only its thumbprint, which is public — answers ANY node's
+// challenge from the token in the URL. TLS-ALPN-01 carries no token in the
+// handshake, so its answer is per-order state on one node, and is not used.
 //
-// What HTTP-01 cannot do is a wildcard. A generated name is two labels under
-// the zone (<resource>.<project>.<zone>), which one wildcard does not cover
-// anyway, so each name gets its own certificate, on its first handshake; the
-// operator's wildcard, when one is supplied, still answers what it covers.
+// What HTTP-01 cannot do is a wildcard. WithDNS hands the issuer a Presenter
+// for one zone, and every name in that zone — the zone, a name under it, and
+// `*.<zone>` — is then proved by DNS-01: the TXT value is presented before the
+// challenge is accepted and withdrawn once it is decided. A wildcard covers
+// one label, so `*.<zone>` covers the cloud's services (`<service>.<zone>`)
+// and not the generated names, which are two labels under it and get their
+// own certificates.
 //
-// # What a node keeps
+// # What is kept, and where
 //
-// Each certificate and its key, and a minted account key, live in the
-// directory the node gives New (under its root), so a restart reissues
-// nothing. A certificate is renewed once two thirds of its lifetime has gone,
-// on a handshake that finds it so, while it keeps being served.
-//
-// The ceiling: each gateway node issues and keeps its own certificate for a
-// name, so a name served by N nodes costs N issuances. Sharing issued
-// certificates across nodes is the upgrade, and it is a store, not a protocol
-// change.
+// A Store keeps each certificate and its key, so a restart reissues nothing.
+// The default is a directory under the node's root, which is one node's own;
+// services/certificate passes one every certificate node reads. A certificate
+// is renewed once two thirds of its lifetime has gone, on a call that finds it
+// so, while it keeps being served.
 package acme
 
 import (
@@ -67,12 +63,31 @@ const DefaultTimeout = 2 * time.Minute
 var (
 	ErrDisabled = errors.New("acme: issuance is not enabled")
 	ErrNoDir    = errors.New("acme: issued certificates need a directory to be kept in")
+
+	// ErrMiss is a Store holding nothing for a name.
+	ErrMiss = errors.New("acme: nothing is kept for that name")
 )
+
+// Store keeps issued certificates: one PEM blob per name, the chain and the
+// key together, as certificate.KeyPair reads it.
+type Store interface {
+	Load(ctx context.Context, name string) ([]byte, error)
+	Keep(ctx context.Context, name string, blob []byte) error
+}
+
+// Presenter publishes DNS-01 answers: Present makes value one of the TXT
+// records of `_acme-challenge.<fqdn>`, and CleanUp withdraws it.
+type Presenter interface {
+	Present(ctx context.Context, fqdn, value string) error
+	CleanUp(ctx context.Context, fqdn, value string) error
+}
 
 // Issuer issues and keeps certificates for names.
 type Issuer struct {
 	client  *xacme.Client
-	dir     string
+	store   Store
+	zone    string
+	dns     Presenter
 	account *xacme.Account
 	timeout time.Duration
 	now     func() time.Time
@@ -98,23 +113,28 @@ func WithTimeout(d time.Duration) Option { return func(i *Issuer) { i.timeout = 
 // WithLogger is where renewal failures, which no caller waits on, are said.
 func WithLogger(logf func(string, ...any)) Option { return func(i *Issuer) { i.logf = logf } }
 
+// WithStore keeps issued certificates in s rather than in the directory.
+func WithStore(s Store) Option { return func(i *Issuer) { i.store = s } }
+
+// WithAccountKey signs as key, over the config's and the directory's.
+func WithAccountKey(key crypto.Signer) Option { return func(i *Issuer) { i.client.Key = key } }
+
+// WithDNS proves every name in zone by DNS-01, published through p.
+func WithDNS(zone string, p Presenter) Option {
+	return func(i *Issuer) {
+		i.zone, i.dns = strings.ToLower(strings.Trim(zone, ".")), p
+	}
+}
+
 // New builds an issuer from an operator's config, keeping what it issues in
-// dir. It reaches no CA: the account is registered on the first issuance.
+// dir unless WithStore says otherwise; dir is then unused and may be empty
+// when WithAccountKey is given too. It reaches no CA: the account is
+// registered on the first issuance.
 func New(cfg certificate.ACME, dir string, opts ...Option) (*Issuer, error) {
 	if !cfg.Enabled {
 		return nil, ErrDisabled
 	}
-	if dir == "" {
-		return nil, ErrNoDir
-	}
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return nil, fmt.Errorf("acme: %w", err)
-	}
 
-	key, err := accountKey(cfg.AccountKey, filepath.Join(dir, "account.key"))
-	if err != nil {
-		return nil, err
-	}
 	httpClient, err := transport(cfg)
 	if err != nil {
 		return nil, err
@@ -129,8 +149,7 @@ func New(cfg certificate.ACME, dir string, opts ...Option) (*Issuer, error) {
 		directory = certificate.LetsEncrypt
 	}
 	i := &Issuer{
-		client:  &xacme.Client{Key: key, DirectoryURL: directory, HTTPClient: httpClient},
-		dir:     dir,
+		client:  &xacme.Client{DirectoryURL: directory, HTTPClient: httpClient},
 		account: account,
 		timeout: DefaultTimeout,
 		now:     time.Now,
@@ -140,7 +159,84 @@ func New(cfg certificate.ACME, dir string, opts ...Option) (*Issuer, error) {
 	for _, opt := range opts {
 		opt(i)
 	}
+
+	// THE DIRECTORY IS NEEDED ONLY FOR WHAT NOTHING ELSE WAS GIVEN: the
+	// certificates when no store was, and the account key when neither the
+	// config nor an option holds one.
+	needDir := i.store == nil || (i.client.Key == nil && cfg.AccountKey == "")
+	if needDir {
+		if dir == "" {
+			return nil, ErrNoDir
+		}
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			return nil, fmt.Errorf("acme: %w", err)
+		}
+	}
+	if i.client.Key == nil {
+		key, err := accountKey(cfg.AccountKey, filepath.Join(dir, "account.key"))
+		if err != nil {
+			return nil, err
+		}
+		i.client.Key = key
+	}
+	if i.store == nil {
+		i.store = dirStore(dir)
+	}
 	return i, nil
+}
+
+// dirStore keeps each certificate as a file named for it.
+type dirStore string
+
+func (d dirStore) path(name string) string {
+	return filepath.Join(string(d), strings.Replace(name, "*", "_", 1)+".pem")
+}
+
+func (d dirStore) Load(_ context.Context, name string) ([]byte, error) {
+	data, err := os.ReadFile(d.path(name))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, ErrMiss
+	}
+	return data, err
+}
+
+func (d dirStore) Keep(_ context.Context, name string, blob []byte) error {
+	return write(d.path(name), blob)
+}
+
+// MintKey is a new account or leaf key, PEM.
+func MintKey() (crypto.Signer, []byte, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+	der, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		return nil, nil, err
+	}
+	return key, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der}), nil
+}
+
+// ParseKey reads an account key, PEM (PKCS#1, PKCS#8 or SEC 1).
+func ParseKey(data []byte) (crypto.Signer, error) { return parseKey(data) }
+
+// Thumbprint is the account key's JWK thumbprint: what an HTTP-01 answer is
+// the token and a dot in front of.
+func (i *Issuer) Thumbprint() (string, error) {
+	return xacme.JWKThumbprint(i.client.Key.Public())
+}
+
+// Answer is the HTTP-01 answer for token under a thumbprint, for a node that
+// holds only the thumbprint. False for a token no CA would send.
+func Answer(thumbprint, token string) (string, bool) {
+	if thumbprint == "" || !validToken(token) {
+		return "", false
+	}
+	return token + "." + thumbprint, true
+}
+
+func validToken(token string) bool {
+	return token != "" && strings.Trim(token, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") == ""
 }
 
 func accountOf(cfg certificate.ACME) (*xacme.Account, error) {
@@ -189,15 +285,11 @@ func accountKey(configured, path string) (crypto.Signer, error) {
 	if data, err := os.ReadFile(path); err == nil {
 		return parseKey(data)
 	}
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	key, blob, err := MintKey()
 	if err != nil {
 		return nil, err
 	}
-	der, err := x509.MarshalECPrivateKey(key)
-	if err != nil {
-		return nil, err
-	}
-	if err := write(path, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der})); err != nil {
+	if err := write(path, blob); err != nil {
 		return nil, err
 	}
 	return key, nil
@@ -232,7 +324,7 @@ func parseKey(data []byte) (crypto.Signer, error) {
 // Challenge is the HTTP-01 answer for token, derived from the account key
 // alone. False for a token no CA would send.
 func (i *Issuer) Challenge(token string) (string, bool) {
-	if token == "" || strings.Trim(token, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") != "" {
+	if !validToken(token) {
 		return "", false
 	}
 	answer, err := i.client.HTTP01ChallengeResponse(token)
@@ -246,7 +338,7 @@ func (i *Issuer) Certificate(ctx context.Context, name string) (tls.Certificate,
 		return tls.Certificate{}, fmt.Errorf("acme: %q is not a name a certificate can be issued for", name)
 	}
 
-	if cert := i.kept(name); cert != nil {
+	if cert := i.kept(ctx, name); cert != nil {
 		if i.due(cert.Leaf) {
 			// STILL VALID, so it keeps answering while its successor is
 			// issued; a renewal that fails is retried on a later handshake.
@@ -271,6 +363,17 @@ func (i *Issuer) Certificate(ctx context.Context, name string) (tls.Certificate,
 	}
 }
 
+// Issue orders a certificate for name now, whatever is kept, and keeps it. A
+// caller deciding renewal itself — services/certificate, under its lease —
+// uses this rather than Certificate.
+func (i *Issuer) Issue(name string) (*tls.Certificate, error) {
+	name = strings.ToLower(strings.TrimSuffix(name, "."))
+	if !hostname(name) {
+		return nil, fmt.Errorf("acme: %q is not a name a certificate can be issued for", name)
+	}
+	return i.issueOnce(name)
+}
+
 func (i *Issuer) issueOnce(name string) (*tls.Certificate, error) {
 	v, err, _ := i.flight.Do(name, func() (any, error) { return i.issue(name) })
 	if err != nil {
@@ -279,21 +382,23 @@ func (i *Issuer) issueOnce(name string) (*tls.Certificate, error) {
 	return v.(*tls.Certificate), nil
 }
 
-// hostname is a DNS name, which is also what makes it safe as a file name.
+// hostname is a DNS name, or `*.` and one, which is also what makes it safe
+// as a file name.
 func hostname(name string) bool {
+	name = strings.TrimPrefix(name, "*.")
 	if name == "" || len(name) > 253 || strings.HasPrefix(name, ".") || strings.Contains(name, "..") {
 		return false
 	}
 	return strings.Trim(name, "abcdefghijklmnopqrstuvwxyz0123456789-.") == ""
 }
 
-// kept is the certificate in memory or on disk, unexpired, or nil.
-func (i *Issuer) kept(name string) *tls.Certificate {
+// kept is the certificate in memory or in the store, unexpired, or nil.
+func (i *Issuer) kept(ctx context.Context, name string) *tls.Certificate {
 	i.mu.Lock()
 	cert := i.certs[name]
 	i.mu.Unlock()
 	if cert == nil {
-		data, err := os.ReadFile(i.path(name))
+		data, err := i.store.Load(ctx, name)
 		if err != nil {
 			return nil
 		}
@@ -327,8 +432,6 @@ func (i *Issuer) due(leaf *x509.Certificate) bool {
 	return leaf.NotAfter.Sub(i.now()) < lifetime/3
 }
 
-func (i *Issuer) path(name string) string { return filepath.Join(i.dir, name+".pem") }
-
 func (i *Issuer) register(ctx context.Context) error {
 	i.regMu.Lock()
 	defer i.regMu.Unlock()
@@ -355,7 +458,7 @@ func (i *Issuer) issue(name string) (*tls.Certificate, error) {
 		return nil, fmt.Errorf("acme: ordering %s: %w", name, err)
 	}
 	for _, u := range order.AuthzURLs {
-		if err := i.prove(ctx, u); err != nil {
+		if err := i.prove(ctx, name, u); err != nil {
 			return nil, fmt.Errorf("acme: proving %s: %w", name, err)
 		}
 	}
@@ -366,10 +469,11 @@ func (i *Issuer) issue(name string) (*tls.Certificate, error) {
 		return nil, fmt.Errorf("acme: %s: %w", name, err)
 	}
 
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	signer, _, err := MintKey()
 	if err != nil {
 		return nil, err
 	}
+	key := signer.(*ecdsa.PrivateKey)
 	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{DNSNames: []string{name}}, key)
 	if err != nil {
 		return nil, err
@@ -382,12 +486,12 @@ func (i *Issuer) issue(name string) (*tls.Certificate, error) {
 	if err != nil {
 		return nil, fmt.Errorf("acme: %s: %w", name, err)
 	}
-	if err := leaf.VerifyHostname(name); err != nil {
+	if err := leaf.VerifyHostname(strings.Replace(name, "*", "x", 1)); err != nil {
 		return nil, fmt.Errorf("acme: the CA issued a certificate that does not name %s: %w", name, err)
 	}
 
 	cert := &tls.Certificate{Certificate: chain, PrivateKey: key, Leaf: leaf}
-	if err := i.keep(name, chain, key); err != nil {
+	if err := i.keep(ctx, name, chain, key); err != nil {
 		return nil, err
 	}
 	i.remember(name, cert)
@@ -413,7 +517,16 @@ func (i *Issuer) finalize(ctx context.Context, orderURL, finalizeURL string, csr
 	return i.client.FetchCert(ctx, o.CertURL, true)
 }
 
-func (i *Issuer) prove(ctx context.Context, url string) error {
+// byDNS is a name proved by DNS-01: one in the zone WithDNS named.
+func (i *Issuer) byDNS(name string) bool {
+	if i.dns == nil {
+		return false
+	}
+	bare := strings.TrimPrefix(name, "*.")
+	return bare == i.zone || strings.HasSuffix(bare, "."+i.zone)
+}
+
+func (i *Issuer) prove(ctx context.Context, name, url string) error {
 	z, err := i.client.GetAuthorization(ctx, url)
 	if err != nil {
 		return err
@@ -421,9 +534,16 @@ func (i *Issuer) prove(ctx context.Context, url string) error {
 	if z.Status == xacme.StatusValid {
 		return nil
 	}
+	want := "http-01"
+	if i.byDNS(name) {
+		want = "dns-01"
+	}
 	for _, c := range z.Challenges {
-		if c.Type != "http-01" {
+		if c.Type != want {
 			continue
+		}
+		if want == "dns-01" {
+			return i.proveDNS(ctx, z, c)
 		}
 		if _, err := i.client.Accept(ctx, c); err != nil {
 			return err
@@ -431,10 +551,34 @@ func (i *Issuer) prove(ctx context.Context, url string) error {
 		_, err := i.client.WaitAuthorization(ctx, z.URI)
 		return err
 	}
-	return errors.New("the CA offers no http-01 challenge")
+	return fmt.Errorf("the CA offers no %s challenge", want)
 }
 
-func (i *Issuer) keep(name string, chain [][]byte, key *ecdsa.PrivateKey) error {
+// proveDNS presents the TXT value, has the CA look, and withdraws it whatever
+// the CA decided. The authorization's identifier is the bare name for a
+// wildcard too, which is where RFC 8555 puts the record.
+func (i *Issuer) proveDNS(ctx context.Context, z *xacme.Authorization, c *xacme.Challenge) error {
+	value, err := i.client.DNS01ChallengeRecord(c.Token)
+	if err != nil {
+		return err
+	}
+	fqdn := z.Identifier.Value
+	if err := i.dns.Present(ctx, fqdn, value); err != nil {
+		return fmt.Errorf("presenting the dns-01 record: %w", err)
+	}
+	defer func() {
+		if err := i.dns.CleanUp(context.WithoutCancel(ctx), fqdn, value); err != nil {
+			i.logf("acme: withdrawing the dns-01 record of %s: %v", fqdn, err)
+		}
+	}()
+	if _, err := i.client.Accept(ctx, c); err != nil {
+		return err
+	}
+	_, err = i.client.WaitAuthorization(ctx, z.URI)
+	return err
+}
+
+func (i *Issuer) keep(ctx context.Context, name string, chain [][]byte, key *ecdsa.PrivateKey) error {
 	der, err := x509.MarshalECPrivateKey(key)
 	if err != nil {
 		return err
@@ -444,7 +588,7 @@ func (i *Issuer) keep(name string, chain [][]byte, key *ecdsa.PrivateKey) error 
 		out = append(out, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c})...)
 	}
 	out = append(out, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der})...)
-	return write(i.path(name), out)
+	return i.store.Keep(ctx, name, out)
 }
 
 // write replaces path whole, so a crash leaves the old file or the new one.
