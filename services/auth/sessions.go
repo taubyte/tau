@@ -71,7 +71,7 @@ func (s *Service) issue(ctx context.Context, u user, conns []*authv2.ForgeToken)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnavailable, err)
 	}
-	sess, err := s.access(ctx, u, sid, sealed, conns, expires)
+	sess, err := s.access(ctx, u, sid, sealed, conns, 0, expires)
 	if err != nil {
 		return nil, err
 	}
@@ -79,9 +79,9 @@ func (s *Service) issue(ctx context.Context, u user, conns []*authv2.ForgeToken)
 	return sess, nil
 }
 
-// access mints an access token for u's session sid, carrying sealed; it
-// never outlives the session.
-func (s *Service) access(ctx context.Context, u user, sid, sealed string, conns []*authv2.ForgeToken, until time.Time) (*authv2.Session, error) {
+// access mints an access token for u's session sid, carrying sealed (of
+// generation gen); it never outlives the session.
+func (s *Service) access(ctx context.Context, u user, sid, sealed string, conns []*authv2.ForgeToken, gen int64, until time.Time) (*authv2.Session, error) {
 	signer, err := s.keys.Signer(ctx, s.cfg.Issuer)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnavailable, err)
@@ -91,7 +91,7 @@ func (s *Service) access(ctx context.Context, u user, sid, sealed string, conns 
 	if exp.After(until) {
 		exp = until
 	}
-	raw, err := signer.Sign(token.Claims{Subject: u.ID, ID: newID(), Issued: now, Expires: exp, Session: sid, Sealed: sealed})
+	raw, err := signer.Sign(token.Claims{Subject: u.ID, ID: newID(), Issued: now, Expires: exp, Session: sid, Sealed: sealed, Generation: gen})
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,11 @@ func (s *Service) access(ctx context.Context, u user, sid, sealed string, conns 
 	if err != nil {
 		return nil, err
 	}
-	return &authv2.Session{AccessToken: raw, AccessExpiresUnix: exp.Unix(), User: p, Connections: describe(conns)}, nil
+	described, err := s.describe(ctx, u.ID, conns)
+	if err != nil {
+		return nil, err
+	}
+	return &authv2.Session{AccessToken: raw, AccessExpiresUnix: exp.Unix(), User: p, Connections: described}, nil
 }
 
 // principal is who a verified credential is.
@@ -155,6 +159,16 @@ func (s *Service) verifyAccess(ctx context.Context, raw string) (principal, erro
 	if revoked {
 		return principal{}, errUnauthenticated
 	}
+	// THE SESSION IS CHECKED TOO, so retiring one (a disconnect, a sign-out)
+	// ends every access token minted from it, not only the one presented.
+	if c.Session != "" {
+		if revoked, err = s.store.revoked(ctx, revokedSession, c.Session); err != nil {
+			return principal{}, connect.NewError(connect.CodeUnavailable, err)
+		}
+		if revoked {
+			return principal{}, errUnauthenticated
+		}
+	}
 	return principal{user: user{ID: c.Subject}, tokenID: c.ID, expires: c.Expires.UnixNano(), session: c.Session, sealed: c.Sealed}, nil
 }
 
@@ -166,6 +180,12 @@ func (s *Service) verifier(ctx context.Context) (*token.Verifier, error) {
 
 // connections are what p's credential carries; an API token carries none.
 func (s *Service) connections(ctx context.Context, p principal) ([]*authv2.ForgeToken, error) {
+	c, err := s.sealOf(ctx, p)
+	return c.GetConnections(), err
+}
+
+// sealOf is p's seal opened; nil for an API token, which carries none.
+func (s *Service) sealOf(ctx context.Context, p principal) (*authv2.Sealed, error) {
 	if p.sealed == "" {
 		return nil, nil
 	}
@@ -173,7 +193,7 @@ func (s *Service) connections(ctx context.Context, p principal) ([]*authv2.Forge
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
-	return c.GetConnections(), nil
+	return c, nil
 }
 
 // splitAPIKey reads tau_<id>_<secret>.
@@ -251,10 +271,15 @@ func (s *Service) session(ctx context.Context, sid string) (sessionRow, error) {
 }
 
 // refresh mints a new access token from a refresh token. The session is the
-// same; its connections are the newer of the refresh token's seal and the
-// seal in accessRaw, the newest access token the client holds — which is
-// newer when a request renewed a forge credential.
-func (s *Service) refresh(ctx context.Context, raw, accessRaw string) (*authv2.Session, error) {
+// same; its connections are merged, per host, from the refresh token's seal
+// and the seals of accessRaw — the access tokens of this session the client
+// was handed since it last refreshed, among them any a request renewed a
+// forge credential in (merge).
+//
+// A token naming another user or session, or one that does not verify even
+// as expired, is skipped rather than refused: it adds nothing, and the
+// refresh token alone still authorizes the call.
+func (s *Service) refresh(ctx context.Context, raw string, accessRaw []string) (*authv2.Session, error) {
 	random, sealedRaw, ok := splitRefresh(raw)
 	if !ok {
 		return nil, errUnauthenticated
@@ -268,12 +293,19 @@ func (s *Service) refresh(ctx context.Context, raw, accessRaw string) (*authv2.S
 	if err != nil {
 		return nil, errUnauthenticated
 	}
-	if accessRaw != "" {
-		if v, err := s.verifier(ctx); err == nil {
-			if c, err := v.VerifyExpired(accessRaw); err == nil && c.Subject == row.User && c.Session == sid {
-				if newer, err := s.unseal(ctx, c.Sealed, row.User, sid); err == nil && newer.GetSealedUnixNano() > sealed.GetSealedUnixNano() {
-					sealed, sealedRaw = newer, c.Sealed
-				}
+	seals, raws := []*authv2.Sealed{sealed}, []string{sealedRaw}
+	if len(accessRaw) > 0 {
+		v, err := s.verifier(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, a := range accessRaw[:min(len(accessRaw), maxRefreshAccess)] {
+			c, err := v.VerifyExpired(a)
+			if err != nil || c.Subject != row.User || c.Session != sid {
+				continue
+			}
+			if newer, err := s.unseal(ctx, c.Sealed, row.User, sid); err == nil {
+				seals, raws = append(seals, newer), append(raws, c.Sealed)
 			}
 		}
 	}
@@ -281,13 +313,22 @@ func (s *Service) refresh(ctx context.Context, raw, accessRaw string) (*authv2.S
 	if err != nil {
 		return nil, errUnauthenticated
 	}
-	sess, err := s.access(ctx, u, sid, sealedRaw, sealed.GetConnections(), time.Unix(0, row.Expires))
+	best, conns, gen := merge(seals)
+	if best >= 0 {
+		sealedRaw = raws[best]
+	} else if sealedRaw, err = s.seal(ctx, &authv2.Sealed{User: row.User, Session: sid, SealedUnixNano: s.now().UnixNano(), Connections: conns, Generation: gen}); err != nil {
+		return nil, connect.NewError(connect.CodeUnavailable, err)
+	}
+	sess, err := s.access(ctx, u, sid, sealedRaw, conns, gen, time.Unix(0, row.Expires))
 	if err != nil {
 		return nil, err
 	}
 	sess.RefreshToken, sess.RefreshExpiresUnix = random+"."+sealedRaw, row.Expires/1e9
 	return sess, nil
 }
+
+// maxRefreshAccess bounds how many access tokens one Refresh opens.
+const maxRefreshAccess = 16
 
 // logout revokes a refresh token's session.
 func (s *Service) logout(ctx context.Context, raw string) error {

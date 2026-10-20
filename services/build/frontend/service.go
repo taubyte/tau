@@ -34,6 +34,7 @@ type Service struct {
 	admissions  Admissions
 	vault       Vault
 	linker      Linker
+	installer   Installer
 	tenancy     tenancy.Tenancy
 	streams     Streams
 	linked      Linked
@@ -85,6 +86,7 @@ type options struct {
 	admissions  Admissions
 	vault       Vault
 	linker      Linker
+	installer   Installer
 	tenancy     tenancy.Tenancy
 	streams     Streams
 	linked      Linked
@@ -155,6 +157,19 @@ func WithLinker(l Linker) Option {
 			return errors.New("build: no linker to record projects with")
 		}
 		o.linker = l
+		return nil
+	}
+}
+
+// WithInstaller is how linking installs a project's webhook and deploy keys
+// at the forge, under the caller's own connection (linkapi.go). Optional:
+// without it the link install routes deny, and a link takes --manual.
+func WithInstaller(i Installer) Option {
+	return func(o *options) error {
+		if i == nil {
+			return errors.New("build: a nil installer")
+		}
+		o.installer = i
 		return nil
 	}
 }
@@ -326,6 +341,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		admissions:  o.admissions,
 		vault:       o.vault,
 		linker:      o.linker,
+		installer:   o.installer,
 		tenancy:     o.tenancy,
 		streams:     o.streams,
 		linked:      o.linked,

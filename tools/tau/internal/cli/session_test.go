@@ -125,11 +125,9 @@ func TestATokenIsRenewedAndKept(t *testing.T) {
 	require.NotEqual(t, before.Token, after.Token, "renewed before use")
 	require.NotEqual(t, before.Refresh, after.Refresh)
 
-	x.f.auth.mu.Lock()
-	x.f.auth.sessions["renewed-by-the-cloud"] = x.f.auth.sessions[after.Token]
-	x.f.auth.mu.Unlock()
+	renewed := x.f.auth.renewal(after.Token)
 	x.f.auth.expiresIn = 0
-	x.f.renew = "renewed-by-the-cloud"
+	x.f.renew = renewed
 	// Reset the expiry so no refresh races the renewal.
 	cfg, err := loadConfig()
 	require.NoError(t, err)
@@ -138,7 +136,7 @@ func TestATokenIsRenewedAndKept(t *testing.T) {
 	cfg.Profiles[cfg.Current] = p
 	require.NoError(t, cfg.Save())
 	x.ok("job", "job-1")
-	require.Equal(t, "renewed-by-the-cloud", x.profile().Token)
+	require.Equal(t, renewed, x.profile().Token)
 
 	// A refresh the cloud refuses is a sign-in again.
 	p = x.profile()

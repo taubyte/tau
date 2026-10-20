@@ -34,7 +34,7 @@ func TestConnectKeepsEveryConnection(t *testing.T) {
 	require.NoError(t, err)
 	first := in.GetSession()
 
-	both, err := f.sessions().Pasted(ctx, req(&authv2.PastedRequest{Provider: "plain.example", Token: "pat", RefreshToken: first.GetRefreshToken()}, first.GetAccessToken()))
+	both, err := f.sessions().Pasted(ctx, req(&authv2.PastedRequest{Provider: "plain.example", Token: "pat"}, first.GetAccessToken()))
 	require.NoError(t, err)
 	s := both.Msg.GetSession()
 	require.Equal(t, first.GetUser().GetId(), s.GetUser().GetId())
@@ -66,9 +66,16 @@ func TestConnectKeepsEveryConnection(t *testing.T) {
 	require.Equal(t, connect.CodeUnauthenticated, code(t, err))
 
 	// Disconnecting drops one, keeps the other.
-	one, err := f.sessions().Disconnect(ctx, req(&authv2.DisconnectRequest{Host: testHost, RefreshToken: s.GetRefreshToken()}, s.GetAccessToken()))
+	one, err := f.sessions().Disconnect(ctx, req(&authv2.DisconnectRequest{Host: testHost}, s.GetAccessToken()))
 	require.NoError(t, err)
 	require.Equal(t, []string{"plain.example"}, hosts(one.Msg.GetSession().GetConnections()))
+	// THE SESSION ITSELF IS RETIRED, though no refresh token was handed
+	// back: its refresh token stops renewing, and its access token stops
+	// verifying.
+	_, err = f.sessions().Refresh(ctx, req(&authv2.RefreshRequest{RefreshToken: s.GetRefreshToken()}, ""))
+	require.Equal(t, connect.CodeUnauthenticated, code(t, err))
+	_, err = f.sessions().Whoami(ctx, req(&authv2.WhoamiRequest{}, s.GetAccessToken()))
+	require.Equal(t, connect.CodeUnauthenticated, code(t, err))
 	_, err = f.identity().Open(ctx, connect.NewRequest(&authv2.OpenRequest{Token: one.Msg.GetSession().GetAccessToken(), Host: testHost}))
 	require.Equal(t, connect.CodeNotFound, code(t, err))
 	_, err = f.sessions().Disconnect(ctx, req(&authv2.DisconnectRequest{Host: testHost}, ""))
@@ -143,7 +150,7 @@ func TestOpenRenewsAnExpiringConnection(t *testing.T) {
 	// The refresh token alone still holds the old credential; with the newest
 	// access token, even expired, Refresh keeps the renewal.
 	f.now = f.now.Add(3 * time.Hour)
-	re, err := f.sessions().Refresh(ctx, req(&authv2.RefreshRequest{RefreshToken: s.GetRefreshToken(), AccessToken: o.GetRenewedToken()}, ""))
+	re, err := f.sessions().Refresh(ctx, req(&authv2.RefreshRequest{RefreshToken: s.GetRefreshToken(), AccessTokens: []string{o.GetRenewedToken()}}, ""))
 	require.NoError(t, err)
 	got := re.Msg.GetSession()
 	require.NotEqual(t, s.GetRefreshToken(), got.GetRefreshToken(), "the refresh token carries the newer seal")
@@ -155,7 +162,7 @@ func TestOpenRenewsAnExpiringConnection(t *testing.T) {
 	// An access token of another session does not lend its seal.
 	other, err := f.browserSignIn(testHost, loopback, "gho_alice", "")
 	require.NoError(t, err)
-	re, err = f.sessions().Refresh(ctx, req(&authv2.RefreshRequest{RefreshToken: s.GetRefreshToken(), AccessToken: other.GetSession().GetAccessToken()}, ""))
+	re, err = f.sessions().Refresh(ctx, req(&authv2.RefreshRequest{RefreshToken: s.GetRefreshToken(), AccessTokens: []string{other.GetSession().GetAccessToken(), "garbage"}}, ""))
 	require.NoError(t, err)
 	require.Equal(t, s.GetRefreshToken(), re.Msg.GetSession().GetRefreshToken())
 }
@@ -174,6 +181,7 @@ func TestOpenAnExpiredConnectionThatCannotRenew(t *testing.T) {
 	f.now = f.now.Add(time.Hour)
 	_, err = f.identity().Open(ctx, connect.NewRequest(&authv2.OpenRequest{Token: access, Host: testHost}))
 	require.Equal(t, connect.CodeFailedPrecondition, code(t, err))
+	require.Contains(t, err.Error(), "reconnect "+testHost)
 
 	// No refresh token at all.
 	conns, err := f.s.connections(ctx, mustVerify(t, f, access))
@@ -197,7 +205,7 @@ func openStripped(t *testing.T, f *fx, raw string, conns []*authv2.ForgeToken) c
 	require.NoError(t, err)
 	sealed, err := f.s.seal(t.Context(), &authv2.Sealed{User: p.user.ID, Session: p.session, SealedUnixNano: f.now.UnixNano(), Connections: conns})
 	require.NoError(t, err)
-	sess, err := f.s.access(t.Context(), p.user, p.session, sealed, conns, time.Unix(0, row.Expires))
+	sess, err := f.s.access(t.Context(), p.user, p.session, sealed, conns, 0, time.Unix(0, row.Expires))
 	require.NoError(t, err)
 	_, err = f.identity().Open(t.Context(), connect.NewRequest(&authv2.OpenRequest{Token: sess.GetAccessToken(), Host: conns[0].GetHost()}))
 	return code(t, err)
@@ -255,11 +263,26 @@ func TestConnectLeavesAnotherUsersLink(t *testing.T) {
 	u, err := f.s.linked(ctx, testHost, "1")
 	require.NoError(t, err)
 	require.Equal(t, bob.Msg.GetSession().GetUser().GetId(), u.ID)
-	// Carol cannot retire Bob's session by naming his refresh token.
-	_, err = f.sessions().Disconnect(ctx, req(&authv2.DisconnectRequest{Host: testHost, RefreshToken: bob.Msg.GetSession().GetRefreshToken()}, in.Msg.GetSession().GetAccessToken()))
+
+	// SAID, not implied: Carol holds the connection for repository access,
+	// and signing in with the account is Bob.
+	require.Equal(t, authv2.SignInLink_SIGN_IN_LINK_OTHER_USER, in.Msg.GetSession().GetConnections()[0].GetSignIn())
+	require.Equal(t, authv2.SignInLink_SIGN_IN_LINK_THIS_USER, bob.Msg.GetSession().GetConnections()[0].GetSignIn())
+	ls, err := f.sessions().Connections(ctx, req(&authv2.ConnectionsRequest{}, in.Msg.GetSession().GetAccessToken()))
+	require.NoError(t, err)
+	require.Equal(t, authv2.SignInLink_SIGN_IN_LINK_OTHER_USER, ls.Msg.GetConnections()[0].GetSignIn())
+
+	// Carol disconnecting retires her session, never Bob's.
+	_, err = f.sessions().Disconnect(ctx, req(&authv2.DisconnectRequest{Host: testHost}, in.Msg.GetSession().GetAccessToken()))
 	require.NoError(t, err)
 	_, err = f.sessions().Refresh(ctx, req(&authv2.RefreshRequest{RefreshToken: bob.Msg.GetSession().GetRefreshToken()}, ""))
 	require.NoError(t, err)
+
+	// Once Bob is gone, nobody holds the account: a connection says so.
+	require.NoError(t, f.s.remove(ctx, u))
+	described, err := f.s.describe(ctx, "carol", []*authv2.ForgeToken{{Host: testHost, Subject: "1"}})
+	require.NoError(t, err)
+	require.Equal(t, authv2.SignInLink_SIGN_IN_LINK_NONE, described[0].GetSignIn())
 }
 
 func TestConnectionsNeedUsers(t *testing.T) {
@@ -287,16 +310,123 @@ func TestOpenRefusesABadToken(t *testing.T) {
 	require.Equal(t, connect.CodeUnauthenticated, code(t, err))
 }
 
-func TestOpenConnectionIsTheCallersOwn(t *testing.T) {
+// Two requests renewing two different hosts from one token each hold one
+// renewal. Refresh merges them per host, and the client is handed a token
+// whose generation says it is the newest.
+func TestRefreshMergesRenewalsPerHost(t *testing.T) {
 	f := newFx(t, func(c *Config) { c.SignUp = SignUpOpen })
+	ctx := t.Context()
 	f.forge.give("gho_alice", identity("42", "alice"))
-	in, err := f.sessions().Pasted(t.Context(), req(&authv2.PastedRequest{Provider: testHost, Token: "gho_alice"}, ""))
+	in, err := f.browserSignIn(testHost, loopback, "gho_alice", "")
 	require.NoError(t, err)
-	o, err := f.sessions().OpenConnection(t.Context(), req(&authv2.OpenConnectionRequest{Host: testHost}, in.Msg.GetSession().GetAccessToken()))
+	s := in.GetSession()
+	p := mustVerify(t, f, s.GetAccessToken())
+	row, err := f.s.session(ctx, p.session)
 	require.NoError(t, err)
-	require.Equal(t, "gho_alice", o.Msg.GetForge().GetAccessToken())
-	_, err = f.sessions().OpenConnection(t.Context(), req(&authv2.OpenConnectionRequest{Host: testHost}, ""))
+	base, err := f.s.connections(ctx, p)
+	require.NoError(t, err)
+	gh := base[0]
+	other := &authv2.ForgeToken{Host: "plain.example", AccessToken: "pat-0", ObtainedUnixNano: 1}
+
+	// mint is an access token of s's session holding conns at gen.
+	mint := func(gen int64, conns ...*authv2.ForgeToken) string {
+		sealed, err := f.s.seal(ctx, &authv2.Sealed{User: p.user.ID, Session: p.session, Connections: conns, Generation: gen})
+		require.NoError(t, err)
+		sess, err := f.s.access(ctx, p.user, p.session, sealed, conns, gen, time.Unix(0, row.Expires))
+		require.NoError(t, err)
+		return sess.GetAccessToken()
+	}
+	renewedGH := &authv2.ForgeToken{Host: testHost, AccessToken: "gh-1", Renewals: 1, ObtainedUnixNano: 5}
+	renewedOther := &authv2.ForgeToken{Host: "plain.example", AccessToken: "pat-1", Renewals: 1, ObtainedUnixNano: 5}
+	a := mint(1, renewedGH, other)
+	b := mint(1, gh, renewedOther)
+
+	re, err := f.sessions().Refresh(ctx, req(&authv2.RefreshRequest{RefreshToken: s.GetRefreshToken(), AccessTokens: []string{a, b}}, ""))
+	require.NoError(t, err)
+	got := re.Msg.GetSession()
+	conns, err := f.s.connections(ctx, mustVerify(t, f, got.GetAccessToken()))
+	require.NoError(t, err)
+	require.Len(t, conns, 2)
+	require.Equal(t, "gh-1", conns[0].GetAccessToken(), "neither renewal is lost")
+	require.Equal(t, "pat-1", conns[1].GetAccessToken())
+	v, err := f.s.verifier(ctx)
+	require.NoError(t, err)
+	c, err := v.VerifyExpired(got.GetAccessToken())
+	require.NoError(t, err)
+	require.EqualValues(t, 2, c.Generation, "a merge is newer than either seal it merged")
+
+	// The refresh token now carries the merge.
+	again, err := f.sessions().Refresh(ctx, req(&authv2.RefreshRequest{RefreshToken: got.GetRefreshToken()}, ""))
+	require.NoError(t, err)
+	require.Equal(t, got.GetRefreshToken(), again.Msg.GetSession().GetRefreshToken(), "an unchanged session is not resealed")
+}
+
+func TestMergeOrdersCredentials(t *testing.T) {
+	old := &authv2.ForgeToken{Host: "h", AccessToken: "a", Renewals: 1, ObtainedUnixNano: 9}
+	more := &authv2.ForgeToken{Host: "h", AccessToken: "b", Renewals: 2, ObtainedUnixNano: 1}
+	later := &authv2.ForgeToken{Host: "h", AccessToken: "c", Renewals: 1, ObtainedUnixNano: 10}
+	tie := &authv2.ForgeToken{Host: "h", AccessToken: "d", Renewals: 1, ObtainedUnixNano: 10}
+	require.True(t, newerCredential(more, old))
+	require.False(t, newerCredential(old, more))
+	require.True(t, newerCredential(later, old))
+	require.True(t, newerCredential(tie, later), "a tie is broken the same way on every node")
+
+	best, conns, gen := merge([]*authv2.Sealed{{Generation: 3, Connections: []*authv2.ForgeToken{old}}, {Generation: 4, Connections: []*authv2.ForgeToken{more}}})
+	require.Equal(t, 1, best, "the seal already holding every winner is reused")
+	require.Equal(t, "b", conns[0].GetAccessToken())
+	require.EqualValues(t, 4, gen)
+	best, _, gen = merge([]*authv2.Sealed{{Generation: 3, Connections: []*authv2.ForgeToken{old}}, {Generation: 3, Connections: []*authv2.ForgeToken{{Host: "z"}}}})
+	require.Equal(t, -1, best)
+	require.EqualValues(t, 4, gen)
+}
+
+// A FORGE THAT ROTATES ITS REFRESH TOKEN spends the old one on every renewal,
+// and the cloud keeps no copy of the new one. A renewal the client never kept
+// — a lost response, or a concurrent renewal from the same token — leaves the
+// connection holding a spent refresh token: the next renewal fails cleanly,
+// telling the caller to reconnect the host, and never succeeds wrongly.
+func TestARotatedRefreshTokenLostIsAReconnect(t *testing.T) {
+	f := newFx(t, func(c *Config) { c.SignUp = SignUpOpen; c.AccessTTL = 2 * time.Hour })
+	ctx := t.Context()
+	f.oauth.rotate = true
+	f.forge.give("gho_alice", identity("42", "alice"))
+	in, err := f.browserSignIn(testHost, loopback, "gho_alice", "")
+	require.NoError(t, err)
+	access := in.GetSession().GetAccessToken()
+
+	f.now = f.now.Add(time.Hour)
+	kept := f.open(access, testHost)
+	require.NotEmpty(t, kept.GetRenewedToken())
+	require.Equal(t, "forge-refresh-1", kept.GetForge().GetRefreshToken(), "the forge rotated it")
+
+	// The client's other request, from the same original token, raced it:
+	// the forge has spent the refresh token that token holds.
+	_, err = f.identity().Open(ctx, connect.NewRequest(&authv2.OpenRequest{Token: access, Host: testHost}))
+	require.Equal(t, connect.CodeFailedPrecondition, code(t, err))
+	require.Contains(t, err.Error(), "reconnect "+testHost)
+	require.Contains(t, err.Error(), "rotated")
+
+	// The renewal that was kept carries on renewing.
+	f.now = f.now.Add(time.Hour)
+	next := f.open(kept.GetRenewedToken(), testHost)
+	require.Equal(t, "forge-refresh-2", next.GetForge().GetRefreshToken())
+	require.EqualValues(t, 2, next.GetForge().GetRenewals())
+}
+
+// Signing out retires the session the access token came from, too.
+func TestLogoutRetiresTheCallersSession(t *testing.T) {
+	f := newFx(t, func(c *Config) { c.SignUp = SignUpOpen })
+	ctx := t.Context()
+	f.forge.give("gho_alice", identity("42", "alice"))
+	in, err := f.browserSignIn(testHost, loopback, "gho_alice", "")
+	require.NoError(t, err)
+	s := in.GetSession()
+	re, err := f.sessions().Refresh(ctx, req(&authv2.RefreshRequest{RefreshToken: s.GetRefreshToken()}, ""))
+	require.NoError(t, err)
+	_, err = f.sessions().Logout(ctx, req(&authv2.LogoutRequest{}, s.GetAccessToken()))
+	require.NoError(t, err)
+	_, err = f.sessions().Whoami(ctx, req(&authv2.WhoamiRequest{}, re.Msg.GetSession().GetAccessToken()))
+	require.Equal(t, connect.CodeUnauthenticated, code(t, err), "a sibling access token of the session stops too")
+	_, err = f.sessions().Refresh(ctx, req(&authv2.RefreshRequest{RefreshToken: s.GetRefreshToken()}, ""))
 	require.Equal(t, connect.CodeUnauthenticated, code(t, err))
-	_, err = (&sessionHandler{newTestService(t)}).OpenConnection(t.Context(), req(&authv2.OpenConnectionRequest{}, ""))
-	require.ErrorIs(t, err, errNoUsers)
 }

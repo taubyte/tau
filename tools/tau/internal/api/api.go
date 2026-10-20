@@ -236,6 +236,41 @@ func (c *Client) LinkProject(ctx context.Context, id, configKey string, codeKeys
 	return &p, nil
 }
 
+// Inspection is a repository as a link sees it before claiming anything: the
+// forge's spelling of it, whether the caller's connection may install on it,
+// and whether this cloud's webhook for the project is already there.
+type Inspection struct {
+	Repository string `json:"repository"`
+	Admin      bool   `json:"admin"`
+	Hooked     bool   `json:"hooked"`
+	Callback   string `json:"callback"`
+}
+
+// InspectRepository asks the cloud to read repository at its forge, under the
+// caller's connection, for project id.
+func (c *Client) InspectRepository(ctx context.Context, id, repository string) (*Inspection, error) {
+	body, err := json.Marshal(map[string]string{"repository": repository})
+	if err != nil {
+		return nil, err
+	}
+	var out Inspection
+	if err := c.json(ctx, http.MethodPost, []string{"link", id, "inspect"}, bytes.NewReader(body), &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// InstallLink asks the cloud to install project id's webhook, with the
+// secret it stores, and deployKey (an authorized_keys line) on repository,
+// under the caller's connection. replace removes this cloud's previous ones.
+func (c *Client) InstallLink(ctx context.Context, id, repository, deployKey string, replace bool) error {
+	body, err := json.Marshal(map[string]any{"repository": repository, "deploy_key": deployKey, "replace": replace})
+	if err != nil {
+		return err
+	}
+	return c.json(ctx, http.MethodPost, []string{"link", id, "install"}, bytes.NewReader(body), nil)
+}
+
 // Projects is every project the token's holder linked, as the forge serving
 // host knows them.
 func (c *Client) Projects(ctx context.Context, host string) ([]Project, error) {

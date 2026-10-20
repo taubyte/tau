@@ -148,6 +148,27 @@ message Connection {
   repeated string scopes = 5;
   // refreshable is whether auth can renew it at the forge.
   bool refreshable = 6;
+  // sign_in is whether signing in with this forge account signs in as the
+  // session's user. A connection is repository access; the sign-in link is
+  // separate, and connecting an account another user is linked to neither
+  // moves that link nor switches who the session is.
+  SignInLink sign_in = 7;
+}
+
+// SignInLink is who a forge account signs in as, on this cloud.
+//
+// "LINKED FIRST" IS A DETERMINISTIC WINNER, not wall-clock arrival: two users
+// claiming one forge account concurrently on two nodes each write their own
+// claim, and every node resolves them the same way — earliest claim
+// timestamp, then lowest user id (services/auth/store.go winner).
+enum SignInLink {
+  // SIGN_IN_LINK_NONE: no user is linked to the account.
+  SIGN_IN_LINK_NONE = 0;
+  // SIGN_IN_LINK_THIS_USER: signing in with the account is this user.
+  SIGN_IN_LINK_THIS_USER = 1;
+  // SIGN_IN_LINK_OTHER_USER: connected for repository access only; signing in
+  // with the account is another user, who holds the link.
+  SIGN_IN_LINK_OTHER_USER = 2;
 }
 
 // ForgeToken is a forge's own credential. It leaves auth only to the build
@@ -162,6 +183,12 @@ message ForgeToken {
   repeated string scopes = 6;
   string subject = 7;
   string login = 8;
+  // renewals counts how often auth renewed the credential at the forge, and
+  // obtained_unix_nano is when this one was obtained. Together they order two
+  // credentials of one connection: two seals of a session are merged per
+  // host, the more renewed credential winning, the later obtained on a tie.
+  int64 renewals = 9;
+  int64 obtained_unix_nano = 10;
 }
 
 // Sealed is the plaintext a tau token's connections are sealed from. It never
@@ -171,9 +198,14 @@ message Sealed {
   // be moved into another token.
   string user = 1;
   string session = 2;
-  // sealed_unix_nano orders two seals of one session: the newer wins.
+  // sealed_unix_nano is when the seal was made.
   int64 sealed_unix_nano = 3;
   repeated ForgeToken connections = 4;
+  // generation counts the renewals and merges this seal descends from in its
+  // session. An access token carries it in the clear (claim tau_gen), so a
+  // client keeps the newest of two tokens by (generation, issued-at) rather
+  // than by which response arrived last.
+  int64 generation = 5;
 }
 
 message SignedIn {
@@ -216,10 +248,13 @@ message LoginRequest {
 
 message RefreshRequest {
   string refresh_token = 1;
-  // access_token is the newest access token the client holds, expired or
-  // not. Its connections are kept when they are newer than the refresh
-  // token's (a forge credential refreshed during a request).
-  string access_token = 2;
+  // access_tokens are the access tokens of this session the client was
+  // handed since it last refreshed, expired or not. Each may carry a forge
+  // credential renewed during a request; the session's connections are
+  // merged from them and the refresh token's seal PER HOST, the newest
+  // credential of each host winning (ForgeToken.renewals, then
+  // obtained_unix_nano), so two requests renewing two hosts lose neither.
+  repeated string access_tokens = 2;
 }
 
 message LogoutRequest {
@@ -253,8 +288,7 @@ message ExchangeRequest {
   string state = 1;
   string code = 2;
   string binding_verifier = 3;
-  // refresh_token is the caller's, when connecting while signed in.
-  string refresh_token = 4;
+  reserved 4;
 }
 
 message DeviceStartRequest {
@@ -274,7 +308,7 @@ message DevicePollRequest {
   string provider = 1;
   string device_code = 2;
   string invite = 3;
-  string refresh_token = 4;
+  reserved 4;
 }
 
 message DevicePollResponse {
@@ -289,25 +323,17 @@ message PastedRequest {
   string provider = 1;
   string token = 2;
   string invite = 3;
-  string refresh_token = 4;
+  reserved 4;
 }
 
 message WhoamiRequest {}
 
 // DisconnectRequest drops the connection to host from the caller's tau token
-// (Authorization: Bearer).
+// (Authorization: Bearer). The session that token belongs to is revoked in
+// favour of the new one.
 message DisconnectRequest {
   string host = 1;
-  // refresh_token is the caller's, revoked in favour of the new session.
-  string refresh_token = 2;
-}
-
-// OpenConnectionRequest asks for the caller's own forge credential for host,
-// opened from their tau token (Authorization: Bearer), for a client that
-// talks to the forge itself — `tau link` installing a webhook and a deploy
-// key. It is renewed first when it is about to expire, as Open does.
-message OpenConnectionRequest {
-  string host = 1;
+  reserved 2;
 }
 
 message ConnectionsRequest {}
@@ -323,8 +349,17 @@ message ConnectionsResponse {
 // CONNECTING A FORGE is a forge sign-in (Exchange, DevicePoll, Pasted) made
 // while carrying a tau token: the answer is a new session for the same user
 // with that forge's connection added (one per host, replacing an older one)
-// and every other connection kept. The refresh token named in the request
-// (refresh_token on Pasted/DevicePoll/Exchange) is revoked in its favour.
+// and every other connection kept. The session the caller's tau token
+// belongs to is revoked in its favour — its access and refresh tokens both.
+//
+// NO CALL HANDS A CLIENT A FORGE CREDENTIAL. Whatever a client needs done at
+// a forge (`tau link` installing a webhook and a deploy key) is a narrow
+// route on the build frontend, which opens the connection itself and
+// authorizes the caller on the repository first.
+//
+// REVOCATION IS EVENTUAL. A node that has not yet received a revocation
+// marker honours the session until it does; the session's own expiry
+// (RefreshTTL, 24h by default) is the bound, not the access token's TTL.
 service SessionService {
   rpc Providers(ProvidersRequest) returns (ProvidersResponse);
   rpc Login(LoginRequest) returns (SignedIn);
@@ -338,7 +373,6 @@ service SessionService {
   rpc Whoami(WhoamiRequest) returns (User);
   rpc Disconnect(DisconnectRequest) returns (SignedIn);
   rpc Connections(ConnectionsRequest) returns (ConnectionsResponse);
-  rpc OpenConnection(OpenConnectionRequest) returns (Opened);
 }
 
 message ListUsersRequest {}

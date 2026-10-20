@@ -145,7 +145,7 @@ func TestRefusals(t *testing.T) {
 func TestVerifyExpired(t *testing.T) {
 	f := newFixture(t)
 	c := f.claims()
-	c.Session, c.Sealed = "sid", "opaque"
+	c.Session, c.Sealed, c.Generation = "sid", "opaque", 3
 	raw, err := f.signer.Sign(c)
 	require.NoError(t, err)
 	f.now = f.now.Add(time.Hour)
@@ -155,6 +155,7 @@ func TestVerifyExpired(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "sid", got.Session)
 	require.Equal(t, "opaque", got.Sealed)
+	require.EqualValues(t, 3, got.Generation)
 
 	// Everything but the expiry is still checked.
 	other, err := NewSigner("tau:other", newKey(t))

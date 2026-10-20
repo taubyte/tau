@@ -289,7 +289,7 @@ func (s *Service) exchange(ctx context.Context, as *principal, req *authv2.Excha
 		}
 		return &authv2.SignedIn{Session: sess}, nil
 	}
-	return s.signInForge(ctx, as, p.forge, tok, row.Invite, req.GetRefreshToken())
+	return s.signInForge(ctx, as, p.forge, tok, row.Invite)
 }
 
 // withSecret reads the provider's client secret from the vault.
@@ -308,18 +308,18 @@ func (s *Service) oauthContext(ctx context.Context) context.Context {
 
 // signInForge asks host who tok is, then signs them in with that forge
 // connected — or, when as is a signed-in caller, connects it to their session.
-func (s *Service) signInForge(ctx context.Context, as *principal, host string, tok *oauth2.Token, invite, refresh string) (*authv2.SignedIn, error) {
+func (s *Service) signInForge(ctx context.Context, as *principal, host string, tok *oauth2.Token, invite string) (*authv2.SignedIn, error) {
 	who, err := s.whoOnForge(ctx, host, tok.AccessToken)
 	if err != nil {
 		return nil, err
 	}
-	ft := &authv2.ForgeToken{Host: host, AccessToken: tok.AccessToken, RefreshToken: tok.RefreshToken, TokenType: tok.Type(), Subject: who.subject, Login: who.login}
+	ft := &authv2.ForgeToken{Host: host, AccessToken: tok.AccessToken, RefreshToken: tok.RefreshToken, TokenType: tok.Type(), Subject: who.subject, Login: who.login, ObtainedUnixNano: s.now().UnixNano()}
 	ft.ExpiresUnix = s.expiry(tok)
 	if sc, ok := tok.Extra("scope").(string); ok && sc != "" {
 		ft.Scopes = strings.FieldsFunc(sc, func(r rune) bool { return r == ' ' || r == ',' })
 	}
 	if as != nil {
-		return s.connectForge(ctx, *as, who, ft, refresh)
+		return s.connectForge(ctx, *as, who, ft)
 	}
 	u, err := s.signIn(ctx, who, invite)
 	if err != nil {
@@ -467,7 +467,7 @@ func (s *Service) devicePoll(ctx context.Context, as *principal, req *authv2.Dev
 		return nil, connect.NewError(connect.CodePermissionDenied, fmt.Errorf("auth: %s refused the device sign-in: %w", p.id, err))
 	}
 	s.store.del(ctx, key)
-	signed, err := s.signInForge(ctx, as, p.forge, tok, req.GetInvite(), req.GetRefreshToken())
+	signed, err := s.signInForge(ctx, as, p.forge, tok, req.GetInvite())
 	if err != nil {
 		return nil, err
 	}

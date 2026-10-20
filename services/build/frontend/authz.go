@@ -43,10 +43,19 @@ const bearerPrefix = "Bearer "
 const RenewedTokenHeader = "Tau-Renewed-Token"
 
 // opened is one request's forge credentials, opened once per host.
+//
+// A RENEWAL IS BUILT ON, NOT REPEATED: once opening one host renews a
+// credential, every later host this request opens is opened from the renewed
+// token rather than the one the caller sent. So the token handed back holds
+// every renewal the request made, instead of each renewal from the stale
+// original overwriting the last one in Tau-Renewed-Token.
 type opened struct {
 	header http.Header
 	tau    string
-	hosts  map[string]string
+	// current is the newest tau token of the request: the caller's, or the
+	// last renewal of it.
+	current string
+	hosts   map[string]string
 }
 
 type openedKey struct{}
@@ -54,27 +63,28 @@ type openedKey struct{}
 // withOpened gives a request somewhere to keep what it opened and to hand a
 // renewed token back.
 func withOpened(w http.ResponseWriter, r *http.Request, tau string) *http.Request {
-	return r.WithContext(context.WithValue(r.Context(), openedKey{}, &opened{header: w.Header(), tau: tau, hosts: map[string]string{}}))
+	return r.WithContext(context.WithValue(r.Context(), openedKey{}, &opened{header: w.Header(), tau: tau, current: tau, hosts: map[string]string{}}))
 }
 
 // forgeToken is the caller's forge credential for host, from the
 // connection their tau token carries.
 func (s *Service) forgeToken(ctx context.Context, tau, host string) (string, error) {
 	o, _ := ctx.Value(openedKey{}).(*opened)
-	if o != nil && o.tau == tau {
-		if f, ok := o.hosts[host]; ok {
-			return f, nil
-		}
+	if o == nil || o.tau != tau {
+		got, err := s.connections.Open(ctx, tau, host)
+		return got.Forge, err
 	}
-	got, err := s.connections.Open(ctx, tau, host)
+	if f, ok := o.hosts[host]; ok {
+		return f, nil
+	}
+	got, err := s.connections.Open(ctx, o.current, host)
 	if err != nil {
 		return "", err
 	}
-	if o != nil && o.tau == tau {
-		o.hosts[host] = got.Forge
-		if got.Renewed != "" {
-			o.header.Set(RenewedTokenHeader, got.Renewed)
-		}
+	o.hosts[host] = got.Forge
+	if got.Renewed != "" {
+		o.current = got.Renewed
+		o.header.Set(RenewedTokenHeader, got.Renewed)
 	}
 	return got.Forge, nil
 }

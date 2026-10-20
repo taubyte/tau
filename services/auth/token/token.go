@@ -82,6 +82,9 @@ type Claims struct {
 	Session string
 	// Sealed is carried as given and never read here.
 	Sealed string
+	// Generation orders two tokens of one session (authv2.Sealed.generation);
+	// it is in the clear so a client can compare without opening the seal.
+	Generation int64
 }
 
 // claims is the JWT body: the registered claims plus tau's two.
@@ -89,6 +92,7 @@ type claims struct {
 	jwt.RegisteredClaims
 	Session string `json:"sid,omitempty"`
 	Sealed  string `json:"tau_conn,omitempty"`
+	Gen     int64  `json:"tau_gen,omitempty"`
 }
 
 // Sign mints a token.
@@ -104,7 +108,7 @@ func (s *Signer) Sign(c Claims) (string, error) {
 		IssuedAt:  jwt.NewNumericDate(c.Issued),
 		NotBefore: jwt.NewNumericDate(c.Issued),
 		ExpiresAt: jwt.NewNumericDate(c.Expires),
-	}, Session: c.Session, Sealed: c.Sealed})
+	}, Session: c.Session, Sealed: c.Sealed, Gen: c.Generation})
 	t.Header["kid"] = s.kid
 	t.Header["typ"] = Type
 	return t.SignedString(s.key)
@@ -184,5 +188,5 @@ func (v *Verifier) verify(raw string, expired bool) (Claims, error) {
 	if rc.Subject == "" || rc.ID == "" || rc.IssuedAt == nil {
 		return Claims{}, fmt.Errorf("%w: missing subject, id or issue time", ErrInvalid)
 	}
-	return Claims{Subject: rc.Subject, ID: rc.ID, Issued: rc.IssuedAt.Time, Expires: rc.ExpiresAt.Time, Session: rc.Session, Sealed: rc.Sealed}, nil
+	return Claims{Subject: rc.Subject, ID: rc.ID, Issued: rc.IssuedAt.Time, Expires: rc.ExpiresAt.Time, Session: rc.Session, Sealed: rc.Sealed, Generation: rc.Gen}, nil
 }

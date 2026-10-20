@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -140,6 +141,11 @@ type oauthServer struct {
 	devices  map[string]*device
 	secret   string
 	lastForm url.Values
+	// rotate makes the forge rotate refresh tokens the way Bitbucket Cloud
+	// does: each renewal hands out a new one and spends the one it took.
+	rotate   bool
+	spent    map[string]bool
+	rotation int
 	idToken  func(nonce string) string
 }
 
@@ -210,6 +216,7 @@ func (o *oauthServer) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var token, nonce string
+	refresh := "forge-refresh"
 	switch r.Form.Get("grant_type") {
 	case "authorization_code":
 		g, ok := o.codes[r.Form.Get("code")]
@@ -231,16 +238,25 @@ func (o *oauthServer) handleToken(w http.ResponseWriter, r *http.Request) {
 		}
 		token = d.approved
 	case "refresh_token":
-		if !strings.HasPrefix(r.Form.Get("refresh_token"), "forge-refresh") {
+		rt := r.Form.Get("refresh_token")
+		if !strings.HasPrefix(rt, "forge-refresh") || o.spent[rt] {
 			fail("invalid_grant")
 			return
 		}
-		token = "renewed-" + r.Form.Get("refresh_token")
+		token = "renewed-" + rt
+		if o.rotate {
+			if o.spent == nil {
+				o.spent = map[string]bool{}
+			}
+			o.spent[rt] = true
+			o.rotation++
+			refresh = fmt.Sprintf("forge-refresh-%d", o.rotation)
+		}
 	default:
 		fail("unsupported_grant_type")
 		return
 	}
-	body := map[string]any{"access_token": token, "token_type": "bearer", "scope": "repo,read:user", "refresh_token": "forge-refresh", "expires_in": 3600}
+	body := map[string]any{"access_token": token, "token_type": "bearer", "scope": "repo,read:user", "refresh_token": refresh, "expires_in": 3600}
 	if o.idToken != nil {
 		body["id_token"] = o.idToken(nonce)
 	}

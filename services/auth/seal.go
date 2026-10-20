@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 
+	"connectrpc.com/connect"
 	jose "github.com/go-jose/go-jose/v4"
 	"google.golang.org/protobuf/proto"
 
@@ -78,16 +81,32 @@ func (s *Service) unseal(ctx context.Context, raw, userID, session string) (*aut
 	return &c, nil
 }
 
-// describe is what a client is told about its connections.
-func describe(conns []*authv2.ForgeToken) []*authv2.Connection {
+// describe is what a client is told about userID's connections: never a
+// credential, and whether each forge account signs in as userID.
+//
+// THE SIGN-IN LINK IS READ HERE, AS OF NOW, not stamped at connect: who an
+// account signs in as is the deterministic winner of the replicated claims
+// (store.go winner — earliest claim, lowest user id on a tie), and a claim
+// written on another node can change it after the connection was made.
+func (s *Service) describe(ctx context.Context, userID string, conns []*authv2.ForgeToken) ([]*authv2.Connection, error) {
 	out := make([]*authv2.Connection, 0, len(conns))
 	for _, c := range conns {
-		out = append(out, &authv2.Connection{
+		d := &authv2.Connection{
 			Host: c.GetHost(), Subject: c.GetSubject(), Login: c.GetLogin(), ExpiresUnix: c.GetExpiresUnix(),
 			Scopes: c.GetScopes(), Refreshable: c.GetRefreshToken() != "",
-		})
+		}
+		switch u, err := s.linked(ctx, c.GetHost(), c.GetSubject()); {
+		case errors.Is(err, ErrNotFound):
+		case err != nil:
+			return nil, connect.NewError(connect.CodeUnavailable, err)
+		case u.ID == userID:
+			d.SignIn = authv2.SignInLink_SIGN_IN_LINK_THIS_USER
+		default:
+			d.SignIn = authv2.SignInLink_SIGN_IN_LINK_OTHER_USER
+		}
+		out = append(out, d)
 	}
-	return out
+	return out, nil
 }
 
 // withConnection is conns with c replacing any connection to its host.
@@ -103,4 +122,68 @@ func withoutConnection(conns []*authv2.ForgeToken, host string) []*authv2.ForgeT
 		}
 	}
 	return out
+}
+
+// newerCredential reports whether a is a newer credential of its connection
+// than b: renewed more often, then obtained later, then — two renewals from
+// one credential in the same instant — by a total order on the token, so
+// every node picks the same one.
+func newerCredential(a, b *authv2.ForgeToken) bool {
+	if a.GetRenewals() != b.GetRenewals() {
+		return a.GetRenewals() > b.GetRenewals()
+	}
+	if a.GetObtainedUnixNano() != b.GetObtainedUnixNano() {
+		return a.GetObtainedUnixNano() > b.GetObtainedUnixNano()
+	}
+	return a.GetAccessToken() > b.GetAccessToken()
+}
+
+// merge is one session's seals made one: per host, the newest credential.
+//
+// PER HOST AND NOT PER SEAL, because two requests renewing two different
+// hosts from one token each hold a seal with one renewal; keeping either
+// whole would throw the other's away. Merging cannot resurrect a dropped
+// connection: a session's set of hosts never changes — connecting and
+// disconnecting mint a new session — so every seal of one session names the
+// same hosts.
+//
+// It returns which of seals to use, when one already holds every winner, so
+// an unchanged session is not resealed; or -1, and the connections and
+// generation a new seal must be made with.
+func merge(seals []*authv2.Sealed) (best int, conns []*authv2.ForgeToken, gen int64) {
+	byHost := map[string]*authv2.ForgeToken{}
+	for _, sl := range seals {
+		gen = max(gen, sl.GetGeneration())
+		for _, c := range sl.GetConnections() {
+			if cur, ok := byHost[c.GetHost()]; !ok || newerCredential(c, cur) {
+				byHost[c.GetHost()] = c
+			}
+		}
+	}
+	best = -1
+	for i, sl := range seals {
+		if holdsAll(sl, byHost) && (best < 0 || sl.GetGeneration() > seals[best].GetGeneration()) {
+			best = i
+		}
+	}
+	if best >= 0 {
+		return best, seals[best].GetConnections(), seals[best].GetGeneration()
+	}
+	for _, c := range byHost {
+		conns = append(conns, c)
+	}
+	slices.SortFunc(conns, func(a, b *authv2.ForgeToken) int { return strings.Compare(a.GetHost(), b.GetHost()) })
+	return -1, conns, gen + 1
+}
+
+func holdsAll(sl *authv2.Sealed, byHost map[string]*authv2.ForgeToken) bool {
+	if len(sl.GetConnections()) != len(byHost) {
+		return false
+	}
+	for _, c := range sl.GetConnections() {
+		if !proto.Equal(c, byHost[c.GetHost()]) {
+			return false
+		}
+	}
+	return true
 }

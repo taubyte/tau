@@ -107,8 +107,7 @@ type signIn struct {
 		DevicePoll(context.Context, *connect.Request[authv2.DevicePollRequest]) (*connect.Response[authv2.DevicePollResponse], error)
 		Pasted(context.Context, *connect.Request[authv2.PastedRequest]) (*connect.Response[authv2.SignedIn], error)
 	}
-	invite  string
-	refresh string
+	invite string
 }
 
 // browser signs in through provider with a loopback redirect (RFC 8252).
@@ -171,7 +170,7 @@ func (s signIn) browser(provider string) (*authv2.Session, error) {
 	case cb.state != az.Msg.GetState():
 		return nil, errors.New("the sign-in came back for another request; try again")
 	}
-	in, err := s.sessions.Exchange(ctx, connect.NewRequest(&authv2.ExchangeRequest{State: cb.state, Code: cb.code, BindingVerifier: verifier, RefreshToken: s.refresh}))
+	in, err := s.sessions.Exchange(ctx, connect.NewRequest(&authv2.ExchangeRequest{State: cb.state, Code: cb.code, BindingVerifier: verifier}))
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +191,7 @@ func (s signIn) device(provider string) (*authv2.Session, error) {
 		s.env.Browse(d.GetVerificationUriComplete())
 	}
 	for {
-		poll, err := s.sessions.DevicePoll(ctx, connect.NewRequest(&authv2.DevicePollRequest{Provider: provider, DeviceCode: d.GetDeviceCode(), Invite: s.invite, RefreshToken: s.refresh}))
+		poll, err := s.sessions.DevicePoll(ctx, connect.NewRequest(&authv2.DevicePollRequest{Provider: provider, DeviceCode: d.GetDeviceCode(), Invite: s.invite}))
 		if err != nil {
 			return nil, err
 		}
@@ -209,7 +208,7 @@ func (s signIn) device(provider string) (*authv2.Session, error) {
 
 // pasted signs in with a forge token the developer already holds.
 func (s signIn) pasted(provider, token string) (*authv2.Session, error) {
-	in, err := s.sessions.Pasted(s.cmd.Context(), connect.NewRequest(&authv2.PastedRequest{Provider: provider, Token: token, Invite: s.invite, RefreshToken: s.refresh}))
+	in, err := s.sessions.Pasted(s.cmd.Context(), connect.NewRequest(&authv2.PastedRequest{Provider: provider, Token: token, Invite: s.invite}))
 	if err != nil {
 		return nil, err
 	}
@@ -575,7 +574,7 @@ func forgeCommand(env Env) *cobra.Command {
 			if pr == nil || pr.GetKind() != authv2.ProviderKind_PROVIDER_KIND_FORGE {
 				return fmt.Errorf("this cloud serves no forge %q", host)
 			}
-			s := signIn{cmd: cmd, env: env, sessions: cl.Sessions(), refresh: p.Refresh}
+			s := signIn{cmd: cmd, env: env, sessions: cl.Sessions()}
 			sess, err := s.through(host, pr)
 			if err != nil {
 				return err
@@ -597,7 +596,7 @@ func forgeCommand(env Env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			in, err := cl.Sessions().Disconnect(cmd.Context(), connect.NewRequest(&authv2.DisconnectRequest{Host: args[0], RefreshToken: p.Refresh}))
+			in, err := cl.Sessions().Disconnect(cmd.Context(), connect.NewRequest(&authv2.DisconnectRequest{Host: args[0]}))
 			if err != nil {
 				return err
 			}

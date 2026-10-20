@@ -99,7 +99,7 @@ func (h *sessionHandler) Refresh(ctx context.Context, req *connect.Request[authv
 	if err := h.ready(); err != nil {
 		return nil, err
 	}
-	sess, err := h.s.refresh(ctx, req.Msg.GetRefreshToken(), req.Msg.GetAccessToken())
+	sess, err := h.s.refresh(ctx, req.Msg.GetRefreshToken(), req.Msg.GetAccessTokens())
 	if err != nil {
 		return nil, err
 	}
@@ -114,6 +114,11 @@ func (h *sessionHandler) Logout(ctx context.Context, req *connect.Request[authv2
 	if p, err := h.s.caller(ctx, req.Header()); err == nil && !p.apiKey {
 		if err := h.s.store.revoke(ctx, revokedAccess, p.tokenID, h.s.now(), p.expires); err != nil {
 			return nil, err
+		}
+		if p.session != "" {
+			if err := h.s.store.revoke(ctx, revokedSession, p.session, h.s.now(), h.s.now().Add(h.s.cfg.RefreshTTL).UnixNano()); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if err := h.s.logout(ctx, req.Msg.GetRefreshToken()); err != nil {
@@ -185,7 +190,7 @@ func (h *sessionHandler) Pasted(ctx context.Context, req *connect.Request[authv2
 	if err != nil {
 		return nil, err
 	}
-	signed, err := h.s.signInForge(ctx, as, req.Msg.GetProvider(), &oauth2.Token{AccessToken: req.Msg.GetToken()}, req.Msg.GetInvite(), req.Msg.GetRefreshToken())
+	signed, err := h.s.signInForge(ctx, as, req.Msg.GetProvider(), &oauth2.Token{AccessToken: req.Msg.GetToken()}, req.Msg.GetInvite())
 	if err != nil {
 		return nil, err
 	}
@@ -200,26 +205,11 @@ func (h *sessionHandler) Disconnect(ctx context.Context, req *connect.Request[au
 	if err != nil {
 		return nil, err
 	}
-	signed, err := h.s.disconnect(ctx, p, req.Msg.GetHost(), req.Msg.GetRefreshToken())
+	signed, err := h.s.disconnect(ctx, p, req.Msg.GetHost())
 	if err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(signed), nil
-}
-
-func (h *sessionHandler) OpenConnection(ctx context.Context, req *connect.Request[authv2.OpenConnectionRequest]) (*connect.Response[authv2.Opened], error) {
-	if err := h.ready(); err != nil {
-		return nil, err
-	}
-	raw, ok := strings.CutPrefix(req.Header().Get("Authorization"), "Bearer ")
-	if !ok || raw == "" {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("auth: no tau token"))
-	}
-	o, err := h.s.open(ctx, raw, req.Msg.GetHost())
-	if err != nil {
-		return nil, err
-	}
-	return connect.NewResponse(o), nil
 }
 
 func (h *sessionHandler) Connections(ctx context.Context, req *connect.Request[authv2.ConnectionsRequest]) (*connect.Response[authv2.ConnectionsResponse], error) {
@@ -234,7 +224,11 @@ func (h *sessionHandler) Connections(ctx context.Context, req *connect.Request[a
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&authv2.ConnectionsResponse{Connections: describe(conns)}), nil
+	described, err := h.s.describe(ctx, p.user.ID, conns)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&authv2.ConnectionsResponse{Connections: described}), nil
 }
 
 func (h *sessionHandler) Whoami(ctx context.Context, req *connect.Request[authv2.WhoamiRequest]) (*connect.Response[authv2.User], error) {

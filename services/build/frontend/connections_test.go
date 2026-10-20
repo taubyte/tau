@@ -2,7 +2,9 @@ package frontend
 
 import (
 	"errors"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -23,6 +25,20 @@ func TestARenewedTokenComesBack(t *testing.T) {
 	w = h.do(t, authed(http.MethodGet, "/forges/github.com/projects", testToken))
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, "tau-renewed", w.Header().Get(RenewedTokenHeader))
+}
+
+// A request that renews two hosts builds the second renewal on the first, so
+// the token it hands back holds both rather than the last one alone.
+func TestARequestRenewsOnItsOwnRenewal(t *testing.T) {
+	h := newHarness(t, Config{}, WithLinker(newLinker(t)))
+	h.connections.renewEach = true
+	h.connections.forge = map[string]string{"github.com": testToken, "gitlab.com": testToken}
+	r := authed(http.MethodPost, "/projects/"+testProject, testToken)
+	r.Body = io.NopCloser(strings.NewReader(`{"config_repository_key":"github.com/acme/cfg","code_repository_keys":["gitlab.com/acme/pay"]}`))
+	w := h.do(t, r)
+	require.Equal(t, http.StatusCreated, w.Code, bodyOf(t, w))
+	require.Equal(t, []string{testToken, testToken + "+github.com"}, h.connections.taus, "the second host is opened from the first renewal")
+	require.Equal(t, testToken+"+github.com+gitlab.com", w.Header().Get(RenewedTokenHeader))
 }
 
 func TestANotConnectedHostIsAReasonToConnect(t *testing.T) {

@@ -217,6 +217,7 @@ func linkTester(t *testing.T) (*tester, *fake.Forge) {
 	reg, err := f.Registry(forge.Policy{AllowInsecureCallback: true})
 	require.NoError(t, err)
 	x.forges = reg
+	x.f.forges = reg
 	x.stdin = f.TokenString() + "\n"
 	x.ok("login", "--cloud", x.f.srv.URL, "--sso", f.Host(), "--paste")
 	x.stdin = ""
@@ -690,6 +691,7 @@ func TestReplacingStopsOnWhatItCouldNotDelete(t *testing.T) {
 		reg, err := forge.New(forge.Policy{AllowInsecureCallback: true}, forge.Binding{Host: d.host, Driver: d})
 		require.NoError(t, err)
 		x.forges = reg
+		x.f.forges = reg
 		x.stdin = forgeToken + "\n"
 		x.ok("login", "--cloud", x.f.srv.URL, "--sso", d.host, "--paste")
 		x.stdin = ""

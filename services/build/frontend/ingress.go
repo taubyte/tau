@@ -71,6 +71,11 @@ func (s *Service) mount() http.Handler {
 	mux.HandleFunc("POST /projects/{projectId}", s.admitted("projectId", s.handleLinkProject))
 	mux.HandleFunc("GET /forges/{forge}/projects", s.admitted("forge", s.handleListProjects))
 
+	// What a link does at the forge, done here under the caller's own
+	// connection so no forge credential is handed to a client (linkapi.go).
+	mux.HandleFunc("POST /link/{projectId}/inspect", s.admitted("projectId", s.handleLinkInspect))
+	mux.HandleFunc("POST /link/{projectId}/install", s.admitted("projectId", s.handleLinkInstall))
+
 	// Signing in, and managing this cloud's users: auth's own calls, carried
 	// to it unchanged and authorized by it (authapi.go). Only when this node
 	// was given a way to reach auth.

@@ -52,7 +52,7 @@ func TestForgeBrowserSignIn(t *testing.T) {
 	require.Equal(t, []*authv2.Link{{Issuer: testHost, Subject: "42", Login: "alice"}}, in.GetSession().GetUser().GetLinks())
 	require.NotContains(t, in.GetSession().GetAccessToken(), "gho_alice")
 	require.NotContains(t, in.GetSession().GetRefreshToken(), "gho_alice")
-	require.Equal(t, []*authv2.Connection{{Host: testHost, Subject: "42", Login: "alice", ExpiresUnix: in.GetSession().GetConnections()[0].GetExpiresUnix(), Scopes: []string{"repo", "read:user"}, Refreshable: true}}, in.GetSession().GetConnections())
+	require.Equal(t, []*authv2.Connection{{Host: testHost, Subject: "42", Login: "alice", ExpiresUnix: in.GetSession().GetConnections()[0].GetExpiresUnix(), Scopes: []string{"repo", "read:user"}, Refreshable: true, SignIn: authv2.SignInLink_SIGN_IN_LINK_THIS_USER}}, in.GetSession().GetConnections())
 	ft := f.open(in.GetSession().GetAccessToken(), testHost).GetForge()
 	require.Equal(t, testHost, ft.GetHost())
 	require.Equal(t, "gho_alice", ft.GetAccessToken())

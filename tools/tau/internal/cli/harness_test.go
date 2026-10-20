@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,8 +25,12 @@ import (
 
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
+	"github.com/taubyte/tau/pkg/git/repokey"
+	"github.com/taubyte/tau/pkg/linkcreds"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	frontendpkg "github.com/taubyte/tau/services/build/frontend"
+	"github.com/taubyte/tau/services/build/frontend/forgeauth"
 	"github.com/taubyte/tau/tools/tau/internal/api"
 	"github.com/taubyte/tau/tools/tau/internal/config"
 )
@@ -52,6 +57,7 @@ type frontend struct {
 	logs     map[string]string
 	secrets  map[string]map[string][]byte
 	created  []string
+	installs []string
 	calls    []string
 	dropOnce bool
 	// failSecrets makes every secret write a 503.
@@ -62,7 +68,10 @@ type frontend struct {
 	// renew is handed back as a renewed tau token on the next job read.
 	renew string
 	auth  *fakeAuth
-	srv   *httptest.Server
+	// forges are what the link routes install on, through the frontend's own
+	// forgeauth, under the connection the caller's tau token carries.
+	forges *forge.Registry
+	srv    *httptest.Server
 }
 
 func newFrontend(t *testing.T) *frontend {
@@ -221,6 +230,70 @@ func newFrontend(t *testing.T) *frontend {
 			out = append(out, map[string]any{"id": parts[0], "config_repository_key": parts[1], "code_repository_keys": strings.Split(parts[2], ",")})
 		}
 		json.NewEncoder(w).Encode(out)
+	}))
+	// THE LINK ROUTES are the real frontend's forge half (forgeauth) behind
+	// a fake's routing: the forge credential is opened here and never sent.
+	linkForge := func(w http.ResponseWriter, r *http.Request, repository string) (*forgeauth.Forges, string, repokey.Key, *url.URL, bool) {
+		key, err := repokey.Parse("https://" + repository)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return nil, "", key, nil, false
+		}
+		tok, err := f.auth.open(r.Header, key.Host)
+		if err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return nil, "", key, nil, false
+		}
+		fa, err := forgeauth.New(f.forges)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return nil, "", key, nil, false
+		}
+		cb, _ := url.Parse("http://" + r.Host + "/hook/" + r.PathValue("projectId"))
+		return fa, tok, key, cb, true
+	}
+	failed := func(w http.ResponseWriter, err error) {
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+	}
+	mux.HandleFunc("POST /link/{projectId}/inspect", authed(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Repository string `json:"repository"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		fa, tok, key, cb, ok := linkForge(w, r, body.Repository)
+		if !ok {
+			return
+		}
+		in, err := fa.Inspect(r.Context(), tok, key, cb)
+		if err != nil {
+			failed(w, err)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"repository": in.Repository, "admin": in.Admin, "hooked": in.Hooked, "callback": cb.String()})
+	}))
+	mux.HandleFunc("POST /link/{projectId}/install", authed(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Repository string `json:"repository"`
+			DeployKey  string `json:"deploy_key"`
+			Replace    bool   `json:"replace"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		fa, tok, key, cb, ok := linkForge(w, r, body.Repository)
+		if !ok {
+			return
+		}
+		f.mu.Lock()
+		f.installs = append(f.installs, body.Repository)
+		secret := f.secrets[r.PathValue("projectId")+"/"+linkcreds.Environment][linkcreds.HookSecret]
+		f.mu.Unlock()
+		in := frontendpkg.Install{Callback: cb, Secret: secret, Title: "tau http://" + r.Host, DeployKey: body.DeployKey, Replace: body.Replace}
+		if err := fa.Install(r.Context(), tok, key, in); err != nil {
+			failed(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}))
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
@@ -161,6 +162,14 @@ type Config struct {
 	// CORS headers, so a browser refuses it the answer. No cookie is ever
 	// accepted, so no credentialed request is allowed. See cors.go.
 	Origins []string `yaml:"origins"`
+
+	// PublicURL is this ingress as forges reach it (scheme://host[:port]),
+	// what a webhook linking installs delivers to: <PublicURL>/hook/<id>.
+	// Empty, it is read from the link request itself — the scheme from
+	// whether it arrived over TLS, the host from its Host header — which is
+	// right for a cloud reached directly and wrong behind a proxy that
+	// terminates TLS, where an https URL must be set here.
+	PublicURL string `yaml:"publicURL"`
 
 	HookRate    Rate `yaml:"hookRate"`
 	WebhookRate Rate `yaml:"webhookRate"`
@@ -489,6 +498,44 @@ type Connections interface {
 	// not verify is ErrBadCredential.
 	Open(ctx context.Context, tau, host string) (Opened, error)
 }
+
+// Installer is what linking does at a forge, under the caller's own
+// connection: the forge credential never leaves this process (linkapi.go).
+type Installer interface {
+	// Inspect is what a link needs to know about key before it claims
+	// anything: the forge's own spelling of it, whether token may install
+	// on it, and whether a hook delivering to callback is there already.
+	Inspect(ctx context.Context, token string, key repokey.Key, callback *url.URL) (Inspection, error)
+	// Install puts the project's webhook and one read-only deploy key on
+	// key. With Replace, the hooks delivering to the callback and the deploy
+	// keys titled Title are removed first; without it, an existing hook to
+	// the callback is ErrAlreadyHooked. An account that may not administer
+	// key is ErrNotAdmin; a forge that cannot install either is
+	// ErrCannotInstall.
+	Install(ctx context.Context, token string, key repokey.Key, in Install) error
+}
+
+// Inspection is one repository, as linking sees it.
+type Inspection struct {
+	Repository string
+	Admin      bool
+	Hooked     bool
+}
+
+// Install is what one repository is given.
+type Install struct {
+	Callback  *url.URL
+	Secret    []byte
+	Title     string
+	DeployKey string
+	Replace   bool
+}
+
+var (
+	ErrNotAdmin      = errors.New("build: installing a webhook and a deploy key takes admin on the repository")
+	ErrAlreadyHooked = errors.New("build: the repository already has this cloud's webhook")
+	ErrCannotInstall = errors.New("build: this forge cannot install a webhook and a deploy key")
+)
 
 // Opened is one connection, opened.
 type Opened struct {

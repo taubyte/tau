@@ -2,7 +2,11 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
+	"slices"
+	"strings"
 	"sync"
 
 	"connectrpc.com/connect"
@@ -83,26 +87,28 @@ func (c *Client) Users() authv2connect.UserServiceClient {
 	return authv2connect.NewUserServiceClient(c.authed, c.base.String())
 }
 
-// OpenConnection is the forge credential the tau token carries for host, for
-// talking to that forge directly.
-func (c *Client) OpenConnection(ctx context.Context, host string) (string, error) {
-	resp, err := c.Sessions().OpenConnection(ctx, connect.NewRequest(&authv2.OpenConnectionRequest{Host: host}))
-	if err != nil {
-		return "", err
-	}
-	if t := resp.Msg.GetRenewedToken(); t != "" {
-		c.tokens.Renewed(t)
-	}
-	return resp.Msg.GetForge().GetAccessToken(), nil
-}
-
 // Refreshing is Tokens kept in memory and renewed from a refresh token. Save
 // is told about every change.
+//
+// A RENEWED TOKEN IS KEPT ONLY WHEN IT IS NEWER, by the order the cloud
+// stamps in it — its session, then its generation (tau_gen: how many
+// renewals and merges its seal descends from), then when it was issued —
+// never by which response happened to arrive last. One of an older session
+// (a stale answer from before a connect or a disconnect) is dropped.
+//
+// EVERY RENEWAL IS KEPT UNTIL THE NEXT REFRESH, newest or not, and sent with
+// it: two requests renewing two forge hosts each hold one renewal, and the
+// cloud merges them per host, so neither is lost. They are kept in memory;
+// a renewal handed to a process that exits before refreshing is what it
+// loses, and the forge renews again from the refresh token it still holds
+// (or, for a forge that rotates refresh tokens, says to reconnect).
 type Refreshing struct {
 	mu      sync.Mutex
 	Token   string
 	Expires int64
 	Refresh string
+	// renewals are the tokens handed back since the last refresh.
+	renewals []string
 	// Sessions renews; it is an anonymous client of the same cloud.
 	Sessions authv2connect.SessionServiceClient
 	Now      func() int64
@@ -112,13 +118,16 @@ type Refreshing struct {
 // renewWithin is how close to its expiry a token is renewed before use.
 const renewWithin = 60
 
+// maxRenewals bounds the renewals kept for the next refresh.
+const maxRenewals = 8
+
 func (r *Refreshing) Access(ctx context.Context) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.Refresh == "" || r.Expires == 0 || r.Now() < r.Expires-renewWithin {
 		return r.Token, nil
 	}
-	resp, err := r.Sessions.Refresh(ctx, connect.NewRequest(&authv2.RefreshRequest{RefreshToken: r.Refresh, AccessToken: r.Token}))
+	resp, err := r.Sessions.Refresh(ctx, connect.NewRequest(&authv2.RefreshRequest{RefreshToken: r.Refresh, AccessTokens: append([]string{r.Token}, r.renewals...)}))
 	if err != nil {
 		if connect.CodeOf(err) == connect.CodeUnauthenticated {
 			return "", errSignedOut
@@ -126,7 +135,7 @@ func (r *Refreshing) Access(ctx context.Context) (string, error) {
 		return "", err
 	}
 	s := resp.Msg.GetSession()
-	r.Token, r.Expires, r.Refresh = s.GetAccessToken(), s.GetAccessExpiresUnix(), s.GetRefreshToken()
+	r.Token, r.Expires, r.Refresh, r.renewals = s.GetAccessToken(), s.GetAccessExpiresUnix(), s.GetRefreshToken(), nil
 	r.Save(r.Token, r.Expires, r.Refresh)
 	return r.Token, nil
 }
@@ -134,8 +143,65 @@ func (r *Refreshing) Access(ctx context.Context) (string, error) {
 func (r *Refreshing) Renewed(token string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	got, ok := orderOf(token)
+	if !ok {
+		return
+	}
+	cur, curOK := orderOf(r.Token)
+	if curOK && got.session != cur.session {
+		return
+	}
+	if !slices.Contains(r.renewals, token) {
+		r.renewals = append(r.renewals, token)
+		if len(r.renewals) > maxRenewals {
+			r.renewals = r.renewals[len(r.renewals)-maxRenewals:]
+		}
+	}
+	if curOK && !got.after(cur) {
+		return
+	}
 	r.Token = token
+	if got.expires != 0 {
+		r.Expires = got.expires
+	}
 	r.Save(r.Token, r.Expires, r.Refresh)
+}
+
+// order is what a tau access token says about where it stands in its
+// session, read without verifying it: the cloud verifies, this only ranks
+// tokens it handed out.
+type order struct {
+	session            string
+	generation, issued int64
+	expires            int64
+}
+
+func (o order) after(than order) bool {
+	if o.generation != than.generation {
+		return o.generation > than.generation
+	}
+	return o.issued > than.issued
+}
+
+func orderOf(token string) (order, bool) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return order{}, false
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return order{}, false
+	}
+	var c struct {
+		Session string `json:"sid"`
+		Gen     int64  `json:"tau_gen"`
+		Issued  int64  `json:"iat"`
+		Expires int64  `json:"exp"`
+	}
+	if json.Unmarshal(payload, &c) != nil || c.Session == "" {
+		return order{}, false
+	}
+	return order{session: c.Session, generation: c.Gen, issued: c.Issued, expires: c.Expires}, true
 }
 
 var errSignedOut = &Error{Status: http.StatusUnauthorized}

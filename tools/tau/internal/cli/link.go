@@ -26,31 +26,35 @@ import (
 // link.go is `tau link`: claim project.yaml's id on a cloud for the project's
 // repositories, and give the cloud what it needs to build them.
 //
-// EVERY CREDENTIAL IS MADE HERE, on the developer's machine, and installed with
-// the developer's own token. The cloud holds no forge token, so it cannot
-// install a webhook or a deploy key itself; what it holds is the private half
-// of each, in the secrets service, under pkg/linkcreds' names:
+// THE CREDENTIALS ARE MADE HERE, on the developer's machine; WHAT IS
+// INSTALLED AT THE FORGE IS INSTALLED BY THE CLOUD, under the forge
+// connection the developer's tau token carries. The CLI never holds a forge
+// token: the cloud opens the connection for the one request that needs it
+// (services/build/frontend/linkapi.go). The cloud keeps the private half of
+// each credential in the secrets service, under pkg/linkcreds' names:
 //
 //  1. read the project's id from project.yaml — the cloud mints none
-//  2. ask each repository's forge for its canonical spelling, which is what a
-//     forge's deliveries will name it as
+//  2. ask the cloud to read each repository at its forge: the forge's
+//     canonical spelling (what a delivery names it as), whether the
+//     connection may install on it, and whether this cloud's hook is there
 //  3. claim the id for the configuration repository and attach the code
 //     repositories (POST /projects/<id>); an id somebody else claimed is
 //     refused by name, and nothing below runs
 //  4. generate one webhook secret for the project and one ed25519 deploy key
 //     per repository, and store their private halves on the cloud
-//  5. install, on each repository, a push webhook pointing at
-//     <cloud>/hook/<id> and the deploy key, read-only
+//  5. ask the cloud to install, on each repository, a push webhook to
+//     <cloud>/hook/<id> with the stored secret, and the deploy key's public
+//     half, read-only
 //
 // A REPOSITORY THAT ALREADY HAS A HOOK TO <cloud>/hook/<id> was linked before.
 // Installing a second would leave the first verified against a secret the
 // cloud no longer holds, so link asks (or takes --replace-hook / --keep-hook):
-// replacing deletes that hook and the deploy key titled for this cloud, after
-// the new credentials are stored, and installs new ones; keeping installs and
-// rotates nothing.
+// replacing has the cloud delete that hook and the deploy key titled for it,
+// after the new credentials are stored, and install new ones; keeping
+// installs and rotates nothing.
 //
 // --manual stops after 4 and prints what step 5 would have installed, for a
-// forge this CLI cannot reach or a token that may not manage hooks.
+// forge the cloud cannot reach or a connection that may not manage hooks.
 
 func linkCommand(env Env) *cobra.Command {
 	cmd := &cobra.Command{
@@ -111,56 +115,33 @@ func linkCommand(env Env) *cobra.Command {
 				return err
 			}
 
-			sessions := make([]*forge.Session, len(keys))
-			stale := make([][]forge.Handle, len(keys))
+			hooked := make([]bool, len(keys))
 			if !manual {
-				// THE FORGE CREDENTIAL IS THE SESSION'S CONNECTION for the
-				// repository's host, opened by the cloud: the profile holds
-				// only the tau token.
-				opened := map[string]string{}
+				// THE CLOUD READS EACH REPOSITORY under the session's
+				// connection for its host: the profile holds only the tau
+				// token, and no forge token is ever handed to it.
 				for i, k := range keys {
-					if _, ok := opened[k.Host]; !ok {
-						tok, err := cl.OpenConnection(cmd.Context(), k.Host)
-						if err != nil {
-							return fmt.Errorf("%s: %w (connect it with `tau forge connect %s`, or run with --manual)", k, err, k.Host)
-						}
-						opened[k.Host] = tok
-					}
-					s, err := forges.For(k, forge.Token(opened[k.Host]))
+					in, err := cl.InspectRepository(cmd.Context(), id, k.String())
 					if err != nil {
-						return fmt.Errorf("%s: %w (or run with --manual)", k, err)
-					}
-					if err := s.Require(forge.CapPushHooks, forge.CapDeployKeys); err != nil {
-						return fmt.Errorf("%s: %w (or run with --manual)", k, err)
-					}
-					// THE FORGE'S SPELLING, because a delivery names the
-					// repository the way the forge does and the cloud
-					// compares it exactly.
-					repo, err := s.Repository(cmd.Context(), k)
-					if err != nil {
-						return fmt.Errorf("reading %s on its forge: %w", k, err)
+						return fmt.Errorf("reading %s on its forge: %w (connect it with `tau forge connect %s`, or run with --manual)", k, err, k.Host)
 					}
 					// ASKED BEFORE ANYTHING IS CLAIMED: installing a webhook
 					// and a deploy key takes admin on most forges, and a link
 					// that claimed the id and then could not install would
 					// leave a project nobody can push to.
-					access, err := s.Access(cmd.Context(), k)
-					if err != nil {
-						return fmt.Errorf("reading your access to %s: %w", k, err)
+					if !in.Admin {
+						return fmt.Errorf("your connection to %s may not administer %s, and installing a webhook and a deploy key takes admin (or run with --manual)", k.Host, k)
 					}
-					if !access.CanAdmin() {
-						return fmt.Errorf("your token holds %s on %s, and installing a webhook and a deploy key takes admin (or run with --manual)", access, k)
+					// THE FORGE'S SPELLING, because a delivery names the
+					// repository the way the forge does and the cloud
+					// compares it exactly.
+					if keys[i], err = repokey.Parse("https://" + in.Repository); err != nil {
+						return fmt.Errorf("%s answered %q for %s: %w", k.Host, in.Repository, k, err)
 					}
-					keys[i], sessions[i] = repo.Key, s
-					// A HOOK THIS CLOUD ALREADY HAS on the repository is a
-					// previous link's: a second one would be verified with a
-					// secret nothing holds any more and fail every delivery.
-					if stale[i], err = installedHooks(cmd.Context(), s, repo.Key, callback); err != nil {
-						return fmt.Errorf("reading the webhooks on %s: %w", repo.Key, err)
-					}
+					hooked[i] = in.Hooked
 				}
 			}
-			relinking, err := relinkDecision(cmd, env, keys, stale)
+			relinking, err := relinkDecision(cmd, env, keys, hooked)
 			if err != nil {
 				return err
 			}
@@ -222,14 +203,12 @@ func linkCommand(env Env) *cobra.Command {
 					// THE OLD ONES GO ONLY NOW, after the new credentials are
 					// stored: from that moment the old hook's secret is gone
 					// from the cloud and its deliveries are refused anyway.
-					if err := removeStale(cmd.Context(), sessions[i], k, stale[i], deployKeyTitle(cl.Base())); err != nil {
-						return err
+					replace := relinking == replaceHook && hooked[i]
+					if err := cl.InstallLink(cmd.Context(), id, k.String(), creds.keys[i].authz, replace); err != nil {
+						return fmt.Errorf("installing the webhook and deploy key on %s: %w", k, err)
 					}
-					if len(stale[i]) > 0 {
+					if replace {
 						b.WriteString(t.Muted.Render("  deleted this cloud's previous webhook and deploy key on "+k.String()) + "\n")
-					}
-					if err := creds.install(cmd.Context(), sessions[i], creds.keys[i], callback, cl.Base()); err != nil {
-						return err
 					}
 					b.WriteString(t.Muted.Render("  installed a webhook and a read-only deploy key on "+k.String()) + "\n")
 				}
@@ -338,18 +317,7 @@ func (c *credentials) store(ctx context.Context, cl *api.Client, id string) erro
 	return nil
 }
 
-// install puts a repository's webhook and deploy key on its forge.
-func (c *credentials) install(ctx context.Context, s *forge.Session, d deployKey, callback *url.URL, cloud string) error {
-	if _, err := s.RegisterPushHook(ctx, d.repository, callback, c.hook); err != nil {
-		return fmt.Errorf("installing the webhook on %s: %w", d.repository, err)
-	}
-	if _, err := s.InstallDeployKey(ctx, d.repository, deployKeyTitle(cloud), d.authz); err != nil {
-		return fmt.Errorf("installing the deploy key on %s: %w", d.repository, err)
-	}
-	return nil
-}
-
-// manual is what install would have put on each forge. The secret is the WIRE
+// manual is what the cloud would have installed on each forge. The secret is the WIRE
 // form the forge's signing scheme derives, which is what a forge is given and
 // signs with — never the stored secret itself.
 func (c *credentials) manual(forges *forge.Registry, callback *url.URL) ([]manualInstall, error) {
@@ -372,25 +340,6 @@ func (c *credentials) manual(forges *forge.Registry, callback *url.URL) ([]manua
 	return out, nil
 }
 
-// deployKeyTitle is the title link installs a deploy key under, and so what
-// identifies the one a previous link to the same cloud installed.
-func deployKeyTitle(cloud string) string { return "tau " + cloud }
-
-// installedHooks are the hooks on key that deliver to callback.
-func installedHooks(ctx context.Context, s *forge.Session, key repokey.Key, callback *url.URL) ([]forge.Handle, error) {
-	hooks, err := s.ListPushHooks(ctx, key)
-	if err != nil {
-		return nil, err
-	}
-	var out []forge.Handle
-	for _, h := range hooks {
-		if h.Callback == callback.String() {
-			out = append(out, h.Handle)
-		}
-	}
-	return out, nil
-}
-
 // relink is what to do about hooks a previous link installed.
 type relink int
 
@@ -403,16 +352,16 @@ const (
 // relinkDecision asks, at a terminal, whether to replace this cloud's hooks
 // found on the repositories; elsewhere it takes --replace-hook or --keep-hook
 // and refuses without one.
-func relinkDecision(cmd *cobra.Command, env Env, keys []repokey.Key, stale [][]forge.Handle) (relink, error) {
-	var hooked, bare []string
+func relinkDecision(cmd *cobra.Command, env Env, keys []repokey.Key, hooked []bool) (relink, error) {
+	var with, bare []string
 	for i, k := range keys {
-		if len(stale[i]) > 0 {
-			hooked = append(hooked, k.String())
+		if hooked[i] {
+			with = append(with, k.String())
 		} else {
 			bare = append(bare, k.String())
 		}
 	}
-	if len(hooked) == 0 {
+	if len(with) == 0 {
 		return freshLink, nil
 	}
 	decision := freshLink
@@ -422,7 +371,7 @@ func relinkDecision(cmd *cobra.Command, env Env, keys []repokey.Key, stale [][]f
 	case flagBool(cmd, "keep-hook"):
 		decision = keepHook
 	case prompting(cmd, env):
-		yes, err := env.Prompter.Confirm(fmt.Sprintf("%s already has this cloud's webhook from an earlier link. Delete it and its deploy key, and install new ones?", strings.Join(hooked, ", ")))
+		yes, err := env.Prompter.Confirm(fmt.Sprintf("%s already has this cloud's webhook from an earlier link. Delete it and its deploy key, and install new ones?", strings.Join(with, ", ")))
 		if err != nil {
 			return freshLink, err
 		}
@@ -431,7 +380,7 @@ func relinkDecision(cmd *cobra.Command, env Env, keys []repokey.Key, stale [][]f
 			decision = replaceHook
 		}
 	default:
-		return freshLink, fmt.Errorf("%s already has this cloud's webhook from an earlier link: pass --replace-hook to delete it and install new credentials, or --keep-hook to keep it", strings.Join(hooked, ", "))
+		return freshLink, fmt.Errorf("%s already has this cloud's webhook from an earlier link: pass --replace-hook to delete it and install new credentials, or --keep-hook to keep it", strings.Join(with, ", "))
 	}
 	// KEEPING IS KEEPING THE PROJECT'S SECRET, which only the cloud holds: a
 	// repository without the old hook could only be given one by rotating it.
@@ -439,30 +388,4 @@ func relinkDecision(cmd *cobra.Command, env Env, keys []repokey.Key, stale [][]f
 		return freshLink, fmt.Errorf("keeping the existing webhook keeps the project's stored secret, which this machine does not hold, so %s cannot be given a hook; use --replace-hook", strings.Join(bare, ", "))
 	}
 	return decision, nil
-}
-
-// removeStale deletes the hooks a previous link installed on key and the
-// deploy keys it installed under this cloud's title.
-func removeStale(ctx context.Context, s *forge.Session, key repokey.Key, hooks []forge.Handle, title string) error {
-	if len(hooks) == 0 {
-		return nil
-	}
-	for _, h := range hooks {
-		if err := s.RemovePushHook(ctx, key, h); err != nil {
-			return fmt.Errorf("deleting the previous webhook on %s: %w", key, err)
-		}
-	}
-	installed, err := s.ListDeployKeys(ctx, key)
-	if err != nil {
-		return fmt.Errorf("reading the deploy keys on %s: %w", key, err)
-	}
-	for _, k := range installed {
-		if k.Title != title {
-			continue
-		}
-		if err := s.RemoveDeployKey(ctx, key, k.Handle); err != nil {
-			return fmt.Errorf("deleting the previous deploy key on %s: %w", key, err)
-		}
-	}
-	return nil
 }

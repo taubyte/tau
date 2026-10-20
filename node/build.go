@@ -386,6 +386,9 @@ func (n *Node) openBuildFrontend() error {
 		frontend.WithProjects(projects),
 		frontend.WithBackend(builds),
 		frontend.WithIdentity(forges),
+		// WHAT A LINK INSTALLS AT THE FORGE is installed here, under the
+		// caller's connection, so no client is handed a forge credential.
+		frontend.WithInstaller(forges),
 		frontend.WithDeliveries(forges),
 		frontend.WithTenancy(served),
 	}

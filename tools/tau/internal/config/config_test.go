@@ -163,3 +163,14 @@ func TestLoadAndLinkWhereAFileIs(t *testing.T) {
 	require.NoError(t, os.WriteFile(file, nil, 0o600))
 	require.Error(t, WriteLink(file, Link{}), "a link cannot go under a file")
 }
+
+// A file that names no profiles at all still loads as one that can take one.
+func TestLoadANullProfileMap(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("profiles: null\n"), 0o600))
+	c, err := Load(path)
+	require.NoError(t, err)
+	require.NotNil(t, c.Profiles)
+	c.Profiles["dev"] = Profile{}
+	require.NoError(t, c.Save())
+}
