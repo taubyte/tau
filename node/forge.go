@@ -41,10 +41,14 @@ type Forge struct {
 	HostKeys []string
 
 	// Signing registers a GitLab instance's hooks with Standard Webhooks, which
-	// binds the body, rather than a replayed shared token. An instance too old
-	// to know it signs nothing and every delivery fails verification — closed,
-	// and visibly broken. Meaningless for a github or gitea driver, which
-	// always signs.
+	// binds the body, rather than a replayed shared token. Set it only if the
+	// instance supports it: one that does not (GitLab CE 18.4 does not) signs
+	// nothing and every delivery fails verification — closed, and visibly
+	// broken. Without it the instance's hooks use X-Gitlab-Token, which is
+	// replayable and binds no body; pkg/forge accepts it only under
+	// Policy.AllowUnboundSchemes, and the node's policy is the strict one, so
+	// such an instance's deliveries are refused here. Meaningless for a
+	// github or gitea driver, which always signs.
 	Signing bool
 }
 

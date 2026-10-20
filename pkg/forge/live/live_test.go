@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
 
@@ -185,9 +187,26 @@ func walk(t *testing.T, in *instance) {
 		require.NoError(t, err, "a delivery %s signed and sent failed verification", in.name)
 		require.Equal(t, forge.Push{Key: key, Ref: "refs/heads/main", Commit: pushed}, p)
 
-		tampered := forge.Delivery{Header: d.Header, Body: bytes.Replace(d.Body, []byte(pushed), []byte(strings.Repeat("e", len(pushed))), 1)}
-		_, err = in.reg.VerifyPush(hook, tampered)
-		require.Error(t, err, "the same delivery naming another commit verified")
+		if hook.Scheme.BindsBody() {
+			tampered := forge.Delivery{Header: d.Header, Body: bytes.Replace(d.Body, []byte(pushed), []byte(strings.Repeat("e", len(pushed))), 1)}
+			_, err = in.reg.VerifyPush(hook, tampered)
+			require.Error(t, err, "the same delivery naming another commit verified")
+			return true
+		}
+		// A SHARED TOKEN BINDS NOTHING BUT ITSELF: the body is not covered and
+		// the same token comes on every delivery, so anyone who sees one can
+		// replay or rewrite it. What it does prove is the token, so a delivery
+		// carrying another one, or none, must be refused.
+		require.Equal(t, forge.SchemeSharedToken, hook.Scheme)
+		for _, token := range []string{"wrong-" + randomHex(t, 16), ""} {
+			forged := forge.Delivery{Header: d.Header.Clone(), Body: d.Body}
+			forged.Header.Set("X-Gitlab-Token", token)
+			if token == "" {
+				forged.Header.Del("X-Gitlab-Token")
+			}
+			_, err = in.reg.VerifyPush(hook, forged)
+			require.Error(t, err, "a delivery with token %q verified", token)
+		}
 		return true
 	})
 	if !verified && in.hookLog != nil {
@@ -397,12 +416,14 @@ type container struct {
 
 func start(t *testing.T, cfg *core.ContainerConfig) *container {
 	t.Helper()
+	sweep(t)
 	backend, err := docker.New(core.DockerConfig{})
 	require.NoError(t, err)
 	pulled := time.Now()
 	require.NoError(t, backend.Image(cfg.Image).Pull(t.Context()), "pulling %s", cfg.Image)
 	t.Logf("%s pulled in %s", cfg.Image, time.Since(pulled).Round(time.Second))
 
+	cfg.Labels = map[string]string{ownerLabel: fmt.Sprint(os.Getpid())}
 	id, err := backend.Create(t.Context(), cfg)
 	require.NoError(t, err)
 	c := &container{backend: backend, id: id, image: cfg.Image}
@@ -416,6 +437,38 @@ func start(t *testing.T, cfg *core.ContainerConfig) *container {
 	})
 	require.NoError(t, backend.Start(t.Context(), id))
 	return c
+}
+
+// ownerLabel names the test process that started a container.
+const ownerLabel = "taubyte.forge-live.owner"
+
+// sweep removes every container an earlier run of this harness started and
+// did not live to remove.
+//
+// t.Cleanup cannot cover that run: when go test's -timeout fires it panics the
+// binary, and a killed or disconnected run is gone the same way, and none of
+// them runs a Cleanup. A GitLab boot is a large slice of the suite's budget, so
+// that is a real ending, and each one left a multi-gigabyte server running.
+// Only containers whose owner process is gone are removed, so two runs on one
+// host do not tear each other down.
+func sweep(t *testing.T) {
+	t.Helper()
+	cli, err := client.New(client.FromEnv)
+	require.NoError(t, err)
+	defer cli.Close()
+	ctx := context.Background()
+	res, err := cli.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: client.Filters{}.Add("label", ownerLabel)})
+	require.NoError(t, err)
+	for _, c := range res.Items {
+		var pid int
+		fmt.Sscan(c.Labels[ownerLabel], &pid)
+		if pid > 0 && syscall.Kill(pid, 0) == nil {
+			continue
+		}
+		t.Logf("removing %s (%s), left behind by test process %s", c.ID[:12], c.Image, c.Labels[ownerLabel])
+		_, err := cli.ContainerRemove(ctx, c.ID, client.ContainerRemoveOptions{Force: true})
+		require.NoError(t, err)
+	}
 }
 
 // logs is everything the container has written so far.

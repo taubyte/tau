@@ -288,6 +288,8 @@ func (b *DockerBackend) createDockerConfig(config *core.ContainerConfig) (*conta
 		Cmd:   config.Command,
 		Env:   config.Env,
 
+		Labels: config.Labels,
+
 		OpenStdin:   config.Stdin != nil,
 		StdinOnce:   config.Stdin != nil,
 		AttachStdin: config.Stdin != nil,

@@ -25,8 +25,14 @@ import (
 const gitlabImage = "gitlab/gitlab-ce:18.4.2-ce.0"
 
 // TestARealGitLabAnswersTheGitLabDriver is the gitlab driver against GitLab
-// CE, with hooks registered under Standard Webhooks signing — the only scheme
-// the strict policy accepts from this driver.
+// CE, with hooks under the shared-token scheme (X-Gitlab-Token).
+//
+// NOT SIGNING, BECAUSE CE DOES NOT SIGN: 18.4.2 has no signing_token anywhere
+// in its rails source, ignores one sent to the API, and delivers with only
+// X-Gitlab-Token — so a binding with Signing() fails closed on every delivery
+// (measured). The token proves the sender knew it and nothing more: it is
+// replayed verbatim and covers no body, which is why the registry takes it only
+// under AllowUnboundSchemes. Signing() is for an instance that supports it.
 //
 // IT IS THE HEAVY ONE: an omnibus GitLab is a dozen services and boots in
 // minutes, not seconds. The boot time is logged, so the cost of keeping it in
@@ -119,9 +125,9 @@ gitlab_rails['usage_ping_enabled'] = false
 		}, nil)
 	}
 
-	drv, err := gitlab.New(host, gitlab.BaseURL(base), gitlab.Signing(), gitlab.Deployment(forge.Token(admin)))
+	drv, err := gitlab.New(host, gitlab.BaseURL(base), gitlab.Deployment(forge.Token(admin)))
 	require.NoError(t, err)
-	reg, err := forge.New(forge.Policy{AllowInsecureCallback: true}, forge.Binding{Host: host, Driver: drv})
+	reg, err := forge.New(forge.Policy{AllowInsecureCallback: true, AllowUnboundSchemes: true}, forge.Binding{Host: host, Driver: drv})
 	require.NoError(t, err)
 
 	in := &instance{

@@ -148,6 +148,10 @@ type ContainerConfig struct {
 	// than hidden inside the build path because they describe the container,
 	// and a workload imported from a PaaS may legitimately need them too.
 	Privileges *Privileges
+
+	// Labels are attached to the container where the runtime has them, so
+	// something that outlives this process can still find what it started.
+	Labels map[string]string
 }
 
 // Privileges loosens a container's default confinement. Every field widens what
