@@ -3,8 +3,8 @@ package git
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,103 +17,60 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-var (
-	testRepoUser  = "taubyte-test"
-	testRepoEmail = "taubytetest@gmail.com"
-)
-
-func TestNew(t *testing.T) {
-	_, err := New(
-		context.Background(),
-		URL(localRemote(t)),
-		Root(t.TempDir()),
-		Author(testRepoUser, testRepoEmail),
-	)
+// A clone lands in the root it was given, on main, with the remote's files.
+func TestNewClonesIntoRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "clone")
+	repo, err := New(context.Background(), URL(localRemote(t)), Root(root), Output(io.Discard))
 	assert.NilError(t, err)
+	assert.Equal(t, repo.Dir(), root)
+
+	body, err := os.ReadFile(filepath.Join(root, "README"))
+	assert.NilError(t, err)
+	assert.Equal(t, string(body), "fixture\n")
+
+	head, err := repo.Repo().Head()
+	assert.NilError(t, err)
+	assert.Equal(t, head.Name(), plumbing.NewBranchReferenceName("main"))
 }
 
-func TestTempWithRoot(t *testing.T) {
-	testRoot := "repo"
-
-	repo, err := New(
-		context.Background(),
-		URL(localRemote(t)),
-		Root(testRoot),
-		Temporary(),
-		Author(testRepoUser, testRepoEmail),
-	)
-	assert.NilError(t, err)
-
-	if len(repo.Root()) == 0 {
-		t.Errorf("repo.Root() got nothing")
-		return
-	}
-
-	_, err = os.Stat(repo.workDir)
-	assert.NilError(t, err)
-
-	if path.Join(repo.workDir, testRoot) != repo.root {
-		t.Errorf("Wrong workdir got `%s` expected `%s`", path.Join(repo.workDir, testRoot), repo.root)
-		return
-	}
-}
-
-func TestTempWithNoRoot(t *testing.T) {
-	repo, err := New(
-		context.Background(),
-		URL(localRemote(t)),
-		Temporary(),
-		Author(testRepoUser, testRepoEmail),
-	)
-	assert.NilError(t, err)
-
-	if len(repo.Root()) == 0 {
-		t.Errorf("repo.Root() got nothing")
-		return
-	}
-
-	_, err = os.Stat(repo.root)
-	assert.NilError(t, err)
-
-	if repo.root != repo.workDir {
-		t.Errorf("No root provided workdir `%s`should be the same as repo root `%s`", repo.workDir, repo.root)
-		return
-	}
-}
-
-func TestCommit(t *testing.T) {
+// A named branch is checked out after the clone, and asking for the branch
+// already checked out is a no-op rather than a second checkout.
+func TestNewChecksOutTheBranch(t *testing.T) {
+	remote := localRemote(t)
 	root := t.TempDir()
-	c, err := New(
-		context.Background(),
-		URL(localRemote(t)),
-		Root(root),
-		Author(testRepoUser, testRepoEmail),
-	)
+	repo, err := New(context.Background(), URL(remote), Root(root), Branch("dream"), Output(io.Discard))
 	assert.NilError(t, err)
 
-	err = os.WriteFile(root+"/plain.txt", []byte(fmt.Sprint("hello world", time.Now())), 0755)
+	head, err := repo.Repo().Head()
 	assert.NilError(t, err)
+	assert.Equal(t, head.Name(), plumbing.NewBranchReferenceName("dream"))
+	assert.NilError(t, repo.Checkout("dream"))
 
-	err = c.Commit("Adding plain file", "plain.txt")
+	// Reopening the same root opens the clone already there.
+	again, err := New(context.Background(), URL(remote), Root(root), Branch("dream"), Output(io.Discard))
 	assert.NilError(t, err)
+	assert.Equal(t, again.Dir(), root)
 }
 
-func TestPush(t *testing.T) {
-	root := t.TempDir()
+// A branch the remote does not have is refused by name.
+func TestNewRefusesAMissingBranch(t *testing.T) {
+	_, err := New(context.Background(), URL(localRemote(t)), Root(t.TempDir()), Branch("nope"), Output(io.Discard))
+	assert.ErrorContains(t, err, "nope")
+}
 
-	c, err := New(
-		context.Background(),
-		URL(localRemote(t)),
-		Root(root),
-		Author(testRepoUser, testRepoEmail),
-	)
-	assert.NilError(t, err)
+// A remote that is not there fails the clone; nothing is retried.
+func TestNewFailsOnAMissingRemote(t *testing.T) {
+	_, err := New(context.Background(), URL("file://"+filepath.Join(t.TempDir(), "absent")), Root(t.TempDir()), Output(io.Discard))
+	assert.Assert(t, err != nil)
+}
 
-	assert.NilError(t, os.WriteFile(root+"/timestamp.txt", []byte(time.Now().String()), 0640))
-
-	assert.NilError(t, c.Commit(t.Name(), "."))
-
-	assert.NilError(t, c.Push())
+// An option that fails stops New before anything is cloned.
+func TestNewStopsOnAFailingOption(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "never")
+	_, err := New(context.Background(), URL(localRemote(t)), Root(root), SSHKeyAs("git", "not a key", githubHostKeys(t)))
+	assert.ErrorContains(t, err, "parsing private key")
+	_, statErr := os.Stat(root)
+	assert.Assert(t, os.IsNotExist(statErr))
 }
 
 // TestCheckoutEmptyRepo asserts that Checkout on an empty repo (no commits) only sets HEAD
@@ -148,8 +105,7 @@ func TestCheckoutEmptyRepo(t *testing.T) {
 // TestOpenWithSSHKeyKeepsTheRemote asserts that opening an existing clone
 // leaves its origin as it was: the transport is the caller's, never rewritten.
 func TestOpenWithSSHKeyKeepsTheRemote(t *testing.T) {
-	_, secKey, err := generateDeployKey()
-	assert.NilError(t, err)
+	secKey := clientKey(t)
 
 	dir := t.TempDir()
 	r, err := gogit.PlainInit(dir, false)
@@ -172,7 +128,6 @@ func TestOpenWithSSHKeyKeepsTheRemote(t *testing.T) {
 		context.Background(),
 		Root(dir),
 		SSHKeyAs("git", secKey, githubHostKeys(t)),
-		Author("u", "e@e.com"),
 	)
 	assert.NilError(t, err)
 

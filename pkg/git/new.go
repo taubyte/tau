@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -23,9 +22,6 @@ func Info(args ...interface{}) {
 	pterm.EnableDebugMessages()
 	pterm.Info.Println(args...)
 }
-
-// LocalURIScheme is the URL scheme for opening a local directory (no clone).
-const LocalURIScheme = "local://"
 
 /*
 New creates a new repository.
@@ -47,19 +43,12 @@ func New(ctx context.Context, options ...Option) (c *Repository, err error) {
 		}
 	}
 
-	if c.ephemeral && !strings.HasPrefix(c.url, LocalURIScheme) {
-		err = c.handle_ephemeral()
-		if err != nil {
-			return
-		}
-	}
-
 	err = c.open_or_clone()
 	if err != nil {
 		return
 	}
 
-	if c.usingSpecificBranch && !strings.HasPrefix(c.url, LocalURIScheme) {
+	if c.usingSpecificBranch {
 		err = c.Checkout(c.branches[0])
 		if err != nil {
 			return
@@ -74,16 +63,6 @@ func (c *Repository) open_or_clone() error {
 
 	if !c.usingSpecificBranch {
 		c.branches = []string{"main", "master"}
-	}
-
-	// Handle local:// URIs — open directly, no clone
-	if localPath, ok := strings.CutPrefix(c.url, LocalURIScheme); ok {
-		c.root = localPath
-		c.repo, err = git.PlainOpen(localPath)
-		if err != nil {
-			return fmt.Errorf("opening local repo at %s: %w", localPath, err)
-		}
-		return nil
 	}
 
 	c.repo, err = git.PlainOpen(c.root)
@@ -149,7 +128,6 @@ func (c *Repository) clone() (err error) {
 	}
 
 	pterm.Success.Printf("Cloning %s complete\n", c.url)
-	c.i_cloned_it = true
 
 	return nil
 }

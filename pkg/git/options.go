@@ -92,42 +92,6 @@ func sshKey(account, key string, hostKey gossh.HostKeyCallback) Option {
 	}
 }
 
-/* Author is an Option to set the repository author.
- *
- * username: The username to use.
- * email: The email to use.
- */
-func Author(username, email string) Option {
-	return func(c *Repository) error {
-		c.user.name = username
-		c.user.email = email
-		return nil
-	}
-}
-
-/* Temporary is an Option to set the repository to be temporary.
- *
- * Returns error if something goes wrong.
- */
-func Temporary() Option {
-	return func(c *Repository) error {
-		c.ephemeral = true
-		return nil
-	}
-}
-
-/* Preserve is an Option to set the repository to be preserved.
- * For use with Temporary to keep the tmp/repo-* directory alive
- *
- * Returns error if something goes wrong.
- */
-func Preserve() Option {
-	return func(c *Repository) error {
-		c.ephemeralNoDelete = true
-		return nil
-	}
-}
-
 /* Root is an Option to set the repository root.
  *
  * root: The root to use.
