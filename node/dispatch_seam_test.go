@@ -87,3 +87,14 @@ func TestARefusedSettlementIsNotRetried(t *testing.T) {
 	d.failed(t.Context(), consumer, seam, item)
 	require.Equal(t, []bool{true, false}, seam.settled)
 }
+
+// A HANDLE THAT NAMES NO QUEUE HAS NO DEPTH, said as "not known" rather than
+// as an empty queue.
+func TestAHandleThatNamesNoQueueHasNoDepth(t *testing.T) {
+	n, _ := consuming(t, &answering{name: "wasm", status: 200}, compiled())
+	require.NotNil(t, n.syncs)
+	ready, claimed, ok := n.QueueDepth("not a handle")
+	require.False(t, ok)
+	require.Zero(t, ready)
+	require.Zero(t, claimed)
+}
