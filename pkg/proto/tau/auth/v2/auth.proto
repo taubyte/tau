@@ -302,6 +302,14 @@ message DisconnectRequest {
   string refresh_token = 2;
 }
 
+// OpenConnectionRequest asks for the caller's own forge credential for host,
+// opened from their tau token (Authorization: Bearer), for a client that
+// talks to the forge itself — `tau link` installing a webhook and a deploy
+// key. It is renewed first when it is about to expire, as Open does.
+message OpenConnectionRequest {
+  string host = 1;
+}
+
 message ConnectionsRequest {}
 
 message ConnectionsResponse {
@@ -330,6 +338,7 @@ service SessionService {
   rpc Whoami(WhoamiRequest) returns (User);
   rpc Disconnect(DisconnectRequest) returns (SignedIn);
   rpc Connections(ConnectionsRequest) returns (ConnectionsResponse);
+  rpc OpenConnection(OpenConnectionRequest) returns (Opened);
 }
 
 message ListUsersRequest {}

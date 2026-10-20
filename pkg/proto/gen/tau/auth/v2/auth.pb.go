@@ -2109,6 +2109,54 @@ func (x *DisconnectRequest) GetRefreshToken() string {
 	return ""
 }
 
+// OpenConnectionRequest asks for the caller's own forge credential for host,
+// opened from their tau token (Authorization: Bearer), for a client that
+// talks to the forge itself — `tau link` installing a webhook and a deploy
+// key. It is renewed first when it is about to expire, as Open does.
+type OpenConnectionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Host          string                 `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OpenConnectionRequest) Reset() {
+	*x = OpenConnectionRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OpenConnectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OpenConnectionRequest) ProtoMessage() {}
+
+func (x *OpenConnectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OpenConnectionRequest.ProtoReflect.Descriptor instead.
+func (*OpenConnectionRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *OpenConnectionRequest) GetHost() string {
+	if x != nil {
+		return x.Host
+	}
+	return ""
+}
+
 type ConnectionsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -2117,7 +2165,7 @@ type ConnectionsRequest struct {
 
 func (x *ConnectionsRequest) Reset() {
 	*x = ConnectionsRequest{}
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[30]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2129,7 +2177,7 @@ func (x *ConnectionsRequest) String() string {
 func (*ConnectionsRequest) ProtoMessage() {}
 
 func (x *ConnectionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[30]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2142,7 +2190,7 @@ func (x *ConnectionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectionsRequest.ProtoReflect.Descriptor instead.
 func (*ConnectionsRequest) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{30}
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{31}
 }
 
 type ConnectionsResponse struct {
@@ -2154,7 +2202,7 @@ type ConnectionsResponse struct {
 
 func (x *ConnectionsResponse) Reset() {
 	*x = ConnectionsResponse{}
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[31]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2166,7 +2214,7 @@ func (x *ConnectionsResponse) String() string {
 func (*ConnectionsResponse) ProtoMessage() {}
 
 func (x *ConnectionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[31]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2179,7 +2227,7 @@ func (x *ConnectionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectionsResponse.ProtoReflect.Descriptor instead.
 func (*ConnectionsResponse) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{31}
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ConnectionsResponse) GetConnections() []*Connection {
@@ -2197,7 +2245,7 @@ type ListUsersRequest struct {
 
 func (x *ListUsersRequest) Reset() {
 	*x = ListUsersRequest{}
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[32]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2209,7 +2257,7 @@ func (x *ListUsersRequest) String() string {
 func (*ListUsersRequest) ProtoMessage() {}
 
 func (x *ListUsersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[32]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2222,7 +2270,7 @@ func (x *ListUsersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListUsersRequest.ProtoReflect.Descriptor instead.
 func (*ListUsersRequest) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{32}
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{33}
 }
 
 type ListUsersResponse struct {
@@ -2234,7 +2282,7 @@ type ListUsersResponse struct {
 
 func (x *ListUsersResponse) Reset() {
 	*x = ListUsersResponse{}
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[33]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2246,7 +2294,7 @@ func (x *ListUsersResponse) String() string {
 func (*ListUsersResponse) ProtoMessage() {}
 
 func (x *ListUsersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[33]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2259,7 +2307,7 @@ func (x *ListUsersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListUsersResponse.ProtoReflect.Descriptor instead.
 func (*ListUsersResponse) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{33}
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ListUsersResponse) GetUsers() []*User {
@@ -2283,7 +2331,7 @@ type CreateUserRequest struct {
 
 func (x *CreateUserRequest) Reset() {
 	*x = CreateUserRequest{}
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[34]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2295,7 +2343,7 @@ func (x *CreateUserRequest) String() string {
 func (*CreateUserRequest) ProtoMessage() {}
 
 func (x *CreateUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[34]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2308,7 +2356,7 @@ func (x *CreateUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateUserRequest.ProtoReflect.Descriptor instead.
 func (*CreateUserRequest) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{34}
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *CreateUserRequest) GetName() string {
@@ -2355,7 +2403,7 @@ type UserRequest struct {
 
 func (x *UserRequest) Reset() {
 	*x = UserRequest{}
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[35]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2367,7 +2415,7 @@ func (x *UserRequest) String() string {
 func (*UserRequest) ProtoMessage() {}
 
 func (x *UserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[35]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2380,7 +2428,7 @@ func (x *UserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserRequest.ProtoReflect.Descriptor instead.
 func (*UserRequest) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{35}
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *UserRequest) GetId() string {
@@ -2400,7 +2448,7 @@ type SetRoleRequest struct {
 
 func (x *SetRoleRequest) Reset() {
 	*x = SetRoleRequest{}
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[36]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2412,7 +2460,7 @@ func (x *SetRoleRequest) String() string {
 func (*SetRoleRequest) ProtoMessage() {}
 
 func (x *SetRoleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[36]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2425,7 +2473,7 @@ func (x *SetRoleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetRoleRequest.ProtoReflect.Descriptor instead.
 func (*SetRoleRequest) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{36}
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *SetRoleRequest) GetId() string {
@@ -2452,7 +2500,7 @@ type SetDisabledRequest struct {
 
 func (x *SetDisabledRequest) Reset() {
 	*x = SetDisabledRequest{}
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[37]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2464,7 +2512,7 @@ func (x *SetDisabledRequest) String() string {
 func (*SetDisabledRequest) ProtoMessage() {}
 
 func (x *SetDisabledRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[37]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2477,7 +2525,7 @@ func (x *SetDisabledRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetDisabledRequest.ProtoReflect.Descriptor instead.
 func (*SetDisabledRequest) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{37}
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *SetDisabledRequest) GetId() string {
@@ -2505,7 +2553,7 @@ type SetPasswordRequest struct {
 
 func (x *SetPasswordRequest) Reset() {
 	*x = SetPasswordRequest{}
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[38]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2517,7 +2565,7 @@ func (x *SetPasswordRequest) String() string {
 func (*SetPasswordRequest) ProtoMessage() {}
 
 func (x *SetPasswordRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[38]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2530,7 +2578,7 @@ func (x *SetPasswordRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPasswordRequest.ProtoReflect.Descriptor instead.
 func (*SetPasswordRequest) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{38}
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *SetPasswordRequest) GetId() string {
@@ -2555,7 +2603,7 @@ type Empty struct {
 
 func (x *Empty) Reset() {
 	*x = Empty{}
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[39]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2567,7 +2615,7 @@ func (x *Empty) String() string {
 func (*Empty) ProtoMessage() {}
 
 func (x *Empty) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[39]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2580,7 +2628,7 @@ func (x *Empty) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Empty.ProtoReflect.Descriptor instead.
 func (*Empty) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{39}
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{40}
 }
 
 type CreateInviteRequest struct {
@@ -2595,7 +2643,7 @@ type CreateInviteRequest struct {
 
 func (x *CreateInviteRequest) Reset() {
 	*x = CreateInviteRequest{}
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[40]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2607,7 +2655,7 @@ func (x *CreateInviteRequest) String() string {
 func (*CreateInviteRequest) ProtoMessage() {}
 
 func (x *CreateInviteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[40]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2620,7 +2668,7 @@ func (x *CreateInviteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateInviteRequest.ProtoReflect.Descriptor instead.
 func (*CreateInviteRequest) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{40}
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *CreateInviteRequest) GetRole() Role {
@@ -2659,7 +2707,7 @@ type Invite struct {
 
 func (x *Invite) Reset() {
 	*x = Invite{}
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[41]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2671,7 +2719,7 @@ func (x *Invite) String() string {
 func (*Invite) ProtoMessage() {}
 
 func (x *Invite) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[41]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2684,7 +2732,7 @@ func (x *Invite) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Invite.ProtoReflect.Descriptor instead.
 func (*Invite) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{41}
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *Invite) GetId() string {
@@ -2738,7 +2786,7 @@ type ListInvitesResponse struct {
 
 func (x *ListInvitesResponse) Reset() {
 	*x = ListInvitesResponse{}
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[42]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2750,7 +2798,7 @@ func (x *ListInvitesResponse) String() string {
 func (*ListInvitesResponse) ProtoMessage() {}
 
 func (x *ListInvitesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[42]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2763,7 +2811,7 @@ func (x *ListInvitesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInvitesResponse.ProtoReflect.Descriptor instead.
 func (*ListInvitesResponse) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{42}
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ListInvitesResponse) GetInvites() []*Invite {
@@ -2787,7 +2835,7 @@ type CreateTokenRequest struct {
 
 func (x *CreateTokenRequest) Reset() {
 	*x = CreateTokenRequest{}
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[43]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2799,7 +2847,7 @@ func (x *CreateTokenRequest) String() string {
 func (*CreateTokenRequest) ProtoMessage() {}
 
 func (x *CreateTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[43]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2812,7 +2860,7 @@ func (x *CreateTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTokenRequest.ProtoReflect.Descriptor instead.
 func (*CreateTokenRequest) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{43}
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *CreateTokenRequest) GetName() string {
@@ -2851,7 +2899,7 @@ type Token struct {
 
 func (x *Token) Reset() {
 	*x = Token{}
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[44]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2863,7 +2911,7 @@ func (x *Token) String() string {
 func (*Token) ProtoMessage() {}
 
 func (x *Token) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[44]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2876,7 +2924,7 @@ func (x *Token) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Token.ProtoReflect.Descriptor instead.
 func (*Token) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{44}
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *Token) GetId() string {
@@ -2930,7 +2978,7 @@ type ListTokensRequest struct {
 
 func (x *ListTokensRequest) Reset() {
 	*x = ListTokensRequest{}
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[45]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2942,7 +2990,7 @@ func (x *ListTokensRequest) String() string {
 func (*ListTokensRequest) ProtoMessage() {}
 
 func (x *ListTokensRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[45]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2955,7 +3003,7 @@ func (x *ListTokensRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTokensRequest.ProtoReflect.Descriptor instead.
 func (*ListTokensRequest) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{45}
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *ListTokensRequest) GetUser() string {
@@ -2974,7 +3022,7 @@ type ListTokensResponse struct {
 
 func (x *ListTokensResponse) Reset() {
 	*x = ListTokensResponse{}
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[46]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2986,7 +3034,7 @@ func (x *ListTokensResponse) String() string {
 func (*ListTokensResponse) ProtoMessage() {}
 
 func (x *ListTokensResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[46]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2999,7 +3047,7 @@ func (x *ListTokensResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTokensResponse.ProtoReflect.Descriptor instead.
 func (*ListTokensResponse) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{46}
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *ListTokensResponse) GetTokens() []*Token {
@@ -3018,7 +3066,7 @@ type RevokeTokenRequest struct {
 
 func (x *RevokeTokenRequest) Reset() {
 	*x = RevokeTokenRequest{}
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[47]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3030,7 +3078,7 @@ func (x *RevokeTokenRequest) String() string {
 func (*RevokeTokenRequest) ProtoMessage() {}
 
 func (x *RevokeTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_auth_v2_auth_proto_msgTypes[47]
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3043,7 +3091,7 @@ func (x *RevokeTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeTokenRequest.ProtoReflect.Descriptor instead.
 func (*RevokeTokenRequest) Descriptor() ([]byte, []int) {
-	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{47}
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *RevokeTokenRequest) GetId() string {
@@ -3189,7 +3237,9 @@ const file_tau_auth_v2_auth_proto_rawDesc = "" +
 	"\rWhoamiRequest\"L\n" +
 	"\x11DisconnectRequest\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12#\n" +
-	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\"\x14\n" +
+	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\"+\n" +
+	"\x15OpenConnectionRequest\x12\x12\n" +
+	"\x04host\x18\x01 \x01(\tR\x04host\"\x14\n" +
 	"\x12ConnectionsRequest\"P\n" +
 	"\x13ConnectionsResponse\x129\n" +
 	"\vconnections\x18\x01 \x03(\v2\x17.tau.auth.v2.ConnectionR\vconnections\"\x12\n" +
@@ -3264,7 +3314,7 @@ const file_tau_auth_v2_auth_proto_rawDesc = "" +
 	"\x0fIdentityService\x124\n" +
 	"\x05Admit\x12\x13.tau.auth.v2.Caller\x1a\x16.tau.auth.v2.Admission\x12<\n" +
 	"\x06Verify\x12\x1a.tau.auth.v2.VerifyRequest\x1a\x16.tau.auth.v2.Principal\x125\n" +
-	"\x04Open\x12\x18.tau.auth.v2.OpenRequest\x1a\x13.tau.auth.v2.Opened2\xd4\x06\n" +
+	"\x04Open\x12\x18.tau.auth.v2.OpenRequest\x1a\x13.tau.auth.v2.Opened2\x9f\a\n" +
 	"\x0eSessionService\x12J\n" +
 	"\tProviders\x12\x1d.tau.auth.v2.ProvidersRequest\x1a\x1e.tau.auth.v2.ProvidersResponse\x129\n" +
 	"\x05Login\x12\x19.tau.auth.v2.LoginRequest\x1a\x15.tau.auth.v2.SignedIn\x12=\n" +
@@ -3279,7 +3329,8 @@ const file_tau_auth_v2_auth_proto_rawDesc = "" +
 	"\x06Whoami\x12\x1a.tau.auth.v2.WhoamiRequest\x1a\x11.tau.auth.v2.User\x12C\n" +
 	"\n" +
 	"Disconnect\x12\x1e.tau.auth.v2.DisconnectRequest\x1a\x15.tau.auth.v2.SignedIn\x12P\n" +
-	"\vConnections\x12\x1f.tau.auth.v2.ConnectionsRequest\x1a .tau.auth.v2.ConnectionsResponse2\xb9\x06\n" +
+	"\vConnections\x12\x1f.tau.auth.v2.ConnectionsRequest\x1a .tau.auth.v2.ConnectionsResponse\x12I\n" +
+	"\x0eOpenConnection\x12\".tau.auth.v2.OpenConnectionRequest\x1a\x13.tau.auth.v2.Opened2\xb9\x06\n" +
 	"\vUserService\x12J\n" +
 	"\tListUsers\x12\x1d.tau.auth.v2.ListUsersRequest\x1a\x1e.tau.auth.v2.ListUsersResponse\x12?\n" +
 	"\n" +
@@ -3311,59 +3362,60 @@ func file_tau_auth_v2_auth_proto_rawDescGZIP() []byte {
 }
 
 var file_tau_auth_v2_auth_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_tau_auth_v2_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
+var file_tau_auth_v2_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
 var file_tau_auth_v2_auth_proto_goTypes = []any{
-	(Role)(0),                   // 0: tau.auth.v2.Role
-	(Capability)(0),             // 1: tau.auth.v2.Capability
-	(ProviderKind)(0),           // 2: tau.auth.v2.ProviderKind
-	(*Caller)(nil),              // 3: tau.auth.v2.Caller
-	(*Admission)(nil),           // 4: tau.auth.v2.Admission
-	(*OpenRequest)(nil),         // 5: tau.auth.v2.OpenRequest
-	(*Opened)(nil),              // 6: tau.auth.v2.Opened
-	(*VerifyRequest)(nil),       // 7: tau.auth.v2.VerifyRequest
-	(*Principal)(nil),           // 8: tau.auth.v2.Principal
-	(*User)(nil),                // 9: tau.auth.v2.User
-	(*Link)(nil),                // 10: tau.auth.v2.Link
-	(*Session)(nil),             // 11: tau.auth.v2.Session
-	(*Connection)(nil),          // 12: tau.auth.v2.Connection
-	(*ForgeToken)(nil),          // 13: tau.auth.v2.ForgeToken
-	(*Sealed)(nil),              // 14: tau.auth.v2.Sealed
-	(*SignedIn)(nil),            // 15: tau.auth.v2.SignedIn
-	(*Provider)(nil),            // 16: tau.auth.v2.Provider
-	(*ProvidersRequest)(nil),    // 17: tau.auth.v2.ProvidersRequest
-	(*ProvidersResponse)(nil),   // 18: tau.auth.v2.ProvidersResponse
-	(*LoginRequest)(nil),        // 19: tau.auth.v2.LoginRequest
-	(*RefreshRequest)(nil),      // 20: tau.auth.v2.RefreshRequest
-	(*LogoutRequest)(nil),       // 21: tau.auth.v2.LogoutRequest
-	(*LogoutResponse)(nil),      // 22: tau.auth.v2.LogoutResponse
-	(*AuthorizeRequest)(nil),    // 23: tau.auth.v2.AuthorizeRequest
-	(*AuthorizeResponse)(nil),   // 24: tau.auth.v2.AuthorizeResponse
-	(*ExchangeRequest)(nil),     // 25: tau.auth.v2.ExchangeRequest
-	(*DeviceStartRequest)(nil),  // 26: tau.auth.v2.DeviceStartRequest
-	(*DeviceStartResponse)(nil), // 27: tau.auth.v2.DeviceStartResponse
-	(*DevicePollRequest)(nil),   // 28: tau.auth.v2.DevicePollRequest
-	(*DevicePollResponse)(nil),  // 29: tau.auth.v2.DevicePollResponse
-	(*PastedRequest)(nil),       // 30: tau.auth.v2.PastedRequest
-	(*WhoamiRequest)(nil),       // 31: tau.auth.v2.WhoamiRequest
-	(*DisconnectRequest)(nil),   // 32: tau.auth.v2.DisconnectRequest
-	(*ConnectionsRequest)(nil),  // 33: tau.auth.v2.ConnectionsRequest
-	(*ConnectionsResponse)(nil), // 34: tau.auth.v2.ConnectionsResponse
-	(*ListUsersRequest)(nil),    // 35: tau.auth.v2.ListUsersRequest
-	(*ListUsersResponse)(nil),   // 36: tau.auth.v2.ListUsersResponse
-	(*CreateUserRequest)(nil),   // 37: tau.auth.v2.CreateUserRequest
-	(*UserRequest)(nil),         // 38: tau.auth.v2.UserRequest
-	(*SetRoleRequest)(nil),      // 39: tau.auth.v2.SetRoleRequest
-	(*SetDisabledRequest)(nil),  // 40: tau.auth.v2.SetDisabledRequest
-	(*SetPasswordRequest)(nil),  // 41: tau.auth.v2.SetPasswordRequest
-	(*Empty)(nil),               // 42: tau.auth.v2.Empty
-	(*CreateInviteRequest)(nil), // 43: tau.auth.v2.CreateInviteRequest
-	(*Invite)(nil),              // 44: tau.auth.v2.Invite
-	(*ListInvitesResponse)(nil), // 45: tau.auth.v2.ListInvitesResponse
-	(*CreateTokenRequest)(nil),  // 46: tau.auth.v2.CreateTokenRequest
-	(*Token)(nil),               // 47: tau.auth.v2.Token
-	(*ListTokensRequest)(nil),   // 48: tau.auth.v2.ListTokensRequest
-	(*ListTokensResponse)(nil),  // 49: tau.auth.v2.ListTokensResponse
-	(*RevokeTokenRequest)(nil),  // 50: tau.auth.v2.RevokeTokenRequest
+	(Role)(0),                     // 0: tau.auth.v2.Role
+	(Capability)(0),               // 1: tau.auth.v2.Capability
+	(ProviderKind)(0),             // 2: tau.auth.v2.ProviderKind
+	(*Caller)(nil),                // 3: tau.auth.v2.Caller
+	(*Admission)(nil),             // 4: tau.auth.v2.Admission
+	(*OpenRequest)(nil),           // 5: tau.auth.v2.OpenRequest
+	(*Opened)(nil),                // 6: tau.auth.v2.Opened
+	(*VerifyRequest)(nil),         // 7: tau.auth.v2.VerifyRequest
+	(*Principal)(nil),             // 8: tau.auth.v2.Principal
+	(*User)(nil),                  // 9: tau.auth.v2.User
+	(*Link)(nil),                  // 10: tau.auth.v2.Link
+	(*Session)(nil),               // 11: tau.auth.v2.Session
+	(*Connection)(nil),            // 12: tau.auth.v2.Connection
+	(*ForgeToken)(nil),            // 13: tau.auth.v2.ForgeToken
+	(*Sealed)(nil),                // 14: tau.auth.v2.Sealed
+	(*SignedIn)(nil),              // 15: tau.auth.v2.SignedIn
+	(*Provider)(nil),              // 16: tau.auth.v2.Provider
+	(*ProvidersRequest)(nil),      // 17: tau.auth.v2.ProvidersRequest
+	(*ProvidersResponse)(nil),     // 18: tau.auth.v2.ProvidersResponse
+	(*LoginRequest)(nil),          // 19: tau.auth.v2.LoginRequest
+	(*RefreshRequest)(nil),        // 20: tau.auth.v2.RefreshRequest
+	(*LogoutRequest)(nil),         // 21: tau.auth.v2.LogoutRequest
+	(*LogoutResponse)(nil),        // 22: tau.auth.v2.LogoutResponse
+	(*AuthorizeRequest)(nil),      // 23: tau.auth.v2.AuthorizeRequest
+	(*AuthorizeResponse)(nil),     // 24: tau.auth.v2.AuthorizeResponse
+	(*ExchangeRequest)(nil),       // 25: tau.auth.v2.ExchangeRequest
+	(*DeviceStartRequest)(nil),    // 26: tau.auth.v2.DeviceStartRequest
+	(*DeviceStartResponse)(nil),   // 27: tau.auth.v2.DeviceStartResponse
+	(*DevicePollRequest)(nil),     // 28: tau.auth.v2.DevicePollRequest
+	(*DevicePollResponse)(nil),    // 29: tau.auth.v2.DevicePollResponse
+	(*PastedRequest)(nil),         // 30: tau.auth.v2.PastedRequest
+	(*WhoamiRequest)(nil),         // 31: tau.auth.v2.WhoamiRequest
+	(*DisconnectRequest)(nil),     // 32: tau.auth.v2.DisconnectRequest
+	(*OpenConnectionRequest)(nil), // 33: tau.auth.v2.OpenConnectionRequest
+	(*ConnectionsRequest)(nil),    // 34: tau.auth.v2.ConnectionsRequest
+	(*ConnectionsResponse)(nil),   // 35: tau.auth.v2.ConnectionsResponse
+	(*ListUsersRequest)(nil),      // 36: tau.auth.v2.ListUsersRequest
+	(*ListUsersResponse)(nil),     // 37: tau.auth.v2.ListUsersResponse
+	(*CreateUserRequest)(nil),     // 38: tau.auth.v2.CreateUserRequest
+	(*UserRequest)(nil),           // 39: tau.auth.v2.UserRequest
+	(*SetRoleRequest)(nil),        // 40: tau.auth.v2.SetRoleRequest
+	(*SetDisabledRequest)(nil),    // 41: tau.auth.v2.SetDisabledRequest
+	(*SetPasswordRequest)(nil),    // 42: tau.auth.v2.SetPasswordRequest
+	(*Empty)(nil),                 // 43: tau.auth.v2.Empty
+	(*CreateInviteRequest)(nil),   // 44: tau.auth.v2.CreateInviteRequest
+	(*Invite)(nil),                // 45: tau.auth.v2.Invite
+	(*ListInvitesResponse)(nil),   // 46: tau.auth.v2.ListInvitesResponse
+	(*CreateTokenRequest)(nil),    // 47: tau.auth.v2.CreateTokenRequest
+	(*Token)(nil),                 // 48: tau.auth.v2.Token
+	(*ListTokensRequest)(nil),     // 49: tau.auth.v2.ListTokensRequest
+	(*ListTokensResponse)(nil),    // 50: tau.auth.v2.ListTokensResponse
+	(*RevokeTokenRequest)(nil),    // 51: tau.auth.v2.RevokeTokenRequest
 }
 var file_tau_auth_v2_auth_proto_depIdxs = []int32{
 	8,  // 0: tau.auth.v2.Opened.principal:type_name -> tau.auth.v2.Principal
@@ -3386,8 +3438,8 @@ var file_tau_auth_v2_auth_proto_depIdxs = []int32{
 	0,  // 17: tau.auth.v2.SetRoleRequest.role:type_name -> tau.auth.v2.Role
 	0,  // 18: tau.auth.v2.CreateInviteRequest.role:type_name -> tau.auth.v2.Role
 	0,  // 19: tau.auth.v2.Invite.role:type_name -> tau.auth.v2.Role
-	44, // 20: tau.auth.v2.ListInvitesResponse.invites:type_name -> tau.auth.v2.Invite
-	47, // 21: tau.auth.v2.ListTokensResponse.tokens:type_name -> tau.auth.v2.Token
+	45, // 20: tau.auth.v2.ListInvitesResponse.invites:type_name -> tau.auth.v2.Invite
+	48, // 21: tau.auth.v2.ListTokensResponse.tokens:type_name -> tau.auth.v2.Token
 	3,  // 22: tau.auth.v2.IdentityService.Admit:input_type -> tau.auth.v2.Caller
 	7,  // 23: tau.auth.v2.IdentityService.Verify:input_type -> tau.auth.v2.VerifyRequest
 	5,  // 24: tau.auth.v2.IdentityService.Open:input_type -> tau.auth.v2.OpenRequest
@@ -3402,48 +3454,50 @@ var file_tau_auth_v2_auth_proto_depIdxs = []int32{
 	30, // 33: tau.auth.v2.SessionService.Pasted:input_type -> tau.auth.v2.PastedRequest
 	31, // 34: tau.auth.v2.SessionService.Whoami:input_type -> tau.auth.v2.WhoamiRequest
 	32, // 35: tau.auth.v2.SessionService.Disconnect:input_type -> tau.auth.v2.DisconnectRequest
-	33, // 36: tau.auth.v2.SessionService.Connections:input_type -> tau.auth.v2.ConnectionsRequest
-	35, // 37: tau.auth.v2.UserService.ListUsers:input_type -> tau.auth.v2.ListUsersRequest
-	37, // 38: tau.auth.v2.UserService.CreateUser:input_type -> tau.auth.v2.CreateUserRequest
-	38, // 39: tau.auth.v2.UserService.DeleteUser:input_type -> tau.auth.v2.UserRequest
-	39, // 40: tau.auth.v2.UserService.SetRole:input_type -> tau.auth.v2.SetRoleRequest
-	40, // 41: tau.auth.v2.UserService.SetDisabled:input_type -> tau.auth.v2.SetDisabledRequest
-	41, // 42: tau.auth.v2.UserService.SetPassword:input_type -> tau.auth.v2.SetPasswordRequest
-	43, // 43: tau.auth.v2.UserService.CreateInvite:input_type -> tau.auth.v2.CreateInviteRequest
-	42, // 44: tau.auth.v2.UserService.ListInvites:input_type -> tau.auth.v2.Empty
-	38, // 45: tau.auth.v2.UserService.DeleteInvite:input_type -> tau.auth.v2.UserRequest
-	46, // 46: tau.auth.v2.UserService.CreateToken:input_type -> tau.auth.v2.CreateTokenRequest
-	48, // 47: tau.auth.v2.UserService.ListTokens:input_type -> tau.auth.v2.ListTokensRequest
-	50, // 48: tau.auth.v2.UserService.RevokeToken:input_type -> tau.auth.v2.RevokeTokenRequest
-	4,  // 49: tau.auth.v2.IdentityService.Admit:output_type -> tau.auth.v2.Admission
-	8,  // 50: tau.auth.v2.IdentityService.Verify:output_type -> tau.auth.v2.Principal
-	6,  // 51: tau.auth.v2.IdentityService.Open:output_type -> tau.auth.v2.Opened
-	18, // 52: tau.auth.v2.SessionService.Providers:output_type -> tau.auth.v2.ProvidersResponse
-	15, // 53: tau.auth.v2.SessionService.Login:output_type -> tau.auth.v2.SignedIn
-	15, // 54: tau.auth.v2.SessionService.Refresh:output_type -> tau.auth.v2.SignedIn
-	22, // 55: tau.auth.v2.SessionService.Logout:output_type -> tau.auth.v2.LogoutResponse
-	24, // 56: tau.auth.v2.SessionService.Authorize:output_type -> tau.auth.v2.AuthorizeResponse
-	15, // 57: tau.auth.v2.SessionService.Exchange:output_type -> tau.auth.v2.SignedIn
-	27, // 58: tau.auth.v2.SessionService.DeviceStart:output_type -> tau.auth.v2.DeviceStartResponse
-	29, // 59: tau.auth.v2.SessionService.DevicePoll:output_type -> tau.auth.v2.DevicePollResponse
-	15, // 60: tau.auth.v2.SessionService.Pasted:output_type -> tau.auth.v2.SignedIn
-	9,  // 61: tau.auth.v2.SessionService.Whoami:output_type -> tau.auth.v2.User
-	15, // 62: tau.auth.v2.SessionService.Disconnect:output_type -> tau.auth.v2.SignedIn
-	34, // 63: tau.auth.v2.SessionService.Connections:output_type -> tau.auth.v2.ConnectionsResponse
-	36, // 64: tau.auth.v2.UserService.ListUsers:output_type -> tau.auth.v2.ListUsersResponse
-	9,  // 65: tau.auth.v2.UserService.CreateUser:output_type -> tau.auth.v2.User
-	42, // 66: tau.auth.v2.UserService.DeleteUser:output_type -> tau.auth.v2.Empty
-	9,  // 67: tau.auth.v2.UserService.SetRole:output_type -> tau.auth.v2.User
-	9,  // 68: tau.auth.v2.UserService.SetDisabled:output_type -> tau.auth.v2.User
-	42, // 69: tau.auth.v2.UserService.SetPassword:output_type -> tau.auth.v2.Empty
-	44, // 70: tau.auth.v2.UserService.CreateInvite:output_type -> tau.auth.v2.Invite
-	45, // 71: tau.auth.v2.UserService.ListInvites:output_type -> tau.auth.v2.ListInvitesResponse
-	42, // 72: tau.auth.v2.UserService.DeleteInvite:output_type -> tau.auth.v2.Empty
-	47, // 73: tau.auth.v2.UserService.CreateToken:output_type -> tau.auth.v2.Token
-	49, // 74: tau.auth.v2.UserService.ListTokens:output_type -> tau.auth.v2.ListTokensResponse
-	42, // 75: tau.auth.v2.UserService.RevokeToken:output_type -> tau.auth.v2.Empty
-	49, // [49:76] is the sub-list for method output_type
-	22, // [22:49] is the sub-list for method input_type
+	34, // 36: tau.auth.v2.SessionService.Connections:input_type -> tau.auth.v2.ConnectionsRequest
+	33, // 37: tau.auth.v2.SessionService.OpenConnection:input_type -> tau.auth.v2.OpenConnectionRequest
+	36, // 38: tau.auth.v2.UserService.ListUsers:input_type -> tau.auth.v2.ListUsersRequest
+	38, // 39: tau.auth.v2.UserService.CreateUser:input_type -> tau.auth.v2.CreateUserRequest
+	39, // 40: tau.auth.v2.UserService.DeleteUser:input_type -> tau.auth.v2.UserRequest
+	40, // 41: tau.auth.v2.UserService.SetRole:input_type -> tau.auth.v2.SetRoleRequest
+	41, // 42: tau.auth.v2.UserService.SetDisabled:input_type -> tau.auth.v2.SetDisabledRequest
+	42, // 43: tau.auth.v2.UserService.SetPassword:input_type -> tau.auth.v2.SetPasswordRequest
+	44, // 44: tau.auth.v2.UserService.CreateInvite:input_type -> tau.auth.v2.CreateInviteRequest
+	43, // 45: tau.auth.v2.UserService.ListInvites:input_type -> tau.auth.v2.Empty
+	39, // 46: tau.auth.v2.UserService.DeleteInvite:input_type -> tau.auth.v2.UserRequest
+	47, // 47: tau.auth.v2.UserService.CreateToken:input_type -> tau.auth.v2.CreateTokenRequest
+	49, // 48: tau.auth.v2.UserService.ListTokens:input_type -> tau.auth.v2.ListTokensRequest
+	51, // 49: tau.auth.v2.UserService.RevokeToken:input_type -> tau.auth.v2.RevokeTokenRequest
+	4,  // 50: tau.auth.v2.IdentityService.Admit:output_type -> tau.auth.v2.Admission
+	8,  // 51: tau.auth.v2.IdentityService.Verify:output_type -> tau.auth.v2.Principal
+	6,  // 52: tau.auth.v2.IdentityService.Open:output_type -> tau.auth.v2.Opened
+	18, // 53: tau.auth.v2.SessionService.Providers:output_type -> tau.auth.v2.ProvidersResponse
+	15, // 54: tau.auth.v2.SessionService.Login:output_type -> tau.auth.v2.SignedIn
+	15, // 55: tau.auth.v2.SessionService.Refresh:output_type -> tau.auth.v2.SignedIn
+	22, // 56: tau.auth.v2.SessionService.Logout:output_type -> tau.auth.v2.LogoutResponse
+	24, // 57: tau.auth.v2.SessionService.Authorize:output_type -> tau.auth.v2.AuthorizeResponse
+	15, // 58: tau.auth.v2.SessionService.Exchange:output_type -> tau.auth.v2.SignedIn
+	27, // 59: tau.auth.v2.SessionService.DeviceStart:output_type -> tau.auth.v2.DeviceStartResponse
+	29, // 60: tau.auth.v2.SessionService.DevicePoll:output_type -> tau.auth.v2.DevicePollResponse
+	15, // 61: tau.auth.v2.SessionService.Pasted:output_type -> tau.auth.v2.SignedIn
+	9,  // 62: tau.auth.v2.SessionService.Whoami:output_type -> tau.auth.v2.User
+	15, // 63: tau.auth.v2.SessionService.Disconnect:output_type -> tau.auth.v2.SignedIn
+	35, // 64: tau.auth.v2.SessionService.Connections:output_type -> tau.auth.v2.ConnectionsResponse
+	6,  // 65: tau.auth.v2.SessionService.OpenConnection:output_type -> tau.auth.v2.Opened
+	37, // 66: tau.auth.v2.UserService.ListUsers:output_type -> tau.auth.v2.ListUsersResponse
+	9,  // 67: tau.auth.v2.UserService.CreateUser:output_type -> tau.auth.v2.User
+	43, // 68: tau.auth.v2.UserService.DeleteUser:output_type -> tau.auth.v2.Empty
+	9,  // 69: tau.auth.v2.UserService.SetRole:output_type -> tau.auth.v2.User
+	9,  // 70: tau.auth.v2.UserService.SetDisabled:output_type -> tau.auth.v2.User
+	43, // 71: tau.auth.v2.UserService.SetPassword:output_type -> tau.auth.v2.Empty
+	45, // 72: tau.auth.v2.UserService.CreateInvite:output_type -> tau.auth.v2.Invite
+	46, // 73: tau.auth.v2.UserService.ListInvites:output_type -> tau.auth.v2.ListInvitesResponse
+	43, // 74: tau.auth.v2.UserService.DeleteInvite:output_type -> tau.auth.v2.Empty
+	48, // 75: tau.auth.v2.UserService.CreateToken:output_type -> tau.auth.v2.Token
+	50, // 76: tau.auth.v2.UserService.ListTokens:output_type -> tau.auth.v2.ListTokensResponse
+	43, // 77: tau.auth.v2.UserService.RevokeToken:output_type -> tau.auth.v2.Empty
+	50, // [50:78] is the sub-list for method output_type
+	22, // [22:50] is the sub-list for method input_type
 	22, // [22:22] is the sub-list for extension type_name
 	22, // [22:22] is the sub-list for extension extendee
 	0,  // [0:22] is the sub-list for field type_name
@@ -3460,7 +3514,7 @@ func file_tau_auth_v2_auth_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_auth_v2_auth_proto_rawDesc), len(file_tau_auth_v2_auth_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   48,
+			NumMessages:   49,
 			NumExtensions: 0,
 			NumServices:   3,
 		},

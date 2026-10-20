@@ -207,6 +207,21 @@ func (h *sessionHandler) Disconnect(ctx context.Context, req *connect.Request[au
 	return connect.NewResponse(signed), nil
 }
 
+func (h *sessionHandler) OpenConnection(ctx context.Context, req *connect.Request[authv2.OpenConnectionRequest]) (*connect.Response[authv2.Opened], error) {
+	if err := h.ready(); err != nil {
+		return nil, err
+	}
+	raw, ok := strings.CutPrefix(req.Header().Get("Authorization"), "Bearer ")
+	if !ok || raw == "" {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("auth: no tau token"))
+	}
+	o, err := h.s.open(ctx, raw, req.Msg.GetHost())
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(o), nil
+}
+
 func (h *sessionHandler) Connections(ctx context.Context, req *connect.Request[authv2.ConnectionsRequest]) (*connect.Response[authv2.ConnectionsResponse], error) {
 	if err := h.ready(); err != nil {
 		return nil, err

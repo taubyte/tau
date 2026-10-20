@@ -286,3 +286,17 @@ func TestOpenRefusesABadToken(t *testing.T) {
 	_, err := f.identity().Open(t.Context(), connect.NewRequest(&authv2.OpenRequest{Token: "x", Host: testHost}))
 	require.Equal(t, connect.CodeUnauthenticated, code(t, err))
 }
+
+func TestOpenConnectionIsTheCallersOwn(t *testing.T) {
+	f := newFx(t, func(c *Config) { c.SignUp = SignUpOpen })
+	f.forge.give("gho_alice", identity("42", "alice"))
+	in, err := f.sessions().Pasted(t.Context(), req(&authv2.PastedRequest{Provider: testHost, Token: "gho_alice"}, ""))
+	require.NoError(t, err)
+	o, err := f.sessions().OpenConnection(t.Context(), req(&authv2.OpenConnectionRequest{Host: testHost}, in.Msg.GetSession().GetAccessToken()))
+	require.NoError(t, err)
+	require.Equal(t, "gho_alice", o.Msg.GetForge().GetAccessToken())
+	_, err = f.sessions().OpenConnection(t.Context(), req(&authv2.OpenConnectionRequest{Host: testHost}, ""))
+	require.Equal(t, connect.CodeUnauthenticated, code(t, err))
+	_, err = (&sessionHandler{newTestService(t)}).OpenConnection(t.Context(), req(&authv2.OpenConnectionRequest{}, ""))
+	require.ErrorIs(t, err, errNoUsers)
+}

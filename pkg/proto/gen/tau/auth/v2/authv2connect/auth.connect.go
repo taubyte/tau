@@ -92,6 +92,9 @@ const (
 	// SessionServiceConnectionsProcedure is the fully-qualified name of the SessionService's
 	// Connections RPC.
 	SessionServiceConnectionsProcedure = "/tau.auth.v2.SessionService/Connections"
+	// SessionServiceOpenConnectionProcedure is the fully-qualified name of the SessionService's
+	// OpenConnection RPC.
+	SessionServiceOpenConnectionProcedure = "/tau.auth.v2.SessionService/OpenConnection"
 	// UserServiceListUsersProcedure is the fully-qualified name of the UserService's ListUsers RPC.
 	UserServiceListUsersProcedure = "/tau.auth.v2.UserService/ListUsers"
 	// UserServiceCreateUserProcedure is the fully-qualified name of the UserService's CreateUser RPC.
@@ -272,6 +275,7 @@ type SessionServiceClient interface {
 	Whoami(context.Context, *connect.Request[v2.WhoamiRequest]) (*connect.Response[v2.User], error)
 	Disconnect(context.Context, *connect.Request[v2.DisconnectRequest]) (*connect.Response[v2.SignedIn], error)
 	Connections(context.Context, *connect.Request[v2.ConnectionsRequest]) (*connect.Response[v2.ConnectionsResponse], error)
+	OpenConnection(context.Context, *connect.Request[v2.OpenConnectionRequest]) (*connect.Response[v2.Opened], error)
 }
 
 // NewSessionServiceClient constructs a client for the tau.auth.v2.SessionService service. By
@@ -357,23 +361,30 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(sessionServiceMethods.ByName("Connections")),
 			connect.WithClientOptions(opts...),
 		),
+		openConnection: connect.NewClient[v2.OpenConnectionRequest, v2.Opened](
+			httpClient,
+			baseURL+SessionServiceOpenConnectionProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("OpenConnection")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // sessionServiceClient implements SessionServiceClient.
 type sessionServiceClient struct {
-	providers   *connect.Client[v2.ProvidersRequest, v2.ProvidersResponse]
-	login       *connect.Client[v2.LoginRequest, v2.SignedIn]
-	refresh     *connect.Client[v2.RefreshRequest, v2.SignedIn]
-	logout      *connect.Client[v2.LogoutRequest, v2.LogoutResponse]
-	authorize   *connect.Client[v2.AuthorizeRequest, v2.AuthorizeResponse]
-	exchange    *connect.Client[v2.ExchangeRequest, v2.SignedIn]
-	deviceStart *connect.Client[v2.DeviceStartRequest, v2.DeviceStartResponse]
-	devicePoll  *connect.Client[v2.DevicePollRequest, v2.DevicePollResponse]
-	pasted      *connect.Client[v2.PastedRequest, v2.SignedIn]
-	whoami      *connect.Client[v2.WhoamiRequest, v2.User]
-	disconnect  *connect.Client[v2.DisconnectRequest, v2.SignedIn]
-	connections *connect.Client[v2.ConnectionsRequest, v2.ConnectionsResponse]
+	providers      *connect.Client[v2.ProvidersRequest, v2.ProvidersResponse]
+	login          *connect.Client[v2.LoginRequest, v2.SignedIn]
+	refresh        *connect.Client[v2.RefreshRequest, v2.SignedIn]
+	logout         *connect.Client[v2.LogoutRequest, v2.LogoutResponse]
+	authorize      *connect.Client[v2.AuthorizeRequest, v2.AuthorizeResponse]
+	exchange       *connect.Client[v2.ExchangeRequest, v2.SignedIn]
+	deviceStart    *connect.Client[v2.DeviceStartRequest, v2.DeviceStartResponse]
+	devicePoll     *connect.Client[v2.DevicePollRequest, v2.DevicePollResponse]
+	pasted         *connect.Client[v2.PastedRequest, v2.SignedIn]
+	whoami         *connect.Client[v2.WhoamiRequest, v2.User]
+	disconnect     *connect.Client[v2.DisconnectRequest, v2.SignedIn]
+	connections    *connect.Client[v2.ConnectionsRequest, v2.ConnectionsResponse]
+	openConnection *connect.Client[v2.OpenConnectionRequest, v2.Opened]
 }
 
 // Providers calls tau.auth.v2.SessionService.Providers.
@@ -436,6 +447,11 @@ func (c *sessionServiceClient) Connections(ctx context.Context, req *connect.Req
 	return c.connections.CallUnary(ctx, req)
 }
 
+// OpenConnection calls tau.auth.v2.SessionService.OpenConnection.
+func (c *sessionServiceClient) OpenConnection(ctx context.Context, req *connect.Request[v2.OpenConnectionRequest]) (*connect.Response[v2.Opened], error) {
+	return c.openConnection.CallUnary(ctx, req)
+}
+
 // SessionServiceHandler is an implementation of the tau.auth.v2.SessionService service.
 type SessionServiceHandler interface {
 	Providers(context.Context, *connect.Request[v2.ProvidersRequest]) (*connect.Response[v2.ProvidersResponse], error)
@@ -450,6 +466,7 @@ type SessionServiceHandler interface {
 	Whoami(context.Context, *connect.Request[v2.WhoamiRequest]) (*connect.Response[v2.User], error)
 	Disconnect(context.Context, *connect.Request[v2.DisconnectRequest]) (*connect.Response[v2.SignedIn], error)
 	Connections(context.Context, *connect.Request[v2.ConnectionsRequest]) (*connect.Response[v2.ConnectionsResponse], error)
+	OpenConnection(context.Context, *connect.Request[v2.OpenConnectionRequest]) (*connect.Response[v2.Opened], error)
 }
 
 // NewSessionServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -531,6 +548,12 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 		connect.WithSchema(sessionServiceMethods.ByName("Connections")),
 		connect.WithHandlerOptions(opts...),
 	)
+	sessionServiceOpenConnectionHandler := connect.NewUnaryHandler(
+		SessionServiceOpenConnectionProcedure,
+		svc.OpenConnection,
+		connect.WithSchema(sessionServiceMethods.ByName("OpenConnection")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/tau.auth.v2.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SessionServiceProvidersProcedure:
@@ -557,6 +580,8 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 			sessionServiceDisconnectHandler.ServeHTTP(w, r)
 		case SessionServiceConnectionsProcedure:
 			sessionServiceConnectionsHandler.ServeHTTP(w, r)
+		case SessionServiceOpenConnectionProcedure:
+			sessionServiceOpenConnectionHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -612,6 +637,10 @@ func (UnimplementedSessionServiceHandler) Disconnect(context.Context, *connect.R
 
 func (UnimplementedSessionServiceHandler) Connections(context.Context, *connect.Request[v2.ConnectionsRequest]) (*connect.Response[v2.ConnectionsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.SessionService.Connections is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) OpenConnection(context.Context, *connect.Request[v2.OpenConnectionRequest]) (*connect.Response[v2.Opened], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.SessionService.OpenConnection is not implemented"))
 }
 
 // UserServiceClient is a client for the tau.auth.v2.UserService service.
