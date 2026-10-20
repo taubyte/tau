@@ -184,22 +184,24 @@ func (srv *Service) rotateIfNeeded(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	var epoch uint64
 	for _, key := range keys {
 		if key.Epoch > active.Epoch && slices.Equal(key.Members, members) {
 			return nil
 		}
+		epoch = max(epoch, key.Epoch)
 	}
 	if srv.alreadyRotated(members, active.Epoch) {
 		return nil
 	}
 
-	epoch, err := srv.keys.Epoch(ctx)
-	if err != nil {
-		return err
-	}
-
-	// A round already exists for this epoch and roster if another node started
-	// it; joinRound is idempotent, so this converges rather than competing.
+	// The next epoch comes from the same read that just found no rotation, not
+	// a fresh one. A key for this roster can land between two reads, and a
+	// second read that sees it counts past it: the check said "not rotated"
+	// and the count said "rotated", so this node rotated again on top of a
+	// rotation that had already happened. From one read, a stale view only
+	// names the round already under way, and joinRound is idempotent, so this
+	// converges rather than competing.
 	return srv.generateKey(ctx, epoch+1, members)
 }
 

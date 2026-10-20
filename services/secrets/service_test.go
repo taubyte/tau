@@ -873,6 +873,7 @@ func TestConcurrentReconciliation(t *testing.T) {
 	epochs := map[uint64]struct{}{}
 	for _, key := range keys {
 		epochs[key.Epoch] = struct{}{}
+		t.Logf("key %s epoch %d members %v", key.KeyID, key.Epoch, key.Members)
 	}
 	assert.LessOrEqualf(t, len(epochs), 2,
 		"concurrent reconciliation advanced %d epochs for one roster change", len(epochs))
