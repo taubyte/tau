@@ -165,10 +165,8 @@ type Config struct {
 
 	// PublicURL is this ingress as forges reach it (scheme://host[:port]),
 	// what a webhook linking installs delivers to: <PublicURL>/hook/<id>.
-	// Empty, it is read from the link request itself — the scheme from
-	// whether it arrived over TLS, the host from its Host header — which is
-	// right for a cloud reached directly and wrong behind a proxy that
-	// terminates TLS, where an https URL must be set here.
+	// Empty, link install and inspect are refused: the request's own Host
+	// header is the caller's to set and never names where hooks deliver.
 	PublicURL string `yaml:"publicURL"`
 
 	HookRate    Rate `yaml:"hookRate"`

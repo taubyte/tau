@@ -64,7 +64,7 @@ func TestLinkRoutesNeedAnInstaller(t *testing.T) {
 // and says where this cloud's hook for the project delivers.
 func TestLinkInspect(t *testing.T) {
 	inst := &fakeInstaller{inspect: Inspection{Repository: "github.com/acme/Pay", Admin: true, Hooked: true}}
-	h := newHarness(t, Config{}, WithInstaller(inst))
+	h := newHarness(t, Config{PublicURL: "http://example.com"}, WithInstaller(inst))
 	h.connections.forge = map[string]string{"github.com": testToken}
 
 	w := h.do(t, linkCall("/link/"+testHookID+"/inspect", `{"repository":"`+testRepoKey+`"}`))
@@ -94,8 +94,7 @@ func TestLinkInspect(t *testing.T) {
 	require.Contains(t, bodyOf(t, w), "no hooks here")
 }
 
-// The callback is the configured public address when there is one, and
-// otherwise the request's own: https when it came over TLS.
+// The callback is the configured public address, and only that.
 func TestLinkCallback(t *testing.T) {
 	inst := &fakeInstaller{inspect: Inspection{Repository: testRepoKey, Admin: true}}
 	h := newHarness(t, Config{PublicURL: "https://build.example.com/"}, WithInstaller(inst))
@@ -103,12 +102,21 @@ func TestLinkCallback(t *testing.T) {
 	require.Equal(t, http.StatusOK, h.do(t, linkCall("/link/"+testHookID+"/inspect", `{"repository":"`+testRepoKey+`"}`)).Code)
 	require.Contains(t, inst.inspected[0], "|https://build.example.com/hook/"+testHookID)
 
+	// UNSET, NOTHING IS INSTALLED: the Host header is the caller's to name,
+	// and a hook aimed by it would deliver wherever the caller said.
 	h = newHarness(t, Config{}, WithInstaller(inst))
 	h.connections.forge = map[string]string{"github.com": testToken}
 	r := linkCall("/link/"+testHookID+"/inspect", `{"repository":"`+testRepoKey+`"}`)
+	r.Host = "attacker.example"
 	r.TLS = &tls.ConnectionState{}
-	require.Equal(t, http.StatusOK, h.do(t, r).Code)
-	require.Contains(t, inst.inspected[1], "|https://example.com/hook/"+testHookID)
+	w := h.do(t, r)
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	require.Contains(t, bodyOf(t, w), "publicURL")
+	require.Equal(t, http.StatusServiceUnavailable, h.do(t, linkCall("/link/"+testHookID+"/install", `{"repository":"`+testRepoKey+`","deploy_key":"`+goodKey+`"}`)).Code)
+	require.Len(t, inst.inspected, 1)
+
+	h = newHarness(t, Config{PublicURL: "ftp://build.example.com"}, WithInstaller(inst))
+	require.Equal(t, http.StatusInternalServerError, h.do(t, linkCall("/link/"+testHookID+"/inspect", `{"repository":"`+testRepoKey+`"}`)).Code)
 
 	h = newHarness(t, Config{PublicURL: "::"}, WithInstaller(inst))
 	require.Equal(t, http.StatusInternalServerError, h.do(t, linkCall("/link/"+testHookID+"/inspect", `{"repository":"`+testRepoKey+`"}`)).Code)
@@ -119,7 +127,7 @@ func TestLinkCallback(t *testing.T) {
 // made of, delivering only to this cloud; the caller sends a public key.
 func TestLinkInstall(t *testing.T) {
 	inst := &fakeInstaller{}
-	h := newHarness(t, Config{}, WithInstaller(inst))
+	h := newHarness(t, Config{PublicURL: "http://example.com"}, WithInstaller(inst))
 	h.connections.forge = map[string]string{"github.com": testToken}
 	path := "/link/" + testHookID + "/install"
 
@@ -174,7 +182,7 @@ func TestLinkInstall(t *testing.T) {
 // A connection that will not open stops both routes before the forge.
 func TestLinkRoutesNeedTheConnection(t *testing.T) {
 	inst := &fakeInstaller{}
-	h := newHarness(t, Config{}, WithInstaller(inst))
+	h := newHarness(t, Config{PublicURL: "http://example.com"}, WithInstaller(inst))
 	h.connections.err = map[string]error{"github.com": &NotConnectedError{Reason: "not connected to github.com: connect it first"}}
 	for _, p := range []string{"/link/" + testHookID + "/inspect", "/link/" + testHookID + "/install"} {
 		w := h.do(t, linkCall(p, `{"repository":"`+testRepoKey+`","deploy_key":"`+goodKey+`"}`))

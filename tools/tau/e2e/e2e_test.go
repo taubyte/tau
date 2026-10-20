@@ -16,6 +16,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -79,7 +80,11 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 		Configure: func(index int, c *node.Config) {
 			if index > 0 {
 				c.Services = []string{node.Discovery, node.BuildFrontend}
-				c.BuildFrontend.Listen = "127.0.0.1:0"
+				// A FIXED PORT, because the frontend installs hooks only at
+				// its configured publicURL and never at a request's Host.
+				addr := freePort(t)
+				c.BuildFrontend.Listen = addr
+				c.BuildFrontend.PublicURL = "http://" + addr
 			}
 		},
 	})
@@ -284,4 +289,14 @@ func copyProject(from, to string) error {
 		}
 		return os.WriteFile(filepath.Join(to, rel), data, 0o644)
 	})
+}
+
+// freePort is a loopback address nothing listens on now.
+func freePort(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	addr := l.Addr().String()
+	require.NoError(t, l.Close())
+	return addr
 }

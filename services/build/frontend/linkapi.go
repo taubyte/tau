@@ -51,20 +51,18 @@ type installRequest struct {
 }
 
 // callback is where a hook for projectID delivers, and the cloud a deploy
-// key is titled for.
-func (s *Service) callback(r *http.Request, projectID string) (*url.URL, string, error) {
-	base := s.cfg.PublicURL
+// key is titled for. IT IS ONLY EVER THE CONFIGURED PublicURL: the request's
+// Host header and TLS state are the caller's to set, and a hook aimed by them
+// would deliver this project's pushes, signed with its secret, wherever the
+// caller named.
+func (s *Service) callback(projectID string) (*url.URL, string, error) {
+	base := strings.TrimSuffix(s.cfg.PublicURL, "/")
 	if base == "" {
-		scheme := "http"
-		if r.TLS != nil {
-			scheme = "https"
-		}
-		base = scheme + "://" + r.Host
+		return nil, "", problem(http.StatusServiceUnavailable, "this cloud has no publicURL configured for its build frontend, so it cannot install a webhook; link with --manual or ask the operator to set it")
 	}
-	base = strings.TrimSuffix(base, "/")
 	u, err := url.Parse(base + "/hook/" + url.PathEscape(projectID))
-	if err != nil || u.Host == "" {
-		return nil, "", problem(http.StatusInternalServerError, "this cloud has no public address to deliver webhooks to")
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return nil, "", problem(http.StatusInternalServerError, "this cloud's publicURL is not an http(s) address to deliver webhooks to")
 	}
 	return u, base, nil
 }
@@ -84,7 +82,7 @@ func (s *Service) handleLinkInspect(w http.ResponseWriter, r *http.Request, toke
 		respond(w, problem(http.StatusBadRequest, "not a repository key: "+req.Repository))
 		return
 	}
-	callback, _, err := s.callback(r, projectID)
+	callback, _, err := s.callback(projectID)
 	if err != nil {
 		respond(w, err)
 		return
@@ -127,7 +125,7 @@ func (s *Service) handleLinkInstall(w http.ResponseWriter, r *http.Request, toke
 		respond(w, problem(http.StatusBadRequest, "deploy_key must be one authorized_keys line"))
 		return
 	}
-	callback, base, err := s.callback(r, projectID)
+	callback, base, err := s.callback(projectID)
 	if err != nil {
 		respond(w, err)
 		return
