@@ -54,11 +54,12 @@ import (
 
 const (
 	pendingTTL = 10 * time.Minute
-	// pollFor bounds one DevicePoll; the client calls again while pending.
-	pollFor = 25 * time.Second
 	// callbackPath is the one path a loopback redirect may name.
 	callbackPath = "/callback"
 )
+
+// pollFor bounds one DevicePoll; the client calls again while pending.
+var pollFor = 25 * time.Second
 
 // provider is one way to sign in, resolved.
 type provider struct {
@@ -390,10 +391,13 @@ func (s *Service) deviceStart(ctx context.Context, req *authv2.DeviceStartReques
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("auth: starting a device sign-in on %s: %w", p.id, err))
 	}
-	expires := da.Expiry
-	if expires.IsZero() {
-		expires = s.now().Add(pendingTTL)
+	// oauth2 stamps the expiry from the wall clock; it is kept on this
+	// service's.
+	ttl := pendingTTL
+	if !da.Expiry.IsZero() {
+		ttl = time.Until(da.Expiry)
 	}
+	expires := s.now().Add(ttl)
 	if err := s.store.put(ctx, prefixDevice+digest(da.DeviceCode), deviceRow{Provider: p.id, Interval: da.Interval, Expires: expires.UnixNano()}); err != nil {
 		return nil, err
 	}
@@ -425,7 +429,7 @@ func (s *Service) devicePoll(ctx context.Context, req *authv2.DevicePollRequest)
 	wait, cancel := context.WithTimeout(ctx, pollFor)
 	defer cancel()
 	tok, err := p.oauth.DeviceAccessToken(s.oauthContext(wait), &oauth2.DeviceAuthResponse{
-		DeviceCode: req.GetDeviceCode(), Interval: row.Interval, Expiry: time.Unix(0, row.Expires),
+		DeviceCode: req.GetDeviceCode(), Interval: row.Interval, Expiry: time.Now().Add(time.Duration(row.Expires - s.now().UnixNano())),
 	})
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
