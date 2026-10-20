@@ -9,6 +9,7 @@ import (
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/azure"
 	"github.com/taubyte/tau/pkg/forge/bitbucket"
+	"github.com/taubyte/tau/pkg/forge/bitbucketserver"
 	"github.com/taubyte/tau/pkg/forge/gerrit"
 	"github.com/taubyte/tau/pkg/forge/gitea"
 	"github.com/taubyte/tau/pkg/forge/github"
@@ -36,8 +37,8 @@ type Forge struct {
 	// Driver is the API the host speaks: "github" for github.com and GitHub
 	// Enterprise, "gitlab" for GitLab, "gitea" for Gitea, Forgejo and
 	// Codeberg, which share one API, "gogs", "onedev", "gerrit", "sourcehut"
-	// for git.sr.ht, "bitbucket" for Bitbucket Cloud, and "azure" for Azure
-	// DevOps.
+	// for git.sr.ht, "bitbucket" for Bitbucket Cloud, "bitbucket-server" for
+	// Bitbucket Server and Data Center, and "azure" for Azure DevOps.
 	//
 	// ONLY A FORGE THAT SIGNS ITS DELIVERIES TRIGGERS BUILDS. tau accepts no
 	// webhook it cannot verify by a signature over the body, so a driver
@@ -73,6 +74,11 @@ type Forge struct {
 	// Organizations are the Azure DevOps organizations (collections, on a
 	// Server) this cloud answers in. At least one is required. azure only.
 	Organizations []string
+
+	// SSHPort is the port a Bitbucket Server serves ssh on, when it is not
+	// 7999. Its ssh addresses are keyed as the same repositories as its https
+	// ones. bitbucket-server only.
+	SSHPort int
 }
 
 // The drivers a Forge may name.
@@ -86,11 +92,13 @@ const (
 	ForgeSourcehut = "sourcehut"
 	ForgeBitbucket = "bitbucket"
 	ForgeAzure     = "azure"
+
+	ForgeBitbucketServer = "bitbucket-server"
 )
 
 // forgeDrivers is every driver a Forge may name, in the order a refusal lists
 // them.
-var forgeDrivers = []string{ForgeGitHub, ForgeGitLab, ForgeGitea, ForgeGogs, ForgeOneDev, ForgeGerrit, ForgeSourcehut, ForgeBitbucket, ForgeAzure}
+var forgeDrivers = []string{ForgeGitHub, ForgeGitLab, ForgeGitea, ForgeGogs, ForgeOneDev, ForgeGerrit, ForgeSourcehut, ForgeBitbucket, ForgeBitbucketServer, ForgeAzure}
 
 // DefaultForges is what a node serves when its operator named none: the two
 // public forges. A self-hosted instance is an operator's to add.
@@ -217,6 +225,12 @@ func forges(declared []Forge) (*forge.Registry, error) {
 			d, err = sourcehut.New(f.Host, opts...)
 		case ForgeBitbucket:
 			d, err = bitbucket.New(f.Host)
+		case ForgeBitbucketServer:
+			var opts []bitbucketserver.Option
+			if f.SSHPort != 0 {
+				opts = append(opts, bitbucketserver.SSHPort(f.SSHPort))
+			}
+			d, err = bitbucketserver.New(f.Host, opts...)
 		case ForgeAzure:
 			d, err = azure.New(f.Host, azure.Organizations(f.Organizations...))
 		default:

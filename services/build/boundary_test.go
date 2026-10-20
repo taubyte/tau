@@ -226,6 +226,8 @@ func TestTheIdentityAdapterKnowsNoProvider(t *testing.T) {
 		"the adapter asks by host; which driver answers is the node's binding")
 	requireNoImport(t, adapterImports, "github.com/taubyte/tau/pkg/forge/bitbucket",
 		"the adapter asks by host; which driver answers is the node's binding")
+	requireNoImport(t, adapterImports, "github.com/taubyte/tau/pkg/forge/bitbucketserver",
+		"the adapter asks by host; which driver answers is the node's binding")
 	requireNoImport(t, adapterImports, "github.com/taubyte/tau/pkg/forge/azure",
 		"the adapter asks by host; which driver answers is the node's binding")
 	requireNoImport(t, adapterImports, backendPkg,

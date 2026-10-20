@@ -57,12 +57,28 @@ func TestForges(t *testing.T) {
 		{Host: "srht.example.org", Driver: ForgeSourcehut, PayloadKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="},
 		{Host: "bitbucket.org", Driver: ForgeBitbucket},
 		{Host: "dev.azure.com", Driver: ForgeAzure, Organizations: []string{"acme"}},
+		{Host: "bitbucket.example.com", Driver: ForgeBitbucketServer},
+		{Host: "bbs.example.com", Driver: ForgeBitbucketServer, SSHPort: 2222},
 	})
 	require.NoError(t, err)
+	// Both of a Bitbucket Server's addresses, on whatever ssh port it was
+	// given, are one repository.
+	for _, spelling := range []string{
+		"https://bitbucket.example.com/scm/PROJ/repo.git", "ssh://git@bitbucket.example.com:7999/PROJ/repo.git",
+	} {
+		k, err := reg.Key(spelling)
+		require.NoError(t, err)
+		require.Equal(t, "bitbucket.example.com/proj/repo", k.String(), spelling)
+	}
+	k, err := reg.Key("ssh://git@bbs.example.com:2222/PROJ/repo.git")
+	require.NoError(t, err)
+	require.Equal(t, "bbs.example.com/proj/repo", k.String())
+	_, err = forges([]Forge{{Host: "bbs.example.com", Driver: ForgeBitbucketServer, SSHPort: -1}})
+	require.ErrorContains(t, err, `forge "bbs.example.com"`)
 	for host, want := range map[string]bool{
 		"gogs.example.com": true, "onedev.example.com": false, "review.example.com": false,
 		"git.sr.ht": true, "git.example.org": false, "srht.example.org": true,
-		"bitbucket.org": true, "dev.azure.com": false,
+		"bitbucket.org": true, "dev.azure.com": false, "bitbucket.example.com": true,
 	} {
 		d, err := reg.Driver(host)
 		require.NoError(t, err)
