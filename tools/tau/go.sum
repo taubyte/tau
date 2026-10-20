@@ -701,6 +701,8 @@ github.com/samyfodil/musql v0.4.0 h1:vUZF2QiORMuGeuTv7mcu4HRySfWSYAlQItTgkP1x+uw
 github.com/samyfodil/musql v0.4.0/go.mod h1:2qx2oHroM/bJXKsDVcUu/CViAk/0eXSjqYsMSdXO6O4=
 github.com/samyfodil/wazy v0.2.1-0.20260902164748-35e45b48b257 h1:7kkpJDC5y2DP/rKjlSJoP1xWBEzDOF+8tMEx3e92YvU=
 github.com/samyfodil/wazy v0.2.1-0.20260902164748-35e45b48b257/go.mod h1:jpXcoooWi9CQPnN1fzwt/A0w3AMRn/s6PQDunF55SIM=
+github.com/samyfodil/wazy v0.4.0 h1:dFauq4qO+XlWrszvBpG+3gFJsELjx0ZVqjMDClCaNNk=
+github.com/samyfodil/wazy v0.4.0/go.mod h1:jpXcoooWi9CQPnN1fzwt/A0w3AMRn/s6PQDunF55SIM=
 github.com/sergi/go-diff v1.2.0/go.mod h1:STckp+ISIX8hZLjrqAeVduY0gWCT9IjLuqbuNXdaHfM=
 github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 h1:n661drycOFuPLCN3Uc8sB6B/s6Z4t2xvBgU1htSHuq8=
 github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3/go.mod h1:A0bzQcvG0E7Rwjx0REVgAGH58e96+X0MeOfepqsbeW4=

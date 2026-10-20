@@ -59,7 +59,7 @@ require (
 	github.com/pkg/sftp v1.13.9
 	github.com/pterm/pterm v0.12.65
 	github.com/samyfodil/musql v0.4.0
-	github.com/samyfodil/wazy v0.2.1-0.20260902164748-35e45b48b257
+	github.com/samyfodil/wazy v0.4.0
 	github.com/spf13/afero v1.11.0
 	github.com/stretchr/testify v1.11.1
 	github.com/taubyte/domain-validation v1.0.1
@@ -290,4 +290,3 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
-
