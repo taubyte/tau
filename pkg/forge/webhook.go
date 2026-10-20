@@ -74,6 +74,13 @@ const (
 	// 19.0 offers only this, which is why it exists here and why the zero
 	// Policy refuses it.
 	SchemeSharedToken Scheme = "shared-token"
+
+	// SchemeGogsSHA256 is X-Gogs-Signature: lowercase hex of HMAC-SHA256 over
+	// the verbatim body, keyed by the wire string's bytes, with NO "sha256="
+	// prefix. Gogs sends nothing else — no X-Hub-Signature-256 beside it — so
+	// it cannot name SchemeHubSHA256, and a verifier that accepted either
+	// spelling in either header would be two schemes pretending to be one.
+	SchemeGogsSHA256 Scheme = "gogs-sha256"
 )
 
 // GitHub's SHA-1 sibling (X-Hub-Signature: sha1=...) is deliberately NOT
@@ -83,7 +90,7 @@ const (
 
 func (s Scheme) implemented() bool {
 	switch s {
-	case SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeSharedToken:
+	case SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeSharedToken, SchemeGogsSHA256:
 		return true
 	}
 	return false
@@ -171,7 +178,7 @@ func (s Scheme) Wire(secret Secret) (string, error) {
 // key is what the MAC is computed with, given the same Secret Wire was given.
 func (s Scheme) key(secret Secret) ([]byte, error) {
 	switch s {
-	case SchemeHubSHA256, SchemeBitbucketSHA256:
+	case SchemeHubSHA256, SchemeBitbucketSHA256, SchemeGogsSHA256:
 		// The forge stores the wire STRING and keys its HMAC with that
 		// string's bytes. Keying with the material here would verify nothing
 		// any forge ever sends. The two schemes no longer collide because the
@@ -201,6 +208,8 @@ func (s Scheme) header() string {
 		return "webhook-signature"
 	case SchemeSharedToken:
 		return "X-Gitlab-Token"
+	case SchemeGogsSHA256:
+		return "X-Gogs-Signature"
 	}
 	return ""
 }
@@ -381,6 +390,14 @@ func Sign(s Scheme, secret Secret, body []byte, id string, at time.Time) (http.H
 		mac := hmac.New(sha256.New, k)
 		mac.Write(body)
 		hdr.Set(s.header(), "sha256="+hex.EncodeToString(mac.Sum(nil)))
+	case SchemeGogsSHA256:
+		k, err := s.key(secret)
+		if err != nil {
+			return nil, err
+		}
+		mac := hmac.New(sha256.New, k)
+		mac.Write(body)
+		hdr.Set(s.header(), hex.EncodeToString(mac.Sum(nil)))
 	case SchemeStandardWebhooks:
 		k, err := s.key(secret)
 		if err != nil {
@@ -426,6 +443,28 @@ func verify(s Scheme, secret Secret, d Delivery, now time.Time, tolerance time.D
 			return fail("secret cannot key this scheme")
 		}
 		got, err := hex.DecodeString(digest)
+		if err != nil {
+			return fail("signature is not hex")
+		}
+		mac := hmac.New(sha256.New, k)
+		mac.Write(d.Body)
+		if !hmac.Equal(got, mac.Sum(nil)) {
+			return fail("signature does not match")
+		}
+		return nil
+
+	case SchemeGogsSHA256:
+		// A bare digest and nothing else: a "sha256=" prefix is not how Gogs
+		// spells it, so it fails as not-hex rather than being cut off.
+		presented := d.Header.Get(s.header())
+		if presented == "" {
+			return fail("no signature header")
+		}
+		k, err := s.key(secret)
+		if err != nil {
+			return fail("secret cannot key this scheme")
+		}
+		got, err := hex.DecodeString(presented)
 		if err != nil {
 			return fail("signature is not hex")
 		}

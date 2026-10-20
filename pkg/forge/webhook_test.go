@@ -52,6 +52,8 @@ var (
 //	wire(bit) = urlsafe-b64-nopad(mat("bitbucket-sha256"))
 //	bit       = hex(hmac_sha256(key=wire(bit), msg=body))
 //	wire(tok) = urlsafe-b64-nopad(mat("shared-token"))
+//	wire(gog) = urlsafe-b64-nopad(mat("gogs-sha256"))
+//	gog       = hex(hmac_sha256(key=wire(gog), msg=body))   # no prefix
 //	wire(swh) = "whsec_" + b64(mat("standard-webhooks"))
 //	swh       = b64(hmac_sha256(key=mat("standard-webhooks"),
 //	                            msg="msg_1.1767225600."+body))
@@ -66,6 +68,8 @@ func TestExternalVectors(t *testing.T) {
 		hubMAC  = "sha256=2a129e3e78b14dfa508831af6f82fab659de665cb0387e94f83a8ef8c607c32f"
 		bitMAC  = "sha256=7fd18b990b5e3a7c1ead981a0ab1081030c830d913c6c362fdbc9f98834e10e7"
 		swhSig  = "v1,zFgJIyaQDIBwvg5Tiy2LHNtwfPE3v+PS5htEHIyELho="
+		gogWire = "5xhInBOJT_lftfUIGLTPSqJjOiVKH7IeRpq8qKCRD3Y"
+		gogMAC  = "54795007349cd69111ca5f6dd3b062b5dcd914f41aa762a32b47416c41671404"
 	)
 
 	// One wire string per scheme, and no two alike. These used to be three
@@ -76,6 +80,7 @@ func TestExternalVectors(t *testing.T) {
 		bitWire: SchemeBitbucketSHA256,
 		tokWire: SchemeSharedToken,
 		swhWire: SchemeStandardWebhooks,
+		gogWire: SchemeGogsSHA256,
 	} {
 		w, err := sc.Wire(s)
 		require.NoError(t, err)
@@ -110,6 +115,26 @@ func TestExternalVectors(t *testing.T) {
 		got, err := Sign(SchemeBitbucketSHA256, s, vectorBody, "", vectorAt)
 		require.NoError(t, err)
 		assert.Equal(t, bitMAC, got.Get("X-Hub-Signature"))
+	})
+
+	t.Run("gogs-sha256-is-a-bare-digest-in-its-own-header", func(t *testing.T) {
+		d := Delivery{Header: http.Header{"X-Gogs-Signature": {gogMAC}}, Body: vectorBody}
+		require.NoError(t, verify(SchemeGogsSHA256, s, d, vectorAt, time.Minute))
+
+		for name, hdr := range map[string]http.Header{
+			"prefixed":          {"X-Gogs-Signature": {"sha256=" + gogMAC}},
+			"in the hub header": {"X-Hub-Signature-256": {"sha256=" + gogMAC}},
+			"absent":            {},
+			"another body's":    {"X-Gogs-Signature": {strings.Repeat("0", 64)}},
+		} {
+			require.Error(t, verify(SchemeGogsSHA256, s, Delivery{Header: hdr, Body: vectorBody}, vectorAt, time.Minute), name)
+		}
+		tampered := Delivery{Header: d.Header, Body: append(append([]byte(nil), vectorBody...), ' ')}
+		require.Error(t, verify(SchemeGogsSHA256, s, tampered, vectorAt, time.Minute))
+
+		got, err := Sign(SchemeGogsSHA256, s, vectorBody, "", vectorAt)
+		require.NoError(t, err)
+		assert.Equal(t, gogMAC, got.Get("X-Gogs-Signature"))
 	})
 
 	t.Run("standard-webhooks", func(t *testing.T) {
@@ -259,7 +284,7 @@ func TestAnUnknownSchemeIsNeverUsable(t *testing.T) {
 }
 
 func TestAnEmptySecretDerivesNothing(t *testing.T) {
-	for _, sc := range []Scheme{SchemeHubSHA256, SchemeStandardWebhooks, SchemeSharedToken, SchemeBitbucketSHA256} {
+	for _, sc := range []Scheme{SchemeHubSHA256, SchemeStandardWebhooks, SchemeSharedToken, SchemeBitbucketSHA256, SchemeGogsSHA256} {
 		_, err := sc.Wire(Secret{})
 		require.Error(t, err, "%s derived a wire secret from nothing", sc)
 		_, err = Sign(sc, Secret{}, vectorBody, "id", vectorAt)
@@ -267,7 +292,7 @@ func TestAnEmptySecretDerivesNothing(t *testing.T) {
 		require.Error(t, verify(sc, Secret{}, Delivery{
 			Header: http.Header{
 				"X-Hub-Signature-256": {"sha256=00"}, "X-Hub-Signature": {"sha256=00"},
-				"X-Gitlab-Token": {"x"}, "Webhook-Id": {"m"},
+				"X-Gitlab-Token": {"x"}, "Webhook-Id": {"m"}, "X-Gogs-Signature": {"00"},
 				"Webhook-Timestamp": {"1767225600"}, "Webhook-Signature": {"v1,AA=="},
 			},
 			Body: vectorBody,
@@ -282,7 +307,7 @@ func TestAnEmptySecretDerivesNothing(t *testing.T) {
 // "eA", exhaustible offline from a single captured delivery. The floor is a
 // property of the SECRET now, so it holds for a scheme added tomorrow too.
 func TestEverySchemeInsistsOnAWholeSecret(t *testing.T) {
-	for _, sc := range []Scheme{SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeSharedToken} {
+	for _, sc := range []Scheme{SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeSharedToken, SchemeGogsSHA256} {
 		for _, short := range [][]byte{[]byte("x"), []byte("short"), make([]byte, SecretSize-1)} {
 			weak := SecretFrom(short)
 			_, err := sc.Wire(weak)
@@ -398,7 +423,7 @@ func TestARefusedRefNamesTheRuleAndNotTheRef(t *testing.T) {
 // same Secret.
 func TestOneSecretIsFourUnrelatedKeys(t *testing.T) {
 	s := vectorSecret()
-	all := []Scheme{SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeSharedToken}
+	all := []Scheme{SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeSharedToken, SchemeGogsSHA256}
 
 	seen := map[string]string{}
 	note := func(value, what string) {
