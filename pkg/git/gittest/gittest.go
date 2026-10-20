@@ -58,14 +58,7 @@ func (s *Server) Served() int {
 // allow accepts any key.
 func NewServer(t testing.TB, allow func(gossh.PublicKey) bool) *Server {
 	t.Helper()
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	signer, err := gossh.NewSignerFromKey(priv)
-	if err != nil {
-		t.Fatal(err)
-	}
+	signer := must(gossh.NewSignerFromKey(ed25519Key()))
 	s := &Server{HostKey: signer.PublicKey(), repos: map[string]storer.Storer{}, allow: allow}
 
 	cfg := &gossh.ServerConfig{
@@ -78,10 +71,7 @@ func NewServer(t testing.TB, allow func(gossh.PublicKey) bool) *Server {
 	}
 	cfg.AddHostKey(signer)
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
+	ln := must(net.Listen("tcp", "127.0.0.1:0"))
 	t.Cleanup(func() { ln.Close() })
 	s.Addr = ln.Addr().String()
 	go func() {
@@ -208,18 +198,9 @@ func (s *Server) uploadPack(ch gossh.Channel, path string) error {
 // deploy key is stored, and the public half.
 func KeyPair(t testing.TB) (private string, public gossh.PublicKey) {
 	t.Helper()
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	block, err := gossh.MarshalPrivateKey(priv, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	signer, err := gossh.NewSignerFromKey(priv)
-	if err != nil {
-		t.Fatal(err)
-	}
+	priv := ed25519Key()
+	block := must(gossh.MarshalPrivateKey(priv, ""))
+	signer := must(gossh.NewSignerFromKey(priv))
 	return string(pem.EncodeToMemory(block)), signer.PublicKey()
 }
 
@@ -228,48 +209,33 @@ func KeyPair(t testing.TB) (private string, public gossh.PublicKey) {
 func Repository(t testing.TB, files map[string]string) (storer.Storer, string) {
 	t.Helper()
 	st := memory.NewStorage()
-	repo, err := gogit.Init(st, memfs.New())
-	if err != nil {
-		t.Fatal(err)
-	}
-	wt, err := repo.Worktree()
-	if err != nil {
-		t.Fatal(err)
-	}
+	main := plumbing.NewBranchReferenceName("main")
+	repo := must(gogit.InitWithOptions(st, memfs.New(), gogit.InitOptions{DefaultBranch: main}))
+	wt := must(repo.Worktree())
 	for name, body := range files {
-		f, err := wt.Filesystem.Create(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := f.Write([]byte(body)); err != nil {
-			t.Fatal(err)
-		}
+		f := must(wt.Filesystem.Create(name))
+		must(f.Write([]byte(body)))
 		f.Close()
-		if _, err := wt.Add(name); err != nil {
-			t.Fatal(err)
-		}
+		must(wt.Add(name))
 	}
-	commit, err := wt.Commit("gittest", &gogit.CommitOptions{
+	commit := must(wt.Commit("gittest", &gogit.CommitOptions{
 		Author: &object.Signature{Name: "gittest", Email: "gittest@example.invalid", When: time.Unix(1700000000, 0)},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	head, err := repo.Head()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// main, whatever go-git's default branch name is.
-	if head.Name() != plumbing.NewBranchReferenceName("main") {
-		if err := st.SetReference(plumbing.NewHashReference(plumbing.NewBranchReferenceName("main"), commit)); err != nil {
-			t.Fatal(err)
-		}
-		if err := st.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("main"))); err != nil {
-			t.Fatal(err)
-		}
-		if err := st.RemoveReference(head.Name()); err != nil {
-			t.Fatal(err)
-		}
-	}
+	}))
 	return st, commit.String()
+}
+
+// must is for setup that cannot fail on a working machine: key generation,
+// a loopback listener, an in-memory repository. Like regexp.MustCompile it
+// panics rather than threading a test through each, and a panic still fails
+// the test that hit it, with the stack.
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
+}
+
+func ed25519Key() ed25519.PrivateKey {
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	return must(priv, err)
 }
