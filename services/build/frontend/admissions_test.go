@@ -16,11 +16,29 @@ type fakeAdmissions struct {
 	reason   string
 	err      error
 	asked    int
+	last     Credentials
 }
 
-func (f *fakeAdmissions) Admit(context.Context, string, repokey.Key) (bool, string, error) {
+func (f *fakeAdmissions) Admit(_ context.Context, c Credentials, _ repokey.Key) (bool, string, error) {
 	f.asked++
+	f.last = c
 	return f.admitted, f.reason, f.err
+}
+
+// The tau token reaches admission beside the forge token, never instead of
+// it.
+func TestTheTauTokenReachesAdmission(t *testing.T) {
+	a := &fakeAdmissions{admitted: true}
+	h := newHarness(t, Config{}, WithAdmissions(a))
+	r := authed(http.MethodGet, "/job/"+testJobID, testToken)
+	r.Header.Set(TauTokenHeader, " tau-access ")
+	w := h.do(t, r)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, Credentials{Forge: testToken, Tau: "tau-access"}, a.last)
+
+	w = h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken))
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, Credentials{Forge: testToken}, a.last)
 }
 
 func TestAnAdmittedCallerIsServed(t *testing.T) {

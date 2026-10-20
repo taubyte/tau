@@ -71,6 +71,15 @@ func (s *Service) mount() http.Handler {
 	mux.HandleFunc("POST /projects/{projectId}", s.admitted("projectId", s.handleLinkProject))
 	mux.HandleFunc("GET /forges/{forge}/projects", s.admitted("forge", s.handleListProjects))
 
+	// Signing in, and managing this cloud's users: auth's own calls, carried
+	// to it unchanged and authorized by it (authapi.go). Only when this node
+	// was given a way to reach auth.
+	if s.authAPI != nil {
+		for _, p := range authProcedures {
+			mux.HandleFunc("POST "+p, s.handleAuth(p))
+		}
+	}
+
 	// No /ping. v1 had one, unauthenticated, and a liveness endpoint is a
 	// decision about what this process will tell the internet about itself
 	// before anyone has asked for it — including that it is here. Nothing in

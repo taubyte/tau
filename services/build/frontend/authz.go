@@ -31,6 +31,27 @@ import (
 
 const bearerPrefix = "Bearer "
 
+// TauTokenHeader carries the caller's tau token: who they are on this cloud.
+// Authorization stays the forge token, because every route here is authorized
+// by the forge, and the two are never one value.
+const TauTokenHeader = "Tau-Token"
+
+type tauTokenKey struct{}
+
+// withTauToken carries the request's tau token to the admission check.
+func withTauToken(r *http.Request) *http.Request {
+	t := strings.TrimSpace(r.Header.Get(TauTokenHeader))
+	if t == "" {
+		return r
+	}
+	return r.WithContext(context.WithValue(r.Context(), tauTokenKey{}, t))
+}
+
+func tauToken(ctx context.Context) string {
+	t, _ := ctx.Value(tauTokenKey{}).(string)
+	return t
+}
+
 // maxIDLength bounds a caller-chosen path segment before it leaves this
 // process. The backend refuses anything that is not a 43-character job id, but
 // it should not have to receive a megabyte to say so.
@@ -153,7 +174,7 @@ func (s *Service) admit(ctx context.Context, token string, key repokey.Key) erro
 	if s.admissions == nil {
 		return nil
 	}
-	admitted, reason, err := s.admissions.Admit(ctx, token, key)
+	admitted, reason, err := s.admissions.Admit(ctx, Credentials{Forge: token, Tau: tauToken(ctx)}, key)
 	switch {
 	case err != nil:
 		return fmt.Errorf("admitting a caller to %s: %w", key, err)

@@ -14,7 +14,9 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
 
-type fakeIdentity struct{}
+type fakeIdentity struct {
+	authv2connect.UnimplementedIdentityServiceHandler
+}
 
 func (fakeIdentity) Admit(_ context.Context, req *connect.Request[authv2.Caller]) (*connect.Response[authv2.Admission], error) {
 	if req.Msg.GetSubject() == "broken" {

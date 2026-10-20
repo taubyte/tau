@@ -36,6 +36,7 @@ type Service struct {
 	tenancy    tenancy.Tenancy
 	streams    Streams
 	linked     Linked
+	authAPI    AuthAPI
 	cfg        Config
 
 	now    func() time.Time
@@ -85,6 +86,7 @@ type options struct {
 	tenancy    tenancy.Tenancy
 	streams    Streams
 	linked     Linked
+	authAPI    AuthAPI
 
 	tune func(*http.Server)
 	now  func() time.Time
@@ -310,6 +312,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		tenancy:    o.tenancy,
 		streams:    o.streams,
 		linked:     o.linked,
+		authAPI:    o.authAPI,
 		cfg:        effective,
 		tune:       o.tune,
 		now:        o.now,

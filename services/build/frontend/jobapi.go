@@ -284,7 +284,7 @@ func (s *Service) admitted(name string, handle jobHandler) http.HandlerFunc {
 			respond(w, err)
 			return
 		}
-		handle(w, r, token, id)
+		handle(w, withTauToken(r), token, id)
 	}
 }
 
