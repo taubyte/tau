@@ -80,6 +80,12 @@ func (v *vault) Set(ctx context.Context, project, environment, name string, valu
 	return absent(v.client.Set(ctx, project, environment, name, value))
 }
 
+// Get is auth's read of its own keys, in the one scope no project can name.
+func (v *vault) Get(ctx context.Context, project, environment, name string) ([]byte, error) {
+	value, err := v.client.Get(ctx, project, environment, name)
+	return value, absent(err)
+}
+
 func (v *vault) Delete(ctx context.Context, project, environment, name string) error {
 	return absent(v.client.Delete(ctx, project, environment, name))
 }

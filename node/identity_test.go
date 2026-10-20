@@ -17,6 +17,7 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 	authService "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/build/clients"
+	"github.com/taubyte/tau/services/build/frontend"
 )
 
 // linked admits subject "fake-user-subject", the fake forge's only user.
@@ -99,21 +100,21 @@ func TestAdmissionsAsksTheForgeWhoThenAuthWhether(t *testing.T) {
 	require.NoError(t, err)
 
 	a := &admissions{forges: registry, auth: identities}
-	admitted, _, err := a.Admit(t.Context(), f.TokenString(), f.Keys().Writable)
+	admitted, _, err := a.Admit(t.Context(), frontend.Credentials{Forge: f.TokenString()}, f.Keys().Writable)
 	require.NoError(t, err)
 	require.True(t, admitted)
 
 	// A credential the forge will not say who holds is not decided.
-	_, _, err = a.Admit(t.Context(), f.BadTokenString(), f.Keys().Writable)
+	_, _, err = a.Admit(t.Context(), frontend.Credentials{Forge: f.BadTokenString()}, f.Keys().Writable)
 	require.Error(t, err)
 
 	// Nor is a host no forge is bound to.
 	other := fake.New(fake.GitLabLike)
-	_, _, err = a.Admit(t.Context(), f.TokenString(), other.Keys().Writable)
+	_, _, err = a.Admit(t.Context(), frontend.Credentials{Forge: f.TokenString()}, other.Keys().Writable)
 	require.Error(t, err)
 
 	// Nor an auth that cannot be reached.
 	require.NoError(t, auth.Close())
-	_, _, err = a.Admit(t.Context(), f.TokenString(), f.Keys().Writable)
+	_, _, err = a.Admit(t.Context(), frontend.Credentials{Forge: f.TokenString()}, f.Keys().Writable)
 	require.Error(t, err)
 }

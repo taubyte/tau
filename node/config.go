@@ -121,7 +121,10 @@ type Config struct {
 	Gateway   gateway.Config
 	Secrets   secrets.Config
 	Proxy     proxy.Config
-	DNS       dns.Config
+	// Auth names the built-in admin, who may sign up, the console callbacks
+	// and the OIDC providers. A forge's OAuth app is on its Forge.
+	Auth auth.Config
+	DNS  dns.Config
 
 	// DNSListen is the port this node's dns server answers on, e.g. ":53" or
 	// ":5353". Default DefaultDNSListen.

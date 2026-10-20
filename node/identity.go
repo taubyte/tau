@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/git/repokey"
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	authService "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/build/clients"
+	"github.com/taubyte/tau/services/build/frontend"
 )
 
 // identity.go wires who may use this cloud: auth answers from the Identity its
@@ -56,8 +58,8 @@ type admissions struct {
 	auth   *clients.IdentityClient
 }
 
-func (a *admissions) Admit(ctx context.Context, token string, key repokey.Key) (bool, string, error) {
-	session, err := a.forges.For(key, forge.Token(token))
+func (a *admissions) Admit(ctx context.Context, cred frontend.Credentials, key repokey.Key) (bool, string, error) {
+	session, err := a.forges.For(key, forge.Token(cred.Forge))
 	if err != nil {
 		return false, "", err
 	}
@@ -65,9 +67,26 @@ func (a *admissions) Admit(ctx context.Context, token string, key repokey.Key) (
 	if err != nil {
 		return false, "", fmt.Errorf("asking %s who holds the credential: %w", key.Host, err)
 	}
-	got, err := a.auth.Admit(ctx, &authv2.Caller{Forge: key.Host, Subject: who.Subject, Login: who.Login})
+	got, err := a.auth.Admit(ctx, &authv2.Caller{Forge: key.Host, Subject: who.Subject, Login: who.Login, Token: cred.Tau})
 	if err != nil {
 		return false, "", err
 	}
 	return got.GetAdmitted(), got.GetReason(), nil
+}
+
+// authConfig is auth's configuration as this node states it: the operator's,
+// with the issuer defaulting to the cloud's name and each forge's OAuth app
+// taken from the forge it is for.
+func (n *Node) authConfig() authService.Config {
+	c := n.cfg.Auth
+	if c.Issuer == "" {
+		c.Issuer = "tau:" + n.cfg.Cloud
+	}
+	c.Forges = slices.Clone(c.Forges)
+	for _, f := range n.cfg.Forges {
+		if f.OAuthClientID != "" {
+			c.Forges = append(c.Forges, authService.ForgeApp{Host: f.Host, ClientID: f.OAuthClientID})
+		}
+	}
+	return c
 }

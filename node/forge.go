@@ -86,6 +86,13 @@ type Forge struct {
 	// reads a project's branch heads. gerrit only.
 	Membership string
 
+	// OAuthClientID is this cloud's OAuth app on the forge, which people sign
+	// in through. Its secret is in the vault, under
+	// auth.OAuthSecretName(Host). Only a forge whose driver has a sign-in face
+	// offers a browser sign-in; every forge offers a pasted one. On a gitlab
+	// it also sends tokens as Bearer, which an OAuth token needs.
+	OAuthClientID string
+
 	// Events subscribes this cloud to the forge's push feed over ssh, which is
 	// how a forge without signed webhooks triggers builds. The sshd is pinned
 	// to HostKeys. gerrit only.
@@ -228,6 +235,9 @@ func forges(declared []Forge) (*forge.Registry, error) {
 			var opts []gitlab.Option
 			if f.Signing {
 				opts = append(opts, gitlab.Signing())
+			}
+			if f.OAuthClientID != "" {
+				opts = append(opts, gitlab.OAuth())
 			}
 			d, err = gitlab.New(f.Host, opts...)
 		case ForgeGitea:

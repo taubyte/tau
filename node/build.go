@@ -141,11 +141,29 @@ func (n *Node) openAuth() error {
 		return nil
 	}
 
-	// AUTH KEEPS NOTHING, so it opens no database: who a project is lives in
-	// the register, and its credentials in the vault. What is left is the one
-	// question of who is admitted, answered from whatever identity this node
-	// was composed with.
-	var authOptions []authService.Option
+	// AUTH KEEPS THIS CLOUD'S USERS in a database of its own, and its keys —
+	// each node's token-signing key and pepper, and the operator's OAuth
+	// client secrets — in the vault. Who a project is lives in the register;
+	// whether a caller is admitted is answered from the users, or from
+	// whatever identity this node was composed with.
+	if n.opts.databases == nil {
+		return ErrNoDatabases
+	}
+	db, err := n.opts.databases.New(logger, Auth, rebroadcastSeconds)
+	if err != nil {
+		return err
+	}
+	n.closers = append(n.closers, closerFunc(db.Close))
+	registry, err := n.forgeRegistry()
+	if err != nil {
+		return err
+	}
+	v := newVault(n)
+	n.closers = append(n.closers, v)
+	authOptions := []authService.Option{
+		authService.WithUsers(db, v, n.authConfig()),
+		authService.WithForges(registry),
+	}
 	identity, err := n.identityOption()
 	if err != nil {
 		return err
@@ -346,6 +364,10 @@ func (n *Node) openBuildFrontend() error {
 	if err != nil {
 		return err
 	}
+	authCalls, err := clients.AuthCalls(auth)
+	if err != nil {
+		return err
+	}
 
 	frontendOptions := []frontend.Option{
 		// THE PROJECT TABLE IS THE REGISTER'S, and this role writes it only
@@ -355,6 +377,8 @@ func (n *Node) openBuildFrontend() error {
 		// WHO MAY USE THIS CLOUD IS AUTH'S TO SAY, from whatever identity
 		// its node was composed with — see identity.go.
 		frontend.WithAdmissions(&admissions{forges: registry, auth: identities}),
+		// SIGNING IN IS AUTH'S, carried here because auth has no ingress.
+		frontend.WithAuthAPI(authCalls),
 		frontend.WithProjects(projects),
 		frontend.WithBackend(builds),
 		frontend.WithIdentity(forges),
