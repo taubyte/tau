@@ -94,7 +94,24 @@ func TestLinkInspect(t *testing.T) {
 	require.Contains(t, bodyOf(t, w), "no hooks here")
 }
 
-// The callback is the configured public address, and only that.
+// The callback is the frontend's name under the cloud, and a configured public
+// address overrides it.
+func TestLinkCallbackIsDerivedFromTheCloud(t *testing.T) {
+	inst := &fakeInstaller{inspect: Inspection{Repository: testRepoKey, Admin: true}}
+	h := newHarness(t, Config{}, WithInstaller(inst), WithCloudFqdn("Tau.Example.io."))
+	h.connections.forge = map[string]string{"github.com": testToken}
+	r := linkCall("/link/"+testHookID+"/inspect", `{"repository":"`+testRepoKey+`"}`)
+	r.Host = "attacker.example"
+	require.Equal(t, http.StatusOK, h.do(t, r).Code)
+	require.Contains(t, inst.inspected[0], "|https://build-frontend.tau.example.io/hook/"+testHookID)
+
+	h = newHarness(t, Config{PublicURL: "https://ci.operator.example"}, WithInstaller(inst), WithCloudFqdn("tau.example.io"))
+	h.connections.forge = map[string]string{"github.com": testToken}
+	require.Equal(t, http.StatusOK, h.do(t, linkCall("/link/"+testHookID+"/inspect", `{"repository":"`+testRepoKey+`"}`)).Code)
+	require.Contains(t, inst.inspected[1], "|https://ci.operator.example/hook/"+testHookID)
+}
+
+// The callback is the configured public address when there is no cloud.
 func TestLinkCallback(t *testing.T) {
 	inst := &fakeInstaller{inspect: Inspection{Repository: testRepoKey, Admin: true}}
 	h := newHarness(t, Config{PublicURL: "https://build.example.com/"}, WithInstaller(inst))
@@ -111,7 +128,9 @@ func TestLinkCallback(t *testing.T) {
 	r.TLS = &tls.ConnectionState{}
 	w := h.do(t, r)
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
-	require.Contains(t, bodyOf(t, w), "publicURL")
+	body := bodyOf(t, w)
+	require.Contains(t, body, "publicURL")
+	require.Contains(t, body, "cloudFqdn")
 	require.Equal(t, http.StatusServiceUnavailable, h.do(t, linkCall("/link/"+testHookID+"/install", `{"repository":"`+testRepoKey+`","deploy_key":"`+goodKey+`"}`)).Code)
 	require.Len(t, inst.inspected, 1)
 

@@ -16,7 +16,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io/fs"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -61,6 +60,9 @@ func ok(t *testing.T, args ...string) string {
 	return r.stdout
 }
 
+// e2eCloud is the fleet's cloud fqdn.
+const e2eCloud = "tau.e2e.test"
+
 func TestTheCLIAgainstARealFleet(t *testing.T) {
 	t.Setenv(config.EnvConfig, filepath.Join(t.TempDir(), "config.yaml"))
 	t.Setenv(config.EnvToken, "")
@@ -78,13 +80,12 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 		Copies:  3,
 		Options: []node.Option{node.WithForges(forges)},
 		Configure: func(index int, c *node.Config) {
+			// THE CLOUD'S NAME, which is where every frontend installs hooks:
+			// https://build-frontend.<cloud>, never a request's Host.
+			c.Gateway.CloudFqdn = e2eCloud
 			if index > 0 {
 				c.Services = []string{node.Discovery, node.BuildFrontend}
-				// A FIXED PORT, because the frontend installs hooks only at
-				// its configured publicURL and never at a request's Host.
-				addr := freePort(t)
-				c.BuildFrontend.Listen = addr
-				c.BuildFrontend.PublicURL = "http://" + addr
+				c.BuildFrontend.Listen = "127.0.0.1:0"
 			}
 		},
 	})
@@ -145,6 +146,10 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 	wire := f.LastHookWire()
 	require.NotEmpty(t, wire)
 	require.True(t, f.LastDeployKeyReadOnly())
+	hooks := installed(t, f, configRepo)
+	require.Len(t, hooks, 1)
+	require.Equal(t, "https://"+node.BuildFrontend+"."+e2eCloud+"/hook/"+linked.ProjectID, hooks[0].Callback,
+		"the hook is aimed at the cloud's name for the frontend")
 
 	// The link's credentials are on the cloud, by name only.
 	var names []string
@@ -289,14 +294,4 @@ func copyProject(from, to string) error {
 		}
 		return os.WriteFile(filepath.Join(to, rel), data, 0o644)
 	})
-}
-
-// freePort is a loopback address nothing listens on now.
-func freePort(t *testing.T) string {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	addr := l.Addr().String()
-	require.NoError(t, l.Close())
-	return addr
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -40,6 +41,7 @@ type Service struct {
 	linked      Linked
 	authAPI     AuthAPI
 	cfg         Config
+	cloudFqdn   string
 
 	now    func() time.Time
 	logf   func(string, ...any)
@@ -91,6 +93,7 @@ type options struct {
 	streams     Streams
 	linked      Linked
 	authAPI     AuthAPI
+	cloudFqdn   string
 
 	tune func(*http.Server)
 	now  func() time.Time
@@ -242,6 +245,17 @@ func WithStreams(s Streams, linked Linked) Option {
 	}
 }
 
+// WithCloudFqdn is the cloud's zone, which this ingress is named under:
+// `https://<build.Frontend.Name>.<fqdn>` is where a hook linking installs
+// delivers when Config.PublicURL does not say otherwise. Empty, only a
+// configured PublicURL can.
+func WithCloudFqdn(fqdn string) Option {
+	return func(o *options) error {
+		o.cloudFqdn = strings.ToLower(strings.Trim(fqdn, "."))
+		return nil
+	}
+}
+
 // WithHTTPServer hands the caller the *http.Server before it serves, for the
 // knobs this package does not name — TLS, connection state hooks, a custom
 // ErrorLog. It mirrors p2p/rpc's own WithHTTPServer so the two roles are tuned
@@ -347,6 +361,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		linked:      o.linked,
 		authAPI:     o.authAPI,
 		cfg:         effective,
+		cloudFqdn:   o.cloudFqdn,
 		tune:        o.tune,
 		now:         o.now,
 		logf:        o.logf,

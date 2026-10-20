@@ -391,6 +391,7 @@ func (n *Node) openBuildFrontend() error {
 		frontend.WithInstaller(forges),
 		frontend.WithDeliveries(forges),
 		frontend.WithTenancy(served),
+		frontend.WithCloudFqdn(n.cfg.Gateway.CloudFqdn),
 	}
 	// A FORGE WITH NO SIGNED WEBHOOK REPORTS PUSHES ON ITS OWN FEED (Gerrit's
 	// stream-events), which this frontend subscribes to as a second source of

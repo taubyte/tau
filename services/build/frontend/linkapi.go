@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+
+	"github.com/taubyte/tau/services/build"
 )
 
 // linkapi.go is what `tau link` has done at the forge: reading a repository
@@ -51,14 +53,21 @@ type installRequest struct {
 }
 
 // callback is where a hook for projectID delivers, and the cloud a deploy
-// key is titled for. IT IS ONLY EVER THE CONFIGURED PublicURL: the request's
-// Host header and TLS state are the caller's to set, and a hook aimed by them
-// would deliver this project's pushes, signed with its secret, wherever the
-// caller named.
+// key is titled for. IT IS NEVER THE REQUEST'S: the Host header and TLS state
+// are the caller's to set, and a hook aimed by them would deliver this
+// project's pushes, signed with its secret, wherever the caller named.
+//
+// It is the cloud's own name for this service, `https://<name>.<cloud fqdn>`,
+// which every frontend of a cloud derives alike and the cloud's dns answers.
+// A configured PublicURL overrides it, for a frontend an operator serves
+// behind a proxy or a domain of their own.
 func (s *Service) callback(projectID string) (*url.URL, string, error) {
 	base := strings.TrimSuffix(s.cfg.PublicURL, "/")
+	if base == "" && s.cloudFqdn != "" {
+		base = "https://" + build.Frontend.Name + "." + s.cloudFqdn
+	}
 	if base == "" {
-		return nil, "", problem(http.StatusServiceUnavailable, "this cloud has no publicURL configured for its build frontend, so it cannot install a webhook; link with --manual or ask the operator to set it")
+		return nil, "", problem(http.StatusServiceUnavailable, "this cloud's build frontend has no cloud fqdn to be named under and no publicURL configured, so it cannot install a webhook; link with --manual or ask the operator to set the gateway's cloudFqdn (or the frontend's publicURL)")
 	}
 	u, err := url.Parse(base + "/hook/" + url.PathEscape(projectID))
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {

@@ -163,10 +163,12 @@ type Config struct {
 	// accepted, so no credentialed request is allowed. See cors.go.
 	Origins []string `yaml:"origins"`
 
-	// PublicURL is this ingress as forges reach it (scheme://host[:port]),
-	// what a webhook linking installs delivers to: <PublicURL>/hook/<id>.
-	// Empty, link install and inspect are refused: the request's own Host
-	// header is the caller's to set and never names where hooks deliver.
+	// PublicURL overrides where a webhook linking installs delivers
+	// (scheme://host[:port]): <PublicURL>/hook/<id>. It is for a frontend an
+	// operator serves behind a proxy or a domain of their own; empty, the
+	// cloud's own name for it is used (see WithCloudFqdn), and with neither,
+	// link install and inspect are refused — the request's own Host header is
+	// the caller's to set and never names where hooks deliver.
 	PublicURL string `yaml:"publicURL"`
 
 	HookRate    Rate `yaml:"hookRate"`
