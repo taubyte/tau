@@ -53,7 +53,6 @@ import (
 	"github.com/taubyte/tau/node/stream"
 	"github.com/taubyte/tau/node/volume"
 	"github.com/taubyte/tau/p2p/rpc"
-	"github.com/taubyte/tau/pkg/certificate/acme"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/invoke/static"
 	"github.com/taubyte/tau/pkg/invoke/wasm"
@@ -67,6 +66,7 @@ import (
 
 	"github.com/taubyte/tau/node/placement"
 	authService "github.com/taubyte/tau/services/auth"
+	certificateService "github.com/taubyte/tau/services/certificate"
 	databaseService "github.com/taubyte/tau/services/database"
 	"github.com/taubyte/tau/services/discovery"
 	dnsService "github.com/taubyte/tau/services/dns"
@@ -91,6 +91,12 @@ type Node struct {
 	dns       *dnsService.Service
 
 	secrets *secretsService.Service
+
+	// certificate issues the cloud's certificates when this node runs it, and
+	// certs is the client every public listener here takes them from. Both
+	// nil in a cloud that issues none.
+	certificate *certificateService.Service
+	certs       *certificateService.Client
 
 	// database is the service that owns this project's engines, when this node
 	// runs it. A node that does not runs no database of its own — it reaches
@@ -241,6 +247,10 @@ func (n *Node) open() error {
 	// BEFORE THE WORKER, which resolves a secret on the request path and takes
 	// the vault as a collaborator rather than looking one up per invocation.
 	if err := n.openSecrets(); err != nil {
+		return err
+	}
+	// AFTER THE SECRETS SERVICE, which keeps its keys.
+	if err := n.openCertificate(); err != nil {
 		return err
 	}
 	// BEFORE THE WORKER, for the reason the vault is: the wasm tier takes its kv
@@ -773,17 +783,14 @@ func (n *Node) openGateway() error {
 		gatewayOptions = append(gatewayOptions, gateway.WithTLS())
 	}
 
-	if n.cfg.Gateway.ACME.Enabled {
-		// KEPT UNDER THE ROOT, so a restart reissues nothing; a node with no
-		// root would ask a CA again on every start, and is refused instead.
-		if n.opts.root == "" {
-			return errors.New("node: gateway: acme keeps what it issues under the node's root, and this node has none")
-		}
-		issuer, err := acme.New(n.cfg.Gateway.ACME, filepath.Join(n.opts.root, "acme"), acme.WithLogger(logger.Warnf))
-		if err != nil {
-			return fmt.Errorf("node: gateway: %w", err)
-		}
-		gatewayOptions = append(gatewayOptions, gateway.WithIssuer(issuer))
+	// A GENERATED NAME THE WILDCARD DOES NOT COVER is issued by the
+	// cloud's certificate nodes, once for the cloud; see certificate.go.
+	certs, err := n.certificates()
+	if err != nil {
+		return fmt.Errorf("node: gateway: %w", err)
+	}
+	if certs != nil {
+		gatewayOptions = append(gatewayOptions, gateway.WithIssuer(certs))
 	}
 
 	svc, err := gateway.New(n.cfg.Gateway, gatewayOptions...)
@@ -841,6 +848,9 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	if n.secrets != nil {
 		order = append(order, n.secrets)
+	}
+	if n.certificate != nil {
+		order = append(order, n.certificate)
 	}
 	// THE DATABASE BEFORE THE WORKER THAT READS THROUGH IT. It was in neither
 	// this list nor any other, which is two failures at once: its listener was

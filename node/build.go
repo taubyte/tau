@@ -422,6 +422,16 @@ func (n *Node) openBuildFrontend() error {
 
 	// A CONSOLE AUTH MAY RETURN A SIGN-IN TO is a console that may call this
 	// ingress from a browser: its callbacks' origins are the CORS allow-list.
+	// OVER TLS WHEN THE CLOUD ISSUES CERTIFICATES: a forge's hook is
+	// installed at https://build-frontend.<cloud fqdn>, and the certificate
+	// for that name comes from the same client every listener here uses.
+	secure, err := n.ServiceTLS()
+	if err != nil {
+		return err
+	}
+	if secure != nil {
+		frontendOptions = append(frontendOptions, frontend.WithTLS(secure))
+	}
 	feCfg := n.cfg.BuildFrontend
 	feCfg.Origins = append(slices.Clone(feCfg.Origins), consoleOrigins(n.cfg.Auth.Redirects)...)
 	svc, err := frontend.New(feCfg, frontendOptions...)

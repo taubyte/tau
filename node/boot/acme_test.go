@@ -10,11 +10,10 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strconv"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/letsencrypt/pebble/v2/ca"
 	"github.com/letsencrypt/pebble/v2/db"
@@ -25,14 +24,16 @@ import (
 	"github.com/taubyte/tau/node"
 	"github.com/taubyte/tau/pkg/certificate"
 	"github.com/taubyte/tau/pkg/register"
+	certificateService "github.com/taubyte/tau/services/certificate"
 	"github.com/taubyte/tau/services/gateway"
 )
 
 // acme_test is REAL ISSUANCE FROM A REAL ACME SERVER: pebble, Let's Encrypt's
-// test CA, runs in this process; it resolves the generated name through the
-// node's own dns service, fetches the HTTP-01 answer from the node's own clear listener,
-// and signs a certificate the node then presents on its https listener to a
-// client that trusts pebble's root and nothing else.
+// test CA, runs in this process; it resolves names through the node's own dns
+// service — which answers DNS-01 too — fetches HTTP-01 answers from the
+// node's own clear listener, and signs certificates the node's certificate
+// service keeps and its listeners present to a client that trusts pebble's
+// root and nothing else.
 
 // pebble serves an ACME directory over TLS. Its validation authority is built
 // once the node is up, because it must be told the node's http port.
@@ -121,30 +122,43 @@ func handshake(t *testing.T, address, name string, roots *x509.CertPool) *http.R
 	return res
 }
 
-// TestAGeneratedNameIsIssuedByACMEAndServedOverTLS.
+// issuing is a single node that runs everything issuance needs: the gateway,
+// the dns server, the secrets service the keys go to and the certificate
+// service. Its identity is fixed, as an operator's is: the secrets it kept
+// are opened by the shares of the peer it is.
+func issuing(t *testing.T, ca *pebble, cloud, root string, cfg certificateService.Config) File {
+	t.Helper()
+	minted, err := identity("")
+	require.NoError(t, err)
+	cfg.ACME = certificate.ACME{
+		Enabled:   true,
+		Directory: ca.server.URL + "/dir",
+		Email:     "ops@example.io",
+		RootCA:    ca.directoryCA(),
+	}
+	return File{
+		Node: node.Config{
+			Services:    []string{node.Register, node.Discovery, node.Gateway, node.DNS, node.Secrets, node.Certificate},
+			DNSListen:   "127.0.0.1:0",
+			Gateway:     gateway.Config{CloudFqdn: cloud},
+			Certificate: cfg,
+		},
+		Root:       root,
+		PrivateKey: base64.StdEncoding.EncodeToString(minted),
+		Listen:     []string{"/ip4/127.0.0.1/tcp/0"},
+		SwarmKey:   base64.StdEncoding.EncodeToString(swarmKey()),
+		HTTP:       "127.0.0.1:0",
+		HTTPS:      "127.0.0.1:0",
+	}
+}
+
+// TestAGeneratedNameIsIssuedByACMEAndServedOverTLS proves it by HTTP-01, for
+// a cloud whose zone is served elsewhere and points at its gateways.
 func TestAGeneratedNameIsIssuedByACMEAndServedOverTLS(t *testing.T) {
 	const cloud = "tau.example.io"
 	compiled, hosts, name := fixtureWithHosts(t, cloud)
 	ca := startPebble(t)
-	root := t.TempDir()
-
-	f := File{
-		Node: node.Config{
-			Services:  []string{node.Register, node.Discovery, node.Gateway, node.DNS},
-			DNSListen: "127.0.0.1:0",
-			Gateway: gateway.Config{CloudFqdn: cloud, ACME: certificate.ACME{
-				Enabled:   true,
-				Directory: ca.server.URL + "/dir",
-				Email:     "ops@example.io",
-				RootCA:    ca.directoryCA(),
-			}},
-		},
-		Root:     root,
-		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
-		SwarmKey: base64.StdEncoding.EncodeToString(swarmKey()),
-		HTTP:     "127.0.0.1:0",
-		HTTPS:    "127.0.0.1:0",
-	}
+	f := issuing(t, ca, cloud, t.TempDir(), certificateService.Config{Challenge: certificateService.ChallengeHTTP})
 	running, err := Start(t.Context(), f)
 	require.NoError(t, err)
 	ca.validate(t, running.Address(), dnsOf(t, running))
@@ -159,16 +173,12 @@ func TestAGeneratedNameIsIssuedByACMEAndServedOverTLS(t *testing.T) {
 	require.NotEqual(t, http.StatusNotFound, res.StatusCode, "the gateway found its route for the name over TLS")
 	serial := res.TLS.PeerCertificates[0].SerialNumber
 
-	kept, err := os.ReadFile(filepath.Join(root, "acme", name+".pem"))
-	require.NoError(t, err, "the certificate is kept under the node's root")
-	require.Contains(t, string(kept), "PRIVATE KEY")
-	require.FileExists(t, filepath.Join(root, "acme", "account.key"))
-
 	// A NAME OUTSIDE THE ZONE is never issued, and fails its handshake.
 	_, err = tls.Dial("tcp", running.SecureAddress(), &tls.Config{RootCAs: ca.roots(t), ServerName: "shop.example.com"})
 	require.Error(t, err)
 
-	// A RESTART ISSUES NOTHING: the CA is gone and the kept certificate answers.
+	// A RESTART ISSUES NOTHING: the CA is gone and the certificate the
+	// service kept, with its key in the secrets service, answers.
 	require.NoError(t, running.Close())
 	ca.server.Close()
 	again, err := Start(t.Context(), f)
@@ -176,4 +186,45 @@ func TestAGeneratedNameIsIssuedByACMEAndServedOverTLS(t *testing.T) {
 	defer again.Close()
 	res = handshake(t, again.SecureAddress(), name, ca.roots(t))
 	require.Equal(t, serial, res.TLS.PeerCertificates[0].SerialNumber, "the same certificate, from the node's root")
+}
+
+// TestTheZoneIsProvedByDNS01AndItsWildcardAnswersEveryService is the default
+// shape: the node's dns server answers its zone, so every name in it is
+// proved by DNS-01 — a generated name its own certificate, and the zone's
+// wildcard the cloud's services, on the listener every service takes.
+func TestTheZoneIsProvedByDNS01AndItsWildcardAnswersEveryService(t *testing.T) {
+	const cloud = "tau.example.io"
+	compiled, hosts, name := fixtureWithHosts(t, cloud)
+	ca := startPebble(t)
+	running, err := Start(t.Context(), issuing(t, ca, cloud, t.TempDir(), certificateService.Config{Wildcard: true}))
+	require.NoError(t, err)
+	defer running.Close()
+	// NO HTTP-01 PORT: pebble is pointed at a port nothing serves, so only
+	// DNS-01 can prove anything here.
+	ca.validate(t, "127.0.0.1:1", dnsOf(t, running))
+
+	_, err = running.Node.Register().Local().Publish(t.Context(), register.Publication{
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled, Hosts: hosts,
+	})
+	require.NoError(t, err)
+
+	// A GENERATED NAME, two labels under the zone, gets its own.
+	res := handshake(t, running.SecureAddress(), name, ca.roots(t))
+	require.Equal(t, []string{name}, res.TLS.PeerCertificates[0].DNSNames)
+
+	// A SERVICE'S NAME is answered by the wildcard, on a listener taking the
+	// node's ServiceTLS — which is what the build frontend's does.
+	secure, err := running.Node.ServiceTLS()
+	require.NoError(t, err)
+	require.NotNil(t, secure)
+	l, err := tls.Listen("tcp", "127.0.0.1:0", secure)
+	require.NoError(t, err)
+	defer l.Close()
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), ReadHeaderTimeout: time.Second}
+	go server.Serve(l)
+	defer server.Close()
+	for _, service := range []string{"build-frontend." + cloud, "dns." + cloud} {
+		res := handshake(t, l.Addr().String(), service, ca.roots(t))
+		require.Equal(t, []string{"*." + cloud}, res.TLS.PeerCertificates[0].DNSNames, service)
+	}
 }

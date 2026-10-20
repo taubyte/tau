@@ -16,8 +16,6 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/libp2p/go-libp2p/core/peer"
-
 	"github.com/taubyte/tau/pkg/certificate/acme"
 	certificatev2 "github.com/taubyte/tau/pkg/proto/gen/tau/certificate/v2"
 )
@@ -162,19 +160,21 @@ func issuanceID() string {
 // that orders: of the live leases, the earliest, then the lowest peer id.
 func (s *Service) claim(ctx context.Context, name string) (bool, error) {
 	now := s.now()
-	self := s.host.ID()
+	// THE ENCODED ID: a peer.ID is raw multihash bytes, which no key may
+	// carry.
+	self := s.host.ID().String()
 	value := strconv.FormatInt(now.UnixNano(), 10) + " " + strconv.FormatInt(now.Add(s.cfg.Lease).UnixNano(), 10)
-	if err := s.db.Put(ctx, leasePrefix+name+"/"+string(self), []byte(value)); err != nil {
+	if err := s.db.Put(ctx, leasePrefix+name+"/"+self, []byte(value)); err != nil {
 		return false, fmt.Errorf("certificate: leasing %s: %w", name, err)
 	}
 	keys, err := s.db.List(ctx, leasePrefix+name+"/")
 	if err != nil {
 		return false, fmt.Errorf("certificate: reading the leases on %s: %w", name, err)
 	}
-	var winner peer.ID
+	var winner string
 	var winnerSince int64
 	for _, k := range keys {
-		holder := peer.ID(k[strings.LastIndex(k, "/")+1:])
+		holder := k[strings.LastIndex(k, "/")+1:]
 		blob, err := s.db.Get(ctx, k)
 		if err != nil {
 			continue
@@ -202,7 +202,7 @@ func parseLease(v string) (since, expires int64, ok bool) {
 
 // release withdraws this node's lease on name.
 func (s *Service) release(name string) {
-	if err := s.db.Delete(context.Background(), leasePrefix+name+"/"+string(s.host.ID())); err != nil {
+	if err := s.db.Delete(context.Background(), leasePrefix+name+"/"+s.host.ID().String()); err != nil {
 		s.logf("certificate: releasing the lease on %s: %v", name, err)
 	}
 }

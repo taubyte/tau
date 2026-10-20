@@ -21,6 +21,7 @@ import (
 	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/frontend"
+	"github.com/taubyte/tau/services/certificate"
 	"github.com/taubyte/tau/services/discovery"
 	"github.com/taubyte/tau/services/dns"
 	gateway "github.com/taubyte/tau/services/gateway"
@@ -120,7 +121,13 @@ type Config struct {
 	Worker    worker.Config
 	Gateway   gateway.Config
 	Secrets   secrets.Config
-	Proxy     proxy.Config
+
+	// Certificate is how the cloud issues its certificates: the ACME CA and
+	// whether the zone's wildcard is issued. Every node of a cloud that
+	// issues carries it, because it is also what makes a node serve TLS with
+	// what the certificate nodes issued. See services/certificate.
+	Certificate certificate.Config
+	Proxy       proxy.Config
 	// Auth names the built-in admin, who may sign up, the console callbacks
 	// and the OIDC providers. A forge's OAuth app is on its Forge.
 	Auth auth.Config

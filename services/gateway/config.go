@@ -162,11 +162,6 @@ type Config struct {
 	// node with none terminates only the names whose gateways provide a
 	// certificate of their own. See tls.go.
 	Wildcard certificate.Pair
-
-	// ACME issues a certificate for a generated name the wildcard does not
-	// cover. The gateway reads none of it: the node builds the issuer from it
-	// and hands it over with WithIssuer. See pkg/certificate/acme.
-	ACME certificate.ACME
 }
 
 // Defaults.
@@ -203,7 +198,8 @@ type options struct {
 
 // Issuer issues a certificate for a generated name the operator's wildcard
 // does not cover, and answers the CA's HTTP-01 challenges for it.
-// pkg/certificate/acme's Issuer is one.
+// services/certificate's Client is the one a node hands over: the cloud's
+// certificate nodes issue it once for every gateway.
 type Issuer interface {
 	Certificate(ctx context.Context, name string) (tls.Certificate, error)
 	Challenge(token string) (string, bool)

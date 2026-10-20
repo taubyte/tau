@@ -258,6 +258,8 @@ func TestWhatIsRefused(t *testing.T) {
 	dir := t.TempDir()
 	_, err := New(certificate.ACME{}, dir)
 	require.ErrorIs(t, err, ErrDisabled)
+	require.ErrorIs(t, Check(certificate.ACME{}), ErrDisabled)
+	require.NoError(t, Check(certificate.ACME{Enabled: true}))
 	_, err = New(certificate.ACME{Enabled: true}, "")
 	require.ErrorIs(t, err, ErrNoDir)
 	_, err = New(certificate.ACME{Enabled: true}, filepath.Join(dir, "\x00"))
@@ -275,6 +277,7 @@ func TestWhatIsRefused(t *testing.T) {
 		cfg.Enabled = true
 		_, err := New(cfg, t.TempDir())
 		require.Error(t, err, name)
+		require.Error(t, Check(cfg), name)
 	}
 
 	// A kept account key that no longer parses is an error, not a new account.
@@ -466,4 +469,16 @@ func TestAThumbprintAloneAnswersHTTP01(t *testing.T) {
 
 	_, err = ParseKey([]byte("nope"))
 	require.Error(t, err)
+}
+
+func TestIssueOrdersAgainWhateverIsKept(t *testing.T) {
+	c := newCloud(t, nil)
+	i := c.issuer(t, certificate.ACME{}, t.TempDir())
+	first, err := i.Certificate(t.Context(), "again.example.io")
+	require.NoError(t, err)
+	second, err := i.Issue("Again.Example.IO.")
+	require.NoError(t, err)
+	require.NotEqual(t, first.Leaf.SerialNumber, second.Leaf.SerialNumber)
+	_, err = i.Issue("a/b")
+	require.ErrorContains(t, err, "not a name")
 }

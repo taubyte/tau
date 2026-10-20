@@ -34,11 +34,12 @@
 //
 // # The challenges
 //
-// A name in the cloud's zone, and the zone's wildcard, are proved by DNS-01:
+// A name in the cloud's zone, and the zone's wildcard, are proved by DNS-01
+// unless the operator says the zone is served elsewhere (Config.Challenge):
 // the TXT value is written to /challenge/<fqdn>/<digest> and a dns node asks
 // every certificate node for it, so the node that wrote it always answers
-// from its own store with no replication to wait for. Anything else is proved
-// by HTTP-01, which any gateway answers from the account's thumbprint alone.
+// from its own store with no replication to wait for. HTTP-01 is answered by
+// any gateway from the account's thumbprint alone.
 //
 // The account key is shared: every certificate node adopts the same one. A
 // node finding none mints its own under its own name and then adopts the
@@ -88,6 +89,12 @@ const (
 	DefaultLease      = 5 * time.Minute
 )
 
+// The challenge types a zone can be proved by.
+const (
+	ChallengeDNS  = "dns-01"
+	ChallengeHTTP = "http-01"
+)
+
 var (
 	ErrNoHost   = errors.New("certificate: a service needs a host")
 	ErrNoDB     = errors.New("certificate: a service needs a database")
@@ -108,6 +115,12 @@ type Config struct {
 	// Wildcard issues `*.<zone>` by DNS-01 and answers every one-label name
 	// under the zone — the cloud's services — with it.
 	Wildcard bool `yaml:"wildcard"`
+
+	// Challenge is how a name in the zone is proved: ChallengeDNS, the
+	// default, for a cloud whose dns nodes answer its zone, or ChallengeHTTP
+	// for one whose zone is served elsewhere and points at its gateways. A
+	// wildcard is DNS-01 or nothing.
+	Challenge string `yaml:"challenge"`
 
 	// Zone is the cloud's fqdn. The node fills it from the gateway's.
 	Zone string `yaml:"-"`
@@ -173,12 +186,24 @@ func New(h host.Host, db kvdb.KVDB, cfg Config, opts ...Option) (*Service, error
 		return nil, ErrNoHost
 	case db == nil:
 		return nil, ErrNoDB
-	case !cfg.ACME.Enabled:
-		return nil, ErrDisabled
+	}
+	if err := acme.Check(cfg.ACME); err != nil {
+		return nil, fmt.Errorf("certificate: %w", err)
 	}
 	cfg.Zone = strings.ToLower(strings.Trim(cfg.Zone, "."))
 	if cfg.Zone == "" {
 		return nil, ErrNoZone
+	}
+	switch cfg.Challenge {
+	case "":
+		cfg.Challenge = ChallengeDNS
+	case ChallengeDNS:
+	case ChallengeHTTP:
+		if cfg.Wildcard {
+			return nil, errors.New("certificate: a wildcard is proved by dns-01 only")
+		}
+	default:
+		return nil, fmt.Errorf("certificate: challenge %q is neither %s nor %s", cfg.Challenge, ChallengeDNS, ChallengeHTTP)
 	}
 	if cfg.RenewEvery <= 0 {
 		cfg.RenewEvery = DefaultRenewEvery
@@ -289,13 +314,16 @@ func (s *Service) acmeIssuer(ctx context.Context) (*acme.Issuer, error) {
 	if err != nil {
 		return nil, err
 	}
-	issuer, err := acme.New(s.cfg.ACME, "",
+	opts := []acme.Option{
 		acme.WithStore(store{s}),
 		acme.WithAccountKey(key),
-		acme.WithDNS(s.cfg.Zone, presenter{s}),
 		acme.WithClock(s.now),
 		acme.WithLogger(s.logf),
-	)
+	}
+	if s.cfg.Challenge == ChallengeDNS {
+		opts = append(opts, acme.WithDNS(s.cfg.Zone, presenter{s}))
+	}
+	issuer, err := acme.New(s.cfg.ACME, "", opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -341,7 +369,7 @@ func (s *Service) accountKey(ctx context.Context) (crypto.Signer, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := s.vault.Set(ctx, VaultProject, VaultEnvironment, prefix+string(s.host.ID()), blob); err != nil {
+	if err := s.vault.Set(ctx, VaultProject, VaultEnvironment, prefix+s.host.ID().String(), blob); err != nil {
 		return nil, fmt.Errorf("certificate: keeping the account key: %w", err)
 	}
 	key, ok, err := adopt()

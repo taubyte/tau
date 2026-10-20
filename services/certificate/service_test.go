@@ -372,6 +372,17 @@ func TestWhatIsRefused(t *testing.T) {
 	_, err = New(h, database, Config{ACME: on.ACME})
 	require.ErrorIs(t, err, ErrNoZone)
 
+	_, err = New(h, database, Config{ACME: on.ACME, Zone: zone, Challenge: "tls-alpn-01"})
+	require.ErrorContains(t, err, "neither")
+	_, err = New(h, database, Config{ACME: on.ACME, Zone: zone, Challenge: ChallengeHTTP, Wildcard: true})
+	require.ErrorContains(t, err, "dns-01 only")
+	_, err = New(h, database, Config{ACME: pkgcertificate.ACME{Enabled: true, RootCA: "nope"}, Zone: zone})
+	require.Error(t, err)
+	http01, err := New(h, database, Config{ACME: on.ACME, Zone: zone, Challenge: ChallengeHTTP}, WithVault(&vault{data: map[string][]byte{}}))
+	require.NoError(t, err)
+	_, err = http01.acmeIssuer(t.Context())
+	require.NoError(t, err)
+
 	s, err := New(h, database, on)
 	require.NoError(t, err)
 	_, err = s.Thumbprint(t.Context())

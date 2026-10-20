@@ -123,7 +123,7 @@ func WithService(s Service) Option {
 }
 
 // builtIn is every name this package starts itself.
-func builtIn() []string { return append(append([]string(nil), All...), BuildFrontend) }
+func builtIn() []string { return append(append([]string(nil), All...), BuildFrontend, Certificate) }
 
 // startAdded starts every added service the config names, in the order they
 // were added.

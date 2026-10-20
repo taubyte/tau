@@ -239,6 +239,26 @@ func validToken(token string) bool {
 	return token != "" && strings.Trim(token, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") == ""
 }
 
+// Check refuses a config New would refuse, without building anything: for a
+// service that builds its issuer later, so a bad config fails at start.
+func Check(cfg certificate.ACME) error {
+	if !cfg.Enabled {
+		return ErrDisabled
+	}
+	if _, err := transport(cfg); err != nil {
+		return err
+	}
+	if _, err := accountOf(cfg); err != nil {
+		return err
+	}
+	if cfg.AccountKey != "" {
+		if _, err := parseKey([]byte(cfg.AccountKey)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func accountOf(cfg certificate.ACME) (*xacme.Account, error) {
 	a := &xacme.Account{}
 	if cfg.Email != "" {

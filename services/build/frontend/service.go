@@ -2,6 +2,7 @@ package frontend
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -46,6 +47,7 @@ type Service struct {
 	now    func() time.Time
 	logf   func(string, ...any)
 	tune   func(*http.Server)
+	tls    *tls.Config
 	router http.Handler
 
 	// FOUR LIMITERS, TWO PER PUBLIC SURFACE, and one cache of auth's answers.
@@ -96,6 +98,7 @@ type options struct {
 	cloudFqdn   string
 
 	tune func(*http.Server)
+	tls  *tls.Config
 	now  func() time.Time
 	logf func(format string, args ...any)
 }
@@ -274,6 +277,19 @@ func WithHTTPServer(f func(*http.Server)) Option {
 	}
 }
 
+// WithTLS serves Listen over TLS, answering each handshake from c. A node
+// hands over the cloud's certificates for `build-frontend.<cloud fqdn>`,
+// which is the address a forge's webhook is installed at.
+func WithTLS(c *tls.Config) Option {
+	return func(o *options) error {
+		if c == nil {
+			return errors.New("build: a nil tls config")
+		}
+		o.tls = c
+		return nil
+	}
+}
+
 // WithClock replaces the source of time for the secret cache and both rate
 // limiters. It is what lets a test watch an entry expire or a bucket refill
 // without sleeping — which is most of why those two are testable at all.
@@ -363,6 +379,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		cfg:         effective,
 		cloudFqdn:   o.cloudFqdn,
 		tune:        o.tune,
+		tls:         o.tls,
 		now:         o.now,
 		logf:        o.logf,
 	}
@@ -433,11 +450,15 @@ func (s *Service) Start(ctx context.Context) error {
 
 	s.server = server
 	s.listener = listener
+	served := listener
+	if s.tls != nil {
+		served = tls.NewListener(listener, s.tls)
+	}
 	s.serving = make(chan struct{})
 
 	go func() {
 		defer close(s.serving)
-		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := server.Serve(served); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.log("serving on %s: %v", listener.Addr(), err)
 		}
 	}()
