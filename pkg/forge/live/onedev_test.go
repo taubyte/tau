@@ -4,6 +4,7 @@ package live_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -127,9 +128,18 @@ func TestARealOneDevAnswersTheOneDevDriver(t *testing.T) {
 	childRepo, err := cs.Create(ctx, child, forge.CreateOptions{Private: true})
 	require.NoError(t, err)
 	t.Cleanup(func() { cs.Delete(context.Background(), child) })
-	childPushed := push(t, childRepo.HTTPS, in.pushAs)
+	push(t, childRepo.HTTPS, in.pushAs)
 	refused := rx.await(t, func(d forge.Delivery) bool {
-		if !strings.Contains(string(d.Body), childPushed) {
+		// The receiver keeps every delivery, the parent's included, and the
+		// two pushes are the same commit. What tells the child's apart is the
+		// project it names against the one the hook's header was written for.
+		var body struct {
+			ProjectID int64 `json:"projectId"`
+		}
+		require.NoError(t, json.Unmarshal(d.Body, &body))
+		header := strings.Fields(d.Header.Get("X-Tau-Repository"))
+		require.Len(t, header, 2, "OneDev did not replay the repository header the driver registered")
+		if fmt.Sprint(body.ProjectID) == header[0] {
 			return false
 		}
 		_, err := in.reg.VerifyPush(hook, d)
