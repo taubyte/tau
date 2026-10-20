@@ -61,7 +61,9 @@ func TestARealGerritStreamsItsPushes(t *testing.T) {
 
 	asAdmin := http.Header{}
 	asAdmin.Set("Authorization", "Basic "+basic("admin", "secret"))
-	admins := map[string]any{"global:Administrators": map[string]string{"action": "ALLOW"}}
+	// Administrators is a group with a UUID, not a system group; Registered
+	// Users is, and the administrator is one.
+	admins := map[string]any{"global:Registered-Users": map[string]string{"action": "ALLOW"}}
 	api(t, http.MethodPost, base+"/a/projects/All-Projects/access", asAdmin, map[string]any{"add": map[string]any{
 		"refs/*": map[string]any{"permissions": map[string]any{
 			"forgeAuthor":    map[string]any{"rules": admins},
