@@ -2,8 +2,10 @@
 // declared in pkg/proto/tau/auth/v2/auth.proto, served to other tau nodes over
 // p2p/rpc (ConnectRPC on a libp2p stream).
 //
-// It answers whether someone a forge vouched for is admitted to this cloud.
-// Projects and repositories are the register's (services/register), a
+// It keeps this cloud's users — the built-in admin from configuration, local
+// users, and people who sign in through a forge or an OIDC provider — issues
+// and verifies their tau tokens, brokers sign-in through the cloud's own OAuth
+// apps, and answers whether someone a forge vouched for is admitted. Projects and repositories are the register's (services/register), a
 // project's webhook secret and deploy keys are the secrets service's, and
 // whether a caller may write to a repository is the forge's answer, asked by
 // the build frontend. auth.proto's package doc says why each lives where it
@@ -14,20 +16,38 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
 
+	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/rpc"
+	"github.com/taubyte/tau/pkg/forge"
+	"github.com/taubyte/tau/services/auth/oidc"
 )
 
-// Service is auth's whole state: the host it answers on and the identity it
-// answers from. It holds no store — nothing it answers is a row it keeps.
+// Service is auth's whole state.
 type Service struct {
 	host host.Host
 
 	identity Identity
+
+	// The users half. Without a store a Service answers admission only.
+	cfg    Config
+	store  *store
+	keys   *keyring
+	forges *forge.Registry
+	vault  Vault
+	http   *http.Client
+	now    func() time.Time
+	// hashing bounds concurrent Argon2 work: each is 64 MiB.
+	hashing chan struct{}
+
+	oidcMu    sync.Mutex
+	providers map[string]*oidc.Provider
 
 	serverOptions []rpc.ServerOption
 
@@ -49,16 +69,86 @@ func WithServerOptions(opts ...rpc.ServerOption) Option {
 	}
 }
 
+// WithUsers gives auth its users: the store they are kept in, the vault its
+// keys are, and the configuration that names the admin and the sign-in
+// providers. Without it auth answers admission only, admitting whoever a forge
+// vouched for.
+func WithUsers(db kvdb.KVDB, v Vault, cfg Config) Option {
+	return func(s *Service) error {
+		if db == nil || v == nil {
+			return errors.New("auth: users need a store and a vault")
+		}
+		if err := cfg.defaults(); err != nil {
+			return err
+		}
+		s.store, s.vault, s.cfg = &store{db: db}, v, cfg
+		return nil
+	}
+}
+
+// WithForges is the registry sign-in asks who a forge credential is.
+func WithForges(r *forge.Registry) Option {
+	return func(s *Service) error {
+		if r == nil {
+			return errors.New("auth: a nil forge registry")
+		}
+		s.forges = r
+		return nil
+	}
+}
+
+// WithHTTPClient is what token endpoints and OIDC discovery are reached
+// with. Redirects are never followed whatever it says.
+func WithHTTPClient(c *http.Client) Option {
+	return func(s *Service) error {
+		if c == nil {
+			return errors.New("auth: a nil http client")
+		}
+		s.http = c
+		return nil
+	}
+}
+
+// WithClock replaces time.Now.
+func WithClock(now func() time.Time) Option {
+	return func(s *Service) error {
+		if now == nil {
+			return errors.New("auth: a nil clock")
+		}
+		s.now = now
+		return nil
+	}
+}
+
 // New validates and allocates. It binds nothing until Start.
 func New(h host.Host, opts ...Option) (*Service, error) {
 	if h == nil {
 		return nil, errors.New("auth: no host to answer on")
 	}
 
-	s := &Service{host: h, identity: AdmitAll{}}
+	s := &Service{host: h, now: time.Now, providers: map[string]*oidc.Provider{}, hashing: make(chan struct{}, 2)}
 	for _, opt := range opts {
 		if err := opt(s); err != nil {
 			return nil, fmt.Errorf("auth: option: %w", err)
+		}
+	}
+	s.http = oidc.Client(s.http)
+	if s.store != nil {
+		s.keys = newKeyring(s.vault, *s.store, h.ID().String(), func() int64 { return s.now().UnixNano() })
+		for _, f := range s.cfg.Forges {
+			if s.forges == nil {
+				return nil, errors.New("auth: forge sign-in is configured with no forge registry")
+			}
+			if _, err := s.forges.Driver(f.Host); err != nil {
+				return nil, fmt.Errorf("auth: forge app for %s: %w", f.Host, err)
+			}
+		}
+	}
+	if s.identity == nil {
+		if s.store != nil {
+			s.identity = &Users{s: s}
+		} else {
+			s.identity = AdmitAll{}
 		}
 	}
 	return s, nil

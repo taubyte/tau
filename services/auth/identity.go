@@ -21,6 +21,9 @@ type Caller struct {
 	Subject string
 	// Login is the account's name on the forge.
 	Login string
+	// User is the tau user the caller's own tau token verified as, or empty
+	// when they sent none.
+	User string
 }
 
 // Admission is what an Identity concluded about a Caller.
@@ -38,16 +41,38 @@ type Identity interface {
 	Admit(ctx context.Context, c Caller) (Admission, error)
 }
 
-// AdmitAll is the identity a node composed with none has: whoever the forge
-// vouched for may use the API, and what they may touch is still decided per
-// repository by the forge.
+// AdmitAll admits whoever the forge vouched for; what they may touch is still
+// decided per repository by the forge. It is the identity of an auth that keeps
+// no users.
 type AdmitAll struct{}
 
 func (AdmitAll) Admit(context.Context, Caller) (Admission, error) {
 	return Admission{Admitted: true}, nil
 }
 
-// WithIdentity sets who decides admission. Without it, AdmitAll.
+// Users is the identity of an auth that keeps users: a caller is admitted when
+// they are a user of this cloud — their tau token says so, or the forge
+// identity they hold is linked to one — or when sign-up is open.
+type Users struct{ s *Service }
+
+func (u *Users) Admit(ctx context.Context, c Caller) (Admission, error) {
+	if c.User != "" {
+		return Admission{Admitted: true}, nil
+	}
+	_, err := u.s.linked(ctx, c.Forge, c.Subject)
+	switch {
+	case err == nil:
+		return Admission{Admitted: true}, nil
+	case !errors.Is(err, ErrNotFound):
+		return Admission{}, err
+	case u.s.cfg.SignUp == SignUpOpen:
+		return Admission{Admitted: true}, nil
+	}
+	return Admission{Reason: "not a user of this cloud: sign in to it first"}, nil
+}
+
+// WithIdentity sets who decides admission. Without it, Users when auth keeps
+// users and AdmitAll when it does not.
 func WithIdentity(i Identity) Option {
 	return func(s *Service) error {
 		if i == nil {
@@ -65,9 +90,34 @@ func (h *identityHandler) Admit(ctx context.Context, req *connect.Request[authv2
 	if c.Forge == "" || c.Subject == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("auth: a caller needs a forge and a subject"))
 	}
+	// A TOKEN THAT DOES NOT VERIFY IS A REFUSAL WITH A REASON, not an error:
+	// the caller can fix it by signing in again.
+	if t := req.Msg.GetToken(); t != "" {
+		p, err := h.s.verify(ctx, t)
+		var ce *connect.Error
+		switch {
+		case errors.As(err, &ce) && ce.Code() == connect.CodeUnauthenticated:
+			return connect.NewResponse(&authv2.Admission{Reason: "the tau token is not valid: sign in again"}), nil
+		case err != nil:
+			return nil, err
+		}
+		c.User = p.user.ID
+	}
 	a, err := h.s.identity.Admit(ctx, c)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnavailable, err)
 	}
 	return connect.NewResponse(&authv2.Admission{Admitted: a.Admitted, Reason: a.Reason, Accounts: a.Accounts}), nil
+}
+
+func (h *identityHandler) Verify(ctx context.Context, req *connect.Request[authv2.VerifyRequest]) (*connect.Response[authv2.Principal], error) {
+	p, err := h.s.verify(ctx, req.Msg.GetToken())
+	if err != nil {
+		return nil, err
+	}
+	u, err := h.s.toProto(ctx, p.user)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&authv2.Principal{User: u, TokenId: p.tokenID}), nil
 }
