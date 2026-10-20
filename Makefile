@@ -31,7 +31,7 @@ DREAM_P ?= $(shell n=$$(nproc 2>/dev/null || echo 4); p=$$((n / 4)); [ $$p -lt 1
 # it fails the package outright rather than skipping it.
 DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xargs grep -L '//go:build dreaming && ee' | sed 's|^\./||' | grep -vE '^(ee/|tools/tau/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
-.PHONY: test test-cli test-acme test-dreaming test-raft test-docker test-containerd test-application test-build test-external-databases test-forges test-containers test-taucorder test-all proto-v2 proto-v2-check
+.PHONY: test test-cli test-acme test-acme-live test-dreaming test-raft test-docker test-containerd test-application test-build test-external-databases test-forges test-containers test-taucorder test-all proto-v2 proto-v2-check
 
 # THE TIMEOUT IS EXPLICIT BECAUSE THE DEFAULT IS A GUESS ABOUT THE MACHINE.
 # go test allows a package 10 minutes unless told otherwise, and pkg/kvdb spends
@@ -99,6 +99,15 @@ AS_ROOT := $(CURDIR)/scripts/as-root
 # It needs nothing installed, so make test runs it too.
 test-acme:
 	go test -count=1 -v -timeout 10m ./pkg/certificate/acme/ ./services/globals/ && go test -count=1 -v -timeout 10m -run '^(TestAGeneratedNameIsIssuedByACMEAndServedOverTLS|TestTheZoneIsProvedByDNS01AndItsWildcardAnswersEveryService)$$' ./node/boot/
+
+# test-acme-live issues from pebble in a container, a CA tau does not share a
+# process with, whose resolver is bind9 finding the cloud's zone by real NS and
+# glue in a bind9 parent for example.test: DNS-01 for a generated name and the
+# wildcard, HTTP-01 through the gateway, then TLS against the gateway and the
+# build frontend verified to pebble's root. A delegation names port 53, so the
+# node's dns needs root; containers are host-networked, at pinned images.
+test-acme-live:
+	go test -exec $(AS_ROOT) -tags docker_integration -count=1 -v -timeout 10m -run '^TestARealCAIssuesThroughARealDelegation$$' ./node/boot/
 
 test-application:
 	go test -exec $(AS_ROOT) -tags 'dreaming docker_integration' -count=1 -v -timeout 10m -run '^(TestAnApplicationAnswersThroughTheGateway|TestAContainerWorkerRunsToCompletionPerInvocation|TestAChannelServedByAContainerDeliversToItsNamedPort)$$' ./node/dream/
