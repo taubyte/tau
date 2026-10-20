@@ -664,6 +664,9 @@ func (s *Session) Capabilities() Set {
 	if _, ok := s.driver.(PushEvents); ok {
 		set[CapPushEvents] = struct{}{}
 	}
+	if _, ok := s.driver.(SignIn); ok {
+		set[CapSignIn] = struct{}{}
+	}
 	return set
 }
 

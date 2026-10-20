@@ -132,6 +132,7 @@ func (f *fixture) subject(t *testing.T, reg *forge.Registry) forgetest.Subject {
 			forge.CapPushHooks:  {},
 			forge.CapCloneAddr:  {},
 			forge.CapSignatures: {},
+			forge.CapSignIn:     {},
 		},
 
 		Credential:    forge.Token(goodToken),

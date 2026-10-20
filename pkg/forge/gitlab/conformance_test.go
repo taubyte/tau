@@ -30,6 +30,7 @@ func baseCapabilities() forge.Set {
 		forge.CapPushHooks:  {},
 		forge.CapCloneAddr:  {},
 		forge.CapSignatures: {},
+		forge.CapSignIn:     {},
 	}
 }
 

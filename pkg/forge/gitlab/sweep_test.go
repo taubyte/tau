@@ -336,6 +336,14 @@ var sweepOps = []sweepOp{
 		},
 	},
 	{
+		// It names endpoints on the host and asks nothing: the code is
+		// redeemed by whoever signs a person in, never by the driver.
+		name: "OAuth", caps: []forge.Capability{forge.CapSignIn}, offline: true,
+		call: func(_ context.Context, reg *forge.Registry, s *forge.Session, _ repokey.Key, _ sweepArgs) (any, error) {
+			return reg.OAuth(s.Host())
+		},
+	},
+	{
 		// It answers from the key alone: no context, no request, no credential.
 		name: "CloneAddress", caps: []forge.Capability{forge.CapCloneAddr}, offline: true,
 		call: func(_ context.Context, _ *forge.Registry, s *forge.Session, k repokey.Key, _ sweepArgs) (any, error) {

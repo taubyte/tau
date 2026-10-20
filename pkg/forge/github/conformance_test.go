@@ -144,6 +144,7 @@ func (f *fixture) subject(t *testing.T, reg *forge.Registry, extra ...forge.Capa
 		forge.CapPushHooks:  {},
 		forge.CapCloneAddr:  {},
 		forge.CapSignatures: {},
+		forge.CapSignIn:     {},
 	}
 	for _, c := range extra {
 		expect[c] = struct{}{}
