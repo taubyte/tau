@@ -1,7 +1,5 @@
 // Package schema is the tau v2 configuration vocabulary: the DSL declaration the
-// generic tcc interpreter compiles. It is a sibling of taubyte/v1/schema, not a
-// revision of it — v1 stays frozen so its parity oracle keeps applying while v2 is
-// authored (.notes/v2/edges.md §9.1).
+// generic tcc interpreter compiles.
 //
 // What v2 changes, and why each is a deletion rather than an extension:
 //

@@ -1,18 +1,17 @@
-// Command tcc-gen generates the mechanical legacy/schema/<resource> accessor files
-// from the tcc schema DSL (pkg/tcc/taubyte/v1/schema/definition.go), which is the
-// single source of truth for resource fields.
+// Command tcc-gen generates what is derived from the v2 tcc schema DSL
+// (pkg/tcc/taubyte/v2/schema/definition.go), the single source of truth for
+// resource fields: the pkg/specs readers, the JSON Schema and the explorer's
+// TypeScript.
 //
 //	tcc-gen [--out DIR]   write generated files under DIR (default: a temp dir)
-//	tcc-gen --check       diff generated accessors against the current legacy/schema
+//	tcc-gen --check       report which generated files on disk have drifted
 //	tcc-gen --wasm [--out DIR]  build the browser wasm module + wasm_exec.js
-//	                      (default out: pkg/tcc/clients/js/assets)
+//	                      (default out: pkg/tcc/taubyte/v2/explorer/public)
 //	tcc-gen --ts [--out DIR]    generate the TypeScript schema interfaces
-//	                      (default out: pkg/tcc/clients/js/src/gen)
+//	                      (default out: pkg/tcc/taubyte/v2/explorer/src/gen)
 //
-// --dsl v1|v2 selects the vocabulary every mode reads. It is the ONLY thing that
-// differs between the two: accessors, TypeScript and the wasm module are all
-// generated from whichever schema root is named, so a second DSL costs a flag
-// rather than a second generator.
+// --dsl names the vocabulary every mode reads; v2 is the only one. Adding one
+// is an entry in selectDSL rather than a second generator.
 package main
 
 import (

@@ -4,7 +4,7 @@
 // root and project. It deliberately does NOT import the schema package — the
 // schema imports THIS package for its capability terms (Cap) and index/group
 // annotations, so the dependency is strictly one-way. The public compile/decompile
-// API is re-exposed as a thin facade in pkg/tcc/taubyte/v1/schema.
+// API is re-exposed as a thin facade in pkg/tcc/taubyte/v2/schema.
 package interp
 
 import (

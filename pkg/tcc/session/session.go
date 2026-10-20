@@ -5,7 +5,7 @@
 // exposes, usable directly from Go (e.g. tau-cli).
 //
 // The core (edit, fork, merge, save) is DSL-agnostic; compilation is injected via
-// CompilerFor, so the Taubyte binding lives in pkg/tcc/taubyte/v1/schema, not here.
+// CompilerFor, so the Taubyte binding lives in pkg/tcc/taubyte/v2/schema, not here.
 package session
 
 import (
