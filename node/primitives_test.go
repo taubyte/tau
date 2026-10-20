@@ -312,3 +312,35 @@ func TestAWindowHandedToAnotherNodeReachesItsPrimitivesService(t *testing.T) {
 func at(hour, minute int) time.Time {
 	return time.Date(2026, 9, 5, hour, minute, 0, 0, time.UTC)
 }
+
+// A CLAIMED FIRE RUNS WHERE IT CAN: on this node's own worker when there is no
+// discovery to place it through, and nowhere — said by name — on a node that
+// runs no worker at all.
+func TestAFireRunsOnTheWorkerItCanReach(t *testing.T) {
+	at := primitivesService.Target{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"}
+	req := &invoke.Request{Method: "POST", Path: "/"}
+
+	none, _, _ := makeNode(t, Config{Services: []string{Register}})
+	_, err := none.fire(t.Context(), at, req)
+	require.ErrorIs(t, err, ErrNoPrimitives)
+
+	answers := &answering{name: "wasm", status: 200}
+	c := dialingNode(t, answers)
+	res, err := c.node.fire(t.Context(), at, req)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.Status)
+	require.Len(t, answers.seen(), 1, "this node's own worker ran it")
+}
+
+// WITH DISCOVERY THE FIRE IS PLACED, and a fleet of one places it here.
+func TestAFireIsPlacedWhereThereIsDiscovery(t *testing.T) {
+	answers := &answering{name: "wasm", status: 200}
+	n, _ := consuming(t, answers, compiled())
+	require.NotNil(t, n.workers)
+
+	res, err := n.fire(t.Context(), primitivesService.Target{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"},
+		&invoke.Request{Method: "POST", Path: "/"})
+	require.NoError(t, err)
+	require.Equal(t, 200, res.Status)
+	require.Len(t, answers.seen(), 1)
+}

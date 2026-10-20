@@ -8,6 +8,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	pkgregister "github.com/taubyte/tau/pkg/register"
 )
 
 // channelGrant is what the composer writes onto a `dial`: the resolved server,
@@ -70,4 +71,60 @@ func TestANodeThatCanReachNoWorkerAnswersNothing(t *testing.T) {
 
 	_, err := (&channels{node: n}).Dial(t.Context(), channelGrant(), []byte("x"))
 	require.ErrorIs(t, err, wasmtier.ErrNoAnswer)
+}
+
+// dialingNode is a worker with no discovery — so a dial goes to its own worker,
+// the only workload it can reach — serving the fixture's checkout function.
+func dialingNode(t *testing.T, answers *answering) *channels {
+	t.Helper()
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker}}, WithRuntimes(answers), prebuilt())
+	require.NoError(t, n.Start(t.Context()))
+	require.Nil(t, n.workers, "no discovery, so nothing to place through")
+	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled(),
+	})
+	require.NoError(t, err)
+	return &channels{node: n}
+}
+
+// A FUNCTION SERVES A CHANNEL BY BEING INVOKED, and what it answered is what
+// the dialer reads.
+func TestAChannelToAFunctionIsItsAnswer(t *testing.T) {
+	c := dialingNode(t, &answering{name: "wasm", status: 200})
+
+	got, err := c.Dial(t.Context(), channelGrant(), []byte("x"))
+	require.NoError(t, err)
+	require.Equal(t, []byte("200"), got)
+}
+
+// A SERVER THAT ANSWERED WITH A FAILURE IS A FAILED CHANNEL, not a body the
+// dialer reads as if it had worked.
+func TestAFailingServerIsAFailedChannel(t *testing.T) {
+	c := dialingNode(t, &answering{name: "wasm", status: 503})
+
+	_, err := c.Dial(t.Context(), channelGrant(), []byte("x"))
+	require.ErrorIs(t, err, wasmtier.ErrChannelFailed)
+	require.Contains(t, err.Error(), "503")
+}
+
+// A CONNECTED KIND IS DIALLED ON A PORT. A node that can reach no worker has
+// nowhere to dial and says no answer — the arm a caller retries; a worker that
+// holds no such resource is a dialling fault, because the composer resolved the
+// server and a grant naming one that is not deployed is not the far end being
+// away.
+func TestAConnectedKindIsDialled(t *testing.T) {
+	grant := channelGrant()
+	grant.Settings["serve/kind"] = "application"
+	grant.Settings["serve/name"] = "absent"
+
+	n, _, _ := makeNode(t, Config{Services: []string{Register}})
+	_, err := (&channels{node: n}).Dial(t.Context(), grant, []byte("x"))
+	require.ErrorIs(t, err, wasmtier.ErrNoAnswer)
+	require.Contains(t, err.Error(), "application/absent")
+
+	c := dialingNode(t, &answering{name: "wasm", status: 200})
+	_, err = c.Dial(t.Context(), grant, []byte("x"))
+	require.Error(t, err)
+	require.NotErrorIs(t, err, wasmtier.ErrNoAnswer)
+	require.Contains(t, err.Error(), "dialling reserve failed")
 }
