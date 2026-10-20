@@ -72,6 +72,10 @@ func (n *Node) openDNS() error {
 		options = append(options, dns.WithGenerated(dns.Generated{
 			Zone: zone, Hosts: n.registerSource(), Service: Gateway,
 		}))
+		// AND ITS SERVICES BY NAME, `<service>.<cloud>`, answered by the nodes
+		// reporting each one. The names are every service a node can run here,
+		// added ones included, so a name outside them is refused as absent.
+		options = append(options, dns.WithServices(dns.Services{Zone: zone, Names: n.knownServices()}))
 	}
 
 	svc, err := dns.New(n.cfg.DNS, options...)
@@ -111,4 +115,15 @@ func (n *Node) DNSAddrs() []net.Addr {
 		return nil
 	}
 	return n.dns.Addrs()
+}
+
+// knownServices is every service name a node of this composition can report:
+// the built-in ones, the public build role All leaves out, and the ones added
+// with WithService.
+func (n *Node) knownServices() []string {
+	out := append(append([]string(nil), All...), BuildFrontend)
+	for _, svc := range n.opts.extra {
+		out = append(out, svc.Name)
+	}
+	return out
 }

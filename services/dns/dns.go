@@ -206,6 +206,13 @@ func (s *Service) AnswerContext(ctx context.Context, req *dns.Msg) *dns.Msg {
 		return reply
 	}
 
+	// A SERVICE OF THE CLOUD, by name. Before the generated names because it
+	// sits where a project label does, and a project label is never a service's
+	// name. See services.go.
+	if s.answerService(reply, name, q) {
+		return reply
+	}
+
 	// A NAME UNDER THE CLOUD'S OWN ZONE is a generated one: published or not,
 	// and answered by the gateways. See generated.go.
 	if s.answerGenerated(ctx, reply, name, q) {

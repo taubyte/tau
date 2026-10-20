@@ -253,3 +253,13 @@ func TestANameDeepInAZoneFindsIt(t *testing.T) {
 	require.Len(t, reply.Answer, 1)
 	require.Equal(t, []string{"deep"}, reply.Answer[0].(*dns.TXT).Txt)
 }
+
+// TestEVERYSERVICEANODECANRUNISANAME, the public build role and added services
+// included, so none of them is refused as absent.
+func TestEveryServiceANodeCanRunIsAName(t *testing.T) {
+	n := &Node{opts: options{extra: []Service{{Name: "billing"}}}}
+	names := n.knownServices()
+	for _, want := range append(append([]string(nil), All...), BuildFrontend, "billing") {
+		require.Contains(t, names, want)
+	}
+}
