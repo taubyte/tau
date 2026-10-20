@@ -61,8 +61,8 @@ const (
 func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 	sweepLive(t)
 	gatewayHTTP := freeLoopbackPort(t)
-	startBind(t, "parent", parentConf, map[string]string{"example.test.zone": parentZone})
-	startBind(t, "resolver", resolverConf, nil)
+	startBind(t, parentNS, parentConf, map[string]string{"example.test.zone": parentZone})
+	startBind(t, resolverAddr, resolverConf, nil)
 	ca := startLivePebble(t, gatewayHTTP)
 	roots := ca.roots(t)
 
@@ -73,7 +73,7 @@ func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 		})
 		require.NoError(t, err)
 		eventually(t, "the resolver answers "+name+" through the delegation", time.Minute, func() bool {
-			return len(resolve(name, dns.TypeA)) > 0
+			return len(resolve(resolverAddr, name, dns.TypeA)) > 0
 		})
 	}
 
@@ -167,7 +167,7 @@ controls { };
 zone "` + liveParent + `" { type static-stub; server-addresses { ` + parentNS + `; }; };
 `
 
-func startBind(t *testing.T, role, conf string, zones map[string]string) {
+func startBind(t *testing.T, addr, conf string, zones map[string]string) {
 	t.Helper()
 	dir := readableDir(t)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "named.conf"), []byte(conf), 0o644))
@@ -176,20 +176,20 @@ func startBind(t *testing.T, role, conf string, zones map[string]string) {
 	}
 	startLive(t, &core.ContainerConfig{
 		Image:   bindImage,
-		Command: []string{"-f", "-c", "/conf/named.conf"},
+		Command: []string{"-g", "-c", "/conf/named.conf"},
 		Volumes: []core.VolumeMount{{Source: dir, Destination: "/conf", ReadOnly: true}},
 		Network: &core.NetworkConfig{Mode: "host"},
 	})
-	eventually(t, "bind9 "+role+" answers", time.Minute, func() bool {
-		return len(resolve(liveParent, dns.TypeSOA)) > 0
+	eventually(t, "bind9 at "+addr+" answers", time.Minute, func() bool {
+		return len(resolve(addr, liveParent, dns.TypeSOA)) > 0
 	})
 }
 
-func resolve(name string, qtype uint16) []dns.RR {
+func resolve(server, name string, qtype uint16) []dns.RR {
 	m := new(dns.Msg)
 	m.SetQuestion(dns.Fqdn(name), qtype)
 	m.RecursionDesired = true
-	in, err := dns.Exchange(m, resolverAddr+":53")
+	in, err := dns.Exchange(m, server+":53")
 	if err != nil || in.Rcode != dns.RcodeSuccess {
 		return nil
 	}
