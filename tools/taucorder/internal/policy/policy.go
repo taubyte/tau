@@ -62,7 +62,20 @@ var Table = map[string]map[string]Class{
 	"tau.build.v2.JobService": {
 		"Get": R, "List": R, "Cancel": W, "Retry": W, "Artifact": R, "Follow": R,
 	},
-	"tau.auth.v2.IdentityService": {"Admit": S},
+	// Opening a connection hands back a forge credential; verifying, who a
+	// token is.
+	"tau.auth.v2.IdentityService": {"Admit": S, "Verify": S, "Open": S},
+	// Every call that ends in a session mints a credential, so it is a write.
+	"tau.auth.v2.SessionService": {
+		"Providers": R, "Login": W, "Refresh": W, "Logout": W, "Authorize": W,
+		"Exchange": W, "DeviceStart": W, "DevicePoll": W, "Pasted": W,
+		"Whoami": S, "Disconnect": W, "Connections": S,
+	},
+	"tau.auth.v2.UserService": {
+		"ListUsers": S, "CreateUser": W, "DeleteUser": W, "SetRole": W,
+		"SetDisabled": W, "SetPassword": W, "CreateInvite": W, "ListInvites": S,
+		"DeleteInvite": W, "CreateToken": W, "ListTokens": S, "RevokeToken": W,
+	},
 	"tau.raft.v2.RaftService": {
 		"Set": W, "Get": R, "Delete": W, "Keys": R, "ExchangePeers": W,
 		"JoinVoter": W, "ClusterInfo": R, "ExportFSM": S, "HealAck": W,
