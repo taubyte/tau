@@ -145,6 +145,13 @@ func (s *Service) AnswerContext(ctx context.Context, req *dns.Msg) *dns.Msg {
 		return s.answerSRV(reply, name, q.Name)
 	}
 
+	// A DNS-01 CHALLENGE, before anything an author wrote: the cloud's zone
+	// is the cloud's, and only a certificate node proves names in it. See
+	// challenges.go.
+	if s.answerChallenge(ctx, reply, name, q) {
+		return reply
+	}
+
 	// AN AUTHORED RECORD WINS, before anything is routed. It is the more
 	// specific statement — somebody wrote it down, about that exact name, on
 	// purpose — and it is the only way this server answers a type it cannot

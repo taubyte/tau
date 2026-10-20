@@ -128,6 +128,8 @@ type options struct {
 	resolvers Resolvers
 	generated *Generated
 	services  *Services
+
+	challenges *challenges
 }
 
 // WithRouter is where the answers come from. Required.
