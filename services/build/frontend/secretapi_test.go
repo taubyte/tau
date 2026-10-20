@@ -267,7 +267,7 @@ func TestAVaultFailureIsAnUpstreamFailure(t *testing.T) {
 
 func TestAVaultMustNotBeNil(t *testing.T) {
 	_, err := New(Config{}, WithHooks(&fakeHooks{}), WithProjects(&fakeProjects{}),
-		WithBackend(&fakeBackend{}), WithIdentity(&fakeIdentity{}), WithVault(nil))
+		WithBackend(&fakeBackend{}), WithIdentity(&fakeIdentity{}), WithConnections(passConnections{}), WithVault(nil))
 	require.ErrorContains(t, err, "no vault")
 }
 

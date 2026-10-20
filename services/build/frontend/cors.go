@@ -10,12 +10,12 @@ import (
 //
 // AN ORIGIN IS ALLOWED BY EXACT MATCH against Config.Origins, and nothing
 // else is: no wildcard, no reflection of whatever Origin arrived. Credentials
-// travel as headers a page sets on purpose — Authorization and Tau-Token —
+// travel as a header a page sets on purpose — Authorization, the tau token —
 // never as cookies, so Access-Control-Allow-Credentials is never sent and a
 // page on another origin cannot ride a signed-in browser.
 
 var (
-	corsHeaders = strings.Join([]string{"Authorization", "Content-Type", "Connect-Protocol-Version", "Connect-Timeout-Ms", TauTokenHeader}, ", ")
+	corsHeaders = strings.Join([]string{"Authorization", "Content-Type", "Connect-Protocol-Version", "Connect-Timeout-Ms"}, ", ")
 	corsMethods = "GET, POST, PUT, DELETE"
 )
 
@@ -38,7 +38,7 @@ func (c *corsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Add("Vary", "Origin")
 		h.Set("Access-Control-Allow-Origin", origin)
-		h.Set("Access-Control-Expose-Headers", "Content-Type")
+		h.Set("Access-Control-Expose-Headers", "Content-Type, "+RenewedTokenHeader)
 		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 			h.Set("Access-Control-Allow-Methods", corsMethods)
 			h.Set("Access-Control-Allow-Headers", corsHeaders)

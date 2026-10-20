@@ -141,3 +141,38 @@ func TestRefusals(t *testing.T) {
 	_, err := f.verify.Verify(sign(jwt.SigningMethodEdDSA, priv, hdr, base()))
 	require.NoError(t, err)
 }
+
+func TestVerifyExpired(t *testing.T) {
+	f := newFixture(t)
+	c := f.claims()
+	c.Session, c.Sealed = "sid", "opaque"
+	raw, err := f.signer.Sign(c)
+	require.NoError(t, err)
+	f.now = f.now.Add(time.Hour)
+	_, err = f.verify.Verify(raw)
+	require.ErrorIs(t, err, ErrInvalid)
+	got, err := f.verify.VerifyExpired(raw)
+	require.NoError(t, err)
+	require.Equal(t, "sid", got.Session)
+	require.Equal(t, "opaque", got.Sealed)
+
+	// Everything but the expiry is still checked.
+	other, err := NewSigner("tau:other", newKey(t))
+	require.NoError(t, err)
+	f.pub[other.KeyID()] = other.key.Public().(ed25519.PublicKey)
+	raw, err = other.Sign(c)
+	require.NoError(t, err)
+	_, err = f.verify.VerifyExpired(raw)
+	require.ErrorIs(t, err, ErrInvalid)
+	c.Issued, c.Expires = f.now.Add(time.Hour), f.now.Add(2*time.Hour)
+	raw, err = f.signer.Sign(c)
+	require.NoError(t, err)
+	_, err = f.verify.VerifyExpired(raw)
+	require.ErrorIs(t, err, ErrInvalid, "issued in the future")
+	tok := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims{RegisteredClaims: jwt.RegisteredClaims{Issuer: "tau:example.com", Subject: "u", ID: "i", Audience: jwt.ClaimStrings{"x"}, IssuedAt: jwt.NewNumericDate(f.now), ExpiresAt: jwt.NewNumericDate(f.now)}})
+	tok.Header["kid"], tok.Header["typ"] = f.signer.KeyID(), Type
+	raw, err = tok.SignedString(f.signer.key)
+	require.NoError(t, err)
+	_, err = f.verify.VerifyExpired(raw)
+	require.ErrorIs(t, err, ErrInvalid, "another audience")
+}

@@ -35,7 +35,7 @@ func authCall(procedure, body string) *http.Request {
 	r.Header.Set("Connect-Protocol-Version", "1")
 	r.Header.Set("Authorization", "Bearer tau-token")
 	r.Header.Set("Cookie", "session=1")
-	r.Header.Set(TauTokenHeader, "other")
+	r.Header.Set("X-Other", "other")
 	return r
 }
 

@@ -105,4 +105,15 @@ func TestSignInAcrossAFleet(t *testing.T) {
 	a, err = id0.Admit(ctx, connect.NewRequest(&authv2.Caller{Forge: f.Host(), Subject: "stranger"}))
 	require.NoError(t, err)
 	require.False(t, a.Msg.GetAdmitted())
+
+	// The forge credential is sealed inside the tau token node 1 issued, and
+	// node 0 opens it: it reads node 1's sealing key from the vault by name.
+	require.Equal(t, []string{f.Host()}, []string{person.GetSession().GetConnections()[0].GetHost()})
+	require.NotContains(t, person.GetSession().GetAccessToken(), f.TokenString())
+	require.Eventually(t, func() bool {
+		o, err := id0.Open(ctx, connect.NewRequest(&authv2.OpenRequest{Token: person.GetSession().GetAccessToken(), Host: f.Host()}))
+		return err == nil && o.Msg.GetForge().GetAccessToken() == f.TokenString()
+	}, 60*time.Second, time.Second, "any node opens what any node sealed")
+	_, err = id0.Open(ctx, connect.NewRequest(&authv2.OpenRequest{Token: person.GetSession().GetAccessToken(), Host: "gitlab.com"}))
+	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }

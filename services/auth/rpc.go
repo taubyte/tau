@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"golang.org/x/oauth2"
 
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
@@ -31,6 +32,21 @@ func (s *Service) caller(ctx context.Context, h http.Header) (principal, error) 
 		return principal{}, connect.NewError(connect.CodeUnauthenticated, errors.New("auth: no tau token"))
 	}
 	return s.verify(ctx, raw)
+}
+
+// signedIn is the caller when the request carries a tau token, and nil when
+// it carries none. A token that does not verify is refused rather than
+// ignored: a caller connecting a forge must not be signed in as whoever the
+// forge says instead.
+func (s *Service) signedIn(ctx context.Context, h http.Header) (*principal, error) {
+	if h.Get("Authorization") == "" {
+		return nil, nil
+	}
+	p, err := s.caller(ctx, h)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
 }
 
 type sessionHandler struct{ s *Service }
@@ -72,7 +88,7 @@ func (h *sessionHandler) Login(ctx context.Context, req *connect.Request[authv2.
 		}
 		return nil, errLogin
 	}
-	sess, err := h.s.issue(ctx, u)
+	sess, err := h.s.issue(ctx, u, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +99,7 @@ func (h *sessionHandler) Refresh(ctx context.Context, req *connect.Request[authv
 	if err := h.ready(); err != nil {
 		return nil, err
 	}
-	sess, err := h.s.refresh(ctx, req.Msg.GetRefreshToken())
+	sess, err := h.s.refresh(ctx, req.Msg.GetRefreshToken(), req.Msg.GetAccessToken())
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +137,11 @@ func (h *sessionHandler) Exchange(ctx context.Context, req *connect.Request[auth
 	if err := h.ready(); err != nil {
 		return nil, err
 	}
-	resp, err := h.s.exchange(ctx, req.Msg)
+	as, err := h.s.signedIn(ctx, req.Header())
+	if err != nil {
+		return nil, err
+	}
+	resp, err := h.s.exchange(ctx, as, req.Msg)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +163,11 @@ func (h *sessionHandler) DevicePoll(ctx context.Context, req *connect.Request[au
 	if err := h.ready(); err != nil {
 		return nil, err
 	}
-	resp, err := h.s.devicePoll(ctx, req.Msg)
+	as, err := h.s.signedIn(ctx, req.Header())
+	if err != nil {
+		return nil, err
+	}
+	resp, err := h.s.devicePoll(ctx, as, req.Msg)
 	if err != nil {
 		return nil, err
 	}
@@ -157,11 +181,45 @@ func (h *sessionHandler) Pasted(ctx context.Context, req *connect.Request[authv2
 	if req.Msg.GetToken() == "" {
 		return nil, invalid("no token")
 	}
-	sess, err := h.s.signInToken(ctx, req.Msg.GetProvider(), req.Msg.GetToken(), req.Msg.GetInvite())
+	as, err := h.s.signedIn(ctx, req.Header())
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&authv2.SignedIn{Session: sess}), nil
+	signed, err := h.s.signInForge(ctx, as, req.Msg.GetProvider(), &oauth2.Token{AccessToken: req.Msg.GetToken()}, req.Msg.GetInvite(), req.Msg.GetRefreshToken())
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(signed), nil
+}
+
+func (h *sessionHandler) Disconnect(ctx context.Context, req *connect.Request[authv2.DisconnectRequest]) (*connect.Response[authv2.SignedIn], error) {
+	if err := h.ready(); err != nil {
+		return nil, err
+	}
+	p, err := h.s.caller(ctx, req.Header())
+	if err != nil {
+		return nil, err
+	}
+	signed, err := h.s.disconnect(ctx, p, req.Msg.GetHost(), req.Msg.GetRefreshToken())
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(signed), nil
+}
+
+func (h *sessionHandler) Connections(ctx context.Context, req *connect.Request[authv2.ConnectionsRequest]) (*connect.Response[authv2.ConnectionsResponse], error) {
+	if err := h.ready(); err != nil {
+		return nil, err
+	}
+	p, err := h.s.caller(ctx, req.Header())
+	if err != nil {
+		return nil, err
+	}
+	conns, err := h.s.connections(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&authv2.ConnectionsResponse{Connections: describe(conns)}), nil
 }
 
 func (h *sessionHandler) Whoami(ctx context.Context, req *connect.Request[authv2.WhoamiRequest]) (*connect.Response[authv2.User], error) {

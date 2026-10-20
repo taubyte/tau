@@ -37,8 +37,10 @@ import (
 //     secret proves the redeemer is whoever started the sign-in, so a code
 //     intercepted on the way back is useless to anyone else. Auth redeems the
 //     code with its client secret, asks the forge who the token is (or
-//     verifies the ID token), signs the user in, and hands back BOTH the tau
-//     session and the forge's own token. It keeps neither forge token.
+//     verifies the ID token), signs the user in, and hands back a tau session
+//     with the forge's own token sealed inside it (seal.go). It keeps no
+//     forge token. A caller already signed in is connecting instead: the
+//     forge is added to their session (connect.go).
 //
 // The pending row is replicated, so Exchange may land on another node than
 // Authorize did. It is not a one-time primitive — the store has none — and
@@ -227,7 +229,7 @@ type signedInAs struct {
 	issuer, subject, login, email string
 }
 
-func (s *Service) exchange(ctx context.Context, req *authv2.ExchangeRequest) (*authv2.SignedIn, error) {
+func (s *Service) exchange(ctx context.Context, as *principal, req *authv2.ExchangeRequest) (*authv2.SignedIn, error) {
 	key := prefixPending + digest(req.GetState())
 	var row pendingRow
 	switch err := s.store.get(ctx, key, &row); {
@@ -277,13 +279,17 @@ func (s *Service) exchange(ctx context.Context, req *authv2.ExchangeRequest) (*a
 		if id.EmailVerified {
 			who.email = id.Email
 		}
-		sess, err := s.signIn(ctx, who, row.Invite)
+		u, err := s.signIn(ctx, who, row.Invite)
+		if err != nil {
+			return nil, err
+		}
+		sess, err := s.issue(ctx, u, nil)
 		if err != nil {
 			return nil, err
 		}
 		return &authv2.SignedIn{Session: sess}, nil
 	}
-	return s.signInForge(ctx, p.forge, tok, row.Invite)
+	return s.signInForge(ctx, as, p.forge, tok, row.Invite, req.GetRefreshToken())
 }
 
 // withSecret reads the provider's client secret from the vault.
@@ -300,54 +306,77 @@ func (s *Service) oauthContext(ctx context.Context) context.Context {
 	return context.WithValue(ctx, oauth2.HTTPClient, s.http)
 }
 
-// signInForge asks host who tok is and signs them in.
-func (s *Service) signInForge(ctx context.Context, host string, tok *oauth2.Token, invite string) (*authv2.SignedIn, error) {
-	sess, err := s.signInToken(ctx, host, tok.AccessToken, invite)
+// signInForge asks host who tok is, then signs them in with that forge
+// connected — or, when as is a signed-in caller, connects it to their session.
+func (s *Service) signInForge(ctx context.Context, as *principal, host string, tok *oauth2.Token, invite, refresh string) (*authv2.SignedIn, error) {
+	who, err := s.whoOnForge(ctx, host, tok.AccessToken)
 	if err != nil {
 		return nil, err
 	}
-	ft := &authv2.ForgeToken{Host: host, AccessToken: tok.AccessToken, RefreshToken: tok.RefreshToken, TokenType: tok.Type()}
-	if !tok.Expiry.IsZero() {
-		ft.ExpiresUnix = tok.Expiry.Unix()
-	}
+	ft := &authv2.ForgeToken{Host: host, AccessToken: tok.AccessToken, RefreshToken: tok.RefreshToken, TokenType: tok.Type(), Subject: who.subject, Login: who.login}
+	ft.ExpiresUnix = s.expiry(tok)
 	if sc, ok := tok.Extra("scope").(string); ok && sc != "" {
 		ft.Scopes = strings.FieldsFunc(sc, func(r rune) bool { return r == ' ' || r == ',' })
 	}
-	return &authv2.SignedIn{Session: sess, Forge: ft}, nil
+	if as != nil {
+		return s.connectForge(ctx, *as, who, ft, refresh)
+	}
+	u, err := s.signIn(ctx, who, invite)
+	if err != nil {
+		return nil, err
+	}
+	sess, err := s.issue(ctx, u, []*authv2.ForgeToken{ft})
+	if err != nil {
+		return nil, err
+	}
+	return &authv2.SignedIn{Session: sess}, nil
 }
 
-// signInToken signs in whoever a forge says the token is.
-func (s *Service) signInToken(ctx context.Context, host, token, invite string) (*authv2.Session, error) {
+// expiry is when tok expires on this service's clock, in unix seconds; zero
+// never. oauth2 stamps Expiry from the wall clock, so expires_in is read
+// instead when the forge sent one.
+func (s *Service) expiry(tok *oauth2.Token) int64 {
+	switch {
+	case tok.ExpiresIn > 0:
+		return s.now().Add(time.Duration(tok.ExpiresIn) * time.Second).Unix()
+	case !tok.Expiry.IsZero():
+		return tok.Expiry.Unix()
+	}
+	return 0
+}
+
+// whoOnForge is who host says token belongs to.
+func (s *Service) whoOnForge(ctx context.Context, host, token string) (signedInAs, error) {
 	if s.forges == nil {
-		return nil, invalid("no forge %q", host)
+		return signedInAs{}, invalid("no forge %q", host)
 	}
 	sess, err := s.forges.Host(host, forge.Token(token))
 	if err != nil {
-		return nil, invalid("%v", err)
+		return signedInAs{}, invalid("%v", err)
 	}
 	who, err := sess.Whoami(ctx)
 	var refused *forge.CredentialError
 	switch {
 	case errors.As(err, &refused):
-		return nil, connect.NewError(connect.CodeUnauthenticated, fmt.Errorf("auth: %s does not accept that token", host))
+		return signedInAs{}, connect.NewError(connect.CodeUnauthenticated, fmt.Errorf("auth: %s does not accept that token", host))
 	case err != nil:
-		return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("auth: asking %s who the token is: %w", host, err))
+		return signedInAs{}, connect.NewError(connect.CodeUnavailable, fmt.Errorf("auth: asking %s who the token is: %w", host, err))
 	case who.Subject == "":
-		return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("auth: %s named no account", host))
+		return signedInAs{}, connect.NewError(connect.CodeUnavailable, fmt.Errorf("auth: %s named no account", host))
 	}
-	return s.signIn(ctx, signedInAs{issuer: host, subject: who.Subject, login: who.Login, email: who.Email}, invite)
+	return signedInAs{issuer: host, subject: who.Subject, login: who.Login, email: who.Email}, nil
 }
 
 // signIn maps an identity to its user, creating one when sign-up allows it.
 // An identity is never linked to an existing user by email: an email says
 // where to write, not who someone is.
-func (s *Service) signIn(ctx context.Context, who signedInAs, invite string) (*authv2.Session, error) {
+func (s *Service) signIn(ctx context.Context, who signedInAs, invite string) (user, error) {
 	u, err := s.linked(ctx, who.issuer, who.subject)
 	switch {
 	case err == nil:
-		return s.issue(ctx, u)
+		return u, nil
 	case !errors.Is(err, ErrNotFound):
-		return nil, connect.NewError(connect.CodeUnavailable, err)
+		return user{}, connect.NewError(connect.CodeUnavailable, err)
 	}
 	role := roleMember
 	inv, err := s.invite(ctx, invite)
@@ -355,25 +384,25 @@ func (s *Service) signIn(ctx context.Context, who signedInAs, invite string) (*a
 	case err == nil:
 		role = inv.Role
 	case !errors.Is(err, ErrNotFound):
-		return nil, connect.NewError(connect.CodeUnavailable, err)
+		return user{}, connect.NewError(connect.CodeUnavailable, err)
 	case invite != "":
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("auth: that invite is not valid"))
+		return user{}, connect.NewError(connect.CodePermissionDenied, errors.New("auth: that invite is not valid"))
 	case s.cfg.SignUp != SignUpOpen:
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("auth: this cloud is invite-only; ask an admin for an invite"))
+		return user{}, connect.NewError(connect.CodePermissionDenied, errors.New("auth: this cloud is invite-only; ask an admin for an invite"))
 	}
 	u, err = s.create(ctx, newUser{Name: who.login, Email: who.email, Role: role})
 	if err != nil {
-		return nil, err
+		return user{}, err
 	}
 	if err := s.link(ctx, u.ID, who.issuer, who.subject, who.login); err != nil {
-		return nil, err
+		return user{}, err
 	}
 	if inv.ID != "" {
 		if err := s.redeem(ctx, inv, u.ID); err != nil {
-			return nil, err
+			return user{}, err
 		}
 	}
-	return s.issue(ctx, u)
+	return u, nil
 }
 
 func (s *Service) deviceStart(ctx context.Context, req *authv2.DeviceStartRequest) (*authv2.DeviceStartResponse, error) {
@@ -407,7 +436,7 @@ func (s *Service) deviceStart(ctx context.Context, req *authv2.DeviceStartReques
 	}, nil
 }
 
-func (s *Service) devicePoll(ctx context.Context, req *authv2.DevicePollRequest) (*authv2.DevicePollResponse, error) {
+func (s *Service) devicePoll(ctx context.Context, as *principal, req *authv2.DevicePollRequest) (*authv2.DevicePollResponse, error) {
 	key := prefixDevice + digest(req.GetDeviceCode())
 	var row deviceRow
 	switch err := s.store.get(ctx, key, &row); {
@@ -438,7 +467,7 @@ func (s *Service) devicePoll(ctx context.Context, req *authv2.DevicePollRequest)
 		return nil, connect.NewError(connect.CodePermissionDenied, fmt.Errorf("auth: %s refused the device sign-in: %w", p.id, err))
 	}
 	s.store.del(ctx, key)
-	signed, err := s.signInForge(ctx, p.forge, tok, req.GetInvite())
+	signed, err := s.signInForge(ctx, as, p.forge, tok, req.GetInvite(), req.GetRefreshToken())
 	if err != nil {
 		return nil, err
 	}

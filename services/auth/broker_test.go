@@ -46,11 +46,14 @@ func TestForgeBrowserSignIn(t *testing.T) {
 
 	in, err := f.browserSignIn(testHost, loopback, "gho_alice", "")
 	require.NoError(t, err)
-	// Both tokens come back: tau's and the forge's own.
+	// One token comes back, with the forge's own sealed inside it.
 	require.Equal(t, "alice", in.GetSession().GetUser().GetName())
 	require.Equal(t, "alice@example.com", in.GetSession().GetUser().GetEmail())
 	require.Equal(t, []*authv2.Link{{Issuer: testHost, Subject: "42", Login: "alice"}}, in.GetSession().GetUser().GetLinks())
-	ft := in.GetForge()
+	require.NotContains(t, in.GetSession().GetAccessToken(), "gho_alice")
+	require.NotContains(t, in.GetSession().GetRefreshToken(), "gho_alice")
+	require.Equal(t, []*authv2.Connection{{Host: testHost, Subject: "42", Login: "alice", ExpiresUnix: in.GetSession().GetConnections()[0].GetExpiresUnix(), Scopes: []string{"repo", "read:user"}, Refreshable: true}}, in.GetSession().GetConnections())
+	ft := f.open(in.GetSession().GetAccessToken(), testHost).GetForge()
 	require.Equal(t, testHost, ft.GetHost())
 	require.Equal(t, "gho_alice", ft.GetAccessToken())
 	require.Equal(t, "forge-refresh", ft.GetRefreshToken())
@@ -209,7 +212,7 @@ func TestPastedSignIn(t *testing.T) {
 	in, err := f.sessions().Pasted(ctx, req(&authv2.PastedRequest{Provider: "plain.example", Token: "pat"}, ""))
 	require.NoError(t, err)
 	require.Equal(t, "carol", in.Msg.GetSession().GetUser().GetName())
-	require.Nil(t, in.Msg.GetForge())
+	require.Equal(t, "pat", f.open(in.Msg.GetSession().GetAccessToken(), "plain.example").GetForge().GetAccessToken())
 
 	_, err = f.sessions().Pasted(ctx, req(&authv2.PastedRequest{Provider: "plain.example", Token: "wrong"}, ""))
 	require.Equal(t, connect.CodeUnauthenticated, code(t, err))
@@ -269,7 +272,7 @@ func TestDeviceSignIn(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, poll.Msg.GetPending())
 	require.Equal(t, "dana", poll.Msg.GetSignedIn().GetSession().GetUser().GetName())
-	require.Equal(t, "gho_dev", poll.Msg.GetSignedIn().GetForge().GetAccessToken())
+	require.Equal(t, "gho_dev", f.open(poll.Msg.GetSignedIn().GetSession().GetAccessToken(), testHost).GetForge().GetAccessToken())
 
 	// The code is spent.
 	_, err = f.sessions().DevicePoll(ctx, req(&authv2.DevicePollRequest{Provider: testHost, DeviceCode: start.Msg.GetDeviceCode()}, ""))
@@ -358,7 +361,7 @@ func TestOIDCSignIn(t *testing.T) {
 	require.Equal(t, "erin", user.GetName())
 	require.Equal(t, "erin@corp.example", user.GetEmail())
 	require.Equal(t, []*authv2.Link{{Issuer: p.url, Subject: "corp-sub-1", Login: "erin"}}, user.GetLinks())
-	require.Nil(t, in.Msg.GetForge(), "an OIDC sign-in carries no forge token")
+	require.Empty(t, in.Msg.GetSession().GetConnections(), "an OIDC sign-in connects no forge")
 
 	// A token whose nonce is not the one sent is refused.
 	f.oauth.idToken = func(string) string {

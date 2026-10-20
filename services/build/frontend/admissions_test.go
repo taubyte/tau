@@ -25,20 +25,21 @@ func (f *fakeAdmissions) Admit(_ context.Context, c Credentials, _ repokey.Key) 
 	return f.admitted, f.reason, f.err
 }
 
-// The tau token reaches admission beside the forge token, never instead of
-// it.
+// Admission is given the tau token and the forge credential its connection
+// opened to, never one in place of the other.
 func TestTheTauTokenReachesAdmission(t *testing.T) {
 	a := &fakeAdmissions{admitted: true}
 	h := newHarness(t, Config{}, WithAdmissions(a))
-	r := authed(http.MethodGet, "/job/"+testJobID, testToken)
-	r.Header.Set(TauTokenHeader, " tau-access ")
-	w := h.do(t, r)
+	h.connections.forge = map[string]string{"github.com": "forge-cred"}
+	h.identity.write = func(token string, _ repokey.Key) (Access, error) {
+		if token == "forge-cred" {
+			return AccessGranted, nil
+		}
+		return AccessDenied, nil
+	}
+	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID, "tau-access"))
 	require.Equal(t, http.StatusOK, w.Code)
-	require.Equal(t, Credentials{Forge: testToken, Tau: "tau-access"}, a.last)
-
-	w = h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken))
-	require.Equal(t, http.StatusOK, w.Code)
-	require.Equal(t, Credentials{Forge: testToken}, a.last)
+	require.Equal(t, Credentials{Forge: "forge-cred", Tau: "tau-access"}, a.last)
 }
 
 func TestAnAdmittedCallerIsServed(t *testing.T) {

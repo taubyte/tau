@@ -157,7 +157,18 @@ func (s *Service) handleListProjects(w http.ResponseWriter, r *http.Request, tok
 // claimant is who the caller is on host, with the forge's refusals turned into
 // this route's answers.
 func (s *Service) claimant(ctx context.Context, token, host string) (string, error) {
-	claimant, err := s.identity.Claimant(ctx, token, host)
+	forgeToken, err := s.forgeToken(ctx, token, host)
+	if nc := notConnected(err); nc != nil {
+		return "", nc
+	}
+	if errors.Is(err, ErrBadCredential) {
+		return "", errUnauthorized
+	}
+	if err != nil {
+		s.log("opening the connection to %s: %v", host, err)
+		return "", errUpstream
+	}
+	claimant, err := s.identity.Claimant(ctx, forgeToken, host)
 	switch {
 	case err == nil:
 		return claimant, nil

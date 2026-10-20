@@ -37,3 +37,17 @@ func (c *IdentityClient) Admit(ctx context.Context, caller *authv2.Caller) (*aut
 	})
 	return admission, err
 }
+
+// Open is the forge credential a tau token carries for one host.
+func (c *IdentityClient) Open(ctx context.Context, token, host string) (*authv2.Opened, error) {
+	var opened *authv2.Opened
+	err := c.pool.Do(ctx, func(client *rpc.Client) error {
+		resp, err := authv2connect.NewIdentityServiceClient(client.HTTP(), client.URL()).Open(ctx, connect.NewRequest(&authv2.OpenRequest{Token: token, Host: host}))
+		if err != nil {
+			return err
+		}
+		opened = resp.Msg
+		return nil
+	})
+	return opened, err
+}

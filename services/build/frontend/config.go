@@ -474,13 +474,33 @@ var (
 	ErrBadCredential = errors.New("build: the forge does not accept this token")
 )
 
-// Credentials are what a caller presented: the forge token every route is
-// authorized with, and the tau token that says which of this cloud's users
-// they are, when they sent one (TauTokenHeader).
+// Credentials are a caller's: their tau token, and the forge credential its
+// connection to the repository's host opened to.
 type Credentials struct {
 	Forge string
 	Tau   string
 }
+
+// Connections opens the forge credentials a tau token carries.
+type Connections interface {
+	// Open is the forge credential tau carries for host, and the renewed
+	// tau token when opening it renewed the credential. A token with no
+	// usable connection to host is a *NotConnectedError; a token that does
+	// not verify is ErrBadCredential.
+	Open(ctx context.Context, tau, host string) (Opened, error)
+}
+
+// Opened is one connection, opened.
+type Opened struct {
+	Forge   string
+	Renewed string
+}
+
+// NotConnectedError is a tau token with no usable connection to a forge
+// host; its message says what to do.
+type NotConnectedError struct{ Reason string }
+
+func (e *NotConnectedError) Error() string { return e.Reason }
 
 // Admissions is the cloud's answer about a caller the forge has already
 // granted: whether the person holding the credential may use this cloud's API

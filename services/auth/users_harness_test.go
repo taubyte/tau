@@ -230,6 +230,12 @@ func (o *oauthServer) handleToken(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		token = d.approved
+	case "refresh_token":
+		if !strings.HasPrefix(r.Form.Get("refresh_token"), "forge-refresh") {
+			fail("invalid_grant")
+			return
+		}
+		token = "renewed-" + r.Form.Get("refresh_token")
 	default:
 		fail("unsupported_grant_type")
 		return
@@ -300,6 +306,14 @@ func (f *fx) sessions() *sessionHandler { return &sessionHandler{f.s} }
 func (f *fx) users() *userHandler       { return &userHandler{f.s} }
 func (f *fx) identity() *identityHandler {
 	return &identityHandler{f.s}
+}
+
+// open is the forge credential access carries for host.
+func (f *fx) open(access, host string) *authv2.Opened {
+	f.t.Helper()
+	o, err := f.identity().Open(f.t.Context(), connect.NewRequest(&authv2.OpenRequest{Token: access, Host: host}))
+	require.NoError(f.t, err)
+	return o.Msg
 }
 
 func req[T any](msg *T, bearer string) *connect.Request[T] {

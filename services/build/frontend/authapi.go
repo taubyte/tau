@@ -56,6 +56,8 @@ var authProcedures = []string{
 	authv2connect.SessionServiceDevicePollProcedure,
 	authv2connect.SessionServicePastedProcedure,
 	authv2connect.SessionServiceWhoamiProcedure,
+	authv2connect.SessionServiceDisconnectProcedure,
+	authv2connect.SessionServiceConnectionsProcedure,
 	authv2connect.UserServiceListUsersProcedure,
 	authv2connect.UserServiceCreateUserProcedure,
 	authv2connect.UserServiceDeleteUserProcedure,

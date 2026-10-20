@@ -25,19 +25,20 @@ import (
 // satisfies them — which is also what lets every route in this package be
 // tested against fakes with no host, no listener and no port.
 type Service struct {
-	hooks      Hooks
-	deliveries Deliveries
-	projects   Projects
-	backend    Backend
-	identity   Identity
-	admissions Admissions
-	vault      Vault
-	linker     Linker
-	tenancy    tenancy.Tenancy
-	streams    Streams
-	linked     Linked
-	authAPI    AuthAPI
-	cfg        Config
+	hooks       Hooks
+	deliveries  Deliveries
+	projects    Projects
+	backend     Backend
+	identity    Identity
+	connections Connections
+	admissions  Admissions
+	vault       Vault
+	linker      Linker
+	tenancy     tenancy.Tenancy
+	streams     Streams
+	linked      Linked
+	authAPI     AuthAPI
+	cfg         Config
 
 	now    func() time.Time
 	logf   func(string, ...any)
@@ -75,18 +76,19 @@ type Service struct {
 type Option func(*options) error
 
 type options struct {
-	hooks      Hooks
-	deliveries Deliveries
-	projects   Projects
-	backend    Backend
-	identity   Identity
-	admissions Admissions
-	vault      Vault
-	linker     Linker
-	tenancy    tenancy.Tenancy
-	streams    Streams
-	linked     Linked
-	authAPI    AuthAPI
+	hooks       Hooks
+	deliveries  Deliveries
+	projects    Projects
+	backend     Backend
+	identity    Identity
+	connections Connections
+	admissions  Admissions
+	vault       Vault
+	linker      Linker
+	tenancy     tenancy.Tenancy
+	streams     Streams
+	linked      Linked
+	authAPI     AuthAPI
 
 	tune func(*http.Server)
 	now  func() time.Time
@@ -175,6 +177,18 @@ func WithIdentity(i Identity) Option {
 			return errors.New("build: no identity to resolve a caller with")
 		}
 		o.identity = i
+		return nil
+	}
+}
+
+// WithConnections opens the forge credentials a caller's tau token carries.
+// Required: the tau token is the only credential a caller sends.
+func WithConnections(c Connections) Option {
+	return func(o *options) error {
+		if c == nil {
+			return errors.New("build: no connections to open a caller's forge credentials with")
+		}
+		o.connections = c
 		return nil
 	}
 }
@@ -298,25 +312,28 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		return nil, errors.New("build: no backend to queue into")
 	case o.identity == nil:
 		return nil, errors.New("build: no identity to resolve a caller with")
+	case o.connections == nil:
+		return nil, errors.New("build: no connections to open a caller's forge credentials with")
 	}
 
 	s := &Service{
-		hooks:      o.hooks,
-		deliveries: o.deliveries,
-		projects:   o.projects,
-		backend:    o.backend,
-		identity:   o.identity,
-		admissions: o.admissions,
-		vault:      o.vault,
-		linker:     o.linker,
-		tenancy:    o.tenancy,
-		streams:    o.streams,
-		linked:     o.linked,
-		authAPI:    o.authAPI,
-		cfg:        effective,
-		tune:       o.tune,
-		now:        o.now,
-		logf:       o.logf,
+		hooks:       o.hooks,
+		deliveries:  o.deliveries,
+		projects:    o.projects,
+		backend:     o.backend,
+		identity:    o.identity,
+		connections: o.connections,
+		admissions:  o.admissions,
+		vault:       o.vault,
+		linker:      o.linker,
+		tenancy:     o.tenancy,
+		streams:     o.streams,
+		linked:      o.linked,
+		authAPI:     o.authAPI,
+		cfg:         effective,
+		tune:        o.tune,
+		now:         o.now,
+		logf:        o.logf,
 	}
 
 	// ONLY A USABLE HOOK IS REMEMBERED — never a miss, never a failure to ask;

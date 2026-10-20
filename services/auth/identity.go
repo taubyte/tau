@@ -121,3 +121,14 @@ func (h *identityHandler) Verify(ctx context.Context, req *connect.Request[authv
 	}
 	return connect.NewResponse(&authv2.Principal{User: u, TokenId: p.tokenID}), nil
 }
+
+func (h *identityHandler) Open(ctx context.Context, req *connect.Request[authv2.OpenRequest]) (*connect.Response[authv2.Opened], error) {
+	if h.s.store == nil {
+		return nil, errNoUsers
+	}
+	o, err := h.s.open(ctx, req.Msg.GetToken(), req.Msg.GetHost())
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(o), nil
+}

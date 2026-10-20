@@ -17,7 +17,7 @@ func TestCORSOnlyForConfiguredOrigins(t *testing.T) {
 	w := h.do(t, pre)
 	require.Equal(t, http.StatusNoContent, w.Code)
 	require.Equal(t, "https://console.example", w.Header().Get("Access-Control-Allow-Origin"))
-	require.Contains(t, w.Header().Get("Access-Control-Allow-Headers"), TauTokenHeader)
+	require.Contains(t, w.Header().Get("Access-Control-Allow-Headers"), "Authorization")
 	require.Empty(t, w.Header().Get("Access-Control-Allow-Credentials"))
 
 	r := authed(http.MethodGet, "/job/"+testJobID, testToken)

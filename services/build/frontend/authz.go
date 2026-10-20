@@ -31,25 +31,63 @@ import (
 
 const bearerPrefix = "Bearer "
 
-// TauTokenHeader carries the caller's tau token: who they are on this cloud.
-// Authorization stays the forge token, because every route here is authorized
-// by the forge, and the two are never one value.
-const TauTokenHeader = "Tau-Token"
+// THE ONE CREDENTIAL IS THE TAU TOKEN, in Authorization. The forge
+// credential a route asks a forge with is not sent by the caller: it is one of
+// the connections sealed inside the tau token, opened by auth for the
+// repository's host (Connections). So a project whose repositories live on
+// two forges is reached with one token holding both.
 
-type tauTokenKey struct{}
+// RenewedTokenHeader is the response header a renewed tau token comes back
+// in, when a connection's forge credential had expired and auth renewed it
+// during the request. A client replaces its access token with it.
+const RenewedTokenHeader = "Tau-Renewed-Token"
 
-// withTauToken carries the request's tau token to the admission check.
-func withTauToken(r *http.Request) *http.Request {
-	t := strings.TrimSpace(r.Header.Get(TauTokenHeader))
-	if t == "" {
-		return r
-	}
-	return r.WithContext(context.WithValue(r.Context(), tauTokenKey{}, t))
+// opened is one request's forge credentials, opened once per host.
+type opened struct {
+	header http.Header
+	tau    string
+	hosts  map[string]string
 }
 
-func tauToken(ctx context.Context) string {
-	t, _ := ctx.Value(tauTokenKey{}).(string)
-	return t
+type openedKey struct{}
+
+// withOpened gives a request somewhere to keep what it opened and to hand a
+// renewed token back.
+func withOpened(w http.ResponseWriter, r *http.Request, tau string) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), openedKey{}, &opened{header: w.Header(), tau: tau, hosts: map[string]string{}}))
+}
+
+// forgeToken is the caller's forge credential for host, from the
+// connection their tau token carries.
+func (s *Service) forgeToken(ctx context.Context, tau, host string) (string, error) {
+	o, _ := ctx.Value(openedKey{}).(*opened)
+	if o != nil && o.tau == tau {
+		if f, ok := o.hosts[host]; ok {
+			return f, nil
+		}
+	}
+	got, err := s.connections.Open(ctx, tau, host)
+	if err != nil {
+		return "", err
+	}
+	if o != nil && o.tau == tau {
+		o.hosts[host] = got.Forge
+		if got.Renewed != "" {
+			o.header.Set(RenewedTokenHeader, got.Renewed)
+		}
+	}
+	return got.Forge, nil
+}
+
+// notConnected is the answer to a caller whose token holds no usable
+// connection to a host the request needs: a 401, which they fix by
+// connecting it.
+func notConnected(err error) error {
+	var nc *NotConnectedError
+	if errors.As(err, &nc) {
+		return problem(http.StatusUnauthorized, nc.Error())
+	}
+	return nil
 }
 
 // maxIDLength bounds a caller-chosen path segment before it leaves this
@@ -117,7 +155,7 @@ func (s *Service) mayTouchJob(ctx context.Context, token, jobID string) (*buildv
 // authorizeProject already grants on either, because the two are a project's
 // config and its code and a contributor may hold one of them.
 func (s *Service) writesAny(ctx context.Context, token string, keys []string) error {
-	var undecided error
+	var undecided, unconnected error
 
 	for _, spelling := range keys {
 		key, ok := parseRepositoryKey(spelling)
@@ -130,7 +168,22 @@ func (s *Service) writesAny(ctx context.Context, token string, keys []string) er
 			continue
 		}
 
-		access, err := s.identity.WriteAccess(ctx, token, key)
+		forgeToken, err := s.forgeToken(ctx, token, key.Host)
+		if err != nil {
+			// NOT CONNECTED TO THIS ONE: another key may be on a forge the
+			// caller is connected to, and is asked first.
+			if nc := notConnected(err); nc != nil {
+				unconnected = nc
+				continue
+			}
+			if errors.Is(err, ErrBadCredential) {
+				return errUnauthorized
+			}
+			undecided = errors.Join(undecided, fmt.Errorf("opening the connection to %s: %w", key.Host, err))
+			continue
+		}
+
+		access, err := s.identity.WriteAccess(ctx, forgeToken, key)
 		if err != nil {
 			// COULD NOT TELL ABOUT THIS ONE, so keep going. A project is gated
 			// by more than one repository, and they need not be on one
@@ -143,7 +196,7 @@ func (s *Service) writesAny(ctx context.Context, token string, keys []string) er
 
 		switch access {
 		case AccessGranted:
-			return s.admit(ctx, token, key)
+			return s.admit(ctx, token, forgeToken, key)
 		case AccessUnauthenticated:
 			// The credential itself is not usable, so the remaining keys would
 			// answer the same way. It is a 401 and not a 404 because the caller
@@ -158,6 +211,11 @@ func (s *Service) writesAny(ctx context.Context, token string, keys []string) er
 	if undecided != nil {
 		return undecided
 	}
+	// A repository the caller might hold on a forge they have not connected
+	// is something they can fix, so it is said rather than denied.
+	if unconnected != nil {
+		return unconnected
+	}
 	return errDenied
 }
 
@@ -167,14 +225,14 @@ func (s *Service) writesAny(ctx context.Context, token string, keys []string) er
 // nothing, and a refusal here is a 403 carrying the reason rather than the
 // 404 a denial is: the caller holds the repository, and what they lack is
 // something they can go and get.
-func (s *Service) admit(ctx context.Context, token string, key repokey.Key) error {
+func (s *Service) admit(ctx context.Context, tau, forgeToken string, key repokey.Key) error {
 	if err := s.tenancy.Refuse(key); err != nil {
 		return problem(http.StatusForbidden, err.Error())
 	}
 	if s.admissions == nil {
 		return nil
 	}
-	admitted, reason, err := s.admissions.Admit(ctx, Credentials{Forge: token, Tau: tauToken(ctx)}, key)
+	admitted, reason, err := s.admissions.Admit(ctx, Credentials{Forge: forgeToken, Tau: tau}, key)
 	switch {
 	case err != nil:
 		return fmt.Errorf("admitting a caller to %s: %w", key, err)

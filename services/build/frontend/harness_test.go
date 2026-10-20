@@ -228,13 +228,14 @@ func (f *fakeIdentity) WriteAccess(_ context.Context, token string, key repokey.
 
 type harness struct {
 	*Service
-	hooks      *fakeHooks
-	deliveries *fakeDeliveries
-	projects   *fakeProjects
-	backend    *fakeBackend
-	identity   *fakeIdentity
-	clock      *clock
-	logs       *logs
+	hooks       *fakeHooks
+	deliveries  *fakeDeliveries
+	connections *fakeConnections
+	projects    *fakeProjects
+	backend     *fakeBackend
+	identity    *fakeIdentity
+	clock       *clock
+	logs        *logs
 }
 
 type clock struct {
@@ -271,21 +272,52 @@ func (l *logs) joined() string {
 	return strings.Join(l.lines, "\n")
 }
 
+// fakeConnections opens a tau token to itself — the forge credential IS the
+// token — unless a test names something else per host.
+type fakeConnections struct {
+	mu      sync.Mutex
+	forge   map[string]string // host -> forge credential
+	renewed string
+	err     map[string]error // host -> error
+	opened  int
+}
+
+func (c *fakeConnections) Open(_ context.Context, tau, host string) (Opened, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.opened++
+	if err := c.err[host]; err != nil {
+		return Opened{}, err
+	}
+	f := tau
+	if v, ok := c.forge[host]; ok {
+		f = v
+	}
+	return Opened{Forge: f, Renewed: c.renewed}, nil
+}
+
+type passConnections struct{}
+
+func (passConnections) Open(_ context.Context, tau, _ string) (Opened, error) {
+	return Opened{Forge: tau}, nil
+}
+
 func newHarness(t *testing.T, cfg Config, opts ...Option) *harness {
 	t.Helper()
 
 	h := &harness{
-		hooks:      &fakeHooks{},
-		deliveries: &fakeDeliveries{},
-		projects:   &fakeProjects{},
-		backend:    &fakeBackend{},
-		identity:   &fakeIdentity{},
-		clock:      &clock{at: time.Unix(1700000000, 0).UTC()},
-		logs:       &logs{},
+		hooks:       &fakeHooks{},
+		deliveries:  &fakeDeliveries{},
+		projects:    &fakeProjects{},
+		backend:     &fakeBackend{},
+		identity:    &fakeIdentity{},
+		connections: &fakeConnections{},
+		clock:       &clock{at: time.Unix(1700000000, 0).UTC()},
+		logs:        &logs{},
 	}
 
 	opts = append([]Option{WithClock(h.clock.now), WithLogger(h.logs.write)}, opts...)
-	svc, err := New(cfg, append([]Option{WithHooks(h.hooks), WithDeliveries(h.deliveries), WithProjects(h.projects), WithBackend(h.backend), WithIdentity(h.identity)}, opts...)...)
+	svc, err := New(cfg, append([]Option{WithHooks(h.hooks), WithDeliveries(h.deliveries), WithProjects(h.projects), WithBackend(h.backend), WithIdentity(h.identity), WithConnections(h.connections)}, opts...)...)
 	require.NoError(t, err)
 	h.Service = svc
 	return h
