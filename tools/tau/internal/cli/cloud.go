@@ -421,7 +421,7 @@ func statusCommand(env Env) *cobra.Command {
 			if perr != nil || p.Token == "" {
 				return emit(cmd, env, out, b.String())
 			}
-			cl, err := api.New(p.Cloud, p.Token, env.HTTP)
+			cl, err := profileClient(env, cfg, profile, p)
 			if err != nil {
 				return err
 			}

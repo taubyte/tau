@@ -46,6 +46,9 @@ type Env struct {
 	// Forges is where `tau link` installs a webhook and a deploy key. Nil is
 	// the public forges (pkg/forge/public).
 	Forges *forge.Registry
+	// Browse opens a URL in the developer's browser, for a sign-in. Nil
+	// only prints it.
+	Browse func(url string) error
 	// Program runs a bubbletea model to completion; alt is whether it takes
 	// the whole screen.
 	Program func(m tea.Model, alt bool) (tea.Model, error)
@@ -59,6 +62,7 @@ func System() Env {
 		Interactive: interactive,
 		Prompter:    ui.Huh{Accessible: os.Getenv("TAU_ACCESSIBLE") == "1"},
 		HTTP:        http.DefaultClient,
+		Browse:      browse,
 		Program: func(m tea.Model, alt bool) (tea.Model, error) {
 			opts := []tea.ProgramOption{tea.WithInput(os.Stdin), tea.WithOutput(os.Stdout)}
 			if alt {
@@ -105,7 +109,8 @@ func New(env Env) *cobra.Command {
 	pf.BoolP("yes", "y", false, "assume yes to every confirmation")
 
 	root.AddCommand(
-		loginCommand(env), logoutCommand(env), profilesCommand(env),
+		loginCommand(env), logoutCommand(env), whoamiCommand(env), profilesCommand(env),
+		forgeCommand(env), usersCommand(env), tokensCommand(env),
 		initCommand(env), newCommand(env), validateCommand(env), viewsCommand(env),
 		linkCommand(env), projectsCommand(env), deployCommand(env), statusCommand(env),
 		jobsCommand(env), jobCommand(env), logsCommand(env), cancelCommand(env), retryCommand(env),
@@ -240,17 +245,18 @@ func loadConfig() (*config.Config, error) {
 	return config.Load(path)
 }
 
-// client is the API client for the selected profile.
+// client is the API client for the selected profile, renewing its token and
+// saving what it renews.
 func client(cmd *cobra.Command, env Env) (*api.Client, error) {
 	cfg, err := loadConfig()
 	if err != nil {
 		return nil, err
 	}
-	_, p, err := cfg.Resolve(flagString(cmd, "profile"), flagString(cmd, "cloud"))
+	name, p, err := cfg.Resolve(flagString(cmd, "profile"), flagString(cmd, "cloud"))
 	if err != nil {
 		return nil, err
 	}
-	return api.New(p.Cloud, p.Token, env.HTTP)
+	return profileClient(env, cfg, name, p)
 }
 
 // projectID is --project, or the directory's link.

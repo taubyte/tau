@@ -1,6 +1,7 @@
 // Package config is the CLI's own state: which clouds a developer has logged
-// in to and with what. It holds forge tokens, so it is written 0600 in a 0700
-// directory and never anywhere else.
+// in to and with what. It holds tau tokens — which carry the developer's forge
+// connections sealed inside them — so it is written 0600 in a 0700 directory
+// and never anywhere else.
 package config
 
 import (
@@ -28,9 +29,15 @@ const DefaultProfile = "default"
 type Profile struct {
 	// Cloud is the build frontend's base URL, e.g. https://build.example.com.
 	Cloud string `yaml:"cloud" json:"cloud"`
-	// Token is a forge token (a GitHub personal access token, say): the
-	// frontend asks the forge what its holder may write, and authorizes on that.
+	// Token is the tau token: a short-lived access token, or an API token.
+	// It is the only credential the cloud takes; the forges the developer
+	// connected are sealed inside it.
 	Token string `yaml:"token,omitempty" json:"-"`
+	// Expires is when Token expires, in unix seconds; zero is unknown or
+	// never.
+	Expires int64 `yaml:"expires,omitempty" json:"-"`
+	// Refresh renews Token; empty for an API token.
+	Refresh string `yaml:"refresh,omitempty" json:"-"`
 }
 
 // Config is the whole file.
@@ -129,7 +136,9 @@ func (c *Config) Resolve(name, cloud string) (string, Profile, error) {
 		p.Cloud = v
 	}
 	if v := os.Getenv(EnvToken); v != "" {
-		p.Token = v
+		// A token from the environment is used as it is: nothing to renew it
+		// with, and nowhere to save a renewal.
+		p.Token, p.Expires, p.Refresh = v, 0, ""
 	}
 	if cloud != "" {
 		p.Cloud = cloud

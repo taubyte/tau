@@ -56,8 +56,9 @@ func linkCommand(env Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "link",
 		Short: "claim this project's id on the cloud and install its webhook and deploy keys",
-		Long: "The id is project.yaml's own. The token must write to every repository named; it is also\n" +
-			"what installs the webhook and the read-only deploy keys on the forge (--manual prints them\n" +
+		Long: "The id is project.yaml's own. You must write to every repository named, through the forge\n" +
+			"connected to your session for its host (`tau forge connect`); that connection is also what\n" +
+			"installs the webhook and the read-only deploy keys on the forge (--manual prints them\n" +
 			"instead). The configuration repository defaults to the directory's git origin. What was\n" +
 			"linked is written to " + config.LinkFile + ".",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -113,8 +114,19 @@ func linkCommand(env Env) *cobra.Command {
 			sessions := make([]*forge.Session, len(keys))
 			stale := make([][]forge.Handle, len(keys))
 			if !manual {
+				// THE FORGE CREDENTIAL IS THE SESSION'S CONNECTION for the
+				// repository's host, opened by the cloud: the profile holds
+				// only the tau token.
+				opened := map[string]string{}
 				for i, k := range keys {
-					s, err := forges.For(k, forge.Token(cl.Token()))
+					if _, ok := opened[k.Host]; !ok {
+						tok, err := cl.OpenConnection(cmd.Context(), k.Host)
+						if err != nil {
+							return fmt.Errorf("%s: %w (connect it with `tau forge connect %s`, or run with --manual)", k, err, k.Host)
+						}
+						opened[k.Host] = tok
+					}
+					s, err := forges.For(k, forge.Token(opened[k.Host]))
 					if err != nil {
 						return fmt.Errorf("%s: %w (or run with --manual)", k, err)
 					}

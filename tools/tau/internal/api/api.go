@@ -35,6 +35,11 @@ type Error struct {
 func (e *Error) Error() string {
 	switch e.Status {
 	case http.StatusUnauthorized:
+		// A refusal the caller can act on — a forge they have not connected —
+		// says so; anything else is the token.
+		if e.Message != "" && e.Message != "unauthorized" {
+			return "unauthorized: " + e.Message + " (see `tau forge connect`)"
+		}
 		return "unauthorized: the cloud did not accept this token (run `tau login`)"
 	case http.StatusNotFound:
 		return "not found, or not yours: the token cannot write to a repository this belongs to"
@@ -51,15 +56,19 @@ func IsStatus(err error, status int) bool {
 	return errors.As(err, &e) && e.Status == status
 }
 
-// Client calls one cloud's frontend with one token.
+// Client calls one cloud's frontend with one token: the tau token, which
+// carries the developer's forge connections sealed inside it.
 type Client struct {
-	base  *url.URL
-	token string
-	http  *http.Client
+	base   *url.URL
+	tokens Tokens
+	// http is the caller's client; authed is it with the tau token added.
+	http   *http.Client
+	authed *http.Client
 }
 
-// New builds a client for the frontend at base.
-func New(base, token string, hc *http.Client) (*Client, error) {
+// New builds a client for the frontend at base. A nil tokens is a client with
+// no credential, for signing in.
+func New(base string, tokens Tokens, hc *http.Client) (*Client, error) {
 	u, err := url.Parse(strings.TrimRight(base, "/"))
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return nil, fmt.Errorf("%q is not a cloud URL (want https://host[:port])", base)
@@ -67,7 +76,12 @@ func New(base, token string, hc *http.Client) (*Client, error) {
 	if hc == nil {
 		hc = http.DefaultClient
 	}
-	return &Client{base: u, token: token, http: hc}, nil
+	if tokens == nil {
+		tokens = Static("")
+	}
+	authed := *hc
+	authed.Transport = &bearer{next: transport(hc), tokens: tokens}
+	return &Client{base: u, tokens: tokens, http: hc, authed: &authed}, nil
 }
 
 // Base is the frontend's URL.
@@ -90,11 +104,14 @@ func (c *Client) do(ctx context.Context, method string, path []string, query url
 	if err != nil {
 		return nil, err
 	}
-	if c.token == "" {
+	token, err := c.tokens.Access(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if token == "" {
 		return nil, errors.New("no token: run `tau login`, or set TAU_TOKEN")
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	resp, err := c.http.Do(req)
+	resp, err := c.authed.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +243,3 @@ func (c *Client) Projects(ctx context.Context, host string) ([]Project, error) {
 	err := c.json(ctx, http.MethodGet, []string{"forges", host, "projects"}, nil, &out)
 	return out, err
 }
-
-// Token is the credential this client sends: the developer's forge token,
-// which is also what `tau link` installs a hook and a deploy key with.
-func (c *Client) Token() string { return c.token }

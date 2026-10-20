@@ -132,3 +132,34 @@ func TestLinks(t *testing.T) {
 	require.NoError(t, os.WriteFile(file, nil, 0o644))
 	require.Error(t, WriteLink(file, Link{ProjectID: "p"}))
 }
+
+// A token from the environment is used as it is: no refresh rides with it.
+func TestAnEnvironmentTokenCarriesNoRefresh(t *testing.T) {
+	t.Setenv(EnvCloud, "")
+	t.Setenv(EnvToken, "tenv")
+	c := &Config{Current: "a", Profiles: map[string]Profile{"a": {Cloud: "https://a", Token: "ta", Expires: 5, Refresh: "taur_x"}}}
+	_, p, err := c.Resolve("", "")
+	require.NoError(t, err)
+	require.Equal(t, Profile{Cloud: "https://a", Token: "tenv"}, p)
+}
+
+func TestSaveWhereNoDirectoryCanBe(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "file")
+	require.NoError(t, os.WriteFile(file, nil, 0o600))
+	c := &Config{path: filepath.Join(file, "sub", "config.yaml"), Profiles: map[string]Profile{}}
+	require.Error(t, c.Save())
+	ro := t.TempDir()
+	require.NoError(t, os.Chmod(ro, 0o500))
+	t.Cleanup(func() { os.Chmod(ro, 0o700) })
+	c = &Config{path: filepath.Join(ro, "config.yaml"), Profiles: map[string]Profile{}}
+	require.Error(t, c.Save(), "no temp file in a read-only directory")
+}
+
+func TestLoadAndLinkWhereAFileIs(t *testing.T) {
+	dir := t.TempDir()
+	_, err := Load(dir)
+	require.Error(t, err, "a directory is not a config file")
+	file := filepath.Join(dir, "file")
+	require.NoError(t, os.WriteFile(file, nil, 0o600))
+	require.Error(t, WriteLink(file, Link{}), "a link cannot go under a file")
+}

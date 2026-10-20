@@ -52,7 +52,7 @@ func TestLoginFromStdinAndASecondProfile(t *testing.T) {
 	x := newTester(t)
 	x.login()
 	x.stdin = goodToken + "\n"
-	x.ok("login", "--profile", "staging", "--cloud", "https://staging.example.com", "--token-stdin", "--use=false")
+	x.ok("login", "--profile", "staging", "--cloud", x.f.srv.URL, "--token-stdin", "--use=false")
 
 	cfg, err := loadConfig()
 	require.NoError(t, err)
@@ -81,7 +81,10 @@ func TestLoginRefusals(t *testing.T) {
 	require.Contains(t, r.stderr, "not a cloud URL")
 
 	r = x.run("login", "--cloud", x.f.srv.URL)
-	require.Contains(t, r.stderr, "--token or --token-stdin is required")
+	require.Contains(t, r.stderr, "say how to sign in")
+
+	r = x.run("login", "--cloud", x.f.srv.URL, "--token", "tok-bad")
+	require.Contains(t, r.stderr, "unauthenticated")
 
 	x.stdin = ""
 	r = x.run("login", "--cloud", x.f.srv.URL, "--token-stdin")
@@ -97,13 +100,13 @@ func TestLoginRefusals(t *testing.T) {
 	require.Contains(t, x.ok("profiles"), "no profiles")
 }
 
-// At a terminal, login asks for what it was not given — the token hidden.
+// At a terminal, login asks for what it was not given — the password hidden.
 func TestLoginPromptsAtATerminal(t *testing.T) {
 	x := newTester(t)
 	x.interactive = true
-	x.prompter.answers = []string{x.f.srv.URL, goodToken}
+	x.prompter.answers = []string{x.f.srv.URL, "password", "root", "hunter2"}
 	x.ok("login")
-	require.Equal(t, []string{"Cloud URL (the build frontend)", "Forge token"}, x.prompter.asked)
+	require.Equal(t, []string{"Cloud URL (the build frontend)", "Sign in with", "User", "Password"}, x.prompter.asked)
 }
 
 // ── project: init / new / validate / views ──────────────────────────────────
@@ -214,7 +217,9 @@ func linkTester(t *testing.T) (*tester, *fake.Forge) {
 	reg, err := f.Registry(forge.Policy{AllowInsecureCallback: true})
 	require.NoError(t, err)
 	x.forges = reg
-	x.ok("login", "--cloud", x.f.srv.URL, "--token", f.TokenString())
+	x.stdin = f.TokenString() + "\n"
+	x.ok("login", "--cloud", x.f.srv.URL, "--sso", f.Host(), "--paste")
+	x.stdin = ""
 	x.ok("init", "shop", "--dir", x.dir)
 	return x, f
 }
@@ -359,8 +364,8 @@ func TestLinkNeedsALogin(t *testing.T) {
 	r := x.run("link", "--dir", x.dir, "--config-repo", "github.com/acme/cfg")
 	require.Contains(t, r.stderr, "tau login")
 
-	x.ok("login", "--cloud", x.f.srv.URL, "--token", "tok-bad")
-	r = x.run("link", "--manual", "--dir", x.dir, "--config-repo", "github.com/acme/cfg")
+	t.Setenv(config.EnvToken, "tok-bad")
+	r = x.run("link", "--cloud", x.f.srv.URL, "--manual", "--dir", x.dir, "--config-repo", "github.com/acme/cfg")
 	require.Contains(t, r.stderr, "unauthorized")
 }
 
@@ -685,7 +690,9 @@ func TestReplacingStopsOnWhatItCouldNotDelete(t *testing.T) {
 		reg, err := forge.New(forge.Policy{AllowInsecureCallback: true}, forge.Binding{Host: d.host, Driver: d})
 		require.NoError(t, err)
 		x.forges = reg
-		x.login()
+		x.stdin = forgeToken + "\n"
+		x.ok("login", "--cloud", x.f.srv.URL, "--sso", d.host, "--paste")
+		x.stdin = ""
 		x.ok("init", "shop", "--dir", x.dir)
 		d.callback = x.f.srv.URL + "/hook/" + projectYAMLID(t, x.dir)
 		d.title = "tau " + x.f.srv.URL

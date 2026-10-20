@@ -44,9 +44,12 @@ type result struct {
 // verifies against.
 var forges *forge.Registry
 
-func tau(args ...string) result {
+func tau(args ...string) result { return tauIn("", args...) }
+
+// tauIn runs the CLI with stdin.
+func tauIn(stdin string, args ...string) result {
 	var out, errs bytes.Buffer
-	code := cli.Run(cli.Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errs, HTTP: http.DefaultClient, Forges: forges}, args)
+	code := cli.Run(cli.Env{Stdin: strings.NewReader(stdin), Stdout: &out, Stderr: &errs, HTTP: http.DefaultClient, Forges: forges}, args)
 	return result{code, out.String(), errs.String()}
 }
 
@@ -97,7 +100,20 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 	require.NotNil(t, otherAddr)
 	otherCloud := "http://" + otherAddr.String()
 
-	ok(t, "login", "--cloud", cloud, "--token", f.TokenString())
+	// ONE TOKEN: signing in with the forge connects it inside the tau token
+	// the CLI keeps; the config file holds no forge token. The fleet has just
+	// booted, so auth may not have its vault yet.
+	var login result
+	require.Eventually(t, func() bool {
+		login = tauIn(f.TokenString()+"\n", "login", "--cloud", cloud, "--sso", f.Host(), "--paste")
+		return login.code == 0
+	}, 2*time.Minute, time.Second, "login never succeeded: %s", login.stderr)
+	require.Contains(t, ok(t, "whoami"), f.Host())
+	path, err := config.Path()
+	require.NoError(t, err)
+	saved, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.NotContains(t, string(saved), f.TokenString(), "no forge token in the config")
 
 	// A generated project compiles and audits clean, with no cloud involved.
 	dir := t.TempDir()
@@ -199,7 +215,17 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 	require.Contains(t, ok(t, "status", "--dir", dir), linked.ProjectID)
 	require.Contains(t, ok(t, "projects", "--forge", f.Host()), linked.ProjectID)
 
-	// A token the forge does not know is refused as unauthenticated.
+	// DISCONNECTED, the cloud says what to do rather than denying; connected
+	// again, it answers.
+	ok(t, "forge", "disconnect", f.Host())
+	r = tau("jobs", "--dir", dir)
+	require.NotZero(t, r.code)
+	require.Contains(t, r.stderr, "not connected to "+f.Host())
+	r = tauIn(f.TokenString()+"\n", "forge", "connect", f.Host(), "--paste")
+	require.Equal(t, 0, r.code, r.stderr)
+	ok(t, "jobs", "--dir", dir)
+
+	// A token the cloud did not issue is refused as unauthenticated.
 	t.Setenv(config.EnvToken, f.BadTokenString())
 	r = tau("jobs", "--dir", dir)
 	require.NotZero(t, r.code)

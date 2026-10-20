@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -23,7 +24,9 @@ import (
 
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	"github.com/taubyte/tau/tools/tau/internal/api"
 	"github.com/taubyte/tau/tools/tau/internal/config"
 )
 
@@ -33,8 +36,8 @@ var mintedID = regexp.MustCompile(`Qm[1-9A-HJ-NP-Za-km-z]{44}`)
 
 const goodToken = "tok-good"
 
-// forgeToken is the fake forge's good token, which the fake frontend accepts
-// too: `tau link` installs with the same token it logs in with.
+// forgeToken is the fake forge's good token: the one a pasted sign-in
+// connects, and what the fake auth opens the connection to for `tau link`.
 var forgeToken = fake.New(fake.GitHubLike).TokenString()
 
 // takenID is a project id the fake frontend says somebody else claimed.
@@ -56,7 +59,10 @@ type frontend struct {
 	// pushAfter counts down list calls; at zero, pushed runs (under mu).
 	pushAfter int
 	pushed    func()
-	srv       *httptest.Server
+	// renew is handed back as a renewed tau token on the next job read.
+	renew string
+	auth  *fakeAuth
+	srv   *httptest.Server
 }
 
 func newFrontend(t *testing.T) *frontend {
@@ -69,13 +75,16 @@ func newFrontend(t *testing.T) *frontend {
 		logs:    map[string]string{"job-1": "step one\nstep two\n"},
 		secrets: map[string]map[string][]byte{},
 	}
+	f.auth = newFakeAuth(func() int64 { return time.Now().Unix() })
 	mux := http.NewServeMux()
+	mux.Handle(authv2connect.NewSessionServiceHandler(f.auth))
+	mux.Handle(authv2connect.NewUserServiceHandler(f.auth))
 	authed := func(h http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			f.mu.Lock()
 			f.calls = append(f.calls, r.Method+" "+r.URL.Path)
 			f.mu.Unlock()
-			if auth := r.Header.Get("Authorization"); auth != "Bearer "+goodToken && auth != "Bearer "+forgeToken {
+			if tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); !ok || !f.auth.valid(tok) {
 				w.WriteHeader(http.StatusUnauthorized)
 				json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
 				return
@@ -106,6 +115,10 @@ func newFrontend(t *testing.T) *frontend {
 	mux.HandleFunc("GET /job/{jid}", authed(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		j, ok := f.jobs[r.PathValue("jid")]
+		if f.renew != "" {
+			w.Header().Set(api.RenewedTokenHeader, f.renew)
+			f.renew = ""
+		}
 		f.mu.Unlock()
 		if !ok {
 			denied(w)
@@ -330,6 +343,7 @@ type tester struct {
 	interactive bool
 	prompter    *prompter
 	stdin       string
+	browse      func(string) error
 }
 
 func newTester(t *testing.T) *tester {
@@ -347,7 +361,7 @@ func (x *tester) run(args ...string) run {
 	env := Env{
 		Stdin: strings.NewReader(x.stdin), Stdout: &out, Stderr: &errs,
 		Interactive: x.interactive, Prompter: x.prompter, HTTP: x.f.srv.Client(), Program: drive,
-		Forges: x.forges,
+		Forges: x.forges, Browse: x.browse,
 	}
 	code := Run(env, args)
 	return run{code: code, stdout: out.String(), stderr: errs.String()}

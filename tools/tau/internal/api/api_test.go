@@ -19,17 +19,17 @@ func server(t *testing.T, h http.HandlerFunc) *Client {
 	t.Helper()
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	c, err := New(srv.URL+"/", "tok", srv.Client())
+	c, err := New(srv.URL+"/", Static("tok"), srv.Client())
 	require.NoError(t, err)
 	return c
 }
 
 func TestNewRefusesWhatIsNotACloudURL(t *testing.T) {
 	for _, bad := range []string{"", "ftp://x", "http://", "::"} {
-		_, err := New(bad, "t", nil)
+		_, err := New(bad, Static("t"), nil)
 		require.Error(t, err, bad)
 	}
-	c, err := New("https://build.example.com/base/", "t", nil)
+	c, err := New("https://build.example.com/base/", Static("t"), nil)
 	require.NoError(t, err)
 	require.Equal(t, "https://build.example.com/base", c.Base())
 }
@@ -70,14 +70,14 @@ func TestNoTokenIsRefusedBeforeAnyRequest(t *testing.T) {
 	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hits.Add(1) }))
 	t.Cleanup(srv.Close)
-	c, err := New(srv.URL, "", nil)
+	c, err := New(srv.URL, nil, nil)
 	require.NoError(t, err)
 	require.ErrorContains(t, c.Retry(t.Context(), "j"), "no token")
 	require.Zero(t, hits.Load())
 }
 
 func TestUnreachable(t *testing.T) {
-	c, err := New("http://127.0.0.1:1", "t", nil)
+	c, err := New("http://127.0.0.1:1", Static("t"), nil)
 	require.NoError(t, err)
 	_, err = c.Job(t.Context(), "j")
 	require.Error(t, err)
@@ -116,7 +116,6 @@ func TestLinkingAndListingProjects(t *testing.T) {
 	_, err = c.LinkProject(t.Context(), "QmTaken", "github.com/a/c", []string{"github.com/a/d"})
 	require.True(t, IsStatus(err, http.StatusConflict))
 	require.ErrorContains(t, err, "generate a new id in project.yaml")
-	require.Equal(t, "tok", c.Token())
 }
 
 func TestAJobThatIsNotAJob(t *testing.T) {
@@ -202,7 +201,7 @@ func TestTheStreamStopsOnARefusal(t *testing.T) {
 }
 
 func TestTheStreamRetriesAnUnreachableCloudThenStops(t *testing.T) {
-	c, err := New("http://127.0.0.1:1", "t", nil)
+	c, err := New("http://127.0.0.1:1", Static("t"), nil)
 	require.NoError(t, err)
 	s := c.Stream(t.Context(), "j", 0)
 	s.Backoff, s.Retries = time.Millisecond, 1
