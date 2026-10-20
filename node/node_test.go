@@ -1,6 +1,7 @@
 package node
 
 import (
+	"crypto/tls"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -338,4 +339,42 @@ func TestLoopbackIsAnAnswerOnlyWhenThereIsNoOther(t *testing.T) {
 
 	n.opts.host = addrsOnly{addrs: listeningOn(t, "/ip4/0.0.0.0/tcp/4001")}
 	require.Empty(t, n.addresses(), "every address is no address")
+}
+
+// WHAT A COMPOSER READS OFF A NODE is the service it runs, or nothing.
+func TestTheAccessorsAreTheServicesItRuns(t *testing.T) {
+	bare, _, _ := makeNode(t, Config{Services: []string{Register}})
+	require.Nil(t, bare.Secrets())
+	require.Nil(t, bare.Database())
+	require.Nil(t, bare.TLSConfig(), "no gateway, nothing to answer a handshake with")
+	_, _, ok := bare.QueueDepth("shop/prod/QmAnything")
+	require.False(t, ok, "a node with no sync backing knows no queue")
+	require.Same(t, bare.opts.pubsub, bare.PubSub())
+
+	full, _, _ := makeNode(t, Config{Services: []string{Register, Discovery, Secrets, Database, Gateway}, Gateway: gatewayConfig()})
+	require.Same(t, full.secrets, full.Secrets())
+	require.Same(t, full.database, full.Database())
+	tlsConfig := full.TLSConfig()
+	require.NotNil(t, tlsConfig)
+	require.NotNil(t, tlsConfig.GetCertificate)
+	require.Equal(t, uint16(tls.VersionTLS12), tlsConfig.MinVersion)
+}
+
+// THE FLEET DOCUMENT IS READ FROM THIS NODE'S OWN REGISTER, and a node without
+// one says so rather than answering a default as if it had looked.
+func TestTheFleetIsReadFromTheLocalRegister(t *testing.T) {
+	ctx := t.Context()
+	with, _, _ := makeNode(t, Config{Services: []string{Register}})
+	_, err := (&source{node: with}).ResolveFleet(ctx)
+	require.ErrorIs(t, err, pkgregister.ErrNotPublished, "nothing was published, and the register said so")
+
+	without, _, _ := makeNode(t, Config{Services: []string{Discovery}})
+	require.NoError(t, without.Start(ctx))
+	s := &source{node: without}
+	_, err = s.ResolveFleet(ctx)
+	require.ErrorIs(t, err, ErrNoRegister)
+	_, err = s.Object(ctx, pkgregister.ObjectID("x"))
+	require.ErrorIs(t, err, ErrNoRegister)
+	_, _, err = s.ResolveHost(ctx, "shop.example.com")
+	require.ErrorIs(t, err, ErrNoRegister)
 }

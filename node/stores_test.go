@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/kvdb"
@@ -91,4 +92,42 @@ func TestTheVolumeBackingIsOnePerNode(t *testing.T) {
 	require.NoError(t, err)
 	require.Same(t, first, again)
 	require.Len(t, n.closers, 1)
+}
+
+// ONE STORE PER DATABASE, opened and released by its own name.
+func TestADatabaseStoreIsOpenedAndReleasedByName(t *testing.T) {
+	ctx := t.Context()
+	_, err := databaseStores{node: &Node{}}.Store("orders")
+	require.ErrorIs(t, err, ErrNoCacheStore)
+	require.ErrorIs(t, databaseStores{node: &Node{}}.Release(ctx, "orders"), ErrNoCacheStore)
+
+	refused := errors.New("disk full")
+	broken := databaseStores{node: &Node{opts: options{databases: &memFactory{err: refused}}}}
+	_, err = broken.Store("orders")
+	require.ErrorIs(t, err, refused)
+	require.ErrorContains(t, err, "orders")
+	require.ErrorIs(t, broken.Release(ctx, "orders"), refused)
+
+	// A STORE THAT CANNOT BE DESTROYED IS NOT RELEASED QUIETLY: the copy
+	// would stay on disk while the node believed it gone.
+	require.ErrorContains(t, databaseStores{node: &Node{opts: options{databases: &memFactory{}}}}.Release(ctx, "orders"),
+		"cannot release")
+}
+
+// A CREDENTIAL IS READ FROM THE FLEET'S VAULT, and a node that can reach none
+// says so rather than handing a connection an empty password.
+func TestADatabaseCredentialNeedsAVault(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register}})
+	_, err := databaseSecrets{node: n}.Secret(t.Context(), "shop", "prod", "dbpass")
+	require.ErrorIs(t, err, ErrNoSecrets)
+}
+
+// A DATABASE NODE KEEPS ITS COPIES IN THE FACTORY, and one built without a
+// factory is refused at boot by name.
+func TestADatabaseNodeNeedsAFactory(t *testing.T) {
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+	h := newHost(t, mn)
+	_, err := New(Config{Services: []string{Database}}, WithHost(h), WithPubSub(newPubSub(t, h)))
+	require.ErrorIs(t, err, ErrNoCacheStore)
 }
