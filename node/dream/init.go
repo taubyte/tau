@@ -28,6 +28,8 @@ import (
 	"sync"
 	"time"
 
+	auth "github.com/taubyte/tau/services/auth"
+
 	"github.com/taubyte/tau/node/boot"
 
 	"github.com/taubyte/tau/node"
@@ -432,6 +434,9 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int) error {
 	}
 	nodeConfig.DNSListen = "127.0.0.1:0"
 	nodeConfig.Discovery.Stabilize = dreamStabilize
+	// A UNIVERSE IS ONE DEVELOPER'S CLOUD, so whoever its forges vouch for may
+	// use it, as before it had users; a test that wants invites says so.
+	nodeConfig.Auth.SignUp = auth.SignUpOpen
 	if cfg.Configure != nil {
 		cfg.Configure(index, &nodeConfig)
 	}
