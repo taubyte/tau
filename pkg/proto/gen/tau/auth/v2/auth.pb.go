@@ -17,9 +17,11 @@
 // namespaces a cloud serves is checked there too. Certificates and domain
 // claims are the gateway's and pkg/certificate's. None of those is here.
 //
-// What is left is one question: once a forge has said who holds a credential,
-// is that person admitted to this cloud. An OSS node admits everyone the forge
-// vouched for; a node composed with an identity answers from it.
+// What is left is who the people using this cloud are: its users, the
+// identities they sign in with, the tau tokens it issues them, and whether
+// someone a forge vouched for is admitted. The cloud is the authority on its
+// users and never on repositories: a sign-in hands the client the forge's
+// token, and the cloud keeps no forge token.
 
 package authv2
 
@@ -38,6 +40,157 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Role is a user's standing on this cloud. OSS knows two.
+type Role int32
+
+const (
+	Role_ROLE_UNSPECIFIED Role = 0
+	Role_ROLE_MEMBER      Role = 1
+	Role_ROLE_ADMIN       Role = 2
+)
+
+// Enum value maps for Role.
+var (
+	Role_name = map[int32]string{
+		0: "ROLE_UNSPECIFIED",
+		1: "ROLE_MEMBER",
+		2: "ROLE_ADMIN",
+	}
+	Role_value = map[string]int32{
+		"ROLE_UNSPECIFIED": 0,
+		"ROLE_MEMBER":      1,
+		"ROLE_ADMIN":       2,
+	}
+)
+
+func (x Role) Enum() *Role {
+	p := new(Role)
+	*p = x
+	return p
+}
+
+func (x Role) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Role) Descriptor() protoreflect.EnumDescriptor {
+	return file_tau_auth_v2_auth_proto_enumTypes[0].Descriptor()
+}
+
+func (Role) Type() protoreflect.EnumType {
+	return &file_tau_auth_v2_auth_proto_enumTypes[0]
+}
+
+func (x Role) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Role.Descriptor instead.
+func (Role) EnumDescriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{0}
+}
+
+// Capability is what a local user may do without a provider.
+type Capability int32
+
+const (
+	Capability_CAPABILITY_UNSPECIFIED Capability = 0
+	// CAPABILITY_LOGIN signs in with a password.
+	Capability_CAPABILITY_LOGIN Capability = 1
+	// CAPABILITY_APIKEY holds API tokens.
+	Capability_CAPABILITY_APIKEY Capability = 2
+)
+
+// Enum value maps for Capability.
+var (
+	Capability_name = map[int32]string{
+		0: "CAPABILITY_UNSPECIFIED",
+		1: "CAPABILITY_LOGIN",
+		2: "CAPABILITY_APIKEY",
+	}
+	Capability_value = map[string]int32{
+		"CAPABILITY_UNSPECIFIED": 0,
+		"CAPABILITY_LOGIN":       1,
+		"CAPABILITY_APIKEY":      2,
+	}
+)
+
+func (x Capability) Enum() *Capability {
+	p := new(Capability)
+	*p = x
+	return p
+}
+
+func (x Capability) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Capability) Descriptor() protoreflect.EnumDescriptor {
+	return file_tau_auth_v2_auth_proto_enumTypes[1].Descriptor()
+}
+
+func (Capability) Type() protoreflect.EnumType {
+	return &file_tau_auth_v2_auth_proto_enumTypes[1]
+}
+
+func (x Capability) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Capability.Descriptor instead.
+func (Capability) EnumDescriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{1}
+}
+
+type ProviderKind int32
+
+const (
+	ProviderKind_PROVIDER_KIND_UNSPECIFIED ProviderKind = 0
+	ProviderKind_PROVIDER_KIND_FORGE       ProviderKind = 1
+	ProviderKind_PROVIDER_KIND_OIDC        ProviderKind = 2
+)
+
+// Enum value maps for ProviderKind.
+var (
+	ProviderKind_name = map[int32]string{
+		0: "PROVIDER_KIND_UNSPECIFIED",
+		1: "PROVIDER_KIND_FORGE",
+		2: "PROVIDER_KIND_OIDC",
+	}
+	ProviderKind_value = map[string]int32{
+		"PROVIDER_KIND_UNSPECIFIED": 0,
+		"PROVIDER_KIND_FORGE":       1,
+		"PROVIDER_KIND_OIDC":        2,
+	}
+)
+
+func (x ProviderKind) Enum() *ProviderKind {
+	p := new(ProviderKind)
+	*p = x
+	return p
+}
+
+func (x ProviderKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ProviderKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_tau_auth_v2_auth_proto_enumTypes[2].Descriptor()
+}
+
+func (ProviderKind) Type() protoreflect.EnumType {
+	return &file_tau_auth_v2_auth_proto_enumTypes[2]
+}
+
+func (x ProviderKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ProviderKind.Descriptor instead.
+func (ProviderKind) EnumDescriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{2}
+}
+
 // IdentityService answers whether someone a forge vouched for may use this
 // cloud's API. The public ingress asks it after the forge has said who holds a
 // credential; auth answers from whatever identity its node was composed with,
@@ -49,7 +202,11 @@ type Caller struct {
 	// subject is the forge's stable id for the account.
 	Subject string `protobuf:"bytes,2,opt,name=subject,proto3" json:"subject,omitempty"`
 	// login is the account's name on the forge, for messages.
-	Login         string `protobuf:"bytes,3,opt,name=login,proto3" json:"login,omitempty"`
+	Login string `protobuf:"bytes,3,opt,name=login,proto3" json:"login,omitempty"`
+	// token is the caller's tau token, when they sent one. Auth verifies it
+	// and answers for the user it names; a forge identity alone is admitted
+	// only when it is linked to a user, or when sign-up is open.
+	Token         string `protobuf:"bytes,4,opt,name=token,proto3" json:"token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -101,6 +258,13 @@ func (x *Caller) GetSubject() string {
 func (x *Caller) GetLogin() string {
 	if x != nil {
 		return x.Login
+	}
+	return ""
+}
+
+func (x *Caller) GetToken() string {
+	if x != nil {
+		return x.Token
 	}
 	return ""
 }
@@ -168,21 +332,2461 @@ func (x *Admission) GetAccounts() []string {
 	return nil
 }
 
+type VerifyRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VerifyRequest) Reset() {
+	*x = VerifyRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VerifyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VerifyRequest) ProtoMessage() {}
+
+func (x *VerifyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VerifyRequest.ProtoReflect.Descriptor instead.
+func (*VerifyRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *VerifyRequest) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+// Principal is a user as a verified credential presents them.
+type Principal struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	User  *User                  `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
+	// token_id is the verified credential's id, so a caller can revoke it.
+	TokenId       string `protobuf:"bytes,2,opt,name=token_id,json=tokenId,proto3" json:"token_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Principal) Reset() {
+	*x = Principal{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Principal) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Principal) ProtoMessage() {}
+
+func (x *Principal) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Principal.ProtoReflect.Descriptor instead.
+func (*Principal) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Principal) GetUser() *User {
+	if x != nil {
+		return x.User
+	}
+	return nil
+}
+
+func (x *Principal) GetTokenId() string {
+	if x != nil {
+		return x.TokenId
+	}
+	return ""
+}
+
+type User struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name  string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// email is lowercased.
+	Email        string       `protobuf:"bytes,3,opt,name=email,proto3" json:"email,omitempty"`
+	Role         Role         `protobuf:"varint,4,opt,name=role,proto3,enum=tau.auth.v2.Role" json:"role,omitempty"`
+	Disabled     bool         `protobuf:"varint,5,opt,name=disabled,proto3" json:"disabled,omitempty"`
+	Capabilities []Capability `protobuf:"varint,6,rep,packed,name=capabilities,proto3,enum=tau.auth.v2.Capability" json:"capabilities,omitempty"`
+	// builtin is the admin named in the node's configuration.
+	Builtin       bool    `protobuf:"varint,7,opt,name=builtin,proto3" json:"builtin,omitempty"`
+	Links         []*Link `protobuf:"bytes,8,rep,name=links,proto3" json:"links,omitempty"`
+	CreatedUnix   int64   `protobuf:"varint,9,opt,name=created_unix,json=createdUnix,proto3" json:"created_unix,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *User) Reset() {
+	*x = User{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *User) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*User) ProtoMessage() {}
+
+func (x *User) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use User.ProtoReflect.Descriptor instead.
+func (*User) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *User) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *User) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *User) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *User) GetRole() Role {
+	if x != nil {
+		return x.Role
+	}
+	return Role_ROLE_UNSPECIFIED
+}
+
+func (x *User) GetDisabled() bool {
+	if x != nil {
+		return x.Disabled
+	}
+	return false
+}
+
+func (x *User) GetCapabilities() []Capability {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
+func (x *User) GetBuiltin() bool {
+	if x != nil {
+		return x.Builtin
+	}
+	return false
+}
+
+func (x *User) GetLinks() []*Link {
+	if x != nil {
+		return x.Links
+	}
+	return nil
+}
+
+func (x *User) GetCreatedUnix() int64 {
+	if x != nil {
+		return x.CreatedUnix
+	}
+	return 0
+}
+
+// Link is an identity a user signs in with: a forge account (issuer is the
+// forge host) or an OIDC subject (issuer is the issuer URL).
+type Link struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Issuer        string                 `protobuf:"bytes,1,opt,name=issuer,proto3" json:"issuer,omitempty"`
+	Subject       string                 `protobuf:"bytes,2,opt,name=subject,proto3" json:"subject,omitempty"`
+	Login         string                 `protobuf:"bytes,3,opt,name=login,proto3" json:"login,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Link) Reset() {
+	*x = Link{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Link) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Link) ProtoMessage() {}
+
+func (x *Link) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Link.ProtoReflect.Descriptor instead.
+func (*Link) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *Link) GetIssuer() string {
+	if x != nil {
+		return x.Issuer
+	}
+	return ""
+}
+
+func (x *Link) GetSubject() string {
+	if x != nil {
+		return x.Subject
+	}
+	return ""
+}
+
+func (x *Link) GetLogin() string {
+	if x != nil {
+		return x.Login
+	}
+	return ""
+}
+
+// Session is what a sign-in returns: a short-lived access token and the
+// refresh token that renews it.
+type Session struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	AccessToken        string                 `protobuf:"bytes,1,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`
+	AccessExpiresUnix  int64                  `protobuf:"varint,2,opt,name=access_expires_unix,json=accessExpiresUnix,proto3" json:"access_expires_unix,omitempty"`
+	RefreshToken       string                 `protobuf:"bytes,3,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
+	RefreshExpiresUnix int64                  `protobuf:"varint,4,opt,name=refresh_expires_unix,json=refreshExpiresUnix,proto3" json:"refresh_expires_unix,omitempty"`
+	User               *User                  `protobuf:"bytes,5,opt,name=user,proto3" json:"user,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *Session) Reset() {
+	*x = Session{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Session) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Session) ProtoMessage() {}
+
+func (x *Session) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Session.ProtoReflect.Descriptor instead.
+func (*Session) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *Session) GetAccessToken() string {
+	if x != nil {
+		return x.AccessToken
+	}
+	return ""
+}
+
+func (x *Session) GetAccessExpiresUnix() int64 {
+	if x != nil {
+		return x.AccessExpiresUnix
+	}
+	return 0
+}
+
+func (x *Session) GetRefreshToken() string {
+	if x != nil {
+		return x.RefreshToken
+	}
+	return ""
+}
+
+func (x *Session) GetRefreshExpiresUnix() int64 {
+	if x != nil {
+		return x.RefreshExpiresUnix
+	}
+	return 0
+}
+
+func (x *Session) GetUser() *User {
+	if x != nil {
+		return x.User
+	}
+	return nil
+}
+
+// ForgeToken is the forge's own credential, handed to the client in the
+// response that signed it in. The cloud does not keep it.
+type ForgeToken struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// host is the forge the token is for, and the only host it may be sent to.
+	Host          string   `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"`
+	AccessToken   string   `protobuf:"bytes,2,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`
+	RefreshToken  string   `protobuf:"bytes,3,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
+	TokenType     string   `protobuf:"bytes,4,opt,name=token_type,json=tokenType,proto3" json:"token_type,omitempty"`
+	ExpiresUnix   int64    `protobuf:"varint,5,opt,name=expires_unix,json=expiresUnix,proto3" json:"expires_unix,omitempty"`
+	Scopes        []string `protobuf:"bytes,6,rep,name=scopes,proto3" json:"scopes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ForgeToken) Reset() {
+	*x = ForgeToken{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ForgeToken) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ForgeToken) ProtoMessage() {}
+
+func (x *ForgeToken) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ForgeToken.ProtoReflect.Descriptor instead.
+func (*ForgeToken) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ForgeToken) GetHost() string {
+	if x != nil {
+		return x.Host
+	}
+	return ""
+}
+
+func (x *ForgeToken) GetAccessToken() string {
+	if x != nil {
+		return x.AccessToken
+	}
+	return ""
+}
+
+func (x *ForgeToken) GetRefreshToken() string {
+	if x != nil {
+		return x.RefreshToken
+	}
+	return ""
+}
+
+func (x *ForgeToken) GetTokenType() string {
+	if x != nil {
+		return x.TokenType
+	}
+	return ""
+}
+
+func (x *ForgeToken) GetExpiresUnix() int64 {
+	if x != nil {
+		return x.ExpiresUnix
+	}
+	return 0
+}
+
+func (x *ForgeToken) GetScopes() []string {
+	if x != nil {
+		return x.Scopes
+	}
+	return nil
+}
+
+type SignedIn struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Session *Session               `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
+	// forge is empty for a password or OIDC sign-in.
+	Forge         *ForgeToken `protobuf:"bytes,2,opt,name=forge,proto3" json:"forge,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SignedIn) Reset() {
+	*x = SignedIn{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SignedIn) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SignedIn) ProtoMessage() {}
+
+func (x *SignedIn) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SignedIn.ProtoReflect.Descriptor instead.
+func (*SignedIn) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *SignedIn) GetSession() *Session {
+	if x != nil {
+		return x.Session
+	}
+	return nil
+}
+
+func (x *SignedIn) GetForge() *ForgeToken {
+	if x != nil {
+		return x.Forge
+	}
+	return nil
+}
+
+// Provider is one way to sign in on this cloud.
+type Provider struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// id is what a client names it by: a forge host ("github.com"), or the
+	// OIDC provider's configured name.
+	Id   string       `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Kind ProviderKind `protobuf:"varint,2,opt,name=kind,proto3,enum=tau.auth.v2.ProviderKind" json:"kind,omitempty"`
+	// browser is a redirect sign-in (Authorize, then Exchange).
+	Browser bool `protobuf:"varint,3,opt,name=browser,proto3" json:"browser,omitempty"`
+	// device is the device flow (DeviceStart, then DevicePoll).
+	Device bool `protobuf:"varint,4,opt,name=device,proto3" json:"device,omitempty"`
+	// pasted is a sign-in with a token the user pastes.
+	Pasted        bool   `protobuf:"varint,5,opt,name=pasted,proto3" json:"pasted,omitempty"`
+	Name          string `protobuf:"bytes,6,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Provider) Reset() {
+	*x = Provider{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Provider) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Provider) ProtoMessage() {}
+
+func (x *Provider) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Provider.ProtoReflect.Descriptor instead.
+func (*Provider) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *Provider) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Provider) GetKind() ProviderKind {
+	if x != nil {
+		return x.Kind
+	}
+	return ProviderKind_PROVIDER_KIND_UNSPECIFIED
+}
+
+func (x *Provider) GetBrowser() bool {
+	if x != nil {
+		return x.Browser
+	}
+	return false
+}
+
+func (x *Provider) GetDevice() bool {
+	if x != nil {
+		return x.Device
+	}
+	return false
+}
+
+func (x *Provider) GetPasted() bool {
+	if x != nil {
+		return x.Pasted
+	}
+	return false
+}
+
+func (x *Provider) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type ProvidersRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProvidersRequest) Reset() {
+	*x = ProvidersRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProvidersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProvidersRequest) ProtoMessage() {}
+
+func (x *ProvidersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProvidersRequest.ProtoReflect.Descriptor instead.
+func (*ProvidersRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{10}
+}
+
+type ProvidersResponse struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Providers []*Provider            `protobuf:"bytes,1,rep,name=providers,proto3" json:"providers,omitempty"`
+	// password is whether a password sign-in is offered at all.
+	Password      bool `protobuf:"varint,2,opt,name=password,proto3" json:"password,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProvidersResponse) Reset() {
+	*x = ProvidersResponse{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProvidersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProvidersResponse) ProtoMessage() {}
+
+func (x *ProvidersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProvidersResponse.ProtoReflect.Descriptor instead.
+func (*ProvidersResponse) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ProvidersResponse) GetProviders() []*Provider {
+	if x != nil {
+		return x.Providers
+	}
+	return nil
+}
+
+func (x *ProvidersResponse) GetPassword() bool {
+	if x != nil {
+		return x.Password
+	}
+	return false
+}
+
+type LoginRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Password      string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LoginRequest) Reset() {
+	*x = LoginRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LoginRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoginRequest) ProtoMessage() {}
+
+func (x *LoginRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoginRequest.ProtoReflect.Descriptor instead.
+func (*LoginRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *LoginRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *LoginRequest) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+type RefreshRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RefreshToken  string                 `protobuf:"bytes,1,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RefreshRequest) Reset() {
+	*x = RefreshRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RefreshRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RefreshRequest) ProtoMessage() {}
+
+func (x *RefreshRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RefreshRequest.ProtoReflect.Descriptor instead.
+func (*RefreshRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *RefreshRequest) GetRefreshToken() string {
+	if x != nil {
+		return x.RefreshToken
+	}
+	return ""
+}
+
+type LogoutRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RefreshToken  string                 `protobuf:"bytes,1,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogoutRequest) Reset() {
+	*x = LogoutRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogoutRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogoutRequest) ProtoMessage() {}
+
+func (x *LogoutRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogoutRequest.ProtoReflect.Descriptor instead.
+func (*LogoutRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *LogoutRequest) GetRefreshToken() string {
+	if x != nil {
+		return x.RefreshToken
+	}
+	return ""
+}
+
+type LogoutResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogoutResponse) Reset() {
+	*x = LogoutResponse{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogoutResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogoutResponse) ProtoMessage() {}
+
+func (x *LogoutResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogoutResponse.ProtoReflect.Descriptor instead.
+func (*LogoutResponse) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{15}
+}
+
+type AuthorizeRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Provider string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	// redirect_uri is where the provider sends the browser back: a loopback
+	// address on any port at /callback, or one of the cloud's configured
+	// console callbacks, exactly.
+	RedirectUri string `protobuf:"bytes,2,opt,name=redirect_uri,json=redirectUri,proto3" json:"redirect_uri,omitempty"`
+	// binding_challenge is base64url(sha256(binding_verifier)), chosen by the
+	// client. Exchange refuses a code whose redeemer cannot show the verifier,
+	// so an intercepted callback cannot be redeemed by someone else.
+	BindingChallenge string `protobuf:"bytes,3,opt,name=binding_challenge,json=bindingChallenge,proto3" json:"binding_challenge,omitempty"`
+	// invite is a code that lets a first sign-in create its user.
+	Invite        string `protobuf:"bytes,4,opt,name=invite,proto3" json:"invite,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuthorizeRequest) Reset() {
+	*x = AuthorizeRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuthorizeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuthorizeRequest) ProtoMessage() {}
+
+func (x *AuthorizeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuthorizeRequest.ProtoReflect.Descriptor instead.
+func (*AuthorizeRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *AuthorizeRequest) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *AuthorizeRequest) GetRedirectUri() string {
+	if x != nil {
+		return x.RedirectUri
+	}
+	return ""
+}
+
+func (x *AuthorizeRequest) GetBindingChallenge() string {
+	if x != nil {
+		return x.BindingChallenge
+	}
+	return ""
+}
+
+func (x *AuthorizeRequest) GetInvite() string {
+	if x != nil {
+		return x.Invite
+	}
+	return ""
+}
+
+type AuthorizeResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// url is where to send the browser.
+	Url           string `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
+	State         string `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
+	ExpiresUnix   int64  `protobuf:"varint,3,opt,name=expires_unix,json=expiresUnix,proto3" json:"expires_unix,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuthorizeResponse) Reset() {
+	*x = AuthorizeResponse{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuthorizeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuthorizeResponse) ProtoMessage() {}
+
+func (x *AuthorizeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuthorizeResponse.ProtoReflect.Descriptor instead.
+func (*AuthorizeResponse) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *AuthorizeResponse) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *AuthorizeResponse) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *AuthorizeResponse) GetExpiresUnix() int64 {
+	if x != nil {
+		return x.ExpiresUnix
+	}
+	return 0
+}
+
+type ExchangeRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	State           string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
+	Code            string                 `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`
+	BindingVerifier string                 `protobuf:"bytes,3,opt,name=binding_verifier,json=bindingVerifier,proto3" json:"binding_verifier,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ExchangeRequest) Reset() {
+	*x = ExchangeRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExchangeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExchangeRequest) ProtoMessage() {}
+
+func (x *ExchangeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExchangeRequest.ProtoReflect.Descriptor instead.
+func (*ExchangeRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ExchangeRequest) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *ExchangeRequest) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *ExchangeRequest) GetBindingVerifier() string {
+	if x != nil {
+		return x.BindingVerifier
+	}
+	return ""
+}
+
+type DeviceStartRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Provider      string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceStartRequest) Reset() {
+	*x = DeviceStartRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceStartRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceStartRequest) ProtoMessage() {}
+
+func (x *DeviceStartRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceStartRequest.ProtoReflect.Descriptor instead.
+func (*DeviceStartRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *DeviceStartRequest) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+type DeviceStartResponse struct {
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	DeviceCode              string                 `protobuf:"bytes,1,opt,name=device_code,json=deviceCode,proto3" json:"device_code,omitempty"`
+	UserCode                string                 `protobuf:"bytes,2,opt,name=user_code,json=userCode,proto3" json:"user_code,omitempty"`
+	VerificationUri         string                 `protobuf:"bytes,3,opt,name=verification_uri,json=verificationUri,proto3" json:"verification_uri,omitempty"`
+	VerificationUriComplete string                 `protobuf:"bytes,4,opt,name=verification_uri_complete,json=verificationUriComplete,proto3" json:"verification_uri_complete,omitempty"`
+	IntervalSeconds         int64                  `protobuf:"varint,5,opt,name=interval_seconds,json=intervalSeconds,proto3" json:"interval_seconds,omitempty"`
+	ExpiresUnix             int64                  `protobuf:"varint,6,opt,name=expires_unix,json=expiresUnix,proto3" json:"expires_unix,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *DeviceStartResponse) Reset() {
+	*x = DeviceStartResponse{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceStartResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceStartResponse) ProtoMessage() {}
+
+func (x *DeviceStartResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceStartResponse.ProtoReflect.Descriptor instead.
+func (*DeviceStartResponse) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *DeviceStartResponse) GetDeviceCode() string {
+	if x != nil {
+		return x.DeviceCode
+	}
+	return ""
+}
+
+func (x *DeviceStartResponse) GetUserCode() string {
+	if x != nil {
+		return x.UserCode
+	}
+	return ""
+}
+
+func (x *DeviceStartResponse) GetVerificationUri() string {
+	if x != nil {
+		return x.VerificationUri
+	}
+	return ""
+}
+
+func (x *DeviceStartResponse) GetVerificationUriComplete() string {
+	if x != nil {
+		return x.VerificationUriComplete
+	}
+	return ""
+}
+
+func (x *DeviceStartResponse) GetIntervalSeconds() int64 {
+	if x != nil {
+		return x.IntervalSeconds
+	}
+	return 0
+}
+
+func (x *DeviceStartResponse) GetExpiresUnix() int64 {
+	if x != nil {
+		return x.ExpiresUnix
+	}
+	return 0
+}
+
+type DevicePollRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Provider      string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	DeviceCode    string                 `protobuf:"bytes,2,opt,name=device_code,json=deviceCode,proto3" json:"device_code,omitempty"`
+	Invite        string                 `protobuf:"bytes,3,opt,name=invite,proto3" json:"invite,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DevicePollRequest) Reset() {
+	*x = DevicePollRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DevicePollRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DevicePollRequest) ProtoMessage() {}
+
+func (x *DevicePollRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DevicePollRequest.ProtoReflect.Descriptor instead.
+func (*DevicePollRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *DevicePollRequest) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *DevicePollRequest) GetDeviceCode() string {
+	if x != nil {
+		return x.DeviceCode
+	}
+	return ""
+}
+
+func (x *DevicePollRequest) GetInvite() string {
+	if x != nil {
+		return x.Invite
+	}
+	return ""
+}
+
+type DevicePollResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// pending is true while the user has not approved yet; poll again after
+	// interval_seconds.
+	Pending         bool      `protobuf:"varint,1,opt,name=pending,proto3" json:"pending,omitempty"`
+	IntervalSeconds int64     `protobuf:"varint,2,opt,name=interval_seconds,json=intervalSeconds,proto3" json:"interval_seconds,omitempty"`
+	SignedIn        *SignedIn `protobuf:"bytes,3,opt,name=signed_in,json=signedIn,proto3" json:"signed_in,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *DevicePollResponse) Reset() {
+	*x = DevicePollResponse{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DevicePollResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DevicePollResponse) ProtoMessage() {}
+
+func (x *DevicePollResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DevicePollResponse.ProtoReflect.Descriptor instead.
+func (*DevicePollResponse) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *DevicePollResponse) GetPending() bool {
+	if x != nil {
+		return x.Pending
+	}
+	return false
+}
+
+func (x *DevicePollResponse) GetIntervalSeconds() int64 {
+	if x != nil {
+		return x.IntervalSeconds
+	}
+	return 0
+}
+
+func (x *DevicePollResponse) GetSignedIn() *SignedIn {
+	if x != nil {
+		return x.SignedIn
+	}
+	return nil
+}
+
+type PastedRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Provider      string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	Token         string                 `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`
+	Invite        string                 `protobuf:"bytes,3,opt,name=invite,proto3" json:"invite,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PastedRequest) Reset() {
+	*x = PastedRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PastedRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PastedRequest) ProtoMessage() {}
+
+func (x *PastedRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PastedRequest.ProtoReflect.Descriptor instead.
+func (*PastedRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *PastedRequest) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *PastedRequest) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *PastedRequest) GetInvite() string {
+	if x != nil {
+		return x.Invite
+	}
+	return ""
+}
+
+type WhoamiRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WhoamiRequest) Reset() {
+	*x = WhoamiRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WhoamiRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WhoamiRequest) ProtoMessage() {}
+
+func (x *WhoamiRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WhoamiRequest.ProtoReflect.Descriptor instead.
+func (*WhoamiRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{24}
+}
+
+type ListUsersRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListUsersRequest) Reset() {
+	*x = ListUsersRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListUsersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListUsersRequest) ProtoMessage() {}
+
+func (x *ListUsersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListUsersRequest.ProtoReflect.Descriptor instead.
+func (*ListUsersRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{25}
+}
+
+type ListUsersResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Users         []*User                `protobuf:"bytes,1,rep,name=users,proto3" json:"users,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListUsersResponse) Reset() {
+	*x = ListUsersResponse{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListUsersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListUsersResponse) ProtoMessage() {}
+
+func (x *ListUsersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListUsersResponse.ProtoReflect.Descriptor instead.
+func (*ListUsersResponse) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ListUsersResponse) GetUsers() []*User {
+	if x != nil {
+		return x.Users
+	}
+	return nil
+}
+
+type CreateUserRequest struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Name         string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Email        string                 `protobuf:"bytes,2,opt,name=email,proto3" json:"email,omitempty"`
+	Role         Role                   `protobuf:"varint,3,opt,name=role,proto3,enum=tau.auth.v2.Role" json:"role,omitempty"`
+	Capabilities []Capability           `protobuf:"varint,4,rep,packed,name=capabilities,proto3,enum=tau.auth.v2.Capability" json:"capabilities,omitempty"`
+	// password is required with CAPABILITY_LOGIN.
+	Password      string `protobuf:"bytes,5,opt,name=password,proto3" json:"password,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateUserRequest) Reset() {
+	*x = CreateUserRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateUserRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateUserRequest) ProtoMessage() {}
+
+func (x *CreateUserRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateUserRequest.ProtoReflect.Descriptor instead.
+func (*CreateUserRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *CreateUserRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateUserRequest) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *CreateUserRequest) GetRole() Role {
+	if x != nil {
+		return x.Role
+	}
+	return Role_ROLE_UNSPECIFIED
+}
+
+func (x *CreateUserRequest) GetCapabilities() []Capability {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
+func (x *CreateUserRequest) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+type UserRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UserRequest) Reset() {
+	*x = UserRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UserRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UserRequest) ProtoMessage() {}
+
+func (x *UserRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UserRequest.ProtoReflect.Descriptor instead.
+func (*UserRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *UserRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type SetRoleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Role          Role                   `protobuf:"varint,2,opt,name=role,proto3,enum=tau.auth.v2.Role" json:"role,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetRoleRequest) Reset() {
+	*x = SetRoleRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetRoleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetRoleRequest) ProtoMessage() {}
+
+func (x *SetRoleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetRoleRequest.ProtoReflect.Descriptor instead.
+func (*SetRoleRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *SetRoleRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SetRoleRequest) GetRole() Role {
+	if x != nil {
+		return x.Role
+	}
+	return Role_ROLE_UNSPECIFIED
+}
+
+type SetDisabledRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Disabled      bool                   `protobuf:"varint,2,opt,name=disabled,proto3" json:"disabled,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetDisabledRequest) Reset() {
+	*x = SetDisabledRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetDisabledRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetDisabledRequest) ProtoMessage() {}
+
+func (x *SetDisabledRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetDisabledRequest.ProtoReflect.Descriptor instead.
+func (*SetDisabledRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *SetDisabledRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SetDisabledRequest) GetDisabled() bool {
+	if x != nil {
+		return x.Disabled
+	}
+	return false
+}
+
+type SetPasswordRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// id is empty for the caller's own password.
+	Id            string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Password      string `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetPasswordRequest) Reset() {
+	*x = SetPasswordRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetPasswordRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetPasswordRequest) ProtoMessage() {}
+
+func (x *SetPasswordRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetPasswordRequest.ProtoReflect.Descriptor instead.
+func (*SetPasswordRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *SetPasswordRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SetPasswordRequest) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+type Empty struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Empty) Reset() {
+	*x = Empty{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Empty) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Empty) ProtoMessage() {}
+
+func (x *Empty) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Empty.ProtoReflect.Descriptor instead.
+func (*Empty) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{32}
+}
+
+type CreateInviteRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Role  Role                   `protobuf:"varint,1,opt,name=role,proto3,enum=tau.auth.v2.Role" json:"role,omitempty"`
+	// ttl_seconds bounds the invite; zero is the default (seven days).
+	TtlSeconds    int64  `protobuf:"varint,2,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
+	Note          string `protobuf:"bytes,3,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateInviteRequest) Reset() {
+	*x = CreateInviteRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateInviteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateInviteRequest) ProtoMessage() {}
+
+func (x *CreateInviteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateInviteRequest.ProtoReflect.Descriptor instead.
+func (*CreateInviteRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *CreateInviteRequest) GetRole() Role {
+	if x != nil {
+		return x.Role
+	}
+	return Role_ROLE_UNSPECIFIED
+}
+
+func (x *CreateInviteRequest) GetTtlSeconds() int64 {
+	if x != nil {
+		return x.TtlSeconds
+	}
+	return 0
+}
+
+func (x *CreateInviteRequest) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+type Invite struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Role        Role                   `protobuf:"varint,2,opt,name=role,proto3,enum=tau.auth.v2.Role" json:"role,omitempty"`
+	ExpiresUnix int64                  `protobuf:"varint,3,opt,name=expires_unix,json=expiresUnix,proto3" json:"expires_unix,omitempty"`
+	Note        string                 `protobuf:"bytes,4,opt,name=note,proto3" json:"note,omitempty"`
+	// code is returned once, when the invite is created.
+	Code          string `protobuf:"bytes,5,opt,name=code,proto3" json:"code,omitempty"`
+	CreatedBy     string `protobuf:"bytes,6,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Invite) Reset() {
+	*x = Invite{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Invite) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Invite) ProtoMessage() {}
+
+func (x *Invite) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Invite.ProtoReflect.Descriptor instead.
+func (*Invite) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *Invite) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Invite) GetRole() Role {
+	if x != nil {
+		return x.Role
+	}
+	return Role_ROLE_UNSPECIFIED
+}
+
+func (x *Invite) GetExpiresUnix() int64 {
+	if x != nil {
+		return x.ExpiresUnix
+	}
+	return 0
+}
+
+func (x *Invite) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+func (x *Invite) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *Invite) GetCreatedBy() string {
+	if x != nil {
+		return x.CreatedBy
+	}
+	return ""
+}
+
+type ListInvitesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Invites       []*Invite              `protobuf:"bytes,1,rep,name=invites,proto3" json:"invites,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListInvitesResponse) Reset() {
+	*x = ListInvitesResponse{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListInvitesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListInvitesResponse) ProtoMessage() {}
+
+func (x *ListInvitesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListInvitesResponse.ProtoReflect.Descriptor instead.
+func (*ListInvitesResponse) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *ListInvitesResponse) GetInvites() []*Invite {
+	if x != nil {
+		return x.Invites
+	}
+	return nil
+}
+
+type CreateTokenRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// ttl_seconds of zero never expires.
+	TtlSeconds int64 `protobuf:"varint,2,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
+	// user is empty for the caller; an admin may name a user with
+	// CAPABILITY_APIKEY.
+	User          string `protobuf:"bytes,3,opt,name=user,proto3" json:"user,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateTokenRequest) Reset() {
+	*x = CreateTokenRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateTokenRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateTokenRequest) ProtoMessage() {}
+
+func (x *CreateTokenRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateTokenRequest.ProtoReflect.Descriptor instead.
+func (*CreateTokenRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *CreateTokenRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateTokenRequest) GetTtlSeconds() int64 {
+	if x != nil {
+		return x.TtlSeconds
+	}
+	return 0
+}
+
+func (x *CreateTokenRequest) GetUser() string {
+	if x != nil {
+		return x.User
+	}
+	return ""
+}
+
+type Token struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name        string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	User        string                 `protobuf:"bytes,3,opt,name=user,proto3" json:"user,omitempty"`
+	CreatedUnix int64                  `protobuf:"varint,4,opt,name=created_unix,json=createdUnix,proto3" json:"created_unix,omitempty"`
+	ExpiresUnix int64                  `protobuf:"varint,5,opt,name=expires_unix,json=expiresUnix,proto3" json:"expires_unix,omitempty"`
+	// secret is returned once, when the token is created.
+	Secret        string `protobuf:"bytes,6,opt,name=secret,proto3" json:"secret,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Token) Reset() {
+	*x = Token{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Token) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Token) ProtoMessage() {}
+
+func (x *Token) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Token.ProtoReflect.Descriptor instead.
+func (*Token) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *Token) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Token) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Token) GetUser() string {
+	if x != nil {
+		return x.User
+	}
+	return ""
+}
+
+func (x *Token) GetCreatedUnix() int64 {
+	if x != nil {
+		return x.CreatedUnix
+	}
+	return 0
+}
+
+func (x *Token) GetExpiresUnix() int64 {
+	if x != nil {
+		return x.ExpiresUnix
+	}
+	return 0
+}
+
+func (x *Token) GetSecret() string {
+	if x != nil {
+		return x.Secret
+	}
+	return ""
+}
+
+type ListTokensRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	User          string                 `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTokensRequest) Reset() {
+	*x = ListTokensRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTokensRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTokensRequest) ProtoMessage() {}
+
+func (x *ListTokensRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTokensRequest.ProtoReflect.Descriptor instead.
+func (*ListTokensRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *ListTokensRequest) GetUser() string {
+	if x != nil {
+		return x.User
+	}
+	return ""
+}
+
+type ListTokensResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Tokens        []*Token               `protobuf:"bytes,1,rep,name=tokens,proto3" json:"tokens,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTokensResponse) Reset() {
+	*x = ListTokensResponse{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTokensResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTokensResponse) ProtoMessage() {}
+
+func (x *ListTokensResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTokensResponse.ProtoReflect.Descriptor instead.
+func (*ListTokensResponse) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *ListTokensResponse) GetTokens() []*Token {
+	if x != nil {
+		return x.Tokens
+	}
+	return nil
+}
+
+type RevokeTokenRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeTokenRequest) Reset() {
+	*x = RevokeTokenRequest{}
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeTokenRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeTokenRequest) ProtoMessage() {}
+
+func (x *RevokeTokenRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_auth_v2_auth_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeTokenRequest.ProtoReflect.Descriptor instead.
+func (*RevokeTokenRequest) Descriptor() ([]byte, []int) {
+	return file_tau_auth_v2_auth_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *RevokeTokenRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
 var File_tau_auth_v2_auth_proto protoreflect.FileDescriptor
 
 const file_tau_auth_v2_auth_proto_rawDesc = "" +
 	"\n" +
-	"\x16tau/auth/v2/auth.proto\x12\vtau.auth.v2\"N\n" +
+	"\x16tau/auth/v2/auth.proto\x12\vtau.auth.v2\"d\n" +
 	"\x06Caller\x12\x14\n" +
 	"\x05forge\x18\x01 \x01(\tR\x05forge\x12\x18\n" +
 	"\asubject\x18\x02 \x01(\tR\asubject\x12\x14\n" +
-	"\x05login\x18\x03 \x01(\tR\x05login\"[\n" +
+	"\x05login\x18\x03 \x01(\tR\x05login\x12\x14\n" +
+	"\x05token\x18\x04 \x01(\tR\x05token\"[\n" +
 	"\tAdmission\x12\x1a\n" +
 	"\badmitted\x18\x01 \x01(\bR\badmitted\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x1a\n" +
-	"\baccounts\x18\x03 \x03(\tR\baccounts2G\n" +
+	"\baccounts\x18\x03 \x03(\tR\baccounts\"%\n" +
+	"\rVerifyRequest\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\"M\n" +
+	"\tPrincipal\x12%\n" +
+	"\x04user\x18\x01 \x01(\v2\x11.tau.auth.v2.UserR\x04user\x12\x19\n" +
+	"\btoken_id\x18\x02 \x01(\tR\atokenId\"\xa6\x02\n" +
+	"\x04User\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
+	"\x05email\x18\x03 \x01(\tR\x05email\x12%\n" +
+	"\x04role\x18\x04 \x01(\x0e2\x11.tau.auth.v2.RoleR\x04role\x12\x1a\n" +
+	"\bdisabled\x18\x05 \x01(\bR\bdisabled\x12;\n" +
+	"\fcapabilities\x18\x06 \x03(\x0e2\x17.tau.auth.v2.CapabilityR\fcapabilities\x12\x18\n" +
+	"\abuiltin\x18\a \x01(\bR\abuiltin\x12'\n" +
+	"\x05links\x18\b \x03(\v2\x11.tau.auth.v2.LinkR\x05links\x12!\n" +
+	"\fcreated_unix\x18\t \x01(\x03R\vcreatedUnix\"N\n" +
+	"\x04Link\x12\x16\n" +
+	"\x06issuer\x18\x01 \x01(\tR\x06issuer\x12\x18\n" +
+	"\asubject\x18\x02 \x01(\tR\asubject\x12\x14\n" +
+	"\x05login\x18\x03 \x01(\tR\x05login\"\xda\x01\n" +
+	"\aSession\x12!\n" +
+	"\faccess_token\x18\x01 \x01(\tR\vaccessToken\x12.\n" +
+	"\x13access_expires_unix\x18\x02 \x01(\x03R\x11accessExpiresUnix\x12#\n" +
+	"\rrefresh_token\x18\x03 \x01(\tR\frefreshToken\x120\n" +
+	"\x14refresh_expires_unix\x18\x04 \x01(\x03R\x12refreshExpiresUnix\x12%\n" +
+	"\x04user\x18\x05 \x01(\v2\x11.tau.auth.v2.UserR\x04user\"\xc2\x01\n" +
+	"\n" +
+	"ForgeToken\x12\x12\n" +
+	"\x04host\x18\x01 \x01(\tR\x04host\x12!\n" +
+	"\faccess_token\x18\x02 \x01(\tR\vaccessToken\x12#\n" +
+	"\rrefresh_token\x18\x03 \x01(\tR\frefreshToken\x12\x1d\n" +
+	"\n" +
+	"token_type\x18\x04 \x01(\tR\ttokenType\x12!\n" +
+	"\fexpires_unix\x18\x05 \x01(\x03R\vexpiresUnix\x12\x16\n" +
+	"\x06scopes\x18\x06 \x03(\tR\x06scopes\"i\n" +
+	"\bSignedIn\x12.\n" +
+	"\asession\x18\x01 \x01(\v2\x14.tau.auth.v2.SessionR\asession\x12-\n" +
+	"\x05forge\x18\x02 \x01(\v2\x17.tau.auth.v2.ForgeTokenR\x05forge\"\xa7\x01\n" +
+	"\bProvider\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12-\n" +
+	"\x04kind\x18\x02 \x01(\x0e2\x19.tau.auth.v2.ProviderKindR\x04kind\x12\x18\n" +
+	"\abrowser\x18\x03 \x01(\bR\abrowser\x12\x16\n" +
+	"\x06device\x18\x04 \x01(\bR\x06device\x12\x16\n" +
+	"\x06pasted\x18\x05 \x01(\bR\x06pasted\x12\x12\n" +
+	"\x04name\x18\x06 \x01(\tR\x04name\"\x12\n" +
+	"\x10ProvidersRequest\"d\n" +
+	"\x11ProvidersResponse\x123\n" +
+	"\tproviders\x18\x01 \x03(\v2\x15.tau.auth.v2.ProviderR\tproviders\x12\x1a\n" +
+	"\bpassword\x18\x02 \x01(\bR\bpassword\">\n" +
+	"\fLoginRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
+	"\bpassword\x18\x02 \x01(\tR\bpassword\"5\n" +
+	"\x0eRefreshRequest\x12#\n" +
+	"\rrefresh_token\x18\x01 \x01(\tR\frefreshToken\"4\n" +
+	"\rLogoutRequest\x12#\n" +
+	"\rrefresh_token\x18\x01 \x01(\tR\frefreshToken\"\x10\n" +
+	"\x0eLogoutResponse\"\x96\x01\n" +
+	"\x10AuthorizeRequest\x12\x1a\n" +
+	"\bprovider\x18\x01 \x01(\tR\bprovider\x12!\n" +
+	"\fredirect_uri\x18\x02 \x01(\tR\vredirectUri\x12+\n" +
+	"\x11binding_challenge\x18\x03 \x01(\tR\x10bindingChallenge\x12\x16\n" +
+	"\x06invite\x18\x04 \x01(\tR\x06invite\"^\n" +
+	"\x11AuthorizeResponse\x12\x10\n" +
+	"\x03url\x18\x01 \x01(\tR\x03url\x12\x14\n" +
+	"\x05state\x18\x02 \x01(\tR\x05state\x12!\n" +
+	"\fexpires_unix\x18\x03 \x01(\x03R\vexpiresUnix\"f\n" +
+	"\x0fExchangeRequest\x12\x14\n" +
+	"\x05state\x18\x01 \x01(\tR\x05state\x12\x12\n" +
+	"\x04code\x18\x02 \x01(\tR\x04code\x12)\n" +
+	"\x10binding_verifier\x18\x03 \x01(\tR\x0fbindingVerifier\"0\n" +
+	"\x12DeviceStartRequest\x12\x1a\n" +
+	"\bprovider\x18\x01 \x01(\tR\bprovider\"\x88\x02\n" +
+	"\x13DeviceStartResponse\x12\x1f\n" +
+	"\vdevice_code\x18\x01 \x01(\tR\n" +
+	"deviceCode\x12\x1b\n" +
+	"\tuser_code\x18\x02 \x01(\tR\buserCode\x12)\n" +
+	"\x10verification_uri\x18\x03 \x01(\tR\x0fverificationUri\x12:\n" +
+	"\x19verification_uri_complete\x18\x04 \x01(\tR\x17verificationUriComplete\x12)\n" +
+	"\x10interval_seconds\x18\x05 \x01(\x03R\x0fintervalSeconds\x12!\n" +
+	"\fexpires_unix\x18\x06 \x01(\x03R\vexpiresUnix\"h\n" +
+	"\x11DevicePollRequest\x12\x1a\n" +
+	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x1f\n" +
+	"\vdevice_code\x18\x02 \x01(\tR\n" +
+	"deviceCode\x12\x16\n" +
+	"\x06invite\x18\x03 \x01(\tR\x06invite\"\x8d\x01\n" +
+	"\x12DevicePollResponse\x12\x18\n" +
+	"\apending\x18\x01 \x01(\bR\apending\x12)\n" +
+	"\x10interval_seconds\x18\x02 \x01(\x03R\x0fintervalSeconds\x122\n" +
+	"\tsigned_in\x18\x03 \x01(\v2\x15.tau.auth.v2.SignedInR\bsignedIn\"Y\n" +
+	"\rPastedRequest\x12\x1a\n" +
+	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x14\n" +
+	"\x05token\x18\x02 \x01(\tR\x05token\x12\x16\n" +
+	"\x06invite\x18\x03 \x01(\tR\x06invite\"\x0f\n" +
+	"\rWhoamiRequest\"\x12\n" +
+	"\x10ListUsersRequest\"<\n" +
+	"\x11ListUsersResponse\x12'\n" +
+	"\x05users\x18\x01 \x03(\v2\x11.tau.auth.v2.UserR\x05users\"\xbd\x01\n" +
+	"\x11CreateUserRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
+	"\x05email\x18\x02 \x01(\tR\x05email\x12%\n" +
+	"\x04role\x18\x03 \x01(\x0e2\x11.tau.auth.v2.RoleR\x04role\x12;\n" +
+	"\fcapabilities\x18\x04 \x03(\x0e2\x17.tau.auth.v2.CapabilityR\fcapabilities\x12\x1a\n" +
+	"\bpassword\x18\x05 \x01(\tR\bpassword\"\x1d\n" +
+	"\vUserRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"G\n" +
+	"\x0eSetRoleRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
+	"\x04role\x18\x02 \x01(\x0e2\x11.tau.auth.v2.RoleR\x04role\"@\n" +
+	"\x12SetDisabledRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
+	"\bdisabled\x18\x02 \x01(\bR\bdisabled\"@\n" +
+	"\x12SetPasswordRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
+	"\bpassword\x18\x02 \x01(\tR\bpassword\"\a\n" +
+	"\x05Empty\"q\n" +
+	"\x13CreateInviteRequest\x12%\n" +
+	"\x04role\x18\x01 \x01(\x0e2\x11.tau.auth.v2.RoleR\x04role\x12\x1f\n" +
+	"\vttl_seconds\x18\x02 \x01(\x03R\n" +
+	"ttlSeconds\x12\x12\n" +
+	"\x04note\x18\x03 \x01(\tR\x04note\"\xa9\x01\n" +
+	"\x06Invite\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12%\n" +
+	"\x04role\x18\x02 \x01(\x0e2\x11.tau.auth.v2.RoleR\x04role\x12!\n" +
+	"\fexpires_unix\x18\x03 \x01(\x03R\vexpiresUnix\x12\x12\n" +
+	"\x04note\x18\x04 \x01(\tR\x04note\x12\x12\n" +
+	"\x04code\x18\x05 \x01(\tR\x04code\x12\x1d\n" +
+	"\n" +
+	"created_by\x18\x06 \x01(\tR\tcreatedBy\"D\n" +
+	"\x13ListInvitesResponse\x12-\n" +
+	"\ainvites\x18\x01 \x03(\v2\x13.tau.auth.v2.InviteR\ainvites\"]\n" +
+	"\x12CreateTokenRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1f\n" +
+	"\vttl_seconds\x18\x02 \x01(\x03R\n" +
+	"ttlSeconds\x12\x12\n" +
+	"\x04user\x18\x03 \x01(\tR\x04user\"\x9d\x01\n" +
+	"\x05Token\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
+	"\x04user\x18\x03 \x01(\tR\x04user\x12!\n" +
+	"\fcreated_unix\x18\x04 \x01(\x03R\vcreatedUnix\x12!\n" +
+	"\fexpires_unix\x18\x05 \x01(\x03R\vexpiresUnix\x12\x16\n" +
+	"\x06secret\x18\x06 \x01(\tR\x06secret\"'\n" +
+	"\x11ListTokensRequest\x12\x12\n" +
+	"\x04user\x18\x01 \x01(\tR\x04user\"@\n" +
+	"\x12ListTokensResponse\x12*\n" +
+	"\x06tokens\x18\x01 \x03(\v2\x12.tau.auth.v2.TokenR\x06tokens\"$\n" +
+	"\x12RevokeTokenRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id*=\n" +
+	"\x04Role\x12\x14\n" +
+	"\x10ROLE_UNSPECIFIED\x10\x00\x12\x0f\n" +
+	"\vROLE_MEMBER\x10\x01\x12\x0e\n" +
+	"\n" +
+	"ROLE_ADMIN\x10\x02*U\n" +
+	"\n" +
+	"Capability\x12\x1a\n" +
+	"\x16CAPABILITY_UNSPECIFIED\x10\x00\x12\x14\n" +
+	"\x10CAPABILITY_LOGIN\x10\x01\x12\x15\n" +
+	"\x11CAPABILITY_APIKEY\x10\x02*^\n" +
+	"\fProviderKind\x12\x1d\n" +
+	"\x19PROVIDER_KIND_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x13PROVIDER_KIND_FORGE\x10\x01\x12\x16\n" +
+	"\x12PROVIDER_KIND_OIDC\x10\x022\x85\x01\n" +
 	"\x0fIdentityService\x124\n" +
-	"\x05Admit\x12\x13.tau.auth.v2.Caller\x1a\x16.tau.auth.v2.AdmissionB\xa3\x01\n" +
+	"\x05Admit\x12\x13.tau.auth.v2.Caller\x1a\x16.tau.auth.v2.Admission\x12<\n" +
+	"\x06Verify\x12\x1a.tau.auth.v2.VerifyRequest\x1a\x16.tau.auth.v2.Principal2\xbd\x05\n" +
+	"\x0eSessionService\x12J\n" +
+	"\tProviders\x12\x1d.tau.auth.v2.ProvidersRequest\x1a\x1e.tau.auth.v2.ProvidersResponse\x129\n" +
+	"\x05Login\x12\x19.tau.auth.v2.LoginRequest\x1a\x15.tau.auth.v2.SignedIn\x12=\n" +
+	"\aRefresh\x12\x1b.tau.auth.v2.RefreshRequest\x1a\x15.tau.auth.v2.SignedIn\x12A\n" +
+	"\x06Logout\x12\x1a.tau.auth.v2.LogoutRequest\x1a\x1b.tau.auth.v2.LogoutResponse\x12J\n" +
+	"\tAuthorize\x12\x1d.tau.auth.v2.AuthorizeRequest\x1a\x1e.tau.auth.v2.AuthorizeResponse\x12?\n" +
+	"\bExchange\x12\x1c.tau.auth.v2.ExchangeRequest\x1a\x15.tau.auth.v2.SignedIn\x12P\n" +
+	"\vDeviceStart\x12\x1f.tau.auth.v2.DeviceStartRequest\x1a .tau.auth.v2.DeviceStartResponse\x12M\n" +
+	"\n" +
+	"DevicePoll\x12\x1e.tau.auth.v2.DevicePollRequest\x1a\x1f.tau.auth.v2.DevicePollResponse\x12;\n" +
+	"\x06Pasted\x12\x1a.tau.auth.v2.PastedRequest\x1a\x15.tau.auth.v2.SignedIn\x127\n" +
+	"\x06Whoami\x12\x1a.tau.auth.v2.WhoamiRequest\x1a\x11.tau.auth.v2.User2\xb9\x06\n" +
+	"\vUserService\x12J\n" +
+	"\tListUsers\x12\x1d.tau.auth.v2.ListUsersRequest\x1a\x1e.tau.auth.v2.ListUsersResponse\x12?\n" +
+	"\n" +
+	"CreateUser\x12\x1e.tau.auth.v2.CreateUserRequest\x1a\x11.tau.auth.v2.User\x12:\n" +
+	"\n" +
+	"DeleteUser\x12\x18.tau.auth.v2.UserRequest\x1a\x12.tau.auth.v2.Empty\x129\n" +
+	"\aSetRole\x12\x1b.tau.auth.v2.SetRoleRequest\x1a\x11.tau.auth.v2.User\x12A\n" +
+	"\vSetDisabled\x12\x1f.tau.auth.v2.SetDisabledRequest\x1a\x11.tau.auth.v2.User\x12B\n" +
+	"\vSetPassword\x12\x1f.tau.auth.v2.SetPasswordRequest\x1a\x12.tau.auth.v2.Empty\x12E\n" +
+	"\fCreateInvite\x12 .tau.auth.v2.CreateInviteRequest\x1a\x13.tau.auth.v2.Invite\x12C\n" +
+	"\vListInvites\x12\x12.tau.auth.v2.Empty\x1a .tau.auth.v2.ListInvitesResponse\x12<\n" +
+	"\fDeleteInvite\x12\x18.tau.auth.v2.UserRequest\x1a\x12.tau.auth.v2.Empty\x12B\n" +
+	"\vCreateToken\x12\x1f.tau.auth.v2.CreateTokenRequest\x1a\x12.tau.auth.v2.Token\x12M\n" +
+	"\n" +
+	"ListTokens\x12\x1e.tau.auth.v2.ListTokensRequest\x1a\x1f.tau.auth.v2.ListTokensResponse\x12B\n" +
+	"\vRevokeToken\x12\x1f.tau.auth.v2.RevokeTokenRequest\x1a\x12.tau.auth.v2.EmptyB\xa3\x01\n" +
 	"\x0fcom.tau.auth.v2B\tAuthProtoP\x01Z7github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2;authv2\xa2\x02\x03TAX\xaa\x02\vTau.Auth.V2\xca\x02\vTau\\Auth\\V2\xe2\x02\x17Tau\\Auth\\V2\\GPBMetadata\xea\x02\rTau::Auth::V2b\x06proto3"
 
 var (
@@ -197,19 +2801,126 @@ func file_tau_auth_v2_auth_proto_rawDescGZIP() []byte {
 	return file_tau_auth_v2_auth_proto_rawDescData
 }
 
-var file_tau_auth_v2_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_tau_auth_v2_auth_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_tau_auth_v2_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
 var file_tau_auth_v2_auth_proto_goTypes = []any{
-	(*Caller)(nil),    // 0: tau.auth.v2.Caller
-	(*Admission)(nil), // 1: tau.auth.v2.Admission
+	(Role)(0),                   // 0: tau.auth.v2.Role
+	(Capability)(0),             // 1: tau.auth.v2.Capability
+	(ProviderKind)(0),           // 2: tau.auth.v2.ProviderKind
+	(*Caller)(nil),              // 3: tau.auth.v2.Caller
+	(*Admission)(nil),           // 4: tau.auth.v2.Admission
+	(*VerifyRequest)(nil),       // 5: tau.auth.v2.VerifyRequest
+	(*Principal)(nil),           // 6: tau.auth.v2.Principal
+	(*User)(nil),                // 7: tau.auth.v2.User
+	(*Link)(nil),                // 8: tau.auth.v2.Link
+	(*Session)(nil),             // 9: tau.auth.v2.Session
+	(*ForgeToken)(nil),          // 10: tau.auth.v2.ForgeToken
+	(*SignedIn)(nil),            // 11: tau.auth.v2.SignedIn
+	(*Provider)(nil),            // 12: tau.auth.v2.Provider
+	(*ProvidersRequest)(nil),    // 13: tau.auth.v2.ProvidersRequest
+	(*ProvidersResponse)(nil),   // 14: tau.auth.v2.ProvidersResponse
+	(*LoginRequest)(nil),        // 15: tau.auth.v2.LoginRequest
+	(*RefreshRequest)(nil),      // 16: tau.auth.v2.RefreshRequest
+	(*LogoutRequest)(nil),       // 17: tau.auth.v2.LogoutRequest
+	(*LogoutResponse)(nil),      // 18: tau.auth.v2.LogoutResponse
+	(*AuthorizeRequest)(nil),    // 19: tau.auth.v2.AuthorizeRequest
+	(*AuthorizeResponse)(nil),   // 20: tau.auth.v2.AuthorizeResponse
+	(*ExchangeRequest)(nil),     // 21: tau.auth.v2.ExchangeRequest
+	(*DeviceStartRequest)(nil),  // 22: tau.auth.v2.DeviceStartRequest
+	(*DeviceStartResponse)(nil), // 23: tau.auth.v2.DeviceStartResponse
+	(*DevicePollRequest)(nil),   // 24: tau.auth.v2.DevicePollRequest
+	(*DevicePollResponse)(nil),  // 25: tau.auth.v2.DevicePollResponse
+	(*PastedRequest)(nil),       // 26: tau.auth.v2.PastedRequest
+	(*WhoamiRequest)(nil),       // 27: tau.auth.v2.WhoamiRequest
+	(*ListUsersRequest)(nil),    // 28: tau.auth.v2.ListUsersRequest
+	(*ListUsersResponse)(nil),   // 29: tau.auth.v2.ListUsersResponse
+	(*CreateUserRequest)(nil),   // 30: tau.auth.v2.CreateUserRequest
+	(*UserRequest)(nil),         // 31: tau.auth.v2.UserRequest
+	(*SetRoleRequest)(nil),      // 32: tau.auth.v2.SetRoleRequest
+	(*SetDisabledRequest)(nil),  // 33: tau.auth.v2.SetDisabledRequest
+	(*SetPasswordRequest)(nil),  // 34: tau.auth.v2.SetPasswordRequest
+	(*Empty)(nil),               // 35: tau.auth.v2.Empty
+	(*CreateInviteRequest)(nil), // 36: tau.auth.v2.CreateInviteRequest
+	(*Invite)(nil),              // 37: tau.auth.v2.Invite
+	(*ListInvitesResponse)(nil), // 38: tau.auth.v2.ListInvitesResponse
+	(*CreateTokenRequest)(nil),  // 39: tau.auth.v2.CreateTokenRequest
+	(*Token)(nil),               // 40: tau.auth.v2.Token
+	(*ListTokensRequest)(nil),   // 41: tau.auth.v2.ListTokensRequest
+	(*ListTokensResponse)(nil),  // 42: tau.auth.v2.ListTokensResponse
+	(*RevokeTokenRequest)(nil),  // 43: tau.auth.v2.RevokeTokenRequest
 }
 var file_tau_auth_v2_auth_proto_depIdxs = []int32{
-	0, // 0: tau.auth.v2.IdentityService.Admit:input_type -> tau.auth.v2.Caller
-	1, // 1: tau.auth.v2.IdentityService.Admit:output_type -> tau.auth.v2.Admission
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	7,  // 0: tau.auth.v2.Principal.user:type_name -> tau.auth.v2.User
+	0,  // 1: tau.auth.v2.User.role:type_name -> tau.auth.v2.Role
+	1,  // 2: tau.auth.v2.User.capabilities:type_name -> tau.auth.v2.Capability
+	8,  // 3: tau.auth.v2.User.links:type_name -> tau.auth.v2.Link
+	7,  // 4: tau.auth.v2.Session.user:type_name -> tau.auth.v2.User
+	9,  // 5: tau.auth.v2.SignedIn.session:type_name -> tau.auth.v2.Session
+	10, // 6: tau.auth.v2.SignedIn.forge:type_name -> tau.auth.v2.ForgeToken
+	2,  // 7: tau.auth.v2.Provider.kind:type_name -> tau.auth.v2.ProviderKind
+	12, // 8: tau.auth.v2.ProvidersResponse.providers:type_name -> tau.auth.v2.Provider
+	11, // 9: tau.auth.v2.DevicePollResponse.signed_in:type_name -> tau.auth.v2.SignedIn
+	7,  // 10: tau.auth.v2.ListUsersResponse.users:type_name -> tau.auth.v2.User
+	0,  // 11: tau.auth.v2.CreateUserRequest.role:type_name -> tau.auth.v2.Role
+	1,  // 12: tau.auth.v2.CreateUserRequest.capabilities:type_name -> tau.auth.v2.Capability
+	0,  // 13: tau.auth.v2.SetRoleRequest.role:type_name -> tau.auth.v2.Role
+	0,  // 14: tau.auth.v2.CreateInviteRequest.role:type_name -> tau.auth.v2.Role
+	0,  // 15: tau.auth.v2.Invite.role:type_name -> tau.auth.v2.Role
+	37, // 16: tau.auth.v2.ListInvitesResponse.invites:type_name -> tau.auth.v2.Invite
+	40, // 17: tau.auth.v2.ListTokensResponse.tokens:type_name -> tau.auth.v2.Token
+	3,  // 18: tau.auth.v2.IdentityService.Admit:input_type -> tau.auth.v2.Caller
+	5,  // 19: tau.auth.v2.IdentityService.Verify:input_type -> tau.auth.v2.VerifyRequest
+	13, // 20: tau.auth.v2.SessionService.Providers:input_type -> tau.auth.v2.ProvidersRequest
+	15, // 21: tau.auth.v2.SessionService.Login:input_type -> tau.auth.v2.LoginRequest
+	16, // 22: tau.auth.v2.SessionService.Refresh:input_type -> tau.auth.v2.RefreshRequest
+	17, // 23: tau.auth.v2.SessionService.Logout:input_type -> tau.auth.v2.LogoutRequest
+	19, // 24: tau.auth.v2.SessionService.Authorize:input_type -> tau.auth.v2.AuthorizeRequest
+	21, // 25: tau.auth.v2.SessionService.Exchange:input_type -> tau.auth.v2.ExchangeRequest
+	22, // 26: tau.auth.v2.SessionService.DeviceStart:input_type -> tau.auth.v2.DeviceStartRequest
+	24, // 27: tau.auth.v2.SessionService.DevicePoll:input_type -> tau.auth.v2.DevicePollRequest
+	26, // 28: tau.auth.v2.SessionService.Pasted:input_type -> tau.auth.v2.PastedRequest
+	27, // 29: tau.auth.v2.SessionService.Whoami:input_type -> tau.auth.v2.WhoamiRequest
+	28, // 30: tau.auth.v2.UserService.ListUsers:input_type -> tau.auth.v2.ListUsersRequest
+	30, // 31: tau.auth.v2.UserService.CreateUser:input_type -> tau.auth.v2.CreateUserRequest
+	31, // 32: tau.auth.v2.UserService.DeleteUser:input_type -> tau.auth.v2.UserRequest
+	32, // 33: tau.auth.v2.UserService.SetRole:input_type -> tau.auth.v2.SetRoleRequest
+	33, // 34: tau.auth.v2.UserService.SetDisabled:input_type -> tau.auth.v2.SetDisabledRequest
+	34, // 35: tau.auth.v2.UserService.SetPassword:input_type -> tau.auth.v2.SetPasswordRequest
+	36, // 36: tau.auth.v2.UserService.CreateInvite:input_type -> tau.auth.v2.CreateInviteRequest
+	35, // 37: tau.auth.v2.UserService.ListInvites:input_type -> tau.auth.v2.Empty
+	31, // 38: tau.auth.v2.UserService.DeleteInvite:input_type -> tau.auth.v2.UserRequest
+	39, // 39: tau.auth.v2.UserService.CreateToken:input_type -> tau.auth.v2.CreateTokenRequest
+	41, // 40: tau.auth.v2.UserService.ListTokens:input_type -> tau.auth.v2.ListTokensRequest
+	43, // 41: tau.auth.v2.UserService.RevokeToken:input_type -> tau.auth.v2.RevokeTokenRequest
+	4,  // 42: tau.auth.v2.IdentityService.Admit:output_type -> tau.auth.v2.Admission
+	6,  // 43: tau.auth.v2.IdentityService.Verify:output_type -> tau.auth.v2.Principal
+	14, // 44: tau.auth.v2.SessionService.Providers:output_type -> tau.auth.v2.ProvidersResponse
+	11, // 45: tau.auth.v2.SessionService.Login:output_type -> tau.auth.v2.SignedIn
+	11, // 46: tau.auth.v2.SessionService.Refresh:output_type -> tau.auth.v2.SignedIn
+	18, // 47: tau.auth.v2.SessionService.Logout:output_type -> tau.auth.v2.LogoutResponse
+	20, // 48: tau.auth.v2.SessionService.Authorize:output_type -> tau.auth.v2.AuthorizeResponse
+	11, // 49: tau.auth.v2.SessionService.Exchange:output_type -> tau.auth.v2.SignedIn
+	23, // 50: tau.auth.v2.SessionService.DeviceStart:output_type -> tau.auth.v2.DeviceStartResponse
+	25, // 51: tau.auth.v2.SessionService.DevicePoll:output_type -> tau.auth.v2.DevicePollResponse
+	11, // 52: tau.auth.v2.SessionService.Pasted:output_type -> tau.auth.v2.SignedIn
+	7,  // 53: tau.auth.v2.SessionService.Whoami:output_type -> tau.auth.v2.User
+	29, // 54: tau.auth.v2.UserService.ListUsers:output_type -> tau.auth.v2.ListUsersResponse
+	7,  // 55: tau.auth.v2.UserService.CreateUser:output_type -> tau.auth.v2.User
+	35, // 56: tau.auth.v2.UserService.DeleteUser:output_type -> tau.auth.v2.Empty
+	7,  // 57: tau.auth.v2.UserService.SetRole:output_type -> tau.auth.v2.User
+	7,  // 58: tau.auth.v2.UserService.SetDisabled:output_type -> tau.auth.v2.User
+	35, // 59: tau.auth.v2.UserService.SetPassword:output_type -> tau.auth.v2.Empty
+	37, // 60: tau.auth.v2.UserService.CreateInvite:output_type -> tau.auth.v2.Invite
+	38, // 61: tau.auth.v2.UserService.ListInvites:output_type -> tau.auth.v2.ListInvitesResponse
+	35, // 62: tau.auth.v2.UserService.DeleteInvite:output_type -> tau.auth.v2.Empty
+	40, // 63: tau.auth.v2.UserService.CreateToken:output_type -> tau.auth.v2.Token
+	42, // 64: tau.auth.v2.UserService.ListTokens:output_type -> tau.auth.v2.ListTokensResponse
+	35, // 65: tau.auth.v2.UserService.RevokeToken:output_type -> tau.auth.v2.Empty
+	42, // [42:66] is the sub-list for method output_type
+	18, // [18:42] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_tau_auth_v2_auth_proto_init() }
@@ -222,13 +2933,14 @@ func file_tau_auth_v2_auth_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_auth_v2_auth_proto_rawDesc), len(file_tau_auth_v2_auth_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   2,
+			NumEnums:      3,
+			NumMessages:   41,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   3,
 		},
 		GoTypes:           file_tau_auth_v2_auth_proto_goTypes,
 		DependencyIndexes: file_tau_auth_v2_auth_proto_depIdxs,
+		EnumInfos:         file_tau_auth_v2_auth_proto_enumTypes,
 		MessageInfos:      file_tau_auth_v2_auth_proto_msgTypes,
 	}.Build()
 	File_tau_auth_v2_auth_proto = out.File

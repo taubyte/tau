@@ -13,9 +13,11 @@ syntax = "proto3";
 // namespaces a cloud serves is checked there too. Certificates and domain
 // claims are the gateway's and pkg/certificate's. None of those is here.
 //
-// What is left is one question: once a forge has said who holds a credential,
-// is that person admitted to this cloud. An OSS node admits everyone the forge
-// vouched for; a node composed with an identity answers from it.
+// What is left is who the people using this cloud are: its users, the
+// identities they sign in with, the tau tokens it issues them, and whether
+// someone a forge vouched for is admitted. The cloud is the authority on its
+// users and never on repositories: a sign-in hands the client the forge's
+// token, and the cloud keeps no forge token.
 package tau.auth.v2;
 
 // IdentityService answers whether someone a forge vouched for may use this
@@ -29,6 +31,10 @@ message Caller {
   string subject = 2;
   // login is the account's name on the forge, for messages.
   string login = 3;
+  // token is the caller's tau token, when they sent one. Auth verifies it
+  // and answers for the user it names; a forge identity alone is admitted
+  // only when it is linked to a user, or when sign-up is open.
+  string token = 4;
 }
 
 message Admission {
@@ -42,4 +48,312 @@ message Admission {
 
 service IdentityService {
   rpc Admit(Caller) returns (Admission);
+  // Verify says who a tau token or an API token belongs to, as of now: a
+  // revoked token, or one whose user is disabled or gone, is Unauthenticated.
+  rpc Verify(VerifyRequest) returns (Principal);
+}
+
+message VerifyRequest {
+  string token = 1;
+}
+
+// Principal is a user as a verified credential presents them.
+message Principal {
+  User user = 1;
+  // token_id is the verified credential's id, so a caller can revoke it.
+  string token_id = 2;
+}
+
+// Role is a user's standing on this cloud. OSS knows two.
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_MEMBER = 1;
+  ROLE_ADMIN = 2;
+}
+
+// Capability is what a local user may do without a provider.
+enum Capability {
+  CAPABILITY_UNSPECIFIED = 0;
+  // CAPABILITY_LOGIN signs in with a password.
+  CAPABILITY_LOGIN = 1;
+  // CAPABILITY_APIKEY holds API tokens.
+  CAPABILITY_APIKEY = 2;
+}
+
+message User {
+  string id = 1;
+  string name = 2;
+  // email is lowercased.
+  string email = 3;
+  Role role = 4;
+  bool disabled = 5;
+  repeated Capability capabilities = 6;
+  // builtin is the admin named in the node's configuration.
+  bool builtin = 7;
+  repeated Link links = 8;
+  int64 created_unix = 9;
+}
+
+// Link is an identity a user signs in with: a forge account (issuer is the
+// forge host) or an OIDC subject (issuer is the issuer URL).
+message Link {
+  string issuer = 1;
+  string subject = 2;
+  string login = 3;
+}
+
+// Session is what a sign-in returns: a short-lived access token and the
+// refresh token that renews it.
+message Session {
+  string access_token = 1;
+  int64 access_expires_unix = 2;
+  string refresh_token = 3;
+  int64 refresh_expires_unix = 4;
+  User user = 5;
+}
+
+// ForgeToken is the forge's own credential, handed to the client in the
+// response that signed it in. The cloud does not keep it.
+message ForgeToken {
+  // host is the forge the token is for, and the only host it may be sent to.
+  string host = 1;
+  string access_token = 2;
+  string refresh_token = 3;
+  string token_type = 4;
+  int64 expires_unix = 5;
+  repeated string scopes = 6;
+}
+
+message SignedIn {
+  Session session = 1;
+  // forge is empty for a password or OIDC sign-in.
+  ForgeToken forge = 2;
+}
+
+// Provider is one way to sign in on this cloud.
+message Provider {
+  // id is what a client names it by: a forge host ("github.com"), or the
+  // OIDC provider's configured name.
+  string id = 1;
+  ProviderKind kind = 2;
+  // browser is a redirect sign-in (Authorize, then Exchange).
+  bool browser = 3;
+  // device is the device flow (DeviceStart, then DevicePoll).
+  bool device = 4;
+  // pasted is a sign-in with a token the user pastes.
+  bool pasted = 5;
+  string name = 6;
+}
+
+enum ProviderKind {
+  PROVIDER_KIND_UNSPECIFIED = 0;
+  PROVIDER_KIND_FORGE = 1;
+  PROVIDER_KIND_OIDC = 2;
+}
+
+message ProvidersRequest {}
+
+message ProvidersResponse {
+  repeated Provider providers = 1;
+  // password is whether a password sign-in is offered at all.
+  bool password = 2;
+}
+
+message LoginRequest {
+  string name = 1;
+  string password = 2;
+}
+
+message RefreshRequest {
+  string refresh_token = 1;
+}
+
+message LogoutRequest {
+  string refresh_token = 1;
+}
+
+message LogoutResponse {}
+
+message AuthorizeRequest {
+  string provider = 1;
+  // redirect_uri is where the provider sends the browser back: a loopback
+  // address on any port at /callback, or one of the cloud's configured
+  // console callbacks, exactly.
+  string redirect_uri = 2;
+  // binding_challenge is base64url(sha256(binding_verifier)), chosen by the
+  // client. Exchange refuses a code whose redeemer cannot show the verifier,
+  // so an intercepted callback cannot be redeemed by someone else.
+  string binding_challenge = 3;
+  // invite is a code that lets a first sign-in create its user.
+  string invite = 4;
+}
+
+message AuthorizeResponse {
+  // url is where to send the browser.
+  string url = 1;
+  string state = 2;
+  int64 expires_unix = 3;
+}
+
+message ExchangeRequest {
+  string state = 1;
+  string code = 2;
+  string binding_verifier = 3;
+}
+
+message DeviceStartRequest {
+  string provider = 1;
+}
+
+message DeviceStartResponse {
+  string device_code = 1;
+  string user_code = 2;
+  string verification_uri = 3;
+  string verification_uri_complete = 4;
+  int64 interval_seconds = 5;
+  int64 expires_unix = 6;
+}
+
+message DevicePollRequest {
+  string provider = 1;
+  string device_code = 2;
+  string invite = 3;
+}
+
+message DevicePollResponse {
+  // pending is true while the user has not approved yet; poll again after
+  // interval_seconds.
+  bool pending = 1;
+  int64 interval_seconds = 2;
+  SignedIn signed_in = 3;
+}
+
+message PastedRequest {
+  string provider = 1;
+  string token = 2;
+  string invite = 3;
+}
+
+message WhoamiRequest {}
+
+// SessionService is the public sign-in surface, reached through the build
+// frontend. A call that acts as a user carries its tau token as
+// `Authorization: Bearer`.
+service SessionService {
+  rpc Providers(ProvidersRequest) returns (ProvidersResponse);
+  rpc Login(LoginRequest) returns (SignedIn);
+  rpc Refresh(RefreshRequest) returns (SignedIn);
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+  rpc Authorize(AuthorizeRequest) returns (AuthorizeResponse);
+  rpc Exchange(ExchangeRequest) returns (SignedIn);
+  rpc DeviceStart(DeviceStartRequest) returns (DeviceStartResponse);
+  rpc DevicePoll(DevicePollRequest) returns (DevicePollResponse);
+  rpc Pasted(PastedRequest) returns (SignedIn);
+  rpc Whoami(WhoamiRequest) returns (User);
+}
+
+message ListUsersRequest {}
+
+message ListUsersResponse {
+  repeated User users = 1;
+}
+
+message CreateUserRequest {
+  string name = 1;
+  string email = 2;
+  Role role = 3;
+  repeated Capability capabilities = 4;
+  // password is required with CAPABILITY_LOGIN.
+  string password = 5;
+}
+
+message UserRequest {
+  string id = 1;
+}
+
+message SetRoleRequest {
+  string id = 1;
+  Role role = 2;
+}
+
+message SetDisabledRequest {
+  string id = 1;
+  bool disabled = 2;
+}
+
+message SetPasswordRequest {
+  // id is empty for the caller's own password.
+  string id = 1;
+  string password = 2;
+}
+
+message Empty {}
+
+message CreateInviteRequest {
+  Role role = 1;
+  // ttl_seconds bounds the invite; zero is the default (seven days).
+  int64 ttl_seconds = 2;
+  string note = 3;
+}
+
+message Invite {
+  string id = 1;
+  Role role = 2;
+  int64 expires_unix = 3;
+  string note = 4;
+  // code is returned once, when the invite is created.
+  string code = 5;
+  string created_by = 6;
+}
+
+message ListInvitesResponse {
+  repeated Invite invites = 1;
+}
+
+message CreateTokenRequest {
+  string name = 1;
+  // ttl_seconds of zero never expires.
+  int64 ttl_seconds = 2;
+  // user is empty for the caller; an admin may name a user with
+  // CAPABILITY_APIKEY.
+  string user = 3;
+}
+
+message Token {
+  string id = 1;
+  string name = 2;
+  string user = 3;
+  int64 created_unix = 4;
+  int64 expires_unix = 5;
+  // secret is returned once, when the token is created.
+  string secret = 6;
+}
+
+message ListTokensRequest {
+  string user = 1;
+}
+
+message ListTokensResponse {
+  repeated Token tokens = 1;
+}
+
+message RevokeTokenRequest {
+  string id = 1;
+}
+
+// UserService manages this cloud's users. Every call carries a tau token;
+// all but the caller's own tokens and password are an admin's.
+service UserService {
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+  rpc CreateUser(CreateUserRequest) returns (User);
+  rpc DeleteUser(UserRequest) returns (Empty);
+  rpc SetRole(SetRoleRequest) returns (User);
+  rpc SetDisabled(SetDisabledRequest) returns (User);
+  rpc SetPassword(SetPasswordRequest) returns (Empty);
+  rpc CreateInvite(CreateInviteRequest) returns (Invite);
+  rpc ListInvites(Empty) returns (ListInvitesResponse);
+  rpc DeleteInvite(UserRequest) returns (Empty);
+  rpc CreateToken(CreateTokenRequest) returns (Token);
+  rpc ListTokens(ListTokensRequest) returns (ListTokensResponse);
+  rpc RevokeToken(RevokeTokenRequest) returns (Empty);
 }

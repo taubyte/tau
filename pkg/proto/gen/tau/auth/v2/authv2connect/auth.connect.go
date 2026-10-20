@@ -15,9 +15,11 @@
 // namespaces a cloud serves is checked there too. Certificates and domain
 // claims are the gateway's and pkg/certificate's. None of those is here.
 //
-// What is left is one question: once a forge has said who holds a credential,
-// is that person admitted to this cloud. An OSS node admits everyone the forge
-// vouched for; a node composed with an identity answers from it.
+// What is left is who the people using this cloud are: its users, the
+// identities they sign in with, the tau tokens it issues them, and whether
+// someone a forge vouched for is admitted. The cloud is the authority on its
+// users and never on repositories: a sign-in hands the client the forge's
+// token, and the cloud keeps no forge token.
 package authv2connect
 
 import (
@@ -39,6 +41,10 @@ const _ = connect.IsAtLeastVersion1_13_0
 const (
 	// IdentityServiceName is the fully-qualified name of the IdentityService service.
 	IdentityServiceName = "tau.auth.v2.IdentityService"
+	// SessionServiceName is the fully-qualified name of the SessionService service.
+	SessionServiceName = "tau.auth.v2.SessionService"
+	// UserServiceName is the fully-qualified name of the UserService service.
+	UserServiceName = "tau.auth.v2.UserService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -51,11 +57,66 @@ const (
 const (
 	// IdentityServiceAdmitProcedure is the fully-qualified name of the IdentityService's Admit RPC.
 	IdentityServiceAdmitProcedure = "/tau.auth.v2.IdentityService/Admit"
+	// IdentityServiceVerifyProcedure is the fully-qualified name of the IdentityService's Verify RPC.
+	IdentityServiceVerifyProcedure = "/tau.auth.v2.IdentityService/Verify"
+	// SessionServiceProvidersProcedure is the fully-qualified name of the SessionService's Providers
+	// RPC.
+	SessionServiceProvidersProcedure = "/tau.auth.v2.SessionService/Providers"
+	// SessionServiceLoginProcedure is the fully-qualified name of the SessionService's Login RPC.
+	SessionServiceLoginProcedure = "/tau.auth.v2.SessionService/Login"
+	// SessionServiceRefreshProcedure is the fully-qualified name of the SessionService's Refresh RPC.
+	SessionServiceRefreshProcedure = "/tau.auth.v2.SessionService/Refresh"
+	// SessionServiceLogoutProcedure is the fully-qualified name of the SessionService's Logout RPC.
+	SessionServiceLogoutProcedure = "/tau.auth.v2.SessionService/Logout"
+	// SessionServiceAuthorizeProcedure is the fully-qualified name of the SessionService's Authorize
+	// RPC.
+	SessionServiceAuthorizeProcedure = "/tau.auth.v2.SessionService/Authorize"
+	// SessionServiceExchangeProcedure is the fully-qualified name of the SessionService's Exchange RPC.
+	SessionServiceExchangeProcedure = "/tau.auth.v2.SessionService/Exchange"
+	// SessionServiceDeviceStartProcedure is the fully-qualified name of the SessionService's
+	// DeviceStart RPC.
+	SessionServiceDeviceStartProcedure = "/tau.auth.v2.SessionService/DeviceStart"
+	// SessionServiceDevicePollProcedure is the fully-qualified name of the SessionService's DevicePoll
+	// RPC.
+	SessionServiceDevicePollProcedure = "/tau.auth.v2.SessionService/DevicePoll"
+	// SessionServicePastedProcedure is the fully-qualified name of the SessionService's Pasted RPC.
+	SessionServicePastedProcedure = "/tau.auth.v2.SessionService/Pasted"
+	// SessionServiceWhoamiProcedure is the fully-qualified name of the SessionService's Whoami RPC.
+	SessionServiceWhoamiProcedure = "/tau.auth.v2.SessionService/Whoami"
+	// UserServiceListUsersProcedure is the fully-qualified name of the UserService's ListUsers RPC.
+	UserServiceListUsersProcedure = "/tau.auth.v2.UserService/ListUsers"
+	// UserServiceCreateUserProcedure is the fully-qualified name of the UserService's CreateUser RPC.
+	UserServiceCreateUserProcedure = "/tau.auth.v2.UserService/CreateUser"
+	// UserServiceDeleteUserProcedure is the fully-qualified name of the UserService's DeleteUser RPC.
+	UserServiceDeleteUserProcedure = "/tau.auth.v2.UserService/DeleteUser"
+	// UserServiceSetRoleProcedure is the fully-qualified name of the UserService's SetRole RPC.
+	UserServiceSetRoleProcedure = "/tau.auth.v2.UserService/SetRole"
+	// UserServiceSetDisabledProcedure is the fully-qualified name of the UserService's SetDisabled RPC.
+	UserServiceSetDisabledProcedure = "/tau.auth.v2.UserService/SetDisabled"
+	// UserServiceSetPasswordProcedure is the fully-qualified name of the UserService's SetPassword RPC.
+	UserServiceSetPasswordProcedure = "/tau.auth.v2.UserService/SetPassword"
+	// UserServiceCreateInviteProcedure is the fully-qualified name of the UserService's CreateInvite
+	// RPC.
+	UserServiceCreateInviteProcedure = "/tau.auth.v2.UserService/CreateInvite"
+	// UserServiceListInvitesProcedure is the fully-qualified name of the UserService's ListInvites RPC.
+	UserServiceListInvitesProcedure = "/tau.auth.v2.UserService/ListInvites"
+	// UserServiceDeleteInviteProcedure is the fully-qualified name of the UserService's DeleteInvite
+	// RPC.
+	UserServiceDeleteInviteProcedure = "/tau.auth.v2.UserService/DeleteInvite"
+	// UserServiceCreateTokenProcedure is the fully-qualified name of the UserService's CreateToken RPC.
+	UserServiceCreateTokenProcedure = "/tau.auth.v2.UserService/CreateToken"
+	// UserServiceListTokensProcedure is the fully-qualified name of the UserService's ListTokens RPC.
+	UserServiceListTokensProcedure = "/tau.auth.v2.UserService/ListTokens"
+	// UserServiceRevokeTokenProcedure is the fully-qualified name of the UserService's RevokeToken RPC.
+	UserServiceRevokeTokenProcedure = "/tau.auth.v2.UserService/RevokeToken"
 )
 
 // IdentityServiceClient is a client for the tau.auth.v2.IdentityService service.
 type IdentityServiceClient interface {
 	Admit(context.Context, *connect.Request[v2.Caller]) (*connect.Response[v2.Admission], error)
+	// Verify says who a tau token or an API token belongs to, as of now: a
+	// revoked token, or one whose user is disabled or gone, is Unauthenticated.
+	Verify(context.Context, *connect.Request[v2.VerifyRequest]) (*connect.Response[v2.Principal], error)
 }
 
 // NewIdentityServiceClient constructs a client for the tau.auth.v2.IdentityService service. By
@@ -75,12 +136,19 @@ func NewIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(identityServiceMethods.ByName("Admit")),
 			connect.WithClientOptions(opts...),
 		),
+		verify: connect.NewClient[v2.VerifyRequest, v2.Principal](
+			httpClient,
+			baseURL+IdentityServiceVerifyProcedure,
+			connect.WithSchema(identityServiceMethods.ByName("Verify")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // identityServiceClient implements IdentityServiceClient.
 type identityServiceClient struct {
-	admit *connect.Client[v2.Caller, v2.Admission]
+	admit  *connect.Client[v2.Caller, v2.Admission]
+	verify *connect.Client[v2.VerifyRequest, v2.Principal]
 }
 
 // Admit calls tau.auth.v2.IdentityService.Admit.
@@ -88,9 +156,17 @@ func (c *identityServiceClient) Admit(ctx context.Context, req *connect.Request[
 	return c.admit.CallUnary(ctx, req)
 }
 
+// Verify calls tau.auth.v2.IdentityService.Verify.
+func (c *identityServiceClient) Verify(ctx context.Context, req *connect.Request[v2.VerifyRequest]) (*connect.Response[v2.Principal], error) {
+	return c.verify.CallUnary(ctx, req)
+}
+
 // IdentityServiceHandler is an implementation of the tau.auth.v2.IdentityService service.
 type IdentityServiceHandler interface {
 	Admit(context.Context, *connect.Request[v2.Caller]) (*connect.Response[v2.Admission], error)
+	// Verify says who a tau token or an API token belongs to, as of now: a
+	// revoked token, or one whose user is disabled or gone, is Unauthenticated.
+	Verify(context.Context, *connect.Request[v2.VerifyRequest]) (*connect.Response[v2.Principal], error)
 }
 
 // NewIdentityServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -106,10 +182,18 @@ func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.Handl
 		connect.WithSchema(identityServiceMethods.ByName("Admit")),
 		connect.WithHandlerOptions(opts...),
 	)
+	identityServiceVerifyHandler := connect.NewUnaryHandler(
+		IdentityServiceVerifyProcedure,
+		svc.Verify,
+		connect.WithSchema(identityServiceMethods.ByName("Verify")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/tau.auth.v2.IdentityService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case IdentityServiceAdmitProcedure:
 			identityServiceAdmitHandler.ServeHTTP(w, r)
+		case IdentityServiceVerifyProcedure:
+			identityServiceVerifyHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -121,4 +205,668 @@ type UnimplementedIdentityServiceHandler struct{}
 
 func (UnimplementedIdentityServiceHandler) Admit(context.Context, *connect.Request[v2.Caller]) (*connect.Response[v2.Admission], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.IdentityService.Admit is not implemented"))
+}
+
+func (UnimplementedIdentityServiceHandler) Verify(context.Context, *connect.Request[v2.VerifyRequest]) (*connect.Response[v2.Principal], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.IdentityService.Verify is not implemented"))
+}
+
+// SessionServiceClient is a client for the tau.auth.v2.SessionService service.
+type SessionServiceClient interface {
+	Providers(context.Context, *connect.Request[v2.ProvidersRequest]) (*connect.Response[v2.ProvidersResponse], error)
+	Login(context.Context, *connect.Request[v2.LoginRequest]) (*connect.Response[v2.SignedIn], error)
+	Refresh(context.Context, *connect.Request[v2.RefreshRequest]) (*connect.Response[v2.SignedIn], error)
+	Logout(context.Context, *connect.Request[v2.LogoutRequest]) (*connect.Response[v2.LogoutResponse], error)
+	Authorize(context.Context, *connect.Request[v2.AuthorizeRequest]) (*connect.Response[v2.AuthorizeResponse], error)
+	Exchange(context.Context, *connect.Request[v2.ExchangeRequest]) (*connect.Response[v2.SignedIn], error)
+	DeviceStart(context.Context, *connect.Request[v2.DeviceStartRequest]) (*connect.Response[v2.DeviceStartResponse], error)
+	DevicePoll(context.Context, *connect.Request[v2.DevicePollRequest]) (*connect.Response[v2.DevicePollResponse], error)
+	Pasted(context.Context, *connect.Request[v2.PastedRequest]) (*connect.Response[v2.SignedIn], error)
+	Whoami(context.Context, *connect.Request[v2.WhoamiRequest]) (*connect.Response[v2.User], error)
+}
+
+// NewSessionServiceClient constructs a client for the tau.auth.v2.SessionService service. By
+// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
+// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
+// connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) SessionServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	sessionServiceMethods := v2.File_tau_auth_v2_auth_proto.Services().ByName("SessionService").Methods()
+	return &sessionServiceClient{
+		providers: connect.NewClient[v2.ProvidersRequest, v2.ProvidersResponse](
+			httpClient,
+			baseURL+SessionServiceProvidersProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("Providers")),
+			connect.WithClientOptions(opts...),
+		),
+		login: connect.NewClient[v2.LoginRequest, v2.SignedIn](
+			httpClient,
+			baseURL+SessionServiceLoginProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("Login")),
+			connect.WithClientOptions(opts...),
+		),
+		refresh: connect.NewClient[v2.RefreshRequest, v2.SignedIn](
+			httpClient,
+			baseURL+SessionServiceRefreshProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("Refresh")),
+			connect.WithClientOptions(opts...),
+		),
+		logout: connect.NewClient[v2.LogoutRequest, v2.LogoutResponse](
+			httpClient,
+			baseURL+SessionServiceLogoutProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("Logout")),
+			connect.WithClientOptions(opts...),
+		),
+		authorize: connect.NewClient[v2.AuthorizeRequest, v2.AuthorizeResponse](
+			httpClient,
+			baseURL+SessionServiceAuthorizeProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("Authorize")),
+			connect.WithClientOptions(opts...),
+		),
+		exchange: connect.NewClient[v2.ExchangeRequest, v2.SignedIn](
+			httpClient,
+			baseURL+SessionServiceExchangeProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("Exchange")),
+			connect.WithClientOptions(opts...),
+		),
+		deviceStart: connect.NewClient[v2.DeviceStartRequest, v2.DeviceStartResponse](
+			httpClient,
+			baseURL+SessionServiceDeviceStartProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("DeviceStart")),
+			connect.WithClientOptions(opts...),
+		),
+		devicePoll: connect.NewClient[v2.DevicePollRequest, v2.DevicePollResponse](
+			httpClient,
+			baseURL+SessionServiceDevicePollProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("DevicePoll")),
+			connect.WithClientOptions(opts...),
+		),
+		pasted: connect.NewClient[v2.PastedRequest, v2.SignedIn](
+			httpClient,
+			baseURL+SessionServicePastedProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("Pasted")),
+			connect.WithClientOptions(opts...),
+		),
+		whoami: connect.NewClient[v2.WhoamiRequest, v2.User](
+			httpClient,
+			baseURL+SessionServiceWhoamiProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("Whoami")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// sessionServiceClient implements SessionServiceClient.
+type sessionServiceClient struct {
+	providers   *connect.Client[v2.ProvidersRequest, v2.ProvidersResponse]
+	login       *connect.Client[v2.LoginRequest, v2.SignedIn]
+	refresh     *connect.Client[v2.RefreshRequest, v2.SignedIn]
+	logout      *connect.Client[v2.LogoutRequest, v2.LogoutResponse]
+	authorize   *connect.Client[v2.AuthorizeRequest, v2.AuthorizeResponse]
+	exchange    *connect.Client[v2.ExchangeRequest, v2.SignedIn]
+	deviceStart *connect.Client[v2.DeviceStartRequest, v2.DeviceStartResponse]
+	devicePoll  *connect.Client[v2.DevicePollRequest, v2.DevicePollResponse]
+	pasted      *connect.Client[v2.PastedRequest, v2.SignedIn]
+	whoami      *connect.Client[v2.WhoamiRequest, v2.User]
+}
+
+// Providers calls tau.auth.v2.SessionService.Providers.
+func (c *sessionServiceClient) Providers(ctx context.Context, req *connect.Request[v2.ProvidersRequest]) (*connect.Response[v2.ProvidersResponse], error) {
+	return c.providers.CallUnary(ctx, req)
+}
+
+// Login calls tau.auth.v2.SessionService.Login.
+func (c *sessionServiceClient) Login(ctx context.Context, req *connect.Request[v2.LoginRequest]) (*connect.Response[v2.SignedIn], error) {
+	return c.login.CallUnary(ctx, req)
+}
+
+// Refresh calls tau.auth.v2.SessionService.Refresh.
+func (c *sessionServiceClient) Refresh(ctx context.Context, req *connect.Request[v2.RefreshRequest]) (*connect.Response[v2.SignedIn], error) {
+	return c.refresh.CallUnary(ctx, req)
+}
+
+// Logout calls tau.auth.v2.SessionService.Logout.
+func (c *sessionServiceClient) Logout(ctx context.Context, req *connect.Request[v2.LogoutRequest]) (*connect.Response[v2.LogoutResponse], error) {
+	return c.logout.CallUnary(ctx, req)
+}
+
+// Authorize calls tau.auth.v2.SessionService.Authorize.
+func (c *sessionServiceClient) Authorize(ctx context.Context, req *connect.Request[v2.AuthorizeRequest]) (*connect.Response[v2.AuthorizeResponse], error) {
+	return c.authorize.CallUnary(ctx, req)
+}
+
+// Exchange calls tau.auth.v2.SessionService.Exchange.
+func (c *sessionServiceClient) Exchange(ctx context.Context, req *connect.Request[v2.ExchangeRequest]) (*connect.Response[v2.SignedIn], error) {
+	return c.exchange.CallUnary(ctx, req)
+}
+
+// DeviceStart calls tau.auth.v2.SessionService.DeviceStart.
+func (c *sessionServiceClient) DeviceStart(ctx context.Context, req *connect.Request[v2.DeviceStartRequest]) (*connect.Response[v2.DeviceStartResponse], error) {
+	return c.deviceStart.CallUnary(ctx, req)
+}
+
+// DevicePoll calls tau.auth.v2.SessionService.DevicePoll.
+func (c *sessionServiceClient) DevicePoll(ctx context.Context, req *connect.Request[v2.DevicePollRequest]) (*connect.Response[v2.DevicePollResponse], error) {
+	return c.devicePoll.CallUnary(ctx, req)
+}
+
+// Pasted calls tau.auth.v2.SessionService.Pasted.
+func (c *sessionServiceClient) Pasted(ctx context.Context, req *connect.Request[v2.PastedRequest]) (*connect.Response[v2.SignedIn], error) {
+	return c.pasted.CallUnary(ctx, req)
+}
+
+// Whoami calls tau.auth.v2.SessionService.Whoami.
+func (c *sessionServiceClient) Whoami(ctx context.Context, req *connect.Request[v2.WhoamiRequest]) (*connect.Response[v2.User], error) {
+	return c.whoami.CallUnary(ctx, req)
+}
+
+// SessionServiceHandler is an implementation of the tau.auth.v2.SessionService service.
+type SessionServiceHandler interface {
+	Providers(context.Context, *connect.Request[v2.ProvidersRequest]) (*connect.Response[v2.ProvidersResponse], error)
+	Login(context.Context, *connect.Request[v2.LoginRequest]) (*connect.Response[v2.SignedIn], error)
+	Refresh(context.Context, *connect.Request[v2.RefreshRequest]) (*connect.Response[v2.SignedIn], error)
+	Logout(context.Context, *connect.Request[v2.LogoutRequest]) (*connect.Response[v2.LogoutResponse], error)
+	Authorize(context.Context, *connect.Request[v2.AuthorizeRequest]) (*connect.Response[v2.AuthorizeResponse], error)
+	Exchange(context.Context, *connect.Request[v2.ExchangeRequest]) (*connect.Response[v2.SignedIn], error)
+	DeviceStart(context.Context, *connect.Request[v2.DeviceStartRequest]) (*connect.Response[v2.DeviceStartResponse], error)
+	DevicePoll(context.Context, *connect.Request[v2.DevicePollRequest]) (*connect.Response[v2.DevicePollResponse], error)
+	Pasted(context.Context, *connect.Request[v2.PastedRequest]) (*connect.Response[v2.SignedIn], error)
+	Whoami(context.Context, *connect.Request[v2.WhoamiRequest]) (*connect.Response[v2.User], error)
+}
+
+// NewSessionServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	sessionServiceMethods := v2.File_tau_auth_v2_auth_proto.Services().ByName("SessionService").Methods()
+	sessionServiceProvidersHandler := connect.NewUnaryHandler(
+		SessionServiceProvidersProcedure,
+		svc.Providers,
+		connect.WithSchema(sessionServiceMethods.ByName("Providers")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceLoginHandler := connect.NewUnaryHandler(
+		SessionServiceLoginProcedure,
+		svc.Login,
+		connect.WithSchema(sessionServiceMethods.ByName("Login")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceRefreshHandler := connect.NewUnaryHandler(
+		SessionServiceRefreshProcedure,
+		svc.Refresh,
+		connect.WithSchema(sessionServiceMethods.ByName("Refresh")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceLogoutHandler := connect.NewUnaryHandler(
+		SessionServiceLogoutProcedure,
+		svc.Logout,
+		connect.WithSchema(sessionServiceMethods.ByName("Logout")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceAuthorizeHandler := connect.NewUnaryHandler(
+		SessionServiceAuthorizeProcedure,
+		svc.Authorize,
+		connect.WithSchema(sessionServiceMethods.ByName("Authorize")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceExchangeHandler := connect.NewUnaryHandler(
+		SessionServiceExchangeProcedure,
+		svc.Exchange,
+		connect.WithSchema(sessionServiceMethods.ByName("Exchange")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceDeviceStartHandler := connect.NewUnaryHandler(
+		SessionServiceDeviceStartProcedure,
+		svc.DeviceStart,
+		connect.WithSchema(sessionServiceMethods.ByName("DeviceStart")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceDevicePollHandler := connect.NewUnaryHandler(
+		SessionServiceDevicePollProcedure,
+		svc.DevicePoll,
+		connect.WithSchema(sessionServiceMethods.ByName("DevicePoll")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServicePastedHandler := connect.NewUnaryHandler(
+		SessionServicePastedProcedure,
+		svc.Pasted,
+		connect.WithSchema(sessionServiceMethods.ByName("Pasted")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceWhoamiHandler := connect.NewUnaryHandler(
+		SessionServiceWhoamiProcedure,
+		svc.Whoami,
+		connect.WithSchema(sessionServiceMethods.ByName("Whoami")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/tau.auth.v2.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case SessionServiceProvidersProcedure:
+			sessionServiceProvidersHandler.ServeHTTP(w, r)
+		case SessionServiceLoginProcedure:
+			sessionServiceLoginHandler.ServeHTTP(w, r)
+		case SessionServiceRefreshProcedure:
+			sessionServiceRefreshHandler.ServeHTTP(w, r)
+		case SessionServiceLogoutProcedure:
+			sessionServiceLogoutHandler.ServeHTTP(w, r)
+		case SessionServiceAuthorizeProcedure:
+			sessionServiceAuthorizeHandler.ServeHTTP(w, r)
+		case SessionServiceExchangeProcedure:
+			sessionServiceExchangeHandler.ServeHTTP(w, r)
+		case SessionServiceDeviceStartProcedure:
+			sessionServiceDeviceStartHandler.ServeHTTP(w, r)
+		case SessionServiceDevicePollProcedure:
+			sessionServiceDevicePollHandler.ServeHTTP(w, r)
+		case SessionServicePastedProcedure:
+			sessionServicePastedHandler.ServeHTTP(w, r)
+		case SessionServiceWhoamiProcedure:
+			sessionServiceWhoamiHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedSessionServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedSessionServiceHandler struct{}
+
+func (UnimplementedSessionServiceHandler) Providers(context.Context, *connect.Request[v2.ProvidersRequest]) (*connect.Response[v2.ProvidersResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.SessionService.Providers is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) Login(context.Context, *connect.Request[v2.LoginRequest]) (*connect.Response[v2.SignedIn], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.SessionService.Login is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) Refresh(context.Context, *connect.Request[v2.RefreshRequest]) (*connect.Response[v2.SignedIn], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.SessionService.Refresh is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) Logout(context.Context, *connect.Request[v2.LogoutRequest]) (*connect.Response[v2.LogoutResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.SessionService.Logout is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) Authorize(context.Context, *connect.Request[v2.AuthorizeRequest]) (*connect.Response[v2.AuthorizeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.SessionService.Authorize is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) Exchange(context.Context, *connect.Request[v2.ExchangeRequest]) (*connect.Response[v2.SignedIn], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.SessionService.Exchange is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) DeviceStart(context.Context, *connect.Request[v2.DeviceStartRequest]) (*connect.Response[v2.DeviceStartResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.SessionService.DeviceStart is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) DevicePoll(context.Context, *connect.Request[v2.DevicePollRequest]) (*connect.Response[v2.DevicePollResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.SessionService.DevicePoll is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) Pasted(context.Context, *connect.Request[v2.PastedRequest]) (*connect.Response[v2.SignedIn], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.SessionService.Pasted is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) Whoami(context.Context, *connect.Request[v2.WhoamiRequest]) (*connect.Response[v2.User], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.SessionService.Whoami is not implemented"))
+}
+
+// UserServiceClient is a client for the tau.auth.v2.UserService service.
+type UserServiceClient interface {
+	ListUsers(context.Context, *connect.Request[v2.ListUsersRequest]) (*connect.Response[v2.ListUsersResponse], error)
+	CreateUser(context.Context, *connect.Request[v2.CreateUserRequest]) (*connect.Response[v2.User], error)
+	DeleteUser(context.Context, *connect.Request[v2.UserRequest]) (*connect.Response[v2.Empty], error)
+	SetRole(context.Context, *connect.Request[v2.SetRoleRequest]) (*connect.Response[v2.User], error)
+	SetDisabled(context.Context, *connect.Request[v2.SetDisabledRequest]) (*connect.Response[v2.User], error)
+	SetPassword(context.Context, *connect.Request[v2.SetPasswordRequest]) (*connect.Response[v2.Empty], error)
+	CreateInvite(context.Context, *connect.Request[v2.CreateInviteRequest]) (*connect.Response[v2.Invite], error)
+	ListInvites(context.Context, *connect.Request[v2.Empty]) (*connect.Response[v2.ListInvitesResponse], error)
+	DeleteInvite(context.Context, *connect.Request[v2.UserRequest]) (*connect.Response[v2.Empty], error)
+	CreateToken(context.Context, *connect.Request[v2.CreateTokenRequest]) (*connect.Response[v2.Token], error)
+	ListTokens(context.Context, *connect.Request[v2.ListTokensRequest]) (*connect.Response[v2.ListTokensResponse], error)
+	RevokeToken(context.Context, *connect.Request[v2.RevokeTokenRequest]) (*connect.Response[v2.Empty], error)
+}
+
+// NewUserServiceClient constructs a client for the tau.auth.v2.UserService service. By default, it
+// uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
+// uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
+// connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewUserServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) UserServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	userServiceMethods := v2.File_tau_auth_v2_auth_proto.Services().ByName("UserService").Methods()
+	return &userServiceClient{
+		listUsers: connect.NewClient[v2.ListUsersRequest, v2.ListUsersResponse](
+			httpClient,
+			baseURL+UserServiceListUsersProcedure,
+			connect.WithSchema(userServiceMethods.ByName("ListUsers")),
+			connect.WithClientOptions(opts...),
+		),
+		createUser: connect.NewClient[v2.CreateUserRequest, v2.User](
+			httpClient,
+			baseURL+UserServiceCreateUserProcedure,
+			connect.WithSchema(userServiceMethods.ByName("CreateUser")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteUser: connect.NewClient[v2.UserRequest, v2.Empty](
+			httpClient,
+			baseURL+UserServiceDeleteUserProcedure,
+			connect.WithSchema(userServiceMethods.ByName("DeleteUser")),
+			connect.WithClientOptions(opts...),
+		),
+		setRole: connect.NewClient[v2.SetRoleRequest, v2.User](
+			httpClient,
+			baseURL+UserServiceSetRoleProcedure,
+			connect.WithSchema(userServiceMethods.ByName("SetRole")),
+			connect.WithClientOptions(opts...),
+		),
+		setDisabled: connect.NewClient[v2.SetDisabledRequest, v2.User](
+			httpClient,
+			baseURL+UserServiceSetDisabledProcedure,
+			connect.WithSchema(userServiceMethods.ByName("SetDisabled")),
+			connect.WithClientOptions(opts...),
+		),
+		setPassword: connect.NewClient[v2.SetPasswordRequest, v2.Empty](
+			httpClient,
+			baseURL+UserServiceSetPasswordProcedure,
+			connect.WithSchema(userServiceMethods.ByName("SetPassword")),
+			connect.WithClientOptions(opts...),
+		),
+		createInvite: connect.NewClient[v2.CreateInviteRequest, v2.Invite](
+			httpClient,
+			baseURL+UserServiceCreateInviteProcedure,
+			connect.WithSchema(userServiceMethods.ByName("CreateInvite")),
+			connect.WithClientOptions(opts...),
+		),
+		listInvites: connect.NewClient[v2.Empty, v2.ListInvitesResponse](
+			httpClient,
+			baseURL+UserServiceListInvitesProcedure,
+			connect.WithSchema(userServiceMethods.ByName("ListInvites")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteInvite: connect.NewClient[v2.UserRequest, v2.Empty](
+			httpClient,
+			baseURL+UserServiceDeleteInviteProcedure,
+			connect.WithSchema(userServiceMethods.ByName("DeleteInvite")),
+			connect.WithClientOptions(opts...),
+		),
+		createToken: connect.NewClient[v2.CreateTokenRequest, v2.Token](
+			httpClient,
+			baseURL+UserServiceCreateTokenProcedure,
+			connect.WithSchema(userServiceMethods.ByName("CreateToken")),
+			connect.WithClientOptions(opts...),
+		),
+		listTokens: connect.NewClient[v2.ListTokensRequest, v2.ListTokensResponse](
+			httpClient,
+			baseURL+UserServiceListTokensProcedure,
+			connect.WithSchema(userServiceMethods.ByName("ListTokens")),
+			connect.WithClientOptions(opts...),
+		),
+		revokeToken: connect.NewClient[v2.RevokeTokenRequest, v2.Empty](
+			httpClient,
+			baseURL+UserServiceRevokeTokenProcedure,
+			connect.WithSchema(userServiceMethods.ByName("RevokeToken")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// userServiceClient implements UserServiceClient.
+type userServiceClient struct {
+	listUsers    *connect.Client[v2.ListUsersRequest, v2.ListUsersResponse]
+	createUser   *connect.Client[v2.CreateUserRequest, v2.User]
+	deleteUser   *connect.Client[v2.UserRequest, v2.Empty]
+	setRole      *connect.Client[v2.SetRoleRequest, v2.User]
+	setDisabled  *connect.Client[v2.SetDisabledRequest, v2.User]
+	setPassword  *connect.Client[v2.SetPasswordRequest, v2.Empty]
+	createInvite *connect.Client[v2.CreateInviteRequest, v2.Invite]
+	listInvites  *connect.Client[v2.Empty, v2.ListInvitesResponse]
+	deleteInvite *connect.Client[v2.UserRequest, v2.Empty]
+	createToken  *connect.Client[v2.CreateTokenRequest, v2.Token]
+	listTokens   *connect.Client[v2.ListTokensRequest, v2.ListTokensResponse]
+	revokeToken  *connect.Client[v2.RevokeTokenRequest, v2.Empty]
+}
+
+// ListUsers calls tau.auth.v2.UserService.ListUsers.
+func (c *userServiceClient) ListUsers(ctx context.Context, req *connect.Request[v2.ListUsersRequest]) (*connect.Response[v2.ListUsersResponse], error) {
+	return c.listUsers.CallUnary(ctx, req)
+}
+
+// CreateUser calls tau.auth.v2.UserService.CreateUser.
+func (c *userServiceClient) CreateUser(ctx context.Context, req *connect.Request[v2.CreateUserRequest]) (*connect.Response[v2.User], error) {
+	return c.createUser.CallUnary(ctx, req)
+}
+
+// DeleteUser calls tau.auth.v2.UserService.DeleteUser.
+func (c *userServiceClient) DeleteUser(ctx context.Context, req *connect.Request[v2.UserRequest]) (*connect.Response[v2.Empty], error) {
+	return c.deleteUser.CallUnary(ctx, req)
+}
+
+// SetRole calls tau.auth.v2.UserService.SetRole.
+func (c *userServiceClient) SetRole(ctx context.Context, req *connect.Request[v2.SetRoleRequest]) (*connect.Response[v2.User], error) {
+	return c.setRole.CallUnary(ctx, req)
+}
+
+// SetDisabled calls tau.auth.v2.UserService.SetDisabled.
+func (c *userServiceClient) SetDisabled(ctx context.Context, req *connect.Request[v2.SetDisabledRequest]) (*connect.Response[v2.User], error) {
+	return c.setDisabled.CallUnary(ctx, req)
+}
+
+// SetPassword calls tau.auth.v2.UserService.SetPassword.
+func (c *userServiceClient) SetPassword(ctx context.Context, req *connect.Request[v2.SetPasswordRequest]) (*connect.Response[v2.Empty], error) {
+	return c.setPassword.CallUnary(ctx, req)
+}
+
+// CreateInvite calls tau.auth.v2.UserService.CreateInvite.
+func (c *userServiceClient) CreateInvite(ctx context.Context, req *connect.Request[v2.CreateInviteRequest]) (*connect.Response[v2.Invite], error) {
+	return c.createInvite.CallUnary(ctx, req)
+}
+
+// ListInvites calls tau.auth.v2.UserService.ListInvites.
+func (c *userServiceClient) ListInvites(ctx context.Context, req *connect.Request[v2.Empty]) (*connect.Response[v2.ListInvitesResponse], error) {
+	return c.listInvites.CallUnary(ctx, req)
+}
+
+// DeleteInvite calls tau.auth.v2.UserService.DeleteInvite.
+func (c *userServiceClient) DeleteInvite(ctx context.Context, req *connect.Request[v2.UserRequest]) (*connect.Response[v2.Empty], error) {
+	return c.deleteInvite.CallUnary(ctx, req)
+}
+
+// CreateToken calls tau.auth.v2.UserService.CreateToken.
+func (c *userServiceClient) CreateToken(ctx context.Context, req *connect.Request[v2.CreateTokenRequest]) (*connect.Response[v2.Token], error) {
+	return c.createToken.CallUnary(ctx, req)
+}
+
+// ListTokens calls tau.auth.v2.UserService.ListTokens.
+func (c *userServiceClient) ListTokens(ctx context.Context, req *connect.Request[v2.ListTokensRequest]) (*connect.Response[v2.ListTokensResponse], error) {
+	return c.listTokens.CallUnary(ctx, req)
+}
+
+// RevokeToken calls tau.auth.v2.UserService.RevokeToken.
+func (c *userServiceClient) RevokeToken(ctx context.Context, req *connect.Request[v2.RevokeTokenRequest]) (*connect.Response[v2.Empty], error) {
+	return c.revokeToken.CallUnary(ctx, req)
+}
+
+// UserServiceHandler is an implementation of the tau.auth.v2.UserService service.
+type UserServiceHandler interface {
+	ListUsers(context.Context, *connect.Request[v2.ListUsersRequest]) (*connect.Response[v2.ListUsersResponse], error)
+	CreateUser(context.Context, *connect.Request[v2.CreateUserRequest]) (*connect.Response[v2.User], error)
+	DeleteUser(context.Context, *connect.Request[v2.UserRequest]) (*connect.Response[v2.Empty], error)
+	SetRole(context.Context, *connect.Request[v2.SetRoleRequest]) (*connect.Response[v2.User], error)
+	SetDisabled(context.Context, *connect.Request[v2.SetDisabledRequest]) (*connect.Response[v2.User], error)
+	SetPassword(context.Context, *connect.Request[v2.SetPasswordRequest]) (*connect.Response[v2.Empty], error)
+	CreateInvite(context.Context, *connect.Request[v2.CreateInviteRequest]) (*connect.Response[v2.Invite], error)
+	ListInvites(context.Context, *connect.Request[v2.Empty]) (*connect.Response[v2.ListInvitesResponse], error)
+	DeleteInvite(context.Context, *connect.Request[v2.UserRequest]) (*connect.Response[v2.Empty], error)
+	CreateToken(context.Context, *connect.Request[v2.CreateTokenRequest]) (*connect.Response[v2.Token], error)
+	ListTokens(context.Context, *connect.Request[v2.ListTokensRequest]) (*connect.Response[v2.ListTokensResponse], error)
+	RevokeToken(context.Context, *connect.Request[v2.RevokeTokenRequest]) (*connect.Response[v2.Empty], error)
+}
+
+// NewUserServiceHandler builds an HTTP handler from the service implementation. It returns the path
+// on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewUserServiceHandler(svc UserServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	userServiceMethods := v2.File_tau_auth_v2_auth_proto.Services().ByName("UserService").Methods()
+	userServiceListUsersHandler := connect.NewUnaryHandler(
+		UserServiceListUsersProcedure,
+		svc.ListUsers,
+		connect.WithSchema(userServiceMethods.ByName("ListUsers")),
+		connect.WithHandlerOptions(opts...),
+	)
+	userServiceCreateUserHandler := connect.NewUnaryHandler(
+		UserServiceCreateUserProcedure,
+		svc.CreateUser,
+		connect.WithSchema(userServiceMethods.ByName("CreateUser")),
+		connect.WithHandlerOptions(opts...),
+	)
+	userServiceDeleteUserHandler := connect.NewUnaryHandler(
+		UserServiceDeleteUserProcedure,
+		svc.DeleteUser,
+		connect.WithSchema(userServiceMethods.ByName("DeleteUser")),
+		connect.WithHandlerOptions(opts...),
+	)
+	userServiceSetRoleHandler := connect.NewUnaryHandler(
+		UserServiceSetRoleProcedure,
+		svc.SetRole,
+		connect.WithSchema(userServiceMethods.ByName("SetRole")),
+		connect.WithHandlerOptions(opts...),
+	)
+	userServiceSetDisabledHandler := connect.NewUnaryHandler(
+		UserServiceSetDisabledProcedure,
+		svc.SetDisabled,
+		connect.WithSchema(userServiceMethods.ByName("SetDisabled")),
+		connect.WithHandlerOptions(opts...),
+	)
+	userServiceSetPasswordHandler := connect.NewUnaryHandler(
+		UserServiceSetPasswordProcedure,
+		svc.SetPassword,
+		connect.WithSchema(userServiceMethods.ByName("SetPassword")),
+		connect.WithHandlerOptions(opts...),
+	)
+	userServiceCreateInviteHandler := connect.NewUnaryHandler(
+		UserServiceCreateInviteProcedure,
+		svc.CreateInvite,
+		connect.WithSchema(userServiceMethods.ByName("CreateInvite")),
+		connect.WithHandlerOptions(opts...),
+	)
+	userServiceListInvitesHandler := connect.NewUnaryHandler(
+		UserServiceListInvitesProcedure,
+		svc.ListInvites,
+		connect.WithSchema(userServiceMethods.ByName("ListInvites")),
+		connect.WithHandlerOptions(opts...),
+	)
+	userServiceDeleteInviteHandler := connect.NewUnaryHandler(
+		UserServiceDeleteInviteProcedure,
+		svc.DeleteInvite,
+		connect.WithSchema(userServiceMethods.ByName("DeleteInvite")),
+		connect.WithHandlerOptions(opts...),
+	)
+	userServiceCreateTokenHandler := connect.NewUnaryHandler(
+		UserServiceCreateTokenProcedure,
+		svc.CreateToken,
+		connect.WithSchema(userServiceMethods.ByName("CreateToken")),
+		connect.WithHandlerOptions(opts...),
+	)
+	userServiceListTokensHandler := connect.NewUnaryHandler(
+		UserServiceListTokensProcedure,
+		svc.ListTokens,
+		connect.WithSchema(userServiceMethods.ByName("ListTokens")),
+		connect.WithHandlerOptions(opts...),
+	)
+	userServiceRevokeTokenHandler := connect.NewUnaryHandler(
+		UserServiceRevokeTokenProcedure,
+		svc.RevokeToken,
+		connect.WithSchema(userServiceMethods.ByName("RevokeToken")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/tau.auth.v2.UserService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case UserServiceListUsersProcedure:
+			userServiceListUsersHandler.ServeHTTP(w, r)
+		case UserServiceCreateUserProcedure:
+			userServiceCreateUserHandler.ServeHTTP(w, r)
+		case UserServiceDeleteUserProcedure:
+			userServiceDeleteUserHandler.ServeHTTP(w, r)
+		case UserServiceSetRoleProcedure:
+			userServiceSetRoleHandler.ServeHTTP(w, r)
+		case UserServiceSetDisabledProcedure:
+			userServiceSetDisabledHandler.ServeHTTP(w, r)
+		case UserServiceSetPasswordProcedure:
+			userServiceSetPasswordHandler.ServeHTTP(w, r)
+		case UserServiceCreateInviteProcedure:
+			userServiceCreateInviteHandler.ServeHTTP(w, r)
+		case UserServiceListInvitesProcedure:
+			userServiceListInvitesHandler.ServeHTTP(w, r)
+		case UserServiceDeleteInviteProcedure:
+			userServiceDeleteInviteHandler.ServeHTTP(w, r)
+		case UserServiceCreateTokenProcedure:
+			userServiceCreateTokenHandler.ServeHTTP(w, r)
+		case UserServiceListTokensProcedure:
+			userServiceListTokensHandler.ServeHTTP(w, r)
+		case UserServiceRevokeTokenProcedure:
+			userServiceRevokeTokenHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedUserServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedUserServiceHandler struct{}
+
+func (UnimplementedUserServiceHandler) ListUsers(context.Context, *connect.Request[v2.ListUsersRequest]) (*connect.Response[v2.ListUsersResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.UserService.ListUsers is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) CreateUser(context.Context, *connect.Request[v2.CreateUserRequest]) (*connect.Response[v2.User], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.UserService.CreateUser is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) DeleteUser(context.Context, *connect.Request[v2.UserRequest]) (*connect.Response[v2.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.UserService.DeleteUser is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) SetRole(context.Context, *connect.Request[v2.SetRoleRequest]) (*connect.Response[v2.User], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.UserService.SetRole is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) SetDisabled(context.Context, *connect.Request[v2.SetDisabledRequest]) (*connect.Response[v2.User], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.UserService.SetDisabled is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) SetPassword(context.Context, *connect.Request[v2.SetPasswordRequest]) (*connect.Response[v2.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.UserService.SetPassword is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) CreateInvite(context.Context, *connect.Request[v2.CreateInviteRequest]) (*connect.Response[v2.Invite], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.UserService.CreateInvite is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) ListInvites(context.Context, *connect.Request[v2.Empty]) (*connect.Response[v2.ListInvitesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.UserService.ListInvites is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) DeleteInvite(context.Context, *connect.Request[v2.UserRequest]) (*connect.Response[v2.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.UserService.DeleteInvite is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) CreateToken(context.Context, *connect.Request[v2.CreateTokenRequest]) (*connect.Response[v2.Token], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.UserService.CreateToken is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) ListTokens(context.Context, *connect.Request[v2.ListTokensRequest]) (*connect.Response[v2.ListTokensResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.UserService.ListTokens is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) RevokeToken(context.Context, *connect.Request[v2.RevokeTokenRequest]) (*connect.Response[v2.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.UserService.RevokeToken is not implemented"))
 }
