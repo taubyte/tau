@@ -679,7 +679,7 @@ func TestEverySchemeRefusesEveryWayADeliveryCanBeWrong(t *testing.T) {
 	claim := PushClaim{Repository: k, Ref: "refs/heads/main", Commit: strings.Repeat("a", 40)}
 
 	for _, scheme := range []Scheme{
-		SchemeHubSHA256, SchemeStandardWebhooks, SchemeBitbucketSHA256, SchemeSharedToken,
+		SchemeHubSHA256, SchemeStandardWebhooks, SchemeBitbucketSHA256, SchemeSharedToken, SchemeOneDevToken,
 	} {
 		t.Run(string(scheme), func(t *testing.T) {
 			secret := vectorSecret()
@@ -743,7 +743,7 @@ func TestEverySchemeRefusesEveryWayADeliveryCanBeWrong(t *testing.T) {
 // asserted without naming a forge.
 func otherImplemented(s Scheme) Scheme {
 	for _, candidate := range []Scheme{
-		SchemeHubSHA256, SchemeStandardWebhooks, SchemeBitbucketSHA256, SchemeSharedToken,
+		SchemeHubSHA256, SchemeStandardWebhooks, SchemeBitbucketSHA256, SchemeSharedToken, SchemeOneDevToken,
 	} {
 		if candidate != s {
 			return candidate

@@ -359,8 +359,9 @@ type Binding struct {
 // every loosening is opt-in and visible at one call site.
 type Policy struct {
 	// AllowUnboundSchemes accepts a scheme whose match does not prove the body
-	// is the one that was signed — today only SchemeSharedToken, which is what
-	// a GitLab older than 19.0 offers. Refusing by default is deliberate: it
+	// is the one that was signed — today SchemeSharedToken, which is what a
+	// GitLab older than 19.0 offers, and SchemeOneDevToken, which is all any
+	// OneDev offers. Refusing by default is deliberate: it
 	// gives that operator materially weaker webhook authentication than a
 	// GitHub operator, and nothing in a config would otherwise say so.
 	AllowUnboundSchemes bool

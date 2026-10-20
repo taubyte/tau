@@ -81,6 +81,18 @@ const (
 	// it cannot name SchemeHubSHA256, and a verifier that accepted either
 	// spelling in either header would be two schemes pretending to be one.
 	SchemeGogsSHA256 Scheme = "gogs-sha256"
+	// SchemeOneDevToken is X-OneDev-Signature, and despite the header's name it
+	// is NOT A SIGNATURE: OneDev sends the hook's stored secret verbatim in it
+	// on every delivery (WebHookManager sets the header to webHook.getSecret()
+	// and computes nothing over the body), so it is SchemeSharedToken's
+	// construction in another header. It is a scheme of its own rather than an
+	// alias for the reason SchemeBitbucketSHA256 is: a verifier keyed on the
+	// procedure must also know which header to read, and the derivation is
+	// domain-separated by the name, so a OneDev delivery that leaks its token
+	// leaks nothing about a GitLab hook holding the same Secret. OneDev offers
+	// no body-binding alternative, so a deployment accepts it only by setting
+	// Policy.AllowUnboundSchemes.
+	SchemeOneDevToken Scheme = "onedev-token"
 )
 
 // GitHub's SHA-1 sibling (X-Hub-Signature: sha1=...) is deliberately NOT
@@ -90,17 +102,22 @@ const (
 
 func (s Scheme) implemented() bool {
 	switch s {
-	case SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeSharedToken, SchemeGogsSHA256:
+	case SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeSharedToken, SchemeGogsSHA256, SchemeOneDevToken:
 		return true
 	}
 	return false
 }
 
 // BindsBody reports whether a match proves the body is the one that was signed.
-// It is false only for SchemeSharedToken. Policy is written against this, so a
+// It is false for the two token schemes, SchemeSharedToken and
+// SchemeOneDevToken, which replay a secret and bind nothing. Policy is written against this, so a
 // deployment refuses weak schemes in ONE place instead of per hook — and so
 // that a scheme added later is classified rather than grandfathered.
-func (s Scheme) BindsBody() bool { return s != SchemeSharedToken && s.implemented() }
+func (s Scheme) BindsBody() bool { return !s.replaysToken() && s.implemented() }
+
+// replaysToken is the class of scheme whose "signature" is the wire string
+// itself, sent in a header and compared for equality.
+func (s Scheme) replaysToken() bool { return s == SchemeSharedToken || s == SchemeOneDevToken }
 
 // secretDomain is the KDF label every scheme's material is derived under. IT IS
 // A WIRE FORMAT — the string a forge stores is derived through it — so it is
@@ -210,6 +227,8 @@ func (s Scheme) header() string {
 		return "X-Gitlab-Token"
 	case SchemeGogsSHA256:
 		return "X-Gogs-Signature"
+	case SchemeOneDevToken:
+		return "X-OneDev-Signature"
 	}
 	return ""
 }
@@ -409,7 +428,7 @@ func Sign(s Scheme, secret Secret, body []byte, id string, at time.Time) (http.H
 		hdr.Set("webhook-id", id)
 		hdr.Set("webhook-timestamp", ts)
 		hdr.Set("webhook-signature", "v1,"+base64.StdEncoding.EncodeToString(mac.Sum(nil)))
-	case SchemeSharedToken:
+	case SchemeSharedToken, SchemeOneDevToken:
 		wire, err := s.Wire(secret)
 		if err != nil {
 			return nil, err
@@ -517,7 +536,7 @@ func verify(s Scheme, secret Secret, d Delivery, now time.Time, tolerance time.D
 		}
 		return fail("no signature matched")
 
-	case SchemeSharedToken:
+	case SchemeSharedToken, SchemeOneDevToken:
 		presented := d.Header.Get(s.header())
 		if presented == "" {
 			return fail("no token header")

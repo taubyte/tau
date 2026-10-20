@@ -103,11 +103,12 @@ func TestAdvNoForgeryWithoutTheSecret(t *testing.T) {
 	})
 
 	t.Run("an empty secret verifies nothing, not everything", func(t *testing.T) {
-		for _, sc := range []Scheme{SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeSharedToken} {
+		for _, sc := range []Scheme{SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeSharedToken, SchemeOneDevToken} {
 			h := http.Header{}
 			h.Set("X-Hub-Signature-256", "sha256=")
 			h.Set("X-Hub-Signature", "sha256=")
 			h.Set("X-Gitlab-Token", "")
+			h.Set("X-OneDev-Signature", "")
 			h.Set("Webhook-Id", "m")
 			h.Set("Webhook-Timestamp", fmt.Sprint(time.Now().Unix()))
 			h.Set("Webhook-Signature", "v1,")

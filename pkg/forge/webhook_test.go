@@ -54,6 +54,7 @@ var (
 //	wire(tok) = urlsafe-b64-nopad(mat("shared-token"))
 //	wire(gog) = urlsafe-b64-nopad(mat("gogs-sha256"))
 //	gog       = hex(hmac_sha256(key=wire(gog), msg=body))   # no prefix
+//	wire(od)  = urlsafe-b64-nopad(mat("onedev-token"))
 //	wire(swh) = "whsec_" + b64(mat("standard-webhooks"))
 //	swh       = b64(hmac_sha256(key=mat("standard-webhooks"),
 //	                            msg="msg_1.1767225600."+body))
@@ -64,6 +65,7 @@ func TestExternalVectors(t *testing.T) {
 		hubWire = "smsN0Dxo7S3_xgA6eSALA2KuvoJ0Lel6q4spT1fXVNU"
 		bitWire = "ftTZCqcUfbgi8yEbedq_urbDDlkbIKJ_e0QCaCfdkWU"
 		tokWire = "XHAEMCpddVHFWlOi0cyi5JLDiCOFQjcyBaVT3D8_mE4"
+		odWire  = "vrXcpFlar5dw-W_sOs7szv2z3QBp2DgwdhzOnt1Tbog"
 		swhWire = "whsec_42kQbrrHtpg9EA+y4tmey46bHSqGj+0Obphd9eGI7Wg="
 		hubMAC  = "sha256=2a129e3e78b14dfa508831af6f82fab659de665cb0387e94f83a8ef8c607c32f"
 		bitMAC  = "sha256=7fd18b990b5e3a7c1ead981a0ab1081030c830d913c6c362fdbc9f98834e10e7"
@@ -79,6 +81,7 @@ func TestExternalVectors(t *testing.T) {
 		hubWire: SchemeHubSHA256,
 		bitWire: SchemeBitbucketSHA256,
 		tokWire: SchemeSharedToken,
+		odWire:  SchemeOneDevToken,
 		swhWire: SchemeStandardWebhooks,
 		gogWire: SchemeGogsSHA256,
 	} {
@@ -172,6 +175,27 @@ func TestExternalVectors(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotEqual(t, tokWire, string(hubKey))
 	})
+
+	t.Run("onedev-token-is-a-token-in-a-header-named-signature", func(t *testing.T) {
+		d := Delivery{Header: http.Header{"X-Onedev-Signature": {odWire}}, Body: vectorBody}
+		require.NoError(t, verify(SchemeOneDevToken, s, d, vectorAt, time.Minute))
+		// It binds nothing either: OneDev computes nothing over the body.
+		other := Delivery{Header: d.Header, Body: []byte("anything at all")}
+		require.NoError(t, verify(SchemeOneDevToken, s, other, vectorAt, time.Minute))
+		assert.False(t, SchemeOneDevToken.BindsBody())
+		// The header is half of the procedure: the right token in GitLab's
+		// header is not a OneDev delivery.
+		wrongHeader := Delivery{Header: http.Header{"X-Gitlab-Token": {odWire}}, Body: vectorBody}
+		require.Error(t, verify(SchemeOneDevToken, s, wrongHeader, vectorAt, time.Minute))
+		// And GitLab's token for the same Secret in OneDev's header is not it
+		// either: the two are domain-separated.
+		gitlabToken := Delivery{Header: http.Header{"X-Onedev-Signature": {tokWire}}, Body: vectorBody}
+		require.Error(t, verify(SchemeOneDevToken, s, gitlabToken, vectorAt, time.Minute))
+
+		got, err := Sign(SchemeOneDevToken, s, vectorBody, "", vectorAt)
+		require.NoError(t, err)
+		assert.Equal(t, odWire, got.Get("X-OneDev-Signature"))
+	})
 }
 
 func TestVerifyRefusesEveryWrongDelivery(t *testing.T) {
@@ -264,6 +288,9 @@ func TestSharedTokenRefusesAnAbsentOrWrongToken(t *testing.T) {
 	require.Error(t, verify(SchemeSharedToken, s, Delivery{Header: http.Header{}}, vectorAt, time.Minute))
 	require.Error(t, verify(SchemeSharedToken, s,
 		Delivery{Header: http.Header{"X-Gitlab-Token": {"not-it"}}}, vectorAt, time.Minute))
+	require.Error(t, verify(SchemeOneDevToken, s, Delivery{Header: http.Header{}}, vectorAt, time.Minute))
+	require.Error(t, verify(SchemeOneDevToken, s,
+		Delivery{Header: http.Header{"X-Onedev-Signature": {"not-it"}}}, vectorAt, time.Minute))
 }
 
 func TestAnUnknownSchemeIsNeverUsable(t *testing.T) {
@@ -284,7 +311,7 @@ func TestAnUnknownSchemeIsNeverUsable(t *testing.T) {
 }
 
 func TestAnEmptySecretDerivesNothing(t *testing.T) {
-	for _, sc := range []Scheme{SchemeHubSHA256, SchemeStandardWebhooks, SchemeSharedToken, SchemeBitbucketSHA256, SchemeGogsSHA256} {
+	for _, sc := range []Scheme{SchemeHubSHA256, SchemeStandardWebhooks, SchemeSharedToken, SchemeBitbucketSHA256, SchemeGogsSHA256, SchemeOneDevToken} {
 		_, err := sc.Wire(Secret{})
 		require.Error(t, err, "%s derived a wire secret from nothing", sc)
 		_, err = Sign(sc, Secret{}, vectorBody, "id", vectorAt)
@@ -293,7 +320,8 @@ func TestAnEmptySecretDerivesNothing(t *testing.T) {
 			Header: http.Header{
 				"X-Hub-Signature-256": {"sha256=00"}, "X-Hub-Signature": {"sha256=00"},
 				"X-Gitlab-Token": {"x"}, "Webhook-Id": {"m"}, "X-Gogs-Signature": {"00"},
-				"Webhook-Timestamp": {"1767225600"}, "Webhook-Signature": {"v1,AA=="},
+				"X-Onedev-Signature": {"x"},
+				"Webhook-Timestamp":  {"1767225600"}, "Webhook-Signature": {"v1,AA=="},
 			},
 			Body: vectorBody,
 		}, vectorAt, time.Minute), "%s verified against nothing", sc)
@@ -307,7 +335,7 @@ func TestAnEmptySecretDerivesNothing(t *testing.T) {
 // "eA", exhaustible offline from a single captured delivery. The floor is a
 // property of the SECRET now, so it holds for a scheme added tomorrow too.
 func TestEverySchemeInsistsOnAWholeSecret(t *testing.T) {
-	for _, sc := range []Scheme{SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeSharedToken, SchemeGogsSHA256} {
+	for _, sc := range []Scheme{SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeSharedToken, SchemeGogsSHA256, SchemeOneDevToken} {
 		for _, short := range [][]byte{[]byte("x"), []byte("short"), make([]byte, SecretSize-1)} {
 			weak := SecretFrom(short)
 			_, err := sc.Wire(weak)
@@ -413,7 +441,7 @@ func TestARefusedRefNamesTheRuleAndNotTheRef(t *testing.T) {
 	assert.Equal(t, "the delivery names no ref", refReason(""))
 }
 
-// TestOneSecretIsFourUnrelatedKeys is the domain separation stated as the thing
+// TestOneSecretIsUnrelatedKeysUnderEveryScheme is the domain separation stated as the thing
 // that matters, over EVERY pair rather than the two a reviewer happened to try:
 // nothing one scheme puts on the wire is anything another scheme would accept.
 //
@@ -421,9 +449,9 @@ func TestARefusedRefNamesTheRuleAndNotTheRef(t *testing.T) {
 // delivery replays its wire string in a header, so anything that logs headers
 // logs it, and that string used to BE the HMAC key of a hub hook holding the
 // same Secret.
-func TestOneSecretIsFourUnrelatedKeys(t *testing.T) {
+func TestOneSecretIsUnrelatedKeysUnderEveryScheme(t *testing.T) {
 	s := vectorSecret()
-	all := []Scheme{SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeSharedToken, SchemeGogsSHA256}
+	all := []Scheme{SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeSharedToken, SchemeGogsSHA256, SchemeOneDevToken}
 
 	seen := map[string]string{}
 	note := func(value, what string) {
@@ -447,7 +475,7 @@ func TestOneSecretIsFourUnrelatedKeys(t *testing.T) {
 		// registered twice; what must hold is that it is never ANOTHER
 		// scheme's, which the two notes above already establish.
 		key, err := sc.key(s)
-		if sc == SchemeSharedToken {
+		if sc.replaysToken() {
 			require.Error(t, err, "a scheme that binds nothing has no MAC")
 			continue
 		}
