@@ -162,7 +162,7 @@ func TestARealGerritStreamsItsPushes(t *testing.T) {
 	backend := &recordingBackend{}
 	svc, err := frontend.New(frontend.Config{Listen: "127.0.0.1:0", StreamResync: time.Hour},
 		frontend.WithHooks(noHooks{}), frontend.WithDeliveries(forges), frontend.WithProjects(noProjects{}),
-		frontend.WithBackend(backend), frontend.WithIdentity(forges),
+		frontend.WithBackend(backend), frontend.WithIdentity(forges), frontend.WithConnections(noConnections{}),
 		frontend.WithStreams(forges, linkedRepos{key.String()}),
 		frontend.WithLogger(t.Logf))
 	require.NoError(t, err)
@@ -288,4 +288,11 @@ func (b *recordingBackend) Cancel(context.Context, string) error { return errors
 func (b *recordingBackend) Retry(context.Context, string) error  { return errors.New("unused") }
 func (b *recordingBackend) Follow(context.Context, string, int64, func([]byte, int64) error) (int64, error) {
 	return 0, errors.New("unused")
+}
+
+// noConnections opens nothing: this test makes no caller's request.
+type noConnections struct{}
+
+func (noConnections) Open(context.Context, string, string) (frontend.Opened, error) {
+	return frontend.Opened{}, frontend.ErrBadCredential
 }

@@ -73,6 +73,7 @@ func TestEveryForgesDeliveriesReachTheSameRoute(t *testing.T) {
 				}}),
 				frontend.WithDeliveries(forges),
 				frontend.WithIdentity(forges),
+				frontend.WithConnections(noConnections{}),
 				frontend.WithProjects(projects{}),
 				frontend.WithBackend(queue))
 			require.NoError(t, err)
@@ -164,4 +165,11 @@ func TestAGenuineButUnreadableDeliveryIsMalformed(t *testing.T) {
 		Repositories: []string{f.Keys().Writable.String()}, Secret: secret.Expose(),
 	}, header, body)
 	require.ErrorIs(t, err, frontend.ErrMalformed)
+}
+
+// noConnections opens nothing: this test makes no caller's request.
+type noConnections struct{}
+
+func (noConnections) Open(context.Context, string, string) (frontend.Opened, error) {
+	return frontend.Opened{}, frontend.ErrBadCredential
 }
