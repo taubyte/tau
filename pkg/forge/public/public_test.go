@@ -13,3 +13,34 @@ func TestThePublicForgesAreBound(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"github.com", "gitlab.com"}, r.Hosts())
 }
+
+// TestEachPublicForgeSignsUnderItsOwnScheme: the scheme is the half of a link
+// the CLI and the cloud must agree on, so each host is held to the one its
+// forge actually sends — gitlab.com included, which a bare gitlab.New would
+// bind to a replayed token instead.
+func TestEachPublicForgeSignsUnderItsOwnScheme(t *testing.T) {
+	r, err := Registry(forge.Policy{})
+	require.NoError(t, err)
+	for host, want := range map[string]forge.Scheme{
+		"github.com": forge.SchemeHubSHA256,
+		"gitlab.com": forge.SchemeStandardWebhooks,
+	} {
+		d, err := r.Driver(host)
+		require.NoError(t, err)
+		s, ok := d.(forge.Signatures)
+		require.True(t, ok, "%s verifies no deliveries at all", host)
+		require.Equal(t, want, s.Scheme(), host)
+	}
+}
+
+// TestNeitherBindingNeedsAnUnboundScheme: both schemes bind the body, so the
+// zero Policy — which refuses a replayed token — is enough for both.
+func TestNeitherBindingNeedsAnUnboundScheme(t *testing.T) {
+	r, err := Registry(forge.Policy{})
+	require.NoError(t, err)
+	for _, host := range r.Hosts() {
+		d, err := r.Driver(host)
+		require.NoError(t, err)
+		require.True(t, d.(forge.Signatures).Scheme().BindsBody(), host)
+	}
+}
