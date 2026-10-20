@@ -91,7 +91,7 @@ func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 
 	// EACH RUN HAS ITS OWN RESOLVER AND ITS OWN CA, so nothing either learned
 	// in an earlier run answers for this one.
-	run := func(t *testing.T, cfg globals.CertificateConfig, httpPort int) (*fleet, *x509.CertPool) {
+	run := func(t *testing.T, cfg globals.CertificateConfig, httpPort int) (*fleet, string, *x509.CertPool) {
 		resolverAddr := startBind(t, bridge, resolverConf(parentNS), nil)
 		ca := startLivePebble(t, httpPort, resolverAddr)
 		f := &fleet{addrs: addrs, proxies: proxies}
@@ -122,34 +122,29 @@ func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 			})
 			require.NoError(t, err)
 		}
-		for i, p := range proxies {
+		for i := range proxies {
 			eventually(t, fmt.Sprintf("NS %d answers %s itself", i, name), time.Minute, func() bool {
 				return len(resolve(addrs[i], name, dns.TypeA)) > 0
 			})
-			p.reset()
 		}
 		eventually(t, "the resolver answers "+name+" through the delegation", time.Minute, func() bool {
 			return len(resolve(resolverAddr, name, dns.TypeA)) > 0
 		})
-		require.True(t, proxies[0].asked(name, dns.TypeA) || proxies[1].asked(name, dns.TypeA),
-			"the resolver's answer came from tau's dns, not from a cache")
-		return f, ca.roots(t)
+		require.True(t, f.reached(resolverAddr, name, dns.TypeA), "the resolver's answer came from tau's dns, not from a cache")
+		return f, resolverAddr, ca.roots(t)
 	}
 
 	t.Run("dns-01", func(t *testing.T) {
 		// NOTHING SERVES pebble's HTTP-01 port in this run, so only DNS-01 can
 		// prove anything.
-		f, roots := run(t, globals.CertificateConfig{Wildcard: true}, freeLoopbackPort(t))
-		for _, p := range f.proxies {
-			p.reset()
-		}
+		f, resolverAddr, roots := run(t, globals.CertificateConfig{Wildcard: true}, freeLoopbackPort(t))
 		gen := f.sameLeafEverywhere(t, name, roots)
 		require.Equal(t, []string{name}, gen.DNSNames)
-		require.True(t, f.proxies[0].asked("_acme-challenge."+name, dns.TypeTXT) || f.proxies[1].asked("_acme-challenge."+name, dns.TypeTXT),
-			"pebble's DNS-01 lookup reached tau's dns")
+		require.True(t, f.reached(resolverAddr, "_acme-challenge."+name, dns.TypeTXT), "pebble's DNS-01 lookup reached tau's dns")
+		require.True(t, f.reached(resolverAddr, "_acme-challenge."+liveCloud, dns.TypeTXT), "and the wildcard's")
 
 		frontendName := node.BuildFrontend + "." + liveCloud
-		res := handshake(t, f.addrs[2]+":8443", frontendName, roots)
+		res := issued(t, f.addrs[2]+":8443", frontendName, roots)
 		wildcard := res.TLS.PeerCertificates[0]
 		require.Equal(t, []string{"*." + liveCloud}, wildcard.DNSNames)
 		for i, n := range f.nodes[:2] {
@@ -162,10 +157,15 @@ func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 	})
 
 	t.Run("http-01", func(t *testing.T) {
-		f, roots := run(t, globals.CertificateConfig{Challenge: globals.ChallengeHTTP}, freeLoopbackPort(t))
+		f, _, roots := run(t, globals.CertificateConfig{Challenge: globals.ChallengeHTTP}, freeLoopbackPort(t))
 		gen := f.sameLeafEverywhere(t, name, roots)
 		require.Equal(t, []string{name}, gen.DNSNames)
 	})
+}
+
+// reached is whether the client at from asked either dns node this question.
+func (f *fleet) reached(from, name string, qtype uint16) bool {
+	return f.proxies[0].asked(from, name, qtype) || f.proxies[1].asked(from, name, qtype)
 }
 
 // sameLeafEverywhere handshakes with every node's gateway for name, verified
@@ -174,7 +174,7 @@ func (f *fleet) sameLeafEverywhere(t *testing.T, name string, roots *x509.CertPo
 	t.Helper()
 	var leaf *x509.Certificate
 	for i, n := range f.nodes {
-		res := handshake(t, n.SecureAddress(), name, roots)
+		res := issued(t, n.SecureAddress(), name, roots)
 		require.NotEqual(t, http.StatusNotFound, res.StatusCode, "node %d found its route for the name over TLS", i)
 		got := res.TLS.PeerCertificates[0]
 		if leaf == nil {
@@ -184,6 +184,29 @@ func (f *fleet) sameLeafEverywhere(t *testing.T, name string, roots *x509.CertPo
 		require.Equal(t, leaf.Raw, got.Raw, "node %d presents the one leaf the cloud ordered", i)
 	}
 	return leaf
+}
+
+// issued waits for a node to present a certificate for name that verifies to
+// pebble's root: on a fleet the order is placed by whichever globals node owns
+// it, and the others answer once it is stored.
+func issued(t *testing.T, address, name string, roots *x509.CertPool) *http.Response {
+	t.Helper()
+	client := &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: name}}}
+	var res *http.Response
+	eventually(t, name+" is served at "+address, 3*time.Minute, func() bool {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://"+address+"/", nil)
+		require.NoError(t, err)
+		req.Host = name
+		got, err := client.Do(req)
+		if err != nil {
+			return false
+		}
+		io.Copy(io.Discard, got.Body)
+		got.Body.Close()
+		res = got
+		return true
+	})
+	return res
 }
 
 func liveNode(t *testing.T, ca *livePebble, cfg globals.CertificateConfig, addr string, httpPort int) File {
@@ -237,10 +260,14 @@ func (f *forwarder) to(t *testing.T, running *Running) {
 }
 
 func (f *forwarder) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
+	from, _, err := net.SplitHostPort(w.RemoteAddr().String())
+	if err != nil {
+		from = w.RemoteAddr().String()
+	}
 	f.mu.Lock()
 	upstream := f.upstream
 	for _, q := range req.Question {
-		f.seen[strings.ToLower(q.Name)+"/"+dns.TypeToString[q.Qtype]]++
+		f.seen[from+" "+strings.ToLower(q.Name)+"/"+dns.TypeToString[q.Qtype]]++
 	}
 	f.mu.Unlock()
 	if upstream == "" {
@@ -260,16 +287,11 @@ func (f *forwarder) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	w.WriteMsg(res)
 }
 
-func (f *forwarder) asked(name string, qtype uint16) bool {
+// asked is whether the client at from asked this question.
+func (f *forwarder) asked(from, name string, qtype uint16) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.seen[strings.ToLower(dns.Fqdn(name))+"/"+dns.TypeToString[qtype]] > 0
-}
-
-func (f *forwarder) reset() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.seen = map[string]int{}
+	return f.seen[from+" "+strings.ToLower(dns.Fqdn(name))+"/"+dns.TypeToString[qtype]] > 0
 }
 
 const parentConf = `options {
