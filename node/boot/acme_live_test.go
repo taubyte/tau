@@ -21,6 +21,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -44,11 +46,17 @@ import (
 // in its own container, and it resolves through a bind9 recursive resolver
 // that finds the cloud's zone by real delegation — a bind9 parent for
 // example.test holding NS and glue for tau.example.test that point at the
-// node's own dns listener. A delegation names port 53 and bind9 answers only
-// on an address an interface holds, so the two bind9s sit on a bridge of
-// their own, the node's dns listens on that bridge's gateway — which needs
-// root: make test-acme-live — and pebble is host-networked, reaching the
-// gateway's HTTP-01 port on loopback.
+// fleet's two dns nodes.
+//
+// A delegation names port 53 and bind9 answers only on an address an
+// interface holds, so every node takes the gateway address of a bridge of its
+// own — that is what discovery hands out in A records — and the bind9s sit on
+// the first. Binding port 53 needs root: make test-acme-live. pebble is
+// host-networked and reaches every node directly.
+//
+// In front of each dns node's listener is a forwarder on <address>:53 that
+// records what it was asked, which is how the test knows a lookup reached
+// tau and was not answered from a cache.
 
 const (
 	pebbleImage = "ghcr.io/letsencrypt/pebble:2.10.0"
@@ -58,80 +66,211 @@ const (
 	liveCloud  = "tau." + liveParent
 )
 
+// fleet is three nodes: two run globals and dns and are the zone's NS, and a
+// third runs only a gateway and the build frontend, and issues nothing.
+type fleet struct {
+	addrs   [3]string
+	nodes   []*Running
+	proxies [2]*forwarder
+}
+
 func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 	sweepLive(t)
-	bridge, cloudNS := liveNetwork(t)
-	gatewayHTTP := freeLoopbackPort(t)
-	parentNS := startBind(t, bridge, parentConf, map[string]string{"example.test.zone": parentZone(cloudNS)})
-	resolverAddr := startBind(t, bridge, resolverConf(parentNS), nil)
-	ca := startLivePebble(t, gatewayHTTP, resolverAddr)
-	roots := ca.roots(t)
-
+	var addrs [3]string
+	var bridge string
+	for i := range addrs {
+		name, gw := liveNetwork(t, i)
+		if i == 0 {
+			bridge = name
+		}
+		addrs[i] = gw
+	}
+	parentNS := startBind(t, bridge, parentConf, map[string]string{"example.test.zone": parentZone(addrs[0], addrs[1])})
 	compiled, hosts, name := fixtureWithHosts(t, liveCloud)
-	publish := func(running *Running) {
-		_, err := running.Node.Register().Local().Publish(t.Context(), register.Publication{
-			Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled, Hosts: hosts,
-		})
-		require.NoError(t, err)
+	proxies := [2]*forwarder{listenForwarder(t, addrs[0]), listenForwarder(t, addrs[1])}
+
+	// EACH RUN HAS ITS OWN RESOLVER AND ITS OWN CA, so nothing either learned
+	// in an earlier run answers for this one.
+	run := func(t *testing.T, cfg globals.CertificateConfig, httpPort int) (*fleet, *x509.CertPool) {
+		resolverAddr := startBind(t, bridge, resolverConf(parentNS), nil)
+		ca := startLivePebble(t, httpPort, resolverAddr)
+		f := &fleet{addrs: addrs, proxies: proxies}
+		for i, addr := range addrs {
+			file := liveNode(t, ca, cfg, addr, httpPort)
+			if i < 2 {
+				file.Node.Services = []string{node.Register, node.Discovery, node.Gateway, node.DNS, node.Secrets, node.Globals}
+				file.Node.DNSListen = "127.0.0.1:0"
+			} else {
+				file.Node.Services = []string{node.Register, node.Discovery, node.Gateway, node.BuildFrontend}
+				file.Node.BuildFrontend = frontend.Config{Listen: addr + ":8443"}
+			}
+			if i > 0 {
+				h := f.nodes[0].Host()
+				for _, a := range h.Addrs() {
+					file.Bootstrap = append(file.Bootstrap, a.String()+"/p2p/"+h.ID().String())
+				}
+			}
+			running, err := Start(t.Context(), file)
+			require.NoError(t, err)
+			t.Cleanup(func() { running.Close() })
+			f.nodes = append(f.nodes, running)
+			if i < 2 {
+				proxies[i].to(t, running)
+			}
+			_, err = running.Node.Register().Local().Publish(t.Context(), register.Publication{
+				Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled, Hosts: hosts,
+			})
+			require.NoError(t, err)
+		}
+		for i, p := range proxies {
+			eventually(t, fmt.Sprintf("NS %d answers %s itself", i, name), time.Minute, func() bool {
+				return len(resolve(addrs[i], name, dns.TypeA)) > 0
+			})
+			p.reset()
+		}
 		eventually(t, "the resolver answers "+name+" through the delegation", time.Minute, func() bool {
 			return len(resolve(resolverAddr, name, dns.TypeA)) > 0
 		})
+		require.True(t, proxies[0].asked(name, dns.TypeA) || proxies[1].asked(name, dns.TypeA),
+			"the resolver's answer came from tau's dns, not from a cache")
+		return f, ca.roots(t)
 	}
 
 	t.Run("dns-01", func(t *testing.T) {
 		// NOTHING SERVES pebble's HTTP-01 port in this run, so only DNS-01 can
 		// prove anything.
-		frontendAddr := fmt.Sprintf("127.0.0.1:%d", freeLoopbackPort(t))
-		f := liveNode(t, ca, cloudNS, globals.CertificateConfig{Wildcard: true}, fmt.Sprintf("127.0.0.1:%d", freeLoopbackPort(t)))
-		f.Node.Services = append(f.Node.Services, node.BuildFrontend)
-		f.Node.BuildFrontend = frontend.Config{Listen: frontendAddr}
-		running, err := Start(t.Context(), f)
-		require.NoError(t, err)
-		defer running.Close()
-		publish(running)
+		f, roots := run(t, globals.CertificateConfig{Wildcard: true}, freeLoopbackPort(t))
+		for _, p := range f.proxies {
+			p.reset()
+		}
+		gen := f.sameLeafEverywhere(t, name, roots)
+		require.Equal(t, []string{name}, gen.DNSNames)
+		require.True(t, f.proxies[0].asked("_acme-challenge."+name, dns.TypeTXT) || f.proxies[1].asked("_acme-challenge."+name, dns.TypeTXT),
+			"pebble's DNS-01 lookup reached tau's dns")
 
-		res := handshake(t, running.SecureAddress(), name, roots)
-		require.Equal(t, []string{name}, res.TLS.PeerCertificates[0].DNSNames)
-		require.NotEqual(t, http.StatusNotFound, res.StatusCode, "the gateway found its route for the name over TLS")
-
-		res = handshake(t, frontendAddr, node.BuildFrontend+"."+liveCloud, roots)
-		require.Equal(t, []string{"*." + liveCloud}, res.TLS.PeerCertificates[0].DNSNames)
+		frontendName := node.BuildFrontend + "." + liveCloud
+		res := handshake(t, f.addrs[2]+":8443", frontendName, roots)
+		wildcard := res.TLS.PeerCertificates[0]
+		require.Equal(t, []string{"*." + liveCloud}, wildcard.DNSNames)
+		for i, n := range f.nodes[:2] {
+			secure, err := n.Node.ServiceTLS()
+			require.NoError(t, err)
+			cert, err := secure.GetCertificate(&tls.ClientHelloInfo{ServerName: frontendName})
+			require.NoError(t, err, "node %d", i)
+			require.Equal(t, wildcard.Raw, cert.Certificate[0], "node %d holds the one wildcard the cloud ordered", i)
+		}
 	})
 
 	t.Run("http-01", func(t *testing.T) {
-		running, err := Start(t.Context(), liveNode(t, ca, cloudNS, globals.CertificateConfig{Challenge: globals.ChallengeHTTP}, fmt.Sprintf("127.0.0.1:%d", gatewayHTTP)))
-		require.NoError(t, err)
-		defer running.Close()
-		publish(running)
-
-		res := handshake(t, running.SecureAddress(), name, roots)
-		require.Equal(t, []string{name}, res.TLS.PeerCertificates[0].DNSNames)
-		require.NotEqual(t, http.StatusNotFound, res.StatusCode)
+		f, roots := run(t, globals.CertificateConfig{Challenge: globals.ChallengeHTTP}, freeLoopbackPort(t))
+		gen := f.sameLeafEverywhere(t, name, roots)
+		require.Equal(t, []string{name}, gen.DNSNames)
 	})
 }
 
-func liveNode(t *testing.T, ca *livePebble, cloudNS string, cfg globals.CertificateConfig, httpAddr string) File {
+// sameLeafEverywhere handshakes with every node's gateway for name, verified
+// to pebble's root, and requires one leaf among them.
+func (f *fleet) sameLeafEverywhere(t *testing.T, name string, roots *x509.CertPool) *x509.Certificate {
+	t.Helper()
+	var leaf *x509.Certificate
+	for i, n := range f.nodes {
+		res := handshake(t, n.SecureAddress(), name, roots)
+		require.NotEqual(t, http.StatusNotFound, res.StatusCode, "node %d found its route for the name over TLS", i)
+		got := res.TLS.PeerCertificates[0]
+		if leaf == nil {
+			leaf = got
+			continue
+		}
+		require.Equal(t, leaf.Raw, got.Raw, "node %d presents the one leaf the cloud ordered", i)
+	}
+	return leaf
+}
+
+func liveNode(t *testing.T, ca *livePebble, cfg globals.CertificateConfig, addr string, httpPort int) File {
 	t.Helper()
 	minted, err := identity("")
 	require.NoError(t, err)
 	cfg.ACME = certificate.ACME{Enabled: true, Directory: ca.directory, Email: "ops@example.test", RootCA: ca.serverCA}
 	return File{
 		Node: node.Config{
-			Services:  []string{node.Register, node.Discovery, node.Gateway, node.DNS, node.Secrets, node.Globals},
-			DNSListen: cloudNS + ":53",
-			Gateway:   gateway.Config{CloudFqdn: liveCloud},
-			Globals:   globals.Config{Certificate: cfg},
+			Gateway: gateway.Config{CloudFqdn: liveCloud},
+			Globals: globals.Config{Certificate: cfg},
 		},
 		Root:       t.TempDir(),
 		PrivateKey: base64.StdEncoding.EncodeToString(minted),
-		Listen:     []string{"/ip4/127.0.0.1/tcp/0"},
+		Listen:     []string{"/ip4/" + addr + "/tcp/0"},
 		SwarmKey:   base64.StdEncoding.EncodeToString(swarmKey()),
-		HTTP:       httpAddr,
-		HTTPS:      "127.0.0.1:0",
+		HTTP:       fmt.Sprintf("%s:%d", addr, httpPort),
+		HTTPS:      addr + ":0",
 	}
 }
 
 // ─────────────────────────────── dns ───────────────────────────────
+
+// forwarder is a dns node's address as the parent's glue names it. It passes
+// every query to the node's own listener and records the question.
+type forwarder struct {
+	mu       sync.Mutex
+	upstream string
+	seen     map[string]int
+}
+
+func listenForwarder(t *testing.T, addr string) *forwarder {
+	t.Helper()
+	f := &forwarder{seen: map[string]int{}}
+	for _, network := range []string{"udp", "tcp"} {
+		s := &dns.Server{Addr: addr + ":53", Net: network, Handler: f}
+		started := make(chan error, 1)
+		s.NotifyStartedFunc = func() { started <- nil }
+		go func() { started <- s.ListenAndServe() }()
+		require.NoError(t, <-started, "listening on %s/%s", addr, network)
+		t.Cleanup(func() { s.Shutdown() })
+	}
+	return f
+}
+
+// to points the forwarder at a node's dns, over tcp.
+func (f *forwarder) to(t *testing.T, running *Running) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.upstream = dnsOf(t, running)
+}
+
+func (f *forwarder) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
+	f.mu.Lock()
+	upstream := f.upstream
+	for _, q := range req.Question {
+		f.seen[strings.ToLower(q.Name)+"/"+dns.TypeToString[q.Qtype]]++
+	}
+	f.mu.Unlock()
+	if upstream == "" {
+		m := new(dns.Msg)
+		m.SetRcode(req, dns.RcodeServerFailure)
+		w.WriteMsg(m)
+		return
+	}
+	c := &dns.Client{Net: "tcp", Timeout: 5 * time.Second}
+	res, _, err := c.Exchange(req, upstream)
+	if err != nil {
+		m := new(dns.Msg)
+		m.SetRcode(req, dns.RcodeServerFailure)
+		w.WriteMsg(m)
+		return
+	}
+	w.WriteMsg(res)
+}
+
+func (f *forwarder) asked(name string, qtype uint16) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.seen[strings.ToLower(dns.Fqdn(name))+"/"+dns.TypeToString[qtype]] > 0
+}
+
+func (f *forwarder) reset() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.seen = map[string]int{}
+}
 
 const parentConf = `options {
 	directory "/var/cache/bind";
@@ -144,13 +283,14 @@ controls { };
 zone "` + liveParent + `" { type primary; file "/conf/example.test.zone"; };
 `
 
-func parentZone(cloudNS string) string {
+func parentZone(ns1, ns2 string) string {
 	return `$TTL 60
-@	IN SOA	ns.` + liveParent + `. hostmaster.` + liveParent + `. 1 60 60 600 60
-@	IN NS	ns.` + liveParent + `.
-ns	IN A	127.0.0.1
+@	IN SOA	ns1.tau.` + liveParent + `. hostmaster.` + liveParent + `. 1 60 60 600 60
+@	IN NS	ns1.tau.` + liveParent + `.
 tau	IN NS	ns1.tau.` + liveParent + `.
-ns1.tau	IN A	` + cloudNS + `
+tau	IN NS	ns2.tau.` + liveParent + `.
+ns1.tau	IN A	` + ns1 + `
+ns2.tau	IN A	` + ns2 + `
 `
 }
 
@@ -330,12 +470,12 @@ func startLive(t *testing.T, cfg *core.ContainerConfig) core.ContainerID {
 
 // liveNetwork is a bridge of this run's own, and the gateway address the host
 // holds on it.
-func liveNetwork(t *testing.T) (string, string) {
+func liveNetwork(t *testing.T, n int) (string, string) {
 	t.Helper()
 	cli, err := client.New(client.FromEnv)
 	require.NoError(t, err)
 	defer cli.Close()
-	name := fmt.Sprintf("tau-acme-live-%d", os.Getpid())
+	name := fmt.Sprintf("tau-acme-live-%d-%d", os.Getpid(), n)
 	created, err := cli.NetworkCreate(t.Context(), name, client.NetworkCreateOptions{
 		Driver: "bridge",
 		Labels: map[string]string{liveOwner: fmt.Sprint(os.Getpid())},
