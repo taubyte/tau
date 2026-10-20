@@ -94,11 +94,11 @@ AS_ROOT := $(CURDIR)/scripts/as-root
 
 # test-acme issues real certificates from pebble, Let's Encrypt's test CA, run
 # in process: the issuer against it by HTTP-01 and DNS-01, the certificate
-# service issuing a service's name, a generated name and the zone's wildcard
+# globals service issuing a service's name, a generated name and the zone's wildcard
 # once for its nodes, and a node's https listeners presenting what it issued.
 # It needs nothing installed, so make test runs it too.
 test-acme:
-	go test -count=1 -v -timeout 10m ./pkg/certificate/acme/ ./services/certificate/ && go test -count=1 -v -timeout 10m -run '^(TestAGeneratedNameIsIssuedByACMEAndServedOverTLS|TestTheZoneIsProvedByDNS01AndItsWildcardAnswersEveryService)$$' ./node/boot/
+	go test -count=1 -v -timeout 10m ./pkg/certificate/acme/ ./services/globals/ && go test -count=1 -v -timeout 10m -run '^(TestAGeneratedNameIsIssuedByACMEAndServedOverTLS|TestTheZoneIsProvedByDNS01AndItsWildcardAnswersEveryService)$$' ./node/boot/
 
 test-application:
 	go test -exec $(AS_ROOT) -tags 'dreaming docker_integration' -count=1 -v -timeout 10m -run '^(TestAnApplicationAnswersThroughTheGateway|TestAContainerWorkerRunsToCompletionPerInvocation|TestAChannelServedByAContainerDeliversToItsNamedPort)$$' ./node/dream/

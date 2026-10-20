@@ -1,14 +1,5 @@
-// Package certificate issues and keeps the certificates a cloud serves TLS
-// with, for every node that serves it.
-//
-// # Why it is its own service
-//
-// The dns service owns the zone and the gateway owns port 80, and each is the
-// answering half of one challenge type; neither is where an order should live.
-// The dns service holds no state and binds :53 on a few nodes, and the gateway
-// runs on every edge node, so issuing there was one issuance per node per name.
-// Here one node orders a name, the result is kept where every certificate node
-// reads it, and a node serving TLS asks for it.
+// The certificate half of the globals service. See doc.go for the service,
+// and the notes here for how a certificate is issued once for the cloud.
 //
 // # What is kept, and where
 //
@@ -24,27 +15,35 @@
 // The node that orders a name is chosen by rendezvous hashing over the nodes
 // reporting this service, so every node with the same view picks the same one
 // and a renewal loop on each touches only its own names. Views can disagree —
-// a node joining, one falling out of the window — so the order is also taken
-// under a lease: the issuer writes /lease/<name>/<its id> and reads the
-// prefix back, and of the live leases the earliest, then the lowest peer id,
-// is the one that orders. kvdb has no conditional write, so this narrows
-// duplicates to two nodes that wrote within one replication delay of each
-// other; it cannot rule them out. A duplicate order costs the CA one more
-// certificate and nothing else, because both are kept and the newest is read.
+// a node joining, one falling out of the window, two regions split — so the
+// order is also taken under a lease: the issuer writes /lease/<name>/<its id>
+// and reads the prefix back, and of the live leases the earliest, then the
+// lowest peer id, is the one that orders; having won, it reads the stored
+// certificate once more before ordering, so a name another node has just
+// renewed is not ordered again.
+//
+// THIS IS NOT A STRICT SINGLE ISSUER. kvdb has no conditional write and this
+// service runs no consensus, so two nodes that cannot see each other's lease —
+// a partition, or a write inside one replication delay — can both order. A
+// duplicate order costs the CA one more certificate and nothing else: both
+// are kept and the newest is read. Strict exclusion across regions is not
+// provided here.
 //
 // # The challenges
 //
 // A name in the cloud's zone, and the zone's wildcard, are proved by DNS-01
-// unless the operator says the zone is served elsewhere (Config.Challenge):
-// the TXT value is written to /challenge/<fqdn>/<digest> and a dns node asks
-// every certificate node for it, so the node that wrote it always answers
-// from its own store with no replication to wait for. HTTP-01 is answered by
-// any gateway from the account's thumbprint alone.
+// unless the operator says the zone is served elsewhere (Challenge). A DNS-01
+// value is short-lived, so it is not a record: it is a pkg/cache entry with a
+// lifetime of ChallengeTTL, over the challenge store the node gives
+// (WithChallenges) — the same replicated cache a workload's cache resource is
+// — so it expires on its own, and any node holding that store answers it.
+// HTTP-01 is answered by any gateway from the account's thumbprint alone and
+// stores nothing.
 //
-// The account key is shared: every certificate node adopts the same one. A
-// node finding none mints its own under its own name and then adopts the
+// The account key is shared: every globals node adopts the same one. A node
+// finding none mints its own under its own name and then adopts the
 // lowest-named key in the vault, so concurrent mints converge on one.
-package certificate
+package globals
 
 import (
 	"context"
@@ -60,20 +59,13 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/rpc"
+	pkgcache "github.com/taubyte/tau/pkg/cache"
 	pkgcertificate "github.com/taubyte/tau/pkg/certificate"
 	"github.com/taubyte/tau/pkg/certificate/acme"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/certificate/v2/certificatev2connect"
 )
-
-// Name is the service's name, in a node's service list and in discovery.
-const Name = "certificate"
-
-// Protocol is the libp2p protocol the service answers on.
-var Protocol protocol.ID = rpc.Protocol(certificatev2connect.CertificateServiceName)
 
 // VaultProject and VaultEnvironment scope the keys this service keeps in the
 // secrets service. A project name cannot start with "@", so no project's
@@ -96,18 +88,25 @@ const (
 )
 
 var (
-	ErrNoHost   = errors.New("certificate: a service needs a host")
-	ErrNoDB     = errors.New("certificate: a service needs a database")
-	ErrNoVault  = errors.New("certificate: keys are kept in the secrets service, and this node reaches none")
-	ErrNoZone   = errors.New("certificate: issuance needs the cloud's zone")
-	ErrNotZone  = errors.New("certificate: only names in the cloud's zone are issued")
-	ErrNotKept  = errors.New("certificate: nothing is kept for that name")
-	ErrIssuing  = errors.New("certificate: another node holds the lease on that name")
-	ErrDisabled = acme.ErrDisabled
+	ErrNoHost       = errors.New("globals: a service needs a host")
+	ErrNoDB         = errors.New("globals: a service needs a database")
+	ErrNoVault      = errors.New("globals: keys are kept in the secrets service, and this node reaches none")
+	ErrNoChallenges = errors.New("globals: DNS-01 needs a store to hold its values in")
+	ErrNoZone       = errors.New("globals: issuance needs the cloud's zone")
+	ErrNotZone      = errors.New("globals: only names in the cloud's zone are issued")
+	ErrNotKept      = errors.New("globals: nothing is kept for that name")
+	ErrIssuing      = errors.New("globals: another node holds the lease on that name")
+	ErrDisabled     = acme.ErrDisabled
 )
 
-// Config is what an operator writes under the node's `certificate:`.
+// Config is what an operator writes under the node's `globals:`.
 type Config struct {
+	// Certificate is how the cloud issues its TLS certificates.
+	Certificate CertificateConfig `yaml:"certificate"`
+}
+
+// CertificateConfig is the ACME CA and what is issued from it.
+type CertificateConfig struct {
 	// ACME is the CA issued from: Let's Encrypt unless a directory is named,
 	// with an external account binding when the CA wants one.
 	ACME pkgcertificate.ACME `yaml:"acme"`
@@ -134,6 +133,9 @@ type Config struct {
 	Lease time.Duration `yaml:"lease"`
 }
 
+// ChallengeTTL is how long a DNS-01 value lives unless withdrawn first.
+const ChallengeTTL = 10 * time.Minute
+
 // Vault is the slice of the secrets service the keys are kept in.
 type Vault interface {
 	Get(ctx context.Context, project, environment, name string) ([]byte, error)
@@ -146,6 +148,10 @@ type Option func(*Service)
 
 // WithVault is where keys are kept. Required to issue.
 func WithVault(v Vault) Option { return func(s *Service) { s.vault = v } }
+
+// WithChallenges is where DNS-01 values are held: a replicated store every
+// dns node also reads (ChallengesIn). Required for DNS-01.
+func WithChallenges(st pkgcache.Store) Option { return func(s *Service) { s.chStore = st } }
 
 // WithPeers is the nodes reporting this service, asked at call time.
 func WithPeers(f func() []peer.ID) Option { return func(s *Service) { s.peers = f } }
@@ -162,14 +168,16 @@ func WithLogger(logf func(string, ...any)) Option { return func(s *Service) { s.
 
 // Service issues, keeps and renews certificates.
 type Service struct {
-	cfg   Config
-	host  host.Host
-	db    kvdb.KVDB
-	vault Vault
-	peers func() []peer.ID
-	names func() []string
-	now   func() time.Time
-	logf  func(string, ...any)
+	cfg        CertificateConfig
+	challenges *Challenges
+	chStore    pkgcache.Store
+	host       host.Host
+	db         kvdb.KVDB
+	vault      Vault
+	peers      func() []peer.ID
+	names      func() []string
+	now        func() time.Time
+	logf       func(string, ...any)
 
 	issuerMu sync.Mutex
 	issuer   *acme.Issuer
@@ -180,7 +188,8 @@ type Service struct {
 }
 
 // New builds a service. It reaches no CA and no vault until it issues.
-func New(h host.Host, db kvdb.KVDB, cfg Config, opts ...Option) (*Service, error) {
+func New(h host.Host, db kvdb.KVDB, whole Config, opts ...Option) (*Service, error) {
+	cfg := whole.Certificate
 	switch {
 	case h == nil:
 		return nil, ErrNoHost
@@ -188,7 +197,7 @@ func New(h host.Host, db kvdb.KVDB, cfg Config, opts ...Option) (*Service, error
 		return nil, ErrNoDB
 	}
 	if err := acme.Check(cfg.ACME); err != nil {
-		return nil, fmt.Errorf("certificate: %w", err)
+		return nil, fmt.Errorf("globals: %w", err)
 	}
 	cfg.Zone = strings.ToLower(strings.Trim(cfg.Zone, "."))
 	if cfg.Zone == "" {
@@ -200,10 +209,10 @@ func New(h host.Host, db kvdb.KVDB, cfg Config, opts ...Option) (*Service, error
 	case ChallengeDNS:
 	case ChallengeHTTP:
 		if cfg.Wildcard {
-			return nil, errors.New("certificate: a wildcard is proved by dns-01 only")
+			return nil, errors.New("globals: a wildcard is proved by dns-01 only")
 		}
 	default:
-		return nil, fmt.Errorf("certificate: challenge %q is neither %s nor %s", cfg.Challenge, ChallengeDNS, ChallengeHTTP)
+		return nil, fmt.Errorf("globals: challenge %q is neither %s nor %s", cfg.Challenge, ChallengeDNS, ChallengeHTTP)
 	}
 	if cfg.RenewEvery <= 0 {
 		cfg.RenewEvery = DefaultRenewEvery
@@ -220,6 +229,16 @@ func New(h host.Host, db kvdb.KVDB, cfg Config, opts ...Option) (*Service, error
 	}
 	for _, opt := range opts {
 		opt(s)
+	}
+	if cfg.Challenge == ChallengeDNS {
+		if s.chStore == nil {
+			return nil, ErrNoChallenges
+		}
+		c, err := ChallengesIn(context.Background(), s.chStore, s.now)
+		if err != nil {
+			return nil, err
+		}
+		s.challenges = c
 	}
 	return s, nil
 }
@@ -321,7 +340,7 @@ func (s *Service) acmeIssuer(ctx context.Context) (*acme.Issuer, error) {
 		acme.WithLogger(s.logf),
 	}
 	if s.cfg.Challenge == ChallengeDNS {
-		opts = append(opts, acme.WithDNS(s.cfg.Zone, presenter{s}))
+		opts = append(opts, acme.WithDNS(s.cfg.Zone, s.challenges))
 	}
 	issuer, err := acme.New(s.cfg.ACME, "", opts...)
 	if err != nil {
@@ -343,7 +362,7 @@ func (s *Service) accountKey(ctx context.Context) (crypto.Signer, error) {
 	adopt := func() (crypto.Signer, bool, error) {
 		names, err := s.vault.List(ctx, VaultProject, VaultEnvironment)
 		if err != nil {
-			return nil, false, fmt.Errorf("certificate: listing account keys: %w", err)
+			return nil, false, fmt.Errorf("globals: listing account keys: %w", err)
 		}
 		var keys []string
 		for _, n := range names {
@@ -357,7 +376,7 @@ func (s *Service) accountKey(ctx context.Context) (crypto.Signer, error) {
 		slices.Sort(keys)
 		blob, err := s.vault.Get(ctx, VaultProject, VaultEnvironment, keys[0])
 		if err != nil {
-			return nil, false, fmt.Errorf("certificate: reading the account key: %w", err)
+			return nil, false, fmt.Errorf("globals: reading the account key: %w", err)
 		}
 		key, err := acme.ParseKey(blob)
 		return key, err == nil, err
@@ -370,11 +389,11 @@ func (s *Service) accountKey(ctx context.Context) (crypto.Signer, error) {
 		return nil, err
 	}
 	if err := s.vault.Set(ctx, VaultProject, VaultEnvironment, prefix+s.host.ID().String(), blob); err != nil {
-		return nil, fmt.Errorf("certificate: keeping the account key: %w", err)
+		return nil, fmt.Errorf("globals: keeping the account key: %w", err)
 	}
 	key, ok, err := adopt()
 	if err == nil && !ok {
-		err = errors.New("certificate: the account key just kept is not listed")
+		err = errors.New("globals: the account key just kept is not listed")
 	}
 	return key, err
 }
@@ -423,13 +442,18 @@ func (s *Service) Ensure(ctx context.Context, name string) (*kept, error) {
 		return nil, fmt.Errorf("%w: %s", ErrIssuing, name)
 	}
 	defer s.release(name)
+	// READ AGAIN HAVING WON: a node that held the lease a moment ago may have
+	// stored a fresh one since this node's first look.
+	if again, err := s.newest(ctx, name); err == nil && !s.due(again) {
+		return again, nil
+	}
 	issuer, err := s.acmeIssuer(ctx)
 	if err != nil {
 		return have, err
 	}
 	if _, err := issuer.Issue(name); err != nil {
 		if have != nil {
-			s.logf("certificate: renewing %s: %v", name, err)
+			s.logf("globals: renewing %s: %v", name, err)
 			return have, nil
 		}
 		return nil, err
@@ -462,7 +486,7 @@ func (s *Service) renewPass(ctx context.Context) {
 			continue
 		}
 		if _, err := s.Ensure(ctx, name); err != nil && !errors.Is(err, ErrIssuing) {
-			s.logf("certificate: keeping %s issued: %v", name, err)
+			s.logf("globals: keeping %s issued: %v", name, err)
 		}
 	}
 }
@@ -484,7 +508,7 @@ func (s *Service) wanted(ctx context.Context) []string {
 	}
 	kept, err := s.keptNames(ctx)
 	if err != nil {
-		s.logf("certificate: listing kept certificates: %v", err)
+		s.logf("globals: listing kept certificates: %v", err)
 	}
 	for _, n := range kept {
 		add(n)

@@ -45,6 +45,7 @@ import (
 	"sync"
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/node/admit"
 	"github.com/taubyte/tau/node/cache"
 	"github.com/taubyte/tau/node/model"
@@ -66,11 +67,11 @@ import (
 
 	"github.com/taubyte/tau/node/placement"
 	authService "github.com/taubyte/tau/services/auth"
-	certificateService "github.com/taubyte/tau/services/certificate"
 	databaseService "github.com/taubyte/tau/services/database"
 	"github.com/taubyte/tau/services/discovery"
 	dnsService "github.com/taubyte/tau/services/dns"
 	gateway "github.com/taubyte/tau/services/gateway"
+	globalsService "github.com/taubyte/tau/services/globals"
 	primitivesService "github.com/taubyte/tau/services/primitives"
 	v2proxy "github.com/taubyte/tau/services/proxy"
 	registerService "github.com/taubyte/tau/services/register"
@@ -92,11 +93,12 @@ type Node struct {
 
 	secrets *secretsService.Service
 
-	// certificate issues the cloud's certificates when this node runs it, and
-	// certs is the client every public listener here takes them from. Both
-	// nil in a cloud that issues none.
-	certificate *certificateService.Service
-	certs       *certificateService.Client
+	// globals holds the cloud's certificates when this node runs it, certs is
+	// the client every public listener here takes them from, and challengeDB
+	// is where DNS-01 values are held. All nil in a cloud that issues none.
+	globals     *globalsService.Service
+	certs       *globalsService.Client
+	challengeDB kvdb.KVDB
 
 	// database is the service that owns this project's engines, when this node
 	// runs it. A node that does not runs no database of its own — it reaches
@@ -250,7 +252,7 @@ func (n *Node) open() error {
 		return err
 	}
 	// AFTER THE SECRETS SERVICE, which keeps its keys.
-	if err := n.openCertificate(); err != nil {
+	if err := n.openGlobals(); err != nil {
 		return err
 	}
 	// BEFORE THE WORKER, for the reason the vault is: the wasm tier takes its kv
@@ -784,7 +786,7 @@ func (n *Node) openGateway() error {
 	}
 
 	// A GENERATED NAME THE WILDCARD DOES NOT COVER is issued by the
-	// cloud's certificate nodes, once for the cloud; see certificate.go.
+	// cloud's globals nodes, once for the cloud; see globals.go.
 	certs, err := n.certificates()
 	if err != nil {
 		return fmt.Errorf("node: gateway: %w", err)
@@ -849,8 +851,8 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.secrets != nil {
 		order = append(order, n.secrets)
 	}
-	if n.certificate != nil {
-		order = append(order, n.certificate)
+	if n.globals != nil {
+		order = append(order, n.globals)
 	}
 	// THE DATABASE BEFORE THE WORKER THAT READS THROUGH IT. It was in neither
 	// this list nor any other, which is two failures at once: its listener was

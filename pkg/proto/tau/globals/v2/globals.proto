@@ -1,14 +1,15 @@
 syntax = "proto3";
 
-// The certificate service's surface between tau nodes, over p2p/rpc.
+// The globals service's surface between tau nodes, over p2p/rpc: what the
+// cloud holds once for every region. Certificates are the first of it.
 //
-// A certificate node issues from an ACME CA and keeps what it issued: the
+// A globals node issues from an ACME CA and keeps what it issued: the
 // chain in its own database, the private key in the secrets service. A node
 // serving TLS asks one for a name's chain and the secret holding its key, and
 // opens the key from the vault itself. A dns node asks for the DNS-01 answers
 // of a name, and a gateway for the account's thumbprint, which is all an
 // HTTP-01 answer needs.
-package tau.certificate.v2;
+package tau.globals.v2;
 
 service CertificateService {
   // Certificate is the newest certificate kept for a name. With issue set, a

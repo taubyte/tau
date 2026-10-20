@@ -1,4 +1,4 @@
-package certificate
+package globals
 
 import (
 	"context"
@@ -27,17 +27,18 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/core/kvdb"
+	pkgcache "github.com/taubyte/tau/pkg/cache"
 	pkgcertificate "github.com/taubyte/tau/pkg/certificate"
 	"github.com/taubyte/tau/pkg/certificate/acme"
 	kvdbmock "github.com/taubyte/tau/pkg/kvdb/mock"
-	certificatev2 "github.com/taubyte/tau/pkg/proto/gen/tau/certificate/v2"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/certificate/v2/certificatev2connect"
+	globalsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/globals/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/globals/v2/globalsv2connect"
 )
 
 const zone = "tau.example.io"
 
 // The CA is pebble, in process. Its resolver answers `_acme-challenge` TXT
-// lookups by asking the certificate nodes through a Client, which is exactly
+// lookups by asking the globals nodes through a Client, which is exactly
 // what a dns node does; it has no HTTP-01 port to reach, so every name here
 // is proved by DNS-01.
 
@@ -90,6 +91,7 @@ type fleet struct {
 	db      kvdb.KVDB
 	vault   *vault
 	cfg     Config
+	chStore *pkgcache.MemStore
 	nodes   []*Service
 	ca      *ca.CAImpl
 	pebble  *httptest.Server
@@ -125,7 +127,7 @@ func newHost(t *testing.T, mn mocknet.Mocknet) host.Host {
 	return h
 }
 
-// newFleet starts pebble and n certificate nodes over one database and one
+// newFleet starts pebble and n globals nodes over one database and one
 // vault, which is what replication converges them to.
 func newFleet(t *testing.T, n int, wildcard bool) *fleet {
 	t.Helper()
@@ -167,7 +169,8 @@ func newFleet(t *testing.T, n int, wildcard bool) *fleet {
 	f.pebble = httptest.NewTLSServer(front.Handler())
 	t.Cleanup(f.pebble.Close)
 
-	f.cfg = Config{
+	f.chStore = pkgcache.NewMemStore()
+	f.cfg = Config{Certificate: CertificateConfig{
 		ACME: pkgcertificate.ACME{
 			Enabled:   true,
 			Directory: f.pebble.URL + "/dir",
@@ -176,7 +179,7 @@ func newFleet(t *testing.T, n int, wildcard bool) *fleet {
 		Wildcard:   wildcard,
 		Zone:       zone + ".",
 		RenewEvery: time.Hour,
-	}
+	}}
 	for range n {
 		f.add(t)
 	}
@@ -189,7 +192,7 @@ func (f *fleet) add(t *testing.T, opts ...Option) *Service {
 	t.Helper()
 	h := newHost(t, f.mn)
 	s, err := New(h, f.db, f.cfg, append([]Option{
-		WithVault(f.vault), WithPeers(f.members), WithClock(f.clock),
+		WithVault(f.vault), WithPeers(f.members), WithClock(f.clock), WithChallenges(f.chStore),
 		WithLogger(t.Logf),
 	}, opts...)...)
 	require.NoError(t, err)
@@ -361,29 +364,33 @@ func TestWhatIsRefused(t *testing.T) {
 	h := newHost(t, mn)
 	database, err := kvdbmock.New().New(nil, "c", 0)
 	require.NoError(t, err)
-	on := Config{ACME: pkgcertificate.ACME{Enabled: true}, Zone: zone}
+	cfg := func(c CertificateConfig) Config { return Config{Certificate: c} }
+	mem := WithChallenges(pkgcache.NewMemStore())
+	on := cfg(CertificateConfig{ACME: pkgcertificate.ACME{Enabled: true}, Zone: zone})
 
 	_, err = New(nil, database, on)
 	require.ErrorIs(t, err, ErrNoHost)
 	_, err = New(h, nil, on)
 	require.ErrorIs(t, err, ErrNoDB)
-	_, err = New(h, database, Config{Zone: zone})
+	_, err = New(h, database, on)
+	require.ErrorIs(t, err, ErrNoChallenges, "DNS-01 needs somewhere to hold its values")
+	_, err = New(h, database, cfg(CertificateConfig{Zone: zone}))
 	require.ErrorIs(t, err, ErrDisabled)
-	_, err = New(h, database, Config{ACME: on.ACME})
+	_, err = New(h, database, cfg(CertificateConfig{ACME: on.Certificate.ACME}))
 	require.ErrorIs(t, err, ErrNoZone)
 
-	_, err = New(h, database, Config{ACME: on.ACME, Zone: zone, Challenge: "tls-alpn-01"})
+	_, err = New(h, database, cfg(CertificateConfig{ACME: on.Certificate.ACME, Zone: zone, Challenge: "tls-alpn-01"}))
 	require.ErrorContains(t, err, "neither")
-	_, err = New(h, database, Config{ACME: on.ACME, Zone: zone, Challenge: ChallengeHTTP, Wildcard: true})
+	_, err = New(h, database, cfg(CertificateConfig{ACME: on.Certificate.ACME, Zone: zone, Challenge: ChallengeHTTP, Wildcard: true}))
 	require.ErrorContains(t, err, "dns-01 only")
-	_, err = New(h, database, Config{ACME: pkgcertificate.ACME{Enabled: true, RootCA: "nope"}, Zone: zone})
+	_, err = New(h, database, cfg(CertificateConfig{ACME: pkgcertificate.ACME{Enabled: true, RootCA: "nope"}, Zone: zone}))
 	require.Error(t, err)
-	http01, err := New(h, database, Config{ACME: on.ACME, Zone: zone, Challenge: ChallengeHTTP}, WithVault(&vault{data: map[string][]byte{}}))
+	http01, err := New(h, database, cfg(CertificateConfig{ACME: on.Certificate.ACME, Zone: zone, Challenge: ChallengeHTTP}), WithVault(&vault{data: map[string][]byte{}}))
 	require.NoError(t, err)
 	_, err = http01.acmeIssuer(t.Context())
 	require.NoError(t, err)
 
-	s, err := New(h, database, on)
+	s, err := New(h, database, on, mem)
 	require.NoError(t, err)
 	_, err = s.Thumbprint(t.Context())
 	require.ErrorIs(t, err, ErrNoVault, "no vault and no configured account key")
@@ -396,8 +403,8 @@ func TestWhatIsRefused(t *testing.T) {
 	_, blob, err := acme.MintKey()
 	require.NoError(t, err)
 	configured := on
-	configured.ACME.AccountKey = string(blob)
-	s, err = New(h, database, configured)
+	configured.Certificate.ACME.AccountKey = string(blob)
+	s, err = New(h, database, configured, mem)
 	require.NoError(t, err)
 	thumb, err := s.Thumbprint(t.Context())
 	require.NoError(t, err)
@@ -405,7 +412,7 @@ func TestWhatIsRefused(t *testing.T) {
 
 	// A VAULT THAT FAILS fails the account key, and the keeping of a key.
 	broken := &vault{data: map[string][]byte{}, fail: errors.New("down")}
-	s, err = New(h, database, on, WithVault(broken))
+	s, err = New(h, database, on, mem, WithVault(broken))
 	require.NoError(t, err)
 	_, err = s.Thumbprint(t.Context())
 	require.ErrorContains(t, err, "down")
@@ -439,11 +446,11 @@ func TestKeptRecordsThatCannotBeReadAreSkipped(t *testing.T) {
 	require.Error(t, store{s}.Keep(t.Context(), name, []byte("no pem")))
 
 	// AN EXPIRED CHALLENGE is not answered.
-	require.NoError(t, presenter{s}.Present(t.Context(), name, "v"))
+	require.NoError(t, s.challenges.Present(t.Context(), name, "v"))
 	values, err := s.Challenges(t.Context(), name)
 	require.NoError(t, err)
 	require.Equal(t, []string{"v"}, values)
-	f.advance(DefaultLease + time.Second)
+	f.advance(ChallengeTTL + time.Second)
 	values, err = s.Challenges(t.Context(), name)
 	require.NoError(t, err)
 	require.Empty(t, values)
@@ -502,7 +509,7 @@ func TestTheWireSaysWhatWentWrong(t *testing.T) {
 	f.vault.mu.Lock()
 	f.vault.fail = errors.New("down")
 	f.vault.mu.Unlock()
-	_, err = h.Thumbprint(t.Context(), connect.NewRequest(&certificatev2.Empty{}))
+	_, err = h.Thumbprint(t.Context(), connect.NewRequest(&globalsv2.Empty{}))
 	require.Equal(t, "unavailable", codeOf(err))
 	_, err = h.Certificate(t.Context(), connectRequest("down."+zone, true))
 	require.Equal(t, "unavailable", codeOf(err))
@@ -510,7 +517,7 @@ func TestTheWireSaysWhatWentWrong(t *testing.T) {
 	// A CLIENT whose every target refuses the name stops at the first.
 	c := f.client(t)
 	f.connect(t)
-	err = c.each("x", func(svc certificatev2connect.CertificateServiceClient) error {
+	err = c.each("x", func(svc globalsv2connect.CertificateServiceClient) error {
 		_, err := svc.Certificate(t.Context(), connectRequest("elsewhere.example.com", true))
 		return err
 	})
@@ -521,8 +528,8 @@ func TestTheWireSaysWhatWentWrong(t *testing.T) {
 	require.Error(t, err)
 }
 
-func connectRequest(name string, issue bool) *connect.Request[certificatev2.CertificateRequest] {
-	return connect.NewRequest(&certificatev2.CertificateRequest{Name: name, Issue: issue})
+func connectRequest(name string, issue bool) *connect.Request[globalsv2.CertificateRequest] {
+	return connect.NewRequest(&globalsv2.CertificateRequest{Name: name, Issue: issue})
 }
 
 func codeOf(err error) string {

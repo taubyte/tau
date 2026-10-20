@@ -1,4 +1,4 @@
-package certificate
+package globals
 
 import (
 	"context"
@@ -18,23 +18,23 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	pkgcertificate "github.com/taubyte/tau/pkg/certificate"
 	"github.com/taubyte/tau/pkg/certificate/acme"
-	certificatev2 "github.com/taubyte/tau/pkg/proto/gen/tau/certificate/v2"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/certificate/v2/certificatev2connect"
+	globalsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/globals/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/globals/v2/globalsv2connect"
 )
 
 // client.go is how a node that serves TLS, answers HTTP-01 or answers DNS-01
-// reaches the certificate nodes. It is the one helper every public listener
+// reaches the globals nodes. It is the one helper every public listener
 // takes its certificates from: GetCertificate is a tls.Config's.
 
 // ErrNoMembers is a cloud where no node reports this service.
-var ErrNoMembers = errors.New("certificate: no certificate node is reachable")
+var ErrNoMembers = errors.New("globals: no certificate node is reachable")
 
 // Keys reads a leaf's private key from the vault.
 type Keys interface {
 	Get(ctx context.Context, project, environment, name string) ([]byte, error)
 }
 
-// Client asks certificate nodes, and keeps what they answered.
+// Client asks globals nodes, and keeps what they answered.
 type Client struct {
 	host    host.Host
 	members func() []peer.ID
@@ -106,7 +106,7 @@ func (c *Client) targets(name string) []peer.ID {
 	return out
 }
 
-func (c *Client) at(p peer.ID) (certificatev2connect.CertificateServiceClient, error) {
+func (c *Client) at(p peer.ID) (globalsv2connect.CertificateServiceClient, error) {
 	if p == c.host.ID() {
 		if s := c.local(); s != nil {
 			return handler{s}, nil
@@ -122,11 +122,11 @@ func (c *Client) at(p peer.ID) (certificatev2connect.CertificateServiceClient, e
 		}
 		c.conns[p] = conn
 	}
-	return certificatev2connect.NewCertificateServiceClient(conn.HTTP(), conn.URL()), nil
+	return globalsv2connect.NewCertificateServiceClient(conn.HTTP(), conn.URL()), nil
 }
 
 // each calls f on every target in order until one answers.
-func (c *Client) each(name string, f func(certificatev2connect.CertificateServiceClient) error) error {
+func (c *Client) each(name string, f func(globalsv2connect.CertificateServiceClient) error) error {
 	targets := c.targets(name)
 	if len(targets) == 0 {
 		return ErrNoMembers
@@ -198,9 +198,9 @@ func (c *Client) refreshInBackground(name string) {
 }
 
 func (c *Client) fetch(ctx context.Context, name string) (*tls.Certificate, error) {
-	var issued *certificatev2.Issued
-	err := c.each(name, func(svc certificatev2connect.CertificateServiceClient) error {
-		res, err := svc.Certificate(ctx, connect.NewRequest(&certificatev2.CertificateRequest{Name: name, Issue: true}))
+	var issued *globalsv2.Issued
+	err := c.each(name, func(svc globalsv2connect.CertificateServiceClient) error {
+		res, err := svc.Certificate(ctx, connect.NewRequest(&globalsv2.CertificateRequest{Name: name, Issue: true}))
 		if err == nil {
 			issued = res.Msg
 		}
@@ -212,7 +212,7 @@ func (c *Client) fetch(ctx context.Context, name string) (*tls.Certificate, erro
 	ref := issued.GetKey()
 	key, err := c.keys.Get(ctx, ref.GetProject(), ref.GetEnvironment(), ref.GetName())
 	if err != nil {
-		return nil, fmt.Errorf("certificate: opening the key of %s: %w", name, err)
+		return nil, fmt.Errorf("globals: opening the key of %s: %w", name, err)
 	}
 	cert, err := pkgcertificate.KeyPair(append(append([]byte(nil), issued.GetChain()...), key...))
 	if err != nil {
@@ -224,7 +224,7 @@ func (c *Client) fetch(ctx context.Context, name string) (*tls.Certificate, erro
 		}
 	}
 	if err := cert.Leaf.VerifyHostname(name); err != nil {
-		return nil, fmt.Errorf("certificate: what is kept for %s does not name it: %w", name, err)
+		return nil, fmt.Errorf("globals: what is kept for %s does not name it: %w", name, err)
 	}
 	c.mu.Lock()
 	c.cache[name] = &cert
@@ -236,7 +236,7 @@ func (c *Client) fetch(ctx context.Context, name string) (*tls.Certificate, erro
 func (c *Client) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	name := normal(hello.ServerName)
 	if name == "" {
-		return nil, errors.New("certificate: the handshake names no server")
+		return nil, errors.New("globals: the handshake names no server")
 	}
 	ctx := hello.Context()
 	if ctx == nil {
@@ -264,8 +264,8 @@ func (c *Client) Challenge(token string) (string, bool) {
 	if thumb == "" {
 		ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 		defer cancel()
-		err := c.each("", func(svc certificatev2connect.CertificateServiceClient) error {
-			res, err := svc.Thumbprint(ctx, connect.NewRequest(&certificatev2.Empty{}))
+		err := c.each("", func(svc globalsv2connect.CertificateServiceClient) error {
+			res, err := svc.Thumbprint(ctx, connect.NewRequest(&globalsv2.Empty{}))
 			if err == nil {
 				thumb = res.Msg.GetValue()
 			}
@@ -301,7 +301,7 @@ func (c *Client) Challenges(ctx context.Context, fqdn string) ([]string, error) 
 				answers <- answer{err: err}
 				return
 			}
-			res, err := svc.Challenges(ctx, connect.NewRequest(&certificatev2.ChallengesRequest{Fqdn: fqdn}))
+			res, err := svc.Challenges(ctx, connect.NewRequest(&globalsv2.ChallengesRequest{Fqdn: fqdn}))
 			if err != nil {
 				answers <- answer{err: err}
 				return

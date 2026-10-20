@@ -1,9 +1,8 @@
-package certificate
+package globals
 
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/pem"
@@ -17,7 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/taubyte/tau/pkg/certificate/acme"
-	certificatev2 "github.com/taubyte/tau/pkg/proto/gen/tau/certificate/v2"
+	globalsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/globals/v2"
 )
 
 // store.go is the keys this service writes. Each one is written by one node
@@ -26,14 +25,13 @@ import (
 // digest of its value.
 
 const (
-	certPrefix      = "/cert/"
-	leasePrefix     = "/lease/"
-	challengePrefix = "/challenge/"
+	certPrefix  = "/cert/"
+	leasePrefix = "/lease/"
 )
 
 // kept is one issuance as stored, with its leaf parsed.
 type kept struct {
-	record *certificatev2.Issued
+	record *globalsv2.Issued
 	leaf   *x509.Certificate
 }
 
@@ -45,7 +43,7 @@ func certKey(name string, notAfter time.Time, id string) string {
 func (s *Service) newest(ctx context.Context, name string) (*kept, error) {
 	keys, err := s.db.List(ctx, certPrefix+name+"/")
 	if err != nil {
-		return nil, fmt.Errorf("certificate: listing %s: %w", name, err)
+		return nil, fmt.Errorf("globals: listing %s: %w", name, err)
 	}
 	slices.Sort(keys)
 	for i := len(keys) - 1; i >= 0; i-- {
@@ -53,7 +51,7 @@ func (s *Service) newest(ctx context.Context, name string) (*kept, error) {
 		if err != nil {
 			continue
 		}
-		var rec certificatev2.Issued
+		var rec globalsv2.Issued
 		if proto.Unmarshal(blob, &rec) != nil {
 			continue
 		}
@@ -135,15 +133,15 @@ func (st store) Keep(ctx context.Context, name string, blob []byte) error {
 		}
 	}
 	if leaf == nil || key == nil {
-		return errors.New("certificate: an issuance holds no chain or no key")
+		return errors.New("globals: an issuance holds no chain or no key")
 	}
 
 	id := issuanceID()
-	ref := &certificatev2.SecretRef{Project: VaultProject, Environment: VaultEnvironment, Name: "leaf-" + id}
+	ref := &globalsv2.SecretRef{Project: VaultProject, Environment: VaultEnvironment, Name: "leaf-" + id}
 	if err := s.vault.Set(ctx, ref.Project, ref.Environment, ref.Name, key); err != nil {
-		return fmt.Errorf("certificate: keeping the key of %s: %w", name, err)
+		return fmt.Errorf("globals: keeping the key of %s: %w", name, err)
 	}
-	rec, err := proto.Marshal(&certificatev2.Issued{Name: name, Chain: chain, Key: ref, NotAfter: leaf.NotAfter.Unix()})
+	rec, err := proto.Marshal(&globalsv2.Issued{Name: name, Chain: chain, Key: ref, NotAfter: leaf.NotAfter.Unix()})
 	if err != nil {
 		return err
 	}
@@ -165,11 +163,11 @@ func (s *Service) claim(ctx context.Context, name string) (bool, error) {
 	self := s.host.ID().String()
 	value := strconv.FormatInt(now.UnixNano(), 10) + " " + strconv.FormatInt(now.Add(s.cfg.Lease).UnixNano(), 10)
 	if err := s.db.Put(ctx, leasePrefix+name+"/"+self, []byte(value)); err != nil {
-		return false, fmt.Errorf("certificate: leasing %s: %w", name, err)
+		return false, fmt.Errorf("globals: leasing %s: %w", name, err)
 	}
 	keys, err := s.db.List(ctx, leasePrefix+name+"/")
 	if err != nil {
-		return false, fmt.Errorf("certificate: reading the leases on %s: %w", name, err)
+		return false, fmt.Errorf("globals: reading the leases on %s: %w", name, err)
 	}
 	var winner string
 	var winnerSince int64
@@ -203,47 +201,16 @@ func parseLease(v string) (since, expires int64, ok bool) {
 // release withdraws this node's lease on name.
 func (s *Service) release(name string) {
 	if err := s.db.Delete(context.Background(), leasePrefix+name+"/"+s.host.ID().String()); err != nil {
-		s.logf("certificate: releasing the lease on %s: %v", name, err)
+		s.logf("globals: releasing the lease on %s: %v", name, err)
 	}
-}
-
-// presenter is the issuer's DNS-01 Presenter over this service's database.
-type presenter struct{ s *Service }
-
-func challengeKey(fqdn, value string) string {
-	sum := sha256.Sum256([]byte(value))
-	return challengePrefix + normal(fqdn) + "/" + hex.EncodeToString(sum[:8])
-}
-
-func (p presenter) Present(ctx context.Context, fqdn, value string) error {
-	expires := p.s.now().Add(p.s.cfg.Lease).UnixNano()
-	return p.s.db.Put(ctx, challengeKey(fqdn, value), []byte(strconv.FormatInt(expires, 10)+" "+value))
-}
-
-func (p presenter) CleanUp(ctx context.Context, fqdn, value string) error {
-	return p.s.db.Delete(ctx, challengeKey(fqdn, value))
 }
 
 // Challenges are the live DNS-01 values for fqdn.
 func (s *Service) Challenges(ctx context.Context, fqdn string) ([]string, error) {
-	keys, err := s.db.List(ctx, challengePrefix+normal(fqdn)+"/")
-	if err != nil {
-		return nil, err
+	if s.challenges == nil {
+		return nil, nil
 	}
-	var out []string
-	for _, k := range keys {
-		blob, err := s.db.Get(ctx, k)
-		if err != nil {
-			continue
-		}
-		at, value, ok := strings.Cut(string(blob), " ")
-		expires, err := strconv.ParseInt(at, 10, 64)
-		if !ok || err != nil || expires <= s.now().UnixNano() {
-			continue
-		}
-		out = append(out, value)
-	}
-	return out, nil
+	return s.challenges.Challenges(ctx, fqdn)
 }
 
 // Thumbprint is the account key's thumbprint.

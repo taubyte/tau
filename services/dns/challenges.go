@@ -9,16 +9,16 @@ import (
 )
 
 // challenges.go answers DNS-01: the TXT records of `_acme-challenge.<name>`
-// for a name in the cloud's zone, while a certificate node is proving it.
+// for a name in the cloud's zone, while a globals node is proving it.
 //
-// They are asked for at query time, from the certificate nodes, rather than
-// carried in the discovery view: a CA looks a handful of times per order, the
-// node proving the name holds the records itself, and a copy here would be a
-// second store to keep in step with the first.
+// They are asked for at query time from the reader the node composes — the
+// globals service's challenge cache — rather than carried in the discovery
+// view: a CA looks a handful of times per order, and the values already live
+// in a store with a lifetime of their own.
 //
 // Before every other answer for the name, because `_acme-challenge` sits where
 // a generated name's labels do and would otherwise be routed as one. A
-// certificate node that cannot be asked is SERVFAIL, for the package's first
+// reader that cannot answer is SERVFAIL, for the package's first
 // refusal: a CA reading "no record" fails the order, "try again" does not.
 
 // Challenges reads the DNS-01 values being presented for a name.

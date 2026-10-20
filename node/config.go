@@ -21,10 +21,10 @@ import (
 	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/frontend"
-	"github.com/taubyte/tau/services/certificate"
 	"github.com/taubyte/tau/services/discovery"
 	"github.com/taubyte/tau/services/dns"
 	gateway "github.com/taubyte/tau/services/gateway"
+	"github.com/taubyte/tau/services/globals"
 	"github.com/taubyte/tau/services/primitives"
 	proxy "github.com/taubyte/tau/services/proxy"
 	"github.com/taubyte/tau/services/secrets"
@@ -122,12 +122,13 @@ type Config struct {
 	Gateway   gateway.Config
 	Secrets   secrets.Config
 
-	// Certificate is how the cloud issues its certificates: the ACME CA and
-	// whether the zone's wildcard is issued. Every node of a cloud that
-	// issues carries it, because it is also what makes a node serve TLS with
-	// what the certificate nodes issued. See services/certificate.
-	Certificate certificate.Config
-	Proxy       proxy.Config
+	// Globals is what the cloud keeps once for every region: today its
+	// certificates — the ACME CA, the challenge type and whether the zone's
+	// wildcard is issued. Every node of a cloud that issues carries it,
+	// because it is also what makes a node serve TLS with what the globals
+	// nodes issued. See services/globals.
+	Globals globals.Config
+	Proxy   proxy.Config
 	// Auth names the built-in admin, who may sign up, the console callbacks
 	// and the OIDC providers. A forge's OAuth app is on its Forge.
 	Auth auth.Config

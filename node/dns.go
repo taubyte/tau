@@ -78,14 +78,14 @@ func (n *Node) openDNS() error {
 		options = append(options, dns.WithServices(dns.Services{Zone: zone, Names: n.knownServices()}))
 	}
 
-	// AND DNS-01, when the cloud issues: the certificate nodes hold the TXT
+	// AND DNS-01, when the cloud issues: the globals nodes hold the TXT
 	// values of the orders they are proving.
-	certs, err := n.certificates()
+	challenges, err := n.challengeReader()
 	if err != nil {
 		return err
 	}
-	if certs != nil {
-		options = append(options, dns.WithChallenges(n.cfg.Gateway.CloudFqdn, certs))
+	if challenges != nil {
+		options = append(options, dns.WithChallenges(n.cfg.Gateway.CloudFqdn, challenges))
 	}
 
 	svc, err := dns.New(n.cfg.DNS, options...)

@@ -1,4 +1,4 @@
-package certificate
+package globals
 
 import (
 	"context"
@@ -7,13 +7,13 @@ import (
 
 	"connectrpc.com/connect"
 
-	certificatev2 "github.com/taubyte/tau/pkg/proto/gen/tau/certificate/v2"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/certificate/v2/certificatev2connect"
+	globalsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/globals/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/globals/v2/globalsv2connect"
 )
 
 func (s *Service) mount() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle(certificatev2connect.NewCertificateServiceHandler(handler{s}))
+	mux.Handle(globalsv2connect.NewCertificateServiceHandler(handler{s}))
 	return mux
 }
 
@@ -22,11 +22,11 @@ func (s *Service) mount() http.Handler {
 type handler struct{ s *Service }
 
 var (
-	_ certificatev2connect.CertificateServiceHandler = handler{}
-	_ certificatev2connect.CertificateServiceClient  = handler{}
+	_ globalsv2connect.CertificateServiceHandler = handler{}
+	_ globalsv2connect.CertificateServiceClient  = handler{}
 )
 
-func (h handler) Certificate(ctx context.Context, req *connect.Request[certificatev2.CertificateRequest]) (*connect.Response[certificatev2.Issued], error) {
+func (h handler) Certificate(ctx context.Context, req *connect.Request[globalsv2.CertificateRequest]) (*connect.Response[globalsv2.Issued], error) {
 	name := normal(req.Msg.GetName())
 	var k *kept
 	var err error
@@ -41,20 +41,20 @@ func (h handler) Certificate(ctx context.Context, req *connect.Request[certifica
 	return connect.NewResponse(k.record), nil
 }
 
-func (h handler) Thumbprint(ctx context.Context, _ *connect.Request[certificatev2.Empty]) (*connect.Response[certificatev2.AccountThumbprint], error) {
+func (h handler) Thumbprint(ctx context.Context, _ *connect.Request[globalsv2.Empty]) (*connect.Response[globalsv2.AccountThumbprint], error) {
 	value, err := h.s.Thumbprint(ctx)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnavailable, err)
 	}
-	return connect.NewResponse(&certificatev2.AccountThumbprint{Value: value}), nil
+	return connect.NewResponse(&globalsv2.AccountThumbprint{Value: value}), nil
 }
 
-func (h handler) Challenges(ctx context.Context, req *connect.Request[certificatev2.ChallengesRequest]) (*connect.Response[certificatev2.ChallengeValues], error) {
+func (h handler) Challenges(ctx context.Context, req *connect.Request[globalsv2.ChallengesRequest]) (*connect.Response[globalsv2.ChallengeValues], error) {
 	values, err := h.s.Challenges(ctx, req.Msg.GetFqdn())
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnavailable, err)
 	}
-	return connect.NewResponse(&certificatev2.ChallengeValues{Values: values}), nil
+	return connect.NewResponse(&globalsv2.ChallengeValues{Values: values}), nil
 }
 
 func wire(err error) error {

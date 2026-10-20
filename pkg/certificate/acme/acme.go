@@ -23,7 +23,7 @@
 //
 // A Store keeps each certificate and its key, so a restart reissues nothing.
 // The default is a directory under the node's root, which is one node's own;
-// services/certificate passes one every certificate node reads. A certificate
+// services/globals passes one every globals node reads. A certificate
 // is renewed once two thirds of its lifetime has gone, on a call that finds it
 // so, while it keeps being served.
 package acme
@@ -384,7 +384,7 @@ func (i *Issuer) Certificate(ctx context.Context, name string) (tls.Certificate,
 }
 
 // Issue orders a certificate for name now, whatever is kept, and keeps it. A
-// caller deciding renewal itself — services/certificate, under its lease —
+// caller deciding renewal itself — services/globals, under its lease —
 // uses this rather than Certificate.
 func (i *Issuer) Issue(name string) (*tls.Certificate, error) {
 	name = strings.ToLower(strings.TrimSuffix(name, "."))
