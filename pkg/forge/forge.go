@@ -53,6 +53,7 @@ package forge
 
 import (
 	"context"
+	"crypto/ed25519"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -422,6 +423,12 @@ func New(policy Policy, bindings ...Binding) (*Registry, error) {
 			sch := s.Scheme()
 			if !sch.implemented() {
 				return nil, fmt.Errorf("forge: driver for %q registers hooks with scheme %q, which this package does not implement", b.Host, sch)
+			}
+			if sch == SchemePayloadEd25519 {
+				pk, ok := b.Driver.(PayloadKey)
+				if !ok || len(pk.PayloadKey()) != ed25519.PublicKeySize {
+					return nil, fmt.Errorf("forge: driver for %q registers hooks with scheme %q and names no Ed25519 key the forge signs with", b.Host, sch)
+				}
 			}
 			if !sch.BindsBody() && !policy.AllowUnboundSchemes {
 				return nil, fmt.Errorf("forge: driver for %q registers hooks with scheme %q, which does not bind the body; set Policy.AllowUnboundSchemes to accept it", b.Host, sch)

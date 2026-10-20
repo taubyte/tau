@@ -1,12 +1,14 @@
 package forge
 
 import (
+	"crypto/ed25519"
 	"crypto/hkdf"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -93,7 +95,46 @@ const (
 	// no body-binding alternative, so a deployment accepts it only by setting
 	// Policy.AllowUnboundSchemes.
 	SchemeOneDevToken Scheme = "onedev-token"
+	// SchemePayloadEd25519 is X-Payload-Signature: std base64 of an Ed25519
+	// signature over the verbatim body followed by the X-Payload-Nonce
+	// header's value, made with the FORGE'S OWN private key. sourcehut.
+	//
+	// THE SIGNATURE PROVES WHO SENT A DELIVERY AND NOT WHICH SUBSCRIPTION IT
+	// IS FOR, and that is the whole reason this scheme is more than a
+	// signature check. Every webhook on a sourcehut instance is signed by the
+	// same key, and a sourcehut webhook's payload is the answer to a GraphQL
+	// query its OWNER wrote — so anyone with an account can subscribe a hook
+	// of their own to tau's callback, alias fields of a victim's public
+	// repository into exactly the shape a push payload has, and have the forge
+	// sign it. Step 9 of VerifyPush does not stop that: the delivery really
+	// does claim the victim's repository, at a real commit of it.
+	//
+	// So the per-hook Secret still exists, and it binds the delivery to the
+	// hook: Wire derives a GraphQL alias from it, the driver writes that alias
+	// into the query it registers, and the forge echoes it back as a key of
+	// the signed body. A delivery verifies only when the forge's key signed it
+	// AND its top-level data carries this hook's alias. The alias rides the
+	// body in cleartext, so it is weaker than a MAC key: whoever reads one
+	// delivery body can subscribe a hook carrying it. It is never in a header,
+	// and the body is what Policy.MaxDeliveryBody already treats as hostile.
+	//
+	// sourcehut signs no timestamp and this package keeps no nonce store, so
+	// a captured delivery replays; what it can replay is a push that already
+	// happened, to the repository it already named.
+	SchemePayloadEd25519 Scheme = "payload-ed25519"
 )
+
+// PayloadKey is the face a driver whose forge signs deliveries with its OWN
+// key implements, naming that key. It is a deployment fact, like a host, and it
+// is the only thing the driver contributes: the verification is this package's.
+// A driver that names SchemePayloadEd25519 without this face is refused at New.
+type PayloadKey interface {
+	PayloadKey() ed25519.PublicKey
+}
+
+// maxPayloadNonce bounds the nonce a stranger's header can make this package
+// append to a body before verifying it.
+const maxPayloadNonce = 256
 
 // GitHub's SHA-1 sibling (X-Hub-Signature: sha1=...) is deliberately NOT
 // implemented. Every forge that sends it also sends the SHA-256 header, so
@@ -102,7 +143,7 @@ const (
 
 func (s Scheme) implemented() bool {
 	switch s {
-	case SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeSharedToken, SchemeGogsSHA256, SchemeOneDevToken:
+	case SchemeHubSHA256, SchemeBitbucketSHA256, SchemeStandardWebhooks, SchemeSharedToken, SchemeGogsSHA256, SchemeOneDevToken, SchemePayloadEd25519:
 		return true
 	}
 	return false
@@ -189,6 +230,11 @@ func (s Scheme) Wire(secret Secret) (string, error) {
 		// refused a one-byte secret, and it refused it for the wrong reason.
 		return "whsec_" + base64.StdEncoding.EncodeToString(k), nil
 	}
+	if s == SchemePayloadEd25519 {
+		// A GraphQL alias: /[_A-Za-z][_0-9A-Za-z]*/, which lowercase hex
+		// behind a letter prefix is by construction.
+		return "tau_" + hex.EncodeToString(k), nil
+	}
 	return base64.RawURLEncoding.EncodeToString(k), nil
 }
 
@@ -229,6 +275,8 @@ func (s Scheme) header() string {
 		return "X-Gogs-Signature"
 	case SchemeOneDevToken:
 		return "X-OneDev-Signature"
+	case SchemePayloadEd25519:
+		return "X-Payload-Signature"
 	}
 	return ""
 }
@@ -343,7 +391,15 @@ func (r *Registry) VerifyPush(h Hook, d Delivery) (Push, error) {
 	if len(d.Body) > r.maxDeliveryBody() {
 		return Push{}, &VerificationError{Scheme: h.Scheme, Reason: "delivery body exceeds the cap"}
 	}
-	if err := verify(h.Scheme, h.Secret, d, r.now(), r.tolerance()); err != nil {
+	var signer ed25519.PublicKey
+	if h.Scheme == SchemePayloadEd25519 {
+		pk, ok := driver.(PayloadKey)
+		if !ok {
+			return Push{}, &VerificationError{Scheme: h.Scheme, Reason: "the driver names no key the forge signs with"}
+		}
+		signer = pk.PayloadKey()
+	}
+	if err := verifyWith(h.Scheme, h.Secret, d, r.now(), r.tolerance(), signer); err != nil {
 		return Push{}, err
 	}
 
@@ -434,13 +490,31 @@ func Sign(s Scheme, secret Secret, body []byte, id string, at time.Time) (http.H
 			return nil, err
 		}
 		hdr.Set(s.header(), wire)
+	case SchemePayloadEd25519:
+		return nil, fmt.Errorf("forge: %s is signed with the forge's own key and not with a secret; a fake forge signs with SignPayload", s)
 	default:
 		return nil, fmt.Errorf("forge: scheme %q is not implemented", s)
 	}
 	return hdr, nil
 }
 
+// SignPayload produces the headers a SchemePayloadEd25519 forge sends for a
+// body, with that forge's private key. It exists for fakes and fixtures, and it
+// is asserted against externally computed vectors like Sign.
+func SignPayload(key ed25519.PrivateKey, body []byte, nonce string) http.Header {
+	hdr := make(http.Header)
+	hdr.Set("X-Payload-Nonce", nonce)
+	hdr.Set("X-Payload-Signature", base64.StdEncoding.EncodeToString(ed25519.Sign(key, append(append([]byte{}, body...), nonce...))))
+	return hdr
+}
+
 func verify(s Scheme, secret Secret, d Delivery, now time.Time, tolerance time.Duration) error {
+	return verifyWith(s, secret, d, now, tolerance, nil)
+}
+
+// verifyWith is verify given the key the forge signs with, which only
+// SchemePayloadEd25519 reads.
+func verifyWith(s Scheme, secret Secret, d Delivery, now time.Time, tolerance time.Duration, signer ed25519.PublicKey) error {
 	fail := func(reason string) error { return &VerificationError{Scheme: s, Reason: reason} }
 
 	switch s {
@@ -547,6 +621,45 @@ func verify(s Scheme, secret Secret, d Delivery, now time.Time, tolerance time.D
 		}
 		if subtle.ConstantTimeCompare([]byte(presented), []byte(wire)) != 1 {
 			return fail("token does not match")
+		}
+		return nil
+
+	case SchemePayloadEd25519:
+		if len(signer) != ed25519.PublicKeySize {
+			return fail("the driver names no usable key the forge signs with")
+		}
+		nonce := d.Header.Get("X-Payload-Nonce")
+		presented := d.Header.Get(s.header())
+		if nonce == "" || presented == "" {
+			return fail("delivery is missing X-Payload-Nonce or X-Payload-Signature")
+		}
+		if len(nonce) > maxPayloadNonce {
+			return fail("X-Payload-Nonce is longer than a nonce may be")
+		}
+		sig, err := base64.StdEncoding.DecodeString(presented)
+		if err != nil || len(sig) != ed25519.SignatureSize {
+			return fail("signature is not a base64 Ed25519 signature")
+		}
+		msg := make([]byte, 0, len(d.Body)+len(nonce))
+		msg = append(append(msg, d.Body...), nonce...)
+		if !ed25519.Verify(signer, msg, sig) {
+			return fail("signature does not match")
+		}
+		// Only now is the body known to be the forge's, and only now does
+		// it say which subscription it answers for.
+		wire, err := s.Wire(secret)
+		if err != nil {
+			return fail("secret cannot key this scheme")
+		}
+		var top struct {
+			Data map[string]json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(d.Body, &top); err != nil {
+			return fail("signed body is not a GraphQL response")
+		}
+		echo, ok := top.Data[wire]
+		if !ok || string(echo) != `"Query"` {
+			return fail("signed body does not carry this hook's binding; the forge signed a delivery for another subscription")
 		}
 		return nil
 	}
