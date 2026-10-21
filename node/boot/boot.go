@@ -106,8 +106,8 @@ type File struct {
 	// tls.go. The CA's HTTP-01 challenges are answered on HTTP.
 	HTTPS string `yaml:"https"`
 
-	// Seed is a file of secrets (ReadSeed) this node writes into the vault
-	// once it can, then deletes. Empty seeds nothing.
+	// Seed is a file of secrets (ReadSeed) this node puts into the vault,
+	// then deletes. Empty seeds nothing.
 	Seed string `yaml:"seed"`
 }
 
@@ -292,18 +292,18 @@ func Start(ctx context.Context, f File, added ...node.Option) (*Running, error) 
 		return nil, err
 	}
 	if f.Seed != "" {
-		secrets, err := ReadSeed(f.Seed)
+		seed, err := ReadSeed(f.Seed)
 		if err != nil {
 			r.Close()
 			return nil, err
 		}
-		if len(secrets) == 0 {
+		if len(seed.Secrets) == 0 {
 			return r, nil
 		}
 		var seedCtx context.Context
 		seedCtx, r.stopSeed = context.WithCancel(context.Background())
 		r.seeded = make(chan struct{})
-		go r.seed(seedCtx, f.Seed, secrets)
+		go r.seed(seedCtx, f.Seed, seed)
 	}
 	return r, nil
 }

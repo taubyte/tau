@@ -13,7 +13,7 @@ import (
 )
 
 // cloudServices is what every node is told about sign-in and certificates,
-// and seed what of them is secret: the vault's, written by one node.
+// and seed what of them is secret: the vault's.
 type cloudServices struct {
 	auth   authService.Config
 	cm     cm.Config
@@ -72,7 +72,17 @@ func servicesOf(p config.Parser) (*cloudServices, error) {
 	return out, nil
 }
 
-// seedsFrom is whether hostName's node writes the seed: the first host by name.
-func seedsFrom(p config.Parser, hostName string) bool {
-	return hostName == slices.Min(p.Hosts().List())
+// seedHolders is the peer id of every host's node: each holds the seed, and
+// the lowest live one writes it (boot.Seed).
+func seedHolders(p config.Parser) ([]string, error) {
+	var out []string
+	for _, h := range p.Hosts().List() {
+		primary, err := primaryShape(p, h)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p.Hosts().Host(h).Shapes().Instance(primary).Id())
+	}
+	slices.Sort(out)
+	return out, nil
 }

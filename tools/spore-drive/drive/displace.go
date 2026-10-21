@@ -194,10 +194,23 @@ func (d *sporedrive) uploadConfig(h remoteHost, inst instance) error {
 	return e.Close()
 }
 
-// uploadSeed writes the secrets a node writes into the vault, then deletes, to
-// /tmp/<instance>.seed.yaml.
-func (d *sporedrive) uploadSeed(h remoteHost, inst instance) error {
-	f, err := h.OpenFile("/tmp/"+inst.name+".seed.yaml", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0600)
+// installSeed puts a node's seed file at /tb/config/<instance>.seed.yaml,
+// through /tmp, and leaves no copy in /tmp.
+func (d *sporedrive) installSeed(ctx context.Context, h remoteHost, inst instance) error {
+	tmp := "/tmp/" + inst.name + ".seed.yaml"
+	if err := d.uploadSeed(h, tmp, inst); err != nil {
+		return fmt.Errorf("failed to create %s.seed.yaml: %w", inst.name, err)
+	}
+	_, err := h.Sudo(ctx, "cp", "-f", tmp, "/tb/config/")
+	h.Remove(tmp)
+	if err != nil {
+		return fmt.Errorf("failed to copy %s.seed.yaml: %w", inst.name, err)
+	}
+	return nil
+}
+
+func (d *sporedrive) uploadSeed(h remoteHost, path string, inst instance) error {
+	f, err := h.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}
@@ -512,13 +525,8 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 				return pushError("setup tau", fmt.Errorf("failed to copy %s.yaml: %w", inst.name, err))
 			}
 			if inst.seed != nil {
-				if err := d.uploadSeed(r, inst); err != nil {
-					return pushError("setup tau", fmt.Errorf("failed to create %s.seed.yaml: %w", inst.name, err))
-				}
-				_, err = r.Sudo(ctx, "cp", "-f", "/tmp/"+inst.name+".seed.yaml", "/tb/config/")
-				r.Remove("/tmp/" + inst.name + ".seed.yaml")
-				if err != nil {
-					return pushError("setup tau", fmt.Errorf("failed to copy %s.seed.yaml: %w", inst.name, err))
+				if err := d.installSeed(ctx, r, inst); err != nil {
+					return pushError("setup tau", err)
 				}
 			}
 		}

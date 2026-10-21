@@ -186,8 +186,12 @@ func (a *added) Handle(pattern string, handler http.Handler) error {
 	return a.node.public.handle(pattern, handler)
 }
 
-func (a *added) Peers(service string) []libp2ppeer.ID {
-	return (&fromDiscovery{node: a.node, name: service}).Known()
+func (a *added) Peers(service string) []libp2ppeer.ID { return a.node.Peers(service) }
+
+// Peers is every node discovery currently says runs service, this one included
+// when it does.
+func (n *Node) Peers(service string) []libp2ppeer.ID {
+	return (&fromDiscovery{node: n, name: service}).Known()
 }
 
 func (a *added) Secrets() Vault { return a.node.Vault() }

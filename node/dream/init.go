@@ -507,7 +507,11 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, accountKey *string
 		return err
 	}
 	if nodeConfig.CM.Certificate.ACME.Enabled && *accountKey != "" {
-		go boot.Seed(ctx, n.Vault(), []boot.Secret{{Project: cm.VaultProject, Environment: cm.VaultEnvironment, Name: cm.AccountSecret, Value: *accountKey}})
+		self := h.ID().String()
+		go boot.Seed(ctx, n.Vault(), self, func() []string { return nil }, boot.SeedFile{
+			Holders: []string{self},
+			Secrets: []boot.Secret{{Project: cm.VaultProject, Environment: cm.VaultEnvironment, Name: cm.AccountSecret, Value: *accountKey}},
+		})
 		*accountKey = ""
 	}
 

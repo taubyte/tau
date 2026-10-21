@@ -160,7 +160,10 @@ func issuing(t *testing.T, ca *pebble, cloud, root string, cfg cm.CertificateCon
 func seeded(t *testing.T, f File) File {
 	t.Helper()
 	f.Seed = filepath.Join(t.TempDir(), "seed.yaml")
-	data, err := yaml.Marshal([]Secret{{Project: cm.VaultProject, Environment: cm.VaultEnvironment, Name: cm.AccountSecret, Value: cloudAccount(t)}})
+	data, err := yaml.Marshal(SeedFile{
+		Holders: []string{peerOf(t, f)},
+		Secrets: []Secret{{Project: cm.VaultProject, Environment: cm.VaultEnvironment, Name: cm.AccountSecret, Value: cloudAccount(t)}},
+	})
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(f.Seed, data, 0o600))
 	return f

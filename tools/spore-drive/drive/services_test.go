@@ -1,10 +1,15 @@
 package drive
 
 import (
+	"encoding/base64"
+	"errors"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/spf13/afero"
 	"gopkg.in/yaml.v3"
 	"gotest.tools/v3/assert"
@@ -78,30 +83,66 @@ func TestSignInAndCertificatesReachEveryNodeAndTheirSecretsOnlyTheSeed(t *testin
 		}
 	}
 
-	main := first.instances[0]
-	assert.Equal(t, main.file.Seed, "/tb/config/node.seed.yaml")
-	assert.DeepEqual(t, main.seed, []boot.Secret{
+	secrets := []boot.Secret{
 		{Project: auth.VaultProject, Environment: auth.VaultEnvironment, Name: auth.OAuthSecretName("github.com"), Value: "gh-secret"},
 		{Project: auth.VaultProject, Environment: auth.VaultEnvironment, Name: auth.OIDCSecretName("corp"), Value: "corp-secret"},
 		{Project: cm.VaultProject, Environment: cm.VaultEnvironment, Name: cm.AccountSecret, Value: "ACCOUNT KEY"},
-	})
-	assert.Assert(t, first.instances[1].seed == nil, "only one node of the cloud writes the seed")
-
+	}
 	second, err := driveFor(p).nodesFor("host2")
 	assert.NilError(t, err)
-	for _, inst := range second.instances {
-		assert.Assert(t, inst.seed == nil && inst.file.Seed == "", "only one node of the cloud writes the seed")
+	holders := []string{first.instances[0].file.PrivateKey, second.instances[0].file.PrivateKey}
+	for i, id := range holders {
+		holders[i] = peerID(t, id)
 	}
+	slices.Sort(holders)
 
-	h := &fsHost{fs: afero.NewMemMapFs()}
-	assert.NilError(t, driveFor(p).uploadSeed(h, main))
-	data, err := afero.ReadFile(h.fs, "/tmp/node.seed.yaml")
+	// EVERY HOST'S NODE HOLDS THE SEED, so a writer that dies is replaced.
+	for _, main := range []instance{first.instances[0], second.instances[0]} {
+		assert.Equal(t, main.file.Seed, "/tb/config/node.seed.yaml")
+		assert.DeepEqual(t, *main.seed, boot.SeedFile{Holders: holders, Secrets: secrets})
+	}
+	assert.Assert(t, first.instances[1].seed == nil, "a split-off frontend is not a holder")
+}
+
+func peerID(t *testing.T, key string) string {
+	t.Helper()
+	raw, err := base64.StdEncoding.DecodeString(key)
 	assert.NilError(t, err)
-	var back []boot.Secret
+	priv, err := crypto.UnmarshalPrivateKey(raw)
+	assert.NilError(t, err)
+	id, err := peer.IDFromPrivateKey(priv)
+	assert.NilError(t, err)
+	return id.String()
+}
+
+func TestASeedIsInstalledAndNoCopyStaysInTmp(t *testing.T) {
+	_, p := fixtures.VirtConfig()
+	inst := instance{name: "node", seed: &boot.SeedFile{Holders: []string{"a"}, Secrets: []boot.Secret{{Project: "p", Environment: "e", Name: "n", Value: "v"}}}}
+	fs := afero.NewMemMapFs()
+	h := &fsHost{fs: fs, sudo: func(name string, args ...string) error {
+		assert.DeepEqual(t, append([]string{name}, args...), []string{"cp", "-f", "/tmp/node.seed.yaml", "/tb/config/"})
+		data, err := afero.ReadFile(fs, args[1])
+		if err != nil {
+			return err
+		}
+		return afero.WriteFile(fs, "/tb/config/node.seed.yaml", data, 0o600)
+	}}
+	assert.NilError(t, driveFor(p).installSeed(t.Context(), h, inst))
+	data, err := afero.ReadFile(fs, "/tb/config/node.seed.yaml")
+	assert.NilError(t, err)
+	var back boot.SeedFile
 	assert.NilError(t, yaml.Unmarshal(data, &back))
-	assert.DeepEqual(t, back, main.seed)
+	assert.DeepEqual(t, back, *inst.seed)
+	_, err = fs.Stat("/tmp/node.seed.yaml")
+	assert.Assert(t, os.IsNotExist(err), "no copy stays in /tmp")
+
+	failing := &fsHost{fs: afero.NewMemMapFs(), sudo: func(string, ...string) error { return errors.New("no sudo") }}
+	assert.ErrorContains(t, driveFor(p).installSeed(t.Context(), failing, inst), "failed to copy")
+	_, err = failing.fs.Stat("/tmp/node.seed.yaml")
+	assert.Assert(t, os.IsNotExist(err), "nor after a failed copy")
+
 	ro := &fsHost{fs: afero.NewReadOnlyFs(afero.NewMemMapFs())}
-	assert.Assert(t, driveFor(p).uploadSeed(ro, main) != nil)
+	assert.ErrorContains(t, driveFor(p).installSeed(t.Context(), ro, inst), "failed to create")
 }
 
 func TestNoSignInOrCertificatesSeedsNothing(t *testing.T) {

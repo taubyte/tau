@@ -65,8 +65,8 @@ type instance struct {
 	name string
 	port int
 	file boot.File
-	// seed is what this node writes into the vault, at file.Seed.
-	seed []boot.Secret
+	// seed is what this node puts into the vault, at file.Seed.
+	seed *boot.SeedFile
 }
 
 // hostNodes is what a host runs, and which of its config's fields have no v2
@@ -307,8 +307,12 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 		return nil, err
 	}
 	first := instance{name: mainInstance, port: mainPort, file: main}
-	if len(cloudServices.seed) > 0 && seedsFrom(p, hostName) {
-		first.seed = cloudServices.seed
+	if len(cloudServices.seed) > 0 {
+		holders, err := seedHolders(p)
+		if err != nil {
+			return nil, err
+		}
+		first.seed = &boot.SeedFile{Holders: holders, Secrets: cloudServices.seed}
 		first.file.Seed = "/tb/config/" + mainInstance + ".seed.yaml"
 	}
 	out.instances = append([]instance{first}, out.instances...)
