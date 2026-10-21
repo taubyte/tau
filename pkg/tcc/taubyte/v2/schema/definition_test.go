@@ -2364,10 +2364,10 @@ func TestRegionPlacementIsASwitch(t *testing.T) {
 		return namedResource(t, resources(t, obj.Flat(), "cache"), "c"), nil
 	}
 
-	res, err := compile("regions:\n    pinned: [eu]\n")
+	res, err := compile("regions:\n    pinned: [region-1]\n")
 	assert.NilError(t, err)
 	assert.Equal(t, nested(res, "regions", "policy"), "pinned")
-	assert.DeepEqual(t, nested(res, "regions", "in"), []string{"eu"})
+	assert.DeepEqual(t, nested(res, "regions", "in"), []string{"region-1"})
 
 	// AN EMPTY BRANCH STILL CAPTURES, so `cdn` needs no regions to be sayable —
 	// it is the branch whose regions the platform picks.
@@ -2375,11 +2375,11 @@ func TestRegionPlacementIsASwitch(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, nested(res, "regions", "policy"), "cdn")
 
-	res, err = compile("regions:\n    failover:\n        main: eu\n        standby: us\n")
+	res, err = compile("regions:\n    failover:\n        main: region-1\n        standby: region-2\n")
 	assert.NilError(t, err)
 	assert.Equal(t, nested(res, "regions", "policy"), "failover")
-	assert.Equal(t, nested(res, "regions", "main"), "eu")
-	assert.Equal(t, nested(res, "regions", "standby"), "us")
+	assert.Equal(t, nested(res, "regions", "main"), "region-1")
+	assert.Equal(t, nested(res, "regions", "standby"), "region-2")
 
 	// AN ABSENT BLOCK IS THE DEFAULT, and it writes nothing: anywhere the allowance
 	// permits is what the common case gets for free. It is the ONLY spelling of
@@ -2394,20 +2394,20 @@ func TestRegionPlacementIsASwitch(t *testing.T) {
 	// EXACTLY TWO, AND ONLY TWO. A third has no key to arrive under and a missing one
 	// is a compile error — which is what "the first one is main" costs instead of a
 	// list whose order is load-bearing.
-	_, err = compile("regions:\n    failover:\n        main: eu\n")
+	_, err = compile("regions:\n    failover:\n        main: region-1\n")
 	assert.ErrorContains(t, err, "required attribute 'regions/failover/standby'")
-	_, err = compile("regions:\n    failover:\n        standby: us\n")
+	_, err = compile("regions:\n    failover:\n        standby: region-2\n")
 	assert.ErrorContains(t, err, "required attribute 'regions/failover/main'")
-	_, err = compile("regions:\n    failover:\n        main: eu\n        standby: us\n        third: ap\n")
+	_, err = compile("regions:\n    failover:\n        main: region-1\n        standby: region-2\n        third: ap\n")
 	assert.ErrorContains(t, err, "unknown key 'third'")
 
 	// `name` IS ON THE TWO BRANCHES A SINGLE REGION MEANS SOMETHING ON. On failover it
 	// would name neither of the two, so the subset Either() refuses it.
-	_, err = compile("regions:\n    failover:\n        main: eu\n        standby: us\n        name: eu\n")
+	_, err = compile("regions:\n    failover:\n        main: region-1\n        standby: region-2\n        name: eu\n")
 	assert.ErrorContains(t, err, "unknown key 'name'")
 
 	// EXACTLY ONE BRANCH is a property of the declaration, not a check somebody wrote.
-	_, err = compile("regions:\n    pinned: [eu]\n    cdn: []\n")
+	_, err = compile("regions:\n    pinned: [region-1]\n    cdn: []\n")
 	assert.ErrorContains(t, err, "each match")
 	_, err = compile("regions: {}\n")
 	assert.ErrorContains(t, err, "attribute regions/policy has an empty key")
@@ -2421,7 +2421,7 @@ func TestRegionPlacementIsASwitch(t *testing.T) {
 	// LIST — its allowance, and the default for everything under it — and a resource
 	// writes it as the SWITCH above. A bare list on a resource picks no branch, so
 	// there is no policy to capture and the compile says so rather than guessing one.
-	_, err = compile("regions: [eu]\n")
+	_, err = compile("regions: [region-1]\n")
 	assert.ErrorContains(t, err, "attribute regions/policy has an empty key")
 }
 

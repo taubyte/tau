@@ -116,7 +116,7 @@ func TestAPushOfARealRepositoryDeploys(t *testing.T) {
 
 	clone := deploy.NewClone(nil, deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) { return forge.Address{URL: path}, nil }))
 	d, err := deploy.New(
-		deploy.WithRegions(schema.WithRegion("eu")),
+		deploy.WithRegions(schema.WithRegion("region-1")),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(clone),
 		deploy.WithLocalRegister(r),

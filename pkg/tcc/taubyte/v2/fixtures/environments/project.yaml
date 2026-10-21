@@ -4,13 +4,13 @@ description: several deployments - the table, a shadow inside one, and the keys 
 environments:
     production:
         branches: [main, master]
-        regions: [eu-west, eu-central]
+        regions: [region-1, region-2]
         shadows:
             # its own release over production's state, so no regions of its own to place
             ab:
                 branches: [main]
     staging:
         branches: ["release/*"]
-        regions: [us-east]
+        regions: [region-3]
     preview:
         branches: ["*"]

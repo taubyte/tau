@@ -149,8 +149,8 @@ func runner(t *testing.T, c *checkout, r deploy.Register, opts ...deploy.Option)
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(c),
 		deploy.WithLocalRegister(r),
-		// The fixture is written for a cloud with eu and us; these deploys are eu.
-		deploy.WithRegions(schema.WithRegion("eu")),
+		// The fixture is written for a cloud with region-1 and region-2; these deploys are region-1.
+		deploy.WithRegions(schema.WithRegion("region-1")),
 		deploy.WithDomains(provenAll()),
 	}
 	d, err := deploy.New(append(base, opts...)...)
@@ -375,7 +375,7 @@ func TestAuthFailingIsNotARefusal(t *testing.T) {
 	dir := fixture(t, basicFixture)
 
 	d, err := deploy.New(
-		deploy.WithRegions(schema.WithRegion("eu")),
+		deploy.WithRegions(schema.WithRegion("region-1")),
 		deploy.WithDomains(provenAll()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config", err: errors.New("auth is down")}),
 		deploy.WithCheckout(&checkout{dir: dir}),
@@ -395,7 +395,7 @@ func TestNoRegisterFailsAfterTheCompile(t *testing.T) {
 	c := &checkout{dir: fixture(t, basicFixture)}
 
 	d, err := deploy.New(
-		deploy.WithRegions(schema.WithRegion("eu")),
+		deploy.WithRegions(schema.WithRegion("region-1")),
 		deploy.WithDomains(provenAll()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(c),
@@ -417,7 +417,7 @@ func TestAPublishThatFails(t *testing.T) {
 	dir := fixture(t, basicFixture)
 
 	d, err := deploy.New(
-		deploy.WithRegions(schema.WithRegion("eu")),
+		deploy.WithRegions(schema.WithRegion("region-1")),
 		deploy.WithDomains(provenAll()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(&checkout{dir: dir}),
@@ -429,7 +429,7 @@ func TestAPublishThatFails(t *testing.T) {
 
 	// And a register that cannot even be read.
 	d, err = deploy.New(
-		deploy.WithRegions(schema.WithRegion("eu")),
+		deploy.WithRegions(schema.WithRegion("region-1")),
 		deploy.WithDomains(provenAll()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(&checkout{dir: dir}),
@@ -472,7 +472,7 @@ func TestACodePushIsDelegated(t *testing.T) {
 	b := &builderStub{}
 
 	d, err := deploy.New(
-		deploy.WithRegions(schema.WithRegion("eu")),
+		deploy.WithRegions(schema.WithRegion("region-1")),
 		deploy.WithDomains(provenAll()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(&checkout{dir: dir}),
@@ -505,7 +505,7 @@ func TestACodePushIsDelegated(t *testing.T) {
 // doing nothing.
 func TestACodePushThatFails(t *testing.T) {
 	d, err := deploy.New(
-		deploy.WithRegions(schema.WithRegion("eu")),
+		deploy.WithRegions(schema.WithRegion("region-1")),
 		deploy.WithDomains(provenAll()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(&checkout{dir: fixture(t, basicFixture)}),
@@ -572,7 +572,7 @@ func TestAnUnprovenZoneIsRefusedBeforeAnythingPublishes(t *testing.T) {
 	require.ErrorIs(t, err, register.ErrNotPublished)
 
 	d, err := deploy.New(
-		deploy.WithRegions(schema.WithRegion("eu")),
+		deploy.WithRegions(schema.WithRegion("region-1")),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(&checkout{dir: fixture(t, basicFixture)}),
 		deploy.WithLocalRegister(r),

@@ -25,12 +25,12 @@ import (
 //
 // THE CUT IS THE ONE A DEPLOY PUBLISHES (schema.Views, through publish), and a node
 // reads its own region's view (node.AsDestination). So what a region serves here is
-// what it would serve on a cloud with both: eu answers the route, because the function
-// and the gateway in front of it are placed there; us holds the cache and the zone and
+// what it would serve on a cloud with both: region-1 answers the route, because the function
+// and the gateway in front of it are placed there; region-2 holds the cache and the zone and
 // no route at all.
-var twoRegions = schema.Preview("eu", "us")
+var twoRegions = schema.Preview("region-1", "region-2")
 
-// inRegion starts a universe that is one region of a cloud with eu and us, and
+// inRegion starts a universe that is one region of a cloud with region-1 and region-2, and
 // publishes the project into it as that region: its own view, and only that.
 func inRegion(t *testing.T, region, name string) (*running, *node.Node) {
 	t.Helper()
@@ -70,43 +70,43 @@ func viewHeld(t *testing.T, n *node.Node, region string) (map[string]bool, uint6
 func TestEachRegionServesItsOwnView(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
-	eu, euNode := inRegion(t, "eu", "with/views")
-	held, _ := viewHeld(t, euNode, "eu")
+	r1, r1Node := inRegion(t, "region-1", "with/views")
+	held, _ := viewHeld(t, r1Node, "region-1")
 	require.Equal(t, map[string]bool{"function/hello": true, "gateway/regional": true, "zone/example_com": true, "cache/sessions": true}, held)
 
 	var said string
 	require.Eventually(t, func() bool {
-		got := eu.ask(t, http.MethodGet, "/")
+		got := r1.ask(t, http.MethodGet, "/")
 		said = got.Body.String()
 		return got.Code == http.StatusOK
-	}, 30*time.Second, 200*time.Millisecond, "eu answers the route it holds: %s", &lastSaid{&said})
+	}, 30*time.Second, 200*time.Millisecond, "region-1 answers the route it holds: %s", &lastSaid{&said})
 
-	// US HOLDS WHAT RUNS ANYWHERE, and nothing placed in eu: no function, so no gateway
+	// region-2 HOLDS WHAT RUNS ANYWHERE, and nothing placed in region-1: no function, so no gateway
 	// in front of one, so the name it answers on reaches no route.
-	us, usNode := inRegion(t, "us", "with/views")
-	held, _ = viewHeld(t, usNode, "us")
+	r2, r2Node := inRegion(t, "region-2", "with/views")
+	held, _ = viewHeld(t, r2Node, "region-2")
 	require.Equal(t, map[string]bool{"zone/example_com": true, "cache/sessions": true}, held)
-	got := us.ask(t, http.MethodGet, "/")
-	require.NotEqual(t, http.StatusOK, got.Code, "us holds no route, and does not borrow eu's")
+	got := r2.ask(t, http.MethodGet, "/")
+	require.NotEqual(t, http.StatusOK, got.Code, "region-2 holds no route, and does not borrow region-1's")
 
-	as, err := usNode.Register().Local().Assigned(t.Context(), "us")
+	as, err := r2Node.Register().Local().Assigned(t.Context(), "region-2")
 	require.NoError(t, err)
-	require.Len(t, as, 1, "us learns of the deployment from its own index")
+	require.Len(t, as, 1, "region-2 learns of the deployment from its own index")
 
 	// A RESOURCE REMOVED IN A LATER REVISION LEAVES ITS REGION'S VIEW: the cache goes,
-	// us still holds the deployment, at the new revision, without it.
+	// region-2 still holds the deployment, at the new revision, without it.
 	later := t.TempDir()
 	require.NoError(t, os.CopyFS(later, os.DirFS(projectDir("with/views"))))
 	require.NoError(t, os.Remove(filepath.Join(later, "cache", "sessions.yaml")))
-	compiled, _, _ := projectAs(t, later, artifacts{"": "unused"}, schema.WithRegion("us"))
+	compiled, _, _ := projectAs(t, later, artifacts{"": "unused"}, schema.WithRegion("region-2"))
 	var flat map[string]any
 	require.NoError(t, json.Unmarshal(compiled, &flat))
-	_, err = usNode.Register().Local().Publish(t.Context(), pkgregister.Publication{
+	_, err = r2Node.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 2, Compiled: compiled,
-		Hosts: []string{"regional.example.com"}, Views: cutFor(t, flat, schema.WithRegion("us")),
+		Hosts: []string{"regional.example.com"}, Views: cutFor(t, flat, schema.WithRegion("region-2")),
 	})
 	require.NoError(t, err)
-	held, revision := viewHeld(t, usNode, "us")
+	held, revision := viewHeld(t, r2Node, "region-2")
 	require.EqualValues(t, 2, revision)
 	require.Equal(t, map[string]bool{"zone/example_com": true}, held)
 }
@@ -127,15 +127,15 @@ func TestAProjectReachingAcrossRegionsIsRefused(t *testing.T) {
 			broken = append(broken, f.Kind+"/"+f.Name+": "+f.Title)
 		}
 	}
-	require.Equal(t, []string{`function/reader: reaches cache/sessions_eu, which is not placed in "us" where this is`}, broken)
+	require.Equal(t, []string{`function/reader: reaches cache/sessions_r1, which is not placed in "region-2" where this is`}, broken)
 
-	// AN EDGE IS JUDGED IN ONE REGION'S VIEW: as eu, the reader pinned to us is not in
-	// it, so nothing eu holds reaches across; as us, the reader reaches eu's cache.
-	views, _, err := schema.Views(obj.Flat(), schema.WithRegions(schema.WithRegion("eu")))
+	// AN EDGE IS JUDGED IN ONE REGION'S VIEW: as region-1, the reader pinned to region-2 is not in
+	// it, so nothing region-1 holds reaches across; as region-2, the reader reaches region-1's cache.
+	views, _, err := schema.Views(obj.Flat(), schema.WithRegions(schema.WithRegion("region-1")))
 	require.NoError(t, err)
-	for _, res := range schema.Resources(views["eu"].Object) {
+	for _, res := range schema.Resources(views["region-1"].Object) {
 		require.NotEqual(t, "function/reader", res.Kind+"/"+res.Name)
 	}
-	_, _, err = schema.Views(obj.Flat(), schema.WithRegions(schema.WithRegion("us")))
+	_, _, err = schema.Views(obj.Flat(), schema.WithRegions(schema.WithRegion("region-2")))
 	require.ErrorIs(t, err, schema.ErrUnviewable)
 }

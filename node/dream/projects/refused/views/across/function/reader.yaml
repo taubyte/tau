@@ -1,5 +1,5 @@
 id: QmSSumLpvBM8vHPASQuwdRwi1YyuXTwdR3opsg5VqzowuH
-description: runs in us, and reaches the cache in eu
+description: runs in region-2, and reaches the cache in region-1
 source: services/reader
 build:
     commands:
@@ -11,7 +11,7 @@ execution:
     timeout: 15s
     memory: 32MB
 regions:
-    pinned: [us]
+    pinned: [region-2]
 cache:
-    sessions_eu:
+    sessions_r1:
         ops: [get]

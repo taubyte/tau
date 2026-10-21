@@ -124,7 +124,7 @@ func TestADefaultedBlockIsNotADeclaredOne(t *testing.T) {
 	require.Equal(t, specs.ApplicationLivenessKindHttp, api.Liveness.Kind)
 	require.Equal(t, "/livez", api.Liveness.HttpPath)
 	require.Equal(t, specs.RegionsPolicyFailover, api.Regions.Policy)
-	require.Equal(t, "us", api.Regions.Standby)
+	require.Equal(t, "region-2", api.Regions.Standby)
 
 	site := specs.ReadGateway(resource(t, nil, specs.KindGateway, "api"))
 	require.Equal(t, specs.GatewayRoutingRouter, site.Routing)

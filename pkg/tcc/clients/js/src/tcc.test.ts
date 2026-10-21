@@ -454,22 +454,22 @@ test("views: the build with no regions refuses a project naming regions; a previ
   assert.ok(strict.views?.refused, "a project naming regions is refused by the build with none");
   assert.equal(strict.views?.views, undefined);
 
-  // …a preview of eu alone holds everything there…
-  const eu = await compile(fixtureFs(), "/", { branch: "main", regions: ["eu"] });
-  assert.deepEqual(eu.views?.destinations, ["eu"]);
-  const one = eu.views!.views!.eu;
+  // …a preview of region-1 alone holds everything there…
+  const r1 = await compile(fixtureFs(), "/", { branch: "main", regions: ["region-1"] });
+  assert.deepEqual(r1.views?.destinations, ["region-1"]);
+  const one = r1.views!.views!["region-1"];
   assert.equal(one.empty, false);
-  assert.deepEqual(Object.keys((one.object as any).object.function).sort(), Object.keys((eu.object as any).function).sort());
+  assert.deepEqual(Object.keys((one.object as any).object.function).sort(), Object.keys((r1.object as any).function).sort());
 
   // …and a session asks for the same cut, with the canonical object beside it.
   const session = await open(fixtureFs(), "/");
-  const viewed = await session.views({ branch: "main", regions: ["eu"] });
-  assert.deepEqual(Object.keys(viewed.views!), ["eu"]);
+  const viewed = await session.views({ branch: "main", regions: ["region-1"] });
+  assert.deepEqual(Object.keys(viewed.views!), ["region-1"]);
   assert.ok(viewed.canonical, "the whole object travels with the views");
 
-  // A preview of the regions it names refuses an edge across them, by name.
+  // A preview of the regions it names cuts one view for each.
   const named = await session.views({ branch: "main", regions: "named" });
-  assert.deepEqual(named.destinations, named.named);
-  assert.match(named.refused ?? "", /reaches workflow\/checkout, which is not placed in/);
-  assert.ok(named.notes.some((n) => n.severity === "broken"));
+  assert.deepEqual(named.destinations, ["region-1", "region-2"]);
+  assert.equal(named.refused, undefined);
+  assert.deepEqual(Object.keys(named.views!).sort(), ["region-1", "region-2"]);
 });

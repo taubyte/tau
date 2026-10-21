@@ -58,10 +58,10 @@ import (
 //     because a cheaper model in preview is the difference people actually ask for.
 //
 //   - PLACEMENT — a resource's own `regions` block. Its regions sit directly ON the
-//     branch key (`pinned: [eu, us]`) and envPath refuses a path ending in an Either,
+//     branch key (`pinned: [region-1, region-2]`) and envPath refuses a path ending in an Either,
 //     because a branch is a key the document chooses rather than one the schema names:
 //     there is nothing there to suffix. What IS per-environment is the SCOPE's own
-//     `regions`, a plain list — `regions_preview: [us]` at the project places every
+//     `regions`, a plain list — `regions_preview: [region-2]` at the project places every
 //     resource that says nothing, which is the lever, in one line. A resource that
 //     pins itself pins itself in every environment, which is what a residency line
 //     should do.
@@ -114,8 +114,8 @@ func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
 		"workflow/concurrency", "workflow/timeout",
 
 		// PLACEMENT, on every kind that declares Placed() — one decision, not
-		// eleven. The BRANCH takes the suffix: `pinned: [eu]` beside
-		// `pinned_preview: [us]`. See regionAttributes.
+		// eleven. The BRANCH takes the suffix: `pinned: [region-1]` beside
+		// `pinned_preview: [region-2]`. See regionAttributes.
 		"agent/regions/in",
 		"application/regions/in",
 		"cache/regions/in",

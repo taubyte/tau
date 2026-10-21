@@ -29,3 +29,5 @@ mcp:
 storage:
     receipts:
         ops: [get, list]
+regions:
+    pinned: [region-1]

@@ -128,11 +128,11 @@ func TestNoRegionsIsOneViewOfEverything(t *testing.T) {
 
 // EVERY POLICY HAS ITS ROLE, in every region it is held in.
 func TestEachPolicyIsHeldInItsRole(t *testing.T) {
-	views, findings, err := viewsOf(t, several{"eu", "us", "ap"}, map[string]string{
+	views, findings, err := viewsOf(t, several{"region-1", "region-2", "region-3"}, map[string]string{
 		"/project.yaml":          regionsProject,
-		"/function/api.yaml":     viewFunction("api", "regions:\n    pinned: [eu]\n"),
-		"/cache/ha.yaml":         viewCache("ha", "regions:\n    failover:\n        main: eu\n        standby: us\n"),
-		"/cache/edge.yaml":       viewCache("edge", "regions:\n    cdn: [us]\n"),
+		"/function/api.yaml":     viewFunction("api", "regions:\n    pinned: [region-1]\n"),
+		"/cache/ha.yaml":         viewCache("ha", "regions:\n    failover:\n        main: region-1\n        standby: region-2\n"),
+		"/cache/edge.yaml":       viewCache("edge", "regions:\n    cdn: [region-2]\n"),
 		"/cache/free.yaml":       viewCache("free", ""),
 		"/gateway/api.yaml":      viewGateway("api", ""),
 		"/zone/example_com.yaml": viewZone,
@@ -146,21 +146,21 @@ func TestEachPolicyIsHeldInItsRole(t *testing.T) {
 		"cache/free":       schema.RoleAnywhere,
 		"gateway/api":      schema.RoleFollows,
 		"zone/example_com": schema.RoleNeeded,
-	}, rolesByName(t, views["eu"]))
+	}, rolesByName(t, views["region-1"]))
 	require.Equal(t, map[string]schema.Role{
 		"cache/ha":         schema.RoleStandby,
 		"cache/edge":       schema.RoleSeed,
 		"cache/free":       schema.RoleAnywhere,
 		"zone/example_com": schema.RoleFollows,
-	}, rolesByName(t, views["us"]))
+	}, rolesByName(t, views["region-2"]))
 	require.Equal(t, map[string]schema.Role{
 		"cache/edge":       schema.RoleDemand,
 		"cache/free":       schema.RoleAnywhere,
 		"zone/example_com": schema.RoleFollows,
-	}, rolesByName(t, views["ap"]))
+	}, rolesByName(t, views["region-3"]))
 
 	// THE INDEX OF A VIEW NAMES ONLY WHAT IT HOLDS.
-	idx := views["us"].Object["indexes"].(map[string]any)
+	idx := views["region-2"].Object["indexes"].(map[string]any)
 	for key := range idx {
 		require.NotContains(t, key, "/function/api/")
 	}
@@ -168,13 +168,13 @@ func TestEachPolicyIsHeldInItsRole(t *testing.T) {
 
 // A CDN NOTHING SEEDS HERE IS SEEDED BY THE PLATFORM, wherever it runs.
 func TestACdnWithNoServedSeedIsSeededEverywhere(t *testing.T) {
-	views, _, err := viewsOf(t, several{"eu", "us"}, map[string]string{
+	views, _, err := viewsOf(t, several{"region-1", "region-2"}, map[string]string{
 		"/project.yaml":    regionsProject,
 		"/cache/edge.yaml": viewCache("edge", "regions:\n    cdn: []\n"),
 	})
 	require.NoError(t, err)
-	require.Equal(t, map[string]schema.Role{"cache/edge": schema.RoleSeed}, rolesByName(t, views["eu"]))
-	require.Equal(t, map[string]schema.Role{"cache/edge": schema.RoleSeed}, rolesByName(t, views["us"]))
+	require.Equal(t, map[string]schema.Role{"cache/edge": schema.RoleSeed}, rolesByName(t, views["region-1"]))
+	require.Equal(t, map[string]schema.Role{"cache/edge": schema.RoleSeed}, rolesByName(t, views["region-2"]))
 }
 
 // A BUILD SERVING FEWER REGIONS THAN THE PROJECT NAMES HOLDS IT WHERE IT PUT IT, and the
@@ -182,9 +182,9 @@ func TestACdnWithNoServedSeedIsSeededEverywhere(t *testing.T) {
 func TestARelocatedResourceIsPlaced(t *testing.T) {
 	views, findings, err := viewsOf(t, relocates{}, map[string]string{
 		"/project.yaml":    regionsProject,
-		"/cache/ha.yaml":   viewCache("ha", "regions:\n    failover:\n        main: eu\n        standby: us\n"),
-		"/cache/pin.yaml":  viewCache("pin", "regions:\n    pinned: [eu]\n"),
-		"/cache/edge.yaml": viewCache("edge", "regions:\n    cdn: [eu]\n"),
+		"/cache/ha.yaml":   viewCache("ha", "regions:\n    failover:\n        main: region-1\n        standby: region-2\n"),
+		"/cache/pin.yaml":  viewCache("pin", "regions:\n    pinned: [region-1]\n"),
+		"/cache/edge.yaml": viewCache("edge", "regions:\n    cdn: [region-1]\n"),
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, findingsTitled(findings, schema.Check))
@@ -197,21 +197,21 @@ func TestARelocatedResourceIsPlaced(t *testing.T) {
 
 // AN EDGE ACROSS REGIONS IS REFUSED, by name, and nothing is projected.
 func TestAnEdgeAcrossRegionsIsRefused(t *testing.T) {
-	views, findings, err := viewsOf(t, several{"eu", "us"}, map[string]string{
+	views, findings, err := viewsOf(t, several{"region-1", "region-2"}, map[string]string{
 		"/project.yaml":        regionsProject,
-		"/function/api.yaml":   viewFunction("api", "regions:\n    pinned: [us]\ncache:\n    sessions:\n        ops: [get]\n"),
-		"/cache/sessions.yaml": viewCache("sessions", "regions:\n    pinned: [eu]\n"),
+		"/function/api.yaml":   viewFunction("api", "regions:\n    pinned: [region-2]\ncache:\n    sessions:\n        ops: [get]\n"),
+		"/cache/sessions.yaml": viewCache("sessions", "regions:\n    pinned: [region-1]\n"),
 	})
 	require.ErrorIs(t, err, schema.ErrUnviewable)
 	require.Nil(t, views)
-	require.Equal(t, []string{`function/api: reaches cache/sessions, which is not placed in "us" where this is`},
+	require.Equal(t, []string{`function/api: reaches cache/sessions, which is not placed in "region-2" where this is`},
 		findingsTitled(findings, schema.Broken))
 
 	// THE SAME EDGE INSIDE ONE REGION IS FINE, and so is one to what has no footprint.
-	_, findings, err = viewsOf(t, several{"eu", "us"}, map[string]string{
+	_, findings, err = viewsOf(t, several{"region-1", "region-2"}, map[string]string{
 		"/project.yaml":        regionsProject,
-		"/function/api.yaml":   viewFunction("api", "regions:\n    pinned: [eu]\ncache:\n    sessions:\n        ops: [get]\n"),
-		"/cache/sessions.yaml": viewCache("sessions", "regions:\n    pinned: [eu, us]\n"),
+		"/function/api.yaml":   viewFunction("api", "regions:\n    pinned: [region-1]\ncache:\n    sessions:\n        ops: [get]\n"),
+		"/cache/sessions.yaml": viewCache("sessions", "regions:\n    pinned: [region-1, region-2]\n"),
 	})
 	require.NoError(t, err)
 	require.Empty(t, findings)
@@ -219,10 +219,10 @@ func TestAnEdgeAcrossRegionsIsRefused(t *testing.T) {
 
 // WHAT HAS NO FOOTPRINT AND REACHES ACROSS REGIONS IS HELD NOWHERE, which is refused.
 func TestAnUnplacedResourceReachingTwoRegionsIsRefused(t *testing.T) {
-	_, findings, err := viewsOf(t, several{"eu", "us"}, map[string]string{
+	_, findings, err := viewsOf(t, several{"region-1", "region-2"}, map[string]string{
 		"/project.yaml":          regionsProject,
-		"/function/api.yaml":     viewFunction("api", "regions:\n    pinned: [eu]\n"),
-		"/function/auth.yaml":    viewFunction("auth", "regions:\n    pinned: [us]\n"),
+		"/function/api.yaml":     viewFunction("api", "regions:\n    pinned: [region-1]\n"),
+		"/function/auth.yaml":    viewFunction("auth", "regions:\n    pinned: [region-2]\n"),
 		"/gateway/api.yaml":      viewGateway("api", "authorizer:\n    name: auth\n"),
 		"/zone/example_com.yaml": viewZone,
 	})
@@ -233,16 +233,16 @@ func TestAnUnplacedResourceReachingTwoRegionsIsRefused(t *testing.T) {
 
 // AN EMPTY VIEW IS A REGION THAT HOLDS NOTHING; AN UNKNOWN ONE IS NOT A REGION.
 func TestAnEmptyViewIsNotAnUnknownOne(t *testing.T) {
-	views, _, err := viewsOf(t, several{"eu", "us"}, map[string]string{
+	views, _, err := viewsOf(t, several{"region-1", "region-2"}, map[string]string{
 		"/project.yaml":   regionsProject,
-		"/cache/pin.yaml": viewCache("pin", "regions:\n    pinned: [eu]\n"),
+		"/cache/pin.yaml": viewCache("pin", "regions:\n    pinned: [region-1]\n"),
 	})
 	require.NoError(t, err)
-	us, err := schema.ViewIn(views, "us")
+	r2, err := schema.ViewIn(views, "region-2")
 	require.NoError(t, err)
-	require.True(t, us.Empty())
-	require.Equal(t, "us", us.Region)
-	require.Equal(t, "p", us.Object["object"].(map[string]any)["name"], "an empty view is still the project")
+	require.True(t, r2.Empty())
+	require.Equal(t, "region-2", r2.Region)
+	require.Equal(t, "p", r2.Object["object"].(map[string]any)["name"], "an empty view is still the project")
 
 	_, err = schema.ViewIn(views, "mars")
 	require.ErrorIs(t, err, schema.ErrUnknownDestination)
@@ -251,38 +251,38 @@ func TestAnEmptyViewIsNotAnUnknownOne(t *testing.T) {
 // A PLACEMENT FINDING THAT IS BROKEN STOPS THE VIEWS. A region the Regions answers but
 // does not render is placed there all the same, and is simply not a view here.
 func TestBrokenPlacementStopsTheViews(t *testing.T) {
-	_, findings, err := viewsOf(t, several{"eu"}, map[string]string{
+	_, findings, err := viewsOf(t, several{"region-1"}, map[string]string{
 		"/project.yaml":   regionsProject,
-		"/cache/pin.yaml": viewCache("pin", "regions:\n    pinned: [ap]\n"),
+		"/cache/pin.yaml": viewCache("pin", "regions:\n    pinned: [region-3]\n"),
 	})
 	require.ErrorIs(t, err, schema.ErrUnviewable)
-	require.Contains(t, findingsTitled(findings, schema.Broken), "cache/pin: unknown ap")
+	require.Contains(t, findingsTitled(findings, schema.Broken), "cache/pin: unknown region-3")
 
 	plan := schema.PlanViews(compileDocs(t, "", map[string]string{
 		"/project.yaml":   regionsProject,
-		"/cache/pin.yaml": viewCache("pin", "regions:\n    pinned: [eu]\n"),
+		"/cache/pin.yaml": viewCache("pin", "regions:\n    pinned: [region-1]\n"),
 	}), schema.WithRegions(liar{}))
-	require.Equal(t, []string{"us"}, plan.Destinations)
+	require.Equal(t, []string{"region-2"}, plan.Destinations)
 	require.Empty(t, findingsTitled(plan.Findings, schema.Broken))
-	require.Empty(t, plan.Roles["us"])
+	require.Empty(t, plan.Roles["region-2"])
 }
 
 type liar struct{}
 
-func (liar) Serves() []string                       { return []string{"us", "us"} }
+func (liar) Serves() []string                       { return []string{"region-2", "region-2"} }
 func (liar) Allow([]string) []schema.Concern        { return nil }
 func (liar) Place(p schema.Placement) schema.Answer { return schema.Answer{In: p.Named()} }
 
 // A SCOPE IS KEPT FOR WHAT IS IN IT, and a resource that is a scope says so.
 func TestAScopeIsKeptForWhatIsInIt(t *testing.T) {
-	views, _, err := viewsOf(t, several{"eu", "us"}, map[string]string{
+	views, _, err := viewsOf(t, several{"region-1", "region-2"}, map[string]string{
 		"/project.yaml":                regionsProject,
 		"/namespace/shop/meta.yaml":    regionsShop,
-		"/namespace/shop/cache/a.yaml": viewCache("a", "regions:\n    pinned: [eu]\n"),
-		"/namespace/shop/cache/b.yaml": viewCache("b", "regions:\n    pinned: [us]\n"),
+		"/namespace/shop/cache/a.yaml": viewCache("a", "regions:\n    pinned: [region-1]\n"),
+		"/namespace/shop/cache/b.yaml": viewCache("b", "regions:\n    pinned: [region-2]\n"),
 	})
 	require.NoError(t, err)
-	for region, want := range map[string]string{"eu": "a", "us": "b"} {
+	for region, want := range map[string]string{"region-1": "a", "region-2": "b"} {
 		var names []string
 		for _, res := range schema.Resources(views[region].Object) {
 			names = append(names, res.Scope+"/"+res.Name)
@@ -293,39 +293,38 @@ func TestAScopeIsKeptForWhatIsInIt(t *testing.T) {
 	require.False(t, errors.Is(err, schema.ErrUnviewable))
 }
 
-// THE WHOLE CORPUS FIXTURE, AS ITS EU PREVIEW SEES IT: every kind, lowerings included,
-// and the one view is the object. A build with no regions refuses it, since it pins eu.
-func TestTheBasicFixtureIsOneViewInEU(t *testing.T) {
+// THE WHOLE CORPUS FIXTURE, AS ITS region-1 PREVIEW SEES IT: every kind, lowerings included,
+// and the one view is the object. A build with no regions refuses it, since it pins region-1.
+func TestTheBasicFixtureIsOneViewInRegion1(t *testing.T) {
 	flat := basicFixture(t)
 
 	_, _, err := schema.Views(flat)
 	require.ErrorIs(t, err, schema.ErrUnviewable)
 
-	views, _, err := schema.Views(flat, schema.WithRegions(schema.Preview("eu")))
+	views, _, err := schema.Views(flat, schema.WithRegions(schema.Preview("region-1")))
 	require.NoError(t, err)
-	require.Equal(t, flat, views["eu"].Object)
-	require.Len(t, views["eu"].Roles, len(schema.Resources(flat)))
+	require.Equal(t, flat, views["region-1"].Object)
+	require.Len(t, views["region-1"].Roles, len(schema.Resources(flat)))
 }
 
 // AS ONE REGION OF THE CLOUD IT IS WRITTEN FOR, each build renders its own view.
 func TestTheBasicFixtureRendersPerRegion(t *testing.T) {
 	flat := basicFixture(t)
 
-	eu, findings, err := schema.Views(flat, schema.WithRegions(schema.WithRegion("eu")))
+	r1, findings, err := schema.Views(flat, schema.WithRegions(schema.WithRegion("region-1")))
 	require.NoError(t, err, "%v", findings)
-	require.Equal(t, []string{"eu"}, keysOf(eu))
-	require.Equal(t, flat, eu["eu"].Object)
+	require.Equal(t, []string{"region-1"}, keysOf(r1))
+	require.Equal(t, flat, r1["region-1"].Object)
 
-	// US IS REFUSED, AND THAT IS THE FIXTURE: function/checkout says nothing, so it runs
-	// in us too, and there it reaches what is pinned to eu.
-	plan := schema.PlanViews(flat, schema.WithRegions(schema.WithRegion("us")))
-	broken := findingsTitled(plan.Findings, schema.Broken)
-	require.Contains(t, broken, `function/checkout: reaches workflow/checkout, which is not placed in "us" where this is`)
-	require.Contains(t, broken, `function/checkout: reaches cache/sessions, which is not placed in "us" where this is`)
-	roles := plan.Roles["us"]
+	r2, findings, err := schema.Views(flat, schema.WithRegions(schema.WithRegion("region-2")))
+	require.NoError(t, err, "%v", findings)
+	require.Equal(t, []string{"region-2"}, keysOf(r2))
+	roles := r2["region-2"].Roles
 	require.Equal(t, schema.RoleStandby, roles[idOfName(t, flat, "application", "api")])
-	_, _, err = schema.Views(flat, schema.WithRegions(schema.WithRegion("us")))
-	require.ErrorIs(t, err, schema.ErrUnviewable)
+	for _, kind := range []string{"workflow", "function"} {
+		role, held := roles[idOfName(t, flat, kind, "checkout")]
+		require.True(t, !held || role == schema.RoleScope, "%s/checkout is %s in region-2", kind, role)
+	}
 }
 
 func basicFixture(t *testing.T) map[string]any {
@@ -361,12 +360,12 @@ func keysOf(views map[string]schema.View) []string {
 func TestAnEnvironmentNarrowsItsViews(t *testing.T) {
 	docs := map[string]string{
 		"/project.yaml": regionsProject +
-			"environments:\n    production:\n        branches: [main]\n        regions: [us]\n" +
+			"environments:\n    production:\n        branches: [main]\n        regions: [region-2]\n" +
 			"    preview:\n        branches: [\"*\"]\n",
 		"/cache/c.yaml": regionsCache(""),
 	}
-	for env, want := range map[string]map[string]int{"production": {"eu": 0, "us": 1}, "preview": {"eu": 1, "us": 1}} {
-		views, _, err := schema.Views(compileDocs(t, env, docs), schema.WithRegions(several{"eu", "us"}), schema.AuditIn(env))
+	for env, want := range map[string]map[string]int{"production": {"region-1": 0, "region-2": 1}, "preview": {"region-1": 1, "region-2": 1}} {
+		views, _, err := schema.Views(compileDocs(t, env, docs), schema.WithRegions(several{"region-1", "region-2"}), schema.AuditIn(env))
 		require.NoError(t, err)
 		for region, n := range want {
 			require.Len(t, views[region].Roles, n, "%s in %s", env, region)
@@ -381,7 +380,7 @@ func TestTheSessionAsksForTheSameViews(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	for path, body := range map[string]string{
 		"/project.yaml": regionsProject +
-			"environments:\n    production:\n        branches: [main]\n        regions: [us]\n" +
+			"environments:\n    production:\n        branches: [main]\n        regions: [region-2]\n" +
 			"    preview:\n        branches: [\"*\"]\n",
 		"/cache/c.yaml": regionsCache("size_preview: 2MB\n"),
 	} {
@@ -393,19 +392,19 @@ func TestTheSessionAsksForTheSameViews(t *testing.T) {
 	_, err = s.Views(context.Background(), schema.CompileOptions{Branch: "main"})
 	require.ErrorIs(t, err, schema.ErrUnviewable, "the default build has no regions, and production names one")
 
-	s, err = schema.NewSessionIn(fs, "/", schema.WithRegion("us"))
+	s, err = schema.NewSessionIn(fs, "/", schema.WithRegion("region-2"))
 	require.NoError(t, err)
 	got, err := s.Views(context.Background(), schema.CompileOptions{Branch: "main"})
 	require.NoError(t, err)
 	require.Len(t, got.Views, 1)
-	require.Equal(t, "us", got.Views[0].Destination)
+	require.Equal(t, "region-2", got.Views[0].Destination)
 	require.Equal(t, got.Canonical.Flat(), got.Views[0].Object)
 
-	s, err = schema.NewSessionIn(fs, "/", several{"eu", "us"})
+	s, err = schema.NewSessionIn(fs, "/", several{"region-1", "region-2"})
 	require.NoError(t, err)
 	got, err = s.Views(context.Background(), schema.CompileOptions{Branch: "main", Environment: "production"})
 	require.NoError(t, err)
-	require.Equal(t, []string{"eu", "us"}, []string{got.Views[0].Destination, got.Views[1].Destination})
+	require.Equal(t, []string{"region-1", "region-2"}, []string{got.Views[0].Destination, got.Views[1].Destination})
 	require.True(t, got.Views[0].Empty())
 	require.Equal(t, map[string]string{cidOfCache: "anywhere"}, got.Views[1].Roles)
 
@@ -414,8 +413,8 @@ func TestTheSessionAsksForTheSameViews(t *testing.T) {
 	size := got.Views[0].Object["object"].(map[string]any)["cache"].(map[string]any)[cidOfCache].(map[string]any)["size"]
 	require.EqualValues(t, 2000000, size, "compiled for preview")
 
-	require.NoError(t, afero.WriteFile(fs, "/cache/c.yaml", []byte(regionsCache("regions:\n    pinned: [ap]\n")), 0o644))
-	s, err = schema.NewSessionIn(fs, "/", several{"eu"})
+	require.NoError(t, afero.WriteFile(fs, "/cache/c.yaml", []byte(regionsCache("regions:\n    pinned: [region-3]\n")), 0o644))
+	s, err = schema.NewSessionIn(fs, "/", several{"region-1"})
 	require.NoError(t, err)
 	got, err = s.Views(context.Background(), schema.CompileOptions{Branch: "main"})
 	require.ErrorIs(t, err, schema.ErrUnviewable)
@@ -429,25 +428,25 @@ const cidOfCache = "QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB"
 // before any cloud is chosen, from the regions the project itself names.
 func TestAPreviewOfTheRegionsTheProjectNames(t *testing.T) {
 	flat := compileDocs(t, "", map[string]string{
-		"/project.yaml":    regionsProject + "regions: [eu, us, ap]\n",
-		"/cache/pin.yaml":  viewCache("pin", "regions:\n    pinned: [eu]\n"),
-		"/cache/ha.yaml":   viewCache("ha", "regions:\n    failover:\n        main: us\n        standby: mars\n"),
-		"/cache/edge.yaml": viewCache("edge", "regions:\n    cdn: [ap]\n"),
+		"/project.yaml":    regionsProject + "regions: [region-1, region-2, region-3]\n",
+		"/cache/pin.yaml":  viewCache("pin", "regions:\n    pinned: [region-1]\n"),
+		"/cache/ha.yaml":   viewCache("ha", "regions:\n    failover:\n        main: region-2\n        standby: mars\n"),
+		"/cache/edge.yaml": viewCache("edge", "regions:\n    cdn: [region-3]\n"),
 	})
 	named := schema.RegionsNamed(flat)
-	require.Equal(t, []string{"ap", "eu", "mars", "us"}, named)
+	require.Equal(t, []string{"mars", "region-1", "region-2", "region-3"}, named)
 
-	views, findings, err := schema.Views(flat, schema.WithRegions(schema.Preview("eu", "us", "ap", "eu", "")))
+	views, findings, err := schema.Views(flat, schema.WithRegions(schema.Preview("region-1", "region-2", "region-3", "region-1", "")))
 	require.NoError(t, err)
 	require.Equal(t, []string{`cache/ha: is placed in region "mars", which this preview does not show`}, findingsTitled(findings, schema.Check))
-	require.Equal(t, schema.RoleSeed, views["ap"].Roles[cidFor("cache/edge")])
-	require.Equal(t, schema.RoleDemand, views["eu"].Roles[cidFor("cache/edge")])
-	require.Equal(t, schema.RoleMain, views["us"].Roles[cidFor("cache/ha")])
+	require.Equal(t, schema.RoleSeed, views["region-3"].Roles[cidFor("cache/edge")])
+	require.Equal(t, schema.RoleDemand, views["region-1"].Roles[cidFor("cache/edge")])
+	require.Equal(t, schema.RoleMain, views["region-2"].Roles[cidFor("cache/ha")])
 	require.Len(t, views, 3)
 
-	require.Equal(t, []schema.Concern{{schema.Check, `allows region "mars", which this preview does not show`, "This preview shows eu."}},
-		schema.Preview("eu").Allow([]string{"eu", "mars"}))
-	require.Nil(t, schema.Preview("eu").Allow([]string{"eu"}))
+	require.Equal(t, []schema.Concern{{schema.Check, `allows region "mars", which this preview does not show`, "This preview shows region-1."}},
+		schema.Preview("region-1").Allow([]string{"region-1", "mars"}))
+	require.Nil(t, schema.Preview("region-1").Allow([]string{"region-1"}))
 	require.Equal(t, "This preview shows no regions.", schema.Preview().Allow([]string{"x"})[0].Detail)
-	require.Equal(t, []string{"us"}, schema.Preview("eu", "us").Place(schema.Placement{Allowed: []string{"us"}}).In)
+	require.Equal(t, []string{"region-2"}, schema.Preview("region-1", "region-2").Place(schema.Placement{Allowed: []string{"region-2"}}).In)
 }

@@ -136,7 +136,7 @@ func project(t *testing.T, name string, components artifacts) ([]byte, map[strin
 }
 
 // projectAs is project placed by the Regions given: WithNoRegions for the corpus,
-// or WithRegion("eu") for a test standing in for one region of a larger cloud.
+// or WithRegion("region-1") for a test standing in for one region of a larger cloud.
 func projectAs(t *testing.T, name string, components artifacts, regions schema.Regions) ([]byte, map[string]any, map[string]string) {
 	t.Helper()
 

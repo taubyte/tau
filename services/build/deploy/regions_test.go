@@ -25,21 +25,23 @@ func TestARegionThisCloudDoesNotServeIsRefusedByDefault(t *testing.T) {
 	var log out
 	err = d.Run(t.Context(), work(), &log)
 	require.ErrorIs(t, err, deploy.ErrUnplaced)
-	require.ErrorContains(t, err, `cache/sessions in shop: is placed in region "eu", which this build does not serve`)
+	require.ErrorContains(t, err, `cache/sessions in shop: is placed in region "region-1", which this build does not serve`)
 	_, err = r.Resolve(t.Context(), shopID, deploy.DefaultEnvironment)
 	require.Error(t, err, "nothing was published")
 }
 
-// AS US, THE FIXTURE IS REFUSED: function/checkout says nothing, so it runs in us too,
-// and there it reaches workflow/checkout, which is pinned to eu.
-func TestTheFixtureIsRefusedAsUS(t *testing.T) {
-	r := registry(t)
-	var log out
-	err := runner(t, &checkout{dir: fixture(t, basicFixture)}, r, deploy.WithRegions(schema.WithRegion("us"))).
-		Run(t.Context(), work(), &log)
-	require.ErrorContains(t, err, `function/checkout: reaches workflow/checkout, which is not placed in "us" where this is`)
-	_, err = r.Resolve(t.Context(), shopID, deploy.DefaultEnvironment)
-	require.Error(t, err, "nothing was published")
+// EACH REGION THE FIXTURE NAMES DEPLOYS IT, as its own view.
+func TestTheFixtureDeploysAsEachRegion(t *testing.T) {
+	for _, region := range []string{"region-1", "region-2"} {
+		t.Run(region, func(t *testing.T) {
+			r := registry(t)
+			var log out
+			require.NoError(t, runner(t, &checkout{dir: fixture(t, basicFixture)}, r, deploy.WithRegions(schema.WithRegion(region))).
+				Run(t.Context(), work(), &log))
+			_, err := r.ResolveView(t.Context(), shopID, deploy.DefaultEnvironment, region)
+			require.NoError(t, err)
+		})
+	}
 }
 
 // placesNothing places nothing anywhere, which is a cloud that cannot run the project.

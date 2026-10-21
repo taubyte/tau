@@ -73,7 +73,7 @@ func TestABranchResolvesToItsDeploymentsFromTheCompiledObject(t *testing.T) {
 	}
 	production := table[byName["production"]]
 	require.Equal(t, []string{"main", "master"}, production.Branches)
-	require.Equal(t, []string{"eu-west", "eu-central"}, production.Regions)
+	require.Equal(t, []string{"region-1", "region-2"}, production.Regions)
 	require.Len(t, production.Shadows, 1)
 	require.Equal(t, "ab", production.Shadows[0].Name)
 	require.Equal(t, "production", production.Shadows[0].Of)

@@ -1,4 +1,3 @@
 id: QmQPeNsJPyVWPFDVHb77w8G42Fvo15z4bmmjRoBHfW1YZv
 name: shop
-description: narrows the project's regions to one - nothing under here leaves the EU
-regions: [eu]
+description: the shop - its sessions are kept in region-1, and what it authorizes runs wherever the project does

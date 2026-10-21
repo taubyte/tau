@@ -23,7 +23,7 @@ func (o onlyNamed) Place(p schema.Placement) schema.Answer {
 }
 
 func (onlyNamed) Allow([]string) []schema.Concern { return nil }
-func (onlyNamed) Serves() []string                { return []string{"eu", "us"} }
+func (onlyNamed) Serves() []string                { return []string{"region-1", "region-2"} }
 
 func compileDocs(t *testing.T, env string, docs map[string]string) map[string]any {
 	t.Helper()
@@ -75,12 +75,12 @@ func TestNoRegionsRefusesAndPlacesInDefault(t *testing.T) {
 		p     schema.Placement
 		title string
 	}{
-		{"pinned", schema.Placement{Policy: "pinned", In: []string{"eu", "us"}},
-			`is placed in regions "eu", "us", which this build does not serve; it runs in "default"`},
-		{"cdn", schema.Placement{Policy: "cdn", In: []string{"eu"}},
-			`is placed in region "eu", which this build does not serve; it runs in "default"`},
-		{"failover", schema.Placement{Policy: "failover", Main: "eu", Standby: "us"},
-			`is placed in regions "eu", "us", which this build does not serve; it runs in "default"`},
+		{"pinned", schema.Placement{Policy: "pinned", In: []string{"region-1", "region-2"}},
+			`is placed in regions "region-1", "region-2", which this build does not serve; it runs in "default"`},
+		{"cdn", schema.Placement{Policy: "cdn", In: []string{"region-1"}},
+			`is placed in region "region-1", which this build does not serve; it runs in "default"`},
+		{"failover", schema.Placement{Policy: "failover", Main: "region-1", Standby: "region-2"},
+			`is placed in regions "region-1", "region-2", which this build does not serve; it runs in "default"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := r.Place(tc.p)
@@ -93,7 +93,7 @@ func TestNoRegionsRefusesAndPlacesInDefault(t *testing.T) {
 	}
 
 	// Saying nothing, or naming the one region served, is nothing to warn about.
-	for _, p := range []schema.Placement{{}, {Allowed: []string{"eu"}}, {Policy: "pinned", In: []string{"default"}}} {
+	for _, p := range []schema.Placement{{}, {Allowed: []string{"region-1"}}, {Policy: "pinned", In: []string{"default"}}} {
 		got := r.Place(p)
 		require.Equal(t, []string{schema.DefaultRegion}, got.In)
 		require.Empty(t, got.Concerns)
@@ -101,10 +101,10 @@ func TestNoRegionsRefusesAndPlacesInDefault(t *testing.T) {
 
 	require.Empty(t, r.Allow(nil))
 	require.Empty(t, r.Allow([]string{"default"}))
-	allow := r.Allow([]string{"eu", "eu", "default"})
+	allow := r.Allow([]string{"region-1", "region-1", "default"})
 	require.Len(t, allow, 1)
 	require.Equal(t, severity, allow[0].Severity)
-	require.Equal(t, `allows region "eu", which this build does not serve; everything under it runs in "default"`, allow[0].Title)
+	require.Equal(t, `allows region "region-1", which this build does not serve; everything under it runs in "default"`, allow[0].Title)
 }
 
 // THE AUDIT FILES WHAT ONEREGION SAYS against what said it: the resource, the
@@ -112,18 +112,18 @@ func TestNoRegionsRefusesAndPlacesInDefault(t *testing.T) {
 // passing a nil Regions is the default too.
 func TestTheAuditHearsNoRegionsByDefault(t *testing.T) {
 	docs := map[string]string{
-		"/project.yaml": regionsProject + "regions: [eu]\n" +
-			"environments:\n    production:\n        branches: [main]\n        regions: [eu]\n",
-		"/namespace/shop/meta.yaml":           regionsShop + "regions: [eu]\n",
-		"/namespace/shop/cache/sessions.yaml": regionsCache("regions:\n    pinned: [eu]\n"),
+		"/project.yaml": regionsProject + "regions: [region-1]\n" +
+			"environments:\n    production:\n        branches: [main]\n        regions: [region-1]\n",
+		"/namespace/shop/meta.yaml":           regionsShop + "regions: [region-1]\n",
+		"/namespace/shop/cache/sessions.yaml": regionsCache("regions:\n    pinned: [region-1]\n"),
 	}
 	obj := compileDocs(t, "", docs)
 
 	want := []string{
-		`project/p: allows region "eu", which this build does not serve; everything under it runs in "default"`,
-		`namespace/shop: allows region "eu", which this build does not serve; everything under it runs in "default"`,
-		`environments/production: allows region "eu", which this build does not serve; everything under it runs in "default"`,
-		`cache/sessions: is placed in region "eu", which this build does not serve; it runs in "default"`,
+		`project/p: allows region "region-1", which this build does not serve; everything under it runs in "default"`,
+		`namespace/shop: allows region "region-1", which this build does not serve; everything under it runs in "default"`,
+		`environments/production: allows region "region-1", which this build does not serve; everything under it runs in "default"`,
+		`cache/sessions: is placed in region "region-1", which this build does not serve; it runs in "default"`,
 	}
 	// THE DEFAULT REFUSES: no validator, a nil one, and WithNoRegions are one answer.
 	for _, found := range [][]schema.Finding{
@@ -147,11 +147,11 @@ func TestTheAuditHearsNoRegionsByDefault(t *testing.T) {
 // the environment the audit reads narrowing it.
 func TestThePlacementTheRegionsIsAsked(t *testing.T) {
 	docs := map[string]string{
-		"/project.yaml": regionsProject + "regions: [eu, us]\n" +
-			"environments:\n    production:\n        branches: [main]\n        regions: [us]\n" +
+		"/project.yaml": regionsProject + "regions: [region-1, region-2]\n" +
+			"environments:\n    production:\n        branches: [main]\n        regions: [region-2]\n" +
 			"    preview:\n        branches: [\"*\"]\n",
-		"/namespace/shop/meta.yaml":       regionsShop + "regions: [eu, us]\n",
-		"/namespace/shop/cache/c.yaml":    regionsCache("regions:\n    failover:\n        main: eu\n        standby: us\n"),
+		"/namespace/shop/meta.yaml":       regionsShop + "regions: [region-1, region-2]\n",
+		"/namespace/shop/cache/c.yaml":    regionsCache("regions:\n    failover:\n        main: region-1\n        standby: region-2\n"),
 		"/cache/root.yaml":                "id: QmVs4sQjPFqJZ7Ug5MPpFxPTNiZ1CT8xY4XPKUbnDNbNAY\nsize: 1MB\nconsensus: crdt\n",
 		"/namespace/shop/secret/s.yaml":   "id: QmWATWQ7fVPP2EFGu71UkfnqhYXDYH566qy47CnJDgvs8u\nsource: value\nrotation: 720h\n",
 		"/namespace/shop/cache/open.yaml": "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nsize: 1MB\nconsensus: crdt\n",
@@ -166,9 +166,9 @@ func TestThePlacementTheRegionsIsAsked(t *testing.T) {
 		byPolicy[p.Policy] = p
 	}
 	require.Len(t, asked, 3, "three caches are placed; a secret is not")
-	require.Equal(t, schema.Placement{Policy: "failover", Main: "eu", Standby: "us", Allowed: []string{"us"}},
-		byPolicy["failover"], "shop's eu+us, narrowed by production's us")
-	require.Equal(t, []string{"us"}, byPolicy[""].Allowed)
+	require.Equal(t, schema.Placement{Policy: "failover", Main: "region-1", Standby: "region-2", Allowed: []string{"region-2"}},
+		byPolicy["failover"], "shop's region-1+region-2, narrowed by production's region-2")
+	require.Equal(t, []string{"region-2"}, byPolicy[""].Allowed)
 
 	// Told no environment, the ceiling is the chain alone; an environment with no
 	// regions of its own narrows nothing.
@@ -177,7 +177,7 @@ func TestThePlacementTheRegionsIsAsked(t *testing.T) {
 		schema.Audit(compileDocs(t, env, docs), nil, schema.AuditIn(env), schema.WithRegions(onlyNamed{&asked}))
 		for _, p := range asked {
 			if p.Policy == "failover" {
-				require.Equal(t, []string{"eu", "us"}, p.Allowed, env)
+				require.Equal(t, []string{"region-1", "region-2"}, p.Allowed, env)
 			}
 		}
 	}
@@ -186,8 +186,8 @@ func TestThePlacementTheRegionsIsAsked(t *testing.T) {
 	// ceiling, not a missing one.
 	asked = nil
 	schema.Audit(compileDocs(t, "production", map[string]string{
-		"/project.yaml": regionsProject + "regions: [eu]\n" +
-			"environments:\n    production:\n        branches: [main]\n        regions: [us]\n" +
+		"/project.yaml": regionsProject + "regions: [region-1]\n" +
+			"environments:\n    production:\n        branches: [main]\n        regions: [region-2]\n" +
 			"    preview:\n        branches: [\"*\"]\n",
 		"/cache/c.yaml": regionsCache(""),
 	}), nil, schema.AuditIn("production"), schema.WithRegions(onlyNamed{&asked}))
@@ -197,11 +197,11 @@ func TestThePlacementTheRegionsIsAsked(t *testing.T) {
 	asked = nil
 	schema.Audit(compileDocs(t, "production", map[string]string{
 		"/project.yaml": regionsProject +
-			"environments:\n    production:\n        branches: [main]\n        regions: [us]\n" +
+			"environments:\n    production:\n        branches: [main]\n        regions: [region-2]\n" +
 			"    preview:\n        branches: [\"*\"]\n",
 		"/cache/c.yaml": regionsCache(""),
 	}), nil, schema.AuditIn("production"), schema.WithRegions(onlyNamed{&asked}))
-	require.Equal(t, []schema.Placement{{Allowed: []string{"us"}}}, asked)
+	require.Equal(t, []schema.Placement{{Allowed: []string{"region-2"}}}, asked)
 }
 
 // A REGIONS THAT REFUSES IS HEARD AS IT SPOKE: its severity, against the resource.
@@ -210,15 +210,15 @@ type refuses struct{}
 func (refuses) Place(p schema.Placement) schema.Answer {
 	return schema.Answer{In: p.Named(), Concerns: []schema.Concern{{schema.Broken, "is refused", "because"}}}
 }
-func (refuses) Serves() []string { return []string{"eu"} }
+func (refuses) Serves() []string { return []string{"region-1"} }
 func (refuses) Allow([]string) []schema.Concern {
 	return []schema.Concern{{schema.Broken, "allowance refused", "because"}}
 }
 
 func TestTheAuditFilesWhatTheRegionsSays(t *testing.T) {
 	found := auditWith(t, refuses{}, map[string]string{
-		"/project.yaml": regionsProject + "regions: [eu]\n",
-		"/cache/c.yaml": regionsCache("regions:\n    pinned: [eu]\n"),
+		"/project.yaml": regionsProject + "regions: [region-1]\n",
+		"/cache/c.yaml": regionsCache("regions:\n    pinned: [region-1]\n"),
 	})
 	require.Contains(t, findingsTitled(found, schema.Broken), "cache/c: is refused")
 	require.Contains(t, findingsTitled(found, schema.Broken), "project/p: allowance refused")
@@ -227,20 +227,20 @@ func TestTheAuditFilesWhatTheRegionsSays(t *testing.T) {
 // AS A REGION, a build is one region of a cloud that has more: naming the others is
 // not an error, and it answers where things run as the cloud would.
 func TestWithRegionIsOneRegionOfMany(t *testing.T) {
-	r := schema.WithRegion("eu")
-	require.Equal(t, []string{"eu"}, r.Serves())
-	require.Empty(t, r.Allow([]string{"eu", "us"}))
+	r := schema.WithRegion("region-1")
+	require.Equal(t, []string{"region-1"}, r.Serves())
+	require.Empty(t, r.Allow([]string{"region-1", "region-2"}))
 
 	for _, tc := range []struct {
 		p    schema.Placement
 		want []string
 	}{
-		{schema.Placement{}, []string{"eu"}},
-		{schema.Placement{Allowed: []string{"us"}}, []string{"us"}},
-		{schema.Placement{Policy: "pinned", In: []string{"us"}}, []string{"us"}},
-		{schema.Placement{Policy: "failover", Main: "eu", Standby: "us"}, []string{"eu", "us"}},
-		{schema.Placement{Policy: "cdn", In: []string{"us"}}, []string{"us", "eu"}},
-		{schema.Placement{Policy: "cdn", In: []string{"us"}, Allowed: []string{"us"}}, []string{"us"}},
+		{schema.Placement{}, []string{"region-1"}},
+		{schema.Placement{Allowed: []string{"region-2"}}, []string{"region-2"}},
+		{schema.Placement{Policy: "pinned", In: []string{"region-2"}}, []string{"region-2"}},
+		{schema.Placement{Policy: "failover", Main: "region-1", Standby: "region-2"}, []string{"region-1", "region-2"}},
+		{schema.Placement{Policy: "cdn", In: []string{"region-2"}}, []string{"region-2", "region-1"}},
+		{schema.Placement{Policy: "cdn", In: []string{"region-2"}, Allowed: []string{"region-2"}}, []string{"region-2"}},
 	} {
 		got := r.Place(tc.p)
 		require.Equal(t, tc.want, got.In, "%+v", tc.p)

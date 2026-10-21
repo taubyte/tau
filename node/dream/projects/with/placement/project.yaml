@@ -1,4 +1,4 @@
 id: QmPigwAetxyyVvHj453JLsLhrWNGV4mW9ZG9yvjd7kUmMk
 name: placement
-description: a project that says where it runs - allowed in eu and us, its cache pinned to eu - refused by a build with no regions, placed by one that is eu
-regions: [eu, us]
+description: a project that says where it runs - allowed in region-1 and region-2, its cache pinned to region-1 - refused by a build with no regions, placed by one that is region-1
+regions: [region-1, region-2]

@@ -16,7 +16,7 @@ func mountedProject(t *testing.T, siteBody string) afero.Fs {
 	t.Helper()
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nname: shop\nregions: [eu]\n"), 0o644))
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nname: shop\nregions: [region-1]\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/website/docs.yaml",
 		[]byte("id: QmRgVLmWTBpgTbCPnHRUvKGnHqHf7Yd7t8ZffKeRXPkRLL\n"+siteBody), 0o644))
 	return fs

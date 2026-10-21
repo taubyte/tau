@@ -36,3 +36,5 @@ channel:
         ops: [dial]
     sync:
         ops: [dial]
+regions:
+    pinned: [region-1]

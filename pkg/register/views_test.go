@@ -24,26 +24,26 @@ func publishCut(t *testing.T, r *Register, rev uint64, views map[string]string) 
 // the deployment does not list has none.
 func TestADestinationReadsItsView(t *testing.T) {
 	r, _ := newRegister(t)
-	publishCut(t, r, 1, map[string]string{"eu": "eu view", "us": "us view"})
+	publishCut(t, r, 1, map[string]string{"region-1": "region-1 view", "region-2": "region-2 view"})
 
-	eu, err := r.ResolveView(ctx, "shop", "prod", "eu")
+	r1, err := r.ResolveView(ctx, "shop", "prod", "region-1")
 	require.NoError(t, err)
-	require.Equal(t, IDOf([]byte("eu view")), eu.Object)
-	require.EqualValues(t, 1, eu.Revision)
-	body, err := r.Object(ctx, eu.Object)
+	require.Equal(t, IDOf([]byte("region-1 view")), r1.Object)
+	require.EqualValues(t, 1, r1.Revision)
+	body, err := r.Object(ctx, r1.Object)
 	require.NoError(t, err)
-	require.Equal(t, "eu view", string(body))
+	require.Equal(t, "region-1 view", string(body))
 
 	m, id, err := r.Manifest(ctx, "shop", "prod")
 	require.NoError(t, err)
-	require.Equal(t, eu.Manifest, id)
+	require.Equal(t, r1.Manifest, id)
 	require.Equal(t, IDOf([]byte("whole 1")), m.Object, "the whole object travels with the views")
 	require.False(t, m.Whole)
 	require.Len(t, m.Views, 2)
 
-	_, err = r.ResolveView(ctx, "shop", "prod", "ap")
+	_, err = r.ResolveView(ctx, "shop", "prod", "region-3")
 	require.ErrorIs(t, err, ErrNoView)
-	_, err = r.ResolveView(ctx, "shop", "staging", "eu")
+	_, err = r.ResolveView(ctx, "shop", "staging", "region-1")
 	require.ErrorIs(t, err, ErrNotPublished)
 
 	// the whole object is still what Resolve names, for whoever needs all of it
@@ -56,9 +56,9 @@ func TestADestinationReadsItsView(t *testing.T) {
 // deployment withdrawn from it.
 func TestADestinationLearnsItsAssignments(t *testing.T) {
 	r, _ := newRegister(t)
-	publishCut(t, r, 1, map[string]string{"eu": "a", "us": "b"})
+	publishCut(t, r, 1, map[string]string{"region-1": "a", "region-2": "b"})
 	_, err := r.Publish(ctx, Publication{Project: "blog", Environment: "prod", Revision: 1, Compiled: []byte("blog"),
-		Views: []View{{Destination: "us", Compiled: []byte("blog us")}}})
+		Views: []View{{Destination: "region-2", Compiled: []byte("blog region-2")}}})
 	require.NoError(t, err)
 
 	names := func(as []Assignment) []string {
@@ -68,31 +68,31 @@ func TestADestinationLearnsItsAssignments(t *testing.T) {
 		}
 		return out
 	}
-	us, err := r.Assigned(ctx, "us")
+	r2, err := r.Assigned(ctx, "region-2")
 	require.NoError(t, err)
-	require.Equal(t, []string{"blog/prod", "shop/prod"}, names(us))
-	eu, err := r.Assigned(ctx, "eu")
+	require.Equal(t, []string{"blog/prod", "shop/prod"}, names(r2))
+	r1, err := r.Assigned(ctx, "region-1")
 	require.NoError(t, err)
-	require.Equal(t, []string{"shop/prod"}, names(eu))
+	require.Equal(t, []string{"shop/prod"}, names(r1))
 
-	// REVISION 2 IS NOT IN us ANY MORE: its old row remains, and it is not listed.
-	publishCut(t, r, 2, map[string]string{"eu": "a2"})
-	us, err = r.Assigned(ctx, "us")
+	// REVISION 2 IS NOT IN region-2 ANY MORE: its old row remains, and it is not listed.
+	publishCut(t, r, 2, map[string]string{"region-1": "a2"})
+	r2, err = r.Assigned(ctx, "region-2")
 	require.NoError(t, err)
-	require.Equal(t, []string{"blog/prod"}, names(us))
-	_, err = r.ResolveView(ctx, "shop", "prod", "us")
+	require.Equal(t, []string{"blog/prod"}, names(r2))
+	_, err = r.ResolveView(ctx, "shop", "prod", "region-2")
 	require.ErrorIs(t, err, ErrNoView)
-	eu, err = r.Assigned(ctx, "eu")
+	r1, err = r.Assigned(ctx, "region-1")
 	require.NoError(t, err)
-	require.EqualValues(t, 2, eu[0].View.Revision)
+	require.EqualValues(t, 2, r1[0].View.Revision)
 
 	// AN EMPTY VIEW IS A VIEW: what it holds was removed, and the destination is told.
-	publishCut(t, r, 3, map[string]string{"eu": "{}", "us": "{}"})
-	us, err = r.Assigned(ctx, "us")
+	publishCut(t, r, 3, map[string]string{"region-1": "{}", "region-2": "{}"})
+	r2, err = r.Assigned(ctx, "region-2")
 	require.NoError(t, err)
-	require.Equal(t, []string{"blog/prod", "shop/prod"}, names(us))
+	require.Equal(t, []string{"blog/prod", "shop/prod"}, names(r2))
 
-	none, err := r.Assigned(ctx, "ap")
+	none, err := r.Assigned(ctx, "region-3")
 	require.NoError(t, err)
 	require.Empty(t, none)
 }
@@ -101,25 +101,25 @@ func TestADestinationLearnsItsAssignments(t *testing.T) {
 // whose manifest is missing, reads as the newest revision that is whole.
 func TestAReaderToleratesWhatHasNotArrived(t *testing.T) {
 	r, store := newRegister(t)
-	publishCut(t, r, 1, map[string]string{"eu": "eu 1"})
-	publishCut(t, r, 2, map[string]string{"eu": "eu 2"})
+	publishCut(t, r, 1, map[string]string{"region-1": "region-1 1"})
+	publishCut(t, r, 2, map[string]string{"region-1": "region-1 2"})
 
 	// the view of revision 2 has not replicated here yet
 	held := store.m
-	delete(held, objectKey(IDOf([]byte("eu 2"))))
-	v, err := r.ResolveView(ctx, "shop", "prod", "eu")
+	delete(held, objectKey(IDOf([]byte("region-1 2"))))
+	v, err := r.ResolveView(ctx, "shop", "prod", "region-1")
 	require.NoError(t, err)
 	require.EqualValues(t, 1, v.Revision)
 
 	// a revision-3 row whose manifest has not arrived is not a revision yet
 	held[manifestKey("shop", "prod", 3, "f00")] = nil
-	v, err = r.ResolveView(ctx, "shop", "prod", "eu")
+	v, err = r.ResolveView(ctx, "shop", "prod", "region-1")
 	require.NoError(t, err)
 	require.EqualValues(t, 1, v.Revision)
 
 	// nothing whole at all is not published, rather than an error
-	delete(held, objectKey(IDOf([]byte("eu 1"))))
-	_, err = r.ResolveView(ctx, "shop", "prod", "eu")
+	delete(held, objectKey(IDOf([]byte("region-1 1"))))
+	_, err = r.ResolveView(ctx, "shop", "prod", "region-1")
 	require.ErrorIs(t, err, ErrNotPublished)
 }
 
@@ -130,19 +130,19 @@ func TestConcurrentRevisionsResolveTheSameEverywhere(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = a.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("x"),
-		Views: []View{{Destination: "eu", Compiled: []byte("from a")}}})
+		Views: []View{{Destination: "region-1", Compiled: []byte("from a")}}})
 	require.NoError(t, err)
 	// b's process holds no lock a's did, and a replicated store orders nothing: model a
 	// second node publishing the same revision by writing beside a's entry, as it would.
 	require.NoError(t, b.publishViews(ctx, Publication{Project: "shop", Environment: "prod", Revision: 1,
-		Views: []View{{Destination: "eu", Compiled: []byte("from b")}}}, IDOf([]byte("y"))))
+		Views: []View{{Destination: "region-1", Compiled: []byte("from b")}}}, IDOf([]byte("y"))))
 
 	entries, err := a.entriesUnder(ctx, manifestPrefix+"shop/prod/")
 	require.NoError(t, err)
 	require.Len(t, entries, 2, "one key per entry: neither overwrote the other")
-	va, err := a.ResolveView(ctx, "shop", "prod", "eu")
+	va, err := a.ResolveView(ctx, "shop", "prod", "region-1")
 	require.NoError(t, err)
-	vb, err := b.ResolveView(ctx, "shop", "prod", "eu")
+	vb, err := b.ResolveView(ctx, "shop", "prod", "region-1")
 	require.NoError(t, err)
 	require.Equal(t, va, vb)
 	require.Equal(t, entries[0].manifest, va.Manifest, "the lowest manifest id wins a tie")
@@ -153,7 +153,7 @@ func TestAnUncutPublicationIsWholeEverywhere(t *testing.T) {
 	r, _ := newRegister(t)
 	_, err := r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("all")})
 	require.NoError(t, err)
-	for _, d := range []string{"default", "eu"} {
+	for _, d := range []string{"default", "region-1"} {
 		v, err := r.ResolveView(ctx, "shop", "prod", d)
 		require.NoError(t, err)
 		require.Equal(t, IDOf([]byte("all")), v.Object)
@@ -169,7 +169,7 @@ func TestAnUncutPublicationIsWholeEverywhere(t *testing.T) {
 	body, err := reg.Object(ctx, p.Object)
 	require.NoError(t, err)
 	require.Equal(t, "all", string(body))
-	_, err = InRegion(r, "eu").Resolve(ctx, "shop", "nope")
+	_, err = InRegion(r, "region-1").Resolve(ctx, "shop", "nope")
 	require.ErrorIs(t, err, ErrNotPublished)
 }
 
@@ -181,18 +181,18 @@ func TestViewsRefuseWhatAddressesNothing(t *testing.T) {
 	}{
 		{[]View{{Destination: "", Compiled: []byte("x")}}, ErrNoDestination},
 		{[]View{{Destination: "a/b", Compiled: []byte("x")}}, ErrSeparator},
-		{[]View{{Destination: "eu"}}, ErrEmptyObject},
+		{[]View{{Destination: "region-1"}}, ErrEmptyObject},
 	} {
 		_, err := r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("x"), Views: tc.views})
 		require.ErrorIs(t, err, tc.want)
 	}
 	_, err := r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("x"),
-		Views: []View{{Destination: "eu", Compiled: []byte("1")}, {Destination: "eu", Compiled: []byte("2")}}})
-	require.ErrorContains(t, err, "two views for eu")
+		Views: []View{{Destination: "region-1", Compiled: []byte("1")}, {Destination: "region-1", Compiled: []byte("2")}}})
+	require.ErrorContains(t, err, "two views for region-1")
 
 	for _, call := range []func() error{
-		func() error { _, err := r.ResolveView(ctx, "", "prod", "eu"); return err },
-		func() error { _, err := r.ResolveView(ctx, "shop", "", "eu"); return err },
+		func() error { _, err := r.ResolveView(ctx, "", "prod", "region-1"); return err },
+		func() error { _, err := r.ResolveView(ctx, "shop", "", "region-1"); return err },
 		func() error { _, err := r.ResolveView(ctx, "shop", "prod", ""); return err },
 		func() error { _, _, err := r.Manifest(ctx, "", "prod"); return err },
 		func() error { _, _, err := r.Manifest(ctx, "shop", ""); return err },
@@ -204,7 +204,7 @@ func TestViewsRefuseWhatAddressesNothing(t *testing.T) {
 	// A MANIFEST THAT IS PRESENT AND UNREADABLE IS DATA LOSS, not "not published".
 	store.m[objectKey("bad")] = []byte("manifest 1\nrevision x\n")
 	store.m[manifestKey("shop", "prod", 9, "bad")] = nil
-	_, err = r.ResolveView(ctx, "shop", "prod", "eu")
+	_, err = r.ResolveView(ctx, "shop", "prod", "region-1")
 	require.ErrorIs(t, err, ErrMalformedPointer)
 	_, _, err = r.Manifest(ctx, "shop", "prod")
 	require.ErrorIs(t, err, ErrMalformedPointer)
@@ -233,28 +233,28 @@ func TestViewsSayAStoreThatFails(t *testing.T) {
 	r, err := New(WithStore(&broken))
 	require.NoError(t, err)
 	_, err = r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("x"),
-		Views: []View{{Destination: "eu", Compiled: []byte("v")}}})
+		Views: []View{{Destination: "region-1", Compiled: []byte("v")}}})
 	require.NoError(t, err)
 
 	broken.list = true
-	_, err = r.ResolveView(ctx, "shop", "prod", "eu")
+	_, err = r.ResolveView(ctx, "shop", "prod", "region-1")
 	require.ErrorIs(t, err, errFailing)
 	_, _, err = r.Manifest(ctx, "shop", "prod")
 	require.ErrorIs(t, err, errFailing)
-	_, err = r.Assigned(ctx, "eu")
+	_, err = r.Assigned(ctx, "region-1")
 	require.ErrorIs(t, err, errFailing)
 
 	broken.list, broken.get = false, true
-	_, err = r.ResolveView(ctx, "shop", "prod", "eu")
+	_, err = r.ResolveView(ctx, "shop", "prod", "region-1")
 	require.ErrorIs(t, err, errFailing)
 	_, _, err = r.Manifest(ctx, "shop", "prod")
 	require.ErrorIs(t, err, errFailing)
-	_, err = r.Assigned(ctx, "eu")
+	_, err = r.Assigned(ctx, "region-1")
 	require.ErrorIs(t, err, errFailing)
 
 	broken.get, broken.put = false, true
 	_, err = r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 2, Compiled: []byte("x"),
-		Views: []View{{Destination: "eu", Compiled: []byte("v2")}}})
+		Views: []View{{Destination: "region-1", Compiled: []byte("v2")}}})
 	require.ErrorIs(t, err, errFailing)
 }
 

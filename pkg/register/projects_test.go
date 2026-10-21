@@ -431,7 +431,7 @@ func TestPublicationsAndRecordsNeverTouchEachOther(t *testing.T) {
 	}
 
 	_, err := r.Publish(ctx, Publication{Project: pid, Environment: "prod", Revision: 1,
-		Compiled: []byte(`{"fn":"a","fn2":"b"}`), Hosts: []string{"shop.example.com", "api.example.com"}, Views: views("eu", "us")})
+		Compiled: []byte(`{"fn":"a","fn2":"b"}`), Hosts: []string{"shop.example.com", "api.example.com"}, Views: views("region-1", "region-2")})
 	require.NoError(t, err)
 
 	publications := snapshot(false)
@@ -446,7 +446,7 @@ func TestPublicationsAndRecordsNeverTouchEachOther(t *testing.T) {
 
 	// A republish that removes a resource, a name and a destination.
 	_, err = r.Publish(ctx, Publication{Project: pid, Environment: "prod", Revision: 2,
-		Compiled: []byte(`{"fn":"a"}`), Hosts: []string{"shop.example.com"}, Views: views("eu")})
+		Compiled: []byte(`{"fn":"a"}`), Hosts: []string{"shop.example.com"}, Views: views("region-1")})
 	require.NoError(t, err)
 	_, err = r.Publish(ctx, Publication{Project: pid, Environment: "staging", Revision: 1, Compiled: []byte(`{}`)})
 	require.NoError(t, err)

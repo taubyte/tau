@@ -580,6 +580,6 @@ func TestAsDestination(t *testing.T) {
 	var o options
 	require.Error(t, AsDestination("")(&o))
 	require.Equal(t, schema.DefaultRegion, (&Node{opts: o}).destination())
-	require.NoError(t, AsDestination("eu")(&o))
-	require.Equal(t, "eu", (&Node{opts: o}).destination())
+	require.NoError(t, AsDestination("region-1")(&o))
+	require.Equal(t, "region-1", (&Node{opts: o}).destination())
 }

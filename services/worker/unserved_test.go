@@ -192,7 +192,7 @@ func TestWhatAWorkflowsDriversDoNotDoIsRefused(t *testing.T) {
 // TestARegionBlockIsNotRead. Placement in this build is one region, so a grant
 // to a resource pinned somewhere is served like any other rather than refused.
 func TestARegionBlockIsNotRead(t *testing.T) {
-	pinned := specs.Resource{"regions": map[string]any{"policy": "pinned", "in": []any{"eu"}}}
+	pinned := specs.Resource{"regions": map[string]any{"policy": "pinned", "in": []any{"region-1"}}}
 	for _, kind := range []string{cacheKind, storageKind, volumeKind, syncKind, workflowKind, databaseKind, functionKind} {
 		require.Empty(t, unservable(specs.Reach{Kind: kind, Label: "x", Ops: []string{"get"}}, pinned), kind)
 	}

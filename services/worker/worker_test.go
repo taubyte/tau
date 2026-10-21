@@ -143,7 +143,7 @@ func TestASecretIsNeverAnEmptyString(t *testing.T) {
 
 	env := with.Runtime.specs()[0].Env
 	require.Equal(t, "info", env["LOG_LEVEL"])
-	require.Equal(t, "eu-west", env["REGION"])
+	require.Equal(t, "region-1", env["REGION"])
 	require.Contains(t, env["STRIPE_KEY"], "sk_live_")
 }
 

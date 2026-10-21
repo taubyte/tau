@@ -1,7 +1,0 @@
-id: QmRLSXLzjHPSdYjD2j9YpDNyhr4zEFXyfgx6h4eahYS6Qx
-description: kept in eu only - the data-residency line
-size: 1MB
-ttl: 1h
-consensus: crdt
-regions:
-    pinned: [eu]

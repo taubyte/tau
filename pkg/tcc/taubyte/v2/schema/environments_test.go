@@ -53,12 +53,12 @@ func TestTheEnvironmentTableIsReadOffTheProject(t *testing.T) {
 	production, ok := at["production"]
 	assert.Assert(t, ok, "production missing from %v", envs)
 	assert.DeepEqual(t, production.Branches, []string{"main", "master"})
-	assert.DeepEqual(t, production.Regions, []string{"eu-west", "eu-central"})
+	assert.DeepEqual(t, production.Regions, []string{"region-1", "region-2"})
 
 	staging, ok := at["staging"]
 	assert.Assert(t, ok, "staging missing from %v", envs)
 	assert.DeepEqual(t, staging.Branches, []string{"release/*"})
-	assert.DeepEqual(t, staging.Regions, []string{"us-east"})
+	assert.DeepEqual(t, staging.Regions, []string{"region-3"})
 
 	preview, ok := at["preview"]
 	assert.Assert(t, ok, "preview missing from %v", envs)

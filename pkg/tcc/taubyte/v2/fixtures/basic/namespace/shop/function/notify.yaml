@@ -22,3 +22,5 @@ bus:
     chat:
         namespace: /
         ops: [publish]
+regions:
+    pinned: [region-1]

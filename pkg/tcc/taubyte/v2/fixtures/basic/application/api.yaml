@@ -25,14 +25,14 @@ variables:
     LOG_LEVEL:
         value: info
     REGION:
-        value: eu-west
+        value: region-1
     STRIPE_KEY:
         secret:
             name: stripe
 regions:
     failover:
-        main: eu
-        standby: us
+        main: region-1
+        standby: region-2
 egress: [api.stripe.com]
 cache:
     orders:

@@ -54,17 +54,17 @@ func TestARegionLabelIsHandedToTheCaller(t *testing.T) {
 
 	asked := regionsAsked(validating(t, map[string]string{
 		"/project.yaml": projectID,
-		"/cache/c.yaml": cache("regions:\n    pinned: [eu, us]\n"),
+		"/cache/c.yaml": cache("regions:\n    pinned: [region-1, region-2]\n"),
 	}))
-	require.ElementsMatch(t, []string{"eu", "us"}, asked,
+	require.ElementsMatch(t, []string{"region-1", "region-2"}, asked,
 		"a nested, optional, REPEATED label was not carried")
 
 	// BOTH HALVES OF A FAILOVER, because either can be wrong on its own.
 	asked = regionsAsked(validating(t, map[string]string{
 		"/project.yaml": projectID,
-		"/cache/c.yaml": cache("regions:\n    failover:\n        main: us\n        standby: ap\n"),
+		"/cache/c.yaml": cache("regions:\n    failover:\n        main: region-2\n        standby: region-3\n"),
 	}))
-	require.ElementsMatch(t, []string{"us", "ap"}, asked)
+	require.ElementsMatch(t, []string{"region-2", "region-3"}, asked)
 }
 
 // TestAnAbsentBlockAsksNothingAndCompiles, which is the limit that made an

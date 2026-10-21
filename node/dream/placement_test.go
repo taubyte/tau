@@ -22,8 +22,8 @@ func TestAPlacementThisBuildDoesNotServeIsRefused(t *testing.T) {
 	require.NoError(t, err)
 
 	want := []string{
-		`project/placement: allows regions "eu", "us", which this build does not serve; everything under it runs in "default"`,
-		`cache/sessions: is placed in region "eu", which this build does not serve; it runs in "default"`,
+		`project/placement: allows regions "region-1", "region-2", which this build does not serve; everything under it runs in "default"`,
+		`cache/sessions: is placed in region "region-1", which this build does not serve; it runs in "default"`,
 	}
 	for _, found := range [][]schema.Finding{
 		schema.Audit(obj.Flat(), schema.StubResolver()),
@@ -39,8 +39,8 @@ func TestAPlacementThisBuildDoesNotServeIsRefused(t *testing.T) {
 	}
 }
 
-// A DREAM TEST CAN BE ONE REGION OF A LARGER CLOUD: as eu, the cache pinned to eu is
-// placed there and naming us is not an error — us exists, this build is not it.
+// A DREAM TEST CAN BE ONE REGION OF A LARGER CLOUD: as region-1, the cache pinned to region-1 is
+// placed there and naming region-2 is not an error — region-2 exists, this build is not it.
 func TestDreamCanMockARegion(t *testing.T) {
 	c, err := schema.New(schema.WithLocal(projectDir("with/placement")), schema.WithBranch("main"))
 	require.NoError(t, err)
@@ -48,7 +48,7 @@ func TestDreamCanMockARegion(t *testing.T) {
 	require.NoError(t, err)
 
 	var broken []string
-	for _, f := range schema.Audit(obj.Flat(), schema.StubResolver(), schema.WithRegions(schema.WithRegion("eu"))) {
+	for _, f := range schema.Audit(obj.Flat(), schema.StubResolver(), schema.WithRegions(schema.WithRegion("region-1"))) {
 		if f.Severity == schema.Broken {
 			broken = append(broken, f.Kind+"/"+f.Name+": "+f.Title)
 		}

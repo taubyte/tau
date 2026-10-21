@@ -91,19 +91,19 @@ func TestAnUndeclaredEnvironmentIsATypo(t *testing.T) {
 }
 
 // TestAPlacementDiffersPerEnvironment. What a preview deployment costs to place is a
-// CEILING and reads exactly like `size` does — `[eu, us]` at a floor of two is four
+// CEILING and reads exactly like `size` does — `[region-1, region-2]` at a floor of two is four
 // nodes, and a throwaway environment should not be billed for production's residency.
 func TestAPlacementDiffersPerEnvironment(t *testing.T) {
 	const doc = "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n" +
 		"execution:\n    call: c\n    timeout: 1s\n    memory: 1MB\n" +
-		"regions:\n    pinned: [eu]\n    pinned_preview: [us]\n"
+		"regions:\n    pinned: [region-1]\n    pinned_preview: [region-2]\n"
 
 	for _, tc := range []struct {
 		env  string
 		want []string
 	}{
-		{"production", []string{"eu"}}, // declared nowhere in the document: the base
-		{"preview", []string{"us"}},
+		{"production", []string{"region-1"}}, // declared nowhere in the document: the base
+		{"preview", []string{"region-2"}},
 	} {
 		t.Run(tc.env, func(t *testing.T) {
 			fn, err := compileInEnv(t, tc.env, doc)
@@ -129,7 +129,7 @@ func TestAPlacementDiffersPerEnvironment(t *testing.T) {
 func TestAPolicyIsTheSameInEveryDeployment(t *testing.T) {
 	fn, err := compileInEnv(t, "preview", "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n"+
 		"execution: {call: c, timeout: 1s, memory: 1MB}\n"+
-		"regions:\n    failover:\n        main: eu\n        standby: us\n    pinned_preview: [us]\n")
+		"regions:\n    failover:\n        main: region-1\n        standby: region-2\n    pinned_preview: [region-2]\n")
 	assert.NilError(t, err, "each key is legal on its own, so the compile cannot refuse it")
 	assert.Equal(t, nested(fn, "regions", "policy"), "failover")
 }

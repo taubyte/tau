@@ -57,40 +57,40 @@ func TestADeployPublishesOneViewPerRegion(t *testing.T) {
 	r := registry(t)
 	co := &checkout{dir: configDir(t, map[string]string{
 		"project.yaml": viewProject,
-		"cache/a.yaml": cacheDoc(cacheA, "regions:\n    pinned: [eu]\n"),
-		"cache/b.yaml": cacheDoc(cacheB, "regions:\n    pinned: [us]\n"),
+		"cache/a.yaml": cacheDoc(cacheA, "regions:\n    pinned: [region-1]\n"),
+		"cache/b.yaml": cacheDoc(cacheB, "regions:\n    pinned: [region-2]\n"),
 	})}
 	var log out
-	require.NoError(t, runner(t, co, r, deploy.WithRegions(schema.Preview("eu", "us"))).Run(t.Context(), work(), &log))
-	require.Contains(t, log.String(), "prod in eu: 1 resources")
-	require.Equal(t, []string{cacheA}, heldIn(t, r, "eu"))
-	require.Equal(t, []string{cacheB}, heldIn(t, r, "us"))
-	_, err := r.ResolveView(t.Context(), shopID, deploy.DefaultEnvironment, "ap")
+	require.NoError(t, runner(t, co, r, deploy.WithRegions(schema.Preview("region-1", "region-2"))).Run(t.Context(), work(), &log))
+	require.Contains(t, log.String(), "prod in region-1: 1 resources")
+	require.Equal(t, []string{cacheA}, heldIn(t, r, "region-1"))
+	require.Equal(t, []string{cacheB}, heldIn(t, r, "region-2"))
+	_, err := r.ResolveView(t.Context(), shopID, deploy.DefaultEnvironment, "region-3")
 	require.ErrorIs(t, err, register.ErrNoView)
 
-	as, err := r.Assigned(t.Context(), "us")
+	as, err := r.Assigned(t.Context(), "region-2")
 	require.NoError(t, err)
 	require.Len(t, as, 1)
 
 	// THE SAME PUSH AGAIN publishes nothing…
 	log = out{}
-	require.NoError(t, runner(t, co, r, deploy.WithRegions(schema.Preview("eu", "us"))).Run(t.Context(), work(), &log))
+	require.NoError(t, runner(t, co, r, deploy.WithRegions(schema.Preview("region-1", "region-2"))).Run(t.Context(), work(), &log))
 	require.Contains(t, log.String(), "unchanged at revision 1")
 
 	// …and a cloud that serves one more region does, with an empty view for it.
 	log = out{}
-	require.NoError(t, runner(t, co, r, deploy.WithRegions(schema.Preview("eu", "us", "ap"))).Run(t.Context(), work(), &log))
+	require.NoError(t, runner(t, co, r, deploy.WithRegions(schema.Preview("region-1", "region-2", "region-3"))).Run(t.Context(), work(), &log))
 	require.Contains(t, log.String(), "published as revision 2")
-	require.Contains(t, log.String(), "prod in ap: nothing placed")
-	require.Empty(t, heldIn(t, r, "ap"))
+	require.Contains(t, log.String(), "prod in region-3: nothing placed")
+	require.Empty(t, heldIn(t, r, "region-3"))
 
 	// A RESOURCE REMOVED IS GONE FROM ITS REGION'S VIEW, which is told so by an empty one.
 	require.NoError(t, os.Remove(filepath.Join(co.dir, "cache/b.yaml")))
 	log = out{}
-	require.NoError(t, runner(t, co, r, deploy.WithRegions(schema.Preview("eu", "us", "ap"))).Run(t.Context(), work(), &log))
-	require.Contains(t, log.String(), "prod in us: nothing placed")
-	require.Empty(t, heldIn(t, r, "us"))
-	as, err = r.Assigned(t.Context(), "us")
+	require.NoError(t, runner(t, co, r, deploy.WithRegions(schema.Preview("region-1", "region-2", "region-3"))).Run(t.Context(), work(), &log))
+	require.Contains(t, log.String(), "prod in region-2: nothing placed")
+	require.Empty(t, heldIn(t, r, "region-2"))
+	as, err = r.Assigned(t.Context(), "region-2")
 	require.NoError(t, err)
 	require.EqualValues(t, 3, as[0].View.Revision)
 }
@@ -100,14 +100,14 @@ func TestADeployReachingAcrossRegionsIsRefused(t *testing.T) {
 	r := registry(t)
 	co := &checkout{dir: configDir(t, map[string]string{
 		"project.yaml": viewProject,
-		"cache/a.yaml": cacheDoc(cacheA, "regions:\n    pinned: [eu]\n"),
+		"cache/a.yaml": cacheDoc(cacheA, "regions:\n    pinned: [region-1]\n"),
 		"function/f.yaml": "id: " + fnID + "\nsource: services/f\nbuild:\n    commands:\n        image: rust:1.83\n        run: cargo build\n        output: x.wasm\n" +
-			"execution:\n    call: handle\n    timeout: 15s\n    memory: 32MiB\nregions:\n    pinned: [us]\ncache:\n    a:\n        ops: [get]\n",
+			"execution:\n    call: handle\n    timeout: 15s\n    memory: 32MiB\nregions:\n    pinned: [region-2]\ncache:\n    a:\n        ops: [get]\n",
 	})}
 	var log out
-	err := runner(t, co, r, deploy.WithRegions(schema.Preview("eu", "us"))).Run(t.Context(), work(), &log)
+	err := runner(t, co, r, deploy.WithRegions(schema.Preview("region-1", "region-2"))).Run(t.Context(), work(), &log)
 	require.ErrorIs(t, err, deploy.ErrUnplaced)
-	require.ErrorContains(t, err, `function/f: reaches cache/a, which is not placed in "us" where this is`)
+	require.ErrorContains(t, err, `function/f: reaches cache/a, which is not placed in "region-2" where this is`)
 	_, err = r.Resolve(t.Context(), shopID, deploy.DefaultEnvironment)
 	require.ErrorIs(t, err, register.ErrNotPublished)
 }
