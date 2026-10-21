@@ -33,17 +33,14 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	"crypto/hkdf"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"math/big"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -210,31 +207,6 @@ func (d dirStore) Keep(_ context.Context, name string, blob []byte) error {
 // MintKey is a new account or leaf key, PEM.
 func MintKey() (crypto.Signer, []byte, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return nil, nil, err
-	}
-	der, err := x509.MarshalECPrivateKey(key)
-	if err != nil {
-		return nil, nil, err
-	}
-	return key, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der}), nil
-}
-
-// DeriveKey is the P-256 key seed and info determine: every node holding the
-// same seed derives the same key, so a cloud has one account without any node
-// minting it first.
-func DeriveKey(seed []byte, info string) (crypto.Signer, []byte, error) {
-	if len(seed) == 0 {
-		return nil, nil, errors.New("acme: deriving a key needs a seed")
-	}
-	raw, err := hkdf.Key(sha256.New, seed, nil, info, 48)
-	if err != nil {
-		return nil, nil, err
-	}
-	n := new(big.Int).Sub(elliptic.P256().Params().N, big.NewInt(1))
-	d := new(big.Int).Mod(new(big.Int).SetBytes(raw), n)
-	d.Add(d, big.NewInt(1))
-	key, err := ecdsa.ParseRawPrivateKey(elliptic.P256(), d.FillBytes(make([]byte, 32)))
 	if err != nil {
 		return nil, nil, err
 	}

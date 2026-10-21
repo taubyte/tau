@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto"
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
@@ -115,8 +114,12 @@ func NewClient(h host.Host, members func() []peer.ID, local func() *Service, v V
 	if err != nil {
 		return nil, err
 	}
+	account, err := acme.ParseKey([]byte(cfg.ACME.AccountKey))
+	if err != nil {
+		return nil, err
+	}
 	c := &Client{
-		host: h, members: members, local: local, vault: v, cfg: cfg,
+		host: h, account: account, members: members, local: local, vault: v, cfg: cfg,
 		timeout: 30 * time.Second,
 		wait:    CertWait,
 		poll:    250 * time.Millisecond,
@@ -294,7 +297,7 @@ func (c *Client) obtain(ctx context.Context, name string) (*tls.Certificate, err
 	if k != nil && !c.due(k.leaf) {
 		return c.open(ctx, name, k)
 	}
-	issuer, ierr := c.acmeIssuer(ctx)
+	issuer, ierr := c.acmeIssuer()
 	if ierr == nil {
 		_, ierr = issuer.Issue(name)
 	}
@@ -330,68 +333,16 @@ func (c *Client) open(ctx context.Context, name string, k *kept) (*tls.Certifica
 	return &cert, nil
 }
 
-// accountKey is the cloud's one account: configured, else kept in the vault,
-// else derived from the seed and kept there.
-func (c *Client) accountKey(ctx context.Context) (crypto.Signer, error) {
-	if c.account != nil {
-		return c.account, nil
-	}
-	if c.cfg.ACME.AccountKey != "" {
-		key, err := acme.ParseKey([]byte(c.cfg.ACME.AccountKey))
-		if err == nil {
-			c.account = key
-		}
-		return key, err
-	}
-	name := "account-" + digest(directoryOf(c.cfg.ACME))
-	if blob, err := c.vault.Get(ctx, VaultProject, VaultEnvironment, name); err == nil {
-		if key, err := acme.ParseKey(blob); err == nil {
-			c.account = key
-			return key, nil
-		}
-	}
-	if len(c.cfg.Seed) == 0 {
-		return nil, ErrNoAccount
-	}
-	key, blob, err := acme.DeriveKey(c.cfg.Seed, "tau/cm/acme-account/"+directoryOf(c.cfg.ACME))
-	if err != nil {
-		return nil, err
-	}
-	// EVERY NODE WRITES THE SAME BYTES, so concurrent first writes agree.
-	if err := c.vault.Set(ctx, VaultProject, VaultEnvironment, name, blob); err != nil {
-		c.logf("cm: keeping the account key: %v", err)
-	}
-	c.account = key
-	return key, nil
-}
-
-func directoryOf(cfg pkgcertificate.ACME) string {
-	if cfg.Directory == "" {
-		return pkgcertificate.LetsEncrypt
-	}
-	return cfg.Directory
-}
-
-func digest(s string) string {
-	sum := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(sum[:8])
-}
-
-// acmeIssuer is this node's issuer, built on first use: the account key may
-// be in a vault that does not answer at construction.
-func (c *Client) acmeIssuer(ctx context.Context) (*acme.Issuer, error) {
+// acmeIssuer is this node's issuer, built on first use.
+func (c *Client) acmeIssuer() (*acme.Issuer, error) {
 	c.keyMu.Lock()
 	defer c.keyMu.Unlock()
 	if c.issuer != nil {
 		return c.issuer, nil
 	}
-	key, err := c.accountKey(ctx)
-	if err != nil {
-		return nil, err
-	}
 	opts := []acme.Option{
 		acme.WithStore(keeper{c}),
-		acme.WithAccountKey(key),
+		acme.WithAccountKey(c.account),
 		acme.WithClock(c.now),
 		acme.WithLogger(c.logf),
 	}
@@ -411,16 +362,7 @@ func (c *Client) acmeIssuer(ctx context.Context) (*acme.Issuer, error) {
 
 // Challenge is the HTTP-01 answer for token, from the account key alone.
 func (c *Client) Challenge(token string) (string, bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
-	defer cancel()
-	c.keyMu.Lock()
-	key, err := c.accountKey(ctx)
-	c.keyMu.Unlock()
-	if err != nil {
-		c.logf("cm: answering http-01: %v", err)
-		return "", false
-	}
-	thumbprint, err := acme.Thumbprint(key)
+	thumbprint, err := acme.Thumbprint(c.account)
 	if err != nil {
 		return "", false
 	}

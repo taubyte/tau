@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/taubyte/tau/node"
 	"github.com/taubyte/tau/pkg/certificate"
+	"github.com/taubyte/tau/pkg/certificate/acme"
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/gateway"
@@ -131,10 +133,11 @@ func issuing(t *testing.T, ca *pebble, cloud, root string, cfg cm.CertificateCon
 	minted, err := identity("")
 	require.NoError(t, err)
 	cfg.ACME = certificate.ACME{
-		Enabled:   true,
-		Directory: ca.server.URL + "/dir",
-		Email:     "ops@example.io",
-		RootCA:    ca.directoryCA(),
+		Enabled:    true,
+		Directory:  ca.server.URL + "/dir",
+		Email:      "ops@example.io",
+		RootCA:     ca.directoryCA(),
+		AccountKey: cloudAccount(t),
 	}
 	return File{
 		Node: node.Config{
@@ -150,6 +153,20 @@ func issuing(t *testing.T, ca *pebble, cloud, root string, cfg cm.CertificateCon
 		HTTP:       "127.0.0.1:0",
 		HTTPS:      "127.0.0.1:0",
 	}
+}
+
+// cloudAccount is the one ACME account key every node of the test cloud is
+// configured with.
+var mintAccount = sync.OnceValues(func() ([]byte, error) {
+	_, blob, err := acme.MintKey()
+	return blob, err
+})
+
+func cloudAccount(t *testing.T) string {
+	t.Helper()
+	blob, err := mintAccount()
+	require.NoError(t, err)
+	return string(blob)
 }
 
 // TestAGeneratedNameIsIssuedByACMEAndServedOverTLS proves it by HTTP-01, for

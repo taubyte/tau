@@ -199,9 +199,6 @@ func Start(ctx context.Context, f File, added ...node.Option) (*Running, error) 
 	if err != nil {
 		return nil, err
 	}
-	// THE CLOUD'S ONE ACME ACCOUNT is derived from the secret every node of it
-	// already holds; see services/cm.
-	f.Node.CM.Certificate.Seed = swarmKey
 
 	bootstrap, err := addrInfos(f.Bootstrap)
 	if err != nil {

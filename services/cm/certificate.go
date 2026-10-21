@@ -17,11 +17,9 @@
 //
 // # The account
 //
-// One account for the whole cloud: the configured key, else the one in the
-// vault, else one derived from the cloud's shared secret (Seed) and kept in
-// the vault. Every node derives the same bytes, so concurrent first writes
-// agree. HTTP-01 therefore stores nothing: any gateway answers any token from
-// the account's thumbprint.
+// One account for the whole cloud: the key configured as acme.accountkey,
+// the same on every node. Without one cm refuses to start. HTTP-01 therefore
+// stores nothing: any gateway answers any token from the account's thumbprint.
 //
 // # DNS-01
 //
@@ -70,7 +68,7 @@ var (
 	ErrNoZone       = errors.New("cm: issuance needs the cloud's zone")
 	ErrNotZone      = errors.New("cm: only names in the cloud's zone are issued")
 	ErrNotKept      = errors.New("cm: nothing is kept for that name")
-	ErrNoAccount    = errors.New("cm: no ACME account key is configured, kept or derivable")
+	ErrNoAccount    = errors.New("cm: issuance needs the cloud's ACME account key; set certificate.acme.accountkey")
 	ErrDisabled     = acme.ErrDisabled
 )
 
@@ -98,16 +96,15 @@ type CertificateConfig struct {
 
 	// Zone is the cloud's fqdn. The node fills it from the gateway's.
 	Zone string `yaml:"-"`
-
-	// Seed is the cloud's shared secret the account key is derived from when
-	// none is configured or kept. The node fills it from the swarm key.
-	Seed []byte `yaml:"-"`
 }
 
 // normalised checks c and fills its defaults.
 func (c CertificateConfig) normalised() (CertificateConfig, error) {
 	if err := acme.Check(c.ACME); err != nil {
 		return c, fmt.Errorf("cm: %w", err)
+	}
+	if c.ACME.AccountKey == "" {
+		return c, ErrNoAccount
 	}
 	c.Zone = strings.ToLower(strings.Trim(c.Zone, "."))
 	if c.Zone == "" {

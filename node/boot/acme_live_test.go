@@ -218,7 +218,7 @@ func liveNode(t *testing.T, ca *livePebble, cfg cm.CertificateConfig, addr strin
 	t.Helper()
 	minted, err := identity("")
 	require.NoError(t, err)
-	cfg.ACME = certificate.ACME{Enabled: true, Directory: ca.directory, Email: "ops@example.test", RootCA: ca.serverCA}
+	cfg.ACME = certificate.ACME{Enabled: true, Directory: ca.directory, Email: "ops@example.test", RootCA: ca.serverCA, AccountKey: cloudAccount(t)}
 	return File{
 		Node: node.Config{
 			Gateway: gateway.Config{CloudFqdn: liveCloud},

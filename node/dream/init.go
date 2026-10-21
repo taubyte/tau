@@ -36,6 +36,7 @@ import (
 	"github.com/taubyte/tau/p2p/mesh"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/assets"
+	"github.com/taubyte/tau/pkg/certificate/acme"
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
@@ -354,10 +355,17 @@ func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
 		return nil, err
 	}
 
+	// ONE ACME ACCOUNT PER UNIVERSE, as an operator configures one per cloud.
+	_, accountKey, err := acme.MintKey()
+	if err != nil {
+		m.Close()
+		return nil, err
+	}
+
 	u := &Universe{mesh: m}
 	copies := max(cfg.Copies, 1)
 	for index := range copies {
-		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index) })
+		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index, string(accountKey)) })
 		if err != nil {
 			u.Close()
 			return nil, fmt.Errorf("dream: node %d: %w", index, err)
@@ -383,7 +391,7 @@ func (u *Universe) SwarmKey() []byte { return u.mesh.SwarmKey() }
 // Close stops every node, then their peers.
 func (u *Universe) Close() { u.mesh.Close() }
 
-func create(m *mesh.Mesh, p peer.Node, cfg Config, index int) error {
+func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, accountKey string) error {
 	ctx := m.Context()
 	h := p.Peer()
 
@@ -440,8 +448,8 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int) error {
 	if cfg.Configure != nil {
 		cfg.Configure(index, &nodeConfig)
 	}
-	if nodeConfig.CM.Certificate.Seed == nil {
-		nodeConfig.CM.Certificate.Seed = m.SwarmKey()
+	if nodeConfig.CM.Certificate.ACME.Enabled && nodeConfig.CM.Certificate.ACME.AccountKey == "" {
+		nodeConfig.CM.Certificate.ACME.AccountKey = accountKey
 	}
 
 	engines, err := boot.DatabaseEngines(ctx)

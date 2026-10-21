@@ -482,19 +482,3 @@ func TestIssueOrdersAgainWhateverIsKept(t *testing.T) {
 	_, err = i.Issue("a/b")
 	require.ErrorContains(t, err, "not a name")
 }
-
-func TestADerivedKeyIsTheSameForTheSameSeed(t *testing.T) {
-	a, pemA, err := DeriveKey([]byte("swarm"), "dir")
-	require.NoError(t, err)
-	_, pemB, err := DeriveKey([]byte("swarm"), "dir")
-	require.NoError(t, err)
-	require.Equal(t, pemA, pemB)
-	_, pemC, err := DeriveKey([]byte("swarm"), "other")
-	require.NoError(t, err)
-	require.NotEqual(t, pemA, pemC)
-	parsed, err := ParseKey(pemA)
-	require.NoError(t, err)
-	require.True(t, parsed.Public().(*ecdsa.PublicKey).Equal(a.Public()))
-	_, _, err = DeriveKey(nil, "dir")
-	require.Error(t, err)
-}

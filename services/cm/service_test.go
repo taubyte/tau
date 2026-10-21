@@ -182,13 +182,13 @@ func newFleet(t *testing.T, n int, wildcard bool) *fleet {
 
 	f.cfg = Config{Certificate: CertificateConfig{
 		ACME: pkgcertificate.ACME{
-			Enabled:   true,
-			Directory: f.pebble.URL + "/dir",
-			RootCA:    string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: f.pebble.Certificate().Raw})),
+			Enabled:    true,
+			Directory:  f.pebble.URL + "/dir",
+			RootCA:     string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: f.pebble.Certificate().Raw})),
+			AccountKey: accountKey(t),
 		},
 		Wildcard: wildcard,
 		Zone:     zone + ".",
-		Seed:     []byte("the cloud's swarm key"),
 	}}
 	for range n {
 		f.add(t)
@@ -262,9 +262,7 @@ func TestANodeOrdersWhatItNeedsAndAnotherReadsIt(t *testing.T) {
 		require.Equal(t, 1, f.kept(t, name))
 	}
 
-	// ONE ACCOUNT, kept in the vault, and HTTP-01 answered by any node from it.
-	_, kept := f.vault.data[VaultProject+"/"+VaultEnvironment+"/account-"+digest(f.cfg.Certificate.ACME.Directory)]
-	require.True(t, kept)
+	// ONE ACCOUNT, and HTTP-01 answered by any node from it.
 	a, ok := c.Challenge("tok")
 	require.True(t, ok)
 	b, ok := f.client(t).Challenge("tok")
@@ -334,7 +332,7 @@ func TestTwoOrdersOfOneNameConvergeOnTheNewest(t *testing.T) {
 	first, err := a.Certificate(t.Context(), name)
 	require.NoError(t, err)
 	// b ORDERS ITS OWN as a node that did not see a's would.
-	issuer, err := b.acmeIssuer(t.Context())
+	issuer, err := b.acmeIssuer()
 	require.NoError(t, err)
 	_, err = issuer.Issue(name)
 	require.NoError(t, err)
@@ -401,7 +399,7 @@ func TestWhatIsRefused(t *testing.T) {
 	database, err := kvdbmock.New().New(nil, "c", 0)
 	require.NoError(t, err)
 	cfg := func(c CertificateConfig) Config { return Config{Certificate: c} }
-	acmeOn := pkgcertificate.ACME{Enabled: true}
+	acmeOn := pkgcertificate.ACME{Enabled: true, AccountKey: accountKey(t)}
 	on := cfg(CertificateConfig{ACME: acmeOn, Zone: zone})
 
 	_, err = New(nil, database, on)
@@ -432,13 +430,27 @@ func TestWhatIsRefused(t *testing.T) {
 	_, err = NewClient(h, none, nolocal, empty, cfg(CertificateConfig{ACME: acmeOn}))
 	require.ErrorIs(t, err, ErrNoZone)
 
-	// NO KEY, NONE KEPT AND NO SEED: no account.
+	// NO KEY: no account, refused at construction.
+	keyless := on
+	keyless.Certificate.ACME.AccountKey = ""
+	_, err = New(h, database, keyless)
+	require.ErrorIs(t, err, ErrNoAccount)
+	_, err = NewClient(h, none, nolocal, empty, keyless)
+	require.ErrorIs(t, err, ErrNoAccount)
+	keyless.Certificate.ACME.AccountKey = "not pem"
+	_, err = NewClient(h, none, nolocal, empty, keyless)
+	require.Error(t, err)
+
+	// THE CONFIGURED KEY is the account; DNS-01 without a store is refused.
 	c, err := NewClient(h, none, nolocal, empty, on)
 	require.NoError(t, err)
-	_, err = c.acmeIssuer(t.Context())
-	require.ErrorIs(t, err, ErrNoAccount)
+	want, err := acme.ParseKey([]byte(on.Certificate.ACME.AccountKey))
+	require.NoError(t, err)
+	require.True(t, c.account.Public().(interface{ Equal(crypto.PublicKey) bool }).Equal(want.Public()))
 	_, ok := c.Challenge("tok")
-	require.False(t, ok)
+	require.True(t, ok)
+	_, err = c.acmeIssuer()
+	require.ErrorIs(t, err, ErrNoChallenges)
 
 	// A REACHABLE CLIENT REACHING NO MEMBER says so.
 	_, err = c.Certificate(t.Context(), "a."+zone)
@@ -446,41 +458,26 @@ func TestWhatIsRefused(t *testing.T) {
 	require.ErrorIs(t, keeper{c}.Keep(t.Context(), "a."+zone, pemOf(t)), ErrNoMembers)
 	require.ErrorContains(t, keeper{c}.Keep(t.Context(), "a."+zone, []byte("no pem")), "no chain")
 
-	// A CONFIGURED KEY is used as it is; DNS-01 without a store is refused.
-	_, blob, err := acme.MintKey()
+	// HTTP-01 needs no store.
+	httpOn := cfg(CertificateConfig{ACME: acmeOn, Zone: zone, Challenge: ChallengeHTTP})
+	c, err = NewClient(h, none, nolocal, empty, httpOn)
 	require.NoError(t, err)
-	configured := on
-	configured.Certificate.ACME.AccountKey = string(blob)
-	c, err = NewClient(h, none, nolocal, empty, configured)
+	_, err = c.acmeIssuer()
 	require.NoError(t, err)
-	_, ok = c.Challenge("tok")
-	require.True(t, ok)
-	_, err = c.acmeIssuer(t.Context())
-	require.ErrorIs(t, err, ErrNoChallenges)
-	configured.Certificate.ACME.AccountKey = "not pem"
-	_, err = NewClient(h, none, nolocal, empty, configured)
-	require.Error(t, err)
 
-	// HTTP-01 needs no store, and the key the vault holds wins over the seed.
-	_, kept, err := acme.MintKey()
-	require.NoError(t, err)
-	held := &vault{data: map[string][]byte{VaultProject + "/" + VaultEnvironment + "/account-" + digest(pkgcertificate.LetsEncrypt): kept}}
-	httpOn := cfg(CertificateConfig{ACME: acmeOn, Zone: zone, Challenge: ChallengeHTTP, Seed: []byte("seed")})
-	c, err = NewClient(h, none, nolocal, held, httpOn)
-	require.NoError(t, err)
-	_, err = c.acmeIssuer(t.Context())
-	require.NoError(t, err)
-	want, err := acme.ParseKey(kept)
-	require.NoError(t, err)
-	require.True(t, c.account.Public().(interface{ Equal(crypto.PublicKey) bool }).Equal(want.Public()))
-
-	// A VAULT THAT FAILS does not stop a derived account, but fails a leaf key.
+	// A VAULT THAT FAILS fails a leaf key.
 	broken := &vault{data: map[string][]byte{}, fail: errors.New("down")}
 	c, err = NewClient(h, none, nolocal, broken, httpOn)
 	require.NoError(t, err)
-	_, ok = c.Challenge("tok")
-	require.True(t, ok)
 	require.ErrorContains(t, keeper{c}.Keep(t.Context(), "a."+zone, pemOf(t)), "down")
+}
+
+// accountKey is a fresh ACME account key, PEM.
+func accountKey(t *testing.T) string {
+	t.Helper()
+	_, blob, err := acme.MintKey()
+	require.NoError(t, err)
+	return string(blob)
 }
 
 // pemOf is a self-signed chain and its key, as an issuer hands a store.

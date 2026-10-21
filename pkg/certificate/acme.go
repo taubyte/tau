@@ -21,8 +21,7 @@ type ACME struct {
 	Email string `yaml:"email"`
 
 	// AccountKey is the ACME account's private key, PEM (PKCS#1, PKCS#8 or
-	// SEC 1). Empty, services/cm uses the cloud's one account, kept in
-	// the secrets service and derived from the swarm key.
+	// SEC 1). services/cm refuses to issue without one.
 	//
 	// EVERY NODE OF A CLOUD HOLDS THE SAME ONE. The HTTP-01 answer is derived
 	// from the account key alone, so any node a CA reaches answers any node's
