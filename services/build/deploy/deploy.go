@@ -88,7 +88,17 @@ var (
 	ErrNotClaimed = errors.New("deploy: the project id is not claimed by this repository")
 
 	ErrUnplaced = errors.New("deploy: this cloud cannot place it")
+
+	// ErrUnproven is a zone the project has not proven is its own, by the TXT
+	// record `tau domain claim` prints. A deploy that published it would let
+	// any project answer for any domain.
+	ErrUnproven = errors.New("deploy: a custom domain is not proven to be the project's")
 )
+
+// Domains proves a custom domain is a project's. services/cm's Domains is one.
+type Domains interface {
+	Prove(ctx context.Context, project, fqdn string) error
+}
 
 // Projects answers what a repository IS to a project.
 //
@@ -158,6 +168,8 @@ type Deploy struct {
 	// half-formed, because a partial name in a routing table is one no request
 	// will ever carry.
 	cloudFqdn string
+
+	domains Domains
 }
 
 var _ backend.Runner = (*Deploy)(nil)
@@ -192,6 +204,7 @@ func New(opts ...Option) (*Deploy, error) {
 		builder:   o.builder,
 		cloudFqdn: o.cloudFqdn,
 		regions:   regions,
+		domains:   o.domains,
 	}, nil
 }
 
@@ -266,6 +279,15 @@ func (d *Deploy) Run(ctx context.Context, w backend.Work, out backend.Output) er
 		}
 	}
 
+	proven := map[string]bool{}
+	for _, c := range plan {
+		for _, z := range c.project.Zones() {
+			if err := d.prove(ctx, w.ProjectID, z.Fqdn, proven); err != nil {
+				return err
+			}
+		}
+	}
+
 	r, err := d.register(ctx)
 	if err != nil {
 		return err
@@ -298,6 +320,23 @@ func (d *Deploy) Run(ctx context.Context, w backend.Work, out backend.Output) er
 	if d.builder != nil {
 		return d.builder.Build(ctx, w, out)
 	}
+	return nil
+}
+
+// prove refuses a zone that is not the project's, before anything publishes.
+// The cloud's generated names are its own and are never asked about.
+func (d *Deploy) prove(ctx context.Context, projectID, fqdn string, proven map[string]bool) error {
+	fqdn = strings.ToLower(strings.TrimSuffix(fqdn, "."))
+	if proven[fqdn] {
+		return nil
+	}
+	if d.domains == nil {
+		return fmt.Errorf("%w: %s: this cloud proves no domain", ErrUnproven, fqdn)
+	}
+	if err := d.domains.Prove(ctx, projectID, fqdn); err != nil {
+		return fmt.Errorf("%w: %s: %w — run `tau domain claim %s` and set the TXT record it prints", ErrUnproven, fqdn, err, fqdn)
+	}
+	proven[fqdn] = true
 	return nil
 }
 

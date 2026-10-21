@@ -33,6 +33,7 @@ type Service struct {
 	callers    Callers
 	backend    Backend
 	vault      Vault
+	domains    Domains
 	linker     Linker
 	assets     Assets
 	tenancy    tenancy.Tenancy
@@ -85,6 +86,7 @@ type options struct {
 	callers    Callers
 	backend    Backend
 	vault      Vault
+	domains    Domains
 	linker     Linker
 	assets     Assets
 	tenancy    tenancy.Tenancy
@@ -146,6 +148,18 @@ func WithVault(v Vault) Option {
 			return errors.New("build: no vault to write secrets into")
 		}
 		o.vault = v
+		return nil
+	}
+}
+
+// WithDomains is where a domain claim is signed. Optional: without it the
+// claim route answers the 404 a denial gets.
+func WithDomains(d Domains) Option {
+	return func(o *options) error {
+		if d == nil {
+			return errors.New("build: no domains to claim with")
+		}
+		o.domains = d
 		return nil
 	}
 }
@@ -335,6 +349,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		callers:    o.callers,
 		backend:    o.backend,
 		vault:      o.vault,
+		domains:    o.domains,
 		linker:     o.linker,
 		assets:     o.assets,
 		tenancy:    o.tenancy,

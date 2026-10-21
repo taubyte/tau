@@ -32,7 +32,9 @@ import (
 //	generated   the operator's wildcard for the cloud's own zone, when it
 //	            covers the name — pkg/certificate's Wildcard, the same code a
 //	            proxy terminates with — and otherwise, for a name under the
-//	            zone, one issued by ACME when the node has an Issuer
+//	            zone, one issued by ACME when the node has an Issuer; a
+//	            name in the project's own zone is issued only once that
+//	            zone is proven to be the project's (services/cm)
 //	provided    the secret the gateway names, read through the same resolver
 //	            the worker and the proxy take
 //
@@ -97,7 +99,7 @@ func (s *Service) Certificate(hello *tls.ClientHelloInfo) (*tls.Certificate, err
 		return nil, fmt.Errorf("%w: nothing serves %s in this environment", ErrNoCertificate, name)
 	}
 
-	cert, err := s.certificateOf(ctx, declared(candidates), projectName, environment, name)
+	cert, err := s.certificateOf(ctx, proj, declared(candidates), projectName, environment, name)
 	if err != nil {
 		s.logf("gateway: %s/%s: no certificate answers %s: %v", projectName, environment, name, err)
 		return nil, err
@@ -121,7 +123,7 @@ func declared(candidates []candidate) specs.Certificate {
 }
 
 // certificateOf is the certificate one block names, for one name.
-func (s *Service) certificateOf(ctx context.Context, declared specs.Certificate, projectName, environment, name string) (tls.Certificate, error) {
+func (s *Service) certificateOf(ctx context.Context, proj *specs.Project, declared specs.Certificate, projectName, environment, name string) (tls.Certificate, error) {
 	switch declared.Source {
 	case specs.CertificateSourceProvided:
 		if declared.SecretName == "" {
@@ -141,6 +143,17 @@ func (s *Service) certificateOf(ctx context.Context, declared specs.Certificate,
 		return cert, nil
 
 	case specs.CertificateSourceGenerated, "":
+		// A NAME IN THE PROJECT'S OWN ZONE is ordered only once the zone is
+		// proven to be the project's; the issuer checks.
+		if p, ok := s.issuer.(ProjectIssuer); ok && !certificate.Under(s.cfg.CloudFqdn, name) {
+			if zone := zoneOf(proj, name); zone != "" {
+				cert, err := p.ForProject(ctx, projectName, zone, name)
+				if err != nil {
+					return tls.Certificate{}, fmt.Errorf("%w: %w", ErrNoCertificate, err)
+				}
+				return cert, nil
+			}
+		}
 		cert, err := certificate.Wildcard(s.cfg.Wildcard, s.cfg.CloudFqdn, name)
 		// THE OPERATOR'S WILDCARD FIRST, when it covers the name: it was
 		// supplied on purpose and costs no CA a request. Otherwise a name
@@ -154,6 +167,18 @@ func (s *Service) certificateOf(ctx context.Context, declared specs.Certificate,
 		return cert, nil
 	}
 	return tls.Certificate{}, fmt.Errorf("%w: its certificate source is %q", ErrNoCertificate, declared.Source)
+}
+
+// zoneOf is the project's zone name is in, the deepest when zones nest.
+func zoneOf(p *specs.Project, name string) string {
+	var best string
+	for _, z := range p.Zones() {
+		fqdn := strings.ToLower(strings.TrimSuffix(z.Fqdn, "."))
+		if (name == fqdn || strings.HasSuffix(name, "."+fqdn)) && len(fqdn) > len(best) {
+			best = fqdn
+		}
+	}
+	return best
 }
 
 func scopeOf(namespace string) string {

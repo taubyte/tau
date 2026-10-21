@@ -99,6 +99,7 @@ type Node struct {
 	// is where DNS-01 values are held. All nil in a cloud that issues none.
 	cm               *cmService.Service
 	certs            *cmService.Client
+	domainClaims     *cmService.Domains
 	challengeDB      kvdb.KVDB
 	challengeAnswers *cm.Challenges
 

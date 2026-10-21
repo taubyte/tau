@@ -1,0 +1,139 @@
+//go:build dreaming
+
+package dream_test
+
+import (
+	"context"
+	"errors"
+	"io"
+	"path/filepath"
+	"slices"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/stretchr/testify/require"
+
+	"github.com/taubyte/tau/node"
+	nodeDream "github.com/taubyte/tau/node/dream"
+	cmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2"
+	pkgregister "github.com/taubyte/tau/pkg/register"
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
+	"github.com/taubyte/tau/services/build/backend"
+	buildDeploy "github.com/taubyte/tau/services/build/deploy"
+	"github.com/taubyte/tau/services/cm"
+)
+
+const (
+	customDomainID = "QmQLHmWAjrRvtx1Ewo8XPUTbii48ht2jZvgBJ3Mi8B1C3o"
+	stolenDomainID = "QmRsawqvCW6LJxceX5AoFr4KcrerdAxeJNvsbYE2x9rQYr"
+)
+
+// txtZone is the internet's DNS as far as these tests are concerned.
+type txtZone struct {
+	mu sync.Mutex
+	m  map[string][]string
+}
+
+func (z *txtZone) set(name, value string) {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	z.m[name] = []string{value}
+}
+
+func (z *txtZone) LookupTXT(_ context.Context, name string) ([]string, error) {
+	z.mu.Lock()
+	defer z.mu.Unlock()
+	if v, ok := z.m[name]; ok {
+		return v, nil
+	}
+	return nil, errors.New("no such host")
+}
+
+type configures struct{}
+
+func (configures) Configures(context.Context, string, string) (bool, error) { return true, nil }
+
+type corpus struct{ dir string }
+
+func (c corpus) Checkout(context.Context, string, string, string) (string, func(), error) {
+	return c.dir, func() {}, nil
+}
+
+type buildLog struct{ strings.Builder }
+
+func (*buildLog) Asset(context.Context, string, string, io.Reader) error { return nil }
+
+// A CUSTOM DOMAIN DEPLOYS ONCE ITS TXT RECORD PROVES IT, as in v1: the cloud's
+// cm nodes sign the claim, the owner sets it, and the deploy looks it up. The
+// same domain declared by another project is refused, with the first project's
+// record in place, because a claim is for one project.
+func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
+	dns := &txtZone{m: map[string][]string{}}
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
+		Copies:   2,
+		Services: []string{node.Discovery, node.Secrets, node.CM},
+		Options:  []node.Option{node.WithResolver(dns)},
+		Configure: func(_ int, c *node.Config) {
+			c.Gateway.CloudFqdn = "tau.dream.test"
+			c.CM.Domains.Trusted = false
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(u.Close)
+
+	var members []libp2ppeer.ID
+	for _, pid := range u.Pids() {
+		id, err := libp2ppeer.Decode(pid)
+		require.NoError(t, err)
+		members = append(members, id)
+	}
+	domains, err := cm.NewDomains(u.Peers()[1].Peer(), func() []libp2ppeer.ID { return slices.Clone(members) },
+		func() *cm.Service { return nil }, dns)
+	require.NoError(t, err)
+	t.Cleanup(func() { domains.Close() })
+
+	run := func(project, id string) (*pkgregister.Register, error) {
+		r, err := pkgregister.New(pkgregister.WithStore(pkgregister.NewMemStore()))
+		require.NoError(t, err)
+		d, err := buildDeploy.New(
+			buildDeploy.WithProjects(configures{}),
+			buildDeploy.WithCheckout(corpus{filepath.Join("projects", project)}),
+			buildDeploy.WithLocalRegister(r),
+			buildDeploy.WithRegions(schema.TryOneRegion()),
+			buildDeploy.WithCloudFqdn("tau.dream.test"),
+			buildDeploy.WithDomains(domains),
+		)
+		require.NoError(t, err)
+		return r, d.Run(t.Context(), backend.Work{JobID: "j", RepositoryKey: "github.com/acme/" + id, Ref: "refs/heads/main", CommitSHA: "c", ProjectID: id}, &buildLog{})
+	}
+
+	_, err = run("with/domain", customDomainID)
+	require.ErrorIs(t, err, buildDeploy.ErrUnproven, "no record is set yet")
+
+	// THE VAULT NEEDS ITS MEMBERS before the first signing key can be kept.
+	var claim *cmv2.DomainClaim
+	require.Eventually(t, func() bool {
+		claim, err = domains.Claim(t.Context(), customDomainID, "shop.test")
+		return err == nil
+	}, time.Minute, time.Second, "a cm node signs a claim once the vault answers")
+	require.Equal(t, customDomainID[:8]+".shop.test", claim.GetEntry())
+	dns.set(claim.GetEntry(), claim.GetToken())
+
+	var r *pkgregister.Register
+	require.Eventually(t, func() bool {
+		r, err = run("with/domain", customDomainID)
+		return err == nil
+	}, time.Minute, time.Second, "the signing key replicates to every cm node")
+	project, environment, err := r.ResolveHost(t.Context(), "www.shop.test")
+	require.NoError(t, err)
+	require.Equal(t, customDomainID, project)
+	require.Equal(t, buildDeploy.DefaultEnvironment, environment)
+
+	dns.set(stolenDomainID[:8]+".shop.test", claim.GetToken())
+	_, err = run("refused/domain/stolen", stolenDomainID)
+	require.ErrorIs(t, err, buildDeploy.ErrUnproven)
+	require.ErrorContains(t, err, "tau domain claim shop.test")
+}

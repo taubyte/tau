@@ -5,8 +5,11 @@ import (
 	"crypto/tls"
 	"errors"
 
+	"connectrpc.com/connect"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
+	"github.com/taubyte/tau/services/build/deploy"
+	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/dns"
 )
@@ -63,7 +66,10 @@ func (n *Node) openCM() error {
 
 	cfg := n.cfg.CM
 	cfg.Certificate.Zone = n.cfg.Gateway.CloudFqdn
-	var options []cm.Option
+	options := []cm.Option{cm.WithVault(n.certVault())}
+	if n.opts.resolver != nil {
+		options = append(options, cm.WithResolver(n.opts.resolver))
+	}
 	if n.opts.now != nil {
 		options = append(options, cm.WithClock(n.opts.now))
 	}
@@ -101,6 +107,11 @@ func (n *Node) certificates() (*cm.Client, error) {
 	if local != nil {
 		options = append(options, cm.WithChallengeStore(local))
 	}
+	d, err := n.domains()
+	if err != nil {
+		return nil, err
+	}
+	options = append(options, cm.WithProver(d))
 	c, err := cm.NewClient(n.opts.host,
 		func() []libp2ppeer.ID { return (&fromDiscovery{node: n, name: CM}).Known() },
 		func() *cm.Service { return n.cm },
@@ -179,4 +190,62 @@ func (n *Node) challengeReader() (dns.Challenges, error) {
 		return nil, ErrNoDatabases
 	}
 	return local, nil
+}
+
+// WithResolver is where TXT records proving a custom domain are looked up.
+// Without it, net.DefaultResolver.
+func WithResolver(r cm.Resolver) Option {
+	return func(o *options) error {
+		if r == nil {
+			return errors.New("node: nil resolver")
+		}
+		o.resolver = r
+		return nil
+	}
+}
+
+// domains is the client that issues and proves domain claims, built once.
+func (n *Node) domains() (*cm.Domains, error) {
+	n.sharedMu.Lock()
+	defer n.sharedMu.Unlock()
+	if n.domainClaims != nil {
+		return n.domainClaims, nil
+	}
+	d, err := cm.NewDomains(n.opts.host,
+		func() []libp2ppeer.ID { return (&fromDiscovery{node: n, name: CM}).Known() },
+		func() *cm.Service { return n.cm },
+		n.opts.resolver)
+	if err != nil {
+		return nil, err
+	}
+	n.domainClaims = d
+	n.closers = append(n.closers, d)
+	return d, nil
+}
+
+// trustedDomains is the prover of a cloud whose zones are trusted unproven.
+type trustedDomains struct{}
+
+func (trustedDomains) Prove(context.Context, string, string) error { return nil }
+
+// domainProver is what this node's deploys prove a zone with.
+func (n *Node) domainProver() (deploy.Domains, error) {
+	if n.cfg.CM.Domains.Trusted {
+		return trustedDomains{}, nil
+	}
+	return n.domains()
+}
+
+// domainClaims is the claim route's seam over the cm client.
+type domainClaims struct{ d *cm.Domains }
+
+func (c domainClaims) Claim(ctx context.Context, project, fqdn string) (frontend.DomainClaim, error) {
+	claim, err := c.d.Claim(ctx, project, fqdn)
+	if errors.Is(err, cm.ErrBadClaim) {
+		return frontend.DomainClaim{}, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	if err != nil {
+		return frontend.DomainClaim{}, err
+	}
+	return frontend.DomainClaim{Entry: claim.GetEntry(), Type: claim.GetType(), Token: claim.GetToken()}, nil
 }

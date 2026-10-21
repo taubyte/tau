@@ -254,6 +254,11 @@ func (n *Node) openBuildBackend() error {
 	if n.opts.regions != nil {
 		options = append(options, deploy.WithRegions(n.opts.regions))
 	}
+	domains, err := n.domainProver()
+	if err != nil {
+		return err
+	}
+	options = append(options, deploy.WithDomains(domains))
 
 	// A NODE THAT CANNOT RUN A CONTAINER CANNOT BUILD CODE, and it says so on
 	// the push rather than starting and refusing every one. The two halves of
@@ -416,6 +421,11 @@ func (n *Node) openBuildFrontend() error {
 		frontendOptions = append(frontendOptions, frontend.WithVault(v))
 	}
 	frontendOptions = append(frontendOptions, frontend.WithHooks(linkSecrets{projects: projects, vault: linked}))
+	domains, err := n.domains()
+	if err != nil {
+		return err
+	}
+	frontendOptions = append(frontendOptions, frontend.WithDomains(domainClaims{domains}))
 
 	// A CONSOLE AUTH MAY RETURN A SIGN-IN TO is a console that may call this
 	// ingress from a browser: its callbacks' origins are the CORS allow-list.

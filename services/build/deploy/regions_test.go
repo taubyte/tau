@@ -19,6 +19,7 @@ func TestARegionThisCloudDoesNotServeIsRefusedByDefault(t *testing.T) {
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(&checkout{dir: fixture(t, basicFixture)}),
 		deploy.WithLocalRegister(r),
+		deploy.WithDomains(provenAll()),
 	)
 	require.NoError(t, err)
 	var log out

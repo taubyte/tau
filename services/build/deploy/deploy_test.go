@@ -36,6 +36,24 @@ func (p projects) Configures(_ context.Context, _, repositoryKey string) (bool, 
 	return repositoryKey == p.config, p.err
 }
 
+// domains proves the zones it holds, for any project, and counts the asks.
+type domains struct {
+	proven map[string]bool
+	asked  int
+}
+
+func (d *domains) Prove(_ context.Context, _, fqdn string) error {
+	d.asked++
+	if d.proven[fqdn] {
+		return nil
+	}
+	return errors.New("no TXT record")
+}
+
+func provenAll() *domains {
+	return &domains{proven: map[string]bool{"example.com": true, "moved.example": true}}
+}
+
 // checkout hands over a fixture instead of cloning. The clone is tested
 // separately, against a real repository; what this stands in for is the network.
 type checkout struct {
@@ -131,6 +149,7 @@ func runner(t *testing.T, c *checkout, r deploy.Register, opts ...deploy.Option)
 		deploy.WithCheckout(c),
 		deploy.WithLocalRegister(r),
 		deploy.WithRegions(schema.TryOneRegion()),
+		deploy.WithDomains(provenAll()),
 	}
 	d, err := deploy.New(append(base, opts...)...)
 	require.NoError(t, err)
@@ -354,6 +373,7 @@ func TestAuthFailingIsNotARefusal(t *testing.T) {
 	dir := fixture(t, basicFixture)
 
 	d, err := deploy.New(
+		deploy.WithDomains(provenAll()),
 		deploy.WithRegions(schema.TryOneRegion()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config", err: errors.New("auth is down")}),
 		deploy.WithCheckout(&checkout{dir: dir}),
@@ -373,6 +393,7 @@ func TestNoRegisterFailsAfterTheCompile(t *testing.T) {
 	c := &checkout{dir: fixture(t, basicFixture)}
 
 	d, err := deploy.New(
+		deploy.WithDomains(provenAll()),
 		deploy.WithRegions(schema.TryOneRegion()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(c),
@@ -394,6 +415,7 @@ func TestAPublishThatFails(t *testing.T) {
 	dir := fixture(t, basicFixture)
 
 	d, err := deploy.New(
+		deploy.WithDomains(provenAll()),
 		deploy.WithRegions(schema.TryOneRegion()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(&checkout{dir: dir}),
@@ -405,6 +427,7 @@ func TestAPublishThatFails(t *testing.T) {
 
 	// And a register that cannot even be read.
 	d, err = deploy.New(
+		deploy.WithDomains(provenAll()),
 		deploy.WithRegions(schema.TryOneRegion()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(&checkout{dir: dir}),
@@ -447,6 +470,7 @@ func TestACodePushIsDelegated(t *testing.T) {
 	b := &builderStub{}
 
 	d, err := deploy.New(
+		deploy.WithDomains(provenAll()),
 		deploy.WithRegions(schema.TryOneRegion()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(&checkout{dir: dir}),
@@ -479,6 +503,7 @@ func TestACodePushIsDelegated(t *testing.T) {
 // doing nothing.
 func TestACodePushThatFails(t *testing.T) {
 	d, err := deploy.New(
+		deploy.WithDomains(provenAll()),
 		deploy.WithRegions(schema.TryOneRegion()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(&checkout{dir: fixture(t, basicFixture)}),
@@ -530,4 +555,37 @@ func TestAConfigNamingAnIdItDidNotClaimPublishesNothing(t *testing.T) {
 	require.ErrorIs(t, err, register.ErrNotPublished)
 	_, err = r.Resolve(t.Context(), w.ProjectID, deploy.DefaultEnvironment)
 	require.ErrorIs(t, err, register.ErrNotPublished)
+}
+
+// A ZONE IS PROVEN BEFORE ANYTHING PUBLISHES: a project naming a domain it has
+// not proven is its own would answer for somebody else's.
+func TestAnUnprovenZoneIsRefusedBeforeAnythingPublishes(t *testing.T) {
+	r := registry(t)
+	none := &domains{}
+	err := runner(t, &checkout{dir: fixture(t, basicFixture)}, r, deploy.WithDomains(none)).Run(t.Context(), work(), &out{})
+	require.ErrorIs(t, err, deploy.ErrUnproven)
+	require.ErrorContains(t, err, "example.com: no TXT record")
+	require.ErrorContains(t, err, "tau domain claim example.com")
+	_, err = r.Resolve(t.Context(), shopID, deploy.DefaultEnvironment)
+	require.ErrorIs(t, err, register.ErrNotPublished)
+
+	d, err := deploy.New(
+		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
+		deploy.WithCheckout(&checkout{dir: fixture(t, basicFixture)}),
+		deploy.WithLocalRegister(r),
+		deploy.WithRegions(schema.TryOneRegion()),
+	)
+	require.NoError(t, err)
+	err = d.Run(t.Context(), work(), &out{})
+	require.ErrorIs(t, err, deploy.ErrUnproven)
+	require.ErrorContains(t, err, "this cloud proves no domain")
+
+	_, err = deploy.New(deploy.WithDomains(nil))
+	require.ErrorContains(t, err, "domains must not be nil")
+}
+
+func TestAProvenZonePublishes(t *testing.T) {
+	proven := provenAll()
+	require.NoError(t, runner(t, &checkout{dir: fixture(t, basicFixture)}, registry(t), deploy.WithDomains(proven)).Run(t.Context(), work(), &out{}))
+	require.Equal(t, 1, proven.asked)
 }

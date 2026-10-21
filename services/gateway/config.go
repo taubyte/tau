@@ -205,6 +205,13 @@ type Issuer interface {
 	Challenge(token string) (string, bool)
 }
 
+// ProjectIssuer is an Issuer that also issues for a name in a project's own
+// zone, once the zone is proven to be the project's. services/cm's Client is
+// one.
+type ProjectIssuer interface {
+	ForProject(ctx context.Context, project, zone, name string) (tls.Certificate, error)
+}
+
 // WithIssuer issues certificates for generated names. Optional: without it a
 // generated name is answered by the wildcard or not at all.
 func WithIssuer(i Issuer) Option {

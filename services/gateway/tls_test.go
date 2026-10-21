@@ -185,9 +185,9 @@ func TestAProvidedCertificateIsTheSecret(t *testing.T) {
 // TestTHECERTIFICATEBLOCKITSELF, where the compile could not have produced it.
 func TestACertificateBlockThisCannotProduceIsRefused(t *testing.T) {
 	s := &Service{}
-	_, err := s.certificateOf(t.Context(), specs.Certificate{Source: "provided"}, "shop", "prod", "x")
+	_, err := s.certificateOf(t.Context(), nil, specs.Certificate{Source: "provided"}, "shop", "prod", "x")
 	require.ErrorContains(t, err, "names no secret")
-	_, err = s.certificateOf(t.Context(), specs.Certificate{Source: "acme"}, "shop", "prod", "x")
+	_, err = s.certificateOf(t.Context(), nil, specs.Certificate{Source: "acme"}, "shop", "prod", "x")
 	require.ErrorContains(t, err, `source is "acme"`)
 	require.Empty(t, scopeOf(""))
 }

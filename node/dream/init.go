@@ -446,6 +446,9 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, accountKey string)
 	// A UNIVERSE IS ONE DEVELOPER'S CLOUD, so whoever its forges vouch for may
 	// use it, as before it had users; a test that wants invites says so.
 	nodeConfig.Auth.SignUp = auth.SignUpOpen
+	// A UNIVERSE IS A DEVELOPMENT CLOUD, so the zones its projects declare are
+	// served unproven, as v1's dev mode did; a test that proves them says so.
+	nodeConfig.CM.Domains.Trusted = true
 	if cfg.Configure != nil {
 		cfg.Configure(index, &nodeConfig)
 	}

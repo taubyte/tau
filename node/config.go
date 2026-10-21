@@ -194,6 +194,7 @@ type options struct {
 	extra     []Service
 	identity  func(Host) (auth.Identity, error)
 	regions   schema.Regions
+	resolver  cm.Resolver
 	forges    *forge.Registry
 	// destination is the region whose views this node reads; see AsDestination.
 	destination string

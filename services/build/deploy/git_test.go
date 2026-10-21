@@ -139,6 +139,7 @@ func TestAPushOfARealRepositoryDeploys(t *testing.T) {
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(clone),
 		deploy.WithLocalRegister(r),
+		deploy.WithDomains(provenAll()),
 		deploy.WithCloudFqdn("acme.example"),
 	)
 	require.NoError(t, err)

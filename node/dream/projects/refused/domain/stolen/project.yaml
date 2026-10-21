@@ -1,0 +1,3 @@
+id: QmRsawqvCW6LJxceX5AoFr4KcrerdAxeJNvsbYE2x9rQYr
+name: stolendomain
+description: another project's custom domain, which no TXT record proves is this one's, so a deploy is refused

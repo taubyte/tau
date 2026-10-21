@@ -68,6 +68,9 @@ func (s *Service) mount() http.Handler {
 	mux.HandleFunc("PUT /secrets/{projectId}/{environment}/{name}", s.admitted("projectId", s.handleSetSecret))
 	mux.HandleFunc("DELETE /secrets/{projectId}/{environment}/{name}", s.admitted("projectId", s.handleDeleteSecret))
 
+	// The TXT record that proves a custom domain is the project's (domainapi.go).
+	mux.HandleFunc("POST /domain/{fqdn}/for/{projectId}", s.admitted("projectId", s.handleClaimDomain))
+
 	// Linking a project, the caller's own projects, and an owner's grants:
 	// the one public door to the register's project table (projectapi.go,
 	// grantapi.go).

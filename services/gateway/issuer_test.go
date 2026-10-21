@@ -76,3 +76,40 @@ func TestTheCAsChallengeIsAnsweredBeforeAnyName(t *testing.T) {
 
 	require.Error(t, WithIssuer(nil)(&options{}))
 }
+
+type projectIssuer struct {
+	fakeIssuer
+	custom []string
+}
+
+func (p *projectIssuer) ForProject(_ context.Context, project, zone, name string) (tls.Certificate, error) {
+	p.custom = append(p.custom, project+" "+zone+" "+name)
+	return p.cert, p.err
+}
+
+// A NAME IN THE PROJECT'S OWN ZONE goes to an issuer that proves the zone,
+// named with the project and the zone it is in.
+func TestACustomNameIsIssuedForItsProjectAndZone(t *testing.T) {
+	cert, key, _ := issued(t, "shop.example.com")
+	pair, err := tls.X509KeyPair([]byte(cert), []byte(key))
+	require.NoError(t, err)
+	issuer := &projectIssuer{fakeIssuer: fakeIssuer{cert: pair}}
+	h := newHarness(t, Config{CloudFqdn: "tau.example.io"}, WithIssuer(issuer))
+
+	got, err := h.Gateway.Certificate(hello("shop.example.com"))
+	require.NoError(t, err)
+	require.Equal(t, cert, leafOf(t, got))
+	require.Equal(t, []string{"shop example.com shop.example.com"}, issuer.custom)
+	require.Empty(t, issuer.asked)
+
+	issuer.err = errors.New("not proven")
+	_, err = h.Gateway.Certificate(hello("shop.example.com"))
+	require.ErrorIs(t, err, ErrNoCertificate)
+	require.ErrorContains(t, err, "not proven")
+
+	// A generated name still goes the zone's way.
+	issuer.err = nil
+	_, err = h.Gateway.Certificate(hello(generatedName(t)))
+	require.NoError(t, err)
+	require.Len(t, issuer.asked, 1)
+}

@@ -17,6 +17,19 @@ type options struct {
 	builder   Builder
 	cloudFqdn string
 	regions   schema.Regions
+	domains   Domains
+}
+
+// WithDomains is what proves a project's zones are its own. Without it a
+// project declaring one is refused.
+func WithDomains(d Domains) Option {
+	return func(o *options) error {
+		if d == nil {
+			return errors.New("domains must not be nil")
+		}
+		o.domains = d
+		return nil
+	}
 }
 
 // WithProjects is how a deploy tells a configuration repository from a code
