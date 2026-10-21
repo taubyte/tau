@@ -156,14 +156,26 @@ func issuanceID() string {
 
 // claim writes this node's lease on name and reports whether it is the one
 // that orders: of the live leases, the earliest, then the lowest peer id.
+//
+// A LIVE LEASE OF ITS OWN IS NOT REWRITTEN. Rewritten, every retry would make
+// a node's lease the newest, and two nodes retrying after the winner released
+// would each lose to the other in turn until the leases expired.
 func (s *Service) claim(ctx context.Context, name string) (bool, error) {
 	now := s.now()
 	// THE ENCODED ID: a peer.ID is raw multihash bytes, which no key may
 	// carry.
 	self := s.host.ID().String()
-	value := strconv.FormatInt(now.UnixNano(), 10) + " " + strconv.FormatInt(now.Add(s.cfg.Lease).UnixNano(), 10)
-	if err := s.db.Put(ctx, leasePrefix+name+"/"+self, []byte(value)); err != nil {
-		return false, fmt.Errorf("globals: leasing %s: %w", name, err)
+	mine := leasePrefix + name + "/" + self
+	live := false
+	if blob, err := s.db.Get(ctx, mine); err == nil {
+		_, expires, ok := parseLease(string(blob))
+		live = ok && expires > now.UnixNano()
+	}
+	if !live {
+		value := strconv.FormatInt(now.UnixNano(), 10) + " " + strconv.FormatInt(now.Add(s.cfg.Lease).UnixNano(), 10)
+		if err := s.db.Put(ctx, mine, []byte(value)); err != nil {
+			return false, fmt.Errorf("globals: leasing %s: %w", name, err)
+		}
 	}
 	keys, err := s.db.List(ctx, leasePrefix+name+"/")
 	if err != nil {

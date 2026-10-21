@@ -346,6 +346,32 @@ func TestOneLeaseWinsAndAnExpiredOneDoesNot(t *testing.T) {
 	require.True(t, won)
 }
 
+// TestARetryAfterTheWinnerReleasedConverges: the winner failed its order and
+// released, and both nodes retry. The one that has waited longest orders.
+func TestARetryAfterTheWinnerReleasedConverges(t *testing.T) {
+	f := newFleet(t, 2, false)
+	a, b := f.nodes[0], f.nodes[1]
+	const name = "x." + zone
+
+	won, err := a.claim(t.Context(), name)
+	require.NoError(t, err)
+	require.True(t, won)
+	f.advance(time.Millisecond)
+	won, err = b.claim(t.Context(), name)
+	require.NoError(t, err)
+	require.False(t, won)
+	a.release(name)
+
+	f.advance(time.Millisecond)
+	won, err = a.claim(t.Context(), name)
+	require.NoError(t, err)
+	require.False(t, won, "b's lease is older than a's new one")
+	f.advance(time.Millisecond)
+	won, err = b.claim(t.Context(), name)
+	require.NoError(t, err)
+	require.True(t, won, "b's retry keeps its lease and so stays the oldest")
+}
+
 func TestOwnerIsDeterministic(t *testing.T) {
 	peers := []peer.ID{"a", "b", "c"}
 	first, ok := Owner("n", peers)
