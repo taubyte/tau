@@ -23,4 +23,8 @@ message HoldsRequest {
 
 message Held {
   bool held = 1;
+  // responders is every node this one knows to answer kind: its dns nodes for
+  // dns-01, its gateways for http-01. A CA reaches what the dns nodes hand
+  // out, so the issuer widens what it confirms by what each of them knows.
+  repeated string responders = 2;
 }

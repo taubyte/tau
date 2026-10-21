@@ -90,8 +90,12 @@ func (x *HoldsRequest) GetValue() string {
 }
 
 type Held struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Held          bool                   `protobuf:"varint,1,opt,name=held,proto3" json:"held,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Held  bool                   `protobuf:"varint,1,opt,name=held,proto3" json:"held,omitempty"`
+	// responders is every node this one knows to answer kind: its dns nodes for
+	// dns-01, its gateways for http-01. A CA reaches what the dns nodes hand
+	// out, so the issuer widens what it confirms by what each of them knows.
+	Responders    []string `protobuf:"bytes,2,rep,name=responders,proto3" json:"responders,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -133,6 +137,13 @@ func (x *Held) GetHeld() bool {
 	return false
 }
 
+func (x *Held) GetResponders() []string {
+	if x != nil {
+		return x.Responders
+	}
+	return nil
+}
+
 var File_tau_challenges_v2_challenges_proto protoreflect.FileDescriptor
 
 const file_tau_challenges_v2_challenges_proto_rawDesc = "" +
@@ -141,9 +152,12 @@ const file_tau_challenges_v2_challenges_proto_rawDesc = "" +
 	"\fHoldsRequest\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
-	"\x05value\x18\x03 \x01(\tR\x05value\"\x1a\n" +
+	"\x05value\x18\x03 \x01(\tR\x05value\":\n" +
 	"\x04Held\x12\x12\n" +
-	"\x04held\x18\x01 \x01(\bR\x04held2U\n" +
+	"\x04held\x18\x01 \x01(\bR\x04held\x12\x1e\n" +
+	"\n" +
+	"responders\x18\x02 \x03(\tR\n" +
+	"responders2U\n" +
 	"\x10ResponderService\x12A\n" +
 	"\x05Holds\x12\x1f.tau.challenges.v2.HoldsRequest\x1a\x17.tau.challenges.v2.HeldB\xd3\x01\n" +
 	"\x15com.tau.challenges.v2B\x0fChallengesProtoP\x01ZCgithub.com/taubyte/tau/pkg/proto/gen/tau/challenges/v2;challengesv2\xa2\x02\x03TCX\xaa\x02\x11Tau.Challenges.V2\xca\x02\x11Tau\\Challenges\\V2\xe2\x02\x1dTau\\Challenges\\V2\\GPBMetadata\xea\x02\x13Tau::Challenges::V2b\x06proto3"

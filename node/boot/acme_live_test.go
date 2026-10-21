@@ -442,6 +442,7 @@ func (p *livePebble) authorizations(t *testing.T) (valid, invalid int) {
 	stdcopy.StdCopy(&out, &out, rc)
 	for _, line := range strings.Split(out.String(), "\n") {
 		switch {
+		case !strings.Contains(line, " authz "):
 		case strings.Contains(line, " set VALID "):
 			valid++
 		case strings.Contains(line, " set INVALID "):

@@ -24,7 +24,7 @@ func TestAnAnswerIsConfirmedOnlyOnceEveryResponderHoldsIt(t *testing.T) {
 	behind, err := ChallengesIn(t.Context(), pkgcache.NewMemStore(), time.Now)
 	require.NoError(t, err)
 	rh := newHost(t, f.mn)
-	r, err := ServeResponder(t.Context(), rh, behind)
+	r, err := ServeResponder(t.Context(), rh, behind, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { r.Close() })
 	f.connect(t)
@@ -82,9 +82,9 @@ func TestAnAnswerIsConfirmedOnlyOnceEveryResponderHoldsIt(t *testing.T) {
 	require.Error(t, err)
 	require.False(t, ok)
 
-	_, err = ServeResponder(t.Context(), nil, behind)
+	_, err = ServeResponder(t.Context(), nil, behind, nil)
 	require.ErrorIs(t, err, ErrNoHost)
-	_, err = ServeResponder(t.Context(), rh, nil)
+	_, err = ServeResponder(t.Context(), rh, nil, nil)
 	require.ErrorIs(t, err, ErrNoChallenges)
 }
 
@@ -116,4 +116,40 @@ func TestAClientWithAMemberSilentIsNotAnEmptyAnswer(t *testing.T) {
 
 	_, err = f.nodes[0].Challenges(context.Background(), acme.KindHTTP, "tok")
 	require.NoError(t, err)
+}
+
+// TestAResponderOnlyAnotherEdgeNodeKnowsIsConfirmedToo: the placing node's
+// view is behind a dns node's, which hands the CA a gateway the placing node
+// has not heard of. That gateway is asked too.
+func TestAResponderOnlyAnotherEdgeNodeKnowsIsConfirmedToo(t *testing.T) {
+	f := newFleet(t, 1, false)
+	s := f.nodes[0]
+	serve := func(view func(string) []peer.ID) (*Challenges, peer.ID) {
+		c, err := ChallengesIn(t.Context(), pkgcache.NewMemStore(), time.Now)
+		require.NoError(t, err)
+		h := newHost(t, f.mn)
+		r, err := ServeResponder(t.Context(), h, c, view)
+		require.NoError(t, err)
+		t.Cleanup(func() { r.Close() })
+		return c, h.ID()
+	}
+	unknown, unknownID := serve(nil)
+	var edgeID peer.ID
+	edge, id := serve(func(kind string) []peer.ID {
+		if kind == acme.KindHTTP {
+			return []peer.ID{edgeID, unknownID}
+		}
+		return nil
+	})
+	edgeID = id
+	f.connect(t)
+	s.responders = func(string) []peer.ID { return []peer.ID{edgeID} }
+	require.NoError(t, edge.PresentHTTP(t.Context(), "tok", "ka"))
+	ok, err := s.Confirmed(t.Context(), acme.KindHTTP, "tok", "ka")
+	require.NoError(t, err)
+	require.False(t, ok, "the gateway only the edge node knows does not hold it")
+	require.NoError(t, unknown.PresentHTTP(t.Context(), "tok", "ka"))
+	ok, err = s.Confirmed(t.Context(), acme.KindHTTP, "tok", "ka")
+	require.NoError(t, err)
+	require.True(t, ok)
 }

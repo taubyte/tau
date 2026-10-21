@@ -70,8 +70,10 @@ func (s *Service) answerChallenge(ctx context.Context, reply *dns.Msg, name stri
 	}
 	for _, v := range values {
 		reply.Answer = append(reply.Answer, &dns.TXT{
-			// A SHORT TTL: the value changes with every order.
-			Hdr: dns.RR_Header{Name: q.Name, Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: 1},
+			// NO TTL: the set changes with every order, and a resolver
+			// holding the set an earlier order was proved with fails the
+			// next one proving the same name.
+			Hdr: dns.RR_Header{Name: q.Name, Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: 0},
 			Txt: []string{v},
 		})
 	}

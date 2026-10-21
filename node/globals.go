@@ -80,13 +80,7 @@ func (n *Node) openGlobals() error {
 			return (&fromDiscovery{node: n, name: Globals}).Known()
 		}),
 		globals.WithNames(n.servedNames),
-		globals.WithResponders(func(kind string) []libp2ppeer.ID {
-			role := DNS
-			if kind == acme.KindHTTP {
-				role = Gateway
-			}
-			return (&fromDiscovery{node: n, name: role}).Known()
-		}),
+		globals.WithResponders(n.responders),
 		globals.WithLogger(logger.Warnf),
 	}
 	if n.opts.now != nil {
@@ -226,6 +220,16 @@ func (n *Node) gatewayIssuer(c *globals.Client) (gateway.Issuer, error) {
 	return gatewayIssuer{Client: c, local: local}, nil
 }
 
+// responders is the nodes this one knows to answer a challenge kind: its dns
+// nodes for dns-01, its gateways for http-01.
+func (n *Node) responders(kind string) []libp2ppeer.ID {
+	role := DNS
+	if kind == acme.KindHTTP {
+		role = Gateway
+	}
+	return (&fromDiscovery{node: n, name: role}).Known()
+}
+
 // serveResponder answers globals.ResponderProtocol on a dns node or gateway
 // of a cloud that issues.
 func (n *Node) serveResponder(ctx context.Context) error {
@@ -236,7 +240,7 @@ func (n *Node) serveResponder(ctx context.Context) error {
 	if err != nil || local == nil {
 		return err
 	}
-	r, err := globals.ServeResponder(ctx, n.opts.host, local)
+	r, err := globals.ServeResponder(ctx, n.opts.host, local, n.responders)
 	if err != nil {
 		return err
 	}
