@@ -1,4 +1,4 @@
 id: QmPigwAetxyyVvHj453JLsLhrWNGV4mW9ZG9yvjd7kUmMk
 name: placement
-description: a project that says where it runs - allowed in eu and us, its cache pinned to eu - on a build that serves one region, which places it in default and says so rather than dropping the statement
+description: a project that says where it runs - allowed in eu and us, its cache pinned to eu - refused by a build with no regions, placed by one that is eu
 regions: [eu, us]

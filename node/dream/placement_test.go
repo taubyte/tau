@@ -39,9 +39,8 @@ func TestAPlacementThisBuildDoesNotServeIsRefused(t *testing.T) {
 	}
 }
 
-// A DREAM TEST CAN STAND IN FOR ONE REGION: as eu, the cache pinned to eu is placed
-// there and clean, and only the allowance's "us" — a region this stand-in does not
-// serve — is refused.
+// A DREAM TEST CAN BE ONE REGION OF A LARGER CLOUD: as eu, the cache pinned to eu is
+// placed there and naming us is not an error — us exists, this build is not it.
 func TestDreamCanMockARegion(t *testing.T) {
 	c, err := schema.New(schema.WithLocal(projectDir("with/placement")), schema.WithBranch("main"))
 	require.NoError(t, err)
@@ -54,7 +53,5 @@ func TestDreamCanMockARegion(t *testing.T) {
 			broken = append(broken, f.Kind+"/"+f.Name+": "+f.Title)
 		}
 	}
-	require.Equal(t, []string{
-		`project/placement: allows region "us", which this build does not serve; everything under it runs in "eu"`,
-	}, broken)
+	require.Empty(t, broken)
 }

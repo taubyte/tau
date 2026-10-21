@@ -16,6 +16,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/deploy"
 )
@@ -48,7 +49,7 @@ func repository(t *testing.T) (path string, first, second string) {
 	run("init", "-q", "-b", "main")
 
 	// The first commit is the vocabulary's own project.
-	copyInto(t, basicFixture, path, true)
+	copyInto(t, basicFixture, path)
 	run("add", "-A")
 	run("commit", "-q", "-m", "the project")
 	first = run("rev-parse", "HEAD")
@@ -115,6 +116,7 @@ func TestAPushOfARealRepositoryDeploys(t *testing.T) {
 
 	clone := deploy.NewClone(nil, deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) { return forge.Address{URL: path}, nil }))
 	d, err := deploy.New(
+		deploy.WithRegions(schema.WithRegion("eu")),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(clone),
 		deploy.WithLocalRegister(r),

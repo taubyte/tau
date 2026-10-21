@@ -73,20 +73,46 @@ type Regions interface {
 const DefaultRegion = "default"
 
 // WithNoRegions is the Regions of a build that has no regions — the OSS build. Everything
-// is placed in DefaultRegion; it behaves exactly as WithRegion(DefaultRegion).
+// is placed in DefaultRegion, and a placement or allowance naming any region is Broken:
+// the author stated a place this build cannot put it.
 //
 // IT IS THE DEFAULT, so an audit nobody configured refuses what it cannot honour
 // rather than accepting it quietly. A project writing no `regions` anywhere — or
 // naming DefaultRegion — compiles clean, which is what "an absent block is anywhere
 // the allowance permits" promises.
-func WithNoRegions() Regions { return WithRegion(DefaultRegion) }
+func WithNoRegions() Regions { return oneRegion{region: DefaultRegion} }
 
-// WithRegion is the Regions of a build that serves the one region named. Every
-// resource runs there, and a placement or allowance naming any other region is
-// Broken: the author stated a place this build cannot put it, and deploying it
-// anyway would put it somewhere it was told not to be. A harness standing in for
-// one region of a larger cloud passes that region's name.
-func WithRegion(region string) Regions { return oneRegion{region: region} }
+// WithRegion is the Regions of one region of a cloud that has more: a build or a
+// harness that is that region. Naming other regions is not an error — they exist,
+// this build just is not them. It places as the cloud would and renders only its own
+// view, so an edge is judged there alone: what it holds reaching something placed
+// only elsewhere is Broken, and what is placed only elsewhere is simply not in it.
+func WithRegion(region string) Regions { return asRegion{region: region} }
+
+type asRegion struct{ region string }
+
+func (a asRegion) Serves() []string         { return []string{a.region} }
+func (a asRegion) Allow([]string) []Concern { return nil }
+
+// Place answers every region the resource runs in that this build can name: the ones
+// it states, else its ceiling, else this region — a resource saying nothing runs
+// everywhere, which includes here.
+func (a asRegion) Place(p Placement) Answer {
+	here := p.Allowed == nil || slices.Contains(p.Allowed, a.region)
+	switch {
+	case p.Policy == "cdn":
+		in := slices.Clone(p.In)
+		if here && !slices.Contains(in, a.region) {
+			in = append(in, a.region)
+		}
+		return Answer{In: in}
+	case len(p.Named()) > 0:
+		return Answer{In: p.Named()}
+	case p.Allowed != nil:
+		return Answer{In: slices.Clone(p.Allowed)}
+	}
+	return Answer{In: []string{a.region}}
+}
 
 type oneRegion struct{ region string }
 

@@ -11,9 +11,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 
 	"github.com/taubyte/tau/pkg/register"
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/deploy"
 )
@@ -85,27 +85,14 @@ type ioReader = interface {
 
 // fixture copies a config tree onto disk, because that is what a checkout hands
 // back — a directory on this machine, for the same reason a build needs one.
-// fixture copies src with every `regions` statement removed: these tests are about
-// deploying, and a build with no regions refuses a project that says where it runs.
-// placedFixture keeps them, for the tests about placing.
 func fixture(t *testing.T, src string) string {
 	t.Helper()
-	return copyFixture(t, src, true)
-}
-
-func placedFixture(t *testing.T, src string) string {
-	t.Helper()
-	return copyFixture(t, src, false)
-}
-
-func copyFixture(t *testing.T, src string, unplace bool) string {
-	t.Helper()
 	dst := t.TempDir()
-	copyInto(t, src, dst, unplace)
+	copyInto(t, src, dst)
 	return dst
 }
 
-func copyInto(t *testing.T, src, dst string, unplace bool) {
+func copyInto(t *testing.T, src, dst string) {
 	t.Helper()
 	require.NoError(t, filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -119,37 +106,8 @@ func copyInto(t *testing.T, src, dst string, unplace bool) {
 		if err != nil {
 			return err
 		}
-		if unplace && strings.HasSuffix(path, ".yaml") {
-			if data, err = withoutRegions(data); err != nil {
-				return err
-			}
-		}
 		return os.WriteFile(target, data, 0o644)
 	}))
-}
-
-func withoutRegions(data []byte) ([]byte, error) {
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, err
-	}
-	var strip func(*yaml.Node)
-	strip = func(n *yaml.Node) {
-		if n.Kind == yaml.MappingNode {
-			kept := n.Content[:0]
-			for i := 0; i+1 < len(n.Content); i += 2 {
-				if n.Content[i].Value != "regions" {
-					kept = append(kept, n.Content[i], n.Content[i+1])
-				}
-			}
-			n.Content = kept
-		}
-		for _, c := range n.Content {
-			strip(c)
-		}
-	}
-	strip(&doc)
-	return yaml.Marshal(&doc)
 }
 
 func registry(t *testing.T) *register.Register {
@@ -191,6 +149,8 @@ func runner(t *testing.T, c *checkout, r deploy.Register, opts ...deploy.Option)
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(c),
 		deploy.WithLocalRegister(r),
+		// The fixture is written for a cloud with eu and us; these deploys are eu.
+		deploy.WithRegions(schema.WithRegion("eu")),
 		deploy.WithDomains(provenAll()),
 	}
 	d, err := deploy.New(append(base, opts...)...)
@@ -415,6 +375,7 @@ func TestAuthFailingIsNotARefusal(t *testing.T) {
 	dir := fixture(t, basicFixture)
 
 	d, err := deploy.New(
+		deploy.WithRegions(schema.WithRegion("eu")),
 		deploy.WithDomains(provenAll()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config", err: errors.New("auth is down")}),
 		deploy.WithCheckout(&checkout{dir: dir}),
@@ -434,6 +395,7 @@ func TestNoRegisterFailsAfterTheCompile(t *testing.T) {
 	c := &checkout{dir: fixture(t, basicFixture)}
 
 	d, err := deploy.New(
+		deploy.WithRegions(schema.WithRegion("eu")),
 		deploy.WithDomains(provenAll()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(c),
@@ -455,6 +417,7 @@ func TestAPublishThatFails(t *testing.T) {
 	dir := fixture(t, basicFixture)
 
 	d, err := deploy.New(
+		deploy.WithRegions(schema.WithRegion("eu")),
 		deploy.WithDomains(provenAll()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(&checkout{dir: dir}),
@@ -466,6 +429,7 @@ func TestAPublishThatFails(t *testing.T) {
 
 	// And a register that cannot even be read.
 	d, err = deploy.New(
+		deploy.WithRegions(schema.WithRegion("eu")),
 		deploy.WithDomains(provenAll()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(&checkout{dir: dir}),
@@ -508,6 +472,7 @@ func TestACodePushIsDelegated(t *testing.T) {
 	b := &builderStub{}
 
 	d, err := deploy.New(
+		deploy.WithRegions(schema.WithRegion("eu")),
 		deploy.WithDomains(provenAll()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(&checkout{dir: dir}),
@@ -540,6 +505,7 @@ func TestACodePushIsDelegated(t *testing.T) {
 // doing nothing.
 func TestACodePushThatFails(t *testing.T) {
 	d, err := deploy.New(
+		deploy.WithRegions(schema.WithRegion("eu")),
 		deploy.WithDomains(provenAll()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(&checkout{dir: fixture(t, basicFixture)}),
@@ -606,6 +572,7 @@ func TestAnUnprovenZoneIsRefusedBeforeAnythingPublishes(t *testing.T) {
 	require.ErrorIs(t, err, register.ErrNotPublished)
 
 	d, err := deploy.New(
+		deploy.WithRegions(schema.WithRegion("eu")),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(&checkout{dir: fixture(t, basicFixture)}),
 		deploy.WithLocalRegister(r),

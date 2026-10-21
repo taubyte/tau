@@ -248,8 +248,8 @@ func TestAnEmptyViewIsNotAnUnknownOne(t *testing.T) {
 	require.ErrorIs(t, err, schema.ErrUnknownDestination)
 }
 
-// A PLACEMENT FINDING THAT IS BROKEN STOPS THE VIEWS, and a Regions answering a region
-// it does not serve is the build's fault, said as such.
+// A PLACEMENT FINDING THAT IS BROKEN STOPS THE VIEWS. A region the Regions answers but
+// does not render is placed there all the same, and is simply not a view here.
 func TestBrokenPlacementStopsTheViews(t *testing.T) {
 	_, findings, err := viewsOf(t, several{"eu"}, map[string]string{
 		"/project.yaml":   regionsProject,
@@ -263,7 +263,8 @@ func TestBrokenPlacementStopsTheViews(t *testing.T) {
 		"/cache/pin.yaml": viewCache("pin", "regions:\n    pinned: [eu]\n"),
 	}), schema.WithRegions(liar{}))
 	require.Equal(t, []string{"us"}, plan.Destinations)
-	require.Contains(t, findingsTitled(plan.Findings, schema.Broken), `cache/pin: is placed in "eu", which this build does not serve`)
+	require.Empty(t, findingsTitled(plan.Findings, schema.Broken))
+	require.Empty(t, plan.Roles["us"])
 }
 
 type liar struct{}
@@ -295,19 +296,64 @@ func TestAScopeIsKeptForWhatIsInIt(t *testing.T) {
 // THE WHOLE CORPUS FIXTURE, AS ITS EU PREVIEW SEES IT: every kind, lowerings included,
 // and the one view is the object. A build with no regions refuses it, since it pins eu.
 func TestTheBasicFixtureIsOneViewInEU(t *testing.T) {
-	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
-	require.NoError(t, err)
-	obj, _, err := c.Compile(context.Background())
-	require.NoError(t, err)
-	flat := obj.Flat()
+	flat := basicFixture(t)
 
-	_, _, err = schema.Views(flat)
+	_, _, err := schema.Views(flat)
 	require.ErrorIs(t, err, schema.ErrUnviewable)
 
 	views, _, err := schema.Views(flat, schema.WithRegions(schema.Preview("eu")))
 	require.NoError(t, err)
 	require.Equal(t, flat, views["eu"].Object)
 	require.Len(t, views["eu"].Roles, len(schema.Resources(flat)))
+}
+
+// AS ONE REGION OF THE CLOUD IT IS WRITTEN FOR, each build renders its own view.
+func TestTheBasicFixtureRendersPerRegion(t *testing.T) {
+	flat := basicFixture(t)
+
+	eu, findings, err := schema.Views(flat, schema.WithRegions(schema.WithRegion("eu")))
+	require.NoError(t, err, "%v", findings)
+	require.Equal(t, []string{"eu"}, keysOf(eu))
+	require.Equal(t, flat, eu["eu"].Object)
+
+	// US IS REFUSED, AND THAT IS THE FIXTURE: function/checkout says nothing, so it runs
+	// in us too, and there it reaches what is pinned to eu.
+	plan := schema.PlanViews(flat, schema.WithRegions(schema.WithRegion("us")))
+	broken := findingsTitled(plan.Findings, schema.Broken)
+	require.Contains(t, broken, `function/checkout: reaches workflow/checkout, which is not placed in "us" where this is`)
+	require.Contains(t, broken, `function/checkout: reaches cache/sessions, which is not placed in "us" where this is`)
+	roles := plan.Roles["us"]
+	require.Equal(t, schema.RoleStandby, roles[idOfName(t, flat, "application", "api")])
+	_, _, err = schema.Views(flat, schema.WithRegions(schema.WithRegion("us")))
+	require.ErrorIs(t, err, schema.ErrUnviewable)
+}
+
+func basicFixture(t *testing.T) map[string]any {
+	t.Helper()
+	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
+	require.NoError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	require.NoError(t, err)
+	return obj.Flat()
+}
+
+func idOfName(t *testing.T, flat map[string]any, kind, name string) string {
+	t.Helper()
+	for _, res := range schema.Resources(flat) {
+		if res.Kind == kind && res.Name == name {
+			return res.ID
+		}
+	}
+	t.Fatalf("no %s/%s", kind, name)
+	return ""
+}
+
+func keysOf(views map[string]schema.View) []string {
+	out := make([]string, 0, len(views))
+	for k := range views {
+		out = append(out, k)
+	}
+	return out
 }
 
 // ENVIRONMENTS FIRST, THEN PLACEMENT: a view is (environment, region), and the

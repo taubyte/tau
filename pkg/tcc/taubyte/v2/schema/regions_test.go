@@ -224,27 +224,26 @@ func TestTheAuditFilesWhatTheRegionsSays(t *testing.T) {
 	require.Contains(t, findingsTitled(found, schema.Broken), "project/p: allowance refused")
 }
 
-// AS A REGION, a build serves the one region it is named for: everything runs there,
-// naming it is clean, and naming any other region is Broken — the way a harness
-// stands in for one region of a larger cloud.
-func TestWithRegionServesTheRegionItNames(t *testing.T) {
+// AS A REGION, a build is one region of a cloud that has more: naming the others is
+// not an error, and it answers where things run as the cloud would.
+func TestWithRegionIsOneRegionOfMany(t *testing.T) {
 	r := schema.WithRegion("eu")
+	require.Equal(t, []string{"eu"}, r.Serves())
+	require.Empty(t, r.Allow([]string{"eu", "us"}))
 
-	clean := r.Place(schema.Placement{Policy: "pinned", In: []string{"eu"}})
-	require.Equal(t, []string{"eu"}, clean.In)
-	require.Empty(t, clean.Concerns)
-	require.Equal(t, []string{"eu"}, r.Place(schema.Placement{}).In)
-	require.Empty(t, r.Allow([]string{"eu"}))
-
-	other := r.Place(schema.Placement{Policy: "pinned", In: []string{"us"}})
-	require.Equal(t, []string{"eu"}, other.In)
-	require.Len(t, other.Concerns, 1)
-	require.Equal(t, schema.Broken, other.Concerns[0].Severity)
-	require.Equal(t, `is placed in region "us", which this build does not serve; it runs in "eu"`, other.Concerns[0].Title)
-
-	allow := r.Allow([]string{"eu", "us"})
-	require.Len(t, allow, 1)
-	require.Equal(t, schema.Broken, allow[0].Severity)
-
-	require.Equal(t, schema.WithRegion(schema.DefaultRegion), schema.WithNoRegions())
+	for _, tc := range []struct {
+		p    schema.Placement
+		want []string
+	}{
+		{schema.Placement{}, []string{"eu"}},
+		{schema.Placement{Allowed: []string{"us"}}, []string{"us"}},
+		{schema.Placement{Policy: "pinned", In: []string{"us"}}, []string{"us"}},
+		{schema.Placement{Policy: "failover", Main: "eu", Standby: "us"}, []string{"eu", "us"}},
+		{schema.Placement{Policy: "cdn", In: []string{"us"}}, []string{"us", "eu"}},
+		{schema.Placement{Policy: "cdn", In: []string{"us"}, Allowed: []string{"us"}}, []string{"us"}},
+	} {
+		got := r.Place(tc.p)
+		require.Equal(t, tc.want, got.In, "%+v", tc.p)
+		require.Empty(t, got.Concerns)
+	}
 }

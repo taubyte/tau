@@ -30,8 +30,8 @@ import (
 // no route at all.
 var twoRegions = schema.Preview("eu", "us")
 
-// inRegion starts a universe standing in for one region and publishes the project into
-// it, cut for twoRegions.
+// inRegion starts a universe that is one region of a cloud with eu and us, and
+// publishes the project into it as that region: its own view, and only that.
 func inRegion(t *testing.T, region, name string) (*running, *node.Node) {
 	t.Helper()
 	u, err := nodeDream.Start(t.Context(), t.Name()+"-"+region, nodeDream.Config{
@@ -47,7 +47,7 @@ func inRegion(t *testing.T, region, name string) (*running, *node.Node) {
 	cid, err := store.Put(t.Context(), bytes.NewReader(handlerWASM(t)))
 	require.NoError(t, err)
 
-	r := publish(t, pids[:1], deployed{project: "shop", name: name, host: "regional.example.com", regions: twoRegions}, artifacts{"": cid})[0]
+	r := publish(t, pids[:1], deployed{project: "shop", name: name, host: "regional.example.com", regions: schema.WithRegion(region)}, artifacts{"": cid})[0]
 	return r, r.node
 }
 
@@ -98,12 +98,12 @@ func TestEachRegionServesItsOwnView(t *testing.T) {
 	later := t.TempDir()
 	require.NoError(t, os.CopyFS(later, os.DirFS(projectDir("with/views"))))
 	require.NoError(t, os.Remove(filepath.Join(later, "cache", "sessions.yaml")))
-	compiled, _, _ := projectAs(t, later, artifacts{"": "unused"}, twoRegions)
+	compiled, _, _ := projectAs(t, later, artifacts{"": "unused"}, schema.WithRegion("us"))
 	var flat map[string]any
 	require.NoError(t, json.Unmarshal(compiled, &flat))
 	_, err = usNode.Register().Local().Publish(t.Context(), pkgregister.Publication{
 		Project: "shop", Environment: "prod", Revision: 2, Compiled: compiled,
-		Hosts: []string{"regional.example.com"}, Views: cutFor(t, flat, twoRegions),
+		Hosts: []string{"regional.example.com"}, Views: cutFor(t, flat, schema.WithRegion("us")),
 	})
 	require.NoError(t, err)
 	held, revision := viewHeld(t, usNode, "us")
@@ -129,9 +129,13 @@ func TestAProjectReachingAcrossRegionsIsRefused(t *testing.T) {
 	}
 	require.Equal(t, []string{`function/reader: reaches cache/sessions_eu, which is not placed in "us" where this is`}, broken)
 
-	// AS EU ALONE, the same project is placed: a stand-in for one region refuses only
-	// the region it does not serve, and says it by name.
-	_, findings, err = schema.Views(obj.Flat(), schema.WithRegions(schema.WithRegion("eu")))
+	// AN EDGE IS JUDGED IN ONE REGION'S VIEW: as eu, the reader pinned to us is not in
+	// it, so nothing eu holds reaches across; as us, the reader reaches eu's cache.
+	views, _, err := schema.Views(obj.Flat(), schema.WithRegions(schema.WithRegion("eu")))
+	require.NoError(t, err)
+	for _, res := range schema.Resources(views["eu"].Object) {
+		require.NotEqual(t, "function/reader", res.Kind+"/"+res.Name)
+	}
+	_, _, err = schema.Views(obj.Flat(), schema.WithRegions(schema.WithRegion("us")))
 	require.ErrorIs(t, err, schema.ErrUnviewable)
-	require.Contains(t, findings[0].Title, `"us"`)
 }

@@ -161,17 +161,16 @@ func PlanViews(obj map[string]any, opts ...AuditOption) Plan {
 
 	// PLACED: where the Regions answered, in the role the placement gives it there.
 	hasFootprint := map[string]bool{}
+	answers := map[string]placed{}
 	for _, at := range placementsOf(root, all, in) {
 		hasFootprint[at.res.id] = true
+		answers[at.res.id] = at
 		for _, region := range at.answer.In {
-			roles, ok := plan.Roles[region]
-			if !ok {
-				plan.Findings = append(plan.Findings, Finding{Broken, at.res.kind, at.res.name, at.res.scope,
-					fmt.Sprintf("is placed in %q, which this build does not serve", region),
-					"The regions this build serves answered a region it does not list. That is the build's fault, not the project's.", at.res.id})
-				continue
+			// A region this build does not render is placed there all the same; it
+			// is just not a view here.
+			if roles, ok := plan.Roles[region]; ok {
+				roles[at.res.id] = roleOf(at.placement, at.answer, region)
 			}
-			roles[at.res.id] = roleOf(at.placement, at.answer, region)
 		}
 	}
 
@@ -298,7 +297,7 @@ func PlanViews(obj map[string]any, opts ...AuditOption) Plan {
 				break
 			}
 		}
-		if !held && len(plan.Destinations) > 0 {
+		if !held && len(plan.Destinations) > 0 && !meetElsewhere(reachedPlaced(res.id), answers, plan.Destinations) {
 			plan.Findings = append(plan.Findings, Finding{Broken, res.kind, res.name, res.scope,
 				"reaches resources placed in no one region together",
 				"It has no placement of its own, so it is held where what it reaches is; what it reaches shares no region, and nothing reaches across regions.", res.id})
@@ -310,6 +309,35 @@ func PlanViews(obj map[string]any, opts ...AuditOption) Plan {
 		return rank[plan.Findings[i].Severity] < rank[plan.Findings[j].Severity]
 	})
 	return plan
+}
+
+// meetElsewhere is whether every target is placed in one region this build does not
+// render, so what reaches them is held there and not here. A target that says nothing
+// runs everywhere and meets any region.
+func meetElsewhere(targets []string, answers map[string]placed, rendered []string) bool {
+	var candidates []string
+	for _, id := range targets {
+		for _, r := range answers[id].answer.In {
+			if !slices.Contains(rendered, r) && !slices.Contains(candidates, r) {
+				candidates = append(candidates, r)
+			}
+		}
+	}
+	for _, r := range candidates {
+		all := true
+		for _, id := range targets {
+			at := answers[id]
+			anywhere := at.placement.Policy == "" && at.placement.Allowed == nil
+			if !anywhere && !slices.Contains(at.answer.In, r) {
+				all = false
+				break
+			}
+		}
+		if all {
+			return true
+		}
+	}
+	return false
 }
 
 // isScopeOnly is a scope that is not itself a resource: it is a place, kept by the
