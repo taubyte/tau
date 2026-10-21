@@ -91,7 +91,7 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 		members = append(members, id)
 	}
 	domains, err := cm.NewDomains(u.Peers()[1].Peer(), func() []libp2ppeer.ID { return slices.Clone(members) },
-		func() *cm.Service { return nil }, dns)
+		func() *cm.Service { return nil })
 	require.NoError(t, err)
 	t.Cleanup(func() { domains.Close() })
 
@@ -110,7 +110,7 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 		return r, d.Run(t.Context(), backend.Work{JobID: "j", RepositoryKey: "github.com/acme/" + id, Ref: "refs/heads/main", CommitSHA: "c", ProjectID: id}, &buildLog{})
 	}
 
-	_, err = run("with/domain", customDomainID)
+	_, err = run("with/domain/apex", customDomainID)
 	require.ErrorIs(t, err, buildDeploy.ErrUnproven, "no record is set yet")
 
 	// THE VAULT NEEDS ITS MEMBERS before the first signing key can be kept.
@@ -124,7 +124,7 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 
 	var r *pkgregister.Register
 	require.Eventually(t, func() bool {
-		r, err = run("with/domain", customDomainID)
+		r, err = run("with/domain/apex", customDomainID)
 		return err == nil
 	}, time.Minute, time.Second, "the signing key replicates to every cm node")
 	project, environment, err := r.ResolveHost(t.Context(), "www.shop.test")
@@ -136,4 +136,20 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 	_, err = run("refused/domain/stolen", stolenDomainID)
 	require.ErrorIs(t, err, buildDeploy.ErrUnproven)
 	require.ErrorContains(t, err, "tau domain claim shop.test")
+
+	// A ZONE UNDER A PROVEN ONE is its project's with no record of its own,
+	// even once the parent's record is gone, and another project's never.
+	dns.set(claim.GetEntry(), "removed")
+	r, err = run("with/domain/child", customDomainID)
+	require.NoError(t, err)
+	project, _, err = r.ResolveHost(t.Context(), "www.eu.shop.test")
+	require.NoError(t, err)
+	require.Equal(t, customDomainID, project)
+
+	stolen, err := domains.Claim(t.Context(), stolenDomainID, "eu.shop.test")
+	require.NoError(t, err)
+	dns.set(stolen.GetEntry(), stolen.GetToken())
+	_, err = run("refused/domain/stolenchild", stolenDomainID)
+	require.ErrorIs(t, err, buildDeploy.ErrUnproven)
+	require.ErrorContains(t, err, "shop.test is proven to be another project's")
 }

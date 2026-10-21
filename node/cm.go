@@ -213,8 +213,7 @@ func (n *Node) domains() (*cm.Domains, error) {
 	}
 	d, err := cm.NewDomains(n.opts.host,
 		func() []libp2ppeer.ID { return (&fromDiscovery{node: n, name: CM}).Known() },
-		func() *cm.Service { return n.cm },
-		n.opts.resolver)
+		func() *cm.Service { return n.cm })
 	if err != nil {
 		return nil, err
 	}

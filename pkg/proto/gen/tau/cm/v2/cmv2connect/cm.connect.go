@@ -49,8 +49,8 @@ const (
 	CertificateServiceKeepProcedure = "/tau.cm.v2.CertificateService/Keep"
 	// DomainServiceClaimProcedure is the fully-qualified name of the DomainService's Claim RPC.
 	DomainServiceClaimProcedure = "/tau.cm.v2.DomainService/Claim"
-	// DomainServiceKeysProcedure is the fully-qualified name of the DomainService's Keys RPC.
-	DomainServiceKeysProcedure = "/tau.cm.v2.DomainService/Keys"
+	// DomainServiceProveProcedure is the fully-qualified name of the DomainService's Prove RPC.
+	DomainServiceProveProcedure = "/tau.cm.v2.DomainService/Prove"
 )
 
 // CertificateServiceClient is a client for the tau.cm.v2.CertificateService service.
@@ -157,8 +157,9 @@ func (UnimplementedCertificateServiceHandler) Keep(context.Context, *connect.Req
 type DomainServiceClient interface {
 	// Claim is the signed claim to publish for one fqdn and project.
 	Claim(context.Context, *connect.Request[v2.ClaimRequest]) (*connect.Response[v2.DomainClaim], error)
-	// Keys is every key a claim may have been signed with, one per cm node.
-	Keys(context.Context, *connect.Request[v2.Empty]) (*connect.Response[v2.ValidationKeys], error)
+	// Prove is Empty when the fqdn is the project's: under a zone already
+	// proven for it, or by the TXT record, which is then recorded.
+	Prove(context.Context, *connect.Request[v2.ClaimRequest]) (*connect.Response[v2.Empty], error)
 }
 
 // NewDomainServiceClient constructs a client for the tau.cm.v2.DomainService service. By default,
@@ -178,10 +179,10 @@ func NewDomainServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(domainServiceMethods.ByName("Claim")),
 			connect.WithClientOptions(opts...),
 		),
-		keys: connect.NewClient[v2.Empty, v2.ValidationKeys](
+		prove: connect.NewClient[v2.ClaimRequest, v2.Empty](
 			httpClient,
-			baseURL+DomainServiceKeysProcedure,
-			connect.WithSchema(domainServiceMethods.ByName("Keys")),
+			baseURL+DomainServiceProveProcedure,
+			connect.WithSchema(domainServiceMethods.ByName("Prove")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -190,7 +191,7 @@ func NewDomainServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 // domainServiceClient implements DomainServiceClient.
 type domainServiceClient struct {
 	claim *connect.Client[v2.ClaimRequest, v2.DomainClaim]
-	keys  *connect.Client[v2.Empty, v2.ValidationKeys]
+	prove *connect.Client[v2.ClaimRequest, v2.Empty]
 }
 
 // Claim calls tau.cm.v2.DomainService.Claim.
@@ -198,17 +199,18 @@ func (c *domainServiceClient) Claim(ctx context.Context, req *connect.Request[v2
 	return c.claim.CallUnary(ctx, req)
 }
 
-// Keys calls tau.cm.v2.DomainService.Keys.
-func (c *domainServiceClient) Keys(ctx context.Context, req *connect.Request[v2.Empty]) (*connect.Response[v2.ValidationKeys], error) {
-	return c.keys.CallUnary(ctx, req)
+// Prove calls tau.cm.v2.DomainService.Prove.
+func (c *domainServiceClient) Prove(ctx context.Context, req *connect.Request[v2.ClaimRequest]) (*connect.Response[v2.Empty], error) {
+	return c.prove.CallUnary(ctx, req)
 }
 
 // DomainServiceHandler is an implementation of the tau.cm.v2.DomainService service.
 type DomainServiceHandler interface {
 	// Claim is the signed claim to publish for one fqdn and project.
 	Claim(context.Context, *connect.Request[v2.ClaimRequest]) (*connect.Response[v2.DomainClaim], error)
-	// Keys is every key a claim may have been signed with, one per cm node.
-	Keys(context.Context, *connect.Request[v2.Empty]) (*connect.Response[v2.ValidationKeys], error)
+	// Prove is Empty when the fqdn is the project's: under a zone already
+	// proven for it, or by the TXT record, which is then recorded.
+	Prove(context.Context, *connect.Request[v2.ClaimRequest]) (*connect.Response[v2.Empty], error)
 }
 
 // NewDomainServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -224,18 +226,18 @@ func NewDomainServiceHandler(svc DomainServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(domainServiceMethods.ByName("Claim")),
 		connect.WithHandlerOptions(opts...),
 	)
-	domainServiceKeysHandler := connect.NewUnaryHandler(
-		DomainServiceKeysProcedure,
-		svc.Keys,
-		connect.WithSchema(domainServiceMethods.ByName("Keys")),
+	domainServiceProveHandler := connect.NewUnaryHandler(
+		DomainServiceProveProcedure,
+		svc.Prove,
+		connect.WithSchema(domainServiceMethods.ByName("Prove")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/tau.cm.v2.DomainService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case DomainServiceClaimProcedure:
 			domainServiceClaimHandler.ServeHTTP(w, r)
-		case DomainServiceKeysProcedure:
-			domainServiceKeysHandler.ServeHTTP(w, r)
+		case DomainServiceProveProcedure:
+			domainServiceProveHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -249,6 +251,6 @@ func (UnimplementedDomainServiceHandler) Claim(context.Context, *connect.Request
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.cm.v2.DomainService.Claim is not implemented"))
 }
 
-func (UnimplementedDomainServiceHandler) Keys(context.Context, *connect.Request[v2.Empty]) (*connect.Response[v2.ValidationKeys], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.cm.v2.DomainService.Keys is not implemented"))
+func (UnimplementedDomainServiceHandler) Prove(context.Context, *connect.Request[v2.ClaimRequest]) (*connect.Response[v2.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.cm.v2.DomainService.Prove is not implemented"))
 }

@@ -53,8 +53,9 @@ service DomainService {
   // Claim is the signed claim to publish for one fqdn and project.
   rpc Claim(ClaimRequest) returns (DomainClaim);
 
-  // Keys is every key a claim may have been signed with, one per cm node.
-  rpc Keys(Empty) returns (ValidationKeys);
+  // Prove is Empty when the fqdn is the project's: under a zone already
+  // proven for it, or by the TXT record, which is then recorded.
+  rpc Prove(ClaimRequest) returns (Empty);
 }
 
 message ClaimRequest {
@@ -69,9 +70,4 @@ message DomainClaim {
   string type = 2;
   // token is the record's value.
   string token = 3;
-}
-
-message ValidationKeys {
-  // public is each key, PEM.
-  repeated bytes public = 1;
 }

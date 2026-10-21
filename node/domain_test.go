@@ -71,7 +71,7 @@ func TestTheClaimRouteSeamSaysWhatIsMalformed(t *testing.T) {
 	n := &Node{cm: svc}
 	n.opts.host = h
 	n.opts.resolver = noTXT{}
-	d, err := cm.NewDomains(h, func() []libp2ppeer.ID { return nil }, func() *cm.Service { return n.cm }, noTXT{})
+	d, err := cm.NewDomains(h, func() []libp2ppeer.ID { return nil }, func() *cm.Service { return n.cm })
 	require.NoError(t, err)
 	t.Cleanup(func() { d.Close() })
 
@@ -84,7 +84,7 @@ func TestTheClaimRouteSeamSaysWhatIsMalformed(t *testing.T) {
 	_, err = domainClaims{d}.Claim(t.Context(), "not a cid", "shop.test")
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 
-	none, err := cm.NewDomains(h, func() []libp2ppeer.ID { return nil }, func() *cm.Service { return nil }, nil)
+	none, err := cm.NewDomains(h, func() []libp2ppeer.ID { return nil }, func() *cm.Service { return nil })
 	require.NoError(t, err)
 	_, err = domainClaims{none}.Claim(t.Context(), "QmNTj7BY3YNySGaUrfuWjkomCME8fTcynvgHiNdX1hyLME", "shop.test")
 	require.ErrorIs(t, err, cm.ErrNoMembers)

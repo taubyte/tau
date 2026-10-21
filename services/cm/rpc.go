@@ -48,8 +48,11 @@ func wire(err error) error {
 	switch {
 	case errors.Is(err, ErrNotKept):
 		return connect.NewError(connect.CodeNotFound, err)
-	case errors.Is(err, ErrNotZone), errors.Is(err, ErrBadClaim), errors.Is(err, ErrUnproven):
+	case errors.Is(err, ErrNotZone), errors.Is(err, ErrBadClaim):
 		return connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	if errors.Is(err, ErrUnproven) {
+		return connect.NewError(connect.CodeFailedPrecondition, err)
 	}
 	return connect.NewError(connect.CodeUnavailable, err)
 }

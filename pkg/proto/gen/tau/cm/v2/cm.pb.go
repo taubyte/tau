@@ -375,51 +375,6 @@ func (x *DomainClaim) GetToken() string {
 	return ""
 }
 
-type ValidationKeys struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// public is each key, PEM.
-	Public        [][]byte `protobuf:"bytes,1,rep,name=public,proto3" json:"public,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ValidationKeys) Reset() {
-	*x = ValidationKeys{}
-	mi := &file_tau_cm_v2_cm_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ValidationKeys) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ValidationKeys) ProtoMessage() {}
-
-func (x *ValidationKeys) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_cm_v2_cm_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ValidationKeys.ProtoReflect.Descriptor instead.
-func (*ValidationKeys) Descriptor() ([]byte, []int) {
-	return file_tau_cm_v2_cm_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *ValidationKeys) GetPublic() [][]byte {
-	if x != nil {
-		return x.Public
-	}
-	return nil
-}
-
 var File_tau_cm_v2_cm_proto protoreflect.FileDescriptor
 
 const file_tau_cm_v2_cm_proto_rawDesc = "" +
@@ -445,15 +400,13 @@ const file_tau_cm_v2_cm_proto_rawDesc = "" +
 	"\vDomainClaim\x12\x14\n" +
 	"\x05entry\x18\x01 \x01(\tR\x05entry\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x14\n" +
-	"\x05token\x18\x03 \x01(\tR\x05token\"(\n" +
-	"\x0eValidationKeys\x12\x16\n" +
-	"\x06public\x18\x01 \x03(\fR\x06public2\x82\x01\n" +
+	"\x05token\x18\x03 \x01(\tR\x05token2\x82\x01\n" +
 	"\x12CertificateService\x12?\n" +
 	"\vCertificate\x12\x1d.tau.cm.v2.CertificateRequest\x1a\x11.tau.cm.v2.Issued\x12+\n" +
-	"\x04Keep\x12\x11.tau.cm.v2.Issued\x1a\x10.tau.cm.v2.Empty2~\n" +
+	"\x04Keep\x12\x11.tau.cm.v2.Issued\x1a\x10.tau.cm.v2.Empty2}\n" +
 	"\rDomainService\x128\n" +
-	"\x05Claim\x12\x17.tau.cm.v2.ClaimRequest\x1a\x16.tau.cm.v2.DomainClaim\x123\n" +
-	"\x04Keys\x12\x10.tau.cm.v2.Empty\x1a\x19.tau.cm.v2.ValidationKeysB\x93\x01\n" +
+	"\x05Claim\x12\x17.tau.cm.v2.ClaimRequest\x1a\x16.tau.cm.v2.DomainClaim\x122\n" +
+	"\x05Prove\x12\x17.tau.cm.v2.ClaimRequest\x1a\x10.tau.cm.v2.EmptyB\x93\x01\n" +
 	"\rcom.tau.cm.v2B\aCmProtoP\x01Z3github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2;cmv2\xa2\x02\x03TCX\xaa\x02\tTau.Cm.V2\xca\x02\tTau\\Cm\\V2\xe2\x02\x15Tau\\Cm\\V2\\GPBMetadata\xea\x02\vTau::Cm::V2b\x06proto3"
 
 var (
@@ -468,7 +421,7 @@ func file_tau_cm_v2_cm_proto_rawDescGZIP() []byte {
 	return file_tau_cm_v2_cm_proto_rawDescData
 }
 
-var file_tau_cm_v2_cm_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_tau_cm_v2_cm_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_tau_cm_v2_cm_proto_goTypes = []any{
 	(*Empty)(nil),              // 0: tau.cm.v2.Empty
 	(*CertificateRequest)(nil), // 1: tau.cm.v2.CertificateRequest
@@ -476,18 +429,17 @@ var file_tau_cm_v2_cm_proto_goTypes = []any{
 	(*SecretRef)(nil),          // 3: tau.cm.v2.SecretRef
 	(*ClaimRequest)(nil),       // 4: tau.cm.v2.ClaimRequest
 	(*DomainClaim)(nil),        // 5: tau.cm.v2.DomainClaim
-	(*ValidationKeys)(nil),     // 6: tau.cm.v2.ValidationKeys
 }
 var file_tau_cm_v2_cm_proto_depIdxs = []int32{
 	3, // 0: tau.cm.v2.Issued.key:type_name -> tau.cm.v2.SecretRef
 	1, // 1: tau.cm.v2.CertificateService.Certificate:input_type -> tau.cm.v2.CertificateRequest
 	2, // 2: tau.cm.v2.CertificateService.Keep:input_type -> tau.cm.v2.Issued
 	4, // 3: tau.cm.v2.DomainService.Claim:input_type -> tau.cm.v2.ClaimRequest
-	0, // 4: tau.cm.v2.DomainService.Keys:input_type -> tau.cm.v2.Empty
+	4, // 4: tau.cm.v2.DomainService.Prove:input_type -> tau.cm.v2.ClaimRequest
 	2, // 5: tau.cm.v2.CertificateService.Certificate:output_type -> tau.cm.v2.Issued
 	0, // 6: tau.cm.v2.CertificateService.Keep:output_type -> tau.cm.v2.Empty
 	5, // 7: tau.cm.v2.DomainService.Claim:output_type -> tau.cm.v2.DomainClaim
-	6, // 8: tau.cm.v2.DomainService.Keys:output_type -> tau.cm.v2.ValidationKeys
+	0, // 8: tau.cm.v2.DomainService.Prove:output_type -> tau.cm.v2.Empty
 	5, // [5:9] is the sub-list for method output_type
 	1, // [1:5] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -506,7 +458,7 @@ func file_tau_cm_v2_cm_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_cm_v2_cm_proto_rawDesc), len(file_tau_cm_v2_cm_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

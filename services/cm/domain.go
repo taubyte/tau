@@ -12,6 +12,13 @@
 // VaultProject/DomainEnvironment and named for the node, and publishes the
 // public half in this service's database at /domain/key/<peer id>. Two nodes
 // never write one key (AGENTS.md), and a token verifies against any of them.
+//
+// # Proven once, per zone
+//
+// A proof is recorded at /domain/proven/<zone>/<project>, carrying when, and
+// is never looked up again. A name under a proven zone is that project's with
+// no record of its own, and nobody else's: the topmost proven zone above a
+// name decides, and two proofs of one zone resolve to the earliest.
 package cm
 
 import (
@@ -23,7 +30,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"net"
 	"slices"
 	"strings"
 	"sync"
@@ -42,7 +48,10 @@ import (
 // DomainEnvironment scopes the domain signing keys in the vault.
 const DomainEnvironment = "domain"
 
-const domainKeyPrefix = "/domain/key/"
+const (
+	domainKeyPrefix    = "/domain/key/"
+	domainProvenPrefix = "/domain/proven/"
+)
 
 var (
 	// ErrUnproven is a custom domain whose TXT record carries no claim this
@@ -192,12 +201,68 @@ func Prove(ctx context.Context, r Resolver, keys [][]byte, project, fqdn string)
 	return fmt.Errorf("%w: %s: the TXT record at %s carries no claim this cloud signed", ErrUnproven, fqdn, entry)
 }
 
+// provenOwner is the project a zone was first proven for: the entry with the
+// earliest timestamp, the project id breaking a tie, so every node reads the
+// same owner from the same replicated entries.
+func (s *Service) provenOwner(ctx context.Context, zone string) (string, bool, error) {
+	prefix := domainProvenPrefix + zone + "/"
+	names, err := s.db.List(ctx, prefix)
+	if err != nil {
+		return "", false, fmt.Errorf("cm: listing the proofs of %s: %w", zone, err)
+	}
+	var owner, first string
+	for _, n := range names {
+		at, err := s.db.Get(ctx, n)
+		if err != nil || len(at) == 0 {
+			continue
+		}
+		project := strings.TrimPrefix(n, prefix)
+		if owner == "" || string(at) < first || (string(at) == first && project < owner) {
+			owner, first = project, string(at)
+		}
+	}
+	return owner, owner != "", nil
+}
+
+// ancestors is fqdn's zones from the top down, ending with fqdn; a bare
+// top-level label is no one's to prove.
+func ancestors(fqdn string) []string {
+	labels := strings.Split(fqdn, ".")
+	var out []string
+	for i := len(labels) - 2; i >= 0; i-- {
+		out = append(out, strings.Join(labels[i:], "."))
+	}
+	return out
+}
+
+// prove is nil when fqdn is project's. The first zone above or at it that was
+// ever proven decides; with none, the TXT record does, and is recorded once
+// (one key per zone and project) so no later deploy or renewal looks it up.
 func (s *Service) prove(ctx context.Context, project, fqdn string) error {
+	fqdn = normal(fqdn)
+	if _, err := cid.Decode(project); err != nil || fqdn == "" {
+		return fmt.Errorf("%w: %s: project %q", ErrUnproven, fqdn, project)
+	}
+	for _, zone := range ancestors(fqdn) {
+		owner, ok, err := s.provenOwner(ctx, zone)
+		if err != nil {
+			return err
+		}
+		if ok {
+			if owner == project {
+				return nil
+			}
+			return fmt.Errorf("%w: %s: %s is proven to be another project's", ErrUnproven, fqdn, zone)
+		}
+	}
 	keys, err := s.keys(ctx)
 	if err != nil {
 		return err
 	}
-	return Prove(ctx, s.resolver, keys, project, fqdn)
+	if err := Prove(ctx, s.resolver, keys, project, fqdn); err != nil {
+		return err
+	}
+	return s.db.Put(ctx, domainProvenPrefix+fqdn+"/"+project, fmt.Appendf(nil, "%020d", s.now().UnixNano()))
 }
 
 func (h handler) Claim(ctx context.Context, req *connect.Request[cmv2.ClaimRequest]) (*connect.Response[cmv2.DomainClaim], error) {
@@ -208,35 +273,29 @@ func (h handler) Claim(ctx context.Context, req *connect.Request[cmv2.ClaimReque
 	return connect.NewResponse(c), nil
 }
 
-func (h handler) Keys(ctx context.Context, _ *connect.Request[cmv2.Empty]) (*connect.Response[cmv2.ValidationKeys], error) {
-	keys, err := h.s.keys(ctx)
-	if err != nil {
+func (h handler) Prove(ctx context.Context, req *connect.Request[cmv2.ClaimRequest]) (*connect.Response[cmv2.Empty], error) {
+	if err := h.s.prove(ctx, req.Msg.GetProject(), req.Msg.GetFqdn()); err != nil {
 		return nil, wire(err)
 	}
-	return connect.NewResponse(&cmv2.ValidationKeys{Public: keys}), nil
+	return connect.NewResponse(&cmv2.Empty{}), nil
 }
 
 // Domains issues claims and proves them, against whichever cm nodes answer.
 type Domains struct {
-	host     host.Host
-	members  func() []peer.ID
-	local    func() *Service
-	resolver Resolver
+	host    host.Host
+	members func() []peer.ID
+	local   func() *Service
 
 	mu    sync.Mutex
 	conns map[peer.ID]*rpc.Client
 }
 
-// NewDomains builds the domain client. members and local are as NewClient's;
-// a nil resolver is net.DefaultResolver.
-func NewDomains(h host.Host, members func() []peer.ID, local func() *Service, r Resolver) (*Domains, error) {
+// NewDomains builds the domain client. members and local are as NewClient's.
+func NewDomains(h host.Host, members func() []peer.ID, local func() *Service) (*Domains, error) {
 	if h == nil {
 		return nil, ErrNoHost
 	}
-	if r == nil {
-		r = net.DefaultResolver
-	}
-	return &Domains{host: h, members: members, local: local, resolver: r, conns: map[peer.ID]*rpc.Client{}}, nil
+	return &Domains{host: h, members: members, local: local, conns: map[peer.ID]*rpc.Client{}}, nil
 }
 
 // Close releases every stream.
@@ -305,34 +364,31 @@ func (d *Domains) Claim(ctx context.Context, project, fqdn string) (*cmv2.Domain
 	return nil, errors.Join(errs...)
 }
 
-// Prove is nil when fqdn is proven to be project's. The keys are every cm
-// node's, so one whose replica is behind hides none.
+// Prove is nil when fqdn is proven to be project's, as the first cm node
+// that answers says.
 func (d *Domains) Prove(ctx context.Context, project, fqdn string) error {
 	targets := d.targets()
 	if len(targets) == 0 {
 		return fmt.Errorf("%w: %s: %w", ErrUnproven, fqdn, ErrNoMembers)
 	}
-	var keys [][]byte
 	var errs []error
 	for _, p := range targets {
 		svc, err := d.at(p)
 		if err == nil {
-			var res *connect.Response[cmv2.ValidationKeys]
-			if res, err = svc.Keys(ctx, connect.NewRequest(&cmv2.Empty{})); err == nil {
-				for _, k := range res.Msg.GetPublic() {
-					if !slices.ContainsFunc(keys, func(h []byte) bool { return string(h) == string(k) }) {
-						keys = append(keys, k)
-					}
-				}
-				continue
+			if _, err = svc.Prove(ctx, connect.NewRequest(&cmv2.ClaimRequest{Fqdn: fqdn, Project: project})); err == nil {
+				return nil
 			}
+			var refused *connect.Error
+			if errors.As(err, &refused) && refused.Code() == connect.CodeFailedPrecondition {
+				return fmt.Errorf("%w: %s", ErrUnproven, refused.Message())
+			}
+		}
+		if errors.Is(err, ErrUnproven) {
+			return err
 		}
 		errs = append(errs, fmt.Errorf("%s: %w", p, err))
 	}
-	if len(errs) == len(targets) {
-		return fmt.Errorf("%w: %s: %w", ErrUnproven, fqdn, errors.Join(errs...))
-	}
-	return Prove(ctx, d.resolver, keys, project, fqdn)
+	return fmt.Errorf("%w: %s: %w", ErrUnproven, fqdn, errors.Join(errs...))
 }
 
 // under is name, or a name below zone.
