@@ -14,7 +14,7 @@ async def main():
         res = await drive.validate(read_dir("config"))
         if res.errors:
             raise SystemExit("\n".join(res.errors))
-        # validate generates missing secrets (swarm key, domain validation
+        # validate generates missing secrets (the cloud's CA, domain validation
         # keys, node keys): keep them.
         write_dir(res.document, "config")
 

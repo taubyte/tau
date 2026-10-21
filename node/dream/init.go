@@ -35,6 +35,7 @@ import (
 	"github.com/taubyte/tau/node"
 	"github.com/taubyte/tau/p2p/mesh"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/sectls"
 	"github.com/taubyte/tau/pkg/assets"
 	"github.com/taubyte/tau/pkg/certificate/acme"
 	"github.com/taubyte/tau/pkg/invoke"
@@ -384,9 +385,9 @@ func (u *Universe) Pids() []string { return append([]string(nil), u.pids...) }
 // Peers are the nodes' libp2p peers, in the order they started.
 func (u *Universe) Peers() []peer.Node { return u.mesh.Peers() }
 
-// SwarmKey is the universe's swarm key, which a peer from outside the
-// universe needs to join it.
-func (u *Universe) SwarmKey() []byte { return u.mesh.SwarmKey() }
+// CA is the universe's own CA, random per universe: a peer from outside
+// joins with a certificate from it, issued for the universe's name.
+func (u *Universe) CA() *sectls.CA { return u.mesh.CA() }
 
 // Close stops every node, then their peers.
 func (u *Universe) Close() { u.mesh.Close() }

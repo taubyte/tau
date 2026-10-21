@@ -16,12 +16,12 @@ describe("Document", () => {
   it("round-trips a directory", async () => {
     await fs.mkdir(path.join(dir, "keys"));
     await fs.writeFile(path.join(dir, "cloud.yaml"), "domain:\n  root: a.com\n");
-    await fs.writeFile(path.join(dir, "keys", "swarm.key"), Buffer.from([0, 1, 2, 255]));
+    await fs.writeFile(path.join(dir, "keys", "ca.key"), Buffer.from([0, 1, 2, 255]));
 
     const doc = await Document.fromDir(dir);
-    expect([...doc.files.keys()].sort()).toEqual(["cloud.yaml", "keys/swarm.key"]);
+    expect([...doc.files.keys()].sort()).toEqual(["cloud.yaml", "keys/ca.key"]);
     expect(doc.text("cloud.yaml")).toBe("domain:\n  root: a.com\n");
-    expect(Array.from(doc.get("keys/swarm.key")!)).toEqual([0, 1, 2, 255]);
+    expect(Array.from(doc.get("keys/ca.key")!)).toEqual([0, 1, 2, 255]);
 
     const out = path.join(dir, "out");
     await doc.toDir(out);

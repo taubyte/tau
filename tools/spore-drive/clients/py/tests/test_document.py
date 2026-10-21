@@ -8,8 +8,8 @@ from spore_drive import from_files, read_dir, write_dir
 
 
 def test_from_files_encodes_str_and_keeps_bytes():
-    doc = from_files({"cloud.yaml": "a: 1\n", "keys/swarm.key": b"\x00\x01"})
-    assert dict(doc.files) == {"cloud.yaml": b"a: 1\n", "keys/swarm.key": b"\x00\x01"}
+    doc = from_files({"cloud.yaml": "a: 1\n", "keys/ca.key": b"\x00\x01"})
+    assert dict(doc.files) == {"cloud.yaml": b"a: 1\n", "keys/ca.key": b"\x00\x01"}
 
 
 @pytest.mark.parametrize("bad", ["", "/etc/passwd", "../x", "keys/../../x"])
@@ -19,9 +19,9 @@ def test_from_files_refuses_paths_leaving_the_root(bad):
 
 
 def test_round_trip(tmp_path):
-    files = {"cloud.yaml": b"domain: {}\n", "keys/swarm.key": b"secret", "a/b/c.txt": b"deep"}
+    files = {"cloud.yaml": b"domain: {}\n", "keys/ca.key": b"secret", "a/b/c.txt": b"deep"}
     write_dir(from_files(files), tmp_path / "out")
-    assert stat.S_IMODE(os.stat(tmp_path / "out" / "keys" / "swarm.key").st_mode) == 0o600
+    assert stat.S_IMODE(os.stat(tmp_path / "out" / "keys" / "ca.key").st_mode) == 0o600
     assert dict(read_dir(tmp_path / "out").files) == files
 
 

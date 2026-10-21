@@ -1,11 +1,13 @@
 // Package e2e runs taucorder against a real v2 fleet: node/dream nodes
 // running register, discovery and worker, joined from outside the universe
-// with nothing but its swarm key and a bootstrap address.
+// with nothing but a certificate from its CA and a bootstrap address.
 package e2e
 
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -15,6 +17,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/libp2p/go-libp2p/core/crypto"
 
 	"github.com/taubyte/tau/node"
 	nodeDream "github.com/taubyte/tau/node/dream"
@@ -49,15 +52,36 @@ func TestBridgesADreamFleet(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// From outside: a key file and one bootstrap address.
+	// From outside: a key, a certificate from the universe's CA, and one
+	// bootstrap address.
 	dir := t.TempDir()
-	key := filepath.Join(dir, "swarm.key")
-	if err := os.WriteFile(key, u.SwarmKey(), 0o600); err != nil {
+	private, public, err := crypto.GenerateEd25519Key(rand.Reader)
+	if err != nil {
 		t.Fatal(err)
+	}
+	raw, err := crypto.MarshalPrivateKey(private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := u.CA().Issue(public, u.Name(), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string][]byte{
+		"private-key": []byte(base64.StdEncoding.EncodeToString(raw)),
+		"ca":          u.CA().CertificatePEM(),
+		"certificate": cert,
 	}
 	first := u.Peers()[0]
 	boot := first.Peer().Addrs()[0].String() + "/p2p/" + first.ID().String()
-	base := []string{"taucorder", "--swarm-key", key, "--bootstrap", boot, "--cloud", u.Name()}
+	base := []string{"taucorder", "--bootstrap", boot, "--cloud", u.Name()}
+	for flag, content := range files {
+		path := filepath.Join(dir, flag)
+		if err := os.WriteFile(path, content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		base = append(base, "--"+flag, path)
+	}
 
 	addrs := make(chan string, 1)
 	env := cli.Default()

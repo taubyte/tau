@@ -59,7 +59,7 @@ func main() {
 		panic(err)
 	}
 
-	err = p.Cloud().P2P().Swarm().Generate()
+	err = p.Cloud().P2P().CA().Generate()
 	if err != nil {
 		panic(err)
 	}

@@ -6,7 +6,7 @@ import { Document as DocumentMessage } from "../gen/drive/v2/drive_pb";
 export type FileContent = string | Uint8Array;
 
 // Document is a cloud config directory held in memory: every file by its path
-// relative to the config root ("cloud.yaml", "keys/swarm.key", ...).
+// relative to the config root ("cloud.yaml", "keys/ca.key", ...).
 export class Document {
   readonly files: Map<string, Uint8Array>;
 

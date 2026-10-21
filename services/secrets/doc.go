@@ -45,7 +45,7 @@
 //   - A peer on the swarm. The service does not authorize callers: any peer that
 //     can reach threshold members can ask each for a partial and read any stored
 //     secret, and any peer can report running the service and join the next
-//     roster. Membership of the swarm (its pre-shared key) is the boundary, and
+//     roster. Membership of the swarm (a certificate from its CA) is the boundary, and
 //     the nodes inside it are trusted with each other's secrets.
 //   - The node that reads. A worker resolving a variable, or a client opening a
 //     secret, holds the plaintext in memory; a member re-wrapping during rotation

@@ -62,7 +62,7 @@
 //
 // AUTHORIZATION. Any peer that can reach this service can read and write any
 // project's data. That is v2's OSS trust model stated where it applies — swarm
-// membership is the boundary and the private swarm key enforces it — and a
+// membership is the boundary and the cloud's CA enforces it — and a
 // deployment that does not trust its own nodes needs a caller identity on every
 // request, not a flag here. The register and the secrets service say the same.
 package database

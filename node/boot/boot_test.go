@@ -40,7 +40,7 @@ node:
     maxbody: 1048576
 root: /var/lib/tau
 listen: ["/ip4/0.0.0.0/tcp/4001"]
-swarmkey: c3dhcm0=
+open: true
 http: ":8080"
 `))
 	require.NoError(t, err)
@@ -56,13 +56,17 @@ http: ":8080"
 	require.Equal(t, ":8080", f.HTTP)
 }
 
-// TestANodeWithNoKeyDoesNotJoinThePublicNetwORK. Every v2 service trusts its
-// swarm, so a node with no pre-shared key is a node whose register any stranger
-// can publish into.
-func TestAMissingSwarmKeyIsRefused(t *testing.T) {
+// TestANodeWithNoCertificateDoesNotJoinAnOpenNetwork. Every v2 service trusts
+// the peers it is connected to, so a node that admits anyone is a node whose
+// register any stranger can publish into.
+func TestAMissingCertificateIsRefused(t *testing.T) {
 	_, err := Read(write(t, "root: /var/lib/tau\n"))
-	require.ErrorIs(t, err, ErrNoSwarmKey)
+	require.ErrorIs(t, err, ErrNoCertificate)
 	require.Contains(t, err.Error(), "open: true", "and it says how to mean it")
+
+	// A root with no certificate of this node's own is no admission either.
+	_, err = Read(write(t, "ca: x\n"))
+	require.ErrorIs(t, err, ErrNoCertificate)
 
 	// Saying it is a line somebody wrote.
 	f, err := Read(write(t, "open: true\n"))
@@ -71,7 +75,7 @@ func TestAMissingSwarmKeyIsRefused(t *testing.T) {
 }
 
 func TestTheDefaultsAreApplied(t *testing.T) {
-	f, err := Read(write(t, "swarmkey: c3dhcm0=\n"))
+	f, err := Read(write(t, "open: true\n"))
 	require.NoError(t, err)
 
 	require.Equal(t, DefaultRoot, f.Root)
@@ -92,11 +96,7 @@ func TestAFileThatIsNotOne(t *testing.T) {
 
 // TestKeysAreBase64AndSayWhichOneIsNot.
 func TestKeysAreBase64(t *testing.T) {
-	_, err := Start(t.Context(), File{SwarmKey: "not base64!"})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "swarmkey")
-
-	_, err = Start(t.Context(), File{SwarmKey: "c3dhcm0=", PrivateKey: "not base64!"})
+	_, err := Start(t.Context(), File{Open: true, PrivateKey: "not base64!"})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "privatekey")
 }
@@ -105,7 +105,7 @@ func TestKeysAreBase64(t *testing.T) {
 // network must not get as far as a listener.
 func TestStartRefusesAnOpenNetworkItWasNotToldAbout(t *testing.T) {
 	_, err := Start(t.Context(), File{Root: t.TempDir()})
-	require.ErrorIs(t, err, ErrNoSwarmKey)
+	require.ErrorIs(t, err, ErrNoCertificate)
 }
 
 // TestTheExampleConfigParsesBackIntoItself, so `tau v2 config` cannot print
@@ -115,7 +115,7 @@ func TestTheExampleRoundTrips(t *testing.T) {
 		Node:      node.Config{Services: node.All, Cloud: "acme"},
 		Root:      DefaultRoot,
 		Listen:    []string{DefaultListen},
-		SwarmKey:  "c3dhcm0=",
+		Open:      true,
 		HTTP:      ":8080",
 		Bootstrap: []string{},
 	}
@@ -137,13 +137,12 @@ func TestTheExampleRoundTrips(t *testing.T) {
 // what this catches is a resource that cannot be built from what the file says
 // — which is the whole reason this package exists.
 func TestANodeStartsAndServes(t *testing.T) {
-	f := File{
-		Node:     node.Config{Services: []string{node.Register, node.Discovery, node.Gateway}},
-		Root:     t.TempDir(),
-		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
-		SwarmKey: base64.StdEncoding.EncodeToString(swarmKey()),
-		HTTP:     "127.0.0.1:0",
-	}
+	f := admit(t, File{
+		Node:   node.Config{Services: []string{node.Register, node.Discovery, node.Gateway}},
+		Root:   t.TempDir(),
+		Listen: []string{"/ip4/127.0.0.1/tcp/0"},
+		HTTP:   "127.0.0.1:0",
+	})
 
 	running, err := Start(t.Context(), f)
 	require.NoError(t, err)
@@ -167,14 +166,13 @@ func TestANodeStartsAndServes(t *testing.T) {
 // TestANodeWithNoGatewayServesNothing, and asking it to is not an error: a
 // worker-only node has no handler to bind.
 func TestANodeWithNoGatewayBindsNothing(t *testing.T) {
-	f := File{
-		Node:     node.Config{Services: []string{node.Register}},
-		Root:     t.TempDir(),
-		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
-		SwarmKey: base64.StdEncoding.EncodeToString(swarmKey()),
-		HTTP:     "127.0.0.1:0",
-		HTTPS:    "127.0.0.1:0",
-	}
+	f := admit(t, File{
+		Node:   node.Config{Services: []string{node.Register}},
+		Root:   t.TempDir(),
+		Listen: []string{"/ip4/127.0.0.1/tcp/0"},
+		HTTP:   "127.0.0.1:0",
+		HTTPS:  "127.0.0.1:0",
+	})
 
 	running, err := Start(t.Context(), f)
 	require.NoError(t, err)
@@ -193,21 +191,14 @@ func TestAnAddressAlreadyTaken(t *testing.T) {
 	require.NoError(t, err)
 	defer held.Close()
 
-	_, err = Start(t.Context(), File{
-		Node:     node.Config{Services: []string{node.Discovery, node.Gateway}},
-		Root:     t.TempDir(),
-		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
-		SwarmKey: base64.StdEncoding.EncodeToString(swarmKey()),
-		HTTP:     held.Addr().String(),
-	})
+	_, err = Start(t.Context(), admit(t, File{
+		Node:   node.Config{Services: []string{node.Discovery, node.Gateway}},
+		Root:   t.TempDir(),
+		Listen: []string{"/ip4/127.0.0.1/tcp/0"},
+		HTTP:   held.Addr().String(),
+	}))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "listening on")
-}
-
-// swarmKey is a libp2p pre-shared key: 32 bytes, in the form go-libp2p reads.
-func swarmKey() []byte {
-	return []byte("/key/swarm/psk/1.0.0/\n/base16/\n" +
-		"0000000000000000000000000000000000000000000000000000000000000001")
 }
 
 // TestAnUnstartedRunningAnswersNothing. Reach hands one of these back to a CLI
@@ -225,14 +216,13 @@ func TestAnUnstartedRunningAnswersNothing(t *testing.T) {
 // and the port after a start that failed.
 func TestANodeThatCannotBeBuiltClosesWhatWasOpened(t *testing.T) {
 	root := t.TempDir()
-	f := File{
+	f := admit(t, File{
 		// A service nobody runs: the node's own closed set refuses it, which
 		// happens after the peer and the asset store are already open.
-		Node:     node.Config{Services: []string{"not-a-service"}},
-		Root:     root,
-		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
-		SwarmKey: base64.StdEncoding.EncodeToString(swarmKey()),
-	}
+		Node:   node.Config{Services: []string{"not-a-service"}},
+		Root:   root,
+		Listen: []string{"/ip4/127.0.0.1/tcp/0"},
+	})
 
 	_, err := Start(t.Context(), f)
 	require.Error(t, err)
@@ -252,14 +242,11 @@ func TestANodeThatCannotBeBuiltClosesWhatWasOpened(t *testing.T) {
 // bootstraps it against nobody and then waits for a swarm it will never be
 // introduced to.
 func TestANodeWithBootstrapPeersDialsThem(t *testing.T) {
-	key := base64.StdEncoding.EncodeToString(swarmKey())
-
-	first, err := Start(t.Context(), File{
-		Node:     node.Config{Services: []string{node.Register, node.Discovery}},
-		Root:     t.TempDir(),
-		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
-		SwarmKey: key,
-	})
+	first, err := Start(t.Context(), admit(t, File{
+		Node:   node.Config{Services: []string{node.Register, node.Discovery}},
+		Root:   t.TempDir(),
+		Listen: []string{"/ip4/127.0.0.1/tcp/0"},
+	}))
 	require.NoError(t, err)
 	defer first.Close()
 
@@ -267,13 +254,12 @@ func TestANodeWithBootstrapPeersDialsThem(t *testing.T) {
 	require.NotEmpty(t, addrs)
 	bootstrap := addrs[0].String() + "/p2p/" + first.Host().ID().String()
 
-	second, err := Start(t.Context(), File{
+	second, err := Start(t.Context(), admit(t, File{
 		Node:      node.Config{Services: []string{node.Register, node.Discovery}},
 		Root:      t.TempDir(),
 		Listen:    []string{"/ip4/127.0.0.1/tcp/0"},
-		SwarmKey:  key,
 		Bootstrap: []string{bootstrap},
-	})
+	}))
 	require.NoError(t, err)
 	defer second.Close()
 
@@ -284,13 +270,12 @@ func TestANodeWithBootstrapPeersDialsThem(t *testing.T) {
 // caller was given and what was taken are two different facts — and the second
 // is the one a client can connect to.
 func TestAServingNodeSaysWhereItIsBound(t *testing.T) {
-	running, err := Start(t.Context(), File{
-		Node:     node.Config{Services: []string{node.Register, node.Discovery, node.Gateway}},
-		Root:     t.TempDir(),
-		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
-		SwarmKey: base64.StdEncoding.EncodeToString(swarmKey()),
-		HTTP:     "127.0.0.1:0",
-	})
+	running, err := Start(t.Context(), admit(t, File{
+		Node:   node.Config{Services: []string{node.Register, node.Discovery, node.Gateway}},
+		Root:   t.TempDir(),
+		Listen: []string{"/ip4/127.0.0.1/tcp/0"},
+		HTTP:   "127.0.0.1:0",
+	}))
 	require.NoError(t, err)
 	defer running.Close()
 
@@ -315,13 +300,12 @@ func TestAConfiguredIdentityIsTheOneUsed(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, minted, again, "a configured key is read back, not replaced")
 
-	f := File{
+	f := admit(t, File{
 		Node:       node.Config{Services: []string{node.Register}},
 		Root:       t.TempDir(),
 		Listen:     []string{"/ip4/127.0.0.1/tcp/0"},
-		SwarmKey:   base64.StdEncoding.EncodeToString(swarmKey()),
 		PrivateKey: encoded,
-	}
+	})
 
 	first, err := Start(t.Context(), f)
 	require.NoError(t, err)

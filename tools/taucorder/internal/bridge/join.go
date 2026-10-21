@@ -3,19 +3,23 @@ package bridge
 import (
 	"context"
 	"errors"
+	"fmt"
 
+	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 
-	"github.com/taubyte/tau/p2p/keypair"
 	p2p "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/sectls"
 )
 
 // Config is what joining a cloud takes.
 type Config struct {
-	// SwarmKey is the cloud's pre-shared key, already parsed (utils.FormatSwarmKey).
-	// It is required: libp2p given no key joins an OPEN network, which is
-	// every swarm and none of them.
-	SwarmKey []byte
+	// Key is this client's libp2p identity, marshalled. CA and Certificate
+	// are PEM: the cloud's root, and a certificate from it for Key. They are
+	// required: a cloud admits no peer without one.
+	Key         []byte
+	CA          []byte
+	Certificate []byte
 	// Bootstrap are the nodes dialled first.
 	Bootstrap []peer.AddrInfo
 	// Cloud scopes the discovery topic, as node.Config.Cloud does.
@@ -33,8 +37,8 @@ type Joined struct {
 
 // Join starts a light client peer in the cloud and a bridge on it.
 func Join(ctx context.Context, cfg Config) (*Joined, error) {
-	if len(cfg.SwarmKey) == 0 {
-		return nil, errors.New("bridge: a swarm key is required; without one libp2p joins an open network")
+	if len(cfg.Key) == 0 || len(cfg.CA) == 0 || len(cfg.Certificate) == 0 {
+		return nil, errors.New("bridge: a key, the cloud's CA and a certificate from it are required")
 	}
 	if len(cfg.Bootstrap) == 0 {
 		return nil, errors.New("bridge: at least one bootstrap peer is required")
@@ -43,7 +47,15 @@ func Join(ctx context.Context, cfg Config) (*Joined, error) {
 	if len(listen) == 0 {
 		listen = []string{"/ip4/127.0.0.1/tcp/0"}
 	}
-	n, err := p2p.NewClientNode(ctx, nil, keypair.NewRaw(), cfg.SwarmKey, listen, nil, true, cfg.Bootstrap)
+	key, err := crypto.UnmarshalPrivateKey(cfg.Key)
+	if err != nil {
+		return nil, fmt.Errorf("bridge: key: %w", err)
+	}
+	admission, err := sectls.NewCredentials(cfg.CA, cfg.Certificate, cfg.Cloud, key)
+	if err != nil {
+		return nil, fmt.Errorf("bridge: %w", err)
+	}
+	n, err := p2p.NewClientNode(ctx, nil, cfg.Key, admission, listen, nil, true, cfg.Bootstrap)
 	if err != nil {
 		return nil, err
 	}

@@ -19,12 +19,10 @@ import (
 	host "github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	peer "github.com/libp2p/go-libp2p/core/peer"
-	pnet "github.com/libp2p/go-libp2p/core/pnet"
 	routing "github.com/libp2p/go-libp2p/core/routing"
 	"github.com/libp2p/go-libp2p/p2p/host/autorelay"
 	"github.com/libp2p/go-libp2p/p2p/host/observedaddrs"
 	connmgr "github.com/libp2p/go-libp2p/p2p/net/connmgr"
-	libp2ptls "github.com/libp2p/go-libp2p/p2p/security/tls"
 
 	tcp "github.com/libp2p/go-libp2p/p2p/transport/tcp"
 )
@@ -52,7 +50,6 @@ func init() {
 
 var Libp2pOptionsBase = []libp2p.Option{
 	libp2p.Ping(true),
-	libp2p.Security(libp2ptls.ID, libp2ptls.New),
 	libp2p.NoTransports,
 	libp2p.Transport(tcp.NewTCPTransport),
 	libp2p.DefaultMuxers,
@@ -126,17 +123,14 @@ var Libp2pLitePrivateNodeOptions = []libp2p.Option{
 // DAG service. When the datastore parameter is nil, the DHT will use an
 // in-memory datastore, so all provider records are lost on program shutdown.
 //
-// Additional libp2p options can be passed. Note that the Identity,
-// ListenAddrs and PrivateNetwork options will be setup automatically.
+// Additional libp2p options can be passed, the security transport among them.
+// Identity and ListenAddrs are set up here.
 // Interesting options to pass: NATPortMap() EnableAutoRelay(),
 // libp2p.EnableNATService(), DisableRelay(), ConnectionManager(...)... see
 // https://godoc.org/github.com/libp2p/go-libp2p#Option for more info.
-//
-// The secret should be a 32-byte pre-shared-key byte slice.
 func SetupLibp2p(
 	ctx context.Context,
 	hostKey crypto.PrivKey,
-	secret pnet.PSK,
 	listenAddrs []string,
 	ds datastore.Batching,
 	bootstrapPeerFunc func() []peer.AddrInfo,
@@ -165,7 +159,6 @@ func SetupLibp2p(
 	opts = append([]libp2p.Option{
 		libp2p.Identity(hostKey),
 		libp2p.ListenAddrStrings(listenAddrs...),
-		libp2p.PrivateNetwork(secret),
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
 			extraopts := make([]dual.Option, 0)
 			if bootstrapPeerFunc != nil {

@@ -8,7 +8,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"io"
@@ -98,17 +97,16 @@ func TestTheNodeTerminatesAGeneratedNameWithTheCloudsWildcard(t *testing.T) {
 	compiled, hosts, name := fixtureWithHosts(t, cloud)
 	wildcard, pool := wildcardFor(t, name)
 
-	f := File{
+	f := admit(t, File{
 		Node: node.Config{
 			Services: []string{node.Register, node.Discovery, node.Gateway},
 			Gateway:  gateway.Config{CloudFqdn: cloud, Wildcard: wildcard},
 		},
-		Root:     t.TempDir(),
-		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
-		SwarmKey: base64.StdEncoding.EncodeToString(swarmKey()),
-		HTTP:     "127.0.0.1:0",
-		HTTPS:    "127.0.0.1:0",
-	}
+		Root:   t.TempDir(),
+		Listen: []string{"/ip4/127.0.0.1/tcp/0"},
+		HTTP:   "127.0.0.1:0",
+		HTTPS:  "127.0.0.1:0",
+	})
 	running, err := Start(t.Context(), f)
 	require.NoError(t, err)
 	defer running.Close()
@@ -141,7 +139,7 @@ func TestTheNodeTerminatesAGeneratedNameWithTheCloudsWildcard(t *testing.T) {
 
 // TestTheHTTPSAddressIsInTheFile.
 func TestTheHTTPSAddressIsInTheFile(t *testing.T) {
-	out, err := yaml.Marshal(File{HTTPS: ":8443", SwarmKey: "c3dhcm0="})
+	out, err := yaml.Marshal(File{HTTPS: ":8443", Open: true})
 	require.NoError(t, err)
 	back, err := Read(write(t, string(out)))
 	require.NoError(t, err)
@@ -150,23 +148,21 @@ func TestTheHTTPSAddressIsInTheFile(t *testing.T) {
 
 // TestAnHTTPSAddressAlreadyTakenIsAnError, and the node is not left half up.
 func TestAnHTTPSAddressAlreadyTakenIsAnError(t *testing.T) {
-	first, err := Start(t.Context(), File{
-		Node:     node.Config{Services: []string{node.Register, node.Discovery, node.Gateway}},
-		Root:     t.TempDir(),
-		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
-		SwarmKey: base64.StdEncoding.EncodeToString(swarmKey()),
-		HTTPS:    "127.0.0.1:0",
-	})
+	first, err := Start(t.Context(), admit(t, File{
+		Node:   node.Config{Services: []string{node.Register, node.Discovery, node.Gateway}},
+		Root:   t.TempDir(),
+		Listen: []string{"/ip4/127.0.0.1/tcp/0"},
+		HTTPS:  "127.0.0.1:0",
+	}))
 	require.NoError(t, err)
 	defer first.Close()
 	require.Empty(t, first.Address(), "no clear listener was asked for")
 
-	_, err = Start(t.Context(), File{
-		Node:     node.Config{Services: []string{node.Register, node.Discovery, node.Gateway}},
-		Root:     t.TempDir(),
-		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
-		SwarmKey: base64.StdEncoding.EncodeToString(swarmKey()),
-		HTTPS:    first.SecureAddress(),
-	})
+	_, err = Start(t.Context(), admit(t, File{
+		Node:   node.Config{Services: []string{node.Register, node.Discovery, node.Gateway}},
+		Root:   t.TempDir(),
+		Listen: []string{"/ip4/127.0.0.1/tcp/0"},
+		HTTPS:  first.SecureAddress(),
+	}))
 	require.ErrorContains(t, err, "listening on")
 }

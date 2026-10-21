@@ -139,7 +139,7 @@ func issuing(t *testing.T, ca *pebble, cloud, root string, cfg cm.CertificateCon
 		RootCA:     ca.directoryCA(),
 		AccountKey: cloudAccount(t),
 	}
-	return File{
+	return admit(t, File{
 		Node: node.Config{
 			Services:  []string{node.Register, node.Discovery, node.Gateway, node.DNS, node.Secrets, node.CM},
 			DNSListen: "127.0.0.1:0",
@@ -149,10 +149,9 @@ func issuing(t *testing.T, ca *pebble, cloud, root string, cfg cm.CertificateCon
 		Root:       root,
 		PrivateKey: base64.StdEncoding.EncodeToString(minted),
 		Listen:     []string{"/ip4/127.0.0.1/tcp/0"},
-		SwarmKey:   base64.StdEncoding.EncodeToString(swarmKey()),
 		HTTP:       "127.0.0.1:0",
 		HTTPS:      "127.0.0.1:0",
-	}
+	})
 }
 
 // cloudAccount is the one ACME account key every node of the test cloud is

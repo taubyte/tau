@@ -121,7 +121,7 @@ describe("Drive against the mock", () => {
 
   it("validates, plans and applies", async () => {
     const doc = await validated();
-    for (const k of ["keys/swarm.key", "keys/dv_private.key", "keys/dv_public.key"]) {
+    for (const k of ["keys/ca.crt", "keys/ca.key", "keys/dv_private.key", "keys/dv_public.key"]) {
       expect(doc.get(k)?.length).toBeGreaterThan(0);
     }
     const hosts = yaml.load(doc.text("hosts.yaml")!) as any;
@@ -160,7 +160,8 @@ describe("Drive against the mock", () => {
     expect(node.node.cloud).toBe("test.com");
     expect(node.node.tenancy).toEqual(["github.com/acme"]);
     expect(node.node.added).toEqual({ example: { greeting: "hello", replicas: 2 } });
-    expect(node.swarmkey).toBeTruthy();
+    expect(node.ca).toContain("BEGIN CERTIFICATE");
+    expect(node.certificate).toContain("BEGIN CERTIFICATE");
     expect(node.privatekey).toBeTruthy();
     expect(node.listen).toEqual(["/ip4/0.0.0.0/tcp/4242"]);
     expect(node.bootstrap).toHaveLength(1);
@@ -180,7 +181,7 @@ describe("Drive against the mock", () => {
     const err = await drive.plan(await Document.fromDir(dir)).catch((e) => e);
     expect(err).toBeInstanceOf(ConnectError);
     expect(err.code).toBe(Code.FailedPrecondition);
-    expect(err.message).toMatch(/swarm key/);
+    expect(err.message).toMatch(/the cloud.s CA/);
   });
 
   it("lists errors without failing", async () => {

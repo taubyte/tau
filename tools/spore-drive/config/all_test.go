@@ -47,7 +47,7 @@ func TestParserEdit(t *testing.T) {
 	assert.NilError(t, p.Cloud().Domain().SetGenerated("gtest.com"))
 	assert.NilError(t, p.Cloud().Domain().Validation().Generate())
 
-	assert.NilError(t, p.Cloud().P2P().Swarm().Generate())
+	assert.NilError(t, p.Cloud().P2P().CA().Generate())
 
 	assert.NilError(t, p.Auth().Add("main").SetUsername("tau"))
 	assert.NilError(t, p.Auth().Add("main").SetPassword("testtest"))
@@ -124,14 +124,22 @@ func TestParserSchema(t *testing.T) {
 
 	assert.Equal(t, hashFile(pubDvKeyFile), hashFile(oPubDvKeyFile))
 
-	assert.Equal(t, p.Cloud().P2P().Swarm().Get(), "keys/swarm.key")
-	swarmKeyFile, err := p.Cloud().P2P().Swarm().Open()
+	certPath, keyPath := p.Cloud().P2P().CA().Paths()
+	assert.Equal(t, certPath, "keys/ca.crt")
+	assert.Equal(t, keyPath, "keys/ca.key")
+	for path, open := range map[string]func() (io.ReadCloser, error){
+		certPath: p.Cloud().P2P().CA().OpenCertificate,
+		keyPath:  p.Cloud().P2P().CA().OpenKey,
+	} {
+		got, err := open()
+		assert.NilError(t, err)
+		want, err := os.Open("fixtures/config/" + path)
+		assert.NilError(t, err)
+		assert.Equal(t, hashFile(got), hashFile(want))
+	}
+	ca, err := p.Cloud().P2P().CA().Load()
 	assert.NilError(t, err)
-
-	oSwarmKeyFile, err := os.Open("fixtures/config/keys/swarm.key")
-	assert.NilError(t, err)
-
-	assert.Equal(t, hashFile(swarmKeyFile), hashFile(oSwarmKeyFile))
+	assert.Equal(t, ca.Root.Subject.CommonName, "test.com")
 
 	assert.Equal(t, p.Auth().Get("main").Username(), "tau")
 	assert.Equal(t, p.Auth().Get("main").Password(), "testtest")

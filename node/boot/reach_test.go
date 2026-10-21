@@ -2,7 +2,6 @@ package boot
 
 import (
 	"context"
-	"encoding/base64"
 	"testing"
 	"time"
 
@@ -15,25 +14,21 @@ import (
 // private swarm is to join it. Reach is that: a discovery-only node in a directory
 // it owns, held open just long enough to find who runs what.
 func TestReachFindsAServiceInTheFleet(t *testing.T) {
-	key := base64.StdEncoding.EncodeToString(swarmKey())
-
-	fleet, err := Start(t.Context(), File{
-		Node:     node.Config{Services: []string{node.Register, node.Discovery}, Cloud: "acme"},
-		Root:     t.TempDir(),
-		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
-		SwarmKey: key,
-	})
+	fleet, err := Start(t.Context(), admit(t, File{
+		Node:   node.Config{Services: []string{node.Register, node.Discovery}, Cloud: "acme"},
+		Root:   t.TempDir(),
+		Listen: []string{"/ip4/127.0.0.1/tcp/0"},
+	}))
 	require.NoError(t, err)
 	defer fleet.Close()
 
 	require.NotNil(t, fleet.Host(), "a caller that has to dial needs the host")
 
-	client, err := Reach(t.Context(), File{
+	client, err := Reach(t.Context(), admit(t, File{
 		Node:      node.Config{Cloud: "acme"},
 		Listen:    []string{"/ip4/127.0.0.1/tcp/0"},
-		SwarmKey:  key,
 		Bootstrap: addresses(t, fleet),
-	}, node.Register, 30*time.Second)
+	}), node.Register, 30*time.Second)
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -52,17 +47,16 @@ func TestReachFindsAServiceInTheFleet(t *testing.T) {
 
 // A service nobody runs is a wait that ends, and says why.
 func TestReachGivesUp(t *testing.T) {
-	_, err := Reach(t.Context(), File{
-		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
-		SwarmKey: base64.StdEncoding.EncodeToString(swarmKey()),
-	}, node.Worker, 500*time.Millisecond)
+	_, err := Reach(t.Context(), admit(t, File{
+		Listen: []string{"/ip4/127.0.0.1/tcp/0"},
+	}), node.Worker, 500*time.Millisecond)
 	require.ErrorContains(t, err, node.Worker)
-	require.ErrorContains(t, err, "swarm key")
+	require.ErrorContains(t, err, "certificate")
 }
 
 func TestReachRefusesTheSameFileStartRefuses(t *testing.T) {
 	_, err := Reach(t.Context(), File{Root: t.TempDir()}, node.Register, time.Second)
-	require.ErrorIs(t, err, ErrNoSwarmKey)
+	require.ErrorIs(t, err, ErrNoCertificate)
 }
 
 // AN ADDRESS THAT DOES NOT NAME WHO IS ON IT is the operator mistake this
@@ -70,18 +64,16 @@ func TestReachRefusesTheSameFileStartRefuses(t *testing.T) {
 // whole question. Dropping it silently produces a node that finds nobody and
 // says nothing about why.
 func TestBootstrapAddressesNameAPeer(t *testing.T) {
-	_, err := Start(t.Context(), File{
+	_, err := Start(t.Context(), admit(t, File{
 		Root:      t.TempDir(),
-		SwarmKey:  base64.StdEncoding.EncodeToString(swarmKey()),
 		Bootstrap: []string{"/ip4/127.0.0.1/tcp/4001"},
-	})
+	}))
 	require.ErrorContains(t, err, "bootstrap")
 
-	_, err = Start(t.Context(), File{
+	_, err = Start(t.Context(), admit(t, File{
 		Root:      t.TempDir(),
-		SwarmKey:  base64.StdEncoding.EncodeToString(swarmKey()),
 		Bootstrap: []string{"not-an-address"},
-	})
+	}))
 	require.ErrorContains(t, err, "bootstrap")
 }
 
@@ -106,9 +98,8 @@ func TestReachStopsWhenTheCallerDoes(t *testing.T) {
 		cancel()
 	}()
 
-	_, err := Reach(ctx, File{
-		Listen:   []string{"/ip4/127.0.0.1/tcp/0"},
-		SwarmKey: base64.StdEncoding.EncodeToString(swarmKey()),
-	}, node.Worker, time.Minute)
+	_, err := Reach(ctx, admit(t, File{
+		Listen: []string{"/ip4/127.0.0.1/tcp/0"},
+	}), node.Worker, time.Minute)
 	require.ErrorIs(t, err, context.Canceled)
 }

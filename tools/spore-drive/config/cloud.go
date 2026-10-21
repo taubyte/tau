@@ -2,11 +2,14 @@ package config
 
 import (
 	"bytes"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
+	"time"
+
+	"github.com/spf13/afero"
+
+	"github.com/taubyte/tau/p2p/sectls"
 )
 
 type CloudParser interface {
@@ -16,7 +19,7 @@ type CloudParser interface {
 
 type P2PParser interface {
 	Bootstrap() BootstrapParser
-	Swarm() SwarmKeyParser
+	CA() CAParser
 }
 
 type BootstrapParser interface {
@@ -26,14 +29,20 @@ type BootstrapParser interface {
 	List() []string
 }
 
-type SwarmKeyParser interface {
-	Get() string
+// CAParser is the cloud's certificate authority: a root certificate and its
+// key, both PEM, which spore-drive issues every node's certificate from at
+// deploy. Generate mints one; a user who owns a CA puts its files at the paths
+// instead.
+type CAParser interface {
+	Paths() (certificate string, key string)
 
-	Open() (io.ReadCloser, error)
-	Create() (io.WriteCloser, error)
+	SetCertificate(string) error
+	SetKey(string) error
 
-	Set(string) error
+	OpenCertificate() (io.ReadCloser, error)
+	OpenKey() (io.ReadCloser, error)
 
+	Load() (*sectls.CA, error)
 	Generate() error
 }
 
@@ -73,7 +82,7 @@ type (
 	validation leaf
 	p2p        leaf
 	bootstrap  leaf
-	swarm      leaf
+	authority  leaf
 )
 
 func (c *cloud) Domain() DomainParser {
@@ -235,63 +244,97 @@ func (b *bootstrap) List() (l []string) {
 	return
 }
 
-func (p *p2p) Swarm() SwarmKeyParser {
-	return &swarm{root: p.root, Query: p.Query.Get("swarm").Get("key")}
+func (p *p2p) CA() CAParser {
+	return &authority{root: p.root, Query: p.Query.Get("ca")}
 }
 
-func (s *swarm) Get() (k string) {
-	s.Query.Value(&k)
+const (
+	caCertificatePath = "keys/ca.crt"
+	caKeyPath         = "keys/ca.key"
+
+	// caValidity is long because rotating a CA is redeploying every node.
+	caValidity = 10 * 365 * 24 * time.Hour
+)
+
+func (a *authority) Paths() (certificate string, key string) {
+	a.Query.Get("certificate").Value(&certificate)
+	a.Query.Get("key").Value(&key)
 	return
 }
 
-func (s *swarm) Open() (io.ReadCloser, error) {
-	path := s.Get()
-	if path == "" {
-		path = "keys/swarm.key"
-		if err := s.Set(path); err != nil {
-			return nil, err
+func (a *authority) SetCertificate(path string) error {
+	return a.Query.Get("certificate").Set(path).Commit()
+}
+
+func (a *authority) SetKey(path string) error {
+	return a.Query.Get("key").Set(path).Commit()
+}
+
+func (a *authority) paths() (string, string, error) {
+	certificate, key := a.Paths()
+	if certificate == "" {
+		certificate = caCertificatePath
+		if err := a.SetCertificate(certificate); err != nil {
+			return "", "", err
 		}
 	}
-
-	return s.root.fs.Open(path)
-}
-
-func (s *swarm) Create() (io.WriteCloser, error) {
-	path := s.Get()
-	if path == "" {
-		path = "keys/swarm.key"
-		if err := s.Set(path); err != nil {
-			return nil, err
+	if key == "" {
+		key = caKeyPath
+		if err := a.SetKey(key); err != nil {
+			return "", "", err
 		}
 	}
-
-	return s.root.fs.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+	return certificate, key, nil
 }
 
-func (s *swarm) Set(path string) error {
-	return s.Query.Set(path).Commit()
-}
-
-func (s *swarm) Generate() error {
-	key := make([]byte, 32)
-	_, err := rand.Read(key)
+func (a *authority) OpenCertificate() (io.ReadCloser, error) {
+	certificate, _, err := a.paths()
 	if err != nil {
-		return fmt.Errorf("rand read failed with: %s", err)
+		return nil, err
 	}
+	return a.root.fs.Open(certificate)
+}
 
-	s.root.fs.Mkdir("keys", 0700)
+func (a *authority) OpenKey() (io.ReadCloser, error) {
+	_, key, err := a.paths()
+	if err != nil {
+		return nil, err
+	}
+	return a.root.fs.Open(key)
+}
 
-	swarmKey, err := s.Create()
+func (a *authority) Load() (*sectls.CA, error) {
+	certificate, key, err := a.paths()
+	if err != nil {
+		return nil, err
+	}
+	certPEM, err := afero.ReadFile(a.root.fs, certificate)
+	if err != nil {
+		return nil, err
+	}
+	keyPEM, err := afero.ReadFile(a.root.fs, key)
+	if err != nil {
+		return nil, err
+	}
+	return sectls.LoadCA(certPEM, keyPEM)
+}
+
+func (a *authority) Generate() error {
+	ca, err := sectls.NewCA(a.root.Cloud().Domain().Root(), caValidity)
 	if err != nil {
 		return err
 	}
-
-	if _, err = io.Copy(
-		swarmKey,
-		bytes.NewBufferString("/key/swarm/psk/1.0.0//base16/"+hex.EncodeToString(key)),
-	); err != nil {
+	keyPEM, err := ca.KeyPEM()
+	if err != nil {
 		return err
 	}
-
-	return nil
+	certificate, key, err := a.paths()
+	if err != nil {
+		return err
+	}
+	a.root.fs.Mkdir("keys", 0700)
+	if err := afero.WriteFile(a.root.fs, key, keyPEM, 0600); err != nil {
+		return err
+	}
+	return afero.WriteFile(a.root.fs, certificate, ca.CertificatePEM(), 0600)
 }

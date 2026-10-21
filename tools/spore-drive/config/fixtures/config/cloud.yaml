@@ -6,8 +6,9 @@ domain:
             private: keys/dv_private.key
             public: keys/dv_public.key
 p2p:
-    swarm:
-        key: keys/swarm.key
+    ca:
+        certificate: keys/ca.crt
+        key: keys/ca.key
     bootstrap:
         shape1:
             - host2

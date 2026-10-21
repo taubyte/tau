@@ -3,7 +3,7 @@ package cli
 
 import (
 	"context"
-	"errors"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
@@ -27,7 +27,6 @@ import (
 	"github.com/taubyte/tau/tools/taucorder/internal/route"
 	"github.com/taubyte/tau/tools/taucorder/internal/server"
 	"github.com/taubyte/tau/tools/taucorder/internal/tui"
-	"github.com/taubyte/tau/utils"
 )
 
 // Seat is a joined bridge, as the commands use it.
@@ -69,16 +68,20 @@ const DefaultListen = "127.0.0.1:4201"
 // Profile is a cloud as a file:
 //
 //	cloud: example
-//	swarm_key: /etc/tau/swarm.key
+//	private_key: /etc/tau/taucorder.key
+//	ca: /etc/tau/ca.crt
+//	certificate: /etc/tau/taucorder.crt
 //	bootstrap: [/ip4/203.0.113.7/tcp/4242/p2p/12D3Koo...]
 //	listen: 127.0.0.1:4201
 //	origins: [http://localhost:5173]
 type Profile struct {
-	Cloud     string   `yaml:"cloud"`
-	SwarmKey  string   `yaml:"swarm_key"`
-	Bootstrap []string `yaml:"bootstrap"`
-	Listen    string   `yaml:"listen"`
-	Origins   []string `yaml:"origins"`
+	Cloud       string   `yaml:"cloud"`
+	PrivateKey  string   `yaml:"private_key"`
+	CA          string   `yaml:"ca"`
+	Certificate string   `yaml:"certificate"`
+	Bootstrap   []string `yaml:"bootstrap"`
+	Listen      string   `yaml:"listen"`
+	Origins     []string `yaml:"origins"`
 }
 
 func loadProfile(path string) (Profile, error) {
@@ -116,19 +119,25 @@ func config(c *cli.Context) (bridge.Config, Profile, error) {
 	if err != nil {
 		return bridge.Config{}, p, err
 	}
-	keyPath := pick(c.String("swarm-key"), p.SwarmKey)
-	if keyPath == "" {
-		return bridge.Config{}, p, errors.New("a swarm key is required (--swarm-key or the profile's swarm_key)")
+	var files [3][]byte
+	for i, f := range []struct{ flag, profile string }{
+		{"private-key", p.PrivateKey},
+		{"ca", p.CA},
+		{"certificate", p.Certificate},
+	} {
+		path := pick(c.String(f.flag), f.profile)
+		if path == "" {
+			return bridge.Config{}, p, fmt.Errorf("--%s or the profile's %s is required: a cloud admits no peer without a certificate from its CA", f.flag, strings.ReplaceAll(f.flag, "-", "_"))
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return bridge.Config{}, p, err
+		}
+		files[i] = raw
 	}
-	raw, err := os.ReadFile(keyPath)
+	key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(files[0])))
 	if err != nil {
-		return bridge.Config{}, p, err
-	}
-	// A swarm.key file is three lines; FormatSwarmKey wants slash-separated
-	// segments, so line breaks become separators.
-	key, err := utils.FormatSwarmKey(strings.Join(strings.Fields(string(raw)), "/"))
-	if err != nil {
-		return bridge.Config{}, p, fmt.Errorf("swarm key %s: %w", keyPath, err)
+		return bridge.Config{}, p, fmt.Errorf("private key: %w", err)
 	}
 	var boot []peer.AddrInfo
 	for _, s := range pickList(c.StringSlice("bootstrap"), p.Bootstrap) {
@@ -143,10 +152,12 @@ func config(c *cli.Context) (bridge.Config, Profile, error) {
 		boot = append(boot, *info)
 	}
 	return bridge.Config{
-		SwarmKey:  key,
-		Bootstrap: boot,
-		Cloud:     pick(c.String("cloud"), p.Cloud),
-		Listen:    c.StringSlice("p2p-listen"),
+		Key:         key,
+		CA:          files[1],
+		Certificate: files[2],
+		Bootstrap:   boot,
+		Cloud:       pick(c.String("cloud"), p.Cloud),
+		Listen:      c.StringSlice("p2p-listen"),
 	}, p, nil
 }
 
@@ -159,7 +170,9 @@ func App(env Env) *cli.App {
 		Usage: "bridge a tau cloud's v2 services to local clients, and watch the fleet",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "profile", Aliases: []string{"p"}, EnvVars: []string{"TAUCORDER_PROFILE"}, Usage: "profile file (yaml)"},
-			&cli.StringFlag{Name: "swarm-key", Usage: "the cloud's swarm.key file"},
+			&cli.StringFlag{Name: "private-key", Usage: "file holding this client's libp2p key, base64"},
+			&cli.StringFlag{Name: "ca", Usage: "the cloud's CA root certificate, PEM"},
+			&cli.StringFlag{Name: "certificate", Usage: "this client's certificate from that CA, PEM"},
 			&cli.StringSliceFlag{Name: "bootstrap", Aliases: []string{"b"}, Usage: "bootstrap peer multiaddr (repeatable)"},
 			&cli.StringFlag{Name: "cloud", Usage: "the cloud's name, which scopes its discovery gossip"},
 			&cli.StringSliceFlag{Name: "p2p-listen", Usage: "swarm listen multiaddr (default an ephemeral loopback port)"},

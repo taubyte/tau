@@ -133,11 +133,13 @@ func printExample(w io.Writer) error {
 			// will fail on a laptop.
 			DNSListen: node.DefaultDNSListen,
 		},
-		Root:      boot.DefaultRoot,
-		Listen:    []string{boot.DefaultListen},
-		Bootstrap: []string{},
-		SwarmKey:  "<base64; a node without one joins the public network>",
-		HTTP:      ":8080",
+		Root:        boot.DefaultRoot,
+		Listen:      []string{boot.DefaultListen},
+		Bootstrap:   []string{},
+		PrivateKey:  "<base64; this node's libp2p key, the one its certificate certifies>",
+		CA:          "<PEM; the root certificate of the cloud's CA>",
+		Certificate: "<PEM; this node's certificate from that CA. Without one the node refuses to start unless open: true>",
+		HTTP:        ":8080",
 	})
 	if err != nil {
 		return err

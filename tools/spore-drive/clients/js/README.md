@@ -29,7 +29,7 @@ import { Document, Drive, TauLatest } from "@taubyte/spore-drive";
 const drive = await Drive.local(); // runs the local spore-drive service
 // or: new RemoteDrive("http://localhost:PORT/")
 
-// Validate generates any missing secret (swarm key, domain validation keys,
+// Validate generates any missing secret (the cloud's CA, domain validation keys,
 // host node keys). Write the normalized document back, or the next run
 // generates different ones.
 const { errors, document } = await drive.validate(await Document.fromDir("./config"));

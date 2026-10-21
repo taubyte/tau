@@ -48,7 +48,7 @@ func createConfig() (afero.Fs, config.Parser) {
 	p.Cloud().Domain().SetGenerated("gtest.com")
 	p.Cloud().Domain().Validation().Generate()
 
-	p.Cloud().P2P().Swarm().Generate()
+	p.Cloud().P2P().CA().Generate()
 
 	p.Auth().Add("main").SetUsername("tau1")
 	p.Auth().Add("main").SetPassword("testtest")

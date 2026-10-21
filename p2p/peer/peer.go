@@ -1,7 +1,6 @@
 package peer
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -17,7 +16,8 @@ import (
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	dirutils "github.com/taubyte/tau/utils/fs/dir"
 
-	"github.com/libp2p/go-libp2p/core/pnet"
+	libp2ptls "github.com/libp2p/go-libp2p/p2p/security/tls"
+	"github.com/taubyte/tau/p2p/sectls"
 
 	helpers "github.com/taubyte/tau/p2p/helpers"
 
@@ -136,59 +136,59 @@ func (p *node) WaitForSwarm(timeout time.Duration) error {
 	}
 }
 
-func New(ctx context.Context, repoPath interface{}, privateKey []byte, swarmKey []byte, swarmListen []string, swarmAnnounce []string, notPublic bool, bootstrap bool) (Node, error) {
+func New(ctx context.Context, repoPath interface{}, privateKey []byte, admission *sectls.Credentials, swarmListen []string, swarmAnnounce []string, notPublic bool, bootstrap bool) (Node, error) {
 	opts := make([]libp2p.Option, len(helpers.Libp2pSimpleNodeOptions))
 	copy(opts, helpers.Libp2pSimpleNodeOptions)
 	if notPublic {
 		opts = append(opts, libp2p.ForceReachabilityPrivate(), libp2p.EnableRelay())
 	}
 
-	return new(ctx, repoPath, privateKey, swarmKey, swarmListen, swarmAnnounce, BootstrapParams{Enable: bootstrap}, false, opts...)
+	return new(ctx, repoPath, privateKey, admission, swarmListen, swarmAnnounce, BootstrapParams{Enable: bootstrap}, false, opts...)
 }
 
-func NewClientNode(ctx context.Context, repoPath interface{}, privateKey []byte, swarmKey []byte, swarmListen []string, swarmAnnounce []string, notPublic bool, bootstrapers []peer.AddrInfo) (Node, error) {
+func NewClientNode(ctx context.Context, repoPath interface{}, privateKey []byte, admission *sectls.Credentials, swarmListen []string, swarmAnnounce []string, notPublic bool, bootstrapers []peer.AddrInfo) (Node, error) {
 	opts := make([]libp2p.Option, len(helpers.Libp2pLitePrivateNodeOptions))
 	copy(opts, helpers.Libp2pLitePrivateNodeOptions)
 	if notPublic {
 		opts = append(opts, libp2p.ForceReachabilityPrivate(), libp2p.EnableRelay())
 	}
 
-	return new(ctx, repoPath, privateKey, swarmKey, swarmListen, swarmAnnounce, BootstrapParams{Enable: true, Peers: bootstrapers}, false, opts...)
+	return new(ctx, repoPath, privateKey, admission, swarmListen, swarmAnnounce, BootstrapParams{Enable: true, Peers: bootstrapers}, false, opts...)
 }
 
-func NewWithBootstrapList(ctx context.Context, repoPath interface{}, privateKey []byte, swarmKey []byte, swarmListen []string, swarmAnnounce []string, notPublic bool, bootstrapers []peer.AddrInfo) (Node, error) {
+func NewWithBootstrapList(ctx context.Context, repoPath interface{}, privateKey []byte, admission *sectls.Credentials, swarmListen []string, swarmAnnounce []string, notPublic bool, bootstrapers []peer.AddrInfo) (Node, error) {
 	opts := make([]libp2p.Option, len(helpers.Libp2pSimpleNodeOptions))
 	copy(opts, helpers.Libp2pSimpleNodeOptions)
 	if notPublic {
 		opts = append(opts, libp2p.ForceReachabilityPrivate(), libp2p.EnableRelay())
 	}
 
-	return new(ctx, repoPath, privateKey, swarmKey, swarmListen, swarmAnnounce, BootstrapParams{Enable: true, Peers: bootstrapers}, false, opts...)
+	return new(ctx, repoPath, privateKey, admission, swarmListen, swarmAnnounce, BootstrapParams{Enable: true, Peers: bootstrapers}, false, opts...)
 }
 
-func NewFull(ctx context.Context, repoPath interface{}, privateKey []byte, swarmKey []byte, swarmListen []string, swarmAnnounce []string, isPublic bool, bootstrap BootstrapParams) (Node, error) {
+func NewFull(ctx context.Context, repoPath interface{}, privateKey []byte, admission *sectls.Credentials, swarmListen []string, swarmAnnounce []string, isPublic bool, bootstrap BootstrapParams) (Node, error) {
 	opts := make([]libp2p.Option, len(helpers.Libp2pOptionsFullNode))
 	copy(opts, helpers.Libp2pOptionsFullNode)
 	if isPublic {
 		opts = append(opts, libp2p.ForceReachabilityPublic(), libp2p.EnableRelay())
 	}
 
-	return new(ctx, repoPath, privateKey, swarmKey, swarmListen, swarmAnnounce, bootstrap, true, opts...)
+	return new(ctx, repoPath, privateKey, admission, swarmListen, swarmAnnounce, bootstrap, true, opts...)
 }
 
-func NewPublic(ctx context.Context, repoPath interface{}, privateKey []byte, swarmKey []byte, swarmListen []string, swarmAnnounce []string, bootstrap BootstrapParams) (Node, error) {
+func NewPublic(ctx context.Context, repoPath interface{}, privateKey []byte, admission *sectls.Credentials, swarmListen []string, swarmAnnounce []string, bootstrap BootstrapParams) (Node, error) {
 	opts := make([]libp2p.Option, len(helpers.Libp2pOptionsPublicNode))
 	copy(opts, helpers.Libp2pOptionsPublicNode)
-	return new(ctx, repoPath, privateKey, swarmKey, swarmListen, swarmAnnounce, bootstrap, true, opts...)
+	return new(ctx, repoPath, privateKey, admission, swarmListen, swarmAnnounce, bootstrap, true, opts...)
 }
 
-func NewLitePublic(ctx context.Context, repoPath interface{}, privateKey []byte, swarmKey []byte, swarmListen []string, swarmAnnounce []string, bootstrap BootstrapParams) (Node, error) {
+func NewLitePublic(ctx context.Context, repoPath interface{}, privateKey []byte, admission *sectls.Credentials, swarmListen []string, swarmAnnounce []string, bootstrap BootstrapParams) (Node, error) {
 	opts := make([]libp2p.Option, len(helpers.Libp2pOptionsLitePublicNode))
 	copy(opts, helpers.Libp2pOptionsLitePublicNode)
-	return new(ctx, repoPath, privateKey, swarmKey, swarmListen, swarmAnnounce, bootstrap, true, opts...)
+	return new(ctx, repoPath, privateKey, admission, swarmListen, swarmAnnounce, bootstrap, true, opts...)
 }
 
-func new(ctx context.Context, repoPath interface{}, privateKey []byte, swarmKey []byte, swarmListen []string, swarmAnnounce []string, bootstrap BootstrapParams, server bool, opts ...libp2p.Option) (Node, error) {
+func new(ctx context.Context, repoPath interface{}, privateKey []byte, admission *sectls.Credentials, swarmListen []string, swarmAnnounce []string, bootstrap BootstrapParams, server bool, opts ...libp2p.Option) (Node, error) {
 	var p node
 	var err error
 
@@ -222,20 +222,12 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, swarmKey 
 		return nil, fmt.Errorf("parsing pid failed with %w", err)
 	}
 
-	// Read swarm key
-	if swarmKey != nil {
-		p.secret, err = pnet.DecodeV1PSK(bytes.NewReader(swarmKey))
-		if err != nil {
-			return nil, fmt.Errorf("reading swarm key failed with %w", err)
-		}
-	}
-
 	// https://github.com/libp2p/go-libp2p/blob/d4d6adff6e3260792cb4514c27368059f2558530/options.go
 	if opts == nil {
 		opts = make([]libp2p.Option, 0)
 	}
 
-	opts = append(helpers.Libp2pOptionsBase, opts...)
+	opts = append(append([]libp2p.Option{security(admission)}, helpers.Libp2pOptionsBase...), opts...)
 
 	opts = append(opts, libp2p.UserAgent(UserAgent))
 	if server && swarmAnnounce != nil {
@@ -249,7 +241,6 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, swarmKey 
 	p.host, p.dht, err = helpers.SetupLibp2p(
 		p.ctx,
 		p.key,
-		p.secret,
 		swarmListen,
 		p.store,
 		bootstrapHandler,
@@ -315,4 +306,13 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, swarmKey 
 
 	p.topics = make(map[string]*pubsub.Topic)
 	return &p, nil
+}
+
+// security admits only peers holding a certificate from the cloud's CA. A node
+// with no credentials is an open one, and speaks stock libp2p TLS.
+func security(admission *sectls.Credentials) libp2p.Option {
+	if admission == nil {
+		return libp2p.Security(libp2ptls.ID, libp2ptls.New)
+	}
+	return libp2p.Security(sectls.ID, sectls.New(admission))
 }

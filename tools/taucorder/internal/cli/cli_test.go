@@ -18,6 +18,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/taubyte/tau/p2p/sectls"
 	discoveryv2 "github.com/taubyte/tau/pkg/proto/gen/tau/discovery/v2"
 	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/register/v2/registerv2connect"
@@ -25,7 +26,6 @@ import (
 	"github.com/taubyte/tau/tools/taucorder/internal/bridge"
 	"github.com/taubyte/tau/tools/taucorder/internal/fixture"
 	"github.com/taubyte/tau/tools/taucorder/internal/query"
-	"github.com/taubyte/tau/utils"
 )
 
 type seat struct{ *bridge.Bridge }
@@ -34,7 +34,7 @@ func (s seat) Close() { s.Bridge.Close() }
 
 type world struct {
 	dir  string
-	key  string
+	key  []string
 	boot string
 	join func(context.Context, bridge.Config) (Seat, error)
 	got  bridge.Config
@@ -53,10 +53,11 @@ func gossip(t *testing.T, h host.Host) *pubsub.PubSub {
 func newWorld(t *testing.T) *world {
 	t.Helper()
 	w := &world{dir: t.TempDir()}
-	key, _ := utils.GenerateSwarmKey()
-	w.key = filepath.Join(w.dir, "swarm.key")
-	formatted, _ := utils.FormatSwarmKey(key)
-	os.WriteFile(w.key, formatted, 0o600)
+	ca, err := sectls.NewCA("c1", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.key = admission(t, ca, "c1")
 
 	node := fixture.Host(t)
 	cloud := fixture.NewCloud()
@@ -88,6 +89,32 @@ func newWorld(t *testing.T) *world {
 	return w
 }
 
+func (w *world) args(rest ...string) []string {
+	return append(append([]string{"taucorder"}, w.key...), rest...)
+}
+
+func (w *world) flag(name string) string {
+	for i := 0; i < len(w.key); i += 2 {
+		if w.key[i] == "--"+name {
+			return w.key[i+1]
+		}
+	}
+	return ""
+}
+
+// replaced is the arguments with one admission file swapped for path.
+func (w *world) replaced(name, path string, rest ...string) []string {
+	out := []string{"taucorder"}
+	for i := 0; i < len(w.key); i += 2 {
+		value := w.key[i+1]
+		if w.key[i] == "--"+name {
+			value = path
+		}
+		out = append(out, w.key[i], value)
+	}
+	return append(out, rest...)
+}
+
 func (w *world) run(t *testing.T, env Env, args ...string) (string, error) {
 	t.Helper()
 	var out bytes.Buffer
@@ -95,7 +122,7 @@ func (w *world) run(t *testing.T, env Env, args ...string) (string, error) {
 	if env.Join == nil {
 		env.Join = w.join
 	}
-	base := []string{"taucorder", "--swarm-key", w.key, "--bootstrap", w.boot, "--cloud", "c1"}
+	base := w.args("--bootstrap", w.boot, "--cloud", "c1")
 	err := App(env).RunContext(context.Background(), append(base, args...))
 	return out.String(), err
 }
@@ -106,7 +133,7 @@ func TestReadCommands(t *testing.T) {
 	if err != nil || !strings.Contains(out, "github/10") || !strings.Contains(out, "main,staging") {
 		t.Fatal(out, err)
 	}
-	if w.got.Cloud != "c1" || len(w.got.Bootstrap) != 1 || len(w.got.SwarmKey) == 0 {
+	if w.got.Cloud != "c1" || len(w.got.Bootstrap) != 1 || len(w.got.Key) == 0 || len(w.got.CA) == 0 || len(w.got.Certificate) == 0 {
 		t.Fatalf("%+v", w.got)
 	}
 	out, err = w.run(t, Env{}, "jobs", "--project", "p1", "-o", "json")
@@ -157,13 +184,15 @@ func TestConfigErrors(t *testing.T) {
 	os.WriteFile(badYAML, []byte("cloud: [\n"), 0o600)
 	cases := [][]string{
 		{"taucorder", "projects"},
-		{"taucorder", "--swarm-key", filepath.Join(w.dir, "missing"), "projects"},
-		{"taucorder", "--swarm-key", bad, "projects"},
-		{"taucorder", "--swarm-key", w.key, "--bootstrap", "not-a-multiaddr", "projects"},
-		{"taucorder", "--swarm-key", w.key, "--bootstrap", "/ip4/127.0.0.1/tcp/1", "projects"},
+		{"taucorder", "--private-key", w.flag("private-key"), "projects"},
+		w.replaced("private-key", filepath.Join(w.dir, "missing"), "projects"),
+		w.replaced("ca", filepath.Join(w.dir, "missing"), "projects"),
+		w.replaced("private-key", bad, "projects"),
+		w.args("--bootstrap", "not-a-multiaddr", "projects"),
+		w.args("--bootstrap", "/ip4/127.0.0.1/tcp/1", "projects"),
 		{"taucorder", "--profile", filepath.Join(w.dir, "missing.yaml"), "projects"},
 		{"taucorder", "--profile", badYAML, "projects"},
-		{"taucorder", "--swarm-key", bad, "serve"},
+		w.replaced("private-key", bad, "serve"),
 	}
 	for _, args := range cases {
 		env := Env{Out: &bytes.Buffer{}, Join: w.join}
@@ -176,7 +205,7 @@ func TestConfigErrors(t *testing.T) {
 func TestProfile(t *testing.T) {
 	w := newWorld(t)
 	prof := filepath.Join(w.dir, "p.yaml")
-	os.WriteFile(prof, []byte("cloud: c1\nswarm_key: "+w.key+"\nbootstrap: ["+w.boot+"]\n"), 0o600)
+	os.WriteFile(prof, []byte("cloud: c1\nprivate_key: "+w.flag("private-key")+"\nca: "+w.flag("ca")+"\ncertificate: "+w.flag("certificate")+"\nbootstrap: ["+w.boot+"]\n"), 0o600)
 	var out bytes.Buffer
 	env := Env{Out: &out, Join: w.join}
 	if err := App(env).RunContext(context.Background(), []string{"taucorder", "-p", prof, "projects"}); err != nil {
@@ -194,8 +223,8 @@ func TestServe(t *testing.T) {
 	env := Env{Out: &bytes.Buffer{}, Join: w.join, Listening: func(a string) { addrs <- a }}
 	done := make(chan error, 1)
 	go func() {
-		done <- App(env).RunContext(ctx, []string{"taucorder", "--swarm-key", w.key, "--bootstrap", w.boot,
-			"serve", "--listen", "127.0.0.1:0", "--origin", "http://localhost:5173"})
+		done <- App(env).RunContext(ctx, w.args("--bootstrap", w.boot,
+			"serve", "--listen", "127.0.0.1:0", "--origin", "http://localhost:5173"))
 	}()
 	var addr string
 	select {

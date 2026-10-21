@@ -219,7 +219,7 @@ func liveNode(t *testing.T, ca *livePebble, cfg cm.CertificateConfig, addr strin
 	minted, err := identity("")
 	require.NoError(t, err)
 	cfg.ACME = certificate.ACME{Enabled: true, Directory: ca.directory, Email: "ops@example.test", RootCA: ca.serverCA, AccountKey: cloudAccount(t)}
-	return File{
+	return admit(t, File{
 		Node: node.Config{
 			Gateway: gateway.Config{CloudFqdn: liveCloud},
 			CM:      cm.Config{Certificate: cfg},
@@ -227,10 +227,9 @@ func liveNode(t *testing.T, ca *livePebble, cfg cm.CertificateConfig, addr strin
 		Root:       t.TempDir(),
 		PrivateKey: base64.StdEncoding.EncodeToString(minted),
 		Listen:     []string{"/ip4/" + addr + "/tcp/0"},
-		SwarmKey:   base64.StdEncoding.EncodeToString(swarmKey()),
 		HTTP:       fmt.Sprintf("%s:%d", addr, httpPort),
 		HTTPS:      addr + ":0",
-	}
+	})
 }
 
 // ─────────────────────────────── dns ───────────────────────────────

@@ -60,7 +60,7 @@ async def test_validate_plan_apply(mock_url, tmp_path):
         assert list(res.errors) == []
         # the secrets were generated and written in
         files = res.document.files
-        assert "keys/swarm.key" in files
+        assert "keys/ca.crt" in files and "keys/ca.key" in files
         assert yaml.safe_load(files["hosts.yaml"])[name]["shapes"]["all"]["key"]
         write_dir(res.document, cfg)
 
@@ -94,7 +94,7 @@ async def test_validate_plan_apply(mock_url, tmp_path):
     assert node["node"]["cloud"] == "test.com"
     assert node["node"]["tenancy"] == ["github.com/acme"]
     assert node["node"]["added"] == {"example": {"greeting": "hello", "replicas": 2}}
-    assert node["swarmkey"] and node["privatekey"]
+    assert "BEGIN CERTIFICATE" in node["ca"] and "BEGIN CERTIFICATE" in node["certificate"] and node["privatekey"]
     assert node["listen"] == ["/ip4/0.0.0.0/tcp/4242"]
     assert node["bootstrap"] == []  # a fleet of one bootstraps from nobody
     assert "PRIVATE KEY" in node["node"]["auth"]["domainvalidation"]["private"]

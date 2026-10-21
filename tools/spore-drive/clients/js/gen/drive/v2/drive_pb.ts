@@ -20,7 +20,7 @@ import { Message, proto3 } from "@bufbuild/protobuf";
 export class Document extends Message<Document> {
   /**
    * files is every file of the config, by its path relative to the config
-   * root, e.g. "cloud.yaml" or "keys/swarm.key". A path is relative and
+   * root, e.g. "cloud.yaml" or "keys/ca.crt". A path is relative and
    * stays inside the root.
    *
    * @generated from field: map<string, bytes> files = 1;
@@ -113,7 +113,7 @@ export class ValidateResponse extends Message<ValidateResponse> {
 
   /**
    * document is the normalized form: the input, with any secret it leaves
-   * to be generated (the swarm key, the domain validation keys, a host's
+   * to be generated (the cloud's CA, the domain validation keys, a host's
    * node key) generated and written in. A client keeps it, or the next
    * validate generates different ones.
    *

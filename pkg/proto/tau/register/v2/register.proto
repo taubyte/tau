@@ -56,7 +56,7 @@ syntax = "proto3";
 //
 // AUTHORIZATION IS NOT HERE. Any peer that can reach this service can publish,
 // which is the OSS trust model — the swarm's members are the trust boundary
-// and a private swarm key is what enforces it. A deployment that needs to
+// and a certificate from the cloud's CA is what enforces it. A deployment that needs to
 // distinguish between its own peers needs a caller identity on every request
 // and an answer to "who may move this pointer"; that is a real design, not a
 // field, and it is not guessed at here.

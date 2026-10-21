@@ -27,13 +27,11 @@ import (
 // boundary is about. A build-frontend that grew a route straight onto these
 // handlers would fail every call rather than serve the queue to the internet.
 //
-// THE DEFAULT IS THAT ANY PEER THE TRANSPORT AUTHENTICATED MAY CALL, and the
-// membership gap under it is named rather than papered over: per
-// service-conventions.md §5c(1) there is no allowlist, no connection gater and
-// no join policy anywhere in this tree, and pkg/config/source_load.go's
-// loadSwarmKey("") returns nil with no error, so an omitted swarmkey yields an
-// open libp2p network. That is the documented OSS trust model, and this package
-// does NOT build a second membership system in front of it: doing so would be
+// THE DEFAULT IS THAT ANY PEER THE TRANSPORT ADMITTED MAY CALL: membership is a
+// certificate from the cloud's CA, checked in the libp2p handshake
+// (p2p/sectls), and a node started with open: true admits anyone. That is the
+// documented OSS trust model, and this package does NOT build a second
+// membership system in front of it: doing so would be
 // exactly the service-local admission policy service-conventions.md §4 reserves
 // for the cluster service. AllowPeers exists so a deployment that knows its
 // frontends' peer ids can narrow ActEnqueue without inventing a mechanism.

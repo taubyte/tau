@@ -64,7 +64,6 @@ func TestSetupLibp2p(t *testing.T) {
 	host, routing, err := SetupLibp2p(
 		ctx,
 		privKey,
-		nil,
 		[]string{"/ip4/127.0.0.1/tcp/0"},
 		ds,
 		nil,
@@ -93,7 +92,6 @@ func TestBootstrap_EmptyPeers(t *testing.T) {
 	host, routing, err := SetupLibp2p(
 		ctx,
 		privKey,
-		nil,
 		[]string{"/ip4/127.0.0.1/tcp/0"},
 		ds,
 		nil,
@@ -124,7 +122,6 @@ func TestSetupLibp2p_WithBootstrapFunc(t *testing.T) {
 	host, routing, err := SetupLibp2p(
 		ctx,
 		privKey,
-		nil,
 		[]string{"/ip4/127.0.0.1/tcp/0"},
 		ds,
 		bootstrapPeers,
@@ -150,7 +147,6 @@ func TestBootstrap_TwoPeers(t *testing.T) {
 	host1, routing1, err := SetupLibp2p(
 		ctx,
 		privKey1,
-		nil,
 		[]string{"/ip4/127.0.0.1/tcp/0"},
 		ds1,
 		nil,
@@ -169,7 +165,6 @@ func TestBootstrap_TwoPeers(t *testing.T) {
 	host2, routing2, err := SetupLibp2p(
 		ctx,
 		privKey2,
-		nil,
 		[]string{"/ip4/127.0.0.1/tcp/0"},
 		ds2,
 		nil,
@@ -203,7 +198,6 @@ func TestSetupLibp2p_MultipleAddrs(t *testing.T) {
 	host, routing, err := SetupLibp2p(
 		ctx,
 		privKey,
-		nil,
 		[]string{
 			"/ip4/127.0.0.1/tcp/0",
 			"/ip4/127.0.0.1/udp/0/quic-v1",
@@ -234,7 +228,6 @@ func TestBootstrap_WithPeers(t *testing.T) {
 	host1, _, err := SetupLibp2p(
 		ctx,
 		privKey1,
-		nil,
 		[]string{"/ip4/127.0.0.1/tcp/0"},
 		ds1,
 		nil,
@@ -253,7 +246,6 @@ func TestBootstrap_WithPeers(t *testing.T) {
 	host2, routing2, err := SetupLibp2p(
 		ctx,
 		privKey2,
-		nil,
 		[]string{"/ip4/127.0.0.1/tcp/0"},
 		ds2,
 		nil,
@@ -272,7 +264,6 @@ func TestBootstrap_WithPeers(t *testing.T) {
 	host3, routing3, err := SetupLibp2p(
 		ctx,
 		privKey3,
-		nil,
 		[]string{"/ip4/127.0.0.1/tcp/0"},
 		ds3,
 		nil,
@@ -307,7 +298,6 @@ func TestSetupLibp2p_FullNodeOptions(t *testing.T) {
 	host, routing, err := SetupLibp2p(
 		ctx,
 		privKey,
-		nil,
 		[]string{"/ip4/127.0.0.1/tcp/0"},
 		ds,
 		nil,
@@ -333,7 +323,6 @@ func TestSetupLibp2p_PublicNodeOptions(t *testing.T) {
 	host, routing, err := SetupLibp2p(
 		ctx,
 		privKey,
-		nil,
 		[]string{"/ip4/127.0.0.1/tcp/0"},
 		ds,
 		nil,
@@ -359,7 +348,6 @@ func TestSetupLibp2p_LitePublicNodeOptions(t *testing.T) {
 	host, routing, err := SetupLibp2p(
 		ctx,
 		privKey,
-		nil,
 		[]string{"/ip4/127.0.0.1/tcp/0"},
 		ds,
 		nil,
@@ -385,7 +373,6 @@ func TestSetupLibp2p_LitePrivateNodeOptions(t *testing.T) {
 	host, routing, err := SetupLibp2p(
 		ctx,
 		privKey,
-		nil,
 		[]string{"/ip4/127.0.0.1/tcp/0"},
 		ds,
 		nil,

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"net/http"
 	"os"
@@ -11,14 +12,35 @@ import (
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	"github.com/taubyte/tau/node/boot"
+	"github.com/taubyte/tau/p2p/sectls"
 )
 
-func swarmKey() string {
-	return base64.StdEncoding.EncodeToString([]byte("/key/swarm/psk/1.0.0/\n/base16/\n" +
-		"0000000000000000000000000000000000000000000000000000000000000001"))
+// admitted is what a node of cloud needs to join it: an identity, the CA's
+// root, and a certificate for that identity.
+func admitted(t *testing.T, cloud string) (key, root, cert string) {
+	t.Helper()
+	ca, err := sectls.NewCA("taud test", time.Hour)
+	require.NoError(t, err)
+	private, public, err := crypto.GenerateEd25519Key(rand.Reader)
+	require.NoError(t, err)
+	raw, err := crypto.MarshalPrivateKey(private)
+	require.NoError(t, err)
+	issued, err := ca.Issue(public, cloud, time.Hour)
+	require.NoError(t, err)
+	return base64.StdEncoding.EncodeToString(raw), string(ca.CertificatePEM()), string(issued)
+}
+
+func quoted(s string) string {
+	out, err := yaml.Marshal(s)
+	if err != nil {
+		panic(err)
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func runApp(t *testing.T, args ...string) (string, error) {
@@ -50,10 +72,14 @@ func TestConfigRoundTripsIntoRead(t *testing.T) {
 
 	path := writeConfig(t, printed)
 	_, err = boot.Read(path)
-	require.ErrorContains(t, err, "swarmkey", "the placeholder is not a key")
+	require.ErrorContains(t, err, "privatekey", "the placeholder is not a key")
 
-	path = writeConfig(t, strings.Replace(printed, "<base64; a node without one joins the public network>", swarmKey(), 1))
-	file, err := boot.Read(path)
+	var example boot.File
+	require.NoError(t, yaml.Unmarshal([]byte(printed), &example))
+	example.PrivateKey, example.CA, example.Certificate = admitted(t, example.Node.Cloud)
+	filled, err := yaml.Marshal(example)
+	require.NoError(t, err)
+	file, err := boot.Read(writeConfig(t, string(filled)))
 	require.NoError(t, err)
 	require.NotEmpty(t, file.Node.Services)
 }
@@ -66,7 +92,7 @@ func TestStartRefusesWhatItCannotRun(t *testing.T) {
 	require.Error(t, err)
 
 	_, err = runApp(t, "start", "--config", writeConfig(t, "root: /tmp/x\n"))
-	require.ErrorContains(t, err, "swarmkey")
+	require.ErrorContains(t, err, "certificate")
 
 	// A file that reads but a node that cannot start: the listen address is
 	// not a multiaddr.
@@ -86,13 +112,16 @@ func TestPrintExampleReportsAWriteFailure(t *testing.T) {
 // a config file and a root — sees the gateway answer on loopback, and stops it
 // first with its context and then with a signal.
 func TestStartServesTheGatewayAndStops(t *testing.T) {
+	key, root, cert := admitted(t, "test")
 	config := writeConfig(t, ""+
 		"node:\n"+
 		"  services: [register, discovery, gateway]\n"+
 		"  cloud: test\n"+
 		"root: /nonexistent/overridden\n"+
 		"listen: [\"/ip4/127.0.0.1/tcp/0\"]\n"+
-		"swarmkey: "+swarmKey()+"\n"+
+		"privatekey: "+key+"\n"+
+		"ca: "+quoted(root)+"\n"+
+		"certificate: "+quoted(cert)+"\n"+
 		"http: 127.0.0.1:0\n")
 
 	for _, stopWith := range []string{"context", "signal"} {

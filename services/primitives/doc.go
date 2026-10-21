@@ -97,6 +97,6 @@
 //
 // AUTHORIZATION. Any peer that can reach this service can send to and read any
 // project's primitives. That is v2's OSS trust model stated where it applies —
-// swarm membership is the boundary and the private swarm key enforces it — and
+// swarm membership is the boundary and the cloud's CA enforces it — and
 // the register, the secrets service and the database service say the same.
 package primitives

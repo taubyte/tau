@@ -2,10 +2,13 @@ package bridge
 
 import (
 	"context"
+	"crypto/rand"
+	"strings"
 	"testing"
 	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"google.golang.org/protobuf/proto"
@@ -146,9 +149,31 @@ func TestNewRefuses(t *testing.T) {
 
 func TestJoinRefuses(t *testing.T) {
 	if _, err := Join(context.Background(), Config{}); err == nil {
-		t.Fatal("joined without a swarm key")
+		t.Fatal("joined without a certificate")
 	}
-	if _, err := Join(context.Background(), Config{SwarmKey: []byte("k")}); err == nil {
+	admitted := Config{Key: []byte("k"), CA: []byte("c"), Certificate: []byte("c")}
+	if _, err := Join(context.Background(), admitted); err == nil {
 		t.Fatal("joined without bootstrap")
 	}
+	admitted.Bootstrap = []peer.AddrInfo{{}}
+	if _, err := Join(context.Background(), admitted); err == nil || !strings.Contains(err.Error(), "key") {
+		t.Fatal("joined with a key that is not one", err)
+	}
+	raw, err := crypto.MarshalPrivateKey(mustKey(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	admitted.Key = raw
+	if _, err := Join(context.Background(), admitted); err == nil || !strings.Contains(err.Error(), "ca") {
+		t.Fatal("joined with a CA that is not one", err)
+	}
+}
+
+func mustKey(t *testing.T) crypto.PrivKey {
+	t.Helper()
+	k, _, err := crypto.GenerateEd25519Key(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k
 }

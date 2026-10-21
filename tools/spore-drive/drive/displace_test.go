@@ -1,7 +1,6 @@
 package drive
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -12,11 +11,12 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/libp2p/go-libp2p/core/pnet"
+	"github.com/libp2p/go-libp2p/core/crypto"
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/mock"
 	"github.com/taubyte/tau/node/boot"
+	"github.com/taubyte/tau/p2p/sectls"
 	host "github.com/taubyte/tau/pkg/mycelium/host"
 	"gopkg.in/yaml.v3"
 
@@ -190,10 +190,16 @@ func testDisplace(t *testing.T, sd Spore) {
 		assert.DeepEqual(t, main.Listen, []string{"/ip4/0.0.0.0/tcp/4242"})
 		assert.Assert(t, !strings.Contains(string(read("/tmp/node.yaml")), "PRIVATE KEY"), "no domain key reaches a node: none signs a domain claim")
 
-		swarm, err := base64.StdEncoding.DecodeString(main.SwarmKey)
-		assert.NilError(t, err)
-		_, err = pnet.DecodeV1PSK(bytes.NewReader(swarm))
-		assert.NilError(t, err, "libp2p reads the swarm key as written")
+		// every node's certificate admits it, checked as the node checks it at boot
+		for _, f := range []boot.File{main, frontend} {
+			raw, err := base64.StdEncoding.DecodeString(f.PrivateKey)
+			assert.NilError(t, err)
+			key, err := crypto.UnmarshalPrivateKey(raw)
+			assert.NilError(t, err)
+			_, err = sectls.NewCredentials([]byte(f.CA), []byte(f.Certificate), f.Node.Cloud, key)
+			assert.NilError(t, err)
+		}
+		assert.Equal(t, main.CA, frontend.CA, "one CA for the cloud")
 
 		// build-frontend is split off, on the next port, with its own identity
 		assert.DeepEqual(t, frontend.Node.Services, []string{"build-frontend", "discovery"})

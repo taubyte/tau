@@ -9,15 +9,16 @@ import (
 	"net"
 	"slices"
 	"sort"
+	"time"
 
 	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/crypto"
 
 	"github.com/taubyte/tau/node"
 	"github.com/taubyte/tau/node/boot"
+	"github.com/taubyte/tau/p2p/sectls"
 	"github.com/taubyte/tau/pkg/tenancy"
 	"github.com/taubyte/tau/tools/spore-drive/config"
-	"github.com/taubyte/tau/utils"
 )
 
 // node.go turns a spore-drive cloud config — written for v1, where a host ran
@@ -160,16 +161,6 @@ func bootstrap(p config.Parser, self string) ([]string, error) {
 	return out, nil
 }
 
-func readAll(open func() (io.ReadCloser, error)) (string, error) {
-	r, err := open()
-	if err != nil {
-		return "", err
-	}
-	defer r.Close()
-	data, err := io.ReadAll(r)
-	return string(data), err
-}
-
 // derivedKey is the build-frontend node's identity when it has to be split off
 // a host's node: a second peer needs a second key, and the cloud config — which
 // spore-drive must not rewrite — holds one per shape. Derived from the primary
@@ -189,6 +180,23 @@ func derivedKey(primary, purpose string) (string, error) {
 		return "", err
 	}
 	return base64.StdEncoding.EncodeToString(out), nil
+}
+
+// certificateValidity is a node certificate's life. Rotation is a redeploy,
+// which issues every node a new one.
+const certificateValidity = 365 * 24 * time.Hour
+
+// issue certifies a node's key, base64 as the host config holds it.
+func issue(ca *sectls.CA, key, cloud string) ([]byte, error) {
+	raw, err := base64.StdEncoding.DecodeString(key)
+	if err != nil {
+		return nil, fmt.Errorf("decode private key failed with %w", err)
+	}
+	private, err := crypto.UnmarshalPrivateKey(raw)
+	if err != nil {
+		return nil, fmt.Errorf("private key: %w", err)
+	}
+	return ca.Issue(private.GetPublic(), cloud, certificateValidity)
 }
 
 // nodesFor computes the v2 node files a host runs.
@@ -211,15 +219,11 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 		services = append(services, node.Discovery)
 	}
 
-	swarmFile, err := readAll(p.Cloud().P2P().Swarm().Open)
+	ca, err := p.Cloud().P2P().CA().Load()
 	if err != nil {
-		return nil, fmt.Errorf("failed to open swarm key: %w", err)
+		return nil, fmt.Errorf("the cloud's CA: %w", err)
 	}
-	// The file is written on one line; libp2p reads the three-line form.
-	swarm, err := utils.FormatSwarmKey(swarmFile)
-	if err != nil {
-		return nil, fmt.Errorf("swarm key: %w", err)
-	}
+	cloud := p.Cloud().Domain().Root()
 
 	peers, err := bootstrap(p, hostName)
 	if err != nil {
@@ -238,7 +242,11 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 	mainPort := int(p.Shapes().Shape(primary).Ports().Get("main"))
 	key := hc.Shapes().Instance(primary).Key()
 
-	file := func(services []string, port int, key string) boot.File {
+	file := func(services []string, port int, key string) (boot.File, error) {
+		certificate, err := issue(ca, key, cloud)
+		if err != nil {
+			return boot.File{}, err
+		}
 		announce := make([]string, len(ips))
 		for i, ip := range ips {
 			announce[i] = fmt.Sprintf("/ip4/%s/tcp/%d", ip, port)
@@ -246,7 +254,7 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 		f := boot.File{
 			Node: node.Config{
 				Services: services,
-				Cloud:    p.Cloud().Domain().Root(),
+				Cloud:    cloud,
 				// ADDED SERVICES' CONFIGURATION IS COPIED, NEVER READ. Each
 				// service decodes its own entry; a node built without one
 				// refuses the entry by name.
@@ -255,18 +263,19 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 				// ones that register, link or build a repository apply it.
 				Tenancy: served.Namespaces(),
 			},
-			Listen:     []string{fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port)},
-			Announce:   announce,
-			Bootstrap:  peers,
-			PrivateKey: key,
-			SwarmKey:   base64.StdEncoding.EncodeToString(swarm),
+			Listen:      []string{fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port)},
+			Announce:    announce,
+			Bootstrap:   peers,
+			PrivateKey:  key,
+			CA:          string(ca.CertificatePEM()),
+			Certificate: string(certificate),
 		}
 		if slices.Contains(services, node.Gateway) {
 			f.Node.Gateway.CloudFqdn = p.Cloud().Domain().Generated()
 			f.HTTP = ":80"
 			f.HTTPS = ":443"
 		}
-		return f
+		return f, nil
 	}
 
 	out := &hostNodes{ignored: d.ignoredFields(hostName, droppedHere)}
@@ -277,13 +286,17 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 			return nil, err
 		}
 		services = slices.DeleteFunc(services, func(s string) bool { return s == node.BuildFrontend })
-		out.instances = append(out.instances, instance{
-			name: node.BuildFrontend,
-			port: mainPort + 1,
-			file: file([]string{node.BuildFrontend, node.Discovery}, mainPort+1, frontendKey),
-		})
+		frontend, err := file([]string{node.BuildFrontend, node.Discovery}, mainPort+1, frontendKey)
+		if err != nil {
+			return nil, err
+		}
+		out.instances = append(out.instances, instance{name: node.BuildFrontend, port: mainPort + 1, file: frontend})
 	}
-	out.instances = append([]instance{{name: mainInstance, port: mainPort, file: file(services, mainPort, key)}}, out.instances...)
+	main, err := file(services, mainPort, key)
+	if err != nil {
+		return nil, err
+	}
+	out.instances = append([]instance{{name: mainInstance, port: mainPort, file: main}}, out.instances...)
 	return out, nil
 }
 

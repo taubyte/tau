@@ -8,7 +8,6 @@ import (
 	"time"
 
 	crypto "github.com/libp2p/go-libp2p/core/crypto"
-	"github.com/libp2p/go-libp2p/core/pnet"
 	"github.com/taubyte/tau/utils/fs/dir"
 
 	"github.com/ipfs/go-cid"
@@ -63,7 +62,6 @@ type node struct {
 	store               datastore.Batching
 	key                 crypto.PrivKey
 	id                  peer.ID
-	secret              pnet.PSK
 	host                host.Host
 	dht                 routing.Routing
 	drouter             discovery.Discovery

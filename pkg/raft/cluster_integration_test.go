@@ -47,7 +47,7 @@ func newTestNode(t *testing.T, bootstrapPeers ...peercore.AddrInfo) taupeer.Node
 		ctx,
 		dir,
 		keypair.NewRaw(),
-		nil,                              // swarm key
+		nil,                              // no admission: an open network
 		[]string{"/ip4/127.0.0.1/tcp/0"}, // port 0 for dynamic allocation
 		nil,                              // swarm announce
 		true,                             // notPublic

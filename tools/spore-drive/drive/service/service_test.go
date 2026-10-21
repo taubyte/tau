@@ -162,18 +162,18 @@ func TestValidateGeneratesWhatADocumentLeavesOut(t *testing.T) {
     shapes:
         all: {}
 `
-	bare := with(without(doc, "keys/swarm.key", "keys/dv_private.key", "keys/dv_public.key"), "hosts.yaml", hosts)
+	bare := with(without(doc, "keys/ca.crt", "keys/ca.key", "keys/dv_private.key", "keys/dv_public.key"), "hosts.yaml", hosts)
 
 	_, err := c.Plan(context.Background(), connect.NewRequest(&pb.PlanRequest{Document: bare}))
 	assert.Equal(t, code(err), connect.CodeFailedPrecondition)
-	assert.ErrorContains(t, err, "the swarm key")
+	assert.ErrorContains(t, err, "the cloud's CA")
 	assert.ErrorContains(t, err, "the domain validation keys")
 	assert.ErrorContains(t, err, "the key of host node1.example.com for shape all")
 
 	res, err := c.Validate(context.Background(), connect.NewRequest(&pb.ValidateRequest{Document: bare}))
 	assert.NilError(t, err)
 	assert.DeepEqual(t, res.Msg.Errors, []string(nil))
-	for _, name := range []string{"keys/swarm.key", "keys/dv_private.key", "keys/dv_public.key"} {
+	for _, name := range []string{"keys/ca.crt", "keys/ca.key", "keys/dv_private.key", "keys/dv_public.key"} {
 		assert.Assert(t, len(res.Msg.Document.Files[name]) > 0, name)
 	}
 	assert.Assert(t, string(res.Msg.Document.Files["hosts.yaml"]) != hosts, "no node key was written")

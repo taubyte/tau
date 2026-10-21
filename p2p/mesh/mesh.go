@@ -30,11 +30,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/crypto"
 	peercore "github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/taubyte/tau/core/p2p/keypair"
 	"github.com/taubyte/tau/p2p/peer"
-	"github.com/taubyte/tau/utils"
+	"github.com/taubyte/tau/p2p/sectls"
 )
 
 const (
@@ -51,6 +52,9 @@ const (
 	// a minute and more, wedging the mesh. Not relaxable.
 	swarmWait = time.Second
 
+	// A universe can run for as long as somebody leaves it up.
+	certificateValidity = 10 * 365 * 24 * time.Hour
+
 	// drain is how long Close lets services finish before their peers go.
 	drain = 300 * time.Millisecond
 )
@@ -60,9 +64,9 @@ type Mesh struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	name     string
-	root     string
-	swarmKey []byte
+	name string
+	root string
+	ca   *sectls.CA
 
 	mu      sync.RWMutex
 	peers   []peer.Node
@@ -81,15 +85,15 @@ func New(ctx context.Context, name string) (*Mesh, error) {
 		return nil, err
 	}
 
-	// A PRIVATE NETWORK PER MESH, so a peer of one mesh cannot join another
-	// even when both dial the same loopback ports in turn.
-	key, err := utils.FormatSwarmKey(utils.GenerateSwarmKeyFromString(root))
+	// A CA PER MESH, so a peer of one mesh cannot join another even when both
+	// dial the same loopback ports in turn.
+	ca, err := sectls.NewCA(name, certificateValidity)
 	if err != nil {
 		os.RemoveAll(root)
 		return nil, err
 	}
 
-	m := &Mesh{name: name, root: root, swarmKey: key}
+	m := &Mesh{name: name, root: root, ca: ca}
 	m.ctx, m.cancel = context.WithCancel(ctx)
 	return m, nil
 }
@@ -133,7 +137,12 @@ func (m *Mesh) Add(start func(peer.Node) error) (peer.Node, error) {
 	// the heads it is told about. Measured with two register nodes: bootstrap
 	// plus dial resolved a publish on the other node about one run in three,
 	// the dial alone every run.
-	n, err := peer.NewPublic(m.ctx, dir, keypair.NewRaw(), m.swarmKey, []string{listen}, []string{listen}, peer.StandAlone())
+	key := keypair.NewRaw()
+	admission, err := m.Credentials(key)
+	if err != nil {
+		return nil, err
+	}
+	n, err := peer.NewPublic(m.ctx, dir, key, admission, []string{listen}, []string{listen}, peer.StandAlone())
 	if err != nil {
 		return nil, err
 	}
@@ -242,6 +251,19 @@ func (m *Mesh) Close() {
 	os.RemoveAll(m.root)
 }
 
-// SwarmKey is the key every peer in this mesh was started with — what an
-// outside peer needs to join it.
-func (m *Mesh) SwarmKey() []byte { return append([]byte(nil), m.swarmKey...) }
+// CA is the mesh's certificate authority.
+func (m *Mesh) CA() *sectls.CA { return m.ca }
+
+// Credentials issues a libp2p key, marshalled, its certificate for this mesh,
+// and checks it the way a booting node checks its own.
+func (m *Mesh) Credentials(key []byte) (*sectls.Credentials, error) {
+	private, err := crypto.UnmarshalPrivateKey(key)
+	if err != nil {
+		return nil, err
+	}
+	cert, err := m.ca.Issue(private.GetPublic(), m.name, certificateValidity)
+	if err != nil {
+		return nil, err
+	}
+	return sectls.NewCredentials(m.ca.CertificatePEM(), cert, m.name, private)
+}

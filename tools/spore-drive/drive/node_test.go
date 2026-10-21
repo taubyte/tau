@@ -2,16 +2,16 @@ package drive
 
 import (
 	"encoding/base64"
-	"errors"
-	"io"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/spf13/afero"
 	"gotest.tools/v3/assert"
 
 	"github.com/taubyte/tau/node"
+	"github.com/taubyte/tau/p2p/sectls"
 	"github.com/taubyte/tau/tools/spore-drive/config"
 	"github.com/taubyte/tau/tools/spore-drive/config/fixtures"
 )
@@ -108,17 +108,11 @@ func TestABrokenHostIsAnError(t *testing.T) {
 	assert.ErrorContains(t, err, "runs no shape", "a bootstrap host with no node")
 }
 
-func TestReadAll(t *testing.T) {
-	broken := errors.New("broken")
-	_, err := readAll(func() (io.ReadCloser, error) { return nil, broken })
-	assert.ErrorIs(t, err, broken)
-}
-
 func TestAMissingKeyFileIsAnError(t *testing.T) {
 	fs, p := fixtures.VirtConfig()
-	assert.NilError(t, fs.Remove("/keys/swarm.key"))
+	assert.NilError(t, fs.Remove("/keys/ca.key"))
 	_, err := driveFor(p).nodesFor("host1")
-	assert.ErrorContains(t, err, "swarm key")
+	assert.ErrorContains(t, err, "the cloud's CA")
 }
 
 // TestAddedServicesConfigurationReachesEveryNode, copied and never read: the
@@ -191,4 +185,13 @@ func TestNoTenancyFileServesEverything(t *testing.T) {
 	nodes, err := driveFor(p).nodesFor("host1")
 	assert.NilError(t, err)
 	assert.Assert(t, nodes.instances[0].file.Node.Tenancy == nil)
+}
+
+func TestIssueRefusesAKeyThatIsNotOne(t *testing.T) {
+	ca, err := sectls.NewCA("test.com", time.Hour)
+	assert.NilError(t, err)
+	_, err = issue(ca, "not base64!", "test.com")
+	assert.ErrorContains(t, err, "decode private key")
+	_, err = issue(ca, base64.StdEncoding.EncodeToString([]byte("not a key")), "test.com")
+	assert.ErrorContains(t, err, "private key")
 }

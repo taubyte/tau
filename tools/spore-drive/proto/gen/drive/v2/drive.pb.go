@@ -32,7 +32,7 @@ const (
 type Document struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// files is every file of the config, by its path relative to the config
-	// root, e.g. "cloud.yaml" or "keys/swarm.key". A path is relative and
+	// root, e.g. "cloud.yaml" or "keys/ca.crt". A path is relative and
 	// stays inside the root.
 	Files         map[string][]byte `protobuf:"bytes,1,rep,name=files,proto3" json:"files,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
@@ -128,7 +128,7 @@ type ValidateResponse struct {
 	// ignored is what the document sets that a v2 node does not read.
 	Ignored []string `protobuf:"bytes,2,rep,name=ignored,proto3" json:"ignored,omitempty"`
 	// document is the normalized form: the input, with any secret it leaves
-	// to be generated (the swarm key, the domain validation keys, a host's
+	// to be generated (the cloud's CA, the domain validation keys, a host's
 	// node key) generated and written in. A client keeps it, or the next
 	// validate generates different ones.
 	Document      *Document `protobuf:"bytes,3,opt,name=document,proto3" json:"document,omitempty"`

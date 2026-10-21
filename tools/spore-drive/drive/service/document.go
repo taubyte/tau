@@ -85,8 +85,9 @@ func dump(tree afero.Fs) (*pb.Document, error) {
 // document with any; Validate generates them.
 func missing(p config.Parser) []string {
 	var out []string
-	if !opens(p.Cloud().P2P().Swarm().Open) {
-		out = append(out, "the swarm key")
+	ca := p.Cloud().P2P().CA()
+	if !opens(ca.OpenCertificate) || !opens(ca.OpenKey) {
+		out = append(out, "the cloud's CA")
 	}
 	v := p.Cloud().Domain().Validation()
 	if !opens(v.OpenPrivateKey) || !opens(v.OpenPublicKey) {
@@ -104,9 +105,12 @@ func missing(p config.Parser) []string {
 
 // complete generates what missing names.
 func complete(p config.Parser) error {
-	if !opens(p.Cloud().P2P().Swarm().Open) {
-		if err := p.Cloud().P2P().Swarm().Generate(); err != nil {
-			return fmt.Errorf("generating the swarm key: %w", err)
+	// A CA IS GENERATED ONLY WHEN THERE IS NONE. Half of one is a user's CA
+	// missing a file, and generating over it would replace what they own.
+	ca := p.Cloud().P2P().CA()
+	if !opens(ca.OpenCertificate) && !opens(ca.OpenKey) {
+		if err := ca.Generate(); err != nil {
+			return fmt.Errorf("generating the cloud's CA: %w", err)
 		}
 	}
 	v := p.Cloud().Domain().Validation()

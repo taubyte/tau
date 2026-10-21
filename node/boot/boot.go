@@ -17,12 +17,13 @@
 // that consumed them would have to decide what each of them means here, which
 // is a mapping nobody could check.
 //
-// # A private network is the default and an open one is a decision
+// # Admission is the default and an open network is a decision
 //
-// A libp2p host with no pre-shared key joins the public network. Every v2
-// service trusts its swarm — that is the OSS trust model, stated in
-// .notes/tee/v2-seam.md — so a node with no key is a node whose register any
-// stranger can publish into. Omitting the key therefore does not open the
+// Every v2 service trusts the peers it is connected to — that is the OSS trust
+// model, stated in .notes/tee/v2-seam.md — so a peer is admitted only by a
+// certificate from the cloud's CA, checked in the libp2p handshake in both
+// directions (p2p/sectls). A node with no certificate would be a node whose
+// register any stranger can publish into, so omitting one does not open the
 // network; it refuses to start, and `open: true` is how somebody says they
 // meant it.
 package boot
@@ -48,6 +49,7 @@ import (
 
 	"github.com/taubyte/tau/node"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/sectls"
 	"github.com/taubyte/tau/pkg/assets"
 	"github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
@@ -77,9 +79,12 @@ type File struct {
 	// this peer forgets it.
 	PrivateKey string `yaml:"privatekey"`
 
-	// SwarmKey is the pre-shared key that makes this a private network,
-	// base64. See the package doc: empty is refused rather than assumed.
-	SwarmKey string `yaml:"swarmkey"`
+	// CA is the root certificate of the cloud's CA, PEM. Certificate is this
+	// node's, PEM, issued by that CA for privatekey's public key and for
+	// node.cloud. See the package doc: either empty is refused rather than
+	// assumed, and so is a certificate this node's peers would refuse.
+	CA          string `yaml:"ca"`
+	Certificate string `yaml:"certificate"`
 
 	// Open says an open network was meant. It exists so that the refusal above
 	// is answerable, and so that answering it is a line somebody wrote.
@@ -105,8 +110,8 @@ type File struct {
 var logger = log.Logger("tau.v2.boot")
 
 var (
-	ErrNoSwarmKey = errors.New("boot: this node would join the public network; give it a swarmkey, or say open: true")
-	ErrNoListen   = errors.New("boot: a node that binds nothing cannot be reached")
+	ErrNoCertificate = errors.New("boot: this node would join an open network; give it a ca and a certificate, or say open: true")
+	ErrNoListen      = errors.New("boot: a node that binds nothing cannot be reached")
 )
 
 // Defaults.
@@ -140,17 +145,14 @@ func (f File) withDefaults() (File, error) {
 	// THE REFUSAL IS HERE AND NOT AT THE HOST. libp2p will happily build a
 	// host with no key, and by the time anything notices, the register is
 	// answering strangers.
-	if f.SwarmKey == "" && !f.Open {
-		return File{}, ErrNoSwarmKey
+	if (f.CA == "" || f.Certificate == "") && !f.Open {
+		return File{}, ErrNoCertificate
 	}
 
-	// AND THE KEYS ARE CHECKED WHERE THE FILE IS READ. A key that is not
-	// base64 is a typo in a file, and finding it after a libp2p host and a
-	// datastore have been built reports it as a boot failure rather than as
-	// the line it is.
-	if _, err := decode("swarmkey", f.SwarmKey); err != nil {
-		return File{}, err
-	}
+	// AND THE KEY IS CHECKED WHERE THE FILE IS READ. A key that is not base64
+	// is a typo in a file, and finding it after a libp2p host and a datastore
+	// have been built reports it as a boot failure rather than as the line it
+	// is. The certificate is checked in admission, against that key.
 	if _, err := decode("privatekey", f.PrivateKey); err != nil {
 		return File{}, err
 	}
@@ -195,7 +197,7 @@ func Start(ctx context.Context, f File, added ...node.Option) (*Running, error) 
 	if err != nil {
 		return nil, err
 	}
-	swarmKey, err := decode("swarmkey", f.SwarmKey)
+	admission, err := f.admission(privateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -211,9 +213,9 @@ func Start(ctx context.Context, f File, added ...node.Option) (*Running, error) 
 	// waits for a swarm it will never be introduced to.
 	var p peer.Node
 	if len(bootstrap) > 0 {
-		p, err = peer.NewWithBootstrapList(ctx, f.Root, privateKey, swarmKey, f.Listen, f.Announce, !f.Open, bootstrap)
+		p, err = peer.NewWithBootstrapList(ctx, f.Root, privateKey, admission, f.Listen, f.Announce, !f.Open, bootstrap)
 	} else {
-		p, err = peer.New(ctx, f.Root, privateKey, swarmKey, f.Listen, f.Announce, !f.Open, false)
+		p, err = peer.New(ctx, f.Root, privateKey, admission, f.Listen, f.Announce, !f.Open, false)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("boot: libp2p: %w", err)
@@ -445,6 +447,23 @@ func identity(encoded string) ([]byte, error) {
 }
 
 // decode reads a base64 field, and says which one when it cannot.
+// admission is nil for an open node with no certificate, which then speaks
+// stock libp2p TLS.
+func (f File) admission(privateKey []byte) (*sectls.Credentials, error) {
+	if f.CA == "" && f.Certificate == "" {
+		return nil, nil
+	}
+	key, err := crypto.UnmarshalPrivateKey(privateKey)
+	if err != nil {
+		return nil, fmt.Errorf("boot: privatekey: %w", err)
+	}
+	creds, err := sectls.NewCredentials([]byte(f.CA), []byte(f.Certificate), f.Node.Cloud, key)
+	if err != nil {
+		return nil, fmt.Errorf("boot: %w", err)
+	}
+	return creds, nil
+}
+
 func decode(name, value string) ([]byte, error) {
 	if value == "" {
 		return nil, nil
@@ -497,7 +516,7 @@ func Reach(ctx context.Context, f File, service string, within time.Duration) (*
 			return nil, ctx.Err()
 		case <-deadline:
 			running.Close()
-			return nil, fmt.Errorf("boot: no %s answered within %s; is the fleet reachable and is the swarm key right", service, within)
+			return nil, fmt.Errorf("boot: no %s answered within %s; is the fleet reachable and is this certificate from its CA", service, within)
 		case <-time.After(250 * time.Millisecond):
 		}
 	}
