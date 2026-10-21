@@ -147,12 +147,12 @@ func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 		gen := f.sameLeafEverywhere(t, name, roots)
 		require.Equal(t, []string{name}, gen.DNSNames)
 		require.True(t, f.reached(resolverAddr, "_acme-challenge."+name, dns.TypeTXT), "pebble's DNS-01 lookup reached tau's dns")
-		require.True(t, f.reached(resolverAddr, "_acme-challenge."+liveCloud, dns.TypeTXT), "and the wildcard's")
 
 		frontendName := node.BuildFrontend + "." + liveCloud
 		res := issued(t, f.addrs[2]+":8443", frontendName, roots)
 		wildcard := res.TLS.PeerCertificates[0]
 		require.Equal(t, []string{"*." + liveCloud}, wildcard.DNSNames)
+		require.True(t, f.reached(resolverAddr, "_acme-challenge."+liveCloud, dns.TypeTXT), "and the wildcard's")
 		for i, n := range f.nodes[:2] {
 			secure, err := n.Node.ServiceTLS()
 			require.NoError(t, err)
