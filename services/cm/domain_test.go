@@ -3,8 +3,10 @@ package cm
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
@@ -253,4 +255,30 @@ func TestACustomDomainIsCertifiedOnlyOnceProven(t *testing.T) {
 	require.ErrorIs(t, s.keep(t.Context(), rec), ErrNotZone)
 	rec.Zone, rec.Project = customZone, otherID
 	require.ErrorIs(t, s.keep(t.Context(), rec), ErrUnproven)
+}
+
+// THE OUTCOMES OF ONE PAIR DO NOT GROW: each write leaves only the newest,
+// and one written ahead of it by another node is kept rather than this one.
+func TestAPairKeepsOnlyItsLatestOutcome(t *testing.T) {
+	f := newFleet(t, 1, false)
+	s := f.nodes[0]
+	prefix := domainProvenPrefix + "a.test/" + projectID + "/"
+	for range 5 {
+		f.advance(time.Second)
+		require.NoError(t, s.record(t.Context(), "a.test", projectID, outcomeProven))
+	}
+	keys, err := f.db.List(t.Context(), prefix)
+	require.NoError(t, err)
+	require.Len(t, keys, 1)
+
+	ahead := fmt.Sprintf("%s%020d", prefix, f.clock().Add(time.Hour).UnixNano())
+	require.NoError(t, f.db.Put(t.Context(), ahead, []byte(outcomeLost)))
+	f.advance(time.Second)
+	require.NoError(t, s.record(t.Context(), "a.test", projectID, outcomeProven))
+	keys, err = f.db.List(t.Context(), prefix)
+	require.NoError(t, err)
+	require.Equal(t, []string{ahead}, keys)
+	_, ok, err := s.provenOwner(t.Context(), "a.test")
+	require.NoError(t, err)
+	require.False(t, ok, "the newest outcome stands")
 }

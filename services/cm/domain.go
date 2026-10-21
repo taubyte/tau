@@ -244,8 +244,29 @@ func (s *Service) provenOwner(ctx context.Context, zone string) (string, bool, e
 	return owner, owner != "", nil
 }
 
+// record writes one outcome, then deletes the pair's older ones: only the
+// latest per pair is ever read and no key is written twice, so a delete can
+// only remove what is already superseded.
 func (s *Service) record(ctx context.Context, zone, project, outcome string) error {
-	return s.db.Put(ctx, fmt.Sprintf("%s%s/%s/%020d", domainProvenPrefix, zone, project, s.now().UnixNano()), []byte(outcome))
+	prefix := domainProvenPrefix + zone + "/" + project + "/"
+	key := fmt.Sprintf("%s%020d", prefix, s.now().UnixNano())
+	if err := s.db.Put(ctx, key, []byte(outcome)); err != nil {
+		return err
+	}
+	older, err := s.db.List(ctx, prefix)
+	if err != nil {
+		return nil
+	}
+	newest := key
+	for _, k := range older {
+		newest = max(newest, k)
+	}
+	for _, k := range older {
+		if k != newest {
+			s.db.Delete(ctx, k)
+		}
+	}
+	return nil
 }
 
 // ancestors is fqdn's zones from the top down, ending with fqdn; a bare
