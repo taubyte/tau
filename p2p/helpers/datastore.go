@@ -21,7 +21,7 @@ func NewDatastore(path string) (datastore.Batching, error) {
 
 	ds, err := pds.NewDatastore(path, nil)
 	if err != nil {
-		if strings.Contains(err.Error(), "version 1 which is no longer supported") {
+		if msg := err.Error(); strings.Contains(msg, "major version 1,") && strings.Contains(msg, "no longer supported") {
 			if err = MigratePebbleV1ToV2(path); err != nil {
 				return nil, err
 			}

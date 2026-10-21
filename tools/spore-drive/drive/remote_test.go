@@ -2,6 +2,7 @@ package drive
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/taubyte/tau/pkg/mycelium/command"
 	cmocks "github.com/taubyte/tau/pkg/mycelium/command/mocks"
 
+	host "github.com/taubyte/tau/pkg/mycelium/host"
 	"github.com/taubyte/tau/pkg/mycelium/host/mocks"
 	"gotest.tools/v3/assert"
 )
@@ -186,4 +188,22 @@ func TestRemoteRemoveAll(t *testing.T) {
 
 	_, err = mfs.Stat("/dir")
 	assert.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestARemoteReportsWhatItsHostCannotDo(t *testing.T) {
+	broken := errors.New("unreachable")
+	h := new(mocks.Host)
+	h.On("Fs", mock.Anything, mock.Anything).Return(afero.NewMemMapFs(), broken).Once()
+	_, err := newRemote(context.TODO(), h)
+	assert.ErrorIs(t, err, broken)
+
+	h.On("Fs", mock.Anything, mock.Anything).Return(afero.NewMemMapFs(), nil)
+	h.On("Command", mock.Anything, mock.Anything, mock.Anything).Return((*command.Command)(nil), broken)
+	r, err := newRemote(context.TODO(), h)
+	assert.NilError(t, err)
+	assert.Equal(t, r.Host(), host.Host(h))
+	_, err = r.Sudo(context.TODO(), "echo")
+	assert.ErrorIs(t, err, broken)
+	_, err = r.Execute(context.TODO(), "echo")
+	assert.ErrorIs(t, err, broken)
 }

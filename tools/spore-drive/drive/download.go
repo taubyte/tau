@@ -13,12 +13,17 @@ import (
 	"github.com/pkg/errors"
 )
 
+var (
+	releasesLatest   = "https://api.github.com/repos/taubyte/tau/releases/latest"
+	releasesDownload = "https://github.com/taubyte/tau/releases/download"
+)
+
 func getLatestAssetVersion() (string, error) {
 	var latest struct {
 		Version string `json:"tag_name" cbor:"4,keyasint"`
 	}
 
-	req, err := http.NewRequest("GET", "https://api.github.com/repos/taubyte/tau/releases/latest", nil)
+	req, err := http.NewRequest("GET", releasesLatest, nil)
 	if err != nil {
 		return "", fmt.Errorf("cerating request: %w", err)
 	}
@@ -56,7 +61,7 @@ func downloadTau(version, arch string) ([]byte, error) {
 	defer os.Remove(asset)
 
 	// Download
-	downloadUrl := fmt.Sprintf("https://github.com/taubyte/tau/releases/download/v%s/%s", version, asset)
+	downloadUrl := fmt.Sprintf("%s/v%s/%s", releasesDownload, version, asset)
 	tauBin, err := httpDownload(downloadUrl)
 	if err != nil {
 		return nil, fmt.Errorf("downloading failed with: %s", err)
