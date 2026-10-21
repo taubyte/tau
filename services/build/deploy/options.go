@@ -101,8 +101,8 @@ func WithBuilder(b Builder) Option {
 }
 
 // WithRegions is what this cloud can do with where a project says it runs. Without
-// it a deploy asks schema.NoRegion: the build has no regions, everything is placed in
-// schema.DefaultRegion, and any region a project names is said.
+// it a deploy asks schema.WithNoRegions: the build has no regions, everything is placed in
+// schema.DefaultRegion, and any region a project names is refused.
 func WithRegions(r schema.Regions) Option {
 	return func(o *options) error {
 		if r == nil {

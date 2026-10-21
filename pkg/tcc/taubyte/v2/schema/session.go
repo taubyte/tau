@@ -33,7 +33,7 @@ type (
 var bindings = bindingsIn(nil)
 
 // bindingsIn is the bindings with the Regions a session's views are cut by; nil is
-// NoRegion's, which is one view of everything.
+// WithNoRegions' answer, which is one view of everything.
 func bindingsIn(r Regions) session.Bindings {
 	return session.Bindings{
 		CompilerFor:    v2CompilerFor,

@@ -194,7 +194,7 @@ func New(opts ...Option) (*Deploy, error) {
 
 	regions := o.regions
 	if regions == nil {
-		regions = schema.NoRegion()
+		regions = schema.WithNoRegions()
 	}
 
 	return &Deploy{

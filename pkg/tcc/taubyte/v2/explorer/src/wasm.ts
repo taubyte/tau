@@ -117,7 +117,7 @@ export interface Views {
 }
 
 /** Which regions to cut for — see wasm/views_js.go. */
-export type RegionsOption = undefined | "lenient" | "named" | string[];
+export type RegionsOption = undefined | "named" | string[];
 
 export interface CompileOk {
   findings?: Finding[];

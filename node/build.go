@@ -613,8 +613,8 @@ func AsDestination(region string) Option {
 }
 
 // WithRegions is what this node's deploys answer about where a project runs. Without
-// it a deploy reads no regions (schema.NoRegion): everything is placed in
-// schema.DefaultRegion, and any region a project names is said.
+// it a deploy reads no regions (schema.WithNoRegions): everything is placed in
+// schema.DefaultRegion, and any region a project names is refused.
 func WithRegions(r schema.Regions) Option {
 	return func(o *options) error {
 		if r == nil {

@@ -11,8 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
-
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
 
@@ -50,7 +48,7 @@ func repository(t *testing.T) (path string, first, second string) {
 	run("init", "-q", "-b", "main")
 
 	// The first commit is the vocabulary's own project.
-	copyTree(t, basicFixture, path)
+	copyInto(t, basicFixture, path, true)
 	run("add", "-A")
 	run("commit", "-q", "-m", "the project")
 	first = run("rev-parse", "HEAD")
@@ -63,24 +61,6 @@ func repository(t *testing.T) (path string, first, second string) {
 	second = run("rev-parse", "HEAD")
 
 	return path, first, second
-}
-
-func copyTree(t *testing.T, src, dst string) {
-	t.Helper()
-	require.NoError(t, filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dst, strings.TrimPrefix(path, src))
-		if info.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(target, data, 0o644)
-	}))
 }
 
 // A REAL CLONE, AT THE COMMIT THE PUSH NAMED — not at the branch head, which by
@@ -135,7 +115,6 @@ func TestAPushOfARealRepositoryDeploys(t *testing.T) {
 
 	clone := deploy.NewClone(nil, deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) { return forge.Address{URL: path}, nil }))
 	d, err := deploy.New(
-		deploy.WithRegions(schema.TryOneRegion()),
 		deploy.WithProjects(projects{config: "github.com/acme/shop-config"}),
 		deploy.WithCheckout(clone),
 		deploy.WithLocalRegister(r),

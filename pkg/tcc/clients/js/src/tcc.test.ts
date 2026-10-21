@@ -448,23 +448,23 @@ test("decompile a compiled object into an editable session", async () => {
   await session.close();
 });
 
-test("views: the build with no regions is one view of the whole project; a preview cuts by region", async () => {
+test("views: the build with no regions refuses a project naming regions; a preview cuts by region", async () => {
   // The fixture names regions, so the strict build refuses it and says why…
   const strict = await compile(fixtureFs(), "/", { branch: "main" });
   assert.ok(strict.views?.refused, "a project naming regions is refused by the build with none");
   assert.equal(strict.views?.views, undefined);
 
-  // …the lenient one holds everything in `default`…
-  const lenient = await compile(fixtureFs(), "/", { branch: "main", regions: "lenient" });
-  assert.deepEqual(lenient.views?.destinations, ["default"]);
-  const one = lenient.views!.views!.default;
+  // …a preview of eu alone holds everything there…
+  const eu = await compile(fixtureFs(), "/", { branch: "main", regions: ["eu"] });
+  assert.deepEqual(eu.views?.destinations, ["eu"]);
+  const one = eu.views!.views!.eu;
   assert.equal(one.empty, false);
-  assert.deepEqual(Object.keys((one.object as any).object.function).sort(), Object.keys((lenient.object as any).function).sort());
+  assert.deepEqual(Object.keys((one.object as any).object.function).sort(), Object.keys((eu.object as any).function).sort());
 
   // …and a session asks for the same cut, with the canonical object beside it.
   const session = await open(fixtureFs(), "/");
-  const viewed = await session.views({ branch: "main", regions: "lenient" });
-  assert.deepEqual(Object.keys(viewed.views!), ["default"]);
+  const viewed = await session.views({ branch: "main", regions: ["eu"] });
+  assert.deepEqual(Object.keys(viewed.views!), ["eu"]);
   assert.ok(viewed.canonical, "the whole object travels with the views");
 
   // A preview of the regions it names refuses an edge across them, by name.

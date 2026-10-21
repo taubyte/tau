@@ -125,9 +125,10 @@ func TestAuditOfTheExample(t *testing.T) {
 	obj, _, err := c.Compile(context.Background())
 	assert.NilError(t, err)
 
-	// LENIENT: the example is written for a cloud with more regions than one, to
-	// exercise the region syntax; what it must not be is broken in any other way.
-	for _, f := range schema.Audit(obj.Flat(), nil, schema.WithRegions(schema.TryOneRegion())) {
+	// A PREVIEW of the regions it names: the example is written for a cloud with more
+	// regions than one, to exercise the region syntax; what it must not be is broken.
+	flat := obj.Flat()
+	for _, f := range schema.Audit(flat, nil, schema.WithRegions(schema.Preview(schema.RegionsNamed(flat)...))) {
 		assert.Assert(t, f.Severity != schema.Broken, "the example must compile to something that works: %v", f)
 	}
 }
@@ -708,7 +709,7 @@ func TestAPerEnvironmentPlacementIsBoundedToo(t *testing.T) {
 // TestAnythingWithAFootprintIsPlaced.
 //
 // WHERE SOMETHING RUNS IS THE REGIONS' ANSWER, not an authored line: the default
-// (NoRegion) places everything in DefaultRegion, so a project that writes no `regions` anywhere is
+// (WithNoRegions) places everything in DefaultRegion, so a project that writes no `regions` anywhere is
 // placed, and only a Regions that places a resource nowhere makes it Broken.
 func TestAnythingWithAFootprintIsPlaced(t *testing.T) {
 	const bare = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"

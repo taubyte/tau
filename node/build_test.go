@@ -569,8 +569,8 @@ func TestAWorkerAsksTheBuildBackendOnAnotherNode(t *testing.T) {
 func TestWithRegions(t *testing.T) {
 	var o options
 	require.Error(t, WithRegions(nil)(&o))
-	require.NoError(t, WithRegions(schema.NoRegion())(&o))
-	require.Equal(t, schema.NoRegion(), o.regions)
+	require.NoError(t, WithRegions(schema.WithNoRegions())(&o))
+	require.Equal(t, schema.WithNoRegions(), o.regions)
 }
 
 // WHICH VIEW A NODE READS: its destination's, DefaultRegion unless it is told another —

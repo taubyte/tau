@@ -131,7 +131,7 @@ func TestAProjectReachingAcrossRegionsIsRefused(t *testing.T) {
 
 	// AS EU ALONE, the same project is placed: a stand-in for one region refuses only
 	// the region it does not serve, and says it by name.
-	_, findings, err = schema.Views(obj.Flat(), schema.WithRegions(schema.AsRegion("eu")))
+	_, findings, err = schema.Views(obj.Flat(), schema.WithRegions(schema.WithRegion("eu")))
 	require.ErrorIs(t, err, schema.ErrUnviewable)
 	require.Contains(t, findings[0].Title, `"us"`)
 }

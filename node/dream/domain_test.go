@@ -20,7 +20,6 @@ import (
 	nodeDream "github.com/taubyte/tau/node/dream"
 	cmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2"
 	pkgregister "github.com/taubyte/tau/pkg/register"
-	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/services/build/backend"
 	buildDeploy "github.com/taubyte/tau/services/build/deploy"
 	"github.com/taubyte/tau/services/cm"
@@ -102,7 +101,6 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 			buildDeploy.WithProjects(configures{}),
 			buildDeploy.WithCheckout(corpus{filepath.Join("projects", project)}),
 			buildDeploy.WithLocalRegister(r),
-			buildDeploy.WithRegions(schema.TryOneRegion()),
 			buildDeploy.WithCloudFqdn("tau.dream.test"),
 			buildDeploy.WithDomains(domains),
 		)

@@ -98,12 +98,12 @@ type auditOf struct {
 }
 
 func auditOptions(opts []AuditOption) auditOf {
-	in := auditOf{regions: NoRegion()}
+	in := auditOf{regions: WithNoRegions()}
 	for _, opt := range opts {
 		opt(&in)
 	}
 	if in.regions == nil {
-		in.regions = NoRegion()
+		in.regions = WithNoRegions()
 	}
 	return in
 }

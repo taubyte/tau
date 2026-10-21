@@ -13,10 +13,9 @@ import (
 // a console through a session. Both ask schema.Views, which is what a deploy publishes,
 // so no page cuts a project its own way.
 //
-// WHICH REGIONS is the caller's to say, and there are three answers:
+// WHICH REGIONS is the caller's to say:
 //
 //	(nothing)        the build with no regions — one view, `default`, the OSS deploy
-//	"lenient"        the same, saying (not refusing) a region the project names
 //	"named"          a preview of every region the project names
 //	["eu", "us"]     a preview of exactly these
 //
@@ -24,18 +23,16 @@ import (
 // which is reported as the views' error beside everything else the compile returned.
 func regionsFrom(opts js.Value, flat map[string]any) schema.Regions {
 	if opts.IsUndefined() || opts.IsNull() || !opts.Truthy() {
-		return schema.NoRegion()
+		return schema.WithNoRegions()
 	}
 	v := opts.Get("regions")
 	switch {
 	case v.IsUndefined() || v.IsNull():
-		return schema.NoRegion()
+		return schema.WithNoRegions()
 	case v.Type() == js.TypeString && v.String() == "named":
 		return schema.Preview(schema.RegionsNamed(flat)...)
-	case v.Type() == js.TypeString && v.String() == "lenient":
-		return schema.TryOneRegion()
 	case v.Type() == js.TypeString:
-		return schema.NoRegion()
+		return schema.WithNoRegions()
 	}
 	return schema.Preview(jsToPath(v)...)
 }

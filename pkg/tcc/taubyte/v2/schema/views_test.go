@@ -24,6 +24,20 @@ func cidFor(name string) string {
 // anywhere allowed, and a cdn runs where it is seeded and wherever else it may go.
 type several []string
 
+// relocates is a build that places everything in DefaultRegion and says, without
+// refusing, where a placement named elsewhere — the shape RolePlaced exists for.
+type relocates struct{}
+
+func (relocates) Serves() []string                { return []string{schema.DefaultRegion} }
+func (relocates) Allow([]string) []schema.Concern { return nil }
+func (relocates) Place(p schema.Placement) schema.Answer {
+	a := schema.Answer{In: []string{schema.DefaultRegion}}
+	if len(p.Named()) > 0 {
+		a.Concerns = []schema.Concern{{Severity: schema.Check, Title: "relocated"}}
+	}
+	return a
+}
+
 func (s several) Serves() []string                { return s }
 func (s several) Allow([]string) []schema.Concern { return nil }
 func (s several) Place(p schema.Placement) schema.Answer {
@@ -166,7 +180,7 @@ func TestACdnWithNoServedSeedIsSeededEverywhere(t *testing.T) {
 // A BUILD SERVING FEWER REGIONS THAN THE PROJECT NAMES HOLDS IT WHERE IT PUT IT, and the
 // role says that is not where the project asked.
 func TestARelocatedResourceIsPlaced(t *testing.T) {
-	views, findings, err := viewsOf(t, schema.TryOneRegion(), map[string]string{
+	views, findings, err := viewsOf(t, relocates{}, map[string]string{
 		"/project.yaml":    regionsProject,
 		"/cache/ha.yaml":   viewCache("ha", "regions:\n    failover:\n        main: eu\n        standby: us\n"),
 		"/cache/pin.yaml":  viewCache("pin", "regions:\n    pinned: [eu]\n"),
@@ -278,19 +292,22 @@ func TestAScopeIsKeptForWhatIsInIt(t *testing.T) {
 	require.False(t, errors.Is(err, schema.ErrUnviewable))
 }
 
-// THE WHOLE CORPUS FIXTURE, AS ONE BUILD SEES IT: every kind, lowerings included, and the
-// one view is the object.
-func TestTheBasicFixtureIsOneViewUnderOneRegion(t *testing.T) {
+// THE WHOLE CORPUS FIXTURE, AS ITS EU PREVIEW SEES IT: every kind, lowerings included,
+// and the one view is the object. A build with no regions refuses it, since it pins eu.
+func TestTheBasicFixtureIsOneViewInEU(t *testing.T) {
 	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
 	require.NoError(t, err)
 	obj, _, err := c.Compile(context.Background())
 	require.NoError(t, err)
 	flat := obj.Flat()
 
-	views, _, err := schema.Views(flat, schema.WithRegions(schema.TryOneRegion()))
+	_, _, err = schema.Views(flat)
+	require.ErrorIs(t, err, schema.ErrUnviewable)
+
+	views, _, err := schema.Views(flat, schema.WithRegions(schema.Preview("eu")))
 	require.NoError(t, err)
-	require.Equal(t, flat, views[schema.DefaultRegion].Object)
-	require.Len(t, views[schema.DefaultRegion].Roles, len(schema.Resources(flat)))
+	require.Equal(t, flat, views["eu"].Object)
+	require.Len(t, views["eu"].Roles, len(schema.Resources(flat)))
 }
 
 // ENVIRONMENTS FIRST, THEN PLACEMENT: a view is (environment, region), and the
@@ -330,12 +347,12 @@ func TestTheSessionAsksForTheSameViews(t *testing.T) {
 	_, err = s.Views(context.Background(), schema.CompileOptions{Branch: "main"})
 	require.ErrorIs(t, err, schema.ErrUnviewable, "the default build has no regions, and production names one")
 
-	s, err = schema.NewSessionIn(fs, "/", schema.TryOneRegion())
+	s, err = schema.NewSessionIn(fs, "/", schema.WithRegion("us"))
 	require.NoError(t, err)
 	got, err := s.Views(context.Background(), schema.CompileOptions{Branch: "main"})
 	require.NoError(t, err)
 	require.Len(t, got.Views, 1)
-	require.Equal(t, schema.DefaultRegion, got.Views[0].Destination)
+	require.Equal(t, "us", got.Views[0].Destination)
 	require.Equal(t, got.Canonical.Flat(), got.Views[0].Object)
 
 	s, err = schema.NewSessionIn(fs, "/", several{"eu", "us"})

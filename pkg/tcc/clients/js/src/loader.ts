@@ -17,11 +17,11 @@ export interface CompileOptions {
 /**
  * Which regions the views are cut for. Omitted: the build with no regions, one view
  * `default` (what an OSS deploy publishes), refusing a region the project names.
- * `"lenient"`: the same, saying rather than refusing. `"named"`: a preview of every
+ * `"named"`: a preview of every
  * region the project names. A list: a preview of exactly those.
  */
 export interface ViewsOptions extends CompileOptions {
-  regions?: "lenient" | "named" | string[];
+  regions?: "named" | string[];
 }
 
 /** How a resource is held in one region. */

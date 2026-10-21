@@ -132,11 +132,11 @@ func (a artifacts) of(label string) string {
 // say here. Both say it through worker.Artifacts.
 func project(t *testing.T, name string, components artifacts) ([]byte, map[string]any, map[string]string) {
 	t.Helper()
-	return projectAs(t, name, components, schema.TryOneRegion())
+	return projectAs(t, name, components, schema.WithNoRegions())
 }
 
-// projectAs is project placed by the Regions given: TryOneRegion for the corpus,
-// or AsRegion("eu") for a test standing in for one region of a larger cloud.
+// projectAs is project placed by the Regions given: WithNoRegions for the corpus,
+// or WithRegion("eu") for a test standing in for one region of a larger cloud.
 func projectAs(t *testing.T, name string, components artifacts, regions schema.Regions) ([]byte, map[string]any, map[string]string) {
 	t.Helper()
 
@@ -326,7 +326,7 @@ type deployed struct {
 	name    string
 	host    string
 
-	// regions places it; nil is TryOneRegion, the corpus's one region.
+	// regions places it; nil is WithNoRegions, the corpus's one region.
 	regions schema.Regions
 }
 
@@ -350,7 +350,7 @@ func publish(t *testing.T, pids []string, at deployed, components artifacts) []*
 
 	regions := at.regions
 	if regions == nil {
-		regions = schema.TryOneRegion()
+		regions = schema.WithNoRegions()
 	}
 	compiled, obj, pointed := projectAs(t, at.name, components, regions)
 	stagedOn(t, pids, at.project, pointed)

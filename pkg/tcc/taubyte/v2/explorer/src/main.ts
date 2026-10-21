@@ -57,15 +57,13 @@ async function main() {
 
 // WHICH VIEW IS SHOWN. A region holds only what is placed there, and the cut is tcc's —
 // the same one a deploy publishes — so the page asks for it and draws what it says.
-// "lenient" is the build with no regions: one view, `default`, the whole project, with
-// any region it names said rather than refused. "named" previews every region the
-// project names.
-let regionMode: "lenient" | "strict" | "named" = "lenient";
+// "strict" is the build with no regions: one view, `default`, the whole project, and
+// any region it names refused. "named" previews every region the project names.
+let regionMode: "strict" | "named" = "strict";
 let region: string | null = null;
 
 function regionsOption(): RegionsOption {
   if (regionMode === "named") return "named";
-  if (regionMode === "lenient") return "lenient";
   return undefined;
 }
 
@@ -223,8 +221,7 @@ function regionBar(): HTMLElement {
   const bar = div("tabs regions");
   const views = lastResult && !("error" in lastResult) ? lastResult.views : undefined;
   for (const [id, label] of [
-    ["lenient", "No regions (OSS)"],
-    ["strict", "No regions, strict"],
+    ["strict", "No regions (OSS)"],
     ["named", "Preview: regions it names"],
   ] as const) {
     const b = document.createElement("button");
