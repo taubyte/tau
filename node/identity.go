@@ -46,18 +46,11 @@ func (n *Node) identityOption() (authService.Option, error) {
 }
 
 // authConfig is auth's configuration as this node states it: the operator's,
-// with the issuer defaulting to the cloud's name and each forge's OAuth app
-// taken from the forge it is for.
+// with the issuer defaulting to the cloud's name.
 func (n *Node) authConfig() authService.Config {
 	c := n.cfg.Auth
 	if c.Issuer == "" {
 		c.Issuer = "tau:" + n.cfg.Cloud
-	}
-	c.Forges = slices.Clone(c.Forges)
-	for _, f := range n.cfg.Forges {
-		if f.OAuthClientID != "" {
-			c.Forges = append(c.Forges, authService.ForgeApp{Host: f.Host, ClientID: f.OAuthClientID})
-		}
 	}
 	return c
 }

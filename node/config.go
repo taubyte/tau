@@ -129,7 +129,7 @@ type Config struct {
 	CM    cm.Config
 	Proxy proxy.Config
 	// Auth names the built-in admin, who may sign up, the console callbacks
-	// and the OIDC providers. A forge's OAuth app is on its Forge.
+	// the forges people sign in through and the OIDC providers.
 	Auth auth.Config
 	DNS  dns.Config
 

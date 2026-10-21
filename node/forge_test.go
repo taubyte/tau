@@ -9,6 +9,7 @@ import (
 	"github.com/taubyte/tau/pkg/forge/fake"
 	publicforges "github.com/taubyte/tau/pkg/forge/public"
 	"github.com/taubyte/tau/pkg/git/gittest"
+	authService "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/build/frontend"
 
 	"github.com/stretchr/testify/require"
@@ -16,30 +17,32 @@ import (
 )
 
 func TestForges(t *testing.T) {
-	reg, err := forges(nil)
+	reg, err := forges(nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"github.com", "gitlab.com"}, reg.Hosts(), "the public forges when none are named")
 
 	reg, err = forges([]Forge{
 		{Host: "git.internal:8443", Driver: ForgeGitLab, Signing: true},
 		{Host: "ghe.example.com", Driver: ForgeGitHub},
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"ghe.example.com", "git.internal:8443"}, reg.Hosts(),
 		"naming any replaces the defaults rather than adding to them")
 
 	// A GitLab that does not sign is served without hooks, not refused.
-	reg, err = forges([]Forge{{Host: "gitlab.example.com", Driver: ForgeGitLab}})
+	reg, err = forges([]Forge{{Host: "gitlab.example.com", Driver: ForgeGitLab}}, nil)
 	require.NoError(t, err)
 	drv, err := reg.Driver("gitlab.example.com")
 	require.NoError(t, err)
 	_, signs := drv.(forge.Signatures)
 	require.False(t, signs, "a gitlab without Signing verifies no deliveries")
+	_, err = forges([]Forge{{Host: "gitlab.example.com", Driver: ForgeGitLab}}, []authService.ForgeApp{{Host: "gitlab.example.com", ClientID: "c"}})
+	require.NoError(t, err, "a gitlab people sign in through")
 
 	reg, err = forges([]Forge{
 		{Host: "codeberg.org", Driver: ForgeGitea},
 		{Host: "git.internal:3000", Driver: ForgeGitea},
-	})
+	}, nil)
 	require.NoError(t, err, "a Gitea, a Forgejo or Codeberg is the gitea driver bound to its host")
 	require.Equal(t, []string{"codeberg.org", "git.internal:3000"}, reg.Hosts())
 	drv, err = reg.Driver("codeberg.org")
@@ -47,7 +50,7 @@ func TestForges(t *testing.T) {
 	require.Equal(t, forge.SchemeHubSHA256, drv.(forge.Signatures).Scheme(),
 		"a gitea hook signs like GitHub's, so the strict policy takes it with no opt-in")
 
-	_, err = forges([]Forge{{Host: "code.example.com", Driver: "fossil"}})
+	_, err = forges([]Forge{{Host: "code.example.com", Driver: "fossil"}}, nil)
 	require.ErrorContains(t, err, `names driver "fossil"`)
 
 	// Every other driver binds, and only the ones whose forge signs verify
@@ -63,7 +66,7 @@ func TestForges(t *testing.T) {
 		{Host: "dev.azure.com", Driver: ForgeAzure, Organizations: []string{"acme"}},
 		{Host: "bitbucket.example.com", Driver: ForgeBitbucketServer},
 		{Host: "bbs.example.com", Driver: ForgeBitbucketServer, SSHPort: 2222},
-	})
+	}, nil)
 	require.NoError(t, err)
 	// Both of a Bitbucket Server's addresses, on whatever ssh port it was
 	// given, are one repository.
@@ -77,7 +80,7 @@ func TestForges(t *testing.T) {
 	k, err := reg.Key("ssh://git@bbs.example.com:2222/PROJ/repo.git")
 	require.NoError(t, err)
 	require.Equal(t, "bbs.example.com/proj/repo", k.String())
-	_, err = forges([]Forge{{Host: "bbs.example.com", Driver: ForgeBitbucketServer, SSHPort: -1}})
+	_, err = forges([]Forge{{Host: "bbs.example.com", Driver: ForgeBitbucketServer, SSHPort: -1}}, nil)
 	require.ErrorContains(t, err, `forge "bbs.example.com"`)
 	for host, want := range map[string]bool{
 		"gogs.example.com": true, "onedev.example.com": false, "review.example.com": false,
@@ -90,18 +93,18 @@ func TestForges(t *testing.T) {
 		require.Equal(t, want, signs, host)
 	}
 
-	_, err = forges([]Forge{{Host: "dev.azure.com", Driver: ForgeAzure}})
+	_, err = forges([]Forge{{Host: "dev.azure.com", Driver: ForgeAzure}}, nil)
 	require.ErrorContains(t, err, `forge "dev.azure.com"`, "azure names its organizations")
-	_, err = forges([]Forge{{Host: "srht.example.org", Driver: ForgeSourcehut, PayloadKey: "short"}})
+	_, err = forges([]Forge{{Host: "srht.example.org", Driver: ForgeSourcehut, PayloadKey: "short"}}, nil)
 	require.ErrorContains(t, err, `forge "srht.example.org"`)
 
-	_, err = forges([]Forge{{Host: "Codeberg.org", Driver: ForgeGitea}})
+	_, err = forges([]Forge{{Host: "Codeberg.org", Driver: ForgeGitea}}, nil)
 	require.ErrorContains(t, err, `forge "Codeberg.org"`)
 
-	_, err = forges([]Forge{{Host: "GitHub.com", Driver: ForgeGitHub}})
+	_, err = forges([]Forge{{Host: "GitHub.com", Driver: ForgeGitHub}}, nil)
 	require.ErrorContains(t, err, `forge "GitHub.com"`)
 
-	_, err = forges([]Forge{{Host: "Gitlab.com", Driver: ForgeGitLab}})
+	_, err = forges([]Forge{{Host: "Gitlab.com", Driver: ForgeGitLab}}, nil)
 	require.ErrorContains(t, err, `forge "Gitlab.com"`)
 }
 
@@ -157,7 +160,7 @@ func TestAGerritBindingCarriesItsDeploymentCredentials(t *testing.T) {
 	hostKey := string(gossh.MarshalAuthorizedKey(pub))
 	events := &ForgeEvents{Address: "review.example.com:29418", User: "tau-bot", Key: priv}
 
-	reg, err := forges([]Forge{{Host: "review.example.com", Driver: ForgeGerrit, Membership: "admin:pw", Events: events, HostKeys: []string{hostKey}}})
+	reg, err := forges([]Forge{{Host: "review.example.com", Driver: ForgeGerrit, Membership: "admin:pw", Events: events, HostKeys: []string{hostKey}}}, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"review.example.com"}, reg.EventHosts())
 	drv, err := reg.Driver("review.example.com")
@@ -165,13 +168,13 @@ func TestAGerritBindingCarriesItsDeploymentCredentials(t *testing.T) {
 	_, members := drv.(forge.Memberships)
 	require.True(t, members)
 
-	reg, err = forges([]Forge{{Host: "review.example.com", Driver: ForgeGerrit}})
+	reg, err = forges([]Forge{{Host: "review.example.com", Driver: ForgeGerrit}}, nil)
 	require.NoError(t, err)
 	require.Empty(t, reg.EventHosts(), "a gerrit with no Events triggers nothing")
 
-	_, err = forges([]Forge{{Host: "review.example.com", Driver: ForgeGerrit, Events: events}})
+	_, err = forges([]Forge{{Host: "review.example.com", Driver: ForgeGerrit, Events: events}}, nil)
 	require.ErrorContains(t, err, "host key pinned", "a stream with no pinned host key is refused at boot")
-	_, err = forges([]Forge{{Host: "review.example.com", Driver: ForgeGerrit, Events: events, HostKeys: []string{"garbage"}}})
+	_, err = forges([]Forge{{Host: "review.example.com", Driver: ForgeGerrit, Events: events, HostKeys: []string{"garbage"}}}, nil)
 	require.Error(t, err)
 }
 
@@ -197,7 +200,7 @@ func TestAnInjectedForgeRegistryWins(t *testing.T) {
 // cloud with no forges declared verifies under DefaultForges. The two must
 // agree on every host, or every delivery a developer's link installs fails.
 func TestTheCLIsPublicForgesSignAsTheDefaultCloudVerifies(t *testing.T) {
-	cloud, err := forges(nil)
+	cloud, err := forges(nil, nil)
 	require.NoError(t, err)
 	cli, err := publicforges.Registry(forge.Policy{})
 	require.NoError(t, err)

@@ -79,11 +79,9 @@ func TestConsoleOriginsAreTheCallbacksOrigins(t *testing.T) {
 		consoleOrigins([]string{"https://console.example/cb", "https://console.example/other", "http://127.0.0.1:3000/x", "::"}))
 }
 
-func TestAuthConfigTakesEachForgesApp(t *testing.T) {
-	n := &Node{cfg: Config{Cloud: "example.com", Forges: []Forge{{Host: "github.com", OAuthClientID: "c1"}, {Host: "gitlab.com"}}}}
-	c := n.authConfig()
-	require.Equal(t, "tau:example.com", c.Issuer)
-	require.Equal(t, []authService.ForgeApp{{Host: "github.com", ClientID: "c1"}}, c.Forges)
+func TestAuthConfigDefaultsTheIssuer(t *testing.T) {
+	n := &Node{cfg: Config{Cloud: "example.com"}}
+	require.Equal(t, "tau:example.com", n.authConfig().Issuer)
 	n.cfg.Auth.Issuer = "tau:set"
 	require.Equal(t, "tau:set", n.authConfig().Issuer)
 }

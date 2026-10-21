@@ -3,6 +3,7 @@ package node
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	gossh "golang.org/x/crypto/ssh"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/taubyte/tau/pkg/forge/gogs"
 	"github.com/taubyte/tau/pkg/forge/onedev"
 	"github.com/taubyte/tau/pkg/forge/sourcehut"
+	authService "github.com/taubyte/tau/services/auth"
 )
 
 // forge.go says which git hosts this cloud serves, and which driver speaks for
@@ -85,13 +87,6 @@ type Forge struct {
 	// that answers whether an account belongs to a group — and, with Events,
 	// reads a project's branch heads. gerrit only.
 	Membership string
-
-	// OAuthClientID is this cloud's OAuth app on the forge, which people sign
-	// in through. Its secret is in the vault, under
-	// auth.OAuthSecretName(Host). Only a forge whose driver has a sign-in face
-	// offers a browser sign-in; every forge offers a pasted one. On a gitlab
-	// it also sends tokens as Bearer, which an OAuth token needs.
-	OAuthClientID string
 
 	// Events subscribes this cloud to the forge's push feed over ssh, which is
 	// how a forge without signed webhooks triggers builds. The sshd is pinned
@@ -214,10 +209,12 @@ func (n *Node) forgeRegistry() (*forge.Registry, error) {
 	if n.opts.forges != nil {
 		return n.opts.forges, nil
 	}
-	return forges(n.cfg.Forges)
+	return forges(n.cfg.Forges, n.cfg.Auth.Forges)
 }
 
-func forges(declared []Forge) (*forge.Registry, error) {
+// forges binds the declared forges. A gitlab with an OAuth app in apps sends
+// tokens as Bearer, which an OAuth token needs.
+func forges(declared []Forge, apps []authService.ForgeApp) (*forge.Registry, error) {
 	if len(declared) == 0 {
 		declared = DefaultForges
 	}
@@ -236,7 +233,7 @@ func forges(declared []Forge) (*forge.Registry, error) {
 			if f.Signing {
 				opts = append(opts, gitlab.Signing())
 			}
-			if f.OAuthClientID != "" {
+			if slices.ContainsFunc(apps, func(a authService.ForgeApp) bool { return a.Host == f.Host }) {
 				opts = append(opts, gitlab.OAuth())
 			}
 			d, err = gitlab.New(f.Host, opts...)
