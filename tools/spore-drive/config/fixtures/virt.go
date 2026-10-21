@@ -13,7 +13,6 @@ func VirtConfig() (afero.Fs, config.Parser) {
 	p, _ := config.New(cfs, "/")
 	p.Cloud().Domain().SetRoot("test.com")
 	p.Cloud().Domain().SetGenerated("gtest.com")
-	p.Cloud().Domain().Validation().Generate()
 
 	p.Cloud().P2P().CA().Generate()
 

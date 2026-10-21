@@ -113,8 +113,8 @@ export class ValidateResponse extends Message<ValidateResponse> {
 
   /**
    * document is the normalized form: the input, with any secret it leaves
-   * to be generated (the cloud's CA, the domain validation keys, a host's
-   * node key) generated and written in. A client keeps it, or the next
+   * to be generated (the cloud's CA, a host's node key) generated and
+   * written in. A client keeps it, or the next
    * validate generates different ones.
    *
    * @generated from field: drive.v2.Document document = 3;

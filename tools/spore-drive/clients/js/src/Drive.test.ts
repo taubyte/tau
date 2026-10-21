@@ -59,6 +59,11 @@ export async function configDir(dir: string, ports: Record<string, number>): Pro
     "cloud.yaml": {
       domain: { root: "test.com", generated: "gtest.com" },
       p2p: { bootstrap: { shape1: Object.keys(ports) } },
+      auth: {
+        admin: { name: "root", password: "correct-horse" },
+        forges: [{ host: "github.com", driver: "github", clientid: "gh-id", clientsecret: "gh-secret" }],
+      },
+      cm: { acme: { accountkey: "keys/acme.key" } },
     },
     "shapes.yaml": { shape1: { services: ["auth", "seer"], ports: { main: 4242 } } },
     "hosts.yaml": hosts,
@@ -69,6 +74,8 @@ export async function configDir(dir: string, ports: Record<string, number>): Pro
   for (const [name, content] of Object.entries(files)) {
     await fs.writeFile(path.join(dir, name), yaml.dump(content));
   }
+  await fs.mkdir(path.join(dir, "keys"), { recursive: true });
+  await fs.writeFile(path.join(dir, "keys/acme.key"), "ACME ACCOUNT KEY");
 }
 
 describe("Drive against the mock", () => {
@@ -121,7 +128,7 @@ describe("Drive against the mock", () => {
 
   it("validates, plans and applies", async () => {
     const doc = await validated();
-    for (const k of ["keys/ca.crt", "keys/ca.key", "keys/dv_private.key", "keys/dv_public.key"]) {
+    for (const k of ["keys/ca.crt", "keys/ca.key"]) {
       expect(doc.get(k)?.length).toBeGreaterThan(0);
     }
     const hosts = yaml.load(doc.text("hosts.yaml")!) as any;
@@ -156,6 +163,7 @@ describe("Drive against the mock", () => {
     const root = await disk(mock, names[0]);
     const raw = await fs.readFile(path.join(root, "tb/config/node.yaml"), "utf8");
     const node = yaml.load(raw) as any;
+    const seed = await fs.readFile(path.join(root, "tb/config/node.seed.yaml"), "utf8");
     await fs.rm(root, { recursive: true, force: true });
     expect(node.node.services).toEqual(["auth", "secrets", "discovery", "dns"]);
     expect(node.node.cloud).toBe("test.com");
@@ -168,6 +176,15 @@ describe("Drive against the mock", () => {
     expect(node.bootstrap).toHaveLength(1);
     // No domain key reaches a node: none signs a domain claim.
     expect(raw).not.toContain("PRIVATE KEY");
+    // Sign-in and certificates reach the node; their secrets only the seed.
+    expect(node.node.auth.admin.name).toBe("root");
+    expect(node.node.auth.admin.passwordhash).toMatch(/^\$argon2id\$/);
+    expect(node.node.auth.forges).toEqual([{ host: "github.com", clientid: "gh-id" }]);
+    expect(node.node.cm.certificate.acme.enabled).toBe(true);
+    expect(node.seed).toBe("/tb/config/node.seed.yaml");
+    for (const secret of ["correct-horse", "gh-secret", "ACME ACCOUNT KEY"]) expect(raw).not.toContain(secret);
+    expect(seed).toContain("gh-secret");
+    expect(seed).toContain("ACME ACCOUNT KEY");
 
     // The course ended with the stream.
     await expect(drive.abort(course)).rejects.toMatchObject({ code: Code.NotFound });

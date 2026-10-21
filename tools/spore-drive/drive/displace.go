@@ -194,6 +194,21 @@ func (d *sporedrive) uploadConfig(h remoteHost, inst instance) error {
 	return e.Close()
 }
 
+// uploadSeed writes the secrets a node writes into the vault, then deletes, to
+// /tmp/<instance>.seed.yaml.
+func (d *sporedrive) uploadSeed(h remoteHost, inst instance) error {
+	f, err := h.OpenFile("/tmp/"+inst.name+".seed.yaml", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	e := yaml.NewEncoder(f)
+	if err := e.Encode(inst.seed); err != nil {
+		return err
+	}
+	return e.Close()
+}
+
 func (d *sporedrive) uploadSystemdFile(h remoteHost) error {
 	var cnf *ini.File
 
@@ -495,6 +510,16 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 			}
 			if _, err = r.Sudo(ctx, "cp", "-f", "/tmp/"+inst.name+".yaml", "/tb/config/"); err != nil {
 				return pushError("setup tau", fmt.Errorf("failed to copy %s.yaml: %w", inst.name, err))
+			}
+			if inst.seed != nil {
+				if err := d.uploadSeed(r, inst); err != nil {
+					return pushError("setup tau", fmt.Errorf("failed to create %s.seed.yaml: %w", inst.name, err))
+				}
+				_, err = r.Sudo(ctx, "cp", "-f", "/tmp/"+inst.name+".seed.yaml", "/tb/config/")
+				r.Remove("/tmp/" + inst.name + ".seed.yaml")
+				if err != nil {
+					return pushError("setup tau", fmt.Errorf("failed to copy %s.seed.yaml: %w", inst.name, err))
+				}
 			}
 		}
 		pushProgress("setup tau", 30)

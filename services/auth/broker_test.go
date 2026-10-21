@@ -137,7 +137,7 @@ func TestExchangeRefusals(t *testing.T) {
 
 	// The client secret is not in the vault.
 	f2 := newFx(t)
-	delete(f2.vault.m, vaultProject+"/"+vaultEnvironment+"/"+OAuthSecretName(testHost))
+	delete(f2.vault.m, VaultProject+"/"+VaultEnvironment+"/"+OAuthSecretName(testHost))
 	_, err = f2.browserSignIn(testHost, loopback, "gho_alice", "")
 	require.Equal(t, connect.CodeUnavailable, code(t, err))
 
@@ -338,7 +338,7 @@ func (f *fx) withOIDC(t *testing.T) *idp {
 		return s
 	}
 	f.s.cfg.OIDC = []OIDCProvider{{Name: "corp", Issuer: p.url, ClientID: "oidc-client"}}
-	f.vault.m[vaultProject+"/"+vaultEnvironment+"/"+OIDCSecretName("corp")] = []byte(f.oauth.secret)
+	f.vault.m[VaultProject+"/"+VaultEnvironment+"/"+OIDCSecretName("corp")] = []byte(f.oauth.secret)
 	return p
 }
 

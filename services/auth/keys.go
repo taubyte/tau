@@ -40,8 +40,8 @@ type Vault interface {
 // starts with a dot, and the frontend's secret routes reach only projects the
 // register holds, so no developer's write can land here.
 const (
-	vaultProject     = ".tau"
-	vaultEnvironment = "auth"
+	VaultProject     = ".tau"
+	VaultEnvironment = "auth"
 )
 
 // Secret names. A host or provider name never holds a "/", which the vault
@@ -81,7 +81,7 @@ func newKeyring(v Vault, st store, node string, now func() int64) *keyring {
 // own returns this node's newest secret named prefix+node+"-"+n, creating one
 // with mint when there is none.
 func (k *keyring) own(ctx context.Context, prefix string, mint func() ([]byte, error)) (string, []byte, error) {
-	names, err := k.vault.List(ctx, vaultProject, vaultEnvironment)
+	names, err := k.vault.List(ctx, VaultProject, VaultEnvironment)
 	if err != nil {
 		return "", nil, fmt.Errorf("auth: listing auth's secrets: %w", err)
 	}
@@ -98,7 +98,7 @@ func (k *keyring) own(ctx context.Context, prefix string, mint func() ([]byte, e
 		}
 	}
 	if newest != "" {
-		v, err := k.vault.Get(ctx, vaultProject, vaultEnvironment, newest)
+		v, err := k.vault.Get(ctx, VaultProject, VaultEnvironment, newest)
 		if err != nil {
 			return "", nil, fmt.Errorf("auth: reading %s: %w", newest, err)
 		}
@@ -109,7 +109,7 @@ func (k *keyring) own(ctx context.Context, prefix string, mint func() ([]byte, e
 		return "", nil, err
 	}
 	name := mine + strconv.FormatInt(k.now(), 10)
-	if err := k.vault.Set(ctx, vaultProject, vaultEnvironment, name, v); err != nil {
+	if err := k.vault.Set(ctx, VaultProject, VaultEnvironment, name, v); err != nil {
 		return "", nil, fmt.Errorf("auth: storing %s: %w", name, err)
 	}
 	return name, v, nil
@@ -196,7 +196,7 @@ func (k *keyring) cached(ctx context.Context, m map[string][]byte, name string) 
 	if v, ok := m[name]; ok {
 		return slices.Clone(v), nil
 	}
-	v, err := k.vault.Get(ctx, vaultProject, vaultEnvironment, name)
+	v, err := k.vault.Get(ctx, VaultProject, VaultEnvironment, name)
 	if err != nil {
 		return nil, fmt.Errorf("auth: reading %s from the secrets service: %w", name, err)
 	}

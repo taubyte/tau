@@ -93,35 +93,6 @@ func TestAnInstanceKeyAndItsID(t *testing.T) {
 	assert.Equal(t, other.Id(), id)
 }
 
-func TestDomainValidationKeysFromAPrivateOne(t *testing.T) {
-	priv, pub, err := generateDVKeys(nil, nil)
-	assert.NilError(t, err)
-
-	p2, pub2, err := generateDVKeys(priv, pub)
-	assert.NilError(t, err)
-	assert.DeepEqual(t, p2, priv)
-	assert.DeepEqual(t, pub2, pub)
-
-	_, derived, err := generateDVKeys(priv, nil)
-	assert.NilError(t, err)
-	assert.DeepEqual(t, derived, pub)
-
-	_, _, err = generateDVKeys([]byte("not pem"), nil)
-	assert.ErrorContains(t, err, "open ecdsa key")
-}
-
-func TestValidationKeysDefaultTheirPaths(t *testing.T) {
-	_, p := parserWith(t, nil)
-	v := p.Cloud().Domain().Validation()
-	_, err := v.OpenPrivateKey()
-	assert.Assert(t, err != nil)
-	_, err = v.OpenPublicKey()
-	assert.Assert(t, err != nil)
-	priv, pub := v.Keys()
-	assert.Equal(t, priv, "keys/dv_private.key")
-	assert.Equal(t, pub, "keys/dv_public.key")
-}
-
 func TestACAIsGeneratedAtItsDefaultPaths(t *testing.T) {
 	_, p := parserWith(t, nil)
 	ca := p.Cloud().P2P().CA()
@@ -135,9 +106,8 @@ func TestACAIsGeneratedAtItsDefaultPaths(t *testing.T) {
 
 func TestKeysCannotBeWrittenToAReadOnlyConfig(t *testing.T) {
 	fs := afero.NewMemMapFs()
-	assert.NilError(t, afero.WriteFile(fs, "/cloud.yaml", []byte("p2p:\n  ca:\n    certificate: keys/ca.crt\n    key: keys/ca.key\ndomain:\n  validation:\n    key:\n      private: keys/a\n      public: keys/b\n"), 0o600))
+	assert.NilError(t, afero.WriteFile(fs, "/cloud.yaml", []byte("p2p:\n  ca:\n    certificate: keys/ca.crt\n    key: keys/ca.key\n"), 0o600))
 	p, err := New(afero.NewReadOnlyFs(fs), "/")
 	assert.NilError(t, err)
 	assert.Assert(t, p.Cloud().P2P().CA().Generate() != nil)
-	assert.Assert(t, p.Cloud().Domain().Validation().Generate() != nil)
 }

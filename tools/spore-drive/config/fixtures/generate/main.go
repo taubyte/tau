@@ -54,11 +54,6 @@ func main() {
 		panic(err)
 	}
 
-	err = p.Cloud().Domain().Validation().Generate()
-	if err != nil {
-		panic(err)
-	}
-
 	err = p.Cloud().P2P().CA().Generate()
 	if err != nil {
 		panic(err)

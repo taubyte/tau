@@ -313,7 +313,7 @@ func newFx(t *testing.T, mutate ...func(*Config)) *fx {
 	for _, m := range mutate {
 		m(&cfg)
 	}
-	f.vault.m[vaultProject+"/"+vaultEnvironment+"/"+OAuthSecretName(testHost)] = []byte(f.oauth.secret)
+	f.vault.m[VaultProject+"/"+VaultEnvironment+"/"+OAuthSecretName(testHost)] = []byte(f.oauth.secret)
 	f.s = newTestService(t, WithUsers(db, f.vault, cfg), WithForges(reg), WithHTTPClient(f.oauth.srv.Client()), WithClock(func() time.Time { return f.now }))
 	return f
 }

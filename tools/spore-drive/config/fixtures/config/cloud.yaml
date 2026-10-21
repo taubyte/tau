@@ -1,10 +1,6 @@
 domain:
     root: test.com
     generated: gtest.com
-    validation:
-        key:
-            private: keys/dv_private.key
-            public: keys/dv_public.key
 p2p:
     ca:
         certificate: keys/ca.crt

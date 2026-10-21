@@ -45,7 +45,6 @@ func TestParserEdit(t *testing.T) {
 
 	assert.NilError(t, p.Cloud().Domain().SetRoot("test.com"))
 	assert.NilError(t, p.Cloud().Domain().SetGenerated("gtest.com"))
-	assert.NilError(t, p.Cloud().Domain().Validation().Generate())
 
 	assert.NilError(t, p.Cloud().P2P().CA().Generate())
 
@@ -103,26 +102,6 @@ func TestParserSchema(t *testing.T) {
 
 	assert.Equal(t, p.Cloud().Domain().Root(), "test.com")
 	assert.Equal(t, p.Cloud().Domain().Generated(), "gtest.com")
-
-	privDvKey, pubDvKey := p.Cloud().Domain().Validation().Keys()
-	assert.Equal(t, privDvKey, "keys/dv_private.key")
-	assert.Equal(t, pubDvKey, "keys/dv_public.key")
-
-	privDvKeyFile, err := p.Cloud().Domain().Validation().OpenPrivateKey()
-	assert.NilError(t, err)
-
-	oPrivDvKeyFile, err := os.Open("fixtures/config/keys/dv_private.key")
-	assert.NilError(t, err)
-
-	assert.Equal(t, hashFile(privDvKeyFile), hashFile(oPrivDvKeyFile))
-
-	pubDvKeyFile, err := p.Cloud().Domain().Validation().OpenPublicKey()
-	assert.NilError(t, err)
-
-	oPubDvKeyFile, err := os.Open("fixtures/config/keys/dv_public.key")
-	assert.NilError(t, err)
-
-	assert.Equal(t, hashFile(pubDvKeyFile), hashFile(oPubDvKeyFile))
 
 	certPath, keyPath := p.Cloud().P2P().CA().Paths()
 	assert.Equal(t, certPath, "keys/ca.crt")

@@ -89,10 +89,6 @@ func missing(p config.Parser) []string {
 	if !opens(ca.OpenCertificate) || !opens(ca.OpenKey) {
 		out = append(out, "the cloud's CA")
 	}
-	v := p.Cloud().Domain().Validation()
-	if !opens(v.OpenPrivateKey) || !opens(v.OpenPublicKey) {
-		out = append(out, "the domain validation keys")
-	}
 	for _, h := range sorted(p.Hosts().List()) {
 		for _, shape := range sorted(p.Hosts().Host(h).Shapes().List()) {
 			if p.Hosts().Host(h).Shapes().Instance(shape).Key() == "" {
@@ -111,12 +107,6 @@ func complete(p config.Parser) error {
 	if !opens(ca.OpenCertificate) && !opens(ca.OpenKey) {
 		if err := ca.Generate(); err != nil {
 			return fmt.Errorf("generating the cloud's CA: %w", err)
-		}
-	}
-	v := p.Cloud().Domain().Validation()
-	if !opens(v.OpenPrivateKey) || !opens(v.OpenPublicKey) {
-		if err := v.Generate(); err != nil {
-			return fmt.Errorf("generating the domain validation keys: %w", err)
 		}
 	}
 	for _, h := range p.Hosts().List() {

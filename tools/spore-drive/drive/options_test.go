@@ -201,15 +201,6 @@ func TestADerivedKeyNeedsAPrimaryOne(t *testing.T) {
 	assert.ErrorContains(t, err, "decode private key")
 }
 
-func TestAConfigWithoutDomainKeysNamesNone(t *testing.T) {
-	fs, p := fixtures.VirtConfig()
-	assert.Assert(t, domainKeys(p))
-	assert.NilError(t, fs.Remove("/keys/dv_private.key"))
-	assert.Assert(t, domainKeys(p), "one of the pair is still named")
-	assert.NilError(t, fs.Remove("/keys/dv_public.key"))
-	assert.Assert(t, !domainKeys(p))
-}
-
 func TestUploadsReportAHostThatCannotBeWritten(t *testing.T) {
 	ro := &fsHost{fs: afero.NewReadOnlyFs(afero.NewMemMapFs())}
 	d := &sporedrive{tauBinary: []byte("tau")}

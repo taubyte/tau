@@ -128,8 +128,8 @@ type ValidateResponse struct {
 	// ignored is what the document sets that a v2 node does not read.
 	Ignored []string `protobuf:"bytes,2,rep,name=ignored,proto3" json:"ignored,omitempty"`
 	// document is the normalized form: the input, with any secret it leaves
-	// to be generated (the cloud's CA, the domain validation keys, a host's
-	// node key) generated and written in. A client keeps it, or the next
+	// to be generated (the cloud's CA, a host's node key) generated and
+	// written in. A client keeps it, or the next
 	// validate generates different ones.
 	Document      *Document `protobuf:"bytes,3,opt,name=document,proto3" json:"document,omitempty"`
 	unknownFields protoimpl.UnknownFields

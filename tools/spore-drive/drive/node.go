@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
-	"io"
 	"net"
 	"slices"
 	"sort"
@@ -66,6 +65,8 @@ type instance struct {
 	name string
 	port int
 	file boot.File
+	// seed is what this node writes into the vault, at file.Seed.
+	seed []boot.Secret
 }
 
 // hostNodes is what a host runs, and which of its config's fields have no v2
@@ -100,7 +101,7 @@ func v2Services(p config.Parser, hostName string) ([]string, []string, error) {
 			}
 			mapped, ok := v1Services[svc]
 			if !ok {
-				if !slices.Contains(node.All, svc) && svc != node.BuildFrontend {
+				if !slices.Contains(node.All, svc) && svc != node.BuildFrontend && svc != node.CM {
 					return nil, nil, fmt.Errorf("shape %s: %q is neither a v1 service nor a v2 one", shape, svc)
 				}
 				mapped = []string{svc}
@@ -239,6 +240,10 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tenancy.yaml: %w", err)
 	}
+	cloudServices, err := servicesOf(p)
+	if err != nil {
+		return nil, err
+	}
 	mainPort := int(p.Shapes().Shape(primary).Ports().Get("main"))
 	key := hc.Shapes().Instance(primary).Key()
 
@@ -262,6 +267,9 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 				// The tenancy is cloud-wide: every node carries it, and the
 				// ones that register, link or build a repository apply it.
 				Tenancy: served.Namespaces(),
+				Forges:  cloudServices.forges,
+				Auth:    cloudServices.auth,
+				CM:      cloudServices.cm,
 			},
 			Listen:      []string{fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port)},
 			Announce:    announce,
@@ -270,8 +278,10 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 			CA:          string(ca.CertificatePEM()),
 			Certificate: string(certificate),
 		}
-		if slices.Contains(services, node.Gateway) {
+		if slices.Contains(services, node.Gateway) || slices.Contains(services, node.DNS) || slices.Contains(services, node.CM) {
 			f.Node.Gateway.CloudFqdn = p.Cloud().Domain().Generated()
+		}
+		if slices.Contains(services, node.Gateway) {
 			f.HTTP = ":80"
 			f.HTTPS = ":443"
 		}
@@ -296,7 +306,12 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 	if err != nil {
 		return nil, err
 	}
-	out.instances = append([]instance{{name: mainInstance, port: mainPort, file: main}}, out.instances...)
+	first := instance{name: mainInstance, port: mainPort, file: main}
+	if len(cloudServices.seed) > 0 && seedsFrom(p, hostName) {
+		first.seed = cloudServices.seed
+		first.file.Seed = "/tb/config/" + mainInstance + ".seed.yaml"
+	}
+	out.instances = append([]instance{first}, out.instances...)
 	return out, nil
 }
 
@@ -323,7 +338,6 @@ func (d *sporedrive) ignoredFields(hostName string, droppedServices []string) []
 		out = append(out, "service "+svc)
 	}
 	add(len(p.Cloud().Domain().Hosts()) > 0, "cloud.domain.hosts")
-	add(domainKeys(p), "cloud.domain.validation (a v2 node signs no domain claims)")
 	add(p.TenancyApp(), "tenancy.app (a v2 node checks the namespace, not membership)")
 	return out
 }
@@ -352,18 +366,4 @@ func (d *sporedrive) Nodes(hostName string) (*Nodes, error) {
 		out.Nodes = append(out.Nodes, Node{Name: inst.name, Port: inst.port, Services: inst.file.Node.Services})
 	}
 	return out, nil
-}
-
-// domainKeys reports whether the config names a domain-validation key pair.
-func domainKeys(p config.Parser) bool {
-	for _, open := range []func() (io.ReadCloser, error){
-		p.Cloud().Domain().Validation().OpenPrivateKey,
-		p.Cloud().Domain().Validation().OpenPublicKey,
-	} {
-		if f, err := open(); err == nil {
-			f.Close()
-			return true
-		}
-	}
-	return false
 }
