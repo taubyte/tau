@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -633,3 +634,8 @@ var (
 	// ErrExists is a repository already at the key a creation named.
 	ErrExists = errors.New("build: a repository is already there")
 )
+
+// Assets reads what a build stored, by the content id a job records.
+type Assets interface {
+	Get(ctx context.Context, cid string) (io.ReadSeekCloser, error)
+}

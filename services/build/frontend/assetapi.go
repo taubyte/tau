@@ -1,0 +1,85 @@
+package frontend
+
+import (
+	"context"
+	"io"
+	"net/http"
+)
+
+// assetapi.go is what a finished build left behind, read back per job: a
+// log by the key the job records it under, and a resource's artifact by the
+// resource id. Each is authorized exactly as the job is (mayTouchJob) and
+// looked up in that job's own maps, so a content id is never something a
+// caller names. There is no bare-cid route.
+
+// handleJobLog is GET /job/{jid}/logs/{key}: one finished log.
+func (s *Service) handleJobLog(w http.ResponseWriter, r *http.Request, token, jobID string) {
+	s.serveJobAsset(w, r, token, jobID, "key", func(_, logs map[string]string, key string) string { return logs[key] }, "text/plain; charset=utf-8")
+}
+
+// handleJobAsset is GET /job/{jid}/assets/{resource}: one built artifact.
+func (s *Service) handleJobAsset(w http.ResponseWriter, r *http.Request, token, jobID string) {
+	s.serveJobAsset(w, r, token, jobID, "resource", func(assets, _ map[string]string, key string) string { return assets[key] }, "application/octet-stream")
+}
+
+func (s *Service) serveJobAsset(w http.ResponseWriter, r *http.Request, token, jobID, name string, pick func(assets, logs map[string]string, key string) string, contentType string) {
+	if s.assets == nil {
+		respond(w, problem(http.StatusServiceUnavailable, "this node reads no asset store"))
+		return
+	}
+	key, err := pathID(r, name)
+	if err != nil {
+		respond(w, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
+	defer cancel()
+	job, err := s.mayTouchJob(ctx, token, jobID)
+	if err != nil {
+		respond(w, err)
+		return
+	}
+	cid := pick(job.GetAssetCid(), job.GetLogs(), key)
+	if cid == "" {
+		respond(w, errDenied)
+		return
+	}
+	// The read outlives BackendTimeout: an artifact is as large as its build
+	// made it, and the transfer is bounded by the caller hanging up.
+	content, err := s.assets.Get(r.Context(), cid)
+	if err != nil {
+		s.log("reading %s of job %s: %v", cid, jobID, err)
+		respond(w, errUpstream)
+		return
+	}
+	defer content.Close()
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if _, err := io.Copy(w, content); err != nil {
+		s.log("relaying %s of job %s: %v", cid, jobID, err)
+	}
+}
+
+type cloudResponse struct {
+	Fqdn string `json:"fqdn"`
+}
+
+// handleCloud is GET /cloud: the name this cloud serves under, which every
+// generated name ends in. A bearer is asked for, as everywhere else: what
+// this process tells a stranger about itself is nothing.
+func (s *Service) handleCloud(w http.ResponseWriter, r *http.Request) {
+	token, err := bearer(r)
+	if err != nil {
+		respond(w, err)
+		return
+	}
+	if !s.globalJobs.allow() || !s.allowCaller(token) {
+		respond(w, tooManyRequests(s.cfg.CallerRate.Per))
+		return
+	}
+	if s.cloudFqdn == "" {
+		respond(w, problem(http.StatusServiceUnavailable, "this build frontend was given no cloud fqdn"))
+		return
+	}
+	writeJSON(w, http.StatusOK, cloudResponse{Fqdn: s.cloudFqdn})
+}

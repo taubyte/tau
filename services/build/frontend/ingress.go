@@ -56,6 +56,9 @@ func (s *Service) mount() http.Handler {
 	mux.HandleFunc("POST /cancel/{jid}", s.admitted("jid", s.handleCancelJob))
 	mux.HandleFunc("POST /retry/{jid}", s.admitted("jid", s.handleRetryJob))
 	mux.HandleFunc("GET /job/{jid}/logs", s.admitted("jid", s.handleFollowJob))
+	mux.HandleFunc("GET /cloud", s.handleCloud)
+	mux.HandleFunc("GET /job/{jid}/logs/{key}", s.admitted("jid", s.handleJobLog))
+	mux.HandleFunc("GET /job/{jid}/assets/{resource}", s.admitted("jid", s.handleJobAsset))
 
 	// The secret routes: written by a developer, out of band, because the value
 	// is the one thing that must not be in git (secretapi.go). Same

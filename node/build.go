@@ -397,6 +397,11 @@ func (n *Node) openBuildFrontend() error {
 	// A FORGE WITH NO SIGNED WEBHOOK REPORTS PUSHES ON ITS OWN FEED (Gerrit's
 	// stream-events), which this frontend subscribes to as a second source of
 	// the same push — see frontend/streams.go.
+	// A FINISHED JOB'S LOGS AND ARTIFACTS are read by the cid the job records,
+	// from the store the backend put them in.
+	if n.opts.assets != nil {
+		frontendOptions = append(frontendOptions, frontend.WithAssets(n.opts.assets))
+	}
 	if len(registry.EventHosts()) > 0 {
 		frontendOptions = append(frontendOptions, frontend.WithStreams(forges, projects))
 	}

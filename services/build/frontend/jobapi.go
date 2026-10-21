@@ -31,11 +31,10 @@ import (
 // by a bare content id and gated only by a token being valid — so anyone with
 // any GitHub token can read any log this cloud ever stored, given its cid. The
 // second has no Auth block at all (defects.md D4, Critical). They come back as
-// GET /job/{jid}/logs/{key} and GET /job/{jid}/assets/{resourceId}, authorized
+// GET /job/{jid}/logs/{key} and GET /job/{jid}/assets/{resource}, authorized
 // exactly as Get is here and checked against that job's own maps — which is
 // what makes them per-job rather than per-cid. There is no bare-cid route in
-// v2. They wait on the byte store the runner will publish to, which does not
-// exist yet.
+// v2 (assetapi.go).
 //
 // AND A THIRD IS HERE THAT v1 HAS NO VERSION OF: following a build WHILE IT
 // RUNS. GET /job/{jid}/logs, with an offset, resumable by a client that

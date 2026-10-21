@@ -38,6 +38,7 @@ type Service struct {
 	linker      Linker
 	installer   Installer
 	repos       Repositories
+	assets      Assets
 	tenancy     tenancy.Tenancy
 	streams     Streams
 	linked      Linked
@@ -93,6 +94,7 @@ type options struct {
 	linker      Linker
 	installer   Installer
 	repos       Repositories
+	assets      Assets
 	tenancy     tenancy.Tenancy
 	streams     Streams
 	linked      Linked
@@ -191,6 +193,18 @@ func WithRepositories(r Repositories) Option {
 			return errors.New("build: nil repositories")
 		}
 		o.repos = r
+		return nil
+	}
+}
+
+// WithAssets is where a finished job's logs and artifacts are read from.
+// Optional: without it those routes answer 503.
+func WithAssets(a Assets) Option {
+	return func(o *options) error {
+		if a == nil {
+			return errors.New("build: nil assets")
+		}
+		o.assets = a
 		return nil
 	}
 }
@@ -388,6 +402,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		linker:      o.linker,
 		installer:   o.installer,
 		repos:       o.repos,
+		assets:      o.assets,
 		tenancy:     o.tenancy,
 		streams:     o.streams,
 		linked:      o.linked,
