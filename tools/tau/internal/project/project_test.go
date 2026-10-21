@@ -13,7 +13,7 @@ func initStarter(t *testing.T) string {
 	dir := t.TempDir()
 	written, err := Init(t.Context(), dir, "shop", false)
 	require.NoError(t, err)
-	require.Equal(t, []string{"function/hello.yaml", "gateway/front.yaml", "project.yaml", "zone/example_com.yaml"}, written)
+	require.Equal(t, []string{"function/hello.yaml", "gateway/front.yaml", "project.yaml"}, written)
 	return dir
 }
 

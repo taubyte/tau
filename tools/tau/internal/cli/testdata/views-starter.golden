@@ -1,4 +1,3 @@
 default
   anywhere   function/hello
   follows    gateway/front
-  needed     zone/example_com

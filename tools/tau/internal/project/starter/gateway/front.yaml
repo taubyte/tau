@@ -1,8 +1,6 @@
 description: the one way in
 host:
-    zone:
-        in:
-            name: example_com
+    generated:
         name: hello
 route:
     path: /
