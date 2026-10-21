@@ -84,7 +84,10 @@ func (c *cache[V]) do(key string, fetch func() (V, error)) (V, error) {
 func (c *cache[V]) load(key string) (cacheEntry[V], bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.loadLocked(key)
+}
 
+func (c *cache[V]) loadLocked(key string) (cacheEntry[V], bool) {
 	entry, ok := c.items[key]
 	if !ok {
 		return cacheEntry[V]{}, false
@@ -180,10 +183,11 @@ func newHookCache(max int, ttl time.Duration, now func() time.Time, fetch func(c
 
 // get answers from the cache, or joins the fetch in flight for project, or
 // starts one.
+//
+// THE CACHE AND THE FLIGHTS ARE READ UNDER ONE LOCK. Read apart, a flight
+// that lands between the two reads is in neither, and the lookup starts a
+// second fetch for a value already held.
 func (c *hookCache) get(ctx context.Context, project string) (hookLookup, error) {
-	if entry, ok := c.load(project); ok {
-		return hookLookup{hook: entry.value.hook, cached: true, ticket: entry.value.ticket}, nil
-	}
 	return c.await(ctx, project, 0)
 }
 
@@ -197,6 +201,12 @@ func (c *hookCache) refresh(ctx context.Context, project string, ticket uint64) 
 
 func (c *hookCache) await(ctx context.Context, project string, notBefore uint64) (hookLookup, error) {
 	c.mu.Lock()
+	if notBefore == 0 {
+		if entry, ok := c.loadLocked(project); ok {
+			c.mu.Unlock()
+			return hookLookup{hook: entry.value.hook, cached: true, ticket: entry.value.ticket}, nil
+		}
+	}
 	f, ok := c.flights[project]
 	if !ok || f.ticket < notBefore {
 		c.seq++
