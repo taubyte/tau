@@ -21,6 +21,7 @@ package forgeauth
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
@@ -305,4 +306,124 @@ func hooksTo(ctx context.Context, session *forge.Session, key repokey.Key, callb
 		}
 	}
 	return out, nil
+}
+
+var _ frontend.Repositories = (*Forges)(nil)
+
+// forgeErr says a pkg/forge refusal in the frontend's terms.
+func forgeErr(err error) error {
+	var (
+		unsupported *forge.UnsupportedError
+		noDriver    *forge.NoDriverError
+		refused     *forge.CredentialError
+	)
+	switch {
+	case errors.As(err, &unsupported):
+		return fmt.Errorf("%w: %v", frontend.ErrUnsupported, err)
+	case errors.As(err, &noDriver):
+		return fmt.Errorf("%w: %s", frontend.ErrUnknownForge, noDriver.Host)
+	case errors.As(err, &refused):
+		return frontend.ErrBadCredential
+	}
+	return fmt.Errorf("build: %w", err)
+}
+
+func info(r forge.Repository) frontend.RepositoryInfo {
+	return frontend.RepositoryInfo{Repository: r.Key.String(), DefaultBranch: r.DefaultBranch, Private: r.Private}
+}
+
+// maxListed bounds one listing; every forge pages and none bounds the result.
+const maxListed = 1000
+
+// List is what the holder of token reaches on host.
+func (i *Forges) List(ctx context.Context, token, host string) ([]frontend.RepositoryInfo, error) {
+	session, err := i.forges.Host(host, forge.Token(token))
+	if err != nil {
+		return nil, forgeErr(err)
+	}
+	out := []frontend.RepositoryInfo{}
+	err = session.ListRepositories(ctx, func(r forge.Repository) bool {
+		out = append(out, info(r))
+		return len(out) < maxListed
+	})
+	if err != nil {
+		return nil, forgeErr(err)
+	}
+	return out, nil
+}
+
+// Create makes key on its forge, as the holder of token.
+func (i *Forges) Create(ctx context.Context, token string, key repokey.Key, in frontend.NewRepository) (frontend.RepositoryInfo, error) {
+	session, err := i.forges.For(key, forge.Token(token))
+	if err != nil {
+		return frontend.RepositoryInfo{}, forgeErr(err)
+	}
+	made, err := session.Create(ctx, key, forge.CreateOptions{Description: in.Description, Private: in.Private})
+	if err != nil {
+		return frontend.RepositoryInfo{}, forgeErr(err)
+	}
+	return info(made), nil
+}
+
+// ReadAccess reports whether the holder of token may read key, with
+// WriteAccess's three answers kept three.
+func (i *Forges) ReadAccess(ctx context.Context, token string, key repokey.Key) (frontend.Access, error) {
+	if token == "" {
+		return frontend.AccessUnauthenticated, nil
+	}
+	session, err := i.forges.For(key, forge.Token(token))
+	if err != nil {
+		return frontend.AccessDenied, fmt.Errorf("build: %w", err)
+	}
+	access, err := session.Access(ctx, key)
+	var refused *forge.CredentialError
+	var missing *forge.NotFoundError
+	switch {
+	case errors.As(err, &refused):
+		return frontend.AccessUnauthenticated, nil
+	case errors.As(err, &missing):
+		return frontend.AccessDenied, nil
+	case err != nil:
+		return frontend.AccessDenied, fmt.Errorf("build: asking %s: %w", key.Host, err)
+	case access >= forge.AccessRead:
+		return frontend.AccessGranted, nil
+	}
+	return frontend.AccessDenied, nil
+}
+
+// Remote is key's https clone address on its forge, reached through a
+// transport that attaches token, as git's basic auth, to that host alone.
+func (i *Forges) Remote(ctx context.Context, token string, key repokey.Key) (frontend.Remote, error) {
+	session, err := i.forges.For(key, forge.Token(token))
+	if err != nil {
+		return frontend.Remote{}, forgeErr(err)
+	}
+	addr, err := session.CloneAddress(key, forge.HTTPS)
+	if err != nil {
+		return frontend.Remote{}, forgeErr(err)
+	}
+	u, err := url.Parse(addr.URL)
+	switch {
+	case err != nil:
+		return frontend.Remote{}, fmt.Errorf("build: %s answered a clone address that is not a url: %w", key.Host, err)
+	case u.User != nil:
+		return frontend.Remote{}, fmt.Errorf("build: %s answered a clone address carrying a credential", key.Host)
+	case addr.HTTPUsername == "":
+		return frontend.Remote{}, fmt.Errorf("build: %s answered no account to authenticate the clone of %s as", key.Host, key)
+	}
+	who, err := session.Whoami(ctx)
+	if err != nil {
+		return frontend.Remote{}, forgeErr(err)
+	}
+	email := who.Email
+	if email == "" {
+		email = who.Login + "@" + key.Host
+	}
+	basic := "Basic " + base64.StdEncoding.EncodeToString([]byte(addr.HTTPUsername+":"+token))
+	return frontend.Remote{
+		URL:       u,
+		Transport: forge.PinnedTransport(key.Host, nil, func(h http.Header) { h.Set("Authorization", basic) }),
+		Author:    who.Login,
+		Email:     email,
+	}, nil
 }

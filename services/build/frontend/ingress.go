@@ -69,12 +69,24 @@ func (s *Service) mount() http.Handler {
 	// authorized as write access to EVERY repository it names, and the caller's
 	// own list of what they linked (projectapi.go).
 	mux.HandleFunc("POST /projects/{projectId}", s.admitted("projectId", s.handleLinkProject))
+	mux.HandleFunc("GET /projects/{projectId}", s.admitted("projectId", s.handleGetProject))
 	mux.HandleFunc("GET /forges/{forge}/projects", s.admitted("forge", s.handleListProjects))
 
 	// What a link does at the forge, done here under the caller's own
 	// connection so no forge credential is handed to a client (linkapi.go).
 	mux.HandleFunc("POST /link/{projectId}/inspect", s.admitted("projectId", s.handleLinkInspect))
 	mux.HandleFunc("POST /link/{projectId}/install", s.admitted("projectId", s.handleLinkInstall))
+
+	// What a console does at a forge — its repository picker, a new
+	// repository, a file read or committed, and git itself — done here
+	// under the caller's connection for the same reason (repoapi.go,
+	// contentapi.go, gitapi.go).
+	mux.HandleFunc("GET /forges/{forge}/repositories", s.admitted("forge", s.handleListRepositories))
+	mux.HandleFunc("POST /forges/{forge}/repositories", s.admitted("forge", s.handleCreateRepository))
+	mux.HandleFunc("POST /forges/{forge}/read", s.admitted("forge", s.handleRead))
+	mux.HandleFunc("POST /forges/{forge}/commit", s.admitted("forge", s.handleCommit))
+	mux.HandleFunc("GET /git/{path...}", s.admitted("path", s.handleGit))
+	mux.HandleFunc("POST /git/{path...}", s.admitted("path", s.handleGit))
 
 	// Signing in, and managing this cloud's users: auth's own calls, carried
 	// to it unchanged and authorized by it (authapi.go). Only when this node

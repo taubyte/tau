@@ -37,6 +37,7 @@ type Service struct {
 	vault       Vault
 	linker      Linker
 	installer   Installer
+	repos       Repositories
 	tenancy     tenancy.Tenancy
 	streams     Streams
 	linked      Linked
@@ -91,6 +92,7 @@ type options struct {
 	vault       Vault
 	linker      Linker
 	installer   Installer
+	repos       Repositories
 	tenancy     tenancy.Tenancy
 	streams     Streams
 	linked      Linked
@@ -176,6 +178,19 @@ func WithInstaller(i Installer) Option {
 			return errors.New("build: a nil installer")
 		}
 		o.installer = i
+		return nil
+	}
+}
+
+// WithRepositories is what a console does at a forge — listing, creating,
+// cloning, reading and committing — under the caller's own connection.
+// Optional: without it those routes deny.
+func WithRepositories(r Repositories) Option {
+	return func(o *options) error {
+		if r == nil {
+			return errors.New("build: nil repositories")
+		}
+		o.repos = r
 		return nil
 	}
 }
@@ -372,6 +387,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		vault:       o.vault,
 		linker:      o.linker,
 		installer:   o.installer,
+		repos:       o.repos,
 		tenancy:     o.tenancy,
 		streams:     o.streams,
 		linked:      o.linked,

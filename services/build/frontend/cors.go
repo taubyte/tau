@@ -15,7 +15,7 @@ import (
 // page on another origin cannot ride a signed-in browser.
 
 var (
-	corsHeaders = strings.Join([]string{"Authorization", "Content-Type", "Connect-Protocol-Version", "Connect-Timeout-Ms"}, ", ")
+	corsHeaders = strings.Join([]string{"Authorization", "Content-Type", "Connect-Protocol-Version", "Connect-Timeout-Ms", "Git-Protocol"}, ", ")
 	corsMethods = "GET, POST, PUT, DELETE"
 )
 

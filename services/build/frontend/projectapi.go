@@ -180,3 +180,25 @@ func (s *Service) claimant(ctx context.Context, token, host string) (string, err
 	s.log("who holds this token on %s: %v", host, err)
 	return "", errUpstream
 }
+
+// handleGetProject is GET /projects/{projectId}: one project's repositories,
+// to whoever may write to any of them — the same gate every project route
+// applies, so a collaborator who did not link it still reads it.
+func (s *Service) handleGetProject(w http.ResponseWriter, r *http.Request, token, projectID string) {
+	if s.linker == nil {
+		respond(w, errDenied)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
+	defer cancel()
+	if err := s.mayTouchProject(ctx, token, projectID); err != nil {
+		respond(w, err)
+		return
+	}
+	rec, err := s.linker.ProjectRecord(ctx, projectID)
+	if err != nil {
+		respond(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, projectOut(rec))
+}

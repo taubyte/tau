@@ -48,6 +48,13 @@ func (l *linker) ProjectsOf(ctx context.Context, claimant string) ([]register.Pr
 	return l.Register.ProjectsOf(ctx, claimant)
 }
 
+func (l *linker) ProjectRecord(ctx context.Context, id string) (register.ProjectRecord, error) {
+	if l.fail != nil {
+		return register.ProjectRecord{}, l.fail
+	}
+	return l.Register.Project(ctx, id)
+}
+
 func linkRequestFor(token, id, body string) *http.Request {
 	r := authed(http.MethodPost, "/projects/"+id, token)
 	r.Body = http.NoBody
@@ -191,4 +198,32 @@ func TestAnUnlinkedProjectIsADenial(t *testing.T) {
 		return nil, fmt.Errorf("%w: project %s", register.ErrNotLinked, id)
 	}
 	require.Equal(t, http.StatusNotFound, h.do(t, authed(http.MethodGet, "/jobs/QmNobody", testToken)).Code)
+}
+
+// A project is read by anyone who may write to one of its repositories, not
+// only by whoever linked it, and an id they may not see is a 404.
+func TestReadingAProject(t *testing.T) {
+	l := newLinker(t)
+	h := newHarness(t, Config{}, WithLinker(l))
+	h.projects.repositories = func(id string) ([]string, error) {
+		rec, err := l.Register.Project(context.Background(), id)
+		return rec.Repositories(), err
+	}
+	require.Equal(t, http.StatusCreated, h.do(t, linkRequestFor(testToken, "QmPay", linkBody)).Code)
+
+	w := h.do(t, authed(http.MethodGet, "/projects/QmPay", testToken))
+	require.Equal(t, http.StatusOK, w.Code)
+	var got projectResponse
+	require.NoError(t, json.Unmarshal([]byte(bodyOf(t, w)), &got))
+	require.Equal(t, "github.com/acme/cfg", got.Config)
+	require.Equal(t, []string{"github.com/acme/pay"}, got.Code)
+
+	require.Equal(t, http.StatusNotFound, h.do(t, authed(http.MethodGet, "/projects/QmNone", testToken)).Code)
+	require.Equal(t, http.StatusNotFound, h.do(t, authed(http.MethodGet, "/projects/QmPay", "someone-else")).Code)
+
+	l.fail = errors.New("register down")
+	require.Equal(t, http.StatusBadGateway, h.do(t, authed(http.MethodGet, "/projects/QmPay", testToken)).Code)
+
+	bare := newHarness(t, Config{})
+	require.Equal(t, http.StatusNotFound, bare.do(t, authed(http.MethodGet, "/projects/"+testProject, testToken)).Code)
 }

@@ -59,6 +59,15 @@ const (
 	// forge registered the subscription, to a backend that refused the
 	// enqueue — is otherwise only found by the next push. See streams.go.
 	DefaultStreamResync = 5 * time.Minute
+
+	// DefaultGitTimeout bounds one git exchange through /git/ and one
+	// server-side read or commit: a clone moves a whole repository.
+	DefaultGitTimeout = 10 * time.Minute
+	// DefaultMaxPushBytes bounds one git-receive-pack body through /git/.
+	DefaultMaxPushBytes = 256 << 20
+	// DefaultMaxFetchBytes bounds the pack a server-side read or commit
+	// fetches; a repository larger than this is cloned through /git/.
+	DefaultMaxFetchBytes = 64 << 20
 )
 
 // The four limits, two per public surface, and they are four because the two
@@ -186,6 +195,12 @@ type Config struct {
 	StreamBackoff    time.Duration `yaml:"streamBackoff"`
 	StreamBackoffMax time.Duration `yaml:"streamBackoffMax"`
 	StreamResync     time.Duration `yaml:"streamResync"`
+
+	// GitTimeout, MaxPushBytes and MaxFetchBytes bound the git routes
+	// (gitapi.go, contentapi.go). Zero means the matching default.
+	GitTimeout    time.Duration `yaml:"gitTimeout"`
+	MaxPushBytes  int64         `yaml:"maxPushBytes"`
+	MaxFetchBytes int64         `yaml:"maxFetchBytes"`
 }
 
 func (c Config) withDefaults() (Config, error) {
@@ -201,6 +216,7 @@ func (c Config) withDefaults() (Config, error) {
 		{"streamBackoff", c.StreamBackoff},
 		{"streamBackoffMax", c.StreamBackoffMax},
 		{"streamResync", c.StreamResync},
+		{"gitTimeout", c.GitTimeout},
 	} {
 		if d.value < 0 {
 			return c, fmt.Errorf("build: %s must not be negative", d.name)
@@ -208,6 +224,9 @@ func (c Config) withDefaults() (Config, error) {
 	}
 	if c.MaxBodyBytes < 0 {
 		return c, fmt.Errorf("build: maxBodyBytes must not be negative")
+	}
+	if c.MaxPushBytes < 0 || c.MaxFetchBytes < 0 {
+		return c, fmt.Errorf("build: maxPushBytes and maxFetchBytes must not be negative")
 	}
 	if c.SecretCacheMax < 0 {
 		return c, fmt.Errorf("build: secretCacheMax must not be negative")
@@ -232,6 +251,15 @@ func (c Config) withDefaults() (Config, error) {
 
 	if c.MaxBodyBytes == 0 {
 		c.MaxBodyBytes = DefaultMaxBodyBytes
+	}
+	if c.GitTimeout == 0 {
+		c.GitTimeout = DefaultGitTimeout
+	}
+	if c.MaxPushBytes == 0 {
+		c.MaxPushBytes = DefaultMaxPushBytes
+	}
+	if c.MaxFetchBytes == 0 {
+		c.MaxFetchBytes = DefaultMaxFetchBytes
 	}
 	if c.ReadHeaderTimeout == 0 {
 		c.ReadHeaderTimeout = DefaultReadHeaderTimeout
@@ -382,6 +410,9 @@ type Vault interface {
 type Linker interface {
 	LinkProject(ctx context.Context, l register.Link) (register.ProjectRecord, error)
 	ProjectsOf(ctx context.Context, claimant string) ([]register.ProjectRecord, error)
+	// ProjectRecord is one linked project; an unknown id is
+	// register.ErrNotLinked.
+	ProjectRecord(ctx context.Context, projectID string) (register.ProjectRecord, error)
 }
 
 // Streams is a forge's own authenticated push feed, for the forges that have
@@ -558,3 +589,43 @@ type Admissions interface {
 	// admitted, and if not, why — in words the caller can act on.
 	Admit(ctx context.Context, cred Credentials, key repokey.Key) (admitted bool, reason string, err error)
 }
+
+// Repositories is what a console does at a forge, under the caller's own
+// connection: the forge credential never leaves this process (repoapi.go,
+// gitapi.go, contentapi.go).
+type Repositories interface {
+	// List is the repositories the holder of token reaches on host.
+	List(ctx context.Context, token, host string) ([]RepositoryInfo, error)
+	// Create makes key, empty, as the holder of token.
+	Create(ctx context.Context, token string, key repokey.Key, in NewRepository) (RepositoryInfo, error)
+	// ReadAccess reports whether the holder of token may read key.
+	ReadAccess(ctx context.Context, token string, key repokey.Key) (Access, error)
+	// Remote is key's https git address, and a transport that carries
+	// token to that host and nowhere else.
+	Remote(ctx context.Context, token string, key repokey.Key) (Remote, error)
+}
+
+// RepositoryInfo is one repository as the forge describes it.
+type RepositoryInfo struct {
+	Repository    string `json:"repository"`
+	DefaultBranch string `json:"default_branch"`
+	Private       bool   `json:"private"`
+}
+
+// NewRepository is what a created repository is given.
+type NewRepository struct {
+	Description string
+	Private     bool
+}
+
+// Remote is one repository's git address, with its credential attached by
+// Transport, and the account commits made through it are authored as.
+type Remote struct {
+	URL       *url.URL
+	Transport http.RoundTripper
+	Author    string
+	Email     string
+}
+
+// ErrUnsupported is a forge that cannot answer the question asked.
+var ErrUnsupported = errors.New("build: this forge cannot do that")

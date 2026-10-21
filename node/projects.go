@@ -90,6 +90,11 @@ func (p projectTable) Repositories(ctx context.Context, projectID string) ([]str
 	return rec.Repositories(), nil
 }
 
+// ProjectRecord is the frontend's read of one project.
+func (p projectTable) ProjectRecord(ctx context.Context, projectID string) (pkgregister.ProjectRecord, error) {
+	return p.record(ctx, projectID)
+}
+
 func (p projectTable) record(ctx context.Context, projectID string) (pkgregister.ProjectRecord, error) {
 	t, err := p.table(ctx)
 	if err != nil {
