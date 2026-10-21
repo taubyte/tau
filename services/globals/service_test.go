@@ -2,14 +2,18 @@ package globals
 
 import (
 	"context"
+	"crypto"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
 	"io"
 	"log"
+	"math/big"
 	"net"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -32,15 +36,14 @@ import (
 	"github.com/taubyte/tau/pkg/certificate/acme"
 	kvdbmock "github.com/taubyte/tau/pkg/kvdb/mock"
 	globalsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/globals/v2"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/globals/v2/globalsv2connect"
 )
 
 const zone = "tau.example.io"
 
 // The CA is pebble, in process. Its resolver answers `_acme-challenge` TXT
-// lookups by asking the globals nodes through a Client, which is exactly
-// what a dns node does; it has no HTTP-01 port to reach, so every name here
-// is proved by DNS-01.
+// lookups from a copy of the challenge store, which is exactly what a dns
+// node does; it has no HTTP-01 port to reach, so every name here is proved
+// by DNS-01.
 
 type vault struct {
 	mu   sync.Mutex
@@ -95,7 +98,6 @@ type fleet struct {
 	nodes   []*Service
 	ca      *ca.CAImpl
 	pebble  *httptest.Server
-	clients []*Client
 	now     time.Time
 	nowMu   sync.Mutex
 	nodesMu sync.Mutex
@@ -130,6 +132,13 @@ func newHost(t *testing.T, mn mocknet.Mocknet) host.Host {
 	return h
 }
 
+func (f *fleet) challenges(t *testing.T) *Challenges {
+	t.Helper()
+	c, err := ChallengesIn(t.Context(), f.chStore, f.clock)
+	require.NoError(t, err)
+	return c
+}
+
 // newFleet starts pebble and n globals nodes over one database and one
 // vault, which is what replication converges them to.
 func newFleet(t *testing.T, n int, wildcard bool) *fleet {
@@ -137,19 +146,18 @@ func newFleet(t *testing.T, n int, wildcard bool) *fleet {
 	t.Setenv("PEBBLE_VA_NOSLEEP", "1")
 	t.Setenv("PEBBLE_WFE_NONCEREJECT", "0")
 	t.Setenv("PEBBLE_AUTHZREUSE", "0")
-
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
 	database, err := kvdbmock.New().New(nil, "certificate", 0)
 	require.NoError(t, err)
-	f := &fleet{mn: mn, db: database, vault: &vault{data: map[string][]byte{}}, now: time.Now()}
+	f := &fleet{mn: mn, db: database, vault: &vault{data: map[string][]byte{}}, now: time.Now(), chStore: pkgcache.NewMemStore()}
 
 	logger := log.New(io.Discard, "", 0)
 	store := db.NewMemoryStore()
 	f.ca = ca.New(logger, store, "", "ecdsa", 0, 1, map[string]ca.Profile{"default": {Description: "default"}})
 
-	// The resolver asks a client on a host of its own.
-	asker := f.client(t)
+	reader := f.challenges(t)
+	reader.wait = 0
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	srv := &mdns.Server{Listener: l, Handler: mdns.HandlerFunc(func(w mdns.ResponseWriter, r *mdns.Msg) {
@@ -157,9 +165,9 @@ func newFleet(t *testing.T, n int, wildcard bool) *fleet {
 		m.SetReply(r)
 		q := r.Question[0]
 		if fqdn, ok := strings.CutPrefix(strings.TrimSuffix(q.Name, "."), "_acme-challenge."); ok && q.Qtype == mdns.TypeTXT {
-			values, _ := asker.Challenges(context.Background(), fqdn)
+			values, _ := reader.Challenges(context.Background(), fqdn)
 			for _, v := range values {
-				m.Answer = append(m.Answer, &mdns.TXT{Hdr: mdns.RR_Header{Name: q.Name, Rrtype: mdns.TypeTXT, Class: mdns.ClassINET, Ttl: 1}, Txt: []string{v}})
+				m.Answer = append(m.Answer, &mdns.TXT{Hdr: mdns.RR_Header{Name: q.Name, Rrtype: mdns.TypeTXT, Class: mdns.ClassINET, Ttl: 0}, Txt: []string{v}})
 			}
 		}
 		w.WriteMsg(m)
@@ -172,32 +180,26 @@ func newFleet(t *testing.T, n int, wildcard bool) *fleet {
 	f.pebble = httptest.NewTLSServer(front.Handler())
 	t.Cleanup(f.pebble.Close)
 
-	f.chStore = pkgcache.NewMemStore()
 	f.cfg = Config{Certificate: CertificateConfig{
 		ACME: pkgcertificate.ACME{
 			Enabled:   true,
 			Directory: f.pebble.URL + "/dir",
 			RootCA:    string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: f.pebble.Certificate().Raw})),
 		},
-		Wildcard:   wildcard,
-		Zone:       zone + ".",
-		RenewEvery: time.Hour,
+		Wildcard: wildcard,
+		Zone:     zone + ".",
+		Seed:     []byte("the cloud's swarm key"),
 	}}
 	for range n {
 		f.add(t)
 	}
-	require.NoError(t, mn.LinkAll())
-	require.NoError(t, mn.ConnectAllButSelf())
+	f.connect(t)
 	return f
 }
 
-func (f *fleet) add(t *testing.T, opts ...Option) *Service {
+func (f *fleet) add(t *testing.T) *Service {
 	t.Helper()
-	h := newHost(t, f.mn)
-	s, err := New(h, f.db, f.cfg, append([]Option{
-		WithVault(f.vault), WithPeers(f.members), WithClock(f.clock), WithChallenges(f.chStore),
-		WithLogger(t.Logf),
-	}, opts...)...)
+	s, err := New(newHost(t, f.mn), f.db, f.cfg, WithClock(f.clock))
 	require.NoError(t, err)
 	require.NoError(t, s.Start(t.Context()))
 	t.Cleanup(func() { s.Close() })
@@ -207,13 +209,17 @@ func (f *fleet) add(t *testing.T, opts ...Option) *Service {
 	return s
 }
 
-func (f *fleet) client(t *testing.T) *Client {
+// client is a node that is not a globals node, with its own copy of the
+// challenge store.
+func (f *fleet) client(t *testing.T, opts ...ClientOption) *Client {
 	t.Helper()
-	c, err := NewClient(newHost(t, f.mn), f.members, func() *Service { return nil }, f.vault, zone)
+	c, err := NewClient(newHost(t, f.mn), f.members, func() *Service { return nil }, f.vault, f.cfg, append([]ClientOption{
+		WithChallengeStore(f.challenges(t)), WithClientClock(f.clock), WithCertWait(0), WithLogger(t.Logf),
+	}, opts...)...)
 	require.NoError(t, err)
-	c.now = f.clock
+	c.poll = 20 * time.Millisecond
 	t.Cleanup(func() { c.Close() })
-	f.clients = append(f.clients, c)
+	f.connect(t)
 	return c
 }
 
@@ -233,10 +239,16 @@ func (f *fleet) verify(t *testing.T, cert tls.Certificate, name string) {
 	require.NoError(t, err)
 }
 
-func TestAServiceNameAndAGeneratedNameAreIssuedByDNS01AndShared(t *testing.T) {
+func (f *fleet) kept(t *testing.T, name string) int {
+	t.Helper()
+	keys, err := f.db.List(t.Context(), certPrefix+name+"/")
+	require.NoError(t, err)
+	return len(keys)
+}
+
+func TestANodeOrdersWhatItNeedsAndAnotherReadsIt(t *testing.T) {
 	f := newFleet(t, 2, false)
 	c := f.client(t)
-	f.connect(t)
 
 	for _, name := range []string{"build-frontend.tau.example.io", "api.shop.tau.example.io"} {
 		cert, err := c.GetCertificate(&tls.ClientHelloInfo{ServerName: strings.ToUpper(name) + "."})
@@ -244,27 +256,26 @@ func TestAServiceNameAndAGeneratedNameAreIssuedByDNS01AndShared(t *testing.T) {
 		f.verify(t, *cert, name)
 
 		// ANOTHER NODE READS THE SAME ONE, from the store and the vault.
-		other := f.client(t)
-		f.connect(t)
-		again, err := other.Certificate(t.Context(), name)
+		again, err := f.client(t).Certificate(t.Context(), name)
 		require.NoError(t, err)
-		require.Equal(t, cert.Certificate[0], again.Certificate[0], "one issuance per name, cluster-wide")
+		require.Equal(t, cert.Certificate[0], again.Certificate[0])
+		require.Equal(t, 1, f.kept(t, name))
 	}
-	keys, err := f.db.List(t.Context(), certPrefix)
-	require.NoError(t, err)
-	require.Len(t, keys, 2)
 
-	// EVERY CERTIFICATE NODE ADOPTED ONE ACCOUNT KEY.
-	a, err := f.nodes[0].Thumbprint(t.Context())
-	require.NoError(t, err)
-	b, err := f.nodes[1].Thumbprint(t.Context())
-	require.NoError(t, err)
+	// ONE ACCOUNT, kept in the vault, and HTTP-01 answered by any node from it.
+	_, kept := f.vault.data[VaultProject+"/"+VaultEnvironment+"/account-"+digest(f.cfg.Certificate.ACME.Directory)]
+	require.True(t, kept)
+	a, ok := c.Challenge("tok")
+	require.True(t, ok)
+	b, ok := f.client(t).Challenge("tok")
+	require.True(t, ok)
 	require.Equal(t, a, b)
-	_, ok := c.Challenge("tok")
-	require.False(t, ok, "no order is proving that token, so no node answers it")
+	require.True(t, strings.HasPrefix(a, "tok."))
+	_, ok = c.Challenge("not/a/token")
+	require.False(t, ok)
 
 	// NO TXT RECORD OUTLIVES ITS CHALLENGE.
-	values, err := c.Challenges(t.Context(), "build-frontend.tau.example.io")
+	values, err := f.challenges(t).values(t.Context(), "build-frontend.tau.example.io")
 	require.NoError(t, err)
 	require.Empty(t, values)
 
@@ -278,7 +289,6 @@ func TestAServiceNameAndAGeneratedNameAreIssuedByDNS01AndShared(t *testing.T) {
 func TestTheWildcardAnswersEveryServiceName(t *testing.T) {
 	f := newFleet(t, 1, true)
 	c := f.client(t)
-	f.connect(t)
 
 	cert, err := c.Certificate(t.Context(), "dns.tau.example.io")
 	require.NoError(t, err)
@@ -289,219 +299,77 @@ func TestTheWildcardAnswersEveryServiceName(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, cert.Certificate[0], other.Certificate[0], "the one wildcard, not a second issuance")
 
-	// A GENERATED NAME IS TWO LABELS UNDER THE ZONE, which the wildcard does
-	// not cover, so it is issued its own.
 	generated, err := c.Certificate(t.Context(), "api.shop.tau.example.io")
 	require.NoError(t, err)
 	require.Equal(t, []string{"api.shop.tau.example.io"}, generated.Leaf.DNSNames)
 }
 
-func TestTheRenewalLoopIssuesWhatItOwnsAndRenewsWhatIsDue(t *testing.T) {
-	f := newFleet(t, 0, true)
-	s := f.add(t, WithNames(func() []string { return []string{"build-frontend." + zone, "outside.example.com"} }))
-	f.connect(t)
-
-	s.renewPass(t.Context())
-	names, err := s.keptNames(t.Context())
+func TestANodeWaitsForOneOrderedElsewhere(t *testing.T) {
+	f := newFleet(t, 1, false)
+	const name = "w." + zone
+	waiting := f.client(t, WithCertWait(time.Minute))
+	got := make(chan tls.Certificate, 1)
+	go func() {
+		cert, err := waiting.Certificate(context.Background(), name)
+		if err == nil {
+			got <- cert
+		}
+		close(got)
+	}()
+	ordered, err := f.client(t).Certificate(t.Context(), name)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"*." + zone}, names, "the service name is the wildcard's; a name outside the zone is never wanted")
-
-	first, err := s.newest(t.Context(), "*."+zone)
-	require.NoError(t, err)
-
-	// DUE: two thirds of its life gone.
-	f.advance(first.leaf.NotAfter.Sub(first.leaf.NotBefore) * 3 / 4)
-	s.renewPass(t.Context())
-	renewed, err := s.newest(t.Context(), "*."+zone)
-	require.NoError(t, err)
-	require.NotEqual(t, first.leaf.SerialNumber, renewed.leaf.SerialNumber)
-	keys, err := f.db.List(t.Context(), certPrefix)
-	require.NoError(t, err)
-	require.Len(t, keys, 2, "both issuances are kept; the newest is read")
+	select {
+	case cert := <-got:
+		require.Equal(t, ordered.Certificate[0], cert.Certificate[0])
+	case <-time.After(30 * time.Second):
+		t.Fatal("the waiting node never read the one ordered elsewhere")
+	}
+	require.Equal(t, 1, f.kept(t, name), "the waiting node ordered nothing")
 }
 
-func TestOneLeaseWinsAndAnExpiredOneDoesNot(t *testing.T) {
+func TestTwoOrdersOfOneNameConvergeOnTheNewest(t *testing.T) {
 	f := newFleet(t, 2, false)
-	a, b := f.nodes[0], f.nodes[1]
-	const name = "x." + zone
-
-	won, err := a.claim(t.Context(), name)
+	const name = "dup." + zone
+	a, b := f.client(t), f.client(t)
+	first, err := a.Certificate(t.Context(), name)
 	require.NoError(t, err)
-	require.True(t, won)
-	f.advance(time.Millisecond)
-	won, err = b.claim(t.Context(), name)
+	// b ORDERS ITS OWN as a node that did not see a's would.
+	issuer, err := b.acmeIssuer(t.Context())
 	require.NoError(t, err)
-	require.False(t, won, "the earlier lease holds")
-
-	// A LOSER WITH NOTHING KEPT says who holds it rather than ordering.
-	_, err = b.Ensure(t.Context(), name)
-	require.ErrorIs(t, err, ErrIssuing)
-
-	// EXPIRED, the earlier lease no longer counts.
-	f.advance(DefaultLease + time.Second)
-	won, err = b.claim(t.Context(), name)
+	_, err = issuer.Issue(name)
 	require.NoError(t, err)
-	require.True(t, won)
-	b.release(name)
-
-	// A malformed lease is ignored.
-	require.NoError(t, f.db.Put(t.Context(), leasePrefix+name+"/junk", []byte("x")))
-	won, err = b.claim(t.Context(), name)
+	require.Equal(t, 2, f.kept(t, name))
+	newest, err := f.nodes[0].newest(t.Context(), name)
 	require.NoError(t, err)
-	require.True(t, won)
+
+	got, err := b.Certificate(t.Context(), name)
+	require.NoError(t, err)
+	require.Equal(t, newest.leaf.Raw, got.Certificate[0])
+
+	// a SERVES ITS OWN until it reads the store again, then the newest.
+	again, err := a.Certificate(t.Context(), name)
+	require.NoError(t, err)
+	require.Equal(t, first.Certificate[0], again.Certificate[0])
+	f.advance(Recheck)
+	require.Eventually(t, func() bool {
+		got, err := a.Certificate(t.Context(), name)
+		return err == nil && slices.Equal(got.Certificate[0], newest.leaf.Raw)
+	}, 10*time.Second, 20*time.Millisecond)
 }
 
-// TestARetryAfterTheWinnerReleasedConverges: the winner failed its order and
-// released, and both nodes retry. The one that has waited longest orders.
-func TestARetryAfterTheWinnerReleasedConverges(t *testing.T) {
-	f := newFleet(t, 2, false)
-	a, b := f.nodes[0], f.nodes[1]
-	const name = "x." + zone
-
-	won, err := a.claim(t.Context(), name)
-	require.NoError(t, err)
-	require.True(t, won)
-	f.advance(time.Millisecond)
-	won, err = b.claim(t.Context(), name)
-	require.NoError(t, err)
-	require.False(t, won)
-	a.release(name)
-
-	f.advance(time.Millisecond)
-	won, err = a.claim(t.Context(), name)
-	require.NoError(t, err)
-	require.False(t, won, "b's lease is older than a's new one")
-	f.advance(time.Millisecond)
-	won, err = b.claim(t.Context(), name)
-	require.NoError(t, err)
-	require.True(t, won, "b's retry keeps its lease and so stays the oldest")
-}
-
-func TestOwnerIsDeterministic(t *testing.T) {
-	peers := []peer.ID{"a", "b", "c"}
-	first, ok := Owner("n", peers)
-	require.True(t, ok)
-	reversed := []peer.ID{"c", "b", "a"}
-	again, _ := Owner("n", reversed)
-	require.Equal(t, first, again)
-	_, ok = Owner("n", nil)
-	require.False(t, ok)
-}
-
-func TestWhatIsRefused(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	h := newHost(t, mn)
-	database, err := kvdbmock.New().New(nil, "c", 0)
-	require.NoError(t, err)
-	cfg := func(c CertificateConfig) Config { return Config{Certificate: c} }
-	mem := WithChallenges(pkgcache.NewMemStore())
-	on := cfg(CertificateConfig{ACME: pkgcertificate.ACME{Enabled: true}, Zone: zone})
-
-	_, err = New(nil, database, on)
-	require.ErrorIs(t, err, ErrNoHost)
-	_, err = New(h, nil, on)
-	require.ErrorIs(t, err, ErrNoDB)
-	_, err = New(h, database, on)
-	require.ErrorIs(t, err, ErrNoChallenges, "DNS-01 needs somewhere to hold its values")
-	_, err = New(h, database, cfg(CertificateConfig{Zone: zone}))
-	require.ErrorIs(t, err, ErrDisabled)
-	_, err = New(h, database, cfg(CertificateConfig{ACME: on.Certificate.ACME}))
-	require.ErrorIs(t, err, ErrNoZone)
-
-	_, err = New(h, database, cfg(CertificateConfig{ACME: on.Certificate.ACME, Zone: zone, Challenge: "tls-alpn-01"}))
-	require.ErrorContains(t, err, "neither")
-	_, err = New(h, database, cfg(CertificateConfig{ACME: on.Certificate.ACME, Zone: zone, Challenge: ChallengeHTTP, Wildcard: true}))
-	require.ErrorContains(t, err, "dns-01 only")
-	_, err = New(h, database, cfg(CertificateConfig{ACME: pkgcertificate.ACME{Enabled: true, RootCA: "nope"}, Zone: zone}))
-	require.Error(t, err)
-	http01, err := New(h, database, cfg(CertificateConfig{ACME: on.Certificate.ACME, Zone: zone, Challenge: ChallengeHTTP}), WithVault(&vault{data: map[string][]byte{}}))
-	require.NoError(t, err)
-	_, err = http01.acmeIssuer(t.Context())
-	require.NoError(t, err)
-
-	s, err := New(h, database, on, mem)
-	require.NoError(t, err)
-	_, err = s.Thumbprint(t.Context())
-	require.ErrorIs(t, err, ErrNoVault, "no vault and no configured account key")
-	require.ErrorIs(t, store{s}.Keep(t.Context(), "n", nil), ErrNoVault)
-	_, err = s.Ensure(t.Context(), "elsewhere.example.com")
-	require.ErrorIs(t, err, ErrNotZone)
-	require.NoError(t, s.Close(), "closing what was never started")
-
-	// A CONFIGURED ACCOUNT KEY is used as it is, with no vault.
-	_, blob, err := acme.MintKey()
-	require.NoError(t, err)
-	configured := on
-	configured.Certificate.ACME.AccountKey = string(blob)
-	s, err = New(h, database, configured, mem)
-	require.NoError(t, err)
-	thumb, err := s.Thumbprint(t.Context())
-	require.NoError(t, err)
-	require.NotEmpty(t, thumb)
-
-	// A VAULT THAT FAILS fails the account key, and the keeping of a key.
-	broken := &vault{data: map[string][]byte{}, fail: errors.New("down")}
-	s, err = New(h, database, on, mem, WithVault(broken))
-	require.NoError(t, err)
-	_, err = s.Thumbprint(t.Context())
-	require.ErrorContains(t, err, "down")
-
-	_, err = NewClient(nil, nil, nil, broken, zone)
-	require.ErrorIs(t, err, ErrNoHost)
-	_, err = NewClient(h, nil, nil, nil, zone)
-	require.ErrorIs(t, err, ErrNoVault)
-
-	// A CLIENT REACHING NO MEMBER says so.
-	c, err := NewClient(h, func() []peer.ID { return nil }, func() *Service { return nil }, broken, zone)
-	require.NoError(t, err)
-	_, err = c.Certificate(t.Context(), "a."+zone)
-	require.ErrorIs(t, err, ErrNoMembers)
-	_, ok := c.Challenge("tok")
-	require.False(t, ok)
-	_, err = c.Challenges(t.Context(), "a."+zone)
-	require.ErrorIs(t, err, ErrNoMembers)
-}
-
-func TestKeptRecordsThatCannotBeReadAreSkipped(t *testing.T) {
+func TestADueCertificateIsRenewedAndAnOutageKeepsTheOldOne(t *testing.T) {
 	f := newFleet(t, 1, false)
 	s := f.nodes[0]
-	const name = "k." + zone
-	far := f.clock().Add(time.Hour)
-	require.NoError(t, f.db.Put(t.Context(), certKey(name, far, "a"), []byte("not a record")))
-	_, err := s.newest(t.Context(), name)
-	require.ErrorIs(t, err, ErrNotKept)
-	_, err = store{s}.Load(t.Context(), name)
-	require.ErrorIs(t, err, acme.ErrMiss)
-	require.Error(t, store{s}.Keep(t.Context(), name, []byte("no pem")))
-
-	// AN EXPIRED CHALLENGE is not answered.
-	require.NoError(t, s.challenges.Present(t.Context(), name, "v"))
-	values, err := s.Challenges(t.Context(), acme.KindDNS, name)
+	// A CLIENT ON THE GLOBALS NODE ITSELF calls it without a stream.
+	c, err := NewClient(s.host, func() []peer.ID { return nil }, func() *Service { return s }, f.vault, f.cfg,
+		WithChallengeStore(f.challenges(t)), WithClientClock(f.clock), WithCertWait(0))
 	require.NoError(t, err)
-	require.Equal(t, []string{"v"}, values)
-	f.advance(ChallengeTTL + time.Second)
-	values, err = s.Challenges(t.Context(), acme.KindDNS, name)
-	require.NoError(t, err)
-	require.Empty(t, values)
-}
-
-func TestADueCertificateIsRefetchedAndAnOutageKeepsTheOldOne(t *testing.T) {
-	f := newFleet(t, 1, false)
-	s := f.nodes[0]
-	// A CLIENT ON THE CERTIFICATE NODE ITSELF calls it without a stream.
-	c, err := NewClient(s.host, func() []peer.ID { return nil }, func() *Service { return s }, f.vault, zone)
-	require.NoError(t, err)
-	c.now = f.clock
 	const name = "r." + zone
 
 	first, err := c.TLSConfig().GetCertificate(&tls.ClientHelloInfo{ServerName: name})
 	require.NoError(t, err)
-	blob, err := store{s}.Load(t.Context(), name)
-	require.NoError(t, err)
-	require.Contains(t, string(blob), "PRIVATE KEY")
 
-	// DUE: the cached one answers while its successor is fetched.
+	// DUE: the cached one answers while its successor is ordered.
 	f.advance(first.Leaf.NotAfter.Sub(first.Leaf.NotBefore) * 3 / 4)
 	again, err := c.Certificate(t.Context(), name)
 	require.NoError(t, err)
@@ -511,59 +379,189 @@ func TestADueCertificateIsRefetchedAndAnOutageKeepsTheOldOne(t *testing.T) {
 		return err == nil && !got.Leaf.Equal(first.Leaf)
 	}, 30*time.Second, 50*time.Millisecond, "the renewed certificate replaces it")
 
-	// THE CA GONE, a due certificate is still served by the node. pebble
-	// dates what it issues by the real clock, so the renewed one is due by
-	// the advanced clock already.
+	// THE CA GONE, a due certificate is still served. pebble dates what it
+	// issues by the real clock, so the renewed one is due by the advanced
+	// clock already.
 	f.pebble.Close()
 	renewed, err := s.newest(t.Context(), name)
 	require.NoError(t, err)
-	require.True(t, s.due(renewed))
-	kept, err := s.Ensure(t.Context(), name)
+	got, err := c.obtain(t.Context(), name)
 	require.NoError(t, err)
-	require.Equal(t, renewed.leaf.SerialNumber, kept.leaf.SerialNumber)
+	require.Equal(t, renewed.leaf.Raw, got.Certificate[0])
 
 	// AND A NAME NOTHING IS KEPT FOR is an error, not a wrong certificate.
-	_, err = s.Ensure(t.Context(), "never."+zone)
+	_, err = c.Certificate(t.Context(), "never."+zone)
 	require.Error(t, err)
 }
 
-func TestTheWireSaysWhatWentWrong(t *testing.T) {
+func TestWhatIsRefused(t *testing.T) {
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+	h := newHost(t, mn)
+	database, err := kvdbmock.New().New(nil, "c", 0)
+	require.NoError(t, err)
+	cfg := func(c CertificateConfig) Config { return Config{Certificate: c} }
+	acmeOn := pkgcertificate.ACME{Enabled: true}
+	on := cfg(CertificateConfig{ACME: acmeOn, Zone: zone})
+
+	_, err = New(nil, database, on)
+	require.ErrorIs(t, err, ErrNoHost)
+	_, err = New(h, nil, on)
+	require.ErrorIs(t, err, ErrNoDB)
+	_, err = New(h, database, cfg(CertificateConfig{Zone: zone}))
+	require.ErrorIs(t, err, ErrDisabled)
+	_, err = New(h, database, cfg(CertificateConfig{ACME: acmeOn}))
+	require.ErrorIs(t, err, ErrNoZone)
+	_, err = New(h, database, cfg(CertificateConfig{ACME: acmeOn, Zone: zone, Challenge: "tls-alpn-01"}))
+	require.ErrorContains(t, err, "neither")
+	_, err = New(h, database, cfg(CertificateConfig{ACME: acmeOn, Zone: zone, Challenge: ChallengeHTTP, Wildcard: true}))
+	require.ErrorContains(t, err, "dns-01 only")
+	_, err = New(h, database, cfg(CertificateConfig{ACME: acmeOn, Zone: zone, Challenge: ChallengeDNS}))
+	require.NoError(t, err)
+	s, err := New(h, database, on)
+	require.NoError(t, err)
+	require.NoError(t, s.Close(), "closing what was never started")
+
+	empty := &vault{data: map[string][]byte{}}
+	none := func() []peer.ID { return nil }
+	nolocal := func() *Service { return nil }
+	_, err = NewClient(nil, none, nolocal, empty, on)
+	require.ErrorIs(t, err, ErrNoHost)
+	_, err = NewClient(h, none, nolocal, nil, on)
+	require.ErrorIs(t, err, ErrNoVault)
+	_, err = NewClient(h, none, nolocal, empty, cfg(CertificateConfig{ACME: acmeOn}))
+	require.ErrorIs(t, err, ErrNoZone)
+
+	// NO KEY, NONE KEPT AND NO SEED: no account.
+	c, err := NewClient(h, none, nolocal, empty, on)
+	require.NoError(t, err)
+	_, err = c.acmeIssuer(t.Context())
+	require.ErrorIs(t, err, ErrNoAccount)
+	_, ok := c.Challenge("tok")
+	require.False(t, ok)
+
+	// A REACHABLE CLIENT REACHING NO MEMBER says so.
+	_, err = c.Certificate(t.Context(), "a."+zone)
+	require.ErrorIs(t, err, ErrNoMembers)
+	require.ErrorIs(t, keeper{c}.Keep(t.Context(), "a."+zone, pemOf(t)), ErrNoMembers)
+	require.ErrorContains(t, keeper{c}.Keep(t.Context(), "a."+zone, []byte("no pem")), "no chain")
+
+	// A CONFIGURED KEY is used as it is; DNS-01 without a store is refused.
+	_, blob, err := acme.MintKey()
+	require.NoError(t, err)
+	configured := on
+	configured.Certificate.ACME.AccountKey = string(blob)
+	c, err = NewClient(h, none, nolocal, empty, configured)
+	require.NoError(t, err)
+	_, ok = c.Challenge("tok")
+	require.True(t, ok)
+	_, err = c.acmeIssuer(t.Context())
+	require.ErrorIs(t, err, ErrNoChallenges)
+	configured.Certificate.ACME.AccountKey = "not pem"
+	_, err = NewClient(h, none, nolocal, empty, configured)
+	require.Error(t, err)
+
+	// HTTP-01 needs no store, and the key the vault holds wins over the seed.
+	_, kept, err := acme.MintKey()
+	require.NoError(t, err)
+	held := &vault{data: map[string][]byte{VaultProject + "/" + VaultEnvironment + "/account-" + digest(pkgcertificate.LetsEncrypt): kept}}
+	httpOn := cfg(CertificateConfig{ACME: acmeOn, Zone: zone, Challenge: ChallengeHTTP, Seed: []byte("seed")})
+	c, err = NewClient(h, none, nolocal, held, httpOn)
+	require.NoError(t, err)
+	_, err = c.acmeIssuer(t.Context())
+	require.NoError(t, err)
+	want, err := acme.ParseKey(kept)
+	require.NoError(t, err)
+	require.True(t, c.account.Public().(interface{ Equal(crypto.PublicKey) bool }).Equal(want.Public()))
+
+	// A VAULT THAT FAILS does not stop a derived account, but fails a leaf key.
+	broken := &vault{data: map[string][]byte{}, fail: errors.New("down")}
+	c, err = NewClient(h, none, nolocal, broken, httpOn)
+	require.NoError(t, err)
+	_, ok = c.Challenge("tok")
+	require.True(t, ok)
+	require.ErrorContains(t, keeper{c}.Keep(t.Context(), "a."+zone, pemOf(t)), "down")
+}
+
+// pemOf is a self-signed chain and its key, as an issuer hands a store.
+func pemOf(t *testing.T) []byte {
+	t.Helper()
+	key, keyPEM, err := acme.MintKey()
+	require.NoError(t, err)
+	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"a." + zone}, NotBefore: time.Now(), NotAfter: time.Now().Add(time.Hour)}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.Public(), key)
+	require.NoError(t, err)
+	return append(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), keyPEM...)
+}
+
+func TestTheStoreKeepsOnlyWhatItCanServe(t *testing.T) {
 	f := newFleet(t, 1, false)
-	h := handler{f.nodes[0]}
+	s := f.nodes[0]
+	h := handler{s}
+	const name = "a." + zone
+	far := f.clock().Add(time.Hour)
+	require.NoError(t, f.db.Put(t.Context(), certKey(name, far, "a"), []byte("not a record")))
+	_, err := s.newest(t.Context(), name)
+	require.ErrorIs(t, err, ErrNotKept)
+	_, err = h.Certificate(t.Context(), connect.NewRequest(&globalsv2.CertificateRequest{Name: name}))
+	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 
-	_, err := h.Certificate(t.Context(), connectRequest("elsewhere.example.com", true))
-	require.Equal(t, "invalid_argument", codeOf(err))
-	_, err = h.Certificate(t.Context(), connectRequest("absent."+zone, false))
-	require.Equal(t, "not_found", codeOf(err))
-
-	f.vault.mu.Lock()
-	f.vault.fail = errors.New("down")
-	f.vault.mu.Unlock()
-	_, err = h.Certificate(t.Context(), connectRequest("down."+zone, true))
-	require.Equal(t, "unavailable", codeOf(err))
-
-	// A CLIENT whose every target refuses the name stops at the first.
-	c := f.client(t)
-	f.connect(t)
-	err = c.each("x", func(svc globalsv2connect.CertificateServiceClient) error {
-		_, err := svc.Certificate(t.Context(), connectRequest("elsewhere.example.com", true))
+	blob := pemOf(t)
+	block, _ := pem.Decode(blob)
+	chain := pem.EncodeToMemory(block)
+	ref := &globalsv2.SecretRef{Project: VaultProject, Environment: VaultEnvironment, Name: "leaf-x"}
+	keep := func(rec *globalsv2.Issued) error {
+		_, err := h.Keep(t.Context(), connect.NewRequest(rec))
 		return err
-	})
-	require.ErrorContains(t, err, "only names in the cloud's zone")
-
-	// A KEY THE VAULT CANNOT OPEN fails the fetch by name.
-	_, err = c.Certificate(t.Context(), "down."+zone)
-	require.Error(t, err)
-}
-
-func connectRequest(name string, issue bool) *connect.Request[globalsv2.CertificateRequest] {
-	return connect.NewRequest(&globalsv2.CertificateRequest{Name: name, Issue: issue})
-}
-
-func codeOf(err error) string {
-	var ce *connect.Error
-	if errors.As(err, &ce) {
-		return ce.Code().String()
 	}
-	return ""
+	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(keep(&globalsv2.Issued{Name: "a.example.com", Chain: chain, Key: ref})))
+	require.Error(t, keep(&globalsv2.Issued{Name: name, Chain: []byte("x"), Key: ref}))
+	require.ErrorContains(t, keep(&globalsv2.Issued{Name: "b." + zone, Chain: chain, Key: ref}), "does not name it")
+	require.ErrorContains(t, keep(&globalsv2.Issued{Name: name, Chain: chain, Key: &globalsv2.SecretRef{Project: "shop"}}), "certificate secrets")
+	require.NoError(t, keep(&globalsv2.Issued{Name: name, Chain: chain, Key: ref}))
+	got, err := h.Certificate(t.Context(), connect.NewRequest(&globalsv2.CertificateRequest{Name: name}))
+	require.NoError(t, err)
+	require.Equal(t, "leaf-x", got.Msg.GetKey().GetName())
+
+	// A KEY THE VAULT DOES NOT HOLD fails the read by name.
+	c := f.client(t)
+	_, err = c.Certificate(t.Context(), name)
+	require.ErrorContains(t, err, "opening the key")
+	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(wire(errors.New("x"))))
+}
+
+func TestChallengesAreOnePerPresentationAndWaitedFor(t *testing.T) {
+	f := newFleet(t, 0, false)
+	a, b := f.challenges(t), f.challenges(t)
+	a.wait = 2 * time.Second
+	const name = "c." + zone
+	require.NoError(t, a.Present(t.Context(), name, "v"))
+	require.NoError(t, b.Present(t.Context(), name, "v"))
+	values, err := a.Challenges(t.Context(), name)
+	require.NoError(t, err)
+	require.Equal(t, []string{"v", "v"}, values, "two orders presenting one value hold two entries")
+	require.NoError(t, b.CleanUp(t.Context(), name, "v"))
+	require.NoError(t, b.CleanUp(t.Context(), name, "v"), "withdrawing twice is nothing")
+	values, err = a.Challenges(t.Context(), name)
+	require.NoError(t, err)
+	require.Equal(t, []string{"v"}, values, "b withdrew only its own")
+
+	// EXPIRED, nothing answers, after the wait.
+	f.advance(ChallengeTTL + time.Second)
+	a.wait = 50 * time.Millisecond
+	_, err = a.Challenges(t.Context(), name)
+	require.ErrorIs(t, err, ErrNoValue)
+
+	// A VALUE ARRIVING DURING THE WAIT is answered.
+	a.wait = 5 * time.Second
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		b.Present(context.Background(), "late."+zone, "w")
+	}()
+	values, err = a.Challenges(t.Context(), "late."+zone)
+	require.NoError(t, err)
+	require.Equal(t, []string{"w"}, values)
+
+	_, err = ChallengesIn(t.Context(), nil, f.clock)
+	require.ErrorIs(t, err, ErrNoChallenges)
 }

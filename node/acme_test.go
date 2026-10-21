@@ -20,7 +20,7 @@ func TestACloudIssuingCertificatesNeedsItsZoneAndAWorkableConfig(t *testing.T) {
 	t.Cleanup(func() { mn.Close() })
 	on := globals.Config{Certificate: globals.CertificateConfig{ACME: certificate.ACME{Enabled: true}}}
 
-	// A GATEWAY OR A CERTIFICATE NODE with no zone cannot say what it issues.
+	// A GATEWAY OR A GLOBALS NODE with no zone cannot say what it issues.
 	for _, services := range [][]string{{Register, Discovery, Gateway}, {Discovery, Secrets, Globals}} {
 		h := newHost(t, mn)
 		_, err := New(Config{Services: services, Globals: on}, WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}), WithRoot(t.TempDir()))
@@ -29,7 +29,7 @@ func TestACloudIssuingCertificatesNeedsItsZoneAndAWorkableConfig(t *testing.T) {
 
 	cfg := Config{Services: []string{Register, Discovery, Secrets, Gateway, DNS, Globals}, Globals: on, Gateway: gateway.Config{CloudFqdn: "tau.example.io"}}
 	n, _, _ := makeNode(t, cfg)
-	require.NotNil(t, n.globals, "a globals node issues")
+	require.NotNil(t, n.globals, "a globals node hosts the store")
 	require.NotNil(t, n.certs, "and its gateway and dns server take the client")
 
 	cfg.Globals.Certificate.ACME.EAB.KeyID = "half"
@@ -37,15 +37,15 @@ func TestACloudIssuingCertificatesNeedsItsZoneAndAWorkableConfig(t *testing.T) {
 	_, err := New(cfg, WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}), WithRoot(t.TempDir()))
 	require.ErrorContains(t, err, "external account binding")
 
-	// A CERTIFICATE NODE KEEPS ITS CHAINS IN A DATABASE.
+	// A GLOBALS NODE KEEPS ITS CHAINS IN A DATABASE.
 	h = newHost(t, mn)
 	_, err = New(Config{Services: []string{Discovery, Globals}, Globals: on, Gateway: gateway.Config{CloudFqdn: "tau.example.io"}}, WithHost(h), WithPubSub(newPubSub(t, h)))
 	require.ErrorIs(t, err, ErrNoDatabases)
 }
 
 // THE BUILD FRONTEND SERVES TLS in a cloud that issues, so a forge's hook
-// reaches https://build-frontend.<cloud fqdn>. With no globals node the
-// handshake fails, which is the proof it was a handshake and not plain HTTP.
+// reaches https://build-frontend.<cloud fqdn>. With no globals node to keep a
+// certificate in, the handshake fails, which is the proof it was a handshake and not plain HTTP.
 func TestTheBuildFrontendServesTLSWhenTheCloudIssues(t *testing.T) {
 	n, _, _ := makeNode(t, Config{
 		Services:      []string{Discovery, BuildFrontend},
@@ -64,7 +64,7 @@ func TestTheBuildFrontendServesTLSWhenTheCloudIssues(t *testing.T) {
 	require.Contains(t, string(body), "HTTPS server")
 
 	_, err = tls.Dial("tcp", n.BuildFrontendAddr().String(), &tls.Config{ServerName: "build-frontend.tau.example.io"})
-	require.Error(t, err, "no globals node answers, so nothing is presented")
+	require.Error(t, err, "no globals node keeps one, so nothing is presented")
 
 	secure, err := n.ServiceTLS()
 	require.NoError(t, err)
@@ -75,4 +75,18 @@ func TestTheBuildFrontendServesTLSWhenTheCloudIssues(t *testing.T) {
 	secure, err = plain.ServiceTLS()
 	require.NoError(t, err)
 	require.Nil(t, secure)
+}
+
+// A DNS NODE WITH NO DATABASES holds no copy of the challenge store, so it
+// cannot answer DNS-01 and says so instead of answering empty.
+func TestADNSNodeOfAnIssuingCloudNeedsTheChallengeStore(t *testing.T) {
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+	h := newHost(t, mn)
+	_, err := New(Config{
+		Services: []string{Discovery, DNS},
+		Gateway:  gateway.Config{CloudFqdn: "tau.example.io"},
+		Globals:  globals.Config{Certificate: globals.CertificateConfig{ACME: certificate.ACME{Enabled: true}}},
+	}, WithHost(h), WithPubSub(newPubSub(t, h)), WithRoot(t.TempDir()))
+	require.ErrorIs(t, err, ErrNoDatabases)
 }

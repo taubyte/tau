@@ -9,7 +9,7 @@ import (
 )
 
 // challenges.go answers DNS-01: the TXT records of `_acme-challenge.<name>`
-// for a name in the cloud's zone, while a globals node is proving it.
+// for a name in the cloud's zone, while an order is proving it.
 //
 // They are asked for at query time from the reader the node composes — the
 // globals service's challenge cache — rather than carried in the discovery

@@ -22,7 +22,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -484,105 +483,18 @@ func TestIssueOrdersAgainWhateverIsKept(t *testing.T) {
 	require.ErrorContains(t, err, "not a name")
 }
 
-// answers is an HTTPPresenter in memory, what every gateway would read.
-type answers struct {
-	mu     sync.Mutex
-	tokens map[string]string
-}
-
-func (a *answers) PresentHTTP(_ context.Context, token, keyAuth string) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.tokens[token] = keyAuth
-	return nil
-}
-
-func (a *answers) CleanUpHTTP(_ context.Context, token, keyAuth string) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.tokens[token] == keyAuth {
-		delete(a.tokens, token)
-	}
-	return nil
-}
-
-func (a *answers) answer(token string) (string, bool) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	v, ok := a.tokens[token]
-	return v, ok
-}
-
-// confirmer holds back n times, then confirms what it is asked about while
-// held is true.
-type confirmer struct {
-	mu    sync.Mutex
-	n     int
-	asked []string
-	held  func(kind, name, value string) bool
-}
-
-func (c *confirmer) Confirmed(_ context.Context, kind, name, value string) (bool, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.asked = append(c.asked, kind)
-	if c.n > 0 {
-		c.n--
-		return false, errors.New("a responder is behind")
-	}
-	return c.held(kind, name, value), nil
-}
-
-func TestTheCALooksOnlyOnceEveryResponderHoldsTheAnswer(t *testing.T) {
-	c := newCloud(t, nil)
-	published := &answers{tokens: map[string]string{}}
-	held := &confirmer{n: 3, held: func(kind, token, value string) bool {
-		got, ok := published.answer(token)
-		return kind == KindHTTP && ok && got == value
-	}}
-	i := c.issuer(t, certificate.ACME{}, t.TempDir(), WithHTTP(published), WithConfirm(held))
-	var looked atomic.Int32
-	c.answer = func(token string) (string, bool) {
-		looked.Add(1)
-		return published.answer(token)
-	}
-	cert, err := i.Certificate(t.Context(), "a.shop.example.io")
+func TestADerivedKeyIsTheSameForTheSameSeed(t *testing.T) {
+	a, pemA, err := DeriveKey([]byte("swarm"), "dir")
 	require.NoError(t, err)
-	c.verify(t, cert.Certificate[0], "a.shop.example.io")
-	require.Len(t, held.asked, 4, "asked until every responder held it")
-	require.NotZero(t, looked.Load())
-	require.Empty(t, published.tokens, "the answer is withdrawn once the challenge is decided")
-
-	// DNS-01 the same way.
-	dnsHeld := &confirmer{n: 2, held: func(kind, fqdn, value string) bool {
-		return kind == KindDNS && slices.Contains(c.txt.lookup(fqdn), value)
-	}}
-	d := c.issuer(t, certificate.ACME{}, t.TempDir(), WithDNS("tau.example.io", c.txt), WithConfirm(dnsHeld))
-	cert, err = d.Certificate(t.Context(), "*.tau.example.io")
+	_, pemB, err := DeriveKey([]byte("swarm"), "dir")
 	require.NoError(t, err)
-	c.verify(t, cert.Certificate[0], "x.tau.example.io")
-	require.Len(t, dnsHeld.asked, 3)
-}
-
-func TestAnAnswerNotEveryResponderHoldsIsNeverShownToTheCA(t *testing.T) {
-	c := newCloud(t, nil)
-	published := &answers{tokens: map[string]string{}}
-	never := &confirmer{held: func(string, string, string) bool { return false }}
-	i := c.issuer(t, certificate.ACME{}, t.TempDir(), WithHTTP(published), WithConfirm(never), WithConfirmWait(300*time.Millisecond))
-	var looked atomic.Int32
-	c.answer = func(token string) (string, bool) {
-		looked.Add(1)
-		return published.answer(token)
-	}
-	_, err := i.Certificate(t.Context(), "a.shop.example.io")
-	require.ErrorIs(t, err, ErrNotHeld)
-	require.Zero(t, looked.Load(), "the CA was never asked to look")
-	require.Empty(t, published.tokens)
-
-	behind := &confirmer{n: 1 << 30}
-	d := c.issuer(t, certificate.ACME{}, t.TempDir(), WithDNS("tau.example.io", c.txt), WithConfirm(behind), WithConfirmWait(300*time.Millisecond))
-	_, err = d.Certificate(t.Context(), "*.tau.example.io")
-	require.ErrorIs(t, err, ErrNotHeld)
-	require.ErrorContains(t, err, "a responder is behind")
-	require.Empty(t, c.txt.lookup("tau.example.io"))
+	require.Equal(t, pemA, pemB)
+	_, pemC, err := DeriveKey([]byte("swarm"), "other")
+	require.NoError(t, err)
+	require.NotEqual(t, pemA, pemC)
+	parsed, err := ParseKey(pemA)
+	require.NoError(t, err)
+	require.True(t, parsed.Public().(*ecdsa.PublicKey).Equal(a.Public()))
+	_, _, err = DeriveKey(nil, "dir")
+	require.Error(t, err)
 }

@@ -78,8 +78,8 @@ func (n *Node) openDNS() error {
 		options = append(options, dns.WithServices(dns.Services{Zone: zone, Names: n.knownServices()}))
 	}
 
-	// AND DNS-01, when the cloud issues: the globals nodes hold the TXT
-	// values of the orders they are proving.
+	// AND DNS-01, when the cloud issues: this node's copy of the
+	// challenge store holds the TXT values of the orders being proved.
 	challenges, err := n.challengeReader()
 	if err != nil {
 		return err

@@ -67,7 +67,8 @@ const (
 )
 
 // fleet is three nodes: two run globals and dns and are the zone's NS, and a
-// third runs only a gateway and the build frontend, and issues nothing.
+// third runs only a gateway and the build frontend, and orders what it serves
+// itself.
 type fleet struct {
 	addrs   [3]string
 	nodes   []*Running
@@ -132,9 +133,9 @@ func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 		})
 		require.True(t, f.reached(resolverAddr, name, dns.TypeA), "the resolver's answer came from tau's dns, not from a cache")
 		t.Cleanup(func() {
-			valid, invalid := ca.authorizations(t)
+			valid, invalid := ca.quiesced(t)
 			require.NotZero(t, valid, "pebble's log names what it decided")
-			require.Zero(t, invalid, "no authorization was ever failed: the CA looked only once every responder held the answer")
+			require.Zero(t, invalid, "no authorization was ever failed")
 		})
 		return f, resolverAddr, ca.roots(t)
 	}
@@ -192,8 +193,7 @@ func (f *fleet) sameLeafEverywhere(t *testing.T, name string, roots *x509.CertPo
 }
 
 // issued waits for a node to present a certificate for name that verifies to
-// pebble's root: on a fleet the order is placed by whichever globals node owns
-// it, and the others answer once it is stored.
+// pebble's root: the first node asked orders it, and the others read it.
 func issued(t *testing.T, address, name string, roots *x509.CertPool) *http.Response {
 	t.Helper()
 	client := &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: name}}}
@@ -431,7 +431,7 @@ func (p *livePebble) get(url string) ([]byte, error) {
 
 // authorizations counts what pebble decided, from its own log: every
 // authorization it set valid and every one it set invalid.
-func (p *livePebble) authorizations(t *testing.T) (valid, invalid int) {
+func (p *livePebble) authorizations(t *testing.T) (valid, invalid int, lines []string) {
 	t.Helper()
 	backend, err := docker.New(core.DockerConfig{})
 	require.NoError(t, err)
@@ -439,7 +439,8 @@ func (p *livePebble) authorizations(t *testing.T) (valid, invalid int) {
 	require.NoError(t, err)
 	defer rc.Close()
 	var out bytes.Buffer
-	stdcopy.StdCopy(&out, &out, rc)
+	_, err = stdcopy.StdCopy(&out, &out, rc)
+	require.NoError(t, err, "reading pebble's log")
 	for _, line := range strings.Split(out.String(), "\n") {
 		switch {
 		case !strings.Contains(line, " authz "):
@@ -447,8 +448,28 @@ func (p *livePebble) authorizations(t *testing.T) (valid, invalid int) {
 			valid++
 		case strings.Contains(line, " set INVALID "):
 			invalid++
-			t.Logf("pebble: %s", line)
+			lines = append(lines, line)
 		}
+	}
+	return valid, invalid, lines
+}
+
+// quiesced is the counts once pebble's log has stopped changing for a few
+// seconds, so an order still being decided is counted too.
+func (p *livePebble) quiesced(t *testing.T) (valid, invalid int) {
+	t.Helper()
+	valid, invalid, lines := p.authorizations(t)
+	stable := time.Now()
+	for deadline := time.Now().Add(2 * time.Minute); time.Since(stable) < 5*time.Second; {
+		require.True(t, time.Now().Before(deadline), "pebble's log never settled")
+		time.Sleep(time.Second)
+		v, i, l := p.authorizations(t)
+		if v != valid || i != invalid {
+			valid, invalid, lines, stable = v, i, l, time.Now()
+		}
+	}
+	for _, line := range lines {
+		t.Logf("pebble: %s", line)
 	}
 	return valid, invalid
 }

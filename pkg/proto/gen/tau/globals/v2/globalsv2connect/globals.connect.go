@@ -5,12 +5,10 @@
 // The globals service's surface between tau nodes, over p2p/rpc: what the
 // cloud holds once for every region. Certificates are the first of it.
 //
-// A globals node issues from an ACME CA and keeps what it issued: the
-// chain in its own database, the private key in the secrets service. A node
-// serving TLS asks one for a name's chain and the secret holding its key, and
-// opens the key from the vault itself. DNS-01 and HTTP-01 answers live in a
-// replicated store every globals, dns and gateway node holds a copy of; a
-// node without one asks the globals nodes for them.
+// A globals node keeps the cloud's certificate chains, one record per
+// issuance; the private key of each is in the secrets service. Any node that
+// needs a certificate orders it itself, keeps it here, and reads the newest
+// one back.
 package globalsv2connect
 
 import (
@@ -45,20 +43,16 @@ const (
 	// CertificateServiceCertificateProcedure is the fully-qualified name of the CertificateService's
 	// Certificate RPC.
 	CertificateServiceCertificateProcedure = "/tau.globals.v2.CertificateService/Certificate"
-	// CertificateServiceChallengesProcedure is the fully-qualified name of the CertificateService's
-	// Challenges RPC.
-	CertificateServiceChallengesProcedure = "/tau.globals.v2.CertificateService/Challenges"
+	// CertificateServiceKeepProcedure is the fully-qualified name of the CertificateService's Keep RPC.
+	CertificateServiceKeepProcedure = "/tau.globals.v2.CertificateService/Keep"
 )
 
 // CertificateServiceClient is a client for the tau.globals.v2.CertificateService service.
 type CertificateServiceClient interface {
-	// Certificate is the newest certificate kept for a name. With issue set, a
-	// name nothing is kept for is issued now, by the node answering.
+	// Certificate is the newest unexpired certificate kept for a name.
 	Certificate(context.Context, *connect.Request[v2.CertificateRequest]) (*connect.Response[v2.Issued], error)
-	// Challenges are the answers being presented for a name while an order
-	// proves it: the TXT values of `_acme-challenge.<name>` for dns-01, the key
-	// authorization of a token for http-01.
-	Challenges(context.Context, *connect.Request[v2.ChallengesRequest]) (*connect.Response[v2.ChallengeValues], error)
+	// Keep stores one issuance beside the others kept for its name.
+	Keep(context.Context, *connect.Request[v2.Issued]) (*connect.Response[v2.Empty], error)
 }
 
 // NewCertificateServiceClient constructs a client for the tau.globals.v2.CertificateService
@@ -78,10 +72,10 @@ func NewCertificateServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(certificateServiceMethods.ByName("Certificate")),
 			connect.WithClientOptions(opts...),
 		),
-		challenges: connect.NewClient[v2.ChallengesRequest, v2.ChallengeValues](
+		keep: connect.NewClient[v2.Issued, v2.Empty](
 			httpClient,
-			baseURL+CertificateServiceChallengesProcedure,
-			connect.WithSchema(certificateServiceMethods.ByName("Challenges")),
+			baseURL+CertificateServiceKeepProcedure,
+			connect.WithSchema(certificateServiceMethods.ByName("Keep")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -90,7 +84,7 @@ func NewCertificateServiceClient(httpClient connect.HTTPClient, baseURL string, 
 // certificateServiceClient implements CertificateServiceClient.
 type certificateServiceClient struct {
 	certificate *connect.Client[v2.CertificateRequest, v2.Issued]
-	challenges  *connect.Client[v2.ChallengesRequest, v2.ChallengeValues]
+	keep        *connect.Client[v2.Issued, v2.Empty]
 }
 
 // Certificate calls tau.globals.v2.CertificateService.Certificate.
@@ -98,20 +92,17 @@ func (c *certificateServiceClient) Certificate(ctx context.Context, req *connect
 	return c.certificate.CallUnary(ctx, req)
 }
 
-// Challenges calls tau.globals.v2.CertificateService.Challenges.
-func (c *certificateServiceClient) Challenges(ctx context.Context, req *connect.Request[v2.ChallengesRequest]) (*connect.Response[v2.ChallengeValues], error) {
-	return c.challenges.CallUnary(ctx, req)
+// Keep calls tau.globals.v2.CertificateService.Keep.
+func (c *certificateServiceClient) Keep(ctx context.Context, req *connect.Request[v2.Issued]) (*connect.Response[v2.Empty], error) {
+	return c.keep.CallUnary(ctx, req)
 }
 
 // CertificateServiceHandler is an implementation of the tau.globals.v2.CertificateService service.
 type CertificateServiceHandler interface {
-	// Certificate is the newest certificate kept for a name. With issue set, a
-	// name nothing is kept for is issued now, by the node answering.
+	// Certificate is the newest unexpired certificate kept for a name.
 	Certificate(context.Context, *connect.Request[v2.CertificateRequest]) (*connect.Response[v2.Issued], error)
-	// Challenges are the answers being presented for a name while an order
-	// proves it: the TXT values of `_acme-challenge.<name>` for dns-01, the key
-	// authorization of a token for http-01.
-	Challenges(context.Context, *connect.Request[v2.ChallengesRequest]) (*connect.Response[v2.ChallengeValues], error)
+	// Keep stores one issuance beside the others kept for its name.
+	Keep(context.Context, *connect.Request[v2.Issued]) (*connect.Response[v2.Empty], error)
 }
 
 // NewCertificateServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -127,18 +118,18 @@ func NewCertificateServiceHandler(svc CertificateServiceHandler, opts ...connect
 		connect.WithSchema(certificateServiceMethods.ByName("Certificate")),
 		connect.WithHandlerOptions(opts...),
 	)
-	certificateServiceChallengesHandler := connect.NewUnaryHandler(
-		CertificateServiceChallengesProcedure,
-		svc.Challenges,
-		connect.WithSchema(certificateServiceMethods.ByName("Challenges")),
+	certificateServiceKeepHandler := connect.NewUnaryHandler(
+		CertificateServiceKeepProcedure,
+		svc.Keep,
+		connect.WithSchema(certificateServiceMethods.ByName("Keep")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/tau.globals.v2.CertificateService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CertificateServiceCertificateProcedure:
 			certificateServiceCertificateHandler.ServeHTTP(w, r)
-		case CertificateServiceChallengesProcedure:
-			certificateServiceChallengesHandler.ServeHTTP(w, r)
+		case CertificateServiceKeepProcedure:
+			certificateServiceKeepHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -152,6 +143,6 @@ func (UnimplementedCertificateServiceHandler) Certificate(context.Context, *conn
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.globals.v2.CertificateService.Certificate is not implemented"))
 }
 
-func (UnimplementedCertificateServiceHandler) Challenges(context.Context, *connect.Request[v2.ChallengesRequest]) (*connect.Response[v2.ChallengeValues], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.globals.v2.CertificateService.Challenges is not implemented"))
+func (UnimplementedCertificateServiceHandler) Keep(context.Context, *connect.Request[v2.Issued]) (*connect.Response[v2.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.globals.v2.CertificateService.Keep is not implemented"))
 }

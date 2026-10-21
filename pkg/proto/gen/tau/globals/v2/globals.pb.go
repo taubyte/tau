@@ -7,12 +7,10 @@
 // The globals service's surface between tau nodes, over p2p/rpc: what the
 // cloud holds once for every region. Certificates are the first of it.
 //
-// A globals node issues from an ACME CA and keeps what it issued: the
-// chain in its own database, the private key in the secrets service. A node
-// serving TLS asks one for a name's chain and the secret holding its key, and
-// opens the key from the vault itself. DNS-01 and HTTP-01 answers live in a
-// replicated store every globals, dns and gateway node holds a copy of; a
-// node without one asks the globals nodes for them.
+// A globals node keeps the cloud's certificate chains, one record per
+// issuance; the private key of each is in the secrets service. Any node that
+// needs a certificate orders it itself, keeps it here, and reads the newest
+// one back.
 
 package globalsv2
 
@@ -71,7 +69,6 @@ type CertificateRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// name is a DNS name, or `*.` and one, lowercase and without a trailing dot.
 	Name          string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Issue         bool   `protobuf:"varint,2,opt,name=issue,proto3" json:"issue,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -111,13 +108,6 @@ func (x *CertificateRequest) GetName() string {
 		return x.Name
 	}
 	return ""
-}
-
-func (x *CertificateRequest) GetIssue() bool {
-	if x != nil {
-		return x.Issue
-	}
-	return false
 }
 
 // Issued is one certificate as kept.
@@ -252,114 +242,14 @@ func (x *SecretRef) GetName() string {
 	return ""
 }
 
-type ChallengesRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// kind is "dns-01" or "http-01".
-	Kind string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
-	// name is the fqdn being proved, without `_acme-challenge.`, for dns-01,
-	// and the token for http-01.
-	Name          string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ChallengesRequest) Reset() {
-	*x = ChallengesRequest{}
-	mi := &file_tau_globals_v2_globals_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ChallengesRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ChallengesRequest) ProtoMessage() {}
-
-func (x *ChallengesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_globals_v2_globals_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ChallengesRequest.ProtoReflect.Descriptor instead.
-func (*ChallengesRequest) Descriptor() ([]byte, []int) {
-	return file_tau_globals_v2_globals_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *ChallengesRequest) GetKind() string {
-	if x != nil {
-		return x.Kind
-	}
-	return ""
-}
-
-func (x *ChallengesRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-type ChallengeValues struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Values        []string               `protobuf:"bytes,1,rep,name=values,proto3" json:"values,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ChallengeValues) Reset() {
-	*x = ChallengeValues{}
-	mi := &file_tau_globals_v2_globals_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ChallengeValues) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ChallengeValues) ProtoMessage() {}
-
-func (x *ChallengeValues) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_globals_v2_globals_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ChallengeValues.ProtoReflect.Descriptor instead.
-func (*ChallengeValues) Descriptor() ([]byte, []int) {
-	return file_tau_globals_v2_globals_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *ChallengeValues) GetValues() []string {
-	if x != nil {
-		return x.Values
-	}
-	return nil
-}
-
 var File_tau_globals_v2_globals_proto protoreflect.FileDescriptor
 
 const file_tau_globals_v2_globals_proto_rawDesc = "" +
 	"\n" +
 	"\x1ctau/globals/v2/globals.proto\x12\x0etau.globals.v2\"\a\n" +
-	"\x05Empty\">\n" +
+	"\x05Empty\".\n" +
 	"\x12CertificateRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
-	"\x05issue\x18\x02 \x01(\bR\x05issue\"|\n" +
+	"\x04name\x18\x01 \x01(\tR\x04nameJ\x04\b\x02\x10\x03\"|\n" +
 	"\x06Issued\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05chain\x18\x02 \x01(\fR\x05chain\x12+\n" +
@@ -368,16 +258,10 @@ const file_tau_globals_v2_globals_proto_rawDesc = "" +
 	"\tSecretRef\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
 	"\venvironment\x18\x02 \x01(\tR\venvironment\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name\";\n" +
-	"\x11ChallengesRequest\x12\x12\n" +
-	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\")\n" +
-	"\x0fChallengeValues\x12\x16\n" +
-	"\x06values\x18\x01 \x03(\tR\x06values2\xb1\x01\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name2\x96\x01\n" +
 	"\x12CertificateService\x12I\n" +
-	"\vCertificate\x12\".tau.globals.v2.CertificateRequest\x1a\x16.tau.globals.v2.Issued\x12P\n" +
-	"\n" +
-	"Challenges\x12!.tau.globals.v2.ChallengesRequest\x1a\x1f.tau.globals.v2.ChallengeValuesB\xbb\x01\n" +
+	"\vCertificate\x12\".tau.globals.v2.CertificateRequest\x1a\x16.tau.globals.v2.Issued\x125\n" +
+	"\x04Keep\x12\x16.tau.globals.v2.Issued\x1a\x15.tau.globals.v2.EmptyB\xbb\x01\n" +
 	"\x12com.tau.globals.v2B\fGlobalsProtoP\x01Z=github.com/taubyte/tau/pkg/proto/gen/tau/globals/v2;globalsv2\xa2\x02\x03TGX\xaa\x02\x0eTau.Globals.V2\xca\x02\x0eTau\\Globals\\V2\xe2\x02\x1aTau\\Globals\\V2\\GPBMetadata\xea\x02\x10Tau::Globals::V2b\x06proto3"
 
 var (
@@ -392,21 +276,19 @@ func file_tau_globals_v2_globals_proto_rawDescGZIP() []byte {
 	return file_tau_globals_v2_globals_proto_rawDescData
 }
 
-var file_tau_globals_v2_globals_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_tau_globals_v2_globals_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_tau_globals_v2_globals_proto_goTypes = []any{
 	(*Empty)(nil),              // 0: tau.globals.v2.Empty
 	(*CertificateRequest)(nil), // 1: tau.globals.v2.CertificateRequest
 	(*Issued)(nil),             // 2: tau.globals.v2.Issued
 	(*SecretRef)(nil),          // 3: tau.globals.v2.SecretRef
-	(*ChallengesRequest)(nil),  // 4: tau.globals.v2.ChallengesRequest
-	(*ChallengeValues)(nil),    // 5: tau.globals.v2.ChallengeValues
 }
 var file_tau_globals_v2_globals_proto_depIdxs = []int32{
 	3, // 0: tau.globals.v2.Issued.key:type_name -> tau.globals.v2.SecretRef
 	1, // 1: tau.globals.v2.CertificateService.Certificate:input_type -> tau.globals.v2.CertificateRequest
-	4, // 2: tau.globals.v2.CertificateService.Challenges:input_type -> tau.globals.v2.ChallengesRequest
+	2, // 2: tau.globals.v2.CertificateService.Keep:input_type -> tau.globals.v2.Issued
 	2, // 3: tau.globals.v2.CertificateService.Certificate:output_type -> tau.globals.v2.Issued
-	5, // 4: tau.globals.v2.CertificateService.Challenges:output_type -> tau.globals.v2.ChallengeValues
+	0, // 4: tau.globals.v2.CertificateService.Keep:output_type -> tau.globals.v2.Empty
 	3, // [3:5] is the sub-list for method output_type
 	1, // [1:3] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -425,7 +307,7 @@ func file_tau_globals_v2_globals_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_globals_v2_globals_proto_rawDesc), len(file_tau_globals_v2_globals_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

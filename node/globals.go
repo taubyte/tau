@@ -4,34 +4,22 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"slices"
-	"strings"
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
-	"github.com/taubyte/tau/pkg/certificate/acme"
 	"github.com/taubyte/tau/services/dns"
-	"github.com/taubyte/tau/services/gateway"
 	"github.com/taubyte/tau/services/globals"
 )
 
-// globals.go wires the globals service — the cloud's certificates, for now —
-// and the one client every public listener on this node takes its
-// certificates from.
+// globals.go wires the globals service — the store of the cloud's
+// certificates, for now — and the one client every public listener on this
+// node takes its certificates from.
 //
-// # Which nodes issue, and which serve
-//
-// A node naming `globals` in its services issues; the cloud's
-// `globals.certificate.acme` turning on is what makes every other node a
-// consumer. Its gateway is handed the client as its issuer, its dns server
-// answers DNS-01 through it, and its build frontend serves TLS with it. A node
-// of a cloud with no ACME builds no client and serves what it served before.
-//
-// DNS-01 and HTTP-01 answers are cache entries over their own replicated
-// database (challengeDatabase), opened by every globals, dns and gateway
-// node. A dns node and a gateway answer from their own copy, and serve
-// globals.ResponderProtocol over it, so the node placing an order has the CA
-// look only once every one of them holds the answer.
+// A node naming `globals` in its services hosts the store; the cloud's
+// `globals.certificate.acme` turning on makes every node a client that orders
+// what it needs itself. DNS-01 values are cache entries over their own
+// replicated database (challengeDatabase), opened by every node that orders
+// or answers them.
 
 // Globals is the service that holds what the cloud keeps once for every
 // region.
@@ -67,23 +55,15 @@ func (n *Node) openGlobals() error {
 		return err
 	}
 	n.closers = append(n.closers, closerFunc(db.Close))
-
-	challenges, err := n.challengeStore()
-	if err != nil {
+	// A HOLDER OF THE CHALLENGE STORE TOO, so DNS-01 values replicate through
+	// a node that is always up.
+	if _, err := n.answers(); err != nil {
 		return err
 	}
+
 	cfg := n.cfg.Globals
 	cfg.Certificate.Zone = n.cfg.Gateway.CloudFqdn
-	options := []globals.Option{
-		globals.WithChallenges(challenges),
-		globals.WithVault(n.certVault()),
-		globals.WithPeers(func() []libp2ppeer.ID {
-			return (&fromDiscovery{node: n, name: Globals}).Known()
-		}),
-		globals.WithNames(n.servedNames),
-		globals.WithResponders(n.responders),
-		globals.WithLogger(logger.Warnf),
-	}
+	var options []globals.Option
 	if n.opts.now != nil {
 		options = append(options, globals.WithClock(n.opts.now))
 	}
@@ -94,18 +74,6 @@ func (n *Node) openGlobals() error {
 	n.globals = svc
 	n.closers = append(n.closers, svc)
 	return nil
-}
-
-// servedNames is `<service>.<zone>` for every service a node reports now.
-func (n *Node) servedNames() []string {
-	zone := strings.Trim(n.cfg.Gateway.CloudFqdn, ".")
-	var out []string
-	for _, name := range n.knownServices() {
-		if len((&fromDiscovery{node: n, name: name}).Known()) > 0 {
-			out = append(out, name+"."+zone)
-		}
-	}
-	return out
 }
 
 // certificates is the client this node's listeners take certificates from,
@@ -120,10 +88,23 @@ func (n *Node) certificates() (*globals.Client, error) {
 	if n.cfg.Gateway.CloudFqdn == "" {
 		return nil, ErrNoZoneForCertificates
 	}
+	cfg := n.cfg.Globals
+	cfg.Certificate.Zone = n.cfg.Gateway.CloudFqdn
+	options := []globals.ClientOption{globals.WithLogger(logger.Warnf)}
+	if n.opts.now != nil {
+		options = append(options, globals.WithClientClock(n.opts.now))
+	}
+	local, err := n.answers()
+	if err != nil {
+		return nil, err
+	}
+	if local != nil {
+		options = append(options, globals.WithChallengeStore(local))
+	}
 	c, err := globals.NewClient(n.opts.host,
 		func() []libp2ppeer.ID { return (&fromDiscovery{node: n, name: Globals}).Known() },
 		func() *globals.Service { return n.globals },
-		n.certVault(), n.cfg.Gateway.CloudFqdn)
+		n.certVault(), cfg, options...)
 	if err != nil {
 		return nil, err
 	}
@@ -184,101 +165,18 @@ func (n *Node) answers() (*globals.Challenges, error) {
 	return n.challengeAnswers, nil
 }
 
-// dnsChallenges answers DNS-01 with this node's copy of the values and the
-// globals nodes' together. The issuer confirms every dns node it and its
-// edge peers know of holds a value before the CA looks, but a node whose
-// view of the fleet is behind another's can be handed to the CA unconfirmed,
-// and the node that presented the value always holds it. Only nothing found
-// with a globals node silent is an error, which the dns server answers
-// SERVFAIL.
-type dnsChallenges struct {
-	local  *globals.Challenges
-	remote *globals.Client
-}
-
-func (d dnsChallenges) Challenges(ctx context.Context, fqdn string) ([]string, error) {
-	values, err := d.local.Challenges(ctx, fqdn)
-	if err != nil {
-		return nil, err
-	}
-	remote, err := d.remote.Challenges(ctx, fqdn)
-	if err != nil && len(values) == 0 {
-		return nil, err
-	}
-	for _, v := range remote {
-		if !slices.Contains(values, v) {
-			values = append(values, v)
-		}
-	}
-	return values, nil
-}
-
 // challengeReader is what this node's dns server answers DNS-01 with, or nil
 // in a cloud that issues none.
 func (n *Node) challengeReader() (dns.Challenges, error) {
-	c, err := n.certificates()
-	if c == nil || err != nil {
-		return nil, err
+	if !n.cfg.Globals.Certificate.ACME.Enabled {
+		return nil, nil
 	}
 	local, err := n.answers()
 	if err != nil {
 		return nil, err
 	}
-	if local != nil {
-		return dnsChallenges{local: local, remote: c}, nil
+	if local == nil {
+		return nil, ErrNoDatabases
 	}
-	return c, nil
-}
-
-// gatewayIssuer answers HTTP-01 from this node's copy of the store, and from
-// the globals nodes when it holds nothing for the token, for the reason
-// dnsChallenges asks them too.
-type gatewayIssuer struct {
-	*globals.Client
-	local *globals.Challenges
-}
-
-func (g gatewayIssuer) Challenge(token string) (string, bool) {
-	if answer, ok := g.local.Challenge(token); ok {
-		return answer, true
-	}
-	return g.Client.Challenge(token)
-}
-
-// gatewayIssuer is the client, answering HTTP-01 from this node's own copy
-// of the store when it has one.
-func (n *Node) gatewayIssuer(c *globals.Client) (gateway.Issuer, error) {
-	local, err := n.answers()
-	if err != nil || local == nil {
-		return c, err
-	}
-	return gatewayIssuer{Client: c, local: local}, nil
-}
-
-// responders is the nodes this one knows to answer a challenge kind: its dns
-// nodes for dns-01, its gateways for http-01.
-func (n *Node) responders(kind string) []libp2ppeer.ID {
-	role := DNS
-	if kind == acme.KindHTTP {
-		role = Gateway
-	}
-	return (&fromDiscovery{node: n, name: role}).Known()
-}
-
-// serveResponder answers globals.ResponderProtocol on a dns node or gateway
-// of a cloud that issues.
-func (n *Node) serveResponder(ctx context.Context) error {
-	if !n.cfg.Globals.Certificate.ACME.Enabled || (!n.cfg.runs(DNS) && !n.cfg.runs(Gateway)) {
-		return nil
-	}
-	local, err := n.answers()
-	if err != nil || local == nil {
-		return err
-	}
-	r, err := globals.ServeResponder(ctx, n.opts.host, local, n.responders)
-	if err != nil {
-		return err
-	}
-	n.addCloser(r)
-	return nil
+	return local, nil
 }

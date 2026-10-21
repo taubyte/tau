@@ -30,8 +30,8 @@ import (
 // certificate_test issues one certificate for a fleet: two globals nodes and
 // a frontend-only node that runs neither, against pebble in process, whose
 // validation authority resolves through the fleet's own dns — DNS-01, the
-// default. Every node presents the same leaf, which is the proof the name was
-// ordered once for the cloud and not once per node.
+// default. The first node asked orders the name and every other one reads
+// what it kept, so every node presents the same leaf.
 func TestAServiceNameIsIssuedOnceForTheFleet(t *testing.T) {
 	const cloud = "tau.dream.test"
 	t.Setenv("PEBBLE_VA_NOSLEEP", "1")

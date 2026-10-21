@@ -23,7 +23,7 @@
 //
 // A Store keeps each certificate and its key, so a restart reissues nothing.
 // The default is a directory under the node's root, which is one node's own;
-// services/globals passes one every globals node reads. A certificate
+// services/globals passes one the whole cloud reads. A certificate
 // is renewed once two thirds of its lifetime has gone, on a call that finds it
 // so, while it keeps being served.
 package acme
@@ -33,14 +33,17 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/hkdf"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -66,22 +69,7 @@ var (
 
 	// ErrMiss is a Store holding nothing for a name.
 	ErrMiss = errors.New("acme: nothing is kept for that name")
-
-	// ErrNotHeld is an answer some responder still did not hold when the
-	// issuer stopped waiting. The CA was not asked to look, so the order
-	// spent no failed authorization.
-	ErrNotHeld = errors.New("acme: not every responder holds the answer yet")
 )
-
-// The challenge kinds, as a Confirmer is asked about them.
-const (
-	KindDNS  = "dns-01"
-	KindHTTP = "http-01"
-)
-
-// ConfirmWait bounds how long an issuer waits for every responder to hold an
-// answer before giving the order up.
-const ConfirmWait = time.Minute
 
 // Store keeps issued certificates: one PEM blob per name, the chain and the
 // key together, as certificate.KeyPair reads it.
@@ -97,29 +85,12 @@ type Presenter interface {
 	CleanUp(ctx context.Context, fqdn, value string) error
 }
 
-// HTTPPresenter publishes HTTP-01 answers where every gateway reads them:
-// PresentHTTP makes keyAuth the answer for token, and CleanUpHTTP withdraws
-// that one answer.
-type HTTPPresenter interface {
-	PresentHTTP(ctx context.Context, token, keyAuth string) error
-	CleanUpHTTP(ctx context.Context, token, keyAuth string) error
-}
-
-// Confirmer says whether every responder a CA may reach holds an answer:
-// name is the fqdn for KindDNS and the token for KindHTTP.
-type Confirmer interface {
-	Confirmed(ctx context.Context, kind, name, value string) (bool, error)
-}
-
 // Issuer issues and keeps certificates for names.
 type Issuer struct {
 	client  *xacme.Client
 	store   Store
 	zone    string
 	dns     Presenter
-	http    HTTPPresenter
-	confirm Confirmer
-	wait    time.Duration
 	account *xacme.Account
 	timeout time.Duration
 	now     func() time.Time
@@ -157,18 +128,6 @@ func WithDNS(zone string, p Presenter) Option {
 		i.zone, i.dns = strings.ToLower(strings.Trim(zone, ".")), p
 	}
 }
-
-// WithHTTP publishes HTTP-01 answers through p rather than leaving them to be
-// derived from the account key, for a cloud whose gateways are not the
-// issuer.
-func WithHTTP(p HTTPPresenter) Option { return func(i *Issuer) { i.http = p } }
-
-// WithConfirm has the CA look only once c says every responder holds the
-// answer, waiting up to ConfirmWait for that.
-func WithConfirm(c Confirmer) Option { return func(i *Issuer) { i.confirm = c } }
-
-// WithConfirmWait replaces ConfirmWait.
-func WithConfirmWait(d time.Duration) Option { return func(i *Issuer) { i.wait = d } }
 
 // New builds an issuer from an operator's config, keeping what it issues in
 // dir unless WithStore says otherwise; dir is then unused and may be empty
@@ -261,14 +220,40 @@ func MintKey() (crypto.Signer, []byte, error) {
 	return key, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der}), nil
 }
 
+// DeriveKey is the P-256 key seed and info determine: every node holding the
+// same seed derives the same key, so a cloud has one account without any node
+// minting it first.
+func DeriveKey(seed []byte, info string) (crypto.Signer, []byte, error) {
+	if len(seed) == 0 {
+		return nil, nil, errors.New("acme: deriving a key needs a seed")
+	}
+	raw, err := hkdf.Key(sha256.New, seed, nil, info, 48)
+	if err != nil {
+		return nil, nil, err
+	}
+	n := new(big.Int).Sub(elliptic.P256().Params().N, big.NewInt(1))
+	d := new(big.Int).Mod(new(big.Int).SetBytes(raw), n)
+	d.Add(d, big.NewInt(1))
+	key, err := ecdsa.ParseRawPrivateKey(elliptic.P256(), d.FillBytes(make([]byte, 32)))
+	if err != nil {
+		return nil, nil, err
+	}
+	der, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		return nil, nil, err
+	}
+	return key, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der}), nil
+}
+
 // ParseKey reads an account key, PEM (PKCS#1, PKCS#8 or SEC 1).
 func ParseKey(data []byte) (crypto.Signer, error) { return parseKey(data) }
 
 // Thumbprint is the account key's JWK thumbprint: what an HTTP-01 answer is
 // the token and a dot in front of.
-func (i *Issuer) Thumbprint() (string, error) {
-	return xacme.JWKThumbprint(i.client.Key.Public())
-}
+func (i *Issuer) Thumbprint() (string, error) { return Thumbprint(i.client.Key) }
+
+// Thumbprint is key's JWK thumbprint.
+func Thumbprint(key crypto.Signer) (string, error) { return xacme.JWKThumbprint(key.Public()) }
 
 // Answer is the HTTP-01 answer for token under a thumbprint, for a node that
 // holds only the thumbprint. False for a token no CA would send.
@@ -428,8 +413,7 @@ func (i *Issuer) Certificate(ctx context.Context, name string) (tls.Certificate,
 }
 
 // Issue orders a certificate for name now, whatever is kept, and keeps it. A
-// caller deciding renewal itself — services/globals, under its lease —
-// uses this rather than Certificate.
+// caller deciding renewal itself uses this rather than Certificate.
 func (i *Issuer) Issue(name string) (*tls.Certificate, error) {
 	name = strings.ToLower(strings.TrimSuffix(name, "."))
 	if !hostname(name) {
@@ -614,64 +598,13 @@ func (i *Issuer) prove(ctx context.Context, name, url string) error {
 	return fmt.Errorf("the CA offers no %s challenge", want)
 }
 
-// proveHTTP publishes the answer when a presenter takes it, waits for every
-// gateway to hold it, and has the CA look.
+// proveHTTP has the CA look: every gateway answers from the account key.
 func (i *Issuer) proveHTTP(ctx context.Context, z *xacme.Authorization, c *xacme.Challenge) error {
-	if i.http != nil {
-		answer, err := i.client.HTTP01ChallengeResponse(c.Token)
-		if err != nil {
-			return err
-		}
-		if err := i.http.PresentHTTP(ctx, c.Token, answer); err != nil {
-			return fmt.Errorf("presenting the http-01 answer: %w", err)
-		}
-		defer func() {
-			if err := i.http.CleanUpHTTP(context.WithoutCancel(ctx), c.Token, answer); err != nil {
-				i.logf("acme: withdrawing the http-01 answer of %s: %v", z.Identifier.Value, err)
-			}
-		}()
-		if err := i.held(ctx, KindHTTP, c.Token, answer); err != nil {
-			return err
-		}
-	}
 	if _, err := i.client.Accept(ctx, c); err != nil {
 		return err
 	}
 	_, err := i.client.WaitAuthorization(ctx, z.URI)
 	return err
-}
-
-// held waits, backing off, until the confirmer says every responder holds
-// the answer, and refuses before the CA is asked when that does not happen
-// within the confirm wait.
-func (i *Issuer) held(ctx context.Context, kind, name, value string) error {
-	if i.confirm == nil {
-		return nil
-	}
-	wait := ConfirmWait
-	if i.wait > 0 {
-		wait = i.wait
-	}
-	ctx, cancel := context.WithTimeout(ctx, wait)
-	defer cancel()
-	backoff := 50 * time.Millisecond
-	var last error
-	for {
-		ok, err := i.confirm.Confirmed(ctx, kind, name, value)
-		if ok {
-			return nil
-		}
-		last = err
-		select {
-		case <-ctx.Done():
-			if last != nil {
-				return fmt.Errorf("%w: %s %s: %v", ErrNotHeld, kind, name, last)
-			}
-			return fmt.Errorf("%w: %s %s", ErrNotHeld, kind, name)
-		case <-time.After(backoff):
-		}
-		backoff = min(2*backoff, 2*time.Second)
-	}
 }
 
 // proveDNS presents the TXT value, has the CA look, and withdraws it whatever
@@ -691,9 +624,6 @@ func (i *Issuer) proveDNS(ctx context.Context, z *xacme.Authorization, c *xacme.
 			i.logf("acme: withdrawing the dns-01 record of %s: %v", fqdn, err)
 		}
 	}()
-	if err := i.held(ctx, KindDNS, fqdn, value); err != nil {
-		return err
-	}
 	if _, err := i.client.Accept(ctx, c); err != nil {
 		return err
 	}

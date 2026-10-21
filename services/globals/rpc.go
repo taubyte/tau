@@ -18,7 +18,7 @@ func (s *Service) mount() http.Handler {
 }
 
 // handler is the generated surface. Its methods have the generated client's
-// signatures, so a Client on a certificate node calls it without a stream.
+// signatures, so a Client on a globals node calls it without a stream.
 type handler struct{ s *Service }
 
 var (
@@ -27,34 +27,26 @@ var (
 )
 
 func (h handler) Certificate(ctx context.Context, req *connect.Request[globalsv2.CertificateRequest]) (*connect.Response[globalsv2.Issued], error) {
-	name := normal(req.Msg.GetName())
-	var k *kept
-	var err error
-	if req.Msg.GetIssue() {
-		k, err = h.s.Ensure(ctx, name)
-	} else {
-		k, err = h.s.newest(ctx, h.s.served(name))
-	}
-	if k == nil {
+	k, err := h.s.newest(ctx, normal(req.Msg.GetName()))
+	if err != nil {
 		return nil, wire(err)
 	}
 	return connect.NewResponse(k.record), nil
 }
 
-func (h handler) Challenges(ctx context.Context, req *connect.Request[globalsv2.ChallengesRequest]) (*connect.Response[globalsv2.ChallengeValues], error) {
-	values, err := h.s.Challenges(ctx, req.Msg.GetKind(), req.Msg.GetName())
-	if err != nil {
-		return nil, connect.NewError(connect.CodeUnavailable, err)
+func (h handler) Keep(ctx context.Context, req *connect.Request[globalsv2.Issued]) (*connect.Response[globalsv2.Empty], error) {
+	if err := h.s.keep(ctx, req.Msg); err != nil {
+		return nil, wire(err)
 	}
-	return connect.NewResponse(&globalsv2.ChallengeValues{Values: values}), nil
+	return connect.NewResponse(&globalsv2.Empty{}), nil
 }
 
 func wire(err error) error {
 	switch {
-	case errors.Is(err, ErrNotZone):
-		return connect.NewError(connect.CodeInvalidArgument, err)
 	case errors.Is(err, ErrNotKept):
 		return connect.NewError(connect.CodeNotFound, err)
+	case errors.Is(err, ErrNotZone):
+		return connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	return connect.NewError(connect.CodeUnavailable, err)
 }

@@ -96,7 +96,7 @@ type File struct {
 	// EACH HANDSHAKE IS ANSWERED BY THE GATEWAY THAT SERVES ITS NAME: the
 	// cloud's own wildcard (node.gateway.wildcard) for a generated name, the
 	// secret a gateway names for one that provides its own, and an ACME
-	// issuance by the cloud's globals nodes (node.globals.certificate) for a
+	// issuance (node.globals.certificate) for a
 	// generated name the wildcard does not cover — see services/gateway's
 	// tls.go. The CA's HTTP-01 challenges are answered on HTTP.
 	HTTPS string `yaml:"https"`
@@ -199,6 +199,9 @@ func Start(ctx context.Context, f File, added ...node.Option) (*Running, error) 
 	if err != nil {
 		return nil, err
 	}
+	// THE CLOUD'S ONE ACME ACCOUNT is derived from the secret every node of it
+	// already holds; see services/globals.
+	f.Node.Globals.Certificate.Seed = swarmKey
 
 	bootstrap, err := addrInfos(f.Bootstrap)
 	if err != nil {

@@ -125,8 +125,7 @@ type Config struct {
 	// Globals is what the cloud keeps once for every region: today its
 	// certificates — the ACME CA, the challenge type and whether the zone's
 	// wildcard is issued. Every node of a cloud that issues carries it,
-	// because it is also what makes a node serve TLS with what the globals
-	// nodes issued. See services/globals.
+	// because every node orders and serves its own certificates. See services/globals.
 	Globals globals.Config
 	Proxy   proxy.Config
 	// Auth names the built-in admin, who may sign up, the console callbacks

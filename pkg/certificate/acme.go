@@ -21,12 +21,12 @@ type ACME struct {
 	Email string `yaml:"email"`
 
 	// AccountKey is the ACME account's private key, PEM (PKCS#1, PKCS#8 or
-	// SEC 1). Empty mints one and keeps it under the node's root.
+	// SEC 1). Empty, services/globals uses the cloud's one account, kept in
+	// the secrets service and derived from the swarm key.
 	//
-	// EVERY GATEWAY NODE OF A CLOUD MUST HOLD THE SAME ONE. The HTTP-01
-	// answer is derived from the account key alone, so any node a CA reaches
-	// answers any node's challenge — which is what makes issuance work behind
-	// a name served by several nodes. A minted key is one node's own.
+	// EVERY NODE OF A CLOUD HOLDS THE SAME ONE. The HTTP-01 answer is derived
+	// from the account key alone, so any node a CA reaches answers any node's
+	// challenge.
 	AccountKey string `yaml:"accountkey"`
 
 	// RootCA is a PEM bundle trusted for the directory's TLS, beside the

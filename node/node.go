@@ -787,18 +787,14 @@ func (n *Node) openGateway() error {
 		gatewayOptions = append(gatewayOptions, gateway.WithTLS())
 	}
 
-	// A GENERATED NAME THE WILDCARD DOES NOT COVER is issued by the
-	// cloud's globals nodes, once for the cloud; see globals.go.
+	// A GENERATED NAME THE WILDCARD DOES NOT COVER is ordered by this node
+	// and kept on the cloud's globals nodes; see globals.go.
 	certs, err := n.certificates()
 	if err != nil {
 		return fmt.Errorf("node: gateway: %w", err)
 	}
 	if certs != nil {
-		issuer, err := n.gatewayIssuer(certs)
-		if err != nil {
-			return fmt.Errorf("node: gateway: %w", err)
-		}
-		gatewayOptions = append(gatewayOptions, gateway.WithIssuer(issuer))
+		gatewayOptions = append(gatewayOptions, gateway.WithIssuer(certs))
 	}
 
 	svc, err := gateway.New(n.cfg.Gateway, gatewayOptions...)
@@ -905,9 +901,6 @@ func (n *Node) Start(ctx context.Context) error {
 	// different failures, and a node that took :53 before it could answer
 	// would be answering with an empty view.
 	if err := n.listenDNS(); err != nil {
-		return err
-	}
-	if err := n.serveResponder(ctx); err != nil {
 		return err
 	}
 
