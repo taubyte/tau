@@ -367,6 +367,7 @@ func TestLinkPushesTheProject(t *testing.T) {
 	require.Len(t, out.Pushed, 40)
 
 	ls := exec.Command("git", "-c", "http.extraHeader=Authorization: "+basicAuth("x-access-token", f.TokenString()), "ls-remote", "http://"+cfg.String()+".git", "refs/heads/main")
+	ls.Dir = t.TempDir()
 	got, err := ls.CombinedOutput()
 	require.NoError(t, err, string(got))
 	require.True(t, strings.HasPrefix(string(got), out.Pushed))
