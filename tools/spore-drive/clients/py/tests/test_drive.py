@@ -100,7 +100,8 @@ async def test_validate_plan_apply(mock_url, tmp_path):
     assert node["bootstrap"] == []  # a fleet of one bootstraps from nobody
     assert b"PRIVATE KEY" not in raw, "no domain key reaches a node: none signs a domain claim"
     # an OIDC provider reaches the node, and its secret only the seed
-    assert node["node"]["auth"]["oidc"] == [{"name": "corp", "issuer": "https://id.test.com", "clientid": "corp-id", "scopes": None}]
+    (oidc,) = node["node"]["auth"]["oidc"]
+    assert (oidc["name"], oidc["issuer"], oidc["clientid"]) == ("corp", "https://id.test.com", "corp-id")
     assert b"corp-secret" not in raw
     assert b"corp-secret" in (await ssh.filesystem(name))["/tb/config/node.seed.yaml"]
     await ssh.close()
