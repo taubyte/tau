@@ -459,9 +459,13 @@ func fetchTip(ctx context.Context, remote Remote, ref string, maxBytes int64) (*
 
 	req := packp.NewUploadPackRequestFromCapabilities(adv.Capabilities)
 	req.Wants = []plumbing.Hash{out.old}
-	req.Depth = packp.DepthCommits(1)
-	if err := req.Capabilities.Set(capability.Shallow); err != nil {
-		return nil, err
+	// DEPTH ONE WHERE THE SERVER OFFERS IT, as git itself asks; a server
+	// that does not answers the whole history, still under maxBytes.
+	if adv.Capabilities.Supports(capability.Shallow) {
+		req.Depth = packp.DepthCommits(1)
+		if err := req.Capabilities.Set(capability.Shallow); err != nil {
+			return nil, err
+		}
 	}
 	if adv.Capabilities.Supports(capability.NoProgress) {
 		if err := req.Capabilities.Set(capability.NoProgress); err != nil {

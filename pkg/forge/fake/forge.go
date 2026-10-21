@@ -78,6 +78,11 @@ type Forge struct{ c *core }
 type core struct {
 	shape Shape
 
+	// scheme is how its https clone addresses are spelled: "https", or
+	// "http" for a forge Serve put on loopback.
+	scheme string
+	git    gitStores
+
 	mu       sync.Mutex
 	repos    map[string]*repo
 	aliases  map[string]string
@@ -537,7 +542,11 @@ func (c *core) cloneURL(k repokey.Key, over forge.Protocol) string {
 	if over == forge.SSH {
 		return "ssh://git@" + c.shape.Host + "/" + k.FullName() + ".git"
 	}
-	return "https://" + c.shape.Host + "/" + k.FullName() + ".git"
+	scheme := c.scheme
+	if scheme == "" {
+		scheme = "https"
+	}
+	return scheme + "://" + c.shape.Host + "/" + k.FullName() + ".git"
 }
 
 // servedCloneURL is a clone address this forge REPORTS, under whichever fault
