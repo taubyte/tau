@@ -32,6 +32,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -76,6 +77,16 @@ var (
 type Config struct {
 	// Certificate is how the cloud issues its TLS certificates.
 	Certificate CertificateConfig `yaml:"certificate"`
+
+	// Domains is how a project's own zones are proven to be its. See domain.go.
+	Domains DomainsConfig `yaml:"domains"`
+}
+
+// DomainsConfig is how custom domains are proven.
+type DomainsConfig struct {
+	// Trusted serves every zone a project declares without its TXT proof, as
+	// v1's dev mode did: a development cloud, never one anybody else deploys to.
+	Trusted bool `yaml:"trusted"`
 }
 
 // CertificateConfig is the ACME CA and what is issued from it.
@@ -159,6 +170,10 @@ type Service struct {
 	db     kvdb.KVDB
 	now    func() time.Time
 	server *rpc.Server
+
+	vault    Vault
+	resolver Resolver
+	signer   signer
 }
 
 // New builds a service.
@@ -169,11 +184,18 @@ func New(h host.Host, db kvdb.KVDB, whole Config, opts ...Option) (*Service, err
 	case db == nil:
 		return nil, ErrNoDB
 	}
-	cfg, err := whole.Certificate.normalised()
-	if err != nil {
-		return nil, err
+	// A CLOUD THAT ISSUES NO CERTIFICATE STILL PROVES ITS DOMAINS, so the
+	// certificate half is checked only when it is on.
+	cfg := whole.Certificate
+	if cfg.ACME.Enabled {
+		var err error
+		if cfg, err = cfg.normalised(); err != nil {
+			return nil, err
+		}
+	} else if cfg.Zone = normal(cfg.Zone); cfg.Zone == "" {
+		return nil, ErrNoZone
 	}
-	s := &Service{cfg: cfg, host: h, db: db, now: time.Now}
+	s := &Service{cfg: cfg, host: h, db: db, now: time.Now, resolver: net.DefaultResolver}
 	for _, opt := range opts {
 		opt(s)
 	}

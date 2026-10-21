@@ -12,10 +12,12 @@ import (
 	"log"
 	"math/big"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -42,8 +44,8 @@ const zone = "tau.example.io"
 
 // The CA is pebble, in process. Its resolver answers `_acme-challenge` TXT
 // lookups from a copy of the challenge store, which is exactly what a dns
-// node does; it has no HTTP-01 port to reach, so every name here is proved
-// by DNS-01.
+// node does, and A lookups outside the zone from loopback, where a server
+// answers HTTP-01 for a custom domain's name.
 
 type vault struct {
 	mu   sync.Mutex
@@ -98,6 +100,8 @@ type fleet struct {
 	nodes   []*Service
 	ca      *ca.CAImpl
 	pebble  *httptest.Server
+	txt     *records
+	http01  atomic.Pointer[func(string) (string, bool)]
 	now     time.Time
 	nowMu   sync.Mutex
 	nodesMu sync.Mutex
@@ -150,7 +154,7 @@ func newFleet(t *testing.T, n int, wildcard bool) *fleet {
 	t.Cleanup(func() { mn.Close() })
 	database, err := kvdbmock.New().New(nil, "certificate", 0)
 	require.NoError(t, err)
-	f := &fleet{mn: mn, db: database, vault: &vault{data: map[string][]byte{}}, now: time.Now(), chStore: pkgcache.NewMemStore()}
+	f := &fleet{mn: mn, db: database, vault: &vault{data: map[string][]byte{}}, now: time.Now(), chStore: pkgcache.NewMemStore(), txt: &records{m: map[string][]string{}}}
 
 	logger := log.New(io.Discard, "", 0)
 	store := db.NewMemoryStore()
@@ -164,6 +168,15 @@ func newFleet(t *testing.T, n int, wildcard bool) *fleet {
 		m := new(mdns.Msg)
 		m.SetReply(r)
 		q := r.Question[0]
+		name := strings.TrimSuffix(q.Name, ".")
+		if q.Qtype == mdns.TypeA && !under(zone, name) {
+			m.Answer = append(m.Answer, &mdns.A{Hdr: mdns.RR_Header{Name: q.Name, Rrtype: mdns.TypeA, Class: mdns.ClassINET}, A: net.IPv4(127, 0, 0, 1)})
+		}
+		if values, err := f.txt.LookupTXT(context.Background(), name); err == nil && q.Qtype == mdns.TypeTXT {
+			for _, v := range values {
+				m.Answer = append(m.Answer, &mdns.TXT{Hdr: mdns.RR_Header{Name: q.Name, Rrtype: mdns.TypeTXT, Class: mdns.ClassINET}, Txt: []string{v}})
+			}
+		}
 		if fqdn, ok := strings.CutPrefix(strings.TrimSuffix(q.Name, "."), "_acme-challenge."); ok && q.Qtype == mdns.TypeTXT {
 			values, _ := reader.Challenges(context.Background(), fqdn)
 			for _, v := range values {
@@ -175,7 +188,21 @@ func newFleet(t *testing.T, n int, wildcard bool) *fleet {
 	go srv.ActivateAndServe()
 	t.Cleanup(func() { srv.Shutdown() })
 
-	v := va.New(logger, 1, 0, false, l.Addr().String(), store)
+	challenge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		answer := f.http01.Load()
+		token, ok := strings.CutPrefix(r.URL.Path, "/.well-known/acme-challenge/")
+		if answer == nil || !ok {
+			http.NotFound(w, r)
+			return
+		}
+		if a, ok := (*answer)(token); ok {
+			io.WriteString(w, a)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(challenge.Close)
+	v := va.New(logger, challenge.Listener.Addr().(*net.TCPAddr).Port, 0, false, l.Addr().String(), store)
 	front := wfe.New(logger, store, v, f.ca, nil, false, false, 0, 0)
 	f.pebble = httptest.NewTLSServer(front.Handler())
 	t.Cleanup(f.pebble.Close)
@@ -199,7 +226,7 @@ func newFleet(t *testing.T, n int, wildcard bool) *fleet {
 
 func (f *fleet) add(t *testing.T) *Service {
 	t.Helper()
-	s, err := New(newHost(t, f.mn), f.db, f.cfg, WithClock(f.clock))
+	s, err := New(newHost(t, f.mn), f.db, f.cfg, WithClock(f.clock), WithVault(f.vault), WithResolver(f.txt))
 	require.NoError(t, err)
 	require.NoError(t, s.Start(t.Context()))
 	t.Cleanup(func() { s.Close() })
@@ -407,7 +434,9 @@ func TestWhatIsRefused(t *testing.T) {
 	_, err = New(h, nil, on)
 	require.ErrorIs(t, err, ErrNoDB)
 	_, err = New(h, database, cfg(CertificateConfig{Zone: zone}))
-	require.ErrorIs(t, err, ErrDisabled)
+	require.NoError(t, err, "a cloud that issues nothing still proves its domains")
+	_, err = New(h, database, cfg(CertificateConfig{}))
+	require.ErrorIs(t, err, ErrNoZone)
 	_, err = New(h, database, cfg(CertificateConfig{ACME: acmeOn}))
 	require.ErrorIs(t, err, ErrNoZone)
 	_, err = New(h, database, cfg(CertificateConfig{ACME: acmeOn, Zone: zone, Challenge: "tls-alpn-01"}))

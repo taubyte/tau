@@ -77,7 +77,22 @@ type Client struct {
 	keyMu   sync.Mutex
 	account crypto.Signer
 	issuer  *acme.Issuer
+
+	domains Prover
+	custom  map[string]custom
 }
+
+// Prover proves a custom domain is a project's. Domains is one.
+type Prover interface {
+	Prove(ctx context.Context, project, fqdn string) error
+}
+
+// custom is the project and zone a name outside the cloud's zone is ordered for.
+type custom struct{ project, zone string }
+
+// WithProver is what proves a custom zone before a name in it is ordered.
+// Without one no name outside the cloud's zone is.
+func WithProver(p Prover) ClientOption { return func(c *Client) { c.domains = p } }
 
 // ClientOption configures a Client.
 type ClientOption func(*Client)
@@ -128,6 +143,7 @@ func NewClient(h host.Host, members func() []peer.ID, local func() *Service, v V
 		cache:   map[string]*cached{},
 		conns:   map[peer.ID]*rpc.Client{},
 		refresh: map[string]bool{},
+		custom:  map[string]custom{},
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -221,7 +237,29 @@ func (c *Client) Certificate(ctx context.Context, name string) (tls.Certificate,
 	if !c.cfg.inZone(name) {
 		return tls.Certificate{}, fmt.Errorf("%w: %s is not in %s", ErrNotZone, name, c.cfg.Zone)
 	}
-	name = c.cfg.served(name)
+	return c.certificate(ctx, c.cfg.served(name))
+}
+
+// ForProject is the certificate for name in project's custom zone, ordered
+// only while the zone is proven to be the project's.
+func (c *Client) ForProject(ctx context.Context, project, zone, name string) (tls.Certificate, error) {
+	name, zone = normal(name), normal(zone)
+	if c.cfg.inZone(name) {
+		return c.Certificate(ctx, name)
+	}
+	if !under(zone, name) {
+		return tls.Certificate{}, fmt.Errorf("%w: %s is not in %s", ErrNotZone, name, zone)
+	}
+	if c.domains == nil {
+		return tls.Certificate{}, fmt.Errorf("%w: %s: this node proves no domain", ErrUnproven, zone)
+	}
+	c.mu.Lock()
+	c.custom[name] = custom{project: project, zone: zone}
+	c.mu.Unlock()
+	return c.certificate(ctx, name)
+}
+
+func (c *Client) certificate(ctx context.Context, name string) (tls.Certificate, error) {
 	c.mu.Lock()
 	hit := c.cache[name]
 	c.mu.Unlock()
@@ -297,7 +335,17 @@ func (c *Client) obtain(ctx context.Context, name string) (*tls.Certificate, err
 	if k != nil && !c.due(k.leaf) {
 		return c.open(ctx, name, k)
 	}
-	issuer, ierr := c.acmeIssuer()
+	c.mu.Lock()
+	owner, isCustom := c.custom[name]
+	c.mu.Unlock()
+	var ierr error
+	if isCustom {
+		ierr = c.domains.Prove(ctx, owner.project, owner.zone)
+	}
+	var issuer *acme.Issuer
+	if ierr == nil {
+		issuer, ierr = c.acmeIssuer()
+	}
 	if ierr == nil {
 		_, ierr = issuer.Issue(name)
 	}
@@ -424,6 +472,11 @@ func (st keeper) Keep(ctx context.Context, name string, blob []byte) error {
 		return fmt.Errorf("cm: keeping the key of %s: %w", name, err)
 	}
 	rec := &cmv2.Issued{Name: name, Chain: chain, Key: ref}
+	c.mu.Lock()
+	if owner, ok := c.custom[name]; ok {
+		rec.Project, rec.Zone = owner.project, owner.zone
+	}
+	c.mu.Unlock()
 	targets := c.targets()
 	if len(targets) == 0 {
 		return ErrNoMembers

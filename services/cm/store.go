@@ -75,7 +75,13 @@ func (s *Service) newest(ctx context.Context, name string) (*kept, error) {
 func (s *Service) keep(ctx context.Context, rec *cmv2.Issued) error {
 	name := normal(rec.GetName())
 	if !s.cfg.inZone(name) {
-		return fmt.Errorf("%w: %s is not in %s", ErrNotZone, name, s.cfg.Zone)
+		zone := normal(rec.GetZone())
+		if !under(zone, name) {
+			return fmt.Errorf("%w: %s is not in %s", ErrNotZone, name, s.cfg.Zone)
+		}
+		if err := s.prove(ctx, rec.GetProject(), zone); err != nil {
+			return err
+		}
 	}
 	k, err := parseRecord(rec)
 	if err != nil {

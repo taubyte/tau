@@ -34,10 +34,44 @@ message Issued {
   SecretRef key = 3;
   // not_after is the leaf's expiry, unix seconds.
   int64 not_after = 4;
+  // project and zone are set for a name outside the cloud's zone: the
+  // project whose proof of zone is checked before it is kept.
+  string project = 5;
+  string zone = 6;
 }
 
 message SecretRef {
   string project = 1;
   string environment = 2;
   string name = 3;
+}
+
+// DomainService proves a custom domain is the project's, the way v1 did: the
+// cloud signs a claim over (fqdn, project) and the owner publishes it as a TXT
+// record at `<first 8 of the project id>.<fqdn>`.
+service DomainService {
+  // Claim is the signed claim to publish for one fqdn and project.
+  rpc Claim(ClaimRequest) returns (DomainClaim);
+
+  // Keys is every key a claim may have been signed with, one per cm node.
+  rpc Keys(Empty) returns (ValidationKeys);
+}
+
+message ClaimRequest {
+  string fqdn = 1;
+  string project = 2;
+}
+
+message DomainClaim {
+  // entry is the name the TXT record is set at.
+  string entry = 1;
+  // type is the record type, always "txt".
+  string type = 2;
+  // token is the record's value.
+  string token = 3;
+}
+
+message ValidationKeys {
+  // public is each key, PEM.
+  repeated bytes public = 1;
 }

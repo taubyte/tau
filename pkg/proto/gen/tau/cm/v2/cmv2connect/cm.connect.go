@@ -30,6 +30,8 @@ const _ = connect.IsAtLeastVersion1_13_0
 const (
 	// CertificateServiceName is the fully-qualified name of the CertificateService service.
 	CertificateServiceName = "tau.cm.v2.CertificateService"
+	// DomainServiceName is the fully-qualified name of the DomainService service.
+	DomainServiceName = "tau.cm.v2.DomainService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -45,6 +47,10 @@ const (
 	CertificateServiceCertificateProcedure = "/tau.cm.v2.CertificateService/Certificate"
 	// CertificateServiceKeepProcedure is the fully-qualified name of the CertificateService's Keep RPC.
 	CertificateServiceKeepProcedure = "/tau.cm.v2.CertificateService/Keep"
+	// DomainServiceClaimProcedure is the fully-qualified name of the DomainService's Claim RPC.
+	DomainServiceClaimProcedure = "/tau.cm.v2.DomainService/Claim"
+	// DomainServiceKeysProcedure is the fully-qualified name of the DomainService's Keys RPC.
+	DomainServiceKeysProcedure = "/tau.cm.v2.DomainService/Keys"
 )
 
 // CertificateServiceClient is a client for the tau.cm.v2.CertificateService service.
@@ -145,4 +151,104 @@ func (UnimplementedCertificateServiceHandler) Certificate(context.Context, *conn
 
 func (UnimplementedCertificateServiceHandler) Keep(context.Context, *connect.Request[v2.Issued]) (*connect.Response[v2.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.cm.v2.CertificateService.Keep is not implemented"))
+}
+
+// DomainServiceClient is a client for the tau.cm.v2.DomainService service.
+type DomainServiceClient interface {
+	// Claim is the signed claim to publish for one fqdn and project.
+	Claim(context.Context, *connect.Request[v2.ClaimRequest]) (*connect.Response[v2.DomainClaim], error)
+	// Keys is every key a claim may have been signed with, one per cm node.
+	Keys(context.Context, *connect.Request[v2.Empty]) (*connect.Response[v2.ValidationKeys], error)
+}
+
+// NewDomainServiceClient constructs a client for the tau.cm.v2.DomainService service. By default,
+// it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and
+// sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC()
+// or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewDomainServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) DomainServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	domainServiceMethods := v2.File_tau_cm_v2_cm_proto.Services().ByName("DomainService").Methods()
+	return &domainServiceClient{
+		claim: connect.NewClient[v2.ClaimRequest, v2.DomainClaim](
+			httpClient,
+			baseURL+DomainServiceClaimProcedure,
+			connect.WithSchema(domainServiceMethods.ByName("Claim")),
+			connect.WithClientOptions(opts...),
+		),
+		keys: connect.NewClient[v2.Empty, v2.ValidationKeys](
+			httpClient,
+			baseURL+DomainServiceKeysProcedure,
+			connect.WithSchema(domainServiceMethods.ByName("Keys")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// domainServiceClient implements DomainServiceClient.
+type domainServiceClient struct {
+	claim *connect.Client[v2.ClaimRequest, v2.DomainClaim]
+	keys  *connect.Client[v2.Empty, v2.ValidationKeys]
+}
+
+// Claim calls tau.cm.v2.DomainService.Claim.
+func (c *domainServiceClient) Claim(ctx context.Context, req *connect.Request[v2.ClaimRequest]) (*connect.Response[v2.DomainClaim], error) {
+	return c.claim.CallUnary(ctx, req)
+}
+
+// Keys calls tau.cm.v2.DomainService.Keys.
+func (c *domainServiceClient) Keys(ctx context.Context, req *connect.Request[v2.Empty]) (*connect.Response[v2.ValidationKeys], error) {
+	return c.keys.CallUnary(ctx, req)
+}
+
+// DomainServiceHandler is an implementation of the tau.cm.v2.DomainService service.
+type DomainServiceHandler interface {
+	// Claim is the signed claim to publish for one fqdn and project.
+	Claim(context.Context, *connect.Request[v2.ClaimRequest]) (*connect.Response[v2.DomainClaim], error)
+	// Keys is every key a claim may have been signed with, one per cm node.
+	Keys(context.Context, *connect.Request[v2.Empty]) (*connect.Response[v2.ValidationKeys], error)
+}
+
+// NewDomainServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewDomainServiceHandler(svc DomainServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	domainServiceMethods := v2.File_tau_cm_v2_cm_proto.Services().ByName("DomainService").Methods()
+	domainServiceClaimHandler := connect.NewUnaryHandler(
+		DomainServiceClaimProcedure,
+		svc.Claim,
+		connect.WithSchema(domainServiceMethods.ByName("Claim")),
+		connect.WithHandlerOptions(opts...),
+	)
+	domainServiceKeysHandler := connect.NewUnaryHandler(
+		DomainServiceKeysProcedure,
+		svc.Keys,
+		connect.WithSchema(domainServiceMethods.ByName("Keys")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/tau.cm.v2.DomainService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case DomainServiceClaimProcedure:
+			domainServiceClaimHandler.ServeHTTP(w, r)
+		case DomainServiceKeysProcedure:
+			domainServiceKeysHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedDomainServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedDomainServiceHandler struct{}
+
+func (UnimplementedDomainServiceHandler) Claim(context.Context, *connect.Request[v2.ClaimRequest]) (*connect.Response[v2.DomainClaim], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.cm.v2.DomainService.Claim is not implemented"))
+}
+
+func (UnimplementedDomainServiceHandler) Keys(context.Context, *connect.Request[v2.Empty]) (*connect.Response[v2.ValidationKeys], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.cm.v2.DomainService.Keys is not implemented"))
 }

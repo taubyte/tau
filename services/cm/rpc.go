@@ -14,6 +14,7 @@ import (
 func (s *Service) mount() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle(cmv2connect.NewCertificateServiceHandler(handler{s}))
+	mux.Handle(cmv2connect.NewDomainServiceHandler(handler{s}))
 	return mux
 }
 
@@ -24,6 +25,8 @@ type handler struct{ s *Service }
 var (
 	_ cmv2connect.CertificateServiceHandler = handler{}
 	_ cmv2connect.CertificateServiceClient  = handler{}
+	_ cmv2connect.DomainServiceHandler      = handler{}
+	_ cmv2connect.DomainServiceClient       = handler{}
 )
 
 func (h handler) Certificate(ctx context.Context, req *connect.Request[cmv2.CertificateRequest]) (*connect.Response[cmv2.Issued], error) {
@@ -45,7 +48,7 @@ func wire(err error) error {
 	switch {
 	case errors.Is(err, ErrNotKept):
 		return connect.NewError(connect.CodeNotFound, err)
-	case errors.Is(err, ErrNotZone):
+	case errors.Is(err, ErrNotZone), errors.Is(err, ErrBadClaim), errors.Is(err, ErrUnproven):
 		return connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	return connect.NewError(connect.CodeUnavailable, err)

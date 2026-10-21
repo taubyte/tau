@@ -119,7 +119,11 @@ type Issued struct {
 	// key names the secret holding the leaf's private key, PEM.
 	Key *SecretRef `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
 	// not_after is the leaf's expiry, unix seconds.
-	NotAfter      int64 `protobuf:"varint,4,opt,name=not_after,json=notAfter,proto3" json:"not_after,omitempty"`
+	NotAfter int64 `protobuf:"varint,4,opt,name=not_after,json=notAfter,proto3" json:"not_after,omitempty"`
+	// project and zone are set for a name outside the cloud's zone: the
+	// project whose proof of zone is checked before it is kept.
+	Project       string `protobuf:"bytes,5,opt,name=project,proto3" json:"project,omitempty"`
+	Zone          string `protobuf:"bytes,6,opt,name=zone,proto3" json:"zone,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -182,6 +186,20 @@ func (x *Issued) GetNotAfter() int64 {
 	return 0
 }
 
+func (x *Issued) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *Issued) GetZone() string {
+	if x != nil {
+		return x.Zone
+	}
+	return ""
+}
+
 type SecretRef struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
@@ -242,6 +260,166 @@ func (x *SecretRef) GetName() string {
 	return ""
 }
 
+type ClaimRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Fqdn          string                 `protobuf:"bytes,1,opt,name=fqdn,proto3" json:"fqdn,omitempty"`
+	Project       string                 `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClaimRequest) Reset() {
+	*x = ClaimRequest{}
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClaimRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClaimRequest) ProtoMessage() {}
+
+func (x *ClaimRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClaimRequest.ProtoReflect.Descriptor instead.
+func (*ClaimRequest) Descriptor() ([]byte, []int) {
+	return file_tau_cm_v2_cm_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ClaimRequest) GetFqdn() string {
+	if x != nil {
+		return x.Fqdn
+	}
+	return ""
+}
+
+func (x *ClaimRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+type DomainClaim struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// entry is the name the TXT record is set at.
+	Entry string `protobuf:"bytes,1,opt,name=entry,proto3" json:"entry,omitempty"`
+	// type is the record type, always "txt".
+	Type string `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	// token is the record's value.
+	Token         string `protobuf:"bytes,3,opt,name=token,proto3" json:"token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DomainClaim) Reset() {
+	*x = DomainClaim{}
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DomainClaim) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DomainClaim) ProtoMessage() {}
+
+func (x *DomainClaim) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DomainClaim.ProtoReflect.Descriptor instead.
+func (*DomainClaim) Descriptor() ([]byte, []int) {
+	return file_tau_cm_v2_cm_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *DomainClaim) GetEntry() string {
+	if x != nil {
+		return x.Entry
+	}
+	return ""
+}
+
+func (x *DomainClaim) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *DomainClaim) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+type ValidationKeys struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// public is each key, PEM.
+	Public        [][]byte `protobuf:"bytes,1,rep,name=public,proto3" json:"public,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ValidationKeys) Reset() {
+	*x = ValidationKeys{}
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ValidationKeys) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ValidationKeys) ProtoMessage() {}
+
+func (x *ValidationKeys) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ValidationKeys.ProtoReflect.Descriptor instead.
+func (*ValidationKeys) Descriptor() ([]byte, []int) {
+	return file_tau_cm_v2_cm_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ValidationKeys) GetPublic() [][]byte {
+	if x != nil {
+		return x.Public
+	}
+	return nil
+}
+
 var File_tau_cm_v2_cm_proto protoreflect.FileDescriptor
 
 const file_tau_cm_v2_cm_proto_rawDesc = "" +
@@ -249,19 +427,33 @@ const file_tau_cm_v2_cm_proto_rawDesc = "" +
 	"\x12tau/cm/v2/cm.proto\x12\ttau.cm.v2\"\a\n" +
 	"\x05Empty\".\n" +
 	"\x12CertificateRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04nameJ\x04\b\x02\x10\x03\"w\n" +
+	"\x04name\x18\x01 \x01(\tR\x04nameJ\x04\b\x02\x10\x03\"\xa5\x01\n" +
 	"\x06Issued\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05chain\x18\x02 \x01(\fR\x05chain\x12&\n" +
 	"\x03key\x18\x03 \x01(\v2\x14.tau.cm.v2.SecretRefR\x03key\x12\x1b\n" +
-	"\tnot_after\x18\x04 \x01(\x03R\bnotAfter\"[\n" +
+	"\tnot_after\x18\x04 \x01(\x03R\bnotAfter\x12\x18\n" +
+	"\aproject\x18\x05 \x01(\tR\aproject\x12\x12\n" +
+	"\x04zone\x18\x06 \x01(\tR\x04zone\"[\n" +
 	"\tSecretRef\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
 	"\venvironment\x18\x02 \x01(\tR\venvironment\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name2\x82\x01\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\"<\n" +
+	"\fClaimRequest\x12\x12\n" +
+	"\x04fqdn\x18\x01 \x01(\tR\x04fqdn\x12\x18\n" +
+	"\aproject\x18\x02 \x01(\tR\aproject\"M\n" +
+	"\vDomainClaim\x12\x14\n" +
+	"\x05entry\x18\x01 \x01(\tR\x05entry\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\x12\x14\n" +
+	"\x05token\x18\x03 \x01(\tR\x05token\"(\n" +
+	"\x0eValidationKeys\x12\x16\n" +
+	"\x06public\x18\x01 \x03(\fR\x06public2\x82\x01\n" +
 	"\x12CertificateService\x12?\n" +
 	"\vCertificate\x12\x1d.tau.cm.v2.CertificateRequest\x1a\x11.tau.cm.v2.Issued\x12+\n" +
-	"\x04Keep\x12\x11.tau.cm.v2.Issued\x1a\x10.tau.cm.v2.EmptyB\x93\x01\n" +
+	"\x04Keep\x12\x11.tau.cm.v2.Issued\x1a\x10.tau.cm.v2.Empty2~\n" +
+	"\rDomainService\x128\n" +
+	"\x05Claim\x12\x17.tau.cm.v2.ClaimRequest\x1a\x16.tau.cm.v2.DomainClaim\x123\n" +
+	"\x04Keys\x12\x10.tau.cm.v2.Empty\x1a\x19.tau.cm.v2.ValidationKeysB\x93\x01\n" +
 	"\rcom.tau.cm.v2B\aCmProtoP\x01Z3github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2;cmv2\xa2\x02\x03TCX\xaa\x02\tTau.Cm.V2\xca\x02\tTau\\Cm\\V2\xe2\x02\x15Tau\\Cm\\V2\\GPBMetadata\xea\x02\vTau::Cm::V2b\x06proto3"
 
 var (
@@ -276,21 +468,28 @@ func file_tau_cm_v2_cm_proto_rawDescGZIP() []byte {
 	return file_tau_cm_v2_cm_proto_rawDescData
 }
 
-var file_tau_cm_v2_cm_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_tau_cm_v2_cm_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_tau_cm_v2_cm_proto_goTypes = []any{
 	(*Empty)(nil),              // 0: tau.cm.v2.Empty
 	(*CertificateRequest)(nil), // 1: tau.cm.v2.CertificateRequest
 	(*Issued)(nil),             // 2: tau.cm.v2.Issued
 	(*SecretRef)(nil),          // 3: tau.cm.v2.SecretRef
+	(*ClaimRequest)(nil),       // 4: tau.cm.v2.ClaimRequest
+	(*DomainClaim)(nil),        // 5: tau.cm.v2.DomainClaim
+	(*ValidationKeys)(nil),     // 6: tau.cm.v2.ValidationKeys
 }
 var file_tau_cm_v2_cm_proto_depIdxs = []int32{
 	3, // 0: tau.cm.v2.Issued.key:type_name -> tau.cm.v2.SecretRef
 	1, // 1: tau.cm.v2.CertificateService.Certificate:input_type -> tau.cm.v2.CertificateRequest
 	2, // 2: tau.cm.v2.CertificateService.Keep:input_type -> tau.cm.v2.Issued
-	2, // 3: tau.cm.v2.CertificateService.Certificate:output_type -> tau.cm.v2.Issued
-	0, // 4: tau.cm.v2.CertificateService.Keep:output_type -> tau.cm.v2.Empty
-	3, // [3:5] is the sub-list for method output_type
-	1, // [1:3] is the sub-list for method input_type
+	4, // 3: tau.cm.v2.DomainService.Claim:input_type -> tau.cm.v2.ClaimRequest
+	0, // 4: tau.cm.v2.DomainService.Keys:input_type -> tau.cm.v2.Empty
+	2, // 5: tau.cm.v2.CertificateService.Certificate:output_type -> tau.cm.v2.Issued
+	0, // 6: tau.cm.v2.CertificateService.Keep:output_type -> tau.cm.v2.Empty
+	5, // 7: tau.cm.v2.DomainService.Claim:output_type -> tau.cm.v2.DomainClaim
+	6, // 8: tau.cm.v2.DomainService.Keys:output_type -> tau.cm.v2.ValidationKeys
+	5, // [5:9] is the sub-list for method output_type
+	1, // [1:5] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
 	1, // [1:1] is the sub-list for extension extendee
 	0, // [0:1] is the sub-list for field type_name
@@ -307,9 +506,9 @@ func file_tau_cm_v2_cm_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_cm_v2_cm_proto_rawDesc), len(file_tau_cm_v2_cm_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   7,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_tau_cm_v2_cm_proto_goTypes,
 		DependencyIndexes: file_tau_cm_v2_cm_proto_depIdxs,
