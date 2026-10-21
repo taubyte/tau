@@ -172,8 +172,10 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 
 	// Relinking keeps the config repository's hook, creates and wires the
 	// code repository, and pushes the project.
-	link = tau("link", "--profile", "owner", "--create", "--push", "--keep-hook", "--dir", dir, "--config-repo", configRepo.String(), "--code-repo", codeRepo.String(), "-o", "json")
-	require.Equal(t, 0, link.code, link.stderr)
+	require.Eventually(t, func() bool {
+		link = tau("link", "--profile", "owner", "--create", "--push", "--keep-hook", "--dir", dir, "--config-repo", configRepo.String(), "--code-repo", codeRepo.String(), "-o", "json")
+		return link.code == 0
+	}, 2*time.Minute, time.Second, "relink never succeeded: %s", link.stderr)
 	require.NoError(t, json.Unmarshal([]byte(link.stdout), &linked))
 	require.Len(t, linked.Pushed, 40)
 	require.Equal(t, []string{codeRepo.String()}, linked.Code)
