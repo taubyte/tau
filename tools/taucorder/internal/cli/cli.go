@@ -13,6 +13,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	ma "github.com/multiformats/go-multiaddr"
@@ -137,6 +138,9 @@ func config(c *cli.Context) (bridge.Config, Profile, error) {
 	}
 	key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(files[0])))
 	if err != nil {
+		return bridge.Config{}, p, fmt.Errorf("private key: %w", err)
+	}
+	if _, err := crypto.UnmarshalPrivateKey(key); err != nil {
 		return bridge.Config{}, p, fmt.Errorf("private key: %w", err)
 	}
 	var boot []peer.AddrInfo
