@@ -316,8 +316,11 @@ func forgeErr(err error) error {
 		unsupported *forge.UnsupportedError
 		noDriver    *forge.NoDriverError
 		refused     *forge.CredentialError
+		exists      *forge.ExistsError
 	)
 	switch {
+	case errors.As(err, &exists):
+		return fmt.Errorf("%w: %v", frontend.ErrExists, err)
 	case errors.As(err, &unsupported):
 		return fmt.Errorf("%w: %v", frontend.ErrUnsupported, err)
 	case errors.As(err, &noDriver):

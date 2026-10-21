@@ -118,8 +118,12 @@ func bearer(r *http.Request) (string, error) {
 
 // pathID reads one bounded path value.
 func pathID(r *http.Request, name string) (string, error) {
+	return boundedPath(r, name, maxIDLength)
+}
+
+func boundedPath(r *http.Request, name string, bound int) (string, error) {
 	id := r.PathValue(name)
-	if id == "" || len(id) > maxIDLength {
+	if id == "" || len(id) > bound {
 		return "", errDenied
 	}
 	return id, nil

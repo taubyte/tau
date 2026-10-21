@@ -197,6 +197,11 @@ func (c *client) Create(ctx context.Context, key repokey.Key, opts forge.CreateO
 	var id int64
 	body := createProjectRequest{Name: key.Name, ParentID: parentID, Description: opts.Description}
 	if err := c.send(ctx, routeCreate.at(), body, &id); err != nil {
+		// OneDev answers a taken name with a 500, the same status as any
+		// fault; the project being there afterwards is what tells them apart.
+		if _, perr := c.projectID(ctx, key); perr == nil {
+			return forge.Repository{}, &forge.ExistsError{Host: c.d.host, Key: key}
+		}
 		return forge.Repository{}, c.classify(err, repokey.Key{})
 	}
 	if id <= 0 {

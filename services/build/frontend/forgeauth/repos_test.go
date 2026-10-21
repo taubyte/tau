@@ -40,7 +40,7 @@ func TestListAndCreate(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, f.Keys().Creatable.String(), made.Repository)
 	_, err = fa.Create(ctx, f.TokenString(), f.Keys().Creatable, frontend.NewRepository{})
-	require.Error(t, err, "a repository is created once")
+	require.ErrorIs(t, err, frontend.ErrExists, "a repository is created once")
 
 	_, err = fa.List(ctx, f.BadTokenString(), f.Host())
 	require.ErrorIs(t, err, frontend.ErrBadCredential)

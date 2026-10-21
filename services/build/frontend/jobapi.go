@@ -278,8 +278,14 @@ type jobHandler func(w http.ResponseWriter, r *http.Request, token, id string)
 // apart, and a route whose two spellings disagree is visible where it is
 // mounted.
 func (s *Service) admitted(name string, handle jobHandler) http.HandlerFunc {
+	return s.admittedWithin(name, maxIDLength, handle)
+}
+
+// admittedWithin is admitted with its own bound on the path value, for a
+// route whose value is a path rather than an id.
+func (s *Service) admittedWithin(name string, bound int, handle jobHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		token, id, err := s.credentials(r, name)
+		token, id, err := s.credentials(r, name, bound)
 		if err != nil {
 			respond(w, err)
 			return
@@ -306,11 +312,11 @@ func (s *Service) admitted(name string, handle jobHandler) http.HandlerFunc {
 // it the only one: a job route reaches nothing without a token and an id, this
 // is the only place either comes from, and the mux takes nothing that has not
 // been through it.
-func (s *Service) credentials(r *http.Request, name string) (token, id string, err error) {
+func (s *Service) credentials(r *http.Request, name string, bound int) (token, id string, err error) {
 	if token, err = bearer(r); err != nil {
 		return "", "", err
 	}
-	if id, err = pathID(r, name); err != nil {
+	if id, err = boundedPath(r, name, bound); err != nil {
 		return "", "", err
 	}
 	if !s.globalJobs.allow() || !s.allowCaller(token) {

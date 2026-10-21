@@ -85,8 +85,8 @@ func (s *Service) mount() http.Handler {
 	mux.HandleFunc("POST /forges/{forge}/repositories", s.admitted("forge", s.handleCreateRepository))
 	mux.HandleFunc("POST /forges/{forge}/read", s.admitted("forge", s.handleRead))
 	mux.HandleFunc("POST /forges/{forge}/commit", s.admitted("forge", s.handleCommit))
-	mux.HandleFunc("GET /git/{path...}", s.admitted("path", s.handleGit))
-	mux.HandleFunc("POST /git/{path...}", s.admitted("path", s.handleGit))
+	mux.HandleFunc("GET /git/{path...}", s.admittedWithin("path", maxGitPath, s.handleGit))
+	mux.HandleFunc("POST /git/{path...}", s.admittedWithin("path", maxGitPath, s.handleGit))
 
 	// Signing in, and managing this cloud's users: auth's own calls, carried
 	// to it unchanged and authorized by it (authapi.go). Only when this node

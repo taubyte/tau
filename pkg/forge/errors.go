@@ -141,3 +141,16 @@ type CredentialLeakError struct {
 func (e *CredentialLeakError) Error() string {
 	return fmt.Sprintf("forge: refusing to carry a %s credential to %s", e.Bound, e.To)
 }
+
+// ExistsError is a creation refused because a repository is already at the
+// key it named. It is said only when the forge, asked after refusing, shows
+// that repository to the credential; a name taken by something the caller
+// cannot see stays the forge's own refusal.
+type ExistsError struct {
+	Host string
+	Key  repokey.Key
+}
+
+func (e *ExistsError) Error() string {
+	return fmt.Sprintf("forge: %s already has a repository %q", e.Host, e.Key)
+}

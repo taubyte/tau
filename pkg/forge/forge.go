@@ -54,6 +54,7 @@ package forge
 import (
 	"context"
 	"crypto/ed25519"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -216,6 +217,13 @@ type Creator interface {
 type CreateOptions struct {
 	Description string
 	Private     bool
+}
+
+// Refusal is a driver error that is the forge's own answer refusing a
+// request — a 4xx — as opposed to a failure to get an answer at all.
+type Refusal interface {
+	error
+	Refused() bool
 }
 
 // Deleter deletes a repository. It exists because it is the consumer of
@@ -739,7 +747,20 @@ func (s *Session) Create(ctx context.Context, key repokey.Key, opts CreateOption
 	if err := s.check(key); err != nil {
 		return Repository{}, err
 	}
-	return c.Create(ctx, key, opts)
+	made, err := c.Create(ctx, key, opts)
+	if err != nil {
+		// EVERY FORGE SAYS "TAKEN" IN ITS OWN WORDS, and none of them is
+		// parsed: the repository being there afterwards is the one answer
+		// that reads the same on all of them.
+		var refused Refusal
+		if errors.As(err, &refused) && refused.Refused() {
+			if there, rerr := s.client.Repository(ctx, key); rerr == nil && there.Key == key {
+				return Repository{}, &ExistsError{Host: s.Host(), Key: key}
+			}
+		}
+		return Repository{}, err
+	}
+	return made, nil
 }
 
 func (s *Session) Delete(ctx context.Context, key repokey.Key) error {

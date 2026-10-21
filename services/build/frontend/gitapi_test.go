@@ -158,3 +158,15 @@ func TestCORSAllowsGitProtocol(t *testing.T) {
 	w := h.do(t, r)
 	require.Contains(t, w.Header().Get("Access-Control-Allow-Headers"), "Git-Protocol")
 }
+
+// A deeply nested key is a repository like any other, and the bound on the
+// path is the git routes' own, not an id's.
+func TestGitReachesADeepKey(t *testing.T) {
+	h, repos := repoHarness(t, Config{})
+	deep := "acme/" + strings.Repeat("group/", 30) + "pay"
+	repos.host.seed(t, deep+".git", map[string]string{"README": "hi"})
+	w := h.do(t, authed(http.MethodGet, "/git/github.com/"+deep+".git/info/refs?service=git-upload-pack", testToken))
+	require.Equal(t, http.StatusOK, w.Code)
+	w = h.do(t, authed(http.MethodGet, "/git/github.com/"+strings.Repeat("a/", maxGitPath)+"x.git/info/refs?service=git-upload-pack", testToken))
+	require.Equal(t, http.StatusNotFound, w.Code)
+}

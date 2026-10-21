@@ -67,6 +67,9 @@ type statusError struct {
 	Status    int
 }
 
+// Refused is a 4xx: the forge's own answer refusing the request.
+func (e *statusError) Refused() bool { return e.Status >= 400 && e.Status < 500 }
+
 func (e *statusError) Error() string {
 	return fmt.Sprintf("forge/sourcehut: %s answered %d %s", e.Operation, e.Status, http.StatusText(e.Status))
 }
@@ -77,6 +80,9 @@ type graphqlError struct {
 	Operation string
 	Messages  []string
 }
+
+// Refused is always true: the forge answered, and said no.
+func (e *graphqlError) Refused() bool { return true }
 
 func (e *graphqlError) Error() string {
 	return fmt.Sprintf("forge/sourcehut: %s was refused: %s", e.Operation, strings.Join(e.Messages, "; "))

@@ -18,6 +18,10 @@ import (
 // git-upload-pack, write access for git-receive-pack, and the cloud's tenancy
 // and admission for both. The forge then applies its own rules on top.
 
+// maxGitPath bounds /git/'s path: a repository key, which nests as deep as
+// its forge allows, and one operation.
+const maxGitPath = 2048
+
 // maxUploadPackBody bounds a fetch's negotiation: its wants and haves.
 const maxUploadPackBody = 8 << 20
 

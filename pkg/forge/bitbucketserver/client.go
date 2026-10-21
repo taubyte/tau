@@ -81,6 +81,9 @@ type statusError struct {
 	Authz bool
 }
 
+// Refused is a 4xx: the forge's own answer refusing the request.
+func (e *statusError) Refused() bool { return e.Status >= 400 && e.Status < 500 }
+
 func (e *statusError) Error() string {
 	reason := http.StatusText(e.Status)
 	if e.Authz {

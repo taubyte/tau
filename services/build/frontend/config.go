@@ -627,5 +627,9 @@ type Remote struct {
 	Email     string
 }
 
-// ErrUnsupported is a forge that cannot answer the question asked.
-var ErrUnsupported = errors.New("build: this forge cannot do that")
+var (
+	// ErrUnsupported is a forge that cannot answer the question asked.
+	ErrUnsupported = errors.New("build: this forge cannot do that")
+	// ErrExists is a repository already at the key a creation named.
+	ErrExists = errors.New("build: a repository is already there")
+)

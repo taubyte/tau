@@ -136,8 +136,21 @@ func fault(host string, r *response, key *repokey.Key) error {
 	case r.status == http.StatusNotFound && key != nil:
 		return &forge.NotFoundError{Host: host, Key: *key}
 	}
-	return fmt.Errorf("gitlab: %s answered %s %q with %s", host, r.method, r.path, statusLine(r.status))
+	return &statusError{host: host, method: r.method, path: r.path, status: r.status}
 }
+
+// statusError is a non-2xx answer the taxonomy does not name.
+type statusError struct {
+	host, method, path string
+	status             int
+}
+
+func (e *statusError) Error() string {
+	return fmt.Sprintf("gitlab: %s answered %s %q with %s", e.host, e.method, e.path, statusLine(e.status))
+}
+
+// Refused is a 4xx: the instance's own answer refusing the request.
+func (e *statusError) Refused() bool { return e.status >= 400 && e.status < 500 }
 
 // decode reads a successful answer's body.
 func decode(r *response, out any) error {

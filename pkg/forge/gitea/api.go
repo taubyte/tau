@@ -119,6 +119,9 @@ type statusError struct {
 	Status int
 }
 
+// Refused is a 4xx: the forge's own answer refusing the request.
+func (e *statusError) Refused() bool { return e.Status >= 400 && e.Status < 500 }
+
 func (e *statusError) Error() string {
 	return fmt.Sprintf("forge/gitea: %s %s answered %d %s", e.Method, e.Path, e.Status, http.StatusText(e.Status))
 }

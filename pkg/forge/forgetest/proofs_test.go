@@ -179,6 +179,7 @@ func faultProofs() []proof {
 		"must be derived from the clone address the forge returned",
 		"about which repository the record of the writable fixture is",
 		"about which repository the record of the repository just created is",
+		"creating the same repository twice was not refused as the name being taken",
 		"about which repository the record of the nested fixture is",
 		"about which repository the record the forge answers for a repository that moved is",
 		"clone address in a record the listing yielded for",
@@ -302,7 +303,7 @@ func faultProofs() []proof {
 	add("list-ignores-a-stopped-yield", fake.GitHubLike, []fake.Fault{fake.FaultListIgnoresAStoppedYield},
 		"yield returned false and the listing kept going")
 	add("creates-the-same-repository-twice", fake.GitHubLike, []fake.Fault{fake.FaultCreatesTheSameRepositoryTwice},
-		"creating the same repository twice succeeded")
+		"creating the same repository twice was not refused as the name being taken")
 	add("creates-in-any-namespace", fake.GitHubLike, []fake.Fault{fake.FaultCreatesInAnyNamespace},
 		"created a repository in a namespace this credential may not write")
 	add("deletes-without-admin", fake.GitHubLike, []fake.Fault{fake.FaultDeletesWithoutAdmin},

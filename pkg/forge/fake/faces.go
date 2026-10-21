@@ -158,7 +158,7 @@ func (b fCreate) Create(_ context.Context, k repokey.Key, opts forge.CreateOptio
 	b.c.mu.Lock()
 	defer b.c.mu.Unlock()
 	if _, taken := b.c.lookup(k); taken && !b.c.shape.faulty(FaultCreatesTheSameRepositoryTwice) {
-		return forge.Repository{}, fmt.Errorf("fake: %q already exists", k)
+		return forge.Repository{}, refused{fmt.Sprintf("fake: %q already exists", k)}
 	}
 	if k.Namespace() != Namespace && !b.c.shape.faulty(FaultCreatesInAnyNamespace) {
 		return forge.Repository{}, fmt.Errorf("fake: this credential cannot create in namespace %q", k.Namespace())
@@ -783,3 +783,9 @@ func beside[T any](c *core, filled T, err error) (T, error) {
 	var zero T
 	return zero, err
 }
+
+// refused is the fake forge's own 4xx.
+type refused struct{ msg string }
+
+func (r refused) Error() string { return r.msg }
+func (refused) Refused() bool   { return true }

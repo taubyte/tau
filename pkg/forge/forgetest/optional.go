@@ -73,7 +73,8 @@ func (r *runner) create(t tb) {
 	r.assertRepository(t, repo, r.s.Creatable, "the record of the repository just created")
 
 	_, err = sess.Create(r.ctx, r.s.Creatable, opts)
-	assert.Error(t, r.note(err), "creating the same repository twice succeeded")
+	var exists *forge.ExistsError
+	assert.ErrorAs(t, r.note(err), &exists, "creating the same repository twice was not refused as the name being taken")
 
 	un := r.session(t, r.s.Uncreatable)
 	_, err = un.Create(r.ctx, r.s.Uncreatable, opts)

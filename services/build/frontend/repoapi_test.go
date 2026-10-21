@@ -288,9 +288,11 @@ func TestCreateRepository(t *testing.T) {
 		require.Equal(t, want, w.Code, body)
 	}
 
-	repos.err = ErrUnsupported
-	w = h.do(t, jsonCall(http.MethodPost, "/forges/github.com/repositories", `{"repository":"github.com/acme/new3"}`))
-	require.Equal(t, http.StatusNotImplemented, w.Code)
+	for err, want := range map[error]int{ErrUnsupported: http.StatusNotImplemented, ErrExists: http.StatusConflict} {
+		repos.err = err
+		w = h.do(t, jsonCall(http.MethodPost, "/forges/github.com/repositories", `{"repository":"github.com/acme/new3"}`))
+		require.Equal(t, want, w.Code)
+	}
 }
 
 // A namespace this cloud does not serve gets no repository made for it.

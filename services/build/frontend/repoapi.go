@@ -51,6 +51,8 @@ func repoProblem(err error) error {
 	switch {
 	case errors.Is(err, ErrUnsupported):
 		return problem(http.StatusNotImplemented, err.Error())
+	case errors.Is(err, ErrExists):
+		return problem(http.StatusConflict, err.Error())
 	case errors.Is(err, ErrUnknownForge):
 		return problem(http.StatusNotFound, err.Error())
 	case errors.Is(err, ErrBadCredential):
