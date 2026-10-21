@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"slices"
 	"strings"
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
@@ -183,10 +184,37 @@ func (n *Node) answers() (*globals.Challenges, error) {
 	return n.challengeAnswers, nil
 }
 
-// challengeReader is what this node's dns server answers DNS-01 with — its
-// own copy of the store, which the issuer confirmed holds the value before
-// the CA looks; the globals nodes on a node with none — or nil in a cloud
-// that issues none.
+// dnsChallenges answers DNS-01 with this node's copy of the values and the
+// globals nodes' together. The issuer confirms every dns node it and its
+// edge peers know of holds a value before the CA looks, but a node whose
+// view of the fleet is behind another's can be handed to the CA unconfirmed,
+// and the node that presented the value always holds it. Only nothing found
+// with a globals node silent is an error, which the dns server answers
+// SERVFAIL.
+type dnsChallenges struct {
+	local  *globals.Challenges
+	remote *globals.Client
+}
+
+func (d dnsChallenges) Challenges(ctx context.Context, fqdn string) ([]string, error) {
+	values, err := d.local.Challenges(ctx, fqdn)
+	if err != nil {
+		return nil, err
+	}
+	remote, err := d.remote.Challenges(ctx, fqdn)
+	if err != nil && len(values) == 0 {
+		return nil, err
+	}
+	for _, v := range remote {
+		if !slices.Contains(values, v) {
+			values = append(values, v)
+		}
+	}
+	return values, nil
+}
+
+// challengeReader is what this node's dns server answers DNS-01 with, or nil
+// in a cloud that issues none.
 func (n *Node) challengeReader() (dns.Challenges, error) {
 	c, err := n.certificates()
 	if c == nil || err != nil {
@@ -197,18 +225,25 @@ func (n *Node) challengeReader() (dns.Challenges, error) {
 		return nil, err
 	}
 	if local != nil {
-		return local, nil
+		return dnsChallenges{local: local, remote: c}, nil
 	}
 	return c, nil
 }
 
-// gatewayIssuer answers HTTP-01 from this node's copy of the store.
+// gatewayIssuer answers HTTP-01 from this node's copy of the store, and from
+// the globals nodes when it holds nothing for the token, for the reason
+// dnsChallenges asks them too.
 type gatewayIssuer struct {
 	*globals.Client
 	local *globals.Challenges
 }
 
-func (g gatewayIssuer) Challenge(token string) (string, bool) { return g.local.Challenge(token) }
+func (g gatewayIssuer) Challenge(token string) (string, bool) {
+	if answer, ok := g.local.Challenge(token); ok {
+		return answer, true
+	}
+	return g.Client.Challenge(token)
+}
 
 // gatewayIssuer is the client, answering HTTP-01 from this node's own copy
 // of the store when it has one.
