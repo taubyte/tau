@@ -174,6 +174,9 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 	// code repository, and pushes the project.
 	require.Eventually(t, func() bool {
 		link = tau("link", "--profile", "owner", "--create", "--push", "--keep-hook", "--dir", dir, "--config-repo", configRepo.String(), "--code-repo", codeRepo.String(), "-o", "json")
+		if link.code != 0 {
+			t.Log(link.stderr)
+		}
 		return link.code == 0
 	}, 2*time.Minute, time.Second, "relink never succeeded: %s", link.stderr)
 	require.NoError(t, json.Unmarshal([]byte(link.stdout), &linked))

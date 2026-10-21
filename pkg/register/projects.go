@@ -293,6 +293,9 @@ func (r *Register) unlink(ctx context.Context, owner ProjectRecord, config strin
 		return fmt.Errorf("register: listing claims on %s: %w", owner.ID, err)
 	}
 	for _, key := range keys {
+		// A store may list a key rooted ("/r/claim/…"), the way a datastore
+		// spells it; the key is the one it was written under.
+		key = strings.TrimPrefix(key, sep)
 		if key != claimKey(owner.ID, config) {
 			if err := r.tombstone(ctx, key); err != nil {
 				return err

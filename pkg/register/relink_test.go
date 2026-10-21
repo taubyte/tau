@@ -1,6 +1,7 @@
 package register
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -66,4 +67,29 @@ func TestARelinkOverAFailingStore(t *testing.T) {
 		_, err = r.LinkProject(ctx, Link{Project: pid, Config: "github.com/acme/new", Claimant: alice, Replace: true})
 		require.ErrorIs(t, err, errFailing, c.op+" "+c.sub)
 	}
+}
+
+// rooted lists keys the way a datastore spells them, with a leading "/".
+type rooted struct{ *MemStore }
+
+func (r rooted) List(ctx context.Context, prefix string) ([]string, error) {
+	keys, err := r.MemStore.List(ctx, prefix)
+	for i := range keys {
+		keys[i] = "/" + keys[i]
+	}
+	return keys, err
+}
+
+func TestARelinkOverAStoreListingRootedKeys(t *testing.T) {
+	r, err := New(WithStore(rooted{NewMemStore()}))
+	require.NoError(t, err)
+	ctx := t.Context()
+	_, err = r.LinkProject(ctx, Link{Project: "QmPay", Config: "github.com/acme/cfg", Claimant: "alice"})
+	require.NoError(t, err)
+	rec, err := r.LinkProject(ctx, Link{Project: "QmPay", Config: "github.com/acme/cfg", Code: []string{"github.com/acme/pay"}, Claimant: "alice", Replace: true})
+	require.NoError(t, err)
+	require.Equal(t, []string{"github.com/acme/pay"}, rec.Code)
+	rec, err = r.LinkProject(ctx, Link{Project: "QmPay", Config: "github.com/acme/other", Claimant: "alice", Replace: true})
+	require.NoError(t, err)
+	require.Equal(t, "github.com/acme/other", rec.Config)
 }
