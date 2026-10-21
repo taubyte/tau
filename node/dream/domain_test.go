@@ -138,8 +138,7 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 	require.ErrorContains(t, err, "tau domain claim shop.test")
 
 	// A ZONE UNDER A PROVEN ONE is its project's with no record of its own,
-	// even once the parent's record is gone, and another project's never.
-	dns.set(claim.GetEntry(), "removed")
+	// and another project's never, whatever record it sets.
 	r, err = run("with/domain/child", customDomainID)
 	require.NoError(t, err)
 	project, _, err = r.ResolveHost(t.Context(), "www.eu.shop.test")
@@ -152,4 +151,10 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 	_, err = run("refused/domain/stolenchild", stolenDomainID)
 	require.ErrorIs(t, err, buildDeploy.ErrUnproven)
 	require.ErrorContains(t, err, "shop.test is proven to be another project's")
+
+	// THE PARENT'S RECORD GONE, the child's redeploy is refused: a released
+	// domain is lost at its next deploy.
+	dns.set(claim.GetEntry(), "removed")
+	_, err = run("with/domain/child", customDomainID)
+	require.ErrorIs(t, err, buildDeploy.ErrUnproven)
 }

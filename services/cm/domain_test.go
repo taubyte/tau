@@ -92,20 +92,26 @@ func TestAClaimInTheTXTRecordProvesTheDomain(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, before, public)
 
-	// PROVEN ONCE: the record is not looked up again, and every zone under
-	// it is the same project's with no record of its own.
-	f.txt.set(c.GetEntry(), "garbage")
-	require.NoError(t, d.Prove(t.Context(), projectID, customZone))
+	// A CHILD NEEDS NO RECORD OF ITS OWN, and another project's is refused,
+	// its own record or not.
 	require.NoError(t, d.Prove(t.Context(), projectID, "eu."+customZone))
 	require.NoError(t, d.Prove(t.Context(), projectID, "www.eu."+customZone))
-
-	// A NAME UNDER ANOTHER PROJECT'S ZONE is refused, its own record or not.
 	child, err := d.Claim(t.Context(), otherID, "eu."+customZone)
 	require.NoError(t, err)
 	f.publish(t, child)
 	err = d.Prove(t.Context(), otherID, "eu."+customZone)
 	require.ErrorIs(t, err, ErrUnproven)
 	require.ErrorContains(t, err, "is proven to be another project's")
+
+	// THE RECORD GONE IS THE ZONE LOST, for the child too, and the next
+	// owner's proof then takes it.
+	f.txt.set(c.GetEntry(), "garbage")
+	require.ErrorIs(t, d.Prove(t.Context(), projectID, "eu."+customZone), ErrUnproven)
+	require.ErrorIs(t, d.Prove(t.Context(), projectID, customZone), ErrUnproven)
+	_, held, err := f.nodes[0].provenOwner(t.Context(), customZone)
+	require.NoError(t, err)
+	require.False(t, held)
+	require.NoError(t, d.Prove(t.Context(), otherID, "eu."+customZone), "released, the child is the next owner's")
 
 	f.txt.set(projectID[:8]+".garbage.test", "garbage")
 	require.ErrorIs(t, d.Prove(t.Context(), projectID, "garbage.test"), ErrUnproven)
@@ -116,24 +122,35 @@ func TestAClaimInTheTXTRecordProvesTheDomain(t *testing.T) {
 func TestTheFirstProofOfAZoneOwnsIt(t *testing.T) {
 	f := newFleet(t, 1, false)
 	s := f.nodes[0]
-	put := func(zone, project, at string) {
-		require.NoError(t, f.db.Put(t.Context(), domainProvenPrefix+zone+"/"+project, []byte(at)))
+	put := func(zone, project, at, outcome string) {
+		require.NoError(t, f.db.Put(t.Context(), domainProvenPrefix+zone+"/"+project+"/"+at, []byte(outcome)))
 	}
-	put("a.test", otherID, "00000000000000000002")
-	put("a.test", projectID, "00000000000000000001")
-	owner, ok, err := s.provenOwner(t.Context(), "a.test")
-	require.NoError(t, err)
+	owner := func(zone string) (string, bool) {
+		o, ok, err := s.provenOwner(t.Context(), zone)
+		require.NoError(t, err)
+		return o, ok
+	}
+	put("a.test", otherID, "00000000000000000002", outcomeProven)
+	put("a.test", projectID, "00000000000000000001", outcomeProven)
+	o, ok := owner("a.test")
 	require.True(t, ok)
-	require.Equal(t, projectID, owner)
+	require.Equal(t, projectID, o)
 
-	put("b.test", otherID, "00000000000000000001")
-	put("b.test", projectID, "00000000000000000001")
-	owner, _, err = s.provenOwner(t.Context(), "b.test")
-	require.NoError(t, err)
-	require.Equal(t, min(projectID, otherID), owner)
+	// THE LATEST OUTCOME PER PROJECT STANDS: lost, the other one owns it.
+	put("a.test", projectID, "00000000000000000003", outcomeLost)
+	o, _ = owner("a.test")
+	require.Equal(t, otherID, o)
+	put("a.test", projectID, "00000000000000000000", outcomeProven)
+	o, _ = owner("a.test")
+	require.Equal(t, otherID, o, "an older outcome replicated late changes nothing")
 
-	_, ok, err = s.provenOwner(t.Context(), "c.test")
-	require.NoError(t, err)
+	put("b.test", otherID, "00000000000000000001", outcomeProven)
+	put("b.test", projectID, "00000000000000000001", outcomeProven)
+	o, _ = owner("b.test")
+	require.Equal(t, min(projectID, otherID), o)
+
+	put("c.test", projectID, "00000000000000000001", outcomeLost)
+	_, ok = owner("c.test")
 	require.False(t, ok)
 	require.Equal(t, []string{"test.example", "a.test.example"}, ancestors("a.test.example")[0:2])
 	require.ErrorIs(t, s.prove(t.Context(), "not a cid", "a.test"), ErrUnproven)
@@ -210,6 +227,20 @@ func TestACustomDomainIsCertifiedOnlyOnceProven(t *testing.T) {
 	require.NoError(t, err)
 	f.verify(t, cert, name)
 	require.Equal(t, 1, f.kept(t, name))
+
+	// A RENEWAL CHECKS AGAIN: the record gone, nothing is ordered and the
+	// certificate held keeps answering until it expires.
+	f.txt.set(claim.GetEntry(), "removed")
+	c.mu.Lock()
+	cached := c.cache[name]
+	c.mu.Unlock()
+	f.advance(cached.cert.Leaf.NotAfter.Sub(cached.cert.Leaf.NotBefore) * 3 / 4)
+	_, err = c.obtain(t.Context(), name)
+	require.NoError(t, err, "the held certificate answers")
+	require.Equal(t, 1, f.kept(t, name), "nothing was ordered")
+	_, held, err := f.nodes[0].provenOwner(t.Context(), customZone)
+	require.NoError(t, err)
+	require.False(t, held, "the loss is recorded")
 
 	// A name in the cloud's own zone is the zone's, whatever is passed.
 	inZone, err := c.ForProject(t.Context(), projectID, customZone, "a."+zone)

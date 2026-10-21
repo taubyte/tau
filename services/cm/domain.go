@@ -13,12 +13,13 @@
 // public half in this service's database at /domain/key/<peer id>. Two nodes
 // never write one key (AGENTS.md), and a token verifies against any of them.
 //
-// # Proven once, per zone
+// # Checked at deploy and at issuance, per zone
 //
-// A proof is recorded at /domain/proven/<zone>/<project>, carrying when, and
-// is never looked up again. A name under a proven zone is that project's with
-// no record of its own, and nobody else's: the topmost proven zone above a
-// name decides, and two proofs of one zone resolve to the earliest.
+// Each check records its outcome at /domain/proven/<zone>/<project>/<when>;
+// serving reads the standing and never looks DNS up. A name under a proven
+// zone needs no record of its own, but the zone's record is checked again,
+// so a domain released is lost at its next deploy or renewal and the next
+// owner's proof takes it. Another project's names under it are refused.
 package cm
 
 import (
@@ -201,27 +202,50 @@ func Prove(ctx context.Context, r Resolver, keys [][]byte, project, fqdn string)
 	return fmt.Errorf("%w: %s: the TXT record at %s carries no claim this cloud signed", ErrUnproven, fqdn, entry)
 }
 
-// provenOwner is the project a zone was first proven for: the entry with the
-// earliest timestamp, the project id breaking a tie, so every node reads the
-// same owner from the same replicated entries.
+// The outcomes a check records.
+const (
+	outcomeProven = "proven"
+	outcomeLost   = "lost"
+)
+
+// provenOwner is the project a zone is proven for now. Each check of a
+// (zone, project) records its outcome under a key of its own, so the latest
+// per pair is its standing; of the pairs standing proven, the one whose proof
+// is oldest owns the zone, the project id breaking a tie, so every node reads
+// the same owner from the same replicated entries.
 func (s *Service) provenOwner(ctx context.Context, zone string) (string, bool, error) {
 	prefix := domainProvenPrefix + zone + "/"
 	names, err := s.db.List(ctx, prefix)
 	if err != nil {
 		return "", false, fmt.Errorf("cm: listing the proofs of %s: %w", zone, err)
 	}
-	var owner, first string
+	type standing struct{ at, outcome string }
+	latest := map[string]standing{}
 	for _, n := range names {
-		at, err := s.db.Get(ctx, n)
-		if err != nil || len(at) == 0 {
+		project, at, ok := strings.Cut(strings.TrimPrefix(n, prefix), "/")
+		if !ok || at <= latest[project].at {
 			continue
 		}
-		project := strings.TrimPrefix(n, prefix)
-		if owner == "" || string(at) < first || (string(at) == first && project < owner) {
-			owner, first = project, string(at)
+		outcome, err := s.db.Get(ctx, n)
+		if err != nil {
+			continue
+		}
+		latest[project] = standing{at: at, outcome: string(outcome)}
+	}
+	var owner, first string
+	for project, st := range latest {
+		if st.outcome != outcomeProven {
+			continue
+		}
+		if owner == "" || st.at < first || (st.at == first && project < owner) {
+			owner, first = project, st.at
 		}
 	}
 	return owner, owner != "", nil
+}
+
+func (s *Service) record(ctx context.Context, zone, project, outcome string) error {
+	return s.db.Put(ctx, fmt.Sprintf("%s%s/%s/%020d", domainProvenPrefix, zone, project, s.now().UnixNano()), []byte(outcome))
 }
 
 // ancestors is fqdn's zones from the top down, ending with fqdn; a bare
@@ -235,34 +259,43 @@ func ancestors(fqdn string) []string {
 	return out
 }
 
-// prove is nil when fqdn is project's. The first zone above or at it that was
-// ever proven decides; with none, the TXT record does, and is recorded once
-// (one key per zone and project) so no later deploy or renewal looks it up.
+// prove is nil when fqdn is project's, and it is asked only when a deploy
+// publishes the name or a certificate for it is issued. The topmost zone
+// proven above or at fqdn decides: another project's is a refusal, the
+// project's own is the record checked, and with none fqdn's own record is.
+// Every outcome is recorded, so a record gone is the zone lost.
 func (s *Service) prove(ctx context.Context, project, fqdn string) error {
 	fqdn = normal(fqdn)
 	if _, err := cid.Decode(project); err != nil || fqdn == "" {
 		return fmt.Errorf("%w: %s: project %q", ErrUnproven, fqdn, project)
 	}
-	for _, zone := range ancestors(fqdn) {
-		owner, ok, err := s.provenOwner(ctx, zone)
+	zone, held := fqdn, false
+	for _, z := range ancestors(fqdn) {
+		owner, ok, err := s.provenOwner(ctx, z)
 		if err != nil {
 			return err
 		}
 		if ok {
-			if owner == project {
-				return nil
+			if owner != project {
+				return fmt.Errorf("%w: %s: %s is proven to be another project's", ErrUnproven, fqdn, z)
 			}
-			return fmt.Errorf("%w: %s: %s is proven to be another project's", ErrUnproven, fqdn, zone)
+			zone, held = z, true
+			break
 		}
 	}
 	keys, err := s.keys(ctx)
 	if err != nil {
 		return err
 	}
-	if err := Prove(ctx, s.resolver, keys, project, fqdn); err != nil {
+	if err := Prove(ctx, s.resolver, keys, project, zone); err != nil {
+		if held {
+			if rerr := s.record(ctx, zone, project, outcomeLost); rerr != nil {
+				return errors.Join(err, rerr)
+			}
+		}
 		return err
 	}
-	return s.db.Put(ctx, domainProvenPrefix+fqdn+"/"+project, fmt.Appendf(nil, "%020d", s.now().UnixNano()))
+	return s.record(ctx, zone, project, outcomeProven)
 }
 
 func (h handler) Claim(ctx context.Context, req *connect.Request[cmv2.ClaimRequest]) (*connect.Response[cmv2.DomainClaim], error) {
@@ -380,7 +413,7 @@ func (d *Domains) Prove(ctx context.Context, project, fqdn string) error {
 			}
 			var refused *connect.Error
 			if errors.As(err, &refused) && refused.Code() == connect.CodeFailedPrecondition {
-				return fmt.Errorf("%w: %s", ErrUnproven, refused.Message())
+				return fmt.Errorf("%w%s", ErrUnproven, strings.TrimPrefix(refused.Message(), ErrUnproven.Error()))
 			}
 		}
 		if errors.Is(err, ErrUnproven) {
