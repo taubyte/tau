@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -35,14 +36,9 @@ type Error struct {
 func (e *Error) Error() string {
 	switch e.Status {
 	case http.StatusUnauthorized:
-		// A refusal the caller can act on — a forge they have not connected —
-		// says so; anything else is the token.
-		if e.Message != "" && e.Message != "unauthorized" {
-			return "unauthorized: " + e.Message + " (see `tau forge connect`)"
-		}
 		return "unauthorized: the cloud did not accept this token (run `tau login`)"
 	case http.StatusNotFound:
-		return "not found, or not yours: the token cannot write to a repository this belongs to"
+		return "not found, or not yours: you hold no role on this project"
 	}
 	if e.Message == "" {
 		return fmt.Sprintf("the cloud answered %d", e.Status)
@@ -235,45 +231,58 @@ func (c *Client) LinkProject(ctx context.Context, id, configKey string, codeKeys
 	return &p, nil
 }
 
-// Inspection is a repository as a link sees it before claiming anything: the
-// forge's spelling of it, whether the caller's connection may install on it,
-// and whether this cloud's webhook for the project is already there.
-type Inspection struct {
-	Repository string `json:"repository"`
-	Admin      bool   `json:"admin"`
-	Hooked     bool   `json:"hooked"`
-	Callback   string `json:"callback"`
-}
-
-// InspectRepository asks the cloud to read repository at its forge, under the
-// caller's connection, for project id.
-func (c *Client) InspectRepository(ctx context.Context, id, repository string) (*Inspection, error) {
-	body, err := json.Marshal(map[string]string{"repository": repository})
-	if err != nil {
-		return nil, err
-	}
-	var out Inspection
-	if err := c.json(ctx, http.MethodPost, []string{"link", id, "inspect"}, bytes.NewReader(body), &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-// InstallLink asks the cloud to install project id's webhook, with the
-// secret it stores, and deployKey (an authorized_keys line) on repository,
-// under the caller's connection. replace removes this cloud's previous ones.
-func (c *Client) InstallLink(ctx context.Context, id, repository, deployKey string, replace bool) error {
-	body, err := json.Marshal(map[string]any{"repository": repository, "deploy_key": deployKey, "replace": replace})
-	if err != nil {
-		return err
-	}
-	return c.json(ctx, http.MethodPost, []string{"link", id, "install"}, bytes.NewReader(body), nil)
-}
-
-// Projects is every project the token's holder linked, as the forge serving
-// host knows them.
-func (c *Client) Projects(ctx context.Context, host string) ([]Project, error) {
+// Projects is every project the caller owns or holds a role on.
+func (c *Client) Projects(ctx context.Context) ([]Project, error) {
 	var out []Project
-	err := c.json(ctx, http.MethodGet, []string{"forges", host, "projects"}, nil, &out)
+	err := c.json(ctx, http.MethodGet, []string{"projects"}, nil, &out)
 	return out, err
+}
+
+// Fqdn is the name the cloud serves under; its build frontend is
+// build-frontend.<fqdn>.
+func (c *Client) Fqdn(ctx context.Context) (string, error) {
+	var out struct {
+		Fqdn string `json:"fqdn"`
+	}
+	if err := c.json(ctx, http.MethodGet, []string{"cloud"}, nil, &out); err != nil {
+		return "", err
+	}
+	if out.Fqdn == "" {
+		return "", errors.New("the cloud named no fqdn")
+	}
+	return out.Fqdn, nil
+}
+
+// Grant is one role an owner gave a tau user on a project.
+type Grant struct {
+	ID   string    `json:"id"`
+	User string    `json:"user"`
+	Role string    `json:"role"`
+	By   string    `json:"by"`
+	At   time.Time `json:"at"`
+}
+
+// Grants lists a project's grants; owners only.
+func (c *Client) Grants(ctx context.Context, projectID string) ([]Grant, error) {
+	var out []Grant
+	err := c.json(ctx, http.MethodGet, []string{"projects", projectID, "grants"}, nil, &out)
+	return out, err
+}
+
+// GrantRole gives user role on a project and returns the grant's id.
+func (c *Client) GrantRole(ctx context.Context, projectID, user, role string) (string, error) {
+	body, err := json.Marshal(map[string]string{"user": user, "role": role})
+	if err != nil {
+		return "", err
+	}
+	var out struct {
+		ID string `json:"id"`
+	}
+	err = c.json(ctx, http.MethodPost, []string{"projects", projectID, "grants"}, bytes.NewReader(body), &out)
+	return out.ID, err
+}
+
+// Revoke withdraws one grant.
+func (c *Client) Revoke(ctx context.Context, projectID, grantID string) error {
+	return c.json(ctx, http.MethodDelete, []string{"projects", projectID, "grants", grantID}, nil, nil)
 }

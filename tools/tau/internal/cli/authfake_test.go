@@ -18,9 +18,8 @@ import (
 )
 
 // fakeAuth is auth's sign-in and user calls as the frontend carries them,
-// answering from memory. A session is an access token naming a user; the
-// forges the user connected stand in for credentials the fake frontend acts
-// with.
+// answering from memory. A session is an access token naming a user. It
+// holds no forge credential: a forge sign-in hands it back.
 type fakeAuth struct {
 	authv2connect.UnimplementedSessionServiceHandler
 	authv2connect.UnimplementedUserServiceHandler
@@ -36,12 +35,15 @@ type fakeAuth struct {
 	// expiresIn is the lifetime of the access tokens it issues, in seconds
 	// from now; zero is fifteen minutes.
 	expiresIn int64
-	now       func() int64
+	// forgeExpires is when the forge credentials it hands back expire; zero
+	// is never.
+	forgeExpires int64
+	renewed      int
+	now          func() int64
 }
 
 type fakeSession struct {
-	user  *authv2.User
-	conns map[string]string // host -> forge token
+	user *authv2.User
 	// sid is what the real token carries in the clear.
 	sid string
 }
@@ -53,7 +55,7 @@ func newFakeAuth(now func() int64) *fakeAuth {
 		{Id: "u-dev", Name: "dev", Role: authv2.Role_ROLE_MEMBER},
 	}
 	// goodToken is an API token: a session nothing renews.
-	a.sessions[goodToken] = &fakeSession{user: a.users[1], conns: map[string]string{}}
+	a.sessions[goodToken] = &fakeSession{user: a.users[1]}
 	return a
 }
 
@@ -76,9 +78,9 @@ func (a *fakeAuth) caller(h interface{ Get(string) string }) (*fakeSession, stri
 	return s, raw, nil
 }
 
-// issue is a new session for u holding conns; locked.
-func (a *fakeAuth) issue(u *authv2.User, conns map[string]string) *authv2.Session {
-	return a.issueIn(u, conns, fmt.Sprintf("sid-%d", a.n+1))
+// issue is a new session for u; locked.
+func (a *fakeAuth) issue(u *authv2.User) *authv2.Session {
+	return a.issueIn(u, fmt.Sprintf("sid-%d", a.n+1))
 }
 
 // fakeAccess is a token shaped like the real one: a JWT whose claims a
@@ -88,10 +90,10 @@ func fakeAccess(sid string, iat int64, n int) string {
 	return "e30." + base64.RawURLEncoding.EncodeToString(payload) + ".fake"
 }
 
-func (a *fakeAuth) issueIn(u *authv2.User, conns map[string]string, sid string) *authv2.Session {
+func (a *fakeAuth) issueIn(u *authv2.User, sid string) *authv2.Session {
 	a.n++
 	access, refresh := fakeAccess(sid, a.now(), a.n), fmt.Sprintf("taur_%d", a.n)
-	a.sessions[access] = &fakeSession{user: u, conns: conns, sid: sid}
+	a.sessions[access] = &fakeSession{user: u, sid: sid}
 	a.refresh[refresh] = access
 	ttl := a.expiresIn
 	if ttl == 0 {
@@ -119,7 +121,7 @@ func (a *fakeAuth) Login(_ context.Context, req *connect.Request[authv2.LoginReq
 	if req.Msg.GetName() != "root" || req.Msg.GetPassword() != "hunter2" {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("the name or the password is wrong"))
 	}
-	return signed(a.issue(a.users[0], map[string]string{})), nil
+	return signed(a.issue(a.users[0])), nil
 }
 
 func (a *fakeAuth) Refresh(_ context.Context, req *connect.Request[authv2.RefreshRequest]) (*connect.Response[authv2.SignedIn], error) {
@@ -131,7 +133,7 @@ func (a *fakeAuth) Refresh(_ context.Context, req *connect.Request[authv2.Refres
 	}
 	s := a.sessions[access]
 	delete(a.refresh, req.Msg.GetRefreshToken())
-	return signed(a.issueIn(s.user, s.conns, s.sid)), nil
+	return signed(a.issueIn(s.user, s.sid)), nil
 }
 
 func (a *fakeAuth) Logout(_ context.Context, req *connect.Request[authv2.LogoutRequest]) (*connect.Response[authv2.LogoutResponse], error) {
@@ -160,18 +162,16 @@ func (a *fakeAuth) Authorize(_ context.Context, req *connect.Request[authv2.Auth
 // locked.
 func (a *fakeAuth) connectOrSignIn(h interface{ Get(string) string }, host, token string) (*authv2.SignedIn, error) {
 	in := &authv2.SignedIn{
-		Forge:      &authv2.ForgeToken{Host: host, AccessToken: token},
+		Forge:      &authv2.ForgeToken{Host: host, AccessToken: token, RefreshToken: "forge-refresh", ExpiresUnix: a.forgeExpires, Login: "fake-user"},
 		Connection: &authv2.Connection{Host: host, Login: "fake-user", SignIn: authv2.SignInLink_SIGN_IN_LINK_THIS_USER},
 	}
 	if h.Get("Authorization") != "" {
-		s, _, err := a.caller(h)
-		if err != nil {
+		if _, _, err := a.caller(h); err != nil {
 			return nil, err
 		}
-		s.conns[host] = token
 		return in, nil
 	}
-	in.Session = a.issue(a.users[1], map[string]string{host: token})
+	in.Session = a.issue(a.users[1])
 	return in, nil
 }
 
@@ -186,7 +186,7 @@ func (a *fakeAuth) Exchange(_ context.Context, req *connect.Request[authv2.Excha
 	delete(a.pending, req.Msg.GetState())
 	host := strings.TrimPrefix(req.Msg.GetCode(), "code-")
 	if host == "corp" {
-		return signed(a.issue(a.users[1], map[string]string{})), nil
+		return signed(a.issue(a.users[1])), nil
 	}
 	in, err := a.connectOrSignIn(req.Header(), host, forgeToken)
 	if err != nil {
@@ -235,19 +235,19 @@ func (a *fakeAuth) Whoami(_ context.Context, req *connect.Request[authv2.WhoamiR
 	return connect.NewResponse(s.user), nil
 }
 
-// open is the forge credential the caller connected for host.
-func (a *fakeAuth) open(h interface{ Get(string) string }, host string) (string, error) {
+// Renew is a forge refresh through the cloud's OAuth app, for a signed-in
+// caller.
+func (a *fakeAuth) Renew(_ context.Context, req *connect.Request[authv2.RenewRequest]) (*connect.Response[authv2.ForgeToken], error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	s, _, err := a.caller(h)
-	if err != nil {
-		return "", err
+	a.renewed++
+	if _, _, err := a.caller(req.Header()); err != nil {
+		return nil, err
 	}
-	t, ok := s.conns[host]
-	if !ok {
-		return "", fmt.Errorf("not connected to %s: connect it first", host)
+	if req.Msg.GetRefreshToken() != "forge-refresh" {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("the forge refused the refresh"))
 	}
-	return t, nil
+	return connect.NewResponse(&authv2.ForgeToken{Host: req.Msg.GetHost(), AccessToken: forgeToken, ExpiresUnix: a.now() + 3600}), nil
 }
 
 // ── users ────────────────────────────────────────────────────────────────────

@@ -525,6 +525,26 @@ type dBase struct{ c *core }
 
 func (d dBase) Host() string { return d.c.shape.Host }
 
+// SpellingHosts is the ssh endpoint of a served forge, which spells the same
+// repositories on a port of its own.
+func (d dBase) SpellingHosts() []string {
+	if d.c.sshHost == "" {
+		return nil
+	}
+	return []string{d.c.sshHost}
+}
+
+func (d dBase) Canonical(k repokey.Key) (repokey.Key, bool) {
+	switch k.Host {
+	case d.c.shape.Host:
+		return k, true
+	case d.c.sshHost:
+		k.Host = d.c.shape.Host
+		return k, true
+	}
+	return k, false
+}
+
 func (d dBase) Addressable(k repokey.Key) error {
 	err := d.c.addressable(k)
 	// A driver that goes and ASKS. The refusal is right and the request is the

@@ -83,6 +83,9 @@ type core struct {
 	scheme string
 	git    gitStores
 
+	// sshHost is where Serve answers git over ssh; empty when not served.
+	sshHost string
+
 	mu       sync.Mutex
 	repos    map[string]*repo
 	aliases  map[string]string
@@ -539,6 +542,9 @@ func (c *core) flatten(k repokey.Key) repokey.Key {
 }
 
 func (c *core) cloneURL(k repokey.Key, over forge.Protocol) string {
+	if over == forge.SSH && c.sshHost != "" {
+		return "ssh://git@" + c.sshHost + "/" + k.FullName() + ".git"
+	}
 	if over == forge.SSH {
 		return "ssh://git@" + c.shape.Host + "/" + k.FullName() + ".git"
 	}

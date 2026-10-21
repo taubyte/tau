@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
@@ -23,48 +24,35 @@ import (
 	"github.com/taubyte/tau/tools/tau/internal/project"
 )
 
-// link.go is `tau link`: claim project.yaml's id on a cloud for the project's
-// repositories, and give the cloud what it needs to build them.
+// link.go is `tau link`: register project.yaml's id on a cloud for the
+// project's repositories, and wire each repository to the cloud.
 //
-// THE CREDENTIALS ARE MADE HERE, on the developer's machine; WHAT IS
-// INSTALLED AT THE FORGE IS INSTALLED BY THE CLOUD, under the forge
-// connection the developer's tau token carries. The CLI never holds a forge
-// token: the cloud opens the connection for the one request that needs it
-// (services/build/frontend/linkapi.go). The cloud keeps the private half of
-// each credential in the secrets service, under pkg/linkcreds' names:
+// EVERYTHING AT THE FORGE IS DONE HERE, with this profile's own forge
+// credential; the cloud never acts at a forge for anyone. Per repository the
+// CLI generates a webhook secret and an ed25519 deploy key, installs the hook
+// (to https://build-frontend.<fqdn>/hook/<id>) and the read-only deploy key,
+// and hands the cloud the secret and the key's private half under
+// pkg/linkcreds' names. With --create it first creates repositories that do
+// not exist yet, in whatever namespace the key names; with --push it pushes
+// the project directory to the configuration repository last, so that push is
+// the first build.
 //
-//  1. read the project's id from project.yaml — the cloud mints none
-//  2. ask the cloud to read each repository at its forge: the forge's
-//     canonical spelling (what a delivery names it as), whether the
-//     connection may install on it, and whether this cloud's hook is there
-//  3. claim the id for the configuration repository and attach the code
-//     repositories (POST /projects/<id>); an id somebody else claimed is
-//     refused by name, and nothing below runs
-//  4. generate one webhook secret for the project and one ed25519 deploy key
-//     per repository, and store their private halves on the cloud
-//  5. ask the cloud to install, on each repository, a push webhook to
-//     <cloud>/hook/<id> with the stored secret, and the deploy key's public
-//     half, read-only
+// A REPOSITORY THAT ALREADY HAS THIS CLOUD'S HOOK was linked before. Link asks
+// (or takes --replace-hook / --keep-hook): replacing deletes that hook and
+// this cloud's deploy key and installs new ones after the new credentials are
+// stored; keeping leaves that repository's hook and stored credentials alone.
 //
-// A REPOSITORY THAT ALREADY HAS A HOOK TO <cloud>/hook/<id> was linked before.
-// Installing a second would leave the first verified against a secret the
-// cloud no longer holds, so link asks (or takes --replace-hook / --keep-hook):
-// replacing has the cloud delete that hook and the deploy key titled for it,
-// after the new credentials are stored, and install new ones; keeping
-// installs and rotates nothing.
-//
-// --manual stops after 4 and prints what step 5 would have installed, for a
-// forge the cloud cannot reach or a connection that may not manage hooks.
+// --manual installs nothing and prints what to install by hand.
 
 func linkCommand(env Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "link",
-		Short: "claim this project's id on the cloud and install its webhook and deploy keys",
-		Long: "The id is project.yaml's own. You must write to every repository named, through the forge\n" +
-			"connected to your session for its host (`tau forge connect`); that connection is also what\n" +
-			"installs the webhook and the read-only deploy keys on the forge (--manual prints them\n" +
-			"instead). The configuration repository defaults to the directory's git origin. What was\n" +
-			"linked is written to " + config.LinkFile + ".",
+		Short: "register this project on the cloud and install its webhooks and deploy keys",
+		Long: "The id is project.yaml's own. The webhooks and read-only deploy keys are installed by this\n" +
+			"CLI with your forge credential (`tau forge connect <host>`), which needs admin on each\n" +
+			"repository; --manual prints them instead. Repositories may belong to any user, organization,\n" +
+			"group or workspace the cloud's tenancy serves. The configuration repository defaults to the\n" +
+			"directory's git origin. What was linked is written to " + config.LinkFile + ".",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir := flagString(cmd, "dir")
 			p, err := project.Open(dir)
@@ -90,8 +78,7 @@ func linkCommand(env Env) *cobra.Command {
 					return err
 				}
 			}
-			repos := []string{configRepo}
-			repos = append(repos, flagStrings(cmd, "code-repo")...)
+			repos := append([]string{configRepo}, flagStrings(cmd, "code-repo")...)
 			keys := make([]repokey.Key, 0, len(repos))
 			for _, r := range repos {
 				k, err := repoKey(keyer, r)
@@ -101,63 +88,56 @@ func linkCommand(env Env) *cobra.Command {
 				keys = append(keys, k)
 			}
 
-			cl, err := client(cmd, env)
+			cfg, name, _, cl, err := current(cmd, env)
 			if err != nil {
 				return err
 			}
-			callback, err := url.Parse(cl.Base() + "/hook/" + url.PathEscape(id))
+			callback, err := hookURL(cmd, cl, id)
 			if err != nil {
 				return err
 			}
-			manual := flagBool(cmd, "manual")
 			forges, err := forgesFor(env, callback)
 			if err != nil {
 				return err
 			}
+			manual := flagBool(cmd, "manual")
+			if manual && (flagBool(cmd, "create") || flagBool(cmd, "push")) {
+				return errors.New("--manual touches no forge, so it cannot --create or --push")
+			}
 
-			hooked := make([]bool, len(keys))
+			at := &forgeWork{forges: forges, creds: forgeCreds{env: env, cfg: cfg, name: name, cl: cl, now: time.Now}, sessions: map[string]*forge.Session{}}
+			state := make([]repoState, len(keys))
 			if !manual {
-				// THE CLOUD READS EACH REPOSITORY under the session's
-				// connection for its host: the profile holds only the tau
-				// token, and no forge token is ever handed to it.
-				for i, k := range keys {
-					in, err := cl.InspectRepository(cmd.Context(), id, k.String())
-					if err != nil {
-						return fmt.Errorf("reading %s on its forge: %w (connect it with `tau forge connect %s`, or run with --manual)", k, err, k.Host)
+				for i := range keys {
+					if state[i], err = at.inspect(cmd.Context(), keys[i], callback, flagBool(cmd, "create"), !flagBool(cmd, "public")); err != nil {
+						return err
 					}
-					// ASKED BEFORE ANYTHING IS CLAIMED: installing a webhook
-					// and a deploy key takes admin on most forges, and a link
-					// that claimed the id and then could not install would
-					// leave a project nobody can push to.
-					if !in.Admin {
-						return fmt.Errorf("your connection to %s may not administer %s, and installing a webhook and a deploy key takes admin (or run with --manual)", k.Host, k)
-					}
-					// THE FORGE'S SPELLING, because a delivery names the
-					// repository the way the forge does and the cloud
-					// compares it exactly.
-					if keys[i], err = repokey.Parse("https://" + in.Repository); err != nil {
-						return fmt.Errorf("%s answered %q for %s: %w", k.Host, in.Repository, k, err)
-					}
-					hooked[i] = in.Hooked
+					keys[i] = state[i].key
 				}
 			}
-			relinking, err := relinkDecision(cmd, env, keys, hooked)
+			relinking, err := relinkDecision(cmd, env, keys, state)
 			if err != nil {
 				return err
 			}
 
 			// THE CREDENTIALS, AND WHAT --manual WOULD PRINT, BEFORE THE CLAIM,
 			// so a forge this CLI cannot sign for refuses the link rather than
-			// leaving a claimed id nobody can push to.
-			var creds *credentials
-			if relinking != keepHook {
-				if creds, err = newCredentials(keys); err != nil {
+			// leaving a registered id nobody can push to.
+			var creds []repoCreds
+			for i, k := range keys {
+				if state[i].hooked && relinking == keepHook {
+					continue
+				}
+				c, err := newRepoCreds(k, callback)
+				if err != nil {
 					return err
 				}
+				c.replace = state[i].hooked
+				creds = append(creds, c)
 			}
 			var paste []manualInstall
 			if manual {
-				if paste, err = creds.manual(forges, callback); err != nil {
+				if paste, err = manualFor(forges, creds, callback); err != nil {
 					return err
 				}
 			}
@@ -167,16 +147,14 @@ func linkCommand(env Env) *cobra.Command {
 				codeKeys = append(codeKeys, k.String())
 			}
 			linked, err := cl.LinkProject(cmd.Context(), id, keys[0].String(), codeKeys)
-			var refusal *api.Error
-			if errors.As(err, &refusal) && refusal.Status == http.StatusConflict {
+			if refusal := (*api.Error)(nil); errors.As(err, &refusal) && (refusal.Status == http.StatusConflict || refusal.Status == http.StatusForbidden) {
 				return errors.New(refusal.Message)
 			}
 			if err != nil {
 				return err
 			}
-
-			if creds != nil {
-				if err := creds.store(cmd.Context(), cl, id); err != nil {
+			for _, c := range creds {
+				if err := c.store(cmd.Context(), cl, id); err != nil {
 					return fmt.Errorf("storing the link's credentials on the cloud: %w", err)
 				}
 			}
@@ -187,6 +165,11 @@ func linkCommand(env Env) *cobra.Command {
 			for _, c := range codeKeys {
 				b.WriteString(t.Muted.Render("  code   "+c) + "\n")
 			}
+			for i, k := range keys {
+				if state[i].created {
+					b.WriteString(t.Muted.Render("  created "+k.String()) + "\n")
+				}
+			}
 
 			out := linkOutput{Link: config.Link{ProjectID: id, Name: p.Name(), Profile: flagString(cmd, "profile"), Config: linked.Config, Code: linked.Code}}
 			if manual {
@@ -196,46 +179,72 @@ func linkCommand(env Env) *cobra.Command {
 					fmt.Fprintf(&b, "\n%s\n  webhook      %s (push events, application/json)\n  secret       %s\n  deploy key   %s (read-only)\n",
 						t.Accent.Render(m.Repository), m.Webhook, m.Secret, m.DeployKey)
 				}
-			} else if relinking == keepHook {
-				b.WriteString(t.Muted.Render("  kept the webhook and deploy keys already installed; the credentials stored on the cloud are unchanged") + "\n")
 			} else {
-				for i, k := range keys {
-					// THE OLD ONES GO ONLY NOW, after the new credentials are
-					// stored: from that moment the old hook's secret is gone
-					// from the cloud and its deliveries are refused anyway.
-					replace := relinking == replaceHook && hooked[i]
-					if err := cl.InstallLink(cmd.Context(), id, k.String(), creds.keys[i].authz, replace); err != nil {
-						return fmt.Errorf("installing the webhook and deploy key on %s: %w", k, err)
+				// THE OLD ONES GO ONLY NOW, after the new credentials are
+				// stored: from that moment the old hook's secret is gone from
+				// the cloud and its deliveries are refused anyway.
+				for _, c := range creds {
+					if err := at.install(cmd.Context(), c, callback); err != nil {
+						return fmt.Errorf("installing the webhook and deploy key on %s: %w", c.repository, err)
 					}
-					if replace {
-						b.WriteString(t.Muted.Render("  deleted this cloud's previous webhook and deploy key on "+k.String()) + "\n")
+					if c.replace {
+						b.WriteString(t.Muted.Render("  deleted this cloud's previous webhook and deploy key on "+c.repository.String()) + "\n")
 					}
-					b.WriteString(t.Muted.Render("  installed a webhook and a read-only deploy key on "+k.String()) + "\n")
+					b.WriteString(t.Muted.Render("  installed a webhook and a read-only deploy key on "+c.repository.String()) + "\n")
+				}
+				if relinking == keepHook {
+					b.WriteString(t.Muted.Render("  kept the webhooks and deploy keys already installed") + "\n")
 				}
 			}
 
 			if err := config.WriteLink(dir, out.Link); err != nil {
 				return err
 			}
-			if manual {
-				return emit(cmd, env, out, b.String())
+			if flagBool(cmd, "push") {
+				commit, err := at.push(cmd.Context(), dir, state[0])
+				if err != nil {
+					return fmt.Errorf("pushing %s: %w", keys[0], err)
+				}
+				out.Pushed = commit
+				b.WriteString(t.Muted.Render("  pushed "+commit+" to "+keys[0].String()) + "\n")
 			}
-			return emit(cmd, env, out.Link, b.String())
+			return emit(cmd, env, out, b.String())
 		},
 	}
 	addDir(cmd)
 	cmd.Flags().String("config-repo", "", "the configuration repository (clone URL or host/owner/name; default: git origin)")
 	cmd.Flags().StringArray("code-repo", nil, "a code repository the project builds; repeatable")
-	cmd.Flags().Bool("manual", false, "install nothing on the forge: print the webhook and deploy keys to add by hand")
+	cmd.Flags().Bool("create", false, "create the repositories that do not exist yet, in the namespace each one names")
+	cmd.Flags().Bool("public", false, "with --create, make the new repositories public (default private)")
+	cmd.Flags().Bool("push", false, "push this directory to the configuration repository once it is linked")
+	cmd.Flags().String("callback", "", "the webhook URL to install (default https://build-frontend.<cloud fqdn>/hook/<id>)")
+	cmd.Flags().Bool("manual", false, "install nothing on the forge: print the webhooks and deploy keys to add by hand")
 	cmd.Flags().Bool("replace-hook", false, "when a repository already has this cloud's webhook, delete it and this cloud's deploy key and install new ones")
-	cmd.Flags().Bool("keep-hook", false, "when a repository already has this cloud's webhook, keep it and the stored credentials and install nothing")
+	cmd.Flags().Bool("keep-hook", false, "when a repository already has this cloud's webhook, keep it and its stored credentials")
 	cmd.MarkFlagsMutuallyExclusive("replace-hook", "keep-hook")
 	return cmd
 }
 
-// forgesFor is the injected registry, or the public forges. A cloud reached
-// over plain http — a development cloud — gets hooks over plain http, which
-// the forge package otherwise refuses because a delivery carries a secret.
+// hookURL is where a forge delivers id's pushes: --callback, or the cloud's
+// build frontend under the name the cloud reports.
+func hookURL(cmd *cobra.Command, cl *api.Client, id string) (*url.URL, error) {
+	base := flagString(cmd, "callback")
+	if base == "" {
+		fqdn, err := cl.Fqdn(cmd.Context())
+		if err != nil {
+			return nil, fmt.Errorf("asking the cloud its name: %w (or pass --callback)", err)
+		}
+		return url.Parse("https://build-frontend." + fqdn + "/hook/" + url.PathEscape(id))
+	}
+	u, err := url.Parse(base)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return nil, fmt.Errorf("--callback %q is not an http(s) URL", base)
+	}
+	return u, nil
+}
+
+// forgesFor is the injected registry, or the public forges. A plain-http
+// callback — a development cloud — is allowed only when asked for by name.
 func forgesFor(env Env, callback *url.URL) (*forge.Registry, error) {
 	if env.Forges != nil {
 		return env.Forges, nil
@@ -243,9 +252,10 @@ func forgesFor(env Env, callback *url.URL) (*forge.Registry, error) {
 	return public.Registry(forge.Policy{AllowInsecureCallback: callback.Scheme == "http"})
 }
 
-// linkOutput is what --manual prints under -o json.
+// linkOutput is what link prints under -o json.
 type linkOutput struct {
 	config.Link
+	Pushed  string          `json:"pushed,omitempty"`
 	Install []manualInstall `json:"install,omitempty"`
 }
 
@@ -257,33 +267,31 @@ type manualInstall struct {
 	DeployKey  string `json:"deploy_key"`
 }
 
-// credentials are one project's webhook secret and each repository's deploy
-// key.
-type credentials struct {
-	hook forge.Secret
-	keys []deployKey
-}
-
-type deployKey struct {
+// repoCreds are one repository's webhook secret and deploy key.
+type repoCreds struct {
 	repository     repokey.Key
+	hook           forge.Secret
+	title          string
 	private, authz string
+	// replace is whether this cloud's earlier hook and key are there to go.
+	replace bool
 }
 
-func newCredentials(repos []repokey.Key) (*credentials, error) {
+func newRepoCreds(k repokey.Key, callback *url.URL) (repoCreds, error) {
 	secret, err := forge.NewSecret()
 	if err != nil {
-		return nil, err
+		return repoCreds{}, err
 	}
-	c := &credentials{hook: secret}
-	for _, k := range repos {
-		private, authz, err := newDeployKey("tau " + k.String())
-		if err != nil {
-			return nil, err
-		}
-		c.keys = append(c.keys, deployKey{repository: k, private: private, authz: authz})
+	title := deployKeyTitle(callback)
+	private, authz, err := newDeployKey(title + " " + k.String())
+	if err != nil {
+		return repoCreds{}, err
 	}
-	return c, nil
+	return repoCreds{repository: k, hook: secret, title: title, private: private, authz: authz}, nil
 }
+
+// deployKeyTitle names this cloud's deploy keys, so a relink finds its own.
+func deployKeyTitle(callback *url.URL) string { return "tau " + callback.Host }
 
 // newDeployKey is an ed25519 key pair: the private half in OpenSSH PEM, the
 // public half as an authorized_keys line.
@@ -305,37 +313,32 @@ func newDeployKey(comment string) (private, authz string, err error) {
 
 // store puts the private halves on the cloud, through the same secret route
 // every other secret takes.
-func (c *credentials) store(ctx context.Context, cl *api.Client, id string) error {
-	for _, k := range c.keys {
-		if err := cl.SetSecret(ctx, id, linkcreds.Environment, linkcreds.HookSecret(k.repository.String()), c.hook.Expose()); err != nil {
-			return err
-		}
-		if err := cl.SetSecret(ctx, id, linkcreds.Environment, linkcreds.DeployKey(k.repository.String()), []byte(k.private)); err != nil {
-			return err
-		}
+func (c repoCreds) store(ctx context.Context, cl *api.Client, id string) error {
+	if err := cl.SetSecret(ctx, id, linkcreds.Environment, linkcreds.HookSecret(c.repository.String()), c.hook.Expose()); err != nil {
+		return err
 	}
-	return nil
+	return cl.SetSecret(ctx, id, linkcreds.Environment, linkcreds.DeployKey(c.repository.String()), []byte(c.private))
 }
 
-// manual is what the cloud would have installed on each forge. The secret is the WIRE
-// form the forge's signing scheme derives, which is what a forge is given and
-// signs with — never the stored secret itself.
-func (c *credentials) manual(forges *forge.Registry, callback *url.URL) ([]manualInstall, error) {
-	out := make([]manualInstall, 0, len(c.keys))
-	for _, k := range c.keys {
-		d, err := forges.Driver(k.repository.Host)
+// manualFor is what would have been installed on each forge. The secret is the
+// WIRE form the forge's signing scheme derives, which is what a forge is
+// given and signs with.
+func manualFor(forges *forge.Registry, creds []repoCreds, callback *url.URL) ([]manualInstall, error) {
+	out := make([]manualInstall, 0, len(creds))
+	for _, c := range creds {
+		d, err := forges.Driver(c.repository.Host)
 		if err != nil {
 			return nil, err
 		}
 		sig, ok := d.(forge.Signatures)
 		if !ok {
-			return nil, fmt.Errorf("%s: this forge's deliveries cannot be verified", k.repository.Host)
+			return nil, fmt.Errorf("%s: this forge's deliveries cannot be verified", c.repository.Host)
 		}
 		wire, err := sig.Scheme().Wire(c.hook)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, manualInstall{Repository: k.repository.String(), Webhook: callback.String(), Secret: wire, DeployKey: k.authz})
+		out = append(out, manualInstall{Repository: c.repository.String(), Webhook: callback.String(), Secret: wire, DeployKey: c.authz})
 	}
 	return out, nil
 }
@@ -345,47 +348,36 @@ type relink int
 
 const (
 	freshLink   relink = iota // no repository has this cloud's hook
-	replaceHook               // delete them, rotate everything, install anew
-	keepHook                  // leave them and the stored credentials alone
+	replaceHook               // delete them and install anew
+	keepHook                  // leave those repositories alone
 )
 
 // relinkDecision asks, at a terminal, whether to replace this cloud's hooks
 // found on the repositories; elsewhere it takes --replace-hook or --keep-hook
 // and refuses without one.
-func relinkDecision(cmd *cobra.Command, env Env, keys []repokey.Key, hooked []bool) (relink, error) {
-	var with, bare []string
+func relinkDecision(cmd *cobra.Command, env Env, keys []repokey.Key, state []repoState) (relink, error) {
+	var with []string
 	for i, k := range keys {
-		if hooked[i] {
+		if state[i].hooked {
 			with = append(with, k.String())
-		} else {
-			bare = append(bare, k.String())
 		}
 	}
-	if len(with) == 0 {
-		return freshLink, nil
-	}
-	decision := freshLink
 	switch {
+	case len(with) == 0:
+		return freshLink, nil
 	case flagBool(cmd, "replace-hook"):
-		decision = replaceHook
+		return replaceHook, nil
 	case flagBool(cmd, "keep-hook"):
-		decision = keepHook
+		return keepHook, nil
 	case prompting(cmd, env):
 		yes, err := env.Prompter.Confirm(fmt.Sprintf("%s already has this cloud's webhook from an earlier link. Delete it and its deploy key, and install new ones?", strings.Join(with, ", ")))
 		if err != nil {
 			return freshLink, err
 		}
-		decision = keepHook
 		if yes {
-			decision = replaceHook
+			return replaceHook, nil
 		}
-	default:
-		return freshLink, fmt.Errorf("%s already has this cloud's webhook from an earlier link: pass --replace-hook to delete it and install new credentials, or --keep-hook to keep it", strings.Join(with, ", "))
+		return keepHook, nil
 	}
-	// KEEPING IS KEEPING THE PROJECT'S SECRET, which only the cloud holds: a
-	// repository without the old hook could only be given one by rotating it.
-	if decision == keepHook && len(bare) > 0 {
-		return freshLink, fmt.Errorf("keeping the existing webhook keeps the project's stored secret, which this machine does not hold, so %s cannot be given a hook; use --replace-hook", strings.Join(bare, ", "))
-	}
-	return decision, nil
+	return freshLink, fmt.Errorf("%s already has this cloud's webhook from an earlier link: pass --replace-hook to delete it and install new credentials, or --keep-hook to keep it", strings.Join(with, ", "))
 }

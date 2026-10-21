@@ -25,10 +25,11 @@ import (
 	"github.com/taubyte/tau/tools/tau/internal/config"
 )
 
-// session.go is signing in to a cloud and connecting forges to the user.
+// session.go is signing in to a cloud and to forges.
 //
-// THE PROFILE HOLDS THE TAU TOKEN (and the refresh token that renews it).
-// Connecting a forge leaves it as it is.
+// THE PROFILE HOLDS THE TAU TOKEN (and the refresh token that renews it), and
+// the forge credentials forge sign-ins handed back, per host. The CLI acts at
+// a forge with its own credential; the cloud keeps none.
 
 // profileClient is a client for profile name that renews its token and saves
 // the renewal, unless the token came from $TAU_TOKEN.
@@ -81,11 +82,15 @@ func profileSaver(env Env, cfg *config.Config, name, start string) func(token st
 	}
 }
 
-// keep stores sess as profile name's token.
-func keep(cfg *config.Config, name string, sess *authv2.Session, use bool) error {
+// keep stores sess as profile name's token, and the forge credential the
+// sign-in obtained. A new sign-in may be another user, so the forge
+// credentials of the last one go.
+func keep(cfg *config.Config, name string, sess *authv2.Session, f *authv2.ForgeToken, use bool) error {
 	p := cfg.Profiles[name]
 	p.Token, p.Expires, p.Refresh = sess.GetAccessToken(), sess.GetAccessExpiresUnix(), sess.GetRefreshToken()
+	p.Forges = nil
 	cfg.Profiles[name] = p
+	setForge(cfg, name, f)
 	if use || cfg.Current == "" {
 		cfg.Current = name
 	}
@@ -303,6 +308,7 @@ func signedInText(env Env, cloud string, in *authv2.SignedIn) string {
 type sessionJSON struct {
 	Profile    string             `json:"profile"`
 	Cloud      string             `json:"cloud"`
+	ID         string             `json:"id,omitempty"`
 	User       string             `json:"user"`
 	Role       string             `json:"role,omitempty"`
 	Connection *authv2.Connection `json:"connection,omitempty"`
@@ -310,7 +316,7 @@ type sessionJSON struct {
 
 func sessionOut(name, cloud string, in *authv2.SignedIn) sessionJSON {
 	u := in.GetSession().GetUser()
-	return sessionJSON{Profile: name, Cloud: cloud, User: u.GetName(), Role: roleName(u.GetRole()), Connection: in.GetConnection()}
+	return sessionJSON{Profile: name, Cloud: cloud, ID: u.GetId(), User: u.GetName(), Role: roleName(u.GetRole()), Connection: in.GetConnection()}
 }
 
 // loginCommand signs in to a cloud and keeps the tau token as a profile.
@@ -357,7 +363,7 @@ func loginCommand(env Env) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				if err := keep(cfg, name, &authv2.Session{AccessToken: tok}, flagBool(cmd, "use")); err != nil {
+				if err := keep(cfg, name, &authv2.Session{AccessToken: tok}, nil, flagBool(cmd, "use")); err != nil {
 					return err
 				}
 				in := &authv2.SignedIn{Session: &authv2.Session{User: who.Msg}}
@@ -408,7 +414,7 @@ func loginCommand(env Env) *cobra.Command {
 			default:
 				return errors.New("say how to sign in: --name with --password-stdin, --sso <provider>, or --token-stdin")
 			}
-			if err := keep(cfg, name, in.GetSession(), flagBool(cmd, "use")); err != nil {
+			if err := keep(cfg, name, in.GetSession(), in.GetForge(), flagBool(cmd, "use")); err != nil {
 				return err
 			}
 			return emit(cmd, env, sessionOut(name, p.Cloud, in), signedInText(env, p.Cloud, in))
@@ -513,7 +519,7 @@ func logoutCommand(env Env) *cobra.Command {
 					}
 				}
 			}
-			p.Token, p.Expires, p.Refresh = "", 0, ""
+			p.Token, p.Expires, p.Refresh, p.Forges = "", 0, "", nil
 			cfg.Profiles[name] = p
 			if err := cfg.Save(); err != nil {
 				return err
@@ -563,10 +569,11 @@ func forgeCommand(env Env) *cobra.Command {
 		Short: "sign in to a forge as yourself, linking it to your user",
 		Long: "Signs in to the forge through the cloud's OAuth app there (a browser redirect to this\n" +
 			"machine, or --device), or takes a token you paste (--paste). The forge account is linked\n" +
-			"to your user when nobody holds it; the cloud stores no forge credential.",
+			"to your user when nobody holds it. The forge credential is kept in this profile, and\n" +
+			"`tau link` acts at the forge with it; the cloud stores none.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, _, _, cl, err := current(cmd, env)
+			cfg, name, _, cl, err := current(cmd, env)
 			if err != nil {
 				return err
 			}
@@ -582,6 +589,13 @@ func forgeCommand(env Env) *cobra.Command {
 			s := signIn{cmd: cmd, env: env, sessions: cl.Sessions()}
 			in, err := s.through(host, pr)
 			if err != nil {
+				return err
+			}
+			if in.GetForge() == nil {
+				return fmt.Errorf("%s signed in but the cloud handed back no forge credential", host)
+			}
+			setForge(cfg, name, in.GetForge())
+			if err := cfg.Save(); err != nil {
 				return err
 			}
 			return emit(cmd, env, in.GetConnection(), theme(env).Done("connected "+host)+connectionText(env, in.GetConnection()))

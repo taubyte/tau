@@ -55,17 +55,17 @@ func originOf(ctx context.Context, dir string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// projectsCommand lists the projects the token's holder linked on the cloud.
+// projectsCommand lists the projects the caller owns or holds a role on.
 func projectsCommand(env Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "projects",
-		Short: "the projects you linked on this cloud",
+		Short: "the projects you own or were granted a role on",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, err := client(cmd, env)
 			if err != nil {
 				return err
 			}
-			ps, err := cl.Projects(cmd.Context(), flagString(cmd, "forge"))
+			ps, err := cl.Projects(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -86,7 +86,6 @@ func projectsCommand(env Env) *cobra.Command {
 			return emit(cmd, env, ps, b.String())
 		},
 	}
-	cmd.Flags().String("forge", "github.com", "the forge your token is for")
 	return cmd
 }
 

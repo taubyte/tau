@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -25,12 +24,8 @@ import (
 
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
-	"github.com/taubyte/tau/pkg/git/repokey"
-	"github.com/taubyte/tau/pkg/linkcreds"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
-	frontendpkg "github.com/taubyte/tau/services/build/frontend"
-	"github.com/taubyte/tau/services/build/frontend/forgeauth"
 	"github.com/taubyte/tau/tools/tau/internal/config"
 )
 
@@ -40,8 +35,8 @@ var mintedID = regexp.MustCompile(`Qm[1-9A-HJ-NP-Za-km-z]{44}`)
 
 const goodToken = "tok-good"
 
-// forgeToken is the fake forge's good token: the one a pasted sign-in
-// connects, and what the fake auth opens the connection to for `tau link`.
+// forgeToken is the fake forge's good token: the one a forge sign-in hands
+// back to the CLI.
 var forgeToken = fake.New(fake.GitHubLike).TokenString()
 
 // takenID is a project id the fake frontend says somebody else claimed.
@@ -56,7 +51,8 @@ type frontend struct {
 	logs     map[string]string
 	secrets  map[string]map[string][]byte
 	created  []string
-	installs []string
+	grants   [][3]string
+	fqdn     string
 	calls    []string
 	dropOnce bool
 	// failSecrets makes every secret write a 503.
@@ -65,10 +61,7 @@ type frontend struct {
 	pushAfter int
 	pushed    func()
 	auth      *fakeAuth
-	// forges are what the link routes install on, through the frontend's own
-	// forgeauth, under the connection the caller's tau token carries.
-	forges *forge.Registry
-	srv    *httptest.Server
+	srv       *httptest.Server
 }
 
 func newFrontend(t *testing.T) *frontend {
@@ -80,6 +73,7 @@ func newFrontend(t *testing.T) *frontend {
 		byProj:  map[string][]string{"proj-1": {"job-1", "job-2"}},
 		logs:    map[string]string{"job-1": "step one\nstep two\n"},
 		secrets: map[string]map[string][]byte{},
+		fqdn:    "cloud.example",
 	}
 	f.auth = newFakeAuth(func() int64 { return time.Now().Unix() })
 	mux := http.NewServeMux()
@@ -214,7 +208,7 @@ func newFrontend(t *testing.T) *frontend {
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]any{"id": id, "config_repository_key": body.Config, "code_repository_keys": body.Code})
 	}))
-	mux.HandleFunc("GET /forges/{forge}/projects", authed(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /projects", authed(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		out := []map[string]any{}
@@ -224,69 +218,53 @@ func newFrontend(t *testing.T) *frontend {
 		}
 		json.NewEncoder(w).Encode(out)
 	}))
-	// THE LINK ROUTES are the real frontend's forge half (forgeauth) behind
-	// a fake's routing: the forge credential is opened here and never sent.
-	linkForge := func(w http.ResponseWriter, r *http.Request, repository string) (*forgeauth.Forges, string, repokey.Key, *url.URL, bool) {
-		key, err := repokey.Parse("https://" + repository)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			return nil, "", key, nil, false
-		}
-		tok, err := f.auth.open(r.Header, key.Host)
-		if err != nil {
-			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-			return nil, "", key, nil, false
-		}
-		fa, err := forgeauth.New(f.forges)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return nil, "", key, nil, false
-		}
-		cb, _ := url.Parse("http://" + r.Host + "/hook/" + r.PathValue("projectId"))
-		return fa, tok, key, cb, true
-	}
-	failed := func(w http.ResponseWriter, err error) {
-		w.WriteHeader(http.StatusBadGateway)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-	}
-	mux.HandleFunc("POST /link/{projectId}/inspect", authed(func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Repository string `json:"repository"`
-		}
-		json.NewDecoder(r.Body).Decode(&body)
-		fa, tok, key, cb, ok := linkForge(w, r, body.Repository)
-		if !ok {
+	mux.HandleFunc("GET /cloud", authed(func(w http.ResponseWriter, r *http.Request) {
+		if f.fqdn == "" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]string{"error": "this build frontend was given no cloud fqdn"})
 			return
 		}
-		in, err := fa.Inspect(r.Context(), tok, key, cb)
-		if err != nil {
-			failed(w, err)
-			return
-		}
-		json.NewEncoder(w).Encode(map[string]any{"repository": in.Repository, "admin": in.Admin, "hooked": in.Hooked, "callback": cb.String()})
+		json.NewEncoder(w).Encode(map[string]string{"fqdn": f.fqdn})
 	}))
-	mux.HandleFunc("POST /link/{projectId}/install", authed(func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Repository string `json:"repository"`
-			DeployKey  string `json:"deploy_key"`
-			Replace    bool   `json:"replace"`
+	mux.HandleFunc("GET /projects/{projectId}/grants", authed(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		if r.PathValue("projectId") != "proj-1" {
+			denied(w)
+			return
 		}
+		out := []map[string]any{}
+		for _, g := range f.grants {
+			out = append(out, map[string]any{"id": g[0], "user": g[1], "role": g[2], "by": "u-dev", "at": "2026-10-21T00:00:00Z"})
+		}
+		json.NewEncoder(w).Encode(out)
+	}))
+	mux.HandleFunc("POST /projects/{projectId}/grants", authed(func(w http.ResponseWriter, r *http.Request) {
+		var body struct{ User, Role string }
 		json.NewDecoder(r.Body).Decode(&body)
-		fa, tok, key, cb, ok := linkForge(w, r, body.Repository)
-		if !ok {
+		if body.Role == "emperor" {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "not a role: emperor"})
 			return
 		}
 		f.mu.Lock()
-		f.installs = append(f.installs, body.Repository)
-		secret := f.secrets[r.PathValue("projectId")+"/"+linkcreds.Environment][linkcreds.HookSecret]
-		f.mu.Unlock()
-		in := frontendpkg.Install{Callback: cb, Secret: secret, Title: "tau http://" + r.Host, DeployKey: body.DeployKey, Replace: body.Replace}
-		if err := fa.Install(r.Context(), tok, key, in); err != nil {
-			failed(w, err)
-			return
+		defer f.mu.Unlock()
+		id := "g-" + strconv.Itoa(len(f.grants)+1)
+		f.grants = append(f.grants, [3]string{id, body.User, body.Role})
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]string{"id": id})
+	}))
+	mux.HandleFunc("DELETE /projects/{projectId}/grants/{grantId}", authed(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		for i, g := range f.grants {
+			if g[0] == r.PathValue("grantId") {
+				f.grants = append(f.grants[:i], f.grants[i+1:]...)
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
 		}
-		w.WriteHeader(http.StatusNoContent)
+		denied(w)
 	}))
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)

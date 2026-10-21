@@ -36,6 +36,18 @@ type Profile struct {
 	Expires int64 `yaml:"expires,omitempty" json:"-"`
 	// Refresh renews Token; empty for an API token.
 	Refresh string `yaml:"refresh,omitempty" json:"-"`
+	// Forges are the forge credentials a forge sign-in handed back, by forge
+	// host. The CLI acts at a forge with these; the cloud holds none.
+	Forges map[string]ForgeToken `yaml:"forges,omitempty" json:"-"`
+}
+
+// ForgeToken is one forge's own credential.
+type ForgeToken struct {
+	Token   string `yaml:"token"`
+	Refresh string `yaml:"refresh,omitempty"`
+	// Expires is unix seconds; zero is never.
+	Expires int64  `yaml:"expires,omitempty"`
+	Login   string `yaml:"login,omitempty"`
 }
 
 // Config is the whole file.

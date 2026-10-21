@@ -23,7 +23,7 @@ func (x *tester) profile() config.Profile {
 
 // The profile holds the tau token, and a forge sign-in leaves no forge token
 // in the config file.
-func TestASSOSignInPastedKeepsOnlyTheTauToken(t *testing.T) {
+func TestASSOSignInPastedKeepsTheForgeCredential(t *testing.T) {
 	x := newTester(t)
 	x.stdin = forgeToken + "\n"
 	out := x.ok("login", "--cloud", x.f.srv.URL, "--sso", "github.com", "--paste", "-o", "json")
@@ -40,7 +40,8 @@ func TestASSOSignInPastedKeepsOnlyTheTauToken(t *testing.T) {
 	require.NoError(t, err)
 	raw, err := readFile(path)
 	require.NoError(t, err)
-	require.NotContains(t, raw, forgeToken)
+	require.Contains(t, raw, forgeToken, "the forge credential is the client's to keep")
+	require.Equal(t, forgeToken, p.Forges["github.com"].Token)
 
 	x.stdin = "wrong\n"
 	r := x.run("login", "--cloud", x.f.srv.URL, "--sso", "github.com", "--paste")
@@ -160,6 +161,8 @@ func TestForgeConnect(t *testing.T) {
 	out := x.ok("forge", "connect", "plain.example", "--paste")
 	require.Contains(t, out, "connected plain.example")
 	require.Equal(t, first.Token, x.profile().Token, "the session is untouched")
+	require.Equal(t, forgeToken, x.profile().Forges["plain.example"].Token, "the forge credential is kept beside the session")
+	require.Contains(t, x.profile().Forges, "github.com")
 	x.stdin = forgeToken + "\n"
 	var got map[string]any
 	require.NoError(t, json.Unmarshal([]byte(x.ok("forge", "connect", "plain.example", "--paste", "-o", "json")), &got))
@@ -201,9 +204,13 @@ func TestLogoutTellsTheCloud(t *testing.T) {
 	x.stdin = "hunter2\n"
 	x.ok("login", "--cloud", x.f.srv.URL, "--name", "root", "--password-stdin")
 	refresh := x.profile().Refresh
+	x.stdin = forgeToken + "\n"
+	x.ok("forge", "connect", "plain.example", "--paste")
+	require.NotEmpty(t, x.profile().Forges)
 	x.ok("logout")
 	require.Equal(t, []string{refresh}, x.f.auth.loggedOut)
 	require.Empty(t, x.profile().Refresh)
+	require.Empty(t, x.profile().Forges, "signing out forgets the forge credentials too")
 
 	// A cloud that cannot be reached does not keep anyone signed in.
 	x.login()
@@ -221,6 +228,7 @@ func TestWhoami(t *testing.T) {
 	var got sessionJSON
 	require.NoError(t, json.Unmarshal([]byte(x.ok("whoami", "-o", "json")), &got))
 	require.Equal(t, "member", got.Role)
+	require.Equal(t, "u-dev", got.ID, "the id a grant names")
 	require.Nil(t, got.Connection)
 }
 

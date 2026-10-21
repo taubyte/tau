@@ -85,7 +85,7 @@ func TestUnreachable(t *testing.T) {
 	require.Error(t, err)
 	_, err = c.LinkProject(t.Context(), "n", "a", nil)
 	require.Error(t, err)
-	_, err = c.Projects(t.Context(), "github.com")
+	_, err = c.Projects(t.Context())
 	require.Error(t, err)
 }
 
@@ -98,8 +98,17 @@ func TestLinkingAndListingProjects(t *testing.T) {
 			require.Equal(t, []any{}, body["code_repository_keys"], "no code repositories is an empty list, not null")
 			w.WriteHeader(http.StatusCreated)
 			w.Write([]byte(`{"id":"QmShop","config_repository_key":"github.com/a/c","code_repository_keys":[]}`))
-		case "GET /forges/github.com/projects":
+		case "GET /projects":
 			w.Write([]byte(`[{"id":"QmShop","config_repository_key":"github.com/a/c"}]`))
+		case "GET /cloud":
+			w.Write([]byte(`{"fqdn":"tau.example"}`))
+		case "GET /projects/QmShop/grants":
+			w.Write([]byte(`[{"id":"g1","user":"u-1","role":"viewer","by":"u-0","at":"2026-10-21T00:00:00Z"}]`))
+		case "POST /projects/QmShop/grants":
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"id":"g2"}`))
+		case "DELETE /projects/QmShop/grants/g1":
+			w.WriteHeader(http.StatusNoContent)
 		default:
 			w.WriteHeader(http.StatusConflict)
 			w.Write([]byte(`{"error":"project QmTaken is already claimed by github.com/x/y; generate a new id in project.yaml"}`))
@@ -109,9 +118,22 @@ func TestLinkingAndListingProjects(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "github.com/a/c", p.Config)
 
-	ps, err := c.Projects(t.Context(), "github.com")
+	ps, err := c.Projects(t.Context())
 	require.NoError(t, err)
 	require.Len(t, ps, 1)
+
+	fqdn, err := c.Fqdn(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "tau.example", fqdn)
+	gs, err := c.Grants(t.Context(), "QmShop")
+	require.NoError(t, err)
+	require.Equal(t, "viewer", gs[0].Role)
+	gid, err := c.GrantRole(t.Context(), "QmShop", "u-2", "builder")
+	require.NoError(t, err)
+	require.Equal(t, "g2", gid)
+	require.NoError(t, c.Revoke(t.Context(), "QmShop", "g1"))
+	_, err = c.GrantRole(t.Context(), "QmNone", "u-2", "builder")
+	require.Error(t, err)
 
 	_, err = c.LinkProject(t.Context(), "QmTaken", "github.com/a/c", []string{"github.com/a/d"})
 	require.True(t, IsStatus(err, http.StatusConflict))

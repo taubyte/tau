@@ -43,8 +43,8 @@ type Env struct {
 	Interactive bool
 	Prompter    ui.Prompter
 	HTTP        *http.Client
-	// Forges is where `tau link` installs a webhook and a deploy key. Nil is
-	// the public forges (pkg/forge/public).
+	// Forges are the forges `tau link` works at, with the profile's own
+	// credentials. Nil is the public forges (pkg/forge/public).
 	Forges *forge.Registry
 	// Browse opens a URL in the developer's browser, for a sign-in. Nil
 	// only prints it.
@@ -114,7 +114,7 @@ func New(env Env) *cobra.Command {
 		initCommand(env), newCommand(env), validateCommand(env), viewsCommand(env),
 		linkCommand(env), projectsCommand(env), deployCommand(env), statusCommand(env),
 		jobsCommand(env), jobCommand(env), logsCommand(env), cancelCommand(env), retryCommand(env),
-		secretsCommand(env),
+		secretsCommand(env), grantsCommand(env),
 	)
 	return root
 }

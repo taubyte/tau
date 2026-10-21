@@ -1,6 +1,7 @@
 package fake_test
 
 import (
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -75,4 +76,29 @@ func TestAServedForgeServesGit(t *testing.T) {
 	require.Error(t, err, out)
 	out, err = runGit(t, t.TempDir(), "clone", with("http://"+s.Host()+"/acme/nope.git", s.TokenString()), "repo")
 	require.Error(t, err, out)
+}
+
+// The served host speaks smart http and nothing else.
+func TestAServedForgeAnswersOnlySmartHTTP(t *testing.T) {
+	s, err := fake.Serve(fake.GitHubLike)
+	require.NoError(t, err)
+	defer s.Close()
+	base := "http://" + s.Host()
+	for _, c := range []struct {
+		method, path string
+		status       int
+	}{
+		{http.MethodGet, "/acme/pay", http.StatusNotFound},
+		{http.MethodPut, "/acme/pay.git/git-upload-pack", http.StatusNotFound},
+		{http.MethodGet, "/acme/pay.git/info/refs?service=git-archive", http.StatusForbidden},
+		{http.MethodGet, "/%25zz.git/info/refs?service=git-upload-pack", http.StatusNotFound},
+	} {
+		req, err := http.NewRequest(c.method, base+c.path, nil)
+		require.NoError(t, err)
+		req.SetBasicAuth("x-access-token", s.TokenString())
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+		require.Equal(t, c.status, resp.StatusCode, c.path)
+	}
 }

@@ -3,18 +3,21 @@
 // Package e2e runs the CLI against a real v2 fleet: a dream universe of two
 // nodes running the build frontend (the public role) and a third running every
 // private service they reach — auth, the build backend, secrets, register.
-// `tau link` installs on the same fake forge the fleet verifies with, so a
-// delivery signed with what the link installed is the real check. The
-// forge is pkg/forge/fake, so "write access" is a real answer from a real
-// driver, just not one that needs the internet.
+// `tau link` works at the fake forge itself, with the credential the forge
+// sign-in handed back; the fleet only verifies deliveries with what the link
+// stored and clones over the deploy key it installed.
 package e2e
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"io/fs"
 	"net/http"
 	"os"
@@ -24,6 +27,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/ssh"
 
 	"github.com/taubyte/tau/node"
 	"github.com/taubyte/tau/node/dream"
@@ -31,8 +35,10 @@ import (
 	"github.com/taubyte/tau/pkg/forge/fake"
 	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/pkg/linkcreds"
+	"github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/tools/tau/internal/cli"
 	"github.com/taubyte/tau/tools/tau/internal/config"
+	"github.com/taubyte/tau/tools/tau/internal/project"
 )
 
 type result struct {
@@ -63,26 +69,26 @@ func ok(t *testing.T, args ...string) string {
 // e2eCloud is the fleet's cloud fqdn.
 const e2eCloud = "tau.e2e.test"
 
-func TestTheCLIAgainstARealFleet(t *testing.T) {
-	t.Setenv(config.EnvConfig, filepath.Join(t.TempDir(), "config.yaml"))
-	t.Setenv(config.EnvToken, "")
-	t.Setenv(config.EnvCloud, "")
-
-	f := fake.New(fake.GitHubLike)
-	// A development fleet answers over http, which a forge refuses to deliver
-	// to unless told; the fleet's own copy verifies with the same drivers.
+// fleet is a dream universe of three: index 0 runs every private service,
+// the others only a build frontend. The fake forge serves git over https and
+// ssh, and every node pins its ssh host key, so a build confirms and clones
+// over the deploy key the CLI installed.
+func fleet(t *testing.T, f *fake.Served) (front, otherFront string) {
+	t.Helper()
 	var err error
 	forges, err = f.Registry(forge.Policy{AllowInsecureCallback: true})
 	require.NoError(t, err)
 	t.Cleanup(func() { forges = nil })
+	hash, err := auth.HashAdminPassword(adminPassword)
+	require.NoError(t, err)
 
 	u, err := dream.Start(t.Context(), t.Name(), dream.Config{
 		Copies:  3,
 		Options: []node.Option{node.WithForges(forges)},
 		Configure: func(index int, c *node.Config) {
-			// THE CLOUD'S NAME, which is where every frontend installs hooks:
-			// https://build-frontend.<cloud>, never a request's Host.
 			c.Gateway.CloudFqdn = e2eCloud
+			c.Forges = []node.Forge{{Host: f.Host(), Driver: node.ForgeGitHub, HostKeys: []string{f.HostKey()}}}
+			c.Auth.Admin = auth.Admin{Name: "root", PasswordHash: hash}
 			if index > 0 {
 				c.Services = []string{node.Discovery, node.BuildFrontend}
 				c.BuildFrontend.Listen = "127.0.0.1:0"
@@ -91,151 +97,168 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 	})
 	require.NoError(t, err)
 	t.Cleanup(u.Close)
+	addr := func(i int) string {
+		n, found := dream.Node(u.Pids()[i])
+		require.True(t, found)
+		a := n.BuildFrontendAddr()
+		require.NotNil(t, a)
+		return "http://" + a.String()
+	}
+	return addr(1), addr(2)
+}
 
-	front, found := dream.Node(u.Pids()[1])
-	require.True(t, found)
-	addr := front.BuildFrontendAddr()
-	require.NotNil(t, addr)
-	cloud := "http://" + addr.String()
+const adminPassword = "correct horse battery"
 
-	// A SECOND FRONTEND, which the CLI never talks to: what a relink through
-	// the first does to it is only what the fleet itself carries.
-	second, found := dream.Node(u.Pids()[2])
-	require.True(t, found)
-	otherAddr := second.BuildFrontendAddr()
-	require.NotNil(t, otherAddr)
-	otherCloud := "http://" + otherAddr.String()
+func gitEnv(t *testing.T) {
+	t.Setenv("GIT_AUTHOR_NAME", "t")
+	t.Setenv("GIT_AUTHOR_EMAIL", "t@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "t")
+	t.Setenv("GIT_COMMITTER_EMAIL", "t@example.com")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("HOME", t.TempDir())
+}
 
-	// ONE TOKEN: signing in with the forge connects it inside the tau token
-	// the CLI keeps; the config file holds no forge token. The fleet has just
-	// booted, so auth may not have its vault yet.
+// THE CLIENT DOES THE FORGE WORK, THE CLOUD ONLY VERIFIES AND CLONES. An
+// organization's repositories, named with no prefix of any kind, are created
+// by the CLI with its own forge credential, wired, pushed, and built; the
+// project is then shared with a second tau user by a grant, and unshared.
+func TestTheCLIAgainstARealFleet(t *testing.T) {
+	t.Setenv(config.EnvConfig, filepath.Join(t.TempDir(), "config.yaml"))
+	t.Setenv(config.EnvToken, "")
+	t.Setenv(config.EnvCloud, "")
+	gitEnv(t)
+
+	f, err := fake.Serve(fake.GitHubLike)
+	require.NoError(t, err)
+	t.Cleanup(func() { f.Close() })
+	cloud, otherCloud := fleet(t, f)
+
+	// The forge sign-in hands its credential back, and the CLI keeps it.
 	var login result
 	require.Eventually(t, func() bool {
-		login = tauIn(f.TokenString()+"\n", "login", "--cloud", cloud, "--sso", f.Host(), "--paste")
+		login = tauIn(f.TokenString()+"\n", "login", "--profile", "owner", "--cloud", cloud, "--sso", f.Host(), "--paste")
 		return login.code == 0
 	}, 2*time.Minute, time.Second, "login never succeeded: %s", login.stderr)
-	require.Contains(t, ok(t, "whoami"), f.Host())
 	path, err := config.Path()
 	require.NoError(t, err)
-	saved, err := os.ReadFile(path)
+	cfg, err := config.Load(path)
 	require.NoError(t, err)
-	require.NotContains(t, string(saved), f.TokenString(), "no forge token in the config")
+	require.Equal(t, f.TokenString(), cfg.Profiles["owner"].Forges[f.Host()].Token)
 
-	// A generated project compiles and audits clean, with no cloud involved.
 	dir := t.TempDir()
 	ok(t, "init", "shop", "--dir", dir)
 	require.Contains(t, ok(t, "validate", "--dir", dir), "✓ compiles")
 
-	// Linking claims project.yaml's own id in the register, through the
-	// frontend's one public door to it, and installs the webhook and a deploy
-	// key on the fake forge. The fleet has just booted, so the frontend may not
-	// have found a register or a vault yet.
-	configRepo, codeRepo := f.Keys().Admin, f.Keys().Deletable
+	configRepo := repokey.Key{Host: f.Host(), Owner: fake.Namespace, Name: "shop"}
+	codeRepo := repokey.Key{Host: f.Host(), Owner: fake.Namespace, Name: "payments"}
+	require.NotEqual(t, "fake-user", configRepo.Owner, "owned by an organization, not the login")
+
 	var link result
 	require.Eventually(t, func() bool {
-		link = tau("link", "--dir", dir, "--config-repo", configRepo.String(), "--code-repo", codeRepo.String(), "-o", "json")
+		link = tau("link", "--profile", "owner", "--create", "--dir", dir, "--config-repo", configRepo.String(), "-o", "json")
 		return link.code == 0
 	}, 2*time.Minute, time.Second, "link never succeeded: %s", link.stderr)
-	var linked config.Link
+	var linked struct {
+		config.Link
+		Pushed string `json:"pushed"`
+	}
 	require.NoError(t, json.Unmarshal([]byte(link.stdout), &linked))
 	require.NotEmpty(t, linked.ProjectID)
-	require.Equal(t, []string{codeRepo.String()}, linked.Code)
-
-	// The forge holds the webhook, aimed at this project's own hook route, and
-	// a read-only deploy key.
 	wire := f.LastHookWire()
-	require.NotEmpty(t, wire)
-	require.True(t, f.LastDeployKeyReadOnly())
-	hooks := installed(t, f, configRepo)
+	hooks := installed(t, f.Forge, configRepo)
 	require.Len(t, hooks, 1)
-	require.Equal(t, "https://"+node.BuildFrontend+"."+e2eCloud+"/hook/"+linked.ProjectID, hooks[0].Callback,
-		"the hook is aimed at the cloud's name for the frontend")
+	require.Equal(t, "https://"+node.BuildFrontend+"."+e2eCloud+"/hook/"+linked.ProjectID, hooks[0].Callback)
+	require.True(t, f.LastDeployKeyReadOnly())
 
-	// The link's credentials are on the cloud, by name only.
+	// Relinking keeps the config repository's hook, creates and wires the
+	// code repository, and pushes the project.
+	link = tau("link", "--profile", "owner", "--create", "--push", "--keep-hook", "--dir", dir, "--config-repo", configRepo.String(), "--code-repo", codeRepo.String(), "-o", "json")
+	require.Equal(t, 0, link.code, link.stderr)
+	require.NoError(t, json.Unmarshal([]byte(link.stdout), &linked))
+	require.Len(t, linked.Pushed, 40)
+	require.Equal(t, []string{codeRepo.String()}, linked.Code)
+	require.Len(t, installed(t, f.Forge, configRepo), 1)
+	require.Len(t, installed(t, f.Forge, codeRepo), 1)
+
 	var names []string
-	require.NoError(t, json.Unmarshal([]byte(ok(t, "secrets", "list", "--dir", dir, "--env", linkcreds.Environment, "-o", "json")), &names))
-	require.ElementsMatch(t, []string{linkcreds.HookSecret, linkcreds.DeployKey(configRepo.String()), linkcreds.DeployKey(codeRepo.String())}, names)
+	require.NoError(t, json.Unmarshal([]byte(ok(t, "secrets", "list", "--profile", "owner", "--dir", dir, "--env", linkcreds.Environment, "-o", "json")), &names))
+	require.ElementsMatch(t, []string{
+		linkcreds.HookSecret(configRepo.String()), linkcreds.DeployKey(configRepo.String()),
+		linkcreds.HookSecret(codeRepo.String()), linkcreds.DeployKey(codeRepo.String()),
+	}, names)
 
-	// The same id again, from a repository that did not claim it, is refused
-	// by name.
+	// The same id from another directory and repository is refused by name.
 	other := t.TempDir()
 	require.NoError(t, copyProject(dir, other))
-	r := tau("link", "--dir", other, "--config-repo", f.Keys().Writable.String(), "--manual")
-	require.NotZero(t, r.code)
-	require.Contains(t, r.stderr, "already claimed by "+configRepo.String()+"; generate a new id in project.yaml")
-
-	// A token that may not write to the repositories is refused, by the forge.
-	r = tau("link", "--dir", t.TempDir(), "--config-repo", f.Keys().NoAccess.String())
+	require.NoError(t, os.RemoveAll(filepath.Join(other, ".git")))
+	r := tau("link", "--profile", "owner", "--dir", other, "--config-repo", f.Keys().Admin.String(), "--manual")
 	require.NotZero(t, r.code)
 
-	// THE FIRST PUSH VERIFIES BEFORE ANYTHING IS PUBLISHED: the forge signs a
-	// delivery with the wire secret the link installed, and the cloud checks it
-	// against the secret the link stored. A wrong signature is refused.
-	// A bad signature and a project nobody linked are one answer.
+	// THE PUSH IS VERIFIED BY THE REPOSITORY'S OWN SECRET, and confirmed at
+	// the forge over the deploy key before it is queued: a commit the branch
+	// does not hold builds nothing.
 	hook := cloud + "/hook/" + linked.ProjectID
-	require.Equal(t, http.StatusAccepted, deliver(t, f, hook, configRepo, wire).StatusCode)
-	require.Equal(t, http.StatusNotFound, deliver(t, f, hook, configRepo, "not-the-secret").StatusCode)
-	require.Equal(t, http.StatusNotFound, deliver(t, f, cloud+"/hook/QmNobodyLinkedThisProjectId", configRepo, wire).StatusCode)
-
-	// The second frontend verifies the same push, and now remembers the
-	// secret it verified with.
-	otherHook := otherCloud + "/hook/" + linked.ProjectID
+	require.Equal(t, http.StatusNotFound, deliver(t, f.Forge, hook, configRepo, "not-the-secret", linked.Pushed).StatusCode)
+	require.NotEqual(t, http.StatusAccepted, deliver(t, f.Forge, hook, configRepo, wire, strings.Repeat("a", 40)).StatusCode)
 	require.Eventually(t, func() bool {
-		return deliver(t, f, otherHook, configRepo, wire).StatusCode == http.StatusAccepted
-	}, time.Minute, time.Second, "the second frontend never verified the push")
-	var jobs []any
+		return deliver(t, f.Forge, hook, configRepo, wire, linked.Pushed).StatusCode == http.StatusAccepted
+	}, time.Minute, time.Second, "the pushed commit was never confirmed")
+	require.Equal(t, http.StatusAccepted, deliver(t, f.Forge, otherCloud+"/hook/"+linked.ProjectID, configRepo, wire, linked.Pushed).StatusCode)
+
+	var jobs []struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	}
 	require.Eventually(t, func() bool {
 		jobs = nil
-		return json.Unmarshal([]byte(ok(t, "jobs", "--dir", dir, "-o", "json")), &jobs) == nil && len(jobs) == 1
+		return json.Unmarshal([]byte(ok(t, "jobs", "--profile", "owner", "--dir", dir, "-o", "json")), &jobs) == nil && len(jobs) == 1
 	}, time.Minute, time.Second, "the verified push queued a job")
-
-	// RELINKING REPLACES. The forge already holds this cloud's hook, so a link
-	// without a terminal refuses until told; --replace-hook deletes the old
-	// hook and deploy key, rotates the secret and installs new ones. A delivery
-	// signed with the old wire is then refused and one with the new verifies.
-	before := installed(t, f, configRepo)
-	require.Len(t, before, 1)
-	r = tau("link", "--dir", dir, "--config-repo", configRepo.String(), "--code-repo", codeRepo.String())
-	require.NotZero(t, r.code)
-	require.Contains(t, r.stderr, "--replace-hook")
-	ok(t, "link", "--dir", dir, "--config-repo", configRepo.String(), "--code-repo", codeRepo.String(), "--replace-hook")
-	after := installed(t, f, configRepo)
-	require.Len(t, after, 1, "the old hook is gone and exactly one new one is installed")
-	require.NotEqual(t, before[0].Handle, after[0].Handle)
-	rewired := f.LastHookWire()
-	require.NotEqual(t, wire, rewired)
-	require.Equal(t, http.StatusNotFound, deliver(t, f, hook, configRepo, wire).StatusCode, "the old hook's secret is gone from the cloud")
-	require.Equal(t, http.StatusAccepted, deliver(t, f, hook, configRepo, rewired).StatusCode)
-
-	// THE SECOND FRONTEND STILL REMEMBERS THE OLD SECRET and was told nothing.
-	// The first delivery under the new one is refused by what it remembers,
-	// so it asks again, verifies, and from then on the old wire is refused.
-	require.Equal(t, http.StatusAccepted, deliver(t, f, otherHook, configRepo, rewired).StatusCode)
-	require.Equal(t, http.StatusNotFound, deliver(t, f, otherHook, configRepo, wire).StatusCode)
-
-	// Secrets: set, then listed by name only.
 	require.Eventually(t, func() bool {
-		return tau("secrets", "set", "DB_URL", "postgres://x", "--dir", dir, "--env", "prod").code == 0
-	}, time.Minute, time.Second)
-	names = nil
-	require.NoError(t, json.Unmarshal([]byte(ok(t, "secrets", "list", "--dir", dir, "--env", "prod", "-o", "json")), &names))
-	require.Equal(t, []string{"DB_URL"}, names)
-	ok(t, "secrets", "unset", "DB_URL", "--dir", dir, "--env", "prod", "--yes")
+		jobs = nil
+		return json.Unmarshal([]byte(ok(t, "jobs", "--profile", "owner", "--dir", dir, "-o", "json")), &jobs) == nil && len(jobs) == 1 && jobs[0].Status == "success"
+	}, 3*time.Minute, 2*time.Second, "the build cloned over the deploy key and succeeded: %v", jobs)
 
-	require.Contains(t, ok(t, "status", "--dir", dir), linked.ProjectID)
-	require.Contains(t, ok(t, "projects", "--forge", f.Host()), linked.ProjectID)
-
-	// DISCONNECTED, the cloud says what to do rather than denying; connected
-	// again, it answers.
-	ok(t, "forge", "disconnect", f.Host())
-	r = tau("jobs", "--dir", dir)
-	require.NotZero(t, r.code)
-	require.Contains(t, r.stderr, "not connected to "+f.Host())
-	r = tauIn(f.TokenString()+"\n", "forge", "connect", f.Host(), "--paste")
+	// A SECOND TAU USER sees nothing until granted, then reads; revoked, the
+	// project is a 404 again.
+	r = tauIn(adminPassword+"\n", "login", "--profile", "admin", "--cloud", cloud, "--name", "root", "--password-stdin")
 	require.Equal(t, 0, r.code, r.stderr)
-	ok(t, "jobs", "--dir", dir)
+	var bob struct {
+		ID string `json:"id"`
+	}
+	r = tauIn("bobs-password-1\n", "users", "create", "bob", "--profile", "admin", "--login", "--password-stdin", "-o", "json")
+	require.Equal(t, 0, r.code, r.stderr)
+	require.NoError(t, json.Unmarshal([]byte(r.stdout), &bob))
+	r = tauIn("bobs-password-1\n", "login", "--profile", "bob", "--cloud", cloud, "--name", "bob", "--password-stdin")
+	require.Equal(t, 0, r.code, r.stderr)
 
-	// A token the cloud did not issue is refused as unauthenticated.
+	r = tau("jobs", "--profile", "bob", "--project", linked.ProjectID)
+	require.Contains(t, r.stderr, "not found")
+	require.Equal(t, "[]\n", ok(t, "projects", "--profile", "bob", "-o", "json"))
+
+	var grant struct {
+		ID string `json:"id"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(ok(t, "grants", "add", bob.ID, "viewer", "--profile", "owner", "--dir", dir, "-o", "json")), &grant))
+	require.Contains(t, tau("grants", "list", "--profile", "bob", "--project", linked.ProjectID).stderr, "not found", "a viewer does not see the grants")
+	require.Eventually(t, func() bool {
+		r := tau("jobs", "--profile", "bob", "--project", linked.ProjectID, "-o", "json")
+		return r.code == 0 && strings.Contains(r.stdout, jobs[0].ID)
+	}, time.Minute, time.Second, "the grant never let bob read the jobs")
+	require.Contains(t, ok(t, "projects", "--profile", "bob"), linked.ProjectID)
+	require.NotZero(t, tau("secrets", "set", "X", "y", "--profile", "bob", "--project", linked.ProjectID, "--env", "prod").code, "a viewer manages no secrets")
+
+	ok(t, "grants", "revoke", grant.ID, "--profile", "owner", "--dir", dir, "--yes")
+	require.Eventually(t, func() bool {
+		return strings.Contains(tau("jobs", "--profile", "bob", "--project", linked.ProjectID).stderr, "not found")
+	}, time.Minute, time.Second, "the revoked grant still let bob in")
+
+	// Secrets, owner only.
+	require.Eventually(t, func() bool {
+		return tau("secrets", "set", "DB_URL", "postgres://x", "--profile", "owner", "--dir", dir, "--env", "prod").code == 0
+	}, time.Minute, time.Second)
+	ok(t, "secrets", "unset", "DB_URL", "--profile", "owner", "--dir", dir, "--env", "prod", "--yes")
+	require.Contains(t, ok(t, "status", "--profile", "owner", "--dir", dir), linked.ProjectID)
+
 	t.Setenv(config.EnvToken, f.BadTokenString())
 	r = tau("jobs", "--dir", dir)
 	require.NotZero(t, r.code)
@@ -244,12 +267,12 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 
 // deliver posts a push for repo to hook, signed the way a hub-sha256 forge
 // signs: an HMAC of the body keyed with the wire secret it was given.
-func deliver(t *testing.T, f *fake.Forge, hook string, repo repokey.Key, wire string) *http.Response {
+func deliver(t *testing.T, f *fake.Forge, hook string, repo repokey.Key, wire, commit string) *http.Response {
 	t.Helper()
 	// The fake builds the payload; it is re-signed with the installed wire.
 	scratch, err := forge.NewSecret()
 	require.NoError(t, err)
-	d, err := f.Delivery(forge.Hook{Key: repo, Scheme: forge.SchemeHubSHA256, Secret: scratch}, "refs/heads/main", strings.Repeat("a", 40))
+	d, err := f.Delivery(forge.Hook{Key: repo, Scheme: forge.SchemeHubSHA256, Secret: scratch}, "refs/heads/main", commit)
 	require.NoError(t, err)
 	mac := hmac.New(sha256.New, []byte(wire))
 	mac.Write(d.Body)
@@ -294,4 +317,26 @@ func copyProject(from, to string) error {
 		}
 		return os.WriteFile(filepath.Join(to, rel), data, 0o644)
 	})
+}
+
+func basic(user, token string) string {
+	return base64.StdEncoding.EncodeToString([]byte(user + ":" + token))
+}
+
+func projectYAMLIDIn(t *testing.T, dir string) string {
+	t.Helper()
+	p, err := project.Open(dir)
+	require.NoError(t, err)
+	return p.ID()
+}
+
+func deployKeyPair(t *testing.T) (private, public string) {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	block, err := ssh.MarshalPrivateKey(priv, "tau console")
+	require.NoError(t, err)
+	sshPub, err := ssh.NewPublicKey(pub)
+	require.NoError(t, err)
+	return string(pem.EncodeToMemory(block)), strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPub)))
 }

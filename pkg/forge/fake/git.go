@@ -30,6 +30,7 @@ import (
 type Served struct {
 	*Forge
 	srv *http.Server
+	ssh *sshServer
 }
 
 // Serve starts a forge of the given shape whose host is a loopback address
@@ -42,13 +43,20 @@ func Serve(sh Shape) (*Served, error) {
 	sh.Host = ln.Addr().String()
 	f := New(sh)
 	f.c.scheme = "http"
-	s := &Served{Forge: f, srv: &http.Server{Handler: http.HandlerFunc(f.c.serveGit)}}
+	ssh, err := serveSSH(f.c)
+	if err != nil {
+		ln.Close()
+		return nil, err
+	}
+	s := &Served{Forge: f, srv: &http.Server{Handler: http.HandlerFunc(f.c.serveGit)}, ssh: ssh}
 	go s.srv.Serve(ln)
 	return s, nil
 }
 
-// Close stops serving.
-func (s *Served) Close() error { return s.srv.Close() }
+// Close stops serving, over http and over ssh.
+func (s *Served) Close() error {
+	return errors.Join(s.srv.Close(), s.ssh.ln.Close())
+}
 
 // gitStores is every served repository's objects, by key.
 type gitStores struct {
@@ -130,17 +138,21 @@ func (c *core) serveGit(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	c.ensureStore(ep)
+
+	if err := c.gitExchange(r.Context(), w, r, ep, service, op == "info/refs"); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (c *core) ensureStore(ep *transport.Endpoint) {
 	c.git.mu.Lock()
+	defer c.git.mu.Unlock()
 	if c.git.stores == nil {
 		c.git.stores = map[string]*memory.Storage{}
 	}
 	if c.git.stores[ep.Path] == nil {
 		c.git.stores[ep.Path] = memory.NewStorage()
-	}
-	c.git.mu.Unlock()
-
-	if err := c.gitExchange(r.Context(), w, r, ep, service, op == "info/refs"); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
