@@ -234,7 +234,7 @@ func (c *hookCache) run(ctx context.Context, project string, f *hookFlight) {
 	if c.flights[project] == f {
 		delete(c.flights, project)
 		switch {
-		case f.err == nil && len(f.hook.Secret) > 0:
+		case f.err == nil && f.hook.signed():
 			c.storeLocked(project, cacheEntry[hookEntry]{value: hookEntry{hook: f.hook, ticket: f.ticket}, at: c.now()})
 		case absent(f.err) || f.err == nil:
 			// AN AUTHORITATIVE ABSENCE EVICTS, and so does a hook that came back

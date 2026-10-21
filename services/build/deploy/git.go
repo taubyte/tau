@@ -15,6 +15,7 @@ import (
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/git"
 	"github.com/taubyte/tau/pkg/git/repokey"
+	"github.com/taubyte/tau/services/build/backend"
 )
 
 // git.go is the Checkout a node actually runs: a real clone of a real
@@ -59,7 +60,10 @@ type Clone struct {
 	hostKeys func(host string) []gossh.PublicKey
 }
 
-var _ Checkout = (*Clone)(nil)
+var (
+	_ Checkout          = (*Clone)(nil)
+	_ backend.Confirmer = (*Clone)(nil)
+)
 
 // NewClone builds one. A nil credentials reads public repositories only.
 func NewClone(credentials Credentials, opts ...CloneOption) *Clone {
@@ -138,56 +142,12 @@ func parse(repositoryKey string) (repokey.Key, error) {
 
 // Checkout clones into a directory this process owns and removes.
 func (c *Clone) Checkout(ctx context.Context, repositoryKey, branch, commit string) (string, func(), error) {
-	key, err := parse(repositoryKey)
+	options, deployKey, err := c.reach(ctx, repositoryKey)
 	if err != nil {
 		return "", nil, err
 	}
+	options = append(options, git.Branch(branch), git.Output(io.Discard))
 
-	// THE KEY FIRST, BECAUSE IT DECIDES THE TRANSPORT. Auth failing is not a
-	// public repository: reading on anonymously would turn an outage into a
-	// build that cannot see the code and says the repository is empty.
-	var deployKey string
-	if c.credentials != nil {
-		deployKey, err = c.credentials.DeployKey(ctx, repositoryKey)
-		if err != nil {
-			return "", nil, fmt.Errorf("deploy: reading %s's key: %w", repositoryKey, err)
-		}
-	}
-
-	over := forge.HTTPS
-	if deployKey != "" {
-		over = forge.SSH
-	}
-	address, err := c.address(repositoryKey, over)
-	if err != nil {
-		return "", nil, err
-	}
-
-	options := []git.Option{
-		git.URL(address.URL),
-		git.Branch(branch),
-		git.Output(io.Discard),
-	}
-	if deployKey != "" {
-		// A KEY OVER HTTPS AUTHENTICATES NOTHING, and git would say so as a
-		// failed clone of what reads as a missing repository.
-		if address.SSHAccount == "" {
-			return "", nil, fmt.Errorf("deploy: %s has a deploy key and is reached by %q, which is not ssh", repositoryKey, address.URL)
-		}
-		// THE HOST IS PINNED, BY THE FORGE THE KEY NAMES. A deploy key proves
-		// who is cloning; only the host key proves who answered.
-		var pinned []gossh.PublicKey
-		if c.hostKeys != nil {
-			pinned = c.hostKeys(key.Host)
-		}
-		if len(pinned) == 0 {
-			return "", nil, fmt.Errorf("deploy: no ssh host key is pinned for %s, and a clone that accepts any host can be answered by anyone", repositoryKey)
-		}
-		options = append(options, git.SSHKeyAs(address.SSHAccount, deployKey, pinned))
-	}
-
-	// ITS OWN DIRECTORY, REMOVED WITH IT. A build reads a stranger's repository;
-	// leaving it next to the node's data is how one build sees another's.
 	root, err := os.MkdirTemp("", "tau-deploy-")
 	if err != nil {
 		return "", nil, err
@@ -218,6 +178,68 @@ func (c *Clone) Checkout(ctx context.Context, repositoryKey, branch, commit stri
 // refused is a clone the host turned away for want of a credential. A forge
 // answers an anonymous read of a private repository either way: GitHub as
 // not-found, others as authentication required.
+// reach is how repositoryKey is fetched from: its address, and its deploy key
+// when one is set — the same for a clone and for a confirmation.
+func (c *Clone) reach(ctx context.Context, repositoryKey string) ([]git.Option, string, error) {
+	key, err := parse(repositoryKey)
+	if err != nil {
+		return nil, "", err
+	}
+
+	var deployKey string
+	if c.credentials != nil {
+		deployKey, err = c.credentials.DeployKey(ctx, repositoryKey)
+		if err != nil {
+			return nil, "", fmt.Errorf("deploy: reading %s's key: %w", repositoryKey, err)
+		}
+	}
+
+	over := forge.HTTPS
+	if deployKey != "" {
+		over = forge.SSH
+	}
+	address, err := c.address(repositoryKey, over)
+	if err != nil {
+		return nil, "", err
+	}
+
+	options := []git.Option{git.URL(address.URL)}
+	if deployKey != "" {
+		if address.SSHAccount == "" {
+			return nil, "", fmt.Errorf("deploy: %s has a deploy key and is reached by %q, which is not ssh", repositoryKey, address.URL)
+		}
+		var pinned []gossh.PublicKey
+		if c.hostKeys != nil {
+			pinned = c.hostKeys(key.Host)
+		}
+		if len(pinned) == 0 {
+			return nil, "", fmt.Errorf("deploy: no ssh host key is pinned for %s, and a clone that accepts any host can be answered by anyone", repositoryKey)
+		}
+		options = append(options, git.SSHKeyAs(address.SSHAccount, deployKey, pinned))
+	}
+	return options, deployKey, nil
+}
+
+// Confirm asks the repository itself, over its deploy key, whether ref is at
+// commit — so a push is built only for what the owner's repository holds,
+// whatever a delivery claimed.
+func (c *Clone) Confirm(ctx context.Context, repositoryKey, ref, commit string) error {
+	options, _, err := c.reach(ctx, repositoryKey)
+	if err != nil {
+		return err
+	}
+	refs, err := git.ListRemote(ctx, options...)
+	if err != nil {
+		return fmt.Errorf("deploy: listing %s: %w", repositoryKey, err)
+	}
+	for _, r := range refs {
+		if r.Name().String() == ref && r.Hash().String() == commit {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: %s %s %s", backend.ErrNotAtCommit, repositoryKey, ref, short(commit))
+}
+
 func refused(err error) bool {
 	return errors.Is(err, transport.ErrAuthenticationRequired) ||
 		errors.Is(err, transport.ErrAuthorizationFailed) ||

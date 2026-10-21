@@ -99,6 +99,32 @@ func TestTheProjectTableAnswersBothBuildRoles(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestTheProjectTableHoldsRoles(t *testing.T) {
+	p := linkedNode(t)
+	ctx := t.Context()
+
+	role, err := p.Role(ctx, linkedID, "github.com/1")
+	require.NoError(t, err)
+	require.Equal(t, pkgregister.RoleOwner, role)
+	_, err = p.Role(ctx, "QmNobody", "github.com/1")
+	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
+
+	g, err := p.GrantRole(ctx, linkedID, "bob", pkgregister.RoleBuilder, "github.com/1")
+	require.NoError(t, err)
+	role, err = p.Role(ctx, linkedID, "bob")
+	require.NoError(t, err)
+	require.Equal(t, pkgregister.RoleBuilder, role)
+	grants, err := p.Grants(ctx, linkedID)
+	require.NoError(t, err)
+	require.Len(t, grants, 1)
+
+	require.NoError(t, p.Revoke(ctx, linkedID, g.ID, "github.com/1"))
+	require.Equal(t, connect.CodeNotFound, connect.CodeOf(p.Revoke(ctx, linkedID, "nope", "github.com/1")))
+	role, err = p.Role(ctx, linkedID, "bob")
+	require.NoError(t, err)
+	require.Equal(t, pkgregister.RoleNone, role)
+}
+
 func TestWithNoRegisterAnywhereTheTableSaysSo(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Discovery}})
 	require.NoError(t, n.Start(t.Context()))
@@ -116,6 +142,13 @@ func TestWithNoRegisterAnywhereTheTableSaysSo(t *testing.T) {
 	_, err = p.ProjectsOf(ctx, "x")
 	require.ErrorIs(t, err, ErrNoRegister)
 	_, err = p.LinkedRepositories(ctx)
+	require.ErrorIs(t, err, ErrNoRegister)
+	_, err = p.Role(ctx, linkedID, "x")
+	require.ErrorIs(t, err, ErrNoRegister)
+	_, err = p.GrantRole(ctx, linkedID, "x", pkgregister.RoleViewer, "y")
+	require.ErrorIs(t, err, ErrNoRegister)
+	require.ErrorIs(t, p.Revoke(ctx, linkedID, "id", "y"), ErrNoRegister)
+	_, err = p.Grants(ctx, linkedID)
 	require.ErrorIs(t, err, ErrNoRegister)
 
 	l := linkSecrets{projects: p, vault: secretsMap{}}
@@ -139,10 +172,18 @@ func TestAHookIsTheLinkAndItsSecret(t *testing.T) {
 	_, err = l.Hook(ctx, "QmNobody")
 	require.ErrorIs(t, err, frontend.ErrNoHook)
 
-	vault[[3]string{linkedID, linkcreds.Environment, linkcreds.HookSecret}] = "s3cret"
+	// EACH REPOSITORY HAS ITS OWN SECRET, and one with none is left out.
+	vault[[3]string{linkedID, linkcreds.Environment, linkcreds.HookSecret(linkedCode)}] = "code-secret"
 	hook, err := l.Hook(ctx, linkedID)
 	require.NoError(t, err)
-	require.Equal(t, frontend.Hook{Project: linkedID, Repositories: []string{linkedCfg, linkedCode}, Secret: []byte("s3cret")}, hook)
+	require.Equal(t, frontend.Hook{Project: linkedID, Repositories: []frontend.HookRepository{{Key: linkedCode, Secret: []byte("code-secret")}}}, hook)
+
+	vault[[3]string{linkedID, linkcreds.Environment, linkcreds.HookSecret(linkedCfg)}] = "cfg-secret"
+	hook, err = l.Hook(ctx, linkedID)
+	require.NoError(t, err)
+	require.Equal(t, frontend.Hook{Project: linkedID, Repositories: []frontend.HookRepository{
+		{Key: linkedCfg, Secret: []byte("cfg-secret")}, {Key: linkedCode, Secret: []byte("code-secret")},
+	}}, hook)
 
 	_, err = linkSecrets{projects: p, vault: brokenVault{}}.Hook(ctx, linkedID)
 	require.Error(t, err)

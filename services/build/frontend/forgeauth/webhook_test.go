@@ -15,6 +15,7 @@ import (
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
 	"github.com/taubyte/tau/pkg/git/repokey"
+	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/build/frontend"
 )
 
@@ -31,7 +32,14 @@ func (h hooks) Hook(context.Context, string) (frontend.Hook, error) { return h.h
 
 type projects struct{}
 
-func (projects) Repositories(context.Context, string) ([]string, error) { return nil, nil }
+func (projects) Role(context.Context, string, string) (register.Role, error) {
+	return register.RoleNone, nil
+}
+func (projects) Project(context.Context, string) (string, error) { return "", nil }
+
+type callers struct{}
+
+func (callers) Caller(context.Context, string) (string, error) { return "", frontend.ErrBadCredential }
 
 // backend records what was queued. Everything but Enqueue is unreached here.
 type backend struct {
@@ -62,18 +70,22 @@ func TestEveryForgesDeliveriesReachTheSameRoute(t *testing.T) {
 			require.True(t, ok)
 			key := f.Keys().Writable
 			hook := forge.Hook{Key: key, Handle: "7", Scheme: sig.Scheme(), Secret: secret}
+			adminSecret, err := forge.NewSecret()
+			require.NoError(t, err)
+			adminHook := forge.Hook{Key: f.Keys().Admin, Handle: "8", Scheme: sig.Scheme(), Secret: adminSecret}
 
 			queue := &backend{}
 			svc, err := frontend.New(frontend.Config{},
-				// TWO REPOSITORIES, the pushed one second, so the delivery is
-				// verified by trying the project's repositories in turn.
+				// TWO REPOSITORIES, each under its own secret, the pushed one
+				// second, so the delivery is verified by trying them in turn.
 				frontend.WithHooks(hooks{frontend.Hook{
-					Project: "hook-1", Repositories: []string{f.Keys().Admin.String(), key.String()},
-					Secret: secret.Expose(),
+					Project: "hook-1", Repositories: []frontend.HookRepository{
+						{Key: f.Keys().Admin.String(), Secret: adminSecret.Expose()},
+						{Key: key.String(), Secret: secret.Expose()},
+					},
 				}}),
 				frontend.WithDeliveries(forges),
-				frontend.WithIdentity(forges),
-				frontend.WithConnections(noConnections{}),
+				frontend.WithCallers(callers{}),
 				frontend.WithProjects(projects{}),
 				frontend.WithBackend(queue))
 			require.NoError(t, err)
@@ -107,6 +119,17 @@ func TestEveryForgesDeliveriesReachTheSameRoute(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, http.StatusNotFound, post(foreign, false).Code)
 
+			// one repository's secret does not sign a push to its sibling
+			crossed, err := f.DeliveryFor(adminHook, key, "refs/heads/main", commit)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusNotFound, post(crossed, false).Code)
+
+			// the sibling's own push verifies under its own secret
+			sibling, err := f.Delivery(adminHook, "refs/heads/main", commit)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusAccepted, post(sibling, false).Code)
+			queue.queued = queue.queued[1:]
+
 			// a genuine ping is accepted and costs no build
 			ping, err := f.NonPushDelivery(hook)
 			require.NoError(t, err)
@@ -134,12 +157,15 @@ func TestAHookThisCloudCannotCheckIsNotAnUnverifiedDelivery(t *testing.T) {
 	forges, err := New(reg)
 	require.NoError(t, err)
 
-	_, err = forges.Verify(frontend.Hook{Repositories: []string{"codeberg.org/acme/pay"}, Secret: bytes.Repeat([]byte("k"), 32)}, http.Header{}, []byte("{}"))
+	_, err = forges.Verify(frontend.Hook{Repositories: []frontend.HookRepository{{Key: "codeberg.org/acme/pay", Secret: bytes.Repeat([]byte("k"), 32)}}}, http.Header{}, []byte("{}"))
 	require.Error(t, err)
 	require.NotErrorIs(t, err, frontend.ErrUnverified)
 
-	_, err = forges.Verify(frontend.Hook{Repositories: []string{"not a key"}}, http.Header{}, nil)
+	_, err = forges.Verify(frontend.Hook{Repositories: []frontend.HookRepository{{Key: "not a key", Secret: []byte("k")}}}, http.Header{}, nil)
 	require.ErrorContains(t, err, "names no repository")
+
+	_, err = forges.Verify(frontend.Hook{Repositories: []frontend.HookRepository{{Key: "github.com/acme/pay"}}}, http.Header{}, nil)
+	require.ErrorIs(t, err, frontend.ErrUnverified, "a repository with no secret verifies nothing")
 
 	_, err = forges.Verify(frontend.Hook{Project: "p"}, http.Header{}, nil)
 	require.ErrorContains(t, err, "no repositories")
@@ -162,14 +188,7 @@ func TestAGenuineButUnreadableDeliveryIsMalformed(t *testing.T) {
 	header.Set("X-Fake-Event", "push")
 
 	_, err = forges.Verify(frontend.Hook{
-		Repositories: []string{f.Keys().Writable.String()}, Secret: secret.Expose(),
+		Repositories: []frontend.HookRepository{{Key: f.Keys().Writable.String(), Secret: secret.Expose()}},
 	}, header, body)
 	require.ErrorIs(t, err, frontend.ErrMalformed)
-}
-
-// noConnections opens nothing: this test makes no caller's request.
-type noConnections struct{}
-
-func (noConnections) Open(context.Context, string, string) (frontend.Opened, error) {
-	return frontend.Opened{}, frontend.ErrBadCredential
 }

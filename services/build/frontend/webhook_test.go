@@ -95,7 +95,7 @@ func TestAQueryParameterCannotChooseTheHook(t *testing.T) {
 func TestAnEmptySecretIsAFailureAndNeverASkippedMAC(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.hooks.get = func(id string) (Hook, error) {
-		return Hook{Project: id, Repositories: []string{testRepoKey}}, nil
+		return Hook{Project: id, Repositories: []HookRepository{{Key: testRepoKey}}}, nil
 	}
 
 	w := h.do(t, webhookRequest(webhookOpts{omitSig: true}))

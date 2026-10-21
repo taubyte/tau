@@ -16,13 +16,13 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/git/repokey"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	"github.com/taubyte/tau/pkg/register"
 )
 
 // This package's whole fixture is five fakes and an httptest recorder. There is
 // no libp2p host, no listener and no port anywhere in it — which is the claim
-// doc.go makes about why the four dependencies are interfaces, held here as a
+// doc.go makes about why the dependencies are interfaces, held here as a
 // test rather than as a sentence.
 
 const (
@@ -31,7 +31,8 @@ const (
 	testRepoKey = "github.com/acme/pay"
 	testProject = "proj-1"
 	testJobID   = "mRPa_1vW1rMGzO8xhI_pQOiKYsqLgYdDWvScXW7jknc"
-	testToken   = "gho_token"
+	testToken   = "tau_token"
+	testUser    = "user-1"
 	testSHA     = "1111111111111111111111111111111111111111"
 )
 
@@ -53,7 +54,7 @@ func (f *fakeHooks) Hook(_ context.Context, id string) (Hook, error) {
 	if id != testHookID {
 		return Hook{}, fmt.Errorf("%w: %s", ErrNoHook, id)
 	}
-	return Hook{Project: id, Secret: []byte(testSecret), Repositories: []string{testRepoKey}}, nil
+	return Hook{Project: id, Repositories: []HookRepository{{Key: testRepoKey, Secret: []byte(testSecret)}}}, nil
 }
 
 func (f *fakeHooks) count() int {
@@ -67,8 +68,8 @@ func (f *fakeHooks) count() int {
 // test runs real signed deliveries through this handler; what this package owns
 // is what the handler does with each answer, so the fake is the answers.
 //
-// By default a delivery verifies when its test signature is the hook's secret,
-// and means the push its body names, for the hook's own repository.
+// By default a delivery verifies when its test signature is one repository's
+// secret, and means the push its body names, for that repository.
 type fakeDeliveries struct {
 	verify func(hook Hook, header http.Header, body []byte) (Push, error)
 }
@@ -79,28 +80,62 @@ func (f *fakeDeliveries) Verify(hook Hook, header http.Header, body []byte) (Pus
 	if f.verify != nil {
 		return f.verify(hook, header, body)
 	}
-	if header.Get(testSignatureHeader) != string(hook.Secret) {
-		return Push{}, fmt.Errorf("%w: wrong signature", ErrUnverified)
+	for _, repo := range hook.Repositories {
+		if len(repo.Secret) == 0 || header.Get(testSignatureHeader) != string(repo.Secret) {
+			continue
+		}
+		var p struct{ Ref, After string }
+		if err := json.Unmarshal(body, &p); err != nil {
+			return Push{}, err
+		}
+		return Push{Repository: repo.Key, Ref: p.Ref, Commit: p.After}, nil
 	}
-	var p struct{ Ref, After string }
-	if err := json.Unmarshal(body, &p); err != nil {
-		return Push{}, err
-	}
-	return Push{Repository: hook.Repositories[0], Ref: p.Ref, Commit: p.After}, nil
+	return Push{}, fmt.Errorf("%w: wrong signature", ErrUnverified)
 }
 
+// fakeProjects makes testUser the owner of testProject, which testRepoKey
+// belongs to, unless a test says otherwise.
 type fakeProjects struct {
-	repositories func(id string) ([]string, error)
+	role    func(project, user string) (register.Role, error)
+	project func(key string) (string, error)
 }
 
-func (f *fakeProjects) Repositories(_ context.Context, id string) ([]string, error) {
-	if f.repositories != nil {
-		return f.repositories(id)
+func (f *fakeProjects) Role(_ context.Context, project, user string) (register.Role, error) {
+	if f.role != nil {
+		return f.role(project, user)
 	}
-	if id != testProject {
-		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("no project %s", id))
+	if project != testProject {
+		return register.RoleNone, connect.NewError(connect.CodeNotFound, fmt.Errorf("no project %s", project))
 	}
-	return []string{testRepoKey}, nil
+	if user == testUser {
+		return register.RoleOwner, nil
+	}
+	return register.RoleNone, nil
+}
+
+func (f *fakeProjects) Project(_ context.Context, key string) (string, error) {
+	if f.project != nil {
+		return f.project(key)
+	}
+	if key != testRepoKey {
+		return "", connect.NewError(connect.CodeNotFound, fmt.Errorf("no repository %s", key))
+	}
+	return testProject, nil
+}
+
+// fakeCallers verifies testToken as testUser and refuses anything else.
+type fakeCallers struct {
+	caller func(token string) (string, error)
+}
+
+func (f *fakeCallers) Caller(_ context.Context, token string) (string, error) {
+	if f.caller != nil {
+		return f.caller(token)
+	}
+	if token != testToken {
+		return "", ErrBadCredential
+	}
+	return testUser, nil
 }
 
 type enqueued struct {
@@ -199,43 +234,17 @@ func (f *fakeBackend) enqueues() []enqueued {
 	return append([]enqueued(nil), f.sent...)
 }
 
-type fakeIdentity struct {
-	write    func(token string, key repokey.Key) (Access, error)
-	claimant func(token, host string) (string, error)
-}
-
-func (f *fakeIdentity) Claimant(_ context.Context, token, host string) (string, error) {
-	if f.claimant != nil {
-		return f.claimant(token, host)
-	}
-	if token != testToken {
-		return "", ErrBadCredential
-	}
-	return host + "/1001", nil
-}
-
-func (f *fakeIdentity) WriteAccess(_ context.Context, token string, key repokey.Key) (Access, error) {
-	if f.write != nil {
-		return f.write(token, key)
-	}
-	if token == testToken {
-		return AccessGranted, nil
-	}
-	return AccessDenied, nil
-}
-
 // ── the service under test ───────────────────────────────────────────────────
 
 type harness struct {
 	*Service
-	hooks       *fakeHooks
-	deliveries  *fakeDeliveries
-	connections *fakeConnections
-	projects    *fakeProjects
-	backend     *fakeBackend
-	identity    *fakeIdentity
-	clock       *clock
-	logs        *logs
+	hooks      *fakeHooks
+	deliveries *fakeDeliveries
+	projects   *fakeProjects
+	callers    *fakeCallers
+	backend    *fakeBackend
+	clock      *clock
+	logs       *logs
 }
 
 type clock struct {
@@ -272,51 +281,21 @@ func (l *logs) joined() string {
 	return strings.Join(l.lines, "\n")
 }
 
-// fakeConnections opens a tau token to itself — the forge credential IS the
-// token — unless a test names something else per host.
-type fakeConnections struct {
-	mu     sync.Mutex
-	forge  map[string]string // host -> forge credential
-	err    map[string]error  // host -> error
-	opened int
-}
-
-func (c *fakeConnections) Open(_ context.Context, tau, host string) (Opened, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.opened++
-	if err := c.err[host]; err != nil {
-		return Opened{}, err
-	}
-	f := tau
-	if v, ok := c.forge[host]; ok {
-		f = v
-	}
-	return Opened{Forge: f}, nil
-}
-
-type passConnections struct{}
-
-func (passConnections) Open(_ context.Context, tau, _ string) (Opened, error) {
-	return Opened{Forge: tau}, nil
-}
-
 func newHarness(t *testing.T, cfg Config, opts ...Option) *harness {
 	t.Helper()
 
 	h := &harness{
-		hooks:       &fakeHooks{},
-		deliveries:  &fakeDeliveries{},
-		projects:    &fakeProjects{},
-		backend:     &fakeBackend{},
-		identity:    &fakeIdentity{},
-		connections: &fakeConnections{},
-		clock:       &clock{at: time.Unix(1700000000, 0).UTC()},
-		logs:        &logs{},
+		hooks:      &fakeHooks{},
+		deliveries: &fakeDeliveries{},
+		projects:   &fakeProjects{},
+		callers:    &fakeCallers{},
+		backend:    &fakeBackend{},
+		clock:      &clock{at: time.Unix(1700000000, 0).UTC()},
+		logs:       &logs{},
 	}
 
 	opts = append([]Option{WithClock(h.clock.now), WithLogger(h.logs.write)}, opts...)
-	svc, err := New(cfg, append([]Option{WithHooks(h.hooks), WithDeliveries(h.deliveries), WithProjects(h.projects), WithBackend(h.backend), WithIdentity(h.identity), WithConnections(h.connections)}, opts...)...)
+	svc, err := New(cfg, append([]Option{WithHooks(h.hooks), WithDeliveries(h.deliveries), WithProjects(h.projects), WithBackend(h.backend), WithCallers(h.callers)}, opts...)...)
 	require.NoError(t, err)
 	h.Service = svc
 	return h

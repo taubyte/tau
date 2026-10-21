@@ -16,7 +16,7 @@ import (
 // nothing but five fakes to stand up.
 
 func TestNewRefusesEveryMissingDependency(t *testing.T) {
-	hooks, deliveries, projects, backend, identity := &fakeHooks{}, &fakeDeliveries{}, &fakeProjects{}, &fakeBackend{}, &fakeIdentity{}
+	hooks, deliveries, projects, backend, callers := &fakeHooks{}, &fakeDeliveries{}, &fakeProjects{}, &fakeBackend{}, &fakeCallers{}
 
 	for _, tc := range []struct {
 		name string
@@ -25,20 +25,20 @@ func TestNewRefusesEveryMissingDependency(t *testing.T) {
 	}{
 		// Omitted entirely: the option was never passed.
 		{"no hooks", func() (*Service, error) {
-			return New(Config{}, WithDeliveries(deliveries), WithProjects(projects), WithBackend(backend), WithIdentity(identity), WithConnections(passConnections{}))
+			return New(Config{}, WithDeliveries(deliveries), WithProjects(projects), WithBackend(backend), WithCallers(callers))
 		}, "hooks"},
 		{"no deliveries", func() (*Service, error) {
-			return New(Config{}, WithHooks(hooks), WithProjects(projects), WithBackend(backend), WithIdentity(identity), WithConnections(passConnections{}))
+			return New(Config{}, WithHooks(hooks), WithProjects(projects), WithBackend(backend), WithCallers(callers))
 		}, "verify a webhook delivery"},
 		{"no projects", func() (*Service, error) {
-			return New(Config{}, WithHooks(hooks), WithDeliveries(deliveries), WithBackend(backend), WithIdentity(identity), WithConnections(passConnections{}))
+			return New(Config{}, WithHooks(hooks), WithDeliveries(deliveries), WithBackend(backend), WithCallers(callers))
 		}, "projects"},
 		{"no backend", func() (*Service, error) {
-			return New(Config{}, WithHooks(hooks), WithDeliveries(deliveries), WithProjects(projects), WithIdentity(identity), WithConnections(passConnections{}))
+			return New(Config{}, WithHooks(hooks), WithDeliveries(deliveries), WithProjects(projects), WithCallers(callers))
 		}, "backend"},
-		{"no identity", func() (*Service, error) {
+		{"no callers", func() (*Service, error) {
 			return New(Config{}, WithHooks(hooks), WithDeliveries(deliveries), WithProjects(projects), WithBackend(backend))
-		}, "identity"},
+		}, "verify a caller"},
 
 		// Passed as nil: the option itself refuses, so a bad argument fails
 		// where it was written rather than at the end of New.
@@ -46,7 +46,7 @@ func TestNewRefusesEveryMissingDependency(t *testing.T) {
 		{"a nil deliveries", func() (*Service, error) { return New(Config{}, WithDeliveries(nil)) }, "verify a webhook delivery"},
 		{"a nil projects", func() (*Service, error) { return New(Config{}, WithProjects(nil)) }, "projects"},
 		{"a nil backend", func() (*Service, error) { return New(Config{}, WithBackend(nil)) }, "backend"},
-		{"a nil identity", func() (*Service, error) { return New(Config{}, WithIdentity(nil)) }, "identity"},
+		{"nil callers", func() (*Service, error) { return New(Config{}, WithCallers(nil)) }, "verify a caller"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, err := tc.call()
@@ -79,7 +79,7 @@ func TestNewRefusesAnUnusableConfig(t *testing.T) {
 		{"an empty eligible ref", Config{EligibleRefs: []string{"refs/heads/main", ""}}, "empty ref"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s, err := New(tc.cfg, WithHooks(&fakeHooks{}), WithProjects(&fakeProjects{}), WithBackend(&fakeBackend{}), WithIdentity(&fakeIdentity{}), WithConnections(passConnections{}))
+			s, err := New(tc.cfg, WithHooks(&fakeHooks{}), WithProjects(&fakeProjects{}), WithBackend(&fakeBackend{}), WithCallers(&fakeCallers{}))
 			require.Nil(t, s)
 			require.ErrorContains(t, err, tc.want)
 		})
@@ -96,7 +96,7 @@ func TestNewRefusesANilOption(t *testing.T) {
 		{"http server", WithHTTPServer(nil)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s, err := New(Config{}, WithHooks(&fakeHooks{}), WithProjects(&fakeProjects{}), WithBackend(&fakeBackend{}), WithIdentity(&fakeIdentity{}), WithConnections(passConnections{}), tc.opt)
+			s, err := New(Config{}, WithHooks(&fakeHooks{}), WithProjects(&fakeProjects{}), WithBackend(&fakeBackend{}), WithCallers(&fakeCallers{}), tc.opt)
 			require.Nil(t, s)
 			require.ErrorContains(t, err, "option")
 		})
@@ -105,7 +105,7 @@ func TestNewRefusesANilOption(t *testing.T) {
 
 func TestAnOptionsOwnErrorSurvives(t *testing.T) {
 	sentinel := errors.New("no")
-	s, err := New(Config{}, WithHooks(&fakeHooks{}), WithProjects(&fakeProjects{}), WithBackend(&fakeBackend{}), WithIdentity(&fakeIdentity{}), WithConnections(passConnections{}),
+	s, err := New(Config{}, WithHooks(&fakeHooks{}), WithProjects(&fakeProjects{}), WithBackend(&fakeBackend{}), WithCallers(&fakeCallers{}),
 		func(*options) error { return sentinel })
 	require.Nil(t, s)
 	require.ErrorIs(t, err, sentinel)
@@ -181,8 +181,9 @@ func TestTheHTTPServerHookRunsBeforeItServes(t *testing.T) {
 
 // The claim doc.go makes: no libp2p host, no listener, no port, and the whole
 // route table reachable.
-func TestServiceNeedsOnlyFiveFakes(t *testing.T) {
-	s, err := New(Config{}, WithHooks(&fakeHooks{}), WithDeliveries(&fakeDeliveries{}), WithProjects(&fakeProjects{}), WithBackend(&fakeBackend{}), WithIdentity(&fakeIdentity{}), WithConnections(passConnections{}))
+func TestServiceNeedsOnlyFakes(t *testing.T) {
+	s, err := New(Config{}, WithHooks(&fakeHooks{}), WithDeliveries(&fakeDeliveries{}), WithProjects(&fakeProjects{}), WithBackend(&fakeBackend{}), WithCallers(&fakeCallers{}),
+		WithLinker(linkedTestProject(t)), WithVault(&fakeVault{}))
 	require.NoError(t, err)
 	require.Nil(t, s.Addr())
 

@@ -9,15 +9,10 @@ import (
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/p2p/discovery"
 	"github.com/taubyte/tau/p2p/rpc"
-	"github.com/taubyte/tau/pkg/forge"
-	"github.com/taubyte/tau/pkg/forge/fake"
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 	authService "github.com/taubyte/tau/services/auth"
-	"github.com/taubyte/tau/services/build/clients"
-	"github.com/taubyte/tau/services/build/frontend"
 )
 
 // linked admits subject "fake-user-subject", the fake forge's only user.
@@ -77,46 +72,6 @@ func TestWhatWithIdentityRefuses(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
-}
-
-func TestAdmissionsAsksTheForgeWhoThenAuthWhether(t *testing.T) {
-	f := fake.New(fake.GitHubLike)
-	registry, err := f.Registry(forge.Policy{})
-	require.NoError(t, err)
-
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	server, caller := newHost(t, mn), newHost(t, mn)
-
-	auth, err := authService.New(server, authService.WithIdentity(&linked{}))
-	require.NoError(t, err)
-	require.NoError(t, auth.Start(t.Context()))
-	t.Cleanup(func() { auth.Close() })
-
-	pool, err := clients.NewPool(caller, discovery.Static(server.ID()), clients.AuthProtocol, 2)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	identities, err := clients.Identities(pool)
-	require.NoError(t, err)
-
-	a := &admissions{forges: registry, auth: identities}
-	admitted, _, err := a.Admit(t.Context(), frontend.Credentials{Forge: f.TokenString()}, f.Keys().Writable)
-	require.NoError(t, err)
-	require.True(t, admitted)
-
-	// A credential the forge will not say who holds is not decided.
-	_, _, err = a.Admit(t.Context(), frontend.Credentials{Forge: f.BadTokenString()}, f.Keys().Writable)
-	require.Error(t, err)
-
-	// Nor is a host no forge is bound to.
-	other := fake.New(fake.GitLabLike)
-	_, _, err = a.Admit(t.Context(), frontend.Credentials{Forge: f.TokenString()}, other.Keys().Writable)
-	require.Error(t, err)
-
-	// Nor an auth that cannot be reached.
-	require.NoError(t, auth.Close())
-	_, _, err = a.Admit(t.Context(), frontend.Credentials{Forge: f.TokenString()}, f.Keys().Writable)
-	require.Error(t, err)
 }
 
 func TestConsoleOriginsAreTheCallbacksOrigins(t *testing.T) {

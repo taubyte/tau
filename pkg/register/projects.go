@@ -83,6 +83,9 @@ type Link struct {
 	Config   string
 	Code     []string
 	Claimant string
+	// Replace makes the link the project's whole set of repositories: an
+	// owner relinking after a rename, a transfer or a dropped code repository.
+	Replace bool
 }
 
 // ProjectRecord is what the register holds about a linked project, as every
@@ -198,7 +201,7 @@ func (r *Register) LinkProject(ctx context.Context, l Link) (ProjectRecord, erro
 	if err != nil {
 		return ProjectRecord{}, err
 	}
-	if found && NormaliseRepository(owner.Config) != config {
+	if found && !l.Replace && NormaliseRepository(owner.Config) != config {
 		return ProjectRecord{}, claimedBy(l.Project, owner.Config)
 	}
 	for _, repo := range append([]string{config}, code...) {
@@ -215,25 +218,35 @@ func (r *Register) LinkProject(ctx context.Context, l Link) (ProjectRecord, erro
 	if found {
 		at = owner.CreatedAt.UnixNano()
 	}
+	if found && l.Replace {
+		claimant = owner.Claimant
+		if err := r.unlink(ctx, owner, config, code); err != nil {
+			return ProjectRecord{}, err
+		}
+	}
 
 	// THE CLAIM FIRST, so the repository rows below are valid the moment they
 	// land: a repository row only counts when its project's owning claim names
 	// the same configuration repository.
-	if err := r.putOnce(ctx, claimKey(l.Project, config), claimRow{At: at, Claimant: claimant, Repo: configSpelt}); err != nil {
+	write := r.putOnce
+	if l.Replace {
+		write = r.put
+	}
+	if err := write(ctx, claimKey(l.Project, config), claimRow{At: at, Claimant: claimant, Repo: configSpelt}); err != nil {
 		return ProjectRecord{}, err
 	}
-	if err := r.putOnce(ctx, repoKey(config, l.Project), claimRow{At: at, Config: config, Repo: configSpelt}); err != nil {
+	if err := write(ctx, repoKey(config, l.Project), claimRow{At: at, Config: config, Repo: configSpelt}); err != nil {
 		return ProjectRecord{}, err
 	}
 	for _, c := range code {
-		if err := r.putOnce(ctx, codeKey(l.Project, config, c), claimRow{At: at, Repo: codeSpelt[c]}); err != nil {
+		if err := write(ctx, codeKey(l.Project, config, c), claimRow{At: at, Repo: codeSpelt[c]}); err != nil {
 			return ProjectRecord{}, err
 		}
-		if err := r.putOnce(ctx, repoKey(c, l.Project), claimRow{At: at, Config: config, Repo: codeSpelt[c]}); err != nil {
+		if err := write(ctx, repoKey(c, l.Project), claimRow{At: at, Config: config, Repo: codeSpelt[c]}); err != nil {
 			return ProjectRecord{}, err
 		}
 	}
-	if err := r.putOnce(ctx, mineKey(claimant, l.Project), claimRow{At: at, Config: config}); err != nil {
+	if err := write(ctx, mineKey(claimant, l.Project), claimRow{At: at, Config: config}); err != nil {
 		return ProjectRecord{}, err
 	}
 
@@ -267,14 +280,54 @@ func claimedBy(project, config string) error {
 
 // putOnce writes a row that is absent and leaves one that is present: every
 // row here is a fact about a moment, and rewriting it would move the moment.
-func (r *Register) putOnce(ctx context.Context, key string, row claimRow) error {
-	_, found, err := r.store.Get(ctx, key)
+// unlink tombstones what a replacing link no longer holds: every other claim
+// on the id, and each repository the new set leaves out. The store has no
+// Delete, so a row is released by writing it empty, which row reads as absent.
+func (r *Register) unlink(ctx context.Context, owner ProjectRecord, config string, code []string) error {
+	held, err := r.project(ctx, owner.ID)
 	if err != nil {
-		return fmt.Errorf("register: reading %s: %w", key, err)
+		return err
 	}
-	if found {
-		return nil
+	keys, err := r.store.List(ctx, claimPrefix+owner.ID+sep)
+	if err != nil {
+		return fmt.Errorf("register: listing claims on %s: %w", owner.ID, err)
 	}
+	for _, key := range keys {
+		if key != claimKey(owner.ID, config) {
+			if err := r.tombstone(ctx, key); err != nil {
+				return err
+			}
+		}
+	}
+	old := NormaliseRepository(owner.Config)
+	keep := append([]string{config}, code...)
+	for _, c := range held.Code {
+		c = NormaliseRepository(c)
+		if old != config || !slices.Contains(code, c) {
+			if err := r.tombstone(ctx, codeKey(owner.ID, old, c)); err != nil {
+				return err
+			}
+		}
+		if !slices.Contains(keep, c) {
+			if err := r.tombstone(ctx, repoKey(c, owner.ID)); err != nil {
+				return err
+			}
+		}
+	}
+	if !slices.Contains(keep, old) {
+		return r.tombstone(ctx, repoKey(old, owner.ID))
+	}
+	return nil
+}
+
+func (r *Register) tombstone(ctx context.Context, key string) error {
+	if err := r.store.Put(ctx, key, nil); err != nil {
+		return fmt.Errorf("register: releasing %s: %w", key, err)
+	}
+	return nil
+}
+
+func (r *Register) put(ctx context.Context, key string, row claimRow) error {
 	b, err := json.Marshal(row)
 	if err != nil {
 		return err
@@ -283,6 +336,17 @@ func (r *Register) putOnce(ctx context.Context, key string, row claimRow) error 
 		return fmt.Errorf("register: writing %s: %w", key, err)
 	}
 	return nil
+}
+
+func (r *Register) putOnce(ctx context.Context, key string, row claimRow) error {
+	v, found, err := r.store.Get(ctx, key)
+	if err != nil {
+		return fmt.Errorf("register: reading %s: %w", key, err)
+	}
+	if found && len(v) > 0 {
+		return nil
+	}
+	return r.put(ctx, key, row)
 }
 
 // Project is a linked project as every node resolves it.
@@ -458,8 +522,8 @@ func (r *Register) repository(ctx context.Context, repository string) (Repositor
 	return RepositoryRecord{}, false, nil
 }
 
-// ProjectsOf is every project a claimant linked through the repository that
-// owns it, sorted.
+// ProjectsOf is every project a user linked through the repository that owns
+// it, or holds a live grant on, sorted.
 func (r *Register) ProjectsOf(ctx context.Context, claimant string) ([]ProjectRecord, error) {
 	claimant = strings.TrimSpace(claimant)
 	if claimant == "" {
@@ -495,6 +559,23 @@ func (r *Register) ProjectsOf(ctx context.Context, claimant string) ([]ProjectRe
 		if NormaliseRepository(rec.Config) == row.Config {
 			out = append(out, rec)
 		}
+	}
+	granted, err := r.granted(ctx, claimant)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range granted {
+		if slices.ContainsFunc(out, func(p ProjectRecord) bool { return p.ID == id }) {
+			continue
+		}
+		rec, err := r.project(ctx, id)
+		if errors.Is(err, ErrNotLinked) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
 	}
 	slices.SortFunc(out, func(a, b ProjectRecord) int { return strings.Compare(a.ID, b.ID) })
 	return out, nil

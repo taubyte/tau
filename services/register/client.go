@@ -157,7 +157,7 @@ func unwire(err error) error {
 	case connect.CodeNotFound:
 		if sentinel := matching(cerr.Message(),
 			pkgregister.ErrNotPublished, pkgregister.ErrNoObject, pkgregister.ErrNoHost, pkgregister.ErrNoView,
-			pkgregister.ErrNotLinked); sentinel != nil {
+			pkgregister.ErrNotLinked, pkgregister.ErrNoGrant); sentinel != nil {
 			return fmt.Errorf("%w: %s", sentinel, cerr.Message())
 		}
 	case connect.CodeAlreadyExists:
@@ -174,7 +174,8 @@ func unwire(err error) error {
 		if sentinel := matching(cerr.Message(),
 			pkgregister.ErrNoProject, pkgregister.ErrNoEnvironment,
 			pkgregister.ErrEmptyObject, pkgregister.ErrSeparator, pkgregister.ErrNoDestination,
-			pkgregister.ErrNoRepository, pkgregister.ErrNoClaimant); sentinel != nil {
+			pkgregister.ErrNoRepository, pkgregister.ErrNoClaimant,
+			pkgregister.ErrNoRole, pkgregister.ErrNoGrantee); sentinel != nil {
 			return fmt.Errorf("%w: %s", sentinel, cerr.Message())
 		}
 	}

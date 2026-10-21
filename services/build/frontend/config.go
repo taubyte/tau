@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"time"
 
-	"github.com/taubyte/tau/pkg/git/repokey"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/register"
 )
@@ -60,15 +58,6 @@ const (
 	// forge registered the subscription, to a backend that refused the
 	// enqueue — is otherwise only found by the next push. See streams.go.
 	DefaultStreamResync = 5 * time.Minute
-
-	// DefaultGitTimeout bounds one git exchange through /git/ and one
-	// server-side read or commit: a clone moves a whole repository.
-	DefaultGitTimeout = 10 * time.Minute
-	// DefaultMaxPushBytes bounds one git-receive-pack body through /git/.
-	DefaultMaxPushBytes = 256 << 20
-	// DefaultMaxFetchBytes bounds the pack a server-side read or commit
-	// fetches; a repository larger than this is cloned through /git/.
-	DefaultMaxFetchBytes = 64 << 20
 )
 
 // The four limits, two per public surface, and they are four because the two
@@ -173,14 +162,6 @@ type Config struct {
 	// accepted, so no credentialed request is allowed. See cors.go.
 	Origins []string `yaml:"origins"`
 
-	// PublicURL overrides where a webhook linking installs delivers
-	// (scheme://host[:port]): <PublicURL>/hook/<id>. It is for a frontend an
-	// operator serves behind a proxy or a domain of their own; empty, the
-	// cloud's own name for it is used (see WithCloudFqdn), and with neither,
-	// link install and inspect are refused — the request's own Host header is
-	// the caller's to set and never names where hooks deliver.
-	PublicURL string `yaml:"publicURL"`
-
 	HookRate    Rate `yaml:"hookRate"`
 	WebhookRate Rate `yaml:"webhookRate"`
 	CallerRate  Rate `yaml:"callerRate"`
@@ -196,12 +177,6 @@ type Config struct {
 	StreamBackoff    time.Duration `yaml:"streamBackoff"`
 	StreamBackoffMax time.Duration `yaml:"streamBackoffMax"`
 	StreamResync     time.Duration `yaml:"streamResync"`
-
-	// GitTimeout, MaxPushBytes and MaxFetchBytes bound the git routes
-	// (gitapi.go, contentapi.go). Zero means the matching default.
-	GitTimeout    time.Duration `yaml:"gitTimeout"`
-	MaxPushBytes  int64         `yaml:"maxPushBytes"`
-	MaxFetchBytes int64         `yaml:"maxFetchBytes"`
 }
 
 func (c Config) withDefaults() (Config, error) {
@@ -217,7 +192,6 @@ func (c Config) withDefaults() (Config, error) {
 		{"streamBackoff", c.StreamBackoff},
 		{"streamBackoffMax", c.StreamBackoffMax},
 		{"streamResync", c.StreamResync},
-		{"gitTimeout", c.GitTimeout},
 	} {
 		if d.value < 0 {
 			return c, fmt.Errorf("build: %s must not be negative", d.name)
@@ -225,9 +199,6 @@ func (c Config) withDefaults() (Config, error) {
 	}
 	if c.MaxBodyBytes < 0 {
 		return c, fmt.Errorf("build: maxBodyBytes must not be negative")
-	}
-	if c.MaxPushBytes < 0 || c.MaxFetchBytes < 0 {
-		return c, fmt.Errorf("build: maxPushBytes and maxFetchBytes must not be negative")
 	}
 	if c.SecretCacheMax < 0 {
 		return c, fmt.Errorf("build: secretCacheMax must not be negative")
@@ -252,15 +223,6 @@ func (c Config) withDefaults() (Config, error) {
 
 	if c.MaxBodyBytes == 0 {
 		c.MaxBodyBytes = DefaultMaxBodyBytes
-	}
-	if c.GitTimeout == 0 {
-		c.GitTimeout = DefaultGitTimeout
-	}
-	if c.MaxPushBytes == 0 {
-		c.MaxPushBytes = DefaultMaxPushBytes
-	}
-	if c.MaxFetchBytes == 0 {
-		c.MaxFetchBytes = DefaultMaxFetchBytes
 	}
 	if c.ReadHeaderTimeout == 0 {
 		c.ReadHeaderTimeout = DefaultReadHeaderTimeout
@@ -310,23 +272,25 @@ func (c Config) withDefaults() (Config, error) {
 	return c, nil
 }
 
-// Hook is what verifies a delivery addressed to one project: the
-// repositories a push to it may be for, and the secret its signature is made
-// with.
+// Hook is what verifies a delivery addressed to one project: each of its
+// repositories with the secret that repository's own webhook signs with.
 //
-// THE FIELDS DECIDE AN AUTHENTICATION TOGETHER, which is why they travel as one
-// value: the secret verifies the body, and the repositories say which
-// repositories that signature is good for. v1 fetched only the secret and let
-// the BODY name the repository, so a signature under one hook authorized a job
-// for any repository the cloud had.
+// A SIGNATURE IS GOOD FOR ITS OWN REPOSITORY ONLY. v1 fetched one secret and
+// let the BODY name the repository, so a signature under one hook authorized a
+// job for any repository the cloud had.
 type Hook struct {
 	Project      string
-	Repositories []string
-	Secret       []byte
+	Repositories []HookRepository
+}
+
+// HookRepository is one linked repository and its webhook secret.
+type HookRepository struct {
+	Key    string
+	Secret []byte
 }
 
 // ErrNoHook is a project this cloud cannot verify a push for: nobody linked
-// it, or no hook secret is set for it. It is an answer, not a failure: the
+// it, or no repository of it has a hook secret set. It is an answer, not a failure: the
 // webhook route denies it, where a failure to ask is a 503 (secrets.go).
 var ErrNoHook = errors.New("build: no hook for this project")
 
@@ -339,13 +303,13 @@ type Hooks interface {
 
 // Deliveries authenticates a webhook delivery and says what it means.
 //
-// IT IS AN INTERFACE FOR THE REASON Identity IS: which forge signed a delivery,
+// IT IS AN INTERFACE because which forge signed a delivery,
 // how, and where in the payload the push is, are the host's answers — and this
 // package names no host. forgeauth answers it through pkg/forge.
 type Deliveries interface {
 	// Verify checks one delivery against the hook it was addressed to, under
-	// the scheme the repository's forge signs with and the secret stored for
-	// the project, and returns the push it proves. A push is always for one of
+	// the scheme the repository's forge signs with and that repository's own
+	// secret, and returns the push it proves. A push is always for one of
 	// the hook's own repositories: a delivery naming any other does not verify.
 	//
 	// ErrNotAPush and ErrRefDeleted are genuine deliveries this cloud does not
@@ -378,11 +342,19 @@ var (
 	ErrMalformed = errors.New("build: the delivery names no usable push")
 )
 
-// Projects is what auth knows about who owns a project.
+// Projects is the register's project table, as authorization reads it.
 type Projects interface {
-	// Repositories returns the repository keys that gate a project: write
-	// access to any one of them is write access to the project.
-	Repositories(ctx context.Context, projectID string) ([]string, error)
+	// Role is user's role on a project; an unknown project is NotFound.
+	Role(ctx context.Context, projectID, user string) (register.Role, error)
+	// Project is the project a repository belongs to; one no project owns
+	// is NotFound.
+	Project(ctx context.Context, repositoryKey string) (string, error)
+}
+
+// Callers resolves a tau token into the user auth issued it to. A token auth
+// refuses is ErrBadCredential or an Unauthenticated connect error.
+type Callers interface {
+	Caller(ctx context.Context, token string) (string, error)
 }
 
 // Vault is the secrets service as this role sees it — three calls, and
@@ -404,16 +376,19 @@ type Vault interface {
 	List(ctx context.Context, project, environment string) ([]string, error)
 }
 
-// Linker is the register's project table, as this role sees it: the one write
-// linking a project takes, and the caller's own index. The register's surface is
+// Linker is the register's project table as this role writes it: linking,
+// the caller's own index, and a project's grants. The register's surface is
 // p2p only; this is the one public door to it, and it opens only after the
-// caller is shown to write to every repository the link names (projectapi.go).
+// caller is authorized (projectapi.go, grantapi.go).
 type Linker interface {
 	LinkProject(ctx context.Context, l register.Link) (register.ProjectRecord, error)
-	ProjectsOf(ctx context.Context, claimant string) ([]register.ProjectRecord, error)
+	ProjectsOf(ctx context.Context, user string) ([]register.ProjectRecord, error)
 	// ProjectRecord is one linked project; an unknown id is
 	// register.ErrNotLinked.
 	ProjectRecord(ctx context.Context, projectID string) (register.ProjectRecord, error)
+	GrantRole(ctx context.Context, project, grantee string, role register.Role, by string) (register.Grant, error)
+	Revoke(ctx context.Context, project, id, by string) error
+	Grants(ctx context.Context, project string) ([]register.Grant, error)
 }
 
 // Streams is a forge's own authenticated push feed, for the forges that have
@@ -458,182 +433,21 @@ type Backend interface {
 	Follow(ctx context.Context, jobID string, from int64, emit func(data []byte, next int64) error) (int64, error)
 }
 
-// Access is what an Identity concluded about one caller and one repository.
-//
-// THREE OUTCOMES, NOT A BOOL AND AN ERROR, because "the token is fine and
-// grants nothing" and "that is not a usable token" are different answers to the
-// caller — 404 and 401 — and a (bool, error) pair can only carry them by
-// agreeing on a sentinel error across a package boundary. AccessDenied is the
-// ZERO VALUE, so an implementation that returns nothing denies.
-type Access int
-
-const (
-	// AccessDenied: the caller is who they say they are and may not write here.
-	AccessDenied Access = iota
-	// AccessGranted: the caller may write to this repository.
-	AccessGranted
-	// AccessUnauthenticated: the credential is not usable at all.
-	AccessUnauthenticated
-)
-
-func (a Access) String() string {
-	switch a {
-	case AccessGranted:
-		return "granted"
-	case AccessUnauthenticated:
-		return "unauthenticated"
-	default:
-		return "denied"
-	}
-}
-
-// Identity resolves a caller's credential into what it may do.
-type Identity interface {
-	// WriteAccess reports whether the holder of token may write to key.
-	//
-	// WRITE, NOT READ, and that is services/auth/github.go:116-132's own rule
-	// restated where this package needs it rather than invented here: read
-	// access is not enough because a public repository reads to everyone, which
-	// is exactly what let an unrelated caller reach another project's
-	// repositories in v1.
-	WriteAccess(ctx context.Context, token string, key repokey.Key) (Access, error)
-
-	// Claimant is who the holder of token is on the forge serving host, as
-	// "<host>/<subject>": the stable id, never the login, which can be renamed
-	// and then claimed by somebody else.
-	//
-	// ErrUnknownForge is a host this cloud has no forge for; ErrBadCredential
-	// is a token that forge does not accept.
-	Claimant(ctx context.Context, token, host string) (string, error)
-}
-
-var (
-	// ErrUnknownForge is a forge host this cloud does not serve.
-	ErrUnknownForge = errors.New("build: no forge serves that host")
-
-	// ErrBadCredential is a token the forge refused outright.
-	ErrBadCredential = errors.New("build: the forge does not accept this token")
-)
-
-// Credentials are a caller's: their tau token, and the forge credential its
-// connection to the repository's host opened to.
-type Credentials struct {
-	Forge string
-	Tau   string
-}
-
-// Connections opens a caller's forge credentials.
-type Connections interface {
-	// Open is the forge credential tau's holder has for host. A token with no
-	// usable connection to host is a *NotConnectedError; a token that does
-	// not verify is ErrBadCredential.
-	Open(ctx context.Context, tau, host string) (Opened, error)
-}
-
-// Installer is what linking does at a forge, under the caller's own
-// connection: the forge credential never leaves this process (linkapi.go).
-type Installer interface {
-	// Inspect is what a link needs to know about key before it claims
-	// anything: the forge's own spelling of it, whether token may install
-	// on it, and whether a hook delivering to callback is there already.
-	Inspect(ctx context.Context, token string, key repokey.Key, callback *url.URL) (Inspection, error)
-	// Install puts the project's webhook and one read-only deploy key on
-	// key. With Replace, the hooks delivering to the callback and the deploy
-	// keys titled Title are removed first; without it, an existing hook to
-	// the callback is ErrAlreadyHooked. An account that may not administer
-	// key is ErrNotAdmin; a forge that cannot install either is
-	// ErrCannotInstall.
-	Install(ctx context.Context, token string, key repokey.Key, in Install) error
-}
-
-// Inspection is one repository, as linking sees it.
-type Inspection struct {
-	Repository string
-	Admin      bool
-	Hooked     bool
-}
-
-// Install is what one repository is given.
-type Install struct {
-	Callback  *url.URL
-	Secret    []byte
-	Title     string
-	DeployKey string
-	Replace   bool
-}
-
-var (
-	ErrNotAdmin      = errors.New("build: installing a webhook and a deploy key takes admin on the repository")
-	ErrAlreadyHooked = errors.New("build: the repository already has this cloud's webhook")
-	ErrCannotInstall = errors.New("build: this forge cannot install a webhook and a deploy key")
-)
-
-// Opened is one connection, opened.
-type Opened struct {
-	Forge string
-}
-
-// NotConnectedError is a tau token with no usable connection to a forge
-// host; its message says what to do.
-type NotConnectedError struct{ Reason string }
-
-func (e *NotConnectedError) Error() string { return e.Reason }
-
-// Admissions is the cloud's answer about a caller the forge has already
-// granted: whether the person holding the credential may use this cloud's API
-// at all. Optional; without it every caller a forge grants is admitted.
-type Admissions interface {
-	// Admit reports whether the caller, as the forge serving key knows the
-	// holder of their forge token and as their tau token names them, is
-	// admitted, and if not, why — in words the caller can act on.
-	Admit(ctx context.Context, cred Credentials, key repokey.Key) (admitted bool, reason string, err error)
-}
-
-// Repositories is what a console does at a forge, under the caller's own
-// connection: the forge credential never leaves this process (repoapi.go,
-// gitapi.go, contentapi.go).
-type Repositories interface {
-	// List is the repositories the holder of token reaches on host.
-	List(ctx context.Context, token, host string) ([]RepositoryInfo, error)
-	// Create makes key, empty, as the holder of token.
-	Create(ctx context.Context, token string, key repokey.Key, in NewRepository) (RepositoryInfo, error)
-	// ReadAccess reports whether the holder of token may read key.
-	ReadAccess(ctx context.Context, token string, key repokey.Key) (Access, error)
-	// Remote is key's https git address, and a transport that carries
-	// token to that host and nowhere else.
-	Remote(ctx context.Context, token string, key repokey.Key) (Remote, error)
-}
-
-// RepositoryInfo is one repository as the forge describes it.
-type RepositoryInfo struct {
-	Repository    string `json:"repository"`
-	DefaultBranch string `json:"default_branch"`
-	Private       bool   `json:"private"`
-}
-
-// NewRepository is what a created repository is given.
-type NewRepository struct {
-	Description string
-	Private     bool
-}
-
-// Remote is one repository's git address, with its credential attached by
-// Transport, and the account commits made through it are authored as.
-type Remote struct {
-	URL       *url.URL
-	Transport http.RoundTripper
-	Author    string
-	Email     string
-}
-
-var (
-	// ErrUnsupported is a forge that cannot answer the question asked.
-	ErrUnsupported = errors.New("build: this forge cannot do that")
-	// ErrExists is a repository already at the key a creation named.
-	ErrExists = errors.New("build: a repository is already there")
-)
+// ErrBadCredential is a token auth refused outright.
+var ErrBadCredential = errors.New("build: the credential is not accepted")
 
 // Assets reads what a build stored, by the content id a job records.
 type Assets interface {
 	Get(ctx context.Context, cid string) (io.ReadSeekCloser, error)
+}
+
+// signed reports whether any of the hook's repositories has a secret to
+// verify a delivery with.
+func (h Hook) signed() bool {
+	for _, r := range h.Repositories {
+		if len(r.Secret) > 0 {
+			return true
+		}
+	}
+	return false
 }

@@ -70,6 +70,10 @@ type registerSeam interface {
 	Repository(ctx context.Context, repository string) (pkgregister.RepositoryRecord, error)
 	ProjectsOf(ctx context.Context, claimant string) ([]pkgregister.ProjectRecord, error)
 	ListProjects(ctx context.Context) ([]pkgregister.ProjectRecord, error)
+	GrantRole(ctx context.Context, project, grantee string, role pkgregister.Role, by string) (pkgregister.Grant, error)
+	Revoke(ctx context.Context, project, id, by string) error
+	Grants(ctx context.Context, project string) ([]pkgregister.Grant, error)
+	RoleOf(ctx context.Context, project, user string) (pkgregister.Role, error)
 }
 
 // routeTo is the `pick` half of every reach on this node: WHICH node in the

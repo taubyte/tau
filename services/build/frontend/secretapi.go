@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+
+	"github.com/taubyte/tau/pkg/register"
 )
 
 // secretapi.go is where a developer's secret values are written, and it is the
@@ -16,11 +18,8 @@ import (
 // one call with no commit and no build behind it. That is the vocabulary's own
 // statement about the `secret` kind, not a convenience added here.
 //
-// SO THE AUTHORIZATION HAS TO BE THE SAME. What git gave the other writes is
-// "may this person change what this project runs", and here that is
-// mayTouchProject: write access to one of the repositories the project is made
-// of, the identical rule the deploy path applies. A secret is at least as
-// powerful as a commit, so it may not be easier to obtain.
+// SO IT TAKES ITS OWN ROLE: secret-manager, which an owner grants and a
+// builder does not hold.
 //
 // THERE IS NO READ ROUTE, and there will not be one. See Vault in config.go: a
 // developer sets a value and lists which names are set. A GET of a value would
@@ -152,5 +151,6 @@ func (s *Service) mayTouchSecrets(r *http.Request, token, projectID string) erro
 	if s.vault == nil {
 		return errDenied
 	}
-	return s.mayTouchProject(r.Context(), token, projectID)
+	_, err := s.mayTouchProject(r.Context(), token, projectID, register.RoleSecretManager)
+	return err
 }

@@ -13,8 +13,8 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/git/repokey"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	"github.com/taubyte/tau/pkg/register"
 )
 
 // The four routes v1 guards with "does this bearer hold a working GitHub
@@ -131,7 +131,7 @@ func TestAMutationIsAuthorizedBeforeItHappens(t *testing.T) {
 	for _, route := range []string{"/cancel/", "/retry/"} {
 		t.Run(route, func(t *testing.T) {
 			h := newHarness(t, Config{})
-			h.identity.write = func(string, repokey.Key) (Access, error) { return AccessDenied, nil }
+			h.projects.role = func(string, string) (register.Role, error) { return register.RoleViewer, nil }
 
 			acted := false
 			h.backend.cancel = func(string) error { acted = true; return nil }
@@ -152,12 +152,6 @@ func TestAnUnknownJobAndADeniedOneAreTheSameAnswer(t *testing.T) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("no job"))
 		}
 		return &buildv2.Job{Id: id, RepositoryKey: "github.com/someone/else"}, nil
-	}
-	h.identity.write = func(_ string, key repokey.Key) (Access, error) {
-		if key.String() == testRepoKey {
-			return AccessGranted, nil
-		}
-		return AccessDenied, nil
 	}
 
 	unknown := h.do(t, authed(http.MethodGet, "/job/unknown", testToken))
@@ -188,7 +182,7 @@ func TestAnOversizedIdNeverReachesTheBackend(t *testing.T) {
 			reached := false
 			h.backend.get = func(string) (*buildv2.Job, error) { reached = true; return nil, nil }
 			h.backend.list = func(string, func(string) error) error { reached = true; return nil }
-			h.projects.repositories = func(string) ([]string, error) { reached = true; return nil, nil }
+			h.projects.role = func(string, string) (register.Role, error) { reached = true; return register.RoleOwner, nil }
 
 			method := http.MethodGet
 			if strings.HasPrefix(path, "/cancel") || strings.HasPrefix(path, "/retry") {
@@ -235,9 +229,9 @@ func TestNoJobRouteSpendsTheCloudOnceForEveryRequest(t *testing.T) {
 		{"POST /cancel", http.MethodPost, "/cancel/" + testJobID, countGets},
 		{"POST /retry", http.MethodPost, "/retry/" + testJobID, countGets},
 		{"GET /jobs", http.MethodGet, "/jobs/" + testProject, func(h *harness, n *int) {
-			h.projects.repositories = func(string) ([]string, error) {
+			h.projects.role = func(string, string) (register.Role, error) {
 				*n++
-				return nil, connect.NewError(connect.CodeNotFound, errors.New("no project"))
+				return register.RoleNone, connect.NewError(connect.CodeNotFound, errors.New("no project"))
 			}
 		}},
 	} {
@@ -302,9 +296,9 @@ func TestAFloodOfInventedCredentialsMeetsTheGlobalJobLimit(t *testing.T) {
 		CallerRate: Rate{Burst: 100, Per: time.Minute},
 	})
 	asked := 0
-	h.backend.get = func(string) (*buildv2.Job, error) {
+	h.callers.caller = func(string) (string, error) {
 		asked++
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("no job"))
+		return "", ErrBadCredential
 	}
 
 	codes := []int{}
@@ -313,10 +307,10 @@ func TestAFloodOfInventedCredentialsMeetsTheGlobalJobLimit(t *testing.T) {
 	}
 
 	require.Equal(t, []int{
-		http.StatusNotFound, http.StatusNotFound,
+		http.StatusUnauthorized, http.StatusUnauthorized,
 		http.StatusTooManyRequests, http.StatusTooManyRequests,
 	}, codes)
-	require.Equal(t, 2, asked, "two barriers, not four")
+	require.Equal(t, 2, asked, "two verifications, not four")
 }
 
 func TestOneCredentialsBurstDoesNotSpendTheWholeJobAPI(t *testing.T) {
@@ -333,7 +327,7 @@ func TestOneCredentialsBurstDoesNotSpendTheWholeJobAPI(t *testing.T) {
 	require.Equal(t, "60", limited.Header().Get("Retry-After"), "the caller is told how long to wait")
 
 	// Another credential is unaffected: the limit is per caller, not per node.
-	require.Equal(t, http.StatusNotFound, h.do(t, authed(http.MethodGet, "/job/"+testJobID, "someone-else")).Code)
+	require.Equal(t, http.StatusUnauthorized, h.do(t, authed(http.MethodGet, "/job/"+testJobID, "someone-else")).Code)
 
 	// And the bucket refills on the clock, not on a sleep.
 	h.clock.advance(time.Minute)

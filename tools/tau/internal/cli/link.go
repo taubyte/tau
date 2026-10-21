@@ -306,10 +306,10 @@ func newDeployKey(comment string) (private, authz string, err error) {
 // store puts the private halves on the cloud, through the same secret route
 // every other secret takes.
 func (c *credentials) store(ctx context.Context, cl *api.Client, id string) error {
-	if err := cl.SetSecret(ctx, id, linkcreds.Environment, linkcreds.HookSecret, c.hook.Expose()); err != nil {
-		return err
-	}
 	for _, k := range c.keys {
+		if err := cl.SetSecret(ctx, id, linkcreds.Environment, linkcreds.HookSecret(k.repository.String()), c.hook.Expose()); err != nil {
+			return err
+		}
 		if err := cl.SetSecret(ctx, id, linkcreds.Environment, linkcreds.DeployKey(k.repository.String()), []byte(k.private)); err != nil {
 			return err
 		}

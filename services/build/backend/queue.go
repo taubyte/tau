@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"errors"
 
 	"connectrpc.com/connect"
 
@@ -96,6 +97,16 @@ func (s *Service) enqueue(ctx context.Context, p *buildv2.PushEvent) (string, er
 	}
 	if projectID == "" {
 		return "", errFailedPrecondition("repository %q belongs to no project", key)
+	}
+
+	if s.confirm != nil {
+		err := s.confirm.Confirm(ctx, key.String(), p.GetRef(), p.GetCommitSha())
+		switch {
+		case errors.Is(err, ErrNotAtCommit):
+			return "", errFailedPrecondition("%s does not hold %s at %s", key, p.GetRef(), p.GetCommitSha())
+		case err != nil:
+			return "", errUnavailable("confirming %s %s: %v", key, p.GetRef(), err)
+		}
 	}
 
 	return id, s.create(id, key.String(), p.GetRef(), p.GetCommitSha(), projectID)

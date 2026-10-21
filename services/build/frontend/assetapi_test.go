@@ -46,7 +46,7 @@ func TestJobAssets(t *testing.T) {
 	} {
 		require.Equal(t, want, h.do(t, authed(http.MethodGet, path, testToken)).Code, path)
 	}
-	require.Equal(t, http.StatusNotFound, h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/assets/resource-1", "stranger")).Code)
+	require.Equal(t, http.StatusUnauthorized, h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/assets/resource-1", "stranger")).Code)
 
 	bad := newHarness(t, Config{}, WithAssets(fakeAssets{}))
 	require.Equal(t, http.StatusBadGateway, bad.do(t, authed(http.MethodGet, "/job/"+testJobID+"/assets/resource-1", testToken)).Code)

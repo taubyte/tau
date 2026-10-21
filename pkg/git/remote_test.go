@@ -45,3 +45,19 @@ func localRemote(t *testing.T) string {
 	assert.NilError(t, repo.Push(&gogit.PushOptions{RefSpecs: []config.RefSpec{"refs/heads/*:refs/heads/*"}}))
 	return "file://" + bare
 }
+
+func TestListRemoteReadsTheHeadsWithoutCloning(t *testing.T) {
+	url := localRemote(t)
+	refs, err := ListRemote(t.Context(), URL(url))
+	assert.NilError(t, err)
+	names := map[plumbing.ReferenceName]bool{}
+	for _, r := range refs {
+		names[r.Name()] = true
+	}
+	assert.Assert(t, names["refs/heads/main"] && names["refs/heads/dream"])
+
+	_, err = ListRemote(t.Context())
+	assert.ErrorContains(t, err, "needs its url")
+	_, err = ListRemote(t.Context(), URL(url), SSHKeyAs("git", "k", nil))
+	assert.ErrorContains(t, err, "host keys")
+}

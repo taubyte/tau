@@ -43,8 +43,8 @@ func (s *Service) mount() http.Handler {
 	// the order it does it.
 	mux.HandleFunc("POST /hook/{projectId}", s.handleWebhook)
 
-	// The four a forge-token holder reaches. Each authorizes on the resource
-	// before it acts (authz.go); a denial is a 404.
+	// The job routes. Each authorizes the caller's role on the project before
+	// it acts (authz.go); a denial is a 404.
 	//
 	// EVERY ONE OF THEM GOES THROUGH admitted(), and none of them could be
 	// mounted here without it: a job handler is a jobHandler and not an
@@ -62,34 +62,21 @@ func (s *Service) mount() http.Handler {
 
 	// The secret routes: written by a developer, out of band, because the value
 	// is the one thing that must not be in git (secretapi.go). Same
-	// authorization as everything above — write access to a repository the
-	// project is made of — and no route that reads a value back.
+	// authorization as everything above, at the secret-manager role, and no
+	// route that reads a value back.
 	mux.HandleFunc("GET /secrets/{projectId}/{environment}", s.admitted("projectId", s.handleListSecrets))
 	mux.HandleFunc("PUT /secrets/{projectId}/{environment}/{name}", s.admitted("projectId", s.handleSetSecret))
 	mux.HandleFunc("DELETE /secrets/{projectId}/{environment}/{name}", s.admitted("projectId", s.handleDeleteSecret))
 
-	// Linking a project: the one public door to the register's project table,
-	// authorized as write access to EVERY repository it names, and the caller's
-	// own list of what they linked (projectapi.go).
+	// Linking a project, the caller's own projects, and an owner's grants:
+	// the one public door to the register's project table (projectapi.go,
+	// grantapi.go).
 	mux.HandleFunc("POST /projects/{projectId}", s.admitted("projectId", s.handleLinkProject))
 	mux.HandleFunc("GET /projects/{projectId}", s.admitted("projectId", s.handleGetProject))
-	mux.HandleFunc("GET /forges/{forge}/projects", s.admitted("forge", s.handleListProjects))
-
-	// What a link does at the forge, done here under the caller's own
-	// connection so no forge credential is handed to a client (linkapi.go).
-	mux.HandleFunc("POST /link/{projectId}/inspect", s.admitted("projectId", s.handleLinkInspect))
-	mux.HandleFunc("POST /link/{projectId}/install", s.admitted("projectId", s.handleLinkInstall))
-
-	// What a console does at a forge — its repository picker, a new
-	// repository, a file read or committed, and git itself — done here
-	// under the caller's connection for the same reason (repoapi.go,
-	// contentapi.go, gitapi.go).
-	mux.HandleFunc("GET /forges/{forge}/repositories", s.admitted("forge", s.handleListRepositories))
-	mux.HandleFunc("POST /forges/{forge}/repositories", s.admitted("forge", s.handleCreateRepository))
-	mux.HandleFunc("POST /forges/{forge}/read", s.admitted("forge", s.handleRead))
-	mux.HandleFunc("POST /forges/{forge}/commit", s.admitted("forge", s.handleCommit))
-	mux.HandleFunc("GET /git/{path...}", s.admittedWithin("path", maxGitPath, s.handleGit))
-	mux.HandleFunc("POST /git/{path...}", s.admittedWithin("path", maxGitPath, s.handleGit))
+	mux.HandleFunc("GET /projects", s.admitted("", s.handleListProjects))
+	mux.HandleFunc("GET /projects/{projectId}/grants", s.admitted("projectId", s.handleListGrants))
+	mux.HandleFunc("POST /projects/{projectId}/grants", s.admitted("projectId", s.handleGrant))
+	mux.HandleFunc("DELETE /projects/{projectId}/grants/{grantId}", s.admitted("projectId", s.handleRevoke))
 
 	// Signing in, and managing this cloud's users: auth's own calls, carried
 	// to it unchanged and authorized by it (authapi.go). Only when this node

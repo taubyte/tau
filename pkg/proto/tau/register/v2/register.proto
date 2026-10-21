@@ -202,9 +202,12 @@ message LinkRequest {
   string project = 1;
   string config_repository = 2;
   repeated string code_repositories = 3;
-  // claimant is the forge identity of the caller the build frontend
-  // authorized, as "<forge host>/<subject>". It is never a node.
+  // claimant is the tau user id of the caller the build frontend
+  // authenticated. It is never a node.
   string claimant = 4;
+  // replace makes this link the project's whole set of repositories; the
+  // build frontend sets it only for the project's owner.
+  bool replace = 5;
 }
 
 // ProjectRecord is a linked project as every node resolves it.
@@ -239,6 +242,49 @@ message ProjectRecords {
 
 message ListProjectsRequest {}
 
+// GrantRequest gives grantee, a tau user id, one role on a linked project.
+// role is viewer, builder, secret-manager or owner.
+message GrantRequest {
+  string project = 1;
+  string grantee = 2;
+  string role = 3;
+  // by is the tau user id of the owner the build frontend authorized.
+  string by = 4;
+}
+
+// GrantRecord is one grant. at is unix nanoseconds.
+message GrantRecord {
+  string id = 1;
+  string project = 2;
+  string grantee = 3;
+  string role = 4;
+  string by = 5;
+  int64 at = 6;
+}
+
+message GrantRecords {
+  repeated GrantRecord grants = 1;
+}
+
+// RevokeRequest withdraws one grant for good.
+message RevokeRequest {
+  string project = 1;
+  string grant_id = 2;
+  string by = 3;
+}
+
+message RevokeResponse {}
+
+message RoleRequest {
+  string project = 1;
+  string user = 2;
+}
+
+// RoleAnswer is a user's role on a project; empty is none.
+message RoleAnswer {
+  string role = 1;
+}
+
 service RegisterService {
   // Link claims a project id for a configuration repository and attaches
   // code repositories. An id or repository another project owns is
@@ -252,12 +298,27 @@ service RegisterService {
   // NotFound.
   rpc Repository(RepositoryRequest) returns (RepositoryRecord);
 
-  // ProjectsOf is every project one claimant linked and its repository still
-  // owns.
+  // ProjectsOf is every project one user linked and its repository still
+  // owns, or holds a live grant on.
   rpc ProjectsOf(ClaimantRequest) returns (ProjectRecords);
 
   // ListProjects is every linked project, sorted by id.
   rpc ListProjects(ListProjectsRequest) returns (ProjectRecords);
+
+  // Grant gives a tau user a role on a linked project. An unknown project is
+  // NotFound; an unknown role is InvalidArgument.
+  rpc Grant(GrantRequest) returns (GrantRecord);
+
+  // Revoke withdraws a grant; a revocation always wins over its grant. An id
+  // the project never granted is NotFound.
+  rpc Revoke(RevokeRequest) returns (RevokeResponse);
+
+  // Grants is every live grant on a project, oldest first.
+  rpc Grants(ProjectRequest) returns (GrantRecords);
+
+  // Role is one user's role on a project: owner for the owning claim's
+  // claimant, else the highest live grant. An unknown project is NotFound.
+  rpc Role(RoleRequest) returns (RoleAnswer);
 
   // Publish stores a compiled project and points an environment at it.
   rpc Publish(PublishRequest) returns (PublishResponse);

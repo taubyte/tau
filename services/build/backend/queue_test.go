@@ -3,6 +3,7 @@ package backend
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -719,4 +720,45 @@ func TestWhatADeliveryFindsWhenItComesBackFromAuth(t *testing.T) {
 		ready, _ := h.work.Depth()
 		require.Zero(t, ready)
 	})
+}
+
+type confirmer struct {
+	err   error
+	asked int
+}
+
+func (c *confirmer) Confirm(_ context.Context, key, ref, commit string) error {
+	c.asked++
+	return c.err
+}
+
+// A PUSH IS QUEUED ONLY FOR WHAT THE REPOSITORY HOLDS, and a repository that
+// cannot be asked is a retry, not a refusal.
+func TestEnqueueConfirmsThePushAtTheRepository(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		code connect.Code
+	}{
+		{"not at the commit", fmt.Errorf("%w: moved on", ErrNotAtCommit), connect.CodeFailedPrecondition},
+		{"forge unreachable", errors.New("dial"), connect.CodeUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &confirmer{err: tc.err}
+			h := newHarness(t, WithConfirmer(c))
+			_, err := enqueue(t, h, testRepo, testRef, testCommit)
+			require.Equal(t, tc.code, connect.CodeOf(err))
+			require.Equal(t, 1, c.asked)
+			require.Empty(t, h.store.Keys(rootSegment+"/"), "nothing refused may have written a row")
+		})
+	}
+
+	c := &confirmer{}
+	h := newHarness(t, WithConfirmer(c))
+	id := h.push(t, testRef, testCommit)
+	require.Equal(t, id, h.push(t, testRef, testCommit))
+	require.Equal(t, 1, c.asked, "a push already queued is not asked about again")
+
+	_, err := New(Config{}, WithConfirmer(nil))
+	require.Error(t, err)
 }

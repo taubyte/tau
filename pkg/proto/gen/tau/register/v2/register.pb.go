@@ -970,9 +970,12 @@ type LinkRequest struct {
 	Project          string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
 	ConfigRepository string                 `protobuf:"bytes,2,opt,name=config_repository,json=configRepository,proto3" json:"config_repository,omitempty"`
 	CodeRepositories []string               `protobuf:"bytes,3,rep,name=code_repositories,json=codeRepositories,proto3" json:"code_repositories,omitempty"`
-	// claimant is the forge identity of the caller the build frontend
-	// authorized, as "<forge host>/<subject>". It is never a node.
-	Claimant      string `protobuf:"bytes,4,opt,name=claimant,proto3" json:"claimant,omitempty"`
+	// claimant is the tau user id of the caller the build frontend
+	// authenticated. It is never a node.
+	Claimant string `protobuf:"bytes,4,opt,name=claimant,proto3" json:"claimant,omitempty"`
+	// replace makes this link the project's whole set of repositories; the
+	// build frontend sets it only for the project's owner.
+	Replace       bool `protobuf:"varint,5,opt,name=replace,proto3" json:"replace,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1033,6 +1036,13 @@ func (x *LinkRequest) GetClaimant() string {
 		return x.Claimant
 	}
 	return ""
+}
+
+func (x *LinkRequest) GetReplace() bool {
+	if x != nil {
+		return x.Replace
+	}
+	return false
 }
 
 // ProjectRecord is a linked project as every node resolves it.
@@ -1343,6 +1353,400 @@ func (*ListProjectsRequest) Descriptor() ([]byte, []int) {
 	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{22}
 }
 
+// GrantRequest gives grantee, a tau user id, one role on a linked project.
+// role is viewer, builder, secret-manager or owner.
+type GrantRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Project string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	Grantee string                 `protobuf:"bytes,2,opt,name=grantee,proto3" json:"grantee,omitempty"`
+	Role    string                 `protobuf:"bytes,3,opt,name=role,proto3" json:"role,omitempty"`
+	// by is the tau user id of the owner the build frontend authorized.
+	By            string `protobuf:"bytes,4,opt,name=by,proto3" json:"by,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GrantRequest) Reset() {
+	*x = GrantRequest{}
+	mi := &file_tau_register_v2_register_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GrantRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GrantRequest) ProtoMessage() {}
+
+func (x *GrantRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v2_register_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GrantRequest.ProtoReflect.Descriptor instead.
+func (*GrantRequest) Descriptor() ([]byte, []int) {
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *GrantRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *GrantRequest) GetGrantee() string {
+	if x != nil {
+		return x.Grantee
+	}
+	return ""
+}
+
+func (x *GrantRequest) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+func (x *GrantRequest) GetBy() string {
+	if x != nil {
+		return x.By
+	}
+	return ""
+}
+
+// GrantRecord is one grant. at is unix nanoseconds.
+type GrantRecord struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Project       string                 `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
+	Grantee       string                 `protobuf:"bytes,3,opt,name=grantee,proto3" json:"grantee,omitempty"`
+	Role          string                 `protobuf:"bytes,4,opt,name=role,proto3" json:"role,omitempty"`
+	By            string                 `protobuf:"bytes,5,opt,name=by,proto3" json:"by,omitempty"`
+	At            int64                  `protobuf:"varint,6,opt,name=at,proto3" json:"at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GrantRecord) Reset() {
+	*x = GrantRecord{}
+	mi := &file_tau_register_v2_register_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GrantRecord) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GrantRecord) ProtoMessage() {}
+
+func (x *GrantRecord) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v2_register_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GrantRecord.ProtoReflect.Descriptor instead.
+func (*GrantRecord) Descriptor() ([]byte, []int) {
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *GrantRecord) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *GrantRecord) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *GrantRecord) GetGrantee() string {
+	if x != nil {
+		return x.Grantee
+	}
+	return ""
+}
+
+func (x *GrantRecord) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+func (x *GrantRecord) GetBy() string {
+	if x != nil {
+		return x.By
+	}
+	return ""
+}
+
+func (x *GrantRecord) GetAt() int64 {
+	if x != nil {
+		return x.At
+	}
+	return 0
+}
+
+type GrantRecords struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Grants        []*GrantRecord         `protobuf:"bytes,1,rep,name=grants,proto3" json:"grants,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GrantRecords) Reset() {
+	*x = GrantRecords{}
+	mi := &file_tau_register_v2_register_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GrantRecords) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GrantRecords) ProtoMessage() {}
+
+func (x *GrantRecords) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v2_register_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GrantRecords.ProtoReflect.Descriptor instead.
+func (*GrantRecords) Descriptor() ([]byte, []int) {
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *GrantRecords) GetGrants() []*GrantRecord {
+	if x != nil {
+		return x.Grants
+	}
+	return nil
+}
+
+// RevokeRequest withdraws one grant for good.
+type RevokeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	GrantId       string                 `protobuf:"bytes,2,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`
+	By            string                 `protobuf:"bytes,3,opt,name=by,proto3" json:"by,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeRequest) Reset() {
+	*x = RevokeRequest{}
+	mi := &file_tau_register_v2_register_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeRequest) ProtoMessage() {}
+
+func (x *RevokeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v2_register_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeRequest.ProtoReflect.Descriptor instead.
+func (*RevokeRequest) Descriptor() ([]byte, []int) {
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *RevokeRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *RevokeRequest) GetGrantId() string {
+	if x != nil {
+		return x.GrantId
+	}
+	return ""
+}
+
+func (x *RevokeRequest) GetBy() string {
+	if x != nil {
+		return x.By
+	}
+	return ""
+}
+
+type RevokeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeResponse) Reset() {
+	*x = RevokeResponse{}
+	mi := &file_tau_register_v2_register_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeResponse) ProtoMessage() {}
+
+func (x *RevokeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v2_register_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeResponse.ProtoReflect.Descriptor instead.
+func (*RevokeResponse) Descriptor() ([]byte, []int) {
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{27}
+}
+
+type RoleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	User          string                 `protobuf:"bytes,2,opt,name=user,proto3" json:"user,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RoleRequest) Reset() {
+	*x = RoleRequest{}
+	mi := &file_tau_register_v2_register_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RoleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RoleRequest) ProtoMessage() {}
+
+func (x *RoleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v2_register_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RoleRequest.ProtoReflect.Descriptor instead.
+func (*RoleRequest) Descriptor() ([]byte, []int) {
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *RoleRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *RoleRequest) GetUser() string {
+	if x != nil {
+		return x.User
+	}
+	return ""
+}
+
+// RoleAnswer is a user's role on a project; empty is none.
+type RoleAnswer struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Role          string                 `protobuf:"bytes,1,opt,name=role,proto3" json:"role,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RoleAnswer) Reset() {
+	*x = RoleAnswer{}
+	mi := &file_tau_register_v2_register_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RoleAnswer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RoleAnswer) ProtoMessage() {}
+
+func (x *RoleAnswer) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v2_register_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RoleAnswer.ProtoReflect.Descriptor instead.
+func (*RoleAnswer) Descriptor() ([]byte, []int) {
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *RoleAnswer) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
 var File_tau_register_v2_register_proto protoreflect.FileDescriptor
 
 const file_tau_register_v2_register_proto_rawDesc = "" +
@@ -1397,12 +1801,13 @@ const file_tau_register_v2_register_proto_rawDesc = "" +
 	"\n" +
 	"HostAnswer\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
-	"\venvironment\x18\x02 \x01(\tR\venvironment\"\x9d\x01\n" +
+	"\venvironment\x18\x02 \x01(\tR\venvironment\"\xb7\x01\n" +
 	"\vLinkRequest\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12+\n" +
 	"\x11config_repository\x18\x02 \x01(\tR\x10configRepository\x12+\n" +
 	"\x11code_repositories\x18\x03 \x03(\tR\x10codeRepositories\x12\x1a\n" +
-	"\bclaimant\x18\x04 \x01(\tR\bclaimant\"\xb4\x01\n" +
+	"\bclaimant\x18\x04 \x01(\tR\bclaimant\x12\x18\n" +
+	"\areplace\x18\x05 \x01(\bR\areplace\"\xb4\x01\n" +
 	"\rProjectRecord\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12+\n" +
 	"\x11config_repository\x18\x02 \x01(\tR\x10configRepository\x12+\n" +
@@ -1426,7 +1831,32 @@ const file_tau_register_v2_register_proto_rawDesc = "" +
 	"\bclaimant\x18\x01 \x01(\tR\bclaimant\"L\n" +
 	"\x0eProjectRecords\x12:\n" +
 	"\bprojects\x18\x01 \x03(\v2\x1e.tau.register.v2.ProjectRecordR\bprojects\"\x15\n" +
-	"\x13ListProjectsRequest2\xb3\a\n" +
+	"\x13ListProjectsRequest\"f\n" +
+	"\fGrantRequest\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x12\x18\n" +
+	"\agrantee\x18\x02 \x01(\tR\agrantee\x12\x12\n" +
+	"\x04role\x18\x03 \x01(\tR\x04role\x12\x0e\n" +
+	"\x02by\x18\x04 \x01(\tR\x02by\"\x85\x01\n" +
+	"\vGrantRecord\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
+	"\aproject\x18\x02 \x01(\tR\aproject\x12\x18\n" +
+	"\agrantee\x18\x03 \x01(\tR\agrantee\x12\x12\n" +
+	"\x04role\x18\x04 \x01(\tR\x04role\x12\x0e\n" +
+	"\x02by\x18\x05 \x01(\tR\x02by\x12\x0e\n" +
+	"\x02at\x18\x06 \x01(\x03R\x02at\"D\n" +
+	"\fGrantRecords\x124\n" +
+	"\x06grants\x18\x01 \x03(\v2\x1c.tau.register.v2.GrantRecordR\x06grants\"T\n" +
+	"\rRevokeRequest\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x12\x19\n" +
+	"\bgrant_id\x18\x02 \x01(\tR\agrantId\x12\x0e\n" +
+	"\x02by\x18\x03 \x01(\tR\x02by\"\x10\n" +
+	"\x0eRevokeResponse\";\n" +
+	"\vRoleRequest\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x12\x12\n" +
+	"\x04user\x18\x02 \x01(\tR\x04user\" \n" +
+	"\n" +
+	"RoleAnswer\x12\x12\n" +
+	"\x04role\x18\x01 \x01(\tR\x04role2\xd1\t\n" +
 	"\x0fRegisterService\x12D\n" +
 	"\x04Link\x12\x1c.tau.register.v2.LinkRequest\x1a\x1e.tau.register.v2.ProjectRecord\x12J\n" +
 	"\aProject\x12\x1f.tau.register.v2.ProjectRequest\x1a\x1e.tau.register.v2.ProjectRecord\x12S\n" +
@@ -1434,7 +1864,11 @@ const file_tau_register_v2_register_proto_rawDesc = "" +
 	"Repository\x12\".tau.register.v2.RepositoryRequest\x1a!.tau.register.v2.RepositoryRecord\x12O\n" +
 	"\n" +
 	"ProjectsOf\x12 .tau.register.v2.ClaimantRequest\x1a\x1f.tau.register.v2.ProjectRecords\x12U\n" +
-	"\fListProjects\x12$.tau.register.v2.ListProjectsRequest\x1a\x1f.tau.register.v2.ProjectRecords\x12L\n" +
+	"\fListProjects\x12$.tau.register.v2.ListProjectsRequest\x1a\x1f.tau.register.v2.ProjectRecords\x12D\n" +
+	"\x05Grant\x12\x1d.tau.register.v2.GrantRequest\x1a\x1c.tau.register.v2.GrantRecord\x12I\n" +
+	"\x06Revoke\x12\x1e.tau.register.v2.RevokeRequest\x1a\x1f.tau.register.v2.RevokeResponse\x12H\n" +
+	"\x06Grants\x12\x1f.tau.register.v2.ProjectRequest\x1a\x1d.tau.register.v2.GrantRecords\x12A\n" +
+	"\x04Role\x12\x1c.tau.register.v2.RoleRequest\x1a\x1b.tau.register.v2.RoleAnswer\x12L\n" +
 	"\aPublish\x12\x1f.tau.register.v2.PublishRequest\x1a .tau.register.v2.PublishResponse\x12D\n" +
 	"\aResolve\x12\x1f.tau.register.v2.ResolveRequest\x1a\x18.tau.register.v2.Pointer\x12J\n" +
 	"\x06Object\x12\x1e.tau.register.v2.ObjectRequest\x1a .tau.register.v2.CompiledProject\x12M\n" +
@@ -1456,7 +1890,7 @@ func file_tau_register_v2_register_proto_rawDescGZIP() []byte {
 	return file_tau_register_v2_register_proto_rawDescData
 }
 
-var file_tau_register_v2_register_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_tau_register_v2_register_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_tau_register_v2_register_proto_goTypes = []any{
 	(*Pointer)(nil),             // 0: tau.register.v2.Pointer
 	(*PublishRequest)(nil),      // 1: tau.register.v2.PublishRequest
@@ -1481,41 +1915,57 @@ var file_tau_register_v2_register_proto_goTypes = []any{
 	(*ClaimantRequest)(nil),     // 20: tau.register.v2.ClaimantRequest
 	(*ProjectRecords)(nil),      // 21: tau.register.v2.ProjectRecords
 	(*ListProjectsRequest)(nil), // 22: tau.register.v2.ListProjectsRequest
+	(*GrantRequest)(nil),        // 23: tau.register.v2.GrantRequest
+	(*GrantRecord)(nil),         // 24: tau.register.v2.GrantRecord
+	(*GrantRecords)(nil),        // 25: tau.register.v2.GrantRecords
+	(*RevokeRequest)(nil),       // 26: tau.register.v2.RevokeRequest
+	(*RevokeResponse)(nil),      // 27: tau.register.v2.RevokeResponse
+	(*RoleRequest)(nil),         // 28: tau.register.v2.RoleRequest
+	(*RoleAnswer)(nil),          // 29: tau.register.v2.RoleAnswer
 }
 var file_tau_register_v2_register_proto_depIdxs = []int32{
 	2,  // 0: tau.register.v2.PublishRequest.views:type_name -> tau.register.v2.View
 	4,  // 1: tau.register.v2.Assignment.view:type_name -> tau.register.v2.ViewPointer
 	6,  // 2: tau.register.v2.Assignments.assignments:type_name -> tau.register.v2.Assignment
 	17, // 3: tau.register.v2.ProjectRecords.projects:type_name -> tau.register.v2.ProjectRecord
-	16, // 4: tau.register.v2.RegisterService.Link:input_type -> tau.register.v2.LinkRequest
-	12, // 5: tau.register.v2.RegisterService.Project:input_type -> tau.register.v2.ProjectRequest
-	18, // 6: tau.register.v2.RegisterService.Repository:input_type -> tau.register.v2.RepositoryRequest
-	20, // 7: tau.register.v2.RegisterService.ProjectsOf:input_type -> tau.register.v2.ClaimantRequest
-	22, // 8: tau.register.v2.RegisterService.ListProjects:input_type -> tau.register.v2.ListProjectsRequest
-	1,  // 9: tau.register.v2.RegisterService.Publish:input_type -> tau.register.v2.PublishRequest
-	9,  // 10: tau.register.v2.RegisterService.Resolve:input_type -> tau.register.v2.ResolveRequest
-	10, // 11: tau.register.v2.RegisterService.Object:input_type -> tau.register.v2.ObjectRequest
-	12, // 12: tau.register.v2.RegisterService.Environments:input_type -> tau.register.v2.ProjectRequest
-	14, // 13: tau.register.v2.RegisterService.ResolveHost:input_type -> tau.register.v2.HostRequest
-	3,  // 14: tau.register.v2.RegisterService.ResolveView:input_type -> tau.register.v2.ViewRequest
-	5,  // 15: tau.register.v2.RegisterService.Assigned:input_type -> tau.register.v2.DestinationRequest
-	17, // 16: tau.register.v2.RegisterService.Link:output_type -> tau.register.v2.ProjectRecord
-	17, // 17: tau.register.v2.RegisterService.Project:output_type -> tau.register.v2.ProjectRecord
-	19, // 18: tau.register.v2.RegisterService.Repository:output_type -> tau.register.v2.RepositoryRecord
-	21, // 19: tau.register.v2.RegisterService.ProjectsOf:output_type -> tau.register.v2.ProjectRecords
-	21, // 20: tau.register.v2.RegisterService.ListProjects:output_type -> tau.register.v2.ProjectRecords
-	8,  // 21: tau.register.v2.RegisterService.Publish:output_type -> tau.register.v2.PublishResponse
-	0,  // 22: tau.register.v2.RegisterService.Resolve:output_type -> tau.register.v2.Pointer
-	11, // 23: tau.register.v2.RegisterService.Object:output_type -> tau.register.v2.CompiledProject
-	13, // 24: tau.register.v2.RegisterService.Environments:output_type -> tau.register.v2.Deployments
-	15, // 25: tau.register.v2.RegisterService.ResolveHost:output_type -> tau.register.v2.HostAnswer
-	4,  // 26: tau.register.v2.RegisterService.ResolveView:output_type -> tau.register.v2.ViewPointer
-	7,  // 27: tau.register.v2.RegisterService.Assigned:output_type -> tau.register.v2.Assignments
-	16, // [16:28] is the sub-list for method output_type
-	4,  // [4:16] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	24, // 4: tau.register.v2.GrantRecords.grants:type_name -> tau.register.v2.GrantRecord
+	16, // 5: tau.register.v2.RegisterService.Link:input_type -> tau.register.v2.LinkRequest
+	12, // 6: tau.register.v2.RegisterService.Project:input_type -> tau.register.v2.ProjectRequest
+	18, // 7: tau.register.v2.RegisterService.Repository:input_type -> tau.register.v2.RepositoryRequest
+	20, // 8: tau.register.v2.RegisterService.ProjectsOf:input_type -> tau.register.v2.ClaimantRequest
+	22, // 9: tau.register.v2.RegisterService.ListProjects:input_type -> tau.register.v2.ListProjectsRequest
+	23, // 10: tau.register.v2.RegisterService.Grant:input_type -> tau.register.v2.GrantRequest
+	26, // 11: tau.register.v2.RegisterService.Revoke:input_type -> tau.register.v2.RevokeRequest
+	12, // 12: tau.register.v2.RegisterService.Grants:input_type -> tau.register.v2.ProjectRequest
+	28, // 13: tau.register.v2.RegisterService.Role:input_type -> tau.register.v2.RoleRequest
+	1,  // 14: tau.register.v2.RegisterService.Publish:input_type -> tau.register.v2.PublishRequest
+	9,  // 15: tau.register.v2.RegisterService.Resolve:input_type -> tau.register.v2.ResolveRequest
+	10, // 16: tau.register.v2.RegisterService.Object:input_type -> tau.register.v2.ObjectRequest
+	12, // 17: tau.register.v2.RegisterService.Environments:input_type -> tau.register.v2.ProjectRequest
+	14, // 18: tau.register.v2.RegisterService.ResolveHost:input_type -> tau.register.v2.HostRequest
+	3,  // 19: tau.register.v2.RegisterService.ResolveView:input_type -> tau.register.v2.ViewRequest
+	5,  // 20: tau.register.v2.RegisterService.Assigned:input_type -> tau.register.v2.DestinationRequest
+	17, // 21: tau.register.v2.RegisterService.Link:output_type -> tau.register.v2.ProjectRecord
+	17, // 22: tau.register.v2.RegisterService.Project:output_type -> tau.register.v2.ProjectRecord
+	19, // 23: tau.register.v2.RegisterService.Repository:output_type -> tau.register.v2.RepositoryRecord
+	21, // 24: tau.register.v2.RegisterService.ProjectsOf:output_type -> tau.register.v2.ProjectRecords
+	21, // 25: tau.register.v2.RegisterService.ListProjects:output_type -> tau.register.v2.ProjectRecords
+	24, // 26: tau.register.v2.RegisterService.Grant:output_type -> tau.register.v2.GrantRecord
+	27, // 27: tau.register.v2.RegisterService.Revoke:output_type -> tau.register.v2.RevokeResponse
+	25, // 28: tau.register.v2.RegisterService.Grants:output_type -> tau.register.v2.GrantRecords
+	29, // 29: tau.register.v2.RegisterService.Role:output_type -> tau.register.v2.RoleAnswer
+	8,  // 30: tau.register.v2.RegisterService.Publish:output_type -> tau.register.v2.PublishResponse
+	0,  // 31: tau.register.v2.RegisterService.Resolve:output_type -> tau.register.v2.Pointer
+	11, // 32: tau.register.v2.RegisterService.Object:output_type -> tau.register.v2.CompiledProject
+	13, // 33: tau.register.v2.RegisterService.Environments:output_type -> tau.register.v2.Deployments
+	15, // 34: tau.register.v2.RegisterService.ResolveHost:output_type -> tau.register.v2.HostAnswer
+	4,  // 35: tau.register.v2.RegisterService.ResolveView:output_type -> tau.register.v2.ViewPointer
+	7,  // 36: tau.register.v2.RegisterService.Assigned:output_type -> tau.register.v2.Assignments
+	21, // [21:37] is the sub-list for method output_type
+	5,  // [5:21] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_tau_register_v2_register_proto_init() }
@@ -1529,7 +1979,7 @@ func file_tau_register_v2_register_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_register_v2_register_proto_rawDesc), len(file_tau_register_v2_register_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   23,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

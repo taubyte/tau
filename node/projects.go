@@ -104,7 +104,7 @@ func (p projectTable) record(ctx context.Context, projectID string) (pkgregister
 	return rec, notLinked(err)
 }
 
-// LinkProject and ProjectsOf are the frontend's Linker.
+// LinkProject, ProjectsOf and the grants are the frontend's Linker.
 func (p projectTable) LinkProject(ctx context.Context, l pkgregister.Link) (pkgregister.ProjectRecord, error) {
 	t, err := p.table(ctx)
 	if err != nil {
@@ -119,6 +119,45 @@ func (p projectTable) ProjectsOf(ctx context.Context, claimant string) ([]pkgreg
 		return nil, err
 	}
 	return t.ProjectsOf(ctx, claimant)
+}
+
+// Role is the frontend's authorization: user's role on a project.
+func (p projectTable) Role(ctx context.Context, projectID, user string) (pkgregister.Role, error) {
+	t, err := p.table(ctx)
+	if err != nil {
+		return pkgregister.RoleNone, err
+	}
+	role, err := t.RoleOf(ctx, projectID, user)
+	return role, notLinked(err)
+}
+
+func (p projectTable) GrantRole(ctx context.Context, project, grantee string, role pkgregister.Role, by string) (pkgregister.Grant, error) {
+	t, err := p.table(ctx)
+	if err != nil {
+		return pkgregister.Grant{}, err
+	}
+	g, err := t.GrantRole(ctx, project, grantee, role, by)
+	return g, notLinked(err)
+}
+
+func (p projectTable) Revoke(ctx context.Context, project, id, by string) error {
+	t, err := p.table(ctx)
+	if err != nil {
+		return err
+	}
+	err = t.Revoke(ctx, project, id, by)
+	if errors.Is(err, pkgregister.ErrNoGrant) {
+		return connect.NewError(connect.CodeNotFound, err)
+	}
+	return err
+}
+
+func (p projectTable) Grants(ctx context.Context, project string) ([]pkgregister.Grant, error) {
+	t, err := p.table(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return t.Grants(ctx, project)
 }
 
 // LinkedRepositories is every repository of every linked project: the
@@ -165,25 +204,32 @@ func (l linkSecrets) value(ctx context.Context, project, name string) ([]byte, b
 	return []byte(v), true, nil
 }
 
-// Hook is a project's webhook: its repositories, from the register, and its
-// secret, from the vault. Either missing is ErrNoHook — a project that can be
-// pushed to is one that was linked AND had its secret set.
+// Hook is a project's webhook: its repositories, from the register, each with
+// its own secret, from the vault. A project none of whose repositories has a
+// secret set is ErrNoHook — one that can be pushed to was linked AND had a
+// secret set for the repository pushed.
 func (l linkSecrets) Hook(ctx context.Context, project string) (frontend.Hook, error) {
 	repositories, err := l.projects.Repositories(ctx, project)
-	if errors.Is(err, pkgregister.ErrNotLinked) {
+	if connect.CodeOf(err) == connect.CodeNotFound {
 		return frontend.Hook{}, fmt.Errorf("%w: %w", frontend.ErrNoHook, err)
 	}
 	if err != nil {
 		return frontend.Hook{}, err
 	}
-	secret, found, err := l.value(ctx, project, linkcreds.HookSecret)
-	if err != nil {
-		return frontend.Hook{}, err
+	hook := frontend.Hook{Project: project}
+	for _, repository := range repositories {
+		secret, found, err := l.value(ctx, project, linkcreds.HookSecret(repository))
+		if err != nil {
+			return frontend.Hook{}, err
+		}
+		if found {
+			hook.Repositories = append(hook.Repositories, frontend.HookRepository{Key: repository, Secret: secret})
+		}
 	}
-	if !found {
+	if len(hook.Repositories) == 0 {
 		return frontend.Hook{}, fmt.Errorf("%w: project %s has no hook secret set", frontend.ErrNoHook, project)
 	}
-	return frontend.Hook{Project: project, Repositories: repositories, Secret: secret}, nil
+	return hook, nil
 }
 
 // DeployKey is a repository's deploy key, private half. A repository no

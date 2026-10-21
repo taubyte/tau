@@ -25,6 +25,8 @@ type Service struct {
 	repos Repositories
 	cfg   Config
 
+	confirm Confirmer
+
 	group *queue.Group
 	work  *queue.Queue
 	dead  *queue.Queue
@@ -91,6 +93,7 @@ type options struct {
 	repos Repositories
 
 	runner        Runner
+	confirm       Confirmer
 	assetStore    Assets
 	meter         Meter
 	authz         Authorizer
@@ -131,6 +134,19 @@ func WithRepositories(r Repositories) Option {
 			return errors.New("build: no repositories to resolve a project with")
 		}
 		o.repos = r
+		return nil
+	}
+}
+
+// WithConfirmer is what a push is checked against before it is queued: the
+// repository itself, asked whether the ref is at the commit. Without it a push
+// is queued as the frontend verified it.
+func WithConfirmer(c Confirmer) Option {
+	return func(o *options) error {
+		if c == nil {
+			return errors.New("build: confirmer must not be nil")
+		}
+		o.confirm = c
 		return nil
 	}
 }
@@ -258,6 +274,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		repos:         o.repos,
 		cfg:           effective,
 		runner:        o.runner,
+		confirm:       o.confirm,
 		assetStore:    o.assetStore,
 		authz:         o.authz,
 		now:           o.now,

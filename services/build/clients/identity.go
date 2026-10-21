@@ -10,8 +10,8 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
 
-// IdentityClient asks auth whether a caller a forge vouched for may use the
-// cloud, against tau.auth.v2's IdentityService.
+// IdentityClient asks auth who a caller is, against tau.auth.v2's
+// IdentityService.
 type IdentityClient struct {
 	pool *Pool
 }
@@ -24,16 +24,17 @@ func Identities(p *Pool) (*IdentityClient, error) {
 	return &IdentityClient{pool: p}, nil
 }
 
-// Admit is auth's answer about one caller.
-func (c *IdentityClient) Admit(ctx context.Context, caller *authv2.Caller) (*authv2.Admission, error) {
-	var admission *authv2.Admission
+// Caller is the id of the user a tau token was issued to. A token auth
+// refuses is its Unauthenticated error.
+func (c *IdentityClient) Caller(ctx context.Context, token string) (string, error) {
+	var user string
 	err := c.pool.Do(ctx, func(client *rpc.Client) error {
-		resp, err := authv2connect.NewIdentityServiceClient(client.HTTP(), client.URL()).Admit(ctx, connect.NewRequest(caller))
+		resp, err := authv2connect.NewIdentityServiceClient(client.HTTP(), client.URL()).Verify(ctx, connect.NewRequest(&authv2.VerifyRequest{Token: token}))
 		if err != nil {
 			return err
 		}
-		admission = resp.Msg
+		user = resp.Msg.GetUser().GetId()
 		return nil
 	})
-	return admission, err
+	return user, err
 }

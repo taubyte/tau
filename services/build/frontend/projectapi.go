@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	"connectrpc.com/connect"
+
 	"github.com/taubyte/tau/pkg/register"
 )
 
@@ -14,31 +16,24 @@ import (
 // a configuration repository and its code repositories one project on this
 // cloud, under the id the author's project.yaml carries.
 //
-// The register owns the project table and answers only over p2p, so a developer
-// has no way to reach it; this role is the public one, and the route is the
-// thinnest forwarding that keeps the table's rules intact:
+// A LINK IS A REGISTRATION BY ITS OWNER, and no forge is asked anything.
+// Linking a repository you do not control gets you nothing: only a forge admin
+// can install the webhook and deploy key the cloud needs, and the cloud only
+// ever touches what the owner wired up. So:
 //
-//   - the caller must hold WRITE access to EVERY repository the link names. One
-//     is not enough, because a project made of my config and your code is a
-//     way to build your code under my project — and every later job/secret
-//     route authorizes on "any one of the project's repositories".
-//   - each repository passes the same tenancy and admission check every other
-//     route applies (writesAny → admit), so a namespace this cloud does not
-//     serve cannot be linked into it.
-//   - only then is the claim written, and the register applies its own rules on
-//     top: an id another configuration repository owns, or a repository another
-//     project owns, is refused by name.
-//
-// THE CLAIMANT IS THE CALLER, never this node. Who linked a project is the
-// forge's answer about the token that was just authorized, which is what makes
-// "the caller's projects" a question with an answer.
+//   - any authenticated tau user may link a new id, and becomes its owner;
+//   - every repository passes this cloud's tenancy, the only namespace rule;
+//   - the register applies its own rules on top: an id another configuration
+//     repository owns, or a repository another project owns, is refused by
+//     name;
+//   - an owner linking again replaces the project's repositories, which is how
+//     a rename or a transfer is followed. A webhook never moves a project.
 
 // maxLinkBody bounds the one body this route reads: a handful of repository
 // keys.
 const maxLinkBody = 16 << 10
 
-// maxLinkedRepositories bounds how many code repositories one link may attach,
-// and so how many forge calls one request can cost.
+// maxLinkedRepositories bounds how many code repositories one link may attach.
 const maxLinkedRepositories = 32
 
 type linkRequest struct {
@@ -77,10 +72,14 @@ func (s *Service) handleLinkProject(w http.ResponseWriter, r *http.Request, toke
 		respond(w, problem(http.StatusBadRequest, "too many code repositories in one link"))
 		return
 	}
-	keys := append([]string{req.Config}, req.Code...)
-	for _, key := range keys {
-		if _, ok := parseRepositoryKey(key); !ok {
-			respond(w, problem(http.StatusBadRequest, "not a repository key: "+key))
+	for _, spelling := range append([]string{req.Config}, req.Code...) {
+		key, ok := parseRepositoryKey(spelling)
+		if !ok {
+			respond(w, problem(http.StatusBadRequest, "not a repository key: "+spelling))
+			return
+		}
+		if err := s.tenancy.Refuse(key); err != nil {
+			respond(w, problem(http.StatusForbidden, err.Error()))
 			return
 		}
 	}
@@ -88,26 +87,33 @@ func (s *Service) handleLinkProject(w http.ResponseWriter, r *http.Request, toke
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
 	defer cancel()
 
-	for _, key := range keys {
-		if err := s.writesAny(ctx, token, []string{key}); err != nil {
-			respond(w, err)
-			return
-		}
-	}
-
-	config, _ := parseRepositoryKey(req.Config)
-	claimant, err := s.claimant(ctx, token, config.Host)
+	user, err := s.caller(ctx, token)
 	if err != nil {
 		respond(w, err)
 		return
 	}
 
-	rec, err := s.linker.LinkProject(ctx, register.Link{Project: projectID, Config: req.Config, Code: req.Code, Claimant: claimant})
+	replace := false
+	role, err := s.projects.Role(ctx, projectID, user)
+	switch {
+	case err == nil && role.Includes(register.RoleOwner):
+		replace = true
+	case err == nil:
+		respond(w, problem(http.StatusConflict, "project "+projectID+" is already claimed; generate a new id in project.yaml"))
+		return
+	case errors.Is(err, register.ErrNotLinked), connect.CodeOf(err) == connect.CodeNotFound:
+	case errors.Is(err, register.ErrSeparator), errors.Is(err, register.ErrNoProject), connect.CodeOf(err) == connect.CodeInvalidArgument:
+		respond(w, problem(http.StatusBadRequest, "not a project id: "+projectID))
+		return
+	default:
+		s.log("linking %s: %v", projectID, err)
+		respond(w, err)
+		return
+	}
+
+	rec, err := s.linker.LinkProject(ctx, register.Link{Project: projectID, Config: req.Config, Code: req.Code, Claimant: user, Replace: replace})
 	switch {
 	case errors.Is(err, register.ErrProjectClaimed), errors.Is(err, register.ErrRepositoryClaimed):
-		// A CONFLICT THE CALLER CAN ACT ON, said in full. They hold every
-		// repository they named, so naming the owner of an id they chose tells
-		// them nothing a project.yaml would not.
 		respond(w, problem(http.StatusConflict, err.Error()))
 		return
 	case errors.Is(err, register.ErrSeparator), errors.Is(err, register.ErrNoProject):
@@ -123,12 +129,9 @@ func (s *Service) handleLinkProject(w http.ResponseWriter, r *http.Request, toke
 	writeJSON(w, http.StatusCreated, projectOut(rec))
 }
 
-// handleListProjects is GET /forges/{forge}/projects: the projects the token's
-// holder, as that forge knows them, linked.
-//
-// THE FORGE IS NAMED BY THE CALLER, because a token is good on one forge and
-// this route must never send it to another to find out which.
-func (s *Service) handleListProjects(w http.ResponseWriter, r *http.Request, token, host string) {
+// handleListProjects is GET /projects: every project the caller owns or holds
+// a grant on.
+func (s *Service) handleListProjects(w http.ResponseWriter, r *http.Request, token, _ string) {
 	if s.linker == nil {
 		respond(w, errDenied)
 		return
@@ -136,14 +139,14 @@ func (s *Service) handleListProjects(w http.ResponseWriter, r *http.Request, tok
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
 	defer cancel()
 
-	claimant, err := s.claimant(ctx, token, host)
+	user, err := s.caller(ctx, token)
 	if err != nil {
 		respond(w, err)
 		return
 	}
-	recs, err := s.linker.ProjectsOf(ctx, claimant)
+	recs, err := s.linker.ProjectsOf(ctx, user)
 	if err != nil {
-		s.log("listing %s's projects: %v", claimant, err)
+		s.log("listing %s's projects: %v", user, err)
 		respond(w, err)
 		return
 	}
@@ -154,36 +157,8 @@ func (s *Service) handleListProjects(w http.ResponseWriter, r *http.Request, tok
 	writeJSON(w, http.StatusOK, out)
 }
 
-// claimant is who the caller is on host, with the forge's refusals turned into
-// this route's answers.
-func (s *Service) claimant(ctx context.Context, token, host string) (string, error) {
-	forgeToken, err := s.forgeToken(ctx, token, host)
-	if nc := notConnected(err); nc != nil {
-		return "", nc
-	}
-	if errors.Is(err, ErrBadCredential) {
-		return "", errUnauthorized
-	}
-	if err != nil {
-		s.log("opening the connection to %s: %v", host, err)
-		return "", errUpstream
-	}
-	claimant, err := s.identity.Claimant(ctx, forgeToken, host)
-	switch {
-	case err == nil:
-		return claimant, nil
-	case errors.Is(err, ErrUnknownForge):
-		return "", errDenied
-	case errors.Is(err, ErrBadCredential):
-		return "", errUnauthorized
-	}
-	s.log("who holds this token on %s: %v", host, err)
-	return "", errUpstream
-}
-
 // handleGetProject is GET /projects/{projectId}: one project's repositories,
-// to whoever may write to any of them — the same gate every project route
-// applies, so a collaborator who did not link it still reads it.
+// to anyone holding a role on it.
 func (s *Service) handleGetProject(w http.ResponseWriter, r *http.Request, token, projectID string) {
 	if s.linker == nil {
 		respond(w, errDenied)
@@ -191,7 +166,7 @@ func (s *Service) handleGetProject(w http.ResponseWriter, r *http.Request, token
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
 	defer cancel()
-	if err := s.mayTouchProject(ctx, token, projectID); err != nil {
+	if _, err := s.mayTouchProject(ctx, token, projectID, register.RoleViewer); err != nil {
 		respond(w, err)
 		return
 	}

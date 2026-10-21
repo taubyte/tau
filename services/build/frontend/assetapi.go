@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"net/http"
+
+	"github.com/taubyte/tau/pkg/register"
 )
 
 // assetapi.go is what a finished build left behind, read back per job: a
@@ -34,7 +36,7 @@ func (s *Service) serveJobAsset(w http.ResponseWriter, r *http.Request, token, j
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
 	defer cancel()
-	job, err := s.mayTouchJob(ctx, token, jobID)
+	job, err := s.mayTouchJob(ctx, token, jobID, register.RoleViewer)
 	if err != nil {
 		respond(w, err)
 		return

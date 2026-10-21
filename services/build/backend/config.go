@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -331,6 +332,16 @@ type Repositories interface {
 	// error when this cloud has no registered repository under that key.
 	Project(ctx context.Context, repositoryKey string) (projectID string, err error)
 }
+
+// Confirmer asks a repository whether it holds ref at commit. A nil error is
+// yes; ErrNotAtCommit is no; anything else is that it could not be asked.
+type Confirmer interface {
+	Confirm(ctx context.Context, repositoryKey, ref, commit string) error
+}
+
+// ErrNotAtCommit is a repository that does not hold the pushed ref at the
+// pushed commit.
+var ErrNotAtCommit = errors.New("build: the repository does not hold that ref at that commit")
 
 // Work is everything a run is given. It is derived here, never carried across
 // the frontend/backend boundary: build.proto's PushEvent is three fields, and

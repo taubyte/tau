@@ -8,80 +8,74 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/git/repokey"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	"github.com/taubyte/tau/pkg/register"
 )
-
-// One allow and one deny per guarded route (service-conventions.md §6c), plus
-// the cases v1's GitHubTokenHTTPAuth cannot express at all.
 
 type route struct {
 	name   string
 	method string
 	path   string
+	want   register.Role
 }
 
 func guardedRoutes() []route {
 	return []route{
-		{"list", http.MethodGet, "/jobs/" + testProject},
-		{"get", http.MethodGet, "/job/" + testJobID},
-		{"cancel", http.MethodPost, "/cancel/" + testJobID},
-		{"retry", http.MethodPost, "/retry/" + testJobID},
+		{"list", http.MethodGet, "/jobs/" + testProject, register.RoleViewer},
+		{"get", http.MethodGet, "/job/" + testJobID, register.RoleViewer},
+		{"cancel", http.MethodPost, "/cancel/" + testJobID, register.RoleBuilder},
+		{"retry", http.MethodPost, "/retry/" + testJobID, register.RoleBuilder},
+		{"project", http.MethodGet, "/projects/" + testProject, register.RoleViewer},
+		{"secrets", http.MethodGet, "/secrets/" + testProject + "/main", register.RoleSecretManager},
+		{"grants", http.MethodGet, "/projects/" + testProject + "/grants", register.RoleOwner},
 	}
 }
 
-func TestEveryJobRouteAllowsAWriterAndDeniesEverybodyElse(t *testing.T) {
+var everyRole = []register.Role{register.RoleNone, register.RoleViewer, register.RoleBuilder, register.RoleSecretManager, register.RoleOwner}
+
+// EVERY ROUTE AT EVERY ROLE: served from the role it takes upward, the 404 a
+// denial is below it.
+func TestEveryRouteServesItsRoleAndAboveAndDeniesBelow(t *testing.T) {
+	for _, r := range guardedRoutes() {
+		for _, role := range everyRole {
+			t.Run(r.name+"/"+string(role), func(t *testing.T) {
+				h := newHarness(t, Config{}, WithLinker(linkedTestProject(t)), WithVault(&fakeVault{}))
+				h.projects.role = func(string, string) (register.Role, error) { return role, nil }
+				w := h.do(t, authed(r.method, r.path, testToken))
+				if role.Includes(r.want) {
+					require.Less(t, w.Code, 300, bodyOf(t, w))
+				} else {
+					require.Equal(t, http.StatusNotFound, w.Code)
+				}
+			})
+		}
+	}
+}
+
+func TestRolesIncludeTheOnesBelowThem(t *testing.T) {
+	require.True(t, register.RoleSecretManager.Includes(register.RoleBuilder))
+	require.True(t, register.RoleOwner.Includes(register.RoleSecretManager))
+	require.False(t, register.RoleBuilder.Includes(register.RoleSecretManager))
+	require.False(t, register.RoleNone.Includes(register.RoleNone))
+}
+
+func TestACallerWhoProvedNothingLearnsNothing(t *testing.T) {
 	for _, r := range guardedRoutes() {
 		t.Run(r.name, func(t *testing.T) {
-			t.Run("allow", func(t *testing.T) {
-				h := newHarness(t, Config{})
-				w := h.do(t, authed(r.method, r.path, testToken))
-				require.Less(t, w.Code, 300, "a writer must be served")
-			})
+			h := newHarness(t, Config{}, WithLinker(linkedTestProject(t)), WithVault(&fakeVault{}))
+			reached := false
+			h.backend.get = func(string) (*buildv2.Job, error) { reached = true; return nil, nil }
+			h.projects.role = func(string, string) (register.Role, error) { reached = true; return register.RoleOwner, nil }
 
-			t.Run("deny", func(t *testing.T) {
-				h := newHarness(t, Config{})
-				h.identity.write = func(string, repokey.Key) (Access, error) { return AccessDenied, nil }
-				w := h.do(t, authed(r.method, r.path, "somebody-elses-token"))
-				require.Equal(t, http.StatusNotFound, w.Code)
-			})
-
-			t.Run("no credential", func(t *testing.T) {
-				h := newHarness(t, Config{})
-				reached := false
-				h.backend.get = func(string) (*buildv2.Job, error) { reached = true; return nil, nil }
-				h.projects.repositories = func(string) ([]string, error) { reached = true; return nil, nil }
-
-				w := h.do(t, authed(r.method, r.path, ""))
-
-				require.Equal(t, http.StatusUnauthorized, w.Code)
-				// A caller who proved nothing does not get to find out whether
-				// the thing they named exists.
-				require.False(t, reached)
-			})
+			require.Equal(t, http.StatusUnauthorized, h.do(t, authed(r.method, r.path, "")).Code)
+			require.Equal(t, http.StatusUnauthorized, h.do(t, authed(r.method, r.path, "not-a-tau-token")).Code)
+			require.False(t, reached)
 		})
 	}
 }
 
-// READ ACCESS IS NOT ENOUGH — services/auth/github.go's own rule, because a
-// public repository reads to everyone. The Identity interface only reports
-// write access, so this is the shape of the check rather than a flag on it.
-func TestReadAccessIsNotWriteAccess(t *testing.T) {
-	h := newHarness(t, Config{})
-	asked := []repokey.Key{}
-	h.identity.write = func(_ string, key repokey.Key) (Access, error) {
-		asked = append(asked, key)
-		return AccessDenied, nil // the shape a reader-not-writer produces
-	}
-
-	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken))
-
-	require.Equal(t, http.StatusNotFound, w.Code)
-	require.Equal(t, []repokey.Key{{Host: "github.com", Owner: "acme", Name: "pay"}}, asked)
-}
-
 func TestOnlyABearerSchemeIsRead(t *testing.T) {
-	for _, header := range []string{"", "Basic dXNlcjpwYXNz", "Bearer", "Bearer ", "Token gho_x", "bearer gho_x"} {
+	for _, header := range []string{"", "Basic dXNlcjpwYXNz", "Bearer", "Bearer ", "Token x", "bearer x"} {
 		t.Run(header, func(t *testing.T) {
 			h := newHarness(t, Config{})
 			r := authed(http.MethodGet, "/job/"+testJobID, "")
@@ -93,94 +87,57 @@ func TestOnlyABearerSchemeIsRead(t *testing.T) {
 	}
 }
 
-// A token that is not a token is a 401, not a 404: the caller can fix it.
-func TestAnUnusableCredentialIsA401AndNotADenial(t *testing.T) {
-	h := newHarness(t, Config{})
-	h.identity.write = func(string, repokey.Key) (Access, error) { return AccessUnauthenticated, nil }
-
-	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID, "revoked"))
-
-	require.Equal(t, http.StatusUnauthorized, w.Code)
+func TestAuthsAnswersAboutACaller(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		err  error
+		user string
+		want int
+	}{
+		{"unauthenticated", connect.NewError(connect.CodeUnauthenticated, errors.New("revoked")), "", http.StatusUnauthorized},
+		{"no user", nil, "", http.StatusUnauthorized},
+		{"auth is down", errors.New("dial"), "", http.StatusBadGateway},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := newHarness(t, Config{})
+			h.callers.caller = func(string) (string, error) { return c.user, c.err }
+			w := h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken))
+			require.Equal(t, c.want, w.Code)
+			require.NotContains(t, bodyOf(t, w), "dial")
+		})
+	}
 }
 
-// A provider outage that silently became "not yours" is a support call rather
-// than a bug report.
-func TestAnUndecidedAccessIsNeverADenial(t *testing.T) {
+func TestTheRoleIsAskedForTheCallerOnTheJobsProject(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.identity.write = func(string, repokey.Key) (Access, error) {
-		return AccessDenied, errors.New("github rate limit")
+	var asked []string
+	h.projects.role = func(project, user string) (register.Role, error) {
+		asked = append(asked, project+" "+user)
+		return register.RoleViewer, nil
 	}
-
-	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken))
-
-	require.Equal(t, http.StatusBadGateway, w.Code)
-	require.NotContains(t, bodyOf(t, w), "rate limit")
+	require.Equal(t, http.StatusOK, h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken)).Code)
+	require.Equal(t, []string{testProject + " " + testUser}, asked)
 }
 
-// A project is gated by more than one repository and they need not be on one
-// provider, so an adapter that cannot answer for one must not shadow the grant
-// the other would have given.
-func TestOneUnanswerableRepositoryDoesNotShadowAGrant(t *testing.T) {
+func TestAJobWhoseRepositoryNoProjectOwnsIsDenied(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.projects.repositories = func(string) ([]string, error) {
-		return []string{"gitlab.com/acme/config", testRepoKey}, nil
+	h.backend.get = func(id string) (*buildv2.Job, error) {
+		return &buildv2.Job{Id: id, RepositoryKey: "github.com/acme/orphan"}, nil
 	}
-	h.identity.write = func(_ string, key repokey.Key) (Access, error) {
-		if key.Host != "github.com" {
-			return AccessDenied, errors.New("cannot answer for gitlab.com")
-		}
-		return AccessGranted, nil
-	}
-
-	w := h.do(t, authed(http.MethodGet, "/jobs/"+testProject, testToken))
-	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, http.StatusNotFound, h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken)).Code)
 }
 
-// And when nothing granted, the failure — not a denial — is what comes back.
-func TestNothingGrantedAndSomethingUnansweredIsAFailure(t *testing.T) {
+func TestARoleThatCannotBeReadIsNeverADenial(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.projects.repositories = func(string) ([]string, error) {
-		return []string{"gitlab.com/acme/config", testRepoKey}, nil
+	h.projects.role = func(string, string) (register.Role, error) {
+		return register.RoleNone, connect.NewError(connect.CodeUnavailable, errors.New("register down"))
 	}
-	h.identity.write = func(_ string, key repokey.Key) (Access, error) {
-		if key.Host != "github.com" {
-			return AccessDenied, errors.New("cannot answer for gitlab.com")
-		}
-		return AccessDenied, nil
-	}
-
-	w := h.do(t, authed(http.MethodGet, "/jobs/"+testProject, testToken))
-	require.Equal(t, http.StatusBadGateway, w.Code)
-}
-
-// A key auth stored that this package cannot parse grants nothing, and must not
-// stop the other one from granting.
-func TestAnUnparseableRepositoryKeyGrantsNothingAndBlocksNothing(t *testing.T) {
-	h := newHarness(t, Config{})
-	h.projects.repositories = func(string) ([]string, error) {
-		return []string{"GitHub.com/Acme/Pay", "", "github.com/acme/pay/", testRepoKey}, nil
-	}
-
-	w := h.do(t, authed(http.MethodGet, "/jobs/"+testProject, testToken))
-
-	require.Equal(t, http.StatusOK, w.Code)
-	require.Contains(t, h.logs.joined(), "unparseable repository key")
-}
-
-func TestAProjectWithNothingToGateItDeniesEveryone(t *testing.T) {
-	h := newHarness(t, Config{})
-	h.projects.repositories = func(string) ([]string, error) { return nil, nil }
-
-	w := h.do(t, authed(http.MethodGet, "/jobs/"+testProject, testToken))
-	require.Equal(t, http.StatusNotFound, w.Code)
+	require.Equal(t, http.StatusServiceUnavailable, h.do(t, authed(http.MethodGet, "/jobs/"+testProject, testToken)).Code)
+	require.Equal(t, http.StatusServiceUnavailable, h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken)).Code)
 }
 
 func TestAnUnknownProjectIsTheSameAnswerAsADeniedOne(t *testing.T) {
 	h := newHarness(t, Config{})
-	h.projects.repositories = func(id string) ([]string, error) {
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("no project"))
-	}
-
 	w := h.do(t, authed(http.MethodGet, "/jobs/nobody", testToken))
 	require.Equal(t, http.StatusNotFound, w.Code)
 }

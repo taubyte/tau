@@ -213,7 +213,7 @@ func (s *Service) refuseLookup(w http.ResponseWriter, hookID string, err error) 
 // the operator's to see; forge refuses it too, but its refusal reads as a
 // delivery that did not verify.
 func (s *Service) usable(w http.ResponseWriter, hookID string, hook Hook) bool {
-	if len(hook.Secret) > 0 {
+	if hook.signed() {
 		return true
 	}
 	s.log("hook %s has no secret; refusing to accept an unauthenticated push", hookID)

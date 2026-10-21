@@ -8,7 +8,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/git/repokey"
+	"github.com/taubyte/tau/pkg/register"
 )
 
 // followapi_test is GET /job/{jid}/logs — the route v1 has no version of,
@@ -91,7 +91,7 @@ func TestFollowIsAuthorizedLikeTheRest(t *testing.T) {
 	// IT IS A 404 AND NOT A 403, which is this package's own choice and worth
 	// pinning on a route that streams: telling a stranger "you may not read
 	// this job" confirms the job exists, and a job id carries a repository.
-	h.identity.write = func(string, repokey.Key) (Access, error) { return AccessDenied, nil }
+	h.projects.role = func(string, string) (register.Role, error) { return register.RoleNone, nil }
 	w = h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs", testToken))
 	require.Equal(t, http.StatusNotFound, w.Code)
 	require.NotContains(t, w.Body.String(), "secret build output")

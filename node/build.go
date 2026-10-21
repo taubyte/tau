@@ -310,6 +310,9 @@ func (n *Node) openBuildBackend() error {
 		backend.WithStore(cluster),
 		backend.WithRepositories(projects),
 		backend.WithRunner(runner),
+		// A PUSH IS BUILT ONLY FOR WHAT THE REPOSITORY HOLDS: the ref is read
+		// at the forge over the repository's deploy key before it is queued.
+		backend.WithConfirmer(clone),
 	}
 	if n.opts.assets != nil {
 		service = append(service, backend.WithAssets(n.opts.assets))
@@ -345,9 +348,6 @@ func (n *Node) openBuildFrontend() error {
 		return err
 	}
 
-	// THE PROVIDER IS THE IDENTITY. Whether a caller may act on a repository is
-	// that repository's host's answer and never this cloud's, which is what
-	// keeps a token this cloud has not stored from becoming one it has.
 	served, err := tenancy.Parse(n.cfg.Tenancy)
 	if err != nil {
 		return err
@@ -371,22 +371,16 @@ func (n *Node) openBuildFrontend() error {
 	}
 
 	frontendOptions := []frontend.Option{
-		// THE PROJECT TABLE IS THE REGISTER'S, and this role writes it only
-		// through the link route, after the caller is shown to write to every
-		// repository the link names.
+		// THE PROJECT TABLE IS THE REGISTER'S: who a project's owner is and
+		// what roles it granted. This role writes it only through the link
+		// and grant routes, after authorizing the caller.
 		frontend.WithLinker(projects),
-		// WHO MAY USE THIS CLOUD IS AUTH'S TO SAY, from whatever identity
-		// its node was composed with — see identity.go.
-		frontend.WithAdmissions(&admissions{forges: registry, auth: identities}),
+		frontend.WithProjects(projects),
+		// WHO A CALLER IS IS AUTH'S TO SAY, from their tau token.
+		frontend.WithCallers(identities),
 		// SIGNING IN IS AUTH'S, carried here because auth has no ingress.
 		frontend.WithAuthAPI(authCalls),
-		frontend.WithProjects(projects),
 		frontend.WithBackend(builds),
-		frontend.WithIdentity(forges),
-		// WHAT A LINK INSTALLS AT THE FORGE is installed here, under the
-		// caller's connection, so no client is handed a forge credential.
-		frontend.WithInstaller(forges),
-		frontend.WithRepositories(forges),
 		frontend.WithDeliveries(forges),
 		frontend.WithTenancy(served),
 		frontend.WithCloudFqdn(n.cfg.Gateway.CloudFqdn),
@@ -408,9 +402,9 @@ func (n *Node) openBuildFrontend() error {
 	// that does, and it exists at all only because a node running discovery can
 	// find one.
 	//
-	// THE HOOK SECRET IS READ THROUGH IT, and only that: verifying a push needs
-	// the project's secret, which the developer's link stored there. Nothing a
-	// caller sends reads a value back.
+	// THE HOOK SECRETS ARE READ THROUGH IT, and only those: verifying a push
+	// needs the pushed repository's secret, which the developer's link stored
+	// there. Nothing a caller sends reads a value back.
 	var linked secretReader
 	switch {
 	case n.opts.secrets != nil:

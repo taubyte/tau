@@ -37,7 +37,7 @@ func TestAMissIsNotRemembered(t *testing.T) {
 		if !linked {
 			return Hook{}, ErrNoHook
 		}
-		return Hook{Project: id, Secret: []byte(testSecret), Repositories: []string{testRepoKey}}, nil
+		return Hook{Project: id, Repositories: []HookRepository{{Key: testRepoKey, Secret: []byte(testSecret)}}}, nil
 	}
 
 	for range 3 {
@@ -54,7 +54,7 @@ func TestAMissIsNotRemembered(t *testing.T) {
 func TestAHookWithNoSecretIsNotRemembered(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.hooks.get = func(id string) (Hook, error) {
-		return Hook{Project: id, Repositories: []string{testRepoKey}}, nil
+		return Hook{Project: id, Repositories: []HookRepository{{Key: testRepoKey}}}, nil
 	}
 	for range 2 {
 		require.Equal(t, http.StatusInternalServerError, h.do(t, webhookRequest(webhookOpts{})).Code)
@@ -89,7 +89,7 @@ func TestAFailureToReachAuthIsNotRemembered(t *testing.T) {
 		if failing {
 			return Hook{}, connect.NewError(connect.CodeUnavailable, errors.New("down"))
 		}
-		return Hook{Project: id, Secret: []byte(testSecret), Repositories: []string{testRepoKey}}, nil
+		return Hook{Project: id, Repositories: []HookRepository{{Key: testRepoKey, Secret: []byte(testSecret)}}}, nil
 	}
 
 	require.Equal(t, http.StatusServiceUnavailable, h.do(t, webhookRequest(webhookOpts{})).Code)
@@ -108,7 +108,7 @@ func TestTheCacheHasACeiling(t *testing.T) {
 		HookRate:       Rate{Burst: 1000, Per: time.Minute},
 	})
 	h.hooks.get = func(id string) (Hook, error) {
-		return Hook{Project: id, Secret: []byte(testSecret), Repositories: []string{testRepoKey}}, nil
+		return Hook{Project: id, Repositories: []HookRepository{{Key: testRepoKey, Secret: []byte(testSecret)}}}, nil
 	}
 
 	for i := range 8 {

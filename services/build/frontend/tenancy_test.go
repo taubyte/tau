@@ -38,12 +38,3 @@ func TestAPushInsideTheTenancyIsBuilt(t *testing.T) {
 	require.Equal(t, http.StatusAccepted, h.do(t, webhookRequest(webhookOpts{})).Code)
 	require.Len(t, h.backend.enqueues(), 1)
 }
-
-func TestACallerIsRefusedARepositoryOutsideTheTenancyByName(t *testing.T) {
-	a := &fakeAdmissions{admitted: true}
-	h := newHarness(t, Config{}, WithAdmissions(a), servesOnly(t, "github.com/someone-else"))
-	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID, testToken))
-	require.Equal(t, http.StatusForbidden, w.Code)
-	require.Contains(t, w.Body.String(), "outside this cloud's tenancy")
-	require.Zero(t, a.asked, "the tenancy is decided before the cloud is asked")
-}

@@ -21,7 +21,7 @@ func rotatable(h *harness, secret *string, mu *sync.Mutex) {
 		if *secret == "" {
 			return Hook{}, ErrNoHook
 		}
-		return Hook{Project: id, Secret: []byte(*secret), Repositories: []string{testRepoKey}}, nil
+		return Hook{Project: id, Repositories: []HookRepository{{Key: testRepoKey, Secret: []byte(*secret)}}}, nil
 	}
 }
 
@@ -108,7 +108,7 @@ func TestAReaskThatFailsKeepsTheEntryAndItsExpiry(t *testing.T) {
 		if down {
 			return Hook{}, connect.NewError(connect.CodeUnavailable, errors.New("down"))
 		}
-		return Hook{Project: id, Secret: []byte(testSecret), Repositories: []string{testRepoKey}}, nil
+		return Hook{Project: id, Repositories: []HookRepository{{Key: testRepoKey, Secret: []byte(testSecret)}}}, nil
 	}
 	h.do(t, webhookRequest(webhookOpts{}))
 
@@ -133,7 +133,7 @@ func TestAReaskThatFindsNoSecretIsTheOperators(t *testing.T) {
 	h.hooks.get = func(id string) (Hook, error) {
 		mu.Lock()
 		defer mu.Unlock()
-		return Hook{Project: id, Secret: []byte(secret), Repositories: []string{testRepoKey}}, nil
+		return Hook{Project: id, Repositories: []HookRepository{{Key: testRepoKey, Secret: []byte(secret)}}}, nil
 	}
 	h.do(t, webhookRequest(webhookOpts{}))
 	mu.Lock()
@@ -200,7 +200,9 @@ func (g *gatedFetch) fetch(context.Context, string) (Hook, error) {
 	return <-g.answer(n), nil
 }
 
-func hookWith(secret string) Hook { return Hook{Project: testHookID, Secret: []byte(secret)} }
+func hookWith(secret string) Hook {
+	return Hook{Project: testHookID, Repositories: []HookRepository{{Key: testRepoKey, Secret: []byte(secret)}}}
+}
 
 func TestConcurrentLookupsShareOneFetch(t *testing.T) {
 	g := newGatedFetch()
@@ -223,7 +225,7 @@ func TestConcurrentLookupsShareOneFetch(t *testing.T) {
 	close(results)
 
 	for look := range results {
-		require.Equal(t, "s", string(look.hook.Secret))
+		require.Equal(t, "s", string(look.hook.Repositories[0].Secret))
 	}
 	require.Equal(t, 1, g.calls)
 
@@ -258,14 +260,14 @@ func TestAnOlderFetchCannotOverwriteANewerOne(t *testing.T) {
 	require.Equal(t, 2, <-g.started)
 
 	g.answer(2) <- hookWith("new")
-	require.Equal(t, "new", string((<-newer).hook.Secret))
+	require.Equal(t, "new", string((<-newer).hook.Repositories[0].Secret))
 	g.answer(1) <- hookWith("old")
-	require.Equal(t, "old", string((<-older).hook.Secret), "its own caller still gets its answer")
+	require.Equal(t, "old", string((<-older).hook.Repositories[0].Secret), "its own caller still gets its answer")
 
 	look, err := c.get(t.Context(), testHookID)
 	require.NoError(t, err)
 	require.True(t, look.cached)
-	require.Equal(t, "new", string(look.hook.Secret))
+	require.Equal(t, "new", string(look.hook.Repositories[0].Secret))
 }
 
 // A refresh joins a fetch that started after the answer it doubts.
@@ -316,7 +318,7 @@ func TestADropDetachesTheFetchInFlight(t *testing.T) {
 	look, err := c.get(t.Context(), testHookID)
 	require.NoError(t, err)
 	require.False(t, look.cached)
-	require.Equal(t, "after", string(look.hook.Secret))
+	require.Equal(t, "after", string(look.hook.Repositories[0].Secret))
 }
 
 // A waiter whose request ends stops waiting; the fetch carries on for the

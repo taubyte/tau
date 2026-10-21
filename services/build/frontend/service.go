@@ -27,24 +27,20 @@ import (
 // satisfies them — which is also what lets every route in this package be
 // tested against fakes with no host, no listener and no port.
 type Service struct {
-	hooks       Hooks
-	deliveries  Deliveries
-	projects    Projects
-	backend     Backend
-	identity    Identity
-	connections Connections
-	admissions  Admissions
-	vault       Vault
-	linker      Linker
-	installer   Installer
-	repos       Repositories
-	assets      Assets
-	tenancy     tenancy.Tenancy
-	streams     Streams
-	linked      Linked
-	authAPI     AuthAPI
-	cfg         Config
-	cloudFqdn   string
+	hooks      Hooks
+	deliveries Deliveries
+	projects   Projects
+	callers    Callers
+	backend    Backend
+	vault      Vault
+	linker     Linker
+	assets     Assets
+	tenancy    tenancy.Tenancy
+	streams    Streams
+	linked     Linked
+	authAPI    AuthAPI
+	cfg        Config
+	cloudFqdn  string
 
 	now    func() time.Time
 	logf   func(string, ...any)
@@ -83,23 +79,19 @@ type Service struct {
 type Option func(*options) error
 
 type options struct {
-	hooks       Hooks
-	deliveries  Deliveries
-	projects    Projects
-	backend     Backend
-	identity    Identity
-	connections Connections
-	admissions  Admissions
-	vault       Vault
-	linker      Linker
-	installer   Installer
-	repos       Repositories
-	assets      Assets
-	tenancy     tenancy.Tenancy
-	streams     Streams
-	linked      Linked
-	authAPI     AuthAPI
-	cloudFqdn   string
+	hooks      Hooks
+	deliveries Deliveries
+	projects   Projects
+	callers    Callers
+	backend    Backend
+	vault      Vault
+	linker     Linker
+	assets     Assets
+	tenancy    tenancy.Tenancy
+	streams    Streams
+	linked     Linked
+	authAPI    AuthAPI
+	cloudFqdn  string
 
 	tune func(*http.Server)
 	tls  *tls.Config
@@ -158,41 +150,16 @@ func WithVault(v Vault) Option {
 	}
 }
 
-// WithLinker is where a linked project is recorded — the register, which this
-// public role may only forward to after authorizing the caller (projectapi.go).
-// Optional: without one the project routes answer the 404 a denial gets.
+// WithLinker is where a linked project and its grants are recorded — the
+// register, which this public role may only forward to after authorizing the
+// caller (projectapi.go). Optional: without one the project routes answer the
+// 404 a denial gets.
 func WithLinker(l Linker) Option {
 	return func(o *options) error {
 		if l == nil {
 			return errors.New("build: no linker to record projects with")
 		}
 		o.linker = l
-		return nil
-	}
-}
-
-// WithInstaller is how linking installs a project's webhook and deploy keys
-// at the forge, under the caller's own connection (linkapi.go). Optional:
-// without it the link install routes deny, and a link takes --manual.
-func WithInstaller(i Installer) Option {
-	return func(o *options) error {
-		if i == nil {
-			return errors.New("build: a nil installer")
-		}
-		o.installer = i
-		return nil
-	}
-}
-
-// WithRepositories is what a console does at a forge — listing, creating,
-// cloning, reading and committing — under the caller's own connection.
-// Optional: without it those routes deny.
-func WithRepositories(r Repositories) Option {
-	return func(o *options) error {
-		if r == nil {
-			return errors.New("build: nil repositories")
-		}
-		o.repos = r
 		return nil
 	}
 }
@@ -220,43 +187,19 @@ func WithDeliveries(d Deliveries) Option {
 	}
 }
 
-// WithIdentity resolves a caller. Required.
-func WithIdentity(i Identity) Option {
-	return func(o *options) error {
-		if i == nil {
-			return errors.New("build: no identity to resolve a caller with")
-		}
-		o.identity = i
-		return nil
-	}
-}
-
-// WithConnections opens a caller's forge credentials. Without it, every host
-// is not connected.
-func WithConnections(c Connections) Option {
+// WithCallers verifies a caller's tau token. Required.
+func WithCallers(c Callers) Option {
 	return func(o *options) error {
 		if c == nil {
-			return errors.New("build: no connections to open a caller's forge credentials with")
+			return errors.New("build: no way to verify a caller")
 		}
-		o.connections = c
+		o.callers = c
 		return nil
 	}
 }
 
-// WithAdmissions asks the cloud whether a caller the forge granted may use it.
-// Optional.
-func WithAdmissions(a Admissions) Option {
-	return func(o *options) error {
-		if a == nil {
-			return errors.New("build: a nil admissions")
-		}
-		o.admissions = a
-		return nil
-	}
-}
-
-// WithTenancy limits the repositories this cloud builds and answers for to the
-// namespaces t serves. Without it, every repository a forge grants.
+// WithTenancy limits the repositories this cloud links and builds to the
+// namespaces t serves. Without it, every repository.
 func WithTenancy(t tenancy.Tenancy) Option {
 	return func(o *options) error {
 		o.tenancy = t
@@ -277,10 +220,7 @@ func WithStreams(s Streams, linked Linked) Option {
 	}
 }
 
-// WithCloudFqdn is the cloud's zone, which this ingress is named under:
-// `https://<build.Frontend.Name>.<fqdn>` is where a hook linking installs
-// delivers when Config.PublicURL does not say otherwise. Empty, only a
-// configured PublicURL can.
+// WithCloudFqdn is the cloud's zone, which GET /cloud answers with.
 func WithCloudFqdn(fqdn string) Option {
 	return func(o *options) error {
 		o.cloudFqdn = strings.ToLower(strings.Trim(fqdn, "."))
@@ -354,7 +294,7 @@ func WithLogger(logf func(format string, args ...any)) Option {
 // serves: v1's services/patrick/service.go starts its stream, then can still fail
 // and leak it.
 //
-// Four dependencies, each an interface this package declares rather than a
+// Five required dependencies, each an interface this package declares rather than a
 // client it builds, and each injected with a With… . A nil one is an error,
 // never something this service invents.
 func New(cfg Config, opts ...Option) (*Service, error) {
@@ -384,33 +324,29 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		return nil, errors.New("build: no projects to authorize against")
 	case o.backend == nil:
 		return nil, errors.New("build: no backend to queue into")
-	case o.identity == nil:
-		return nil, errors.New("build: no identity to resolve a caller with")
+	case o.callers == nil:
+		return nil, errors.New("build: no way to verify a caller")
 	}
 
 	s := &Service{
-		hooks:       o.hooks,
-		deliveries:  o.deliveries,
-		projects:    o.projects,
-		backend:     o.backend,
-		identity:    o.identity,
-		connections: o.connections,
-		admissions:  o.admissions,
-		vault:       o.vault,
-		linker:      o.linker,
-		installer:   o.installer,
-		repos:       o.repos,
-		assets:      o.assets,
-		tenancy:     o.tenancy,
-		streams:     o.streams,
-		linked:      o.linked,
-		authAPI:     o.authAPI,
-		cfg:         effective,
-		cloudFqdn:   o.cloudFqdn,
-		tune:        o.tune,
-		tls:         o.tls,
-		now:         o.now,
-		logf:        o.logf,
+		hooks:      o.hooks,
+		deliveries: o.deliveries,
+		projects:   o.projects,
+		callers:    o.callers,
+		backend:    o.backend,
+		vault:      o.vault,
+		linker:     o.linker,
+		assets:     o.assets,
+		tenancy:    o.tenancy,
+		streams:    o.streams,
+		linked:     o.linked,
+		authAPI:    o.authAPI,
+		cfg:        effective,
+		cloudFqdn:  o.cloudFqdn,
+		tune:       o.tune,
+		tls:        o.tls,
+		now:        o.now,
+		logf:       o.logf,
 	}
 
 	// ONLY A USABLE HOOK IS REMEMBERED — never a miss, never a failure to ask;

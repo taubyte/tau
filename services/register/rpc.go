@@ -147,6 +147,8 @@ func wire(err error) error {
 		errors.Is(err, pkgregister.ErrNoDestination),
 		errors.Is(err, pkgregister.ErrNoRepository),
 		errors.Is(err, pkgregister.ErrNoClaimant),
+		errors.Is(err, pkgregister.ErrNoRole),
+		errors.Is(err, pkgregister.ErrNoGrantee),
 		errors.Is(err, pkgregister.ErrSeparator):
 		return connect.NewError(connect.CodeInvalidArgument, err)
 
@@ -154,7 +156,8 @@ func wire(err error) error {
 		errors.Is(err, pkgregister.ErrNoObject),
 		errors.Is(err, pkgregister.ErrNoView),
 		errors.Is(err, pkgregister.ErrNoHost),
-		errors.Is(err, pkgregister.ErrNotLinked):
+		errors.Is(err, pkgregister.ErrNotLinked),
+		errors.Is(err, pkgregister.ErrNoGrant):
 		return connect.NewError(connect.CodeNotFound, err)
 
 	// A name another project holds is a well-formed publish the state refuses,

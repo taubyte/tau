@@ -12,7 +12,7 @@ import (
 )
 
 // projects.go is the project table's wire surface: pkg/register's projects.go
-// over four calls, each a decode, a call and the shared code table.
+// over its calls, each a decode, a call and the shared code table.
 //
 // AUTHORIZATION IS NOT HERE either. Whether the claimant may write to the
 // repositories it names is the build frontend's to establish before it calls
@@ -25,6 +25,7 @@ func (h *handler) Link(ctx context.Context, req *connect.Request[registerv2.Link
 		Config:   req.Msg.GetConfigRepository(),
 		Code:     req.Msg.GetCodeRepositories(),
 		Claimant: req.Msg.GetClaimant(),
+		Replace:  req.Msg.GetReplace(),
 	})
 	if err != nil {
 		return nil, wire(err)
@@ -85,7 +86,7 @@ func recordFromWire(rec *registerv2.ProjectRecord) pkgregister.ProjectRecord {
 // LinkProject claims a project id over the wire.
 func (c *Client) LinkProject(ctx context.Context, l pkgregister.Link) (pkgregister.ProjectRecord, error) {
 	res, err := c.svc.Link(ctx, connect.NewRequest(&registerv2.LinkRequest{
-		Project: l.Project, ConfigRepository: l.Config, CodeRepositories: l.Code, Claimant: l.Claimant,
+		Project: l.Project, ConfigRepository: l.Config, CodeRepositories: l.Code, Claimant: l.Claimant, Replace: l.Replace,
 	}))
 	if err != nil {
 		return pkgregister.ProjectRecord{}, unwire(err)
@@ -149,4 +150,87 @@ func (c *Client) ListProjects(ctx context.Context) ([]pkgregister.ProjectRecord,
 		out = append(out, recordFromWire(rec))
 	}
 	return out, nil
+}
+
+func (h *handler) Grant(ctx context.Context, req *connect.Request[registerv2.GrantRequest]) (*connect.Response[registerv2.GrantRecord], error) {
+	g, err := h.s.reg.GrantRole(ctx, req.Msg.GetProject(), req.Msg.GetGrantee(), pkgregister.Role(req.Msg.GetRole()), req.Msg.GetBy())
+	if err != nil {
+		return nil, wire(err)
+	}
+	return connect.NewResponse(grantToWire(g)), nil
+}
+
+func (h *handler) Revoke(ctx context.Context, req *connect.Request[registerv2.RevokeRequest]) (*connect.Response[registerv2.RevokeResponse], error) {
+	if err := h.s.reg.Revoke(ctx, req.Msg.GetProject(), req.Msg.GetGrantId(), req.Msg.GetBy()); err != nil {
+		return nil, wire(err)
+	}
+	return connect.NewResponse(&registerv2.RevokeResponse{}), nil
+}
+
+func (h *handler) Grants(ctx context.Context, req *connect.Request[registerv2.ProjectRequest]) (*connect.Response[registerv2.GrantRecords], error) {
+	grants, err := h.s.reg.Grants(ctx, req.Msg.GetProject())
+	if err != nil {
+		return nil, wire(err)
+	}
+	out := &registerv2.GrantRecords{}
+	for _, g := range grants {
+		out.Grants = append(out.Grants, grantToWire(g))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (h *handler) Role(ctx context.Context, req *connect.Request[registerv2.RoleRequest]) (*connect.Response[registerv2.RoleAnswer], error) {
+	role, err := h.s.reg.RoleOf(ctx, req.Msg.GetProject(), req.Msg.GetUser())
+	if err != nil {
+		return nil, wire(err)
+	}
+	return connect.NewResponse(&registerv2.RoleAnswer{Role: string(role)}), nil
+}
+
+func grantToWire(g pkgregister.Grant) *registerv2.GrantRecord {
+	return &registerv2.GrantRecord{Id: g.ID, Project: g.Project, Grantee: g.Grantee, Role: string(g.Role), By: g.By, At: g.At.UnixNano()}
+}
+
+func grantFromWire(g *registerv2.GrantRecord) pkgregister.Grant {
+	return pkgregister.Grant{
+		ID: g.GetId(), Project: g.GetProject(), Grantee: g.GetGrantee(), Role: pkgregister.Role(g.GetRole()),
+		By: g.GetBy(), At: time.Unix(0, g.GetAt()).UTC(),
+	}
+}
+
+// GrantRole gives a tau user a role on a project over the wire.
+func (c *Client) GrantRole(ctx context.Context, project, grantee string, role pkgregister.Role, by string) (pkgregister.Grant, error) {
+	res, err := c.svc.Grant(ctx, connect.NewRequest(&registerv2.GrantRequest{Project: project, Grantee: grantee, Role: string(role), By: by}))
+	if err != nil {
+		return pkgregister.Grant{}, unwire(err)
+	}
+	return grantFromWire(res.Msg), nil
+}
+
+// Revoke withdraws a grant over the wire.
+func (c *Client) Revoke(ctx context.Context, project, id, by string) error {
+	_, err := c.svc.Revoke(ctx, connect.NewRequest(&registerv2.RevokeRequest{Project: project, GrantId: id, By: by}))
+	return unwire(err)
+}
+
+// Grants is a project's live grants.
+func (c *Client) Grants(ctx context.Context, project string) ([]pkgregister.Grant, error) {
+	res, err := c.svc.Grants(ctx, connect.NewRequest(&registerv2.ProjectRequest{Project: project}))
+	if err != nil {
+		return nil, unwire(err)
+	}
+	var out []pkgregister.Grant
+	for _, g := range res.Msg.GetGrants() {
+		out = append(out, grantFromWire(g))
+	}
+	return out, nil
+}
+
+// RoleOf is one user's role on a project.
+func (c *Client) RoleOf(ctx context.Context, project, user string) (pkgregister.Role, error) {
+	res, err := c.svc.Role(ctx, connect.NewRequest(&registerv2.RoleRequest{Project: project, User: user}))
+	if err != nil {
+		return pkgregister.RoleNone, unwire(err)
+	}
+	return pkgregister.Role(res.Msg.GetRole()), nil
 }

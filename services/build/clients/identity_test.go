@@ -18,15 +18,11 @@ type fakeIdentity struct {
 	authv2connect.UnimplementedIdentityServiceHandler
 }
 
-func (fakeIdentity) Admit(_ context.Context, req *connect.Request[authv2.Caller]) (*connect.Response[authv2.Admission], error) {
-	if req.Msg.GetSubject() == "broken" {
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("down"))
+func (fakeIdentity) Verify(_ context.Context, req *connect.Request[authv2.VerifyRequest]) (*connect.Response[authv2.Principal], error) {
+	if req.Msg.GetToken() != "tok" {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("revoked"))
 	}
-	return connect.NewResponse(&authv2.Admission{
-		Admitted: req.Msg.GetSubject() == "1",
-		Reason:   "sign up first",
-		Accounts: []string{req.Msg.GetForge() + "/" + req.Msg.GetLogin()},
-	}), nil
+	return connect.NewResponse(&authv2.Principal{User: &authv2.User{Id: "user-1"}}), nil
 }
 
 func TestIdentitiesCarriesAuthsAnswer(t *testing.T) {
@@ -44,18 +40,11 @@ func TestIdentitiesCarriesAuthsAnswer(t *testing.T) {
 	c, err := Identities(p)
 	require.NoError(t, err)
 
-	got, err := c.Admit(t.Context(), &authv2.Caller{Forge: "github.com", Subject: "1", Login: "ada"})
+	user, err := c.Caller(t.Context(), "tok")
 	require.NoError(t, err)
-	require.True(t, got.GetAdmitted())
-	require.Equal(t, []string{"github.com/ada"}, got.GetAccounts())
-
-	got, err = c.Admit(t.Context(), &authv2.Caller{Forge: "github.com", Subject: "2"})
-	require.NoError(t, err)
-	require.False(t, got.GetAdmitted())
-	require.Equal(t, "sign up first", got.GetReason())
-
-	_, err = c.Admit(t.Context(), &authv2.Caller{Forge: "github.com", Subject: "broken"})
-	require.Error(t, err)
+	require.Equal(t, "user-1", user)
+	_, err = c.Caller(t.Context(), "bad")
+	require.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
 
 	_, err = Identities(nil)
 	require.Error(t, err)

@@ -7,6 +7,8 @@ import (
 	"strconv"
 
 	"google.golang.org/protobuf/encoding/protojson"
+
+	"github.com/taubyte/tau/pkg/register"
 )
 
 // jobapi.go is the GitHub-token-authenticated surface a human or the CLI calls:
@@ -60,7 +62,7 @@ func (s *Service) handleGetJob(w http.ResponseWriter, r *http.Request, token, jo
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
 	defer cancel()
 
-	job, err := s.mayTouchJob(ctx, token, jobID)
+	job, err := s.mayTouchJob(ctx, token, jobID, register.RoleViewer)
 	if err != nil {
 		respond(w, err)
 		return
@@ -93,7 +95,7 @@ func (s *Service) handleGetJob(w http.ResponseWriter, r *http.Request, token, jo
 // discovered.
 func (s *Service) handleFollowJob(w http.ResponseWriter, r *http.Request, token, jobID string) {
 	authorize, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
-	if _, err := s.mayTouchJob(authorize, token, jobID); err != nil {
+	if _, err := s.mayTouchJob(authorize, token, jobID, register.RoleViewer); err != nil {
 		cancel()
 		respond(w, err)
 		return
@@ -190,7 +192,7 @@ func (s *Service) mutate(w http.ResponseWriter, r *http.Request, token, jobID st
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
 	defer cancel()
 
-	if _, err := s.mayTouchJob(ctx, token, jobID); err != nil {
+	if _, err := s.mayTouchJob(ctx, token, jobID, register.RoleBuilder); err != nil {
 		respond(w, err)
 		return
 	}
@@ -216,7 +218,7 @@ func (s *Service) handleListJobs(w http.ResponseWriter, r *http.Request, token, 
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
 	defer cancel()
 
-	if err := s.mayTouchProject(ctx, token, projectID); err != nil {
+	if _, err := s.mayTouchProject(ctx, token, projectID, register.RoleViewer); err != nil {
 		respond(w, err)
 		return
 	}
@@ -289,7 +291,7 @@ func (s *Service) admittedWithin(name string, bound int, handle jobHandler) http
 			respond(w, err)
 			return
 		}
-		handle(w, withOpened(r, token), token, id)
+		handle(w, r, token, id)
 	}
 }
 
@@ -315,8 +317,10 @@ func (s *Service) credentials(r *http.Request, name string, bound int) (token, i
 	if token, err = bearer(r); err != nil {
 		return "", "", err
 	}
-	if id, err = boundedPath(r, name, bound); err != nil {
-		return "", "", err
+	if name != "" {
+		if id, err = boundedPath(r, name, bound); err != nil {
+			return "", "", err
+		}
 	}
 	if !s.globalJobs.allow() || !s.allowCaller(token) {
 		return "", "", tooManyRequests(s.cfg.CallerRate.Per)

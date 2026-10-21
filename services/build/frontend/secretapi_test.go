@@ -14,7 +14,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
-	"github.com/taubyte/tau/pkg/git/repokey"
+	"github.com/taubyte/tau/pkg/register"
 )
 
 // fakeVault records what reached it, so a route that authorized wrongly is
@@ -162,7 +162,7 @@ func TestThereIsNoRouteThatReadsASecretBack(t *testing.T) {
 func TestOnlySomebodyWhoMayPushMaySetASecret(t *testing.T) {
 	v := newVault()
 	h := newHarness(t, Config{}, WithVault(v))
-	h.identity.write = func(string, repokey.Key) (Access, error) { return AccessDenied, nil }
+	h.projects.role = func(string, string) (register.Role, error) { return register.RoleNone, nil }
 
 	for _, r := range []*http.Request{
 		authed(http.MethodGet, secretPath, testToken),
@@ -267,7 +267,7 @@ func TestAVaultFailureIsAnUpstreamFailure(t *testing.T) {
 
 func TestAVaultMustNotBeNil(t *testing.T) {
 	_, err := New(Config{}, WithHooks(&fakeHooks{}), WithProjects(&fakeProjects{}),
-		WithBackend(&fakeBackend{}), WithIdentity(&fakeIdentity{}), WithConnections(passConnections{}), WithVault(nil))
+		WithBackend(&fakeBackend{}), WithCallers(&fakeCallers{}), WithVault(nil))
 	require.ErrorContains(t, err, "no vault")
 }
 
@@ -277,7 +277,7 @@ func TestAVaultMustNotBeNil(t *testing.T) {
 func TestSettingASecretIsBelievedAtOnceByTheHookItVerifies(t *testing.T) {
 	h := newHarness(t, Config{}, WithVault(newVault()))
 	h.hooks.get = func(id string) (Hook, error) {
-		return Hook{Project: id, Secret: []byte(testSecret), Repositories: []string{testRepoKey}}, nil
+		return Hook{Project: id, Repositories: []HookRepository{{Key: testRepoKey, Secret: []byte(testSecret)}}}, nil
 	}
 	push := func() { h.do(t, webhookRequest(webhookOpts{hookID: testProject})) }
 

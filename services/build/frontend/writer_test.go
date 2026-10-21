@@ -71,10 +71,3 @@ func TestAJobThatCannotBeEncodedIsNotHalfWritten(t *testing.T) {
 	require.NotContains(t, bodyOf(t, w), "refs/heads")
 	require.Contains(t, h.logs.joined(), "encoding job")
 }
-
-func TestAccessSaysWhatItIs(t *testing.T) {
-	require.Equal(t, "granted", AccessGranted.String())
-	require.Equal(t, "denied", AccessDenied.String())
-	require.Equal(t, "unauthenticated", AccessUnauthenticated.String())
-	require.Equal(t, "denied", Access(99).String())
-}

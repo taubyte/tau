@@ -18,6 +18,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
+	"github.com/taubyte/tau/services/build/backend"
 	"github.com/taubyte/tau/services/build/deploy"
 )
 
@@ -270,4 +271,28 @@ func hostPublicKey(t *testing.T) gossh.PublicKey {
 	key, err := gossh.NewPublicKey(pub)
 	require.NoError(t, err)
 	return key
+}
+
+// A PUSH IS CONFIRMED AT THE REPOSITORY: the ref is there at the commit, or the
+// push is not built.
+func TestAPushIsConfirmedAtTheRepository(t *testing.T) {
+	path, first, second := repository(t)
+	clone := deploy.NewClone(nil, deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) { return forge.Address{URL: path}, nil }))
+
+	require.NoError(t, clone.Confirm(t.Context(), "local/repo", "refs/heads/main", second))
+	require.ErrorIs(t, clone.Confirm(t.Context(), "local/repo", "refs/heads/main", first), backend.ErrNotAtCommit,
+		"a superseded commit is not the ref")
+	require.ErrorIs(t, clone.Confirm(t.Context(), "local/repo", "refs/heads/gone", second), backend.ErrNotAtCommit)
+
+	err := clone.Confirm(t.Context(), "", "refs/heads/main", second)
+	require.ErrorContains(t, err, "not a repository")
+	err = deploy.NewClone(keys{err: errors.New("auth is down")}).Confirm(t.Context(), "local/repo", "refs/heads/main", second)
+	require.ErrorContains(t, err, "auth is down")
+
+	missing := deploy.NewClone(nil, deploy.WithAddress(func(string, forge.Protocol) (forge.Address, error) {
+		return forge.Address{URL: filepath.Join(t.TempDir(), "nothing")}, nil
+	}))
+	err = missing.Confirm(t.Context(), "local/repo", "refs/heads/main", second)
+	require.ErrorContains(t, err, "listing local/repo")
+	require.NotErrorIs(t, err, backend.ErrNotAtCommit)
 }
