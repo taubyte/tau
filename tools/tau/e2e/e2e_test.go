@@ -192,13 +192,6 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 		linkcreds.HookSecret(codeRepo.String()), linkcreds.DeployKey(codeRepo.String()),
 	}, names)
 
-	// The same id from another directory and repository is refused by name.
-	other := t.TempDir()
-	require.NoError(t, copyProject(dir, other))
-	require.NoError(t, os.RemoveAll(filepath.Join(other, ".git")))
-	r := tau("link", "--profile", "owner", "--dir", other, "--config-repo", f.Keys().Admin.String(), "--manual")
-	require.NotZero(t, r.code)
-
 	// THE PUSH IS VERIFIED BY THE REPOSITORY'S OWN SECRET, and confirmed at
 	// the forge over the deploy key before it is queued: a commit the branch
 	// does not hold builds nothing.
@@ -225,7 +218,7 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 
 	// A SECOND TAU USER sees nothing until granted, then reads; revoked, the
 	// project is a 404 again.
-	r = tauIn(adminPassword+"\n", "login", "--profile", "admin", "--cloud", cloud, "--name", "root", "--password-stdin")
+	r := tauIn(adminPassword+"\n", "login", "--profile", "admin", "--cloud", cloud, "--name", "root", "--password-stdin")
 	require.Equal(t, 0, r.code, r.stderr)
 	var bob struct {
 		ID string `json:"id"`
@@ -235,6 +228,15 @@ func TestTheCLIAgainstARealFleet(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(r.stdout), &bob))
 	r = tauIn("bobs-password-1\n", "login", "--profile", "bob", "--cloud", cloud, "--name", "bob", "--password-stdin")
 	require.Equal(t, 0, r.code, r.stderr)
+
+	// The same id from another tau user is refused by name, whatever the
+	// repository.
+	other := t.TempDir()
+	require.NoError(t, copyProject(dir, other))
+	require.NoError(t, os.RemoveAll(filepath.Join(other, ".git")))
+	r = tau("link", "--profile", "bob", "--dir", other, "--config-repo", f.Keys().Admin.String(), "--manual", "--callback", "https://x.example/hook")
+	require.NotZero(t, r.code)
+	require.Contains(t, r.stderr, "already claimed")
 
 	r = tau("jobs", "--profile", "bob", "--project", linked.ProjectID)
 	require.Contains(t, r.stderr, "not found")
