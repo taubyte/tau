@@ -461,9 +461,12 @@ func TestWhatIsRefused(t *testing.T) {
 	// NO KEY IN THE VAULT: nothing is issued, and no challenge answered.
 	c, err := NewClient(h, none, nolocal, empty, on)
 	require.NoError(t, err)
+	c.timeout, c.poll = 20*time.Millisecond, time.Millisecond
 	_, ok := c.Challenge("tok")
 	require.False(t, ok)
-	_, err = c.acmeIssuer(t.Context())
+	short, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	_, err = c.acmeIssuer(short)
 	require.ErrorIs(t, err, ErrNoAccount)
 	empty.data[VaultProject+"/"+VaultEnvironment+"/"+AccountSecret] = []byte("not pem")
 	_, err = c.acmeIssuer(t.Context())
@@ -589,4 +592,23 @@ func TestChallengesAreOnePerPresentationAndWaitedFor(t *testing.T) {
 
 	_, err = ChallengesIn(t.Context(), nil, f.clock)
 	require.ErrorIs(t, err, ErrNoChallenges)
+}
+
+// TestAKeyNotReadableYetIsWaitedFor: a CA reaching a node whose vault has not
+// caught up is still answered.
+func TestAKeyNotReadableYetIsWaitedFor(t *testing.T) {
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+	v := &vault{data: map[string][]byte{}}
+	c, err := NewClient(newHost(t, mn), func() []peer.ID { return nil }, func() *Service { return nil }, v,
+		Config{Certificate: CertificateConfig{ACME: pkgcertificate.ACME{Enabled: true}, Zone: zone}})
+	require.NoError(t, err)
+	c.poll = time.Millisecond
+	key := accountKey(t)
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		v.Set(t.Context(), VaultProject, VaultEnvironment, AccountSecret, []byte(key))
+	}()
+	_, ok := c.Challenge("tok")
+	require.True(t, ok)
 }

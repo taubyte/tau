@@ -414,9 +414,16 @@ func (c *Client) accountLocked(ctx context.Context) (crypto.Signer, error) {
 	if c.account != nil {
 		return c.account, nil
 	}
+	// A KEY NOT READABLE YET IS WAITED FOR, until ctx ends: a CA asking a node
+	// whose vault has not caught up must still be answered.
 	blob, err := c.vault.Get(ctx, VaultProject, VaultEnvironment, AccountSecret)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrNoAccount, err)
+	for err != nil {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("%w: %w", ErrNoAccount, err)
+		case <-time.After(c.poll):
+		}
+		blob, err = c.vault.Get(ctx, VaultProject, VaultEnvironment, AccountSecret)
 	}
 	key, err := acme.ParseKey(blob)
 	if err != nil {
