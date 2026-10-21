@@ -1,77 +1,61 @@
-import {Config,CourseConfig,Drive,TauLatest} from "@taubyte/spore-drive";
+import * as fs from "fs/promises";
 
-export const createConfig = async (config: Config) => {
-    // Set Cloud Domain
-    await config.Cloud().Domain().Root().Set("test.com");
-    await config.Cloud().Domain().Generated().Set("gtest.com");
-    await config.Cloud().Domain().Validation().Generate();
-    // Generate P2P Swarm keys
-    await config.Cloud().P2P().Swarm().Generate();
-    // Set Auth configurations
-    const mainAuth = config.Auth().Signer("main");
-    await mainAuth.Username().Set("tau1");
-    await mainAuth.Password().Set("testtest");
-    // Set Shapes configurations
-    const shape1 = config.Shapes().Shape("shape1");
-    await shape1.Services().Set(["auth", "seer"]);
-    await shape1.Ports().Port("main").Set(BigInt(4242));
-    await shape1.Ports().Port("lite").Set(BigInt(4262));
-    const shape2 = config.Shapes().Shape("shape2");
-    await shape2.Services().Set(["gateway", "patrick", "monkey"]);
-    await shape2.Ports().Port("main").Set(BigInt(6242));
-    await shape2.Ports().Port("lite").Set(BigInt(6262));
-    await shape2.Plugins().Set(["plugin1@v0.1"]);
-    // Set Hosts
-    const host1 = config.Hosts().Host("host1");
-    await host1.Addresses().Add(["1.2.3.4/24", "4.3.2.1/24"]);
-    await host1.SSH().Address().Set("1.2.3.4:4242");
-    await host1.SSH().Auth().Add(["main"]);
-    await host1.Location().Set("1.25, 25.1");
-    await host1.Shapes().Shape("shape1").Instance().Generate();
-    await host1.Shapes().Shape("shape2").Instance().Generate();
-    const host2 = config.Hosts().Host("host2");
-    await host2.Addresses().Add(["8.2.3.4/24", "4.3.2.8/24"]);
-    await host2.SSH().Address().Set("8.2.3.4:4242");
-    await host2.SSH().Auth().Add(["main"]);
-    await host2.Location().Set("1.25, 25.1");
-    await host2.Shapes().Shape("shape1").Instance().Generate();
-    await host2.Shapes().Shape("shape2").Instance().Generate();
-    // Set P2P Bootstrap
-    await config
-        .Cloud()
-        .P2P()
-        .Bootstrap()
-        .Shape("shape1")
-        .Nodes()
-        .Add(["host2", "host1"]);
-    await config
-        .Cloud()
-        .P2P()
-        .Bootstrap()
-        .Shape("shape2")
-        .Nodes()
-        .Add(["host2", "host1"]);
-    await config.Commit();
-};
+import { Document, Drive, TauLatest } from "@taubyte/spore-drive";
 
-const config:Config= new Config()
+// A cloud described in memory. The service validates it, generating every
+// secret left out: the cloud's CA, the domain validation keys and each host's
+// node key. Every node it deploys is issued a certificate from that CA, which
+// is how the nodes admit each other.
+const doc = Document.fromObject({
+  "cloud.yaml": `
+domain:
+  root: test.com
+  generated: gtest.com
+p2p:
+  bootstrap:
+    shape1: [host1, host2]
+`,
+  "auth.yaml": `
+main:
+  username: tau1
+  password: testtest
+`,
+  "shapes.yaml": `
+shape1:
+  services: [auth, secrets, dns, gateway]
+  ports:
+    main: 4242
+`,
+  "hosts.yaml": `
+host1:
+  addr: [1.2.3.4/24]
+  ssh: {addr: 1.2.3.4, port: 22, auth: [main]}
+  shapes: {shape1: {}}
+host2:
+  addr: [8.2.3.4/24]
+  ssh: {addr: 8.2.3.4, port: 22, auth: [main]}
+  shapes: {shape1: {}}
+`,
+});
 
-await config.init()
-
-await createConfig(config)
-
-const drive:Drive = new Drive(config,TauLatest)
-
-await drive.init()
-
-const course = await drive.plot(new CourseConfig(["shape1"]))
-
-await course.displace()
-
-console.log("displacement...")
-for await (const prg of await course.progress()) {
-    console.log(prg)
+// To use a CA you own instead of a generated one, give its root certificate
+// and key (PKCS#8), both PEM, at the paths cloud.yaml names (keys/ca.crt and
+// keys/ca.key by default).
+if (process.env.CA_CERT && process.env.CA_KEY) {
+  doc.set("keys/ca.crt", await fs.readFile(process.env.CA_CERT));
+  doc.set("keys/ca.key", await fs.readFile(process.env.CA_KEY));
 }
 
+const drive = await Drive.local();
 
-console.log("done")
+const { errors, document } = await drive.validate(doc);
+if (errors.length) throw new Error(errors.join("\n"));
+// Keep the normalized document: the next validate would generate a new CA and
+// new node keys.
+await document.toDir("./config");
+
+const course = await drive.plan(document, { tau: TauLatest, shapes: ["shape1"] });
+for await (const p of drive.apply(course)) {
+  console.log(p.hop, p.host, p.step, p.progress, p.error ?? "");
+}
+console.log("done");
