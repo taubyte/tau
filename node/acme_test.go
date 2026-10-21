@@ -19,7 +19,7 @@ import (
 func TestACloudIssuingCertificatesNeedsItsZoneAndAWorkableConfig(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
-	on := cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{Enabled: true, AccountKey: accountKey(t)}}}
+	on := cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{Enabled: true}}}
 
 	// A GATEWAY OR A GLOBALS NODE with no zone cannot say what it issues.
 	for _, services := range [][]string{{Register, Discovery, Gateway}, {Discovery, Secrets, CM}} {
@@ -33,16 +33,9 @@ func TestACloudIssuingCertificatesNeedsItsZoneAndAWorkableConfig(t *testing.T) {
 	require.NotNil(t, n.cm, "a cm node hosts the store")
 	require.NotNil(t, n.certs, "and its gateway and dns server take the client")
 
-	// A CLOUD THAT ISSUES NAMES ITS ACCOUNT, or the node does not start.
-	keyless := cfg
-	keyless.CM.Certificate.ACME.AccountKey = ""
-	h := newHost(t, mn)
-	_, err := New(keyless, WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}), WithRoot(t.TempDir()))
-	require.ErrorIs(t, err, cm.ErrNoAccount)
-
 	cfg.CM.Certificate.ACME.EAB.KeyID = "half"
-	h = newHost(t, mn)
-	_, err = New(cfg, WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}), WithRoot(t.TempDir()))
+	h := newHost(t, mn)
+	_, err := New(cfg, WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}), WithRoot(t.TempDir()))
 	require.ErrorContains(t, err, "external account binding")
 
 	// A GLOBALS NODE KEEPS ITS CHAINS IN A DATABASE.
@@ -66,7 +59,7 @@ func TestTheBuildFrontendServesTLSWhenTheCloudIssues(t *testing.T) {
 		Services:      []string{Discovery, BuildFrontend},
 		BuildFrontend: frontend.Config{Listen: "127.0.0.1:0"},
 		Gateway:       gateway.Config{CloudFqdn: "tau.example.io"},
-		CM:            cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{Enabled: true, AccountKey: accountKey(t)}}},
+		CM:            cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{Enabled: true}}},
 	})
 	require.NoError(t, n.Start(t.Context()))
 
@@ -101,7 +94,7 @@ func TestADNSNodeOfAnIssuingCloudNeedsTheChallengeStore(t *testing.T) {
 	_, err := New(Config{
 		Services: []string{Discovery, DNS},
 		Gateway:  gateway.Config{CloudFqdn: "tau.example.io"},
-		CM:       cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{Enabled: true, AccountKey: accountKey(t)}}},
+		CM:       cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{Enabled: true}}},
 	}, WithHost(h), WithPubSub(newPubSub(t, h)), WithRoot(t.TempDir()))
 	require.ErrorIs(t, err, ErrNoDatabases)
 }

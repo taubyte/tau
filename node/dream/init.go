@@ -31,6 +31,7 @@ import (
 	auth "github.com/taubyte/tau/services/auth"
 
 	"github.com/taubyte/tau/node/boot"
+	"github.com/taubyte/tau/services/cm"
 
 	"github.com/taubyte/tau/node"
 	"github.com/taubyte/tau/p2p/mesh"
@@ -356,17 +357,19 @@ func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
 		return nil, err
 	}
 
-	// ONE ACME ACCOUNT PER UNIVERSE, as an operator configures one per cloud.
-	_, accountKey, err := acme.MintKey()
+	// ONE ACME ACCOUNT PER UNIVERSE, as an operator configures one per cloud,
+	// seeded into the vault by the first node that issues.
+	_, minted, err := acme.MintKey()
 	if err != nil {
 		m.Close()
 		return nil, err
 	}
 
+	accountKey := string(minted)
 	u := &Universe{mesh: m}
 	copies := max(cfg.Copies, 1)
 	for index := range copies {
-		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index, string(accountKey)) })
+		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index, &accountKey) })
 		if err != nil {
 			u.Close()
 			return nil, fmt.Errorf("dream: node %d: %w", index, err)
@@ -392,7 +395,7 @@ func (u *Universe) CA() *sectls.CA { return u.mesh.CA() }
 // Close stops every node, then their peers.
 func (u *Universe) Close() { u.mesh.Close() }
 
-func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, accountKey string) error {
+func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, accountKey *string) error {
 	ctx := m.Context()
 	h := p.Peer()
 
@@ -452,9 +455,6 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, accountKey string)
 	if cfg.Configure != nil {
 		cfg.Configure(index, &nodeConfig)
 	}
-	if nodeConfig.CM.Certificate.ACME.Enabled && nodeConfig.CM.Certificate.ACME.AccountKey == "" {
-		nodeConfig.CM.Certificate.ACME.AccountKey = accountKey
-	}
 
 	engines, err := boot.DatabaseEngines(ctx)
 	if err != nil {
@@ -505,6 +505,10 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, accountKey string)
 		n.Close()
 		os.RemoveAll(root)
 		return err
+	}
+	if nodeConfig.CM.Certificate.ACME.Enabled && *accountKey != "" {
+		go boot.Seed(ctx, n.Vault(), []boot.Secret{{Project: cm.VaultProject, Environment: cm.VaultEnvironment, Name: cm.AccountSecret, Value: *accountKey}})
+		*accountKey = ""
 	}
 
 	id := h.ID().String()

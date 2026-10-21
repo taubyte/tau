@@ -154,7 +154,7 @@ func newFleet(t *testing.T, n int, wildcard bool) *fleet {
 	t.Cleanup(func() { mn.Close() })
 	database, err := kvdbmock.New().New(nil, "certificate", 0)
 	require.NoError(t, err)
-	f := &fleet{mn: mn, db: database, vault: &vault{data: map[string][]byte{}}, now: time.Now(), chStore: pkgcache.NewMemStore(), txt: &records{m: map[string][]string{}}}
+	f := &fleet{mn: mn, db: database, vault: &vault{data: map[string][]byte{VaultProject + "/" + VaultEnvironment + "/" + AccountSecret: []byte(accountKey(t))}}, now: time.Now(), chStore: pkgcache.NewMemStore(), txt: &records{m: map[string][]string{}}}
 
 	logger := log.New(io.Discard, "", 0)
 	store := db.NewMemoryStore()
@@ -209,10 +209,9 @@ func newFleet(t *testing.T, n int, wildcard bool) *fleet {
 
 	f.cfg = Config{Certificate: CertificateConfig{
 		ACME: pkgcertificate.ACME{
-			Enabled:    true,
-			Directory:  f.pebble.URL + "/dir",
-			RootCA:     string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: f.pebble.Certificate().Raw})),
-			AccountKey: accountKey(t),
+			Enabled:   true,
+			Directory: f.pebble.URL + "/dir",
+			RootCA:    string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: f.pebble.Certificate().Raw})),
 		},
 		Wildcard: wildcard,
 		Zone:     zone + ".",
@@ -359,7 +358,7 @@ func TestTwoOrdersOfOneNameConvergeOnTheNewest(t *testing.T) {
 	first, err := a.Certificate(t.Context(), name)
 	require.NoError(t, err)
 	// b ORDERS ITS OWN as a node that did not see a's would.
-	issuer, err := b.acmeIssuer()
+	issuer, err := b.acmeIssuer(t.Context())
 	require.NoError(t, err)
 	_, err = issuer.Issue(name)
 	require.NoError(t, err)
@@ -426,7 +425,7 @@ func TestWhatIsRefused(t *testing.T) {
 	database, err := kvdbmock.New().New(nil, "c", 0)
 	require.NoError(t, err)
 	cfg := func(c CertificateConfig) Config { return Config{Certificate: c} }
-	acmeOn := pkgcertificate.ACME{Enabled: true, AccountKey: accountKey(t)}
+	acmeOn := pkgcertificate.ACME{Enabled: true}
 	on := cfg(CertificateConfig{ACME: acmeOn, Zone: zone})
 
 	_, err = New(nil, database, on)
@@ -459,26 +458,26 @@ func TestWhatIsRefused(t *testing.T) {
 	_, err = NewClient(h, none, nolocal, empty, cfg(CertificateConfig{ACME: acmeOn}))
 	require.ErrorIs(t, err, ErrNoZone)
 
-	// NO KEY: no account, refused at construction.
-	keyless := on
-	keyless.Certificate.ACME.AccountKey = ""
-	_, err = New(h, database, keyless)
-	require.ErrorIs(t, err, ErrNoAccount)
-	_, err = NewClient(h, none, nolocal, empty, keyless)
-	require.ErrorIs(t, err, ErrNoAccount)
-	keyless.Certificate.ACME.AccountKey = "not pem"
-	_, err = NewClient(h, none, nolocal, empty, keyless)
-	require.Error(t, err)
-
-	// THE CONFIGURED KEY is the account; DNS-01 without a store is refused.
+	// NO KEY IN THE VAULT: nothing is issued, and no challenge answered.
 	c, err := NewClient(h, none, nolocal, empty, on)
 	require.NoError(t, err)
-	want, err := acme.ParseKey([]byte(on.Certificate.ACME.AccountKey))
+	_, ok := c.Challenge("tok")
+	require.False(t, ok)
+	_, err = c.acmeIssuer(t.Context())
+	require.ErrorIs(t, err, ErrNoAccount)
+	empty.data[VaultProject+"/"+VaultEnvironment+"/"+AccountSecret] = []byte("not pem")
+	_, err = c.acmeIssuer(t.Context())
+	require.Error(t, err)
+
+	// THE VAULT'S KEY is the account; DNS-01 without a store is refused.
+	key := accountKey(t)
+	empty.data[VaultProject+"/"+VaultEnvironment+"/"+AccountSecret] = []byte(key)
+	_, ok = c.Challenge("tok")
+	require.True(t, ok)
+	want, err := acme.ParseKey([]byte(key))
 	require.NoError(t, err)
 	require.True(t, c.account.Public().(interface{ Equal(crypto.PublicKey) bool }).Equal(want.Public()))
-	_, ok := c.Challenge("tok")
-	require.True(t, ok)
-	_, err = c.acmeIssuer()
+	_, err = c.acmeIssuer(t.Context())
 	require.ErrorIs(t, err, ErrNoChallenges)
 
 	// A REACHABLE CLIENT REACHING NO MEMBER says so.
@@ -491,7 +490,7 @@ func TestWhatIsRefused(t *testing.T) {
 	httpOn := cfg(CertificateConfig{ACME: acmeOn, Zone: zone, Challenge: ChallengeHTTP})
 	c, err = NewClient(h, none, nolocal, empty, httpOn)
 	require.NoError(t, err)
-	_, err = c.acmeIssuer()
+	_, err = c.acmeIssuer(t.Context())
 	require.NoError(t, err)
 
 	// A VAULT THAT FAILS fails a leaf key.

@@ -17,9 +17,9 @@
 //
 // # The account
 //
-// One account for the whole cloud: the key configured as acme.accountkey,
-// the same on every node. Without one cm refuses to start. HTTP-01 therefore
-// stores nothing: any gateway answers any token from the account's thumbprint.
+// One account for the whole cloud: the key in the vault under AccountSecret,
+// read by every node. Without one nothing is issued. HTTP-01 therefore stores
+// nothing: any gateway answers any token from the account's thumbprint.
 //
 // # DNS-01
 //
@@ -50,6 +50,9 @@ import (
 const (
 	VaultProject     = "@cloud"
 	VaultEnvironment = "certificate"
+
+	// AccountSecret is the vault name of the cloud's ACME account key, PEM.
+	AccountSecret = "acme-account"
 )
 
 // The challenge types a zone can be proved by.
@@ -69,7 +72,7 @@ var (
 	ErrNoZone       = errors.New("cm: issuance needs the cloud's zone")
 	ErrNotZone      = errors.New("cm: only names in the cloud's zone are issued")
 	ErrNotKept      = errors.New("cm: nothing is kept for that name")
-	ErrNoAccount    = errors.New("cm: issuance needs the cloud's ACME account key; set certificate.acme.accountkey")
+	ErrNoAccount    = errors.New("cm: issuance needs the cloud's ACME account key, in the vault as " + VaultProject + "/" + VaultEnvironment + "/" + AccountSecret)
 	ErrDisabled     = acme.ErrDisabled
 )
 
@@ -113,9 +116,6 @@ type CertificateConfig struct {
 func (c CertificateConfig) normalised() (CertificateConfig, error) {
 	if err := acme.Check(c.ACME); err != nil {
 		return c, fmt.Errorf("cm: %w", err)
-	}
-	if c.ACME.AccountKey == "" {
-		return c, ErrNoAccount
 	}
 	c.Zone = strings.ToLower(strings.Trim(c.Zone, "."))
 	if c.Zone == "" {

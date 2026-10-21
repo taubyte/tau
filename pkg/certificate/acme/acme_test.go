@@ -266,10 +266,6 @@ func TestWhatIsRefused(t *testing.T) {
 	require.Error(t, err)
 
 	for name, cfg := range map[string]certificate.ACME{
-		"not pem":         {AccountKey: "nope"},
-		"unknown type":    {AccountKey: string(pem.EncodeToMemory(&pem.Block{Type: "DSA PRIVATE KEY", Bytes: []byte{1}}))},
-		"ed25519":         {AccountKey: pkcs8(t, ed25519Key(t))},
-		"bad pkcs8":       {AccountKey: string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: []byte{1}}))},
 		"half an eab":     {EAB: certificate.EAB{KeyID: "kid"}},
 		"eab not base64":  {EAB: certificate.EAB{KeyID: "kid", HMAC: "*"}},
 		"root ca nothing": {RootCA: "nope"},
@@ -278,6 +274,15 @@ func TestWhatIsRefused(t *testing.T) {
 		_, err := New(cfg, t.TempDir())
 		require.Error(t, err, name)
 		require.Error(t, Check(cfg), name)
+	}
+	for name, key := range map[string]string{
+		"not pem":      "nope",
+		"unknown type": string(pem.EncodeToMemory(&pem.Block{Type: "DSA PRIVATE KEY", Bytes: []byte{1}})),
+		"ed25519":      pkcs8(t, ed25519Key(t)),
+		"bad pkcs8":    string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: []byte{1}})),
+	} {
+		_, err := ParseKey([]byte(key))
+		require.Error(t, err, name)
 	}
 
 	// A kept account key that no longer parses is an error, not a new account.
@@ -312,9 +317,8 @@ func TestEveryAccountKeyFormParses(t *testing.T) {
 		"sec1":  string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: ecDER})),
 		"pkcs8": pkcs8(t, ecKey),
 	} {
-		i, err := New(certificate.ACME{Enabled: true, AccountKey: key}, t.TempDir())
+		_, err := ParseKey([]byte(key))
 		require.NoError(t, err, name)
-		require.NotNil(t, i.client.Key, name)
 	}
 }
 

@@ -129,12 +129,8 @@ func NewClient(h host.Host, members func() []peer.ID, local func() *Service, v V
 	if err != nil {
 		return nil, err
 	}
-	account, err := acme.ParseKey([]byte(cfg.ACME.AccountKey))
-	if err != nil {
-		return nil, err
-	}
 	c := &Client{
-		host: h, account: account, members: members, local: local, vault: v, cfg: cfg,
+		host: h, members: members, local: local, vault: v, cfg: cfg,
 		timeout: 30 * time.Second,
 		wait:    CertWait,
 		poll:    250 * time.Millisecond,
@@ -344,7 +340,7 @@ func (c *Client) obtain(ctx context.Context, name string) (*tls.Certificate, err
 	}
 	var issuer *acme.Issuer
 	if ierr == nil {
-		issuer, ierr = c.acmeIssuer()
+		issuer, ierr = c.acmeIssuer(ctx)
 	}
 	if ierr == nil {
 		_, ierr = issuer.Issue(name)
@@ -382,15 +378,19 @@ func (c *Client) open(ctx context.Context, name string, k *kept) (*tls.Certifica
 }
 
 // acmeIssuer is this node's issuer, built on first use.
-func (c *Client) acmeIssuer() (*acme.Issuer, error) {
+func (c *Client) acmeIssuer(ctx context.Context) (*acme.Issuer, error) {
 	c.keyMu.Lock()
 	defer c.keyMu.Unlock()
 	if c.issuer != nil {
 		return c.issuer, nil
 	}
+	account, err := c.accountLocked(ctx)
+	if err != nil {
+		return nil, err
+	}
 	opts := []acme.Option{
 		acme.WithStore(keeper{c}),
-		acme.WithAccountKey(c.account),
+		acme.WithAccountKey(account),
 		acme.WithClock(c.now),
 		acme.WithLogger(c.logf),
 	}
@@ -408,9 +408,35 @@ func (c *Client) acmeIssuer() (*acme.Issuer, error) {
 	return issuer, nil
 }
 
+// accountLocked is the cloud's ACME account key, read from the vault once it
+// is there. c.keyMu is held.
+func (c *Client) accountLocked(ctx context.Context) (crypto.Signer, error) {
+	if c.account != nil {
+		return c.account, nil
+	}
+	blob, err := c.vault.Get(ctx, VaultProject, VaultEnvironment, AccountSecret)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrNoAccount, err)
+	}
+	key, err := acme.ParseKey(blob)
+	if err != nil {
+		return nil, err
+	}
+	c.account = key
+	return key, nil
+}
+
 // Challenge is the HTTP-01 answer for token, from the account key alone.
 func (c *Client) Challenge(token string) (string, bool) {
-	thumbprint, err := acme.Thumbprint(c.account)
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+	c.keyMu.Lock()
+	account, err := c.accountLocked(ctx)
+	c.keyMu.Unlock()
+	if err != nil {
+		return "", false
+	}
+	thumbprint, err := acme.Thumbprint(account)
 	if err != nil {
 		return "", false
 	}

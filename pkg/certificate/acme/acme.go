@@ -116,7 +116,7 @@ func WithLogger(logf func(string, ...any)) Option { return func(i *Issuer) { i.l
 // WithStore keeps issued certificates in s rather than in the directory.
 func WithStore(s Store) Option { return func(i *Issuer) { i.store = s } }
 
-// WithAccountKey signs as key, over the config's and the directory's.
+// WithAccountKey signs as key, over the directory's.
 func WithAccountKey(key crypto.Signer) Option { return func(i *Issuer) { i.client.Key = key } }
 
 // WithDNS proves every name in zone by DNS-01, published through p.
@@ -161,9 +161,9 @@ func New(cfg certificate.ACME, dir string, opts ...Option) (*Issuer, error) {
 	}
 
 	// THE DIRECTORY IS NEEDED ONLY FOR WHAT NOTHING ELSE WAS GIVEN: the
-	// certificates when no store was, and the account key when neither the
-	// config nor an option holds one.
-	needDir := i.store == nil || (i.client.Key == nil && cfg.AccountKey == "")
+	// certificates when no store was, and the account key when no option
+	// holds one.
+	needDir := i.store == nil || i.client.Key == nil
 	if needDir {
 		if dir == "" {
 			return nil, ErrNoDir
@@ -173,7 +173,7 @@ func New(cfg certificate.ACME, dir string, opts ...Option) (*Issuer, error) {
 		}
 	}
 	if i.client.Key == nil {
-		key, err := accountKey(cfg.AccountKey, filepath.Join(dir, "account.key"))
+		key, err := accountKey(filepath.Join(dir, "account.key"))
 		if err != nil {
 			return nil, err
 		}
@@ -252,11 +252,6 @@ func Check(cfg certificate.ACME) error {
 	if _, err := accountOf(cfg); err != nil {
 		return err
 	}
-	if cfg.AccountKey != "" {
-		if _, err := parseKey([]byte(cfg.AccountKey)); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
@@ -299,10 +294,7 @@ func transport(cfg certificate.ACME) (*http.Client, error) {
 
 // accountKey is the configured key, or the one kept at path, or a new one
 // kept there.
-func accountKey(configured, path string) (crypto.Signer, error) {
-	if configured != "" {
-		return parseKey([]byte(configured))
-	}
+func accountKey(path string) (crypto.Signer, error) {
 	if data, err := os.ReadFile(path); err == nil {
 		return parseKey(data)
 	}

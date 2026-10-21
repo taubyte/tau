@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -21,6 +23,7 @@ import (
 	"github.com/letsencrypt/pebble/v2/va"
 	"github.com/letsencrypt/pebble/v2/wfe"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	"github.com/taubyte/tau/node"
 	"github.com/taubyte/tau/pkg/certificate"
@@ -133,13 +136,12 @@ func issuing(t *testing.T, ca *pebble, cloud, root string, cfg cm.CertificateCon
 	minted, err := identity("")
 	require.NoError(t, err)
 	cfg.ACME = certificate.ACME{
-		Enabled:    true,
-		Directory:  ca.server.URL + "/dir",
-		Email:      "ops@example.io",
-		RootCA:     ca.directoryCA(),
-		AccountKey: cloudAccount(t),
+		Enabled:   true,
+		Directory: ca.server.URL + "/dir",
+		Email:     "ops@example.io",
+		RootCA:    ca.directoryCA(),
 	}
-	return admit(t, File{
+	return seeded(t, admit(t, File{
 		Node: node.Config{
 			Services:  []string{node.Register, node.Discovery, node.Gateway, node.DNS, node.Secrets, node.CM},
 			DNSListen: "127.0.0.1:0",
@@ -151,7 +153,17 @@ func issuing(t *testing.T, ca *pebble, cloud, root string, cfg cm.CertificateCon
 		Listen:     []string{"/ip4/127.0.0.1/tcp/0"},
 		HTTP:       "127.0.0.1:0",
 		HTTPS:      "127.0.0.1:0",
-	})
+	}))
+}
+
+// seeded hands f the cloud's ACME account key through a seed file.
+func seeded(t *testing.T, f File) File {
+	t.Helper()
+	f.Seed = filepath.Join(t.TempDir(), "seed.yaml")
+	data, err := yaml.Marshal([]Secret{{Project: cm.VaultProject, Environment: cm.VaultEnvironment, Name: cm.AccountSecret, Value: cloudAccount(t)}})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(f.Seed, data, 0o600))
+	return f
 }
 
 // cloudAccount is the one ACME account key every node of the test cloud is

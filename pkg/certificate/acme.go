@@ -20,14 +20,6 @@ type ACME struct {
 	// Email is the account's contact, optional.
 	Email string `yaml:"email"`
 
-	// AccountKey is the ACME account's private key, PEM (PKCS#1, PKCS#8 or
-	// SEC 1). services/cm refuses to issue without one.
-	//
-	// EVERY NODE OF A CLOUD HOLDS THE SAME ONE. The HTTP-01 answer is derived
-	// from the account key alone, so any node a CA reaches answers any node's
-	// challenge.
-	AccountKey string `yaml:"accountkey"`
-
 	// RootCA is a PEM bundle trusted for the directory's TLS, beside the
 	// system's. For a private CA.
 	RootCA string `yaml:"rootca"`
