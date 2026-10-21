@@ -226,6 +226,13 @@ func newFrontend(t *testing.T) *frontend {
 		}
 		json.NewEncoder(w).Encode(map[string]string{"fqdn": f.fqdn})
 	}))
+	mux.HandleFunc("POST /domain/{fqdn}/for/{projectId}", authed(func(w http.ResponseWriter, r *http.Request) {
+		if r.PathValue("projectId") != "proj-1" {
+			denied(w)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"entry": "proj-1xx." + r.PathValue("fqdn"), "type": "txt", "token": "signed"})
+	}))
 	mux.HandleFunc("GET /projects/{projectId}/grants", authed(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()

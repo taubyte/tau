@@ -286,3 +286,19 @@ func (c *Client) GrantRole(ctx context.Context, projectID, user, role string) (s
 func (c *Client) Revoke(ctx context.Context, projectID, grantID string) error {
 	return c.json(ctx, http.MethodDelete, []string{"projects", projectID, "grants", grantID}, nil, nil)
 }
+
+// DomainClaim is the TXT record that proves a custom domain is a project's.
+type DomainClaim struct {
+	Entry string `json:"entry"`
+	Type  string `json:"type"`
+	Token string `json:"token"`
+}
+
+// ClaimDomain is the record to set for fqdn; the project's owner only.
+func (c *Client) ClaimDomain(ctx context.Context, projectID, fqdn string) (*DomainClaim, error) {
+	var out DomainClaim
+	if err := c.json(ctx, http.MethodPost, []string{"domain", fqdn, "for", projectID}, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}

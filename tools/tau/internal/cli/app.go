@@ -114,7 +114,7 @@ func New(env Env) *cobra.Command {
 		initCommand(env), newCommand(env), validateCommand(env), viewsCommand(env),
 		linkCommand(env), projectsCommand(env), deployCommand(env), statusCommand(env),
 		jobsCommand(env), jobCommand(env), logsCommand(env), cancelCommand(env), retryCommand(env),
-		secretsCommand(env), grantsCommand(env),
+		secretsCommand(env), grantsCommand(env), domainCommand(env),
 	)
 	return root
 }
