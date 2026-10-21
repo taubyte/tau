@@ -20,6 +20,8 @@ import (
 // a generated name's labels do and would otherwise be routed as one. A
 // reader that cannot answer is SERVFAIL, for the package's first
 // refusal: a CA reading "no record" fails the order, "try again" does not.
+// So is a reader holding no value: a CA asks only while an order proves the
+// name, and its value not being here yet is not its absence.
 
 // Challenges reads the DNS-01 values being presented for a name.
 type Challenges interface {
@@ -62,7 +64,7 @@ func (s *Service) answerChallenge(ctx context.Context, reply *dns.Msg, name stri
 		return true
 	}
 	values, err := c.reader.Challenges(ctx, fqdn)
-	if err != nil {
+	if err != nil || len(values) == 0 {
 		reply.Rcode = dns.RcodeServerFailure
 		return true
 	}

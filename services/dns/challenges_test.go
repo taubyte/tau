@@ -34,9 +34,10 @@ func TestADNS01ChallengeIsAnsweredFromTheCertificateNodes(t *testing.T) {
 	reply = s.Answer(query("_acme-challenge.tau.example.io", dns.TypeTXT))
 	require.Equal(t, []string{"apex"}, reply.Answer[0].(*dns.TXT).Txt)
 
-	// Nothing presented is NOERROR and empty; another type holds nothing.
+	// Nothing presented is SERVFAIL, not "no record": the value may not have
+	// reached this node yet. Another type holds nothing.
 	reply = s.Answer(query("_acme-challenge.other.tau.example.io", dns.TypeTXT))
-	require.Equal(t, dns.RcodeSuccess, reply.Rcode)
+	require.Equal(t, dns.RcodeServerFailure, reply.Rcode)
 	require.Empty(t, reply.Answer)
 	reply = s.Answer(query("_acme-challenge.build-frontend.tau.example.io", dns.TypeA))
 	require.Equal(t, dns.RcodeSuccess, reply.Rcode)

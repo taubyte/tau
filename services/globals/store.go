@@ -217,23 +217,12 @@ func (s *Service) release(name string) {
 	}
 }
 
-// Challenges are the live DNS-01 values for fqdn.
-func (s *Service) Challenges(ctx context.Context, fqdn string) ([]string, error) {
+// Challenges are the live answers of kind for name.
+func (s *Service) Challenges(ctx context.Context, kind, name string) ([]string, error) {
 	if s.challenges == nil {
-		return nil, nil
+		return nil, ErrNoChallenges
 	}
-	return s.challenges.Challenges(ctx, fqdn)
-}
-
-// KeyAuthorization is the HTTP-01 answer for a token this node's order is
-// proving.
-func (s *Service) KeyAuthorization(ctx context.Context, token string) (string, bool, error) {
-	issuer, err := s.acmeIssuer(ctx)
-	if err != nil {
-		return "", false, err
-	}
-	answer, ok := issuer.Pending(token)
-	return answer, ok, nil
+	return s.challenges.Values(ctx, kind, name)
 }
 
 // Thumbprint is the account key's thumbprint.

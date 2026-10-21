@@ -71,6 +71,7 @@ import (
 	"github.com/taubyte/tau/services/discovery"
 	dnsService "github.com/taubyte/tau/services/dns"
 	gateway "github.com/taubyte/tau/services/gateway"
+	"github.com/taubyte/tau/services/globals"
 	globalsService "github.com/taubyte/tau/services/globals"
 	primitivesService "github.com/taubyte/tau/services/primitives"
 	v2proxy "github.com/taubyte/tau/services/proxy"
@@ -96,9 +97,10 @@ type Node struct {
 	// globals holds the cloud's certificates when this node runs it, certs is
 	// the client every public listener here takes them from, and challengeDB
 	// is where DNS-01 values are held. All nil in a cloud that issues none.
-	globals     *globalsService.Service
-	certs       *globalsService.Client
-	challengeDB kvdb.KVDB
+	globals          *globalsService.Service
+	certs            *globalsService.Client
+	challengeDB      kvdb.KVDB
+	challengeAnswers *globals.Challenges
 
 	// database is the service that owns this project's engines, when this node
 	// runs it. A node that does not runs no database of its own — it reaches
@@ -792,7 +794,11 @@ func (n *Node) openGateway() error {
 		return fmt.Errorf("node: gateway: %w", err)
 	}
 	if certs != nil {
-		gatewayOptions = append(gatewayOptions, gateway.WithIssuer(certs))
+		issuer, err := n.gatewayIssuer(certs)
+		if err != nil {
+			return fmt.Errorf("node: gateway: %w", err)
+		}
+		gatewayOptions = append(gatewayOptions, gateway.WithIssuer(issuer))
 	}
 
 	svc, err := gateway.New(n.cfg.Gateway, gatewayOptions...)
@@ -899,6 +905,9 @@ func (n *Node) Start(ctx context.Context) error {
 	// different failures, and a node that took :53 before it could answer
 	// would be answering with an empty view.
 	if err := n.listenDNS(); err != nil {
+		return err
+	}
+	if err := n.serveResponder(ctx); err != nil {
 		return err
 	}
 

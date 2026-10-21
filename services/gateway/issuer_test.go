@@ -67,7 +67,7 @@ func TestTheCAsChallengeIsAnsweredBeforeAnyName(t *testing.T) {
 	require.Equal(t, "tok.thumb", w.Body.String())
 
 	w = h.do(t, http.MethodGet, "http://nobody.example.com/.well-known/acme-challenge/bad", "")
-	require.Equal(t, http.StatusNotFound, w.Code)
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 
 	// Without an issuer the path is an ordinary one.
 	plain := newHarness(t, Config{CloudFqdn: "tau.example.io"})

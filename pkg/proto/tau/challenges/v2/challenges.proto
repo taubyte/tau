@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+// What a node answering ACME challenges for the cloud says about its own copy
+// of the answers: every dns node for dns-01 and every gateway for http-01
+// serves it, and the globals node placing an order asks them all before it
+// has the CA look. Its own package because a protocol id is one per package
+// and these nodes are not globals nodes.
+package tau.challenges.v2;
+
+service ResponderService {
+  // Holds is whether this node's copy holds value among the answers of kind
+  // for name.
+  rpc Holds(HoldsRequest) returns (Held);
+}
+
+message HoldsRequest {
+  // kind is "dns-01" or "http-01".
+  string kind = 1;
+  // name is the fqdn for dns-01, the token for http-01.
+  string name = 2;
+  string value = 3;
+}
+
+message Held {
+  bool held = 1;
+}

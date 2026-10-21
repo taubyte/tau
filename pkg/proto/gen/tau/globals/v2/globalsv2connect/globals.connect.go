@@ -8,8 +8,9 @@
 // A globals node issues from an ACME CA and keeps what it issued: the
 // chain in its own database, the private key in the secrets service. A node
 // serving TLS asks one for a name's chain and the secret holding its key, and
-// opens the key from the vault itself. A dns node asks for the DNS-01 answers
-// of a name, and a gateway for the HTTP-01 answer to a token.
+// opens the key from the vault itself. DNS-01 and HTTP-01 answers live in a
+// replicated store every globals, dns and gateway node holds a copy of; a
+// node without one asks the globals nodes for them.
 package globalsv2connect
 
 import (
@@ -44,9 +45,6 @@ const (
 	// CertificateServiceCertificateProcedure is the fully-qualified name of the CertificateService's
 	// Certificate RPC.
 	CertificateServiceCertificateProcedure = "/tau.globals.v2.CertificateService/Certificate"
-	// CertificateServiceKeyAuthorizationProcedure is the fully-qualified name of the
-	// CertificateService's KeyAuthorization RPC.
-	CertificateServiceKeyAuthorizationProcedure = "/tau.globals.v2.CertificateService/KeyAuthorization"
 	// CertificateServiceChallengesProcedure is the fully-qualified name of the CertificateService's
 	// Challenges RPC.
 	CertificateServiceChallengesProcedure = "/tau.globals.v2.CertificateService/Challenges"
@@ -57,13 +55,9 @@ type CertificateServiceClient interface {
 	// Certificate is the newest certificate kept for a name. With issue set, a
 	// name nothing is kept for is issued now, by the node answering.
 	Certificate(context.Context, *connect.Request[v2.CertificateRequest]) (*connect.Response[v2.Issued], error)
-	// KeyAuthorization is the HTTP-01 answer for a token the answering node's
-	// order is proving right now. It is asked of the node that placed the order
-	// and not derived from an account thumbprint, because two nodes that both
-	// minted an account before either saw the other's hold different ones.
-	KeyAuthorization(context.Context, *connect.Request[v2.KeyAuthorizationRequest]) (*connect.Response[v2.KeyAuthorizationValue], error)
-	// Challenges are the TXT values a dns node answers for
-	// `_acme-challenge.<fqdn>` while an order for fqdn is being proved.
+	// Challenges are the answers being presented for a name while an order
+	// proves it: the TXT values of `_acme-challenge.<name>` for dns-01, the key
+	// authorization of a token for http-01.
 	Challenges(context.Context, *connect.Request[v2.ChallengesRequest]) (*connect.Response[v2.ChallengeValues], error)
 }
 
@@ -84,12 +78,6 @@ func NewCertificateServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(certificateServiceMethods.ByName("Certificate")),
 			connect.WithClientOptions(opts...),
 		),
-		keyAuthorization: connect.NewClient[v2.KeyAuthorizationRequest, v2.KeyAuthorizationValue](
-			httpClient,
-			baseURL+CertificateServiceKeyAuthorizationProcedure,
-			connect.WithSchema(certificateServiceMethods.ByName("KeyAuthorization")),
-			connect.WithClientOptions(opts...),
-		),
 		challenges: connect.NewClient[v2.ChallengesRequest, v2.ChallengeValues](
 			httpClient,
 			baseURL+CertificateServiceChallengesProcedure,
@@ -101,19 +89,13 @@ func NewCertificateServiceClient(httpClient connect.HTTPClient, baseURL string, 
 
 // certificateServiceClient implements CertificateServiceClient.
 type certificateServiceClient struct {
-	certificate      *connect.Client[v2.CertificateRequest, v2.Issued]
-	keyAuthorization *connect.Client[v2.KeyAuthorizationRequest, v2.KeyAuthorizationValue]
-	challenges       *connect.Client[v2.ChallengesRequest, v2.ChallengeValues]
+	certificate *connect.Client[v2.CertificateRequest, v2.Issued]
+	challenges  *connect.Client[v2.ChallengesRequest, v2.ChallengeValues]
 }
 
 // Certificate calls tau.globals.v2.CertificateService.Certificate.
 func (c *certificateServiceClient) Certificate(ctx context.Context, req *connect.Request[v2.CertificateRequest]) (*connect.Response[v2.Issued], error) {
 	return c.certificate.CallUnary(ctx, req)
-}
-
-// KeyAuthorization calls tau.globals.v2.CertificateService.KeyAuthorization.
-func (c *certificateServiceClient) KeyAuthorization(ctx context.Context, req *connect.Request[v2.KeyAuthorizationRequest]) (*connect.Response[v2.KeyAuthorizationValue], error) {
-	return c.keyAuthorization.CallUnary(ctx, req)
 }
 
 // Challenges calls tau.globals.v2.CertificateService.Challenges.
@@ -126,13 +108,9 @@ type CertificateServiceHandler interface {
 	// Certificate is the newest certificate kept for a name. With issue set, a
 	// name nothing is kept for is issued now, by the node answering.
 	Certificate(context.Context, *connect.Request[v2.CertificateRequest]) (*connect.Response[v2.Issued], error)
-	// KeyAuthorization is the HTTP-01 answer for a token the answering node's
-	// order is proving right now. It is asked of the node that placed the order
-	// and not derived from an account thumbprint, because two nodes that both
-	// minted an account before either saw the other's hold different ones.
-	KeyAuthorization(context.Context, *connect.Request[v2.KeyAuthorizationRequest]) (*connect.Response[v2.KeyAuthorizationValue], error)
-	// Challenges are the TXT values a dns node answers for
-	// `_acme-challenge.<fqdn>` while an order for fqdn is being proved.
+	// Challenges are the answers being presented for a name while an order
+	// proves it: the TXT values of `_acme-challenge.<name>` for dns-01, the key
+	// authorization of a token for http-01.
 	Challenges(context.Context, *connect.Request[v2.ChallengesRequest]) (*connect.Response[v2.ChallengeValues], error)
 }
 
@@ -149,12 +127,6 @@ func NewCertificateServiceHandler(svc CertificateServiceHandler, opts ...connect
 		connect.WithSchema(certificateServiceMethods.ByName("Certificate")),
 		connect.WithHandlerOptions(opts...),
 	)
-	certificateServiceKeyAuthorizationHandler := connect.NewUnaryHandler(
-		CertificateServiceKeyAuthorizationProcedure,
-		svc.KeyAuthorization,
-		connect.WithSchema(certificateServiceMethods.ByName("KeyAuthorization")),
-		connect.WithHandlerOptions(opts...),
-	)
 	certificateServiceChallengesHandler := connect.NewUnaryHandler(
 		CertificateServiceChallengesProcedure,
 		svc.Challenges,
@@ -165,8 +137,6 @@ func NewCertificateServiceHandler(svc CertificateServiceHandler, opts ...connect
 		switch r.URL.Path {
 		case CertificateServiceCertificateProcedure:
 			certificateServiceCertificateHandler.ServeHTTP(w, r)
-		case CertificateServiceKeyAuthorizationProcedure:
-			certificateServiceKeyAuthorizationHandler.ServeHTTP(w, r)
 		case CertificateServiceChallengesProcedure:
 			certificateServiceChallengesHandler.ServeHTTP(w, r)
 		default:
@@ -180,10 +150,6 @@ type UnimplementedCertificateServiceHandler struct{}
 
 func (UnimplementedCertificateServiceHandler) Certificate(context.Context, *connect.Request[v2.CertificateRequest]) (*connect.Response[v2.Issued], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.globals.v2.CertificateService.Certificate is not implemented"))
-}
-
-func (UnimplementedCertificateServiceHandler) KeyAuthorization(context.Context, *connect.Request[v2.KeyAuthorizationRequest]) (*connect.Response[v2.KeyAuthorizationValue], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.globals.v2.CertificateService.KeyAuthorization is not implemented"))
 }
 
 func (UnimplementedCertificateServiceHandler) Challenges(context.Context, *connect.Request[v2.ChallengesRequest]) (*connect.Response[v2.ChallengeValues], error) {

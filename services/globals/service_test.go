@@ -98,6 +98,7 @@ type fleet struct {
 	clients []*Client
 	now     time.Time
 	nowMu   sync.Mutex
+	nodesMu sync.Mutex
 }
 
 func (f *fleet) clock() time.Time {
@@ -113,6 +114,8 @@ func (f *fleet) advance(d time.Duration) {
 }
 
 func (f *fleet) members() []peer.ID {
+	f.nodesMu.Lock()
+	defer f.nodesMu.Unlock()
 	var out []peer.ID
 	for _, n := range f.nodes {
 		out = append(out, n.host.ID())
@@ -198,7 +201,9 @@ func (f *fleet) add(t *testing.T, opts ...Option) *Service {
 	require.NoError(t, err)
 	require.NoError(t, s.Start(t.Context()))
 	t.Cleanup(func() { s.Close() })
+	f.nodesMu.Lock()
 	f.nodes = append(f.nodes, s)
+	f.nodesMu.Unlock()
 	return s
 }
 
@@ -472,11 +477,11 @@ func TestKeptRecordsThatCannotBeReadAreSkipped(t *testing.T) {
 
 	// AN EXPIRED CHALLENGE is not answered.
 	require.NoError(t, s.challenges.Present(t.Context(), name, "v"))
-	values, err := s.Challenges(t.Context(), name)
+	values, err := s.Challenges(t.Context(), acme.KindDNS, name)
 	require.NoError(t, err)
 	require.Equal(t, []string{"v"}, values)
 	f.advance(ChallengeTTL + time.Second)
-	values, err = s.Challenges(t.Context(), name)
+	values, err = s.Challenges(t.Context(), acme.KindDNS, name)
 	require.NoError(t, err)
 	require.Empty(t, values)
 }
@@ -534,8 +539,6 @@ func TestTheWireSaysWhatWentWrong(t *testing.T) {
 	f.vault.mu.Lock()
 	f.vault.fail = errors.New("down")
 	f.vault.mu.Unlock()
-	_, err = h.KeyAuthorization(t.Context(), connect.NewRequest(&globalsv2.KeyAuthorizationRequest{Token: "tok"}))
-	require.Equal(t, "unavailable", codeOf(err))
 	_, err = h.Certificate(t.Context(), connectRequest("down."+zone, true))
 	require.Equal(t, "unavailable", codeOf(err))
 

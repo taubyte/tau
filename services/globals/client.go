@@ -17,6 +17,7 @@ import (
 
 	"github.com/taubyte/tau/p2p/rpc"
 	pkgcertificate "github.com/taubyte/tau/pkg/certificate"
+	"github.com/taubyte/tau/pkg/certificate/acme"
 	globalsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/globals/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/globals/v2/globalsv2connect"
 )
@@ -254,44 +255,30 @@ func (c *Client) TLSConfig() *tls.Config {
 	return &tls.Config{GetCertificate: c.GetCertificate, MinVersion: tls.VersionTLS12}
 }
 
-// Challenge is the HTTP-01 answer for token, from whichever certificate node
-// placed the order proving it: every one is asked, as for Challenges.
+// Challenge is the HTTP-01 answer for token, from the certificate nodes. A
+// node holding its own copy of the challenge store answers from that
+// instead (Challenges.Challenge).
 func (c *Client) Challenge(token string) (string, bool) {
-	targets := c.targets("")
-	if len(targets) == 0 {
-		return "", false
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
-	answers := make(chan string, len(targets))
-	for _, p := range targets {
-		go func() {
-			svc, err := c.at(p)
-			if err != nil {
-				answers <- ""
-				return
-			}
-			res, err := svc.KeyAuthorization(ctx, connect.NewRequest(&globalsv2.KeyAuthorizationRequest{Token: token}))
-			if err != nil || !res.Msg.GetFound() {
-				answers <- ""
-				return
-			}
-			answers <- res.Msg.GetValue()
-		}()
+	values, err := c.values(ctx, acme.KindHTTP, token)
+	if err != nil || len(values) == 0 {
+		return "", false
 	}
-	for range targets {
-		if a := <-answers; a != "" {
-			return a, true
-		}
-	}
-	return "", false
+	return values[0], true
 }
 
-// Challenges are the DNS-01 values for fqdn, from every certificate node: the
-// one proving it wrote them, and asking all of them is what makes that one
-// always among those asked.
+// Challenges are the DNS-01 values for fqdn, from the certificate nodes.
 func (c *Client) Challenges(ctx context.Context, fqdn string) ([]string, error) {
-	targets := c.targets(fqdn)
+	return c.values(ctx, acme.KindDNS, fqdn)
+}
+
+// values asks every certificate node: the one proving the name wrote them,
+// and asking all of them is what makes that one always among those asked. A
+// node that did not answer leaves the set uncertain, so nothing found with
+// one silent is an error and not an empty answer.
+func (c *Client) values(ctx context.Context, kind, name string) ([]string, error) {
+	targets := c.targets(name)
 	if len(targets) == 0 {
 		return nil, ErrNoMembers
 	}
@@ -307,7 +294,7 @@ func (c *Client) Challenges(ctx context.Context, fqdn string) ([]string, error) 
 				answers <- answer{err: err}
 				return
 			}
-			res, err := svc.Challenges(ctx, connect.NewRequest(&globalsv2.ChallengesRequest{Fqdn: fqdn}))
+			res, err := svc.Challenges(ctx, connect.NewRequest(&globalsv2.ChallengesRequest{Kind: kind, Name: name}))
 			if err != nil {
 				answers <- answer{err: err}
 				return
@@ -329,7 +316,7 @@ func (c *Client) Challenges(ctx context.Context, fqdn string) ([]string, error) 
 			}
 		}
 	}
-	if len(errs) == len(targets) {
+	if len(out) == 0 && len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
 	return out, nil

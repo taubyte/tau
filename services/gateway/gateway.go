@@ -168,7 +168,9 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if token, ok := strings.CutPrefix(r.URL.Path, acmeChallengePrefix); ok && s.issuer != nil {
 		answer, ok := s.issuer.Challenge(token)
 		if !ok {
-			http.NotFound(w, r)
+			// NOT A 404: the answer may not have reached this node yet, and a
+			// CA reading "not found" fails the order.
+			http.Error(w, "no answer for that token here yet", http.StatusServiceUnavailable)
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain")

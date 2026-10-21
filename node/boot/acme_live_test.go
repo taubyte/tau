@@ -131,6 +131,11 @@ func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 			return len(resolve(resolverAddr, name, dns.TypeA)) > 0
 		})
 		require.True(t, f.reached(resolverAddr, name, dns.TypeA), "the resolver's answer came from tau's dns, not from a cache")
+		t.Cleanup(func() {
+			valid, invalid := ca.authorizations(t)
+			require.NotZero(t, valid, "pebble's log names what it decided")
+			require.Zero(t, invalid, "no authorization was ever failed: the CA looked only once every responder held the answer")
+		})
 		return f, resolverAddr, ca.roots(t)
 	}
 
@@ -367,6 +372,7 @@ func resolve(server, name string, qtype uint16) []dns.RR {
 // ─────────────────────────────── pebble ───────────────────────────────
 
 type livePebble struct {
+	id                    core.ContainerID
 	directory, management string
 	serverCA              string
 	pool                  *x509.CertPool
@@ -392,14 +398,14 @@ func startLivePebble(t *testing.T, httpPort int, resolverAddr string) *livePebbl
 	}})
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "pebble.json"), conf, 0o644))
-	startLive(t, &core.ContainerConfig{
+	id := startLive(t, &core.ContainerConfig{
 		Image:   pebbleImage,
 		Command: []string{"-config", "/conf/pebble.json", "-dnsserver", resolverAddr + ":53"},
 		Env:     []string{"PEBBLE_VA_NOSLEEP=1", "PEBBLE_WFE_NONCEREJECT=0", "PEBBLE_AUTHZREUSE=0"},
 		Volumes: []core.VolumeMount{{Source: dir, Destination: "/conf", ReadOnly: true}},
 		Network: &core.NetworkConfig{Mode: "host"},
 	})
-	p := &livePebble{directory: "https://" + listen + "/dir", management: "https://" + management, serverCA: serverCA}
+	p := &livePebble{id: id, directory: "https://" + listen + "/dir", management: "https://" + management, serverCA: serverCA}
 	pool := x509.NewCertPool()
 	require.True(t, pool.AppendCertsFromPEM([]byte(serverCA)))
 	p.pool = pool
@@ -421,6 +427,29 @@ func (p *livePebble) get(url string) ([]byte, error) {
 		return nil, fmt.Errorf("%s: %s", url, res.Status)
 	}
 	return io.ReadAll(res.Body)
+}
+
+// authorizations counts what pebble decided, from its own log: every
+// authorization it set valid and every one it set invalid.
+func (p *livePebble) authorizations(t *testing.T) (valid, invalid int) {
+	t.Helper()
+	backend, err := docker.New(core.DockerConfig{})
+	require.NoError(t, err)
+	rc, err := backend.Logs(context.Background(), p.id)
+	require.NoError(t, err)
+	defer rc.Close()
+	var out bytes.Buffer
+	stdcopy.StdCopy(&out, &out, rc)
+	for _, line := range strings.Split(out.String(), "\n") {
+		switch {
+		case strings.Contains(line, " set VALID "):
+			valid++
+		case strings.Contains(line, " set INVALID "):
+			invalid++
+			t.Logf("pebble: %s", line)
+		}
+	}
+	return valid, invalid
 }
 
 // roots is pebble's issuing root, as its management endpoint hands it out.

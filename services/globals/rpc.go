@@ -41,16 +41,8 @@ func (h handler) Certificate(ctx context.Context, req *connect.Request[globalsv2
 	return connect.NewResponse(k.record), nil
 }
 
-func (h handler) KeyAuthorization(ctx context.Context, req *connect.Request[globalsv2.KeyAuthorizationRequest]) (*connect.Response[globalsv2.KeyAuthorizationValue], error) {
-	value, found, err := h.s.KeyAuthorization(ctx, req.Msg.GetToken())
-	if err != nil {
-		return nil, connect.NewError(connect.CodeUnavailable, err)
-	}
-	return connect.NewResponse(&globalsv2.KeyAuthorizationValue{Found: found, Value: value}), nil
-}
-
 func (h handler) Challenges(ctx context.Context, req *connect.Request[globalsv2.ChallengesRequest]) (*connect.Response[globalsv2.ChallengeValues], error) {
-	values, err := h.s.Challenges(ctx, req.Msg.GetFqdn())
+	values, err := h.s.Challenges(ctx, req.Msg.GetKind(), req.Msg.GetName())
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnavailable, err)
 	}

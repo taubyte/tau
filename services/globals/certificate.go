@@ -149,8 +149,9 @@ type Option func(*Service)
 // WithVault is where keys are kept. Required to issue.
 func WithVault(v Vault) Option { return func(s *Service) { s.vault = v } }
 
-// WithChallenges is where DNS-01 values are held: a replicated store every
-// dns node also reads (ChallengesIn). Required for DNS-01.
+// WithChallenges is where DNS-01 and HTTP-01 answers are held: a replicated
+// store every dns node and gateway also reads (ChallengesIn). Required for
+// DNS-01.
 func WithChallenges(st pkgcache.Store) Option { return func(s *Service) { s.chStore = st } }
 
 // WithPeers is the nodes reporting this service, asked at call time.
@@ -175,6 +176,7 @@ type Service struct {
 	db         kvdb.KVDB
 	vault      Vault
 	peers      func() []peer.ID
+	responders func(kind string) []peer.ID
 	names      func() []string
 	now        func() time.Time
 	logf       func(string, ...any)
@@ -230,10 +232,10 @@ func New(h host.Host, db kvdb.KVDB, whole Config, opts ...Option) (*Service, err
 	for _, opt := range opts {
 		opt(s)
 	}
-	if cfg.Challenge == ChallengeDNS {
-		if s.chStore == nil {
-			return nil, ErrNoChallenges
-		}
+	if cfg.Challenge == ChallengeDNS && s.chStore == nil {
+		return nil, ErrNoChallenges
+	}
+	if s.chStore != nil {
 		c, err := ChallengesIn(context.Background(), s.chStore, s.now)
 		if err != nil {
 			return nil, err
@@ -341,6 +343,11 @@ func (s *Service) acmeIssuer(ctx context.Context) (*acme.Issuer, error) {
 	}
 	if s.cfg.Challenge == ChallengeDNS {
 		opts = append(opts, acme.WithDNS(s.cfg.Zone, s.challenges))
+	} else if s.challenges != nil {
+		opts = append(opts, acme.WithHTTP(s.challenges))
+	}
+	if s.responders != nil && s.challenges != nil {
+		opts = append(opts, acme.WithConfirm(s))
 	}
 	issuer, err := acme.New(s.cfg.ACME, "", opts...)
 	if err != nil {
