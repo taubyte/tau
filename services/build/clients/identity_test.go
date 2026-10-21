@@ -29,13 +29,6 @@ func (fakeIdentity) Admit(_ context.Context, req *connect.Request[authv2.Caller]
 	}), nil
 }
 
-func (fakeIdentity) Open(_ context.Context, req *connect.Request[authv2.OpenRequest]) (*connect.Response[authv2.Opened], error) {
-	if req.Msg.GetHost() != "github.com" {
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("not connected"))
-	}
-	return connect.NewResponse(&authv2.Opened{Forge: &authv2.ForgeToken{AccessToken: "gho_" + req.Msg.GetToken()}}), nil
-}
-
 func TestIdentitiesCarriesAuthsAnswer(t *testing.T) {
 	mn := newMocknet(t)
 	caller := newHost(t, mn)
@@ -63,12 +56,6 @@ func TestIdentitiesCarriesAuthsAnswer(t *testing.T) {
 
 	_, err = c.Admit(t.Context(), &authv2.Caller{Forge: "github.com", Subject: "broken"})
 	require.Error(t, err)
-
-	o, err := c.Open(t.Context(), "tau", "github.com")
-	require.NoError(t, err)
-	require.Equal(t, "gho_tau", o.GetForge().GetAccessToken())
-	_, err = c.Open(t.Context(), "tau", "gitlab.com")
-	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 
 	_, err = Identities(nil)
 	require.Error(t, err)

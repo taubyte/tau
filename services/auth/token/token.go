@@ -8,10 +8,8 @@
 //
 // A token says who and until when, never what: a role is read from the
 // store at verification, so a demotion does not wait for an expiry. It may
-// also carry the session it was minted from and an opaque sealed value (the
-// user's forge connections, encrypted by auth): a signature makes a token
-// tamper-proof, not secret, so anything private in it is sealed before it
-// gets here.
+// also carry the session it was minted from. A signature makes a token
+// tamper-proof, not secret, so nothing private goes in it.
 //
 // The checks follow RFC 8725: one algorithm, fixed by the verifier and never
 // read from the token; an explicit type in the header so another JWT a node
@@ -25,7 +23,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"slices"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -80,19 +77,12 @@ type Claims struct {
 	Expires time.Time
 	// Session is the session the token was minted from; empty for none.
 	Session string
-	// Sealed is carried as given and never read here.
-	Sealed string
-	// Generation orders two tokens of one session (authv2.Sealed.generation);
-	// it is in the clear so a client can compare without opening the seal.
-	Generation int64
 }
 
-// claims is the JWT body: the registered claims plus tau's two.
+// claims is the JWT body: the registered claims plus the session.
 type claims struct {
 	jwt.RegisteredClaims
 	Session string `json:"sid,omitempty"`
-	Sealed  string `json:"tau_conn,omitempty"`
-	Gen     int64  `json:"tau_gen,omitempty"`
 }
 
 // Sign mints a token.
@@ -108,7 +98,7 @@ func (s *Signer) Sign(c Claims) (string, error) {
 		IssuedAt:  jwt.NewNumericDate(c.Issued),
 		NotBefore: jwt.NewNumericDate(c.Issued),
 		ExpiresAt: jwt.NewNumericDate(c.Expires),
-	}, Session: c.Session, Sealed: c.Sealed, Gen: c.Generation})
+	}, Session: c.Session})
 	t.Header["kid"] = s.kid
 	t.Header["typ"] = Type
 	return t.SignedString(s.key)
@@ -137,16 +127,6 @@ func NewVerifier(issuer string, keys Keys, now func() time.Time) (*Verifier, err
 
 // Verify checks raw and returns its claims.
 func (v *Verifier) Verify(raw string) (Claims, error) {
-	return v.verify(raw, false)
-}
-
-// VerifyExpired checks raw as Verify does except for its expiry: it is for
-// reading what an expired token carried, never for admitting its holder.
-func (v *Verifier) VerifyExpired(raw string) (Claims, error) {
-	return v.verify(raw, true)
-}
-
-func (v *Verifier) verify(raw string, expired bool) (Claims, error) {
 	var rc claims
 	opts := []jwt.ParserOption{
 		jwt.WithValidMethods([]string{jwt.SigningMethodEdDSA.Alg()}),
@@ -156,10 +136,6 @@ func (v *Verifier) verify(raw string, expired bool) (Claims, error) {
 		jwt.WithIssuedAt(),
 		jwt.WithLeeway(Skew),
 		jwt.WithTimeFunc(v.now),
-	}
-	if expired {
-		// The expiry is the one claim skipped; the rest are checked below.
-		opts = append(opts, jwt.WithoutClaimsValidation())
 	}
 	parsed, err := jwt.ParseWithClaims(raw, &rc, func(t *jwt.Token) (any, error) {
 		if typ, _ := t.Header["typ"].(string); typ != Type {
@@ -181,12 +157,8 @@ func (v *Verifier) verify(raw string, expired bool) (Claims, error) {
 	if err != nil || !parsed.Valid {
 		return Claims{}, fmt.Errorf("%w: %w", ErrInvalid, err)
 	}
-	if expired && (rc.Issuer != v.issuer || !slices.Contains(rc.Audience, Audience) || rc.ExpiresAt == nil ||
-		rc.IssuedAt == nil || rc.IssuedAt.After(v.now().Add(Skew))) {
-		return Claims{}, fmt.Errorf("%w: issuer, audience or times", ErrInvalid)
-	}
 	if rc.Subject == "" || rc.ID == "" || rc.IssuedAt == nil {
 		return Claims{}, fmt.Errorf("%w: missing subject, id or issue time", ErrInvalid)
 	}
-	return Claims{Subject: rc.Subject, ID: rc.ID, Issued: rc.IssuedAt.Time, Expires: rc.ExpiresAt.Time, Session: rc.Session, Sealed: rc.Sealed, Generation: rc.Gen}, nil
+	return Claims{Subject: rc.Subject, ID: rc.ID, Issued: rc.IssuedAt.Time, Expires: rc.ExpiresAt.Time, Session: rc.Session}, nil
 }

@@ -3,7 +3,6 @@ package node
 import (
 	"context"
 	"errors"
-	"net/http"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -132,49 +131,4 @@ func TestAuthConfigTakesEachForgesApp(t *testing.T) {
 	require.Equal(t, []authService.ForgeApp{{Host: "github.com", ClientID: "c1"}}, c.Forges)
 	n.cfg.Auth.Issuer = "tau:set"
 	require.Equal(t, "tau:set", n.authConfig().Issuer)
-}
-
-type openOnly struct {
-	authv2connect.UnimplementedIdentityServiceHandler
-}
-
-func (openOnly) Open(_ context.Context, req *connect.Request[authv2.OpenRequest]) (*connect.Response[authv2.Opened], error) {
-	switch req.Msg.GetHost() {
-	case "github.com":
-		return connect.NewResponse(&authv2.Opened{Forge: &authv2.ForgeToken{AccessToken: "gho"}, RenewedToken: "renewed"}), nil
-	case "gitlab.com":
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("not connected to gitlab.com"))
-	case "bad.example":
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("sign in again"))
-	}
-	return nil, connect.NewError(connect.CodeInternal, errors.New("broken"))
-}
-
-func TestConnectionsAreOpenedByAuth(t *testing.T) {
-	mn := mocknet.New()
-	t.Cleanup(func() { mn.Close() })
-	server, caller := newHost(t, mn), newHost(t, mn)
-	mux := http.NewServeMux()
-	mux.Handle(authv2connect.NewIdentityServiceHandler(openOnly{}))
-	srv, err := rpc.Listen(t.Context(), server, authService.Protocol, mux)
-	require.NoError(t, err)
-	t.Cleanup(func() { srv.Close() })
-	pool, err := clients.NewPool(caller, discovery.Static(server.ID()), clients.AuthProtocol, 2)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	identities, err := clients.Identities(pool)
-	require.NoError(t, err)
-	c := connections{auth: identities}
-
-	got, err := c.Open(t.Context(), "tau", "github.com")
-	require.NoError(t, err)
-	require.Equal(t, frontend.Opened{Forge: "gho", Renewed: "renewed"}, got)
-	_, err = c.Open(t.Context(), "tau", "gitlab.com")
-	var nc *frontend.NotConnectedError
-	require.ErrorAs(t, err, &nc)
-	require.Contains(t, nc.Error(), "not connected to gitlab.com")
-	_, err = c.Open(t.Context(), "tau", "bad.example")
-	require.ErrorIs(t, err, frontend.ErrBadCredential)
-	_, err = c.Open(t.Context(), "tau", "other")
-	require.Error(t, err)
 }

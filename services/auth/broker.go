@@ -38,9 +38,9 @@ import (
 //     intercepted on the way back is useless to anyone else. Auth redeems the
 //     code with its client secret, asks the forge who the token is (or
 //     verifies the ID token), signs the user in, and hands back a tau session
-//     with the forge's own token sealed inside it (seal.go). It keeps no
-//     forge token. A caller already signed in is connecting instead: the
-//     forge is added to their session (connect.go).
+//     beside the forge's own token, which it keeps no copy of. A caller
+//     already signed in is connecting instead: no session, only the forge
+//     token (connect.go).
 //
 // The pending row is replicated, so Exchange may land on another node than
 // Authorize did. It is not a one-time primitive — the store has none — and
@@ -283,7 +283,7 @@ func (s *Service) exchange(ctx context.Context, as *principal, req *authv2.Excha
 		if err != nil {
 			return nil, err
 		}
-		sess, err := s.issue(ctx, u, nil)
+		sess, err := s.issue(ctx, u)
 		if err != nil {
 			return nil, err
 		}
@@ -306,18 +306,15 @@ func (s *Service) oauthContext(ctx context.Context) context.Context {
 	return context.WithValue(ctx, oauth2.HTTPClient, s.http)
 }
 
-// signInForge asks host who tok is, then signs them in with that forge
-// connected — or, when as is a signed-in caller, connects it to their session.
+// signInForge asks host who tok is, then signs them in — or, when as is a
+// signed-in caller, links the account to them. Either way the credential goes
+// back to the client.
 func (s *Service) signInForge(ctx context.Context, as *principal, host string, tok *oauth2.Token, invite string) (*authv2.SignedIn, error) {
 	who, err := s.whoOnForge(ctx, host, tok.AccessToken)
 	if err != nil {
 		return nil, err
 	}
-	ft := &authv2.ForgeToken{Host: host, AccessToken: tok.AccessToken, RefreshToken: tok.RefreshToken, TokenType: tok.Type(), Subject: who.subject, Login: who.login, ObtainedUnixNano: s.now().UnixNano()}
-	ft.ExpiresUnix = s.expiry(tok)
-	if sc, ok := tok.Extra("scope").(string); ok && sc != "" {
-		ft.Scopes = strings.FieldsFunc(sc, func(r rune) bool { return r == ' ' || r == ',' })
-	}
+	ft := &authv2.ForgeToken{Host: host, AccessToken: tok.AccessToken, RefreshToken: tok.RefreshToken, TokenType: tok.Type(), Subject: who.subject, Login: who.login, ExpiresUnix: s.expiry(tok), Scopes: scopes(tok)}
 	if as != nil {
 		return s.connectForge(ctx, *as, who, ft)
 	}
@@ -325,11 +322,17 @@ func (s *Service) signInForge(ctx context.Context, as *principal, host string, t
 	if err != nil {
 		return nil, err
 	}
-	sess, err := s.issue(ctx, u, []*authv2.ForgeToken{ft})
+	sess, err := s.issue(ctx, u)
 	if err != nil {
 		return nil, err
 	}
-	return &authv2.SignedIn{Session: sess}, nil
+	return s.forgeSignedIn(ctx, u.ID, sess, ft)
+}
+
+// scopes are what the forge said tok was granted.
+func scopes(tok *oauth2.Token) []string {
+	sc, _ := tok.Extra("scope").(string)
+	return strings.FieldsFunc(sc, func(r rune) bool { return r == ' ' || r == ',' })
 }
 
 // expiry is when tok expires on this service's clock, in unix seconds; zero

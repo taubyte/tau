@@ -88,7 +88,7 @@ func (h *sessionHandler) Login(ctx context.Context, req *connect.Request[authv2.
 		}
 		return nil, errLogin
 	}
-	sess, err := h.s.issue(ctx, u, nil)
+	sess, err := h.s.issue(ctx, u)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (h *sessionHandler) Refresh(ctx context.Context, req *connect.Request[authv
 	if err := h.ready(); err != nil {
 		return nil, err
 	}
-	sess, err := h.s.refresh(ctx, req.Msg.GetRefreshToken(), req.Msg.GetAccessTokens())
+	sess, err := h.s.refresh(ctx, req.Msg.GetRefreshToken())
 	if err != nil {
 		return nil, err
 	}
@@ -197,38 +197,18 @@ func (h *sessionHandler) Pasted(ctx context.Context, req *connect.Request[authv2
 	return connect.NewResponse(signed), nil
 }
 
-func (h *sessionHandler) Disconnect(ctx context.Context, req *connect.Request[authv2.DisconnectRequest]) (*connect.Response[authv2.SignedIn], error) {
+func (h *sessionHandler) Renew(ctx context.Context, req *connect.Request[authv2.RenewRequest]) (*connect.Response[authv2.ForgeToken], error) {
 	if err := h.ready(); err != nil {
 		return nil, err
 	}
-	p, err := h.s.caller(ctx, req.Header())
+	if _, err := h.s.caller(ctx, req.Header()); err != nil {
+		return nil, err
+	}
+	ft, err := h.s.renew(ctx, req.Msg.GetHost(), req.Msg.GetRefreshToken())
 	if err != nil {
 		return nil, err
 	}
-	signed, err := h.s.disconnect(ctx, p, req.Msg.GetHost())
-	if err != nil {
-		return nil, err
-	}
-	return connect.NewResponse(signed), nil
-}
-
-func (h *sessionHandler) Connections(ctx context.Context, req *connect.Request[authv2.ConnectionsRequest]) (*connect.Response[authv2.ConnectionsResponse], error) {
-	if err := h.ready(); err != nil {
-		return nil, err
-	}
-	p, err := h.s.caller(ctx, req.Header())
-	if err != nil {
-		return nil, err
-	}
-	conns, err := h.s.connections(ctx, p)
-	if err != nil {
-		return nil, err
-	}
-	described, err := h.s.describe(ctx, p.user.ID, conns)
-	if err != nil {
-		return nil, err
-	}
-	return connect.NewResponse(&authv2.ConnectionsResponse{Connections: described}), nil
+	return connect.NewResponse(ft), nil
 }
 
 func (h *sessionHandler) Whoami(ctx context.Context, req *connect.Request[authv2.WhoamiRequest]) (*connect.Response[authv2.User], error) {

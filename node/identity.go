@@ -8,8 +8,6 @@ import (
 	"net/url"
 	"slices"
 
-	"connectrpc.com/connect"
-
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/git/repokey"
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
@@ -75,26 +73,6 @@ func (a *admissions) Admit(ctx context.Context, cred frontend.Credentials, key r
 		return false, "", err
 	}
 	return got.GetAdmitted(), got.GetReason(), nil
-}
-
-// connections opens the forge credentials a caller's tau token carries,
-// through auth, which alone holds the keys that seal them.
-type connections struct{ auth *clients.IdentityClient }
-
-func (c connections) Open(ctx context.Context, tau, host string) (frontend.Opened, error) {
-	got, err := c.auth.Open(ctx, tau, host)
-	switch connect.CodeOf(err) {
-	case connect.CodeNotFound, connect.CodeFailedPrecondition:
-		var ce *connect.Error
-		errors.As(err, &ce)
-		return frontend.Opened{}, &frontend.NotConnectedError{Reason: ce.Message()}
-	case connect.CodeUnauthenticated:
-		return frontend.Opened{}, frontend.ErrBadCredential
-	}
-	if err != nil {
-		return frontend.Opened{}, err
-	}
-	return frontend.Opened{Forge: got.GetForge().GetAccessToken(), Renewed: got.GetRenewedToken()}, nil
 }
 
 // authConfig is auth's configuration as this node states it: the operator's,

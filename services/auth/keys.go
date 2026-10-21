@@ -15,16 +15,15 @@ import (
 )
 
 // keys.go is the key material auth holds in the secrets service: each node's
-// token-signing key, password pepper and sealing key (the data key a tau
-// token's forge connections are encrypted with), and the operator's OAuth
-// client secrets.
+// token-signing key and password pepper, and the operator's OAuth client
+// secrets.
 //
 // NO KEY HERE IS ONE TWO NODES WRITE. A shared signing key or pepper would be
 // a contended key — two nodes booting together would each generate one, and
 // last-write-wins would quietly drop the loser's, invalidating every token and
 // hash made with it. So each node generates its OWN, under a name carrying its
 // peer id and the time it was made, and says which one it used: a token names
-// its key by kid, a hash its pepper by name, a seal its sealing key by name. Any node verifies with any key,
+// its key by kid, a hash its pepper by name. Any node verifies with any key,
 // fetching one it has not seen yet, once, and keeping it.
 //
 // A node's public key is published in auth's store as well, so a verifier
@@ -50,7 +49,6 @@ const (
 const (
 	secretSigning = "signing-"
 	secretPepper  = "pepper-"
-	secretSeal    = "seal-"
 	secretOAuth   = "oauth-"
 	secretOIDC    = "oidc-"
 )
@@ -73,13 +71,11 @@ type keyring struct {
 	signer  *token.Signer
 	pepper  string // this node's pepper's name
 	peppers map[string][]byte
-	seal    string // this node's sealing key's name
-	seals   map[string][]byte
 	secrets map[string][]byte
 }
 
 func newKeyring(v Vault, st store, node string, now func() int64) *keyring {
-	return &keyring{vault: v, store: st, node: node, now: now, peppers: map[string][]byte{}, seals: map[string][]byte{}, secrets: map[string][]byte{}}
+	return &keyring{vault: v, store: st, node: node, now: now, peppers: map[string][]byte{}, secrets: map[string][]byte{}}
 }
 
 // own returns this node's newest secret named prefix+node+"-"+n, creating one
@@ -187,37 +183,6 @@ func (k *keyring) PepperNamed(ctx context.Context, name string) ([]byte, error) 
 		return nil, fmt.Errorf("auth: %q is not a pepper", name)
 	}
 	return k.cached(ctx, k.peppers, name)
-}
-
-// SealKey is this node's sealing key and its name, for a new seal: 32 random
-// bytes, an AES-256 key.
-func (k *keyring) SealKey(ctx context.Context) (string, []byte, error) {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	if k.seal != "" {
-		return k.seal, k.seals[k.seal], nil
-	}
-	name, v, err := k.own(ctx, secretSeal, func() ([]byte, error) {
-		b := make([]byte, 32)
-		_, err := rand.Read(b)
-		return b, err
-	})
-	if err != nil {
-		return "", nil, err
-	}
-	if len(v) != 32 {
-		return "", nil, fmt.Errorf("auth: %s is not a 32-byte key", name)
-	}
-	k.seal, k.seals[name] = name, v
-	return name, v, nil
-}
-
-// SealKeyNamed is the sealing key a seal names, from any node.
-func (k *keyring) SealKeyNamed(ctx context.Context, name string) ([]byte, error) {
-	if !strings.HasPrefix(name, secretSeal) {
-		return nil, fmt.Errorf("auth: %q is not a sealing key", name)
-	}
-	return k.cached(ctx, k.seals, name)
 }
 
 // Secret is an operator's secret by name, read once.

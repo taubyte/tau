@@ -324,14 +324,6 @@ func (f *fx) identity() *identityHandler {
 	return &identityHandler{f.s}
 }
 
-// open is the forge credential access carries for host.
-func (f *fx) open(access, host string) *authv2.Opened {
-	f.t.Helper()
-	o, err := f.identity().Open(f.t.Context(), connect.NewRequest(&authv2.OpenRequest{Token: access, Host: host}))
-	require.NoError(f.t, err)
-	return o.Msg
-}
-
 func req[T any](msg *T, bearer string) *connect.Request[T] {
 	r := connect.NewRequest(msg)
 	if bearer != "" {

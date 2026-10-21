@@ -378,9 +378,6 @@ func (n *Node) openBuildFrontend() error {
 		// WHO MAY USE THIS CLOUD IS AUTH'S TO SAY, from whatever identity
 		// its node was composed with — see identity.go.
 		frontend.WithAdmissions(&admissions{forges: registry, auth: identities}),
-		// THE TAU TOKEN IS THE ONE CREDENTIAL; the forge credential each
-		// route asks with is a connection sealed inside it, which auth opens.
-		frontend.WithConnections(connections{auth: identities}),
 		// SIGNING IN IS AUTH'S, carried here because auth has no ingress.
 		frontend.WithAuthAPI(authCalls),
 		frontend.WithProjects(projects),

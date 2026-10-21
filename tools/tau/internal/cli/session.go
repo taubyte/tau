@@ -25,12 +25,10 @@ import (
 	"github.com/taubyte/tau/tools/tau/internal/config"
 )
 
-// session.go is signing in to a cloud and connecting forges to the session.
+// session.go is signing in to a cloud and connecting forges to the user.
 //
-// THE PROFILE HOLDS ONE TOKEN: the tau token (and the refresh token that
-// renews it). The forges a developer connects are sealed inside it by the
-// cloud, so there is no forge token in the config file, and connecting or
-// disconnecting a forge is replacing the token with the one the cloud returns.
+// THE PROFILE HOLDS THE TAU TOKEN (and the refresh token that renews it).
+// Connecting a forge leaves it as it is.
 
 // profileClient is a client for profile name that renews its token and saves
 // the renewal, unless the token came from $TAU_TOKEN.
@@ -135,7 +133,7 @@ type signIn struct {
 }
 
 // browser signs in through provider with a loopback redirect (RFC 8252).
-func (s signIn) browser(provider string) (*authv2.Session, error) {
+func (s signIn) browser(provider string) (*authv2.SignedIn, error) {
 	ctx, cancel := context.WithTimeout(s.cmd.Context(), flagDuration(s.cmd, "timeout"))
 	defer cancel()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -198,11 +196,11 @@ func (s signIn) browser(provider string) (*authv2.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return in.Msg.GetSession(), nil
+	return in.Msg, nil
 }
 
 // device signs in with the device flow (RFC 8628).
-func (s signIn) device(provider string) (*authv2.Session, error) {
+func (s signIn) device(provider string) (*authv2.SignedIn, error) {
 	ctx, cancel := context.WithTimeout(s.cmd.Context(), flagDuration(s.cmd, "timeout"))
 	defer cancel()
 	start, err := s.sessions.DeviceStart(ctx, connect.NewRequest(&authv2.DeviceStartRequest{Provider: provider}))
@@ -220,7 +218,7 @@ func (s signIn) device(provider string) (*authv2.Session, error) {
 			return nil, err
 		}
 		if !poll.Msg.GetPending() {
-			return poll.Msg.GetSignedIn().GetSession(), nil
+			return poll.Msg.GetSignedIn(), nil
 		}
 		select {
 		case <-time.After(time.Duration(max(poll.Msg.GetIntervalSeconds(), 1)) * time.Second):
@@ -231,12 +229,12 @@ func (s signIn) device(provider string) (*authv2.Session, error) {
 }
 
 // pasted signs in with a forge token the developer already holds.
-func (s signIn) pasted(provider, token string) (*authv2.Session, error) {
+func (s signIn) pasted(provider, token string) (*authv2.SignedIn, error) {
 	in, err := s.sessions.Pasted(s.cmd.Context(), connect.NewRequest(&authv2.PastedRequest{Provider: provider, Token: token, Invite: s.invite}))
 	if err != nil {
 		return nil, err
 	}
-	return in.Msg.GetSession(), nil
+	return in.Msg, nil
 }
 
 // forgeToken is a pasted forge token: --forge-token, stdin with --paste, or
@@ -253,7 +251,7 @@ func forgeTokenFlag(cmd *cobra.Command, env Env, host string) (string, bool, err
 }
 
 // through runs the flow cmd's flags name for provider.
-func (s signIn) through(provider string, p *authv2.Provider) (*authv2.Session, error) {
+func (s signIn) through(provider string, p *authv2.Provider) (*authv2.SignedIn, error) {
 	tok, pasted, err := forgeTokenFlag(s.cmd, s.env, provider)
 	switch {
 	case err != nil:
@@ -292,30 +290,27 @@ func addFlowFlags(cmd *cobra.Command) {
 	cmd.Flags().Duration("timeout", 5*time.Minute, "how long to wait for a browser or device sign-in")
 }
 
-func signedInText(env Env, cloud string, sess *authv2.Session) string {
+func signedInText(env Env, cloud string, in *authv2.SignedIn) string {
 	t := theme(env)
 	var b strings.Builder
-	b.WriteString(t.Done(fmt.Sprintf("signed in to %s as %s", cloud, sess.GetUser().GetName())))
-	for _, c := range sess.GetConnections() {
-		fmt.Fprintf(&b, "  %s %s\n", t.Muted.Render("connected"), c.GetHost()+" ("+c.GetLogin()+")")
+	b.WriteString(t.Done(fmt.Sprintf("signed in to %s as %s", cloud, in.GetSession().GetUser().GetName())))
+	if c := in.GetConnection(); c != nil {
+		fmt.Fprintf(&b, "  %s %s\n", t.Muted.Render("signed in with"), c.GetHost()+" ("+c.GetLogin()+")")
 	}
 	return b.String()
 }
 
 type sessionJSON struct {
-	Profile     string               `json:"profile"`
-	Cloud       string               `json:"cloud"`
-	User        string               `json:"user"`
-	Role        string               `json:"role,omitempty"`
-	Connections []*authv2.Connection `json:"connections"`
+	Profile    string             `json:"profile"`
+	Cloud      string             `json:"cloud"`
+	User       string             `json:"user"`
+	Role       string             `json:"role,omitempty"`
+	Connection *authv2.Connection `json:"connection,omitempty"`
 }
 
-func sessionOut(name, cloud string, sess *authv2.Session) sessionJSON {
-	conns := sess.GetConnections()
-	if conns == nil {
-		conns = []*authv2.Connection{}
-	}
-	return sessionJSON{Profile: name, Cloud: cloud, User: sess.GetUser().GetName(), Role: roleName(sess.GetUser().GetRole()), Connections: conns}
+func sessionOut(name, cloud string, in *authv2.SignedIn) sessionJSON {
+	u := in.GetSession().GetUser()
+	return sessionJSON{Profile: name, Cloud: cloud, User: u.GetName(), Role: roleName(u.GetRole()), Connection: in.GetConnection()}
 }
 
 // loginCommand signs in to a cloud and keeps the tau token as a profile.
@@ -325,8 +320,7 @@ func loginCommand(env Env) *cobra.Command {
 		Short: "sign in to a cloud",
 		Long: "Signs in with a password (--name, --password-stdin), through a provider (--sso <provider>:\n" +
 			"a browser redirect to this machine, --device, or --paste a forge token on stdin), or with an\n" +
-			"API token (--token-stdin). The cloud's tau token is stored 0600 in the user config directory;\n" +
-			"a forge signed in with is connected inside it (see `tau forge`).",
+			"API token (--token-stdin). The cloud's tau token is stored 0600 in the user config directory.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := loadConfig()
@@ -366,12 +360,12 @@ func loginCommand(env Env) *cobra.Command {
 				if err := keep(cfg, name, &authv2.Session{AccessToken: tok}, flagBool(cmd, "use")); err != nil {
 					return err
 				}
-				sess := &authv2.Session{User: who.Msg}
-				return emit(cmd, env, sessionOut(name, p.Cloud, sess), signedInText(env, p.Cloud, sess))
+				in := &authv2.SignedIn{Session: &authv2.Session{User: who.Msg}}
+				return emit(cmd, env, sessionOut(name, p.Cloud, in), signedInText(env, p.Cloud, in))
 			}
 
 			s := signIn{cmd: cmd, env: env, sessions: anon.Anonymous(), invite: flagString(cmd, "invite")}
-			var sess *authv2.Session
+			var in *authv2.SignedIn
 			provider := flagString(cmd, "sso")
 			user := flagString(cmd, "name")
 			switch {
@@ -380,11 +374,11 @@ func loginCommand(env Env) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				if sess, err = s.through(provider, providerNamed(ps.Msg.GetProviders(), provider)); err != nil {
+				if in, err = s.through(provider, providerNamed(ps.Msg.GetProviders(), provider)); err != nil {
 					return err
 				}
 			case user != "" || flagBool(cmd, "password-stdin"):
-				if sess, err = passwordLogin(cmd, env, anon, user); err != nil {
+				if in, err = passwordLogin(cmd, env, anon, user); err != nil {
 					return err
 				}
 			case prompting(cmd, env):
@@ -404,9 +398,9 @@ func loginCommand(env Env) *cobra.Command {
 					return err
 				}
 				if pick == "password" {
-					sess, err = passwordLogin(cmd, env, anon, "")
+					in, err = passwordLogin(cmd, env, anon, "")
 				} else {
-					sess, err = s.through(pick, providerNamed(ps.Msg.GetProviders(), pick))
+					in, err = s.through(pick, providerNamed(ps.Msg.GetProviders(), pick))
 				}
 				if err != nil {
 					return err
@@ -414,10 +408,10 @@ func loginCommand(env Env) *cobra.Command {
 			default:
 				return errors.New("say how to sign in: --name with --password-stdin, --sso <provider>, or --token-stdin")
 			}
-			if err := keep(cfg, name, sess, flagBool(cmd, "use")); err != nil {
+			if err := keep(cfg, name, in.GetSession(), flagBool(cmd, "use")); err != nil {
 				return err
 			}
-			return emit(cmd, env, sessionOut(name, p.Cloud, sess), signedInText(env, p.Cloud, sess))
+			return emit(cmd, env, sessionOut(name, p.Cloud, in), signedInText(env, p.Cloud, in))
 		},
 	}
 	cmd.Flags().String("name", "", "sign in with a password as this user")
@@ -448,7 +442,7 @@ func bearerReq[T any](msg *T, token string) *connect.Request[T] {
 	return r
 }
 
-func passwordLogin(cmd *cobra.Command, env Env, anon *api.Client, user string) (*authv2.Session, error) {
+func passwordLogin(cmd *cobra.Command, env Env, anon *api.Client, user string) (*authv2.SignedIn, error) {
 	var err error
 	if user == "" {
 		if user, err = need(cmd, env, "name", "User", nil); err != nil {
@@ -472,7 +466,7 @@ func passwordLogin(cmd *cobra.Command, env Env, anon *api.Client, user string) (
 	if err != nil {
 		return nil, err
 	}
-	return in.Msg.GetSession(), nil
+	return in.Msg, nil
 }
 
 // current is the selected profile, which must be signed in.
@@ -532,7 +526,7 @@ func logoutCommand(env Env) *cobra.Command {
 func whoamiCommand(env Env) *cobra.Command {
 	return &cobra.Command{
 		Use:   "whoami",
-		Short: "who the profile is signed in as, and the forges connected",
+		Short: "who the profile is signed in as",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			_, name, p, cl, err := current(cmd, env)
@@ -543,49 +537,36 @@ func whoamiCommand(env Env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			conns, err := cl.Sessions().Connections(cmd.Context(), connect.NewRequest(&authv2.ConnectionsRequest{}))
-			if err != nil {
-				return err
-			}
-			sess := &authv2.Session{User: who.Msg, Connections: conns.Msg.GetConnections()}
 			t := theme(env)
 			text := fmt.Sprintf("%s %s on %s\n", t.Title.Render(who.Msg.GetName()), t.Muted.Render("("+roleName(who.Msg.GetRole())+")"), p.Cloud)
-			text += connectionsText(env, sess.GetConnections())
-			return emit(cmd, env, sessionOut(name, p.Cloud, sess), text)
+			return emit(cmd, env, sessionOut(name, p.Cloud, &authv2.SignedIn{Session: &authv2.Session{User: who.Msg}}), text)
 		},
 	}
 }
 
-func connectionsText(env Env, conns []*authv2.Connection) string {
+func connectionText(env Env, c *authv2.Connection) string {
 	t := theme(env)
-	if len(conns) == 0 {
-		return t.Muted.Render("no forge connected: run `tau forge connect <host>`") + "\n"
-	}
-	var b strings.Builder
-	for _, c := range conns {
-		exp := "no expiry"
-		if c.GetExpiresUnix() != 0 {
-			exp = "expires " + time.Unix(c.GetExpiresUnix(), 0).UTC().Format(time.RFC3339)
-			if c.GetRefreshable() {
-				exp += ", renewed by the cloud"
-			}
+	exp := "no expiry"
+	if c.GetExpiresUnix() != 0 {
+		exp = "expires " + time.Unix(c.GetExpiresUnix(), 0).UTC().Format(time.RFC3339)
+		if c.GetRefreshable() {
+			exp += ", renewable"
 		}
-		fmt.Fprintf(&b, "  %s %s %s\n", t.Title.Render(c.GetHost()), c.GetLogin(), t.Muted.Render("("+exp+")"))
 	}
-	return b.String()
+	return fmt.Sprintf("  %s %s %s\n", t.Title.Render(c.GetHost()), c.GetLogin(), t.Muted.Render("("+exp+")"))
 }
 
-// forgeCommand is the forges connected to the session: "connect your git".
+// forgeCommand signs in to a forge as the signed-in user.
 func forgeCommand(env Env) *cobra.Command {
 	connectCmd := &cobra.Command{
 		Use:   "connect <host>",
-		Short: "connect a forge to your session, so the cloud acts on its repositories as you",
+		Short: "sign in to a forge as yourself, linking it to your user",
 		Long: "Signs in to the forge through the cloud's OAuth app there (a browser redirect to this\n" +
-			"machine, or --device), or takes a token you paste (--paste). The cloud seals the forge's\n" +
-			"credential into a new tau token, which replaces the profile's; it stores none itself.",
+			"machine, or --device), or takes a token you paste (--paste). The forge account is linked\n" +
+			"to your user when nobody holds it; the cloud stores no forge credential.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, name, p, cl, err := current(cmd, env)
+			_, _, _, cl, err := current(cmd, env)
 			if err != nil {
 				return err
 			}
@@ -599,61 +580,16 @@ func forgeCommand(env Env) *cobra.Command {
 				return fmt.Errorf("this cloud serves no forge %q", host)
 			}
 			s := signIn{cmd: cmd, env: env, sessions: cl.Sessions()}
-			sess, err := s.through(host, pr)
+			in, err := s.through(host, pr)
 			if err != nil {
 				return err
 			}
-			if err := keep(cfg, name, sess, false); err != nil {
-				return err
-			}
-			return emit(cmd, env, sessionOut(name, p.Cloud, sess), theme(env).Done("connected "+host)+connectionsText(env, sess.GetConnections()))
+			return emit(cmd, env, in.GetConnection(), theme(env).Done("connected "+host)+connectionText(env, in.GetConnection()))
 		},
 	}
 	addFlowFlags(connectCmd)
 
-	disconnectCmd := &cobra.Command{
-		Use:   "disconnect <host>",
-		Short: "drop a forge from your session",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, name, p, cl, err := current(cmd, env)
-			if err != nil {
-				return err
-			}
-			in, err := cl.Sessions().Disconnect(cmd.Context(), connect.NewRequest(&authv2.DisconnectRequest{Host: args[0]}))
-			if err != nil {
-				return err
-			}
-			sess := in.Msg.GetSession()
-			if err := keep(cfg, name, sess, false); err != nil {
-				return err
-			}
-			return emit(cmd, env, sessionOut(name, p.Cloud, sess), theme(env).Done("disconnected "+args[0])+connectionsText(env, sess.GetConnections()))
-		},
-	}
-
-	listCmd := &cobra.Command{
-		Use:   "list",
-		Short: "the forges connected to your session",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			_, _, _, cl, err := current(cmd, env)
-			if err != nil {
-				return err
-			}
-			conns, err := cl.Sessions().Connections(cmd.Context(), connect.NewRequest(&authv2.ConnectionsRequest{}))
-			if err != nil {
-				return err
-			}
-			list := conns.Msg.GetConnections()
-			if list == nil {
-				list = []*authv2.Connection{}
-			}
-			return emit(cmd, env, list, connectionsText(env, list))
-		},
-	}
-
-	cmd := &cobra.Command{Use: "forge", Short: "connect your git: the forges your session acts on"}
-	cmd.AddCommand(connectCmd, disconnectCmd, listCmd)
+	cmd := &cobra.Command{Use: "forge", Short: "connect your git: sign in to a forge as yourself"}
+	cmd.AddCommand(connectCmd)
 	return cmd
 }

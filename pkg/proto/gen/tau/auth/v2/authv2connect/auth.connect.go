@@ -18,9 +18,8 @@
 // What is left is who the people using this cloud are: its users, the
 // identities they sign in with, the tau tokens it issues them, and whether
 // someone a forge vouched for is admitted. The cloud is the authority on its
-// users and never on repositories. A forge credential a user connects is
-// sealed (encrypted, not merely signed) INSIDE their tau token, so the client
-// holds one token and the cloud stores no forge token.
+// users and never on repositories. It stores and carries no forge credential:
+// the one a forge sign-in obtains goes back to the client, which holds it.
 package authv2connect
 
 import (
@@ -60,8 +59,6 @@ const (
 	IdentityServiceAdmitProcedure = "/tau.auth.v2.IdentityService/Admit"
 	// IdentityServiceVerifyProcedure is the fully-qualified name of the IdentityService's Verify RPC.
 	IdentityServiceVerifyProcedure = "/tau.auth.v2.IdentityService/Verify"
-	// IdentityServiceOpenProcedure is the fully-qualified name of the IdentityService's Open RPC.
-	IdentityServiceOpenProcedure = "/tau.auth.v2.IdentityService/Open"
 	// SessionServiceProvidersProcedure is the fully-qualified name of the SessionService's Providers
 	// RPC.
 	SessionServiceProvidersProcedure = "/tau.auth.v2.SessionService/Providers"
@@ -86,12 +83,8 @@ const (
 	SessionServicePastedProcedure = "/tau.auth.v2.SessionService/Pasted"
 	// SessionServiceWhoamiProcedure is the fully-qualified name of the SessionService's Whoami RPC.
 	SessionServiceWhoamiProcedure = "/tau.auth.v2.SessionService/Whoami"
-	// SessionServiceDisconnectProcedure is the fully-qualified name of the SessionService's Disconnect
-	// RPC.
-	SessionServiceDisconnectProcedure = "/tau.auth.v2.SessionService/Disconnect"
-	// SessionServiceConnectionsProcedure is the fully-qualified name of the SessionService's
-	// Connections RPC.
-	SessionServiceConnectionsProcedure = "/tau.auth.v2.SessionService/Connections"
+	// SessionServiceRenewProcedure is the fully-qualified name of the SessionService's Renew RPC.
+	SessionServiceRenewProcedure = "/tau.auth.v2.SessionService/Renew"
 	// UserServiceListUsersProcedure is the fully-qualified name of the UserService's ListUsers RPC.
 	UserServiceListUsersProcedure = "/tau.auth.v2.UserService/ListUsers"
 	// UserServiceCreateUserProcedure is the fully-qualified name of the UserService's CreateUser RPC.
@@ -126,13 +119,6 @@ type IdentityServiceClient interface {
 	// Verify says who a tau token or an API token belongs to, as of now: a
 	// revoked token, or one whose user is disabled or gone, is Unauthenticated.
 	Verify(context.Context, *connect.Request[v2.VerifyRequest]) (*connect.Response[v2.Principal], error)
-	// Open is the forge credential a tau token carries for one forge host,
-	// for the build frontend to ask the forge with. NotFound is a token with
-	// no connection to that host. A connection that has expired is refreshed
-	// at the forge when it can be, and the answer then carries a renewed tau
-	// token holding the new credential, which the frontend hands back to the
-	// caller (Tau-Renewed-Token).
-	Open(context.Context, *connect.Request[v2.OpenRequest]) (*connect.Response[v2.Opened], error)
 }
 
 // NewIdentityServiceClient constructs a client for the tau.auth.v2.IdentityService service. By
@@ -158,12 +144,6 @@ func NewIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(identityServiceMethods.ByName("Verify")),
 			connect.WithClientOptions(opts...),
 		),
-		open: connect.NewClient[v2.OpenRequest, v2.Opened](
-			httpClient,
-			baseURL+IdentityServiceOpenProcedure,
-			connect.WithSchema(identityServiceMethods.ByName("Open")),
-			connect.WithClientOptions(opts...),
-		),
 	}
 }
 
@@ -171,7 +151,6 @@ func NewIdentityServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 type identityServiceClient struct {
 	admit  *connect.Client[v2.Caller, v2.Admission]
 	verify *connect.Client[v2.VerifyRequest, v2.Principal]
-	open   *connect.Client[v2.OpenRequest, v2.Opened]
 }
 
 // Admit calls tau.auth.v2.IdentityService.Admit.
@@ -184,24 +163,12 @@ func (c *identityServiceClient) Verify(ctx context.Context, req *connect.Request
 	return c.verify.CallUnary(ctx, req)
 }
 
-// Open calls tau.auth.v2.IdentityService.Open.
-func (c *identityServiceClient) Open(ctx context.Context, req *connect.Request[v2.OpenRequest]) (*connect.Response[v2.Opened], error) {
-	return c.open.CallUnary(ctx, req)
-}
-
 // IdentityServiceHandler is an implementation of the tau.auth.v2.IdentityService service.
 type IdentityServiceHandler interface {
 	Admit(context.Context, *connect.Request[v2.Caller]) (*connect.Response[v2.Admission], error)
 	// Verify says who a tau token or an API token belongs to, as of now: a
 	// revoked token, or one whose user is disabled or gone, is Unauthenticated.
 	Verify(context.Context, *connect.Request[v2.VerifyRequest]) (*connect.Response[v2.Principal], error)
-	// Open is the forge credential a tau token carries for one forge host,
-	// for the build frontend to ask the forge with. NotFound is a token with
-	// no connection to that host. A connection that has expired is refreshed
-	// at the forge when it can be, and the answer then carries a renewed tau
-	// token holding the new credential, which the frontend hands back to the
-	// caller (Tau-Renewed-Token).
-	Open(context.Context, *connect.Request[v2.OpenRequest]) (*connect.Response[v2.Opened], error)
 }
 
 // NewIdentityServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -223,20 +190,12 @@ func NewIdentityServiceHandler(svc IdentityServiceHandler, opts ...connect.Handl
 		connect.WithSchema(identityServiceMethods.ByName("Verify")),
 		connect.WithHandlerOptions(opts...),
 	)
-	identityServiceOpenHandler := connect.NewUnaryHandler(
-		IdentityServiceOpenProcedure,
-		svc.Open,
-		connect.WithSchema(identityServiceMethods.ByName("Open")),
-		connect.WithHandlerOptions(opts...),
-	)
 	return "/tau.auth.v2.IdentityService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case IdentityServiceAdmitProcedure:
 			identityServiceAdmitHandler.ServeHTTP(w, r)
 		case IdentityServiceVerifyProcedure:
 			identityServiceVerifyHandler.ServeHTTP(w, r)
-		case IdentityServiceOpenProcedure:
-			identityServiceOpenHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -254,10 +213,6 @@ func (UnimplementedIdentityServiceHandler) Verify(context.Context, *connect.Requ
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.IdentityService.Verify is not implemented"))
 }
 
-func (UnimplementedIdentityServiceHandler) Open(context.Context, *connect.Request[v2.OpenRequest]) (*connect.Response[v2.Opened], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.IdentityService.Open is not implemented"))
-}
-
 // SessionServiceClient is a client for the tau.auth.v2.SessionService service.
 type SessionServiceClient interface {
 	Providers(context.Context, *connect.Request[v2.ProvidersRequest]) (*connect.Response[v2.ProvidersResponse], error)
@@ -270,8 +225,7 @@ type SessionServiceClient interface {
 	DevicePoll(context.Context, *connect.Request[v2.DevicePollRequest]) (*connect.Response[v2.DevicePollResponse], error)
 	Pasted(context.Context, *connect.Request[v2.PastedRequest]) (*connect.Response[v2.SignedIn], error)
 	Whoami(context.Context, *connect.Request[v2.WhoamiRequest]) (*connect.Response[v2.User], error)
-	Disconnect(context.Context, *connect.Request[v2.DisconnectRequest]) (*connect.Response[v2.SignedIn], error)
-	Connections(context.Context, *connect.Request[v2.ConnectionsRequest]) (*connect.Response[v2.ConnectionsResponse], error)
+	Renew(context.Context, *connect.Request[v2.RenewRequest]) (*connect.Response[v2.ForgeToken], error)
 }
 
 // NewSessionServiceClient constructs a client for the tau.auth.v2.SessionService service. By
@@ -345,16 +299,10 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(sessionServiceMethods.ByName("Whoami")),
 			connect.WithClientOptions(opts...),
 		),
-		disconnect: connect.NewClient[v2.DisconnectRequest, v2.SignedIn](
+		renew: connect.NewClient[v2.RenewRequest, v2.ForgeToken](
 			httpClient,
-			baseURL+SessionServiceDisconnectProcedure,
-			connect.WithSchema(sessionServiceMethods.ByName("Disconnect")),
-			connect.WithClientOptions(opts...),
-		),
-		connections: connect.NewClient[v2.ConnectionsRequest, v2.ConnectionsResponse](
-			httpClient,
-			baseURL+SessionServiceConnectionsProcedure,
-			connect.WithSchema(sessionServiceMethods.ByName("Connections")),
+			baseURL+SessionServiceRenewProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("Renew")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -372,8 +320,7 @@ type sessionServiceClient struct {
 	devicePoll  *connect.Client[v2.DevicePollRequest, v2.DevicePollResponse]
 	pasted      *connect.Client[v2.PastedRequest, v2.SignedIn]
 	whoami      *connect.Client[v2.WhoamiRequest, v2.User]
-	disconnect  *connect.Client[v2.DisconnectRequest, v2.SignedIn]
-	connections *connect.Client[v2.ConnectionsRequest, v2.ConnectionsResponse]
+	renew       *connect.Client[v2.RenewRequest, v2.ForgeToken]
 }
 
 // Providers calls tau.auth.v2.SessionService.Providers.
@@ -426,14 +373,9 @@ func (c *sessionServiceClient) Whoami(ctx context.Context, req *connect.Request[
 	return c.whoami.CallUnary(ctx, req)
 }
 
-// Disconnect calls tau.auth.v2.SessionService.Disconnect.
-func (c *sessionServiceClient) Disconnect(ctx context.Context, req *connect.Request[v2.DisconnectRequest]) (*connect.Response[v2.SignedIn], error) {
-	return c.disconnect.CallUnary(ctx, req)
-}
-
-// Connections calls tau.auth.v2.SessionService.Connections.
-func (c *sessionServiceClient) Connections(ctx context.Context, req *connect.Request[v2.ConnectionsRequest]) (*connect.Response[v2.ConnectionsResponse], error) {
-	return c.connections.CallUnary(ctx, req)
+// Renew calls tau.auth.v2.SessionService.Renew.
+func (c *sessionServiceClient) Renew(ctx context.Context, req *connect.Request[v2.RenewRequest]) (*connect.Response[v2.ForgeToken], error) {
+	return c.renew.CallUnary(ctx, req)
 }
 
 // SessionServiceHandler is an implementation of the tau.auth.v2.SessionService service.
@@ -448,8 +390,7 @@ type SessionServiceHandler interface {
 	DevicePoll(context.Context, *connect.Request[v2.DevicePollRequest]) (*connect.Response[v2.DevicePollResponse], error)
 	Pasted(context.Context, *connect.Request[v2.PastedRequest]) (*connect.Response[v2.SignedIn], error)
 	Whoami(context.Context, *connect.Request[v2.WhoamiRequest]) (*connect.Response[v2.User], error)
-	Disconnect(context.Context, *connect.Request[v2.DisconnectRequest]) (*connect.Response[v2.SignedIn], error)
-	Connections(context.Context, *connect.Request[v2.ConnectionsRequest]) (*connect.Response[v2.ConnectionsResponse], error)
+	Renew(context.Context, *connect.Request[v2.RenewRequest]) (*connect.Response[v2.ForgeToken], error)
 }
 
 // NewSessionServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -519,16 +460,10 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 		connect.WithSchema(sessionServiceMethods.ByName("Whoami")),
 		connect.WithHandlerOptions(opts...),
 	)
-	sessionServiceDisconnectHandler := connect.NewUnaryHandler(
-		SessionServiceDisconnectProcedure,
-		svc.Disconnect,
-		connect.WithSchema(sessionServiceMethods.ByName("Disconnect")),
-		connect.WithHandlerOptions(opts...),
-	)
-	sessionServiceConnectionsHandler := connect.NewUnaryHandler(
-		SessionServiceConnectionsProcedure,
-		svc.Connections,
-		connect.WithSchema(sessionServiceMethods.ByName("Connections")),
+	sessionServiceRenewHandler := connect.NewUnaryHandler(
+		SessionServiceRenewProcedure,
+		svc.Renew,
+		connect.WithSchema(sessionServiceMethods.ByName("Renew")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/tau.auth.v2.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -553,10 +488,8 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 			sessionServicePastedHandler.ServeHTTP(w, r)
 		case SessionServiceWhoamiProcedure:
 			sessionServiceWhoamiHandler.ServeHTTP(w, r)
-		case SessionServiceDisconnectProcedure:
-			sessionServiceDisconnectHandler.ServeHTTP(w, r)
-		case SessionServiceConnectionsProcedure:
-			sessionServiceConnectionsHandler.ServeHTTP(w, r)
+		case SessionServiceRenewProcedure:
+			sessionServiceRenewHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -606,12 +539,8 @@ func (UnimplementedSessionServiceHandler) Whoami(context.Context, *connect.Reque
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.SessionService.Whoami is not implemented"))
 }
 
-func (UnimplementedSessionServiceHandler) Disconnect(context.Context, *connect.Request[v2.DisconnectRequest]) (*connect.Response[v2.SignedIn], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.SessionService.Disconnect is not implemented"))
-}
-
-func (UnimplementedSessionServiceHandler) Connections(context.Context, *connect.Request[v2.ConnectionsRequest]) (*connect.Response[v2.ConnectionsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.SessionService.Connections is not implemented"))
+func (UnimplementedSessionServiceHandler) Renew(context.Context, *connect.Request[v2.RenewRequest]) (*connect.Response[v2.ForgeToken], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.auth.v2.SessionService.Renew is not implemented"))
 }
 
 // UserServiceClient is a client for the tau.auth.v2.UserService service.

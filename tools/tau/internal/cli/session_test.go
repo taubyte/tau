@@ -21,8 +21,8 @@ func (x *tester) profile() config.Profile {
 	return cfg.Profiles[cfg.Current]
 }
 
-// The profile holds one token, and a forge sign-in leaves no forge token in
-// the config file.
+// The profile holds the tau token, and a forge sign-in leaves no forge token
+// in the config file.
 func TestASSOSignInPastedKeepsOnlyTheTauToken(t *testing.T) {
 	x := newTester(t)
 	x.stdin = forgeToken + "\n"
@@ -30,7 +30,7 @@ func TestASSOSignInPastedKeepsOnlyTheTauToken(t *testing.T) {
 	var got sessionJSON
 	require.NoError(t, json.Unmarshal([]byte(out), &got))
 	require.Equal(t, "dev", got.User)
-	require.Equal(t, "github.com", got.Connections[0].GetHost())
+	require.Equal(t, "github.com", got.Connection.GetHost())
 
 	p := x.profile()
 	require.NotEmpty(t, p.Token)
@@ -64,9 +64,9 @@ func TestABrowserSignInComesBackToThisMachine(t *testing.T) {
 	require.Contains(t, out, "signed in to")
 	require.Contains(t, out, "github.com")
 
-	// An OIDC provider signs in too, with nothing connected.
+	// An OIDC provider signs in too, with no forge.
 	out = x.ok("login", "--cloud", x.f.srv.URL, "--sso", "corp")
-	require.NotContains(t, out, "connected")
+	require.NotContains(t, out, "signed in with")
 
 	// A browser that will not open still shows the URL; the sign-in waits
 	// until its timeout.
@@ -114,7 +114,7 @@ func TestPasswordSignIn(t *testing.T) {
 }
 
 // A token about to expire is renewed before it is used, and the renewal is
-// saved; a renewed token the cloud hands back replaces it.
+// saved.
 func TestATokenIsRenewedAndKept(t *testing.T) {
 	x := newTester(t)
 	x.f.auth.expiresIn = 30
@@ -127,23 +127,11 @@ func TestATokenIsRenewedAndKept(t *testing.T) {
 	require.NotEqual(t, before.Token, after.Token, "renewed before use")
 	require.NotEqual(t, before.Refresh, after.Refresh)
 
-	renewed := x.f.auth.renewal(after.Token)
-	x.f.auth.expiresIn = 0
-	x.f.renew = renewed
-	// Reset the expiry so no refresh races the renewal.
+	// A refresh the cloud refuses is a sign-in again.
+	p := x.profile()
+	p.Expires, p.Refresh = 1, "taur_gone"
 	cfg, err := loadConfig()
 	require.NoError(t, err)
-	p := cfg.Profiles[cfg.Current]
-	p.Expires = 0
-	cfg.Profiles[cfg.Current] = p
-	require.NoError(t, cfg.Save())
-	x.ok("job", "job-1")
-	require.Equal(t, renewed, x.profile().Token)
-
-	// A refresh the cloud refuses is a sign-in again.
-	p = x.profile()
-	p.Expires, p.Refresh = 1, "taur_gone"
-	cfg, _ = loadConfig()
 	cfg.Profiles[cfg.Current] = p
 	require.NoError(t, cfg.Save())
 	r := x.run("job", "job-1")
@@ -154,17 +142,15 @@ func TestATokenIsRenewedAndKept(t *testing.T) {
 func TestAnEnvironmentTokenIsNotSaved(t *testing.T) {
 	x := newTester(t)
 	x.login()
+	x.f.auth.expiresIn = 30
 	t.Setenv(config.EnvToken, goodToken)
-	x.f.renew = "from-the-cloud"
-	x.f.auth.mu.Lock()
-	x.f.auth.sessions["from-the-cloud"] = x.f.auth.sessions[goodToken]
-	x.f.auth.mu.Unlock()
 	x.ok("job", "job-1")
 	t.Setenv(config.EnvToken, "")
 	require.Equal(t, goodToken, x.profile().Token)
 }
 
-func TestForgeConnectDisconnectList(t *testing.T) {
+// Connecting a forge keeps the session and hands back the connection.
+func TestForgeConnect(t *testing.T) {
 	x := newTester(t)
 	x.stdin = forgeToken + "\n"
 	x.ok("login", "--cloud", x.f.srv.URL, "--sso", "github.com", "--paste")
@@ -173,19 +159,11 @@ func TestForgeConnectDisconnectList(t *testing.T) {
 	x.stdin = forgeToken + "\n"
 	out := x.ok("forge", "connect", "plain.example", "--paste")
 	require.Contains(t, out, "connected plain.example")
-	second := x.profile()
-	require.NotEqual(t, first.Token, second.Token, "the connection is a new token")
-
-	var list []map[string]any
-	require.NoError(t, json.Unmarshal([]byte(x.ok("forge", "list", "-o", "json")), &list))
-	require.Len(t, list, 2)
-	require.Contains(t, x.ok("whoami"), "plain.example")
-
-	x.ok("forge", "disconnect", "github.com")
-	require.NoError(t, json.Unmarshal([]byte(x.ok("forge", "list", "-o", "json")), &list))
-	require.Len(t, list, 1)
-	x.ok("forge", "disconnect", "plain.example")
-	require.Contains(t, x.ok("forge", "list"), "no forge connected")
+	require.Equal(t, first.Token, x.profile().Token, "the session is untouched")
+	x.stdin = forgeToken + "\n"
+	var got map[string]any
+	require.NoError(t, json.Unmarshal([]byte(x.ok("forge", "connect", "plain.example", "--paste", "-o", "json")), &got))
+	require.Equal(t, "plain.example", got["host"])
 
 	// Through a browser, and the device flow.
 	x.browse = func(u string) error {
@@ -198,7 +176,7 @@ func TestForgeConnectDisconnectList(t *testing.T) {
 	x.ok("forge", "connect", "github.com")
 	x.f.auth.polls = 0
 	x.ok("forge", "connect", "github.com", "--device")
-	require.Contains(t, x.ok("whoami"), "github.com")
+	require.Contains(t, x.ok("whoami"), "dev")
 
 	r := x.run("forge", "connect", "corp")
 	require.Contains(t, r.stderr, "no forge")
@@ -212,7 +190,7 @@ func TestSessionCommandsNeedASignIn(t *testing.T) {
 	require.Contains(t, r.stderr, "tau login")
 	x.login()
 	x.ok("logout")
-	for _, args := range [][]string{{"whoami"}, {"forge", "list"}, {"forge", "disconnect", "x"}, {"forge", "connect", "x"}, {"users", "list"}, {"tokens", "list"}} {
+	for _, args := range [][]string{{"whoami"}, {"forge", "connect", "x"}, {"users", "list"}, {"tokens", "list"}} {
 		r := x.run(args...)
 		require.Contains(t, r.stderr, "not signed in", args)
 	}
@@ -243,7 +221,7 @@ func TestWhoami(t *testing.T) {
 	var got sessionJSON
 	require.NoError(t, json.Unmarshal([]byte(x.ok("whoami", "-o", "json")), &got))
 	require.Equal(t, "member", got.Role)
-	require.Empty(t, got.Connections)
+	require.Nil(t, got.Connection)
 }
 
 func (x *tester) asAdmin() {
@@ -353,7 +331,7 @@ func TestTokens(t *testing.T) {
 
 	x.ok("logout")
 	t.Setenv(config.EnvToken, "tok-bad")
-	for _, args := range [][]string{{"tokens", "list"}, {"tokens", "create", "x"}, {"tokens", "revoke", "tok-1"}, {"users", "password", "--password-stdin"}, {"whoami"}, {"forge", "list"}, {"forge", "disconnect", "x"}} {
+	for _, args := range [][]string{{"tokens", "list"}, {"tokens", "create", "x"}, {"tokens", "revoke", "tok-1"}, {"users", "password", "--password-stdin"}, {"whoami"}} {
 		x.stdin = "longenough\n"
 		r := x.run(append(args, "--cloud", x.f.srv.URL)...)
 		require.Contains(t, r.stderr, "unauthenticated", args)
@@ -376,7 +354,7 @@ func TestARenewalIsSavedNewestWinsOnDisk(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	t.Setenv(config.EnvToken, "")
-	start := fakeAccess("sid-1", 1, 100, 1)
+	start := fakeAccess("sid-1", 101, 1)
 	cfg, err := config.Load(path)
 	require.NoError(t, err)
 	cfg.Profiles["p"] = config.Profile{Cloud: "https://c", Token: start}
@@ -398,35 +376,35 @@ func TestARenewalIsSavedNewestWinsOnDisk(t *testing.T) {
 	save := profileSaver(Env{Stderr: &stderr}, cfg, "p", start)
 
 	// Nobody else wrote: kept, and 0600.
-	gen2 := fakeAccess("sid-1", 2, 100, 2)
-	save(gen2, 0, "r")
-	require.Equal(t, gen2, read())
+	at2 := fakeAccess("sid-1", 102, 2)
+	save(at2, 0, "r")
+	require.Equal(t, at2, read())
 	st, err := os.Stat(path)
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o600), st.Mode().Perm())
 
 	// Another process saved a newer one: an older renewal does not replace it.
-	gen4 := fakeAccess("sid-1", 4, 100, 4)
-	write(gen4)
-	save(fakeAccess("sid-1", 3, 100, 3), 0, "r")
-	require.Equal(t, gen4, read())
+	at4 := fakeAccess("sid-1", 104, 4)
+	write(at4)
+	save(fakeAccess("sid-1", 103, 3), 0, "r")
+	require.Equal(t, at4, read())
 	// A newer one of the same session does.
-	gen5 := fakeAccess("sid-1", 5, 100, 5)
-	save(gen5, 0, "r")
-	require.Equal(t, gen5, read())
+	at5 := fakeAccess("sid-1", 105, 5)
+	save(at5, 0, "r")
+	require.Equal(t, at5, read())
 
 	// Another sign-in: no token of the old session replaces it.
-	other := fakeAccess("sid-2", 1, 50, 6)
+	other := fakeAccess("sid-2", 50, 6)
 	write(other)
-	save(fakeAccess("sid-1", 9, 100, 7), 0, "r")
+	save(fakeAccess("sid-1", 109, 7), 0, "r")
 	require.Equal(t, other, read())
 
 	// An unreadable file is a warning, not a crash.
 	require.NoError(t, os.WriteFile(path, []byte(":\n\t- ["), 0o600))
-	save(gen5, 0, "r")
+	save(at5, 0, "r")
 	require.Contains(t, stderr.String(), "saving the renewed token")
 
 	// A token from the environment is never saved.
 	t.Setenv(config.EnvToken, "x")
-	profileSaver(Env{Stderr: &stderr}, cfg, "p", start)(gen5, 0, "r")
+	profileSaver(Env{Stderr: &stderr}, cfg, "p", start)(at5, 0, "r")
 }

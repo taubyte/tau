@@ -522,10 +522,9 @@ type Credentials struct {
 	Tau   string
 }
 
-// Connections opens the forge credentials a tau token carries.
+// Connections opens a caller's forge credentials.
 type Connections interface {
-	// Open is the forge credential tau carries for host, and the renewed
-	// tau token when opening it renewed the credential. A token with no
+	// Open is the forge credential tau's holder has for host. A token with no
 	// usable connection to host is a *NotConnectedError; a token that does
 	// not verify is ErrBadCredential.
 	Open(ctx context.Context, tau, host string) (Opened, error)
@@ -571,8 +570,7 @@ var (
 
 // Opened is one connection, opened.
 type Opened struct {
-	Forge   string
-	Renewed string
+	Forge string
 }
 
 // NotConnectedError is a tau token with no usable connection to a forge

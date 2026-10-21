@@ -289,7 +289,7 @@ func (s *Service) admittedWithin(name string, bound int, handle jobHandler) http
 			respond(w, err)
 			return
 		}
-		handle(w, withOpened(w, r, token), token, id)
+		handle(w, withOpened(r, token), token, id)
 	}
 }
 

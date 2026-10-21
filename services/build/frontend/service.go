@@ -231,8 +231,8 @@ func WithIdentity(i Identity) Option {
 	}
 }
 
-// WithConnections opens the forge credentials a caller's tau token carries.
-// Required: the tau token is the only credential a caller sends.
+// WithConnections opens a caller's forge credentials. Without it, every host
+// is not connected.
 func WithConnections(c Connections) Option {
 	return func(o *options) error {
 		if c == nil {
@@ -386,8 +386,6 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		return nil, errors.New("build: no backend to queue into")
 	case o.identity == nil:
 		return nil, errors.New("build: no identity to resolve a caller with")
-	case o.connections == nil:
-		return nil, errors.New("build: no connections to open a caller's forge credentials with")
 	}
 
 	s := &Service{

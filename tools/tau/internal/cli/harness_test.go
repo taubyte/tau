@@ -31,7 +31,6 @@ import (
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	frontendpkg "github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/build/frontend/forgeauth"
-	"github.com/taubyte/tau/tools/tau/internal/api"
 	"github.com/taubyte/tau/tools/tau/internal/config"
 )
 
@@ -65,9 +64,7 @@ type frontend struct {
 	// pushAfter counts down list calls; at zero, pushed runs (under mu).
 	pushAfter int
 	pushed    func()
-	// renew is handed back as a renewed tau token on the next job read.
-	renew string
-	auth  *fakeAuth
+	auth      *fakeAuth
 	// forges are what the link routes install on, through the frontend's own
 	// forgeauth, under the connection the caller's tau token carries.
 	forges *forge.Registry
@@ -124,10 +121,6 @@ func newFrontend(t *testing.T) *frontend {
 	mux.HandleFunc("GET /job/{jid}", authed(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		j, ok := f.jobs[r.PathValue("jid")]
-		if f.renew != "" {
-			w.Header().Set(api.RenewedTokenHeader, f.renew)
-			f.renew = ""
-		}
 		f.mu.Unlock()
 		if !ok {
 			denied(w)

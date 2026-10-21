@@ -275,22 +275,16 @@ func (l *logs) joined() string {
 // fakeConnections opens a tau token to itself — the forge credential IS the
 // token — unless a test names something else per host.
 type fakeConnections struct {
-	mu      sync.Mutex
-	forge   map[string]string // host -> forge credential
-	renewed string
-	// renewEach renews every host opened: the renewal is the token it was
-	// opened from, plus the host.
-	renewEach bool
-	taus      []string         // the tau token each Open was given
-	err       map[string]error // host -> error
-	opened    int
+	mu     sync.Mutex
+	forge  map[string]string // host -> forge credential
+	err    map[string]error  // host -> error
+	opened int
 }
 
 func (c *fakeConnections) Open(_ context.Context, tau, host string) (Opened, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.opened++
-	c.taus = append(c.taus, tau)
 	if err := c.err[host]; err != nil {
 		return Opened{}, err
 	}
@@ -298,10 +292,7 @@ func (c *fakeConnections) Open(_ context.Context, tau, host string) (Opened, err
 	if v, ok := c.forge[host]; ok {
 		f = v
 	}
-	if c.renewEach {
-		return Opened{Forge: f, Renewed: tau + "+" + host}, nil
-	}
-	return Opened{Forge: f, Renewed: c.renewed}, nil
+	return Opened{Forge: f}, nil
 }
 
 type passConnections struct{}

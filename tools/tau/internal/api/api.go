@@ -56,8 +56,7 @@ func IsStatus(err error, status int) bool {
 	return errors.As(err, &e) && e.Status == status
 }
 
-// Client calls one cloud's frontend with one token: the tau token, which
-// carries the developer's forge connections sealed inside it.
+// Client calls one cloud's frontend with one token: the tau token.
 type Client struct {
 	base   *url.URL
 	tokens Tokens

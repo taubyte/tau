@@ -31,44 +31,31 @@ import (
 
 const bearerPrefix = "Bearer "
 
-// THE ONE CREDENTIAL IS THE TAU TOKEN, in Authorization. The forge
-// credential a route asks a forge with is not sent by the caller: it is one of
-// the connections sealed inside the tau token, opened by auth for the
-// repository's host (Connections). So a project whose repositories live on
-// two forges is reached with one token holding both.
+// THE ONE CREDENTIAL IS THE TAU TOKEN, in Authorization. A forge credential
+// a route asks a forge with comes from Connections, opened once per host per
+// request; a service with none holds no forge credential at all.
 
-// RenewedTokenHeader is the response header a renewed tau token comes back
-// in, when a connection's forge credential had expired and auth renewed it
-// during the request. A client replaces its access token with it.
-const RenewedTokenHeader = "Tau-Renewed-Token"
+// errNoConnections is every host, when the service holds no Connections.
+var errNoConnections = &NotConnectedError{Reason: "build: this cloud holds no forge credential for you"}
 
 // opened is one request's forge credentials, opened once per host.
-//
-// A RENEWAL IS BUILT ON, NOT REPEATED: once opening one host renews a
-// credential, every later host this request opens is opened from the renewed
-// token rather than the one the caller sent. So the token handed back holds
-// every renewal the request made, instead of each renewal from the stale
-// original overwriting the last one in Tau-Renewed-Token.
 type opened struct {
-	header http.Header
-	tau    string
-	// current is the newest tau token of the request: the caller's, or the
-	// last renewal of it.
-	current string
-	hosts   map[string]string
+	tau   string
+	hosts map[string]string
 }
 
 type openedKey struct{}
 
-// withOpened gives a request somewhere to keep what it opened and to hand a
-// renewed token back.
-func withOpened(w http.ResponseWriter, r *http.Request, tau string) *http.Request {
-	return r.WithContext(context.WithValue(r.Context(), openedKey{}, &opened{header: w.Header(), tau: tau, current: tau, hosts: map[string]string{}}))
+// withOpened gives a request somewhere to keep what it opened.
+func withOpened(r *http.Request, tau string) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), openedKey{}, &opened{tau: tau, hosts: map[string]string{}}))
 }
 
-// forgeToken is the caller's forge credential for host, from the
-// connection their tau token carries.
+// forgeToken is the caller's forge credential for host.
 func (s *Service) forgeToken(ctx context.Context, tau, host string) (string, error) {
+	if s.connections == nil {
+		return "", errNoConnections
+	}
 	o, _ := ctx.Value(openedKey{}).(*opened)
 	if o == nil || o.tau != tau {
 		got, err := s.connections.Open(ctx, tau, host)
@@ -77,15 +64,11 @@ func (s *Service) forgeToken(ctx context.Context, tau, host string) (string, err
 	if f, ok := o.hosts[host]; ok {
 		return f, nil
 	}
-	got, err := s.connections.Open(ctx, o.current, host)
+	got, err := s.connections.Open(ctx, tau, host)
 	if err != nil {
 		return "", err
 	}
 	o.hosts[host] = got.Forge
-	if got.Renewed != "" {
-		o.current = got.Renewed
-		o.header.Set(RenewedTokenHeader, got.Renewed)
-	}
 	return got.Forge, nil
 }
 
