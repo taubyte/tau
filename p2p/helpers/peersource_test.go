@@ -54,12 +54,16 @@ func TestThePeerSourceOffersRelaysTheDHTKnows(t *testing.T) {
 	require.Empty(t, drain(source(ctx, 1)), "a lone host knows nobody")
 
 	// A WAN DHT that keeps loopback peers, so the lookup has someone to find.
+	// Without the IP diversity filter too: every peer here is one address,
+	// and it admits at most two of them per bucket, so three peers landing
+	// in one bucket would leave one out.
 	loopback := func(h host.Host) *dual.DHT {
 		d, err := dual.New(ctx, h,
 			dual.DHTOption(dht.Mode(dht.ModeServer)),
 			dual.WanDHTOption(
 				dht.QueryFilter(func(any, peer.AddrInfo) bool { return true }),
 				dht.RoutingTableFilter(func(any, peer.ID) bool { return true }),
+				dht.RoutingTablePeerDiversityFilter(nil),
 			))
 		require.NoError(t, err)
 		t.Cleanup(func() { d.Close() })

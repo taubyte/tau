@@ -26,6 +26,7 @@ import (
 	"github.com/taubyte/tau/pkg/git/gittest"
 	"github.com/taubyte/tau/pkg/git/repokey"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/build/frontend/forgeauth"
 )
@@ -162,7 +163,7 @@ func TestARealGerritStreamsItsPushes(t *testing.T) {
 	backend := &recordingBackend{}
 	svc, err := frontend.New(frontend.Config{Listen: "127.0.0.1:0", StreamResync: time.Hour},
 		frontend.WithHooks(noHooks{}), frontend.WithDeliveries(forges), frontend.WithProjects(noProjects{}),
-		frontend.WithBackend(backend), frontend.WithIdentity(forges), frontend.WithConnections(noConnections{}),
+		frontend.WithBackend(backend), frontend.WithCallers(noCallers{}),
 		frontend.WithStreams(forges, linkedRepos{key.String()}),
 		frontend.WithLogger(t.Logf))
 	require.NoError(t, err)
@@ -249,7 +250,11 @@ func (noHooks) Hook(context.Context, string) (frontend.Hook, error) {
 
 type noProjects struct{}
 
-func (noProjects) Repositories(context.Context, string) ([]string, error) { return nil, nil }
+func (noProjects) Role(context.Context, string, string) (register.Role, error) {
+	return "", errors.New("unused")
+}
+
+func (noProjects) Project(context.Context, string) (string, error) { return "", errors.New("unused") }
 
 type linkedRepos []string
 
@@ -290,9 +295,9 @@ func (b *recordingBackend) Follow(context.Context, string, int64, func([]byte, i
 	return 0, errors.New("unused")
 }
 
-// noConnections opens nothing: this test makes no caller's request.
-type noConnections struct{}
+// noCallers admits nobody: this test makes no caller's request.
+type noCallers struct{}
 
-func (noConnections) Open(context.Context, string, string) (frontend.Opened, error) {
-	return frontend.Opened{}, frontend.ErrBadCredential
+func (noCallers) Caller(context.Context, string) (string, error) {
+	return "", frontend.ErrBadCredential
 }
