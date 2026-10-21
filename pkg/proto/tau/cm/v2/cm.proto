@@ -1,13 +1,13 @@
 syntax = "proto3";
 
-// The globals service's surface between tau nodes, over p2p/rpc: what the
+// The cm service's surface between tau nodes, over p2p/rpc: what the
 // cloud holds once for every region. Certificates are the first of it.
 //
-// A globals node keeps the cloud's certificate chains, one record per
+// A cm node keeps the cloud's certificate chains, one record per
 // issuance; the private key of each is in the secrets service. Any node that
 // needs a certificate orders it itself, keeps it here, and reads the newest
 // one back.
-package tau.globals.v2;
+package tau.cm.v2;
 
 service CertificateService {
   // Certificate is the newest unexpired certificate kept for a name.

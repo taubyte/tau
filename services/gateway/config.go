@@ -198,7 +198,7 @@ type options struct {
 
 // Issuer issues a certificate for a generated name the operator's wildcard
 // does not cover, and answers the CA's HTTP-01 challenges for it.
-// services/globals' Client is the one a node hands over: it orders what
+// services/cm' Client is the one a node hands over: it orders what
 // nothing keeps yet and answers HTTP-01 from the cloud's account key.
 type Issuer interface {
 	Certificate(ctx context.Context, name string) (tls.Certificate, error)

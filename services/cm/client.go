@@ -1,4 +1,4 @@
-package globals
+package cm
 
 import (
 	"context"
@@ -24,12 +24,12 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	pkgcertificate "github.com/taubyte/tau/pkg/certificate"
 	"github.com/taubyte/tau/pkg/certificate/acme"
-	globalsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/globals/v2"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/globals/v2/globalsv2connect"
+	cmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2/cmv2connect"
 )
 
 // client.go is how a node gets its certificates: it reads the newest one kept
-// on the globals nodes, and orders one from the CA itself when none is. It is
+// on the cm nodes, and orders one from the CA itself when none is. It is
 // the one helper every public listener takes its certificates from:
 // GetCertificate is a tls.Config's.
 
@@ -42,7 +42,7 @@ const CertWait = 3 * time.Second
 const Recheck = time.Minute
 
 // ErrNoMembers is a cloud where no node reports this service.
-var ErrNoMembers = errors.New("globals: no globals node is reachable")
+var ErrNoMembers = errors.New("cm: no cm node is reachable")
 
 // Vault is the slice of the secrets service the keys are kept in.
 type Vault interface {
@@ -143,7 +143,7 @@ func (c *Client) Close() error {
 	return nil
 }
 
-// targets is every globals node, this one first when it runs one.
+// targets is every cm node, this one first when it runs one.
 func (c *Client) targets() []peer.ID {
 	var all []peer.ID
 	if c.local() != nil {
@@ -157,7 +157,7 @@ func (c *Client) targets() []peer.ID {
 	return all
 }
 
-func (c *Client) at(p peer.ID) (globalsv2connect.CertificateServiceClient, error) {
+func (c *Client) at(p peer.ID) (cmv2connect.CertificateServiceClient, error) {
 	if p == c.host.ID() {
 		if s := c.local(); s != nil {
 			return handler{s}, nil
@@ -173,10 +173,10 @@ func (c *Client) at(p peer.ID) (globalsv2connect.CertificateServiceClient, error
 		}
 		c.conns[p] = conn
 	}
-	return globalsv2connect.NewCertificateServiceClient(conn.HTTP(), conn.URL()), nil
+	return cmv2connect.NewCertificateServiceClient(conn.HTTP(), conn.URL()), nil
 }
 
-// stored is the newest issuance of name any globals node holds: each holds a
+// stored is the newest issuance of name any cm node holds: each holds a
 // replica, and one behind the others must not hide a newer one.
 func (c *Client) stored(ctx context.Context, name string) (*kept, error) {
 	targets := c.targets()
@@ -188,8 +188,8 @@ func (c *Client) stored(ctx context.Context, name string) (*kept, error) {
 	for _, p := range targets {
 		svc, err := c.at(p)
 		if err == nil {
-			var res *connect.Response[globalsv2.Issued]
-			if res, err = svc.Certificate(ctx, connect.NewRequest(&globalsv2.CertificateRequest{Name: name})); err == nil {
+			var res *connect.Response[cmv2.Issued]
+			if res, err = svc.Certificate(ctx, connect.NewRequest(&cmv2.CertificateRequest{Name: name})); err == nil {
 				k, perr := parseRecord(res.Msg)
 				if perr == nil && c.now().Before(k.leaf.NotAfter) && (best == nil || k.leaf.NotAfter.After(best.leaf.NotAfter)) {
 					best = k
@@ -235,7 +235,7 @@ func (c *Client) Certificate(ctx context.Context, name string) (tls.Certificate,
 	})
 	select {
 	case <-ctx.Done():
-		return tls.Certificate{}, fmt.Errorf("globals: %s: %w", name, ctx.Err())
+		return tls.Certificate{}, fmt.Errorf("cm: %s: %w", name, ctx.Err())
 	case r := <-res:
 		if r.Err != nil {
 			return tls.Certificate{}, r.Err
@@ -266,7 +266,7 @@ func (c *Client) refreshInBackground(name string) {
 		ctx, cancel := context.WithTimeout(context.Background(), acme.DefaultTimeout+c.timeout)
 		defer cancel()
 		if _, err := c.obtain(ctx, name); err != nil {
-			c.logf("globals: renewing %s: %v", name, err)
+			c.logf("cm: renewing %s: %v", name, err)
 		}
 	}()
 }
@@ -300,7 +300,7 @@ func (c *Client) obtain(ctx context.Context, name string) (*tls.Certificate, err
 	}
 	if ierr != nil {
 		if k != nil {
-			c.logf("globals: renewing %s: %v", name, ierr)
+			c.logf("cm: renewing %s: %v", name, ierr)
 			return c.open(ctx, name, k)
 		}
 		return nil, ierr
@@ -317,7 +317,7 @@ func (c *Client) open(ctx context.Context, name string, k *kept) (*tls.Certifica
 	ref := k.record.GetKey()
 	key, err := c.vault.Get(ctx, ref.GetProject(), ref.GetEnvironment(), ref.GetName())
 	if err != nil {
-		return nil, fmt.Errorf("globals: opening the key of %s: %w", name, err)
+		return nil, fmt.Errorf("cm: opening the key of %s: %w", name, err)
 	}
 	cert, err := pkgcertificate.KeyPair(append(append([]byte(nil), k.record.GetChain()...), key...))
 	if err != nil {
@@ -353,13 +353,13 @@ func (c *Client) accountKey(ctx context.Context) (crypto.Signer, error) {
 	if len(c.cfg.Seed) == 0 {
 		return nil, ErrNoAccount
 	}
-	key, blob, err := acme.DeriveKey(c.cfg.Seed, "tau/globals/acme-account/"+directoryOf(c.cfg.ACME))
+	key, blob, err := acme.DeriveKey(c.cfg.Seed, "tau/cm/acme-account/"+directoryOf(c.cfg.ACME))
 	if err != nil {
 		return nil, err
 	}
 	// EVERY NODE WRITES THE SAME BYTES, so concurrent first writes agree.
 	if err := c.vault.Set(ctx, VaultProject, VaultEnvironment, name, blob); err != nil {
-		c.logf("globals: keeping the account key: %v", err)
+		c.logf("cm: keeping the account key: %v", err)
 	}
 	c.account = key
 	return key, nil
@@ -417,7 +417,7 @@ func (c *Client) Challenge(token string) (string, bool) {
 	key, err := c.accountKey(ctx)
 	c.keyMu.Unlock()
 	if err != nil {
-		c.logf("globals: answering http-01: %v", err)
+		c.logf("cm: answering http-01: %v", err)
 		return "", false
 	}
 	thumbprint, err := acme.Thumbprint(key)
@@ -431,7 +431,7 @@ func (c *Client) Challenge(token string) (string, bool) {
 func (c *Client) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	name := normal(hello.ServerName)
 	if name == "" {
-		return nil, errors.New("globals: the handshake names no server")
+		return nil, errors.New("cm: the handshake names no server")
 	}
 	ctx := hello.Context()
 	if ctx == nil {
@@ -452,7 +452,7 @@ func (c *Client) TLSConfig() *tls.Config {
 }
 
 // keeper is the issuer's Store: the key into the vault first and the chain
-// onto a globals node after, so no chain is kept whose key is not.
+// onto a cm node after, so no chain is kept whose key is not.
 type keeper struct{ c *Client }
 
 // Load is never asked: the client decides what to order itself.
@@ -475,13 +475,13 @@ func (st keeper) Keep(ctx context.Context, name string, blob []byte) error {
 		}
 	}
 	if chain == nil || key == nil {
-		return errors.New("globals: an issuance holds no chain or no key")
+		return errors.New("cm: an issuance holds no chain or no key")
 	}
-	ref := &globalsv2.SecretRef{Project: VaultProject, Environment: VaultEnvironment, Name: "leaf-" + issuanceID()}
+	ref := &cmv2.SecretRef{Project: VaultProject, Environment: VaultEnvironment, Name: "leaf-" + issuanceID()}
 	if err := c.vault.Set(ctx, ref.Project, ref.Environment, ref.Name, key); err != nil {
-		return fmt.Errorf("globals: keeping the key of %s: %w", name, err)
+		return fmt.Errorf("cm: keeping the key of %s: %w", name, err)
 	}
-	rec := &globalsv2.Issued{Name: name, Chain: chain, Key: ref}
+	rec := &cmv2.Issued{Name: name, Chain: chain, Key: ref}
 	targets := c.targets()
 	if len(targets) == 0 {
 		return ErrNoMembers

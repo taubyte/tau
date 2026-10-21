@@ -38,8 +38,8 @@ import (
 	"github.com/taubyte/tau/pkg/containers/core"
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/build/frontend"
+	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/gateway"
-	"github.com/taubyte/tau/services/globals"
 )
 
 // acme_live_test is issuance with nothing in process but tau: pebble is a CA
@@ -66,7 +66,7 @@ const (
 	liveCloud  = "tau." + liveParent
 )
 
-// fleet is three nodes: two run globals and dns and are the zone's NS, and a
+// fleet is three nodes: two run cm and dns and are the zone's NS, and a
 // third runs only a gateway and the build frontend, and orders what it serves
 // itself.
 type fleet struct {
@@ -92,14 +92,14 @@ func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 
 	// EACH RUN HAS ITS OWN RESOLVER AND ITS OWN CA, so nothing either learned
 	// in an earlier run answers for this one.
-	run := func(t *testing.T, cfg globals.CertificateConfig, httpPort int) (*fleet, string, *x509.CertPool) {
+	run := func(t *testing.T, cfg cm.CertificateConfig, httpPort int) (*fleet, string, *x509.CertPool) {
 		resolverAddr := startBind(t, bridge, resolverConf(parentNS), nil)
 		ca := startLivePebble(t, httpPort, resolverAddr)
 		f := &fleet{addrs: addrs, proxies: proxies}
 		for i, addr := range addrs {
 			file := liveNode(t, ca, cfg, addr, httpPort)
 			if i < 2 {
-				file.Node.Services = []string{node.Register, node.Discovery, node.Gateway, node.DNS, node.Secrets, node.Globals}
+				file.Node.Services = []string{node.Register, node.Discovery, node.Gateway, node.DNS, node.Secrets, node.CM}
 				file.Node.DNSListen = "127.0.0.1:0"
 			} else {
 				file.Node.Services = []string{node.Register, node.Discovery, node.Gateway, node.BuildFrontend}
@@ -143,7 +143,7 @@ func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 	t.Run("dns-01", func(t *testing.T) {
 		// NOTHING SERVES pebble's HTTP-01 port in this run, so only DNS-01 can
 		// prove anything.
-		f, resolverAddr, roots := run(t, globals.CertificateConfig{Wildcard: true}, freeLoopbackPort(t))
+		f, resolverAddr, roots := run(t, cm.CertificateConfig{Wildcard: true}, freeLoopbackPort(t))
 		gen := f.sameLeafEverywhere(t, name, roots)
 		require.Equal(t, []string{name}, gen.DNSNames)
 		require.True(t, f.reached(resolverAddr, "_acme-challenge."+name, dns.TypeTXT), "pebble's DNS-01 lookup reached tau's dns")
@@ -163,7 +163,7 @@ func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 	})
 
 	t.Run("http-01", func(t *testing.T) {
-		f, _, roots := run(t, globals.CertificateConfig{Challenge: globals.ChallengeHTTP}, freeLoopbackPort(t))
+		f, _, roots := run(t, cm.CertificateConfig{Challenge: cm.ChallengeHTTP}, freeLoopbackPort(t))
 		gen := f.sameLeafEverywhere(t, name, roots)
 		require.Equal(t, []string{name}, gen.DNSNames)
 	})
@@ -214,7 +214,7 @@ func issued(t *testing.T, address, name string, roots *x509.CertPool) *http.Resp
 	return res
 }
 
-func liveNode(t *testing.T, ca *livePebble, cfg globals.CertificateConfig, addr string, httpPort int) File {
+func liveNode(t *testing.T, ca *livePebble, cfg cm.CertificateConfig, addr string, httpPort int) File {
 	t.Helper()
 	minted, err := identity("")
 	require.NoError(t, err)
@@ -222,7 +222,7 @@ func liveNode(t *testing.T, ca *livePebble, cfg globals.CertificateConfig, addr 
 	return File{
 		Node: node.Config{
 			Gateway: gateway.Config{CloudFqdn: liveCloud},
-			Globals: globals.Config{Certificate: cfg},
+			CM:      cm.Config{Certificate: cfg},
 		},
 		Root:       t.TempDir(),
 		PrivateKey: base64.StdEncoding.EncodeToString(minted),

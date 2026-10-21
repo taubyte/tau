@@ -1,4 +1,4 @@
-// The certificate half of the globals service.
+// The certificate half of the cm service.
 //
 // # What is kept, and where
 //
@@ -26,9 +26,9 @@
 // # DNS-01
 //
 // A DNS-01 value is a pkg/cache entry with a lifetime of ChallengeTTL, one per
-// presentation, over the replicated challenge store every globals, dns and
+// presentation, over the replicated challenge store every cm, dns and
 // ordering node holds a copy of (Challenges).
-package globals
+package cm
 
 import (
 	"context"
@@ -63,18 +63,18 @@ const (
 const ChallengeTTL = 10 * time.Minute
 
 var (
-	ErrNoHost       = errors.New("globals: a service needs a host")
-	ErrNoDB         = errors.New("globals: a service needs a database")
-	ErrNoVault      = errors.New("globals: keys are kept in the secrets service, and this node reaches none")
-	ErrNoChallenges = errors.New("globals: DNS-01 needs a store to hold its values in")
-	ErrNoZone       = errors.New("globals: issuance needs the cloud's zone")
-	ErrNotZone      = errors.New("globals: only names in the cloud's zone are issued")
-	ErrNotKept      = errors.New("globals: nothing is kept for that name")
-	ErrNoAccount    = errors.New("globals: no ACME account key is configured, kept or derivable")
+	ErrNoHost       = errors.New("cm: a service needs a host")
+	ErrNoDB         = errors.New("cm: a service needs a database")
+	ErrNoVault      = errors.New("cm: keys are kept in the secrets service, and this node reaches none")
+	ErrNoChallenges = errors.New("cm: DNS-01 needs a store to hold its values in")
+	ErrNoZone       = errors.New("cm: issuance needs the cloud's zone")
+	ErrNotZone      = errors.New("cm: only names in the cloud's zone are issued")
+	ErrNotKept      = errors.New("cm: nothing is kept for that name")
+	ErrNoAccount    = errors.New("cm: no ACME account key is configured, kept or derivable")
 	ErrDisabled     = acme.ErrDisabled
 )
 
-// Config is what an operator writes under the node's `globals:`.
+// Config is what an operator writes under the node's `cm:`.
 type Config struct {
 	// Certificate is how the cloud issues its TLS certificates.
 	Certificate CertificateConfig `yaml:"certificate"`
@@ -107,7 +107,7 @@ type CertificateConfig struct {
 // normalised checks c and fills its defaults.
 func (c CertificateConfig) normalised() (CertificateConfig, error) {
 	if err := acme.Check(c.ACME); err != nil {
-		return c, fmt.Errorf("globals: %w", err)
+		return c, fmt.Errorf("cm: %w", err)
 	}
 	c.Zone = strings.ToLower(strings.Trim(c.Zone, "."))
 	if c.Zone == "" {
@@ -119,10 +119,10 @@ func (c CertificateConfig) normalised() (CertificateConfig, error) {
 	case ChallengeDNS:
 	case ChallengeHTTP:
 		if c.Wildcard {
-			return c, errors.New("globals: a wildcard is proved by dns-01 only")
+			return c, errors.New("cm: a wildcard is proved by dns-01 only")
 		}
 	default:
-		return c, fmt.Errorf("globals: challenge %q is neither %s nor %s", c.Challenge, ChallengeDNS, ChallengeHTTP)
+		return c, fmt.Errorf("cm: challenge %q is neither %s nor %s", c.Challenge, ChallengeDNS, ChallengeHTTP)
 	}
 	return c, nil
 }

@@ -392,7 +392,7 @@ func TestADirectoryThatCannotBeWrittenIsAnError(t *testing.T) {
 	require.Error(t, err)
 }
 
-// memStore is a Store in memory, as services/globals' is to the issuer.
+// memStore is a Store in memory, as services/cm' is to the issuer.
 type memStore struct {
 	mu    sync.Mutex
 	blobs map[string][]byte

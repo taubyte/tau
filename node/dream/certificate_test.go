@@ -24,10 +24,10 @@ import (
 	"github.com/taubyte/tau/node"
 	nodeDream "github.com/taubyte/tau/node/dream"
 	"github.com/taubyte/tau/pkg/certificate"
-	"github.com/taubyte/tau/services/globals"
+	"github.com/taubyte/tau/services/cm"
 )
 
-// certificate_test issues one certificate for a fleet: two globals nodes and
+// certificate_test issues one certificate for a fleet: two cm nodes and
 // a frontend-only node that runs neither, against pebble in process, whose
 // validation authority resolves through the fleet's own dns — DNS-01, the
 // default. The first node asked orders the name and every other one reads
@@ -54,7 +54,7 @@ func TestAServiceNameIsIssuedOnceForTheFleet(t *testing.T) {
 	}))
 	t.Cleanup(directory.Close)
 
-	cfg := globals.Config{Certificate: globals.CertificateConfig{ACME: certificate.ACME{
+	cfg := cm.Config{Certificate: cm.CertificateConfig{ACME: certificate.ACME{
 		Enabled:   true,
 		Directory: directory.URL + "/dir",
 		RootCA:    string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: directory.Certificate().Raw})),
@@ -63,10 +63,10 @@ func TestAServiceNameIsIssuedOnceForTheFleet(t *testing.T) {
 		Copies: 3,
 		Configure: func(index int, c *node.Config) {
 			c.Gateway.CloudFqdn = cloud
-			c.Globals = cfg
+			c.CM = cfg
 			switch index {
 			case 0, 1:
-				c.Services = append(slices.Clone(node.All), node.Globals)
+				c.Services = append(slices.Clone(node.All), node.CM)
 			default:
 				c.Services = []string{node.Discovery, node.BuildFrontend}
 				c.BuildFrontend.Listen = "127.0.0.1:0"
@@ -107,7 +107,7 @@ func TestAServiceNameIsIssuedOnceForTheFleet(t *testing.T) {
 				t.Logf("not yet: %v", err)
 			}
 			return err == nil
-		}, 3*time.Minute, time.Second, "every node is answered, from the frontend that runs no globals to the globals nodes")
+		}, 3*time.Minute, time.Second, "every node is answered, from the frontend that runs no cm to the cm nodes")
 		require.Equal(t, []string{name}, cert.Leaf.DNSNames)
 		leaves = append(leaves, cert.Certificate[0])
 	}

@@ -146,7 +146,7 @@ func (s *Service) AnswerContext(ctx context.Context, req *dns.Msg) *dns.Msg {
 	}
 
 	// A DNS-01 CHALLENGE, before anything an author wrote: the cloud's zone
-	// is the cloud's, and only a globals node proves names in it. See
+	// is the cloud's, and only a cm node proves names in it. See
 	// challenges.go.
 	if s.answerChallenge(ctx, reply, name, q) {
 		return reply

@@ -94,11 +94,11 @@ AS_ROOT := $(CURDIR)/scripts/as-root
 
 # test-acme issues real certificates from pebble, Let's Encrypt's test CA, run
 # in process: the issuer against it by HTTP-01 and DNS-01, nodes ordering a
-# service's name, a generated name and the zone's wildcard into the globals
+# service's name, a generated name and the zone's wildcard into the cm
 # store and reading them back, and a node's https listeners presenting them.
 # It needs nothing installed, so make test runs it too.
 test-acme:
-	go test -count=1 -v -timeout 10m ./pkg/certificate/acme/ ./services/globals/ && go test -count=1 -v -timeout 10m -run '^(TestAGeneratedNameIsIssuedByACMEAndServedOverTLS|TestTheZoneIsProvedByDNS01AndItsWildcardAnswersEveryService)$$' ./node/boot/
+	go test -count=1 -v -timeout 10m ./pkg/certificate/acme/ ./services/cm/ && go test -count=1 -v -timeout 10m -run '^(TestAGeneratedNameIsIssuedByACMEAndServedOverTLS|TestTheZoneIsProvedByDNS01AndItsWildcardAnswersEveryService)$$' ./node/boot/
 
 # test-acme-live issues from pebble in a container, a CA tau does not share a
 # process with, whose resolver is bind9 finding the cloud's zone by real NS and

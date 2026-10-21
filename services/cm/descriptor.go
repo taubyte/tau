@@ -1,17 +1,17 @@
-package globals
+package cm
 
 import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/taubyte/tau/p2p/rpc"
-	"github.com/taubyte/tau/pkg/proto/gen/tau/globals/v2/globalsv2connect"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2/cmv2connect"
 )
 
 // Name is the service's name, in a node's service list and in discovery.
-const Name = "globals"
+const Name = "cm"
 
 // Protocol is the libp2p protocol the service answers on.
-var Protocol protocol.ID = rpc.Protocol(globalsv2connect.CertificateServiceName)
+var Protocol protocol.ID = rpc.Protocol(cmv2connect.CertificateServiceName)
 
 type Ingress int
 

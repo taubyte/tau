@@ -440,8 +440,8 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int) error {
 	if cfg.Configure != nil {
 		cfg.Configure(index, &nodeConfig)
 	}
-	if nodeConfig.Globals.Certificate.Seed == nil {
-		nodeConfig.Globals.Certificate.Seed = m.SwarmKey()
+	if nodeConfig.CM.Certificate.Seed == nil {
+		nodeConfig.CM.Certificate.Seed = m.SwarmKey()
 	}
 
 	engines, err := boot.DatabaseEngines(ctx)

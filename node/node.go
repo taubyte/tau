@@ -67,12 +67,12 @@ import (
 
 	"github.com/taubyte/tau/node/placement"
 	authService "github.com/taubyte/tau/services/auth"
+	"github.com/taubyte/tau/services/cm"
+	cmService "github.com/taubyte/tau/services/cm"
 	databaseService "github.com/taubyte/tau/services/database"
 	"github.com/taubyte/tau/services/discovery"
 	dnsService "github.com/taubyte/tau/services/dns"
 	gateway "github.com/taubyte/tau/services/gateway"
-	"github.com/taubyte/tau/services/globals"
-	globalsService "github.com/taubyte/tau/services/globals"
 	primitivesService "github.com/taubyte/tau/services/primitives"
 	v2proxy "github.com/taubyte/tau/services/proxy"
 	registerService "github.com/taubyte/tau/services/register"
@@ -94,13 +94,13 @@ type Node struct {
 
 	secrets *secretsService.Service
 
-	// globals holds the cloud's certificates when this node runs it, certs is
+	// cm holds the cloud's certificates when this node runs it, certs is
 	// the client every public listener here takes them from, and challengeDB
 	// is where DNS-01 values are held. All nil in a cloud that issues none.
-	globals          *globalsService.Service
-	certs            *globalsService.Client
+	cm               *cmService.Service
+	certs            *cmService.Client
 	challengeDB      kvdb.KVDB
-	challengeAnswers *globals.Challenges
+	challengeAnswers *cm.Challenges
 
 	// database is the service that owns this project's engines, when this node
 	// runs it. A node that does not runs no database of its own — it reaches
@@ -254,7 +254,7 @@ func (n *Node) open() error {
 		return err
 	}
 	// AFTER THE SECRETS SERVICE, which keeps its keys.
-	if err := n.openGlobals(); err != nil {
+	if err := n.openCM(); err != nil {
 		return err
 	}
 	// BEFORE THE WORKER, for the reason the vault is: the wasm tier takes its kv
@@ -788,7 +788,7 @@ func (n *Node) openGateway() error {
 	}
 
 	// A GENERATED NAME THE WILDCARD DOES NOT COVER is ordered by this node
-	// and kept on the cloud's globals nodes; see globals.go.
+	// and kept on the cloud's cm nodes; see cm.go.
 	certs, err := n.certificates()
 	if err != nil {
 		return fmt.Errorf("node: gateway: %w", err)
@@ -853,8 +853,8 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.secrets != nil {
 		order = append(order, n.secrets)
 	}
-	if n.globals != nil {
-		order = append(order, n.globals)
+	if n.cm != nil {
+		order = append(order, n.cm)
 	}
 	// THE DATABASE BEFORE THE WORKER THAT READS THROUGH IT. It was in neither
 	// this list nor any other, which is two failures at once: its listener was

@@ -24,8 +24,8 @@ import (
 	"github.com/taubyte/tau/node"
 	"github.com/taubyte/tau/pkg/certificate"
 	"github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/gateway"
-	"github.com/taubyte/tau/services/globals"
 )
 
 // acme_test is REAL ISSUANCE FROM A REAL ACME SERVER: pebble, Let's Encrypt's
@@ -126,7 +126,7 @@ func handshake(t *testing.T, address, name string, roots *x509.CertPool) *http.R
 // the dns server, the secrets service the keys go to and the certificate
 // service. Its identity is fixed, as an operator's is: the secrets it kept
 // are opened by the shares of the peer it is.
-func issuing(t *testing.T, ca *pebble, cloud, root string, cfg globals.CertificateConfig) File {
+func issuing(t *testing.T, ca *pebble, cloud, root string, cfg cm.CertificateConfig) File {
 	t.Helper()
 	minted, err := identity("")
 	require.NoError(t, err)
@@ -138,10 +138,10 @@ func issuing(t *testing.T, ca *pebble, cloud, root string, cfg globals.Certifica
 	}
 	return File{
 		Node: node.Config{
-			Services:  []string{node.Register, node.Discovery, node.Gateway, node.DNS, node.Secrets, node.Globals},
+			Services:  []string{node.Register, node.Discovery, node.Gateway, node.DNS, node.Secrets, node.CM},
 			DNSListen: "127.0.0.1:0",
 			Gateway:   gateway.Config{CloudFqdn: cloud},
-			Globals:   globals.Config{Certificate: cfg},
+			CM:        cm.Config{Certificate: cfg},
 		},
 		Root:       root,
 		PrivateKey: base64.StdEncoding.EncodeToString(minted),
@@ -158,7 +158,7 @@ func TestAGeneratedNameIsIssuedByACMEAndServedOverTLS(t *testing.T) {
 	const cloud = "tau.example.io"
 	compiled, hosts, name := fixtureWithHosts(t, cloud)
 	ca := startPebble(t)
-	f := issuing(t, ca, cloud, t.TempDir(), globals.CertificateConfig{Challenge: globals.ChallengeHTTP})
+	f := issuing(t, ca, cloud, t.TempDir(), cm.CertificateConfig{Challenge: cm.ChallengeHTTP})
 	running, err := Start(t.Context(), f)
 	require.NoError(t, err)
 	ca.validate(t, running.Address(), dnsOf(t, running))
@@ -196,7 +196,7 @@ func TestTheZoneIsProvedByDNS01AndItsWildcardAnswersEveryService(t *testing.T) {
 	const cloud = "tau.example.io"
 	compiled, hosts, name := fixtureWithHosts(t, cloud)
 	ca := startPebble(t)
-	running, err := Start(t.Context(), issuing(t, ca, cloud, t.TempDir(), globals.CertificateConfig{Wildcard: true}))
+	running, err := Start(t.Context(), issuing(t, ca, cloud, t.TempDir(), cm.CertificateConfig{Wildcard: true}))
 	require.NoError(t, err)
 	defer running.Close()
 	// NO HTTP-01 PORT: pebble is pointed at a port nothing serves, so only

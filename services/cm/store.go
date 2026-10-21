@@ -1,4 +1,4 @@
-package globals
+package cm
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	globalsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/globals/v2"
+	cmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2"
 )
 
 // store.go is the keys this service writes: one per issuance, carrying its
@@ -22,7 +22,7 @@ const certPrefix = "/cert/"
 
 // kept is one issuance as stored, with its leaf parsed.
 type kept struct {
-	record *globalsv2.Issued
+	record *cmv2.Issued
 	leaf   *x509.Certificate
 }
 
@@ -31,17 +31,17 @@ func certKey(name string, notAfter time.Time, id string) string {
 }
 
 func parseIssued(blob []byte) (*kept, error) {
-	var rec globalsv2.Issued
+	var rec cmv2.Issued
 	if err := proto.Unmarshal(blob, &rec); err != nil {
 		return nil, err
 	}
 	return parseRecord(&rec)
 }
 
-func parseRecord(rec *globalsv2.Issued) (*kept, error) {
+func parseRecord(rec *cmv2.Issued) (*kept, error) {
 	block, _ := pem.Decode(rec.GetChain())
 	if block == nil {
-		return nil, errors.New("globals: an issuance holds no chain")
+		return nil, errors.New("cm: an issuance holds no chain")
 	}
 	leaf, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
@@ -54,7 +54,7 @@ func parseRecord(rec *globalsv2.Issued) (*kept, error) {
 func (s *Service) newest(ctx context.Context, name string) (*kept, error) {
 	keys, err := s.db.List(ctx, certPrefix+name+"/")
 	if err != nil {
-		return nil, fmt.Errorf("globals: listing %s: %w", name, err)
+		return nil, fmt.Errorf("cm: listing %s: %w", name, err)
 	}
 	slices.Sort(keys)
 	for i := len(keys) - 1; i >= 0; i-- {
@@ -72,7 +72,7 @@ func (s *Service) newest(ctx context.Context, name string) (*kept, error) {
 }
 
 // keep stores one issuance under a key of its own.
-func (s *Service) keep(ctx context.Context, rec *globalsv2.Issued) error {
+func (s *Service) keep(ctx context.Context, rec *cmv2.Issued) error {
 	name := normal(rec.GetName())
 	if !s.cfg.inZone(name) {
 		return fmt.Errorf("%w: %s is not in %s", ErrNotZone, name, s.cfg.Zone)
@@ -82,13 +82,13 @@ func (s *Service) keep(ctx context.Context, rec *globalsv2.Issued) error {
 		return err
 	}
 	if err := k.leaf.VerifyHostname(strings.Replace(name, "*", "x", 1)); err != nil {
-		return fmt.Errorf("globals: the chain kept for %s does not name it: %w", name, err)
+		return fmt.Errorf("cm: the chain kept for %s does not name it: %w", name, err)
 	}
 	ref := rec.GetKey()
 	if ref.GetProject() != VaultProject || ref.GetEnvironment() != VaultEnvironment || ref.GetName() == "" {
-		return errors.New("globals: an issuance's key is kept under the cloud's certificate secrets")
+		return errors.New("cm: an issuance's key is kept under the cloud's certificate secrets")
 	}
-	blob, err := proto.Marshal(&globalsv2.Issued{Name: name, Chain: rec.GetChain(), Key: ref, NotAfter: k.leaf.NotAfter.Unix()})
+	blob, err := proto.Marshal(&cmv2.Issued{Name: name, Chain: rec.GetChain(), Key: ref, NotAfter: k.leaf.NotAfter.Unix()})
 	if err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-package globals
+package cm
 
 import (
 	"context"
@@ -35,7 +35,7 @@ import (
 	pkgcertificate "github.com/taubyte/tau/pkg/certificate"
 	"github.com/taubyte/tau/pkg/certificate/acme"
 	kvdbmock "github.com/taubyte/tau/pkg/kvdb/mock"
-	globalsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/globals/v2"
+	cmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2"
 )
 
 const zone = "tau.example.io"
@@ -139,7 +139,7 @@ func (f *fleet) challenges(t *testing.T) *Challenges {
 	return c
 }
 
-// newFleet starts pebble and n globals nodes over one database and one
+// newFleet starts pebble and n cm nodes over one database and one
 // vault, which is what replication converges them to.
 func newFleet(t *testing.T, n int, wildcard bool) *fleet {
 	t.Helper()
@@ -209,7 +209,7 @@ func (f *fleet) add(t *testing.T) *Service {
 	return s
 }
 
-// client is a node that is not a globals node, with its own copy of the
+// client is a node that is not a cm node, with its own copy of the
 // challenge store.
 func (f *fleet) client(t *testing.T, opts ...ClientOption) *Client {
 	t.Helper()
@@ -503,23 +503,23 @@ func TestTheStoreKeepsOnlyWhatItCanServe(t *testing.T) {
 	require.NoError(t, f.db.Put(t.Context(), certKey(name, far, "a"), []byte("not a record")))
 	_, err := s.newest(t.Context(), name)
 	require.ErrorIs(t, err, ErrNotKept)
-	_, err = h.Certificate(t.Context(), connect.NewRequest(&globalsv2.CertificateRequest{Name: name}))
+	_, err = h.Certificate(t.Context(), connect.NewRequest(&cmv2.CertificateRequest{Name: name}))
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 
 	blob := pemOf(t)
 	block, _ := pem.Decode(blob)
 	chain := pem.EncodeToMemory(block)
-	ref := &globalsv2.SecretRef{Project: VaultProject, Environment: VaultEnvironment, Name: "leaf-x"}
-	keep := func(rec *globalsv2.Issued) error {
+	ref := &cmv2.SecretRef{Project: VaultProject, Environment: VaultEnvironment, Name: "leaf-x"}
+	keep := func(rec *cmv2.Issued) error {
 		_, err := h.Keep(t.Context(), connect.NewRequest(rec))
 		return err
 	}
-	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(keep(&globalsv2.Issued{Name: "a.example.com", Chain: chain, Key: ref})))
-	require.Error(t, keep(&globalsv2.Issued{Name: name, Chain: []byte("x"), Key: ref}))
-	require.ErrorContains(t, keep(&globalsv2.Issued{Name: "b." + zone, Chain: chain, Key: ref}), "does not name it")
-	require.ErrorContains(t, keep(&globalsv2.Issued{Name: name, Chain: chain, Key: &globalsv2.SecretRef{Project: "shop"}}), "certificate secrets")
-	require.NoError(t, keep(&globalsv2.Issued{Name: name, Chain: chain, Key: ref}))
-	got, err := h.Certificate(t.Context(), connect.NewRequest(&globalsv2.CertificateRequest{Name: name}))
+	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(keep(&cmv2.Issued{Name: "a.example.com", Chain: chain, Key: ref})))
+	require.Error(t, keep(&cmv2.Issued{Name: name, Chain: []byte("x"), Key: ref}))
+	require.ErrorContains(t, keep(&cmv2.Issued{Name: "b." + zone, Chain: chain, Key: ref}), "does not name it")
+	require.ErrorContains(t, keep(&cmv2.Issued{Name: name, Chain: chain, Key: &cmv2.SecretRef{Project: "shop"}}), "certificate secrets")
+	require.NoError(t, keep(&cmv2.Issued{Name: name, Chain: chain, Key: ref}))
+	got, err := h.Certificate(t.Context(), connect.NewRequest(&cmv2.CertificateRequest{Name: name}))
 	require.NoError(t, err)
 	require.Equal(t, "leaf-x", got.Msg.GetKey().GetName())
 

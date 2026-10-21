@@ -7,26 +7,26 @@ import (
 
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
+	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/dns"
-	"github.com/taubyte/tau/services/globals"
 )
 
-// globals.go wires the globals service — the store of the cloud's
+// cm.go wires the cm service — the store of the cloud's
 // certificates, for now — and the one client every public listener on this
 // node takes its certificates from.
 //
-// A node naming `globals` in its services hosts the store; the cloud's
-// `globals.certificate.acme` turning on makes every node a client that orders
+// A node naming `cm` in its services hosts the store; the cloud's
+// `cm.certificate.acme` turning on makes every node a client that orders
 // what it needs itself. DNS-01 values are cache entries over their own
 // replicated database (challengeDatabase), opened by every node that orders
 // or answers them.
 
-// Globals is the service that holds what the cloud keeps once for every
+// CM is the service that holds what the cloud keeps once for every
 // region.
-var Globals = globals.Name
+var CM = cm.Name
 
 // challengeDatabase is where the answers live while an order is proved.
-const challengeDatabase = "globals-challenges"
+const challengeDatabase = "cm-challenges"
 
 // ErrNoZoneForCertificates is ACME on a node that does not know the zone.
 var ErrNoZoneForCertificates = errors.New("node: certificates are issued for the cloud's zone, and this node's gateway names none (gateway.cloudfqdn)")
@@ -39,8 +39,8 @@ func (n *Node) certVault() *vault {
 	return n.shared
 }
 
-func (n *Node) openGlobals() error {
-	if !n.cfg.runs(Globals) {
+func (n *Node) openCM() error {
+	if !n.cfg.runs(CM) {
 		return nil
 	}
 	if n.opts.databases == nil {
@@ -50,7 +50,7 @@ func (n *Node) openGlobals() error {
 		return ErrNoZoneForCertificates
 	}
 
-	db, err := n.opts.databases.New(logger, Globals, rebroadcastSeconds)
+	db, err := n.opts.databases.New(logger, CM, rebroadcastSeconds)
 	if err != nil {
 		return err
 	}
@@ -61,25 +61,25 @@ func (n *Node) openGlobals() error {
 		return err
 	}
 
-	cfg := n.cfg.Globals
+	cfg := n.cfg.CM
 	cfg.Certificate.Zone = n.cfg.Gateway.CloudFqdn
-	var options []globals.Option
+	var options []cm.Option
 	if n.opts.now != nil {
-		options = append(options, globals.WithClock(n.opts.now))
+		options = append(options, cm.WithClock(n.opts.now))
 	}
-	svc, err := globals.New(n.opts.host, db, cfg, options...)
+	svc, err := cm.New(n.opts.host, db, cfg, options...)
 	if err != nil {
 		return err
 	}
-	n.globals = svc
+	n.cm = svc
 	n.closers = append(n.closers, svc)
 	return nil
 }
 
 // certificates is the client this node's listeners take certificates from,
 // built on first use, or nil in a cloud that issues none.
-func (n *Node) certificates() (*globals.Client, error) {
-	if !n.cfg.Globals.Certificate.ACME.Enabled {
+func (n *Node) certificates() (*cm.Client, error) {
+	if !n.cfg.CM.Certificate.ACME.Enabled {
 		return nil, nil
 	}
 	if n.certs != nil {
@@ -88,22 +88,22 @@ func (n *Node) certificates() (*globals.Client, error) {
 	if n.cfg.Gateway.CloudFqdn == "" {
 		return nil, ErrNoZoneForCertificates
 	}
-	cfg := n.cfg.Globals
+	cfg := n.cfg.CM
 	cfg.Certificate.Zone = n.cfg.Gateway.CloudFqdn
-	options := []globals.ClientOption{globals.WithLogger(logger.Warnf)}
+	options := []cm.ClientOption{cm.WithLogger(logger.Warnf)}
 	if n.opts.now != nil {
-		options = append(options, globals.WithClientClock(n.opts.now))
+		options = append(options, cm.WithClientClock(n.opts.now))
 	}
 	local, err := n.answers()
 	if err != nil {
 		return nil, err
 	}
 	if local != nil {
-		options = append(options, globals.WithChallengeStore(local))
+		options = append(options, cm.WithChallengeStore(local))
 	}
-	c, err := globals.NewClient(n.opts.host,
-		func() []libp2ppeer.ID { return (&fromDiscovery{node: n, name: Globals}).Known() },
-		func() *globals.Service { return n.globals },
+	c, err := cm.NewClient(n.opts.host,
+		func() []libp2ppeer.ID { return (&fromDiscovery{node: n, name: CM}).Known() },
+		func() *cm.Service { return n.cm },
 		n.certVault(), cfg, options...)
 	if err != nil {
 		return nil, err
@@ -147,7 +147,7 @@ func (n *Node) challengeStore() (cacheStore, error) {
 
 // answers is this node's copy of the challenge store, opened once, or nil on
 // a node with no databases.
-func (n *Node) answers() (*globals.Challenges, error) {
+func (n *Node) answers() (*cm.Challenges, error) {
 	if n.opts.databases == nil {
 		return nil, nil
 	}
@@ -158,7 +158,7 @@ func (n *Node) answers() (*globals.Challenges, error) {
 	n.sharedMu.Lock()
 	defer n.sharedMu.Unlock()
 	if n.challengeAnswers == nil {
-		if n.challengeAnswers, err = globals.ChallengesIn(context.Background(), st, n.clock); err != nil {
+		if n.challengeAnswers, err = cm.ChallengesIn(context.Background(), st, n.clock); err != nil {
 			return nil, err
 		}
 	}
@@ -168,7 +168,7 @@ func (n *Node) answers() (*globals.Challenges, error) {
 // challengeReader is what this node's dns server answers DNS-01 with, or nil
 // in a cloud that issues none.
 func (n *Node) challengeReader() (dns.Challenges, error) {
-	if !n.cfg.Globals.Certificate.ACME.Enabled {
+	if !n.cfg.CM.Certificate.ACME.Enabled {
 		return nil, nil
 	}
 	local, err := n.answers()

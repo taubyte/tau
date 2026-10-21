@@ -1,4 +1,4 @@
-package globals
+package cm
 
 import (
 	"context"
@@ -30,7 +30,7 @@ const ChallengeWait = 5 * time.Second
 const challengePoll = 100 * time.Millisecond
 
 // ErrNoValue is a name with no value presented within the wait.
-var ErrNoValue = errors.New("globals: no DNS-01 value is presented for that name")
+var ErrNoValue = errors.New("cm: no DNS-01 value is presented for that name")
 
 // Challenges reads and writes DNS-01 values over this node's copy of the
 // replicated challenge store.

@@ -12,7 +12,7 @@ import (
 // for a name in the cloud's zone, while an order is proving it.
 //
 // They are asked for at query time from the reader the node composes — the
-// globals service's challenge cache — rather than carried in the discovery
+// cm service's challenge cache — rather than carried in the discovery
 // view: a CA looks a handful of times per order, and the values already live
 // in a store with a lifetime of their own.
 //

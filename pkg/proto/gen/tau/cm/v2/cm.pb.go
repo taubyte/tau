@@ -2,17 +2,17 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        (unknown)
-// source: tau/globals/v2/globals.proto
+// source: tau/cm/v2/cm.proto
 
-// The globals service's surface between tau nodes, over p2p/rpc: what the
+// The cm service's surface between tau nodes, over p2p/rpc: what the
 // cloud holds once for every region. Certificates are the first of it.
 //
-// A globals node keeps the cloud's certificate chains, one record per
+// A cm node keeps the cloud's certificate chains, one record per
 // issuance; the private key of each is in the secrets service. Any node that
 // needs a certificate orders it itself, keeps it here, and reads the newest
 // one back.
 
-package globalsv2
+package cmv2
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -37,7 +37,7 @@ type Empty struct {
 
 func (x *Empty) Reset() {
 	*x = Empty{}
-	mi := &file_tau_globals_v2_globals_proto_msgTypes[0]
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -49,7 +49,7 @@ func (x *Empty) String() string {
 func (*Empty) ProtoMessage() {}
 
 func (x *Empty) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_globals_v2_globals_proto_msgTypes[0]
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -62,7 +62,7 @@ func (x *Empty) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Empty.ProtoReflect.Descriptor instead.
 func (*Empty) Descriptor() ([]byte, []int) {
-	return file_tau_globals_v2_globals_proto_rawDescGZIP(), []int{0}
+	return file_tau_cm_v2_cm_proto_rawDescGZIP(), []int{0}
 }
 
 type CertificateRequest struct {
@@ -75,7 +75,7 @@ type CertificateRequest struct {
 
 func (x *CertificateRequest) Reset() {
 	*x = CertificateRequest{}
-	mi := &file_tau_globals_v2_globals_proto_msgTypes[1]
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -87,7 +87,7 @@ func (x *CertificateRequest) String() string {
 func (*CertificateRequest) ProtoMessage() {}
 
 func (x *CertificateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_globals_v2_globals_proto_msgTypes[1]
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -100,7 +100,7 @@ func (x *CertificateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CertificateRequest.ProtoReflect.Descriptor instead.
 func (*CertificateRequest) Descriptor() ([]byte, []int) {
-	return file_tau_globals_v2_globals_proto_rawDescGZIP(), []int{1}
+	return file_tau_cm_v2_cm_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *CertificateRequest) GetName() string {
@@ -126,7 +126,7 @@ type Issued struct {
 
 func (x *Issued) Reset() {
 	*x = Issued{}
-	mi := &file_tau_globals_v2_globals_proto_msgTypes[2]
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -138,7 +138,7 @@ func (x *Issued) String() string {
 func (*Issued) ProtoMessage() {}
 
 func (x *Issued) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_globals_v2_globals_proto_msgTypes[2]
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -151,7 +151,7 @@ func (x *Issued) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Issued.ProtoReflect.Descriptor instead.
 func (*Issued) Descriptor() ([]byte, []int) {
-	return file_tau_globals_v2_globals_proto_rawDescGZIP(), []int{2}
+	return file_tau_cm_v2_cm_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Issued) GetName() string {
@@ -193,7 +193,7 @@ type SecretRef struct {
 
 func (x *SecretRef) Reset() {
 	*x = SecretRef{}
-	mi := &file_tau_globals_v2_globals_proto_msgTypes[3]
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -205,7 +205,7 @@ func (x *SecretRef) String() string {
 func (*SecretRef) ProtoMessage() {}
 
 func (x *SecretRef) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_globals_v2_globals_proto_msgTypes[3]
+	mi := &file_tau_cm_v2_cm_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -218,7 +218,7 @@ func (x *SecretRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SecretRef.ProtoReflect.Descriptor instead.
 func (*SecretRef) Descriptor() ([]byte, []int) {
-	return file_tau_globals_v2_globals_proto_rawDescGZIP(), []int{3}
+	return file_tau_cm_v2_cm_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *SecretRef) GetProject() string {
@@ -242,53 +242,53 @@ func (x *SecretRef) GetName() string {
 	return ""
 }
 
-var File_tau_globals_v2_globals_proto protoreflect.FileDescriptor
+var File_tau_cm_v2_cm_proto protoreflect.FileDescriptor
 
-const file_tau_globals_v2_globals_proto_rawDesc = "" +
+const file_tau_cm_v2_cm_proto_rawDesc = "" +
 	"\n" +
-	"\x1ctau/globals/v2/globals.proto\x12\x0etau.globals.v2\"\a\n" +
+	"\x12tau/cm/v2/cm.proto\x12\ttau.cm.v2\"\a\n" +
 	"\x05Empty\".\n" +
 	"\x12CertificateRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04nameJ\x04\b\x02\x10\x03\"|\n" +
+	"\x04name\x18\x01 \x01(\tR\x04nameJ\x04\b\x02\x10\x03\"w\n" +
 	"\x06Issued\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
-	"\x05chain\x18\x02 \x01(\fR\x05chain\x12+\n" +
-	"\x03key\x18\x03 \x01(\v2\x19.tau.globals.v2.SecretRefR\x03key\x12\x1b\n" +
+	"\x05chain\x18\x02 \x01(\fR\x05chain\x12&\n" +
+	"\x03key\x18\x03 \x01(\v2\x14.tau.cm.v2.SecretRefR\x03key\x12\x1b\n" +
 	"\tnot_after\x18\x04 \x01(\x03R\bnotAfter\"[\n" +
 	"\tSecretRef\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
 	"\venvironment\x18\x02 \x01(\tR\venvironment\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name2\x96\x01\n" +
-	"\x12CertificateService\x12I\n" +
-	"\vCertificate\x12\".tau.globals.v2.CertificateRequest\x1a\x16.tau.globals.v2.Issued\x125\n" +
-	"\x04Keep\x12\x16.tau.globals.v2.Issued\x1a\x15.tau.globals.v2.EmptyB\xbb\x01\n" +
-	"\x12com.tau.globals.v2B\fGlobalsProtoP\x01Z=github.com/taubyte/tau/pkg/proto/gen/tau/globals/v2;globalsv2\xa2\x02\x03TGX\xaa\x02\x0eTau.Globals.V2\xca\x02\x0eTau\\Globals\\V2\xe2\x02\x1aTau\\Globals\\V2\\GPBMetadata\xea\x02\x10Tau::Globals::V2b\x06proto3"
+	"\x04name\x18\x03 \x01(\tR\x04name2\x82\x01\n" +
+	"\x12CertificateService\x12?\n" +
+	"\vCertificate\x12\x1d.tau.cm.v2.CertificateRequest\x1a\x11.tau.cm.v2.Issued\x12+\n" +
+	"\x04Keep\x12\x11.tau.cm.v2.Issued\x1a\x10.tau.cm.v2.EmptyB\x93\x01\n" +
+	"\rcom.tau.cm.v2B\aCmProtoP\x01Z3github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2;cmv2\xa2\x02\x03TCX\xaa\x02\tTau.Cm.V2\xca\x02\tTau\\Cm\\V2\xe2\x02\x15Tau\\Cm\\V2\\GPBMetadata\xea\x02\vTau::Cm::V2b\x06proto3"
 
 var (
-	file_tau_globals_v2_globals_proto_rawDescOnce sync.Once
-	file_tau_globals_v2_globals_proto_rawDescData []byte
+	file_tau_cm_v2_cm_proto_rawDescOnce sync.Once
+	file_tau_cm_v2_cm_proto_rawDescData []byte
 )
 
-func file_tau_globals_v2_globals_proto_rawDescGZIP() []byte {
-	file_tau_globals_v2_globals_proto_rawDescOnce.Do(func() {
-		file_tau_globals_v2_globals_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_tau_globals_v2_globals_proto_rawDesc), len(file_tau_globals_v2_globals_proto_rawDesc)))
+func file_tau_cm_v2_cm_proto_rawDescGZIP() []byte {
+	file_tau_cm_v2_cm_proto_rawDescOnce.Do(func() {
+		file_tau_cm_v2_cm_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_tau_cm_v2_cm_proto_rawDesc), len(file_tau_cm_v2_cm_proto_rawDesc)))
 	})
-	return file_tau_globals_v2_globals_proto_rawDescData
+	return file_tau_cm_v2_cm_proto_rawDescData
 }
 
-var file_tau_globals_v2_globals_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
-var file_tau_globals_v2_globals_proto_goTypes = []any{
-	(*Empty)(nil),              // 0: tau.globals.v2.Empty
-	(*CertificateRequest)(nil), // 1: tau.globals.v2.CertificateRequest
-	(*Issued)(nil),             // 2: tau.globals.v2.Issued
-	(*SecretRef)(nil),          // 3: tau.globals.v2.SecretRef
+var file_tau_cm_v2_cm_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_tau_cm_v2_cm_proto_goTypes = []any{
+	(*Empty)(nil),              // 0: tau.cm.v2.Empty
+	(*CertificateRequest)(nil), // 1: tau.cm.v2.CertificateRequest
+	(*Issued)(nil),             // 2: tau.cm.v2.Issued
+	(*SecretRef)(nil),          // 3: tau.cm.v2.SecretRef
 }
-var file_tau_globals_v2_globals_proto_depIdxs = []int32{
-	3, // 0: tau.globals.v2.Issued.key:type_name -> tau.globals.v2.SecretRef
-	1, // 1: tau.globals.v2.CertificateService.Certificate:input_type -> tau.globals.v2.CertificateRequest
-	2, // 2: tau.globals.v2.CertificateService.Keep:input_type -> tau.globals.v2.Issued
-	2, // 3: tau.globals.v2.CertificateService.Certificate:output_type -> tau.globals.v2.Issued
-	0, // 4: tau.globals.v2.CertificateService.Keep:output_type -> tau.globals.v2.Empty
+var file_tau_cm_v2_cm_proto_depIdxs = []int32{
+	3, // 0: tau.cm.v2.Issued.key:type_name -> tau.cm.v2.SecretRef
+	1, // 1: tau.cm.v2.CertificateService.Certificate:input_type -> tau.cm.v2.CertificateRequest
+	2, // 2: tau.cm.v2.CertificateService.Keep:input_type -> tau.cm.v2.Issued
+	2, // 3: tau.cm.v2.CertificateService.Certificate:output_type -> tau.cm.v2.Issued
+	0, // 4: tau.cm.v2.CertificateService.Keep:output_type -> tau.cm.v2.Empty
 	3, // [3:5] is the sub-list for method output_type
 	1, // [1:3] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -296,26 +296,26 @@ var file_tau_globals_v2_globals_proto_depIdxs = []int32{
 	0, // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_tau_globals_v2_globals_proto_init() }
-func file_tau_globals_v2_globals_proto_init() {
-	if File_tau_globals_v2_globals_proto != nil {
+func init() { file_tau_cm_v2_cm_proto_init() }
+func file_tau_cm_v2_cm_proto_init() {
+	if File_tau_cm_v2_cm_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_globals_v2_globals_proto_rawDesc), len(file_tau_globals_v2_globals_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_cm_v2_cm_proto_rawDesc), len(file_tau_cm_v2_cm_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_tau_globals_v2_globals_proto_goTypes,
-		DependencyIndexes: file_tau_globals_v2_globals_proto_depIdxs,
-		MessageInfos:      file_tau_globals_v2_globals_proto_msgTypes,
+		GoTypes:           file_tau_cm_v2_cm_proto_goTypes,
+		DependencyIndexes: file_tau_cm_v2_cm_proto_depIdxs,
+		MessageInfos:      file_tau_cm_v2_cm_proto_msgTypes,
 	}.Build()
-	File_tau_globals_v2_globals_proto = out.File
-	file_tau_globals_v2_globals_proto_goTypes = nil
-	file_tau_globals_v2_globals_proto_depIdxs = nil
+	File_tau_cm_v2_cm_proto = out.File
+	file_tau_cm_v2_cm_proto_goTypes = nil
+	file_tau_cm_v2_cm_proto_depIdxs = nil
 }

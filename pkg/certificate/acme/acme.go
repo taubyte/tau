@@ -23,7 +23,7 @@
 //
 // A Store keeps each certificate and its key, so a restart reissues nothing.
 // The default is a directory under the node's root, which is one node's own;
-// services/globals passes one the whole cloud reads. A certificate
+// services/cm passes one the whole cloud reads. A certificate
 // is renewed once two thirds of its lifetime has gone, on a call that finds it
 // so, while it keeps being served.
 package acme
