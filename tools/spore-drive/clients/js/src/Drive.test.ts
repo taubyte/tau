@@ -154,7 +154,8 @@ describe("Drive against the mock", () => {
 
     // What was installed is the node the config describes, read off the host.
     const root = await disk(mock, names[0]);
-    const node = yaml.load(await fs.readFile(path.join(root, "tb/config/node.yaml"), "utf8")) as any;
+    const raw = await fs.readFile(path.join(root, "tb/config/node.yaml"), "utf8");
+    const node = yaml.load(raw) as any;
     await fs.rm(root, { recursive: true, force: true });
     expect(node.node.services).toEqual(["auth", "secrets", "discovery", "dns"]);
     expect(node.node.cloud).toBe("test.com");
@@ -165,7 +166,8 @@ describe("Drive against the mock", () => {
     expect(node.privatekey).toBeTruthy();
     expect(node.listen).toEqual(["/ip4/0.0.0.0/tcp/4242"]);
     expect(node.bootstrap).toHaveLength(1);
-    expect(node.node.auth.domainvalidation.private).toContain("PRIVATE KEY");
+    // No domain key reaches a node: none signs a domain claim.
+    expect(raw).not.toContain("PRIVATE KEY");
 
     // The course ended with the stream.
     await expect(drive.abort(course)).rejects.toMatchObject({ code: Code.NotFound });

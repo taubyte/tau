@@ -89,7 +89,8 @@ async def test_validate_plan_apply(mock_url, tmp_path):
     assert 'sudo "cp" "-f" "/tmp/tau" "/tb/bin/"' in cmds
 
     # what was installed is the node the config describes, read off the host
-    node = yaml.safe_load((await ssh.filesystem(name))["/tb/config/node.yaml"])
+    raw = (await ssh.filesystem(name))["/tb/config/node.yaml"]
+    node = yaml.safe_load(raw)
     assert node["node"]["services"] == ["auth", "secrets", "discovery", "dns"]
     assert node["node"]["cloud"] == "test.com"
     assert node["node"]["tenancy"] == ["github.com/acme"]
@@ -97,7 +98,7 @@ async def test_validate_plan_apply(mock_url, tmp_path):
     assert "BEGIN CERTIFICATE" in node["ca"] and "BEGIN CERTIFICATE" in node["certificate"] and node["privatekey"]
     assert node["listen"] == ["/ip4/0.0.0.0/tcp/4242"]
     assert node["bootstrap"] == []  # a fleet of one bootstraps from nobody
-    assert "PRIVATE KEY" in node["node"]["auth"]["domainvalidation"]["private"]
+    assert b"PRIVATE KEY" not in raw, "no domain key reaches a node: none signs a domain claim"
     await ssh.close()
 
 
