@@ -316,7 +316,7 @@ func (srv *Service) Start(ctx context.Context) error {
 	// Separate goroutines: bootstrap sleeps between attempts, and
 	// reconciliation must not wait those out before it can rotate or finish a
 	// migration.
-	srv.wg.Add(2)
+	srv.wg.Add(3)
 	go func() {
 		defer srv.wg.Done()
 		srv.bootstrap(srv.ctx)
@@ -324,6 +324,10 @@ func (srv *Service) Start(ctx context.Context) error {
 	go func() {
 		defer srv.wg.Done()
 		srv.reconcileLoop(srv.ctx)
+	}()
+	go func() {
+		defer srv.wg.Done()
+		srv.watchRoster(srv.ctx)
 	}()
 
 	return nil
@@ -456,6 +460,34 @@ func (srv *Service) wake() {
 	}
 }
 
+// rosterPollFloor bounds how often the roster is re-read when the boot delay
+// is tiny.
+const rosterPollFloor = 50 * time.Millisecond
+
+// watchRoster wakes reconciliation when the membership changes, rather than
+// leaving a new member to wait out the reconcile interval.
+//
+// It polls the member source because that is where the roster comes from: a
+// connection event fires before discovery counts the peer, so acting on one
+// would read the roster it is about to replace.
+func (srv *Service) watchRoster(ctx context.Context) {
+	every := max(srv.bootDelay, rosterPollFloor)
+	last := srv.roster()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(every):
+		}
+
+		members := srv.roster()
+		if !slices.Equal(members, last) {
+			last = members
+			srv.wake()
+		}
+	}
+}
+
 // reconcileLoop keeps the cluster's epochs converged: it rotates when the
 // roster changes or the key ages out, carries secrets forward, and retires
 // superseded epochs. Every node runs it, and every write it makes is justified
@@ -535,6 +567,12 @@ func (srv *Service) Set(ctx context.Context, ref Ref, ciphertext []byte, keyID s
 	if err != nil {
 		return err
 	}
+	// A wrapping under a key this node no longer holds is one it could never
+	// open, and a one-member key's share is deleted once nothing uses it.
+	if _, err := srv.shares.Get(ctx, key.KeyID); err != nil {
+		return fmt.Errorf("this node holds no share of key %s: %w", key.KeyID, err)
+	}
+
 	writtenAt, err := srv.nextWrittenAt(ctx, ref)
 	if err != nil {
 		return err
@@ -681,7 +719,7 @@ func (srv *Service) closing() error {
 }
 
 // roster is the membership this node can see, itself included.
-func (srv *Service) roster(context.Context) ([]string, error) {
+func (srv *Service) roster() []string {
 	members := make([]string, 0, maxMembers)
 	for _, p := range srv.others() {
 		members = append(members, p.String())
@@ -689,7 +727,7 @@ func (srv *Service) roster(context.Context) ([]string, error) {
 	members = append(members, srv.self())
 	slices.Sort(members)
 
-	return members, nil
+	return members
 }
 
 // others are the other members this node can see, at most maxMembers-1.

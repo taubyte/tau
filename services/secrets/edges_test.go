@@ -283,7 +283,9 @@ func TestAStoreThatFailsIsAnErrorEverywhere(t *testing.T) {
 	require.Error(t, srv.Delete(ctx, ref))
 	require.Error(t, srv.compact(ctx))
 	require.Error(t, srv.retire(ctx, &KeyMeta{}))
+	require.Error(t, srv.prune(ctx))
 	require.Error(t, srv.reEncrypt(ctx, &KeyMeta{}))
+	require.Error(t, srv.dropGenesis(ctx))
 }
 
 func TestTheBootTimerFormsTheFirstKey(t *testing.T) {

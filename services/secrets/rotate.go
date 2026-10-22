@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/cloudflare/circl/group"
@@ -29,8 +30,13 @@ import (
 //	trigger      the roster changed, or the active key is older than policy
 //	generate     a round at the next epoch over the current roster
 //	activate     a node offers a key once IT holds a share of it
-//	re-encrypt   every secret gains a wrapping under the new epoch
-//	retire       a secret's older wrappings go once it has a newer one
+//	prune        a secret's older versions go once a newer one opens here
+//	re-encrypt   every version gains a wrapping under the new epoch
+//	retire       a version's older wrappings go once it has a newer one
+//
+// A version that cannot be carried forward is reported, never a reason to
+// stop: one unreadable secret must not keep every other one's old wrappings,
+// and the keys under them, alive.
 func (srv *Service) reconcile(ctx context.Context) error {
 	// Repair before anything else. A node that lost its share is not a reason to
 	// rotate -- rotating would re-encrypt every secret to work around a node
@@ -46,11 +52,12 @@ func (srv *Service) reconcile(ctx context.Context) error {
 		return err
 	}
 
-	if err := srv.reEncrypt(ctx, active); err != nil {
-		return err
-	}
-
-	return srv.retire(ctx, active)
+	// Pruning first, so nothing is re-encrypted only to be deleted.
+	return errors.Join(
+		srv.prune(ctx),
+		srv.reEncrypt(ctx, active),
+		srv.retire(ctx, active),
+	)
 }
 
 // repairShares rebuilds any share this node should hold but cannot open.
@@ -165,10 +172,7 @@ func (srv *Service) rotateIfNeeded(ctx context.Context) error {
 		return srv.ensureKey(ctx)
 	}
 
-	members, err := srv.roster(ctx)
-	if err != nil {
-		return err
-	}
+	members := srv.roster()
 
 	aged, err := srv.aged(ctx, active.KeyID)
 	if err != nil {
@@ -189,6 +193,7 @@ func (srv *Service) rotateIfNeeded(ctx context.Context) error {
 	// passes before it is worth rotating for. Local, no clock, and the
 	// reconcile interval supplies the spacing.
 	if !srv.rememberRoster(members) {
+		srv.rearm()
 		return nil
 	}
 
@@ -237,6 +242,18 @@ func (srv *Service) rememberRoster(members []string) bool {
 	return seenBefore
 }
 
+// rearm runs one more pass a moment from now, so a roster seen once is
+// confirmed by a second sighting without waiting out the reconcile interval.
+func (srv *Service) rearm() {
+	srv.background(func() {
+		select {
+		case <-srv.ctx.Done():
+		case <-time.After(srv.bootDelay):
+			srv.wake()
+		}
+	})
+}
+
 // aged reports whether the active key has outlived the rotation policy.
 //
 // Age is measured from when THIS node stored its share, not from a timestamp in
@@ -255,6 +272,43 @@ func (srv *Service) aged(ctx context.Context, keyID string) (bool, error) {
 	}
 
 	return srv.now().Sub(stored) >= srv.rotateAfter, nil
+}
+
+// prune drops a secret's older versions once a newer one is proven to open
+// here: the same evidence retire asks for before it drops a wrapping. A newer
+// version this node cannot open yet is kept, and so is everything older than
+// the newest one it can.
+func (srv *Service) prune(ctx context.Context) error {
+	refs, err := srv.records.All(ctx)
+	if err != nil {
+		return err
+	}
+
+	var failures []error
+	for _, ref := range refs {
+		versions, err := srv.records.Versions(ctx, ref)
+		if err != nil {
+			failures = append(failures, err)
+			continue
+		}
+		if len(versions) < 2 {
+			continue
+		}
+
+		for i, v := range versions {
+			if _, err := srv.open(ctx, v.version); err != nil {
+				continue
+			}
+			for _, older := range versions[i+1:] {
+				if err := srv.dropVersion(ctx, older.version); err != nil {
+					failures = append(failures, err)
+				}
+			}
+			break
+		}
+	}
+
+	return errors.Join(failures...)
 }
 
 // reEncrypt gives every version a wrapping under the active key.
@@ -290,12 +344,7 @@ func (srv *Service) reEncrypt(ctx context.Context, active *KeyMeta) error {
 
 // carryForward re-wraps one version's data key under the active key.
 func (srv *Service) carryForward(ctx context.Context, v version, active *KeyMeta, public group.Element) error {
-	from, wrapping, writer, err := srv.readable(ctx, v)
-	if err != nil {
-		return err
-	}
-
-	dek, err := srv.recoverDEK(ctx, v, from, wrapping, writer)
+	dek, err := srv.open(ctx, v)
 	if err != nil {
 		return err
 	}
@@ -306,6 +355,30 @@ func (srv *Service) carryForward(ctx context.Context, v version, active *KeyMeta
 	}
 
 	return srv.wrappings.Put(ctx, v, active.KeyID, srv.self(), rewrapped)
+}
+
+// open recovers a version's data key under any key this node holds that it is
+// wrapped under, newest first.
+func (srv *Service) open(ctx context.Context, v version) ([]byte, error) {
+	keys, err := srv.held(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	failures := []error{fmt.Errorf("secret %s has no wrapping under a key this node holds", v)}
+	for _, key := range keys {
+		wrapping, writer, err := srv.wrappings.Get(ctx, v, key.KeyID)
+		if err != nil {
+			continue
+		}
+		dek, err := srv.recoverDEK(ctx, v, key, wrapping, writer)
+		if err == nil {
+			return dek, nil
+		}
+		failures = append(failures, err)
+	}
+
+	return nil, errors.Join(failures...)
 }
 
 // retire drops wrappings this cluster no longer needs.
@@ -325,7 +398,8 @@ func (srv *Service) carryForward(ctx context.Context, v version, active *KeyMeta
 // fewer than t members persisted a share of the new key: the replacement is
 // unopenable and the readable original is gone.
 //
-// It deliberately never deletes key material. A share is 32 bytes and a key
+// It deliberately never deletes key material, a one-member key's share aside
+// (dropGenesis). A share is 32 bytes and a key
 // record is barely more, while deciding that nobody anywhere still needs them
 // would take exactly the cluster-wide agreement this design does not have. So
 // wrappings -- the part that grows with the number of secrets -- are collected,
@@ -351,14 +425,41 @@ func (srv *Service) retire(ctx context.Context, active *KeyMeta) error {
 		}
 	}
 
-	if err := errors.Join(failures...); err != nil {
-		return err
-	}
+	failures = append(failures, srv.dropGenesis(ctx))
 
 	// Deletion writes tombstones, so the store has to be compacted for the
 	// space to come back. Compact documents itself as coordination-free, so
 	// every node may run it.
-	return srv.compact(ctx)
+	return errors.Join(append(failures, srv.compact(ctx))...)
+}
+
+// dropGenesis deletes this node's share of a one-member key nothing is wrapped
+// under any more.
+//
+// Retire keeps key material because deciding nobody still needs a share takes
+// agreement this design does not have. A one-member key is the exception: only
+// its own member ever wraps under it, so this node's store is the whole truth
+// about whether it is still in use.
+func (srv *Service) dropGenesis(ctx context.Context) error {
+	inUse, err := srv.keysInUse(ctx)
+	if err != nil {
+		return err
+	}
+
+	keys, err := srv.held(ctx)
+	if err != nil {
+		return err
+	}
+
+	self := srv.self()
+	var failures []error
+	for _, key := range keys {
+		if _, used := inUse[key.KeyID]; used || !slices.Equal(key.Members, []string{self}) {
+			continue
+		}
+		failures = append(failures, srv.shares.Delete(ctx, key.KeyID))
+	}
+	return errors.Join(failures...)
 }
 
 // supersededKeys lists the keys whose wrappings of this version are safe to

@@ -116,8 +116,7 @@ func (c *cluster) awaitMesh(t *testing.T, ctx context.Context) {
 
 	require.Eventually(t, func() bool {
 		for _, srv := range c.live() {
-			members, err := srv.roster(ctx)
-			if err != nil || len(members) != len(c.nodes) {
+			if len(srv.roster()) != len(c.nodes) {
 				return false
 			}
 		}
@@ -1474,8 +1473,7 @@ func TestABootstrapWaitsForItsOwnRoundWhenAPeerFinishedItFirst(t *testing.T) {
 	c := newCluster(t, ctx, 2)
 	self, peer := c.services[0], c.services[1]
 
-	members, err := self.roster(ctx)
-	require.NoError(t, err)
+	members := self.roster()
 	epoch, err := self.keys.Epoch(ctx)
 	require.NoError(t, err)
 	id := roundID(epoch, members)

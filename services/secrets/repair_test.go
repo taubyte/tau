@@ -122,8 +122,7 @@ func TestWithoutStatedMembersTheRosterIsWhoSpeaksTheProtocol(t *testing.T) {
 	want := []string{nodes[0].ID().String(), nodes[1].ID().String()}
 	slices.Sort(want)
 	require.Eventually(t, func() bool {
-		members, err := services[0].roster(ctx)
-		return err == nil && assert.ObjectsAreEqual(want, members)
+		return assert.ObjectsAreEqual(want, services[0].roster())
 	}, 60*time.Second, 100*time.Millisecond, "the roster never settled on the peers speaking the protocol")
 }
 

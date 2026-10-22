@@ -101,10 +101,7 @@ func (srv *Service) ensureKey(ctx context.Context) error {
 		return nil
 	}
 
-	members, err := srv.roster(ctx)
-	if err != nil {
-		return err
-	}
+	members := srv.roster()
 
 	if holder, epoch, roster, found := srv.peerWithKey(members); found {
 		// A ROUND THIS NODE IS IN CAN FINISH ELSEWHERE FIRST. Nodes that
