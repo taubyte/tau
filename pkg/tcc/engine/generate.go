@@ -98,23 +98,6 @@ func Derived(kind string, from ...string) Option {
 	}
 }
 
-// DerivedBy reports the derivation id declared for a field of a resource group, and
-// the fields it is computed from. Empty kind when the field is authored.//
-// Addresses a field of a GROUP. The project root's own attributes are not reachable
-// through it — findAttr walks groups — so the project id's generator and the project
-// label's derivation are both invisible here. Pre-existing, not introduced by the
-// derivation: a consumer that needs a root field reads Root().Attributes directly.
-
-func DerivedBy(root []*Node, group string, field []string) (kind string, from []string) {
-	a := findAttr(root, group, field)
-	if a == nil {
-		return "", nil
-	}
-	kind, _ = a.Meta["derived"].(string)
-	from, _ = a.Meta["derivedFrom"].([]string)
-	return kind, from
-}
-
 // Derive computes a derived field from its inputs. Unlike Generate it takes no
 // entropy and returns the same value for the same inputs, on every machine, forever.
 func Derive(kind string, from ...string) (string, error) {

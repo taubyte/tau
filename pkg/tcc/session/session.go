@@ -61,10 +61,6 @@ type RequiredField struct {
 	FieldRef
 	When   *FieldRef
 	WhenIn []string
-	// Unless inverts both the sense and the default: required UNLESS the
-	// discriminator (a bool) is true, and an ABSENT discriminator means
-	// required, because an unset bool is false.
-	Unless bool
 
 	// WhenBranch says the discriminator's value is the KEY an author wrote
 	// under WhenBranchAt rather than a field with a value — `build: {commands:
@@ -470,9 +466,6 @@ func (s *Session) ValidateResource(res []string) []FieldIssue {
 		at := s.authoredAt(res, rf.FieldRef)
 		msg := fmt.Sprintf("required field %q is missing", strings.Join(at, "/"))
 		switch {
-		case rf.Unless:
-			msg = fmt.Sprintf("%s is required unless %s is true", strings.Join(at, "/"),
-				strings.Join(rf.When.Path, "/"))
 		case rf.When != nil:
 			msg = fmt.Sprintf("%s is required when %s is %s", strings.Join(at, "/"),
 				strings.Join(rf.When.Path, "/"), strings.Join(rf.WhenIn, " or "))
@@ -573,14 +566,6 @@ func (s *Session) requiredNow(res []string, rf RequiredField) bool {
 		return true
 	}
 	v, err := s.Get(res, rf.When.Path)
-	if rf.Unless {
-		// Required unless the discriminator reads as true. Absent, unreadable
-		// or non-bool all mean required — an unset bool is false. Read as a
-		// real bool on both sides, so the two paths cannot drift over casing
-		// or stringification.
-		b, ok := v.(bool)
-		return err != nil || !ok || !b
-	}
 	if err != nil {
 		return false
 	}

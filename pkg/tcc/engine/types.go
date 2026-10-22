@@ -85,14 +85,10 @@ type schemaDef struct {
 }
 
 type Schema interface {
-	Yaml() (string, error)
-	Json() (string, error)
-	Map() map[string]any
+	rootNode() *Node
 }
 
 type Engine interface {
-	Schema() Schema
-	Parse() (object.Object[SeerRef], error)           // load linked to seer
 	Process() (object.Object[object.Refrence], error) // load & process
 	// ProcessFor is Process UNDER ONE BINDING: an attribute that varies takes its
 	// `<key>_<value>` spelling where the document writes one. An argument rather than
@@ -177,18 +173,4 @@ type Node struct {
 	Attributes []*Attribute
 	Children   []*Node
 	Meta       map[string]any // opaque codegen metadata; the engine never interprets it
-}
-
-type SeerOps struct {
-	ops []*yaseer.Query
-}
-
-type SeerRef *struct {
-	object.Object[object.Refrence]
-	ops   *SeerOps
-	query *yaseer.Query
-}
-
-type ObjectDataType interface {
-	object.Refrence | SeerRef
 }

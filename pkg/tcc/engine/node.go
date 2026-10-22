@@ -71,70 +71,6 @@ func wrapErrorWithLocation(query *yaseer.Query, err error, context string) error
 	return located(filePath, line, column, wrapped)
 }
 
-func (n *Node) Map() map[string]any {
-	// Pre-allocate map with known capacity (4 fields)
-	m := make(map[string]any, 4)
-	m["group"] = n.Group
-	m["match"] = stringify(n.Match)
-	m["attributes"] = n.attributesToMap()
-	m["children"] = n.childrenToSlice()
-	return m
-}
-
-func (n *Node) ChildMatch(name string) (*Node, error) {
-	for _, c := range n.Children {
-		switch pitm := c.Match.(type) {
-		case string:
-			if pitm == name {
-				return c, nil
-			}
-		case StringMatcher:
-			if pitm.Match(name) {
-				return c, nil
-			}
-		}
-	}
-	return nil, errors.New("not found")
-}
-
-func (n *Node) attributesToMap() map[string]any {
-	ret := make(map[string]any, len(n.Attributes))
-	for _, attr := range n.Attributes {
-		// Pre-allocate map with estimated capacity based on possible fields
-		estimatedCapacity := 2 // type is always present
-		if attr.Captures {
-			estimatedCapacity++
-		}
-		if attr.Default != nil {
-			estimatedCapacity++
-		}
-		if len(attr.Path) > 0 {
-			estimatedCapacity++
-		}
-		m := make(map[string]any, estimatedCapacity)
-		m["type"] = attr.Type.String()
-		if attr.Captures {
-			m["key"] = true
-		}
-		if attr.Default != nil {
-			m["default"] = attr.Default
-		}
-		if len(attr.Path) > 0 {
-			m["path"] = stringify(attr.Path)
-		}
-		ret[attr.Name] = m
-	}
-	return ret
-}
-
-func (n *Node) childrenToSlice() []any {
-	ret := make([]any, len(n.Children))
-	for i, node := range n.Children {
-		ret[i] = node.Map()
-	}
-	return ret
-}
-
 // inferPathQuery walks a declared path against the document, resolving each
 // matcher segment to the key actually present. It returns the RESOLVED segments
 // so a caller can report where it really looked ("streaming/size"), not the
@@ -353,9 +289,6 @@ func getValue(aq *yaseer.Query, attr *Attribute) (val any, err error) {
 // declaration order. An absent or unreadable discriminator means the condition
 // cannot hold — a resource with no trigger type owes no trigger-specific field.
 func requiredHere(n *Node, attr *Attribute, query *yaseer.Query) bool {
-	if field, ok := attr.Meta["requiredUnless"].(string); ok {
-		return requiredUnlessHere(n, field, query)
-	}
 	c, ok := attr.Meta["requiredWhen"].(ConditionSpec)
 	if !ok {
 		return false
@@ -502,28 +435,6 @@ func isBlank(val any) bool {
 	return false
 }
 
-// requiredUnlessHere reports whether a RequiredUnless field is required right
-// now: it is, unless the named sibling reads as true. An absent or unreadable
-// discriminator means required — an unset bool is false — which is the opposite
-// default to requiredHere's condition, and the reason the two are separate.
-func requiredUnlessHere(n *Node, field string, query *yaseer.Query) bool {
-	for _, sib := range n.Attributes {
-		if sib.Name != field {
-			continue
-		}
-		path := sib.Path
-		if len(path) == 0 {
-			path = []StringMatch{sib.Name}
-		}
-		var v bool
-		if sq, _, err := inferPathQuery(path, query); err == nil && sq.Value(&v) == nil {
-			return !v
-		}
-		return true
-	}
-	return false // names an attribute this group does not have
-}
-
 // requiredName is the authored path to report for a missing required field,
 // using the segments the document actually resolved to when the declared path
 // contains a matcher — "streaming/size", not the bare attribute name. Both
@@ -589,7 +500,7 @@ func variantOf(attr *Attribute, query *yaseer.Query, w walk) ([]StringMatch, err
 	return found, nil
 }
 
-func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer.Query, w walk) error {
+func setAttributes(n *Node, obj object.Object[object.Refrence], query *yaseer.Query, w walk) error {
 	if len(n.Attributes) == 0 {
 		return nil
 	}
@@ -760,7 +671,7 @@ func CompiledSegments(attr *Attribute) []string {
 // "2" would leave every reader to sort them back — numerically, or "10" lands between
 // "1" and "2" and the pipeline silently runs in the wrong order. So the sequence
 // compiles to ONE ordered value, and the order is the document's.
-func loadSequence[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer.Query, w walk) error {
+func loadSequence(n *Node, obj object.Object[object.Refrence], query *yaseer.Query, w walk) error {
 	name, ok := n.Match.(string)
 	if !ok || len(n.Children) == 0 {
 		return nil
@@ -788,7 +699,7 @@ func loadSequence[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer
 	iter := n.Children[0]
 	out := make([]any, 0, len(items))
 	for i := range items {
-		el, err := load[T](iter, at.Get(strconv.Itoa(i)), w)
+		el, err := load(iter, at.Get(strconv.Itoa(i)), w)
 		if err != nil {
 			return err
 		}
@@ -804,8 +715,8 @@ func loadSequence[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer
 	return nil
 }
 
-func load[T ObjectDataType](n *Node, query *yaseer.Query, w walk, claimed ...map[string]bool) (object.Object[T], error) {
-	obj := object.New[T]()
+func load(n *Node, query *yaseer.Query, w walk, claimed ...map[string]bool) (object.Object[object.Refrence], error) {
+	obj := object.New[object.Refrence]()
 
 	// Before reading anything: where the vocabulary asks for it, a key this node
 	// cannot read is a mistake rather than an extension. See strict.go — it used to
@@ -840,7 +751,7 @@ func load[T ObjectDataType](n *Node, query *yaseer.Query, w walk, claimed ...map
 // mergeInto folds one object's values and children into another, leaving what is
 // already there alone: whoever wrote first declared it, and this is the second
 // declaration arriving at the same key.
-func mergeInto[T ObjectDataType](into, from object.Object[T]) {
+func mergeInto(into, from object.Object[object.Refrence]) {
 	for key, val := range from.Flat() {
 		if child, err := from.Child(key).Object(); err == nil {
 			existing, err := into.CreatePath(key)
@@ -851,7 +762,7 @@ func mergeInto[T ObjectDataType](into, from object.Object[T]) {
 			continue
 		}
 		if any(into.Get(key)) == nil {
-			if v, ok := val.(T); ok {
+			if v, ok := val.(object.Refrence); ok {
 				into.Set(key, v)
 			}
 		}
@@ -910,7 +821,7 @@ func claimedUnder(n *Node, key string, vars Vars) map[string]bool {
 // loadChildren walks a node's child groups against the document at query. Shared by
 // group nodes (children are entries one level down) and nested resources (children
 // are keys of the resource's own document).
-func loadChildren[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer.Query, w walk, claimed ...map[string]bool) error {
+func loadChildren(n *Node, obj object.Object[object.Refrence], query *yaseer.Query, w walk, claimed ...map[string]bool) error {
 	list, _ := query.List()
 	// A resource-container has two channels below one instance: directories are the
 	// resources it contains, while keys in its leaf document are the nested data of
@@ -967,7 +878,7 @@ func loadChildren[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer
 		if !matched {
 			return nil
 		}
-		cobj, err := load[T](itm, childQuery, w, claimedUnder(n, l, w.vars))
+		cobj, err := load(itm, childQuery, w, claimedUnder(n, l, w.vars))
 		if err != nil {
 			return err
 		}

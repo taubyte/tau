@@ -153,10 +153,6 @@ func listOrNone(names []string) string {
 	return strings.Join(names, ", ")
 }
 
-func (s *instance) Parse() (object.Object[SeerRef], error) {
-	return load[SeerRef](s.schema.root, s.seer.Query(), s.walk(nil))
-}
-
 func (s *instance) Process() (object.Object[object.Refrence], error) {
 	return s.ProcessFor(nil)
 }
@@ -170,7 +166,7 @@ func (s *instance) ProcessFor(b Bound) (object.Object[object.Refrence], error) {
 	if err != nil {
 		return nil, err
 	}
-	return load[object.Refrence](s.schema.root, s.seer.Query(), s.walk(bound))
+	return load(s.schema.root, s.seer.Query(), s.walk(bound))
 }
 
 // bind drops the variables this read says nothing about and refuses the one binding that
@@ -212,8 +208,4 @@ func sortedBound(b Bound) []string {
 
 func (s *instance) walk(b Bound) walk {
 	return walk{strict: s.schema.root.Strict, bound: b, vars: s.vars}
-}
-
-func (s *instance) Schema() Schema {
-	return s.schema
 }

@@ -23,31 +23,6 @@ func TestNew(t *testing.T) {
 	assert.Equal(t, instance.schema, s) // Ensure the schema is correctly set in the parser instance
 }
 
-// Test for Parse function
-func TestParse(t *testing.T) {
-	s := &schemaDef{
-		root: &Node{}, // Create a Node instance as root
-	}
-	p, err := New(s, yaseer.SystemFS("fixtures/config"))
-	assert.NilError(t, err)
-
-	// Execute Parse
-	obj, err := p.Parse()
-	assert.NilError(t, err)
-	assert.Assert(t, obj != nil)
-}
-
-// Test for Schema function
-func TestSchema(t *testing.T) {
-	s := &schemaDef{}
-	p, err := New(s, yaseer.VirtualFS(afero.NewMemMapFs(), "/"))
-	assert.NilError(t, err)
-
-	// Execute Schema method
-	schema := p.Schema()
-	assert.Equal(t, schema, s) // Ensure the returned schema is the same as provided during New
-}
-
 // Test for New function with error path
 func TestNew_ErrorPath(t *testing.T) {
 	s := &schemaDef{}

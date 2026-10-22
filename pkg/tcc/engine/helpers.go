@@ -5,28 +5,6 @@ import (
 	"strings"
 )
 
-func stringify(a any) string {
-	switch b := a.(type) {
-	case string:
-		return b
-	case StringMatcher:
-		return b.String()
-	case AttributeValidator:
-		return "AttributeValidator()"
-	case []StringMatch:
-		ret := ""
-		for i, s := range b {
-			ret += stringify(s)
-			if i < len(b)-1 {
-				ret += "/"
-			}
-		}
-		return ret
-	default:
-		return "unknown"
-	}
-}
-
 // AKey is a compiled key with more than one segment — one level of the object per
 // entry. Built with Key(...); an attribute whose key is a single segment is declared
 // with a plain string, as it always was.

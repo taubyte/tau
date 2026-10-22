@@ -156,7 +156,6 @@ func (v2FieldValidator) RequiredFields(group string) []session.RequiredField {
 		rf := session.RequiredField{
 			FieldRef:     session.FieldRef{Path: r.Path, AnyOf: r.AnyOf},
 			WhenIn:       r.WhenIn,
-			Unless:       r.Unless,
 			WhenBranch:   r.WhenBranch,
 			WhenBranchAt: r.WhenBranchAt,
 		}

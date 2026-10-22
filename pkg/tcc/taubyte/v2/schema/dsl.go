@@ -143,8 +143,7 @@ func RequiredWhen[T string | AKey](field T, in ...string) engine.Option {
 func DefaultWhen[T string | AKey](field T, in ...string) engine.Option {
 	return engine.DefaultWhen(field, in...)
 }
-func RequiredUnless[T string | AKey](field T) engine.Option { return engine.RequiredUnless(field) }
-func KindFrom[T string | AKey](field T) engine.RefOpt       { return engine.KindFrom(field) }
+func KindFrom[T string | AKey](field T) engine.RefOpt { return engine.KindFrom(field) }
 
 // EnvironmentVar is THE NAME OF THIS VOCABULARY'S ONE VARIABLE. The engine has no such
 // word — it learns its axes from the root — so the word is declared here, once, and

@@ -1,86 +1,11 @@
 package engine
 
 import (
-	"encoding/json"
 	"testing"
 
 	yaseer "github.com/taubyte/tau/pkg/yaseer"
-	"gopkg.in/yaml.v3"
 	"gotest.tools/v3/assert"
 )
-
-func setupTestSchema() *schemaDef {
-	return &schemaDef{
-		root: &Node{
-			Match: "sample",
-			Attributes: []*Attribute{
-				{Name: "sampleAttr", Type: TypeString},
-			},
-		},
-	}
-}
-
-func TestSchema_Map(t *testing.T) {
-	parser := setupTestSchema()
-
-	expectedMap := map[string]any{
-		"root": map[string]any{
-			"match": "sample",
-			"group": false,
-			"attributes": map[string]any{
-				"sampleAttr": map[string]any{
-					"type": "String",
-				},
-			},
-			"children": []any{},
-		},
-	}
-	assert.DeepEqual(t, parser.Map(), expectedMap)
-}
-
-func TestSchema_Json(t *testing.T) {
-	parser := setupTestSchema()
-
-	expectedMap := map[string]any{
-		"root": map[string]any{
-			"match": "sample",
-			"group": false,
-			"attributes": map[string]any{
-				"sampleAttr": map[string]any{
-					"type": "String",
-				},
-			},
-			"children": []any{},
-		},
-	}
-	expectedJson, err := json.Marshal(expectedMap)
-	assert.NilError(t, err)
-	actualJson, err := parser.Json()
-	assert.NilError(t, err)
-	assert.Equal(t, actualJson, string(expectedJson))
-}
-
-func TestSchema_Yaml(t *testing.T) {
-	parser := setupTestSchema()
-
-	expectedMap := map[string]any{
-		"root": map[string]any{
-			"match": "sample",
-			"group": false,
-			"attributes": map[string]any{
-				"sampleAttr": map[string]any{
-					"type": "String",
-				},
-			},
-			"children": []any{},
-		},
-	}
-	expectedYaml, err := yaml.Marshal(expectedMap)
-	assert.NilError(t, err)
-	actualYaml, err := parser.Yaml()
-	assert.NilError(t, err)
-	assert.Equal(t, actualYaml, string(expectedYaml))
-}
 
 var resSchemaDef = []*Node{
 	DefineGroup("type1",
@@ -156,7 +81,7 @@ func TestSchema_Parse_ErrorCases(t *testing.T) {
 	for _, i := range []string{"1", "2", "3"} {
 		p, err := New(testSchemaDef, yaseer.SystemFS("fixtures/config_bad_"+i))
 		assert.NilError(t, err)
-		_, err = p.Parse()
+		_, err = p.Process()
 		if err == nil {
 			t.Error("should have failed")
 			t.FailNow()

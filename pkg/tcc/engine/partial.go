@@ -83,11 +83,6 @@ type RequiredField struct {
 	FieldRef
 	When   *FieldRef // the discriminator to read, nil when unconditional
 	WhenIn []string  // ...required only if its value is one of these
-	// Unless inverts the sense AND the default: the field is required unless
-	// the discriminator (a bool) is true, and an ABSENT discriminator means
-	// required — an unset bool is false. RequiredWhen cannot express that:
-	// there, an absent discriminator means NOT required.
-	Unless bool
 
 	// WhenBranchAt is set when the discriminator has NO value of its own: its
 	// path ends in a finite matcher and it Captures(), which means the value IS
@@ -169,8 +164,7 @@ func RequiredFields(root []*Node, group string) []RequiredField {
 		attrs := g.Children[0].Attributes
 		for _, a := range attrs {
 			cond, conditional := a.Meta["requiredWhen"].(ConditionSpec)
-			unlessField, unless := a.Meta["requiredUnless"].(string)
-			if !a.Required && !conditional && !unless {
+			if !a.Required && !conditional {
 				continue
 			}
 			paths := fieldPaths(a)
@@ -180,18 +174,6 @@ func RequiredFields(root []*Node, group string) []RequiredField {
 			rf := RequiredField{FieldRef: FieldRef{Path: paths[0]}}
 			if len(paths) > 1 {
 				rf.AnyOf = paths
-			}
-			if unless {
-				sib := attrByName(attrs, unlessField)
-				if sib == nil {
-					continue // names an attribute this group doesn't have
-				}
-				sp := fieldPath(sib)
-				if sp == nil {
-					continue
-				}
-				rf.When = &FieldRef{Path: sp}
-				rf.Unless = true
 			}
 			if conditional {
 				// Resolve the discriminator's NAME to its authored path here,

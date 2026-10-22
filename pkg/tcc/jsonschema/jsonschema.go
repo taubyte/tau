@@ -756,11 +756,6 @@ func (g jsonSchemaGen) attrSchema(a *engine.Attribute) map[string]any {
 	if c, ok := a.Meta["showWhen"].(engine.ConditionSpec); ok {
 		s[g.ext+"show-when"] = condition(c) // static visibility: show only when field ∈ in
 	}
-	if f, ok := a.Meta["requiredUnless"].(string); ok {
-		// Required unless the named sibling bool is true. One datum, so a bare
-		// name — the same identifier space as x-tau-required-when.field.
-		s[g.ext+"required-unless"] = f
-	}
 	if c, ok := a.Meta["requiredWhen"].(engine.ConditionSpec); ok {
 		// Conditionally required: enforced at load, so it belongs beside the
 		// standard `required` list rather than in it — JSON Schema's `required`

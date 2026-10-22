@@ -3441,7 +3441,7 @@ func rootAttributes() []*Attribute {
 		String("id", IsCID(), Required(), Generated(GenCID), EmitValidation("project_id", "project_id"), Doc("ID", "Content-addressed identifier (CID) of the project.")),
 		String("name", IsVariableName(), Doc("Name", "Project name. Must be a valid variable name.")),
 
-		// Declared so a consumer can DISCOVER it — engine.DerivedBy names the
+		// Declared so a consumer can DISCOVER it — the Derived mark names the
 		// derivation and its inputs — rather than each one hard-coding "hash the id
 		// and base32 it". It is never authored and so never appears in the compiled
 		// object; the validator is what says so out loud, because a key the schema

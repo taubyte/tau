@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
-	"github.com/taubyte/tau/pkg/tcc/object"
 	yaseer "github.com/taubyte/tau/pkg/yaseer"
 	"gotest.tools/v3/assert"
 )
@@ -38,7 +37,7 @@ func TestValidationError_ReportsLine1Column1(t *testing.T) {
 	}
 
 	query := sr.Query()
-	_, err = load[object.Refrence](node, query, walk{strict: false})
+	_, err = load(node, query, walk{strict: false})
 
 	// Expected format: /email.yaml:1:1: [validator error message]
 	// Check for location format: filepath:line:column
@@ -59,7 +58,7 @@ func TestValidationError_CarriesLocationStructurally(t *testing.T) {
 
 	attr := &Attribute{Name: "email", Type: TypeString, Required: true}
 	emailOnly()(attr)
-	_, err = load[object.Refrence](&Node{Attributes: []*Attribute{attr}}, sr.Query(), walk{strict: false})
+	_, err = load(&Node{Attributes: []*Attribute{attr}}, sr.Query(), walk{strict: false})
 	assert.Assert(t, err != nil)
 
 	var le *LocatedError
@@ -104,7 +103,7 @@ func TestValidationError_MultiLineYAML_ReportsCorrectLine(t *testing.T) {
 	}
 
 	query := sr.Query()
-	_, err = load[object.Refrence](node, query, walk{strict: false})
+	_, err = load(node, query, walk{strict: false})
 
 	// Expected format: /email.yaml:1:1: [validator error message]
 	// Check for location format: filepath:line:column
@@ -141,7 +140,7 @@ func TestRequiredAttributeError_ReportsLocation(t *testing.T) {
 	}
 
 	query := sr.Query()
-	_, err = load[object.Refrence](node, query, walk{strict: false})
+	_, err = load(node, query, walk{strict: false})
 
 	assert.ErrorContains(t, err, "required attribute")
 	errStr := err.Error()
@@ -178,7 +177,7 @@ func TestErrorFormat_ContainsFileLineColumn(t *testing.T) {
 	}
 
 	query := sr.Query()
-	_, err = load[object.Refrence](node, query, walk{strict: false})
+	_, err = load(node, query, walk{strict: false})
 
 	// Expected format: /email.yaml:1:1: [validator error message]
 	// Verify the error format: filepath:line:column: message
@@ -217,7 +216,7 @@ func TestNestedFileError_ReportsCorrectPath(t *testing.T) {
 	}
 
 	query := sr.Query()
-	_, err = load[object.Refrence](node, query, walk{strict: false})
+	_, err = load(node, query, walk{strict: false})
 
 	// Expected format: /nested/email.yaml:line:column: [validator error message]
 	// Error must reference the nested path
@@ -250,7 +249,7 @@ func TestWrappedError_PreservesLocation(t *testing.T) {
 	}
 
 	query := sr.Query()
-	_, err = load[object.Refrence](node, query, walk{strict: false})
+	_, err = load(node, query, walk{strict: false})
 
 	// Expected format: /email.yaml:1:1: [validator error message]
 	// Wrapped error must preserve location

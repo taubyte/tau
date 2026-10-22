@@ -408,8 +408,8 @@ validator that rejects a non-empty value — otherwise the strict-key check acce
 (the key IS in the schema) and a stale copy of a derived name sits in the document,
 which is the drift deriving it was meant to remove.
 
-`GeneratedBy` / `DerivedBy` address a field of a GROUP. Project-root attributes are not
-reachable through them; read `CompileRoot().Attributes` for those.
+`GeneratedBy` addresses a field of a GROUP. Project-root attributes are not
+reachable through it; read `CompileRoot().Attributes` for those.
 
 ---
 

@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
-	"github.com/taubyte/tau/pkg/tcc/object"
 	yaseer "github.com/taubyte/tau/pkg/yaseer"
 	"gotest.tools/v3/assert"
 )
@@ -17,7 +16,7 @@ func loadAttr(t *testing.T, body string, attr *Attribute) (any, error) {
 	assert.NilError(t, afero.WriteFile(fs, "/t/"+attr.Name+".yaml", []byte(body), 0644))
 	sr, err := yaseer.New(yaseer.VirtualFS(fs, "/t"))
 	assert.NilError(t, err)
-	obj, err := load[object.Refrence](&Node{Attributes: []*Attribute{attr}}, sr.Query(), walk{strict: false})
+	obj, err := load(&Node{Attributes: []*Attribute{attr}}, sr.Query(), walk{strict: false})
 	if err != nil {
 		return nil, err
 	}
