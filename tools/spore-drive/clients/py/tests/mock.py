@@ -93,7 +93,7 @@ def config_files(ports: Dict[str, int], added: str = None, tenancy: str = None) 
         "cloud.yaml": yaml.safe_dump({
             "domain": {"root": "test.com", "generated": "g.test.com"},
             "p2p": {"bootstrap": {"all": list(ports)}},
-            "auth": {"oidc": [{"name": "corp", "issuer": "https://id.test.com", "clientid": "corp-id", "clientsecret": "corp-secret", "scopes": ["email"]}]},
+            "auth": {"admin": {"name": "root", "password": "correct-horse"}, "oidc": [{"name": "corp", "issuer": "https://id.test.com", "clientid": "corp-id", "clientsecret": "corp-secret", "scopes": ["email"]}]},
         }),
         "shapes.yaml": yaml.safe_dump({"all": {"services": ["auth", "seer"], "ports": {"main": 4242}}}),
         "hosts.yaml": yaml.safe_dump(hosts),

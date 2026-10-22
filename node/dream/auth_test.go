@@ -17,7 +17,9 @@ import (
 	"github.com/taubyte/tau/pkg/forge/fake"
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
+	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/services/auth"
+	"github.com/taubyte/tau/services/secrets"
 )
 
 // TestSignInAcrossAFleet: the built-in admin signs in on one auth node, mints
@@ -31,13 +33,16 @@ func TestSignInAcrossAFleet(t *testing.T) {
 	require.NoError(t, err)
 	hash, err := auth.HashAdminPassword("correct horse battery")
 	require.NoError(t, err)
+	adminSecret, err := secrets.Sealed(secrets.Ref{Scope: secrets.Cloud(auth.VaultService), Name: auth.AdminSecret}, []byte(hash), time.Now())
+	require.NoError(t, err)
 
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Copies:   2,
 		Services: []string{node.Discovery, node.Secrets, node.Auth},
 		Options:  []node.Option{node.WithForges(reg)},
+		Secrets:  []*secretsv2.InitSecret{adminSecret},
 		Configure: func(_ int, c *node.Config) {
-			c.Auth.Admin = auth.Admin{Name: "root", PasswordHash: hash}
+			c.Auth.Admin = auth.Admin{Name: "root"}
 			c.Auth.SignUp = auth.SignUpInvite
 		},
 	})

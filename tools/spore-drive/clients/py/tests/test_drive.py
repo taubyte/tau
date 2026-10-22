@@ -104,14 +104,17 @@ async def test_validate_plan_apply(mock_url, tmp_path):
     assert b"PRIVATE KEY" not in raw, "no domain key reaches a node: none signs a domain claim"
     # an OIDC provider reaches the node, and its secret no file: init has it on stdin
     assert node["node"]["auth"]["oidc"] == [{"name": "corp", "issuer": "https://id.test.com", "clientid": "corp-id", "scopes": ["email"]}]
-    assert not [path for path, data in disk.items() if b"corp-secret" in data]
-    assert not [c for c in cmds if "corp-secret" in c]
+    assert node["node"]["auth"]["admin"] == {"name": "root", "disabled": False}
+    for secret in (b"corp-secret", b"correct-horse", b"$argon2id$"):
+        assert not [path for path, data in disk.items() if secret in data]
+        assert not [c for c in cmds if secret.decode() in c]
 
     # the sealed bundle reached init on stdin, the secret sealed in it, and no other command had stdin
     stdins = await ssh.stdins(name)
     init = 'sudo "/tb/bin/tau" "init" "--config" "/tb/config/all.yaml" "--root" "/tb/storage/all" "-"'
     bundle = stdins.pop(init)
-    assert b"oidc-corp" in bundle and b"corp-secret" not in bundle
+    assert b"oidc-corp" in bundle and b"admin-password" in bundle
+    assert b"corp-secret" not in bundle and b"correct-horse" not in bundle
     assert not [c for c, data in stdins.items() if data]
     await ssh.close()
 

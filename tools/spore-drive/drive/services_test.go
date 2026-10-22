@@ -18,6 +18,7 @@ import (
 	"github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/auth/password"
 	"github.com/taubyte/tau/services/cm"
+	"github.com/taubyte/tau/services/secrets"
 	"github.com/taubyte/tau/tools/spore-drive/config"
 	"github.com/taubyte/tau/tools/spore-drive/config/fixtures"
 )
@@ -60,9 +61,6 @@ func TestSignInAndCertificatesReachEveryNodeAndTheirSecretsOnlyTheBundle(t *test
 	for _, inst := range first.instances {
 		n := inst.file.Node
 		assert.Equal(t, n.Auth.Admin.Name, "root")
-		hash, err := password.Parse(n.Auth.Admin.PasswordHash)
-		assert.NilError(t, err)
-		assert.NilError(t, hash.Verify("correct-horse", nil))
 		assert.Equal(t, n.Auth.SignUp, auth.SignUpOpen)
 		assert.DeepEqual(t, n.Auth.Redirects, []string{"https://console.test.com/callback"})
 		assert.DeepEqual(t, n.Auth.Forges, []auth.ForgeApp{{Host: "github.com", ClientID: "gh-id"}})
@@ -77,9 +75,10 @@ func TestSignInAndCertificatesReachEveryNodeAndTheirSecretsOnlyTheBundle(t *test
 
 		raw, err := yaml.Marshal(inst.file)
 		assert.NilError(t, err)
-		for _, secret := range []string{"correct-horse", "gh-secret", "corp-secret", "ACCOUNT KEY"} {
+		for _, secret := range []string{"correct-horse", "$argon2id$", "gh-secret", "corp-secret", "ACCOUNT KEY"} {
 			assert.Assert(t, !strings.Contains(string(raw), secret), "%s is in %s's file", secret, inst.name)
 		}
+		assert.Equal(t, strings.Count(string(raw), "driver:"), 2, "a forge's driver is said once, in node.forges")
 	}
 
 	d := driveFor(p)
@@ -88,16 +87,25 @@ func TestSignInAndCertificatesReachEveryNodeAndTheirSecretsOnlyTheBundle(t *test
 	var bundle secretsv2.InitBundle
 	assert.NilError(t, proto.Unmarshal(sealed, &bundle))
 	var refs []string
+	opened := map[string]string{}
 	for _, s := range bundle.GetSecrets() {
+		_, plain, err := secrets.Unsealed(s)
+		assert.NilError(t, err)
+		opened[s.GetRef().GetName()] = string(plain)
 		refs = append(refs, s.GetRef().GetScope().GetCloud().GetService()+"/"+s.GetRef().GetName())
 		assert.Assert(t, s.GetCid() != "" && len(s.GetDek()) > 0)
 	}
+	hash, err := password.Parse(opened[auth.AdminSecret])
+	assert.NilError(t, err)
+	assert.NilError(t, hash.Verify("correct-horse", nil))
+	assert.Equal(t, hash.Pepper, "", "every node verifies the admin, so no node's pepper is in it")
 	assert.DeepEqual(t, refs, []string{
+		auth.VaultService + "/" + auth.AdminSecret,
 		auth.VaultService + "/" + auth.OAuthSecretName("github.com"),
 		auth.VaultService + "/" + auth.OIDCSecretName("corp"),
 		cm.VaultService + "/" + cm.AccountSecret,
 	})
-	for _, secret := range []string{"gh-secret", "corp-secret", "ACCOUNT KEY"} {
+	for _, secret := range []string{"correct-horse", "$argon2id$", "gh-secret", "corp-secret", "ACCOUNT KEY"} {
 		assert.Assert(t, !strings.Contains(string(sealed), secret), "%s is sealed in the clear", secret)
 	}
 

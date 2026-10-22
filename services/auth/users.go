@@ -333,11 +333,13 @@ func (s *Service) checkPassword(ctx context.Context, u user, pw string) error {
 	var h password.Hash
 	var pepper []byte
 	if u.Builtin {
-		parsed, err := password.Parse(s.cfg.Admin.PasswordHash)
+		phc, err := s.keys.vault.Get(ctx, AdminSecret)
 		if err != nil {
-			return err
+			return connect.NewError(connect.CodeUnavailable, fmt.Errorf("auth: the admin cannot sign in until the secrets service holds its password: %w", err))
 		}
-		h = parsed
+		if h, err = password.Parse(string(phc)); err != nil {
+			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("auth: the admin's password in the secrets service is not a hash: %w", err))
+		}
 	} else {
 		if err := s.store.get(ctx, userKey(u.ID, fieldPassword), &h); err != nil {
 			return err

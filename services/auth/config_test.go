@@ -32,7 +32,7 @@ func TestConfigDefaultsAndRefusals(t *testing.T) {
 	require.Equal(t, DefaultInviteTTL, c.InviteTTL)
 	require.Equal(t, password.Default, c.Params)
 
-	ok := Config{Issuer: "tau:x", SignUp: SignUpOpen, Admin: Admin{Name: "root", PasswordHash: phc},
+	ok := Config{Issuer: "tau:x", SignUp: SignUpOpen, Admin: Admin{Name: "root"},
 		Redirects: []string{"https://console.example/cb", "http://127.0.0.1:8080/cb"},
 		Forges:    []ForgeApp{{Host: "github.com", ClientID: "a"}},
 		OIDC:      []OIDCProvider{{Name: "corp", Issuer: "https://idp", ClientID: "b"}}}
@@ -41,7 +41,6 @@ func TestConfigDefaultsAndRefusals(t *testing.T) {
 	for name, bad := range map[string]Config{
 		"no issuer":       {},
 		"sign-up":         {Issuer: "x", SignUp: "sometimes"},
-		"admin hash":      {Issuer: "x", Admin: Admin{Name: "root", PasswordHash: "plaintext"}},
 		"redirect scheme": {Issuer: "x", Redirects: []string{"http://console.example/cb"}},
 		"redirect frag":   {Issuer: "x", Redirects: []string{"https://console.example/cb#x"}},
 		"redirect parse":  {Issuer: "x", Redirects: []string{"::"}},
@@ -52,9 +51,6 @@ func TestConfigDefaultsAndRefusals(t *testing.T) {
 	} {
 		require.Error(t, bad.defaults(), name)
 	}
-	// A disabled admin needs no hash.
-	off := Config{Issuer: "x", Admin: Admin{Name: "root", Disabled: true}}
-	require.NoError(t, off.defaults())
 }
 
 func TestOptionsRefuseNil(t *testing.T) {

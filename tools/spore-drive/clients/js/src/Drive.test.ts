@@ -178,6 +178,7 @@ describe("Drive against the mock", () => {
     expect(bundles[0].length).toBeGreaterThan(0);
     for (const b of bundles) expect(b.equals(bundles[0])).toBe(true);
     expect(bundles[0].includes("oauth-github.com")).toBe(true);
+    expect(bundles[0].includes("admin-password")).toBe(true);
     for (const secret of ["correct-horse", "gh-secret", "ACME ACCOUNT KEY"]) {
       expect(bundles[0].includes(secret)).toBe(false);
     }
@@ -203,11 +204,10 @@ describe("Drive against the mock", () => {
     // No domain key reaches a node: none signs a domain claim.
     expect(raw).not.toContain("PRIVATE KEY");
     // Sign-in and certificates reach the node; their secrets no file at all.
-    expect(node.node.auth.admin.name).toBe("root");
-    expect(node.node.auth.admin.passwordhash).toMatch(/^\$argon2id\$/);
+    expect(node.node.auth.admin).toEqual({ name: "root", disabled: false });
     expect(node.node.auth.forges).toEqual([{ host: "github.com", clientid: "gh-id" }]);
     expect(node.node.cm.certificate.acme.enabled).toBe(true);
-    for (const secret of ["correct-horse", "gh-secret", "ACME ACCOUNT KEY"]) {
+    for (const secret of ["correct-horse", "$argon2id$", "gh-secret", "ACME ACCOUNT KEY"]) {
       for (const content of onDisk) expect(content).not.toContain(secret);
     }
 

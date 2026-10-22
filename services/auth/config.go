@@ -11,7 +11,8 @@ import (
 )
 
 // Config is auth's operator configuration. Every secret it refers to is in
-// the secrets service, never here; see OAuthSecretName and OIDCSecretName.
+// the secrets service, never here; see AdminSecret, OAuthSecretName and
+// OIDCSecretName.
 type Config struct {
 	// Issuer names this cloud in every token it signs, e.g. "tau:example.com".
 	// A token from another cloud does not verify here.
@@ -52,17 +53,15 @@ type Config struct {
 // the store: every node reads it from its own configuration, so there is no
 // first-user race and no record two nodes could write differently.
 type Admin struct {
-	// Name is what the admin signs in as. Empty is no built-in admin.
+	// Name is what the admin signs in as. Empty is no built-in admin. The
+	// password's hash is in the vault under AdminSecret.
 	Name string
-	// PasswordHash is the admin's password as an argon2id PHC string
-	// (HashAdminPassword makes one). It carries no pepper: it is written
-	// before the cloud has a vault to hold one.
-	PasswordHash string
 	// Disabled turns the admin off, once provider sign-in works.
 	Disabled bool
 }
 
-// HashAdminPassword is the PasswordHash for pw.
+// HashAdminPassword is what the vault holds under AdminSecret for pw. It
+// carries no pepper: a pepper is per node, and every node verifies this hash.
 func HashAdminPassword(pw string) (string, error) {
 	h, err := password.New(pw, "", nil, password.Default)
 	if err != nil {
@@ -125,11 +124,6 @@ func (c *Config) defaults() error {
 	}
 	if c.Params == (password.Params{}) {
 		c.Params = password.Default
-	}
-	if c.Admin.Name != "" && !c.Admin.Disabled {
-		if _, err := password.Parse(c.Admin.PasswordHash); err != nil {
-			return fmt.Errorf("auth: the admin's password hash: %w", err)
-		}
 	}
 	for _, r := range c.Redirects {
 		u, err := url.Parse(r)

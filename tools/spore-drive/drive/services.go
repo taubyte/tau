@@ -54,17 +54,18 @@ func servicesOf(p config.Parser) (*cloudServices, error) {
 	out := &cloudServices{}
 	out.auth.SignUp = authService.SignUp(a.SignUp)
 	out.auth.Redirects = a.Redirects
+	secret := func(name, value string) {
+		if value != "" {
+			out.secrets = append(out.secrets, cloudSecret{ref: secrets.Ref{Scope: secrets.Cloud(authService.VaultService), Name: name}, value: value})
+		}
+	}
 	if a.Admin.Name != "" {
 		hash, err := authService.HashAdminPassword(a.Admin.Password)
 		if err != nil {
 			return nil, fmt.Errorf("cloud.auth.admin: %w", err)
 		}
-		out.auth.Admin = authService.Admin{Name: a.Admin.Name, PasswordHash: hash}
-	}
-	secret := func(name, value string) {
-		if value != "" {
-			out.secrets = append(out.secrets, cloudSecret{ref: secrets.Ref{Scope: secrets.Cloud(authService.VaultService), Name: name}, value: value})
-		}
+		out.auth.Admin = authService.Admin{Name: a.Admin.Name}
+		secret(authService.AdminSecret, hash)
 	}
 	for _, f := range a.Forges {
 		if f.Driver != "" {

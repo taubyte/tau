@@ -35,7 +35,9 @@ import (
 	"github.com/taubyte/tau/pkg/forge/fake"
 	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/pkg/linkcreds"
+	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/services/auth"
+	"github.com/taubyte/tau/services/secrets"
 	"github.com/taubyte/tau/tools/tau/internal/cli"
 	"github.com/taubyte/tau/tools/tau/internal/config"
 	"github.com/taubyte/tau/tools/tau/internal/project"
@@ -81,14 +83,17 @@ func fleet(t *testing.T, f *fake.Served) (front, otherFront string) {
 	t.Cleanup(func() { forges = nil })
 	hash, err := auth.HashAdminPassword(adminPassword)
 	require.NoError(t, err)
+	adminSecret, err := secrets.Sealed(secrets.Ref{Scope: secrets.Cloud(auth.VaultService), Name: auth.AdminSecret}, []byte(hash), time.Now())
+	require.NoError(t, err)
 
 	u, err := dream.Start(t.Context(), t.Name(), dream.Config{
 		Copies:  3,
 		Options: []node.Option{node.WithForges(forges)},
+		Secrets: []*secretsv2.InitSecret{adminSecret},
 		Configure: func(index int, c *node.Config) {
 			c.Gateway.CloudFqdn = e2eCloud
 			c.Forges = []node.Forge{{Host: f.Host(), Driver: node.ForgeGitHub, HostKeys: []string{f.HostKey()}}}
-			c.Auth.Admin = auth.Admin{Name: "root", PasswordHash: hash}
+			c.Auth.Admin = auth.Admin{Name: "root"}
 			if index > 0 {
 				c.Services = []string{node.Discovery, node.BuildFrontend}
 				c.BuildFrontend.Listen = "127.0.0.1:0"

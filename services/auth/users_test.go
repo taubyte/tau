@@ -11,6 +11,25 @@ import (
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
 
+func TestTheAdminWaitsForItsPasswordInTheVault(t *testing.T) {
+	f := newFx(t)
+	ctx := t.Context()
+	phc := f.vault.m[AdminSecret]
+	delete(f.vault.m, AdminSecret)
+	_, err := f.sessions().Login(ctx, req(&authv2.LoginRequest{Name: "root", Password: f.adminP}, ""))
+	require.Equal(t, connect.CodeUnavailable, code(t, err))
+	require.ErrorContains(t, err, "the admin cannot sign in until the secrets service holds its password")
+
+	f.vault.m[AdminSecret] = []byte("plaintext")
+	_, err = f.sessions().Login(ctx, req(&authv2.LoginRequest{Name: "root", Password: f.adminP}, ""))
+	require.Equal(t, connect.CodeFailedPrecondition, code(t, err))
+	require.ErrorContains(t, err, "is not a hash")
+
+	f.vault.m[AdminSecret] = phc
+	_, err = f.sessions().Login(ctx, req(&authv2.LoginRequest{Name: "root", Password: f.adminP}, ""))
+	require.NoError(t, err)
+}
+
 func TestBuiltinAdminLogsInAndIsNeverStored(t *testing.T) {
 	f := newFx(t)
 	ctx := t.Context()

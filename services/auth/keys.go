@@ -50,6 +50,10 @@ const (
 	secretOIDC    = "oidc-"
 )
 
+// AdminSecret is the vault name of the built-in admin's password hash
+// (HashAdminPassword), in the cloud scope VaultService.
+const AdminSecret = "admin-password"
+
 // OAuthSecretName is the vault name an operator stores a forge OAuth app's
 // client secret under, in the cloud scope VaultService.
 func OAuthSecretName(host string) string { return secretOAuth + host }

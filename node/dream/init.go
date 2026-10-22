@@ -343,6 +343,11 @@ type Config struct {
 	// such as a build frontend on one node and its backend on another (a node
 	// refuses to run both halves).
 	Configure func(index int, c *node.Config)
+
+	// Secrets are cloud secrets every node that keeps secrets is initialized
+	// with, beside the universe's ACME account, as `taud init -` writes a
+	// sealed bundle (see secrets.Sealed).
+	Secrets []*secretsv2.InitSecret
 }
 
 // Universe is a running fleet of nodes.
@@ -373,7 +378,7 @@ func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
 		m.Close()
 		return nil, err
 	}
-	account := &secretsv2.InitBundle{Secrets: []*secretsv2.InitSecret{sealed}}
+	account := &secretsv2.InitBundle{Secrets: append([]*secretsv2.InitSecret{sealed}, cfg.Secrets...)}
 
 	u := &Universe{mesh: m}
 	copies := max(cfg.Copies, 1)

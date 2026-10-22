@@ -303,7 +303,7 @@ func newFx(t *testing.T, mutate ...func(*Config)) *fx {
 	require.NoError(t, err)
 	cfg := Config{
 		Issuer:    "tau:test",
-		Admin:     Admin{Name: "root", PasswordHash: phc},
+		Admin:     Admin{Name: "root"},
 		Forges:    []ForgeApp{{Host: testHost, ClientID: "client-1"}},
 		Redirects: []string{"https://console.example/auth/callback"},
 		Params:    cheap,
@@ -312,6 +312,7 @@ func newFx(t *testing.T, mutate ...func(*Config)) *fx {
 		m(&cfg)
 	}
 	f.vault.m[OAuthSecretName(testHost)] = []byte(f.oauth.secret)
+	f.vault.m[AdminSecret] = []byte(phc)
 	f.s = newTestService(t, WithUsers(db, f.vault, cfg), WithForges(reg), WithHTTPClient(f.oauth.srv.Client()), WithClock(func() time.Time { return f.now }))
 	return f
 }

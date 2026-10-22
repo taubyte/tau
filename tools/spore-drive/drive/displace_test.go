@@ -21,6 +21,8 @@ import (
 	"github.com/taubyte/tau/p2p/sectls"
 	host "github.com/taubyte/tau/pkg/mycelium/host"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
+	"github.com/taubyte/tau/services/auth"
+	"github.com/taubyte/tau/services/cm"
 	"gopkg.in/yaml.v3"
 
 	"github.com/taubyte/tau/tools/spore-drive/config/fixtures"
@@ -53,7 +55,7 @@ func TestDisplaceStreamsTheSecretsToInit(t *testing.T) {
 	p = withCloud(t, fs, p, signIn)
 	sd, err := New(p, WithRoot("/opt/tau"))
 	assert.NilError(t, err)
-	testDisplace(t, sd, "/opt/tau", []string{"gh-secret", "corp-secret", "ACCOUNT KEY"})
+	testDisplace(t, sd, "/opt/tau", []string{"correct-horse", "$argon2id$", "gh-secret", "corp-secret", "ACCOUNT KEY"})
 }
 
 func testDisplace(t *testing.T, sd Spore, root string, secrets []string) {
@@ -208,7 +210,11 @@ func testDisplace(t *testing.T, sd Spore, root string, secrets []string) {
 		assert.DeepEqual(t, stdins[0], stdins[1])
 		var bundle secretsv2.InitBundle
 		assert.NilError(t, proto.Unmarshal(stdins[0], &bundle))
-		assert.Equal(t, len(bundle.GetSecrets()), len(secrets))
+		var names []string
+		for _, s := range bundle.GetSecrets() {
+			names = append(names, s.GetRef().GetName())
+		}
+		assert.DeepEqual(t, names, []string{auth.AdminSecret, auth.OAuthSecretName("github.com"), auth.OIDCSecretName("corp"), cm.AccountSecret})
 	}
 
 	for h, mfs := range fses {
