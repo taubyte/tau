@@ -52,6 +52,7 @@ import (
 	"github.com/taubyte/tau/p2p/sectls"
 	"github.com/taubyte/tau/pkg/assets"
 	"github.com/taubyte/tau/pkg/kvdb"
+	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/pkg/stats"
 )
@@ -546,3 +547,40 @@ func Reach(ctx context.Context, f File, service string, within time.Duration) (*
 		}
 	}
 }
+
+// ErrNoIdentity is an init with no privatekey: a minted identity would write
+// its key share for a peer that never starts.
+var ErrNoIdentity = errors.New("boot: init needs the node's privatekey, the identity it will start with")
+
+// Init writes a sealed bundle of secrets into this node's vault, on a node that
+// is not running. It holds the node's identity and its data directory for as
+// long as it runs, binds only loopback, and dials nobody.
+func Init(ctx context.Context, f File, bundle *secretsv2.InitBundle) error {
+	f, err := f.withDefaults()
+	if err != nil {
+		return err
+	}
+	if f.PrivateKey == "" {
+		return ErrNoIdentity
+	}
+
+	privateKey, err := identity(f.PrivateKey)
+	if err != nil {
+		return err
+	}
+	admission, err := f.admission(privateKey)
+	if err != nil {
+		return err
+	}
+
+	p, err := peer.New(ctx, f.Root, privateKey, admission, []string{initListen}, nil, !f.Open, false)
+	if err != nil {
+		return fmt.Errorf("boot: libp2p: %w", err)
+	}
+	defer p.Close()
+
+	return node.InitSecrets(ctx, f.Node, f.Root, p.Peer(), kvdb.New(p), bundle)
+}
+
+// initListen keeps init off the ports the node itself binds.
+const initListen = "/ip4/127.0.0.1/tcp/0"

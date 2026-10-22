@@ -13,6 +13,18 @@
 // computed from one share against the stored wrapping the reader names, and the
 // reader combines them itself.
 //
+// A secret lives in a scope: one of the cloud's own services, or one project
+// environment. A write never replaces a value; it adds a version keyed by the
+// CID of its ciphertext and stamped no earlier than the newest one its writer
+// has seen. A read serves the newest version that opens, and older ones are
+// pruned once a newer one has been opened here.
+//
+// Operator secrets reach a cloud through `taud init`, on a stopped node: the
+// same sealed bundle goes to every node, each writes the same version and
+// wraps it under a key it holds, forming a one-member key when it holds none.
+// Rotation to the real roster then carries every version forward and retires
+// the one-member keys.
+//
 // The threshold is a majority of the roster, capped at n-1 so the cluster can
 // lose one member and still read. A changed roster, or a key older than its
 // rotation age, starts a new epoch: a fresh key, every secret's data key

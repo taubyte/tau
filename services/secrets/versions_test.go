@@ -2,13 +2,19 @@ package secrets
 
 import (
 	"context"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	logging "github.com/ipfs/go-log/v2"
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/taubyte/tau/pkg/kvdb"
+	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
+	"github.com/taubyte/tau/pkg/secrets/tdh"
 )
 
 // localClient is a client on a member, writing through that member's own
@@ -257,4 +263,195 @@ func TestAnUnreadableSecretDoesNotStopRetirement(t *testing.T) {
 	got, err := consumer.Get(ctx, ref("good"))
 	require.NoError(t, err)
 	assert.Equal(t, "v", string(got))
+}
+
+// initOn writes a bundle into one node's store through a service that is not
+// serving, the way `taud init` does on a stopped node.
+func initOn(t *testing.T, ctx context.Context, c *cluster, i int, bundle *secretsv2.InitBundle) {
+	t.Helper()
+
+	srv, err := New(c.nodes[i].Peer(), c.dbs[i], WithRoot(c.paths[i]))
+	require.NoError(t, err)
+	require.NoError(t, srv.Init(ctx, bundle))
+	require.NoError(t, srv.Close())
+}
+
+func bundleOf(t *testing.T, values map[Ref]string) *secretsv2.InitBundle {
+	t.Helper()
+
+	bundle := &secretsv2.InitBundle{}
+	for ref, value := range values {
+		sealed, err := Sealed(ref, []byte(value), time.Now())
+		require.NoError(t, err)
+		bundle.Secrets = append(bundle.Secrets, sealed)
+	}
+	return bundle
+}
+
+// TestInitOnEveryNodeSurvivesOneLostBeforeStart is the regression for the
+// seeding flow. Every node is handed the same sealed bundle and writes it under
+// a one-member key of its own; one node never starts. The survivors rotate to
+// their real roster, every secret stays readable, and the one-member keys'
+// wrappings and shares are gone.
+//
+// It used to be that each node wrote its own ciphertext under its own key, so a
+// secret whose only writer died was unreadable forever, and the error carrying
+// it forward returned before retirement ran at all.
+func TestInitOnEveryNodeSurvivesOneLostBeforeStart(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c := newMesh(t, ctx, 3)
+	for _, node := range c.nodes {
+		db, err := kvdb.New(node).New(logging.Logger("secrets-test"), c.db, 1)
+		require.NoError(t, err)
+		t.Cleanup(func() { db.Close() })
+		c.dbs = append(c.dbs, db)
+		c.paths = append(c.paths, t.TempDir())
+	}
+
+	values := map[Ref]string{
+		{Scope: Cloud("auth"), Name: "oauth-github.com"}: "client-secret",
+		{Scope: Cloud("cm"), Name: "acme-account"}:       "account-key",
+	}
+	bundle := bundleOf(t, values)
+	for i := range c.nodes {
+		initOn(t, ctx, c, i, bundle)
+	}
+
+	for i := range 2 {
+		c.launch(t, c.nodes[i], c.dbs[i], c.paths[i])
+	}
+
+	var genesis []string
+	for _, srv := range c.services {
+		key := mustActive(t, ctx, srv)
+		require.Equal(t, []string{srv.self()}, key.Members)
+		genesis = append(genesis, key.KeyID)
+	}
+
+	consumer := c.client(t)
+	var real *KeyMeta
+	require.Eventually(t, func() bool {
+		c.reconcileAll(ctx)
+		for _, srv := range c.services {
+			active, err := srv.ActiveKey(ctx)
+			if err != nil || len(active.Members) != 2 {
+				return false
+			}
+			real = active
+			for ref := range values {
+				keyIDs, err := srv.wrappings.KeyIDs(ctx, newest(ctx, srv, ref))
+				if err != nil || !slices.Equal(keyIDs, []string{active.KeyID}) {
+					return false
+				}
+			}
+			for _, id := range genesis {
+				if _, err := srv.shares.Get(ctx, id); err == nil {
+					return false
+				}
+			}
+		}
+		return true
+	}, 60*time.Second, 200*time.Millisecond, "the one-member keys were never retired")
+
+	for _, srv := range c.services {
+		require.NoError(t, srv.reconcile(ctx), "a converged pass reports nothing")
+		for ref := range values {
+			assert.Equal(t, 1, versionsOn(t, ctx, srv, ref), "every node wrote the same version")
+		}
+	}
+	for ref, value := range values {
+		got, err := consumer.Get(ctx, ref)
+		require.NoError(t, err)
+		assert.Equal(t, value, string(got))
+	}
+	assert.Len(t, real.Members, 2)
+}
+
+// TestInitOnANodeHoldingAKeyWritesUnderIt: a node that already holds a real
+// key wraps under it, and no epoch is started.
+func TestInitOnANodeHoldingAKeyWritesUnderIt(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c := newCluster(t, ctx, 2)
+	c.bootstrap(t, ctx, 0)
+	key := c.awaitKey(t, ctx)
+
+	require.NoError(t, c.services[1].Close())
+	r := Ref{Scope: Cloud("auth"), Name: "pepper"}
+	initOn(t, ctx, c, 1, bundleOf(t, map[Ref]string{r: "salt"}))
+
+	keys, err := c.services[1].keys.List(ctx)
+	require.NoError(t, err)
+	assert.Len(t, keys, 1, "init started an epoch on a node that held a key")
+	keyIDs, err := c.services[1].wrappings.KeyIDs(ctx, newest(ctx, c.services[1], r))
+	require.NoError(t, err)
+	assert.Equal(t, []string{key.KeyID}, keyIDs)
+
+	c.restart(t, 1)
+	got, err := c.client(t).Get(ctx, r)
+	require.NoError(t, err)
+	assert.Equal(t, "salt", string(got))
+}
+
+// TestInitRefusesABundleThatDoesNotHoldTogether.
+func TestInitRefusesABundleThatDoesNotHoldTogether(t *testing.T) {
+	srv, _, _ := single(t)
+	ctx := t.Context()
+
+	_, err := Sealed(Ref{}, []byte("v"), time.Now())
+	require.ErrorIs(t, err, ErrInvalidRef)
+
+	r := Ref{Scope: Cloud("auth"), Name: "n"}
+	good, err := Sealed(r, []byte("v"), time.Now())
+	require.NoError(t, err)
+
+	for name, change := range map[string]func(*secretsv2.InitSecret){
+		"no ref":      func(s *secretsv2.InitSecret) { s.Ref = nil },
+		"another cid": func(s *secretsv2.InitSecret) { s.Cid = contentID([]byte("other")) },
+		"another dek": func(s *secretsv2.InitSecret) { s.Dek = make([]byte, len(s.Dek)) },
+		"moved":       func(s *secretsv2.InitSecret) { s.Ref = wireRef(Ref{Scope: Cloud("cm"), Name: "n"}) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			bad := &secretsv2.InitSecret{Ref: good.Ref, Cid: good.Cid, Ciphertext: good.Ciphertext, Dek: good.Dek, WrittenAt: good.WrittenAt}
+			change(bad)
+			require.Error(t, srv.Init(ctx, &secretsv2.InitBundle{Secrets: []*secretsv2.InitSecret{bad}}))
+		})
+	}
+	all, err := srv.records.All(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, all, "a refused secret was written")
+
+	require.NoError(t, srv.Init(ctx, &secretsv2.InitBundle{Secrets: []*secretsv2.InitSecret{good}}))
+	assert.Equal(t, 1, versionsOn(t, ctx, srv, r))
+	_, err = tdh.Unseal(good.Dek, good.Ciphertext, contentAAD(r))
+	require.NoError(t, err)
+}
+
+// TestVersionStepsReportAFailingStore: init, set and delete surface a store
+// failure rather than write half of a version.
+func TestVersionStepsReportAFailingStore(t *testing.T) {
+	srv, _, _ := single(t)
+	ctx := t.Context()
+	r := Ref{Scope: Cloud("auth"), Name: "n"}
+	bundle := bundleOf(t, map[Ref]string{r: "v"})
+
+	failing := &Service{host: srv.host, shares: srv.shares, now: time.Now, ctx: ctx, rounds: map[string]*round{},
+		db: broken{}, keys: &keyStore{db: broken{}}, records: &recordStore{db: broken{}}, wrappings: &wrappingStore{db: broken{}}}
+	require.ErrorIs(t, failing.Init(ctx, bundle), errBroken)
+	require.ErrorIs(t, failing.Delete(ctx, r), errBroken)
+	require.ErrorIs(t, failing.dropVersion(ctx, version{Ref: r, CID: "c"}), errBroken)
+	_, err := failing.nextWrittenAt(ctx, r)
+	require.ErrorIs(t, err, errBroken)
+	_, _, _, _, err = failing.Get(ctx, r)
+	require.ErrorIs(t, err, errBroken)
+
+	require.NoError(t, srv.Init(ctx, bundle))
+	key := mustActive(t, ctx, srv)
+	other := &KeyMeta{KeyID: "not-held", Epoch: key.Epoch, Public: key.Public, Threshold: 1, Members: key.Members}
+	require.NoError(t, srv.keys.Put(ctx, other))
+	require.ErrorContains(t, srv.Set(ctx, r, []byte("c"), other.KeyID, &tdh.Wrapping{}), "holds no share")
+	require.ErrorIs(t, srv.Set(ctx, Ref{Scope: Cloud("auth")}, []byte("c"), key.KeyID, &tdh.Wrapping{}), ErrInvalidRef)
 }

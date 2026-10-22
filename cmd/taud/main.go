@@ -7,6 +7,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,10 +16,12 @@ import (
 
 	"github.com/ipfs/go-log/v2"
 	"github.com/urfave/cli/v2"
+	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
 	"github.com/taubyte/tau/node"
 	"github.com/taubyte/tau/node/boot"
+	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 )
 
 // Set at release by -ldflags "-X main.version=… -X main.commit=… -X main.date=…".
@@ -56,25 +59,37 @@ func newApp(started func(*boot.Running)) *cli.App {
 	return &cli.App{
 		Name:     "taud",
 		Usage:    "run a tau node",
-		Commands: []*cli.Command{startCommand(started), configCommand(), versionCommand()},
+		Commands: []*cli.Command{startCommand(started), initCommand(), configCommand(), versionCommand()},
 	}
+}
+
+func nodeFlags() []cli.Flag {
+	return []cli.Flag{
+		&cli.PathFlag{Name: "config", Aliases: []string{"c"}, Usage: "the node's config file (`taud config` prints one)", Required: true},
+		&cli.PathFlag{Name: "root", Usage: "where the node keeps its data; overrides the file's root"},
+	}
+}
+
+func readFile(ctx *cli.Context) (boot.File, error) {
+	file, err := boot.Read(ctx.Path("config"))
+	if err != nil {
+		return file, err
+	}
+	if root := ctx.Path("root"); root != "" {
+		file.Root = root
+	}
+	return file, nil
 }
 
 func startCommand(started func(*boot.Running)) *cli.Command {
 	return &cli.Command{
 		Name:  "start",
 		Usage: "start a node",
-		Flags: []cli.Flag{
-			&cli.PathFlag{Name: "config", Aliases: []string{"c"}, Usage: "the node's config file (`taud config` prints one)", Required: true},
-			&cli.PathFlag{Name: "root", Usage: "where the node keeps its data; overrides the file's root"},
-		},
+		Flags: nodeFlags(),
 		Action: func(ctx *cli.Context) error {
-			file, err := boot.Read(ctx.Path("config"))
+			file, err := readFile(ctx)
 			if err != nil {
 				return err
-			}
-			if root := ctx.Path("root"); root != "" {
-				file.Root = root
 			}
 
 			running, err := boot.Start(ctx.Context, file, composed...)
@@ -106,6 +121,43 @@ func startCommand(started func(*boot.Running)) *cli.Command {
 
 			logger.Info("stopping")
 			return nil
+		},
+	}
+}
+
+// initCommand writes a sealed bundle of secrets into a stopped node's vault.
+// The bundle is read from a file or, as `-`, from stdin, so the secrets need
+// never be written to the node's disk in the clear.
+func initCommand() *cli.Command {
+	return &cli.Command{
+		Name:      "init",
+		Usage:     "write sealed secrets into this node's vault before it starts",
+		ArgsUsage: "<bundle, or - for stdin>",
+		Flags:     nodeFlags(),
+		Action: func(ctx *cli.Context) error {
+			if ctx.NArg() != 1 {
+				return errors.New("init takes one bundle: a file, or - for stdin")
+			}
+			file, err := readFile(ctx)
+			if err != nil {
+				return err
+			}
+
+			var data []byte
+			if name := ctx.Args().First(); name == "-" {
+				data, err = io.ReadAll(ctx.App.Reader)
+			} else {
+				data, err = os.ReadFile(name)
+			}
+			if err != nil {
+				return fmt.Errorf("reading the bundle: %w", err)
+			}
+
+			var bundle secretsv2.InitBundle
+			if err := proto.Unmarshal(data, &bundle); err != nil {
+				return fmt.Errorf("reading the bundle: %w", err)
+			}
+			return boot.Init(ctx.Context, file, &bundle)
 		},
 	}
 }

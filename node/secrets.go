@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 
+	"github.com/libp2p/go-libp2p/core/host"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
+	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/pkg/invoke"
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
+	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/pkg/specs"
 	secretsService "github.com/taubyte/tau/services/secrets"
 )
@@ -122,6 +126,42 @@ func (v *vault) SecretFor(ctx context.Context, grant invoke.Grant) ([]byte, erro
 		return nil, err
 	}
 	return []byte(value), nil
+}
+
+// ErrNoSecretsHere is an init on a node whose config runs no secrets service.
+var ErrNoSecretsHere = errors.New("node: this node runs no secrets service to initialize")
+
+// secretsOptions are what every secrets service on this node is opened with,
+// serving or not, so init writes the store the service later reads.
+func secretsOptions(cfg Config, root string) []secretsService.Option {
+	return []secretsService.Option{
+		secretsService.WithRoot(filepath.Join(root, Secrets)),
+		secretsService.WithConfig(cfg.Secrets),
+	}
+}
+
+// InitSecrets writes a sealed bundle into the vault of a node that is not
+// running: its own database and share store, through a service that never
+// serves. See services/secrets' Init for what it writes.
+func InitSecrets(ctx context.Context, cfg Config, root string, h host.Host, databases kvdb.Factory, bundle *secretsv2.InitBundle) error {
+	if !cfg.runs(Secrets) {
+		return ErrNoSecretsHere
+	}
+	if root == "" {
+		return secretsService.ErrNoRoot
+	}
+
+	db, err := databases.New(logger, Secrets, rebroadcastSeconds)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	svc, err := secretsService.New(h, db, secretsOptions(cfg, root)...)
+	if err != nil {
+		return err
+	}
+	return errors.Join(svc.Init(ctx, bundle), svc.Close())
 }
 
 // Close releases the streams the vault opened.

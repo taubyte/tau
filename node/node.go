@@ -40,7 +40,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -382,10 +381,7 @@ func (n *Node) openSecrets() error {
 	}
 	n.closers = append(n.closers, closerFunc(db.Close))
 
-	options := []secretsService.Option{
-		secretsService.WithRoot(filepath.Join(n.opts.root, Secrets)),
-		secretsService.WithConfig(n.cfg.Secrets),
-	}
+	options := secretsOptions(n.cfg, n.opts.root)
 	// WHO ELSE HOLDS A SHARE IS DISCOVERY'S ANSWER on a node that has one,
 	// asked each time a roster is formed; without it, the connected peers that
 	// speak the protocol.
