@@ -1,6 +1,7 @@
 package interp
 
 import (
+	"maps"
 	"slices"
 	"sort"
 	"strconv"
@@ -266,11 +267,12 @@ func inherit(root *engine.Node, kind, into string, res, fields map[string]any) m
 	if src == nil || dst == nil {
 		return fields
 	}
+	stated := maps.Clone(fields)
 	for _, a := range src.Attributes {
 		if on, _ := a.Meta["inherited"].(bool); !on || !declares(dst, a.Name) {
 			continue
 		}
-		if _, set := fields[a.Name]; set {
+		if setsBlock(dst, a, stated) {
 			continue
 		}
 		v, ok := attrOf(res, a)
@@ -283,6 +285,30 @@ func inherit(root *engine.Node, kind, into string, res, fields map[string]any) m
 		fields[a.Name] = v
 	}
 	return fields
+}
+
+// setsBlock is whether the lowering already set any field of the block a belongs to: a
+// block is inherited whole or not at all, so a lowering's policy never meets the
+// source's regions.
+func setsBlock(iter *engine.Node, a *engine.Attribute, fields map[string]any) bool {
+	for _, b := range iter.Attributes {
+		if _, set := fields[b.Name]; set && sameBlock(a, b) {
+			return true
+		}
+	}
+	return false
+}
+
+func sameBlock(a, b *engine.Attribute) bool {
+	if a.Name == b.Name {
+		return true
+	}
+	if len(a.Path) == 0 || len(b.Path) == 0 {
+		return false
+	}
+	x, xok := a.Path[0].(string)
+	y, yok := b.Path[0].(string)
+	return xok && yok && x == y
 }
 
 func declares(iter *engine.Node, name string) bool {

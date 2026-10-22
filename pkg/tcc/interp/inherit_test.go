@@ -73,7 +73,9 @@ func TestWhatALoweringProducesInheritsItsSource(t *testing.T) {
 	root, plan = inheritPlan(t, "own: cdn\nwhere:\n    pinned: [eu]\n")
 	own := plan["build-own"]
 	assert.Equal(t, own.Fields["where/policy"], "cdn", "what the lowering states wins")
-	assert.DeepEqual(t, authored(root, own)["where"], map[string]any{"cdn": []string{"eu"}})
+	_, mixed := own.Fields["where/in"]
+	assert.Assert(t, !mixed, "a block is inherited whole or not at all")
+	assert.DeepEqual(t, authored(root, own)["where"], map[string]any{"cdn": []any{}})
 
 	_, plan = inheritPlan(t, "")
 	assert.Equal(t, len(plan["build-run"].Fields), 0, "nothing stated, nothing inherited")
