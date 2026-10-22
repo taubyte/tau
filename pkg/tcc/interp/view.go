@@ -95,15 +95,6 @@ func (c *Compiler) lowerFor(ctx context.Context, b engine.Bound, authored Object
 		return nil, nil, err
 	}
 
-	// A plan that hit the nesting cap is a plan with the bottom missing, and compiling it
-	// would produce a configuration that is wrong in a way nothing else will mention.
-	for _, d := range docs {
-		if d.depth >= MaxLoweringDepth {
-			return nil, nil, fmt.Errorf("interp: %s/%s lowers more than %d levels deep; the rest was not produced",
-				d.kind, d.name, MaxLoweringDepth)
-		}
-	}
-
 	view, added, err := c.view(moves, docs, adds)
 	if err != nil {
 		return nil, nil, err

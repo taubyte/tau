@@ -306,23 +306,70 @@ func TestALoweredScopeMayNotTakeAnAuthoredScopesName(t *testing.T) {
 	assert.ErrorContains(t, err, "is the scope pipeline/build becomes")
 }
 
-func TestAKindThatLowersIntoItselfIsRefusedAtTheCap(t *testing.T) {
-	root := engine.Root(
-		[]*engine.Attribute{engine.String("id")},
-		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{
+func chainRoot(into map[string][]string, kinds ...string) *engine.Node {
+	var groups []*engine.Node
+	for _, k := range kinds {
+		opts := []any{engine.Resource(k, k, k, k)}
+		var ls []Lowering
+		for _, to := range into[k] {
+			ls = append(ls, Into(to, Named(Concat(Attr("name"), Text("-"+to)))))
+		}
+		if len(ls) > 0 {
+			opts = append(opts, Lowers(ls...))
+		}
+		groups = append(groups, engine.DefineGroup(k, engine.DefineIter([]*engine.Attribute{
 			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
 			engine.String("name"),
-		},
-			engine.Resource("pipeline", "Pipeline", "Pipeline", "pipeline"),
-			Lowers(Into("pipeline", Named(Concat(Attr("name"), Text("x"))))),
-		)),
-	).With(engine.Leaf("project"), engine.Identity("id", "name"))
+		}, opts...)))
+	}
+	return engine.Root([]*engine.Attribute{engine.String("id")}, groups...).
+		With(engine.Leaf("project"), engine.Identity("id", "name"))
+}
+
+func chainCompiler(root *engine.Node, first string) (*Compiler, error) {
 	fs := afero.NewMemMapFs()
-	assert.NilError(t, afero.WriteFile(fs, "/project.yaml", []byte("id: root\n"), 0o644))
-	assert.NilError(t, afero.WriteFile(fs, "/pipeline/p.yaml", []byte("id: QmP\n"), 0o644))
-	c, err := New(engine.SchemaDefinition(root), root, WithVirtual(fs, "/"),
+	if err := afero.WriteFile(fs, "/project.yaml", []byte("id: root\n"), 0o644); err != nil {
+		return nil, err
+	}
+	if err := afero.WriteFile(fs, "/"+first+"/p.yaml", []byte("id: QmP\n"), 0o644); err != nil {
+		return nil, err
+	}
+	return New(engine.SchemaDefinition(root), root, WithVirtual(fs, "/"),
 		WithLayout(Layout{Resource: "{kind}/{name}.yaml", Scope: "{kind}/{name}"}))
+}
+
+func TestALoweringCycleIsRefusedAtNew(t *testing.T) {
+	_, err := chainCompiler(chainRoot(map[string][]string{"pipeline": {"pipeline"}}, "pipeline"), "pipeline")
+	assert.ErrorContains(t, err, "lowerings cycle: pipeline -> pipeline")
+
+	_, err = chainCompiler(chainRoot(map[string][]string{"a": {"b"}, "b": {"a"}}, "a", "b"), "a")
+	assert.ErrorContains(t, err, "a -> b -> a")
+}
+
+func TestADeepAcyclicChainLowersAllTheWay(t *testing.T) {
+	into := map[string][]string{}
+	var kinds []string
+	for i := 1; i <= 10; i++ {
+		kinds = append(kinds, fmt.Sprintf("k%d", i))
+		if i < 10 {
+			into[kinds[i-1]] = []string{fmt.Sprintf("k%d", i+1)}
+		}
+	}
+	c, err := chainCompiler(chainRoot(into, kinds...), "k1")
 	assert.NilError(t, err)
-	_, _, err = c.Compile(context.Background())
-	assert.ErrorContains(t, err, fmt.Sprintf("lowers more than %d levels deep", MaxLoweringDepth))
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err)
+	name := "p"
+	for _, k := range kinds[1:] {
+		name += "-" + k
+		group, _ := obj.Flat()[ProjectKey].(map[string]any)[k].(map[string]any)
+		assert.Assert(t, group != nil, "%s missing from %v", k, obj)
+		found := false
+		for _, r := range group {
+			if m, _ := r.(map[string]any); m != nil && m["name"] == name {
+				found = true
+			}
+		}
+		assert.Assert(t, found, "%s has no %s: %v", k, name, group)
+	}
 }

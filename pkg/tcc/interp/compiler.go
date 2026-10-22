@@ -9,6 +9,8 @@ package interp
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/spf13/afero"
 
@@ -76,6 +78,11 @@ func New(project engine.Schema, compileRoot *engine.Node, options ...Option) (c 
 		env:         Env{"branch": DefaultBranch},
 		compileRoot: compileRoot,
 		project:     project,
+	}
+	if compileRoot != nil {
+		if cycles := loweringCycles(compileRoot); len(cycles) > 0 {
+			return nil, fmt.Errorf("interp: lowerings cycle: %s", strings.Join(cycles, "; "))
+		}
 	}
 
 	for _, option := range options {

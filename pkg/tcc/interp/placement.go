@@ -29,8 +29,7 @@ type placement struct {
 	// src is that resource as a person would look for it — "workflow/checkout
 	// (steps/0)". The id says which resource; only this says which STEP, and a
 	// collision between two parts of one lowering has the same id on both sides.
-	src   string
-	depth int // how many lowerings deep this one is
+	src string
 }
 
 // relocation moves an authored lowerable resource's document into the leaf of the
@@ -132,7 +131,7 @@ func placements(root *engine.Node, obj map[string]any, layout Layout) ([]placeme
 			at:   placeAt(root, layout, d, kinds),
 			tree: authored(root, d),
 			id:   d.ID, kind: d.Kind, name: d.Name, scope: d.Scope,
-			from: d.Source.ID, part: d.Source.Path, src: d.Source.String(), depth: len(d.Via),
+			from: d.Source.ID, part: d.Source.Path, src: d.Source.String(),
 		})
 
 		for _, w := range d.Writes {

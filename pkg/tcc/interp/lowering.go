@@ -372,11 +372,8 @@ func loweredLeafOf(iter *engine.Node) string {
 	return engine.LeafOf(loweredShapeOf(iter))
 }
 
-// at is one node reached at one lowering depth: what a rewrite produces depends on
-// nothing else, which is what makes the walk below memoizable.
-type nodeAt struct {
-	node  *engine.Node
-	depth int
+type nodeIn struct {
+	node, container *engine.Node
 }
 
 // LoweredRoot is the schema Compile's SECOND pass reads, and the only place the after
@@ -385,33 +382,23 @@ type nodeAt struct {
 // role — the authored root, and therefore every editor, JSON Schema and completion list,
 // is untouched.
 //
-// THE CAP IS THE NESTING CAP. An after shape holds the vocabulary's resource groups,
-// which include the lowering kinds themselves, so expanding it without a bound is a
-// cyclic node graph — and interp's schema walks have no visited set (see
-// MaxNamespaceDepth for the same reason). A lowering may lower again up to
-// MaxLoweringDepth, and the shape reaches exactly that far.
+// Inside a kind's after shape, a held kind is expanded only if that kind's lowerings
+// produce it: nothing else can sit in its container, and expanding everything would never
+// end, since an after shape holds every resource group.
 //
-// IT SHARES WHAT IT DOES NOT CHANGE. Most of a vocabulary has no lowering under it at
-// all, and rebuilding those subtrees anyway is not free: v2's tree copied whole took 1.2
-// SECONDS, on every compile, which the explorer does on every keystroke. A subtree with
-// no Lowerable node in it comes back as itself, so only the spine down to each lowering
-// kind is new — the same structural-sharing rule a persistent tree uses, and the reason
-// the memo is keyed by depth as well as by node.
+// A subtree with no Lowerable node in it comes back as itself, so only the spine down to
+// each lowering kind is new; copying v2's whole tree took over a second per compile.
 func LoweredRoot(root *engine.Node) *engine.Node {
-	memo, open := map[nodeAt]*engine.Node{}, map[nodeAt]bool{}
-	var rewrite func(*engine.Node, int) *engine.Node
-	rewrite = func(n *engine.Node, depth int) *engine.Node {
+	memo, open := map[nodeIn]*engine.Node{}, map[nodeIn]bool{}
+	var rewrite func(n, container *engine.Node, kind string) *engine.Node
+	rewrite = func(n, container *engine.Node, kind string) *engine.Node {
 		if n == nil {
 			return nil
 		}
-		key := nodeAt{n, depth}
+		key := nodeIn{n, container}
 		if done, ok := memo[key]; ok {
 			return done
 		}
-		// A schema is a finite tree and the depth rises on every swap, so this cannot
-		// re-enter at the same depth. Saying so out loud costs one map entry and turns a
-		// vocabulary that got that wrong into a shape that stops expanding rather than a
-		// stack that runs out.
 		if open[key] {
 			return n
 		}
@@ -419,15 +406,15 @@ func LoweredRoot(root *engine.Node) *engine.Node {
 		defer delete(open, key)
 
 		base, before := n, (*engine.Node)(nil)
-		if after := loweredShapeOf(n); after != nil && depth < MaxLoweringDepth {
-			before, base = n, after
-			depth++
+		if after := loweredShapeOf(n); after != nil && (container == nil || produces(container, kind)) {
+			before, base, container = n, after, n
 		}
 
 		children := make([]*engine.Node, len(base.Children))
 		untouched := before == nil
+		childKind, _ := base.Match.(string)
 		for i, child := range base.Children {
-			children[i] = rewrite(child, depth)
+			children[i] = rewrite(child, container, childKind)
 			if children[i] != child {
 				untouched = false
 			}
@@ -455,7 +442,11 @@ func LoweredRoot(root *engine.Node) *engine.Node {
 		memo[key] = &out
 		return &out
 	}
-	return rewrite(root, 0)
+	return rewrite(root, nil, "")
+}
+
+func produces(container *engine.Node, kind string) bool {
+	return slices.ContainsFunc(LoweringsOf(container), func(l Lowering) bool { return l.into == kind })
 }
 
 // DeclaredWrite is one value a lowering says it will put somewhere, read off the schema
@@ -838,11 +829,7 @@ func LoweringPlan(root *engine.Node, obj map[string]any) []Derived {
 
 	// A lowering may lower again: what a construct becomes can itself be a construct.
 	// Each round reads the fields the round above produced, which is why Set exists.
-	//
-	// The cap is a real guard rather than a formality — a vocabulary whose kind A
-	// lowers into B and B into A is a build mistake, and without a cap it is a build
-	// mistake that hangs the compiler instead of reporting itself.
-	out = append(out, nest(root, out, 1)...)
+	out = append(out, nest(root, out)...)
 
 	// A TOTAL order. Sorting on a pair that two derived resources can share leaves the
 	// rest to map iteration, and the plan stops being a pure function of the config —
@@ -870,11 +857,6 @@ func LoweringPlan(root *engine.Node, obj map[string]any) []Derived {
 	})
 	return out
 }
-
-// MaxLoweringDepth is how many times a lowering may lower again. Eight, the same cap
-// the namespace nesting uses, and for the same reason: the structure has to be finite
-// and a cycle has to end in a message rather than a hang.
-const MaxLoweringDepth = 8
 
 // setFor fills in a lowering's fields and puts any SCALAR back into the form an author
 // writes. A compiled value is the wire form — a Duration is nanoseconds, a Bytes is a
@@ -1036,13 +1018,10 @@ func derivedID(srcID, kind, part string) string {
 }
 
 // nest lowers again the derived resources that are themselves of a lowering kind, carrying
-// the trail down so the innermost one still names what the author wrote.
-//
-// depth is len(Via) of what this round produces, the same count the view refuses at.
-// The round AT the cap is still produced, so a lowering that would go deeper is seen
-// and refused by name instead of silently stopping.
-func nest(root *engine.Node, parents []Derived, depth int) []Derived {
-	if depth > MaxLoweringDepth || len(parents) == 0 {
+// the trail down so the innermost one still names what the author wrote. New refuses a
+// cyclic vocabulary, so this ends.
+func nest(root *engine.Node, parents []Derived) []Derived {
+	if len(parents) == 0 {
 		return nil
 	}
 	_, nameField := engine.IdentityOf(root)
@@ -1060,7 +1039,7 @@ func nest(root *engine.Node, parents []Derived, depth int) []Derived {
 		via := append(append([]string{}, p.Via...), p.Kind+"/"+p.Name)
 		out = append(out, from(root, iter, p.Kind, p.Name, p.ID, res, p.Scope, p.Source, via)...)
 	}
-	return append(out, nest(root, out, depth+1)...)
+	return append(out, nest(root, out)...)
 }
 
 // iterOfKind finds a kind's iterator anywhere in the schema, including inside the scope
@@ -1468,11 +1447,6 @@ func CheckLowerings(root *engine.Node) []string {
 		}
 	}
 
-	// A CYCLE IS A BUILD MISTAKE, and it is one nobody's config can fix: a kind that
-	// lowers into a kind that lowers back into it produces resources forever. The runtime
-	// cap stops the hang, and stopping is all it does — the plan it returns is silently
-	// truncated, which is a lie about what a config becomes. Said here instead, where a
-	// vocabulary author can see it without writing any config at all.
 	for _, cycle := range loweringCycles(root) {
 		problems = append(problems, "lowerings cycle: "+cycle)
 	}
