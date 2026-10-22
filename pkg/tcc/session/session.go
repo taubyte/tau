@@ -684,7 +684,7 @@ func diffOps(prev, next map[string]any, base []string) []fieldOp {
 			ops = append(ops, diffOps(pm, nm, at(k))...)
 			continue
 		}
-		if !sameValue(prev[k], nv) {
+		if pv, had := prev[k]; !had || !sameValue(pv, nv) {
 			ops = append(ops, fieldOp{path: at(k), value: nv})
 		}
 	}
@@ -903,8 +903,8 @@ func (s *Session) ResourceAt(filePath string) ([]string, bool) {
 		rest = rest[2:]
 	}
 	switch len(rest) {
-	case 0: // the path ended on a scope, whose own document is named by the layout
-		return segs[:len(segs)], true
+	case 0: // <container>/<instance>.yaml: a scope's document lives inside its directory, never beside it
+		return nil, false
 	case 1: // .../<container>/<instance>/<containerDoc> addresses the scope itself
 		if len(segs) == len(rest) {
 			return nil, false
@@ -975,7 +975,7 @@ func (s *Session) Complete(res, field []string, partial string) ([]string, error
 	if !found {
 		return nil, fmt.Errorf("unknown field %q on %q", strings.Join(field, "/"), group)
 	}
-	cands := append([]string(nil), values...)
+	cands := append([]string{}, values...)
 	if refGroup != "" {
 		for _, name := range s.scopedNames(res, refGroup) {
 			cands = append(cands, name)
