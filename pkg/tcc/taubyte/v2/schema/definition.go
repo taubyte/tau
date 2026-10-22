@@ -2117,7 +2117,7 @@ var V2Resources = []*Node{
 				// same field be either, and the safe reading was the one nothing enforced.
 				String(Key("encryption", "key", "namespace"), IsNamespacePath(), InSection("encryption"),
 					Doc("Namespace", "Where that secret lives. Omitted means this resource's own scope, then its parents.")),
-				String(Key("encryption", "key", "name"), IsVariableName(), Ref("secret", Inbound()), NoAccessors(), InSection("encryption"),
+				String(Key("encryption", "key", "name"), IsVariableName(), Ref("secret", Inbound()), InSection("encryption"),
 					Doc("Encryption Key", "Secret holding the key entries are encrypted with, as \"secret/<name>\".")),
 			)...),
 			GroupDoc("A key-value cache served to the project's peers, with a lifetime on every entry. Not a system of record: losing an entry costs a recomputation, never a fact."), Icon("bolt"), Category("data"), Footprint(),
@@ -2168,8 +2168,8 @@ var V2Resources = []*Node{
 			commonAttributes(append(append([]*Attribute{
 				String("type", Path(Either(storageTypes...)), Captures(), InSection("storage"), Doc("Type", "Storage kind: object or streaming (the key selects the type block).")),
 			}, instanceAttributes()...),
-				Bool(Key("object", "versioning"), NoSetter(), InSection("storage"), Doc("Versioning", "Keep historical versions of objects (object storage).")),
-				Duration(Key("streaming", "ttl"), Field("Ttl"), Accessor("TTL"), NoSetter(), PerEnv(), InSection("storage"), Doc("Time-To-Live", "Lifetime for streamed entries. A floor, not a guarantee.")),
+				Bool(Key("object", "versioning"), InSection("storage"), Doc("Versioning", "Keep historical versions of objects (object storage).")),
+				Duration(Key("streaming", "ttl"), Field("Ttl"), Accessor("TTL"), PerEnv(), InSection("storage"), Doc("Time-To-Live", "Lifetime for streamed entries. A floor, not a guarantee.")),
 				Bytes(Key("size"), Path(Either(storageTypes...), "size"), Required(), PerEnv(), InSection("storage"), Doc("Size", "Maximum storage size, as a human string (e.g. \"1GB\").")),
 			)...),
 			GroupDoc("Object or streaming storage, content-addressed, served to the project's peers."), Icon("bucket"), Category("data"), Footprint(),
@@ -3447,7 +3447,7 @@ func rootAttributes() []*Attribute {
 		// object; the validator is what says so out loud, because a key the schema
 		// knows would otherwise be silently accepted from a document that set it, and
 		// a stale copy of a derived name is exactly the drift deriving it avoids.
-		String("zone_label", Derived(DeriveDNSLabel, "id"), NoAccessors(),
+		String("zone_label", Derived(DeriveDNSLabel, "id"),
 			Validator(func(v string) error {
 				if v == "" {
 					return nil

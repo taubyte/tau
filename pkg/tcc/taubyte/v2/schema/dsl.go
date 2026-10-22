@@ -76,11 +76,8 @@ var (
 	Captures         = engine.Captures
 	MinInt           = engine.MinInt
 	Nested           = engine.Nested
-	NoAccessors      = engine.NoAccessors
-	NoSetter         = engine.NoSetter
 	Path             = engine.Path
 	Ref              = engine.Ref
-	RepoBranch       = engine.RepoBranch
 	Required         = engine.Required
 	Resource         = engine.Resource
 	Root             = engine.Root

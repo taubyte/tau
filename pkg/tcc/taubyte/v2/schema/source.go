@@ -105,7 +105,7 @@ func contentSource(section string, branches ...string) []*engine.Attribute {
 				//
 				// Omitted still means the repository's default branch, which is
 				// what an environment with nothing said about it gets.
-				String(Key("source", "branch"), RepoBranch(), PerEnv(), InSection(section), ShowWhen(Key("source", "kind"), "git"),
+				String(Key("source", "branch"), PerEnv(), InSection(section), ShowWhen(Key("source", "kind"), "git"),
 					Doc("Branch", "Branch to read, e.g. \"main\". Per environment: `branch_staging: develop`. Omitted means the repository's default branch.")),
 				String(Key("source", "path"), IsRepoPath(), InSection(section), ShowWhen(Key("source", "kind"), "git"),
 					Doc("Path", "Where in that repository the content is. Omitted means its root.")),

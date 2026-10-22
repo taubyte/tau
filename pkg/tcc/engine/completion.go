@@ -1,37 +1,5 @@
 package engine
 
-// Field completion: the DSL-derived candidates for a field's value. Static
-// candidates (enum members) come straight from the
-// constraint specs; a reference field additionally names a resource group whose
-// in-scope instances are candidates (the caller lists those from the live config,
-// since the DSL can't know them). Same introspection as validation, read the
-// other way: "what may go here" instead of "is this allowed".
-
-// FieldCompletion describes how a field's value can be completed.
-type FieldCompletion struct {
-	Values   []string // fixed candidates: enum members
-	RefGroup string   // if non-empty, instances of this resource group are candidates
-}
-
-// Completion returns the completion sources for one field of a resource group and
-// whether the field is known (an attribute at that path).
-// found is false for an unknown path so a caller can distinguish "no candidates"
-// (a known free-form field: cid/fqdn/pattern/plain string) from "unknown field".
-func Completion(root []*Node, group string, field []string) (fc FieldCompletion, found bool) {
-	a := findAttr(root, group, field)
-	if a == nil {
-		return FieldCompletion{}, false
-	}
-	found = true
-	if enum, ok := a.Meta["enum"].([]string); ok {
-		fc.Values = append(fc.Values, enum...)
-	}
-	if ref, ok := a.Meta["ref"].(RefSpec); ok {
-		fc.RefGroup = ref.Group
-	}
-	return fc, true
-}
-
 // findAttr locates the attribute of a resource group addressed by field (see
 // matchField); nil for an unknown path.
 func findAttr(root []*Node, group string, field []string) *Attribute {

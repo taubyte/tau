@@ -116,7 +116,7 @@ type RequiredField struct {
 // fieldPaths is every plain authored location of an attribute: a static path
 // yields one, and each FINITE matcher segment multiplies into its values. An
 // unbounded matcher (All) yields nil — such a field has no enumerable location
-// and stays unaddressable, which is what RequiredPathOf reports.
+// and stays unaddressable.
 //
 // This is the whole trick behind required fields at a "dynamic" path: Either is
 // declared, so the set of locations is known statically. Nothing has to resolve
@@ -247,15 +247,6 @@ func branchPrefix(a *Attribute) ([]string, bool) {
 		prefix = append(prefix, plain)
 	}
 	return nil, false
-}
-
-// RequiredPathOf is an attribute's authored path as a display/lookup key, or ""
-// when it sits at a dynamic (Either/Key) location with no plain path.
-func RequiredPathOf(a *Attribute) string {
-	if p := fieldPaths(a); p != nil {
-		return strings.Join(p[0], "/")
-	}
-	return ""
 }
 
 func attrByName(attrs []*Attribute, name string) *Attribute {

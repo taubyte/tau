@@ -166,10 +166,6 @@ func InSection(id string) Option {
 	return Annotate("section", id)
 }
 
-// RepoBranch marks the attribute holding the git branch a repo-backed resource
-// builds from (a sibling of the provider block). Introspection-only.
-func RepoBranch() Option { return Annotate("repoBranch", true) }
-
 // Field overrides the Go struct field name a generator emits for this attribute,
 // for cases where the config-key-derived name differs from the struct field
 // (e.g. github-id -> RepoID). Generation-only; no runtime effect.
@@ -183,31 +179,6 @@ func Field(goName string) Option {
 // Distinct from Field, which names the struct field. Generation-only.
 func Accessor(goName string) Option {
 	return Annotate("accessor", goName)
-}
-
-// NoSetter suppresses the generated pkg/schema setter for this attribute — the
-// write is folded into a combined hand-written helper (e.g. Channel/Bridges).
-// The getter is still emitted. Generation-only; no runtime effect.
-func NoSetter() Option {
-	return Annotate("noSetter", true)
-}
-
-// NoGetter suppresses the generated pkg/schema getter for this attribute — the
-// read applies a value transform the DSL can't express (e.g. fqdn lower-cases).
-// The setter is still emitted. Generation-only; no runtime effect.
-func NoGetter() Option {
-	return Annotate("noGetter", true)
-}
-
-// NoAccessors suppresses BOTH generated pkg/schema accessors — neither is
-// mechanical (a value transform, combined encryption, or deep github-* folded
-// into a hand-written helper own this attribute's config surface). Note: the TS
-// source facade is unaffected and still edits these keys. Generation-only.
-func NoAccessors() Option {
-	return func(a *Attribute) {
-		NoSetter()(a)
-		NoGetter()(a)
-	}
 }
 
 // NodeOption mutates a node — the node-level analogue of Option. Passed to
@@ -241,25 +212,6 @@ type Capability interface {
 // than guess a singular from the plural key. Generation-only; no runtime effect.
 func Singular(goName string) NodeOption {
 	return GroupAnnotate("singular", goName)
-}
-
-// Indexed declares that a group takes part in the index, and at which position. The
-// index accumulates buckets shared across scopes, so the ORDER groups are visited in is
-// part of what comes out — and it is a fact about a vocabulary, not about the driver
-// visiting them. It was a list of eight group names in the interpreter: right for one
-// vocabulary and silently wrong for every other.
-//
-// Lower goes first. Groups that declare no position follow, in declaration order.
-func Indexed(position int) NodeOption { return GroupAnnotate("indexAt", position) }
-
-// IndexedAt reads a group's position back. The second value is false when it declares
-// none, which is not an error: it means "after the ones that do".
-func IndexedAt(iter *Node) (int, bool) {
-	if iter == nil {
-		return 0, false
-	}
-	at, ok := iter.Meta["indexAt"].(int)
-	return at, ok
 }
 
 // RefSpec declares that an attribute value references another resource group,
