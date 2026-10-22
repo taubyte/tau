@@ -200,11 +200,10 @@ func (x *Issued) GetZone() string {
 	return ""
 }
 
+// SecretRef names a secret in the certificate service's cloud scope.
 type SecretRef struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
-	Environment   string                 `protobuf:"bytes,2,opt,name=environment,proto3" json:"environment,omitempty"`
-	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -237,20 +236,6 @@ func (x *SecretRef) ProtoReflect() protoreflect.Message {
 // Deprecated: Use SecretRef.ProtoReflect.Descriptor instead.
 func (*SecretRef) Descriptor() ([]byte, []int) {
 	return file_tau_cm_v2_cm_proto_rawDescGZIP(), []int{3}
-}
-
-func (x *SecretRef) GetProject() string {
-	if x != nil {
-		return x.Project
-	}
-	return ""
-}
-
-func (x *SecretRef) GetEnvironment() string {
-	if x != nil {
-		return x.Environment
-	}
-	return ""
 }
 
 func (x *SecretRef) GetName() string {
@@ -389,11 +374,9 @@ const file_tau_cm_v2_cm_proto_rawDesc = "" +
 	"\x03key\x18\x03 \x01(\v2\x14.tau.cm.v2.SecretRefR\x03key\x12\x1b\n" +
 	"\tnot_after\x18\x04 \x01(\x03R\bnotAfter\x12\x18\n" +
 	"\aproject\x18\x05 \x01(\tR\aproject\x12\x12\n" +
-	"\x04zone\x18\x06 \x01(\tR\x04zone\"[\n" +
-	"\tSecretRef\x12\x18\n" +
-	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
-	"\venvironment\x18\x02 \x01(\tR\venvironment\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name\"<\n" +
+	"\x04zone\x18\x06 \x01(\tR\x04zone\"\x1f\n" +
+	"\tSecretRef\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"<\n" +
 	"\fClaimRequest\x12\x12\n" +
 	"\x04fqdn\x18\x01 \x01(\tR\x04fqdn\x12\x18\n" +
 	"\aproject\x18\x02 \x01(\tR\aproject\"M\n" +

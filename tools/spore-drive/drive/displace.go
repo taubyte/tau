@@ -7,14 +7,17 @@ import (
 	"io"
 	"net"
 	"os"
+	"path"
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	host "github.com/taubyte/tau/pkg/mycelium/host"
 	"github.com/taubyte/tau/tools/spore-drive/course"
 	preader "github.com/taubyte/tau/tools/spore-drive/drive/progress"
+	"google.golang.org/protobuf/proto"
 	"gopkg.in/ini.v1"
 	"gopkg.in/yaml.v3"
 )
@@ -58,6 +61,10 @@ func (d *sporedrive) Displace(ctx context.Context, course course.Course) <-chan 
 
 	hyphae := course.Hyphae()
 
+	// THE CLOUD'S SECRETS ARE SEALED ONCE PER DEPLOY, not once per host: every
+	// host is handed the same bundle, so each writes the same version.
+	seal := sync.OnceValues(d.sealSecrets)
+
 	pCh := make(chan Progress, hyphae.Size()*1024)
 
 	if cap(pCh) == 0 { // course is empty
@@ -72,7 +79,7 @@ func (d *sporedrive) Displace(ctx context.Context, course course.Course) <-chan 
 		defer close(pCh)
 
 		for _, hypha := range hyphae {
-			errCh := hypha.Subnet.Run(dCtx, uint16(hypha.Concurrency), d.displaceHandler(hypha, pCh))
+			errCh := hypha.Subnet.Run(dCtx, uint16(hypha.Concurrency), d.displaceHandler(hypha, pCh, seal))
 			err := <-errCh
 			if err != nil {
 				// only errors in errCh
@@ -194,32 +201,63 @@ func (d *sporedrive) uploadConfig(h remoteHost, inst instance) error {
 	return e.Close()
 }
 
-// installSeed puts a node's seed file at /tb/config/<instance>.seed.yaml,
-// through /tmp, and leaves no copy in /tmp.
-func (d *sporedrive) installSeed(ctx context.Context, h remoteHost, inst instance) error {
-	tmp := "/tmp/" + inst.name + ".seed.yaml"
-	if err := d.uploadSeed(h, tmp, inst); err != nil {
-		return fmt.Errorf("failed to create %s.seed.yaml: %w", inst.name, err)
-	}
-	_, err := h.Sudo(ctx, "cp", "-f", tmp, "/tb/config/")
-	h.Remove(tmp)
+// sealSecrets is the bundle every host running the secrets service is
+// initialized with, marshaled for its stdin. It is nil when the cloud has no
+// secret to hand over.
+func (d *sporedrive) sealSecrets() ([]byte, error) {
+	services, err := servicesOf(d.parser)
 	if err != nil {
-		return fmt.Errorf("failed to copy %s.seed.yaml: %w", inst.name, err)
+		return nil, err
 	}
+	bundle, err := services.bundle(d.now())
+	if err != nil {
+		return nil, err
+	}
+	if len(bundle.GetSecrets()) == 0 {
+		return nil, nil
+	}
+	return proto.Marshal(bundle)
+}
+
+func (d *sporedrive) path(parts ...string) string {
+	return path.Join(append([]string{d.root}, parts...)...)
+}
+
+func (d *sporedrive) binary() string { return d.path("bin", "tau") }
+
+func (d *sporedrive) configOf(instance string) string {
+	return d.path("config", instance+".yaml")
+}
+
+func (d *sporedrive) storageOf(instance string) string { return d.path("storage", instance) }
+
+// moveAsideV1 keeps a v1 node's data out of the v2 node that takes its name.
+// A directory whose config is not a v2 node file (one with a node: section)
+// was left by something else, and is renamed rather than opened.
+func (d *sporedrive) moveAsideV1(ctx context.Context, h remoteHost, instance string) error {
+	storage := d.storageOf(instance)
+	if _, err := h.Sudo(ctx, "test", "-d", storage); err != nil {
+		return nil
+	}
+	if _, err := h.Sudo(ctx, "grep", "-qs", "^node:", d.configOf(instance)); err == nil {
+		return nil
+	}
+	aside := storage + ".v1-" + d.now().UTC().Format("20060102T150405")
+	if _, err := h.Sudo(ctx, "mv", storage, aside); err != nil {
+		return fmt.Errorf("moving %s aside: %w", storage, err)
+	}
+	logger.Warnf("%s was not a v2 node's data and is now %s", storage, aside)
 	return nil
 }
 
-func (d *sporedrive) uploadSeed(h remoteHost, path string, inst instance) error {
-	f, err := h.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0600)
+// initSecrets streams the bundle to the node's `tau init`, on stdin, while it
+// is stopped.
+func (d *sporedrive) initSecrets(ctx context.Context, h remoteHost, inst instance, bundle []byte) error {
+	out, err := h.SudoInput(ctx, bundle, d.binary(), "init", "--config", d.configOf(inst.name), "--root", d.storageOf(inst.name), "-")
 	if err != nil {
-		return err
+		return fmt.Errorf("initializing tau@%s's secrets: %w: %s", inst.name, err, out)
 	}
-	defer f.Close()
-	e := yaml.NewEncoder(f)
-	if err := e.Encode(inst.seed); err != nil {
-		return err
-	}
-	return e.Close()
+	return nil
 }
 
 func (d *sporedrive) uploadSystemdFile(h remoteHost) error {
@@ -242,7 +280,7 @@ func (d *sporedrive) uploadSystemdFile(h remoteHost) error {
 	service.Key("ExecStartPre").SetValue("-/usr/sbin/setenforce 0")
 	// EACH INSTANCE HAS ITS OWN ROOT: two nodes on one host must not share a
 	// datastore.
-	service.Key("ExecStart").SetValue("/tb/bin/tau start --config /tb/config/%i.yaml --root /tb/storage/%i")
+	service.Key("ExecStart").SetValue(d.binary() + " start --config " + d.configOf("%i") + " --root " + d.storageOf("%i"))
 	service.Key("StandardOutput").SetValue("journal")
 	service.Key("User").SetValue("root")
 	service.Key("Group").SetValue("root")
@@ -300,7 +338,7 @@ func listTauInstances(ctx context.Context, h remoteHost) ([]string, error) {
 }
 
 func (d *sporedrive) isSameTau(ctx context.Context, h remoteHost) bool {
-	output, err := h.Execute(ctx, "md5sum", "-bz", "/tb/bin/tau")
+	output, err := h.Execute(ctx, "md5sum", "-bz", d.binary())
 	if err == nil && output != nil {
 		fields := strings.Fields(string(output))
 		if len(fields) > 1 && fields[0] == d.tauBinaryHash {
@@ -319,7 +357,7 @@ func defaultPortsToOpen() map[int]struct{} {
 	}
 }
 
-func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Progress) func(context.Context, host.Host) error {
+func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Progress, seal func() ([]byte, error)) func(context.Context, host.Host) error {
 	return func(ctx context.Context, h host.Host) error {
 		updatingTau := (d.tauBinary != nil)
 
@@ -512,29 +550,40 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 			return pushError("upload tau files", fmt.Errorf("failed to daemon-reload: %w", err))
 		}
 
-		if _, err = r.Sudo(ctx, "bash", "-c", "mkdir -p /tb/{bin,config,storage}"); err != nil {
+		if _, err = r.Sudo(ctx, "bash", "-c", "mkdir -p "+d.root+"/{bin,config,storage}"); err != nil {
 			return pushError("setup tau", fmt.Errorf("failed create fs structure: %w", err))
 		}
 		pushProgress("setup tau", 25)
 
 		for _, inst := range nodes.instances {
+			if err := d.moveAsideV1(ctx, r, inst.name); err != nil {
+				return pushError("setup tau", err)
+			}
 			if err := d.uploadConfig(r, inst); err != nil {
 				return pushError("setup tau", fmt.Errorf("failed to create %s.yaml: %w", inst.name, err))
 			}
-			if _, err = r.Sudo(ctx, "cp", "-f", "/tmp/"+inst.name+".yaml", "/tb/config/"); err != nil {
+			if _, err = r.Sudo(ctx, "cp", "-f", "/tmp/"+inst.name+".yaml", d.path("config")+"/"); err != nil {
 				return pushError("setup tau", fmt.Errorf("failed to copy %s.yaml: %w", inst.name, err))
-			}
-			if inst.seed != nil {
-				if err := d.installSeed(ctx, r, inst); err != nil {
-					return pushError("setup tau", err)
-				}
 			}
 		}
 		pushProgress("setup tau", 30)
 
 		if updatingTau {
-			if _, err = r.Sudo(ctx, "cp", "-f", "/tmp/tau", "/tb/bin/"); err != nil {
+			if _, err = r.Sudo(ctx, "cp", "-f", "/tmp/tau", d.path("bin")+"/"); err != nil {
 				return pushError("setup tau", fmt.Errorf("failed to copy tau: %w", err))
+			}
+		}
+		pushProgress("setup tau", 40)
+
+		bundle, err := seal()
+		if err != nil {
+			return pushError("setup tau", fmt.Errorf("failed to seal the cloud's secrets: %w", err))
+		}
+		for _, inst := range nodes.instances {
+			if inst.keepsSecrets() && bundle != nil {
+				if err := d.initSecrets(ctx, r, inst, bundle); err != nil {
+					return pushError("setup tau", err)
+				}
 			}
 		}
 		pushProgress("setup tau", 50)

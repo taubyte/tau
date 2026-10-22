@@ -95,12 +95,16 @@ func TestProgressNamesItsHopAndHost(t *testing.T) {
 
 // fsHost is a remote host whose disk is an afero tree and whose sudo copies.
 type fsHost struct {
-	fs   afero.Fs
-	sudo func(name string, args ...string) error
+	fs    afero.Fs
+	sudo  func(name string, args ...string) error
+	input func(stdin []byte, name string, args ...string) error
 }
 
 func (f *fsHost) Sudo(_ context.Context, name string, args ...string) ([]byte, error) {
 	return nil, f.sudo(name, args...)
+}
+func (f *fsHost) SudoInput(_ context.Context, stdin []byte, name string, args ...string) ([]byte, error) {
+	return nil, f.input(stdin, name, args...)
 }
 func (f *fsHost) Execute(context.Context, string, ...string) ([]byte, error) { return nil, nil }
 func (f *fsHost) Open(p string) (io.ReadCloser, error)                       { return f.fs.Open(p) }

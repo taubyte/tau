@@ -15,6 +15,9 @@ import (
 // helpers wrapper
 type remoteHost interface {
 	Sudo(ctx context.Context, name string, args ...string) ([]byte, error)
+	// SudoInput is Sudo with stdin, so what it is handed never touches the
+	// host's disk or its process list.
+	SudoInput(ctx context.Context, stdin []byte, name string, args ...string) ([]byte, error)
 	Execute(ctx context.Context, name string, args ...string) ([]byte, error)
 	Open(path string) (io.ReadCloser, error)
 	OpenFile(path string, flag int, perm os.FileMode) (io.ReadWriteCloser, error)
@@ -42,6 +45,22 @@ func (r *remote) Sudo(ctx context.Context, name string, args ...string) ([]byte,
 	if err != nil {
 		return nil, err
 	}
+	return cmd.CombinedOutput()
+}
+
+func (r *remote) SudoInput(ctx context.Context, stdin []byte, name string, args ...string) ([]byte, error) {
+	cmd, err := r.h.Command(ctx, "sudo", command.Args(append([]string{name}, args...)...))
+	if err != nil {
+		return nil, err
+	}
+	in, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		in.Write(stdin)
+		in.Close()
+	}()
 	return cmd.CombinedOutput()
 }
 

@@ -210,6 +210,14 @@ export class PlanRequest extends Message<PlanRequest> {
    */
   concurrency = 0;
 
+  /**
+   * root is where tau lives on every host: bin, config and storage. Empty is
+   * /tb.
+   *
+   * @generated from field: string root = 8;
+   */
+  root = "";
+
   constructor(data?: PartialMessage<PlanRequest>) {
     super();
     proto3.util.initPartial(data, this);
@@ -225,6 +233,7 @@ export class PlanRequest extends Message<PlanRequest> {
     { no: 5, name: "path", kind: "scalar", T: 9 /* ScalarType.STRING */, oneof: "tau" },
     { no: 6, name: "shapes", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
     { no: 7, name: "concurrency", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 8, name: "root", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): PlanRequest {

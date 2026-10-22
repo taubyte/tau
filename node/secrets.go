@@ -93,14 +93,33 @@ func (v *vault) List(ctx context.Context, project, environment string) ([]string
 	return names, absent(err)
 }
 
-// Get is auth's read of its own keys, in the one scope no project can name.
-func (v *vault) Get(ctx context.Context, project, environment, name string) ([]byte, error) {
-	value, err := v.client.Get(ctx, projectRef(project, environment, name))
+func projectRef(project, environment, name string) secretsService.Ref {
+	return secretsService.Ref{Scope: secretsService.Project(project, environment), Name: name}
+}
+
+// cloud is one of the cloud's own services' scope of the vault: auth's keys,
+// cm's. No project can name it, so no developer's write lands there.
+func (v *vault) cloud(service string) cloudVault {
+	return cloudVault{client: v.client, scope: secretsService.Cloud(service)}
+}
+
+type cloudVault struct {
+	client *secretsService.Client
+	scope  secretsService.Scope
+}
+
+func (c cloudVault) Get(ctx context.Context, name string) ([]byte, error) {
+	value, err := c.client.Get(ctx, secretsService.Ref{Scope: c.scope, Name: name})
 	return value, absent(err)
 }
 
-func projectRef(project, environment, name string) secretsService.Ref {
-	return secretsService.Ref{Scope: secretsService.Project(project, environment), Name: name}
+func (c cloudVault) Set(ctx context.Context, name string, value []byte) error {
+	return absent(c.client.Set(ctx, secretsService.Ref{Scope: c.scope, Name: name}, value))
+}
+
+func (c cloudVault) List(ctx context.Context) ([]string, error) {
+	names, err := c.client.List(ctx, c.scope)
+	return names, absent(err)
 }
 
 // Secret is pkg/invoke/wasm's Secrets: the value a grant names, read at the

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net"
+	"regexp"
 	"slices"
 	"sort"
 	"time"
@@ -38,11 +39,6 @@ import (
 
 var logger = log.Logger("tau.spore-drive")
 
-// mainInstance names a host's node. The systemd unit is tau@<instance>, its
-// file /tb/config/<instance>.yaml; a split-off build-frontend node is named
-// after that service.
-const mainInstance = "node"
-
 // v1Services maps each v1 service name onto the v2 services doing its work.
 // accounts is absent on purpose: it has no v2 counterpart in this tree, and is
 // reported as ignored.
@@ -60,14 +56,24 @@ var v1Services = map[string][]string{
 // dropped are v1 service names that are read and run nothing in v2.
 var dropped = []string{"accounts"}
 
-// instance is one v2 node a host runs.
+// instance is one v2 node a host runs. The main one is named after the host's
+// primary shape, as its key and port already are: its systemd unit is
+// tau@<shape>, its file <root>/config/<shape>.yaml and its data
+// <root>/storage/<shape>. A split-off build-frontend node is named after that
+// service.
 type instance struct {
 	name string
 	port int
 	file boot.File
-	// seed is what this node puts into the vault, at file.Seed.
-	seed *boot.SeedFile
 }
+
+// keepsSecrets is whether this node runs the secrets service, and so is
+// initialized with the cloud's secrets before it starts.
+func (i instance) keepsSecrets() bool { return slices.Contains(i.file.Node.Services, node.Secrets) }
+
+// safeName is what an instance or path may be spelled with: it names a unit, a
+// file and a directory on the host, and reaches a remote shell unquoted.
+var safeName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // hostNodes is what a host runs, and which of its config's fields have no v2
 // home.
@@ -209,6 +215,14 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 	if err != nil {
 		return nil, err
 	}
+	for _, shape := range hc.Shapes().List() {
+		if shape == node.BuildFrontend {
+			return nil, fmt.Errorf("host %s: a shape cannot be named %s, the name of the node split off for it", hostName, node.BuildFrontend)
+		}
+		if !safeName.MatchString(shape) {
+			return nil, fmt.Errorf("host %s: shape %q names a unit and a directory, so it is letters, digits, '.', '_' and '-'", hostName, shape)
+		}
+	}
 	services, droppedHere, err := v2Services(p, hostName)
 	if err != nil {
 		return nil, err
@@ -306,16 +320,7 @@ func (d *sporedrive) nodesFor(hostName string) (*hostNodes, error) {
 	if err != nil {
 		return nil, err
 	}
-	first := instance{name: mainInstance, port: mainPort, file: main}
-	if len(cloudServices.seed) > 0 {
-		holders, err := seedHolders(p)
-		if err != nil {
-			return nil, err
-		}
-		first.seed = &boot.SeedFile{Holders: holders, Secrets: cloudServices.seed}
-		first.file.Seed = "/tb/config/" + mainInstance + ".seed.yaml"
-	}
-	out.instances = append([]instance{first}, out.instances...)
+	out.instances = append([]instance{{name: primary, port: mainPort, file: main}}, out.instances...)
 	return out, nil
 }
 

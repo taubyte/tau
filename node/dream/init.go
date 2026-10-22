@@ -21,6 +21,7 @@ package dream
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,7 +32,9 @@ import (
 	auth "github.com/taubyte/tau/services/auth"
 
 	"github.com/taubyte/tau/node/boot"
+	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/services/cm"
+	"github.com/taubyte/tau/services/secrets"
 
 	"github.com/taubyte/tau/node"
 	"github.com/taubyte/tau/p2p/mesh"
@@ -358,18 +361,24 @@ func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
 	}
 
 	// ONE ACME ACCOUNT PER UNIVERSE, as an operator configures one per cloud,
-	// seeded into the vault by the first node that issues.
+	// sealed once and written by every node that keeps secrets before it
+	// starts, the way `taud init` does on a machine.
 	_, minted, err := acme.MintKey()
 	if err != nil {
 		m.Close()
 		return nil, err
 	}
+	sealed, err := secrets.Sealed(secrets.Ref{Scope: secrets.Cloud(cm.VaultService), Name: cm.AccountSecret}, minted, time.Now())
+	if err != nil {
+		m.Close()
+		return nil, err
+	}
+	account := &secretsv2.InitBundle{Secrets: []*secretsv2.InitSecret{sealed}}
 
-	accountKey := string(minted)
 	u := &Universe{mesh: m}
 	copies := max(cfg.Copies, 1)
 	for index := range copies {
-		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index, &accountKey) })
+		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index, account) })
 		if err != nil {
 			u.Close()
 			return nil, fmt.Errorf("dream: node %d: %w", index, err)
@@ -395,7 +404,7 @@ func (u *Universe) CA() *sectls.CA { return u.mesh.CA() }
 // Close stops every node, then their peers.
 func (u *Universe) Close() { u.mesh.Close() }
 
-func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, accountKey *string) error {
+func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account *secretsv2.InitBundle) error {
 	ctx := m.Context()
 	h := p.Peer()
 
@@ -496,6 +505,14 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, accountKey *string
 	}
 	options = append(options, cfg.Options...)
 
+	if nodeConfig.CM.Certificate.ACME.Enabled {
+		err := node.InitSecrets(ctx, nodeConfig, root, h, kvdb.New(p), account)
+		if err != nil && !errors.Is(err, node.ErrNoSecretsHere) {
+			os.RemoveAll(root)
+			return err
+		}
+	}
+
 	n, err := node.New(nodeConfig, options...)
 	if err != nil {
 		os.RemoveAll(root)
@@ -505,14 +522,6 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, accountKey *string
 		n.Close()
 		os.RemoveAll(root)
 		return err
-	}
-	if nodeConfig.CM.Certificate.ACME.Enabled && *accountKey != "" {
-		self := h.ID().String()
-		go boot.Seed(ctx, n.Vault(), self, func() []string { return nil }, boot.SeedFile{
-			Holders: []string{self},
-			Secrets: []boot.Secret{{Project: cm.VaultProject, Environment: cm.VaultEnvironment, Name: cm.AccountSecret, Value: *accountKey}},
-		})
-		*accountKey = ""
 	}
 
 	id := h.ID().String()

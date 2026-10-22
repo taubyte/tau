@@ -2,9 +2,16 @@ package node
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
+	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
+
+	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
+	"github.com/taubyte/tau/pkg/raft"
+	secretsService "github.com/taubyte/tau/services/secrets"
 )
 
 // secrets_test covers the WRITE half of the vault.
@@ -134,4 +141,52 @@ func TestAnInjectedResolverOutranksTheNodesOwnVault(t *testing.T) {
 	bare, _, _ := makeNode(t, Config{Services: []string{Register}})
 	require.NoError(t, bare.Start(t.Context()))
 	require.Nil(t, bare.secretResolver())
+}
+
+// TestInitWritesTheCloudsSecretsTheNodeThenServes: what `taud init` writes on
+// a stopped node is in its vault once it starts, in the cloud scope its own
+// services read and no project can name.
+func TestInitWritesTheCloudsSecretsTheNodeThenServes(t *testing.T) {
+	ctx := t.Context()
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+	h := newHost(t, mn)
+	factory := &memFactory{}
+	root := t.TempDir()
+
+	ref := secretsService.Ref{Scope: secretsService.Cloud("auth"), Name: "pepper"}
+	sealed, err := secretsService.Sealed(ref, []byte("salt"), time.Now())
+	require.NoError(t, err)
+	bundle := &secretsv2.InitBundle{Secrets: []*secretsv2.InitSecret{sealed}}
+
+	require.ErrorIs(t, InitSecrets(ctx, Config{Services: []string{Register}}, root, h, factory, bundle), ErrNoSecretsHere)
+	cfg := Config{Services: []string{Register, Discovery, Secrets}}
+	failing := &memFactory{err: errors.New("no database")}
+	require.ErrorContains(t, InitSecrets(ctx, cfg, root, h, failing, bundle), "no database")
+	require.ErrorIs(t, InitSecrets(ctx, cfg, "", h, factory, bundle), secretsService.ErrNoRoot)
+	require.NoError(t, InitSecrets(ctx, cfg, root, h, factory, bundle))
+
+	n, err := New(cfg,
+		WithHost(h),
+		WithPubSub(newPubSub(t, h)),
+		WithDatabases(factory),
+		WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
+		WithRoot(root),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { n.Close() })
+	require.NoError(t, n.Start(ctx))
+
+	cloud := n.Vault().(*vault).cloud("auth")
+	got, err := cloud.Get(ctx, "pepper")
+	require.NoError(t, err)
+	require.Equal(t, "salt", string(got))
+
+	require.NoError(t, cloud.Set(ctx, "signing", []byte("key")))
+	names, err := cloud.List(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"pepper", "signing"}, names)
+
+	_, err = n.Vault().Secret(ctx, "cloud", "auth", "pepper")
+	require.ErrorIs(t, err, secretsService.ErrNotSet, "a project named cloud reaches no cloud secret")
 }

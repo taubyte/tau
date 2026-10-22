@@ -134,7 +134,7 @@ describe("Drive against the mock", () => {
     const hosts = yaml.load(doc.text("hosts.yaml")!) as any;
     expect(hosts[names[0]].shapes.shape1.key).toBeTruthy();
 
-    const course = await drive.plan(doc, { tau: TauPath(FAKE_TAU), shapes: ["shape1"], concurrency: 1 });
+    const course = await drive.plan(doc, { tau: TauPath(FAKE_TAU), shapes: ["shape1"], concurrency: 1, root: "/opt/tau" });
     expect(course.id).toBeTruthy();
     expect(course.hops.map((h) => h.shapes)).toEqual([["shape1"]]);
     expect(course.hosts.map((h) => h.name).sort()).toEqual(names);
@@ -154,16 +154,25 @@ describe("Drive against the mock", () => {
     for (const c of ['command "-v" "systemctl"', 'command "-v" "docker"', 'sudo "apt-get" "update"']) {
       expect(cmds).toContain(c);
     }
-    // The node's boot file was uploaded and installed, and the node started.
-    expect(cmds).toContain("SFTP Filewrite /tmp/node.yaml");
-    expect(cmds).toContain('sudo "cp" "-f" "/tmp/node.yaml" "/tb/config/"');
-    expect(cmds).toContain('sudo "systemctl" "start" "tau@node"');
+    // The node's boot file was uploaded and installed under the root, its
+    // secrets handed to init on stdin, and the node, named for its primary
+    // shape, started.
+    expect(cmds).toContain("SFTP Filewrite /tmp/shape1.yaml");
+    expect(cmds).toContain('sudo "cp" "-f" "/tmp/shape1.yaml" "/opt/tau/config/"');
+    expect(cmds).toContain(
+      'sudo "/opt/tau/bin/tau" "init" "--config" "/opt/tau/config/shape1.yaml" "--root" "/opt/tau/storage/shape1" "-"'
+    );
+    expect(cmds).toContain('sudo "systemctl" "start" "tau@shape1"');
+    for (const c of cmds) expect(c).not.toContain("gh-secret");
 
     // What was installed is the node the config describes, read off the host.
     const root = await disk(mock, names[0]);
-    const raw = await fs.readFile(path.join(root, "tb/config/node.yaml"), "utf8");
+    const raw = await fs.readFile(path.join(root, "opt/tau/config/shape1.yaml"), "utf8");
     const node = yaml.load(raw) as any;
-    const seed = await fs.readFile(path.join(root, "tb/config/node.seed.yaml"), "utf8");
+    const onDisk: string[] = [];
+    for (const entry of await fs.readdir(root, { recursive: true, withFileTypes: true })) {
+      if (entry.isFile()) onDisk.push(await fs.readFile(path.join(entry.parentPath, entry.name), "utf8"));
+    }
     await fs.rm(root, { recursive: true, force: true });
     expect(node.node.services).toEqual(["auth", "secrets", "discovery", "dns"]);
     expect(node.node.cloud).toBe("test.com");
@@ -176,15 +185,14 @@ describe("Drive against the mock", () => {
     expect(node.bootstrap).toHaveLength(1);
     // No domain key reaches a node: none signs a domain claim.
     expect(raw).not.toContain("PRIVATE KEY");
-    // Sign-in and certificates reach the node; their secrets only the seed.
+    // Sign-in and certificates reach the node; their secrets no file at all.
     expect(node.node.auth.admin.name).toBe("root");
     expect(node.node.auth.admin.passwordhash).toMatch(/^\$argon2id\$/);
     expect(node.node.auth.forges).toEqual([{ host: "github.com", clientid: "gh-id" }]);
     expect(node.node.cm.certificate.acme.enabled).toBe(true);
-    expect(node.seed).toBe("/tb/config/node.seed.yaml");
-    for (const secret of ["correct-horse", "gh-secret", "ACME ACCOUNT KEY"]) expect(raw).not.toContain(secret);
-    expect(seed).toContain("gh-secret");
-    expect(seed).toContain("ACME ACCOUNT KEY");
+    for (const secret of ["correct-horse", "gh-secret", "ACME ACCOUNT KEY"]) {
+      for (const content of onDisk) expect(content).not.toContain(secret);
+    }
 
     // The course ended with the stream.
     await expect(drive.abort(course)).rejects.toMatchObject({ code: Code.NotFound });

@@ -40,31 +40,31 @@ type memVault struct {
 
 func newVault() *memVault { return &memVault{m: map[string][]byte{}} }
 
-func (v *memVault) Get(_ context.Context, p, e, n string) ([]byte, error) {
+func (v *memVault) Get(_ context.Context, n string) ([]byte, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	v.gets++
 	if v.fail != nil {
 		return nil, v.fail
 	}
-	b, ok := v.m[p+"/"+e+"/"+n]
+	b, ok := v.m[n]
 	if !ok {
 		return nil, errors.New("not set")
 	}
 	return b, nil
 }
 
-func (v *memVault) Set(_ context.Context, p, e, n string, b []byte) error {
+func (v *memVault) Set(_ context.Context, n string, b []byte) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.fail != nil {
 		return v.fail
 	}
-	v.m[p+"/"+e+"/"+n] = b
+	v.m[n] = b
 	return nil
 }
 
-func (v *memVault) List(_ context.Context, p, e string) ([]string, error) {
+func (v *memVault) List(context.Context) ([]string, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.fail != nil {
@@ -72,9 +72,7 @@ func (v *memVault) List(_ context.Context, p, e string) ([]string, error) {
 	}
 	var out []string
 	for k := range v.m {
-		if n, ok := strings.CutPrefix(k, p+"/"+e+"/"); ok {
-			out = append(out, n)
-		}
+		out = append(out, k)
 	}
 	return out, nil
 }
@@ -313,7 +311,7 @@ func newFx(t *testing.T, mutate ...func(*Config)) *fx {
 	for _, m := range mutate {
 		m(&cfg)
 	}
-	f.vault.m[VaultProject+"/"+VaultEnvironment+"/"+OAuthSecretName(testHost)] = []byte(f.oauth.secret)
+	f.vault.m[OAuthSecretName(testHost)] = []byte(f.oauth.secret)
 	f.s = newTestService(t, WithUsers(db, f.vault, cfg), WithForges(reg), WithHTTPClient(f.oauth.srv.Client()), WithClock(func() time.Time { return f.now }))
 	return f
 }

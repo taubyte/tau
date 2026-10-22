@@ -9,7 +9,7 @@
 // # One signing key per cm node
 //
 // Each cm node signs with its own key, kept in the secrets service under
-// VaultProject/DomainEnvironment and named for the node, and publishes the
+// VaultService and named for the node, and publishes the
 // public half in this service's database at /domain/key/<peer id>. Two nodes
 // never write one key (AGENTS.md), and a token verifies against any of them.
 //
@@ -45,9 +45,6 @@ import (
 	cmv2 "github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/cm/v2/cmv2connect"
 )
-
-// DomainEnvironment scopes the domain signing keys in the vault.
-const DomainEnvironment = "domain"
 
 const (
 	domainKeyPrefix    = "/domain/key/"
@@ -96,7 +93,7 @@ func (s *Service) signingKey(ctx context.Context) ([]byte, []byte, error) {
 	}
 	public, err := s.db.Get(ctx, domainKeyPrefix+s.host.ID().String())
 	if err == nil && len(public) > 0 {
-		private, err := s.vault.Get(ctx, VaultProject, DomainEnvironment, s.keyName())
+		private, err := s.vault.Get(ctx, s.keyName())
 		if err != nil {
 			return nil, nil, fmt.Errorf("cm: reading the domain key: %w", err)
 		}
@@ -109,7 +106,7 @@ func (s *Service) signingKey(ctx context.Context) ([]byte, []byte, error) {
 	}
 	// THE PRIVATE HALF FIRST, so no public key is published whose private one
 	// is not kept.
-	if err := s.vault.Set(ctx, VaultProject, DomainEnvironment, s.keyName(), private); err != nil {
+	if err := s.vault.Set(ctx, s.keyName(), private); err != nil {
 		return nil, nil, fmt.Errorf("cm: keeping the domain key: %w", err)
 	}
 	if err := s.db.Put(ctx, domainKeyPrefix+s.host.ID().String(), public); err != nil {

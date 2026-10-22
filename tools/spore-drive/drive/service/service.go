@@ -145,7 +145,7 @@ func (s *Service) Plan(_ context.Context, in *connect.Request[pb.PlanRequest]) (
 			fmt.Errorf("the document is incomplete, missing %s; Validate generates them", strings.Join(gaps, ", ")))
 	}
 
-	sp, err := s.spore(p, tauOf(in.Msg)...)
+	sp, err := s.spore(p, append(tauOf(in.Msg), drive.WithRoot(in.Msg.GetRoot()))...)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}

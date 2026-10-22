@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x14\x64rive/v2/drive.proto\x12\x08\x64rive.v2\"y\n\x08\x44ocument\x12\x33\n\x05\x66iles\x18\x01 \x03(\x0b\x32\x1d.drive.v2.Document.FilesEntryR\x05\x66iles\x1a\x38\n\nFilesEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\x0cR\x05value:\x02\x38\x01\"A\n\x0fValidateRequest\x12.\n\x08\x64ocument\x18\x01 \x01(\x0b\x32\x12.drive.v2.DocumentR\x08\x64ocument\"t\n\x10ValidateResponse\x12\x16\n\x06\x65rrors\x18\x01 \x03(\tR\x06\x65rrors\x12\x18\n\x07ignored\x18\x02 \x03(\tR\x07ignored\x12.\n\x08\x64ocument\x18\x03 \x01(\x0b\x32\x12.drive.v2.DocumentR\x08\x64ocument\"\xde\x01\n\x0bPlanRequest\x12.\n\x08\x64ocument\x18\x01 \x01(\x0b\x32\x12.drive.v2.DocumentR\x08\x64ocument\x12\x18\n\x06latest\x18\x02 \x01(\x08H\x00R\x06latest\x12\x1a\n\x07version\x18\x03 \x01(\tH\x00R\x07version\x12\x12\n\x03url\x18\x04 \x01(\tH\x00R\x03url\x12\x14\n\x04path\x18\x05 \x01(\tH\x00R\x04path\x12\x16\n\x06shapes\x18\x06 \x03(\tR\x06shapes\x12 \n\x0b\x63oncurrency\x18\x07 \x01(\x05R\x0b\x63oncurrencyB\x05\n\x03tau\"a\n\x06\x43ourse\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12!\n\x04hops\x18\x02 \x03(\x0b\x32\r.drive.v2.HopR\x04hops\x12$\n\x05hosts\x18\x03 \x03(\x0b\x32\x0e.drive.v2.HostR\x05hosts\"G\n\x03Hop\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n\x06shapes\x18\x02 \x03(\tR\x06shapes\x12\x14\n\x05hosts\x18\x03 \x03(\tR\x05hosts\"Z\n\x04Host\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\x12$\n\x05nodes\x18\x02 \x03(\x0b\x32\x0e.drive.v2.NodeR\x05nodes\x12\x18\n\x07ignored\x18\x03 \x03(\tR\x07ignored\"J\n\x04Node\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n\x04port\x18\x02 \x01(\x05R\x04port\x12\x1a\n\x08services\x18\x03 \x03(\tR\x08services\"&\n\x0c\x41pplyRequest\x12\x16\n\x06\x63ourse\x18\x01 \x01(\tR\x06\x63ourse\"v\n\x08Progress\x12\x10\n\x03hop\x18\x01 \x01(\tR\x03hop\x12\x12\n\x04host\x18\x02 \x01(\tR\x04host\x12\x12\n\x04step\x18\x03 \x01(\tR\x04step\x12\x1a\n\x08progress\x18\x04 \x01(\x05R\x08progress\x12\x14\n\x05\x65rror\x18\x05 \x01(\tR\x05\x65rror\"&\n\x0c\x41\x62ortRequest\x12\x16\n\x06\x63ourse\x18\x01 \x01(\tR\x06\x63ourse\"\x0f\n\rAbortResponse2\xf3\x01\n\x0c\x44riveService\x12\x41\n\x08Validate\x12\x19.drive.v2.ValidateRequest\x1a\x1a.drive.v2.ValidateResponse\x12/\n\x04Plan\x12\x15.drive.v2.PlanRequest\x1a\x10.drive.v2.Course\x12\x35\n\x05\x41pply\x12\x16.drive.v2.ApplyRequest\x1a\x12.drive.v2.Progress0\x01\x12\x38\n\x05\x41\x62ort\x12\x16.drive.v2.AbortRequest\x1a\x17.drive.v2.AbortResponseB\xa0\x01\n\x0c\x63om.drive.v2B\nDriveProtoP\x01ZCgithub.com/taubyte/tau/tools/spore-drive/proto/gen/drive/v2;drivev2\xa2\x02\x03\x44XX\xaa\x02\x08\x44rive.V2\xca\x02\x08\x44rive\\V2\xe2\x02\x14\x44rive\\V2\\GPBMetadata\xea\x02\tDrive::V2b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x14\x64rive/v2/drive.proto\x12\x08\x64rive.v2\"y\n\x08\x44ocument\x12\x33\n\x05\x66iles\x18\x01 \x03(\x0b\x32\x1d.drive.v2.Document.FilesEntryR\x05\x66iles\x1a\x38\n\nFilesEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\x0cR\x05value:\x02\x38\x01\"A\n\x0fValidateRequest\x12.\n\x08\x64ocument\x18\x01 \x01(\x0b\x32\x12.drive.v2.DocumentR\x08\x64ocument\"t\n\x10ValidateResponse\x12\x16\n\x06\x65rrors\x18\x01 \x03(\tR\x06\x65rrors\x12\x18\n\x07ignored\x18\x02 \x03(\tR\x07ignored\x12.\n\x08\x64ocument\x18\x03 \x01(\x0b\x32\x12.drive.v2.DocumentR\x08\x64ocument\"\xf2\x01\n\x0bPlanRequest\x12.\n\x08\x64ocument\x18\x01 \x01(\x0b\x32\x12.drive.v2.DocumentR\x08\x64ocument\x12\x18\n\x06latest\x18\x02 \x01(\x08H\x00R\x06latest\x12\x1a\n\x07version\x18\x03 \x01(\tH\x00R\x07version\x12\x12\n\x03url\x18\x04 \x01(\tH\x00R\x03url\x12\x14\n\x04path\x18\x05 \x01(\tH\x00R\x04path\x12\x16\n\x06shapes\x18\x06 \x03(\tR\x06shapes\x12 \n\x0b\x63oncurrency\x18\x07 \x01(\x05R\x0b\x63oncurrency\x12\x12\n\x04root\x18\x08 \x01(\tR\x04rootB\x05\n\x03tau\"a\n\x06\x43ourse\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12!\n\x04hops\x18\x02 \x03(\x0b\x32\r.drive.v2.HopR\x04hops\x12$\n\x05hosts\x18\x03 \x03(\x0b\x32\x0e.drive.v2.HostR\x05hosts\"G\n\x03Hop\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n\x06shapes\x18\x02 \x03(\tR\x06shapes\x12\x14\n\x05hosts\x18\x03 \x03(\tR\x05hosts\"Z\n\x04Host\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\x12$\n\x05nodes\x18\x02 \x03(\x0b\x32\x0e.drive.v2.NodeR\x05nodes\x12\x18\n\x07ignored\x18\x03 \x03(\tR\x07ignored\"J\n\x04Node\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n\x04port\x18\x02 \x01(\x05R\x04port\x12\x1a\n\x08services\x18\x03 \x03(\tR\x08services\"&\n\x0c\x41pplyRequest\x12\x16\n\x06\x63ourse\x18\x01 \x01(\tR\x06\x63ourse\"v\n\x08Progress\x12\x10\n\x03hop\x18\x01 \x01(\tR\x03hop\x12\x12\n\x04host\x18\x02 \x01(\tR\x04host\x12\x12\n\x04step\x18\x03 \x01(\tR\x04step\x12\x1a\n\x08progress\x18\x04 \x01(\x05R\x08progress\x12\x14\n\x05\x65rror\x18\x05 \x01(\tR\x05\x65rror\"&\n\x0c\x41\x62ortRequest\x12\x16\n\x06\x63ourse\x18\x01 \x01(\tR\x06\x63ourse\"\x0f\n\rAbortResponse2\xf3\x01\n\x0c\x44riveService\x12\x41\n\x08Validate\x12\x19.drive.v2.ValidateRequest\x1a\x1a.drive.v2.ValidateResponse\x12/\n\x04Plan\x12\x15.drive.v2.PlanRequest\x1a\x10.drive.v2.Course\x12\x35\n\x05\x41pply\x12\x16.drive.v2.ApplyRequest\x1a\x12.drive.v2.Progress0\x01\x12\x38\n\x05\x41\x62ort\x12\x16.drive.v2.AbortRequest\x1a\x17.drive.v2.AbortResponseB\xa0\x01\n\x0c\x63om.drive.v2B\nDriveProtoP\x01ZCgithub.com/taubyte/tau/tools/spore-drive/proto/gen/drive/v2;drivev2\xa2\x02\x03\x44XX\xaa\x02\x08\x44rive.V2\xca\x02\x08\x44rive\\V2\xe2\x02\x14\x44rive\\V2\\GPBMetadata\xea\x02\tDrive::V2b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -43,23 +43,23 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_VALIDATERESPONSE']._serialized_start=224
   _globals['_VALIDATERESPONSE']._serialized_end=340
   _globals['_PLANREQUEST']._serialized_start=343
-  _globals['_PLANREQUEST']._serialized_end=565
-  _globals['_COURSE']._serialized_start=567
-  _globals['_COURSE']._serialized_end=664
-  _globals['_HOP']._serialized_start=666
-  _globals['_HOP']._serialized_end=737
-  _globals['_HOST']._serialized_start=739
-  _globals['_HOST']._serialized_end=829
-  _globals['_NODE']._serialized_start=831
-  _globals['_NODE']._serialized_end=905
-  _globals['_APPLYREQUEST']._serialized_start=907
-  _globals['_APPLYREQUEST']._serialized_end=945
-  _globals['_PROGRESS']._serialized_start=947
-  _globals['_PROGRESS']._serialized_end=1065
-  _globals['_ABORTREQUEST']._serialized_start=1067
-  _globals['_ABORTREQUEST']._serialized_end=1105
-  _globals['_ABORTRESPONSE']._serialized_start=1107
-  _globals['_ABORTRESPONSE']._serialized_end=1122
-  _globals['_DRIVESERVICE']._serialized_start=1125
-  _globals['_DRIVESERVICE']._serialized_end=1368
+  _globals['_PLANREQUEST']._serialized_end=585
+  _globals['_COURSE']._serialized_start=587
+  _globals['_COURSE']._serialized_end=684
+  _globals['_HOP']._serialized_start=686
+  _globals['_HOP']._serialized_end=757
+  _globals['_HOST']._serialized_start=759
+  _globals['_HOST']._serialized_end=849
+  _globals['_NODE']._serialized_start=851
+  _globals['_NODE']._serialized_end=925
+  _globals['_APPLYREQUEST']._serialized_start=927
+  _globals['_APPLYREQUEST']._serialized_end=965
+  _globals['_PROGRESS']._serialized_start=967
+  _globals['_PROGRESS']._serialized_end=1085
+  _globals['_ABORTREQUEST']._serialized_start=1087
+  _globals['_ABORTREQUEST']._serialized_end=1125
+  _globals['_ABORTRESPONSE']._serialized_start=1127
+  _globals['_ABORTRESPONSE']._serialized_end=1142
+  _globals['_DRIVESERVICE']._serialized_start=1145
+  _globals['_DRIVESERVICE']._serialized_end=1388
 # @@protoc_insertion_point(module_scope)

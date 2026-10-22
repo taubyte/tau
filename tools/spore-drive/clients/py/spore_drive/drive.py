@@ -65,18 +65,20 @@ class Drive:
         path: Optional[str] = None,
         shapes: Iterable[str] = (),
         concurrency: int = 0,
+        root: str = "",
     ) -> drive_pb2.Course:
         """Plan a course for a complete (validated) doc.
 
         At most one tau source is given: latest, version, url or path (a local
-        binary). None leaves the service's default.
+        binary). None leaves the service's default. root is where tau lives
+        on every host; empty is /tb.
         """
         sources = {k: v for k, v in
                    (("latest", latest or None), ("version", version), ("url", url), ("path", path))
                    if v is not None}
         if len(sources) > 1:
             raise ValueError(f"give one tau source, got {sorted(sources)}")
-        req = drive_pb2.PlanRequest(document=doc, shapes=list(shapes), concurrency=concurrency, **sources)
+        req = drive_pb2.PlanRequest(document=doc, shapes=list(shapes), concurrency=concurrency, root=root, **sources)
         return await self._unary("Plan", drive_pb2.Course)(req)
 
     async def apply(self, course: CourseRef) -> AsyncIterator[drive_pb2.Progress]:

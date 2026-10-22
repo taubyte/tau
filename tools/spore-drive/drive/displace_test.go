@@ -10,14 +10,17 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/mock"
 	"github.com/taubyte/tau/node/boot"
 	"github.com/taubyte/tau/p2p/sectls"
 	host "github.com/taubyte/tau/pkg/mycelium/host"
+	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"gopkg.in/yaml.v3"
 
 	"github.com/taubyte/tau/tools/spore-drive/config/fixtures"
@@ -31,19 +34,34 @@ func TestDisplace(t *testing.T) {
 	sd, err := New(p)
 	assert.NilError(t, err)
 	sd.(*sporedrive).tauBinary = make([]byte, 1024)
-	testDisplace(t, sd)
+	testDisplace(t, sd, DefaultRoot, nil)
 }
 
 func TestDisplaceWithoutUpdatingTau(t *testing.T) {
 	_, p := fixtures.VirtConfig()
 	sd, err := New(p)
 	assert.NilError(t, err)
-	testDisplace(t, sd)
+	testDisplace(t, sd, DefaultRoot, nil)
 }
 
-func testDisplace(t *testing.T, sd Spore) {
+// TestDisplaceStreamsTheSecretsToInit: one bundle, sealed once, reaches every
+// secrets node on stdin before it starts, under the configured root, and no
+// file on any host holds a secret.
+func TestDisplaceStreamsTheSecretsToInit(t *testing.T) {
+	fs, p := fixtures.VirtConfig()
+	assert.NilError(t, afero.WriteFile(fs, "/keys/acme.key", []byte("ACCOUNT KEY"), 0o600))
+	p = withCloud(t, fs, p, signIn)
+	sd, err := New(p, WithRoot("/opt/tau"))
+	assert.NilError(t, err)
+	testDisplace(t, sd, "/opt/tau", []string{"gh-secret", "corp-secret", "ACCOUNT KEY"})
+}
+
+func testDisplace(t *testing.T, sd Spore, root string, secrets []string) {
 	sdrive := sd.(*sporedrive)
+	sdrive.now = func() time.Time { return fixedNow }
 	updatingTau := (sdrive.tauBinary != nil)
+	var stdins [][]byte
+	var stdinsLock sync.Mutex
 
 	// domains.hosts has no v2 home: it is read and reported, not emitted.
 	assert.NilError(t, sdrive.parser.Cloud().Domain().SetHost("admin.test.com", "gateway"))
@@ -86,7 +104,7 @@ func testDisplace(t *testing.T, sd Spore) {
 		}
 
 		if updatingTau {
-			rh.On("Execute", ctx, "md5sum", "-bz", "/tb/bin/tau").Once().Return(nil, nil)
+			rh.On("Execute", ctx, "md5sum", "-bz", root+"/bin/tau").Once().Return(nil, nil)
 		}
 
 		// upload tau
@@ -102,20 +120,36 @@ func testDisplace(t *testing.T, sd Spore) {
 		rh.On("Sudo", ctx, "cp", "-f", "/tmp/tau@.service", "/lib/systemd/system/tau@.service").Return(nil, nil)
 		rh.On("Sudo", ctx, "systemctl", "daemon-reload").Return(nil, nil)
 
-		rh.On("Sudo", ctx, "bash", "-c", "mkdir -p /tb/{bin,config,storage}").Return(nil, nil)
+		rh.On("Sudo", ctx, "bash", "-c", "mkdir -p "+root+"/{bin,config,storage}").Return(nil, nil)
 
 		// one file per node, keys inline
-		for _, inst := range []string{"node", "build-frontend"} {
+		for _, inst := range []string{"shape1", "build-frontend"} {
 			cf, _ := rhfs.OpenFile("/tmp/"+inst+".yaml", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0600)
 			rh.On("OpenFile", "/tmp/"+inst+".yaml", os.O_CREATE|os.O_RDWR|os.O_TRUNC, fs.FileMode(0600)).Once().Return(cf, nil)
-			rh.On("Sudo", ctx, "cp", "-f", "/tmp/"+inst+".yaml", "/tb/config/").Return(nil, nil)
+			rh.On("Sudo", ctx, "cp", "-f", "/tmp/"+inst+".yaml", root+"/config/").Return(nil, nil)
 			rh.On("Remove", "/tmp/"+inst+".yaml").Return(nil)
 		}
 		if updatingTau {
-			rh.On("Sudo", ctx, "cp", "-f", "/tmp/tau", "/tb/bin/").Return(nil, nil)
+			rh.On("Sudo", ctx, "cp", "-f", "/tmp/tau", root+"/bin/").Return(nil, nil)
 		}
 
-		// v1 left a unit per shape; the node unit is already there.
+		// v1's shape1 left its data where the v2 node named shape1 keeps its
+		// own, under a config that is not a v2 node file: it is moved aside.
+		rh.On("Sudo", ctx, "test", "-d", root+"/storage/shape1").Once().Return(nil, nil)
+		rh.On("Sudo", ctx, "grep", "-qs", "^node:", root+"/config/shape1.yaml").Once().Return(nil, errors.New("exit 1"))
+		rh.On("Sudo", ctx, "mv", root+"/storage/shape1", root+"/storage/shape1.v1-20261022T093000").Once().Return(nil, nil)
+		rh.On("Sudo", ctx, "test", "-d", root+"/storage/build-frontend").Once().Return(nil, errors.New("exit 1"))
+
+		if secrets != nil {
+			rh.On("SudoInput", ctx, mock.Anything, root+"/bin/tau", "init", "--config", root+"/config/shape1.yaml", "--root", root+"/storage/shape1", "-").
+				Once().Run(func(args mock.Arguments) {
+				stdinsLock.Lock()
+				stdins = append(stdins, args.Get(1).([]byte))
+				stdinsLock.Unlock()
+			}).Return(nil, nil)
+		}
+
+		// v1 left a unit per shape, and an earlier v2 deploy a unit named node.
 		rh.On("Sudo", ctx, "systemctl", "list-units", "--type=service", "--quiet", "--no-pager", "--all", "tau@*.service").Once().Return([]byte(`  tau@shape1.service   loaded inactive dead Description of shape1
   tau@shape2.service    loaded inactive dead Description of shape2
   tau@node.service       loaded inactive dead Description of node`), nil)
@@ -123,11 +157,11 @@ func testDisplace(t *testing.T, sd Spore) {
 		for _, inst := range []string{"shape1", "shape2", "node"} {
 			rh.On("Sudo", ctx, "systemctl", "stop", "tau@"+inst).Return(nil, nil)
 		}
-		for _, inst := range []string{"shape1", "shape2"} {
+		for _, inst := range []string{"shape2", "node"} {
 			rh.On("Sudo", ctx, "systemctl", "disable", "tau@"+inst).Return(nil, nil)
 		}
 		rh.On("Sudo", ctx, "systemctl", "enable", "tau@build-frontend").Return(nil, nil)
-		for _, inst := range []string{"node", "build-frontend"} {
+		for _, inst := range []string{"shape1", "build-frontend"} {
 			rh.On("Sudo", ctx, "systemctl", "start", "tau@"+inst).Return(nil, nil)
 		}
 
@@ -160,10 +194,21 @@ func testDisplace(t *testing.T, sd Spore) {
 		steps = append(steps, p)
 	}
 
+	for _, s := range steps {
+		assert.NilError(t, s.Error(), s.Name())
+	}
 	if updatingTau {
-		assert.Equal(t, len(steps), 64)
+		assert.Equal(t, len(steps), 66)
 	} else {
-		assert.Equal(t, len(steps), 58)
+		assert.Equal(t, len(steps), 60)
+	}
+
+	if secrets != nil {
+		assert.Equal(t, len(stdins), 2, "every secrets node is initialized")
+		assert.DeepEqual(t, stdins[0], stdins[1])
+		var bundle secretsv2.InitBundle
+		assert.NilError(t, proto.Unmarshal(stdins[0], &bundle))
+		assert.Equal(t, len(bundle.GetSecrets()), len(secrets))
 	}
 
 	for h, mfs := range fses {
@@ -177,7 +222,7 @@ func testDisplace(t *testing.T, sd Spore) {
 		}
 
 		var main, frontend boot.File
-		assert.NilError(t, yaml.Unmarshal(read("/tmp/node.yaml"), &main))
+		assert.NilError(t, yaml.Unmarshal(read("/tmp/shape1.yaml"), &main))
 		assert.NilError(t, yaml.Unmarshal(read("/tmp/build-frontend.yaml"), &frontend))
 
 		// the host's shapes are one node, keyed by its first shape
@@ -188,7 +233,16 @@ func testDisplace(t *testing.T, sd Spore) {
 		assert.Equal(t, main.HTTP, ":80")
 		assert.Equal(t, main.HTTPS, ":443")
 		assert.DeepEqual(t, main.Listen, []string{"/ip4/0.0.0.0/tcp/4242"})
-		assert.Assert(t, !strings.Contains(string(read("/tmp/node.yaml")), "PRIVATE KEY"), "no domain key reaches a node: none signs a domain claim")
+		assert.Assert(t, !strings.Contains(string(read("/tmp/shape1.yaml")), "PRIVATE KEY"), "no domain key reaches a node: none signs a domain claim")
+		assert.NilError(t, afero.Walk(mfs, "/", func(path string, info fs.FileInfo, err error) error {
+			if err != nil || info.IsDir() {
+				return err
+			}
+			for _, secret := range secrets {
+				assert.Assert(t, !strings.Contains(string(read(path)), secret), "%s holds %s", path, secret)
+			}
+			return nil
+		}))
 
 		// every node's certificate admits it, checked as the node checks it at boot
 		for _, f := range []boot.File{main, frontend} {
@@ -225,7 +279,7 @@ Description = Taubyte Tau Service Running %i
 [Service]
 Type           = simple
 ExecStartPre   = -/usr/sbin/setenforce 0
-ExecStart      = /tb/bin/tau start --config /tb/config/%i.yaml --root /tb/storage/%i
+ExecStart      = `+root+`/bin/tau start --config `+root+`/config/%i.yaml --root `+root+`/storage/%i
 StandardOutput = journal
 User           = root
 Group          = root

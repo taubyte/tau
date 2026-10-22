@@ -2,23 +2,43 @@ package drive
 
 import (
 	"fmt"
-	"slices"
+	"time"
 
 	"github.com/taubyte/tau/node"
-	"github.com/taubyte/tau/node/boot"
 	"github.com/taubyte/tau/pkg/certificate"
+	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	authService "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/cm"
+	"github.com/taubyte/tau/services/secrets"
 	"github.com/taubyte/tau/tools/spore-drive/config"
 )
 
 // cloudServices is what every node is told about sign-in and certificates,
-// and seed what of them is secret: the vault's.
+// and secrets what of them is secret: the vault's.
 type cloudServices struct {
-	auth   authService.Config
-	cm     cm.Config
-	forges []node.Forge
-	seed   []boot.Secret
+	auth    authService.Config
+	cm      cm.Config
+	forges  []node.Forge
+	secrets []cloudSecret
+}
+
+type cloudSecret struct {
+	ref   secrets.Ref
+	value string
+}
+
+// bundle seals every cloud secret once. The same bundle goes to every host
+// running the secrets service, so each writes the same version.
+func (c *cloudServices) bundle(now time.Time) (*secretsv2.InitBundle, error) {
+	out := &secretsv2.InitBundle{}
+	for _, s := range c.secrets {
+		sealed, err := secrets.Sealed(s.ref, []byte(s.value), now)
+		if err != nil {
+			return nil, err
+		}
+		out.Secrets = append(out.Secrets, sealed)
+	}
+	return out, nil
 }
 
 func servicesOf(p config.Parser) (*cloudServices, error) {
@@ -43,7 +63,7 @@ func servicesOf(p config.Parser) (*cloudServices, error) {
 	}
 	secret := func(name, value string) {
 		if value != "" {
-			out.seed = append(out.seed, boot.Secret{Project: authService.VaultProject, Environment: authService.VaultEnvironment, Name: name, Value: value})
+			out.secrets = append(out.secrets, cloudSecret{ref: secrets.Ref{Scope: secrets.Cloud(authService.VaultService), Name: name}, value: value})
 		}
 	}
 	for _, f := range a.Forges {
@@ -67,22 +87,7 @@ func servicesOf(p config.Parser) (*cloudServices, error) {
 			return nil, fmt.Errorf("cloud.cm.acme.accountkey: %w", err)
 		}
 		out.cm.Certificate.ACME = certificate.ACME{Enabled: true, Directory: m.ACME.Directory, Email: m.ACME.Email, EAB: m.ACME.EAB}
-		out.seed = append(out.seed, boot.Secret{Project: cm.VaultProject, Environment: cm.VaultEnvironment, Name: cm.AccountSecret, Value: string(key)})
+		out.secrets = append(out.secrets, cloudSecret{ref: secrets.Ref{Scope: secrets.Cloud(cm.VaultService), Name: cm.AccountSecret}, value: string(key)})
 	}
-	return out, nil
-}
-
-// seedHolders is the peer id of every host's node: each holds the seed, and
-// the lowest live one writes it (boot.Seed).
-func seedHolders(p config.Parser) ([]string, error) {
-	var out []string
-	for _, h := range p.Hosts().List() {
-		primary, err := primaryShape(p, h)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, p.Hosts().Host(h).Shapes().Instance(primary).Id())
-	}
-	slices.Sort(out)
 	return out, nil
 }

@@ -3,6 +3,8 @@ package drive
 import (
 	"fmt"
 	"os"
+	"path"
+	"strings"
 )
 
 type Option func(Spore) error
@@ -52,6 +54,26 @@ func WithTauPath(path string) Option {
 			return fmt.Errorf("reading tau from %s: %w", path, err)
 		}
 
+		return nil
+	}
+}
+
+// WithRoot is where tau lives on every host: its binary in bin, the node files
+// in config, the nodes' data in storage. Empty keeps DefaultRoot.
+func WithRoot(root string) Option {
+	return func(s Spore) error {
+		if root == "" {
+			return nil
+		}
+		if !path.IsAbs(root) || path.Clean(root) != root || root == "/" {
+			return fmt.Errorf("root %q is not a clean absolute directory", root)
+		}
+		for _, part := range strings.Split(strings.TrimPrefix(root, "/"), "/") {
+			if !safeName.MatchString(part) {
+				return fmt.Errorf("root %q: %q is letters, digits, '.', '_' and '-'", root, part)
+			}
+		}
+		s.(*sporedrive).root = root
 		return nil
 	}
 }

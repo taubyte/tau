@@ -43,10 +43,11 @@ const Recheck = time.Minute
 // ErrNoMembers is a cloud where no node reports this service.
 var ErrNoMembers = errors.New("cm: no cm node is reachable")
 
-// Vault is the slice of the secrets service the keys are kept in.
+// Vault is the slice of the secrets service the keys are kept in, already
+// bound to VaultService.
 type Vault interface {
-	Get(ctx context.Context, project, environment, name string) ([]byte, error)
-	Set(ctx context.Context, project, environment, name string, value []byte) error
+	Get(ctx context.Context, name string) ([]byte, error)
+	Set(ctx context.Context, name string, value []byte) error
 }
 
 type cached struct {
@@ -362,7 +363,7 @@ func (c *Client) obtain(ctx context.Context, name string) (*tls.Certificate, err
 // open reads k's key from the vault and caches the pair.
 func (c *Client) open(ctx context.Context, name string, k *kept) (*tls.Certificate, error) {
 	ref := k.record.GetKey()
-	key, err := c.vault.Get(ctx, ref.GetProject(), ref.GetEnvironment(), ref.GetName())
+	key, err := c.vault.Get(ctx, ref.GetName())
 	if err != nil {
 		return nil, fmt.Errorf("cm: opening the key of %s: %w", name, err)
 	}
@@ -416,14 +417,14 @@ func (c *Client) accountLocked(ctx context.Context) (crypto.Signer, error) {
 	}
 	// A KEY NOT READABLE YET IS WAITED FOR, until ctx ends: a CA asking a node
 	// whose vault has not caught up must still be answered.
-	blob, err := c.vault.Get(ctx, VaultProject, VaultEnvironment, AccountSecret)
+	blob, err := c.vault.Get(ctx, AccountSecret)
 	for err != nil {
 		select {
 		case <-ctx.Done():
 			return nil, fmt.Errorf("%w: %w", ErrNoAccount, err)
 		case <-time.After(c.poll):
 		}
-		blob, err = c.vault.Get(ctx, VaultProject, VaultEnvironment, AccountSecret)
+		blob, err = c.vault.Get(ctx, AccountSecret)
 	}
 	key, err := acme.ParseKey(blob)
 	if err != nil {
@@ -500,8 +501,8 @@ func (st keeper) Keep(ctx context.Context, name string, blob []byte) error {
 	if chain == nil || key == nil {
 		return errors.New("cm: an issuance holds no chain or no key")
 	}
-	ref := &cmv2.SecretRef{Project: VaultProject, Environment: VaultEnvironment, Name: "leaf-" + issuanceID()}
-	if err := c.vault.Set(ctx, ref.Project, ref.Environment, ref.Name, key); err != nil {
+	ref := &cmv2.SecretRef{Name: "leaf-" + issuanceID()}
+	if err := c.vault.Set(ctx, ref.Name, key); err != nil {
 		return fmt.Errorf("cm: keeping the key of %s: %w", name, err)
 	}
 	rec := &cmv2.Issued{Name: name, Chain: chain, Key: ref}

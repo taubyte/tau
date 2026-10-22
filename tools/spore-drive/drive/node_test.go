@@ -16,7 +16,9 @@ import (
 	"github.com/taubyte/tau/tools/spore-drive/config/fixtures"
 )
 
-func driveFor(p config.Parser) *sporedrive { return &sporedrive{parser: p} }
+func driveFor(p config.Parser) *sporedrive {
+	return &sporedrive{parser: p, root: DefaultRoot, now: time.Now}
+}
 
 // TestAHostWithoutBothBuildHalvesIsOneNode, and v2 service names pass through.
 func TestAHostWithoutBothBuildHalvesIsOneNode(t *testing.T) {
@@ -26,7 +28,7 @@ func TestAHostWithoutBothBuildHalvesIsOneNode(t *testing.T) {
 	nodes, err := driveFor(p).nodesFor("host1")
 	assert.NilError(t, err)
 	assert.Equal(t, len(nodes.instances), 1)
-	assert.Equal(t, nodes.instances[0].name, mainInstance)
+	assert.Equal(t, nodes.instances[0].name, "shape1", "the main node is named after the primary shape")
 	assert.DeepEqual(t, nodes.instances[0].file.Node.Services,
 		[]string{node.Auth, node.Secrets, node.Discovery, node.DNS, node.Gateway, node.BuildBackend, node.Proxy})
 }
@@ -140,7 +142,7 @@ func TestNodesIsThePlanOfOneHost(t *testing.T) {
 	plan, err := driveFor(p).Nodes("host1")
 	assert.NilError(t, err)
 	assert.Equal(t, len(plan.Nodes), 2)
-	assert.Equal(t, plan.Nodes[0].Name, mainInstance)
+	assert.Equal(t, plan.Nodes[0].Name, "shape1")
 	assert.Equal(t, plan.Nodes[1].Name, node.BuildFrontend)
 	assert.Equal(t, plan.Nodes[1].Port, plan.Nodes[0].Port+1)
 	assert.Assert(t, slices.Contains(plan.Ignored, "shapes.shape2.plugins"))
@@ -194,4 +196,38 @@ func TestIssueRefusesAKeyThatIsNotOne(t *testing.T) {
 	assert.ErrorContains(t, err, "decode private key")
 	_, err = issue(ca, base64.StdEncoding.EncodeToString([]byte("not a key")), "test.com")
 	assert.ErrorContains(t, err, "private key")
+}
+
+// TestAShapeMustNameAUnitAndADirectory: the main node takes its primary shape's
+// name, so a shape cannot take the split-off frontend's, nor spell a path.
+func TestAShapeMustNameAUnitAndADirectory(t *testing.T) {
+	for shape, want := range map[string]string{
+		node.BuildFrontend: "cannot be named",
+		"a b":              "letters, digits",
+		"../up":            "letters, digits",
+	} {
+		_, p := fixtures.VirtConfig()
+		p.Shapes().Shape(shape).Ports().Set("main", 5242)
+		assert.NilError(t, p.Hosts().Host("host1").Shapes().Instance(shape).GenerateKey())
+		_, err := driveFor(p).nodesFor("host1")
+		assert.ErrorContains(t, err, want, shape)
+	}
+}
+
+func TestTheRootIsOneSetting(t *testing.T) {
+	_, p := fixtures.VirtConfig()
+	for _, bad := range []string{"relative", "/", "/a/../b", "/a b", "/a/"} {
+		_, err := New(p, WithRoot(bad))
+		assert.ErrorContains(t, err, "root", bad)
+	}
+	sd, err := New(p, WithRoot(""))
+	assert.NilError(t, err)
+	assert.Equal(t, sd.(*sporedrive).root, DefaultRoot)
+
+	sd, err = New(p, WithRoot("/opt/tau"))
+	assert.NilError(t, err)
+	d := sd.(*sporedrive)
+	assert.Equal(t, d.binary(), "/opt/tau/bin/tau")
+	assert.Equal(t, d.configOf("shape1"), "/opt/tau/config/shape1.yaml")
+	assert.Equal(t, d.storageOf("shape1"), "/opt/tau/storage/shape1")
 }

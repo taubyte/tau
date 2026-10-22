@@ -206,7 +206,10 @@ type PlanRequest struct {
 	Shapes []string `protobuf:"bytes,6,rep,name=shapes,proto3" json:"shapes,omitempty"`
 	// concurrency is how many hosts of one hop are deployed at once. Zero is
 	// the default.
-	Concurrency   int32 `protobuf:"varint,7,opt,name=concurrency,proto3" json:"concurrency,omitempty"`
+	Concurrency int32 `protobuf:"varint,7,opt,name=concurrency,proto3" json:"concurrency,omitempty"`
+	// root is where tau lives on every host: bin, config and storage. Empty is
+	// /tb.
+	Root          string `protobuf:"bytes,8,opt,name=root,proto3" json:"root,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -303,6 +306,13 @@ func (x *PlanRequest) GetConcurrency() int32 {
 		return x.Concurrency
 	}
 	return 0
+}
+
+func (x *PlanRequest) GetRoot() string {
+	if x != nil {
+		return x.Root
+	}
+	return ""
 }
 
 type isPlanRequest_Tau interface {
@@ -797,7 +807,7 @@ const file_drive_v2_drive_proto_rawDesc = "" +
 	"\x10ValidateResponse\x12\x16\n" +
 	"\x06errors\x18\x01 \x03(\tR\x06errors\x12\x18\n" +
 	"\aignored\x18\x02 \x03(\tR\aignored\x12.\n" +
-	"\bdocument\x18\x03 \x01(\v2\x12.drive.v2.DocumentR\bdocument\"\xde\x01\n" +
+	"\bdocument\x18\x03 \x01(\v2\x12.drive.v2.DocumentR\bdocument\"\xf2\x01\n" +
 	"\vPlanRequest\x12.\n" +
 	"\bdocument\x18\x01 \x01(\v2\x12.drive.v2.DocumentR\bdocument\x12\x18\n" +
 	"\x06latest\x18\x02 \x01(\bH\x00R\x06latest\x12\x1a\n" +
@@ -805,7 +815,8 @@ const file_drive_v2_drive_proto_rawDesc = "" +
 	"\x03url\x18\x04 \x01(\tH\x00R\x03url\x12\x14\n" +
 	"\x04path\x18\x05 \x01(\tH\x00R\x04path\x12\x16\n" +
 	"\x06shapes\x18\x06 \x03(\tR\x06shapes\x12 \n" +
-	"\vconcurrency\x18\a \x01(\x05R\vconcurrencyB\x05\n" +
+	"\vconcurrency\x18\a \x01(\x05R\vconcurrency\x12\x12\n" +
+	"\x04root\x18\b \x01(\tR\x04rootB\x05\n" +
 	"\x03tau\"a\n" +
 	"\x06Course\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +

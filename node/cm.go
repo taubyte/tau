@@ -35,11 +35,11 @@ const challengeDatabase = "cm-challenges"
 var ErrNoZoneForCertificates = errors.New("node: certificates are issued for the cloud's zone, and this node's gateway names none (gateway.cloudfqdn)")
 
 // certVault is the vault every certificate key goes through.
-func (n *Node) certVault() *vault {
+func (n *Node) certVault() cloudVault {
 	n.Vault()
 	n.sharedMu.Lock()
 	defer n.sharedMu.Unlock()
-	return n.shared
+	return n.shared.cloud(cm.VaultService)
 }
 
 func (n *Node) openCM() error {

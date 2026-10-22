@@ -141,7 +141,7 @@ func TestARealConfigShapeValidatesUnchangedAndPlans(t *testing.T) {
 	assert.Equal(t, h.Name, "node1.example.com")
 	// patrick and monkey are both here, so build-frontend is split off.
 	assert.Equal(t, len(h.Nodes), 2)
-	assert.Equal(t, h.Nodes[0].Name, "node")
+	assert.Equal(t, h.Nodes[0].Name, "all")
 	assert.Equal(t, h.Nodes[0].Port, int32(4242))
 	assert.Equal(t, h.Nodes[1].Name, "build-frontend")
 	assert.Equal(t, h.Nodes[1].Port, int32(4243))
@@ -208,6 +208,10 @@ func TestWhatADocumentCannotBe(t *testing.T) {
 		Tau:      &pb.PlanRequest_Path{Path: "/nonexistent/tau"},
 	}))
 	assert.Equal(t, code(err), connect.CodeInvalidArgument)
+
+	_, err = c.Plan(context.Background(), connect.NewRequest(&pb.PlanRequest{Document: acdz(t), Root: "relative"}))
+	assert.Equal(t, code(err), connect.CodeInvalidArgument)
+	assert.ErrorContains(t, err, "root")
 
 	shapes := with(acdz(t), "shapes.yaml", "all:\n    services:\n        - gatewya\n    ports:\n        main: 4242\n")
 	_, err = c.Plan(context.Background(), connect.NewRequest(&pb.PlanRequest{Document: shapes}))

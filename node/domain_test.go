@@ -20,20 +20,20 @@ type memVault struct {
 	m  map[string][]byte
 }
 
-func (v *memVault) Get(_ context.Context, p, e, n string) ([]byte, error) {
+func (v *memVault) Get(_ context.Context, n string) ([]byte, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	b, ok := v.m[p+e+n]
+	b, ok := v.m[n]
 	if !ok {
 		return nil, errors.New("not set")
 	}
 	return b, nil
 }
 
-func (v *memVault) Set(_ context.Context, p, e, n string, b []byte) error {
+func (v *memVault) Set(_ context.Context, n string, b []byte) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	v.m[p+e+n] = b
+	v.m[n] = b
 	return nil
 }
 

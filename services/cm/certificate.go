@@ -6,7 +6,7 @@
 // one key per issuance (/cert/<name>/<not after, 20 digits>/<issuance id>), so
 // two issuances never overwrite each other and the newest is the last key in
 // byte order. Its private key and the ACME account key are secrets and live in
-// the secrets service, under VaultProject.
+// the secrets service, in the cloud scope VaultService.
 //
 // # Who orders
 //
@@ -44,12 +44,10 @@ import (
 	"github.com/taubyte/tau/pkg/certificate/acme"
 )
 
-// VaultProject and VaultEnvironment scope the keys kept in the secrets
-// service. A project name cannot start with "@", so no project's secret is
-// ever one of these.
+// VaultService is the cloud scope this service's keys are kept in. It is a
+// scope no project can name.
 const (
-	VaultProject     = "@cloud"
-	VaultEnvironment = "certificate"
+	VaultService = "cm"
 
 	// AccountSecret is the vault name of the cloud's ACME account key, PEM.
 	AccountSecret = "acme-account"
@@ -72,7 +70,7 @@ var (
 	ErrNoZone       = errors.New("cm: issuance needs the cloud's zone")
 	ErrNotZone      = errors.New("cm: only names in the cloud's zone are issued")
 	ErrNotKept      = errors.New("cm: nothing is kept for that name")
-	ErrNoAccount    = errors.New("cm: issuance needs the cloud's ACME account key, in the vault as " + VaultProject + "/" + VaultEnvironment + "/" + AccountSecret)
+	ErrNoAccount    = errors.New("cm: issuance needs the cloud's ACME account key, in the vault as cloud/" + VaultService + "/" + AccountSecret)
 	ErrDisabled     = acme.ErrDisabled
 )
 

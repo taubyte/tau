@@ -251,7 +251,7 @@ func TestACustomDomainIsCertifiedOnlyOnceProven(t *testing.T) {
 
 	// THE STORE PROVES TOO: a chain for a customZone name keeps only with a proof.
 	s := f.nodes[0]
-	rec := &cmv2.Issued{Name: name, Chain: []byte("x"), Key: &cmv2.SecretRef{Project: VaultProject, Environment: VaultEnvironment, Name: "k"}}
+	rec := &cmv2.Issued{Name: name, Chain: []byte("x"), Key: &cmv2.SecretRef{Name: "k"}}
 	require.ErrorIs(t, s.keep(t.Context(), rec), ErrNotZone)
 	rec.Zone, rec.Project = customZone, otherID
 	require.ErrorIs(t, s.keep(t.Context(), rec), ErrUnproven)

@@ -96,14 +96,13 @@ func TestARealCAIssuesThroughARealDelegation(t *testing.T) {
 		resolverAddr := startBind(t, bridge, resolverConf(parentNS), nil)
 		ca := startLivePebble(t, httpPort, resolverAddr)
 		f := &fleet{addrs: addrs, proxies: proxies}
+		bundle := accountBundle(t)
 		for i, addr := range addrs {
 			file := liveNode(t, ca, cfg, addr, httpPort)
-			if i == 0 {
-				file = seeded(t, file)
-			}
 			if i < 2 {
 				file.Node.Services = []string{node.Register, node.Discovery, node.Gateway, node.DNS, node.Secrets, node.CM}
 				file.Node.DNSListen = "127.0.0.1:0"
+				file = initialized(t, bundle, file)
 			} else {
 				file.Node.Services = []string{node.Register, node.Discovery, node.Gateway, node.BuildFrontend}
 				file.Node.BuildFrontend = frontend.Config{Listen: addr + ":8443"}

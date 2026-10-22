@@ -2,6 +2,7 @@ package drive
 
 import (
 	"context"
+	"time"
 
 	"github.com/taubyte/tau/pkg/mycelium"
 	host "github.com/taubyte/tau/pkg/mycelium/host"
@@ -15,6 +16,12 @@ type sporedrive struct {
 
 	tauBinary     []byte
 	tauBinaryHash string
+
+	// root is where everything tau keeps on a host lives: bin, config and
+	// storage.
+	root string
+
+	now func() time.Time
 
 	hostWrapper func(ctx context.Context, h host.Host) (remoteHost, error)
 }

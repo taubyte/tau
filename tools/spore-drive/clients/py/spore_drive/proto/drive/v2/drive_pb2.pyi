@@ -36,7 +36,7 @@ class ValidateResponse(_message.Message):
     def __init__(self, errors: _Optional[_Iterable[str]] = ..., ignored: _Optional[_Iterable[str]] = ..., document: _Optional[_Union[Document, _Mapping]] = ...) -> None: ...
 
 class PlanRequest(_message.Message):
-    __slots__ = ("document", "latest", "version", "url", "path", "shapes", "concurrency")
+    __slots__ = ("document", "latest", "version", "url", "path", "shapes", "concurrency", "root")
     DOCUMENT_FIELD_NUMBER: _ClassVar[int]
     LATEST_FIELD_NUMBER: _ClassVar[int]
     VERSION_FIELD_NUMBER: _ClassVar[int]
@@ -44,6 +44,7 @@ class PlanRequest(_message.Message):
     PATH_FIELD_NUMBER: _ClassVar[int]
     SHAPES_FIELD_NUMBER: _ClassVar[int]
     CONCURRENCY_FIELD_NUMBER: _ClassVar[int]
+    ROOT_FIELD_NUMBER: _ClassVar[int]
     document: Document
     latest: bool
     version: str
@@ -51,7 +52,8 @@ class PlanRequest(_message.Message):
     path: str
     shapes: _containers.RepeatedScalarFieldContainer[str]
     concurrency: int
-    def __init__(self, document: _Optional[_Union[Document, _Mapping]] = ..., latest: bool = ..., version: _Optional[str] = ..., url: _Optional[str] = ..., path: _Optional[str] = ..., shapes: _Optional[_Iterable[str]] = ..., concurrency: _Optional[int] = ...) -> None: ...
+    root: str
+    def __init__(self, document: _Optional[_Union[Document, _Mapping]] = ..., latest: bool = ..., version: _Optional[str] = ..., url: _Optional[str] = ..., path: _Optional[str] = ..., shapes: _Optional[_Iterable[str]] = ..., concurrency: _Optional[int] = ..., root: _Optional[str] = ...) -> None: ...
 
 class Course(_message.Message):
     __slots__ = ("id", "hops", "hosts")

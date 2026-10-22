@@ -29,20 +29,17 @@ import (
 // A node's public key is published in auth's store as well, so a verifier
 // finds it without opening a secret.
 
-// Vault is the part of the secrets client auth uses.
+// Vault is the part of the secrets client auth uses, already bound to
+// VaultService.
 type Vault interface {
-	Get(ctx context.Context, project, environment, name string) ([]byte, error)
-	Set(ctx context.Context, project, environment, name string, value []byte) error
-	List(ctx context.Context, project, environment string) ([]string, error)
+	Get(ctx context.Context, name string) ([]byte, error)
+	Set(ctx context.Context, name string, value []byte) error
+	List(ctx context.Context) ([]string, error)
 }
 
-// The scope every auth secret lives in. A project id is a CID and never
-// starts with a dot, and the frontend's secret routes reach only projects the
-// register holds, so no developer's write can land here.
-const (
-	VaultProject     = ".tau"
-	VaultEnvironment = "auth"
-)
+// VaultService is the cloud scope every auth secret lives in. It is a scope
+// no project can name, so no developer's write can land here.
+const VaultService = "auth"
 
 // Secret names. A host or provider name never holds a "/", which the vault
 // refuses.
@@ -54,7 +51,7 @@ const (
 )
 
 // OAuthSecretName is the vault name an operator stores a forge OAuth app's
-// client secret under, in project ".tau", environment "auth".
+// client secret under, in the cloud scope VaultService.
 func OAuthSecretName(host string) string { return secretOAuth + host }
 
 // OIDCSecretName is the same for an OIDC provider.
@@ -81,7 +78,7 @@ func newKeyring(v Vault, st store, node string, now func() int64) *keyring {
 // own returns this node's newest secret named prefix+node+"-"+n, creating one
 // with mint when there is none.
 func (k *keyring) own(ctx context.Context, prefix string, mint func() ([]byte, error)) (string, []byte, error) {
-	names, err := k.vault.List(ctx, VaultProject, VaultEnvironment)
+	names, err := k.vault.List(ctx)
 	if err != nil {
 		return "", nil, fmt.Errorf("auth: listing auth's secrets: %w", err)
 	}
@@ -98,7 +95,7 @@ func (k *keyring) own(ctx context.Context, prefix string, mint func() ([]byte, e
 		}
 	}
 	if newest != "" {
-		v, err := k.vault.Get(ctx, VaultProject, VaultEnvironment, newest)
+		v, err := k.vault.Get(ctx, newest)
 		if err != nil {
 			return "", nil, fmt.Errorf("auth: reading %s: %w", newest, err)
 		}
@@ -109,7 +106,7 @@ func (k *keyring) own(ctx context.Context, prefix string, mint func() ([]byte, e
 		return "", nil, err
 	}
 	name := mine + strconv.FormatInt(k.now(), 10)
-	if err := k.vault.Set(ctx, VaultProject, VaultEnvironment, name, v); err != nil {
+	if err := k.vault.Set(ctx, name, v); err != nil {
 		return "", nil, fmt.Errorf("auth: storing %s: %w", name, err)
 	}
 	return name, v, nil
@@ -196,7 +193,7 @@ func (k *keyring) cached(ctx context.Context, m map[string][]byte, name string) 
 	if v, ok := m[name]; ok {
 		return slices.Clone(v), nil
 	}
-	v, err := k.vault.Get(ctx, VaultProject, VaultEnvironment, name)
+	v, err := k.vault.Get(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("auth: reading %s from the secrets service: %w", name, err)
 	}

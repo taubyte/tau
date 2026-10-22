@@ -84,12 +84,15 @@ async def test_validate_plan_apply(mock_url, tmp_path):
         assert e.value.code() == grpc.StatusCode.NOT_FOUND
 
     cmds = await ssh.commands(name)
-    assert "SFTP Filewrite /tmp/node.yaml" in cmds
-    assert 'sudo "cp" "-f" "/tmp/node.yaml" "/tb/config/"' in cmds
+    assert "SFTP Filewrite /tmp/all.yaml" in cmds
+    assert 'sudo "cp" "-f" "/tmp/all.yaml" "/tb/config/"' in cmds
+    assert 'sudo "/tb/bin/tau" "init" "--config" "/tb/config/all.yaml" "--root" "/tb/storage/all" "-"' in cmds
+    assert 'sudo "systemctl" "start" "tau@all"' in cmds
     assert 'sudo "cp" "-f" "/tmp/tau" "/tb/bin/"' in cmds
 
     # what was installed is the node the config describes, read off the host
-    raw = (await ssh.filesystem(name))["/tb/config/node.yaml"]
+    disk = await ssh.filesystem(name)
+    raw = disk["/tb/config/all.yaml"]
     node = yaml.safe_load(raw)
     assert node["node"]["services"] == ["auth", "secrets", "discovery", "dns"]
     assert node["node"]["cloud"] == "test.com"
@@ -99,10 +102,10 @@ async def test_validate_plan_apply(mock_url, tmp_path):
     assert node["listen"] == ["/ip4/0.0.0.0/tcp/4242"]
     assert node["bootstrap"] == []  # a fleet of one bootstraps from nobody
     assert b"PRIVATE KEY" not in raw, "no domain key reaches a node: none signs a domain claim"
-    # an OIDC provider reaches the node, and its secret only the seed
+    # an OIDC provider reaches the node, and its secret no file: init has it on stdin
     assert node["node"]["auth"]["oidc"] == [{"name": "corp", "issuer": "https://id.test.com", "clientid": "corp-id", "scopes": ["email"]}]
-    assert b"corp-secret" not in raw
-    assert b"corp-secret" in (await ssh.filesystem(name))["/tb/config/node.seed.yaml"]
+    assert not [path for path, data in disk.items() if b"corp-secret" in data]
+    assert not [c for c in cmds if "corp-secret" in c]
     await ssh.close()
 
 

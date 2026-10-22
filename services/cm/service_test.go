@@ -53,42 +53,27 @@ type vault struct {
 	fail error
 }
 
-func (v *vault) Get(_ context.Context, p, e, n string) ([]byte, error) {
+func (v *vault) Get(_ context.Context, n string) ([]byte, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.fail != nil {
 		return nil, v.fail
 	}
-	b, ok := v.data[p+"/"+e+"/"+n]
+	b, ok := v.data[n]
 	if !ok {
 		return nil, errors.New("not set")
 	}
 	return b, nil
 }
 
-func (v *vault) Set(_ context.Context, p, e, n string, value []byte) error {
+func (v *vault) Set(_ context.Context, n string, value []byte) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.fail != nil {
 		return v.fail
 	}
-	v.data[p+"/"+e+"/"+n] = value
+	v.data[n] = value
 	return nil
-}
-
-func (v *vault) List(_ context.Context, p, e string) ([]string, error) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	if v.fail != nil {
-		return nil, v.fail
-	}
-	var out []string
-	for k := range v.data {
-		if name, ok := strings.CutPrefix(k, p+"/"+e+"/"); ok {
-			out = append(out, name)
-		}
-	}
-	return out, nil
 }
 
 type fleet struct {
@@ -154,7 +139,7 @@ func newFleet(t *testing.T, n int, wildcard bool) *fleet {
 	t.Cleanup(func() { mn.Close() })
 	database, err := kvdbmock.New().New(nil, "certificate", 0)
 	require.NoError(t, err)
-	f := &fleet{mn: mn, db: database, vault: &vault{data: map[string][]byte{VaultProject + "/" + VaultEnvironment + "/" + AccountSecret: []byte(accountKey(t))}}, now: time.Now(), chStore: pkgcache.NewMemStore(), txt: &records{m: map[string][]string{}}}
+	f := &fleet{mn: mn, db: database, vault: &vault{data: map[string][]byte{AccountSecret: []byte(accountKey(t))}}, now: time.Now(), chStore: pkgcache.NewMemStore(), txt: &records{m: map[string][]string{}}}
 
 	logger := log.New(io.Discard, "", 0)
 	store := db.NewMemoryStore()
@@ -468,13 +453,13 @@ func TestWhatIsRefused(t *testing.T) {
 	defer cancel()
 	_, err = c.acmeIssuer(short)
 	require.ErrorIs(t, err, ErrNoAccount)
-	empty.data[VaultProject+"/"+VaultEnvironment+"/"+AccountSecret] = []byte("not pem")
+	empty.data[AccountSecret] = []byte("not pem")
 	_, err = c.acmeIssuer(t.Context())
 	require.Error(t, err)
 
 	// THE VAULT'S KEY is the account; DNS-01 without a store is refused.
 	key := accountKey(t)
-	empty.data[VaultProject+"/"+VaultEnvironment+"/"+AccountSecret] = []byte(key)
+	empty.data[AccountSecret] = []byte(key)
 	_, ok = c.Challenge("tok")
 	require.True(t, ok)
 	want, err := acme.ParseKey([]byte(key))
@@ -537,7 +522,7 @@ func TestTheStoreKeepsOnlyWhatItCanServe(t *testing.T) {
 	blob := pemOf(t)
 	block, _ := pem.Decode(blob)
 	chain := pem.EncodeToMemory(block)
-	ref := &cmv2.SecretRef{Project: VaultProject, Environment: VaultEnvironment, Name: "leaf-x"}
+	ref := &cmv2.SecretRef{Name: "leaf-x"}
 	keep := func(rec *cmv2.Issued) error {
 		_, err := h.Keep(t.Context(), connect.NewRequest(rec))
 		return err
@@ -545,7 +530,7 @@ func TestTheStoreKeepsOnlyWhatItCanServe(t *testing.T) {
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(keep(&cmv2.Issued{Name: "a.example.com", Chain: chain, Key: ref})))
 	require.Error(t, keep(&cmv2.Issued{Name: name, Chain: []byte("x"), Key: ref}))
 	require.ErrorContains(t, keep(&cmv2.Issued{Name: "b." + zone, Chain: chain, Key: ref}), "does not name it")
-	require.ErrorContains(t, keep(&cmv2.Issued{Name: name, Chain: chain, Key: &cmv2.SecretRef{Project: "shop"}}), "certificate secrets")
+	require.ErrorContains(t, keep(&cmv2.Issued{Name: name, Chain: chain, Key: &cmv2.SecretRef{}}), "names no secret")
 	require.NoError(t, keep(&cmv2.Issued{Name: name, Chain: chain, Key: ref}))
 	got, err := h.Certificate(t.Context(), connect.NewRequest(&cmv2.CertificateRequest{Name: name}))
 	require.NoError(t, err)
@@ -607,7 +592,7 @@ func TestAKeyNotReadableYetIsWaitedFor(t *testing.T) {
 	key := accountKey(t)
 	go func() {
 		time.Sleep(30 * time.Millisecond)
-		v.Set(t.Context(), VaultProject, VaultEnvironment, AccountSecret, []byte(key))
+		v.Set(t.Context(), AccountSecret, []byte(key))
 	}()
 	_, ok := c.Challenge("tok")
 	require.True(t, ok)

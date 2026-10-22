@@ -57,6 +57,10 @@ message PlanRequest {
   // concurrency is how many hosts of one hop are deployed at once. Zero is
   // the default.
   int32 concurrency = 7;
+
+  // root is where tau lives on every host: bin, config and storage. Empty is
+  // /tb.
+  string root = 8;
 }
 
 // Course is a plan: what Apply will do, and the id it is applied by.

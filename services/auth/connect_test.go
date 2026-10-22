@@ -148,7 +148,7 @@ func TestRenew(t *testing.T) {
 // Renewal needs the OAuth app's secret.
 func TestRenewWithoutTheSecret(t *testing.T) {
 	f := newFx(t)
-	delete(f.vault.m, VaultProject+"/"+VaultEnvironment+"/"+OAuthSecretName(testHost))
+	delete(f.vault.m, OAuthSecretName(testHost))
 	_, tok := f.local("dave", authv2.Role_ROLE_MEMBER, authv2.Capability_CAPABILITY_LOGIN)
 	_, err := f.sessions().Renew(t.Context(), req(&authv2.RenewRequest{Host: testHost, RefreshToken: "forge-refresh"}, tok))
 	require.Equal(t, connect.CodeUnavailable, code(t, err))

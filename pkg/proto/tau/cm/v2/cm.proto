@@ -40,10 +40,9 @@ message Issued {
   string zone = 6;
 }
 
+// SecretRef names a secret in the certificate service's cloud scope.
 message SecretRef {
-  string project = 1;
-  string environment = 2;
-  string name = 3;
+  string name = 1;
 }
 
 // DomainService proves a custom domain is the project's, the way v1 did: the

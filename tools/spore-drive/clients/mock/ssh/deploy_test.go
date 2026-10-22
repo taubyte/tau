@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -87,7 +88,8 @@ func TestADeployWritesTheNodeFileItPlanned(t *testing.T) {
 	}
 
 	doc := &drivepb.Document{Files: map[string][]byte{
-		"cloud.yaml":  []byte("domain:\n  root: test.com\n  generated: g.test.com\np2p:\n  bootstrap:\n    all: [h1, h2]\n"),
+		"cloud.yaml": []byte("domain:\n  root: test.com\n  generated: g.test.com\np2p:\n  bootstrap:\n    all: [h1, h2]\n" +
+			"auth:\n  forges:\n    - {host: github.com, driver: github, clientid: gh-id, clientsecret: gh-s3cret}\n"),
 		"shapes.yaml": []byte("all:\n  services: [auth, seer, gateway]\n  ports:\n    main: 4242\n"),
 		"hosts.yaml": []byte(fmt.Sprintf("h1:\n  addr: [127.0.0.1/32]\n  ssh: {addr: 127.0.0.1, port: %d, auth: [main]}\n  shapes: {all: {}}\n"+
 			"h2:\n  addr: [127.0.0.2/32]\n  ssh: {addr: 127.0.0.1, port: %d, auth: [main]}\n  shapes: {all: {}}\n", ports[0], ports[1])),
@@ -114,7 +116,7 @@ func TestADeployWritesTheNodeFileItPlanned(t *testing.T) {
 	var keys []string
 	for _, host := range []string{"h1", "h2"} {
 		disk := files(t, m, host)
-		raw, ok := disk["/tb/config/node.yaml"]
+		raw, ok := disk["/tb/config/all.yaml"]
 		assert.Assert(t, ok, "the node file was installed on %s; its disk holds %d files", host, len(disk))
 
 		var f boot.File
@@ -128,6 +130,22 @@ func TestADeployWritesTheNodeFileItPlanned(t *testing.T) {
 		assert.DeepEqual(t, f.Listen, []string{"/ip4/0.0.0.0/tcp/4242"})
 		assert.Equal(t, len(f.Bootstrap), 1, "a host bootstraps from the others")
 		keys = append(keys, f.PrivateKey)
+
+		// THE SECRET REACHED THE NODE'S INIT ON STDIN, and no file holds it.
+		for name, data := range disk {
+			assert.Assert(t, !bytes.Contains(data, []byte("gh-s3cret")), "%s on %s holds the secret", name, host)
+		}
+		cmds, err := m.Commands(ctx, connect.NewRequest(&pb.Host{Name: host}))
+		assert.NilError(t, err)
+		var inits []string
+		for cmds.Receive() {
+			if c := cmds.Msg().GetCommand(); strings.Contains(c, `"init"`) {
+				inits = append(inits, c)
+			}
+		}
+		assert.NilError(t, cmds.Err())
+		assert.DeepEqual(t, inits, []string{`sudo "/tb/bin/tau" "init" "--config" "/tb/config/all.yaml" "--root" "/tb/storage/all" "-"`})
+		assert.Assert(t, !strings.Contains(strings.Join(inits, ""), "gh-s3cret"))
 	}
 	assert.Assert(t, keys[0] != keys[1], "each host has its own identity")
 

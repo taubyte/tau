@@ -106,10 +106,6 @@ type File struct {
 	// generated name the wildcard does not cover — see services/gateway's
 	// tls.go. The CA's HTTP-01 challenges are answered on HTTP.
 	HTTPS string `yaml:"https"`
-
-	// Seed is a file of secrets (ReadSeed) this node puts into the vault,
-	// then deletes. Empty seeds nothing.
-	Seed string `yaml:"seed"`
 }
 
 var logger = log.Logger("tau.v2.boot")
@@ -187,9 +183,6 @@ type Running struct {
 	// temporary is a data directory this process made and owns, removed on
 	// Close. A node started from an operator's file has none.
 	temporary string
-
-	stopSeed context.CancelFunc
-	seeded   chan struct{}
 }
 
 // Start builds the machine's resources, starts the node, and serves its gateway
@@ -291,20 +284,6 @@ func Start(ctx context.Context, f File, added ...node.Option) (*Running, error) 
 	if err := r.serve(f.HTTP, f.HTTPS); err != nil {
 		r.Close()
 		return nil, err
-	}
-	if f.Seed != "" {
-		seed, err := ReadSeed(f.Seed)
-		if err != nil {
-			r.Close()
-			return nil, err
-		}
-		if len(seed.Secrets) == 0 {
-			return r, nil
-		}
-		var seedCtx context.Context
-		seedCtx, r.stopSeed = context.WithCancel(context.Background())
-		r.seeded = make(chan struct{})
-		go r.seed(seedCtx, f.Seed, seed)
 	}
 	return r, nil
 }
@@ -418,10 +397,6 @@ func (r *Running) SecureAddress() string {
 
 // Close stops serving, then the node, then the machine's resources.
 func (r *Running) Close() error {
-	if r.stopSeed != nil {
-		r.stopSeed()
-		<-r.seeded
-	}
 	var err error
 	if r.server != nil {
 		err = r.server.Close()

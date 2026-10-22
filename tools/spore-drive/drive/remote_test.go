@@ -207,3 +207,40 @@ func TestARemoteReportsWhatItsHostCannotDo(t *testing.T) {
 	_, err = r.Execute(context.TODO(), "echo")
 	assert.ErrorIs(t, err, broken)
 }
+
+func TestRemoteSudoInputHandsStdinOver(t *testing.T) {
+	ctx := context.TODO()
+	h := new(mocks.Host)
+	h.On("Fs", mock.Anything, mock.Anything).Return(afero.NewMemMapFs(), nil)
+
+	read, write := io.Pipe()
+	got := make(chan []byte, 1)
+	go func() {
+		data, err := io.ReadAll(read)
+		assert.NilError(t, err)
+		got <- data
+	}()
+	sess := &cmocks.RemoteSession{}
+	sess.On("Close").Return(nil)
+	sess.On("StdinPipe").Return(write, nil)
+	sess.On("CombinedOutput", "sudo \"tau\" \"init\" \"-\"").Return([]byte("ok"), nil)
+	cmd, err := command.New(ctx, sess, "sudo", command.Args("tau", "init", "-"))
+	assert.NilError(t, err)
+	h.On("Command", ctx, "sudo", mock.Anything).Once().Return(cmd, nil)
+
+	r, err := newRemote(ctx, h)
+	assert.NilError(t, err)
+	out, err := r.SudoInput(ctx, []byte("sealed"), "tau", "init", "-")
+	assert.NilError(t, err)
+	assert.Equal(t, string(out), "ok")
+	assert.Equal(t, string(<-got), "sealed")
+
+	broken := &cmocks.RemoteSession{}
+	broken.On("StdinPipe").Return(nil, errors.New("no stdin"))
+	cmd, err = command.New(ctx, broken, "sudo")
+	assert.NilError(t, err)
+	h.On("Command", ctx, "sudo", mock.Anything).Once().Return(cmd, nil)
+	_, err = r.SudoInput(ctx, nil, "tau")
+	assert.ErrorContains(t, err, "no stdin")
+
+}

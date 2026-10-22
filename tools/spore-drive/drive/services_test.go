@@ -1,21 +1,20 @@
 package drive
 
 import (
-	"encoding/base64"
+	"bytes"
 	"errors"
 	"os"
-	"slices"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/libp2p/go-libp2p/core/crypto"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/spf13/afero"
+	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 	"gotest.tools/v3/assert"
 
 	"github.com/taubyte/tau/node"
-	"github.com/taubyte/tau/node/boot"
+	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/auth/password"
 	"github.com/taubyte/tau/services/cm"
@@ -51,7 +50,7 @@ func withCloud(t *testing.T, fs afero.Fs, p config.Parser, extra string) config.
 	return p
 }
 
-func TestSignInAndCertificatesReachEveryNodeAndTheirSecretsOnlyTheSeed(t *testing.T) {
+func TestSignInAndCertificatesReachEveryNodeAndTheirSecretsOnlyTheBundle(t *testing.T) {
 	fs, p := fixtures.VirtConfig()
 	assert.NilError(t, afero.WriteFile(fs, "/keys/acme.key", []byte("ACCOUNT KEY"), 0o600))
 	p = withCloud(t, fs, p, signIn)
@@ -83,73 +82,115 @@ func TestSignInAndCertificatesReachEveryNodeAndTheirSecretsOnlyTheSeed(t *testin
 		}
 	}
 
-	secrets := []boot.Secret{
-		{Project: auth.VaultProject, Environment: auth.VaultEnvironment, Name: auth.OAuthSecretName("github.com"), Value: "gh-secret"},
-		{Project: auth.VaultProject, Environment: auth.VaultEnvironment, Name: auth.OIDCSecretName("corp"), Value: "corp-secret"},
-		{Project: cm.VaultProject, Environment: cm.VaultEnvironment, Name: cm.AccountSecret, Value: "ACCOUNT KEY"},
-	}
-	second, err := driveFor(p).nodesFor("host2")
+	d := driveFor(p)
+	sealed, err := d.sealSecrets()
 	assert.NilError(t, err)
-	holders := []string{first.instances[0].file.PrivateKey, second.instances[0].file.PrivateKey}
-	for i, id := range holders {
-		holders[i] = peerID(t, id)
+	var bundle secretsv2.InitBundle
+	assert.NilError(t, proto.Unmarshal(sealed, &bundle))
+	var refs []string
+	for _, s := range bundle.GetSecrets() {
+		refs = append(refs, s.GetRef().GetScope().GetCloud().GetService()+"/"+s.GetRef().GetName())
+		assert.Assert(t, s.GetCid() != "" && len(s.GetDek()) > 0)
 	}
-	slices.Sort(holders)
+	assert.DeepEqual(t, refs, []string{
+		auth.VaultService + "/" + auth.OAuthSecretName("github.com"),
+		auth.VaultService + "/" + auth.OIDCSecretName("corp"),
+		cm.VaultService + "/" + cm.AccountSecret,
+	})
+	for _, secret := range []string{"gh-secret", "corp-secret", "ACCOUNT KEY"} {
+		assert.Assert(t, !strings.Contains(string(sealed), secret), "%s is sealed in the clear", secret)
+	}
 
-	// EVERY HOST'S NODE HOLDS THE SEED, so a writer that dies is replaced.
-	for _, main := range []instance{first.instances[0], second.instances[0]} {
-		assert.Equal(t, main.file.Seed, "/tb/config/node.seed.yaml")
-		assert.DeepEqual(t, *main.seed, boot.SeedFile{Holders: holders, Secrets: secrets})
-	}
-	assert.Assert(t, first.instances[1].seed == nil, "a split-off frontend is not a holder")
+	second, err := d.sealSecrets()
+	assert.NilError(t, err)
+	assert.Assert(t, !bytes.Equal(sealed, second), "every deploy seals afresh")
+
+	assert.Assert(t, first.instances[0].keepsSecrets())
+	assert.Assert(t, !first.instances[1].keepsSecrets(), "a split-off frontend keeps no secrets")
 }
 
-func peerID(t *testing.T, key string) string {
-	t.Helper()
-	raw, err := base64.StdEncoding.DecodeString(key)
-	assert.NilError(t, err)
-	priv, err := crypto.UnmarshalPrivateKey(raw)
-	assert.NilError(t, err)
-	id, err := peer.IDFromPrivateKey(priv)
-	assert.NilError(t, err)
-	return id.String()
-}
+// fixedNow is the clock the deploy tests run on.
+var fixedNow = time.Date(2026, 10, 22, 9, 30, 0, 0, time.UTC)
 
-func TestASeedIsInstalledAndNoCopyStaysInTmp(t *testing.T) {
+func TestTheSecretsReachInitOnStdinAndNowhereElse(t *testing.T) {
 	_, p := fixtures.VirtConfig()
-	inst := instance{name: "node", seed: &boot.SeedFile{Holders: []string{"a"}, Secrets: []boot.Secret{{Project: "p", Environment: "e", Name: "n", Value: "v"}}}}
+	d := driveFor(p)
 	fs := afero.NewMemMapFs()
-	h := &fsHost{fs: fs, sudo: func(name string, args ...string) error {
-		assert.DeepEqual(t, append([]string{name}, args...), []string{"cp", "-f", "/tmp/node.seed.yaml", "/tb/config/"})
-		data, err := afero.ReadFile(fs, args[1])
-		if err != nil {
-			return err
-		}
-		return afero.WriteFile(fs, "/tb/config/node.seed.yaml", data, 0o600)
+	var got []string
+	var stdin []byte
+	h := &fsHost{fs: fs, input: func(in []byte, name string, args ...string) error {
+		got, stdin = append([]string{name}, args...), in
+		return nil
 	}}
-	assert.NilError(t, driveFor(p).installSeed(t.Context(), h, inst))
-	data, err := afero.ReadFile(fs, "/tb/config/node.seed.yaml")
+	inst := instance{name: "shape1"}
+	assert.NilError(t, d.initSecrets(t.Context(), h, inst, []byte("sealed")))
+	assert.DeepEqual(t, got, []string{"/tb/bin/tau", "init", "--config", "/tb/config/shape1.yaml", "--root", "/tb/storage/shape1", "-"})
+	assert.Equal(t, string(stdin), "sealed")
+	files, err := afero.ReadDir(fs, "/")
 	assert.NilError(t, err)
-	var back boot.SeedFile
-	assert.NilError(t, yaml.Unmarshal(data, &back))
-	assert.DeepEqual(t, back, *inst.seed)
-	_, err = fs.Stat("/tmp/node.seed.yaml")
-	assert.Assert(t, os.IsNotExist(err), "no copy stays in /tmp")
+	assert.Equal(t, len(files), 0, "nothing was written on the host")
 
-	failing := &fsHost{fs: afero.NewMemMapFs(), sudo: func(string, ...string) error { return errors.New("no sudo") }}
-	assert.ErrorContains(t, driveFor(p).installSeed(t.Context(), failing, inst), "failed to copy")
-	_, err = failing.fs.Stat("/tmp/node.seed.yaml")
-	assert.Assert(t, os.IsNotExist(err), "nor after a failed copy")
-
-	ro := &fsHost{fs: afero.NewReadOnlyFs(afero.NewMemMapFs())}
-	assert.ErrorContains(t, driveFor(p).installSeed(t.Context(), ro, inst), "failed to create")
+	failing := &fsHost{fs: fs, input: func([]byte, string, ...string) error { return errors.New("no init") }}
+	assert.ErrorContains(t, d.initSecrets(t.Context(), failing, inst, nil), "initializing tau@shape1")
 }
 
-func TestNoSignInOrCertificatesSeedsNothing(t *testing.T) {
+func TestAV1NodesDataIsMovedAside(t *testing.T) {
+	_, p := fixtures.VirtConfig()
+	d := driveFor(p)
+	d.now = func() time.Time { return fixedNow }
+
+	for name, tc := range map[string]struct {
+		storage, v2, fails, moved bool
+	}{
+		"no data":       {},
+		"v1's data":     {storage: true, moved: true},
+		"a v2 node's":   {storage: true, v2: true},
+		"a failed move": {storage: true, fails: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var moved []string
+			h := &fsHost{fs: afero.NewMemMapFs(), sudo: func(name string, args ...string) error {
+				switch name {
+				case "test":
+					assert.DeepEqual(t, args, []string{"-d", "/tb/storage/shape1"})
+					if !tc.storage {
+						return errors.New("absent")
+					}
+				case "grep":
+					assert.DeepEqual(t, args, []string{"-qs", "^node:", "/tb/config/shape1.yaml"})
+					if !tc.v2 {
+						return errors.New("not a v2 node file")
+					}
+				case "mv":
+					moved = args
+					if tc.fails {
+						return errors.New("busy")
+					}
+				}
+				return nil
+			}}
+			err := d.moveAsideV1(t.Context(), h, "shape1")
+			if tc.fails {
+				assert.ErrorContains(t, err, "moving /tb/storage/shape1 aside")
+				return
+			}
+			assert.NilError(t, err)
+			if tc.moved {
+				assert.DeepEqual(t, moved, []string{"/tb/storage/shape1", "/tb/storage/shape1.v1-20261022T093000"})
+			} else {
+				assert.Assert(t, moved == nil)
+			}
+		})
+	}
+}
+
+func TestNoSignInOrCertificatesSealsNothing(t *testing.T) {
 	_, p := fixtures.VirtConfig()
 	nodes, err := driveFor(p).nodesFor("host1")
 	assert.NilError(t, err)
-	assert.Assert(t, nodes.instances[0].seed == nil && nodes.instances[0].file.Seed == "")
+	sealed, err := driveFor(p).sealSecrets()
+	assert.NilError(t, err)
+	assert.Assert(t, sealed == nil, "nothing to hand a node")
 	assert.Assert(t, !nodes.instances[0].file.Node.CM.Certificate.ACME.Enabled)
 	assert.Assert(t, nodes.instances[0].file.Node.Forges == nil)
 }
@@ -178,4 +219,16 @@ func TestACertificateNodeKnowsTheZone(t *testing.T) {
 	assert.DeepEqual(t, f.Node.Services, []string{node.CM, node.Register, node.Discovery})
 	assert.Equal(t, f.Node.Gateway.CloudFqdn, "gtest.com")
 	assert.Equal(t, f.HTTP, "", "only a gateway serves http")
+}
+
+func TestSealingRefusesWhatCannotBeASecret(t *testing.T) {
+	for name, extra := range map[string]string{
+		"auth that is not a map": "auth: [1]\n",
+		"a name with a slash":    "auth:\n    forges:\n        - {host: a/b, clientid: id, clientsecret: s}\n",
+	} {
+		fs, p := fixtures.VirtConfig()
+		p = withCloud(t, fs, p, extra)
+		_, err := driveFor(p).sealSecrets()
+		assert.Assert(t, err != nil, name)
+	}
 }

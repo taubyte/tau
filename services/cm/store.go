@@ -91,8 +91,8 @@ func (s *Service) keep(ctx context.Context, rec *cmv2.Issued) error {
 		return fmt.Errorf("cm: the chain kept for %s does not name it: %w", name, err)
 	}
 	ref := rec.GetKey()
-	if ref.GetProject() != VaultProject || ref.GetEnvironment() != VaultEnvironment || ref.GetName() == "" {
-		return errors.New("cm: an issuance's key is kept under the cloud's certificate secrets")
+	if ref.GetName() == "" {
+		return errors.New("cm: an issuance names no secret holding its key")
 	}
 	blob, err := proto.Marshal(&cmv2.Issued{Name: name, Chain: rec.GetChain(), Key: ref, NotAfter: k.leaf.NotAfter.Unix()})
 	if err != nil {

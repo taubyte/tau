@@ -10,8 +10,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -23,14 +21,15 @@ import (
 	"github.com/letsencrypt/pebble/v2/va"
 	"github.com/letsencrypt/pebble/v2/wfe"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 
 	"github.com/taubyte/tau/node"
 	"github.com/taubyte/tau/pkg/certificate"
 	"github.com/taubyte/tau/pkg/certificate/acme"
+	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/pkg/register"
 	"github.com/taubyte/tau/services/cm"
 	"github.com/taubyte/tau/services/gateway"
+	secretsService "github.com/taubyte/tau/services/secrets"
 )
 
 // acme_test is REAL ISSUANCE FROM A REAL ACME SERVER: pebble, Let's Encrypt's
@@ -141,7 +140,7 @@ func issuing(t *testing.T, ca *pebble, cloud, root string, cfg cm.CertificateCon
 		Email:     "ops@example.io",
 		RootCA:    ca.directoryCA(),
 	}
-	return seeded(t, admit(t, File{
+	return initialized(t, accountBundle(t), admit(t, File{
 		Node: node.Config{
 			Services:  []string{node.Register, node.Discovery, node.Gateway, node.DNS, node.Secrets, node.CM},
 			DNSListen: "127.0.0.1:0",
@@ -156,16 +155,18 @@ func issuing(t *testing.T, ca *pebble, cloud, root string, cfg cm.CertificateCon
 	}))
 }
 
-// seeded hands f the cloud's ACME account key through a seed file.
-func seeded(t *testing.T, f File) File {
+// accountBundle seals the cloud's ACME account key once, for every node that
+// runs the secrets service to be initialized with.
+func accountBundle(t *testing.T) *secretsv2.InitBundle {
 	t.Helper()
-	f.Seed = filepath.Join(t.TempDir(), "seed.yaml")
-	data, err := yaml.Marshal(SeedFile{
-		Holders: []string{peerOf(t, f)},
-		Secrets: []Secret{{Project: cm.VaultProject, Environment: cm.VaultEnvironment, Name: cm.AccountSecret, Value: cloudAccount(t)}},
-	})
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(f.Seed, data, 0o600))
+	return bundleOf(t, secretsService.Ref{Scope: secretsService.Cloud(cm.VaultService), Name: cm.AccountSecret}, cloudAccount(t))
+}
+
+// initialized writes bundle into f's vault before f starts, as `taud init`
+// does.
+func initialized(t *testing.T, bundle *secretsv2.InitBundle, f File) File {
+	t.Helper()
+	require.NoError(t, Init(t.Context(), f, bundle))
 	return f
 }
 

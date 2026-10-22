@@ -4,11 +4,15 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"time"
 
 	"github.com/taubyte/tau/pkg/mycelium"
 	"github.com/taubyte/tau/tools/spore-drive/config"
 	myceliumUtils "github.com/taubyte/tau/tools/spore-drive/mycelium"
 )
+
+// DefaultRoot is where tau lives on a host unless WithRoot says otherwise.
+const DefaultRoot = "/tb"
 
 func New(cnf config.Parser, options ...Option) (Spore, error) {
 	n, err := myceliumUtils.Map(cnf)
@@ -20,6 +24,8 @@ func New(cnf config.Parser, options ...Option) (Spore, error) {
 		parser:      cnf,
 		network:     n,
 		hostWrapper: newRemote,
+		root:        DefaultRoot,
+		now:         time.Now,
 	}
 
 	for _, opt := range options {

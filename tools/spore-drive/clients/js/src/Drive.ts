@@ -25,6 +25,8 @@ export interface PlanOptions {
   shapes?: string[];
   // concurrency is how many hosts of one hop deploy at once; 0 is the default.
   concurrency?: number;
+  // root is where tau lives on every host (bin, config, storage); omitted is /tb.
+  root?: string;
 }
 
 export interface Validation {
@@ -63,6 +65,7 @@ export class Drive {
         tau: options.tau ?? TauLatest,
         shapes: options.shapes ?? [],
         concurrency: options.concurrency ?? 0,
+        root: options.root ?? "",
       })
     );
   }
