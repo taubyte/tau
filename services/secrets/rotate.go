@@ -278,8 +278,16 @@ func (srv *Service) aged(ctx context.Context, keyID string) (bool, error) {
 // here: the same evidence retire asks for before it drops a wrapping. A newer
 // version this node cannot open yet is kept, and so is everything older than
 // the newest one it can.
+//
+// The exception is an abandoned version, which goes as soon as the secret has
+// any other version: see abandoned.
 func (srv *Service) prune(ctx context.Context) error {
 	refs, err := srv.records.All(ctx)
+	if err != nil {
+		return err
+	}
+
+	keys, err := srv.keys.Newest(ctx)
 	if err != nil {
 		return err
 	}
@@ -295,20 +303,70 @@ func (srv *Service) prune(ctx context.Context) error {
 			continue
 		}
 
-		for i, v := range versions {
+		var live []*entry
+		for _, v := range versions {
+			if srv.abandoned(ctx, v.version, keys) {
+				continue
+			}
+			live = append(live, v)
+		}
+		if len(live) == 0 {
+			continue
+		}
+
+		for i, v := range live {
 			if _, err := srv.open(ctx, v.version); err != nil {
 				continue
 			}
-			for _, older := range versions[i+1:] {
-				if err := srv.dropVersion(ctx, older.version); err != nil {
-					failures = append(failures, err)
-				}
-			}
+			live = live[:i+1]
 			break
+		}
+		for _, v := range versions {
+			if slices.Contains(live, v) {
+				continue
+			}
+			if err := srv.dropVersion(ctx, v.version); err != nil {
+				failures = append(failures, err)
+			}
 		}
 	}
 
 	return errors.Join(failures...)
+}
+
+// abandoned reports whether no node that could ever join a future roster can
+// open this version. That is a fact of replicated state, not a guess about who
+// is down: every key the version is wrapped under is older than the newest key
+// in the store, and none of its members is a member of that newest key. Their
+// members were left out of the roster, so nobody in it holds a share to carry
+// the version forward with, and the next roster can only add back members the
+// newest one dropped -- which, if it happens before every node has pruned, is
+// a newest key that includes them and the version stops being abandoned.
+//
+// A version with no wrapping at all is mid-write, never abandoned.
+func (srv *Service) abandoned(ctx context.Context, v version, keys []*KeyMeta) bool {
+	if len(keys) == 0 {
+		return false
+	}
+	newest := keys[0]
+
+	keyIDs, err := srv.wrappings.KeyIDs(ctx, v)
+	if err != nil || len(keyIDs) == 0 {
+		return false
+	}
+
+	for _, keyID := range keyIDs {
+		key, err := srv.keys.Get(ctx, keyID)
+		if err != nil || key.Epoch >= newest.Epoch {
+			return false
+		}
+		for _, member := range key.Members {
+			if slices.Contains(newest.Members, member) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // reEncrypt gives every version a wrapping under the active key.

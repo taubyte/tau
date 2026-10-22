@@ -455,3 +455,90 @@ func TestVersionStepsReportAFailingStore(t *testing.T) {
 	require.ErrorContains(t, srv.Set(ctx, r, []byte("c"), other.KeyID, &tdh.Wrapping{}), "holds no share")
 	require.ErrorIs(t, srv.Set(ctx, Ref{Scope: Cloud("auth")}, []byte("c"), key.KeyID, &tdh.Wrapping{}), ErrInvalidRef)
 }
+
+// TestANewestVersionItsDeadOwnerNeverCarriedForwardIsDropped: a node writes the
+// newest version of a secret under its one-member key and never starts. The
+// survivors rotate past it, so nobody left holds a share it is wrapped under.
+// The secret stays readable at the older version, the abandoned one goes on
+// every node and reconcile stops reporting it; when the owner comes back, the
+// cluster converges on the older version with it.
+func TestANewestVersionItsDeadOwnerNeverCarriedForwardIsDropped(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c := newMesh(t, ctx, 3)
+	for _, node := range c.nodes {
+		db, err := kvdb.New(node).New(logging.Logger("secrets-test"), c.db, 1)
+		require.NoError(t, err)
+		t.Cleanup(func() { db.Close() })
+		c.dbs = append(c.dbs, db)
+		c.paths = append(c.paths, t.TempDir())
+	}
+
+	r := Ref{Scope: Cloud("auth"), Name: "pepper"}
+	older := bundleOf(t, map[Ref]string{r: "v1"})
+	for i := range c.nodes {
+		initOn(t, ctx, c, i, older)
+	}
+	newer, err := Sealed(r, []byte("v2"), time.Now().Add(time.Hour))
+	require.NoError(t, err)
+	initOn(t, ctx, c, 2, &secretsv2.InitBundle{Secrets: []*secretsv2.InitSecret{newer}})
+
+	for i := range 2 {
+		c.launch(t, c.nodes[i], c.dbs[i], c.paths[i])
+	}
+
+	converged := func(members int) bool {
+		c.reconcileAll(ctx)
+		for _, srv := range c.live() {
+			active, err := srv.ActiveKey(ctx)
+			if err != nil || len(active.Members) != members {
+				return false
+			}
+			versions, err := srv.records.Versions(ctx, r)
+			if err != nil || len(versions) != 1 || versions[0].CID == newer.GetCid() {
+				return false
+			}
+			if srv.reconcile(ctx) != nil {
+				return false
+			}
+		}
+		return true
+	}
+	require.Eventually(t, func() bool { return converged(2) }, 60*time.Second, 200*time.Millisecond,
+		"the abandoned version was never dropped")
+
+	consumer := c.client(t)
+	got, err := consumer.Get(ctx, r)
+	require.NoError(t, err)
+	assert.Equal(t, "v1", string(got))
+
+	c.launch(t, c.nodes[2], c.dbs[2], c.paths[2])
+	require.Eventually(t, func() bool { return converged(3) }, 60*time.Second, 200*time.Millisecond,
+		"the cluster never converged once the owner returned")
+	got, err = consumer.Get(ctx, r)
+	require.NoError(t, err)
+	assert.Equal(t, "v1", string(got))
+}
+
+// TestAVersionStillHeldByARosterMemberIsNotAbandoned: the rule only fires
+// for keys none of whose members are in the newest key.
+func TestAVersionStillHeldByARosterMemberIsNotAbandoned(t *testing.T) {
+	srv, client, _ := single(t)
+	ctx := t.Context()
+
+	r := Ref{Scope: Project("p", "e"), Name: "n"}
+	require.NoError(t, client.Set(ctx, r, []byte("v")))
+	v := newest(ctx, srv, r)
+
+	assert.False(t, srv.abandoned(ctx, v, nil), "no key: nothing to judge by")
+	keys, err := srv.keys.Newest(ctx)
+	require.NoError(t, err)
+	assert.False(t, srv.abandoned(ctx, v, keys), "wrapped under the newest key")
+	later := &KeyMeta{KeyID: "later", Epoch: keys[0].Epoch + 1, Members: keys[0].Members}
+	assert.False(t, srv.abandoned(ctx, v, []*KeyMeta{later}), "its member is still in the roster")
+	assert.True(t, srv.abandoned(ctx, v, []*KeyMeta{{KeyID: "other", Epoch: later.Epoch, Members: []string{"someone-else"}}}))
+
+	bare := []byte("no wrapping")
+	assert.False(t, srv.abandoned(ctx, version{Ref: r, CID: contentID(bare)}, []*KeyMeta{later}), "mid-write")
+}
