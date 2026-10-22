@@ -7,8 +7,8 @@ package engine
 // a resource address to its document without re-deriving the convention.
 
 // ContainerDoc returns the document name a container group's instances keep
-// their own fields in — whatever the DSL named it with Leaf(...), "config" when it
-// named none — or "" when group is not a container. A
+// their own fields in — whatever the DSL named it with Leaf(...) — or "" when group
+// is not a container or names no document. A
 // container is a group whose iterator is ITSELF a group over all names
 // (DefineIterGroup) — the same structural test dump.go uses to decide that its
 // instances are directories holding nested resources.
