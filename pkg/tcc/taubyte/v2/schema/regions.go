@@ -263,33 +263,22 @@ type placed struct {
 	answer    Answer
 }
 
-// placementsOf asks the Regions where every resource with a footprint runs, in the
-// order collect found them.
+// placementsOf asks the Regions where every placed resource runs, in the order collect
+// found them: every resource of a kind with a footprint, and every other one that states
+// a placement of its own.
 func placementsOf(root map[string]any, all []compiled, in auditOf) []placed {
-	kinds := make(map[string]bool, len(PlacedKinds()))
-	for _, kind := range PlacedKinds() {
+	kinds := make(map[string]bool, len(FootprintKinds()))
+	for _, kind := range FootprintKinds() {
 		kinds[kind] = true
 	}
 	scopes := scopeAllowances(root)
 	environment := environmentRegions(root, in.environment)
-	byID := make(map[string]compiled, len(all))
-	for _, res := range all {
-		byID[res.id] = res
-	}
 	var out []placed
 	for _, res := range all {
-		if !kinds[res.kind] {
+		if !kinds[res.kind] && res.str("regions/policy") == "" {
 			continue
 		}
 		p := placementOf(res, scopes, environment)
-		// WHAT A SHELL LOWERS TO RUNS WHERE THE SHELL DOES, unless it says otherwise:
-		// a workflow pinned to one region is its functions and queues pinned there.
-		if from, ok := in.lowered.Resources[res.id]; ok && p.Policy == "" && len(p.Named()) == 0 {
-			if shell, ok := byID[from.From]; ok {
-				s := placementOf(shell, scopes, environment)
-				p.Policy, p.In, p.Main, p.Standby = s.Policy, s.In, s.Main, s.Standby
-			}
-		}
 		out = append(out, placed{res: res, placement: p, answer: in.regions.Place(p)})
 	}
 	return out

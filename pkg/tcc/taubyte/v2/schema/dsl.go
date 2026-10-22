@@ -40,6 +40,7 @@ var (
 	// reads in one language.
 	Lowers     = interp.Lowers
 	Lowerable  = interp.Lowerable
+	Inherited  = interp.Inherited
 	Into       = interp.Into
 	PerEach    = interp.PerEach
 	Acts       = interp.Acts

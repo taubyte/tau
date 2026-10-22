@@ -530,11 +530,13 @@ func instanceAttributes() []*Attribute {
 
 var secInstances = Section("instances", "Instances", "Whether this holds one instance or many, how many, and who admits a new one.")
 
-// Placed marks a kind whose instances HAVE A PHYSICAL FOOTPRINT — something that runs,
-// or bytes that sit somewhere — so "where" is a question about the resource itself and
-// not about something it names. attachPlacement gives every one of them the region
-// block below, which is why this is a mark on the kind rather than a list of kinds
-// somewhere else: one rule over whatever declares it, the way Ops() and Category() are.
+// Footprint marks a kind whose instances HAVE A PHYSICAL FOOTPRINT — something that
+// runs, or bytes that sit somewhere — so a resource that states no placement still runs
+// somewhere: anywhere its allowance permits. A kind without one runs nowhere of its own
+// and, unless it states a placement, is held wherever what reaches it is.
+//
+// IT DOES NOT DECIDE WHO MAY BE PLACED. Every resource carries the region block
+// (attachPlacement); this answers only what an absent block means.
 //
 // NOT DERIVED FROM `Category()`, and the four exceptions are the argument. A category
 // is what a kind is FOR, which is a coarser question: `website` is compute and runs no
@@ -542,19 +544,18 @@ var secInstances = Section("instances", "Instances", "Whether this holds one ins
 // `model` is compute and is an endpoint somebody else operates, or a `local`
 // application that carries its own placement; `channel` is compute and is a name two
 // workloads meet at, each placed on its own; `secret` is data and holds no value — the
-// secrets service does. Placing any of the four would be a second, weaker statement
-// about something already placed elsewhere.
-func Placed() NodeOption { return GroupAnnotate("placed", true) }
+// secrets service does.
+func Footprint() NodeOption { return GroupAnnotate("footprint", true) }
 
-// PlacedIter reports whether a kind's iterator declares Placed().
-func PlacedIter(iter *Node) bool { placed, _ := iter.Meta["placed"].(bool); return placed }
+// FootprintIter reports whether a kind's iterator declares Footprint().
+func FootprintIter(iter *Node) bool { f, _ := iter.Meta["footprint"].(bool); return f }
 
-// PlacedKinds is every kind that carries the region block, in declaration order. Read
+// FootprintKinds is every kind that declares Footprint(), in declaration order. Read
 // back off the schema rather than kept beside it, so there is one answer.
-func PlacedKinds() []string {
+func FootprintKinds() []string {
 	var out []string
 	for _, g := range V2Resources {
-		if len(g.Children) == 0 || !PlacedIter(g.Children[0]) {
+		if len(g.Children) == 0 || !FootprintIter(g.Children[0]) {
 			continue
 		}
 		if key, _ := g.Match.(string); key != "" {
@@ -568,7 +569,7 @@ func PlacedKinds() []string {
 // exit is the answer, and nothing about it listens. It is what a tier asks
 // before deciding how a call reaches a workload — wait for a port, or run a
 // process and read how it ended — and it is a statement about the kind, not about
-// any one resource, so it lives here beside Placed() and Engines().
+// any one resource, so it lives here beside Footprint() and Engines().
 func Completes() NodeOption { return GroupAnnotate("completes", true) }
 
 // CompletesOf reports whether a kind declares Completes().
@@ -582,23 +583,20 @@ func CompletesOf(kind string) bool {
 	return false
 }
 
-// attachPlacement hangs the region block off every kind that declared Placed(), once
-// the vocabulary exists. Same shape as attachAccess: a rule that holds for a set of
-// kinds is not four lines repeated in each of them, one of which is forgotten when the
-// next kind arrives.
+// attachPlacement hangs the region block off EVERY kind, once the vocabulary exists —
+// the same pass shape as attachAccess, so placement is part of what a resource is and
+// not a line each kind repeats. A scope container is skipped: its `regions` is the
+// allowance, not a placement.
 //
-// It runs BEFORE attachLowerable, which copies a kind's attributes into the container
-// shape it takes after lowering — an agent or a workflow that gained the block
-// afterwards would carry it only in the shape nobody authors.
+// The block is Inherited(): what a resource lowers into is placed where it is, unless
+// it states its own. It runs BEFORE attachLowerable, which copies a kind's attributes
+// into the container shape it takes after lowering.
 func attachPlacement() {
 	for _, g := range V2Resources {
-		if len(g.Children) == 0 {
+		if len(g.Children) == 0 || g.Children[0].Group {
 			continue
 		}
 		iter := g.Children[0]
-		if !PlacedIter(iter) {
-			continue
-		}
 		iter.Attributes = append(iter.Attributes, regionAttributes()...)
 		secPlacement(iter)
 	}
@@ -695,7 +693,7 @@ func attachPlacement() {
 // cannot be mistaken for a pin.
 func regionAttributes() []*Attribute {
 	return []*Attribute{
-		String(Key("regions", "policy"), Path("regions", Either("pinned", "cdn", "failover")), Captures(), InSection("placement"),
+		String(Key("regions", "policy"), Path("regions", Either("pinned", "cdn", "failover")), Captures(), Inherited(), InSection("placement"),
 			Doc("Placement", "pinned: these regions only — the data-residency line. cdn: seeded here, then follows demand within the allowance. failover: exactly two, the first one main. Omit the block for anywhere the allowance permits.")),
 
 		// A LIST, BECAUSE A RESOURCE IS IN MANY REGIONS. A database pinned to eu
@@ -704,7 +702,7 @@ func regionAttributes() []*Attribute {
 		// plurality a scope uses for its allowance, which is the point: one
 		// concept, narrowing down.
 		StringSlice(Key("regions", "in"), Path("regions", Either("pinned", "cdn")),
-			RequiredWhen(Key("regions", "policy"), "pinned"), PerEnv(), EmitValidation("region", "region"), InSection("placement"),
+			RequiredWhen(Key("regions", "policy"), "pinned"), PerEnv(), Inherited(), EmitValidation("region", "region"), InSection("placement"),
 			Doc("Regions", "pinned: every region this is kept in. cdn: the regions it starts in before demand moves it — omit them and the platform seeds the choice.")),
 
 		// FAILOVER KEEPS NAMED FIELDS, and it is the one branch that should. Its
@@ -712,9 +710,9 @@ func regionAttributes() []*Attribute {
 		// a two-element list would re-derive that from an index — the shape §2a
 		// warns against. A third has no key to arrive under, and a missing one is
 		// a compile error.
-		String(Key("regions", "main"), Path("regions", "failover", "main"), RequiredWhen(Key("regions", "policy"), "failover"), ShowWhen(Key("regions", "policy"), "failover"), EmitValidation("region", "region"), InSection("placement"),
+		String(Key("regions", "main"), Path("regions", "failover", "main"), RequiredWhen(Key("regions", "policy"), "failover"), ShowWhen(Key("regions", "policy"), "failover"), Inherited(), EmitValidation("region", "region"), InSection("placement"),
 			Doc("Main", "Where this runs while it can.")),
-		String(Key("regions", "standby"), Path("regions", "failover", "standby"), RequiredWhen(Key("regions", "policy"), "failover"), ShowWhen(Key("regions", "policy"), "failover"), EmitValidation("region", "region"), InSection("placement"),
+		String(Key("regions", "standby"), Path("regions", "failover", "standby"), RequiredWhen(Key("regions", "policy"), "failover"), ShowWhen(Key("regions", "policy"), "failover"), Inherited(), EmitValidation("region", "region"), InSection("placement"),
 			Doc("Standby", "Where it runs when the main is gone.")),
 	}
 }
@@ -748,7 +746,7 @@ const (
 var workerEngines = []string{wasmEngine, containerEngine}
 
 // Engines declares WHICH TIERS MAY RUN A KIND, on the kind, beside Icon(),
-// Category(), Ops() and Placed(). It exists for §8c's reason and it is not
+// Category(), Ops() and Footprint(). It exists for §8c's reason and it is not
 // decoration: without it every consumer that has to know whether a resource is a
 // component or an image keeps its own table — "a function is wasm, an application is
 // a container" — and those tables drift the day a kind or a tier is added. A graph
@@ -789,7 +787,7 @@ func EnginesOf(kind string) []string {
 // BuiltKinds is every kind that carries the build block, in declaration order — which
 // is every kind that declares an engine, because an engine is a thing to run and
 // something has to make it. Read back off the schema rather than kept beside it, the
-// way PlacedKinds is.
+// way FootprintKinds is.
 func BuiltKinds() []string {
 	var out []string
 	for _, g := range V2Resources {
@@ -1844,7 +1842,7 @@ var V2Resources = []*Node{
 		resource(
 			commonAttributes(append(contentSource("code", "image", "git"), applicationAttributes()...)...),
 			Nested(portsGroup(), variablesGroup(runLifetime, buildLifetime, bothLifetimes)),
-			GroupDoc("A long-running container that listens on HTTP. Mount a volume for anything it must keep."), Icon("box"), Category("compute"), Placed(), Engines(containerEngine),
+			GroupDoc("A long-running container that listens on HTTP. Mount a volume for anything it must keep."), Icon("box"), Category("compute"), Footprint(), Engines(containerEngine),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Resource("application", "Application", "Application", "application"),
 		)),
@@ -1860,7 +1858,7 @@ var V2Resources = []*Node{
 		resource(
 			wasmAttributes(),
 			Nested(variablesGroup(runLifetime, buildLifetime, bothLifetimes)),
-			GroupDoc("A serverless function. It declares no trigger: what may reach it is an inbound edge."), Icon("bolt"), Category("compute"), Placed(), Engines(wasmEngine),
+			GroupDoc("A serverless function. It declares no trigger: what may reach it is an inbound edge."), Icon("bolt"), Category("compute"), Footprint(), Engines(wasmEngine),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Ops(WriteOp("invoke")), // invoke is write: a call may do anything the callee can
 			Resource("function", "Function", "Function", "function"),
@@ -1893,7 +1891,7 @@ var V2Resources = []*Node{
 				String("runtime", InSet(workerEngines...), Required(), InSection("code"), Doc("Runtime", "Which tier runs this worker: wasm or container.")),
 			),
 			Nested(variablesGroup(runLifetime, buildLifetime, bothLifetimes)),
-			GroupDoc("An on-demand workload that runs to completion. Not HTTP-listening."), Icon("gear"), Category("compute"), Placed(), Completes(), Engines(workerEngines...),
+			GroupDoc("An on-demand workload that runs to completion. Not HTTP-listening."), Icon("gear"), Category("compute"), Footprint(), Completes(), Engines(workerEngines...),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Ops(WriteOp("invoke")),
 			Resource("worker", "Worker", "Worker", "worker"),
@@ -1912,7 +1910,7 @@ var V2Resources = []*Node{
 				cpuLimit(),
 			)...),
 			Nested(variablesGroup(runLifetime, buildLifetime, bothLifetimes)),
-			GroupDoc("An interactive container with exec and filesystem access, for agent and build sessions."), Icon("terminal"), Category("compute"), Placed(), Engines(containerEngine),
+			GroupDoc("An interactive container with exec and filesystem access, for agent and build sessions."), Icon("terminal"), Category("compute"), Footprint(), Engines(containerEngine),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Ops(WriteOp("exec"), ReadOp("read"), WriteOp("write")),
 			Resource("sandbox", "Sandbox", "Sandbox", "sandbox"),
@@ -2122,7 +2120,7 @@ var V2Resources = []*Node{
 				String(Key("encryption", "key", "name"), IsVariableName(), Ref("secret", Inbound()), NoAccessors(), InSection("encryption"),
 					Doc("Encryption Key", "Secret holding the key entries are encrypted with, as \"secret/<name>\".")),
 			)...),
-			GroupDoc("A key-value cache served to the project's peers, with a lifetime on every entry. Not a system of record: losing an entry costs a recomputation, never a fact."), Icon("bolt"), Category("data"), Placed(),
+			GroupDoc("A key-value cache served to the project's peers, with a lifetime on every entry. Not a system of record: losing an entry costs a recomputation, never a fact."), Icon("bolt"), Category("data"), Footprint(),
 			secIdentity, secAccess,
 			Section("keys", "Keys", "Capacity, lifetime, where the data lives, and what happens to two writes at one key."),
 			secInstances,
@@ -2142,7 +2140,7 @@ var V2Resources = []*Node{
 	DefineGroup("database",
 		resource(
 			commonAttributes(append(databaseAttributes(), instanceAttributes()...)...),
-			GroupDoc("A database: keys and values, documents, tables or vectors — on tau's own replicated engine, or on an external server reached over the network."), Icon("database"), Category("data"), Placed(),
+			GroupDoc("A database: keys and values, documents, tables or vectors — on tau's own replicated engine, or on an external server reached over the network."), Icon("database"), Category("data"), Footprint(),
 			secIdentity, secAccess,
 			Section("engine", "Engine", "Which data model it is, which engine backs it, and its settings."),
 			secInstances,
@@ -2174,7 +2172,7 @@ var V2Resources = []*Node{
 				Duration(Key("streaming", "ttl"), Field("Ttl"), Accessor("TTL"), NoSetter(), PerEnv(), InSection("storage"), Doc("Time-To-Live", "Lifetime for streamed entries. A floor, not a guarantee.")),
 				Bytes(Key("size"), Path(Either(storageTypes...), "size"), Required(), PerEnv(), InSection("storage"), Doc("Size", "Maximum storage size, as a human string (e.g. \"1GB\").")),
 			)...),
-			GroupDoc("Object or streaming storage, content-addressed, served to the project's peers."), Icon("bucket"), Category("data"), Placed(),
+			GroupDoc("Object or streaming storage, content-addressed, served to the project's peers."), Icon("bucket"), Category("data"), Footprint(),
 			secIdentity, secAccess,
 			Section("storage", "Storage", "Storage kind and capacity."),
 			secInstances,
@@ -2232,7 +2230,7 @@ var V2Resources = []*Node{
 				Duration(Key("checkpoint", "rpo_budget"), PerEnv(), InSection("checkpoint"), Doc("RPO Budget", "Ceiling on the age of the last committed snapshot before on-budget-exceeded fires. What a snapshot holds is a crash-consistent moment — writers are not stopped for the walk — so a restore gives back what a power cut would.")),
 				String(Key("checkpoint", "on_budget_exceeded"), InSet("alert", "freeze-writes"), Default("alert"), InSection("checkpoint"), Doc("On Budget Exceeded", "What to do when the committed-snapshot age passes rpo-budget. Nothing happens without a budget to pass.")),
 			),
-			GroupDoc("A quota'd directory with full POSIX semantics, checkpointed into the CAS. More than one workload may mount it read-write; the filesystem arbitrates. Bind mounts are refused."), Icon("drive"), Category("data"), Placed(),
+			GroupDoc("A quota'd directory with full POSIX semantics, checkpointed into the CAS. More than one workload may mount it read-write; the filesystem arbitrates. Bind mounts are refused."), Icon("drive"), Category("data"), Footprint(),
 			secIdentity, secAccess,
 			Section("storage", "Storage", "Capacity."),
 			Section("checkpoint", "Checkpoint", "Durability out of band from the write path. A snapshot is crash-consistent, not quiesced."),
@@ -2327,7 +2325,7 @@ var V2Resources = []*Node{
 	DefineGroup("sync",
 		resource(
 			commonAttributes(syncAttributes()...),
-			GroupDoc("Coordination between workloads: a queue that hands work over exactly once, or an append-only log that fixes what order things happened in. What these have in common is that the resource decides who wins — which is what a stream and a bus deliberately do not."), Icon("list"), Category("data"), Placed(),
+			GroupDoc("Coordination between workloads: a queue that hands work over exactly once, or an append-only log that fixes what order things happened in. What these have in common is that the resource decides who wins — which is what a stream and a bus deliberately do not."), Icon("list"), Category("data"), Footprint(),
 			secIdentity, secAccess,
 			Section("sync", "Sync", "Which primitive it is, and what happens to concurrent writes."),
 			Section("delivery", "Delivery", "Claim, retry and dead-letter behaviour."),
@@ -3151,7 +3149,7 @@ var V2Resources = []*Node{
 			// content is prose — so a variable of its own has one lifetime and the set
 			// says which.
 			Nested(variablesGroup(runLifetime)),
-			GroupDoc("An LLM loop with tools. What it may call is what it declares access to — there is no second list."), Icon("agent"), Category("compute"), Placed(),
+			GroupDoc("An LLM loop with tools. What it may call is what it declares access to — there is no second list."), Icon("agent"), Category("compute"), Footprint(),
 			secIdentity, secAccess, secConfig, secNetwork, secLimits, secSource,
 			Section("model", "Model", "Which model answers, and what it is told."),
 			Section("memory", "Memory", "What it remembers, and how wide the vectors are."),
@@ -3248,7 +3246,7 @@ var V2Resources = []*Node{
 					Doc("Start", "The step a start lands on.")),
 			),
 			Nested(stepsGroup(), entryGroup()),
-			GroupDoc("An ordered pipeline of functions with retries. Each step runs as its own queue; nothing new has to be deployed to serve it. There is no run state to inspect yet."), Icon("workflow"), Category("trigger"), Placed(),
+			GroupDoc("An ordered pipeline of functions with retries. Each step runs as its own queue; nothing new has to be deployed to serve it. There is no run state to inspect yet."), Icon("workflow"), Category("trigger"), Footprint(),
 			secIdentity, secAccess,
 			Section("run", "Run", "Ceilings on one run and on all of them."),
 			Section("steps", "Steps", "What runs, in order."),

@@ -23,7 +23,7 @@ import (
 // rest on demand. So every resource a view holds says how it is there (Role).
 //
 // WHAT HAS NO FOOTPRINT FOLLOWS WHAT IT REACHES. A gateway, a zone, a secret runs
-// nowhere of its own (PlacedKinds says which kinds do), so it is held where something
+// nowhere of its own (FootprintKinds says which kinds do), unless it states a placement,, so it is held where something
 // placed needs it, and wherever everything placed it reaches already is: a gateway in
 // front of a function pinned to region-1 is in region-1's view, and a zone nothing ties to a place
 // is in every view.

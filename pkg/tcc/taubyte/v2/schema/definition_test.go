@@ -2305,40 +2305,38 @@ func TestInstancesTakeALimitAndAreNamedByAKey(t *testing.T) {
 	}
 }
 
-// EVERY KIND THAT SAYS WHERE IT RUNS, AND THE WHOLE LIST, so a kind joining or leaving
-// it is a deliberate line in a diff rather than a side effect of declaring `Placed()`.
+// EVERY KIND MAY SAY WHERE IT RUNS, in both shapes, and the kinds with a footprint are
+// the whole list, so a kind joining or leaving it is a deliberate line in a diff.
 //
-// The line is a PHYSICAL FOOTPRINT: something that runs, or bytes that sit somewhere.
-// The four kinds a category would have dragged in are what the list is really about —
-// `website` runs no process and its bytes are the CAS's, exactly as a function's wasm
-// is; `model` is an endpoint somebody else operates, or a `local` application carrying
-// its own placement; `channel` is a name two placed workloads meet at; `secret` holds
-// no value. Placing any of them is a second, weaker statement about something already
-// placed.
-func TestRegionIsDeclaredOnKindsWithAFootprint(t *testing.T) {
-	assert.DeepEqual(t, schema.PlacedKinds(), []string{
+// A footprint decides only what an absent block means — anywhere, or wherever what
+// reaches it is. `website`, `model`, `channel` and `secret` have none.
+func TestRegionIsDeclaredOnEveryKind(t *testing.T) {
+	assert.DeepEqual(t, schema.FootprintKinds(), []string{
 		"application", "function", "worker", "sandbox",
 		"cache", "database", "storage", "volume", "sync",
 		"agent", "workflow",
 	})
 
-	placed := map[string]bool{}
-	for _, kind := range schema.PlacedKinds() {
-		placed[kind] = true
-	}
 	// BOTH SHAPES. V2Resources is what an author writes against; KindRoot is what a
 	// lowered kind becomes, built from a COPY of the iterator's attributes — so a block
-	// attached after that copy is taken exists only in the authored half, and an agent
-	// or a workflow saying where it runs stops compiling in the pass that lowers it.
+	// attached after that copy is taken exists only in the authored half.
+	kinds := map[string]bool{}
+	for _, g := range schema.V2Resources {
+		if kind, _ := g.Match.(string); !g.Children[0].Group {
+			kinds[kind] = true // a scope container's `regions` is the allowance
+		}
+	}
+	assert.Assert(t, len(kinds) > 20)
 	for _, root := range [][]*engine.Node{schema.V2Resources, schema.KindRoot()} {
 		for _, g := range root {
-			kind, _ := g.Match.(string)
-			fields := map[string]bool{}
-			for _, a := range g.Children[0].Attributes {
-				fields[a.Name] = true
-			}
-			for _, f := range []string{"regions/policy", "regions/in", "regions/main", "regions/standby"} {
-				assert.Equal(t, fields[f], placed[kind], "%s carries %q; PlacedKinds says %v", kind, f, placed[kind])
+			if kind, _ := g.Match.(string); kinds[kind] {
+				fields := map[string]bool{}
+				for _, a := range g.Children[0].Attributes {
+					fields[a.Name] = true
+				}
+				for _, f := range []string{"regions/policy", "regions/in", "regions/main", "regions/standby"} {
+					assert.Assert(t, fields[f], "%s carries no %q", kind, f)
+				}
 			}
 		}
 	}

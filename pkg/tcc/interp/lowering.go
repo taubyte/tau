@@ -254,6 +254,62 @@ func Lowers(into ...Lowering) engine.NodeOption {
 	return engine.GroupAnnotate("lowers", into)
 }
 
+// Inherited marks an attribute that what a resource lowers into carries too: a produced
+// resource that does not state it gets the source's value, so the compiled output says
+// what the source said and no consumer has to borrow it back.
+func Inherited() engine.Option { return engine.Annotate("inherited", true) }
+
+// inherit fills in, on a produced resource, every Inherited attribute of its source
+// that the produced kind declares and the lowering left unset.
+func inherit(root *engine.Node, kind, into string, res, fields map[string]any) map[string]any {
+	src, dst := iterOfKind(root, kind), iterOfKind(root, into)
+	if src == nil || dst == nil {
+		return fields
+	}
+	for _, a := range src.Attributes {
+		if on, _ := a.Meta["inherited"].(bool); !on || !declares(dst, a.Name) {
+			continue
+		}
+		if _, set := fields[a.Name]; set {
+			continue
+		}
+		v, ok := attrOf(res, a)
+		if !ok {
+			continue
+		}
+		if fields == nil {
+			fields = map[string]any{}
+		}
+		fields[a.Name] = v
+	}
+	return fields
+}
+
+func declares(iter *engine.Node, name string) bool {
+	return slices.ContainsFunc(iter.Attributes, func(a *engine.Attribute) bool { return a.Name == name })
+}
+
+// attrOf reads an attribute off a resource: nested by its segments when compiled, flat
+// by its name when the resource is itself a lowering's fields.
+func attrOf(res map[string]any, a *engine.Attribute) (any, bool) {
+	if v, ok := res[a.Name]; ok {
+		return v, true
+	}
+	if len(a.Segments) == 0 {
+		return nil, false
+	}
+	at := res
+	for _, seg := range a.Segments[:len(a.Segments)-1] {
+		next, ok := at[seg].(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		at = next
+	}
+	v, ok := at[a.Segments[len(a.Segments)-1]]
+	return v, ok && v != nil
+}
+
 // Lowerable declares the two shapes of one kind: before lowering it is an ordinary
 // authored resource; after lowering the SAME resource is a container for what it became.
 //
@@ -596,8 +652,20 @@ func authored(root *engine.Node, d Derived) map[string]any {
 	}
 
 	iter := iterOfKind(root, d.Kind)
+	var branches []string
 	for name, v := range d.Fields {
-		place(tree, authoredPath(iter, name), v)
+		if captures(iter, name) {
+			branches = append(branches, name)
+			continue
+		}
+		place(tree, authoredPath(iter, name, d.Fields), v)
+	}
+	// A captured branch is stated by its key being there, so it is written only when no
+	// field inside it already put it there.
+	for _, name := range branches {
+		if path := authoredPath(iter, name, d.Fields); !has(tree, path) {
+			place(tree, path, []any{})
+		}
 	}
 
 	// A write whose target is this resource is part of it, at the path it names. One that
@@ -635,9 +703,10 @@ func put(tree map[string]any, path []string, value string) {
 }
 
 // authoredPath is where a field is WRITTEN, which is its attribute's Path — not its
-// compiled name. A path with a matcher in it (an Either branch) has no single authored
-// location, so it stays flat and the document says what it can.
-func authoredPath(iter *engine.Node, name string) []string {
+// compiled name. A matcher in the path (an Either branch) is the branch the attribute
+// capturing it holds in fields; with none, the field has no single authored location,
+// so it stays flat and the document says what it can.
+func authoredPath(iter *engine.Node, name string, fields map[string]any) []string {
 	if iter == nil {
 		return []string{name}
 	}
@@ -649,16 +718,68 @@ func authoredPath(iter *engine.Node, name string) []string {
 			return []string{name}
 		}
 		out := make([]string, 0, len(a.Path))
-		for _, seg := range a.Path {
+		for i, seg := range a.Path {
 			s, ok := seg.(string)
 			if !ok {
-				return []string{name}
+				m, matcher := seg.(engine.StringMatcher)
+				if s, ok = branchOf(iter, out, i, fields); !ok || !matcher || !m.Match(s) {
+					return []string{name}
+				}
 			}
 			out = append(out, s)
 		}
 		return out
 	}
 	return []string{name}
+}
+
+// branchOf is the branch taken at position i under prefix: the value of the attribute
+// that captures the matcher there.
+func branchOf(iter *engine.Node, prefix []string, i int, fields map[string]any) (string, bool) {
+	for _, c := range iter.Attributes {
+		if !c.Captures || len(c.Path) != i+1 {
+			continue
+		}
+		same := true
+		for j, seg := range c.Path[:i] {
+			if s, ok := seg.(string); !ok || s != prefix[j] {
+				same = false
+				break
+			}
+		}
+		if v, ok := fields[c.Name].(string); same && ok {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+func captures(iter *engine.Node, name string) bool {
+	if iter == nil {
+		return false
+	}
+	for _, a := range iter.Attributes {
+		if a.Name == name {
+			return a.Captures
+		}
+	}
+	return false
+}
+
+func has(tree map[string]any, path []string) bool {
+	for i, seg := range path {
+		v, ok := tree[seg]
+		if !ok {
+			return false
+		}
+		if i == len(path)-1 {
+			return true
+		}
+		if tree, ok = v.(map[string]any); !ok {
+			return false
+		}
+	}
+	return false
 }
 
 func place(tree map[string]any, path []string, value any) {
@@ -838,7 +959,7 @@ func plan(root *engine.Node, l Lowering, kind, name, srcID string, res map[strin
 			// The id is hung off the lowering's own name AS DECLARED — the term, printed —
 			// so a rename of the source does not re-key what it produced.
 			ID:  derivedID(srcID, l.into, l.name.String()),
-			Why: describe(l.why, e), Fields: setFor(root, l.into, l.set, e),
+			Why: describe(l.why, e), Fields: inherit(root, kind, l.into, res, setFor(root, l.into, l.set, e)),
 			Writes: writes(l.writes, l.into, named, scope, e), Source: src, Via: via, Acts: l.acts,
 		}}
 	}
@@ -868,7 +989,7 @@ func plan(root *engine.Node, l Lowering, kind, name, srcID string, res map[strin
 		out = append(out, Derived{
 			Kind: l.into, Name: named, Of: of, Scope: scope,
 			ID:  derivedID(srcID, l.into, part),
-			Why: describe(l.why, e), Fields: setFor(root, l.into, l.set, e),
+			Why: describe(l.why, e), Fields: inherit(root, kind, l.into, res, setFor(root, l.into, l.set, e)),
 			Writes: writes(l.writes, l.into, named, scope, e), Source: at, Via: via, Acts: l.acts,
 		})
 	}

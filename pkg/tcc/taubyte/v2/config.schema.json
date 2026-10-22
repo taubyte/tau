@@ -3053,36 +3053,90 @@
       ]
     },
     "Bus": {
-      "description": "An ephemeral n:n message bus: everything attached gets what is sent, and nothing is kept. Point a gateway route at it and a browser can attach over websocket.",
-      "oneOf": [
+      "allOf": [
         {
-          "properties": {
-            "instances": {
+          "oneOf": [
+            {
               "properties": {
-                "validator": {
+                "instances": {
+                  "properties": {
+                    "validator": {
+                      "required": [
+                        "name"
+                      ]
+                    }
+                  },
                   "required": [
-                    "name"
-                  ]
+                    "validator"
+                  ],
+                  "type": "object"
                 }
               },
               "required": [
-                "validator"
-              ],
-              "type": "object"
+                "instances"
+              ]
+            },
+            {
+              "not": {
+                "required": [
+                  "instances"
+                ]
+              }
             }
-          },
-          "required": [
-            "instances"
           ]
         },
         {
-          "not": {
-            "required": [
-              "instances"
-            ]
-          }
+          "oneOf": [
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "pinned"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "cdn"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "failover"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "not": {
+                "required": [
+                  "regions"
+                ]
+              }
+            }
+          ]
         }
       ],
+      "description": "An ephemeral n:n message bus: everything attached gets what is sent, and nothing is kept. Point a gateway route at it and a browser can attach over websocket.",
       "properties": {
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
@@ -3164,6 +3218,80 @@
                 ]
               },
               "x-tau-section": "instances"
+            }
+          },
+          "type": "object"
+        },
+        "regions/policy": {
+          "description": "pinned: these regions only — the data-residency line. cdn: seeded here, then follows demand within the allowance. failover: exactly two, the first one main. Omit the block for anywhere the allowance permits.",
+          "title": "Placement",
+          "type": "string",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn|failover}",
+          "x-tau-section": "placement"
+        },
+        "regions/in": {
+          "description": "pinned: every region this is kept in. cdn: the regions it starts in before demand moves it — omit them and the platform seeds the choice.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Regions",
+          "type": "array",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn}",
+          "x-tau-required-when": {
+            "field": "regions/policy",
+            "in": [
+              "pinned"
+            ]
+          },
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
+        },
+        "regions": {
+          "properties": {
+            "failover": {
+              "properties": {
+                "main": {
+                  "description": "Where this runs while it can.",
+                  "title": "Main",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                },
+                "standby": {
+                  "description": "Where it runs when the main is gone.",
+                  "title": "Standby",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                }
+              },
+              "type": "object"
             }
           },
           "type": "object"
@@ -4060,6 +4188,11 @@
           "description": "Whether this holds one instance or many, how many, and who admits a new one.",
           "id": "instances",
           "title": "Instances"
+        },
+        {
+          "description": "Where this may run, within what its scopes allow.",
+          "id": "placement",
+          "title": "Placement"
         },
         {
           "description": "Who decides what a caller may do to this.",
@@ -5289,49 +5422,103 @@
       ]
     },
     "Channel": {
-      "description": "A named byte channel between two workloads inside the project, over libp2p. The way in that is not an ingress.",
-      "oneOf": [
+      "allOf": [
         {
-          "properties": {
-            "serve": {
+          "oneOf": [
+            {
               "properties": {
-                "application": {
+                "serve": {
+                  "properties": {
+                    "application": {
+                      "required": [
+                        "name"
+                      ]
+                    }
+                  },
                   "required": [
-                    "name"
-                  ]
+                    "application"
+                  ],
+                  "type": "object"
                 }
               },
               "required": [
-                "application"
-              ],
-              "type": "object"
+                "serve"
+              ]
+            },
+            {
+              "properties": {
+                "serve": {
+                  "properties": {
+                    "function": {
+                      "required": [
+                        "name"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "function"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "serve"
+              ]
             }
-          },
-          "required": [
-            "serve"
           ]
         },
         {
-          "properties": {
-            "serve": {
+          "oneOf": [
+            {
               "properties": {
-                "function": {
+                "regions": {
                   "required": [
-                    "name"
-                  ]
+                    "pinned"
+                  ],
+                  "type": "object"
                 }
               },
               "required": [
-                "function"
-              ],
-              "type": "object"
+                "regions"
+              ]
+            },
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "cdn"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "failover"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "not": {
+                "required": [
+                  "regions"
+                ]
+              }
             }
-          },
-          "required": [
-            "serve"
           ]
         }
       ],
+      "description": "A named byte channel between two workloads inside the project, over libp2p. The way in that is not an ingress.",
       "properties": {
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
@@ -5410,6 +5597,80 @@
           "x-tau-dynamic": true,
           "x-tau-path": "serve/{application|function}/port",
           "x-tau-section": "channel"
+        },
+        "regions/policy": {
+          "description": "pinned: these regions only — the data-residency line. cdn: seeded here, then follows demand within the allowance. failover: exactly two, the first one main. Omit the block for anywhere the allowance permits.",
+          "title": "Placement",
+          "type": "string",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn|failover}",
+          "x-tau-section": "placement"
+        },
+        "regions/in": {
+          "description": "pinned: every region this is kept in. cdn: the regions it starts in before demand moves it — omit them and the platform seeds the choice.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Regions",
+          "type": "array",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn}",
+          "x-tau-required-when": {
+            "field": "regions/policy",
+            "in": [
+              "pinned"
+            ]
+          },
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
+        },
+        "regions": {
+          "properties": {
+            "failover": {
+              "properties": {
+                "main": {
+                  "description": "Where this runs while it can.",
+                  "title": "Main",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                },
+                "standby": {
+                  "description": "Where it runs when the main is gone.",
+                  "title": "Standby",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
         },
         "authorizer": {
           "properties": {
@@ -6306,6 +6567,11 @@
           "title": "Channel"
         },
         {
+          "description": "Where this may run, within what its scopes allow.",
+          "id": "placement",
+          "title": "Placement"
+        },
+        {
           "description": "Who decides what a caller may do to this.",
           "id": "authorizer",
           "title": "Authorizer"
@@ -6343,6 +6609,56 @@
               "not": {
                 "required": [
                   "source"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "pinned"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "cdn"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "failover"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "not": {
+                "required": [
+                  "regions"
                 ]
               }
             }
@@ -6501,6 +6817,80 @@
           "x-tau-dynamic": true,
           "x-tau-path": "source/{git}",
           "x-tau-section": "source"
+        },
+        "regions/policy": {
+          "description": "pinned: these regions only — the data-residency line. cdn: seeded here, then follows demand within the allowance. failover: exactly two, the first one main. Omit the block for anywhere the allowance permits.",
+          "title": "Placement",
+          "type": "string",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn|failover}",
+          "x-tau-section": "placement"
+        },
+        "regions/in": {
+          "description": "pinned: every region this is kept in. cdn: the regions it starts in before demand moves it — omit them and the platform seeds the choice.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Regions",
+          "type": "array",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn}",
+          "x-tau-required-when": {
+            "field": "regions/policy",
+            "in": [
+              "pinned"
+            ]
+          },
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
+        },
+        "regions": {
+          "properties": {
+            "failover": {
+              "properties": {
+                "main": {
+                  "description": "Where this runs while it can.",
+                  "title": "Main",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                },
+                "standby": {
+                  "description": "Where it runs when the main is gone.",
+                  "title": "Standby",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
         },
         "build/kind": {
           "description": "How the thing that runs is made. Omit the whole block and this repository decides, as it always has.",
@@ -7527,6 +7917,11 @@
           "title": "Source"
         },
         {
+          "description": "Where this may run, within what its scopes allow.",
+          "id": "placement",
+          "title": "Placement"
+        },
+        {
           "description": "How the source becomes the thing that runs.",
           "id": "build",
           "title": "Build"
@@ -7535,6 +7930,54 @@
     },
     "Cron": {
       "description": "A schedule. It fires whatever it edges to; the target declares nothing.",
+      "oneOf": [
+        {
+          "properties": {
+            "regions": {
+              "required": [
+                "pinned"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "regions"
+          ]
+        },
+        {
+          "properties": {
+            "regions": {
+              "required": [
+                "cdn"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "regions"
+          ]
+        },
+        {
+          "properties": {
+            "regions": {
+              "required": [
+                "failover"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "regions"
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "regions"
+            ]
+          }
+        }
+      ],
       "properties": {
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
@@ -7599,6 +8042,80 @@
           "type": "string",
           "x-tau-scalar": "duration",
           "x-tau-section": "firing"
+        },
+        "regions/policy": {
+          "description": "pinned: these regions only — the data-residency line. cdn: seeded here, then follows demand within the allowance. failover: exactly two, the first one main. Omit the block for anywhere the allowance permits.",
+          "title": "Placement",
+          "type": "string",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn|failover}",
+          "x-tau-section": "placement"
+        },
+        "regions/in": {
+          "description": "pinned: every region this is kept in. cdn: the regions it starts in before demand moves it — omit them and the platform seeds the choice.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Regions",
+          "type": "array",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn}",
+          "x-tau-required-when": {
+            "field": "regions/policy",
+            "in": [
+              "pinned"
+            ]
+          },
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
+        },
+        "regions": {
+          "properties": {
+            "failover": {
+              "properties": {
+                "main": {
+                  "description": "Where this runs while it can.",
+                  "title": "Main",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                },
+                "standby": {
+                  "description": "Where it runs when the main is gone.",
+                  "title": "Standby",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
         },
         "function": {
           "additionalProperties": {
@@ -8471,6 +8988,11 @@
           "description": "What happens when the clock comes round.",
           "id": "firing",
           "title": "Firing"
+        },
+        {
+          "description": "Where this may run, within what its scopes allow.",
+          "id": "placement",
+          "title": "Placement"
         }
       ]
     },
@@ -12097,6 +12619,56 @@
               }
             }
           ]
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "pinned"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "cdn"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "failover"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "not": {
+                "required": [
+                  "regions"
+                ]
+              }
+            }
+          ]
         }
       ],
       "description": "A name, the policy at it, and what it serves — one static route, or a function that routes.",
@@ -12520,6 +13092,80 @@
               "title": "Authorizer Namespace",
               "type": "string",
               "x-tau-section": "policy"
+            }
+          },
+          "type": "object"
+        },
+        "regions/policy": {
+          "description": "pinned: these regions only — the data-residency line. cdn: seeded here, then follows demand within the allowance. failover: exactly two, the first one main. Omit the block for anywhere the allowance permits.",
+          "title": "Placement",
+          "type": "string",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn|failover}",
+          "x-tau-section": "placement"
+        },
+        "regions/in": {
+          "description": "pinned: every region this is kept in. cdn: the regions it starts in before demand moves it — omit them and the platform seeds the choice.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Regions",
+          "type": "array",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn}",
+          "x-tau-required-when": {
+            "field": "regions/policy",
+            "in": [
+              "pinned"
+            ]
+          },
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
+        },
+        "regions": {
+          "properties": {
+            "failover": {
+              "properties": {
+                "main": {
+                  "description": "Where this runs while it can.",
+                  "title": "Main",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                },
+                "standby": {
+                  "description": "Where it runs when the main is gone.",
+                  "title": "Standby",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                }
+              },
+              "type": "object"
             }
           },
           "type": "object"
@@ -13450,11 +14096,64 @@
           "description": "Who may reach this, and how often — the authorizer, CORS and rate limiting.",
           "id": "policy",
           "title": "Policy"
+        },
+        {
+          "description": "Where this may run, within what its scopes allow.",
+          "id": "placement",
+          "title": "Placement"
         }
       ]
     },
     "MCP": {
       "description": "An MCP server grouping functions as tools. Stateless Streamable HTTP; subscriptions are declined in v1.",
+      "oneOf": [
+        {
+          "properties": {
+            "regions": {
+              "required": [
+                "pinned"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "regions"
+          ]
+        },
+        {
+          "properties": {
+            "regions": {
+              "required": [
+                "cdn"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "regions"
+          ]
+        },
+        {
+          "properties": {
+            "regions": {
+              "required": [
+                "failover"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "regions"
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "regions"
+            ]
+          }
+        }
+      ],
       "properties": {
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
@@ -13508,6 +14207,80 @@
               "type": "string",
               "x-tau-scalar": "duration",
               "x-tau-section": "tools"
+            }
+          },
+          "type": "object"
+        },
+        "regions/policy": {
+          "description": "pinned: these regions only — the data-residency line. cdn: seeded here, then follows demand within the allowance. failover: exactly two, the first one main. Omit the block for anywhere the allowance permits.",
+          "title": "Placement",
+          "type": "string",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn|failover}",
+          "x-tau-section": "placement"
+        },
+        "regions/in": {
+          "description": "pinned: every region this is kept in. cdn: the regions it starts in before demand moves it — omit them and the platform seeds the choice.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Regions",
+          "type": "array",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn}",
+          "x-tau-required-when": {
+            "field": "regions/policy",
+            "in": [
+              "pinned"
+            ]
+          },
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
+        },
+        "regions": {
+          "properties": {
+            "failover": {
+              "properties": {
+                "main": {
+                  "description": "Where this runs while it can.",
+                  "title": "Main",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                },
+                "standby": {
+                  "description": "Where it runs when the main is gone.",
+                  "title": "Standby",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                }
+              },
+              "type": "object"
             }
           },
           "type": "object"
@@ -14406,6 +15179,11 @@
           "title": "Tools"
         },
         {
+          "description": "Where this may run, within what its scopes allow.",
+          "id": "placement",
+          "title": "Placement"
+        },
+        {
           "description": "Who decides what a caller may do to this.",
           "id": "authorizer",
           "title": "Authorizer"
@@ -14413,42 +15191,96 @@
       ]
     },
     "Model": {
-      "description": "Where inference happens and on whose account: an endpoint, a wire format, a credential, and the parameters it is called with.",
-      "oneOf": [
+      "allOf": [
         {
-          "properties": {
-            "inference": {
+          "oneOf": [
+            {
+              "properties": {
+                "inference": {
+                  "required": [
+                    "remote"
+                  ],
+                  "type": "object"
+                }
+              },
               "required": [
-                "remote"
-              ],
-              "type": "object"
+                "inference"
+              ]
+            },
+            {
+              "properties": {
+                "inference": {
+                  "required": [
+                    "local"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "inference"
+              ]
+            },
+            {
+              "not": {
+                "required": [
+                  "inference"
+                ]
+              }
             }
-          },
-          "required": [
-            "inference"
           ]
         },
         {
-          "properties": {
-            "inference": {
+          "oneOf": [
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "pinned"
+                  ],
+                  "type": "object"
+                }
+              },
               "required": [
-                "local"
-              ],
-              "type": "object"
+                "regions"
+              ]
+            },
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "cdn"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "failover"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "not": {
+                "required": [
+                  "regions"
+                ]
+              }
             }
-          },
-          "required": [
-            "inference"
           ]
-        },
-        {
-          "not": {
-            "required": [
-              "inference"
-            ]
-          }
         }
       ],
+      "description": "Where inference happens and on whose account: an endpoint, a wire format, a credential, and the parameters it is called with.",
       "properties": {
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
@@ -14621,6 +15453,80 @@
               "title": "Stop Sequences",
               "type": "array",
               "x-tau-section": "parameters"
+            }
+          },
+          "type": "object"
+        },
+        "regions/policy": {
+          "description": "pinned: these regions only — the data-residency line. cdn: seeded here, then follows demand within the allowance. failover: exactly two, the first one main. Omit the block for anywhere the allowance permits.",
+          "title": "Placement",
+          "type": "string",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn|failover}",
+          "x-tau-section": "placement"
+        },
+        "regions/in": {
+          "description": "pinned: every region this is kept in. cdn: the regions it starts in before demand moves it — omit them and the platform seeds the choice.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Regions",
+          "type": "array",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn}",
+          "x-tau-required-when": {
+            "field": "regions/policy",
+            "in": [
+              "pinned"
+            ]
+          },
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
+        },
+        "regions": {
+          "properties": {
+            "failover": {
+              "properties": {
+                "main": {
+                  "description": "Where this runs while it can.",
+                  "title": "Main",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                },
+                "standby": {
+                  "description": "Where it runs when the main is gone.",
+                  "title": "Standby",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                }
+              },
+              "type": "object"
             }
           },
           "type": "object"
@@ -15526,6 +16432,11 @@
           "title": "Parameters"
         },
         {
+          "description": "Where this may run, within what its scopes allow.",
+          "id": "placement",
+          "title": "Placement"
+        },
+        {
           "description": "Who decides what a caller may do to this.",
           "id": "authorizer",
           "title": "Authorizer"
@@ -16270,6 +17181,56 @@
               }
             }
           ]
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "pinned"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "cdn"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "failover"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "not": {
+                "required": [
+                  "regions"
+                ]
+              }
+            }
+          ]
         }
       ],
       "description": "An allocated address that accepts a raw connection and streams it to a workload over p2p — to a fixed one, or to whichever a function picks. For everything a gateway cannot parse.",
@@ -16562,6 +17523,80 @@
               "title": "Counted Per",
               "type": "string",
               "x-tau-section": "limits"
+            }
+          },
+          "type": "object"
+        },
+        "regions/policy": {
+          "description": "pinned: these regions only — the data-residency line. cdn: seeded here, then follows demand within the allowance. failover: exactly two, the first one main. Omit the block for anywhere the allowance permits.",
+          "title": "Placement",
+          "type": "string",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn|failover}",
+          "x-tau-section": "placement"
+        },
+        "regions/in": {
+          "description": "pinned: every region this is kept in. cdn: the regions it starts in before demand moves it — omit them and the platform seeds the choice.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Regions",
+          "type": "array",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn}",
+          "x-tau-required-when": {
+            "field": "regions/policy",
+            "in": [
+              "pinned"
+            ]
+          },
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
+        },
+        "regions": {
+          "properties": {
+            "failover": {
+              "properties": {
+                "main": {
+                  "description": "Where this runs while it can.",
+                  "title": "Main",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                },
+                "standby": {
+                  "description": "Where it runs when the main is gone.",
+                  "title": "Standby",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                }
+              },
+              "type": "object"
             }
           },
           "type": "object"
@@ -17487,6 +18522,11 @@
           "description": "What one source may open, and how fast.",
           "id": "limits",
           "title": "Limits"
+        },
+        {
+          "description": "Where this may run, within what its scopes allow.",
+          "id": "placement",
+          "title": "Placement"
         }
       ]
     },
@@ -18926,6 +19966,54 @@
     },
     "Secret": {
       "description": "A named reference to a secret value held outside git. The config never carries the value.",
+      "oneOf": [
+        {
+          "properties": {
+            "regions": {
+              "required": [
+                "pinned"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "regions"
+          ]
+        },
+        {
+          "properties": {
+            "regions": {
+              "required": [
+                "cdn"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "regions"
+          ]
+        },
+        {
+          "properties": {
+            "regions": {
+              "required": [
+                "failover"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "regions"
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "regions"
+            ]
+          }
+        }
+      ],
       "properties": {
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
@@ -18976,6 +20064,80 @@
           "type": "string",
           "x-tau-scalar": "duration",
           "x-tau-section": "identity"
+        },
+        "regions/policy": {
+          "description": "pinned: these regions only — the data-residency line. cdn: seeded here, then follows demand within the allowance. failover: exactly two, the first one main. Omit the block for anywhere the allowance permits.",
+          "title": "Placement",
+          "type": "string",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn|failover}",
+          "x-tau-section": "placement"
+        },
+        "regions/in": {
+          "description": "pinned: every region this is kept in. cdn: the regions it starts in before demand moves it — omit them and the platform seeds the choice.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Regions",
+          "type": "array",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn}",
+          "x-tau-required-when": {
+            "field": "regions/policy",
+            "in": [
+              "pinned"
+            ]
+          },
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
+        },
+        "regions": {
+          "properties": {
+            "failover": {
+              "properties": {
+                "main": {
+                  "description": "Where this runs while it can.",
+                  "title": "Main",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                },
+                "standby": {
+                  "description": "Where it runs when the main is gone.",
+                  "title": "Standby",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
         },
         "authorizer": {
           "properties": {
@@ -19864,6 +21026,11 @@
           "description": "What this resource may reach, and what it therefore depends on.",
           "id": "access",
           "title": "Access"
+        },
+        {
+          "description": "Where this may run, within what its scopes allow.",
+          "id": "placement",
+          "title": "Placement"
         },
         {
           "description": "Who decides what a caller may do to this.",
@@ -21099,57 +22266,111 @@
       ]
     },
     "Stream": {
-      "description": "A pubsub stream: what is published to it reaches every subscriber. On the swarm's own gossipsub, or on an external Kafka or NATS cluster.",
-      "oneOf": [
+      "allOf": [
         {
-          "required": [
-            "distributed"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "kafka": {
+          "oneOf": [
+            {
+              "required": [
+                "distributed"
+              ],
+              "type": "object"
+            },
+            {
               "properties": {
-                "credentials": {
+                "kafka": {
+                  "properties": {
+                    "credentials": {
+                      "required": [
+                        "name"
+                      ]
+                    }
+                  },
                   "required": [
-                    "name"
+                    "host",
+                    "credentials"
                   ]
                 }
               },
               "required": [
-                "host",
-                "credentials"
-              ]
-            }
-          },
-          "required": [
-            "kafka"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "nats": {
+                "kafka"
+              ],
+              "type": "object"
+            },
+            {
               "properties": {
-                "credentials": {
+                "nats": {
+                  "properties": {
+                    "credentials": {
+                      "required": [
+                        "name"
+                      ]
+                    }
+                  },
                   "required": [
-                    "name"
+                    "host",
+                    "credentials"
                   ]
                 }
               },
               "required": [
-                "host",
-                "credentials"
-              ]
+                "nats"
+              ],
+              "type": "object"
             }
-          },
-          "required": [
-            "nats"
-          ],
-          "type": "object"
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "pinned"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "cdn"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "failover"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "not": {
+                "required": [
+                  "regions"
+                ]
+              }
+            }
+          ]
         }
       ],
+      "description": "A pubsub stream: what is published to it reaches every subscriber. On the swarm's own gossipsub, or on an external Kafka or NATS cluster.",
       "properties": {
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
@@ -21290,6 +22511,80 @@
               "nats"
             ]
           }
+        },
+        "regions/policy": {
+          "description": "pinned: these regions only — the data-residency line. cdn: seeded here, then follows demand within the allowance. failover: exactly two, the first one main. Omit the block for anywhere the allowance permits.",
+          "title": "Placement",
+          "type": "string",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn|failover}",
+          "x-tau-section": "placement"
+        },
+        "regions/in": {
+          "description": "pinned: every region this is kept in. cdn: the regions it starts in before demand moves it — omit them and the platform seeds the choice.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Regions",
+          "type": "array",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn}",
+          "x-tau-required-when": {
+            "field": "regions/policy",
+            "in": [
+              "pinned"
+            ]
+          },
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
+        },
+        "regions": {
+          "properties": {
+            "failover": {
+              "properties": {
+                "main": {
+                  "description": "Where this runs while it can.",
+                  "title": "Main",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                },
+                "standby": {
+                  "description": "Where it runs when the main is gone.",
+                  "title": "Standby",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
         },
         "authorizer": {
           "properties": {
@@ -22183,6 +23478,11 @@
           "description": "Which engine holds the topic, and its settings.",
           "id": "engine",
           "title": "Engine"
+        },
+        {
+          "description": "Where this may run, within what its scopes allow.",
+          "id": "placement",
+          "title": "Placement"
         },
         {
           "description": "Who decides what a caller may do to this.",
@@ -24644,6 +25944,56 @@
           "oneOf": [
             {
               "properties": {
+                "regions": {
+                  "required": [
+                    "pinned"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "cdn"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "properties": {
+                "regions": {
+                  "required": [
+                    "failover"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "regions"
+              ]
+            },
+            {
+              "not": {
+                "required": [
+                  "regions"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
                 "build": {
                   "properties": {
                     "commands": {
@@ -24825,6 +26175,80 @@
                   "static"
                 ]
               }
+            }
+          },
+          "type": "object"
+        },
+        "regions/policy": {
+          "description": "pinned: these regions only — the data-residency line. cdn: seeded here, then follows demand within the allowance. failover: exactly two, the first one main. Omit the block for anywhere the allowance permits.",
+          "title": "Placement",
+          "type": "string",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn|failover}",
+          "x-tau-section": "placement"
+        },
+        "regions/in": {
+          "description": "pinned: every region this is kept in. cdn: the regions it starts in before demand moves it — omit them and the platform seeds the choice.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Regions",
+          "type": "array",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn}",
+          "x-tau-required-when": {
+            "field": "regions/policy",
+            "in": [
+              "pinned"
+            ]
+          },
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
+        },
+        "regions": {
+          "properties": {
+            "failover": {
+              "properties": {
+                "main": {
+                  "description": "Where this runs while it can.",
+                  "title": "Main",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                },
+                "standby": {
+                  "description": "Where it runs when the main is gone.",
+                  "title": "Standby",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                }
+              },
+              "type": "object"
             }
           },
           "type": "object"
@@ -25857,6 +27281,11 @@
           "description": "What the site returns for a path it does not have.",
           "id": "serving",
           "title": "Serving"
+        },
+        {
+          "description": "Where this may run, within what its scopes allow.",
+          "id": "placement",
+          "title": "Placement"
         },
         {
           "description": "How the source becomes the thing that runs.",
@@ -28709,6 +30138,54 @@
     },
     "Zone": {
       "description": "A DNS zone served authoritatively by this cloud: a zone file you own, and a function asked for the names it does not carry.",
+      "oneOf": [
+        {
+          "properties": {
+            "regions": {
+              "required": [
+                "pinned"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "regions"
+          ]
+        },
+        {
+          "properties": {
+            "regions": {
+              "required": [
+                "cdn"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "regions"
+          ]
+        },
+        {
+          "properties": {
+            "regions": {
+              "required": [
+                "failover"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "regions"
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "regions"
+            ]
+          }
+        }
+      ],
       "properties": {
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
@@ -28783,6 +30260,80 @@
               "title": "Resolver Namespace",
               "type": "string",
               "x-tau-section": "records"
+            }
+          },
+          "type": "object"
+        },
+        "regions/policy": {
+          "description": "pinned: these regions only — the data-residency line. cdn: seeded here, then follows demand within the allowance. failover: exactly two, the first one main. Omit the block for anywhere the allowance permits.",
+          "title": "Placement",
+          "type": "string",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn|failover}",
+          "x-tau-section": "placement"
+        },
+        "regions/in": {
+          "description": "pinned: every region this is kept in. cdn: the regions it starts in before demand moves it — omit them and the platform seeds the choice.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Regions",
+          "type": "array",
+          "x-tau-dynamic": true,
+          "x-tau-path": "regions/{pinned|cdn}",
+          "x-tau-required-when": {
+            "field": "regions/policy",
+            "in": [
+              "pinned"
+            ]
+          },
+          "x-tau-section": "placement",
+          "x-tau-validation": "region"
+        },
+        "regions": {
+          "properties": {
+            "failover": {
+              "properties": {
+                "main": {
+                  "description": "Where this runs while it can.",
+                  "title": "Main",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                },
+                "standby": {
+                  "description": "Where it runs when the main is gone.",
+                  "title": "Standby",
+                  "type": "string",
+                  "x-tau-required-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-section": "placement",
+                  "x-tau-show-when": {
+                    "field": "regions/policy",
+                    "in": [
+                      "failover"
+                    ]
+                  },
+                  "x-tau-validation": "region"
+                }
+              },
+              "type": "object"
             }
           },
           "type": "object"
@@ -29658,6 +31209,11 @@
           "description": "What this zone answers with: a zone file, or a function.",
           "id": "records",
           "title": "Answers"
+        },
+        {
+          "description": "Where this may run, within what its scopes allow.",
+          "id": "placement",
+          "title": "Placement"
         }
       ]
     }
@@ -29696,6 +31252,66 @@
       "title": "Tags",
       "type": "array",
       "x-tau-section": "identity"
+    },
+    "regions/policy": {
+      "description": "pinned: these regions only — the data-residency line. cdn: seeded here, then follows demand within the allowance. failover: exactly two, the first one main. Omit the block for anywhere the allowance permits.",
+      "title": "Placement",
+      "type": "string",
+      "x-tau-section": "placement"
+    },
+    "regions/in": {
+      "description": "pinned: every region this is kept in. cdn: the regions it starts in before demand moves it — omit them and the platform seeds the choice.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Regions",
+      "type": "array",
+      "x-tau-required-when": {
+        "field": "regions/policy",
+        "in": [
+          "pinned"
+        ]
+      },
+      "x-tau-section": "placement",
+      "x-tau-validation": "region"
+    },
+    "regions/main": {
+      "description": "Where this runs while it can.",
+      "title": "Main",
+      "type": "string",
+      "x-tau-required-when": {
+        "field": "regions/policy",
+        "in": [
+          "failover"
+        ]
+      },
+      "x-tau-section": "placement",
+      "x-tau-show-when": {
+        "field": "regions/policy",
+        "in": [
+          "failover"
+        ]
+      },
+      "x-tau-validation": "region"
+    },
+    "regions/standby": {
+      "description": "Where it runs when the main is gone.",
+      "title": "Standby",
+      "type": "string",
+      "x-tau-required-when": {
+        "field": "regions/policy",
+        "in": [
+          "failover"
+        ]
+      },
+      "x-tau-section": "placement",
+      "x-tau-show-when": {
+        "field": "regions/policy",
+        "in": [
+          "failover"
+        ]
+      },
+      "x-tau-validation": "region"
     },
     "application": {
       "additionalProperties": {

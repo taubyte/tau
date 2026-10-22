@@ -113,22 +113,32 @@ func TestWhatMayBeWrittenPerEnvironment(t *testing.T) {
 		"worker/source/image", "worker/value",
 		"workflow/concurrency", "workflow/timeout",
 
-		// PLACEMENT, on every kind that declares Placed() — one decision, not
-		// eleven. The BRANCH takes the suffix: `pinned: [region-1]` beside
-		// `pinned_preview: [region-2]`. See regionAttributes.
+		// PLACEMENT, on every kind — one decision, not twenty-three. The BRANCH
+		// takes the suffix: `pinned: [region-1]` beside `pinned_preview: [region-2]`.
+		// See regionAttributes.
 		"agent/regions/in",
 		"application/regions/in",
+		"bus/regions/in",
 		"cache/regions/in",
+		"channel/regions/in",
+		"component/regions/in",
+		"cron/regions/in",
 		"database/regions/in",
 		"function/regions/in",
+		"gateway/regions/in",
+		"mcp/regions/in",
+		"model/regions/in",
+		"proxy/regions/in",
 		"sandbox/regions/in",
+		"secret/regions/in",
 		"storage/regions/in",
+		"stream/regions/in",
 		"sync/regions/in",
 		"volume/regions/in",
+		"website/regions/in",
 		"worker/regions/in",
 		"workflow/regions/in",
-
-		// thirty-three. See regionAttributes: the leaves vary, the policy cannot.
+		"zone/regions/in",
 
 		// THE BRANCH A GIT SOURCE READS, on every kind that can take one.
 		// `environments[].branches` already binds branches to a deployment, and

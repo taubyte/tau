@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/mr-tron/base58"
@@ -321,9 +322,15 @@ func TestTheBasicFixtureRendersPerRegion(t *testing.T) {
 	require.Equal(t, []string{"region-2"}, keysOf(r2))
 	roles := r2["region-2"].Roles
 	require.Equal(t, schema.RoleStandby, roles[idOfName(t, flat, "application", "api")])
-	for _, kind := range []string{"workflow", "function"} {
-		role, held := roles[idOfName(t, flat, kind, "checkout")]
-		require.True(t, !held || role == schema.RoleScope, "%s/checkout is %s in region-2", kind, role)
+	for _, shell := range []string{"workflow/checkout", "agent/support"} {
+		kind, name, _ := strings.Cut(shell, "/")
+		id := idOfName(t, flat, kind, name)
+		produced, _ := schema.Became(flat, id)
+		require.NotEmpty(t, produced, shell)
+		for _, held := range append(produced, id) {
+			role, ok := roles[held]
+			require.False(t, ok, "%s is %s in region-2", held, role)
+		}
 	}
 }
 
@@ -451,18 +458,30 @@ func TestAPreviewOfTheRegionsTheProjectNames(t *testing.T) {
 	require.Equal(t, []string{"region-2"}, schema.Preview("region-1", "region-2").Place(schema.Placement{Allowed: []string{"region-2"}}).In)
 }
 
-// WHAT A PINNED SHELL LOWERS TO IS PINNED THE SAME: workflow/checkout and agent/support
-// are pinned to region-1, and so is every function, sync and database they became.
+// WHAT A PINNED SHELL LOWERS TO IS PINNED THE SAME, in the compiled object itself:
+// workflow/checkout and agent/support are pinned to region-1, and so is every function,
+// sync and database they became.
 func TestALoweredResourceIsPlacedWithItsShell(t *testing.T) {
 	flat := basicFixture(t)
-	views, findings, err := schema.Views(flat, schema.WithRegions(schema.WithRegion("region-1")))
-	require.NoError(t, err, "%v", findings)
-	held := map[string]schema.Role{}
-	for _, res := range schema.Resources(views["region-1"].Object) {
-		held[res.Kind+"/"+res.Name] = views["region-1"].Roles[res.ID]
+	byID := map[string]schema.Instance{}
+	for _, res := range schema.Resources(flat) {
+		byID[res.ID] = res
+	}
+	seen := map[string]bool{}
+	for _, shell := range []string{"workflow/checkout", "agent/support"} {
+		kind, name, _ := strings.Cut(shell, "/")
+		produced, _ := schema.Became(flat, idOfName(t, flat, kind, name))
+		require.NotEmpty(t, produced, shell)
+		for _, id := range produced {
+			res := byID[id]
+			seen[res.Kind+"/"+res.Name] = true
+			regions, _ := res.Fields["regions"].(map[string]any)
+			require.Equal(t, "pinned", regions["policy"], "%s/%s", res.Kind, res.Name)
+			require.ElementsMatch(t, []any{"region-1"}, regions["in"], "%s/%s", res.Kind, res.Name)
+		}
 	}
 	for _, name := range []string{"function/checkout_charge", "function/checkout_reserve", "function/checkout_settle",
 		"sync/checkout_reserve", "database/support_memory", "function/support_infer"} {
-		require.Equal(t, schema.RolePinned, held[name], name)
+		require.True(t, seen[name], name)
 	}
 }

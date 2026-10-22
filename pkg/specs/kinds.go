@@ -294,7 +294,7 @@ const (
 	ApplicationReadinessKindFunction         = "function"
 )
 
-// Regions is the "regions" block of Agent, Application, Cache, Database, Function, Sandbox, Storage, Sync, Volume, Worker, Workflow, read from a compiled object.
+// Regions is the "regions" block of Agent, Application, Bus, Cache, Channel, Component, Cron, Database, Function, Gateway, Mcp, Model, Proxy, Sandbox, Secret, Storage, Stream, Sync, Volume, Website, Worker, Workflow, Zone, read from a compiled object.
 type Regions struct {
 	In      []string // authored at regions/{pinned|cdn}
 	Main    string   // authored at regions/failover/main
@@ -1099,6 +1099,7 @@ type Cron struct {
 	Jitter      *time.Duration
 	Name        string
 	OnOverlap   string // defaulted
+	Regions     Regions
 	Schedule    string
 	Tags        []string
 	Timezone    string // defaulted
@@ -1112,6 +1113,7 @@ func ReadCron(r Resource) Cron {
 	out.Jitter = present[time.Duration](r.Duration("jitter"))
 	out.Name = r.String("name")
 	out.OnOverlap = r.String("on_overlap")
+	out.Regions = ReadRegions(r)
 	out.Schedule = r.String("schedule")
 	out.Tags = r.Strings("tags")
 	out.Timezone = r.String("timezone")
@@ -1125,6 +1127,7 @@ const (
 	CronKeyJitter      = "jitter"
 	CronKeyName        = "name"
 	CronKeyOnOverlap   = "on_overlap"
+	CronKeyRegions     = "regions"
 	CronKeySchedule    = "schedule"
 	CronKeyTags        = "tags"
 	CronKeyTimezone    = "timezone"
@@ -1139,6 +1142,7 @@ type Component struct {
 	Description string
 	Id          string
 	Name        string
+	Regions     Regions
 	Source      ComponentSource
 	Tags        []string
 	Variables   map[string]VariablesEntry
@@ -1151,6 +1155,7 @@ func ReadComponent(r Resource) Component {
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
+	out.Regions = ReadRegions(r)
 	out.Source = ReadComponentSource(r)
 	out.Tags = r.Strings("tags")
 	for _, name := range r.Keys("variables") {
@@ -1168,6 +1173,7 @@ const (
 	ComponentKeyDescription = "description"
 	ComponentKeyId          = "id"
 	ComponentKeyName        = "name"
+	ComponentKeyRegions     = "regions"
 	ComponentKeySource      = "source"
 	ComponentKeyTags        = "tags"
 	ComponentKeyVariables   = "variables"
@@ -1266,6 +1272,7 @@ type Website struct {
 	Description string
 	Id          string
 	Name        string
+	Regions     Regions
 	Serve       WebsiteServe
 	Source      WebsiteSource
 	Tags        []string
@@ -1279,6 +1286,7 @@ func ReadWebsite(r Resource) Website {
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
+	out.Regions = ReadRegions(r)
 	out.Serve = ReadWebsiteServe(r)
 	out.Source = ReadWebsiteSource(r)
 	out.Tags = r.Strings("tags")
@@ -1297,6 +1305,7 @@ const (
 	WebsiteKeyDescription = "description"
 	WebsiteKeyId          = "id"
 	WebsiteKeyName        = "name"
+	WebsiteKeyRegions     = "regions"
 	WebsiteKeyServe       = "serve"
 	WebsiteKeySource      = "source"
 	WebsiteKeyTags        = "tags"
@@ -1947,6 +1956,7 @@ type Secret struct {
 	Description string
 	Id          string
 	Name        string
+	Regions     Regions
 	Rotation    *time.Duration
 	Source      string // defaulted
 	Tags        []string
@@ -1959,6 +1969,7 @@ func ReadSecret(r Resource) Secret {
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
+	out.Regions = ReadRegions(r)
 	out.Rotation = present[time.Duration](r.Duration("rotation"))
 	out.Source = r.String("source")
 	out.Tags = r.Strings("tags")
@@ -1971,6 +1982,7 @@ const (
 	SecretKeyDescription = "description"
 	SecretKeyId          = "id"
 	SecretKeyName        = "name"
+	SecretKeyRegions     = "regions"
 	SecretKeyRotation    = "rotation"
 	SecretKeySource      = "source"
 	SecretKeyTags        = "tags"
@@ -2115,6 +2127,7 @@ type Zone struct {
 	Id          string
 	Name        string
 	Records     []string
+	Regions     Regions
 	Resolver    ZoneResolver
 	Tags        []string
 }
@@ -2128,6 +2141,7 @@ func ReadZone(r Resource) Zone {
 	out.Id = r.String("id")
 	out.Name = r.String("name")
 	out.Records = r.Strings("records")
+	out.Regions = ReadRegions(r)
 	out.Resolver = ReadZoneResolver(r)
 	out.Tags = r.Strings("tags")
 	return out
@@ -2141,6 +2155,7 @@ const (
 	ZoneKeyId          = "id"
 	ZoneKeyName        = "name"
 	ZoneKeyRecords     = "records"
+	ZoneKeyRegions     = "regions"
 	ZoneKeyResolver    = "resolver"
 	ZoneKeyTags        = "tags"
 )
@@ -2181,6 +2196,7 @@ type Gateway struct {
 	Id           string
 	Name         string
 	RateLimit    GatewayRateLimit
+	Regions      Regions
 	Route        GatewayRoute
 	Router       Router
 	Routing      string // which of route, router was written
@@ -2199,6 +2215,7 @@ func ReadGateway(r Resource) Gateway {
 	out.Id = r.String("id")
 	out.Name = r.String("name")
 	out.RateLimit = ReadGatewayRateLimit(r)
+	out.Regions = ReadRegions(r)
 	out.Route = ReadGatewayRoute(r)
 	out.Router = ReadRouter(r)
 	out.Routing = r.String("routing")
@@ -2219,6 +2236,7 @@ const (
 	GatewayKeyId           = "id"
 	GatewayKeyName         = "name"
 	GatewayKeyRateLimit    = "rate_limit"
+	GatewayKeyRegions      = "regions"
 	GatewayKeyRoute        = "route"
 	GatewayKeyRouter       = "router"
 	GatewayKeyRouting      = "routing"
@@ -2514,6 +2532,7 @@ type Proxy struct {
 	Id           string
 	Name         string
 	RateLimit    ProxyRateLimit
+	Regions      Regions
 	Router       Router
 	Routing      string // which of forward, router was written
 	Service      string
@@ -2532,6 +2551,7 @@ func ReadProxy(r Resource) Proxy {
 	out.Id = r.String("id")
 	out.Name = r.String("name")
 	out.RateLimit = ReadProxyRateLimit(r)
+	out.Regions = ReadRegions(r)
 	out.Router = ReadRouter(r)
 	out.Routing = r.String("routing")
 	out.Service = r.String("service")
@@ -2552,6 +2572,7 @@ const (
 	ProxyKeyId           = "id"
 	ProxyKeyName         = "name"
 	ProxyKeyRateLimit    = "rate_limit"
+	ProxyKeyRegions      = "regions"
 	ProxyKeyRouter       = "router"
 	ProxyKeyRouting      = "routing"
 	ProxyKeyService      = "service"
@@ -2664,6 +2685,7 @@ type Stream struct {
 	Id          string
 	Local       *bool // authored at distributed/local
 	Name        string
+	Regions     Regions
 	Tags        []string
 	Tls         string // authored at {kafka|nats}/tls
 }
@@ -2679,6 +2701,7 @@ func ReadStream(r Resource) Stream {
 	out.Id = r.String("id")
 	out.Local = present[bool](r.Bool("local"))
 	out.Name = r.String("name")
+	out.Regions = ReadRegions(r)
 	out.Tags = r.Strings("tags")
 	out.Tls = r.String("tls")
 	return out
@@ -2694,6 +2717,7 @@ const (
 	StreamKeyId             = "id"
 	StreamKeyLocal          = "local"
 	StreamKeyName           = "name"
+	StreamKeyRegions        = "regions"
 	StreamKeyTags           = "tags"
 	StreamKeyTls            = "tls"
 	StreamEngineDistributed = "distributed"
@@ -2737,6 +2761,7 @@ type Bus struct {
 	Id          string
 	Instances   Instances
 	Name        string
+	Regions     Regions
 	Tags        []string
 }
 
@@ -2748,6 +2773,7 @@ func ReadBus(r Resource) Bus {
 	out.Id = r.String("id")
 	out.Instances = ReadInstances(r)
 	out.Name = r.String("name")
+	out.Regions = ReadRegions(r)
 	out.Tags = r.Strings("tags")
 	return out
 }
@@ -2759,6 +2785,7 @@ const (
 	BusKeyId          = "id"
 	BusKeyInstances   = "instances"
 	BusKeyName        = "name"
+	BusKeyRegions     = "regions"
 	BusKeyTags        = "tags"
 )
 
@@ -2768,6 +2795,7 @@ type Mcp struct {
 	Description string
 	Id          string
 	Name        string
+	Regions     Regions
 	Tags        []string
 	Tools       McpTools
 }
@@ -2779,6 +2807,7 @@ func ReadMcp(r Resource) Mcp {
 	out.Description = r.String("description")
 	out.Id = r.String("id")
 	out.Name = r.String("name")
+	out.Regions = ReadRegions(r)
 	out.Tags = r.Strings("tags")
 	out.Tools = ReadMcpTools(r)
 	return out
@@ -2790,6 +2819,7 @@ const (
 	McpKeyDescription = "description"
 	McpKeyId          = "id"
 	McpKeyName        = "name"
+	McpKeyRegions     = "regions"
 	McpKeyTags        = "tags"
 	McpKeyTools       = "tools"
 )
@@ -2829,6 +2859,7 @@ type Channel struct {
 	Id          string
 	Name        string
 	Protocol    string
+	Regions     Regions
 	Serve       ChannelServe
 	Tags        []string
 }
@@ -2841,6 +2872,7 @@ func ReadChannel(r Resource) Channel {
 	out.Id = r.String("id")
 	out.Name = r.String("name")
 	out.Protocol = r.String("protocol")
+	out.Regions = ReadRegions(r)
 	out.Serve = ReadChannelServe(r)
 	out.Tags = r.Strings("tags")
 	return out
@@ -2853,6 +2885,7 @@ const (
 	ChannelKeyId          = "id"
 	ChannelKeyName        = "name"
 	ChannelKeyProtocol    = "protocol"
+	ChannelKeyRegions     = "regions"
 	ChannelKeyServe       = "serve"
 	ChannelKeyTags        = "tags"
 )
@@ -2903,6 +2936,7 @@ type Model struct {
 	Inference   ModelInference
 	Name        string
 	Parameters  ModelParameters
+	Regions     Regions
 	Tags        []string
 }
 
@@ -2917,6 +2951,7 @@ func ReadModel(r Resource) Model {
 	out.Inference = ReadModelInference(r)
 	out.Name = r.String("name")
 	out.Parameters = ReadModelParameters(r)
+	out.Regions = ReadRegions(r)
 	out.Tags = r.Strings("tags")
 	return out
 }
@@ -2931,6 +2966,7 @@ const (
 	ModelKeyInference    = "inference"
 	ModelKeyName         = "name"
 	ModelKeyParameters   = "parameters"
+	ModelKeyRegions      = "regions"
 	ModelKeyTags         = "tags"
 	ModelFormatOpenai    = "openai"
 	ModelFormatAnthropic = "anthropic"

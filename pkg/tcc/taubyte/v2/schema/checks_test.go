@@ -730,14 +730,23 @@ func TestAnythingWithAFootprintIsPlaced(t *testing.T) {
 		"/cache/c.yaml": cache("regions:\n    pinned: [region-1]\n"),
 	}), "is not placed anywhere")
 
-	// A KIND WITH NO FOOTPRINT IS NEVER ASKED, and the set is read off the
-	// schema rather than listed here — a `component` is built, not placed, and
-	// a kind that gains a footprint tomorrow is covered the moment it declares
-	// Placed().
-	require.NotContains(t, schema.PlacedKinds(), "secret")
+	// A KIND WITH NO FOOTPRINT IS NOT ASKED UNTIL IT SAYS WHERE IT GOES, and the
+	// set is read off the schema rather than listed here.
+	require.NotContains(t, schema.FootprintKinds(), "secret")
+	secret := "id: QmVs4sQjPFqJZ7Ug5MPpFxPTNiZ1CT8xY4XPKUbnDNbNAY\nsource: value\nrotation: 720h\n"
 	hasNo(t, auditWith(t, onlyNamed{}, map[string]string{
 		"/project.yaml":  bare,
-		"/secret/s.yaml": "id: QmVs4sQjPFqJZ7Ug5MPpFxPTNiZ1CT8xY4XPKUbnDNbNAY\nsource: value\nrotation: 720h\n",
+		"/secret/s.yaml": secret,
+	}), "is not placed anywhere")
+
+	// …and once it does, it is placed like anything else.
+	has(t, auditWith(t, onlyNamed{}, map[string]string{
+		"/project.yaml":  bare,
+		"/secret/s.yaml": secret + "regions:\n    cdn: []\n",
+	}), schema.Broken, "is not placed anywhere")
+	hasNo(t, auditWith(t, onlyNamed{}, map[string]string{
+		"/project.yaml":  bare,
+		"/secret/s.yaml": secret + "regions:\n    pinned: [region-1]\n",
 	}), "is not placed anywhere")
 }
 
