@@ -52,23 +52,23 @@ func TestALocalClientNeedsNoStreamAndFormsAKeyOnFirstWrite(t *testing.T) {
 	_, client, _ := single(t)
 	ctx := t.Context()
 
-	require.NoError(t, client.Set(ctx, "shop", "prod", "token", []byte("sk_live")))
+	require.NoError(t, client.Set(ctx, Ref{Scope: Project("shop", "prod"), Name: "token"}, []byte("sk_live")))
 	got, err := client.Secret(ctx, "shop", "prod", "token")
 	require.NoError(t, err)
 	assert.Equal(t, "sk_live", got)
 
-	names, err := client.List(ctx, "shop", "prod")
+	names, err := client.List(ctx, Project("shop", "prod"))
 	require.NoError(t, err)
 	assert.Equal(t, []string{"token"}, names)
 
-	_, err = client.Get(ctx, "shop", "prod", "absent")
+	_, err = client.Get(ctx, Ref{Scope: Project("shop", "prod"), Name: "absent"})
 	require.ErrorIs(t, err, ErrNotSet)
 
-	require.NoError(t, client.Delete(ctx, "shop", "prod", "token"))
+	require.NoError(t, client.Delete(ctx, Ref{Scope: Project("shop", "prod"), Name: "token"}))
 	_, err = client.Secret(ctx, "shop", "prod", "token")
 	require.ErrorIs(t, err, ErrNotSet)
 
-	_, err = client.List(ctx, "shop", "")
+	_, err = client.List(ctx, Project("shop", ""))
 	require.ErrorIs(t, err, ErrInvalidRef)
 }
 
@@ -78,10 +78,10 @@ func TestAClientWithNobodyToAskSaysSo(t *testing.T) {
 	client, err := NewClient(node.Peer(), nil, nil)
 	require.NoError(t, err)
 
-	require.ErrorIs(t, client.Set(t.Context(), "p", "e", "n", []byte("v")), ErrNoMembers)
-	_, err = client.Get(t.Context(), "p", "e", "n")
+	require.ErrorIs(t, client.Set(t.Context(), Ref{Scope: Project("p", "e"), Name: "n"}, []byte("v")), ErrNoMembers)
+	_, err = client.Get(t.Context(), Ref{Scope: Project("p", "e"), Name: "n"})
 	require.ErrorIs(t, err, ErrNoMembers)
-	_, err = client.List(t.Context(), "p", "e")
+	_, err = client.List(t.Context(), Project("p", "e"))
 	require.ErrorIs(t, err, ErrNoMembers)
 
 	// A member named but unreachable is unavailable, not absent.
@@ -89,7 +89,7 @@ func TestAClientWithNobodyToAskSaysSo(t *testing.T) {
 	t.Cleanup(func() { unreachable.Close() })
 	client, err = NewClient(node.Peer(), func() []peerCore.ID { return []peerCore.ID{unreachable.ID(), node.ID()} }, nil)
 	require.NoError(t, err)
-	err = client.Delete(t.Context(), "p", "e", "n")
+	err = client.Delete(t.Context(), Ref{Scope: Project("p", "e"), Name: "n"})
 	require.ErrorIs(t, err, ErrUnavailable)
 
 	_, err = NewClient(nil, nil, nil)
@@ -137,7 +137,7 @@ func TestTheHandlersRefuseWhatTheyCannotUse(t *testing.T) {
 	ctx := t.Context()
 	h := &secretsHandler{srv}
 
-	good := &secretsv2.Ref{Project: "p", Environment: "e", Name: "n"}
+	good := wireRef(Ref{Scope: Project("p", "e"), Name: "n"})
 	_, err := h.Put(ctx, connect.NewRequest(&secretsv2.PutRequest{Ref: good}))
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 	_, err = h.Put(ctx, connect.NewRequest(&secretsv2.PutRequest{Ref: &secretsv2.Ref{}}))
@@ -202,7 +202,7 @@ func TestAGroupKeyThatCannotBeUsedIsRefused(t *testing.T) {
 	require.Error(t, err)
 
 	srv, client, _ := single(t)
-	require.NoError(t, client.Set(t.Context(), "p", "e", "n", []byte("v")))
+	require.NoError(t, client.Set(t.Context(), Ref{Scope: Project("p", "e"), Name: "n"}, []byte("v")))
 	key, err := srv.ActiveKey(t.Context())
 	require.NoError(t, err)
 
@@ -251,32 +251,39 @@ func (broken) Compact(context.Context, string) (int, error)   { return 0, errBro
 
 func TestAStoreThatFailsIsAnErrorEverywhere(t *testing.T) {
 	ctx := t.Context()
-	ref := Ref{Project: "p", Environment: "e", Name: "n"}
+	ref := Ref{Scope: Project("p", "e"), Name: "n"}
 	db := broken{}
 
-	require.Error(t, (&recordStore{db: db}).Put(ctx, &Record{Project: "p", Environment: "e", Name: "n"}))
-	require.Error(t, (&recordStore{db: db}).Delete(ctx, ref))
-	_, err := (&recordStore{db: db}).All(ctx)
+	v := version{Ref: ref, CID: contentID([]byte("c"))}
+	require.Error(t, (&recordStore{db: db}).Put(ctx, v, []byte("c"), 1))
+	require.ErrorIs(t, (&recordStore{db: db}).Put(ctx, v, []byte("other"), 1), ErrInvalidRef)
+	require.Error(t, (&recordStore{db: db}).Delete(ctx, v))
+	_, err := (&recordStore{db: db}).Versions(ctx, ref)
 	require.Error(t, err)
-	require.Error(t, (&wrappingStore{db: db}).Put(ctx, ref, "k", "w", &tdh.Wrapping{}))
-	require.Error(t, (&wrappingStore{db: db}).DeleteKey(ctx, ref, "k"))
-	require.Error(t, (&wrappingStore{db: db}).DeleteAll(ctx, ref))
+	_, err = (&recordStore{db: db}).All(ctx)
+	require.Error(t, err)
+	require.Error(t, (&wrappingStore{db: db}).Put(ctx, v, "k", "w", &tdh.Wrapping{}))
+	require.Error(t, (&wrappingStore{db: db}).DeleteKey(ctx, v, "k"))
+	require.Error(t, (&wrappingStore{db: db}).DeleteAll(ctx, v))
 	_, err = (&keyStore{db: db}).Newest(ctx)
 	require.Error(t, err)
 	_, err = (&keyStore{db: db}).Epoch(ctx)
 	require.Error(t, err)
 
 	// Invalid references never reach the store.
-	bad := Ref{}
+	bad := version{}
 	require.ErrorIs(t, (&recordStore{db: db}).Delete(ctx, bad), ErrInvalidRef)
 	require.ErrorIs(t, (&wrappingStore{db: db}).Put(ctx, bad, "k", "w", &tdh.Wrapping{}), ErrInvalidRef)
-	_, err = (&recordStore{db: db}).List(ctx, "", "e")
+	_, err = (&recordStore{db: db}).List(ctx, Project("", "e"))
+	require.ErrorIs(t, err, ErrInvalidRef)
+	_, err = (&recordStore{db: db}).Versions(ctx, Ref{})
 	require.ErrorIs(t, err, ErrInvalidRef)
 
 	srv := &Service{db: db, records: &recordStore{db: db}, wrappings: &wrappingStore{db: db}, keys: &keyStore{db: db}}
 	require.Error(t, srv.Delete(ctx, ref))
 	require.Error(t, srv.compact(ctx))
 	require.Error(t, srv.retire(ctx, &KeyMeta{}))
+	require.Error(t, srv.reEncrypt(ctx, &KeyMeta{}))
 }
 
 func TestTheBootTimerFormsTheFirstKey(t *testing.T) {

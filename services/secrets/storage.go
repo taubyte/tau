@@ -7,6 +7,7 @@ import (
 	"maps"
 	"path"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/cloudflare/circl/group"
@@ -75,25 +76,34 @@ func (k *KeyMeta) PublicKey() (group.Element, error) {
 	return pub, nil
 }
 
-// Record is a secret at rest. The service never holds the plaintext: clients
-// encrypt under the group public key before storing.
+// storedRecord is one version of a secret at rest: the ciphertext and when it
+// was written. The service never holds the plaintext: clients encrypt under the
+// group public key before storing.
 //
-// The ciphertext is epoch-independent -- rotation rewrites wrappings, never
-// this -- so a record is written once and read forever.
-type Record struct {
-	Project     string    `cbor:"project"`
-	Environment string    `cbor:"environment"`
-	Name        string    `cbor:"name"`
-	Ciphertext  []byte    `cbor:"ciphertext"`
-	CreatedAt   time.Time `cbor:"created_at"`
+// It is written once, under the CID of its own ciphertext, and never changed:
+// rotation rewrites wrappings, never this. Two nodes writing the same version
+// write the same bytes, and two writing different values write different keys,
+// so no record is a key two nodes write differently (AGENTS.md, rule 1).
+type storedRecord struct {
+	Ciphertext []byte `cbor:"ciphertext"`
+
+	// WrittenAt is unix nanoseconds. It orders versions of one name; the CID
+	// breaks a tie (rule 3).
+	WrittenAt int64 `cbor:"written_at"`
 }
 
-func (r *Record) Ref() Ref {
-	return Ref{Project: r.Project, Environment: r.Environment, Name: r.Name}
+// entry is one stored version of a secret.
+type entry struct {
+	version
+	Ciphertext []byte
+	WrittenAt  int64
 }
 
-// refPath is a validated reference as three storage path segments.
-func refPath(ref Ref) string { return ref.String() }
+func scopePath(s Scope) string { return s.String() + "/" }
+
+func namePath(ref Ref) string { return scopePath(ref.Scope) + ref.Name + "/" }
+
+func versionPath(v version) string { return namePath(v.Ref) + v.CID }
 
 // keyStore holds distributed key metadata in the shared database.
 type keyStore struct{ db kvdb.KVDB }
@@ -176,55 +186,73 @@ func (s *keyStore) Epoch(ctx context.Context) (uint64, error) {
 	return highest, nil
 }
 
-// recordStore holds encrypted secrets in the shared database.
+// recordStore holds encrypted secrets in the shared database, one key per
+// version: /records/<scope>/<name>/<cid>.
 type recordStore struct{ db kvdb.KVDB }
 
-func (s *recordStore) Put(ctx context.Context, record *Record) error {
-	ref := record.Ref()
-	if err := ref.Validate(); err != nil {
+func (s *recordStore) Put(ctx context.Context, v version, ciphertext []byte, writtenAt int64) error {
+	if err := v.Validate(); err != nil {
 		return err
 	}
+	if v.CID != contentID(ciphertext) {
+		return fmt.Errorf("%w: %s does not name its ciphertext", ErrInvalidRef, v)
+	}
 
-	data, err := cbor.Marshal(record)
+	data, err := cbor.Marshal(storedRecord{Ciphertext: ciphertext, WrittenAt: writtenAt})
 	if err != nil {
 		return fmt.Errorf("marshaling record: %w", err)
 	}
 
-	return s.db.Put(ctx, recordPrefix+refPath(ref), data)
+	return s.db.Put(ctx, recordPrefix+versionPath(v), data)
 }
 
-func (s *recordStore) Get(ctx context.Context, ref Ref) (*Record, error) {
+// Versions lists every stored version of a secret, newest first: by written-at,
+// then by CID, so every node orders the same set the same way.
+func (s *recordStore) Versions(ctx context.Context, ref Ref) ([]*entry, error) {
 	if err := ref.Validate(); err != nil {
 		return nil, err
 	}
 
-	data, err := s.db.Get(ctx, recordPrefix+refPath(ref))
+	paths, err := s.db.List(ctx, recordPrefix+namePath(ref))
 	if err != nil {
-		return nil, fmt.Errorf("getting secret %s: %w", ref, err)
+		return nil, fmt.Errorf("listing versions of %s: %w", ref, err)
 	}
 
-	var record Record
-	if err := cbor.Unmarshal(data, &record); err != nil {
-		return nil, fmt.Errorf("unmarshaling secret %s: %w", ref, err)
+	out := make([]*entry, 0, len(paths))
+	for _, p := range paths {
+		data, err := s.db.Get(ctx, p)
+		if err != nil {
+			continue // deleted between the list and the read
+		}
+
+		var record storedRecord
+		if err := cbor.Unmarshal(data, &record); err != nil {
+			continue
+		}
+		out = append(out, &entry{version: version{Ref: ref, CID: path.Base(p)}, Ciphertext: record.Ciphertext, WrittenAt: record.WrittenAt})
 	}
 
-	return &record, nil
+	slices.SortFunc(out, func(a, b *entry) int {
+		return cmp.Or(cmp.Compare(b.WrittenAt, a.WrittenAt), cmp.Compare(b.CID, a.CID))
+	})
+
+	return out, nil
 }
 
-func (s *recordStore) Delete(ctx context.Context, ref Ref) error {
-	if err := ref.Validate(); err != nil {
+func (s *recordStore) Delete(ctx context.Context, v version) error {
+	if err := v.Validate(); err != nil {
 		return err
 	}
 
-	return s.db.Delete(ctx, recordPrefix+refPath(ref))
+	return s.db.Delete(ctx, recordPrefix+versionPath(v))
 }
 
-// List returns the secrets of one project environment.
-func (s *recordStore) List(ctx context.Context, project, environment string) ([]Ref, error) {
-	if err := validScope(project, environment); err != nil {
+// List returns the names stored in one scope.
+func (s *recordStore) List(ctx context.Context, scope Scope) ([]Ref, error) {
+	if err := scope.Validate(); err != nil {
 		return nil, err
 	}
-	return s.list(ctx, recordPrefix+project+"/"+environment+"/")
+	return s.list(ctx, recordPrefix+scopePath(scope))
 }
 
 // All returns every stored secret, which is what reconciliation walks.
@@ -239,18 +267,30 @@ func (s *recordStore) list(ctx context.Context, prefix string) ([]Ref, error) {
 	}
 
 	// Every part is validated on write, so none spans a separator and the
-	// last three segments are exactly the reference.
-	refs := make([]Ref, 0, len(paths))
+	// segments are exactly the scope, the name and the CID.
+	seen := make(map[Ref]struct{}, len(paths))
 	for _, p := range paths {
-		environment := path.Dir(p)
-		refs = append(refs, Ref{
-			Project:     path.Base(path.Dir(environment)),
-			Environment: path.Base(environment),
-			Name:        path.Base(p),
-		})
+		if ref, ok := refOfPath(strings.TrimPrefix(p, recordPrefix)); ok {
+			seen[ref] = struct{}{}
+		}
 	}
 
-	return refs, nil
+	return slices.SortedFunc(maps.Keys(seen), func(a, b Ref) int { return cmp.Compare(a.String(), b.String()) }), nil
+}
+
+// refOfPath reads <scope>/<name>/<cid> back into the reference.
+func refOfPath(p string) (Ref, bool) {
+	parts := strings.Split(strings.Trim(p, "/"), "/")
+	var ref Ref
+	switch {
+	case len(parts) == 4 && parts[0] == cloudKind:
+		ref = Ref{Scope: Cloud(parts[1]), Name: parts[2]}
+	case len(parts) == 5 && parts[0] == projectKind:
+		ref = Ref{Scope: Project(parts[1], parts[2]), Name: parts[3]}
+	default:
+		return ref, false
+	}
+	return ref, ref.Validate() == nil
 }
 
 // wrappingStore holds each secret's data key, sealed to one group key.
@@ -269,12 +309,12 @@ func (s *recordStore) list(ctx context.Context, prefix string) ([]Ref, error) {
 // another forever.
 type wrappingStore struct{ db kvdb.KVDB }
 
-func wrappingPath(ref Ref, keyID, writer string) string {
-	return wrappingPrefix + refPath(ref) + "/" + keyID + "/" + writer
+func wrappingPath(v version, keyID, writer string) string {
+	return wrappingPrefix + versionPath(v) + "/" + keyID + "/" + writer
 }
 
-func (s *wrappingStore) Put(ctx context.Context, ref Ref, keyID, writer string, w *tdh.Wrapping) error {
-	if err := ref.Validate(); err != nil {
+func (s *wrappingStore) Put(ctx context.Context, v version, keyID, writer string, w *tdh.Wrapping) error {
+	if err := v.Validate(); err != nil {
 		return err
 	}
 
@@ -283,24 +323,25 @@ func (s *wrappingStore) Put(ctx context.Context, ref Ref, keyID, writer string, 
 		return fmt.Errorf("marshaling wrapping: %w", err)
 	}
 
-	return s.db.Put(ctx, wrappingPath(ref, keyID, writer), data)
+	return s.db.Put(ctx, wrappingPath(v, keyID, writer), data)
 }
 
-// Get returns one wrapping of a secret under a key, and the writer it came from.
+// Get returns one wrapping of a version under a key, and the writer it came
+// from.
 //
 // Wrappings under one key unlock the same data key but are NOT interchangeable
 // mid-decryption: each writer sealed with its own ephemeral R, and a partial is
 // computed against that R. Combining partials taken against different wrappings
 // yields nothing. So the writer comes back with it, and everyone contributing to
 // one decryption must be pointed at the same instance.
-func (s *wrappingStore) Get(ctx context.Context, ref Ref, keyID string) (*tdh.Wrapping, string, error) {
-	if err := ref.Validate(); err != nil {
+func (s *wrappingStore) Get(ctx context.Context, v version, keyID string) (*tdh.Wrapping, string, error) {
+	if err := v.Validate(); err != nil {
 		return nil, "", err
 	}
 
-	paths, err := s.db.List(ctx, wrappingPrefix+refPath(ref)+"/"+keyID+"/")
+	paths, err := s.db.List(ctx, wrappingPrefix+versionPath(v)+"/"+keyID+"/")
 	if err != nil {
-		return nil, "", fmt.Errorf("listing wrappings of %s: %w", ref, err)
+		return nil, "", fmt.Errorf("listing wrappings of %s: %w", v, err)
 	}
 
 	// Sorted, so nodes that can see the same set land on the same instance
@@ -321,19 +362,19 @@ func (s *wrappingStore) Get(ctx context.Context, ref Ref, keyID string) (*tdh.Wr
 		return &w, path.Base(p), nil
 	}
 
-	return nil, "", fmt.Errorf("secret %s has no wrapping under key %s", ref, keyID)
+	return nil, "", fmt.Errorf("secret %s has no wrapping under key %s", v, keyID)
 }
 
 // GetFrom returns the wrapping one specific writer made, so every node
 // contributing a partial works against the same ephemeral R.
-func (s *wrappingStore) GetFrom(ctx context.Context, ref Ref, keyID, writer string) (*tdh.Wrapping, error) {
-	if err := ref.Validate(); err != nil {
+func (s *wrappingStore) GetFrom(ctx context.Context, v version, keyID, writer string) (*tdh.Wrapping, error) {
+	if err := v.Validate(); err != nil {
 		return nil, err
 	}
 
-	data, err := s.db.Get(ctx, wrappingPath(ref, keyID, writer))
+	data, err := s.db.Get(ctx, wrappingPath(v, keyID, writer))
 	if err != nil {
-		return nil, fmt.Errorf("secret %s has no wrapping from %s under key %s", ref, writer, keyID)
+		return nil, fmt.Errorf("secret %s has no wrapping from %s under key %s", v, writer, keyID)
 	}
 
 	var w tdh.Wrapping
@@ -344,15 +385,15 @@ func (s *wrappingStore) GetFrom(ctx context.Context, ref Ref, keyID, writer stri
 	return &w, nil
 }
 
-// KeyIDs lists the keys a secret currently has wrappings under.
-func (s *wrappingStore) KeyIDs(ctx context.Context, ref Ref) ([]string, error) {
-	if err := ref.Validate(); err != nil {
+// KeyIDs lists the keys a version currently has wrappings under.
+func (s *wrappingStore) KeyIDs(ctx context.Context, v version) ([]string, error) {
+	if err := v.Validate(); err != nil {
 		return nil, err
 	}
 
-	paths, err := s.db.List(ctx, wrappingPrefix+refPath(ref)+"/")
+	paths, err := s.db.List(ctx, wrappingPrefix+versionPath(v)+"/")
 	if err != nil {
-		return nil, fmt.Errorf("listing wrappings of %s: %w", ref, err)
+		return nil, fmt.Errorf("listing wrappings of %s: %w", v, err)
 	}
 
 	seen := make(map[string]struct{}, len(paths))
@@ -363,32 +404,25 @@ func (s *wrappingStore) KeyIDs(ctx context.Context, ref Ref) ([]string, error) {
 	return slices.Sorted(maps.Keys(seen)), nil
 }
 
-// DeleteKey removes every wrapping of a secret under one key.
-func (s *wrappingStore) DeleteKey(ctx context.Context, ref Ref, keyID string) error {
-	paths, err := s.db.List(ctx, wrappingPrefix+refPath(ref)+"/"+keyID+"/")
+// DeleteKey removes every wrapping of a version under one key.
+func (s *wrappingStore) DeleteKey(ctx context.Context, v version, keyID string) error {
+	return s.deletePrefix(ctx, wrappingPrefix+versionPath(v)+"/"+keyID+"/")
+}
+
+// DeleteAll removes every wrapping of a version, under every key.
+func (s *wrappingStore) DeleteAll(ctx context.Context, v version) error {
+	return s.deletePrefix(ctx, wrappingPrefix+versionPath(v)+"/")
+}
+
+func (s *wrappingStore) deletePrefix(ctx context.Context, prefix string) error {
+	paths, err := s.db.List(ctx, prefix)
 	if err != nil {
-		return fmt.Errorf("listing wrappings of %s: %w", ref, err)
+		return fmt.Errorf("listing wrappings under %s: %w", prefix, err)
 	}
 
 	for _, p := range paths {
 		if err := s.db.Delete(ctx, p); err != nil {
 			return fmt.Errorf("deleting wrapping %s: %w", p, err)
-		}
-	}
-
-	return nil
-}
-
-// DeleteAll removes every wrapping of a secret, under every key.
-func (s *wrappingStore) DeleteAll(ctx context.Context, ref Ref) error {
-	keyIDs, err := s.KeyIDs(ctx, ref)
-	if err != nil {
-		return err
-	}
-
-	for _, keyID := range keyIDs {
-		if err := s.DeleteKey(ctx, ref, keyID); err != nil {
-			return err
 		}
 	}
 

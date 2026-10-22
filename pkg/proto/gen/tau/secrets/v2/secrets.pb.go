@@ -28,30 +28,28 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Ref names one secret.
-type Ref struct {
+// CloudScope holds the secrets one of the cloud's own services keeps.
+type CloudScope struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
-	Environment   string                 `protobuf:"bytes,2,opt,name=environment,proto3" json:"environment,omitempty"`
-	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Service       string                 `protobuf:"bytes,1,opt,name=service,proto3" json:"service,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *Ref) Reset() {
-	*x = Ref{}
+func (x *CloudScope) Reset() {
+	*x = CloudScope{}
 	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *Ref) String() string {
+func (x *CloudScope) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Ref) ProtoMessage() {}
+func (*CloudScope) ProtoMessage() {}
 
-func (x *Ref) ProtoReflect() protoreflect.Message {
+func (x *CloudScope) ProtoReflect() protoreflect.Message {
 	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -63,34 +61,20 @@ func (x *Ref) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Ref.ProtoReflect.Descriptor instead.
-func (*Ref) Descriptor() ([]byte, []int) {
+// Deprecated: Use CloudScope.ProtoReflect.Descriptor instead.
+func (*CloudScope) Descriptor() ([]byte, []int) {
 	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *Ref) GetProject() string {
+func (x *CloudScope) GetService() string {
 	if x != nil {
-		return x.Project
+		return x.Service
 	}
 	return ""
 }
 
-func (x *Ref) GetEnvironment() string {
-	if x != nil {
-		return x.Environment
-	}
-	return ""
-}
-
-func (x *Ref) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-// Scope names every secret of one project environment.
-type Scope struct {
+// ProjectScope holds the secrets of one project environment.
+type ProjectScope struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
 	Environment   string                 `protobuf:"bytes,2,opt,name=environment,proto3" json:"environment,omitempty"`
@@ -98,9 +82,66 @@ type Scope struct {
 	sizeCache     protoimpl.SizeCache
 }
 
+func (x *ProjectScope) Reset() {
+	*x = ProjectScope{}
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectScope) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectScope) ProtoMessage() {}
+
+func (x *ProjectScope) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectScope.ProtoReflect.Descriptor instead.
+func (*ProjectScope) Descriptor() ([]byte, []int) {
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ProjectScope) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *ProjectScope) GetEnvironment() string {
+	if x != nil {
+		return x.Environment
+	}
+	return ""
+}
+
+// Scope is where a secret lives. The two kinds are disjoint: no project can
+// name the cloud's scope.
+type Scope struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Scope:
+	//
+	//	*Scope_Cloud
+	//	*Scope_Project
+	Scope         isScope_Scope `protobuf_oneof:"scope"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
 func (x *Scope) Reset() {
 	*x = Scope{}
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[1]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -112,7 +153,7 @@ func (x *Scope) String() string {
 func (*Scope) ProtoMessage() {}
 
 func (x *Scope) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[1]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -125,19 +166,99 @@ func (x *Scope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Scope.ProtoReflect.Descriptor instead.
 func (*Scope) Descriptor() ([]byte, []int) {
-	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{1}
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *Scope) GetProject() string {
+func (x *Scope) GetScope() isScope_Scope {
 	if x != nil {
-		return x.Project
+		return x.Scope
 	}
-	return ""
+	return nil
 }
 
-func (x *Scope) GetEnvironment() string {
+func (x *Scope) GetCloud() *CloudScope {
 	if x != nil {
-		return x.Environment
+		if x, ok := x.Scope.(*Scope_Cloud); ok {
+			return x.Cloud
+		}
+	}
+	return nil
+}
+
+func (x *Scope) GetProject() *ProjectScope {
+	if x != nil {
+		if x, ok := x.Scope.(*Scope_Project); ok {
+			return x.Project
+		}
+	}
+	return nil
+}
+
+type isScope_Scope interface {
+	isScope_Scope()
+}
+
+type Scope_Cloud struct {
+	Cloud *CloudScope `protobuf:"bytes,1,opt,name=cloud,proto3,oneof"`
+}
+
+type Scope_Project struct {
+	Project *ProjectScope `protobuf:"bytes,2,opt,name=project,proto3,oneof"`
+}
+
+func (*Scope_Cloud) isScope_Scope() {}
+
+func (*Scope_Project) isScope_Scope() {}
+
+// Ref names one secret.
+type Ref struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Scope         *Scope                 `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Ref) Reset() {
+	*x = Ref{}
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Ref) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Ref) ProtoMessage() {}
+
+func (x *Ref) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Ref.ProtoReflect.Descriptor instead.
+func (*Ref) Descriptor() ([]byte, []int) {
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Ref) GetScope() *Scope {
+	if x != nil {
+		return x.Scope
+	}
+	return nil
+}
+
+func (x *Ref) GetName() string {
+	if x != nil {
+		return x.Name
 	}
 	return ""
 }
@@ -150,7 +271,7 @@ type Empty struct {
 
 func (x *Empty) Reset() {
 	*x = Empty{}
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[2]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -162,7 +283,7 @@ func (x *Empty) String() string {
 func (*Empty) ProtoMessage() {}
 
 func (x *Empty) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[2]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -175,7 +296,7 @@ func (x *Empty) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Empty.ProtoReflect.Descriptor instead.
 func (*Empty) Descriptor() ([]byte, []int) {
-	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{2}
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{4}
 }
 
 // KeyRequest asks for a group key by id, or, with no id, for the newest one
@@ -193,7 +314,7 @@ type KeyRequest struct {
 
 func (x *KeyRequest) Reset() {
 	*x = KeyRequest{}
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[3]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -205,7 +326,7 @@ func (x *KeyRequest) String() string {
 func (*KeyRequest) ProtoMessage() {}
 
 func (x *KeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[3]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -218,7 +339,7 @@ func (x *KeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KeyRequest.ProtoReflect.Descriptor instead.
 func (*KeyRequest) Descriptor() ([]byte, []int) {
-	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{3}
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *KeyRequest) GetKeyId() string {
@@ -251,7 +372,7 @@ type GroupKey struct {
 
 func (x *GroupKey) Reset() {
 	*x = GroupKey{}
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[4]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -263,7 +384,7 @@ func (x *GroupKey) String() string {
 func (*GroupKey) ProtoMessage() {}
 
 func (x *GroupKey) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[4]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -276,7 +397,7 @@ func (x *GroupKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GroupKey.ProtoReflect.Descriptor instead.
 func (*GroupKey) Descriptor() ([]byte, []int) {
-	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{4}
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GroupKey) GetKeyId() string {
@@ -325,7 +446,7 @@ type Wrapping struct {
 
 func (x *Wrapping) Reset() {
 	*x = Wrapping{}
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[5]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -337,7 +458,7 @@ func (x *Wrapping) String() string {
 func (*Wrapping) ProtoMessage() {}
 
 func (x *Wrapping) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[5]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -350,7 +471,7 @@ func (x *Wrapping) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Wrapping.ProtoReflect.Descriptor instead.
 func (*Wrapping) Descriptor() ([]byte, []int) {
-	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{5}
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Wrapping) GetR() []byte {
@@ -379,7 +500,7 @@ type PutRequest struct {
 
 func (x *PutRequest) Reset() {
 	*x = PutRequest{}
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[6]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -391,7 +512,7 @@ func (x *PutRequest) String() string {
 func (*PutRequest) ProtoMessage() {}
 
 func (x *PutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[6]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -404,7 +525,7 @@ func (x *PutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutRequest.ProtoReflect.Descriptor instead.
 func (*PutRequest) Descriptor() ([]byte, []int) {
-	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{6}
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *PutRequest) GetRef() *Ref {
@@ -444,16 +565,18 @@ type Sealed struct {
 	Epoch uint64                 `protobuf:"varint,3,opt,name=epoch,proto3" json:"epoch,omitempty"`
 	// writer is the member whose wrapping this is. Every partial for one read
 	// must be taken against the same writer's wrapping.
-	Writer        string    `protobuf:"bytes,4,opt,name=writer,proto3" json:"writer,omitempty"`
-	Wrapping      *Wrapping `protobuf:"bytes,5,opt,name=wrapping,proto3" json:"wrapping,omitempty"`
-	Ciphertext    []byte    `protobuf:"bytes,6,opt,name=ciphertext,proto3" json:"ciphertext,omitempty"`
+	Writer     string    `protobuf:"bytes,4,opt,name=writer,proto3" json:"writer,omitempty"`
+	Wrapping   *Wrapping `protobuf:"bytes,5,opt,name=wrapping,proto3" json:"wrapping,omitempty"`
+	Ciphertext []byte    `protobuf:"bytes,6,opt,name=ciphertext,proto3" json:"ciphertext,omitempty"`
+	// cid names the version served: the CID of its ciphertext.
+	Cid           string `protobuf:"bytes,7,opt,name=cid,proto3" json:"cid,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Sealed) Reset() {
 	*x = Sealed{}
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[7]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -465,7 +588,7 @@ func (x *Sealed) String() string {
 func (*Sealed) ProtoMessage() {}
 
 func (x *Sealed) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[7]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -478,7 +601,7 @@ func (x *Sealed) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Sealed.ProtoReflect.Descriptor instead.
 func (*Sealed) Descriptor() ([]byte, []int) {
-	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{7}
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Sealed) GetFound() bool {
@@ -523,18 +646,26 @@ func (x *Sealed) GetCiphertext() []byte {
 	return nil
 }
 
+func (x *Sealed) GetCid() string {
+	if x != nil {
+		return x.Cid
+	}
+	return ""
+}
+
 type PartialRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ref           *Ref                   `protobuf:"bytes,1,opt,name=ref,proto3" json:"ref,omitempty"`
 	KeyId         string                 `protobuf:"bytes,2,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
 	Writer        string                 `protobuf:"bytes,3,opt,name=writer,proto3" json:"writer,omitempty"`
+	Cid           string                 `protobuf:"bytes,4,opt,name=cid,proto3" json:"cid,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PartialRequest) Reset() {
 	*x = PartialRequest{}
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[8]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -546,7 +677,7 @@ func (x *PartialRequest) String() string {
 func (*PartialRequest) ProtoMessage() {}
 
 func (x *PartialRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[8]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -559,7 +690,7 @@ func (x *PartialRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PartialRequest.ProtoReflect.Descriptor instead.
 func (*PartialRequest) Descriptor() ([]byte, []int) {
-	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{8}
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *PartialRequest) GetRef() *Ref {
@@ -583,6 +714,13 @@ func (x *PartialRequest) GetWriter() string {
 	return ""
 }
 
+func (x *PartialRequest) GetCid() string {
+	if x != nil {
+		return x.Cid
+	}
+	return ""
+}
+
 type PartialDecryption struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            []byte                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -593,7 +731,7 @@ type PartialDecryption struct {
 
 func (x *PartialDecryption) Reset() {
 	*x = PartialDecryption{}
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[9]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -605,7 +743,7 @@ func (x *PartialDecryption) String() string {
 func (*PartialDecryption) ProtoMessage() {}
 
 func (x *PartialDecryption) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[9]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -618,7 +756,7 @@ func (x *PartialDecryption) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PartialDecryption.ProtoReflect.Descriptor instead.
 func (*PartialDecryption) Descriptor() ([]byte, []int) {
-	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{9}
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *PartialDecryption) GetId() []byte {
@@ -644,7 +782,7 @@ type Names struct {
 
 func (x *Names) Reset() {
 	*x = Names{}
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[10]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -656,7 +794,7 @@ func (x *Names) String() string {
 func (*Names) ProtoMessage() {}
 
 func (x *Names) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[10]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -669,7 +807,7 @@ func (x *Names) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Names.ProtoReflect.Descriptor instead.
 func (*Names) Descriptor() ([]byte, []int) {
-	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{10}
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *Names) GetNames() []string {
@@ -695,7 +833,7 @@ type Contribution struct {
 
 func (x *Contribution) Reset() {
 	*x = Contribution{}
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[11]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -707,7 +845,7 @@ func (x *Contribution) String() string {
 func (*Contribution) ProtoMessage() {}
 
 func (x *Contribution) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[11]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -720,7 +858,7 @@ func (x *Contribution) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Contribution.ProtoReflect.Descriptor instead.
 func (*Contribution) Descriptor() ([]byte, []int) {
-	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{11}
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *Contribution) GetRound() string {
@@ -781,7 +919,7 @@ type ReplayRequest struct {
 
 func (x *ReplayRequest) Reset() {
 	*x = ReplayRequest{}
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[12]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -793,7 +931,7 @@ func (x *ReplayRequest) String() string {
 func (*ReplayRequest) ProtoMessage() {}
 
 func (x *ReplayRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[12]
+	mi := &file_tau_secrets_v2_secrets_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -806,7 +944,7 @@ func (x *ReplayRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplayRequest.ProtoReflect.Descriptor instead.
 func (*ReplayRequest) Descriptor() ([]byte, []int) {
-	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{12}
+	return file_tau_secrets_v2_secrets_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ReplayRequest) GetKeyId() string {
@@ -820,14 +958,20 @@ var File_tau_secrets_v2_secrets_proto protoreflect.FileDescriptor
 
 const file_tau_secrets_v2_secrets_proto_rawDesc = "" +
 	"\n" +
-	"\x1ctau/secrets/v2/secrets.proto\x12\x0etau.secrets.v2\"U\n" +
-	"\x03Ref\x12\x18\n" +
+	"\x1ctau/secrets/v2/secrets.proto\x12\x0etau.secrets.v2\"&\n" +
+	"\n" +
+	"CloudScope\x12\x18\n" +
+	"\aservice\x18\x01 \x01(\tR\aservice\"J\n" +
+	"\fProjectScope\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
-	"\venvironment\x18\x02 \x01(\tR\venvironment\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name\"C\n" +
-	"\x05Scope\x12\x18\n" +
-	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
-	"\venvironment\x18\x02 \x01(\tR\venvironment\"\a\n" +
+	"\venvironment\x18\x02 \x01(\tR\venvironment\"~\n" +
+	"\x05Scope\x122\n" +
+	"\x05cloud\x18\x01 \x01(\v2\x1a.tau.secrets.v2.CloudScopeH\x00R\x05cloud\x128\n" +
+	"\aproject\x18\x02 \x01(\v2\x1c.tau.secrets.v2.ProjectScopeH\x00R\aprojectB\a\n" +
+	"\x05scope\"F\n" +
+	"\x03Ref\x12+\n" +
+	"\x05scope\x18\x01 \x01(\v2\x15.tau.secrets.v2.ScopeR\x05scope\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\a\n" +
 	"\x05Empty\"7\n" +
 	"\n" +
 	"KeyRequest\x12\x15\n" +
@@ -850,7 +994,7 @@ const file_tau_secrets_v2_secrets_proto_rawDesc = "" +
 	"\n" +
 	"ciphertext\x18\x03 \x01(\fR\n" +
 	"ciphertext\x124\n" +
-	"\bwrapping\x18\x04 \x01(\v2\x18.tau.secrets.v2.WrappingR\bwrapping\"\xb9\x01\n" +
+	"\bwrapping\x18\x04 \x01(\v2\x18.tau.secrets.v2.WrappingR\bwrapping\"\xcb\x01\n" +
 	"\x06Sealed\x12\x14\n" +
 	"\x05found\x18\x01 \x01(\bR\x05found\x12\x15\n" +
 	"\x06key_id\x18\x02 \x01(\tR\x05keyId\x12\x14\n" +
@@ -859,11 +1003,13 @@ const file_tau_secrets_v2_secrets_proto_rawDesc = "" +
 	"\bwrapping\x18\x05 \x01(\v2\x18.tau.secrets.v2.WrappingR\bwrapping\x12\x1e\n" +
 	"\n" +
 	"ciphertext\x18\x06 \x01(\fR\n" +
-	"ciphertext\"f\n" +
+	"ciphertext\x12\x10\n" +
+	"\x03cid\x18\a \x01(\tR\x03cid\"x\n" +
 	"\x0ePartialRequest\x12%\n" +
 	"\x03ref\x18\x01 \x01(\v2\x13.tau.secrets.v2.RefR\x03ref\x12\x15\n" +
 	"\x06key_id\x18\x02 \x01(\tR\x05keyId\x12\x16\n" +
-	"\x06writer\x18\x03 \x01(\tR\x06writer\"1\n" +
+	"\x06writer\x18\x03 \x01(\tR\x06writer\x12\x10\n" +
+	"\x03cid\x18\x04 \x01(\tR\x03cid\"1\n" +
 	"\x11PartialDecryption\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\fR\x02id\x12\f\n" +
 	"\x01d\x18\x02 \x01(\fR\x01d\"\x1d\n" +
@@ -907,48 +1053,53 @@ func file_tau_secrets_v2_secrets_proto_rawDescGZIP() []byte {
 	return file_tau_secrets_v2_secrets_proto_rawDescData
 }
 
-var file_tau_secrets_v2_secrets_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_tau_secrets_v2_secrets_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_tau_secrets_v2_secrets_proto_goTypes = []any{
-	(*Ref)(nil),               // 0: tau.secrets.v2.Ref
-	(*Scope)(nil),             // 1: tau.secrets.v2.Scope
-	(*Empty)(nil),             // 2: tau.secrets.v2.Empty
-	(*KeyRequest)(nil),        // 3: tau.secrets.v2.KeyRequest
-	(*GroupKey)(nil),          // 4: tau.secrets.v2.GroupKey
-	(*Wrapping)(nil),          // 5: tau.secrets.v2.Wrapping
-	(*PutRequest)(nil),        // 6: tau.secrets.v2.PutRequest
-	(*Sealed)(nil),            // 7: tau.secrets.v2.Sealed
-	(*PartialRequest)(nil),    // 8: tau.secrets.v2.PartialRequest
-	(*PartialDecryption)(nil), // 9: tau.secrets.v2.PartialDecryption
-	(*Names)(nil),             // 10: tau.secrets.v2.Names
-	(*Contribution)(nil),      // 11: tau.secrets.v2.Contribution
-	(*ReplayRequest)(nil),     // 12: tau.secrets.v2.ReplayRequest
+	(*CloudScope)(nil),        // 0: tau.secrets.v2.CloudScope
+	(*ProjectScope)(nil),      // 1: tau.secrets.v2.ProjectScope
+	(*Scope)(nil),             // 2: tau.secrets.v2.Scope
+	(*Ref)(nil),               // 3: tau.secrets.v2.Ref
+	(*Empty)(nil),             // 4: tau.secrets.v2.Empty
+	(*KeyRequest)(nil),        // 5: tau.secrets.v2.KeyRequest
+	(*GroupKey)(nil),          // 6: tau.secrets.v2.GroupKey
+	(*Wrapping)(nil),          // 7: tau.secrets.v2.Wrapping
+	(*PutRequest)(nil),        // 8: tau.secrets.v2.PutRequest
+	(*Sealed)(nil),            // 9: tau.secrets.v2.Sealed
+	(*PartialRequest)(nil),    // 10: tau.secrets.v2.PartialRequest
+	(*PartialDecryption)(nil), // 11: tau.secrets.v2.PartialDecryption
+	(*Names)(nil),             // 12: tau.secrets.v2.Names
+	(*Contribution)(nil),      // 13: tau.secrets.v2.Contribution
+	(*ReplayRequest)(nil),     // 14: tau.secrets.v2.ReplayRequest
 }
 var file_tau_secrets_v2_secrets_proto_depIdxs = []int32{
-	0,  // 0: tau.secrets.v2.PutRequest.ref:type_name -> tau.secrets.v2.Ref
-	5,  // 1: tau.secrets.v2.PutRequest.wrapping:type_name -> tau.secrets.v2.Wrapping
-	5,  // 2: tau.secrets.v2.Sealed.wrapping:type_name -> tau.secrets.v2.Wrapping
-	0,  // 3: tau.secrets.v2.PartialRequest.ref:type_name -> tau.secrets.v2.Ref
-	3,  // 4: tau.secrets.v2.SecretsService.Key:input_type -> tau.secrets.v2.KeyRequest
-	6,  // 5: tau.secrets.v2.SecretsService.Put:input_type -> tau.secrets.v2.PutRequest
-	0,  // 6: tau.secrets.v2.SecretsService.Get:input_type -> tau.secrets.v2.Ref
-	8,  // 7: tau.secrets.v2.SecretsService.Partial:input_type -> tau.secrets.v2.PartialRequest
-	0,  // 8: tau.secrets.v2.SecretsService.Delete:input_type -> tau.secrets.v2.Ref
-	1,  // 9: tau.secrets.v2.SecretsService.List:input_type -> tau.secrets.v2.Scope
-	11, // 10: tau.secrets.v2.DealerService.Contribute:input_type -> tau.secrets.v2.Contribution
-	12, // 11: tau.secrets.v2.DealerService.Replay:input_type -> tau.secrets.v2.ReplayRequest
-	4,  // 12: tau.secrets.v2.SecretsService.Key:output_type -> tau.secrets.v2.GroupKey
-	2,  // 13: tau.secrets.v2.SecretsService.Put:output_type -> tau.secrets.v2.Empty
-	7,  // 14: tau.secrets.v2.SecretsService.Get:output_type -> tau.secrets.v2.Sealed
-	9,  // 15: tau.secrets.v2.SecretsService.Partial:output_type -> tau.secrets.v2.PartialDecryption
-	2,  // 16: tau.secrets.v2.SecretsService.Delete:output_type -> tau.secrets.v2.Empty
-	10, // 17: tau.secrets.v2.SecretsService.List:output_type -> tau.secrets.v2.Names
-	2,  // 18: tau.secrets.v2.DealerService.Contribute:output_type -> tau.secrets.v2.Empty
-	11, // 19: tau.secrets.v2.DealerService.Replay:output_type -> tau.secrets.v2.Contribution
-	12, // [12:20] is the sub-list for method output_type
-	4,  // [4:12] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	0,  // 0: tau.secrets.v2.Scope.cloud:type_name -> tau.secrets.v2.CloudScope
+	1,  // 1: tau.secrets.v2.Scope.project:type_name -> tau.secrets.v2.ProjectScope
+	2,  // 2: tau.secrets.v2.Ref.scope:type_name -> tau.secrets.v2.Scope
+	3,  // 3: tau.secrets.v2.PutRequest.ref:type_name -> tau.secrets.v2.Ref
+	7,  // 4: tau.secrets.v2.PutRequest.wrapping:type_name -> tau.secrets.v2.Wrapping
+	7,  // 5: tau.secrets.v2.Sealed.wrapping:type_name -> tau.secrets.v2.Wrapping
+	3,  // 6: tau.secrets.v2.PartialRequest.ref:type_name -> tau.secrets.v2.Ref
+	5,  // 7: tau.secrets.v2.SecretsService.Key:input_type -> tau.secrets.v2.KeyRequest
+	8,  // 8: tau.secrets.v2.SecretsService.Put:input_type -> tau.secrets.v2.PutRequest
+	3,  // 9: tau.secrets.v2.SecretsService.Get:input_type -> tau.secrets.v2.Ref
+	10, // 10: tau.secrets.v2.SecretsService.Partial:input_type -> tau.secrets.v2.PartialRequest
+	3,  // 11: tau.secrets.v2.SecretsService.Delete:input_type -> tau.secrets.v2.Ref
+	2,  // 12: tau.secrets.v2.SecretsService.List:input_type -> tau.secrets.v2.Scope
+	13, // 13: tau.secrets.v2.DealerService.Contribute:input_type -> tau.secrets.v2.Contribution
+	14, // 14: tau.secrets.v2.DealerService.Replay:input_type -> tau.secrets.v2.ReplayRequest
+	6,  // 15: tau.secrets.v2.SecretsService.Key:output_type -> tau.secrets.v2.GroupKey
+	4,  // 16: tau.secrets.v2.SecretsService.Put:output_type -> tau.secrets.v2.Empty
+	9,  // 17: tau.secrets.v2.SecretsService.Get:output_type -> tau.secrets.v2.Sealed
+	11, // 18: tau.secrets.v2.SecretsService.Partial:output_type -> tau.secrets.v2.PartialDecryption
+	4,  // 19: tau.secrets.v2.SecretsService.Delete:output_type -> tau.secrets.v2.Empty
+	12, // 20: tau.secrets.v2.SecretsService.List:output_type -> tau.secrets.v2.Names
+	4,  // 21: tau.secrets.v2.DealerService.Contribute:output_type -> tau.secrets.v2.Empty
+	13, // 22: tau.secrets.v2.DealerService.Replay:output_type -> tau.secrets.v2.Contribution
+	15, // [15:23] is the sub-list for method output_type
+	7,  // [7:15] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_tau_secrets_v2_secrets_proto_init() }
@@ -956,13 +1107,17 @@ func file_tau_secrets_v2_secrets_proto_init() {
 	if File_tau_secrets_v2_secrets_proto != nil {
 		return
 	}
+	file_tau_secrets_v2_secrets_proto_msgTypes[2].OneofWrappers = []any{
+		(*Scope_Cloud)(nil),
+		(*Scope_Project)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_secrets_v2_secrets_proto_rawDesc), len(file_tau_secrets_v2_secrets_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

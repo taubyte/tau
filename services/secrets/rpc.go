@@ -96,14 +96,11 @@ func (h *secretsHandler) Get(ctx context.Context, req *connect.Request[secretsv2
 	// absent secret from one that has not replicated here yet, so it says only
 	// what it knows -- "not on me" -- and lets the caller, which can ask other
 	// members and wait, decide what that means.
-	record, err := h.srv.records.Get(ctx, ref)
-	if err != nil {
-		audit(ctx, "get", ref.String(), err)
+	stored, key, wrapping, writer, err := h.srv.Get(ctx, ref)
+	audit(ctx, "get", ref.String(), err)
+	if errors.Is(err, ErrNotSet) {
 		return connect.NewResponse(&secretsv2.Sealed{}), nil
 	}
-
-	key, wrapping, writer, err := h.srv.readable(ctx, ref)
-	audit(ctx, "get", ref.String(), err)
 	if err != nil {
 		return nil, wire(err)
 	}
@@ -114,7 +111,8 @@ func (h *secretsHandler) Get(ctx context.Context, req *connect.Request[secretsv2
 		Epoch:      key.Epoch,
 		Writer:     writer,
 		Wrapping:   &secretsv2.Wrapping{R: wrapping.R, WrappedDek: wrapping.WrappedDEK},
-		Ciphertext: record.Ciphertext,
+		Ciphertext: stored.Ciphertext,
+		Cid:        stored.CID,
 	}), nil
 }
 
@@ -124,8 +122,9 @@ func (h *secretsHandler) Partial(ctx context.Context, req *connect.Request[secre
 		return nil, wire(err)
 	}
 
-	partial, err := h.srv.Partial(ctx, ref, req.Msg.GetKeyId(), req.Msg.GetWriter())
-	audit(ctx, "partial", ref.String(), err)
+	v := version{Ref: ref, CID: req.Msg.GetCid()}
+	partial, err := h.srv.Partial(ctx, v, req.Msg.GetKeyId(), req.Msg.GetWriter())
+	audit(ctx, "partial", v.String(), err)
 	if err != nil {
 		return nil, wire(err)
 	}
@@ -150,9 +149,9 @@ func (h *secretsHandler) Delete(ctx context.Context, req *connect.Request[secret
 }
 
 func (h *secretsHandler) List(ctx context.Context, req *connect.Request[secretsv2.Scope]) (*connect.Response[secretsv2.Names], error) {
-	scope := req.Msg.GetProject() + "/" + req.Msg.GetEnvironment()
-	refs, err := h.srv.List(ctx, req.Msg.GetProject(), req.Msg.GetEnvironment())
-	audit(ctx, "list", scope, err)
+	scope := scopeOf(req.Msg)
+	refs, err := h.srv.List(ctx, scope)
+	audit(ctx, "list", scope.String(), err)
 	if err != nil {
 		return nil, wire(err)
 	}
@@ -203,12 +202,26 @@ func (h *dealerHandler) Replay(ctx context.Context, req *connect.Request[secrets
 	return connect.NewResponse(out), nil
 }
 
+func wireScope(s Scope) *secretsv2.Scope {
+	if s.Service != "" {
+		return &secretsv2.Scope{Scope: &secretsv2.Scope_Cloud{Cloud: &secretsv2.CloudScope{Service: s.Service}}}
+	}
+	return &secretsv2.Scope{Scope: &secretsv2.Scope_Project{Project: &secretsv2.ProjectScope{Project: s.Project, Environment: s.Environment}}}
+}
+
 func wireRef(ref Ref) *secretsv2.Ref {
-	return &secretsv2.Ref{Project: ref.Project, Environment: ref.Environment, Name: ref.Name}
+	return &secretsv2.Ref{Scope: wireScope(ref.Scope), Name: ref.Name}
+}
+
+func scopeOf(s *secretsv2.Scope) Scope {
+	if cloud := s.GetCloud(); cloud != nil {
+		return Cloud(cloud.GetService())
+	}
+	return Project(s.GetProject().GetProject(), s.GetProject().GetEnvironment())
 }
 
 func refOf(r *secretsv2.Ref) (Ref, error) {
-	ref := Ref{Project: r.GetProject(), Environment: r.GetEnvironment(), Name: r.GetName()}
+	ref := Ref{Scope: scopeOf(r.GetScope()), Name: r.GetName()}
 	return ref, ref.Validate()
 }
 

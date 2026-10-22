@@ -69,6 +69,20 @@ type cluster struct {
 func newCluster(t *testing.T, ctx context.Context, n int, opts ...Option) *cluster {
 	t.Helper()
 
+	c := newMesh(t, ctx, n, opts...)
+	for _, node := range c.nodes {
+		c.start(t, node)
+	}
+
+	c.awaitMesh(t, ctx)
+
+	return c
+}
+
+// newMesh connects n nodes and a consumer, and starts no service on them.
+func newMesh(t *testing.T, ctx context.Context, n int, opts ...Option) *cluster {
+	t.Helper()
+
 	// The mocknet is process-wide and kvdb replicates by database name, so two
 	// clusters sharing a name would replicate into each other. Give each test
 	// its own.
@@ -89,12 +103,6 @@ func newCluster(t *testing.T, ctx context.Context, n int, opts ...Option) *clust
 			require.NoError(t, node.Peer().Connect(ctx, other.Peer().Peerstore().PeerInfo(other.ID())))
 		}
 	}
-
-	for _, node := range c.nodes {
-		c.start(t, node)
-	}
-
-	c.awaitMesh(t, ctx)
 
 	return c
 }
@@ -260,33 +268,31 @@ const (
 )
 
 func ref(name string) Ref {
-	return Ref{Project: testNamespace, Environment: testEnvironment, Name: name}
+	return Ref{Scope: Project(testNamespace, testEnvironment), Name: name}
 }
 
-// refClient is the Client addressed by Ref, which is how these tests read.
+// newest is the newest version of ref a node stores, or one naming nothing.
+func newest(ctx context.Context, srv *Service, ref Ref) version {
+	versions, err := srv.records.Versions(ctx, ref)
+	if err != nil || len(versions) == 0 {
+		return version{Ref: ref, CID: "none"}
+	}
+	return versions[0].version
+}
+
+// refClient is the Client with List answering references, which is how these
+// tests read.
 type refClient struct{ *Client }
-
-func (r refClient) Set(ctx context.Context, ref Ref, value []byte) error {
-	return r.Client.Set(ctx, ref.Project, ref.Environment, ref.Name, value)
-}
-
-func (r refClient) Get(ctx context.Context, ref Ref) ([]byte, error) {
-	return r.Client.Get(ctx, ref.Project, ref.Environment, ref.Name)
-}
-
-func (r refClient) Delete(ctx context.Context, ref Ref) error {
-	return r.Client.Delete(ctx, ref.Project, ref.Environment, ref.Name)
-}
 
 // List lists one project's test environment as references.
 func (r refClient) List(ctx context.Context, project string) ([]Ref, error) {
-	names, err := r.Client.List(ctx, project, testEnvironment)
+	names, err := r.Client.List(ctx, Project(project, testEnvironment))
 	if err != nil {
 		return nil, err
 	}
 	refs := make([]Ref, 0, len(names))
 	for _, name := range names {
-		refs = append(refs, Ref{Project: project, Environment: testEnvironment, Name: name})
+		refs = append(refs, Ref{Scope: Project(project, testEnvironment), Name: name})
 	}
 	return refs, nil
 }
@@ -389,7 +395,7 @@ func TestThresholdAcrossNodes(t *testing.T) {
 	_, _, wrapping, writer, err := c.services[0].Get(ctx, ref("owner-key"))
 	require.NoError(t, err)
 
-	partial, err := c.services[0].Partial(ctx, ref("owner-key"), key.KeyID, writer)
+	partial, err := c.services[0].Partial(ctx, newest(ctx, c.services[0], ref("owner-key")), key.KeyID, writer)
 	require.NoError(t, err)
 
 	public, err := key.PublicKey()
@@ -524,8 +530,8 @@ func TestNamespacesIsolateNames(t *testing.T) {
 	c.awaitKey(t, ctx)
 	secrets := c.client(t)
 
-	one := Ref{Project: "shop", Environment: testEnvironment, Name: "db-password"}
-	two := Ref{Project: "blog", Environment: testEnvironment, Name: "db-password"}
+	one := Ref{Scope: Project("shop", testEnvironment), Name: "db-password"}
+	two := Ref{Scope: Project("blog", testEnvironment), Name: "db-password"}
 
 	require.NoError(t, secrets.Set(ctx, one, []byte("a's password")))
 	require.NoError(t, secrets.Set(ctx, two, []byte("b's password")))
@@ -582,7 +588,7 @@ func TestRotationCarriesSecretsForward(t *testing.T) {
 		second = active
 
 		// Carried forward means a wrapping exists under the new epoch.
-		_, _, err = c.services[0].wrappings.Get(ctx, ref("owner-key"), second.KeyID)
+		_, _, err = c.services[0].wrappings.Get(ctx, newest(ctx, c.services[0], ref("owner-key")), second.KeyID)
 
 		return err == nil
 	}, 60*time.Second, 200*time.Millisecond, "the secret was not carried into a new epoch")
@@ -600,7 +606,7 @@ func TestRotationCarriesSecretsForward(t *testing.T) {
 	require.Eventually(t, func() bool {
 		c.reconcileAll(ctx)
 
-		keyIDs, err := c.services[0].wrappings.KeyIDs(ctx, ref("owner-key"))
+		keyIDs, err := c.services[0].wrappings.KeyIDs(ctx, newest(ctx, c.services[0], ref("owner-key")))
 
 		return err == nil && len(keyIDs) == 1 && keyIDs[0] == second.KeyID
 	}, 60*time.Second, 200*time.Millisecond, "the superseded epoch was not retired")
@@ -690,7 +696,7 @@ func TestRetirementNeedsNoAgreement(t *testing.T) {
 		}
 		second = active
 
-		keyIDs, err := c.services[0].wrappings.KeyIDs(ctx, ref("owner-key"))
+		keyIDs, err := c.services[0].wrappings.KeyIDs(ctx, newest(ctx, c.services[0], ref("owner-key")))
 
 		return err == nil && len(keyIDs) == 1 && keyIDs[0] == second.KeyID
 	}, 60*time.Second, 200*time.Millisecond, "a lone node could not retire a superseded wrapping")
@@ -743,7 +749,7 @@ func TestSurvivesRestart(t *testing.T) {
 		_, _, _, writer, err := srv.Get(ctx, ref("owner-key"))
 		require.NoErrorf(t, err, "node %d cannot read the record after restarting", i)
 
-		_, err = srv.Partial(ctx, ref("owner-key"), key.KeyID, writer)
+		_, err = srv.Partial(ctx, newest(ctx, srv, ref("owner-key")), key.KeyID, writer)
 		require.NoErrorf(t, err, "node %d cannot serve partials after restarting", i)
 	}
 
@@ -811,7 +817,7 @@ func TestReconcileLoopRunsOnItsOwn(t *testing.T) {
 			return false
 		}
 
-		keyIDs, err := c.services[0].wrappings.KeyIDs(ctx, ref("owner-key"))
+		keyIDs, err := c.services[0].wrappings.KeyIDs(ctx, newest(ctx, c.services[0], ref("owner-key")))
 
 		return err == nil && len(keyIDs) == 1 && keyIDs[0] == active.KeyID
 	}, 90*time.Second, 250*time.Millisecond, "the reconcile loop did not rotate and carry forward on its own")
@@ -857,7 +863,7 @@ func TestConcurrentReconciliation(t *testing.T) {
 		}
 
 		for _, id := range []string{"alpha", "beta", "gamma"} {
-			if _, _, err := c.services[0].wrappings.Get(ctx, ref(id), active.KeyID); err != nil {
+			if _, _, err := c.services[0].wrappings.Get(ctx, newest(ctx, c.services[0], ref(id)), active.KeyID); err != nil {
 				return false
 			}
 		}
@@ -951,7 +957,7 @@ func TestGrowsOneNodeAtATime(t *testing.T) {
 
 				// Every secret carried forward onto it.
 				for id := range written {
-					if _, _, err := c.services[0].wrappings.Get(ctx, ref(id), active.KeyID); err != nil {
+					if _, _, err := c.services[0].wrappings.Get(ctx, newest(ctx, c.services[0], ref(id)), active.KeyID); err != nil {
 						return false
 					}
 				}
@@ -1040,7 +1046,7 @@ func TestShrinksOneNodeAtATime(t *testing.T) {
 			active = key
 
 			for id := range written {
-				if _, _, err := c.live()[0].wrappings.Get(ctx, ref(id), active.KeyID); err != nil {
+				if _, _, err := c.live()[0].wrappings.Get(ctx, newest(ctx, c.live()[0], ref(id)), active.KeyID); err != nil {
 					return false
 				}
 			}
@@ -1100,7 +1106,7 @@ func TestShrinksToASingleNode(t *testing.T) {
 			return false
 		}
 
-		_, _, err = c.live()[0].wrappings.Get(ctx, ref("owner-key"), active.KeyID)
+		_, _, err = c.live()[0].wrappings.Get(ctx, newest(ctx, c.live()[0], ref("owner-key")), active.KeyID)
 
 		return err == nil
 	}, 120*time.Second, 250*time.Millisecond, "the survivor did not carry the secret forward on its own")
@@ -1149,7 +1155,7 @@ func TestRetirementProvesTheReplacementOpens(t *testing.T) {
 	// have it before staging anything -- otherwise the assertion below races
 	// replication rather than testing retirement.
 	require.Eventually(t, func() bool {
-		_, _, err := srv.wrappings.Get(ctx, ref("owner-key"), real.KeyID)
+		_, _, err := srv.wrappings.Get(ctx, newest(ctx, srv, ref("owner-key")), real.KeyID)
 
 		return err == nil
 	}, settleFor, 100*time.Millisecond, "the wrapping never reached this node")
@@ -1168,15 +1174,15 @@ func TestRetirementProvesTheReplacementOpens(t *testing.T) {
 	public, err := orphan.PublicKey()
 	require.NoError(t, err)
 	dek := make([]byte, 32)
-	unopenable, err := tdh.Wrap(public, dek, wrapAAD(ref("owner-key"), orphan.KeyID))
+	unopenable, err := tdh.Wrap(public, dek, wrapAAD(newest(ctx, srv, ref("owner-key")), orphan.KeyID))
 	require.NoError(t, err)
-	require.NoError(t, srv.wrappings.Put(ctx, ref("owner-key"), orphan.KeyID, "someone", unopenable))
+	require.NoError(t, srv.wrappings.Put(ctx, newest(ctx, srv, ref("owner-key")), orphan.KeyID, "someone", unopenable))
 
 	// Retire against the orphan, which is exactly the state a rotation reaches
 	// when fewer than t members persisted a share.
 	require.NoError(t, srv.retire(ctx, orphan))
 
-	keyIDs, err := srv.wrappings.KeyIDs(ctx, ref("owner-key"))
+	keyIDs, err := srv.wrappings.KeyIDs(ctx, newest(ctx, srv, ref("owner-key")))
 	require.NoError(t, err)
 	assert.Contains(t, keyIDs, real.KeyID,
 		"retirement deleted the only readable wrapping for one that cannot be opened")
@@ -1244,7 +1250,7 @@ func TestRebuildsALostShareWithoutRotating(t *testing.T) {
 		if err != nil {
 			return false
 		}
-		_, err = damaged.Partial(ctx, ref("owner-key"), key.KeyID, writer)
+		_, err = damaged.Partial(ctx, newest(ctx, damaged, ref("owner-key")), key.KeyID, writer)
 
 		return err == nil
 	}, settleFor, 100*time.Millisecond, "the repaired node still cannot serve partials")
@@ -1315,7 +1321,7 @@ func TestRetirementNeverDeletesANewerKey(t *testing.T) {
 
 	srv := c.services[0]
 	require.Eventually(t, func() bool {
-		_, _, err := srv.wrappings.Get(ctx, ref("owner-key"), older.KeyID)
+		_, _, err := srv.wrappings.Get(ctx, newest(ctx, srv, ref("owner-key")), older.KeyID)
 
 		return err == nil
 	}, settleFor, 100*time.Millisecond, "the wrapping never reached this node")
@@ -1334,15 +1340,15 @@ func TestRetirementNeverDeletesANewerKey(t *testing.T) {
 
 	public, err := newer.PublicKey()
 	require.NoError(t, err)
-	wrapping, err := tdh.Wrap(public, make([]byte, 32), wrapAAD(ref("owner-key"), newer.KeyID))
+	wrapping, err := tdh.Wrap(public, make([]byte, 32), wrapAAD(newest(ctx, srv, ref("owner-key")), newer.KeyID))
 	require.NoError(t, err)
-	require.NoError(t, srv.wrappings.Put(ctx, ref("owner-key"), newer.KeyID, "elsewhere", wrapping))
+	require.NoError(t, srv.wrappings.Put(ctx, newest(ctx, srv, ref("owner-key")), newer.KeyID, "elsewhere", wrapping))
 
 	// Retire while serving the OLDER key, which is what a node with a broken
 	// newer share does.
 	require.NoError(t, srv.retire(ctx, older))
 
-	keyIDs, err := srv.wrappings.KeyIDs(ctx, ref("owner-key"))
+	keyIDs, err := srv.wrappings.KeyIDs(ctx, newest(ctx, srv, ref("owner-key")))
 	require.NoError(t, err)
 	assert.Contains(t, keyIDs, newer.KeyID,
 		"retiring against an older key deleted a newer key's wrapping")

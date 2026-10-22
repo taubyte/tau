@@ -134,7 +134,7 @@ func TestWithoutStatedMembersTheRosterIsWhoSpeaksTheProtocol(t *testing.T) {
 func TestARebuiltShareIsCheckedBeforeItIsKept(t *testing.T) {
 	srv, client, _ := single(t)
 	ctx := t.Context()
-	require.NoError(t, client.Set(ctx, "p", "e", "n", []byte("v")))
+	require.NoError(t, client.Set(ctx, Ref{Scope: Project("p", "e"), Name: "n"}, []byte("v")))
 	key := mustActive(t, ctx, srv)
 	require.NoError(t, srv.shares.Delete(ctx, key.KeyID))
 
@@ -172,16 +172,17 @@ func TestARebuiltShareIsCheckedBeforeItIsKept(t *testing.T) {
 func TestSetRefusesWhatItCannotStore(t *testing.T) {
 	srv, client, _ := single(t)
 	ctx := t.Context()
-	require.NoError(t, client.Set(ctx, "p", "e", "n", []byte("v")))
+	require.NoError(t, client.Set(ctx, Ref{Scope: Project("p", "e"), Name: "n"}, []byte("v")))
 	key := mustActive(t, ctx, srv)
-	ref := Ref{Project: "p", Environment: "e", Name: "other"}
+	ref := Ref{Scope: Project("p", "e"), Name: "other"}
 
 	require.ErrorContains(t, srv.Set(ctx, ref, []byte("c"), key.KeyID, nil), "missing wrapping")
 	require.Error(t, srv.Set(ctx, ref, []byte("c"), "unknown-key", &tdh.Wrapping{}))
 	require.ErrorIs(t, srv.Set(ctx, Ref{}, []byte("c"), key.KeyID, &tdh.Wrapping{}), ErrInvalidRef)
 
-	_, err := srv.records.Get(ctx, ref)
-	require.Error(t, err, "a refused Set left a record behind")
+	versions, err := srv.records.Versions(ctx, ref)
+	require.NoError(t, err)
+	require.Empty(t, versions, "a refused Set left a record behind")
 }
 
 // TestAClientRefusesBadReferencesBeforeAskingAnyone: with nobody to ask, an
@@ -196,14 +197,14 @@ func TestAClientRefusesBadReferencesBeforeAskingAnyone(t *testing.T) {
 	require.NoError(t, err)
 	ctx := t.Context()
 
-	require.ErrorIs(t, client.Set(ctx, "p", "e", "", []byte("v")), ErrInvalidRef)
-	_, err = client.Get(ctx, "p", "", "n")
+	require.ErrorIs(t, client.Set(ctx, Ref{Scope: Project("p", "e"), Name: ""}, []byte("v")), ErrInvalidRef)
+	_, err = client.Get(ctx, Ref{Scope: Project("p", ""), Name: "n"})
 	require.ErrorIs(t, err, ErrInvalidRef)
 	_, err = client.Secret(ctx, "", "e", "n")
 	require.ErrorIs(t, err, ErrInvalidRef)
-	require.ErrorIs(t, client.Delete(ctx, "p", "e", "a/b"), ErrInvalidRef)
+	require.ErrorIs(t, client.Delete(ctx, Ref{Scope: Project("p", "e"), Name: "a/b"}), ErrInvalidRef)
 
-	_, err = client.Get(ctx, "p", "e", "n")
+	_, err = client.Get(ctx, Ref{Scope: Project("p", "e"), Name: "n"})
 	require.ErrorIs(t, err, ErrNoMembers)
 }
 
@@ -218,7 +219,7 @@ func TestReconciliationStepsReportAFailingStore(t *testing.T) {
 	_, err := srv.keysInUse(ctx)
 	require.ErrorIs(t, err, errBroken)
 	require.ErrorIs(t, srv.reEncrypt(ctx, &KeyMeta{}), errBroken)
-	_, err = srv.supersededKeys(ctx, Ref{Project: "p", Environment: "e", Name: "n"}, &KeyMeta{})
+	_, err = srv.supersededKeys(ctx, version{Ref: Ref{Scope: Project("p", "e"), Name: "n"}, CID: "c"}, &KeyMeta{})
 	require.ErrorIs(t, err, errBroken)
 }
 

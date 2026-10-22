@@ -19,9 +19,9 @@ func TestCorruptEntriesAreSkippedOrRefused(t *testing.T) {
 	srv, client, _ := single(t)
 	ctx := t.Context()
 
-	require.NoError(t, client.Set(ctx, "p", "e", "n", []byte("v")))
+	require.NoError(t, client.Set(ctx, Ref{Scope: Project("p", "e"), Name: "n"}, []byte("v")))
 	good := mustActive(t, ctx, srv)
-	ref := Ref{Project: "p", Environment: "e", Name: "n"}
+	ref := newest(ctx, srv, Ref{Scope: Project("p", "e"), Name: "n"})
 
 	require.NoError(t, srv.db.Put(ctx, keyPrefix+"corrupt", []byte{0xff}))
 	_, err := srv.keys.Get(ctx, "corrupt")
@@ -31,11 +31,15 @@ func TestCorruptEntriesAreSkippedOrRefused(t *testing.T) {
 	require.Len(t, keys, 1, "a corrupt key record must be skipped, not listed")
 	assert.Equal(t, good.KeyID, keys[0].KeyID)
 
-	require.NoError(t, srv.db.Put(ctx, recordPrefix+"p/e/broken", []byte{0xff}))
-	_, err = srv.records.Get(ctx, Ref{Project: "p", Environment: "e", Name: "broken"})
-	require.ErrorContains(t, err, "unmarshaling secret")
-	_, err = srv.records.Get(ctx, Ref{})
-	require.ErrorIs(t, err, ErrInvalidRef)
+	broken := Ref{Scope: Project("p", "e"), Name: "broken"}
+	require.NoError(t, srv.db.Put(ctx, recordPrefix+"project/p/e/broken/cid", []byte{0xff}))
+	require.NoError(t, srv.db.Put(ctx, recordPrefix+"project/p/e/no-cid", []byte{0xff}))
+	versions, err := srv.records.Versions(ctx, broken)
+	require.NoError(t, err)
+	require.Empty(t, versions, "a corrupt version must be skipped, not listed")
+	all, err := srv.records.All(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, []Ref{broken, ref.Ref}, all, "a path that is not a version names no secret")
 
 	// The writer that sorts first is corrupt; Get must fall through to the
 	// readable one rather than report the secret unreadable.
@@ -49,11 +53,11 @@ func TestCorruptEntriesAreSkippedOrRefused(t *testing.T) {
 	require.ErrorContains(t, err, "unmarshaling wrapping")
 	_, err = srv.wrappings.GetFrom(ctx, ref, good.KeyID, "nobody")
 	require.ErrorContains(t, err, "no wrapping from nobody")
-	_, err = srv.wrappings.GetFrom(ctx, Ref{}, good.KeyID, writer)
+	_, err = srv.wrappings.GetFrom(ctx, version{}, good.KeyID, writer)
 	require.ErrorIs(t, err, ErrInvalidRef)
-	_, _, err = srv.wrappings.Get(ctx, Ref{}, good.KeyID)
+	_, _, err = srv.wrappings.Get(ctx, version{}, good.KeyID)
 	require.ErrorIs(t, err, ErrInvalidRef)
-	_, err = srv.wrappings.KeyIDs(ctx, Ref{})
+	_, err = srv.wrappings.KeyIDs(ctx, version{})
 	require.ErrorIs(t, err, ErrInvalidRef)
 
 	// The secret is still readable through all of it.
@@ -76,7 +80,7 @@ func TestKeyMetaRefusesElementsItCannotDecode(t *testing.T) {
 func TestAShareThatCannotBeOpenedIsNotAShare(t *testing.T) {
 	srv, client, _ := single(t)
 	ctx := t.Context()
-	require.NoError(t, client.Set(ctx, "p", "e", "n", []byte("v")))
+	require.NoError(t, client.Set(ctx, Ref{Scope: Project("p", "e"), Name: "n"}, []byte("v")))
 	key := mustActive(t, ctx, srv)
 
 	share, err := srv.shares.Get(ctx, key.KeyID)
@@ -132,9 +136,9 @@ func TestAShareThatCannotBeOpenedIsNotAShare(t *testing.T) {
 func TestAPartialNeedsAShareThatOpens(t *testing.T) {
 	srv, client, _ := single(t)
 	ctx := t.Context()
-	require.NoError(t, client.Set(ctx, "p", "e", "n", []byte("v")))
+	require.NoError(t, client.Set(ctx, Ref{Scope: Project("p", "e"), Name: "n"}, []byte("v")))
 	key := mustActive(t, ctx, srv)
-	ref := Ref{Project: "p", Environment: "e", Name: "n"}
+	ref := newest(ctx, srv, Ref{Scope: Project("p", "e"), Name: "n"})
 	_, writer, err := srv.wrappings.Get(ctx, ref, key.KeyID)
 	require.NoError(t, err)
 

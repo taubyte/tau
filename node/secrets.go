@@ -77,22 +77,26 @@ func (v *vault) Secret(ctx context.Context, project, environment, secretID strin
 // frontend. They are the one write in v2 that is not a git push, and the
 // frontend authorizes them exactly as it authorizes a deploy.
 func (v *vault) Set(ctx context.Context, project, environment, name string, value []byte) error {
-	return absent(v.client.Set(ctx, project, environment, name, value))
+	return absent(v.client.Set(ctx, projectRef(project, environment, name), value))
+}
+
+func (v *vault) Delete(ctx context.Context, project, environment, name string) error {
+	return absent(v.client.Delete(ctx, projectRef(project, environment, name)))
+}
+
+func (v *vault) List(ctx context.Context, project, environment string) ([]string, error) {
+	names, err := v.client.List(ctx, secretsService.Project(project, environment))
+	return names, absent(err)
 }
 
 // Get is auth's read of its own keys, in the one scope no project can name.
 func (v *vault) Get(ctx context.Context, project, environment, name string) ([]byte, error) {
-	value, err := v.client.Get(ctx, project, environment, name)
+	value, err := v.client.Get(ctx, projectRef(project, environment, name))
 	return value, absent(err)
 }
 
-func (v *vault) Delete(ctx context.Context, project, environment, name string) error {
-	return absent(v.client.Delete(ctx, project, environment, name))
-}
-
-func (v *vault) List(ctx context.Context, project, environment string) ([]string, error) {
-	names, err := v.client.List(ctx, project, environment)
-	return names, absent(err)
+func projectRef(project, environment, name string) secretsService.Ref {
+	return secretsService.Ref{Scope: secretsService.Project(project, environment), Name: name}
 }
 
 // Secret is pkg/invoke/wasm's Secrets: the value a grant names, read at the

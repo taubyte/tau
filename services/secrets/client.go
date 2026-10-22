@@ -124,8 +124,7 @@ func (c *Client) first(call func(api secretsv2connect.SecretsServiceClient) erro
 }
 
 // Set encrypts value under the cluster's active key and stores it.
-func (c *Client) Set(ctx context.Context, project, environment, name string, value []byte) error {
-	ref := Ref{Project: project, Environment: environment, Name: name}
+func (c *Client) Set(ctx context.Context, ref Ref, value []byte) error {
 	if err := ref.Validate(); err != nil {
 		return err
 	}
@@ -144,7 +143,7 @@ func (c *Client) Set(ctx context.Context, project, environment, name string, val
 		if err != nil {
 			return fmt.Errorf("encrypting secret %s: %w", ref, err)
 		}
-		wrapping, err := tdh.Wrap(key.public, dek, wrapAAD(ref, key.id))
+		wrapping, err := tdh.Wrap(key.public, dek, wrapAAD(version{Ref: ref, CID: contentID(ciphertext)}, key.id))
 		if err != nil {
 			return fmt.Errorf("wrapping the data key for %s: %w", ref, err)
 		}
@@ -161,7 +160,7 @@ func (c *Client) Set(ctx context.Context, project, environment, name string, val
 
 // Secret is the value a run-time variable refers to.
 func (c *Client) Secret(ctx context.Context, project, environment, secretID string) (string, error) {
-	value, err := c.Get(ctx, project, environment, secretID)
+	value, err := c.Get(ctx, Ref{Scope: Project(project, environment), Name: secretID})
 	if err != nil {
 		return "", err
 	}
@@ -173,8 +172,7 @@ func (c *Client) Secret(ctx context.Context, project, environment, secretID stri
 // A member that does not hold the record may only be behind, so every member
 // is asked before a secret is called absent. One that exists and cannot be
 // opened yet is retried until settleWindow or the caller's deadline.
-func (c *Client) Get(ctx context.Context, project, environment, name string) ([]byte, error) {
-	ref := Ref{Project: project, Environment: environment, Name: name}
+func (c *Client) Get(ctx context.Context, ref Ref) ([]byte, error) {
 	if err := ref.Validate(); err != nil {
 		return nil, err
 	}
@@ -253,13 +251,17 @@ func (c *Client) openAt(ctx context.Context, to peerCore.ID, ref Ref) ([]byte, e
 		return nil, err
 	}
 
+	v := version{Ref: ref, CID: sealed.GetCid()}
+	if v.CID != contentID(sealed.GetCiphertext()) {
+		return nil, fmt.Errorf("secret %s: the version served does not name its ciphertext", ref)
+	}
 	wrapping := &tdh.Wrapping{R: sealed.GetWrapping().GetR(), WrappedDEK: sealed.GetWrapping().GetWrappedDek()}
-	partials, err := c.partials(ctx, ref, key, sealed.GetWriter())
+	partials, err := c.partials(ctx, v, key, sealed.GetWriter())
 	if err != nil {
 		return nil, err
 	}
 
-	dek, err := tdh.Unwrap(wrapping, key.public, partials, key.threshold, wrapAAD(ref, key.id))
+	dek, err := tdh.Unwrap(wrapping, key.public, partials, key.threshold, wrapAAD(v, key.id))
 	if err != nil {
 		return nil, fmt.Errorf("unwrapping the data key for %s: %w", ref, err)
 	}
@@ -273,7 +275,7 @@ func (c *Client) openAt(ctx context.Context, to peerCore.ID, ref Ref) ([]byte, e
 
 // partials collects a threshold of partial decryptions against one writer's
 // wrapping, from the key's own members.
-func (c *Client) partials(ctx context.Context, ref Ref, key *groupKeyOf, writer string) ([]*tdh.Partial, error) {
+func (c *Client) partials(ctx context.Context, v version, key *groupKeyOf, writer string) ([]*tdh.Partial, error) {
 	partials := make([]*tdh.Partial, 0, key.threshold)
 	var failures []error
 
@@ -287,7 +289,7 @@ func (c *Client) partials(ctx context.Context, ref Ref, key *groupKeyOf, writer 
 			failures = append(failures, fmt.Errorf("%s: %w", member, err))
 			continue
 		}
-		resp, err := api.Partial(ctx, connect.NewRequest(&secretsv2.PartialRequest{Ref: wireRef(ref), KeyId: key.id, Writer: writer}))
+		resp, err := api.Partial(ctx, connect.NewRequest(&secretsv2.PartialRequest{Ref: wireRef(v.Ref), Cid: v.CID, KeyId: key.id, Writer: writer}))
 		if err != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", member, err))
 			continue
@@ -297,14 +299,13 @@ func (c *Client) partials(ctx context.Context, ref Ref, key *groupKeyOf, writer 
 
 	if uint(len(partials)) < key.threshold {
 		return nil, fmt.Errorf("collected %d of %d partial decryptions for %s: %w",
-			len(partials), key.threshold, ref, errors.Join(failures...))
+			len(partials), key.threshold, v, errors.Join(failures...))
 	}
 	return partials, nil
 }
 
 // Delete removes a secret.
-func (c *Client) Delete(ctx context.Context, project, environment, name string) error {
-	ref := Ref{Project: project, Environment: environment, Name: name}
+func (c *Client) Delete(ctx context.Context, ref Ref) error {
 	if err := ref.Validate(); err != nil {
 		return err
 	}
@@ -314,14 +315,14 @@ func (c *Client) Delete(ctx context.Context, project, environment, name string) 
 	})
 }
 
-// List names the secrets of one project environment, sorted.
-func (c *Client) List(ctx context.Context, project, environment string) ([]string, error) {
-	if err := validScope(project, environment); err != nil {
+// List names the secrets of one scope, sorted.
+func (c *Client) List(ctx context.Context, scope Scope) ([]string, error) {
+	if err := scope.Validate(); err != nil {
 		return nil, err
 	}
 	var names []string
 	err := c.first(func(api secretsv2connect.SecretsServiceClient) error {
-		resp, err := api.List(ctx, connect.NewRequest(&secretsv2.Scope{Project: project, Environment: environment}))
+		resp, err := api.List(ctx, connect.NewRequest(wireScope(scope)))
 		if err != nil {
 			return err
 		}

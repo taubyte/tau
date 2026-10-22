@@ -117,13 +117,13 @@ func (srv *Service) keysInUse(ctx context.Context) (map[string]struct{}, error) 
 		inUse[active.KeyID] = struct{}{}
 	}
 
-	refs, err := srv.records.All(ctx)
+	versions, err := srv.versions(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, ref := range refs {
-		keyIDs, err := srv.wrappings.KeyIDs(ctx, ref)
+	for _, v := range versions {
+		keyIDs, err := srv.wrappings.KeyIDs(ctx, v)
 		if err != nil {
 			continue
 		}
@@ -133,6 +133,26 @@ func (srv *Service) keysInUse(ctx context.Context) (map[string]struct{}, error) 
 	}
 
 	return inUse, nil
+}
+
+// versions is every stored version of every secret.
+func (srv *Service) versions(ctx context.Context) ([]version, error) {
+	refs, err := srv.records.All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var out []version
+	for _, ref := range refs {
+		versions, err := srv.records.Versions(ctx, ref)
+		if err != nil {
+			return nil, err
+		}
+		for _, v := range versions {
+			out = append(out, v.version)
+		}
+	}
+	return out, nil
 }
 
 // rotateIfNeeded starts a new epoch when the roster has changed or the active
@@ -237,14 +257,14 @@ func (srv *Service) aged(ctx context.Context, keyID string) (bool, error) {
 	return srv.now().Sub(stored) >= srv.rotateAfter, nil
 }
 
-// reEncrypt gives every secret a wrapping under the active key.
+// reEncrypt gives every version a wrapping under the active key.
 //
 // Only the data key is re-wrapped. The ciphertext is untouched, so this never
 // needs the plaintext -- but it does need the data key, which means a threshold
-// decryption per secret and a moment where this node holds that key in memory.
+// decryption per version and a moment where this node holds that key in memory.
 // That is the cost of regenerating rather than resharing.
 func (srv *Service) reEncrypt(ctx context.Context, active *KeyMeta) error {
-	refs, err := srv.records.All(ctx)
+	versions, err := srv.versions(ctx)
 	if err != nil {
 		return err
 	}
@@ -255,37 +275,37 @@ func (srv *Service) reEncrypt(ctx context.Context, active *KeyMeta) error {
 	}
 
 	var failures []error
-	for _, ref := range refs {
-		if _, _, err := srv.wrappings.Get(ctx, ref, active.KeyID); err == nil {
+	for _, v := range versions {
+		if _, _, err := srv.wrappings.Get(ctx, v, active.KeyID); err == nil {
 			continue // already carried forward
 		}
 
-		if err := srv.carryForward(ctx, ref, active, public); err != nil {
-			failures = append(failures, fmt.Errorf("%s: %w", ref, err))
+		if err := srv.carryForward(ctx, v, active, public); err != nil {
+			failures = append(failures, fmt.Errorf("%s: %w", v, err))
 		}
 	}
 
 	return errors.Join(failures...)
 }
 
-// carryForward re-wraps one secret's data key under the active key.
-func (srv *Service) carryForward(ctx context.Context, ref Ref, active *KeyMeta, public group.Element) error {
-	from, wrapping, writer, err := srv.readable(ctx, ref)
+// carryForward re-wraps one version's data key under the active key.
+func (srv *Service) carryForward(ctx context.Context, v version, active *KeyMeta, public group.Element) error {
+	from, wrapping, writer, err := srv.readable(ctx, v)
 	if err != nil {
 		return err
 	}
 
-	dek, err := srv.recoverDEK(ctx, ref, from, wrapping, writer)
+	dek, err := srv.recoverDEK(ctx, v, from, wrapping, writer)
 	if err != nil {
 		return err
 	}
 
-	rewrapped, err := tdh.Wrap(public, dek, wrapAAD(ref, active.KeyID))
+	rewrapped, err := tdh.Wrap(public, dek, wrapAAD(v, active.KeyID))
 	if err != nil {
 		return err
 	}
 
-	return srv.wrappings.Put(ctx, ref, active.KeyID, srv.self(), rewrapped)
+	return srv.wrappings.Put(ctx, v, active.KeyID, srv.self(), rewrapped)
 }
 
 // retire drops wrappings this cluster no longer needs.
@@ -311,21 +331,21 @@ func (srv *Service) carryForward(ctx context.Context, ref Ref, active *KeyMeta, 
 // wrappings -- the part that grows with the number of secrets -- are collected,
 // and the per-epoch material is kept.
 func (srv *Service) retire(ctx context.Context, active *KeyMeta) error {
-	refs, err := srv.records.All(ctx)
+	versions, err := srv.versions(ctx)
 	if err != nil {
 		return err
 	}
 
 	var failures []error
-	for _, ref := range refs {
-		superseded, err := srv.supersededKeys(ctx, ref, active)
+	for _, v := range versions {
+		superseded, err := srv.supersededKeys(ctx, v, active)
 		if err != nil {
 			failures = append(failures, err)
 			continue
 		}
 
 		for _, keyID := range superseded {
-			if err := srv.wrappings.DeleteKey(ctx, ref, keyID); err != nil {
+			if err := srv.wrappings.DeleteKey(ctx, v, keyID); err != nil {
 				failures = append(failures, err)
 			}
 		}
@@ -341,10 +361,10 @@ func (srv *Service) retire(ctx context.Context, active *KeyMeta) error {
 	return srv.compact(ctx)
 }
 
-// supersededKeys lists the keys whose wrappings of this secret are safe to drop:
-// only once the active key's wrapping has been proven openable.
-func (srv *Service) supersededKeys(ctx context.Context, ref Ref, active *KeyMeta) ([]string, error) {
-	keyIDs, err := srv.wrappings.KeyIDs(ctx, ref)
+// supersededKeys lists the keys whose wrappings of this version are safe to
+// drop: only once the active key's wrapping has been proven openable.
+func (srv *Service) supersededKeys(ctx context.Context, v version, active *KeyMeta) ([]string, error) {
+	keyIDs, err := srv.wrappings.KeyIDs(ctx, v)
 	if err != nil {
 		return nil, err
 	}
@@ -358,13 +378,13 @@ func (srv *Service) supersededKeys(ctx context.Context, ref Ref, active *KeyMeta
 		return nil, nil // not carried forward yet, so nothing here is redundant
 	}
 
-	replacement, writer, err := srv.wrappings.Get(ctx, ref, active.KeyID)
+	replacement, writer, err := srv.wrappings.Get(ctx, v, active.KeyID)
 	if err != nil {
 		return nil, nil
 	}
 
 	// The load-bearing line: open it, do not assume it opens.
-	if _, err := srv.recoverDEK(ctx, ref, active, replacement, writer); err != nil {
+	if _, err := srv.recoverDEK(ctx, v, active, replacement, writer); err != nil {
 		return nil, nil
 	}
 
@@ -400,7 +420,7 @@ func (srv *Service) supersededKeys(ctx context.Context, ref Ref, active *KeyMeta
 // recoverDEK opens a secret's data key, using this node's own share plus
 // partials collected from the rest of the key's members. The plaintext is never
 // involved: only the wrapped data key is recovered, and only to re-wrap it.
-func (srv *Service) recoverDEK(ctx context.Context, ref Ref, key *KeyMeta, wrapping *tdh.Wrapping, writer string) ([]byte, error) {
+func (srv *Service) recoverDEK(ctx context.Context, v version, key *KeyMeta, wrapping *tdh.Wrapping, writer string) ([]byte, error) {
 	public, err := key.PublicKey()
 	if err != nil {
 		return nil, err
@@ -422,7 +442,7 @@ func (srv *Service) recoverDEK(ctx context.Context, ref Ref, key *KeyMeta, wrapp
 			continue
 		}
 
-		partial, err := srv.askPartial(member, ref, key.KeyID, writer)
+		partial, err := srv.askPartial(member, v, key.KeyID, writer)
 		if err != nil {
 			failures = append(failures, fmt.Errorf("%s: %w", member, err))
 			continue
@@ -432,13 +452,13 @@ func (srv *Service) recoverDEK(ctx context.Context, ref Ref, key *KeyMeta, wrapp
 
 	if uint(len(partials)) < key.Threshold {
 		return nil, fmt.Errorf("collected %d of %d partials for %s: %w",
-			len(partials), key.Threshold, ref, errors.Join(failures...))
+			len(partials), key.Threshold, v, errors.Join(failures...))
 	}
 
-	return tdh.Unwrap(wrapping, public, partials, key.Threshold, wrapAAD(ref, key.KeyID))
+	return tdh.Unwrap(wrapping, public, partials, key.Threshold, wrapAAD(v, key.KeyID))
 }
 
-func (srv *Service) askPartial(member string, ref Ref, keyID, writer string) (*tdh.Partial, error) {
+func (srv *Service) askPartial(member string, v version, keyID, writer string) (*tdh.Partial, error) {
 	to, err := peerCore.Decode(member)
 	if err != nil {
 		return nil, err
@@ -451,7 +471,7 @@ func (srv *Service) askPartial(member string, ref Ref, keyID, writer string) (*t
 
 	ctx, cancel := context.WithTimeout(srv.ctx, callTimeout)
 	defer cancel()
-	resp, err := api.Partial(ctx, connect.NewRequest(&secretsv2.PartialRequest{Ref: wireRef(ref), KeyId: keyID, Writer: writer}))
+	resp, err := api.Partial(ctx, connect.NewRequest(&secretsv2.PartialRequest{Ref: wireRef(v.Ref), Cid: v.CID, KeyId: keyID, Writer: writer}))
 	if err != nil {
 		return nil, err
 	}

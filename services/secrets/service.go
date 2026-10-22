@@ -517,59 +517,91 @@ func (srv *Service) held(ctx context.Context) ([]*KeyMeta, error) {
 }
 
 // Set records a secret a client has already encrypted, with its data key
-// wrapped to the epoch the client used. The service never sees a plaintext.
+// wrapped to a key this node holds. The service never sees a plaintext.
+//
+// It adds a version rather than replacing one, named by the CID of the
+// ciphertext. Its written-at is never earlier than the newest version this
+// node has seen, so a sequential overwrite wins wherever the earlier write had
+// arrived, whatever the writers' clocks say.
 func (srv *Service) Set(ctx context.Context, ref Ref, ciphertext []byte, keyID string, wrapping *tdh.Wrapping) error {
 	if wrapping == nil {
 		return errors.New("missing wrapping")
+	}
+	if err := ref.Validate(); err != nil {
+		return err
 	}
 
 	key, err := srv.keys.Get(ctx, keyID)
 	if err != nil {
 		return err
 	}
-
-	if err := srv.records.Put(ctx, &Record{
-		Project:     ref.Project,
-		Environment: ref.Environment,
-		Name:        ref.Name,
-		Ciphertext:  ciphertext,
-		CreatedAt:   srv.now(),
-	}); err != nil {
+	writtenAt, err := srv.nextWrittenAt(ctx, ref)
+	if err != nil {
 		return err
 	}
 
-	return srv.wrappings.Put(ctx, ref, key.KeyID, srv.self(), wrapping)
+	v := version{Ref: ref, CID: contentID(ciphertext)}
+	if err := srv.records.Put(ctx, v, ciphertext, writtenAt); err != nil {
+		return err
+	}
+
+	return srv.wrappings.Put(ctx, v, key.KeyID, srv.self(), wrapping)
 }
 
-// Get returns a stored secret, still encrypted, with a wrapping this cluster
-// can still open. Older epochs stay readable until reconciliation retires them.
-func (srv *Service) Get(ctx context.Context, ref Ref) (*Record, *KeyMeta, *tdh.Wrapping, string, error) {
-	record, err := srv.records.Get(ctx, ref)
+// nextWrittenAt is now, or one nanosecond past the newest version of ref this
+// node has seen when that is later.
+func (srv *Service) nextWrittenAt(ctx context.Context, ref Ref) (int64, error) {
+	versions, err := srv.records.Versions(ctx, ref)
+	if err != nil {
+		return 0, err
+	}
+
+	at := srv.now().UnixNano()
+	if len(versions) > 0 {
+		at = max(at, versions[0].WrittenAt+1)
+	}
+	return at, nil
+}
+
+// Get returns the newest version of a secret this node can open, still
+// encrypted, with the wrapping to open it by. A newer version this node holds
+// no wrapping for yet is skipped rather than reported: another member may
+// serve it, and the reader asks them all.
+func (srv *Service) Get(ctx context.Context, ref Ref) (*entry, *KeyMeta, *tdh.Wrapping, string, error) {
+	versions, err := srv.records.Versions(ctx, ref)
 	if err != nil {
 		return nil, nil, nil, "", err
 	}
-
-	key, wrapping, writer, err := srv.readable(ctx, ref)
-	if err != nil {
-		return nil, nil, nil, "", err
+	if len(versions) == 0 {
+		return nil, nil, nil, "", fmt.Errorf("secret %s: %w", ref, ErrNotSet)
 	}
 
-	return record, key, wrapping, writer, nil
+	var failures []error
+	for _, v := range versions {
+		key, wrapping, writer, err := srv.readable(ctx, v.version)
+		if err != nil {
+			failures = append(failures, err)
+			continue
+		}
+		return v, key, wrapping, writer, nil
+	}
+
+	return nil, nil, nil, "", errors.Join(failures...)
 }
 
-// readable finds the newest key this node holds that the secret is wrapped
+// readable finds the newest key this node holds that a version is wrapped
 // under.
 //
 // Matching is by key id, never by epoch: two keys can share an epoch, so an
 // epoch match can pair a wrapping with a group key that did not make it.
-func (srv *Service) readable(ctx context.Context, ref Ref) (*KeyMeta, *tdh.Wrapping, string, error) {
+func (srv *Service) readable(ctx context.Context, v version) (*KeyMeta, *tdh.Wrapping, string, error) {
 	keys, err := srv.held(ctx)
 	if err != nil {
 		return nil, nil, "", err
 	}
 
 	for _, key := range keys {
-		wrapping, writer, err := srv.wrappings.Get(ctx, ref, key.KeyID)
+		wrapping, writer, err := srv.wrappings.Get(ctx, v, key.KeyID)
 		if err != nil {
 			continue
 		}
@@ -577,18 +609,18 @@ func (srv *Service) readable(ctx context.Context, ref Ref) (*KeyMeta, *tdh.Wrapp
 		return key, wrapping, writer, nil
 	}
 
-	return nil, nil, "", fmt.Errorf("secret %s has no wrapping under a key this node holds", ref)
+	return nil, nil, "", fmt.Errorf("secret %s has no wrapping under a key this node holds", v)
 }
 
-// Partial applies this node's share to a stored secret. It takes a reference
-// and a key id, never a ciphertext: a holder must never apply its share to a
-// value a caller made up, and never to a key other than the one the caller
-// named.
-func (srv *Service) Partial(ctx context.Context, ref Ref, keyID, writer string) (*tdh.Partial, error) {
+// Partial applies this node's share to a stored secret. It takes a reference,
+// a version and a key id, never a ciphertext: a holder must never apply its
+// share to a value a caller made up, and never to a key other than the one
+// the caller named.
+func (srv *Service) Partial(ctx context.Context, v version, keyID, writer string) (*tdh.Partial, error) {
 	// The caller names the exact wrapping. Picking one locally would let two
 	// nodes answer against different ephemeral keys, and partials taken against
 	// different R values combine to nothing.
-	wrapping, err := srv.wrappings.GetFrom(ctx, ref, keyID, writer)
+	wrapping, err := srv.wrappings.GetFrom(ctx, v, keyID, writer)
 	if err != nil {
 		return nil, err
 	}
@@ -605,19 +637,36 @@ func (srv *Service) self() string {
 	return srv.host.ID().String()
 }
 
-// Delete removes a secret: its wrappings first, so a half-done delete leaves a
-// record nothing can open rather than a wrapping of nothing.
+// Delete removes every version of a secret: each one's wrappings first, so a
+// half-done delete leaves a record nothing can open rather than a wrapping of
+// nothing.
+//
+// A version written concurrently from elsewhere has a CID this delete did not
+// see, so it survives; a delete only ever removes what it read.
 func (srv *Service) Delete(ctx context.Context, ref Ref) error {
-	if err := srv.wrappings.DeleteAll(ctx, ref); err != nil {
+	versions, err := srv.records.Versions(ctx, ref)
+	if err != nil {
 		return err
 	}
 
-	return srv.records.Delete(ctx, ref)
+	for _, v := range versions {
+		if err := srv.dropVersion(ctx, v.version); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// List names the secrets of one project environment.
-func (srv *Service) List(ctx context.Context, project, environment string) ([]Ref, error) {
-	return srv.records.List(ctx, project, environment)
+func (srv *Service) dropVersion(ctx context.Context, v version) error {
+	if err := srv.wrappings.DeleteAll(ctx, v); err != nil {
+		return err
+	}
+	return srv.records.Delete(ctx, v)
+}
+
+// List names the secrets of one scope.
+func (srv *Service) List(ctx context.Context, scope Scope) ([]Ref, error) {
+	return srv.records.List(ctx, scope)
 }
 
 // closing reports whether the service is shutting down, so a handler does not
