@@ -378,7 +378,7 @@ func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
 		m.Close()
 		return nil, err
 	}
-	account := &secretsv2.InitBundle{Secrets: append([]*secretsv2.InitSecret{sealed}, cfg.Secrets...)}
+	account := []*secretsv2.InitSecret{sealed}
 
 	u := &Universe{mesh: m}
 	copies := max(cfg.Copies, 1)
@@ -409,7 +409,7 @@ func (u *Universe) CA() *sectls.CA { return u.mesh.CA() }
 // Close stops every node, then their peers.
 func (u *Universe) Close() { u.mesh.Close() }
 
-func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account *secretsv2.InitBundle) error {
+func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secretsv2.InitSecret) error {
 	ctx := m.Context()
 	h := p.Peer()
 
@@ -510,8 +510,12 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account *secretsv2
 	}
 	options = append(options, cfg.Options...)
 
+	bundle := &secretsv2.InitBundle{Secrets: cfg.Secrets}
 	if nodeConfig.CM.Certificate.ACME.Enabled {
-		err := node.InitSecrets(ctx, nodeConfig, root, h, kvdb.New(p), account)
+		bundle.Secrets = append(account, cfg.Secrets...)
+	}
+	if len(bundle.Secrets) > 0 {
+		err := node.InitSecrets(ctx, nodeConfig, root, h, kvdb.New(p), bundle)
 		if err != nil && !errors.Is(err, node.ErrNoSecretsHere) {
 			os.RemoveAll(root)
 			return err

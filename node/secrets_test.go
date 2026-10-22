@@ -164,6 +164,7 @@ func TestInitWritesTheCloudsSecretsTheNodeThenServes(t *testing.T) {
 	failing := &memFactory{err: errors.New("no database")}
 	require.ErrorContains(t, InitSecrets(ctx, cfg, root, h, failing, bundle), "no database")
 	require.ErrorIs(t, InitSecrets(ctx, cfg, "", h, factory, bundle), secretsService.ErrNoRoot)
+	require.ErrorIs(t, InitSecrets(ctx, Config{}, "", h, factory, bundle), secretsService.ErrNoRoot, "no services named runs secrets")
 	require.NoError(t, InitSecrets(ctx, cfg, root, h, factory, bundle))
 
 	n, err := New(cfg,

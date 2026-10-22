@@ -8,6 +8,7 @@ import (
 
 	"connectrpc.com/connect"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/node"
@@ -67,14 +68,17 @@ func TestSignInAcrossAFleet(t *testing.T) {
 
 	// The vault needs its members before the first key can be made.
 	var admin *authv2.SignedIn
-	require.Eventually(t, func() bool {
+	var last error
+	assert.Eventually(t, func() bool {
 		resp, err := s0.Login(ctx, connect.NewRequest(&authv2.LoginRequest{Name: "root", Password: "correct horse battery"}))
+		last = err
 		if err != nil {
 			return false
 		}
 		admin = resp.Msg
 		return true
 	}, 60*time.Second, time.Second, "the admin signs in once the vault answers")
+	require.NoError(t, last)
 
 	req := connect.NewRequest(&authv2.CreateInviteRequest{Note: "fleet"})
 	req.Header().Set("Authorization", "Bearer "+admin.GetSession().GetAccessToken())

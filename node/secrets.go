@@ -161,9 +161,10 @@ func secretsOptions(cfg Config, root string) []secretsService.Option {
 
 // InitSecrets writes a sealed bundle into the vault of a node that is not
 // running: its own database and share store, through a service that never
-// serves. See services/secrets' Init for what it writes.
+// serves. No services named is all of them, secrets among them. See
+// services/secrets' Init for what it writes.
 func InitSecrets(ctx context.Context, cfg Config, root string, h host.Host, databases kvdb.Factory, bundle *secretsv2.InitBundle) error {
-	if !cfg.runs(Secrets) {
+	if len(cfg.Services) > 0 && !cfg.runs(Secrets) {
 		return ErrNoSecretsHere
 	}
 	if root == "" {
