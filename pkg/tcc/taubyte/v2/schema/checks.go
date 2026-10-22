@@ -310,11 +310,8 @@ func (r compiled) str(key string) string {
 	return s
 }
 
-// list reads a StringSlice off the compiled object, which arrives as []string or, when
-// it came through JSON, as []any.
-func (r compiled) list(key string) []string { return listAt(r.fields, key) }
-
-// listAt is that read on any object, because a SCOPE is not a compiled resource —
+// listAt reads a string list, []string or, through JSON, []any, off any object, because
+// a SCOPE is not a compiled resource —
 // only a container that is also a kind ends up in the flat list, so the allowance on a
 // namespace has to be read off the tree.
 func listAt(fields map[string]any, key string) []string {
@@ -352,19 +349,6 @@ func (r compiled) elements(key string) []map[string]any {
 func field(el map[string]any, key string) string {
 	s, _ := el[key].(string)
 	return s
-}
-
-// int reads a numeric field, which arrives as int or, through JSON, as float64.
-func (r compiled) int(key string) int {
-	switch v := fieldValue(r.fields, key).(type) {
-	case int:
-		return v
-	case int64:
-		return int(v)
-	case float64:
-		return int(v)
-	}
-	return 0
 }
 
 func (r compiled) block(key string) map[string]any {
@@ -1283,15 +1267,6 @@ func lookupName(known map[string]bool, name, scope string) bool {
 			scope = ""
 		}
 	}
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // checkAccessDuplicates: two entries in one resource's own access group that resolve to

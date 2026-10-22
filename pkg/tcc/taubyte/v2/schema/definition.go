@@ -1112,12 +1112,6 @@ func StorageTypes() []string { return append([]string(nil), storageTypes...) }
 
 var streamEngines = append([]string{tauEngine}, externalStreamEngines...)
 
-// StreamEngines is every engine a stream may name, tau's own first.
-//
-// THE STREAM TWIN OF DatabaseEngines, and its absence is why the one consumer
-// that asks "can this cloud open that" answers with a bare literal instead.
-func StreamEngines() []string { return append([]string(nil), streamEngines...) }
-
 // TauEngine is what this cloud's own engine is called, wherever a consumer has
 // to tell it apart from a server somebody else runs.
 func TauEngine() string { return tauEngine }

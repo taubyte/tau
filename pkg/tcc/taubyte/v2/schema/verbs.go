@@ -79,11 +79,10 @@ func Mounts(v Verb) Verb { v.Mounted = true; return v }
 // which states the same fact about a reference.
 func Arrives(v Verb) Verb { v.Inbound = true; return v }
 
-// Read/Write/Admin name a verb and its effect class in one term, so a verb cannot be
+// Read/Write name a verb and its effect class in one term, so a verb cannot be
 // declared without one.
 func ReadOp(name string) Verb  { return Verb{Name: name, Effect: Read} }
 func WriteOp(name string) Verb { return Verb{Name: name, Effect: Write} }
-func AdminOp(name string) Verb { return Verb{Name: name, Effect: Admin} }
 
 // DeliveredOp is a read whose data ARRIVES. See Verb.Delivered.
 func DeliveredOp(name string) Verb { return Verb{Name: name, Effect: Read, Delivered: true} }
