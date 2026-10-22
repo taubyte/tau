@@ -57,6 +57,14 @@ class MockSSH:
         )(ssh_pb2.Host(name=name))
         return [c.command async for c in call]
 
+    async def stdins(self, name: str) -> Dict[str, bytes]:
+        """What each command read on stdin, by command line."""
+        call = self.channel.unary_stream(
+            "/mock.v1.MockSSHService/Commands", request_serializer=_ser,
+            response_deserializer=ssh_pb2.Command.FromString,
+        )(ssh_pb2.Host(name=name))
+        return {c.command: c.stdin async for c in call}
+
     async def filesystem(self, name: str) -> Dict[str, bytes]:
         """The host's disk: every file it holds, by absolute path."""
         call = self.channel.unary_stream(

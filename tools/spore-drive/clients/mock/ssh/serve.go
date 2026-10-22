@@ -48,7 +48,7 @@ streamCmds:
 		case <-ctx.Done():
 			break streamCmds
 		default:
-			if err := stream.Send(&pb.Command{Index: int32(idx), Command: cmd}); err != nil {
+			if err := stream.Send(&pb.Command{Index: int32(idx), Command: cmd.line, Stdin: cmd.stdin}); err != nil {
 				return err
 			}
 		}

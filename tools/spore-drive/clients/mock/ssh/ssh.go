@@ -26,6 +26,12 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+// command is one exec or sftp operation, with whatever arrived on its stdin.
+type command struct {
+	line  string
+	stdin []byte
+}
+
 type hostInst struct {
 	ctx  context.Context
 	ctxC context.CancelFunc
@@ -33,7 +39,7 @@ type hostInst struct {
 	config *pb.HostConfig
 
 	lock     sync.Mutex
-	commands []string
+	commands []command
 
 	// fs is the host's disk: one per host, so what one connection writes the
 	// next one reads, as on a real machine, and Filesystem can hand it back.
@@ -179,11 +185,17 @@ func (hi *hostInst) handleSSHConnection(nConn net.Conn, config *ssh.ServerConfig
 		go func(in <-chan *ssh.Request) {
 			for req := range in {
 				if req.Type == "exec" {
-					cmd := string(req.Payload[4:])
-					output := hi.handleCommand(cmd)
+					// The client starts streaming stdin only once exec is
+					// acknowledged, and closes it before waiting for the exit.
+					req.Reply(true, nil)
+					stdin, err := io.ReadAll(channel)
+					if err != nil {
+						channel.Close()
+						return
+					}
+					output := hi.handleCommand(string(req.Payload[4:]), stdin)
 					channel.Write(output)
 					channel.SendRequest("exit-status", false, []byte{0, 0, 0, 0})
-					req.Reply(true, nil)
 					channel.Close()
 				} else if req.Type == "subsystem" && string(req.Payload[4:]) == "sftp" {
 					req.Reply(true, nil)
@@ -193,15 +205,10 @@ func (hi *hostInst) handleSSHConnection(nConn net.Conn, config *ssh.ServerConfig
 						FileList: fsHandler,
 						FileCmd:  fsHandler,
 					})
-					if err != nil {
-						log.Printf("SFTP server creation error: %v", err)
-						return
-					}
-					if err := server.Serve(); err != nil {
+					if err := server.Serve(); err != nil && !errors.Is(err, io.EOF) {
 						log.Printf("SFTP server completed with error: %v", err)
-					} else {
-						log.Println("SFTP server completed successfully")
 					}
+					channel.Close()
 					return
 				}
 				req.Reply(false, nil)
@@ -210,10 +217,10 @@ func (hi *hostInst) handleSSHConnection(nConn net.Conn, config *ssh.ServerConfig
 	}
 }
 
-func (hi *hostInst) handleCommand(c string) []byte {
+func (hi *hostInst) handleCommand(c string, stdin []byte) []byte {
 	hi.lock.Lock()
 	defer hi.lock.Unlock()
-	hi.commands = append(hi.commands, c)
+	hi.commands = append(hi.commands, command{line: c, stdin: stdin})
 	// The deploy probes DNS resolvers with `dig +short ... @<resolver> google.com`
 	// and keeps a resolver only when the first output line is a valid IP. Answer
 	// that probe so the mock host looks like it can reach the public resolvers
@@ -310,7 +317,7 @@ func (h *fileSystemHandler) Fileread(r *sftp.Request) (io.ReaderAt, error) {
 	h.hi.lock.Lock()
 	defer h.hi.lock.Unlock()
 
-	h.hi.commands = append(h.hi.commands, fmt.Sprintf("SFTP Fileread %s", r.Filepath))
+	h.hi.commands = append(h.hi.commands, command{line: fmt.Sprintf("SFTP Fileread %s", r.Filepath)})
 
 	file, err := h.fs.Open(r.Filepath)
 	if err != nil {
@@ -323,7 +330,7 @@ func (h *fileSystemHandler) Filewrite(r *sftp.Request) (io.WriterAt, error) {
 	h.hi.lock.Lock()
 	defer h.hi.lock.Unlock()
 
-	h.hi.commands = append(h.hi.commands, fmt.Sprintf("SFTP Filewrite %s", r.Filepath))
+	h.hi.commands = append(h.hi.commands, command{line: fmt.Sprintf("SFTP Filewrite %s", r.Filepath)})
 
 	file, err := h.fs.OpenFile(r.Filepath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
 	if err != nil {
@@ -336,7 +343,7 @@ func (h *fileSystemHandler) Filelist(r *sftp.Request) (sftp.ListerAt, error) {
 	h.hi.lock.Lock()
 	defer h.hi.lock.Unlock()
 
-	h.hi.commands = append(h.hi.commands, fmt.Sprintf("SFTP Filelist %s", r.Filepath))
+	h.hi.commands = append(h.hi.commands, command{line: fmt.Sprintf("SFTP Filelist %s", r.Filepath)})
 
 	files, err := afero.ReadDir(h.fs, r.Filepath)
 	if err != nil {
@@ -366,7 +373,7 @@ func (h *fileSystemHandler) Filecmd(r *sftp.Request) error {
 	h.hi.lock.Lock()
 	defer h.hi.lock.Unlock()
 
-	h.hi.commands = append(h.hi.commands, fmt.Sprintf("SFTP %s %s", r.Method, r.Filepath))
+	h.hi.commands = append(h.hi.commands, command{line: fmt.Sprintf("SFTP %s %s", r.Method, r.Filepath)})
 
 	switch r.Method {
 	case "Setstat":

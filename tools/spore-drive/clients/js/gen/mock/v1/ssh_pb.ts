@@ -20,6 +20,11 @@ export class Command extends Message<Command> {
    */
   command = "";
 
+  /**
+   * @generated from field: bytes stdin = 4;
+   */
+  stdin = new Uint8Array(0);
+
   constructor(data?: PartialMessage<Command>) {
     super();
     proto3.util.initPartial(data, this);
@@ -30,6 +35,7 @@ export class Command extends Message<Command> {
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
     { no: 1, name: "index", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
     { no: 3, name: "command", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "stdin", kind: "scalar", T: 12 /* ScalarType.BYTES */ },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Command {

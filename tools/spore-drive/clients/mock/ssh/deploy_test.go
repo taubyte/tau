@@ -20,7 +20,12 @@ import (
 	"gopkg.in/yaml.v3"
 	"gotest.tools/v3/assert"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/taubyte/tau/node/boot"
+	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
+	authService "github.com/taubyte/tau/services/auth"
+	"github.com/taubyte/tau/services/secrets"
 	sshSrv "github.com/taubyte/tau/tools/spore-drive/clients/mock/ssh"
 	driveSrv "github.com/taubyte/tau/tools/spore-drive/drive/service"
 	drivepb "github.com/taubyte/tau/tools/spore-drive/proto/gen/drive/v2"
@@ -114,6 +119,7 @@ func TestADeployWritesTheNodeFileItPlanned(t *testing.T) {
 	assert.NilError(t, progress.Err())
 
 	var keys []string
+	var stdins [][]byte
 	for _, host := range []string{"h1", "h2"} {
 		disk := files(t, m, host)
 		raw, ok := disk["/tb/config/all.yaml"]
@@ -139,15 +145,35 @@ func TestADeployWritesTheNodeFileItPlanned(t *testing.T) {
 		assert.NilError(t, err)
 		var inits []string
 		for cmds.Receive() {
-			if c := cmds.Msg().GetCommand(); strings.Contains(c, `"init"`) {
-				inits = append(inits, c)
+			c := cmds.Msg()
+			if strings.Contains(c.GetCommand(), `"init"`) {
+				inits = append(inits, c.GetCommand())
+				stdins = append(stdins, c.GetStdin())
+				continue
 			}
+			assert.Equal(t, len(c.GetStdin()), 0, "%q was handed stdin", c.GetCommand())
 		}
 		assert.NilError(t, cmds.Err())
 		assert.DeepEqual(t, inits, []string{`sudo "/tb/bin/tau" "init" "--config" "/tb/config/all.yaml" "--root" "/tb/storage/all" "-"`})
 		assert.Assert(t, !strings.Contains(strings.Join(inits, ""), "gh-s3cret"))
 	}
 	assert.Assert(t, keys[0] != keys[1], "each host has its own identity")
+
+	// One sealed bundle, byte for byte the same on every host, holding the
+	// secret sealed rather than in the clear.
+	assert.Equal(t, len(stdins), 2)
+	assert.DeepEqual(t, stdins[0], stdins[1])
+	assert.Assert(t, !bytes.Contains(stdins[0], []byte("gh-s3cret")))
+	var bundle secretsv2.InitBundle
+	assert.NilError(t, proto.Unmarshal(stdins[0], &bundle))
+	opened := map[string]string{}
+	for _, sealed := range bundle.GetSecrets() {
+		ref, value, err := secrets.Unsealed(sealed)
+		assert.NilError(t, err)
+		opened[ref.String()] = string(value)
+	}
+	ref := secrets.Ref{Scope: secrets.Cloud(authService.VaultService), Name: authService.OAuthSecretName("github.com")}
+	assert.Equal(t, opened[ref.String()], "gh-s3cret")
 
 	stream, err := m.Filesystem(ctx, connect.NewRequest(&pb.Host{Name: "nobody"}))
 	assert.NilError(t, err)

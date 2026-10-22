@@ -7,6 +7,7 @@ option go_package = ".";
 message Command {
     int32 index = 1;
     string command = 3;
+    bytes stdin = 4;
 }
 
 message Host {

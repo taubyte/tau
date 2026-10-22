@@ -70,16 +70,27 @@ func (srv *Service) Init(ctx context.Context, bundle *secretsv2.InitBundle) erro
 	return nil
 }
 
-func (srv *Service) initOne(ctx context.Context, key *KeyMeta, public group.Element, secret *secretsv2.InitSecret) error {
+// Unsealed opens a sealed secret with the data key it carries.
+func Unsealed(secret *secretsv2.InitSecret) (Ref, []byte, error) {
 	ref, err := refOf(secret.GetRef())
+	if err != nil {
+		return Ref{}, nil, err
+	}
+
+	value, err := tdh.Unseal(secret.GetDek(), secret.GetCiphertext(), contentAAD(ref))
+	if err != nil {
+		return Ref{}, nil, fmt.Errorf("secret %s: the data key does not open the ciphertext: %w", ref, err)
+	}
+	return ref, value, nil
+}
+
+func (srv *Service) initOne(ctx context.Context, key *KeyMeta, public group.Element, secret *secretsv2.InitSecret) error {
+	ref, _, err := Unsealed(secret)
 	if err != nil {
 		return err
 	}
 
 	v := version{Ref: ref, CID: secret.GetCid()}
-	if _, err := tdh.Unseal(secret.GetDek(), secret.GetCiphertext(), contentAAD(ref)); err != nil {
-		return fmt.Errorf("secret %s: the data key does not open the ciphertext: %w", ref, err)
-	}
 	if err := srv.records.Put(ctx, v, secret.GetCiphertext(), secret.GetWrittenAt()); err != nil {
 		return err
 	}

@@ -25,6 +25,7 @@ type Command struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Index         int32                  `protobuf:"varint,1,opt,name=index,proto3" json:"index,omitempty"`
 	Command       string                 `protobuf:"bytes,3,opt,name=command,proto3" json:"command,omitempty"`
+	Stdin         []byte                 `protobuf:"bytes,4,opt,name=stdin,proto3" json:"stdin,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -71,6 +72,13 @@ func (x *Command) GetCommand() string {
 		return x.Command
 	}
 	return ""
+}
+
+func (x *Command) GetStdin() []byte {
+	if x != nil {
+		return x.Stdin
+	}
+	return nil
 }
 
 type Host struct {
@@ -383,10 +391,11 @@ var File_mock_v1_ssh_proto protoreflect.FileDescriptor
 
 const file_mock_v1_ssh_proto_rawDesc = "" +
 	"\n" +
-	"\x11mock/v1/ssh.proto\x12\amock.v1\"9\n" +
+	"\x11mock/v1/ssh.proto\x12\amock.v1\"O\n" +
 	"\aCommand\x12\x14\n" +
 	"\x05index\x18\x01 \x01(\x05R\x05index\x12\x18\n" +
-	"\acommand\x18\x03 \x01(\tR\acommand\"\x1a\n" +
+	"\acommand\x18\x03 \x01(\tR\acommand\x12\x14\n" +
+	"\x05stdin\x18\x04 \x01(\fR\x05stdin\"\x1a\n" +
 	"\x04Host\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"\x8b\x02\n" +
 	"\n" +

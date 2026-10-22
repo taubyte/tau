@@ -6,12 +6,14 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class Command(_message.Message):
-    __slots__ = ("index", "command")
+    __slots__ = ("index", "command", "stdin")
     INDEX_FIELD_NUMBER: _ClassVar[int]
     COMMAND_FIELD_NUMBER: _ClassVar[int]
+    STDIN_FIELD_NUMBER: _ClassVar[int]
     index: int
     command: str
-    def __init__(self, index: _Optional[int] = ..., command: _Optional[str] = ...) -> None: ...
+    stdin: bytes
+    def __init__(self, index: _Optional[int] = ..., command: _Optional[str] = ..., stdin: _Optional[bytes] = ...) -> None: ...
 
 class Host(_message.Message):
     __slots__ = ("name",)

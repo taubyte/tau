@@ -165,6 +165,23 @@ describe("Drive against the mock", () => {
     expect(cmds).toContain('sudo "systemctl" "start" "tau@shape1"');
     for (const c of cmds) expect(c).not.toContain("gh-secret");
 
+    // One sealed bundle reaches every host's init on stdin, byte for byte the
+    // same, with the secret sealed in it; no other command is handed stdin.
+    const bundles: Buffer[] = [];
+    for (const name of names) {
+      for await (const c of mock.commands(new Hostname({ name }))) {
+        if (c.command.includes('"init"')) bundles.push(Buffer.from(c.stdin));
+        else expect(c.stdin.length).toBe(0);
+      }
+    }
+    expect(bundles).toHaveLength(names.length);
+    expect(bundles[0].length).toBeGreaterThan(0);
+    for (const b of bundles) expect(b.equals(bundles[0])).toBe(true);
+    expect(bundles[0].includes("oauth-github.com")).toBe(true);
+    for (const secret of ["correct-horse", "gh-secret", "ACME ACCOUNT KEY"]) {
+      expect(bundles[0].includes(secret)).toBe(false);
+    }
+
     // What was installed is the node the config describes, read off the host.
     const root = await disk(mock, names[0]);
     const raw = await fs.readFile(path.join(root, "opt/tau/config/shape1.yaml"), "utf8");

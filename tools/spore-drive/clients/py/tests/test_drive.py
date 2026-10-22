@@ -106,6 +106,13 @@ async def test_validate_plan_apply(mock_url, tmp_path):
     assert node["node"]["auth"]["oidc"] == [{"name": "corp", "issuer": "https://id.test.com", "clientid": "corp-id", "scopes": ["email"]}]
     assert not [path for path, data in disk.items() if b"corp-secret" in data]
     assert not [c for c in cmds if "corp-secret" in c]
+
+    # the sealed bundle reached init on stdin, the secret sealed in it, and no other command had stdin
+    stdins = await ssh.stdins(name)
+    init = 'sudo "/tb/bin/tau" "init" "--config" "/tb/config/all.yaml" "--root" "/tb/storage/all" "-"'
+    bundle = stdins.pop(init)
+    assert b"oidc-corp" in bundle and b"corp-secret" not in bundle
+    assert not [c for c, data in stdins.items() if data]
     await ssh.close()
 
 
