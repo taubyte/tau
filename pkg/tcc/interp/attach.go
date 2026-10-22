@@ -113,7 +113,9 @@ func attachFromTags(ct transform.Context[object.Refrence], sel object.Selector[o
 		if tag == "" || !strings.HasPrefix(tag, prefix) {
 			continue
 		}
-		names = append(names, strings.TrimPrefix(tag, prefix))
+		if name := strings.TrimPrefix(tag, prefix); name != "" {
+			names = append(names, name)
+		}
 	}
 	if len(names) == 0 {
 		return nil

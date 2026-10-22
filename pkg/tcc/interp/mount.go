@@ -69,6 +69,9 @@ type Mount struct {
 	Config string
 
 	At string
+	// Address is the resource's document as yaseer addresses it, by the vocabulary's
+	// layout: a scope level is a directory named after its container.
+	Address []string
 }
 
 // String is the request as an operator reads it in a log.
@@ -98,6 +101,7 @@ func (c *Compiler) Mounts(ctx context.Context) ([]Mount, error) {
 	}
 
 	flat := obj.Flat()
+	kinds := scopeKinds(c.compileRoot, flat, nil)
 	if inner, ok := flat[ProjectKey].(map[string]any); ok {
 		flat = inner
 	}
@@ -119,7 +123,8 @@ func (c *Compiler) Mounts(ctx context.Context) ([]Mount, error) {
 		out = append(out, Mount{
 			Kind: kind, Name: name, Scope: at, ID: id,
 			Repo: repo, Branch: branch, Path: path, Config: config,
-			At: MountPoint(at, kind, name),
+			At:      MountPoint(at, kind, name),
+			Address: address(c.layout, at, kind, name, kinds),
 		})
 	})
 
@@ -166,6 +171,9 @@ func WithMounted(m Mount, fs afero.Fs, commit string) Option {
 		at := m.At
 		if at == "" {
 			return fmt.Errorf("interp: a mount with no mount point")
+		}
+		if len(m.Address) == 0 {
+			return fmt.Errorf("interp: mount %s has no document address", at)
 		}
 		if fs == nil {
 			return fmt.Errorf("interp: mount %s was answered with no filesystem", at)
@@ -259,7 +267,7 @@ func (c *Compiler) mountedView() (afero.Fs, map[string]string, error) {
 			return nil, nil, err
 		}
 
-		address := m.address()
+		address := m.Address
 		var doc map[string]any
 		if err := at(seer, address).Value(&doc); err != nil {
 			return nil, nil, fmt.Errorf("reading %s: %w", m, err)
@@ -294,15 +302,6 @@ func (c *Compiler) mountedView() (afero.Fs, map[string]string, error) {
 	}
 
 	return view, from, seer.Sync()
-}
-
-// address is where this resource's document lives, as yaseer addresses one.
-func (m Mount) address() []string {
-	var out []string
-	if m.Scope != "" {
-		out = append(out, strings.Split(m.Scope, "/")...)
-	}
-	return append(out, m.Kind, m.Name)
 }
 
 // readFill decodes one fill, and refuses one that is not a mapping of blocks.

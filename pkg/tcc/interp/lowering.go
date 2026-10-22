@@ -1038,8 +1038,12 @@ func derivedID(srcID, kind, part string) string {
 
 // nest lowers again the derived resources that are themselves of a lowering kind, carrying
 // the trail down so the innermost one still names what the author wrote.
+//
+// depth is len(Via) of what this round produces, the same count the view refuses at.
+// The round AT the cap is still produced, so a lowering that would go deeper is seen
+// and refused by name instead of silently stopping.
 func nest(root *engine.Node, parents []Derived, depth int) []Derived {
-	if depth >= MaxLoweringDepth || len(parents) == 0 {
+	if depth > MaxLoweringDepth || len(parents) == 0 {
 		return nil
 	}
 	_, nameField := engine.IdentityOf(root)

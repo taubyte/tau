@@ -70,16 +70,25 @@ func dcAgent() *engine.Node {
 		engine.Leaf("meta"))
 }
 
-func dcSchema() (engine.Schema, *engine.Node) {
-	root := engine.Root(
-		[]*engine.Attribute{engine.String("id"), engine.String("name")},
-		engine.DefineGroup("agent", dcAgent()),
+func dcSchema() (engine.Schema, *engine.Node) { return dcSchemaOrdered(false) }
+
+// dcSchemaOrdered declares the container kind after the kind it holds, or before it.
+func dcSchemaOrdered(containerFirst bool) (engine.Schema, *engine.Node) {
+	groups := []*engine.Node{
 		engine.DefineGroup("lib", dcLib()),
 		engine.DefineGroup("domain", dcDomain()),
 		engine.DefineGroup("fn", dcFn()),
-		engine.DefineGroup("app", engine.DefineIterGroup([]*engine.Attribute{
-			engine.String("id", engine.Required()), engine.String("name"),
-		}, engine.DefineGroup("lib", dcLib()), engine.DefineGroup("fn", dcFn())).With(engine.Leaf("meta"))),
+		engine.DefineGroup("agent", dcAgent()),
+	}
+	if containerFirst {
+		groups = append(groups[3:], groups[:3]...)
+	}
+	root := engine.Root(
+		[]*engine.Attribute{engine.String("id"), engine.String("name")},
+		append(groups,
+			engine.DefineGroup("app", engine.DefineIterGroup([]*engine.Attribute{
+				engine.String("id", engine.Required()), engine.String("name"),
+			}, engine.DefineGroup("lib", dcLib()), engine.DefineGroup("fn", dcFn())).With(engine.Leaf("meta"))))...,
 	).With(engine.Leaf("project"), engine.Identity("id", "name"))
 	return engine.SchemaDefinition(root), root
 }
@@ -99,9 +108,9 @@ var dcFiles = map[string]string{
 	"/app/eu/fn/job.yaml":     "id: F3\ntype: http\nsource: libraries/own\nuses: core\n",
 }
 
-func dcCompile(t *testing.T, fs afero.Fs) map[string]any {
+func dcCompile(t *testing.T, fs afero.Fs, containerFirst bool) map[string]any {
 	t.Helper()
-	project, root := dcSchema()
+	project, root := dcSchemaOrdered(containerFirst)
 	c, err := interp.New(project, root, interp.WithVirtual(fs, "/"),
 		interp.WithLayout(interp.Layout{Resource: "{kind}/{name}.yaml", Scope: "{kind}/{name}"}))
 	assert.NilError(t, err)
@@ -110,9 +119,9 @@ func dcCompile(t *testing.T, fs afero.Fs) map[string]any {
 	return obj.Flat()
 }
 
-func dcDecompile(t *testing.T, flat map[string]any) afero.Fs {
+func dcDecompile(t *testing.T, flat map[string]any, containerFirst bool) afero.Fs {
 	t.Helper()
-	project, root := dcSchema()
+	project, root := dcSchemaOrdered(containerFirst)
 	src := memFs(t, dcFiles)
 	c, err := interp.New(project, root, interp.WithVirtual(src, "/"),
 		interp.WithLayout(interp.Layout{Resource: "{kind}/{name}.yaml", Scope: "{kind}/{name}"}))
@@ -138,8 +147,14 @@ func readDoc(t *testing.T, fs afero.Fs, path string) map[string]any {
 }
 
 func TestDecompileWritesWhatWasAuthored(t *testing.T) {
-	flat := dcCompile(t, memFs(t, dcFiles))
-	out := dcDecompile(t, flat)
+	for name, containerFirst := range map[string]bool{"container declared last": false, "container declared first": true} {
+		t.Run(name, func(t *testing.T) { testDecompileWritesWhatWasAuthored(t, containerFirst) })
+	}
+}
+
+func testDecompileWritesWhatWasAuthored(t *testing.T, containerFirst bool) {
+	flat := dcCompile(t, memFs(t, dcFiles), containerFirst)
+	out := dcDecompile(t, flat, containerFirst)
 
 	api := readDoc(t, out, "/fn/api.yaml")
 	assert.Equal(t, api["id"], "F1")
@@ -179,7 +194,7 @@ func TestDecompileWritesWhatWasAuthored(t *testing.T) {
 	assert.Equal(t, tool["uses"], "core")
 	assert.Equal(t, tool["timeout"], "3s")
 
-	assert.DeepEqual(t, dcCompile(t, out), flat)
+	assert.DeepEqual(t, dcCompile(t, out, containerFirst), flat)
 }
 
 func TestDecompileRefusesAnObjectItCannotInvert(t *testing.T) {
@@ -239,4 +254,21 @@ func fnF1(t *testing.T, obj interp.Object) object.Object[object.Refrence] {
 	fn, err := fns.Child("F1").Object()
 	assert.NilError(t, err)
 	return fn
+}
+
+func TestDecompileAbsentFlatValueReference(t *testing.T) {
+	project, root := dcSchemaOrdered(true)
+	c, err := interp.New(project, root, interp.WithVirtual(memFs(t, dcFiles), "/"),
+		interp.WithLayout(interp.Layout{Resource: "{kind}/{name}.yaml", Scope: "{kind}/{name}"}))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err)
+	fnF1(t, obj).Delete("source")
+
+	out := afero.NewMemMapFs()
+	d, err := decompile.New(project, root, decompile.WithVirtual(out, "/"))
+	assert.NilError(t, err)
+	assert.NilError(t, d.Decompile(obj))
+	_, has := readDoc(t, out, "/fn/api.yaml")["source"]
+	assert.Assert(t, !has)
 }

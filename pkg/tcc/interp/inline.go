@@ -84,7 +84,7 @@ func (c *Compiler) inlineFiles(obj Object) error {
 		// builds a fresh map every call, so a value written into it goes into
 		// a copy that is thrown away -- which the first shape here did,
 		// silently, while the selector read it back correctly.
-		held, err := resourceIn(obj, at, kind, id)
+		held, err := resourceIn(c.compileRoot, obj, at, kind, id)
 		if err != nil {
 			failed = fmt.Errorf("%w: %s/%s: %v", ErrInline, kind, name, err)
 			return
@@ -235,23 +235,29 @@ func readLines(fs afero.Fs, path string) ([]any, error) {
 // resourceIn selects one resource in the object: its scope chain, then its kind,
 // then its id.
 //
-// BY ID AND NOT BY NAME. A resource's name comes from the file it was written in,
-// so the document need not carry a `name` key at all -- a selector keyed on one
-// matches nothing while looking correct.
-func resourceIn(obj Object, at, kind, id string) (Object, error) {
+// The scope chain is NAMES, as walkResources hands it over, while a compiled
+// container is keyed by its id under its group like any other resource. Each segment
+// is the container whose name field holds it.
+//
+// BY ID AND NOT BY NAME for the resource itself. A resource's name comes from the
+// file it was written in, so the document need not carry a `name` key at all -- a
+// selector keyed on one matches nothing while looking correct.
+func resourceIn(root *engine.Node, obj Object, at, kind, id string) (Object, error) {
 	held := obj
 	// The same wrapper Flat() is unwrapped for: a compiled object nests everything
 	// under the project.
 	if inner, err := obj.Child(ProjectKey).Object(); err == nil {
 		held = inner
 	}
+	containers := ContainerKeys(root)
+	_, nameField := engine.IdentityOf(root)
 	for _, segment := range strings.Split(at, "/") {
 		if segment == "" {
 			continue
 		}
-		inner, err := held.Child(segment).Object()
-		if err != nil {
-			return nil, fmt.Errorf("scope %q: %w", at, err)
+		inner := containerNamed(held, containers, nameField, segment)
+		if inner == nil {
+			return nil, fmt.Errorf("scope %q: does not exist", at)
 		}
 		held = inner
 	}
@@ -267,4 +273,23 @@ func resourceIn(obj Object, at, kind, id string) (Object, error) {
 		return nil, fmt.Errorf("no %s with id %s", kind, id)
 	}
 	return sel.Object()
+}
+
+func containerNamed(held Object, containers []string, nameField, name string) Object {
+	for _, key := range containers {
+		group, err := held.Child(key).Object()
+		if err != nil {
+			continue
+		}
+		for _, id := range group.Children() {
+			inst, err := group.Child(id).Object()
+			if err != nil {
+				continue
+			}
+			if got, _ := inst.Get(nameField).(string); got == name {
+				return inst
+			}
+		}
+	}
+	return nil
 }

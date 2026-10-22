@@ -2,6 +2,7 @@ package interp
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"testing"
 
@@ -303,4 +304,25 @@ func TestALoweredScopeMayNotTakeAnAuthoredScopesName(t *testing.T) {
 		"/space/build/space.yaml": "id: QmBuild\n",
 	})
 	assert.ErrorContains(t, err, "is the scope pipeline/build becomes")
+}
+
+func TestAKindThatLowersIntoItselfIsRefusedAtTheCap(t *testing.T) {
+	root := engine.Root(
+		[]*engine.Attribute{engine.String("id")},
+		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{
+			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
+			engine.String("name"),
+		},
+			engine.Resource("pipeline", "Pipeline", "Pipeline", "pipeline"),
+			Lowers(Into("pipeline", Named(Concat(Attr("name"), Text("x"))))),
+		)),
+	).With(engine.Leaf("project"), engine.Identity("id", "name"))
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(fs, "/project.yaml", []byte("id: root\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/pipeline/p.yaml", []byte("id: QmP\n"), 0o644))
+	c, err := New(engine.SchemaDefinition(root), root, WithVirtual(fs, "/"),
+		WithLayout(Layout{Resource: "{kind}/{name}.yaml", Scope: "{kind}/{name}"}))
+	assert.NilError(t, err)
+	_, _, err = c.Compile(context.Background())
+	assert.ErrorContains(t, err, fmt.Sprintf("lowers more than %d levels deep", MaxLoweringDepth))
 }

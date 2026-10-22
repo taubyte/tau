@@ -71,3 +71,15 @@ func TestReadLinesOfNothing(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, len(lines), 0, "an empty file is no lines, not one empty line")
 }
+
+func TestInlineReadsAFileForAResourceInsideAScope(t *testing.T) {
+	flat, _, err := compileFiles(t, map[string]string{
+		"/project.yaml":           "id: root\n",
+		"/space/shop/space.yaml":  "id: QmShop\n",
+		"/space/shop/site/w.yaml": "id: QmW\nfile: zones/w.zone\n",
+		"/zones/w.zone":           "a\nb\n",
+	})
+	assert.NilError(t, err)
+	w := flat["space"].(map[string]any)["QmShop"].(map[string]any)["site"].(map[string]any)["QmW"].(map[string]any)
+	assert.DeepEqual(t, w["records"], []any{"a", "b"})
+}

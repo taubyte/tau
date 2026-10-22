@@ -310,7 +310,7 @@ func (gi *groupIndexer) Process(ct transform.Context[object.Refrence], config ob
 	if !ok {
 		return config, nil
 	}
-	lookup := makeLookup(config, configRoot)
+	lookup := makeLookup(ct.Path())
 
 	for _, id := range groupObj.Children() {
 		if !keyedByIdentity(gi.iter, gi.idField, id) {
@@ -399,27 +399,21 @@ func scopeOf(from, target object.Object[object.Refrence], containers []string) S
 	return nil
 }
 
-// makeLookup builds the (group, id) resolver with pass4's app-local-then-global
-// rule: the current scope's group is primary, the project-root group is
-// secondary; an app with no such group falls back to the project-root one; at
-// project scope there is no secondary.
-func makeLookup(config, configRoot object.Object[object.Refrence]) func(string, string) (object.Object[object.Refrence], bool) {
+// makeLookup builds the (group, id) resolver over the chain references resolve
+// along (utils.ResolveNameToId): the current scope, then each parent, then the
+// project root.
+func makeLookup(scopes []any) func(string, string) (object.Object[object.Refrence], bool) {
 	return func(group, id string) (object.Object[object.Refrence], bool) {
-		secondary, _ := configRoot.Child(group).Object()
-		primary, _ := config.Child(group).Object()
-		if primary == nil {
-			primary = secondary
-		}
-		if primary == secondary {
-			secondary = nil
-		}
-		if primary != nil {
-			if o, err := primary.Child(id).Object(); err == nil {
-				return o, true
+		for i := len(scopes) - 1; i >= 1; i-- {
+			scope, ok := scopes[i].(object.Object[object.Refrence])
+			if !ok {
+				continue
 			}
-		}
-		if secondary != nil {
-			if o, err := secondary.Child(id).Object(); err == nil {
+			g, err := scope.Child(group).Object()
+			if err != nil {
+				continue
+			}
+			if o, err := g.Child(id).Object(); err == nil {
 				return o, true
 			}
 		}

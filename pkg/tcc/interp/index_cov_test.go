@@ -72,7 +72,7 @@ var covProject = map[string]string{
 	"/space/shop/db/local.yaml":      "id: d2\n",
 	"/space/shop/fn/b.yaml":          "id: f2\nstore: local\nreads: [orders, local]\nhost: b.com\n",
 	"/space/shop/space/eu/meta.yaml": "id: s2\n",
-	"/space/shop/space/eu/fn/c.yaml": "id: f3\nreads: [orders]\n",
+	"/space/shop/space/eu/fn/c.yaml": "id: f3\nreads: [orders, local]\n",
 	"/space/empty/meta.yaml":         "id: s3\n",
 }
 
@@ -151,8 +151,8 @@ func TestIndexDriverWritesWhatTheVocabularyReturns(t *testing.T) {
 	// a scope's own db shadows nothing it does not have: "orders" is found at the root
 	assert.Equal(t, idx["reads/f1"], "orders")
 	assert.Equal(t, idx["reads/f2"], "orders,local")
-	// s2 has no db group of its own, and the lookup falls back to the project
-	assert.Equal(t, idx["reads/f3"], "orders")
+	// s2 has no db group of its own: local is found in its parent, orders at the project
+	assert.Equal(t, idx["reads/f3"], "orders,local")
 
 	assert.Equal(t, idx["kept/f1"], "first", "a hole never clobbers a value")
 	hole, ok := idx["hole/f1"]
@@ -220,7 +220,7 @@ func TestIndexLookupPrefersTheScope(t *testing.T) {
 	assert.DeepEqual(t, got, []string{
 		"f1:d1=orders", "f1:d2=missing", "f1:nope=missing",
 		"f2:d1=orders", "f2:d2=local", "f2:nope=missing",
-		"f3:d1=orders", "f3:d2=missing", "f3:nope=missing",
+		"f3:d1=orders", "f3:d2=local", "f3:nope=missing",
 	})
 }
 

@@ -98,6 +98,7 @@ func TestMountsAreWhatDelegatesAndNothingElse(t *testing.T) {
 
 	assert.Equal(t, mounts[0].At, "/.mounts/eu/site/shop")
 	assert.Equal(t, mounts[0].Scope, "eu")
+	assert.DeepEqual(t, mounts[0].Address, []string{"space", "eu", "site", "shop"})
 	assert.Equal(t, mounts[0].String(), "eu/site/shop reads tb.yaml from https://x/shop")
 
 	assert.Equal(t, mounts[1].At, "/.mounts/site/blog")
@@ -105,7 +106,8 @@ func TestMountsAreWhatDelegatesAndNothingElse(t *testing.T) {
 
 	docs := mounts[2]
 	assert.DeepEqual(t, docs, interp.Mount{Kind: "site", Name: "docs", ID: "d1",
-		Repo: "https://x/docs", Branch: "main", Path: "site/", Config: "tb.yaml", At: "/.mounts/site/docs"})
+		Repo: "https://x/docs", Branch: "main", Path: "site/", Config: "tb.yaml", At: "/.mounts/site/docs",
+		Address: []string{"site", "docs"}})
 	assert.Equal(t, docs.String(), "site/docs reads tb.yaml from https://x/docs@main")
 
 	assert.Equal(t, interp.MountPoint("a/b", "site", "x"), "/.mounts/a/b/site/x")
@@ -125,6 +127,8 @@ func TestWithMountedRefusesAnIncompleteAnswer(t *testing.T) {
 
 	_, err := mountCompiler(t, fs, interp.WithMounted(interp.Mount{}, afero.NewMemMapFs(), "c"))
 	assert.ErrorContains(t, err, "no mount point")
+	_, err = mountCompiler(t, fs, interp.WithMounted(interp.Mount{At: m.At}, afero.NewMemMapFs(), "c"))
+	assert.ErrorContains(t, err, "no document address")
 	_, err = mountCompiler(t, fs, interp.WithMounted(m, nil, "c"))
 	assert.ErrorContains(t, err, "with no filesystem")
 	_, err = mountCompiler(t, fs, interp.WithMounted(m, afero.NewMemMapFs(), ""))
@@ -296,4 +300,26 @@ func TestAMounterThatFailsFailsTheCompile(t *testing.T) {
 			assert.ErrorContains(t, err, tc.want)
 		})
 	}
+}
+
+func TestAFillInsideAScopeLandsOnItsResource(t *testing.T) {
+	fs := mountProject(t, map[string]string{
+		"/space/eu/meta.yaml":      "id: s1\nname: eu\n",
+		"/space/eu/site/shop.yaml": "id: e1\nsource:\n    git: https://x/shop\n    config: tb.yaml\n",
+	})
+	var opts []interp.Option
+	for _, m := range discover(t, fs) {
+		opts = append(opts, interp.WithMounted(m, memFs(t, map[string]string{"tb.yaml": "serve:\n    index: shop.html\n"}), "commit-shop"))
+	}
+	c, err := mountCompiler(t, fs, opts...)
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err)
+	flat := obj.Flat()
+
+	shop := flat["space"].(map[string]any)["s1"].(map[string]any)["site"].(map[string]any)["e1"].(map[string]any)
+	assert.Equal(t, shop["serve"].(map[string]any)["index"], "shop.html")
+	assert.DeepEqual(t, interp.MountedOf(flat), map[string]interp.Fill{
+		"e1": {Repo: "https://x/shop", Commit: "commit-shop", Config: "tb.yaml", Kind: "site", Name: "shop", Scope: "eu"},
+	})
 }

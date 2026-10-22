@@ -10,7 +10,7 @@ import (
 func TestAttachAllTurnsTagsIntoIDs(t *testing.T) {
 	flat, _, err := covCompile(t, covVocab{}, covWith(covProject, map[string]string{
 		"/space/shop/tag/cold.yaml": "id: t2\n",
-		"/space/shop/fn/b.yaml":     "id: f2\nlabels: ['tag:cold', 'tag:hot', '', 'other:hot']\n",
+		"/space/shop/fn/b.yaml":     "id: f2\nlabels: ['tag:cold', 'tag:hot', '', 'tag:', 'other:hot']\n",
 		"/space/shop/fn/q.yaml":     "id: f4\nlabels: [untagged]\n",
 	}))
 	assert.NilError(t, err)

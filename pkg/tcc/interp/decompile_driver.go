@@ -21,8 +21,8 @@ import (
 // restored from the key, and decompiling failed on the first resource with "required
 // attribute 'id' is missing". A v2 project could be compiled and not written back.
 //
-// Order does not affect the result — each inverse touches only its own group and
-// disjoint keys — which is what makes reading it off the schema safe for v1 too.
+// Order does not affect the result — every nested walk runs before any rename, and
+// each inverse touches only its own group and disjoint keys — which is what makes reading it off the schema safe for v1 too.
 func decompileOrder(root *engine.Node) []string {
 	var out []string
 	for _, g := range root.Children {
@@ -70,15 +70,19 @@ func (d *decompileDriver) Process(ct transform.Context[object.Refrence], o objec
 		utils.Global(containers, &decompileRefs{groups: d.root.Children, idField: idField, nameField: nameField}),
 		&decompileApps{containers: containers, resources: resourceContainers, idField: idField, nameField: nameField},
 	}
-	for _, key := range decompileOrder(d.root) {
-		g := findGroup(d.root, key)
-		if g == nil || len(g.Children) == 0 {
-			continue
+	// Every nested walk runs before any instance is renamed: a held resource is told
+	// from a declared entry by its id key, which its own group's rename takes away.
+	for _, nestedOnly := range []bool{true, false} {
+		for _, key := range decompileOrder(d.root) {
+			g := findGroup(d.root, key)
+			if g == nil || len(g.Children) == 0 {
+				continue
+			}
+			pipe = append(pipe, utils.Global(containers, &decompileResource{
+				groupKey: key, iter: g.Children[0], groups: d.root.Children,
+				idField: idField, nameField: nameField, nestedOnly: nestedOnly,
+			}))
 		}
-		pipe = append(pipe, utils.Global(containers, &decompileResource{
-			groupKey: key, iter: g.Children[0], groups: d.root.Children,
-			idField: idField, nameField: nameField,
-		}))
 	}
 	return transform.Pipe(ct, o, pipe...)
 }
@@ -273,6 +277,9 @@ func invertRefAttr(sel object.Selector[object.Refrence], ra refAttr, getMap func
 	}
 
 	if ra.spec.FlatValue {
+		if val == nil {
+			return nil
+		}
 		s, ok := val.(string)
 		if !ok {
 			return fmt.Errorf("%s is not a string", ra.name())
@@ -354,6 +361,8 @@ type decompileResource struct {
 	// entry the kind declares, or a resource the container holds?
 	groups             []*engine.Node
 	idField, nameField string
+	// nestedOnly runs the nested walk alone; otherwise the instance inverse alone.
+	nestedOnly bool
 }
 
 func (ri *decompileResource) Process(ct transform.Context[object.Refrence], o object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
@@ -375,8 +384,12 @@ func (ri *decompileResource) Process(ct transform.Context[object.Refrence], o ob
 		// pass walks them (driver.go's iter.Nested branch); the inverse has to walk them
 		// too, or a resource with an access block cannot be written out at all.
 		//
-		// Before the instance inverse, because that one renames the instance by name and
-		// the nested walk wants the object it is holding.
+		if !ri.nestedOnly {
+			if err := applyInstanceInverse(sel, ri.iter, ri.idField, ri.nameField); err != nil {
+				return nil, fmt.Errorf("%s %s: %w", ri.groupKey, key, err)
+			}
+			continue
+		}
 		if ri.iter.Nested {
 			inst, err := sel.Object()
 			if err != nil {
@@ -385,9 +398,6 @@ func (ri *decompileResource) Process(ct transform.Context[object.Refrence], o ob
 			if err := applyNestedInverse(inst, ri.iter.Children, ri.groups, ri.idField); err != nil {
 				return nil, fmt.Errorf("%s %s: %w", ri.groupKey, key, err)
 			}
-		}
-		if err := applyInstanceInverse(sel, ri.iter, ri.idField, ri.nameField); err != nil {
-			return nil, fmt.Errorf("%s %s: %w", ri.groupKey, key, err)
 		}
 	}
 	return o, nil
