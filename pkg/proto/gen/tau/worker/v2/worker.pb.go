@@ -103,7 +103,7 @@ type Target struct {
 	Project     string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
 	Environment string                 `protobuf:"bytes,2,opt,name=environment,proto3" json:"environment,omitempty"`
 	// scope is the chain of namespace NAMES from the project root — the
-	// `/shop/eu` an author writes, split. Empty is the project itself.
+	// `/shop/local` an author writes, split. Empty is the project itself.
 	//
 	// It is the ASKER's scope, not the resource's: a name resolves in the scope
 	// that asked and then in each parent, which is how a namespace inherits its
