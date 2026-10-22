@@ -456,71 +456,6 @@ func TestVersionStepsReportAFailingStore(t *testing.T) {
 	require.ErrorIs(t, srv.Set(ctx, Ref{Scope: Cloud("auth")}, []byte("c"), key.KeyID, &tdh.Wrapping{}), ErrInvalidRef)
 }
 
-// TestANewestVersionItsDeadOwnerNeverCarriedForwardIsDropped: a node writes the
-// newest version of a secret under its one-member key and never starts. The
-// survivors rotate past it, so nobody left holds a share it is wrapped under.
-// The secret stays readable at the older version, the abandoned one goes on
-// every node and reconcile stops reporting it; when the owner comes back, the
-// cluster converges on the older version with it.
-func TestANewestVersionItsDeadOwnerNeverCarriedForwardIsDropped(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	c := newMesh(t, ctx, 3)
-	for _, node := range c.nodes {
-		db, err := kvdb.New(node).New(logging.Logger("secrets-test"), c.db, 1)
-		require.NoError(t, err)
-		t.Cleanup(func() { db.Close() })
-		c.dbs = append(c.dbs, db)
-		c.paths = append(c.paths, t.TempDir())
-	}
-
-	r := Ref{Scope: Cloud("auth"), Name: "pepper"}
-	older := bundleOf(t, map[Ref]string{r: "v1"})
-	for i := range c.nodes {
-		initOn(t, ctx, c, i, older)
-	}
-	newer, err := Sealed(r, []byte("v2"), time.Now().Add(time.Hour))
-	require.NoError(t, err)
-	initOn(t, ctx, c, 2, &secretsv2.InitBundle{Secrets: []*secretsv2.InitSecret{newer}})
-
-	for i := range 2 {
-		c.launch(t, c.nodes[i], c.dbs[i], c.paths[i])
-	}
-
-	converged := func(members int) bool {
-		c.reconcileAll(ctx)
-		for _, srv := range c.live() {
-			active, err := srv.ActiveKey(ctx)
-			if err != nil || len(active.Members) != members {
-				return false
-			}
-			versions, err := srv.records.Versions(ctx, r)
-			if err != nil || len(versions) != 1 || versions[0].CID == newer.GetCid() {
-				return false
-			}
-			if srv.reconcile(ctx) != nil {
-				return false
-			}
-		}
-		return true
-	}
-	require.Eventually(t, func() bool { return converged(2) }, 60*time.Second, 200*time.Millisecond,
-		"the abandoned version was never dropped")
-
-	consumer := c.client(t)
-	got, err := consumer.Get(ctx, r)
-	require.NoError(t, err)
-	assert.Equal(t, "v1", string(got))
-
-	c.launch(t, c.nodes[2], c.dbs[2], c.paths[2])
-	require.Eventually(t, func() bool { return converged(3) }, 60*time.Second, 200*time.Millisecond,
-		"the cluster never converged once the owner returned")
-	got, err = consumer.Get(ctx, r)
-	require.NoError(t, err)
-	assert.Equal(t, "v1", string(got))
-}
-
 // TestAVersionStillHeldByARosterMemberIsNotAbandoned: the rule only fires
 // for keys none of whose members are in the newest key.
 func TestAVersionStillHeldByARosterMemberIsNotAbandoned(t *testing.T) {
@@ -541,4 +476,110 @@ func TestAVersionStillHeldByARosterMemberIsNotAbandoned(t *testing.T) {
 
 	bare := []byte("no wrapping")
 	assert.False(t, srv.abandoned(ctx, version{Ref: r, CID: contentID(bare)}, []*KeyMeta{later}), "mid-write")
+}
+
+// ownerAway stores v1 on three nodes and a newer v2 only on node 2, under
+// its one-member key, then runs nodes 0 and 1 without it until they have
+// rotated. away closes node 2's database for that time when set.
+func ownerAway(t *testing.T, ctx context.Context, away bool) {
+	c := newMesh(t, ctx, 3)
+	open := func(i int) {
+		db, err := kvdb.New(c.nodes[i]).New(logging.Logger("secrets-test"), c.db, 1)
+		require.NoError(t, err)
+		t.Cleanup(func() { db.Close() })
+		if i < len(c.dbs) {
+			c.dbs[i] = db
+			return
+		}
+		c.dbs = append(c.dbs, db)
+		c.paths = append(c.paths, t.TempDir())
+	}
+	for i := range c.nodes {
+		open(i)
+	}
+
+	r := Ref{Scope: Cloud("auth"), Name: "pepper"}
+	older := bundleOf(t, map[Ref]string{r: "v1"})
+	for i := range c.nodes {
+		initOn(t, ctx, c, i, older)
+	}
+	newer, err := Sealed(r, []byte("v2"), time.Now().Add(time.Hour))
+	require.NoError(t, err)
+	initOn(t, ctx, c, 2, &secretsv2.InitBundle{Secrets: []*secretsv2.InitSecret{newer}})
+	require.Eventually(t, func() bool {
+		versions, err := (&recordStore{db: c.dbs[0]}).Versions(ctx, r)
+		return err == nil && len(versions) == 2
+	}, 30*time.Second, 100*time.Millisecond)
+	if away {
+		c.dbs[2].Close()
+	}
+
+	for i := range 2 {
+		c.launch(t, c.nodes[i], c.dbs[i], c.paths[i])
+	}
+	consumer := c.client(t)
+
+	// Without its owner nobody can open v2: it is kept, never served, and no
+	// longer reported, and v1 is what everyone reads.
+	require.Eventually(t, func() bool {
+		c.reconcileAll(ctx)
+		for _, srv := range c.live() {
+			active, err := srv.ActiveKey(ctx)
+			if err != nil || len(active.Members) != 2 || srv.reconcile(ctx) != nil || versionsOn(t, ctx, srv, r) != 2 {
+				return false
+			}
+		}
+		return true
+	}, 60*time.Second, 200*time.Millisecond, "the survivors never settled without the owner")
+	got, err := consumer.Get(ctx, r)
+	require.NoError(t, err)
+	assert.Equal(t, "v1", string(got))
+
+	if away {
+		open(2)
+		// Its first look is stale: v2 only under its own one-member key, v1
+		// under every node's. That must not prune v1.
+		returning, err := New(c.nodes[2].Peer(), c.dbs[2], WithRoot(c.paths[2]))
+		require.NoError(t, err)
+		require.NoError(t, returning.prune(ctx))
+		assert.Equal(t, 2, versionsOn(t, ctx, returning, r), "a stale view pruned the older version")
+		require.NoError(t, returning.Close())
+	}
+
+	// The owner back, v2 is carried forward and, held as widely as v1, wins
+	// on every node: the newest write is not lost.
+	c.launch(t, c.nodes[2], c.dbs[2], c.paths[2])
+	require.Eventually(t, func() bool {
+		c.reconcileAll(ctx)
+		for _, srv := range c.live() {
+			active, err := srv.ActiveKey(ctx)
+			if err != nil || len(active.Members) != 3 || srv.reconcile(ctx) != nil {
+				return false
+			}
+			versions, err := srv.records.Versions(ctx, r)
+			if err != nil || len(versions) != 1 || versions[0].CID != newer.GetCid() {
+				return false
+			}
+		}
+		return true
+	}, 60*time.Second, 200*time.Millisecond, "the cluster never converged on the newest version")
+	got, err = consumer.Get(ctx, r)
+	require.NoError(t, err)
+	assert.Equal(t, "v2", string(got))
+}
+
+// TestANewestVersionItsOwnerHasNotCarriedForwardIsKeptAndWins: the owner of
+// the newest version is gone before carrying it forward, then returns.
+func TestANewestVersionItsOwnerHasNotCarriedForwardIsKeptAndWins(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ownerAway(t, ctx, false)
+}
+
+// TestAnOwnerReturningWithAStaleStoreKeepsTheOlderVersion: the same, with the
+// owner's database closed while it was away, so it returns on a stale view.
+func TestAnOwnerReturningWithAStaleStoreKeepsTheOlderVersion(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ownerAway(t, ctx, true)
 }
