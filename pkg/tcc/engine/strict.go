@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -194,6 +195,7 @@ func (c *claim) walk(query *yaseer.Query) error {
 		// of setAttributes.
 		return nil
 	}
+	keys = slices.Sorted(slices.Values(keys))
 	for _, key := range keys {
 		sub, known := c.kids[key]
 		if !known {

@@ -166,3 +166,14 @@ func TestStrictRejectsBlockWhereValueBelongs(t *testing.T) {
 
 	assert.NilError(t, compileDoc(t, "id: one\nname: x\n"))
 }
+
+// The first unknown key reported must not depend on map order: an editor showing it
+// would otherwise flicker between two lines of one document.
+func TestStrictReportsTheSameUnknownKeyEveryTime(t *testing.T) {
+	const doc = "id: one\nzeta: 1\nalpha: 2\nmid: 3\n"
+	first := compileDoc(t, doc)
+	assert.ErrorContains(t, first, "unknown key 'alpha'")
+	for range 50 {
+		assert.Equal(t, compileDoc(t, doc).Error(), first.Error())
+	}
+}
