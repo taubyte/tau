@@ -40,8 +40,7 @@ type AKey []string
 // SEGMENTS rather than a string spelling them — a key may never contain "/" (keys.go).
 //
 // Where the value is AUTHORED is the same place unless the vocabulary says otherwise:
-// `Path(...)` is declared only when the two differ, which is what v1 does when it reads
-// `execution.call` and compiles it onto a flat `call`.
+// `Path(...)` is declared only when the two differ.
 func Key(segments ...string) AKey { return AKey(segments) }
 
 // keyOf normalises either spelling of an attribute's key.
@@ -90,9 +89,7 @@ func defAttr[T string | AKey](name T, _type Type, options []Option) *Attribute {
 	}
 
 	// WHERE IT IS AUTHORED IS WHERE IT COMPILES, unless the vocabulary says otherwise.
-	// Path(...) is declared only when the two differ — v1 reads `execution.call` and
-	// compiles it onto a flat `call`, so it declares one; v2 reads and writes the same
-	// place, so it declares none. Resolved here rather than at load because the strict
+	// Path(...) is declared only when the two differ. Resolved here rather than at load because the strict
 	// key check reads Path before any document is opened.
 	if len(a.Path) == 0 {
 		a.Path = make([]StringMatch, 0, len(segments)+1)
@@ -240,7 +237,7 @@ func DefineList(name string, attrs []*Attribute, extra ...any) *Node {
 // The line is exactly the layer boundary, so it is drawn from the Meta keys the
 // interpreter dispatches on rather than from a hand-kept list of types.
 func listUnsupported(a *Attribute) (string, bool) {
-	for _, term := range []string{"scalar", "ref", "tag", "enumBool", "derivedBool", "onlyWhen"} {
+	for _, term := range []string{"scalar", "ref"} {
 		if _, ok := a.Meta[term]; !ok {
 			continue
 		}

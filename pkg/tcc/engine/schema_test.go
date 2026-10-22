@@ -107,7 +107,7 @@ var resSchemaDef = []*Node{
 var testSchemaDef = SchemaDefinition(
 	Root(
 		Attributes(
-			String("email", Path("notification", "email"), IsEmail(), Required()),
+			String("email", Path("notification", "email"), emailOnly(), Required()),
 		),
 		append(
 			resSchemaDef,

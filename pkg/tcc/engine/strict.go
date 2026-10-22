@@ -26,20 +26,7 @@ import (
 // where any key is legal, and a child group claims its own name. So a kind that gains an
 // attribute gains the key for free, and there is no second place to update.
 
-// Strict turns the check on, declared on a vocabulary's ROOT. It is per-vocabulary
-// rather than always-on because the two vocabularies are in different positions and
-// the difference is not stylistic:
-//
-//   - v2 is being authored and has no deployed documents. A typo there is a bug being
-//     written, and catching it costs nobody anything.
-//   - v1 is FROZEN, and real projects are deployed against it. Turning this on for v1
-//     rejected `replicas:` and `path:` on a database in taubyte/tb_test_project —
-//     keys v1 has never read, in a repository cloned at test time, in four dreaming
-//     suites at once. Every customer project with a dead key would break the same way,
-//     to catch typos in a vocabulary nobody is authoring any more.
-//
-// That is a bad trade for a frozen oracle and a good one for a live vocabulary, so it
-// is the vocabulary's statement to make.
+// Strict turns the check on, declared on a vocabulary's ROOT.
 func Strict() NodeOption {
 	return func(n *Node) { n.Strict = true }
 }
@@ -128,9 +115,6 @@ func attrClaims(n *Node, vars Vars) *claim {
 					c.insert(vp)
 				}
 			}
-		}
-		if len(attr.Compat) > 0 {
-			c.insert(attr.Compat)
 		}
 	}
 	return c

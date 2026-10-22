@@ -1501,7 +1501,6 @@ func TestConsumersNeedNoHardcodedShapes(t *testing.T) {
 	// the name, so nothing is packed into the value
 	src := find("function", "source/component")
 	assert.Equal(t, src.Kind, "component")
-	assert.Equal(t, src.Prefix, "", "a v2 reference carries no kind in its value")
 	assert.Assert(t, !src.ByName)
 
 	// keeps the authored name, and says where its namespace is

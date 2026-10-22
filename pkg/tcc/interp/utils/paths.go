@@ -74,9 +74,6 @@ func localResolveNameToId(store transform.Store[object.Refrence], ctp []any, gro
 //   - "name"      current scope, then fall back to ancestors up to root (default)
 //   - "/name"     the root/global scope only (absolute)
 //   - "../name"   the parent scope, exact (repeatable: "../../name")
-//
-// The default arm is byte-for-byte the previous behavior, so existing configs
-// (and the parity oracle) are unaffected; the qualifiers are pure additions.
 func ResolveNameToId(ct transform.Context[object.Refrence], group, name, nameField string) (string, error) {
 	ctp := ct.Path()
 	if len(ctp) == 0 {

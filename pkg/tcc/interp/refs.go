@@ -10,14 +10,12 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/transform"
 )
 
-// ResolveRefs folds the whole pass2 reference-resolution layer into a single
-// generic transform. It replaces pass2/{functions,smartops,websites}.go: for
-// every attribute annotated with Ref(...), it reads the compiled wire value and
-// resolves the referenced name(s) to the target group's compiled id(s) against
+// ResolveRefs is the reference-resolution transform. For every attribute annotated
+// with Ref(...), it reads the compiled value and resolves the referenced name(s) to the target group's compiled id(s) against
 // the name->id index the CompileDriver already populated.
 //
-// It is wrapped in utils.Global so it walks the exact same scope shape pass2 did
-// (project root, then each application), which is what makes utils.ResolveNamesToId
+// It is wrapped in utils.Global so it walks the project root, then each
+// application, which is what makes utils.ResolveNamesToId
 // key the store identically (app -> project -> root scope walk). Resolution runs
 // after the CompileDriver, so the index is complete before any ref is read.
 func ResolveRefs(root *engine.Node) transform.Transformer[object.Refrence] {
@@ -33,14 +31,12 @@ type resolveRefs struct {
 	nameField string
 }
 
-// refAttr is a ref-carrying attribute paired with the compiled wire key it lives
-// under (Tag ?? Name — e.g. functions `http-domains` compiles to `domains`).
+// refAttr is a ref-carrying attribute paired with the compiled key it lives under.
 type refAttr struct {
 	// segments is the compiled key, one level of the object per entry.
 	segments []string
 	// list says the field holds MANY names rather than one — which is the attribute's
-	// own type, not a second thing to declare. It used to be inferred from a Prefix
-	// being absent, so a single-valued reference could not exist without one.
+	// own type, not a second thing to declare.
 	list bool
 	spec engine.RefSpec
 }
@@ -146,26 +142,13 @@ func collectRefAttrs(attrs []*engine.Attribute) []refAttr {
 		if spec.ByName {
 			continue
 		}
-		// By now the Tag rename has happened, so a tagged attribute is at its tag;
-		// everything else is at its key, which may be more than one level down.
-		segments := engine.CompiledSegments(a)
-		if t, ok := tagOf(a); ok {
-			segments = []string{t}
-		}
-		out = append(out, refAttr{segments: segments, list: a.Type == engine.TypeStringSlice, spec: spec})
+		out = append(out, refAttr{segments: engine.CompiledSegments(a), list: a.Type == engine.TypeStringSlice, spec: spec})
 	}
 	return out
 }
 
-// resolveRefAttr resolves a single ref attribute on one resource instance,
-// reproducing pass2 exactly:
-//   - no Prefix (functions/websites `domains`): the value is a []string of names;
-//     resolve each name to its id and write the []string of ids back.
-//   - with Prefix (functions/smartops `source`, "libraries/"): only values under
-//     the prefix are refs — strip it, resolve the single name, re-prefix. Values
-//     without the prefix (e.g. ".") pass through untouched.
-//
-// A missing/nil value is a no-op (matching pass2's `if err == nil && v != nil`).
+// resolveRefAttr resolves a single ref attribute on one resource instance: a list
+// of names to a list of ids, or one name to one id. A missing/nil value is a no-op.
 func resolveRefAttr(ct transform.Context[object.Refrence], sel object.Selector[object.Refrence], ra refAttr, nameField string) error {
 	holder, key, err := refHolder(sel, ra.segments)
 	if err != nil {
@@ -193,14 +176,6 @@ func resolveRefAttr(ct transform.Context[object.Refrence], sel object.Selector[o
 	if !ok {
 		return fmt.Errorf("%s is not a string", ra.name())
 	}
-	if ra.spec.Prefix != "" {
-		// v1 keeps the kind in the value, and uses it to tell a reference from a value
-		// that is not one — `source: "."` is inline code and resolves to nothing.
-		if !strings.HasPrefix(name, ra.spec.Prefix) {
-			return nil
-		}
-		name = strings.TrimPrefix(name, ra.spec.Prefix)
-	}
 	if name == "" {
 		return nil
 	}
@@ -216,11 +191,6 @@ func resolveRefAttr(ct transform.Context[object.Refrence], sel object.Selector[o
 	// belongs to adds no information — it is already on the Ref — and a kind written
 	// into the value is that same fact free to disagree with it. Which NAMESPACE the
 	// name was looked up in is authored beside the name, not packed into it.
-	if ra.spec.FlatValue {
-		// v1 alone: its consumers read `libraries/<id>` off the compiled object.
-		holder.Set(key, object.Refrence(ra.spec.Prefix+ids[0]))
-		return nil
-	}
 	holder.Set(key, object.Refrence(ids[0]))
 	return nil
 }

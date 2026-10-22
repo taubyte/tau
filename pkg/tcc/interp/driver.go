@@ -2,8 +2,6 @@ package interp
 
 import (
 	"fmt"
-	"slices"
-	"strings"
 
 	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/interp/utils"
@@ -11,26 +9,22 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/transform"
 )
 
-// CompileDriver replaces the whole pass1 layer. It walks the project root and
-// each application scope alongside the DSL groups, reproducing pass1 exactly —
-// but reading the behavior off attribute/node annotations rather than a file per
-// resource.
+// CompileDriver walks the project root and each application scope alongside the
+// DSL groups, reading the behavior off attribute/node annotations.
 type CompileDriver struct {
 	root *engine.Node
-	env  Env
 }
 
 // newCompileDriver builds a CompileDriver from the schema root node. `root` carries
 // the project-scope attributes (id -> project_id validation, tags -> wire drop via
-// annotations) and the resource/container/map groups as its children. env is the
-// compile environment whose values env-keyed group projections read by name.
-// Takes the node tree as data so this package never imports schema.
-func newCompileDriver(root *engine.Node, env Env) transform.Transformer[object.Refrence] {
-	return &CompileDriver{root: root, env: env}
+// annotations) and the resource/container groups as its children. Takes the node
+// tree as data so this package never imports schema.
+func newCompileDriver(root *engine.Node) transform.Transformer[object.Refrence] {
+	return &CompileDriver{root: root}
 }
 
 func (d *CompileDriver) Process(ct transform.Context[object.Refrence], o object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
-	// Fork once with the project root so the context path matches pass1's
+	// Fork once with the project root so the context path matches the
 	// utils.Global(...) shape ([root]) — the name->id index keys derive from it.
 	ctRoot := ct.Fork(o)
 
@@ -40,8 +34,8 @@ func (d *CompileDriver) Process(ct transform.Context[object.Refrence], o object.
 		return nil, err
 	}
 
-	// Groups: resources (project scope), the applications container (id-promote
-	// each app, then recurse into its scope), and env-keyed map groups (clouds).
+	// Groups: resources (project scope) and the applications container (id-promote
+	// each app, then recurse into its scope).
 	if err := d.processGroups(ctRoot, o, d.root.Children, false); err != nil {
 		return nil, err
 	}
@@ -50,16 +44,45 @@ func (d *CompileDriver) Process(ct transform.Context[object.Refrence], o object.
 }
 
 // processGroups runs each group at the given scope (project root or an app).
+//
+// mixed is a hybrid container's scope, where its own nested entries and the resources
+// it holds share a key. They are told apart by the id field BEFORE anything runs:
+// promoting a held resource deletes its id, so a group walked after that would take
+// it for an entry and project it a second time.
 func (d *CompileDriver) processGroups(ct transform.Context[object.Refrence], scope object.Object[object.Refrence], groups []*engine.Node, mixed bool) error {
+	var own map[string]bool
+	if mixed {
+		own = ownEntries(scope, groups, d.root)
+	}
 	for _, g := range groups {
-		if err := d.processGroup(ct, scope, g, mixed); err != nil {
+		if err := d.processGroup(ct, scope, g, mixed, own); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scope object.Object[object.Refrence], g *engine.Node, mixed bool) error {
+// ownEntries is every "<group>/<entry>" in scope that carries no id: the entries a
+// hybrid container declares for itself rather than the resources it holds.
+func ownEntries(scope object.Object[object.Refrence], groups []*engine.Node, root *engine.Node) map[string]bool {
+	idField, _ := engine.IdentityOf(root)
+	own := map[string]bool{}
+	for _, g := range groups {
+		key, _ := g.Match.(string)
+		groupObj, err := scope.Child(key).Object()
+		if err != nil {
+			continue
+		}
+		for _, name := range groupObj.Children() {
+			if v, err := groupObj.Child(name).Get(idField); err != nil || v == nil {
+				own[key+"/"+name] = true
+			}
+		}
+	}
+	return own
+}
+
+func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scope object.Object[object.Refrence], g *engine.Node, mixed bool, own map[string]bool) error {
 	groupKey, _ := g.Match.(string)
 	if len(g.Children) == 0 {
 		return nil
@@ -69,13 +92,6 @@ func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scop
 	}
 	iter := g.Children[0]
 	_, isResource := iter.Meta["resource"].([4]string)
-
-	// An env-keyed promotion owns the whole projection for this group: select the
-	// entry keyed by env[spec.EnvVar], hoist its fields to root scalars, drop the
-	// map. It reads the scope object directly — no per-instance walk.
-	if spec, ok := iter.Meta["promoteEnvKeyed"].(EnvKeyedPromoteSpec); ok {
-		return runPromoteEnvKeyed(spec, d.env, scope)
-	}
 
 	groupObj, err := scope.Child(groupKey).Object()
 	if err == object.ErrNotExist {
@@ -87,7 +103,7 @@ func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scop
 
 	// A container group (its iterator is itself a group holding nested resource
 	// groups — the applications container). Each instance is id-promoted with NO
-	// index (no Resource descriptor, matching pass1/applications.go), then its
+	// index (no Resource descriptor), then its
 	// nested resource groups are processed in that instance's scope.
 	if iter.Group && len(iter.Children) > 0 {
 		idField, nameField := engine.IdentityOf(d.root)
@@ -127,15 +143,8 @@ func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scop
 	promote := idField != "" && hasAttr(iter, idField)
 	for _, instName := range groupObj.Children() {
 		sel := groupObj.Child(instName)
-		if mixed {
-			idValue, idErr := sel.Get(idField)
-			hasID := idErr == nil && idValue != nil
-			// A hybrid container merges its own nested entry map with the contained
-			// resource group of the same key. Before promotion the id field tells the
-			// two apart: nested entries have none; contained resources do.
-			if g.Nested == hasID {
-				continue
-			}
+		if mixed && g.Nested != own[groupKey+"/"+instName] {
+			continue
 		}
 		if err := applyInstanceOps(sel, iter.Attributes); err != nil {
 			return fmt.Errorf("%s %s: %w", groupKey, instName, err)
@@ -171,15 +180,9 @@ func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scop
 	return nil
 }
 
-// applyInstanceOps runs the per-resource-instance wire projections in the order
-// the design review fixed: scalar parse, EnumBool, DerivedBool, OnlyWhen-gated
-// rename, then plain Tag renames. Each stage is driven by attribute annotations;
-// a resource missing an annotation simply produces nothing for that stage (this
-// is why smartops needs no special-casing — it has no trigger/type attrs, so its
-// projections and renames naturally no-op).
+// applyInstanceOps runs the per-resource-instance projections: each scalar term
+// (Duration -> ns, Bytes -> bytes) parses its own value.
 func applyInstanceOps(sel object.Selector[object.Refrence], attrs []*engine.Attribute) error {
-	// 1. scalar parse (Duration -> ns, Bytes -> bytes): each scalar term carries
-	//    its own codec, so there is no per-scalar switch to keep in sync.
 	for _, a := range attrs {
 		if sc, ok := a.Meta["scalar"].(engine.ScalarSpec); ok {
 			holder, field := holderOf(sel, a)
@@ -188,49 +191,6 @@ func applyInstanceOps(sel object.Selector[object.Refrence], attrs []*engine.Attr
 			}
 		}
 	}
-
-	// 2. EnumBool: project the source enum to a bool field, dropping the source
-	//    wire key only for the declared DropWhen values.
-	for _, a := range attrs {
-		if eb, ok := a.Meta["enumBool"].(engine.EnumBoolSpec); ok && eb.GoName != "" {
-			if err := projectEnumBool(sel, a.Name, eb); err != nil {
-				return err
-			}
-		}
-	}
-
-	// 3. DerivedBool: synthesize a bool from the source value (keeping the source
-	//    key); a value with no When entry emits nothing.
-	for _, a := range attrs {
-		if db, ok := a.Meta["derivedBool"].(engine.DerivedBoolSpec); ok && db.GoName != "" {
-			if err := projectDerivedBool(sel, a.Name, db); err != nil {
-				return err
-			}
-		}
-	}
-
-	// 4. OnlyWhen-gated rename: keep+rename to Tag when the gate matches, else
-	//    delete the key (p2p-protocol -> service only when type == "p2p").
-	for _, a := range attrs {
-		if ow, ok := a.Meta["onlyWhen"].(engine.OnlyWhenSpec); ok {
-			applyOnlyWhen(sel, a, ow)
-		}
-	}
-
-	// 5. plain Tag rename: move the attribute's own key to its Tag value, for
-	//    every tagged attribute that is NOT OnlyWhen-gated (handled above). A
-	//    no-op when the source key is absent, matching pass1's blind Move()s.
-	for _, a := range attrs {
-		tag, ok := tagOf(a)
-		if !ok {
-			continue
-		}
-		if _, gated := a.Meta["onlyWhen"]; gated {
-			continue
-		}
-		_ = sel.Move(a.Name, tag)
-	}
-
 	return nil
 }
 
@@ -260,7 +220,7 @@ func holderOf(sel object.Selector[object.Refrence], a *engine.Attribute) (object
 
 // applyRootOps applies the project-scope attribute annotations: EmitValidation
 // (push a deferred external validation keyed off the attribute's value) and
-// WireDrop (delete the compiled key). Mirrors the old pass1/project.go.
+// WireDrop (delete the compiled key).
 func (d *CompileDriver) applyRootOps(ct transform.Context[object.Refrence], o object.Object[object.Refrence], attrs []*engine.Attribute) error {
 	for _, a := range attrs {
 		if ve, ok := a.Meta["emitValidation"].(engine.ValidationEmit); ok {
@@ -283,81 +243,6 @@ func (d *CompileDriver) applyRootOps(ct transform.Context[object.Refrence], o ob
 		}
 	}
 	return nil
-}
-
-// projectEnumBool sets lower(GoName) = (value in TrueWhen), then deletes the
-// source wire key when the value is in DropWhen. Runs whenever the instance
-// exists (matching pass1's `if err == nil` guard, which is always true for an
-// enumerated child); a missing/non-string value yields false and no drop.
-func projectEnumBool(sel object.Selector[object.Refrence], name string, eb engine.EnumBoolSpec) error {
-	val, err := sel.Get(name)
-	if err != nil {
-		return nil
-	}
-	isTrue, drop := false, false
-	if s, ok := val.(string); ok {
-		isTrue = slices.Contains(eb.TrueWhen, s)
-		drop = slices.Contains(eb.DropWhen, s)
-	}
-	if err := sel.Set(strings.ToLower(eb.GoName), isTrue); err != nil {
-		return err
-	}
-	if drop {
-		sel.Delete(name)
-	}
-	return nil
-}
-
-// projectDerivedBool sets lower(GoName) = When[value], emitting nothing when the
-// value is absent, non-string, or not a key of When (keeping the source key).
-func projectDerivedBool(sel object.Selector[object.Refrence], name string, db engine.DerivedBoolSpec) error {
-	val, err := sel.Get(name)
-	if err != nil {
-		return nil
-	}
-	s, ok := val.(string)
-	if !ok {
-		return nil
-	}
-	b, has := db.When[s]
-	if !has {
-		return nil
-	}
-	return sel.Set(strings.ToLower(db.GoName), b)
-}
-
-// applyOnlyWhen reproduces the p2p-protocol branch of pass1/functions.go: when
-// the gate attribute's value is one of Vals, rename the key to its Tag; on any
-// other value (including gate absent/non-string), delete the key.
-func applyOnlyWhen(sel object.Selector[object.Refrence], a *engine.Attribute, ow engine.OnlyWhenSpec) {
-	match := false
-	if g, ok := valueOf(sel, ow.Attr); ok {
-		match = slices.Contains(ow.Vals, g)
-	}
-	if match {
-		if tag, ok := tagOf(a); ok {
-			_ = sel.Move(a.Name, tag)
-			return
-		}
-		return
-	}
-	sel.Delete(a.Name)
-}
-
-// valueOf reads a string attribute value off the selector; ok is false when the
-// key is absent or not a string.
-func valueOf(sel object.Selector[object.Refrence], name string) (string, bool) {
-	v, err := sel.Get(name)
-	if err != nil {
-		return "", false
-	}
-	s, ok := v.(string)
-	return s, ok
-}
-
-func tagOf(a *engine.Attribute) (string, bool) {
-	t, ok := a.Meta["tag"].(string)
-	return t, ok && t != ""
 }
 
 func hasAttr(n *engine.Node, name string) bool {

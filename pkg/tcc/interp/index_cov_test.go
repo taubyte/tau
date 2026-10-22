@@ -13,9 +13,8 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// covVocab is a small vocabulary with every cross-resource feature: a db kind, a tag kind
-// that attaches to everything, a fn kind that references dbs, and a `space` scope that
-// holds all three and spaces of its own. fnIndex and dbIndex are the index footprints.
+// covVocab is a small vocabulary with every cross-resource feature: a db kind, a fn kind
+// that references dbs, and a `space` scope that holds both and spaces of its own. fnIndex and dbIndex are the index footprints.
 type covVocab struct {
 	fnIndex, dbIndex Indexer
 	fnAttrs          []*engine.Attribute
@@ -35,7 +34,6 @@ func (v covVocab) resources() []*engine.Node {
 		engine.String("store", engine.Ref("db")),
 		engine.StringSlice("reads", engine.Ref("db")),
 		engine.StringSlice("labels"),
-		engine.StringSlice("tag"),
 		engine.String("host", engine.EmitValidation("dns", "hostCheck")),
 	)
 	fn := engine.DefineIter(append(fnAttrs, v.fnAttrs...), append([]any{engine.Resource("fn", "Fn", "Fn", "fn")}, v.fnExtra...)...)
@@ -44,7 +42,6 @@ func (v covVocab) resources() []*engine.Node {
 	}
 	return []*engine.Node{
 		engine.DefineGroup("db", db),
-		engine.DefineGroup("tag", engine.DefineIter(covIdentity(), engine.Resource("tag", "Tag", "Tag", "tag"), engine.AttachesToAll("labels", ":"))),
 		engine.DefineGroup("fn", fn),
 	}
 }
@@ -66,7 +63,6 @@ func (v covVocab) root() *engine.Node {
 var covProject = map[string]string{
 	"/project.yaml":                  "id: root\n",
 	"/db/orders.yaml":                "id: d1\n",
-	"/tag/hot.yaml":                  "id: t1\n",
 	"/fn/a.yaml":                     "id: f1\nstore: orders\nreads: [orders]\nlabels: ['tag:hot', 'x']\nhost: a.com\n",
 	"/space/shop/meta.yaml":          "id: s1\n",
 	"/space/shop/db/local.yaml":      "id: d2\n",
@@ -127,9 +123,6 @@ func TestIndexDriverWritesWhatTheVocabularyReturns(t *testing.T) {
 				Link("all", ic.Kind+"/"+ic.ID),
 				Set("who/"+ic.ID, ic.Project+"|"+ic.Branch+"|"+scopeKey(ic)),
 				Set("reads/"+ic.ID, strings.Join(reads, ",")),
-				Set("kept/"+ic.ID, "first"),
-				Hole("kept/" + ic.ID),
-				Hole("hole/" + ic.ID),
 			}, nil
 		},
 		dbIndex: func(ic IndexCtx) ([]IndexEntry, error) {
@@ -154,10 +147,6 @@ func TestIndexDriverWritesWhatTheVocabularyReturns(t *testing.T) {
 	// s2 has no db group of its own: local is found in its parent, orders at the project
 	assert.Equal(t, idx["reads/f3"], "orders,local")
 
-	assert.Equal(t, idx["kept/f1"], "first", "a hole never clobbers a value")
-	hole, ok := idx["hole/f1"]
-	assert.Assert(t, ok && hole == nil)
-
 	// fn at position 0 is indexed, in every scope, before db at position 1
 	all := idx["all"].([]string)
 	assert.Equal(t, all[0], "fn/f1")
@@ -169,7 +158,7 @@ func TestIndexDriverWritesWhatTheVocabularyReturns(t *testing.T) {
 		engine.NewNextValidation("dns", "b.com", "hostCheck", map[string]any{"project": "root", "app": "s1"}),
 	})
 
-	_, ok = flat[ProjectKey].(map[string]any)
+	_, ok := flat[ProjectKey].(map[string]any)
 	assert.Assert(t, ok, "an indexed compile is chrooted under %q", ProjectKey)
 }
 
@@ -232,7 +221,6 @@ func TestScopeChainIDs(t *testing.T) {
 func TestIndexEntryConstructors(t *testing.T) {
 	assert.DeepEqual(t, Link("p", 1), IndexEntry{Path: "p", Value: 1, Append: true})
 	assert.DeepEqual(t, Set("p", "v"), IndexEntry{Path: "p", Value: "v"})
-	assert.DeepEqual(t, Hole("p"), IndexEntry{Path: "p"})
 }
 
 func TestIndexAllStopsAtTheFirstError(t *testing.T) {

@@ -28,23 +28,14 @@ const (
 	// NOT UNDER pkg/tcc/taubyte/v2. That tree is where the vocabulary is
 	// DEFINED, and generated output living inside its own definition makes the
 	// two impossible to tell apart — which is the failure this generation
-	// exists to end. Generated specs have their own home: v1's was
-	// legacy/specs, and this is v2's.
+	// exists to end. Generated specs have their own home.
 	readersPath = "pkg/specs/kinds.go"
 	corePath    = "pkg/specs/project.go"
 	readersPkg  = "specs"
 )
 
 // Generate returns a map of repo-relative path -> generated file content: the
-// TypeScript schema and the JSON schema.
-//
-// IT NO LONGER EMITS GO ACCESSORS. It used to also render legacy/schema/<kind>
-// accessor files and legacy/specs/structure struct proposals, which existed to
-// project the V1 vocabulary into the v1 services' hand-written packages. v1 is
-// not a target and its vocabulary is deleted, so there is nothing to project
-// into: generating v2 shapes into legacy/ paths would produce files describing
-// a vocabulary those packages do not speak, and the drift check would report
-// the difference forever as though it were a mistake somebody could fix.
+// TypeScript schema, the JSON schema and the specs readers.
 func Generate(root []*engine.Node) (map[string][]byte, error) {
 	out := make(map[string][]byte, 2)
 	ts, err := GenerateTS(schema.CompileRoot())
@@ -91,12 +82,8 @@ func WriteTo(dir string, gen map[string][]byte) error {
 // Check reports which generated files' on-disk copies are not what the
 // vocabulary now says they should be, by repo-relative path.
 //
-// BYTES, AND NOTHING FINER. It used to also compare sets of declared function
-// names, for the Go accessor files this tool projected into the v1 packages:
-// those were adopted and then hand-edited, so a name-level check was the only
-// honest one. Every file generated now is generated whole and adopted whole,
-// which makes "the bytes differ" the entire question — and a path the entire
-// answer.
+// Every file is generated whole and adopted whole, so "the bytes differ" is the
+// entire question.
 func Check(repoRoot string, gen map[string][]byte) ([]string, error) {
 	var drifted []string
 	for rel, b := range gen {

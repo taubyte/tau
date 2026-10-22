@@ -289,35 +289,6 @@ func TestSetAttributes_WithValidator(t *testing.T) {
 	assert.Equal(t, obj.Get("attr1"), "valid")
 }
 
-func TestSetAttributes_WithCompatFallback(t *testing.T) {
-	// Use case: Testing setAttributes with Compat fallback
-	fs := afero.NewMemMapFs()
-	fs.MkdirAll("/test/compat", 0755)
-	afero.WriteFile(fs, "/test/compat/value.yaml", []byte("compat-value"), 0644)
-
-	sr, err := yaseer.New(yaseer.VirtualFS(fs, "/test"))
-	assert.NilError(t, err)
-
-	node := &Node{
-		Attributes: []*Attribute{
-			{
-				Name:   "attr1",
-				Type:   TypeString,
-				Path:   []StringMatch{"nonexistent"},
-				Compat: []StringMatch{"compat", "value"},
-			},
-		},
-	}
-
-	obj := object.New[object.Refrence]()
-	query := sr.Query()
-
-	err = setAttributes(node, obj, query, walk{})
-
-	assert.NilError(t, err)
-	assert.Equal(t, obj.Get("attr1"), "compat-value")
-}
-
 func TestSetAttributes_RequiredError(t *testing.T) {
 	// Use case: Testing setAttributes with required attribute that fails
 	fs := afero.NewMemMapFs()

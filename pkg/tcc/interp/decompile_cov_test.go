@@ -33,17 +33,14 @@ func dcFn() *engine.Node {
 	return engine.DefineIter([]*engine.Attribute{
 		engine.String("id", engine.Required(), engine.Validator(fnID)),
 		engine.String("name"),
-		engine.String("type", engine.DerivedBool("Secure", map[string]bool{"https": true, "http": false}, map[bool]string{true: "https", false: "http"})),
-		engine.String("protocol", engine.OnlyWhen("type", "p2p"), engine.Tag("service")),
-		engine.String("net", engine.EnumBool("Local", []string{"host"}, []string{"host", "all"}, [2]string{"host", "all"})),
-		engine.Duration("timeout", engine.Tag("wait")),
+		engine.String("type"),
+		engine.Duration("timeout"),
 		engine.StringSlice("domains", engine.Ref("domain")),
-		engine.String("source", engine.Ref("lib", engine.Prefix("libraries/"), engine.FlatValue())),
 		engine.String("uses", engine.Ref("lib")),
 	},
 		engine.Nested(
 			engine.DefineGroup("ports", engine.DefineIter([]*engine.Attribute{
-				engine.String("proto", engine.Tag("p")),
+				engine.String("proto"),
 				engine.Duration("idle"),
 				engine.String("lib", engine.Ref("lib")),
 			})),
@@ -98,14 +95,14 @@ var dcFiles = map[string]string{
 	"/lib/core.yaml":    "id: L1\n",
 	"/domain/main.yaml": "id: D1\nfqdn: a.example.com\nzone: zones/a.zone\n",
 	"/zones/a.zone":     "@ IN A 1.2.3.4\n",
-	"/fn/api.yaml": "id: F1\ntype: https\nnet: host\ntimeout: 20s\ndomains: [main]\nsource: libraries/core\nuses: core\n" +
+	"/fn/api.yaml": "id: F1\ntype: https\ntimeout: 20s\ndomains: [main]\nuses: core\n" +
 		"ports:\n    web:\n        proto: tcp\n        idle: 5m\n        lib: core\nsteps:\n    - run: a\n    - run: b\n",
-	"/fn/peer.yaml":           "id: F2\ntype: p2p\nprotocol: chat\nnet: subnet\nsource: .\n",
+	"/fn/peer.yaml":           "id: F2\ntype: p2p\n",
 	"/app/eu/meta.yaml":       "id: A1\n",
 	"/app/eu/lib/own.yaml":    "id: L2\n",
 	"/agent/bot/meta.yaml":    "id: G1\nuses: core\nfn:\n    checkout:\n        lib: core\n        timeout: 1m\n",
-	"/agent/bot/fn/tool.yaml": "id: F4\ntype: http\nsource: .\nuses: core\ntimeout: 3s\n",
-	"/app/eu/fn/job.yaml":     "id: F3\ntype: http\nsource: libraries/own\nuses: core\n",
+	"/agent/bot/fn/tool.yaml": "id: F4\ntype: http\nuses: core\ntimeout: 3s\n",
+	"/app/eu/fn/job.yaml":     "id: F3\ntype: http\nuses: own\n",
 }
 
 func dcCompile(t *testing.T, fs afero.Fs, containerFirst bool) map[string]any {
@@ -159,27 +156,18 @@ func testDecompileWritesWhatWasAuthored(t *testing.T, containerFirst bool) {
 	api := readDoc(t, out, "/fn/api.yaml")
 	assert.Equal(t, api["id"], "F1")
 	assert.Equal(t, api["type"], "https")
-	assert.Equal(t, api["net"], "host")
 	assert.Equal(t, api["timeout"], "20s")
 	assert.DeepEqual(t, api["domains"], []any{"main"})
-	assert.Equal(t, api["source"], "libraries/core")
 	assert.Equal(t, api["uses"], "core")
 	assert.DeepEqual(t, api["ports"], map[string]any{"web": map[string]any{"proto": "tcp", "idle": "5m0s", "lib": "core"}})
 	assert.DeepEqual(t, api["steps"], []any{map[string]any{"run": "a"}, map[string]any{"run": "b"}})
-	for _, synthesized := range []string{"secure", "local", "wait", "name"} {
-		_, has := api[synthesized]
-		assert.Assert(t, !has, "%s is compiled, not authored", synthesized)
-	}
+	_, has := api["name"]
+	assert.Assert(t, !has, "name is compiled, not authored")
 
-	peer := readDoc(t, out, "/fn/peer.yaml")
-	assert.Equal(t, peer["protocol"], "chat", "renamed back only when type is p2p")
-	assert.Equal(t, peer["net"], "subnet", "a preserved source value wins over the bool")
-	assert.Equal(t, peer["source"], ".", "a value outside the prefix is not a reference")
+	assert.Equal(t, readDoc(t, out, "/fn/peer.yaml")["type"], "p2p")
 
 	job := readDoc(t, out, "/app/eu/fn/job.yaml")
-	assert.Equal(t, job["source"], "libraries/own", "the scope's own library first")
-	assert.Equal(t, job["uses"], "core", "then the project's")
-	assert.Equal(t, job["net"], "all", "rebuilt from the bool when the source key was dropped")
+	assert.Equal(t, job["uses"], "own", "the scope's own library first")
 	assert.Equal(t, readDoc(t, out, "/app/eu/meta.yaml")["id"], "A1")
 	main := readDoc(t, out, "/domain/main.yaml")
 	assert.DeepEqual(t, main, map[string]any{"id": "D1", "fqdn": "a.example.com", "zone": "zones/a.zone"})
@@ -203,12 +191,10 @@ func TestDecompileRefusesAnObjectItCannotInvert(t *testing.T) {
 		mutate func(fn object.Object[object.Refrence])
 		want   string
 	}{
-		"unknown listed id":     {func(fn object.Object[object.Refrence]) { fn.Set("domains", []string{"D9"}) }, "domain ID D9 not found"},
-		"list that is not":      {func(fn object.Object[object.Refrence]) { fn.Set("domains", "D1") }, "is not a []string"},
-		"unknown prefixed id":   {func(fn object.Object[object.Refrence]) { fn.Set("source", "libraries/L9") }, "lib ID L9 not found"},
-		"prefixed not a string": {func(fn object.Object[object.Refrence]) { fn.Set("source", 7) }, "is not a string"},
-		"unknown id":            {func(fn object.Object[object.Refrence]) { fn.Set("uses", "L9") }, "lib ID L9 not found"},
-		"bad scalar":            {func(fn object.Object[object.Refrence]) { fn.Set("wait", "soon") }, "fn F1"},
+		"unknown listed id": {func(fn object.Object[object.Refrence]) { fn.Set("domains", []string{"D9"}) }, "domain ID D9 not found"},
+		"list that is not":  {func(fn object.Object[object.Refrence]) { fn.Set("domains", "D1") }, "is not a []string"},
+		"unknown id":        {func(fn object.Object[object.Refrence]) { fn.Set("uses", "L9") }, "lib ID L9 not found"},
+		"bad scalar":        {func(fn object.Object[object.Refrence]) { fn.Set("timeout", "soon") }, "fn F1"},
 		"bad nested scalar": {func(fn object.Object[object.Refrence]) {
 			ports, err := fn.Child("ports").Object()
 			assert.NilError(t, err)
@@ -230,23 +216,6 @@ func TestDecompileRefusesAnObjectItCannotInvert(t *testing.T) {
 	}
 }
 
-func TestDecompileWithNoBoolToRestoreFrom(t *testing.T) {
-	project, root := dcSchema()
-	c, err := interp.New(project, root, interp.WithVirtual(memFs(t, dcFiles), "/"),
-		interp.WithLayout(interp.Layout{Resource: "{kind}/{name}.yaml", Scope: "{kind}/{name}"}))
-	assert.NilError(t, err)
-	obj, _, err := c.Compile(context.Background())
-	assert.NilError(t, err)
-	fnF1(t, obj).Delete("local")
-
-	out := afero.NewMemMapFs()
-	d, err := decompile.New(project, root, decompile.WithVirtual(out, "/"))
-	assert.NilError(t, err)
-	assert.NilError(t, d.Decompile(obj))
-	_, has := readDoc(t, out, "/fn/api.yaml")["net"]
-	assert.Assert(t, !has, "nothing to restore the enum from, so it is not invented")
-}
-
 func fnF1(t *testing.T, obj interp.Object) object.Object[object.Refrence] {
 	t.Helper()
 	fns, err := obj.Child("fn").Object()
@@ -256,19 +225,19 @@ func fnF1(t *testing.T, obj interp.Object) object.Object[object.Refrence] {
 	return fn
 }
 
-func TestDecompileAbsentFlatValueReference(t *testing.T) {
+func TestDecompileAbsentReference(t *testing.T) {
 	project, root := dcSchemaOrdered(true)
 	c, err := interp.New(project, root, interp.WithVirtual(memFs(t, dcFiles), "/"),
 		interp.WithLayout(interp.Layout{Resource: "{kind}/{name}.yaml", Scope: "{kind}/{name}"}))
 	assert.NilError(t, err)
 	obj, _, err := c.Compile(context.Background())
 	assert.NilError(t, err)
-	fnF1(t, obj).Delete("source")
+	fnF1(t, obj).Delete("uses")
 
 	out := afero.NewMemMapFs()
 	d, err := decompile.New(project, root, decompile.WithVirtual(out, "/"))
 	assert.NilError(t, err)
 	assert.NilError(t, d.Decompile(obj))
-	_, has := readDoc(t, out, "/fn/api.yaml")["source"]
+	_, has := readDoc(t, out, "/fn/api.yaml")["uses"]
 	assert.Assert(t, !has)
 }

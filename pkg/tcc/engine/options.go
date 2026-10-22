@@ -20,12 +20,6 @@ func Required() Option {
 	}
 }
 
-func Compat(path ...StringMatch) Option {
-	return func(a *Attribute) {
-		a.Compat = path
-	}
-}
-
 func Default[T any](val T) Option {
 	return func(a *Attribute) {
 		a.Default = val

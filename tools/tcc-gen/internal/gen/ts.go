@@ -9,7 +9,7 @@ import (
 )
 
 // TypeScript emission. Reuses the same DSL walk primitives as the Go accessor
-// generator (pathSegs / compatSegs / accessorName / the skip tables) and emits a
+// generator (pathSegs / accessorName / the skip tables) and emits a
 // typed facade over a wasm-resident editable session: one accessor class per
 // resource whose async getters/setters read/write fields by (resource, field)
 // path across the wasm boundary. The config representation and all YAML live in
@@ -55,17 +55,10 @@ func upperFirst(s string) string {
 	return string(r)
 }
 
-// wireKey is the JSON key a compiled resource carries for a struct field — the
-// mapstructure tag if declared, else the lower-cased field name (which is what
-// the compiler emits and mapstructure decodes case-insensitively).
+// wireKey is the JSON key a compiled resource carries for a struct field: the
+// lower-cased field name, which is what the compiler emits and mapstructure
+// decodes case-insensitively.
 func wireKey(f Field) string {
-	if f.Tag != "" {
-		if i := strings.IndexByte(f.Tag, '"'); i >= 0 {
-			if j := strings.IndexByte(f.Tag[i+1:], '"'); j >= 0 {
-				return f.Tag[i+1 : i+1+j]
-			}
-		}
-	}
 	return strings.ToLower(f.Name)
 }
 
@@ -124,10 +117,9 @@ func tsArr(segs []string) string {
 }
 
 type tsField struct {
-	name   string   // camelCase accessor name
-	typ    string   // ts type (or enum alias)
-	path   []string // in-document field path
-	compat []string // legacy field path (read fallback), or nil
+	name string   // camelCase accessor name
+	typ  string   // ts type (or enum alias)
+	path []string // in-document field path
 	// A branching location: the field lives under one of several alternative
 	// keys (a storage's size is at object/size or streaming/size). prefix and
 	// suffix are the literal segments around the choice; alts are the keys.
@@ -189,44 +181,6 @@ type tsEnum struct {
 	quoted bool
 }
 
-// repoShape is the DSL's git-repository block, read off the RepoName/RepoBranch
-// annotations: `source` is the block, the provider key under it is dynamic, and
-// `fullname` is the leaf that says which repository. Nothing here names a
-// provider or a leaf — that is exactly the hardcoding this shape removes.
-type repoShape struct{ source, fullname, branch string }
-
-// repoShapeOf reads the shape off every group that declares one and requires
-// them to agree: one generated resourceRepo serves all of them, so two kinds
-// with different repo layouts would silently read the wrong key for one. Fail
-// loudly instead — the generator never guesses.
-func repoShapeOf(groups []*engine.Node) (*repoShape, error) {
-	var found *repoShape
-	for _, g := range groups {
-		if len(g.Children) == 0 {
-			continue
-		}
-		s := &repoShape{}
-		for _, a := range g.Children[0].Attributes {
-			p, plain := pathSegs(a)
-			if b, _ := a.Meta["repoName"].(bool); b && plain && len(p) >= 2 {
-				s.source, s.fullname = p[0], p[len(p)-1]
-			}
-			if b, _ := a.Meta["repoBranch"].(bool); b && plain && len(p) > 0 {
-				s.branch = p[len(p)-1]
-			}
-		}
-		if s.source == "" || s.fullname == "" {
-			continue
-		}
-		if found != nil && *s != *found {
-			name, _ := g.Match.(string)
-			return nil, fmt.Errorf("group %q declares a repository shape %+v that disagrees with %+v", name, *s, *found)
-		}
-		found = s
-	}
-	return found, nil
-}
-
 // tsFieldsOf projects a node's attributes into TS accessor fields, registering
 // each enum under an alias named for spec. Shared by resources, the container
 // group and the project root, so all three get the same accessors.
@@ -258,9 +212,6 @@ func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enu
 	}
 
 	for _, a := range n.Attributes {
-		if noStructField(a) {
-			continue
-		}
 		prefix, alts, suffix, branched := branchOf(a)
 		if a.Captures && !branched {
 			continue // a key with no alternatives is not addressable
@@ -306,9 +257,6 @@ func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enu
 			if a.Captures {
 				f.typ = sw.alias
 			}
-		}
-		if compat, ok := compatSegs(a); ok {
-			f.compat = compat
 		}
 		out = append(out, f)
 	}
@@ -412,14 +360,8 @@ func writeTSClass(b *strings.Builder, r tsResource, ctor string) {
 			continue
 		}
 		// getter
-		if len(f.compat) == 0 {
-			fmt.Fprintf(b, "\n  async %s(): Promise<%s | undefined> {\n", f.name, f.typ)
-			fmt.Fprintf(b, "    return (await this.s.binding.get(this.s.handle, this.res, %s)) as %s | undefined;\n  }\n", tsArr(f.path), f.typ)
-		} else {
-			fmt.Fprintf(b, "\n  async %s(): Promise<%s | undefined> {\n", f.name, f.typ)
-			fmt.Fprintf(b, "    const v = await this.s.binding.get(this.s.handle, this.res, %s);\n", tsArr(f.path))
-			fmt.Fprintf(b, "    return (v ?? (await this.s.binding.get(this.s.handle, this.res, %s))) as %s | undefined;\n  }\n", tsArr(f.compat), f.typ)
-		}
+		fmt.Fprintf(b, "\n  async %s(): Promise<%s | undefined> {\n", f.name, f.typ)
+		fmt.Fprintf(b, "    return (await this.s.binding.get(this.s.handle, this.res, %s)) as %s | undefined;\n  }\n", tsArr(f.path), f.typ)
 		// setter
 		fmt.Fprintf(b, "  set%s(v: %s): Promise<void> {\n", upperFirst(f.name), f.typ)
 		fmt.Fprintf(b, "    return this.s.binding.set(this.s.handle, this.res, %s, v);\n  }\n", tsArr(f.path))
@@ -484,11 +426,6 @@ func GenerateTS(rootNode *engine.Node) ([]byte, error) {
 	if err2 != nil {
 		return nil, err2
 	}
-	repo, err := repoShapeOf(root)
-	if err != nil {
-		return nil, err
-	}
-
 	var b strings.Builder
 	b.WriteString("// Code generated by tcc-gen; DO NOT EDIT.\n")
 	b.WriteString("// Typed accessors over a wasm-resident editable config session. Getters/setters\n")
@@ -520,11 +457,6 @@ func GenerateTS(rootNode *engine.Node) ([]byte, error) {
 	}
 	if len(enumOrder) > 0 {
 		b.WriteString("\n")
-	}
-
-	if repo != nil {
-		b.WriteString("/** The git repository backing a resource. */\n")
-		b.WriteString("export interface RepoRef {\n  provider: string;\n  fullname: string;\n  branch?: string;\n}\n\n")
 	}
 
 	// Session: the editable handle, with typed resource factories.
@@ -581,26 +513,6 @@ func GenerateTS(rootNode *engine.Node) ([]byte, error) {
     return new ResourceConfig(this, await this.address(kind, name, app));
   }
 `)
-	if repo != nil {
-		fmt.Fprintf(&b, `  /** The git repository backing a resource, or null if it isn't repo-backed.
-   * The provider key is dynamic, so this takes whichever sub-object of %q
-   * carries the repo name — no provider is named here or in the DSL walk. */
-  async resourceRepo(res: string[]): Promise<RepoRef | null> {
-    const src = await this.binding.get(this.handle, res, [%q]).catch(() => null);
-    if (!src || typeof src !== "object" || Array.isArray(src)) return null;
-    const block = src as Record<string, unknown>;
-    const branch = typeof block[%q] === "string" ? (block[%q] as string) : undefined;
-    for (const [provider, v] of Object.entries(block)) {
-      if (!v || typeof v !== "object" || Array.isArray(v)) continue;
-      const fullname = (v as Record<string, unknown>)[%q];
-      if (typeof fullname === "string" && fullname) {
-        return { provider, fullname, ...(branch ? { branch } : {}) };
-      }
-    }
-    return null;
-  }
-`, repo.source, repo.source, repo.branch, repo.branch, repo.fullname)
-	}
 	b.WriteString("  compile(opts?: CompileOptions): Promise<CompileResult> {\n    return this.binding.compile(this.handle, opts);\n  }\n")
 	b.WriteString("  validate(opts?: CompileOptions): Promise<Validation[]> {\n    return this.binding.validate(this.handle, opts);\n  }\n")
 	// views() is the compile cut one view per region — the cut a deploy publishes —

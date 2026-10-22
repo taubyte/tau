@@ -7,8 +7,6 @@ import (
 
 // DSL builder re-exports, so definition.go reads as bare String(...)/DefineGroup(...)
 // without a dot-import (which would collide with this package's own New/Option).
-// Same list as v1's, minus the terms the v2 vocabulary deletes with smartops and
-// the trigger block (AttachesToAll, DerivedBool, OnlyWhen, SectionWhen).
 type (
 	Node      = engine.Node
 	Attribute = engine.Attribute
@@ -66,7 +64,6 @@ var (
 	Serves           = engine.Serves
 	Inbound          = engine.Inbound
 	EmitValidation   = engine.EmitValidation
-	EnumBool         = engine.EnumBool
 	Field            = engine.Field
 	Generated        = engine.Generated
 	GroupAnnotate    = engine.GroupAnnotate
@@ -80,14 +77,10 @@ var (
 	MinInt           = engine.MinInt
 	Nested           = engine.Nested
 	NoAccessors      = engine.NoAccessors
-	NoGetter         = engine.NoGetter
 	NoSetter         = engine.NoSetter
-	NoStructField    = engine.NoStructField
 	Path             = engine.Path
-	Prefix           = engine.Prefix
 	Ref              = engine.Ref
 	RepoBranch       = engine.RepoBranch
-	RepoName         = engine.RepoName
 	Required         = engine.Required
 	Resource         = engine.Resource
 	Root             = engine.Root
@@ -100,8 +93,6 @@ var (
 	Leaf             = engine.Leaf
 	Derived          = engine.Derived
 	Strict           = engine.Strict
-	StringShape      = engine.StringShape
-	Tag              = engine.Tag
 	WireDrop         = engine.WireDrop
 )
 

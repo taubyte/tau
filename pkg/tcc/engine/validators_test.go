@@ -58,30 +58,6 @@ func TestIsCID(t *testing.T) {
 	}
 }
 
-func TestIsEmail(t *testing.T) {
-	attr := &Attribute{}
-	option := IsEmail()
-	option(attr)
-
-	tests := []struct {
-		val     string
-		isValid bool
-	}{
-		{"test@example.com", true},
-		{"invalid-email", false},
-	}
-
-	for _, test := range tests {
-		err := attr.Validator(test.val)
-		if test.isValid && err != nil {
-			t.Errorf("Expected email '%s' to be valid, but got error: %v", test.val, err)
-		}
-		if !test.isValid && err == nil {
-			t.Errorf("Expected email '%s' to be invalid, but got no error", test.val)
-		}
-	}
-}
-
 func TestInSet(t *testing.T) {
 	attr := &Attribute{}
 	option := InSet("test", "sample")
@@ -131,32 +107,6 @@ func TestIsFqdn(t *testing.T) {
 		}
 		if !test.isValid && err == nil {
 			t.Errorf("Expected domain '%s' to be invalid, but got no error", test.val)
-		}
-	}
-}
-
-func TestIsHttpMethod(t *testing.T) {
-	attr := &Attribute{}
-	option := IsHttpMethod()
-	option(attr)
-
-	tests := []struct {
-		val     string
-		isValid bool
-	}{
-		{"GET", true},
-		{"HEAD", true},
-		{"INVALID", false},
-		{"http", false},
-	}
-
-	for _, test := range tests {
-		err := attr.Validator(test.val)
-		if test.isValid && err != nil {
-			t.Errorf("Expected method '%s' to be valid, but got error: %v", test.val, err)
-		}
-		if !test.isValid && err == nil {
-			t.Errorf("Expected method '%s' to be invalid, but got no error", test.val)
 		}
 	}
 }

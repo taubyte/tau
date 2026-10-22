@@ -116,8 +116,7 @@ func (d *Decompiler) writeInlined(files map[string][]string) error {
 //
 // The chroot-unwrap is only needed when the forward path chrooted, and it chroots to make
 // room for a sibling: the `indexes` subtree, or the record of what was lowered. When it
-// did not there is no `object` wrapper and the unwrap is a no-op, so gating it keeps v1
-// identical and skips dead work for a schema with neither sibling.
+// did not there is no `object` wrapper and the unwrap is a no-op, so gating it skips dead work for a schema with neither sibling.
 //
 // The lowering removal runs BEFORE the driver: the record addresses resources and
 // accessors by their compiled id, and the driver's last act is to key every resource by

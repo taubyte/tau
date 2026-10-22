@@ -39,20 +39,6 @@ func TestPathOption(t *testing.T) {
 	}
 }
 
-func TestCompatOption(t *testing.T) {
-	attr := &Attribute{}
-	expectedCompat := []StringMatch{"compat1", "compat2"}
-	Compat(expectedCompat...)(attr)
-	if len(attr.Compat) != len(expectedCompat) {
-		t.Fatalf("Expected compat length %d, got %d", len(expectedCompat), len(attr.Compat))
-	}
-	for i, c := range expectedCompat {
-		if attr.Compat[i] != c {
-			t.Errorf("Expected compat at index %d to be %s, got %s", i, c, attr.Compat[i])
-		}
-	}
-}
-
 func TestDefaultOption(t *testing.T) {
 	attr := &Attribute{}
 	expectedDefault := "defaultTest"

@@ -154,14 +154,14 @@ func (v2FieldValidator) RequiredFields(group string) []session.RequiredField {
 	out := make([]session.RequiredField, 0, len(src))
 	for _, r := range src {
 		rf := session.RequiredField{
-			FieldRef:     session.FieldRef{Path: r.Path, Compat: r.Compat, AnyOf: r.AnyOf},
+			FieldRef:     session.FieldRef{Path: r.Path, AnyOf: r.AnyOf},
 			WhenIn:       r.WhenIn,
 			Unless:       r.Unless,
 			WhenBranch:   r.WhenBranch,
 			WhenBranchAt: r.WhenBranchAt,
 		}
 		if r.When != nil {
-			rf.When = &session.FieldRef{Path: r.When.Path, Compat: r.When.Compat}
+			rf.When = &session.FieldRef{Path: r.When.Path}
 		}
 		out = append(out, rf)
 	}

@@ -3,37 +3,8 @@ package utils
 import (
 	"fmt"
 
-	"github.com/alecthomas/units"
 	"github.com/taubyte/tau/pkg/tcc/object"
 )
-
-// ParseSize parses a size string from the specified field and sets it as bytes (int64).
-// If the field doesn't exist or is nil, the function returns nil (no error).
-// Returns an error if the field exists but is not a string or cannot be parsed.
-func ParseSize(sel object.Selector[object.Refrence], field string) error {
-	size, err := sel.Get(field)
-	if err != nil {
-		// Field doesn't exist, which is fine
-		return nil
-	}
-
-	// Some code checks for nil explicitly, so we handle that too
-	if size == nil {
-		return nil
-	}
-
-	sizeStr, ok := size.(string)
-	if !ok {
-		return fmt.Errorf("%s is not a string", field)
-	}
-
-	sizeInt, err := units.ParseStrictBytes(sizeStr)
-	if err != nil {
-		return fmt.Errorf("parsing %s failed with %w", field, err)
-	}
-
-	return sel.Set(field, sizeInt)
-}
 
 // RenameById extracts the "id" field, sets "name" to the provided name,
 // deletes the "id" field, and renames the selector to use the id value.
@@ -60,37 +31,6 @@ func RenameById(sel object.Selector[object.Refrence], name, idField, nameField s
 	}
 
 	return idStr, nil
-}
-
-// FormatSize converts bytes (int64) back to a human-readable size string.
-// If the field doesn't exist or is nil, the function returns nil (no error).
-// Returns an error if the field exists but is not an int64 or cannot be formatted.
-func FormatSize(sel object.Selector[object.Refrence], field string) error {
-	size, err := sel.Get(field)
-	if err != nil {
-		// Field doesn't exist, which is fine
-		return nil
-	}
-
-	// Field exists but is nil, which is also fine
-	if size == nil {
-		return nil
-	}
-
-	var sizeBytes int64
-	switch v := size.(type) {
-	case int64:
-		sizeBytes = v
-	case int:
-		sizeBytes = int64(v)
-	case int32:
-		sizeBytes = int64(v)
-	default:
-		return fmt.Errorf("%s is not an integer", field)
-	}
-
-	sizeStr := units.MetricBytes(float64(sizeBytes)).String()
-	return sel.Set(field, sizeStr)
 }
 
 // RenameByName reverses RenameById: the resource goes back to being keyed by its name,

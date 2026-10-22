@@ -11,8 +11,7 @@ type Option func(c *Compiler) error
 // declarations reference by name. interp spells none of these keys: the VARIABLES
 // among them are the ones the schema root declares with Varying, which is where the
 // compile binding comes from, and every other key is owned by the schema that reads
-// it — e.g. the taubyte schema's WithCloud sets "cloud", consumed by a
-// PromoteEnvKeyed declaration, not by interp.
+// it.
 type Env map[string]string
 
 func WithLocal(path string) Option {

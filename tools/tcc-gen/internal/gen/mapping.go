@@ -59,10 +59,6 @@ func attrSet(attrs []*engine.Attribute) map[string]bool {
 	return m
 }
 
-// noStructField reports the NoStructField() annotation — the attribute projects
-// to no structureSpec struct field (and no TS wire/session field).
-func noStructField(a *engine.Attribute) bool { b, _ := a.Meta["noStructField"].(bool); return b }
-
 // goType maps a DSL type to the Go type used by the schema accessors. Float is
 // unused by resource schemas; "" signals "skip".
 func goType(t engine.Type) string {
@@ -113,16 +109,6 @@ func pathSegs(a *engine.Attribute) (segs []string, ok bool) {
 // engine keeps the decomposition on the attribute (Segments), and holds every
 // segment to a bare identifier — so the accessor is the segments title-cased and
 // joined, ServeKind, which is a legal identifier by construction.
-// compatSegs is the legacy ALIAS location, if the attribute declares one. The
-// engine falls back to it when the canonical Path is absent, so generated
-// getters do the same (canonical read, compat read-fallback).
-func compatSegs(a *engine.Attribute) (segs []string, ok bool) {
-	if len(a.Compat) == 0 {
-		return nil, false
-	}
-	return plainSegs(a.Compat)
-}
-
 func accessorName(group string, a *engine.Attribute) string {
 	if ov, ok := a.Meta["accessor"].(string); ok && ov != "" {
 		return ov

@@ -241,27 +241,18 @@ func (c *Compiler) Validate(ctx context.Context) ([]NextValidation, error) {
 // compilePipe assembles the transform pipeline from what the schema root actually
 // declares, so a schema that doesn't use a feature doesn't pay for its pass. The
 // CompileDriver always runs; the rest are gated on generic predicates over the
-// root's DSL annotations. For the v1 schema every predicate is true, so the pipe is
-// byte-for-byte the historical fixed sequence
-// {compileDriver, resolveRefs, attachAll, chroot, indexDriver}.
+// root's DSL annotations.
 func compilePipe(root *engine.Node, env Env) []transform.Transformer[object.Refrence] {
-	// The CompileDriver replaces the whole pass1 layer: one generic transform that
-	// interprets the schema DSL to do every structural projection pass1 did.
+	// The CompileDriver: one generic transform that interprets the schema DSL to do
+	// every structural projection.
 	pipe := []transform.Transformer[object.Refrence]{
-		newCompileDriver(root, env),
+		newCompileDriver(root),
 	}
 
-	// ResolveRefs (pass2): resolve every Ref(...)-annotated attribute against the
+	// ResolveRefs: resolve every Ref(...)-annotated attribute against the
 	// name->id index the CompileDriver populated. Only needed if the schema has refs.
 	if usesRefs(root) {
 		pipe = append(pipe, ResolveRefs(root))
-	}
-
-	// AttachAll: the AttachesToAll() cross-cutting attachment, turning each
-	// "<group>:<name>" resource tag into an entry on that resource's wire list. Only
-	// needed if some group declares AttachesToAll.
-	if usesAttachesToAll(root) {
-		pipe = append(pipe, AttachAll(root))
 	}
 
 	// The chroot wraps the project under `object` so a sibling can sit beside it. Two

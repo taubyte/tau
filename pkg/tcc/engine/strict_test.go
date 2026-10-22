@@ -8,8 +8,8 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// The vocabulary under test: one kind with a nested block, an Either() switch, a
-// Compat path, an All() level, and a name-keyed child group.
+// The vocabulary under test: one kind with a nested block, an Either() switch, an
+// All() level, and a name-keyed child group.
 func strictSchema() Schema {
 	return SchemaDefinition(Root(
 		Attributes(String("id")),
@@ -20,7 +20,7 @@ func strictSchema() Schema {
 					String("name"),
 					String("call", Path("execution", "call")),
 					String("mem", Path("execution", "memory")),
-					String("regex", Path("regex"), Compat("useRegex")),
+					String("regex", Path("regex")),
 					String("kind", Path("engine", Either("local", "remote")), Captures()),
 					String("host", Path("engine", Either("local", "remote"), "host")),
 					String("anything", Path("labels", All(), "value")),
@@ -46,7 +46,7 @@ func compileDoc(t *testing.T, doc string) error {
 }
 
 // Everything the schema CAN read is accepted — including the shapes that are easy to
-// reject by accident: an Either() branch, a Compat name, and an All() level where the
+// reject by accident: an Either() branch and an All() level where the
 // key is the author's to choose.
 func TestStrictAcceptsEverythingTheSchemaReads(t *testing.T) {
 	assert.NilError(t, compileDoc(t, `
@@ -55,7 +55,7 @@ name: one
 execution:
     call: main
     memory: 32MB
-useRegex: "yes"
+regex: "yes"
 engine:
     local:
         host: here
@@ -135,9 +135,8 @@ func TestStrictIgnoresNeighbouringFilesOnDisk(t *testing.T) {
 	assert.NilError(t, err, "a neighbouring directory is not an unknown key")
 }
 
-// A vocabulary that does not ask for the check keeps the old behaviour, which is what
-// keeps v1 loading the projects already deployed against it. The same document that
-// fails above compiles here.
+// A vocabulary that does not ask for the check drops unknown keys. The same document
+// that fails above compiles here.
 func TestStrictIsOptInPerVocabulary(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/config.yaml", []byte("id: root\n"), 0o644))

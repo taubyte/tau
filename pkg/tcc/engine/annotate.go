@@ -79,8 +79,7 @@ func Icon(name string) NodeOption {
 
 // ConditionSpec is a simple static visibility condition: show the field or section
 // only when a sibling attribute (Field) holds one of In. Presentation-only — a
-// UI/CLI evaluates it; it never affects parsing or the compiled output. (For
-// compile-time wire-projection gating, that's the separate OnlyWhen.)
+// UI/CLI evaluates it; it never affects parsing or the compiled output.
 type ConditionSpec struct {
 	Field string
 	In    []string
@@ -136,13 +135,11 @@ func RequiredUnless[T string | AKey](field T) Option {
 // or CLI groups them for display. It is presentation-only (no compile effect) and
 // does NOT have to align with the authored nesting: a field under one Path can sit
 // in a section with a field from another. Membership is explicit (see InSection),
-// never derived from Path. Title is the short heading; Doc the longer blurb; When
-// (optional) shows the whole section only when its condition holds.
+// never derived from Path. Title is the short heading; Doc the longer blurb.
 type SectionSpec struct {
 	ID    string
 	Title string
 	Doc   string
-	When  *ConditionSpec
 }
 
 // Section declares a display section with an id, a short Title, and a longer
@@ -150,13 +147,6 @@ type SectionSpec struct {
 // Fields join it with InSection(id). Schema-only — no compile/parse effect.
 func Section(id, title, doc string) NodeOption {
 	return sectionDef(SectionSpec{ID: id, Title: title, Doc: doc})
-}
-
-// SectionWhen is Section with a static visibility condition: the section is shown
-// only when sibling attribute field holds one of in (e.g. the HTTP section only
-// when a function's type is "http"/"https"). Schema-only.
-func SectionWhen(id, title, doc, field string, in ...string) NodeOption {
-	return sectionDef(SectionSpec{ID: id, Title: title, Doc: doc, When: &ConditionSpec{Field: field, In: in}})
 }
 
 func sectionDef(spec SectionSpec) NodeOption {
@@ -176,14 +166,6 @@ func InSection(id string) Option {
 	return Annotate("section", id)
 }
 
-// RepoName marks the attribute holding a repository's full name (owner/repo)
-// INSIDE its provider block — the value that says which repository backs the
-// resource. It is what lets a tool extract the backing repo generically: the
-// provider key is dynamic, so "the sub-object carrying the repo name" is the
-// only stable handle, and this says which leaf that is instead of every consumer
-// hardcoding "fullname". Introspection-only; no compile or runtime effect.
-func RepoName() Option { return Annotate("repoName", true) }
-
 // RepoBranch marks the attribute holding the git branch a repo-backed resource
 // builds from (a sibling of the provider block). Introspection-only.
 func RepoBranch() Option { return Annotate("repoBranch", true) }
@@ -193,14 +175,6 @@ func RepoBranch() Option { return Annotate("repoBranch", true) }
 // (e.g. github-id -> RepoID). Generation-only; no runtime effect.
 func Field(goName string) Option {
 	return Annotate("field", goName)
-}
-
-// Tag sets the mapstructure key a generator emits for this attribute's struct
-// field, when the on-disk key isn't derivable from the schema (e.g. github-id ->
-// `mapstructure:"repository-id"`). Generation-only; no runtime effect.
-func Tag(key string) Option {
-	mustNotSpellAPath("tag", key)
-	return Annotate("tag", key)
 }
 
 // Accessor overrides the exported NAME of the pkg/schema getter/setter a
@@ -236,13 +210,6 @@ func NoAccessors() Option {
 	}
 }
 
-// NoStructField declares that this attribute projects to no structureSpec struct
-// field (and no TS wire/session field) — folded elsewhere (encryption-type) or
-// unimplemented (http-methods). Generation-only; no runtime effect.
-func NoStructField() Option {
-	return Annotate("noStructField", true)
-}
-
 // NodeOption mutates a node — the node-level analogue of Option. Passed to
 // DefineIter to attach opaque metadata to the object template (the node each
 // compiled resource-object matches), not to the parse rules.
@@ -266,46 +233,6 @@ func GroupAnnotate(key string, val any) NodeOption {
 // behaviour can be added later without touching the engine.
 type Capability interface {
 	String() string
-}
-
-// Embeds records the structureSpec interface types a generated struct embeds
-// (e.g. "Basic", "Indexer", "Wasm") — the object-addressing behaviours it
-// exposes. Kept explicit (not derived from Addressing) because a few resources
-// embed more than their capability flags imply (e.g. messaging embeds Wasm).
-// Generation-only; no runtime effect.
-func Embeds(names ...string) NodeOption {
-	return GroupAnnotate("embeds", names)
-}
-
-// AttachesToAll marks a resource group as cross-cutting: every OTHER compiled resource
-// carries a trailing derived []string field listing the instances of THIS kind attached
-// to it. The compiler synthesizes that list from a field each resource already has —
-// `from`, holding entries like "<key><sep><name>" — and adds the named instance's id.
-//
-// The field and the separator are NAMED here because they are the vocabulary's. The
-// driver used to read a field called `tags` and split on `:`, which is one vocabulary's
-// convention written into the layer that must not have one.
-//
-// Requires Resource(...) on the same node.
-func AttachesToAll(from, sep string) NodeOption {
-	return GroupAnnotate("attachesToAll", AttachSpec{From: from, Sep: sep})
-}
-
-// AttachSpec is where a cross-cutting attachment is read from: the field holding the
-// entries, and what separates the group key from the name inside one.
-type AttachSpec struct {
-	From string
-	Sep  string
-}
-
-// AttachesFrom reads it back. The second value is false when the group is not
-// cross-cutting.
-func AttachesFrom(iter *Node) (AttachSpec, bool) {
-	if iter == nil {
-		return AttachSpec{}, false
-	}
-	spec, ok := iter.Meta["attachesToAll"].(AttachSpec)
-	return spec, ok
 }
 
 // Singular declares the Go type name a container group compiles to (e.g. the
@@ -335,74 +262,11 @@ func IndexedAt(iter *Node) (int, bool) {
 	return at, ok
 }
 
-// EnumBoolSpec is the compile/decompile contract for an EnumBool attribute.
-type EnumBoolSpec struct {
-	GoName      string    // bool struct-field name (network-access -> Local/Public)
-	TrueWhen    []string  // source values that compile the bool to true
-	DropWhen    []string  // source values whose wire key is dropped after projection
-	DecompileAs [2]string // [falseVal, trueVal] restored on decompile
-}
-
-// EnumBool declares that this enum attribute projects to a bool struct field
-// named goName (network-access -> Local/Public), replacing the attribute's own
-// field. It carries the full compile/decompile contract a generic driver reads:
-// values in trueWhen compile the bool true; values in dropWhen have their wire
-// key deleted after projection (values in neither survive compile as-is, e.g. a
-// database's authored "subnet"); decompileAs is the [false,true] pair the
-// inverse restores. Generation reads only GoName; the rest is inert driver data
-// this phase. No runtime effect (the hand-written passes still hardcode this).
-func EnumBool(goName string, trueWhen, dropWhen []string, decompileAs [2]string) Option {
-	return Annotate("enumBool", EnumBoolSpec{GoName: goName, TrueWhen: trueWhen, DropWhen: dropWhen, DecompileAs: decompileAs})
-}
-
-// DerivedBoolSpec is the compile/decompile contract for a DerivedBool attribute.
-type DerivedBoolSpec struct {
-	GoName      string          // synthesized bool struct-field name (Function.Secure)
-	When        map[string]bool // source value -> the bool it yields
-	Reconstruct map[bool]string // bool -> the source value restored on decompile
-}
-
-// DerivedBool declares an attribute-level derived bool: a bool struct field
-// named goName synthesized from THIS attribute's value (Function.Secure from
-// type=="https"). `when` maps each source value to the bool it yields;
-// `reconstruct` maps the bool back to a source value on decompile. It is
-// attribute-level (unlike the removed node-level DerivedBools) so a generic
-// driver knows the source attribute. The generator still emits `<goName> bool`
-// alongside the source attribute's own field. Inert driver data this phase; the
-// generator reads only GoName. No runtime effect.
-func DerivedBool(goName string, when map[string]bool, reconstruct map[bool]string) Option {
-	return Annotate("derivedBool", DerivedBoolSpec{GoName: goName, When: when, Reconstruct: reconstruct})
-}
-
-// OnlyWhenSpec gates a wire-key rename/emit on a sibling attribute's value.
-type OnlyWhenSpec struct {
-	Attr string
-	Vals []string
-}
-
-// OnlyWhen makes an attribute's wire projection conditional on a sibling
-// attribute's value (p2p-protocol renames to "service" only when type=="p2p").
-// Inert driver data — no generation or runtime effect this phase.
-func OnlyWhen(attr string, vals ...string) Option {
-	return Annotate("onlyWhen", OnlyWhenSpec{Attr: attr, Vals: vals})
-}
-
 // RefSpec declares that an attribute value references another resource group,
-// so a driver can resolve it to that group's compiled key, optionally under a
-// key Prefix.
+// so a driver can resolve it to that group's compiled key.
 type RefSpec struct {
-	Group  string
-	Prefix string
+	Group string
 
-	// FlatValue keeps a resolved reference as one string, `<prefix><id>`, instead of the
-	// two levels it is: a kind and an id. It exists for v1 alone, whose consumers read
-	// `libraries/<id>` off the compiled object and would have to be changed together
-	// with it — a frozen wire format, declared rather than assumed.
-	//
-	// Everything else nests, because a value that packs two facts is a value every
-	// reader splits back apart by hand, and because "/" belongs between levels of the
-	// object and nowhere else.
-	FlatValue bool
 	// Inbound reverses the DIRECTION of the relationship. A reference is normally
 	// declared by the thing that depends on the target — a function names the module it
 	// is built from, and the arrow runs function -> module. Some run the other way: a
@@ -455,15 +319,6 @@ func KindFrom[T string | AKey](field T) RefOpt {
 	return func(s *RefSpec) { s.KindFrom = name }
 }
 
-// FlatValue keeps a resolved reference as `<prefix><id>` in one string — v1's wire
-// format, and nothing else's. See RefSpec.FlatValue.
-func FlatValue() RefOpt { return func(s *RefSpec) { s.FlatValue = true } }
-
-// Prefix is the kind written in front of a resolved reference's value, `libraries/<id>`.
-// v1's alone, and only alongside FlatValue: v2 authors a reference as a block and
-// compiles it to the id, so the kind is on the Ref and never in the value.
-func Prefix(p string) RefOpt { return func(s *RefSpec) { s.Prefix = p } }
-
 // Serves declares that traffic GOES to the referenced resource — a handoff rather than a
 // dependency. See RefSpec.Serves.
 func Serves() RefOpt { return func(s *RefSpec) { s.Serves = true } }
@@ -502,8 +357,8 @@ func WireDrop() Option {
 // generator needs no hardcoded per-resource table:
 //   - schemaPkg: the pkg/schema/<dir> accessor package (usually the group name;
 //     "website" for the "websites" group).
-//   - iface:     the exported accessor interface, e.g. "Database", "SmartOps".
-//   - specType:  the structureSpec type, e.g. "Database", "SmartOp".
+//   - iface:     the exported accessor interface, e.g. "Database".
+//   - specType:  the structureSpec type, e.g. "Database".
 //   - specPkg:   the pkg/specs/<dir> addressing-helper package.
 //
 // Everything else — struct name, receiver, error noun, folder constant, import

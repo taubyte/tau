@@ -328,9 +328,7 @@ func writeValueToPath(n *Node, query *yaseer.Query, path []StringMatch, attr *At
 					// attribute on this same switch captured. Which attribute that is
 					// comes from the SCHEMA — the sibling whose path has the same
 					// Either at the same depth and carries Key() — not from a field
-					// conventionally called `type`. v1 named every switch's key `type`
-					// and this looked for exactly that, so a vocabulary that names it
-					// `engine/kind` could not be written back at all.
+					// conventionally called `type`.
 					typeVal, err := branchKeyValue(n, obj, path, depth)
 					if err != nil {
 						return fmt.Errorf("cannot determine Either() branch for attribute '%s': %w", attr.Name, err)
@@ -360,8 +358,6 @@ func writeValueToPath(n *Node, query *yaseer.Query, path []StringMatch, attr *At
 	// INTO it: `router: router`, on top of the block. The branch is already selected
 	// above — reaching it is the whole write — and the fields underneath fill it in.
 	//
-	// It matters more for a switch whose branch holds one block than for v1's, where
-	// the branch always had a scalar beside it that happened to overwrite the damage.
 	if attr.Captures {
 		return nil
 	}

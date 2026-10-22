@@ -6,32 +6,6 @@ import (
 	engine "github.com/taubyte/tau/pkg/tcc/engine"
 )
 
-type field struct{ name, goType, key string }
-
-// universalTail derives the trailing derived fields every resource carries from
-// the groups marked AttachesToAll: the field is named by the group's Resource
-// iface and keyed by the group's config key (the smartops group -> a SmartOps
-// []string field, key "smartops"). No such group -> no tail.
-func universalTail(root []*engine.Node) []field {
-	var tail []field
-	for _, g := range root {
-		if len(g.Children) == 0 {
-			continue
-		}
-		iter := g.Children[0]
-		if _, ok := engine.AttachesFrom(iter); !ok {
-			continue
-		}
-		d, ok := descriptorFor(iter)
-		if !ok {
-			continue // AttachesToAll requires Resource(...)
-		}
-		name, _ := g.Match.(string)
-		tail = append(tail, field{d.Iface, "[]string", name})
-	}
-	return tail
-}
-
 // containerKey returns the config key of the nested container group — the one
 // whose iterator holds resource sub-groups (applications) rather than being a
 // resource itself — or "" if the schema has none. Same structural test the

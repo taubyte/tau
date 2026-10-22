@@ -27,7 +27,7 @@ import (
 // THE SHAPE OF A COMPILED ARTIFACT. Three keys, and they are tcc's rather than any
 // vocabulary's: whatever a schema calls its kinds, what comes out is the project under
 // one key with the index and the lowering record beside it. tau reads the first two off
-// every artifact it publishes (v1's services/monkey/jobs/config.go), which is what makes them
+// every artifact it publishes, which is what makes them
 // a contract and not a convention.
 const (
 	// ProjectKey is where the compiled project sits.

@@ -4,7 +4,7 @@ import "github.com/taubyte/tau/pkg/tcc/engine"
 
 // This file holds the generic "schema shape" queries the interpreter uses to stay
 // schema-driven: it inspects the injected root's DSL annotations rather than
-// restating v1's fixed shape. The compiler uses the usesX predicates to select
+// restating a fixed shape. The compiler uses the usesX predicates to select
 // which passes to run; ContainerKeys derives the nested-container config keys so
 // "applications" is declared only in the schema, never here.
 
@@ -46,15 +46,6 @@ func usesRefs(root *engine.Node) bool {
 			}
 		}
 		return false
-	})
-}
-
-// usesAttachesToAll reports whether any group iterator is marked AttachesToAll —
-// the signal that the AttachAll cross-cutting attachment pass is needed.
-func usesAttachesToAll(root *engine.Node) bool {
-	return eachIter(root, func(iter *engine.Node) bool {
-		_, b := engine.AttachesFrom(iter)
-		return b
 	})
 }
 

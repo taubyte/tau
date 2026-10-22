@@ -111,9 +111,6 @@ func (n *Node) attributesToMap() map[string]any {
 		if len(attr.Path) > 0 {
 			estimatedCapacity++
 		}
-		if len(attr.Compat) > 0 {
-			estimatedCapacity++
-		}
 		m := make(map[string]any, estimatedCapacity)
 		m["type"] = attr.Type.String()
 		if attr.Captures {
@@ -124,9 +121,6 @@ func (n *Node) attributesToMap() map[string]any {
 		}
 		if len(attr.Path) > 0 {
 			m["path"] = stringify(attr.Path)
-		}
-		if len(attr.Compat) > 0 {
-			m["compat"] = stringify(attr.Compat)
 		}
 		ret[attr.Name] = m
 	}
@@ -418,10 +412,7 @@ func conditionHolds(n *Node, c ConditionSpec, query *yaseer.Query) bool {
 
 		var v string
 		if sq, _, err := inferPathQuery(path, query); err != nil || sq.Value(&v) != nil {
-			cq, _, cerr := inferPathQuery(sib.Compat, query)
-			if len(sib.Compat) == 0 || cerr != nil || cq.Value(&v) != nil {
-				return false
-			}
+			return false
 		}
 		return slices.Contains(c.In, v)
 	}
@@ -528,10 +519,6 @@ func requiredUnlessHere(n *Node, field string, query *yaseer.Query) bool {
 		if sq, _, err := inferPathQuery(path, query); err == nil && sq.Value(&v) == nil {
 			return !v
 		}
-		// the fixtures author useRegex at its legacy location
-		if cq, _, err := inferPathQuery(sib.Compat, query); len(sib.Compat) > 0 && err == nil && cq.Value(&v) == nil {
-			return !v
-		}
 		return true
 	}
 	return false // names an attribute this group does not have
@@ -615,7 +602,7 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 		}
 		// THE VARIANT'S VALUE FIRST. `<key>_<value>` beside `<key>` is the same field
 		// said for one value of one variable, so it is a path tried BEFORE the declared
-		// one — the mirror of Compat below, which is tried after.
+		// one.
 		//
 		// PRESENCE decides, not validity. If something is written at the suffixed key
 		// the attribute reads THERE, and a wrong type or an empty value is reported
@@ -631,18 +618,13 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 		aq, resolved, err := inferPathQuery(path, query)
 		if err != nil {
 			// AN AMBIGUOUS PATH IS NEVER A MISSING ONE. A switch with two of its
-			// branches open is a conflict, and the compat fallback swallowed it: an
-			// attribute with no legacy location resolves the empty path to the document
-			// root without error, so the conflict was reported later, and elsewhere, as
-			// "has an empty key". A path that simply is not there still falls through —
+			// branches open is a conflict, and falling back to the document root swallowed
+			// it: the conflict was reported later, and elsewhere, as "has an empty key". A path that simply is not there still falls through —
 			// an optional block that nobody wrote is not a mistake.
 			if strings.Contains(err.Error(), ambiguousPath) {
 				return err
 			}
-			aq, resolved, err = inferPathQuery(attr.Compat, query)
-			if err != nil {
-				return wrapErrorWithLocation(query, err, fmt.Sprintf("attribute '%s' path resolution failed", attr.Name))
-			}
+			aq, resolved = query, nil
 		}
 
 		if attr.Captures {
@@ -678,11 +660,7 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 		origAq := aq
 		val, err := getValue(aq, attr)
 		if err != nil {
-			aq, _, err = inferPathQuery(attr.Compat, query)
-			if err != nil {
-				return wrapErrorWithLocation(query, err, fmt.Sprintf("attribute '%s' compat path resolution failed", attr.Name))
-			}
-			val, err = getValue(aq, attr)
+			aq = query
 		}
 
 		// A value that is THERE but of the wrong type is a mistake, not an
@@ -746,10 +724,6 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 // the nesting to survive had to spell the path into the name — `execution-call` — and
 // end up with one opaque leaf that can only be replaced whole.
 //
-// `Tag(...)` still overrides, as one segment: that is how a vocabulary whose WIRE format
-// deliberately differs from its authored shape says so. v1 is exactly that — its
-// compiled keys are flat by design and its consumers read them that way.
-//
 // A Captures() attribute is the odd one: its path ENDS in the Either it captured, so the
 // branch name is the value rather than a level to write under. It lands beside the
 // branch, under its own name.
@@ -774,9 +748,6 @@ func CompiledSegments(attr *Attribute) []string {
 	if len(attr.Segments) > 0 {
 		return attr.Segments
 	}
-	// Single segment. NOT the Tag: a tagged attribute is renamed later, by
-	// applyInstanceOps, and the gates that run in between (OnlyWhen) key off the name
-	// it was loaded under. Landing on the tag here skips them.
 	return []string{attr.Name}
 }
 

@@ -26,22 +26,14 @@ import (
 //
 // A bare string name is held only to the "/" ban. It is an IDENTIFIER — what ShowWhen
 // and KindFrom call the attribute — and it is the compiled key only when nothing else
-// says otherwise. v1's `git-provider` is one: it compiles to the tag `provider`, and it
-// is also where the CLI's `--git-provider` flag comes from, so it is a published name
-// that has nothing to do with the object.
-//
-// The one exemption is Tag, which exists to say the compiled key differs from what this
-// vocabulary would call it — including differing from a name, because the format it is
-// matching is somebody else's. v1's `cert-file` and `repository-id` are that. A Tag is
-// still refused a "/": that separator is structural and belongs to nobody.
+// says otherwise.
 //
 // REFUSED AT CONSTRUCTION, loudly, like DefineList's unsupported terms: a schema that
 // cannot express a legal object is a build failure, not a config that compiles into a
 // shape nothing can merge.
 var keyRegex = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
-// mustNotSpellAPath refuses the one character that separates levels of the object. It is
-// all a Tag is held to: what it names is a foreign wire format, not this vocabulary.
+// mustNotSpellAPath refuses the one character that separates levels of the object.
 func mustNotSpellAPath(what, key string) {
 	if key != "" && !strings.Contains(key, "/") {
 		return

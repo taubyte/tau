@@ -65,13 +65,9 @@ func CheckFields(root []*Node, group string) [][]string {
 	return out
 }
 
-// FieldRef is where a field may be authored: its canonical path, plus the legacy
-// alias that also satisfies it. Both matter for required-ness — the fixtures
-// author a function's domains under the compat key, and a requirement that only
-// looked at the canonical path would call them missing.
+// FieldRef is where a field may be authored.
 type FieldRef struct {
-	Path   []string
-	Compat []string // nil if the field has no legacy alias
+	Path []string
 	// AnyOf is every plain location the field may be authored at, when its
 	// declared path contains a FINITE matcher (Either). A storage's size lives
 	// at object/size or streaming/size depending on which block the author
@@ -181,7 +177,7 @@ func RequiredFields(root []*Node, group string) []RequiredField {
 			if paths == nil {
 				continue
 			}
-			rf := RequiredField{FieldRef: FieldRef{Path: paths[0], Compat: compatPath(a)}}
+			rf := RequiredField{FieldRef: FieldRef{Path: paths[0]}}
 			if len(paths) > 1 {
 				rf.AnyOf = paths
 			}
@@ -194,7 +190,7 @@ func RequiredFields(root []*Node, group string) []RequiredField {
 				if sp == nil {
 					continue
 				}
-				rf.When = &FieldRef{Path: sp, Compat: compatPath(sib)}
+				rf.When = &FieldRef{Path: sp}
 				rf.Unless = true
 			}
 			if conditional {
@@ -208,7 +204,7 @@ func RequiredFields(root []*Node, group string) []RequiredField {
 				rf.WhenIn = cond.In
 
 				if sp := fieldPath(sib); sp != nil {
-					rf.When = &FieldRef{Path: sp, Compat: compatPath(sib)}
+					rf.When = &FieldRef{Path: sp}
 				} else if at, ok := branchPrefix(sib); ok {
 					// A CAPTURED BRANCH: the discriminator has no value of its
 					// own, its value is the key under this prefix.
@@ -372,15 +368,6 @@ func fieldPath(a *Attribute) []string {
 		return []string{a.Name}
 	}
 	return plainStrings(a.Path)
-}
-
-// compatPath is an attribute's plain legacy-alias path (Compat), which the
-// accessors accept as a read fallback; nil if none or dynamic.
-func compatPath(a *Attribute) []string {
-	if len(a.Compat) == 0 {
-		return nil
-	}
-	return plainStrings(a.Compat)
 }
 
 func plainStrings(path []StringMatch) []string {

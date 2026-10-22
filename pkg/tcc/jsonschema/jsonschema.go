@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"slices"
 	"strings"
 
@@ -19,7 +18,7 @@ import (
 // --- DSL-introspection helpers (self-contained; read only engine types/Meta) ---
 
 // resourceSpec is the structureSpec type name a resource iterator declares via
-// Resource(...) (e.g. "Function", "SmartOp"); ok is false for non-resource groups.
+// Resource(...) (e.g. "Function"); ok is false for non-resource groups.
 func resourceSpec(iter *engine.Node) (string, bool) {
 	r, ok := iter.Meta["resource"].([4]string)
 	if !ok {
@@ -80,10 +79,6 @@ func pathSegs(a *engine.Attribute) (segs []string, ok bool) {
 	}
 	return segs, true
 }
-
-// noStructField reports the NoStructField() annotation (the attr projects to no
-// struct/wire field — folded or unimplemented), which is left out of the schema.
-func noStructField(a *engine.Attribute) bool { b, _ := a.Meta["noStructField"].(bool); return b }
 
 // JSON Schema emission. Walks the DSL and projects
 // the AUTHORED config shape (nested by Path) plus every constraint the DSL
@@ -275,15 +270,12 @@ func resourceMap(spec, group string) map[string]any {
 // objectSchema projects one resource/container iterator into an object schema:
 // its attributes nested by authored Path, plus (for a container) a map per nested
 // resource group. title is the singular the DSL declares for one instance, with
-// its declared casing ("SmartOp", not "Smartop") — the only place that casing
+// its declared casing — the only place that casing
 // survives, since it is otherwise just a $defs key nobody should have to parse.
 func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, title string) map[string]any {
 	props := newOmap()
 	var required []string
 	for _, a := range iter.Attributes {
-		if noStructField(a) {
-			continue
-		}
 		leaf := g.attrSchema(a)
 		segs, ok := pathSegs(a)
 		if ok && !a.Captures {
@@ -302,18 +294,8 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, ti
 				// property, not at its real path, so naming it in `required`
 				// would demand a top-level property that does not exist and
 				// reject every valid document. The requirement rides the
-				// marker, in the vocabulary the compat case already set.
+				// marker.
 				leaf[g.ext+"required"] = true
-			case len(a.Compat) > 0:
-				// A field with a legacy alias is satisfied by EITHER location,
-				// and JSON Schema's `required` names exactly one. Listing it
-				// would reject documents the compiler accepts (the fixtures
-				// author a website's paths under source/paths), so the
-				// requirement is recorded as a vendor key instead of lost.
-				leaf[g.ext+"required"] = true
-				if c := compatSegs(a); c != "" {
-					leaf[g.ext+"required-alias"] = c
-				}
 			default:
 				markRequired(props, &required, segs)
 			}
@@ -398,9 +380,6 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, ti
 			entry := map[string]any{"id": s.ID, "title": s.Title}
 			if s.Doc != "" {
 				entry["description"] = s.Doc
-			}
-			if s.When != nil {
-				entry["show-when"] = condition(*s.When)
 			}
 			list = append(list, entry)
 		}
@@ -487,9 +466,9 @@ func (g jsonSchemaGen) branchConstraints(iter *engine.Node) [][]any {
 			prefix:  prefix,
 			options: fm.Values(),
 			// OPTIONAL UNLESS SOMETHING INSIDE A BRANCH IS REQUIRED. The capturing
-			// attribute is not the only thing that can make a switch mandatory: v1's
-			// `git-provider` carries no Required() while `source/github/id` does, so a
-			// v1 library with no `source` block is a compile error. Publishing that
+			// attribute is not the only thing that can make a switch mandatory: a
+			// Required() attribute inside a branch makes the block it hangs off
+			// mandatory too. Publishing that
 			// switch as optional hands an editor a schema more permissive than the
 			// compiler — the drift this file exists to close, not to move elsewhere.
 			optional: !a.Required && !requiredUnderBranch(iter, prefix, fm.Values()),
@@ -500,7 +479,7 @@ func (g jsonSchemaGen) branchConstraints(iter *engine.Node) [][]any {
 	}
 
 	for _, a := range iter.Attributes {
-		if noStructField(a) || a.Captures {
+		if a.Captures {
 			continue
 		}
 		at := -1
@@ -821,14 +800,8 @@ func (g jsonSchemaGen) attrSchema(a *engine.Attribute) map[string]any {
 	if m, ok := a.Meta["minimum"].(int); ok {
 		s["minimum"] = m
 	}
-	if sh, ok := a.Meta["shape"].(engine.ShapeSpec); ok {
-		s["oneOf"] = shapeOneOf(sh)
-	}
 	if r, ok := a.Meta["ref"].(engine.RefSpec); ok {
 		ref := map[string]any{"group": r.Group}
-		if r.Prefix != "" {
-			ref["prefix"] = r.Prefix
-		}
 		// A REFERENCE WHOSE TARGET KIND IS ANOTHER FIELD'S VALUE HAS NO GROUP
 		// OF ITS OWN, and dropping that made the emitted schema say `{"group":
 		// ""}` — a reference to nothing. A consumer reading it could neither
@@ -851,36 +824,9 @@ func (g jsonSchemaGen) attrSchema(a *engine.Attribute) map[string]any {
 	return s
 }
 
-// compatSegs renders an attribute's legacy alias path, or "" if it has none or
-// the path is dynamic.
-func compatSegs(a *engine.Attribute) string {
-	out := make([]string, 0, len(a.Compat))
-	for _, p := range a.Compat {
-		s, ok := p.(string)
-		if !ok {
-			return ""
-		}
-		out = append(out, s)
-	}
-	return strings.Join(out, "/")
-}
-
 // condition renders a static visibility condition (show when Field ∈ In).
 func condition(c engine.ConditionSpec) map[string]any {
 	return map[string]any{"field": c.Field, "in": c.In}
-}
-
-// shapeOneOf renders a ShapeSpec as a JSON Schema oneOf of const (literals) and
-// pattern (prefixes) branches.
-func shapeOneOf(sh engine.ShapeSpec) []any {
-	out := make([]any, 0, len(sh.Literals)+len(sh.Prefixes))
-	for _, l := range sh.Literals {
-		out = append(out, map[string]any{"const": l})
-	}
-	for _, p := range sh.Prefixes {
-		out = append(out, map[string]any{"type": "string", "pattern": "^" + regexp.QuoteMeta(p)})
-	}
-	return out
 }
 
 // markRequired records a required field at the level it actually lives.
@@ -1004,7 +950,7 @@ func cleanMatcher(s string) string {
 
 // requiredUnderBranch reports whether any attribute is Required() somewhere inside one
 // of this switch's branches — through the Either, or through the branch key written
-// literally, which is how v1 spells it.
+// literally.
 func requiredUnderBranch(iter *engine.Node, prefix []string, options []string) bool {
 	for _, a := range iter.Attributes {
 		if a.Captures || !a.Required || len(a.Path) <= len(prefix) {

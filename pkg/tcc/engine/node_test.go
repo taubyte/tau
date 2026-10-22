@@ -16,7 +16,6 @@ func TestNode_Map(t *testing.T) {
 				Captures: true,
 				Default:  123,
 				Path:     []StringMatch{StringMatchAll{}},
-				Compat:   []StringMatch{StringMatchAll{}},
 			},
 			{
 				Name: "attr2",
@@ -40,7 +39,6 @@ func TestNode_Map(t *testing.T) {
 				"key":     true,
 				"default": 123,
 				"path":    stringify([]StringMatch{StringMatchAll{}}),
-				"compat":  stringify([]StringMatch{StringMatchAll{}}),
 			},
 			"attr2": map[string]any{
 				"type": "String",
@@ -67,7 +65,7 @@ func TestNode_AttributesToMap_WithoutOptionalFields(t *testing.T) {
 			{
 				Name: "attr1",
 				Type: TypeInt,
-				// No Key, Default, Path, or Compat
+				// No Key, Default, or Path
 			},
 		},
 	}
@@ -83,8 +81,6 @@ func TestNode_AttributesToMap_WithoutOptionalFields(t *testing.T) {
 	assert.Assert(t, !hasDefault)
 	_, hasPath := attr1["path"]
 	assert.Assert(t, !hasPath)
-	_, hasCompat := attr1["compat"]
-	assert.Assert(t, !hasCompat)
 }
 
 func TestNode_ChildrenToSlice_ConvertsChildren(t *testing.T) {

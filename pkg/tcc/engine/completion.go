@@ -1,7 +1,7 @@
 package engine
 
 // Field completion: the DSL-derived candidates for a field's value. Static
-// candidates (enum members, string-shape literals) come straight from the
+// candidates (enum members) come straight from the
 // constraint specs; a reference field additionally names a resource group whose
 // in-scope instances are candidates (the caller lists those from the live config,
 // since the DSL can't know them). Same introspection as validation, read the
@@ -9,13 +9,12 @@ package engine
 
 // FieldCompletion describes how a field's value can be completed.
 type FieldCompletion struct {
-	Values    []string // fixed candidates: enum members + shape literals (e.g. ".")
-	RefGroup  string   // if non-empty, instances of this resource group are candidates
-	RefPrefix string   // prefix to prepend to each referenced name (e.g. "libraries/")
+	Values   []string // fixed candidates: enum members
+	RefGroup string   // if non-empty, instances of this resource group are candidates
 }
 
 // Completion returns the completion sources for one field of a resource group and
-// whether the field is known (an attribute at that path, canonical or compat).
+// whether the field is known (an attribute at that path).
 // found is false for an unknown path so a caller can distinguish "no candidates"
 // (a known free-form field: cid/fqdn/pattern/plain string) from "unknown field".
 func Completion(root []*Node, group string, field []string) (fc FieldCompletion, found bool) {
@@ -27,12 +26,8 @@ func Completion(root []*Node, group string, field []string) (fc FieldCompletion,
 	if enum, ok := a.Meta["enum"].([]string); ok {
 		fc.Values = append(fc.Values, enum...)
 	}
-	if sh, ok := a.Meta["shape"].(ShapeSpec); ok {
-		fc.Values = append(fc.Values, sh.Literals...)
-	}
 	if ref, ok := a.Meta["ref"].(RefSpec); ok {
 		fc.RefGroup = ref.Group
-		fc.RefPrefix = ref.Prefix
 	}
 	return fc, true
 }
@@ -45,8 +40,7 @@ func findAttr(root []*Node, group string, field []string) *Attribute {
 }
 
 // matchField locates the attribute addressed by field. It matches an attribute's
-// canonical Path or a legacy Compat alias (the paths the accessors accept), and
-// also a single element of a list field addressed by a trailing numeric index —
+// canonical Path, and also a single element of a list field addressed by a trailing numeric index —
 // e.g. ["trigger","domains","0"] resolves to the "trigger/domains" StringSlice, so
 // per-element validation/completion of a list works the same as the whole field.
 // element reports that latter case (the value is one scalar item, not the list).
@@ -70,7 +64,7 @@ func matchAttr(root []*Node, group string, field []string) *Attribute {
 			continue
 		}
 		for _, a := range g.Children[0].Attributes {
-			if fieldPathEq(fieldPath(a), field) || fieldPathEq(compatPath(a), field) {
+			if fieldPathEq(fieldPath(a), field) {
 				return a
 			}
 		}

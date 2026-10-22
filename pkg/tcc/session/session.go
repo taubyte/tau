@@ -42,11 +42,9 @@ type FieldValidator interface {
 	RequiredFields(group string) []RequiredField
 }
 
-// FieldRef is where a field may be authored: its canonical path plus the legacy
-// alias that also satisfies it.
+// FieldRef is where a field may be authored.
 type FieldRef struct {
-	Path   []string
-	Compat []string
+	Path []string
 	// AnyOf is every location the field may be authored at, when the DSL gives
 	// it more than one — a storage's size lives at object/size or
 	// streaming/size depending on which block the author wrote. AnyOf[0] ==
@@ -81,13 +79,13 @@ type RequiredField struct {
 }
 
 // Completer supplies a DSL's field completion sources: the fixed candidates (enum
-// members, shape literals) and, for a reference field, the resource group whose
+// members) and, for a reference field, the resource group whose
 // in-scope instances are candidates. Injected by the binding.
 type Completer interface {
 	// Field returns a field's fixed candidates and, if it references a resource
-	// group, that group + the prefix to prepend to each referenced name. found is
-	// false when the field is unknown (no such attribute path).
-	Field(group string, field []string) (values []string, refGroup, refPrefix string, found bool)
+	// group, that group. found is false when the field is unknown (no such
+	// attribute path).
+	Field(group string, field []string) (values []string, refGroup string, found bool)
 }
 
 // Layout describes the DSL's document layout so the session can map a resource
@@ -395,8 +393,8 @@ func (s *Session) ValidateField(res, field []string, value any) error {
 		}
 	}
 	if s.bind.Completer != nil {
-		if _, refGroup, refPrefix, _ := s.bind.Completer.Field(group, field); refGroup != "" {
-			if err := s.checkRef(res, refGroup, refPrefix, value); err != nil {
+		if _, refGroup, _ := s.bind.Completer.Field(group, field); refGroup != "" {
+			if err := s.checkRef(res, refGroup, value); err != nil {
 				return err
 			}
 		}
@@ -405,21 +403,13 @@ func (s *Session) ValidateField(res, field []string, value any) error {
 }
 
 // checkRef verifies that every referenced name in value names a refGroup resource
-// visible from res (its app + root). Values that don't carry the ref prefix are
-// literals (e.g. a source of ".") and are left to the shape validator.
-func (s *Session) checkRef(res []string, refGroup, refPrefix string, value any) error {
+// visible from res (its app + root).
+func (s *Session) checkRef(res []string, refGroup string, value any) error {
 	inScope := map[string]bool{}
 	for _, n := range s.scopedNames(res, refGroup) {
 		inScope[n] = true
 	}
-	for _, v := range asStrings(value) {
-		name := v
-		if refPrefix != "" {
-			if !strings.HasPrefix(v, refPrefix) {
-				continue // a literal, not a reference
-			}
-			name = strings.TrimPrefix(v, refPrefix)
-		}
+	for _, name := range asStrings(value) {
 		if name == "" {
 			continue
 		}
@@ -501,11 +491,9 @@ func (s *Session) ValidateResource(res []string) []FieldIssue {
 	return issues
 }
 
-// hasValue reports whether a field is authored at either of its locations. The
-// compat alias counts: the compiler reads it as a fallback, so a field present
-// only under its legacy key is present, not missing.
+// hasValue reports whether a field is authored at any of its locations.
 func (s *Session) hasValue(res []string, f FieldRef) bool {
-	// Candidates: every location the DSL allows, plus the legacy alias. Built
+	// Candidates: every location the DSL allows. Built
 	// with an explicit loop rather than appending to AnyOf — that slice comes
 	// from the binding and appending to it can write into its backing array.
 	for _, p := range f.locations() {
@@ -522,18 +510,12 @@ func (s *Session) hasValue(res []string, f FieldRef) bool {
 }
 
 // locations is every place a field may be authored: its candidate paths (one,
-// unless the DSL branches) followed by its legacy alias.
+// unless the DSL branches).
 func (f FieldRef) locations() [][]string {
-	out := make([][]string, 0, len(f.AnyOf)+2)
 	if len(f.AnyOf) > 0 {
-		out = append(out, f.AnyOf...)
-	} else {
-		out = append(out, f.Path)
+		return f.AnyOf
 	}
-	if len(f.Compat) > 0 {
-		out = append(out, f.Compat)
-	}
-	return out
+	return [][]string{f.Path}
 }
 
 // authoredAt is where to report a missing field. With one location that is the
@@ -591,9 +573,6 @@ func (s *Session) requiredNow(res []string, rf RequiredField) bool {
 		return true
 	}
 	v, err := s.Get(res, rf.When.Path)
-	if err != nil && len(rf.When.Compat) > 0 {
-		v, err = s.Get(res, rf.When.Compat)
-	}
 	if rf.Unless {
 		// Required unless the discriminator reads as true. Absent, unreadable
 		// or non-bool all mean required — an unset bool is false. Read as a
@@ -998,9 +977,8 @@ func (s *Session) resGroup(res []string) string {
 
 // Complete returns completion candidates for a field's value, filtered by the
 // partial string the user has typed (case-insensitive prefix; "" = all). Fixed
-// candidates come from the DSL (enum members, shape literals); reference fields
-// also offer the target group's instances IN SCOPE (the resource's own app plus
-// root/global), each prefixed. An unknown field path is an error (so a typo isn't
+// candidates come from the DSL (enum members); reference fields also offer the
+// target group's instances IN SCOPE (the resource's own app plus root/global). An unknown field path is an error (so a typo isn't
 // mistaken for "no suggestions"); a known field with no candidates returns an
 // empty slice. Returns (nil, nil) if completion isn't wired.
 func (s *Session) Complete(res, field []string, partial string) ([]string, error) {
@@ -1008,14 +986,14 @@ func (s *Session) Complete(res, field []string, partial string) ([]string, error
 		return nil, nil
 	}
 	group := s.resGroup(res)
-	values, refGroup, refPrefix, found := s.bind.Completer.Field(group, field)
+	values, refGroup, found := s.bind.Completer.Field(group, field)
 	if !found {
 		return nil, fmt.Errorf("unknown field %q on %q", strings.Join(field, "/"), group)
 	}
 	cands := append([]string(nil), values...)
 	if refGroup != "" {
 		for _, name := range s.scopedNames(res, refGroup) {
-			cands = append(cands, refPrefix+name)
+			cands = append(cands, name)
 		}
 	}
 	return filterPrefix(cands, partial), nil

@@ -7,21 +7,12 @@ import (
 	engine "github.com/taubyte/tau/pkg/tcc/engine"
 )
 
-// Struct generation is a PARTIAL projection: the structureSpec structs carry
-// things the DSL cannot express — embedded types (Wasm/Basic/Indexer), derived
-// fields (e.g. Function.Secure), transform fields (network-access -> Local/Public
-// bool), and hand-tuned mapstructure tags/names on git/cert fields. tcc-gen emits
-// the DSL-derivable field block as a reviewable proposal; the rest is hand-merged
-// at adoption. Two things ARE derived: uint64 duration/size types and the
-// mapstructure tag for compat-aliased fields.
+// Struct generation projects the DSL-derivable field block of each kind; uint64
+// duration/size types are derived from the scalar terms.
 
 // StructModel is one kind, projected into one field per logical attribute.
 //
-// IT IS A MODEL AND NO LONGER A TEMPLATE MODEL. It used to also carry the
-// method source, the embedded interface types and the import alias needed to
-// render a Go struct file into legacy/specs/structure — a v1 target that no
-// longer exists. What reads it now is the TypeScript generator, which wants the
-// name and the fields.
+// What reads it is the TypeScript generator, which wants the name and the fields.
 type StructModel struct {
 	Spec   string  // the type name, e.g. "Function"
 	Fields []Field // one per logical attribute, common first
@@ -32,13 +23,12 @@ type StructModel struct {
 	Bare bool
 }
 
-// Field is one struct field. Name/Type/Tag drive the Go struct emit; Required
+// Field is one struct field. Name/Type drive the Go struct emit; Required
 // and Enum are extra DSL facts the TypeScript emit uses (optionality, unions)
 // and the Go template ignores.
 type Field struct {
 	Name       string
 	Type       string
-	Tag        string // full tag incl. backticks, e.g. `mapstructure:"service"`, or ""
 	Required   bool
 	Enum       []string // permitted values (InSet); empty = none
 	EnumString bool     // enum literals are strings (quote them)
@@ -56,14 +46,13 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 			continue
 		}
 		iter := g.Children[0]
-		// A group emits a struct if the DSL declares it a Resource (full: struct +
-		// addressing methods + SmartOps), or if it's a nested container group — an
-		// iterator that itself holds resource sub-groups (applications) — which
+		// A group emits a struct if the DSL declares it a Resource, or if it's a
+		// nested container group — an iterator that itself holds resource
+		// sub-groups (applications) — which
 		// compiles to a bare struct of the common fields only, named by its
 		// Singular() declaration (applications -> Application). Everything else
-		// (leaf maps like clouds, which decode to no type) is skipped.
+		// is skipped.
 		var m *StructModel
-		bare := false
 		if d, ok := descriptorFor(iter); ok {
 			m = &StructModel{Spec: d.Spec, Fields: commonFields(root)}
 		} else if iter.Group && len(iter.Children) > 0 {
@@ -72,7 +61,6 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 				return nil, fmt.Errorf("container group %q has no Singular() declaration", name)
 			}
 			m = &StructModel{Spec: so, Fields: commonFields(root), Bare: true}
-			bare = true
 		} else {
 			continue
 		}
@@ -80,29 +68,8 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 		for _, f := range commonFields(root) {
 			reserved[f.Name] = true
 		}
-		for _, t := range universalTail(root) {
-			reserved[t.name] = true
-		}
-		var derived []string // DerivedBool GoNames, emitted post-loop (see below)
 		for _, a := range iter.Attributes {
-			if common[a.Name] || noStructField(a) {
-				continue
-			}
-			// A DerivedBool attr synthesizes an extra bool field (Function.Secure
-			// from type) IN ADDITION to its own field; collected here and emitted
-			// post-loop at the position the old node-level DerivedBools used.
-			if d, ok := a.Meta["derivedBool"].(engine.DerivedBoolSpec); ok && d.GoName != "" {
-				derived = append(derived, d.GoName)
-			}
-			// An EnumBool attr (network-access) projects to a bool field named by
-			// the annotation, replacing its own field (decoded from lower(name)).
-			if eb, ok := a.Meta["enumBool"].(engine.EnumBoolSpec); ok && eb.GoName != "" {
-				b := eb.GoName
-				if reserved[b] {
-					continue
-				}
-				reserved[b] = true
-				m.Fields = append(m.Fields, Field{Name: b, Type: "bool"})
+			if common[a.Name] {
 				continue
 			}
 			gt := goType(a.Type)
@@ -120,26 +87,12 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 			if sc, ok := a.Meta["scalar"].(engine.ScalarSpec); ok && sc.GoType != "" {
 				gt = sc.GoType
 			}
-			f := Field{Name: nm, Type: gt, Tag: structTag(nm, a), Required: a.Required}
+			f := Field{Name: nm, Type: gt, Required: a.Required}
 			if enum, ok := a.Meta["enum"].([]string); ok {
 				f.Enum = enum
 				_, f.EnumString = a.Meta["enumString"].(bool)
 			}
 			m.Fields = append(m.Fields, f)
-		}
-		// Derived fields and SmartOps are resource conventions — a bare container
-		// struct (Application) has neither.
-		if !bare {
-			for _, nm := range derived {
-				if reserved[nm] {
-					continue
-				}
-				reserved[nm] = true
-				m.Fields = append(m.Fields, Field{Name: nm, Type: "bool"})
-			}
-			for _, t := range universalTail(root) {
-				m.Fields = append(m.Fields, Field{Name: t.name, Type: t.goType})
-			}
 		}
 		out = append(out, m)
 	}
@@ -174,26 +127,4 @@ func structFieldName(group string, a *engine.Attribute) string {
 		parts[i] = title(parts[i])
 	}
 	return strings.Join(parts, "")
-}
-
-// structTag derives a mapstructure tag from the compat alias when the field name
-// (lower-cased) does not already match the compat key (e.g. Protocol -> "service",
-// Regex -> "useRegex"). Non-compat custom tags (repository-id, cert-type) are not
-// derivable and are left for hand-merge.
-func structTag(fieldName string, a *engine.Attribute) string {
-	if t, ok := a.Meta["tag"].(string); ok && t != "" {
-		if t == strings.ToLower(fieldName) {
-			return "" // redundant with the field name (mapstructure decodes case-insensitively)
-		}
-		return "`mapstructure:\"" + t + "\"`"
-	}
-	compat, ok := compatSegs(a)
-	if !ok {
-		return ""
-	}
-	key := compat[len(compat)-1]
-	if key == strings.ToLower(fieldName) {
-		return ""
-	}
-	return "`mapstructure:\"" + key + "\"`"
 }

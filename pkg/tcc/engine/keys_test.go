@@ -26,7 +26,6 @@ func refuses(t *testing.T, what string, build func()) {
 
 func TestAKeyMayNotSpellItsOwnPath(t *testing.T) {
 	refuses(t, "a slashed attribute", func() { String("execution/call") })
-	refuses(t, "a slashed tag", func() { String("call", Tag("execution/call")) })
 	refuses(t, "a slashed group", func() { DefineGroup("route/handler") })
 	refuses(t, "a slashed list", func() { DefineList("route/steps", nil) })
 	refuses(t, "a slashed leaf", func() { Leaf("a/b") })
@@ -45,8 +44,7 @@ func TestAKeyIsAName(t *testing.T) {
 	refuses(t, "a space", func() { String(Key("max attempts")) })
 	refuses(t, "empty", func() { String("") })
 
-	// a bare name is an IDENTIFIER, held only to the "/" ban — v1's `git-provider` is
-	// one, and it is where the CLI's --git-provider flag comes from
+	// a bare name is an IDENTIFIER, held only to the "/" ban
 	String("git-provider")
 
 	// a KEY segment is a name, strictly: it addresses a level of the compiled object
@@ -69,7 +67,7 @@ func TestTheKeyIsTheNesting(t *testing.T) {
 	assert.DeepEqual(t, a.Segments, []string{"execution", "call"})
 	assert.Equal(t, len(a.Path), 2, "authored where it compiles, unless Path says otherwise")
 
-	// v1's shape: read from execution.call, compile onto a flat `call`
+	// read from execution.call, compile onto a flat `call`
 	b := String("call", Path("execution", "call"))
 	assert.Equal(t, b.Name, "call")
 	assert.Equal(t, len(b.Segments), 0)

@@ -694,9 +694,8 @@ type Reference struct {
 	Serves bool
 	// Namespace is the sibling holding the target's namespace, when there is one.
 	Namespace string
-	Prefix    string // the value's prefix, for a reference that resolves
-	ByName    bool   // the value stays a name rather than resolving to an id
-	Inbound   bool   // the relationship runs toward the declarer
+	ByName    bool // the value stays a name rather than resolving to an id
+	Inbound   bool // the relationship runs toward the declarer
 	// In is the nested group whose ENTRIES carry this, empty on the resource itself. A
 	// transformer entry's field is called `name`, and so is every resource's own — a
 	// consumer that applied one to the other drew every function pointing at itself.
@@ -716,7 +715,7 @@ func collectReferences(kind string, iter *engine.Node, in string, out *[]Referen
 		seen[key] = true
 		r := Reference{
 			On: kind, Field: a.Name, Kind: spec.Group, KindFrom: spec.KindFrom,
-			Prefix: spec.Prefix, ByName: spec.ByName, Inbound: spec.Inbound,
+			ByName: spec.ByName, Inbound: spec.Inbound,
 			Serves: spec.Serves, In: in,
 		}
 		// THE NAMESPACE BESIDE IT: the sibling called `namespace` under the same

@@ -405,8 +405,7 @@ func TestWriteValueToPath_WithEitherNoMatch(t *testing.T) {
 
 // The branch a non-Key attribute is written into comes from the Captures() attribute that
 // captured the switch — read off the schema, not from a field conventionally named
-// `type`. v1 named every switch `type` and the old lookup demanded exactly that, so a
-// vocabulary calling it anything else could not be written back at all.
+// `type`.
 func TestBranchKeyValue_FromTheKeyAttribute(t *testing.T) {
 	n := &Node{Attributes: []*Attribute{
 		String(Key("engine", "kind"), Path("engine", Either("distributed", "postgres")), Captures()),

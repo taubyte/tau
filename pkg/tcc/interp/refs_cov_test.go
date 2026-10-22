@@ -52,24 +52,18 @@ func TestRefToANameThatDoesNotExist(t *testing.T) {
 	}
 }
 
-func TestRefPrefixFlatValueAndByName(t *testing.T) {
+func TestRefBlankAndByName(t *testing.T) {
 	v := covVocab{fnAttrs: []*engine.Attribute{
-		engine.String("flat", engine.Ref("db", engine.Prefix("db:"), engine.FlatValue())),
-		engine.String("bare", engine.Ref("db", engine.Prefix("db:"))),
-		engine.String("other", engine.Ref("db", engine.Prefix("db:"))),
-		engine.String("only", engine.Ref("db", engine.Prefix("db:"))),
+		engine.String("blank", engine.Ref("db")),
 		engine.StringSlice("named", engine.Ref("db", engine.ByName())),
 	}}
 	files := covWith(covProject, map[string]string{
-		"/fn/a.yaml": "id: f1\nflat: 'db:orders'\nbare: 'db:orders'\nother: 'kv:orders'\nonly: 'db:'\nnamed: [orders]\n",
+		"/fn/a.yaml": "id: f1\nblank: ''\nnamed: [orders]\n",
 	})
 	flat, _, err := covCompile(t, v, files)
 	assert.NilError(t, err)
 	a := covFn(t, flat, "fn", "f1")
-	assert.Equal(t, a["flat"], "db:d1", "a flat value keeps its prefix")
-	assert.Equal(t, a["bare"], "d1")
-	assert.Equal(t, a["other"], "kv:orders", "another prefix is not this reference")
-	assert.Equal(t, a["only"], "db:", "a prefix naming nothing is left alone")
+	assert.Equal(t, a["blank"], "", "an empty reference names nothing")
 	assert.DeepEqual(t, a["named"], []string{"orders"})
 }
 
@@ -117,7 +111,6 @@ func TestCollectRefAttrs(t *testing.T) {
 		engine.StringSlice("many", engine.Ref("db")),
 		engine.StringSlice("byname", engine.Ref("db", engine.ByName())),
 		engine.String(engine.Key("conn", "db"), engine.Path("conn", "db"), engine.Ref("db")),
-		engine.String("tagged", engine.Tag("t"), engine.Ref("db")),
 	}
 	var got []string
 	for _, r := range collectRefAttrs(attrs) {
@@ -127,7 +120,7 @@ func TestCollectRefAttrs(t *testing.T) {
 		}
 		got = append(got, r.name()+":"+kind+":"+r.spec.Group)
 	}
-	assert.DeepEqual(t, got, []string{"one:one:db", "many:list:db", "conn/db:one:db", "t:one:db"})
+	assert.DeepEqual(t, got, []string{"one:one:db", "many:list:db", "conn/db:one:db"})
 }
 
 func TestRefOfTheWrongShape(t *testing.T) {

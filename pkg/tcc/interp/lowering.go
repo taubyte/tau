@@ -40,8 +40,7 @@ import (
 // becomes. Its fields are unexported ON PURPOSE: this DSL is written in terms, not in
 // struct literals, and the only way to build one is the terms below. The same rule the
 // rest of the vocabulary follows — `String("x", Required(), InSection("y"))`, never a
-// literal — and the same one PromoteEnvKeyed and StringShape follow, which keep their
-// specs internal behind a function.
+// literal.
 type Lowering struct {
 	into    string
 	perEach string

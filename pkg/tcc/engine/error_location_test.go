@@ -2,6 +2,7 @@ package engine
 
 import (
 	"errors"
+	"net/mail"
 	"strings"
 	"testing"
 
@@ -29,7 +30,7 @@ func TestValidationError_ReportsLine1Column1(t *testing.T) {
 		Type:     TypeString,
 		Required: true,
 	}
-	IsEmail()(attr)
+	emailOnly()(attr)
 
 	node := &Node{
 		Group:      false,
@@ -57,7 +58,7 @@ func TestValidationError_CarriesLocationStructurally(t *testing.T) {
 	assert.NilError(t, err)
 
 	attr := &Attribute{Name: "email", Type: TypeString, Required: true}
-	IsEmail()(attr)
+	emailOnly()(attr)
 	_, err = load[object.Refrence](&Node{Attributes: []*Attribute{attr}}, sr.Query(), walk{strict: false})
 	assert.Assert(t, err != nil)
 
@@ -91,7 +92,7 @@ func TestValidationError_MultiLineYAML_ReportsCorrectLine(t *testing.T) {
 		Type:     TypeString,
 		Required: true,
 	}
-	IsEmail()(emailAttr)
+	emailOnly()(emailAttr)
 
 	node := &Node{
 		Group: false,
@@ -169,7 +170,7 @@ func TestErrorFormat_ContainsFileLineColumn(t *testing.T) {
 		Type:     TypeString,
 		Required: true,
 	}
-	IsEmail()(attr)
+	emailOnly()(attr)
 
 	node := &Node{
 		Group:      false,
@@ -202,7 +203,7 @@ func TestNestedFileError_ReportsCorrectPath(t *testing.T) {
 		Type:     TypeString,
 		Required: true,
 	}
-	IsEmail()(attr)
+	emailOnly()(attr)
 
 	node := &Node{
 		Group: true,
@@ -241,7 +242,7 @@ func TestWrappedError_PreservesLocation(t *testing.T) {
 		Type:     TypeString,
 		Required: true,
 	}
-	IsEmail()(attr)
+	emailOnly()(attr)
 
 	node := &Node{
 		Group:      false,
@@ -255,4 +256,11 @@ func TestWrappedError_PreservesLocation(t *testing.T) {
 	// Wrapped error must preserve location
 	assert.ErrorContains(t, err, "/email.yaml:1:1:", "Wrapped error must preserve location at line 1, column 1 in format 'filepath:line:column'")
 	assert.ErrorContains(t, err, "email.yaml", "Wrapped error must preserve file path")
+}
+
+func emailOnly() Option {
+	return Validator(func(s string) error {
+		_, err := mail.ParseAddress(s)
+		return err
+	})
 }

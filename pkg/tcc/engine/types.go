@@ -134,7 +134,6 @@ type Attribute struct {
 	Captures  bool // this attribute captures WHICH branch of an Either() was taken
 	Default   any
 	Path      []StringMatch
-	Compat    []StringMatch
 	Validator AttributeValidator
 	Meta      map[string]any // opaque codegen metadata; the engine never interprets it
 }

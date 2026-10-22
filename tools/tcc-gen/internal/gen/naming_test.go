@@ -9,9 +9,8 @@ import (
 )
 
 // naming_test covers the engine features the CURRENT vocabulary happens not to
-// use: a Field() override, a hyphenated path, a mapstructure Tag() and a
-// Compat() alias. The generator handles all four, and v2 declares none of them —
-// so without this they are handled by code nothing ever runs, and a vocabulary
+// use: a Field() override and a hyphenated path. The generator handles both, and
+// v2 declares neither — so without this they are handled by code nothing ever runs, and a vocabulary
 // that started using one tomorrow would find out from a broken console.
 
 func TestAFieldsGoNameComesFromWhereItWasWritten(t *testing.T) {
@@ -40,34 +39,10 @@ func TestAFieldsGoNameComesFromWhereItWasWritten(t *testing.T) {
 	}
 }
 
-// TestTHEWIREKEYISWHATTHEOBJECTCARRIES. A struct field is named for the author;
-// the compiled object is keyed for the compiler, and where a tag or a compat
-// alias says they differ, the consumer decoding the object needs the second one.
+// TestTheWireKeyIsWhatTheObjectCarries. A struct field decodes from the
+// lower-cased name the compiler writes.
 func TestTheWireKeyIsWhatTheObjectCarries(t *testing.T) {
-	plain := engine.String("timeout")
-	require.Empty(t, structTag("Timeout", plain))
 	require.Equal(t, "timeout", wireKey(Field{Name: "Timeout"}))
-
-	// A TAG THAT ONLY RESTATES THE NAME IS NOT ONE: mapstructure decodes
-	// case-insensitively, so `mapstructure:"timeout"` on Timeout is noise.
-	same := engine.String("timeout", engine.Tag("timeout"))
-	require.Empty(t, structTag("Timeout", same))
-
-	tagged := engine.String("kind", engine.Tag("handler_kind"))
-	require.Equal(t, "`mapstructure:\"handler_kind\"`", structTag("Kind", tagged))
-	require.Equal(t, "handler_kind", wireKey(Field{Name: "Kind", Tag: structTag("Kind", tagged)}))
-
-	// A COMPAT ALIAS IS A WIRE KEY TOO. The engine reads it when the canonical
-	// path is absent, so a decoder that did not know it would read nothing from
-	// an object written before the rename.
-	alias := engine.String("regex", engine.Path("regex"), engine.Compat("useRegex"))
-	require.Equal(t, "`mapstructure:\"useRegex\"`", structTag("Regex", alias))
-	require.Equal(t, "useRegex", wireKey(Field{Name: "Regex", Tag: structTag("Regex", alias)}))
-
-	// ...unless it is the field name again, which is a rename that renamed
-	// nothing.
-	noop := engine.String("regex", engine.Path("regex"), engine.Compat("regex"))
-	require.Empty(t, structTag("Regex", noop))
 }
 
 // TestAMatcherIsNotALocation. A path with a matcher in it does not name one
@@ -80,7 +55,4 @@ func TestAMatcherIsNotALocation(t *testing.T) {
 	segs, ok := pathSegs(engine.String("timeout"))
 	require.True(t, ok)
 	require.Equal(t, []string{"timeout"}, segs)
-
-	_, ok = compatSegs(engine.String("timeout"))
-	require.False(t, ok, "an attribute with no Compat() has no alias")
 }

@@ -41,8 +41,7 @@ type ScopeLevel struct{ Kind, ID string }
 // field carrying the same fact in a second shape is the thing that drifts.
 type ScopeChain []ScopeLevel
 
-// IDs is the chain as v1 has always read it: the scope ids joined by "/", empty at the
-// root.
+// IDs is the scope ids joined by "/", empty at the root.
 func (s ScopeChain) IDs() string {
 	out := make([]string, 0, len(s))
 	for _, level := range s {
@@ -69,9 +68,8 @@ type IndexCtx struct {
 	Lookup func(group, id string) (object.Object[object.Refrence], bool)
 }
 
-// IndexEntry is one thing to write into the index. Build one with Link, Set or Hole
-// rather than by hand: those are the three things an index entry can be, and a struct
-// literal with a bool in it makes the reader work out which.
+// IndexEntry is one thing to write into the index. Build one with Link or Set rather
+// than by hand: a struct literal with a bool in it makes the reader work out which.
 type IndexEntry struct {
 	// Path is where, in whatever path language the vocabulary uses. Opaque here.
 	Path string
@@ -91,11 +89,6 @@ func Link(path string, value any) IndexEntry {
 func Set(path string, value any) IndexEntry {
 	return IndexEntry{Path: path, Value: value}
 }
-
-// Hole reserves a key without claiming anything is at it yet — a name that resolves to
-// nothing so far, which is different from a name nobody has mentioned. Never written over
-// something already there.
-func Hole(path string) IndexEntry { return IndexEntry{Path: path} }
 
 // Indexer is asked what one resource contributes to the index.
 type Indexer func(IndexCtx) ([]IndexEntry, error)
@@ -173,9 +166,7 @@ func indexerOf(iter *engine.Node) (indexSpec, bool) {
 // vocabulary put them in.
 //
 // The order is load-bearing: buckets shared across scopes accumulate in it, so a
-// different sequence is a different artifact. It used to be a list of eight group names
-// here — v1's, verbatim — which for any other vocabulary matches nothing: every indexed
-// group is skipped and the indexes come out empty with no error.
+// different sequence is a different artifact.
 func indexedGroups(root *engine.Node) []string {
 	type at struct {
 		key      string
@@ -334,12 +325,6 @@ func (gi *groupIndexer) Process(ct transform.Context[object.Refrence], config ob
 			switch {
 			case e.Append:
 				appendLink(index, e.Path, fmt.Sprint(e.Value))
-			case e.Value == nil:
-				// a hole: reserve the key without claiming anything is at it, and never
-				// over a value something already put there
-				if index.Get(e.Path) == nil {
-					index.Set(e.Path, nil)
-				}
 			default:
 				index.Set(e.Path, e.Value)
 			}
@@ -370,8 +355,7 @@ func appendLink(index object.Object[object.Refrence], key, val string) {
 // carrying the container it was found in and its own id. It walks DOWN because the
 // reverse lookup it replaced asked the root's container for the name of the object it had
 // been handed, and an object is a direct child of that container only at the first level.
-// v1's applications cannot hold applications, so one level was the whole tree; v2's
-// namespaces nest, and everything two deep was indexed as though it sat at the project
+// Namespaces nest, and everything two deep was indexed as though it sat at the project
 // root — under a scope of "", against the same keys the root's own resources use.
 //
 // Every container is searched at every level, because a scope of one kind holds scopes of

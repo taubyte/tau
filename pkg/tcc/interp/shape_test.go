@@ -36,8 +36,8 @@ func mkRoot(groups ...*engine.Node) *engine.Node {
 	return &engine.Node{Group: true, Children: groups}
 }
 
-// A root with no Ref/AttachesToAll/index annotations must yield a pipe with none
-// of those passes; turning each feature on adds exactly its pass.
+// A root with no Ref/index annotations must yield a pipe with none of those passes;
+// turning each feature on adds exactly its pass.
 func TestCompilePipe_SelectsPassesFromSchema(t *testing.T) {
 	// Bare schema: one resource group, plain id/name attrs, no annotations.
 	bare := mkRoot(mkResGroup("widgets", []*engine.Attribute{
@@ -45,10 +45,9 @@ func TestCompilePipe_SelectsPassesFromSchema(t *testing.T) {
 	}, nil))
 
 	assert.Assert(t, !usesRefs(bare), "bare schema should not use refs")
-	assert.Assert(t, !usesAttachesToAll(bare), "bare schema should not attach-to-all")
 	assert.Assert(t, !UsesIndexing(bare), "bare schema should not index")
 
-	// Only the CompileDriver — no resolveRefs / attachAll / chroot / indexDriver.
+	// Only the CompileDriver — no resolveRefs / chroot / indexDriver.
 	assert.Equal(t, len(compilePipe(bare, Env{"branch": "main"})), 1)
 
 	// A Ref annotation alone adds exactly ResolveRefs.
@@ -57,39 +56,26 @@ func TestCompilePipe_SelectsPassesFromSchema(t *testing.T) {
 		{Name: "target", Meta: map[string]any{"ref": true}},
 	}, nil))
 	assert.Assert(t, usesRefs(refRoot))
-	assert.Assert(t, !usesAttachesToAll(refRoot))
 	assert.Assert(t, !UsesIndexing(refRoot))
 	assert.Equal(t, len(compilePipe(refRoot, Env{"branch": "main"})), 2)
-
-	// An AttachesToAll marker alone adds exactly AttachAll.
-	attachRoot := mkRoot(mkResGroup("ops", []*engine.Attribute{{Name: "id"}},
-		map[string]any{"attachesToAll": engine.AttachSpec{From: "tags", Sep: ":"}}))
-	assert.Assert(t, usesAttachesToAll(attachRoot))
-	assert.Assert(t, !usesRefs(attachRoot))
-	assert.Assert(t, !UsesIndexing(attachRoot))
-	assert.Equal(t, len(compilePipe(attachRoot, Env{"branch": "main"})), 2)
 
 	// An index annotation alone adds chroot + IndexDriver (two transforms).
 	indexRoot := mkRoot(mkResGroup("widgets", []*engine.Attribute{{Name: "id"}},
 		map[string]any{"indexes": indexSpec{index: func(IndexCtx) ([]IndexEntry, error) { return nil, nil }}}))
 	assert.Assert(t, UsesIndexing(indexRoot))
 	assert.Assert(t, !usesRefs(indexRoot))
-	assert.Assert(t, !usesAttachesToAll(indexRoot))
 	assert.Equal(t, len(compilePipe(indexRoot, Env{"branch": "main"})), 3)
 
-	// The full set: every predicate true -> the historical fixed sequence
-	// {compileDriver, resolveRefs, attachAll, chroot, indexDriver} = 5 transforms.
+	// Both: {compileDriver, resolveRefs, chroot, indexDriver} = 4 transforms.
 	full := mkRoot(
 		mkResGroup("widgets", []*engine.Attribute{
 			{Name: "id"},
 			{Name: "target", Meta: map[string]any{"ref": true}},
 		}, map[string]any{"indexes": indexSpec{index: func(IndexCtx) ([]IndexEntry, error) { return nil, nil }}}),
-		mkResGroup("ops", []*engine.Attribute{{Name: "id"}}, map[string]any{"attachesToAll": engine.AttachSpec{From: "tags", Sep: ":"}}),
 	)
 	assert.Assert(t, usesRefs(full))
-	assert.Assert(t, usesAttachesToAll(full))
 	assert.Assert(t, UsesIndexing(full))
-	assert.Equal(t, len(compilePipe(full, Env{"branch": "main"})), 5)
+	assert.Equal(t, len(compilePipe(full, Env{"branch": "main"})), 4)
 }
 
 // ContainerKeys derives the nested-container config keys structurally (a top-level

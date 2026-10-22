@@ -48,8 +48,7 @@ func (g *global) Process(ct transform.Context[object.Refrence], o object.Object[
 // any it holds itself — of any kind, because a scope of one kind holds scopes of the
 // other.
 //
-// v1's applications could not hold applications, so one level was the whole tree. v2's
-// namespaces nest, and a resource in a namespace inside a namespace was never visited —
+// Namespaces nest, and a resource in a namespace inside a namespace was never visited —
 // the forward pass reaches it and this did not, which is one of the ways a v2 project
 // compiled and could not be written back.
 func (g *global) scopes(ct transform.Context[object.Refrence], o object.Object[object.Refrence]) error {
