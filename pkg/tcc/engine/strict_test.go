@@ -30,7 +30,7 @@ func strictSchema() Schema {
 				)),
 			),
 		),
-	).With(Strict()))
+	))
 }
 
 func compileDoc(t *testing.T, doc string) error {
@@ -109,7 +109,7 @@ func TestStrictIgnoresANodeThatClaimsNothing(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/config.yaml", []byte("whatever: 1\n"), 0o644))
 
-	e, err := New(SchemaDefinition((&Node{}).With(Strict())), yaseer.VirtualFS(fs, "/"))
+	e, err := New(SchemaDefinition(&Node{}), yaseer.VirtualFS(fs, "/"))
 	assert.NilError(t, err)
 	_, err = e.Process()
 	assert.NilError(t, err)
@@ -135,15 +135,15 @@ func TestStrictIgnoresNeighbouringFilesOnDisk(t *testing.T) {
 	assert.NilError(t, err, "a neighbouring directory is not an unknown key")
 }
 
-// A vocabulary that does not ask for the check drops unknown keys. The same document
-// that fails above compiles here.
-func TestStrictIsOptInPerVocabulary(t *testing.T) {
+// There is no opt-out: a vocabulary that declares nothing about strictness still refuses
+// a key it cannot read.
+func TestEveryVocabularyRefusesAnUnknownKey(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/config.yaml", []byte("id: root\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/things/one.yaml",
 		[]byte("id: one\nengine:\n    local:\n        host: here\nreplicas: 3\n"), 0o644))
 
-	lax := SchemaDefinition(Root(
+	plain := SchemaDefinition(Root(
 		Attributes(String("id")),
 		DefineGroup("things", DefineIter([]*Attribute{
 			String("id", Required()),
@@ -152,10 +152,10 @@ func TestStrictIsOptInPerVocabulary(t *testing.T) {
 		})),
 	))
 
-	e, err := New(lax, yaseer.VirtualFS(fs, "/"))
+	e, err := New(plain, yaseer.VirtualFS(fs, "/"))
 	assert.NilError(t, err)
 	_, err = e.Process()
-	assert.NilError(t, err, "without Strict() an unknown key is still dropped")
+	assert.ErrorContains(t, err, "unknown key 'replicas'")
 }
 
 // The other half of the silence: the key is real, but a BLOCK was written where a
@@ -176,4 +176,19 @@ func TestStrictReportsTheSameUnknownKeyEveryTime(t *testing.T) {
 	for range 50 {
 		assert.Equal(t, compileDoc(t, doc).Error(), first.Error())
 	}
+}
+
+// A branch that takes no fields is written as an empty block, and that is the branch,
+// not a block where a value belongs.
+func TestAnEmptyBranchIsABlock(t *testing.T) {
+	schema := SchemaDefinition(Root(Attributes(String("id")),
+		DefineGroup("things", DefineIter([]*Attribute{
+			String("id", Required()),
+			String("kind", Path("engine", Either("local", "remote")), Captures()),
+		}))))
+	flat, err := processFiles(t, schema, nil, nil, map[string]string{"/things/one.yaml": "id: one\nengine:\n    local: {}\n"})
+	assert.NilError(t, err)
+	assert.Equal(t, thing(t, flat, "one")["kind"], "local")
+	_, err = processFiles(t, schema, nil, nil, map[string]string{"/things/one.yaml": "id: one\nengine:\n    local:\n        port: 1\n"})
+	assert.ErrorContains(t, err, "unknown key 'port'")
 }

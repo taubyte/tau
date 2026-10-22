@@ -21,7 +21,7 @@ func listSchema() Schema {
 				})),
 			),
 		),
-	).With(Strict()))
+	))
 }
 
 func loadList(t *testing.T, doc string) (map[string]any, error) {

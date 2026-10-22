@@ -103,7 +103,7 @@ func TestKeySwitchOnAnOptionalBlock(t *testing.T) {
 	for _, tc := range []struct{ name, doc, wantErr, wantProbe string }{
 		{"optional block absent", "id: one\nround: {}\n", "", ""},
 		{"optional block present", "id: one\nround: {}\nprobe:\n    http:\n        path: /x\n", "", "http"},
-		{"optional block present, unlisted key", "id: one\nround: {}\nprobe:\n    telepathy: {}\n", "empty key", ""},
+		{"optional block present, unlisted key", "id: one\nround: {}\nprobe:\n    telepathy: {}\n", "unknown key 'telepathy'", ""},
 		{"top-level switch, nothing matched", "id: one\n", "empty key", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

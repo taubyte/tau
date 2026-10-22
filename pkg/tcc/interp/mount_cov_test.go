@@ -28,7 +28,7 @@ func siteIter() *engine.Node {
 
 func mountSchema() (engine.Schema, *engine.Node) {
 	root := engine.Root(
-		[]*engine.Attribute{engine.String("id")},
+		[]*engine.Attribute{engine.String("id"), engine.String("name")},
 		engine.DefineGroup("site", siteIter()),
 		engine.DefineGroup("page", engine.DefineIter([]*engine.Attribute{
 			engine.String("id", engine.Required()),

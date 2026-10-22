@@ -27,11 +27,6 @@ import (
 // where any key is legal, and a child group claims its own name. So a kind that gains an
 // attribute gains the key for free, and there is no second place to update.
 
-// Strict turns the check on, declared on a vocabulary's ROOT.
-func Strict() NodeOption {
-	return func(n *Node) { n.Strict = true }
-}
-
 // claim is a prefix tree of the key paths one document may hold.
 type claim struct {
 	kids map[string]*claim
@@ -77,6 +72,39 @@ func (c *claim) insert(path []StringMatch) {
 	}
 }
 
+// insertBranch claims a Captures() path. Its last segment is the KEY an author picks,
+// and what sits under that key is a block — empty when the branch takes no fields — so
+// it is claimed as a level, never as a value.
+func (c *claim) insertBranch(path []StringMatch) {
+	if len(path) == 0 {
+		return
+	}
+	if len(path) > 1 {
+		if m, ok := path[0].(string); ok {
+			c.child(m).insertBranch(path[1:])
+			return
+		}
+		if m, ok := path[0].(FiniteMatcher); ok {
+			for _, v := range m.Values() {
+				c.child(v).insertBranch(path[1:])
+			}
+			return
+		}
+		c.insert(path)
+		return
+	}
+	switch m := path[0].(type) {
+	case string:
+		c.child(m)
+	case FiniteMatcher:
+		for _, v := range m.Values() {
+			c.child(v)
+		}
+	default:
+		c.insert(path)
+	}
+}
+
 // claimGroup records a child group's own key. What is INSIDE it is checked when that
 // node is loaded, so this stops here.
 func (c *claim) claimGroup(child *Node) {
@@ -103,7 +131,11 @@ func attrClaims(n *Node, vars Vars) *claim {
 			// same fallback setAttributes uses, so the claim matches the read
 			path = []StringMatch{attr.Name}
 		}
-		c.insert(path)
+		if attr.Captures {
+			c.insertBranch(path)
+		} else {
+			c.insert(path)
+		}
 		// EVERY VARIANT SPELLING OF THIS FIELD IS A KEY THE SCHEMA CAN READ, so each is
 		// claimed like any other — otherwise every override is an unknown key. The
 		// UNION, not the cross product: there are no compound suffixes, so an attribute

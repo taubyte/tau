@@ -25,7 +25,7 @@ func variableSchema(vars ...string) Schema {
 				String("under", Path("pick", Either("one", "two"), "under"), Varies("alpha")),
 			}),
 		),
-	).With(Strict(), Varying(vars...)))
+	).With(Varying(vars...)))
 }
 
 func readWith(t *testing.T, schema Schema, values map[string][]string, b Bound, doc string) (map[string]any, error) {
@@ -201,7 +201,7 @@ func TestAVocabularyWithNoVariablesReadsTheBareKeys(t *testing.T) {
 	plain := SchemaDefinition(Root(
 		Attributes(String("id")),
 		DefineGroup("things", DefineIter([]*Attribute{String("id", Required()), String("solo")})),
-	).With(Strict()))
+	))
 
 	one, err := readWith(t, plain, nil, nil, "id: one\nsolo: base\n")
 	assert.NilError(t, err)

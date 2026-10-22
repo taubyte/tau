@@ -207,5 +207,5 @@ func sortedBound(b Bound) []string {
 }
 
 func (s *instance) walk(b Bound) walk {
-	return walk{strict: s.schema.root.Strict, bound: b, vars: s.vars}
+	return walk{bound: b, vars: s.vars}
 }

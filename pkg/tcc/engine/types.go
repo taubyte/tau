@@ -137,10 +137,6 @@ type Attribute struct {
 type Option func(*Attribute)
 
 type Node struct {
-	// Strict rejects an authored key this vocabulary cannot read. Declared on the
-	// root; see strict.go for why it is not simply always on.
-	Strict bool
-
 	// Leaf is the document this group's instances keep their own fields in —
 	// `namespace` gives namespaces/shop/namespace.yaml. Empty means
 	// the document a container instance keeps its own fields in; see Leaf.

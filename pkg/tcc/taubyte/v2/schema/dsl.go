@@ -89,7 +89,6 @@ var (
 	Varying          = engine.Varying
 	Leaf             = engine.Leaf
 	Derived          = engine.Derived
-	Strict           = engine.Strict
 	WireDrop         = engine.WireDrop
 )
 

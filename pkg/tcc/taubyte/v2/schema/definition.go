@@ -3650,7 +3650,7 @@ func environmentBranches() *Attribute {
 var v2Root = Root(
 	rootAttributes(),
 	append(append([]*Node{}, V2Resources...), scopeShape, environmentsGroup())...,
-).With(Singular("Project"), Leaf("project"), Strict(),
+).With(Singular("Project"), Leaf("project"),
 	// A resource is stored under its `id` and called by the name of the document it was
 	// written in — the interpreter's two field names, which are this vocabulary's to
 	// choose and therefore this vocabulary's to state.

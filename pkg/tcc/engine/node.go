@@ -80,10 +80,8 @@ func wrapErrorWithLocation(query *yaseer.Query, err error, context string) error
 const ambiguousPath = "ambiguous path"
 
 // walk is what a load carries down that the schema cannot state: the per-compile
-// decisions. `strict` was threaded alone; the binding joins it rather than becoming a
-// second parameter on five signatures.
+// decisions.
 type walk struct {
-	strict bool
 	// bound is what the variables ARE for this read, nil for a read that binds none. A
 	// vocabulary that declares no variable is unaffected by every line below that reads
 	// it — which is why variant resolution needs no opt-in: an empty binding resolves
@@ -718,13 +716,10 @@ func loadSequence(n *Node, obj object.Object[object.Refrence], query *yaseer.Que
 func load(n *Node, query *yaseer.Query, w walk, claimed ...map[string]bool) (object.Object[object.Refrence], error) {
 	obj := object.New[object.Refrence]()
 
-	// Before reading anything: where the vocabulary asks for it, a key this node
-	// cannot read is a mistake rather than an extension. See strict.go — it used to
-	// be dropped in silence, and it still is for a vocabulary that does not opt in.
-	if w.strict {
-		if err := checkKeys(n, query, w.vars); err != nil {
-			return nil, err
-		}
+	// Before reading anything: a key this node cannot read is a mistake rather than
+	// an extension. See strict.go.
+	if err := checkKeys(n, query, w.vars); err != nil {
+		return nil, err
 	}
 
 	if !n.Group {
