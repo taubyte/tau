@@ -150,23 +150,23 @@ func TestViewsCrossTheWire(t *testing.T) {
 	c := newClient(t, h)
 
 	_, err := c.Publish(t.Context(), pkgregister.Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("whole"),
-		Views: []pkgregister.View{{Destination: "eu", Compiled: []byte("eu")}, {Destination: "us", Compiled: []byte("{}")}}})
+		Views: []pkgregister.View{{Destination: "region-1", Compiled: []byte("region-1")}, {Destination: "region-2", Compiled: []byte("{}")}}})
 	require.NoError(t, err)
 
-	v, err := c.ResolveView(t.Context(), "shop", "prod", "eu")
+	v, err := c.ResolveView(t.Context(), "shop", "prod", "region-1")
 	require.NoError(t, err)
-	require.Equal(t, pkgregister.IDOf([]byte("eu")), v.Object)
+	require.Equal(t, pkgregister.IDOf([]byte("region-1")), v.Object)
 	require.NotEmpty(t, v.Manifest)
 
-	as, err := c.Assigned(t.Context(), "us")
+	as, err := c.Assigned(t.Context(), "region-2")
 	require.NoError(t, err)
 	require.Len(t, as, 1)
 	require.Equal(t, "shop", as[0].Project)
 	require.Equal(t, pkgregister.IDOf([]byte("{}")), as[0].View.Object)
 
-	_, err = c.ResolveView(t.Context(), "shop", "prod", "ap")
+	_, err = c.ResolveView(t.Context(), "shop", "prod", "region-3")
 	require.ErrorIs(t, err, pkgregister.ErrNoView)
-	_, err = c.ResolveView(t.Context(), "shop", "staging", "eu")
+	_, err = c.ResolveView(t.Context(), "shop", "staging", "region-1")
 	require.ErrorIs(t, err, pkgregister.ErrNotPublished)
 	_, err = c.ResolveView(t.Context(), "shop", "prod", "")
 	require.ErrorIs(t, err, pkgregister.ErrNoDestination)
@@ -176,12 +176,12 @@ func TestViewsCrossTheWire(t *testing.T) {
 	// cut for nobody is not uncut: no destination holds it
 	_, err = c.Publish(t.Context(), pkgregister.Publication{Project: "blog", Environment: "prod", Revision: 1, Compiled: []byte("b"), Views: []pkgregister.View{}})
 	require.NoError(t, err)
-	_, err = c.ResolveView(t.Context(), "blog", "prod", "eu")
+	_, err = c.ResolveView(t.Context(), "blog", "prod", "region-1")
 	require.ErrorIs(t, err, pkgregister.ErrNoView)
 	// and uncut is whole everywhere
 	_, err = c.Publish(t.Context(), pkgregister.Publication{Project: "blog", Environment: "dev", Revision: 1, Compiled: []byte("b")})
 	require.NoError(t, err)
-	v, err = c.ResolveView(t.Context(), "blog", "dev", "eu")
+	v, err = c.ResolveView(t.Context(), "blog", "dev", "region-1")
 	require.NoError(t, err)
 	require.Equal(t, pkgregister.IDOf([]byte("b")), v.Object)
 }

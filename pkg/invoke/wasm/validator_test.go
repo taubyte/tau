@@ -34,7 +34,7 @@ func anOpening(instance string) wasm.Opening {
 	return wasm.Opening{
 		Who: wasm.Caller{
 			Project: "shop", Environment: "prod", Kind: "function", Name: "chat",
-			Scope: []string{"shop", "eu"},
+			Scope: []string{"shop", "local"},
 		},
 		What:     wasm.Store{Kind: "cache", Label: "sessions"},
 		Instance: instance,
@@ -86,7 +86,7 @@ func TestTheWholeOpeningReachesTheGuest(t *testing.T) {
 
 	verdict, err := r.Admit(t.Context(), admitterSpec(), anOpening("echo"))
 	require.NoError(t, err)
-	require.Equal(t, "saw:shop/prod/function/chat/[shop,eu]:cache/sessions", verdict.Refused)
+	require.Equal(t, "saw:shop/prod/function/chat/[shop,local]:cache/sessions", verdict.Refused)
 }
 
 // TestABROWSERISNOTAWORKLOADANDSAYSSOBYITSKIND. The gateway asks this same

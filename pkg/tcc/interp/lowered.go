@@ -165,7 +165,7 @@ func recordOf(root *engine.Node, obj Object, docs []placement, adds []granted) L
 	}
 
 	// Scopes nest, and a name is only unique inside one: keyed without the scope, an
-	// entry on `shop/eu/function/relay` was recorded against whichever `relay` the map
+	// entry on `shop/local/function/relay` was recorded against whichever `relay` the map
 	// happened to yield.
 	_, nameField := engine.IdentityOf(root)
 	byName := map[string]string{}

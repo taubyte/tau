@@ -10,10 +10,10 @@ import "strings"
 //	(absent)   its own scope, then each parent, then the root
 //	/          the root
 //	/billing   that scope, exactly
-//	eu         a scope BELOW its own, exactly
+//	local         a scope BELOW its own, exactly
 //
-// The last line is the one every copy got wrong: `namespace: eu` written in `shop` means
-// `shop/eu`, and a resolver that starts at `eu` finds nothing — so the reference silently
+// The last line is the one every copy got wrong: `namespace: local` written in `shop` means
+// `shop/local`, and a resolver that starts at `local` finds nothing — so the reference silently
 // disappears from a graph, an audit, or both.
 //
 // Returned in the order they should be tried, so a caller stops at the first hit.

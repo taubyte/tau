@@ -224,7 +224,7 @@ func (p *Project) Root() Resource { return Resource(p.root) }
 // Resource resolves a name the way the vocabulary does: in the scope that
 // asked, then in each parent.
 //
-// scope is a chain of namespace NAMES from the project root — the `/shop/eu` an
+// scope is a chain of namespace NAMES from the project root — the `/shop/local` an
 // author writes, split — and nil is the project itself. The returned id is the
 // resource's own, which is what an edge that already resolved carries.
 func (p *Project) Resource(scope []string, kind, name string) (Resource, string, error) {
@@ -613,7 +613,7 @@ type Reach struct {
 	// only to reach two resources that share a name in different namespaces.
 	Name string
 
-	// Namespace is where it lives: "/billing" from the project root, "eu"
+	// Namespace is where it lives: "/billing" from the project root, "local"
 	// relative to the asker, or empty for the asker's own scope and then its
 	// parents.
 	Namespace string

@@ -67,7 +67,7 @@ func TestRelationsResolveBothEnds(t *testing.T) {
 }
 
 // A NAMESPACE BESIDE A NAME IS RELATIVE. `notify` lives in `shop` and reaches `relay`
-// with `namespace: eu`, which means `shop/eu` — a resolver that starts looking at `eu`
+// with `namespace: local`, which means `shop/local` — a resolver that starts looking at `local`
 // finds nothing, and the use disappears without a word.
 func TestRelationsResolveARelativeNamespace(t *testing.T) {
 	obj := compiledExample(t)
@@ -80,7 +80,7 @@ func TestRelationsResolveARelativeNamespace(t *testing.T) {
 	for _, rel := range schema.Relations(obj) {
 		from, to := byID[rel.From], byID[rel.To]
 		if from.Name == "notify" && to.Name == "relay" && rel.Verb == "invoke" {
-			assert.Equal(t, to.Scope, "shop/eu")
+			assert.Equal(t, to.Scope, "shop/local")
 			assert.Equal(t, string(rel.Class), string(schema.Use))
 			found = true
 		}

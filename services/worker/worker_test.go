@@ -93,8 +93,8 @@ func TestTheTierComesFromTheVocabulary(t *testing.T) {
 func TestANameResolvesInTheScopeThatAsked(t *testing.T) {
 	h := newHarness(t)
 
-	invokeOver(t, h, target("function", "relay", "shop", "eu"))
-	invokeOver(t, h, target("application", "api", "shop", "eu"))
+	invokeOver(t, h, target("function", "relay", "shop", "local"))
+	invokeOver(t, h, target("application", "api", "shop", "local"))
 
 	started := h.Runtime.specs()
 	require.Len(t, started, 2)

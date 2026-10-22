@@ -19,7 +19,7 @@ import (
 func TestAScopeResolvesFromWhoAsked(t *testing.T) {
 	require.Equal(t, []string{"shop"}, specs.ScopeOf([]string{"shop"}, ""),
 		"an omitted namespace is the asker's own scope")
-	require.Equal(t, []string{"shop", "eu"}, specs.ScopeOf([]string{"shop"}, "eu"),
+	require.Equal(t, []string{"shop", "local"}, specs.ScopeOf([]string{"shop"}, "local"),
 		"a relative one hangs off the asker")
 	require.Equal(t, []string{"billing", "ledger"}, specs.ScopeOf([]string{"shop"}, "/billing/ledger"),
 		"an absolute one ignores the asker, which is what the leading slash is for")

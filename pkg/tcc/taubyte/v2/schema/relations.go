@@ -8,7 +8,7 @@ import (
 
 // EVERY RELATIONSHIP BETWEEN TWO RESOURCES, resolved.
 //
-// A name in this vocabulary is resolved against a scope: "/billing/x" is absolute, "eu/x"
+// A name in this vocabulary is resolved against a scope: "/billing/x" is absolute, "local/x"
 // is relative to the resource's own namespace, and a bare "x" is looked for here and then
 // in each parent. That rule was written three times — the interpreter's reference
 // resolver, this package's audit, and the explorer's graph — and the third copy is the

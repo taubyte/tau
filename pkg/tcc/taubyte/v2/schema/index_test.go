@@ -10,12 +10,12 @@ import (
 )
 
 // The fixture holds three caches called `sessions` — one in `shop`, one in `billing`,
-// one in `shop/eu` — which is what makes it worth indexing at all: the name alone says
+// one in `shop/local` — which is what makes it worth indexing at all: the name alone says
 // nothing, and the scope has to be in the key or a lookup returns somebody else's cache.
 //
 // The nested one is the interesting case. Before this, the interpreter worked a
 // resource's scope out by asking the ROOT's container for the name of the object it had
-// been handed, which is a direct child only one level down: everything inside `shop/eu`
+// been handed, which is a direct child only one level down: everything inside `shop/local`
 // was indexed with an empty scope, i.e. under the same keys as the project root's own.
 func compileIndex(t *testing.T) (map[string]any, string) {
 	t.Helper()
@@ -49,10 +49,10 @@ func TestIndexResolvesANameInItsOwnScope(t *testing.T) {
 	assert.Assert(t, shop != billing)
 
 	// a namespace resolves to its id the same way anything else does, which is what
-	// turns the written `/shop/eu` into the segments every other key is built from
+	// turns the written `/shop/local` into the segments every other key is built from
 	shopID := shop[strings.LastIndex(shop, "/")+1:]
-	eu := link(t, idx, "projects/"+project+"/namespace/"+shopID+"/namespace/eu/links")
-	euID := eu[strings.LastIndex(eu, "/")+1:]
+	local := link(t, idx, "projects/"+project+"/namespace/"+shopID+"/namespace/local/links")
+	euID := local[strings.LastIndex(local, "/")+1:]
 	assert.Assert(t, euID != shopID)
 
 	billingID := billing[strings.LastIndex(billing, "/")+1:]

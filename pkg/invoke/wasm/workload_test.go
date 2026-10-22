@@ -21,7 +21,7 @@ func TestAComponentLearnsWhatItIs(t *testing.T) {
 		Environment: "prod",
 		Kind:        "function",
 		Label:       "checkout",
-		Scope:       []string{"shop", "eu"},
+		Scope:       []string{"shop", "local"},
 		Revision:    "bafyRevision",
 		Artifact:    "bafyArtifact",
 	})
@@ -29,7 +29,7 @@ func TestAComponentLearnsWhatItIs(t *testing.T) {
 	res := call(t, instance, "/whoami/x/", nil)
 	require.Equal(t, 200, res.Status, string(res.Body))
 	require.Equal(t,
-		"shop/prod/function/checkout/[shop,eu]/bafyRevision/bafyArtifact/12D3KooWNode",
+		"shop/prod/function/checkout/[shop,local]/bafyRevision/bafyArtifact/12D3KooWNode",
 		string(res.Body))
 }
 

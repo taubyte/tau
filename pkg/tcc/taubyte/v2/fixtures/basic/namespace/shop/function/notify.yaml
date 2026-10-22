@@ -1,5 +1,5 @@
 id: QmbWqxBEKC3P8tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnR
-description: in shop; its own sessions cache, the project-wide orders by absolute path, and eu's relay by a RELATIVE one
+description: in shop; its own sessions cache, the project-wide orders by absolute path, and local's relay by a RELATIVE one
 execution:
     call: notify
     timeout: 5s
@@ -12,7 +12,7 @@ cache:
         ops: [get]
 function:
     relay:
-        namespace: eu
+        namespace: local
         ops: [invoke]
 stream:
     orders:

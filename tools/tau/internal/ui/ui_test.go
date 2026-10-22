@@ -69,7 +69,7 @@ func TestViewsRendering(t *testing.T) {
 	require.Equal(t, "everywhere\n  2 keys, every resource whole\n", th.Views(whole))
 
 	named := session.Viewed{Views: []session.View{{
-		Destination: "eu",
+		Destination: "region-1",
 		Roles:       map[string]string{"id1": "anywhere", "id2": "needed", "id3": "needed"},
 		Object: map[string]any{"object": map[string]any{
 			"function": map[string]any{"id1": map[string]any{"name": "hello"}, "bad": "x"},

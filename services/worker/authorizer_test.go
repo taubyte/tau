@@ -55,7 +55,7 @@ func guardedProject(t *testing.T, guard map[string]any) *specs.Project {
 			},
 			"namespace": map[string]any{
 				nestedNSID: map[string]any{
-					"name": "eu",
+					"name": "local",
 					"cache": map[string]any{
 						nestedCache: map[string]any{
 							// NO NAMESPACE WRITTEN, so it must find the guard in
@@ -74,7 +74,7 @@ func guardedProject(t *testing.T, guard map[string]any) *specs.Project {
 				"branches/main/projects/" + guardProject + "/function/" + plainFuncID},
 			"projects/" + guardProject + "/cache/one/links": []any{
 				"branches/main/projects/" + guardProject + "/cache/" + cacheOneID},
-			"projects/" + guardProject + "/namespace/eu/links": []any{
+			"projects/" + guardProject + "/namespace/local/links": []any{
 				"branches/main/projects/" + guardProject + "/namespace/" + nestedNSID},
 			"projects/" + guardProject + "/namespace/" + nestedNSID + "/cache/deep/links": []any{
 				"branches/main/projects/" + guardProject + "/namespace/" + nestedNSID + "/cache/" + nestedCache},
@@ -112,15 +112,15 @@ func TestAGuardResolvesToAnAuthorizer(t *testing.T) {
 
 // TestTheWalkIsTheTARGETsAndNotTheCALLERs. A guard belongs to the thing being
 // reached, so an omitted namespace means the target's own scope and then its
-// parents — a cache in /eu guarded by `keeper` means the keeper /eu can see,
+// parents — a cache in /local guarded by `keeper` means the keeper /local can see,
 // whoever is reaching it and from wherever.
 func TestAnOmittedGuardNamespaceWalksOutFromTheTarget(t *testing.T) {
 	proj := guardedProject(t, map[string]any{"name": "keeper"})
 
-	grant := guardOf(t, proj, []string{"eu"}, "deep", nestedCache)
+	grant := guardOf(t, proj, []string{"local"}, "deep", nestedCache)
 	require.Empty(t, grant.Refused, "the guard is in the parent and the walk goes outward")
 	require.Equal(t, "keeper", grant.Settings["authorizer/name"])
-	require.Equal(t, "/eu", grant.Settings["authorizer/namespace"],
+	require.Equal(t, "/local", grant.Settings["authorizer/namespace"],
 		"where the walk STARTED, which is what the tier needs to resolve it again")
 }
 

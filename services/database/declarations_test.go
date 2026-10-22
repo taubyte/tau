@@ -59,9 +59,9 @@ func sessions(t *testing.T, d *declarations) declared {
 func TestARegionBlockIsNotRead(t *testing.T) {
 	d := declaring(t, map[string]any{
 		"id": projectID, "name": "shop",
-		"regions": []string{"eu"},
+		"regions": []string{"region-1"},
 		"database": map[string]any{kvID: kvAt(
-			map[string]any{"policy": "pinned", "in": []string{"us"}})},
+			map[string]any{"policy": "pinned", "in": []string{"region-2"}})},
 	})
 
 	got := sessions(t, d)
@@ -77,7 +77,7 @@ func TestARegionBlockIsNotRead(t *testing.T) {
 func TestPerModelDeclarationsTravelAsOptions(t *testing.T) {
 	d := declaring(t, map[string]any{
 		"id": projectID, "name": "shop",
-		"regions": []string{"eu"},
+		"regions": []string{"region-1"},
 		"database": map[string]any{
 			vectorID: map[string]any{
 				"name": "knowledge", "type": "vector",

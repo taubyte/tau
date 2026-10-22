@@ -163,7 +163,7 @@ func TestTheAnswerSaysItIsJson(t *testing.T) {
 //
 // A TOOL IS PUBLISHED UNDER THE AUTHOR'S LABEL, and Call used to build its
 // target out of that label in the mcp's own scope. `notify` sits in /shop and
-// reaches `relay` in `eu`, so the label alone names nothing — resolving it is
+// reaches `relay` in `local`, so the label alone names nothing — resolving it is
 // the composer's job, where the compiled project is open.
 func TestAnInvokeGrantCarriesTheFunctionItResolvedTo(t *testing.T) {
 	h := newHarness(t)
@@ -176,10 +176,10 @@ func TestAnInvokeGrantCarriesTheFunctionItResolvedTo(t *testing.T) {
 			break
 		}
 	}
-	require.NotNil(t, relay, "the fixture's /shop/notify reaches relay in eu")
+	require.NotNil(t, relay, "the fixture's /shop/notify reaches relay in local")
 
 	require.Equal(t, "relay", relay.Settings[settingInvokeName])
-	require.Equal(t, "/shop/eu", relay.Settings[settingInvokeScope],
+	require.Equal(t, "/shop/local", relay.Settings[settingInvokeScope],
 		"where it was FOUND, not the scope of whoever asked - a caller building a target out of the label alone looked in /shop and found nothing")
 }
 
@@ -204,7 +204,7 @@ func TestCallTargetsTheResolvedAddressAndNotTheLabel(t *testing.T) {
 		reached = append(reached, s.Name)
 	}
 	require.Contains(t, reached, "shop/prod/function/"+relayID(t, h),
-		"the function in /shop/eu ran, which the label alone could never have reached")
+		"the function in /shop/local ran, which the label alone could never have reached")
 }
 
 // relayID is what `relay` compiled to, read off the fixture rather than
@@ -212,6 +212,6 @@ func TestCallTargetsTheResolvedAddressAndNotTheLabel(t *testing.T) {
 // stops agreeing with it.
 func relayID(t *testing.T, h *harness) string {
 	t.Helper()
-	spec := resolveIn(t, h, []string{"shop", "eu"}, "function", "relay")
+	spec := resolveIn(t, h, []string{"shop", "local"}, "function", "relay")
 	return spec.Name[len("shop/prod/function/"):]
 }

@@ -100,7 +100,7 @@ func TestOneLabelResolvesToADifferentCachePerNamespace(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, mine, theirs, "two namespaces, one label, two caches")
 
-	_, deeper, err := p.Reached([]string{"shop", "eu"}, reach)
+	_, deeper, err := p.Reached([]string{"shop", "local"}, reach)
 	require.NoError(t, err)
 	require.NotEqual(t, theirs, deeper, "and the nested one is its own again")
 }

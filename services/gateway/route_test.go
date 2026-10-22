@@ -209,8 +209,8 @@ func TestTheHandlersScope(t *testing.T) {
 
 	require.Nil(t, splitScope(""))
 	require.Nil(t, splitScope("/"))
-	require.Equal(t, []string{"shop", "eu"}, splitScope("/shop/eu"))
-	require.Equal(t, []string{"shop", "eu"}, splitScope("shop/eu/"))
+	require.Equal(t, []string{"shop", "local"}, splitScope("/shop/local"))
+	require.Equal(t, []string{"shop", "local"}, splitScope("shop/local/"))
 }
 
 // TestARouteNamesItsOwnRouter.

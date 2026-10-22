@@ -94,7 +94,7 @@ func TestANameResolvesOutward(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, rootID, fromShop, "the same resource, reached from a child scope")
 
-	_, fromEU, err := p.Resource([]string{"shop", "eu"}, "application", "api")
+	_, fromEU, err := p.Resource([]string{"shop", "local"}, "application", "api")
 	require.NoError(t, err)
 	require.Equal(t, rootID, fromEU, "and from a grandchild")
 }
@@ -107,13 +107,13 @@ func TestTheNearestDeclarationWins(t *testing.T) {
 	_, shop, err := p.Resource([]string{"shop"}, "cache", "sessions")
 	require.NoError(t, err)
 
-	_, eu, err := p.Resource([]string{"shop", "eu"}, "cache", "sessions")
+	_, local, err := p.Resource([]string{"shop", "local"}, "cache", "sessions")
 	require.NoError(t, err)
 
 	_, billing, err := p.Resource([]string{"billing"}, "cache", "sessions")
 	require.NoError(t, err)
 
-	require.NotEqual(t, shop, eu, "eu declares its own, so the parent's is not what it gets")
+	require.NotEqual(t, shop, local, "local declares its own, so the parent's is not what it gets")
 	require.NotEqual(t, shop, billing)
 
 	// And the root does not have one at all, so a lookup there is a miss
@@ -141,7 +141,7 @@ func TestWalkingTheProject(t *testing.T) {
 	p := load(t)
 
 	require.ElementsMatch(t, []string{"shop", "billing"}, mustNamespaces(t, p, nil))
-	require.ElementsMatch(t, []string{"eu"}, mustNamespaces(t, p, []string{"shop"}))
+	require.ElementsMatch(t, []string{"local"}, mustNamespaces(t, p, []string{"shop"}))
 	require.Empty(t, mustNamespaces(t, p, []string{"billing"}))
 
 	kinds, err := p.Kinds(nil)

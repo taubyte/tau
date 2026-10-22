@@ -367,7 +367,7 @@ func TestALocalModelIsDialledThroughPlacement(t *testing.T) {
 			"inference/kind":        "local",
 			"inference/local/name":  "llama",
 			"inference/local/port":  "http",
-			"inference/local/scope": "eu/ml",
+			"inference/local/scope": "local/ml",
 		},
 	}
 
@@ -383,7 +383,7 @@ func TestALocalModelIsDialledThroughPlacement(t *testing.T) {
 	require.Equal(t, "llama", where.at.Name)
 	require.Equal(t, "shop", where.at.Project)
 	require.Equal(t, "prod", where.at.Environment)
-	require.Equal(t, []string{"eu", "ml"}, where.at.Scope)
+	require.Equal(t, []string{"local", "ml"}, where.at.Scope)
 	require.Equal(t, "http", where.port)
 
 	// And it spoke the format, at the path, exactly as a remote one would.

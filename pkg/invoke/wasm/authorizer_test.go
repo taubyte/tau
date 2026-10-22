@@ -42,7 +42,7 @@ func aQuestion() wasm.Question {
 	return wasm.Question{
 		Who: wasm.Caller{
 			Project: "shop", Environment: "prod", Kind: "function", Name: "checkout",
-			Scope: []string{"shop", "eu"},
+			Scope: []string{"shop", "local"},
 		},
 		What: wasm.Target{Kind: "cache", Label: "orders", Instance: "room-42"},
 		Op:   "get",
@@ -68,7 +68,7 @@ func TestTheWholeQuestionReachesTheGuest(t *testing.T) {
 			saw = op
 		}
 	}
-	require.Equal(t, "saw:shop/prod/function/checkout/[shop,eu]:cache/orders/room-42", saw,
+	require.Equal(t, "saw:shop/prod/function/checkout/[shop,local]:cache/orders/room-42", saw,
 		"the caller, its scope, the target and the instance all crossed intact")
 	require.Contains(t, decision.Granted, "get", "and the op it was asked about")
 }

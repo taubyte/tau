@@ -655,10 +655,10 @@ func TestAuditRegions(t *testing.T) {
 	// The chain is walked to whichever level last declared one, so a namespace that
 	// declares nothing inherits rather than resetting to the cloud's whole world.
 	found = auditDocs(t, nil, map[string]string{
-		"/project.yaml":                                    proj,
-		"/namespace/shop/meta.yaml":                        shopID + "regions: [region-1]\n",
-		"/namespace/shop/namespace/eu/meta.yaml":           "id: QmVs4sQjPFqJZ7Ug5MPpFxPTNiZ1CT8xY4XPKUbnDNbNAY\n",
-		"/namespace/shop/namespace/eu/cache/sessions.yaml": cache("regions:\n    pinned: [region-2]\n"),
+		"/project.yaml":                                       proj,
+		"/namespace/shop/meta.yaml":                           shopID + "regions: [region-1]\n",
+		"/namespace/shop/namespace/local/meta.yaml":           "id: QmQt1CwQTMMBWhPDHmNUzd81oCd21PuxkrxJzSh2SnoUQM\n",
+		"/namespace/shop/namespace/local/cache/sessions.yaml": cache("regions:\n    pinned: [region-2]\n"),
 	})
 	has(t, found, schema.Broken, `is placed in region "region-2", which its scope does not allow`)
 }

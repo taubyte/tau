@@ -203,7 +203,7 @@ func (m match) address(projectName, environment string) specs.Address {
 	}
 }
 
-// splitScope turns "/shop/eu" into the chain a lookup takes. An empty or "/"
+// splitScope turns "/shop/local" into the chain a lookup takes. An empty or "/"
 // namespace is the project root, which is what the vocabulary says an omitted
 // one means.
 func splitScope(namespace string) []string {

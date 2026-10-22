@@ -95,7 +95,7 @@ Nested(DefineList("transformers", attrs))             // ordered by position
 ```yaml
 variables:                      transformers:
     LOG_LEVEL: {value: info}        - name: redact
-    REGION:    {value: eu-west}     - namespace: /shop
+    REGION:    {value: region-1}     - namespace: /shop
                                       name: tier_header
 ```
 
@@ -132,7 +132,7 @@ String("handler-name",      Path("route","handler", Either(handlerKinds...), "na
 route:
     handler:
         function:              # the switch
-            namespace: /shop/eu
+            namespace: /shop/local
             name: notify
 ```
 
@@ -607,7 +607,7 @@ Three properties of the shape, each a decision rather than an inheritance:
   vocabulary's address space, which §8c forbids.
 - **The scope is its ids, and each level says what KIND of scope it is.** The key and the
   value it holds are built from the same segments; a scope is itself indexed by name,
-  which is what turns a written `/shop/eu` into those ids. `<scope-kind>` was the literal
+  which is what turns a written `/shop/local` into those ids. `<scope-kind>` was the literal
   `namespace` until a lowering made a scope of the source's own kind, and a level indexed
   under the wrong word is a subtree no reader can rebuild the path to.
 - **No commit in the value.** The branch is in it and the reader resolves the branch to

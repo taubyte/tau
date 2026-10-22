@@ -25,7 +25,7 @@ import (
 // WHAT HAS NO FOOTPRINT FOLLOWS WHAT IT REACHES. A gateway, a zone, a secret runs
 // nowhere of its own (PlacedKinds says which kinds do), so it is held where something
 // placed needs it, and wherever everything placed it reaches already is: a gateway in
-// front of a function pinned to eu is in eu's view, and a zone nothing ties to a place
+// front of a function pinned to region-1 is in region-1's view, and a zone nothing ties to a place
 // is in every view.
 //
 // AN EDGE ACROSS REGIONS IS REFUSED. A resource held in one region that reaches a

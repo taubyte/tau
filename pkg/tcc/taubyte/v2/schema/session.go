@@ -76,7 +76,7 @@ func (v v2Viewer) Views(flat map[string]any, environment string) ([]session.View
 // Wiring one also switches on the session's reference check, which resolves a bare name
 // against "the resource's own application, then the root" — v1's scope rule. THIS
 // vocabulary's is scopeChain: a reference is a block, and the `namespace` beside the
-// name is what says where to look, absolutely (`/billing`), relatively (`eu`) or by
+// name is what says where to look, absolutely (`/billing`), relatively (`local`) or by
 // walking outward when it is absent. Reporting a RefGroup here made the session reject
 // `authorizer: {name: tier_check, namespace: /shop}` in cache/orders.yaml — config that
 // compiles — with `no function named "tier_check" in scope`. A check that rejects valid

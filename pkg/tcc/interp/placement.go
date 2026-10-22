@@ -141,7 +141,7 @@ func placements(root *engine.Node, obj map[string]any, layout Layout) ([]placeme
 			}
 			// A scope a lowering names is read the way a scope is read anywhere: absolute
 			// from the root with a leading slash, and otherwise relative to where the
-			// resource being lowered lives. Taking it as absolute put `eu` at the root,
+			// resource being lowered lives. Taking it as absolute put `local` at the root,
 			// which is a resource in the wrong namespace and compiles.
 			adds = append(adds, granted{
 				on:     End{Kind: w.On.Kind, Name: w.On.Name},

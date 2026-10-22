@@ -476,25 +476,25 @@ func TestSessionAddressesNestedScopes(t *testing.T) {
 	s, err := schema.AdoptSession(fs)
 	assert.NilError(t, err)
 
-	deep := []string{"namespace", "shop", "namespace", "eu", "function", "relay"}
+	deep := []string{"namespace", "shop", "namespace", "local", "function", "relay"}
 
 	id, err := s.Get(deep, []string{"id"})
 	assert.NilError(t, err, "a function two namespaces down is not readable")
 	assert.Assert(t, id != "")
 
 	// the address a caller builds by kind, and the one a file path maps back to, agree
-	built, err := s.Address("function", "relay", "shop/eu")
+	built, err := s.Address("function", "relay", "shop/local")
 	assert.NilError(t, err)
 	assert.DeepEqual(t, built, deep)
 
-	back, ok := s.ResourceAt("/namespace/shop/namespace/eu/function/relay.yaml")
+	back, ok := s.ResourceAt("/namespace/shop/namespace/local/function/relay.yaml")
 	assert.Assert(t, ok, "the file a decompile writes maps back to no address")
 	assert.DeepEqual(t, back, deep)
 
 	// ...and the scope itself is addressable, which is where its own fields live
-	scope, ok := s.ResourceAt("/namespace/shop/namespace/eu/meta.yaml")
+	scope, ok := s.ResourceAt("/namespace/shop/namespace/local/meta.yaml")
 	assert.Assert(t, ok)
-	assert.DeepEqual(t, scope, []string{"namespace", "shop", "namespace", "eu"})
+	assert.DeepEqual(t, scope, []string{"namespace", "shop", "namespace", "local"})
 }
 
 // A NAME A LOWERING TAKES IS NOT A NAME AN AUTHOR CAN LOSE. A workflow is a scope for

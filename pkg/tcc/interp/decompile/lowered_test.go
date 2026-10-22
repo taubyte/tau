@@ -55,10 +55,10 @@ func compiled(t *testing.T) Object {
 
 	instance(t, group(t, project, "workflow"), workflow, "checkout")
 
-	scope := instance(t, group(t, project, "namespace"), nsEu, "eu")
-	instance(t, group(t, scope, "queue"), qEu, "eu_reserve")
+	scope := instance(t, group(t, project, "namespace"), nsEu, "local")
+	instance(t, group(t, scope, "queue"), qEu, "local_reserve")
 	worker := instance(t, group(t, scope, "function"), fnEu, "eu_worker")
-	entry(t, group(t, worker, "queue"), "eu_reserve", "receive")
+	entry(t, group(t, worker, "queue"), "local_reserve", "receive")
 
 	root := object.New[object.Refrence]()
 	assert.NilError(t, root.Child("object").Add(project))
@@ -75,7 +75,7 @@ func record(t *testing.T) Object {
 	resources := object.New[object.Refrence]()
 	for id, p := range map[string]map[string]any{
 		qReserve: {"from": workflow, "at": "steps/0", "kind": "queue", "name": "checkout_reserve"},
-		qEu:      {"from": workflow, "kind": "queue", "name": "eu_reserve", "scope": "eu"},
+		qEu:      {"from": workflow, "kind": "queue", "name": "local_reserve", "scope": "local"},
 	} {
 		one := object.New[object.Refrence]()
 		for k, v := range p {
@@ -92,7 +92,7 @@ func record(t *testing.T) Object {
 		written(fnCheckout, "receive", "queue", "checkout_reserve", "ops"),
 		written(fnCheckout, "send", "queue", "checkout_charge", "ops"),
 		written(fnAudit, "get", "cache", "orders", "ops"),
-		written(fnEu, "receive", "queue", "eu_reserve", "ops"),
+		written(fnEu, "receive", "queue", "local_reserve", "ops"),
 	})
 	return rec
 }
@@ -198,7 +198,7 @@ func TestAuthoredOnly_WithAsLoweredKeepsEverything(t *testing.T) {
 	assert.DeepEqual(t, values(reserve, "ops"), []string{"receive", "send"})
 	at(t, out, "function", fnCheckout, "queue", "checkout_charge")
 	at(t, out, "function", fnAudit, "cache", "orders")
-	at(t, out, "namespace", nsEu, "function", fnEu, "queue", "eu_reserve")
+	at(t, out, "namespace", nsEu, "function", fnEu, "queue", "local_reserve")
 }
 
 // An object that carries a record without an envelope — nothing chrooted it — still must
@@ -227,7 +227,7 @@ func TestLoweredOf(t *testing.T) {
 	assert.Assert(t, !l.Produced(qManual))
 	assert.Equal(t, l.Resources[qReserve].From, workflow)
 	assert.Equal(t, l.Resources[qReserve].At, "steps/0")
-	assert.Equal(t, l.Resources[qEu].Scope, "eu")
+	assert.Equal(t, l.Resources[qEu].Scope, "local")
 	assert.Equal(t, len(l.Entries), 4)
 
 	// An object with no record answers "nothing was lowered" rather than failing.

@@ -226,8 +226,8 @@ func (s *Session) docPath(res []string) ([]string, error) {
 		return fmt.Errorf("session: %q is not a resource address (%s)", strings.Join(res, "/"), why)
 	}
 
-	// SCOPES NEST, so an address does too: [namespace, shop, namespace, eu, function,
-	// notify] is `notify` in `shop/eu`. Reading only the shapes that fit in four segments
+	// SCOPES NEST, so an address does too: [namespace, shop, namespace, local, function,
+	// notify] is `notify` in `shop/local`. Reading only the shapes that fit in four segments
 	// answered "too deep" for anything two scopes down — a limit on the vocabulary
 	// invented by the reader, and one the compiler does not share.
 	rest := res
@@ -840,8 +840,8 @@ func (s *Session) Address(kind, name, app string) ([]string, error) {
 	if !ok {
 		return nil, fmt.Errorf("session: this DSL has no container kind to scope %q under", app)
 	}
-	// Scopes NEST, so the scope is a path: "shop/eu" is two of them, and addressing it as
-	// one produced a scope literally called "shop/eu" that exists nowhere.
+	// Scopes NEST, so the scope is a path: "shop/local" is two of them, and addressing it as
+	// one produced a scope literally called "shop/local" that exists nowhere.
 	out := []string{}
 	for _, level := range strings.Split(app, "/") {
 		if level == "" {

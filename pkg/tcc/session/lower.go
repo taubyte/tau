@@ -72,8 +72,8 @@ func idOf(flat map[string]any, kind, name, scope, nameField string) (string, boo
 // resourceAt reads an ordinary resource address — the same []string Get, Set and
 // ValidateResource take — as the kind, name and scope the compiled object knows it by.
 //
-// Scopes NEST, so the address does too: [namespace, shop, namespace, eu, function,
-// notify] is `notify` in `shop/eu`. Reading only the two shapes that fit in four
+// Scopes NEST, so the address does too: [namespace, shop, namespace, local, function,
+// notify] is `notify` in `shop/local`. Reading only the two shapes that fit in four
 // segments would have answered "not a resource" for anything two namespaces deep, which
 // is a limit on the vocabulary invented by the reader.
 func (s *Session) resourceAt(res []string) (kind, name, scope string, err error) {

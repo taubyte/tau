@@ -839,11 +839,11 @@ func TestNamespacesNest(t *testing.T) {
 
 	inner, ok := shop["namespace"].(map[string]any)
 	assert.Assert(t, ok, "a namespace must be able to hold namespaces")
-	eu := only(t, inner)
-	assert.Equal(t, eu["name"], "eu")
+	local := only(t, inner)
+	assert.Equal(t, local["name"], "local")
 
 	// a third `sessions`, two levels down, distinct from both above it
-	kv := only(t, eu["cache"].(map[string]any))
+	kv := only(t, local["cache"].(map[string]any))
 	assert.Equal(t, kv["name"], "sessions")
 	assert.Equal(t, nested(kv, "size"), int64(2000000))
 }
@@ -863,9 +863,9 @@ func TestDeepNamespaceRefsAreNotResolved(t *testing.T) {
 
 	// two levels down there is nothing to resolve against yet, so the assertion is
 	// simply that the scope compiles at all and holds its own resources
-	eu := only(t, shop["namespace"].(map[string]any))
-	assert.Equal(t, eu["name"], "eu")
-	assert.Equal(t, len(eu["cache"].(map[string]any)), 1)
+	local := only(t, shop["namespace"].(map[string]any))
+	assert.Equal(t, local["name"], "local")
+	assert.Equal(t, len(local["cache"].(map[string]any)), 1)
 }
 
 // Every verb has an effect class, assigned once, in the table next to the kind.
@@ -1071,12 +1071,12 @@ func TestNamespacePathForms(t *testing.T) {
 	assert.Equal(t, caches["orders"].(map[string]any)["namespace"], "/")
 
 	// absolute, from two levels down
-	eu := only(t, shop["namespace"].(map[string]any))
-	relay := only(t, eu["function"].(map[string]any))
+	local := only(t, shop["namespace"].(map[string]any))
+	relay := only(t, local["function"].(map[string]any))
 	assert.Equal(t, relay["database"].(map[string]any)["ledger"].(map[string]any)["namespace"], "/billing")
 
 	// and the shape is checked at load
-	for _, bad := range []string{"shop/", "shop//eu", "../billing", "Shop-EU"} {
+	for _, bad := range []string{"shop/", "shop//local", "../billing", "Shop-Local"} {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
 		assert.NilError(t, afero.WriteFile(fs, "/function/checkout.yaml", []byte(
@@ -1614,10 +1614,10 @@ func nested(res map[string]any, segments ...string) any {
 func TestACrossNamespaceAccessIsNotAuthorised(t *testing.T) {
 	flat := compileBasic(t)
 	shop := namespace(t, root(t, flat), "shop")
-	eu := namespace(t, shop, "eu")
-	relay := namedResource(t, resources(t, eu, "function"), "relay")
+	local := namespace(t, shop, "local")
+	relay := namedResource(t, resources(t, local, "function"), "relay")
 
-	// A SIBLING, which is the case v1 could not write down. /shop/eu reaching
+	// A SIBLING, which is the case v1 could not write down. /shop/local reaching
 	// /billing walks into a scope that is not its own and not its parent, so no
 	// resolution rule permits it — the grammar does, and nothing else looks.
 	ledger, ok := nestedOK(relay, "database", "ledger")
@@ -2403,7 +2403,7 @@ func TestRegionPlacementIsASwitch(t *testing.T) {
 
 	// `name` IS ON THE TWO BRANCHES A SINGLE REGION MEANS SOMETHING ON. On failover it
 	// would name neither of the two, so the subset Either() refuses it.
-	_, err = compile("regions:\n    failover:\n        main: region-1\n        standby: region-2\n        name: eu\n")
+	_, err = compile("regions:\n    failover:\n        main: region-1\n        standby: region-2\n        name: local\n")
 	assert.ErrorContains(t, err, "unknown key 'name'")
 
 	// EXACTLY ONE BRANCH is a property of the declaration, not a check somebody wrote.

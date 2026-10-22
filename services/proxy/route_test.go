@@ -225,14 +225,14 @@ func TestARouterIsAskedOnceMoreWhenTheClientIsDone(t *testing.T) {
 func TestARouterCanNameANamespace(t *testing.T) {
 	sock, _, w, _ := routing(t, func([]byte) *invoke.Direction {
 		return &invoke.Direction{To: &invoke.Endpoint{
-			Kind: "application", Namespace: "/eu", Name: "db", Port: "pg",
+			Kind: "application", Namespace: "/local", Name: "db", Port: "pg",
 		}}
 	}, proxy.Config{})
 
 	says(t, sock, "hello")
 
 	at, _ := w.asked()
-	require.Equal(t, []string{"eu"}, at.Scope)
+	require.Equal(t, []string{"local"}, at.Scope)
 }
 
 // TestAPROXYWITHNOROUTERNAMED is refused rather than forwarded somewhere.

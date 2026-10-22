@@ -140,7 +140,7 @@ func newCommand(env Env) *cobra.Command {
 		},
 	}
 	addDir(cmd)
-	cmd.Flags().String("in", "", "the scope to create it in, e.g. shop or shop/eu")
+	cmd.Flags().String("in", "", "the scope to create it in, e.g. shop or shop/local")
 	cmd.Flags().StringArray("set", nil, "a field value, path=yaml (e.g. execution.timeout=10s); repeatable")
 	cmd.Flags().Bool("incomplete", false, "write it even though required fields are missing")
 	return cmd

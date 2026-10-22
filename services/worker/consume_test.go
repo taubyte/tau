@@ -54,7 +54,7 @@ func TestAContainerConsumerCarriesItsDeclaredPath(t *testing.T) {
 	require.Empty(t, got.Queue.Refused)
 }
 
-// TestTHEWALKDescendsIntoNamespaces. `shop/eu/relay` receives from the
+// TestTHEWALKDescendsIntoNamespaces. `shop/local/relay` receives from the
 // project-wide queue and is two levels down; a walk that stopped at the top
 // would drain nothing for it and nothing would say so.
 func TestAConsumerTwoNamespacesDownIsFound(t *testing.T) {
@@ -65,8 +65,8 @@ func TestAConsumerTwoNamespacesDownIsFound(t *testing.T) {
 	holding(t, h, "function", "checkout")
 
 	got, ok := consumersOf(t, h)["relay"]
-	require.True(t, ok, "the walk never reached shop/eu")
-	require.Equal(t, []string{"shop", "eu"}, got.Target.Scope)
+	require.True(t, ok, "the walk never reached shop/local")
+	require.Equal(t, []string{"shop", "local"}, got.Target.Scope)
 	require.Equal(t, "/", got.Path, "a wasm consumer is dispatched and declares no path")
 	require.Zero(t, got.Concurrency, "and declared no concurrency either")
 }

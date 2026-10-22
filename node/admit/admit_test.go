@@ -334,8 +334,8 @@ func TestTheValidatorIsLookedForInTheNamespaceTheBlockNames(t *testing.T) {
 		{"", nil},
 		{"/", nil},
 		{"/billing", []string{"billing"}},
-		{"billing/eu", []string{"billing", "eu"}},
-		{"/billing/eu/", []string{"billing", "eu"}},
+		{"billing/local", []string{"billing", "local"}},
+		{"/billing/local/", []string{"billing", "local"}},
 	} {
 		t.Run(one.namespace, func(t *testing.T) {
 			a, found, _ := admitting(t, saysYes())
