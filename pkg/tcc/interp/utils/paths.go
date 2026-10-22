@@ -88,20 +88,26 @@ func ResolveNameToId(ct transform.Context[object.Refrence], group, name, nameFie
 		return "", err
 	}
 
-	ret, err := localResolveNameToId(ct.Store(), scope, group, bare, nameField)
-	if err == nil || exact {
-		return ret, err
+	if exact {
+		return localResolveNameToId(ct.Store(), scope, group, bare, nameField)
 	}
-
-	// Default arm only: fall back to parent scopes (app -> project -> root),
-	// matching the worker's resolution order.
-	for i := len(scope) - 1; i >= 1; i-- {
-		if ret, err = localResolveNameToId(ct.Store(), scope[:i], group, bare, nameField); err == nil {
+	var ret string
+	for _, at := range Outward(scope) {
+		if ret, err = localResolveNameToId(ct.Store(), at, group, bare, nameField); err == nil {
 			return ret, nil
 		}
 	}
-
 	return "", err
+}
+
+// Outward is the chain a default reference resolves along: the scope itself, then
+// each parent up to the root (app -> project -> root), matching the worker's order.
+func Outward(scope []any) [][]any {
+	out := make([][]any, 0, len(scope))
+	for i := len(scope); i >= 1; i-- {
+		out = append(out, scope[:i])
+	}
+	return out
 }
 
 // scopeFor strips leading scope qualifiers from name and returns the target scope

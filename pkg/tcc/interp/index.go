@@ -404,8 +404,8 @@ func scopeOf(from, target object.Object[object.Refrence], containers []string) S
 // project root.
 func makeLookup(scopes []any) func(string, string) (object.Object[object.Refrence], bool) {
 	return func(group, id string) (object.Object[object.Refrence], bool) {
-		for i := len(scopes) - 1; i >= 1; i-- {
-			scope, ok := scopes[i].(object.Object[object.Refrence])
+		for _, at := range utils.Outward(scopes) {
+			scope, ok := at[len(at)-1].(object.Object[object.Refrence])
 			if !ok {
 				continue
 			}
