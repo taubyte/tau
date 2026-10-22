@@ -95,6 +95,8 @@ type AuditOption func(*auditOf)
 type auditOf struct {
 	environment string
 	regions     Regions
+	// lowered is what the compile lowered, so what a shell produced is placed with it.
+	lowered interp.Lowered
 }
 
 func auditOptions(opts []AuditOption) auditOf {
@@ -135,6 +137,7 @@ func Audit(obj map[string]any, r Resolver, opts ...AuditOption) []Finding {
 		r = StubResolver()
 	}
 	in := auditOptions(opts)
+	in.lowered = interp.LoweredOf(obj)
 	root := projectOf(obj)
 
 	all := collect(root, "")

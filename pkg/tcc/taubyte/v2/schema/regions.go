@@ -5,6 +5,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/taubyte/tau/pkg/tcc/interp"
 )
 
 // WHICH REGIONS EXIST IS NOT THE CONFIG'S TO SAY, and not tcc's either. A region name
@@ -171,6 +173,7 @@ func WithRegions(r Regions) AuditOption {
 // is heard wherever a project is published.
 func Place(obj map[string]any, opts ...AuditOption) []Finding {
 	in := auditOptions(opts)
+	in.lowered = interp.LoweredOf(obj)
 	root := projectOf(obj)
 	return place(root, collect(root, ""), in)
 }
@@ -269,12 +272,24 @@ func placementsOf(root map[string]any, all []compiled, in auditOf) []placed {
 	}
 	scopes := scopeAllowances(root)
 	environment := environmentRegions(root, in.environment)
+	byID := make(map[string]compiled, len(all))
+	for _, res := range all {
+		byID[res.id] = res
+	}
 	var out []placed
 	for _, res := range all {
 		if !kinds[res.kind] {
 			continue
 		}
 		p := placementOf(res, scopes, environment)
+		// WHAT A SHELL LOWERS TO RUNS WHERE THE SHELL DOES, unless it says otherwise:
+		// a workflow pinned to one region is its functions and queues pinned there.
+		if from, ok := in.lowered.Resources[res.id]; ok && p.Policy == "" && len(p.Named()) == 0 {
+			if shell, ok := byID[from.From]; ok {
+				s := placementOf(shell, scopes, environment)
+				p.Policy, p.In, p.Main, p.Standby = s.Policy, s.In, s.Main, s.Standby
+			}
+		}
 		out = append(out, placed{res: res, placement: p, answer: in.regions.Place(p)})
 	}
 	return out

@@ -142,6 +142,7 @@ type Plan struct {
 // PlanViews is Views without the projection: who goes where, and what stops it.
 func PlanViews(obj map[string]any, opts ...AuditOption) Plan {
 	in := auditOptions(opts)
+	in.lowered = interp.LoweredOf(obj)
 	root := projectOf(obj)
 	all := collect(root, "")
 

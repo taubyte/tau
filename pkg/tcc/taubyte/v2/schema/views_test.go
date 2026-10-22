@@ -450,3 +450,19 @@ func TestAPreviewOfTheRegionsTheProjectNames(t *testing.T) {
 	require.Equal(t, "This preview shows no regions.", schema.Preview().Allow([]string{"x"})[0].Detail)
 	require.Equal(t, []string{"region-2"}, schema.Preview("region-1", "region-2").Place(schema.Placement{Allowed: []string{"region-2"}}).In)
 }
+
+// WHAT A PINNED SHELL LOWERS TO IS PINNED THE SAME: workflow/checkout and agent/support
+// are pinned to region-1, and so is every function, sync and database they became.
+func TestALoweredResourceIsPlacedWithItsShell(t *testing.T) {
+	flat := basicFixture(t)
+	views, findings, err := schema.Views(flat, schema.WithRegions(schema.WithRegion("region-1")))
+	require.NoError(t, err, "%v", findings)
+	held := map[string]schema.Role{}
+	for _, res := range schema.Resources(views["region-1"].Object) {
+		held[res.Kind+"/"+res.Name] = views["region-1"].Roles[res.ID]
+	}
+	for _, name := range []string{"function/checkout_charge", "function/checkout_reserve", "function/checkout_settle",
+		"sync/checkout_reserve", "database/support_memory", "function/support_infer"} {
+		require.Equal(t, schema.RolePinned, held[name], name)
+	}
+}
