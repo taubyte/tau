@@ -602,7 +602,7 @@ func (n *Node) openWorker() error {
 	case n.opts.artifacts != nil:
 		options = append(options, worker.WithArtifacts(n.opts.artifacts))
 	case n.discovery != nil:
-		options = append(options, worker.WithArtifacts(&artifacts{node: n, seen: map[string]builtAt{}}))
+		options = append(options, worker.WithArtifacts(n.BuildArtifacts()))
 	}
 	// A SECRET IS RESOLVED THE SAME WAY AN ARTIFACT IS, and by the same rule:
 	// an injected resolver wins, then this node's own vault or one in the

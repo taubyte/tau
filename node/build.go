@@ -26,6 +26,7 @@ import (
 	"github.com/taubyte/tau/services/build/deploy"
 	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/build/frontend/forgeauth"
+	"github.com/taubyte/tau/services/worker"
 )
 
 // build.go composes the two halves of the build service and the auth they both
@@ -245,20 +246,7 @@ func (n *Node) openBuildBackend() error {
 		return err
 	}
 
-	options := []deploy.Option{
-		deploy.WithProjects(projects),
-		deploy.WithCheckout(clone),
-		deploy.WithRegister(n.publisher),
-		deploy.WithCloudFqdn(n.cfg.Gateway.CloudFqdn),
-	}
-	if n.opts.regions != nil {
-		options = append(options, deploy.WithRegions(n.opts.regions))
-	}
-	domains, err := n.domainProver()
-	if err != nil {
-		return err
-	}
-	options = append(options, deploy.WithDomains(domains))
+	seams := BuildSeams{Checkout: clone, Confirm: clone}
 
 	// A NODE THAT CANNOT RUN A CONTAINER CANNOT BUILD CODE, and it says so on
 	// the push rather than starting and refusing every one. The two halves of
@@ -274,7 +262,28 @@ func (n *Node) openBuildBackend() error {
 		if err != nil {
 			return err
 		}
+		seams.Engine = engine
+	}
+	if n.opts.buildSeams != nil {
+		seams = n.opts.buildSeams(seams)
+	}
 
+	options := []deploy.Option{
+		deploy.WithProjects(projects),
+		deploy.WithCheckout(seams.Checkout),
+		deploy.WithRegister(n.publisher),
+		deploy.WithCloudFqdn(n.cfg.Gateway.CloudFqdn),
+	}
+	if n.opts.regions != nil {
+		options = append(options, deploy.WithRegions(n.opts.regions))
+	}
+	domains, err := n.domainProver()
+	if err != nil {
+		return err
+	}
+	options = append(options, deploy.WithDomains(domains))
+
+	if seams.Engine != nil {
 		// A source's clone URL is keyed by the forge that serves it, the same
 		// function every push's repository key came out of.
 		registry, err := n.forgeRegistry()
@@ -285,8 +294,8 @@ func (n *Node) openBuildBackend() error {
 		buildOptions := []artifact.Option{
 			artifact.WithRegister(buildRegister{n}),
 			artifact.WithProjects(projects),
-			artifact.WithCheckout(clone),
-			artifact.WithEngine(engine),
+			artifact.WithCheckout(seams.Checkout),
+			artifact.WithEngine(seams.Engine),
 			artifact.WithKeys(registry),
 		}
 		// THE SAME VAULT THE WORKER READS, and by the same rule — an injected
@@ -317,7 +326,7 @@ func (n *Node) openBuildBackend() error {
 		backend.WithRunner(runner),
 		// A PUSH IS BUILT ONLY FOR WHAT THE REPOSITORY HOLDS: the ref is read
 		// at the forge over the repository's deploy key before it is queued.
-		backend.WithConfirmer(clone),
+		backend.WithConfirmer(seams.Confirm),
 	}
 	if n.opts.assets != nil {
 		service = append(service, backend.WithAssets(n.opts.assets))
@@ -400,6 +409,12 @@ func (n *Node) openBuildFrontend() error {
 	}
 	if len(registry.EventHosts()) > 0 {
 		frontendOptions = append(frontendOptions, frontend.WithStreams(forges, projects))
+	}
+	// WHAT A DEPLOYMENT RUNS is the register's, read back to a viewer for a
+	// developer's build against it.
+	frontendOptions = append(frontendOptions, frontend.WithPublished(buildRegister{n}))
+	if n.opts.uploads != nil {
+		frontendOptions = append(frontendOptions, frontend.WithUploads(n.opts.uploads))
 	}
 	// THE PUBLIC ROLE NEVER HOLDS A VAULT ITSELF. It is the one process a
 	// stranger reaches, and withDefaults already refuses it running the
@@ -492,6 +507,15 @@ func (b buildRegister) Object(ctx context.Context, id pkgregister.ObjectID) ([]b
 
 // reader is the register this node reads, local when it runs one. It is
 // node/locate.go's one reach, narrowed to what a build may ask.
+// Compiled is frontend.Published: the object a deployment's pointer names.
+func (b buildRegister) Compiled(ctx context.Context, project, environment string) ([]byte, error) {
+	pointer, err := b.Resolve(ctx, project, environment)
+	if err != nil {
+		return nil, err
+	}
+	return b.Object(ctx, pointer.Object)
+}
+
 func (b buildRegister) reader(ctx context.Context) (artifact.Register, error) {
 	return b.node.registers.Now(ctx)
 }
@@ -519,6 +543,13 @@ type artifacts struct {
 type builtAt struct {
 	cid  string
 	when time.Time
+}
+
+// BuildArtifacts is what this node's worker reads a built resource's artifact
+// from when nothing was injected: the build service, asked over p2p. A
+// composer that injects its own resolver hands this to it to fall back on.
+func (n *Node) BuildArtifacts() worker.Artifacts {
+	return &artifacts{node: n, seen: map[string]builtAt{}}
 }
 
 func (a *artifacts) Artifact(ctx context.Context, project, environment, kind, resource string) (string, error) {

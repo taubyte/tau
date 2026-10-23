@@ -16,6 +16,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 	"github.com/taubyte/tau/pkg/raft"
 	pkgregister "github.com/taubyte/tau/pkg/register"
+	"github.com/taubyte/tau/services/build/artifact"
 	"github.com/taubyte/tau/services/build/frontend"
 	"github.com/taubyte/tau/services/worker"
 )
@@ -582,4 +583,51 @@ func TestAsDestination(t *testing.T) {
 	require.Equal(t, schema.DefaultRegion, (&Node{opts: o}).destination())
 	require.NoError(t, AsDestination("region-1")(&o))
 	require.Equal(t, "region-1", (&Node{opts: o}).destination())
+}
+
+// A DEVELOPMENT CLOUD PUTS ITS OWN SEAMS IN FRONT OF THE NODE'S: it is handed
+// the clone the node would have used — and, on a node that runs no containers,
+// no engine — and what it hands back is what the backend reads and runs with.
+func TestBuildSeamsAreLayeredOverTheNodesOwn(t *testing.T) {
+	require.Error(t, WithBuildSeams(nil)(&options{}))
+	require.Error(t, WithUploads(nil)(&options{}))
+
+	var handed BuildSeams
+	n, _, _ := makeNode(t, Config{Services: []string{Discovery, BuildBackend}}, WithBuildSeams(func(s BuildSeams) BuildSeams {
+		handed = s
+		s.Engine = engineFunc(func(context.Context, artifact.Spec, io.Writer) (io.ReadCloser, error) {
+			return nil, errors.New("not run here")
+		})
+		return s
+	}))
+	require.NoError(t, n.Start(t.Context()))
+	require.NotNil(t, n.buildBackend)
+	require.NotNil(t, handed.Checkout)
+	require.NotNil(t, handed.Confirm)
+	require.Nil(t, handed.Engine, "this node runs no containers")
+}
+
+type engineFunc func(context.Context, artifact.Spec, io.Writer) (io.ReadCloser, error)
+
+func (f engineFunc) Make(ctx context.Context, s artifact.Spec, log io.Writer) (io.ReadCloser, error) {
+	return f(ctx, s, log)
+}
+
+// WHAT A DEPLOYMENT RUNS reads back as the object its pointer names.
+func TestTheBuildRegisterReadsAPublishedObjectBack(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
+	require.NoError(t, n.Start(t.Context()))
+
+	compiled := []byte(`{"object":{"id":"QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zd","name":"shop"}}`)
+	_, err := n.register.Local().Publish(t.Context(), pkgregister.Publication{
+		Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled,
+	})
+	require.NoError(t, err)
+
+	got, err := buildRegister{n}.Compiled(t.Context(), "shop", "prod")
+	require.NoError(t, err)
+	require.JSONEq(t, string(compiled), string(got))
+
+	_, err = buildRegister{n}.Compiled(t.Context(), "shop", "preview")
+	require.Error(t, err)
 }
