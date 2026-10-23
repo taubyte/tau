@@ -1,0 +1,98 @@
+// An append-only log, as the vocabulary's `sync` kind at `type: log`.
+//
+// # What it is, and what it is not
+//
+// Records go on the end and nothing rewrites what is already there. A reader
+// reads FORWARD from a position it keeps itself, and reading consumes nothing —
+// which is the whole difference from a queue. A queue hands each item to
+// exactly one consumer and the item is gone once acknowledged; a log keeps
+// every record and serves it to every reader that asks. Work distribution
+// versus history.
+//
+// It is not a `stream` either: a stream is fan-out with no retention, so a
+// subscriber that was not attached missed it. A log is durable and replayable
+// from any position it still holds.
+//
+// # `append` and `read`, and no third verb
+//
+// THE ABSENCE OF `put` AND `delete` IS WHERE APPEND-ONLY IS STATED. A record
+// that can be overwritten or removed is not one, and a verb set is the one
+// place this vocabulary says so where every consumer reads it back.
+//
+// A FOLLOW is the other direction — the platform handing each new record over
+// as it lands — and it is deliberately absent. It is a delivery, the way a
+// queue's `receive` is, so it needs a dispatcher rather than a function a guest
+// calls. `read` is a pull, and it is what a log owes first.
+//
+// # The position is an opaque cursor and not an offset
+//
+// Every log client in the world hands you a dense integer offset, and this one
+// deliberately does not, because the vocabulary lets an author choose what
+// happens to two concurrent appends:
+//
+//   - `consensus: raft` — one writer decides, so there IS one total
+//     order and a dense position would be meaningful.
+//   - `consensus: crdt` — two nodes append at the same instant and neither can
+//     assign "the next one" without asking the other, which is the coordination
+//     a crdt exists to avoid. The order CONVERGES rather than being decided.
+//
+// A dense offset is a promise only the first of those can keep. An opaque
+// cursor is one shape both keep, so a guest written today against a raft log
+// still compiles, still reads forward, and still resumes where it stopped when
+// the log it names is a crdt one. An offset now would buy nothing and cost a
+// second, incompatible read verb later.
+//
+// A cursor is only ever handed back to the log that issued it. Nothing about
+// its contents is promised, and comparing two of them is not meaningful.
+package taubyte:log@0.1.0;
+
+interface records {
+    // One record, as it was appended.
+    record entry {
+        // Where this record sits. Hand it back as `after` to read what follows.
+        cursor: string,
+
+        // Unix seconds when the log accepted it. It is the LOG's clock and not
+        // the appender's, because what a log orders is when it took the record,
+        // and a caller's clock is a number a caller chose.
+        at: s64,
+
+        data: list<u8>,
+    }
+
+    variant error {
+        // The label is not in this resource's `sync:` block.
+        no-such-log(string),
+        // Declared, but not with this op — or the target is a `sync` this cloud
+        // cannot serve as a log, which an author can read.
+        denied(string),
+        // The node that took the call is not the one that may write. Under
+        // `raft` exactly one node appends at a time, and this is its own arm
+        // because a caller RETRIES it and nothing else about the request was
+        // wrong.
+        not-writable(string),
+        // One record larger than this log will take.
+        too-large(string),
+        // A cursor this log never issued, or one whose records retention has
+        // already dropped. It is its own arm because a caller FIXES it — by
+        // starting again from the beginning — rather than retrying it.
+        bad-cursor(string),
+        unavailable(string),
+    }
+
+    // append adds one record to the end and answers the cursor it landed at, so
+    // a caller can record what it wrote without reading it back.
+    append: func(name: string, data: list<u8>) -> result<string, error>;
+
+    // read answers the records after a cursor, in order, oldest first. An empty
+    // `after` starts at the oldest record the log still holds.
+    //
+    // FEWER THAN `limit` MEANS CAUGHT UP, which is how a reader knows to stop
+    // without a second call that answers nothing. `limit` of 0 asks for this
+    // cloud's own ceiling, which is also the cap on anything larger.
+    read: func(name: string, after: string, limit: u32) -> result<list<entry>, error>;
+}
+
+world imports {
+    import records;
+}

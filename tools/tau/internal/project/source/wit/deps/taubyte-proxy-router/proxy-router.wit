@@ -1,0 +1,101 @@
+// The world a tau PROXY ROUTER is compiled to.
+//
+// # It sees bytes, because that is all a connection has
+//
+// A gateway router is handed a parsed request — a method, a path, headers. A
+// raw TCP connection carries none of that: what arrives is a source address and
+// then some bytes, and everything else is the router's to recognise. So this
+// world hands it exactly those two things and lets it say when it has seen
+// enough.
+//
+// # `more` is what makes one peek enough
+//
+// The host cannot know how many bytes a protocol needs before it identifies
+// itself — a TLS ClientHello is five bytes of record header before its own
+// length, a postgres startup packet is four. So the router asks: `more(n)`
+// means "call me again when at least n bytes have arrived". The host bounds
+// both the total and the wait, and a router that keeps asking past either is
+// refused — an unbounded peek is a client holding a listener open by sending
+// nothing.
+//
+// # Nothing it says is kept, so it is POOLED
+//
+// The whole prefix is handed over on every call, so the router needs no memory
+// of the connection between them. That is what keeps it an ordinary pooled
+// instance — the same trade gateway-router makes, and the reason neither has to
+// be pinned to the node the connection landed on.
+//
+// # What it answers with is an ADDRESS, never a workload
+//
+// Same rule as gateway-router, and one field wider: a proxy forwards to a
+// NAMED PORT of its destination, because a workload binds several and the
+// connection has to arrive at one of them.
+package taubyte:proxy-router@0.1.0;
+
+world proxy-router {
+    // The same state subset every deciding world gets, and nothing that sends.
+    import taubyte:sql/store@0.1.0;
+    import taubyte:kv/store@0.1.0;
+    import taubyte:document/store@0.1.0;
+    import taubyte:vector/store@0.1.0;
+    import taubyte:cache/store@0.1.0;
+    import taubyte:secret/vault@0.1.0;
+    import taubyte:workload/identity@0.1.0;
+
+    // What is known about a connection before a byte of it is forwarded.
+    record connection {
+        // Where the client dialed from, as "ip:port". It is the PEER address
+        // and never anything the client sent: a proxy has no forwarded header
+        // to be lied to with, which is the one advantage of seeing no protocol.
+        source: string,
+
+        // The name this proxy answers on, and how a client looked it up —
+        // `host`, `_protocol._transport.host` in DNS. They are here because one
+        // router can serve several proxies and has to be able to tell which
+        // connection it is deciding for.
+        host: string,
+        protocol: string,
+        transport: string,
+
+        // The name the client asked for in its TLS handshake, when this proxy
+        // terminated one. Empty when it did not — which is not the same as a
+        // client that sent no SNI, and a router that needs the difference
+        // should read the bytes.
+        server-name: string,
+    }
+
+    // Where a connection should go: the vocabulary's own kind, the namespace
+    // holding it, its name, and which of its named ports to stream to.
+    //
+    // AN EMPTY NAMESPACE MEANS THE PROXY'S OWN SCOPE, then its parents, which
+    // is what an omitted `namespace:` means everywhere else in this vocabulary.
+    // An empty port means the workload's only one.
+    record destination {
+        kind: string,
+        namespace: string,
+        name: string,
+        port: string,
+    }
+
+    // What the router decided.
+    //
+    // THERE IS NO ARM THAT ANSWERS. A gateway router can serve a request
+    // itself because a response is a thing this vocabulary can spell; a raw
+    // stream has no such shape, and an arm that handed back bytes would be a
+    // transformer wearing a router's name.
+    variant decision {
+        // Stream this connection to that destination.
+        to(destination),
+
+        // Not enough yet: call again once at least this many bytes have
+        // arrived in total. Asking for no more than has already been seen is a
+        // router that will never decide, and is refused as one.
+        more(u32),
+
+        // Close it. The reason goes to the operator's log, because a raw
+        // socket has nowhere to write one.
+        refuse(string),
+    }
+
+    export route: func(conn: connection, peeked: list<u8>) -> decision;
+}

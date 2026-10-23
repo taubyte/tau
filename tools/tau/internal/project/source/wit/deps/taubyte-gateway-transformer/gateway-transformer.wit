@@ -1,0 +1,80 @@
+// The world a tau GATEWAY TRANSFORMER is compiled to.
+//
+// # Functions traffic passes through, in the order they run
+//
+// A gateway or a proxy declares `transformers:` — a LIST, because the order
+// they run in is what they mean — and each entry says what happens if it fails:
+// `closed` rejects the traffic, `open` passes it through untransformed. That
+// choice is genuinely per use, and it is dangerous in both directions: a filter
+// that fails open stops filtering exactly when something is wrong, and an
+// enrichment that fails closed takes the site down to add a header.
+//
+// # Why this is not a handler with a convention
+//
+// A handler answers a request. A transformer answers with EITHER a request that
+// carries on or a response that stops it, and those are different things: the
+// first has a method and a path and goes to the next transformer, the second
+// has a status and goes back to the client. Encoding "carry on" as a response
+// with a magic status would make every real status ambiguous — a transformer
+// that legitimately wants to return 200 could not.
+//
+// # It runs on every request, which is the whole difference from the others
+//
+// An authorizer and an instance validator are asked once and their answer is
+// kept, so instantiating one per question costs a cold start that amortises
+// away. A transformer runs on EVERY request and nothing about its answer can be
+// kept — it is a function of the request. Measured on this tree, instantiating a
+// small component is ~13ms, which is not a thing to add to every request at the
+// edge, so transformer instances are POOLED exactly like handlers: the pool's
+// warm slots, cold-start deduplication, per-spec concurrency and scale-to-zero
+// are engine-agnostic and none of it is specific to answering a request.
+package taubyte:gateway-transformer@0.1.0;
+
+world gateway-transformer {
+    // THE SAME SUBSET THE OTHER DECIDING WORLDS GET: state, and nothing that
+    // sends. A transformer that publishes to a queue makes a request's journey
+    // through the chain unrepeatable, and a chain is retried.
+    import taubyte:sql/store@0.1.0;
+    import taubyte:kv/store@0.1.0;
+    import taubyte:document/store@0.1.0;
+    import taubyte:vector/store@0.1.0;
+    import taubyte:cache/store@0.1.0;
+    import taubyte:secret/vault@0.1.0;
+    import taubyte:workload/identity@0.1.0;
+
+    // THE SAME `request` AND `response` THE HANDLER WORLD DECLARES, field for
+    // field, because this is the same traffic — and inline here for the reason
+    // handler.wit gives: a `use` from an imported interface leaves the export's
+    // signature naming a type the host must resolve separately.
+    record header {
+        name: string,
+        value: string,
+    }
+
+    record request {
+        method: string,
+        path: string,
+        headers: list<header>,
+        body: list<u8>,
+    }
+
+    record response {
+        status: u16,
+        headers: list<header>,
+        body: list<u8>,
+    }
+
+    // What a transformer decided.
+    //
+    // `forward` carries the request on to the next transformer and then to
+    // whatever the route names — changed or not, since a transformer that
+    // decided to change nothing returns what it was given. `answer` stops the
+    // chain here and the response goes back to the client, which is how a
+    // filter rejects without the request ever reaching a workload.
+    variant outcome {
+        forward(request),
+        answer(response),
+    }
+
+    export transform: func(req: request) -> outcome;
+}

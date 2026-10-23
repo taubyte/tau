@@ -2,9 +2,9 @@ description: answers the route
 source: services/hello
 build:
     commands:
-        image: rust:1.83
+        image: ghcr.io/samyfodil/wazy-build-rust:1.99.1-cc0.21.1
         install: cargo fetch --locked
-        run: cargo build --release --target wasm32-wasip2
+        run: cargo build --release --locked --target wasm32-wasip2
         output: target/wasm32-wasip2/release/hello.wasm
 execution:
     call: handle

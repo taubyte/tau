@@ -1,0 +1,140 @@
+// The world a tau function is compiled to.
+//
+// # Why this and not wasi:http/incoming-handler
+//
+// A tau invocation is not always HTTP. A pubsub delivery and a channel call are
+// invocations too, and pkg/invoke's Request says so in as many words — so a
+// world that could only carry an HTTP exchange would make the other two
+// second-class at the ABI, which is the one place that is expensive to undo.
+//
+// This world mirrors that Request exactly, which is what lets one tier serve
+// every trigger. Supporting `wasi:http/incoming-handler` as a SECOND world is
+// worth doing — it is what makes a component built for wasmtime serve, Spin or
+// wasmCloud run here unmodified — and it is additive: a component exporting it
+// is recognised by what it exports, not by a flag.
+//
+// # One package per capability, and this world is the union
+//
+// Every capability is its own package under deps/, with its own version and its
+// own world. This world imports each of their interfaces, so what a tau function
+// may reach is this list and nothing else.
+//
+// THE SPLIT IS NOT TIDINESS. Three things fall out of it:
+//
+//   - A capability versions on its own. Adding a field to `storage` moved the
+//     version every cache guest was built against, back when there was one
+//     package.
+//
+//   - A SUBSET BECOMES EXPRESSIBLE. `implements:` already names worlds beyond
+//     the handler — an authorizer, a router, a gateway transformer — and each
+//     serves a different subset of these. A subset is a list of packages, and
+//     there was nothing to pick from when the package was the whole set. Each
+//     capability also ships a `world imports` of its own, so a guest that needs
+//     one of them can target that world alone.
+//
+//   - The host half matches it one to one. pkg/invoke/wasm registers one host
+//     component per package (host.go), so a capability is a file on each side
+//     rather than two more lines in an instantiation.
+//
+// # A guest imports only what it calls, and that is measured
+//
+// A component's import section names the interfaces it actually reaches, not
+// the ones its world offered: fixtures/handler.wasm is built against this world
+// and imports NONE of these, while fixtures/cacher.wasm imports the ones it
+// calls. So offering every capability costs a guest that uses one of them
+// nothing at all.
+//
+// # These are `import`s and not `include`s, and the reason is a toolchain
+//
+// `include taubyte:cache/imports@0.1.0;` says the same thing more compactly and
+// resolves under wasm-tools 1.253. cargo-component 0.21's wit-parser does not
+// resolve a cross-package world include from a `deps/` tree at all, and the
+// error it gives names the package rather than the include — so the shape that
+// costs a guest author an afternoon is not worth the four saved lines.
+//
+// # The export is named by the author
+//
+// `execution/call` in the project's configuration names the export, so a
+// project with two functions in one component is two exports rather than two
+// components. That is why this world declares the SHAPE and not the name: the
+// host calls whatever the config says, and what it requires is the signature.
+package taubyte:handler@0.1.0;
+
+world handler {
+    // The four data models the `database` kind declares, each its own package
+    // because they share nothing but the kind's name.
+    import taubyte:sql/store@0.1.0;
+    import taubyte:kv/store@0.1.0;
+    import taubyte:document/store@0.1.0;
+    import taubyte:vector/store@0.1.0;
+
+    import taubyte:cache/store@0.1.0;
+    import taubyte:storage/objects@0.1.0;
+
+    // Sending: three kinds, three deliveries, and every one of the matching
+    // RECEIVE halves is a trigger rather than a function a guest calls.
+    import taubyte:%stream/publisher@0.1.0;
+    import taubyte:bus/publisher@0.1.0;
+    import taubyte:queue/producer@0.1.0;
+    import taubyte:log/records@0.1.0;
+    import taubyte:workflow/runs@0.1.0;
+
+    import taubyte:secret/vault@0.1.0;
+
+    // Inference, on the account and at the endpoint the `model` resource names.
+    // It is a WRITE in the vocabulary — it costs money and answers differently
+    // every time — so it is here, with the things that send, and not in the
+    // state subset the deciding worlds import.
+    import taubyte:model/inference@0.1.0;
+
+    // In-project addressing: what v1 called p2p.
+    import taubyte:channel/dialer@0.1.0;
+
+    // And what the workload is. The one capability that is authority over
+    // nothing, and so the one that needs no grant. v1 called it `self`, which
+    // is a keyword in Rust and cannot be a package name there.
+    import taubyte:workload/identity@0.1.0;
+
+    // THE REQUEST AND RESPONSE TYPES ARE IN THE WORLD AND NOT IN AN INTERFACE,
+    // which is not a style choice: a `use` from an imported interface leaves
+    // the export's signature referring to a type the host has to resolve
+    // separately, and a host reading the component's own type section then
+    // cannot flatten the call at all. Inline, the export carries its whole
+    // shape with it — which is what lets any embedder call it knowing only this
+    // file.
+
+    // A header, once. It is a list of pairs rather than a map because a header
+    // may legitimately appear more than once — Set-Cookie is the example that
+    // breaks every map-shaped API.
+    record header {
+        name: string,
+        value: string,
+    }
+
+    // What a guest is handed.
+    //
+    // Method and path are empty for an invocation that is not HTTP-shaped,
+    // which is a case a header list and a body still describe perfectly well:
+    // a pubsub delivery is a body and some metadata.
+    record request {
+        method: string,
+        path: string,
+        headers: list<header>,
+        body: list<u8>,
+    }
+
+    // What a guest answers with.
+    //
+    // A guest that fails does so by returning a status, not by trapping: a trap
+    // takes the instance with it, and an instance is warm state worth keeping
+    // across a handled error.
+    record response {
+        status: u16,
+        headers: list<header>,
+        body: list<u8>,
+    }
+
+    // The name is the author's — `execution/call` — and this declares the
+    // signature every one of them has.
+    export handle: func(req: request) -> response;
+}

@@ -1,0 +1,150 @@
+// Inference, as the vocabulary's `model` kind.
+//
+// # What a workload is spared
+//
+// A model resource already carries the endpoint, the wire format, the
+// credential and the parameters it is called with. A workload that reached an
+// LLM by hand would carry a copy of all four — which is how a credential ends
+// up in an environment variable on every caller, and how rotating it becomes an
+// edit per workload instead of an edit.
+//
+// So this takes a NAME. Which provider answers, what it is called there, and
+// whose account it is on are the resource's business, and an author changes any
+// of them without touching a line of a guest.
+//
+// # One verb, and it is a WRITE
+//
+// `Ops(WriteOp("infer"))` in the vocabulary, with its reason beside it: it
+// costs money and answers differently every time. There is no read here to be
+// granted separately, and a workload that may call a model may call it.
+//
+// # The ceiling is the resource's, not the caller's
+//
+// `max-tokens` is a cost ceiling as much as a length one, so a request asking
+// for more than the resource declares gets what the resource declares. Asking
+// for LESS works — a caller that wants a short answer should be able to say so
+// — which makes this a clamp rather than an override. Nothing else a caller
+// sends can raise a bill.
+//
+// # No streaming, yet
+//
+// A streamed answer is a different shape — a stream resource, held open, with
+// its own cancellation — and the honest version of it is `wasi:io/streams`
+// rather than a second set of types here. A workload that wants tokens as they
+// arrive cannot have them through this interface, which is a gap and is said
+// rather than worked around with a polling call.
+package taubyte:model@0.1.0;
+
+interface inference {
+    // A tool the model may ask to have run.
+    //
+    // THE SCHEMA IS JSON AS TEXT, not a structured type. JSON Schema is
+    // recursive and WIT has no recursive records, so a typed version could only
+    // express a subset — and every provider takes it as JSON on the wire
+    // anyway. A caller that has a schema hands it over whole.
+    record tool {
+        name: string,
+        description: string,
+        schema: string,
+    }
+
+    // The model asking for one to be run.
+    record tool-call {
+        // The provider's own id for this call, echoed rather than invented: a
+        // model that asked for two tools at once is told which answer is which
+        // by this and by nothing else.
+        id: string,
+        name: string,
+
+        // The arguments, as JSON. The MODEL produced them, so nothing here
+        // checks them against the schema — the tool is the only party that
+        // knows what it needs, and a host that pre-validated would be
+        // enforcing a contract it does not own.
+        arguments: string,
+    }
+
+    // One turn. The roles are the ones every format has; a format that spells
+    // them differently is the host's problem, not the caller's.
+    record message {
+        // "system", "user", "assistant" or "tool".
+        role: string,
+        content: string,
+
+        // On a `tool` turn: which call this answers.
+        tool-call-id: string,
+
+        // On an `assistant` turn the model produced: what it asked for.
+        // HANDING IT BACK IS WHAT MAKES THE CONVERSATION RESUMABLE — a provider
+        // that cannot see its own request cannot be given the answer to it.
+        tool-calls: list<tool-call>,
+    }
+
+    record request {
+        messages: list<message>,
+
+        // How much the model may vary its answer. None means what the resource
+        // declares, which may itself be none — and then it is the provider's
+        // default rather than a number tau invented.
+        temperature: option<f64>,
+
+        // A ceiling on this answer, clamped by the resource's own. See above.
+        max-tokens: option<u32>,
+
+        // Strings that end an answer. They are ADDED to what the resource
+        // declares rather than replacing them: a stop sequence an author wrote
+        // is a rule about what this model may emit, and a caller does not get
+        // to lift it.
+        stop: list<string>,
+
+        // What the model may ask to have run. An empty list is a plain
+        // completion, which is what every caller that wants prose sends.
+        //
+        // NOTHING HERE RUNS THEM. The model answers with what it wants called
+        // and the caller does the calling — which is what keeps a loop the
+        // caller's program rather than a behaviour hidden in a host function.
+        tools: list<tool>,
+    }
+
+    // What it cost. It is here because the caller is the only party that can
+    // attribute it to anything — tau knows the workload, not the feature.
+    record usage {
+        input-tokens: u32,
+        output-tokens: u32,
+    }
+
+    record answer {
+        content: string,
+
+        // Why it stopped: "stop" when it finished, "length" when it hit the
+        // ceiling, "tool-calls" when it wants one run, or whatever else the
+        // provider said. A caller that cares whether the answer is complete
+        // reads this rather than guessing from the text.
+        stop-reason: string,
+
+        // What it wants run before it can answer. Empty on an ordinary
+        // completion. A caller that sent no tools never sees one.
+        tool-calls: list<tool-call>,
+
+        usage: usage,
+    }
+
+    variant error {
+        // No grant by that name. A typo, or a resource that reaches a model it
+        // did not declare.
+        no-such-model(string),
+        denied(string),
+
+        // THE PROVIDER ANSWERED AND SAID NO — a malformed request, a filtered
+        // one, a context that does not fit. It is its own arm because a caller
+        // acts on it differently from a provider it could not reach: this one
+        // will fail again the same way, and the other is worth a retry.
+        refused(string),
+        unavailable(string),
+    }
+
+    infer: func(name: string, req: request) -> result<answer, error>;
+}
+
+world imports {
+    import inference;
+}

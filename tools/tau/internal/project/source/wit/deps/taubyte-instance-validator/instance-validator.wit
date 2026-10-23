@@ -1,0 +1,96 @@
+// The world a tau INSTANCE VALIDATOR is compiled to.
+//
+// # A store that holds many says who may open one
+//
+// `instances: {admission: validator, validator: {name: may_open}}` names a
+// function that decides whether one instance of a store may exist. It is the
+// other half of a ceiling: `instances/limit` says how many there may be, and
+// this says which.
+//
+// # It was a handler wearing a header, and the code said so
+//
+// Until now this world was named by the vocabulary and built by nothing, so the
+// node drove a validator as an ordinary handler with the instance in a header —
+// node/admission.go said as much in its own doc, and node/dream's test said it
+// again: "`implements: instance-validator` names a host world nothing builds,
+// so a validator IS a handler."
+//
+// The cost was not the header. It was that a function declaring the world the
+// VOCABULARY names could not start at all: the tier refuses any world it cannot
+// drive, correctly, so `may_open` in the fixture — which declares it — was a
+// control that compiled, published and then failed its first cold start.
+//
+// # Refused and undecided are different, and so is the reason
+//
+// `refused` is a decision and its string is for the CALLER: it is why they were
+// turned down, and a workload can act on it. `undecided` is a refusal to decide
+// and its string is for an OPERATOR: telling a caller their instance was turned
+// down when nothing decided sends them to argue with a policy that never fired.
+//
+// That distinction is the one node/admission.go already made in Go before this
+// world existed, which is why it survives into the ABI rather than being
+// invented here.
+package taubyte:instance-validator@0.1.0;
+
+world instance-validator {
+    // THE SAME SUBSET THE AUTHORIZER GETS, and for the same reason: a decision
+    // has to look the caller up somewhere, and an admission that publishes to a
+    // queue cannot be re-asked without changing the system it is deciding about.
+    import taubyte:sql/store@0.1.0;
+    import taubyte:kv/store@0.1.0;
+    import taubyte:document/store@0.1.0;
+    import taubyte:vector/store@0.1.0;
+    import taubyte:cache/store@0.1.0;
+    import taubyte:secret/vault@0.1.0;
+    import taubyte:workload/identity@0.1.0;
+
+    // THE RECORDS ARE THIS WORLD'S OWN, and they are deliberately not shared
+    // with taubyte:authorizer even though `caller` is the same five fields.
+    // Sharing them means a `use` from an imported interface, which leaves the
+    // export's signature naming a type the host must resolve separately — and a
+    // host reading the component's own type section then cannot flatten the call
+    // at all. handler.wit states that at more length. Two worlds that ask
+    // different questions carrying their own shapes is the cheaper mistake.
+
+    // Who is opening it.
+    //
+    // AN EMPTY `kind` MEANS THIS DID NOT COME FROM A WORKLOAD. The same
+    // validator is asked about a browser attaching at the edge, which has a
+    // deployment and nothing else — it came from the internet. That is a
+    // distinction worth deciding on, so it is stated here rather than left to
+    // be inferred from blank fields.
+    record caller {
+        project: string,
+        environment: string,
+        kind: string,
+        name: string,
+        scope: list<string>,
+    }
+
+    // What is being opened: the vocabulary's kind and the label the CALLER wrote
+    // in its access block, which is not the store's name and not its id.
+    record store {
+        kind: string,
+        label: string,
+    }
+
+    // One opening.
+    record opening {
+        who: caller,
+        what: store,
+        // The instance being opened, as the caller named it — the part after the
+        // "/" in `chat/room-42`.
+        instance: string,
+    }
+
+    // The answer.
+    variant verdict {
+        admitted,
+        refused(string),
+        undecided(string),
+    }
+
+    // The name is fixed, unlike a handler's: a store names the FUNCTION that
+    // admits, not an export within it.
+    export admit: func(o: opening) -> verdict;
+}

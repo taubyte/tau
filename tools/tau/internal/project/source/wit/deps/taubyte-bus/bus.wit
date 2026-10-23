@@ -1,0 +1,34 @@
+// An ephemeral message bus, as the vocabulary's `bus` kind.
+//
+// # It is not a stream, and the difference is what is kept
+//
+// A stream is a pubsub topic that reaches every subscriber. A bus is n:n and
+// EPHEMERAL — "everything attached gets what is sent, and nothing is kept" —
+// which is what makes it the thing a browser attaches to over a websocket and
+// not the thing a job is queued on.
+//
+// # Only publish, and its other verb is a different mechanism from stream's
+//
+// `subscribe` on a bus is an ATTACHMENT: a websocket at the bus's own host, or
+// a workload the platform delivers to. Fan-out is not a question here the way
+// it is for a stream — everything attached gets what is sent is the kind's own
+// definition — but the attaching is the gateway's to serve and not a function a
+// guest calls.
+package taubyte:bus@0.1.0;
+
+interface publisher {
+    variant error {
+        no-such-bus(string),
+        denied(string),
+        unavailable(string),
+    }
+
+    // publish sends one message to everything attached. It returns when the
+    // message has been handed to the swarm and promises nothing about who was
+    // attached — nothing is kept, so an unattached bus drops it.
+    publish: func(name: string, message: list<u8>) -> result<_, error>;
+}
+
+world imports {
+    import publisher;
+}

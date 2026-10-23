@@ -1,0 +1,86 @@
+// The world a tau DNS RESOLVER is compiled to.
+//
+// # What a resolver is
+//
+// A zone declares `file`, `resolver`, or both. The file is what an author knows
+// when they deploy; the resolver is asked for the names it does not carry — a
+// label per tenant, an address that follows where a workload actually landed, a
+// name that should not resolve at all until something is checked. With no file
+// it answers the whole zone.
+//
+// # It answers in ZONE-FILE NOTATION, which is not laziness
+//
+// The other arm of the same zone is a zone file, and services/dns already turns
+// a line into a record with one `dns.NewRR($ORIGIN … \n line)`. Answering in the
+// same notation means the two arms converge on ONE parse path, so a record
+// cannot mean one thing written in the file and another returned by the
+// function.
+//
+// It is also the only shape that does not go stale. A structured record would
+// have to enumerate A, AAAA, MX, TXT, SRV, CAA and whatever is standardised
+// next, and a guest wanting the one this world forgot would have no way to say
+// it. A line says all of them.
+//
+// # The three answers are a real distinction and not a convenience
+//
+// DNS separates "no such name" from "that name exists and has nothing of this
+// type", and a server that confuses them misleads every resolver that asks:
+// NXDOMAIN for a name that exists poisons a negative cache, and NOERROR for one
+// that does not stops a client trying anywhere else. services/dns already keeps
+// the distinction for the file arm — "a name a zone declares only an MX for,
+// asked for an A, exists and has no A" — so a function that could only say
+// "here are some records" could not be wired to the same server.
+package taubyte:dns@0.1.0;
+
+world dns-resolver {
+    // THE SAME SUBSET EVERY DECIDING WORLD GETS: state, and nothing that
+    // sends. A resolver that published to a queue would make a DNS question
+    // unrepeatable, and a question is retried by every resolver on the internet.
+    //
+    // INLINE RATHER THAN INCLUDED, which is worth stating because the authorizer
+    // package factors exactly this list into a `deciding` world. That include
+    // works only WITHIN a package: each dep here is parsed standalone, so a
+    // world in taubyte:dns cannot include one from taubyte:authorizer. Copied
+    // deliberately, and this comment is where the drift gets caught.
+    import taubyte:sql/store@0.1.0;
+    import taubyte:kv/store@0.1.0;
+    import taubyte:document/store@0.1.0;
+    import taubyte:vector/store@0.1.0;
+    import taubyte:cache/store@0.1.0;
+    import taubyte:secret/vault@0.1.0;
+
+    // What the resolver itself is, not who asked: a DNS question carries no
+    // caller a zone could describe.
+    import taubyte:workload/identity@0.1.0;
+
+    // One question. The name is ABSOLUTE and lower-cased, as it arrived on the
+    // wire, so a guest matching on it does not have to guess whether the apex
+    // is included or how it was capitalised.
+    record question {
+        name: string,
+        // The type as the text form spells it — "A", "AAAA", "TXT", "SRV" —
+        // rather than its number, for the reason the answer is a line: a guest
+        // that wants a type this list forgot can still name it.
+        %type: string,
+    }
+
+    // What the resolver decided.
+    //
+    // `records` are zone-file lines relative to the zone's apex, exactly as the
+    // file arm holds them: "geo 60 IN A 203.0.113.9". An EMPTY list here is not
+    // a refusal — use `empty` for that, which is the shape the wire has.
+    variant answer {
+        records(list<string>),
+        // The name exists in this zone and holds nothing of the type asked for.
+        // NOERROR with no records, which is what stops a client looking
+        // elsewhere for a name that is genuinely here.
+        empty,
+        // No such name in this zone. NXDOMAIN, which is cacheable as an
+        // absence — so a resolver that is merely unsure must not answer it.
+        absent,
+    }
+
+    // The name is fixed, for the reason every other world's is: a zone names
+    // the FUNCTION, not an export within it.
+    export resolve: func(q: question) -> answer;
+}

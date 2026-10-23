@@ -1,8 +1,11 @@
 package project
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -17,8 +20,71 @@ func initStarter(t *testing.T) string {
 	dir := t.TempDir()
 	written, err := Init(t.Context(), dir, "shop", false)
 	require.NoError(t, err)
-	require.Equal(t, []string{"function/hello.yaml", "gateway/front.yaml", "project.yaml"}, written)
+	require.Equal(t, starterFiles(t), written)
 	return dir
+}
+
+// starterFiles is every path init writes: the three documents and the source.
+func starterFiles(t *testing.T) []string {
+	t.Helper()
+	files := []string{"function/hello.yaml", "gateway/front.yaml", "project.yaml"}
+	require.NoError(t, fs.WalkDir(source, "source", func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			files = append(files, strings.TrimPrefix(path, "source/"))
+		}
+		return err
+	}))
+	sort.Strings(files)
+	return files
+}
+
+// THE STARTER BUILDS FROM SOURCE: the crate its function names, and tau's
+// world at the path the crate reads it from.
+func TestTheStarterShipsItsSource(t *testing.T) {
+	dir := initStarter(t)
+	for _, f := range []string{"services/hello/Cargo.toml", "services/hello/Cargo.lock", "services/hello/src/lib.rs", "wit/handler.wit"} {
+		require.FileExists(t, filepath.Join(dir, f))
+	}
+	lib, err := os.ReadFile(filepath.Join(dir, "services", "hello", "src", "lib.rs"))
+	require.NoError(t, err)
+	require.Contains(t, string(lib), `path: "../../wit"`)
+}
+
+// THE STARTER'S WORLD IS THE HOST'S. The copy exists because this module cannot
+// embed a file outside it; this is what keeps it from drifting.
+func TestTheStartersWorldIsTheHosts(t *testing.T) {
+	host := filepath.Join("..", "..", "..", "..", "pkg", "invoke", "wasm", "wit")
+	var want []string
+	require.NoError(t, filepath.WalkDir(host, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(host, path)
+		require.NoError(t, err)
+		want = append(want, filepath.ToSlash(rel))
+		body, err := os.ReadFile(path)
+		require.NoError(t, err)
+		copied, err := source.ReadFile("source/wit/" + filepath.ToSlash(rel))
+		require.NoError(t, err, "the starter is missing %s", rel)
+		require.Equal(t, string(body), string(copied), "the starter's %s differs from the host's", rel)
+		return nil
+	}))
+	var got []string
+	require.NoError(t, fs.WalkDir(source, "source/wit", func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			got = append(got, strings.TrimPrefix(path, "source/wit/"))
+		}
+		return err
+	}))
+	require.Equal(t, want, got)
+}
+
+// A source file that cannot be written fails init.
+func TestInitWhereTheSourceCannotBeWritten(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "services"), []byte("a file where the directory goes"), 0o644))
+	_, err := Init(t.Context(), dir, "shop", false)
+	require.Error(t, err)
 }
 
 // The starter compiles clean — the whole reason init compiles before writing.

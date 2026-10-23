@@ -22,6 +22,13 @@ import (
 //go:embed starter
 var starter embed.FS
 
+// source is what the starter's function is built from, written beside the
+// documents as it is: the Rust crate the function's `source` names, and tau's
+// world at wit/, which the crate builds against.
+//
+//go:embed source
+var source embed.FS
+
 // ErrExists is a directory that already holds a project.
 var ErrExists = errors.New("this directory already holds a project (project.yaml); pass --force to overwrite")
 
@@ -85,5 +92,26 @@ func Init(ctx context.Context, dir, name string, force bool) ([]string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	return p.Save()
+	written, err := p.Save()
+	if err != nil {
+		return written, err
+	}
+	err = fs.WalkDir(source, "source", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := source.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel("source", path)
+		dst := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return err
+		}
+		written = append(written, filepath.ToSlash(rel))
+		return os.WriteFile(dst, data, 0o644)
+	})
+	sort.Strings(written)
+	return written, err
 }

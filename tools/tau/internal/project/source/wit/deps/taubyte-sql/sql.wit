@@ -1,0 +1,103 @@
+// A SQL database, as the vocabulary's `database` kind at `type: sql`.
+//
+// # Four types, four packages
+//
+// `database` is one kind with four data models, and they share nothing but a
+// name: `sql` speaks statements, `kv` speaks keys, `document` speaks JSON, and
+// `vector` speaks embeddings. Folding them into one interface would be four
+// interfaces wearing a trenchcoat — and would make a guest that needs a
+// keystore carry a SQL value variant it will never construct.
+//
+// # It is shaped like the client the author already uses
+//
+// `query` answers rows, `exec` answers what it changed. That is Go's
+// `database/sql`, Python's DBAPI, node-postgres and every JDBC wrapper — so
+// bindings over this are a thin adapter rather than a new idiom to learn. It is
+// deliberately NOT an ORM and not a query builder: those belong in the guest's
+// own ecosystem, over this.
+//
+// # Two verbs, and `exec` is a write because the host cannot classify SQL
+//
+// The vocabulary says so where it declares them: nothing here parses a
+// statement to decide whether it changes anything, so an author who asked for
+// `query` gets reads and an author who needs to write asks for `exec`.
+//
+// # A row is flat on purpose
+//
+// `values` is ROW-MAJOR with `columns` giving the width, rather than a list of
+// lists. Nesting a list of variants inside a list inside a record is three
+// composites deep in the canonical ABI, and the flat shape carries exactly the
+// same information for a guest that already has the column count. Chunking it
+// back into rows is one line in any language's bindings.
+//
+// # What is not here, and what it would take
+//
+// TRANSACTIONS. `begin`/`commit`/`rollback` need a handle that outlives a call,
+// which is a WIT `resource` — the shape is available and the missing half is
+// underneath: what backs this must be able to pin a connection for the life of
+// one, and an adapter that pools per call cannot. It is a change to the backing
+// before it is a change to this file.
+//
+// PREPARED STATEMENTS, for the same reason and with less to gain: `args` is
+// already parameterised, so what a prepare adds is plan reuse across calls, and
+// an instance that serves one request at a time gets most of that from the
+// server's own statement cache.
+//
+// A CURSOR. `query` answers the whole result set as one value, so a statement
+// that selects a million rows materialises them in the guest's memory. SQL's own
+// answer to that is `LIMIT`/`OFFSET`, which a caller writes today and which
+// every engine here supports — a streaming cursor is a `resource` and wants the
+// same pinned connection a transaction does.
+package taubyte:sql@0.1.0;
+
+interface store {
+    // A SQL value, in and out. NULL is its own case rather than an absent
+    // option, because a column that IS null and a column that was not selected
+    // are different answers and a guest has to be able to tell them apart.
+    variant value {
+        null,
+        text(string),
+        integer(s64),
+        real(f64),
+        boolean(bool),
+        blob(list<u8>),
+    }
+
+    record rows {
+        columns: list<string>,
+        // Row-major: columns.len() values per row. See the package doc.
+        values: list<value>,
+    }
+
+    // What a write changed.
+    //
+    // `last-insert-id` IS 0 WHEN THE SERVER DID NOT REPORT ONE, which is most
+    // of them: it is a MySQL and SQLite idea, and PostgreSQL answers the same
+    // question with `RETURNING`. A guest that needs the id portably writes the
+    // RETURNING and reads it out of `query`.
+    record outcome {
+        affected: s64,
+        last-insert-id: s64,
+    }
+
+    variant error {
+        // The label is not in this resource's `database:` block.
+        no-such-database(string),
+        // Declared, but not with this verb — or the target is on an engine
+        // this cloud has no adapter registered for.
+        denied(string),
+        // The server could not be reached.
+        unavailable(string),
+        // The server answered, and what it said was no: a syntax error, a
+        // constraint, a permission. It is ITS OWN ARM because a caller retries
+        // an outage and fixes a statement.
+        failed(string),
+    }
+
+    query: func(name: string, statement: string, args: list<value>) -> result<rows, error>;
+    exec: func(name: string, statement: string, args: list<value>) -> result<outcome, error>;
+}
+
+world imports {
+    import store;
+}
