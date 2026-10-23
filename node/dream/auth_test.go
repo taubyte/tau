@@ -123,3 +123,52 @@ func TestSignInAcrossAFleet(t *testing.T) {
 	require.NotContains(t, person.GetSession().GetAccessToken(), f.TokenString())
 	require.NotContains(t, person.GetSession().GetRefreshToken(), f.TokenString())
 }
+
+// TestTheAdminSignsInOnceItsPasswordIsWritten: a cloud started without the
+// admin's hash refuses the admin as not set, and admits it the moment the hash
+// is written, with no restart.
+func TestTheAdminSignsInOnceItsPasswordIsWritten(t *testing.T) {
+	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
+		Copies:   2,
+		Services: []string{node.Discovery, node.Secrets, node.Auth},
+		Configure: func(_ int, c *node.Config) {
+			c.Auth.Admin = auth.Admin{Name: "root"}
+		},
+	})
+	require.NoError(t, err)
+	defer u.Close()
+	pids := u.Pids()
+	require.Len(t, pids, 2)
+
+	targets := make([]libp2ppeer.ID, len(pids))
+	for i, p := range pids {
+		targets[i], err = libp2ppeer.Decode(p)
+		require.NoError(t, err)
+	}
+	c, err := rpc.NewClient(u.Peers()[1].Peer(), targets[0], auth.Protocol)
+	require.NoError(t, err)
+	defer c.Close()
+	sessions := authv2connect.NewSessionServiceClient(c.HTTP(), c.URL())
+	ctx := t.Context()
+	login := func() error {
+		_, err := sessions.Login(ctx, connect.NewRequest(&authv2.LoginRequest{Name: "root", Password: "correct horse battery"}))
+		return err
+	}
+
+	var last error
+	assert.Eventually(t, func() bool {
+		last = login()
+		return connect.CodeOf(last) == connect.CodeNotFound
+	}, 60*time.Second, time.Second, "the admin is refused as not set once the vault answers")
+	require.Equal(t, connect.CodeNotFound, connect.CodeOf(last), "%v", last)
+	require.ErrorContains(t, last, "the admin has no password in the secrets service yet")
+
+	vault, err := secrets.NewClient(u.Peers()[1].Peer(), func() []libp2ppeer.ID { return targets }, nil)
+	require.NoError(t, err)
+	defer vault.Close()
+	hash, err := auth.HashAdminPassword("correct horse battery")
+	require.NoError(t, err)
+	require.NoError(t, vault.Set(ctx, secrets.Ref{Scope: secrets.Cloud(auth.VaultService), Name: auth.AdminSecret}, []byte(hash)))
+
+	require.NoError(t, login())
+}

@@ -17,8 +17,14 @@ func TestTheAdminWaitsForItsPasswordInTheVault(t *testing.T) {
 	phc := f.vault.m[AdminSecret]
 	delete(f.vault.m, AdminSecret)
 	_, err := f.sessions().Login(ctx, req(&authv2.LoginRequest{Name: "root", Password: f.adminP}, ""))
+	require.Equal(t, connect.CodeNotFound, code(t, err))
+	require.ErrorContains(t, err, "the admin has no password in the secrets service yet")
+
+	f.vault.fail = errors.New("no quorum")
+	_, err = f.sessions().Login(ctx, req(&authv2.LoginRequest{Name: "root", Password: f.adminP}, ""))
 	require.Equal(t, connect.CodeUnavailable, code(t, err))
-	require.ErrorContains(t, err, "the admin cannot sign in until the secrets service holds its password")
+	require.ErrorContains(t, err, "the admin cannot sign in until the secrets service answers")
+	f.vault.fail = nil
 
 	f.vault.m[AdminSecret] = []byte("plaintext")
 	_, err = f.sessions().Login(ctx, req(&authv2.LoginRequest{Name: "root", Password: f.adminP}, ""))

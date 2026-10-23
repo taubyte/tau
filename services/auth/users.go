@@ -14,6 +14,7 @@ import (
 
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/services/auth/password"
+	"github.com/taubyte/tau/services/secrets"
 )
 
 // users.go is who this cloud's users are.
@@ -334,8 +335,11 @@ func (s *Service) checkPassword(ctx context.Context, u user, pw string) error {
 	var pepper []byte
 	if u.Builtin {
 		phc, err := s.keys.vault.Get(ctx, AdminSecret)
+		if errors.Is(err, secrets.ErrNotSet) {
+			return connect.NewError(connect.CodeNotFound, fmt.Errorf("auth: the admin has no password in the secrets service yet: %w", err))
+		}
 		if err != nil {
-			return connect.NewError(connect.CodeUnavailable, fmt.Errorf("auth: the admin cannot sign in until the secrets service holds its password: %w", err))
+			return connect.NewError(connect.CodeUnavailable, fmt.Errorf("auth: the admin cannot sign in until the secrets service answers: %w", err))
 		}
 		if h, err = password.Parse(string(phc)); err != nil {
 			return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("auth: the admin's password in the secrets service is not a hash: %w", err))

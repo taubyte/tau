@@ -22,6 +22,7 @@ import (
 	kvdbmock "github.com/taubyte/tau/pkg/kvdb/mock"
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 	"github.com/taubyte/tau/services/auth/password"
+	"github.com/taubyte/tau/services/secrets"
 )
 
 // The users half's fixture: an in-memory kvdb, a map for a vault, a forge
@@ -49,7 +50,7 @@ func (v *memVault) Get(_ context.Context, n string) ([]byte, error) {
 	}
 	b, ok := v.m[n]
 	if !ok {
-		return nil, errors.New("not set")
+		return nil, secrets.ErrNotSet
 	}
 	return b, nil
 }
