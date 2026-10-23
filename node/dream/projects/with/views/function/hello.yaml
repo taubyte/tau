@@ -3,10 +3,10 @@ description: pinned to region-1, so only region-1's view holds it - and the gate
 source: services/hello
 build:
     commands:
-        image: rust:1.83
+        image: tau-fixtures/rust-component:0.21.1
         install: cargo fetch --locked
-        run: cargo build --release --target wasm32-wasip2
-        output: target/wasm32-wasip2/release/hello.wasm
+        run: cargo component build --release --locked --target wasm32-wasip2
+        output: target/wasm32-wasip1/release/handler.wasm
 execution:
     call: handle
     timeout: 15s

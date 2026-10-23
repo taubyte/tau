@@ -8,10 +8,10 @@ implements: http-authorizer
 source: services/doorman
 build:
     commands:
-        image: rust:1.83
+        image: tau-fixtures/rust-component:0.21.1
         install: cargo fetch --locked
-        run: cargo build --release --target wasm32-wasip2
-        output: target/wasm32-wasip2/release/doorman.wasm
+        run: cargo component build --release --locked --target wasm32-wasip2
+        output: target/wasm32-wasip1/release/doorman.wasm
 execution:
     call: authorize
     timeout: 5s

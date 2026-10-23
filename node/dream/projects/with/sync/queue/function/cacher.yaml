@@ -3,10 +3,10 @@ description: sends on the path it is asked on, and receives on the delivery path
 source: services/cacher
 build:
     commands:
-        image: rust:1.83
+        image: tau-fixtures/rust-component:0.21.1
         install: cargo fetch --locked
-        run: cargo build --release --target wasm32-wasip2
-        output: target/wasm32-wasip2/release/cacher.wasm
+        run: cargo component build --release --locked --target wasm32-wasip2
+        output: target/wasm32-wasip1/release/cacher.wasm
 execution:
     call: handle
     timeout: 15s

@@ -31,7 +31,7 @@ DREAM_P ?= $(shell n=$$(nproc 2>/dev/null || echo 4); p=$$((n / 4)); [ $$p -lt 1
 # it fails the package outright rather than skipping it.
 DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xargs grep -L '//go:build dreaming && ee' | sed 's|^\./||' | grep -vE '^(ee/|tools/tau/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
-.PHONY: test test-cli test-acme test-acme-live test-dreaming test-raft test-docker test-containerd test-application test-build test-external-databases test-forges test-containers test-taucorder test-all proto-v2 proto-v2-check
+.PHONY: test test-cli test-acme test-acme-live test-dreaming test-raft test-docker test-containerd test-application test-build test-corpus test-external-databases test-forges test-containers test-taucorder test-all proto-v2 proto-v2-check
 
 # THE TIMEOUT IS EXPLICIT BECAUSE THE DEFAULT IS A GUESS ABOUT THE MACHINE.
 # go test allows a package 10 minutes unless told otherwise, and pkg/kvdb spends
@@ -55,6 +55,14 @@ test:
 test-cli:
 	cd tools/tau && go vet ./... && go test -timeout 10m $(FLAGS) ./...
 	cd tools/tau && GOMEMLIMIT=$(GOMEMLIMIT) go test -tags dreaming -timeout 20m $(FLAGS) ./e2e/
+	$(MAKE) test-corpus
+
+# test-corpus puts every project under node/dream/projects through `tau build`
+# and `tau ci run` against a universe that builds in containers, so it needs a
+# docker daemon and, for the cloud's restricted build egress, root. The first
+# run on a machine builds the toolchain image the corpus names.
+test-corpus:
+	cd tools/tau && GOMEMLIMIT=$(GOMEMLIMIT) go test -exec $(AS_ROOT) -tags 'dreaming docker_integration' -timeout 150m -v $(FLAGS) -run '^(TestEveryCorpusProjectBuildsBothWays|TestTheDomainCorpusBuildsBothWays)$$' ./e2e/
 
 test-dreaming:
 	GOMEMLIMIT=$(GOMEMLIMIT) go test -tags dreaming -p $(DREAM_P) -timeout 30m $(FLAGS) $(DREAM_PKGS)
