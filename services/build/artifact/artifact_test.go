@@ -342,7 +342,8 @@ func TestTheBuildCommandsAreTheAuthors(t *testing.T) {
 		case "rust:1.83":
 			require.Equal(t, []string{"cargo fetch --locked", "cargo build --release"}, spec.Commands)
 			require.Equal(t, "target/release/reserve.wasm", spec.Output)
-			require.True(t, strings.HasSuffix(spec.Dir, filepath.Join("services", "reserve")), spec.Dir)
+			require.Equal(t, filepath.Join("services", "reserve"), spec.Path, "the commands run in the resource's own directory")
+			require.DirExists(t, filepath.Join(spec.Dir, "services"), "of a checkout mounted whole, so a sibling it depends on is there")
 		}
 	}
 }
@@ -660,7 +661,8 @@ func TestABuildTimeSecretReachesTheBuild(t *testing.T) {
 
 	specs := e.seen()
 	require.Len(t, specs, 1)
-	require.Equal(t, "ghp_thetoken", specs[0].Variables["GITHUB_TOKEN"])
+	require.Equal(t, "ghp_thetoken", specs[0].Secrets["GITHUB_TOKEN"])
+	require.NotContains(t, specs[0].Variables, "GITHUB_TOKEN")
 }
 
 // TestAVaultThatRefusesFailsTheBuildBeforeAnythingRuns. Every spec is read

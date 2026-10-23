@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -23,14 +24,15 @@ import (
 // the container exits and there is nothing to copy out of a stopped container.
 // That is also why Checkout hands back a directory rather than a filesystem.
 //
-// # Egress is restricted, always
+// # Egress is restricted on a node, always
 //
 // A build runs a stranger's commands — `cargo build` fetches from crates.io and
 // runs whatever build.rs it downloaded — so it gets the public internet and
 // nothing else: no node-local services, no cloud metadata endpoint, no
-// private or link-local ranges, enforced fail-closed by pkg/containers. It is
-// not a configurable: a build that could reach the node's own register is a
-// build that can deploy itself.
+// private or link-local ranges, enforced fail-closed by pkg/containers. A node
+// cannot turn it off: a build that could reach the node's own register is a
+// build that can deploy itself. Only `tau build`, on the developer's own
+// machine, runs with OpenEgress.
 //
 // # What the log does, and does not, do
 //
@@ -55,6 +57,19 @@ var shell = []string{"/bin/sh", "-c"}
 // Containers is an Engine over pkg/containers.
 type Containers struct {
 	client *containers.Client
+	open   bool
+}
+
+// EngineOption configures a Containers.
+type EngineOption func(*Containers)
+
+// OpenEgress is a build on a developer's own machine: the toolchain reaches
+// what that machine reaches. The restriction protects a node's own services
+// and its peers from a stranger's commands; on a developer's machine the
+// commands are the developer's, run as they would run them by hand, and the
+// restriction needs privileges a developer's docker does not have.
+func OpenEgress() EngineOption {
+	return func(c *Containers) { c.open = true }
 }
 
 var _ Engine = (*Containers)(nil)
@@ -64,7 +79,7 @@ var _ Engine = (*Containers)(nil)
 // A NIL BACKEND IS THE MACHINE'S DEFAULT, which is what a development cloud
 // wants; a node whose operator named one passes it, so a build runs on the same
 // daemon its workloads do.
-func NewEngine(backend core.Backend) (*Containers, error) {
+func NewEngine(backend core.Backend, opts ...EngineOption) (*Containers, error) {
 	options := []containers.Option{}
 	if backend != nil {
 		options = append(options, containers.WithBackend(backend))
@@ -74,27 +89,32 @@ func NewEngine(backend core.Backend) (*Containers, error) {
 	if err != nil {
 		return nil, fmt.Errorf("artifact: %w", err)
 	}
-	return &Containers{client: client}, nil
+	c := &Containers{client: client}
+	for _, apply := range opts {
+		apply(c)
+	}
+	return c, nil
 }
 
 // Make runs one build and returns what it produced.
 func (c *Containers) Make(ctx context.Context, spec Spec, log io.Writer) (io.ReadCloser, error) {
+	// Image pulls, and keeps an image the machine already holds when the pull
+	// fails — a toolchain built on this machine, or a registry that is down.
 	image, err := c.client.Image(ctx, spec.Image, containers.Output(log))
 	if err != nil {
-		return nil, err
-	}
-	if _, err := image.Pull(ctx, nil); err != nil {
 		return nil, err
 	}
 
 	options := []containers.ContainerOption{
 		containers.Volume(spec.Dir, mount),
-		containers.WorkDir(mount),
+		containers.WorkDir(path.Join(mount, filepath.ToSlash(within(spec.Path)))),
 		containers.Command(append(shell, strings.Join(spec.Commands, " && "))),
-		containers.RestrictedEgress(),
 	}
-	if len(spec.Variables) > 0 {
-		options = append(options, containers.Variables(spec.Variables))
+	if !c.open {
+		options = append(options, containers.RestrictedEgress())
+	}
+	if env := spec.environment(); len(env) > 0 {
+		options = append(options, containers.Variables(env))
 	}
 
 	container, err := image.Instantiate(ctx, options...)
@@ -119,7 +139,22 @@ func (c *Containers) Make(ctx context.Context, spec Spec, log io.Writer) (io.Rea
 		return nil, err
 	}
 
-	return collect(spec.Dir, spec.Output)
+	return collect(joinWithin(spec.Dir, spec.Path), spec.Output)
+}
+
+// environment is what the build sees: its variables and its secrets, alike.
+func (s Spec) environment() map[string]string {
+	if len(s.Variables)+len(s.Secrets) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(s.Variables)+len(s.Secrets))
+	for k, v := range s.Variables {
+		out[k] = v
+	}
+	for k, v := range s.Secrets {
+		out[k] = v
+	}
+	return out
 }
 
 // collect reads what a build left behind.

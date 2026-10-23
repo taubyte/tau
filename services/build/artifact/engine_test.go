@@ -26,6 +26,7 @@ import (
 // answer — is exercised without a daemon; the docker_integration tests are what
 // prove a real runtime agrees.
 type hostBackend struct {
+	held      bool
 	pullErr   error
 	createErr error
 
@@ -41,7 +42,7 @@ type hostImage struct {
 }
 
 func (i hostImage) Pull(context.Context) error  { return i.backend.pullErr }
-func (i hostImage) Exists(context.Context) bool { return false }
+func (i hostImage) Exists(context.Context) bool { return i.backend.held }
 
 func (b *hostBackend) BackendType() core.BackendType                { return core.BackendTypeDocker }
 func (b *hostBackend) Image(string) core.Image                      { return hostImage{backend: b} }
@@ -64,8 +65,8 @@ func (b *hostBackend) Create(_ context.Context, config *core.ContainerConfig) (c
 func (b *hostBackend) Start(ctx context.Context, _ core.ContainerID) error {
 	var dir string
 	for _, v := range b.config.Volumes {
-		if v.Destination == b.config.WorkDir {
-			dir = v.Source
+		if rel, ok := strings.CutPrefix(b.config.WorkDir, v.Destination); ok && (rel == "" || rel[0] == '/') {
+			dir = filepath.Join(v.Source, rel)
 		}
 	}
 	if dir == "" {
@@ -114,9 +115,9 @@ func (b *hostBackend) Remove(context.Context, core.ContainerID) error {
 	return nil
 }
 
-func runBuild(t *testing.T, backend *hostBackend, spec artifact.Spec) (string, string, error) {
+func runBuild(t *testing.T, backend *hostBackend, spec artifact.Spec, opts ...artifact.EngineOption) (string, string, error) {
 	t.Helper()
-	e, err := artifact.NewEngine(backend)
+	e, err := artifact.NewEngine(backend, opts...)
 	require.NoError(t, err)
 
 	var log strings.Builder
@@ -216,4 +217,102 @@ func TestMakeFailsWhenTheContainerCannotBeCreated(t *testing.T) {
 		Image: "busybox:1.36", Dir: t.TempDir(), Commands: []string{"true"}, Output: "out",
 	})
 	require.ErrorContains(t, err, "no egress firewall")
+}
+
+// A MONOREPO RESOURCE REACHES ITS SIBLINGS. The whole checkout is mounted and
+// the commands run in the resource's own directory, so a `../` dependency is
+// there, and the output is read relative to that directory.
+func TestMakeRunsInTheResourcesDirectoryOfTheWholeCheckout(t *testing.T) {
+	backend := &hostBackend{}
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "services", "hello"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "wit"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "wit", "world.wit"), []byte("shared"), 0o644))
+
+	body, _, err := runBuild(t, backend, artifact.Spec{
+		Image:    "busybox:1.36",
+		Dir:      dir,
+		Path:     "services/hello",
+		Commands: []string{"mkdir -p out", "cp ../../wit/world.wit out/app.wasm"},
+		Output:   "out/app.wasm",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "shared", body)
+	require.Equal(t, "/src/services/hello", backend.config.WorkDir)
+	require.Equal(t, []core.VolumeMount{{Source: dir, Destination: "/src"}}, backend.config.Volumes)
+}
+
+// A PATH THAT CLIMBS OUT RUNS AT THE CHECKOUT ROOT, which is joinWithin's rule
+// for a path carried into the container.
+func TestMakeKeepsAClimbingPathInsideTheCheckout(t *testing.T) {
+	backend := &hostBackend{}
+	_, _, err := runBuild(t, backend, artifact.Spec{
+		Image: "busybox:1.36", Dir: t.TempDir(), Path: "../../etc", Commands: []string{"printf x > out"}, Output: "out",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "/src", backend.config.WorkDir)
+}
+
+// A SECRET REACHES THE BUILD the way a variable does.
+func TestMakeHandsTheBuildItsSecrets(t *testing.T) {
+	backend := &hostBackend{}
+	body, _, err := runBuild(t, backend, artifact.Spec{
+		Image:     "busybox:1.36",
+		Dir:       t.TempDir(),
+		Commands:  []string{"printf %s-%s \"$GREETING\" \"$TOKEN\" > out"},
+		Variables: map[string]string{"GREETING": "hi"},
+		Secrets:   map[string]string{"TOKEN": "ghp_x"},
+		Output:    "out",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "hi-ghp_x", body)
+}
+
+// ON A DEVELOPER'S MACHINE the build reaches what the machine reaches.
+func TestMakeWithOpenEgressInstallsNoRestriction(t *testing.T) {
+	backend := &hostBackend{}
+	_, _, err := runBuild(t, backend, artifact.Spec{
+		Image: "busybox:1.36", Dir: t.TempDir(), Commands: []string{"printf x > out"}, Output: "out",
+	}, artifact.OpenEgress())
+	require.NoError(t, err)
+	require.False(t, backend.config.Network != nil && backend.config.Network.RestrictEgress)
+}
+
+// A TOOLCHAIN THE MACHINE ALREADY HOLDS is used when no registry has it: an
+// image built here, or a registry that is down.
+func TestMakeUsesAHeldImageWhenThePullFails(t *testing.T) {
+	body, _, err := runBuild(t, &hostBackend{held: true, pullErr: errors.New("not in any registry")}, artifact.Spec{
+		Image: "tau-local/toolchain:1", Dir: t.TempDir(), Commands: []string{"printf built > out"}, Output: "out",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "built", body)
+}
+
+// THE DIGEST NAMES THE RECIPE: the same build is one name wherever it was
+// planned, a change to what runs is another, and a secret's value is no part
+// of it.
+func TestARecipesDigest(t *testing.T) {
+	base := artifact.Spec{
+		Image: "rust:1.90", Dir: "/one/machine", Path: "services/hello",
+		Commands: []string{"cargo build"}, Variables: map[string]string{"A": "1"},
+		Secrets: map[string]string{"TOKEN": "first"}, Output: "out.wasm",
+	}
+	same := base
+	same.Dir = "/another/machine"
+	same.Secrets = map[string]string{"TOKEN": "second"}
+	require.Equal(t, base.Digest(), same.Digest(), "where the checkout is and what a secret holds are not the recipe")
+	require.Len(t, base.Digest(), 64)
+
+	for name, change := range map[string]func(*artifact.Spec){
+		"image":    func(s *artifact.Spec) { s.Image = "rust:1.91" },
+		"path":     func(s *artifact.Spec) { s.Path = "services/other" },
+		"commands": func(s *artifact.Spec) { s.Commands = []string{"cargo build --release"} },
+		"variable": func(s *artifact.Spec) { s.Variables = map[string]string{"A": "2"} },
+		"secret":   func(s *artifact.Spec) { s.Secrets = map[string]string{"OTHER": "first"} },
+		"output":   func(s *artifact.Spec) { s.Output = "other.wasm" },
+	} {
+		changed := base
+		change(&changed)
+		require.NotEqual(t, base.Digest(), changed.Digest(), "a different %s is a different recipe", name)
+	}
 }

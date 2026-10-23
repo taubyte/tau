@@ -34,9 +34,14 @@ package artifact
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
@@ -134,9 +139,18 @@ type Spec struct {
 	// nobody chose.
 	Image string
 
-	// Dir is the directory on this machine holding the source, already
-	// narrowed to the resource's own path within the checkout.
+	// Dir is the directory on this machine holding the whole checkout.
+	//
+	// THE WHOLE CHECKOUT AND NOT THE RESOURCE'S PATH, because a resource in a
+	// monorepo reaches its siblings: a cargo path dependency, a go.mod
+	// replace, a workspace. A build handed only its own directory fails on
+	// the first `../`, which is a build that works on its author's machine
+	// and nowhere this cloud runs it.
 	Dir string
+
+	// Path is the resource's own directory within Dir, where the commands run
+	// and Output is read from. Empty is the checkout root.
+	Path string
 
 	// Commands run in order, each in a shell, and the first that fails ends
 	// the build.
@@ -145,9 +159,41 @@ type Spec struct {
 	// Variables are the author's build-time environment.
 	Variables map[string]string
 
-	// Output is what to collect afterwards, relative to Dir. It is a file for
+	// Secrets are the build-time variables whose values came out of a vault.
+	// They reach the build exactly as Variables do, and are kept apart so a
+	// recipe can be named without its credentials in the name.
+	Secrets map[string]string
+
+	// Output is what to collect afterwards, relative to Path. It is a file for
 	// a wasm component and a directory for a website.
 	Output string
+}
+
+// Digest names what the recipe IS: the toolchain, where in the checkout it
+// runs, what it runs, with what, and what it leaves behind. Two machines that
+// planned the same build from the same configuration name it alike, which is
+// how a developer's build and a cloud's are known to be one recipe.
+//
+// A SECRET IS NAMED AND ITS VALUE IS NOT. The value is a credential the recipe
+// is run with, not part of what the recipe is, and a digest printed in a job
+// log must not be something a reader can test guesses against.
+func (s Spec) Digest() string {
+	secrets := make([]string, 0, len(s.Secrets))
+	for name := range s.Secrets {
+		secrets = append(secrets, name)
+	}
+	sort.Strings(secrets)
+
+	named, _ := json.Marshal(struct {
+		Image     string            `json:"image"`
+		Path      string            `json:"path"`
+		Commands  []string          `json:"commands"`
+		Variables map[string]string `json:"variables"`
+		Secrets   []string          `json:"secrets"`
+		Output    string            `json:"output"`
+	}{s.Image, filepath.ToSlash(s.Path), s.Commands, s.Variables, secrets, s.Output})
+	sum := sha256.Sum256(named)
+	return hex.EncodeToString(sum[:])
 }
 
 // Engine runs one build.
@@ -224,9 +270,20 @@ func (b *Builder) Build(ctx context.Context, w backend.Work, out backend.Output)
 		return fmt.Errorf("artifact: %w", err)
 	}
 
+	compiled := make([]Deployment, 0, len(deployments))
+	for _, environment := range deployments {
+		p, err := b.projectAt(ctx, w.ProjectID, environment)
+		if err != nil {
+			return err
+		}
+		compiled = append(compiled, Deployment{Environment: environment, Project: p})
+	}
+
 	// WHAT TO BUILD IS DECIDED BEFORE ANYTHING IS CLONED, so a push that
 	// touches nothing costs no network and says so.
-	work, err := b.plan(ctx, w.ProjectID, deployments, w.RepositoryKey, main)
+	work, err := Plan(compiled, func(res specs.Buildable) (bool, error) {
+		return b.backedBy(res, w.RepositoryKey, main)
+	})
 	if err != nil {
 		return err
 	}
@@ -245,19 +302,19 @@ func (b *Builder) Build(ctx context.Context, w backend.Work, out backend.Output)
 	// follows for the same reason: a push where one resource declares a build
 	// this cloud cannot run must not leave the others rebuilt and that one
 	// stale. A partially rebuilt deployment looks exactly like a healthy one.
-	specs := make([]Spec, len(work))
+	recipes := make([]Spec, len(work))
 	for i, item := range work {
-		spec, err := b.specOf(ctx, w.ProjectID, item, dir)
+		spec, err := Recipe(ctx, b.secrets, w.ProjectID, item, dir)
 		if err != nil {
 			return err
 		}
-		specs[i] = spec
+		recipes[i] = spec
 	}
 
 	for i, item := range work {
-		say(out, "building %s/%s for %s", item.Kind, item.Name, item.Environment)
+		say(out, "building %s/%s for %s (recipe %s)", item.Kind, item.Name, item.Environment, recipes[i].Digest())
 
-		product, err := b.engine.Make(ctx, specs[i], out)
+		product, err := b.engine.Make(ctx, recipes[i], out)
 		if err != nil {
 			return fmt.Errorf("artifact: building %s/%s for %s: %w", item.Kind, item.Name, item.Environment, err)
 		}
@@ -317,8 +374,16 @@ func (b *Builder) deployments(ctx context.Context, projectID, branch string) ([]
 	return out, nil
 }
 
-// item is one build: a resource, in one deployment.
-type item struct {
+// Deployment is one environment's compiled project, which is what a build
+// reads its recipes from: published, for a push, or compiled on a developer's
+// machine, for `tau build`.
+type Deployment struct {
+	Environment string
+	Project     *specs.Project
+}
+
+// Item is one build: a resource, in one deployment.
+type Item struct {
 	Environment string
 	Scope       []string
 	Kind        string
@@ -329,22 +394,21 @@ type item struct {
 	Variables   []specs.Variable
 }
 
-// plan is every build this push touches, across every deployment it feeds.
-func (b *Builder) plan(ctx context.Context, projectID string, deployments []string, pushed, main string) ([]item, error) {
-	var out []item
+// Plan is every build the deployments owe the source backs says is at hand.
+//
+// IT IS THE WHOLE OF WHAT A BUILD DECIDES BEFORE ANYTHING RUNS, and it is
+// exported so that a cloud's build and a developer's are one decision: the
+// same compiled deployments plan the same items, whichever machine reads them.
+func Plan(deployments []Deployment, backs func(specs.Buildable) (bool, error)) ([]Item, error) {
+	var out []Item
 
-	for _, environment := range deployments {
-		p, err := b.projectAt(ctx, projectID, environment)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, buildable := range p.Buildables() {
-			backs, err := b.backedBy(buildable, pushed, main)
+	for _, d := range deployments {
+		for _, buildable := range d.Project.Buildables() {
+			backed, err := backs(buildable)
 			if err != nil {
 				return nil, err
 			}
-			if !backs {
+			if !backed {
 				continue
 			}
 
@@ -352,13 +416,13 @@ func (b *Builder) plan(ctx context.Context, projectID string, deployments []stri
 			// resource serves is decided in its own repository; the compiled
 			// object records every such file the compile read, and one it did
 			// not would be served by the block it was meant to replace.
-			if config := buildable.Source.Config; config != "" && !p.Filled(buildable.ID) {
+			if config := buildable.Source.Config; config != "" && !d.Project.Filled(buildable.ID) {
 				return nil, fmt.Errorf("%w: %s/%s names source.config %q and the compile of %s did not read it",
-					ErrUnfilled, buildable.Kind, buildable.Name, config, environment)
+					ErrUnfilled, buildable.Kind, buildable.Name, config, d.Environment)
 			}
 
-			out = append(out, item{
-				Environment: environment,
+			out = append(out, Item{
+				Environment: d.Environment,
 				Scope:       buildable.Scope,
 				Kind:        buildable.Kind,
 				Name:        buildable.Name,
@@ -398,11 +462,14 @@ func (b *Builder) backedBy(res specs.Buildable, pushed, main string) (bool, erro
 	return key.String() == pushed, nil
 }
 
-// specOf turns one item into a build to run.
-func (b *Builder) specOf(ctx context.Context, projectID string, i item, checkout string) (Spec, error) {
+// Recipe turns one item into the build it runs in checkout, resolving its
+// build-time secrets through secrets — nil being a machine with nothing to
+// resolve one with.
+func Recipe(ctx context.Context, secrets Secrets, projectID string, i Item, checkout string) (Spec, error) {
 	spec := Spec{
 		Image:  i.Build.Image,
-		Dir:    joinWithin(checkout, i.Path),
+		Dir:    checkout,
+		Path:   within(i.Path),
 		Output: i.Build.Output,
 	}
 
@@ -438,11 +505,10 @@ func (b *Builder) specOf(ctx context.Context, projectID string, i item, checkout
 		if v.At != buildTime {
 			continue
 		}
-		if spec.Variables == nil {
-			spec.Variables = map[string]string{}
-		}
-
 		if !v.FromSecret() {
+			if spec.Variables == nil {
+				spec.Variables = map[string]string{}
+			}
 			spec.Variables[v.Name] = v.Value
 			continue
 		}
@@ -451,7 +517,7 @@ func (b *Builder) specOf(ctx context.Context, projectID string, i item, checkout
 		// than run without it. A build that quietly lost its token fails
 		// somewhere further in, with a message about a dependency it could not
 		// fetch.
-		if b.secrets == nil {
+		if secrets == nil {
 			return Spec{}, fmt.Errorf("%w: %s/%s's %s wants %s",
 				ErrNoSecrets, i.Kind, i.Name, v.Name, v.Secret)
 		}
@@ -460,7 +526,7 @@ func (b *Builder) specOf(ctx context.Context, projectID string, i item, checkout
 		// deployment its branch feeds, and each of those reads its own
 		// environment's value — so staging builds with staging's token and
 		// production with production's, out of one plan.
-		value, err := b.secrets.Secret(ctx, projectID, i.Environment, v.Secret)
+		value, err := secrets.Secret(ctx, projectID, i.Environment, v.Secret)
 		if err != nil {
 			// THE VALUE CANNOT BE IN THIS MESSAGE and neither can anything
 			// resolved so far: this error reaches the job log, which the
@@ -468,7 +534,10 @@ func (b *Builder) specOf(ctx context.Context, projectID string, i item, checkout
 			return Spec{}, fmt.Errorf("artifact: %s/%s's %s needs the secret %s in %s: %w",
 				i.Kind, i.Name, v.Name, v.Secret, i.Environment, err)
 		}
-		spec.Variables[v.Name] = value
+		if spec.Secrets == nil {
+			spec.Secrets = map[string]string{}
+		}
+		spec.Secrets[v.Name] = value
 	}
 
 	if spec.Image == "" {

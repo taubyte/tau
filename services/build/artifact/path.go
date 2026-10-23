@@ -30,3 +30,15 @@ func joinWithin(root, path string) string {
 	}
 	return cleaned
 }
+
+// within is a config-supplied path cleaned to one inside the checkout, and ""
+// for the checkout itself or one that would leave it — joinWithin's rule, for a
+// path that is carried rather than joined.
+func within(path string) string {
+	root := string(filepath.Separator) + "checkout"
+	rel, err := filepath.Rel(root, joinWithin(root, path))
+	if err != nil || rel == "." {
+		return ""
+	}
+	return rel
+}
