@@ -131,17 +131,6 @@ func TestContainerCleanUpInterval_Integration(t *testing.T) {
 		return
 	}
 
-	err = gc.Start(
-		ctx,
-		gc.Interval(20*time.Second),
-		gc.MaxAge(10*time.Second),
-		gc.Reference(testGCImage),
-	)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
 	file, err := os.OpenFile(DockerTarBallPath, os.O_RDWR, 0444)
 	if err != nil {
 		t.Error(err)
@@ -194,7 +183,21 @@ func TestContainerCleanUpInterval_Integration(t *testing.T) {
 		return
 	}
 
-	time.Sleep(20 * time.Second)
+	// The collector starts only once the image is known to exist: started
+	// before the build, a build slower than one interval had the image
+	// collected before it could be seen.
+	err = gc.Start(
+		ctx,
+		gc.Interval(20*time.Second),
+		gc.MaxAge(10*time.Second),
+		gc.Reference(testGCImage),
+	)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	time.Sleep(25 * time.Second)
 
 	// After cleanup interval, image should be gone (GC removes images older than MaxAge).
 	img2, err2 := cli.Image(ctx, testGCImage)
