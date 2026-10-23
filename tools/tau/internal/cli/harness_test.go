@@ -26,6 +26,7 @@ import (
 	"github.com/taubyte/tau/pkg/forge/fake"
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
+	"github.com/taubyte/tau/services/build/artifact"
 	"github.com/taubyte/tau/tools/tau/internal/config"
 )
 
@@ -62,10 +63,23 @@ type frontend struct {
 	pushed    func()
 	auth      *fakeAuth
 	srv       *httptest.Server
+
+	// uploads makes this a development cloud that takes a build in.
+	uploads bool
+	// uploaded and queued are what an upload and a manual build were handed.
+	uploaded []byte
+	queued   []string
+	// finish is the status a queued job ends in; published is what a
+	// deployment's compiled object reads back as.
+	finish      buildv2.JobStatus
+	endOnFollow bool
+	published   map[string][]byte
 }
 
 func newFrontend(t *testing.T) *frontend {
 	f := &frontend{
+		finish:    buildv2.JobStatus_JobStatusSuccess,
+		published: map[string][]byte{},
 		jobs: map[string]*buildv2.Job{
 			"job-1": {Id: "job-1", Status: buildv2.JobStatus_JobStatusSuccess, RepositoryKey: "github.com/acme/pay", Ref: "refs/heads/main", CommitSha: "0123456789abcdef0123", Timestamp: 1700000000, Attempt: 1, AssetCid: map[string]string{"res-a": "bafyA"}},
 			"job-2": {Id: "job-2", Status: buildv2.JobStatus_JobStatusFailed, RepositoryKey: "github.com/acme/cfg", Ref: "refs/heads/main", CommitSha: "fedcba", Timestamp: 1700000100, Attempt: 2},
@@ -146,6 +160,13 @@ func newFrontend(t *testing.T) *frontend {
 			return
 		}
 		io.WriteString(w, rest)
+		// A FOLLOWED BUILD ENDS when its log does, as the backend's follow
+		// returns when the build finishes.
+		f.mu.Lock()
+		if j := f.jobs[r.PathValue("jid")]; j != nil && f.endOnFollow && j.Status == buildv2.JobStatus_JobStatusClaimed {
+			j.Status = buildv2.JobStatus_JobStatusSuccess
+		}
+		f.mu.Unlock()
 	}))
 	mux.HandleFunc("POST /cancel/{jid}", authed(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }))
 	mux.HandleFunc("POST /retry/{jid}", authed(func(w http.ResponseWriter, r *http.Request) {
@@ -224,7 +245,62 @@ func newFrontend(t *testing.T) *frontend {
 			json.NewEncoder(w).Encode(map[string]string{"error": "this build frontend was given no cloud fqdn"})
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]string{"fqdn": f.fqdn})
+		json.NewEncoder(w).Encode(map[string]any{"fqdn": f.fqdn, "uploads": f.uploads})
+	}))
+	queue := func(w http.ResponseWriter, what string) {
+		f.mu.Lock()
+		id := "job-" + strconv.Itoa(len(f.queued)+3)
+		f.queued = append(f.queued, what)
+		f.jobs[id] = &buildv2.Job{Id: id, Status: f.finish, Timestamp: 1700000300, Logs: map[string]string{"1": "bafylog"}}
+		f.logs[id] = "built " + what + "\n"
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(map[string]string{"job_id": id})
+	}
+	mux.HandleFunc("POST /build/{projectId}", authed(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Repository string `json:"repository_key"`
+			Ref        string `json:"ref"`
+			Commit     string `json:"commit_sha"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		if body.Ref == "refs/heads/feature" {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			json.NewEncoder(w).Encode(map[string]string{"error": "refs/heads/feature is not a ref this cloud builds"})
+			return
+		}
+		queue(w, r.PathValue("projectId")+" "+body.Repository+" "+body.Ref+" "+body.Commit)
+	}))
+	mux.HandleFunc("POST /upload/{projectId}", authed(func(w http.ResponseWriter, r *http.Request) {
+		if !f.uploads {
+			denied(w)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		f.mu.Lock()
+		f.uploaded = body
+		f.mu.Unlock()
+		queue(w, r.PathValue("projectId")+" upload "+r.URL.Query().Get("ref"))
+	}))
+	mux.HandleFunc("GET /job/{jid}/logs/{key}", authed(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		log, ok := f.logs[r.PathValue("jid")]
+		f.mu.Unlock()
+		if !ok {
+			denied(w)
+			return
+		}
+		io.WriteString(w, "stored: "+log)
+	}))
+	mux.HandleFunc("GET /projects/{projectId}/deployments/{environment}", authed(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		compiled, ok := f.published[r.PathValue("projectId")+"/"+r.PathValue("environment")]
+		f.mu.Unlock()
+		if !ok {
+			denied(w)
+			return
+		}
+		w.Write(compiled)
 	}))
 	mux.HandleFunc("POST /domain/{fqdn}/for/{projectId}", authed(func(w http.ResponseWriter, r *http.Request) {
 		if r.PathValue("projectId") != "proj-1" {
@@ -395,6 +471,7 @@ type tester struct {
 	prompter    *prompter
 	stdin       string
 	browse      func(string) error
+	engine      artifact.Engine
 }
 
 func newTester(t *testing.T) *tester {
@@ -412,7 +489,7 @@ func (x *tester) run(args ...string) run {
 	env := Env{
 		Stdin: strings.NewReader(x.stdin), Stdout: &out, Stderr: &errs,
 		Interactive: x.interactive, Prompter: x.prompter, HTTP: x.f.srv.Client(), Program: drive,
-		Forges: x.forges, Browse: x.browse,
+		Forges: x.forges, Browse: x.browse, Engine: x.engine,
 	}
 	code := Run(env, args)
 	return run{code: code, stdout: out.String(), stderr: errs.String()}

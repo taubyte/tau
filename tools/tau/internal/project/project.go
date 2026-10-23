@@ -9,6 +9,7 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -275,4 +276,24 @@ func (p *Project) Environments() []string {
 		return nil
 	}
 	return schema.EnvironmentNames(envs)
+}
+
+// Deployments are the environments a branch feeds.
+func (p *Project) Deployments(branch string) []string {
+	envs, err := schema.EnvironmentsOf(p.s.FS(), "/")
+	if err != nil {
+		return nil
+	}
+	return schema.DeploymentNames(envs, branch)
+}
+
+// Compiled is the project compiled for one deployment from branch — the
+// options a cloud's deploy compiles with, so the bytes are what it would
+// publish.
+func (p *Project) Compiled(ctx context.Context, branch, environment string) ([]byte, error) {
+	obj, _, err := p.s.Compile(ctx, schema.CompileOptions{Branch: branch, Environment: environment})
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(obj.Flat())
 }

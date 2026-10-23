@@ -28,6 +28,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/taubyte/tau/pkg/forge"
+	"github.com/taubyte/tau/services/build/artifact"
 	"github.com/taubyte/tau/tools/tau/internal/api"
 	"github.com/taubyte/tau/tools/tau/internal/config"
 	"github.com/taubyte/tau/tools/tau/internal/ui"
@@ -52,6 +53,9 @@ type Env struct {
 	// Program runs a bubbletea model to completion; alt is whether it takes
 	// the whole screen.
 	Program func(m tea.Model, alt bool) (tea.Model, error)
+	// Engine runs `tau build`'s builds. Nil is this machine's container
+	// daemon.
+	Engine artifact.Engine
 }
 
 // System is the Env of a real process.
@@ -115,6 +119,7 @@ func New(env Env) *cobra.Command {
 		linkCommand(env), projectsCommand(env), deployCommand(env), statusCommand(env),
 		jobsCommand(env), jobCommand(env), logsCommand(env), cancelCommand(env), retryCommand(env),
 		secretsCommand(env), grantsCommand(env), domainCommand(env),
+		buildCommand(env), ciCommand(env),
 	)
 	return root
 }

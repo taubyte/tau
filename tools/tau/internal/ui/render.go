@@ -42,6 +42,9 @@ func NewTheme(w io.Writer) Theme {
 	}
 }
 
+// Table is rows under headers, drawn as every table here is.
+func (t Theme) Table(headers []string, rows [][]string) string { return t.table(headers, rows) }
+
 func (t Theme) table(headers []string, rows [][]string) string {
 	cell := lipgloss.NewStyle().Padding(0, 1)
 	return table.New().

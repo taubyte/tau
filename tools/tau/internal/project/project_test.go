@@ -6,6 +6,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/taubyte/tau/pkg/specs"
+	"github.com/taubyte/tau/pkg/tcc/session"
+	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
 func initStarter(t *testing.T) string {
@@ -130,4 +134,91 @@ func TestTheProjectIdIsProjectYAMLs(t *testing.T) {
 	empty, err := Open(t.TempDir())
 	require.NoError(t, err)
 	require.Empty(t, empty.ID())
+}
+
+// A DEPLOYMENT COMPILES AS A CLOUD'S DEPLOY COMPILES IT: the branch picks the
+// deployments, and the bytes are the compiled object a register is published.
+func TestTheStarterCompilesForItsDeployment(t *testing.T) {
+	p, err := Open(initStarter(t))
+	require.NoError(t, err)
+	require.Equal(t, []string{"prod"}, p.Deployments("main"))
+
+	compiled, err := p.Compiled(t.Context(), "main", "prod")
+	require.NoError(t, err)
+	loaded, err := specs.Load(compiled)
+	require.NoError(t, err)
+	require.Equal(t, p.ID(), loaded.ID())
+	require.Len(t, loaded.Buildables(), 1)
+
+	require.NoError(t, os.WriteFile(filepath.Join(p.dir, "function", "hello.yaml"), []byte("execution: {memory: lots}\n"), 0o644))
+	broken, err := Open(p.dir)
+	require.NoError(t, err)
+	_, err = broken.Compiled(t.Context(), "main", "prod")
+	require.Error(t, err, "a project that does not compile")
+}
+
+func TestAProjectWithNoEnvironmentTableFeedsNothing(t *testing.T) {
+	p, err := Open(t.TempDir())
+	require.NoError(t, err)
+	require.Empty(t, p.Deployments("main"))
+}
+
+// A value is checked against the field's rule without being set.
+func TestCheckFieldAsksWithoutSetting(t *testing.T) {
+	p, err := Open(initStarter(t))
+	require.NoError(t, err)
+	res := []string{"function", "hello"}
+	require.NoError(t, p.CheckField(res, "execution.memory", "64MB"))
+	require.Error(t, p.CheckField(res, "execution.memory", "not-a-size"))
+	require.Error(t, p.CheckField(res, "execution.memory", "[unclosed"))
+	require.NoError(t, p.SetField(res, "description", ""), "an empty value is the empty string")
+}
+
+// A REPORT IS BROKEN BY A COMPILE ERROR OR A BROKEN FINDING, and by nothing
+// milder.
+func TestWhatABrokenReportIs(t *testing.T) {
+	require.True(t, Report{Error: "x"}.Broken())
+	require.True(t, Report{Findings: []session.Note{{Severity: string(schema.Broken)}}}.Broken())
+	require.False(t, Report{Findings: []session.Note{{Severity: "note"}}}.Broken())
+	require.False(t, Report{}.Broken())
+}
+
+// A PROJECT THAT DOES NOT COMPILE is reported as one, and a directory that is
+// not a project answers nothing.
+func TestValidatingWhatDoesNotCompile(t *testing.T) {
+	dir := initStarter(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "function", "hello.yaml"), []byte("execution: {memory: lots}\n"), 0o644))
+	p, err := Open(dir)
+	require.NoError(t, err)
+	r := p.Validate(t.Context(), "prod")
+	require.NotEmpty(t, r.Error)
+	require.True(t, r.Broken())
+
+	empty, err := Open(t.TempDir())
+	require.NoError(t, err)
+	require.False(t, empty.IsProject())
+	require.Empty(t, empty.Name())
+	require.Empty(t, empty.ID())
+	require.Empty(t, empty.Environments())
+}
+
+func TestOpeningWhatCannotBeRead(t *testing.T) {
+	_, err := Open(filepath.Join(t.TempDir(), "missing"))
+	require.Error(t, err)
+
+	dir := t.TempDir()
+	require.NoError(t, os.Symlink(filepath.Join(dir, "nowhere"), filepath.Join(dir, "project.yaml")))
+	_, err = Open(dir)
+	require.Error(t, err, "a document that cannot be read")
+}
+
+func TestSavingIntoWhatCannotBeWritten(t *testing.T) {
+	dir := initStarter(t)
+	p, err := Open(dir)
+	require.NoError(t, err)
+	_, _, err = p.New("cache", "sessions", "", nil)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "cache"), []byte("a file where the directory goes"), 0o644))
+	_, err = p.Save()
+	require.Error(t, err)
 }

@@ -302,3 +302,75 @@ func (c *Client) ClaimDomain(ctx context.Context, projectID, fqdn string) (*Doma
 	}
 	return &out, nil
 }
+
+// Cloud is what a cloud says about itself.
+type Cloud struct {
+	Fqdn string `json:"fqdn"`
+	// Uploads is a development cloud that takes a developer's build straight
+	// in; no cloud does.
+	Uploads bool `json:"uploads"`
+}
+
+// Cloud asks the cloud what it is.
+func (c *Client) Cloud(ctx context.Context) (Cloud, error) {
+	var out Cloud
+	err := c.json(ctx, http.MethodGet, []string{"cloud"}, nil, &out)
+	return out, err
+}
+
+type queued struct {
+	JobID string `json:"job_id"`
+}
+
+// Build queues a build of repositoryKey at commit, for ref, by hand.
+func (c *Client) Build(ctx context.Context, projectID, repositoryKey, ref, commit string) (string, error) {
+	body, err := json.Marshal(map[string]string{"repository_key": repositoryKey, "ref": ref, "commit_sha": commit})
+	if err != nil {
+		return "", err
+	}
+	var out queued
+	err = c.json(ctx, http.MethodPost, []string{"build", projectID}, bytes.NewReader(body), &out)
+	return out.JobID, err
+}
+
+// Upload carries a developer's build into a development cloud, which queues it
+// as a commit of the project's configuration for ref.
+func (c *Client) Upload(ctx context.Context, projectID, ref string, bundle io.Reader) (string, error) {
+	resp, err := c.do(ctx, http.MethodPost, []string{"upload", projectID}, url.Values{"ref": {ref}}, bundle)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var out queued
+	err = json.NewDecoder(resp.Body).Decode(&out)
+	return out.JobID, err
+}
+
+// Published is the compiled object a deployment runs.
+func (c *Client) Published(ctx context.Context, projectID, environment string) ([]byte, error) {
+	resp, err := c.do(ctx, http.MethodGet, []string{"projects", projectID, "deployments", environment}, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
+}
+
+// StoredLog is the log a finished attempt of a job left, by the key its record
+// files it under.
+func (c *Client) StoredLog(ctx context.Context, jobID, key string) (io.ReadCloser, error) {
+	resp, err := c.do(ctx, http.MethodGet, []string{"job", jobID, "logs", key}, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Body, nil
+}
+
+// The job statuses a caller waits through.
+const (
+	JobQueued    = buildv2.JobStatus_JobStatusOpen
+	JobRunning   = buildv2.JobStatus_JobStatusClaimed
+	JobSuccess   = buildv2.JobStatus_JobStatusSuccess
+	JobFailed    = buildv2.JobStatus_JobStatusFailed
+	JobCancelled = buildv2.JobStatus_JobStatusCancelled
+)

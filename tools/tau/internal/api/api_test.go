@@ -261,3 +261,65 @@ func TestTheStreamStopsWhenCancelledDuringBackoff(t *testing.T) {
 	_, err = s.Next()
 	require.Error(t, err)
 }
+
+func TestBuildsByHandAndByUpload(t *testing.T) {
+	var got []string
+	c := server(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		got = append(got, r.Method+" "+r.URL.Path+" "+r.URL.RawQuery+" "+string(body))
+		switch r.URL.Path {
+		case "/cloud":
+			w.Write([]byte(`{"fqdn":"tau.test","uploads":true}`))
+		case "/projects/p/deployments/prod":
+			w.Write([]byte(`{"object":{}}`))
+		case "/job/j1/logs/k":
+			w.Write([]byte("the log"))
+		default:
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"job_id":"j1"}`))
+		}
+	})
+
+	cloud, err := c.Cloud(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, Cloud{Fqdn: "tau.test", Uploads: true}, cloud)
+
+	job, err := c.Build(t.Context(), "p", "git.test/a/b", "refs/heads/main", "abc")
+	require.NoError(t, err)
+	require.Equal(t, "j1", job)
+
+	job, err = c.Upload(t.Context(), "p", "refs/heads/main", bytes.NewReader([]byte("bundle")))
+	require.NoError(t, err)
+	require.Equal(t, "j1", job)
+
+	compiled, err := c.Published(t.Context(), "p", "prod")
+	require.NoError(t, err)
+	require.Equal(t, `{"object":{}}`, string(compiled))
+
+	log, err := c.StoredLog(t.Context(), "j1", "k")
+	require.NoError(t, err)
+	body, err := io.ReadAll(log)
+	log.Close()
+	require.NoError(t, err)
+	require.Equal(t, "the log", string(body))
+
+	require.Equal(t, "POST /build/p  "+`{"commit_sha":"abc","ref":"refs/heads/main","repository_key":"git.test/a/b"}`, got[1])
+	require.Equal(t, "POST /upload/p ref=refs%2Fheads%2Fmain bundle", got[2])
+}
+
+func TestBuildsTheCloudRefuses(t *testing.T) {
+	c := server(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		w.Write([]byte(`{"error":"refs/heads/x is not a ref this cloud builds"}`))
+	})
+	_, err := c.Build(t.Context(), "p", "k", "refs/heads/x", "abc")
+	require.ErrorContains(t, err, "not a ref this cloud builds")
+	_, err = c.Upload(t.Context(), "p", "refs/heads/x", bytes.NewReader(nil))
+	require.True(t, IsStatus(err, http.StatusUnprocessableEntity))
+	_, err = c.Published(t.Context(), "p", "prod")
+	require.Error(t, err)
+	_, err = c.Cloud(t.Context())
+	require.Error(t, err)
+	_, err = c.StoredLog(t.Context(), "j", "k")
+	require.Error(t, err)
+}
