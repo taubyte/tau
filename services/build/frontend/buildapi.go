@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"slices"
 
 	"connectrpc.com/connect"
 
@@ -54,8 +55,10 @@ type Uploads interface {
 	Put(ctx context.Context, projectID, repositoryKey, ref string, bundle io.Reader) (commit string, err error)
 }
 
-// Published reads what a deployment currently runs.
+// Published reads what a project's deployments currently run.
 type Published interface {
+	// Environments are the deployments published for project.
+	Environments(ctx context.Context, project string) ([]string, error)
 	// Compiled is the compiled object published for project's environment;
 	// one never published is register.ErrNotLinked or a NotFound.
 	Compiled(ctx context.Context, project, environment string) ([]byte, error)
@@ -135,8 +138,10 @@ func (s *Service) queue(w http.ResponseWriter, ctx context.Context, push Push) {
 	writeJSON(w, http.StatusAccepted, queued{JobID: jobID})
 }
 
-// handleUpload is POST /upload/{projectId}?ref=…, mounted only where an
-// Uploads was given.
+// handleUpload is POST /upload/{projectId}?ref=…[&repository=…], mounted only
+// where an Uploads was given. The repository is the project's configuration
+// unless it names one of its code repositories: a code repository's build is
+// uploaded as a commit of that repository, and built against what is published.
 func (s *Service) handleUpload(w http.ResponseWriter, r *http.Request, token, projectID string) {
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
 	defer cancel()
@@ -151,6 +156,15 @@ func (s *Service) handleUpload(w http.ResponseWriter, r *http.Request, token, pr
 		return
 	}
 
+	repository := record.Config
+	if named := r.URL.Query().Get("repository"); named != "" && named != record.Config {
+		if !slices.Contains(record.Code, named) {
+			respond(w, problem(http.StatusUnprocessableEntity, named+" is not linked to this project"))
+			return
+		}
+		repository = named
+	}
+
 	ref := r.URL.Query().Get("ref")
 	if !s.eligible(ref) {
 		respond(w, problem(http.StatusUnprocessableEntity, ref+" is not a ref this cloud builds"))
@@ -160,14 +174,35 @@ func (s *Service) handleUpload(w http.ResponseWriter, r *http.Request, token, pr
 	// THE BODY IS READ UNDER THE REQUEST'S OWN CONTEXT and not BackendTimeout,
 	// which bounds one call out of this process: a bundle is as slow as the
 	// developer's link.
-	commit, err := s.uploads.Put(r.Context(), projectID, record.Config, ref, http.MaxBytesReader(w, r.Body, MaxUploadBytes))
+	commit, err := s.uploads.Put(r.Context(), projectID, repository, ref, http.MaxBytesReader(w, r.Body, MaxUploadBytes))
 	if err != nil {
 		s.log("upload for %s: %v", projectID, err)
 		respond(w, problem(http.StatusBadRequest, "the bundle could not be read: "+err.Error()))
 		return
 	}
 
-	s.queue(w, ctx, Push{Repository: record.Config, Ref: ref, Commit: commit})
+	s.queue(w, ctx, Push{Repository: repository, Ref: ref, Commit: commit})
+}
+
+// handleDeployments is GET /projects/{projectId}/deployments: the
+// environments a project has published.
+func (s *Service) handleDeployments(w http.ResponseWriter, r *http.Request, token, projectID string) {
+	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
+	defer cancel()
+
+	if _, err := s.mayTouchProject(ctx, token, projectID, register.RoleViewer); err != nil {
+		respond(w, err)
+		return
+	}
+	environments, err := s.published.Environments(ctx, projectID)
+	if err != nil {
+		respond(w, err)
+		return
+	}
+	if environments == nil {
+		environments = []string{}
+	}
+	writeJSON(w, http.StatusOK, environments)
 }
 
 // handlePublished is GET /projects/{projectId}/deployments/{environment}: the

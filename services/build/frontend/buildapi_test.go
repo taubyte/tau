@@ -203,12 +203,23 @@ func TestAUniverseTakesAnUploadAsACommitOfTheConfiguration(t *testing.T) {
 	require.Equal(t, http.StatusUnprocessableEntity, w.Code)
 	require.Empty(t, held.body)
 
+	// A code repository of the project is uploaded as itself; any other is
+	// refused.
+	_, err = l.Register.LinkProject(t.Context(), register.Link{Project: testProject, Config: testRepoKey, Code: []string{"github.com/acme/lib"}, Claimant: testUser})
+	require.NoError(t, err)
+	w = h.do(t, withBody(authed(http.MethodPost, "/upload/"+testProject+"?ref=refs/heads/main&repository=github.com/acme/lib", "tok-"+testUser), []byte("code")))
+	require.Equal(t, http.StatusAccepted, w.Code, w.Body.String())
+	require.Equal(t, "github.com/acme/lib", held.repository)
+	require.Equal(t, enqueued{"github.com/acme/lib", "refs/heads/main", testSHA}, h.backend.enqueues()[1])
+	w = h.do(t, withBody(authed(http.MethodPost, "/upload/"+testProject+"?ref=refs/heads/main&repository=github.com/else/lib", "tok-"+testUser), []byte("code")))
+	require.Equal(t, http.StatusUnprocessableEntity, w.Code)
+
 	// A bundle that cannot be kept is refused with why.
 	held.err = errors.New("not a gzip stream")
 	w = h.do(t, upload("tok-"+testUser, testProject, "refs/heads/main", "x"))
 	require.Equal(t, http.StatusBadRequest, w.Code)
 	require.Contains(t, w.Body.String(), "not a gzip stream")
-	require.Len(t, h.backend.enqueues(), 1)
+	require.Len(t, h.backend.enqueues(), 2)
 }
 
 // AN UPLOAD FOR A PROJECT THE REGISTER CANNOT READ is the register's answer.
@@ -238,6 +249,19 @@ func TestUploadsNeedALinker(t *testing.T) {
 
 type published map[string]string
 
+func (p published) Environments(_ context.Context, project string) ([]string, error) {
+	if project == "unreadable" {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("down"))
+	}
+	var out []string
+	for key := range p {
+		if env, ok := strings.CutPrefix(key, project+"/"); ok {
+			out = append(out, env)
+		}
+	}
+	return out, nil
+}
+
 func (p published) Compiled(_ context.Context, project, environment string) ([]byte, error) {
 	got, ok := p[project+"/"+environment]
 	if !ok {
@@ -264,6 +288,29 @@ func TestAViewerReadsWhatADeploymentRuns(t *testing.T) {
 
 	w = h.do(t, authed(http.MethodGet, "/projects/"+testProject+"/deployments/"+strings.Repeat("e", maxIDLength+1), testToken))
 	require.Equal(t, http.StatusNotFound, w.Code)
+
+	w = h.do(t, authed(http.MethodGet, "/projects/"+testProject+"/deployments", testToken))
+	require.Equal(t, http.StatusOK, w.Code)
+	require.JSONEq(t, `["prod"]`, w.Body.String())
+
+	w = h.do(t, authed(http.MethodGet, "/projects/proj-2/deployments", testToken))
+	require.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestTheDeploymentsOfAProjectWithNone(t *testing.T) {
+	h := newHarness(t, Config{}, WithPublished(published{}))
+	h.projects.role = func(project, _ string) (register.Role, error) {
+		if project == "unreadable" {
+			return register.RoleViewer, nil
+		}
+		return asBuilder(project, "someone")
+	}
+	w := h.do(t, authed(http.MethodGet, "/projects/"+testProject+"/deployments", testToken))
+	require.Equal(t, http.StatusOK, w.Code)
+	require.JSONEq(t, `[]`, w.Body.String())
+
+	w = h.do(t, authed(http.MethodGet, "/projects/unreadable/deployments", testToken))
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 }
 
 func TestWithoutPublishedTheRouteDoesNotExist(t *testing.T) {

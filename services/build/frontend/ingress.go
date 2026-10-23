@@ -64,6 +64,7 @@ func (s *Service) mount() http.Handler {
 	// at the builder role, and queued exactly as a verified push is.
 	mux.HandleFunc("POST /build/{projectId}", s.admitted("projectId", s.handleManualBuild))
 	if s.published != nil {
+		mux.HandleFunc("GET /projects/{projectId}/deployments", s.admitted("projectId", s.handleDeployments))
 		mux.HandleFunc("GET /projects/{projectId}/deployments/{environment}", s.admitted("projectId", s.handlePublished))
 	}
 
