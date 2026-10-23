@@ -473,6 +473,13 @@ func TestADeploymentsArtifactIsItsOwn(t *testing.T) {
 	require.NotEqual(t, production, preview)
 	require.Equal(t, assetCID([]byte("production")), production)
 	require.Equal(t, assetCID([]byte("preview")), preview)
+
+	// THE NODE THIS SERVICE RUNS ON reads the same row in-process.
+	local, err := h.Built(project, "prod", "website/home")
+	require.NoError(t, err)
+	require.Equal(t, production, local)
+	_, err = h.Built(project, "prod", "website/elsewhere")
+	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }
 
 // A FAILED BUILD'S OUTPUT IS KEPT AND ITS ARTIFACT IS NOT PUBLISHED. The log of

@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
@@ -630,4 +632,32 @@ func TestTheBuildRegisterReadsAPublishedObjectBack(t *testing.T) {
 
 	_, err = buildRegister{n}.Compiled(t.Context(), "shop", "preview")
 	require.Error(t, err)
+}
+
+// A NODE THAT RUNS THE BUILD BACKEND READS ITS OWN, in-process: a host does not
+// dial itself, so a single-node cloud asking the swarm found only itself and
+// never resolved anything. Its answer stands — here, that nothing was built.
+func TestANodeReadsItsOwnBuildBackend(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{Discovery, BuildBackend, Worker}})
+	require.NoError(t, n.Start(t.Context()))
+
+	_, err := n.BuildArtifacts().Artifact(t.Context(), "shop", "prod", "function", "QmNothing")
+	require.ErrorIs(t, err, ErrNotBuilt)
+	require.NotEqual(t, connect.CodeNotFound, connect.CodeOf(err), "a site missing its artifact is broken, not unknown")
+	require.ErrorContains(t, err, "QmNothing")
+}
+
+// following is a backend's store that never leads.
+type following struct{ *raft.MockCluster }
+
+func (following) IsLeader() bool { return false }
+
+// A FOLLOWER ASKS THE FLEET, as before: only the leader answers.
+func TestAFollowerAsksTheFleetForAnArtifact(t *testing.T) {
+	n, _, _ := makeNode(t, Config{Services: []string{BuildBackend}},
+		WithRaft(func(string) (raft.Cluster, error) { return following{raft.NewMockCluster()}, nil }))
+	require.NoError(t, n.Start(t.Context()))
+
+	_, err := n.BuildArtifacts().Artifact(t.Context(), "shop", "prod", "function", "QmNothing")
+	require.ErrorIs(t, err, ErrNoBuildBackend)
 }

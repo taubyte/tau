@@ -294,6 +294,20 @@ func (s *Service) artifact(ctx context.Context, project, environment, resource s
 	if err := s.allow(ctx, ActArtifact, project); err != nil {
 		return "", err
 	}
+	return s.Built(project, environment, resource)
+}
+
+// Built is what one resource of one deployment currently runs, read by the node
+// this service runs on — the read the Artifact RPC answers, in-process.
+//
+// THERE IS NO PEER TO AUTHORIZE, because the caller is this node: a worker on
+// the node that runs the build backend cannot reach it over the swarm (a host
+// does not dial itself), and the register takes the same local shortcut for the
+// same reason. It is not an RPC, so nothing off this process reaches it.
+//
+// Only the leader answers, as over the swarm; a follower says Unavailable and
+// the caller asks the fleet.
+func (s *Service) Built(project, environment, resource string) (string, error) {
 	if err := s.lead(); err != nil {
 		return "", err
 	}

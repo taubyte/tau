@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"connectrpc.com/connect"
+
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 
@@ -56,6 +58,13 @@ const pollInterval = 250 * time.Millisecond
 // ErrNoBuildBackend is a resource the platform builds, on a node that can find
 // nothing that builds.
 var ErrNoBuildBackend = errors.New("node: no build service is reachable")
+
+// ErrNotBuilt is a resource the platform builds and nothing has built yet.
+//
+// IT IS NOT THE BUILD SERVICE'S NotFound, deliberately: what a gateway tells a
+// caller follows the error's code, and a deployment missing its artifact is a
+// broken site (502), not a name nobody serves (404).
+var ErrNotBuilt = errors.New("node: nothing has built this resource yet")
 
 // fromDiscovery is a discovery.Resolver over the view every other locator on this
 // node reads.
@@ -559,6 +568,21 @@ func (a *artifacts) Artifact(ctx context.Context, project, environment, kind, re
 		return cid, nil
 	}
 
+	// THIS NODE'S OWN BACKEND IS READ IN-PROCESS, as its own register is: a
+	// host does not dial itself, so a single-node cloud asking the swarm would
+	// find only itself and never resolve anything. A follower says
+	// Unavailable, and then the fleet is asked as before.
+	if a.node.buildBackend != nil {
+		cid, err := a.node.buildBackend.Built(project, environment, resource)
+		if err == nil {
+			a.remember(key, cid)
+			return cid, nil
+		}
+		if connect.CodeOf(err) != connect.CodeUnavailable {
+			return "", notBuilt(err, project, environment, resource)
+		}
+	}
+
 	// THE VIEW IS ASKED BEFORE THE POOL IS, and the reason is that this runs on
 	// the REQUEST PATH. fromDiscovery.Peers waits until a peer appears or the
 	// context ends, which is right for a pool opened at startup — services come
@@ -589,13 +613,26 @@ func (a *artifacts) Artifact(ctx context.Context, project, environment, kind, re
 		// A FAILED LOOKUP IS NOT CACHED. "Nothing has built this yet" is a
 		// state that ends the moment a build finishes, and remembering it would
 		// keep a node refusing a resource for a TTL after it became runnable.
-		return "", err
+		return "", notBuilt(err, project, environment, resource)
 	}
 
+	a.remember(key, cid)
+	return cid, nil
+}
+
+// notBuilt is the build service's NotFound as ErrNotBuilt, and anything else
+// as it came.
+func notBuilt(err error, project, environment, resource string) error {
+	if connect.CodeOf(err) == connect.CodeNotFound {
+		return fmt.Errorf("%w: %s/%s's %s", ErrNotBuilt, project, environment, resource)
+	}
+	return err
+}
+
+func (a *artifacts) remember(key, cid string) {
 	a.mu.Lock()
 	a.seen[key] = builtAt{cid: cid, when: a.node.clock()}
 	a.mu.Unlock()
-	return cid, nil
 }
 
 func (a *artifacts) cached(key string) (string, bool) {

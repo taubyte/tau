@@ -224,7 +224,7 @@ func TestTheGatewayIsServedByTheCaller(t *testing.T) {
 // name, and ask its gateway for it. Nothing leaves the process, and every hop
 // is the production one.
 func TestAWholeRequestPathOnOneNode(t *testing.T) {
-	n, _, _ := makeNode(t, Config{Gateway: gatewayConfig()})
+	n, _, _ := makeNode(t, Config{Gateway: gatewayConfig()}, prebuilt())
 	require.NoError(t, n.Start(t.Context()))
 
 	_, err := n.Register().Local().Publish(t.Context(), pkgregister.Publication{
