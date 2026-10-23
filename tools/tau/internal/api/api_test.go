@@ -270,6 +270,8 @@ func TestBuildsByHandAndByUpload(t *testing.T) {
 		switch r.URL.Path {
 		case "/cloud":
 			w.Write([]byte(`{"fqdn":"tau.test","uploads":true}`))
+		case "/projects/p/deployments":
+			w.Write([]byte(`["prod"]`))
 		case "/projects/p/deployments/prod":
 			w.Write([]byte(`{"object":{}}`))
 		case "/job/j1/logs/k":
@@ -288,9 +290,14 @@ func TestBuildsByHandAndByUpload(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "j1", job)
 
-	job, err = c.Upload(t.Context(), "p", "refs/heads/main", bytes.NewReader([]byte("bundle")))
+	job, err = c.Upload(t.Context(), "p", "", "refs/heads/main", bytes.NewReader([]byte("bundle")))
 	require.NoError(t, err)
 	require.Equal(t, "j1", job)
+	_, err = c.Upload(t.Context(), "p", "git.test/a/lib", "refs/heads/main", bytes.NewReader([]byte("code")))
+	require.NoError(t, err)
+	envs, err := c.Deployments(t.Context(), "p")
+	require.NoError(t, err)
+	require.Equal(t, []string{"prod"}, envs)
 
 	compiled, err := c.Published(t.Context(), "p", "prod")
 	require.NoError(t, err)
@@ -305,6 +312,7 @@ func TestBuildsByHandAndByUpload(t *testing.T) {
 
 	require.Equal(t, "POST /build/p  "+`{"commit_sha":"abc","ref":"refs/heads/main","repository_key":"git.test/a/b"}`, got[1])
 	require.Equal(t, "POST /upload/p ref=refs%2Fheads%2Fmain bundle", got[2])
+	require.Equal(t, "POST /upload/p ref=refs%2Fheads%2Fmain&repository=git.test%2Fa%2Flib code", got[3])
 }
 
 func TestBuildsTheCloudRefuses(t *testing.T) {
@@ -314,12 +322,14 @@ func TestBuildsTheCloudRefuses(t *testing.T) {
 	})
 	_, err := c.Build(t.Context(), "p", "k", "refs/heads/x", "abc")
 	require.ErrorContains(t, err, "not a ref this cloud builds")
-	_, err = c.Upload(t.Context(), "p", "refs/heads/x", bytes.NewReader(nil))
+	_, err = c.Upload(t.Context(), "p", "", "refs/heads/x", bytes.NewReader(nil))
 	require.True(t, IsStatus(err, http.StatusUnprocessableEntity))
 	_, err = c.Published(t.Context(), "p", "prod")
 	require.Error(t, err)
 	_, err = c.Cloud(t.Context())
 	require.Error(t, err)
 	_, err = c.StoredLog(t.Context(), "j", "k")
+	require.Error(t, err)
+	_, err = c.Deployments(t.Context(), "p")
 	require.Error(t, err)
 }

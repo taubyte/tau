@@ -191,6 +191,19 @@ func TestWhatABuildRefuses(t *testing.T) {
 	require.NotZero(t, r.code)
 	require.Contains(t, r.stderr, "no project here")
 
+	// A project that declares no environments deploys nothing, as a cloud
+	// refuses it.
+	bare := newTester(t)
+	buildable(t, bare)
+	root := filepath.Join(bare.dir, "project.yaml")
+	doc, err := os.ReadFile(root)
+	require.NoError(t, err)
+	at := bytes.Index(doc, []byte("environments:"))
+	require.NoError(t, os.WriteFile(root, doc[:at], 0o644))
+	r = bare.run("build", bare.dir)
+	require.Equal(t, ExitBroken, r.code)
+	require.Contains(t, r.stderr, "declares no environments")
+
 	// A project that would not deploy is refused by the cloud's own audit.
 	fn := filepath.Join(x.dir, "function", "hello.yaml")
 	body, err := os.ReadFile(fn)
@@ -392,4 +405,67 @@ func TestATreeOutsideARepository(t *testing.T) {
 	require.Error(t, copyFiles(dir, t.TempDir(), []string{"missing"}))
 	require.True(t, underTau(".tau/link.yaml"))
 	require.False(t, underTau(".taurus"))
+}
+
+// A CODE REPOSITORY IS BUILT AGAINST WHAT IS PUBLISHED: its configuration is in
+// another repository, so the cloud's deployments say what it makes, and it
+// builds the resources whose source names it — found by its origin.
+func TestACodeRepositoryBuildsAgainstWhatIsPublished(t *testing.T) {
+	x := newTester(t)
+	buildable(t, x)
+	x.login()
+	x.f.uploads = true
+	fn := filepath.Join(x.dir, "function", "hello.yaml")
+	body, err := os.ReadFile(fn)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(fn, bytes.Replace(body, []byte("source: services/hello"), []byte("source:\n    git: https://github.com/acme/lib\n    path: services/hello\n"), 1), 0o644))
+	id := projectYAMLID(t, x.dir)
+	x.f.published[id+"/prod"] = compiledOf(t, x)
+
+	code := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(code, "services", "hello"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(code, "services", "shared"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(code, "services", "hello", "lib.rs"), []byte("fn main() {}"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(code, "services", "shared", "greeting"), []byte("from the code repository"), 0o644))
+
+	r := x.run("build", code)
+	require.NotZero(t, r.code)
+	require.Contains(t, r.stderr, "a code repository is built with --repo and --project")
+
+	gitAt(t, code, "init", "-q", "-b", "main")
+	gitAt(t, code, "remote", "add", "origin", "https://github.com/acme/lib.git")
+	r = x.run("build", code)
+	require.NotZero(t, r.code)
+	require.Contains(t, r.stderr, "--project is required")
+
+	var out buildOutput
+	require.NoError(t, json.Unmarshal([]byte(x.ok("build", code, "--project", id, "-o", "json")), &out))
+	require.Equal(t, "github.com/acme/lib", out.Repository)
+	require.Len(t, out.Built, 1)
+	product, err := os.ReadFile(filepath.Join(code, out.Built[0].File))
+	require.NoError(t, err)
+	require.Equal(t, "from the code repository", string(product))
+	require.Equal(t, id+" upload refs/heads/main github.com/acme/lib", x.f.queued[0], "handed over as a commit of the code repository")
+
+	// Another repository's build plans nothing here.
+	require.NoError(t, json.Unmarshal([]byte(x.ok("build", code, "--project", id, "--repo", "github.com/acme/other", "-o", "json")), &out))
+	require.Empty(t, out.Built)
+	require.Equal(t, []string{"function/hello is built from https://github.com/acme/lib"}, out.Skipped)
+
+	// A branch the published table does not feed, and a source that is no
+	// repository, are refused.
+	root := filepath.Join(x.dir, "project.yaml")
+	doc, err := os.ReadFile(root)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(root, bytes.Replace(doc, []byte(`branches: ["*"]`), []byte(`branches: [main]`), 1), 0o644))
+	x.f.published[id+"/prod"] = compiledOf(t, x)
+	r = x.run("build", code, "--project", id, "--branch", "feature")
+	require.NotZero(t, r.code)
+	require.Contains(t, r.stderr, `"feature" feeds no deployment`)
+	x.ok("build", code, "--project", id, "--branch", "feature", "--env", "prod")
+
+	x.f.published[id+"/prod"] = []byte(strings.Replace(string(compiledOf(t, x)), "https://github.com/acme/lib", "not a url", 1))
+	r = x.run("build", code, "--project", id)
+	require.NotZero(t, r.code)
+	require.Contains(t, r.stderr, "which is not a repository")
 }

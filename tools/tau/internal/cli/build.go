@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -20,7 +21,6 @@ import (
 
 	"github.com/taubyte/tau/pkg/specs"
 	"github.com/taubyte/tau/services/build/artifact"
-	"github.com/taubyte/tau/tools/tau/internal/api"
 	"github.com/taubyte/tau/tools/tau/internal/config"
 	"github.com/taubyte/tau/tools/tau/internal/project"
 )
@@ -59,12 +59,14 @@ type built struct {
 }
 
 type buildOutput struct {
-	Project string   `json:"project"`
-	Branch  string   `json:"branch"`
-	Built   []built  `json:"built"`
-	Skipped []string `json:"skipped,omitempty"`
-	Pushed  string   `json:"job,omitempty"`
-	Status  string   `json:"status,omitempty"`
+	Project string `json:"project"`
+	// Repository is the code repository built, when this was one.
+	Repository string   `json:"repository,omitempty"`
+	Branch     string   `json:"branch"`
+	Built      []built  `json:"built"`
+	Skipped    []string `json:"skipped,omitempty"`
+	Pushed     string   `json:"job,omitempty"`
+	Status     string   `json:"status,omitempty"`
 }
 
 func buildCommand(env Env) *cobra.Command {
@@ -86,6 +88,7 @@ func buildCommand(env Env) *cobra.Command {
 	cmd.Flags().Bool("clean", false, "build what HEAD holds (git archive HEAD) rather than the working tree")
 	cmd.Flags().Bool("published", false, "build against the configuration the cloud has published, rather than this directory's")
 	cmd.Flags().String("branch", "", "the branch whose deployments are built (default: the checked-out one)")
+	cmd.Flags().String("repo", "", "build this code repository's resources, against what the cloud published (default for a directory with no project: its origin)")
 	return cmd
 }
 
@@ -98,53 +101,27 @@ func runBuild(cmd *cobra.Command, env Env, dir string) error {
 	}
 	defer release()
 
-	p, err := project.Open(tree)
-	if err != nil {
-		return err
-	}
-	if !p.IsProject() {
-		return errors.New("no project here: run `tau init` first, or pass a directory")
-	}
 	branch := flagString(cmd, "branch")
 	if branch == "" {
 		branch = branchOf(ctx, dir)
 	}
-
-	environments, err := environmentsFor(cmd, p, branch)
+	src, err := planFor(cmd, env, dir, tree, branch)
 	if err != nil {
 		return err
 	}
-
-	published := flagBool(cmd, "published")
-	var cl *api.Client
-	if published {
-		if cl, err = client(cmd, env); err != nil {
-			return err
-		}
+	deployments := src.deployments
+	environments := make([]string, 0, len(deployments))
+	for _, d := range deployments {
+		environments = append(environments, d.Environment)
 	}
 
-	deployments := make([]artifact.Deployment, 0, len(environments))
-	for _, environment := range environments {
-		compiled, err := compiledFor(cmd, env, cl, p, branch, environment)
-		if err != nil {
-			return err
-		}
-		loaded, err := specs.Load(compiled)
-		if err != nil {
-			return fmt.Errorf("reading %s's compiled configuration: %w", environment, err)
-		}
-		deployments = append(deployments, artifact.Deployment{Environment: environment, Project: loaded})
-	}
-
-	// THIS DIRECTORY BUILDS WHAT A BARE PATH NAMES. A resource whose source is
-	// another repository is that repository's to build.
 	var skipped []string
 	items, err := artifact.Plan(deployments, func(res specs.Buildable) (bool, error) {
-		if res.Source.Git != "" {
-			skipped = append(skipped, fmt.Sprintf("%s/%s is built from %s", res.Kind, res.Name, res.Source.Git))
-			return false, nil
+		backs, err := src.backs(res)
+		if !backs && err == nil {
+			skipped = append(skipped, fmt.Sprintf("%s/%s is built from %s", res.Kind, res.Name, sourceName(res)))
 		}
-		return true, nil
+		return backs, err
 	})
 	if err != nil {
 		return err
@@ -168,7 +145,7 @@ func runBuild(cmd *cobra.Command, env Env, dir string) error {
 	}
 	recipes := make([]artifact.Spec, len(items))
 	for i, item := range items {
-		if recipes[i], err = artifact.Recipe(ctx, secrets, p.ID(), item, work); err != nil {
+		if recipes[i], err = artifact.Recipe(ctx, secrets, src.project, item, work); err != nil {
 			return err
 		}
 	}
@@ -180,7 +157,7 @@ func runBuild(cmd *cobra.Command, env Env, dir string) error {
 		}
 	}
 
-	out := buildOutput{Project: p.ID(), Branch: branch, Built: []built{}, Skipped: skipped}
+	out := buildOutput{Project: src.project, Repository: src.repository, Branch: branch, Built: []built{}, Skipped: skipped}
 	products := map[string]string{}
 	log := env.Stderr
 	if jsonOut(cmd) {
@@ -206,8 +183,11 @@ func runBuild(cmd *cobra.Command, env Env, dir string) error {
 		return err
 	}
 
-	if !published {
-		if err := pushBuild(cmd, env, dir, tree, files, branch, products, &out); err != nil {
+	// A BUILD AGAINST WHAT IS PUBLISHED, OF THE CONFIGURATION, IS HANDED BACK
+	// TO NOTHING: handing it over would deploy this directory's configuration,
+	// which is not the one it was built against.
+	if !src.published || src.repository != "" {
+		if err := pushBuild(cmd, env, dir, tree, files, branch, products, src.repository, &out); err != nil {
 			return err
 		}
 	}
@@ -221,9 +201,155 @@ func runBuild(cmd *cobra.Command, env Env, dir string) error {
 	return nil
 }
 
+// source is what a build plans from: the project, the deployments, and which
+// of their resources this directory backs.
+type source struct {
+	project string
+	// repository is "" for the project's configuration directory, whose bare
+	// paths it builds, and a code repository's key otherwise.
+	repository  string
+	published   bool
+	deployments []artifact.Deployment
+	keys        artifact.Keys
+}
+
+func (s source) backs(res specs.Buildable) (bool, error) {
+	if s.repository == "" {
+		return res.Source.Git == "", nil
+	}
+	if res.Source.Git == "" {
+		return false, nil
+	}
+	key, err := s.keys.Key(res.Source.Git)
+	if err != nil {
+		return false, fmt.Errorf("%s/%s names %q, which is not a repository: %w", res.Kind, res.Name, res.Source.Git, err)
+	}
+	return key.String() == s.repository, nil
+}
+
+func sourceName(res specs.Buildable) string {
+	if res.Source.Git != "" {
+		return res.Source.Git
+	}
+	return "the configuration repository"
+}
+
+// planFor reads what the build is planned from.
+//
+// A DIRECTORY WITH NO PROJECT IS A CODE REPOSITORY, or one named with --repo:
+// its configuration is in another repository, so what it builds is read from
+// what the cloud published, and it builds the resources whose source names it.
+// A project directory compiles its own deployments, refused by name where a
+// cloud would refuse them, unless --published says to build against the
+// cloud's.
+func planFor(cmd *cobra.Command, env Env, dir, tree, branch string) (source, error) {
+	p, err := project.Open(tree)
+	if err != nil {
+		return source{}, err
+	}
+	repo := flagString(cmd, "repo")
+	if !p.IsProject() && repo == "" {
+		if origin := originOf(cmd.Context(), dir); origin != "" {
+			keys, err := keysFor(env)
+			if err != nil {
+				return source{}, err
+			}
+			if key, err := keys.Key(origin); err == nil {
+				repo = key.String()
+			}
+		}
+		if repo == "" {
+			return source{}, errors.New("no project here: run `tau init` first, or pass a directory; a code repository is built with --repo and --project")
+		}
+	}
+
+	if repo == "" && !flagBool(cmd, "published") {
+		environments, err := environmentsFor(cmd, p, branch)
+		if err != nil {
+			return source{}, err
+		}
+		src := source{project: p.ID()}
+		for _, environment := range environments {
+			// A CLOUD WOULD REFUSE IT, so it is refused here, by the same
+			// compile and the same audit, before anything is built.
+			if r := p.Validate(cmd.Context(), environment); r.Broken() {
+				fmt.Fprint(env.Stderr, theme(env).Report(r))
+				return source{}, &exitError{code: ExitBroken, msg: environment + " does not deploy as written"}
+			}
+			compiled, err := p.Compiled(cmd.Context(), branch, environment)
+			if err != nil {
+				return source{}, err
+			}
+			if src.deployments, err = appendLoaded(src.deployments, environment, compiled); err != nil {
+				return source{}, err
+			}
+		}
+		return src, nil
+	}
+
+	cl, err := client(cmd, env)
+	if err != nil {
+		return source{}, err
+	}
+	keys, err := keysFor(env)
+	if err != nil {
+		return source{}, err
+	}
+	src := source{project: flagString(cmd, "project"), repository: repo, published: true, keys: keys}
+	if src.project == "" {
+		if !p.IsProject() {
+			return source{}, errors.New("--project is required to build a code repository")
+		}
+		src.project = p.ID()
+	}
+
+	environments := []string{flagString(cmd, "env")}
+	if environments[0] == "" {
+		if environments, err = cl.Deployments(cmd.Context(), src.project); err != nil {
+			return source{}, err
+		}
+	}
+	for _, environment := range environments {
+		compiled, err := cl.Published(cmd.Context(), src.project, environment)
+		if err != nil {
+			return source{}, err
+		}
+		if src.deployments, err = appendLoaded(src.deployments, environment, compiled); err != nil {
+			return source{}, err
+		}
+	}
+
+	// ONLY WHAT THE BRANCH FEEDS, as a cloud's build of a push plans it: the
+	// environment table is in every published deployment.
+	if flagString(cmd, "env") == "" {
+		fed := src.deployments[:0]
+		for _, d := range src.deployments {
+			if slices.Contains(d.Project.Deployments(branch), d.Environment) {
+				fed = append(fed, d)
+			}
+		}
+		src.deployments = fed
+	}
+	if len(src.deployments) == 0 {
+		return source{}, fmt.Errorf("%q feeds no deployment %s has published; pass --env or --branch", branch, src.project)
+	}
+	return src, nil
+}
+
+func appendLoaded(to []artifact.Deployment, environment string, compiled []byte) ([]artifact.Deployment, error) {
+	loaded, err := specs.Load(compiled)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s's compiled configuration: %w", environment, err)
+	}
+	return append(to, artifact.Deployment{Environment: environment, Project: loaded}), nil
+}
+
 // environmentsFor is --env, which must be one the project declares, or every
 // deployment the branch feeds.
 func environmentsFor(cmd *cobra.Command, p *project.Project, branch string) ([]string, error) {
+	if len(p.Environments()) == 0 {
+		return nil, &exitError{code: ExitBroken, msg: "the project declares no environments, so nothing deploys; declare one under environments: in project.yaml"}
+	}
 	if named := flagString(cmd, "env"); named != "" {
 		for _, declared := range p.Environments() {
 			if declared == named {
@@ -237,33 +363,6 @@ func environmentsFor(cmd *cobra.Command, p *project.Project, branch string) ([]s
 		return nil, fmt.Errorf("%q feeds no deployment of this project; pass --env or --branch", branch)
 	}
 	return fed, nil
-}
-
-// compiledFor is one deployment's compiled object: this directory's, refused
-// by name when it would not deploy, or the cloud's published one.
-func compiledFor(cmd *cobra.Command, env Env, cl *api.Client, p *project.Project, branch, environment string) ([]byte, error) {
-	if cl != nil {
-		id, err := buildProjectID(cmd, p)
-		if err != nil {
-			return nil, err
-		}
-		return cl.Published(cmd.Context(), id, environment)
-	}
-
-	// A CLOUD WOULD REFUSE IT, so it is refused here, by the same compile and
-	// the same audit, before anything is built.
-	if r := p.Validate(cmd.Context(), environment); r.Broken() {
-		fmt.Fprint(env.Stderr, theme(env).Report(r))
-		return nil, &exitError{code: ExitBroken, msg: environment + " does not deploy as written"}
-	}
-	return p.Compiled(cmd.Context(), branch, environment)
-}
-
-func buildProjectID(cmd *cobra.Command, p *project.Project) (string, error) {
-	if id := flagString(cmd, "project"); id != "" {
-		return id, nil
-	}
-	return p.ID(), nil
 }
 
 // make1 runs one recipe and writes what it produced to file.
@@ -314,7 +413,7 @@ func writeRecipes(dir string, environments []string, all []built) error {
 // pushBuild hands the build to a development cloud that takes one, and
 // follows the deploy it queues. A cloud that takes none is told nothing; no
 // cloud configured is a build that stays on this machine.
-func pushBuild(cmd *cobra.Command, env Env, dir, tree string, files []string, branch string, products map[string]string, out *buildOutput) error {
+func pushBuild(cmd *cobra.Command, env Env, dir, tree string, files []string, branch string, products map[string]string, repository string, out *buildOutput) error {
 	cl, err := client(cmd, env)
 	if err != nil {
 		// NO CLOUD IS A BUILD THAT STAYS ON THIS MACHINE, which is most of
@@ -338,7 +437,7 @@ func pushBuild(cmd *cobra.Command, env Env, dir, tree string, files []string, br
 	if err := artifact.PackBundle(&bundle, tree, files, products); err != nil {
 		return err
 	}
-	job, err := cl.Upload(cmd.Context(), id, "refs/heads/"+branch, &bundle)
+	job, err := cl.Upload(cmd.Context(), id, repository, "refs/heads/"+branch, &bundle)
 	if err != nil {
 		return err
 	}

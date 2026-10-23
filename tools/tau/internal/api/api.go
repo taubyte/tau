@@ -334,9 +334,13 @@ func (c *Client) Build(ctx context.Context, projectID, repositoryKey, ref, commi
 }
 
 // Upload carries a developer's build into a development cloud, which queues it
-// as a commit of the project's configuration for ref.
-func (c *Client) Upload(ctx context.Context, projectID, ref string, bundle io.Reader) (string, error) {
-	resp, err := c.do(ctx, http.MethodPost, []string{"upload", projectID}, url.Values{"ref": {ref}}, bundle)
+// as a commit, for ref, of repository — the project's configuration when "".
+func (c *Client) Upload(ctx context.Context, projectID, repository, ref string, bundle io.Reader) (string, error) {
+	q := url.Values{"ref": {ref}}
+	if repository != "" {
+		q.Set("repository", repository)
+	}
+	resp, err := c.do(ctx, http.MethodPost, []string{"upload", projectID}, q, bundle)
 	if err != nil {
 		return "", err
 	}
@@ -344,6 +348,13 @@ func (c *Client) Upload(ctx context.Context, projectID, ref string, bundle io.Re
 	var out queued
 	err = json.NewDecoder(resp.Body).Decode(&out)
 	return out.JobID, err
+}
+
+// Deployments are the environments a project has published.
+func (c *Client) Deployments(ctx context.Context, projectID string) ([]string, error) {
+	var out []string
+	err := c.json(ctx, http.MethodGet, []string{"projects", projectID, "deployments"}, nil, &out)
+	return out, err
 }
 
 // Published is the compiled object a deployment runs.

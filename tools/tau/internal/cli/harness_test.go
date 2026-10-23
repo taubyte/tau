@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -280,7 +281,11 @@ func newFrontend(t *testing.T) *frontend {
 		f.mu.Lock()
 		f.uploaded = body
 		f.mu.Unlock()
-		queue(w, r.PathValue("projectId")+" upload "+r.URL.Query().Get("ref"))
+		what := r.PathValue("projectId") + " upload " + r.URL.Query().Get("ref")
+		if repo := r.URL.Query().Get("repository"); repo != "" {
+			what += " " + repo
+		}
+		queue(w, what)
 	}))
 	mux.HandleFunc("GET /job/{jid}/logs/{key}", authed(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
@@ -291,6 +296,22 @@ func newFrontend(t *testing.T) *frontend {
 			return
 		}
 		io.WriteString(w, "stored: "+log)
+	}))
+	mux.HandleFunc("GET /projects/{projectId}/deployments", authed(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		envs := []string{}
+		for key := range f.published {
+			if env, ok := strings.CutPrefix(key, r.PathValue("projectId")+"/"); ok {
+				envs = append(envs, env)
+			}
+		}
+		if len(envs) == 0 {
+			denied(w)
+			return
+		}
+		sort.Strings(envs)
+		json.NewEncoder(w).Encode(envs)
 	}))
 	mux.HandleFunc("GET /projects/{projectId}/deployments/{environment}", authed(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
