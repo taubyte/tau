@@ -1,4 +1,3 @@
-// Package pb contains generated protobuf types
-//
-//go:generate protoc -I=. --go_out=. delta.proto bcast.proto
+// Package pb contains generated protobuf types. Regenerate with
+// `make proto-v2` from the repository root.
 package pb

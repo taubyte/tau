@@ -1,0 +1,28 @@
+syntax = "proto3";
+package crdt.pb;
+
+option go_package = ".;pb";
+
+message Delta {
+  repeated Element elements = 1;
+  repeated Element tombstones = 2;
+  uint64 priority = 3;
+  string dagName = 4;
+  bool snapshot = 5;
+  // snapshotTotal is the number of sibling snapshot nodes in this
+  // compaction generation (>= 1 in snapshot deltas; 0 otherwise).
+  uint32 snapshotTotal = 6;
+  // snapshotId identifies one compaction generation: all sibling snapshot
+  // nodes created by a single Compact() run carry the same id.
+  bytes snapshotId = 7;
+}
+
+message Element {
+  // key+id must form a unique identifier
+  string key = 1;
+  string id = 2;
+  bytes value = 3;
+  // priority carries the element's original priority in snapshot deltas.
+  // 0 means "use the delta's priority" (all pre-snapshot data).
+  uint64 priority = 4;
+}

@@ -21,6 +21,7 @@ version: v2
 modules:
   - path: tools/spore-drive/proto
   - path: pkg/proto
+  - path: pkg/kvdb/pb
   - path: ee/proto
 lint:
   use:

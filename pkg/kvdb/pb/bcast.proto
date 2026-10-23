@@ -1,0 +1,13 @@
+syntax = "proto3";
+package crdt.pb;
+
+option go_package = ".;pb";
+
+message CRDTBroadcast {
+  repeated Head Heads = 1; // A list of heads
+}
+
+message Head {
+  bytes Cid = 1;
+  string DagName = 2;
+}

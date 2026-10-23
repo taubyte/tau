@@ -210,6 +210,7 @@ proto-v2:
 	else \
 		echo "pkg/proto: no .proto sources yet — nothing to generate"; \
 	fi
+	cd pkg/kvdb/pb && buf generate
 
 proto-v2-check:
 	go test $(FLAGS) ./tools/protogen/... ./pkg/proto/...
