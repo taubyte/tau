@@ -96,8 +96,9 @@ test-containerd:
 #
 #   unit                untagged, no daemon
 #   docker              the docker suites as the user
-#   root                both suites as root (scripts/as-root): the firewall
-#                       paths and the system containerd
+#   root                everything as root (scripts/as-root): the firewall
+#                       paths, the system containerd, and the unit tests'
+#                       root-only branches
 #   rootless            the containerd suite as the user, which starts a
 #                       rootless daemon; needs containerd, rootlesskit and
 #                       slirp4netns or pasta, and a system socket the user
@@ -115,7 +116,7 @@ cover-containers-docker:
 	mkdir -p $(COVER_DIR) && $(CONTAINERS_COVER) -tags docker_integration -run '_Integration$$' -coverprofile=$(COVER_DIR)/docker.out ./pkg/containers/...
 
 cover-containers-root:
-	mkdir -p $(COVER_DIR) && $(CONTAINERS_COVER) -exec $(AS_ROOT) -tags 'docker_integration containerd_integration' -run '_Integration$$' -coverprofile=$(COVER_DIR)/root.out ./pkg/containers/...
+	mkdir -p $(COVER_DIR) && $(CONTAINERS_COVER) -exec $(AS_ROOT) -tags 'docker_integration containerd_integration' -coverprofile=$(COVER_DIR)/root.out ./pkg/containers/...
 
 cover-containers-rootless:
 	mkdir -p $(COVER_DIR) && $(CONTAINERS_COVER) -tags containerd_integration -run '_Integration$$' -coverprofile=$(COVER_DIR)/rootless.out ./pkg/containers/backends/containerd/
