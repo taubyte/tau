@@ -296,10 +296,6 @@ func (b *DockerBackend) createDockerConfig(config *core.ContainerConfig) (*conta
 		WorkingDir:  config.WorkDir,
 	}
 
-	if len(containerConfig.Env) == 0 {
-		containerConfig.Env = []string{"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}
-	}
-
 	if containerConfig.WorkingDir == "" {
 		containerConfig.WorkingDir = "/"
 	}

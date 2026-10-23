@@ -69,7 +69,7 @@ func TestCreateDockerConfig(t *testing.T) {
 
 			containerConfig, _, _, err := backend.createDockerConfig(config)
 			require.NoError(t, err)
-			assert.Contains(t, containerConfig.Env, "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+			assert.Empty(t, containerConfig.Env, "the image's own environment, PATH included, is the default")
 		})
 
 		t.Run("Empty", func(t *testing.T) {
@@ -80,7 +80,7 @@ func TestCreateDockerConfig(t *testing.T) {
 
 			containerConfig, _, _, err := backend.createDockerConfig(config)
 			require.NoError(t, err)
-			assert.Contains(t, containerConfig.Env, "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "Default PATH must be set")
+			assert.Empty(t, containerConfig.Env, "a PATH set here would replace the image's")
 		})
 
 		t.Run("Provided", func(t *testing.T) {
