@@ -248,12 +248,37 @@ func (r Report) Broken() bool {
 // Validate compiles the project for environment ("" for the bare keys) and
 // audits the result.
 func (p *Project) Validate(ctx context.Context, environment string) Report {
-	opts := schema.CompileOptions{Environment: environment}
-	deferred, err := p.s.Validate(ctx, opts)
+	return validate(ctx, p.s, environment)
+}
+
+// Preflight is Validate as a build judges a project before a cloud does: the
+// cut is previewed across the regions the project itself names (schema.Preview,
+// which is the vocabulary's own look before any cloud is chosen), so whether a
+// cloud serves those regions is left to the cloud, and everything else a cloud
+// would refuse is refused here.
+func (p *Project) Preflight(ctx context.Context, environment string) Report {
+	obj, _, err := p.s.Compile(ctx, schema.CompileOptions{Environment: environment})
 	if err != nil {
 		return Report{Error: err.Error(), Findings: []session.Note{}}
 	}
-	viewed, err := p.s.Views(ctx, opts)
+	regions := schema.WithNoRegions()
+	if named := schema.RegionsNamed(obj.Flat()); len(named) > 0 {
+		regions = schema.Preview(named...)
+	}
+	s, err := schema.NewSessionIn(p.s.FS(), "/", regions)
+	if err != nil {
+		return Report{Error: err.Error(), Findings: []session.Note{}}
+	}
+	return validate(ctx, s, environment)
+}
+
+func validate(ctx context.Context, s *schema.Session, environment string) Report {
+	opts := schema.CompileOptions{Environment: environment}
+	deferred, err := s.Validate(ctx, opts)
+	if err != nil {
+		return Report{Error: err.Error(), Findings: []session.Note{}}
+	}
+	viewed, err := s.Views(ctx, opts)
 	r := Report{Findings: viewed.Notes, Deferred: deferred}
 	if r.Findings == nil {
 		r.Findings = []session.Note{}

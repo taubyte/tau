@@ -272,7 +272,7 @@ func planFor(cmd *cobra.Command, env Env, dir, tree, branch string) (source, err
 		for _, environment := range environments {
 			// A CLOUD WOULD REFUSE IT, so it is refused here, by the same
 			// compile and the same audit, before anything is built.
-			if r := p.Validate(cmd.Context(), environment); r.Broken() {
+			if r := p.Preflight(cmd.Context(), environment); r.Broken() {
 				fmt.Fprint(env.Stderr, theme(env).Report(r))
 				return source{}, &exitError{code: ExitBroken, msg: environment + " does not deploy as written"}
 			}

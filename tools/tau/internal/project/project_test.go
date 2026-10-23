@@ -256,3 +256,43 @@ func TestAnEmptyProjectHasNoFindings(t *testing.T) {
 	require.NotNil(t, r.Findings)
 	require.Equal(t, []string{"prod"}, p.Deployments("main"))
 }
+
+func corpusProject(t *testing.T, name string) *Project {
+	t.Helper()
+	p, err := Open(filepath.Join("..", "..", "..", "..", "node", "dream", "projects", filepath.FromSlash(name)))
+	require.NoError(t, err)
+	require.True(t, p.IsProject(), name)
+	return p
+}
+
+func brokenOf(r Report) []string {
+	var out []string
+	for _, f := range r.Findings {
+		if f.Severity == string(schema.Broken) {
+			out = append(out, f.Kind+"/"+f.Name+": "+f.Title)
+		}
+	}
+	return out
+}
+
+// WHETHER A CLOUD SERVES A REGION IS THE CLOUD'S TO SAY. A project placed in
+// regions it names passes a build's preflight, which the one-region reading of
+// `validate` refuses; an edge across the regions it names is refused by both,
+// because no cloud can carry it.
+func TestPreflightLeavesWhetherARegionIsServedToTheCloud(t *testing.T) {
+	for _, name := range []string{"with/placement", "with/views"} {
+		p := corpusProject(t, name)
+		require.True(t, p.Validate(t.Context(), "prod").Broken(), "%s names regions one region does not serve", name)
+		r := p.Preflight(t.Context(), "prod")
+		require.False(t, r.Broken(), "%s: %v", name, brokenOf(r))
+	}
+
+	across := corpusProject(t, "refused/views/across").Preflight(t.Context(), "prod")
+	require.Equal(t, []string{`function/reader: reaches cache/sessions_r1, which is not placed in "region-2" where this is`}, brokenOf(across))
+
+	plain := corpusProject(t, "with/function").Preflight(t.Context(), "prod")
+	require.False(t, plain.Broken(), "a project naming no region is read as one region")
+
+	missing := corpusProject(t, "refused/environments/missing").Preflight(t.Context(), "prod")
+	require.NotEmpty(t, missing.Error)
+}
