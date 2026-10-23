@@ -214,13 +214,10 @@
 //
 // Production wires each shard's store itself rather than going through a
 // factory that returns the narrow core interface. That is not preference:
-// Compact, ReclaimCompacted, Repair and InternalStats are methods on the
-// concrete store and are NOT on that interface, and this service is the first
-// production caller of Compact. PUSHING STORAGE BACK BEHIND THAT INTERFACE
-// SILENTLY STOPS COMPACTION — which is not a throughput regression but a growth
-// in a new replica's catch-up cost with the cloud's LIFETIME rather than with
-// its state, and that turns rebalancing, the thing this design is built around,
-// into something that gets slower every month.
+// a shard is a go-datastore with prefix queries, which the core interface is
+// not. This service does not call Compact; a caller that wants to reaches it
+// through core/kvdb.Compactor, never through an unnamed interface assertion
+// that compiles whether or not the store has the method.
 //
 // # WHAT IS DEFERRED, AND WHAT EACH IS STUBBED BEHIND
 //

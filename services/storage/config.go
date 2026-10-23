@@ -124,11 +124,8 @@ const (
 //
 // *kvdb.Datastore satisfies it, which is compile-verified below rather than
 // asserted. That matters because THIS SERVICE OWNS ITS OWN STORE CONSTRUCTION
-// deliberately: Compact, ReclaimCompacted, Repair and InternalStats are
-// methods on *kvdb.Datastore and are NOT on core/kvdb.KVDB, so pushing this
-// service back behind that interface in a later refactor silently stops
-// compaction — which is not a performance regression but a growth in a new
-// replica's catch-up cost with the cloud's LIFETIME rather than with its state.
+// deliberately, because the index needs go-datastore's prefix queries, which
+// core/kvdb.KVDB does not have. Nothing in this service calls Compact.
 type Datastore interface {
 	Get(ctx context.Context, key ds.Key) ([]byte, error)
 	Has(ctx context.Context, key ds.Key) (bool, error)

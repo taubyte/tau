@@ -11,6 +11,7 @@ import (
 	"github.com/cloudflare/circl/group"
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
 
+	"github.com/taubyte/tau/core/kvdb"
 	secretsv2 "github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2"
 	"github.com/taubyte/tau/pkg/secrets/tdh"
 )
@@ -680,14 +681,12 @@ func (srv *Service) askPartial(member string, v version, keyID, writer string) (
 // compact reclaims the space behind the tombstones deletion leaves. Compact
 // documents itself as coordination-free, so every node may run it.
 func (srv *Service) compact(ctx context.Context) error {
-	compactor, ok := srv.db.(interface {
-		Compact(context.Context, string) (int, error)
-	})
+	compactor, ok := srv.db.(kvdb.Compactor)
 	if !ok {
 		return nil
 	}
 
-	if _, err := compactor.Compact(ctx, ""); err != nil {
+	if _, err := compactor.Compact(ctx); err != nil {
 		return fmt.Errorf("compacting after retiring an epoch: %w", err)
 	}
 

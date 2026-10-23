@@ -247,7 +247,40 @@ func (broken) Put(context.Context, string, []byte) error      { return errBroken
 func (broken) Delete(context.Context, string) error           { return errBroken }
 func (broken) List(context.Context, string) ([]string, error) { return nil, errBroken }
 func (broken) Get(context.Context, string) ([]byte, error)    { return nil, errBroken }
-func (broken) Compact(context.Context, string) (int, error)   { return 0, errBroken }
+func (broken) Compact(context.Context) (int, error)           { return 0, errBroken }
+
+// TestRetiringCompactsTheRealStore is the regression for an assertion that was
+// never true: compact looked for Compact(ctx, string) on the production store,
+// which had no such method, so it returned nil without compacting anything.
+func TestRetiringCompactsTheRealStore(t *testing.T) {
+	srv, _, _ := single(t)
+	_, ok := srv.db.(coreKvdb.Compactor)
+	require.True(t, ok, "the production store must be a Compactor")
+
+	ctx := t.Context()
+	for i := range 4 {
+		key := fmt.Sprintf("/churn/%d", i)
+		require.NoError(t, srv.db.Put(ctx, key, []byte("v")))
+		require.NoError(t, srv.db.Delete(ctx, key))
+	}
+	counted := &countingCompactor{KVDB: srv.db}
+	srv.db = counted
+	require.NoError(t, srv.compact(ctx))
+	require.Equal(t, 1, counted.calls)
+	require.Positive(t, counted.dropped, "compacting a store with history must drop some of it")
+}
+
+type countingCompactor struct {
+	coreKvdb.KVDB
+	calls, dropped int
+}
+
+func (c *countingCompactor) Compact(ctx context.Context) (int, error) {
+	c.calls++
+	n, err := c.KVDB.(coreKvdb.Compactor).Compact(ctx)
+	c.dropped += n
+	return n, err
+}
 
 func TestAStoreThatFailsIsAnErrorEverywhere(t *testing.T) {
 	ctx := t.Context()

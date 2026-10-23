@@ -49,6 +49,13 @@ type KVDB interface {
 	Close()
 }
 
+// Compactor is a KVDB that can fold its history into a snapshot of its live
+// state, returning how many history blocks it dropped. It is separate from KVDB
+// so that a store without history, such as a mock, is still a KVDB.
+type Compactor interface {
+	Compact(ctx context.Context) (int, error)
+}
+
 type Batch interface {
 	Put(key string, value []byte) error
 	Delete(key string) error

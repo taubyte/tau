@@ -9,6 +9,12 @@ import (
 	"github.com/taubyte/tau/core/kvdb"
 )
 
+var _ kvdb.Compactor = (*kvDatabase)(nil)
+
+func (kvd *kvDatabase) Compact(ctx context.Context) (int, error) {
+	return kvd.datastore.Compact(ctx, "")
+}
+
 func (kvd *kvDatabase) Get(ctx context.Context, key string) ([]byte, error) {
 	k := ds.NewKey(key)
 	return kvd.datastore.Get(ctx, k)
