@@ -504,3 +504,59 @@ func TestHealthCheck_Integration(t *testing.T) {
 	assert.NoError(t, backend.HealthCheck(context.Background()))
 	assert.NoError(t, backend.testSocketConnection())
 }
+
+// TestAnotherInstanceAdoptsAContainer_Integration is a node restarting: the
+// backend that started a container is gone, and a fresh one has only the id.
+func TestAnotherInstanceAdoptsAContainer_Integration(t *testing.T) {
+	first := newTestBackend(t)
+	ctx := context.Background()
+
+	require.NoError(t, first.Image(testImage).Pull(ctx))
+	id, err := first.Create(ctx, &core.ContainerConfig{Image: testImage, Command: []string{"/bin/sleep", "300"}})
+	require.NoError(t, err)
+	require.NoError(t, first.Start(ctx, id))
+
+	second := newTestBackend(t)
+
+	info, err := second.Inspect(ctx, id)
+	require.NoError(t, err)
+	assert.Equal(t, "running", info.Status)
+
+	require.NoError(t, second.Stop(ctx, id))
+	info, err = second.Inspect(ctx, id)
+	require.NoError(t, err)
+	assert.Equal(t, "stopped", info.Status)
+
+	require.NoError(t, second.Remove(ctx, id))
+	_, err = first.Inspect(ctx, id)
+	assert.Error(t, err, "the container is gone for every instance")
+}
+
+func TestUnknownContainer_Integration(t *testing.T) {
+	backend := newTestBackend(t)
+	ctx := context.Background()
+
+	assert.ErrorContains(t, backend.Stop(ctx, "tau-never-created"), "failed to load container")
+	assert.ErrorContains(t, backend.Remove(ctx, "tau-never-created"), "failed to load container")
+	assert.ErrorContains(t, backend.Wait(ctx, "tau-never-created"), "failed to load container")
+	_, err := backend.Inspect(ctx, "tau-never-created")
+	assert.ErrorContains(t, err, "failed to load container")
+	assert.ErrorContains(t, backend.Start(ctx, "tau-never-created"), "tau-never-created")
+}
+
+func TestCreatedButNeverStarted_Integration(t *testing.T) {
+	backend := newTestBackend(t)
+	ctx := context.Background()
+
+	require.NoError(t, backend.Image(testImage).Pull(ctx))
+	id, err := backend.Create(ctx, &core.ContainerConfig{Image: testImage, Command: []string{"/bin/true"}})
+	require.NoError(t, err)
+	defer backend.Remove(ctx, id)
+
+	info, err := backend.Inspect(ctx, id)
+	require.NoError(t, err)
+	assert.Equal(t, "created", info.Status)
+
+	assert.ErrorContains(t, backend.Stop(ctx, id), "failed to get task")
+	assert.ErrorContains(t, backend.Wait(ctx, id), "failed to get task")
+}
