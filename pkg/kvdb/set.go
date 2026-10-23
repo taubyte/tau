@@ -704,7 +704,7 @@ NEXT:
 // the surviving marker for a key is (key, original id) aliased to the gen-1
 // snapshot block, and gen-2's walk finds that snapshot block, not the
 // original (now-purged) id. The carried-tombstone rule is Compact's
-// two-generation rule (see the Compact doc comment). Every element this
+// "carried by every generation" rule (see the Compact doc comment). Every element this
 // produces carries its winner marker's ORIGINAL path id (not the block
 // that happens to host it), preserving element identity across every future
 // generation and every concurrent tombstone that targets it.
@@ -930,25 +930,8 @@ func (s *set) compactSnapshotState(ctx context.Context, touched map[string]dagWa
 			elements = append(elements, &pb.Element{Key: key, Id: bestID, Value: bestValue, Priority: maxPriority})
 		}
 
-		// Carried tombstones.
-		if len(tombsByKey[key]) == 0 {
-			continue
-		}
-		liveIDs := make(map[string]struct{}, len(elemsByKey[key]))
-		for _, m := range elemsByKey[key] {
-			liveIDs[m.id] = struct{}{}
-		}
 		for _, id := range tombsByKey[key] {
-			targetCid, err := idToCid(id)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			_, purgingNow := dagCIDSet[targetCid]
-			_, elemStillLive := liveIDs[id]
-			if purgingNow || elemStillLive {
-				tombstones = append(tombstones, &pb.Element{Key: key, Id: id})
-			}
+			tombstones = append(tombstones, &pb.Element{Key: key, Id: id})
 		}
 	}
 
@@ -1080,14 +1063,14 @@ func (s *set) putElems(ctx context.Context, elems []*pb.Element, id string, prio
 // for that key, computes.
 //
 // id and isSnapshot mirror putElems' parameters: for a snapshot delta's
-// CARRIED tombstones (the two-generation rule -- see Compact's doc
+// CARRIED tombstones (see Compact's doc
 // comment), the marker is written with an alias pointing at this snapshot
 // block (id), exactly like a re-homed element's marker (S2). This closes a
 // self-purge gap that has nothing to do with element-id stability directly,
 // but that stable ids make newly reachable now that Compact no longer
 // requires a quiesced dagName: a carried tombstone's target id is, in the
 // common case, the very id being purged THIS SAME Compact() run
-// (compactSnapshotState's "purgingNow" carry reason). Without an alias,
+// Without an alias,
 // purgeKeyBlocks would delete that just-(re)written tombstone marker in the
 // very same run that wrote it (its path-id CID is trivially in the purge
 // set), silently discarding the compacting replica's own record of the
@@ -1286,7 +1269,7 @@ func (s *set) purgeKeyBlocks(ctx context.Context, key string, blockCIDs map[cid.
 	// alias only records that a snapshot RE-AFFIRMED the kill (putTombs).
 	// It is keyed on its target's own id (path): kept whenever its target
 	// block is not in this purge set (its target was purged by an earlier
-	// generation, so this is inert two-generation residue -- tiny and
+	// generation and a later snapshot re-affirmed it -- tiny and
 	// harmless, see TestCompactTwoGenerationTombstones), and, when its
 	// target IS in the purge set, kept iff a snapshot outside the purge set
 	// re-affirmed it (so the kill outlives the purge of the target's block

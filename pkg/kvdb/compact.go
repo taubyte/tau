@@ -34,23 +34,19 @@ import (
 // snapshot changes nothing about which value wins a concurrent write for a
 // still-being-replicated key.
 //
-// # Two-generation tombstone rule
+// # Tombstones are carried by every generation
 //
-// A tombstone cannot simply be dropped once its target's block is purged:
-// a lagging replica that has not yet processed the original history may
-// still be holding the (soon to be dead) element and needs the tombstone to
-// eventually reach it. So a tombstone is carried into a snapshot generation
-// if either (a) the block of the element it targets is being purged in this
-// very Compact call (the lagging replica may hold that element and needs
-// the kill now), or (b) that element's marker is still present locally at
-// all (it is alive -- possibly reintroduced by a different dagName sharing
-// the key -- and the kill must not be lost). A tombstone matching neither
-// condition already did its job in a previous generation and is dropped.
+// A tombstone cannot be dropped once its target's block is purged: a
+// replica offline since before the delete may still hold the element, or
+// compact its stale view into a snapshot that re-exports it under its
+// original id, and only the tombstone refutes it. So every snapshot carries
+// every tombstone of the keys it touches. This keeps the tombstone set
+// growing with deletes; bounding it needs agreement on what every holder
+// has seen, which this package does not have.
 //
 // A carried tombstone's marker is written with an alias pointing at the
 // snapshot block that carries it (see putTombs), mirroring a re-homed
-// element's marker (S2): in the common carry case (a), the tombstone's
-// target id is the very id being purged by THIS SAME Compact call, so
+// element's marker (S2): the tombstone's target id is often the very id being purged by THIS SAME Compact call, so
 // without an alias the purge below would immediately delete the marker it
 // just (re)wrote, and a later-arriving element for that id -- exactly the
 // kind of divergent write Compact must now tolerate -- would wrongly
