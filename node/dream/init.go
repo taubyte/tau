@@ -364,6 +364,12 @@ type Config struct {
 	// with, beside the universe's ACME account, as `taud init -` writes a
 	// sealed bundle (see secrets.Sealed).
 	Secrets []*secretsv2.InitSecret
+
+	// Local is repositories read from folders on this machine, by repository
+	// key (github.com/acme/app), in place of the forge: each is a git
+	// repository, cloned and confirmed at the commit a push or `tau ci run`
+	// names, so a CI run needs no forge to hold the code.
+	Local map[string]string
 }
 
 // Universe is a running fleet of nodes.
@@ -406,10 +412,16 @@ func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
 	}
 	m.OnClose(held)
 
+	folders, err := newLocal(cfg.Local)
+	if err != nil {
+		m.Close()
+		return nil, err
+	}
+
 	u := &Universe{mesh: m}
 	copies := max(cfg.Copies, 1)
 	for index := range copies {
-		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index, account, held) })
+		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index, account, held, folders) })
 		if err != nil {
 			u.Close()
 			return nil, fmt.Errorf("dream: node %d: %w", index, err)
@@ -435,7 +447,7 @@ func (u *Universe) CA() *sectls.CA { return u.mesh.CA() }
 // Close stops every node, then their peers.
 func (u *Universe) Close() { u.mesh.Close() }
 
-func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secretsv2.InitSecret, held *uploads) error {
+func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secretsv2.InitSecret, held *uploads, folders *local) error {
 	ctx := m.Context()
 	h := p.Peer()
 
@@ -532,7 +544,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		node.WithRuntimes(tiers...),
 		// A DEVELOPMENT CLOUD'S DOOR for a developer's own build — see uploads.
 		node.WithUploads(held),
-		node.WithBuildSeams(held.layer),
+		node.WithBuildSeams(func(s node.BuildSeams) node.BuildSeams { return held.layer(folders.layer(s)) }),
 	}
 	if now != nil {
 		options = append(options, node.WithClock(now))
