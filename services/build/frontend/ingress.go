@@ -60,6 +60,19 @@ func (s *Service) mount() http.Handler {
 	mux.HandleFunc("GET /job/{jid}/logs/{key}", s.admitted("jid", s.handleJobLog))
 	mux.HandleFunc("GET /job/{jid}/assets/{resource}", s.admitted("jid", s.handleJobAsset))
 
+	// A build somebody asked for by hand (buildapi.go): admitted, authorized
+	// at the builder role, and queued exactly as a verified push is.
+	mux.HandleFunc("POST /build/{projectId}", s.admitted("projectId", s.handleManualBuild))
+	if s.published != nil {
+		mux.HandleFunc("GET /projects/{projectId}/deployments/{environment}", s.admitted("projectId", s.handlePublished))
+	}
+
+	// A DEVELOPMENT CLOUD'S OWN DOOR, and only one composed with Uploads has
+	// it: on a cloud nothing accepts a build's output from outside.
+	if s.uploads != nil {
+		mux.HandleFunc("POST /upload/{projectId}", s.admitted("projectId", s.handleUpload))
+	}
+
 	// The secret routes: written by a developer, out of band, because the value
 	// is the one thing that must not be in git (secretapi.go). Same
 	// authorization as everything above, at the secret-manager role, and no

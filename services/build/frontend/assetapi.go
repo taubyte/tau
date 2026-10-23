@@ -64,6 +64,9 @@ func (s *Service) serveJobAsset(w http.ResponseWriter, r *http.Request, token, j
 
 type cloudResponse struct {
 	Fqdn string `json:"fqdn"`
+	// Uploads is whether this is a development cloud that takes a developer's
+	// build straight in (buildapi.go).
+	Uploads bool `json:"uploads,omitempty"`
 }
 
 // handleCloud is GET /cloud: the name this cloud serves under, which every
@@ -83,5 +86,5 @@ func (s *Service) handleCloud(w http.ResponseWriter, r *http.Request) {
 		respond(w, problem(http.StatusServiceUnavailable, "this build frontend was given no cloud fqdn"))
 		return
 	}
-	writeJSON(w, http.StatusOK, cloudResponse{Fqdn: s.cloudFqdn})
+	writeJSON(w, http.StatusOK, cloudResponse{Fqdn: s.cloudFqdn, Uploads: s.uploads != nil})
 }

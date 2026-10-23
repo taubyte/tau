@@ -40,6 +40,8 @@ type Service struct {
 	streams    Streams
 	linked     Linked
 	authAPI    AuthAPI
+	uploads    Uploads
+	published  Published
 	cfg        Config
 	cloudFqdn  string
 
@@ -93,6 +95,8 @@ type options struct {
 	streams    Streams
 	linked     Linked
 	authAPI    AuthAPI
+	uploads    Uploads
+	published  Published
 	cloudFqdn  string
 
 	tune func(*http.Server)
@@ -338,6 +342,8 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		return nil, errors.New("build: no projects to authorize against")
 	case o.backend == nil:
 		return nil, errors.New("build: no backend to queue into")
+	case o.uploads != nil && o.linker == nil:
+		return nil, errors.New("build: uploads need a linker to name the repository an upload is a commit of")
 	case o.callers == nil:
 		return nil, errors.New("build: no way to verify a caller")
 	}
@@ -356,6 +362,8 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		streams:    o.streams,
 		linked:     o.linked,
 		authAPI:    o.authAPI,
+		uploads:    o.uploads,
+		published:  o.published,
 		cfg:        effective,
 		cloudFqdn:  o.cloudFqdn,
 		tune:       o.tune,
@@ -497,3 +505,29 @@ func (s *Service) Close() error {
 }
 
 func (s *Service) log(format string, args ...any) { s.logf(format, args...) }
+
+// WithUploads mounts POST /upload/{projectId}: a universe's own way in for a
+// developer's build. Nothing but a development cloud's composition passes one,
+// so on a cloud the route does not exist (buildapi.go). It needs WithLinker,
+// for the configuration repository an upload is a commit of.
+func WithUploads(u Uploads) Option {
+	return func(o *options) error {
+		if u == nil {
+			return errors.New("build: nil uploads")
+		}
+		o.uploads = u
+		return nil
+	}
+}
+
+// WithPublished is how a deployment's compiled object is read back for
+// `tau build --published`. Optional: without one that route is a 404.
+func WithPublished(p Published) Option {
+	return func(o *options) error {
+		if p == nil {
+			return errors.New("build: nil published")
+		}
+		o.published = p
+		return nil
+	}
+}
