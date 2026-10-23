@@ -560,3 +560,59 @@ func TestCreatedButNeverStarted_Integration(t *testing.T) {
 	assert.ErrorContains(t, backend.Stop(ctx, id), "failed to get task")
 	assert.ErrorContains(t, backend.Wait(ctx, id), "failed to get task")
 }
+
+func TestMissingImage_Integration(t *testing.T) {
+	backend := newTestBackend(t)
+	ctx := context.Background()
+	image := backend.Image("docker.io/taubyte/does-not-exist:never")
+
+	assert.False(t, image.Exists(ctx))
+	assert.ErrorContains(t, image.Pull(ctx), "failed to pull image")
+	assert.ErrorContains(t, image.Remove(ctx), "failed to remove image")
+	_, err := image.Digest(ctx)
+	assert.ErrorContains(t, err, "failed to get image")
+	_, err = image.Tags(ctx)
+	assert.ErrorContains(t, err, "failed to get image")
+
+	_, err = backend.Create(ctx, &core.ContainerConfig{Image: image.Name()})
+	assert.ErrorContains(t, err, "failed to pull image")
+}
+
+func TestCreateRefusesAnUnsupportedNetworkMode_Integration(t *testing.T) {
+	backend := newTestBackend(t)
+	ctx := context.Background()
+	require.NoError(t, backend.Image(testImage).Pull(ctx))
+
+	_, err := backend.Create(ctx, &core.ContainerConfig{Image: testImage, Network: &core.NetworkConfig{Mode: "bridge"}})
+	assert.ErrorContains(t, err, "failed to build OCI spec options")
+}
+
+// TestLostDaemonConnection is every operation after the connection to
+// containerd is gone: each reports it, none panics.
+func TestLostDaemonConnection_Integration(t *testing.T) {
+	backend := newTestBackend(t)
+	ctx := context.Background()
+	require.NoError(t, backend.client.Close())
+
+	assert.ErrorContains(t, backend.HealthCheck(ctx), "not responding")
+	assert.ErrorContains(t, backend.Clean(ctx, time.Hour, ""), "failed to list images")
+	_, err := backend.Create(ctx, &core.ContainerConfig{Image: testImage})
+	assert.ErrorContains(t, err, "failed to pull image")
+	assert.ErrorContains(t, backend.Start(ctx, "tau-x"), "failed to load container")
+
+	image := backend.Image(testImage)
+	assert.False(t, image.Exists(ctx))
+	assert.ErrorContains(t, image.Build(ctx, &core.DockerfileBuild{Context: tarOfDockerfile(t, "FROM scratch\n")}),
+		"failed to create builder")
+}
+
+func TestFailingBuildReportsTheBuilderOutput_Integration(t *testing.T) {
+	backend := newTestBackend(t)
+
+	err := backend.Image("tau-test/failing-build:latest").Build(context.Background(), &core.DockerfileBuild{
+		Context: tarOfDockerfile(t, "FROM "+testImage+"\nRUN echo the-step-said-this && exit 3\n"),
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed with exit code")
+	assert.Contains(t, err.Error(), "the-step-said-this", "the builder's own output is the reason a build failed")
+}

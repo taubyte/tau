@@ -338,3 +338,76 @@ func TestDaemonStartWhenAlreadyRunning(t *testing.T) {
 	assert.NoError(t, daemon.Start(context.Background()), "a daemon answering on the socket is not started twice")
 	assert.Nil(t, daemon.process)
 }
+
+func TestNewDaemonRootfulUsesTheSystemPaths(t *testing.T) {
+	if _, err := os.Stat("/run/containerd"); err != nil && os.Geteuid() != 0 {
+		t.Skip("/run/containerd is missing and only root may create it")
+	}
+
+	daemon, err := NewDaemon(core.ContainerdConfig{RootlessMode: core.RootlessModeDisabled})
+	require.NoError(t, err)
+	assert.Equal(t, "/run/containerd/containerd.sock", daemon.socketPath)
+	assert.Equal(t, "/run/containerd/containerd.pid", daemon.stateFile)
+}
+
+func TestNewDaemonUnwritableSocketDirectory(t *testing.T) {
+	_, err := NewDaemon(core.ContainerdConfig{SocketPath: "/proc/self/nope/containerd.sock"})
+	assert.ErrorContains(t, err, "failed to create directory")
+}
+
+func TestNewFailures(t *testing.T) {
+	t.Run("no daemon at the system socket", func(t *testing.T) {
+		_, err := New(core.ContainerdConfig{
+			RootlessMode: core.RootlessModeDisabled,
+			SocketPath:   filepath.Join(t.TempDir(), "containerd.sock"),
+		})
+		assert.ErrorContains(t, err, "failed to ensure containerd is running")
+	})
+
+	t.Run("through the registered factory", func(t *testing.T) {
+		factory, ok := core.GetBackendFactory(core.BackendTypeContainerd)
+		require.True(t, ok)
+		_, err := factory(core.ContainerdConfig{
+			RootlessMode: core.RootlessModeDisabled,
+			SocketPath:   filepath.Join(t.TempDir(), "containerd.sock"),
+		})
+		assert.ErrorContains(t, err, "failed to ensure containerd is running")
+	})
+
+	t.Run("a socket file nothing answers on", func(t *testing.T) {
+		socket := filepath.Join(t.TempDir(), "containerd.sock")
+		ln, err := net.Listen("unix", socket)
+		require.NoError(t, err)
+		ln.(*net.UnixListener).SetUnlinkOnClose(false)
+		ln.Close()
+
+		_, err = New(core.ContainerdConfig{RootlessMode: core.RootlessModeDisabled, SocketPath: socket})
+		assert.ErrorContains(t, err, "containerd not running at system socket")
+	})
+
+	t.Run("rootless as root", func(t *testing.T) {
+		if os.Geteuid() != 0 {
+			t.Skip("only root is refused rootless mode")
+		}
+		_, err := New(core.ContainerdConfig{RootlessMode: core.RootlessModeEnabled})
+		assert.ErrorContains(t, err, "cannot enable rootless mode when running as root")
+	})
+
+	t.Run("a daemon manager that cannot be made", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root is never rootless")
+		}
+		_, err := New(core.ContainerdConfig{
+			RootlessMode: core.RootlessModeEnabled,
+			AutoStart:    true,
+			SocketPath:   "/proc/self/nope/containerd.sock",
+		})
+		assert.ErrorContains(t, err, "failed to create daemon manager")
+	})
+}
+
+func TestBuildRejectsABadContext(t *testing.T) {
+	image := &containerdImage{backend: &ContainerdBackend{client: &Client{}}, name: "x"}
+	err := image.Build(context.Background(), &core.DockerfileBuild{Context: strings.NewReader("not a tarball")})
+	assert.ErrorContains(t, err, "failed to unpack build context")
+}
