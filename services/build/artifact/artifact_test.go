@@ -747,3 +747,19 @@ func TestABarePathIsTheMainRepositoryNotACodeRepository(t *testing.T) {
 		require.Equal(t, c.images, images, c.pushed)
 	}
 }
+
+// AN ENGINE WITH NOTHING TO RUN A BUILD IN DECLINES IT: the push is not failed
+// for what it could not build here, nothing is stored for it, and the log says
+// which resource was left unbuilt.
+func TestABuildTheEngineDeclinesIsReportedUnbuilt(t *testing.T) {
+	e := &engine{err: fmt.Errorf("%w: this universe runs no containers", artifact.ErrNoEngine)}
+	o := newOut()
+
+	require.NoError(t, builder(t, deployed(t, oneEnvironment(t)), &checkout{dir: source(t)}, e, mainRepo).
+		Build(t.Context(), work(mainRepo), o))
+	require.NotEmpty(t, e.seen())
+	require.Empty(t, o.stored())
+	require.Contains(t, o.text(), "not built: function/reserve for prod")
+	require.Contains(t, o.text(), "this universe runs no containers")
+	require.Contains(t, o.text(), "(recipe ", "and every build it was asked for named its recipe")
+}

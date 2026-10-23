@@ -78,7 +78,10 @@ var (
 	ErrNoRegister = errors.New("artifact: nothing to read the configuration from")
 	ErrNoCheckout = errors.New("artifact: no way to read a repository")
 	ErrNoProjects = errors.New("artifact: no way to tell which repository backs a project's code")
-	ErrNoEngine   = errors.New("artifact: nothing to run a build in")
+	// ErrNoEngine is nothing to run a build in. An Engine answers it for a
+	// build it cannot run here, and the build is reported unbuilt rather than
+	// failed.
+	ErrNoEngine = errors.New("artifact: nothing to run a build in")
 
 	// ErrNoSecrets is a build whose author declared a build-time secret on a
 	// cloud with no vault. It is a refusal rather than a build run without the
@@ -315,6 +318,14 @@ func (b *Builder) Build(ctx context.Context, w backend.Work, out backend.Output)
 		say(out, "building %s/%s for %s (recipe %s)", item.Kind, item.Name, item.Environment, recipes[i].Digest())
 
 		product, err := b.engine.Make(ctx, recipes[i], out)
+		if errors.Is(err, ErrNoEngine) {
+			// AN ENGINE THAT HAS NOTHING TO RUN THIS IN declines rather than
+			// fails: the configuration this push published stands, and what
+			// could not be built is said by name, as a node with no engine at
+			// all would leave it unbuilt.
+			say(out, "not built: %s/%s for %s: %v", item.Kind, item.Name, item.Environment, err)
+			continue
+		}
 		if err != nil {
 			return fmt.Errorf("artifact: building %s/%s for %s: %w", item.Kind, item.Name, item.Environment, err)
 		}
