@@ -270,21 +270,19 @@ func (p *Project) Views(ctx context.Context, environment string) (session.Viewed
 }
 
 // Environments are the deployments the project declares.
-func (p *Project) Environments() []string {
+func (p *Project) Environments() []string { return schema.EnvironmentNames(p.declared()) }
+
+func (p *Project) declared() []schema.Environment {
 	envs, err := schema.EnvironmentsOf(p.s.FS(), "/")
 	if err != nil {
 		return nil
 	}
-	return schema.EnvironmentNames(envs)
+	return envs
 }
 
 // Deployments are the environments a branch feeds.
 func (p *Project) Deployments(branch string) []string {
-	envs, err := schema.EnvironmentsOf(p.s.FS(), "/")
-	if err != nil {
-		return nil
-	}
-	return schema.DeploymentNames(envs, branch)
+	return schema.DeploymentNames(p.declared(), branch)
 }
 
 // Compiled is the project compiled for one deployment from branch — the

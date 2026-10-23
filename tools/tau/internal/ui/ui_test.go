@@ -240,3 +240,30 @@ func TestHuhPrompts(t *testing.T) {
 	require.Equal(t, "b", v)
 
 }
+
+// Jobs, a job, a table, secrets and a done line render the job and the rows
+// they were handed, newest first, with no colour on a plain writer.
+func TestTheJobAndListRenderers(t *testing.T) {
+	th := plain()
+	require.Contains(t, th.Jobs(nil), "no jobs yet")
+	jobs := th.Jobs([]*buildv2.Job{
+		{Id: "old", Status: buildv2.JobStatus_JobStatusSuccess, CommitSha: "0123456789abcdef0123", Timestamp: 1700000000, Attempt: 1},
+		{Id: "new", Status: buildv2.JobStatus_JobStatusFailed, CommitSha: "abc"},
+	})
+	require.Less(t, strings.Index(jobs, "old"), strings.Index(jobs, "new"), "newest first, and a job never queued sorts last")
+	require.Contains(t, jobs, "0123456789ab")
+	require.Contains(t, jobs, "2023-11-14T22:13:20Z")
+	require.Contains(t, jobs, "-")
+
+	one := th.Job(&buildv2.Job{Id: "j", Status: buildv2.JobStatus_JobStatusCancelled, AssetCid: map[string]string{"b": "2", "a": "1"}})
+	require.Less(t, strings.Index(one, "a → 1"), strings.Index(one, "b → 2"))
+
+	table := th.Table([]string{"A", "B"}, [][]string{{"one", "two"}})
+	require.Contains(t, table, "one")
+	require.Contains(t, table, "B")
+
+	require.Contains(t, th.Secrets("prod", nil), "no secrets set in prod")
+	listed := th.Secrets("prod", []string{"Z", "A"})
+	require.Less(t, strings.Index(listed, "A"), strings.Index(listed, "Z"))
+	require.Equal(t, "✓ built\n", th.Done("built"))
+}

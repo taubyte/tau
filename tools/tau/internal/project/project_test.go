@@ -222,3 +222,37 @@ func TestSavingIntoWhatCannotBeWritten(t *testing.T) {
 	_, err = p.Save()
 	require.Error(t, err)
 }
+
+// A starter that cannot be written is not half written: init fails, and a
+// name the schema refuses is refused before anything touches the disk.
+func TestInitIntoWhatCannotBeWritten(t *testing.T) {
+	parent := t.TempDir()
+	blocked := filepath.Join(parent, "shop")
+	require.NoError(t, os.WriteFile(blocked, []byte("a file where the directory goes"), 0o644))
+	_, err := Init(t.Context(), blocked, "shop", false)
+	require.Error(t, err)
+}
+
+func TestSavingOverADirectory(t *testing.T) {
+	dir := initStarter(t)
+	p, err := Open(dir)
+	require.NoError(t, err)
+	_, _, err = p.New("function", "bye", "", nil)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "function", "bye.yaml"), 0o755))
+	_, err = p.Save()
+	require.Error(t, err)
+}
+
+// A project with nothing in it compiles to nothing to say, and says so as an
+// empty list rather than none.
+func TestAnEmptyProjectHasNoFindings(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "project.yaml"), []byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nname: empty\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
+	p, err := Open(dir)
+	require.NoError(t, err)
+	r := p.Validate(t.Context(), "prod")
+	require.Empty(t, r.Error)
+	require.NotNil(t, r.Findings)
+	require.Equal(t, []string{"prod"}, p.Deployments("main"))
+}
