@@ -53,9 +53,14 @@ func TestAContainerIsADefOfItsOwn(t *testing.T) {
 	assert.NilError(t, json.Unmarshal(scope.Properties["things"], &held))
 	assert.DeepEqual(t, held["additionalProperties"], map[string]any{"$ref": "#/$defs/Thing"})
 	_, isDef := doc.Defs["clouds"]
-	assert.Assert(t, !isDef, "a leaf map decodes to no type")
-	_, listed := doc.Properties["clouds"]
-	assert.Assert(t, !listed)
+	assert.Assert(t, !isDef, "a table is described in place, not as a type")
+	var clouds map[string]any
+	assert.NilError(t, json.Unmarshal(doc.Properties["clouds"], &clouds))
+	assert.Equal(t, clouds["type"], "object")
+	_, bounded := clouds["minProperties"]
+	assert.Assert(t, !bounded, "an optional table may be empty")
+	entry := clouds["additionalProperties"].(map[string]any)
+	assert.Assert(t, entry["properties"].(map[string]any)["v"] != nil)
 
 	_, err = GenerateJSONSchema(containerRoot(false), JSONSchemaOptions{})
 	assert.ErrorContains(t, err, `container group "scopes" has no Singular() declaration`)

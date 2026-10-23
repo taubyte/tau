@@ -220,8 +220,12 @@ func GenerateJSONSchema(root []*engine.Node, opts JSONSchemaOptions) ([]byte, er
 			}
 			defs[spec] = g.objectSchema(iter, iter.Children, spec)
 			props.set(name, resourceMap(spec, name))
+			continue
 		}
-		// leaf maps (clouds) decode to no type — omitted from $defs.
+		props.set(name, g.table(node))
+		if node.Required {
+			required = append(required, name)
+		}
 	}
 
 	doc := map[string]any{
@@ -265,6 +269,20 @@ func resourceMap(spec, group string) map[string]any {
 		"description":          "Map of name -> " + spec + " (authored under " + group + "/<name>.yaml).",
 		"additionalProperties": map[string]any{"$ref": "#/$defs/" + spec},
 	}
+}
+
+// table is a group of named entries that are not resources: each key is one entry,
+// shaped by the group's iterator. A required group must hold at least one.
+func (g jsonSchemaGen) table(node *engine.Node) map[string]any {
+	t := map[string]any{
+		"type":                 "object",
+		"description":          groupDoc(node.Children[0]),
+		"additionalProperties": g.objectSchema(node.Children[0], nil, ""),
+	}
+	if node.Required {
+		t["minProperties"] = 1
+	}
+	return t
 }
 
 // objectSchema projects one resource/container iterator into an object schema:
@@ -332,10 +350,9 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, ti
 			})
 			continue
 		}
-		group := map[string]any{
-			"type":                 "object",
-			"description":          groupDoc(node.Children[0]),
-			"additionalProperties": g.objectSchema(node.Children[0], nil, ""),
+		group := g.table(node)
+		if node.Required {
+			addOnce(&required, name)
 		}
 		// A KEY CAN HOLD BOTH. A kind and an attribute may be called the same thing —
 		// `model` is a kind, and an agent has a `model` — so the attribute's own

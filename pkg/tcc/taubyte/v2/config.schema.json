@@ -31480,10 +31480,72 @@
       },
       "description": "Map of name -> Namespace (authored under namespace/<name>.yaml).",
       "type": "object"
+    },
+    "environments": {
+      "additionalProperties": {
+        "description": "The deployments of this project: which branches feed each, and where each keeps its state.",
+        "properties": {
+          "branches": {
+            "description": "Which branches feed this deployment. Globs allowed: [main, master], [\"release/*\"], or [\"*\"] for everything else.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Branches",
+            "type": "array",
+            "x-tau-section": "deployment"
+          },
+          "regions": {
+            "description": "Where this environment keeps its state, as region names the cloud offers. Absent means the cloud places it.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Regions",
+            "type": "array",
+            "x-tau-section": "deployment"
+          },
+          "shadows": {
+            "additionalProperties": {
+              "description": "Deployments attached to this environment: their own code and their own address, over its state.",
+              "properties": {
+                "branches": {
+                  "description": "Which branches feed this deployment. Globs allowed: [main, master], [\"release/*\"], or [\"*\"] for everything else.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Branches",
+                  "type": "array",
+                  "x-tau-section": "deployment"
+                }
+              },
+              "required": [
+                "branches"
+              ],
+              "type": "object"
+            },
+            "description": "Deployments attached to this environment: their own code and their own address, over its state.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "branches"
+        ],
+        "type": "object",
+        "x-tau-sections": [
+          {
+            "description": "Which branches feed an environment, and where it keeps its state.",
+            "id": "deployment",
+            "title": "Deployment"
+          }
+        ]
+      },
+      "description": "The deployments of this project: which branches feed each, and where each keeps its state.",
+      "minProperties": 1,
+      "type": "object"
     }
   },
   "required": [
-    "id"
+    "id",
+    "environments"
   ],
   "title": "tau v2 project configuration",
   "type": "object"
