@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/host"
 
 	"github.com/taubyte/tau/core/kvdb"
@@ -28,6 +29,8 @@ import (
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/services/auth/oidc"
 )
+
+var serviceLog = logging.Logger("tau.auth.service")
 
 // Service is auth's whole state.
 type Service struct {

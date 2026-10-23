@@ -8,32 +8,64 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
+	logging "github.com/ipfs/go-log/v2"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
+
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
+
+func observeLogs(t *testing.T) *observer.ObservedLogs {
+	core, logs := observer.New(zapcore.DebugLevel)
+	prev := serviceLog
+	serviceLog = &logging.ZapEventLogger{SugaredLogger: *zap.New(core).Sugar()}
+	t.Cleanup(func() { serviceLog = prev })
+	return logs
+}
+
+func requireOneLog(t *testing.T, logs *observer.ObservedLogs, level zapcore.Level, want ...string) string {
+	t.Helper()
+	all := logs.TakeAll()
+	require.Len(t, all, 1)
+	require.Equal(t, level, all[0].Level)
+	for _, w := range want {
+		require.Contains(t, all[0].Message, w)
+	}
+	return all[0].Message
+}
 
 func TestTheAdminWaitsForItsPasswordInTheVault(t *testing.T) {
 	f := newFx(t)
 	ctx := t.Context()
+	logs := observeLogs(t)
 	phc := f.vault.m[AdminSecret]
 	delete(f.vault.m, AdminSecret)
 	_, err := f.sessions().Login(ctx, req(&authv2.LoginRequest{Name: "root", Password: f.adminP}, ""))
 	require.Equal(t, connect.CodeNotFound, code(t, err))
 	require.ErrorContains(t, err, "the admin has no password in the secrets service yet")
+	requireOneLog(t, logs, zapcore.WarnLevel, "admin password has not been initialized in the secrets service", AdminSecret)
 
 	f.vault.fail = errors.New("no quorum")
 	_, err = f.sessions().Login(ctx, req(&authv2.LoginRequest{Name: "root", Password: f.adminP}, ""))
 	require.Equal(t, connect.CodeUnavailable, code(t, err))
 	require.ErrorContains(t, err, "the admin cannot sign in until the secrets service answers")
+	requireOneLog(t, logs, zapcore.ErrorLevel, "reading secret", AdminSecret, "no quorum")
 	f.vault.fail = nil
 
 	f.vault.m[AdminSecret] = []byte("plaintext")
 	_, err = f.sessions().Login(ctx, req(&authv2.LoginRequest{Name: "root", Password: f.adminP}, ""))
 	require.Equal(t, connect.CodeFailedPrecondition, code(t, err))
 	require.ErrorContains(t, err, "is not a hash")
+	require.NotContains(t, requireOneLog(t, logs, zapcore.ErrorLevel, "is not a password hash", AdminSecret), "plaintext")
 
 	f.vault.m[AdminSecret] = phc
+	_, err = f.sessions().Login(ctx, req(&authv2.LoginRequest{Name: "root", Password: "wrong password"}, ""))
+	require.Equal(t, connect.CodeUnauthenticated, code(t, err))
+	require.Zero(t, logs.Len())
 	_, err = f.sessions().Login(ctx, req(&authv2.LoginRequest{Name: "root", Password: f.adminP}, ""))
 	require.NoError(t, err)
+	require.Zero(t, logs.Len())
 }
 
 func TestBuiltinAdminLogsInAndIsNeverStored(t *testing.T) {
