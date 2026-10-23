@@ -76,7 +76,7 @@ func TestARealBuildThatFails(t *testing.T) {
 	_, err = e.Make(t.Context(), artifact.Spec{
 		Image:    "busybox:1.36",
 		Dir:      t.TempDir(),
-		Commands: []string{"false", "echo this must not run > out"},
+		Commands: []string{"echo compiling", "echo main.go:3: undefined: x >&2", "false", "echo this must not run > out"},
 		Output:   "out",
 	}, &log)
 	needsEgressRestriction(t, err)
@@ -84,6 +84,8 @@ func TestARealBuildThatFails(t *testing.T) {
 	require.NotContains(t, err.Error(), "left nothing at",
 		"it failed at the command, not at the missing output")
 	require.NotContains(t, log.String(), "this must not run")
+	require.Contains(t, log.String(), "compiling")
+	require.Contains(t, log.String(), "main.go:3: undefined: x")
 }
 
 // A BUILD WHOSE COMMANDS SUCCEEDED AND PUT THE PRODUCT SOMEWHERE ELSE is the

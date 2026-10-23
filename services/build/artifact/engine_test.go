@@ -169,6 +169,18 @@ func TestMakeStopsAtTheFirstFailingCommand(t *testing.T) {
 	require.NoFileExists(t, filepath.Join(dir, "out"))
 }
 
+func TestMakeLogsTheOutputOfAFailingBuild(t *testing.T) {
+	_, log, err := runBuild(t, &hostBackend{}, artifact.Spec{
+		Image:    "busybox:1.36",
+		Dir:      t.TempDir(),
+		Commands: []string{"echo compiling", "echo main.go:3: undefined: x >&2", "false"},
+		Output:   "out",
+	})
+	require.ErrorIs(t, err, containers.ErrorExitCode)
+	require.Contains(t, log, "compiling")
+	require.Contains(t, log, "main.go:3: undefined: x")
+}
+
 func TestMakeWithNoVariablesSetsNoEnvironment(t *testing.T) {
 	backend := &hostBackend{}
 	body, _, err := runBuild(t, backend, artifact.Spec{

@@ -103,17 +103,21 @@ func (c *Containers) Make(ctx context.Context, spec Spec, log io.Writer) (io.Rea
 	}
 
 	output, err := container.Run(ctx)
+	// THE BUILD'S OWN OUTPUT IS THE JOB'S LOG, stdout and stderr together —
+	// which is what somebody reading a build wants, in the order the build
+	// wrote them. Run hands the output over with an exit-code error too, and
+	// a failed build's output is the part worth reading, so it is copied
+	// before the error is returned. A copy that fails is not checked: it
+	// says nothing about whether the build did.
+	if output != nil {
+		combined := output.Combined()
+		io.Copy(log, combined)
+		combined.Close()
+		output.Close()
+	}
 	if err != nil {
 		return nil, err
 	}
-	// THE BUILD'S OWN OUTPUT IS THE JOB'S LOG, stdout and stderr together —
-	// which is what somebody reading a build wants, in the order the build
-	// wrote them. A copy that fails is not a build that failed, since the
-	// product is already on disk, so it is not checked.
-	combined := output.Combined()
-	io.Copy(log, combined)
-	combined.Close()
-	output.Close()
 
 	return collect(spec.Dir, spec.Output)
 }
