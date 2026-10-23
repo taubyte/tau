@@ -60,9 +60,10 @@ test-cli:
 # test-corpus puts every project under node/dream/projects through `tau build`
 # and `tau ci run` against a universe that builds in containers, so it needs a
 # docker daemon and, for the cloud's restricted build egress, root. The first
-# run on a machine builds the toolchain image the corpus names.
+# run on a machine builds the toolchain image the corpus names. RUN= replaces
+# the -run filter, e.g. RUN='^TestEveryCorpusProjectBuildsBothWays$$/^starter$$' (dollars doubled for make).
 test-corpus:
-	cd tools/tau && GOMEMLIMIT=$(GOMEMLIMIT) go test -exec $(AS_ROOT) -tags 'dreaming docker_integration' -timeout 150m -v $(FLAGS) -run '^(TestEveryCorpusProjectBuildsBothWays|TestTheDomainCorpusBuildsBothWays)$$' ./e2e/
+	cd tools/tau && GOMEMLIMIT=$(GOMEMLIMIT) go test -exec $(AS_ROOT) -tags 'dreaming docker_integration' -timeout 150m -v $(FLAGS) -run '$(if $(RUN),$(RUN),^(TestEveryCorpusProjectBuildsBothWays|TestTheDomainCorpusBuildsBothWays)$$)' ./e2e/
 
 test-dreaming:
 	GOMEMLIMIT=$(GOMEMLIMIT) go test -tags dreaming -p $(DREAM_P) -timeout 30m $(FLAGS) $(DREAM_PKGS)
