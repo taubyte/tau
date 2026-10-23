@@ -443,3 +443,66 @@ func TestNetworkSpecOptsRefusals(t *testing.T) {
 	require.NoError(t, err, "host networking already gives a container its own port")
 	assert.NotEmpty(t, opts)
 }
+
+func TestDaemonStartFailures(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("rootless start is refused to root")
+	}
+	bin := fakeBin(t, map[string]string{"pasta": "", "rootlesskit": "exit 0"})
+	home := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(home, "run"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+
+	start := func(t *testing.T, ctx context.Context, rootlesskit string) error {
+		daemon := newTestDaemon(t)
+		daemon.config.ContainerdPath = "/bin/true"
+		daemon.config.RootlesskitPath = rootlesskit
+		return daemon.Start(ctx)
+	}
+
+	t.Run("data directory cannot be made", func(t *testing.T) {
+		t.Setenv("XDG_DATA_HOME", "/proc/self/nope")
+		assert.ErrorContains(t, start(t, context.Background(), filepath.Join(bin, "rootlesskit")), "failed to create directory")
+	})
+
+	t.Run("wrapper cannot be written", func(t *testing.T) {
+		daemon := newTestDaemon(t)
+		daemon.config.ContainerdPath = "/bin/true"
+		daemon.config.RootlesskitPath = filepath.Join(bin, "rootlesskit")
+		t.Setenv("TMPDIR", "/proc/self/nope")
+		assert.ErrorContains(t, daemon.Start(context.Background()), "failed to create rootlesskit wrapper")
+	})
+
+	t.Run("rootlesskit cannot be executed", func(t *testing.T) {
+		notExecutable := filepath.Join(t.TempDir(), "rootlesskit")
+		require.NoError(t, os.WriteFile(notExecutable, nil, 0o644))
+		assert.ErrorContains(t, start(t, context.Background(), notExecutable), "failed to start containerd via rootlesskit")
+	})
+
+	t.Run("containerd never answers", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+		defer cancel()
+		daemon := newTestDaemon(t)
+		daemon.config.ContainerdPath = "/bin/true"
+		daemon.config.RootlesskitPath = filepath.Join(bin, "rootlesskit")
+
+		assert.ErrorContains(t, daemon.Start(ctx), "containerd failed to start via rootlesskit")
+		assert.NoFileExists(t, daemon.stateFile, "a daemon that never came up leaves no pid file")
+	})
+}
+
+func TestNewDaemonRootlessRuntimeDirectory(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", "/proc/self/nope")
+	_, err := NewDaemon(core.ContainerdConfig{RootlessMode: core.RootlessModeEnabled})
+	assert.ErrorContains(t, err, "failed to create directory")
+
+	runtime := filepath.Join("/run", "user", strconv.Itoa(os.Getuid()))
+	if _, err := os.Stat(runtime); err != nil {
+		t.Skip("no per-user runtime directory here")
+	}
+	t.Setenv("XDG_RUNTIME_DIR", "")
+	daemon, err := NewDaemon(core.ContainerdConfig{RootlessMode: core.RootlessModeEnabled})
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(runtime, "tau", "containerd", "containerd.sock"), daemon.socketPath)
+}
