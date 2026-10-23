@@ -251,32 +251,23 @@ func (r Report) Broken() bool {
 // those regions is left to the cloud, and everything else a cloud would refuse is
 // refused here.
 func (p *Project) Validate(ctx context.Context, environment string) Report {
-	obj, _, err := p.s.Compile(ctx, schema.CompileOptions{Environment: environment})
+	opts := schema.CompileOptions{Environment: environment}
+	deferred, err := p.s.Validate(ctx, opts)
 	if err != nil {
 		return Report{Error: err.Error(), Findings: []session.Note{}}
 	}
 	regions := schema.WithNoRegions()
-	if named := schema.RegionsNamed(obj.Flat()); len(named) > 0 {
-		regions = schema.Preview(named...)
+	if obj, _, err := p.s.Compile(ctx, opts); err == nil {
+		if named := schema.RegionsNamed(obj.Flat()); len(named) > 0 {
+			regions = schema.Preview(named...)
+		}
 	}
 	s, err := schema.NewSessionIn(p.s.FS(), "/", regions)
 	if err != nil {
 		return Report{Error: err.Error(), Findings: []session.Note{}}
 	}
-	return validate(ctx, s, environment)
-}
-
-func validate(ctx context.Context, s *schema.Session, environment string) Report {
-	opts := schema.CompileOptions{Environment: environment}
-	deferred, err := s.Validate(ctx, opts)
-	if err != nil {
-		return Report{Error: err.Error(), Findings: []session.Note{}}
-	}
 	viewed, err := s.Views(ctx, opts)
-	r := Report{Findings: viewed.Notes, Deferred: deferred}
-	if r.Findings == nil {
-		r.Findings = []session.Note{}
-	}
+	r := Report{Findings: append([]session.Note{}, viewed.Notes...), Deferred: deferred}
 	if err != nil && !errors.Is(err, schema.ErrUnviewable) {
 		r.Error = err.Error()
 	}
