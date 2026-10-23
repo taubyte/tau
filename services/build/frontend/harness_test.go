@@ -30,7 +30,7 @@ const (
 	testSecret  = "s3cret"
 	testRepoKey = "github.com/acme/pay"
 	testProject = "proj-1"
-	testJobID   = "mRPa_1vW1rMGzO8xhI_pQOiKYsqLgYdDWvScXW7jknc"
+	testJobID   = "9913daff5bd6d6b306ccef31848fe940e88a62ca8b8187435af49c5d6ee39277"
 	testToken   = "tau_token"
 	testUser    = "user-1"
 	testSHA     = "1111111111111111111111111111111111111111"

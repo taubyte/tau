@@ -2,8 +2,8 @@ package backend
 
 import (
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"regexp"
 
 	"github.com/taubyte/tau/pkg/git/repokey"
@@ -11,14 +11,15 @@ import (
 
 // jobID names the build of one (repository, ref, commit) triple. It is
 // sha256 over a DOMAIN-SEPARATED, LENGTH-FRAMED encoding of the three, in
-// unpadded base64url — 43 characters, alphabet A-Z a-z 0-9 - _.
+// lowercase hex — 64 characters. Hex rather than base64url so no id begins with
+// "-", which a command line reads as a flag.
 //
 // FRAMING IS NOT CEREMONY. Concatenated with a separator, the triple collides:
 //
 //	("github.com/o/n", "refs/heads/x:deadbeef", "c")
 //	("github.com/o/n", "refs/heads/x",          "deadbeef:c")
 //
-// both hash to mRPa_1vW1rMGzO8xhI_pQOiKYsqLgYdDWvScXW7jknc, because a
+// both hash to 9913daff5bd6d6b306ccef31848fe940…, because a
 // variable-length field's edge can move (jobid_test.go runs exactly that pair).
 // A ref is attacker-chosen for any repository an attacker can push to, so the
 // collision is a way to forge another push's job id — and since Enqueue returns
@@ -49,7 +50,7 @@ func jobID(key repokey.Key, ref, commitSHA string) string {
 		h.Write(length[:])
 		h.Write([]byte(field))
 	}
-	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // jobIDDomain separates this hash from every other sha256 in the tree, so that

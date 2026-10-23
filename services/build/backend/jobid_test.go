@@ -3,6 +3,7 @@ package backend
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"strings"
 	"testing"
 
@@ -25,7 +26,7 @@ func mustKey(t *testing.T, s string) repokey.Key {
 func TestASeparatorJoinedTripleCollidesAndTheFramedOneDoesNot(t *testing.T) {
 	naive := func(k, r, s string) string {
 		sum := sha256.Sum256([]byte(k + ":" + r + ":" + s))
-		return base64.RawURLEncoding.EncodeToString(sum[:])
+		return hex.EncodeToString(sum[:])
 	}
 
 	key := mustKey(t, "github.com/o/n")
@@ -34,7 +35,7 @@ func TestASeparatorJoinedTripleCollidesAndTheFramedOneDoesNot(t *testing.T) {
 		naive(key.String(), "refs/heads/x:deadbeef", "c"),
 		naive(key.String(), "refs/heads/x", "deadbeef:c"),
 		"the naive form must be shown to collide, or this test proves nothing")
-	require.Equal(t, "mRPa_1vW1rMGzO8xhI_pQOiKYsqLgYdDWvScXW7jknc",
+	require.Equal(t, "9913daff5bd6d6b306ccef31848fe940e88a62ca8b8187435af49c5d6ee39277",
 		naive(key.String(), "refs/heads/x", "deadbeef:c"))
 
 	require.NotEqual(t,
@@ -94,7 +95,7 @@ func TestAJobIDIsDeterministicAndExactlyOneKeySegment(t *testing.T) {
 
 	id := jobID(key, "refs/heads/main", sha)
 	require.Equal(t, id, jobID(key, "refs/heads/main", sha), "the same push must mint the same id")
-	require.Len(t, id, 43)
+	require.Len(t, id, 64)
 	require.NoError(t, requireJobID(id))
 	require.NotContains(t, id, "/")
 

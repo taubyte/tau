@@ -47,9 +47,9 @@ func errUnavailable(format string, args ...any) error {
 	return connect.NewError(connect.CodeUnavailable, fmt.Errorf(format, args...))
 }
 
-// A job id is 43 unpadded base64url characters — the whole of a sha256 and
+// A job id is 64 lowercase hex characters — the whole of a sha256 and
 // nothing else (jobid.go).
-var jobIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
+var jobIDPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // requireJobID refuses a caller-supplied id that this service could not have
 // minted, BEFORE it reaches a key builder or a single store read.
@@ -57,7 +57,7 @@ var jobIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
 // The id is derived, so it is guessable, and it is therefore never a bearer
 // token: every JobService call authorizes separately. What this closes is the
 // other half — an id is a KEY SEGMENT, and store.go's grammar is stated over
-// ids that are exactly one segment. base64url's alphabet cannot contain "/"
+// ids that are exactly one segment. hex cannot contain "/"
 // and cannot be "." or "..", and a fixed length means no id can be a prefix of
 // another, so no listing under one job's prefix can reach another's rows.
 // The encoding in store.go holds that for any input; this holds it for the

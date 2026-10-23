@@ -376,7 +376,7 @@ func (r jobRecord) encode() ([]byte, error) { return cbor.Marshal(r) }
 // BOTH THE KEY AND THE ID ARE PASSED, because they are two different things:
 // the key is where this came from and belongs in the message, and the id is
 // what it has to agree with. The one caller has both already. An empty id
-// cannot match a job id (errors.go: 43 base64url characters), so "no id at all"
+// cannot match a job id (errors.go: 64 hex characters), so "no id at all"
 // is the same failure and needs no separate branch.
 func decodeJobRecord(key, id string, raw []byte) (jobRecord, error) {
 	var r jobRecord

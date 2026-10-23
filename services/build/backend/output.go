@@ -123,8 +123,8 @@ type runOutput struct {
 // output opens a run's log and registers it so it can be followed.
 //
 // THE FILE IS NAMED FOR THE JOB AND THE ATTEMPT, through the same encoding the
-// key grammar uses (store.go's seg) and for the same reason: the id is 43
-// base64url characters when this package minted it, and this is one of the
+// key grammar uses (store.go's seg) and for the same reason: the id is 64
+// hex characters when this package minted it, and this is one of the
 // places that is true of every id it will ever be handed rather than only of
 // the ones it made. A path segment that cannot contain "/" and cannot be "." or
 // ".." is a filename that stays inside the log directory whatever arrives.

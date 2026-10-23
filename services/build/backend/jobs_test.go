@@ -13,7 +13,7 @@ import (
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
-const unknownJobID = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+const unknownJobID = "0000000000000000000000000000000000000000000000000000000000000000"
 
 // A caller-supplied id is refused for SHAPE before a single store read, so it
 // never reaches a key builder.
@@ -26,7 +26,7 @@ func TestEveryJobRPCRefusesAMalformedIDBeforeReadingAnything(t *testing.T) {
 		"retry":  h.retry,
 	} {
 		t.Run(name, func(t *testing.T) {
-			for _, bad := range []string{"", "../../etc/passwd", strings.Repeat("A", 42), "a/b"} {
+			for _, bad := range []string{"", "../../etc/passwd", strings.Repeat("a", 63), strings.Repeat("A", 64), "-" + strings.Repeat("a", 63), "a/b"} {
 				require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(call(bad)),
 					"%q must be refused", bad)
 			}

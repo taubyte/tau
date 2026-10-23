@@ -330,7 +330,7 @@ func (s *Service) credentials(r *http.Request, name string, bound int) (token, i
 
 // writeJSONString writes one string as a json literal. It goes through
 // encoding/json rather than fmt so that a value which somehow contained a quote
-// could not close it — a job id cannot, being 43 base64url characters, but a
+// could not close it — a job id cannot, being 64 hex characters, but a
 // hand-rolled quote in an internet-facing response is the kind of thing that
 // stays correct only as long as its input never changes.
 //
