@@ -1,7 +1,6 @@
 package artifact_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -10,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,7 +32,8 @@ type hostBackend struct {
 
 	config  *core.ContainerConfig
 	exit    int
-	logs    bytes.Buffer
+	logs    *io.PipeReader
+	exited  chan struct{}
 	removed bool
 }
 
@@ -49,7 +50,14 @@ func (b *hostBackend) Image(string) core.Image                      { return hos
 func (b *hostBackend) HealthCheck(context.Context) error            { return nil }
 func (b *hostBackend) Capabilities() core.BackendCapabilities       { return core.BackendCapabilities{} }
 func (b *hostBackend) Stop(context.Context, core.ContainerID) error { return nil }
-func (b *hostBackend) Wait(context.Context, core.ContainerID) error { return nil }
+func (b *hostBackend) Wait(ctx context.Context, _ core.ContainerID) error {
+	select {
+	case <-b.exited:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
 func (b *hostBackend) Clean(context.Context, time.Duration, string) error {
 	return nil
 }
@@ -73,37 +81,50 @@ func (b *hostBackend) Start(ctx context.Context, _ core.ContainerID) error {
 		return errors.New("the working directory is not a mount")
 	}
 
-	cmd := exec.CommandContext(ctx, b.config.Command[0], b.config.Command[1:]...)
+	// The process runs on its own and its output is framed into a pipe as it
+	// is written, the way a runtime's followed log arrives.
+	cmd := exec.CommandContext(context.WithoutCancel(ctx), b.config.Command[0], b.config.Command[1:]...)
 	cmd.Dir = dir
 	cmd.Env = append([]string{"PATH=" + os.Getenv("PATH")}, b.config.Env...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-
-	err := cmd.Run()
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		b.exit = exit.ExitCode()
-	} else if err != nil {
+	reader, writer := io.Pipe()
+	var mu sync.Mutex
+	cmd.Stdout = &framer{mu: &mu, w: writer, stream: 1}
+	cmd.Stderr = &framer{mu: &mu, w: writer, stream: 2}
+	if err := cmd.Start(); err != nil {
 		return err
 	}
-	frame(&b.logs, 1, stdout.Bytes())
-	frame(&b.logs, 2, stderr.Bytes())
+	b.logs, b.exited = reader, make(chan struct{})
+	go func() {
+		var exit *exec.ExitError
+		if errors.As(cmd.Wait(), &exit) {
+			b.exit = exit.ExitCode()
+		}
+		writer.Close()
+		close(b.exited)
+	}()
 	return nil
 }
 
-func frame(w io.Writer, stream byte, payload []byte) {
-	if len(payload) == 0 {
-		return
-	}
+type framer struct {
+	mu     *sync.Mutex
+	w      io.Writer
+	stream byte
+}
+
+func (f *framer) Write(p []byte) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	var header [8]byte
-	header[0] = stream
-	binary.BigEndian.PutUint32(header[4:], uint32(len(payload)))
-	w.Write(header[:])
-	w.Write(payload)
+	header[0] = f.stream
+	binary.BigEndian.PutUint32(header[4:], uint32(len(p)))
+	if _, err := f.w.Write(header[:]); err != nil {
+		return 0, err
+	}
+	return f.w.Write(p)
 }
 
 func (b *hostBackend) Logs(context.Context, core.ContainerID) (io.ReadCloser, error) {
-	return io.NopCloser(bytes.NewReader(b.logs.Bytes())), nil
+	return b.logs, nil
 }
 
 func (b *hostBackend) Inspect(context.Context, core.ContainerID) (*core.ContainerInfo, error) {
@@ -180,6 +201,78 @@ func TestMakeLogsTheOutputOfAFailingBuild(t *testing.T) {
 	require.ErrorIs(t, err, containers.ErrorExitCode)
 	require.Contains(t, log, "compiling")
 	require.Contains(t, log, "main.go:3: undefined: x")
+}
+
+// signal reports when the log first contains want.
+type signal struct {
+	mu   sync.Mutex
+	buf  strings.Builder
+	want string
+	seen chan struct{}
+}
+
+func (s *signal) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	had := strings.Contains(s.buf.String(), s.want)
+	s.buf.Write(p)
+	if !had && strings.Contains(s.buf.String(), s.want) {
+		close(s.seen)
+	}
+	return len(p), nil
+}
+
+func TestMakeLogsTheBuildWhileItRuns(t *testing.T) {
+	dir := t.TempDir()
+	e, err := artifact.NewEngine(&hostBackend{})
+	require.NoError(t, err)
+
+	log := &signal{want: "compiling", seen: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() {
+		product, err := e.Make(t.Context(), artifact.Spec{
+			Image:    "busybox:1.36",
+			Dir:      dir,
+			Commands: []string{"echo compiling", "while [ ! -f release ]; do sleep 0.02; done", "echo linked", "printf built > out"},
+			Output:   "out",
+		}, log)
+		if err == nil {
+			product.Close()
+		}
+		done <- err
+	}()
+
+	select {
+	case <-log.seen:
+	case err := <-done:
+		t.Fatalf("the build ended before its first line was logged: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the first line must reach the log while the build is still running")
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "release"), nil, 0o644))
+	require.NoError(t, <-done)
+	require.Contains(t, log.buf.String(), "linked")
+}
+
+type brokenLog struct{}
+
+func (brokenLog) Write([]byte) (int, error) { return 0, errors.New("log full") }
+
+func TestMakeSurvivesALogThatStopsTakingBytes(t *testing.T) {
+	e, err := artifact.NewEngine(&hostBackend{})
+	require.NoError(t, err)
+
+	product, err := e.Make(t.Context(), artifact.Spec{
+		Image:    "busybox:1.36",
+		Dir:      t.TempDir(),
+		Commands: []string{"echo noisy", "printf built > out"},
+		Output:   "out",
+	}, brokenLog{})
+	require.NoError(t, err, "a log that fails says nothing about the build")
+	body, err := io.ReadAll(product)
+	product.Close()
+	require.NoError(t, err)
+	require.Equal(t, "built", string(body))
 }
 
 func TestMakeWithNoVariablesSetsNoEnvironment(t *testing.T) {

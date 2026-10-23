@@ -57,6 +57,7 @@ func Run(t *testing.T, b Backend) {
 	t.Run("BindMount", func(t *testing.T) { testBindMount(t, b) })
 	t.Run("ImageDefaults", func(t *testing.T) { testImageDefaults(t, b) })
 	t.Run("LargeOutput", func(t *testing.T) { testLargeOutput(t, b) })
+	t.Run("LogsFollowAWorkingContainer", func(t *testing.T) { testLogsFollow(t, b) })
 	t.Run("RemoveIsFinal", func(t *testing.T) { testRemoveIsFinal(t, b) })
 	t.Run("CleanKeepsRecentImages", func(t *testing.T) { testCleanKeepsRecentImages(t, b) })
 	t.Run("BuildFromDockerfile", func(t *testing.T) { testBuildFromDockerfile(t, b) })
@@ -223,6 +224,55 @@ func testLargeOutput(t *testing.T, b Backend) {
 
 	assert.Equal(t, lines, strings.Count(got.stdout, "\n"), "no output may be lost")
 	assert.Contains(t, got.stdout, fmt.Sprintf("line-%d\n", lines-1), "the last line must be present")
+}
+
+func testLogsFollow(t *testing.T, b Backend) {
+	// A build's output has to reach whoever watches it while the build runs,
+	// not when it ends. The container says something, then keeps working; the
+	// first line must be readable while it is still running, and the stream
+	// must then end on its own once it exits.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	id, err := b.Backend.Create(ctx, &core.ContainerConfig{
+		Image:   b.Image,
+		Command: []string{"/bin/sh", "-c", "echo early; sleep 4; echo late"},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		removeCtx, removeCancel := context.WithTimeout(context.Background(), time.Minute)
+		defer removeCancel()
+		b.Backend.Remove(removeCtx, id)
+	})
+
+	require.NoError(t, b.Backend.Start(ctx, id))
+
+	logs, err := b.Backend.Logs(ctx, id)
+	require.NoError(t, err)
+	defer logs.Close()
+
+	stdout, writer := io.Pipe()
+	go func() { writer.CloseWithError(demuxTo(writer, logs)) }()
+
+	first := make([]byte, len("early\n"))
+	_, err = io.ReadFull(stdout, first)
+	require.NoError(t, err)
+	assert.Equal(t, "early\n", string(first))
+
+	info, err := b.Backend.Inspect(ctx, id)
+	require.NoError(t, err)
+	assert.Equal(t, "running", info.Status, "the first line must arrive before the container exits")
+
+	rest, err := io.ReadAll(stdout)
+	require.NoError(t, err, "the stream must end cleanly when the container exits")
+	assert.Equal(t, "late\n", string(rest))
+
+	require.NoError(t, b.Backend.Wait(ctx, id))
+}
+
+func demuxTo(w io.Writer, muxed io.Reader) error {
+	_, err := stdcopy.StdCopy(w, w, muxed)
+	return err
 }
 
 func testRemoveIsFinal(t *testing.T, b Backend) {

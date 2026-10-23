@@ -620,7 +620,7 @@ func (b *DockerBackend) Logs(ctx context.Context, id core.ContainerID) (io.ReadC
 	logs, err := b.client.ContainerLogs(ctx, dockerID, client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
-		Follow:     false,
+		Follow:     true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get logs for container %s: %w", id, err)

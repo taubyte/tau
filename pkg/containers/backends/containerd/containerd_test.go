@@ -359,12 +359,34 @@ func TestLogs(t *testing.T) {
 		containerStdout.Close()
 		containerStderr.Close()
 
-		collected, err := tio.collected(context.Background())
+		collected, err := io.ReadAll(&follower{ctx: context.Background(), t: tio})
 		require.NoError(t, err)
 		assert.NotEmpty(t, collected)
 	})
 
-	t.Run("collecting respects context", func(t *testing.T) {
+	t.Run("output arrives while the streams are still open", func(t *testing.T) {
+		stdout, containerStdout := io.Pipe()
+		defer containerStdout.Close()
+
+		tio := &taskIO{stdout: stdout}
+		tio.drain()
+		backend := &ContainerdBackend{client: &Client{}, tasks: map[core.ContainerID]*taskIO{"c": tio}}
+
+		logs, err := backend.Logs(context.Background(), "c")
+		require.NoError(t, err)
+		defer logs.Close()
+
+		go containerStdout.Write([]byte("early\n"))
+
+		var out bytes.Buffer
+		header := make([]byte, 8+len("early\n"))
+		_, err = io.ReadFull(logs, header)
+		require.NoError(t, err)
+		out.Write(header[8:])
+		assert.Equal(t, "early\n", out.String())
+	})
+
+	t.Run("following respects context", func(t *testing.T) {
 		// A container still running has streams that have not ended; the caller
 		// must get its context back rather than hang.
 		stdout, open := io.Pipe()
@@ -376,7 +398,7 @@ func TestLogs(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		defer cancel()
 
-		_, err := tio.collected(ctx)
+		_, err := io.ReadAll(&follower{ctx: ctx, t: tio})
 		assert.ErrorIs(t, err, context.DeadlineExceeded)
 	})
 

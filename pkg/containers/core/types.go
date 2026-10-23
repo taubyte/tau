@@ -42,7 +42,9 @@ type Backend interface {
 	// itself fails.
 	Wait(ctx context.Context, id ContainerID) error
 	// Logs returns the container's output as a docker-multiplexed stream, to be
-	// demultiplexed with stdcopy. Callers must read it before removing the container.
+	// demultiplexed with stdcopy. It follows: output arrives as the container
+	// writes it, from the first byte, and the stream ends when the container
+	// exits. Callers must read it before removing the container.
 	Logs(ctx context.Context, id ContainerID) (io.ReadCloser, error)
 	Inspect(ctx context.Context, id ContainerID) (*ContainerInfo, error)
 

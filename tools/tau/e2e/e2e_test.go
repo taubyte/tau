@@ -75,7 +75,7 @@ const e2eCloud = "tau.e2e.test"
 // the others only a build frontend. The fake forge serves git over https and
 // ssh, and every node pins its ssh host key, so a build confirms and clones
 // over the deploy key the CLI installed.
-func fleet(t *testing.T, f *fake.Served) (front, otherFront string) {
+func fleet(t *testing.T, f *fake.Served, opts ...node.Option) (front, otherFront string) {
 	t.Helper()
 	var err error
 	forges, err = f.Registry(forge.Policy{AllowInsecureCallback: true})
@@ -88,7 +88,7 @@ func fleet(t *testing.T, f *fake.Served) (front, otherFront string) {
 
 	u, err := dream.Start(t.Context(), t.Name(), dream.Config{
 		Copies:  3,
-		Options: []node.Option{node.WithForges(forges)},
+		Options: append([]node.Option{node.WithForges(forges)}, opts...),
 		Secrets: []*secretsv2.InitSecret{adminSecret},
 		Configure: func(index int, c *node.Config) {
 			c.Gateway.CloudFqdn = e2eCloud

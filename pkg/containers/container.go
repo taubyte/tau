@@ -3,6 +3,7 @@ package containers
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -13,6 +14,32 @@ import (
 // can inspect build output (e.g. compiler errors); that status comes back as an
 // error wrapping ErrorExitCode.
 func (c *Container) Run(ctx context.Context) (*MuxedReadCloser, error) {
+	var buf bytes.Buffer
+	err := c.run(ctx, func(stream io.Reader) error {
+		_, err := io.Copy(&buf, stream)
+		return err
+	})
+	if err != nil && !errors.Is(err, ErrorExitCode) {
+		return nil, err
+	}
+	return &MuxedReadCloser{reader: io.NopCloser(&buf)}, err
+}
+
+// Stream starts the container and writes its output to stdout and stderr as
+// the container produces it, returning once it has exited and all of its
+// output is written. A non-zero exit comes back as an error wrapping
+// ErrorExitCode, after the output that led to it.
+func (c *Container) Stream(ctx context.Context, stdout, stderr io.Writer) error {
+	return c.run(ctx, func(stream io.Reader) error {
+		return demux(stdout, stderr, stream)
+	})
+}
+
+// run starts the container and hands consume its log stream while it runs.
+// The stream is read to the end before the container is removed, because
+// removing a container cuts a stream still being read from it and silently
+// truncates the output.
+func (c *Container) run(ctx context.Context, consume func(io.Reader) error) error {
 	imageName := ""
 	if c.image != nil {
 		imageName = c.image.image
@@ -32,21 +59,26 @@ func (c *Container) Run(ctx context.Context) (*MuxedReadCloser, error) {
 	}()
 
 	if err := c.backend.Start(ctx, c.id); err != nil {
-		return nil, errorContainerStart(c.id, imageName, err)
+		return errorContainerStart(c.id, imageName, err)
 	}
 
+	stream, err := c.backend.Logs(ctx, c.id)
+	if err != nil {
+		return errorContainerLogs(c.id, imageName, err)
+	}
+	consumed := consume(stream)
+	stream.Close()
+
 	if err := c.Wait(ctx); err != nil {
-		return nil, err
+		return err
+	}
+	if consumed != nil {
+		return errorContainerLogs(c.id, imageName, consumed)
 	}
 
 	info, err := c.backend.Inspect(ctx, c.id)
 	if err != nil {
-		return nil, errorContainerInspect(c.id, imageName, err)
-	}
-
-	logs, err := c.readLogs(ctx)
-	if err != nil {
-		return nil, errorContainerLogs(c.id, imageName, err)
+		return errorContainerInspect(c.id, imageName, err)
 	}
 
 	if err := c.Cleanup(ctx); err == nil {
@@ -54,30 +86,9 @@ func (c *Container) Run(ctx context.Context) (*MuxedReadCloser, error) {
 	}
 
 	if info.ExitCode != 0 {
-		return logs, errorContainerExitCode(c.id, imageName, info.ExitCode)
+		return errorContainerExitCode(c.id, imageName, info.ExitCode)
 	}
-
-	return logs, nil
-}
-
-// readLogs drains the container's log stream. It is read to the end before Run
-// removes the container, because removing a container cuts a stream still being
-// read from it and silently truncates the build output.
-//
-// ponytail: whole log held in memory; spill to a temp file if build logs ever outgrow that.
-func (c *Container) readLogs(ctx context.Context) (*MuxedReadCloser, error) {
-	stream, err := c.backend.Logs(ctx, c.id)
-	if err != nil {
-		return nil, err
-	}
-	defer stream.Close()
-
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, stream); err != nil {
-		return nil, err
-	}
-
-	return &MuxedReadCloser{reader: io.NopCloser(&buf)}, nil
+	return nil
 }
 
 // Wait calls the ContainerWait method for the container, and returns once a response has been received.

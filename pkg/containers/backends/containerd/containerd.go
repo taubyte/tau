@@ -3,7 +3,6 @@
 package containerd
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -14,7 +13,6 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -53,12 +51,15 @@ type taskIO struct {
 	io       cio.IO        // IO instance for cleanup
 
 	// logs holds the container's output, docker-framed, collected as it is
-	// produced. drained closes once both streams have hit EOF.
+	// produced. grew is closed and replaced on every append, and done closes
+	// once both streams have hit EOF, so a follower blocks on either.
 	//
-	// ponytail: whole output in memory; spill to fifoDir if a workload ever
+	// The whole output is held in memory; spill to fifoDir if a workload ever
 	// outgrows that.
 	logsMu  sync.Mutex
 	logs    []byte
+	grew    chan struct{}
+	done    chan struct{}
 	drained sync.WaitGroup
 }
 
@@ -69,6 +70,8 @@ type taskIO struct {
 // reads. Collecting only when Logs is called therefore wedges any container
 // that says more than that, which is every real build.
 func (t *taskIO) drain() {
+	t.grew = make(chan struct{})
+	t.done = make(chan struct{})
 	for _, s := range []struct {
 		reader io.Reader
 		stream byte
@@ -87,6 +90,10 @@ func (t *taskIO) drain() {
 			io.Copy(&streamFramer{mu: &t.logsMu, w: (*logSink)(t), stream: stream}, reader)
 		}(s.reader, s.stream)
 	}
+	go func() {
+		t.drained.Wait()
+		close(t.done)
+	}()
 }
 
 // logSink appends to a taskIO's collected output. The framer already holds
@@ -95,27 +102,44 @@ type logSink taskIO
 
 func (s *logSink) Write(p []byte) (int, error) {
 	s.logs = append(s.logs, p...)
+	close(s.grew)
+	s.grew = make(chan struct{})
 	return len(p), nil
 }
 
-// collected returns the output gathered so far, once both streams have ended.
-func (t *taskIO) collected(ctx context.Context) ([]byte, error) {
-	done := make(chan struct{})
-	go func() {
-		t.drained.Wait()
-		close(done)
-	}()
+// follower reads a task's output from the start, blocking at the end of what
+// has arrived until more does or both streams end.
+type follower struct {
+	ctx    context.Context
+	t      *taskIO
+	offset int
+}
 
-	select {
-	case <-done:
-	case <-ctx.Done():
-		return nil, ctx.Err()
+func (f *follower) Read(p []byte) (int, error) {
+	for {
+		f.t.logsMu.Lock()
+		if f.offset < len(f.t.logs) {
+			n := copy(p, f.t.logs[f.offset:])
+			f.offset += n
+			f.t.logsMu.Unlock()
+			return n, nil
+		}
+		grew := f.t.grew
+		f.t.logsMu.Unlock()
+
+		select {
+		case <-grew:
+		case <-f.t.done:
+			f.t.logsMu.Lock()
+			more := f.offset < len(f.t.logs)
+			f.t.logsMu.Unlock()
+			if !more {
+				return 0, io.EOF
+			}
+		case <-f.ctx.Done():
+			return 0, f.ctx.Err()
+		}
 	}
-
-	t.logsMu.Lock()
-	defer t.logsMu.Unlock()
-
-	return slices.Clone(t.logs), nil
 }
 
 // ContainerdBackend implements the core.Backend interface for containerd
@@ -1167,15 +1191,7 @@ func (b *ContainerdBackend) Logs(ctx context.Context, id core.ContainerID) (io.R
 		return nil, fmt.Errorf("container %s not found or not started", id)
 	}
 
-	// The output was collected while the container ran; this waits for the
-	// streams to end, which they have by the time a caller waits and then asks
-	// for logs.
-	collected, err := tio.collected(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to collect logs for container %s: %w", id, err)
-	}
-
-	return io.NopCloser(bytes.NewReader(collected)), nil
+	return io.NopCloser(&follower{ctx: ctx, t: tio}), nil
 }
 
 // Docker stream framing: every write is prefixed with an 8-byte header of

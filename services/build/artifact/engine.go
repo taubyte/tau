@@ -34,13 +34,11 @@ import (
 // build that can deploy itself. Only `tau build`, on the developer's own
 // machine, runs with OpenEgress.
 //
-// # What the log does, and does not, do
+// # The log is the build's output as it is written
 //
-// The container's output arrives when the build ENDS, because that is what
-// pkg/containers offers — Run starts, waits and then hands over the logs. A
-// build being watched live therefore goes quiet for the length of the build and
-// then prints all of it. Closing that means streaming logs while a container
-// runs, which is a change in pkg/containers rather than here.
+// stdout and stderr go to the job's log together, in the order the build wrote
+// them, while the container runs — so a build being watched prints as it goes,
+// and a failed build's output is in the log before its exit code is.
 
 // mount is where the checkout appears inside the build.
 //
@@ -122,24 +120,30 @@ func (c *Containers) Make(ctx context.Context, spec Spec, log io.Writer) (io.Rea
 		return nil, err
 	}
 
-	output, err := container.Run(ctx)
-	// THE BUILD'S OWN OUTPUT IS THE JOB'S LOG, stdout and stderr together —
-	// which is what somebody reading a build wants, in the order the build
-	// wrote them. Run hands the output over with an exit-code error too, and
-	// a failed build's output is the part worth reading, so it is copied
-	// before the error is returned. A copy that fails is not checked: it
-	// says nothing about whether the build did.
-	if output != nil {
-		combined := output.Combined()
-		io.Copy(log, combined)
-		combined.Close()
-		output.Close()
-	}
-	if err != nil {
+	// A log that stops taking bytes says nothing about whether the build
+	// worked, so it does not fail the build: the output past that point is
+	// dropped and the container runs to its own end.
+	sink := &forgiving{w: log}
+	if err := container.Stream(ctx, sink, sink); err != nil {
 		return nil, err
 	}
 
 	return collect(joinWithin(spec.Dir, spec.Path), spec.Output)
+}
+
+// forgiving passes writes through until one fails, then swallows the rest.
+type forgiving struct {
+	w      io.Writer
+	failed bool
+}
+
+func (f *forgiving) Write(p []byte) (int, error) {
+	if !f.failed {
+		if _, err := f.w.Write(p); err != nil {
+			f.failed = true
+		}
+	}
+	return len(p), nil
 }
 
 // environment is what the build sees: its variables and its secrets, alike.

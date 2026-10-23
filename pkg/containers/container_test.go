@@ -159,7 +159,85 @@ func TestRunReadsLogsBeforeRemoving(t *testing.T) {
 	require.NoError(t, err, "logs must be complete before the container is removed")
 	assert.Equal(t, "streamed output\n", string(out))
 
-	assert.Equal(t, []string{"start", "wait", "inspect", "logs", "remove"}, backend.calls)
+	assert.Equal(t, []string{"start", "logs", "wait", "inspect", "remove"}, backend.calls)
+}
+
+// liveStream hands out one frame, then blocks until released: a container
+// still running after it has said something.
+type liveStream struct {
+	first   *strings.Reader
+	release chan struct{}
+}
+
+func (l *liveStream) Read(p []byte) (int, error) {
+	if l.first.Len() > 0 {
+		return l.first.Read(p)
+	}
+	<-l.release
+	return 0, io.EOF
+}
+
+func (l *liveStream) Close() error { return nil }
+
+// signalWriter reports the first write it sees.
+type signalWriter struct {
+	once sync.Once
+	seen chan string
+}
+
+func (w *signalWriter) Write(p []byte) (int, error) {
+	w.once.Do(func() { w.seen <- string(p) })
+	return len(p), nil
+}
+
+func TestStreamDeliversOutputWhileTheContainerRuns(t *testing.T) {
+	live := &liveStream{first: strings.NewReader(framed("compiling\n")), release: make(chan struct{})}
+	backend := &fakeBackend{logStream: live}
+
+	out := &signalWriter{seen: make(chan string, 1)}
+	done := make(chan error, 1)
+	go func() { done <- newContainer(backend).Stream(context.Background(), out, io.Discard) }()
+
+	select {
+	case got := <-out.seen:
+		assert.Equal(t, "compiling\n", got)
+	case <-time.After(5 * time.Second):
+		t.Fatal("output must arrive before the container exits")
+	}
+	select {
+	case <-done:
+		t.Fatal("Stream must not return while the container is running")
+	default:
+	}
+
+	close(live.release)
+	require.NoError(t, <-done)
+	assert.Equal(t, []string{"start", "logs", "wait", "inspect", "remove"}, backend.calls)
+}
+
+func TestStreamNonZeroExitKeepsOutput(t *testing.T) {
+	backend := &fakeBackend{exitCode: 3, stdout: "out\n", stderr: "boom\n"}
+
+	var stdout, stderr bytes.Buffer
+	err := newContainer(backend).Stream(context.Background(), &stdout, &stderr)
+
+	assert.ErrorIs(t, err, ErrorExitCode)
+	assert.Equal(t, "out\n", stdout.String())
+	assert.Equal(t, "boom\n", stderr.String())
+}
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("disk full") }
+
+func TestStreamWriterFailureIsALogsError(t *testing.T) {
+	backend := &fakeBackend{stdout: "out\n"}
+
+	err := newContainer(backend).Stream(context.Background(), failingWriter{}, failingWriter{})
+
+	assert.ErrorIs(t, err, ErrorContainerLogs)
+	assert.Contains(t, backend.calls, "wait", "the container is still waited on and removed")
+	assert.True(t, backend.removed)
 }
 
 func TestRunStartFailure(t *testing.T) {

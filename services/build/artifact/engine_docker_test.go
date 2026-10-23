@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -125,4 +126,39 @@ func TestARealBuildSeesItsVariables(t *testing.T) {
 	body, err := io.ReadAll(product)
 	require.NoError(t, err)
 	require.Equal(t, "github.com/acme/*", string(body))
+}
+
+// A REAL BUILD IS LOGGED WHILE IT RUNS: its first line reaches the log while
+// the container is still waiting for the test to let it finish.
+func TestARealBuildLogsWhileItRuns(t *testing.T) {
+	e, err := artifact.NewEngine(nil)
+	require.NoError(t, err)
+
+	dir := t.TempDir()
+	log := &signal{want: "compiling", seen: make(chan struct{})}
+	done := make(chan error, 1)
+	go func() {
+		product, err := e.Make(t.Context(), artifact.Spec{
+			Image:    "busybox:1.36",
+			Dir:      dir,
+			Commands: []string{"echo compiling", "while [ ! -f release ]; do sleep 0.1; done", "echo linked", "printf built > out"},
+			Output:   "out",
+		}, log)
+		if err == nil {
+			product.Close()
+		}
+		done <- err
+	}()
+
+	select {
+	case <-log.seen:
+	case err := <-done:
+		needsEgressRestriction(t, err)
+		t.Fatalf("the build ended before its first line was logged: %v", err)
+	case <-time.After(2 * time.Minute):
+		t.Fatal("the first line must reach the log while the container runs")
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "release"), nil, 0o644))
+	require.NoError(t, <-done)
+	require.Contains(t, log.buf.String(), "linked")
 }
