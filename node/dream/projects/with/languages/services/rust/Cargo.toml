@@ -1,0 +1,44 @@
+[package]
+name = "rusty"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen-rt = { version = "0.39", features = ["bitflags"] }
+
+[package.metadata.component]
+package = "taubyte:handler"
+
+[package.metadata.component.target]
+# tau's world, at the repository root the project is pushed as.
+path = "../../wit"
+world = "handler"
+
+[package.metadata.component.target.dependencies]
+"taubyte:gateway-transformer" = { path = "../../wit/deps/taubyte-gateway-transformer" }
+"taubyte:gateway-router" = { path = "../../wit/deps/taubyte-gateway-router" }
+"taubyte:proxy-transformer" = { path = "../../wit/deps/taubyte-proxy-transformer" }
+"taubyte:proxy-router" = { path = "../../wit/deps/taubyte-proxy-router" }
+"taubyte:bus" = { path = "../../wit/deps/taubyte-bus" }
+"taubyte:cache" = { path = "../../wit/deps/taubyte-cache" }
+"taubyte:channel" = { path = "../../wit/deps/taubyte-channel" }
+"taubyte:document" = { path = "../../wit/deps/taubyte-document" }
+"taubyte:kv" = { path = "../../wit/deps/taubyte-kv" }
+"taubyte:log" = { path = "../../wit/deps/taubyte-log" }
+"taubyte:model" = { path = "../../wit/deps/taubyte-model" }
+"taubyte:queue" = { path = "../../wit/deps/taubyte-queue" }
+"taubyte:secret" = { path = "../../wit/deps/taubyte-secret" }
+"taubyte:workload" = { path = "../../wit/deps/taubyte-workload" }
+"taubyte:sql" = { path = "../../wit/deps/taubyte-sql" }
+"taubyte:storage" = { path = "../../wit/deps/taubyte-storage" }
+"taubyte:stream" = { path = "../../wit/deps/taubyte-stream" }
+"taubyte:vector" = { path = "../../wit/deps/taubyte-vector" }
+"taubyte:workflow" = { path = "../../wit/deps/taubyte-workflow" }
+
+[profile.release]
+opt-level = "s"
+strip = true

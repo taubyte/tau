@@ -1,0 +1,12 @@
+id: QmYUTt745KfudLackgxFptAvUWyJAL5NJVyRyNReKtpSrb
+description: answers in TypeScript, compiled by tsc and componentized by componentize-js
+source: services/typescript
+build:
+    commands:
+        image: ghcr.io/samyfodil/wazy-build-js:1.39.0-cjs0.23.0-node22.23.4
+        run: tsc --target es2022 --module es2022 --lib es2022,dom --outDir out function.ts && jco componentize out/function.js --wit ../../wit --world-name handler -o function.wasm
+        output: function.wasm
+execution:
+    call: handle
+    timeout: 15s
+    memory: 128MiB

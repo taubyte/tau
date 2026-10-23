@@ -1,0 +1,13 @@
+id: QmTsEMKa2S4zo7926XaJvkRC28WBT37D3cE3HvJaCanp2N
+description: answers in Rust, through cargo-component
+source: services/rust
+build:
+    commands:
+        image: ghcr.io/samyfodil/wazy-build-rust:1.99.1-cc0.21.1
+        install: cargo fetch --locked
+        run: cargo component build --release --locked --target wasm32-wasip2
+        output: target/wasm32-wasip1/release/rusty.wasm
+execution:
+    call: handle
+    timeout: 15s
+    memory: 128MiB

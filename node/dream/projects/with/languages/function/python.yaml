@@ -1,0 +1,12 @@
+id: QmPXXFq176W5Ezj7s3NmgswRornuQC3ijo1FAq5rsg4XUc
+description: answers in Python, through componentize-py
+source: services/python
+build:
+    commands:
+        image: ghcr.io/samyfodil/wazy-build-python:0.25.1-py3.13.9
+        run: componentize-py -d ../../wit -w handler componentize function -o function.wasm
+        output: function.wasm
+execution:
+    call: handle
+    timeout: 15s
+    memory: 128MiB

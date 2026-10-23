@@ -1,0 +1,6 @@
+id: QmVf1DrBjMgWvgNR65aBth8ZtPeA9YscrB6CRx3gzheEPM
+name: languages
+description: one function per language the published build images compile to tau's world, each built from source and each answering with its language's name
+environments:
+    prod:
+        branches: ["*"]

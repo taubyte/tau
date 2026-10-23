@@ -4,7 +4,7 @@ implements: dns-resolver
 source: services/warren
 build:
     commands:
-        image: tau-fixtures/rust-component:0.21.1
+        image: ghcr.io/samyfodil/wazy-build-rust:1.99.1-cc0.21.1
         install: cargo fetch --locked
         run: cargo component build --release --locked --target wasm32-wasip2
         output: target/wasm32-wasip1/release/warren.wasm

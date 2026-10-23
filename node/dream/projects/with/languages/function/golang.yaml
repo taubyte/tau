@@ -1,0 +1,12 @@
+id: QmcqDUXqCb6dQSD3ssZyb6Q6mrqZrLnX7tkK4mCWPXmk7C
+description: answers in Go, through the standard toolchain and the WASI reactor adapter
+source: services/golang
+build:
+    commands:
+        image: ghcr.io/samyfodil/wazy-build-go:1.26.10
+        run: sh build.sh
+        output: function.wasm
+execution:
+    call: handle
+    timeout: 15s
+    memory: 128MiB

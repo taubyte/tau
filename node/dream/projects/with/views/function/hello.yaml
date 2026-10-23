@@ -3,7 +3,7 @@ description: pinned to region-1, so only region-1's view holds it - and the gate
 source: services/hello
 build:
     commands:
-        image: tau-fixtures/rust-component:0.21.1
+        image: ghcr.io/samyfodil/wazy-build-rust:1.99.1-cc0.21.1
         install: cargo fetch --locked
         run: cargo component build --release --locked --target wasm32-wasip2
         output: target/wasm32-wasip1/release/handler.wasm

@@ -1,0 +1,12 @@
+id: QmRU8AbmfH5aRkC5LebWmsbZGFGuqf332kUJKWgB3LJHeD
+description: answers in C, with wit-bindgen's C bindings and wasi-sdk
+source: services/c
+build:
+    commands:
+        image: ghcr.io/samyfodil/wazy-build-c:34.0
+        run: wit-bindgen c --out-dir gen --world handler ../../wit && clang --target=wasm32-wasip2 -O2 -mexec-model=reactor function.c gen/handler.c gen/handler_component_type.o -o function.wasm
+        output: function.wasm
+execution:
+    call: handle
+    timeout: 15s
+    memory: 128MiB

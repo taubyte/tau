@@ -1,0 +1,13 @@
+id: Qme5Gb2ZU2s7gMukCsTqG1mZGGjERGdpzRWXpVkixWCUY1
+description: answers in Go, through TinyGo and wit-bindgen-go
+source: services/tinygo
+build:
+    commands:
+        image: ghcr.io/samyfodil/wazy-build-tinygo:0.43.0-go1.26.10
+        install: go mod download
+        run: sh build.sh
+        output: function.wasm
+execution:
+    call: handle
+    timeout: 15s
+    memory: 128MiB

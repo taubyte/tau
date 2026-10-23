@@ -23,7 +23,6 @@ import (
 
 	"github.com/taubyte/tau/node"
 	"github.com/taubyte/tau/node/dream"
-	"github.com/taubyte/tau/pkg/containers"
 	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
 	"github.com/taubyte/tau/pkg/git/repokey"
@@ -45,13 +44,11 @@ import (
 // must build the same thing: the same recipe, the same artifact.
 //
 // THE SOURCES ARE THE FIXTURE CRATES. A corpus project names `services/<x>` and
-// the toolchain image; the repository each project is pushed as is the
+// a published build image; the repository each project is pushed as is the
 // project's documents with those crates under services/ and the world they
-// build against at wit/ — so what runs is what the toolchain made from source,
-// on whichever side built it.
-
-// toolchain is the image the corpus builds with (pkg/invoke/wasm/fixtures/toolchain).
-const toolchain = "tau-fixtures/rust-component:0.21.1"
+// build against at wit/ — so what runs is what the image made from source, on
+// whichever side built it. A project that carries its own services/ (one in a
+// language other than the fixtures') is pushed with them as they are.
 
 // crateOf is the fixture crate a source path is: by its own name, unless named here.
 var crateOf = map[string]string{"hello": "handler", "keeper": "cacher", "reader": "cacher"}
@@ -61,17 +58,6 @@ func repoRoot(t *testing.T) string {
 	root, err := filepath.Abs(filepath.Join("..", "..", ".."))
 	require.NoError(t, err)
 	return root
-}
-
-// ensureToolchain builds the toolchain image on this machine's daemon unless it
-// already holds it.
-func ensureToolchain(t *testing.T) {
-	t.Helper()
-	client, err := containers.New()
-	require.NoError(t, err)
-	_, err = client.Image(t.Context(), toolchain,
-		containers.Dockerfile(filepath.Join(repoRoot(t), "pkg", "invoke", "wasm", "fixtures", "toolchain", "Dockerfile")))
-	require.NoError(t, err, "the corpus toolchain image")
 }
 
 var sourceLine = regexp.MustCompile(`(?m)^\s*source: (services/[a-z_]+)\s*$`)
@@ -222,6 +208,9 @@ type corpusCase struct {
 	// region is the one region the universe is, for a project that says where
 	// it runs; empty is a cloud of one unnamed region.
 	region string
+	// from writes the project somewhere other than node/dream/projects and
+	// answers where; nil assembles the corpus project the name names.
+	from func(t *testing.T) string
 }
 
 func (c corpusCase) repo() string {
@@ -300,8 +289,6 @@ func pushed(t *testing.T, f *fake.Served, r codeRepo) {
 
 // TestEveryCorpusProjectBuildsBothWays.
 func TestEveryCorpusProjectBuildsBothWays(t *testing.T) {
-	ensureToolchain(t)
-
 	for _, c := range corpus {
 		name := c.name
 		if c.region != "" {
@@ -315,6 +302,12 @@ var corpus = []corpusCase{
 	{name: "with/function", probes: []probe{
 		{host: "hello.example.com", method: http.MethodGet, path: "/", status: 200},
 		{host: "hello.example.com", method: http.MethodPost, path: "/orders", status: 201},
+	}},
+	{name: "with/languages", probes: languageProbes},
+	// THE STARTER is what `tau init` writes, and nothing but that: it builds
+	// from the source init ships and answers.
+	{name: "starter", from: initialised, probes: []probe{
+		{function: "hello", method: http.MethodGet, path: "/orders", status: 200, answer: "hello from /orders\n"},
 	}},
 	{name: "with/component", probes: []probe{
 		{host: "shared.example.com", method: http.MethodGet, path: "/", status: 200},
@@ -395,6 +388,29 @@ var corpus = []corpusCase{
 	{name: "refused/views/across", region: "region-2", refused: `reaches cache/sessions_r1, which is not placed in "region-2" where this is`},
 }
 
+// languageProbes asks every function of with/languages, each built by the
+// published image for its language, and expects its language's name back with
+// what it was sent.
+var languageProbes = func() []probe {
+	var out []probe
+	for _, l := range [][2]string{
+		{"rust", "rust"}, {"c", "c"}, {"cpp", "c++"}, {"python", "python"}, {"js", "js"},
+		{"typescript", "typescript"}, {"csharp", "csharp"}, {"tinygo", "tinygo"}, {"golang", "go"},
+	} {
+		out = append(out, probe{function: l[0], method: http.MethodPost, path: "/echo", body: "ping", status: 200, answer: l[1] + " POST /echo ping"})
+	}
+	return out
+}()
+
+// initialised is a project as `tau init` writes it.
+func initialised(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	r := tau("init", "starter", "--dir", dir)
+	require.Equal(t, 0, r.code, "tau init\nstdout: %s\nstderr: %s", r.stdout, r.stderr)
+	return dir
+}
+
 type built struct {
 	Built []struct {
 		Environment, Kind, Name, ID, Recipe string
@@ -441,7 +457,12 @@ func bothWays(t *testing.T, c corpusCase) {
 func (u *underTest) bothWays(t *testing.T, c corpusCase) {
 	f, serving := u.f, u.serving
 
-	work := assemble(t, c.name)
+	var work string
+	if c.from != nil {
+		work = c.from(t)
+	} else {
+		work = assemble(t, c.name)
+	}
 	code := codeRepos(t, work, f)
 	configRepo := repokey.Key{Host: f.Host(), Owner: fake.Namespace, Name: c.repo()}
 	args := []string{"link", "--create", "--push", "--dir", work, "--config-repo", configRepo.String(), "-o", "json"}
@@ -668,8 +689,6 @@ func (z *txtZone) LookupTXT(_ context.Context, name string) ([]string, error) {
 // the owner's child zone deploys under the proven parent, and the second
 // project's own proof of that child is refused anyway.
 func TestTheDomainCorpusBuildsBothWays(t *testing.T) {
-	ensureToolchain(t)
-
 	dns := &txtZone{m: map[string][]string{}}
 	u := signedIn(t, func(c *node.Config) {
 		c.CM.Domains.Trusted = false
