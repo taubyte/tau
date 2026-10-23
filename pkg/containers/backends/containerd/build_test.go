@@ -322,4 +322,12 @@ func TestRestrictedResources(t *testing.T) {
 		Resources: &core.ResourceLimits{PIDs: 7},
 	}
 	assert.Equal(t, int64(7), restrictedResources(chosen).PIDs, "a caller's own limit wins")
+
+	memoryOnly := &core.ContainerConfig{
+		Network:   &core.NetworkConfig{RestrictEgress: true},
+		Resources: &core.ResourceLimits{Memory: 1 << 20},
+	}
+	limits := restrictedResources(memoryOnly)
+	assert.Equal(t, core.ResourceLimits{Memory: 1 << 20, PIDs: defaultRestrictedPIDs}, *limits)
+	assert.Zero(t, memoryOnly.Resources.PIDs, "the caller's config is not modified")
 }

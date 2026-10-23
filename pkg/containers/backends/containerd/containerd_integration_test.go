@@ -616,3 +616,39 @@ func TestFailingBuildReportsTheBuilderOutput_Integration(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed with exit code")
 	assert.Contains(t, err.Error(), "the-step-said-this", "the builder's own output is the reason a build failed")
 }
+
+// A container whose process cannot start must be startable again with the same
+// error, not "already exists": a container holds one task, and the failed one
+// has to go.
+func TestFailedStartCanBeRetried_Integration(t *testing.T) {
+	backend := newTestBackend(t)
+	ctx := context.Background()
+	require.NoError(t, backend.Image(testImage).Pull(ctx))
+
+	id, err := backend.Create(ctx, &core.ContainerConfig{Image: testImage, Command: []string{"/no/such/binary"}})
+	require.NoError(t, err)
+	defer backend.Remove(ctx, id)
+
+	first := backend.Start(ctx, id)
+	require.Error(t, first)
+	second := backend.Start(ctx, id)
+	require.Error(t, second)
+	assert.NotContains(t, second.Error(), "already exists")
+}
+
+func TestStartTwice_Integration(t *testing.T) {
+	backend := newTestBackend(t)
+	ctx := context.Background()
+	require.NoError(t, backend.Image(testImage).Pull(ctx))
+
+	id, err := backend.Create(ctx, &core.ContainerConfig{Image: testImage, Command: []string{"/bin/sleep", "300"}})
+	require.NoError(t, err)
+	defer backend.Remove(ctx, id)
+
+	require.NoError(t, backend.Start(ctx, id))
+	assert.ErrorContains(t, backend.Start(ctx, id), "failed to create task")
+
+	waitCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	assert.ErrorIs(t, backend.Wait(waitCtx, id), context.DeadlineExceeded, "Wait gives up with its context")
+}

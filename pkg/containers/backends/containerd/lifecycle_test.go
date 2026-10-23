@@ -236,12 +236,28 @@ func TestDaemonStartWithRootlesskit(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("rootless start is refused to root")
 	}
-	bin := fakeBin(t, map[string]string{"pasta": "", "rootlesskit": `echo "$@" > "${0%/*}/args"; exec /bin/sleep 30`})
 
-	home := t.TempDir()
-	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(home, "run"))
-	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	t.Run("XDG directories given", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
+		t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+		startWithStandIn(t)
+	})
+
+	t.Run("XDG directories defaulted under HOME", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("XDG_DATA_HOME", "")
+		t.Setenv("XDG_CONFIG_HOME", "")
+		startWithStandIn(t)
+	})
+}
+
+// startWithStandIn starts the daemon with the stand-in rootlesskit and checks
+// what it left behind.
+func startWithStandIn(t *testing.T) {
+	bin := fakeBin(t, map[string]string{"pasta": "", "rootlesskit": `echo "$@" > "${0%/*}/args"; exec /bin/sleep 30`})
+	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(t.TempDir(), "run"))
 	t.Setenv("TMPDIR", t.TempDir())
 
 	daemon := newTestDaemon(t)
@@ -278,7 +294,11 @@ func TestDaemonStartWithRootlesskit(t *testing.T) {
 
 	config, err := os.ReadFile(filepath.Join(filepath.Dir(daemon.socketPath), "containerd.toml"))
 	require.NoError(t, err)
-	assert.Contains(t, string(config), filepath.Join(home, "data", "tau", "containerd", "daemon"))
+	dataHome := os.Getenv("XDG_DATA_HOME")
+	if dataHome == "" {
+		dataHome = filepath.Join(os.Getenv("HOME"), ".local", "share")
+	}
+	assert.Contains(t, string(config), filepath.Join(dataHome, "tau", "containerd", "daemon"))
 
 	wrappers, err := filepath.Glob(filepath.Join(os.Getenv("TMPDIR"), "tau-containerd-rootless-*.sh"))
 	require.NoError(t, err)
@@ -410,4 +430,16 @@ func TestBuildRejectsABadContext(t *testing.T) {
 	image := &containerdImage{backend: &ContainerdBackend{client: &Client{}}, name: "x"}
 	err := image.Build(context.Background(), &core.DockerfileBuild{Context: strings.NewReader("not a tarball")})
 	assert.ErrorContains(t, err, "failed to unpack build context")
+}
+
+func TestNetworkSpecOptsRefusals(t *testing.T) {
+	_, err := networkSpecOpts(&core.NetworkConfig{DNS: []string{"1.1.1.1"}})
+	assert.ErrorContains(t, err, "custom DNS servers not supported")
+
+	_, err = networkSpecOpts(&core.NetworkConfig{PortMappings: []core.PortMapping{{HostPort: 8080, ContainerPort: 80}}})
+	assert.ErrorContains(t, err, "cannot map port 80 to 8080")
+
+	opts, err := networkSpecOpts(&core.NetworkConfig{PortMappings: []core.PortMapping{{HostPort: 80, ContainerPort: 80}}})
+	require.NoError(t, err, "host networking already gives a container its own port")
+	assert.NotEmpty(t, opts)
 }
