@@ -19,12 +19,10 @@ import (
 // author can write, and the vocabulary claims to refuse. A claim nobody asks the
 // vocabulary to keep is one nothing notices it stopped keeping.
 //
-// THE REFUSAL IS THE AUDIT'S, and that is a fact to state rather than hide: these
-// compile. A container with no image and no build is a statement the config
-// itself can answer, so it is checkBuild's (pkg/tcc/taubyte/v2/schema/checks.go)
-// to call broken — and today only the editor runs that audit. Nothing on the
-// deploy path does, so a project like this one publishes and fails when its
-// container is asked to start.
+// THE REFUSAL IS THE AUDIT'S: these compile. A container with no image and no
+// build is a statement the config itself can answer, so it is checkBuild's
+// (pkg/tcc/taubyte/v2/schema/checks.go) to call broken, and the deploy cuts views
+// through that same audit, so nothing is published.
 //
 // IT IS PAIRED WITH THE PROJECT THAT WORKS. The refused one is also unrouted,
 // which the audit says too; that is not what it is about. Neither writes any
@@ -39,6 +37,25 @@ func TestAnApplicationWithNothingToRunIsBroken(t *testing.T) {
 
 	require.Empty(t, brokenIn(t, "with/application"),
 		"the project that runs has nothing broken, so the refusal above is about the image")
+
+	const id = "QmZc65DUedgswsy18Ljq3GKmbX86Y7RWPJbosfPCdAVLWy"
+	r, err := pkgregister.New(pkgregister.WithStore(pkgregister.NewMemStore()))
+	require.NoError(t, err)
+	d, err := buildDeploy.New(
+		buildDeploy.WithProjects(configures{}),
+		buildDeploy.WithCheckout(corpus{filepath.Join("projects", "refused/application/noartifact")}),
+		buildDeploy.WithLocalRegister(r),
+		buildDeploy.WithCloudFqdn("tau.dream.test"),
+	)
+	require.NoError(t, err)
+	err = d.Run(t.Context(), backend.Work{JobID: "j", RepositoryKey: "github.com/acme/" + id,
+		Ref: "refs/heads/main", CommitSHA: "c", ProjectID: id}, &buildLog{})
+	require.ErrorIs(t, err, buildDeploy.ErrBroken)
+	require.ErrorContains(t, err, "names no image and declares no build")
+
+	envs, err := r.Environments(t.Context(), id)
+	require.NoError(t, err)
+	require.Empty(t, envs, "nothing is published for a refused project")
 }
 
 // A PROJECT THAT SAYS NO BRANCH DEPLOYS ANYWHERE IS REFUSED, by the compiler and

@@ -223,7 +223,7 @@ func TestAnUnplacedResourceReachingTwoRegionsIsRefused(t *testing.T) {
 	_, findings, err := viewsOf(t, several{"region-1", "region-2"}, map[string]string{
 		"/project.yaml":          regionsProject + everyBranch,
 		"/function/api.yaml":     viewFunction("api", "regions:\n    pinned: [region-1]\n"),
-		"/function/auth.yaml":    viewFunction("auth", "regions:\n    pinned: [region-2]\n"),
+		"/function/auth.yaml":    viewFunction("auth", "implements: http-authorizer\nregions:\n    pinned: [region-2]\n"),
 		"/gateway/api.yaml":      viewGateway("api", "authorizer:\n    name: auth\n"),
 		"/zone/example_com.yaml": viewZone,
 	})
@@ -435,7 +435,7 @@ const cidOfCache = "QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB"
 // before any cloud is chosen, from the regions the project itself names.
 func TestAPreviewOfTheRegionsTheProjectNames(t *testing.T) {
 	flat := compileDocs(t, "", map[string]string{
-		"/project.yaml":    regionsProject + "regions: [region-1, region-2, region-3]\n" + everyBranch,
+		"/project.yaml":    regionsProject + "regions: [region-1, region-2, region-3, mars]\n" + everyBranch,
 		"/cache/pin.yaml":  viewCache("pin", "regions:\n    pinned: [region-1]\n"),
 		"/cache/ha.yaml":   viewCache("ha", "regions:\n    failover:\n        main: region-2\n        standby: mars\n"),
 		"/cache/edge.yaml": viewCache("edge", "regions:\n    cdn: [region-3]\n"),
@@ -445,7 +445,7 @@ func TestAPreviewOfTheRegionsTheProjectNames(t *testing.T) {
 
 	views, findings, err := schema.Views(flat, schema.WithRegions(schema.Preview("region-1", "region-2", "region-3", "region-1", "")))
 	require.NoError(t, err)
-	require.Equal(t, []string{`cache/ha: is placed in region "mars", which this preview does not show`}, findingsTitled(findings, schema.Check))
+	require.Equal(t, []string{`project/p: allows region "mars", which this preview does not show`, `cache/ha: is placed in region "mars", which this preview does not show`}, findingsTitled(findings, schema.Check))
 	require.Equal(t, schema.RoleSeed, views["region-3"].Roles[cidFor("cache/edge")])
 	require.Equal(t, schema.RoleDemand, views["region-1"].Roles[cidFor("cache/edge")])
 	require.Equal(t, schema.RoleMain, views["region-2"].Roles[cidFor("cache/ha")])

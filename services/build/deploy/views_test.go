@@ -106,7 +106,7 @@ func TestADeployReachingAcrossRegionsIsRefused(t *testing.T) {
 	})}
 	var log out
 	err := runner(t, co, r, deploy.WithRegions(schema.Preview("region-1", "region-2"))).Run(t.Context(), work(), &log)
-	require.ErrorIs(t, err, deploy.ErrUnplaced)
+	require.ErrorIs(t, err, deploy.ErrBroken)
 	require.ErrorContains(t, err, `function/f: reaches cache/a, which is not placed in "region-2" where this is`)
 	_, err = r.Resolve(t.Context(), shopID, "prod")
 	require.ErrorIs(t, err, register.ErrNotPublished)

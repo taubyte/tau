@@ -78,7 +78,7 @@ var (
 	ErrNoRegister = errors.New("deploy: nowhere to publish to")
 	ErrNoCheckout = errors.New("deploy: no way to read a repository")
 	ErrNoProjects = errors.New("deploy: no way to tell a configuration repository from a code one")
-	// ErrUnplaced is a deployment this cloud cannot place where it says it runs.
+	// ErrBroken is a deployment this cloud cannot place where it says it runs.
 	// ErrNotClaimed is a configuration whose project.yaml names an id the
 	// pushed repository has not claimed. The register's project table is the
 	// one thing that says which repository may publish under an id, and this
@@ -87,7 +87,8 @@ var (
 	// pointers.
 	ErrNotClaimed = errors.New("deploy: the project id is not claimed by this repository")
 
-	ErrUnplaced = errors.New("deploy: this cloud cannot place it")
+	// ErrBroken is a project the audit calls broken, or cannot cut into views here.
+	ErrBroken = errors.New("deploy: broken, so nothing is published")
 
 	// ErrUnproven is a zone the project has not proven is its own, by the TXT
 	// record `tau domain claim` prints. A deploy that published it would let
@@ -468,7 +469,7 @@ func (d *Deploy) cut(flat map[string]any, environment string, out backend.Output
 		if len(refused) == 0 {
 			refused = append(refused, err.Error())
 		}
-		return nil, fmt.Errorf("%w: %s: %s", ErrUnplaced, environment, strings.Join(refused, "; "))
+		return nil, fmt.Errorf("%w: %s: %s", ErrBroken, environment, strings.Join(refused, "; "))
 	}
 
 	regions := make([]string, 0, len(views))

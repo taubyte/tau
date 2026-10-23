@@ -24,7 +24,7 @@ func TestARegionThisCloudDoesNotServeIsRefusedByDefault(t *testing.T) {
 	require.NoError(t, err)
 	var log out
 	err = d.Run(t.Context(), work(), &log)
-	require.ErrorIs(t, err, deploy.ErrUnplaced)
+	require.ErrorIs(t, err, deploy.ErrBroken)
 	require.ErrorContains(t, err, `cache/sessions in shop: is placed in region "region-1", which this build does not serve`)
 	_, err = r.Resolve(t.Context(), shopID, "prod")
 	require.Error(t, err, "nothing was published")
@@ -57,7 +57,7 @@ func TestAnUnplaceableDeploymentPublishesNothing(t *testing.T) {
 	var log out
 	err := runner(t, &checkout{dir: fixture(t, basicFixture)}, r, deploy.WithRegions(placesNothing{})).
 		Run(t.Context(), work(), &log)
-	require.ErrorIs(t, err, deploy.ErrUnplaced)
+	require.ErrorIs(t, err, deploy.ErrBroken)
 	require.Contains(t, err.Error(), "is not placed anywhere")
 
 	_, err = r.Resolve(t.Context(), shopID, "prod")

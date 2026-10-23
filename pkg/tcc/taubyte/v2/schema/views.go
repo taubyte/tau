@@ -84,16 +84,21 @@ func (v View) Empty() bool { return len(v.Roles) == 0 }
 // ErrUnknownDestination is a view asked for in a region the Regions does not serve.
 var ErrUnknownDestination = errors.New("schema: no view for a region this build does not serve")
 
-// ErrUnviewable is a project that cannot be cut into views: a Broken placement finding,
-// or an edge across regions.
+// ErrUnviewable is a project that cannot be cut into views: a Broken finding of the
+// audit, or an edge across regions.
 var ErrUnviewable = errors.New("schema: this project cannot be cut into one view per region")
 
 // Views is every view of a compiled object, keyed by the regions the Regions serves —
-// one each, empty or not — with the placement findings and every edge refused for
-// crossing regions. It errors, wrapping ErrUnviewable, when any finding is Broken; the
+// one each, empty or not — with the audit's findings and every edge refused for
+// crossing regions. External questions are not asked here: they are the runtime's. It errors, wrapping ErrUnviewable, when any finding is Broken; the
 // findings are returned either way, so a caller can say all of them.
 func Views(obj map[string]any, opts ...AuditOption) (map[string]View, []Finding, error) {
 	plan := PlanViews(obj, opts...)
+	for _, f := range Audit(obj, StubResolver(), opts...) {
+		if !slices.Contains(plan.Findings, f) {
+			plan.Findings = append(plan.Findings, f)
+		}
+	}
 	for _, f := range plan.Findings {
 		if f.Severity == Broken {
 			return nil, plan.Findings, fmt.Errorf("%w: %s", ErrUnviewable, f)
