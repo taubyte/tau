@@ -67,11 +67,10 @@ func repoRoot(t *testing.T) string {
 // already holds it.
 func ensureToolchain(t *testing.T) {
 	t.Helper()
-	dockerfile, err := os.ReadFile(filepath.Join(repoRoot(t), "pkg", "invoke", "wasm", "fixtures", "toolchain", "Dockerfile"))
-	require.NoError(t, err)
 	client, err := containers.New()
 	require.NoError(t, err)
-	_, err = client.Image(t.Context(), toolchain, containers.Dockerfile(string(dockerfile)))
+	_, err = client.Image(t.Context(), toolchain,
+		containers.Dockerfile(filepath.Join(repoRoot(t), "pkg", "invoke", "wasm", "fixtures", "toolchain", "Dockerfile")))
 	require.NoError(t, err, "the corpus toolchain image")
 }
 
