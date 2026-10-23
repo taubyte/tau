@@ -835,3 +835,42 @@ func BenchmarkCompact(b *testing.B) {
 		b.StartTimer()
 	}
 }
+
+func TestCompactCarriesTombstoneForElementInAnotherDAG(t *testing.T) {
+	replicas, closeReplicas := makeNReplicasNoBcast(t, 1, nil)
+	defer closeReplicas()
+	r := replicas[0]
+	ctx := t.Context()
+	key := ds.NewKey("shared").String()
+
+	add, err := r.set.Add(ctx, key, []byte("from-dag2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	add.SetDagName("dag2")
+	if _, err := r.publish(ctx, add); err != nil {
+		t.Fatal(err)
+	}
+	rmv, err := r.set.Rmv(ctx, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rmv.SetDagName("dag1")
+	if _, err := r.publish(ctx, rmv); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := r.Compact(ctx, "dag1"); err != nil {
+		t.Fatal(err)
+	}
+	heads, _, err := r.heads.ListDAG(ctx, "dag1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(heads) != 1 {
+		t.Fatalf("expected 1 dag1 head, got %d", len(heads))
+	}
+	if tombs := deltaTombstonesForKey(t, r, heads[0].Cid, key); len(tombs) != 1 {
+		t.Fatalf("dag1 snapshot must carry the tombstone for dag2's element, got %d", len(tombs))
+	}
+}

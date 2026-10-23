@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	dshelp "github.com/ipfs/boxo/datastore/dshelp"
@@ -58,6 +59,9 @@ type set struct {
 	// turn a local operation into an indefinite network wait. 0 disables
 	// the timeout (the caller's context is used as-is).
 	dagTimeout time.Duration
+
+	historyBound int
+	longHistory  atomic.Bool
 
 	// Avoid merging two things at the same time since
 	// we read-write value-priorities in a non-atomic way.
@@ -115,6 +119,7 @@ func (s *set) Add(ctx context.Context, key string, value []byte) (Delta, error) 
 func (s *set) Rmv(ctx context.Context, key string) (Delta, error) {
 	delta := s.deltaFactory()
 	var tombs []*pb.Element
+	scanned := 0
 
 	// /namespace/<key>/elements
 	prefix := s.elemsPrefix(key)
@@ -143,6 +148,7 @@ func (s *set) Rmv(ctx context.Context, key string) (Delta, error) {
 			// should be the block id only.
 			continue
 		}
+		scanned++
 
 		// check if its already tombed, which case don't add it to the
 		// Rmv delta set.
@@ -160,6 +166,9 @@ func (s *set) Rmv(ctx context.Context, key string) (Delta, error) {
 
 	if len(tombs) > 0 {
 		delta.SetTombstones(tombs)
+	}
+	if s.historyBound > 0 && scanned > s.historyBound {
+		s.longHistory.Store(true)
 	}
 
 	return delta, nil

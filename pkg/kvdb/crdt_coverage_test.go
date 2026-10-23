@@ -39,6 +39,7 @@ func TestOptionsVerifyErrorBranches(t *testing.T) {
 		{"NumWorkers zero", func(o *Options) { o.NumWorkers = 0 }, "bad number of NumWorkers"},
 		{"NumWorkers negative", func(o *Options) { o.NumWorkers = -1 }, "bad number of NumWorkers"},
 		{"DAGSyncerTimeout negative", func(o *Options) { o.DAGSyncerTimeout = -1 }, "invalid DAGSyncerTimeout"},
+		{"CompactAfterVersions negative", func(o *Options) { o.CompactAfterVersions = -1 }, "invalid CompactAfterVersions"},
 		{"MaxBatchDeltaSize zero", func(o *Options) { o.MaxBatchDeltaSize = 0 }, "invalid MaxBatchDeltaSize"},
 		{"MaxBatchDeltaSize negative", func(o *Options) { o.MaxBatchDeltaSize = -1 }, "invalid MaxBatchDeltaSize"},
 		{"RepairInterval negative", func(o *Options) { o.RepairInterval = -1 }, "invalid RepairInterval"},

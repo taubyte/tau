@@ -487,3 +487,47 @@ func TestProcessNodeFailureUnreservesChild(t *testing.T) {
 		t.Fatal("expected key to be present after reprocessing succeeded")
 	}
 }
+
+func TestDeleteCostStaysFlatAsHistoryGrows(t *testing.T) {
+	opts := DefaultOptions()
+	opts.CompactAfterVersions = 8
+	replicas, closeReplicas := makeNReplicasNoBcast(t, 1, opts)
+	defer closeReplicas()
+	r := replicas[0]
+	ctx := t.Context()
+	k := ds.NewKey("hot")
+
+	for i := range 200 {
+		if err := r.Put(ctx, k, fmt.Appendf(nil, "v%d", i)); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.Delete(ctx, k); err != nil {
+			t.Fatal(err)
+		}
+		if n := countPrefix(t, r, r.set.elemsPrefix(k.String())); n > opts.CompactAfterVersions+1 {
+			t.Fatalf("after %d deletes the key carries %d element entries", i+1, n)
+		}
+	}
+	if _, err := r.Get(ctx, k); !errors.Is(err, ds.ErrNotFound) {
+		t.Fatalf("deleted key must stay deleted, got %v", err)
+	}
+
+	batch, err := r.Batch(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 20 {
+		if err := r.Put(ctx, k, fmt.Appendf(nil, "b%d", i)); err != nil {
+			t.Fatal(err)
+		}
+		if err := batch.Delete(ctx, k); err != nil {
+			t.Fatal(err)
+		}
+		if err := batch.Commit(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := countPrefix(t, r, r.set.elemsPrefix(k.String())); n > opts.CompactAfterVersions+1 {
+		t.Fatalf("after batched deletes the key carries %d element entries", n)
+	}
+}

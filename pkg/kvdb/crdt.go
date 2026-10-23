@@ -150,6 +150,11 @@ type Options struct {
 	// windows, legacy pre-metadata snapshots, or when this option is
 	// disabled). Default: true.
 	ReclaimOnSnapshot bool
+	// CompactAfterVersions makes Delete and Batch.Commit compact the
+	// default DAG once a deleted key has accumulated more than this many
+	// element versions, since every delete of a key scans all of them.
+	// 0 disables. Default: 64.
+	CompactAfterVersions int
 	// advanced options
 	crdtOpts MerkleCRDTOptions
 }
@@ -169,6 +174,10 @@ func (opts *Options) verify() error {
 
 	if opts.NumWorkers <= 0 {
 		return errors.New("bad number of NumWorkers")
+	}
+
+	if opts.CompactAfterVersions < 0 {
+		return errors.New("invalid CompactAfterVersions")
 	}
 
 	if opts.DAGSyncerTimeout < 0 {
@@ -217,11 +226,12 @@ func DefaultOptions() *Options {
 		// always keeping
 		// https://github.com/libp2p/go-libp2p-core/blob/master/network/network.go#L23
 		// in sight
-		MaxBatchDeltaSize:   1 * 1024 * 1024, // 1MB,
-		RepairInterval:      time.Hour,
-		MultiHeadProcessing: false,
-		BroadcastBatchDelay: 0,
-		ReclaimOnSnapshot:   true,
+		MaxBatchDeltaSize:    1 * 1024 * 1024, // 1MB,
+		RepairInterval:       time.Hour,
+		MultiHeadProcessing:  false,
+		BroadcastBatchDelay:  0,
+		ReclaimOnSnapshot:    true,
+		CompactAfterVersions: 64,
 
 		crdtOpts: MerkleCRDTOptions{
 			DeltaFactory: func() Delta { return &pbDelta{Delta: &pb.Delta{}} },
@@ -361,6 +371,7 @@ func NewDatastore(
 		cancel()
 		return nil, fmt.Errorf("error setting up crdt set: %w", err)
 	}
+	set.historyBound = opts.CompactAfterVersions
 	heads, err := newHeads(ctx, store, fullHeadsNs, fullDagHeadsNs, opts.Logger)
 	if err != nil {
 		cancel()
@@ -1397,8 +1408,24 @@ func (store *Datastore) Delete(ctx context.Context, key ds.Key) error {
 	if len(tombs) == 0 {
 		return nil
 	}
-	_, err = store.publish(ctx, delta)
-	return err
+	if _, err := store.publish(ctx, delta); err != nil {
+		return err
+	}
+	store.compactLongHistory(ctx)
+	return nil
+}
+
+// compactLongHistory runs Compact on the default DAG when a delete since
+// the last run scanned more versions of its key than CompactAfterVersions.
+// Like receiver-side reclaim it is best-effort: a failure is logged, the
+// delete it follows has already succeeded.
+func (store *Datastore) compactLongHistory(ctx context.Context) {
+	if !store.set.longHistory.Swap(false) {
+		return
+	}
+	if _, err := store.Compact(ctx, ""); err != nil {
+		store.logger.Errorf("compacting long key history: %s", err)
+	}
 }
 
 // Sync ensures that all the data under the given prefix is flushed to disk in
@@ -1785,7 +1812,11 @@ func (b *crdtBatch) Delete(ctx context.Context, key ds.Key) error {
 // Commit writes the current delta as a new DAG node and publishes the new
 // head. The publish step is skipped if the context is cancelled.
 func (b *crdtBatch) Commit(ctx context.Context) error {
-	return b.store.publishDelta(ctx)
+	if err := b.store.publishDelta(ctx); err != nil {
+		return err
+	}
+	b.store.compactLongHistory(ctx)
+	return nil
 }
 
 // PrintDAG pretty prints the current Merkle-DAG to stdout in a pretty
