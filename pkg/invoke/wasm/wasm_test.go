@@ -374,3 +374,17 @@ func TestTheEntrypointComesFromTheConfiguration(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 200, res.Status)
 }
+
+// A COMPONENT MAY USE WEBASSEMBLY 3.0. componentize-py's CPython initialises a
+// global with an extended constant expression; fixtures/v3.wasm is the
+// smallest handler that does, and a tier that left 3.0 off refuses it.
+func TestAComponentMayUseWebAssembly3(t *testing.T) {
+	code, err := os.ReadFile("fixtures/v3.wasm")
+	require.NoError(t, err, "run `wasm-tools parse v3.wat -o v3.wasm` in fixtures")
+	instance := start(t, tier(t, code), invoke.Spec{Name: "shop/prod/function/python"})
+
+	res, err := instance.Serve(t.Context(), &invoke.Request{Method: "GET", Path: "/"})
+	require.NoError(t, err)
+	require.Equal(t, 200, res.Status)
+	require.Equal(t, "ok", string(res.Body))
+}

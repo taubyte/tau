@@ -72,6 +72,7 @@ import (
 	"strings"
 
 	"github.com/samyfodil/wazy"
+	"github.com/samyfodil/wazy/api"
 	"github.com/samyfodil/wazy/component"
 	"github.com/samyfodil/wazy/imports/wasip2"
 
@@ -437,7 +438,10 @@ func (r *Runtime) instantiate(ctx context.Context, spec invoke.Spec, world strin
 		// A GUEST THAT WILL NOT STOP IS STOPPED. The pool bounds a request
 		// with a context; without this a guest in a loop ignores it and holds
 		// the goroutine until the process ends.
-		WithCloseOnContextDone(true)
+		WithCloseOnContextDone(true).
+		// WebAssembly 3.0, because toolchains emit it: componentize-py's
+		// CPython needs extended-const.
+		WithCoreFeatures(api.CoreFeaturesV3)
 	if pages := memoryPages(spec.Memory); pages > 0 {
 		config = config.WithMemoryLimitPages(pages)
 	}
