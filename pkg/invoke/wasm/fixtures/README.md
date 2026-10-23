@@ -137,3 +137,11 @@ upgrade moves it.
 
 Closing this means vendoring the upstream wasi WIT (wasi-http, wasi-io,
 wasi-clocks, wasi-random and a complete wasi-cli) under a proxy fixture.
+
+## The toolchain as an image
+
+`toolchain/Dockerfile` is the same toolchain as an image, tagged
+`tau-fixtures/rust-component:0.21.1`. The corpus projects under
+`node/dream/projects/` name it as their build image and their sources are these
+crates, so a project there is built — by `tau build` on a machine and by a
+cloud's build alike — from source rather than handed a committed component.
