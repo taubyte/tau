@@ -134,7 +134,8 @@ func TestAFailedBuildKeepsWhatItPrintedBeforeItFailed(t *testing.T) {
 	rec := h.mustRecord(t, id)
 	require.Equal(t, buildv2.JobStatus_JobStatusFailed, rec.status())
 	require.Contains(t, rec.Reason, "compile error")
-	require.Equal(t, "undefined: Frobnicate\n", h.assets.content(t, rec.Logs[stamp(1)]))
+	require.Equal(t, "undefined: Frobnicate\nerror: compile error\n", h.assets.content(t, rec.Logs[stamp(1)]),
+		"what it printed, then why it failed: the record carries no reason anybody can read")
 }
 
 // And a runner that PANICS is the same case one step further: the recovery
@@ -152,7 +153,7 @@ func TestAPanickingBuildKeepsWhatItPrinted(t *testing.T) {
 	rec := h.mustRecord(t, id)
 	require.Equal(t, buildv2.JobStatus_JobStatusFailed, rec.status())
 	require.Contains(t, rec.Reason, "panicked")
-	require.Equal(t, "step 3 of 4\n", h.assets.content(t, rec.Logs[stamp(1)]))
+	require.Equal(t, "step 3 of 4\nerror: runner panicked: nil map write\n", h.assets.content(t, rec.Logs[stamp(1)]))
 }
 
 // A CANCELLED BUILD KEEPS ITS LOG AND KEEPS ITS STATUS. The status must not
@@ -176,7 +177,7 @@ func TestACancelledBuildStillGetsItsLog(t *testing.T) {
 	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, rec.status(),
 		"the run's outcome must not overwrite the cancel")
 	require.Equal(t, "cancelled", rec.Reason)
-	require.Equal(t, "installing dependencies\n", h.assets.content(t, rec.Logs[stamp(1)]),
+	require.Equal(t, "installing dependencies\nerror: context canceled\n", h.assets.content(t, rec.Logs[stamp(1)]),
 		"and the log of the run that was cancelled is on the record")
 }
 

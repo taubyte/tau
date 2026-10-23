@@ -300,9 +300,18 @@ func (s *Service) invoke(ctx context.Context, work Work) (out *runOutput, err er
 	// failed build, which is what the recovery turns it into. The output is
 	// already in the named return by then, so the log the panicking build wrote
 	// is published like any other.
+	//
+	// WHY A RUN FAILED IS THE LAST LINE OF ITS LOG. The log is what a person
+	// reads about a build, and the job record carries no reason, so a refusal
+	// a runner returned — a deployment that does not compile, a zone that is
+	// not the project's — would otherwise reach nobody. Runners write their
+	// errors to be read there and keep values out of them for that reason.
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("runner panicked: %v", r)
+		}
+		if err != nil {
+			fmt.Fprintf(out, "error: %v\n", err)
 		}
 	}()
 
