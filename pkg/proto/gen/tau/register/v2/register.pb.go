@@ -432,6 +432,101 @@ func (x *ViewPointer) GetManifest() string {
 	return ""
 }
 
+// DeploymentManifest is one revision of one deployment. whole is a publication nobody
+// cut; views is each listed destination's object.
+type DeploymentManifest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Project     string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	Environment string                 `protobuf:"bytes,2,opt,name=environment,proto3" json:"environment,omitempty"`
+	Revision    uint64                 `protobuf:"varint,3,opt,name=revision,proto3" json:"revision,omitempty"`
+	Object      string                 `protobuf:"bytes,4,opt,name=object,proto3" json:"object,omitempty"`
+	Whole       bool                   `protobuf:"varint,5,opt,name=whole,proto3" json:"whole,omitempty"`
+	Views       map[string]string      `protobuf:"bytes,6,rep,name=views,proto3" json:"views,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// id is the manifest's own content address.
+	Id            string `protobuf:"bytes,7,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeploymentManifest) Reset() {
+	*x = DeploymentManifest{}
+	mi := &file_tau_register_v2_register_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeploymentManifest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeploymentManifest) ProtoMessage() {}
+
+func (x *DeploymentManifest) ProtoReflect() protoreflect.Message {
+	mi := &file_tau_register_v2_register_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeploymentManifest.ProtoReflect.Descriptor instead.
+func (*DeploymentManifest) Descriptor() ([]byte, []int) {
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *DeploymentManifest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *DeploymentManifest) GetEnvironment() string {
+	if x != nil {
+		return x.Environment
+	}
+	return ""
+}
+
+func (x *DeploymentManifest) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *DeploymentManifest) GetObject() string {
+	if x != nil {
+		return x.Object
+	}
+	return ""
+}
+
+func (x *DeploymentManifest) GetWhole() bool {
+	if x != nil {
+		return x.Whole
+	}
+	return false
+}
+
+func (x *DeploymentManifest) GetViews() map[string]string {
+	if x != nil {
+		return x.Views
+	}
+	return nil
+}
+
+func (x *DeploymentManifest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
 type DestinationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Destination   string                 `protobuf:"bytes,1,opt,name=destination,proto3" json:"destination,omitempty"`
@@ -441,7 +536,7 @@ type DestinationRequest struct {
 
 func (x *DestinationRequest) Reset() {
 	*x = DestinationRequest{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[5]
+	mi := &file_tau_register_v2_register_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -453,7 +548,7 @@ func (x *DestinationRequest) String() string {
 func (*DestinationRequest) ProtoMessage() {}
 
 func (x *DestinationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[5]
+	mi := &file_tau_register_v2_register_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -466,7 +561,7 @@ func (x *DestinationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DestinationRequest.ProtoReflect.Descriptor instead.
 func (*DestinationRequest) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{5}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *DestinationRequest) GetDestination() string {
@@ -487,7 +582,7 @@ type Assignment struct {
 
 func (x *Assignment) Reset() {
 	*x = Assignment{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[6]
+	mi := &file_tau_register_v2_register_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -499,7 +594,7 @@ func (x *Assignment) String() string {
 func (*Assignment) ProtoMessage() {}
 
 func (x *Assignment) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[6]
+	mi := &file_tau_register_v2_register_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -512,7 +607,7 @@ func (x *Assignment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Assignment.ProtoReflect.Descriptor instead.
 func (*Assignment) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{6}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Assignment) GetProject() string {
@@ -547,7 +642,7 @@ type Assignments struct {
 
 func (x *Assignments) Reset() {
 	*x = Assignments{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[7]
+	mi := &file_tau_register_v2_register_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -559,7 +654,7 @@ func (x *Assignments) String() string {
 func (*Assignments) ProtoMessage() {}
 
 func (x *Assignments) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[7]
+	mi := &file_tau_register_v2_register_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -572,7 +667,7 @@ func (x *Assignments) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Assignments.ProtoReflect.Descriptor instead.
 func (*Assignments) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{7}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Assignments) GetAssignments() []*Assignment {
@@ -594,7 +689,7 @@ type PublishResponse struct {
 
 func (x *PublishResponse) Reset() {
 	*x = PublishResponse{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[8]
+	mi := &file_tau_register_v2_register_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -606,7 +701,7 @@ func (x *PublishResponse) String() string {
 func (*PublishResponse) ProtoMessage() {}
 
 func (x *PublishResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[8]
+	mi := &file_tau_register_v2_register_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -619,7 +714,7 @@ func (x *PublishResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishResponse.ProtoReflect.Descriptor instead.
 func (*PublishResponse) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{8}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *PublishResponse) GetObject() string {
@@ -639,7 +734,7 @@ type ResolveRequest struct {
 
 func (x *ResolveRequest) Reset() {
 	*x = ResolveRequest{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[9]
+	mi := &file_tau_register_v2_register_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -651,7 +746,7 @@ func (x *ResolveRequest) String() string {
 func (*ResolveRequest) ProtoMessage() {}
 
 func (x *ResolveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[9]
+	mi := &file_tau_register_v2_register_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -664,7 +759,7 @@ func (x *ResolveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveRequest.ProtoReflect.Descriptor instead.
 func (*ResolveRequest) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{9}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ResolveRequest) GetProject() string {
@@ -692,7 +787,7 @@ type ObjectRequest struct {
 
 func (x *ObjectRequest) Reset() {
 	*x = ObjectRequest{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[10]
+	mi := &file_tau_register_v2_register_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -704,7 +799,7 @@ func (x *ObjectRequest) String() string {
 func (*ObjectRequest) ProtoMessage() {}
 
 func (x *ObjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[10]
+	mi := &file_tau_register_v2_register_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -717,7 +812,7 @@ func (x *ObjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ObjectRequest.ProtoReflect.Descriptor instead.
 func (*ObjectRequest) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{10}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ObjectRequest) GetObject() string {
@@ -739,7 +834,7 @@ type CompiledProject struct {
 
 func (x *CompiledProject) Reset() {
 	*x = CompiledProject{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[11]
+	mi := &file_tau_register_v2_register_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -751,7 +846,7 @@ func (x *CompiledProject) String() string {
 func (*CompiledProject) ProtoMessage() {}
 
 func (x *CompiledProject) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[11]
+	mi := &file_tau_register_v2_register_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -764,7 +859,7 @@ func (x *CompiledProject) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompiledProject.ProtoReflect.Descriptor instead.
 func (*CompiledProject) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{11}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CompiledProject) GetCompiled() []byte {
@@ -783,7 +878,7 @@ type ProjectRequest struct {
 
 func (x *ProjectRequest) Reset() {
 	*x = ProjectRequest{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[12]
+	mi := &file_tau_register_v2_register_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -795,7 +890,7 @@ func (x *ProjectRequest) String() string {
 func (*ProjectRequest) ProtoMessage() {}
 
 func (x *ProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[12]
+	mi := &file_tau_register_v2_register_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -808,7 +903,7 @@ func (x *ProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectRequest.ProtoReflect.Descriptor instead.
 func (*ProjectRequest) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{12}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ProjectRequest) GetProject() string {
@@ -833,7 +928,7 @@ type Deployments struct {
 
 func (x *Deployments) Reset() {
 	*x = Deployments{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[13]
+	mi := &file_tau_register_v2_register_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -845,7 +940,7 @@ func (x *Deployments) String() string {
 func (*Deployments) ProtoMessage() {}
 
 func (x *Deployments) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[13]
+	mi := &file_tau_register_v2_register_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -858,7 +953,7 @@ func (x *Deployments) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Deployments.ProtoReflect.Descriptor instead.
 func (*Deployments) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{13}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *Deployments) GetEnvironments() []string {
@@ -877,7 +972,7 @@ type HostRequest struct {
 
 func (x *HostRequest) Reset() {
 	*x = HostRequest{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[14]
+	mi := &file_tau_register_v2_register_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -889,7 +984,7 @@ func (x *HostRequest) String() string {
 func (*HostRequest) ProtoMessage() {}
 
 func (x *HostRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[14]
+	mi := &file_tau_register_v2_register_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -902,7 +997,7 @@ func (x *HostRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostRequest.ProtoReflect.Descriptor instead.
 func (*HostRequest) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{14}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *HostRequest) GetFqdn() string {
@@ -922,7 +1017,7 @@ type HostAnswer struct {
 
 func (x *HostAnswer) Reset() {
 	*x = HostAnswer{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[15]
+	mi := &file_tau_register_v2_register_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -934,7 +1029,7 @@ func (x *HostAnswer) String() string {
 func (*HostAnswer) ProtoMessage() {}
 
 func (x *HostAnswer) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[15]
+	mi := &file_tau_register_v2_register_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -947,7 +1042,7 @@ func (x *HostAnswer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostAnswer.ProtoReflect.Descriptor instead.
 func (*HostAnswer) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{15}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *HostAnswer) GetProject() string {
@@ -982,7 +1077,7 @@ type LinkRequest struct {
 
 func (x *LinkRequest) Reset() {
 	*x = LinkRequest{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[16]
+	mi := &file_tau_register_v2_register_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -994,7 +1089,7 @@ func (x *LinkRequest) String() string {
 func (*LinkRequest) ProtoMessage() {}
 
 func (x *LinkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[16]
+	mi := &file_tau_register_v2_register_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1007,7 +1102,7 @@ func (x *LinkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LinkRequest.ProtoReflect.Descriptor instead.
 func (*LinkRequest) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{16}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *LinkRequest) GetProject() string {
@@ -1060,7 +1155,7 @@ type ProjectRecord struct {
 
 func (x *ProjectRecord) Reset() {
 	*x = ProjectRecord{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[17]
+	mi := &file_tau_register_v2_register_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1072,7 +1167,7 @@ func (x *ProjectRecord) String() string {
 func (*ProjectRecord) ProtoMessage() {}
 
 func (x *ProjectRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[17]
+	mi := &file_tau_register_v2_register_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1085,7 +1180,7 @@ func (x *ProjectRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectRecord.ProtoReflect.Descriptor instead.
 func (*ProjectRecord) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{17}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ProjectRecord) GetId() string {
@@ -1132,7 +1227,7 @@ type RepositoryRequest struct {
 
 func (x *RepositoryRequest) Reset() {
 	*x = RepositoryRequest{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[18]
+	mi := &file_tau_register_v2_register_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1144,7 +1239,7 @@ func (x *RepositoryRequest) String() string {
 func (*RepositoryRequest) ProtoMessage() {}
 
 func (x *RepositoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[18]
+	mi := &file_tau_register_v2_register_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1157,7 +1252,7 @@ func (x *RepositoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RepositoryRequest.ProtoReflect.Descriptor instead.
 func (*RepositoryRequest) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{18}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *RepositoryRequest) GetRepository() string {
@@ -1180,7 +1275,7 @@ type RepositoryRecord struct {
 
 func (x *RepositoryRecord) Reset() {
 	*x = RepositoryRecord{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[19]
+	mi := &file_tau_register_v2_register_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1192,7 +1287,7 @@ func (x *RepositoryRecord) String() string {
 func (*RepositoryRecord) ProtoMessage() {}
 
 func (x *RepositoryRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[19]
+	mi := &file_tau_register_v2_register_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1205,7 +1300,7 @@ func (x *RepositoryRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RepositoryRecord.ProtoReflect.Descriptor instead.
 func (*RepositoryRecord) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{19}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *RepositoryRecord) GetProject() string {
@@ -1238,7 +1333,7 @@ type ClaimantRequest struct {
 
 func (x *ClaimantRequest) Reset() {
 	*x = ClaimantRequest{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[20]
+	mi := &file_tau_register_v2_register_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1250,7 +1345,7 @@ func (x *ClaimantRequest) String() string {
 func (*ClaimantRequest) ProtoMessage() {}
 
 func (x *ClaimantRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[20]
+	mi := &file_tau_register_v2_register_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1263,7 +1358,7 @@ func (x *ClaimantRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimantRequest.ProtoReflect.Descriptor instead.
 func (*ClaimantRequest) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{20}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ClaimantRequest) GetClaimant() string {
@@ -1282,7 +1377,7 @@ type ProjectRecords struct {
 
 func (x *ProjectRecords) Reset() {
 	*x = ProjectRecords{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[21]
+	mi := &file_tau_register_v2_register_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1294,7 +1389,7 @@ func (x *ProjectRecords) String() string {
 func (*ProjectRecords) ProtoMessage() {}
 
 func (x *ProjectRecords) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[21]
+	mi := &file_tau_register_v2_register_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1307,7 +1402,7 @@ func (x *ProjectRecords) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectRecords.ProtoReflect.Descriptor instead.
 func (*ProjectRecords) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{21}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ProjectRecords) GetProjects() []*ProjectRecord {
@@ -1325,7 +1420,7 @@ type ListProjectsRequest struct {
 
 func (x *ListProjectsRequest) Reset() {
 	*x = ListProjectsRequest{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[22]
+	mi := &file_tau_register_v2_register_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1337,7 +1432,7 @@ func (x *ListProjectsRequest) String() string {
 func (*ListProjectsRequest) ProtoMessage() {}
 
 func (x *ListProjectsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[22]
+	mi := &file_tau_register_v2_register_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1350,7 +1445,7 @@ func (x *ListProjectsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProjectsRequest.ProtoReflect.Descriptor instead.
 func (*ListProjectsRequest) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{22}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{23}
 }
 
 // GrantRequest gives grantee, a tau user id, one role on a linked project.
@@ -1368,7 +1463,7 @@ type GrantRequest struct {
 
 func (x *GrantRequest) Reset() {
 	*x = GrantRequest{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[23]
+	mi := &file_tau_register_v2_register_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1380,7 +1475,7 @@ func (x *GrantRequest) String() string {
 func (*GrantRequest) ProtoMessage() {}
 
 func (x *GrantRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[23]
+	mi := &file_tau_register_v2_register_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1393,7 +1488,7 @@ func (x *GrantRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrantRequest.ProtoReflect.Descriptor instead.
 func (*GrantRequest) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{23}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *GrantRequest) GetProject() string {
@@ -1439,7 +1534,7 @@ type GrantRecord struct {
 
 func (x *GrantRecord) Reset() {
 	*x = GrantRecord{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[24]
+	mi := &file_tau_register_v2_register_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1451,7 +1546,7 @@ func (x *GrantRecord) String() string {
 func (*GrantRecord) ProtoMessage() {}
 
 func (x *GrantRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[24]
+	mi := &file_tau_register_v2_register_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1464,7 +1559,7 @@ func (x *GrantRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrantRecord.ProtoReflect.Descriptor instead.
 func (*GrantRecord) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{24}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *GrantRecord) GetId() string {
@@ -1518,7 +1613,7 @@ type GrantRecords struct {
 
 func (x *GrantRecords) Reset() {
 	*x = GrantRecords{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[25]
+	mi := &file_tau_register_v2_register_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1530,7 +1625,7 @@ func (x *GrantRecords) String() string {
 func (*GrantRecords) ProtoMessage() {}
 
 func (x *GrantRecords) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[25]
+	mi := &file_tau_register_v2_register_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1543,7 +1638,7 @@ func (x *GrantRecords) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrantRecords.ProtoReflect.Descriptor instead.
 func (*GrantRecords) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{25}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *GrantRecords) GetGrants() []*GrantRecord {
@@ -1565,7 +1660,7 @@ type RevokeRequest struct {
 
 func (x *RevokeRequest) Reset() {
 	*x = RevokeRequest{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[26]
+	mi := &file_tau_register_v2_register_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1577,7 +1672,7 @@ func (x *RevokeRequest) String() string {
 func (*RevokeRequest) ProtoMessage() {}
 
 func (x *RevokeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[26]
+	mi := &file_tau_register_v2_register_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1590,7 +1685,7 @@ func (x *RevokeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeRequest.ProtoReflect.Descriptor instead.
 func (*RevokeRequest) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{26}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *RevokeRequest) GetProject() string {
@@ -1622,7 +1717,7 @@ type RevokeResponse struct {
 
 func (x *RevokeResponse) Reset() {
 	*x = RevokeResponse{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[27]
+	mi := &file_tau_register_v2_register_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1634,7 +1729,7 @@ func (x *RevokeResponse) String() string {
 func (*RevokeResponse) ProtoMessage() {}
 
 func (x *RevokeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[27]
+	mi := &file_tau_register_v2_register_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1647,7 +1742,7 @@ func (x *RevokeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeResponse.ProtoReflect.Descriptor instead.
 func (*RevokeResponse) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{27}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{28}
 }
 
 type RoleRequest struct {
@@ -1660,7 +1755,7 @@ type RoleRequest struct {
 
 func (x *RoleRequest) Reset() {
 	*x = RoleRequest{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[28]
+	mi := &file_tau_register_v2_register_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1672,7 +1767,7 @@ func (x *RoleRequest) String() string {
 func (*RoleRequest) ProtoMessage() {}
 
 func (x *RoleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[28]
+	mi := &file_tau_register_v2_register_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1685,7 +1780,7 @@ func (x *RoleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoleRequest.ProtoReflect.Descriptor instead.
 func (*RoleRequest) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{28}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *RoleRequest) GetProject() string {
@@ -1712,7 +1807,7 @@ type RoleAnswer struct {
 
 func (x *RoleAnswer) Reset() {
 	*x = RoleAnswer{}
-	mi := &file_tau_register_v2_register_proto_msgTypes[29]
+	mi := &file_tau_register_v2_register_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1724,7 +1819,7 @@ func (x *RoleAnswer) String() string {
 func (*RoleAnswer) ProtoMessage() {}
 
 func (x *RoleAnswer) ProtoReflect() protoreflect.Message {
-	mi := &file_tau_register_v2_register_proto_msgTypes[29]
+	mi := &file_tau_register_v2_register_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1737,7 +1832,7 @@ func (x *RoleAnswer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoleAnswer.ProtoReflect.Descriptor instead.
 func (*RoleAnswer) Descriptor() ([]byte, []int) {
-	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{29}
+	return file_tau_register_v2_register_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *RoleAnswer) GetRole() string {
@@ -1773,7 +1868,19 @@ const file_tau_register_v2_register_proto_rawDesc = "" +
 	"\vViewPointer\x12\x16\n" +
 	"\x06object\x18\x01 \x01(\tR\x06object\x12\x1a\n" +
 	"\brevision\x18\x02 \x01(\x04R\brevision\x12\x1a\n" +
-	"\bmanifest\x18\x03 \x01(\tR\bmanifest\"6\n" +
+	"\bmanifest\x18\x03 \x01(\tR\bmanifest\"\xaa\x02\n" +
+	"\x12DeploymentManifest\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x12 \n" +
+	"\venvironment\x18\x02 \x01(\tR\venvironment\x12\x1a\n" +
+	"\brevision\x18\x03 \x01(\x04R\brevision\x12\x16\n" +
+	"\x06object\x18\x04 \x01(\tR\x06object\x12\x14\n" +
+	"\x05whole\x18\x05 \x01(\bR\x05whole\x12D\n" +
+	"\x05views\x18\x06 \x03(\v2..tau.register.v2.DeploymentManifest.ViewsEntryR\x05views\x12\x0e\n" +
+	"\x02id\x18\a \x01(\tR\x02id\x1a8\n" +
+	"\n" +
+	"ViewsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"6\n" +
 	"\x12DestinationRequest\x12 \n" +
 	"\vdestination\x18\x01 \x01(\tR\vdestination\"z\n" +
 	"\n" +
@@ -1856,7 +1963,8 @@ const file_tau_register_v2_register_proto_rawDesc = "" +
 	"\x04user\x18\x02 \x01(\tR\x04user\" \n" +
 	"\n" +
 	"RoleAnswer\x12\x12\n" +
-	"\x04role\x18\x01 \x01(\tR\x04role2\xd1\t\n" +
+	"\x04role\x18\x01 \x01(\tR\x04role2\xa3\n" +
+	"\n" +
 	"\x0fRegisterService\x12D\n" +
 	"\x04Link\x12\x1c.tau.register.v2.LinkRequest\x1a\x1e.tau.register.v2.ProjectRecord\x12J\n" +
 	"\aProject\x12\x1f.tau.register.v2.ProjectRequest\x1a\x1e.tau.register.v2.ProjectRecord\x12S\n" +
@@ -1875,7 +1983,8 @@ const file_tau_register_v2_register_proto_rawDesc = "" +
 	"\fEnvironments\x12\x1f.tau.register.v2.ProjectRequest\x1a\x1c.tau.register.v2.Deployments\x12H\n" +
 	"\vResolveHost\x12\x1c.tau.register.v2.HostRequest\x1a\x1b.tau.register.v2.HostAnswer\x12I\n" +
 	"\vResolveView\x12\x1c.tau.register.v2.ViewRequest\x1a\x1c.tau.register.v2.ViewPointer\x12M\n" +
-	"\bAssigned\x12#.tau.register.v2.DestinationRequest\x1a\x1c.tau.register.v2.AssignmentsB\xc3\x01\n" +
+	"\bAssigned\x12#.tau.register.v2.DestinationRequest\x1a\x1c.tau.register.v2.Assignments\x12P\n" +
+	"\bManifest\x12\x1f.tau.register.v2.ResolveRequest\x1a#.tau.register.v2.DeploymentManifestB\xc3\x01\n" +
 	"\x13com.tau.register.v2B\rRegisterProtoP\x01Z?github.com/taubyte/tau/pkg/proto/gen/tau/register/v2;registerv2\xa2\x02\x03TRX\xaa\x02\x0fTau.Register.V2\xca\x02\x0fTau\\Register\\V2\xe2\x02\x1bTau\\Register\\V2\\GPBMetadata\xea\x02\x11Tau::Register::V2b\x06proto3"
 
 var (
@@ -1890,82 +1999,87 @@ func file_tau_register_v2_register_proto_rawDescGZIP() []byte {
 	return file_tau_register_v2_register_proto_rawDescData
 }
 
-var file_tau_register_v2_register_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
+var file_tau_register_v2_register_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_tau_register_v2_register_proto_goTypes = []any{
 	(*Pointer)(nil),             // 0: tau.register.v2.Pointer
 	(*PublishRequest)(nil),      // 1: tau.register.v2.PublishRequest
 	(*View)(nil),                // 2: tau.register.v2.View
 	(*ViewRequest)(nil),         // 3: tau.register.v2.ViewRequest
 	(*ViewPointer)(nil),         // 4: tau.register.v2.ViewPointer
-	(*DestinationRequest)(nil),  // 5: tau.register.v2.DestinationRequest
-	(*Assignment)(nil),          // 6: tau.register.v2.Assignment
-	(*Assignments)(nil),         // 7: tau.register.v2.Assignments
-	(*PublishResponse)(nil),     // 8: tau.register.v2.PublishResponse
-	(*ResolveRequest)(nil),      // 9: tau.register.v2.ResolveRequest
-	(*ObjectRequest)(nil),       // 10: tau.register.v2.ObjectRequest
-	(*CompiledProject)(nil),     // 11: tau.register.v2.CompiledProject
-	(*ProjectRequest)(nil),      // 12: tau.register.v2.ProjectRequest
-	(*Deployments)(nil),         // 13: tau.register.v2.Deployments
-	(*HostRequest)(nil),         // 14: tau.register.v2.HostRequest
-	(*HostAnswer)(nil),          // 15: tau.register.v2.HostAnswer
-	(*LinkRequest)(nil),         // 16: tau.register.v2.LinkRequest
-	(*ProjectRecord)(nil),       // 17: tau.register.v2.ProjectRecord
-	(*RepositoryRequest)(nil),   // 18: tau.register.v2.RepositoryRequest
-	(*RepositoryRecord)(nil),    // 19: tau.register.v2.RepositoryRecord
-	(*ClaimantRequest)(nil),     // 20: tau.register.v2.ClaimantRequest
-	(*ProjectRecords)(nil),      // 21: tau.register.v2.ProjectRecords
-	(*ListProjectsRequest)(nil), // 22: tau.register.v2.ListProjectsRequest
-	(*GrantRequest)(nil),        // 23: tau.register.v2.GrantRequest
-	(*GrantRecord)(nil),         // 24: tau.register.v2.GrantRecord
-	(*GrantRecords)(nil),        // 25: tau.register.v2.GrantRecords
-	(*RevokeRequest)(nil),       // 26: tau.register.v2.RevokeRequest
-	(*RevokeResponse)(nil),      // 27: tau.register.v2.RevokeResponse
-	(*RoleRequest)(nil),         // 28: tau.register.v2.RoleRequest
-	(*RoleAnswer)(nil),          // 29: tau.register.v2.RoleAnswer
+	(*DeploymentManifest)(nil),  // 5: tau.register.v2.DeploymentManifest
+	(*DestinationRequest)(nil),  // 6: tau.register.v2.DestinationRequest
+	(*Assignment)(nil),          // 7: tau.register.v2.Assignment
+	(*Assignments)(nil),         // 8: tau.register.v2.Assignments
+	(*PublishResponse)(nil),     // 9: tau.register.v2.PublishResponse
+	(*ResolveRequest)(nil),      // 10: tau.register.v2.ResolveRequest
+	(*ObjectRequest)(nil),       // 11: tau.register.v2.ObjectRequest
+	(*CompiledProject)(nil),     // 12: tau.register.v2.CompiledProject
+	(*ProjectRequest)(nil),      // 13: tau.register.v2.ProjectRequest
+	(*Deployments)(nil),         // 14: tau.register.v2.Deployments
+	(*HostRequest)(nil),         // 15: tau.register.v2.HostRequest
+	(*HostAnswer)(nil),          // 16: tau.register.v2.HostAnswer
+	(*LinkRequest)(nil),         // 17: tau.register.v2.LinkRequest
+	(*ProjectRecord)(nil),       // 18: tau.register.v2.ProjectRecord
+	(*RepositoryRequest)(nil),   // 19: tau.register.v2.RepositoryRequest
+	(*RepositoryRecord)(nil),    // 20: tau.register.v2.RepositoryRecord
+	(*ClaimantRequest)(nil),     // 21: tau.register.v2.ClaimantRequest
+	(*ProjectRecords)(nil),      // 22: tau.register.v2.ProjectRecords
+	(*ListProjectsRequest)(nil), // 23: tau.register.v2.ListProjectsRequest
+	(*GrantRequest)(nil),        // 24: tau.register.v2.GrantRequest
+	(*GrantRecord)(nil),         // 25: tau.register.v2.GrantRecord
+	(*GrantRecords)(nil),        // 26: tau.register.v2.GrantRecords
+	(*RevokeRequest)(nil),       // 27: tau.register.v2.RevokeRequest
+	(*RevokeResponse)(nil),      // 28: tau.register.v2.RevokeResponse
+	(*RoleRequest)(nil),         // 29: tau.register.v2.RoleRequest
+	(*RoleAnswer)(nil),          // 30: tau.register.v2.RoleAnswer
+	nil,                         // 31: tau.register.v2.DeploymentManifest.ViewsEntry
 }
 var file_tau_register_v2_register_proto_depIdxs = []int32{
 	2,  // 0: tau.register.v2.PublishRequest.views:type_name -> tau.register.v2.View
-	4,  // 1: tau.register.v2.Assignment.view:type_name -> tau.register.v2.ViewPointer
-	6,  // 2: tau.register.v2.Assignments.assignments:type_name -> tau.register.v2.Assignment
-	17, // 3: tau.register.v2.ProjectRecords.projects:type_name -> tau.register.v2.ProjectRecord
-	24, // 4: tau.register.v2.GrantRecords.grants:type_name -> tau.register.v2.GrantRecord
-	16, // 5: tau.register.v2.RegisterService.Link:input_type -> tau.register.v2.LinkRequest
-	12, // 6: tau.register.v2.RegisterService.Project:input_type -> tau.register.v2.ProjectRequest
-	18, // 7: tau.register.v2.RegisterService.Repository:input_type -> tau.register.v2.RepositoryRequest
-	20, // 8: tau.register.v2.RegisterService.ProjectsOf:input_type -> tau.register.v2.ClaimantRequest
-	22, // 9: tau.register.v2.RegisterService.ListProjects:input_type -> tau.register.v2.ListProjectsRequest
-	23, // 10: tau.register.v2.RegisterService.Grant:input_type -> tau.register.v2.GrantRequest
-	26, // 11: tau.register.v2.RegisterService.Revoke:input_type -> tau.register.v2.RevokeRequest
-	12, // 12: tau.register.v2.RegisterService.Grants:input_type -> tau.register.v2.ProjectRequest
-	28, // 13: tau.register.v2.RegisterService.Role:input_type -> tau.register.v2.RoleRequest
-	1,  // 14: tau.register.v2.RegisterService.Publish:input_type -> tau.register.v2.PublishRequest
-	9,  // 15: tau.register.v2.RegisterService.Resolve:input_type -> tau.register.v2.ResolveRequest
-	10, // 16: tau.register.v2.RegisterService.Object:input_type -> tau.register.v2.ObjectRequest
-	12, // 17: tau.register.v2.RegisterService.Environments:input_type -> tau.register.v2.ProjectRequest
-	14, // 18: tau.register.v2.RegisterService.ResolveHost:input_type -> tau.register.v2.HostRequest
-	3,  // 19: tau.register.v2.RegisterService.ResolveView:input_type -> tau.register.v2.ViewRequest
-	5,  // 20: tau.register.v2.RegisterService.Assigned:input_type -> tau.register.v2.DestinationRequest
-	17, // 21: tau.register.v2.RegisterService.Link:output_type -> tau.register.v2.ProjectRecord
-	17, // 22: tau.register.v2.RegisterService.Project:output_type -> tau.register.v2.ProjectRecord
-	19, // 23: tau.register.v2.RegisterService.Repository:output_type -> tau.register.v2.RepositoryRecord
-	21, // 24: tau.register.v2.RegisterService.ProjectsOf:output_type -> tau.register.v2.ProjectRecords
-	21, // 25: tau.register.v2.RegisterService.ListProjects:output_type -> tau.register.v2.ProjectRecords
-	24, // 26: tau.register.v2.RegisterService.Grant:output_type -> tau.register.v2.GrantRecord
-	27, // 27: tau.register.v2.RegisterService.Revoke:output_type -> tau.register.v2.RevokeResponse
-	25, // 28: tau.register.v2.RegisterService.Grants:output_type -> tau.register.v2.GrantRecords
-	29, // 29: tau.register.v2.RegisterService.Role:output_type -> tau.register.v2.RoleAnswer
-	8,  // 30: tau.register.v2.RegisterService.Publish:output_type -> tau.register.v2.PublishResponse
-	0,  // 31: tau.register.v2.RegisterService.Resolve:output_type -> tau.register.v2.Pointer
-	11, // 32: tau.register.v2.RegisterService.Object:output_type -> tau.register.v2.CompiledProject
-	13, // 33: tau.register.v2.RegisterService.Environments:output_type -> tau.register.v2.Deployments
-	15, // 34: tau.register.v2.RegisterService.ResolveHost:output_type -> tau.register.v2.HostAnswer
-	4,  // 35: tau.register.v2.RegisterService.ResolveView:output_type -> tau.register.v2.ViewPointer
-	7,  // 36: tau.register.v2.RegisterService.Assigned:output_type -> tau.register.v2.Assignments
-	21, // [21:37] is the sub-list for method output_type
-	5,  // [5:21] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	31, // 1: tau.register.v2.DeploymentManifest.views:type_name -> tau.register.v2.DeploymentManifest.ViewsEntry
+	4,  // 2: tau.register.v2.Assignment.view:type_name -> tau.register.v2.ViewPointer
+	7,  // 3: tau.register.v2.Assignments.assignments:type_name -> tau.register.v2.Assignment
+	18, // 4: tau.register.v2.ProjectRecords.projects:type_name -> tau.register.v2.ProjectRecord
+	25, // 5: tau.register.v2.GrantRecords.grants:type_name -> tau.register.v2.GrantRecord
+	17, // 6: tau.register.v2.RegisterService.Link:input_type -> tau.register.v2.LinkRequest
+	13, // 7: tau.register.v2.RegisterService.Project:input_type -> tau.register.v2.ProjectRequest
+	19, // 8: tau.register.v2.RegisterService.Repository:input_type -> tau.register.v2.RepositoryRequest
+	21, // 9: tau.register.v2.RegisterService.ProjectsOf:input_type -> tau.register.v2.ClaimantRequest
+	23, // 10: tau.register.v2.RegisterService.ListProjects:input_type -> tau.register.v2.ListProjectsRequest
+	24, // 11: tau.register.v2.RegisterService.Grant:input_type -> tau.register.v2.GrantRequest
+	27, // 12: tau.register.v2.RegisterService.Revoke:input_type -> tau.register.v2.RevokeRequest
+	13, // 13: tau.register.v2.RegisterService.Grants:input_type -> tau.register.v2.ProjectRequest
+	29, // 14: tau.register.v2.RegisterService.Role:input_type -> tau.register.v2.RoleRequest
+	1,  // 15: tau.register.v2.RegisterService.Publish:input_type -> tau.register.v2.PublishRequest
+	10, // 16: tau.register.v2.RegisterService.Resolve:input_type -> tau.register.v2.ResolveRequest
+	11, // 17: tau.register.v2.RegisterService.Object:input_type -> tau.register.v2.ObjectRequest
+	13, // 18: tau.register.v2.RegisterService.Environments:input_type -> tau.register.v2.ProjectRequest
+	15, // 19: tau.register.v2.RegisterService.ResolveHost:input_type -> tau.register.v2.HostRequest
+	3,  // 20: tau.register.v2.RegisterService.ResolveView:input_type -> tau.register.v2.ViewRequest
+	6,  // 21: tau.register.v2.RegisterService.Assigned:input_type -> tau.register.v2.DestinationRequest
+	10, // 22: tau.register.v2.RegisterService.Manifest:input_type -> tau.register.v2.ResolveRequest
+	18, // 23: tau.register.v2.RegisterService.Link:output_type -> tau.register.v2.ProjectRecord
+	18, // 24: tau.register.v2.RegisterService.Project:output_type -> tau.register.v2.ProjectRecord
+	20, // 25: tau.register.v2.RegisterService.Repository:output_type -> tau.register.v2.RepositoryRecord
+	22, // 26: tau.register.v2.RegisterService.ProjectsOf:output_type -> tau.register.v2.ProjectRecords
+	22, // 27: tau.register.v2.RegisterService.ListProjects:output_type -> tau.register.v2.ProjectRecords
+	25, // 28: tau.register.v2.RegisterService.Grant:output_type -> tau.register.v2.GrantRecord
+	28, // 29: tau.register.v2.RegisterService.Revoke:output_type -> tau.register.v2.RevokeResponse
+	26, // 30: tau.register.v2.RegisterService.Grants:output_type -> tau.register.v2.GrantRecords
+	30, // 31: tau.register.v2.RegisterService.Role:output_type -> tau.register.v2.RoleAnswer
+	9,  // 32: tau.register.v2.RegisterService.Publish:output_type -> tau.register.v2.PublishResponse
+	0,  // 33: tau.register.v2.RegisterService.Resolve:output_type -> tau.register.v2.Pointer
+	12, // 34: tau.register.v2.RegisterService.Object:output_type -> tau.register.v2.CompiledProject
+	14, // 35: tau.register.v2.RegisterService.Environments:output_type -> tau.register.v2.Deployments
+	16, // 36: tau.register.v2.RegisterService.ResolveHost:output_type -> tau.register.v2.HostAnswer
+	4,  // 37: tau.register.v2.RegisterService.ResolveView:output_type -> tau.register.v2.ViewPointer
+	8,  // 38: tau.register.v2.RegisterService.Assigned:output_type -> tau.register.v2.Assignments
+	5,  // 39: tau.register.v2.RegisterService.Manifest:output_type -> tau.register.v2.DeploymentManifest
+	23, // [23:40] is the sub-list for method output_type
+	6,  // [6:23] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_tau_register_v2_register_proto_init() }
@@ -1979,7 +2093,7 @@ func file_tau_register_v2_register_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_register_v2_register_proto_rawDesc), len(file_tau_register_v2_register_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   30,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

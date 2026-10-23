@@ -444,8 +444,8 @@ type refusing struct{}
 func (refusing) Resolve(context.Context, string, string) (register.Pointer, error) {
 	return register.Pointer{}, register.ErrNotPublished
 }
-func (refusing) ResolveView(context.Context, string, string, string) (register.ViewPointer, error) {
-	return register.ViewPointer{}, register.ErrNotPublished
+func (refusing) Manifest(context.Context, string, string) (register.Manifest, register.ObjectID, error) {
+	return register.Manifest{}, "", register.ErrNotPublished
 }
 func (refusing) Publish(context.Context, register.Publication) (register.ObjectID, error) {
 	return "", errors.New("refused")
@@ -456,8 +456,8 @@ type unreadable struct{}
 func (unreadable) Resolve(context.Context, string, string) (register.Pointer, error) {
 	return register.Pointer{}, errors.New("unreadable")
 }
-func (unreadable) ResolveView(context.Context, string, string, string) (register.ViewPointer, error) {
-	return register.ViewPointer{}, errors.New("unreadable")
+func (unreadable) Manifest(context.Context, string, string) (register.Manifest, register.ObjectID, error) {
+	return register.Manifest{}, "", errors.New("unreadable")
 }
 func (unreadable) Publish(context.Context, register.Publication) (register.ObjectID, error) {
 	return "", nil

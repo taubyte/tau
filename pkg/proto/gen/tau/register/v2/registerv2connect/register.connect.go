@@ -132,6 +132,9 @@ const (
 	// RegisterServiceAssignedProcedure is the fully-qualified name of the RegisterService's Assigned
 	// RPC.
 	RegisterServiceAssignedProcedure = "/tau.register.v2.RegisterService/Assigned"
+	// RegisterServiceManifestProcedure is the fully-qualified name of the RegisterService's Manifest
+	// RPC.
+	RegisterServiceManifestProcedure = "/tau.register.v2.RegisterService/Manifest"
 )
 
 // RegisterServiceClient is a client for the tau.register.v2.RegisterService service.
@@ -195,6 +198,9 @@ type RegisterServiceClient interface {
 	// Assigned is every deployment a destination holds a view of now, read from
 	// the destination's own index rather than from every project.
 	Assigned(context.Context, *connect.Request[v2.DestinationRequest]) (*connect.Response[v2.Assignments], error)
+	// Manifest is a deployment's current revision: its whole object and every
+	// destination it lists. A deployment nobody published is NotFound.
+	Manifest(context.Context, *connect.Request[v2.ResolveRequest]) (*connect.Response[v2.DeploymentManifest], error)
 }
 
 // NewRegisterServiceClient constructs a client for the tau.register.v2.RegisterService service. By
@@ -304,6 +310,12 @@ func NewRegisterServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(registerServiceMethods.ByName("Assigned")),
 			connect.WithClientOptions(opts...),
 		),
+		manifest: connect.NewClient[v2.ResolveRequest, v2.DeploymentManifest](
+			httpClient,
+			baseURL+RegisterServiceManifestProcedure,
+			connect.WithSchema(registerServiceMethods.ByName("Manifest")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -325,6 +337,7 @@ type registerServiceClient struct {
 	resolveHost  *connect.Client[v2.HostRequest, v2.HostAnswer]
 	resolveView  *connect.Client[v2.ViewRequest, v2.ViewPointer]
 	assigned     *connect.Client[v2.DestinationRequest, v2.Assignments]
+	manifest     *connect.Client[v2.ResolveRequest, v2.DeploymentManifest]
 }
 
 // Link calls tau.register.v2.RegisterService.Link.
@@ -407,6 +420,11 @@ func (c *registerServiceClient) Assigned(ctx context.Context, req *connect.Reque
 	return c.assigned.CallUnary(ctx, req)
 }
 
+// Manifest calls tau.register.v2.RegisterService.Manifest.
+func (c *registerServiceClient) Manifest(ctx context.Context, req *connect.Request[v2.ResolveRequest]) (*connect.Response[v2.DeploymentManifest], error) {
+	return c.manifest.CallUnary(ctx, req)
+}
+
 // RegisterServiceHandler is an implementation of the tau.register.v2.RegisterService service.
 type RegisterServiceHandler interface {
 	// Link claims a project id for a configuration repository and attaches
@@ -468,6 +486,9 @@ type RegisterServiceHandler interface {
 	// Assigned is every deployment a destination holds a view of now, read from
 	// the destination's own index rather than from every project.
 	Assigned(context.Context, *connect.Request[v2.DestinationRequest]) (*connect.Response[v2.Assignments], error)
+	// Manifest is a deployment's current revision: its whole object and every
+	// destination it lists. A deployment nobody published is NotFound.
+	Manifest(context.Context, *connect.Request[v2.ResolveRequest]) (*connect.Response[v2.DeploymentManifest], error)
 }
 
 // NewRegisterServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -573,6 +594,12 @@ func NewRegisterServiceHandler(svc RegisterServiceHandler, opts ...connect.Handl
 		connect.WithSchema(registerServiceMethods.ByName("Assigned")),
 		connect.WithHandlerOptions(opts...),
 	)
+	registerServiceManifestHandler := connect.NewUnaryHandler(
+		RegisterServiceManifestProcedure,
+		svc.Manifest,
+		connect.WithSchema(registerServiceMethods.ByName("Manifest")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/tau.register.v2.RegisterService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RegisterServiceLinkProcedure:
@@ -607,6 +634,8 @@ func NewRegisterServiceHandler(svc RegisterServiceHandler, opts ...connect.Handl
 			registerServiceResolveViewHandler.ServeHTTP(w, r)
 		case RegisterServiceAssignedProcedure:
 			registerServiceAssignedHandler.ServeHTTP(w, r)
+		case RegisterServiceManifestProcedure:
+			registerServiceManifestHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -678,4 +707,8 @@ func (UnimplementedRegisterServiceHandler) ResolveView(context.Context, *connect
 
 func (UnimplementedRegisterServiceHandler) Assigned(context.Context, *connect.Request[v2.DestinationRequest]) (*connect.Response[v2.Assignments], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.Assigned is not implemented"))
+}
+
+func (UnimplementedRegisterServiceHandler) Manifest(context.Context, *connect.Request[v2.ResolveRequest]) (*connect.Response[v2.DeploymentManifest], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.register.v2.RegisterService.Manifest is not implemented"))
 }

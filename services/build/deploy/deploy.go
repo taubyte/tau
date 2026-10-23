@@ -143,7 +143,7 @@ type Builder interface {
 // then publish.
 type Register interface {
 	Resolve(ctx context.Context, project, environment string) (register.Pointer, error)
-	ResolveView(ctx context.Context, project, environment, destination string) (register.ViewPointer, error)
+	Manifest(ctx context.Context, project, environment string) (register.Manifest, register.ObjectID, error)
 	Publish(ctx context.Context, p register.Publication) (register.ObjectID, error)
 }
 
@@ -494,19 +494,22 @@ func (d *Deploy) cut(flat map[string]any, environment string, out backend.Output
 	return cut, nil
 }
 
-// sameViews is whether every view of a deployment is what is already published, so a
-// push that changed nothing any region reads moves no pointer — and a change in what
-// this cloud serves, with the object the same, still does.
+// sameViews is whether the current manifest lists exactly these views, so a push that
+// changed nothing any region reads moves no pointer — and a change in what this cloud
+// serves, a destination added or dropped with the object the same, still does.
 func sameViews(ctx context.Context, r Register, projectID, environment string, views []register.View) (bool, error) {
+	m, _, err := r.Manifest(ctx, projectID, environment)
+	switch {
+	case errors.Is(err, register.ErrNotPublished):
+		return false, nil
+	case err != nil:
+		return false, fmt.Errorf("deploy: reading what %s/%s lists: %w", projectID, environment, err)
+	}
+	if m.Whole != (views == nil) || len(m.Views) != len(views) {
+		return false, nil
+	}
 	for _, v := range views {
-		current, err := r.ResolveView(ctx, projectID, environment, v.Destination)
-		switch {
-		case errors.Is(err, register.ErrNoView), errors.Is(err, register.ErrNotPublished):
-			return false, nil
-		case err != nil:
-			return false, fmt.Errorf("deploy: reading what %s/%s holds in %s: %w", projectID, environment, v.Destination, err)
-		}
-		if current.Object != register.IDOf(v.Compiled) {
+		if id, ok := m.Views[v.Destination]; !ok || id != register.IDOf(v.Compiled) {
 			return false, nil
 		}
 	}

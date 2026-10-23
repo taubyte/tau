@@ -185,3 +185,21 @@ func TestViewsCrossTheWire(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, pkgregister.IDOf([]byte("b")), v.Object)
 }
+
+func TestTheManifestCrossesTheWire(t *testing.T) {
+	h := newHarness(t, pkgregister.NewMemStore())
+	c := newClient(t, h)
+
+	_, _, err := c.Manifest(t.Context(), "shop", "prod")
+	require.ErrorIs(t, err, pkgregister.ErrNotPublished)
+
+	_, err = c.Publish(t.Context(), pkgregister.Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("whole"),
+		Views: []pkgregister.View{{Destination: "region-1", Compiled: []byte("region-1")}}})
+	require.NoError(t, err)
+	m, id, err := c.Manifest(t.Context(), "shop", "prod")
+	require.NoError(t, err)
+	local, localID, err := h.Service.reg.Manifest(t.Context(), "shop", "prod")
+	require.NoError(t, err)
+	require.Equal(t, local, m)
+	require.Equal(t, localID, id)
+}

@@ -133,6 +133,19 @@ message ViewPointer {
   string manifest = 3;
 }
 
+// DeploymentManifest is one revision of one deployment. whole is a publication nobody
+// cut; views is each listed destination's object.
+message DeploymentManifest {
+  string project = 1;
+  string environment = 2;
+  uint64 revision = 3;
+  string object = 4;
+  bool whole = 5;
+  map<string, string> views = 6;
+  // id is the manifest's own content address.
+  string id = 7;
+}
+
 message DestinationRequest {
   string destination = 1;
 }
@@ -360,4 +373,8 @@ service RegisterService {
   // Assigned is every deployment a destination holds a view of now, read from
   // the destination's own index rather than from every project.
   rpc Assigned(DestinationRequest) returns (Assignments);
+
+  // Manifest is a deployment's current revision: its whole object and every
+  // destination it lists. A deployment nobody published is NotFound.
+  rpc Manifest(ResolveRequest) returns (DeploymentManifest);
 }

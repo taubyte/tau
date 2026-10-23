@@ -183,3 +183,19 @@ func wire(err error) error {
 		return connect.NewError(connect.CodeUnavailable, err)
 	}
 }
+
+// Manifest is a deployment's current revision and every destination it lists.
+func (h *handler) Manifest(ctx context.Context, req *connect.Request[registerv2.ResolveRequest]) (*connect.Response[registerv2.DeploymentManifest], error) {
+	m, id, err := h.s.reg.Manifest(ctx, req.Msg.GetProject(), req.Msg.GetEnvironment())
+	if err != nil {
+		return nil, wire(err)
+	}
+	out := &registerv2.DeploymentManifest{
+		Project: m.Project, Environment: m.Environment, Revision: m.Revision,
+		Object: string(m.Object), Whole: m.Whole, Views: map[string]string{}, Id: string(id),
+	}
+	for d, v := range m.Views {
+		out.Views[d] = string(v)
+	}
+	return connect.NewResponse(out), nil
+}

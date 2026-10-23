@@ -193,3 +193,22 @@ func matching(message string, candidates ...error) error {
 	}
 	return nil
 }
+
+// Manifest is a deployment's current revision and every destination it lists.
+func (c *Client) Manifest(ctx context.Context, project, environment string) (pkgregister.Manifest, pkgregister.ObjectID, error) {
+	res, err := c.svc.Manifest(ctx, connect.NewRequest(&registerv2.ResolveRequest{
+		Project: project, Environment: environment,
+	}))
+	if err != nil {
+		return pkgregister.Manifest{}, "", unwire(err)
+	}
+	m := pkgregister.Manifest{
+		Project: res.Msg.GetProject(), Environment: res.Msg.GetEnvironment(), Revision: res.Msg.GetRevision(),
+		Object: pkgregister.ObjectID(res.Msg.GetObject()), Whole: res.Msg.GetWhole(),
+		Views: map[string]pkgregister.ObjectID{},
+	}
+	for d, v := range res.Msg.GetViews() {
+		m.Views[d] = pkgregister.ObjectID(v)
+	}
+	return m, pkgregister.ObjectID(res.Msg.GetId()), nil
+}
