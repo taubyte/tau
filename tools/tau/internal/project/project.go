@@ -246,17 +246,11 @@ func (r Report) Broken() bool {
 }
 
 // Validate compiles the project for environment ("" for the bare keys) and
-// audits the result.
+// audits it as a build judges it before a cloud does: the cut is previewed across
+// the regions the project itself names (schema.Preview), so whether a cloud serves
+// those regions is left to the cloud, and everything else a cloud would refuse is
+// refused here.
 func (p *Project) Validate(ctx context.Context, environment string) Report {
-	return validate(ctx, p.s, environment)
-}
-
-// Preflight is Validate as a build judges a project before a cloud does: the
-// cut is previewed across the regions the project itself names (schema.Preview,
-// which is the vocabulary's own look before any cloud is chosen), so whether a
-// cloud serves those regions is left to the cloud, and everything else a cloud
-// would refuse is refused here.
-func (p *Project) Preflight(ctx context.Context, environment string) Report {
 	obj, _, err := p.s.Compile(ctx, schema.CompileOptions{Environment: environment})
 	if err != nil {
 		return Report{Error: err.Error(), Findings: []session.Note{}}
