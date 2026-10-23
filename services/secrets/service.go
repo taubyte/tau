@@ -36,6 +36,11 @@ const (
 	// cluster generates a new epoch and re-encrypts under it.
 	defaultRotateAfter = 30 * 24 * time.Hour
 
+	// defaultRetainReplaced is how long a replaced version outlives the one
+	// that replaced it, so a reader that must still accept the old value for a
+	// while after a rotation (a webhook secret) can read it.
+	defaultRetainReplaced = time.Hour
+
 	// defaultReconcileInterval is how often a node checks whether the roster
 	// changed, the key aged out, or a migration is unfinished.
 	defaultReconcileInterval = 5 * time.Minute
@@ -71,6 +76,7 @@ type Service struct {
 	pubsub         PubSub
 	bootDelay      time.Duration
 	rotateAfter    time.Duration
+	retainReplaced time.Duration
 	reconcileEvery time.Duration
 	now            func() time.Time
 	serverOptions  []rpc.ServerOption
@@ -113,6 +119,7 @@ type options struct {
 	pubsub         PubSub
 	bootDelay      time.Duration
 	rotateAfter    time.Duration
+	retainReplaced time.Duration
 	reconcileEvery time.Duration
 	now            func() time.Time
 	serverOptions  []rpc.ServerOption
@@ -191,6 +198,19 @@ func WithRotationAge(age time.Duration) Option {
 	}
 }
 
+// WithReplacedRetention sets how long a replaced version is kept after the
+// version that replaced it was written. Zero prunes it as soon as the newer one
+// is held as widely.
+func WithReplacedRetention(d time.Duration) Option {
+	return func(o *options) error {
+		if d < 0 {
+			return errors.New("replaced retention cannot be negative")
+		}
+		o.retainReplaced = d
+		return nil
+	}
+}
+
 // WithReconcileInterval sets how often the node re-checks the roster, the key
 // age, and whether a migration is unfinished.
 func WithReconcileInterval(interval time.Duration) Option {
@@ -241,6 +261,7 @@ func New(h host.Host, db kvdb.KVDB, opts ...Option) (*Service, error) {
 	o := options{
 		bootDelay:      defaultBootDelay,
 		rotateAfter:    defaultRotateAfter,
+		retainReplaced: defaultRetainReplaced,
 		reconcileEvery: defaultReconcileInterval,
 		now:            time.Now,
 	}
@@ -276,6 +297,7 @@ func New(h host.Host, db kvdb.KVDB, opts ...Option) (*Service, error) {
 		pubsub:         o.pubsub,
 		bootDelay:      o.bootDelay,
 		rotateAfter:    o.rotateAfter,
+		retainReplaced: o.retainReplaced,
 		reconcileEvery: o.reconcileEvery,
 		now:            o.now,
 		serverOptions:  o.serverOptions,
@@ -625,6 +647,26 @@ func (srv *Service) Get(ctx context.Context, ref Ref) (*entry, *KeyMeta, *tdh.Wr
 	}
 
 	return nil, nil, nil, "", errors.Join(failures...)
+}
+
+// Previous returns the version the newest one replaced, with the newest one's
+// written-at. Only the immediate predecessor is ever served: what it replaced
+// is not a previous value of anything a reader holds.
+func (srv *Service) Previous(ctx context.Context, ref Ref) (*entry, int64, *KeyMeta, *tdh.Wrapping, string, error) {
+	versions, err := srv.records.Versions(ctx, ref)
+	if err != nil {
+		return nil, 0, nil, nil, "", err
+	}
+	if len(versions) < 2 {
+		return nil, 0, nil, nil, "", fmt.Errorf("secret %s has no previous version: %w", ref, ErrNotSet)
+	}
+
+	previous := versions[1]
+	key, wrapping, writer, err := srv.readable(ctx, previous.version)
+	if err != nil {
+		return nil, 0, nil, nil, "", err
+	}
+	return previous, versions[0].WrittenAt, key, wrapping, writer, nil
 }
 
 // readable finds the newest key this node holds that a version is wrapped

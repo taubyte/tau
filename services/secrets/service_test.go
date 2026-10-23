@@ -167,7 +167,7 @@ func (c *cluster) serve(t *testing.T, node peerNode.Node, db coreKvdb.KVDB, path
 	// service starts listening after its node has connected, so that record
 	// arrived only by an identify push -- late under load, and on a busy
 	// machine never inside the mesh wait.
-	opts := append([]Option{WithRoot(path), WithPubSub(node.Messaging()), WithBootstrapDelay(never), WithMembers(c.memberIDs)}, c.opts...)
+	opts := append([]Option{WithRoot(path), WithPubSub(node.Messaging()), WithBootstrapDelay(never), WithMembers(c.memberIDs), WithReplacedRetention(0)}, c.opts...)
 	srv, err := New(node.Peer(), db, opts...)
 	require.NoError(t, err)
 	require.NoError(t, srv.Start(context.Background()))

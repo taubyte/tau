@@ -569,7 +569,10 @@ type Sealed struct {
 	Wrapping   *Wrapping `protobuf:"bytes,5,opt,name=wrapping,proto3" json:"wrapping,omitempty"`
 	Ciphertext []byte    `protobuf:"bytes,6,opt,name=ciphertext,proto3" json:"ciphertext,omitempty"`
 	// cid names the version served: the CID of its ciphertext.
-	Cid           string `protobuf:"bytes,7,opt,name=cid,proto3" json:"cid,omitempty"`
+	Cid string `protobuf:"bytes,7,opt,name=cid,proto3" json:"cid,omitempty"`
+	// replaced_at is set by Previous only: the written-at, in unix nanoseconds,
+	// of the newer version that replaced the one served.
+	ReplacedAt    int64 `protobuf:"varint,8,opt,name=replaced_at,json=replacedAt,proto3" json:"replaced_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -651,6 +654,13 @@ func (x *Sealed) GetCid() string {
 		return x.Cid
 	}
 	return ""
+}
+
+func (x *Sealed) GetReplacedAt() int64 {
+	if x != nil {
+		return x.ReplacedAt
+	}
+	return 0
 }
 
 type PartialRequest struct {
@@ -1118,7 +1128,7 @@ const file_tau_secrets_v2_secrets_proto_rawDesc = "" +
 	"\n" +
 	"ciphertext\x18\x03 \x01(\fR\n" +
 	"ciphertext\x124\n" +
-	"\bwrapping\x18\x04 \x01(\v2\x18.tau.secrets.v2.WrappingR\bwrapping\"\xcb\x01\n" +
+	"\bwrapping\x18\x04 \x01(\v2\x18.tau.secrets.v2.WrappingR\bwrapping\"\xec\x01\n" +
 	"\x06Sealed\x12\x14\n" +
 	"\x05found\x18\x01 \x01(\bR\x05found\x12\x15\n" +
 	"\x06key_id\x18\x02 \x01(\tR\x05keyId\x12\x14\n" +
@@ -1128,7 +1138,9 @@ const file_tau_secrets_v2_secrets_proto_rawDesc = "" +
 	"\n" +
 	"ciphertext\x18\x06 \x01(\fR\n" +
 	"ciphertext\x12\x10\n" +
-	"\x03cid\x18\a \x01(\tR\x03cid\"x\n" +
+	"\x03cid\x18\a \x01(\tR\x03cid\x12\x1f\n" +
+	"\vreplaced_at\x18\b \x01(\x03R\n" +
+	"replacedAt\"x\n" +
 	"\x0ePartialRequest\x12%\n" +
 	"\x03ref\x18\x01 \x01(\v2\x13.tau.secrets.v2.RefR\x03ref\x12\x15\n" +
 	"\x06key_id\x18\x02 \x01(\tR\x05keyId\x12\x16\n" +
@@ -1164,11 +1176,12 @@ const file_tau_secrets_v2_secrets_proto_rawDesc = "" +
 	"InitBundle\x124\n" +
 	"\asecrets\x18\x01 \x03(\v2\x1a.tau.secrets.v2.InitSecretR\asecrets\"&\n" +
 	"\rReplayRequest\x12\x15\n" +
-	"\x06key_id\x18\x01 \x01(\tR\x05keyId2\xf5\x02\n" +
+	"\x06key_id\x18\x01 \x01(\tR\x05keyId2\xae\x03\n" +
 	"\x0eSecretsService\x12;\n" +
 	"\x03Key\x12\x1a.tau.secrets.v2.KeyRequest\x1a\x18.tau.secrets.v2.GroupKey\x128\n" +
 	"\x03Put\x12\x1a.tau.secrets.v2.PutRequest\x1a\x15.tau.secrets.v2.Empty\x122\n" +
-	"\x03Get\x12\x13.tau.secrets.v2.Ref\x1a\x16.tau.secrets.v2.Sealed\x12L\n" +
+	"\x03Get\x12\x13.tau.secrets.v2.Ref\x1a\x16.tau.secrets.v2.Sealed\x127\n" +
+	"\bPrevious\x12\x13.tau.secrets.v2.Ref\x1a\x16.tau.secrets.v2.Sealed\x12L\n" +
 	"\aPartial\x12\x1e.tau.secrets.v2.PartialRequest\x1a!.tau.secrets.v2.PartialDecryption\x124\n" +
 	"\x06Delete\x12\x13.tau.secrets.v2.Ref\x1a\x15.tau.secrets.v2.Empty\x124\n" +
 	"\x04List\x12\x15.tau.secrets.v2.Scope\x1a\x15.tau.secrets.v2.Names2\x99\x01\n" +
@@ -1223,21 +1236,23 @@ var file_tau_secrets_v2_secrets_proto_depIdxs = []int32{
 	5,  // 9: tau.secrets.v2.SecretsService.Key:input_type -> tau.secrets.v2.KeyRequest
 	8,  // 10: tau.secrets.v2.SecretsService.Put:input_type -> tau.secrets.v2.PutRequest
 	3,  // 11: tau.secrets.v2.SecretsService.Get:input_type -> tau.secrets.v2.Ref
-	10, // 12: tau.secrets.v2.SecretsService.Partial:input_type -> tau.secrets.v2.PartialRequest
-	3,  // 13: tau.secrets.v2.SecretsService.Delete:input_type -> tau.secrets.v2.Ref
-	2,  // 14: tau.secrets.v2.SecretsService.List:input_type -> tau.secrets.v2.Scope
-	13, // 15: tau.secrets.v2.DealerService.Contribute:input_type -> tau.secrets.v2.Contribution
-	16, // 16: tau.secrets.v2.DealerService.Replay:input_type -> tau.secrets.v2.ReplayRequest
-	6,  // 17: tau.secrets.v2.SecretsService.Key:output_type -> tau.secrets.v2.GroupKey
-	4,  // 18: tau.secrets.v2.SecretsService.Put:output_type -> tau.secrets.v2.Empty
-	9,  // 19: tau.secrets.v2.SecretsService.Get:output_type -> tau.secrets.v2.Sealed
-	11, // 20: tau.secrets.v2.SecretsService.Partial:output_type -> tau.secrets.v2.PartialDecryption
-	4,  // 21: tau.secrets.v2.SecretsService.Delete:output_type -> tau.secrets.v2.Empty
-	12, // 22: tau.secrets.v2.SecretsService.List:output_type -> tau.secrets.v2.Names
-	4,  // 23: tau.secrets.v2.DealerService.Contribute:output_type -> tau.secrets.v2.Empty
-	13, // 24: tau.secrets.v2.DealerService.Replay:output_type -> tau.secrets.v2.Contribution
-	17, // [17:25] is the sub-list for method output_type
-	9,  // [9:17] is the sub-list for method input_type
+	3,  // 12: tau.secrets.v2.SecretsService.Previous:input_type -> tau.secrets.v2.Ref
+	10, // 13: tau.secrets.v2.SecretsService.Partial:input_type -> tau.secrets.v2.PartialRequest
+	3,  // 14: tau.secrets.v2.SecretsService.Delete:input_type -> tau.secrets.v2.Ref
+	2,  // 15: tau.secrets.v2.SecretsService.List:input_type -> tau.secrets.v2.Scope
+	13, // 16: tau.secrets.v2.DealerService.Contribute:input_type -> tau.secrets.v2.Contribution
+	16, // 17: tau.secrets.v2.DealerService.Replay:input_type -> tau.secrets.v2.ReplayRequest
+	6,  // 18: tau.secrets.v2.SecretsService.Key:output_type -> tau.secrets.v2.GroupKey
+	4,  // 19: tau.secrets.v2.SecretsService.Put:output_type -> tau.secrets.v2.Empty
+	9,  // 20: tau.secrets.v2.SecretsService.Get:output_type -> tau.secrets.v2.Sealed
+	9,  // 21: tau.secrets.v2.SecretsService.Previous:output_type -> tau.secrets.v2.Sealed
+	11, // 22: tau.secrets.v2.SecretsService.Partial:output_type -> tau.secrets.v2.PartialDecryption
+	4,  // 23: tau.secrets.v2.SecretsService.Delete:output_type -> tau.secrets.v2.Empty
+	12, // 24: tau.secrets.v2.SecretsService.List:output_type -> tau.secrets.v2.Names
+	4,  // 25: tau.secrets.v2.DealerService.Contribute:output_type -> tau.secrets.v2.Empty
+	13, // 26: tau.secrets.v2.DealerService.Replay:output_type -> tau.secrets.v2.Contribution
+	18, // [18:27] is the sub-list for method output_type
+	9,  // [9:18] is the sub-list for method input_type
 	9,  // [9:9] is the sub-list for extension type_name
 	9,  // [9:9] is the sub-list for extension extendee
 	0,  // [0:9] is the sub-list for field type_name

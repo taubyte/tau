@@ -202,16 +202,37 @@ func (c *Client) Get(ctx context.Context, ref Ref) ([]byte, error) {
 }
 
 func (c *Client) tryGet(ctx context.Context, ref Ref) ([]byte, error) {
+	plaintext, _, err := c.tryOpen(ctx, ref, secretsv2connect.SecretsServiceClient.Get)
+	return plaintext, err
+}
+
+// Previous opens the version the newest one replaced, and says when it was
+// replaced. It asks each member once and does not wait for one to settle: a
+// previous version is a fallback, and its absence is the common answer.
+func (c *Client) Previous(ctx context.Context, ref Ref) ([]byte, time.Time, error) {
+	if err := ref.Validate(); err != nil {
+		return nil, time.Time{}, err
+	}
+	plaintext, sealed, err := c.tryOpen(ctx, ref, secretsv2connect.SecretsServiceClient.Previous)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	return plaintext, time.Unix(0, sealed.GetReplacedAt()), nil
+}
+
+type fetchSealed func(api secretsv2connect.SecretsServiceClient, ctx context.Context, req *connect.Request[secretsv2.Ref]) (*connect.Response[secretsv2.Sealed], error)
+
+func (c *Client) tryOpen(ctx context.Context, ref Ref, fetch fetchSealed) ([]byte, *secretsv2.Sealed, error) {
 	targets := c.targets()
 	if len(targets) == 0 {
-		return nil, ErrNoMembers
+		return nil, nil, ErrNoMembers
 	}
 
 	var failures []error
 	for _, to := range targets {
-		plaintext, err := c.openAt(ctx, to, ref)
+		plaintext, sealed, err := c.openAt(ctx, to, ref, fetch)
 		if err == nil {
-			return plaintext, nil
+			return plaintext, sealed, nil
 		}
 		if errors.Is(err, errMiss) {
 			continue
@@ -219,58 +240,58 @@ func (c *Client) tryGet(ctx context.Context, ref Ref) ([]byte, error) {
 		failures = append(failures, fmt.Errorf("%s: %w", to, err))
 	}
 	if len(failures) == 0 {
-		return nil, fmt.Errorf("secret %s: %w", ref, ErrNotSet)
+		return nil, nil, fmt.Errorf("secret %s: %w", ref, ErrNotSet)
 	}
-	return nil, errors.Join(failures...)
+	return nil, nil, errors.Join(failures...)
 }
 
 var errMiss = errors.New("this member holds no such secret")
 
 // openAt reads the sealed secret from one member and opens it.
-func (c *Client) openAt(ctx context.Context, to peerCore.ID, ref Ref) ([]byte, error) {
+func (c *Client) openAt(ctx context.Context, to peerCore.ID, ref Ref, fetch fetchSealed) ([]byte, *secretsv2.Sealed, error) {
 	api, err := c.at(to)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	got, err := api.Get(ctx, connect.NewRequest(wireRef(ref)))
+	got, err := fetch(api, ctx, connect.NewRequest(wireRef(ref)))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	sealed := got.Msg
 	if !sealed.GetFound() {
-		return nil, errMiss
+		return nil, nil, errMiss
 	}
 
 	resp, err := api.Key(ctx, connect.NewRequest(&secretsv2.KeyRequest{KeyId: sealed.GetKeyId()}))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	key, err := groupKey(resp.Msg)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	v := version{Ref: ref, CID: sealed.GetCid()}
 	if v.CID != contentID(sealed.GetCiphertext()) {
-		return nil, fmt.Errorf("secret %s: the version served does not name its ciphertext", ref)
+		return nil, nil, fmt.Errorf("secret %s: the version served does not name its ciphertext", ref)
 	}
 	wrapping := &tdh.Wrapping{R: sealed.GetWrapping().GetR(), WrappedDEK: sealed.GetWrapping().GetWrappedDek()}
 	partials, err := c.partials(ctx, v, key, sealed.GetWriter())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	dek, err := tdh.Unwrap(wrapping, key.public, partials, key.threshold, wrapAAD(v, key.id))
 	if err != nil {
-		return nil, fmt.Errorf("unwrapping the data key for %s: %w", ref, err)
+		return nil, nil, fmt.Errorf("unwrapping the data key for %s: %w", ref, err)
 	}
 
 	plaintext, err := tdh.Unseal(dek, sealed.GetCiphertext(), contentAAD(ref))
 	if err != nil {
-		return nil, fmt.Errorf("opening secret %s: %w", ref, err)
+		return nil, nil, fmt.Errorf("opening secret %s: %w", ref, err)
 	}
-	return plaintext, nil
+	return plaintext, sealed, nil
 }
 
 // partials collects a threshold of partial decryptions against one writer's

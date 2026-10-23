@@ -120,7 +120,7 @@ func (s *Service) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	// push is only ever for one of the project's own repositories — otherwise a
 	// signature under any project's secret would authorize a job for any
 	// repository this cloud has.
-	event, err := s.deliveries.Verify(look.hook, r.Header, body)
+	event, err := s.deliveries.Verify(look.hook.accepting(s.now(), s.cfg.HookSecretGrace), r.Header, body)
 
 	// A REMEMBERED HOOK THAT REFUSES A DELIVERY IS ASKED FOR AGAIN, ONCE, and
 	// the same headers and body are verified against the answer. This — not
@@ -141,7 +141,7 @@ func (s *Service) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		if !s.usable(w, hookID, look.hook) {
 			return
 		}
-		event, err = s.deliveries.Verify(look.hook, r.Header, body)
+		event, err = s.deliveries.Verify(look.hook.accepting(s.now(), s.cfg.HookSecretGrace), r.Header, body)
 	}
 
 	switch {

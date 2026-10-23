@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
@@ -75,6 +76,13 @@ func absent(err error) error {
 func (v *vault) Secret(ctx context.Context, project, environment, secretID string) (string, error) {
 	value, err := v.client.Secret(ctx, project, environment, secretID)
 	return value, absent(err)
+}
+
+// Previous is the value a secret's newest version replaced, while the vault
+// still keeps it.
+func (v *vault) Previous(ctx context.Context, project, environment, secretID string) (string, time.Time, error) {
+	value, at, err := v.client.Previous(ctx, projectRef(project, environment, secretID))
+	return string(value), at, absent(err)
 }
 
 // Set, Delete and List are the developer's half, reached from the build

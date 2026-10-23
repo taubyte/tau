@@ -281,6 +281,10 @@ func (srv *Service) aged(ctx context.Context, keyID string) (bool, error) {
 // An abandoned version is never the one that opens, so it never prunes what
 // is older; it is kept rather than dropped, because its owner may yet carry
 // it forward, and a drop racing that carry-forward loses both versions.
+//
+// The version the opening one replaced is kept until the retention has passed
+// since the replacement was written, so Previous can serve it; nothing has to
+// end that window but the clock.
 func (srv *Service) prune(ctx context.Context) error {
 	refs, err := srv.records.All(ctx)
 	if err != nil {
@@ -307,7 +311,10 @@ func (srv *Service) prune(ctx context.Context) error {
 			if _, err := srv.open(ctx, v.version); err != nil {
 				continue
 			}
-			for _, older := range versions[i+1:] {
+			for j, older := range versions[i+1:] {
+				if j == 0 && srv.retainReplaced > 0 && srv.now().UnixNano() < v.WrittenAt+srv.retainReplaced.Nanoseconds() {
+					continue
+				}
 				if !srv.covers(ctx, v.version, older.version) {
 					continue
 				}

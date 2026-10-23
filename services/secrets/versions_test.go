@@ -539,7 +539,7 @@ func ownerAway(t *testing.T, ctx context.Context, away bool) {
 		open(2)
 		// Its first look is stale: v2 only under its own one-member key, v1
 		// under every node's. That must not prune v1.
-		returning, err := New(c.nodes[2].Peer(), c.dbs[2], WithRoot(c.paths[2]))
+		returning, err := New(c.nodes[2].Peer(), c.dbs[2], WithRoot(c.paths[2]), WithReplacedRetention(0))
 		require.NoError(t, err)
 		require.NoError(t, returning.prune(ctx))
 		assert.Equal(t, 2, versionsOn(t, ctx, returning, r), "a stale view pruned the older version")

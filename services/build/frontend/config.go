@@ -46,6 +46,11 @@ const (
 	// alike. Both are keyed by a string a stranger chooses, so both need a
 	// ceiling; see ratelimit.go for what that ceiling costs.
 	DefaultSecretCacheMax = 1024
+	// DefaultHookSecretGrace is how long a replaced hook secret still verifies
+	// after its replacement was written: deliveries already in flight, and a
+	// forge whose hook the client has not yet updated. The secrets service
+	// keeps a replaced version an hour, so a longer grace is cut to that.
+	DefaultHookSecretGrace = time.Hour
 
 	// DefaultStreamBackoff and DefaultStreamBackoffMax bound how soon a forge
 	// event stream that broke is opened again: the first wait, doubled per
@@ -172,6 +177,10 @@ type Config struct {
 	SecretCacheTTL time.Duration `yaml:"secretCacheTTL"`
 	SecretCacheMax int           `yaml:"secretCacheMax"`
 
+	// HookSecretGrace is how long a rotated hook secret's previous value is
+	// still accepted. Zero means the default.
+	HookSecretGrace time.Duration `yaml:"hookSecretGrace"`
+
 	// StreamBackoff, StreamBackoffMax and StreamResync pace the forge event
 	// streams (streams.go). Zero means the matching default.
 	StreamBackoff    time.Duration `yaml:"streamBackoff"`
@@ -189,6 +198,7 @@ func (c Config) withDefaults() (Config, error) {
 		{"shutdownTimeout", c.ShutdownTimeout},
 		{"backendTimeout", c.BackendTimeout},
 		{"secretCacheTTL", c.SecretCacheTTL},
+		{"hookSecretGrace", c.HookSecretGrace},
 		{"streamBackoff", c.StreamBackoff},
 		{"streamBackoffMax", c.StreamBackoffMax},
 		{"streamResync", c.StreamResync},
@@ -242,6 +252,9 @@ func (c Config) withDefaults() (Config, error) {
 	if c.SecretCacheMax == 0 {
 		c.SecretCacheMax = DefaultSecretCacheMax
 	}
+	if c.HookSecretGrace == 0 {
+		c.HookSecretGrace = DefaultHookSecretGrace
+	}
 	if c.EligibleRefs == nil {
 		c.EligibleRefs = DefaultEligibleRefs()
 	}
@@ -283,10 +296,14 @@ type Hook struct {
 	Repositories []HookRepository
 }
 
-// HookRepository is one linked repository and its webhook secret.
+// HookRepository is one linked repository and its webhook secret, with the
+// secret that one replaced and when, if the vault still holds it.
 type HookRepository struct {
 	Key    string
 	Secret []byte
+
+	Previous []byte
+	Replaced time.Time
 }
 
 // ErrNoHook is a project this cloud cannot verify a push for: nobody linked
@@ -439,6 +456,22 @@ var ErrBadCredential = errors.New("build: the credential is not accepted")
 // Assets reads what a build stored, by the content id a job records.
 type Assets interface {
 	Get(ctx context.Context, cid string) (io.ReadSeekCloser, error)
+}
+
+// accepting is the hook as a delivery is verified against now: each
+// repository under its secret, and under its previous one while the grace since
+// the replacement lasts.
+func (h Hook) accepting(now time.Time, grace time.Duration) Hook {
+	out := Hook{Project: h.Project, Repositories: make([]HookRepository, 0, len(h.Repositories))}
+	for _, r := range h.Repositories {
+		out.Repositories = append(out.Repositories, HookRepository{Key: r.Key, Secret: r.Secret})
+	}
+	for _, r := range h.Repositories {
+		if len(r.Previous) > 0 && now.Before(r.Replaced.Add(grace)) {
+			out.Repositories = append(out.Repositories, HookRepository{Key: r.Key, Secret: r.Previous})
+		}
+	}
+	return out
 }
 
 // signed reports whether any of the hook's repositories has a secret to

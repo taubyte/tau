@@ -127,6 +127,32 @@ func TestTheConsolePathAgainstARealFleet(t *testing.T) {
 		var ids []string
 		return code == http.StatusOK && json.Unmarshal(out, &ids) == nil && len(ids) == 1
 	}, time.Minute, time.Second, "the push queued no job")
+
+	// A rotation, as the client makes it: a new secret installed at the forge,
+	// then handed to the cloud. A delivery signed with the old one — in flight,
+	// or from a hook not yet updated — still verifies for the grace; the new
+	// one verifies at once; anything else is refused.
+	rotated, err := forge.NewSecret()
+	require.NoError(t, err)
+	require.NoError(t, s.RemovePushHook(t.Context(), repo, hook.Handle))
+	newHook, err := s.RegisterPushHook(t.Context(), repo, callback, rotated)
+	require.NoError(t, err)
+	code, out = call(http.MethodPut, "/secrets/"+project+"/"+linkcreds.Environment+"/"+linkcreds.HookSecret(repo.String()), bytes.NewReader(rotated.Expose()))
+	require.Equal(t, http.StatusNoContent, code, string(out))
+
+	newWire, err := newHook.Scheme.Wire(rotated)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		return deliver(t, f.Forge, cloud+"/hook/"+project, repo, newWire, commit).StatusCode == http.StatusAccepted
+	}, time.Minute, time.Second, "the rotated secret never verified")
+	require.Equal(t, http.StatusAccepted, deliver(t, f.Forge, cloud+"/hook/"+project, repo, wire, commit).StatusCode,
+		"the replaced secret is refused inside its grace")
+
+	stranger, err := forge.NewSecret()
+	require.NoError(t, err)
+	strangerWire, err := newHook.Scheme.Wire(stranger)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNotFound, deliver(t, f.Forge, cloud+"/hook/"+project, repo, strangerWire, commit).StatusCode)
 }
 
 func gitOK(t *testing.T, dir string, args ...string) { gitOut(t, dir, args...) }

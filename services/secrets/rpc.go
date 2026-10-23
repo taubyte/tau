@@ -116,6 +116,33 @@ func (h *secretsHandler) Get(ctx context.Context, req *connect.Request[secretsv2
 	}), nil
 }
 
+func (h *secretsHandler) Previous(ctx context.Context, req *connect.Request[secretsv2.Ref]) (*connect.Response[secretsv2.Sealed], error) {
+	ref, err := refOf(req.Msg)
+	if err != nil {
+		return nil, wire(err)
+	}
+
+	stored, replacedAt, key, wrapping, writer, err := h.srv.Previous(ctx, ref)
+	audit(ctx, "previous", ref.String(), err)
+	if errors.Is(err, ErrNotSet) {
+		return connect.NewResponse(&secretsv2.Sealed{}), nil
+	}
+	if err != nil {
+		return nil, wire(err)
+	}
+
+	return connect.NewResponse(&secretsv2.Sealed{
+		Found:      true,
+		KeyId:      key.KeyID,
+		Epoch:      key.Epoch,
+		Writer:     writer,
+		Wrapping:   &secretsv2.Wrapping{R: wrapping.R, WrappedDek: wrapping.WrappedDEK},
+		Ciphertext: stored.Ciphertext,
+		Cid:        stored.CID,
+		ReplacedAt: replacedAt,
+	}), nil
+}
+
 func (h *secretsHandler) Partial(ctx context.Context, req *connect.Request[secretsv2.PartialRequest]) (*connect.Response[secretsv2.PartialDecryption], error) {
 	ref, err := refOf(req.Msg.GetRef())
 	if err != nil {

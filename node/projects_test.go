@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
@@ -253,4 +254,49 @@ func TestLinkedRepositoriesIsEveryRepositoryOfEveryProject(t *testing.T) {
 	repos, err = p.LinkedRepositories(ctx)
 	require.ErrorIs(t, err, broken)
 	require.Nil(t, repos)
+}
+
+// historyVault also serves what each secret replaced.
+type historyVault struct {
+	secretsMap
+	previous map[[3]string]string
+	replaced time.Time
+	err      error
+}
+
+func (h historyVault) Previous(_ context.Context, project, environment, name string) (string, time.Time, error) {
+	if h.err != nil {
+		return "", time.Time{}, h.err
+	}
+	v, ok := h.previous[[3]string{project, environment, name}]
+	if !ok {
+		return "", time.Time{}, secretsService.ErrNotSet
+	}
+	return v, h.replaced, nil
+}
+
+// A ROTATED HOOK SECRET CARRIES THE ONE IT REPLACED, and when, so the frontend
+// can accept it for its grace.
+func TestAHookCarriesTheSecretItsSecretReplaced(t *testing.T) {
+	p := linkedNode(t)
+	ctx := t.Context()
+	code := [3]string{linkedID, linkcreds.Environment, linkcreds.HookSecret(linkedCode)}
+	cfg := [3]string{linkedID, linkcreds.Environment, linkcreds.HookSecret(linkedCfg)}
+	at := time.Unix(1700000000, 0)
+
+	vault := historyVault{
+		secretsMap: secretsMap{code: "new", cfg: "cfg-secret"},
+		previous:   map[[3]string]string{code: "old"},
+		replaced:   at,
+	}
+	hook, err := linkSecrets{projects: p, vault: vault}.Hook(ctx, linkedID)
+	require.NoError(t, err)
+	require.Equal(t, []frontend.HookRepository{
+		{Key: linkedCfg, Secret: []byte("cfg-secret")},
+		{Key: linkedCode, Secret: []byte("new"), Previous: []byte("old"), Replaced: at},
+	}, hook.Repositories)
+
+	vault.err = errors.New("vault unreachable")
+	_, err = linkSecrets{projects: p, vault: vault}.Hook(ctx, linkedID)
+	require.ErrorContains(t, err, "vault unreachable")
 }

@@ -47,6 +47,8 @@ const (
 	SecretsServicePutProcedure = "/tau.secrets.v2.SecretsService/Put"
 	// SecretsServiceGetProcedure is the fully-qualified name of the SecretsService's Get RPC.
 	SecretsServiceGetProcedure = "/tau.secrets.v2.SecretsService/Get"
+	// SecretsServicePreviousProcedure is the fully-qualified name of the SecretsService's Previous RPC.
+	SecretsServicePreviousProcedure = "/tau.secrets.v2.SecretsService/Previous"
 	// SecretsServicePartialProcedure is the fully-qualified name of the SecretsService's Partial RPC.
 	SecretsServicePartialProcedure = "/tau.secrets.v2.SecretsService/Partial"
 	// SecretsServiceDeleteProcedure is the fully-qualified name of the SecretsService's Delete RPC.
@@ -65,6 +67,9 @@ type SecretsServiceClient interface {
 	Key(context.Context, *connect.Request[v2.KeyRequest]) (*connect.Response[v2.GroupKey], error)
 	Put(context.Context, *connect.Request[v2.PutRequest]) (*connect.Response[v2.Empty], error)
 	Get(context.Context, *connect.Request[v2.Ref]) (*connect.Response[v2.Sealed], error)
+	// Previous serves the version the newest one replaced, if this member still
+	// holds it and can open it.
+	Previous(context.Context, *connect.Request[v2.Ref]) (*connect.Response[v2.Sealed], error)
 	Partial(context.Context, *connect.Request[v2.PartialRequest]) (*connect.Response[v2.PartialDecryption], error)
 	Delete(context.Context, *connect.Request[v2.Ref]) (*connect.Response[v2.Empty], error)
 	List(context.Context, *connect.Request[v2.Scope]) (*connect.Response[v2.Names], error)
@@ -99,6 +104,12 @@ func NewSecretsServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(secretsServiceMethods.ByName("Get")),
 			connect.WithClientOptions(opts...),
 		),
+		previous: connect.NewClient[v2.Ref, v2.Sealed](
+			httpClient,
+			baseURL+SecretsServicePreviousProcedure,
+			connect.WithSchema(secretsServiceMethods.ByName("Previous")),
+			connect.WithClientOptions(opts...),
+		),
 		partial: connect.NewClient[v2.PartialRequest, v2.PartialDecryption](
 			httpClient,
 			baseURL+SecretsServicePartialProcedure,
@@ -122,12 +133,13 @@ func NewSecretsServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // secretsServiceClient implements SecretsServiceClient.
 type secretsServiceClient struct {
-	key     *connect.Client[v2.KeyRequest, v2.GroupKey]
-	put     *connect.Client[v2.PutRequest, v2.Empty]
-	get     *connect.Client[v2.Ref, v2.Sealed]
-	partial *connect.Client[v2.PartialRequest, v2.PartialDecryption]
-	delete  *connect.Client[v2.Ref, v2.Empty]
-	list    *connect.Client[v2.Scope, v2.Names]
+	key      *connect.Client[v2.KeyRequest, v2.GroupKey]
+	put      *connect.Client[v2.PutRequest, v2.Empty]
+	get      *connect.Client[v2.Ref, v2.Sealed]
+	previous *connect.Client[v2.Ref, v2.Sealed]
+	partial  *connect.Client[v2.PartialRequest, v2.PartialDecryption]
+	delete   *connect.Client[v2.Ref, v2.Empty]
+	list     *connect.Client[v2.Scope, v2.Names]
 }
 
 // Key calls tau.secrets.v2.SecretsService.Key.
@@ -143,6 +155,11 @@ func (c *secretsServiceClient) Put(ctx context.Context, req *connect.Request[v2.
 // Get calls tau.secrets.v2.SecretsService.Get.
 func (c *secretsServiceClient) Get(ctx context.Context, req *connect.Request[v2.Ref]) (*connect.Response[v2.Sealed], error) {
 	return c.get.CallUnary(ctx, req)
+}
+
+// Previous calls tau.secrets.v2.SecretsService.Previous.
+func (c *secretsServiceClient) Previous(ctx context.Context, req *connect.Request[v2.Ref]) (*connect.Response[v2.Sealed], error) {
+	return c.previous.CallUnary(ctx, req)
 }
 
 // Partial calls tau.secrets.v2.SecretsService.Partial.
@@ -165,6 +182,9 @@ type SecretsServiceHandler interface {
 	Key(context.Context, *connect.Request[v2.KeyRequest]) (*connect.Response[v2.GroupKey], error)
 	Put(context.Context, *connect.Request[v2.PutRequest]) (*connect.Response[v2.Empty], error)
 	Get(context.Context, *connect.Request[v2.Ref]) (*connect.Response[v2.Sealed], error)
+	// Previous serves the version the newest one replaced, if this member still
+	// holds it and can open it.
+	Previous(context.Context, *connect.Request[v2.Ref]) (*connect.Response[v2.Sealed], error)
 	Partial(context.Context, *connect.Request[v2.PartialRequest]) (*connect.Response[v2.PartialDecryption], error)
 	Delete(context.Context, *connect.Request[v2.Ref]) (*connect.Response[v2.Empty], error)
 	List(context.Context, *connect.Request[v2.Scope]) (*connect.Response[v2.Names], error)
@@ -195,6 +215,12 @@ func NewSecretsServiceHandler(svc SecretsServiceHandler, opts ...connect.Handler
 		connect.WithSchema(secretsServiceMethods.ByName("Get")),
 		connect.WithHandlerOptions(opts...),
 	)
+	secretsServicePreviousHandler := connect.NewUnaryHandler(
+		SecretsServicePreviousProcedure,
+		svc.Previous,
+		connect.WithSchema(secretsServiceMethods.ByName("Previous")),
+		connect.WithHandlerOptions(opts...),
+	)
 	secretsServicePartialHandler := connect.NewUnaryHandler(
 		SecretsServicePartialProcedure,
 		svc.Partial,
@@ -221,6 +247,8 @@ func NewSecretsServiceHandler(svc SecretsServiceHandler, opts ...connect.Handler
 			secretsServicePutHandler.ServeHTTP(w, r)
 		case SecretsServiceGetProcedure:
 			secretsServiceGetHandler.ServeHTTP(w, r)
+		case SecretsServicePreviousProcedure:
+			secretsServicePreviousHandler.ServeHTTP(w, r)
 		case SecretsServicePartialProcedure:
 			secretsServicePartialHandler.ServeHTTP(w, r)
 		case SecretsServiceDeleteProcedure:
@@ -246,6 +274,10 @@ func (UnimplementedSecretsServiceHandler) Put(context.Context, *connect.Request[
 
 func (UnimplementedSecretsServiceHandler) Get(context.Context, *connect.Request[v2.Ref]) (*connect.Response[v2.Sealed], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.secrets.v2.SecretsService.Get is not implemented"))
+}
+
+func (UnimplementedSecretsServiceHandler) Previous(context.Context, *connect.Request[v2.Ref]) (*connect.Response[v2.Sealed], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("tau.secrets.v2.SecretsService.Previous is not implemented"))
 }
 
 func (UnimplementedSecretsServiceHandler) Partial(context.Context, *connect.Request[v2.PartialRequest]) (*connect.Response[v2.PartialDecryption], error) {

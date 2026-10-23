@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -183,6 +184,12 @@ type secretReader interface {
 	Secret(ctx context.Context, project, environment, secretID string) (string, error)
 }
 
+// previousReader is a vault that still serves the value a secret's newest
+// version replaced, and when.
+type previousReader interface {
+	Previous(ctx context.Context, project, environment, secretID string) (string, time.Time, error)
+}
+
 // linkSecrets reads what a link stored in the vault.
 type linkSecrets struct {
 	projects projectTable
@@ -204,6 +211,22 @@ func (l linkSecrets) value(ctx context.Context, project, name string) ([]byte, b
 	return []byte(v), true, nil
 }
 
+// previous is the value a link credential's newest version replaced, or none.
+func (l linkSecrets) previous(ctx context.Context, project, name string) ([]byte, time.Time, error) {
+	vault, ok := l.vault.(previousReader)
+	if !ok {
+		return nil, time.Time{}, nil
+	}
+	v, at, err := vault.Previous(ctx, project, linkcreds.Environment, name)
+	switch {
+	case errors.Is(err, secretsService.ErrNotSet):
+		return nil, time.Time{}, nil
+	case err != nil:
+		return nil, time.Time{}, err
+	}
+	return []byte(v), at, nil
+}
+
 // Hook is a project's webhook: its repositories, from the register, each with
 // its own secret, from the vault. A project none of whose repositories has a
 // secret set is ErrNoHook — one that can be pushed to was linked AND had a
@@ -222,9 +245,14 @@ func (l linkSecrets) Hook(ctx context.Context, project string) (frontend.Hook, e
 		if err != nil {
 			return frontend.Hook{}, err
 		}
-		if found {
-			hook.Repositories = append(hook.Repositories, frontend.HookRepository{Key: repository, Secret: secret})
+		if !found {
+			continue
 		}
+		repo := frontend.HookRepository{Key: repository, Secret: secret}
+		if repo.Previous, repo.Replaced, err = l.previous(ctx, project, linkcreds.HookSecret(repository)); err != nil {
+			return frontend.Hook{}, err
+		}
+		hook.Repositories = append(hook.Repositories, repo)
 	}
 	if len(hook.Repositories) == 0 {
 		return frontend.Hook{}, fmt.Errorf("%w: project %s has no hook secret set", frontend.ErrNoHook, project)

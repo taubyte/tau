@@ -36,7 +36,7 @@ func single(t *testing.T, opts ...Option) (*Service, *Client, peerNode.Node) {
 	srv, err := New(node.Peer(), db, append([]Option{
 		WithRoot(t.TempDir()), WithBootstrapDelay(never), WithConfig(Config{}),
 		WithMembers(func() []peerCore.ID { return nil }), WithServerOptions(),
-		WithReconcileInterval(time.Hour),
+		WithReconcileInterval(time.Hour), WithReplacedRetention(0),
 	}, opts...)...)
 	require.NoError(t, err)
 	require.NoError(t, srv.Start(ctx))
