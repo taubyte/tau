@@ -47,8 +47,8 @@ import (
 // a published build image; the repository each project is pushed as is the
 // project's documents with those crates under services/ and the world they
 // build against at wit/ — so what runs is what the image made from source, on
-// whichever side built it. A project that carries its own services/ (one in a
-// language other than the fixtures') is pushed with them as they are.
+// whichever side built it. A function in a language other than Rust is
+// built from its directory under pkg/invoke/wasm/fixtures/languages.
 
 // crateOf is the fixture crate a source path is: by its own name, unless named here.
 var crateOf = map[string]string{"hello": "handler", "keeper": "cacher", "reader": "cacher"}
@@ -91,6 +91,12 @@ func assemble(t *testing.T, name string) string {
 		if named, ok := crateOf[base]; ok {
 			crate = named
 		}
+		// A SOURCE IN ANOTHER LANGUAGE is its whole directory under
+		// fixtures/languages, as with/languages names it.
+		if lang := filepath.Join(fixtures, "languages", base); dirExists(lang) {
+			require.NoError(t, copyTree(lang, filepath.Join(dir, source)))
+			continue
+		}
 		// A SOURCE NOTHING BUILDS has no crate: an application's source is
 		// a path its author never fills when it names no build.
 		if _, err := os.Stat(filepath.Join(fixtures, crate)); os.IsNotExist(err) {
@@ -104,6 +110,11 @@ func assemble(t *testing.T, name string) string {
 		require.NoError(t, copyTree(filepath.Join(root, "pkg", "invoke", "wasm", "wit"), filepath.Join(dir, "wit")))
 	}
 	return dir
+}
+
+func dirExists(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && info.IsDir()
 }
 
 func copyTree(from, to string) error {

@@ -152,4 +152,4 @@ published Rust build image, `ghcr.io/samyfodil/wazy-build-rust:1.99.1-cc0.21.1`
 so a project there is built — by `tau build` on a machine and by a cloud's
 build alike — from source rather than handed a committed component.
 `with/languages` does the same for every other language that image family
-covers.
+covers, from the sources under `languages/`, one directory per function.
