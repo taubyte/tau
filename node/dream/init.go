@@ -46,6 +46,7 @@ import (
 	"github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/services/discovery"
+	"github.com/taubyte/tau/services/worker"
 )
 
 // runtimes are the tiers nodes in this process run on.
@@ -108,12 +109,13 @@ type running struct {
 	artifacts *Built
 }
 
-// Built is what a build service would have published, for a universe that runs
-// none.
+// Built is what a build service would have published, staged by a test that
+// runs none.
 //
-// A UNIVERSE HAS NO BUILD SERVICE AND THIS IS NOT A WAY TO GIVE IT ONE. Building
-// a corpus project needs a git server and a toolchain, so what each resource runs
-// is a component this tree already ships — which is a DEPLOYMENT fact, and the
+// THIS IS NOT A WAY TO GIVE A UNIVERSE A BUILD SERVICE; a universe that wants one
+// runs the build service and is pushed to, or takes a developer's `tau build` in
+// (see uploads). Staging is for a test about the runtime, where what each resource
+// runs is a component this tree already ships — which is a DEPLOYMENT fact, and the
 // artifact seam is precisely where a deployment fact belongs. In a cloud the
 // build service writes the component into the asset store and its cid reaches the
 // worker through worker.Artifacts; here the TEST writes it into the asset store
@@ -134,9 +136,15 @@ type running struct {
 // THE KIND IS DROPPED, exactly as the real resolver drops it (node/build.go): a
 // resource id is already unique, so a component asked about under kind
 // `component` and a workload asked about under its own kind are one lookup.
+//
+// WHAT NOTHING STAGED IS THE BUILD SERVICE'S, as on a node with no seam
+// injected: a universe that runs one builds a push or a developer's upload and
+// files the artifact there, and a resource the test staged nothing for is
+// asked of it.
 type Built struct {
-	mu   sync.Mutex
-	cids map[string]string
+	mu       sync.Mutex
+	cids     map[string]string
+	fallback worker.Artifacts
 }
 
 // Publish records what a build produced for each resource of one deployment,
@@ -159,13 +167,21 @@ func (b *Built) Publish(project, environment string, byResource map[string]strin
 // AN UNKNOWN RESOURCE IS A REFUSAL NAMING IT, never an empty string. A tier
 // handed "" asks the asset store for nothing and fails somewhere else, which is
 // how a project the test forgot to stage would read as a broken runtime.
-func (b *Built) Artifact(_ context.Context, project, environment, _, resource string) (string, error) {
+func (b *Built) Artifact(ctx context.Context, project, environment, kind, resource string) (string, error) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	cid, ok := b.cids[builtKey(project, environment, resource)]
-	if !ok {
+	fallback := b.fallback
+	b.mu.Unlock()
+
+	if ok {
+		return cid, nil
+	}
+	if fallback == nil {
 		return "", fmt.Errorf("dream: nothing was staged for %s/%s/%s", project, environment, resource)
+	}
+	cid, err := fallback.Artifact(ctx, project, environment, kind, resource)
+	if err != nil {
+		return "", fmt.Errorf("dream: nothing was staged for %s/%s/%s, and the build service has nothing either: %w", project, environment, resource, err)
 	}
 	return cid, nil
 }
@@ -380,10 +396,20 @@ func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
 	}
 	account := []*secretsv2.InitSecret{sealed}
 
+	// ONE UPLOAD DOOR PER UNIVERSE, shared by every node in it: the frontend
+	// that takes a bundle in and the backend that builds it are often two
+	// nodes, and in one process they read one store.
+	held, err := newUploads()
+	if err != nil {
+		m.Close()
+		return nil, err
+	}
+	m.OnClose(held)
+
 	u := &Universe{mesh: m}
 	copies := max(cfg.Copies, 1)
 	for index := range copies {
-		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index, account) })
+		p, err := m.Add(func(p peer.Node) error { return create(m, p, cfg, index, account, held) })
 		if err != nil {
 			u.Close()
 			return nil, fmt.Errorf("dream: node %d: %w", index, err)
@@ -409,7 +435,7 @@ func (u *Universe) CA() *sectls.CA { return u.mesh.CA() }
 // Close stops every node, then their peers.
 func (u *Universe) Close() { u.mesh.Close() }
 
-func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secretsv2.InitSecret) error {
+func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secretsv2.InitSecret, held *uploads) error {
 	ctx := m.Context()
 	h := p.Peer()
 
@@ -434,8 +460,8 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		return err
 	}
 
-	// THE SEAM A CLOUD FILLS WITH ITS BUILD SERVICE. A universe runs none, so it
-	// is filled by whoever staged the components — see Built.
+	// THE SEAM A CLOUD FILLS WITH ITS BUILD SERVICE, filled first by whoever
+	// staged components and otherwise by the build service — see Built.
 	staged := &Built{}
 
 	// A DIRECTORY PER PEER, so two nodes in one universe do not share a volume
@@ -504,6 +530,9 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		node.WithRoot(root),
 		node.WithDatabaseEngines(engines),
 		node.WithRuntimes(tiers...),
+		// A DEVELOPMENT CLOUD'S DOOR for a developer's own build — see uploads.
+		node.WithUploads(held),
+		node.WithBuildSeams(held.layer),
 	}
 	if now != nil {
 		options = append(options, node.WithClock(now))
@@ -527,6 +556,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		os.RemoveAll(root)
 		return err
 	}
+	staged.fallback = n.BuildArtifacts()
 	if err := n.Start(ctx); err != nil {
 		n.Close()
 		os.RemoveAll(root)
