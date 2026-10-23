@@ -31,7 +31,7 @@ DREAM_P ?= $(shell n=$$(nproc 2>/dev/null || echo 4); p=$$((n / 4)); [ $$p -lt 1
 # it fails the package outright rather than skipping it.
 DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xargs grep -L '//go:build dreaming && ee' | sed 's|^\./||' | grep -vE '^(ee/|tools/tau/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
-.PHONY: test test-cli test-acme test-acme-live test-dreaming test-raft test-docker test-containerd test-application test-build test-corpus test-external-databases test-forges test-containers test-taucorder test-all proto-v2 proto-v2-check
+.PHONY: test test-cli test-acme test-acme-live test-dreaming test-raft test-docker test-containerd test-application test-build test-corpus test-external-databases test-forges test-containers cover-containers cover-containers-unit cover-containers-docker cover-containers-root cover-containers-rootless cover-containers-report test-taucorder test-all proto-v2 proto-v2-check
 
 # THE TIMEOUT IS EXPLICIT BECAUSE THE DEFAULT IS A GUESS ABOUT THE MACHINE.
 # go test allows a package 10 minutes unless told otherwise, and pkg/kvdb spends
@@ -86,6 +86,42 @@ test-docker:
 # the system containerd socket is root's (scripts/as-root).
 test-containerd:
 	go test -exec $(AS_ROOT) -tags containerd_integration -run '_Integration$$' -p 1 -timeout 20m $(FLAGS) ./pkg/containers/...
+
+# cover-containers measures pkg/containers and its two backends the only way
+# that means anything for daemon-backed code: every pass that reaches them, each
+# with -coverpkg across all three, merged. A pass that cannot run here leaves no
+# profile and is left out of the merge, so the passes can also be run one at a
+# time on different machines into one COVER_DIR and merged with
+# cover-containers-report:
+#
+#   unit                untagged, no daemon
+#   docker              the docker suites as the user
+#   root                both suites as root (scripts/as-root): the firewall
+#                       paths and the system containerd
+#   rootless            the containerd suite as the user, which starts a
+#                       rootless daemon; needs containerd, rootlesskit and
+#                       slirp4netns or pasta, and a system socket the user
+#                       cannot reach
+CONTAINERS_COVERPKG := ./pkg/containers,./pkg/containers/backends/containerd,./pkg/containers/backends/docker
+COVER_DIR ?= $${TMPDIR:-/tmp}/tau-containers-cover
+CONTAINERS_COVER = go test -coverpkg=$(CONTAINERS_COVERPKG) -p 1 -count=1 -timeout 30m $(FLAGS)
+
+cover-containers: cover-containers-unit cover-containers-docker cover-containers-root cover-containers-rootless cover-containers-report
+
+cover-containers-unit:
+	mkdir -p $(COVER_DIR) && $(CONTAINERS_COVER) -coverprofile=$(COVER_DIR)/unit.out ./pkg/containers/...
+
+cover-containers-docker:
+	mkdir -p $(COVER_DIR) && $(CONTAINERS_COVER) -tags docker_integration -run '_Integration$$' -coverprofile=$(COVER_DIR)/docker.out ./pkg/containers/...
+
+cover-containers-root:
+	mkdir -p $(COVER_DIR) && $(CONTAINERS_COVER) -exec $(AS_ROOT) -tags 'docker_integration containerd_integration' -run '_Integration$$' -coverprofile=$(COVER_DIR)/root.out ./pkg/containers/...
+
+cover-containers-rootless:
+	mkdir -p $(COVER_DIR) && $(CONTAINERS_COVER) -tags containerd_integration -run '_Integration$$' -coverprofile=$(COVER_DIR)/rootless.out ./pkg/containers/backends/containerd/
+
+cover-containers-report:
+	scripts/cover-merge $(COVER_DIR)/*.out
 
 test-containers: test-docker test-containerd test-application test-build test-external-databases
 
