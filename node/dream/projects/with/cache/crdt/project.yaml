@@ -1,3 +1,6 @@
 id: QmTHzsR5xqX4MVGPUJ9jyeUeMuMmCdbftRsa2d7jKEoFXr
 name: cachecrdt
 description: one function and the cache it keeps things in - the smallest project where a guest reaches replicated state of its own
+environments:
+    prod:
+        branches: ["*"]

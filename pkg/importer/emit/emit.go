@@ -185,8 +185,8 @@ func To(dst afero.Fs, dir, name string, results ...importer.Result) (Report, err
 	return report, nil
 }
 
-// identify writes the project's own document: its name, and the id the schema's
-// generator mints for it.
+// identify writes the project's own document: its name, one environment every
+// branch feeds, and the id the schema's generator mints for it.
 func identify(s *session.Session, name string) error {
 	// The root address is never empty: this package opens the session itself,
 	// through schema.AdoptSession, which wires the layout that answers it.
@@ -194,6 +194,9 @@ func identify(s *session.Session, name string) error {
 
 	if err := s.Set(root, []string{"name"}, name); err != nil {
 		return fmt.Errorf("emit: naming the project: %w", err)
+	}
+	if err := s.Set(root, []string{"environments", "prod", "branches"}, []string{"*"}); err != nil {
+		return fmt.Errorf("emit: declaring the project's environment: %w", err)
 	}
 	return mint(s, root, name)
 }

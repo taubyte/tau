@@ -133,14 +133,14 @@ func TestAPushOfARealRepositoryDeploys(t *testing.T) {
 	project, environment, err := r.ResolveHost(t.Context(), "shop.example.com")
 	require.NoError(t, err)
 	require.Equal(t, shopID, project)
-	require.Equal(t, deploy.DefaultEnvironment, environment)
+	require.Equal(t, "prod", environment)
 
 	// The second commit moved the zone, so the deployment answers on a
 	// different name — and the revision moved with it.
 	w.CommitSHA = second
 	require.NoError(t, d.Run(t.Context(), w, &log))
 
-	pointer, err := r.Resolve(t.Context(), shopID, deploy.DefaultEnvironment)
+	pointer, err := r.Resolve(t.Context(), shopID, "prod")
 	require.NoError(t, err)
 	require.Equal(t, uint64(2), pointer.Revision)
 

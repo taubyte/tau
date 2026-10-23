@@ -1,3 +1,6 @@
 id: QmYMVuNsQYkL2QLCw2UHZP3vMgcz85x6L4oa5ZrZctuEYy
 name: mysqlsql
 description: a function and the mysql server it keeps rows in - somebody else's engine, reached over the network
+environments:
+    prod:
+        branches: ["*"]

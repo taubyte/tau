@@ -26,6 +26,11 @@ func (s *instance) Dump(obj object.Object[object.Refrence]) error {
 		if err := s.dumpAttributes(n, obj, configQuery); err != nil {
 			return err
 		}
+		for _, child := range n.Children {
+			if err := s.dumpTable(child, obj, configQuery); err != nil {
+				return err
+			}
+		}
 		if err := configQuery.Commit(); err != nil {
 			return fmt.Errorf("committing config.yaml failed: %w", err)
 		}
@@ -33,6 +38,9 @@ func (s *instance) Dump(obj object.Object[object.Refrence]) error {
 
 	// Process children
 	for _, child := range n.Children {
+		if n.Match == nil && s.isTable(child, obj) {
+			continue
+		}
 		if err := s.dumpChild(child, obj, query, false); err != nil {
 			return err
 		}
@@ -56,6 +64,56 @@ func (s *instance) Dump(obj object.Object[object.Refrence]) error {
 func (s *instance) heldResource(entry object.Object[object.Refrence]) bool {
 	idField, _ := IdentityOf(s.schema.root)
 	return idField != "" && entry.Get(idField) != nil
+}
+
+// isTable reports a root group whose entries carry no identity: a table the root
+// document holds, not resources each kept in a document of their own.
+func (s *instance) isTable(child *Node, obj object.Object[object.Refrence]) bool {
+	if idField, _ := IdentityOf(s.schema.root); idField == "" {
+		return false
+	}
+	name, ok := child.Match.(string)
+	if !ok || !child.Group || len(child.Children) != 1 || child.Children[0].Group {
+		return false
+	}
+	group, err := obj.Child(name).Object()
+	if err != nil {
+		return false
+	}
+	entries := group.Children()
+	for _, entry := range entries {
+		e, err := group.Child(entry).Object()
+		if err != nil || s.heldResource(e) {
+			return false
+		}
+	}
+	return len(entries) > 0
+}
+
+func (s *instance) dumpTable(child *Node, obj object.Object[object.Refrence], query *yaseer.Query) error {
+	if !s.isTable(child, obj) {
+		return nil
+	}
+	name := child.Match.(string)
+	iter := child.Children[0]
+	group, err := obj.Child(name).Object()
+	if err != nil {
+		return err
+	}
+	for _, entry := range group.Children() {
+		e, err := group.Child(entry).Object()
+		if err != nil {
+			return err
+		}
+		at := query.Get(name).Get(entry)
+		if err := s.dumpAttributes(iter, e, at); err != nil {
+			return fmt.Errorf("dumping %s/%s failed: %w", name, entry, err)
+		}
+		if err := s.dumpNested(iter, e, at); err != nil {
+			return fmt.Errorf("dumping nested groups for %s/%s failed: %w", name, entry, err)
+		}
+	}
+	return nil
 }
 
 func (s *instance) dumpChild(child *Node, obj object.Object[object.Refrence], query *yaseer.Query, mixed bool) error {

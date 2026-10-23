@@ -9,6 +9,9 @@ const FILES: Record<string, string> = {
     "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR",
     "name: truetest",
     "description: the smallest thing that still validates a zone",
+    "environments:",
+    "    prod:",
+    '        branches: ["*"]',
     "",
   ].join("\n"),
   "/zone/hal.yaml": [

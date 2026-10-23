@@ -15,7 +15,7 @@ import (
 func TestProducedTwiceNamesTheStep(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	for path, body := range map[string]string{
-		"/project.yaml":    "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nname: p\n",
+		"/project.yaml":    "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\nname: p\n",
 		"/function/a.yaml": "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution:\n    call: a\n    timeout: 10s\n    memory: 16MB\n",
 		"/function/b.yaml": "id: QmTaCZBnrxvJm5xkLQKN4o3TFhBqHfLYCUuCkFTGiT8s8t\nexecution:\n    call: b\n    timeout: 10s\n    memory: 16MB\n",
 		// two steps called the same thing, so both derive sync/w_s

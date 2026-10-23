@@ -388,12 +388,8 @@ func deployments(fs afero.Fs, dir, branch string) ([]string, error) {
 		return nil, fmt.Errorf("deploy: reading the environment table: %w", err)
 	}
 
-	// A project with no table has exactly one deployment and no name for it in
-	// the document, so this names it — and it is the only place that may,
-	// because the name is a key in the register that must be the same on every
-	// push.
 	if len(declared) == 0 {
-		return []string{DefaultEnvironment}, nil
+		return nil, fmt.Errorf("%w: the project declares no environments", ErrNoDeployment)
 	}
 
 	fed := schema.DeploymentNames(declared, branch)
@@ -403,10 +399,6 @@ func deployments(fs afero.Fs, dir, branch string) ([]string, error) {
 	}
 	return fed, nil
 }
-
-// DefaultEnvironment names the one deployment of a project that declares no
-// environment table.
-const DefaultEnvironment = "prod"
 
 // compileFor reads a config directory as ONE deployment sees it.
 //
@@ -428,13 +420,7 @@ func compileFor(fs afero.Fs, dir, branch, environment string) ([]byte, *specs.Pr
 		schema.WithVirtual(fs, dir),
 		schema.WithEnvironments(schema.EnvironmentNames(declared)...),
 		schema.WithBranch(branch),
-	}
-	// A PROJECT WITH NO TABLE HAS NOTHING TO BIND. DefaultEnvironment names that
-	// project's one deployment in the register; it is not a value any document may
-	// suffix a key with, and reading for a value the project never declared is
-	// refused — rightly, because it would be a compile no override could reach.
-	if len(declared) > 0 {
-		options = append(options, schema.WithEnvironment(environment))
+		schema.WithEnvironment(environment),
 	}
 
 	c, err := schema.New(options...)

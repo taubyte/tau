@@ -128,7 +128,7 @@ func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 	project, environment, err := r.ResolveHost(t.Context(), "www.shop.test")
 	require.NoError(t, err)
 	require.Equal(t, customDomainID, project)
-	require.Equal(t, buildDeploy.DefaultEnvironment, environment)
+	require.Equal(t, "prod", environment)
 
 	dns.set(stolenDomainID[:8]+".shop.test", claim.GetToken())
 	_, err = run("refused/domain/stolen", stolenDomainID)

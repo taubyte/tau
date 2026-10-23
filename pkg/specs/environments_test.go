@@ -18,13 +18,9 @@ func loadFixture(t testing.TB, dir, environment, branch string) *specs.Project {
 	t.Helper()
 
 	options := []schema.Option{schema.WithLocal(dir), schema.WithBranch(branch)}
-	// SAME RULE AS deploy.compileFor: a project with no environment table has no axis
-	// to bind, and the name its one deployment is filed under in the register is not a
-	// value a document may suffix a key with. So `prod` here reads exactly the bare
-	// keys, which is what that deployment runs.
 	declared, err := schema.EnvironmentsOf(afero.NewOsFs(), dir)
 	require.NoError(t, err)
-	if environment != "" && len(declared) > 0 {
+	if environment != "" {
 		options = append(options,
 			schema.WithEnvironments(schema.EnvironmentNames(declared)...),
 			schema.WithEnvironment(environment))
@@ -82,9 +78,11 @@ func TestABranchResolvesToItsDeploymentsFromTheCompiledObject(t *testing.T) {
 	require.Empty(t, production.Shadows[0].Regions)
 }
 
-// A project that declares no table has one deployment and no name for it here.
-func TestAProjectWithNoTable(t *testing.T) {
+// One environment fed by every branch is the whole of what a single-deployment
+// project declares.
+func TestOneEnvironmentFedByEveryBranch(t *testing.T) {
 	p := loadFixture(t, basicFixture, "", "main")
-	require.Empty(t, p.Environments())
-	require.Empty(t, p.Deployments("main"))
+	require.Len(t, p.Environments(), 1)
+	require.Equal(t, []string{"prod"}, p.Deployments("main"))
+	require.Equal(t, []string{"prod"}, p.Deployments("feature/x"))
 }

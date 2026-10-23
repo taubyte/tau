@@ -2,3 +2,6 @@ id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR
 name: v2basic
 description: minimal v2 project - no trigger blocks anywhere
 regions: [region-1, region-2]
+environments:
+    prod:
+        branches: ["*"]

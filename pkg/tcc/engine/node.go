@@ -929,7 +929,24 @@ func loadChildren(n *Node, obj object.Object[object.Refrence], query *yaseer.Que
 				}
 			}
 		}
+		if itm.Required {
+			if err := requireEntries(itm, obj, query.Get(leaf)); err != nil {
+				return err
+			}
+		}
 	}
 
+	return nil
+}
+
+func requireEntries(itm *Node, obj object.Object[object.Refrence], at *yaseer.Query) error {
+	name := literalOf(itm.Match)
+	group, err := obj.Child(name).Object()
+	if err != nil {
+		return errorWithLocation(at, "required group '%s'", name)
+	}
+	if len(group.Children()) == 0 {
+		return errorWithLocation(at.Get(name), "required group '%s' is empty", name)
+	}
 	return nil
 }

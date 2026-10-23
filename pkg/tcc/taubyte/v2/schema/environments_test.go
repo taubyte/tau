@@ -10,11 +10,8 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// The environments fixture is its own tree rather than a few lines added to `basic`,
-// because `basic` is decompiled byte-for-byte against itself and a table nobody reads
-// there would churn those goldens for nothing. Here the table IS the subject: three
-// deployments, a shadow written inside one of them, and two documents that suffix keys
-// for four names.
+// The environments fixture is its own tree: three deployments, a shadow written inside
+// one of them, and two documents that suffix keys for four names.
 const envFixture = "../fixtures/environments"
 
 // envsOfFixture reads the table the way a caller does — off a filesystem and a path,
@@ -96,13 +93,22 @@ func TestOfIsSetOnAShadowAndEmptyOnADeployment(t *testing.T) {
 	}
 }
 
-// A PROJECT THAT DECLARES NONE IS A PROJECT WITH ONE DEPLOYMENT — no table is not an
-// error, and `basic` is the tree that proves it since it has never had one.
-func TestAProjectMayDeclareNoEnvironments(t *testing.T) {
-	envs, err := schema.EnvironmentsOf(afero.NewOsFs(), "../fixtures/basic")
-	assert.NilError(t, err)
-	assert.Equal(t, len(envs), 0)
-	assert.Equal(t, len(schema.EnvironmentNames(envs)), 0)
+// A PROJECT MUST SAY WHICH BRANCHES DEPLOY WHERE: no table, or an empty one, is refused
+// at compile, and the refusal names the missing table.
+func TestAProjectWithNoEnvironmentsIsRefused(t *testing.T) {
+	for name, doc := range map[string]string{
+		"absent": "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nname: p\n",
+		"empty":  "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nname: p\nenvironments: {}\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
+			assert.NilError(t, afero.WriteFile(fs, "/project.yaml", []byte(doc), 0o644))
+			c, err := schema.New(schema.WithVirtual(fs, "/"))
+			assert.NilError(t, err)
+			_, _, err = c.Compile(context.Background())
+			assert.ErrorContains(t, err, "required group 'environments'")
+		})
+	}
 }
 
 // EnvironmentNames IS THE CLOSED SET OF SUFFIXES, and shadows are in it. A shadow is a

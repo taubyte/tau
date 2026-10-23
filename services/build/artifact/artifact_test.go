@@ -135,6 +135,8 @@ func (o *out) stored() map[string]string {
 // are about is which resources a push touches and what each build is handed —
 // and the shared fixtures carry a dockerfile build and a resource with no
 // source, both of which are their own cases and are tested as such below.
+const everyBranch = "environments:\n    prod:\n        branches: [\"*\"]\n"
+
 func projectConfig(t *testing.T, environments string, resources map[string]string) string {
 	t.Helper()
 
@@ -154,7 +156,7 @@ func projectConfig(t *testing.T, environments string, resources map[string]strin
 // the project's, both built from two commands.
 func oneEnvironment(t *testing.T) string {
 	t.Helper()
-	return projectConfig(t, "", map[string]string{
+	return projectConfig(t, everyBranch, map[string]string{
 		"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\n" +
 			"source: services/reserve\n" +
 			"build:\n    commands:\n        image: rust:1.83\n" +
@@ -201,10 +203,6 @@ func deployed(t *testing.T, dir string, environments ...string) *pkgregister.Reg
 	if len(environments) == 0 {
 		environments = []string{"prod"}
 	}
-	// SAME RULE AS deploy.compileFor: a project with no environment table has no axis to
-	// bind. `prod` is the name its one deployment is filed under in the register, not a
-	// value a document may suffix a key with — so that compile reads the bare keys, and
-	// the publication below is still keyed by the name.
 	declared, err := schema.EnvironmentsOf(afero.NewOsFs(), dir)
 	require.NoError(t, err)
 
@@ -213,9 +211,7 @@ func deployed(t *testing.T, dir string, environments ...string) *pkgregister.Reg
 			schema.WithLocal(dir),
 			schema.WithBranch("main"),
 			schema.WithEnvironments(schema.EnvironmentNames(declared)...),
-		}
-		if len(declared) > 0 {
-			options = append(options, schema.WithEnvironment(environment))
+			schema.WithEnvironment(environment),
 		}
 
 		c, err := schema.New(options...)
@@ -526,7 +522,7 @@ func TestAResourceWithNoSourceIsNotBuilt(t *testing.T) {
 // a compiled object cannot carry one. joinWithin is the second line, tested in
 // path_test.go, for a compiled object that arrived some other way.
 func TestAPathThatClimbsOutIsRefusedAtCompileTime(t *testing.T) {
-	escaping := projectConfig(t, "", map[string]string{
+	escaping := projectConfig(t, everyBranch, map[string]string{
 		"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\n" +
 			"source: ../../../../etc\n" +
 			"build:\n    commands:\n        image: rust:1.83\n        run: cat shadow\n" +
@@ -598,13 +594,26 @@ func TestABranchWhoseDeploymentIsNotLive(t *testing.T) {
 	require.ErrorContains(t, err, "none of those is deployed")
 }
 
+// A BRANCH NO ENVIRONMENT IS FED BY builds nothing, and says which ones exist.
+func TestABranchThatFeedsNoDeployment(t *testing.T) {
+	r := deployed(t, projectConfig(t, "environments:\n    production:\n        branches: [main]\n", nil), "production")
+
+	w := work(mainRepo)
+	w.Ref = "refs/heads/wip"
+
+	err := builder(t, r, &checkout{dir: t.TempDir()}, &engine{}, mainRepo).
+		Build(t.Context(), w, newOut())
+	require.ErrorIs(t, err, artifact.ErrNoDeployment)
+	require.ErrorContains(t, err, `"wip" feeds none of production`)
+}
+
 // ── the build's own environment ──────────────────────────────────────────
 
 // A BUILD-TIME VARIABLE REACHES THE BUILD AND A RUN-TIME ONE DOES NOT. Passing
 // everything would put a runtime secret into a toolchain container somebody
 // else wrote.
 func TestOnlyBuildTimeVariablesReachTheBuild(t *testing.T) {
-	config := projectConfig(t, "", map[string]string{
+	config := projectConfig(t, everyBranch, map[string]string{
 		"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\n" +
 			"source: services/reserve\n" +
 			"build:\n    commands:\n        image: rust:1.83\n        run: cargo build\n" +
@@ -696,7 +705,7 @@ func TestASecretsResolverMustNotBeNil(t *testing.T) {
 // READ IS REFUSED BY NAME, rather than built and served by the block that file
 // was meant to replace.
 func TestAnUnreadDelegatedBlockIsRefusedByName(t *testing.T) {
-	delegated := projectConfig(t, "", map[string]string{
+	delegated := projectConfig(t, everyBranch, map[string]string{
 		"component/paylib.yaml": "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\n" +
 			"source:\n    git: https://github.com/acme/paylib\n    branch: main\n    config: taubyte.yaml\n" +
 			"build:\n    script:\n        image: taubyte/go-wasi:v2\n" +

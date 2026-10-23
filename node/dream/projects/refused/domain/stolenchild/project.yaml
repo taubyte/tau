@@ -1,3 +1,6 @@
 id: QmRsawqvCW6LJxceX5AoFr4KcrerdAxeJNvsbYE2x9rQYr
 name: stolendomain
 description: a zone under another project's proven shop.test, refused even with its own TXT record
+environments:
+    prod:
+        branches: ["*"]

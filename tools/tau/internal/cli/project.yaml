@@ -1,3 +1,6 @@
 name: shop
 description: a starter project - one function behind one route
 id: QmZcWyWeGtLbqfsfC3RV62xcWUA1yLSap4Ed4QHobre8Hs
+environments:
+    prod:
+        branches: ["*"]

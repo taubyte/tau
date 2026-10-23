@@ -1,3 +1,6 @@
 id: QmUZ31yPda7LixtTCESKbfKyvYzoU4Rd8tcW2pUMwPQX86
 name: cacheauthorizer
 description: one guest, three guarded caches and the function that decides for it - the only project here that builds two components against two different host worlds, so what one of them may do is the answer the other gave
+environments:
+    prod:
+        branches: ["*"]

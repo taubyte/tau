@@ -20,6 +20,14 @@ func Required() Option {
 	}
 }
 
+// RequiredGroup refuses a document that leaves this group out or declares it with
+// no entries.
+func RequiredGroup() NodeOption {
+	return func(n *Node) {
+		n.Required = true
+	}
+}
+
 func Default[T any](val T) Option {
 	return func(a *Attribute) {
 		a.Default = val

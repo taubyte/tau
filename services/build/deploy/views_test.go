@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	viewProject = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nname: shop\n"
+	viewProject = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nname: shop\nenvironments:\n    prod:\n        branches: [\"*\"]\n"
 	cacheA      = "QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB"
 	cacheB      = "QmVs4sQjPFqJZ7Ug5MPpFxPTNiZ1CT8xY4XPKUbnDNbNAY"
 	fnID        = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"
@@ -38,7 +38,7 @@ func configDir(t *testing.T, docs map[string]string) string {
 // heldIn is the ids of every cache the view a region reads holds.
 func heldIn(t *testing.T, r *register.Register, region string) []string {
 	t.Helper()
-	v, err := r.ResolveView(t.Context(), shopID, deploy.DefaultEnvironment, region)
+	v, err := r.ResolveView(t.Context(), shopID, "prod", region)
 	require.NoError(t, err)
 	body, err := r.Object(t.Context(), v.Object)
 	require.NoError(t, err)
@@ -65,7 +65,7 @@ func TestADeployPublishesOneViewPerRegion(t *testing.T) {
 	require.Contains(t, log.String(), "prod in region-1: 1 resources")
 	require.Equal(t, []string{cacheA}, heldIn(t, r, "region-1"))
 	require.Equal(t, []string{cacheB}, heldIn(t, r, "region-2"))
-	_, err := r.ResolveView(t.Context(), shopID, deploy.DefaultEnvironment, "region-3")
+	_, err := r.ResolveView(t.Context(), shopID, "prod", "region-3")
 	require.ErrorIs(t, err, register.ErrNoView)
 
 	as, err := r.Assigned(t.Context(), "region-2")
@@ -108,6 +108,6 @@ func TestADeployReachingAcrossRegionsIsRefused(t *testing.T) {
 	err := runner(t, co, r, deploy.WithRegions(schema.Preview("region-1", "region-2"))).Run(t.Context(), work(), &log)
 	require.ErrorIs(t, err, deploy.ErrUnplaced)
 	require.ErrorContains(t, err, `function/f: reaches cache/a, which is not placed in "region-2" where this is`)
-	_, err = r.Resolve(t.Context(), shopID, deploy.DefaultEnvironment)
+	_, err = r.Resolve(t.Context(), shopID, "prod")
 	require.ErrorIs(t, err, register.ErrNotPublished)
 }

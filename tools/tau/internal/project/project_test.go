@@ -32,7 +32,7 @@ func TestTheStarterCompilesAndAuditsClean(t *testing.T) {
 	viewed, err := p.Views(t.Context(), "")
 	require.NoError(t, err)
 	require.NotEmpty(t, viewed.Views)
-	require.Empty(t, p.Environments())
+	require.Equal(t, []string{"prod"}, p.Environments())
 }
 
 func TestInitRefusesAnExistingProject(t *testing.T) {

@@ -1,0 +1,3 @@
+id: QmZDqydqrb5sFAbuqHeNPuQQpAHWbBHLUcPkM9gDeuSY6D
+name: noenvironments
+description: the onefunction project with its environments table left out - no branch is said to deploy anywhere, so it is refused rather than given an implicit deployment

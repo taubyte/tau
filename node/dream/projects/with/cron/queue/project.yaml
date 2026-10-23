@@ -1,3 +1,6 @@
 id: QmNtNZrkrN1rcKBnAShCb6ZLPPB22p9wvyxAHZGzkNRyrW
 name: cronqueue
 description: the firing block a schedule can actually write - every field of it, none of them the default, so what the compiler carries is the author's answer and not its own
+environments:
+    prod:
+        branches: ["*"]

@@ -164,7 +164,9 @@ type Node struct {
 	// rejection and per-field error locations all work inside an element. The only
 	// difference is where the key comes from — the author writes the order, the
 	// engine reads it back as the index.
-	Sequence   bool
+	Sequence bool
+	// Required marks a group that must be authored with at least one entry.
+	Required   bool
 	Match      StringMatch
 	Attributes []*Attribute
 	Children   []*Node

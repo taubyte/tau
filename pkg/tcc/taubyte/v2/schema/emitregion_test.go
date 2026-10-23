@@ -35,7 +35,7 @@ func regionsAsked(v []schema.NextValidation) []string {
 	return out
 }
 
-const projectID = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"
+const projectID = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"
 
 // TestAnOptionalNestedLabelCanDeferItsValidation.
 //

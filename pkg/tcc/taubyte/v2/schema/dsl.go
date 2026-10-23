@@ -79,6 +79,7 @@ var (
 	Path             = engine.Path
 	Ref              = engine.Ref
 	Required         = engine.Required
+	RequiredGroup    = engine.RequiredGroup
 	Resource         = engine.Resource
 	Root             = engine.Root
 	SchemaDefinition = engine.SchemaDefinition

@@ -26,7 +26,7 @@ func TestARegionThisCloudDoesNotServeIsRefusedByDefault(t *testing.T) {
 	err = d.Run(t.Context(), work(), &log)
 	require.ErrorIs(t, err, deploy.ErrUnplaced)
 	require.ErrorContains(t, err, `cache/sessions in shop: is placed in region "region-1", which this build does not serve`)
-	_, err = r.Resolve(t.Context(), shopID, deploy.DefaultEnvironment)
+	_, err = r.Resolve(t.Context(), shopID, "prod")
 	require.Error(t, err, "nothing was published")
 }
 
@@ -38,7 +38,7 @@ func TestTheFixtureDeploysAsEachRegion(t *testing.T) {
 			var log out
 			require.NoError(t, runner(t, &checkout{dir: fixture(t, basicFixture)}, r, deploy.WithRegions(schema.WithRegion(region))).
 				Run(t.Context(), work(), &log))
-			_, err := r.ResolveView(t.Context(), shopID, deploy.DefaultEnvironment, region)
+			_, err := r.ResolveView(t.Context(), shopID, "prod", region)
 			require.NoError(t, err)
 		})
 	}
@@ -60,7 +60,7 @@ func TestAnUnplaceableDeploymentPublishesNothing(t *testing.T) {
 	require.ErrorIs(t, err, deploy.ErrUnplaced)
 	require.Contains(t, err.Error(), "is not placed anywhere")
 
-	_, err = r.Resolve(t.Context(), shopID, deploy.DefaultEnvironment)
+	_, err = r.Resolve(t.Context(), shopID, "prod")
 	require.Error(t, err, "nothing was published")
 }
 

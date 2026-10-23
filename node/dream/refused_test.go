@@ -9,7 +9,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	pkgregister "github.com/taubyte/tau/pkg/register"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
+	"github.com/taubyte/tau/services/build/backend"
+	buildDeploy "github.com/taubyte/tau/services/build/deploy"
 )
 
 // refused_test holds the projects under projects/refused: each is something an
@@ -36,6 +39,36 @@ func TestAnApplicationWithNothingToRunIsBroken(t *testing.T) {
 
 	require.Empty(t, brokenIn(t, "with/application"),
 		"the project that runs has nothing broken, so the refusal above is about the image")
+}
+
+// A PROJECT THAT SAYS NO BRANCH DEPLOYS ANYWHERE IS REFUSED, by the compiler and
+// so by the deploy, and nothing is published. It is with/function minus its table.
+func TestAProjectWithNoEnvironmentsIsRefused(t *testing.T) {
+	const id = "QmZDqydqrb5sFAbuqHeNPuQQpAHWbBHLUcPkM9gDeuSY6D"
+	dir := filepath.Join("projects", "refused/environments/missing")
+
+	c, err := schema.New(schema.WithLocal(dir), schema.WithBranch("main"))
+	require.NoError(t, err)
+	_, _, err = c.Compile(context.Background())
+	require.ErrorContains(t, err, "required group 'environments'")
+
+	r, err := pkgregister.New(pkgregister.WithStore(pkgregister.NewMemStore()))
+	require.NoError(t, err)
+	d, err := buildDeploy.New(
+		buildDeploy.WithProjects(configures{}),
+		buildDeploy.WithCheckout(corpus{dir}),
+		buildDeploy.WithLocalRegister(r),
+		buildDeploy.WithCloudFqdn("tau.dream.test"),
+	)
+	require.NoError(t, err)
+	err = d.Run(t.Context(), backend.Work{JobID: "j", RepositoryKey: "github.com/acme/" + id,
+		Ref: "refs/heads/main", CommitSHA: "c", ProjectID: id}, &buildLog{})
+	require.ErrorIs(t, err, buildDeploy.ErrNoDeployment)
+	require.ErrorContains(t, err, "declares no environments")
+
+	envs, err := r.Environments(t.Context(), id)
+	require.NoError(t, err)
+	require.Empty(t, envs, "nothing is published for a refused project")
 }
 
 // brokenIn is every Broken finding the audit makes about one corpus project.

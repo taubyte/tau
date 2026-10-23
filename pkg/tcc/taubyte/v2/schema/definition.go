@@ -3594,7 +3594,7 @@ func environmentsGroup() *Node {
 			GroupDoc("The deployments of this project: which branches feed each, and where each keeps its state."),
 			Section("deployment", "Deployment", "Which branches feed an environment, and where it keeps its state."),
 			Nested(shadowsGroup())),
-	)
+	).With(RequiredGroup())
 }
 
 // A SHADOW IS A DEPLOYMENT ATTACHED TO ANOTHER'S STATE. It is its own deployment —

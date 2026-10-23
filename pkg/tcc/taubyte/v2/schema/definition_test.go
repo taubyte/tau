@@ -216,7 +216,7 @@ func TestDatabaseEngineIsClosed(t *testing.T) {
 	compile := func(body string) error {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/database/orders.yaml",
 			[]byte("id: QmSgvGwSJmtqBCJ8Zw3rNKtCCTqTFcqSUQqLYyPBnW6cVs\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -356,7 +356,7 @@ func TestRequiredOnOneEngineBranchIsEnforced(t *testing.T) {
 	compile := func(body string) error {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/database/d.yaml",
 			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -384,7 +384,7 @@ func TestRequiredOnOneEngineBranchIsEnforced(t *testing.T) {
 	// `tls` does.
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/database/d.yaml",
 		[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nkv:\n    distributed:\n        size: 1MB\n        consensus: crdt\n"), 0o644))
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -413,7 +413,7 @@ func TestDatabaseConsensusIsUnderTheDistributedEngineOnly(t *testing.T) {
 	compile := func(path, body string) (map[string]any, error) {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, path,
 			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -484,7 +484,7 @@ func TestCacheSaysWhereItsDataLives(t *testing.T) {
 	compile := func(path, body string) (map[string]any, error) {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, path,
 			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -564,7 +564,7 @@ func TestCacheConsensusIsRequiredAndTakesTheLossyValue(t *testing.T) {
 	compile := func(path, body string) error {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, path,
 			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -625,7 +625,7 @@ func TestDatabaseConsensusIsRequiredAndClosed(t *testing.T) {
 	compile := func(body string) error {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/database/d.yaml",
 			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -1210,7 +1210,7 @@ func TestCronCarriesItsTimezone(t *testing.T) {
 	// and a cron that says nothing gets the zone where every day has 24 hours
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/cron/c.yaml",
 		[]byte("id: QmRAQB6YaCyidP37UdDnjFY5vQuiBrcqdyoW1CuDgwxkD4\nschedule: \"@daily\"\n"), 0o644))
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -1229,7 +1229,7 @@ func TestExternalDatabaseMustStateItsTransport(t *testing.T) {
 
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/secret/k.yaml",
 		[]byte("id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/database/x.yaml", []byte(`
@@ -1326,7 +1326,7 @@ func TestWorkloadVariables(t *testing.T) {
 func TestDefaultsThatWereUnreachable(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/application/a.yaml", []byte(
 		"id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\nsource:\n    image: img\nexecution:\n    memory: 1MB\nports:\n    p:\n        number: 80\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/sync/q.yaml",
@@ -1709,7 +1709,7 @@ func TestDatabaseVerbsAreTheFourTypesUnioned(t *testing.T) {
 func TestADurableKvHasNoLifetime(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/database/d.yaml",
 		[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nkv:\n    distributed:\n        size: 1MB\n        ttl: 24h\n"), 0o644))
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -1735,7 +1735,7 @@ func TestChannelIsOneToOneAndStreamFansOut(t *testing.T) {
 	compile := func(path, body string) error {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/application/db.yaml",
 			[]byte("id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\nsource:\n    image: img\nexecution:\n    memory: 1MB\nports:\n    pg:\n        number: 5432\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, path, []byte(id+body), 0o644))
@@ -1787,7 +1787,7 @@ func TestStreamEngineIsClosedAndBranchScoped(t *testing.T) {
 	compile := func(body string) error {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/secret/k.yaml",
 			[]byte("id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/stream/s.yaml",
@@ -1847,7 +1847,7 @@ func TestAStreamIsNamedNotMatched(t *testing.T) {
 	compile := func(body string) error {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/stream/orders.yaml",
 			[]byte("id: QmdmQXB2d1q5PVFHrpKgHqPnnGSuVYd3ZWZAJf1YXcvJcz\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -1903,7 +1903,7 @@ func TestABusIsAStreamThatCannotBecomeALog(t *testing.T) {
 	compile := func(path, body string) error {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/function/f.yaml",
 			[]byte("id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, path,
@@ -1994,7 +1994,7 @@ func TestEveryEngineIsClosedAndNoKindIsOpen(t *testing.T) {
 	compile := func(path, body string) error {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/secret/k.yaml",
 			[]byte("id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, path,
@@ -2012,7 +2012,7 @@ func TestEveryEngineIsClosedAndNoKindIsOpen(t *testing.T) {
 	// nothing reads has no keys to be strict about.
 	stray := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(stray, "/project.yaml",
-		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(stray, "/connector/c.yaml",
 		[]byte("id: QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn\ntype: slack\npolls: true\n"), 0o644))
 	sc, err := schema.New(schema.WithVirtual(stray, "/"), schema.WithBranch("main"))
@@ -2093,7 +2093,7 @@ func TestThereIsNoEntityKind(t *testing.T) {
 	// keys are a property of a document the loader reads, and nothing reads this one.
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/entity/counter.yaml", []byte(
 		"id: QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn\n"+
 			"execution:\n    call: tick\n    timeout: 5s\n    memory: 8MB\n"+
@@ -2192,7 +2192,7 @@ func TestALogIsAppendOnlyAndOtherwiseUnspecified(t *testing.T) {
 	logWith := func(body string) error {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/sync/a.yaml",
 			[]byte("id: QmPq5xVnB7LtWcHdKzR3JgEyUM8fasNbT2vXrQwCk6hDZm\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -2251,7 +2251,7 @@ func TestInstancesTakeALimitAndAreNamedByAKey(t *testing.T) {
 	compile := func(body string) (map[string]any, error) {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/function/f.yaml",
 			[]byte("id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/cache/c.yaml",
@@ -2349,7 +2349,7 @@ func TestRegionPlacementIsASwitch(t *testing.T) {
 	compile := func(body string) (map[string]any, error) {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/cache/c.yaml",
 			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))

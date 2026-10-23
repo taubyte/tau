@@ -1,3 +1,6 @@
 id: QmdL1VUDSLGfUJ3zqgAvtZ6reGB6L8Hx2QUiKVns5fKArz
 name: across
 description: a function in region-2 reaching a cache kept only in region-1 - an edge across regions, which nothing can carry, so it is refused before anything publishes
+environments:
+    prod:
+        branches: ["*"]

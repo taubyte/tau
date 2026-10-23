@@ -104,7 +104,7 @@ func rolesByName(t *testing.T, v schema.View) map[string]schema.Role {
 // that has no regions: the one view is the whole compiled object, ids and index intact.
 func TestNoRegionsIsOneViewOfEverything(t *testing.T) {
 	docs := map[string]string{
-		"/project.yaml":          regionsProject,
+		"/project.yaml":          regionsProject + everyBranch,
 		"/function/api.yaml":     viewFunction("api", "cache:\n    sessions:\n        ops: [get]\n"),
 		"/cache/sessions.yaml":   viewCache("sessions", ""),
 		"/gateway/api.yaml":      viewGateway("api", ""),
@@ -130,7 +130,7 @@ func TestNoRegionsIsOneViewOfEverything(t *testing.T) {
 // EVERY POLICY HAS ITS ROLE, in every region it is held in.
 func TestEachPolicyIsHeldInItsRole(t *testing.T) {
 	views, findings, err := viewsOf(t, several{"region-1", "region-2", "region-3"}, map[string]string{
-		"/project.yaml":          regionsProject,
+		"/project.yaml":          regionsProject + everyBranch,
 		"/function/api.yaml":     viewFunction("api", "regions:\n    pinned: [region-1]\n"),
 		"/cache/ha.yaml":         viewCache("ha", "regions:\n    failover:\n        main: region-1\n        standby: region-2\n"),
 		"/cache/edge.yaml":       viewCache("edge", "regions:\n    cdn: [region-2]\n"),
@@ -170,7 +170,7 @@ func TestEachPolicyIsHeldInItsRole(t *testing.T) {
 // A CDN NOTHING SEEDS HERE IS SEEDED BY THE PLATFORM, wherever it runs.
 func TestACdnWithNoServedSeedIsSeededEverywhere(t *testing.T) {
 	views, _, err := viewsOf(t, several{"region-1", "region-2"}, map[string]string{
-		"/project.yaml":    regionsProject,
+		"/project.yaml":    regionsProject + everyBranch,
 		"/cache/edge.yaml": viewCache("edge", "regions:\n    cdn: []\n"),
 	})
 	require.NoError(t, err)
@@ -182,7 +182,7 @@ func TestACdnWithNoServedSeedIsSeededEverywhere(t *testing.T) {
 // role says that is not where the project asked.
 func TestARelocatedResourceIsPlaced(t *testing.T) {
 	views, findings, err := viewsOf(t, relocates{}, map[string]string{
-		"/project.yaml":    regionsProject,
+		"/project.yaml":    regionsProject + everyBranch,
 		"/cache/ha.yaml":   viewCache("ha", "regions:\n    failover:\n        main: region-1\n        standby: region-2\n"),
 		"/cache/pin.yaml":  viewCache("pin", "regions:\n    pinned: [region-1]\n"),
 		"/cache/edge.yaml": viewCache("edge", "regions:\n    cdn: [region-1]\n"),
@@ -199,7 +199,7 @@ func TestARelocatedResourceIsPlaced(t *testing.T) {
 // AN EDGE ACROSS REGIONS IS REFUSED, by name, and nothing is projected.
 func TestAnEdgeAcrossRegionsIsRefused(t *testing.T) {
 	views, findings, err := viewsOf(t, several{"region-1", "region-2"}, map[string]string{
-		"/project.yaml":        regionsProject,
+		"/project.yaml":        regionsProject + everyBranch,
 		"/function/api.yaml":   viewFunction("api", "regions:\n    pinned: [region-2]\ncache:\n    sessions:\n        ops: [get]\n"),
 		"/cache/sessions.yaml": viewCache("sessions", "regions:\n    pinned: [region-1]\n"),
 	})
@@ -210,7 +210,7 @@ func TestAnEdgeAcrossRegionsIsRefused(t *testing.T) {
 
 	// THE SAME EDGE INSIDE ONE REGION IS FINE, and so is one to what has no footprint.
 	_, findings, err = viewsOf(t, several{"region-1", "region-2"}, map[string]string{
-		"/project.yaml":        regionsProject,
+		"/project.yaml":        regionsProject + everyBranch,
 		"/function/api.yaml":   viewFunction("api", "regions:\n    pinned: [region-1]\ncache:\n    sessions:\n        ops: [get]\n"),
 		"/cache/sessions.yaml": viewCache("sessions", "regions:\n    pinned: [region-1, region-2]\n"),
 	})
@@ -221,7 +221,7 @@ func TestAnEdgeAcrossRegionsIsRefused(t *testing.T) {
 // WHAT HAS NO FOOTPRINT AND REACHES ACROSS REGIONS IS HELD NOWHERE, which is refused.
 func TestAnUnplacedResourceReachingTwoRegionsIsRefused(t *testing.T) {
 	_, findings, err := viewsOf(t, several{"region-1", "region-2"}, map[string]string{
-		"/project.yaml":          regionsProject,
+		"/project.yaml":          regionsProject + everyBranch,
 		"/function/api.yaml":     viewFunction("api", "regions:\n    pinned: [region-1]\n"),
 		"/function/auth.yaml":    viewFunction("auth", "regions:\n    pinned: [region-2]\n"),
 		"/gateway/api.yaml":      viewGateway("api", "authorizer:\n    name: auth\n"),
@@ -235,7 +235,7 @@ func TestAnUnplacedResourceReachingTwoRegionsIsRefused(t *testing.T) {
 // AN EMPTY VIEW IS A REGION THAT HOLDS NOTHING; AN UNKNOWN ONE IS NOT A REGION.
 func TestAnEmptyViewIsNotAnUnknownOne(t *testing.T) {
 	views, _, err := viewsOf(t, several{"region-1", "region-2"}, map[string]string{
-		"/project.yaml":   regionsProject,
+		"/project.yaml":   regionsProject + everyBranch,
 		"/cache/pin.yaml": viewCache("pin", "regions:\n    pinned: [region-1]\n"),
 	})
 	require.NoError(t, err)
@@ -253,14 +253,14 @@ func TestAnEmptyViewIsNotAnUnknownOne(t *testing.T) {
 // does not render is placed there all the same, and is simply not a view here.
 func TestBrokenPlacementStopsTheViews(t *testing.T) {
 	_, findings, err := viewsOf(t, several{"region-1"}, map[string]string{
-		"/project.yaml":   regionsProject,
+		"/project.yaml":   regionsProject + everyBranch,
 		"/cache/pin.yaml": viewCache("pin", "regions:\n    pinned: [region-3]\n"),
 	})
 	require.ErrorIs(t, err, schema.ErrUnviewable)
 	require.Contains(t, findingsTitled(findings, schema.Broken), "cache/pin: unknown region-3")
 
 	plan := schema.PlanViews(compileDocs(t, "", map[string]string{
-		"/project.yaml":   regionsProject,
+		"/project.yaml":   regionsProject + everyBranch,
 		"/cache/pin.yaml": viewCache("pin", "regions:\n    pinned: [region-1]\n"),
 	}), schema.WithRegions(liar{}))
 	require.Equal(t, []string{"region-2"}, plan.Destinations)
@@ -277,7 +277,7 @@ func (liar) Place(p schema.Placement) schema.Answer { return schema.Answer{In: p
 // A SCOPE IS KEPT FOR WHAT IS IN IT, and a resource that is a scope says so.
 func TestAScopeIsKeptForWhatIsInIt(t *testing.T) {
 	views, _, err := viewsOf(t, several{"region-1", "region-2"}, map[string]string{
-		"/project.yaml":                regionsProject,
+		"/project.yaml":                regionsProject + everyBranch,
 		"/namespace/shop/meta.yaml":    regionsShop,
 		"/namespace/shop/cache/a.yaml": viewCache("a", "regions:\n    pinned: [region-1]\n"),
 		"/namespace/shop/cache/b.yaml": viewCache("b", "regions:\n    pinned: [region-2]\n"),
@@ -435,7 +435,7 @@ const cidOfCache = "QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB"
 // before any cloud is chosen, from the regions the project itself names.
 func TestAPreviewOfTheRegionsTheProjectNames(t *testing.T) {
 	flat := compileDocs(t, "", map[string]string{
-		"/project.yaml":    regionsProject + "regions: [region-1, region-2, region-3]\n",
+		"/project.yaml":    regionsProject + "regions: [region-1, region-2, region-3]\n" + everyBranch,
 		"/cache/pin.yaml":  viewCache("pin", "regions:\n    pinned: [region-1]\n"),
 		"/cache/ha.yaml":   viewCache("ha", "regions:\n    failover:\n        main: region-2\n        standby: mars\n"),
 		"/cache/edge.yaml": viewCache("edge", "regions:\n    cdn: [region-3]\n"),

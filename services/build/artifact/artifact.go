@@ -290,14 +290,8 @@ func (b *Builder) deployments(ctx context.Context, projectID, branch string) ([]
 		return nil, err
 	}
 
-	// A PROJECT THAT DECLARES NO TABLE HAS ONE DEPLOYMENT, and what it is
-	// called is whatever the deploy published it under — which is exactly what
-	// the register just listed.
 	declared := p.Deployments(branch)
 	if len(declared) == 0 {
-		if len(p.Environments()) == 0 {
-			return published, nil
-		}
 		return nil, fmt.Errorf("%w: %q feeds none of %s",
 			ErrNoDeployment, branch, strings.Join(published, ", "))
 	}

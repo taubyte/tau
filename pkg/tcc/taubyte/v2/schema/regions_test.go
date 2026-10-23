@@ -49,6 +49,7 @@ func auditWith(t *testing.T, r schema.Regions, docs map[string]string) []schema.
 
 const (
 	regionsProject = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nname: p\n"
+	everyBranch    = "environments:\n    prod:\n        branches: [\"*\"]\n"
 	regionsShop    = "id: QmQPeNsJPyVWPFDVHb77w8G42Fvo15z4bmmjRoBHfW1YZv\n"
 )
 
@@ -137,7 +138,7 @@ func TestTheAuditHearsNoRegionsByDefault(t *testing.T) {
 
 	// Nothing named anywhere: nothing to say, and nothing broken.
 	clean := compileDocs(t, "", map[string]string{
-		"/project.yaml": regionsProject,
+		"/project.yaml": regionsProject + everyBranch,
 		"/cache/c.yaml": regionsCache(""),
 	})
 	require.Empty(t, schema.Place(clean))
@@ -217,7 +218,7 @@ func (refuses) Allow([]string) []schema.Concern {
 
 func TestTheAuditFilesWhatTheRegionsSays(t *testing.T) {
 	found := auditWith(t, refuses{}, map[string]string{
-		"/project.yaml": regionsProject + "regions: [region-1]\n",
+		"/project.yaml": regionsProject + "regions: [region-1]\n" + everyBranch,
 		"/cache/c.yaml": regionsCache("regions:\n    pinned: [region-1]\n"),
 	})
 	require.Contains(t, findingsTitled(found, schema.Broken), "cache/c: is refused")

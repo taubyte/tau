@@ -169,14 +169,14 @@ func TestAPushPublishes(t *testing.T) {
 	var log out
 	require.NoError(t, runner(t, c, r).Run(t.Context(), work(), &log))
 
-	pointer, err := r.Resolve(t.Context(), shopID, deploy.DefaultEnvironment)
+	pointer, err := r.Resolve(t.Context(), shopID, "prod")
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), pointer.Revision)
 	require.NotEmpty(t, pointer.Object)
 
 	// The developer watching sees which deployments the branch fed and what
 	// each one now answers on.
-	require.Contains(t, log.String(), "main feeds "+deploy.DefaultEnvironment)
+	require.Contains(t, log.String(), "main feeds "+"prod")
 	require.Contains(t, log.String(), "published as revision 1")
 
 	// The clone is released whatever happened.
@@ -241,7 +241,7 @@ func TestAnUnchangedPushDoesNotMoveThePointer(t *testing.T) {
 	require.NoError(t, runner(t, c, r).Run(t.Context(), work(), &log))
 	require.NoError(t, runner(t, c, r).Run(t.Context(), work(), &log))
 
-	pointer, err := r.Resolve(t.Context(), shopID, deploy.DefaultEnvironment)
+	pointer, err := r.Resolve(t.Context(), shopID, "prod")
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), pointer.Revision)
 	require.Contains(t, log.String(), "unchanged at revision 1")
@@ -271,7 +271,7 @@ func TestAGeneratedNameNeedsTheCloudsZone(t *testing.T) {
 	project, environment, err := told.ResolveHost(t.Context(), "storefront.tdw4ygm23gwgn.acme.example")
 	require.NoError(t, err)
 	require.Equal(t, shopID, project)
-	require.Equal(t, deploy.DefaultEnvironment, environment)
+	require.Equal(t, "prod", environment)
 }
 
 // ── what it refuses ──────────────────────────────────────────────────────
@@ -355,7 +355,7 @@ func TestWhatItCannotBeBuiltWithout(t *testing.T) {
 func TestConfigThatDoesNotCompile(t *testing.T) {
 	broken := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(broken, "project.yaml"),
-		[]byte("id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nname: broken\n"), 0o644))
+		[]byte("id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nname: broken\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 	require.NoError(t, os.MkdirAll(filepath.Join(broken, "zone"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(broken, "zone", "bad.yaml"),
 		[]byte("id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Za\nnot_a_key: 1\n"), 0o644))
@@ -553,9 +553,9 @@ func TestAConfigNamingAnIdItDidNotClaimPublishesNothing(t *testing.T) {
 	require.ErrorIs(t, err, deploy.ErrNotClaimed)
 	require.Contains(t, err.Error(), shopID)
 
-	_, err = r.Resolve(t.Context(), shopID, deploy.DefaultEnvironment)
+	_, err = r.Resolve(t.Context(), shopID, "prod")
 	require.ErrorIs(t, err, register.ErrNotPublished)
-	_, err = r.Resolve(t.Context(), w.ProjectID, deploy.DefaultEnvironment)
+	_, err = r.Resolve(t.Context(), w.ProjectID, "prod")
 	require.ErrorIs(t, err, register.ErrNotPublished)
 }
 
@@ -568,7 +568,7 @@ func TestAnUnprovenZoneIsRefusedBeforeAnythingPublishes(t *testing.T) {
 	require.ErrorIs(t, err, deploy.ErrUnproven)
 	require.ErrorContains(t, err, "example.com: no TXT record")
 	require.ErrorContains(t, err, "tau domain claim example.com")
-	_, err = r.Resolve(t.Context(), shopID, deploy.DefaultEnvironment)
+	_, err = r.Resolve(t.Context(), shopID, "prod")
 	require.ErrorIs(t, err, register.ErrNotPublished)
 
 	d, err := deploy.New(

@@ -58,7 +58,7 @@ const (
 func environmentsIn(q *yaseer.Query, of string) ([]Environment, error) {
 	names, err := q.List()
 	if err != nil {
-		return nil, nil // a project that declares none is a project with one deployment
+		return nil, nil // the compile refuses a project with no table; this read only reports it
 	}
 	out := make([]Environment, 0, len(names))
 	for _, name := range names {

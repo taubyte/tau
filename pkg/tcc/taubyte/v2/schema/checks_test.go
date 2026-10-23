@@ -17,7 +17,7 @@ func auditDocs(t *testing.T, r schema.Resolver, docs map[string]string) []schema
 	t.Helper()
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 	for path, body := range docs {
 		assert.NilError(t, afero.WriteFile(fs, path, []byte(body), 0o644))
 	}
@@ -159,7 +159,7 @@ func TestAuditMountedWebsite(t *testing.T) {
 func TestWebsiteServingMode(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/website/app.yaml", []byte(
 		"id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\nsource:\n    git: https://github.com/acme/app\n    branch: main\nserve:\n    mode: spa\n"), 0o644))
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -542,7 +542,7 @@ func TestDatabaseOpsAreItsTypesNotTheUnion(t *testing.T) {
 	// enum — so the two halves cover different mistakes rather than overlapping.
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/database/tokens.yaml", []byte(kv), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/function/f.yaml",
 		[]byte(fn+"database:\n    tokens:\n        ops: [fetch]\n"), 0o644))
@@ -570,7 +570,7 @@ func TestALoweredDatabaseEntryIsCheckedToo(t *testing.T) {
 	// the wrong reason, on a project where nothing produced a database at all.
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 	for path, body := range docs {
 		assert.NilError(t, afero.WriteFile(fs, path, []byte(body), 0o644))
 	}
@@ -593,7 +593,7 @@ func TestALoweredDatabaseEntryIsCheckedToo(t *testing.T) {
 // ends — and a widening that compiled silently would mean a child running where its
 // parent said nothing may.
 func TestAuditRegions(t *testing.T) {
-	const proj = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nregions: [region-1, region-2]\n"
+	const proj = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\nregions: [region-1, region-2]\n"
 	const shopID = "id: QmQPeNsJPyVWPFDVHb77w8G42Fvo15z4bmmjRoBHfW1YZv\n"
 	cache := func(region string) string {
 		return "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n" + region
@@ -647,7 +647,7 @@ func TestAuditRegions(t *testing.T) {
 	// nothing to check a label against and the audit says nothing. This is also where
 	// the typo-catcher stops — `zz` is only wrong against a list somebody wrote.
 	found = auditDocs(t, nil, map[string]string{
-		"/project.yaml": "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n",
+		"/project.yaml": "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n",
 		"/cache/c.yaml": cache("regions:\n    pinned: [zz]\n"),
 	})
 	hasNo(t, found, "which its scope does not allow")
@@ -712,7 +712,7 @@ func TestAPerEnvironmentPlacementIsBoundedToo(t *testing.T) {
 // (WithNoRegions) places everything in DefaultRegion, so a project that writes no `regions` anywhere is
 // placed, and only a Regions that places a resource nowhere makes it Broken.
 func TestAnythingWithAFootprintIsPlaced(t *testing.T) {
-	const bare = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"
+	const bare = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"
 	cache := func(region string) string {
 		return "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n" + region
 	}

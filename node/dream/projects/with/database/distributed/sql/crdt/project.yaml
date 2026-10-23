@@ -1,3 +1,6 @@
 id: QmYGMfo7eTMpDtWNxXukqgSQnZMZS8jVG6mR8D1XKnsXYG
 name: sqlcrdt
 description: a function and the sql database it keeps rows in - tau's own engine, musql, every copy writable and converging
+environments:
+    prod:
+        branches: ["*"]
