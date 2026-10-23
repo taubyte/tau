@@ -156,23 +156,30 @@ func interval(cmd *cobra.Command) time.Duration {
 	return 2 * time.Second
 }
 
-// storedLog prints the last log a finished job stored.
+// storedLog prints the last log a finished job stored, or why it cannot.
 func storedLog(cmd *cobra.Command, cl *api.Client, j *api.Job, log io.Writer) {
+	if err := storedLogOf(cmd, cl, j, log); err != nil {
+		fmt.Fprintf(log, "the job's log cannot be read: %v\n", err)
+	}
+}
+
+// storedLogOf writes the log of a finished job's last attempt to w.
+func storedLogOf(cmd *cobra.Command, cl *api.Client, j *api.Job, w io.Writer) error {
 	keys := make([]string, 0, len(j.GetLogs()))
 	for k := range j.GetLogs() {
 		keys = append(keys, k)
 	}
 	if len(keys) == 0 {
-		return
+		return nil
 	}
 	sort.Strings(keys)
 	body, err := cl.StoredLog(cmd.Context(), j.GetId(), keys[len(keys)-1])
 	if err != nil {
-		fmt.Fprintf(log, "the job's log cannot be read: %v\n", err)
-		return
+		return err
 	}
 	defer body.Close()
-	io.Copy(log, body)
+	_, err = io.Copy(w, body)
+	return err
 }
 
 func terminal(j *api.Job) bool {

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -216,6 +217,20 @@ func logsCommand(env Env) *cobra.Command {
 // showLog prints a job's log. At a terminal, following draws the live view;
 // anywhere else the bytes go to stdout as they arrive.
 func showLog(cmd *cobra.Command, env Env, cl *api.Client, id string, from int64, follow bool) error {
+	// A FINISHED JOB'S LOG IS THE ONE IT STORED. Following asks the node
+	// writing the log, and once the build ends no node is: the stream would be
+	// empty, and an empty log reads as a build that printed nothing.
+	if j, err := cl.Job(cmd.Context(), id); err == nil && terminal(j) {
+		var all bytes.Buffer
+		if err := storedLogOf(cmd, cl, j, &all); err != nil {
+			return err
+		}
+		if from > int64(all.Len()) {
+			from = int64(all.Len())
+		}
+		_, err := env.Stdout.Write(all.Bytes()[from:])
+		return err
+	}
 	stream := cl.Stream(cmd.Context(), id, from)
 	if !follow {
 		stream.Retries = 0

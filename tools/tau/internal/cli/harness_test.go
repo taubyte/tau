@@ -82,11 +82,12 @@ func newFrontend(t *testing.T) *frontend {
 		finish:    buildv2.JobStatus_JobStatusSuccess,
 		published: map[string][]byte{},
 		jobs: map[string]*buildv2.Job{
-			"job-1": {Id: "job-1", Status: buildv2.JobStatus_JobStatusSuccess, RepositoryKey: "github.com/acme/pay", Ref: "refs/heads/main", CommitSha: "0123456789abcdef0123", Timestamp: 1700000000, Attempt: 1, AssetCid: map[string]string{"res-a": "bafyA"}},
-			"job-2": {Id: "job-2", Status: buildv2.JobStatus_JobStatusFailed, RepositoryKey: "github.com/acme/cfg", Ref: "refs/heads/main", CommitSha: "fedcba", Timestamp: 1700000100, Attempt: 2},
+			"job-1":    {Id: "job-1", Status: buildv2.JobStatus_JobStatusSuccess, RepositoryKey: "github.com/acme/pay", Ref: "refs/heads/main", CommitSha: "0123456789abcdef0123", Timestamp: 1700000000, Attempt: 1, AssetCid: map[string]string{"res-a": "bafyA"}, Logs: map[string]string{"1": "bafylog"}},
+			"job-live": {Id: "job-live", Status: buildv2.JobStatus_JobStatusClaimed, RepositoryKey: "github.com/acme/pay", Ref: "refs/heads/main", CommitSha: "0123456789abcdef0123", Timestamp: 1700000050, Attempt: 1},
+			"job-2":    {Id: "job-2", Status: buildv2.JobStatus_JobStatusFailed, RepositoryKey: "github.com/acme/cfg", Ref: "refs/heads/main", CommitSha: "fedcba", Timestamp: 1700000100, Attempt: 2},
 		},
 		byProj:  map[string][]string{"proj-1": {"job-1", "job-2"}},
-		logs:    map[string]string{"job-1": "step one\nstep two\n"},
+		logs:    map[string]string{"job-1": "step one\nstep two\n", "job-live": "step one\nstep two\n"},
 		secrets: map[string]map[string][]byte{},
 		fqdn:    "cloud.example",
 	}

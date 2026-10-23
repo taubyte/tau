@@ -254,17 +254,23 @@ func TestJob(t *testing.T) {
 func TestLogs(t *testing.T) {
 	x := newTester(t)
 	x.login()
-	require.Equal(t, "step one\nstep two\n", x.ok("logs", "job-1"))
-	require.Equal(t, "step two\n", x.ok("logs", "job-1", "--offset", "9"))
+	// A FINISHED JOB'S LOG IS THE ONE IT STORED: no node is writing it any
+	// more, so following it would read nothing.
+	require.Equal(t, "stored: step one\nstep two\n", x.ok("logs", "job-1"))
+	require.Equal(t, "step two\n", x.ok("logs", "job-1", "--offset", "17"))
+	require.Equal(t, "", x.ok("logs", "job-1", "--offset", "999"))
+
+	require.Equal(t, "step one\nstep two\n", x.ok("logs", "job-live"))
+	require.Equal(t, "step two\n", x.ok("logs", "job-live", "--offset", "9"))
 
 	// A dropped connection resumes at the byte offset reached, so nothing is
 	// printed twice and nothing is lost.
 	x.f.dropOnce = true
-	require.Equal(t, "step one\nstep two\n", x.ok("logs", "job-1", "--follow"))
+	require.Equal(t, "step one\nstep two\n", x.ok("logs", "job-live", "--follow"))
 
 	// At a terminal, --follow draws the live view and reads the same bytes.
 	x.interactive = true
-	x.ok("logs", "job-1", "-f")
+	x.ok("logs", "job-live", "-f")
 
 	require.NotZero(t, x.run("logs").code)
 	require.Contains(t, x.run("logs", "nope").stderr, "not found")
