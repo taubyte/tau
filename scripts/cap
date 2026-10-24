@@ -75,16 +75,176 @@ if ! command -v systemd-run >/dev/null 2>&1 || [ ! -S "$runtime/systemd/private"
   exit 70
 fi
 
+# TAU_CAP_SLICE and TAU_CAP_TMP move the slice and the runs' temp directories
+# somewhere else, which is how a test of this script stays out of the real ones.
+slice="${TAU_CAP_SLICE:-tau-cap.slice}"
+tmp="${TAU_CAP_TMP:-/tmp/cap}"
+
+# ★ ONE LOCK, HELD UNTIL THE NEW RUN IS INSIDE ITS SCOPE. Everything below looks
+# at the other runs and acts on what it sees — which scopes are alive, whether
+# the slice holds anything — and a run that has its directory and its limits but
+# has not reached its scope yet is invisible to both. So the lock is not released
+# here: it rides through systemd-run on fd 9, and the first thing the command does
+# inside the scope is close it.
+exec 9>>"$runtime/tau-cap.lock"
+if ! flock -w 120 9; then
+  echo "scripts/cap: another cap call has held $runtime/tau-cap.lock for 120s." >&2
+  exit 75
+fi
+
+# Every loaded tau-cap-N.scope, and the ones that still have a run in them.
+# Unknown means nothing is swept: a directory is only removed on evidence that
+# its run has ended.
+declare -A loaded=() live=()
+known=""
+if units="$(systemctl --user show -p Id -p ActiveState 'tau-cap-*.scope')"; then
+  known=1
+  while read -r unit state; do
+    id="${unit#tau-cap-}"
+    id="${id%.scope}"
+    loaded[$id]=1
+    case "$state" in
+      inactive|failed) ;;
+      *) live[$id]=1 ;;
+    esac
+  done < <(awk -v RS= '{
+    id = ""; state = ""
+    for (i = 1; i <= NF; i++) {
+      split($i, kv, "=")
+      if (kv[1] == "Id") id = kv[2]
+      if (kv[1] == "ActiveState") state = kv[2]
+    }
+    if (id != "") print id, state
+  }' <<<"$units")
+fi
+
+# ★ EVERY RUN GETS A TMPDIR OF ITS OWN: $tmp/N, for the scope tau-cap-N. Go's
+# work directories and t.TempDir follow TMPDIR, and so does whatever a test makes
+# with os.MkdirTemp — none of which a killed run cleans up. MEASURED on the build
+# servers, where /tmp is a tmpfs: 2,327 peer repositories and 437 universes,
+# 7.9 GiB on one box, from runs long gone. A tmpfs page stays charged to the
+# cgroup that wrote it, so all of it counted against this slice.
+#
+# So every call first removes the directories of scopes that are no longer
+# alive, and a killed run's files go with the next run. Nothing is removed
+# outside $tmp, nor anything in it that is not named for a scope. Root's files,
+# left by a run under scripts/as-root, take root to remove.
+#
+# ★ THE PATH IS SHORT ON PURPOSE. A unix socket's path holds 107 bytes, and
+# t.TempDir alone adds up to 79 below TMPDIR before a test names its socket —
+# containerd.sock is 16 more. /tmp/cap/N leaves room for both; a second user on
+# the box, who cannot have /tmp/cap, gets /tmp/cap-UID.
+ours() { [ -d "$1" ] && [ ! -L "$1" ] && [ -O "$1" ]; }
+mkdir -p -m 700 "$tmp" 2>/dev/null
+if ! ours "$tmp" && [ -z "${TAU_CAP_TMP:-}" ]; then
+  tmp="/tmp/cap-$(id -u)"
+  mkdir -m 700 "$tmp" 2>/dev/null
+fi
+if ! ours "$tmp"; then
+  echo "scripts/cap: $tmp is not a directory this user owns." >&2
+  exit 70
+fi
+if [ -n "$known" ]; then
+  for dir in "$tmp"/*; do
+    id="${dir##*/}"
+    case "$id" in
+      ''|*[!0-9]*) continue ;;
+    esac
+    if [ -d "$dir" ] && [ ! -L "$dir" ] && [ -z "${live[$id]:-}" ]; then
+      rm -rf --one-file-system -- "$dir" 2>/dev/null ||
+        sudo -n rm -rf --one-file-system -- "$dir" 2>/dev/null ||
+        echo "scripts/cap: could not remove $dir, left by a run that has ended." >&2
+    fi
+  done
+fi
+
+# bytes 8G → 8589934592; infinity, or memory.max's max, stays infinity.
+bytes() {
+  local n="${1%[KMGT]}"
+  case "$1" in
+    infinity|max) echo infinity; return ;;
+  esac
+  case "$n" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  case "$1" in
+    *K) echo $(( n << 10 )) ;;
+    *M) echo $(( n << 20 )) ;;
+    *G) echo $(( n << 30 )) ;;
+    *T) echo $(( n << 40 )) ;;
+    *) echo "$n" ;;
+  esac
+}
+
+# percent 400% → 400, and cpu.max's "400000 100000" → 400.
+percent() {
+  local n
+  case "$1" in
+    *%) n="${1%\%}" ;;
+    "max "*) echo infinity; return ;;
+    *" "*) n=$(( ${1% *} * 100 / ${1#* } )) ;;
+  esac
+  case "$n" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  echo "$n"
+}
+
+# higher UNIT A B: the larger of two limits; nothing when either is unreadable.
+higher() {
+  local a b
+  a="$("$1" "$2")" && b="$("$1" "$3")" || return 0
+  if [ "$a" = infinity ] || [ "$b" = infinity ]; then
+    echo infinity
+  elif [ "$a" -ge "$b" ]; then
+    echo "$a"
+  else
+    echo "$b"
+  fi
+}
+
 # A shared slice bounds every capped run ADDED UP, which the per-scope ceiling
 # cannot: five runs each honestly under their own limit still summed past the
 # host. CPUQuota is here for the same reason — a sweep reaching load 32 makes the
 # desktop unusable without any memory limit being crossed. Failure to set these
 # is not fatal; the per-scope caps below are the ones that must hold.
-systemctl --user set-property tau-cap.slice \
-  MemoryMax="${TAU_CAP_TOTAL:-8G}" MemoryHigh="${TAU_CAP_TOTAL_HIGH:-6G}" \
-  MemorySwapMax=0 CPUQuota="${TAU_CAP_CPU:-400%}" IOWeight=10 \
-  >/dev/null 2>&1 || true
+#
+# ★ A CALL ONLY LOWERS THE SLICE WHEN NOTHING IS IN IT. These limits used to be
+# set to whatever each call asked, so a call taking the 8G default dropped the
+# slice under a gate running at 96G, and the kernel OOM-killed the gate's make.
+# While a run is inside, each limit only rises, to the larger of what is set and
+# what is asked; the slice takes exactly what is asked once it is idle.
+total="${TAU_CAP_TOTAL:-8G}"
+total_high="${TAU_CAP_TOTAL_HIGH:-6G}"
+cpu="${TAU_CAP_CPU:-400%}"
+cg="$(systemctl --user show -p ControlGroup --value "$slice" 2>/dev/null)"
+if [ -n "$cg" ] && grep -qx 'populated 1' "/sys/fs/cgroup$cg/cgroup.events" 2>/dev/null; then
+  cg="/sys/fs/cgroup$cg"
+  total="$(higher bytes "$total" "$(cat "$cg/memory.max" 2>/dev/null)")"
+  total_high="$(higher bytes "$total_high" "$(cat "$cg/memory.high" 2>/dev/null)")"
+  cpu="$(higher percent "$cpu" "$(cat "$cg/cpu.max" 2>/dev/null)")"
+  case "$cpu" in
+    infinity) cpu="" ;;
+    ?*) cpu="$cpu%" ;;
+  esac
+fi
+props=(MemorySwapMax=0 IOWeight=10)
+[ -n "$total" ] && props+=(MemoryMax="$total")
+[ -n "$total_high" ] && props+=(MemoryHigh="$total_high")
+[ -n "$cpu" ] && props+=(CPUQuota="$cpu")
+systemctl --user set-property "$slice" "${props[@]}" >/dev/null 2>&1 || true
 
-exec systemd-run --user --scope -q --collect --slice=tau-cap.slice \
+id=1
+while [ -n "${loaded[$id]:-}" ] || [ -e "$tmp/$id" ] || [ -L "$tmp/$id" ]; do
+  id=$(( id + 1 ))
+done
+mkdir -m 700 "$tmp/$id" || exit 70
+export TMPDIR="$tmp/$id"
+
+# --expand-environment=no hands the command its arguments as they were given.
+# systemd-run otherwise substitutes ${VAR} in them first, from its own
+# environment, so `sh -c 'echo "${x:-none}"'` ran as `echo ""`.
+exec systemd-run --user --scope -q --collect --slice="$slice" \
+  --unit="tau-cap-$id" --description="$*" --expand-environment=no \
   -p MemoryMax="$mem" -p MemoryHigh="$high" -p MemorySwapMax=0 \
-  -p TasksMax=4096 -- "$@"
+  -p TasksMax=4096 -- sh -c 'exec 9>&-; exec "$@"' cap "$@"
