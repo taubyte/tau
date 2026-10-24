@@ -168,7 +168,7 @@ func (c *core) deployKeyReads(path string, pub []byte) (*transport.Endpoint, err
 	return nil, notFound
 }
 
-func (c *core) sshUploadPack(ctx context.Context, ch gossh.Channel, ep *transport.Endpoint) error {
+func (c *core) sshUploadPack(ctx context.Context, ch io.ReadWriter, ep *transport.Endpoint) error {
 	sess, err := server.NewServer(c).NewUploadPackSession(ep, nil)
 	if err != nil {
 		return err
@@ -191,6 +191,13 @@ func (c *core) sshUploadPack(ctx context.Context, ch gossh.Channel, ep *transpor
 	}
 	req := packp.NewUploadPackRequest()
 	if err := req.Decode(in); err != nil {
+		return err
+	}
+	// Decode stops at the wants. The client then writes its haves and done
+	// and closes its input, and fails the fetch with EOF if this side hung up
+	// first, so the answer waits for that close, as pkg/git/gittest's does.
+	// The haves are dropped: the pack is still everything wanted.
+	if _, err := io.Copy(io.Discard, in); err != nil {
 		return err
 	}
 	resp, err := sess.UploadPack(ctx, req)
