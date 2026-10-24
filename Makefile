@@ -37,7 +37,7 @@ DREAM_P ?= $(shell n=$$(nproc 2>/dev/null || echo 4); p=$$((n / 4)); [ $$p -lt 1
 # it fails the package outright rather than skipping it.
 DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xargs grep -L '//go:build dreaming && ee' | sed 's|^\./||' | grep -vE '^(ee/|tools/tau/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
-.PHONY: test test-cli test-acme test-acme-live test-dreaming test-raft test-docker test-containerd test-application test-build test-corpus test-external-databases test-forges test-containers cover-containers cover-containers-unit cover-containers-docker cover-containers-root cover-containers-rootless cover-containers-report test-taucorder test-all proto-v2 proto-v2-check
+.PHONY: test test-cli test-acme test-acme-live test-dreaming test-raft test-docker test-containerd test-application test-build test-corpus test-external-databases forge-images test-forges test-containers cover-containers cover-containers-unit cover-containers-docker cover-containers-root cover-containers-rootless cover-containers-report test-taucorder test-all proto-v2 proto-v2-check
 
 # THE TIMEOUT IS EXPLICIT BECAUSE THE DEFAULT IS A GUESS ABOUT THE MACHINE.
 # go test allows a package 10 minutes unless told otherwise, and pkg/kvdb spends
@@ -185,8 +185,18 @@ test-external-databases:
 # access, membership, create, list, a deploy key, a hook, a real push whose
 # signed delivery pkg/forge verifies, and a clone with the deploy key. It needs
 # a docker daemon and no sudo; GitLab alone takes minutes to boot.
-test-forges:
+test-forges: forge-images
 	go test -exec $(LEAKCHECK) -tags docker_integration -run '^TestAReal' -count=1 -v -p 1 -timeout 30m $(FLAGS) ./pkg/forge/live/
+
+# forge-images pulls every image test-forges starts, before its timed suite.
+# A pull is bound by the network, not the machine: a cold GitLab is 1.7 GiB,
+# half an hour on a host that downloads at 1 MB/s, and inside the suite's 30
+# minutes it timed the suite out while no forge was slow. Pulled first, a cold
+# cache costs the gate the download and never a forge's time; a pull that fails
+# fails here, naming its image, before any forge starts. The two hours are the
+# 2.7 GiB of images at under 400 KB/s.
+forge-images:
+	go test -exec $(LEAKCHECK) -tags docker_integration -run '^TestPullEveryForgeImage$$' -count=1 -v -timeout 2h ./pkg/forge/live/
 
 # test-taucorder runs tools/taucorder, which is its own module (the root never
 # imports it, so `make test` does not sweep it). It includes the end-to-end

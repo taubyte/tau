@@ -456,8 +456,26 @@ func (o *output) String() string {
 	return o.buf.String()
 }
 
+// forgeImages is every image a live test starts. `make forge-images` pulls
+// them before `make test-forges` starts its timed suite, so a cold image cache
+// costs the gate the download and never the suite's timeout: GitLab alone is
+// 1.7 GiB. start refuses an image that is not here.
+var forgeImages = []string{giteaImage, forgejoImage, gitlabImage, gerritImage, onedevImage, gogsImage}
+
+// TestPullEveryForgeImage is what `make forge-images` runs ahead of the suite.
+func TestPullEveryForgeImage(t *testing.T) {
+	backend, err := docker.New(core.DockerConfig{})
+	require.NoError(t, err)
+	for _, image := range forgeImages {
+		pulled := time.Now()
+		require.NoError(t, backend.Image(image).Pull(t.Context()), "pulling %s", image)
+		t.Logf("%s pulled in %s", image, time.Since(pulled).Round(time.Second))
+	}
+}
+
 func start(t *testing.T, cfg *core.ContainerConfig) *container {
 	t.Helper()
+	require.Contains(t, forgeImages, cfg.Image, "make forge-images does not pull %s, so the suite's timeout would pay for it", cfg.Image)
 	sweep(t)
 	backend, err := docker.New(core.DockerConfig{})
 	require.NoError(t, err)
