@@ -174,11 +174,18 @@ func (s *Server) Addr() net.Addr { return s.listener.Addr() }
 // Close drops the listener and every stream on it at once. It is safe to
 // call more than once, and to call on a server that is already draining, to
 // stop waiting for it.
-func (s *Server) Close() error { return s.http.Close() }
+//
+// THE LISTENER IS CLOSED HERE TOO, after net/http has begun to shut down:
+// net/http closes only the listeners Serve has started to track, and Serve
+// runs on a goroutine that may not have started yet, so a server stopped
+// straight after Listen would keep its protocol until that goroutine ran.
+func (s *Server) Close() error { return errors.Join(s.http.Close(), s.listener.Close()) }
 
 // Shutdown stops accepting and waits for the calls already in flight, or for
-// ctx to end.
-func (s *Server) Shutdown(ctx context.Context) error { return s.http.Shutdown(ctx) }
+// ctx to end. Like Close, it has released the protocol when it returns.
+func (s *Server) Shutdown(ctx context.Context) error {
+	return errors.Join(s.http.Shutdown(ctx), s.listener.Close())
+}
 
 // Done closes once the server has stopped serving, however it stopped.
 func (s *Server) Done() <-chan struct{} { return s.done }
@@ -196,6 +203,16 @@ func (s *Server) Err() error {
 type serverListener struct {
 	net.Listener
 	prefaceTimeout time.Duration
+	closed         sync.Once
+}
+
+// Close releases the protocol once, for whichever asks first: the Server, or
+// net/http as Serve returns. A second close would remove whatever handler
+// holds the protocol by then.
+func (l *serverListener) Close() error {
+	var err error
+	l.closed.Do(func() { err = l.Listener.Close() })
+	return err
 }
 
 func (l *serverListener) Accept() (net.Conn, error) {

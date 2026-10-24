@@ -76,6 +76,35 @@ func TestCloseStopsServing(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestStoppingReleasesTheProtocolAtOnce: Listen hands Serve to a goroutine,
+// and net/http closes only the listeners Serve has begun to track, so a Close
+// or a Shutdown that ran before that goroutine left the protocol registered
+// until it did: a service that failed straight after listening went on
+// answering, and listening again was refused as a protocol taken.
+func TestStoppingReleasesTheProtocolAtOnce(t *testing.T) {
+	stops := map[string]func(*rpc.Server) error{
+		"close":    (*rpc.Server).Close,
+		"shutdown": func(srv *rpc.Server) error { return srv.Shutdown(t.Context()) },
+	}
+	for name, stop := range stops {
+		t.Run(name, func(t *testing.T) {
+			h := newHost(t)
+			for range 100 {
+				srv, err := rpc.Listen(t.Context(), h, testProtocol, http.NewServeMux())
+				require.NoError(t, err)
+				require.NoError(t, stop(srv))
+				require.NotContains(t, h.Mux().Protocols(), testProtocol, "the server stopped with its protocol still registered")
+				select {
+				case <-srv.Done():
+				case <-time.After(5 * time.Second):
+					t.Fatal("server did not stop")
+				}
+				require.NoError(t, srv.Err())
+			}
+		})
+	}
+}
+
 func TestShutdownDrains(t *testing.T) {
 	h := newHarness(t)
 
