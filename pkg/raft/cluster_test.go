@@ -1554,3 +1554,86 @@ func TestCluster_MembersAfterBootstrap(t *testing.T) {
 	assert.Equal(t, node.ID(), members[0].ID)
 	assert.Equal(t, raft.Voter, members[0].Suffrage)
 }
+
+// TestCluster_TwoMembersThatStartTogetherFormOneGroup: two nodes connected
+// before either runs the namespace find each other while both are still
+// deciding, so neither finds a group to join and each counts the other as a
+// founder. The lower of the two bootstraps a group of both, the other asks it
+// to be let in, and they end as one group that applies the same writes.
+func TestCluster_TwoMembersThatStartTogetherFormOneGroup(t *testing.T) {
+	const namespace = "start-together"
+	nodes := []taupeer.Node{newMockNode(t), newMockNode(t)}
+	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, nodes[1].Peer().Connect(t.Context(), peer.AddrInfo{ID: nodes[0].ID(), Addrs: nodes[0].Peer().Addrs()}))
+
+	type started struct {
+		cl  Cluster
+		err error
+	}
+	results := make(chan started, len(nodes))
+	for _, node := range nodes {
+		root := t.TempDir()
+		go func() {
+			cl, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second), WithSnapshotRoot(root))
+			results <- started{cl: cl, err: err}
+		}()
+	}
+	group := make([]Cluster, 0, len(nodes))
+	for range nodes {
+		r := <-results
+		require.NoError(t, r.err)
+		t.Cleanup(func() { r.cl.Close() })
+		group = append(group, r.cl)
+	}
+
+	require.Eventually(t, func() bool {
+		for _, cl := range group {
+			if members, err := cl.Members(); err != nil || len(members) != 2 {
+				return false
+			}
+		}
+		return true
+	}, leaderWait, 20*time.Millisecond, "the two never formed one group")
+	require.NoError(t, onLeader(t, group, func(leader Cluster) error {
+		return leader.Set("k", []byte("v"), time.Second)
+	}))
+	for _, cl := range group {
+		require.Eventually(t, func() bool {
+			value, found := cl.Get("k")
+			return found && string(value) == "v"
+		}, leaderWait, 20*time.Millisecond, "%s never applied the group's write", idOf(cl).ShortString())
+	}
+}
+
+// TestCluster_AMemberRestartedOnItsStateLeadsItsGroupAgain: a member started
+// again on the store it ran on finds nobody to join, and the bootstrap a new
+// member would make is refused because the store already holds a group. It
+// asks to be let in instead, and its raft takes the group up again from its
+// log, holding what the group committed and committing more.
+func TestCluster_AMemberRestartedOnItsStateLeadsItsGroupAgain(t *testing.T) {
+	const namespace = "restarted-member"
+	node := newMockNode(t)
+	root := t.TempDir()
+
+	first, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(root))
+	require.NoError(t, err)
+	waitLeader(t, first, 5*time.Second)
+	require.NoError(t, first.Set("k", []byte("v"), time.Second))
+	require.NoError(t, first.Close())
+
+	again, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(200*time.Millisecond), WithSnapshotRoot(root))
+	require.NoError(t, err)
+	defer again.Close()
+	waitLeader(t, again, 5*time.Second)
+
+	value, found, err := again.TryGet("k")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, []byte("v"), value)
+	members, err := again.Members()
+	require.NoError(t, err)
+	require.Len(t, members, 1)
+	require.NoError(t, onLeader(t, []Cluster{again}, func(leader Cluster) error {
+		return leader.Set("after", []byte("v"), time.Second)
+	}))
+}

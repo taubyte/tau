@@ -323,3 +323,31 @@ func TestStream_ExportFSMAskedOfEitherMemberIsTheGroupsState(t *testing.T) {
 		}, leaderWait, 20*time.Millisecond, "asking %s for the group's state", idOf(member).ShortString())
 	}
 }
+
+// TestStream_AJoinAskedOfAFollowerIsForwardedToItsLeader: a peer asking to
+// join may reach any member, and one that follows hands the request to its
+// leader, which lets the peer in.
+func TestStream_AJoinAskedOfAFollowerIsForwardedToItsLeader(t *testing.T) {
+	const namespace = "stream-join-forwarded"
+	caller := newMockNode(t)
+	a, b := joinedPair(t, namespace, sameStore)
+	connected(t, caller, a, b)
+	cli, err := newInternalClient(caller, namespace, nil)
+	require.NoError(t, err)
+	defer cli.Close()
+
+	leader := leaderOf(t, a, b)
+	follower := a
+	if leader == a {
+		follower = b
+	}
+	joiner := strangerID(t)
+	require.NoError(t, cli.JoinVoter(joiner, 5*time.Second, idOf(follower)))
+	members, err := leader.Members()
+	require.NoError(t, err)
+	ids := make([]peer.ID, 0, len(members))
+	for _, m := range members {
+		ids = append(ids, m.ID)
+	}
+	require.ElementsMatch(t, []peer.ID{idOf(a), idOf(b), joiner}, ids)
+}

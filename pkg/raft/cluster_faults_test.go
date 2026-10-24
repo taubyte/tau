@@ -331,7 +331,7 @@ func TestCluster_CloseReleasesAWaitForALeader(t *testing.T) {
 
 // TestCluster_BatchAndMembershipRefuseWhatTheyCannotDo: a batch member is a
 // set or a delete, so one naming neither refuses the whole batch on the
-// leader; a member that cannot lead refuses deletes and batches as
+// leader; a member that cannot lead refuses sets, deletes and batches as
 // ErrNotLeader; and a closed member refuses batches and new voters as shut
 // down.
 func TestCluster_BatchAndMembershipRefuseWhatTheyCannotDo(t *testing.T) {
@@ -346,6 +346,7 @@ func TestCluster_BatchAndMembershipRefuseWhatTheyCannotDo(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, found, "a refused batch wrote part of itself")
 
+	require.ErrorIs(t, removed.Set("k", []byte("v"), time.Second), ErrNotLeader)
 	require.ErrorIs(t, removed.Delete("k", time.Second), ErrNotLeader)
 	require.ErrorIs(t, removed.Batch([]BatchOp{{Delete: &DeleteCommand{Key: "k"}}}, time.Second), ErrNotLeader)
 
