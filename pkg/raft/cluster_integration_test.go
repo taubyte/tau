@@ -10,35 +10,16 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/hashicorp/raft"
-	"github.com/libp2p/go-libp2p/core/network"
 	peercore "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/p2p/keypair"
 	taupeer "github.com/taubyte/tau/p2p/peer"
 	"gotest.tools/v3/assert"
 )
 
-func waitForConnected(t *testing.T, node taupeer.Node, peerID peercore.ID, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(t.Context(), timeout)
-	defer cancel()
-
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			state := node.Peer().Network().Connectedness(peerID)
-			if state == network.Connected {
-				return nil
-			}
-		}
-	}
-}
-
-// newTestNode creates a real libp2p node for testing
-func newTestNode(t *testing.T, bootstrapPeers ...peercore.AddrInfo) taupeer.Node {
+// newTestNode creates a real libp2p node for testing, connected to nothing: a
+// test links it, with linkTo or startTogether, once it serves what the test
+// has it share.
+func newTestNode(t *testing.T) taupeer.Node {
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 
@@ -63,11 +44,6 @@ func newTestNode(t *testing.T, bootstrapPeers ...peercore.AddrInfo) taupeer.Node
 	// Wait for node to be ready
 	err = node.WaitForSwarm(5 * time.Second)
 	assert.NilError(t, err, "failed to wait for swarm")
-
-	// If bootstrap peers provided, add them to peering
-	for _, peer := range bootstrapPeers {
-		node.Peering().AddPeer(peer)
-	}
 
 	return node
 }
@@ -214,17 +190,10 @@ func whileLeadershipMoves(t *testing.T, call func() error) error {
 func TestCluster_MultiNode_LeaderElection_Integration(t *testing.T) {
 	// Create first node (will be bootstrap)
 	node1 := newTestNode(t)
-	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
 
-	// Create additional nodes that connect to node1
-	node2 := newTestNode(t, node1Info)
-	node3 := newTestNode(t, node1Info)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
-	assert.NilError(t, err, "node2 failed to connect to node1")
-	err = waitForConnected(t, node3, node1.ID(), 10*time.Second)
-	assert.NilError(t, err, "node3 failed to connect to node1")
+	// Create additional nodes, each linked to node1 once it serves the group
+	node2 := newTestNode(t)
+	node3 := newTestNode(t)
 
 	namespace := "multi-node-test"
 
@@ -242,10 +211,12 @@ func TestCluster_MultiNode_LeaderElection_Integration(t *testing.T) {
 	assert.Assert(t, cluster1.IsLeader(), "cluster1 should be leader")
 
 	// Other nodes do NOT bootstrap - they will be added by the leader
+	linkTo(t, node2, node1)
 	cluster2, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster2")
 	defer cluster2.Close()
 
+	linkTo(t, node3, node1)
 	cluster3, err := New(node3, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster3")
 	defer cluster3.Close()
@@ -284,13 +255,7 @@ func TestCluster_MultiNode_LeaderElection_Integration(t *testing.T) {
 
 func TestCluster_MultiNode_SendToNonLeader_Integration(t *testing.T) {
 	node1 := newTestNode(t)
-	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
-
-	node2 := newTestNode(t, node1Info)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
-	assert.NilError(t, err, "node2 failed to connect to node1")
+	node2 := newTestNode(t)
 
 	namespace := "forward-test"
 
@@ -307,6 +272,7 @@ func TestCluster_MultiNode_SendToNonLeader_Integration(t *testing.T) {
 	assert.Assert(t, cluster1.IsLeader(), "cluster1 should be leader")
 
 	// Second node does NOT bootstrap
+	linkTo(t, node2, node1)
 	cluster2, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster2")
 	defer cluster2.Close()
@@ -383,15 +349,10 @@ func TestCluster_AutoBootstrapThenJoiners_Integration(t *testing.T) {
 	assert.Assert(t, time.Since(start) >= 900*time.Millisecond, "auto-bootstrap should wait ~1s")
 
 	// Start joiners after leader is established.
-	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
-	node2 := newTestNode(t, node1Info)
-	node3 := newTestNode(t, node1Info)
-
-	// Ensure they can find/connect to node1.
-	err = waitForConnected(t, node2, node1.ID(), 10*time.Second)
-	assert.NilError(t, err, "node2 failed to connect to node1")
-	err = waitForConnected(t, node3, node1.ID(), 10*time.Second)
-	assert.NilError(t, err, "node3 failed to connect to node1")
+	node2 := newTestNode(t)
+	node3 := newTestNode(t)
+	linkTo(t, node2, node1)
+	linkTo(t, node3, node1)
 
 	cluster2, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(200*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster2")
@@ -420,13 +381,7 @@ func TestCluster_AutoBootstrapThenJoiners_Integration(t *testing.T) {
 
 func TestCluster_MultiNode_DiscoverPeers_Integration(t *testing.T) {
 	node1 := newTestNode(t)
-	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
-
-	node2 := newTestNode(t, node1Info)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
-	assert.NilError(t, err, "node2 failed to connect to node1")
+	node2 := newTestNode(t)
 
 	namespace := "discover-test"
 
@@ -444,6 +399,7 @@ func TestCluster_MultiNode_DiscoverPeers_Integration(t *testing.T) {
 	assert.Assert(t, cluster1.IsLeader(), "cluster1 should be the leader")
 
 	// Second node does NOT bootstrap - it will be added by the leader
+	linkTo(t, node2, node1)
 	cluster2, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster2")
 	defer cluster2.Close()
@@ -464,13 +420,7 @@ func TestCluster_MultiNode_DiscoverPeers_Integration(t *testing.T) {
 
 func TestCluster_MultiNode_StreamServiceForwarding_Integration(t *testing.T) {
 	node1 := newTestNode(t)
-	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
-
-	node2 := newTestNode(t, node1Info)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
-	assert.NilError(t, err, "node2 failed to connect to node1")
+	node2 := newTestNode(t)
 
 	namespace := "stream-forward-test"
 
@@ -487,6 +437,7 @@ func TestCluster_MultiNode_StreamServiceForwarding_Integration(t *testing.T) {
 	assert.Assert(t, cluster1.IsLeader(), "cluster1 should be leader")
 
 	// Second node does NOT bootstrap
+	linkTo(t, node2, node1)
 	cluster2, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster2")
 	defer cluster2.Close()
@@ -549,13 +500,7 @@ func TestCluster_MultiNode_StreamServiceForwarding_Integration(t *testing.T) {
 
 func TestCluster_MultiNode_ClientOperations_Integration(t *testing.T) {
 	node1 := newTestNode(t)
-	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
-
-	node2 := newTestNode(t, node1Info)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
-	assert.NilError(t, err, "node2 failed to connect to node1")
+	node2 := newTestNode(t)
 
 	namespace := "client-ops-test"
 
@@ -572,6 +517,7 @@ func TestCluster_MultiNode_ClientOperations_Integration(t *testing.T) {
 	assert.Assert(t, cluster1.IsLeader(), "cluster1 should be leader")
 
 	// Second node does NOT bootstrap
+	linkTo(t, node2, node1)
 	cluster2, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster2")
 	defer cluster2.Close()
@@ -650,13 +596,7 @@ func TestCluster_MultiNode_ClientOperations_Integration(t *testing.T) {
 
 func TestCluster_MultiNode_ClientGetWithBarrier_Integration(t *testing.T) {
 	node1 := newTestNode(t)
-	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
-
-	node2 := newTestNode(t, node1Info)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
-	assert.NilError(t, err, "node2 failed to connect to node1")
+	node2 := newTestNode(t)
 
 	namespace := "barrier-test"
 
@@ -673,6 +613,7 @@ func TestCluster_MultiNode_ClientGetWithBarrier_Integration(t *testing.T) {
 	assert.Assert(t, cluster1.IsLeader(), "cluster1 should be leader")
 
 	// Second node joins
+	linkTo(t, node2, node1)
 	cluster2, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster2")
 	defer cluster2.Close()
@@ -766,13 +707,7 @@ func TestCluster_MultiNode_ClientGetWithBarrier_Integration(t *testing.T) {
 
 func TestCluster_MultiNode_Apply_InvalidTimeout_Integration(t *testing.T) {
 	node1 := newTestNode(t)
-	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
-
-	node2 := newTestNode(t, node1Info)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
-	assert.NilError(t, err, "node2 failed to connect to node1")
+	node2 := newTestNode(t)
 
 	namespace := "apply-timeout-test"
 
@@ -789,6 +724,7 @@ func TestCluster_MultiNode_Apply_InvalidTimeout_Integration(t *testing.T) {
 	assert.Assert(t, cluster1.IsLeader(), "cluster1 should be leader")
 
 	// Second node joins
+	linkTo(t, node2, node1)
 	cluster2, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster2")
 	defer cluster2.Close()
@@ -966,18 +902,13 @@ func TestCluster_MultiCluster_SameNode_Integration(t *testing.T) {
 func TestCluster_MultiCluster_MultiNode_Integration(t *testing.T) {
 	// Create two nodes
 	node1 := newTestNode(t)
-	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
-
-	node2 := newTestNode(t, node1Info)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
-	assert.NilError(t, err, "node2 failed to connect to node1")
+	node2 := newTestNode(t)
 
 	namespaceA := "service-A"
 	namespaceB := "service-B"
 
-	// Create cluster A on both nodes
+	// Both clusters start on node1 (independent from each other), and node2
+	// links to node1 once it serves both
 	clusterA1, err := New(node1, namespaceA, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	assert.NilError(t, err, "failed to create clusterA1")
 	defer clusterA1.Close()
@@ -986,25 +917,28 @@ func TestCluster_MultiCluster_MultiNode_Integration(t *testing.T) {
 	defer cancel()
 	assert.NilError(t, clusterA1.WaitForLeader(ctx), "clusterA1 failed to elect leader")
 
-	clusterA2, err := New(node2, namespaceA, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
-	assert.NilError(t, err, "failed to create clusterA2")
-	defer clusterA2.Close()
-
-	ctx2, cancel2 := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel2()
-	err = waitForMember(t, clusterA1, node2.ID(), raft.Voter, 20*time.Second)
-	assert.NilError(t, err, "node2 failed to join cluster A as voter")
-	assert.NilError(t, clusterA2.WaitForLeader(ctx2), "clusterA2 failed to wait for leader")
-
-	// Create cluster B on both nodes (independent from cluster A)
 	clusterB1, err := New(node1, namespaceB, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	assert.NilError(t, err, "failed to create clusterB1")
 	defer clusterB1.Close()
 
-	ctx3, cancel3 := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel3()
-	assert.NilError(t, clusterB1.WaitForLeader(ctx3), "clusterB1 failed to elect leader")
+	ctx2, cancel2 := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel2()
+	assert.NilError(t, clusterB1.WaitForLeader(ctx2), "clusterB1 failed to elect leader")
 
+	linkTo(t, node2, node1)
+
+	// node2 joins cluster A
+	clusterA2, err := New(node2, namespaceA, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
+	assert.NilError(t, err, "failed to create clusterA2")
+	defer clusterA2.Close()
+
+	ctx3, cancel3 := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel3()
+	err = waitForMember(t, clusterA1, node2.ID(), raft.Voter, 20*time.Second)
+	assert.NilError(t, err, "node2 failed to join cluster A as voter")
+	assert.NilError(t, clusterA2.WaitForLeader(ctx3), "clusterA2 failed to wait for leader")
+
+	// node2 joins cluster B
 	clusterB2, err := New(node2, namespaceB, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create clusterB2")
 	defer clusterB2.Close()
@@ -1066,12 +1000,7 @@ func TestCluster_MultiCluster_MultiNode_Integration(t *testing.T) {
 
 func TestCluster_RejoinAfterLeave_Integration(t *testing.T) {
 	node1 := newTestNode(t)
-	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
-	node2 := newTestNode(t, node1Info)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
-	assert.NilError(t, err, "node2 failed to connect to node1")
+	node2 := newTestNode(t)
 
 	namespace := "rejoin-test"
 
@@ -1084,6 +1013,7 @@ func TestCluster_RejoinAfterLeave_Integration(t *testing.T) {
 	assert.NilError(t, cluster1.WaitForLeader(ctx), "cluster1 failed to wait for leader")
 	assert.Assert(t, cluster1.IsLeader(), "cluster1 should be leader")
 
+	linkTo(t, node2, node1)
 	cluster2, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster2")
 
@@ -1110,78 +1040,28 @@ func TestCluster_RejoinAfterLeave_Integration(t *testing.T) {
 // TestCluster_DiscoveryBasedBootstrap tests the discovery-based peer convergence
 // where nodes discover each other and bootstrap together
 func TestCluster_DiscoveryBasedBootstrap_Integration(t *testing.T) {
-	// Create nodes that know about each other via peering
 	node1 := newTestNode(t)
-	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
-
-	node2 := newTestNode(t, node1Info)
-	node2Info := peercore.AddrInfo{ID: node2.ID(), Addrs: node2.Peer().Addrs()}
-
-	// Also add node2 to node1's peering for bidirectional peering
-	node1.Peering().AddPeer(node2Info)
-
-	// Wait for peering to establish connections (peering handles connection automatically)
-	err := waitForConnected(t, node1, node2.ID(), 30*time.Second)
-	assert.NilError(t, err, "node1 did not connect to node2")
-	err = waitForConnected(t, node2, node1.ID(), 30*time.Second)
-	assert.NilError(t, err, "node2 did not connect to node1")
-
-	// Verify nodes are actually connected
-	node1Peers := node1.Peer().Network().Peers()
-	node2Peers := node2.Peer().Network().Peers()
-	t.Logf("Node1 connected peers: %d", len(node1Peers))
-	t.Logf("Node2 connected peers: %d", len(node2Peers))
-
-	assert.Assert(t, len(node1Peers) > 0, "node1 should have connected peers")
-	assert.Assert(t, len(node2Peers) > 0, "node2 should have connected peers")
+	node2 := newTestNode(t)
 
 	namespace := "discovery-bootstrap-test"
 
 	// Use a bootstrap timeout that allows discovery and exchange to work
 	bootstrapTimeout := 3 * time.Second
 
-	// Start clusters concurrently - they should discover each other
-	var cluster1, cluster2 Cluster
-	var err1, err2 error
-
-	done := make(chan struct{})
-
-	go func() {
-		cluster1, err1 = New(node1, namespace,
-			WithTimeouts(testTimeoutConfig()),
-			WithBootstrapTimeout(bootstrapTimeout),
-		)
-		done <- struct{}{}
-	}()
-
-	go func() {
-		cluster2, err2 = New(node2, namespace,
-			WithTimeouts(testTimeoutConfig()),
-			WithBootstrapTimeout(bootstrapTimeout),
-		)
-		done <- struct{}{}
-	}()
-
-	// Wait for both to complete
-	<-done
-	<-done
-
-	if cluster1 != nil {
-		defer cluster1.Close()
-	}
-	if cluster2 != nil {
-		defer cluster2.Close()
-	}
-
-	assert.NilError(t, err1, "failed to create cluster1")
-	assert.NilError(t, err2, "failed to create cluster2")
+	// Start clusters concurrently, linked while they bootstrap - they should
+	// discover each other
+	clusters := startTogether(t, namespace, []taupeer.Node{node1, node2}, make([]time.Duration, 2),
+		WithTimeouts(testTimeoutConfig()),
+		WithBootstrapTimeout(bootstrapTimeout),
+	)
+	cluster1, cluster2 := clusters[0], clusters[1]
 
 	// Wait for a leader to emerge
 	leaderCtx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 
 	// At least one should become leader
-	err = cluster1.WaitForLeader(leaderCtx)
+	err := cluster1.WaitForLeader(leaderCtx)
 	assert.NilError(t, err, "cluster1 failed to wait for leader")
 
 	err = cluster2.WaitForLeader(leaderCtx)
@@ -1194,74 +1074,22 @@ func TestCluster_DiscoveryBasedBootstrap_Integration(t *testing.T) {
 // TestCluster_ThreeNodes_SimultaneousStart tests that 3 nodes starting at exactly
 // the same time can properly bootstrap and elect a single leader
 func TestCluster_ThreeNodes_SimultaneousStart_Integration(t *testing.T) {
-	// Create three nodes that will know about each other
-	node1 := newTestNode(t)
-	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
-
-	node2 := newTestNode(t, node1Info)
-	node2Info := peercore.AddrInfo{ID: node2.ID(), Addrs: node2.Peer().Addrs()}
-
-	node3 := newTestNode(t, node1Info, node2Info)
-	node3Info := peercore.AddrInfo{ID: node3.ID(), Addrs: node3.Peer().Addrs()}
-
-	// Add all peers to each other for full mesh peering
-	node1.Peering().AddPeer(node2Info)
-	node1.Peering().AddPeer(node3Info)
-	node2.Peering().AddPeer(node3Info)
-
-	// Wait for all connections to be established
-	err := waitForConnected(t, node1, node2.ID(), 30*time.Second)
-	assert.NilError(t, err, "node1 failed to connect to node2")
-	err = waitForConnected(t, node1, node3.ID(), 30*time.Second)
-	assert.NilError(t, err, "node1 failed to connect to node3")
-	err = waitForConnected(t, node2, node3.ID(), 30*time.Second)
-	assert.NilError(t, err, "node2 failed to connect to node3")
+	// Create three nodes, fully meshed once each serves the group
+	nodes := []taupeer.Node{newTestNode(t), newTestNode(t), newTestNode(t)}
 
 	namespace := "three-node-simultaneous"
 	bootstrapTimeout := 3 * time.Second
 
-	var cluster1, cluster2, cluster3 Cluster
-	var err1, err2, err3 error
-	done := make(chan struct{}, 3)
-
 	// Start all three clusters simultaneously
-	go func() {
-		cluster1, err1 = New(node1, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(bootstrapTimeout))
-		done <- struct{}{}
-	}()
-	go func() {
-		cluster2, err2 = New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(bootstrapTimeout))
-		done <- struct{}{}
-	}()
-	go func() {
-		cluster3, err3 = New(node3, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(bootstrapTimeout))
-		done <- struct{}{}
-	}()
-
-	// Wait for all to complete initialization
-	for i := 0; i < 3; i++ {
-		<-done
-	}
-
-	if cluster1 != nil {
-		defer cluster1.Close()
-	}
-	if cluster2 != nil {
-		defer cluster2.Close()
-	}
-	if cluster3 != nil {
-		defer cluster3.Close()
-	}
-
-	assert.NilError(t, err1, "failed to create cluster1")
-	assert.NilError(t, err2, "failed to create cluster2")
-	assert.NilError(t, err3, "failed to create cluster3")
+	clusters := startTogether(t, namespace, nodes, make([]time.Duration, 3),
+		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(bootstrapTimeout))
+	cluster1, cluster2, cluster3 := clusters[0], clusters[1], clusters[2]
 
 	// Wait for leader election on all nodes
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 
-	err = cluster1.WaitForLeader(ctx)
+	err := cluster1.WaitForLeader(ctx)
 	assert.NilError(t, err, "cluster1 failed to wait for leader")
 	err = cluster2.WaitForLeader(ctx)
 	assert.NilError(t, err, "cluster2 failed to wait for leader")
@@ -1277,26 +1105,8 @@ func TestCluster_ThreeNodes_SimultaneousStart_Integration(t *testing.T) {
 func TestCluster_LeaderCrashAndFailover_Integration(t *testing.T) {
 	// Create three nodes with full mesh connectivity
 	node1 := newTestNode(t)
-	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
-
-	node2 := newTestNode(t, node1Info)
-	node2Info := peercore.AddrInfo{ID: node2.ID(), Addrs: node2.Peer().Addrs()}
-
-	node3 := newTestNode(t, node1Info, node2Info)
-	node3Info := peercore.AddrInfo{ID: node3.ID(), Addrs: node3.Peer().Addrs()}
-
-	// Establish full mesh: all nodes know about all other nodes
-	node1.Peering().AddPeer(node2Info)
-	node1.Peering().AddPeer(node3Info)
-	node2.Peering().AddPeer(node3Info)
-
-	// Wait for all connections to be established
-	err := waitForConnected(t, node1, node2.ID(), 30*time.Second)
-	assert.NilError(t, err, "node1 failed to connect to node2")
-	err = waitForConnected(t, node1, node3.ID(), 30*time.Second)
-	assert.NilError(t, err, "node1 failed to connect to node3")
-	err = waitForConnected(t, node2, node3.ID(), 30*time.Second)
-	assert.NilError(t, err, "node2 failed to connect to node3")
+	node2 := newTestNode(t)
+	node3 := newTestNode(t)
 
 	namespace := "leader-crash-failover"
 
@@ -1313,11 +1123,13 @@ func TestCluster_LeaderCrashAndFailover_Integration(t *testing.T) {
 	assert.NilError(t, err, "cluster1 failed to wait for leader")
 	assert.Assert(t, cluster1.IsLeader(), "cluster1 must be leader after force bootstrap")
 
-	// Add followers
+	// Add followers, each linked to the members before it: a full mesh
+	linkTo(t, node2, node1)
 	cluster2, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster2")
 	defer cluster2.Close()
 
+	linkTo(t, node3, node1, node2)
 	cluster3, err := New(node3, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster3")
 	defer cluster3.Close()
@@ -1380,26 +1192,8 @@ func TestCluster_LeaderCrashAndFailover_Integration(t *testing.T) {
 func TestCluster_NodeRebootWithDataPersistence_Integration(t *testing.T) {
 	// Create 3 nodes with full mesh connectivity (needed to maintain quorum during reboot)
 	node1 := newTestNode(t)
-	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
-
-	node2 := newTestNode(t, node1Info)
-	node2Info := peercore.AddrInfo{ID: node2.ID(), Addrs: node2.Peer().Addrs()}
-
-	node3 := newTestNode(t, node1Info, node2Info)
-	node3Info := peercore.AddrInfo{ID: node3.ID(), Addrs: node3.Peer().Addrs()}
-
-	// Full mesh peering
-	node1.Peering().AddPeer(node2Info)
-	node1.Peering().AddPeer(node3Info)
-	node2.Peering().AddPeer(node3Info)
-
-	// Wait for all connections
-	err := waitForConnected(t, node1, node2.ID(), 30*time.Second)
-	assert.NilError(t, err, "node1 failed to connect to node2")
-	err = waitForConnected(t, node1, node3.ID(), 30*time.Second)
-	assert.NilError(t, err, "node1 failed to connect to node3")
-	err = waitForConnected(t, node2, node3.ID(), 30*time.Second)
-	assert.NilError(t, err, "node2 failed to connect to node3")
+	node2 := newTestNode(t)
+	node3 := newTestNode(t)
 
 	namespace := "node-reboot-persistence"
 
@@ -1414,13 +1208,15 @@ func TestCluster_NodeRebootWithDataPersistence_Integration(t *testing.T) {
 	assert.NilError(t, err, "cluster1 failed to wait for leader")
 	assert.Assert(t, cluster1.IsLeader(), "cluster1 must be leader")
 
-	// Node2 and Node3 join
+	// Node2 and Node3 join, each linked to the members before it: a full mesh
+	linkTo(t, node2, node1)
 	cluster2, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster2")
 	// Closed here as well, for a failure before the close below: a raft
 	// left running outlives the node's store and panics the test binary.
 	defer cluster2.Close()
 
+	linkTo(t, node3, node1, node2)
 	cluster3, err := New(node3, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster3")
 	defer cluster3.Close()
@@ -1515,85 +1311,28 @@ func TestCluster_NodeRebootWithDataPersistence_Integration(t *testing.T) {
 // TestCluster_StaggeredConcurrentStartup tests nodes starting at random offsets
 // within a short window (simulating real network conditions)
 func TestCluster_StaggeredConcurrentStartup_Integration(t *testing.T) {
-	// Create three nodes
-	node1 := newTestNode(t)
-	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
-
-	node2 := newTestNode(t, node1Info)
-	node2Info := peercore.AddrInfo{ID: node2.ID(), Addrs: node2.Peer().Addrs()}
-
-	node3 := newTestNode(t, node1Info, node2Info)
-	node3Info := peercore.AddrInfo{ID: node3.ID(), Addrs: node3.Peer().Addrs()}
-
-	// Full mesh peering
-	node1.Peering().AddPeer(node2Info)
-	node1.Peering().AddPeer(node3Info)
-	node2.Peering().AddPeer(node3Info)
-
-	// Wait for connections with longer timeout
-	err := waitForConnected(t, node1, node2.ID(), 30*time.Second)
-	assert.NilError(t, err, "node1 failed to connect to node2")
-	err = waitForConnected(t, node1, node3.ID(), 30*time.Second)
-	assert.NilError(t, err, "node1 failed to connect to node3")
-	err = waitForConnected(t, node2, node3.ID(), 30*time.Second)
-	assert.NilError(t, err, "node2 failed to connect to node3")
+	// Create three nodes, each linked to those started before it once it
+	// serves the group
+	nodes := []taupeer.Node{newTestNode(t), newTestNode(t), newTestNode(t)}
 
 	namespace := "staggered-startup"
 	bootstrapTimeout := 3 * time.Second
 
-	var cluster1, cluster2, cluster3 Cluster
-	var err1, err2, err3 error
-	done := make(chan struct{}, 3)
-
 	// Start nodes with staggered delays (0ms, 200ms, 500ms)
-	go func() {
-		cluster1, err1 = New(node1, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(bootstrapTimeout))
-		done <- struct{}{}
-	}()
-
-	go func() {
-		time.Sleep(200 * time.Millisecond) // Staggered start
-		cluster2, err2 = New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(bootstrapTimeout))
-		done <- struct{}{}
-	}()
-
-	go func() {
-		time.Sleep(500 * time.Millisecond) // More staggered
-		cluster3, err3 = New(node3, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(bootstrapTimeout))
-		done <- struct{}{}
-	}()
-
-	// Wait for all
-	for i := 0; i < 3; i++ {
-		<-done
-	}
-
-	if cluster1 != nil {
-		defer cluster1.Close()
-	}
-	if cluster2 != nil {
-		defer cluster2.Close()
-	}
-	if cluster3 != nil {
-		defer cluster3.Close()
-	}
-
-	assert.NilError(t, err1, "failed to create cluster1")
-	assert.NilError(t, err2, "failed to create cluster2")
-	assert.NilError(t, err3, "failed to create cluster3")
+	clusters := startTogether(t, namespace, nodes, []time.Duration{0, 200 * time.Millisecond, 500 * time.Millisecond},
+		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(bootstrapTimeout))
+	cluster1, cluster2, cluster3 := clusters[0], clusters[1], clusters[2]
 
 	// Wait for leader on all
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 
-	err = cluster1.WaitForLeader(ctx)
+	err := cluster1.WaitForLeader(ctx)
 	assert.NilError(t, err, "cluster1 failed to wait for leader")
 	err = cluster2.WaitForLeader(ctx)
 	assert.NilError(t, err, "cluster2 failed to wait for leader")
 	err = cluster3.WaitForLeader(ctx)
 	assert.NilError(t, err, "cluster3 failed to wait for leader")
-
-	clusters := []Cluster{cluster1, cluster2, cluster3}
 
 	// All must agree on leader, and exactly one must say it leads
 	leader := leaderOf(t, clusters...)
@@ -1618,26 +1357,8 @@ func TestCluster_StaggeredConcurrentStartup_Integration(t *testing.T) {
 func TestCluster_LeaderRebootAndRejoin_Integration(t *testing.T) {
 	// Create 3 nodes with full mesh connectivity
 	node1 := newTestNode(t)
-	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
-
-	node2 := newTestNode(t, node1Info)
-	node2Info := peercore.AddrInfo{ID: node2.ID(), Addrs: node2.Peer().Addrs()}
-
-	node3 := newTestNode(t, node1Info, node2Info)
-	node3Info := peercore.AddrInfo{ID: node3.ID(), Addrs: node3.Peer().Addrs()}
-
-	// Establish full mesh peering
-	node1.Peering().AddPeer(node2Info)
-	node1.Peering().AddPeer(node3Info)
-	node2.Peering().AddPeer(node3Info)
-
-	// Wait for all connections
-	err := waitForConnected(t, node1, node2.ID(), 30*time.Second)
-	assert.NilError(t, err, "node1 failed to connect to node2")
-	err = waitForConnected(t, node1, node3.ID(), 30*time.Second)
-	assert.NilError(t, err, "node1 failed to connect to node3")
-	err = waitForConnected(t, node2, node3.ID(), 30*time.Second)
-	assert.NilError(t, err, "node2 failed to connect to node3")
+	node2 := newTestNode(t)
+	node3 := newTestNode(t)
 
 	namespace := "leader-reboot-rejoin"
 
@@ -1654,11 +1375,13 @@ func TestCluster_LeaderRebootAndRejoin_Integration(t *testing.T) {
 	assert.NilError(t, err, "cluster1 failed to wait for leader")
 	assert.Assert(t, cluster1.IsLeader(), "cluster1 must be leader")
 
-	// Add followers
+	// Add followers, each linked to the members before it: a full mesh
+	linkTo(t, node2, node1)
 	cluster2, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster2")
 	defer cluster2.Close()
 
+	linkTo(t, node3, node1, node2)
 	cluster3, err := New(node3, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster3")
 	defer cluster3.Close()

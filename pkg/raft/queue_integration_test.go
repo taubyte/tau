@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/hashicorp/raft"
-	peercore "github.com/libp2p/go-libp2p/core/peer"
 	"gotest.tools/v3/assert"
 )
 
@@ -203,12 +202,7 @@ func TestQueue_Integration_MultiNode_Replication(t *testing.T) {
 	}
 
 	node1 := newTestNode(t)
-	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
-	node2 := newTestNode(t, node1Info)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
-	assert.NilError(t, err, "node2 failed to connect to node1")
+	node2 := newTestNode(t)
 
 	namespace := "queue-replication"
 
@@ -222,6 +216,7 @@ func TestQueue_Integration_MultiNode_Replication(t *testing.T) {
 	assert.NilError(t, err, "cluster1 failed to wait for leader")
 	assert.Assert(t, cluster1.IsLeader(), "cluster1 should be leader")
 
+	linkTo(t, node2, node1)
 	cluster2, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster2")
 	defer cluster2.Close()
@@ -262,12 +257,7 @@ func TestQueue_Integration_MultiNode_PopEmpty(t *testing.T) {
 	}
 
 	node1 := newTestNode(t)
-	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
-	node2 := newTestNode(t, node1Info)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
-	assert.NilError(t, err, "node2 failed to connect to node1")
+	node2 := newTestNode(t)
 
 	namespace := "queue-empty"
 
@@ -280,6 +270,7 @@ func TestQueue_Integration_MultiNode_PopEmpty(t *testing.T) {
 	err = cluster1.WaitForLeader(ctx)
 	assert.NilError(t, err, "cluster1 failed to wait for leader")
 
+	linkTo(t, node2, node1)
 	cluster2, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster2")
 	defer cluster2.Close()
@@ -306,12 +297,7 @@ func TestQueue_Integration_MultiNode_Order(t *testing.T) {
 	}
 
 	node1 := newTestNode(t)
-	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
-	node2 := newTestNode(t, node1Info)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
-	assert.NilError(t, err, "node2 failed to connect to node1")
+	node2 := newTestNode(t)
 
 	namespace := "queue-order"
 
@@ -324,6 +310,7 @@ func TestQueue_Integration_MultiNode_Order(t *testing.T) {
 	err = cluster1.WaitForLeader(ctx)
 	assert.NilError(t, err, "cluster1 failed to wait for leader")
 
+	linkTo(t, node2, node1)
 	cluster2, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster2")
 	defer cluster2.Close()
@@ -365,12 +352,7 @@ func TestQueue_Integration_MultiNode_ManyItems(t *testing.T) {
 	}
 
 	node1 := newTestNode(t)
-	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
-	node2 := newTestNode(t, node1Info)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
-	assert.NilError(t, err, "node2 failed to connect to node1")
+	node2 := newTestNode(t)
 
 	namespace := "queue-many"
 
@@ -384,6 +366,7 @@ func TestQueue_Integration_MultiNode_ManyItems(t *testing.T) {
 	assert.NilError(t, err, "cluster1 failed to wait for leader")
 	assert.Assert(t, cluster1.IsLeader(), "cluster1 should be leader")
 
+	linkTo(t, node2, node1)
 	cluster2, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster2")
 	defer cluster2.Close()
@@ -428,12 +411,7 @@ func TestQueue_Integration_MultiNode_MultipleConsumers(t *testing.T) {
 	}
 
 	node1 := newTestNode(t)
-	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
-	node2 := newTestNode(t, node1Info)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
-	assert.NilError(t, err, "node2 failed to connect to node1")
+	node2 := newTestNode(t)
 
 	namespace := "queue-multi-consumer"
 
@@ -446,6 +424,7 @@ func TestQueue_Integration_MultiNode_MultipleConsumers(t *testing.T) {
 	err = cluster1.WaitForLeader(ctx)
 	assert.NilError(t, err, "cluster1 failed to wait for leader")
 
+	linkTo(t, node2, node1)
 	cluster2, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster2")
 	defer cluster2.Close()

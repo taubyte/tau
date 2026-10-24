@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	peercore "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
 	"gotest.tools/v3/assert"
 )
@@ -18,14 +17,9 @@ import (
 func TestClient_Set_Success_Integration(t *testing.T) {
 	// Create cluster node
 	clusterNode := newTestNode(t)
-	clusterNodeInfo := peercore.AddrInfo{ID: clusterNode.ID(), Addrs: clusterNode.Peer().Addrs()}
 
 	// Create separate client node (not part of cluster)
-	clientNode := newTestNode(t, clusterNodeInfo)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, clientNode, clusterNode.ID(), 10*time.Second)
-	require.NoError(t, err, "clientNode failed to connect to clusterNode")
+	clientNode := newTestNode(t)
 
 	namespace := "test-client-set"
 
@@ -37,6 +31,7 @@ func TestClient_Set_Success_Integration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
+	linkTo(t, clientNode, clusterNode)
 
 	// Create client on separate node
 	client, err := NewClient(clientNode, namespace, nil)
@@ -56,13 +51,7 @@ func TestClient_Set_Success_Integration(t *testing.T) {
 // TestClient_Get_Success tests Get with a separate client node
 func TestClient_Get_Success_Integration(t *testing.T) {
 	clusterNode := newTestNode(t)
-	clusterNodeInfo := peercore.AddrInfo{ID: clusterNode.ID(), Addrs: clusterNode.Peer().Addrs()}
-
-	clientNode := newTestNode(t, clusterNodeInfo)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, clientNode, clusterNode.ID(), 10*time.Second)
-	require.NoError(t, err, "clientNode failed to connect to clusterNode")
+	clientNode := newTestNode(t)
 
 	namespace := "test-client-get"
 
@@ -73,6 +62,7 @@ func TestClient_Get_Success_Integration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
+	linkTo(t, clientNode, clusterNode)
 
 	// Set a value first on cluster
 	require.NoError(t, cl.Set("get-key", []byte("get-value"), time.Second))
@@ -92,13 +82,7 @@ func TestClient_Get_Success_Integration(t *testing.T) {
 // TestClient_Delete_Success tests Delete with a separate client node
 func TestClient_Delete_Success_Integration(t *testing.T) {
 	clusterNode := newTestNode(t)
-	clusterNodeInfo := peercore.AddrInfo{ID: clusterNode.ID(), Addrs: clusterNode.Peer().Addrs()}
-
-	clientNode := newTestNode(t, clusterNodeInfo)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, clientNode, clusterNode.ID(), 10*time.Second)
-	require.NoError(t, err, "clientNode failed to connect to clusterNode")
+	clientNode := newTestNode(t)
 
 	namespace := "test-client-delete"
 
@@ -109,6 +93,7 @@ func TestClient_Delete_Success_Integration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
+	linkTo(t, clientNode, clusterNode)
 
 	// Set a value first
 	require.NoError(t, cl.Set("delete-key", []byte("delete-value"), time.Second))
@@ -130,13 +115,7 @@ func TestClient_Delete_Success_Integration(t *testing.T) {
 // TestClient_Keys_Success tests Keys with a separate client node
 func TestClient_Keys_Success_Integration(t *testing.T) {
 	clusterNode := newTestNode(t)
-	clusterNodeInfo := peercore.AddrInfo{ID: clusterNode.ID(), Addrs: clusterNode.Peer().Addrs()}
-
-	clientNode := newTestNode(t, clusterNodeInfo)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, clientNode, clusterNode.ID(), 10*time.Second)
-	require.NoError(t, err, "clientNode failed to connect to clusterNode")
+	clientNode := newTestNode(t)
 
 	namespace := "test-client-keys"
 
@@ -147,6 +126,7 @@ func TestClient_Keys_Success_Integration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
+	linkTo(t, clientNode, clusterNode)
 
 	// Set multiple values
 	require.NoError(t, cl.Set("keys/a", []byte("a"), time.Second))
@@ -167,13 +147,7 @@ func TestClient_Keys_Success_Integration(t *testing.T) {
 // TestClient_ExchangePeers_Success tests ExchangePeers with a separate client node
 func TestClient_ExchangePeers_Success_Integration(t *testing.T) {
 	clusterNode := newTestNode(t)
-	clusterNodeInfo := peercore.AddrInfo{ID: clusterNode.ID(), Addrs: clusterNode.Peer().Addrs()}
-
-	clientNode := newTestNode(t, clusterNodeInfo)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, clientNode, clusterNode.ID(), 10*time.Second)
-	require.NoError(t, err, "clientNode failed to connect to clusterNode")
+	clientNode := newTestNode(t)
 
 	namespace := "test-client-exchange"
 
@@ -184,6 +158,7 @@ func TestClient_ExchangePeers_Success_Integration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
+	linkTo(t, clientNode, clusterNode)
 
 	// Create client on separate node
 	client, err := newInternalClient(clientNode, namespace, nil)
@@ -205,13 +180,7 @@ func TestClient_ExchangePeers_Success_Integration(t *testing.T) {
 // TestClient_JoinVoter_Success tests JoinVoter with a separate client node
 func TestClient_JoinVoter_Success_Integration(t *testing.T) {
 	clusterNode := newTestNode(t)
-	clusterNodeInfo := peercore.AddrInfo{ID: clusterNode.ID(), Addrs: clusterNode.Peer().Addrs()}
-
-	clientNode := newTestNode(t, clusterNodeInfo)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, clientNode, clusterNode.ID(), 10*time.Second)
-	require.NoError(t, err, "clientNode failed to connect to clusterNode")
+	clientNode := newTestNode(t)
 
 	namespace := "test-client-join"
 
@@ -222,6 +191,7 @@ func TestClient_JoinVoter_Success_Integration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
+	linkTo(t, clientNode, clusterNode)
 
 	// Create client on separate node
 	client, err := newInternalClient(clientNode, namespace, nil)
@@ -241,13 +211,7 @@ func TestClient_Set_WithEncryption_Success_Integration(t *testing.T) {
 	}
 
 	clusterNode := newTestNode(t)
-	clusterNodeInfo := peercore.AddrInfo{ID: clusterNode.ID(), Addrs: clusterNode.Peer().Addrs()}
-
-	clientNode := newTestNode(t, clusterNodeInfo)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, clientNode, clusterNode.ID(), 10*time.Second)
-	require.NoError(t, err, "clientNode failed to connect to clusterNode")
+	clientNode := newTestNode(t)
 
 	namespace := "test-client-enc-set"
 
@@ -258,6 +222,7 @@ func TestClient_Set_WithEncryption_Success_Integration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
+	linkTo(t, clientNode, clusterNode)
 
 	// Create encrypted client on separate node
 	block, err := aes.NewCipher(key)
@@ -286,13 +251,7 @@ func TestClient_Get_WithEncryption_Success_Integration(t *testing.T) {
 	}
 
 	clusterNode := newTestNode(t)
-	clusterNodeInfo := peercore.AddrInfo{ID: clusterNode.ID(), Addrs: clusterNode.Peer().Addrs()}
-
-	clientNode := newTestNode(t, clusterNodeInfo)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, clientNode, clusterNode.ID(), 10*time.Second)
-	require.NoError(t, err, "clientNode failed to connect to clusterNode")
+	clientNode := newTestNode(t)
 
 	namespace := "test-client-enc-get"
 
@@ -303,6 +262,7 @@ func TestClient_Get_WithEncryption_Success_Integration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
+	linkTo(t, clientNode, clusterNode)
 
 	// Set a value first
 	require.NoError(t, cl.Set("enc-get-key", []byte("enc-get-value"), time.Second))
@@ -331,13 +291,7 @@ func TestClient_Delete_WithEncryption_Success_Integration(t *testing.T) {
 	}
 
 	clusterNode := newTestNode(t)
-	clusterNodeInfo := peercore.AddrInfo{ID: clusterNode.ID(), Addrs: clusterNode.Peer().Addrs()}
-
-	clientNode := newTestNode(t, clusterNodeInfo)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, clientNode, clusterNode.ID(), 10*time.Second)
-	require.NoError(t, err, "clientNode failed to connect to clusterNode")
+	clientNode := newTestNode(t)
 
 	namespace := "test-client-enc-del"
 
@@ -348,6 +302,7 @@ func TestClient_Delete_WithEncryption_Success_Integration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
+	linkTo(t, clientNode, clusterNode)
 
 	// Set a value first
 	require.NoError(t, cl.Set("enc-del-key", []byte("enc-del-value"), time.Second))
@@ -378,13 +333,7 @@ func TestClient_Keys_WithEncryption_Success_Integration(t *testing.T) {
 	}
 
 	clusterNode := newTestNode(t)
-	clusterNodeInfo := peercore.AddrInfo{ID: clusterNode.ID(), Addrs: clusterNode.Peer().Addrs()}
-
-	clientNode := newTestNode(t, clusterNodeInfo)
-
-	// Wait for peers to connect
-	err := waitForConnected(t, clientNode, clusterNode.ID(), 10*time.Second)
-	require.NoError(t, err, "clientNode failed to connect to clusterNode")
+	clientNode := newTestNode(t)
 
 	namespace := "test-client-enc-keys"
 
@@ -395,6 +344,7 @@ func TestClient_Keys_WithEncryption_Success_Integration(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
+	linkTo(t, clientNode, clusterNode)
 
 	// Set multiple values
 	require.NoError(t, cl.Set("enc-keys/a", []byte("a"), time.Second))
