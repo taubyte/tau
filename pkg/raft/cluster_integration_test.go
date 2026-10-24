@@ -4,6 +4,7 @@ package raft
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -147,6 +148,69 @@ func waitForKeyValue(t *testing.T, cl Cluster, key, want string, timeout time.Du
 	}
 }
 
+// waitForKeyAbsent polls cl.Get(key) until the key is gone, or the timeout elapses.
+func waitForKeyAbsent(t *testing.T, cl Cluster, key string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(t.Context(), timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if _, found := cl.Get(key); !found {
+				return nil
+			}
+		}
+	}
+}
+
+// nodeOf is the node a cluster runs on.
+func nodeOf(cl Cluster) taupeer.Node { return cl.(*cluster).node }
+
+// followerOf returns a member of clusters other than the one leading now.
+func followerOf(t *testing.T, clusters ...Cluster) Cluster {
+	t.Helper()
+	leader := leaderOf(t, clusters...)
+	for _, cl := range clusters {
+		if cl != leader {
+			return cl
+		}
+	}
+	t.Fatal("a group of one has no follower")
+	return nil
+}
+
+// without is clusters less gone.
+func without(clusters []Cluster, gone Cluster) []Cluster {
+	var rest []Cluster
+	for _, cl := range clusters {
+		if cl != gone {
+			rest = append(rest, cl)
+		}
+	}
+	return rest
+}
+
+// whileLeadershipMoves makes a client call again while the member it reached
+// could not answer because leadership was moving: no leader to forward to, a
+// leader that stepped down before applying, or one that lost its lease
+// mid-commit. Only for calls that leave the same state however often they land.
+func whileLeadershipMoves(t *testing.T, call func() error) error {
+	t.Helper()
+	deadline := time.Now().Add(leaderWait)
+	for {
+		err := call()
+		if !(leadershipMoved(err) || errors.Is(err, ErrNoLeader)) || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestCluster_MultiNode_LeaderElection_Integration(t *testing.T) {
 	// Create first node (will be bootstrap)
 	node1 := newTestNode(t)
@@ -202,26 +266,19 @@ func TestCluster_MultiNode_LeaderElection_Integration(t *testing.T) {
 		assert.NilError(t, err, "cluster%d failed to wait for leader", i+1)
 	}
 
-	// Verify all see the same leader
-	leader1, err := cluster1.Leader()
-	assert.NilError(t, err, "failed to get leader from cluster1")
+	// All agree on one leader, which alone says it leads
+	t.Logf("Leader: %s", idOf(leaderOf(t, clusters...)))
 
-	for i, cl := range clusters[1:] {
-		leader, err := cl.Leader()
-		assert.NilError(t, err, "cluster%d failed to get leader", i+2)
-		assert.Equal(t, leader, leader1, "all clusters should agree on leader")
-	}
-
-	t.Logf("Leader: %s", leader1)
-
-	// Set a value on the leader
-	err = cluster1.Set("test-key", []byte("test-value"), 5*time.Second)
+	// Set a value on whichever member leads
+	err = onLeader(t, clusters, func(leader Cluster) error {
+		return leader.Set("test-key", []byte("test-value"), 5*time.Second)
+	})
 	assert.NilError(t, err, "failed to set on leader")
 
-	// Verify value is replicated to followers
-	for i, cl := range clusters[1:] {
+	// Verify value is replicated to every member
+	for i, cl := range clusters {
 		err := waitForKeyValue(t, cl, "test-key", "test-value", 5*time.Second)
-		assert.NilError(t, err, "cluster%d: key not replicated in time", i+2)
+		assert.NilError(t, err, "cluster%d: key not replicated in time", i+1)
 	}
 }
 
@@ -264,31 +321,41 @@ func TestCluster_MultiNode_SendToNonLeader_Integration(t *testing.T) {
 	err = cluster2.WaitForLeader(ctx2)
 	assert.NilError(t, err, "cluster2 failed to wait for leader")
 
-	// cluster2 should be follower
-	assert.Assert(t, !cluster2.IsLeader(), "cluster2 should be follower")
+	clusters := []Cluster{cluster1, cluster2}
 
-	t.Logf("Sending Set to follower: %s", node2.ID())
+	// Set directly on a member that is not leading - should return
+	// ErrNotLeader. Which member that is, raft decides when the write arrives:
+	// one that had come to lead by then took the write, which is not this case,
+	// so it is put to whichever member follows next.
+	refused := false
+	for deadline := time.Now().Add(leaderWait); !refused && time.Now().Before(deadline); {
+		follower := followerOf(t, clusters...)
+		err = follower.Set("follower-key", []byte("follower-value"), 5*time.Second)
+		if err == nil || errors.Is(err, raft.ErrLeadershipLost) {
+			continue
+		}
+		assert.ErrorIs(t, err, ErrNotLeader, "expected ErrNotLeader when calling Set on follower")
+		refused = true
+	}
+	assert.Assert(t, refused, "no member refused a write while following")
 
-	// Try to set on follower directly - should return ErrNotLeader
-	err = cluster2.Set("follower-key", []byte("follower-value"), 5*time.Second)
-	assert.ErrorIs(t, err, ErrNotLeader, "expected ErrNotLeader when calling Set on follower")
+	follower := followerOf(t, clusters...)
+	t.Logf("Sending Set to follower: %s", idOf(follower))
 
-	// Use the client to send to the follower's stream service
+	// Use a client on the other node to send to the follower's stream service
 	// This should forward to the leader
-	client, err := NewClient(node1, namespace, nil)
+	client, err := NewClient(nodeOf(without(clusters, follower)[0]), namespace, nil)
 	assert.NilError(t, err, "failed to create client")
 	defer client.Close()
 
-	err = client.Set("client-key", []byte("client-value"), 5*time.Second, node2.ID())
+	err = whileLeadershipMoves(t, func() error {
+		return client.Set("client-key", []byte("client-value"), 5*time.Second, idOf(follower))
+	})
 	assert.NilError(t, err, "client.Set to follower should forward to leader")
 
-	// Wait for replication
-	time.Sleep(500 * time.Millisecond)
-
-	// Verify value was set (read from follower)
-	val, found := cluster2.Get("client-key")
-	assert.Assert(t, found, "key should exist after forwarded set")
-	assert.Equal(t, string(val), "client-value")
+	// Verify value was set (read from the follower once replicated)
+	err = waitForKeyValue(t, follower, "client-key", "client-value", 5*time.Second)
+	assert.NilError(t, err, "key should exist after forwarded set")
 }
 
 func TestCluster_AutoBootstrapThenJoiners_Integration(t *testing.T) {
@@ -348,15 +415,7 @@ func TestCluster_AutoBootstrapThenJoiners_Integration(t *testing.T) {
 	}
 
 	// Joiners should see the same leader.
-	leader1, err := cluster1.Leader()
-	assert.NilError(t, err, "failed to get leader from cluster1")
-	leader2, err := cluster2.Leader()
-	assert.NilError(t, err, "failed to get leader from cluster2")
-	leader3, err := cluster3.Leader()
-	assert.NilError(t, err, "failed to get leader from cluster3")
-
-	assert.Equal(t, leader1, leader2, "cluster2 should agree on leader")
-	assert.Equal(t, leader1, leader3, "cluster3 should agree on leader")
+	leaderOf(t, cluster1, cluster2, cluster3)
 }
 
 func TestCluster_MultiNode_DiscoverPeers_Integration(t *testing.T) {
@@ -400,15 +459,7 @@ func TestCluster_MultiNode_DiscoverPeers_Integration(t *testing.T) {
 	assert.NilError(t, err, "cluster2 failed to wait for leader")
 
 	// Verify both clusters see the same leader
-	leader1, err := cluster1.Leader()
-	assert.NilError(t, err, "cluster1 failed to get leader")
-
-	leader2, err := cluster2.Leader()
-	assert.NilError(t, err, "cluster2 failed to get leader")
-
-	assert.Equal(t, leader1, leader2, "both clusters should agree on leader")
-
-	t.Logf("Both clusters agree on leader: %s", leader1)
+	t.Logf("Both clusters agree on leader: %s", idOf(leaderOf(t, cluster1, cluster2)))
 }
 
 func TestCluster_MultiNode_StreamServiceForwarding_Integration(t *testing.T) {
@@ -449,55 +500,51 @@ func TestCluster_MultiNode_StreamServiceForwarding_Integration(t *testing.T) {
 	err = cluster2.WaitForLeader(ctx2)
 	assert.NilError(t, err, "cluster2 failed to wait for leader")
 
-	leaderCluster := cluster1.(*cluster)
-	followerCluster := cluster2.(*cluster)
+	clusters := []Cluster{cluster1, cluster2}
+	followerCluster := followerOf(t, clusters...)
+	leaderCluster := without(clusters, followerCluster)[0]
 
-	t.Logf("Leader: %s", leaderCluster.node.ID())
-	t.Logf("Follower: %s", followerCluster.node.ID())
+	t.Logf("Follower: %s", idOf(followerCluster))
 
-	// Create a client
-	client, err := NewClient(node1, namespace, nil)
+	// Create a client on the other node
+	client, err := NewClient(nodeOf(leaderCluster), namespace, nil)
 	assert.NilError(t, err, "failed to create client")
 	defer client.Close()
 
 	// Send Set to follower - should be forwarded to leader
-	err = client.Set("forwarded-key", []byte("forwarded-value"), 5*time.Second, followerCluster.node.ID())
+	err = whileLeadershipMoves(t, func() error {
+		return client.Set("forwarded-key", []byte("forwarded-value"), 5*time.Second, idOf(followerCluster))
+	})
 	assert.NilError(t, err, "Set to follower should forward to leader")
 
-	// Wait for replication
-	time.Sleep(500 * time.Millisecond)
-
-	// Verify value was set on leader
-	val, found := leaderCluster.Get("forwarded-key")
-	assert.Assert(t, found, "key should exist on leader after forwarded set")
-	assert.Equal(t, string(val), "forwarded-value")
-
-	// Also verify on follower
-	val, found = followerCluster.Get("forwarded-key")
-	assert.Assert(t, found, "key should be replicated to follower")
-	assert.Equal(t, string(val), "forwarded-value")
+	// Verify value was set on the leader and replicated to the follower
+	err = waitForKeyValue(t, leaderCluster, "forwarded-key", "forwarded-value", 5*time.Second)
+	assert.NilError(t, err, "key should exist on leader after forwarded set")
+	err = waitForKeyValue(t, followerCluster, "forwarded-key", "forwarded-value", 5*time.Second)
+	assert.NilError(t, err, "key should be replicated to follower")
 
 	// Test Get from follower
-	val, found, err = client.Get("forwarded-key", 0, followerCluster.node.ID())
+	val, found, err := client.Get("forwarded-key", 0, idOf(followerCluster))
 	assert.NilError(t, err, "Get from follower should work")
 	assert.Assert(t, found, "key should be found via client")
 	assert.Equal(t, string(val), "forwarded-value")
 
 	// Test Keys from follower
-	keys, err := client.Keys("forwarded", followerCluster.node.ID())
+	keys, err := client.Keys("forwarded", idOf(followerCluster))
 	assert.NilError(t, err, "Keys from follower should work")
 	assert.Assert(t, len(keys) >= 1, "should find at least one key with prefix")
 
 	// Test Delete on follower (should forward)
-	err = client.Delete("forwarded-key", 5*time.Second, followerCluster.node.ID())
+	err = whileLeadershipMoves(t, func() error {
+		return client.Delete("forwarded-key", 5*time.Second, idOf(followerCluster))
+	})
 	assert.NilError(t, err, "Delete on follower should forward to leader")
 
-	// Wait for replication
-	time.Sleep(500 * time.Millisecond)
-
-	// Verify key is deleted
-	_, found = leaderCluster.Get("forwarded-key")
-	assert.Assert(t, !found, "key should be deleted after forwarded delete")
+	// Verify key is deleted on both
+	for _, cl := range clusters {
+		err = waitForKeyAbsent(t, cl, "forwarded-key", 5*time.Second)
+		assert.NilError(t, err, "key should be deleted after forwarded delete")
+	}
 }
 
 func TestCluster_MultiNode_ClientOperations_Integration(t *testing.T) {
@@ -538,15 +585,22 @@ func TestCluster_MultiNode_ClientOperations_Integration(t *testing.T) {
 	err = cluster2.WaitForLeader(ctx2)
 	assert.NilError(t, err, "cluster2 failed to wait for leader")
 
-	// Test Set directly via cluster (local operations)
-	err = cluster1.Set("key1", []byte("value1"), 5*time.Second)
+	clusters := []Cluster{cluster1, cluster2}
+
+	// Test Set directly via cluster, on whichever member leads
+	err = onLeader(t, clusters, func(leader Cluster) error {
+		return leader.Set("key1", []byte("value1"), 5*time.Second)
+	})
 	assert.NilError(t, err, "Set to leader should succeed")
 
-	err = cluster1.Set("key2", []byte("value2"), 5*time.Second)
+	err = onLeader(t, clusters, func(leader Cluster) error {
+		return leader.Set("key2", []byte("value2"), 5*time.Second)
+	})
 	assert.NilError(t, err, "Set second key should succeed")
 
-	// Wait for replication
-	time.Sleep(500 * time.Millisecond)
+	// Wait for replication to cluster1, which the client below reads
+	assert.NilError(t, waitForKeyValue(t, cluster1, "key1", "value1", 5*time.Second), "key1 not replicated in time")
+	assert.NilError(t, waitForKeyValue(t, cluster1, "key2", "value2", 5*time.Second), "key2 not replicated in time")
 
 	// Test Get via cluster
 	val, found := cluster1.Get("key1")
@@ -573,12 +627,14 @@ func TestCluster_MultiNode_ClientOperations_Integration(t *testing.T) {
 	assert.NilError(t, err, "Keys via client should succeed")
 	assert.Equal(t, len(keys), 2, "should find 2 keys via client")
 
-	// Test Delete via cluster (local operation)
-	err = cluster1.Delete("key1", 5*time.Second)
+	// Test Delete via cluster, on whichever member leads
+	err = onLeader(t, clusters, func(leader Cluster) error {
+		return leader.Delete("key1", 5*time.Second)
+	})
 	assert.NilError(t, err, "Delete should succeed")
 
-	// Wait for replication
-	time.Sleep(500 * time.Millisecond)
+	// Wait for replication to cluster1
+	assert.NilError(t, waitForKeyAbsent(t, cluster1, "key1", 5*time.Second), "delete not replicated in time")
 
 	// Verify deletion via client
 	_, found, err = client.Get("key1", 0, node1.ID())
@@ -630,40 +686,68 @@ func TestCluster_MultiNode_ClientGetWithBarrier_Integration(t *testing.T) {
 	err = cluster2.WaitForLeader(ctx2)
 	assert.NilError(t, err, "cluster2 failed to wait for leader")
 
-	// Create client from node2 to test remote operations with barrier
-	client, err := NewClient(node2, namespace, nil)
-	assert.NilError(t, err, "failed to create client")
-	defer client.Close()
+	clusters := []Cluster{cluster1, cluster2}
+
+	// A client on each node, so either node can be reached from the other
+	reach := map[peercore.ID]Client{}
+	for _, from := range []taupeer.Node{node1, node2} {
+		cl, err := NewClient(from, namespace, nil)
+		assert.NilError(t, err, "failed to create client")
+		defer cl.Close()
+		for _, to := range []taupeer.Node{node1, node2} {
+			if to.ID() != from.ID() {
+				reach[to.ID()] = cl
+			}
+		}
+	}
+	// The client on node2, which reaches node1
+	client := reach[node1.ID()]
+
+	// A barrier is the leader's to take, so a read behind one goes to
+	// whichever member leads when it is sent
+	readBehindBarrier := func(key string, barrierNs int64) (val []byte, found bool, err error) {
+		err = whileLeadershipMoves(t, func() error {
+			target := idOf(leaderOf(t, clusters...))
+			var err error
+			val, found, err = reach[target].Get(key, barrierNs, target)
+			return err
+		})
+		return val, found, err
+	}
 
 	// Set a value via leader
-	err = cluster1.Set("barrier-test-key", []byte("barrier-test-value"), 5*time.Second)
+	err = onLeader(t, clusters, func(leader Cluster) error {
+		return leader.Set("barrier-test-key", []byte("barrier-test-value"), 5*time.Second)
+	})
 	assert.NilError(t, err, "Set to leader should succeed")
 
 	// Test Get without barrier - may return stale data on follower
-	val, found, err := client.Get("barrier-test-key", 0, node1.ID())
+	_, _, err = client.Get("barrier-test-key", 0, node1.ID())
 	assert.NilError(t, err, "Get without barrier should succeed")
 	// Note: Without barrier, might not see the value immediately due to replication lag
 
 	// Test Get with barrier - should ensure consistency
 	barrierNs := int64(2 * time.Second.Nanoseconds())
-	val, found, err = client.Get("barrier-test-key", barrierNs, node1.ID())
+	val, found, err := readBehindBarrier("barrier-test-key", barrierNs)
 	assert.NilError(t, err, "Get with barrier should succeed")
 	assert.Assert(t, found, "key should be found with barrier")
 	assert.Equal(t, string(val), "barrier-test-value", "value should match")
 
 	// Set another value
-	err = cluster1.Set("barrier-test-key2", []byte("barrier-test-value2"), 5*time.Second)
+	err = onLeader(t, clusters, func(leader Cluster) error {
+		return leader.Set("barrier-test-key2", []byte("barrier-test-value2"), 5*time.Second)
+	})
 	assert.NilError(t, err, "Set second key should succeed")
 
 	// Get with barrier should see the new value
-	val, found, err = client.Get("barrier-test-key2", barrierNs, node1.ID())
+	val, found, err = readBehindBarrier("barrier-test-key2", barrierNs)
 	assert.NilError(t, err, "Get with barrier should succeed")
 	assert.Assert(t, found, "key2 should be found with barrier")
 	assert.Equal(t, string(val), "barrier-test-value2", "value2 should match")
 
 	// Test Get with barrier at max timeout
 	maxBarrierNs := int64(MaxGetHandlerBarrierTimeout.Nanoseconds())
-	val, found, err = client.Get("barrier-test-key", maxBarrierNs, node1.ID())
+	val, found, err = readBehindBarrier("barrier-test-key", maxBarrierNs)
 	assert.NilError(t, err, "Get with max barrier should succeed")
 	assert.Assert(t, found, "key should be found with max barrier")
 	assert.Equal(t, string(val), "barrier-test-value", "value should match")
@@ -740,39 +824,43 @@ func TestCluster_MultiNode_Apply_InvalidTimeout_Integration(t *testing.T) {
 	assert.Assert(t, err != nil, "Apply with timeout > MaxApplyTimeout should fail")
 	assert.ErrorIs(t, err, ErrInvalidTimeout, "should return ErrInvalidTimeout")
 
-	// Test Apply with valid timeout on leader (should work)
+	clusters := []Cluster{cluster1, cluster2}
+
+	// Test Apply with valid timeout on whichever member leads (should work)
 	cmd2 := Command{
 		Type: CommandSet,
 		Set:  &SetCommand{Key: "apply-timeout-key2", Value: []byte("apply-timeout-value2")},
 	}
 	data2, _ := cbor.Marshal(cmd2)
-	_, err = cluster1.Apply(data2, time.Second)
+	err = onLeader(t, clusters, func(leader Cluster) error {
+		_, err := leader.Apply(data2, time.Second)
+		return err
+	})
 	assert.NilError(t, err, "Apply with valid timeout should succeed")
 
-	// Wait for replication
-	time.Sleep(500 * time.Millisecond)
+	// Verify the value was replicated to every member
+	for i, cl := range clusters {
+		err = waitForKeyValue(t, cl, "apply-timeout-key2", "apply-timeout-value2", 5*time.Second)
+		assert.NilError(t, err, "cluster%d: key not replicated in time", i+1)
+	}
 
-	// Verify the value was replicated to follower
-	val, found := cluster2.Get("apply-timeout-key2")
-	assert.Assert(t, found, "key should be found on follower")
-	assert.Equal(t, string(val), "apply-timeout-value2", "value should match")
-
-	// Test Apply with timeout = MaxApplyTimeout on leader (should work)
+	// Test Apply with timeout = MaxApplyTimeout on whichever member leads (should work)
 	cmd3 := Command{
 		Type: CommandSet,
 		Set:  &SetCommand{Key: "apply-timeout-key3", Value: []byte("apply-timeout-value3")},
 	}
 	data3, _ := cbor.Marshal(cmd3)
-	_, err = cluster1.Apply(data3, MaxApplyTimeout)
+	err = onLeader(t, clusters, func(leader Cluster) error {
+		_, err := leader.Apply(data3, MaxApplyTimeout)
+		return err
+	})
 	assert.NilError(t, err, "Apply with timeout at MaxApplyTimeout should succeed")
 
-	// Wait for replication
-	time.Sleep(500 * time.Millisecond)
-
-	// Verify the value was replicated
-	val, found = cluster2.Get("apply-timeout-key3")
-	assert.Assert(t, found, "key3 should be found on follower")
-	assert.Equal(t, string(val), "apply-timeout-value3", "value3 should match")
+	// Verify the value was replicated to every member
+	for i, cl := range clusters {
+		err = waitForKeyValue(t, cl, "apply-timeout-key3", "apply-timeout-value3", 5*time.Second)
+		assert.NilError(t, err, "cluster%d: key3 not replicated in time", i+1)
+	}
 }
 
 // TestCluster_MultiCluster_SameNode tests that a single node can participate
@@ -927,15 +1015,21 @@ func TestCluster_MultiCluster_MultiNode_Integration(t *testing.T) {
 	assert.NilError(t, err, "node2 failed to join cluster B as voter")
 	assert.NilError(t, clusterB2.WaitForLeader(ctx4), "clusterB2 failed to wait for leader")
 
-	// Set data in cluster A
-	err = clusterA1.Set("service-data", []byte("from-service-A"), 5*time.Second)
-	assert.NilError(t, err, "clusterA1 Set failed")
+	// Set data in cluster A, on whichever member leads it
+	err = onLeader(t, []Cluster{clusterA1, clusterA2}, func(leader Cluster) error {
+		return leader.Set("service-data", []byte("from-service-A"), 5*time.Second)
+	})
+	assert.NilError(t, err, "cluster A Set failed")
 
-	// Set data in cluster B
-	err = clusterB1.Set("service-data", []byte("from-service-B"), 5*time.Second)
-	assert.NilError(t, err, "clusterB1 Set failed")
+	// Set data in cluster B, on whichever member leads it
+	err = onLeader(t, []Cluster{clusterB1, clusterB2}, func(leader Cluster) error {
+		return leader.Set("service-data", []byte("from-service-B"), 5*time.Second)
+	})
+	assert.NilError(t, err, "cluster B Set failed")
 
 	// Verify cluster A data is isolated
+	err = waitForKeyValue(t, clusterA1, "service-data", "from-service-A", 5*time.Second)
+	assert.NilError(t, err, "clusterA1: service-data not replicated in time")
 	valA1, foundA1 := clusterA1.Get("service-data")
 	assert.Assert(t, foundA1, "clusterA1 should have service-data")
 	assert.Equal(t, string(valA1), "from-service-A")
@@ -946,6 +1040,8 @@ func TestCluster_MultiCluster_MultiNode_Integration(t *testing.T) {
 	assert.Equal(t, string(valA2), "from-service-A")
 
 	// Verify cluster B data is isolated
+	err = waitForKeyValue(t, clusterB1, "service-data", "from-service-B", 5*time.Second)
+	assert.NilError(t, err, "clusterB1: service-data not replicated in time")
 	valB1, foundB1 := clusterB1.Get("service-data")
 	assert.Assert(t, foundB1, "clusterB1 should have service-data")
 	assert.Equal(t, string(valB1), "from-service-B")
@@ -994,8 +1090,11 @@ func TestCluster_RejoinAfterLeave_Integration(t *testing.T) {
 	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
 	assert.NilError(t, err, "node2 failed to join as voter")
 
-	// Remove node2 and close its cluster (leave).
-	assert.NilError(t, cluster1.RemoveServer(node2.ID(), 10*time.Second), "failed to remove node2")
+	// Remove node2 through whichever member leads, and close its cluster (leave).
+	err = onLeader(t, []Cluster{cluster1, cluster2}, func(leader Cluster) error {
+		return leader.RemoveServer(node2.ID(), 10*time.Second)
+	})
+	assert.NilError(t, err, "failed to remove node2")
 	assert.NilError(t, waitForMemberAbsent(t, cluster1, node2.ID(), 20*time.Second), "node2 still present after removal")
 	assert.NilError(t, cluster2.Close(), "failed to close cluster2")
 
@@ -1088,22 +1187,8 @@ func TestCluster_DiscoveryBasedBootstrap_Integration(t *testing.T) {
 	err = cluster2.WaitForLeader(leaderCtx)
 	assert.NilError(t, err, "cluster2 failed to wait for leader")
 
-	// Both should see the same leader
-	leader1, err := cluster1.Leader()
-	assert.NilError(t, err, "failed to get leader from cluster1")
-
-	leader2, err := cluster2.Leader()
-	assert.NilError(t, err, "failed to get leader from cluster2")
-
-	assert.Equal(t, leader1, leader2, "both nodes should agree on leader")
-
-	t.Logf("Leader elected: %s", leader1)
-	t.Logf("Node1 is leader: %v", cluster1.IsLeader())
-	t.Logf("Node2 is leader: %v", cluster2.IsLeader())
-
-	// Exactly one should be leader
-	assert.Assert(t, cluster1.IsLeader() != cluster2.IsLeader(),
-		"exactly one node should be leader")
+	// Both should see the same leader, and exactly one should say it leads
+	t.Logf("Leader elected: %s", idOf(leaderOf(t, cluster1, cluster2)))
 }
 
 // TestCluster_ThreeNodes_SimultaneousStart tests that 3 nodes starting at exactly
@@ -1183,31 +1268,8 @@ func TestCluster_ThreeNodes_SimultaneousStart_Integration(t *testing.T) {
 	err = cluster3.WaitForLeader(ctx)
 	assert.NilError(t, err, "cluster3 failed to wait for leader")
 
-	// All nodes must see the same leader
-	leader1, err := cluster1.Leader()
-	assert.NilError(t, err, "cluster1 failed to get leader")
-	leader2, err := cluster2.Leader()
-	assert.NilError(t, err, "cluster2 failed to get leader")
-	leader3, err := cluster3.Leader()
-	assert.NilError(t, err, "cluster3 failed to get leader")
-
-	assert.Equal(t, leader1, leader2, "cluster1 and cluster2 must agree on leader")
-	assert.Equal(t, leader2, leader3, "cluster2 and cluster3 must agree on leader")
-
-	// Count leaders - exactly one node must be leader
-	leaderCount := 0
-	if cluster1.IsLeader() {
-		leaderCount++
-	}
-	if cluster2.IsLeader() {
-		leaderCount++
-	}
-	if cluster3.IsLeader() {
-		leaderCount++
-	}
-	assert.Equal(t, leaderCount, 1, "exactly one node must be leader")
-
-	t.Logf("Leader elected among 3 simultaneous nodes: %s", leader1)
+	// All nodes must see the same leader, and exactly one must say it leads
+	t.Logf("Leader elected among 3 simultaneous nodes: %s", idOf(leaderOf(t, cluster1, cluster2, cluster3)))
 }
 
 // TestCluster_LeaderCrashAndFailover tests that a cluster survives leader crash
@@ -1274,70 +1336,42 @@ func TestCluster_LeaderCrashAndFailover_Integration(t *testing.T) {
 	err = cluster3.WaitForLeader(ctx2)
 	assert.NilError(t, err, "cluster3 failed to see leader")
 
+	clusters := []Cluster{cluster1, cluster2, cluster3}
+
 	// Set data on leader BEFORE crash
-	err = cluster1.Set("before-crash", []byte("important-data"), 5*time.Second)
+	err = onLeader(t, clusters, func(leader Cluster) error {
+		return leader.Set("before-crash", []byte("important-data"), 5*time.Second)
+	})
 	assert.NilError(t, err, "failed to set data before crash")
 
-	// Wait for replication
-	time.Sleep(500 * time.Millisecond)
+	// Verify data is replicated to every member
+	for i, cl := range clusters {
+		err = waitForKeyValue(t, cl, "before-crash", "important-data", 5*time.Second)
+		assert.NilError(t, err, "data must be replicated to cluster%d before crash", i+1)
+	}
 
-	// Verify data is replicated to followers
-	val, found := cluster2.Get("before-crash")
-	assert.Assert(t, found, "data must be replicated to cluster2 before crash")
-	assert.Equal(t, string(val), "important-data", "cluster2 data mismatch before crash")
+	// Crash whichever member leads now
+	crashed := leaderOf(t, clusters...)
+	survivors := without(clusters, crashed)
+	t.Logf("Crashing leader (%s)...", idOf(crashed))
 
-	val, found = cluster3.Get("before-crash")
-	assert.Assert(t, found, "data must be replicated to cluster3 before crash")
-	assert.Equal(t, string(val), "important-data", "cluster3 data mismatch before crash")
+	err = crashed.Close()
+	assert.NilError(t, err, "failed to close the leader")
 
-	t.Log("Crashing leader (cluster1)...")
-
-	// Crash the leader
-	err = cluster1.Close()
-	assert.NilError(t, err, "failed to close cluster1")
-
-	// Wait for new leader election
-	ctx3, cancel3 := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel3()
-
-	// Both remaining nodes should eventually see a new leader
-	err = cluster2.WaitForLeader(ctx3)
-	assert.NilError(t, err, "cluster2 must find new leader after crash")
-	err = cluster3.WaitForLeader(ctx3)
-	assert.NilError(t, err, "cluster3 must find new leader after crash")
-
-	// Get new leader - should be either node2 or node3
-	newLeader, err := cluster2.Leader()
-	assert.NilError(t, err, "failed to get new leader from cluster2")
+	// The survivors must agree on a new leader, and exactly one must lead
+	newLeader := leaderOf(t, survivors...)
 
 	// New leader must NOT be the crashed node
-	assert.Assert(t, newLeader != node1.ID(), "new leader must not be the crashed node")
-
-	// Both nodes must agree on the new leader
-	newLeader3, err := cluster3.Leader()
-	assert.NilError(t, err, "failed to get new leader from cluster3")
-	assert.Equal(t, newLeader, newLeader3, "cluster2 and cluster3 must agree on new leader")
+	assert.Assert(t, idOf(newLeader) != idOf(crashed), "new leader must not be the crashed node")
 
 	// Data must still be accessible after leader crash
-	val, found = cluster2.Get("before-crash")
-	assert.Assert(t, found, "data must persist after leader crash (cluster2)")
-	assert.Equal(t, string(val), "important-data", "data integrity failure after crash (cluster2)")
-
-	val, found = cluster3.Get("before-crash")
-	assert.Assert(t, found, "data must persist after leader crash (cluster3)")
-	assert.Equal(t, string(val), "important-data", "data integrity failure after crash (cluster3)")
-
-	// Exactly one of the remaining nodes must be leader
-	leaderCount := 0
-	if cluster2.IsLeader() {
-		leaderCount++
+	for _, cl := range survivors {
+		val, found := cl.Get("before-crash")
+		assert.Assert(t, found, "data must persist after leader crash (%s)", idOf(cl))
+		assert.Equal(t, string(val), "important-data", "data integrity failure after crash (%s)", idOf(cl))
 	}
-	if cluster3.IsLeader() {
-		leaderCount++
-	}
-	assert.Equal(t, leaderCount, 1, "exactly one remaining node must be leader")
 
-	t.Logf("New leader after crash: %s", newLeader)
+	t.Logf("New leader after crash: %s", idOf(newLeader))
 }
 
 // TestCluster_NodeRebootWithDataPersistence verifies that when a follower reboots,
@@ -1403,73 +1437,77 @@ func TestCluster_NodeRebootWithDataPersistence_Integration(t *testing.T) {
 	err = cluster3.WaitForLeader(ctx2)
 	assert.NilError(t, err, "cluster3 failed to see leader")
 
+	clusters := []Cluster{cluster1, cluster2, cluster3}
+
 	// Set data BEFORE reboot
-	err = cluster1.Set("key-before-reboot", []byte("value-before"), 5*time.Second)
+	err = onLeader(t, clusters, func(leader Cluster) error {
+		return leader.Set("key-before-reboot", []byte("value-before"), 5*time.Second)
+	})
 	assert.NilError(t, err, "failed to set key-before-reboot")
 
-	// Wait for replication
-	time.Sleep(500 * time.Millisecond)
+	// Verify data on every member before reboot
+	for i, cl := range clusters {
+		err = waitForKeyValue(t, cl, "key-before-reboot", "value-before", 5*time.Second)
+		assert.NilError(t, err, "key-before-reboot must exist on cluster%d before reboot", i+1)
+	}
 
-	// Verify data on follower before reboot
-	val, found := cluster2.Get("key-before-reboot")
-	assert.Assert(t, found, "key-before-reboot must exist on cluster2 before reboot")
-	assert.Equal(t, string(val), "value-before", "value mismatch before reboot")
+	// Reboot whichever member follows now
+	rebooted := followerOf(t, clusters...)
+	survivors := without(clusters, rebooted)
+	t.Logf("Rebooting follower (%s)...", idOf(rebooted))
 
-	t.Log("Rebooting follower (cluster2)...")
+	// Simulate reboot: close it
+	err = rebooted.Close()
+	assert.NilError(t, err, "failed to close the follower")
 
-	// Simulate reboot: close cluster2
-	err = cluster2.Close()
-	assert.NilError(t, err, "failed to close cluster2")
+	// Set more data while follower is down (quorum maintained by the other two)
+	err = onLeader(t, survivors, func(leader Cluster) error {
+		return leader.Set("key-during-reboot", []byte("value-during"), 5*time.Second)
+	})
+	assert.NilError(t, err, "failed to set key-during-reboot (should work with quorum from the other two)")
 
-	// Set more data while follower is down (quorum maintained via node1 + node3)
-	err = cluster1.Set("key-during-reboot", []byte("value-during"), 5*time.Second)
-	assert.NilError(t, err, "failed to set key-during-reboot (should work with quorum from node1+node3)")
+	// Verify data is on both survivors while the follower is down
+	for _, cl := range survivors {
+		err = waitForKeyValue(t, cl, "key-during-reboot", "value-during", 5*time.Second)
+		assert.NilError(t, err, "key-during-reboot must be replicated to %s", idOf(cl))
+	}
 
-	// Wait for replication to node3
-	time.Sleep(500 * time.Millisecond)
+	// Recreate the follower's cluster on the same node (simulating reboot)
+	rebootedB, err := New(nodeOf(rebooted), namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
+	assert.NilError(t, err, "failed to recreate the follower after reboot")
+	defer rebootedB.Close()
 
-	// Verify data is on node3 while node2 is down
-	val, found = cluster3.Get("key-during-reboot")
-	assert.Assert(t, found, "key-during-reboot must be replicated to node3")
-	assert.Equal(t, string(val), "value-during")
-
-	// Recreate cluster2 on the same node (simulating reboot)
-	cluster2b, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
-	assert.NilError(t, err, "failed to recreate cluster2 after reboot")
-	defer cluster2b.Close()
-
-	// Wait for node2 to rejoin
-	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
-	assert.NilError(t, err, "node2 failed to rejoin as voter after reboot")
+	// Wait for it to rejoin
+	err = waitForMember(t, survivors[0], idOf(rebooted), raft.Voter, 20*time.Second)
+	assert.NilError(t, err, "the follower failed to rejoin as voter after reboot")
 
 	ctx3, cancel3 := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel3()
-	err = cluster2b.WaitForLeader(ctx3)
-	assert.NilError(t, err, "cluster2b failed to see leader after reboot")
+	err = rebootedB.WaitForLeader(ctx3)
+	assert.NilError(t, err, "the rebooted follower failed to see leader after reboot")
 
 	// Verify data set BEFORE reboot is accessible, once replication catches up
-	err = waitForKeyValue(t, cluster2b, "key-before-reboot", "value-before", 5*time.Second)
+	err = waitForKeyValue(t, rebootedB, "key-before-reboot", "value-before", 5*time.Second)
 	assert.NilError(t, err, "key-before-reboot not replicated in time")
-	val, found = cluster2b.Get("key-before-reboot")
+	val, found := rebootedB.Get("key-before-reboot")
 	assert.Assert(t, found, "key-before-reboot must exist after reboot")
 	assert.Equal(t, string(val), "value-before", "value mismatch for key-before-reboot after reboot")
 
 	// Verify data set DURING reboot (while node was down) is replicated
-	err = waitForKeyValue(t, cluster2b, "key-during-reboot", "value-during", 5*time.Second)
+	err = waitForKeyValue(t, rebootedB, "key-during-reboot", "value-during", 5*time.Second)
 	assert.NilError(t, err, "key-during-reboot not replicated in time")
-	val, found = cluster2b.Get("key-during-reboot")
+	val, found = rebootedB.Get("key-during-reboot")
 	assert.Assert(t, found, "key-during-reboot must be replicated after rejoin")
 	assert.Equal(t, string(val), "value-during", "value mismatch for key-during-reboot after reboot")
 
 	// Set data AFTER reboot to verify full functionality
-	err = cluster1.Set("key-after-reboot", []byte("value-after"), 5*time.Second)
+	err = onLeader(t, append(survivors, rebootedB), func(leader Cluster) error {
+		return leader.Set("key-after-reboot", []byte("value-after"), 5*time.Second)
+	})
 	assert.NilError(t, err, "failed to set key-after-reboot")
 
-	time.Sleep(500 * time.Millisecond)
-
-	val, found = cluster2b.Get("key-after-reboot")
-	assert.Assert(t, found, "key-after-reboot must be replicated")
-	assert.Equal(t, string(val), "value-after", "value mismatch for key-after-reboot")
+	err = waitForKeyValue(t, rebootedB, "key-after-reboot", "value-after", 5*time.Second)
+	assert.NilError(t, err, "key-after-reboot must be replicated")
 
 	t.Log("Node reboot with data persistence test passed")
 }
@@ -1555,59 +1593,24 @@ func TestCluster_StaggeredConcurrentStartup_Integration(t *testing.T) {
 	err = cluster3.WaitForLeader(ctx)
 	assert.NilError(t, err, "cluster3 failed to wait for leader")
 
-	// All must agree on leader
-	leader1, err := cluster1.Leader()
-	assert.NilError(t, err, "cluster1 failed to get leader")
-	leader2, err := cluster2.Leader()
-	assert.NilError(t, err, "cluster2 failed to get leader")
-	leader3, err := cluster3.Leader()
-	assert.NilError(t, err, "cluster3 failed to get leader")
+	clusters := []Cluster{cluster1, cluster2, cluster3}
 
-	assert.Equal(t, leader1, leader2, "cluster1 and cluster2 must agree on leader")
-	assert.Equal(t, leader2, leader3, "cluster2 and cluster3 must agree on leader")
-
-	// Exactly one leader
-	leaderCount := 0
-	if cluster1.IsLeader() {
-		leaderCount++
-	}
-	if cluster2.IsLeader() {
-		leaderCount++
-	}
-	if cluster3.IsLeader() {
-		leaderCount++
-	}
-	assert.Equal(t, leaderCount, 1, "exactly one node must be leader")
+	// All must agree on leader, and exactly one must say it leads
+	leader := leaderOf(t, clusters...)
 
 	// Verify cluster is functional - write and read
-	var leaderCluster Cluster
-	if cluster1.IsLeader() {
-		leaderCluster = cluster1
-	} else if cluster2.IsLeader() {
-		leaderCluster = cluster2
-	} else {
-		leaderCluster = cluster3
-	}
-
-	err = leaderCluster.Set("staggered-key", []byte("staggered-value"), 5*time.Second)
+	err = onLeader(t, clusters, func(leader Cluster) error {
+		return leader.Set("staggered-key", []byte("staggered-value"), 5*time.Second)
+	})
 	assert.NilError(t, err, "failed to set on leader")
 
-	time.Sleep(500 * time.Millisecond)
-
 	// All nodes must see the data
-	val, found := cluster1.Get("staggered-key")
-	assert.Assert(t, found, "cluster1 must see staggered-key")
-	assert.Equal(t, string(val), "staggered-value")
+	for i, cl := range clusters {
+		err = waitForKeyValue(t, cl, "staggered-key", "staggered-value", 5*time.Second)
+		assert.NilError(t, err, "cluster%d must see staggered-key", i+1)
+	}
 
-	val, found = cluster2.Get("staggered-key")
-	assert.Assert(t, found, "cluster2 must see staggered-key")
-	assert.Equal(t, string(val), "staggered-value")
-
-	val, found = cluster3.Get("staggered-key")
-	assert.Assert(t, found, "cluster3 must see staggered-key")
-	assert.Equal(t, string(val), "staggered-value")
-
-	t.Logf("Staggered startup test passed, leader: %s", leader1)
+	t.Logf("Staggered startup test passed, leader: %s", idOf(leader))
 }
 
 // TestCluster_LeaderRebootAndRejoin tests the scenario where the leader crashes,
@@ -1672,87 +1675,87 @@ func TestCluster_LeaderRebootAndRejoin_Integration(t *testing.T) {
 	err = cluster3.WaitForLeader(ctx2)
 	assert.NilError(t, err, "cluster3 failed to see leader")
 
+	clusters := []Cluster{cluster1, cluster2, cluster3}
+
 	// Set data before leader crash
-	err = cluster1.Set("before-leader-crash", []byte("original-value"), 5*time.Second)
+	err = onLeader(t, clusters, func(leader Cluster) error {
+		return leader.Set("before-leader-crash", []byte("original-value"), 5*time.Second)
+	})
 	assert.NilError(t, err, "failed to set before-leader-crash")
-	time.Sleep(500 * time.Millisecond)
-
-	t.Log("Crashing original leader (cluster1)...")
-
-	// Crash the leader
-	err = cluster1.Close()
-	assert.NilError(t, err, "failed to close cluster1")
-
-	// Wait for new leader
-	ctx3, cancel3 := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel3()
-	err = cluster2.WaitForLeader(ctx3)
-	assert.NilError(t, err, "cluster2 must find new leader")
-	err = cluster3.WaitForLeader(ctx3)
-	assert.NilError(t, err, "cluster3 must find new leader")
-
-	// Identify the new leader
-	newLeader, err := cluster2.Leader()
-	assert.NilError(t, err, "failed to get new leader")
-	assert.Assert(t, newLeader != node1.ID(), "new leader must not be crashed node")
-
-	// Set data while old leader is down
-	var newLeaderCluster Cluster
-	if cluster2.IsLeader() {
-		newLeaderCluster = cluster2
-	} else {
-		newLeaderCluster = cluster3
+	for i, cl := range clusters {
+		err = waitForKeyValue(t, cl, "before-leader-crash", "original-value", 5*time.Second)
+		assert.NilError(t, err, "cluster%d: before-leader-crash not replicated in time", i+1)
 	}
 
-	err = newLeaderCluster.Set("during-leader-down", []byte("new-leader-value"), 5*time.Second)
-	assert.NilError(t, err, "new leader failed to set data")
-	time.Sleep(500 * time.Millisecond)
+	// Crash whichever member leads now
+	crashed := leaderOf(t, clusters...)
+	survivors := without(clusters, crashed)
+	t.Logf("Crashing original leader (%s)...", idOf(crashed))
 
-	t.Log("Rebooting old leader (cluster1)...")
+	err = crashed.Close()
+	assert.NilError(t, err, "failed to close the leader")
+
+	// Identify the new leader the survivors agree on
+	newLeader := leaderOf(t, survivors...)
+	assert.Assert(t, idOf(newLeader) != idOf(crashed), "new leader must not be crashed node")
+
+	// Set data while old leader is down
+	err = onLeader(t, survivors, func(leader Cluster) error {
+		return leader.Set("during-leader-down", []byte("new-leader-value"), 5*time.Second)
+	})
+	assert.NilError(t, err, "new leader failed to set data")
+	for _, cl := range survivors {
+		err = waitForKeyValue(t, cl, "during-leader-down", "new-leader-value", 5*time.Second)
+		assert.NilError(t, err, "%s: during-leader-down not replicated in time", idOf(cl))
+	}
+
+	t.Logf("Rebooting old leader (%s)...", idOf(crashed))
 
 	// Old leader comes back
-	cluster1b, err := New(node1, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
-	assert.NilError(t, err, "failed to recreate cluster1")
-	defer cluster1b.Close()
+	rejoined, err := New(nodeOf(crashed), namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
+	assert.NilError(t, err, "failed to recreate the old leader")
+	defer rejoined.Close()
 
 	// Wait for old leader to rejoin
-	err = waitForMember(t, newLeaderCluster, node1.ID(), raft.Voter, 20*time.Second)
-	assert.NilError(t, err, "node1 failed to rejoin after reboot")
+	err = waitForMember(t, survivors[0], idOf(crashed), raft.Voter, 20*time.Second)
+	assert.NilError(t, err, "the old leader failed to rejoin after reboot")
 
 	ctx4, cancel4 := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel4()
-	err = cluster1b.WaitForLeader(ctx4)
-	assert.NilError(t, err, "cluster1b failed to see leader")
+	err = rejoined.WaitForLeader(ctx4)
+	assert.NilError(t, err, "the old leader failed to see leader")
 
-	// Old leader must now be a follower
-	assert.Assert(t, !cluster1b.IsLeader(), "old leader must rejoin as follower")
-
-	// Verify old leader agrees on current leader
-	leader1b, err := cluster1b.Leader()
-	assert.NilError(t, err, "cluster1b failed to get leader")
-	assert.Equal(t, leader1b, newLeader, "old leader must agree on current leader")
+	// The old leader rejoins the group the survivors formed rather than one
+	// of its own: it holds all three members and names the leader they name.
+	// Raft does not keep it a follower after that, since once it has caught
+	// up it may win a later election like any member.
+	all := append(survivors, rejoined)
+	members, err := rejoined.Members()
+	assert.NilError(t, err, "the old leader failed to list members")
+	assert.Equal(t, len(members), 3, "the old leader must rejoin the survivors' group")
+	leaderOf(t, all...)
 
 	// Old leader must have all data, once replication catches up
-	err = waitForKeyValue(t, cluster1b, "before-leader-crash", "original-value", 5*time.Second)
+	err = waitForKeyValue(t, rejoined, "before-leader-crash", "original-value", 5*time.Second)
 	assert.NilError(t, err, "before-leader-crash not replicated in time")
-	val, found := cluster1b.Get("before-leader-crash")
+	val, found := rejoined.Get("before-leader-crash")
 	assert.Assert(t, found, "old leader must have data from before crash")
 	assert.Equal(t, string(val), "original-value")
 
-	err = waitForKeyValue(t, cluster1b, "during-leader-down", "new-leader-value", 5*time.Second)
+	err = waitForKeyValue(t, rejoined, "during-leader-down", "new-leader-value", 5*time.Second)
 	assert.NilError(t, err, "during-leader-down not replicated in time")
-	val, found = cluster1b.Get("during-leader-down")
+	val, found = rejoined.Get("during-leader-down")
 	assert.Assert(t, found, "old leader must have data set during its downtime")
 	assert.Equal(t, string(val), "new-leader-value")
 
 	// Set data after old leader rejoins
-	err = newLeaderCluster.Set("after-rejoin", []byte("post-rejoin-value"), 5*time.Second)
+	err = onLeader(t, all, func(leader Cluster) error {
+		return leader.Set("after-rejoin", []byte("post-rejoin-value"), 5*time.Second)
+	})
 	assert.NilError(t, err, "failed to set after-rejoin")
-	time.Sleep(500 * time.Millisecond)
 
-	val, found = cluster1b.Get("after-rejoin")
-	assert.Assert(t, found, "old leader must receive new data after rejoin")
-	assert.Equal(t, string(val), "post-rejoin-value")
+	err = waitForKeyValue(t, rejoined, "after-rejoin", "post-rejoin-value", 5*time.Second)
+	assert.NilError(t, err, "old leader must receive new data after rejoin")
 
-	t.Logf("Leader reboot and rejoin test passed. New leader: %s, Old leader rejoined as follower: %s", newLeader, node1.ID())
+	t.Logf("Leader reboot and rejoin test passed. New leader: %s, old leader rejoined: %s", idOf(newLeader), idOf(crashed))
 }

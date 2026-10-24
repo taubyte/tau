@@ -16,6 +16,147 @@ import (
 	"gotest.tools/v3/assert"
 )
 
+// throughLeader is a group as one client that always writes through whichever
+// member leads sees it, which is how a queue is used across a change of
+// leader. A batch refused with ErrNotLeader applied nothing and is made again
+// on the next leader. One whose leader lost its lease mid-commit
+// (raft.ErrLeadershipLost) may still commit under the next leader, so it is
+// settled there, behind a barrier, by whether its writes are all present; a
+// queue's pop is not safe to make twice. A read is answered by the member that
+// last applied this client's batch or barrier, which holds every write made
+// through it.
+type throughLeader struct {
+	Cluster
+
+	members []Cluster
+
+	mu      sync.Mutex
+	current Cluster
+}
+
+func newThroughLeader(t *testing.T, members ...Cluster) *throughLeader {
+	return &throughLeader{members: members, current: leaderOf(t, members...)}
+}
+
+func (g *throughLeader) leader() (Cluster, error) {
+	deadline := time.Now().Add(leaderWait)
+	for {
+		if leader := agreedLeader(g.members); leader != nil {
+			return leader, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("no leader within %v", leaderWait)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func (g *throughLeader) reader() Cluster {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.current
+}
+
+func (g *throughLeader) readFrom(cl Cluster) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.current = cl
+}
+
+func (g *throughLeader) IsLeader() bool {
+	_, err := g.leader()
+	return err == nil
+}
+
+func (g *throughLeader) Barrier(timeout time.Duration) error {
+	deadline := time.Now().Add(leaderWait)
+	for {
+		leader, err := g.leader()
+		if err != nil {
+			return err
+		}
+		err = leader.Barrier(timeout)
+		if err == nil {
+			g.readFrom(leader)
+			return nil
+		}
+		if !leadershipMoved(err) || time.Now().After(deadline) {
+			return err
+		}
+	}
+}
+
+func (g *throughLeader) Batch(ops []BatchOp, timeout time.Duration) error {
+	deadline := time.Now().Add(leaderWait)
+	for {
+		leader, err := g.leader()
+		if err != nil {
+			return err
+		}
+		err = leader.Batch(ops, timeout)
+		switch {
+		case err == nil:
+			g.readFrom(leader)
+			return nil
+		case errors.Is(err, raft.ErrLeadershipLost):
+			if err := g.Barrier(timeout); err != nil {
+				return err
+			}
+			if g.landed(ops) {
+				return nil
+			}
+		case !errors.Is(err, ErrNotLeader):
+			return err
+		}
+		if time.Now().After(deadline) {
+			return err
+		}
+	}
+}
+
+// landed reports whether every write of ops is in the reader's state.
+func (g *throughLeader) landed(ops []BatchOp) bool {
+	cl := g.reader()
+	for _, op := range ops {
+		switch {
+		case op.Set != nil:
+			value, found := cl.Get(op.Set.Key)
+			if !found || !bytes.Equal(value, op.Set.Value) {
+				return false
+			}
+		case op.Delete != nil:
+			if _, found := cl.Get(op.Delete.Key); found {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (g *throughLeader) Get(key string) ([]byte, bool) { return g.reader().Get(key) }
+
+func (g *throughLeader) Keys(prefix string) []string { return g.reader().Keys(prefix) }
+
+// waitForLen polls q.Len() until it is want, or the timeout elapses.
+func waitForLen(t *testing.T, q Queue, want int, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(t.Context(), timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("Len() = %d, want %d: %w", q.Len(), want, ctx.Err())
+		case <-ticker.C:
+			if q.Len() == want {
+				return nil
+			}
+		}
+	}
+}
+
 func TestQueue_Integration_SingleNode(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping queue integration test in short mode")
@@ -91,29 +232,26 @@ func TestQueue_Integration_MultiNode_Replication(t *testing.T) {
 	err = cluster2.WaitForLeader(ctx2)
 	assert.NilError(t, err, "cluster2 failed to wait for leader")
 
-	qu1 := NewQueue(cluster1, "repl")
-	defer qu1.Close()
+	// Written through whichever member leads, read on node2's own state
+	qu := NewQueue(newThroughLeader(t, cluster1, cluster2), "repl")
+	defer qu.Close()
 	qu2 := NewQueue(cluster2, "repl")
 	defer qu2.Close()
 
-	err = qu1.Push("repl-1", []byte("replicated-item"), 5*time.Second)
+	err = qu.Push("repl-1", []byte("replicated-item"), 5*time.Second)
 	assert.NilError(t, err, "Push on leader failed")
 
-	time.Sleep(500 * time.Millisecond)
-
-	assert.Equal(t, qu2.Len(), 1, "follower Len() should be 1 after replication")
+	assert.NilError(t, waitForLen(t, qu2, 1, 5*time.Second), "node2 Len() should be 1 after replication")
 	_, peekData, ok := qu2.Peek()
-	assert.Assert(t, ok, "follower Peek() should succeed")
-	assert.Assert(t, bytes.Equal(peekData, []byte("replicated-item")), "follower Peek data mismatch")
+	assert.Assert(t, ok, "node2 Peek() should succeed")
+	assert.Assert(t, bytes.Equal(peekData, []byte("replicated-item")), "node2 Peek data mismatch")
 
-	gotID, gotData, err := qu1.Pop(5 * time.Second)
+	gotID, gotData, err := qu.Pop(5 * time.Second)
 	assert.NilError(t, err, "Pop failed")
 	assert.Equal(t, gotID, "repl-1")
 	assert.Assert(t, bytes.Equal(gotData, []byte("replicated-item")), "Pop data mismatch")
 
-	time.Sleep(500 * time.Millisecond)
-
-	assert.Equal(t, qu2.Len(), 0, "follower Len() should be 0 after pop")
+	assert.NilError(t, waitForLen(t, qu2, 0, 5*time.Second), "node2 Len() should be 0 after pop")
 }
 
 func TestQueue_Integration_MultiNode_PopEmpty(t *testing.T) {
@@ -152,7 +290,7 @@ func TestQueue_Integration_MultiNode_PopEmpty(t *testing.T) {
 	err = cluster2.WaitForLeader(ctx2)
 	assert.NilError(t, err, "cluster2 failed to wait for leader")
 
-	qu := NewQueue(cluster1, "empty-test")
+	qu := NewQueue(newThroughLeader(t, cluster1, cluster2), "empty-test")
 	defer qu.Close()
 
 	_, _, err = qu.Pop(5 * time.Second)
@@ -196,7 +334,7 @@ func TestQueue_Integration_MultiNode_Order(t *testing.T) {
 	err = cluster2.WaitForLeader(ctx2)
 	assert.NilError(t, err, "cluster2 failed to wait for leader")
 
-	qu := NewQueue(cluster1, "order-test")
+	qu := NewQueue(newThroughLeader(t, cluster1, cluster2), "order-test")
 	defer qu.Close()
 
 	payloads := [][]byte{[]byte("first"), []byte("second"), []byte("third")}
@@ -257,29 +395,28 @@ func TestQueue_Integration_MultiNode_ManyItems(t *testing.T) {
 	assert.NilError(t, err, "cluster2 failed to wait for leader")
 
 	const n = 15
-	qu1 := NewQueue(cluster1, "many-test")
-	defer qu1.Close()
+	// Written through whichever member leads, read on node2's own state
+	qu := NewQueue(newThroughLeader(t, cluster1, cluster2), "many-test")
+	defer qu.Close()
 	qu2 := NewQueue(cluster2, "many-test")
 	defer qu2.Close()
 
 	for i := range n {
-		err := qu1.Push(fmt.Sprintf("many-%02d", i), []byte{byte(i)}, 5*time.Second)
+		err := qu.Push(fmt.Sprintf("many-%02d", i), []byte{byte(i)}, 5*time.Second)
 		assert.NilError(t, err, "Push %d failed", i)
 	}
 
-	time.Sleep(500 * time.Millisecond)
-	assert.Equal(t, qu2.Len(), n, "follower Len() should be %d after replication", n)
+	assert.NilError(t, waitForLen(t, qu2, n, 5*time.Second), "node2 Len() should be %d after replication", n)
 
 	for i := range n {
-		gotID, gotData, err := qu1.Pop(5 * time.Second)
+		gotID, gotData, err := qu.Pop(5 * time.Second)
 		assert.NilError(t, err, "Pop %d failed", i)
 		assert.Equal(t, gotID, fmt.Sprintf("many-%02d", i), "Pop %d id mismatch", i)
 		assert.Assert(t, bytes.Equal(gotData, []byte{byte(i)}), "Pop %d data mismatch", i)
 	}
 
-	time.Sleep(500 * time.Millisecond)
-	assert.Equal(t, qu2.Len(), 0, "follower Len() should be 0 after all popped")
-	_, _, err = qu1.Pop(5 * time.Second)
+	assert.NilError(t, waitForLen(t, qu2, 0, 5*time.Second), "node2 Len() should be 0 after all popped")
+	_, _, err = qu.Pop(5 * time.Second)
 	assert.Assert(t, errors.Is(err, ErrQueueEmpty), "queue should be empty")
 }
 
@@ -322,7 +459,7 @@ func TestQueue_Integration_MultiNode_MultipleConsumers(t *testing.T) {
 	const numItems = 15
 	const numConsumers = 4
 
-	qu := NewQueue(cluster1, "multiconsumer")
+	qu := NewQueue(newThroughLeader(t, cluster1, cluster2), "multiconsumer")
 	defer qu.Close()
 
 	for i := range numItems {

@@ -197,6 +197,21 @@ func leadershipMoved(err error) bool {
 	return errors.Is(err, ErrNotLeader) || errors.Is(err, raft.ErrLeadershipLost)
 }
 
+// onLeader runs write on whichever of clusters leads, and again on the next
+// leader while leadership moves under it. A write lost mid-commit may land
+// twice, so this is for writes that leave the same state however often they
+// are made.
+func onLeader(t testing.TB, clusters []Cluster, write func(Cluster) error) error {
+	t.Helper()
+	deadline := time.Now().Add(leaderWait)
+	for {
+		err := write(leaderOf(t, clusters...))
+		if !leadershipMoved(err) || time.Now().After(deadline) {
+			return err
+		}
+	}
+}
+
 // joinedPair is a group of two on linked mock nodes: a bootstrapped it and b
 // joined. Each runs on the store wrap makes of its node's own.
 func joinedPair(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batching) (a, b Cluster) {
