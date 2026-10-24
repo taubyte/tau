@@ -263,9 +263,14 @@ func mountGrant(handle string, settings map[string]string) invoke.Grant {
 // holding is a volume backing over a fresh root, a store and a row.
 func holding(t *testing.T) (*volume.Volumes, *blobs, *rows, *said) {
 	t.Helper()
+	return holdingAt(t, t.TempDir())
+}
+
+func holdingAt(t *testing.T, root string) (*volume.Volumes, *blobs, *rows, *said) {
+	t.Helper()
 
 	store, index, log := newBlobs(), newRows(), &said{}
-	v, err := volume.New(t.TempDir(), store, &opening{rows: index}, log)
+	v, err := volume.New(root, store, &opening{rows: index}, log)
 	require.NoError(t, err)
 	t.Cleanup(func() { v.Close() })
 	return v, store, index, log
@@ -1345,7 +1350,12 @@ func TestAnArchiveThatCannotBeUnpackedIsRefused(t *testing.T) {
 // What it is NOT is silent: the pass says so with the handle, every interval,
 // which is the same loudness the quota gets and for the same reason.
 func TestAVolumeHoldingASocketIsNotCheckpointed(t *testing.T) {
-	v, _, index, log := holding(t)
+	// A socket's path holds 107 bytes, and this test's t.TempDir and the
+	// volume's own layout already take 100 of them below TMPDIR.
+	root, err := os.MkdirTemp("", "v")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(root) })
+	v, _, index, log := holdingAt(t, root)
 	handle := "shop/prod/QmData"
 
 	dir, err := v.Mount(t.Context(), mountGrant(handle, nil))
