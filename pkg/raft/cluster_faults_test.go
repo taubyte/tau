@@ -4,16 +4,25 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"fmt"
+	"net/http"
 	"os"
+	"path"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
+	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/stretchr/testify/require"
+	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/rpc"
 	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2/raftv2connect"
 )
 
 // strangerID is the id of a peer no group has heard of.
@@ -126,8 +135,9 @@ func TestCluster_AMemberLeftAloneInAPairAcknowledgesNoWrite(t *testing.T) {
 	require.False(t, found, "a write nobody acknowledged was applied")
 }
 
-// TestNew_RefusesWhatItCannotRun: New fails, and returns no cluster, for an
-// option it cannot honour and for a configuration raft will not start with.
+// TestNew_RefusesWhatItCannotRun: New fails, and returns no cluster and leaves
+// nothing of itself on the node, for an option it cannot honour and for a
+// configuration raft will not start with.
 func TestNew_RefusesWhatItCannotRun(t *testing.T) {
 	notADir := filepath.Join(t.TempDir(), "file")
 	require.NoError(t, os.WriteFile(notADir, []byte("x"), 0o644))
@@ -148,11 +158,147 @@ func TestNew_RefusesWhatItCannotRun(t *testing.T) {
 		{"a lease longer than the heartbeat", WithTimeouts(badTimeouts), "failed to create raft"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cl, err := New(newMockNode(t), "new-refuses", WithForceBootstrap(), WithSnapshotRoot(t.TempDir()), tc.opt)
+			node := newMockNode(t)
+			cl, err := New(node, "new-refuses", WithForceBootstrap(), WithSnapshotRoot(t.TempDir()), tc.opt)
 			require.ErrorContains(t, err, tc.says)
 			require.Nil(t, cl)
+			require.Empty(t, groupProtocols(node, "new-refuses"), "the refused New left its transport behind")
 		})
 	}
+}
+
+// groupProtocols is which of namespace's two protocols node answers on.
+func groupProtocols(node taupeer.Node, namespace string) []protocol.ID {
+	var served []protocol.ID
+	for _, id := range node.Peer().Mux().Protocols() {
+		if id == protocol.ID(Protocol(namespace)) || id == protocol.ID(TransportProtocol(namespace)) {
+			served = append(served, id)
+		}
+	}
+	return served
+}
+
+// writesSeen counts the writes made through it.
+type writesSeen struct {
+	ds.Batching
+	writes atomic.Int32
+}
+
+func (s *writesSeen) Put(ctx context.Context, key ds.Key, value []byte) error {
+	s.writes.Add(1)
+	return s.Batching.Put(ctx, key, value)
+}
+
+func (s *writesSeen) Delete(ctx context.Context, key ds.Key) error {
+	s.writes.Add(1)
+	return s.Batching.Delete(ctx, key)
+}
+
+func (s *writesSeen) Batch(ctx context.Context) (ds.Batch, error) {
+	s.writes.Add(1)
+	return s.Batching.Batch(ctx)
+}
+
+// TestNew_ANamespaceTheNodeAlreadyRunsIsRefused: gostream.Listen replaces a
+// handler already on its protocol, so a second New on a node already running
+// the namespace took the group's transport and started a second raft on the
+// group's store, then failed at the stream service with that raft running. The
+// transport refuses the protocol now, before anything is built, and the group
+// keeps it: a member that never dialled it reaches it for a vote, and for the
+// writes it then leads.
+func TestNew_ANamespaceTheNodeAlreadyRunsIsRefused(t *testing.T) {
+	const namespace = "namespace-already-run"
+	// A leadership transfer has one election timeout to finish in.
+	timeouts := TimeoutConfig{
+		HeartbeatTimeout:   time.Second,
+		ElectionTimeout:    time.Second,
+		CommitTimeout:      50 * time.Millisecond,
+		LeaderLeaseTimeout: 500 * time.Millisecond,
+		SnapshotInterval:   time.Minute,
+		SnapshotThreshold:  1000,
+	}
+	nodeA, nodeB := newMockNode(t), newMockNode(t)
+	require.NoError(t, taupeer.LinkAllPeers())
+
+	a, err := New(nodeA, namespace, WithTimeouts(timeouts), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	defer a.Close()
+	waitLeader(t, a, 10*time.Second)
+
+	store := &writesSeen{Batching: nodeA.Store()}
+	second, err := New(storeNode{Node: nodeA, store: store}, namespace,
+		WithTimeouts(timeouts), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	require.ErrorIs(t, err, rpc.ErrProtocolTaken)
+	require.Nil(t, second)
+	require.Zero(t, store.writes.Load(), "a second raft ran on the group's store")
+
+	require.True(t, a.IsLeader())
+	require.NoError(t, a.Set("before", []byte("v"), time.Second))
+	value, found := a.Get("before")
+	require.True(t, found)
+	require.Equal(t, []byte("v"), value)
+
+	require.NoError(t, nodeB.Peer().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Peer().Addrs()}))
+	b, err := New(nodeB, namespace, WithTimeouts(timeouts), WithBootstrapTimeout(5*time.Second), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	defer b.Close()
+	// a commits b's joining before b has heard of it, and a b that has not is
+	// sent its turn to lead with nobody to ask for a vote.
+	require.Eventually(t, func() bool {
+		ofA, errA := a.Members()
+		ofB, errB := b.Members()
+		return errA == nil && errB == nil && len(ofA) == 2 && len(ofB) == 2
+	}, 10*time.Second, 20*time.Millisecond, "b never joined a")
+
+	require.NoError(t, a.TransferLeadership())
+	require.Eventually(t, b.IsLeader, 10*time.Second, 20*time.Millisecond, "b never reached the group's transport for a's vote")
+	require.NoError(t, b.Set("after", []byte("v"), time.Second))
+	require.Eventually(t, func() bool {
+		value, found := a.Get("after")
+		return found && string(value) == "v"
+	}, 10*time.Second, 20*time.Millisecond, "a write b leads never reached a")
+}
+
+// TestNew_AFailedNewLeavesNothingRunning: initialize returned at the first step
+// that failed and left running what the steps before it had built: the
+// transport, a raft on the node's store, the peer tracker, the client and the
+// stream service. It takes all of them down now, so the node answers neither
+// of the group's protocols, and the group starts once what stopped it is gone.
+func TestNew_AFailedNewLeavesNothingRunning(t *testing.T) {
+	t.Run("a stream protocol another service holds", func(t *testing.T) {
+		const namespace = "new-stream-protocol-taken"
+		node := newMockNode(t)
+		route, handler := raftv2connect.NewRaftServiceHandler(raftv2connect.UnimplementedRaftServiceHandler{})
+		mux := http.NewServeMux()
+		mux.Handle(route, handler)
+		other, err := rpc.Listen(t.Context(), node.Peer(), protocol.ID(Protocol(namespace)), mux)
+		require.NoError(t, err)
+
+		cl, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		require.ErrorIs(t, err, rpc.ErrProtocolTaken)
+		require.Nil(t, cl)
+		require.Equal(t, []protocol.ID{protocol.ID(Protocol(namespace))}, groupProtocols(node, namespace),
+			"the refused New left its transport behind")
+
+		require.NoError(t, other.Close())
+		cl, err = New(node, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		require.NoError(t, err)
+		defer cl.Close()
+		waitLeader(t, cl, 5*time.Second)
+	})
+
+	t.Run("a bootstrap the store refuses", func(t *testing.T) {
+		const namespace = "new-bootstrap-refused"
+		store := newFaultStore()
+		store.failPut(fmt.Sprintf("%s/%020d", path.Join(RaftStoragePrefix, namespace, "log"), 1), errNoSpace)
+		node := newMockNode(t)
+
+		cl, err := New(storeNode{Node: node, store: store}, namespace,
+			WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		require.ErrorContains(t, err, errNoSpace.Error())
+		require.Nil(t, cl)
+		require.Empty(t, groupProtocols(node, namespace), "the refused New left its stream service or transport behind")
+	})
 }
 
 // TestCluster_CloseReleasesAWaitForALeader: a member that removed itself hears

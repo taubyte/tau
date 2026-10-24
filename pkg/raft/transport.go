@@ -18,6 +18,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
+	"github.com/taubyte/tau/p2p/rpc"
 )
 
 var raftTransportLogger = logging.Logger("raft-transport")
@@ -150,6 +151,12 @@ type namespaceStreamLayer struct {
 
 func newNamespaceStreamLayer(h host.Host, namespace string, encryptionCipher cipher.AEAD) (*namespaceStreamLayer, error) {
 	protocolID := protocol.ID(TransportProtocol(namespace))
+
+	// gostream.Listen replaces a handler already on the protocol, which would
+	// take the transport from a group this node already runs.
+	if slices.Contains(h.Mux().Protocols(), protocolID) {
+		return nil, fmt.Errorf("listening on %s: %w", protocolID, rpc.ErrProtocolTaken)
+	}
 
 	listener, err := gostream.Listen(h, protocolID)
 	if err != nil {

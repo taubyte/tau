@@ -82,25 +82,29 @@ func New(node taupeer.Node, namespace string, opts ...Option) (Cluster, error) {
 		bootstrapThreshold: 0.8,
 	}
 
-	c.ctx, c.cancel = context.WithCancel(node.Context())
-
 	for _, opt := range opts {
 		if err := opt(c); err != nil {
 			return nil, err
 		}
 	}
 
+	c.ctx, c.cancel = context.WithCancel(node.Context())
+
 	clusterLogger.Infof("[%s] creating raft cluster for namespace %s (bootstrap_timeout=%v, threshold=%.1f%%)",
 		node.ID().ShortString(), namespace, c.bootstrapTimeout, c.bootstrapThreshold*100)
 
 	if err := c.initialize(); err != nil {
+		c.cancel()
 		return nil, err
 	}
 
 	return c, nil
 }
 
-func (c *cluster) initialize() error {
+// initialize builds the group's member, and takes down what it built when a
+// step fails: New returns no cluster to close, and a yield that rebuilds has
+// already taken down the one it replaces.
+func (c *cluster) initialize() (err error) {
 	store := c.node.Store()
 	storagePrefix := path.Join(RaftStoragePrefix, c.namespace)
 
@@ -113,7 +117,6 @@ func (c *cluster) initialize() error {
 	if snapDir == "" {
 		snapDir = filepath.Join("/tmp", "tau-raft-snapshots", strings.ReplaceAll(c.namespace, "/", "_"))
 	}
-	var err error
 	c.snaps, err = newSnapshotStore(snapDir, defaultRetainSnapshots)
 	if err != nil {
 		return fmt.Errorf("failed to create snapshot store: %w", err)
@@ -135,10 +138,17 @@ func (c *cluster) initialize() error {
 		timeouts.CommitTimeout, timeouts.LeaderLeaseTimeout,
 		timeouts.SnapshotInterval, timeouts.SnapshotThreshold)
 
-	c.raft, err = raft.NewRaft(raftConfig, c.fsm, c.logStore, c.stable, c.snaps, transport)
+	r, err := raft.NewRaft(raftConfig, c.fsm, c.logStore, c.stable, c.snaps, transport)
 	if err != nil {
+		transport.Close()
 		return fmt.Errorf("failed to create raft: %w", err)
 	}
+	c.raft = r
+	defer func() {
+		if err != nil {
+			c.takeDown()
+		}
+	}()
 
 	c.raftClient, err = newInternalClient(c.node, c.namespace, c.encryptionCipher)
 	if err != nil {
@@ -397,7 +407,7 @@ func (c *cluster) getTimeoutConfig() TimeoutConfig {
 // regardless. No effect on production (default HeartbeatTimeout is 15s).
 const minTransportTimeout = time.Second
 
-func (c *cluster) createTransport() (raft.Transport, error) {
+func (c *cluster) createTransport() (*raft.NetworkTransport, error) {
 	timeout := max(c.getTimeoutConfig().HeartbeatTimeout, minTransportTimeout)
 	transport, err := newNamespaceTransport(c.node.Peer(), c.namespace, timeout, c.encryptionCipher)
 	if err != nil {
