@@ -356,15 +356,19 @@ func TestASlowAuthorStampsTheFleetTimeItHeard(t *testing.T) {
 	st := newSimTime()
 	a, b, slow := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "slow", -simRetention/2)
 	put(t, a.r, "/k", "v")
+	// Its own value: what the others write is ahead of its clock, and waits.
+	put(t, slow.r, "/s", "v")
 	st.exchange(t, a, b, slow)
 	slow.reopen(t)
 	st.exchange(t, a, b, slow)
 	if slow.rejoining() {
 		t.Fatal("setup: slow should have rejoined")
 	}
-	head := del(t, slow.r, "/k")
-	at := deltaAt(t, slow, head).GetAt()
-	if now := st.ms(); at+durationMillis(simS) < now {
-		t.Fatalf("a slow author stamped its removal %dms behind the fleet's time", now-at)
+	d := deltaAt(t, slow, del(t, slow.r, "/s"))
+	if dotFromPB(d.GetDot()).replica != slow.incarnation() || len(d.GetTombstones()) == 0 {
+		t.Fatal("setup: slow's removal wrote no block")
+	}
+	if now := st.ms(); d.GetAt()+durationMillis(simS) < now {
+		t.Fatalf("a slow author stamped its removal %dms behind the fleet's time", now-d.GetAt())
 	}
 }
