@@ -116,6 +116,7 @@ func (s *simTime) replica(t testing.TB, name string, offset time.Duration) *simR
 	t.Helper()
 	sr := &simReplica{name: name, store: dssync.MutexWrap(ds.NewMapDatastore()), dag: newFetchThrough(), out: &outbox{}, offset: offset, st: s}
 	sr.opts = s.options(offset)
+	sr.opts.ReplicaID = []byte(name)
 	sr.open(t)
 	return sr
 }

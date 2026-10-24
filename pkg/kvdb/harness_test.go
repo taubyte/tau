@@ -220,6 +220,46 @@ func hear(t testing.TB, dst, src *Datastore) {
 	dst.handleBroadcast(context.Background(), msg)
 }
 
+// lastDot is the dot of r's last write.
+func lastDot(r *Datastore) dot {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return dot{replica: r.replica, counter: r.counter}
+}
+
+// waitCovered waits until every replica covers every dot.
+//
+// Replication runs on the replicas' own goroutines: a broadcast is heard, a
+// walk fetches and merges, and how long that takes is the machine's business,
+// longer under load. The tests that use this assert what replication converges
+// to, so they wait for the merge itself, woken by every change of a replica's
+// context, and give up only at the test's own deadline. A fixed sleep in its
+// place asserted a latency nothing promises, and failed under load.
+func waitCovered(t *testing.T, replicas []*Datastore, dots ...dot) {
+	t.Helper()
+	var deadline <-chan time.Time
+	if dl, ok := t.Deadline(); ok {
+		timer := time.NewTimer(time.Until(dl) * 9 / 10)
+		defer timer.Stop()
+		deadline = timer.C
+	}
+	for i, r := range replicas {
+		for _, d := range dots {
+			for {
+				changed := r.contextChanged()
+				if r.covered(d) {
+					break
+				}
+				select {
+				case <-changed:
+				case <-deadline:
+					t.Fatalf("replica %d never covered %s", i, d)
+				}
+			}
+		}
+	}
+}
+
 // syncHeadsLogged is syncReplicaHeads for a source whose heads may name a
 // block nobody holds: the failure is logged and the state is what is judged.
 func syncHeadsLogged(t testing.TB, src, dst *Datastore) {

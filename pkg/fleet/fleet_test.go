@@ -2,6 +2,7 @@ package fleet_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -128,4 +129,26 @@ func TestAMalformedStorageBlockIsRefusedAtDecode(t *testing.T) {
 	back, err := fleet.Decode([]byte(`{"storage":{"barrier":5}}`))
 	require.NoError(t, err)
 	require.Equal(t, 5, back.Storage.Barrier)
+}
+
+// TestRetentionIsWrittenAsAnOperatorWritesIt: T round-trips as a duration
+// string, a cloud that says nothing says zero, and a negative or unreadable
+// one is refused like any corrupt document.
+func TestRetentionIsWrittenAsAnOperatorWritesIt(t *testing.T) {
+	raw, err := fleet.Encode(fleet.Fleet{Retention: fleet.Duration(720 * time.Hour)})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"retention":"720h0m0s"}`, string(raw))
+
+	back, err := fleet.Decode([]byte(`{"retention":"36h"}`))
+	require.NoError(t, err)
+	require.Equal(t, 36*time.Hour, time.Duration(back.Retention))
+
+	none, err := fleet.Encode(fleet.Fleet{Replication: 1})
+	require.NoError(t, err)
+	require.NotContains(t, string(none), "retention")
+
+	for _, bad := range []string{`{"retention":"-1h"}`, `{"retention":"soon"}`, `{"retention":3600}`} {
+		_, err := fleet.Decode([]byte(bad))
+		require.ErrorIs(t, err, fleet.ErrMalformed, bad)
+	}
 }

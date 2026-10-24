@@ -46,14 +46,40 @@ type factory struct {
 	dbs     map[string]*kvDatabase
 	dbsLock sync.RWMutex
 	node    peer.Node
+
+	// retention is the T every database opened here writes under, 0 for
+	// the default; fixed is set when the caller chose it, so a bad one
+	// refuses to open rather than falls back.
+	retention time.Duration
+	fixed     bool
 }
 
 var slogger = logging.Logger("kvdb")
 
-func New(node peer.Node) kvdb.Factory {
+// A FactoryOption configures a factory.
+type FactoryOption func(*factory)
+
+// WithRetention fixes T for every database the factory opens.
+func WithRetention(t time.Duration) FactoryOption {
+	return func(f *factory) { f.retention, f.fixed = t, true }
+}
+
+// WithFleet keeps T at what the cloud's fleet document says, read now and
+// then every interval for as long as the node runs.
+func WithFleet(src FleetSource, every time.Duration) FactoryOption {
+	return func(f *factory) {
+		f.applyFleet(f.node.Context(), src)
+		go f.followFleet(f.node.Context(), src, every)
+	}
+}
+
+func New(node peer.Node, options ...FactoryOption) kvdb.Factory {
 	f := &factory{
 		dbs:  make(map[string]*kvDatabase),
 		node: node,
+	}
+	for _, o := range options {
+		o(f)
 	}
 
 	if slogger.Level() <= zapcore.DebugLevel {
@@ -119,6 +145,16 @@ func (f *factory) New(logger logging.StandardLogger, path string, rebroadcastInt
 	}
 
 	opts.RebroadcastInterval = time.Duration(rebroadcastIntervalSec * int(time.Second))
+	opts.DeliveryBound = max(opts.DeliveryBound, opts.DAGSyncerTimeout+opts.RebroadcastInterval)
+	if f.retention != 0 {
+		if err := opts.checkRetention(f.retention); err == nil || f.fixed {
+			opts.Retention = f.retention
+		} else {
+			// Every node opening this database computes the same margin and
+			// refuses the same T, so falling back keeps them agreeing.
+			slogger.Errorf("the fleet's retention cannot hold %s: %s; keeping %s", path, err, opts.Retention)
+		}
+	}
 	// THE KEY AND HOW BIG THE VALUE WAS, NEVER THE VALUE. Every write a
 	// workload makes — a cache entry, a database row, an object's metadata —
 	// arrives here, so logging `v` puts guest data in the node's log the moment

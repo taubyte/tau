@@ -59,6 +59,17 @@ func readMillis(ctx context.Context, store ds.Datastore, k ds.Key) (uint64, erro
 	return n, nil
 }
 
+// lows: see Datastore.lows. none is "nothing there".
+type lows struct{ pending, block, own uint64 }
+
+const none = ^uint64(0)
+
+func (l *lows) lower(o lows) {
+	l.pending = min(l.pending, o.pending)
+	l.block = min(l.block, o.block)
+	l.own = min(l.own, o.own)
+}
+
 // times are the durations the rules read, in milliseconds.
 type times struct {
 	margin uint64 // m
@@ -77,10 +88,18 @@ func timesOf(opts *Options) times {
 }
 
 // dropClock is the time this replica forgets by. The caller holds store.mu.
+//
+// While rejoining it stands still at the fleet time heard before the gap: a
+// replica out of contact forgets nothing, so that what it vouches for, and
+// what another rejoining replica rebuilt from it holds, is judged by what it
+// knew when it left.
 func (store *Datastore) dropClock() uint64 {
 	now := store.clock()
-	if store.since == 0 {
+	switch {
+	case store.since == 0:
 		return now
+	case store.rejoining:
+		return min(now, store.since)
 	}
 	return min(now, store.since+durationMillis(store.times.up()-store.sinceUp))
 }
@@ -130,6 +149,14 @@ func (store *Datastore) expired(expires uint64, now uint64) bool {
 	return expires+store.times.margin <= now
 }
 
+var errAhead = errors.New("stamped ahead of this replica's clock")
+
+// ahead reports whether a block stamped at is further ahead of this
+// replica's clock than the skew.
+func (store *Datastore) ahead(at uint64) bool {
+	return at > store.clock()+store.times.skew
+}
+
 // stale reports whether a state as recent as since may hold an element this
 // replica could no longer refute: a removal written after since, less the
 // window, that it has forgotten or is about to. The caller holds store.mu.
@@ -147,25 +174,34 @@ func (store *Datastore) stale(ctx context.Context, since uint64) (bool, error) {
 			return true, nil
 		}
 	}
+	if store.lows.pending > now {
+		return false, nil
+	}
 	danger := false
+	low := none
 	err := scanStore(ctx, store.store, store.set.pendingPrefix(), func(k string, v []byte) error {
 		r, err := store.set.parsePending(k, v)
 		if err != nil {
 			return err
 		}
+		low = min(low, r.expires())
 		if r.at >= floor && r.expires() <= now {
 			danger = true
 		}
 		return nil
 	})
+	if err == nil {
+		store.lows.pending = low
+	}
 	return danger, err
 }
 
 // forget drops from a merge everything that has expired by now: the
-// incarnations it no longer needs to know, and the pending removals of dots
-// the context does not cover whose removal is no longer needed. A pending
-// removal of a dot its incarnation's entry is still waiting for is kept until
-// the dot is covered or the entry goes. It reports whether anything went.
+// incarnations it no longer needs to know, and the pending removals no longer
+// needed. A removal is needed as long as its target is, so once it expires its
+// target's delta has expired too and is never merged (T8.12): a removal kept
+// for a dot that never comes would be kept forever. It reports whether
+// anything went.
 func (m *merging) forget(ctx context.Context, now uint64) (bool, error) {
 	dropped := false
 	for r, k := range m.cc.inc {
@@ -175,23 +211,28 @@ func (m *merging) forget(ctx context.Context, now uint64) (bool, error) {
 			dropped = true
 		}
 	}
+	if !m.store.expired(m.store.lows.pending, now) {
+		return dropped, nil
+	}
 	pending, err := m.t.scan(ctx, m.store.set.pendingPrefix())
 	if err != nil {
 		return false, err
 	}
+	low := none
 	for _, e := range pending {
 		r, err := m.store.set.parsePending(e.key, e.value)
 		if err != nil {
 			return false, err
 		}
-		k := m.cc.inc[r.dot.replica]
-		waited := k != nil && r.dot.counter > k.spans[0].lo
-		if !waited && m.store.expired(r.expires(), now) {
+		if m.store.expired(r.expires(), now) {
 			m.t.del(ds.RawKey(e.key))
 			m.horizon = max(m.horizon, r.at)
 			dropped = true
+		} else {
+			low = min(low, r.expires())
 		}
 	}
+	m.scanned.pending = low
 	return dropped, nil
 }
 
@@ -211,6 +252,10 @@ func (store *Datastore) expireLocked(ctx context.Context) (bool, error) {
 // holds store.mu.
 func (store *Datastore) purgeAncient(ctx context.Context) (int, error) {
 	now := store.dropClock()
+	// A block expires a margin past its whole ttl, after its half-life.
+	if store.lows.block > now {
+		return 0, nil
+	}
 	var drop []cid.Cid
 	var keys []ds.Key
 	prefix := store.blocksPrefix()
@@ -251,17 +296,25 @@ func (store *Datastore) gone(l link, now uint64) bool {
 // any replica stops following links to it. The caller holds store.mu.
 func (store *Datastore) refreshDue(ctx context.Context) (bool, error) {
 	now := store.clock()
+	if store.lows.block > now {
+		return false, nil
+	}
 	due := false
+	low := none
 	err := scanStore(ctx, store.store, store.blocksPrefix(), func(_ string, v []byte) error {
 		b, err := decodeBlock(v)
 		if err != nil {
 			return err
 		}
+		low = min(low, b.at+b.ttl/2)
 		if b.kind != kindChunk && b.at+b.ttl/2 <= now {
 			due = true
 		}
 		return nil
 	})
+	if err == nil && !due {
+		store.lows.block = low
+	}
 	return due, err
 }
 
@@ -278,8 +331,12 @@ func (store *Datastore) maintain(ctx context.Context) error {
 	if err == nil {
 		_, err = store.purgeAncient(ctx)
 	}
+	if err == nil {
+		err = store.settleOwn(ctx)
+	}
 
-	due := dropped
+	due := dropped || store.compactDue
+	store.compactDue = false
 	if err == nil && !due {
 		due, err = store.refreshDue(ctx)
 	}

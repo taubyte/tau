@@ -195,15 +195,15 @@ func TestABlockFromTheFutureWaits(t *testing.T) {
 	put(t, fast.r, "/k", "v")
 	c.pull(t, fast)
 	c.wantValue(t, "/k", "<deleted>")
-	if !c.r.IsDirty(context.Background()) {
-		t.Fatal("a delayed block is not marked for repair")
+	if c.r.IsDirty(context.Background()) || countEntries(t, c.r, c.r.retryPrefix()) != 0 {
+		t.Fatal("a block from the future left a mark: a clock far ahead would fill others' stores")
 	}
+	// Fetched anyway, as a walk through another replica's links would.
+	c.mergeBlock(fast, onlyHead(t, fast.r))
+	c.wantValue(t, "/k", "<deleted>")
 
 	st.advance(time.Hour)
-	c.reach(fast)
-	if err := c.r.Repair(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	c.pull(t, fast) // heard again when fast rebroadcasts
 	c.wantValue(t, "/k", "v")
 }
 
@@ -383,4 +383,65 @@ func deltaAt(t testing.TB, sr *simReplica, c cid.Cid) *pb.Delta {
 		t.Fatal(err)
 	}
 	return d
+}
+
+// TestARemovalKeepsItsWritersEntry (R-C): removing an element moves its
+// writer's entry to the removal's time, so a writer that went quiet long
+// before is still known, and the removal refuted, for a full T after the
+// removal rather than after the write.
+func TestARemovalKeepsItsWritersEntry(t *testing.T) {
+	st := newSimTime()
+	w, a, b, c := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
+	put(t, w.r, "/k", "v")
+	st.exchange(t, w, a, b, c)
+	// w goes quiet; a fleet in contact carries on.
+	for range int(simRetention * 8 / 10 / simRI) {
+		st.advance(simRI)
+		st.exchange(t, a, b, c)
+	}
+	del(t, a.r, "/k") // late in w's life: w's entry must now live on from here
+	st.exchange(t, a, b)
+	// c is away from the removal on, for less than T.
+	for range int(simRetention * 7 / 10 / simRI) {
+		st.advance(simRI)
+		st.exchange(t, a, b)
+		a.maintain(t)
+		b.maintain(t)
+	}
+	if !a.knows(w.r.replica) {
+		t.Fatal("the writer was forgotten less than T after a removal of its element")
+	}
+	st.exchange(t, a, b, c)
+	st.exchange(t, a, b, c)
+	for _, sr := range []*simReplica{a, b, c} {
+		sr.wantValue(t, "/k", "<deleted>")
+	}
+}
+
+// TestAPendingRemovalExpiresWhereverItTravels (T8.11): a pending removal
+// expires at the time written in it, however many snapshots carry it back and
+// forth between replicas that keep compacting.
+func TestAPendingRemovalExpiresWhereverItTravels(t *testing.T) {
+	st := newSimTime()
+	w, a, b := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0)
+	put(t, w.r, "/k", "v")
+	st.exchange(t, w, a, b)
+	st.away(t, simRetention+2*simMargin, a, b) // w is forgotten: /k is ancient
+	del(t, a.r, "/k")
+	st.exchange(t, a, b)
+	if countEntries(t, b.r, b.r.set.pendingPrefix()) != 1 {
+		t.Fatal("setup: b should keep the removal of an ancient element pending")
+	}
+	for range int((simRetention + 2*simMargin) / (5 * simRI)) {
+		st.away(t, 5*simRI, a, b)
+		compact(t, a.r)
+		st.exchange(t, a, b)
+		compact(t, b.r)
+		st.exchange(t, a, b)
+	}
+	for _, sr := range []*simReplica{a, b} {
+		if n := countEntries(t, sr.r, sr.r.set.pendingPrefix()); n != 0 {
+			t.Fatalf("%s keeps a pending removal past its expiry after carrying it in snapshots", sr.name)
+		}
+	}
 }

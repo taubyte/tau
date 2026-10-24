@@ -118,8 +118,10 @@ type Options struct {
 	// Default: 1MiB.
 	MaxBatchDeltaSize int
 	// RepairInterval specifies how often to retry the parents a walk
-	// could not fetch, when the store is marked dirty. 0 to disable.
-	// Default: 1h.
+	// could not fetch, when the store is marked dirty. 0 to disable. It
+	// should be well under DeliveryBound: a delta is promised to every
+	// replica in contact within D, and a parent whose fetch failed is
+	// fetched again only by repair. Default: 1m.
 	RepairInterval time.Duration
 	// BroadcastBatchDelay batches the new Head broadcasts when
 	// publishing new deltas into a single message. 0 to
@@ -242,7 +244,7 @@ func DefaultOptions() *Options {
 		NumWorkers:          5,
 		DAGSyncerTimeout:    5 * time.Minute,
 		MaxBatchDeltaSize:   1 * 1024 * 1024, // 1MB,
-		RepairInterval:      time.Hour,
+		RepairInterval:      time.Minute,
 		CompactAfterBlocks:  128,
 		Retention:           30 * 24 * time.Hour,
 		DeliveryBound:       10 * time.Minute,
@@ -302,12 +304,27 @@ type Datastore struct {
 	// with the fleet time it had heard before it (see rejoin.go).
 	rejoining bool
 	gapFrom   uint64
-	// lastHeard and liveHeard are the uptimes it last heard any peer and a
-	// peer that was not rejoining; answered is when it last answered each
-	// rejoining incarnation.
+	// lastHeard is the uptime it last heard a peer that was not rejoining,
+	// counted from its open; liveHeard the same, 0 until one is heard.
+	// answered is when it last answered each rejoining incarnation.
 	lastHeard time.Duration
 	liveHeard time.Duration
-	answered  map[string]time.Duration
+	// anyHeard and fleetHeard are the uptimes it last heard any peer and a
+	// peer that has heard a fleet, 0 before the first.
+	anyHeard   time.Duration
+	fleetHeard time.Duration
+	answered   map[string]time.Duration
+	// merged is when this replica last covered more of each incarnation:
+	// its heartbeats acknowledge those to their authors.
+	merged map[string]time.Duration
+	// compactDue asks the next maintenance for a snapshot.
+	compactDue bool
+	// lows are lower bounds, kept so the frequent passes skip scans that
+	// would find nothing: the earliest expiry of a pending removal, the
+	// earliest half-life (at + ttl/2) of an indexed block, the earliest
+	// expiry of a kept own operation. Every insertion lowers them; a scan
+	// sets them to what it found, none = unbounded; 0 means unknown.
+	lows lows
 	// generation changes when a rebase replaces the state: a walk begun
 	// under an older one merges nothing.
 	generation uint64
@@ -371,6 +388,7 @@ func NewDatastore(
 		queuedChildren:   newCidSafeSet(),
 		ccChanged:        make(chan struct{}),
 		answered:         map[string]time.Duration{},
+		merged:           map[string]time.Duration{},
 	}
 	dstore.ttl.Store(durationMillis(opts.Retention))
 	dstore.times = timesOf(opts)
@@ -828,7 +846,7 @@ func (store *Datastore) handleBlockAt(ctx context.Context, gen uint64, h Head) e
 	if !h.Dot.isZero() && store.covered(h.Dot) {
 		return nil
 	}
-	if store.gone(h.link(), store.dropClockNow()) {
+	if store.gone(h.link(), store.dropClockNow()) || store.ahead(h.At) {
 		return nil
 	}
 	held, err := store.isIndexed(ctx, h.Cid)
@@ -905,7 +923,12 @@ func (store *Datastore) dagWorker() {
 		children, err := store.processNode(ctx, job.gen, job.nodeGetter, job.delta, job.node)
 		if err != nil {
 			store.logger.Error(err)
-			store.retryLater(ctx, linkOf(job.node.Cid(), job.delta))
+			// A block from the future is heard again when its author
+			// rebroadcasts; recording it would let a clock far ahead fill
+			// other replicas' stores.
+			if !errors.Is(err, errAhead) {
+				store.retryLater(ctx, linkOf(job.node.Cid(), job.delta))
+			}
 			job.session.Done()
 			continue
 		}
@@ -1064,9 +1087,9 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 
 	// A block stamped ahead of this replica's clock by more than the skew
 	// waits for the clock: a clock far ahead delays only its owner's writes.
-	if ahead := delta.GetAt(); ahead > store.clock()+store.times.skew {
+	if store.ahead(delta.GetAt()) {
 		store.dropFailed(ctx, current, nil)
-		return nil, fmt.Errorf("block %s is stamped ahead of this replica's clock", current)
+		return nil, fmt.Errorf("block %s: %w", current, errAhead)
 	}
 
 	var elems []*pb.Element
@@ -1113,7 +1136,9 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 		}
 		return walk, nil
 	}
-	if d.replica != store.replica {
+	// A snapshot whose author never heard a fleet (since 0) holds only what
+	// replicas like it wrote: nothing in it can have been removed.
+	if d.replica != store.replica && delta.GetSince() != 0 {
 		stale, err := store.stale(ctx, delta.GetSince())
 		if err != nil {
 			store.dropFailed(ctx, current, chunks)
@@ -1227,6 +1252,7 @@ func (store *Datastore) repairDAG(ctx context.Context) error {
 	// Clean first, so a failure recorded while this repair runs keeps its
 	// mark for the next one.
 	store.MarkClean(ctx)
+	now := store.dropClockNow()
 	var todo []link
 	var done []ds.Key
 	for _, prefix := range []ds.Key{store.missingPrefix(), store.retryPrefix()} {
@@ -1239,7 +1265,9 @@ func (store *Datastore) repairDAG(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			if store.covered(d) {
+			// Covered by now, or expired with nobody holding it: nothing
+			// to fetch any more.
+			if store.covered(d) || store.gone(l, now) {
 				done = append(done, ds.RawKey(k))
 				return nil
 			}
@@ -1373,9 +1401,7 @@ func (store *Datastore) write(ctx context.Context, ops []op) error {
 // was idle for more than half the retention, so it never writes under an
 // incarnation its peers may have forgotten. The caller holds store.mu.
 func (store *Datastore) idleRetire() error {
-	up := store.times.up()
-	idle := up - store.lastWrite
-	store.lastWrite = up
+	idle := store.times.up() - store.lastWrite
 	if store.counter == 0 || durationMillis(idle) <= store.retention()/2 {
 		return nil
 	}
@@ -1391,6 +1417,7 @@ func (store *Datastore) drawIncarnation() error {
 	}
 	store.replica = string(append(append([]byte{}, store.opts.ReplicaID...), nonce...))
 	store.counter = 0
+	store.lastWrite = store.times.up()
 	return nil
 }
 
@@ -1422,6 +1449,7 @@ func (store *Datastore) publishLocked(ctx context.Context, delta *pb.Delta) (Hea
 		return Head{}, nil, fmt.Errorf("error processing new block: %w", err)
 	}
 	store.counter = d.counter
+	store.lastWrite = store.times.up()
 	return Head{Cid: nd.Cid(), Height: delta.Priority, Dot: d, At: delta.At, TTL: delta.Ttl}, hs, nil
 }
 
@@ -1443,7 +1471,7 @@ func linkOf(c cid.Cid, delta *pb.Delta) link {
 func (store *Datastore) stamped(delta *pb.Delta) *pb.Delta {
 	delta.At = store.stampNow()
 	delta.Ttl = store.retention()
-	delta.Since = store.reportedSince()
+	delta.Since = store.broadcastSince()
 	delta.Horizon = store.horizon
 	return delta
 }

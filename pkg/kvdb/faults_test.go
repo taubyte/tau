@@ -166,9 +166,6 @@ func TestContextAbsorbsAcrossGaps(t *testing.T) {
 	if !c.covers(a(8)) {
 		t.Fatal("8 is a counter the author skipped after 7: covering it is harmless, and the span does")
 	}
-	if !c.inGap(a(6)) || c.inGap(a(4)) || c.inGap(a(9)) {
-		t.Fatal("6 is in the gap; 4 is below the base and 9 is covered")
-	}
 	c.add(a(7), 5, 10, 10)
 	if got := spans(c, "a"); len(got) != 1 || got[0] != (span{4, 9}) {
 		t.Fatalf("the chain 5,7,9 should join into one entry: %v", got)
@@ -479,12 +476,9 @@ func TestMergeRefusesMalformedBlocks(t *testing.T) {
 		t.Error("a snapshot without a dot merged")
 	}
 	d := dot{replica: "x", counter: 1}
-	// Its context knows y up to 1 and covers nothing past it, so it cannot
-	// hold y's third delta: an element arrives with its dot.
-	knowsY := &pb.Context{Vector: []*pb.Entry{{Replica: []byte("y"), Counter: 1}}}
-	if _, _, err := r.mergeSnapshot(ctx, cid.Undef, &pb.Delta{Snapshot: true, Dot: d.toPB(), Context: knowsY}, nil,
-		[]*pb.Element{{Key: "/k", Dot: dot{replica: "y", counter: 3}.toPB()}}); err == nil {
-		t.Error("a snapshot holding an element in a gap of its context merged")
+	if _, _, err := r.mergeSnapshot(ctx, cid.Undef, &pb.Delta{Snapshot: true, Dot: d.toPB()}, nil,
+		[]*pb.Element{{Key: "/k"}}); err == nil {
+		t.Error("a snapshot holding an element with no dot merged")
 	}
 	if _, err := r.mergeDelta(ctx, cid.Undef, &pb.Delta{Dot: d.toPB(), Parents: []*pb.Parent{{Cid: []byte{1}}}}); err == nil {
 		t.Error("a delta with a broken parent merged")

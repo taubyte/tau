@@ -265,7 +265,7 @@ func TestCRDT(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(time.Second)
+	waitCovered(t, replicas, lastDot(replicas[0]))
 
 	for _, r := range replicas {
 		v, err := r.Get(ctx, k)
@@ -287,6 +287,7 @@ func TestCRDTReplication(t *testing.T) {
 	defer closeReplicas()
 
 	// Add nItems choosing the replica randomly
+	var written []dot
 	for i := range nItems {
 		k := ds.RandomKey()
 		v := fmt.Appendf(nil, "%d", i)
@@ -295,9 +296,10 @@ func TestCRDTReplication(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		written = append(written, lastDot(replicas[n]))
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	waitCovered(t, replicas, written...)
 
 	// Query all items
 	q := query.Query{
@@ -331,15 +333,17 @@ func TestCRDTReplication(t *testing.T) {
 	}
 
 	// give a new value for each item
+	written = written[:0]
 	for _, r := range rest {
 		n := randGen.Intn(len(replicas))
 		err := replicas[n].Put(ctx, ds.NewKey(r.Key), []byte("hola"))
 		if err != nil {
 			t.Error(err)
 		}
+		written = append(written, lastDot(replicas[n]))
 	}
 
-	time.Sleep(200 * time.Millisecond)
+	waitCovered(t, replicas, written...)
 
 	// query everything again
 	results, err = replicas[0].Query(ctx, q)
@@ -413,7 +417,14 @@ func TestCRDTPriority(t *testing.T) {
 		}(r, i)
 	}
 	wg.Wait()
-	time.Sleep(5000 * time.Millisecond)
+	var written []dot
+	for _, r := range replicas {
+		last := lastDot(r)
+		for c := uint64(1); c <= last.counter; c++ {
+			written = append(written, dot{replica: last.replica, counter: c})
+		}
+	}
+	waitCovered(t, replicas, written...)
 	var v, lastv []byte
 	var err error
 	for i, r := range replicas {
@@ -433,7 +444,7 @@ func TestCRDTPriority(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(1000 * time.Millisecond)
+	waitCovered(t, replicas, lastDot(replicas[0]))
 
 	for i, r := range replicas {
 		v, err := r.Get(ctx, k)
@@ -461,24 +472,26 @@ func TestCRDTCatchUp(t *testing.T) {
 	br.dropProb.Store(101)
 
 	// this items will not get to anyone
+	var written []dot
 	for range nItems {
 		k := ds.RandomKey()
 		err := r.Put(ctx, k, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
+		written = append(written, lastDot(r))
 	}
 
-	time.Sleep(100 * time.Millisecond)
 	br.dropProb.Store(0)
 
-	// this message will get to everyone
+	// this message will get to everyone, and its links bring the rest
 	err := r.Put(ctx, ds.RandomKey(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	written = append(written, lastDot(r))
 
-	time.Sleep(500 * time.Millisecond)
+	waitCovered(t, replicas, written...)
 	q := query.Query{KeysOnly: true}
 	results, err := replicas[0].Query(ctx, q)
 	if err != nil {
@@ -565,7 +578,12 @@ func TestCRDTBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(100 * time.Millisecond)
+	var written []dot
+	last := lastDot(replicas[0])
+	for c := uint64(1); c <= last.counter; c++ {
+		written = append(written, dot{replica: last.replica, counter: c})
+	}
+	waitCovered(t, replicas, written...)
 	for _, r := range replicas {
 		if _, err := r.Get(ctx, k); err != ds.ErrNotFound {
 			t.Error("k should have been deleted everywhere")
@@ -715,7 +733,15 @@ func TestCRDTPutPutDelete(t *testing.T) {
 	br0.dropProb.Store(0)
 	br1.dropProb.Store(0)
 
-	time.Sleep(15 * time.Second)
+	// The heads were never heard: they arrive with the next rebroadcast.
+	var written []dot
+	for _, r := range replicas {
+		last := lastDot(r)
+		for c := uint64(1); c <= last.counter; c++ {
+			written = append(written, dot{replica: last.replica, counter: c})
+		}
+	}
+	waitCovered(t, replicas, written...)
 
 	r0Res, err := replicas[0].Get(ctx, ds.NewKey("k1"))
 	if err != nil {

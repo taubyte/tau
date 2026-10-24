@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"google.golang.org/protobuf/proto"
 )
 
 func (sr *simReplica) rejoining() bool {
@@ -268,6 +270,7 @@ func TestARebaseInterruptedByACrashFinishesAtOpen(t *testing.T) {
 	// The crash: the store as the rebase left it, reopened.
 	c.reopen(t)
 	c.wantValue(t, "/p", "mine")
+	c.maintain(t) // what maintenance does within an interval: a snapshot carries /p
 	if has, _ := c.store.Has(ctx, c.r.rebaseKey()); has {
 		t.Fatal("the rebase is still marked after the open wrote its operations")
 	}
@@ -304,4 +307,64 @@ func TestAFleetThatRestartsTogetherRejoins(t *testing.T) {
 	put(t, b.r, "/after", "1")
 	st.exchange(t, a, b, c)
 	a.wantValue(t, "/after", "1")
+}
+
+// TestAJudgeThatHeardLessIsNotTrusted (T8.8): a judge whose fleet time is
+// older than the replica's gap knows less than the replica did when it left;
+// its ok is not taken, and its rebase would be a bootstrap from a staler
+// state.
+func TestAJudgeThatHeardLessIsNotTrusted(t *testing.T) {
+	st := newSimTime()
+	a, c := st.replica(t, "a", 0), st.replica(t, "c", 0)
+	put(t, a.r, "/k", "v")
+	st.exchange(t, a, c)
+	st.away(t, 3*simRI, a, c)
+	c.reopen(t)
+	gap := c.r.reportedSinceNow()
+
+	behind := st.replica(t, "behind", 0)
+	behind.r.mu.Lock()
+	behind.r.since = gap - 1 // heard the fleet, a moment before c left it
+	behind.r.mu.Unlock()
+	c.beat()
+	st.deliver(t, c, behind) // behind will not judge a replica that heard more
+	if msgs := behind.out.take(); len(msgs) != 0 {
+		t.Fatal("a judge that heard an older fleet than the replica answered it")
+	}
+	behind.r.mu.Lock()
+	ok := behind.r.message(nil, &verdict{to: c.incarnation(), since: gap - 1})
+	behind.r.mu.Unlock()
+	data, err := proto.Marshal(ok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	behind.out.msgs = [][]byte{data}
+	st.deliver(t, behind, c)
+	if !c.rejoining() {
+		t.Fatal("a rejoining replica took an ok from a judge that heard an older fleet than it had")
+	}
+	st.exchange(t, a, c)
+	if c.rejoining() {
+		t.Fatal("a judge that heard as much did not end the rejoin")
+	}
+}
+
+// TestASlowAuthorStampsTheFleetTimeItHeard (T8.11): a replica whose clock is
+// behind writes, once it has heard the fleet's time from a judge, at that
+// time and not at its clock, so its removals are kept as long as anyone's.
+func TestASlowAuthorStampsTheFleetTimeItHeard(t *testing.T) {
+	st := newSimTime()
+	a, b, slow := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "slow", -simRetention/2)
+	put(t, a.r, "/k", "v")
+	st.exchange(t, a, b, slow)
+	slow.reopen(t)
+	st.exchange(t, a, b, slow)
+	if slow.rejoining() {
+		t.Fatal("setup: slow should have rejoined")
+	}
+	head := del(t, slow.r, "/k")
+	at := deltaAt(t, slow, head).GetAt()
+	if now := st.ms(); at+durationMillis(simS) < now {
+		t.Fatalf("a slow author stamped its removal %dms behind the fleet's time", now-at)
+	}
 }

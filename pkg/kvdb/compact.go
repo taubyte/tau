@@ -76,7 +76,9 @@ func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *c
 		return Head{}, nil, ErrClosed
 	}
 	hs, height := store.heads.List()
-	if len(hs) == 0 {
+	// Elements with no block to carry them, put back after a rebase, are
+	// carried by the snapshot like any others.
+	if len(hs) == 0 && store.liveCount == 0 {
 		return Head{}, nil, nil
 	}
 	if !force {
@@ -169,6 +171,7 @@ func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *c
 		return Head{}, nil, fmt.Errorf("error merging snapshot: %w", err)
 	}
 	store.counter = d.counter
+	store.lastWrite = store.times.up()
 	return Head{Cid: nd.Cid(), Height: root.Priority, Dot: d, At: root.At, TTL: root.Ttl}, contextFromPB(root.Context), nil
 }
 

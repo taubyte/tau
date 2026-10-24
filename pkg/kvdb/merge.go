@@ -215,6 +215,10 @@ type merging struct {
 	blocks  int
 	horizon uint64
 	since   uint64
+	// added lowers the store's lows by what this merge adds; scanned, when
+	// set, is what a scan in it found and replaces them.
+	added   lows
+	scanned lows
 }
 
 func (store *Datastore) beginMerge() *merging {
@@ -226,11 +230,13 @@ func (store *Datastore) beginMerge() *merging {
 		touched: map[string]*change{},
 		horizon: store.horizon,
 		since:   store.since,
+		added:   lows{none, none, none},
 	}
 }
 
 // heard takes what a block written by another incarnation says about fleet
 // time: its stamp, no further ahead of this replica's clock than the skew.
+// A replica that merged anything of anyone else's has heard a fleet.
 func (m *merging) heard(author string, at uint64) {
 	if author == m.store.replica || m.store.rejoining {
 		return
@@ -295,6 +301,7 @@ func (m *merging) remove(ctx context.Context, r removal) error {
 		return err
 	}
 	m.t.put(pk, encodeStamps(r.at, r.ttl))
+	m.added.pending = min(m.added.pending, r.expires())
 	return nil
 }
 
@@ -347,6 +354,7 @@ func (m *merging) linked(ctx context.Context, d dot) (bool, error) {
 // links it, and indexes it for purging.
 func (m *merging) settleBlock(c cid.Cid, b block, height uint64, linked bool) {
 	m.t.del(m.store.missingKey(b.dot))
+	m.t.del(m.store.retryKey(b.dot))
 	if !linked {
 		m.heads.addHead(Head{Cid: c, Height: height, Dot: b.dot, At: b.at, TTL: b.ttl})
 	}
@@ -355,6 +363,7 @@ func (m *merging) settleBlock(c cid.Cid, b block, height uint64, linked bool) {
 
 func (m *merging) indexBlock(c cid.Cid, b block) {
 	m.t.put(m.store.blockKey(c), encodeBlock(b))
+	m.added.block = min(m.added.block, b.at+b.ttl/2)
 	m.blocks++
 }
 
@@ -374,8 +383,18 @@ func (m *merging) commit(ctx context.Context) error {
 		return err
 	}
 	m.store.horizon = m.horizon
+	if m.scanned.pending != 0 {
+		m.store.lows.pending = m.scanned.pending
+	}
+	m.store.lows.lower(m.added)
 	if m.since != m.store.since {
 		m.store.since, m.store.sinceUp = m.since, m.store.times.up()
+	}
+	up := m.store.times.up()
+	for r, k := range m.cc.inc {
+		if o := m.store.cc.inc[r]; o == nil || len(o.spans) != len(k.spans) || o.spans[0] != k.spans[0] {
+			m.store.merged[r] = up
+		}
 	}
 	m.store.setContext(m.cc)
 	m.store.heads.apply(m.heads)
@@ -468,14 +487,6 @@ func (m *merging) settlePending(e entry) error {
 	return nil
 }
 
-// inGap reports whether c knows d's incarnation above d's counter yet does
-// not cover d: a state cannot hold such an element, since an element arrives
-// with its dot.
-func (c *causalContext) inGap(d dot) bool {
-	k := c.inc[d.replica]
-	return k != nil && d.counter > k.spans[0].lo && !k.covers(d.counter)
-}
-
 // mergeSnapshot joins a snapshot's state, root and chunks, as one merge. The
 // caller holds store.mu.
 func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.Delta, chunks []cid.Cid, elems []*pb.Element) ([]link, *causalContext, error) {
@@ -499,8 +510,12 @@ func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.D
 	inSnapshot := make(map[string]struct{}, len(elems))
 	for _, e := range elems {
 		el := element{key: e.GetKey(), dot: dotFromPB(e.GetDot()), priority: e.GetPriority(), value: e.GetValue(), at: e.GetAt(), ttl: e.GetTtl()}
-		if el.dot.isZero() || theirs.inGap(el.dot) {
-			return nil, nil, fmt.Errorf("snapshot %s holds an element its context cannot have", c)
+		// An element its context does not cover is an ancient one, kept
+		// under its own dot. It can even sit between two spans of its
+		// incarnation, learned out of order after it was admitted, so
+		// nothing short of the zero dot is malformed.
+		if el.dot.isZero() {
+			return nil, nil, fmt.Errorf("snapshot %s holds an element with no dot", c)
 		}
 		inSnapshot[m.store.set.elemKey(el.key, el.dot).String()] = struct{}{}
 		if err := m.admit(ctx, el, local); err != nil {
@@ -566,8 +581,8 @@ func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.D
 	return walk, theirs, m.commit(ctx)
 }
 
-// dropCovered forgets every pending removal and missing parent the context
-// now covers.
+// dropCovered forgets every pending removal, missing parent and retry mark
+// the context now covers.
 func (m *merging) dropCovered(ctx context.Context) error {
 	pending, err := m.t.scan(ctx, m.store.set.pendingPrefix())
 	if err != nil {
@@ -584,17 +599,19 @@ func (m *merging) dropCovered(ctx context.Context) error {
 			}
 		}
 	}
-	missing, err := m.t.scan(ctx, m.store.missingPrefix())
-	if err != nil {
-		return err
-	}
-	for _, e := range missing {
-		d, err := parseDotSegment(strings.TrimPrefix(e.key, m.store.missingPrefix().String()+"/"))
+	for _, prefix := range []ds.Key{m.store.missingPrefix(), m.store.retryPrefix()} {
+		marks, err := m.t.scan(ctx, prefix)
 		if err != nil {
 			return err
 		}
-		if m.cc.covers(d) {
-			m.t.del(ds.RawKey(e.key))
+		for _, e := range marks {
+			d, err := parseDotSegment(strings.TrimPrefix(e.key, prefix.String()+"/"))
+			if err != nil {
+				return err
+			}
+			if m.cc.covers(d) {
+				m.t.del(ds.RawKey(e.key))
+			}
 		}
 	}
 	return nil

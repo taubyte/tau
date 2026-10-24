@@ -38,6 +38,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/ipfs/go-log/v2"
@@ -247,11 +248,17 @@ func Start(ctx context.Context, f File, added ...node.Option) (*Running, error) 
 		serving = append(serving, node.WithTLS())
 	}
 
+	// THE RETENTION EVERY DATABASE WRITES UNDER IS THE CLOUD'S, read from the
+	// fleet document once this node's register is up; until then, and on a
+	// node that runs none, the default.
+	var running atomic.Pointer[node.Node]
+	databases := kvdb.New(p, kvdb.WithFleet(fleetDocument(&running), retentionPoll))
+
 	n, err := node.New(f.Node, append(append(serving,
 		node.WithHost(p.Peer()),
 		node.WithDatabaseEngines(dbEngines),
 		node.WithPubSub(p.Messaging()),
-		node.WithDatabases(kvdb.New(p)),
+		node.WithDatabases(databases),
 		// RAFT IS OPENED HERE BECAUSE raft.New TAKES A peer.Node — a host, a
 		// DHT, a datastore and a lifetime — and this is the layer that has one.
 		// The node is handed a function so a composition that is not a machine
@@ -274,6 +281,7 @@ func Start(ctx context.Context, f File, added ...node.Option) (*Running, error) 
 		p.Close()
 		return nil, err
 	}
+	running.Store(n)
 	if err := n.Start(ctx); err != nil {
 		n.Close()
 		p.Close()

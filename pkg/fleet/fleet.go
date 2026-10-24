@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // ErrMalformed is a document that cannot be read. It is an error and never a
@@ -55,6 +56,43 @@ type Fleet struct {
 	// — a cloud that said nothing about objects would publish "storage":{} and
 	// an operator reading the document could not tell that from one that had.
 	Storage Storage `json:"storage,omitzero"`
+
+	// Retention is T for the cloud's replicated databases: how long a
+	// removal is remembered, and so how long a node can be away and still
+	// rejoin with what it holds rather than be rebuilt from a peer. Zero
+	// means the reader's default.
+	//
+	// IT IS THE FIRST KIND OF NUMBER, with one difference that makes changing
+	// it safe. Every write carries the T its author held when it wrote it,
+	// and what a write teaches is kept for that T, not for whatever T the
+	// reader holds — so two nodes that read different revisions for a while
+	// still agree on when each thing expires, and lowering T forgets nothing
+	// that was written under the old one. What the cloud gains by publishing
+	// it is that every node writes under the same T, so what a node rejoining
+	// after an absence finds is decided by one number and not by whichever
+	// node wrote last.
+	Retention Duration `json:"retention,omitzero"`
+}
+
+// Duration is a length of time written the way an operator writes one:
+// "720h", "30m". Zero is omitted.
+type Duration time.Duration
+
+func (d Duration) MarshalJSON() ([]byte, error) {
+	return json.Marshal(time.Duration(d).String())
+}
+
+func (d *Duration) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return fmt.Errorf("a duration is a string such as \"720h\": %w", err)
+	}
+	v, err := time.ParseDuration(s)
+	if err != nil {
+		return err
+	}
+	*d = Duration(v)
+	return nil
 }
 
 // Storage is what the cloud promises about objects.
@@ -147,6 +185,9 @@ func Decode(b []byte) (Fleet, error) {
 	}
 	if out.Storage.Barrier < 0 {
 		return Fleet{}, fmt.Errorf("%w: storage barrier %d", ErrMalformed, out.Storage.Barrier)
+	}
+	if out.Retention < 0 {
+		return Fleet{}, fmt.Errorf("%w: retention %s", ErrMalformed, time.Duration(out.Retention))
 	}
 	return out, nil
 }
