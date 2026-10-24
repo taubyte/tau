@@ -1509,6 +1509,47 @@ func TestADirectoryItsOwnerCannotListOrWriteIsStillRestored(t *testing.T) {
 	}
 }
 
+// TestADIRECTORYIsClosedWhereItsNameLeadsOnDisk, deepest there first. A name's
+// own depth says nothing once a link lies along it.
+func TestADirectoryIsClosedWhereItsNameLeadsOnDisk(t *testing.T) {
+	t.Run("deeper on disk than its name", func(t *testing.T) {
+		dir, err := restoring(t, t.TempDir(), entries(t,
+			tar.Header{Name: "a/b/c", Typeflag: tar.TypeDir, Mode: 0o600},
+			linkEntry("l", "a/b/c"),
+			tar.Header{Name: "l/d", Typeflag: tar.TypeDir, Mode: 0o600},
+		))
+		require.NoError(t, err)
+
+		closed := filepath.Join(dir, "a", "b", "c")
+		t.Cleanup(func() {
+			os.Chmod(closed, 0o750)
+			os.Chmod(filepath.Join(closed, "d"), 0o750)
+		})
+		info, err := os.Stat(closed)
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o600), info.Mode().Perm()&0o700)
+
+		// Opened back up to look inside.
+		require.NoError(t, os.Chmod(closed, 0o700))
+		info, err = os.Stat(filepath.Join(closed, "d"))
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o600), info.Mode().Perm()&0o700)
+	})
+
+	t.Run("the volume itself, through a link", func(t *testing.T) {
+		dir, err := restoring(t, t.TempDir(), entries(t,
+			linkEntry("x", "."),
+			tar.Header{Name: "x", Typeflag: tar.TypeDir, Mode: 0o500},
+		))
+		require.NoError(t, err)
+		t.Cleanup(func() { os.Chmod(dir, 0o750) })
+
+		info, err := os.Stat(dir)
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o700), info.Mode().Perm()&0o700, "the volume itself was closed")
+	})
+}
+
 // TestSETUIDSetgidAndStickyDoNotComeBack. Only the permission bits of a mode
 // are restored.
 func TestSetuidSetgidAndStickyDoNotComeBack(t *testing.T) {

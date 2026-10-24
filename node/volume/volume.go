@@ -736,7 +736,7 @@ func untar(r io.Reader, dir string) error {
 			if err := root.MkdirAll(name, perm|0o700); err != nil {
 				return err
 			}
-			if closed := 0o700 &^ perm; closed != 0 && name != "." {
+			if closed := 0o700 &^ perm; closed != 0 {
 				shut[name] = closed
 			}
 		case tar.TypeSymlink:
@@ -809,21 +809,82 @@ func checkLinks(root *os.Root, links []string) error {
 // closeDirs takes away what a directory's entry did not grant its owner, once
 // everything is unpacked. The deepest go first, so that a parent its owner
 // cannot pass through is closed after what is in it.
+//
+// DEEPEST ON DISK, AND EACH CLOSED WHERE ITS NAME LEADS. A name says nothing
+// about either once a link lies along it: `l/d`, with `l` a link to `a/b/c`, is
+// four directories down rather than two. So every name is followed to the path
+// it reaches before anything is closed, and that path is what is closed. The
+// volume itself is never closed, whatever name reaches it.
 func closeDirs(root *os.Root, shut map[string]fs.FileMode) error {
-	names := slices.Collect(maps.Keys(shut))
+	onDisk := map[string]fs.FileMode{}
+	for name, closed := range shut {
+		at, err := reached(root, name)
+		if err != nil {
+			return err
+		}
+		if at != "." {
+			onDisk[at] |= closed
+		}
+	}
+
+	names := slices.Collect(maps.Keys(onDisk))
 	slices.SortFunc(names, func(a, b string) int {
 		return strings.Count(b, string(os.PathSeparator)) - strings.Count(a, string(os.PathSeparator))
 	})
 	for _, name := range names {
-		info, err := root.Stat(name)
+		info, err := root.Lstat(name)
 		if err != nil {
 			return err
 		}
-		if err := root.Chmod(name, info.Mode().Perm()&^shut[name]); err != nil {
+		if err := root.Chmod(name, info.Mode().Perm()&^onDisk[name]); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// maxLinks is as many links as os.Root follows in one name, so a name it made
+// a directory at never needs more.
+const maxLinks = 8
+
+// reached is the path name leads to inside root, with every link along it
+// followed: a path with no link in it, for the directory name reaches.
+func reached(root *os.Root, name string) (string, error) {
+	var at []string
+	rest := strings.Split(filepath.ToSlash(name), "/")
+	for links := 0; len(rest) > 0; {
+		part := rest[0]
+		rest = rest[1:]
+		switch part {
+		case "", ".":
+			continue
+		case "..":
+			if len(at) == 0 {
+				return "", fmt.Errorf("volume: %q leads out of the volume", name)
+			}
+			at = at[:len(at)-1]
+			continue
+		}
+
+		next := filepath.Join(append(slices.Clone(at), part)...)
+		info, err := root.Lstat(next)
+		if err != nil {
+			return "", err
+		}
+		if info.Mode()&fs.ModeSymlink == 0 {
+			at = append(at, part)
+			continue
+		}
+		if links++; links > maxLinks {
+			return "", fmt.Errorf("volume: %q passes through more than %d links", name, maxLinks)
+		}
+		target, err := root.Readlink(next)
+		if err != nil {
+			return "", err
+		}
+		rest = append(strings.Split(filepath.ToSlash(target), "/"), rest...)
+	}
+	return filepath.Join(append([]string{"."}, at...)...), nil
 }
 
 // within is the name an entry has inside the volume, or an error when it names
