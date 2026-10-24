@@ -232,6 +232,13 @@ func wellFormed(s string) []byte {
 // stream, an incomplete sequence at the end is held back, and rest is how many
 // bytes that is.
 func decodeUTF8(b []byte, fatal, stream bool) (text string, rest int, ok bool) {
+	// Well-formed input decodes to itself: utf8.Valid refuses what the
+	// decoder replaces (surrogates, overlong forms, beyond U+10FFFF), and a
+	// valid input has no incomplete tail to hold back. Byte at a time, a
+	// 128 KiB body spent half its request here.
+	if utf8.Valid(b) {
+		return string(b), 0, true
+	}
 	var out strings.Builder
 	out.Grow(len(b))
 	var cp rune

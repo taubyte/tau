@@ -25,6 +25,7 @@ func TestDecodeUTF8IsTheWHATWGDecoder(t *testing.T) {
 		{"an overlong four-byte form", []byte{0xf0, 0x80, 0x80, 0x80}, "����"},
 		{"the largest code point", []byte{0xf4, 0x8f, 0xbf, 0xbf}, "\U0010FFFF"},
 		{"truncated at the end", []byte{0x41, 0xf0, 0x9f, 0x98}, "A�"},
+		{"whole characters around a bad byte", []byte("é€😀\xffé€😀"), "é€😀�é€😀"},
 		{"empty", nil, ""},
 	}
 	for _, c := range cases {
