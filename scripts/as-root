@@ -10,16 +10,19 @@
 #   passwordless sudo     run it under `sudo -n` (the homelab, GitHub's runners)
 #   neither               print SKIP and exit 0 — a laptop is not a failure
 #
-# The environment the caller set (TMPDIR, GOCOVERDIR, the cap's limits) is
-# carried through sudo, because a test that runs elsewhere than it was told to
-# is a test that lies about where it ran.
+# The environment the caller set is carried through sudo, because a test that
+# runs elsewhere than it was told to is a test that lies about where it ran. -E
+# carries it where sudo honours -E; the temp directories are also passed by
+# name, since the loader strips TMPDIR from any setuid program's environment and
+# sudo-rs, which the build servers run, ignores -E altogether. Without them a
+# root test wrote to /tmp while its run's TMPDIR was somewhere else.
 
 if [ "$(id -u)" -eq 0 ]; then
 	exec "$@"
 fi
 
 if sudo -n true 2>/dev/null; then
-	exec sudo -n -E "$@"
+	exec sudo -n -E env ${TMPDIR+"TMPDIR=$TMPDIR"} ${GOTMPDIR+"GOTMPDIR=$GOTMPDIR"} "$@"
 fi
 
 echo "SKIP: $(basename "$1") needs root, and this user is not root and has no passwordless sudo"
