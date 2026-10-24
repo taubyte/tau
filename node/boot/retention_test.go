@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/node"
-	"github.com/taubyte/tau/pkg/fleet"
+	fleetdoc "github.com/taubyte/tau/pkg/fleet"
 )
 
 // TestTheFleetDocumentIsReadFromTheNodesRegister: before the node is up, and on
@@ -35,7 +35,7 @@ func TestTheFleetDocumentIsReadFromTheNodesRegister(t *testing.T) {
 	require.False(t, published)
 	require.Nil(t, doc)
 
-	want, err := fleet.Encode(fleet.Fleet{Retention: fleet.Duration(72 * time.Hour)})
+	want, err := fleetdoc.Encode(fleetdoc.Fleet{Retention: fleetdoc.Duration(72 * time.Hour)})
 	require.NoError(t, err)
 	_, err = r.Node.Register().Local().PublishFleet(t.Context(), 1, want)
 	require.NoError(t, err)
@@ -43,7 +43,7 @@ func TestTheFleetDocumentIsReadFromTheNodesRegister(t *testing.T) {
 	doc, published, err = src(t.Context())
 	require.NoError(t, err)
 	require.True(t, published)
-	got, err := fleet.Decode(doc)
+	got, err := fleetdoc.Decode(doc)
 	require.NoError(t, err)
 	require.Equal(t, 72*time.Hour, time.Duration(got.Retention))
 }
