@@ -75,7 +75,7 @@ func WithSnapshotRoot(root string) Option {
 }
 
 // WithEncryptionKey enables AES-256-GCM encryption for all transport and stream service messages.
-// The key must be at least 32 bytes. All cluster members must use the same key.
+// The key must be 32 bytes. All cluster members must use the same key.
 // This protects:
 // - Raft RPC traffic (transport layer)
 // - Stream service commands (set, get, delete, keys, joinVoter, exchangePeers)
