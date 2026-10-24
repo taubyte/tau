@@ -386,6 +386,21 @@ func RunStopsRunningContainer(t *testing.T, b Backend) {
 	require.NoError(t, err)
 
 	require.NoError(t, b.Backend.Start(ctx, id))
+
+	// The stop has to come after the output it must preserve: sent straight
+	// after Start it can land before the shell has run, and the container then
+	// dies having said nothing.
+	following, err := b.Backend.Logs(ctx, id)
+	require.NoError(t, err)
+	said, writer := io.Pipe()
+	go func() { writer.CloseWithError(demuxTo(writer, following)) }()
+	first := make([]byte, len("before stop\n"))
+	_, err = io.ReadFull(said, first)
+	require.NoError(t, err)
+	require.Equal(t, "before stop\n", string(first))
+	said.Close()
+	following.Close()
+
 	require.NoError(t, b.Backend.Stop(ctx, id), "a running container must be stoppable")
 
 	// A stopped container must still be distinguishable from one that was never
