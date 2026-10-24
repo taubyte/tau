@@ -717,6 +717,10 @@ func (store *Datastore) adoptHeads(ctx context.Context, received []Head) {
 		head.Height = delta.GetPriority()
 		head.Dot = dotFromPB(delta.GetDot())
 		head.At, head.TTL = delta.GetAt(), delta.GetTtl()
+		// A walk that merged it meanwhile made it a head, or a parent.
+		if store.covered(head.Dot) {
+			continue
+		}
 		if err := store.heads.add(ctx, head); err != nil {
 			store.logger.Error(err)
 		}

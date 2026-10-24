@@ -56,8 +56,9 @@ func (h *hangingDAG) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.N
 }
 
 // TestARebaseDoesNotWaitOnAVanishedJudge: a rebase on a judge that is gone
-// walks its heads in the background; the replica goes on hearing and merging
-// what live peers send while that walk waits out its fetches.
+// walks its heads in the background, and a replica left with no heads adopts
+// what it hears in the background too; it goes on hearing and merging what
+// live peers send while those wait out their fetches.
 func TestARebaseDoesNotWaitOnAVanishedJudge(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := t.Context()
@@ -75,7 +76,7 @@ func TestARebaseDoesNotWaitOnAVanishedJudge(t *testing.T) {
 		}
 		rDag := &hangingDAG{newFetchThrough()}
 		rDag.setRemotes(pDag.DAGService)
-		in := &chanBroadcaster{in: make(chan []byte, 2)}
+		in := &chanBroadcaster{in: make(chan []byte, 3)}
 		opts := replicaOptions(DefaultOptions(), "r: ")
 		opts.RebroadcastInterval = time.Hour
 		opts.DeliveryBound = opts.DAGSyncerTimeout + opts.RebroadcastInterval
@@ -110,7 +111,18 @@ func TestARebaseDoesNotWaitOnAVanishedJudge(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// Its last heartbeat, sent before it went, names the same head.
+		last, err := proto.Marshal(&pb.CRDTBroadcast{
+			Since:       since,
+			Now:         now,
+			Incarnation: []byte("judge"),
+			Heads:       []*pb.Head{{Cid: gone.Cid().Bytes(), Dot: dot{replica: "judge", counter: 1}.toPB(), At: now, Ttl: durationMillis(opts.Retention)}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 		in.in <- verdict
+		in.in <- last
 		in.in <- beat
 		synctest.Wait()
 		if got := valueOf(t, r, ds.NewKey("/k")); got != "v" {

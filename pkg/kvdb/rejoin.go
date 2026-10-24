@@ -370,9 +370,18 @@ func (store *Datastore) handleBroadcast(ctx context.Context, msg message) {
 	}
 
 	// A replica with no heads builds on what it heard rather than starting
-	// an orphan branch while it syncs.
+	// an orphan branch while it syncs, without waiting on a sender that may
+	// be gone.
 	if store.heads.Len() == 0 {
-		store.adoptHeads(ctx, msg.heads)
+		if store.opts.manual {
+			store.adoptHeads(ctx, msg.heads)
+		} else {
+			store.wg.Add(1)
+			go func() {
+				defer store.wg.Done()
+				store.adoptHeads(ctx, msg.heads)
+			}()
+		}
 	}
 	store.walkHeads(ctx, gen, msg.heads)
 }
