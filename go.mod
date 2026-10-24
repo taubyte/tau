@@ -72,16 +72,17 @@ require (
 	golang.org/x/mod v0.36.0
 	golang.org/x/net v0.55.0
 	golang.org/x/oauth2 v0.36.0
-	golang.org/x/sync v0.20.0
-	golang.org/x/sys v0.46.0
+	golang.org/x/sync v0.21.0
+	golang.org/x/sys v0.47.0
 	golang.org/x/term v0.43.0
-	golang.org/x/text v0.37.0
+	golang.org/x/text v0.38.0
 	golang.org/x/tools v0.45.0
 	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/ini.v1 v1.67.0
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools/v3 v3.5.2
+	warpjs v0.0.0
 )
 
 require (
