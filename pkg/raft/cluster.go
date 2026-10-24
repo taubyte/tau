@@ -605,10 +605,7 @@ func (c *cluster) Set(key string, value []byte, timeout time.Duration) error {
 
 	future := c.raft.Apply(cmd, timeout)
 	if err := future.Error(); err != nil {
-		if err == raft.ErrNotLeader {
-			return ErrNotLeader
-		}
-		return err
+		return mapNotLeader(err)
 	}
 
 	resp := future.Response()
@@ -658,10 +655,7 @@ func (c *cluster) Delete(key string, timeout time.Duration) error {
 
 	future := c.raft.Apply(cmd, timeout)
 	if err := future.Error(); err != nil {
-		if err == raft.ErrNotLeader {
-			return ErrNotLeader
-		}
-		return err
+		return mapNotLeader(err)
 	}
 
 	resp := future.Response()
@@ -700,10 +694,7 @@ func (c *cluster) Batch(ops []BatchOp, timeout time.Duration) error {
 
 	future := c.raft.Apply(data, timeout)
 	if err := future.Error(); err != nil {
-		if err == raft.ErrNotLeader {
-			return ErrNotLeader
-		}
-		return err
+		return mapNotLeader(err)
 	}
 
 	resp := future.Response()
@@ -748,10 +739,7 @@ func (c *cluster) Apply(cmd []byte, timeout time.Duration) (FSMResponse, error) 
 
 	future := c.raft.Apply(cmd, timeout)
 	if err := future.Error(); err != nil {
-		if err == raft.ErrNotLeader {
-			return FSMResponse{}, ErrNotLeader
-		}
-		return FSMResponse{}, err
+		return FSMResponse{}, mapNotLeader(err)
 	}
 
 	resp := future.Response()
@@ -767,13 +755,16 @@ func (c *cluster) Barrier(timeout time.Duration) error {
 		return ErrShutdown
 	}
 
-	if err := c.raft.Barrier(timeout).Error(); err != nil {
-		if err == raft.ErrNotLeader {
-			return ErrNotLeader
-		}
-		return err
+	return mapNotLeader(c.raft.Barrier(timeout).Error())
+}
+
+// mapNotLeader answers raft's refusal of a member that does not lead as
+// ErrNotLeader, which is the error callers test for.
+func mapNotLeader(err error) error {
+	if errors.Is(err, raft.ErrNotLeader) {
+		return ErrNotLeader
 	}
-	return nil
+	return err
 }
 
 func (c *cluster) IsLeader() bool {
@@ -884,7 +875,7 @@ func (c *cluster) AddVoter(id peer.ID, timeout time.Duration) error {
 	future := c.raft.AddVoter(serverID, serverAddr, 0, timeout)
 	if err := future.Error(); err != nil {
 		clusterLogger.Warnf("[%s] AddVoter %s failed: %v", c.node.ID().ShortString(), id.ShortString(), err)
-		return err
+		return mapNotLeader(err)
 	}
 
 	clusterLogger.Infof("[%s] voter %s added successfully", c.node.ID().ShortString(), id.ShortString())
@@ -906,9 +897,9 @@ func (c *cluster) RemoveServer(id peer.ID, timeout time.Duration) error {
 	future := c.raft.RemoveServer(serverID, 0, timeout)
 	if err := future.Error(); err != nil {
 		clusterLogger.Warnf("[%s] RemoveServer %s failed: %v", c.node.ID().ShortString(), id.ShortString(), err)
-		return err
+		return mapNotLeader(err)
 	}
-	return future.Error()
+	return nil
 }
 
 func (c *cluster) TransferLeadership() error {
@@ -917,5 +908,5 @@ func (c *cluster) TransferLeadership() error {
 	}
 
 	clusterLogger.Infof("[%s] transferring leadership", c.node.ID().ShortString())
-	return c.raft.LeadershipTransfer().Error()
+	return mapNotLeader(c.raft.LeadershipTransfer().Error())
 }

@@ -353,3 +353,58 @@ func TestCluster_BatchAndMembershipRefuseWhatTheyCannotDo(t *testing.T) {
 	require.ErrorIs(t, removed.Batch([]BatchOp{{Delete: &DeleteCommand{Key: "k"}}}, time.Second), ErrShutdown)
 	require.ErrorIs(t, removed.AddVoter(idOf(left), time.Second), ErrShutdown)
 }
+
+// TestCluster_AMembershipChangeThatLosesTheLeadIsNotLeader: every write path
+// answers raft's refusal of a member that does not lead as ErrNotLeader, and
+// AddVoter and RemoveServer passed it through as raft's own when the lead was
+// lost between their check and raft's answer; TransferLeadership always did.
+//
+// A leader alone commits a second voter on its own say, and then needs a
+// voter nobody can reach for everything after: the third voter's change stays
+// uncommitted, raft holds the next change back until it commits, and the
+// leader steps down at its next lease check. A change asked for meanwhile
+// passes the check, waits in raft and is refused once the member follows.
+func TestCluster_AMembershipChangeThatLosesTheLeadIsNotLeader(t *testing.T) {
+	lease := time.Second
+	cl, err := New(newMockNode(t), "membership-loses-the-lead", WithTimeouts(TimeoutConfig{
+		HeartbeatTimeout:   lease,
+		ElectionTimeout:    lease,
+		CommitTimeout:      50 * time.Millisecond,
+		LeaderLeaseTimeout: lease,
+		SnapshotInterval:   time.Minute,
+		SnapshotThreshold:  1000,
+	}), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	defer cl.Close()
+	waitLeader(t, cl, 10*time.Second)
+
+	unreachable, third, joiner := strangerID(t), strangerID(t), strangerID(t)
+	require.NoError(t, cl.AddVoter(unreachable, 10*time.Second))
+	uncommitted := make(chan error, 1)
+	go func() { uncommitted <- cl.AddVoter(third, 10*time.Second) }()
+	require.Eventually(t, func() bool {
+		members, err := cl.Members()
+		return err == nil && len(members) == 3
+	}, 5*time.Second, 5*time.Millisecond, "the change adding the third voter never reached the configuration")
+	require.True(t, cl.IsLeader(), "the lead was lost before the changes were asked for")
+
+	changes := map[string]func() error{
+		"add voter":     func() error { return cl.AddVoter(joiner, 10*time.Second) },
+		"remove server": func() error { return cl.RemoveServer(unreachable, 10*time.Second) },
+	}
+	type answer struct {
+		name string
+		err  error
+	}
+	answers := make(chan answer, len(changes))
+	for name, change := range changes {
+		go func() { answers <- answer{name: name, err: change()} }()
+	}
+	for range changes {
+		got := <-answers
+		require.ErrorIs(t, got.err, ErrNotLeader, "%s", got.name)
+	}
+	require.Error(t, <-uncommitted, "a change that never committed was acknowledged")
+
+	require.ErrorIs(t, cl.TransferLeadership(), ErrNotLeader)
+}
