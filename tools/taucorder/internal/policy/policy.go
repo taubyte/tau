@@ -56,7 +56,7 @@ var Table = map[string]map[string]Class{
 	"tau.register.v2.RegisterService": {
 		"Link": W, "Project": R, "Repository": R, "ProjectsOf": R, "ListProjects": R,
 		"Publish": W, "Resolve": R, "Object": R, "Environments": R,
-		"ResolveHost": R, "ResolveView": R, "Assigned": R,
+		"ResolveHost": R, "ResolveView": R, "Assigned": R, "Manifest": R,
 		"Grant": W, "Revoke": W, "Grants": R, "Role": R,
 	},
 	"tau.build.v2.QueueService": {"Enqueue": W},
@@ -89,7 +89,7 @@ var Table = map[string]map[string]Class{
 		"LogAppend": W, "LogRead": S, "CronTask": W,
 	},
 	"tau.secrets.v2.SecretsService": {
-		"Key": S, "Put": W, "Get": S, "Partial": S, "Delete": W, "List": S,
+		"Key": S, "Put": W, "Get": S, "Previous": S, "Partial": S, "Delete": W, "List": S,
 	},
 	"tau.secrets.v2.DealerService": {"Contribute": W, "Replay": S},
 	"tau.sqlsync.v2.SQLSyncService": {
