@@ -28,18 +28,36 @@ import (
 // names; a reader fetches them all before it merges anything, so a snapshot
 // is never half-applied.
 //
-// What it does not bound is the vector: one entry per incarnation that ever
-// wrote. Folding an entry away would need every holder to agree no delta of
-// that incarnation is still in flight, and that is an agreement step this
-// package does not take.
+// The vector is bounded by time: an incarnation is forgotten once nothing
+// merged about it is needed any more (see timebound.go), and compacting
+// first forgets what has expired.
 func (store *Datastore) Compact(ctx context.Context) (int, error) {
+	return store.compact(ctx, false)
+}
+
+// compact compacts; forced, it writes a snapshot even when every block held
+// is a head snapshot, to replace one that has grown old.
+func (store *Datastore) compact(ctx context.Context, force bool) (int, error) {
 	store.mu.Lock()
-	head, theirs, err := store.compactLocked(ctx)
+	if store.closed {
+		store.mu.Unlock()
+		return 0, ErrClosed
+	}
+	if _, err := store.expireLocked(ctx); err != nil {
+		store.mu.Unlock()
+		return 0, err
+	}
+	head, theirs, err := store.compactLocked(ctx, force)
 	if err != nil || theirs == nil {
 		store.mu.Unlock()
 		return 0, err
 	}
 	n, err := store.purge(ctx, theirs)
+	if err == nil {
+		var old int
+		old, err = store.purgeAncient(ctx)
+		n += old
+	}
 	store.mu.Unlock()
 	if err != nil {
 		return n, err
@@ -53,7 +71,7 @@ func (store *Datastore) Compact(ctx context.Context) (int, error) {
 // compactLocked writes and merges the snapshot. It returns no context when
 // there is nothing to fold: the only block held is the snapshot that is the
 // only head. The caller holds store.mu.
-func (store *Datastore) compactLocked(ctx context.Context) (Head, *causalContext, error) {
+func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *causalContext, error) {
 	if store.closed {
 		return Head{}, nil, ErrClosed
 	}
@@ -61,8 +79,10 @@ func (store *Datastore) compactLocked(ctx context.Context) (Head, *causalContext
 	if len(hs) == 0 {
 		return Head{}, nil, nil
 	}
-	if folded, err := store.nothingToFold(ctx, hs); err != nil || folded {
-		return Head{}, nil, err
+	if !force {
+		if folded, err := store.nothingToFold(ctx, hs); err != nil || folded {
+			return Head{}, nil, err
+		}
 	}
 
 	var elems []*pb.Element

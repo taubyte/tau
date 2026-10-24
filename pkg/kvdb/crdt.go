@@ -161,6 +161,10 @@ type Options struct {
 	// times this process's own intervals, never anything compared across
 	// replicas. Default: the boot clock.
 	Uptime func() time.Duration
+
+	// manual leaves what time drives, maintenance and heartbeats, to the
+	// caller: tests drive them step by step on a virtual clock.
+	manual bool
 }
 
 // retentionFactor is how many margins T must be at least: "many times".
@@ -285,7 +289,16 @@ type Datastore struct {
 	blockCount int
 
 	// ttl is the retention this replica stamps, in milliseconds.
-	ttl atomic.Uint64
+	ttl   atomic.Uint64
+	times times
+	// since is the fleet time this replica last heard, and sinceUp the
+	// uptime it heard it at; horizon is the latest authored time of
+	// anything it forgot. All three are guarded by mu.
+	since   uint64
+	sinceUp time.Duration
+	horizon uint64
+	// lastWrite is the uptime of this incarnation's last write.
+	lastWrite time.Duration
 
 	wg sync.WaitGroup
 
@@ -346,6 +359,7 @@ func NewDatastore(
 		ccChanged:        make(chan struct{}),
 	}
 	dstore.ttl.Store(durationMillis(opts.Retention))
+	dstore.times = timesOf(opts)
 	dstore.set = &set{
 		store:     store,
 		namespace: namespace.ChildString(setNs),
@@ -378,7 +392,13 @@ func NewDatastore(
 			dstore.dagWorker()
 		}()
 	}
-	dstore.wg.Add(5)
+	dstore.wg.Add(6)
+	go func() {
+		defer dstore.wg.Done()
+		if !dstore.opts.manual {
+			dstore.maintenance(ctx)
+		}
+	}()
 	go func() {
 		defer dstore.wg.Done()
 		dstore.handleNext(ctx)
@@ -418,6 +438,13 @@ func (store *Datastore) open(ctx context.Context) error {
 	if store.cc, err = store.loadContext(ctx); err != nil {
 		return fmt.Errorf("error loading the causal context: %w", err)
 	}
+	if store.since, err = readMillis(ctx, store.store, store.sinceKey()); err != nil {
+		return err
+	}
+	if store.horizon, err = readMillis(ctx, store.store, store.horizonKey()); err != nil {
+		return err
+	}
+	store.sinceUp = store.times.up()
 	store.ccRead.Store(store.cc)
 	if err := store.dropOrphans(ctx); err != nil {
 		return fmt.Errorf("error dropping unmerged blocks: %w", err)
@@ -449,14 +476,11 @@ func (store *Datastore) open(ctx context.Context) error {
 	}
 
 	// Last, so that an open that fails never holds an incarnation.
+	store.lastWrite = store.times.up()
 	if inc, ok := incarnations.resume(store.incarnationKey(), store.cc.counter); ok {
 		store.replica, store.counter = inc.replica, inc.counter
-	} else {
-		nonce := make([]byte, 16)
-		if _, err := rand.Read(nonce); err != nil {
-			return fmt.Errorf("error drawing an incarnation: %w", err)
-		}
-		store.replica = string(append(append([]byte{}, store.opts.ReplicaID...), nonce...))
+	} else if err := store.drawIncarnation(); err != nil {
+		return err
 	}
 
 	hs, maxHeight := store.heads.List()
@@ -481,9 +505,10 @@ func (store *Datastore) retention() uint64 { return store.ttl.Load() }
 // clock is this replica's wall clock in milliseconds.
 func (store *Datastore) clock() uint64 { return millis(store.opts.Clock()) }
 
-// stampNow is the time a block written now carries. The caller holds
-// store.mu.
-func (store *Datastore) stampNow() uint64 { return store.clock() }
+// stampNow is the time a block written now carries: its clock, or the fleet
+// time it last heard if that is later, so a clock behind the fleet does not
+// write what is already old. The caller holds store.mu.
+func (store *Datastore) stampNow() uint64 { return max(store.clock(), store.since) }
 
 func (store *Datastore) incarnationKey() incarnationKey {
 	return incarnationKey{replicaID: string(store.opts.ReplicaID), namespace: store.namespace.String()}
@@ -823,6 +848,9 @@ func (store *Datastore) handleBlock(ctx context.Context, h Head) error {
 	if !h.Dot.isZero() && store.covered(h.Dot) {
 		return nil
 	}
+	if store.gone(h.link(), store.dropClockNow()) {
+		return nil
+	}
 	held, err := store.isIndexed(ctx, h.Cid)
 	if err != nil {
 		return fmt.Errorf("error checking for known block %s: %w", h.Cid, err)
@@ -857,8 +885,12 @@ func (store *Datastore) retryKey(d dot) ds.Key {
 // handleBranch walks down from the given blocks and returns once the walk is
 // done. A block that cannot be fetched marks the store dirty: it is still
 // missing, and repair retries it.
+//
+// A walk is bounded by D, the delivery bound, as a whole: one that takes
+// longer is abandoned and left to repair, so nothing it fetches late is
+// merged on the strength of a judgement made when it began.
 func (store *Datastore) handleBranch(ctx context.Context, from []link) error {
-	cctx, cancel := context.WithCancel(ctx)
+	cctx, cancel := context.WithTimeout(ctx, store.opts.DeliveryBound)
 	defer cancel()
 
 	dg := &crdtNodeGetter{NodeGetter: store.dagService}
@@ -867,7 +899,7 @@ func (store *Datastore) handleBranch(ctx context.Context, from []link) error {
 	}
 
 	var session sync.WaitGroup
-	err := store.sendNewJobs(ctx, &session, dg, from)
+	err := store.sendNewJobs(cctx, &session, dg, from)
 	session.Wait()
 	return err
 }
@@ -909,8 +941,9 @@ func (store *Datastore) dagWorker() {
 func (store *Datastore) sendNewJobs(ctx context.Context, session *sync.WaitGroup, ng *crdtNodeGetter, links []link) error {
 	var fetch []cid.Cid
 	dots := map[cid.Cid]dot{}
+	now := store.dropClockNow()
 	for _, l := range links {
-		if !l.dot.isZero() && store.covered(l.dot) {
+		if !l.dot.isZero() && store.covered(l.dot) || store.gone(l, now) {
 			continue
 		}
 		if !store.queuedChildren.Visit(l.cid) {
@@ -1044,6 +1077,13 @@ func (store *Datastore) processNode(ctx context.Context, ng *crdtNodeGetter, del
 	// failed block would stay reserved and stall every later walk of it.
 	defer store.queuedChildren.Remove(current)
 
+	// A block stamped ahead of this replica's clock by more than the skew
+	// waits for the clock: a clock far ahead delays only its owner's writes.
+	if ahead := delta.GetAt(); ahead > store.clock()+store.times.skew {
+		store.dropFailed(ctx, current, nil)
+		return nil, fmt.Errorf("block %s is stamped ahead of this replica's clock", current)
+	}
+
 	var elems []*pb.Element
 	var chunks []cid.Cid
 	if delta.GetSnapshot() {
@@ -1065,7 +1105,8 @@ func (store *Datastore) processNode(ctx context.Context, ng *crdtNodeGetter, del
 	store.mu.Lock()
 	defer store.mu.Unlock()
 
-	if store.cc.covers(dotFromPB(delta.GetDot())) {
+	d := dotFromPB(delta.GetDot())
+	if store.cc.covers(d) {
 		return nil, store.dropUnindexed(ctx, current, chunks)
 	}
 	if !delta.GetSnapshot() {
@@ -1074,12 +1115,32 @@ func (store *Datastore) processNode(ctx context.Context, ng *crdtNodeGetter, del
 				return nil, fmt.Errorf("block %s is a snapshot chunk, not a delta", current)
 			}
 		}
+		if store.expired(delta.GetAt()+delta.GetTtl(), store.dropClock()) {
+			// Too old to be merged: what it added that is still live is
+			// in a snapshot by now, and what it removed may already be
+			// forgotten.
+			return nil, store.unmerged(ctx, current, d, nil, delta.GetAt())
+		}
 		walk, err := store.mergeDelta(ctx, current, delta)
 		if err != nil {
 			store.dropFailed(ctx, current, nil)
 			return nil, fmt.Errorf("error merging delta from %s: %w", current, err)
 		}
 		return walk, nil
+	}
+	if d.replica != store.replica {
+		stale, err := store.stale(ctx, delta.GetSince())
+		if err != nil {
+			store.dropFailed(ctx, current, chunks)
+			return nil, err
+		}
+		if stale {
+			// Its author had not heard the fleet since before something
+			// this replica can no longer refute: what it holds may have
+			// been removed, and it is never merged.
+			store.logger.Warnf("refusing snapshot %s: written by a replica that had heard nothing since %d", current, delta.GetSince())
+			return nil, store.unmerged(ctx, current, d, chunks, 0)
+		}
 	}
 	walk, theirs, err := store.mergeSnapshot(ctx, current, delta, chunks, elems)
 	if err != nil {
@@ -1090,6 +1151,21 @@ func (store *Datastore) processNode(ctx context.Context, ng *crdtNodeGetter, del
 		store.logger.Warnf("error purging what snapshot %s covers: %s", current, err)
 	}
 	return walk, nil
+}
+
+// unmerged settles a block that will never be merged: nothing waits for it
+// any more, the blocks fetched for it go, and the horizon takes forgot, the
+// time of what it taught if that is being forgotten. The caller holds
+// store.mu.
+func (store *Datastore) unmerged(ctx context.Context, c cid.Cid, d dot, chunks []cid.Cid, forgot uint64) error {
+	m := store.beginMerge()
+	m.horizon = max(m.horizon, forgot)
+	m.t.del(store.missingKey(d))
+	m.t.del(store.retryKey(d))
+	if err := m.commit(ctx); err != nil {
+		return err
+	}
+	return store.dropUnindexed(ctx, c, chunks)
 }
 
 // dropUnindexed removes blocks fetched for a dot this replica already covers
@@ -1268,6 +1344,10 @@ func (store *Datastore) write(ctx context.Context, ops []op) error {
 		store.mu.Unlock()
 		return ErrClosed
 	}
+	if err := store.idleRetire(); err != nil {
+		store.mu.Unlock()
+		return err
+	}
 	delta := store.stamped(&pb.Delta{})
 	t := newTxn(store.store)
 	for _, o := range ops {
@@ -1296,6 +1376,31 @@ func (store *Datastore) write(ctx context.Context, ops []op) error {
 		return err
 	}
 	store.maybeCompact(ctx)
+	return nil
+}
+
+// idleRetire draws a new incarnation for a write that comes after this one
+// was idle for more than half the retention, so it never writes under an
+// incarnation its peers may have forgotten. The caller holds store.mu.
+func (store *Datastore) idleRetire() error {
+	up := store.times.up()
+	idle := up - store.lastWrite
+	store.lastWrite = up
+	if store.counter == 0 || durationMillis(idle) <= store.retention()/2 {
+		return nil
+	}
+	return store.drawIncarnation()
+}
+
+// drawIncarnation starts a new incarnation: the peer id and a nonce drawn
+// at random, its counter at 0. The caller holds store.mu or is opening.
+func (store *Datastore) drawIncarnation() error {
+	nonce := make([]byte, 16)
+	if _, err := rand.Read(nonce); err != nil {
+		return fmt.Errorf("error drawing an incarnation: %w", err)
+	}
+	store.replica = string(append(append([]byte{}, store.opts.ReplicaID...), nonce...))
+	store.counter = 0
 	return nil
 }
 
@@ -1348,6 +1453,8 @@ func linkOf(c cid.Cid, delta *pb.Delta) link {
 func (store *Datastore) stamped(delta *pb.Delta) *pb.Delta {
 	delta.At = store.stampNow()
 	delta.Ttl = store.retention()
+	delta.Since = store.knownSince()
+	delta.Horizon = store.horizon
 	return delta
 }
 

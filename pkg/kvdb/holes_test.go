@@ -268,7 +268,13 @@ func TestH4AChunkFetchThatEndsEarlyIsNotMerged(t *testing.T) {
 
 	dag := &droppingDAG{fetchThroughDAGSvc: newFetchThrough(), drop: map[cid.Cid]bool{last: true}}
 	dag.setRemotes(dagsyncs[0].DAGService)
-	x, err := NewDatastore(dssync.MutexWrap(ds.NewMapDatastore()), ds.NewKey("crdttest"), dag, &nullBroadcaster{}, replicaOptions(opts, "x: "))
+	// The test repairs X itself. The repair loop's first pass runs at
+	// open, and when it lands after the failed fetch it walks the snapshot
+	// while the chunk is still withheld and holds it until the test's
+	// repair has already found nothing to do.
+	xopts := replicaOptions(opts, "x: ")
+	xopts.RepairInterval = 0
+	x, err := NewDatastore(dssync.MutexWrap(ds.NewMapDatastore()), ds.NewKey("crdttest"), dag, &nullBroadcaster{}, xopts)
 	if err != nil {
 		t.Fatal(err)
 	}

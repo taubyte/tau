@@ -213,6 +213,8 @@ type merging struct {
 	touched map[string]*change
 	live    int
 	blocks  int
+	horizon uint64
+	since   uint64
 }
 
 func (store *Datastore) beginMerge() *merging {
@@ -222,7 +224,18 @@ func (store *Datastore) beginMerge() *merging {
 		cc:      store.cc.clone(),
 		heads:   newHeadChanges(),
 		touched: map[string]*change{},
+		horizon: store.horizon,
+		since:   store.since,
 	}
+}
+
+// heard takes what a block written by another incarnation says about fleet
+// time: its stamp, no further ahead of this replica's clock than the skew.
+func (m *merging) heard(author string, at uint64) {
+	if author == m.store.replica {
+		return
+	}
+	m.since = max(m.since, min(at, m.store.clock()+m.store.times.skew))
 }
 
 func (m *merging) touch(key string) *change {
@@ -301,8 +314,10 @@ func (m *merging) admit(ctx context.Context, e element, local *causalContext) er
 }
 
 // link records a merged block's parents: a covered parent is no longer a
-// head, an uncovered one is missing and is returned to be walked.
+// head, an uncovered one is missing and is returned to be walked, unless it
+// has expired, when no holder keeps it any more.
 func (m *merging) link(ctx context.Context, parents []*pb.Parent) ([]link, error) {
+	now := m.store.dropClock()
 	var walk []link
 	for _, p := range parents {
 		c, err := cid.Cast(p.GetCid())
@@ -313,7 +328,7 @@ func (m *merging) link(ctx context.Context, parents []*pb.Parent) ([]link, error
 		if _, isHead := m.store.heads.Get(c); isHead {
 			m.heads.removeHead(c)
 		}
-		if m.cc.covers(l.dot) {
+		if m.cc.covers(l.dot) || m.store.expired(l.at+l.ttl, now) {
 			continue
 		}
 		m.t.put(m.store.missingKey(l.dot), encodeLink(l))
@@ -349,8 +364,18 @@ func (m *merging) commit(ctx context.Context) error {
 	}
 	m.store.stageContext(m.t, m.store.cc, m.cc)
 	m.store.heads.stage(m.t, m.heads)
+	if m.horizon != m.store.horizon {
+		m.t.put(m.store.horizonKey(), binary.AppendUvarint(nil, m.horizon))
+	}
+	if m.since != m.store.since {
+		m.t.put(m.store.sinceKey(), binary.AppendUvarint(nil, m.since))
+	}
 	if err := m.t.commit(ctx); err != nil {
 		return err
+	}
+	m.store.horizon = m.horizon
+	if m.since != m.store.since {
+		m.store.since, m.store.sinceUp = m.since, m.store.times.up()
 	}
 	m.store.setContext(m.cc)
 	m.store.heads.apply(m.heads)
@@ -381,6 +406,8 @@ func (store *Datastore) mergeDelta(ctx context.Context, c cid.Cid, delta *pb.Del
 	}
 	at, ttl := delta.GetAt(), delta.GetTtl()
 	m := store.beginMerge()
+	m.horizon = max(m.horizon, delta.GetHorizon())
+	m.heard(d.replica, at)
 	linked, err := m.linked(ctx, d)
 	if err != nil {
 		return nil, err
@@ -457,6 +484,8 @@ func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.D
 	theirs := contextFromPB(root.GetContext())
 	local := store.cc
 	m := store.beginMerge()
+	m.horizon = max(m.horizon, root.GetHorizon())
+	m.heard(d.replica, root.GetAt())
 	linked, err := m.linked(ctx, d)
 	if err != nil {
 		return nil, nil, err
@@ -502,6 +531,12 @@ func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.D
 		if err := m.remove(ctx, tombstoneOf(tomb, at)); err != nil {
 			return nil, nil, err
 		}
+	}
+	// What the snapshot still knew and this replica had already forgotten
+	// is forgotten again, at once: an entry lives as long as its stamps say,
+	// not as long as someone keeps sending it.
+	if _, err := m.forget(ctx, store.dropClock()); err != nil {
+		return nil, nil, err
 	}
 
 	if err := m.dropCovered(ctx); err != nil {
