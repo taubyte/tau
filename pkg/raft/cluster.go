@@ -779,6 +779,13 @@ func mapNotLeader(err error) error {
 	return err
 }
 
+// leadershipMoved is a write that did not land because its leader stopped
+// leading: refused (ErrNotLeader), which applied nothing, or lost mid-commit
+// (raft.ErrLeadershipLost), which the next leader may still commit.
+func leadershipMoved(err error) bool {
+	return errors.Is(err, ErrNotLeader) || errors.Is(err, raft.ErrLeadershipLost)
+}
+
 func (c *cluster) IsLeader() bool {
 	if c.closed.Load() {
 		return false

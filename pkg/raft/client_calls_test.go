@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/hashicorp/raft"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -387,6 +388,70 @@ func TestStream_AJoinAskedOfAFollowerBetweenLeadersWaitsForTheNext(t *testing.T)
 	joiner := strangerID(t)
 	require.NoError(t, cli.JoinVoter(t.Context(), joiner, leaderWait, idOf(follower)))
 	members, err := leaderOf(t, survivors...).Members()
+	require.NoError(t, err)
+	ids := make([]peer.ID, 0, len(members))
+	for _, m := range members {
+		ids = append(ids, m.ID)
+	}
+	require.Contains(t, ids, joiner)
+}
+
+// TestStream_AJoinWhoseLeaderStopsLeadingIsAddedByTheNext: a leader that lost
+// the lead while adding a voter answered the join with raft's refusal, though
+// the join had budget left and the group a next leader. It now waits for that
+// leader, as any member between leaders does, and hands the join on. Here one
+// member's store refuses the voter's change, which the leader holds
+// uncommitted when it hands the lead to the other.
+func TestStream_AJoinWhoseLeaderStopsLeadingIsAddedByTheNext(t *testing.T) {
+	const namespace = "stream-join-leader-steps-down"
+	// No member loses its leader on its own: the test moves the lead.
+	steady := TimeoutConfig{
+		HeartbeatTimeout:   time.Second,
+		ElectionTimeout:    time.Second,
+		CommitTimeout:      50 * time.Millisecond,
+		LeaderLeaseTimeout: 500 * time.Millisecond,
+		SnapshotInterval:   time.Minute,
+		SnapshotThreshold:  1000,
+	}
+	caller := newMockNode(t)
+	var stores []*faultStore
+	group := joinedGroup(t, namespace, func(ds.Batching) ds.Batching {
+		store := newFaultStore()
+		stores = append(stores, store)
+		return store
+	}, 3, WithTimeouts(steady))
+	connected(t, caller, group...)
+	cli, err := newInternalClient(caller, namespace, nil)
+	require.NoError(t, err)
+	defer cli.Close()
+
+	leader := leaderOf(t, group...)
+	var next Cluster
+	for i, cl := range group {
+		switch {
+		case cl == leader:
+		case next == nil:
+			next = cl
+		default:
+			stores[i].failBatches(errNoSpace)
+		}
+	}
+
+	joiner := strangerID(t)
+	joined := make(chan error, 1)
+	go func() { joined <- cli.JoinVoter(t.Context(), joiner, leaderWait, idOf(leader)) }()
+	require.Eventually(t, func() bool {
+		members, err := leader.Members()
+		return err == nil && len(members) == len(group)+1
+	}, leaderWait, 5*time.Millisecond, "the leader never took the voter's change")
+
+	id := idOf(next).String()
+	require.NoError(t, leader.(*cluster).raft.LeadershipTransferToServer(raft.ServerID(id), raft.ServerAddress(id)).Error())
+	for _, store := range stores {
+		store.failBatches(nil)
+	}
+	require.NoError(t, <-joined)
+	members, err := leaderOf(t, group...).Members()
 	require.NoError(t, err)
 	ids := make([]peer.ID, 0, len(members))
 	for _, m := range members {

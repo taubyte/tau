@@ -2,7 +2,6 @@ package raft
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -285,13 +284,6 @@ func agreedLeader(clusters []Cluster) Cluster {
 
 func idOf(cl Cluster) peer.ID { return cl.(*cluster).node.ID() }
 
-// leadershipMoved is a write that did not land because its leader stopped
-// leading: refused (ErrNotLeader), which applied nothing, or lost mid-commit
-// (raft.ErrLeadershipLost), which the next leader may still commit.
-func leadershipMoved(err error) bool {
-	return errors.Is(err, ErrNotLeader) || errors.Is(err, raft.ErrLeadershipLost)
-}
-
 // onLeader runs write on whichever of clusters leads, and again on the next
 // leader while leadership moves under it. A write lost mid-commit may land
 // twice, so this is for writes that leave the same state however often they
@@ -317,13 +309,13 @@ func joinedPair(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batchi
 
 // joinedGroup is a group of size on linked mock nodes: the first bootstrapped
 // it and each other joined in turn. Each runs on the store wrap makes of its
-// node's own.
+// node's own, with opts after the test timeouts.
 //
 // A joiner connects to the first once that one serves the group, so the
 // identify that completes the connection already lists its protocols.
 // Connected earlier, the joiner learns them only from identify's push, and one
 // that has not heard it within its bootstrap timeout founds a group of its own.
-func joinedGroup(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batching, size int) []Cluster {
+func joinedGroup(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batching, size int, opts ...Option) []Cluster {
 	t.Helper()
 	nodes := make([]taupeer.Node, size)
 	for i := range nodes {
@@ -332,7 +324,7 @@ func joinedGroup(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batch
 	require.NoError(t, taupeer.LinkAllPeers())
 
 	first, err := New(storeNode{Node: nodes[0], store: wrap(nodes[0].Store())}, namespace,
-		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		append([]Option{WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir())}, opts...)...)
 	require.NoError(t, err)
 	t.Cleanup(func() { first.Close() })
 	waitLeader(t, first, 5*time.Second)
@@ -341,7 +333,7 @@ func joinedGroup(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batch
 	for _, node := range nodes[1:] {
 		require.NoError(t, node.Peer().Connect(t.Context(), peer.AddrInfo{ID: nodes[0].ID(), Addrs: nodes[0].Peer().Addrs()}))
 		joiner, err := New(storeNode{Node: node, store: wrap(node.Store())}, namespace,
-			WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(t.TempDir()))
+			append([]Option{WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2 * time.Second), WithSnapshotRoot(t.TempDir())}, opts...)...)
 		require.NoError(t, err)
 		t.Cleanup(func() { joiner.Close() })
 		group = append(group, joiner)

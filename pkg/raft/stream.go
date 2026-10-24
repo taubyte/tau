@@ -238,19 +238,27 @@ func (s *raftStreamService) JoinVoter(ctx context.Context, req *connect.Request[
 	streamLogger.Infof("[%s] received joinVoter request from %s (is_leader=%v)",
 		s.cluster.node.ID().ShortString(), peerID.ShortString(), s.cluster.IsLeader())
 
-	if err := s.awaitLeader(ctx, timeout); err != nil {
-		streamLogger.Infof("[%s] joinVoter: no leader available to handle %s",
-			s.cluster.node.ID().ShortString(), peerID.ShortString())
-		return nil, err
-	}
-
-	if s.cluster.IsLeader() {
-		if err := s.cluster.AddVoter(peerID, timeout); err != nil {
-			streamLogger.Warnf("[%s] joinVoter: AddVoter %s failed: %v",
-				s.cluster.node.ID().ShortString(), peerID.ShortString(), err)
+	budget, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	for {
+		if err := s.awaitLeader(budget); err != nil {
+			streamLogger.Infof("[%s] joinVoter: no leader available to handle %s",
+				s.cluster.node.ID().ShortString(), peerID.ShortString())
 			return nil, err
 		}
-		return connect.NewResponse(&raftv2.JoinVoterResponse{}), nil
+		if !s.cluster.IsLeader() {
+			break
+		}
+		err := s.cluster.AddVoter(peerID, timeout)
+		if err == nil {
+			return connect.NewResponse(&raftv2.JoinVoterResponse{}), nil
+		}
+		streamLogger.Warnf("[%s] joinVoter: AddVoter %s failed: %v",
+			s.cluster.node.ID().ShortString(), peerID.ShortString(), err)
+		// A leader that lost the lead while adding is between leaders now.
+		if !leadershipMoved(err) || budget.Err() != nil {
+			return nil, err
+		}
 	}
 
 	streamLogger.Infof("[%s] joinVoter: forwarding request for %s to leader",
@@ -264,18 +272,15 @@ func (s *raftStreamService) JoinVoter(ctx context.Context, req *connect.Request[
 
 // awaitLeader returns once this member knows a leader, which may be itself. A
 // member in a configuration is between leaders and waits for the next, within
-// ctx and timeout. One in no configuration, a founder or a joiner, has no
-// election to wait for: it says so at once, and the joiner asks again on its
-// own schedule.
-func (s *raftStreamService) awaitLeader(ctx context.Context, timeout time.Duration) error {
+// ctx. One in no configuration, a founder or a joiner, has no election to wait
+// for: it says so at once, and the joiner asks again on its own schedule.
+func (s *raftStreamService) awaitLeader(ctx context.Context) error {
 	if _, err := s.cluster.Leader(); err == nil {
 		return nil
 	}
 	if members, err := s.cluster.Members(); err != nil || len(members) == 0 {
 		return ErrNoLeader
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 	if s.cluster.WaitForLeader(ctx) != nil {
 		return ErrNoLeader
 	}
