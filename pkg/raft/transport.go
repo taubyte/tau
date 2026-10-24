@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"slices"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
@@ -26,9 +27,19 @@ type hcLogToLogger struct {
 	name      string
 }
 
+// pairs makes args whole key/value pairs, giving a value left without its key
+// the key hclog gives it.
+func pairs(args []interface{}) []interface{} {
+	if len(args)%2 == 0 {
+		return args
+	}
+	last := len(args) - 1
+	return append(args[:last:last], hclog.MissingKey, args[last])
+}
+
 func (log *hcLogToLogger) formatArgs(args []interface{}) string {
 	result := ""
-	args = append(args, log.extraArgs)
+	args = append(slices.Clone(log.extraArgs), pairs(args)...)
 	for i := 0; i < len(args); i = i + 2 {
 		key, ok := args[i].(string)
 		if !ok {
@@ -98,15 +109,18 @@ func (log *hcLogToLogger) Name() string {
 }
 
 func (log *hcLogToLogger) With(args ...interface{}) hclog.Logger {
-	return &hcLogToLogger{extraArgs: args, name: log.name}
+	return &hcLogToLogger{extraArgs: append(slices.Clone(log.extraArgs), pairs(args)...), name: log.name}
 }
 
 func (log *hcLogToLogger) Named(name string) hclog.Logger {
-	return &hcLogToLogger{name: log.name + ": " + name}
+	if log.name != "" {
+		name = log.name + ": " + name
+	}
+	return &hcLogToLogger{extraArgs: log.extraArgs, name: name}
 }
 
 func (log *hcLogToLogger) ResetNamed(name string) hclog.Logger {
-	return &hcLogToLogger{name: name}
+	return &hcLogToLogger{extraArgs: log.extraArgs, name: name}
 }
 
 func (log *hcLogToLogger) SetLevel(level hclog.Level) {}
@@ -124,7 +138,7 @@ func (log *hcLogToLogger) StandardWriter(opts *hclog.StandardLoggerOptions) io.W
 }
 
 func (log *hcLogToLogger) ImpliedArgs() []interface{} {
-	return nil
+	return log.extraArgs
 }
 
 type namespaceStreamLayer struct {
