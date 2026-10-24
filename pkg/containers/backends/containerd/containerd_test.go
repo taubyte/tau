@@ -554,7 +554,17 @@ func TestEndedIsTheContextsErrorOnceItEnds(t *testing.T) {
 	assert.ErrorIs(t, ended(ctx, cut), context.DeadlineExceeded)
 	assert.NoError(t, ended(ctx, nil), "a container that exited cleanly as the deadline passed exited cleanly")
 
+	assert.ErrorIs(t, ended(passedDeadline{context.Background()}, cut), context.DeadlineExceeded,
+		"a deadline the clock has passed is the context's error before its timer fires")
+
 	live := context.Background()
 	assert.Same(t, cut, ended(live, cut))
 	assert.NoError(t, ended(live, nil))
 }
+
+// passedDeadline is a context whose deadline the clock has passed and whose
+// timer has not fired yet, as gRPC sees it when it turns a cut call into
+// DeadlineExceeded.
+type passedDeadline struct{ context.Context }
+
+func (passedDeadline) Deadline() (time.Time, bool) { return time.Now().Add(-time.Millisecond), true }

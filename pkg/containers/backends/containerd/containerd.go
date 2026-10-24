@@ -1184,10 +1184,18 @@ func (b *ContainerdBackend) Wait(ctx context.Context, id core.ContainerID) error
 // its context cancelled with a status of its own that does not wrap the
 // context's error, and the exit channel carries that status as soon as the
 // context ends, so a select can see it before ctx.Done: a caller that set a
-// deadline must still get the deadline back.
+// deadline must still get the deadline back. gRPC reports a call the server
+// cut as DeadlineExceeded once the deadline has passed by the clock, which can
+// be before the context's own timer has fired and set its error.
 func ended(ctx context.Context, err error) error {
-	if err != nil && ctx.Err() != nil {
-		return ctx.Err()
+	if err == nil {
+		return nil
+	}
+	if cerr := ctx.Err(); cerr != nil {
+		return cerr
+	}
+	if d, ok := ctx.Deadline(); ok && !d.After(time.Now()) {
+		return context.DeadlineExceeded
 	}
 	return err
 }
