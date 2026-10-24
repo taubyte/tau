@@ -310,7 +310,7 @@ func TestAnAssetStoreIsEnoughToServeASite(t *testing.T) {
 	h := newHost(t, mn)
 
 	// No container backend, no injected runtime — and a worker still starts,
-	// with both tiers that need only the asset store.
+	// with every tier that needs only the asset store.
 	n, err := New(Config{Services: []string{Discovery, Worker}},
 		WithHost(h), WithPubSub(newPubSub(t, h)), WithDatabases(&memFactory{}),
 		WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
@@ -320,9 +320,9 @@ func TestAnAssetStoreIsEnoughToServeASite(t *testing.T) {
 	t.Cleanup(func() { n.Close() })
 	require.NotNil(t, n.worker)
 
-	// Both of them: a static site and a wasm component are what the smallest
-	// possible cloud runs, and neither needs a daemon.
-	require.ElementsMatch(t, []string{"static", "wasm"}, tierNames(n))
+	// All three: a static site, a wasm component and a js function are what
+	// the smallest possible cloud runs, and none of them needs a daemon.
+	require.ElementsMatch(t, []string{"static", "wasm", "js"}, tierNames(n))
 
 	// And with neither, it refuses rather than starting a worker that can run
 	// nothing.
@@ -476,9 +476,9 @@ func TestAnInjectedTierWins(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { n.Close() })
 
-	// One wasm, and it is the injected one; static is still built, because
-	// nothing else answers for it.
-	require.ElementsMatch(t, []string{"wasm", "static"}, tierNames(n))
+	// One wasm, and it is the injected one; static and js are still built,
+	// because nothing else answers for them.
+	require.ElementsMatch(t, []string{"wasm", "static", "js"}, tierNames(n))
 	require.Same(t, n.opts.runtimes[0], n.tiers()[0])
 }
 

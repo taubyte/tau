@@ -152,8 +152,9 @@ const pageSize = 64 << 10
 const DefaultExport = "handle"
 
 var (
-	ErrNoAssets   = errors.New("wasm: nothing to fetch a component from")
-	ErrNoArtifact = errors.New("wasm: the spec names no artifact")
+	ErrNoAssets    = errors.New("wasm: nothing to fetch a component from")
+	ErrNoArtifact  = errors.New("wasm: the spec names no artifact")
+	ErrUnknownMode = errors.New("wasm: unknown engine mode")
 
 	// ErrNoMounts is a component that declared a filesystem. It is refused
 	// rather than started without one — see the container tier's own
@@ -179,6 +180,26 @@ var (
 	ErrNotAHandler = errors.New("wasm: that export does not answer with a response")
 )
 
+// Mode is how wazy runs a component.
+type Mode string
+
+const (
+	// ModeCompiler compiles a component to machine code ahead of its first
+	// call, where wazy has a compiler for this arch, and interprets it where
+	// it has none.
+	ModeCompiler Mode = "compiler"
+
+	// ModeInterpreter interprets on every arch: the compiler turned off.
+	ModeInterpreter Mode = "interpreter"
+)
+
+func (m Mode) config() wazy.RuntimeConfig {
+	if m == ModeInterpreter {
+		return wazy.NewRuntimeConfigInterpreter()
+	}
+	return wazy.NewRuntimeConfig()
+}
+
 // Assets is where a built component is fetched from.
 type Assets interface {
 	Get(ctx context.Context, id string) (io.ReadSeekCloser, error)
@@ -188,6 +209,7 @@ type Assets interface {
 type Runtime struct {
 	assets Assets
 	cache  wazy.CompilationCache
+	mode   Mode
 
 	// transport is what an allowed outbound request is finally sent over. Nil
 	// is the process default; a test points it at a scratch backend.
@@ -288,6 +310,11 @@ func WithTransport(t http.RoundTripper) Option {
 	return func(r *Runtime) { r.transport = t }
 }
 
+// WithMode picks how wazy runs a component; empty is ModeCompiler.
+func WithMode(m Mode) Option {
+	return func(r *Runtime) { r.mode = m }
+}
+
 // WithWarn is where this tier says something an operator has to know but that
 // is not a reason to refuse a workload. See unserved.
 func WithWarn(warn func(format string, args ...any)) Option {
@@ -300,14 +327,25 @@ func New(assets Assets, opts ...Option) (*Runtime, error) {
 		return nil, ErrNoAssets
 	}
 
-	r := &Runtime{assets: assets, cache: wazy.NewCompilationCache()}
+	r := &Runtime{assets: assets}
 	for _, apply := range opts {
 		apply(r)
 	}
+	switch r.mode {
+	case "":
+		r.mode = ModeCompiler
+	case ModeCompiler, ModeInterpreter:
+	default:
+		return nil, fmt.Errorf("%w: %q (want %s or %s)", ErrUnknownMode, r.mode, ModeCompiler, ModeInterpreter)
+	}
+	r.cache = wazy.NewCompilationCache()
 	return r, nil
 }
 
 func (r *Runtime) Name() string { return Name }
+
+// Mode is how this tier runs components.
+func (r *Runtime) Mode() Mode { return r.mode }
 
 // Close releases the compilation cache. A Runtime is usable until it is called.
 func (r *Runtime) Close() error { return r.cache.Close(context.Background()) }
@@ -441,7 +479,7 @@ func (r *Runtime) instantiate(ctx context.Context, spec invoke.Spec, world strin
 		return nil, nil, fmt.Errorf("wasm: reading %s: %w", spec.Artifact, err)
 	}
 
-	config := wazy.NewRuntimeConfig().
+	config := r.mode.config().
 		WithCompilationCache(r.cache).
 		// A GUEST THAT WILL NOT STOP IS STOPPED. The pool bounds a request
 		// with a context; without this a guest in a loop ignores it and holds

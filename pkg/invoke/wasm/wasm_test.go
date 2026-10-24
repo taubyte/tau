@@ -87,6 +87,24 @@ func TestAComponentAnswersARequest(t *testing.T) {
 	require.Equal(t, []string{"abc"}, res.Headers["x-echo-x-trace"], "and a header the caller sent")
 }
 
+// THE COMPILER CAN BE TURNED OFF, and the same component answers the same way
+// interpreted. An unset mode is the compiler; a mode this tier does not know is
+// refused when the tier is built, not at the first request.
+func TestTheEngineModeIsTheOperators(t *testing.T) {
+	require.Equal(t, wasm.ModeCompiler, tier(t, handler(t)).Mode())
+
+	interpreted := tier(t, handler(t), wasm.WithMode(wasm.ModeInterpreter))
+	require.Equal(t, wasm.ModeInterpreter, interpreted.Mode())
+	res, err := start(t, interpreted, invoke.Spec{Name: "shop/prod/function/checkout"}).
+		Serve(t.Context(), &invoke.Request{Method: "GET", Path: "/orders", Body: []byte("hello")})
+	require.NoError(t, err)
+	require.Equal(t, "GET hello", string(res.Body))
+
+	_, err = wasm.New(&store{}, wasm.WithMode("jit"))
+	require.ErrorIs(t, err, wasm.ErrUnknownMode)
+	require.ErrorContains(t, err, `"jit"`)
+}
+
 // A SPEC FOR ANOTHER TIER IS REFUSED BY NAME, at every way into this one. The
 // pool never hands one here, but a guard, a validator, a resolver and a request
 // authorizer are asked through the tier directly, and a function's runtime is

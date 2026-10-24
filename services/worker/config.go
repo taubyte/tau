@@ -84,6 +84,25 @@ type Config struct {
 	// deploy mints a new one and the old is still valid forever, so "valid" is
 	// not a bound. This is.
 	MaxProjects int
+
+	// Engines is how this node's engines run the code they are handed.
+	Engines Engines
+}
+
+// Engines is the engine tuning of one node, not of a project: how fast a node
+// runs code is a property of the machine and of what its operator chose.
+//
+// EMPTY IS EACH ENGINE'S DEFAULT FOR THIS ARCH, and the tier that reads a value
+// refuses one it does not know when the node starts.
+type Engines struct {
+	// JS is how warpjs runs a js function: "bytecode", "native" or
+	// "native+jit". Empty is pkg/invoke/js's DefaultMode, and a native mode on
+	// an arch with no native backend runs bytecode.
+	JS string
+
+	// Wasm is how wazy runs a component: "compiler" or "interpreter". Empty is
+	// the compiler, which interprets on an arch it has no backend for.
+	Wasm string
 }
 
 // Pointer is PointerTTL with the default applied.

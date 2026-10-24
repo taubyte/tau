@@ -15,6 +15,7 @@ import (
 	"github.com/taubyte/tau/pkg/importer/fly"
 	"github.com/taubyte/tau/pkg/importer/vercel"
 	"github.com/taubyte/tau/pkg/invoke/container"
+	"github.com/taubyte/tau/pkg/invoke/js"
 	"github.com/taubyte/tau/pkg/invoke/static"
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
@@ -39,6 +40,7 @@ import (
 // without a tier, is what the test below is about.
 var implemented = map[string]bool{
 	container.Name: true,
+	js.Name:        true,
 	static.Name:    true,
 	wasm.Name:      true,
 }
@@ -46,9 +48,7 @@ var implemented = map[string]bool{
 // absent is every engine the vocabulary names that no tier here runs YET, and why.
 // An entry is a gap with a reason, not a waiver: the test below fails the day its
 // tier lands and the entry is still here, so the list cannot outlive what it records.
-var absent = map[string]string{
-	"js": "a function may choose it, and until pkg/invoke/js is a tier a node refuses a js function by name",
-}
+var absent = map[string]string{}
 
 // theFlyFile, theVercelOutput and the compose file above are one representative
 // descriptor each — enough to make every importer emit its kinds.

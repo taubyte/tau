@@ -37,16 +37,21 @@ func TestBothModesServe(t *testing.T) {
 	}
 }
 
-func TestTheDefaultModeIsTheFastestTheArchHas(t *testing.T) {
+func TestTheDefaultModeFollowsTheArch(t *testing.T) {
 	want := js.ModeBytecode
 	if engine.NativeSupported() {
-		want = js.ModeNative
+		want = js.DefaultNativeMode
 	}
 	require.Equal(t, want, js.DefaultMode())
 	tier, err := js.New(&store{})
 	require.NoError(t, err)
 	require.Equal(t, want, tier.Mode())
 	require.Equal(t, js.Name, tier.Name())
+
+	// A config that names no mode is one that asks for the default.
+	tier, err = js.New(&store{}, js.WithMode(""))
+	require.NoError(t, err)
+	require.Equal(t, want, tier.Mode())
 }
 
 func TestNewRefusesWhatItCannotUse(t *testing.T) {

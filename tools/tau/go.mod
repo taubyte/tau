@@ -295,4 +295,7 @@ require (
 	google.golang.org/grpc v1.81.1 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
+	warpjs v0.0.0 // indirect
 )
+
+replace warpjs => ../../.deps/warpjs

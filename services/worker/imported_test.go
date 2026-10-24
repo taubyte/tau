@@ -212,7 +212,7 @@ func assertRunnable(t *testing.T, specs map[string]invoke.Spec) {
 // implementedTiers is the same set pkg/importer/emit/runnable_test holds,
 // restated because this file asserts a different thing about it: not that the
 // kind names an implemented engine, but that the resolved SPEC did.
-var implementedTiers = []string{"container", "static", "wasm"}
+var implementedTiers = []string{"container", "js", "static", "wasm"}
 
 // ── one test per platform ────────────────────────────────────────────────────
 

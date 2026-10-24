@@ -54,6 +54,7 @@ import (
 	"github.com/taubyte/tau/node/volume"
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/invoke"
+	"github.com/taubyte/tau/pkg/invoke/js"
 	"github.com/taubyte/tau/pkg/invoke/static"
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 	"github.com/taubyte/tau/pkg/register"
@@ -443,10 +444,12 @@ func (n *Node) openWorker() error {
 		tiers = append(tiers, tier)
 	}
 
-	// NEITHER A SITE NOR A COMPONENT NEEDS A DAEMON OR AN OPERATOR CHOICE.
-	// Both cold-start out of the asset store, so a node that can reach it
-	// serves both — which means the smallest possible cloud runs a static
-	// website and a wasm function, and that is most of what anybody deploys.
+	// NEITHER A SITE, A COMPONENT NOR A SCRIPT NEEDS A DAEMON OR AN OPERATOR
+	// CHOICE. All three cold-start out of the asset store, so a node that can
+	// reach it serves all three — which means the smallest possible cloud runs
+	// a static website, a wasm function and a js one, and that is most of what
+	// anybody deploys. A node with no asset store has none of them, and refuses
+	// a js function by name as it refuses a wasm one.
 	//
 	// AN INJECTED TIER WINS OVER A BUILT ONE, by name. Somebody who handed this
 	// node a wasm runtime meant that one — a test observing what a node asks to
@@ -533,6 +536,7 @@ func (n *Node) openWorker() error {
 		}
 
 		component, err := wasm.New(n.opts.assets,
+			wasm.WithMode(wasm.Mode(n.cfg.Worker.Engines.Wasm)),
 			wasm.WithOutput(workloadLog),
 			// THE SAME REPORT THE CONTAINER TIER MAKES. The composer hands every
 			// tier a grant for every kind so it can say what it cannot do; this
@@ -575,7 +579,18 @@ func (n *Node) openWorker() error {
 		// function to instantiate. See authorizer.go.
 		n.decider = component
 
-		tiers = appendUnnamed(tiers, site, component)
+		// A JS FUNCTION REACHES NOTHING YET: its env is empty until host
+		// capabilities have a JS binding, and the tier says so for each one a
+		// workload declares rather than refusing it.
+		script, err := js.New(n.opts.assets,
+			js.WithMode(js.Mode(n.cfg.Worker.Engines.JS)),
+			js.WithOutput(workloadLog),
+			js.WithWarn(func(format string, args ...any) { logger.Warnf(format, args...) }))
+		if err != nil {
+			return err
+		}
+
+		tiers = appendUnnamed(tiers, site, component, script)
 	}
 
 	if len(tiers) == 0 {

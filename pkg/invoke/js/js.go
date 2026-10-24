@@ -53,28 +53,25 @@ import (
 	_ "embed"
 
 	"github.com/taubyte/tau/pkg/invoke"
+	"github.com/taubyte/tau/pkg/specs"
 )
 
 // Name is the string the config vocabulary uses for this tier.
-//
-// IT IS SPELLED HERE AND NOT READ FROM pkg/specs, and so are the settings
-// below: the tier is not wired to the schema yet, and it must build without
-// whatever the schema is generating at the time. Wiring ties them together.
-const Name = "js"
+const Name = specs.WorkloadBlockRuntimeJs
 
 // The settings this tier reads, spelled as the vocabulary spells them.
 const (
 	// SettingCall names the export the handler is. Empty is DefaultExport.
-	SettingCall = "execution/call"
+	SettingCall = specs.WorkloadBlockKeyExecutionCall
 
 	// SettingImplements is which host interface the function was written
 	// against. This tier serves the handler and refuses the rest by name.
-	SettingImplements = "implements"
+	SettingImplements = specs.WorkloadBlockKeyImplements
 )
 
 // WorldHandler is the one host interface this tier serves: a request in, a
 // response out.
-const WorldHandler = "handler"
+const WorldHandler = specs.WorkloadBlockImplementsHandler
 
 // DefaultExport is the export a Workers module is: `export default { fetch }`.
 const DefaultExport = "default"
@@ -131,11 +128,19 @@ const (
 	ModeJIT Mode = "native+jit"
 )
 
-// DefaultMode is native where the engine has a backend for this arch, and
-// bytecode elsewhere.
+// DefaultNativeMode is what an arch with a native backend runs when nothing
+// names a mode.
+//
+// PROVISIONAL. The numbers it was chosen on measured the request path and JIT
+// warm-up rather than how fast code runs, so it is this one constant, and
+// nothing else depends on which mode it names.
+const DefaultNativeMode = ModeJIT
+
+// DefaultMode is DefaultNativeMode where the engine has a native backend for
+// this arch, and bytecode elsewhere.
 func DefaultMode() Mode {
 	if engine.NativeSupported() {
-		return ModeNative
+		return DefaultNativeMode
 	}
 	return ModeBytecode
 }
@@ -188,8 +193,8 @@ var _ invoke.Runtime = (*Runtime)(nil)
 // Option configures a Runtime.
 type Option func(*Runtime)
 
-// WithMode picks the engine mode. A native mode on an arch with no native
-// backend runs bytecode, and Mode reports that.
+// WithMode picks the engine mode; empty is DefaultMode. A native mode on an
+// arch with no native backend runs bytecode, and Mode reports that.
 func WithMode(m Mode) Option {
 	return func(r *Runtime) { r.mode = m }
 }
@@ -222,6 +227,9 @@ func New(assets Assets, opts ...Option) (*Runtime, error) {
 	r := &Runtime{assets: assets, mode: DefaultMode(), maxArchive: DefaultMaxArchive}
 	for _, apply := range opts {
 		apply(r)
+	}
+	if r.mode == "" {
+		r.mode = DefaultMode()
 	}
 	switch r.mode {
 	case ModeBytecode:

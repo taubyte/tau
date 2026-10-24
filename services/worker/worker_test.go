@@ -378,9 +378,10 @@ func TestTheClientIsTheSameWorker(t *testing.T) {
 
 // A FUNCTION ON A TIER THIS NODE DOES NOT HAVE IS REFUSED BY NAME. `runtime: js` is
 // valid config: tcc compiles it, the default export is its entrypoint, and the
-// resource resolves to a spec naming the js tier. No js engine is registered, so
-// starting it says which engine is missing, across the wire, and nothing is handed
-// to a tier that would run it as something else.
+// resource resolves to a spec naming the js tier. This pool has no js tier, as a
+// node with no asset store builds none, so starting it says which engine is
+// missing, across the wire, and nothing is handed to a tier that would run it as
+// something else.
 func TestAFunctionOnATierThisNodeLacksIsRefusedByName(t *testing.T) {
 	h := build(t, Config{}, resolvers()...)
 	h.Register.Register = publishedDocs(t, map[string]string{
