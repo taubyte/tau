@@ -41,7 +41,8 @@ func WithBootstrapTimeout(d time.Duration) Option {
 	}
 }
 
-// WithSnapshotDir sets the snapshot directory (default /tmp/tau-raft-snapshots/<namespace>).
+// WithSnapshotDir sets the snapshot directory (default: a folder of the
+// node's own, raft/<namespace>).
 func WithSnapshotDir(dir string) Option {
 	return func(c *cluster) error {
 		if dir == "" {
@@ -53,13 +54,9 @@ func WithSnapshotDir(dir string) Option {
 }
 
 // WithSnapshotRoot puts this cluster's snapshots under a directory the CALLER
-// owns, in a subdirectory named after the namespace.
-//
-// IT IS THE OPTION A COMPOSITION THAT RUNS TWO NODES NEEDS. The default is
-// /tmp/tau-raft-snapshots/<namespace>, which is a machine-wide path: two nodes
-// in one process, or two processes on one machine, share one snapshot store per
-// namespace and write each other's state. Handing each node its own root is
-// what makes that impossible rather than unlikely.
+// owns, in a subdirectory named after the namespace. Without it they go in a
+// folder of the node's own (node.NewFolder), beside the store that holds the
+// log they compact, so two nodes never share one.
 //
 // THE NAMESPACE STILL NAMES THE SUBDIRECTORY, because one node opens many
 // groups — one per resource in the case of a database — and a root shared

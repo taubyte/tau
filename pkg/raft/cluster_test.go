@@ -49,6 +49,33 @@ func testOptions() []Option {
 	}
 }
 
+// TestCluster_NodesKeepTheirOwnSnapshots: with no snapshot option a group's
+// snapshots went to /tmp/tau-raft-snapshots/<namespace>, one directory for
+// every node on the machine and every run, so a node opening a namespace
+// another node had snapshotted started from that node's state. Each node's
+// snapshots are now its own.
+func TestCluster_NodesKeepTheirOwnSnapshots(t *testing.T) {
+	const namespace = "snapshots-of-their-own"
+	opts := []Option{WithTimeouts(testTimeoutConfig()), WithForceBootstrap()}
+
+	a, err := New(newMockNode(t), namespace, opts...)
+	require.NoError(t, err)
+	t.Cleanup(func() { a.Close() })
+	waitLeader(t, a, 5*time.Second)
+	require.NoError(t, a.Set("only-a-wrote", []byte("v"), time.Second))
+	require.NoError(t, a.(*cluster).raft.Snapshot().Error())
+
+	b, err := New(newMockNode(t), namespace, opts...)
+	require.NoError(t, err, "b started from a's snapshot")
+	t.Cleanup(func() { b.Close() })
+	waitLeader(t, b, 5*time.Second)
+	snaps, err := b.(*cluster).snaps.List()
+	require.NoError(t, err)
+	require.Empty(t, snaps, "b's store holds a's snapshot")
+	_, found := b.Get("only-a-wrote")
+	require.False(t, found, "b holds a write only a made")
+}
+
 func TestNew_ValidNamespace(t *testing.T) {
 	node := newMockNode(t)
 

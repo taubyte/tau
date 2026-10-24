@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"path"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -115,7 +114,11 @@ func (c *cluster) initialize() (err error) {
 
 	snapDir := c.snapshotDir
 	if snapDir == "" {
-		snapDir = filepath.Join("/tmp", "tau-raft-snapshots", strings.ReplaceAll(c.namespace, "/", "_"))
+		folder, err := c.node.NewFolder(path.Join("raft", strings.ReplaceAll(c.namespace, "/", "_")))
+		if err != nil {
+			return fmt.Errorf("failed to create snapshot store: %w", err)
+		}
+		snapDir = folder.Path()
 	}
 	c.snaps, err = newSnapshotStore(snapDir, defaultRetainSnapshots)
 	if err != nil {
