@@ -1111,6 +1111,10 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 			store.dropFailed(ctx, current, fetched)
 			return nil, fmt.Errorf("error fetching snapshot %s: %w", current, err)
 		}
+		if store.carriesAhead(delta, elems) {
+			store.dropFailed(ctx, current, chunks)
+			return nil, fmt.Errorf("snapshot %s: %w", current, errAhead)
+		}
 	}
 
 	store.mu.Lock()
@@ -1139,10 +1143,20 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 		}
 		return walk, nil
 	}
-	// A snapshot whose author never heard a fleet (since 0) holds only what
-	// replicas like it wrote: nothing in it can have been removed.
-	if d.replica != store.replica && delta.GetSince() != 0 {
-		stale, err := store.stale(ctx, delta.GetSince())
+	if d.replica != store.replica {
+		// A snapshot is as recent as its author's fleet time. One written
+		// before its author heard any fleet (since 0) holds only that
+		// author's own writes, and is as recent as the oldest of them: any
+		// may have been removed, and the removal forgotten, after it was
+		// written, however late the snapshot is fetched.
+		since := delta.GetSince()
+		if since == 0 {
+			since = delta.GetAt()
+			for _, e := range elems {
+				since = min(since, e.GetAt())
+			}
+		}
+		stale, err := store.stale(ctx, since)
 		if err != nil {
 			store.dropFailed(ctx, current, chunks)
 			return nil, err
@@ -1151,7 +1165,7 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 			// Its author had not heard the fleet since before something
 			// this replica can no longer refute: what it holds may have
 			// been removed, and it is never merged.
-			store.logger.Warnf("refusing snapshot %s: written by a replica that had heard nothing since %d", current, delta.GetSince())
+			store.logger.Warnf("refusing snapshot %s: written by a replica that had heard nothing since %d", current, since)
 			return nil, store.unmerged(ctx, current, d, chunks, 0)
 		}
 	}

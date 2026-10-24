@@ -9,6 +9,8 @@ import (
 
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
+	pb "github.com/taubyte/tau/pkg/kvdb/pb"
+	"google.golang.org/protobuf/proto"
 )
 
 // What a replica knows is forgotten by time, and nothing else.
@@ -125,6 +127,16 @@ func (store *Datastore) knownSince() uint64 {
 
 // hearFleet takes a peer's word for the fleet's time, no further ahead of
 // this replica's clock than the skew.
+//
+// The first time a replica hears one, everything it holds it wrote itself,
+// before it had heard anyone, and nothing logged it for a rebase. Once an
+// element has expired by a margin, the fleet may have removed it and
+// forgotten the removal, which outlives what it removes by no more: taking
+// the fleet's time would vouch for it. Such a replica rejoins instead, from
+// the time of the oldest element it holds, and is judged from there. One
+// whose elements are all younger takes the time, and logs them as its own
+// operations: from now on it can be judged stale, and a rebase must put
+// them back.
 func (store *Datastore) hearFleet(ctx context.Context, stamp uint64) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
@@ -132,10 +144,72 @@ func (store *Datastore) hearFleet(ctx context.Context, stamp uint64) error {
 	if store.rejoining || stamp <= store.since {
 		return nil
 	}
-	if err := store.store.Put(ctx, store.sinceKey(), binary.AppendUvarint(nil, stamp)); err != nil {
+	t := newTxn(store.store)
+	rejoin := false
+	if store.since == 0 {
+		held, err := store.heldElements(ctx)
+		if err != nil {
+			return err
+		}
+		oldest, expires := none, none
+		for _, el := range held {
+			oldest, expires = min(oldest, el.at), min(expires, el.expires())
+		}
+		switch {
+		case oldest != none && store.expired(expires, stamp):
+			stamp, rejoin = max(oldest, 1), true
+		case oldest != none:
+			if err := store.logHeld(t, held); err != nil {
+				return err
+			}
+		}
+	}
+	t.put(store.sinceKey(), binary.AppendUvarint(nil, stamp))
+	if err := t.commit(ctx); err != nil {
 		return err
 	}
 	store.since, store.sinceUp = stamp, store.times.up()
+	if rejoin {
+		return store.startRejoin(ctx)
+	}
+	return nil
+}
+
+// heldElements is every element this replica holds. The caller holds
+// store.mu.
+func (store *Datastore) heldElements(ctx context.Context) ([]element, error) {
+	var held []element
+	err := scanStore(ctx, store.store, store.set.elemsPrefix(), func(k string, v []byte) error {
+		el, err := store.set.parseElem(k, v)
+		if err != nil {
+			return err
+		}
+		held = append(held, el)
+		return nil
+	})
+	return held, err
+}
+
+// logHeld logs elements as the own operations that wrote them, one record
+// per dot, as logOwn would have. The caller holds store.mu.
+func (store *Datastore) logHeld(t *txn, held []element) error {
+	recs := map[dot]*pb.Delta{}
+	for _, el := range held {
+		rec := recs[el.dot]
+		if rec == nil {
+			rec = &pb.Delta{At: el.at, Ttl: el.ttl, Priority: el.priority}
+			recs[el.dot] = rec
+		}
+		rec.Elements = append(rec.Elements, &pb.Element{Key: el.key, Value: el.value})
+	}
+	for d, rec := range recs {
+		b, err := proto.Marshal(rec)
+		if err != nil {
+			return err
+		}
+		t.put(store.ownKey(d), b)
+		store.lows.own = min(store.lows.own, rec.GetAt()+rec.GetTtl())
+	}
 	return nil
 }
 
@@ -155,6 +229,29 @@ var errAhead = errors.New("stamped ahead of this replica's clock")
 // replica's clock than the skew.
 func (store *Datastore) ahead(at uint64) bool {
 	return at > store.clock()+store.times.skew
+}
+
+// carriesAhead reports whether a snapshot holds anything stamped ahead: what
+// a clock far ahead wrote, carried by a snapshot its author wrote once the
+// clock was put right. It waits as the block that wrote it would have, so a
+// wrong clock's stamps never reach a correct replica's state.
+func (store *Datastore) carriesAhead(delta *pb.Delta, elems []*pb.Element) bool {
+	for _, e := range elems {
+		if store.ahead(e.GetAt()) {
+			return true
+		}
+	}
+	for _, e := range delta.GetTombstones() {
+		if store.ahead(e.GetAt()) {
+			return true
+		}
+	}
+	for _, e := range delta.GetContext().GetVector() {
+		if store.ahead(e.GetChanged()) {
+			return true
+		}
+	}
+	return false
 }
 
 // stale reports whether a state as recent as since may hold an element this

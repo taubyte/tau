@@ -445,3 +445,69 @@ func TestAPendingRemovalExpiresWhereverItTravels(t *testing.T) {
 		}
 	}
 }
+
+// TestASnapshotWrittenBeforeAnyContactIsJudgedByItsOldestElement (T8.8): a
+// snapshot written by a replica that had heard no fleet holds that
+// replica's own writes, and is only as recent as the oldest of them. Fetched
+// late, after the fleet removed one and forgot the removal, it is refused,
+// whatever T it was written under.
+func TestASnapshotWrittenBeforeAnyContactIsJudgedByItsOldestElement(t *testing.T) {
+	ctx := context.Background()
+	st := newSimTime()
+	a, b, c := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
+	put(t, a.r, "/x", "removed")
+	st.deliver(t, a, b, c) // its write goes out, and nothing comes back
+	st.advance(simRI)
+	closeStore(t, a.r)
+	forgetIncarnation(a.r.incarnationKey())
+	a.open(t)
+	if err := a.r.SetRetention(4 * simRetention); err != nil {
+		t.Fatal(err)
+	}
+	compact(t, a.r)
+	hs, _ := a.r.heads.List()
+	if len(hs) != 1 {
+		t.Fatalf("setup: %d heads, want the snapshot", len(hs))
+	}
+	snap := hs[0]
+	a.out.take()
+	b.r.retryLater(ctx, snap.link()) // heard, not fetched yet
+	del(t, b.r, "/x")
+	st.away(t, simRetention+2*simMargin, b, c)
+	b.wantValue(t, "/x", "<deleted>")
+
+	b.dag.setRemotes(a.dag.DAGService)
+	if err := b.r.Repair(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if b.r.covered(snap.Dot) {
+		t.Fatal("a snapshot from before any contact was merged after what it holds was removed and forgotten")
+	}
+	b.wantValue(t, "/x", "<deleted>")
+}
+
+// TestASnapshotCarryingStampsFromTheFutureWaits (T8.11): a replica whose
+// clock ran far ahead and was put right still holds what it wrote then, and
+// so does every snapshot it writes after. A correct replica merges none of
+// it before its own clock gets there, so the wrong clock's stamps, and the
+// incarnation they would keep known for as long, never reach its state.
+func TestASnapshotCarryingStampsFromTheFutureWaits(t *testing.T) {
+	st := newSimTime()
+	fast, b, c := st.replica(t, "fast", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
+	st.exchange(t, fast, b, c)
+	fast.r.opts.Clock = st.at(1000 * simRetention)
+	put(t, fast.r, "/x", "v")
+	ahead := fast.incarnation()
+	fast.r.opts.Clock = st.at(0)
+	compact(t, fast.r)
+	if at := deltaAt(t, fast, onlyHead(t, fast.r)).GetAt(); at > st.ms()+durationMillis(simS) {
+		t.Fatalf("setup: the snapshot is stamped %dms ahead", at-st.ms())
+	}
+	st.exchange(t, fast, b, c)
+	for _, sr := range []*simReplica{b, c} {
+		sr.wantValue(t, "/x", "<deleted>")
+		if sr.knows(ahead) {
+			t.Fatalf("%s took stamps a clock far ahead wrote, from a snapshot written once it was put right", sr.name)
+		}
+	}
+}

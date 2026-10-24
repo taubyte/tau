@@ -118,13 +118,13 @@ func (store *Datastore) message(heads []Head, v *verdict) *pb.CRDTBroadcast {
 	// What this replica merged lately, of whom: the authors stop keeping it
 	// for a rebase.
 	up := store.times.up()
-	for _, r := range store.cc.replicas() {
-		at, ok := store.merged[r]
-		if !ok {
-			continue
-		}
-		if up-at > gapIntervals*store.opts.RebroadcastInterval {
+	for r, at := range store.merged {
+		if up-at > gapIntervals*store.opts.RebroadcastInterval || store.cc.inc[r] == nil {
 			delete(store.merged, r)
+		}
+	}
+	for _, r := range store.cc.replicas() {
+		if _, ok := store.merged[r]; !ok {
 			continue
 		}
 		k := store.cc.inc[r]
@@ -227,16 +227,23 @@ func (store *Datastore) checkGap(ctx context.Context) error {
 	if store.closed || store.since == 0 {
 		return nil
 	}
-	g := gapIntervals * store.opts.RebroadcastInterval
-	up := store.times.up()
 	if store.rejoining {
+		g := gapIntervals * store.opts.RebroadcastInterval
+		up := store.times.up()
 		if store.anyHeard != 0 && up-store.anyHeard <= g && (store.fleetHeard == 0 || up-store.fleetHeard > g) {
 			store.logger.Warnf("rejoining among replicas that never heard a fleet: carrying on from %d", store.gapFrom)
 			return store.endRejoin(ctx, 0)
 		}
 		return nil
 	}
-	if up-store.lastHeard <= g {
+	return store.rejoinIfAway(ctx)
+}
+
+// rejoinIfAway starts a rejoin when no peer of the fleet has been heard for
+// G. The caller holds store.mu, and the replica has heard a fleet and is not
+// rejoining.
+func (store *Datastore) rejoinIfAway(ctx context.Context) error {
+	if store.times.up()-store.lastHeard <= gapIntervals*store.opts.RebroadcastInterval {
 		return nil
 	}
 	return store.startRejoin(ctx)
@@ -256,6 +263,15 @@ func (store *Datastore) handleBroadcast(ctx context.Context, msg message) {
 	if store.closed || msg.incarnation == store.replica {
 		store.mu.Unlock()
 		return
+	}
+	// The absence is judged before what was just heard counts as contact: a
+	// replica whose timers stood still, a machine suspended for longer than
+	// T, may hear a peer before its own heartbeat checks the gap, and that
+	// peer must not vouch for what it held while away.
+	if !store.rejoining && store.since != 0 {
+		if err := store.rejoinIfAway(ctx); err != nil {
+			store.logger.Errorf("checking for a gap: %s", err)
+		}
 	}
 	// Only a peer that is not rejoining and has heard a fleet is the fleet:
 	// a replica that hears nothing else is as cut off as one that hears
@@ -465,7 +481,7 @@ func (store *Datastore) heartbeat(ctx context.Context) {
 // again. The caller holds store.mu.
 func (m *merging) logOwn(d dot, delta *pb.Delta) error {
 	// A replica that has never heard a fleet is never judged stale: what it
-	// wrote reaches whoever it meets from its own heads.
+	// still holds when it first hears one is logged then (hearFleet).
 	if m.store.since == 0 || len(delta.GetElements())+len(delta.GetTombstones()) == 0 {
 		return nil
 	}
@@ -686,7 +702,10 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 }
 
 // reissue puts back every kept own operation the state does not cover, then
-// forgets them all and the rebase with them.
+// forgets those it covers and the rebase. The others stay in the log until a
+// peer acknowledges them or they expire, as before the rebase: nothing says
+// the snapshot that carries them reached anyone, and a second rebase must
+// put them back again.
 //
 // An element goes back under its own dot, as an ancient one, not as a new
 // write: if the fleet removed it while this replica was away and still knows
@@ -705,19 +724,27 @@ func (store *Datastore) reissue(ctx context.Context) error {
 	delta := store.stamped(&pb.Delta{})
 	m := store.beginMerge()
 	var done []ds.Key
+	kept := map[ds.Key]*pb.Delta{}
 	prefix := store.ownPrefix().String() + "/"
 	err = scanStore(ctx, store.store, store.ownPrefix(), func(k string, v []byte) error {
 		d, err := parseDotSegment(strings.TrimPrefix(k, prefix))
 		if err != nil {
 			return err
 		}
-		done = append(done, ds.RawKey(k))
 		if store.cc.covers(d) {
+			done = append(done, ds.RawKey(k))
 			return nil
 		}
 		rec := &pb.Delta{}
 		if err := proto.Unmarshal(v, rec); err != nil {
 			return err
+		}
+		// The removals go out in a delta of their own, logged as it merges;
+		// the record keeps the elements.
+		if len(rec.GetElements()) == 0 {
+			done = append(done, ds.RawKey(k))
+		} else if len(rec.GetTombstones()) > 0 {
+			kept[ds.RawKey(k)] = &pb.Delta{Elements: rec.GetElements(), At: rec.GetAt(), Ttl: rec.GetTtl(), Priority: rec.GetPriority()}
 		}
 		for _, e := range rec.GetElements() {
 			el := element{key: e.GetKey(), dot: d, priority: rec.GetPriority(), value: e.GetValue(), at: rec.GetAt(), ttl: rec.GetTtl()}
@@ -753,6 +780,13 @@ func (store *Datastore) reissue(ctx context.Context) error {
 	t := newTxn(store.store)
 	for _, k := range done {
 		t.del(k)
+	}
+	for k, rec := range kept {
+		b, err := proto.Marshal(rec)
+		if err != nil {
+			return err
+		}
+		t.put(k, b)
 	}
 	t.del(store.rebaseKey())
 	if err := t.commit(ctx); err != nil {

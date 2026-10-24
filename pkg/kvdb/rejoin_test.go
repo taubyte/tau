@@ -234,15 +234,19 @@ func TestAQuietFleetVouchesForAReplicaThatWasNeverAway(t *testing.T) {
 }
 
 // TestAPeersAcksForgetTheOwnOperations: what a peer's heartbeat shows it has
-// merged is no longer kept for a rebase.
+// merged is no longer kept for a rebase. What a replica wrote before it first
+// heard anyone is logged when it does.
 func TestAPeersAcksForgetTheOwnOperations(t *testing.T) {
 	st := newSimTime()
 	a, b := st.replica(t, "a", 0), st.replica(t, "b", 0)
 	put(t, a.r, "/k", "1")
+	if n := countEntries(t, a.r, a.r.ownPrefix()); n != 0 {
+		t.Fatalf("a replica that never heard a fleet logs %d own operations", n)
+	}
 	st.exchange(t, a, b)
 	put(t, a.r, "/k", "2")
-	if n := countEntries(t, a.r, a.r.ownPrefix()); n != 1 {
-		t.Fatalf("a keeps %d own operations, want the one nobody acknowledged", n)
+	if n := countEntries(t, a.r, a.r.ownPrefix()); n != 2 {
+		t.Fatalf("a keeps %d own operations, want the two nobody acknowledged yet", n)
 	}
 	st.exchange(t, a, b)
 	st.exchange(t, a, b)
@@ -370,5 +374,178 @@ func TestASlowAuthorStampsTheFleetTimeItHeard(t *testing.T) {
 	}
 	if now := st.ms(); d.GetAt()+durationMillis(simS) < now {
 		t.Fatalf("a slow author stamped its removal %dms behind the fleet's time", now-d.GetAt())
+	}
+}
+
+// TestAReplicaThatHearsAPeerAfterAGapRejoinsFirst (T8.4): a replica whose
+// timers stood still while it was away, a machine suspended for longer than
+// T, may hear a peer before its own heartbeat checks the gap. It rejoins all
+// the same: what it held while away is judged, not vouched for by the first
+// message it hears.
+func TestAReplicaThatHearsAPeerAfterAGapRejoinsFirst(t *testing.T) {
+	st := newSimTime()
+	w, a, b, c := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
+	put(t, w.r, "/x", "removed")
+	st.exchange(t, w, a, b, c)
+	del(t, b.r, "/x")
+	st.away(t, simRetention+2*simMargin, b, c)
+	b.wantValue(t, "/x", "<deleted>")
+
+	b.beat()
+	st.deliver(t, b, a)
+	if !a.rejoining() {
+		t.Fatal("a replica back from a gap took the first peer it heard for contact")
+	}
+	a.beat()
+	a.maintain(t)
+	st.exchange(t, a, b, c)
+	for _, sr := range []*simReplica{a, b, c} {
+		sr.wantValue(t, "/x", "<deleted>")
+	}
+}
+
+// TestAnOwnWriteSurvivesASecondRebase (T8.7): a rebase puts back what the
+// replica wrote and nobody acknowledged, and keeps it in the log: the
+// snapshot that carries it may never reach anyone, and the next rebase puts
+// it back again.
+func TestAnOwnWriteSurvivesASecondRebase(t *testing.T) {
+	st := newSimTime()
+	a, b, c := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
+	st.exchange(t, a, b, c)
+	put(t, a.r, "/own", "unsent")
+	a.out.take()
+	for i, name := range []string{"w1", "w2"} {
+		st.advance(simRI)
+		w := st.replica(t, name, 0)
+		put(t, w.r, "/other", "v")
+		st.exchange(t, w, b, c)
+		del(t, b.r, "/other")
+		st.away(t, simRetention+2*simMargin, b, c)
+		a.beat()
+		st.deliver(t, a, b) // its rejoin
+		st.deliver(t, b, a) // the verdict; what a writes after never leaves
+		a.out.take()
+		if got := a.rebases(); got != i+1 {
+			t.Fatalf("setup: %d rebases, want %d", got, i+1)
+		}
+		a.wantValue(t, "/own", "unsent")
+	}
+}
+
+// TestAWriteBeforeFirstContactSurvivesARebase (T8.7): what a replica wrote
+// before it ever heard a fleet is logged like anything it writes, so a
+// rebase after it was heard puts it back.
+func TestAWriteBeforeFirstContactSurvivesARebase(t *testing.T) {
+	st := newSimTime()
+	a, b, c := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
+	put(t, a.r, "/own", "unsent")
+	a.out.take()
+	st.exchange(t, b, c)
+	b.beat()
+	st.deliver(t, b, a) // first contact, inbound only
+	a.out.take()
+	w := st.replica(t, "w", 0)
+	put(t, w.r, "/other", "v")
+	st.exchange(t, w, b, c)
+	del(t, b.r, "/other")
+	st.away(t, simRetention+2*simMargin, b, c)
+	a.beat()
+	st.exchange(t, a, b, c)
+	if a.rebases() != 1 {
+		t.Fatalf("setup: %d rebases, want 1", a.rebases())
+	}
+	for _, sr := range []*simReplica{a, b, c} {
+		sr.wantValue(t, "/own", "unsent")
+	}
+}
+
+// TestAReplicaThatWroteBeforeAnyContactIsJudgedAtFirstContact (T8.4): what
+// a replica that never heard a fleet holds it wrote itself, and the fleet
+// may have removed and forgotten any of it. The first fleet time it hears
+// does not vouch for that: it rejoins from its oldest write, and is rebased
+// when that is too old to be judged.
+func TestAReplicaThatWroteBeforeAnyContactIsJudgedAtFirstContact(t *testing.T) {
+	st := newSimTime()
+	a, b, c := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
+	put(t, a.r, "/x", "removed")
+	st.deliver(t, a, b, c) // its write goes out, and nothing comes back
+	b.wantValue(t, "/x", "removed")
+	del(t, b.r, "/x")
+	st.away(t, simRetention+2*simMargin, b, c)
+	a.maintain(t) // its own log forgets the write, long expired
+	if n := countEntries(t, a.r, a.r.ownPrefix()); n != 0 {
+		t.Fatalf("setup: a still logs %d writes", n)
+	}
+
+	b.beat()
+	st.deliver(t, b, a)
+	if !a.rejoining() {
+		t.Fatal("a replica that wrote before it heard anyone took the first fleet time it heard")
+	}
+	a.maintain(t)
+	st.exchange(t, a, b, c)
+	if a.rebases() != 1 {
+		t.Fatalf("%d rebases, want 1", a.rebases())
+	}
+	for _, sr := range []*simReplica{a, b, c} {
+		sr.wantValue(t, "/x", "<deleted>")
+	}
+}
+
+// TestACopyRestoredFromBeforeFirstContactIsJudged (T8.4): a backup taken
+// before the replica heard anyone opens as a replica that never heard a
+// fleet, holding what the fleet has since removed and forgotten. It is
+// judged at first contact like one, not vouched for by it.
+func TestACopyRestoredFromBeforeFirstContactIsJudged(t *testing.T) {
+	st := newSimTime()
+	a, b, c := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
+	put(t, a.r, "/x", "removed")
+	saved, blocks := copyStore(t, a.store), copyBlocks(t, a.dag)
+	st.exchange(t, a, b, c)
+	del(t, b.r, "/x")
+	st.exchange(t, a, b, c)
+	st.away(t, simRetention+2*simMargin, b, c)
+	closeStore(t, a.r)
+	forgetIncarnation(a.r.incarnationKey())
+	a.store, a.dag = saved, blocks
+	a.open(t)
+	a.maintain(t)
+	st.exchange(t, a, b, c) // first contact: it rejoins
+	if !a.rejoining() {
+		t.Fatal("a copy from before first contact took the first fleet time it heard")
+	}
+	st.exchange(t, a, b, c) // and is judged
+	if a.rebases() != 1 {
+		t.Fatalf("%d rebases, want 1", a.rebases())
+	}
+	for _, sr := range []*simReplica{a, b, c} {
+		sr.wantValue(t, "/x", "<deleted>")
+	}
+}
+
+// TestAnExpiredIncarnationLeavesTheAcknowledgements: a heartbeat acknowledges
+// what was merged lately of each incarnation still known. One forgotten in
+// between leaves that list too, or every incarnation that expired right
+// after a merge would stay in memory for good.
+func TestAnExpiredIncarnationLeavesTheAcknowledgements(t *testing.T) {
+	st := newSimTime()
+	w, a, c := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "c", 0)
+	put(t, w.r, "/x", "v")
+	inc := w.incarnation()
+	st.exchange(t, w, a, c)
+	st.away(t, simRetention+simMargin-simRI, a, c)
+	b := st.replica(t, "b", 0)
+	st.exchange(t, a, b, c)
+	if !b.knows(inc) {
+		t.Fatal("setup: b should know the writer")
+	}
+	st.advance(2 * simRI)
+	b.maintain(t) // the writer expires before b's next heartbeat
+	st.away(t, 3*simRetention, a, b, c)
+	b.r.mu.Lock()
+	_, kept := b.r.merged[inc]
+	b.r.mu.Unlock()
+	if kept {
+		t.Fatal("an incarnation forgotten stayed among the acknowledgements")
 	}
 }
