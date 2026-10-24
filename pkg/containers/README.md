@@ -16,6 +16,7 @@ Runs containers from Go, over docker or containerd.
 | `backends/containerd` | containerd backend, Linux only. Builds by running BuildKit. |
 | `backends/conformance` | The behaviour both backends are held to. |
 | `gc` | Periodic image cleanup. |
+| `reserve` | The share of a node's disk a restore or a build context leaves free. |
 
 `New()` picks a backend at construction: docker if its daemon answers, otherwise
 containerd. Callers do not choose.
