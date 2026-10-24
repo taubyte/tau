@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/taubyte/tau/pkg/containers/core"
@@ -176,6 +177,52 @@ func TestExtractContext(t *testing.T) {
 		err := extractContext(strings.NewReader("this is not a tar"), t.TempDir())
 		assert.Error(t, err)
 	})
+
+	t.Run("a corrupt gzip stream is an error", func(t *testing.T) {
+		err := extractContext(bytes.NewReader([]byte{0x1f, 0x8b, 0xff, 0xff}), t.TempDir())
+		assert.ErrorContains(t, err, "reading build context")
+	})
+
+	t.Run("a file cut short is an error", func(t *testing.T) {
+		var buf bytes.Buffer
+		writer := tar.NewWriter(&buf)
+		require.NoError(t, writer.WriteHeader(&tar.Header{Name: "Dockerfile", Typeflag: tar.TypeReg, Mode: 0o644, Size: 100}))
+		_, err := writer.Write(bytes.Repeat([]byte("x"), 100))
+		require.NoError(t, err)
+		require.NoError(t, writer.Close())
+
+		// The header and the start of the body, as a transfer that died leaves it.
+		err = extractContext(bytes.NewReader(buf.Bytes()[:512+10]), t.TempDir())
+		assert.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	})
+
+	t.Run("entries that contradict each other are refused", func(t *testing.T) {
+		directory := func(name string) *tar.Header {
+			return &tar.Header{Name: name, Typeflag: tar.TypeDir, Mode: 0o755}
+		}
+		link := func(name string) *tar.Header {
+			return &tar.Header{Name: name, Typeflag: tar.TypeSymlink, Linkname: "x"}
+		}
+
+		for _, c := range []struct {
+			what    string
+			entries []*tar.Header
+			kept    os.FileMode // the type the first entry gave a, which must survive
+		}{
+			{"a directory under a file", []*tar.Header{file("a"), directory("a/b")}, 0},
+			{"a file under a file", []*tar.Header{file("a"), file("a/b")}, 0},
+			{"a link under a file", []*tar.Header{file("a"), link("a/b")}, 0},
+			{"a file where a directory is", []*tar.Header{directory("a"), file("a")}, os.ModeDir},
+			{"a link where a file is", []*tar.Header{file("a"), link("a")}, 0},
+		} {
+			dir := t.TempDir()
+			assert.Error(t, extractContext(tarOf(t, c.entries...), dir), c.what)
+
+			info, err := os.Lstat(filepath.Join(dir, "a"))
+			require.NoError(t, err, c.what)
+			assert.Equal(t, c.kept, info.Mode().Type(), "%s: the entry already extracted must be left as it was", c.what)
+		}
+	})
 }
 
 func TestConfine(t *testing.T) {
@@ -294,6 +341,30 @@ func TestPrivilegeSpecOpts(t *testing.T) {
 		assert.Contains(t, spec.Process.Capabilities.Effective, "CAP_SYS_ADMIN")
 		assert.Greater(t, len(spec.Process.Capabilities.Bounding), 20,
 			"privileged means every capability, not the caller's")
+	})
+
+	t.Run("a device comes with the rule that lets the container open it", func(t *testing.T) {
+		spec := applySpecOpts(t, &core.ContainerConfig{
+			Privileges: &core.Privileges{Devices: []string{"/dev/null"}},
+		})
+
+		var device *specs.LinuxDevice
+		for i := range spec.Linux.Devices {
+			if spec.Linux.Devices[i].Path == "/dev/null" {
+				device = &spec.Linux.Devices[i]
+			}
+		}
+		require.NotNil(t, device, "the device must be in the container")
+
+		allowed := false
+		for _, rule := range spec.Linux.Resources.Devices {
+			if rule.Allow && rule.Access == "rwm" &&
+				rule.Major != nil && *rule.Major == device.Major &&
+				rule.Minor != nil && *rule.Minor == device.Minor {
+				allowed = true
+			}
+		}
+		assert.True(t, allowed, "a device node without a cgroup rule cannot be opened")
 	})
 
 	t.Run("a container asks for no privileges by default", func(t *testing.T) {

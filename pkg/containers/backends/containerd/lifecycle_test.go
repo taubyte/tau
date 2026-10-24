@@ -12,16 +12,21 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/containerd/containerd"
+	namespacesapi "github.com/containerd/containerd/api/services/namespaces/v1"
+	versionapi "github.com/containerd/containerd/api/services/version/v1"
 	"github.com/containerd/errdefs"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/taubyte/tau/pkg/containers/core"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 // fakeTask scripts the three calls killAndWait makes. Anything else on the
@@ -152,6 +157,18 @@ func TestBuilderOutput(t *testing.T) {
 	assert.Equal(t, "error: step failed\nprogress", image("progress", "error: step failed").builderOutput(ctx, "b"))
 	assert.Equal(t, "(builder produced no output)", image("", "").builderOutput(ctx, "b"))
 	assert.Contains(t, image("", "").builderOutput(ctx, "missing"), "builder output unavailable")
+
+	// A builder still talking when the caller gives up must not hold up the
+	// report of why the build failed.
+	talking, open := io.Pipe()
+	defer open.Close()
+	tio := &taskIO{stdout: talking}
+	tio.drain()
+	still := &containerdImage{backend: &ContainerdBackend{client: &Client{}, tasks: map[core.ContainerID]*taskIO{"b": tio}}, name: "x"}
+
+	gone, cancel := context.WithCancel(ctx)
+	cancel()
+	assert.Equal(t, "(builder output unreadable: context canceled)", still.builderOutput(gone, "b"))
 }
 
 func TestWithoutCgroups(t *testing.T) {
@@ -239,25 +256,55 @@ func TestDaemonStartWithRootlesskit(t *testing.T) {
 
 	t.Run("XDG directories given", func(t *testing.T) {
 		home := t.TempDir()
+		t.Setenv("XDG_RUNTIME_DIR", filepath.Join(home, "run"))
 		t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
 		t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
-		startWithStandIn(t)
+		assert.Contains(t, startWithStandIn(t, "pasta"), "--net pasta --mtu 65520")
 	})
 
 	t.Run("XDG directories defaulted under HOME", func(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
+		t.Setenv("XDG_RUNTIME_DIR", filepath.Join(home, "run"))
 		t.Setenv("XDG_DATA_HOME", "")
 		t.Setenv("XDG_CONFIG_HOME", "")
-		startWithStandIn(t)
+		assert.Contains(t, startWithStandIn(t, "pasta"), "--net pasta --mtu 65520")
+	})
+
+	t.Run("a driver with no MTU of its own gets the ordinary one", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("XDG_RUNTIME_DIR", filepath.Join(home, "run"))
+		t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
+		t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+		assert.Contains(t, startWithStandIn(t, "vpnkit"), "--net vpnkit --mtu 1500")
+	})
+
+	t.Run("runtime directory defaulted to the user's", func(t *testing.T) {
+		runtime := filepath.Join("/run", "user", strconv.Itoa(os.Getuid()))
+		if _, err := os.Stat(runtime); err != nil {
+			t.Skip("no per-user runtime directory here")
+		}
+		// The start makes its state directories there: whichever did not exist
+		// before the test goes with it.
+		for _, made := range []string{filepath.Join(runtime, "tau"), filepath.Join(runtime, "tau-containerd-rootless")} {
+			if _, err := os.Stat(made); os.IsNotExist(err) {
+				t.Cleanup(func() { os.RemoveAll(made) })
+			}
+		}
+
+		home := t.TempDir()
+		t.Setenv("XDG_RUNTIME_DIR", "")
+		t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
+		t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+		assert.Contains(t, startWithStandIn(t, "pasta"), "--state-dir "+filepath.Join(runtime, "tau-containerd-rootless"))
 	})
 }
 
-// startWithStandIn starts the daemon with the stand-in rootlesskit and checks
-// what it left behind.
-func startWithStandIn(t *testing.T) {
-	bin := fakeBin(t, map[string]string{"pasta": "", "rootlesskit": `echo "$@" > "${0%/*}/args"; exec /bin/sleep 30`})
-	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(t.TempDir(), "run"))
+// startWithStandIn starts the daemon with the stand-in rootlesskit and the given
+// network driver, checks what it left behind, and returns the arguments the
+// stand-in was started with.
+func startWithStandIn(t *testing.T, driver string) string {
+	bin := fakeBin(t, map[string]string{driver: "", "rootlesskit": `echo "$@" > "${0%/*}/args"; exec /bin/sleep 30`})
 	t.Setenv("TMPDIR", t.TempDir())
 
 	daemon := newTestDaemon(t)
@@ -290,7 +337,6 @@ func startWithStandIn(t *testing.T) {
 
 	args, err := os.ReadFile(filepath.Join(bin, "args"))
 	require.NoError(t, err)
-	assert.Contains(t, string(args), "--net pasta --mtu 65520")
 
 	config, err := os.ReadFile(filepath.Join(filepath.Dir(daemon.socketPath), "containerd.toml"))
 	require.NoError(t, err)
@@ -309,6 +355,8 @@ func startWithStandIn(t *testing.T) {
 	assert.Error(t, process.Signal(syscall.Signal(0)), "Stop must end the daemon process")
 	assert.NoFileExists(t, daemon.stateFile)
 	assert.NoFileExists(t, daemon.socketPath)
+
+	return string(args)
 }
 
 func TestDaemonStopFromPidFile(t *testing.T) {
@@ -424,12 +472,174 @@ func TestNewFailures(t *testing.T) {
 		})
 		assert.ErrorContains(t, err, "failed to create daemon manager")
 	})
+
+	t.Run("a socket that answers but is not containerd", func(t *testing.T) {
+		socket := filepath.Join(t.TempDir(), "containerd.sock")
+		ln, err := net.Listen("unix", socket)
+		require.NoError(t, err)
+		serveStandIn(t, ln, false, false)
+
+		_, err = New(core.ContainerdConfig{RootlessMode: core.RootlessModeDisabled, SocketPath: socket})
+		assert.ErrorContains(t, err, "failed to connect to containerd at "+socket)
+	})
+
+	t.Run("a daemon that does not report its version", func(t *testing.T) {
+		socket := filepath.Join(t.TempDir(), "containerd.sock")
+		ln, err := net.Listen("unix", socket)
+		require.NoError(t, err)
+		conns := &countingListener{Listener: ln}
+		serveStandIn(t, conns, true, false)
+
+		_, err = New(core.ContainerdConfig{RootlessMode: core.RootlessModeDisabled, SocketPath: socket})
+		assert.ErrorContains(t, err, "failed to get containerd version")
+		assert.Eventually(t, func() bool { return conns.open.Load() == 0 }, 5*time.Second, 10*time.Millisecond,
+			"a daemon New refused must not keep a connection open")
+	})
+}
+
+// standInNamespaces and standInVersion answer the two calls a client makes of
+// containerd as it connects: the labels of its namespace, then the version.
+// They are containerd's own service definitions, so New runs as it would
+// against the real daemon.
+type standInNamespaces struct {
+	namespacesapi.UnimplementedNamespacesServer
+}
+
+func (standInNamespaces) Get(_ context.Context, req *namespacesapi.GetNamespaceRequest) (*namespacesapi.GetNamespaceResponse, error) {
+	return &namespacesapi.GetNamespaceResponse{Namespace: &namespacesapi.Namespace{Name: req.Name}}, nil
+}
+
+type standInVersion struct {
+	versionapi.UnimplementedVersionServer
+}
+
+func (standInVersion) Version(context.Context, *emptypb.Empty) (*versionapi.VersionResponse, error) {
+	return &versionapi.VersionResponse{Version: "stand-in"}, nil
+}
+
+// serveStandIn answers on ln as containerd does, or only in part: a service
+// left out is unimplemented.
+func serveStandIn(t *testing.T, ln net.Listener, withNamespaces, withVersion bool) {
+	t.Helper()
+	server := grpc.NewServer()
+	if withNamespaces {
+		namespacesapi.RegisterNamespacesServer(server, standInNamespaces{})
+	}
+	if withVersion {
+		versionapi.RegisterVersionServer(server, standInVersion{})
+	}
+	go server.Serve(ln)
+	t.Cleanup(server.Stop)
+}
+
+// countingListener counts the connections it accepted that are still open.
+type countingListener struct {
+	net.Listener
+	open atomic.Int32
+}
+
+func (l *countingListener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	l.open.Add(1)
+	return &countedConn{Conn: conn, closed: func() { l.open.Add(-1) }}, nil
+}
+
+type countedConn struct {
+	net.Conn
+	once   sync.Once
+	closed func()
+}
+
+func (c *countedConn) Close() error {
+	c.once.Do(c.closed)
+	return c.Conn.Close()
+}
+
+// TestNewStartsARootlessDaemon is the path a rootless node takes when nothing
+// answers yet: New starts the daemon itself, then connects to it. rootlesskit
+// is a stand-in that only sleeps, and the test plays containerd on the socket
+// once the daemon has recorded the process, which is what Start waits for.
+func TestNewStartsARootlessDaemon(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("rootless mode is refused to root")
+	}
+
+	bin := fakeBin(t, map[string]string{"pasta": "", "rootlesskit": "exec /bin/sleep 30"})
+	home := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(home, "run"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	t.Setenv("TMPDIR", t.TempDir())
+
+	socket := filepath.Join(t.TempDir(), "containerd.sock")
+	pidFile := filepath.Join(filepath.Dir(socket), "containerd.pid")
+
+	server := grpc.NewServer()
+	namespacesapi.RegisterNamespacesServer(server, standInNamespaces{})
+	versionapi.RegisterVersionServer(server, standInVersion{})
+	t.Cleanup(server.Stop)
+
+	stop := make(chan struct{})
+	t.Cleanup(func() { close(stop) })
+	go func() {
+		ticker := time.NewTicker(20 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+			}
+			if _, err := os.Stat(pidFile); err == nil {
+				if ln, err := net.Listen("unix", socket); err == nil {
+					server.Serve(ln)
+				}
+				return
+			}
+		}
+	}()
+
+	backend, err := New(core.ContainerdConfig{
+		RootlessMode:    core.RootlessModeEnabled,
+		AutoStart:       true,
+		SocketPath:      socket,
+		ContainerdPath:  "/bin/true",
+		RootlesskitPath: filepath.Join(bin, "rootlesskit"),
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		backend.client.Close()
+		backend.daemon.Stop(context.Background())
+	})
+
+	require.NotNil(t, backend.daemon, "a backend that started its daemon must keep it, to stop it")
+	assert.NoError(t, backend.HealthCheck(context.Background()))
+
+	process := backend.daemon.process
+	require.NotNil(t, process)
+	require.NoError(t, backend.daemon.Stop(context.Background()))
+	assert.Error(t, process.Signal(syscall.Signal(0)), "the daemon New started is the one Stop ends")
 }
 
 func TestBuildRejectsABadContext(t *testing.T) {
 	image := &containerdImage{backend: &ContainerdBackend{client: &Client{}}, name: "x"}
-	err := image.Build(context.Background(), &core.DockerfileBuild{Context: strings.NewReader("not a tarball")})
-	assert.ErrorContains(t, err, "failed to unpack build context")
+	bad := func() *core.DockerfileBuild {
+		return &core.DockerfileBuild{Context: strings.NewReader("not a tarball")}
+	}
+
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	assert.ErrorContains(t, image.Build(context.Background(), bad()), "failed to unpack build context")
+
+	left, err := os.ReadDir(tmp)
+	require.NoError(t, err)
+	assert.Empty(t, left, "a refused build must not leave its directory behind")
+
+	t.Setenv("TMPDIR", filepath.Join(tmp, "missing"))
+	assert.ErrorContains(t, image.Build(context.Background(), bad()), "failed to create build directory")
 }
 
 func TestNetworkSpecOptsRefusals(t *testing.T) {
@@ -478,6 +688,54 @@ func TestDaemonStartFailures(t *testing.T) {
 		notExecutable := filepath.Join(t.TempDir(), "rootlesskit")
 		require.NoError(t, os.WriteFile(notExecutable, nil, 0o644))
 		assert.ErrorContains(t, start(t, context.Background(), notExecutable), "failed to start containerd via rootlesskit")
+	})
+
+	t.Run("no home to put the data directory in", func(t *testing.T) {
+		t.Setenv("HOME", "")
+		t.Setenv("XDG_DATA_HOME", "")
+		assert.ErrorContains(t, start(t, context.Background(), filepath.Join(bin, "rootlesskit")), "failed to get home directory")
+	})
+
+	t.Run("no home to put the config directory in", func(t *testing.T) {
+		t.Setenv("HOME", "")
+		t.Setenv("XDG_CONFIG_HOME", "")
+		assert.ErrorContains(t, start(t, context.Background(), filepath.Join(bin, "rootlesskit")), "failed to get home directory")
+	})
+
+	t.Run("the socket's directory is a file", func(t *testing.T) {
+		daemon := newTestDaemon(t)
+		daemon.config.ContainerdPath = "/bin/true"
+		daemon.config.RootlesskitPath = filepath.Join(bin, "rootlesskit")
+		dir := filepath.Dir(daemon.socketPath)
+		require.NoError(t, os.RemoveAll(dir))
+		require.NoError(t, os.WriteFile(dir, nil, 0o644))
+
+		assert.ErrorContains(t, daemon.Start(context.Background()), "failed to create config file")
+	})
+
+	t.Run("the config file's place is taken", func(t *testing.T) {
+		daemon := newTestDaemon(t)
+		daemon.config.ContainerdPath = "/bin/true"
+		daemon.config.RootlesskitPath = filepath.Join(bin, "rootlesskit")
+		require.NoError(t, os.Mkdir(filepath.Join(filepath.Dir(daemon.socketPath), "containerd.toml"), 0o755))
+
+		assert.ErrorContains(t, daemon.Start(context.Background()), "failed to create config file")
+	})
+
+	t.Run("a daemon whose pid cannot be recorded is not left running", func(t *testing.T) {
+		sleeper := filepath.Join(t.TempDir(), "rootlesskit")
+		require.NoError(t, os.WriteFile(sleeper, []byte("#!/bin/sh\nexec /bin/sleep 30\n"), 0o755))
+		daemon := newTestDaemon(t)
+		daemon.config.ContainerdPath = "/bin/true"
+		daemon.config.RootlesskitPath = sleeper
+		require.NoError(t, os.Mkdir(daemon.stateFile, 0o755))
+
+		assert.ErrorContains(t, daemon.Start(context.Background()), "failed to save PID")
+
+		state, err := daemon.process.Wait()
+		require.NoError(t, err)
+		status := state.Sys().(syscall.WaitStatus)
+		assert.True(t, status.Signaled() && status.Signal() == syscall.SIGKILL, "the daemon must have been killed, got %v", state)
 	})
 
 	t.Run("containerd never answers", func(t *testing.T) {

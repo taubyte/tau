@@ -234,6 +234,37 @@ func TestSpecOpts(t *testing.T) {
 		assert.Equal(t, int64(50000), *spec.Linux.Resources.CPU.Quota)
 		assert.Equal(t, uint64(100000), *spec.Linux.Resources.CPU.Period, "a quota without a period is not a limit")
 	})
+
+	t.Run("a caller's CPU period is kept", func(t *testing.T) {
+		spec := applySpecOpts(t, &core.ContainerConfig{
+			Resources: &core.ResourceLimits{CPUQuota: 50000, CPUPeriod: 250000},
+		})
+
+		require.NotNil(t, spec.Linux.Resources.CPU)
+		assert.Equal(t, int64(50000), *spec.Linux.Resources.CPU.Quota)
+		assert.Equal(t, uint64(250000), *spec.Linux.Resources.CPU.Period)
+	})
+}
+
+// A restricted container is handed only the resolvers it may reach. A host's
+// own are often loopback or private, and the egress rule denies both, so passing
+// them on would leave the container resolving nothing.
+func TestPermittedNameservers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "resolv.conf")
+	require.NoError(t, os.WriteFile(path, []byte(`# generated
+search example.internal
+nameserver 127.0.0.53
+nameserver 10.0.0.2
+nameserver
+nameserver not-an-address
+nameserver 9.9.9.9
+nameserver 2620:fe::fe
+options edns0
+`), 0o644))
+
+	assert.Equal(t, []string{"9.9.9.9", "2620:fe::fe"}, permittedNameservers(path))
+	assert.Nil(t, permittedNameservers(filepath.Join(t.TempDir(), "missing")),
+		"a host without the file offers nothing there, and that is not an error")
 }
 
 // applySpecOpts builds the tau options for a config and applies them to
@@ -451,6 +482,7 @@ func TestOperationsWithoutClient(t *testing.T) {
 	assert.Error(t, backend.Remove(ctx, "c"))
 	assert.Error(t, backend.Wait(ctx, "c"))
 	assert.Error(t, backend.HealthCheck(ctx))
+	assert.Error(t, backend.Clean(ctx, time.Hour, ""))
 
 	_, err = backend.Logs(ctx, "c")
 	assert.Error(t, err)

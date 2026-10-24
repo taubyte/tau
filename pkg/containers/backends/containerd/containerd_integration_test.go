@@ -16,13 +16,17 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/containerd/containerd/namespaces"
 	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/opencontainers/go-digest"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/taubyte/tau/pkg/containers/backends/conformance"
@@ -35,7 +39,8 @@ const testImage = "docker.io/library/alpine:latest"
 
 // newTestBackend connects to whatever containerd this machine has: the system
 // daemon when it is reachable, otherwise a rootless one started for the test.
-func newTestBackend(t *testing.T) *ContainerdBackend {
+// configure, if given, sets what a node's own configuration would.
+func newTestBackend(t *testing.T, configure ...func(*core.ContainerdConfig)) *ContainerdBackend {
 	t.Helper()
 
 	config := core.ContainerdConfig{Namespace: "tau-test"}
@@ -47,6 +52,10 @@ func newTestBackend(t *testing.T) *ContainerdBackend {
 		requireBinary(t, "rootlesskit")
 		config.RootlessMode = core.RootlessModeEnabled
 		config.AutoStart = true
+	}
+
+	for _, set := range configure {
+		set(&config)
 	}
 
 	backend, err := New(config)
@@ -394,17 +403,25 @@ RUN nc -w 3 127.0.0.1 %s </dev/null >/dev/null 2>&1 && echo LOCAL_REACHED > /pro
 // tarOfDockerfile packs a one-file build context.
 func tarOfDockerfile(t *testing.T, dockerfile string) io.Reader {
 	t.Helper()
+	return tarOfFiles(t, map[string]string{"Dockerfile": dockerfile})
+}
+
+// tarOfFiles packs a build context of the given files, by name.
+func tarOfFiles(t *testing.T, files map[string]string) io.Reader {
+	t.Helper()
 
 	var buf bytes.Buffer
 	writer := tar.NewWriter(&buf)
 
-	require.NoError(t, writer.WriteHeader(&tar.Header{
-		Name: "Dockerfile",
-		Mode: 0o644,
-		Size: int64(len(dockerfile)),
-	}))
-	_, err := io.WriteString(writer, dockerfile)
-	require.NoError(t, err)
+	for name, content := range files {
+		require.NoError(t, writer.WriteHeader(&tar.Header{
+			Name: name,
+			Mode: 0o644,
+			Size: int64(len(content)),
+		}))
+		_, err := io.WriteString(writer, content)
+		require.NoError(t, err)
+	}
 	require.NoError(t, writer.Close())
 
 	return &buf
@@ -651,4 +668,145 @@ func TestStartTwice_Integration(t *testing.T) {
 	waitCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
 	defer cancel()
 	assert.ErrorIs(t, backend.Wait(waitCtx, id), context.DeadlineExceeded, "Wait gives up with its context")
+}
+
+// Clean is what gets a build node its disk back: an image older than the age it
+// is given goes. Scoped to one reference it touches nothing else, which is also
+// what lets this prove a deletion without emptying the machine it runs on.
+func TestCleanRemovesAnOldImage_Integration(t *testing.T) {
+	backend := newTestBackend(t)
+	ctx := context.Background()
+	nsCtx := namespaces.WithNamespace(ctx, backend.config.Namespace)
+
+	image := backend.Image(testImage)
+	require.NoError(t, image.Pull(ctx))
+	pulled, err := backend.client.GetImage(nsCtx, testImage)
+	require.NoError(t, err)
+
+	// A name of its own for the test image, so the sweep can take nothing else.
+	alias := fmt.Sprintf("docker.io/tau-test/clean:%d", time.Now().UnixNano())
+	require.NoError(t, backend.nameImage(nsCtx, alias, pulled.Target()))
+	t.Cleanup(func() { backend.Image(alias).Remove(ctx) })
+
+	require.NoError(t, backend.Clean(ctx, 0, alias))
+
+	assert.False(t, backend.Image(alias).Exists(ctx), "an image older than the age must be removed")
+	assert.True(t, image.Exists(ctx), "a sweep scoped to one reference must leave every other image")
+}
+
+// A node that names a runtime for untrusted workloads gets it for every
+// restricted container, and only for those. The handler named here exists on no
+// node, so starting the restricted container fails, and the failure names the
+// runtime containerd was asked to use.
+func TestRestrictedContainersRunOnTheNamedRuntime_Integration(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("programming nftables needs CAP_NET_ADMIN; run this test as root")
+	}
+	const runtime = "io.containerd.tau-test.v1"
+	backend := newTestBackend(t, func(config *core.ContainerdConfig) { config.Runtime = runtime })
+	if backend.isRootlessMode() {
+		t.Skip("restricted egress requires rootful containerd")
+	}
+
+	ctx := context.Background()
+	nsCtx := namespaces.WithNamespace(ctx, backend.config.Namespace)
+	require.NoError(t, backend.Image(testImage).Pull(ctx))
+	t.Cleanup(func() {
+		if err := netguard.Uninstall(); err != nil {
+			t.Logf("removing the egress table: %v", err)
+		}
+	})
+
+	create := func(restrict bool) (core.ContainerID, string) {
+		t.Helper()
+		id, err := backend.Create(ctx, &core.ContainerConfig{
+			Image:   testImage,
+			Command: []string{"/bin/true"},
+			Network: &core.NetworkConfig{RestrictEgress: restrict},
+		})
+		require.NoError(t, err)
+		t.Cleanup(func() { backend.Remove(ctx, id) })
+
+		container, err := backend.client.LoadContainer(nsCtx, string(id))
+		require.NoError(t, err)
+		info, err := container.Info(nsCtx)
+		require.NoError(t, err)
+		return id, info.Runtime.Name
+	}
+
+	restricted, named := create(true)
+	assert.Equal(t, runtime, named, "a restricted container must be created on the runtime the node names")
+	assert.ErrorContains(t, backend.Start(ctx, restricted), "tau-test", "starting it must go to that runtime")
+
+	_, ordinary := create(false)
+	assert.NotEqual(t, runtime, ordinary, "an ordinary container keeps containerd's default")
+}
+
+// An image whose record outlived its content — a pull or import that died
+// halfway, or a content store cleaned underneath it — is refused at Create with
+// the reason, rather than made into a container that cannot run.
+func TestCreateRefusesAnImageWithoutContent_Integration(t *testing.T) {
+	backend := newTestBackend(t)
+	ctx := context.Background()
+
+	name := fmt.Sprintf("docker.io/tau-test/no-content:%d", time.Now().UnixNano())
+	missing := ocispec.Descriptor{MediaType: ocispec.MediaTypeImageManifest, Digest: digest.FromString(name), Size: 1}
+	require.NoError(t, backend.nameImage(namespaces.WithNamespace(ctx, backend.config.Namespace), name, missing))
+	t.Cleanup(func() { backend.Image(name).Remove(ctx) })
+
+	_, err := backend.Create(ctx, &core.ContainerConfig{Image: name, Command: []string{"/bin/true"}})
+	assert.ErrorContains(t, err, "failed to read config of image "+name)
+}
+
+// Rebuilding under a name already in use is how an image is updated: the name
+// moves to the new build rather than refusing it or keeping the old one.
+func TestRebuildMovesTheName_Integration(t *testing.T) {
+	backend := newTestBackend(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	name := fmt.Sprintf("tau-test/rebuilt:%d", time.Now().UnixNano())
+	image := backend.Image(name)
+	t.Cleanup(func() {
+		image.Remove(context.Background())
+		// The name BuildKit wrote into the tarball, as containerd normalised it.
+		backend.Image("docker.io/" + name).Remove(context.Background())
+	})
+
+	build := func(version string) string {
+		t.Helper()
+		require.NoError(t, image.Build(ctx, &core.DockerfileBuild{Context: tarOfFiles(t, map[string]string{
+			"Dockerfile": "FROM scratch\nCOPY version /version\n",
+			"version":    version,
+		})}))
+		got, err := image.Digest(ctx)
+		require.NoError(t, err)
+		return got
+	}
+
+	first := build("one")
+	assert.NotEqual(t, first, build("two"), "the name must move to the second build")
+}
+
+// Start makes the container's FIFOs in a temporary directory. When it cannot,
+// it says so and leaves the container as it was, so the next Start runs it.
+func TestStartWithoutATempDirectory_Integration(t *testing.T) {
+	backend := newTestBackend(t)
+	ctx := context.Background()
+	require.NoError(t, backend.Image(testImage).Pull(ctx))
+
+	id, err := backend.Create(ctx, &core.ContainerConfig{Image: testImage, Command: []string{"/bin/true"}})
+	require.NoError(t, err)
+	defer backend.Remove(ctx, id)
+
+	t.Run("no temp directory", func(t *testing.T) {
+		t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "missing"))
+		assert.ErrorContains(t, backend.Start(ctx, id), "failed to create temp directory for FIFOs")
+	})
+
+	require.NoError(t, backend.Start(ctx, id), "the container must start once it can")
+	require.NoError(t, backend.Wait(ctx, id))
+	info, err := backend.Inspect(ctx, id)
+	require.NoError(t, err)
+	assert.Equal(t, 0, info.ExitCode)
 }
