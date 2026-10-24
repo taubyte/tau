@@ -2,6 +2,7 @@ package swarm_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -18,36 +19,80 @@ import (
 // node is one host with its own gossip router and its own engine over a mesh.
 type node struct {
 	host   host.Host
+	gossip *pubsub.PubSub
 	engine *distributed.Engine
 	mesh   *swarm.Mesh
 }
 
-func pair(t *testing.T) (node, node) {
+// swarmOf is n nodes on one mocknet, every one with a gossip stream to every
+// other before a mesh is built on it.
+//
+// EVERY HOST GOSSIPS BEFORE IT IS CONNECTED. A gossipsub opens its stream to a
+// peer when it starts or when identify says the peer gossips, and never retries
+// one that failed. A host connected before its peer gossiped hears of it only
+// from an identify push: sent once, and limited per subnet, which every mocknet
+// peer shares. Miss it and that host never sends the peer a write, nor tells it
+// that it holds the database.
+func swarmOf(t *testing.T, n int) []node {
 	t.Helper()
 	ctx := t.Context()
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
 
-	var out []node
-	for range 2 {
+	out := make([]node, n)
+	for i := range out {
 		h, err := mn.GenPeer()
 		require.NoError(t, err)
-		out = append(out, node{host: h})
+		ps, err := pubsub.NewGossipSub(ctx, h)
+		require.NoError(t, err)
+		out[i] = node{host: h, gossip: ps}
 	}
 	require.NoError(t, mn.LinkAll())
 	require.NoError(t, mn.ConnectAllButSelf())
 
+	for i, from := range out {
+		for j, to := range out {
+			if i == j {
+				continue
+			}
+			require.Eventually(t, func() bool {
+				return slices.Contains(from.gossip.ListPeers(""), to.host.ID())
+			}, 30*time.Second, 10*time.Millisecond, "node %d never opened a stream to node %d", i, j)
+		}
+	}
+
 	for i := range out {
-		ps, err := pubsub.NewGossipSub(ctx, out[i].host)
-		require.NoError(t, err)
-		m, err := swarm.New(ctx, out[i].host, ps)
+		m, err := swarm.New(ctx, out[i].host, out[i].gossip)
 		require.NoError(t, err)
 		t.Cleanup(func() { m.Close() })
 		e, err := distributed.New(distributed.InDir(t.TempDir()), distributed.WithSync(m.Sync))
 		require.NoError(t, err)
 		out[i].mesh, out[i].engine = m, e
 	}
-	return out[0], out[1]
+	return out
+}
+
+func pair(t *testing.T) (node, node) {
+	t.Helper()
+	nodes := swarmOf(t, 2)
+	return nodes[0], nodes[1]
+}
+
+// EVERY NODE OF A LARGE SWARM HAS A STREAM TO EVERY OTHER when it is handed
+// over. A host takes ten identify pushes in a burst from one subnet, then one
+// every five seconds, so sixteen mocknet hosts are past it: a swarm that
+// connected before it gossiped left some nodes never sending to others.
+func TestEveryNodeOfALargeSwarmHasAStreamToEveryOther(t *testing.T) {
+	nodes := swarmOf(t, 16)
+
+	for i, from := range nodes {
+		peers := from.gossip.ListPeers("")
+		for j, to := range nodes {
+			if i != j {
+				require.Contains(t, peers, to.host.ID(), "node %d has no stream to node %d", i, j)
+			}
+		}
+	}
 }
 
 func ledger() database.Spec {
