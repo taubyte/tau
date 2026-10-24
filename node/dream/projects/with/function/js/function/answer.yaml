@@ -1,0 +1,12 @@
+id: QmPGAFTpKc2PFZBCUANU4bdoVVFjvJKJP4eeyi2DjAN4fz
+description: answers the method and the body it was sent, from an ES module the build bundles; no `call`, so the module's default export is the handler
+runtime: js
+source: services/answer
+build:
+    commands:
+        image: ghcr.io/samyfodil/wazy-build-js:1.39.0-cjs0.23.0-node22.23.4
+        run: rolldown src/index.js --format esm --platform neutral --file dist/worker.js --sourcemap
+        output: dist/worker.js
+execution:
+    timeout: 15s
+    memory: 64MB

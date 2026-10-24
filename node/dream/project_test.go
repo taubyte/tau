@@ -48,7 +48,9 @@ import (
 // A project's path under projects/ mirrors the vocabulary's own axes, so the
 // directory IS the description and nothing has to be looked up:
 //
-//	with/function                          one function, one route, nothing else
+//	with/function/wasm                     one function, one route, nothing else
+//	with/function/js                       …the same, on the js tier
+//	with/function/runtimes                 …one host, a function on each tier
 //	with/component                         …whose source is a COMPONENT, not a path
 //	with/database/distributed/kv/crdt      …and a kv, tau's engine, merge resolution
 //	with/database/distributed/kv/raft      …and a ledger, where writes are ordered
@@ -79,9 +81,10 @@ import (
 //
 // # They start small on purpose
 //
-// `with/function` is the smallest project that answers anything: one function,
-// one zone, one route. Everything that goes wrong in it goes wrong for every
-// project after it, so it is the one to read first when the corpus turns red.
+// `with/function/wasm` is the smallest project that answers anything: one
+// function, one zone, one route. Everything that goes wrong in it goes wrong for
+// every project after it, so it is the one to read first when the corpus turns
+// red.
 //
 // # The one substitution
 //
@@ -460,7 +463,7 @@ func handlerWASM(t *testing.T) []byte {
 func TestTheSmallestProjectAnswers(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
-	r := deploy(t, "with/function", "hello.example.com", handlerWASM(t))
+	r := deploy(t, "with/function/wasm", "hello.example.com", handlerWASM(t))
 
 	got := r.ask(t, http.MethodGet, "/")
 	require.Equal(t, 200, got.Code, "a GET reached the function")

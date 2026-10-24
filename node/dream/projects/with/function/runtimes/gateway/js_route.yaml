@@ -1,0 +1,14 @@
+id: QmYrnHTayJ24w2YzWphVtQW5AZ7gRPuapveuEXe9Ty2DTX
+description: the js half of the host
+host:
+    zone:
+        in:
+            name: example_com
+        name: both
+route:
+    path: /js
+    match: prefix
+    methods: [POST]
+    handler:
+        function:
+            name: scripted

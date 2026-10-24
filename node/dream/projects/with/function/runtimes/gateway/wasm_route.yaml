@@ -1,0 +1,14 @@
+id: QmfDWT9oJe9jn9vrsL33nqtCC1vPHiRiaBLPvwV7qqSP3e
+description: the wasm half of the same host, told apart by its path
+host:
+    zone:
+        in:
+            name: example_com
+        name: both
+route:
+    path: /wasm
+    match: prefix
+    methods: [POST]
+    handler:
+        function:
+            name: compiled

@@ -50,7 +50,8 @@ import (
 // project's documents with those crates under services/ and the world they
 // build against at wit/ — so what runs is what the image made from source, on
 // whichever side built it. A function in a language other than Rust is
-// built from its directory under pkg/invoke/wasm/fixtures/languages.
+// built from its directory under pkg/invoke/wasm/fixtures/languages, and one the
+// js tier runs from its directory under pkg/invoke/js/fixtures.
 
 // crateOf is the fixture crate a source path is: by its own name, unless named here.
 var crateOf = map[string]string{"hello": "handler", "keeper": "cacher", "reader": "cacher"}
@@ -92,6 +93,10 @@ func assemble(t *testing.T, name string) string {
 		crate := base
 		if named, ok := crateOf[base]; ok {
 			crate = named
+		}
+		if script := filepath.Join(root, "pkg", "invoke", "js", "fixtures", base); dirExists(script) {
+			require.NoError(t, copyTree(script, filepath.Join(dir, source)))
+			continue
 		}
 		// A SOURCE IN ANOTHER LANGUAGE is its whole directory under
 		// fixtures/languages, as with/languages names it.
@@ -312,9 +317,21 @@ func TestEveryCorpusProjectBuildsBothWays(t *testing.T) {
 }
 
 var corpus = []corpusCase{
-	{name: "with/function", probes: []probe{
+	{name: "with/function/wasm", probes: []probe{
 		{host: "hello.example.com", method: http.MethodGet, path: "/", status: 200},
 		{host: "hello.example.com", method: http.MethodPost, path: "/orders", status: 201},
+	}},
+	// THE JS TIER answers with the method and the body, from a bundle the
+	// author's build made and the platform packed.
+	{name: "with/function/js", probes: []probe{
+		{host: "js.example.com", method: http.MethodPost, path: "/", body: "ping", status: 200, answer: "POST ping"},
+		{host: "js.example.com", method: http.MethodGet, path: "/orders", status: 200, answer: "GET "},
+	}},
+	// ONE HOST, A FUNCTION ON EACH TIER: the componentized one says it is js
+	// compiled to wasm, and the packed one answers on the js tier.
+	{name: "with/function/runtimes", probes: []probe{
+		{host: "both.example.com", method: http.MethodPost, path: "/js", body: "ping", status: 200, answer: "POST ping"},
+		{host: "both.example.com", method: http.MethodPost, path: "/wasm", body: "ping", status: 200, answer: "js POST /wasm ping"},
 	}},
 	{name: "with/languages", probes: languageProbes},
 	// THE STARTER is what `tau init` writes, and nothing but that: it builds

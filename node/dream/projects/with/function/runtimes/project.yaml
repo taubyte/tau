@@ -1,0 +1,6 @@
+id: QmX3nK6qsedkyzcDXzVAvsvmiSiVGi8hdTonGci553pS8B
+name: runtimes
+description: one host, a function on each tier a function can choose - the gateway tells the routes apart, and the worker starts each function on the tier it names
+environments:
+    prod:
+        branches: ["*"]

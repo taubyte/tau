@@ -1,0 +1,13 @@
+id: QmV8c3MVHV2bvmpZiuJGDD6cJLEe5TRtyKCNo3MmPHPy6S
+description: JavaScript too, but compiled to a component by componentize-js with the same image, so it runs on the wasm tier and says so
+runtime: wasm
+source: services/js
+build:
+    commands:
+        image: ghcr.io/samyfodil/wazy-build-js:1.39.0-cjs0.23.0-node22.23.4
+        run: jco componentize function.js --wit ../../wit --world-name handler -o function.wasm
+        output: function.wasm
+execution:
+    call: handle
+    timeout: 15s
+    memory: 128MiB

@@ -59,7 +59,8 @@ func TestAnApplicationWithNothingToRunIsBroken(t *testing.T) {
 }
 
 // A PROJECT THAT SAYS NO BRANCH DEPLOYS ANYWHERE IS REFUSED, by the compiler and
-// so by the deploy, and nothing is published. It is with/function minus its table.
+// so by the deploy, and nothing is published. It is with/function/wasm minus its
+// table.
 func TestAProjectWithNoEnvironmentsIsRefused(t *testing.T) {
 	const id = "QmZDqydqrb5sFAbuqHeNPuQQpAHWbBHLUcPkM9gDeuSY6D"
 	dir := filepath.Join("projects", "refused/environments/missing")
@@ -91,7 +92,7 @@ func TestAProjectWithNoEnvironmentsIsRefused(t *testing.T) {
 // A FUNCTION SAYS WHICH TIER RUNS IT. wasm and js are both functions, so the runtime
 // is the author's to write, and a value the kind does not run is refused naming the
 // ones it does. Both are the compiler's refusals, so the deploy makes them too and
-// nothing is published. Each project is with/function with one line changed.
+// nothing is published. Each project is with/function/wasm with one line changed.
 func TestAFunctionWithoutATierItRunsOnIsRefused(t *testing.T) {
 	for _, tc := range []struct{ project, id, reason string }{
 		{"refused/function/noruntime", "QmckTZTPqB6a5thN1vZNAjoXUBdEUXWL3vA1gFxcx3xBk9", "required attribute 'runtime'"},

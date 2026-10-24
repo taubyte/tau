@@ -1,0 +1,6 @@
+id: Qmb4i7CxBzpQewDbmTF4DmLjyHGf46YYa4fan7WjFUQrPB
+name: jsfunction
+description: the smallest project on the js tier - one function behind one route, its bundle made by the author's build and packed by the platform's
+environments:
+    prod:
+        branches: ["*"]
