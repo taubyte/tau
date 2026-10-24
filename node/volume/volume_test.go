@@ -840,6 +840,103 @@ func TestARestoreThatCannotBeCompletedRefusesTheMount(t *testing.T) {
 	}
 }
 
+// TestARESTOREThatFailsLeavesNothingALaterMountTakes. The directory existing is
+// what tells a mount the bytes are there, so a restore that failed or was
+// refused leaves none: the next mount would otherwise hand the workload what
+// the first one stopped halfway through, as though it were the checkpoint.
+func TestARestoreThatFailsLeavesNothingALaterMountTakes(t *testing.T) {
+	handle := "shop/prod/QmData"
+
+	for _, c := range []struct {
+		name string
+		node func(t *testing.T, root string) *volume.Volumes
+	}{
+		{
+			name: "the archive stops halfway",
+			node: func(t *testing.T, root string) *volume.Volumes {
+				whole := tarOf(t, map[string]string{"PG_VERSION": "16"})
+				var buf bytes.Buffer
+				archive := tar.NewWriter(&buf)
+				require.NoError(t, archive.WriteHeader(&tar.Header{Name: "base", Typeflag: tar.TypeDir, Mode: 0o750}))
+				require.NoError(t, archive.WriteHeader(&tar.Header{Name: "base/rows", Typeflag: tar.TypeReg, Mode: 0o640, Size: int64(len(whole))}))
+				_, err := archive.Write(whole)
+				require.NoError(t, err)
+				require.NoError(t, archive.Close())
+				return node(t, root, buf.Bytes()[:3*512])
+			},
+		},
+		{
+			name: "a link in it leads out",
+			node: func(t *testing.T, root string) *volume.Volumes {
+				return node(t, root, entries(t,
+					tar.Header{Name: "PG_VERSION", Typeflag: tar.TypeReg, Mode: 0o640},
+					linkEntry("x", "."), linkEntry("x/y", ".."),
+				))
+			},
+		},
+		{
+			name: "there is no store to read it from",
+			node: func(t *testing.T, root string) *volume.Volumes {
+				index := newRows()
+				require.NoError(t, index.Put(t.Context(), recordedAt+handle, []byte("QmWhatever")))
+				v, err := volume.New(root, nil, &opening{rows: index}, &said{})
+				require.NoError(t, err)
+				return v
+			},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			root := t.TempDir()
+			v := c.node(t, root)
+
+			_, err := v.Mount(t.Context(), mountGrant(handle, nil))
+			require.Error(t, err)
+			_, err = v.Mount(t.Context(), mountGrant(handle, nil))
+			require.Error(t, err, "a later mount took what the failed restore left")
+
+			left, err := os.ReadDir(filepath.Join(root, "volumes"))
+			if !errors.Is(err, os.ErrNotExist) {
+				require.NoError(t, err)
+			}
+			require.Empty(t, left, "the failed restore left something behind")
+		})
+	}
+}
+
+// node is a fresh backing over root whose store holds archive as the
+// volume's last checkpoint.
+func node(t *testing.T, root string, archive []byte) *volume.Volumes {
+	t.Helper()
+
+	store, index := newBlobs(), newRows()
+	id := store.put(t, archive)
+	require.NoError(t, index.Put(t.Context(), recordedAt+"shop/prod/QmData", []byte(id)))
+
+	v, err := volume.New(root, store, &opening{rows: index}, &said{})
+	require.NoError(t, err)
+	t.Cleanup(func() { v.Close() })
+	return v
+}
+
+// TestARESTORELeftUnfinishedIsClearedByTheNext. A node that stops midway leaves
+// its restore where it was being unpacked, beside the volume's directory, and
+// possibly with directories in it already closed.
+func TestARestoreLeftUnfinishedIsClearedByTheNext(t *testing.T) {
+	root := t.TempDir()
+	unfinished := filepath.Join(root, "volumes", "shop%2Fprod%2FQmData%restoring")
+	require.NoError(t, os.MkdirAll(filepath.Join(unfinished, "base", "1"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(unfinished, "base", "1", "rows"), []byte("half"), 0o640))
+	require.NoError(t, os.Chmod(filepath.Join(unfinished, "base"), 0o100))
+	t.Cleanup(func() { os.Chmod(filepath.Join(unfinished, "base"), 0o750) })
+
+	dir, err := restoring(t, root, tarOf(t, map[string]string{"PG_VERSION": "16"}))
+	require.NoError(t, err)
+	require.FileExists(t, filepath.Join(dir, "PG_VERSION"))
+
+	_, err = os.Lstat(unfinished)
+	require.ErrorIs(t, err, os.ErrNotExist, "the unfinished restore is still there")
+}
+
 // TestARECORDEDCheckpointWithNoStoreIsRefused. Having recorded one and having
 // nowhere to read it from is not the same as never having had one — the first is
 // a node missing its store, and answering an empty directory would hand a
@@ -1319,7 +1416,7 @@ func TestNoEntryLandsOutsideTheVolumeWhateverLinksPrecedeIt(t *testing.T) {
 
 			beside, err := os.ReadDir(filepath.Join(root, "volumes"))
 			require.NoError(t, err)
-			require.Len(t, beside, 1, "something was written beside the volume")
+			require.Empty(t, beside, "something was left beside the volume")
 		})
 	}
 }

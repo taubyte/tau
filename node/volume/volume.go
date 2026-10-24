@@ -304,19 +304,18 @@ func (v *Volumes) Mount(ctx context.Context, grant invoke.Grant) (string, error)
 	}()
 
 	dir := filepath.Join(v.root, "volumes", escapeHandle(grant.Handle))
-	fresh, err := ensureDir(dir)
-	if err != nil {
-		return "", err
-	}
 
 	// RESTORED ONLY WHEN THE DIRECTORY IS NEW. A node that already holds bytes
 	// holds the newer ones: the checkpoint is behind by up to an interval by
 	// construction, so overwriting live data with it would be losing the very
 	// writes the checkpoint exists to bound.
-	if fresh {
+	switch _, err := os.Stat(dir); {
+	case errors.Is(err, fs.ErrNotExist):
 		if err := v.restore(ctx, grant.Handle, dir); err != nil {
 			return "", err
 		}
+	case err != nil:
+		return "", err
 	}
 
 	opened := &volume{
@@ -336,13 +335,24 @@ func (v *Volumes) Mount(ctx context.Context, grant invoke.Grant) (string, error)
 	return dir, nil
 }
 
-// restore unpacks the last checkpoint, or does nothing when there is not one.
+// restore makes the volume's directory, holding the last checkpoint when there
+// is one.
+//
+// A CHECKPOINT IS UNPACKED BESIDE THE DIRECTORY AND RENAMED INTO PLACE WHOLE,
+// because the directory existing is what tells a later mount that its bytes are
+// here. One that a failed or refused restore left behind would be mounted as
+// though it had been restored.
 func (v *Volumes) restore(ctx context.Context, handle, dir string) error {
+	staging := dir + restoring
+	if err := discard(staging); err != nil {
+		return fmt.Errorf("volume: clearing an unfinished restore of %s: %w", handle, err)
+	}
+
 	rows, err := v.store()
 	if err != nil {
 		// Nowhere to have recorded one, so there is nothing to read back and an
 		// empty directory is the honest answer rather than a failure.
-		return nil
+		return makeDir(dir)
 	}
 
 	// A READ THAT FAILED IS READ AS "NOTHING WAS RECORDED", and that is the one
@@ -353,7 +363,7 @@ func (v *Volumes) restore(ctx context.Context, handle, dir string) error {
 	// those is worse is a call the operator's own retry policy makes.
 	recorded, found, err := rows.Get(ctx, checkpointPrefix+handle)
 	if err != nil || !found || len(recorded) == 0 {
-		return nil
+		return makeDir(dir)
 	}
 	if v.assets == nil {
 		return ErrNoStore
@@ -365,7 +375,16 @@ func (v *Volumes) restore(ctx context.Context, handle, dir string) error {
 	}
 	defer content.Close()
 
-	if err := untar(content, dir); err != nil {
+	if err := makeDir(staging); err != nil {
+		return err
+	}
+	err = untar(content, staging)
+	if err == nil {
+		err = os.Rename(staging, dir)
+	}
+	if err != nil {
+		// What this leaves, the next restore of the volume clears first.
+		discard(staging)
 		return fmt.Errorf("volume: restoring %s: %w", handle, err)
 	}
 	v.log.Infof("volume: restored %s from %s", handle, string(recorded))
@@ -553,18 +572,30 @@ func escapeHandle(handle string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(handle, "%", "%25"), "/", "%2F")
 }
 
-// ensureDir makes the directory and says whether it had to.
-func ensureDir(dir string) (fresh bool, err error) {
-	switch _, err := os.Stat(dir); {
-	case err == nil:
-		return false, nil
-	case !errors.Is(err, fs.ErrNotExist):
-		return false, err
-	}
+// restoring is the suffix a restore in progress is unpacked under, beside the
+// directory it becomes. escapeHandle never makes a name holding it, so no
+// volume's directory is ever taken for another's unfinished restore.
+const restoring = "%restoring"
+
+// makeDir makes a volume's directory, and the directory volumes live in.
+func makeDir(dir string) error {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return false, fmt.Errorf("volume: making a volume directory: %w", err)
+		return fmt.Errorf("volume: making a volume directory: %w", err)
 	}
-	return true, nil
+	return nil
+}
+
+// discard removes what an unfinished restore left. Each directory is opened up
+// as it is reached, since the restore may already have closed it; whatever
+// still cannot be removed, RemoveAll says.
+func discard(dir string) error {
+	filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || !entry.IsDir() {
+			return nil
+		}
+		return os.Chmod(path, 0o700)
+	})
+	return os.RemoveAll(dir)
 }
 
 // durationOr reads a duration, falling back when the compiled object carried
