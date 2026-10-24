@@ -74,4 +74,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute.
 
 ## License
 
-BSD 3-Clause, see [LICENSE](LICENSE).
+Apache 2.0, see [LICENSE](LICENSE) and [COPYRIGHT](COPYRIGHT).

@@ -11,7 +11,7 @@
   },
   "keywords": [],
   "author": "taubyte",
-  "license": "BSD-3-Clause",
+  "license": "Apache-2.0",
   "devDependencies": {
     "@types/node": "^22.20.5",
     "tsx": "^4.19.1",

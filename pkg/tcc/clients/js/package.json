@@ -23,7 +23,7 @@
     "compiler"
   ],
   "author": "taubyte",
-  "license": "BSD-3-Clause",
+  "license": "Apache-2.0",
   "devDependencies": {
     "@esm-bundle/chai": "^4.3.4",
     "@types/node": "^22.5.2",

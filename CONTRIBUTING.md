@@ -146,6 +146,6 @@ Expect initial review within 2-3 business days. Be responsive to feedback and ma
 
 ## License
 
-By contributing, you agree that your work will be licensed under the BSD-3-Clause license.
+By contributing, you agree that your work will be licensed under the Apache License 2.0.
 
 **Thank you for helping make Taubyte/Tau better!**

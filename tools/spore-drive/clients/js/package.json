@@ -16,7 +16,7 @@
   },
   "keywords": [],
   "author": "taubyte",
-  "license": "BSD-3-Clause",
+  "license": "Apache-2.0",
   "devDependencies": {
     "@babel/preset-env": "^7.25.9",
     "@babel/preset-typescript": "^7.25.9",
