@@ -1034,3 +1034,103 @@ func TestASettingReadAsANumber(t *testing.T) {
 	// a panic: a refused grant has none, and every backing reads one.
 	require.Zero(t, Grant{}.Number("size"))
 }
+
+// TestALingeringCallAnswersAtOnceAndHoldsItsSlot. A JS handler's waitUntil work
+// runs after the response: the caller must not wait for it, and the instance it
+// runs on must be neither reaped nor handed another request until it is over.
+func TestALingeringCallAnswersAtOnceAndHoldsItsSlot(t *testing.T) {
+	e := newFakeRuntime("fake")
+	settle := make(chan func(bool), 2)
+	e.serve = func(ctx context.Context, req *Request) (*Response, error) {
+		done, ok := Linger(ctx)
+		require.True(t, ok)
+		settle <- done
+		return &Response{Status: 200}, nil
+	}
+	p, clock := newPool(t, e, func() []Option {
+		return []Option{WithMaxInstances(1), WithIdleTimeout(time.Second)}
+	})
+	s := spec("shop", "r1")
+
+	resp, err := p.Do(t.Context(), s, &Request{})
+	require.NoError(t, err)
+	require.Equal(t, 200, resp.Status, "the answer came back while the work it left is still running")
+	done := <-settle
+
+	clock.advance(time.Hour)
+	require.Zero(t, p.Reap(), "a lingering instance is still in use")
+
+	second := make(chan error, 1)
+	go func() {
+		_, err := p.Do(t.Context(), s, &Request{})
+		second <- err
+	}()
+	select {
+	case <-second:
+		t.Fatal("a second request was served while the first one's work held the only slot")
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	done(false)
+	require.NoError(t, <-second, "settling the work handed the slot back")
+	(<-settle)(false)
+
+	started, closed := e.counts()
+	require.Equal(t, 1, started, "one instance served both")
+	require.Zero(t, closed)
+}
+
+// TestALingerThatFailsRetiresTheInstance. Work stopped at its deadline leaves a
+// realm interrupted mid-mutation, which is not reused.
+func TestALingerThatFailsRetiresTheInstance(t *testing.T) {
+	e := newFakeRuntime("fake")
+	settle := make(chan func(bool), 1)
+	e.serve = func(ctx context.Context, req *Request) (*Response, error) {
+		done, _ := Linger(ctx)
+		settle <- done
+		return &Response{Status: 200}, nil
+	}
+	p, _ := newPool(t, e, nil)
+	s := spec("shop", "r1")
+
+	_, err := p.Do(t.Context(), s, &Request{})
+	require.NoError(t, err)
+	require.Equal(t, 1, p.Warm(s))
+
+	(<-settle)(true)
+	require.Eventually(t, func() bool { _, closed := e.counts(); return closed == 1 }, 3*time.Second, time.Millisecond)
+	require.Zero(t, p.Warm(s))
+}
+
+// TestAFailedCallReleasesWhatItClaimed. A call that fails retires its instance
+// at once, and the done it claimed before failing does nothing and never blocks.
+func TestAFailedCallReleasesWhatItClaimed(t *testing.T) {
+	e := newFakeRuntime("fake")
+	boom := errors.New("the handler failed after claiming")
+	settle := make(chan func(bool), 1)
+	e.serve = func(ctx context.Context, req *Request) (*Response, error) {
+		done, _ := Linger(ctx)
+		settle <- done
+		return nil, boom
+	}
+	p, _ := newPool(t, e, nil)
+
+	_, err := p.Do(t.Context(), spec("shop", "r1"), &Request{})
+	require.ErrorIs(t, err, boom)
+	_, closed := e.counts()
+	require.Equal(t, 1, closed, "retired at once, not when the work settles")
+
+	done := <-settle
+	done(false)
+	done(true)
+	_, closed = e.counts()
+	require.Equal(t, 1, closed)
+}
+
+// TestLingerNeedsAPooledCall. A caller driving an instance directly has no
+// slot to keep.
+func TestLingerNeedsAPooledCall(t *testing.T) {
+	done, ok := Linger(t.Context())
+	require.False(t, ok)
+	require.Nil(t, done)
+}

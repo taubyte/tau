@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -434,10 +435,10 @@ func (p *Pool) on(ctx context.Context, spec Spec, fn func(context.Context, Insta
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	defer func() { <-sem }()
 
 	s, err := p.acquire(ctx, rt, spec)
 	if err != nil {
+		<-sem
 		return err
 	}
 
@@ -446,12 +447,54 @@ func (p *Pool) on(ctx context.Context, spec Spec, fn func(context.Context, Insta
 		timeout = p.opts.timeout
 	}
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	l := &linger{settled: make(chan bool, 1)}
+	err = fn(context.WithValue(callCtx, lingerKey{}, l), s.inst)
+	cancel()
 
-	err = fn(callCtx, s.inst)
-	p.release(spec, s, err != nil)
+	done := func(failed bool) {
+		p.release(spec, s, failed)
+		<-sem
+	}
+	if err == nil && l.claimed.Load() {
+		go func() { done(<-l.settled) }()
+		return nil
+	}
+	done(err != nil)
 	return err
 }
+
+// Linger keeps the instance serving ctx's call checked out after the call has
+// answered, until done is called. failed retires the instance, as a failed call
+// would.
+//
+// IT IS FOR WORK A CALL LEAVES RUNNING ON PURPOSE: a JS handler hands
+// `ctx.waitUntil` a promise the response must not wait for. The caller gets its
+// answer at once, and the slot stays held, so the instance is neither handed
+// another request nor reaped while that work runs on it. The accounting is the
+// slot's own and the semaphore's own, just held longer.
+//
+// It must be claimed before the call returns, and a call that fails releases
+// its slot at once whatever it claimed. ok is false when ctx is not a pooled
+// call's: a caller driving an instance directly has no slot to keep, so the
+// instance has to finish the work before it answers.
+func Linger(ctx context.Context) (done func(failed bool), ok bool) {
+	l, ok := ctx.Value(lingerKey{}).(*linger)
+	if !ok {
+		return nil, false
+	}
+	l.claimed.Store(true)
+	return l.done, true
+}
+
+type lingerKey struct{}
+
+type linger struct {
+	claimed atomic.Bool
+	once    sync.Once
+	settled chan bool
+}
+
+func (l *linger) done(failed bool) { l.once.Do(func() { l.settled <- failed }) }
 
 // acquire finds a slot with room, or starts one.
 //
