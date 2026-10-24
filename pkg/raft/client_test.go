@@ -1,7 +1,6 @@
 package raft
 
 import (
-	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"errors"
@@ -11,7 +10,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/hashicorp/raft"
 	"github.com/stretchr/testify/require"
-	"gotest.tools/v3/assert"
+	taupeer "github.com/taubyte/tau/p2p/peer"
 )
 
 func TestNewClient(t *testing.T) {
@@ -44,252 +43,94 @@ func TestClient_Close(t *testing.T) {
 	require.NoError(t, err, "close should succeed")
 }
 
+// TestClient_SetGetDelete_Integration: what a client on another node writes
+// reads back and is listed, and once it deletes a key the key is gone.
 func TestClient_SetGetDelete_Integration(t *testing.T) {
-	node := newMockNode(t)
+	cl, cli := callerOf(t, "client-round-trip", sameStore)
+	member := idOf(cl)
 
-	cl, err := New(node, "/raft/test", testOptions()...)
-	require.NoError(t, err, "failed to create cluster")
-	defer cl.Close()
+	require.NoError(t, cli.Set("client/a", []byte("a"), time.Second, member))
+	require.NoError(t, cli.Set("client/b", []byte("b"), time.Second, member))
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	value, found, err := cli.Get("client/a", 0, member)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, []byte("a"), value)
+	keys, err := cli.Keys("client/", member)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"client/a", "client/b"}, keys)
 
-	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
-
-	client, err := NewClient(node, "/raft/test", nil)
-	require.NoError(t, err, "failed to create client")
-	defer client.Close()
-
-	err = client.Set("client-key", []byte("client-value"), time.Second, node.ID())
-	if err != nil {
-		t.Logf("Set returned error (expected in single-node test): %v", err)
-	}
-
-	_, _, err = client.Get("client-key", 0, node.ID())
-	if err != nil {
-		t.Logf("Get returned error (expected in single-node test): %v", err)
-	}
-
-	err = client.Delete("client-key", time.Second, node.ID())
-	if err != nil {
-		t.Logf("Delete returned error (expected in single-node test): %v", err)
-	}
-
-	_, err = client.Keys("client-", node.ID())
-	if err != nil {
-		t.Logf("Keys returned error (expected in single-node test): %v", err)
-	}
+	require.NoError(t, cli.Delete("client/a", time.Second, member))
+	value, found, err = cli.Get("client/a", 0, member)
+	require.NoError(t, err)
+	require.False(t, found)
+	require.Nil(t, value)
+	keys, err = cli.Keys("client/", member)
+	require.NoError(t, err)
+	require.Equal(t, []string{"client/b"}, keys)
 }
 
-func TestClient_Get_NotFound(t *testing.T) {
-	node := newMockNode(t)
-
-	cl, err := New(node, "/raft/test", testOptions()...)
-	require.NoError(t, err, "failed to create cluster")
-	defer cl.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
-
-	client, err := NewClient(node, "/raft/test", nil)
-	require.NoError(t, err, "failed to create client")
-	defer client.Close()
-
-	val, found, err := client.Get("nonexistent-key", 0, node.ID())
-	if err == nil {
-		assert.Assert(t, !found)
-		assert.Assert(t, val == nil)
-	}
-}
-
-func TestClient_Keys_Empty(t *testing.T) {
-	node := newMockNode(t)
-
-	cl, err := New(node, "/raft/test", testOptions()...)
-	require.NoError(t, err, "failed to create cluster")
-	defer cl.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
-
-	client, err := NewClient(node, "/raft/test", nil)
-	require.NoError(t, err, "failed to create client")
-	defer client.Close()
-
-	keys, err := client.Keys("nonexistent-prefix-", node.ID())
-	if err == nil {
-		assert.Equal(t, len(keys), 0)
-	}
-}
-
+// TestClient_ExchangePeers: the member comes away from an exchange knowing the
+// peers its caller had seen, and the caller with the member's.
 func TestClient_ExchangePeers(t *testing.T) {
-	node := newMockNode(t)
+	cl, cli := callerOf(t, "client-exchange-seen", sameStore)
+	seen := newMockNode(t)
+	require.NoError(t, taupeer.LinkAllPeers())
 
-	cl, err := New(node, "/raft/test", testOptions()...)
-	require.NoError(t, err, "failed to create cluster")
-	defer cl.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
-
-	client, err := newInternalClient(node, "/raft/test", nil)
-	require.NoError(t, err, "failed to create client")
-	defer client.Close()
-
-	ourStart := time.Now()
-	ourPeers := map[string]int64{
-		node.ID().String(): 0,
-	}
-
-	theirStart, theirPeers, err := client.ExchangePeers(ourStart, ourPeers, node.ID())
-	if err == nil {
-		assert.Assert(t, !theirStart.IsZero())
-		assert.Assert(t, theirPeers != nil)
-	}
+	_, theirPeers, err := cli.ExchangePeers(time.Now(), map[string]int64{
+		cli.node.ID().String(): 0,
+		seen.ID().String():     100,
+	}, idOf(cl))
+	require.NoError(t, err)
+	require.Contains(t, theirPeers, idOf(cl).String())
+	require.Contains(t, theirPeers, seen.ID().String(), "the member did not take the peer its caller had seen")
+	require.Contains(t, cl.(*cluster).tracker.allPeers(), seen.ID())
 }
 
-func TestClient_ExchangePeers_WithPeers(t *testing.T) {
-	node := newMockNode(t)
-
-	cl, err := New(node, "/raft/test", testOptions()...)
-	require.NoError(t, err, "failed to create cluster")
-	defer cl.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
-
-	client, err := newInternalClient(node, "/raft/test", nil)
-	require.NoError(t, err, "failed to create client")
-	defer client.Close()
-
-	ourStart := time.Now()
-	ourPeers := map[string]int64{
-		node.ID().String(): 0,
-		"QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt": 100,
-		"QmVvkUhhLaQ4dJEPZB1bGTPNqBpHnXcGLqbNFnZbMSKszN": 200,
-	}
-
-	theirStart, theirPeers, err := client.ExchangePeers(ourStart, ourPeers, node.ID())
-	if err == nil {
-		assert.Assert(t, !theirStart.IsZero())
-		assert.Assert(t, theirPeers != nil)
-	}
-}
-
-func TestClient_Get_TypeConversions(t *testing.T) {
-	node := newMockNode(t)
-
-	cl, err := New(node, "/raft/test", testOptions()...)
-	require.NoError(t, err, "failed to create cluster")
-	defer cl.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
-
-	require.NoError(t, cl.Set("testkey", []byte("testvalue"), time.Second))
-
-	client, err := NewClient(node, "/raft/test", nil)
-	require.NoError(t, err, "failed to create client")
-	defer client.Close()
-
-	val, found, err := client.Get("testkey", 0, node.ID())
-	if err == nil && found {
-		assert.Assert(t, len(val) > 0)
-	}
-}
-
-func TestClient_Keys_TypeConversions(t *testing.T) {
-	node := newMockNode(t)
-
-	cl, err := New(node, "/raft/test", testOptions()...)
-	require.NoError(t, err, "failed to create cluster")
-	defer cl.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
-
-	require.NoError(t, cl.Set("prefix/a", []byte("a"), time.Second))
-	require.NoError(t, cl.Set("prefix/b", []byte("b"), time.Second))
-
-	client, err := NewClient(node, "/raft/test", nil)
-	require.NoError(t, err, "failed to create client")
-	defer client.Close()
-
-	keys, err := client.Keys("prefix/", node.ID())
-	if err == nil {
-		assert.Assert(t, len(keys) >= 0) // Just verify no panic
-	}
-}
-
-// TestClient_JoinVoter tests the JoinVoter method
-func TestClient_JoinVoter(t *testing.T) {
-	node := newMockNode(t)
-
-	cl, err := New(node, "/raft/test", testOptions()...)
-	require.NoError(t, err, "failed to create cluster")
-	defer cl.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
-
-	client, err := newInternalClient(node, "/raft/test", nil)
-	require.NoError(t, err, "failed to create client")
-	defer client.Close()
-
-	err = client.JoinVoter(node.ID(), time.Second, node.ID())
-	if err != nil {
-		t.Logf("JoinVoter returned error (expected): %v", err)
-	}
-}
-
-// TestClient_WithEncryption tests client methods with encryption enabled
+// TestClient_WithEncryption: a client holding the group's key reads and writes
+// it from another node, and one without the key is answered with nothing.
 func TestClient_WithEncryption(t *testing.T) {
+	const namespace = "client-encrypted"
 	key := make([]byte, 32)
 	for i := range key {
 		key[i] = byte(i)
 	}
+	member := newMockNode(t)
+	caller := newMockNode(t)
+	require.NoError(t, taupeer.LinkAllPeers())
 
-	node := newMockNode(t)
-
-	cl, err := New(node, "/raft/enc-client-test", WithEncryptionKey(key), WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
-	require.NoError(t, err, "failed to create encrypted cluster")
-	defer cl.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	err = cl.WaitForLeader(ctx)
-	require.NoError(t, err, "leader election should succeed with fast timeouts")
+	cl, err := New(member, namespace, WithEncryptionKey(key),
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	t.Cleanup(func() { cl.Close() })
+	waitLeader(t, cl, 5*time.Second)
+	connected(t, caller, cl)
 
 	block, err := aes.NewCipher(key)
-	require.NoError(t, err, "failed to create cipher")
+	require.NoError(t, err)
 	gcm, err := cipher.NewGCMWithNonceSize(block, nonceSize)
-	require.NoError(t, err, "failed to create GCM")
-	client, err := NewClient(node, "/raft/enc-client-test", gcm)
-	require.NoError(t, err, "failed to create encrypted client")
-	defer client.Close()
+	require.NoError(t, err)
+	cli, err := NewClient(caller, namespace, gcm)
+	require.NoError(t, err)
+	defer cli.Close()
 
-	err = client.Set("enc-key", []byte("enc-value"), time.Second, node.ID())
-	if err == nil {
-		val, found, err := client.Get("enc-key", 0, node.ID())
-		if err == nil && found {
-			assert.Equal(t, string(val), "enc-value")
-		}
+	require.NoError(t, cli.Set("enc-key", []byte("enc-value"), time.Second, member.ID()))
+	value, found, err := cli.Get("enc-key", 0, member.ID())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, []byte("enc-value"), value)
+	keys, err := cli.Keys("enc-", member.ID())
+	require.NoError(t, err)
+	require.Equal(t, []string{"enc-key"}, keys)
+	require.NoError(t, cli.Delete("enc-key", time.Second, member.ID()))
+	_, found, err = cli.Get("enc-key", 0, member.ID())
+	require.NoError(t, err)
+	require.False(t, found)
 
-		err = client.Delete("enc-key", time.Second, node.ID())
-		if err != nil {
-			t.Logf("Delete with encryption returned error: %v", err)
-		}
-
-		keys, err := client.Keys("enc-", node.ID())
-		if err == nil {
-			assert.Assert(t, keys != nil)
-		}
-	}
+	plain, err := NewClient(caller, namespace, nil)
+	require.NoError(t, err)
+	defer plain.Close()
+	require.NoError(t, cl.Set("sealed", []byte("v"), time.Second))
+	_, _, err = plain.Get("sealed", 0, member.ID())
+	require.Error(t, err, "a client without the key read the group")
 }
