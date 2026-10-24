@@ -549,3 +549,45 @@ func TestAnExpiredIncarnationLeavesTheAcknowledgements(t *testing.T) {
 		t.Fatal("an incarnation forgotten stayed among the acknowledgements")
 	}
 }
+
+// TestAJudgeStillWalkingTheFleetKnowsWhatItForgot (T8.8): a replica that has
+// just heard the fleet, its walk of the fleet's heads still in flight, holds
+// none of the fleet's blocks and so none of their horizons. The heartbeat
+// that told it the fleet's time told it what the fleet forgot too: it does
+// not vouch for a replica that may hold what nobody can refute any more.
+func TestAJudgeStillWalkingTheFleetKnowsWhatItForgot(t *testing.T) {
+	st := newSimTime()
+	w, a, b, c := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
+	put(t, w.r, "/x", "removed")
+	st.exchange(t, w, a, b, c)
+	del(t, b.r, "/x")
+	st.away(t, simRetention+2*simMargin, b, c)
+
+	f := st.replica(t, "f", 0)
+	b.beat()
+	f.reach() // nothing of b's fetched yet
+	for _, data := range b.out.take() {
+		msg, err := f.r.decodeBroadcast(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.r.handleBroadcast(context.Background(), msg)
+	}
+	f.out.take()
+	if f.horizon() < b.horizon() {
+		t.Fatalf("f heard b's heartbeat and knows a horizon of %d, b's is %d", f.horizon(), b.horizon())
+	}
+	a.beat()
+	if !a.rejoining() {
+		t.Fatal("setup: a should rejoin")
+	}
+	st.deliver(t, a, f)
+	st.deliver(t, f, a)
+	if a.rebases() != 1 {
+		t.Fatal("a judge holding none of the fleet's blocks vouched for a replica away longer than T")
+	}
+	st.exchange(t, a, b, c, f)
+	for _, sr := range []*simReplica{a, b, c, f} {
+		sr.wantValue(t, "/x", "<deleted>")
+	}
+}

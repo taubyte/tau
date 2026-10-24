@@ -63,6 +63,7 @@ func (store *Datastore) ownKey(d dot) ds.Key { return store.ownPrefix().ChildStr
 type message struct {
 	heads       []Head
 	since, now  uint64
+	horizon     uint64
 	rejoining   bool
 	incarnation string
 	verdict     *verdict
@@ -81,7 +82,7 @@ func (store *Datastore) decodeBroadcast(data []byte) (message, error) {
 	if err := proto.Unmarshal(data, &b); err != nil {
 		return message{}, err
 	}
-	msg := message{since: b.GetSince(), now: b.GetNow(), rejoining: b.GetRejoining(), incarnation: string(b.GetIncarnation())}
+	msg := message{since: b.GetSince(), now: b.GetNow(), horizon: b.GetHorizon(), rejoining: b.GetRejoining(), incarnation: string(b.GetIncarnation())}
 	msg.acks = contextFromPB(&pb.Context{Vector: b.GetAcks()})
 	for _, h := range b.GetHeads() {
 		c, err := cid.Cast(h.GetCid())
@@ -105,6 +106,7 @@ func (store *Datastore) message(heads []Head, v *verdict) *pb.CRDTBroadcast {
 		Now:         store.clock(),
 		Rejoining:   store.rejoining,
 		Incarnation: []byte(store.replica),
+		Horizon:     store.horizon,
 	}
 	for _, h := range heads {
 		if h.Cid == cid.Undef {
@@ -288,6 +290,12 @@ func (store *Datastore) handleBroadcast(ctx context.Context, msg message) {
 	if !msg.rejoining && msg.since != 0 && store.plausible(msg.now) {
 		store.lastHeard = up
 		store.liveHeard = up
+		// What the fleet forgot is known from the moment it is heard, not
+		// once its blocks are walked: a judge whose walk is still in flight
+		// would vouch for what nobody can refute any more.
+		if err := store.hearHorizon(ctx, msg.horizon); err != nil {
+			store.logger.Errorf("hearing the horizon: %s", err)
+		}
 	}
 	gen := store.generation
 	err := store.reached(ctx, msg.acks)

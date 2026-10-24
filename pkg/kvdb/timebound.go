@@ -175,6 +175,20 @@ func (store *Datastore) hearFleet(ctx context.Context, stamp uint64) error {
 	return nil
 }
 
+// hearHorizon takes a peer's horizon, no further ahead of this replica's
+// clock than the skew. The caller holds store.mu.
+func (store *Datastore) hearHorizon(ctx context.Context, h uint64) error {
+	h = min(h, store.clock()+store.times.skew)
+	if h <= store.horizon {
+		return nil
+	}
+	if err := store.store.Put(ctx, store.horizonKey(), binary.AppendUvarint(nil, h)); err != nil {
+		return err
+	}
+	store.horizon = h
+	return nil
+}
+
 // heldElements is every element this replica holds. The caller holds
 // store.mu.
 func (store *Datastore) heldElements(ctx context.Context) ([]element, error) {

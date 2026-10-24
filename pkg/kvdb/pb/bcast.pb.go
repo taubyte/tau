@@ -37,7 +37,11 @@ type CRDTBroadcast struct {
 	Verdict *Verdict `protobuf:"bytes,6,opt,name=verdict,proto3" json:"verdict,omitempty"`
 	// acks are the sender's entries for the incarnations that wrote lately:
 	// their authors learn what of theirs has reached the fleet.
-	Acks          []*Entry `protobuf:"bytes,7,rep,name=acks,proto3" json:"acks,omitempty"`
+	Acks []*Entry `protobuf:"bytes,7,rep,name=acks,proto3" json:"acks,omitempty"`
+	// horizon is the latest authored time of anything the sender has
+	// forgotten: a replica that hears it knows the fleet forgot that much
+	// before it holds any of the fleet's blocks.
+	Horizon       uint64 `protobuf:"varint,8,opt,name=horizon,proto3" json:"horizon,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -119,6 +123,13 @@ func (x *CRDTBroadcast) GetAcks() []*Entry {
 		return x.Acks
 	}
 	return nil
+}
+
+func (x *CRDTBroadcast) GetHorizon() uint64 {
+	if x != nil {
+		return x.Horizon
+	}
+	return 0
 }
 
 // A Verdict tells one rejoining incarnation whether the sender can still
@@ -255,7 +266,7 @@ var File_bcast_proto protoreflect.FileDescriptor
 
 const file_bcast_proto_rawDesc = "" +
 	"\n" +
-	"\vbcast.proto\x12\acrdt.pb\x1a\vdelta.proto\"\xec\x01\n" +
+	"\vbcast.proto\x12\acrdt.pb\x1a\vdelta.proto\"\x86\x02\n" +
 	"\rCRDTBroadcast\x12#\n" +
 	"\x05Heads\x18\x01 \x03(\v2\r.crdt.pb.HeadR\x05Heads\x12\x14\n" +
 	"\x05since\x18\x02 \x01(\x04R\x05since\x12\x10\n" +
@@ -263,7 +274,8 @@ const file_bcast_proto_rawDesc = "" +
 	"\trejoining\x18\x04 \x01(\bR\trejoining\x12 \n" +
 	"\vincarnation\x18\x05 \x01(\fR\vincarnation\x12*\n" +
 	"\averdict\x18\x06 \x01(\v2\x10.crdt.pb.VerdictR\averdict\x12\"\n" +
-	"\x04acks\x18\a \x03(\v2\x0e.crdt.pb.EntryR\x04acks\"G\n" +
+	"\x04acks\x18\a \x03(\v2\x0e.crdt.pb.EntryR\x04acks\x12\x18\n" +
+	"\ahorizon\x18\b \x01(\x04R\ahorizon\"G\n" +
 	"\aVerdict\x12\x0e\n" +
 	"\x02to\x18\x01 \x01(\fR\x02to\x12\x16\n" +
 	"\x06rebase\x18\x02 \x01(\bR\x06rebase\x12\x14\n" +

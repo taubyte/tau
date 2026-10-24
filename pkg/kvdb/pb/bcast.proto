@@ -21,6 +21,10 @@ message CRDTBroadcast {
   // acks are the sender's entries for the incarnations that wrote lately:
   // their authors learn what of theirs has reached the fleet.
   repeated Entry acks = 7;
+  // horizon is the latest authored time of anything the sender has
+  // forgotten: a replica that hears it knows the fleet forgot that much
+  // before it holds any of the fleet's blocks.
+  uint64 horizon = 8;
 }
 
 // A Verdict tells one rejoining incarnation whether the sender can still
