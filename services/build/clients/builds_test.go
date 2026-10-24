@@ -391,3 +391,55 @@ func TestArtifactWalksPastAFollower(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "bafybuilt", cid)
 }
+
+// A SNAPSHOT IS ITS OWN REQUEST: the backend is asked for what the log holds
+// now, not for a follow the caller would have to cut short.
+func TestSnapshotAsksForWhatTheLogHoldsNow(t *testing.T) {
+	c := newBuilds(t, &fakeBackend{
+		follow: func(string, int64, func(*buildv2.LogChunk) error) error {
+			return connect.NewError(connect.CodeFailedPrecondition, errors.New("asked to follow"))
+		},
+		snapshot: chunks("cloning\n", 64),
+	})
+
+	var got []byte
+	end, err := c.Snapshot(t.Context(), "job", 0, func(data []byte, _ int64) error {
+		got = append(got, data...)
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, "cloning\n", string(got))
+	require.Equal(t, int64(len("cloning\n")), end)
+}
+
+// And it walks to the writer as a follow does, still asking for a snapshot.
+func TestSnapshotWalksToTheWriterAndResumes(t *testing.T) {
+	mn := newMocknet(t)
+	caller := newHost(t, mn)
+
+	partial := serveBuild(t, mn, &fakeBackend{snapshot: func(_ string, offset int64, send func(*buildv2.LogChunk) error) error {
+		if offset == 0 {
+			if err := send(&buildv2.LogChunk{Data: []byte("cloning\n"), NextOffset: 8}); err != nil {
+				return err
+			}
+		}
+		return connect.NewError(connect.CodeUnavailable, errors.New("not writing this log"))
+	}})
+	whole := serveBuild(t, mn, &fakeBackend{snapshot: chunks("cloning\ncompiling\n", 64)})
+
+	p, err := NewPool(caller, discovery.Static(partial.ID(), whole.ID()), build.Protocol, 4)
+	require.NoError(t, err)
+	t.Cleanup(p.Close)
+
+	c, err := Builds(p)
+	require.NoError(t, err)
+
+	var got []byte
+	end, err := c.Snapshot(t.Context(), "job", 0, func(data []byte, _ int64) error {
+		got = append(got, data...)
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, "cloning\ncompiling\n", string(got))
+	require.Equal(t, int64(len("cloning\ncompiling\n")), end)
+}

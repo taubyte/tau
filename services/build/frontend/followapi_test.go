@@ -2,8 +2,12 @@ package frontend
 
 import (
 	"errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"sync"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
@@ -125,4 +129,150 @@ func TestFollowWhenNothingIsRunningIt(t *testing.T) {
 	w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs", testToken))
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Empty(t, w.Body.String())
+}
+
+// building is a log the backend is still writing, read the two ways the real
+// one reads it: follow sends what is there and then each line as it is
+// written, ending with the build; snapshot sends what is there and ends.
+type building struct {
+	mu    sync.Mutex
+	text  string
+	grew  chan struct{}
+	ended bool
+}
+
+// newBuilding goes after the listener a test follows it through, so that its
+// cleanup ends the build before the listener waits on the follow.
+func newBuilding(t *testing.T, text string) *building {
+	b := &building{text: text, grew: make(chan struct{})}
+	t.Cleanup(b.end)
+	return b
+}
+
+func (b *building) say(line string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.text += line
+	close(b.grew)
+	b.grew = make(chan struct{})
+}
+
+func (b *building) end() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.ended {
+		b.ended = true
+		close(b.grew)
+	}
+}
+
+func (b *building) follow(_ string, from int64, emit func([]byte, int64) error) (int64, error) {
+	for {
+		b.mu.Lock()
+		text, grew, ended := b.text, b.grew, b.ended
+		b.mu.Unlock()
+		if from < int64(len(text)) {
+			if err := emit([]byte(text[from:]), int64(len(text))); err != nil {
+				return from, err
+			}
+			from = int64(len(text))
+			continue
+		}
+		if ended {
+			return from, nil
+		}
+		<-grew
+	}
+}
+
+func (b *building) snapshot(id string, from int64, emit func([]byte, int64) error) (int64, error) {
+	b.mu.Lock()
+	text := b.text
+	b.mu.Unlock()
+	return serves(text)(id, from, emit)
+}
+
+// get is an authorized GET through a real listener, so the response can be
+// read while it streams. The client's timeout bounds a read that never ends.
+func get(t *testing.T, srv *httptest.Server, path string) *http.Response {
+	t.Helper()
+	r, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL+path, nil)
+	require.NoError(t, err)
+	r.Header.Set("Authorization", bearerPrefix+testToken)
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(r)
+	require.NoError(t, err)
+	t.Cleanup(func() { resp.Body.Close() })
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	return resp
+}
+
+func readN(t *testing.T, r io.Reader, n int) string {
+	t.Helper()
+	buf := make([]byte, n)
+	_, err := io.ReadFull(r, buf)
+	require.NoError(t, err)
+	return string(buf)
+}
+
+// A SNAPSHOT IS WHAT A RUNNING BUILD HAS LOGGED SO FAR, and the response ends
+// while the build goes on: `tau logs` without --follow. The same route without
+// it follows: each line as it is written, ending when the build does.
+func TestASnapshotEndsWhileTheBuildRunsAndAFollowEndsWithIt(t *testing.T) {
+	h := newHarness(t, Config{})
+	srv := httptest.NewServer(h.Handler())
+	t.Cleanup(srv.Close)
+	build := newBuilding(t, "cloning\n")
+	h.backend.follow, h.backend.snapshot = build.follow, build.snapshot
+
+	soFar, err := io.ReadAll(get(t, srv, "/job/"+testJobID+"/logs?snapshot=true").Body)
+	require.NoError(t, err, "a snapshot that waited for the build would have timed out")
+	require.Equal(t, "cloning\n", string(soFar))
+
+	followed := get(t, srv, "/job/"+testJobID+"/logs").Body
+	require.Equal(t, "cloning\n", readN(t, followed, len("cloning\n")))
+
+	build.say("compiling\n")
+	require.Equal(t, "compiling\n", readN(t, followed, len("compiling\n")))
+
+	soFar, err = io.ReadAll(get(t, srv, "/job/"+testJobID+"/logs?snapshot=true&offset=8").Body)
+	require.NoError(t, err)
+	require.Equal(t, "compiling\n", string(soFar))
+
+	build.end()
+	rest, err := io.ReadAll(followed)
+	require.NoError(t, err)
+	require.Empty(t, rest, "the follow ends with the build")
+}
+
+// A BUILD THAT HAS ENDED IS WHOLE TO BOTH READS: the follow drains to the end
+// and stops, and a snapshot of it is the same bytes.
+func TestAnEndedBuildsLogIsWholeToBothReads(t *testing.T) {
+	h := newHarness(t, Config{})
+	build := newBuilding(t, "cloning\ncompiling\n")
+	build.end()
+	h.backend.follow, h.backend.snapshot = build.follow, build.snapshot
+
+	for _, path := range []string{"/logs", "/logs?snapshot=true"} {
+		w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+path, testToken))
+		require.Equal(t, http.StatusOK, w.Code, path)
+		require.Equal(t, "cloning\ncompiling\n", w.Body.String(), path)
+	}
+}
+
+// ?snapshot= is a boolean: false follows, and a value that is not one is
+// refused rather than guessed at, as an offset that is not a number is.
+func TestASnapshotIsAskedForWithABoolean(t *testing.T) {
+	h := newHarness(t, Config{})
+	h.backend.follow = serves("followed\n")
+	h.backend.snapshot = serves("so far\n")
+
+	for value, want := range map[string]string{"false": "followed\n", "0": "followed\n", "true": "so far\n", "1": "so far\n"} {
+		w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?snapshot="+value, testToken))
+		require.Equal(t, http.StatusOK, w.Code, value)
+		require.Equal(t, want, w.Body.String(), value)
+	}
+	for _, value := range []string{"maybe", "yes", "2"} {
+		w := h.do(t, authed(http.MethodGet, "/job/"+testJobID+"/logs?snapshot="+value, testToken))
+		require.Equal(t, http.StatusBadRequest, w.Code, value)
+	}
 }

@@ -619,7 +619,11 @@ type FollowRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	JobId string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
 	// offset to resume from. Zero is the beginning of this attempt's log.
-	Offset        int64 `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
+	Offset int64 `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
+	// snapshot ends the stream at what the log holds when the request arrives
+	// instead of when the build ends: what has been logged so far, as
+	// `docker logs` reads without -f.
+	Snapshot      bool `protobuf:"varint,3,opt,name=snapshot,proto3" json:"snapshot,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -666,6 +670,13 @@ func (x *FollowRequest) GetOffset() int64 {
 		return x.Offset
 	}
 	return 0
+}
+
+func (x *FollowRequest) GetSnapshot() bool {
+	if x != nil {
+		return x.Snapshot
+	}
+	return false
 }
 
 // LogChunk is some bytes of a build's output and where they ended.
@@ -870,10 +881,11 @@ const file_tau_build_v2_build_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x1c\n" +
 	"\n" +
 	"ProjectRef\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\">\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"Z\n" +
 	"\rFollowRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
-	"\x06offset\x18\x02 \x01(\x03R\x06offset\"?\n" +
+	"\x06offset\x18\x02 \x01(\x03R\x06offset\x12\x1a\n" +
+	"\bsnapshot\x18\x03 \x01(\bR\bsnapshot\"?\n" +
 	"\bLogChunk\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\x12\x1f\n" +
 	"\vnext_offset\x18\x02 \x01(\x03R\n" +

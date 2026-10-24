@@ -2,7 +2,10 @@ package backend
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -218,4 +221,65 @@ func (h *wireHarness) built(t *testing.T, project, environment, resource string)
 		return "", err
 	}
 	return res.Msg.GetCid(), nil
+}
+
+// THE SNAPSHOT CROSSES THE WIRE: asked over the RPC a remote caller uses, it
+// ends at what the running build has written, while a follow on the same RPC
+// stays open for the next line and ends with the build.
+func TestASnapshotEndsOverTheWireWhileAFollowStaysOpen(t *testing.T) {
+	h := newWireHarness(t)
+	started, lines := make(chan struct{}), make(chan string)
+	h.runner.mu.Lock()
+	h.runner.run = func(ctx context.Context, _ Work, out Output) error {
+		fmt.Fprint(out, "cloning\n")
+		close(started)
+		for {
+			select {
+			case line, more := <-lines:
+				if !more {
+					return nil
+				}
+				fmt.Fprint(out, line)
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+	}
+	h.runner.mu.Unlock()
+	var once sync.Once
+	finish := func() { once.Do(func() { close(lines) }) }
+	t.Cleanup(finish)
+
+	id := h.push(t, testRef, testCommit)
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the claim loop never started the build")
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	snapshot, err := h.Jobs.Follow(ctx, connect.NewRequest(&buildv2.FollowRequest{JobId: id, Snapshot: true}))
+	require.NoError(t, err)
+	var soFar []byte
+	for snapshot.Receive() {
+		soFar = append(soFar, snapshot.Msg().GetData()...)
+	}
+	require.NoError(t, snapshot.Err(), "a snapshot that waited for the build would have run into the deadline")
+	require.Equal(t, "cloning\n", string(soFar))
+
+	follow, err := h.Jobs.Follow(ctx, connect.NewRequest(&buildv2.FollowRequest{JobId: id}))
+	require.NoError(t, err)
+	defer follow.Close()
+	require.True(t, follow.Receive(), "%v", follow.Err())
+	require.Equal(t, "cloning\n", string(follow.Msg().GetData()))
+
+	lines <- "compiling\n"
+	require.True(t, follow.Receive(), "%v", follow.Err())
+	require.Equal(t, "compiling\n", string(follow.Msg().GetData()))
+
+	finish()
+	require.False(t, follow.Receive())
+	require.NoError(t, follow.Err(), "the build ending is the end of the follow, not a failure of it")
 }

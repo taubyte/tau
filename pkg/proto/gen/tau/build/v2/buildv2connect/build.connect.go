@@ -269,7 +269,8 @@ type JobServiceClient interface {
 	// its own resource — and the caller is the one that knows which it asked
 	// about.
 	Artifact(context.Context, *connect.Request[v2.ArtifactRequest]) (*connect.Response[v2.Built], error)
-	// Follow streams a RUNNING build's output, from `offset` to the end of it.
+	// Follow streams a RUNNING build's output, from `offset` to the end of it —
+	// or, with `snapshot`, to the end of what it has written so far.
 	//
 	// ONLY THE NODE WRITING THE LOG CAN ANSWER, and every other one says
 	// Unavailable rather than NotFound — which is what makes a caller's pool walk
@@ -399,7 +400,8 @@ type JobServiceHandler interface {
 	// its own resource — and the caller is the one that knows which it asked
 	// about.
 	Artifact(context.Context, *connect.Request[v2.ArtifactRequest]) (*connect.Response[v2.Built], error)
-	// Follow streams a RUNNING build's output, from `offset` to the end of it.
+	// Follow streams a RUNNING build's output, from `offset` to the end of it —
+	// or, with `snapshot`, to the end of what it has written so far.
 	//
 	// ONLY THE NODE WRITING THE LOG CAN ANSWER, and every other one says
 	// Unavailable rather than NotFound — which is what makes a caller's pool walk

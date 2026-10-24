@@ -40,7 +40,8 @@ import (
 //
 // AND A THIRD IS HERE THAT v1 HAS NO VERSION OF: following a build WHILE IT
 // RUNS. GET /job/{jid}/logs, with an offset, resumable by a client that
-// reconnects, under the same authorization as everything else in this file.
+// reconnects, or with ?snapshot=true just what it has logged so far, under the
+// same authorization as everything else in this file.
 //
 // THE ROUTING QUESTION THIS WAITED ON IS ANSWERED, and the answer is a status
 // code. The log file is on whichever backend node is running that build; every
@@ -79,7 +80,8 @@ func (s *Service) handleGetJob(w http.ResponseWriter, r *http.Request, token, jo
 	w.Write(body)
 }
 
-// handleFollowJob is GET /job/{jid}/logs.
+// handleFollowJob is GET /job/{jid}/logs. With ?snapshot=true the response
+// ends at what the log holds now instead of when the build does.
 //
 // IT IS NOT BOUNDED BY BackendTimeout, and that is the one thing about it that
 // is not like the routes above. BackendTimeout bounds ONE CALL OUT OF THIS
@@ -107,6 +109,15 @@ func (s *Service) handleFollowJob(w http.ResponseWriter, r *http.Request, token,
 		respond(w, err)
 		return
 	}
+	snapshot, err := snapshotOf(r)
+	if err != nil {
+		respond(w, err)
+		return
+	}
+	read := s.backend.Follow
+	if snapshot {
+		read = s.backend.Snapshot
+	}
 
 	// THE HEADERS GO BEFORE THE FIRST CHUNK IS ASKED FOR, so a viewer sees the
 	// connection open on a build that has produced nothing yet rather than
@@ -127,7 +138,7 @@ func (s *Service) handleFollowJob(w http.ResponseWriter, r *http.Request, token,
 	// the response is the log and nothing else, so a client resuming counts the
 	// bytes it wrote and adds them to the offset it asked for. That is the same
 	// arithmetic the backend does and it needs no framing on this hop.
-	_, err = s.backend.Follow(r.Context(), jobID, from, func(data []byte, _ int64) error {
+	_, err = read(r.Context(), jobID, from, func(data []byte, _ int64) error {
 		if _, err := w.Write(data); err != nil {
 			return err
 		}
@@ -160,6 +171,20 @@ func offsetOf(r *http.Request) (int64, error) {
 		return 0, problem(http.StatusBadRequest, "offset must be a non-negative integer")
 	}
 	return n, nil
+}
+
+// snapshotOf reads ?snapshot=, refusing a value that is not a boolean the way
+// offsetOf refuses an offset that is not a number.
+func snapshotOf(r *http.Request) (bool, error) {
+	raw := r.URL.Query().Get("snapshot")
+	if raw == "" {
+		return false, nil
+	}
+	snapshot, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, problem(http.StatusBadRequest, "snapshot must be true or false")
+	}
+	return snapshot, nil
 }
 
 // handleCancelJob is POST /cancel/{jid}.

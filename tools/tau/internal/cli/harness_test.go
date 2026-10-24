@@ -75,6 +75,8 @@ type frontend struct {
 	finish      buildv2.JobStatus
 	endOnFollow bool
 	published   map[string][]byte
+	// live is the jobs still being built, whose logs are still being written.
+	live map[string]*liveLog
 }
 
 func newFrontend(t *testing.T) *frontend {
@@ -140,6 +142,13 @@ func newFrontend(t *testing.T) *frontend {
 		w.Write(b)
 	}))
 	mux.HandleFunc("GET /job/{jid}/logs", authed(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		live := f.live[r.PathValue("jid")]
+		f.mu.Unlock()
+		if live != nil {
+			live.serve(w, r)
+			return
+		}
 		log, ok := f.logs[r.PathValue("jid")]
 		if !ok {
 			denied(w)
@@ -398,6 +407,83 @@ func (f *frontend) addJobLocked(project, id, log string) {
 	f.logs[id] = log
 }
 
+// liveLog is a running job's log the way the build frontend serves it: a
+// follow is held open and sent each line as it is written until the job ends,
+// and a snapshot is what is there now.
+type liveLog struct {
+	f     *frontend
+	id    string
+	mu    sync.Mutex
+	text  string
+	grew  chan struct{}
+	ended bool
+}
+
+// building puts a running job on the fake whose log so far is first.
+func (f *frontend) building(t *testing.T, id, first string) *liveLog {
+	l := &liveLog{f: f, id: id, text: first, grew: make(chan struct{})}
+	f.mu.Lock()
+	f.jobs[id] = &buildv2.Job{Id: id, Status: buildv2.JobStatus_JobStatusClaimed, Timestamp: 1700000400, Attempt: 1}
+	if f.live == nil {
+		f.live = map[string]*liveLog{}
+	}
+	f.live[id] = l
+	f.mu.Unlock()
+	// After newFrontend's, so the job ends before the server waits on a follow.
+	t.Cleanup(l.end)
+	return l
+}
+
+func (l *liveLog) say(line string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.text += line
+	close(l.grew)
+	l.grew = make(chan struct{})
+}
+
+// end is the job finishing: a follow of it ends, and its log is the stored one.
+func (l *liveLog) end() {
+	l.mu.Lock()
+	if l.ended {
+		l.mu.Unlock()
+		return
+	}
+	l.ended = true
+	close(l.grew)
+	text := l.text
+	l.mu.Unlock()
+
+	l.f.mu.Lock()
+	defer l.f.mu.Unlock()
+	l.f.jobs[l.id].Status = buildv2.JobStatus_JobStatusSuccess
+	l.f.jobs[l.id].Logs = map[string]string{"1": "bafylog"}
+	l.f.logs[l.id] = text
+}
+
+func (l *liveLog) serve(w http.ResponseWriter, r *http.Request) {
+	from, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	snapshot := r.URL.Query().Get("snapshot") == "true"
+	for {
+		l.mu.Lock()
+		text, grew, ended := l.text, l.grew, l.ended
+		l.mu.Unlock()
+		if from < len(text) {
+			io.WriteString(w, text[from:])
+			w.(http.Flusher).Flush()
+			from = len(text)
+		}
+		if snapshot || ended {
+			return
+		}
+		select {
+		case <-grew:
+		case <-r.Context().Done():
+			return
+		}
+	}
+}
+
 // prompter answers from a script, in order, and records what it was asked.
 type prompter struct {
 	answers []string
@@ -505,16 +591,46 @@ func newTester(t *testing.T) *tester {
 	return &tester{t: t, f: newFrontend(t), dir: t.TempDir(), prompter: &prompter{}}
 }
 
-func (x *tester) run(args ...string) run {
-	x.t.Helper()
-	var out, errs bytes.Buffer
-	env := Env{
-		Stdin: strings.NewReader(x.stdin), Stdout: &out, Stderr: &errs,
+func (x *tester) env(stdout, stderr io.Writer) Env {
+	return Env{
+		Stdin: strings.NewReader(x.stdin), Stdout: stdout, Stderr: stderr,
 		Interactive: x.interactive, Prompter: x.prompter, HTTP: x.f.srv.Client(), Program: drive,
 		Forges: x.forges, Browse: x.browse, Engine: x.engine,
 	}
-	code := Run(env, args)
+}
+
+func (x *tester) run(args ...string) run {
+	x.t.Helper()
+	var out, errs bytes.Buffer
+	code := Run(x.env(&out, &errs), args)
 	return run{code: code, stdout: out.String(), stderr: errs.String()}
+}
+
+// start runs the CLI in the background with stdout going to out, and hands
+// back its exit code once it has one.
+func (x *tester) start(out io.Writer, args ...string) <-chan int {
+	exited := make(chan int, 1)
+	env := x.env(out, io.Discard)
+	go func() { exited <- Run(env, args) }()
+	return exited
+}
+
+// syncBuffer is a stdout a test reads while the CLI is still writing it.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func (x *tester) ok(args ...string) string {

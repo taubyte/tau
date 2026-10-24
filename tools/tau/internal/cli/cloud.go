@@ -196,7 +196,7 @@ func jobCommand(env Env) *cobra.Command {
 func logsCommand(env Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "logs <job-id>",
-		Short: "print a job's log; --follow keeps reading while it runs, resuming across drops",
+		Short: "print what a job has logged so far; --follow keeps reading while it runs, resuming across drops",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := jobArg(args)
 			if err != nil {
@@ -214,8 +214,9 @@ func logsCommand(env Env) *cobra.Command {
 	return cmd
 }
 
-// showLog prints a job's log. At a terminal, following draws the live view;
-// anywhere else the bytes go to stdout as they arrive.
+// showLog prints a job's log: what it holds now, or with follow, everything
+// until the job ends. At a terminal, following draws the live view; anywhere
+// else the bytes go to stdout as they arrive.
 func showLog(cmd *cobra.Command, env Env, cl *api.Client, id string, from int64, follow bool) error {
 	// A FINISHED JOB'S LOG IS THE ONE IT STORED. Following asks the node
 	// writing the log, and once the build ends no node is: the stream would be
@@ -234,6 +235,7 @@ func showLog(cmd *cobra.Command, env Env, cl *api.Client, id string, from int64,
 	stream := cl.Stream(cmd.Context(), id, from)
 	if !follow {
 		stream.Retries = 0
+		stream.Snapshot = true
 	}
 	if follow && env.Interactive && !jsonOut(cmd) && env.Program != nil {
 		m := ui.NewFollow("job "+id, stream, theme(env))

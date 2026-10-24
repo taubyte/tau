@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -247,6 +248,34 @@ func TestTheStreamStopsWhenItsWriterDoes(t *testing.T) {
 type failing struct{}
 
 func (failing) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
+
+// A SNAPSHOT IS ASKED FOR, never assumed: the frontend ends that response at
+// what the log holds now, and a stream that did not ask is a follow.
+func TestTheStreamAsksForASnapshotOnlyWhenTold(t *testing.T) {
+	var mu sync.Mutex
+	var asked []string
+	c := server(t, func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		asked = append(asked, r.URL.Path+"?"+r.URL.RawQuery)
+		mu.Unlock()
+		io.WriteString(w, "so far\n")
+	})
+
+	s := c.Stream(t.Context(), "j", 3)
+	s.Snapshot = true
+	var out bytes.Buffer
+	end, err := s.CopyTo(&out)
+	require.NoError(t, err)
+	require.Equal(t, "so far\n", out.String())
+	require.Equal(t, int64(3+len("so far\n")), end)
+
+	_, err = c.Stream(t.Context(), "j", 0).CopyTo(io.Discard)
+	require.NoError(t, err)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, []string{"/job/j/logs?offset=3&snapshot=true", "/job/j/logs?"}, asked)
+}
 
 // A cancelled context during a backoff after a mid-stream drop ends the read.
 func TestTheStreamStopsWhenCancelledDuringBackoff(t *testing.T) {

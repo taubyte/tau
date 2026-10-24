@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -285,6 +286,55 @@ func TestLogs(t *testing.T) {
 	require.NotZero(t, x.run("logs").code)
 	require.Contains(t, x.run("logs", "nope").stderr, "not found")
 	require.Contains(t, x.run("logs", "nope", "-f").stderr, "not found")
+}
+
+// WITHOUT --follow, A RUNNING JOB'S LOG IS WHAT IT HAS LOGGED SO FAR, and tau
+// logs exits while the job goes on, the way docker logs and kubectl logs do
+// without -f. With --follow each line is printed as it arrives and the command
+// ends with the job. Once the job has ended, both print the whole log.
+func TestLogsOfAJobStillRunning(t *testing.T) {
+	x := newTester(t)
+	x.login()
+	job := x.f.building(t, "job-run", "step one\n")
+
+	soFar := func(args ...string) string {
+		t.Helper()
+		var out syncBuffer
+		select {
+		case code := <-x.start(&out, args...):
+			require.Equal(t, 0, code)
+		case <-time.After(10 * time.Second):
+			t.Fatal("tau logs without --follow waited for the job to end")
+		}
+		return out.String()
+	}
+	require.Equal(t, "step one\n", soFar("logs", "job-run"))
+
+	var followed syncBuffer
+	exited := x.start(&followed, "logs", "job-run", "--follow")
+	require.Eventually(t, func() bool { return followed.String() == "step one\n" }, 10*time.Second, 5*time.Millisecond)
+
+	job.say("step two\n")
+	require.Eventually(t, func() bool { return followed.String() == "step one\nstep two\n" }, 10*time.Second, 5*time.Millisecond)
+	select {
+	case code := <-exited:
+		t.Fatalf("tau logs --follow ended (%d) while the job was running", code)
+	default:
+	}
+	require.Equal(t, "step one\nstep two\n", soFar("logs", "job-run"))
+	require.Equal(t, "step two\n", soFar("logs", "job-run", "--offset", "9"))
+
+	job.end()
+	select {
+	case code := <-exited:
+		require.Equal(t, 0, code)
+	case <-time.After(10 * time.Second):
+		t.Fatal("tau logs --follow outlived the job")
+	}
+	require.Equal(t, "step one\nstep two\n", followed.String())
+
+	require.Equal(t, "stored: step one\nstep two\n", x.ok("logs", "job-run"))
+	require.Equal(t, "stored: step one\nstep two\n", x.ok("logs", "job-run", "--follow"))
 }
 
 func TestCancelAndRetry(t *testing.T) {

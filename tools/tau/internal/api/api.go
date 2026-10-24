@@ -168,13 +168,17 @@ func (c *Client) Retry(ctx context.Context, jobID string) error {
 	return c.json(ctx, http.MethodPost, []string{"retry", jobID}, nil, nil)
 }
 
-// Logs opens a job's log stream at byte offset from. The frontend keeps it open
-// while the job runs; the caller reads until EOF and, if the connection drops
-// first, reopens at the offset it had reached.
-func (c *Client) Logs(ctx context.Context, jobID string, from int64) (io.ReadCloser, error) {
+// logs opens a job's log stream at byte offset from. The frontend keeps it open
+// while the job runs, or with snapshot ends it at what the log holds now; the
+// caller reads until EOF and, if the connection drops first, reopens at the
+// offset it had reached.
+func (c *Client) logs(ctx context.Context, jobID string, from int64, snapshot bool) (io.ReadCloser, error) {
 	q := url.Values{}
 	if from > 0 {
 		q.Set("offset", strconv.FormatInt(from, 10))
+	}
+	if snapshot {
+		q.Set("snapshot", "true")
 	}
 	resp, err := c.do(ctx, http.MethodGet, []string{"job", jobID, "logs"}, q, nil)
 	if err != nil {

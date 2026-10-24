@@ -330,20 +330,26 @@ func (h *jobHandler) Follow(ctx context.Context, req *connect.Request[buildv2.Fo
 	if err := h.s.allow(ctx, ActRead, req.Msg.GetJobId()); err != nil {
 		return err
 	}
-	return h.s.follow(ctx, req.Msg.GetJobId(), req.Msg.GetOffset(), stream.Send)
+	return h.s.follow(ctx, req.Msg, stream.Send)
 }
 
-// follow streams a running build's output to send, from offset to the end.
+// follow streams a running build's output to send, from the request's offset
+// to the end — of the build, or with snapshot, of what it has written so far.
 //
 // IT IS SEPARATE FROM THE HANDLER for the same reason job() and list() are: the
 // connect adapter decides authorization and nothing else, so what this does can
 // be driven without a stream on either side of it.
-func (s *Service) follow(ctx context.Context, jobID string, offset int64, send func(*buildv2.LogChunk) error) error {
+func (s *Service) follow(ctx context.Context, req *buildv2.FollowRequest, send func(*buildv2.LogChunk) error) error {
+	jobID, offset := req.GetJobId(), req.GetOffset()
 	if offset < 0 {
 		return errInvalidArgument("build: offset %d is before the start of the log", offset)
 	}
 
-	reader, err := s.Follow(jobID, offset)
+	open := s.Follow
+	if req.GetSnapshot() {
+		open = s.Snapshot
+	}
+	reader, err := open(jobID, offset)
 	if err != nil {
 		// A NODE THAT IS NOT WRITING THIS LOG IS Unavailable ON THE WIRE, not
 		// NotFound. The in-process answer is honest — the log is not here — but
@@ -382,7 +388,8 @@ func (s *Service) follow(ctx context.Context, jobID string, offset int64, send f
 			// EOF IS THE BUILD ENDING, WHICH IS A COMPLETE ANSWER. livelog does
 			// not return it early — a reader that catches up blocks — so
 			// reaching it means the writer closed and a follower has seen the
-			// whole log.
+			// whole log. A snapshot reaches it sooner, at the end of what was
+			// there when it was asked, which is the whole of what it asked for.
 			if errors.Is(err, io.EOF) {
 				return nil
 			}

@@ -24,6 +24,9 @@ type LogStream struct {
 	// gives up; Backoff is the wait before each.
 	Retries int
 	Backoff time.Duration
+	// Snapshot ends the log at what it holds when it is opened rather than
+	// when the job ends: what a running job has logged so far.
+	Snapshot bool
 }
 
 // Stream opens a resumable log stream for job, starting at from.
@@ -39,7 +42,7 @@ func (s *LogStream) Next() ([]byte, error) {
 	failures := 0
 	for {
 		if s.body == nil {
-			body, err := s.c.Logs(s.ctx, s.job, s.offset)
+			body, err := s.c.logs(s.ctx, s.job, s.offset, s.Snapshot)
 			if err != nil {
 				var refusal *Error
 				if errors.As(err, &refusal) {

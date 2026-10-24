@@ -326,6 +326,10 @@ message FollowRequest {
   string job_id = 1;
   // offset to resume from. Zero is the beginning of this attempt's log.
   int64 offset = 2;
+  // snapshot ends the stream at what the log holds when the request arrives
+  // instead of when the build ends: what has been logged so far, as
+  // `docker logs` reads without -f.
+  bool snapshot = 3;
 }
 
 // LogChunk is some bytes of a build's output and where they ended.
@@ -382,7 +386,8 @@ service JobService {
   // about.
   rpc Artifact(ArtifactRequest) returns (Built);
 
-  // Follow streams a RUNNING build's output, from `offset` to the end of it.
+  // Follow streams a RUNNING build's output, from `offset` to the end of it —
+  // or, with `snapshot`, to the end of what it has written so far.
   //
   // ONLY THE NODE WRITING THE LOG CAN ANSWER, and every other one says
   // Unavailable rather than NotFound — which is what makes a caller's pool walk

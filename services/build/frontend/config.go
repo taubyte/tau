@@ -448,6 +448,9 @@ type Backend interface {
 	// the log can answer; the others say Unavailable, which is what makes a
 	// pooled caller walk to the writer.
 	Follow(ctx context.Context, jobID string, from int64, emit func(data []byte, next int64) error) (int64, error)
+	// Snapshot is Follow up to what the log holds when it is asked: it ends
+	// there while the build goes on.
+	Snapshot(ctx context.Context, jobID string, from int64, emit func(data []byte, next int64) error) (int64, error)
 }
 
 // ErrBadCredential is a token auth refused outright.

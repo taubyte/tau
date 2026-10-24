@@ -70,6 +70,9 @@ func (w *watched) String() string {
 // while the build is still holding, which is the job's live log followed from
 // the node running it to the CLI; the failure's own output then follows, and
 // `tau logs` reads all of it back once the job has ended.
+//
+// While it holds, `tau logs` prints what it has logged so far and exits, and
+// `tau logs --follow` stays until the build ends, printing the rest as it comes.
 func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 	engine := &heldEngine{release: make(chan struct{})}
 	t.Setenv(config.EnvConfig, filepath.Join(t.TempDir(), "config.yaml"))
@@ -121,6 +124,43 @@ func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 	default:
 	}
 
+	_, rest, found := strings.Cut(live.String(), "queued job ")
+	require.True(t, found, "tau ci run names its job: %s", live.String())
+	job, _, _ := strings.Cut(rest, ":")
+
+	soFar := make(chan result, 1)
+	go func() { soFar <- tau("logs", "--", job) }()
+	select {
+	case r := <-soFar:
+		require.Equal(t, 0, r.code, r.stderr)
+		require.Contains(t, r.stdout, "compiling the held build")
+		require.NotContains(t, r.stdout, "error: the linker gave up")
+	case <-time.After(time.Minute):
+		close(engine.release)
+		t.Fatal("tau logs without --follow waited for the held build to end")
+	}
+
+	followed := &watched{want: "compiling the held build", seen: make(chan struct{})}
+	following := make(chan int, 1)
+	go func() {
+		following <- cli.Run(cli.Env{Stdin: strings.NewReader(""), Stdout: followed, Stderr: io.Discard, HTTP: http.DefaultClient, Forges: forges},
+			[]string{"logs", "--follow", "--", job})
+	}()
+	select {
+	case <-followed.seen:
+	case code := <-following:
+		close(engine.release)
+		t.Fatalf("tau logs --follow ended (%d) while the build was held: %s", code, followed.String())
+	case <-time.After(time.Minute):
+		close(engine.release)
+		t.Fatalf("tau logs --follow never printed the held build's first line: %s", followed.String())
+	}
+	select {
+	case code := <-following:
+		t.Fatalf("tau logs --follow ended (%d) while the build was held", code)
+	default:
+	}
+
 	close(engine.release)
 	select {
 	case code := <-exited:
@@ -129,12 +169,17 @@ func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 		t.Fatal("tau ci run never ended after the build did")
 	}
 	require.Contains(t, live.String(), "error: the linker gave up", "the failure's output is followed too")
+	select {
+	case code := <-following:
+		require.Equal(t, 0, code)
+	case <-time.After(2 * time.Minute):
+		t.Fatal("tau logs --follow never ended after the build did")
+	}
+	require.Contains(t, followed.String(), "error: the linker gave up", "the rest arrives while it follows")
 
-	_, rest, found := strings.Cut(live.String(), "queued job ")
-	require.True(t, found, "tau ci run names its job: %s", live.String())
-	job, _, _ := strings.Cut(rest, ":")
 	require.Contains(t, out.String(), "job "+job+": failed")
 	stored := ok(t, "logs", "--", job)
 	require.Contains(t, stored, "compiling the held build")
 	require.Contains(t, stored, "error: the linker gave up")
+	require.Equal(t, stored, ok(t, "logs", "--follow", "--", job), "an ended job's log is the stored one either way")
 }

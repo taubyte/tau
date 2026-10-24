@@ -175,6 +175,17 @@ func (c *BuildClient) Retry(ctx context.Context, jobID string) error {
 // likely — and is never a routing problem, so it stops the walk with its own
 // error.
 func (c *BuildClient) Follow(ctx context.Context, jobID string, from int64, emit func(data []byte, next int64) error) (int64, error) {
+	return c.read(ctx, jobID, from, false, emit)
+}
+
+// Snapshot is Follow up to what the log holds when it is asked rather than to
+// the end of the build, which goes on. It walks to the writer and resumes the
+// way Follow does.
+func (c *BuildClient) Snapshot(ctx context.Context, jobID string, from int64, emit func(data []byte, next int64) error) (int64, error) {
+	return c.read(ctx, jobID, from, true, emit)
+}
+
+func (c *BuildClient) read(ctx context.Context, jobID string, from int64, snapshot bool, emit func(data []byte, next int64) error) (int64, error) {
 	if emit == nil {
 		return from, connect.NewError(connect.CodeInternal, errors.New("build: follow needs somewhere to put the output"))
 	}
@@ -183,8 +194,9 @@ func (c *BuildClient) Follow(ctx context.Context, jobID string, from int64, emit
 	err := c.pool.Do(ctx, func(client *rpc.Client) error {
 		jobs := buildv2connect.NewJobServiceClient(client.HTTP(), client.URL())
 		stream, err := jobs.Follow(ctx, connect.NewRequest(&buildv2.FollowRequest{
-			JobId:  jobID,
-			Offset: offset,
+			JobId:    jobID,
+			Offset:   offset,
+			Snapshot: snapshot,
 		}))
 		if err != nil {
 			return err

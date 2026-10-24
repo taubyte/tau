@@ -501,8 +501,37 @@ func (o *runOutput) end() {
 // log being written for it, and it is this node's own — a job running elsewhere
 // is a NotFound here, not a forward.
 func (s *Service) Follow(jobID string, from int64) (io.ReadCloser, error) {
-	if err := requireJobID(jobID); err != nil {
+	_, r, err := s.fork(jobID, from)
+	if err != nil {
 		return nil, err
+	}
+	return r, nil
+}
+
+// Snapshot is Follow up to where the log is now: every byte written so far
+// from `from`, then EOF rather than a wait for the next line.
+//
+// The end is read after the fork, so it is never short of the offset the fork
+// checked: a log only grows, and everything below its Size is readable without
+// waiting (livelog).
+func (s *Service) Snapshot(jobID string, from int64) (io.ReadCloser, error) {
+	log, r, err := s.fork(jobID, from)
+	if err != nil {
+		return nil, err
+	}
+	return soFar{Reader: io.LimitReader(r, log.Size()-from), Closer: r}, nil
+}
+
+// soFar is a fork that ends at a fixed byte of the log.
+type soFar struct {
+	io.Reader
+	io.Closer
+}
+
+// fork is the log this node is writing for jobID and a reader of it at from.
+func (s *Service) fork(jobID string, from int64) (*livelog.Log, *livelog.Reader, error) {
+	if err := requireJobID(jobID); err != nil {
+		return nil, nil, err
 	}
 
 	s.logsMu.Lock()
@@ -510,7 +539,7 @@ func (s *Service) Follow(jobID string, from int64) (io.ReadCloser, error) {
 	s.logsMu.Unlock()
 
 	if !running {
-		return nil, errNotFound("no build of job %s is running on this node", jobID)
+		return nil, nil, errNotFound("no build of job %s is running on this node", jobID)
 	}
 
 	r, err := log.Fork(from)
@@ -518,9 +547,9 @@ func (s *Service) Follow(jobID string, from int64) (io.ReadCloser, error) {
 		// An offset past the end is the caller's: it is resuming against a log
 		// that never reached it, which is almost always a different attempt's.
 		if errors.Is(err, livelog.ErrOffset) {
-			return nil, errInvalidArgument("%v", err)
+			return nil, nil, errInvalidArgument("%v", err)
 		}
-		return nil, errUnavailable("build: following job %s: %v", jobID, err)
+		return nil, nil, errUnavailable("build: following job %s: %v", jobID, err)
 	}
-	return r, nil
+	return log, r, nil
 }

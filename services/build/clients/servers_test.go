@@ -29,7 +29,10 @@ type fakeBackend struct {
 	cancel  func(id string) error
 	retry   func(id string) error
 	follow  func(jobID string, offset int64, send func(*buildv2.LogChunk) error) error
-	built   func(project, environment, resource string) (string, error)
+	// snapshot answers a Follow that asks for one, so a test can tell the two
+	// requests apart.
+	snapshot func(jobID string, offset int64, send func(*buildv2.LogChunk) error) error
+	built    func(project, environment, resource string) (string, error)
 }
 
 func (f *fakeBackend) Artifact(_ context.Context, req *connect.Request[buildv2.ArtifactRequest]) (*connect.Response[buildv2.Built], error) {
@@ -44,10 +47,14 @@ func (f *fakeBackend) Artifact(_ context.Context, req *connect.Request[buildv2.A
 }
 
 func (f *fakeBackend) Follow(_ context.Context, req *connect.Request[buildv2.FollowRequest], stream *connect.ServerStream[buildv2.LogChunk]) error {
-	if f.follow == nil {
+	read := f.follow
+	if req.Msg.GetSnapshot() {
+		read = f.snapshot
+	}
+	if read == nil {
 		return connect.NewError(connect.CodeUnimplemented, nil)
 	}
-	return f.follow(req.Msg.GetJobId(), req.Msg.GetOffset(), stream.Send)
+	return read(req.Msg.GetJobId(), req.Msg.GetOffset(), stream.Send)
 }
 
 func (f *fakeBackend) Enqueue(_ context.Context, req *connect.Request[buildv2.PushEvent]) (*connect.Response[buildv2.JobRef], error) {
