@@ -1,0 +1,226 @@
+package node
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
+	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
+	"github.com/libp2p/go-libp2p/p2p/protocol/identify"
+	"github.com/stretchr/testify/require"
+)
+
+// A FLEET'S WAITS SAY WHY THEY GAVE UP. A report that never arrives and a
+// process the kernel held still past the deadline fail with one message, and
+// only the state at that moment tells them apart: a node with no gossip stream
+// from the reporter never heard it, which is an identify push gone missing; one
+// with streams both ways in a cgroup that stalled was heard too late. Each
+// diagnosis is a Stringer, so it is read when the wait gives up rather than
+// when it starts.
+
+// gossipWith is which way a host's gossip runs with each peer it is connected
+// to, and whether its peerstore has the peer gossiping, from identify or from a
+// stream it opened.
+type gossipWith struct{ h host.Host }
+
+func (g gossipWith) String() string {
+	var b strings.Builder
+	for _, p := range g.h.Network().Peers() {
+		to, from := false, false
+		for _, c := range g.h.Network().ConnsToPeer(p) {
+			for _, s := range c.GetStreams() {
+				if !slices.Contains(pubsub.GossipSubDefaultProtocols, s.Protocol()) {
+					continue
+				}
+				if s.Stat().Direction == network.DirOutbound {
+					to = true
+				} else {
+					from = true
+				}
+			}
+		}
+		told, err := g.h.Peerstore().SupportsProtocols(p, pubsub.GossipSubDefaultProtocols...)
+		gossips := strconv.FormatBool(len(told) > 0)
+		if err != nil {
+			gossips = err.Error()
+		}
+		fmt.Fprintf(&b, "\ngossip with %s: its peerstore says it gossips %s, a stream to it %v, a stream from it %v", p, gossips, to, from)
+	}
+	return b.String()
+}
+
+// viewOf is every node a node's discovery view holds, and how stale.
+type viewOf struct{ n *Node }
+
+func (v viewOf) String() string {
+	var b strings.Builder
+	for _, row := range v.n.Discovery().All() {
+		fmt.Fprintf(&b, "\nview: %s serving %v, %s old", row.Peer, row.Serving, row.Age.Round(time.Millisecond))
+	}
+	return b.String()
+}
+
+// stallCounters are what the kernel counts against this test's cgroup and its
+// parent, which under scripts/cap are the run's scope and the shared slice: how
+// often memory.high was crossed, how long tasks waited on memory and on a CPU,
+// and how long the slice's CPU quota held them back.
+var stallCounters = []struct {
+	parent    bool
+	file, key string
+}{
+	{false, "memory.events.local", "high"},
+	{true, "memory.events.local", "high"},
+	{false, "memory.pressure", "some"},
+	{false, "memory.pressure", "full"},
+	{false, "cpu.pressure", "some"},
+	{true, "cpu.stat", "throttled_usec"},
+}
+
+// stall is how much of each counter a wait used, from when it began.
+type stall struct {
+	dir    string
+	before []int64
+	err    []error
+}
+
+// stallSince starts counting for the cgroup this process runs in.
+func stallSince() *stall {
+	b, err := os.ReadFile("/proc/self/cgroup")
+	if err != nil {
+		return &stall{err: []error{err}}
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		if own, ok := strings.CutPrefix(line, "0::"); ok {
+			return stallIn(filepath.Join("/sys/fs/cgroup", own))
+		}
+	}
+	return &stall{err: []error{fmt.Errorf("/proc/self/cgroup has no cgroup v2 entry")}}
+}
+
+func stallIn(dir string) *stall {
+	s := &stall{dir: dir}
+	s.before, s.err = s.read()
+	return s
+}
+
+func (s *stall) read() ([]int64, []error) {
+	values := make([]int64, len(stallCounters))
+	errs := make([]error, len(stallCounters))
+	for i, c := range stallCounters {
+		dir := s.dir
+		if c.parent {
+			dir = filepath.Dir(dir)
+		}
+		values[i], errs[i] = counter(filepath.Join(dir, c.file), c.key)
+	}
+	return values, errs
+}
+
+// counter is a pressure file's total for one line, or a flat-keyed file's
+// value for one key.
+func counter(path, key string) (int64, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 || f[0] != key {
+			continue
+		}
+		v := f[1]
+		if total, ok := strings.CutPrefix(f[len(f)-1], "total="); ok {
+			v = total
+		}
+		return strconv.ParseInt(v, 10, 64)
+	}
+	return 0, fmt.Errorf("%s has no %s", path, key)
+}
+
+func (s *stall) String() string {
+	if s.dir == "" {
+		return fmt.Sprintf("\ncgroup unknown: %v", s.err[0])
+	}
+	now, errs := s.read()
+	var out []string
+	for i, c := range stallCounters {
+		name := c.file + " " + c.key
+		if c.parent {
+			name = "../" + name
+		}
+		switch {
+		case s.err[i] != nil:
+			out = append(out, fmt.Sprintf("%s unreadable: %v", name, s.err[i]))
+		case errs[i] != nil:
+			out = append(out, fmt.Sprintf("%s unreadable: %v", name, errs[i]))
+		case strings.HasSuffix(c.file, ".pressure") || strings.HasSuffix(c.key, "_usec"):
+			out = append(out, fmt.Sprintf("%s +%s", name, (time.Duration(now[i]-s.before[i])*time.Microsecond).Round(time.Millisecond)))
+		default:
+			out = append(out, fmt.Sprintf("%s +%d", name, now[i]-s.before[i]))
+		}
+	}
+	return fmt.Sprintf("\ncgroup %s during the wait: %s", s.dir, strings.Join(out, ", "))
+}
+
+// TestAStallIsReportedAsWhatTheWaitUsed, counter by counter, and a counter
+// that cannot be read says so instead of reading as nothing.
+func TestAStallIsReportedAsWhatTheWaitUsed(t *testing.T) {
+	scope := filepath.Join(t.TempDir(), "tau-cap.slice", "tau-cap-1.scope")
+	require.NoError(t, os.MkdirAll(scope, 0o755))
+	write := func(dir, file, content string) {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, file), []byte(content), 0o644))
+	}
+	pressure := func(some, full int) string {
+		return fmt.Sprintf("some avg10=0.00 avg60=0.00 avg300=0.00 total=%d\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=%d\n", some, full)
+	}
+	write(scope, "memory.events.local", "low 0\nhigh 552\nmax 0\n")
+	write(filepath.Dir(scope), "memory.events.local", "low 0\nhigh 7\nmax 0\n")
+	write(scope, "memory.pressure", pressure(4864, 4864))
+	write(scope, "cpu.pressure", pressure(202, 196))
+
+	s := stallIn(scope)
+	write(scope, "memory.events.local", "low 0\nhigh 76527\nmax 0\n")
+	write(scope, "memory.pressure", pressure(10670156, 10667085))
+	write(scope, "cpu.pressure", pressure(114057, 113780))
+
+	require.Equal(t, "\ncgroup "+scope+" during the wait: "+
+		"memory.events.local high +75975, ../memory.events.local high +0, "+
+		"memory.pressure some +10.665s, memory.pressure full +10.662s, cpu.pressure some +114ms, "+
+		"../cpu.stat throttled_usec unreadable: open "+filepath.Join(filepath.Dir(scope), "cpu.stat")+": no such file or directory",
+		s.String())
+}
+
+// TestAGossipReportSaysWhichWayEachStreamRuns, built the way a fleet that
+// connected before it gossiped could be left: a host that heard of its peer's
+// gossip from no identify, so its peer has a stream to it and it has none
+// back.
+func TestAGossipReportSaysWhichWayEachStreamRuns(t *testing.T) {
+	mn := mocknet.New()
+	t.Cleanup(func() { mn.Close() })
+
+	late, deaf := newHost(t, mn), newHost(t, mn)
+	newPubSub(t, deaf)
+	deaf.RemoveStreamHandler(identify.IDPush)
+	_, err := mn.ConnectPeers(late.ID(), deaf.ID())
+	require.NoError(t, err)
+
+	// deaf has identified late before late gossips, so only the push it
+	// refuses could tell it.
+	require.Eventually(t, func() bool {
+		protos, err := deaf.Peerstore().GetProtocols(late.ID())
+		return err == nil && slices.Contains(protos, identify.ID)
+	}, 10*time.Second, 10*time.Millisecond)
+	ps := newPubSub(t, late)
+	require.Eventually(t, func() bool { return slices.Contains(ps.ListPeers(""), deaf.ID()) }, 10*time.Second, 10*time.Millisecond)
+
+	require.Equal(t, fmt.Sprintf("\ngossip with %s: its peerstore says it gossips false, a stream to it false, a stream from it true", late.ID()), gossipWith{deaf}.String())
+	require.Equal(t, fmt.Sprintf("\ngossip with %s: its peerstore says it gossips true, a stream to it true, a stream from it false", deaf.ID()), gossipWith{late}.String())
+}

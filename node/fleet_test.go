@@ -58,6 +58,7 @@ func fleet(t *testing.T, configs ...Config) []*Node {
 	// snapshot its own goroutine refreshes, so under load a connection can still
 	// be told "no pubsub" and left to a push; building nodes pushes to every
 	// peer and would spend the budget that push needs.
+	stalled := stallSince()
 	for i, ps := range gossip {
 		for j, h := range hosts {
 			if i == j {
@@ -65,7 +66,7 @@ func fleet(t *testing.T, configs ...Config) []*Node {
 			}
 			require.Eventually(t, func() bool {
 				return slices.Contains(ps.ListPeers(""), h.ID())
-			}, 30*time.Second, 10*time.Millisecond, "node %d never opened a stream to node %d", i, j)
+			}, 30*time.Second, 10*time.Millisecond, "node %d never opened a stream to node %d%s%s", i, j, gossipWith{hosts[i]}, stalled)
 		}
 	}
 
@@ -105,9 +106,10 @@ func fleet(t *testing.T, configs ...Config) []*Node {
 func sees(t *testing.T, watcher *Node, name string) {
 	t.Helper()
 
+	stalled := stallSince()
 	require.Eventually(t, func() bool {
 		return len(watcher.Discovery().Route(name, time.Minute)) > 0
-	}, 30*time.Second, 100*time.Millisecond, "%s never appeared in the view", name)
+	}, 30*time.Second, 100*time.Millisecond, "%s never appeared in the view%s%s%s", name, viewOf{watcher}, gossipWith{watcher.opts.host}, stalled)
 }
 
 // TestEveryNodeOfALargeFleetHasAStreamToEveryOther when the fleet is handed
