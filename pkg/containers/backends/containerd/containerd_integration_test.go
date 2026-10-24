@@ -14,11 +14,13 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -398,6 +400,54 @@ RUN nc -w 3 127.0.0.1 %s </dev/null >/dev/null 2>&1 && echo LOCAL_REACHED > /pro
 
 	assert.Contains(t, stdout.String(), "LOCAL_BLOCKED",
 		"a Dockerfile RUN step reached a node-local service (got %q)", stdout.String())
+}
+
+// TestRestrictedBuildFetchesThroughTheFirewall_Integration: BuildKit fetches an
+// ADD's URL itself, and so it does the frontend a `# syntax=` line names and the
+// triggers a base image carries. Those fetches are confined because the builder
+// runs inside the restricted container, which is what this proves: a URL on a
+// node-local service is fetched by an unrestricted build and never reached by a
+// restricted one.
+func TestRestrictedBuildFetchesThroughTheFirewall_Integration(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("programming nftables needs CAP_NET_ADMIN; run this test as root")
+	}
+	backend := newTestBackend(t)
+	if backend.isRootlessMode() {
+		t.Skip("restricted egress requires rootful containerd")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	var fetched atomic.Int32
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fetched.Add(1)
+		io.WriteString(w, "fetched")
+	})}
+	go server.Serve(ln)
+	defer server.Close()
+
+	t.Cleanup(func() {
+		if err := netguard.Uninstall(); err != nil {
+			t.Logf("removing the egress table: %v", err)
+		}
+	})
+
+	dockerfile := fmt.Sprintf("FROM %s\nADD http://%s/x /x\n", testImage, ln.Addr())
+	build := func(restrict bool) error {
+		image := backend.Image(fmt.Sprintf("tau-netguard-fetch:%d", time.Now().UnixNano()))
+		t.Cleanup(func() { image.Remove(context.WithoutCancel(ctx)) })
+		return image.Build(ctx, &core.DockerfileBuild{Context: tarOfDockerfile(t, dockerfile), RestrictEgress: restrict})
+	}
+
+	require.NoError(t, build(false), "an unrestricted build fetches the URL")
+	require.EqualValues(t, 1, fetched.Load())
+
+	require.Error(t, build(true), "a restricted build fetched a node-local URL")
+	assert.EqualValues(t, 1, fetched.Load(), "the builder of a restricted build reached a node-local service")
 }
 
 // tarOfDockerfile packs a one-file build context.

@@ -179,7 +179,19 @@ func (i *containerdImage) Build(ctx context.Context, input *core.DockerfileBuild
 
 // runBuildKit runs one build and returns the builder's own output on failure —
 // that output is the compiler error, the missing package, the failed RUN.
+// keepCgroup keeps buildkitd in the cgroup it is started in. The image sets
+// BUILDKIT_SETUP_CGROUPV2_ROOT, and buildkitd then moves into an "init" group at
+// the root of the hierarchy it sees, which is the host's, passed through: out of
+// the restricted subtree the egress rule matches. Its own fetches, an ADD's URL,
+// a `# syntax=` frontend, a base image's triggers, would leave unfiltered while
+// only the RUN steps it parents are confined.
+const keepCgroup = "BUILDKIT_SETUP_CGROUPV2_ROOT=0"
+
 func (i *containerdImage) runBuildKit(ctx context.Context, contextDir, outputDir, configPath, dockerfile string, restrictEgress bool) error {
+	env := buildkitFlags(i.backend.isRootlessMode())
+	if restrictEgress {
+		env = append(env, keepCgroup)
+	}
 	config := &core.ContainerConfig{
 		Image: buildkitImage,
 		Command: []string{
@@ -191,7 +203,7 @@ func (i *containerdImage) runBuildKit(ctx context.Context, contextDir, outputDir
 			"--output", fmt.Sprintf("type=docker,name=%s,dest=%s",
 				i.name, path.Join(buildOutputPath, buildOutputFile)),
 		},
-		Env: buildkitFlags(i.backend.isRootlessMode()),
+		Env: env,
 		// The Dockerfile is repository content, so its RUN steps are untrusted
 		// code and get the same egress policy as build.sh. Restricting the
 		// builder is only half of it — see writeBuildKitConfig for the half that
