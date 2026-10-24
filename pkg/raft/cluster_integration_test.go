@@ -5,6 +5,7 @@ package raft
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/taubyte/tau/p2p/keypair"
 	taupeer "github.com/taubyte/tau/p2p/peer"
 	"gotest.tools/v3/assert"
+	"gotest.tools/v3/poll"
 )
 
 // newTestNode creates a real libp2p node for testing, connected to nothing: a
@@ -1355,8 +1357,79 @@ func TestCluster_StaggeredConcurrentStartup_Integration(t *testing.T) {
 	t.Logf("Staggered startup test passed, leader: %s", idOf(leader))
 }
 
+// leadingNow returns whichever of clusters leads and a term it leads in. The
+// term is read before the member is seen still leading, so it led at that term
+// or a later one, and a leader elected once it is gone leads at a later one.
+func leadingNow(t *testing.T, clusters ...Cluster) (Cluster, uint64) {
+	t.Helper()
+	deadline := time.Now().Add(leaderWait)
+	for {
+		leader := leaderOf(t, clusters...)
+		term := getClusterInternal(leader).raft.CurrentTerm()
+		if leader.IsLeader() {
+			return leader, term
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no member led long enough to read its term within %v", leaderWait)
+		}
+	}
+}
+
+// rejoinSettled is one look at what raft promises once back, a member that
+// crashed while it led, has been restarted among members:
+//   - one leader, which every member names, at a term past crashTerm that
+//     every member is at;
+//   - every member holding each of them as a voter;
+//   - back following that leader unless it is the leader, its log reaching
+//     the leader's commit index, all of it applied, and holding writes.
+//
+// Raft does not promise back stays a follower: caught up, it may win a later
+// election like any member.
+func rejoinSettled(back Cluster, members []Cluster, crashTerm uint64, writes map[string]string) poll.Result {
+	leader := agreedLeader(members)
+	if leader == nil {
+		return poll.Continue("the members do not all name the one member that leads")
+	}
+	term := getClusterInternal(leader).raft.CurrentTerm()
+	if term <= crashTerm {
+		return poll.Continue("%s leads at term %d, not past the crash at term %d", idOf(leader), term, crashTerm)
+	}
+	for _, m := range members {
+		if got := getClusterInternal(m).raft.CurrentTerm(); got != term {
+			return poll.Continue("%s is at term %d, its leader at %d", idOf(m), got, term)
+		}
+		config, err := m.Members()
+		if err != nil {
+			return poll.Continue("%s lists no members: %v", idOf(m), err)
+		}
+		if len(config) != len(members) {
+			return poll.Continue("%s holds %d members, not %d", idOf(m), len(config), len(members))
+		}
+		for _, v := range members {
+			if !slices.ContainsFunc(config, func(s Member) bool { return s.ID == idOf(v) && s.Suffrage == raft.Voter }) {
+				return poll.Continue("%s does not hold %s as a voter", idOf(m), idOf(v))
+			}
+		}
+	}
+	if back != leader && back.State() != raft.Follower {
+		return poll.Continue("%s neither leads nor follows: %v", idOf(back), back.State())
+	}
+	commit := getClusterInternal(leader).raft.CommitIndex()
+	r := getClusterInternal(back).raft
+	if last, applied := r.LastIndex(), r.AppliedIndex(); last < commit || applied < commit {
+		return poll.Continue("%s logged to %d and applied to %d, short of its leader's commit index %d", idOf(back), last, applied, commit)
+	}
+	for key, want := range writes {
+		if got, found := back.Get(key); !found || string(got) != want {
+			return poll.Continue("%s holds %s=%q (found %v), not %q", idOf(back), key, got, found, want)
+		}
+	}
+	return poll.Success()
+}
+
 // TestCluster_LeaderRebootAndRejoin tests the scenario where the leader crashes,
-// a new leader is elected, and then the old leader comes back and rejoins as follower
+// a new leader is elected, and then the old leader comes back and rejoins the
+// group, caught up
 func TestCluster_LeaderRebootAndRejoin_Integration(t *testing.T) {
 	// Create 3 nodes with full mesh connectivity
 	node1 := newTestNode(t)
@@ -1413,17 +1486,19 @@ func TestCluster_LeaderRebootAndRejoin_Integration(t *testing.T) {
 		assert.NilError(t, err, "cluster%d: before-leader-crash not replicated in time", i+1)
 	}
 
-	// Crash whichever member leads now
-	crashed := leaderOf(t, clusters...)
+	// Crash whichever member leads now, noting a term it leads in
+	crashed, crashTerm := leadingNow(t, clusters...)
 	survivors := without(clusters, crashed)
-	t.Logf("Crashing original leader (%s)...", idOf(crashed))
+	t.Logf("Crashing original leader (%s) at term %d...", idOf(crashed), crashTerm)
 
 	err = crashed.Close()
 	assert.NilError(t, err, "failed to close the leader")
 
-	// Identify the new leader the survivors agree on
+	// Identify the new leader the survivors agree on, elected after the crash
 	newLeader := leaderOf(t, survivors...)
 	assert.Assert(t, idOf(newLeader) != idOf(crashed), "new leader must not be crashed node")
+	assert.Assert(t, getClusterInternal(newLeader).raft.CurrentTerm() > crashTerm,
+		"the survivors' leader must lead at a term past the crash")
 
 	// Set data while old leader is down
 	err = onLeader(t, survivors, func(leader Cluster) error {
@@ -1450,16 +1525,7 @@ func TestCluster_LeaderRebootAndRejoin_Integration(t *testing.T) {
 	defer cancel4()
 	err = rejoined.WaitForLeader(ctx4)
 	assert.NilError(t, err, "the old leader failed to see leader")
-
-	// The old leader rejoins the group the survivors formed rather than one
-	// of its own: it holds all three members and names the leader they name.
-	// Raft does not keep it a follower after that, since once it has caught
-	// up it may win a later election like any member.
 	all := append(survivors, rejoined)
-	members, err := rejoined.Members()
-	assert.NilError(t, err, "the old leader failed to list members")
-	assert.Equal(t, len(members), 3, "the old leader must rejoin the survivors' group")
-	leaderOf(t, all...)
 
 	// Old leader must have all data, once replication catches up
 	err = waitForKeyValue(t, rejoined, "before-leader-crash", "original-value", 5*time.Second)
@@ -1482,6 +1548,15 @@ func TestCluster_LeaderRebootAndRejoin_Integration(t *testing.T) {
 
 	err = waitForKeyValue(t, rejoined, "after-rejoin", "post-rejoin-value", 5*time.Second)
 	assert.NilError(t, err, "old leader must receive new data after rejoin")
+
+	// The old leader is back in the survivors' group, a caught-up voter
+	poll.WaitOn(t, func(poll.LogT) poll.Result {
+		return rejoinSettled(rejoined, all, crashTerm, map[string]string{
+			"before-leader-crash": "original-value",
+			"during-leader-down":  "new-leader-value",
+			"after-rejoin":        "post-rejoin-value",
+		})
+	}, poll.WithTimeout(leaderWait), poll.WithDelay(10*time.Millisecond))
 
 	t.Logf("Leader reboot and rejoin test passed. New leader: %s, old leader rejoined: %s", idOf(newLeader), idOf(crashed))
 }
