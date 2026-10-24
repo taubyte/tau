@@ -363,6 +363,11 @@ func (c *cluster) buildRaftConfig() *raft.Config {
 	cfg := raft.DefaultConfig()
 	cfg.LocalID = raft.ServerID(c.node.ID().String())
 	cfg.PreVoteDisabled = false
+	// A leader that commits its own removal steps down instead of shutting
+	// itself down. raft drops the future of a shutdown it starts itself, so
+	// Close would find it already shut down, get a future that waits for
+	// nothing, and return with its goroutines still writing to the store.
+	cfg.ShutdownOnRemove = false
 
 	timeouts := c.getTimeoutConfig()
 	cfg.HeartbeatTimeout = timeouts.HeartbeatTimeout

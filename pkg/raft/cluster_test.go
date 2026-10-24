@@ -2,13 +2,18 @@ package raft
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"path"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/hashicorp/raft"
+	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -93,6 +98,212 @@ func TestCluster_Close(t *testing.T) {
 
 	// Second close should return ErrAlreadyClosed
 	assert.ErrorIs(t, cluster.Close(), ErrAlreadyClosed)
+}
+
+// heldStore holds every write of one key until it is let go, so a test can
+// keep a raft's FSM goroutine inside an apply.
+type heldStore struct {
+	ds.Batching
+	key      ds.Key
+	entered  chan struct{}
+	release  chan struct{}
+	in, out  sync.Once
+	finished atomic.Bool
+}
+
+func newHeldStore(store ds.Batching, key ds.Key) *heldStore {
+	return &heldStore{
+		Batching: store,
+		key:      key,
+		entered:  make(chan struct{}),
+		release:  make(chan struct{}),
+	}
+}
+
+func (s *heldStore) Put(ctx context.Context, key ds.Key, value []byte) error {
+	if key != s.key {
+		return s.Batching.Put(ctx, key, value)
+	}
+	s.in.Do(func() { close(s.entered) })
+	<-s.release
+	err := s.Batching.Put(ctx, key, value)
+	s.finished.Store(true)
+	return err
+}
+
+func (s *heldStore) letGo() { s.out.Do(func() { close(s.release) }) }
+
+// storeNode is a node whose store is the one a test hands it.
+type storeNode struct {
+	taupeer.Node
+	store ds.Batching
+}
+
+func (n storeNode) Store() ds.Batching { return n.store }
+
+// leaderWait bounds how long a test waits for its members to agree on a
+// leader, the same bound the integration tests give WaitForLeader.
+const leaderWait = 30 * time.Second
+
+// leaderOf returns whichever of clusters leads, once every one of them names it
+// and it alone says it leads. Nothing outside raft decides who leads: with the
+// tests' 25ms lease a loaded host moves leadership between any two calls, so a
+// test asks at the moment it needs the answer.
+func leaderOf(t testing.TB, clusters ...Cluster) Cluster {
+	t.Helper()
+	deadline := time.Now().Add(leaderWait)
+	for {
+		if l := agreedLeader(clusters); l != nil {
+			return l
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d members never agreed on a leader within %v", len(clusters), leaderWait)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// agreedLeader is leaderOf's one look, nil while the members disagree.
+func agreedLeader(clusters []Cluster) Cluster {
+	var (
+		named  peer.ID
+		leader Cluster
+	)
+	for _, cl := range clusters {
+		id, err := cl.Leader()
+		if err != nil || (named != "" && id != named) {
+			return nil
+		}
+		named = id
+		if cl.IsLeader() {
+			if leader != nil {
+				return nil
+			}
+			leader = cl
+		}
+	}
+	if leader == nil || idOf(leader) != named {
+		return nil
+	}
+	return leader
+}
+
+func idOf(cl Cluster) peer.ID { return cl.(*cluster).node.ID() }
+
+// leadershipMoved is a write that did not land because its leader stopped
+// leading: refused (ErrNotLeader), which applied nothing, or lost mid-commit
+// (raft.ErrLeadershipLost), which the next leader may still commit.
+func leadershipMoved(err error) bool {
+	return errors.Is(err, ErrNotLeader) || errors.Is(err, raft.ErrLeadershipLost)
+}
+
+// joinedPair is a group of two on linked mock nodes: a bootstrapped it and b
+// joined. Each runs on the store wrap makes of its node's own.
+func joinedPair(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batching) (a, b Cluster) {
+	t.Helper()
+	nodeA := taupeer.Mock(t.Context())
+	nodeB := taupeer.Mock(t.Context())
+	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, nodeB.Peer().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Peer().Addrs()}))
+
+	a, err := New(storeNode{Node: nodeA, store: wrap(nodeA.Store())}, namespace,
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	t.Cleanup(func() { a.Close() })
+	waitLeader(t, a, 5*time.Second)
+
+	b, err = New(storeNode{Node: nodeB, store: wrap(nodeB.Store())}, namespace,
+		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	t.Cleanup(func() { b.Close() })
+
+	require.Eventually(t, func() bool {
+		members, err := a.Members()
+		return err == nil && len(members) == 2
+	}, 10*time.Second, 20*time.Millisecond, "b never joined a")
+	return a, b
+}
+
+// removeTheLeader has whichever of a and b leads commit its own removal and
+// returns it with the member left leading. The removal is sent and not waited
+// on, because its future is answered by the FSM goroutine, which a test may be
+// holding; a leader that loses its lease before the removal commits is asked
+// again of whichever leads next.
+func removeTheLeader(t *testing.T, a, b Cluster) (removed, left Cluster) {
+	t.Helper()
+	deadline := time.Now().Add(leaderWait)
+	for time.Now().Before(deadline) {
+		removed = leaderOf(t, a, b)
+		left = a
+		if removed == a {
+			left = b
+		}
+		removed.(*cluster).raft.RemoveServer(raft.ServerID(idOf(removed).String()), 0, 5*time.Second)
+		settled := time.Now().Add(2 * time.Second)
+		for time.Now().Before(settled) {
+			members, err := left.Members()
+			if err == nil && len(members) == 1 && left.IsLeader() && removed.State() != raft.Leader {
+				return removed, left
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	t.Fatalf("no leader committed its own removal within %v", leaderWait)
+	return nil, nil
+}
+
+// TestCluster_CloseWaitsForALeaderThatRemovedItself: raft's default is to shut
+// itself down once a leader commits its own removal, and the future that
+// waits for that shutdown is dropped inside raft. Close then found a raft
+// already shut down, got a future that waits for nothing, and returned while
+// the FSM goroutine was still writing to the store its caller closes next.
+func TestCluster_CloseWaitsForALeaderThatRemovedItself(t *testing.T) {
+	namespace := "close-after-self-removal"
+	key := ds.NewKey(path.Join(RaftStoragePrefix, namespace, "data", "held"))
+	a, b := joinedPair(t, namespace, func(store ds.Batching) ds.Batching { return newHeldStore(store, key) })
+	heldOf := func(cl Cluster) *heldStore { return cl.(*cluster).node.Store().(*heldStore) }
+	defer heldOf(a).letGo()
+	defer heldOf(b).letGo()
+
+	// Both FSMs hold the write, so whichever member leads at the removal is
+	// inside an apply when it removes itself.
+	setDone := make(chan error, 1)
+	go func() {
+		for {
+			l := agreedLeader([]Cluster{a, b})
+			if l == nil {
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
+			if err := l.Set("held", []byte("v"), 5*time.Second); !leadershipMoved(err) {
+				setDone <- err
+				return
+			}
+		}
+	}()
+	for _, cl := range []Cluster{a, b} {
+		select {
+		case <-heldOf(cl).entered:
+		case <-time.After(leaderWait):
+			t.Fatal("the held write never reached a member's FSM")
+		}
+	}
+
+	removed, _ := removeTheLeader(t, a, b)
+
+	closed := make(chan error, 1)
+	go func() { closed <- removed.Close() }()
+	select {
+	case <-closed:
+		t.Fatal("Close returned while its raft was still writing to the store")
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	heldOf(a).letGo()
+	heldOf(b).letGo()
+	require.NoError(t, <-closed)
+	assert.True(t, heldOf(removed).finished.Load(), "Close returned before the write it was holding finished")
+	require.NoError(t, <-setDone)
 }
 
 func TestCluster_SingleNode_IsLeader(t *testing.T) {
