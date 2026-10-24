@@ -7,10 +7,10 @@ import (
 	"io"
 	"io/fs"
 	"maps"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -90,9 +90,13 @@ func (d disk) measure(string) (reserve.Usage, error) {
 	}, err
 }
 
-// noise is n bytes that are not zeros, so they land on disk.
+// noise is n bytes that are not zeros, so they land on disk, and that do not
+// compress, so a restore reads about as many of them from the store as it
+// unpacks.
 func noise(n int) string {
-	return strings.Repeat("x", n)
+	b := make([]byte, n)
+	rand.NewChaCha8([32]byte{}).Read(b)
+	return string(b)
 }
 
 // TestARESTORELeavesTheDiskItsReserve, of bytes and of inodes. One that would

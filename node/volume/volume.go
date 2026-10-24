@@ -106,10 +106,31 @@
 // puts it in place, and the directory it is renamed into after. A node that
 // loses power during a restore comes back holding either no volume, which the
 // next mount restores again, or all of it.
+//
+// # A checkpoint stores what the files hold, not how long they are
+//
+// A database preallocates, so a file's length says little about what is in it:
+// four gigabytes long with a megabyte written is a megabyte on disk. archive/tar
+// cannot write a sparse entry, so a hole goes into the archive as zeros, and
+// every one of them was read off the disk, handed to the store and hashed there
+// a chunk at a time, then streamed back out on the node that restored it.
+//
+// So the walk asks the filesystem where a file's data is and reads only that,
+// filling the holes with zeros it never read, and the archive is compressed on
+// its way to the store, where a run of zeros is a few bytes. The zeros still
+// pass through the compressor, once each way, and that is what a long file
+// costs now. The compression is pinned — one encoder, one level, one window —
+// so the same files are still the same bytes, and the same cid.
+//
+// A RESTORE HOLDS NO MORE HISTORY THAN A CHECKPOINT IS WRITTEN WITH. A frame is
+// bytes from a store, and one naming a window of half a gigabyte would have the
+// decoder allocate it; one wider than a checkpoint's is refused before anything
+// is allocated for it.
 package volume
 
 import (
 	"archive/tar"
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -123,6 +144,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 
 	"github.com/taubyte/tau/pkg/containers/reserve"
 	"github.com/taubyte/tau/pkg/specs"
@@ -194,6 +217,10 @@ type Volumes struct {
 	floor reserve.Floor
 	sync  func(*os.File) error
 
+	// read is how a checkpoint reads a file's data, which is all of a file it
+	// reads: its holes go into the archive as zeros nothing read.
+	read func(*os.File, []byte, int64) (int, error)
+
 	mu   sync.Mutex
 	rows Rows
 	open map[string]*volume
@@ -256,7 +283,10 @@ func New(root string, assets Assets, stores Stores, log Log) (*Volumes, error) {
 	if log == nil {
 		return nil, errors.New("volume: nowhere to say that a volume is over its quota")
 	}
-	return &Volumes{root: root, assets: assets, stores: stores, log: log, floor: reserve.Default, sync: (*os.File).Sync}, nil
+	return &Volumes{
+		root: root, assets: assets, stores: stores, log: log,
+		floor: reserve.Default, sync: (*os.File).Sync, read: (*os.File).ReadAt,
+	}, nil
 }
 
 // The setting keys services/worker writes for a mount, which are the
@@ -401,7 +431,7 @@ func (v *Volumes) restore(ctx context.Context, handle, dir string, quota int64) 
 	if err := makeDir(staging); err != nil {
 		return err
 	}
-	unpacked, err := untar(content, staging, v.floor, v.sync)
+	unpacked, err := unpack(content, staging, v.floor, v.sync)
 	if err == nil {
 		err = os.Rename(staging, dir)
 	}
@@ -441,7 +471,7 @@ func (v *Volumes) checkpoint(ctx context.Context, held *volume) (int64, error) {
 	read, write := io.Pipe()
 	walked := make(chan int64, 1)
 	go func() {
-		n, err := tarInto(write, held.dir)
+		n, err := pack(write, held.dir, v.read)
 		walked <- n
 		write.CloseWithError(err)
 	}()
@@ -639,6 +669,65 @@ func durationOr(value string, fallback time.Duration) time.Duration {
 	return fallback
 }
 
+// window is the history a checkpoint is compressed with, and the most a
+// restore holds to read one back.
+//
+// IT IS A QUARTER OF WHAT THE FASTEST LEVEL WOULD TAKE. A decoder moves its
+// whole history down each time its buffer fills, so a wider window is a slower
+// restore, and the archives it was measured on came out no smaller for it.
+const window = 1 << 20
+
+// encoding is how a checkpoint is compressed. Every setting is pinned, because
+// the same files must be the same bytes: one encoder, so nothing depends on how
+// its blocks were scheduled, at the fastest level, since a checkpoint runs every
+// interval beside the workload it is taken from.
+var encoding = []zstd.EOption{
+	zstd.WithEncoderConcurrency(1),
+	zstd.WithEncoderLevel(zstd.SpeedFastest),
+	zstd.WithWindowSize(window),
+}
+
+// decoding is how one is read back: one decoder, which decodes no frame whose
+// window is wider than a checkpoint's, so a crafted one cannot have it allocate
+// more.
+var decoding = []zstd.DOption{
+	zstd.WithDecoderConcurrency(1),
+	zstd.WithDecoderMaxWindow(window),
+}
+
+// pack walks a directory into a compressed tar stream, and reports the total
+// content size, as tarInto does.
+//
+// WHAT IT WRITES IS BUFFERED, because a block of zeros compresses to a few
+// bytes, and handing the store each of those on its own is a wakeup of its
+// reader per block.
+func pack(w io.Writer, dir string, read func(*os.File, []byte, int64) (int, error)) (int64, error) {
+	buffered := bufio.NewWriterSize(w, 64<<10)
+	compressed, err := zstd.NewWriter(buffered, encoding...)
+	if err != nil {
+		return 0, err
+	}
+	n, err := tarInto(compressed, dir, read)
+	if err == nil {
+		err = compressed.Close()
+	}
+	if err == nil {
+		err = buffered.Flush()
+	}
+	return n, err
+}
+
+// unpack decompresses a checkpoint and unpacks the archive it holds into a
+// directory, answering what untar does.
+func unpack(r io.Reader, dir string, floor reserve.Floor, sync func(*os.File) error) (int64, error) {
+	decompressed, err := zstd.NewReader(r, decoding...)
+	if err != nil {
+		return 0, err
+	}
+	defer decompressed.Close()
+	return untar(decompressed, dir, floor, sync)
+}
+
 // tarInto walks a directory into a tar stream and reports the total content
 // size — which is what the quota is measured against.
 //
@@ -658,7 +747,7 @@ func durationOr(value string, fallback time.Duration) time.Duration {
 // and what says so is the warning the pass makes every interval. Skipping the
 // entry instead would mean a checkpoint that quietly holds less than the
 // directory did, which is the failure mode this package is here to prevent.
-func tarInto(w io.Writer, dir string) (int64, error) {
+func tarInto(w io.Writer, dir string, read func(*os.File, []byte, int64) (int, error)) (int64, error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return 0, err
@@ -673,7 +762,7 @@ func tarInto(w io.Writer, dir string) (int64, error) {
 		if err != nil || name == "." {
 			return err
 		}
-		n, isDir, err := writeEntry(archive, root, name)
+		n, isDir, err := writeEntry(archive, root, name, read)
 		total += n
 		if err == nil && listed.IsDir() && !isDir {
 			return fs.SkipDir
@@ -697,7 +786,11 @@ type entry struct {
 // THE CONTENT IS AS LONG AS THE HEADER SAYS, which is the size the file had
 // when it was opened: bytes a writer appends after that are the next
 // checkpoint's.
-func writeEntry(archive *tar.Writer, root *os.Root, name string) (int64, bool, error) {
+//
+// AND ONLY ITS DATA IS READ. A hole is in the archive as the zeros it reads as,
+// which archive/tar has no other way to write, but they are not read off the
+// disk to put them there.
+func writeEntry(archive *tar.Writer, root *os.Root, name string, read func(*os.File, []byte, int64) (int, error)) (int64, bool, error) {
 	opened, err := openEntry(root, name)
 	if err != nil {
 		return 0, false, err
@@ -717,12 +810,45 @@ func writeEntry(archive *tar.Writer, root *os.Root, name string) (int64, bool, e
 	if opened.content == nil || !opened.info.Mode().IsRegular() {
 		return 0, opened.info.IsDir(), nil
 	}
-	n, err := io.CopyN(archive, opened.content, header.Size)
+	n, err := io.CopyN(archive, &holes{file: opened.content, read: read, size: header.Size}, header.Size)
 	return n, false, err
 }
 
-// untar unpacks a checkpoint into a directory, and answers how many bytes of
-// files it unpacked.
+// holes reads the first size bytes of a file the way its tar entry carries
+// them: its data as read, and its holes as zeros that are not.
+type holes struct {
+	file *os.File
+	read func(*os.File, []byte, int64) (int, error)
+	size int64
+
+	// at is how far it has read, and the data at or after it is from data
+	// up to end.
+	at, data, end int64
+}
+
+func (h *holes) Read(p []byte) (int, error) {
+	if h.at >= h.size {
+		return 0, io.EOF
+	}
+	if h.at >= h.end {
+		var err error
+		if h.data, h.end, err = extent(h.file, h.at, h.size); err != nil {
+			return 0, err
+		}
+	}
+	if h.at < h.data {
+		n := int(min(int64(len(p)), h.data-h.at))
+		clear(p[:n])
+		h.at += int64(n)
+		return n, nil
+	}
+	n, err := h.read(h.file, p[:min(int64(len(p)), h.end-h.at)], h.at)
+	h.at += int64(n)
+	return n, err
+}
+
+// untar unpacks a checkpoint's archive into a directory, and answers how many
+// bytes of files it unpacked.
 //
 // EVERY ENTRY IS CHECKED AGAINST THE DESTINATION. A tar is bytes from a store,
 // and an entry named `../../etc` would write outside the volume — the oldest

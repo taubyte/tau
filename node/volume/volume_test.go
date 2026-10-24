@@ -12,12 +12,15 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/node/volume"
@@ -113,12 +116,26 @@ func (b *blobs) Get(_ context.Context, id string) (io.ReadSeekCloser, error) {
 	return nopSeekCloser{bytes.NewReader(body)}, nil
 }
 
-// put is a checkpoint somebody else wrote: arbitrary bytes under their own id.
-func (b *blobs) put(t *testing.T, body []byte) string {
+// put is a checkpoint somebody else wrote: an archive, compressed the way a
+// checkpoint is, under its own id.
+func (b *blobs) put(t *testing.T, archive []byte) string {
 	t.Helper()
-	id, err := b.Put(context.Background(), bytes.NewReader(body))
+	id, err := b.Put(context.Background(), bytes.NewReader(packed(t, archive)))
 	require.NoError(t, err)
 	return id
+}
+
+// packed is an archive compressed the way a checkpoint is.
+func packed(t *testing.T, archive []byte) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+	compressed, err := zstd.NewWriter(&buf, volume.Encoding...)
+	require.NoError(t, err)
+	_, err = compressed.Write(archive)
+	require.NoError(t, err)
+	require.NoError(t, compressed.Close())
+	return buf.Bytes()
 }
 
 func (b *blobs) counts() (gets, puts int) {
@@ -293,12 +310,16 @@ func tarOf(t *testing.T, files map[string]string) []byte {
 	return buf.Bytes()
 }
 
-// headers is every entry of an archive, by name.
-func headers(t *testing.T, archive []byte) map[string]tar.Header {
+// headers is every entry of a checkpoint, by name.
+func headers(t *testing.T, checkpoint []byte) map[string]tar.Header {
 	t.Helper()
 
+	decompressed, err := zstd.NewReader(bytes.NewReader(checkpoint))
+	require.NoError(t, err)
+	defer decompressed.Close()
+
 	out := map[string]tar.Header{}
-	read := tar.NewReader(bytes.NewReader(archive))
+	read := tar.NewReader(decompressed)
 	for {
 		header, err := read.Next()
 		if errors.Is(err, io.EOF) {
@@ -451,6 +472,15 @@ func TestAnUnchangedVolumeWritesNoPointer(t *testing.T) {
 	dir, err := v.Mount(t.Context(), mountGrant(handle, nil))
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "rows"), []byte("alice"), 0o640))
+
+	// AND A FILE THAT IS MOSTLY HOLES, whose zeros nothing reads, and data
+	// enough to fill more than one block of the compression.
+	sparse, err := os.Create(filepath.Join(dir, "base"))
+	require.NoError(t, err)
+	require.NoError(t, sparse.Truncate(8<<20))
+	_, err = sparse.WriteAt([]byte(noise(256<<10)), 4<<20)
+	require.NoError(t, err)
+	require.NoError(t, sparse.Close())
 
 	require.Equal(t, 1, v.CheckpointAll(t.Context()))
 	require.Equal(t, 1, index.written())
@@ -801,6 +831,25 @@ func TestARestoreThatCannotBeCompletedRefusesTheMount(t *testing.T) {
 			says: "restoring " + handle,
 		},
 		{
+			name: "the object is not compressed",
+			setup: func(t *testing.T, store *blobs, index *rows) string {
+				id, err := store.Put(t.Context(), bytes.NewReader(tarOf(t, map[string]string{"rows": "alice"})))
+				require.NoError(t, err)
+				return id
+			},
+			says: "restoring " + handle,
+		},
+		{
+			name: "the compressed stream stops halfway",
+			setup: func(t *testing.T, store *blobs, index *rows) string {
+				whole := packed(t, tarOf(t, map[string]string{"rows": noise(256 << 10)}))
+				id, err := store.Put(t.Context(), bytes.NewReader(whole[:len(whole)/2]))
+				require.NoError(t, err)
+				return id
+			},
+			says: "restoring " + handle,
+		},
+		{
 			name: "the store lost the object",
 			setup: func(t *testing.T, store *blobs, index *rows) string {
 				id := store.put(t, tarOf(t, map[string]string{"rows": "alice"}))
@@ -836,6 +885,52 @@ func TestARestoreThatCannotBeCompletedRefusesTheMount(t *testing.T) {
 
 			_, err := v.Mount(t.Context(), mountGrant(handle, nil))
 			require.ErrorContains(t, err, c.says)
+		})
+	}
+}
+
+// TestAFRAMEWiderThanACheckpointIsRefusedBeforeItIsAllocated. A frame names the
+// window its decoder must hold, as a window or as the content of a single
+// segment, and a checkpoint is bytes from a store: a dozen of them naming half
+// a gigabyte would have the restore allocate it. One wider than a checkpoint is
+// written with is refused, and nothing that size is allocated.
+func TestAFrameWiderThanACheckpointIsRefusedBeforeItIsAllocated(t *testing.T) {
+	handle := "shop/prod/QmData"
+	magic := []byte{0x28, 0xb5, 0x2f, 0xfd}
+	// The last block, repeating a zero 1024 times: an archive with nothing in it.
+	empty := []byte{0x03, 0x20, 0x00, 0x00}
+
+	for _, c := range []struct {
+		name   string
+		header []byte
+	}{
+		// No content size, and a window of 1<<29: exponent 19, mantissa 0.
+		{"a window", []byte{0x00, 0x98}},
+		// One segment, whose window is its content size: 1<<29, in four bytes.
+		{"a single segment", []byte{0xa0, 0x00, 0x00, 0x00, 0x20}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			root := t.TempDir()
+			store, index := newBlobs(), newRows()
+			id, err := store.Put(t.Context(), bytes.NewReader(slices.Concat(magic, c.header, empty)))
+			require.NoError(t, err)
+			require.NoError(t, index.Put(t.Context(), recordedAt+handle, []byte(id)))
+			v, err := volume.New(root, store, &opening{rows: index}, &said{})
+			require.NoError(t, err)
+			t.Cleanup(func() { v.Close() })
+
+			var before, after runtime.MemStats
+			runtime.ReadMemStats(&before)
+			_, err = v.Mount(t.Context(), mountGrant(handle, nil))
+			runtime.ReadMemStats(&after)
+
+			require.ErrorContains(t, err, "restoring "+handle)
+			allocated := after.TotalAlloc - before.TotalAlloc
+			require.Less(t, allocated, uint64(64<<20), "the restore allocated %d bytes for a frame of %d", allocated, len(magic)+len(c.header)+len(empty))
+
+			left, err := os.ReadDir(filepath.Join(root, "volumes"))
+			require.NoError(t, err)
+			require.Empty(t, left, "the refused restore left something behind")
 		})
 	}
 }
@@ -1185,22 +1280,96 @@ func TestACheckpointHoldsWhatTheDirectoryHeld(t *testing.T) {
 	require.Equal(t, "real", held["link"].Linkname, "the link was followed")
 }
 
-// pausing is a store that stops reading a checkpoint after so many bytes, runs
-// meanwhile, then reads the rest. The walk writes into a pipe, so it is held
-// exactly there.
-type pausing struct {
+// handed is a store that counts what a checkpoint hands it: the bytes, and the
+// reads they arrived in.
+type handed struct {
 	*blobs
+	bytes int64
+	reads int
+}
+
+func (h *handed) Put(ctx context.Context, content io.Reader) (string, error) {
+	var body bytes.Buffer
+	buf := make([]byte, 1<<20)
+	for {
+		n, err := content.Read(buf)
+		if n > 0 {
+			h.reads++
+			body.Write(buf[:n])
+		}
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+	}
+	h.bytes += int64(body.Len())
+	return h.blobs.Put(ctx, &body)
+}
+
+// TestASPARSEFileCostsTheStoreWhatItHolds. A database preallocates, so a file
+// can be long and hold almost nothing, and the archive carries its holes as
+// zeros. The store is handed the data and a few bytes for each run of them —
+// not the file's length, which it would otherwise read, hash and serve back —
+// and in a handful of reads rather than one for each of those few bytes.
+func TestASparseFileCostsTheStoreWhatItHolds(t *testing.T) {
+	store, index := &handed{blobs: newBlobs()}, newRows()
+	grant := mountGrant("shop/prod/QmData", nil)
+	source, err := volume.New(t.TempDir(), store, &opening{rows: index}, &said{})
+	require.NoError(t, err)
+	t.Cleanup(func() { source.Close() })
+
+	dir, err := source.Mount(t.Context(), grant)
+	require.NoError(t, err)
+	const length = 64 << 20
+	data := []byte(noise(256 << 10))
+	file, err := os.Create(filepath.Join(dir, "base"))
+	require.NoError(t, err)
+	require.NoError(t, file.Truncate(length))
+	_, err = file.WriteAt(data, length/2)
+	require.NoError(t, err)
+	require.NoError(t, file.Close())
+
+	require.Equal(t, 1, source.CheckpointAll(t.Context()))
+	require.GreaterOrEqual(t, store.bytes, int64(len(data)), "the store was handed less than the data")
+	require.Less(t, store.bytes, int64(length/64), "a %d-byte file holding %d bytes handed the store %d", length, len(data), store.bytes)
+	require.Less(t, store.reads, 64, "the store read %d bytes in %d pieces", store.bytes, store.reads)
+
+	moved, err := volume.New(t.TempDir(), store, &opening{rows: index}, &said{})
+	require.NoError(t, err)
+	t.Cleanup(func() { moved.Close() })
+	restored, err := moved.Mount(t.Context(), grant)
+	require.NoError(t, err)
+	content, err := os.ReadFile(filepath.Join(restored, "base"))
+	require.NoError(t, err)
+	want := make([]byte, length)
+	copy(want[length/2:], data)
+	require.True(t, bytes.Equal(want, content), "the restored file differs")
+}
+
+// pausing is where a walk writes its archive: after so many bytes it runs
+// meanwhile, then takes the rest. The walk is held exactly there, inside the
+// write.
+type pausing struct {
+	w         io.Writer
 	after     int
 	meanwhile func()
 }
 
-func (p *pausing) Put(ctx context.Context, content io.Reader) (string, error) {
-	head := make([]byte, p.after)
-	if _, err := io.ReadFull(content, head); err != nil {
-		return "", err
+func (p *pausing) Write(b []byte) (int, error) {
+	if p.meanwhile == nil || len(b) <= p.after {
+		p.after -= len(b)
+		return p.w.Write(b)
+	}
+	n, err := p.w.Write(b[:p.after])
+	if err != nil {
+		return n, err
 	}
 	p.meanwhile()
-	return p.blobs.Put(ctx, io.MultiReader(bytes.NewReader(head), content))
+	p.meanwhile = nil
+	rest, err := p.w.Write(b[n:])
+	return n + rest, err
 }
 
 // TestACHECKPOINTHoldsWhatItOpened. The walk runs while the workload writes, so
@@ -1240,35 +1409,42 @@ func TestACheckpointHoldsOnlyWhatItOpened(t *testing.T) {
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			outside := t.TempDir()
-			store := newBlobs()
-			paused := &pausing{blobs: store, after: 511}
-			v, err := volume.New(t.TempDir(), paused, &opening{rows: newRows()}, &said{})
-			require.NoError(t, err)
-
-			dir, err := v.Mount(t.Context(), mountGrant("shop/prod/QmData", nil))
-			require.NoError(t, err)
+			outside, dir := t.TempDir(), t.TempDir()
 			c.prepare(t, dir, outside)
 
 			// ONE BYTE SHORT OF THE FIRST HEADER: the walk has looked at the
-			// first entry and is still writing what it found.
-			paused.meanwhile = func() { c.swap(t, dir, outside) }
-			written := v.CheckpointAll(t.Context())
+			// first entry and is still writing what it found. It is held where
+			// it writes the archive, ahead of the compression, which would
+			// hold the header back until a block of them had filled.
+			var archive bytes.Buffer
+			_, err := volume.Walk(&pausing{w: &archive, after: 511, meanwhile: func() { c.swap(t, dir, outside) }}, dir)
 
-			store.mu.Lock()
-			defer store.mu.Unlock()
-			for _, archive := range store.held {
-				require.False(t, bytes.Contains(archive, []byte("host-secret")), "a checkpoint holds bytes from outside the volume")
-			}
+			require.False(t, bytes.Contains(archive.Bytes(), []byte("host-secret")), "a checkpoint holds bytes from outside the volume")
 			if c.kept {
-				require.Equal(t, 1, written)
-				require.Len(t, store.held, 1)
-				for _, archive := range store.held {
-					require.True(t, bytes.Contains(archive, []byte("volume-data")), "the checkpoint lost the file it opened")
-				}
+				require.NoError(t, err)
+				require.True(t, bytes.Contains(archive.Bytes(), []byte("volume-data")), "the checkpoint lost the file it opened")
 			}
 		})
 	}
+}
+
+// TestAFILEThatShrinksUnderTheWalkFailsIt, as reading it plainly did. Its
+// header has already said how long it is, and what it no longer holds is not
+// made up as a hole.
+func TestAFileThatShrinksUnderTheWalkFailsIt(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "rows")
+	file, err := os.Create(path)
+	require.NoError(t, err)
+	_, err = file.Write([]byte("volume-data"))
+	require.NoError(t, err)
+	require.NoError(t, file.Truncate(1<<20))
+	require.NoError(t, file.Close())
+
+	_, err = volume.Walk(&pausing{w: io.Discard, after: 511, meanwhile: func() {
+		require.NoError(t, os.Truncate(path, 0))
+	}}, dir)
+	require.ErrorIs(t, err, io.EOF)
 }
 
 // TestARESTOREPutsBackWhatAWalkTook, which is the round trip the two halves are
