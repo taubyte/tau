@@ -321,7 +321,19 @@ func (b *ContainerdBackend) nameImage(ctx context.Context, name string, target o
 // The tar comes from a user's repository, so every entry is confined to dir: an
 // entry named ../../etc/cron.d/x, or a symlink pointing at /etc/shadow, would
 // otherwise write outside the build or pull host files into the image.
+//
+// Checking names is not enough on its own, because a link the tar has already
+// made sits in the path of every entry after it. x -> . and then x/y -> .. are
+// each inside dir by name, yet together they make y the directory above dir.
+// So every entry is written through an os.Root, which refuses to resolve a
+// path out of dir.
 func extractContext(r io.Reader, dir string) error {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+
 	// The tarball a builder hands over is gzipped (utils/bundle), while the one
 	// a test or an API caller writes usually is not. The docker daemon sniffs
 	// this for itself; here it has to be done by hand.
@@ -347,22 +359,22 @@ func extractContext(r io.Reader, dir string) error {
 			return fmt.Errorf("reading build context: %w", err)
 		}
 
-		target, err := confine(dir, header.Name)
+		name, err := confine(header.Name)
 		if err != nil {
 			return err
 		}
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0o755); err != nil {
+			if err := root.MkdirAll(name, 0o755); err != nil {
 				return err
 			}
 
 		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			if err := root.MkdirAll(filepath.Dir(name), 0o755); err != nil {
 				return err
 			}
-			if err := writeFile(target, reader, header.FileInfo().Mode()); err != nil {
+			if err := writeFile(root, name, reader, header.FileInfo().Mode()); err != nil {
 				return err
 			}
 
@@ -370,10 +382,10 @@ func extractContext(r io.Reader, dir string) error {
 			if err := checkLink(header.Name, header.Linkname); err != nil {
 				return err
 			}
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			if err := root.MkdirAll(filepath.Dir(name), 0o755); err != nil {
 				return err
 			}
-			if err := os.Symlink(header.Linkname, target); err != nil {
+			if err := root.Symlink(header.Linkname, name); err != nil {
 				return err
 			}
 
@@ -405,33 +417,27 @@ func checkLink(name, linkname string) error {
 	return nil
 }
 
-// confine joins name onto dir and refuses anything that climbs out of it.
+// confine turns an entry's name into a path relative to the build directory,
+// and refuses one that climbs out of it. Anything it does not anticipate, the
+// os.Root the path is resolved in still refuses.
 //
-// An absolute name is rooted into dir rather than refused — it cannot escape,
-// and tars written from an absolute path are ordinary. A name that walks up
-// with ".." is refused outright instead of being clamped: cleaning it against
+// An absolute name is rooted into the directory rather than refused — it cannot
+// escape, and tars written from an absolute path are ordinary. A name that walks
+// up with ".." is refused outright instead of being clamped: cleaning it against
 // the root would silently turn "../evil" into "evil" and build something other
 // than what the tar described.
-func confine(dir, name string) (string, error) {
-	cleaned := filepath.Clean(strings.TrimPrefix(filepath.ToSlash(name), "/"))
+func confine(name string) (string, error) {
+	cleaned := filepath.Clean(strings.TrimLeft(filepath.ToSlash(name), "/"))
 
 	if cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(os.PathSeparator)) {
 		return "", fmt.Errorf("build context entry %q escapes the build directory", name)
 	}
 
-	target := filepath.Join(dir, cleaned)
-
-	// The join itself is checked too, so a name this function has not
-	// anticipated cannot get through on the strength of the check above.
-	if target != dir && !strings.HasPrefix(target, dir+string(os.PathSeparator)) {
-		return "", fmt.Errorf("build context entry %q escapes the build directory", name)
-	}
-
-	return target, nil
+	return cleaned, nil
 }
 
-func writeFile(target string, r io.Reader, mode os.FileMode) error {
-	file, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+func writeFile(root *os.Root, name string, r io.Reader, mode os.FileMode) error {
+	file, err := root.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
 		return err
 	}

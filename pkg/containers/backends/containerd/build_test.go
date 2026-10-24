@@ -115,6 +115,35 @@ func TestExtractContext(t *testing.T) {
 		}
 	})
 
+	// Each link here resolves inside the context from where the tar says it
+	// sits. On disk x is the context itself, so x/y lands at y and points
+	// above it, and an entry under y would be written there.
+	t.Run("links cannot carry a later entry out", func(t *testing.T) {
+		for _, last := range []struct {
+			what   string
+			header *tar.Header
+		}{
+			{"a file", file("y/escaped")},
+			{"a directory", &tar.Header{Name: "y/escaped", Typeflag: tar.TypeDir, Mode: 0o755}},
+			{"a link", &tar.Header{Name: "y/escaped", Typeflag: tar.TypeSymlink, Linkname: "anything"}},
+		} {
+			parent := t.TempDir()
+			dir := filepath.Join(parent, "context")
+			require.NoError(t, os.Mkdir(dir, 0o755))
+
+			err := extractContext(tarOf(t,
+				&tar.Header{Name: "x", Typeflag: tar.TypeSymlink, Linkname: "."},
+				&tar.Header{Name: "x/y", Typeflag: tar.TypeSymlink, Linkname: ".."},
+				last.header,
+			), dir)
+			assert.Error(t, err, "%s reached through the links must be refused", last.what)
+
+			beside, err := os.ReadDir(parent)
+			require.NoError(t, err)
+			require.Len(t, beside, 1, "%s was written beside the build context", last.what)
+		}
+	})
+
 	t.Run("a link inside the context is kept", func(t *testing.T) {
 		dir := t.TempDir()
 
@@ -150,16 +179,20 @@ func TestExtractContext(t *testing.T) {
 }
 
 func TestConfine(t *testing.T) {
-	dir := "/build"
-
-	for _, name := range []string{"Dockerfile", "sub/app.go", "/rooted", "./x"} {
-		target, err := confine(dir, name)
+	for name, want := range map[string]string{
+		"Dockerfile": "Dockerfile",
+		"sub/app.go": "sub/app.go",
+		"/rooted":    "rooted",
+		"//rooted":   "rooted",
+		"./x":        "x",
+	} {
+		got, err := confine(name)
 		require.NoError(t, err, "%q", name)
-		assert.True(t, strings.HasPrefix(target, dir+"/"), "%q -> %q", name, target)
+		assert.Equal(t, want, got, "%q", name)
 	}
 
 	for _, name := range []string{"../x", "sub/../../x", "../../../etc/passwd"} {
-		_, err := confine(dir, name)
+		_, err := confine(name)
 		assert.Error(t, err, "%q must be refused", name)
 	}
 }
