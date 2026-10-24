@@ -309,6 +309,70 @@ func TestDiscovery_AGroupOnlyDiscoveryFindsIsJoined(t *testing.T) {
 	require.NotContains(t, a.(*cluster).tracker.allPeers(), unreachable)
 }
 
+// slowPoint answers a search only after delay, the way a DHT query takes its
+// time, and answers nothing to a search called off sooner.
+type slowPoint struct {
+	discovery.Discovery
+	delay time.Duration
+}
+
+func (p slowPoint) FindPeers(ctx context.Context, name string, opts ...discovery.Option) (<-chan peer.AddrInfo, error) {
+	found := make(chan peer.AddrInfo)
+	go func() {
+		defer close(found)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(p.delay):
+		}
+		answer, err := p.Discovery.FindPeers(ctx, name, opts...)
+		if err != nil {
+			return
+		}
+		for info := range answer {
+			select {
+			case found <- info:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return found, nil
+}
+
+// TestDiscovery_ASearchSlowerThanATickFindsTheGroup: the tracker called each
+// search off after 50ms and a DHT query takes longer, so discovery found
+// nothing, and libp2p's backoff cache, which runs a search on its first
+// caller's context, kept that nothing until its backoff expired, a minute or
+// more. A search now runs until discovery ends it, and a node that reaches a
+// group only through a discovery slower than a tick tracks it and joins.
+func TestDiscovery_ASearchSlowerThanATickFindsTheGroup(t *testing.T) {
+	const namespace = "found-by-a-slow-search"
+	meeting := newRendezvous()
+	nodeA, nodeB := newMockNode(t), newMockNode(t)
+	require.NoError(t, taupeer.LinkAllPeers())
+
+	b, err := New(discoveryNode{Node: nodeB, discovery: meeting.pointOf(nodeB.Peer())}, namespace,
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	t.Cleanup(func() { b.Close() })
+	waitLeader(t, b, 5*time.Second)
+	require.Eventually(t, func() bool { return meeting.holds(Protocol(namespace), nodeB.ID()) },
+		5*time.Second, 10*time.Millisecond, "b never advertised the group")
+	require.NotContains(t, nodeA.Peer().Network().Peers(), nodeB.ID())
+
+	slow := slowPoint{Discovery: meeting.pointOf(nodeA.Peer()), delay: 300 * time.Millisecond}
+	a, err := New(discoveryNode{Node: nodeA, discovery: slow}, namespace,
+		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	t.Cleanup(func() { a.Close() })
+
+	require.Eventually(t, func() bool {
+		members, err := b.Members()
+		return err == nil && len(members) == 2
+	}, 10*time.Second, 20*time.Millisecond, "a never joined the group a slow search found")
+}
+
 // pushless is a mock node that refuses identify's push, so all it knows a
 // peer serves is what the identify run on connecting told it.
 func pushless(t *testing.T) taupeer.Node {

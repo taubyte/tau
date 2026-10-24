@@ -8,6 +8,7 @@ import (
 	"time"
 
 	logging "github.com/ipfs/go-log/v2"
+	"github.com/libp2p/go-libp2p/core/discovery"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -216,12 +217,15 @@ func supportsRaftProtocol(h host.Host, pid peer.ID, raftProtocol protocol.ID) bo
 
 // runDiscoveryAndExchange discovers peers and exchanges lists until ctx is done
 func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) {
-	discovery := c.node.Discovery()
 	host := c.node.Peer()
 	raftProtocol := protocol.ID(Protocol(c.namespace))
 
 	discoveryLogger.Infof("[%s] starting peer discovery for namespace %s (interval=%v)",
 		pt.selfID.ShortString(), c.namespace, pt.getDiscoveryInterval())
+
+	if d := c.node.Discovery(); d != nil {
+		go pt.runLookups(ctx, c, d, raftProtocol)
+	}
 
 	for {
 		select {
@@ -242,19 +246,6 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) 
 				}
 			}
 
-			if discovery != nil {
-				discoverCtx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
-				peerCh, err := discovery.FindPeers(discoverCtx, string(raftProtocol))
-				if err == nil {
-					for p := range peerCh {
-						if p.ID != c.node.ID() && c.connectFound(ctx, p) && supportsRaftProtocol(host, p.ID, raftProtocol) {
-							pt.addPeer(p.ID)
-						}
-					}
-				}
-				cancel()
-			}
-
 			if c.raftClient != nil {
 				for _, pid := range pt.allPeers() {
 					startTime, peersMap := pt.getPeersMap()
@@ -272,6 +263,29 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) 
 					}
 				}
 			}
+		}
+	}
+}
+
+// runLookups searches discovery for the group's members until ctx ends, one
+// lookup at a time, each left to run until discovery ends it: a DHT query
+// takes longer than a tick of the tracker, and one called off with nothing
+// found is cached as nothing found until its backoff expires.
+func (pt *peerTracker) runLookups(ctx context.Context, c *cluster, d discovery.Discovery, raftProtocol protocol.ID) {
+	host := c.node.Peer()
+	for {
+		peerCh, err := d.FindPeers(ctx, string(raftProtocol))
+		if err == nil {
+			for p := range peerCh {
+				if p.ID != c.node.ID() && c.connectFound(ctx, p) && supportsRaftProtocol(host, p.ID, raftProtocol) {
+					pt.addPeer(p.ID)
+				}
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(pt.getDiscoveryInterval()):
 		}
 	}
 }
