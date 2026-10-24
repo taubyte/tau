@@ -265,6 +265,10 @@ func (f *kvFSM) applyBatch(ctx context.Context, cmds []Command) FSMResponse {
 // an applied entry again, so a merge that landed part of itself would stay
 // part, whichever part map order reached first. The clock moves only once the
 // batch has landed.
+//
+// Only an absent key loses to whatever comes in. An entry the store cannot
+// read, or that will not decode, refuses the whole merge, as TryGet refuses to
+// call it absent: the merge would otherwise land over an entry it never saw.
 func (f *kvFSM) applyMerge(ctx context.Context, delta map[string]CRDTEntry) FSMResponse {
 	clock := f.clock
 	batch, err := f.store.Batch(ctx)
@@ -273,8 +277,13 @@ func (f *kvFSM) applyMerge(ctx context.Context, delta map[string]CRDTEntry) FSMR
 	}
 	for key, incoming := range delta {
 		existing, err := f.getEntry(ctx, key)
-		if err == nil && !crdtEntryWins(incoming, existing) {
-			continue
+		switch {
+		case err == nil:
+			if !crdtEntryWins(incoming, existing) {
+				continue
+			}
+		case !errors.Is(err, ds.ErrNotFound):
+			return FSMResponse{Error: err}
 		}
 		raw, err := cbor.Marshal(incoming)
 		if err != nil {

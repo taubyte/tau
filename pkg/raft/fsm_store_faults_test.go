@@ -101,6 +101,62 @@ func TestAMergeKeepsWhatItLoses(t *testing.T) {
 	require.Equal(t, uint64(10), timestampOf(t, store, "after"))
 }
 
+// TestAMergeOverAnEntryItCannotReadIsRefused: a merge arbitrates each entry it
+// carries against the one the store holds, and took any failure to read that
+// entry for an absent key, so an entry the store could not read, or one that
+// would not decode, was replaced by whatever the merge carried, winning or
+// not. Only an absent key loses unseen now; anything else refuses the merge,
+// which writes none of itself and leaves the clock where it was.
+func TestAMergeOverAnEntryItCannotReadIsRefused(t *testing.T) {
+	garbage := []byte("not an entry")
+	for _, tc := range []struct {
+		name    string
+		fault   func(*testing.T, *faultStore)
+		refusal func(*testing.T, error)
+		left    func(*testing.T, *faultStore)
+	}{
+		{
+			"a read the store refuses",
+			func(t *testing.T, s *faultStore) { s.failGet(faultPrefix+"/data/held", errDisk) },
+			func(t *testing.T, err error) { require.ErrorIs(t, err, errDisk) },
+			func(t *testing.T, s *faultStore) {
+				require.Equal(t, uint64(5), timestampOf(t, s.Batching, "held"), "the merge wrote over the entry it could not read")
+			},
+		},
+		{
+			"an entry that will not decode",
+			func(t *testing.T, s *faultStore) {
+				require.NoError(t, s.Put(t.Context(), ds.NewKey(faultPrefix+"/data/held"), garbage))
+			},
+			func(t *testing.T, err error) { require.Error(t, err) },
+			func(t *testing.T, s *faultStore) {
+				raw, err := s.Get(t.Context(), ds.NewKey(faultPrefix+"/data/held"))
+				require.NoError(t, err)
+				require.Equal(t, garbage, raw, "the merge wrote over the entry it could not decode")
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newFaultStore()
+			fsm := newKVFSM(t.Context(), store, faultPrefix)
+			for range 5 {
+				require.Nil(t, applied(t, fsm, Command{Type: CommandSet, Set: &SetCommand{Key: "held", Value: []byte("ours")}}).Error)
+			}
+			tc.fault(t, store)
+
+			resp := applied(t, fsm, Command{Type: CommandMerge, Merge: &MergeCommand{Delta: map[string]CRDTEntry{
+				"held":  {Value: []byte("theirs"), Timestamp: 2},
+				"other": {Value: []byte("theirs"), Timestamp: 9},
+			}}})
+			tc.refusal(t, resp.Error)
+			tc.left(t, store)
+			require.True(t, absent(t, store, faultPrefix, "other"), "a refused merge wrote part of itself")
+			require.Nil(t, applied(t, fsm, Command{Type: CommandSet, Set: &SetCommand{Key: "after", Value: []byte("1")}}).Error)
+			require.Equal(t, uint64(6), timestampOf(t, store, "after"), "the refused merge moved the clock")
+		})
+	}
+}
+
 // TestABatchTheStoreWillNotStageWritesNoneOfIt: a staging write that fails
 // abandons the batch before its commit, and leaves the clock where it was.
 func TestABatchTheStoreWillNotStageWritesNoneOfIt(t *testing.T) {
