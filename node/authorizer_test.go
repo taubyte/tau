@@ -137,6 +137,7 @@ func withValidator() []byte {
 			"function": {
 				"` + validatorID + `": {
 					"name": "may_open",
+					"runtime": "wasm",
 					"execution": {"call": "handle", "memory": 33554432},
 					"source": "services/may_open"
 				}

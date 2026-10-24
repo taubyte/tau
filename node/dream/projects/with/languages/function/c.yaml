@@ -1,5 +1,6 @@
 id: QmRU8AbmfH5aRkC5LebWmsbZGFGuqf332kUJKWgB3LJHeD
 description: answers in C, with wit-bindgen's C bindings and wasi-sdk
+runtime: wasm
 source: services/c
 build:
     commands:

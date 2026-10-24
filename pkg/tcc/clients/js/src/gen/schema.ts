@@ -23,12 +23,13 @@ export type ApplicationBuildKind = "dockerfile";
 export type FunctionKind = "component" | "builtin" | "git";
 export type FunctionRegionsPolicy = "pinned" | "cdn" | "failover";
 export type FunctionBuildKind = "commands" | "script";
+export type FunctionRuntime = "wasm" | "js";
 export type FunctionImplements = "handler" | "authorizer" | "http-authorizer" | "dns-resolver" | "instance-validator" | "gateway-transformer" | "proxy-transformer" | "gateway-router" | "proxy-router";
 export type WorkerKind = "component" | "builtin" | "git" | "image";
 export type WorkerRegionsPolicy = "pinned" | "cdn" | "failover";
 export type WorkerBuildKind = "commands" | "script" | "dockerfile";
+export type WorkerRuntime = "wasm" | "js" | "container";
 export type WorkerImplements = "handler" | "authorizer" | "http-authorizer" | "dns-resolver" | "instance-validator" | "gateway-transformer" | "proxy-transformer" | "gateway-router" | "proxy-router";
-export type WorkerRuntime = "wasm" | "container";
 export type SandboxKind = "image" | "git";
 export type SandboxRegionsPolicy = "pinned" | "cdn" | "failover";
 export type SandboxBuildKind = "dockerfile";
@@ -679,6 +680,16 @@ export class FunctionConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
   }
 
+  async runtime(): Promise<FunctionRuntime | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["runtime"])) as FunctionRuntime | undefined;
+  }
+  setRuntime(v: FunctionRuntime): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["runtime"], v);
+  }
+  unsetRuntime(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["runtime"]);
+  }
+
   async implements(): Promise<FunctionImplements | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["implements"])) as FunctionImplements | undefined;
   }
@@ -975,6 +986,16 @@ export class WorkerConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
   }
 
+  async runtime(): Promise<WorkerRuntime | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["runtime"])) as WorkerRuntime | undefined;
+  }
+  setRuntime(v: WorkerRuntime): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["runtime"], v);
+  }
+  unsetRuntime(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["runtime"]);
+  }
+
   async implements(): Promise<WorkerImplements | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["implements"])) as WorkerImplements | undefined;
   }
@@ -1131,16 +1152,6 @@ export class WorkerConfig extends ResourceConfig {
   }
   unsetEgress(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["egress"]);
-  }
-
-  async runtime(): Promise<WorkerRuntime | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["runtime"])) as WorkerRuntime | undefined;
-  }
-  setRuntime(v: WorkerRuntime): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["runtime"], v);
-  }
-  unsetRuntime(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, ["runtime"]);
   }
 
   /** Which worker this is — the key its settings live under. */
@@ -5181,6 +5192,7 @@ export interface Function {
   "regions/in"?: string[];
   "regions/main"?: string;
   "regions/standby"?: string;
+  runtime?: FunctionRuntime;
   implements?: FunctionImplements;
   source?: string;
   kind?: string;
@@ -5214,6 +5226,7 @@ export interface Worker {
   "regions/in"?: string[];
   "regions/main"?: string;
   "regions/standby"?: string;
+  runtime?: WorkerRuntime;
   implements?: WorkerImplements;
   source?: string;
   kind?: string;
@@ -5230,7 +5243,6 @@ export interface Worker {
   memory?: number;
   cpu?: number;
   egress?: string[];
-  runtime?: WorkerRuntime;
   buildkind?: string;
   buildimage?: string;
   buildoutput?: string;

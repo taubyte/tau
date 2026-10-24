@@ -54,6 +54,7 @@ func compiled() []byte {
 			"function": {
 				"` + checkoutID + `": {
 					"name": "checkout",
+					"runtime": "wasm",
 					"execution": {"call": "handle", "memory": 33554432},
 					"source": "services/checkout"
 				}

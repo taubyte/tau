@@ -1,5 +1,6 @@
 id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Hd
 description: answers the route, and runs the COMPONENT's artifact rather than one of its own
+runtime: wasm
 source:
     component: handler
 execution:

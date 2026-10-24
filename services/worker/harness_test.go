@@ -13,6 +13,7 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/host"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/rpc"
@@ -183,6 +184,31 @@ func catalogue(t testing.TB) map[string]any {
 	obj, _, err := c.Compile(context.Background())
 	require.NoError(t, err)
 	return obj.Flat()
+}
+
+// publishedDocs is a project of its own, compiled by tcc from the documents given and
+// published as shop/prod, for a test about something the fixture does not hold.
+func publishedDocs(t testing.TB, docs map[string]string) *register.Register {
+	t.Helper()
+
+	fs := afero.NewMemMapFs()
+	require.NoError(t, afero.WriteFile(fs, "/project.yaml",
+		[]byte("id: QmXsFZB9QzWaXpFdmRjwdRv7qhbbHnDoHwcr6UTK3MXWFq\nname: shop\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
+	for path, doc := range docs {
+		require.NoError(t, afero.WriteFile(fs, path, []byte(doc), 0o644))
+	}
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	require.NoError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	require.NoError(t, err)
+	compiled, err := json.Marshal(obj.Flat())
+	require.NoError(t, err)
+
+	reg, err := register.New(register.WithStore(register.NewMemStore()))
+	require.NoError(t, err)
+	_, err = reg.Publish(t.Context(), register.Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: compiled})
+	require.NoError(t, err)
+	return reg
 }
 
 // servable takes off what this cloud refuses of the fixture's applications,

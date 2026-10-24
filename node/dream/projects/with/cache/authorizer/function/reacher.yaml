@@ -1,5 +1,6 @@
 id: QmZj1DgpxueYqSPdKMUEyffDMS1ZjBPeJi1g9N4pxghyxK
 description: the guest - it asks each cache for the ops it wants, and every one of those caches names a guard, so nothing it is allowed to do is settled by this file
+runtime: wasm
 source: services/cacher
 build:
     commands:

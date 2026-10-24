@@ -1,5 +1,6 @@
 id: QmbWqxBEKC3P8tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnR
 description: in shop; its own sessions cache, the project-wide orders by absolute path, and local's relay by a RELATIVE one
+runtime: wasm
 execution:
     call: notify
     timeout: 5s

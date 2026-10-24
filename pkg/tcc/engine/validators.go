@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/ipfs/go-cid"
 )
@@ -61,20 +63,27 @@ func IsCID() Option {
 
 func InSet[T string | int | float64](elms ...T) Option {
 	return func(a *Attribute) {
+		vals := make([]string, len(elms))
+		for i, e := range elms {
+			vals[i] = fmt.Sprint(e)
+		}
+		// A refusal names what would have been accepted, as strict mode's
+		// unknown-key one does: a closed set the author cannot see is a search
+		// through the schema.
 		Validator(func(s T) error {
 			for _, _s := range elms {
 				if s == _s {
 					return nil
 				}
 			}
-			return errors.New("invalid value")
+			shown := fmt.Sprint(s)
+			if str, ok := any(s).(string); ok {
+				shown = strconv.Quote(str)
+			}
+			return fmt.Errorf("invalid value %s; valid values here: %s", shown, strings.Join(vals, ", "))
 		})(a)
 		// Record the permitted values so a code generator can emit an enum /
 		// union type. Opaque to the engine (see Annotate) — no runtime effect.
-		vals := make([]string, len(elms))
-		for i, e := range elms {
-			vals[i] = fmt.Sprint(e)
-		}
 		Annotate("enum", vals)(a)
 		var zero T
 		if _, ok := any(zero).(string); ok {

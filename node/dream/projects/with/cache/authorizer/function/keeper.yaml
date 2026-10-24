@@ -1,5 +1,6 @@
 id: QmNPFXqtFpZ3HvPv1r9Dzz47FuN7j2u7yUFNDK4HFQhKEa
 description: who decides - named by all three caches and reached by none of them, because an authorizer is invoked by being pointed at and never by being called
+runtime: wasm
 # THE ONE NON-DEFAULT WORLD IN THIS CORPUS. Every other function here leaves
 # `implements` out and compiles as a handler; a guard that did the same would be
 # refused at resolve rather than instantiated and handed a question it would

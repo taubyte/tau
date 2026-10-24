@@ -1,5 +1,6 @@
 id: QmZVW4utwcqPcze7nAm1MyrJteLCKqAE8UKjtmbX8qDLCv
 description: answers in C++, over wit-bindgen's C bindings and wasi-sdk
+runtime: wasm
 source: services/cpp
 build:
     commands:

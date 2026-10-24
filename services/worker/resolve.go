@@ -1192,8 +1192,8 @@ func servedHere(kind string) bool { return kind == mcpKind }
 // forgotten, and the failure would be a workload that will not start on the
 // tier its config selected.
 func runtimeOf(kind string, w specs.WorkloadBlock) (string, error) {
-	// A kind with more than one tier authors the choice; `worker` is the one
-	// that does today.
+	// A kind with more than one tier authors the choice: `function` and
+	// `worker` do.
 	if declared := w.Runtime; declared != "" {
 		return declared, nil
 	}

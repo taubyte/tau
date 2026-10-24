@@ -536,8 +536,9 @@ func checkDelivery(all []compiled) []Finding {
 // are containers.
 //
 // A kind that declared two engines and no way to choose between them would answer no
-// here, which is the safe direction (nothing is reported) and is unreachable while
-// `worker` is the only such kind — TestTheEngineSeamIsAValue holds that.
+// here, which is the safe direction (nothing is reported) and is unreachable because
+// every kind declaring more than one carries `runtime` — TestTheEngineSeamIsAValue
+// holds that.
 func runsAsContainer(res compiled) bool {
 	if tier := res.str("runtime"); tier != "" {
 		return tier == containerEngine

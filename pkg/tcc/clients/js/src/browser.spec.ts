@@ -23,6 +23,7 @@ const FILES: Record<string, string> = {
   "/function/hello.yaml": [
     "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh",
     "description: says hello - v2 functions declare no trigger, an edge reaches them",
+    "runtime: wasm",
     "implements: handler",
     "execution:",
     "  timeout: 20s",

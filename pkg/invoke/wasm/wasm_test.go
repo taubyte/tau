@@ -87,6 +87,35 @@ func TestAComponentAnswersARequest(t *testing.T) {
 	require.Equal(t, []string{"abc"}, res.Headers["x-echo-x-trace"], "and a header the caller sent")
 }
 
+// A SPEC FOR ANOTHER TIER IS REFUSED BY NAME, at every way into this one. The
+// pool never hands one here, but a guard, a validator, a resolver and a request
+// authorizer are asked through the tier directly, and a function's runtime is
+// the author's to choose.
+func TestAnotherTiersSpecIsRefusedByName(t *testing.T) {
+	r := tier(t, handler(t))
+	spec := invoke.Spec{Runtime: "js", Name: "shop/prod/function/checkout", Artifact: "bafycomponent"}
+
+	refused := func(err error) {
+		t.Helper()
+		require.ErrorIs(t, err, invoke.ErrNoRuntime)
+		require.ErrorContains(t, err, `shop/prod/function/checkout runs on the "js" tier, and this is the wasm tier`)
+	}
+	_, err := r.Start(t.Context(), spec)
+	refused(err)
+	_, err = r.Authorize(t.Context(), spec, aQuestion())
+	refused(err)
+	_, err = r.Admit(t.Context(), spec, wasm.Opening{})
+	refused(err)
+	_, err = r.AuthorizeRequest(t.Context(), spec, &invoke.Request{Method: "GET", Path: "/"})
+	refused(err)
+	_, err = r.Resolve(t.Context(), spec, invoke.Question{Name: "a.example.com", Type: "A"})
+	refused(err)
+
+	// and this tier's own name is what it runs
+	spec.Runtime = wasm.Name
+	start(t, r, spec)
+}
+
 // THE STATUS IS THE GUEST'S, so a test can tell a real dispatch from a
 // constant — and a guest that fails does so by returning one rather than by
 // trapping, because a trap takes the instance with it.

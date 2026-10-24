@@ -1,5 +1,6 @@
 id: QmNP8ZJRT6En1LVfTwkbiD4HgdeRxvpHGn4m5Sp2cY8UxS
 description: sends on the path it is asked on, and receives on the delivery path it declares - so one component is both the producer and the consumer
+runtime: wasm
 source: services/cacher
 build:
     commands:

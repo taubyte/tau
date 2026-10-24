@@ -376,6 +376,30 @@ func TestTheClientIsTheSameWorker(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// A FUNCTION ON A TIER THIS NODE DOES NOT HAVE IS REFUSED BY NAME. `runtime: js` is
+// valid config: tcc compiles it, the default export is its entrypoint, and the
+// resource resolves to a spec naming the js tier. No js engine is registered, so
+// starting it says which engine is missing, across the wire, and nothing is handed
+// to a tier that would run it as something else.
+func TestAFunctionOnATierThisNodeLacksIsRefusedByName(t *testing.T) {
+	h := build(t, Config{}, resolvers()...)
+	h.Register.Register = publishedDocs(t, map[string]string{
+		"/function/greet.yaml": "id: QmQhhiXXgeW3Z5Q5JjH9VF5cQkn4ZCPU4nAKUgc2z2GwMd\nruntime: js\nexecution:\n    timeout: 5s\n    memory: 16MB\n",
+	})
+	greet := specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "greet"}
+
+	spec, err := h.Worker.Resolve(t.Context(), greet)
+	require.NoError(t, err)
+	require.Equal(t, specs.FunctionRuntimeJs, spec.Runtime)
+	require.Equal(t, "default", spec.Settings[specs.WorkloadBlockKeyExecutionCall], "the module's default export")
+
+	_, err = newWorkerClient(t, h).Invoke(t.Context(), greet, &invoke.Request{Method: "GET", Path: "/"})
+	require.ErrorIs(t, err, invoke.ErrNoRuntime)
+	require.ErrorContains(t, err, `"js"`)
+	require.Empty(t, h.Runtime.specs(), "nothing was started on another tier")
+	require.Empty(t, h.Static.specs())
+}
+
 func TestEverySentinelSurvivesTheWireToTheClient(t *testing.T) {
 	h := newBareHarness(t)
 	c := newWorkerClient(t, h)

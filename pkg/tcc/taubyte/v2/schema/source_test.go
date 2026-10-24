@@ -21,7 +21,7 @@ func sourceOf(t *testing.T, doc string) (any, error) {
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
 	assert.NilError(t, afero.WriteFile(fs, "/function/checkout.yaml", []byte(
 		"id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n"+
-			doc+"execution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
+			"runtime: wasm\n"+doc+"execution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
 	obj, _, err := c.Compile(context.Background())

@@ -1,5 +1,6 @@
 id: QmTvbNq1RHtWLpKUYKzhZBjTx5DDSbGGgVTMEjbNTKrsY9
 description: decides whether a session cache instance may be opened for a tenant, and with what ttl
+runtime: wasm
 implements: instance-validator
 execution:
     call: admit

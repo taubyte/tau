@@ -1,4 +1,5 @@
 description: answers the route
+runtime: wasm
 source: services/hello
 build:
     commands:

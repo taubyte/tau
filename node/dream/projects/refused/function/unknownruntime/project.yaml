@@ -1,0 +1,6 @@
+id: QmTSpD9SVJriUVp9EHdp1okVF71Ua9FvmeCYXwFABkQiD7
+name: unknownruntime
+description: the onefunction project with a runtime its kind does not run - a function is wasm or js, and nodejs is neither
+environments:
+    prod:
+        branches: ["*"]

@@ -1,5 +1,6 @@
 id: QmaSyM5zu2BQimJMNgFdSEbza2XFMagNnRSGW1JKneLWM3
 description: the far end - no route reaches it and no access block is written for it, because a channel's server is addressed by being named as one and not by being called
+runtime: wasm
 source: services/cacher
 build:
     commands:

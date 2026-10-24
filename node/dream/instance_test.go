@@ -54,6 +54,7 @@ func withInstances() []byte {
 			"function": map[string]any{
 				cacheFuncID: map[string]any{
 					"name":      "cacher",
+					"runtime":   "wasm",
 					"execution": map[string]any{"call": "handle", "memory": 33554432},
 					"source":    "services/cacher",
 					"cache": map[string]any{
@@ -63,6 +64,7 @@ func withInstances() []byte {
 				mayOpenFunc: map[string]any{
 					"name":       "may_open",
 					"implements": "instance-validator",
+					"runtime":    "wasm",
 					"execution":  map[string]any{"call": "admit", "memory": 8388608},
 					"source":     "services/admitter",
 				},

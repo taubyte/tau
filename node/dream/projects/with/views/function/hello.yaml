@@ -1,5 +1,6 @@
 id: QmRN6wdp1S2A5EtjW9A3M1vKSBuQQGcgvuhoMUoEz4iiT5
 description: pinned to region-1, so only region-1's view holds it - and the gateway in front of it follows it there
+runtime: wasm
 source: services/hello
 build:
     commands:

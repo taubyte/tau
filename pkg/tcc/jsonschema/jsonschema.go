@@ -832,6 +832,12 @@ func (g jsonSchemaGen) attrSchema(a *engine.Attribute) map[string]any {
 	}
 	if a.Default != nil {
 		s["default"] = a.Default
+		// A default scoped to a branch is filled in only when a sibling holds one
+		// of these values; without the condition, the schema would claim it for
+		// every document.
+		if c, ok := a.Meta["defaultWhen"].(engine.ConditionSpec); ok {
+			s[g.ext+"default-when"] = condition(c)
+		}
 	}
 	return s
 }

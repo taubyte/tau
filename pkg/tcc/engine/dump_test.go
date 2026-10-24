@@ -2,6 +2,7 @@ package engine
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -207,6 +208,47 @@ func TestDump_SkipsDefaultAttributeValues(t *testing.T) {
 	assert.NilError(t, err)
 	// The file should contain id but not enabled
 	assert.Assert(t, len(content) > 0)
+}
+
+// A DEFAULT SCOPED TO A BRANCH is left out only where that branch is taken: there it
+// is filled in again on the next load, and anywhere else it is the author's value.
+func TestDump_KeepsADefaultItsBranchDoesNotTake(t *testing.T) {
+	for _, tc := range []struct {
+		tier    string
+		written bool
+	}{
+		{"b", false},
+		{"a", true},
+		{"", true},
+	} {
+		memFs := afero.NewMemMapFs()
+		entry := String("entry", Default("main"), DefaultWhen("tier", "b"))
+		schema := &schemaDef{
+			root: &Node{
+				Group: true,
+				Leaf:  "config",
+				Attributes: []*Attribute{
+					{Name: "id", Type: TypeString, Required: true},
+					{Name: "tier", Type: TypeString},
+					entry,
+				},
+			},
+		}
+		eng, err := New(schema, yaseer.VirtualFS(memFs, "/"))
+		assert.NilError(t, err)
+
+		obj := object.New[object.Refrence]()
+		obj.Set("id", "test")
+		if tc.tier != "" {
+			obj.Set("tier", tc.tier)
+		}
+		obj.Set("entry", "main")
+		assert.NilError(t, eng.Dump(obj))
+
+		content, err := afero.ReadFile(memFs, "/config.yaml")
+		assert.NilError(t, err)
+		assert.Equal(t, strings.Contains(string(content), "entry: main"), tc.written, "tier %q:\n%s", tc.tier, content)
+	}
 }
 
 func TestDump_WithEmptyGroup(t *testing.T) {

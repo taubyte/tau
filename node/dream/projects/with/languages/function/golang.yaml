@@ -1,5 +1,6 @@
 id: QmcqDUXqCb6dQSD3ssZyb6Q6mrqZrLnX7tkK4mCWPXmk7C
 description: answers in Go, through the standard toolchain and the WASI reactor adapter
+runtime: wasm
 source: services/golang
 build:
     commands:

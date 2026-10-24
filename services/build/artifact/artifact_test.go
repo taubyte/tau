@@ -157,7 +157,7 @@ func projectConfig(t *testing.T, environments string, resources map[string]strin
 func oneEnvironment(t *testing.T) string {
 	t.Helper()
 	return projectConfig(t, everyBranch, map[string]string{
-		"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\n" +
+		"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\nruntime: wasm\n" +
 			"source: services/reserve\n" +
 			"build:\n    commands:\n        image: rust:1.83\n" +
 			"        install: cargo fetch --locked\n        run: cargo build --release\n" +
@@ -180,7 +180,7 @@ func perEnvironment(t *testing.T) string {
 			"    preview:\n        branches: [\"*\"]\n"+
 			"    staging:\n        branches: [\"release/*\"]\n",
 		map[string]string{
-			"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\n" +
+			"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\nruntime: wasm\n" +
 				"source: services/reserve\n" +
 				"build:\n    commands:\n        image: rust:1.83\n" +
 				"        image_preview: rust:1.83-slim\n" +
@@ -524,7 +524,7 @@ func TestAResourceWithNoSourceIsNotBuilt(t *testing.T) {
 // path_test.go, for a compiled object that arrived some other way.
 func TestAPathThatClimbsOutIsRefusedAtCompileTime(t *testing.T) {
 	escaping := projectConfig(t, everyBranch, map[string]string{
-		"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\n" +
+		"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\nruntime: wasm\n" +
 			"source: ../../../../etc\n" +
 			"build:\n    commands:\n        image: rust:1.83\n        run: cat shadow\n" +
 			"        output: out\n" +
@@ -615,7 +615,7 @@ func TestABranchThatFeedsNoDeployment(t *testing.T) {
 // else wrote.
 func TestOnlyBuildTimeVariablesReachTheBuild(t *testing.T) {
 	config := projectConfig(t, everyBranch, map[string]string{
-		"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\n" +
+		"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\nruntime: wasm\n" +
 			"source: services/reserve\n" +
 			"build:\n    commands:\n        image: rust:1.83\n        run: cargo build\n" +
 			"        output: out.wasm\n" +

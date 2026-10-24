@@ -54,6 +54,7 @@ func withConsumer(c consumer) []byte {
 
 	workload := map[string]any{
 		"name":      "checkout",
+		"runtime":   "wasm",
 		"execution": map[string]any{"call": "handle", "memory": 33554432},
 		"source":    "services/checkout",
 		"sync":      map[string]any{"jobs": entry},

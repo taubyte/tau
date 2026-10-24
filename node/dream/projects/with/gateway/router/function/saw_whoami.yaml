@@ -1,5 +1,6 @@
 id: QmZ79Rn2MWFZ9WndYMkfVtrsVCPuAwZx7BaqMRG2yygpoE
 description: the handler at the end of the chain, named for what reaching it proves
+runtime: wasm
 # THE NAME IS THE ASSERTION. picker's fallback arm answers with the path it was
 # handed, slashes turned into underscores - so a request for /whoami reaches a
 # function of this name only if the router actually SAW the path. A router that

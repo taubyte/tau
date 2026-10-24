@@ -88,6 +88,42 @@ func TestAProjectWithNoEnvironmentsIsRefused(t *testing.T) {
 	require.Empty(t, envs, "nothing is published for a refused project")
 }
 
+// A FUNCTION SAYS WHICH TIER RUNS IT. wasm and js are both functions, so the runtime
+// is the author's to write, and a value the kind does not run is refused naming the
+// ones it does. Both are the compiler's refusals, so the deploy makes them too and
+// nothing is published. Each project is with/function with one line changed.
+func TestAFunctionWithoutATierItRunsOnIsRefused(t *testing.T) {
+	for _, tc := range []struct{ project, id, reason string }{
+		{"refused/function/noruntime", "QmckTZTPqB6a5thN1vZNAjoXUBdEUXWL3vA1gFxcx3xBk9", "required attribute 'runtime'"},
+		{"refused/function/unknownruntime", "QmTSpD9SVJriUVp9EHdp1okVF71Ua9FvmeCYXwFABkQiD7", `invalid value "nodejs"; valid values here: wasm, js`},
+	} {
+		t.Run(tc.project, func(t *testing.T) {
+			dir := filepath.Join("projects", tc.project)
+			c, err := schema.New(schema.WithLocal(dir), schema.WithBranch("main"))
+			require.NoError(t, err)
+			_, _, err = c.Compile(context.Background())
+			require.ErrorContains(t, err, tc.reason)
+
+			r, err := pkgregister.New(pkgregister.WithStore(pkgregister.NewMemStore()))
+			require.NoError(t, err)
+			d, err := buildDeploy.New(
+				buildDeploy.WithProjects(configures{}),
+				buildDeploy.WithCheckout(corpus{dir}),
+				buildDeploy.WithLocalRegister(r),
+				buildDeploy.WithCloudFqdn("tau.dream.test"),
+			)
+			require.NoError(t, err)
+			err = d.Run(t.Context(), backend.Work{JobID: "j", RepositoryKey: "github.com/acme/" + tc.id,
+				Ref: "refs/heads/main", CommitSHA: "c", ProjectID: tc.id}, &buildLog{})
+			require.ErrorContains(t, err, tc.reason)
+
+			envs, err := r.Environments(t.Context(), tc.id)
+			require.NoError(t, err)
+			require.Empty(t, envs, "nothing is published for a refused project")
+		})
+	}
+}
+
 // brokenIn is every Broken finding the audit makes about one corpus project.
 func brokenIn(t *testing.T, name string) []string {
 	t.Helper()

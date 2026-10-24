@@ -1,5 +1,6 @@
 id: QmYUTt745KfudLackgxFptAvUWyJAL5NJVyRyNReKtpSrb
 description: answers in TypeScript, compiled by tsc and componentized by componentize-js
+runtime: wasm
 source: services/typescript
 build:
     commands:

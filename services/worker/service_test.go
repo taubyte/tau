@@ -124,16 +124,18 @@ func TestTheProtocolIsDerived(t *testing.T) {
 // Engines(); a kind with two authors the choice, and one that names neither is
 // refused rather than defaulted.
 func TestARuntimeIsNeverGuessed(t *testing.T) {
-	got, err := runtimeOf("function", specs.ReadWorkloadBlock(specs.Resource{}))
+	got, err := runtimeOf("application", specs.ReadWorkloadBlock(specs.Resource{}))
 	require.NoError(t, err)
-	require.Equal(t, "wasm", got)
+	require.Equal(t, "container", got, "a kind with one tier runs on it")
 
-	got, err = runtimeOf("worker", specs.ReadWorkloadBlock(specs.Resource{"runtime": "container"}))
-	require.NoError(t, err)
-	require.Equal(t, "container", got, "the resource's own choice wins over the kind's set")
+	for kind, tier := range map[string]string{"function": "js", "worker": "container"} {
+		got, err = runtimeOf(kind, specs.ReadWorkloadBlock(specs.Resource{"runtime": tier}))
+		require.NoError(t, err)
+		require.Equal(t, tier, got, "the resource's own choice wins over the kind's set")
 
-	_, err = runtimeOf("worker", specs.ReadWorkloadBlock(specs.Resource{}))
-	require.ErrorIs(t, err, ErrAmbiguous, "worker runs on two tiers and this one says neither")
+		_, err = runtimeOf(kind, specs.ReadWorkloadBlock(specs.Resource{}))
+		require.ErrorIs(t, err, ErrAmbiguous, "%s runs on more than one tier and this one says none", kind)
+	}
 
 	_, err = runtimeOf("cache", specs.ReadWorkloadBlock(specs.Resource{}))
 	require.ErrorIs(t, err, ErrNoRuntime, "nothing runs a cache")

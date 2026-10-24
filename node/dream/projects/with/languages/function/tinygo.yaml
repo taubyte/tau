@@ -1,5 +1,6 @@
 id: Qme5Gb2ZU2s7gMukCsTqG1mZGGjERGdpzRWXpVkixWCUY1
 description: answers in Go, through TinyGo and wit-bindgen-go
+runtime: wasm
 source: services/tinygo
 build:
     commands:

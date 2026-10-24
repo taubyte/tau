@@ -26,6 +26,7 @@ func compiled() []byte {
 			"function": {
 				"QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY": {
 					"name": "checkout",
+					"runtime": "wasm",
 					"execution": {"call": "handle", "memory": 33554432},
 					"source": "services/checkout"
 				}
@@ -77,6 +78,7 @@ func needsASecret() []byte {
 			"function": {
 				"QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY": {
 					"name": "checkout",
+					"runtime": "wasm",
 					"execution": {"call": "handle", "memory": 33554432},
 					"source": "services/checkout",
 					"variables": {
@@ -107,6 +109,7 @@ func needsBothSeams() []byte {
 			"function": {
 				"QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY": {
 					"name": "built",
+					"runtime": "wasm",
 					"execution": {"call": "handle", "memory": 33554432},
 					"source": "services/built",
 					"variables": {

@@ -248,36 +248,61 @@ func TestDatabaseEngineIsClosed(t *testing.T) {
 	assert.ErrorContains(t, compile("description: nothing\n"), "attribute type has an empty key")
 }
 
-// A CONTAINER WORKER HAS NO ENTRYPOINT TO NAME, and it used to be refused for not
-// naming one. `execution/call` was Required() inside the helper three kinds share,
-// and only `worker` has a tier at all.
+// THE ENTRYPOINT FOLLOWS THE TIER, on both kinds that run code. A component has no
+// convention for what the host calls, so wasm demands `execution/call`; a module has
+// one, its default export, so js defaults to it; a container's entrypoint is the
+// image's, so it is neither demanded nor filled in.
 //
 // The tier is Required() with no default, and that is the load-bearing half.
 // RequiredWhen reads the discriminator FROM THE DOCUMENT — an absent one means the
 // condition cannot hold — so `runtime` defaulting to wasm would have gated the
-// entrypoint on a value the loader never sees, and every worker that wrote no
-// `runtime:` line would have quietly stopped being asked for one. This pins all five
-// combinations because the trap here is a check that passes by checking less.
-func TestWorkerEntrypointIsRequiredOnTheWasmTierOnly(t *testing.T) {
-	const head = "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n"
-	compile := func(body string) error {
-		fs := afero.NewMemMapFs()
-		assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
-		assert.NilError(t, afero.WriteFile(fs, "/worker/probe.yaml", []byte(head+body), 0o644))
-		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
-		assert.NilError(t, err)
-		_, _, err = c.Compile(context.Background())
-		return err
+// entrypoint on a value the loader never sees, and every workload that wrote no
+// `runtime:` line would have quietly stopped being asked for one. This pins every
+// combination because the trap here is a check that passes by checking less.
+func TestTheEntrypointFollowsTheTier(t *testing.T) {
+	head := "id: " + cidFor("probe") + "\n"
+	compile := func(kind, body string) (map[string]any, error) {
+		flat, err := buildDoc(t, "/"+kind+"/probe.yaml", head+body)
+		if err != nil {
+			return nil, err
+		}
+		return namedResource(t, resources(t, flat, kind), "probe"), nil
 	}
 	const limits = "execution:\n    timeout: 20s\n    memory: 32MB\n"
-	const wasmLimits = "execution:\n    call: c\n    timeout: 20s\n    memory: 32MB\n"
+	const called = "execution:\n    call: handle\n    timeout: 20s\n    memory: 32MB\n"
 
-	assert.ErrorContains(t, compile(limits), "required attribute 'runtime'",
-		"a tier with no default has to be written")
-	assert.NilError(t, compile("runtime: wasm\n"+wasmLimits))
-	assert.ErrorContains(t, compile("runtime: wasm\n"+limits), "required attribute 'execution/call'")
-	assert.NilError(t, compile("runtime: container\nsource:\n    image: busybox\n"+limits),
-		"a container names an image, not an exported symbol")
+	for kind, tiers := range map[string]string{"function": "wasm, js", "worker": "wasm, js, container"} {
+		_, err := compile(kind, limits)
+		assert.ErrorContains(t, err, "required attribute 'runtime'", "%s: a tier with no default has to be written", kind)
+
+		_, err = compile(kind, "runtime: python\n"+called)
+		assert.ErrorContains(t, err, `invalid value "python"; valid values here: `+tiers, "%s: a tier is one of the kind's engines", kind)
+
+		_, err = compile(kind, "runtime: wasm\n"+limits)
+		assert.ErrorContains(t, err, "required attribute 'execution/call'", "%s: a component names its export", kind)
+
+		res, err := compile(kind, "runtime: wasm\n"+called)
+		assert.NilError(t, err)
+		assert.Equal(t, nested(res, "execution", "call"), "handle")
+
+		res, err = compile(kind, "runtime: js\n"+limits)
+		assert.NilError(t, err, "%s: a module's entrypoint has a convention", kind)
+		assert.Equal(t, nested(res, "execution", "call"), "default", "%s: js defaults to the default export", kind)
+
+		res, err = compile(kind, "runtime: js\n"+called)
+		assert.NilError(t, err)
+		assert.Equal(t, nested(res, "execution", "call"), "handle", "%s: a written export wins over the convention", kind)
+	}
+
+	// A function has no tier that runs an image.
+	_, err := compile("function", "runtime: container\n"+limits)
+	assert.ErrorContains(t, err, `invalid value "container"; valid values here: wasm, js`)
+
+	res, err := compile("worker", "runtime: container\nsource:\n    image: busybox\n"+limits)
+	assert.NilError(t, err, "a container names an image, not an exported symbol")
+	_, defaulted := nestedOK(res, "execution", "call")
+	assert.Assert(t, !defaulted, "a container is given no entrypoint it did not write")
+
 	// A CONTAINER WITH NEITHER AN IMAGE NOR A BUILD IS NO LONGER A LOAD ERROR, and
 	// that is the price of unifying the two ways of having something to run. `image:`
 	// used to be a field of this kind with a RequiredWhen on the tier; it is a branch of
@@ -285,20 +310,8 @@ func TestWorkerEntrypointIsRequiredOnTheWasmTierOnly(t *testing.T) {
 	// in a second block, so no single key can demand "one of these two". It is
 	// checkBuild's, which is where every other cross-block exclusion in this vocabulary
 	// already is.
-	assert.NilError(t, compile("runtime: container\n"+limits))
-
-	// The kind that is ALWAYS a component keeps the unconditional demand. A gate
-	// written inside the shared helper would have named an attribute it does not
-	// have, and a condition on a field that is not there is never true.
-	for _, kind := range []string{"function"} {
-		fs := afero.NewMemMapFs()
-		assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
-		assert.NilError(t, afero.WriteFile(fs, "/"+kind+"/probe.yaml", []byte(head+limits), 0o644))
-		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
-		assert.NilError(t, err)
-		_, _, err = c.Compile(context.Background())
-		assert.ErrorContains(t, err, "required attribute 'execution/call'", "kind %q", kind)
-	}
+	_, err = compile("worker", "runtime: container\n"+limits)
+	assert.NilError(t, err)
 }
 
 // An external engine carries its own connection; tau's own carries a size and no
@@ -744,6 +757,7 @@ func TestAccessIsPerTarget(t *testing.T) {
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
 	assert.NilError(t, afero.WriteFile(fs, "/function/checkout.yaml", []byte(`
 id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh
+runtime: wasm
 execution: {call: checkout, timeout: 20s, memory: 32MB}
 cache:
     orders:
@@ -979,6 +993,7 @@ func TestSiblingNamespaceIsNameableAndUnchecked(t *testing.T) {
 	// shop reaches into billing's books
 	assert.NilError(t, afero.WriteFile(fs, "/namespace/shop/function/notify.yaml", []byte(`
 id: QmbWqxBEKC3P8tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnR
+runtime: wasm
 execution: {call: notify, timeout: 5s, memory: 16MB}
 database:
     ledger:
@@ -1081,6 +1096,7 @@ func TestNamespacePathForms(t *testing.T) {
 		assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
 		assert.NilError(t, afero.WriteFile(fs, "/function/checkout.yaml", []byte(
 			"id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n"+
+				"runtime: wasm\n"+
 				"execution: {call: c, timeout: 1s, memory: 1MB}\n"+
 				"cache:\n    orders:\n        namespace: "+bad+"\n        ops: [get]\n"), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -1641,6 +1657,7 @@ func TestAResourceNameIsNotValidated(t *testing.T) {
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
 	assert.NilError(t, afero.WriteFile(fs, "/function/paid-tier.yaml", []byte(
 		"id: QmWQ7XwnqQzhLTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPYuB\n"+
+			"runtime: wasm\n"+
 			"execution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
@@ -1905,7 +1922,7 @@ func TestABusIsAStreamThatCannotBecomeALog(t *testing.T) {
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/function/f.yaml",
-			[]byte("id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
+			[]byte("id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nruntime: wasm\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, path,
 			[]byte("id: QmYb8sCzT9dGqLxKRp7BwVn2jMhFcXPtUdEaWqRk4vNhJ5\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -2046,7 +2063,7 @@ func TestEveryEngineIsClosedAndNoKindIsOpen(t *testing.T) {
 	// it may reach and the secret it authenticates with, and nothing has to declare the
 	// vendor as a resource first. This is the poller the fixture's connector became.
 	assert.NilError(t, compile("/function/p.yaml",
-		"execution:\n    call: p\n    timeout: 5s\n    memory: 8MB\negress:\n    - some-vendor-api.example.com\nsecret:\n    k:\n        ops: [get]\n"),
+		"runtime: wasm\nexecution:\n    call: p\n    timeout: 5s\n    memory: 8MB\negress:\n    - some-vendor-api.example.com\nsecret:\n    k:\n        ops: [get]\n"),
 		"a workload reaching an external system needs no kind for it")
 }
 
@@ -2253,7 +2270,7 @@ func TestInstancesTakeALimitAndAreNamedByAKey(t *testing.T) {
 		assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 			[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/function/f.yaml",
-			[]byte("id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
+			[]byte("id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nruntime: wasm\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
 		assert.NilError(t, afero.WriteFile(fs, "/cache/c.yaml",
 			[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n"+body), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))

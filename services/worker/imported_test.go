@@ -97,6 +97,7 @@ var filled = map[string]any{
 	"build/commands/run":    "npm run build",
 	"build/commands/output": "dist",
 	"execution/call":        "handler",
+	"runtime":               "wasm",
 	"execution/memory":      "512MB",
 	"execution/timeout":     "30s",
 	"source/image":          "ghcr.io/acme/placeholder:1",

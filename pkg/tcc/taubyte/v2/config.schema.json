@@ -11046,6 +11046,16 @@
           "type": "array",
           "x-tau-section": "identity"
         },
+        "runtime": {
+          "description": "Which tier runs this, one of: wasm, js.",
+          "enum": [
+            "wasm",
+            "js"
+          ],
+          "title": "Runtime",
+          "type": "string",
+          "x-tau-section": "code"
+        },
         "implements": {
           "default": "handler",
           "description": "Which host interface this was built against. handler: takes a request. authorizer: takes a caller and an operation, answers with ops. gateway-transformer: takes a parsed HTTP request. proxy-transformer: takes bytes on a stream. gateway-router: takes a parsed HTTP request, decides which route or function should handle it. proxy-router: takes bytes on a stream, decides which target should receive the connection.",
@@ -11165,9 +11175,22 @@
         "execution": {
           "properties": {
             "call": {
-              "description": "Exported entrypoint symbol invoked in the WASM component.",
+              "default": "default",
+              "description": "The export the host calls: a symbol of the WASM component, or an export of the JS module. Required for wasm; js defaults to the module's default export.",
               "title": "Entrypoint",
               "type": "string",
+              "x-tau-default-when": {
+                "field": "runtime",
+                "in": [
+                  "js"
+                ]
+              },
+              "x-tau-required-when": {
+                "field": "runtime",
+                "in": [
+                  "wasm"
+                ]
+              },
               "x-tau-section": "code"
             },
             "timeout": {
@@ -11194,7 +11217,6 @@
             }
           },
           "required": [
-            "call",
             "timeout",
             "memory"
           ],
@@ -12305,6 +12327,7 @@
       },
       "required": [
         "id",
+        "runtime",
         "execution"
       ],
       "title": "Function",
@@ -23631,6 +23654,12 @@
               "pattern": "^[-+]?(([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$",
               "title": "Visibility Timeout",
               "type": "string",
+              "x-tau-default-when": {
+                "field": "type",
+                "in": [
+                  "queue"
+                ]
+              },
               "x-tau-scalar": "duration",
               "x-tau-section": "delivery",
               "x-tau-show-when": {
@@ -23659,6 +23688,12 @@
               "description": "Deliveries before the item moves to the dead-letter queue.",
               "title": "Max Attempts",
               "type": "integer",
+              "x-tau-default-when": {
+                "field": "type",
+                "in": [
+                  "queue"
+                ]
+              },
               "x-tau-section": "delivery",
               "x-tau-show-when": {
                 "field": "type",
@@ -27518,6 +27553,17 @@
           "type": "array",
           "x-tau-section": "identity"
         },
+        "runtime": {
+          "description": "Which tier runs this, one of: wasm, js, container.",
+          "enum": [
+            "wasm",
+            "js",
+            "container"
+          ],
+          "title": "Runtime",
+          "type": "string",
+          "x-tau-section": "code"
+        },
         "implements": {
           "default": "handler",
           "description": "Which host interface this was built against. handler: takes a request. authorizer: takes a caller and an operation, answers with ops. gateway-transformer: takes a parsed HTTP request. proxy-transformer: takes bytes on a stream. gateway-router: takes a parsed HTTP request, decides which route or function should handle it. proxy-router: takes bytes on a stream, decides which target should receive the connection.",
@@ -27677,9 +27723,16 @@
         "execution": {
           "properties": {
             "call": {
-              "description": "Exported entrypoint symbol invoked in the WASM component.",
+              "default": "default",
+              "description": "The export the host calls: a symbol of the WASM component, or an export of the JS module. Required for wasm; js defaults to the module's default export.",
               "title": "Entrypoint",
               "type": "string",
+              "x-tau-default-when": {
+                "field": "runtime",
+                "in": [
+                  "js"
+                ]
+              },
               "x-tau-required-when": {
                 "field": "runtime",
                 "in": [
@@ -27725,16 +27778,6 @@
           "title": "Egress",
           "type": "array",
           "x-tau-section": "network"
-        },
-        "runtime": {
-          "description": "Which tier runs this worker: wasm or container.",
-          "enum": [
-            "wasm",
-            "container"
-          ],
-          "title": "Runtime",
-          "type": "string",
-          "x-tau-section": "code"
         },
         "regions/policy": {
           "description": "pinned: these regions only — the data-residency line. cdn: seeded here, then follows demand within the allowance. failover: exactly two, the first one main. Omit the block for anywhere the allowance permits.",
@@ -28863,8 +28906,8 @@
       },
       "required": [
         "id",
-        "execution",
-        "runtime"
+        "runtime",
+        "execution"
       ],
       "title": "Worker",
       "type": "object",

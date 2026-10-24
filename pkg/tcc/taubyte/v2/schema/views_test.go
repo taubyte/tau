@@ -67,7 +67,7 @@ func (s several) Place(p schema.Placement) schema.Answer {
 }
 
 func viewFunction(name, block string) string {
-	return "id: " + cidFor("function/"+name) + "\nsource: services/" + name + "\n" +
+	return "id: " + cidFor("function/"+name) + "\nruntime: wasm\nsource: services/" + name + "\n" +
 		"build:\n    commands:\n        image: rust:1.83\n        run: cargo build\n        output: x.wasm\n" +
 		"execution:\n    call: handle\n    timeout: 15s\n    memory: 32MiB\n" + block
 }

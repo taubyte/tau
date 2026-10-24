@@ -246,3 +246,30 @@ func TestGeneratedDocumentsCompile(t *testing.T) {
 			"%s/%s is planned and is not in the compiled object", d.Kind, d.Name)
 	}
 }
+
+// A DEFAULT IS LEFT OUT ONLY WHERE IT APPLIES. `default` is a module's entrypoint by
+// convention, and a component may export a symbol by that name too: written back
+// without it, the wasm function would have nothing to call and would not recompile.
+func TestAnEntrypointRoundTripsOnEitherTier(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
+	for path, doc := range map[string]string{
+		"/function/exports_default.yaml": "id: " + cidFor("exports_default") + "\nruntime: wasm\nexecution:\n    call: default\n    timeout: 1s\n    memory: 1MB\n",
+		"/function/module.yaml":          "id: " + cidFor("module") + "\nruntime: js\nexecution:\n    timeout: 1s\n    memory: 1MB\n",
+	} {
+		assert.NilError(t, afero.WriteFile(fs, path, []byte(doc), 0o644))
+	}
+	out := decompileTo(t, compileFor(t, schema.WithVirtual(fs, "/")))
+
+	component, err := afero.ReadFile(out, "/function/exports_default.yaml")
+	assert.NilError(t, err)
+	assert.Assert(t, strings.Contains(string(component), "call: default"), "a component's export is the author's:\n%s", component)
+
+	module, err := afero.ReadFile(out, "/function/module.yaml")
+	assert.NilError(t, err)
+	assert.Assert(t, !strings.Contains(string(module), "call:"), "a module's convention is not written back:\n%s", module)
+
+	fns := resources(t, compileFor(t, schema.WithVirtual(out, "/")).Flat(), "function")
+	assert.Equal(t, nested(namedResource(t, fns, "exports_default"), "execution", "call"), "default")
+	assert.Equal(t, nested(namedResource(t, fns, "module"), "execution", "call"), "default")
+}

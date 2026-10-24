@@ -382,6 +382,14 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 // AN EMPTY `implements` IS THE HANDLER, which is what the schema defaults it to,
 // so a world that is not the handler must be written down to be run as one.
 func (r *Runtime) instantiate(ctx context.Context, spec invoke.Spec, world string) (*component.Instance, wazy.Runtime, error) {
+	// A SPEC FOR ANOTHER TIER IS REFUSED BY NAME. The pool picks a tier by
+	// spec.Runtime, but a guard, a validator and a resolver are asked through
+	// this tier directly, and nothing else stops what another engine runs from
+	// reaching wazy as bytes it cannot parse.
+	if spec.Runtime != "" && spec.Runtime != Name {
+		return nil, nil, fmt.Errorf("%w: %s runs on the %q tier, and this is the %s tier",
+			invoke.ErrNoRuntime, spec.Name, spec.Runtime, Name)
+	}
 	if spec.Artifact == "" {
 		return nil, nil, fmt.Errorf("%w: %s", ErrNoArtifact, spec.Name)
 	}

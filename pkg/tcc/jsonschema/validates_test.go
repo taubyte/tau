@@ -41,6 +41,7 @@ func TestSchemaRefusesWhatTheCompilerRefuses(t *testing.T) {
 		body := map[string]any{
 			"id":          "QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh",
 			"description": "x",
+			"runtime":     "wasm",
 			"execution":   map[string]any{"call": "c", "timeout": "1s", "memory": "1MB"},
 		}
 		if source != nil {

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/taubyte/tau/pkg/tcc/object"
@@ -296,7 +297,7 @@ func (s *instance) dumpAttributes(n *Node, obj object.Object[object.Refrence], q
 		}
 
 		// Skip values that equal the default (no need to write them)
-		if attr.Default != nil && val == attr.Default {
+		if attr.Default != nil && val == attr.Default && defaultApplies(n, attr, obj) {
 			continue
 		}
 
@@ -320,6 +321,23 @@ func (s *instance) dumpAttributes(n *Node, obj object.Object[object.Refrence], q
 	}
 
 	return nil
+}
+
+// defaultApplies is whether a value equal to attr's default may be left out of the
+// document. A default scoped to a branch is filled in again only where that branch is
+// taken, so anywhere else the value is the author's and has to be written.
+func defaultApplies(n *Node, attr *Attribute, obj object.Object[object.Refrence]) bool {
+	c, conditional := attr.Meta["defaultWhen"].(ConditionSpec)
+	if !conditional {
+		return true
+	}
+	for _, sib := range n.Attributes {
+		if sib.Name == c.Field {
+			v, _ := read(obj, sib).(string)
+			return slices.Contains(c.In, v)
+		}
+	}
+	return false
 }
 
 // read pulls an attribute's compiled value back out, at the key it was written to —

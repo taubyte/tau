@@ -1,5 +1,6 @@
 id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Hc
 description: reaches the kv it was granted - the path picks the operation and the body carries the value
+runtime: wasm
 source: services/keeper
 build:
     commands:

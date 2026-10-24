@@ -1,5 +1,6 @@
 id: QmTgMPaMmJsBmAVzWmGKZ3kTQqzBHPkrGCjkbLGSjcEXsZ
 description: decides whether a request may pass and with what - it is asked about the REQUEST, which is why it is this world and not the authorizer one a cache names
+runtime: wasm
 # THE ONLY http-authorizer IN THIS FIXTURE. A cache's authorizer is asked
 # `who: caller` about a workload; whoever opens a socket at the edge has no
 # project, environment or scope, so ingress needs the world that is handed the

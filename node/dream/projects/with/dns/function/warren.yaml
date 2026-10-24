@@ -1,5 +1,6 @@
 id: QmSpknkBq8JUhQMQ6j3Qn1S4S6TLYKSVa6c2YX1pqLHJiR
 description: what the zone above is asked - it answers `geo` with a record, `quiet` with a name that exists and holds nothing of the type asked for, and everything else with no such name
+runtime: wasm
 implements: dns-resolver
 source: services/warren
 build:

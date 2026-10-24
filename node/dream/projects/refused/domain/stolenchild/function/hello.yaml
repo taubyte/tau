@@ -1,5 +1,6 @@
 id: QmRN6wdp1S2A5EtjW9A3M1vKSBuQQGcgvuhoMUoEz4iiT5
 description: answers the route, and says which method arrived in the status so a 200 cannot be a constant
+runtime: wasm
 source: services/hello
 build:
     commands:

@@ -1,5 +1,6 @@
 id: QmVbT4kKQ6Xr9nLdWuFpHc2ZmAyRs7JgEvNxKtBqPdYwSh
 description: polls slack for mentions and publishes what it read - this is what a connector kind was, written in kinds that already exist
+runtime: wasm
 execution:
     call: poll_mentions
     timeout: 30s

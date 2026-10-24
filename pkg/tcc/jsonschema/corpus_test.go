@@ -105,3 +105,18 @@ func TestCorpusWithoutEnvironmentsIsRefused(t *testing.T) {
 	doc["environments"] = map[string]any{}
 	assert.ErrorContains(t, r.Validate(doc), "minProperties")
 }
+
+// A FUNCTION WITHOUT A TIER IT RUNS ON is refused by the published schema as it is by
+// the compiler, so an editor says so before a build does.
+func TestCorpusFunctionWithoutATierItRunsOnIsRefused(t *testing.T) {
+	r := published(t)
+	docs := projects(t, "refused/function")
+
+	missing := docs["refused/function/noruntime"]
+	assert.Assert(t, missing != nil)
+	assert.ErrorContains(t, r.Validate(missing), `missing properties: ["runtime"]`)
+
+	unknown := docs["refused/function/unknownruntime"]
+	assert.Assert(t, unknown != nil)
+	assert.ErrorContains(t, r.Validate(unknown), "properties/runtime: enum: nodejs does not equal any of: [wasm js]")
+}

@@ -410,6 +410,7 @@ func TestAnAuthoredOpIsNotRecordedAsGranted(t *testing.T) {
 	assert.NilError(t, afero.WriteFile(fs, "/function/relay_own.yaml", []byte(
 		"id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zu\n"+
 			"description: says for itself that it receives from the queue its step will make\n"+
+			"runtime: wasm\n"+
 			"execution:\n"+
 			"    call: relay\n"+
 			"    timeout: 5s\n"+

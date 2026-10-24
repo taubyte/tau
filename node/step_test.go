@@ -51,6 +51,7 @@ func withStepFunction() []byte {
 			"function": {
 				"QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY": {
 					"name": "reserve_stock",
+					"runtime": "wasm",
 					"execution": {"call": "handle", "memory": 33554432},
 					"source": "services/reserve"
 				}

@@ -80,6 +80,16 @@ func TestInSet(t *testing.T) {
 			t.Errorf("Expected value '%s' not to be in set, but got no error", test.val)
 		}
 	}
+
+	// the refusal names the value and every one that would have been accepted
+	if err := attr.Validator("notInSet"); err == nil || err.Error() != `invalid value "notInSet"; valid values here: test, sample` {
+		t.Errorf("a refusal that does not name the set: %v", err)
+	}
+	numbers := &Attribute{}
+	InSet(0, 16, 32)(numbers)
+	if err := numbers.Validator(8); err == nil || err.Error() != "invalid value 8; valid values here: 0, 16, 32" {
+		t.Errorf("a number is shown as itself, not quoted: %v", err)
+	}
 }
 
 func TestIsFqdn(t *testing.T) {

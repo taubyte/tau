@@ -1,5 +1,6 @@
 id: QmWwN9XrPRinVaayWnpPyzXTbnKM117Hna6YhYNV5mc1cK
 description: answers in C#, through componentize-dotnet and NativeAOT-LLVM
+runtime: wasm
 source: services/csharp
 build:
     commands:

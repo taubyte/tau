@@ -198,6 +198,7 @@ func EffectOf(kind, verb string) (string, bool) {
 //
 //	# functions/invoice.yaml — a plain resource file, id at the root
 //	id: Qm…
+//	runtime: wasm
 //	source: "."
 //	execution: { call: invoice, timeout: 10s, memory: 16MB }
 //	caches:

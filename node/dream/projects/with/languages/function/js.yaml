@@ -1,5 +1,6 @@
 id: QmPsgdz4diNQNEcNk9Yt1JBsHeWCaB3y2rJjYUBRokm58Q
 description: answers in JavaScript, through componentize-js
+runtime: wasm
 source: services/js
 build:
     commands:

@@ -43,6 +43,13 @@ var implemented = map[string]bool{
 	wasm.Name:      true,
 }
 
+// absent is every engine the vocabulary names that no tier here runs YET, and why.
+// An entry is a gap with a reason, not a waiver: the test below fails the day its
+// tier lands and the entry is still here, so the list cannot outlive what it records.
+var absent = map[string]string{
+	"js": "a function may choose it, and until pkg/invoke/js is a tier a node refuses a js function by name",
+}
+
 // theFlyFile, theVercelOutput and the compose file above are one representative
 // descriptor each — enough to make every importer emit its kinds.
 const theFlyFile = `
@@ -127,11 +134,24 @@ func TestEverythingAnImporterEmitsCanBeRun(t *testing.T) {
 				continue
 			}
 
+			// A KIND WITH A CHOICE runs if one of its tiers does; which one
+			// the resource takes is its `runtime`, checked below where an
+			// importer writes it and left to the author where it is a hole.
+			runs := false
 			for _, engine := range engines {
-				require.True(t, implemented[engine],
+				require.True(t, implemented[engine] || absent[engine] != "",
 					"%s imports %s/%v, which the vocabulary says runs on %q — and nothing implements that engine. "+
 						"An imported project would compile, deploy, and refuse every request.",
 					source, kind, names, engine)
+				runs = runs || implemented[engine]
+			}
+			require.True(t, runs, "%s imports %s/%v, and no tier its kind may run on is implemented", source, kind, names)
+		}
+
+		for _, res := range result.Resources {
+			if tier, ok := res.Doc["runtime"].(string); ok {
+				require.True(t, implemented[tier], "%s imports %s/%s on the %q tier, and nothing implements it",
+					source, res.Kind, res.Name, tier)
 			}
 		}
 	}
@@ -152,7 +172,7 @@ func TestEveryEngineTheVocabularyNamesIsImplemented(t *testing.T) {
 
 	var missing []string
 	for engine := range named {
-		if !implemented[engine] {
+		if !implemented[engine] && absent[engine] == "" {
 			missing = append(missing, engine)
 		}
 	}
@@ -161,4 +181,10 @@ func TestEveryEngineTheVocabularyNamesIsImplemented(t *testing.T) {
 	require.Empty(t, missing,
 		"the vocabulary names an engine nothing implements: %v. A resource declaring it compiles, "+
 			"deploys, and refuses every request with \"no engine registered for this spec\".", missing)
+
+	// and the absent list says only what is still true
+	for engine := range absent {
+		require.True(t, named[engine], "%q is listed as absent and the vocabulary does not name it", engine)
+		require.False(t, implemented[engine], "%q has a tier now; take it off the absent list", engine)
+	}
 }

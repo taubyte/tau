@@ -41,10 +41,12 @@ func guardedProject(t *testing.T, guard map[string]any) *specs.Project {
 			"function": map[string]any{
 				guardFuncID: map[string]any{
 					"name": "keeper", "implements": "authorizer",
+					"runtime":   "wasm",
 					"execution": map[string]any{"call": "authorize", "memory": 8388608},
 				},
 				plainFuncID: map[string]any{
 					"name": "plain", "implements": "handler",
+					"runtime":   "wasm",
 					"execution": map[string]any{"call": "handle", "memory": 8388608},
 				},
 			},

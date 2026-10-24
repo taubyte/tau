@@ -1,5 +1,6 @@
 id: QmPXXFq176W5Ezj7s3NmgswRornuQC3ijo1FAq5rsg4XUc
 description: answers in Python, through componentize-py
+runtime: wasm
 source: services/python
 build:
     commands:

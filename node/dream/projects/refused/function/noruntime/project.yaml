@@ -1,0 +1,6 @@
+id: QmckTZTPqB6a5thN1vZNAjoXUBdEUXWL3vA1gFxcx3xBk9
+name: noruntime
+description: the onefunction project with its function's runtime left out - wasm and js are both functions, so the author says which and nothing assumes it
+environments:
+    prod:
+        branches: ["*"]

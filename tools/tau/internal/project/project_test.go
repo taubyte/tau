@@ -137,6 +137,8 @@ func TestNewResourceFromTheSchema(t *testing.T) {
 		require.NotEmpty(t, issue.Field)
 	}
 	require.Error(t, p.SetField(res, "execution.memory", "not-a-size"))
+	require.Error(t, p.SetField(res, "runtime", "nodejs"), "a tier the kind does not run")
+	require.NoError(t, p.SetField(res, "runtime", "wasm"))
 	require.NoError(t, p.SetField(res, "execution.call", "handle"))
 	require.NoError(t, p.SetField(res, "execution.timeout", "10s"))
 	require.NoError(t, p.SetField(res, "execution.memory", "16MB"))

@@ -1,5 +1,6 @@
 id: QmNP8ZJRT6En1LVfTwkbiD4HgdeRxvpHGn4m5Sp2cY8UxS
 description: reaches the cache on all four verbs, so a refusal in the test is the grant refusing and never the component missing an export
+runtime: wasm
 source: services/cacher
 build:
     commands:

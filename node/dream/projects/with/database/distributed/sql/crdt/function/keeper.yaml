@@ -1,5 +1,6 @@
 id: QmNPFXqtFpZ3HvPv1r9Dzz47FuN7j2u7yUFNDK4HFQhKEa
 description: runs the statement it was sent against the sql database it was granted - the path picks query or exec
+runtime: wasm
 source: services/keeper
 build:
     commands:

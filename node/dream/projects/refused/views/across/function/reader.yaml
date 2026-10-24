@@ -1,5 +1,6 @@
 id: QmSSumLpvBM8vHPASQuwdRwi1YyuXTwdR3opsg5VqzowuH
 description: runs in region-2, and reaches the cache in region-1
+runtime: wasm
 source: services/reader
 build:
     commands:

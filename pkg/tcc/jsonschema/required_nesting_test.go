@@ -63,3 +63,38 @@ func TestRequiredIsRecordedAtTheLevelTheFieldLivesAt(t *testing.T) {
 	assert.NilError(t, json.Unmarshal(thing.Properties["execution"], &exec))
 	assert.DeepEqual(t, exec.Required, []string{"call"})
 }
+
+// A DEFAULT SCOPED TO A BRANCH says which branch. `default` alone is unconditional
+// in JSON Schema, so an editor reading it would offer a js function's entrypoint
+// convention to a wasm one, which the compiler then refuses for having none.
+func TestAConditionalDefaultCarriesItsCondition(t *testing.T) {
+	root := []*engine.Node{
+		engine.DefineGroup("things", engine.DefineIter(
+			[]*engine.Attribute{
+				engine.String("id", engine.Required()),
+				engine.String("tier", engine.InSet("a", "b")),
+				engine.String("entry", engine.Default("main"), engine.DefaultWhen("tier", "b")),
+				engine.String("always", engine.Default("x")),
+			},
+			engine.Resource("things", "Thing", "Thing", "thing"),
+		)),
+	}
+	raw, err := GenerateJSONSchema(root, JSONSchemaOptions{ExtPrefix: "x-t-"})
+	assert.NilError(t, err)
+
+	var doc struct {
+		Defs map[string]struct {
+			Properties map[string]map[string]any `json:"properties"`
+		} `json:"$defs"`
+	}
+	assert.NilError(t, json.Unmarshal(raw, &doc))
+
+	entry := doc.Defs["Thing"].Properties["entry"]
+	assert.Equal(t, entry["default"], "main")
+	assert.DeepEqual(t, entry["x-t-default-when"], map[string]any{"field": "tier", "in": []any{"b"}})
+
+	always := doc.Defs["Thing"].Properties["always"]
+	assert.Equal(t, always["default"], "x")
+	_, conditional := always["x-t-default-when"]
+	assert.Assert(t, !conditional, "an unconditional default names no condition")
+}

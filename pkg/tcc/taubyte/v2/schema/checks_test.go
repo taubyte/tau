@@ -74,7 +74,7 @@ func TestAuditDelivery(t *testing.T) {
 
 	found = auditDocs(t, nil, map[string]string{
 		"/sync/work.yaml":  "id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o\nqueue:\n    consensus: raft\n    visibility_timeout: 30s\n",
-		"/function/f.yaml": "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\nsync:\n    work:\n        ops: [receive]\n",
+		"/function/f.yaml": "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nruntime: wasm\nexecution: {call: c, timeout: 1s, memory: 1MB}\nsync:\n    work:\n        ops: [receive]\n",
 	})
 	hasNo(t, found, "deliver port")
 }
@@ -177,7 +177,7 @@ func TestWebsiteServingMode(t *testing.T) {
 // compile.
 func TestAuditHostWorlds(t *testing.T) {
 	fn := func(world string) string {
-		body := "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"
+		body := "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nruntime: wasm\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"
 		if world != "" {
 			body += "implements: " + world + "\n"
 		}
@@ -214,7 +214,7 @@ func TestAuditHostWorlds(t *testing.T) {
 // built against something else, which is the failure this check exists to prevent.
 func TestAuditHostWorldsReachesEveryUse(t *testing.T) {
 	fn := func(world string) string {
-		b := "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nexecution:\n    call: c\n    timeout: 1s\n    memory: 1MB\n"
+		b := "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nruntime: wasm\nexecution:\n    call: c\n    timeout: 1s\n    memory: 1MB\n"
 		if world != "" {
 			b += "implements: " + world + "\n"
 		}
@@ -337,13 +337,13 @@ func TestAuditReportsALoweringFaultAgainstItsSource(t *testing.T) {
 	const wf = "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nstart: reserve\nsteps:\n    - name: reserve\n      call:\n          function: %s\n      attempts: 2\n"
 
 	found := auditDocs(t, nil, map[string]string{
-		"/function/reserve.yaml":  "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\n",
+		"/function/reserve.yaml":  "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nruntime: wasm\nexecution: {call: c, timeout: 1s, memory: 1MB}\n",
 		"/workflow/checkout.yaml": strings.Replace(wf, "%s", "reserve", 1),
 	})
 	hasNo(t, found, "does not exist")
 
 	found = auditDocs(t, nil, map[string]string{
-		"/function/reserve.yaml":  "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\n",
+		"/function/reserve.yaml":  "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nruntime: wasm\nexecution: {call: c, timeout: 1s, memory: 1MB}\n",
 		"/workflow/checkout.yaml": strings.Replace(wf, "%s", "resrve", 1),
 	})
 	f := findOne(t, found, "does not exist")
@@ -431,6 +431,7 @@ func TestAuditAuthoredBuiltin(t *testing.T) {
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
 	assert.NilError(t, afero.WriteFile(fs, "/function/checkout.yaml", []byte(
 		"id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n"+
+			"runtime: wasm\n"+
 			"source:\n    builtin: does_not_exist\n"+
 			"execution: {call: c, timeout: 1s, memory: 1MB}\n"), 0o644))
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
@@ -491,7 +492,7 @@ func TestATargetWithNoNameIsRefused(t *testing.T) {
 // so it pins both halves at once — take the check out and the first assertion still
 // passes, which is exactly the failure this is here to catch.
 func TestDatabaseOpsAreItsTypesNotTheUnion(t *testing.T) {
-	const fn = "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"
+	const fn = "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nruntime: wasm\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"
 	kv := "id: QmVLDAzEjEbfBPuoyLPWnPMhKp8ceDXwGdmMKY5W3nZWfF\nkv:\n    distributed:\n        size: 1MB\n        consensus: crdt\n"
 	vec := "id: QmRZ1J1ZmVsGKvBFZoScNoGCzMwrDGHqxYAgqK7QsWpZbb\nvector:\n    dimensions: 8\n    distributed:\n        size: 1MB\n        consensus: crdt\n"
 

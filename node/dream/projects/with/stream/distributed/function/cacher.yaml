@@ -1,5 +1,6 @@
 id: QmNP8ZJRT6En1LVfTwkbiD4HgdeRxvpHGn4m5Sp2cY8UxS
 description: publishes on the path it is asked on, and declares the subscription on the same topic - so one component is both ends of the stream, the way the queue project is both ends of a queue
+runtime: wasm
 source: services/cacher
 build:
     commands:

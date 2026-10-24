@@ -458,6 +458,7 @@ type Function struct {
 	Implements  string // defaulted
 	Name        string
 	Regions     Regions
+	Runtime     string
 	Source      FunctionSource
 	Tags        []string
 	Variables   map[string]VariablesEntry
@@ -475,6 +476,7 @@ func ReadFunction(r Resource) Function {
 	out.Implements = r.String("implements")
 	out.Name = r.String("name")
 	out.Regions = ReadRegions(r)
+	out.Runtime = r.String("runtime")
 	out.Source = ReadFunctionSource(r)
 	out.Tags = r.Strings("tags")
 	for _, name := range r.Keys("variables") {
@@ -497,6 +499,7 @@ const (
 	FunctionKeyImplements                = "implements"
 	FunctionKeyName                      = "name"
 	FunctionKeyRegions                   = "regions"
+	FunctionKeyRuntime                   = "runtime"
 	FunctionKeySource                    = "source"
 	FunctionKeyTags                      = "tags"
 	FunctionKeyVariables                 = "variables"
@@ -509,6 +512,8 @@ const (
 	FunctionImplementsProxyTransformer   = "proxy-transformer"
 	FunctionImplementsGatewayRouter      = "gateway-router"
 	FunctionImplementsProxyRouter        = "proxy-router"
+	FunctionRuntimeWasm                  = "wasm"
+	FunctionRuntimeJs                    = "js"
 )
 
 // Authorizer is the "authorizer" block of Agent, Bus, Cache, Channel, Database, Function, Gateway, Mcp, Model, Sandbox, Secret, Storage, Stream, Sync, Volume, Worker, Workflow, read from a compiled object.
@@ -583,7 +588,7 @@ const (
 
 // FunctionExecution is the "execution" block of Function, read from a compiled object.
 type FunctionExecution struct {
-	Call    string
+	Call    string // defaulted
 	Cpu     *int64
 	Memory  int64
 	Timeout time.Duration
@@ -600,8 +605,7 @@ func ReadFunctionExecution(r Resource) FunctionExecution {
 	out.Cpu = present[int64](r.Int("execution", "cpu"))
 	out.Memory, _ = r.Int("execution", "memory")
 	out.Timeout, _ = r.Duration("execution", "timeout")
-	out.Declared = r.Has("execution", "call") ||
-		r.Has("execution", "cpu") ||
+	out.Declared = r.Has("execution", "cpu") ||
 		r.Has("execution", "memory") ||
 		r.Has("execution", "timeout")
 	return out
@@ -738,6 +742,7 @@ const (
 	WorkerImplementsGatewayRouter      = "gateway-router"
 	WorkerImplementsProxyRouter        = "proxy-router"
 	WorkerRuntimeWasm                  = "wasm"
+	WorkerRuntimeJs                    = "js"
 	WorkerRuntimeContainer             = "container"
 )
 
@@ -796,7 +801,7 @@ const (
 
 // WorkerExecution is the "execution" block of Worker, read from a compiled object.
 type WorkerExecution struct {
-	Call    string
+	Call    string // defaulted
 	Cpu     *int64
 	Memory  int64
 	Timeout time.Duration
@@ -813,8 +818,7 @@ func ReadWorkerExecution(r Resource) WorkerExecution {
 	out.Cpu = present[int64](r.Int("execution", "cpu"))
 	out.Memory, _ = r.Int("execution", "memory")
 	out.Timeout, _ = r.Duration("execution", "timeout")
-	out.Declared = r.Has("execution", "call") ||
-		r.Has("execution", "cpu") ||
+	out.Declared = r.Has("execution", "cpu") ||
 		r.Has("execution", "memory") ||
 		r.Has("execution", "timeout")
 	return out
@@ -3726,6 +3730,7 @@ const (
 	WorkloadBlockImplementsGatewayRouter      = "gateway-router"
 	WorkloadBlockImplementsProxyRouter        = "proxy-router"
 	WorkloadBlockRuntimeWasm                  = "wasm"
+	WorkloadBlockRuntimeJs                    = "js"
 	WorkloadBlockRuntimeContainer             = "container"
 	WorkloadBlockServeKindApplication         = "application"
 	WorkloadBlockServeKindFunction            = "function"

@@ -207,33 +207,40 @@ var hostWorlds = []string{"handler", "authorizer", "http-authorizer", "dns-resol
 // mirrored in seven places under pkg/invoke/wasm today, and they could not ask.
 func HostWorlds() []string { return append([]string(nil), hostWorlds...) }
 
-func wasmAttributes(attrs ...*Attribute) []*Attribute {
-	return wasmAttributesEntrypoint(Required(), []string{"component", "builtin", "git"}, attrs...)
-}
-
-// wasmAttributesEntrypoint is wasmAttributes with the ENTRYPOINT'S DEMAND as an
-// argument, because one of the two kinds that runs a WASM component does not
-// always run one.
+// runnableAttributes is the shape of a kind that runs CODE — `function` and
+// `worker` — and `engines` is that kind's own Engines() slice.
 //
-// `worker` carries a `runtime` tier, and a container worker has no exported symbol
-// to call — its entrypoint is the image's. Requiring `execution/call` of it made a
-// legal workload unauthorable, and writing a dummy `call: main` to get past the
-// error compiled an object stating two wasm facts about a container.
+// `runtime` IS REQUIRED, WITH NO DEFAULT, and the default is what had to go rather
+// than a preference that was given up. `RequiredWhen` reads the discriminator FROM
+// THE DOCUMENT — requiredHere's own comment says an absent one means the condition
+// cannot hold — so a defaulted `wasm` would have gated the entrypoint on a value the
+// loader never sees, and every workload that wrote no `runtime:` line would have
+// stopped being asked for one. Silently. The answers are also different products:
+// a component this platform builds and runs, a module a JS engine runs, an image
+// somebody else built. A tier that decides which half of the fields exist is worth
+// one line of saying which.
 //
-// THE GATE HAD TO BE A PARAMETER RATHER THAN A CONDITION INSIDE THIS HELPER.
-// `RequiredWhen("runtime", …)` written here would name an attribute `function` does
-// not have, and a condition naming a field that is not there is simply never true —
-// so the entrypoint would have stopped being required on the kind that always needs
-// it. That is a check narrowed to fit one caller, which is worse than the error it
-// removes.
+// THE SET IS THE KIND'S OWN Engines(), read from one slice. `runtime` is the CHOICE
+// between the tiers the kind declares, and declaring the same words twice is what
+// an annotation and an InSet spelled apart would be. It comes first, because the
+// entrypoint's demand is read off it.
 //
-// THE SOURCE BRANCHES ARE A PARAMETER FOR THE SAME REASON, one question later. A
-// container worker's content can be an image somebody else built; a function's cannot,
-// because there is no tier under a function that runs one. Hardcoding the union here
-// would put `source: {image: …}` on `function` — a branch that compiles, resolves a
-// pull secret, and is read by nothing.
-func wasmAttributesEntrypoint(demand AttrOption, sources []string, attrs ...*Attribute) []*Attribute {
+// THE ENTRYPOINT FOLLOWS THE TIER. `execution/call` names what the host calls: an
+// export of the component, or of the module. A component has no convention for it,
+// so wasm requires one. A module does — its default export — so js defaults to it.
+// A container has neither: its entrypoint is the image's, and requiring a symbol of
+// it made a legal workload unauthorable, with a dummy `call: main` compiling an
+// object that stated two wasm facts about a container.
+//
+// THE SOURCE BRANCHES ARE A PARAMETER, because they are the kind's. A container
+// worker's content can be an image somebody else built; a function's cannot, because
+// there is no tier under a function that runs one. Hardcoding the union here would
+// put `source: {image: …}` on `function` — a branch that compiles, resolves a pull
+// secret, and is read by nothing.
+func runnableAttributes(engines, sources []string) []*Attribute {
 	base := []*Attribute{
+		String("runtime", InSet(engines...), Required(), InSection("code"),
+			Doc("Runtime", "Which tier runs this, one of: "+strings.Join(engines, ", ")+".")),
 		String("implements", InSet(hostWorlds...), Default("handler"), InSection("code"),
 			Doc("Implements", "Which host interface this was built against. handler: takes a request. authorizer: takes a caller and an operation, answers with ops. gateway-transformer: takes a parsed HTTP request. proxy-transformer: takes bytes on a stream. gateway-router: takes a parsed HTTP request, decides which route or function should handle it. proxy-router: takes bytes on a stream, decides which target should receive the connection.")),
 	}
@@ -243,7 +250,8 @@ func wasmAttributesEntrypoint(demand AttrOption, sources []string, attrs ...*Att
 	// "tau/<name>", a kind packed into a value with no room to say which namespace.
 	base = append(base, contentSource("code", sources...)...)
 	base = append(base,
-		String(Key("execution", "call"), demand, InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM component.")),
+		String(Key("execution", "call"), RequiredWhen("runtime", wasmEngine), Default("default"), DefaultWhen("runtime", jsEngine), InSection("code"),
+			Doc("Entrypoint", "The export the host calls: a symbol of the WASM component, or an export of the JS module. Required for wasm; js defaults to the module's default export.")),
 		// A CEILING IS WHAT AN ENVIRONMENT DIFFERS IN. `timeout_preview: 5s` beside
 		// `timeout: 20s` is the same field said for one environment — the resource is
 		// one resource, with one id and one name, running smaller where it is cheap
@@ -254,7 +262,7 @@ func wasmAttributesEntrypoint(demand AttrOption, sources []string, attrs ...*Att
 		cpuLimit(),
 		egressAttribute(),
 	)
-	return commonAttributes(append(base, attrs...)...)
+	return commonAttributes(base...)
 }
 
 var secCode = Section("code", "Code", "The workload's code source and entrypoint.")
@@ -724,26 +732,33 @@ var secPlacement = Section("placement", "Placement", "Where this may run, within
 // The ENGINES are the tiers this platform can run, and this is their one home.
 //
 //	wasm       a component-model component — wasip2/wasip3, WIT is the author
-//	           contract. The default, and the thing this platform is.
+//	           contract. The thing this platform is.
+//	js         an ES module, run by a JS engine embedded in the worker. Built the
+//	           ways a component is, and held to the same limits.
 //	container  an OCI image. A serverless engine too, deliberately: it is what
 //	           lets a workload somebody already built arrive unchanged.
 //	static     a directory of files, served rather than executed.
 //
-// A THIRD ENGINE IS A VALUE. Adding one is a constant here, an entry in BuildWaysOf
-// if it is produced differently from the three, and the word appearing in the
+// ANOTHER ENGINE IS A VALUE. Adding one is a constant here, an entry in BuildWaysOf
+// if it is produced differently from the others, and the word appearing in the
 // `Engines(...)` of every kind that may run it. Nothing forks and no consumer
 // changes: everything that asks "what runs this" asks EnginesOf, which reads the
-// answer back off the schema.
+// answer back off the schema. `js` arrived exactly that way.
 const (
 	wasmEngine      = "wasm"
+	jsEngine        = "js"
 	containerEngine = "container"
 	staticEngine    = "static"
 )
 
-// workerEngines is the one kind that CHOOSES, so the set is a variable rather than
-// two literals spelled the same: `runtime`'s InSet and the kind's Engines() are one
-// fact, and a second copy is free to disagree the day a third tier arrives.
-var workerEngines = []string{wasmEngine, containerEngine}
+// functionEngines and workerEngines are the kinds that CHOOSE, so each set is a
+// variable rather than literals spelled twice: `runtime`'s InSet and the kind's
+// Engines() are one fact, and a second copy is free to disagree the day another
+// tier arrives.
+var (
+	functionEngines = []string{wasmEngine, jsEngine}
+	workerEngines   = []string{wasmEngine, jsEngine, containerEngine}
+)
 
 // Engines declares WHICH TIERS MAY RUN A KIND, on the kind, beside Icon(),
 // Category(), Ops() and Footprint(). It exists for §8c's reason and it is not
@@ -758,11 +773,11 @@ var workerEngines = []string{wasmEngine, containerEngine}
 // which engines it declares — attachBuild computes it, and there is no second list of
 // "kinds that are built" to forget a kind in.
 //
-// NOT AN ATTRIBUTE, except where there is a choice to make. A function is a WASM
-// component wherever it is written; writing `engine: wasm` on every function would be
-// a line that can only say one thing. `worker` is the single kind with two answers,
-// and it has carried `runtime` for exactly that reason since before this annotation
-// existed. The two are the same set, read from one slice.
+// NOT AN ATTRIBUTE, except where there is a choice to make. A component is a WASM
+// component wherever it is written; writing `engine: wasm` on every component would
+// be a line that can only say one thing. `function` and `worker` each have more than
+// one answer, and carry `runtime` for exactly that reason. The attribute's set and
+// the annotation are the same set, read from one slice.
 func Engines(names ...string) NodeOption { return GroupAnnotate("engines", names) }
 
 // EnginesOfIter reads a kind's declared tiers off its iterator.
@@ -1045,11 +1060,11 @@ var secBuild = Section("build", "Build", "How the source becomes the thing that 
 // and for the same reason: a rule that holds for a set of kinds is not six lines
 // repeated in each of them, one of which is forgotten when the seventh arrives.
 //
-// The branch set is UNIONED over the kind's engines, so `worker` — the one kind with
-// two — is the one kind that can write all three ways. Which of them goes with which
-// tier is a pair the DSL cannot state (the two blocks are different attributes at
-// different paths, so §3's switch has no single key to hang on) and is checkBuild's,
-// alongside the other cross-block exclusions checks.go already owes.
+// The branch set is UNIONED over the kind's engines, so `worker` — a component, a
+// module or an image — is the one kind that can write all three ways. Which of them
+// goes with which tier is a pair the DSL cannot state (the two blocks are different
+// attributes at different paths, so §3's switch has no single key to hang on) and is
+// checkBuild's, alongside the other cross-block exclusions checks.go already owes.
 //
 // It runs BEFORE attachLowerable, which copies a kind's attributes into the shape it
 // takes after lowering — a kind that gained the block afterwards would carry it only
@@ -1850,40 +1865,21 @@ var V2Resources = []*Node{
 	// yes or no — which is a property of the artifact, not of the config.
 	DefineGroup("function",
 		resource(
-			wasmAttributes(),
+			runnableAttributes(functionEngines, []string{"component", "builtin", "git"}),
 			Nested(variablesGroup(runLifetime, buildLifetime, bothLifetimes)),
-			GroupDoc("A serverless function. It declares no trigger: what may reach it is an inbound edge."), Icon("bolt"), Category("compute"), Footprint(), Engines(wasmEngine),
+			GroupDoc("A serverless function. It declares no trigger: what may reach it is an inbound edge."), Icon("bolt"), Category("compute"), Footprint(), Engines(functionEngines...),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Ops(WriteOp("invoke")), // invoke is write: a call may do anything the callee can
 			Resource("function", "Function", "Function", "function"),
 		)),
 
-	// On-demand, long-running once triggered, not HTTP-listening. The only type
-	// where the runtime tier is an authored field (resources.md §1.2).
+	// On-demand, long-running once triggered, not HTTP-listening (resources.md
+	// §1.2). `image:` is not a field here: which tier runs it and where the
+	// artifact comes from are two questions, and the second one is `source:`,
+	// which this kind already had.
 	DefineGroup("worker",
 		resource(
-			wasmAttributesEntrypoint(RequiredWhen("runtime", wasmEngine),
-				[]string{"component", "builtin", "git", "image"},
-				// REQUIRED, WITH NO DEFAULT, and the default is what had to go rather
-				// than a preference that was given up. `RequiredWhen` reads the
-				// discriminator FROM THE DOCUMENT — requiredHere's own comment says an
-				// absent one means the condition cannot hold — so a defaulted `wasm`
-				// would have gated the entrypoint on a value the loader never sees, and
-				// every worker that wrote no `runtime:` line would have stopped being
-				// asked for one. Silently, which is the failure this fix is about.
-				//
-				// The two answers are also different products, the way a database's
-				// `engine` is: one is a component this platform builds and runs, the
-				// other an image somebody else built. A tier that decides which half of
-				// the fields exist is worth one line of saying which.
-				// THE SET IS THE KIND'S OWN Engines(), read from one slice. `runtime` is
-				// the CHOICE between the tiers this kind declares, and declaring the
-				// same two words twice is what an annotation and an InSet spelled apart
-				// would be. `image:` is gone from here: which tier runs it and where the
-				// artifact comes from are two questions, and the second one is
-				// `source:`, which this kind already had.
-				String("runtime", InSet(workerEngines...), Required(), InSection("code"), Doc("Runtime", "Which tier runs this worker: wasm or container.")),
-			),
+			runnableAttributes(workerEngines, []string{"component", "builtin", "git", "image"}),
 			Nested(variablesGroup(runLifetime, buildLifetime, bothLifetimes)),
 			GroupDoc("An on-demand workload that runs to completion. Not HTTP-listening."), Icon("gear"), Category("compute"), Footprint(), Completes(), Engines(workerEngines...),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
@@ -3166,6 +3162,7 @@ var V2Resources = []*Node{
 					Acts(),
 					Named(Concat(Attr("name"), Text("_infer"))),
 					Carries(Text("the loop: call the model, run a tool, decide again")),
+					Sets("runtime", Text(wasmEngine)),
 					Sets(Key("source", "builtin"), Text("agent")),
 					Sets(Key("execution", "call"), Text("infer")),
 					Sets(Key("execution", "timeout"), Attr(Key("limits", "timeout"))),
@@ -3301,9 +3298,8 @@ var V2Resources = []*Node{
 				// an inbound edge — and a queue delivery is one, which is why a wasm
 				// consumer needs no port and no path: it is dispatched, and the call IS
 				// the delivery (deliverAttributes says so about containers by saying it
-				// about their absence). `worker` is the kind whose runtime TIER is
-				// authored, wasm or container, and a program the runtime itself ships
-				// has no tier to choose.
+				// about their absence). A program the runtime itself ships is a
+				// component, so its tier is stated rather than left for an author.
 				//
 				// It carries the step's NAME and no suffix. The kind is part of a
 				// resource's identity everywhere here — the index, the layout, a
@@ -3313,6 +3309,7 @@ var V2Resources = []*Node{
 					PerEach("steps"),
 					Named(Concat(Attr("name"), Text("_"), Each("name"))),
 					Carries(Concat(Text("step "), Each("name"), Text(": receive, run, hand on"))),
+					Sets("runtime", Text(wasmEngine)),
 					Sets(Key("source", "builtin"), Text("step")),
 					Sets(Key("execution", "call"), Text("step")),
 					// FIXED, and not the run's timeout. This bounds one delivery — receive,

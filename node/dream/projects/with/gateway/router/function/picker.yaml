@@ -1,5 +1,6 @@
 id: Qmc18Dcz6pUAGJqrUZTYjRia5RReCWQByKq4L73VioUfSw
 description: where each request goes, decided rather than written down - this gateway declares no static route, so every path is a question put to this function
+runtime: wasm
 implements: gateway-router
 source: services/picker
 build:

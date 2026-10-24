@@ -1,5 +1,6 @@
 id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc
 description: holds the items in the order so nobody else can buy them - and it says how it is made, so no file in the repository has to
+runtime: wasm
 source: services/reserve
 build:
     commands:

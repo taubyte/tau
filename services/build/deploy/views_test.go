@@ -103,7 +103,7 @@ func TestADeployReachingAcrossRegionsIsRefused(t *testing.T) {
 	co := &checkout{dir: configDir(t, map[string]string{
 		"project.yaml": viewProject,
 		"cache/a.yaml": cacheDoc(cacheA, "regions:\n    pinned: [region-1]\n"),
-		"function/f.yaml": "id: " + fnID + "\nsource: services/f\nbuild:\n    commands:\n        image: rust:1.83\n        run: cargo build\n        output: x.wasm\n" +
+		"function/f.yaml": "id: " + fnID + "\nruntime: wasm\nsource: services/f\nbuild:\n    commands:\n        image: rust:1.83\n        run: cargo build\n        output: x.wasm\n" +
 			"execution:\n    call: handle\n    timeout: 15s\n    memory: 32MiB\nregions:\n    pinned: [region-2]\ncache:\n    a:\n        ops: [get]\n",
 	})}
 	var log out

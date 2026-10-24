@@ -1,5 +1,6 @@
 id: QmWQ7XwnqQzhLTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPYuB
 description: enriches inbound with the caller tier, and strips it from the response on the way out
+runtime: wasm
 implements: gateway-transformer
 execution:
     call: tier

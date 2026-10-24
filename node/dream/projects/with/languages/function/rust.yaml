@@ -1,5 +1,6 @@
 id: QmTsEMKa2S4zo7926XaJvkRC28WBT37D3cE3HvJaCanp2N
 description: answers in Rust, through cargo-component
+runtime: wasm
 source: services/rust
 build:
     commands:

@@ -28,7 +28,7 @@ func buildDoc(t *testing.T, path, body string) (map[string]any, error) {
 	return obj.Flat(), nil
 }
 
-const probeFn = "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLi\nexecution:\n    call: c\n    timeout: 1s\n    memory: 1MB\n"
+const probeFn = "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLi\nruntime: wasm\nexecution:\n    call: c\n    timeout: 1s\n    memory: 1MB\n"
 
 // THE ABSENT BLOCK IS THE ZERO-CONFIG CASE, and it has to cost nothing. Everything
 // about the build stanza rests on this: a repository that says nothing is built the way
@@ -247,32 +247,35 @@ func TestTheEngineSeamIsAValue(t *testing.T) {
 	// `runtime` first and falls back to a kind's single engine, so a kind declaring two
 	// tiers and no attribute choosing between them would answer "not a container" for
 	// both of them — the safe direction, and silent. checks.go says that is unreachable
-	// while `worker` is the only kind with two; this is what makes that true rather than
-	// observed.
-	for _, kind := range built {
-		if len(schema.EnginesOf(kind)) > 1 {
-			assert.Equal(t, kind, "worker",
-				"%s declares more than one engine, so something has to choose between them", kind)
-		}
-	}
-
-	// the one kind with a choice: the attribute's set IS the kind's set
+	// because every kind with a choice carries `runtime`; this is what makes that true
+	// rather than observed. And the attribute's set IS the kind's set — `enum` is what
+	// InSet leaves behind, and also what a JSON Schema and a completion read, so this
+	// asserts the same list an editor offers.
+	choosers := map[string][]string{}
 	for _, g := range schema.V2Resources {
-		if key, _ := g.Match.(string); key != "worker" {
+		kind, _ := g.Match.(string)
+		if len(g.Children) == 0 || len(schema.EnginesOf(kind)) < 2 {
 			continue
 		}
+		var in []string
 		for _, a := range g.Children[0].Attributes {
-			if a.Name != "runtime" {
-				continue
+			if a.Name == "runtime" {
+				in, _ = a.Meta["enum"].([]string)
 			}
-			// `enum` is what InSet leaves behind, and it is also what a JSON Schema
-			// and a completion read — so this asserts the same list an editor offers.
-			in, _ := a.Meta["enum"].([]string)
-			assert.DeepEqual(t, in, schema.EnginesOf("worker"))
-			return
 		}
-		t.Fatal("worker declares two engines and no way to choose between them")
+		assert.Assert(t, in != nil, "%s declares more than one engine and no way to choose between them", kind)
+		assert.DeepEqual(t, in, schema.EnginesOf(kind))
+		choosers[kind] = in
 	}
+	assert.DeepEqual(t, choosers, map[string][]string{
+		"function": {"wasm", "js"},
+		"worker":   {"wasm", "js", "container"},
+	})
+
+	// js is produced the ways a component is: a toolchain image runs, and what it left
+	// in its output directory is the artifact.
+	assert.DeepEqual(t, schema.BuildWaysOf("js"), schema.BuildWaysOf("wasm"))
+	assert.DeepEqual(t, schema.BuildWaysOf("js"), []string{"commands", "script"})
 }
 
 // THE THREE THINGS ABOUT A BUILD THAT ARE TRUE ACROSS TWO BLOCKS. `source:` and
@@ -307,6 +310,12 @@ func TestAuditBuild(t *testing.T) {
 		"/worker/w.yaml": "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdJ\nruntime: wasm\nexecution:\n    call: c\n    timeout: 1s\n    memory: 1MB\nbuild:\n    dockerfile:\n        path: Dockerfile\n",
 	})
 	has(t, found, schema.Broken, "runs on the wasm tier and is built with \"dockerfile\"")
+
+	// and a module is made the ways a component is, so a Dockerfile does not make one
+	found = auditDocs(t, nil, map[string]string{
+		"/worker/w.yaml": "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdJ\nruntime: js\nexecution:\n    timeout: 1s\n    memory: 1MB\nbuild:\n    dockerfile:\n        path: Dockerfile\n",
+	})
+	has(t, found, schema.Broken, "runs on the js tier and is built with \"dockerfile\"")
 
 	// and a wasm worker built the way a wasm artifact is made says nothing
 	found = auditDocs(t, nil, map[string]string{

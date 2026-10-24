@@ -1,5 +1,6 @@
 id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh
 description: takes an order and charges it
+runtime: wasm
 source:
     component: paylib
 execution:
