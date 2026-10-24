@@ -255,6 +255,32 @@ func TestAPeersAcksForgetTheOwnOperations(t *testing.T) {
 	}
 }
 
+// TestAMergeThatGrowsALaterSpanIsAcknowledged: a peer that missed one of an
+// author's deltas covers the ones after it as a span of their own, and every
+// later write it merges grows that span. Each merge is acknowledged: a peer
+// that acknowledged only changes to an entry's first span would never
+// acknowledge the author again while the gap stays, and the author would
+// keep, and write again after a rebase, everything it wrote since.
+func TestAMergeThatGrowsALaterSpanIsAcknowledged(t *testing.T) {
+	st := newSimTime()
+	a, b := st.replica(t, "a", 0), st.replica(t, "b", 0)
+	st.exchange(t, a, b)
+	put(t, a.r, "/k1", "v")
+	st.exchange(t, a, b)
+	st.exchange(t, a, b)
+	put(t, a.r, "/k2", "v")
+	third := put(t, a.r, "/k3", "v")
+	fourth := put(t, a.r, "/k4", "v")
+	b.mergeBlock(a, third)
+	st.advance((gapIntervals + 1) * simRI)
+	b.mergeBlock(a, fourth)
+	b.beat()
+	st.deliver(t, b, a)
+	if n := countEntries(t, a.r, a.r.ownPrefix()); n != 1 {
+		t.Fatalf("a keeps %d own operations, want only the one its peer missed", n)
+	}
+}
+
 // TestARebaseInterruptedByACrashFinishesAtOpen: the own operations a rebase
 // keeps survive a crash before they are written again, and the next open
 // writes them.

@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	dshelp "github.com/ipfs/boxo/datastore/dshelp"
@@ -392,7 +393,7 @@ func (m *merging) commit(ctx context.Context) error {
 	}
 	up := m.store.times.up()
 	for r, k := range m.cc.inc {
-		if o := m.store.cc.inc[r]; o == nil || len(o.spans) != len(k.spans) || o.spans[0] != k.spans[0] {
+		if o := m.store.cc.inc[r]; o == nil || !slices.Equal(o.spans, k.spans) {
 			m.store.merged[r] = up
 		}
 	}
