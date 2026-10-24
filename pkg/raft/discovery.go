@@ -23,6 +23,7 @@ type peerTracker struct {
 	selfID         peer.ID
 	lastPeerCount  int       // last known peer count for stability detection
 	lastChangeTime time.Time // when peer count last changed
+	probed         map[peer.ID]struct{}
 
 	discoveryInterval atomic.Int64
 }
@@ -33,6 +34,7 @@ func newPeerTracker(selfID peer.ID) *peerTracker {
 		selfID:         selfID,
 		startTime:      now,
 		peers:          make(map[peer.ID]time.Duration),
+		probed:         make(map[peer.ID]struct{}),
 		lastPeerCount:  1, // self
 		lastChangeTime: now,
 	}
@@ -169,6 +171,35 @@ func (pt *peerTracker) allPeers() []peer.ID {
 	return peers
 }
 
+// firstProbe reports whether this tracker has not probed pid yet, and counts
+// it probed from now on.
+func (pt *peerTracker) firstProbe(pid peer.ID) bool {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	if _, done := pt.probed[pid]; done {
+		return false
+	}
+	pt.probed[pid] = struct{}{}
+	return true
+}
+
+// probe asks a connected peer whether it serves the group by opening a stream
+// on the group's protocol. The peerstore learns what a peer serves from the
+// identify run on connecting, so a peer that began to serve after the two
+// connected is listed only once identify's push arrives: one best-effort
+// attempt. A stream that negotiates the protocol is recorded in the peerstore
+// (basichost's NewStream), which lists the peer from then on.
+func (pt *peerTracker) probe(ctx context.Context, h host.Host, pid peer.ID, raftProtocol protocol.ID) {
+	ctx, cancel := context.WithTimeout(ctx, sendToPeerTimeout)
+	defer cancel()
+	s, err := h.NewStream(ctx, pid, raftProtocol)
+	if err != nil {
+		return
+	}
+	s.Reset()
+	pt.addPeer(pid)
+}
+
 // supportsRaftProtocol checks if a peer explicitly supports the given raft protocol
 func supportsRaftProtocol(h host.Host, pid peer.ID, raftProtocol protocol.ID) bool {
 	protocols, err := h.Peerstore().GetProtocols(pid)
@@ -201,8 +232,13 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) 
 		case <-time.After(pt.getDiscoveryInterval()):
 			connectedPeers := host.Network().Peers()
 			for _, pid := range connectedPeers {
-				if pid != c.node.ID() && supportsRaftProtocol(host, pid, raftProtocol) {
+				if pid == c.node.ID() {
+					continue
+				}
+				if supportsRaftProtocol(host, pid, raftProtocol) {
 					pt.addPeer(pid)
+				} else if pt.firstProbe(pid) {
+					go pt.probe(ctx, host, pid, raftProtocol)
 				}
 			}
 

@@ -71,11 +71,9 @@ func identifiesAll(ctx context.Context, node taupeer.Node) error {
 
 // link connects node to each of members once an identify of every one of them
 // lists everything it serves, so the identify each side runs on a connection
-// tells it what the other serves. That list is the only way a member's
-// bootstrap finds the others. A side that begins to serve a group after the
-// two connected is known to serve it only once identify's push arrives: one
-// best-effort attempt, lost under load, and a member that has not heard it
-// within its bootstrap timeout founds a group of its own.
+// tells it what the other serves. A side that begins to serve a group after
+// the two connected is listed once identify's push arrives, or once the
+// other's tracker probes it.
 func link(ctx context.Context, node taupeer.Node, members ...taupeer.Node) error {
 	for _, n := range append([]taupeer.Node{node}, members...) {
 		if err := identifiesAll(ctx, n); err != nil {
@@ -186,11 +184,11 @@ func pushlessNode(t *testing.T) taupeer.Node {
 }
 
 // TestCluster_AGroupFormsWithNoIdentifyPush_Integration: a member's bootstrap
-// finds the others only through the protocols its peerstore lists for its
-// connected peers. With no push, a node connected before a peer served the
-// group never learns that it does, and founds a group of its own. Connected
-// once the peer serves it, whether joining a leader or starting alongside the
-// others, it joins.
+// finds the others through the protocols its peerstore lists for its
+// connected peers. With no push, the peerstore of a node connected before a
+// peer served the group does not list it, and the tracker's probe finds it.
+// Connected before or after the peer serves it, whether joining a leader or
+// starting alongside the others, a node joins.
 func TestCluster_AGroupFormsWithNoIdentifyPush_Integration(t *testing.T) {
 	const namespace = "pushless"
 	leading := func(t *testing.T, node taupeer.Node) Cluster {
@@ -209,21 +207,14 @@ func TestCluster_AGroupFormsWithNoIdentifyPush_Integration(t *testing.T) {
 		return cl
 	}
 
-	t.Run("connected before the group exists, a node founds its own", func(t *testing.T) {
+	t.Run("connected before the group exists, a node joins it", func(t *testing.T) {
 		leaderNode, joinerNode := pushlessNode(t), pushlessNode(t)
 		assert.NilError(t, joinerNode.Peer().Connect(t.Context(), addrOf(leaderNode)))
 
 		leader := leading(t, leaderNode)
 		joiner := joining(t, joinerNode)
-
-		assert.Assert(t, !supportsRaftProtocol(joinerNode.Peer(), leaderNode.ID(), protocol.ID(TransportProtocol(namespace))),
-			"the joiner learned with no push that the leader serves the group")
-		for _, cl := range []Cluster{leader, joiner} {
-			members, err := cl.Members()
-			assert.NilError(t, err)
-			assert.Equal(t, len(members), 1, "%s is not in a group of its own", idOf(cl))
-			assert.Equal(t, members[0].ID, idOf(cl))
-		}
+		assert.NilError(t, waitForMember(t, leader, joinerNode.ID(), raft.Voter, 20*time.Second), "the joiner never joined")
+		leaderOf(t, leader, joiner)
 	})
 
 	t.Run("connected once the group is served, a node joins it", func(t *testing.T) {

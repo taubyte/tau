@@ -10,6 +10,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/discovery"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/p2p/protocol/identify"
 	"github.com/stretchr/testify/require"
 	taupeer "github.com/taubyte/tau/p2p/peer"
 	"gotest.tools/v3/assert"
@@ -306,4 +307,95 @@ func TestDiscovery_AGroupOnlyDiscoveryFindsIsJoined(t *testing.T) {
 		return err == nil && len(members) == 2
 	}, 10*time.Second, 20*time.Millisecond, "a never joined the group discovery found")
 	require.NotContains(t, a.(*cluster).tracker.allPeers(), unreachable)
+}
+
+// pushless is a mock node that refuses identify's push, so all it knows a
+// peer serves is what the identify run on connecting told it.
+func pushless(t *testing.T) taupeer.Node {
+	node := newMockNode(t)
+	node.Peer().RemoveStreamHandler(identify.IDPush)
+	return node
+}
+
+// connectAllOf connects every pair of nodes.
+func connectAllOf(t *testing.T, nodes ...taupeer.Node) {
+	t.Helper()
+	require.NoError(t, taupeer.LinkAllPeers())
+	for i, a := range nodes {
+		for _, b := range nodes[i+1:] {
+			require.NoError(t, a.Peer().Connect(t.Context(), peer.AddrInfo{ID: b.ID(), Addrs: b.Peer().Addrs()}))
+		}
+	}
+}
+
+// TestDiscovery_APeerConnectedBeforeItServedTheGroupIsFound: a fleet connects
+// its nodes first and starts groups after, and the peerstore, the only place
+// the tracker and the bootstrap looked, learns that a connected peer serves a
+// group only from identify's push. With the push lost, a node never found the
+// group its peer started after they connected, and founded one of its own;
+// nodes that started a group together after connecting each founded one. A
+// connected peer the peerstore does not list is now probed, once per start,
+// and the bootstrap asks over the protocol the probe settles, the one a join
+// is asked over, so the joiner joins without waiting out its timeout.
+func TestDiscovery_APeerConnectedBeforeItServedTheGroupIsFound(t *testing.T) {
+	t.Run("a node joins a group its peer started after they connected", func(t *testing.T) {
+		const namespace = "connected-first-join"
+		leaderNode, joinerNode := pushless(t), pushless(t)
+		connectAllOf(t, leaderNode, joinerNode)
+
+		leader, err := New(leaderNode, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+		require.NoError(t, err)
+		t.Cleanup(func() { leader.Close() })
+		waitLeader(t, leader, 5*time.Second)
+		const timeout = 10 * time.Second
+		began := time.Now()
+		joiner, err := New(joinerNode, namespace,
+			WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(timeout), WithSnapshotRoot(t.TempDir()))
+		require.NoError(t, err)
+		t.Cleanup(func() { joiner.Close() })
+		require.Less(t, time.Since(began), timeout/2, "the joiner waited out its bootstrap timeout instead of joining")
+
+		require.Eventually(t, func() bool {
+			members, err := leader.Members()
+			return err == nil && len(members) == 2
+		}, 10*time.Second, 20*time.Millisecond, "the joiner never joined the group its peer started")
+		leaderOf(t, leader, joiner)
+	})
+
+	t.Run("nodes that start a group after connecting form one", func(t *testing.T) {
+		const namespace = "connected-first-found"
+		nodes := []taupeer.Node{pushless(t), pushless(t), pushless(t)}
+		connectAllOf(t, nodes...)
+
+		opened := make(chan Cluster, len(nodes))
+		failed := make(chan error, len(nodes))
+		for _, node := range nodes {
+			root := t.TempDir()
+			go func() {
+				cl, err := New(node, namespace,
+					WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(root))
+				if err != nil {
+					failed <- err
+					return
+				}
+				opened <- cl
+			}()
+		}
+		var clusters []Cluster
+		for range nodes {
+			select {
+			case cl := <-opened:
+				t.Cleanup(func() { cl.Close() })
+				clusters = append(clusters, cl)
+			case err := <-failed:
+				t.Error(err)
+			}
+		}
+		require.Len(t, clusters, len(nodes))
+		leader := leaderOf(t, clusters...)
+		require.Eventually(t, func() bool {
+			members, err := leader.Members()
+			return err == nil && len(members) == len(nodes)
+		}, 10*time.Second, 20*time.Millisecond, "the nodes did not form one group")
+	})
 }

@@ -551,8 +551,10 @@ func (c *cluster) voterJoinTargets() []peer.ID {
 	return c.protocolPeers(protocol.ID(Protocol(c.namespace)), true)
 }
 
+// raftProtocolPeers are the connected peers listed as serving the group's
+// protocol, the one a join is asked over.
 func (c *cluster) raftProtocolPeers() []peer.ID {
-	return c.protocolPeers(protocol.ID(TransportProtocol(c.namespace)), false)
+	return c.protocolPeers(protocol.ID(Protocol(c.namespace)), false)
 }
 
 // Close gracefully shuts down the Raft node
