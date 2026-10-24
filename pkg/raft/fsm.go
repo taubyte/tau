@@ -151,23 +151,7 @@ func (f *kvFSM) applyCommand(ctx context.Context, cmd *Command) FSMResponse {
 		if cmd.Merge == nil || len(cmd.Merge.Delta) == 0 {
 			return FSMResponse{Error: ErrInvalidCommand}
 		}
-		for key, incoming := range cmd.Merge.Delta {
-			existing, err := f.getEntry(ctx, key)
-			if err == nil && !crdtEntryWins(incoming, existing) {
-				continue
-			}
-			raw, err := cbor.Marshal(incoming)
-			if err != nil {
-				return FSMResponse{Error: err}
-			}
-			if err := f.store.Put(ctx, f.dataKey(key), raw); err != nil {
-				return FSMResponse{Error: err}
-			}
-			if incoming.Timestamp > f.clock {
-				f.clock = incoming.Timestamp
-			}
-		}
-		return FSMResponse{}
+		return f.applyMerge(ctx, cmd.Merge.Delta)
 
 	default:
 		return FSMResponse{Error: ErrInvalidCommand}
@@ -266,6 +250,40 @@ func (f *kvFSM) applyBatch(ctx context.Context, cmds []Command) FSMResponse {
 		if err := batch.Put(ctx, w.key, w.raw); err != nil {
 			return FSMResponse{Error: err}
 		}
+	}
+	if err := batch.Commit(ctx); err != nil {
+		return FSMResponse{Error: err}
+	}
+
+	f.clock = clock
+
+	return FSMResponse{}
+}
+
+// applyMerge lands the entries of a merge that win against what the store
+// holds in one store batch, for the reason applyBatch gives: raft never offers
+// an applied entry again, so a merge that landed part of itself would stay
+// part, whichever part map order reached first. The clock moves only once the
+// batch has landed.
+func (f *kvFSM) applyMerge(ctx context.Context, delta map[string]CRDTEntry) FSMResponse {
+	clock := f.clock
+	batch, err := f.store.Batch(ctx)
+	if err != nil {
+		return FSMResponse{Error: err}
+	}
+	for key, incoming := range delta {
+		existing, err := f.getEntry(ctx, key)
+		if err == nil && !crdtEntryWins(incoming, existing) {
+			continue
+		}
+		raw, err := cbor.Marshal(incoming)
+		if err != nil {
+			return FSMResponse{Error: err}
+		}
+		if err := batch.Put(ctx, f.dataKey(key), raw); err != nil {
+			return FSMResponse{Error: err}
+		}
+		clock = max(clock, incoming.Timestamp)
 	}
 	if err := batch.Commit(ctx); err != nil {
 		return FSMResponse{Error: err}
