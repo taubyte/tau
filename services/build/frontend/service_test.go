@@ -67,6 +67,8 @@ func TestNewRefusesAnUnusableConfig(t *testing.T) {
 		{"negative idle timeout", Config{IdleTimeout: -time.Second}, "idleTimeout"},
 		{"negative shutdown timeout", Config{ShutdownTimeout: -time.Second}, "shutdownTimeout"},
 		{"negative backend timeout", Config{BackendTimeout: -time.Second}, "backendTimeout"},
+		{"negative follow backoff", Config{FollowBackoff: -time.Second}, "followBackoff"},
+		{"negative follow backoff ceiling", Config{FollowBackoffMax: -time.Second}, "followBackoffMax"},
 		{"negative cache ttl", Config{SecretCacheTTL: -time.Second}, "secretCacheTTL"},
 		{"negative cache size", Config{SecretCacheMax: -1}, "secretCacheMax"},
 		{"negative burst", Config{HookRate: Rate{Burst: -1, Per: time.Second}}, "hookRate"},

@@ -2,6 +2,7 @@ package clients
 
 import (
 	"errors"
+	"sync/atomic"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -324,6 +325,36 @@ func TestFollowWalksToTheWriterAndResumes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "cloning\ncompiling\n", string(got), "the second peer resumed at 8 rather than repeating")
 	require.Equal(t, int64(len("cloning\ncompiling\n")), end)
+}
+
+// A JOB THAT HAS ENDED STOPS THE WALK AT THE LEADER: its FailedPrecondition is
+// an answer rather than a routing problem, so no peer after it is asked. A
+// walk that finds no writer at all is Unavailable — a log still to come, which
+// the caller asks for again.
+func TestFollowOfAnEndedJobStopsAtTheLeader(t *testing.T) {
+	var asked atomic.Int32
+	after := &fakeBackend{follow: func(id string, offset int64, send func(*buildv2.LogChunk) error) error {
+		asked.Add(1)
+		return chunks("output\n", 64)(id, offset, send)
+	}}
+	ended := func(string, int64, func(*buildv2.LogChunk) error) error {
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("job finished as JobStatusSuccess"))
+	}
+	c := newBuilds(t, &fakeBackend{follow: ended, snapshot: ended}, after)
+
+	_, err := c.Follow(t.Context(), "job", 0, func([]byte, int64) error { return nil })
+	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
+	_, err = c.Snapshot(t.Context(), "job", 0, func([]byte, int64) error { return nil })
+	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
+	require.Zero(t, asked.Load(), "nothing past the leader was asked")
+
+	notHere := func(string, int64, func(*buildv2.LogChunk) error) error {
+		return connect.NewError(connect.CodeUnavailable, errors.New("not writing this log"))
+	}
+	c = newBuilds(t, &fakeBackend{follow: notHere}, &fakeBackend{follow: notHere})
+	_, err = c.Follow(t.Context(), "job", 0, func([]byte, int64) error { return nil })
+	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
+	require.ErrorIs(t, err, ErrNoBackend)
 }
 
 // An emit that fails is the CALLER's failure — a hung-up HTTP client — and is

@@ -393,8 +393,11 @@ func (r jobRecord) status() buildv2.JobStatus { return buildv2.JobStatus(r.Statu
 
 // terminal reports whether this job is finished for good. A terminal job is
 // never claimed, never re-queued by reconcile, and its open-index row is gone.
-func (r jobRecord) terminal() bool {
-	switch r.status() {
+func (r jobRecord) terminal() bool { return finished(r.status()) }
+
+// finished is terminal for a status, which is how a Job carries it.
+func finished(status buildv2.JobStatus) bool {
+	switch status {
 	case buildv2.JobStatus_JobStatusSuccess, buildv2.JobStatus_JobStatusFailed, buildv2.JobStatus_JobStatusCancelled:
 		return true
 	default:

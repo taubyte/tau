@@ -10,8 +10,8 @@ import (
 
 // LogStream reads a job's log, chunk by chunk, resuming at the byte offset it
 // had reached when the connection drops. EOF from the frontend is the end of
-// the log: the frontend holds the stream open while the job runs and closes it
-// when there is nothing more to come.
+// the log: the frontend holds the stream open while the job is queued and
+// while it runs, and closes it when there is nothing more to come.
 type LogStream struct {
 	c      *Client
 	ctx    context.Context

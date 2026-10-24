@@ -171,6 +171,12 @@ func (c *BuildClient) Retry(ctx context.Context, jobID string) error {
 // the node writing the log can answer, every other one says Unavailable, and
 // walking past them is exactly how the writer is found.
 //
+// SO A WALK THAT FINDS NO WRITER ENDS Unavailable, and that is a log still to
+// come — the job is queued, or claimed and not writing yet — which the caller
+// may ask for again. A job that has ended stops the walk at the leader with
+// FailedPrecondition instead, since no node will write its log again: what it
+// logged is the one its record names.
+//
 // An emit that fails is the CALLER's failure — a hung-up HTTP client, most
 // likely — and is never a routing problem, so it stops the walk with its own
 // error.

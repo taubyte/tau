@@ -3,9 +3,15 @@ package frontend
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"maps"
 	"net/http"
+	"slices"
 	"strconv"
+	"time"
 
+	"connectrpc.com/connect"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/taubyte/tau/pkg/register"
@@ -95,6 +101,14 @@ func (s *Service) handleGetJob(w http.ResponseWriter, r *http.Request, token, jo
 // stream it already opened and is refused the next one. That is the same
 // bargain every streaming API makes, and it is written down rather than
 // discovered.
+//
+// WHATEVER STATE THE JOB IS IN, THE RESPONSE IS ITS LOG. A follow of a job
+// whose log no node is writing yet — queued, or claimed and not writing — waits
+// for one to start (followLog); a snapshot of it is empty, since it has logged
+// nothing so far.
+// A job that has ended answers FailedPrecondition, and what the read did not
+// reach comes from the log its record names: all of it for a build that ran
+// between two of a follow's asks, or that ended before the request came.
 func (s *Service) handleFollowJob(w http.ResponseWriter, r *http.Request, token, jobID string) {
 	authorize, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
 	if _, err := s.mayTouchJob(authorize, token, jobID, register.RoleViewer); err != nil {
@@ -114,7 +128,7 @@ func (s *Service) handleFollowJob(w http.ResponseWriter, r *http.Request, token,
 		respond(w, err)
 		return
 	}
-	read := s.backend.Follow
+	read := s.followLog
 	if snapshot {
 		read = s.backend.Snapshot
 	}
@@ -129,30 +143,99 @@ func (s *Service) handleFollowJob(w http.ResponseWriter, r *http.Request, token,
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 
-	flusher, _ := w.(http.Flusher)
-	if flusher != nil {
-		flusher.Flush()
-	}
+	out := flushing{w: w}
+	out.flush()
 
 	// THE OFFSET IS ECHOED IN A TRAILER-SHAPED HEADER NOWHERE, deliberately:
 	// the response is the log and nothing else, so a client resuming counts the
 	// bytes it wrote and adds them to the offset it asked for. That is the same
 	// arithmetic the backend does and it needs no framing on this hop.
-	_, err = read(r.Context(), jobID, from, func(data []byte, _ int64) error {
-		if _, err := w.Write(data); err != nil {
-			return err
-		}
-		if flusher != nil {
-			flusher.Flush()
-		}
-		return nil
+	reached, err := read(r.Context(), jobID, from, func(data []byte, _ int64) error {
+		_, err := out.Write(data)
+		return err
 	})
+	switch {
+	case connect.CodeOf(err) == connect.CodeFailedPrecondition:
+		err = s.storedLog(r.Context(), jobID, reached, out)
+	case snapshot && reached == from && connect.CodeOf(err) == connect.CodeUnavailable:
+		// No node is writing it yet, so it has logged nothing so far.
+		err = nil
+	}
 	if err != nil {
 		// THE STATUS IS ALREADY SENT. There is nothing to respond with, so the
 		// failure is logged and the connection ends — which is what a client
 		// tailing a log sees as "it stopped", and what its offset lets it
 		// recover from.
 		s.log("following job %s: %v", jobID, err)
+	}
+}
+
+// followLog is Backend.Follow that waits while no node is writing the log,
+// asking again from FollowBackoff, doubled per ask up to FollowBackoffMax,
+// until a node does or the caller hangs up.
+//
+// IT ASKS AGAIN ONLY BEFORE THE FIRST BYTE. Unavailable after one is a stream
+// that broke, and an offset resumes only within the attempt that wrote it: the
+// job's next writer is a new attempt, starting again from nothing. So a broken
+// follow still ends where it broke.
+func (s *Service) followLog(ctx context.Context, jobID string, from int64, emit func([]byte, int64) error) (int64, error) {
+	wait := s.cfg.FollowBackoff
+	for {
+		reached, err := s.backend.Follow(ctx, jobID, from, emit)
+		if reached != from || connect.CodeOf(err) != connect.CodeUnavailable {
+			return reached, err
+		}
+		select {
+		case <-ctx.Done():
+			return reached, nil
+		case <-time.After(wait):
+		}
+		wait = min(2*wait, s.cfg.FollowBackoffMax)
+	}
+}
+
+// storedLog writes the log an ended job's record names, from `from`: the last
+// one, since the record's keys sort in attempt order. The record is read again
+// because the authorization's read was taken before the job ended.
+func (s *Service) storedLog(ctx context.Context, jobID string, from int64, w io.Writer) error {
+	if s.assets == nil {
+		return errors.New("this node reads no asset store")
+	}
+	read, cancel := context.WithTimeout(ctx, s.cfg.BackendTimeout)
+	job, err := s.backend.Get(read, jobID)
+	cancel()
+	if err != nil {
+		return err
+	}
+	keys := slices.Sorted(maps.Keys(job.GetLogs()))
+	if len(keys) == 0 {
+		return nil
+	}
+	content, err := s.assets.Get(ctx, job.GetLogs()[keys[len(keys)-1]])
+	if err != nil {
+		return err
+	}
+	defer content.Close()
+	if _, err := content.Seek(from, io.SeekStart); err != nil {
+		return err
+	}
+	_, err = io.Copy(w, content)
+	return err
+}
+
+// flushing is a response that sends each write as it is made: a log held back
+// in a buffer would defeat the route.
+type flushing struct{ w http.ResponseWriter }
+
+func (f flushing) Write(p []byte) (int, error) {
+	n, err := f.w.Write(p)
+	f.flush()
+	return n, err
+}
+
+func (f flushing) flush() {
+	if flusher, ok := f.w.(http.Flusher); ok {
+		flusher.Flush()
 	}
 }
 

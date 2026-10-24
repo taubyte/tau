@@ -351,17 +351,11 @@ func (s *Service) follow(ctx context.Context, req *buildv2.FollowRequest, send f
 	}
 	reader, err := open(jobID, offset)
 	if err != nil {
-		// A NODE THAT IS NOT WRITING THIS LOG IS Unavailable ON THE WIRE, not
-		// NotFound. The in-process answer is honest — the log is not here — but
-		// a caller's pool walks to the next backend on Unavailable and stops on
-		// NotFound, so answering NotFound would make "ask the cloud" mean "ask
-		// whichever node the resolver happened to name first".
-		//
-		// It is narrowed to exactly that case: an offset past the end, a job id
-		// that is not one, and a job this caller may not read all keep their
-		// own codes, so a bad request does not walk the whole fleet.
+		// ONLY THE LOG NOT BEING HERE goes to notWritten: an offset past the
+		// end, a job id that is not one, and a job this caller may not read all
+		// keep their own codes, so a bad request does not walk the whole fleet.
 		if connect.CodeOf(err) == connect.CodeNotFound {
-			return errUnavailable("%v", err)
+			return s.notWritten(jobID, err)
 		}
 		return err
 	}
@@ -396,4 +390,30 @@ func (s *Service) follow(ctx context.Context, req *buildv2.FollowRequest, send f
 			return errUnavailable("build: following job %s: %v", jobID, err)
 		}
 	}
+}
+
+// notWritten is the answer of a node that is not writing jobID's log.
+//
+// WHILE THE JOB HAS NOT ENDED IT IS Unavailable, not NotFound. The log is on
+// the node running the build, or on none yet — the job is queued, or claimed
+// and not yet writing — and a caller's pool walks to the next backend on
+// Unavailable and stops on NotFound, so NotFound would make "ask the cloud"
+// mean "ask whichever node the resolver happened to name first". A follower
+// that found no writer asks again on the same code, because the log is coming.
+//
+// ONCE THE JOB HAS ENDED IT IS FailedPrecondition, from the leader, which is
+// the one node that can read the record: no node will write this log again, and
+// what survives the run is the cid on the record. Unavailable would have a
+// follower ask for it until it gave up.
+func (s *Service) notWritten(jobID string, missing error) error {
+	job, err := s.job(jobID)
+	switch {
+	case connect.CodeOf(err) == connect.CodeUnavailable:
+		return errUnavailable("%v", missing)
+	case err != nil:
+		return err
+	case finished(job.GetStatus()):
+		return errFailedPrecondition("build: job %s finished as %s: its log is the one its record names", jobID, job.GetStatus())
+	}
+	return errUnavailable("%v", missing)
 }

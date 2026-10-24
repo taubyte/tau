@@ -337,6 +337,41 @@ func TestLogsOfAJobStillRunning(t *testing.T) {
 	require.Equal(t, "stored: step one\nstep two\n", x.ok("logs", "job-run", "--follow"))
 }
 
+// A QUEUED JOB HAS LOGGED NOTHING YET. tau logs prints nothing, exits 0 and
+// says on stderr that the job is queued; tau logs --follow says so too, waits
+// for the job to start, and follows it to the end.
+func TestLogsOfAQueuedJob(t *testing.T) {
+	x := newTester(t)
+	x.login()
+	job := x.f.queuedJob(t, "job-queued")
+
+	r := x.run("logs", "job-queued")
+	require.Equal(t, 0, r.code, r.stderr)
+	require.Empty(t, r.stdout)
+	require.Equal(t, "job job-queued is queued: it has logged nothing yet\n", r.stderr)
+
+	quiet := x.run("logs", "job-queued", "-o", "json")
+	require.Equal(t, 0, quiet.code, quiet.stderr)
+	require.Empty(t, quiet.stderr, "a note is not part of a machine's output")
+
+	var followed, notes syncBuffer
+	exited := x.startWith(&followed, &notes, "logs", "job-queued", "--follow")
+	require.Eventually(t, func() bool { return notes.String() == "job job-queued is queued: its log follows once it starts\n" },
+		10*time.Second, 5*time.Millisecond)
+
+	job.start("step one\n")
+	require.Eventually(t, func() bool { return followed.String() == "step one\n" }, 10*time.Second, 5*time.Millisecond)
+	job.say("step two\n")
+	job.end()
+	select {
+	case code := <-exited:
+		require.Equal(t, 0, code)
+	case <-time.After(10 * time.Second):
+		t.Fatal("tau logs --follow outlived the job")
+	}
+	require.Equal(t, "step one\nstep two\n", followed.String())
+}
+
 func TestCancelAndRetry(t *testing.T) {
 	x := newTester(t)
 	x.login()

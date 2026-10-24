@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"slices"
 	"strings"
@@ -221,7 +222,8 @@ func showLog(cmd *cobra.Command, env Env, cl *api.Client, id string, from int64,
 	// A FINISHED JOB'S LOG IS THE ONE IT STORED. Following asks the node
 	// writing the log, and once the build ends no node is: the stream would be
 	// empty, and an empty log reads as a build that printed nothing.
-	if j, err := cl.Job(cmd.Context(), id); err == nil && terminal(j) {
+	j, err := cl.Job(cmd.Context(), id)
+	if err == nil && terminal(j) {
 		var all bytes.Buffer
 		if err := storedLogOf(cmd, cl, j, &all); err != nil {
 			return err
@@ -232,12 +234,28 @@ func showLog(cmd *cobra.Command, env Env, cl *api.Client, id string, from int64,
 		_, err := env.Stdout.Write(all.Bytes()[from:])
 		return err
 	}
+	// A QUEUED JOB HAS LOGGED NOTHING, and stderr says so, so that an empty log
+	// does not read as a build that printed nothing. Following it waits: the
+	// frontend holds the stream open until the job starts.
+	queued := err == nil && j.GetStatus() == api.JobQueued
+	notes := env.Stderr
+	if jsonOut(cmd) {
+		notes = io.Discard
+	}
 	stream := cl.Stream(cmd.Context(), id, from)
 	if !follow {
 		stream.Retries = 0
 		stream.Snapshot = true
+		reached, err := stream.CopyTo(env.Stdout)
+		if err == nil && queued && reached == from {
+			fmt.Fprintf(notes, "job %s is queued: it has logged nothing yet\n", id)
+		}
+		return err
 	}
-	if follow && env.Interactive && !jsonOut(cmd) && env.Program != nil {
+	if queued {
+		fmt.Fprintf(notes, "job %s is queued: its log follows once it starts\n", id)
+	}
+	if env.Interactive && !jsonOut(cmd) && env.Program != nil {
 		m := ui.NewFollow("job "+id, stream, theme(env))
 		if _, err := env.Program(m, true); err != nil {
 			return err
@@ -248,7 +266,7 @@ func showLog(cmd *cobra.Command, env Env, cl *api.Client, id string, from int64,
 		}
 		return nil
 	}
-	_, err := stream.CopyTo(env.Stdout)
+	_, err = stream.CopyTo(env.Stdout)
 	return err
 }
 

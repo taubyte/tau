@@ -434,6 +434,24 @@ func (f *frontend) building(t *testing.T, id, first string) *liveLog {
 	return l
 }
 
+// queuedJob puts a job on the fake that no node has started: a follow of it is
+// held open until it does, and a snapshot of it is empty.
+func (f *frontend) queuedJob(t *testing.T, id string) *liveLog {
+	l := f.building(t, id, "")
+	f.mu.Lock()
+	f.jobs[id].Status = buildv2.JobStatus_JobStatusOpen
+	f.mu.Unlock()
+	return l
+}
+
+// start is a queued job being claimed and printing its first line.
+func (l *liveLog) start(first string) {
+	l.f.mu.Lock()
+	l.f.jobs[l.id].Status = buildv2.JobStatus_JobStatusClaimed
+	l.f.mu.Unlock()
+	l.say(first)
+}
+
 func (l *liveLog) say(line string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -464,6 +482,8 @@ func (l *liveLog) end() {
 func (l *liveLog) serve(w http.ResponseWriter, r *http.Request) {
 	from, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	snapshot := r.URL.Query().Get("snapshot") == "true"
+	// The response opens before the first chunk, as the frontend's does.
+	w.(http.Flusher).Flush()
 	for {
 		l.mu.Lock()
 		text, grew, ended := l.text, l.grew, l.ended
@@ -609,8 +629,13 @@ func (x *tester) run(args ...string) run {
 // start runs the CLI in the background with stdout going to out, and hands
 // back its exit code once it has one.
 func (x *tester) start(out io.Writer, args ...string) <-chan int {
+	return x.startWith(out, io.Discard, args...)
+}
+
+// startWith is start with stderr going to errs.
+func (x *tester) startWith(out, errs io.Writer, args ...string) <-chan int {
 	exited := make(chan int, 1)
-	env := x.env(out, io.Discard)
+	env := x.env(out, errs)
 	go func() { exited <- Run(env, args) }()
 	return exited
 }

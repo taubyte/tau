@@ -5,6 +5,7 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/node"
+	"github.com/taubyte/tau/pkg/forge"
 	"github.com/taubyte/tau/pkg/forge/fake"
 	"github.com/taubyte/tau/pkg/git/repokey"
 	"github.com/taubyte/tau/services/build/artifact"
@@ -73,6 +75,11 @@ func (w *watched) String() string {
 //
 // While it holds, `tau logs` prints what it has logged so far and exits, and
 // `tau logs --follow` stays until the build ends, printing the rest as it comes.
+//
+// AND A SECOND COMMIT'S JOB WAITS BEHIND IT, since the fleet has one build
+// backend: queued, `tau logs` prints nothing, says why on stderr and exits,
+// while `tau logs --follow` waits for the job to start and follows it to the
+// end — the whole of its log, however soon after the release it ran.
 func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 	engine := &heldEngine{release: make(chan struct{})}
 	t.Setenv(config.EnvConfig, filepath.Join(t.TempDir(), "config.yaml"))
@@ -161,6 +168,36 @@ func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 	default:
 	}
 
+	queued := queueBehind(t, f, work, configRepo)
+	require.Contains(t, ok(t, "job", "-o", "json", "--", queued), `"status": "open"`)
+	waiting := tau("logs", "--", queued)
+	require.Equal(t, 0, waiting.code, waiting.stderr)
+	require.Empty(t, waiting.stdout)
+	require.Contains(t, waiting.stderr, "job "+queued+" is queued")
+
+	waited := &watched{want: "error: the linker gave up", seen: make(chan struct{})}
+	note := &watched{want: "job " + queued + " is queued", seen: make(chan struct{})}
+	waitingFollow := make(chan int, 1)
+	go func() {
+		waitingFollow <- cli.Run(cli.Env{Stdin: strings.NewReader(""), Stdout: waited, Stderr: note, HTTP: http.DefaultClient, Forges: forges},
+			[]string{"logs", "--follow", "--", queued})
+	}()
+	select {
+	case <-note.seen:
+	case code := <-waitingFollow:
+		close(engine.release)
+		t.Fatalf("tau logs --follow of a queued job ended (%d) without saying it was queued: %s", code, note.String())
+	case <-time.After(time.Minute):
+		close(engine.release)
+		t.Fatalf("tau logs --follow of a queued job never said it was queued: %s", note.String())
+	}
+	require.Contains(t, ok(t, "job", "-o", "json", "--", queued), `"status": "open"`, "still behind the held build")
+	select {
+	case code := <-waitingFollow:
+		t.Fatalf("tau logs --follow of a queued job ended (%d) before it started: %s", code, waited.String())
+	default:
+	}
+
 	close(engine.release)
 	select {
 	case code := <-exited:
@@ -182,4 +219,37 @@ func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 	require.Contains(t, stored, "compiling the held build")
 	require.Contains(t, stored, "error: the linker gave up")
 	require.Equal(t, stored, ok(t, "logs", "--follow", "--", job), "an ended job's log is the stored one either way")
+
+	select {
+	case code := <-waitingFollow:
+		require.Equal(t, 0, code)
+	case <-time.After(2 * time.Minute):
+		t.Fatal("tau logs --follow of the queued job never ended after it did")
+	}
+	require.Contains(t, waited.String(), "compiling the held build")
+	// The follow ends with the log, which closes before the record settles.
+	require.Eventually(t, func() bool {
+		r := tau("job", "-o", "json", "--", queued)
+		return r.code == 0 && strings.Contains(r.stdout, `"status": "failed"`)
+	}, 2*time.Minute, time.Second, "the queued job never settled")
+	require.Equal(t, ok(t, "logs", "--", queued), waited.String(), "the follow that waited got the whole log")
+}
+
+// queueBehind pushes a second commit to the configuration repository and has
+// tau ci run queue its build, which waits for the fleet's one build backend.
+func queueBehind(t *testing.T, f *fake.Served, work string, repo repokey.Key) string {
+	t.Helper()
+	s, err := forges.For(repo, f.Token())
+	require.NoError(t, err)
+	addr, err := s.CloneAddress(repo, forge.HTTPS)
+	require.NoError(t, err)
+	gitOK(t, work, "commit", "-q", "--allow-empty", "-m", "queued behind the held build")
+	gitOK(t, work, "-c", "http.extraHeader=Authorization: Basic "+basic(addr.HTTPUsername, f.TokenString()), "push", "-q", addr.URL, "HEAD:refs/heads/main")
+
+	var queued struct {
+		Job string `json:"job"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(ok(t, "ci", "run", "--detach", "--dir", work, "-o", "json")), &queued))
+	require.NotEmpty(t, queued.Job)
+	return queued.Job
 }

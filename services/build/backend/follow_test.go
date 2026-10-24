@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -299,8 +300,46 @@ func TestASnapshotEndsAtWhatTheBuildHasWrittenAndAFollowEndsWithTheBuild(t *test
 	require.Equal(t, stored, followed.text(), "the follower saw the whole log")
 	for _, snapshot := range []bool{false, true} {
 		err := h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Snapshot: snapshot}, (&collector{}).send)
-		require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err), "snapshot=%v", snapshot)
+		require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "snapshot=%v", snapshot)
 	}
+}
+
+// A LOG NO NODE IS WRITING IS STILL TO COME UNTIL THE JOB HAS ENDED. Queued, or
+// claimed with its log on another node, it is Unavailable from this one, which
+// is what has a caller walk on or ask again. Ended, the leader says so as
+// FailedPrecondition, because no node will write it again; a follower cannot
+// read the record and walks on to the leader.
+func TestALogNoNodeIsWritingIsComingUntilTheJobEnds(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+	ask := func(jobID string, snapshot bool) error {
+		return h.follow(t.Context(), &buildv2.FollowRequest{JobId: jobID, Snapshot: snapshot}, (&collector{}).send)
+	}
+
+	for _, snapshot := range []bool{false, true} {
+		require.Equal(t, connect.CodeUnavailable, connect.CodeOf(ask(id, snapshot)), "queued, snapshot=%v", snapshot)
+	}
+
+	build := hold(t, h, "cloning\n")
+	h.logsMu.Lock()
+	delete(h.logs, id)
+	h.logsMu.Unlock()
+	require.Equal(t, buildv2.JobStatus_JobStatusClaimed, h.status(t, id))
+	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(ask(id, false)), "claimed, written on another node")
+
+	build.finish()
+	require.NoError(t, <-build.ended)
+	for _, snapshot := range []bool{false, true} {
+		err := ask(id, snapshot)
+		require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "ended, snapshot=%v", snapshot)
+		require.ErrorContains(t, err, buildv2.JobStatus_JobStatusSuccess.String())
+	}
+
+	h.store.stepDown()
+	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(ask(id, false)), "a follower cannot read the record")
+	h.store.stepUp()
+
+	require.Equal(t, connect.CodeNotFound, connect.CodeOf(ask(strings.Repeat("ab", 32), false)), "no such job")
 }
 
 // A LOG WHOSE WRITER HAS CLOSED IS WHOLE TO BOTH READS: the moment between a

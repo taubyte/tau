@@ -272,17 +272,21 @@ type JobServiceClient interface {
 	// Follow streams a RUNNING build's output, from `offset` to the end of it —
 	// or, with `snapshot`, to the end of what it has written so far.
 	//
-	// ONLY THE NODE WRITING THE LOG CAN ANSWER, and every other one says
-	// Unavailable rather than NotFound — which is what makes a caller's pool walk
-	// to the next backend instead of stopping at the first that does not have it.
-	// The alternative, forwarding to the claim record's holder the way Cancel
-	// does, would put a proxy hop in front of a stream that is already a proxy
-	// hop behind the public role.
+	// ONLY THE NODE WRITING THE LOG CAN ANSWER, and while the job has not ended
+	// every other one says Unavailable rather than NotFound — which is what makes
+	// a caller's pool walk to the next backend instead of stopping at the first
+	// that does not have it. A job that is queued, or claimed and not writing
+	// yet, is Unavailable from every node: its log is still to come, and a
+	// follower asks again. The alternative, forwarding to the claim record's
+	// holder the way Cancel does, would put a proxy hop in front of a stream that
+	// is already a proxy hop behind the public role.
 	//
-	// A FINISHED BUILD'S LOG IS NOT HERE. What survives a run is a content id in
-	// the asset store, and reading one back is that store's business — this
-	// answers FailedPrecondition and names the id, rather than returning an empty
-	// stream that reads like a build with no output.
+	// A FINISHED BUILD'S LOG IS NOT HERE. What survives a run is a content id on
+	// the job record (Job.logs), and reading one back is the asset store's
+	// business — so the leader, which reads the record, answers
+	// FailedPrecondition and names the status the job finished as, rather than
+	// an empty stream that reads like a build with no output, or an Unavailable
+	// that would have a follower ask again for a log no node will write.
 	Follow(context.Context, *connect.Request[v2.FollowRequest]) (*connect.ServerStreamForClient[v2.LogChunk], error)
 }
 
@@ -403,17 +407,21 @@ type JobServiceHandler interface {
 	// Follow streams a RUNNING build's output, from `offset` to the end of it —
 	// or, with `snapshot`, to the end of what it has written so far.
 	//
-	// ONLY THE NODE WRITING THE LOG CAN ANSWER, and every other one says
-	// Unavailable rather than NotFound — which is what makes a caller's pool walk
-	// to the next backend instead of stopping at the first that does not have it.
-	// The alternative, forwarding to the claim record's holder the way Cancel
-	// does, would put a proxy hop in front of a stream that is already a proxy
-	// hop behind the public role.
+	// ONLY THE NODE WRITING THE LOG CAN ANSWER, and while the job has not ended
+	// every other one says Unavailable rather than NotFound — which is what makes
+	// a caller's pool walk to the next backend instead of stopping at the first
+	// that does not have it. A job that is queued, or claimed and not writing
+	// yet, is Unavailable from every node: its log is still to come, and a
+	// follower asks again. The alternative, forwarding to the claim record's
+	// holder the way Cancel does, would put a proxy hop in front of a stream that
+	// is already a proxy hop behind the public role.
 	//
-	// A FINISHED BUILD'S LOG IS NOT HERE. What survives a run is a content id in
-	// the asset store, and reading one back is that store's business — this
-	// answers FailedPrecondition and names the id, rather than returning an empty
-	// stream that reads like a build with no output.
+	// A FINISHED BUILD'S LOG IS NOT HERE. What survives a run is a content id on
+	// the job record (Job.logs), and reading one back is the asset store's
+	// business — so the leader, which reads the record, answers
+	// FailedPrecondition and names the status the job finished as, rather than
+	// an empty stream that reads like a build with no output, or an Unavailable
+	// that would have a follower ask again for a log no node will write.
 	Follow(context.Context, *connect.Request[v2.FollowRequest], *connect.ServerStream[v2.LogChunk]) error
 }
 

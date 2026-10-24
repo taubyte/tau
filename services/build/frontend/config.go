@@ -57,6 +57,12 @@ const (
 	// failure up to the ceiling, and back to the first once one connects.
 	DefaultStreamBackoff    = time.Second
 	DefaultStreamBackoffMax = time.Minute
+	// DefaultFollowBackoff and DefaultFollowBackoffMax pace a follow asking
+	// again for a log no node is writing yet: the first wait, doubled per ask
+	// up to the ceiling. Each ask walks the backends, the leader's answer
+	// behind a barrier, so the ceiling is what a long queue costs per viewer.
+	DefaultFollowBackoff    = 500 * time.Millisecond
+	DefaultFollowBackoffMax = 2 * time.Second
 	// DefaultStreamResync is how often a connected stream's linked
 	// repositories have their branch heads compared anyway. A stream has no
 	// replay, and a push it lost — to a disconnect, to the window before the
@@ -186,6 +192,11 @@ type Config struct {
 	StreamBackoff    time.Duration `yaml:"streamBackoff"`
 	StreamBackoffMax time.Duration `yaml:"streamBackoffMax"`
 	StreamResync     time.Duration `yaml:"streamResync"`
+
+	// FollowBackoff and FollowBackoffMax pace a follow of a job whose log no
+	// node is writing yet (jobapi.go). Zero means the matching default.
+	FollowBackoff    time.Duration `yaml:"followBackoff"`
+	FollowBackoffMax time.Duration `yaml:"followBackoffMax"`
 }
 
 func (c Config) withDefaults() (Config, error) {
@@ -202,6 +213,8 @@ func (c Config) withDefaults() (Config, error) {
 		{"streamBackoff", c.StreamBackoff},
 		{"streamBackoffMax", c.StreamBackoffMax},
 		{"streamResync", c.StreamResync},
+		{"followBackoff", c.FollowBackoff},
+		{"followBackoffMax", c.FollowBackoffMax},
 	} {
 		if d.value < 0 {
 			return c, fmt.Errorf("build: %s must not be negative", d.name)
@@ -269,6 +282,15 @@ func (c Config) withDefaults() (Config, error) {
 	}
 	if c.StreamResync == 0 {
 		c.StreamResync = DefaultStreamResync
+	}
+	if c.FollowBackoff == 0 {
+		c.FollowBackoff = DefaultFollowBackoff
+	}
+	if c.FollowBackoffMax == 0 {
+		c.FollowBackoffMax = DefaultFollowBackoffMax
+	}
+	if c.FollowBackoffMax < c.FollowBackoff {
+		c.FollowBackoffMax = c.FollowBackoff
 	}
 	if c.HookRate == (Rate{}) {
 		c.HookRate = DefaultHookRate
@@ -446,7 +468,9 @@ type Backend interface {
 	// Follow streams a running build's output to emit, from `from` to the end
 	// of it, and returns the offset it reached. Only the backend node writing
 	// the log can answer; the others say Unavailable, which is what makes a
-	// pooled caller walk to the writer.
+	// pooled caller walk to the writer. Unavailable from all of them is a log
+	// no node is writing yet; FailedPrecondition is a job that has ended, whose
+	// log is the one its record names.
 	Follow(ctx context.Context, jobID string, from int64, emit func(data []byte, next int64) error) (int64, error)
 	// Snapshot is Follow up to what the log holds when it is asked: it ends
 	// there while the build goes on.

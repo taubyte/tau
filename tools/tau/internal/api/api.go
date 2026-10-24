@@ -169,9 +169,9 @@ func (c *Client) Retry(ctx context.Context, jobID string) error {
 }
 
 // logs opens a job's log stream at byte offset from. The frontend keeps it open
-// while the job runs, or with snapshot ends it at what the log holds now; the
-// caller reads until EOF and, if the connection drops first, reopens at the
-// offset it had reached.
+// while the job is queued and while it runs, or with snapshot ends it at what
+// the log holds now; the caller reads until EOF and, if the connection drops
+// first, reopens at the offset it had reached.
 func (c *Client) logs(ctx context.Context, jobID string, from int64, snapshot bool) (io.ReadCloser, error) {
 	q := url.Values{}
 	if from > 0 {
