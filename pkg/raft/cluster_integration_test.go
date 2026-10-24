@@ -1241,6 +1241,9 @@ func TestCluster_LeaderCrashAndFailover_Integration(t *testing.T) {
 	// Node1 bootstraps as leader
 	cluster1, err := New(node1, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	assert.NilError(t, err, "failed to create cluster1")
+	// Closed here as well, for a failure before the close below: a raft
+	// left running outlives the node's store and panics the test binary.
+	defer cluster1.Close()
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
@@ -1380,6 +1383,9 @@ func TestCluster_NodeRebootWithDataPersistence_Integration(t *testing.T) {
 	// Node2 and Node3 join
 	cluster2, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster2")
+	// Closed here as well, for a failure before the close below: a raft
+	// left running outlives the node's store and panics the test binary.
+	defer cluster2.Close()
 
 	cluster3, err := New(node3, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster3")
@@ -1635,6 +1641,9 @@ func TestCluster_LeaderRebootAndRejoin_Integration(t *testing.T) {
 	// Node1 bootstraps as leader
 	cluster1, err := New(node1, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	assert.NilError(t, err, "failed to create cluster1")
+	// Closed here as well, for a failure before the close below: a raft
+	// left running outlives the node's store and panics the test binary.
+	defer cluster1.Close()
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
