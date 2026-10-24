@@ -168,8 +168,13 @@ type Spec struct {
 	Secrets map[string]string
 
 	// Output is what to collect afterwards, relative to Path. It is a file for
-	// a wasm component and a directory for a website.
+	// a wasm component and a js bundle, and a directory for a website.
 	Output string
+
+	// Runtime is the tier the resource declares it runs on, when it declares
+	// one. A js bundle is not handed over as the build left it: the platform
+	// packs it into the archive that tier reads (see pack.go).
+	Runtime string
 }
 
 // Digest names what the recipe IS: the toolchain, where in the checkout it
@@ -194,7 +199,8 @@ func (s Spec) Digest() string {
 		Variables map[string]string `json:"variables"`
 		Secrets   []string          `json:"secrets"`
 		Output    string            `json:"output"`
-	}{s.Image, filepath.ToSlash(s.Path), s.Commands, s.Variables, secrets, s.Output})
+		Runtime   string            `json:"runtime,omitempty"`
+	}{s.Image, filepath.ToSlash(s.Path), s.Commands, s.Variables, secrets, s.Output, s.Runtime})
 	sum := sha256.Sum256(named)
 	return hex.EncodeToString(sum[:])
 }
@@ -403,6 +409,9 @@ type Item struct {
 	Build       specs.Build
 	Path        string
 	Variables   []specs.Variable
+
+	// Runtime is the tier the resource declares, "" for a kind with no choice.
+	Runtime string
 }
 
 // Plan is every build the deployments owe the source backs says is at hand.
@@ -441,6 +450,7 @@ func Plan(deployments []Deployment, backs func(specs.Buildable) (bool, error)) (
 				Build:       buildable.Build,
 				Path:        buildable.Source.Path,
 				Variables:   buildable.Variables,
+				Runtime:     buildable.Runtime,
 			})
 		}
 	}
@@ -478,10 +488,11 @@ func (b *Builder) backedBy(res specs.Buildable, pushed, main string) (bool, erro
 // resolve one with.
 func Recipe(ctx context.Context, secrets Secrets, projectID string, i Item, checkout string) (Spec, error) {
 	spec := Spec{
-		Image:  i.Build.Image,
-		Dir:    checkout,
-		Path:   within(i.Path),
-		Output: i.Build.Output,
+		Image:   i.Build.Image,
+		Dir:     checkout,
+		Path:    within(i.Path),
+		Output:  i.Build.Output,
+		Runtime: i.Runtime,
 	}
 
 	// THE KIND IS READ BEFORE THE IMAGE, because a dockerfile build has no

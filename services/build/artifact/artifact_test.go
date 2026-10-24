@@ -311,6 +311,42 @@ func TestAPushBuildsWhatTheConfigurationSaysItMakes(t *testing.T) {
 	require.True(t, c.released, "the checkout is released whatever happened")
 }
 
+// WHAT RUNS A RESOURCE REACHES ITS BUILD, because what the platform does with
+// the product depends on it: a js bundle is packed for the js tier, and a kind
+// with no choice of tier says none.
+func TestTheBuildIsToldWhatRunsTheResource(t *testing.T) {
+	dir := projectConfig(t, everyBranch, map[string]string{
+		"function/reserve.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc\nruntime: wasm\n" +
+			"source: services/reserve\n" +
+			"build:\n    commands:\n        image: rust:1.83\n" +
+			"        run: cargo build --release\n        output: target/release/reserve.wasm\n" +
+			"execution:\n    call: reserve\n    timeout: 15s\n    memory: 32MB\n",
+		"function/answer.yaml": "id: QmPGAFTpKc2PFZBCUANU4bdoVVFjvJKJP4eeyi2DjAN4fz\nruntime: js\n" +
+			"source: services/answer\n" +
+			"build:\n    commands:\n        image: node:22\n" +
+			"        run: npx esbuild src/index.js --bundle --format=esm --outfile=dist/worker.js\n" +
+			"        output: dist/worker.js\n" +
+			"execution:\n    timeout: 15s\n    memory: 32MB\n",
+		"component/paylib.yaml": "id: QmekNGuKUGBE9sg23vrcgPEZSCcvj7XUa9NyrNHq6MSVtb\n" +
+			"source: services/paylib\n" +
+			"build:\n    commands:\n        image: taubyte/go-wasi:v2\n" +
+			"        run: go build\n        output: paylib.wasm\n",
+	})
+	e := &engine{}
+	require.NoError(t, builder(t, deployed(t, dir), &checkout{dir: source(t)}, e, mainRepo).
+		Build(t.Context(), work(mainRepo), newOut()))
+
+	runtimes := map[string]string{}
+	for _, spec := range e.seen() {
+		runtimes[spec.Output] = spec.Runtime
+	}
+	require.Equal(t, map[string]string{
+		"target/release/reserve.wasm": "wasm",
+		"dist/worker.js":              "js",
+		"paylib.wasm":                 "",
+	}, runtimes)
+}
+
 // A RESOURCE THAT NAMES ITS OWN REPOSITORY IS BUILT BY A PUSH TO THAT ONE, and
 // by nothing else.
 func TestAResourceWithItsOwnRepository(t *testing.T) {

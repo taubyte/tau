@@ -50,6 +50,10 @@ const (
 	// compiled by the engine the manifest names.
 	CompiledExt = ".warp"
 
+	// DefaultMax bounds an archive, packed and unpacked: what the tier reads
+	// unless told otherwise, and so what a build packs at most.
+	DefaultMax = 64 << 20
+
 	// modulePath is the engine's module path in a binary's build info.
 	modulePath = "warpjs"
 )

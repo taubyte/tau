@@ -1300,6 +1300,11 @@ type Buildable struct {
 	// Variables is the resource's declared environment, both build- and
 	// run-time. Which of them a build passes is the build's decision.
 	Variables []Variable
+
+	// Runtime is the tier the resource says runs it, "" for a kind that has
+	// no choice. What the platform does with a build's product after the
+	// author's commands depends on it.
+	Runtime string
 }
 
 // Buildables is every resource this project makes from source, in a stable
@@ -1344,6 +1349,7 @@ func (p *Project) Buildables() []Buildable {
 			Source:    source,
 			Build:     build,
 			Variables: r.Variables(),
+			Runtime:   r.String("runtime"),
 		})
 	}
 

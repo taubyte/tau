@@ -25,7 +25,7 @@ import (
 
 // DefaultMaxArchive bounds an archive, packed and unpacked, unless WithMaxArchive
 // says otherwise.
-const DefaultMaxArchive = 64 << 20
+const DefaultMaxArchive = archive.DefaultMax
 
 var (
 	// ErrBadArchive is an artifact that is not an archive this tier can read.

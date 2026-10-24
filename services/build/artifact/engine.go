@@ -128,7 +128,7 @@ func (c *Containers) Make(ctx context.Context, spec Spec, log io.Writer) (io.Rea
 		return nil, err
 	}
 
-	return collect(joinWithin(spec.Dir, spec.Path), spec.Output)
+	return product(joinWithin(spec.Dir, spec.Path), spec)
 }
 
 // forgiving passes writes through until one fails, then swallows the rest.

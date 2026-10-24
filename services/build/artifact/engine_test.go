@@ -1,6 +1,7 @@
 package artifact_test
 
 import (
+	"archive/zip"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -177,6 +178,27 @@ func TestMakeRunsTheBuildConfined(t *testing.T) {
 	require.True(t, c.Network.RestrictEgress, "a build always runs with egress restricted")
 	require.Contains(t, c.Env, "GREETING=hi")
 	require.True(t, backend.removed)
+}
+
+// A JS FUNCTION'S BUILD HANDS BACK AN ARCHIVE: the author's commands write a
+// bundle, and what Make returns is that bundle packed for the js tier.
+func TestMakePacksAJSFunctionsBundle(t *testing.T) {
+	body, _, err := runBuild(t, &hostBackend{}, artifact.Spec{
+		Image:    "node:22",
+		Dir:      t.TempDir(),
+		Commands: []string{"mkdir -p dist", "echo 'export default {}' > dist/worker.js"},
+		Output:   "dist/worker.js",
+		Runtime:  "js",
+	})
+	require.NoError(t, err)
+
+	z, err := zip.NewReader(strings.NewReader(body), int64(len(body)))
+	require.NoError(t, err)
+	var names []string
+	for _, f := range z.File {
+		names = append(names, f.Name)
+	}
+	require.ElementsMatch(t, []string{"manifest.json", "worker.js"}, names)
 }
 
 func TestMakeStopsAtTheFirstFailingCommand(t *testing.T) {
@@ -403,6 +425,7 @@ func TestARecipesDigest(t *testing.T) {
 		"variable": func(s *artifact.Spec) { s.Variables = map[string]string{"A": "2"} },
 		"secret":   func(s *artifact.Spec) { s.Secrets = map[string]string{"OTHER": "first"} },
 		"output":   func(s *artifact.Spec) { s.Output = "other.wasm" },
+		"runtime":  func(s *artifact.Spec) { s.Runtime = "js" },
 	} {
 		changed := base
 		change(&changed)
