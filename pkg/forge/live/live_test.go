@@ -435,9 +435,25 @@ func (rx *receiver) await(t *testing.T, judge func(forge.Delivery) bool) bool {
 // container is one forge server this test started, through the repo's own
 // docker backend.
 type container struct {
-	backend core.Backend
-	id      core.ContainerID
-	image   string
+	out output
+}
+
+// output collects what a container writes, as it writes it.
+type output struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (o *output) Write(p []byte) (int, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.buf.Write(p)
+}
+
+func (o *output) String() string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.buf.String()
 }
 
 func start(t *testing.T, cfg *core.ContainerConfig) *container {
@@ -452,7 +468,7 @@ func start(t *testing.T, cfg *core.ContainerConfig) *container {
 	cfg.Labels = map[string]string{ownerLabel: fmt.Sprint(os.Getpid())}
 	id, err := backend.Create(t.Context(), cfg)
 	require.NoError(t, err)
-	c := &container{backend: backend, id: id, image: cfg.Image}
+	c := &container{}
 	t.Cleanup(func() {
 		if t.Failed() {
 			t.Logf("%s logs, tail:\n%s", cfg.Image, tail(c.logs(), 60))
@@ -462,6 +478,23 @@ func start(t *testing.T, cfg *core.ContainerConfig) *container {
 		backend.Remove(ctx, id)
 	})
 	require.NoError(t, backend.Start(t.Context(), id))
+
+	// Logs follows until the container exits, so a server's log is read for as
+	// long as it runs, and finished before the container is removed.
+	follow, stop := context.WithCancel(context.Background())
+	t.Cleanup(stop)
+	rc, err := backend.Logs(follow, id)
+	require.NoError(t, err)
+	read := make(chan struct{})
+	go func() {
+		defer close(read)
+		defer rc.Close()
+		stdcopy.StdCopy(&c.out, &c.out, rc)
+	}()
+	t.Cleanup(func() {
+		stop()
+		<-read
+	})
 	return c
 }
 
@@ -498,16 +531,7 @@ func sweep(t *testing.T) {
 }
 
 // logs is everything the container has written so far.
-func (c *container) logs() string {
-	rc, err := c.backend.Logs(context.Background(), c.id)
-	if err != nil {
-		return ""
-	}
-	defer rc.Close()
-	var out bytes.Buffer
-	stdcopy.StdCopy(&out, &out, rc)
-	return out.String()
-}
+func (c *container) logs() string { return c.out.String() }
 
 // lines are the log lines carrying a tag the container's own script wrote.
 func (c *container) lines(tag string) []string {
