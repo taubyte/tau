@@ -8,7 +8,21 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	taupeer "github.com/taubyte/tau/p2p/peer"
 )
+
+// callerOfNode is a client of namespace on a second node, linked to node once
+// node serves it: a client on node itself would have to dial node, and a host
+// refuses to dial itself.
+func callerOfNode(t *testing.T, node taupeer.Node, namespace string) Client {
+	t.Helper()
+	caller := newTestNode(t)
+	linkTo(t, caller, node)
+	client, err := NewClient(caller, namespace, nil)
+	require.NoError(t, err, "failed to create client")
+	t.Cleanup(func() { client.Close() })
+	return client
+}
 
 func TestClient_Get_WithBarrier_Integration(t *testing.T) {
 	node := newTestNode(t)
@@ -24,20 +38,13 @@ func TestClient_Get_WithBarrier_Integration(t *testing.T) {
 	err = cl.Set("barrier-key", []byte("barrier-value"), time.Second)
 	require.NoError(t, err, "failed to set value")
 
-	client, err := NewClient(node, "/raft/test-barrier", nil)
-	require.NoError(t, err, "failed to create client")
-	defer client.Close()
+	client := callerOfNode(t, node, "/raft/test-barrier")
 
 	barrierNs := int64(time.Second.Nanoseconds())
 	val, found, err := client.Get("barrier-key", barrierNs, node.ID())
-	// In single-node, network may fail, but if it succeeds, barrier should work
-	if err == nil {
-		require.True(t, found, "key should be found")
-		require.Equal(t, []byte("barrier-value"), val, "value should match")
-	} else {
-		// Network error is expected in single-node, but validation should have passed
-		t.Logf("Get with barrier returned network error (expected in single-node): %v", err)
-	}
+	require.NoError(t, err, "Get with barrier should succeed")
+	require.True(t, found, "key should be found")
+	require.Equal(t, []byte("barrier-value"), val, "value should match")
 }
 
 func TestClient_Get_WithBarrier_Zero_Integration(t *testing.T) {
@@ -54,19 +61,12 @@ func TestClient_Get_WithBarrier_Zero_Integration(t *testing.T) {
 	err = cl.Set("barrier-key-zero", []byte("barrier-value-zero"), time.Second)
 	require.NoError(t, err, "failed to set value")
 
-	client, err := NewClient(node, "/raft/test-barrier-zero", nil)
-	require.NoError(t, err, "failed to create client")
-	defer client.Close()
+	client := callerOfNode(t, node, "/raft/test-barrier-zero")
 
 	val, found, err := client.Get("barrier-key-zero", 0, node.ID())
-	// In single-node, network may fail, but if it succeeds, should work
-	if err == nil {
-		require.True(t, found, "key should be found")
-		require.Equal(t, []byte("barrier-value-zero"), val, "value should match")
-	} else {
-		// Network error is expected in single-node, but validation should have passed
-		t.Logf("Get with barrierNs=0 returned network error (expected in single-node): %v", err)
-	}
+	require.NoError(t, err, "Get with barrierNs=0 should succeed")
+	require.True(t, found, "key should be found")
+	require.Equal(t, []byte("barrier-value-zero"), val, "value should match")
 }
 
 func TestClient_Get_WithBarrier_Invalid_Negative_Integration(t *testing.T) {
@@ -163,20 +163,12 @@ func TestClient_Get_WithBarrier_AtMax_Integration(t *testing.T) {
 	require.NoError(t, err, "failed to set value")
 
 	// Create client
-	client, err := NewClient(node, "/raft/test-barrier-max", nil)
-	require.NoError(t, err, "failed to create client")
-	defer client.Close()
+	client := callerOfNode(t, node, "/raft/test-barrier-max")
 
 	// Test Get with barrierNs exactly at MaxGetHandlerBarrierTimeout (should work)
-	// Note: In single-node setup, stream may not open, but validation should pass
 	barrierNs := int64(MaxGetHandlerBarrierTimeout.Nanoseconds())
 	val, found, err := client.Get("barrier-key-max", barrierNs, node.ID())
-	// In single-node, network may fail, but if it succeeds, barrier should work
-	if err == nil {
-		require.True(t, found, "key should be found")
-		require.Equal(t, []byte("barrier-value-max"), val, "value should match")
-	} else {
-		// Network error is expected in single-node, but validation should have passed
-		t.Logf("Get with barrierNs at max returned network error (expected in single-node): %v", err)
-	}
+	require.NoError(t, err, "Get with barrierNs at max should succeed")
+	require.True(t, found, "key should be found")
+	require.Equal(t, []byte("barrier-value-max"), val, "value should match")
 }
