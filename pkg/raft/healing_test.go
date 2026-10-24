@@ -759,3 +759,71 @@ func TestHealing_AnOrphansWritesAreMergedBeforeItYields(t *testing.T) {
 	require.True(t, found, "the orphan was told to yield a write the group never took")
 	require.Equal(t, []byte("v"), value)
 }
+
+// joiningPeer answers the group's protocol the way a node still joining it
+// does: in no configuration and knowing no leader. It counts the exports it is
+// asked for and the healAcks it is sent.
+type joiningPeer struct {
+	raftv2connect.UnimplementedRaftServiceHandler
+	exports  atomic.Int32
+	healAcks atomic.Int32
+}
+
+func (p *joiningPeer) ClusterInfo(context.Context, *connect.Request[raftv2.ClusterInfoRequest]) (*connect.Response[raftv2.ClusterInfoResponse], error) {
+	return connect.NewResponse(&raftv2.ClusterInfoResponse{}), nil
+}
+
+func (p *joiningPeer) ExportFSM(context.Context, *connect.Request[raftv2.ExportFSMRequest]) (*connect.Response[raftv2.ExportFSMResponse], error) {
+	p.exports.Add(1)
+	state, err := cbor.Marshal(map[string]CRDTEntry{})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&raftv2.ExportFSMResponse{FsmState: state}), nil
+}
+
+func (p *joiningPeer) HealAck(context.Context, *connect.Request[raftv2.HealAckRequest]) (*connect.Response[raftv2.HealAckResponse], error) {
+	p.healAcks.Add(1)
+	return connect.NewResponse(&raftv2.HealAckResponse{}), nil
+}
+
+// TestHealing_AJoinerIsNotTakenForAnOrphan: a node still joining serves the
+// group's protocol and knows no leader, and the leader's healer took it for
+// an orphan and sent it a healAck, which, landing once the join was done,
+// had the new member wipe itself and join again. A peer in no configuration
+// is left to its join.
+func TestHealing_AJoinerIsNotTakenForAnOrphan(t *testing.T) {
+	joiner := &joiningPeer{}
+	leader, _ := facing(t, "heal-joiner", newFaultStore(), joiner)
+
+	leader.healer.probeAndMergeAsLeader(t.Context())
+	assert.Zero(t, joiner.healAcks.Load(), "a joiner was told to yield")
+	assert.Zero(t, joiner.exports.Load(), "a joiner was absorbed as an orphan")
+}
+
+// TestHealing_AHealAckFromTheMembersOwnLeaderIsIgnored: a healAck its own
+// leader sent before the member joined it, or before it rejoined, arrives at a
+// member of the sender's group, and the member wiped itself and joined again.
+func TestHealing_AHealAckFromTheMembersOwnLeaderIsIgnored(t *testing.T) {
+	a, b := formedPair(t, "heal-ack-own-leader")
+	require.NoError(t, onLeader(t, []Cluster{a, b}, func(leader Cluster) error {
+		return leader.Set("held", []byte("v"), time.Second)
+	}))
+	leader := leaderOf(t, a, b)
+	member := a.(*cluster)
+	if leader == a {
+		member = b.(*cluster)
+	}
+	require.Eventually(t, func() bool {
+		led, err := member.Leader()
+		_, held := member.Get("held")
+		return err == nil && led == idOf(leader) && held
+	}, leaderWait, 10*time.Millisecond, "the member never followed its leader")
+	before, healer := member.raft, member.healer
+
+	healer.healAcked(t.Context(), idOf(leader))
+	assert.False(t, healer.superseded.Load(), "the member yielded to its own leader")
+	assert.Same(t, before, member.raft, "the member's raft was replaced")
+	_, held := member.Get("held")
+	assert.True(t, held, "the member wiped what its group holds")
+}

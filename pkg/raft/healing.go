@@ -79,9 +79,7 @@ func (h *healer) run(ctx context.Context) {
 			h.handleForeignVote(ctx, pid)
 			continue
 		case from := <-h.healAckCh:
-			healLogger.Infof("[%s] received healAck from %s — yielding immediately",
-				h.cluster.node.ID().ShortString(), from.ShortString())
-			h.yieldAndRejoin(ctx, from)
+			h.healAcked(ctx, from)
 			if h.superseded.Load() {
 				healLogger.Infof("[%s] healer superseded after yieldAndRejoin — exiting", h.cluster.node.ID().ShortString())
 				return
@@ -128,6 +126,21 @@ func (h *healer) run(ctx context.Context) {
 		}
 		noLeaderCycles = 0
 	}
+}
+
+// healAcked yields to the group whose leader sent the healAck, unless that
+// leader is this member's own: a healAck sent while the member was still
+// joining, or before it rejoined, lands on a member of the sender's own group,
+// which has nothing to yield, and yielding would wipe it.
+func (h *healer) healAcked(ctx context.Context, from peer.ID) {
+	if leader, err := h.cluster.Leader(); err == nil && leader == from {
+		healLogger.Infof("[%s] healAck from %s, which leads us — nothing to yield",
+			h.cluster.node.ID().ShortString(), from.ShortString())
+		return
+	}
+	healLogger.Infof("[%s] received healAck from %s — yielding immediately",
+		h.cluster.node.ID().ShortString(), from.ShortString())
+	h.yieldAndRejoin(ctx, from)
 }
 
 // handleForeignVote reacts to a vote/pre-vote from a non-member peer.
@@ -243,6 +256,11 @@ func (h *healer) probeAndMergeAsLeader(ctx context.Context) {
 		}
 
 		if info.LeaderID == "" {
+			// A peer in no configuration belongs to no group: it is joining
+			// one, and its join, not a healAck, is what adds it.
+			if info.MemberCount == 0 {
+				continue
+			}
 			healLogger.Infof("[%s] detected orphaned foreign node %s — absorbing",
 				h.cluster.node.ID().ShortString(), pid.ShortString())
 			h.absorbOrphan(ctx, pid)
