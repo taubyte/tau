@@ -1,10 +1,17 @@
 package raft
 
 import (
+	"context"
+	"slices"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/discovery"
+	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/stretchr/testify/require"
+	taupeer "github.com/taubyte/tau/p2p/peer"
 	"gotest.tools/v3/assert"
 )
 
@@ -199,4 +206,104 @@ func TestPeerTracker_MergePeers_NegativeTime(t *testing.T) {
 	newPeers := pt.mergePeers(theirStart, theirPeers)
 	assert.Equal(t, len(newPeers), 1)
 	assert.Equal(t, pt.peers[peer1], time.Duration(0)) // Clamped to 0
+}
+
+// rendezvous is a discovery the nodes of a test share: what one advertises
+// under a name, every one searching that name finds. libp2p's own mock expires
+// a registration made with no TTL at once, and Advertise is called with none.
+type rendezvous struct {
+	mu    sync.Mutex
+	names map[string]map[peer.ID]peer.AddrInfo
+}
+
+func newRendezvous() *rendezvous {
+	return &rendezvous{names: make(map[string]map[peer.ID]peer.AddrInfo)}
+}
+
+func (r *rendezvous) register(name string, info peer.AddrInfo) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.names[name] == nil {
+		r.names[name] = make(map[peer.ID]peer.AddrInfo)
+	}
+	r.names[name][info.ID] = info
+}
+
+func (r *rendezvous) holds(name string, id peer.ID) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, ok := r.names[name][id]
+	return ok
+}
+
+// pointOf is h's way into the rendezvous.
+func (r *rendezvous) pointOf(h host.Host) discovery.Discovery {
+	return rendezvousPoint{rendezvous: r, host: h}
+}
+
+type rendezvousPoint struct {
+	*rendezvous
+	host host.Host
+}
+
+func (p rendezvousPoint) Advertise(_ context.Context, name string, _ ...discovery.Option) (time.Duration, error) {
+	p.register(name, peer.AddrInfo{ID: p.host.ID(), Addrs: p.host.Addrs()})
+	return time.Hour, nil
+}
+
+func (p rendezvousPoint) FindPeers(_ context.Context, name string, _ ...discovery.Option) (<-chan peer.AddrInfo, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	found := make(chan peer.AddrInfo, len(p.names[name]))
+	for _, info := range p.names[name] {
+		found <- info
+	}
+	close(found)
+	return found, nil
+}
+
+// discoveryNode is a node whose discovery is the one a test hands it.
+type discoveryNode struct {
+	taupeer.Node
+	discovery discovery.Discovery
+}
+
+func (n discoveryNode) Discovery() discovery.Discovery { return n.discovery }
+
+// TestDiscovery_AGroupOnlyDiscoveryFindsIsJoined: a group advertises
+// Protocol(namespace) and the tracker searched for the bare namespace, so
+// discovery never yielded a member; and the peer it yields is one this node is
+// not connected to, whose protocols the peerstore does not know until it is. A
+// node that can reach a group only through discovery now tracks it and joins
+// it, and passes over an advertised peer it cannot reach.
+func TestDiscovery_AGroupOnlyDiscoveryFindsIsJoined(t *testing.T) {
+	const namespace = "found-by-discovery"
+	meeting := newRendezvous()
+	nodeA, nodeB := newMockNode(t), newMockNode(t)
+	require.NoError(t, taupeer.LinkAllPeers())
+
+	b, err := New(discoveryNode{Node: nodeB, discovery: meeting.pointOf(nodeB.Peer())}, namespace,
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	t.Cleanup(func() { b.Close() })
+	waitLeader(t, b, 5*time.Second)
+	require.Eventually(t, func() bool { return meeting.holds(Protocol(namespace), nodeB.ID()) },
+		5*time.Second, 10*time.Millisecond, "b never advertised the group")
+	unreachable := strangerID(t)
+	meeting.register(Protocol(namespace), peer.AddrInfo{ID: unreachable})
+	require.NotContains(t, nodeA.Peer().Network().Peers(), nodeB.ID())
+
+	a, err := New(discoveryNode{Node: nodeA, discovery: meeting.pointOf(nodeA.Peer())}, namespace,
+		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	t.Cleanup(func() { a.Close() })
+
+	require.Eventually(t, func() bool {
+		return slices.Contains(a.(*cluster).tracker.allPeers(), nodeB.ID())
+	}, 5*time.Second, 10*time.Millisecond, "a never tracked the member discovery found")
+	require.Eventually(t, func() bool {
+		members, err := b.Members()
+		return err == nil && len(members) == 2
+	}, 10*time.Second, 20*time.Millisecond, "a never joined the group discovery found")
+	require.NotContains(t, a.(*cluster).tracker.allPeers(), unreachable)
 }

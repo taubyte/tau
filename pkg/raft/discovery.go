@@ -208,10 +208,10 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) 
 
 			if discovery != nil {
 				discoverCtx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
-				peerCh, err := discovery.FindPeers(discoverCtx, c.namespace)
+				peerCh, err := discovery.FindPeers(discoverCtx, string(raftProtocol))
 				if err == nil {
 					for p := range peerCh {
-						if supportsRaftProtocol(host, p.ID, raftProtocol) {
+						if p.ID != c.node.ID() && c.connectFound(ctx, p) && supportsRaftProtocol(host, p.ID, raftProtocol) {
 							pt.addPeer(p.ID)
 						}
 					}
@@ -238,6 +238,20 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) 
 			}
 		}
 	}
+}
+
+// connectFound connects to a peer discovery found, which is usually one this
+// node has never been connected to: the peerstore learns a peer's protocols
+// from the identify that Connect waits for.
+func (c *cluster) connectFound(ctx context.Context, p peer.AddrInfo) bool {
+	ctx, cancel := context.WithTimeout(ctx, sendToPeerTimeout)
+	defer cancel()
+	if err := c.node.Peer().Connect(ctx, p); err != nil {
+		discoveryLogger.Infof("[%s] connecting to discovered peer %s failed: %v",
+			c.node.ID().ShortString(), p.ID.ShortString(), err)
+		return false
+	}
+	return true
 }
 
 func (c *cluster) dialPeer(ctx context.Context, pid peer.ID) {
