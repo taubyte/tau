@@ -346,13 +346,13 @@ func startBind(t *testing.T, bridge, conf string, zones map[string]string) strin
 	for file, body := range zones {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, file), []byte(body), 0o644))
 	}
-	id := startLive(t, &core.ContainerConfig{
+	c := startLive(t, &core.ContainerConfig{
 		Image:   bindImage,
 		Command: []string{"-g", "-c", "/conf/named.conf"},
 		Volumes: []core.VolumeMount{{Source: dir, Destination: "/conf", ReadOnly: true}},
 		Network: &core.NetworkConfig{Mode: bridge},
 	})
-	addr := addressOn(t, id, bridge)
+	addr := addressOn(t, c.id, bridge)
 	eventually(t, "bind9 at "+addr+" answers", time.Minute, func() bool {
 		return len(resolve(addr, liveParent, dns.TypeSOA)) > 0
 	})
@@ -373,7 +373,7 @@ func resolve(server, name string, qtype uint16) []dns.RR {
 // ─────────────────────────────── pebble ───────────────────────────────
 
 type livePebble struct {
-	id                    core.ContainerID
+	container             *liveContainer
 	directory, management string
 	serverCA              string
 	pool                  *x509.CertPool
@@ -399,14 +399,14 @@ func startLivePebble(t *testing.T, httpPort int, resolverAddr string) *livePebbl
 	}})
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "pebble.json"), conf, 0o644))
-	id := startLive(t, &core.ContainerConfig{
+	c := startLive(t, &core.ContainerConfig{
 		Image:   pebbleImage,
 		Command: []string{"-config", "/conf/pebble.json", "-dnsserver", resolverAddr + ":53"},
 		Env:     []string{"PEBBLE_VA_NOSLEEP=1", "PEBBLE_WFE_NONCEREJECT=0", "PEBBLE_AUTHZREUSE=0"},
 		Volumes: []core.VolumeMount{{Source: dir, Destination: "/conf", ReadOnly: true}},
 		Network: &core.NetworkConfig{Mode: "host"},
 	})
-	p := &livePebble{id: id, directory: "https://" + listen + "/dir", management: "https://" + management, serverCA: serverCA}
+	p := &livePebble{container: c, directory: "https://" + listen + "/dir", management: "https://" + management, serverCA: serverCA}
 	pool := x509.NewCertPool()
 	require.True(t, pool.AppendCertsFromPEM([]byte(serverCA)))
 	p.pool = pool
@@ -434,15 +434,9 @@ func (p *livePebble) get(url string) ([]byte, error) {
 // authorization it set valid and every one it set invalid.
 func (p *livePebble) authorizations(t *testing.T) (valid, invalid int, lines []string) {
 	t.Helper()
-	backend, err := docker.New(core.DockerConfig{})
-	require.NoError(t, err)
-	rc, err := backend.Logs(context.Background(), p.id)
-	require.NoError(t, err)
-	defer rc.Close()
-	var out bytes.Buffer
-	_, err = stdcopy.StdCopy(&out, &out, rc)
-	require.NoError(t, err, "reading pebble's log")
-	for _, line := range strings.Split(out.String(), "\n") {
+	log := p.container.logs()
+	require.NoError(t, p.container.out.Err(), "reading pebble's log")
+	for _, line := range strings.Split(log, "\n") {
 		switch {
 		case !strings.Contains(line, " authz "):
 		case strings.Contains(line, " set VALID "):
@@ -518,7 +512,45 @@ func selfSigned(t *testing.T, dir string) string {
 // run removes what it left only once its owner is gone.
 const liveOwner = "taubyte.acme-live.owner"
 
-func startLive(t *testing.T, cfg *core.ContainerConfig) core.ContainerID {
+// liveContainer is one container this test started, and what it has written.
+type liveContainer struct {
+	id  core.ContainerID
+	out output
+}
+
+// output collects what a container writes, as it writes it.
+type output struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+	err error
+}
+
+func (o *output) Write(p []byte) (int, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.buf.Write(p)
+}
+
+func (o *output) String() string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.buf.String()
+}
+
+func (o *output) fail(err error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.err = err
+}
+
+// Err is why reading the container's output stopped before it ended, if it did.
+func (o *output) Err() error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.err
+}
+
+func startLive(t *testing.T, cfg *core.ContainerConfig) *liveContainer {
 	t.Helper()
 	backend, err := docker.New(core.DockerConfig{})
 	require.NoError(t, err)
@@ -526,21 +558,39 @@ func startLive(t *testing.T, cfg *core.ContainerConfig) core.ContainerID {
 	cfg.Labels = map[string]string{liveOwner: fmt.Sprint(os.Getpid())}
 	id, err := backend.Create(t.Context(), cfg)
 	require.NoError(t, err)
+	c := &liveContainer{id: id}
 	t.Cleanup(func() {
 		if t.Failed() {
-			if rc, err := backend.Logs(context.Background(), id); err == nil {
-				var out bytes.Buffer
-				stdcopy.StdCopy(&out, &out, rc)
-				rc.Close()
-				t.Logf("%s logs:\n%s", cfg.Image, tail(out.String(), 60))
-			}
+			t.Logf("%s logs:\n%s", cfg.Image, tail(c.logs(), 60))
 		}
 		backend.Stop(context.Background(), id)
 		backend.Remove(context.Background(), id)
 	})
 	require.NoError(t, backend.Start(t.Context(), id))
-	return id
+
+	// Logs follows until the container exits, so a server's log is read for as
+	// long as it runs, and finished before the container is removed.
+	follow, stop := context.WithCancel(context.Background())
+	t.Cleanup(stop)
+	rc, err := backend.Logs(follow, id)
+	require.NoError(t, err)
+	read := make(chan struct{})
+	go func() {
+		defer close(read)
+		defer rc.Close()
+		if _, err := stdcopy.StdCopy(&c.out, &c.out, rc); err != nil {
+			c.out.fail(err)
+		}
+	}()
+	t.Cleanup(func() {
+		stop()
+		<-read
+	})
+	return c
 }
+
+// logs is everything the container has written so far.
+func (c *liveContainer) logs() string { return c.out.String() }
 
 // liveNetwork is a bridge of this run's own, and the gateway address the host
 // holds on it.
