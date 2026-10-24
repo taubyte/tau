@@ -544,10 +544,18 @@ func (h *healer) yieldAndRejoin(ctx context.Context, winnerLeader peer.ID) {
 	healLogger.Infof("[%s] yielding to winner %s",
 		h.cluster.node.ID().ShortString(), winnerLeader.ShortString())
 
-	if h.cluster.raft != nil {
-		healLogger.Infof("[%s] shutting down raft instance for rejoin", h.cluster.node.ID().ShortString())
-		h.cluster.raft.Shutdown()
+	h.cluster.mu.Lock()
+	defer h.cluster.mu.Unlock()
+	if h.cluster.closed.Load() {
+		return
 	}
+
+	// EVERYTHING INITIALIZE BUILDS IS TAKEN DOWN BEFORE IT IS BUILT AGAIN. The
+	// stream service holds the group's protocol, so a second one cannot listen
+	// beside it, and a raft that is not waited for can still apply into the
+	// state being wiped.
+	healLogger.Infof("[%s] taking down raft for rejoin", h.cluster.node.ID().ShortString())
+	h.cluster.takeDown()
 
 	healLogger.Infof("[%s] wiping raft state (logs, stable and applied data)", h.cluster.node.ID().ShortString())
 	h.wipeRaftState(ctx)

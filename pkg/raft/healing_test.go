@@ -2,9 +2,15 @@ package raft
 
 import (
 	"context"
+	"fmt"
+	"path"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/hashicorp/raft"
+	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -193,5 +199,403 @@ func TestHealing_HealAck_Signal(t *testing.T) {
 	case <-h.healAckCh:
 		t.Fatal("buffer should be 1, second signal should be dropped")
 	default:
+	}
+}
+
+// splitPair is two nodes that each bootstrapped a group of their own before
+// they could see each other, then were connected: a split brain, each side
+// holding a write the other never saw. The bootstrap timeout leaves a yielding
+// node's discovery time to find the other side.
+func splitPair(t *testing.T, namespace string) (a, b Cluster) {
+	t.Helper()
+	nodeA := taupeer.Mock(t.Context())
+	nodeB := taupeer.Mock(t.Context())
+
+	opts := func() []Option {
+		return []Option{WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second), WithSnapshotRoot(t.TempDir())}
+	}
+	a, err := New(nodeA, namespace, opts()...)
+	require.NoError(t, err)
+	t.Cleanup(func() { a.Close() })
+	b, err = New(nodeB, namespace, opts()...)
+	require.NoError(t, err)
+	t.Cleanup(func() { b.Close() })
+
+	waitLeader(t, a, 5*time.Second)
+	waitLeader(t, b, 5*time.Second)
+	require.NoError(t, a.Set("from-a", []byte("a"), time.Second))
+	require.NoError(t, b.Set("from-b", []byte("b"), time.Second))
+
+	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, nodeB.Peer().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Peer().Addrs()}))
+	a.(*cluster).tracker.addPeer(nodeB.ID())
+	b.(*cluster).tracker.addPeer(nodeA.ID())
+	return a, b
+}
+
+// winnerOf is the side of a split that negotiateWinner keeps.
+func winnerOf(a, b Cluster) (winner, loser *cluster) {
+	ca, cb := a.(*cluster), b.(*cluster)
+	if negotiateWinner(ca.healer.localClusterInfo(), cb.healer.localClusterInfo()) == ca.node.ID().String() {
+		return ca, cb
+	}
+	return cb, ca
+}
+
+// holdsEverything reports whether cl holds both sides' writes.
+func holdsEverything(cl Cluster) bool {
+	va, okA := cl.Get("from-a")
+	vb, okB := cl.Get("from-b")
+	return okA && okB && string(va) == "a" && string(vb) == "b"
+}
+
+// TestHealing_ALoserRejoinsTheGroupItYieldedTo: the winner of a split merges
+// the loser's writes and tells it to yield, and the loser wipes its state and
+// joins the winner's group.
+func TestHealing_ALoserRejoinsTheGroupItYieldedTo(t *testing.T) {
+	a, b := splitPair(t, "heal-rejoin")
+	winner, loser := winnerOf(a, b)
+
+	winner.healer.executeMerge(t.Context(), loser.node.ID())
+
+	require.Eventually(t, func() bool {
+		members, err := winner.Members()
+		return err == nil && len(members) == 2
+	}, 20*time.Second, 50*time.Millisecond, "the loser never joined the winner's group")
+	require.Eventually(t, func() bool {
+		return holdsEverything(a) && holdsEverything(b)
+	}, 10*time.Second, 50*time.Millisecond, "the healed group does not hold both sides' writes")
+	leaderOf(t, a, b)
+}
+
+// TestHealing_AYieldWaitsForTheRaftItReplaces: a yield shut its raft down
+// without waiting for it, so an apply still in flight landed after the wipe,
+// in state the yielding node had just thrown away.
+func TestHealing_AYieldWaitsForTheRaftItReplaces(t *testing.T) {
+	node := taupeer.Mock(t.Context())
+	namespace := "yield-waits"
+	held := newHeldStore(node.Store(), ds.NewKey(path.Join(RaftStoragePrefix, namespace, "data", "held")))
+	defer held.letGo()
+
+	c, err := New(storeNode{Node: node, store: held}, namespace,
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	defer c.Close()
+	waitLeader(t, c, 5*time.Second)
+
+	setDone := make(chan error, 1)
+	go func() { setDone <- c.Set("held", []byte("v"), 5*time.Second) }()
+	<-held.entered
+
+	yielded := make(chan struct{})
+	go func() {
+		c.(*cluster).healer.yieldAndRejoin(t.Context(), "")
+		close(yielded)
+	}()
+	select {
+	case <-yielded:
+		t.Fatal("the yield went on while the raft it replaces was still applying")
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	held.letGo()
+	<-yielded
+	<-setDone
+	_, found := c.Get("held")
+	assert.False(t, found, "an apply of the replaced raft outlived the wipe")
+}
+
+// heldWipe holds the first delete under prefix until it is let go, so a test
+// can stop a yield inside its wipe.
+type heldWipe struct {
+	ds.Batching
+	prefix  string
+	entered chan struct{}
+	release chan struct{}
+	in, out sync.Once
+}
+
+func (s *heldWipe) Delete(ctx context.Context, key ds.Key) error {
+	if strings.HasPrefix(key.String(), s.prefix) {
+		s.in.Do(func() { close(s.entered) })
+		<-s.release
+	}
+	return s.Batching.Delete(ctx, key)
+}
+
+func (s *heldWipe) letGo() { s.out.Do(func() { close(s.release) }) }
+
+// TestCluster_CloseWaitsForAYieldInProgress: Close did not wait for a yield,
+// which rebuilt a raft after Close returned, one nothing would ever shut down
+// and which ran past the close of the store under it.
+func TestCluster_CloseWaitsForAYieldInProgress(t *testing.T) {
+	node := taupeer.Mock(t.Context())
+	namespace := "close-during-yield"
+	wipe := &heldWipe{
+		Batching: node.Store(),
+		prefix:   path.Join(RaftStoragePrefix, namespace) + "/",
+		entered:  make(chan struct{}),
+		release:  make(chan struct{}),
+	}
+	defer wipe.letGo()
+
+	c, err := New(storeNode{Node: node, store: wipe}, namespace,
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	defer c.Close()
+	waitLeader(t, c, 5*time.Second)
+	require.NoError(t, c.Set("k", []byte("v"), time.Second))
+
+	cl := c.(*cluster)
+	yielded := make(chan struct{})
+	go func() {
+		cl.healer.yieldAndRejoin(t.Context(), "")
+		close(yielded)
+	}()
+	<-wipe.entered
+
+	closed := make(chan error, 1)
+	go func() { closed <- c.Close() }()
+	select {
+	case <-closed:
+		t.Fatal("Close returned while a yield was rebuilding the raft")
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	wipe.letGo()
+	require.NoError(t, <-closed)
+	<-yielded
+	assert.Equal(t, raft.Shutdown, cl.raft.State(), "a raft the yield built is still running after Close")
+}
+
+// probeEvery runs the healers a test starts at interval, for the test.
+func probeEvery(t *testing.T, interval time.Duration) {
+	before := HealingProbeInterval
+	HealingProbeInterval = interval
+	t.Cleanup(func() { HealingProbeInterval = before })
+}
+
+// TestHealing_ASplitHealsByItself: each side's healer finds the other, the
+// side negotiateWinner keeps merges the other's writes, and the other yields
+// and joins it, with nothing but the healers driving it.
+func TestHealing_ASplitHealsByItself(t *testing.T) {
+	probeEvery(t, 50*time.Millisecond)
+	a, b := splitPair(t, "heal-by-itself")
+
+	require.Eventually(t, func() bool {
+		ofA, errA := a.Members()
+		ofB, errB := b.Members()
+		return errA == nil && errB == nil && len(ofA) == 2 && len(ofB) == 2
+	}, 20*time.Second, 50*time.Millisecond, "the split never healed")
+	require.Eventually(t, func() bool {
+		return holdsEverything(a) && holdsEverything(b)
+	}, 10*time.Second, 50*time.Millisecond, "the healed group does not hold both sides' writes")
+	leaderOf(t, a, b)
+}
+
+// formedPair is a group of two that formed the way a fleet does, with no
+// member forced to bootstrap: a bootstrapped alone, then b found it and joined.
+func formedPair(t *testing.T, namespace string) (a, b Cluster) {
+	t.Helper()
+	nodeA := taupeer.Mock(t.Context())
+	nodeB := taupeer.Mock(t.Context())
+
+	a, err := New(nodeA, namespace,
+		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	t.Cleanup(func() { a.Close() })
+	waitLeader(t, a, 5*time.Second)
+
+	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, nodeB.Peer().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Peer().Addrs()}))
+	b, err = New(nodeB, namespace,
+		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	t.Cleanup(func() { b.Close() })
+	require.Eventually(t, func() bool {
+		members, err := a.Members()
+		return err == nil && len(members) == 2
+	}, 10*time.Second, 20*time.Millisecond, "b never joined a")
+	return a, b
+}
+
+// TestHealing_AnOrphanIsAbsorbed: a member removed from its group keeps
+// running with no leader, and the group's healer finds it and has it wipe its
+// state and join again.
+func TestHealing_AnOrphanIsAbsorbed(t *testing.T) {
+	probeEvery(t, 50*time.Millisecond)
+	a, b := formedPair(t, "heal-orphan")
+
+	removed, left := removeTheLeader(t, a, b)
+	left.(*cluster).tracker.addPeer(idOf(removed))
+	require.NoError(t, onLeader(t, []Cluster{left}, func(leader Cluster) error {
+		return leader.Set("after-removal", []byte("v"), time.Second)
+	}))
+
+	require.Eventually(t, func() bool {
+		members, err := left.Members()
+		return err == nil && len(members) == 2
+	}, 20*time.Second, 50*time.Millisecond, "the orphan was never absorbed")
+	require.Eventually(t, func() bool {
+		value, found := removed.Get("after-removal")
+		return found && string(value) == "v"
+	}, 10*time.Second, 50*time.Millisecond, "the absorbed member does not hold the group's writes")
+	leaderOf(t, a, b)
+}
+
+// TestHealing_AGroupWithoutQuorumYieldsToTheGroupAheadOfIt: a member left
+// alone by its group's other member has no leader, and once it can see a
+// group of the same size that has committed more, its healer yields and the
+// member joins that group.
+func TestHealing_AGroupWithoutQuorumYieldsToTheGroupAheadOfIt(t *testing.T) {
+	probeEvery(t, 50*time.Millisecond)
+	before := SplitBrainDetectionCycles
+	SplitBrainDetectionCycles = 1
+	t.Cleanup(func() { SplitBrainDetectionCycles = before })
+
+	namespace := "heal-quorum-lost"
+	stranded, gone := formedPair(t, namespace)
+	ahead, other := formedPair(t, namespace)
+	group := []Cluster{ahead, other}
+	for i := range 10 {
+		require.NoError(t, onLeader(t, group, func(leader Cluster) error {
+			return leader.Set(fmt.Sprintf("ahead-%d", i), []byte("v"), time.Second)
+		}))
+	}
+
+	require.NoError(t, gone.Close())
+	require.NoError(t, nodeOfCluster(stranded).Peer().Connect(t.Context(),
+		peer.AddrInfo{ID: idOf(ahead), Addrs: nodeOfCluster(ahead).Peer().Addrs()}))
+	stranded.(*cluster).tracker.addPeer(idOf(ahead))
+
+	require.Eventually(t, func() bool {
+		members, err := ahead.Members()
+		if err != nil {
+			return false
+		}
+		for _, m := range members {
+			if m.ID == idOf(stranded) {
+				return true
+			}
+		}
+		return false
+	}, 20*time.Second, 50*time.Millisecond, "the stranded member never joined the group ahead of it")
+	require.Eventually(t, func() bool {
+		value, found := stranded.Get("ahead-9")
+		return found && string(value) == "v"
+	}, 10*time.Second, 50*time.Millisecond, "the stranded member does not hold the group's writes")
+}
+
+func nodeOfCluster(cl Cluster) taupeer.Node { return cl.(*cluster).node }
+
+// TestHealing_AVoteFromANonMemberIsReported: the healer sees every vote and
+// pre-vote raft receives; one from a peer outside the configuration is
+// reported, and one from a member, from nobody or from a name that is not a
+// peer is not.
+func TestHealing_AVoteFromANonMemberIsReported(t *testing.T) {
+	node := taupeer.Mock(t.Context())
+	c, err := New(node, "foreign-votes", WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	defer c.Close()
+	waitLeader(t, c, 5*time.Second)
+
+	// A healer of its own, so nothing else drains what it reports.
+	h := newHealer(c.(*cluster))
+	stranger := taupeer.Mock(t.Context()).ID()
+	vote := func(from string) raft.Observation {
+		return raft.Observation{Data: raft.RequestVoteRequest{RPCHeader: raft.RPCHeader{ID: []byte(from)}}}
+	}
+	preVote := func(from string) raft.Observation {
+		return raft.Observation{Data: raft.RequestPreVoteRequest{RPCHeader: raft.RPCHeader{ID: []byte(from)}}}
+	}
+
+	for _, ignored := range []raft.Observation{
+		vote(node.ID().String()),
+		preVote(""),
+		vote("not-a-peer"),
+		{Data: raft.LeaderObservation{}},
+	} {
+		h.processVoteObservation(ignored)
+	}
+	select {
+	case pid := <-h.foreignVoteCh:
+		t.Fatalf("reported %s, which is not a foreign voter", pid)
+	default:
+	}
+
+	h.processVoteObservation(preVote(stranger.String()))
+	h.processVoteObservation(vote(stranger.String()))
+	for range 2 {
+		select {
+		case pid := <-h.foreignVoteCh:
+			assert.Equal(t, stranger, pid)
+		default:
+			t.Fatal("a vote from a peer outside the configuration was not reported")
+		}
+	}
+
+	// Reporting never blocks raft: a full channel drops the report.
+	for range cap(h.foreignVoteCh) + 1 {
+		h.notifyForeignVote(stranger)
+	}
+	assert.Len(t, h.foreignVoteCh, cap(h.foreignVoteCh))
+}
+
+// TestHealing_AForeignVoterIsTrackedAndAbsorbedByTheLeader: a follower only
+// remembers a foreign voter, so that its own probes can find it; a leader
+// takes it in at once.
+func TestHealing_AForeignVoterIsTrackedAndAbsorbedByTheLeader(t *testing.T) {
+	a, b := formedPair(t, "foreign-voter")
+	stranger := taupeer.Mock(t.Context()).ID()
+
+	leader := leaderOf(t, a, b)
+	follower := a
+	if leader == a {
+		follower = b
+	}
+
+	follower.(*cluster).healer.handleForeignVote(t.Context(), stranger)
+	assert.Contains(t, follower.(*cluster).tracker.allPeers(), stranger)
+
+	// The stranger answers nothing, so the leader's absorb gives up after
+	// trying, and the leader still leads a group without it.
+	leader.(*cluster).healer.handleForeignVote(t.Context(), stranger)
+	assert.Contains(t, leader.(*cluster).tracker.allPeers(), stranger)
+	members, err := leader.Members()
+	require.NoError(t, err)
+	assert.Len(t, members, 2)
+
+	require.NoError(t, a.Close())
+	a.(*cluster).healer.handleForeignVote(t.Context(), stranger)
+}
+
+// TestHealing_AMergeNeedsTheLeadAndTheOtherSide: a member that does not lead
+// merges nothing, and neither does a leader that cannot read the other side;
+// either leaves its group as it was.
+func TestHealing_AMergeNeedsTheLeadAndTheOtherSide(t *testing.T) {
+	a, b := formedPair(t, "merge-preconditions")
+	stranger := taupeer.Mock(t.Context()).ID()
+	require.NoError(t, onLeader(t, []Cluster{a, b}, func(leader Cluster) error {
+		return leader.Set("k", []byte("v"), time.Second)
+	}))
+	require.Eventually(t, func() bool {
+		_, onA := a.Get("k")
+		_, onB := b.Get("k")
+		return onA && onB
+	}, 5*time.Second, 20*time.Millisecond, "the write never reached both members")
+
+	leader := leaderOf(t, a, b)
+	follower := a
+	if leader == a {
+		follower = b
+	}
+	follower.(*cluster).healer.executeMerge(t.Context(), idOf(leader))
+	leader.(*cluster).healer.executeMerge(t.Context(), stranger)
+
+	for _, cl := range []Cluster{a, b} {
+		members, err := cl.Members()
+		require.NoError(t, err)
+		assert.Len(t, members, 2)
+		assert.Equal(t, []string{"k"}, cl.Keys(""))
 	}
 }

@@ -51,6 +51,7 @@ type cluster struct {
 	stable        *datastoreStableStore
 	snaps         *fileSnapshotStore
 	tracker       *peerTracker
+	stopTracker   context.CancelFunc
 	streamService *raftStreamService
 	raftClient    internalClient // Client for remote Raft operations (joining voters, forwarding to leader, etc.)
 	healer        *healer
@@ -146,7 +147,9 @@ func (c *cluster) initialize() error {
 
 	c.tracker = newPeerTracker(c.node.ID())
 
-	go c.tracker.runDiscoveryAndExchange(c.ctx, c)
+	var trackerCtx context.Context
+	trackerCtx, c.stopTracker = context.WithCancel(c.ctx)
+	go c.tracker.runDiscoveryAndExchange(trackerCtx, c)
 
 	c.streamService, err = newStreamService(c)
 	if err != nil {
@@ -542,6 +545,19 @@ func (c *cluster) Close() error {
 
 	if c.cancel != nil {
 		c.cancel()
+	}
+
+	// A yield takes down and rebuilds the same parts, so the two take turns:
+	// a yield in progress finishes, and what it built is what is taken down.
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.takeDown()
+}
+
+// takeDown stops everything initialize builds and waits for the raft.
+func (c *cluster) takeDown() error {
+	if c.stopTracker != nil {
+		c.stopTracker()
 	}
 
 	if c.streamService != nil {
