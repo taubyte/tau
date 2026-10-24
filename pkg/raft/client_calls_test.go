@@ -396,6 +396,77 @@ func TestStream_AJoinAskedOfAFollowerBetweenLeadersWaitsForTheNext(t *testing.T)
 	require.Contains(t, ids, joiner)
 }
 
+// TestStream_AJoinAskedOfAMemberLetInBeforeItsLogWaitsForTheLeader: a leader
+// commits a joiner's admission once a quorum holds it, and can be gone before
+// its log reaches the joiner, which is then a voter in the group's
+// configuration holding none of its own. Asked to add a voter, it said "no
+// leader" at once, as a founder does, though the group's next election needs
+// its vote. Here its store refuses the log and its vote, so the group can
+// neither reach it nor elect without it: it waits out the join's budget, and
+// once its store takes them it waits for the leader the group elects, which
+// adds the voter.
+func TestStream_AJoinAskedOfAMemberLetInBeforeItsLogWaitsForTheLeader(t *testing.T) {
+	const (
+		namespace = "stream-join-before-log"
+		firstLog  = "/raft/" + namespace + "/log/00000000000000000001"
+		vote      = "/raft/" + namespace + "/stable/LastVoteTerm"
+		budget    = 300 * time.Millisecond
+	)
+	caller := newMockNode(t)
+	group := joinedGroup(t, namespace, sameStore, 3)
+
+	node := newMockNode(t)
+	store := newFaultStore()
+	store.failPut(firstLog, errNoSpace)
+	store.failPut(vote, errNoSpace)
+	require.NoError(t, taupeer.LinkAllPeers())
+	founder := group[0].(*cluster).node.Peer()
+	require.NoError(t, node.Peer().Connect(t.Context(), peer.AddrInfo{ID: founder.ID(), Addrs: founder.Addrs()}))
+	late, err := New(storeNode{Node: node, store: store}, namespace,
+		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	t.Cleanup(func() { late.Close() })
+	require.Eventually(t, late.(*cluster).joined.Load, leaderWait, 10*time.Millisecond, "the group never let the late member in")
+	members, err := late.Members()
+	require.NoError(t, err)
+	require.Empty(t, members, "the late member holds a configuration")
+
+	connected(t, caller, group...)
+	connected(t, caller, late)
+	cli, err := newInternalClient(caller, namespace, nil)
+	require.NoError(t, err)
+	defer cli.Close()
+
+	gone := leaderOf(t, group...)
+	survivors := []Cluster{late}
+	for _, cl := range group {
+		if cl != gone {
+			survivors = append(survivors, cl)
+		}
+	}
+	require.NoError(t, gone.Close())
+	require.Eventually(t, func() bool {
+		_, err := late.Leader()
+		return err != nil
+	}, leaderWait, time.Millisecond, "the late member kept naming the closed leader")
+
+	began := time.Now()
+	require.ErrorIs(t, cli.JoinVoter(t.Context(), strangerID(t), budget, idOf(late)), ErrNoLeader)
+	require.GreaterOrEqual(t, time.Since(began), budget, "a member the group let in refused a join at once")
+
+	store.failPut(firstLog, nil)
+	store.failPut(vote, nil)
+	joiner := strangerID(t)
+	require.NoError(t, cli.JoinVoter(t.Context(), joiner, leaderWait, idOf(late)))
+	members, err = leaderOf(t, survivors...).Members()
+	require.NoError(t, err)
+	ids := make([]peer.ID, 0, len(members))
+	for _, m := range members {
+		ids = append(ids, m.ID)
+	}
+	require.Contains(t, ids, joiner)
+}
+
 // TestStream_AJoinWhoseLeaderStopsLeadingIsAddedByTheNext: a leader that lost
 // the lead while adding a voter answered the join with raft's refusal, though
 // the join had budget left and the group a next leader. It now waits for that

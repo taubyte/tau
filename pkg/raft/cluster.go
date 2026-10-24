@@ -58,6 +58,9 @@ type cluster struct {
 	snapshotDir string
 
 	closed atomic.Bool
+	// joined is set once a group lets this member in, which can be before the
+	// leader's log, and the configuration in it, reach the member.
+	joined atomic.Bool
 	mu     sync.RWMutex
 }
 
@@ -456,6 +459,7 @@ func (c *cluster) requestVoterJoin(timeout time.Duration) {
 					if err := c.raftClient.JoinVoter(ctx, c.node.ID(), timeout, targets...); err != nil {
 						clusterLogger.Infof("[%s] voter join request failed: %v", c.node.ID().ShortString(), err)
 					} else {
+						c.joined.Store(true)
 						clusterLogger.Infof("[%s] voter join request accepted", c.node.ID().ShortString())
 					}
 				}
@@ -503,6 +507,7 @@ func (c *cluster) tryJoinExistingCluster(ctx context.Context, peers []peer.ID, t
 		}
 		err := c.raftClient.JoinVoter(ctx, c.node.ID(), timeout, targets...)
 		if err == nil {
+			c.joined.Store(true)
 			clusterLogger.Infof("[%s] successfully joined existing cluster", c.node.ID().ShortString())
 			return true, false
 		}

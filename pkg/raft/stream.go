@@ -271,14 +271,16 @@ func (s *raftStreamService) JoinVoter(ctx context.Context, req *connect.Request[
 }
 
 // awaitLeader returns once this member knows a leader, which may be itself. A
-// member in a configuration is between leaders and waits for the next, within
-// ctx. One in no configuration, a founder or a joiner, has no election to wait
-// for: it says so at once, and the joiner asks again on its own schedule.
+// member of a group is between leaders and waits for the next, within ctx: one
+// in a configuration, and one the group let in before its log, and the
+// configuration in it, reached it. One in no group, a founder or a joiner not
+// let in yet, has no election to wait for: it says so at once, and the joiner
+// asks again on its own schedule.
 func (s *raftStreamService) awaitLeader(ctx context.Context) error {
 	if _, err := s.cluster.Leader(); err == nil {
 		return nil
 	}
-	if members, err := s.cluster.Members(); err != nil || len(members) == 0 {
+	if members, err := s.cluster.Members(); err != nil || (len(members) == 0 && !s.cluster.joined.Load()) {
 		return ErrNoLeader
 	}
 	if s.cluster.WaitForLeader(ctx) != nil {
