@@ -2,6 +2,7 @@ package peer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -66,25 +67,31 @@ func (p *node) Close() {
 	}
 }
 
+// cleanup closes whatever the node has opened, a half-built one included, and
+// goes on past a step that fails: a step left out would leave its part open and
+// the temporary repository behind it.
 func (p *node) cleanup() error {
 	p.topicsMutex.Lock()
 	defer p.topicsMutex.Unlock()
 
 	p.topics = nil
 
-	if err := p.Peer().Close(); err != nil {
-		return fmt.Errorf("closing peer failed: %w", err)
+	var errs []error
+	if p.host != nil {
+		if err := p.host.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("closing peer failed: %w", err))
+		}
 	}
 
 	if p.peering != nil {
 		if err := p.peering.Stop(); err != nil {
-			return fmt.Errorf("stopping peering service failed: %w", err)
+			errs = append(errs, fmt.Errorf("stopping peering service failed: %w", err))
 		}
 	}
 	if p.dht != nil {
 		if closer, ok := p.dht.(io.Closer); ok {
 			if err := closer.Close(); err != nil {
-				return fmt.Errorf("closing DHT failed: %w", err)
+				errs = append(errs, fmt.Errorf("closing DHT failed: %w", err))
 			}
 		}
 	}
@@ -95,20 +102,22 @@ func (p *node) cleanup() error {
 	p.ctx_cancel()
 	if p.dag != nil {
 		if err := p.dag.Close(); err != nil {
-			return fmt.Errorf("closing DAG service failed: %w", err)
+			errs = append(errs, fmt.Errorf("closing DAG service failed: %w", err))
 		}
 	}
 
 	if p.store != nil {
 		if err := p.store.Close(); err != nil {
-			return fmt.Errorf("closing datastore failed: %w", err)
+			errs = append(errs, fmt.Errorf("closing datastore failed: %w", err))
 		}
 	}
 	if p.ephemeral_repo_path {
-		os.RemoveAll(p.repo_path)
+		if err := os.RemoveAll(p.repo_path); err != nil {
+			errs = append(errs, fmt.Errorf("removing temporary repository failed: %w", err))
+		}
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 func (p *node) Done() <-chan struct{} {
@@ -189,11 +198,15 @@ func NewLitePublic(ctx context.Context, repoPath interface{}, privateKey []byte,
 	return new(ctx, repoPath, privateKey, admission, swarmListen, swarmAnnounce, bootstrap, true, opts...)
 }
 
-func new(ctx context.Context, repoPath interface{}, privateKey []byte, admission *sectls.Credentials, swarmListen []string, swarmAnnounce []string, bootstrap BootstrapParams, server bool, opts ...libp2p.Option) (Node, error) {
+func new(ctx context.Context, repoPath interface{}, privateKey []byte, admission *sectls.Credentials, swarmListen []string, swarmAnnounce []string, bootstrap BootstrapParams, server bool, opts ...libp2p.Option) (_ Node, err error) {
 	var p node
-	var err error
 
 	p.ctx, p.ctx_cancel = context.WithCancel(ctx)
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, p.cleanup())
+		}
+	}()
 
 	p.ephemeral_repo_path = false
 	if repoPath == nil {
