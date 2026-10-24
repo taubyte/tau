@@ -135,6 +135,8 @@ func (g *throughLeader) landed(ops []BatchOp) bool {
 
 func (g *throughLeader) Get(key string) ([]byte, bool) { return g.reader().Get(key) }
 
+func (g *throughLeader) TryGet(key string) ([]byte, bool, error) { return g.reader().TryGet(key) }
+
 func (g *throughLeader) Keys(prefix string) []string { return g.reader().Keys(prefix) }
 
 // waitForLen polls q.Len() until it is want, or the timeout elapses.

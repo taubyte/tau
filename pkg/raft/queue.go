@@ -42,12 +42,20 @@ func (q *queue) indexKey(id string) string {
 	return q.indexPrefix + id
 }
 
-func (q *queue) readCounter() uint64 {
-	data, ok := q.cluster.Get(q.counterKey)
-	if !ok || len(data) < 8 {
-		return 0
+// readCounter is the last position handed out. A counter that cannot be read
+// is an error and not a zero, because Push allocates the next position from it.
+func (q *queue) readCounter() (uint64, error) {
+	data, ok, err := q.cluster.TryGet(q.counterKey)
+	if err != nil {
+		return 0, fmt.Errorf("reading the queue counter: %w", err)
 	}
-	return binary.BigEndian.Uint64(data)
+	if !ok {
+		return 0, nil
+	}
+	if len(data) != 8 {
+		return 0, fmt.Errorf("corrupt queue counter: %d bytes", len(data))
+	}
+	return binary.BigEndian.Uint64(data), nil
 }
 
 func encodeCounter(seq uint64) []byte {
@@ -108,11 +116,19 @@ func (q *queue) Push(id string, data []byte, timeout time.Duration) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	if _, exists := q.cluster.Get(q.indexKey(id)); exists {
+	_, exists, err := q.cluster.TryGet(q.indexKey(id))
+	if err != nil {
+		return fmt.Errorf("reading the queue index: %w", err)
+	}
+	if exists {
 		return nil
 	}
 
-	seq := q.readCounter() + 1
+	last, err := q.readCounter()
+	if err != nil {
+		return err
+	}
+	seq := last + 1
 	seqStr := sequenceID(seq)
 
 	return q.cluster.Batch([]BatchOp{
@@ -139,7 +155,10 @@ func (q *queue) Pop(timeout time.Duration) (string, []byte, error) {
 	}
 
 	key := keys[0]
-	raw, ok := q.cluster.Get(key)
+	raw, ok, err := q.cluster.TryGet(key)
+	if err != nil {
+		return "", nil, fmt.Errorf("reading the queue head: %w", err)
+	}
 	if !ok {
 		return "", nil, ErrQueueEmpty
 	}
