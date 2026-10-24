@@ -76,19 +76,19 @@ func TestSharedSnapshotDir_StaleIdentity_Wedges(t *testing.T) {
 }
 
 // TestScopedSnapshotDir_FreshIdentity_Bootstraps is the fix guard: when the
-// snapshot dir is scoped per root (SnapshotDir / NewRaftCluster), a fresh node in
-// its own dir bootstraps cleanly regardless of a prior node's leftover snapshot.
+// snapshot dir is scoped per root (WithSnapshotRoot), a fresh node in its own
+// root bootstraps cleanly regardless of a prior node's leftover snapshot.
 func TestScopedSnapshotDir_FreshIdentity_Bootstraps(t *testing.T) {
 	const ns = "main"
 
 	// A prior run leaves a snapshot under its own root.
-	bootstrapAndSnapshot(t, SnapshotDir(t.TempDir(), "shapeA", ns), ns)
+	bootstrapAndSnapshot(t, t.TempDir(), ns)
 
 	// New run: its own root → its own snapshot dir → no contamination.
 	nodeB := newTestNode(t)
 	cB, err := New(nodeB, ns,
 		WithForceBootstrap(),
-		WithSnapshotDir(SnapshotDir(t.TempDir(), "shapeB", ns)),
+		WithSnapshotRoot(t.TempDir()),
 		WithTimeouts(fastSingleNode),
 	)
 	assert.NilError(t, err)
