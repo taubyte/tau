@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"google.golang.org/protobuf/proto"
 )
 
 // hear hands what src has broadcast so far to each of dsts, which fetch from
@@ -386,16 +388,29 @@ func TestAJudgeThatVanishesAfterARebaseLeavesNothingWaiting(t *testing.T) {
 		t.Fatal("setup: r should rejoin")
 	}
 	before := r.incarnation()
+	// b's ok, whose state r cannot fetch, is held when the rebase lands.
+	b.r.mu.Lock()
+	ok := b.r.message(nil, &verdict{to: before, since: b.r.since, held: b.r.since})
+	b.r.mu.Unlock()
+	data, err := proto.Marshal(ok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.out.msgs = [][]byte{data}
+	st.hear(t, b, []*simReplica{r})
 	st.hear(t, r, []*simReplica{a}, a, b)
 	st.hear(t, a, []*simReplica{r}) // the rebase; then a is never heard again
 	if r.rejoining() || r.incarnation() == before {
 		t.Fatal("setup: a should have rebased r")
 	}
 	r.r.mu.Lock()
-	settledSince := r.r.settledSince
+	settledSince, oks := r.r.settledSince, len(r.r.oks)
 	r.r.mu.Unlock()
 	if settledSince != 0 {
 		t.Fatal("a rebase kept the time the replica last held what its peers held")
+	}
+	if oks != 0 {
+		t.Fatal("an ok for the incarnation a rebase replaced outlived it")
 	}
 	rebased := st.ms()
 	for !r.settled() {
@@ -693,5 +708,39 @@ func TestAReplicaHearingOnlyRejoiningPeersVouchesForThem(t *testing.T) {
 	st.hear(t, a, []*simReplica{b}, a, b)
 	if b.rejoining() {
 		t.Fatal("a replica hearing only rejoining peers did not vouch for them")
+	}
+}
+
+// TestARebasedReplicaVouchesForTheJudgeWhoseStateItHolds: a replica rebased
+// on a judge's state, once it holds it, holds what the judge held, so when
+// the two hear nobody else it vouches for the judge in turn rather than
+// leave it rejoining.
+func TestARebasedReplicaVouchesForTheJudgeWhoseStateItHolds(t *testing.T) {
+	st := newSimTime()
+	w, a, j := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "j", 0)
+	put(t, w.r, "/x", "v")
+	st.settle(t, w, a, j)
+	st.away(t, simRetention+2*simMargin, a, j)
+	// x hears j once and is never settled; then x and j hear nobody else.
+	x := st.replica(t, "x", 0)
+	j.beat()
+	st.hear(t, j, []*simReplica{x}, j)
+	st.advance((gapIntervals + 1) * simRI)
+	j.beat()
+	x.beat()
+	if !j.rejoining() || !x.rejoining() {
+		t.Fatal("setup: j and x should rejoin")
+	}
+	j.out.take()
+	st.hear(t, x, []*simReplica{j}, j, x)
+	st.hear(t, j, []*simReplica{x}, j, x)
+	if x.rebases() != 1 {
+		t.Fatal("setup: j, which forgot what x may hold, should have rebased it")
+	}
+	j.beat()
+	st.hear(t, j, []*simReplica{x}, j, x)
+	st.hear(t, x, []*simReplica{j}, j, x)
+	if j.rejoining() {
+		t.Fatal("a replica rebased on a judge's state did not vouch for that judge")
 	}
 }
