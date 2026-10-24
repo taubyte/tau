@@ -2,10 +2,13 @@ package kvdb
 
 import (
 	"context"
+	"fmt"
+	"maps"
 	"testing"
 
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
+	dssync "github.com/ipfs/go-datastore/sync"
 )
 
 // TestE1CompactionKeepsEveryLiveVersion: a key with two concurrent versions
@@ -174,4 +177,59 @@ func TestE3AFreshReplicaSyncsFromAReclaimingPeer(t *testing.T) {
 	if !sameCids(headCIDs(bh), headCIDs(fh)) {
 		t.Errorf("fresh replica's heads %v differ from its source's %v: a branch it merged is not a tip it will build on", headCIDs(fh), headCIDs(bh))
 	}
+}
+
+// TestACoveredBlockIsNeverFetched: a replica never asks for a block whose dot
+// its context covers. A fresh replica syncing from a compacted peer fetches
+// the snapshot alone and records nothing it covers as missing; and the walk
+// skips a covered link it is handed, as a walk is when a snapshot merged
+// meanwhile covers a parent that was missing when it was linked.
+func TestACoveredBlockIsNeverFetched(t *testing.T) {
+	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 1, noAutoCompact())
+	defer done()
+	a := replicas[0]
+	ctx := context.Background()
+
+	var history []link
+	for i := range 5 {
+		put(t, a, fmt.Sprintf("k%d", i), "v")
+		history = append(history, onlyHeadLink(t, a))
+	}
+	del(t, a, "k0")
+	history = append(history, onlyHeadLink(t, a))
+	compact(t, a)
+	snapshot := onlyHead(t, a)
+
+	dag := newCountingDAG()
+	dag.setRemotes(dagsyncs[0].DAGService)
+	f, err := NewDatastore(dssync.MutexWrap(ds.NewMapDatastore()), ds.NewKey("crdttest"), dag, &nullBroadcaster{}, replicaOptions(noAutoCompact(), "fresh: "))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	syncReplicaHeads(t, a, f)
+	if got := dag.take(); !maps.Equal(got, map[cid.Cid]int{snapshot: 1}) {
+		t.Errorf("syncing a snapshot fetched %v, want the snapshot %s alone", got, snapshot)
+	}
+	if n, err := countPrefix(ctx, f.store, f.missingPrefix()); err != nil || n != 0 {
+		t.Errorf("the fresh replica records %d covered parents as missing (%v)", n, err)
+	}
+
+	if err := f.handleBranch(ctx, history); err != nil {
+		t.Fatal(err)
+	}
+	if got := dag.take(); len(got) != 0 {
+		t.Errorf("the walk fetched blocks it covers: %v", got)
+	}
+	assertSameState(t, []string{"a", "fresh"}, a, f)
+}
+
+func onlyHeadLink(t testing.TB, r *Datastore) link {
+	t.Helper()
+	hs, _ := r.heads.List()
+	if len(hs) != 1 {
+		t.Fatalf("want one head, have %d", len(hs))
+	}
+	return link{cid: hs[0].Cid, dot: hs[0].Dot}
 }

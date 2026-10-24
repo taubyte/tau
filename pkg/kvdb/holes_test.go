@@ -3,10 +3,13 @@ package kvdb
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
+	dssync "github.com/ipfs/go-datastore/sync"
+	ipld "github.com/ipfs/go-ipld-format"
 )
 
 // The holes H1-H5 and the counterexamples of
@@ -201,6 +204,94 @@ func TestH4ChunkedSnapshotIsMergedWhole(t *testing.T) {
 	assertSameState(t, []string{"A", "X"}, a, x)
 }
 
+// droppingDAG ends a GetMany early, with no error, at the first block in
+// drop: what a getter does when its context ends mid-fetch, since nothing
+// obliges it to report each block it did not send.
+type droppingDAG struct {
+	*fetchThroughDAGSvc
+
+	mu   sync.Mutex
+	drop map[cid.Cid]bool
+}
+
+func (d *droppingDAG) dropping(c cid.Cid) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.drop[c]
+}
+
+func (d *droppingDAG) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.NodeOption {
+	out := make(chan *ipld.NodeOption, len(cids))
+	go func() {
+		defer close(out)
+		for _, c := range cids {
+			if d.dropping(c) {
+				return
+			}
+			nd, err := d.Get(ctx, c)
+			out <- &ipld.NodeOption{Node: nd, Err: err}
+		}
+	}()
+	return out
+}
+
+// H4, the other way a fetch comes up short: the getter stops before the last
+// chunk and reports nothing. The snapshot is still not merged until it is
+// whole.
+func TestH4AChunkFetchThatEndsEarlyIsNotMerged(t *testing.T) {
+	opts := noAutoCompact()
+	opts.MaxBatchDeltaSize = 200
+	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 1, opts)
+	defer done()
+	a := replicas[0]
+	ctx := context.Background()
+
+	all := map[string]string{}
+	for i := range 40 {
+		k, v := fmt.Sprintf("key-%02d", i), fmt.Sprintf("value-%02d", i)
+		put(t, a, k, v)
+		all[k] = v
+	}
+	compact(t, a)
+	root := onlyHead(t, a)
+	_, rootDelta, err := (&crdtNodeGetter{a.dagService}).GetDelta(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rootDelta.GetChunks()) < 2 {
+		t.Fatalf("test setup: want a snapshot in several chunks, got %d", len(rootDelta.GetChunks()))
+	}
+	last, err := cid.Cast(rootDelta.GetChunks()[len(rootDelta.GetChunks())-1])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dag := &droppingDAG{fetchThroughDAGSvc: newFetchThrough(), drop: map[cid.Cid]bool{last: true}}
+	dag.setRemotes(dagsyncs[0].DAGService)
+	x, err := NewDatastore(dssync.MutexWrap(ds.NewMapDatastore()), ds.NewKey("crdttest"), dag, &nullBroadcaster{}, replicaOptions(opts, "x: "))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer x.Close()
+
+	syncHeadsLogged(t, a, x)
+	if x.covered(dotFromPB(rootDelta.GetDot())) {
+		t.Fatal("X merged a snapshot it fetched only part of")
+	}
+	if got := queryAll(t, x); len(got) != 0 {
+		t.Fatalf("X shows %d keys of a snapshot it did not merge", len(got))
+	}
+
+	dag.mu.Lock()
+	dag.drop = nil
+	dag.mu.Unlock()
+	if err := x.Repair(ctx); err != nil {
+		t.Fatal(err)
+	}
+	want(t, "X", x, all)
+	assertSameState(t, []string{"A", "X"}, a, x)
+}
+
 // H5: one context per store. A delete issued by one writer of an element
 // another writer added survives a compaction, against the adder's stale
 // chain.
@@ -368,6 +459,47 @@ func TestConcurrentCompactionsOfTheSameViewConverge(t *testing.T) {
 		if r.blockCount > 2 {
 			t.Errorf("a replica keeps %d blocks after both snapshots", r.blockCount)
 		}
+	}
+}
+
+// TestCompactingAgainFoldsNothing: a replica that holds only snapshots it
+// heads, made here or merged, has nothing to fold. Compacting anyway would
+// write a snapshot that frees nothing, and replicas that compact after a
+// merge would answer every snapshot with another one, forever.
+func TestCompactingAgainFoldsNothing(t *testing.T) {
+	for _, concurrent := range []bool{false, true} {
+		t.Run(fmt.Sprintf("concurrent=%t", concurrent), func(t *testing.T) {
+			replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 2, noAutoCompact())
+			defer done()
+			a, b := replicas[0], replicas[1]
+			ctx := context.Background()
+
+			put(t, a, "x", "1")
+			put(t, a, "y", "2")
+			del(t, a, "x")
+			syncReplicaHeads(t, a, b)
+			compact(t, a)
+			if concurrent {
+				compact(t, b)
+				from(dagsyncs, 0, 1)
+				syncReplicaHeads(t, b, a)
+			}
+			syncReplicaHeads(t, a, b)
+
+			for name, r := range map[string]*Datastore{"a": a, "b": b} {
+				before, _ := r.heads.List()
+				counter := r.counter
+				n, err := r.Compact(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				after, _ := r.heads.List()
+				if n != 0 || r.counter != counter || !sameCids(headCIDs(before), headCIDs(after)) {
+					t.Errorf("%s compacted with nothing to fold: dropped %d blocks, counter %d -> %d, heads %v -> %v", name, n, counter, r.counter, headCIDs(before), headCIDs(after))
+				}
+			}
+			assertSameState(t, []string{"a", "b"}, a, b)
+		})
 	}
 }
 

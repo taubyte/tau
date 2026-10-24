@@ -95,6 +95,45 @@ func (f *fetchThroughDAGSvc) holds(c cid.Cid) bool {
 	return err == nil && has
 }
 
+// countingDAG counts every block its replica asks for, whoever serves it.
+type countingDAG struct {
+	*fetchThroughDAGSvc
+
+	mu      sync.Mutex
+	fetched map[cid.Cid]int
+}
+
+func newCountingDAG() *countingDAG {
+	return &countingDAG{fetchThroughDAGSvc: newFetchThrough(), fetched: map[cid.Cid]int{}}
+}
+
+func (c *countingDAG) count(cids ...cid.Cid) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, id := range cids {
+		c.fetched[id]++
+	}
+}
+
+func (c *countingDAG) Get(ctx context.Context, id cid.Cid) (ipld.Node, error) {
+	c.count(id)
+	return c.fetchThroughDAGSvc.Get(ctx, id)
+}
+
+func (c *countingDAG) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.NodeOption {
+	c.count(cids...)
+	return c.fetchThroughDAGSvc.GetMany(ctx, cids)
+}
+
+// take returns the fetches since the last take.
+func (c *countingDAG) take() map[cid.Cid]int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := c.fetched
+	c.fetched = map[cid.Cid]int{}
+	return out
+}
+
 // from points replica r's fetches at src only.
 func from(dagsyncs []*fetchThroughDAGSvc, r, src int) {
 	dagsyncs[r].setRemotes(dagsyncs[src].DAGService)

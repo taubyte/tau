@@ -47,11 +47,12 @@ type incarnation struct {
 // every replica's vector by one entry.
 //
 // It is safe because an entry is the incarnation's true last counter, written
-// under the store's lock as it closed and after its last write, and because
-// resuming takes the entry out: no two open stores ever write under one
-// incarnation. A store whose context does not reach that counter draws a new
-// one instead: it is a copy of the store taken earlier, or one emptied since,
-// and would chain its own writes past a gap in its own context.
+// under the store's lock as it closes, after its last write: a closed store
+// writes nothing more. And resuming takes the entry out, so no two open
+// stores ever write under one incarnation. A store whose context does not
+// reach that counter draws a new one instead: it is a copy of the store taken
+// earlier, or one emptied since, and would chain its own writes past a gap in
+// its own context.
 type incarnationRegistry struct {
 	mu     sync.Mutex
 	closed map[incarnationKey]incarnation
