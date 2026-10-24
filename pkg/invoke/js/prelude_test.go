@@ -132,6 +132,14 @@ export default {
     eq("not ok", new Response(null, { status: 503 }).ok, false);
     eq("json", await Response.json([1, { a: 2 }]).json(), [1, { a: 2 }]);
     eq("json keeps a type", Response.json(1, { headers: { "content-type": "application/x" } }).headers.get("content-type"), "application/x");
+    eq("json types itself", Response.json(1).headers.get("content-type"), "application/json");
+    eq("a string body types itself", new Response("x").headers.get("content-type"), "text/plain;charset=UTF-8");
+    eq("a typed body keeps a given type", new Response("x", { headers: { "content-type": "text/x" } }).headers.get("content-type"), "text/x");
+    eq("no body, no headers", [...new Response().headers], []);
+    eq("a clone keeps the type", new Response("x").clone().headers.get("content-type"), "text/plain;charset=UTF-8");
+    const untyped = new Response("x");
+    untyped.headers.delete("content-type");
+    eq("a type deleted stays deleted", untyped.headers.has("content-type"), false);
     eq("redirect", [Response.redirect("/x").status, Response.redirect("/x").headers.get("location")], [302, "/x"]);
     eq("binary bodies are copied", bytes(await new Response(new Uint8Array([1, 2, 3]).subarray(1)).bytes()), [2, 3]);
     eq("an ArrayBuffer body", bytes(await new Response(new Uint8Array([9]).buffer).bytes()), [9]);

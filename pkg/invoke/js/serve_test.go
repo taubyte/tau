@@ -149,6 +149,48 @@ export default {
 	require.Equal(t, []string{"http://workload.invalid/relative"}, resp.Headers["X-Url"])
 }
 
+// TestARequestBodyReadsTheSameWhenever. text and json decode the bytes Go
+// holds while the request is served, and the copy the realm holds once it is
+// not: a body read then, read late from waitUntil, kept for a later request
+// or read through a clone, reads the same.
+func TestARequestBodyReadsTheSameWhenever(t *testing.T) {
+	f := newFixture(t, `
+let late = "";
+let kept = null;
+export default {
+  async fetch(request, env, ctx) {
+    const path = request.url.slice("http://workload.invalid".length);
+    if (path === "/late") {
+      ctx.waitUntil(later(5).then(async () => { late = await request.text(); }));
+      return new Response("later");
+    }
+    if (path === "/late-read") return new Response(late);
+    if (path === "/keep") { kept = request; return new Response("kept"); }
+    if (path === "/kept") return new Response(await kept.text());
+    if (path === "/clone") {
+      const copy = request.clone();
+      return Response.json([await request.text(), await copy.text()]);
+    }
+    if (path === "/json") return Response.json(await request.json());
+    return new Response(await request.text());
+  },
+};
+`)
+	inst := f.start()
+	body := []byte("\xef\xbb\xbfh\xffi \xe2\x82\xac")
+	want := "h\ufffdi \u20ac"
+	post := func(path string) *invoke.Request { return &invoke.Request{Method: "POST", Path: path, Body: body} }
+
+	require.Equal(t, want, string(serve(t, inst, post("/now")).Body))
+	require.Equal(t, "later", string(serve(t, inst, post("/late")).Body))
+	require.Equal(t, want, string(serve(t, inst, get("/late-read")).Body))
+	require.Equal(t, "kept", string(serve(t, inst, post("/keep")).Body))
+	require.Equal(t, want, string(serve(t, inst, get("/kept")).Body))
+	require.JSONEq(t, `["`+want+`","`+want+`"]`, string(serve(t, inst, post("/clone")).Body))
+	resp := serve(t, inst, &invoke.Request{Method: "POST", Path: "/json", Body: []byte(`{"a":[1,"\u00e9"]}`)})
+	require.JSONEq(t, `{"a":[1,"\u00e9"]}`, string(resp.Body))
+}
+
 func TestANon200StatusIsKept(t *testing.T) {
 	f := newFixture(t, `
 export default {
