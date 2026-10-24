@@ -13,7 +13,6 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 	"github.com/taubyte/tau/pkg/queue"
 	"github.com/taubyte/tau/services/build"
-	"github.com/taubyte/tau/services/build/livelog"
 )
 
 // Service is build's private half: the host it answers on, the replicated
@@ -57,9 +56,10 @@ type Service struct {
 	runningMu sync.Mutex
 	running   map[string]context.CancelFunc
 
-	// logs holds the open log of every build this node is WRITING ONE FOR, so
-	// that Follow can fork a reader off it while it is still being appended to
-	// (output.go).
+	// logs holds the log of every build this node is WRITING ONE FOR, with the
+	// run it belongs to, so that Follow can fork a reader off it while it is
+	// still being appended to — and goes on holding it until the run's record
+	// names it (output.go's discard).
 	//
 	// IT IS A SECOND MAP AND NOT A SECOND OPINION about what this node runs.
 	// The one above is decided by a record READ — the claim's, inside its
@@ -68,7 +68,7 @@ type Service struct {
 	// for the same reason: a build holds no lock, and opening its log is not a
 	// transition of anything.
 	logsMu sync.Mutex
-	logs   map[string]*livelog.Log
+	logs   map[string]runLog
 
 	// meter is where this service says what it accounted for. Nil is the
 	// ordinary case; see meter.go.
@@ -280,7 +280,7 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 		now:           o.now,
 		serverOptions: o.serverOptions,
 		running:       map[string]context.CancelFunc{},
-		logs:          map[string]*livelog.Log{},
+		logs:          map[string]runLog{},
 	}
 
 	// The queue reads the same clock this service does, so a test that moves

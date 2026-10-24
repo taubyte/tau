@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -218,31 +217,22 @@ func logsCommand(env Env) *cobra.Command {
 // showLog prints a job's log: what it holds now, or with follow, everything
 // until the job ends. At a terminal, following draws the live view; anywhere
 // else the bytes go to stdout as they arrive.
+//
+// IT IS ONE RUN'S LOG, the job's current one, read the same way whatever the
+// run is doing: the frontend serves an ended run's from where its record files
+// it under that run. Read here by the record's last entry instead, a cancelled
+// job's log was the previous run's while its own was still being stored.
 func showLog(cmd *cobra.Command, env Env, cl *api.Client, id string, from int64, follow bool) error {
-	// A FINISHED JOB'S LOG IS THE ONE IT STORED. Following asks the node
-	// writing the log, and once the build ends no node is: the stream would be
-	// empty, and an empty log reads as a build that printed nothing.
-	j, err := cl.Job(cmd.Context(), id)
-	if err == nil && terminal(j) {
-		var all bytes.Buffer
-		if err := storedLogOf(cmd, cl, j, &all); err != nil {
-			return err
-		}
-		if from > int64(all.Len()) {
-			from = int64(all.Len())
-		}
-		_, err := env.Stdout.Write(all.Bytes()[from:])
-		return err
-	}
 	// A QUEUED JOB HAS LOGGED NOTHING, and stderr says so, so that an empty log
 	// does not read as a build that printed nothing. Following it waits: the
 	// frontend holds the stream open until the job starts.
+	j, err := cl.Job(cmd.Context(), id)
 	queued := err == nil && j.GetStatus() == api.JobQueued
 	notes := env.Stderr
 	if jsonOut(cmd) {
 		notes = io.Discard
 	}
-	stream := cl.Stream(cmd.Context(), id, from)
+	stream := cl.Stream(cmd.Context(), id, 0, from)
 	if !follow {
 		stream.Retries = 0
 		stream.Snapshot = true

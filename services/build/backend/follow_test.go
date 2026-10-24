@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -59,15 +61,15 @@ func (c *collector) last() int64 {
 	return c.chunks[len(c.chunks)-1].GetNextOffset()
 }
 
-// running puts a log on this service under jobID, as a run would.
-func running(t *testing.T, s *Service, jobID string) *livelog.Log {
+// running puts a log on this service under jobID, as that attempt's run would.
+func running(t *testing.T, s *Service, jobID string, attempt uint32) *livelog.Log {
 	t.Helper()
 
 	log, err := livelog.Create(t.TempDir() + "/log")
 	require.NoError(t, err)
 
 	s.logsMu.Lock()
-	s.logs[jobID] = log
+	s.logs[jobID] = runLog{attempt: attempt, log: log}
 	s.logsMu.Unlock()
 
 	t.Cleanup(func() {
@@ -84,7 +86,7 @@ func running(t *testing.T, s *Service, jobID string) *livelog.Log {
 func TestFollowStreamsARunningBuild(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
-	log := running(t, h.Service, id)
+	log := running(t, h.Service, id, 1)
 
 	_, err := log.Write([]byte("cloning\n"))
 	require.NoError(t, err)
@@ -92,7 +94,7 @@ func TestFollowStreamsARunningBuild(t *testing.T) {
 	var out collector
 	done := make(chan error, 1)
 	go func() {
-		done <- h.follow(t.Context(), &buildv2.FollowRequest{JobId: id}, out.send)
+		done <- h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Attempt: 1}, out.send)
 	}()
 
 	// What was already there arrives without waiting for more.
@@ -118,14 +120,14 @@ func TestFollowStreamsARunningBuild(t *testing.T) {
 func TestFollowResumesAtAnOffset(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
-	log := running(t, h.Service, id)
+	log := running(t, h.Service, id, 1)
 
 	_, err := log.Write([]byte("first\nsecond\n"))
 	require.NoError(t, err)
 	require.NoError(t, log.Close())
 
 	var out collector
-	require.NoError(t, h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Offset: int64(len("first\n"))}, out.send))
+	require.NoError(t, h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Attempt: 1, Offset: int64(len("first\n"))}, out.send))
 	require.Equal(t, "second\n", out.text())
 }
 
@@ -136,21 +138,21 @@ func TestFollowOnANodeThatIsNotTheWriter(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
-	err := h.follow(t.Context(), &buildv2.FollowRequest{JobId: id}, (&collector{}).send)
+	err := h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Attempt: 1}, (&collector{}).send)
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
 
 	// The narrowing is real: the other refusals keep their own codes, so a
 	// caller does not walk the whole fleet over a bad request.
-	err = h.follow(t.Context(), &buildv2.FollowRequest{}, (&collector{}).send)
+	err = h.follow(t.Context(), &buildv2.FollowRequest{Attempt: 1}, (&collector{}).send)
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 
-	err = h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Offset: -1}, (&collector{}).send)
+	err = h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Attempt: 1, Offset: -1}, (&collector{}).send)
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 
 	// An offset past the end of a log that IS here is the caller's arithmetic,
 	// not a routing problem.
-	running(t, h.Service, id)
-	err = h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Offset: 4096}, (&collector{}).send)
+	running(t, h.Service, id, 1)
+	err = h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Attempt: 1, Offset: 4096}, (&collector{}).send)
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 }
 
@@ -160,7 +162,7 @@ func TestFollowOnANodeThatIsNotTheWriter(t *testing.T) {
 func TestFollowEndsWhenTheViewerGoesAway(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
-	log := running(t, h.Service, id)
+	log := running(t, h.Service, id, 1)
 
 	_, err := log.Write([]byte("started\n"))
 	require.NoError(t, err)
@@ -168,7 +170,7 @@ func TestFollowEndsWhenTheViewerGoesAway(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	var out collector
 	done := make(chan error, 1)
-	go func() { done <- h.follow(ctx, &buildv2.FollowRequest{JobId: id}, out.send) }()
+	go func() { done <- h.follow(ctx, &buildv2.FollowRequest{JobId: id, Attempt: 1}, out.send) }()
 
 	require.Eventually(t, func() bool { return out.text() == "started\n" }, 2*time.Second, 5*time.Millisecond)
 
@@ -190,13 +192,13 @@ func TestFollowEndsWhenTheViewerGoesAway(t *testing.T) {
 func TestFollowStopsWhenItCannotSend(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
-	log := running(t, h.Service, id)
+	log := running(t, h.Service, id, 1)
 
 	_, err := log.Write([]byte("output\n"))
 	require.NoError(t, err)
 
 	broken := &collector{fail: errors.New("client went away")}
-	require.ErrorContains(t, h.follow(t.Context(), &buildv2.FollowRequest{JobId: id}, broken.send), "client went away")
+	require.ErrorContains(t, h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Attempt: 1}, broken.send), "client went away")
 
 }
 
@@ -241,7 +243,7 @@ func snapshotOf(t *testing.T, h *harness, id string, from int64) *collector {
 	var out collector
 	done := make(chan error, 1)
 	go func() {
-		done <- h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Offset: from, Snapshot: true}, out.send)
+		done <- h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Attempt: 1, Offset: from, Snapshot: true}, out.send)
 	}()
 	select {
 	case err := <-done:
@@ -267,7 +269,7 @@ func TestASnapshotEndsAtWhatTheBuildHasWrittenAndAFollowEndsWithTheBuild(t *test
 	var followed collector
 	following := make(chan error, 1)
 	go func() {
-		following <- h.follow(t.Context(), &buildv2.FollowRequest{JobId: id}, followed.send)
+		following <- h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Attempt: 1}, followed.send)
 	}()
 	require.Eventually(t, func() bool { return followed.text() == "cloning\n" }, 2*time.Second, 5*time.Millisecond)
 
@@ -299,7 +301,7 @@ func TestASnapshotEndsAtWhatTheBuildHasWrittenAndAFollowEndsWithTheBuild(t *test
 	require.Equal(t, "cloning\ncompiling\n", stored)
 	require.Equal(t, stored, followed.text(), "the follower saw the whole log")
 	for _, snapshot := range []bool{false, true} {
-		err := h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Snapshot: snapshot}, (&collector{}).send)
+		err := h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Attempt: 1, Snapshot: snapshot}, (&collector{}).send)
 		require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "snapshot=%v", snapshot)
 	}
 }
@@ -313,7 +315,7 @@ func TestALogNoNodeIsWritingIsComingUntilTheJobEnds(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 	ask := func(jobID string, snapshot bool) error {
-		return h.follow(t.Context(), &buildv2.FollowRequest{JobId: jobID, Snapshot: snapshot}, (&collector{}).send)
+		return h.follow(t.Context(), &buildv2.FollowRequest{JobId: jobID, Attempt: 1, Snapshot: snapshot}, (&collector{}).send)
 	}
 
 	for _, snapshot := range []bool{false, true} {
@@ -347,7 +349,7 @@ func TestALogNoNodeIsWritingIsComingUntilTheJobEnds(t *testing.T) {
 func TestAnEndedLogIsWholeToAFollowAndASnapshot(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
-	log := running(t, h.Service, id)
+	log := running(t, h.Service, id, 1)
 
 	_, err := log.Write([]byte("cloning\ncompiling\n"))
 	require.NoError(t, err)
@@ -355,7 +357,7 @@ func TestAnEndedLogIsWholeToAFollowAndASnapshot(t *testing.T) {
 
 	for _, snapshot := range []bool{false, true} {
 		var out collector
-		require.NoError(t, h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Snapshot: snapshot}, out.send))
+		require.NoError(t, h.follow(t.Context(), &buildv2.FollowRequest{JobId: id, Attempt: 1, Snapshot: snapshot}, out.send))
 		require.Equal(t, "cloning\ncompiling\n", out.text(), "snapshot=%v", snapshot)
 		require.Equal(t, int64(len("cloning\ncompiling\n")), out.last(), "snapshot=%v", snapshot)
 	}
@@ -366,13 +368,194 @@ func TestASnapshotIsRefusedWhereAFollowIs(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 	ask := func(jobID string, offset int64) error {
-		return h.follow(t.Context(), &buildv2.FollowRequest{JobId: jobID, Offset: offset, Snapshot: true}, (&collector{}).send)
+		return h.follow(t.Context(), &buildv2.FollowRequest{JobId: jobID, Attempt: 1, Offset: offset, Snapshot: true}, (&collector{}).send)
 	}
 
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(ask(id, 0)))
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(ask("", 0)))
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(ask(id, -1)))
 
-	running(t, h.Service, id)
+	running(t, h.Service, id, 1)
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(ask(id, 4096)))
+}
+
+// ask is one read of jobID's log at that run and offset, and what it got.
+func ask(t *testing.T, h *harness, jobID string, attempt int32, from int64, snapshot bool) (string, error) {
+	t.Helper()
+	var out collector
+	err := h.follow(t.Context(), &buildv2.FollowRequest{JobId: jobID, Attempt: attempt, Offset: from, Snapshot: snapshot}, out.send)
+	return out.text(), err
+}
+
+// AN OFFSET IS A POSITION IN ONE RUN'S LOG. A node writing the job's next run
+// answers a resume of the previous one as if it held no log, and the leader
+// says that run has ended — never the next run's bytes from the same offset,
+// which would splice two runs into one log.
+func TestAResumeIsNeverAnotherRunsLog(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+
+	first := "first run, line one\nfirst run, line two\n"
+	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+		fmt.Fprint(out, first)
+		return errors.New("the node went away")
+	}
+	require.True(t, h.mustStep(t))
+	require.NoError(t, h.retry(id))
+	hold(t, h, "second run, line one\nsecond run, line two\n")
+	require.Equal(t, uint32(2), h.mustRecord(t, id).Attempt)
+
+	read := int64(len("first run, line one\n"))
+	for _, snapshot := range []bool{false, true} {
+		// A follow handed anything stops there, so a splice fails this rather
+		// than waiting on the held build.
+		ctx, stop := context.WithCancel(t.Context())
+		var out collector
+		err := h.follow(ctx, &buildv2.FollowRequest{JobId: id, Attempt: 1, Offset: read, Snapshot: snapshot}, func(c *buildv2.LogChunk) error {
+			stop()
+			return out.send(c)
+		})
+		stop()
+		require.Empty(t, out.text(), "snapshot=%v: the second run's bytes are not the rest of the first run's log", snapshot)
+		require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "snapshot=%v", snapshot)
+	}
+
+	got, err := ask(t, h, id, 2, read, true)
+	require.NoError(t, err)
+	require.Equal(t, "second run, line one\nsecond run, line two\n"[read:], got)
+}
+
+// A RUN IS NAMED BY ITS ATTEMPT, and which runs are still to come is the
+// record's to say: the next one of a queued job, and the one a claim is on.
+// One the job has moved past, or that it ended before, has ended; one past
+// its next is not a run at all.
+func TestWhetherARunHasEndedIsTheRecords(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+	code := func(attempt int32) connect.Code {
+		_, err := ask(t, h, id, attempt, 0, false)
+		return connect.CodeOf(err)
+	}
+
+	require.Equal(t, connect.CodeInvalidArgument, code(0), "an offset needs its run")
+	require.Equal(t, connect.CodeUnavailable, code(1), "queued: its first run is to come")
+	require.Equal(t, connect.CodeInvalidArgument, code(2))
+
+	build := hold(t, h, "cloning\n")
+	h.logsMu.Lock()
+	delete(h.logs, id)
+	h.logsMu.Unlock()
+	require.Equal(t, connect.CodeUnavailable, code(1), "claimed, written on another node")
+	require.Equal(t, connect.CodeUnavailable, code(2), "the run after the claimed one is to come")
+	build.finish()
+	require.NoError(t, <-build.ended)
+
+	require.NoError(t, h.retry(id))
+	require.Equal(t, connect.CodeFailedPrecondition, code(1), "retried: the job has moved past it")
+	require.Equal(t, connect.CodeUnavailable, code(2), "retried: the next run is to come")
+	require.Equal(t, connect.CodeInvalidArgument, code(3))
+
+	require.NoError(t, h.cancel(id))
+	require.Equal(t, connect.CodeFailedPrecondition, code(1))
+	require.Equal(t, connect.CodeFailedPrecondition, code(2), "the job ended before it")
+	require.Equal(t, connect.CodeInvalidArgument, code(3))
+}
+
+// storing holds the asset store's next Put until release is called, and closes
+// reached once a publish is inside it.
+func storing(t *testing.T, h *harness) (reached chan struct{}, release func()) {
+	reached, held := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	release = func() { once.Do(func() { close(held) }) }
+	t.Cleanup(release)
+	h.assets.mu.Lock()
+	h.assets.block = held
+	h.assets.onPut = func() { close(reached) }
+	h.assets.mu.Unlock()
+	return reached, release
+}
+
+// A BUILD THAT HAS ENDED IS WHOLE WHILE ITS LOG GOES TO THE STORE. The record
+// still reads Claimed until the log is stored and named, so the node that
+// wrote the log is the one that can answer for it — and a snapshot taken then,
+// `tau logs` between the end of a build and its record settling, is its log
+// and not nothing.
+func TestALogIsWholeWhileItIsHandedToTheStore(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+		fmt.Fprint(out, "cloning\ncompiling\n")
+		return nil
+	}
+	reached, release := storing(t, h)
+	done := make(chan error, 1)
+	go func() {
+		_, err := h.step(context.WithoutCancel(t.Context()))
+		done <- err
+	}()
+	<-reached
+	require.Equal(t, buildv2.JobStatus_JobStatusClaimed, h.status(t, id))
+
+	for _, snapshot := range []bool{true, false} {
+		got, err := ask(t, h, id, 1, 0, snapshot)
+		require.NoError(t, err, "snapshot=%v", snapshot)
+		require.Equal(t, "cloning\ncompiling\n", got, "snapshot=%v", snapshot)
+	}
+
+	release()
+	require.NoError(t, <-done)
+	require.Equal(t, "cloning\ncompiling\n", h.assets.content(t, h.mustRecord(t, id).Logs[stamp(1)]))
+	_, err := ask(t, h, id, 1, 0, true)
+	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err), "stored and named: the node has let go")
+}
+
+// A CANCELLED RUN'S LOG IS FOLLOWED FROM THE NODE THAT WROTE IT UNTIL IT IS
+// STORED. Cancel makes the record terminal before the run has even stopped,
+// so for the whole of the handoff the record names only what earlier runs
+// left: a follow then must still read this run's log, not the last stored one.
+func TestACancelledRunsLogIsFollowedUntilItIsStored(t *testing.T) {
+	h := newHarness(t)
+	id := h.push(t, testRef, testCommit)
+	h.runner.run = func(_ context.Context, _ Work, out Output) error {
+		fmt.Fprint(out, "the first run\n")
+		return errors.New("flaky")
+	}
+	require.True(t, h.mustStep(t))
+	require.NoError(t, h.retry(id))
+
+	started := make(chan struct{})
+	h.runner.run = func(ctx context.Context, _ Work, out Output) error {
+		fmt.Fprint(out, "the second run\n")
+		close(started)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	reached, release := storing(t, h)
+	done := make(chan error, 1)
+	go func() {
+		_, err := h.step(context.WithoutCancel(t.Context()))
+		done <- err
+	}()
+	<-started
+	require.NoError(t, h.cancel(id))
+	<-reached
+
+	rec := h.mustRecord(t, id)
+	require.Equal(t, buildv2.JobStatus_JobStatusCancelled, rec.status())
+	require.Equal(t, []string{stamp(1)}, slices.Sorted(maps.Keys(rec.Logs)), "the record does not name this run's log yet")
+
+	var during []string
+	for _, snapshot := range []bool{true, false} {
+		got, err := ask(t, h, id, 2, 0, snapshot)
+		require.NoError(t, err, "snapshot=%v", snapshot)
+		require.True(t, strings.HasPrefix(got, "the second run\n"), "snapshot=%v: %q", snapshot, got)
+		during = append(during, got)
+	}
+
+	release()
+	require.NoError(t, <-done)
+	stored := h.assets.content(t, h.mustRecord(t, id).Logs[stamp(2)])
+	require.Equal(t, []string{stored, stored}, during, "what was followed is what was stored")
+	_, err := ask(t, h, id, 2, 0, false)
+	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
 }

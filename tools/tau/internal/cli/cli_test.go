@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/tools/tau/internal/config"
 )
 
@@ -370,6 +371,53 @@ func TestLogsOfAQueuedJob(t *testing.T) {
 		t.Fatal("tau logs --follow outlived the job")
 	}
 	require.Equal(t, "step one\nstep two\n", followed.String())
+}
+
+// A FOLLOW THAT DROPS RESUMES THE RUN IT WAS READING, so a job whose node went
+// away and ran again is not read on into the rerun: its bytes would carry on
+// from the dropped run's offset as if they were the rest of it. tau logs
+// --follow says where the lost run's log stops, and fails.
+func TestLogsNeverSpliceTwoRuns(t *testing.T) {
+	x := newTester(t)
+	x.login()
+	x.f.mu.Lock()
+	x.f.runLogs["job-live/2"] = "the rerun, from its own start\n"
+	x.f.dropOnce, x.f.rerunOnDrop = true, true
+	x.f.mu.Unlock()
+
+	r := x.run("logs", "job-live", "--follow")
+	require.NotZero(t, r.code)
+	require.Equal(t, "step ", r.stdout, "nothing of the rerun follows the dropped run's bytes")
+	require.Contains(t, r.stderr, "job job-live: the log of attempt 1 was not kept past byte 5")
+	require.Equal(t, []string{"", "attempt=1&offset=5"}, x.f.logQueries, "the resume named its run")
+
+	// And a job whose last run left no log has none to print, which is not an
+	// empty one.
+	x.f.mu.Lock()
+	x.f.gone["job-2/2"] = true
+	x.f.mu.Unlock()
+	r = x.run("logs", "job-2")
+	require.NotZero(t, r.code)
+	require.Empty(t, r.stdout)
+	require.Contains(t, r.stderr, "job job-2: the log of attempt 2 was not kept")
+}
+
+// A CANCELLED JOB'S LOG IS ITS LAST RUN'S, also while that run's log is still
+// being stored and the record names only the run before it: tau logs reads the
+// run, not the record's last entry.
+func TestLogsOfACancelledJobAreItsLastRuns(t *testing.T) {
+	x := newTester(t)
+	x.login()
+	x.f.mu.Lock()
+	x.f.jobs["job-cx"] = &buildv2.Job{Id: "job-cx", Status: buildv2.JobStatus_JobStatusCancelled, RepositoryKey: "github.com/acme/pay", Attempt: 2,
+		Logs: map[string]string{"00000000000000000001": "bafy1"}}
+	x.f.runLogs["job-cx/1"] = "the first run\n"
+	x.f.runLogs["job-cx/2"] = "the second run, cancelled\n"
+	x.f.mu.Unlock()
+
+	require.Equal(t, "stored: the second run, cancelled\n", x.ok("logs", "job-cx"))
+	require.Equal(t, "stored: the second run, cancelled\n", x.ok("logs", "job-cx", "--follow"))
+	require.Equal(t, []string{"snapshot=true", ""}, x.f.logQueries)
 }
 
 func TestCancelAndRetry(t *testing.T) {

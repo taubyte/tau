@@ -38,7 +38,7 @@ func (c *corsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Add("Vary", "Origin")
 		h.Set("Access-Control-Allow-Origin", origin)
-		h.Set("Access-Control-Expose-Headers", "Content-Type")
+		h.Set("Access-Control-Expose-Headers", "Content-Type, "+attemptHeader)
 		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 			h.Set("Access-Control-Allow-Methods", corsMethods)
 			h.Set("Access-Control-Allow-Headers", corsHeaders)

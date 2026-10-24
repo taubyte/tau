@@ -3,6 +3,7 @@ package clients
 import (
 	"context"
 	"net/http"
+	"sync"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -33,6 +34,16 @@ type fakeBackend struct {
 	// requests apart.
 	snapshot func(jobID string, offset int64, send func(*buildv2.LogChunk) error) error
 	built    func(project, environment, resource string) (string, error)
+
+	mu sync.Mutex
+	// runs is the attempt each Follow asked for, in order.
+	runs []int32
+}
+
+func (f *fakeBackend) asked() []int32 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]int32(nil), f.runs...)
 }
 
 func (f *fakeBackend) Artifact(_ context.Context, req *connect.Request[buildv2.ArtifactRequest]) (*connect.Response[buildv2.Built], error) {
@@ -47,6 +58,9 @@ func (f *fakeBackend) Artifact(_ context.Context, req *connect.Request[buildv2.A
 }
 
 func (f *fakeBackend) Follow(_ context.Context, req *connect.Request[buildv2.FollowRequest], stream *connect.ServerStream[buildv2.LogChunk]) error {
+	f.mu.Lock()
+	f.runs = append(f.runs, req.Msg.GetAttempt())
+	f.mu.Unlock()
 	read := f.follow
 	if req.Msg.GetSnapshot() {
 		read = f.snapshot

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
-	"sort"
 	"strings"
 	"time"
 
@@ -114,32 +113,54 @@ func ciRunCommand(env Env) *cobra.Command {
 	return cmd
 }
 
-// awaitJob follows a job to its end: its live log while it runs, the log it
-// stored when it ended before a byte was followed, and its record at the end.
+// awaitJob follows a job to its end: the log of the run it is on while it runs,
+// what is left of that run's log once it has ended, and its record at the end.
+//
+// THE RUN IS THE RECORD'S, and a read resumes only within it. A job whose node
+// went away runs again with a log of its own, which is read from its start
+// after a note saying where the last one stopped.
 func awaitJob(cmd *cobra.Command, cl *api.Client, job string, log io.Writer) (*api.Job, error) {
 	ctx := cmd.Context()
-	var offset int64
+	out := &lines{w: log}
+	var run *api.LogStream
+	// done is whether run's log was read to its end, or is known to have none.
+	var done bool
 	for {
 		j, err := cl.Job(ctx, job)
 		if err != nil {
 			return nil, err
 		}
-		if terminal(j) {
-			if offset == 0 {
-				storedLog(cmd, cl, j, log)
+		ended := terminal(j)
+		if at := j.GetAttempt(); at > 0 && (ended || j.GetStatus() == api.JobRunning) {
+			if run == nil || run.Attempt() != at {
+				if run != nil && !done {
+					out.note("job %s: the log of attempt %d was read to byte %d; attempt %d follows", job, run.Attempt(), run.Offset(), at)
+				}
+				run, done = cl.Stream(ctx, job, at, 0), false
 			}
-			return j, nil
+			if !done {
+				_, err := run.CopyTo(out)
+				done = err == nil
+				var lost *api.LostLog
+				var refusal *api.Error
+				switch {
+				case errors.As(err, &lost):
+					done = true
+					out.note("%v", lost)
+				case errors.As(err, &refusal):
+					// A FOLLOW REFUSED IS A BUILD NOT RUNNING THERE YET OR ANY
+					// MORE, which the next look at its record says — unless the
+					// job has ended, when it is the last word on its log.
+					if ended {
+						out.note("the job's log cannot be read: %v", err)
+					}
+				case err != nil:
+					return nil, err
+				}
+			}
 		}
-		if j.GetStatus() == api.JobRunning {
-			stream := cl.Stream(ctx, job, offset)
-			n, err := stream.CopyTo(log)
-			offset = n
-			// A FOLLOW REFUSED IS A BUILD NOT RUNNING THERE YET OR ANY MORE,
-			// which the next look at its record says.
-			var refusal *api.Error
-			if err != nil && !errors.As(err, &refusal) {
-				return nil, err
-			}
+		if ended {
+			return j, nil
 		}
 		select {
 		case <-ctx.Done():
@@ -149,37 +170,33 @@ func awaitJob(cmd *cobra.Command, cl *api.Client, job string, log io.Writer) (*a
 	}
 }
 
+// lines is a log with notes between its runs, each on a line of its own.
+type lines struct {
+	w   io.Writer
+	mid bool
+}
+
+func (l *lines) Write(p []byte) (int, error) {
+	n, err := l.w.Write(p)
+	if n > 0 {
+		l.mid = p[n-1] != '\n'
+	}
+	return n, err
+}
+
+func (l *lines) note(format string, args ...any) {
+	if l.mid {
+		fmt.Fprintln(l.w)
+		l.mid = false
+	}
+	fmt.Fprintf(l.w, format+"\n", args...)
+}
+
 func interval(cmd *cobra.Command) time.Duration {
 	if d := flagDuration(cmd, "interval"); d > 0 {
 		return d
 	}
 	return 2 * time.Second
-}
-
-// storedLog prints the last log a finished job stored, or why it cannot.
-func storedLog(cmd *cobra.Command, cl *api.Client, j *api.Job, log io.Writer) {
-	if err := storedLogOf(cmd, cl, j, log); err != nil {
-		fmt.Fprintf(log, "the job's log cannot be read: %v\n", err)
-	}
-}
-
-// storedLogOf writes the log of a finished job's last attempt to w.
-func storedLogOf(cmd *cobra.Command, cl *api.Client, j *api.Job, w io.Writer) error {
-	keys := make([]string, 0, len(j.GetLogs()))
-	for k := range j.GetLogs() {
-		keys = append(keys, k)
-	}
-	if len(keys) == 0 {
-		return nil
-	}
-	sort.Strings(keys)
-	body, err := cl.StoredLog(cmd.Context(), j.GetId(), keys[len(keys)-1])
-	if err != nil {
-		return err
-	}
-	defer body.Close()
-	_, err = io.Copy(w, body)
-	return err
 }
 
 func terminal(j *api.Job) bool {

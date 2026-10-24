@@ -3,17 +3,15 @@ package frontend
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
-	"maps"
 	"net/http"
-	"slices"
 	"strconv"
 	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/pkg/register"
 )
 
@@ -102,21 +100,27 @@ func (s *Service) handleGetJob(w http.ResponseWriter, r *http.Request, token, jo
 // bargain every streaming API makes, and it is written down rather than
 // discovered.
 //
-// WHATEVER STATE THE JOB IS IN, THE RESPONSE IS ITS LOG. A follow of a job
-// whose log no node is writing yet — queued, or claimed and not writing — waits
-// for one to start (followLog); a snapshot of it is empty, since it has logged
-// nothing so far.
-// A job that has ended answers FailedPrecondition, and what the read did not
-// reach comes from the log its record names: all of it for a build that ran
-// between two of a follow's asks, or that ended before the request came.
+// THE RESPONSE IS ONE RUN'S LOG, and X-Job-Attempt says which: ?attempt=N, or
+// without it the job's current run. An offset is a position in that run's
+// log, so a client resuming sends the run back with it — a job whose node went
+// away runs again, a retried one too, and the new run's log starts again from
+// nothing, so an offset carried over to it would splice the two.
+//
+// WHATEVER STATE THE RUN IS IN, THE RESPONSE IS ITS LOG. A follow of one no
+// node is writing yet waits for it to start (followLog); a snapshot of it is
+// empty, since it has logged nothing so far. One that has ended is read from
+// where its record files it (storedLog). One that ended with no log kept is a
+// 410, so that it cannot read as a log that stopped there — and found out
+// after the 200, the response is cut rather than ended, so the client resumes
+// and is told then.
 func (s *Service) handleFollowJob(w http.ResponseWriter, r *http.Request, token, jobID string) {
 	authorize, cancel := context.WithTimeout(r.Context(), s.cfg.BackendTimeout)
-	if _, err := s.mayTouchJob(authorize, token, jobID, register.RoleViewer); err != nil {
-		cancel()
+	job, err := s.mayTouchJob(authorize, token, jobID, register.RoleViewer)
+	cancel()
+	if err != nil {
 		respond(w, err)
 		return
 	}
-	cancel()
 
 	from, err := offsetOf(r)
 	if err != nil {
@@ -128,90 +132,113 @@ func (s *Service) handleFollowJob(w http.ResponseWriter, r *http.Request, token,
 		respond(w, err)
 		return
 	}
-	read := s.followLog
-	if snapshot {
-		read = s.backend.Snapshot
+	run, err := attemptOf(r, job)
+	if err != nil {
+		respond(w, err)
+		return
 	}
-
-	// THE HEADERS GO BEFORE THE FIRST CHUNK IS ASKED FOR, so a viewer sees the
-	// connection open on a build that has produced nothing yet rather than
-	// waiting on a blank response for the first line of output.
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	// A proxy that buffered this would defeat the whole route.
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.WriteHeader(http.StatusOK)
-
-	out := flushing{w: w}
-	out.flush()
 
 	// THE OFFSET IS ECHOED IN A TRAILER-SHAPED HEADER NOWHERE, deliberately:
 	// the response is the log and nothing else, so a client resuming counts the
 	// bytes it wrote and adds them to the offset it asked for. That is the same
 	// arithmetic the backend does and it needs no framing on this hop.
-	reached, err := read(r.Context(), jobID, from, func(data []byte, _ int64) error {
-		_, err := out.Write(data)
-		return err
-	})
+	out := &logResponse{w: w, run: run}
+	err = s.readLog(r.Context(), jobID, run, from, snapshot, out)
 	switch {
-	case connect.CodeOf(err) == connect.CodeFailedPrecondition:
-		err = s.storedLog(r.Context(), jobID, reached, out)
-	case snapshot && reached == from && connect.CodeOf(err) == connect.CodeUnavailable:
-		// No node is writing it yet, so it has logged nothing so far.
-		err = nil
-	}
-	if err != nil {
-		// THE STATUS IS ALREADY SENT. There is nothing to respond with, so the
-		// failure is logged and the connection ends — which is what a client
-		// tailing a log sees as "it stopped", and what its offset lets it
-		// recover from.
+	case err == nil:
+		out.open()
+	case !out.opened:
+		w.Header().Set(attemptHeader, strconv.Itoa(int(run)))
+		respond(w, err)
+	default:
+		// THE STATUS IS ALREADY SENT, so the failure is logged and the response
+		// is CUT: ended, it would read as the whole log, and a client could not
+		// tell where the log stopped from where the reading did. Cut, it is a
+		// read that broke, which its offset lets it resume.
 		s.log("following job %s: %v", jobID, err)
+		panic(http.ErrAbortHandler)
 	}
 }
 
-// followLog is Backend.Follow that waits while no node is writing the log,
-// asking again from FollowBackoff, doubled per ask up to FollowBackoffMax,
-// until a node does or the caller hangs up.
+// attemptHeader names the run a log response is about.
+const attemptHeader = "X-Job-Attempt"
+
+// readLog writes run's log of jobID to out from `from`: what it holds now, and
+// unless snapshot, what it goes on to write until the run ends.
 //
-// IT ASKS AGAIN ONLY BEFORE THE FIRST BYTE. Unavailable after one is a stream
-// that broke, and an offset resumes only within the attempt that wrote it: the
-// job's next writer is a new attempt, starting again from nothing. So a broken
-// follow still ends where it broke.
-func (s *Service) followLog(ctx context.Context, jobID string, from int64, emit func([]byte, int64) error) (int64, error) {
+// THE FIRST ASK IS A SNAPSHOT, for a follow too, because a snapshot answers at
+// once whatever the run is doing and the status waits for its answer: soon
+// enough that a viewer sees the response open on a build that has printed
+// nothing yet, and late enough that a run whose log was not kept is a 410
+// rather than a 200 that ends where nothing was.
+func (s *Service) readLog(ctx context.Context, jobID string, run int32, from int64, snapshot bool, out *logResponse) error {
+	reached, err := s.backend.Snapshot(ctx, jobID, run, from, out.emit)
+	if !snapshot && (err == nil || connect.CodeOf(err) == connect.CodeUnavailable) {
+		out.open()
+		reached, err = s.followLog(ctx, jobID, run, reached, out.emit)
+	}
+	switch {
+	case connect.CodeOf(err) == connect.CodeFailedPrecondition:
+		return s.storedLog(ctx, jobID, run, reached, out)
+	case snapshot && reached == from && connect.CodeOf(err) == connect.CodeUnavailable:
+		// No node is writing it yet, so it has logged nothing so far.
+		return nil
+	}
+	return err
+}
+
+// followLog is Backend.Follow of one run that waits while no node is writing
+// its log, asking again from FollowBackoff, doubled per ask up to
+// FollowBackoffMax, until a node does, the run ends, or the caller hangs up.
+//
+// IT ASKS AGAIN AFTER A BREAK TOO, from where the break left it. The request
+// names the run, so whatever answers next is that run's log or says it has
+// ended — never another run's bytes from the same offset, which is why this
+// once stopped at the first byte.
+func (s *Service) followLog(ctx context.Context, jobID string, run int32, from int64, emit func([]byte, int64) error) (int64, error) {
 	wait := s.cfg.FollowBackoff
 	for {
-		reached, err := s.backend.Follow(ctx, jobID, from, emit)
-		if reached != from || connect.CodeOf(err) != connect.CodeUnavailable {
+		reached, err := s.backend.Follow(ctx, jobID, run, from, emit)
+		if connect.CodeOf(err) != connect.CodeUnavailable {
 			return reached, err
+		}
+		if reached != from {
+			from, wait = reached, s.cfg.FollowBackoff
 		}
 		select {
 		case <-ctx.Done():
-			return reached, nil
+			return from, nil
 		case <-time.After(wait):
 		}
 		wait = min(2*wait, s.cfg.FollowBackoffMax)
 	}
 }
 
-// storedLog writes the log an ended job's record names, from `from`: the last
-// one, since the record's keys sort in attempt order. The record is read again
-// because the authorization's read was taken before the job ended.
-func (s *Service) storedLog(ctx context.Context, jobID string, from int64, w io.Writer) error {
-	if s.assets == nil {
-		return errors.New("this node reads no asset store")
-	}
+// storedLog writes, from `from`, the log an ended run left: what its job's
+// record files under its attempt. The record is read again, because the
+// authorization's read was taken before the run ended.
+//
+// NO OTHER RUN'S ENTRY IS THIS RUN'S LOG. A run with none left nothing: one the
+// job ended before reaching has logged nothing, which is a whole answer, and
+// one that ran had its log lost with its node or refused by the store, which
+// is errLogNotKept.
+func (s *Service) storedLog(ctx context.Context, jobID string, run int32, from int64, w io.Writer) error {
 	read, cancel := context.WithTimeout(ctx, s.cfg.BackendTimeout)
 	job, err := s.backend.Get(read, jobID)
 	cancel()
 	if err != nil {
 		return err
 	}
-	keys := slices.Sorted(maps.Keys(job.GetLogs()))
-	if len(keys) == 0 {
+	cid, kept := logOf(job, run)
+	switch {
+	case !kept && run > job.GetAttempt():
 		return nil
+	case !kept:
+		return errLogNotKept
+	case s.assets == nil:
+		return problem(http.StatusServiceUnavailable, "this node reads no asset store")
 	}
-	content, err := s.assets.Get(ctx, job.GetLogs()[keys[len(keys)-1]])
+	content, err := s.assets.Get(ctx, cid)
 	if err != nil {
 		return err
 	}
@@ -223,18 +250,58 @@ func (s *Service) storedLog(ctx context.Context, jobID string, from int64, w io.
 	return err
 }
 
-// flushing is a response that sends each write as it is made: a log held back
-// in a buffer would defeat the route.
-type flushing struct{ w http.ResponseWriter }
+// logOf is the cid a job's record files run's log under. The keys are the
+// attempt in decimal, padded so that they sort; read as numbers, the padding
+// is not this package's to know.
+func logOf(job *buildv2.Job, run int32) (string, bool) {
+	for key, cid := range job.GetLogs() {
+		if n, err := strconv.ParseInt(key, 10, 32); err == nil && int32(n) == run {
+			return cid, true
+		}
+	}
+	return "", false
+}
 
-func (f flushing) Write(p []byte) (int, error) {
-	n, err := f.w.Write(p)
-	f.flush()
+// logResponse is a log read's response. Its status and headers go with the
+// first byte, or when the read has nothing to send yet, so that until then a
+// refusal can still be a status; after that each write is sent as it is made,
+// since a log held back in a buffer would defeat the route.
+type logResponse struct {
+	w      http.ResponseWriter
+	run    int32
+	opened bool
+}
+
+func (o *logResponse) open() {
+	if o.opened {
+		return
+	}
+	o.opened = true
+	h := o.w.Header()
+	h.Set("Content-Type", "text/plain; charset=utf-8")
+	h.Set("X-Content-Type-Options", "nosniff")
+	// A proxy that buffered this would defeat the whole route.
+	h.Set("Cache-Control", "no-store")
+	h.Set("X-Accel-Buffering", "no")
+	h.Set(attemptHeader, strconv.Itoa(int(o.run)))
+	o.w.WriteHeader(http.StatusOK)
+	o.flush()
+}
+
+func (o *logResponse) Write(p []byte) (int, error) {
+	o.open()
+	n, err := o.w.Write(p)
+	o.flush()
 	return n, err
 }
 
-func (f flushing) flush() {
-	if flusher, ok := f.w.(http.Flusher); ok {
+func (o *logResponse) emit(data []byte, _ int64) error {
+	_, err := o.Write(data)
+	return err
+}
+
+func (o *logResponse) flush() {
+	if flusher, ok := o.w.(http.Flusher); ok {
 		flusher.Flush()
 	}
 }
@@ -268,6 +335,25 @@ func snapshotOf(r *http.Request) (bool, error) {
 		return false, problem(http.StatusBadRequest, "snapshot must be true or false")
 	}
 	return snapshot, nil
+}
+
+// attemptOf reads ?attempt=N, the run a log read is about, refusing one that is
+// not a positive number the way offsetOf refuses an offset that is not one.
+// Without it the read is about the job's current run: the one claimed or last
+// run, or a queued job's next.
+func attemptOf(r *http.Request, job *buildv2.Job) (int32, error) {
+	raw := r.URL.Query().Get("attempt")
+	if raw == "" {
+		if job.GetStatus() == buildv2.JobStatus_JobStatusOpen || job.GetAttempt() == 0 {
+			return job.GetAttempt() + 1, nil
+		}
+		return job.GetAttempt(), nil
+	}
+	n, err := strconv.ParseInt(raw, 10, 32)
+	if err != nil || n < 1 {
+		return 0, problem(http.StatusBadRequest, "attempt must be a positive integer")
+	}
+	return int32(n), nil
 }
 
 // handleCancelJob is POST /cancel/{jid}.

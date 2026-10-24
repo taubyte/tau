@@ -68,6 +68,11 @@ var (
 	// of anything this cloud holds.
 	errTooLarge = problem(http.StatusRequestEntityTooLarge, "request body too large")
 
+	// errLogNotKept is a run that ended with no log stored: its node went away
+	// before handing it over, or the asset store would not take it. GONE and
+	// not empty, so that what a client read of it cannot pass for all of it.
+	errLogNotKept = problem(http.StatusGone, "this run's log was not kept")
+
 	// errUpstream is anything this process could not get an answer to. It never
 	// carries the upstream's own words: a stranger learns that this cloud is
 	// unhappy, not which of its services is.

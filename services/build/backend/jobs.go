@@ -344,18 +344,22 @@ func (s *Service) follow(ctx context.Context, req *buildv2.FollowRequest, send f
 	if offset < 0 {
 		return errInvalidArgument("build: offset %d is before the start of the log", offset)
 	}
+	if req.GetAttempt() < 1 {
+		return errInvalidArgument("build: attempt %d is not a run: an offset is a position in one run's log", req.GetAttempt())
+	}
+	attempt := uint32(req.GetAttempt())
 
 	open := s.Follow
 	if req.GetSnapshot() {
 		open = s.Snapshot
 	}
-	reader, err := open(jobID, offset)
+	reader, err := open(jobID, attempt, offset)
 	if err != nil {
 		// ONLY THE LOG NOT BEING HERE goes to notWritten: an offset past the
 		// end, a job id that is not one, and a job this caller may not read all
 		// keep their own codes, so a bad request does not walk the whole fleet.
 		if connect.CodeOf(err) == connect.CodeNotFound {
-			return s.notWritten(jobID, err)
+			return s.notWritten(jobID, attempt, err)
 		}
 		return err
 	}
@@ -392,28 +396,36 @@ func (s *Service) follow(ctx context.Context, req *buildv2.FollowRequest, send f
 	}
 }
 
-// notWritten is the answer of a node that is not writing jobID's log.
+// notWritten is the answer of a node that holds no log of that run of jobID.
 //
-// WHILE THE JOB HAS NOT ENDED IT IS Unavailable, not NotFound. The log is on
-// the node running the build, or on none yet — the job is queued, or claimed
-// and not yet writing — and a caller's pool walks to the next backend on
-// Unavailable and stops on NotFound, so NotFound would make "ask the cloud"
+// WHILE THE RUN IS TO COME OR GOING ON IT IS Unavailable, not NotFound. The log
+// is on the node running the build, or on none yet — the job is queued, or
+// claimed and not yet writing — and a caller's pool walks to the next backend
+// on Unavailable and stops on NotFound, so NotFound would make "ask the cloud"
 // mean "ask whichever node the resolver happened to name first". A follower
 // that found no writer asks again on the same code, because the log is coming.
 //
-// ONCE THE JOB HAS ENDED IT IS FailedPrecondition, from the leader, which is
-// the one node that can read the record: no node will write this log again, and
-// what survives the run is the cid on the record. Unavailable would have a
-// follower ask for it until it gave up.
-func (s *Service) notWritten(jobID string, missing error) error {
+// ONCE THE RUN HAS ENDED IT IS FailedPrecondition, from the leader, which is
+// the one node that can read the record: the job finished, or ran again. The
+// node that wrote the log holds it until the record names it (output.go's
+// discard), so what survives the run is the cid the record files under its
+// attempt, or nothing. Unavailable would have a follower ask for it until it
+// gave up.
+func (s *Service) notWritten(jobID string, attempt uint32, missing error) error {
 	job, err := s.job(jobID)
 	switch {
 	case connect.CodeOf(err) == connect.CodeUnavailable:
 		return errUnavailable("%v", missing)
 	case err != nil:
 		return err
-	case finished(job.GetStatus()):
-		return errFailedPrecondition("build: job %s finished as %s: its log is the one its record names", jobID, job.GetStatus())
+	}
+	last := uint32(job.GetAttempt())
+	switch {
+	case attempt > last+1:
+		return errInvalidArgument("build: job %s has run %d times: attempt %d is not its next", jobID, last, attempt)
+	case finished(job.GetStatus()), attempt < last, attempt == last && job.GetStatus() == buildv2.JobStatus_JobStatusOpen:
+		return errFailedPrecondition("build: attempt %d of job %s has ended, and the job is %s at attempt %d: its log is the one its record files under that attempt",
+			attempt, jobID, job.GetStatus(), last)
 	}
 	return errUnavailable("%v", missing)
 }

@@ -154,7 +154,7 @@ func (s *Service) output(w Work) (*runOutput, error) {
 	}
 
 	s.logsMu.Lock()
-	s.logs[w.JobID] = log
+	s.logs[w.JobID] = runLog{attempt: w.Attempt, log: log}
 	s.logsMu.Unlock()
 
 	return &runOutput{
@@ -426,8 +426,21 @@ func (h *handover) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// discard is the cleanup run defers: the log is closed whatever happened, and
-// the file goes.
+// discard is the cleanup run defers: the log is closed whatever happened, taken
+// off the followable set, and the file goes.
+//
+// IT IS THE ONE PLACE A LOG STOPS BEING FOLLOWABLE, and run defers it past
+// settle, so a run's log is on this node until its record names it. Taken off
+// when the build ended, it was neither for as long as the handoff to the asset
+// store took: a snapshot then was empty, and a follow of a cancelled job —
+// terminal before its log is stored — read the previous attempt's.
+//
+// THE UNREGISTRATION COMPARES THE POINTER rather than deleting the key: this
+// map is keyed by job, and a second run of the same job on this node — which
+// the queue's exclusion should make impossible, and which a deleted key would
+// hide rather than survive — must not have its log unfollowable because an
+// older run of it finished. It comes before the unlink, and fork takes its
+// reader under the same lock, so no fork lands on an unlinked log.
 //
 // THE FILE IS SCRATCH. What survives a run is the cid, and a file kept after a
 // publish is a file nothing will ever delete — v1's own defect, one directory
@@ -436,17 +449,18 @@ func (h *handover) Read(p []byte) (int, error) {
 // name (livelog).
 func (o *runOutput) discard() {
 	o.end()
+
+	o.s.logsMu.Lock()
+	if o.s.logs[o.job].log == o.log {
+		delete(o.s.logs, o.job)
+	}
+	o.s.logsMu.Unlock()
+
 	o.log.Unlink()
 }
 
-// end closes the log and takes it off the followable set. It is idempotent
-// because publish and discard both need it and both happen.
-//
-// THE UNREGISTRATION COMPARES THE POINTER rather than deleting the key: this
-// map is keyed by job, and a second run of the same job on this node — which
-// the queue's exclusion should make impossible, and which a deleted key would
-// hide rather than survive — must not have its log unfollowable because an
-// older run of it finished.
+// end closes the log, which releases every reader waiting at its end. It is
+// idempotent because publish and discard both need it and both happen.
 func (o *runOutput) end() {
 	o.mu.Lock()
 	ended := o.ended
@@ -455,25 +469,18 @@ func (o *runOutput) end() {
 	if ended {
 		return
 	}
-
 	o.log.Close()
-
-	o.s.logsMu.Lock()
-	if o.s.logs[o.job] == o.log {
-		delete(o.s.logs, o.job)
-	}
-	o.s.logsMu.Unlock()
 }
 
-// Follow hands back a reader of the log of a build THIS NODE IS RUNNING,
-// positioned at `from`, which blocks at the end until there is more or the
-// build finishes. Closing it is how a caller lets go.
+// Follow hands back a reader of the log of one run of a build THIS NODE IS
+// RUNNING, positioned at `from`, which blocks at the end until there is more or
+// the build finishes. Closing it is how a caller lets go.
 //
 // THE OFFSET IS THE WHOLE MECHANISM, and it is what v1 has no version of: a
 // viewer joining late forks at 0 and catches up, a viewer whose connection
-// dropped forks at the offset it had, and a proxy is a fork and an io.Copy. v1
-// can only hand you a log once the build is over and the whole of it has
-// reached IPFS.
+// dropped forks at the offset it had in the run it was reading, and a proxy is
+// a fork and an io.Copy. v1 can only hand you a log once the build is over and
+// the whole of it has reached IPFS.
 //
 // THERE IS NO ROUTE ON IT, AND THAT IS DELIBERATE — this is the seam, not half
 // a feature. Two reasons, and the second is the one that decides it:
@@ -498,10 +505,10 @@ func (o *runOutput) end() {
 //
 // It is on the Service rather than inside the run because the run owns the
 // writer and a watcher owns nothing: the map is what turns a job id into the
-// log being written for it, and it is this node's own — a job running elsewhere
-// is a NotFound here, not a forward.
-func (s *Service) Follow(jobID string, from int64) (io.ReadCloser, error) {
-	_, r, err := s.fork(jobID, from)
+// log being written for it, and it is this node's own — a job running elsewhere,
+// or another run of it, is a NotFound here, not a forward.
+func (s *Service) Follow(jobID string, attempt uint32, from int64) (io.ReadCloser, error) {
+	_, r, err := s.fork(jobID, attempt, from)
 	if err != nil {
 		return nil, err
 	}
@@ -514,8 +521,8 @@ func (s *Service) Follow(jobID string, from int64) (io.ReadCloser, error) {
 // The end is read after the fork, so it is never short of the offset the fork
 // checked: a log only grows, and everything below its Size is readable without
 // waiting (livelog).
-func (s *Service) Snapshot(jobID string, from int64) (io.ReadCloser, error) {
-	log, r, err := s.fork(jobID, from)
+func (s *Service) Snapshot(jobID string, attempt uint32, from int64) (io.ReadCloser, error) {
+	log, r, err := s.fork(jobID, attempt, from)
 	if err != nil {
 		return nil, err
 	}
@@ -528,28 +535,36 @@ type soFar struct {
 	io.Closer
 }
 
-// fork is the log this node is writing for jobID and a reader of it at from.
-func (s *Service) fork(jobID string, from int64) (*livelog.Log, *livelog.Reader, error) {
+// runLog is a log this node holds and the run it belongs to.
+type runLog struct {
+	attempt uint32
+	log     *livelog.Log
+}
+
+// fork is the log this node holds for that run of jobID and a reader of it at
+// from. ANOTHER RUN'S LOG IS NOT IT: an offset is a position in one run's log,
+// and a fork of the next run's at the same offset is the splice the attempt is
+// there to refuse.
+func (s *Service) fork(jobID string, attempt uint32, from int64) (*livelog.Log, *livelog.Reader, error) {
 	if err := requireJobID(jobID); err != nil {
 		return nil, nil, err
 	}
 
 	s.logsMu.Lock()
-	log, running := s.logs[jobID]
-	s.logsMu.Unlock()
+	defer s.logsMu.Unlock()
 
-	if !running {
-		return nil, nil, errNotFound("no build of job %s is running on this node", jobID)
+	kept, ok := s.logs[jobID]
+	if !ok || kept.attempt != attempt {
+		return nil, nil, errNotFound("no log of attempt %d of job %s is on this node", attempt, jobID)
 	}
 
-	r, err := log.Fork(from)
+	r, err := kept.log.Fork(from)
 	if err != nil {
-		// An offset past the end is the caller's: it is resuming against a log
-		// that never reached it, which is almost always a different attempt's.
+		// An offset past the end of this run's log is the caller's arithmetic.
 		if errors.Is(err, livelog.ErrOffset) {
 			return nil, nil, errInvalidArgument("%v", err)
 		}
 		return nil, nil, errUnavailable("build: following job %s: %v", jobID, err)
 	}
-	return log, r, nil
+	return kept.log, r, nil
 }

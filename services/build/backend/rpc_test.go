@@ -260,7 +260,7 @@ func TestASnapshotEndsOverTheWireWhileAFollowStaysOpen(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
-	snapshot, err := h.Jobs.Follow(ctx, connect.NewRequest(&buildv2.FollowRequest{JobId: id, Snapshot: true}))
+	snapshot, err := h.Jobs.Follow(ctx, connect.NewRequest(&buildv2.FollowRequest{JobId: id, Attempt: 1, Snapshot: true}))
 	require.NoError(t, err)
 	var soFar []byte
 	for snapshot.Receive() {
@@ -269,7 +269,7 @@ func TestASnapshotEndsOverTheWireWhileAFollowStaysOpen(t *testing.T) {
 	require.NoError(t, snapshot.Err(), "a snapshot that waited for the build would have run into the deadline")
 	require.Equal(t, "cloning\n", string(soFar))
 
-	follow, err := h.Jobs.Follow(ctx, connect.NewRequest(&buildv2.FollowRequest{JobId: id}))
+	follow, err := h.Jobs.Follow(ctx, connect.NewRequest(&buildv2.FollowRequest{JobId: id, Attempt: 1}))
 	require.NoError(t, err)
 	defer follow.Close()
 	require.True(t, follow.Receive(), "%v", follow.Err())

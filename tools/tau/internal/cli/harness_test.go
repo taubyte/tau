@@ -77,6 +77,19 @@ type frontend struct {
 	published   map[string][]byte
 	// live is the jobs still being built, whose logs are still being written.
 	live map[string]*liveLog
+	// runLogs is a run's own log, keyed "job/attempt", where a test gives one;
+	// gone is the runs whose log was not kept.
+	runLogs map[string]string
+	gone    map[string]bool
+	// rerunOnDrop makes the job a dropped follow was reading run again: the
+	// run it was on loses its log and the next one starts. refused is the runs
+	// whose read is a 503, which with rerunOnDrop run again too.
+	rerunOnDrop bool
+	refused     map[string]bool
+	// unnamed leaves X-Job-Attempt off a log response.
+	unnamed bool
+	// logQueries is the query of every log read, in order.
+	logQueries []string
 }
 
 func newFrontend(t *testing.T) *frontend {
@@ -90,6 +103,9 @@ func newFrontend(t *testing.T) *frontend {
 		},
 		byProj:  map[string][]string{"proj-1": {"job-1", "job-2"}},
 		logs:    map[string]string{"job-1": "step one\nstep two\n", "job-live": "step one\nstep two\n"},
+		runLogs: map[string]string{},
+		gone:    map[string]bool{},
+		refused: map[string]bool{},
 		secrets: map[string]map[string][]byte{},
 		fqdn:    "cloud.example",
 	}
@@ -141,34 +157,80 @@ func newFrontend(t *testing.T) *frontend {
 		b, _ := protojson.MarshalOptions{UseProtoNames: true}.Marshal(j)
 		w.Write(b)
 	}))
+	// THE LOG ROUTE SERVES ONE RUN, as the frontend's does: ?attempt=, or the
+	// job's current run, named in X-Job-Attempt. An ended run's log is the one
+	// it stored, and a run whose log was not kept is a 410.
 	mux.HandleFunc("GET /job/{jid}/logs", authed(func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("jid")
 		f.mu.Lock()
-		live := f.live[r.PathValue("jid")]
+		f.logQueries = append(f.logQueries, r.URL.RawQuery)
+		live, j := f.live[id], f.jobs[id]
+		var run int32
+		var ended bool
+		if j != nil {
+			run, ended = currentRun(j), terminal(j)
+		}
 		f.mu.Unlock()
-		if live != nil {
-			live.serve(w, r)
+		if j == nil {
+			denied(w)
 			return
 		}
-		log, ok := f.logs[r.PathValue("jid")]
+		if asked, err := strconv.Atoi(r.URL.Query().Get("attempt")); err == nil {
+			run = int32(asked)
+		}
+		attempt := strconv.Itoa(int(run))
+		if live != nil && !live.over() {
+			live.serve(w, r, attempt)
+			return
+		}
+		f.mu.Lock()
+		log, ok := f.runLogs[id+"/"+attempt]
+		if !ok {
+			log, ok = f.logs[id]
+		}
+		gone, refused, unnamed := f.gone[id+"/"+attempt], f.refused[id+"/"+attempt], f.unnamed
+		from, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+		drop := f.dropOnce && from == 0
+		f.dropOnce = false
+		if drop && f.rerunOnDrop {
+			f.gone[id+"/"+attempt] = true
+			j.Attempt = run + 1
+		}
+		if refused && f.rerunOnDrop {
+			j.Attempt = run + 1
+		}
+		f.mu.Unlock()
+		if refused {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]string{"error": "no backend available"})
+			return
+		}
+		if gone {
+			w.Header().Set("X-Job-Attempt", attempt)
+			w.WriteHeader(http.StatusGone)
+			json.NewEncoder(w).Encode(map[string]string{"error": "this run's log was not kept"})
+			return
+		}
 		if !ok {
 			denied(w)
 			return
 		}
-		from, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+		if ended {
+			log = "stored: " + log
+		}
 		rest := log[min(from, len(log)):]
-		f.mu.Lock()
-		drop := f.dropOnce && from == 0
-		f.dropOnce = false
-		f.mu.Unlock()
 		if drop {
 			// Send a little, then cut the connection mid-stream.
 			hj, _ := w.(http.Hijacker)
 			conn, buf, _ := hj.Hijack()
-			buf.WriteString("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n\r\n")
+			buf.WriteString("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nX-Job-Attempt: " + attempt + "\r\nTransfer-Encoding: chunked\r\n\r\n")
 			buf.WriteString(strconv.FormatInt(int64(len(rest[:5])), 16) + "\r\n" + rest[:5] + "\r\n")
 			buf.Flush()
 			conn.Close()
 			return
+		}
+		if !unnamed {
+			w.Header().Set("X-Job-Attempt", attempt)
 		}
 		io.WriteString(w, rest)
 		// A FOLLOWED BUILD ENDS when its log does, as the backend's follow
@@ -262,7 +324,7 @@ func newFrontend(t *testing.T) *frontend {
 		f.mu.Lock()
 		id := "job-" + strconv.Itoa(len(f.queued)+3)
 		f.queued = append(f.queued, what)
-		f.jobs[id] = &buildv2.Job{Id: id, Status: f.finish, Timestamp: 1700000300, Logs: map[string]string{"1": "bafylog"}}
+		f.jobs[id] = &buildv2.Job{Id: id, Status: f.finish, Timestamp: 1700000300, Attempt: 1, Logs: map[string]string{"1": "bafylog"}}
 		f.logs[id] = "built " + what + "\n"
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusAccepted)
@@ -299,7 +361,10 @@ func newFrontend(t *testing.T) *frontend {
 	}))
 	mux.HandleFunc("GET /job/{jid}/logs/{key}", authed(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
-		log, ok := f.logs[r.PathValue("jid")]
+		log, ok := f.runLogs[r.PathValue("jid")+"/"+strings.TrimLeft(r.PathValue("key"), "0")]
+		if !ok {
+			log, ok = f.logs[r.PathValue("jid")]
+		}
 		f.mu.Unlock()
 		if !ok {
 			denied(w)
@@ -402,7 +467,7 @@ func (f *frontend) pushLater(project, id, log string) {
 }
 
 func (f *frontend) addJobLocked(project, id, log string) {
-	f.jobs[id] = &buildv2.Job{Id: id, Status: buildv2.JobStatus_JobStatusClaimed, Timestamp: 1700000200}
+	f.jobs[id] = &buildv2.Job{Id: id, Status: buildv2.JobStatus_JobStatusClaimed, Timestamp: 1700000200, Attempt: 1}
 	f.byProj[project] = append(f.byProj[project], id)
 	f.logs[id] = log
 }
@@ -439,7 +504,7 @@ func (f *frontend) building(t *testing.T, id, first string) *liveLog {
 func (f *frontend) queuedJob(t *testing.T, id string) *liveLog {
 	l := f.building(t, id, "")
 	f.mu.Lock()
-	f.jobs[id].Status = buildv2.JobStatus_JobStatusOpen
+	f.jobs[id].Status, f.jobs[id].Attempt = buildv2.JobStatus_JobStatusOpen, 0
 	f.mu.Unlock()
 	return l
 }
@@ -447,9 +512,25 @@ func (f *frontend) queuedJob(t *testing.T, id string) *liveLog {
 // start is a queued job being claimed and printing its first line.
 func (l *liveLog) start(first string) {
 	l.f.mu.Lock()
-	l.f.jobs[l.id].Status = buildv2.JobStatus_JobStatusClaimed
+	l.f.jobs[l.id].Status, l.f.jobs[l.id].Attempt = buildv2.JobStatus_JobStatusClaimed, 1
 	l.f.mu.Unlock()
 	l.say(first)
+}
+
+// currentRun is the run a log read is about when it names none, as the
+// frontend decides it: the one claimed or last run, or a queued job's next.
+func currentRun(j *buildv2.Job) int32 {
+	if j.GetStatus() == buildv2.JobStatus_JobStatusOpen || j.GetAttempt() == 0 {
+		return j.GetAttempt() + 1
+	}
+	return j.GetAttempt()
+}
+
+// over is whether the job has ended, after which its log is the stored one.
+func (l *liveLog) over() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.ended
 }
 
 func (l *liveLog) say(line string) {
@@ -461,28 +542,28 @@ func (l *liveLog) say(line string) {
 }
 
 // end is the job finishing: a follow of it ends, and its log is the stored one.
+// The record and the stored log are written before the log ends, so a read
+// that finds it over finds them.
 func (l *liveLog) end() {
 	l.mu.Lock()
+	defer l.mu.Unlock()
 	if l.ended {
-		l.mu.Unlock()
 		return
 	}
-	l.ended = true
-	close(l.grew)
-	text := l.text
-	l.mu.Unlock()
-
 	l.f.mu.Lock()
-	defer l.f.mu.Unlock()
 	l.f.jobs[l.id].Status = buildv2.JobStatus_JobStatusSuccess
 	l.f.jobs[l.id].Logs = map[string]string{"1": "bafylog"}
-	l.f.logs[l.id] = text
+	l.f.logs[l.id] = l.text
+	l.f.mu.Unlock()
+	l.ended = true
+	close(l.grew)
 }
 
-func (l *liveLog) serve(w http.ResponseWriter, r *http.Request) {
+func (l *liveLog) serve(w http.ResponseWriter, r *http.Request, attempt string) {
 	from, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	snapshot := r.URL.Query().Get("snapshot") == "true"
 	// The response opens before the first chunk, as the frontend's does.
+	w.Header().Set("X-Job-Attempt", attempt)
 	w.(http.Flusher).Flush()
 	for {
 		l.mu.Lock()

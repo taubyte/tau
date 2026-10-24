@@ -48,7 +48,7 @@ func TestARunningBuildsLogIsFollowedWhileItIsStillBeingWritten(t *testing.T) {
 	}()
 
 	<-started
-	follower, err := h.Follow(id, 0)
+	follower, err := h.Follow(id, 1, 0)
 	require.NoError(t, err)
 	defer follower.Close()
 
@@ -74,7 +74,7 @@ func TestARunningBuildsLogIsFollowedWhileItIsStillBeingWritten(t *testing.T) {
 	// And it is not followable any more: what a reader wants now is the cid on
 	// the job, which is an address in the asset store rather than a file on
 	// whichever node happened to build it.
-	_, err = h.Follow(id, 0)
+	_, err = h.Follow(id, 1, 0)
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }
 
@@ -86,17 +86,16 @@ func TestFollowRefusesWhatItCannotAnswer(t *testing.T) {
 	h := newHarness(t)
 	id := h.push(t, testRef, testCommit)
 
-	_, err := h.Follow("not-a-job-id", 0)
+	_, err := h.Follow("not-a-job-id", 1, 0)
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err),
 		"a caller-supplied id is refused for shape before anything is looked up")
 
-	_, err = h.Follow(id, 0)
+	_, err = h.Follow(id, 1, 0)
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err),
 		"a job this node is not building is a NotFound here, not a forward")
 
-	// And an offset past the end of a log that IS being written: a client
-	// resuming against an offset this log never reached is reading a different
-	// attempt's, and is told so rather than handed the end.
+	// And an offset past the end of a log that IS being written: the caller's
+	// arithmetic, told so rather than handed the end.
 	started, release := make(chan struct{}), make(chan struct{})
 	done := make(chan error, 1)
 	h.runner.run = func(context.Context, Work, Output) error {
@@ -110,7 +109,7 @@ func TestFollowRefusesWhatItCannotAnswer(t *testing.T) {
 	}()
 	<-started
 
-	_, err = h.Follow(id, 1<<20)
+	_, err = h.Follow(id, 1, 1<<20)
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 	require.ErrorContains(t, err, "offset")
 
@@ -412,7 +411,7 @@ func TestARunEndingOnlyForgetsItsOwnLog(t *testing.T) {
 	first.discard()
 
 	h.logsMu.Lock()
-	still := h.logs[id]
+	still := h.logs[id].log
 	h.logsMu.Unlock()
 	require.Equal(t, second.log, still, "the newer run's log must still be followable")
 
@@ -695,7 +694,7 @@ func TestFollowReportsALogItCannotOpen(t *testing.T) {
 	defer out.discard()
 	require.NoError(t, out.log.Unlink())
 
-	_, err = h.Follow(id, 0)
+	_, err = h.Follow(id, 1, 0)
 	require.Equal(t, connect.CodeUnavailable, connect.CodeOf(err))
 }
 

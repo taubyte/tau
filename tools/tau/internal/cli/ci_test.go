@@ -84,3 +84,58 @@ func TestCIRunFollowsARunningJob(t *testing.T) {
 	require.Contains(t, r.stderr, "built proj-1")
 	require.NotContains(t, r.stderr, "stored:", "it was followed live, so the stored log is not printed again")
 }
+
+// A JOB WHOSE NODE WENT AWAY RUNS AGAIN, and tau ci run follows the run the job
+// is on: the first run's log as far as it went, a note that it stops there, and
+// the rerun's log from its own start — never the rerun's bytes carried on from
+// the first run's offset.
+func TestCIRunFollowsARerunFromItsStart(t *testing.T) {
+	x := newTester(t)
+	x.login()
+	x.link("proj-1")
+	x.f.finish = buildv2.JobStatus_JobStatusClaimed
+	x.f.endOnFollow = true
+	x.f.mu.Lock()
+	x.f.dropOnce, x.f.rerunOnDrop = true, true
+	x.f.runLogs["job-3/2"] = "rebuilt from its start\n"
+	x.f.mu.Unlock()
+
+	r := x.run("ci", "run", "--dir", x.dir, "--commit", strings.Repeat("c", 40), "--branch", "main", "--interval", "10ms")
+	require.Zero(t, r.code, r.stderr)
+	require.Contains(t, r.stderr, "built\njob job-3: the log of attempt 1 was not kept past byte 5\nrebuilt from its start\n")
+	require.Contains(t, r.stdout, "success")
+}
+
+// A RUN WHOSE READ WAS REFUSED IS LEFT, NOT RESUMED, once the job is on the next
+// one, and a note says how far it was read. An ended job whose log cannot be
+// read says so and still ends by its record.
+func TestCIRunMovesOnFromARunItCouldNotRead(t *testing.T) {
+	x := newTester(t)
+	x.login()
+	x.link("proj-1")
+	x.f.finish = buildv2.JobStatus_JobStatusClaimed
+	x.f.endOnFollow = true
+	x.f.mu.Lock()
+	x.f.refused["job-3/1"], x.f.rerunOnDrop = true, true
+	x.f.runLogs["job-3/2"] = "rebuilt\n"
+	x.f.mu.Unlock()
+	r := x.run("ci", "run", "--dir", x.dir, "--commit", strings.Repeat("c", 40), "--branch", "main", "--interval", "10ms")
+	require.Zero(t, r.code, r.stderr)
+	require.Contains(t, r.stderr, "job job-3: the log of attempt 1 was read to byte 0; attempt 2 follows\nrebuilt\n")
+
+	x.f.mu.Lock()
+	x.f.finish, x.f.rerunOnDrop = buildv2.JobStatus_JobStatusSuccess, false
+	x.f.refused["job-4/1"] = true
+	x.f.mu.Unlock()
+	r = x.run("ci", "run", "--dir", x.dir, "--commit", strings.Repeat("d", 40), "--branch", "main", "--interval", "10ms")
+	require.Zero(t, r.code, r.stderr)
+	require.Contains(t, r.stderr, "the job's log cannot be read: the cloud answered 503: no backend available")
+
+	// A log that does not say which run it is cannot be followed at all.
+	x.f.mu.Lock()
+	x.f.finish, x.f.unnamed = buildv2.JobStatus_JobStatusClaimed, true
+	x.f.mu.Unlock()
+	r = x.run("ci", "run", "--dir", x.dir, "--commit", strings.Repeat("e", 40), "--branch", "main", "--interval", "10ms")
+	require.NotZero(t, r.code)
+	require.Contains(t, r.stderr, "did not say which run")
+}

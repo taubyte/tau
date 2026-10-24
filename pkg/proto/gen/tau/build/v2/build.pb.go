@@ -414,11 +414,13 @@ type Job struct {
 	CommitSha     string                 `protobuf:"bytes,5,opt,name=commit_sha,json=commitSha,proto3" json:"commit_sha,omitempty"`
 	// Unix seconds. v1's Job.Timestamp.
 	Timestamp int64 `protobuf:"varint,6,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	Attempt   int32 `protobuf:"varint,7,opt,name=attempt,proto3" json:"attempt,omitempty"`
-	// Keyed the way v1's Job.SetLog (core/services/patrick/methods.go) keys
-	// it: an RFC3339 timestamp per log entry a build step recorded
-	// (v1's services/monkey/jobs/helpers.go's handleLog) — a job with several
-	// buildable resources produces several entries. Not a single log per job.
+	// attempt counts the runs this job has had: each claim is the next one, and
+	// a retry does not start it again. A queued job's next run is attempt + 1.
+	Attempt int32 `protobuf:"varint,7,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	// The cid of each run's log, keyed by that run's attempt as zero-padded
+	// decimal, so the keys sort in run order. A run whose log was not kept — its
+	// node went away, or the asset store would not take it — has no entry, and
+	// a later run's entry is not its log.
 	Logs map[string]string `protobuf:"bytes,8,rep,name=logs,proto3" json:"logs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// Keyed by resource id (a function/website/library/... within the
 	// pushed project) -> the built artifact's cid, matching v1's Job.SetCid
@@ -623,7 +625,14 @@ type FollowRequest struct {
 	// snapshot ends the stream at what the log holds when the request arrives
 	// instead of when the build ends: what has been logged so far, as
 	// `docker logs` reads without -f.
-	Snapshot      bool `protobuf:"varint,3,opt,name=snapshot,proto3" json:"snapshot,omitempty"`
+	Snapshot bool `protobuf:"varint,3,opt,name=snapshot,proto3" json:"snapshot,omitempty"`
+	// attempt is the run whose log `offset` is in — Job.attempt as that run
+	// was claimed — and it is required. AN OFFSET IS A POSITION IN ONE RUN'S
+	// LOG: a job that runs again, because its node went away or because it was
+	// retried, writes a new log from byte zero, and an offset carried over to it
+	// would splice the new run's bytes onto the old one's. So a node writing
+	// another run's log answers as if it held none.
+	Attempt       int32 `protobuf:"varint,4,opt,name=attempt,proto3" json:"attempt,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -677,6 +686,13 @@ func (x *FollowRequest) GetSnapshot() bool {
 		return x.Snapshot
 	}
 	return false
+}
+
+func (x *FollowRequest) GetAttempt() int32 {
+	if x != nil {
+		return x.Attempt
+	}
+	return 0
 }
 
 // LogChunk is some bytes of a build's output and where they ended.
@@ -881,11 +897,12 @@ const file_tau_build_v2_build_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x1c\n" +
 	"\n" +
 	"ProjectRef\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"Z\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"t\n" +
 	"\rFollowRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
 	"\x06offset\x18\x02 \x01(\x03R\x06offset\x12\x1a\n" +
-	"\bsnapshot\x18\x03 \x01(\bR\bsnapshot\"?\n" +
+	"\bsnapshot\x18\x03 \x01(\bR\bsnapshot\x12\x18\n" +
+	"\aattempt\x18\x04 \x01(\x05R\aattempt\"?\n" +
 	"\bLogChunk\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\x12\x1f\n" +
 	"\vnext_offset\x18\x02 \x01(\x03R\n" +

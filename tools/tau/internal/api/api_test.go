@@ -171,31 +171,46 @@ func TestSecretsRoundTrip(t *testing.T) {
 
 // ── the resumable log ────────────────────────────────────────────────────────
 
-// logServer serves log from ?offset=, cutting the connection after cut bytes
-// on the first `drops` requests.
-func logServer(t *testing.T, log string, drops int, cut int) (*Client, *atomic.Int32) {
+// logServer serves log from ?offset=, as run 1 unless asked for another, cutting
+// the connection after cut bytes on the first `drops` requests. It keeps the
+// query each request asked with.
+func logServer(t *testing.T, log string, drops int, cut int) (*Client, *atomic.Int32, func() []string) {
 	var requests atomic.Int32
+	var mu sync.Mutex
+	var asked []string
 	c := server(t, func(w http.ResponseWriter, r *http.Request) {
 		n := requests.Add(1)
+		mu.Lock()
+		asked = append(asked, r.URL.RawQuery)
+		mu.Unlock()
+		run := r.URL.Query().Get("attempt")
+		if run == "" {
+			run = "1"
+		}
 		from, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 		rest := log[from:]
 		if int(n) <= drops {
 			hj := w.(http.Hijacker)
 			conn, buf, _ := hj.Hijack()
 			part := rest[:min(cut, len(rest))]
-			buf.WriteString("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n" + strconv.FormatInt(int64(len(part)), 16) + "\r\n" + part + "\r\n")
+			buf.WriteString("HTTP/1.1 200 OK\r\nX-Job-Attempt: " + run + "\r\nTransfer-Encoding: chunked\r\n\r\n" + strconv.FormatInt(int64(len(part)), 16) + "\r\n" + part + "\r\n")
 			buf.Flush()
 			conn.Close()
 			return
 		}
+		w.Header().Set("X-Job-Attempt", run)
 		io.WriteString(w, rest)
 	})
-	return c, &requests
+	return c, &requests, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), asked...)
+	}
 }
 
 func TestTheStreamResumesAtTheOffsetReached(t *testing.T) {
-	c, requests := logServer(t, "0123456789", 2, 3)
-	s := c.Stream(t.Context(), "j", 0)
+	c, requests, _ := logServer(t, "0123456789", 2, 3)
+	s := c.Stream(t.Context(), "j", 0, 0)
 	s.Backoff = time.Millisecond
 	var out bytes.Buffer
 	end, err := s.CopyTo(&out)
@@ -206,33 +221,122 @@ func TestTheStreamResumesAtTheOffsetReached(t *testing.T) {
 	require.Equal(t, int32(3), requests.Load())
 }
 
+// A RESUME NAMES THE RUN IT RESUMES. The first response names the job's
+// current run; every reconnect after it asks for that run, at the offset
+// reached, so the bytes that follow can only be that run's.
+func TestTheStreamResumesTheRunItWasReading(t *testing.T) {
+	c, _, asked := logServer(t, "0123456789", 2, 3)
+	s := c.Stream(t.Context(), "j", 0, 0)
+	s.Backoff = time.Millisecond
+	_, err := s.CopyTo(io.Discard)
+	require.NoError(t, err)
+	require.Equal(t, int32(1), s.Attempt())
+	require.Equal(t, []string{"", "attempt=1&offset=3", "attempt=1&offset=6"}, asked())
+
+	c, _, asked = logServer(t, "0123456789", 1, 4)
+	s = c.Stream(t.Context(), "j", 7, 2)
+	s.Backoff = time.Millisecond
+	var out bytes.Buffer
+	_, err = s.CopyTo(&out)
+	require.NoError(t, err)
+	require.Equal(t, "23456789", out.String())
+	require.Equal(t, []string{"attempt=7&offset=2", "attempt=7&offset=6"}, asked())
+}
+
+// ANOTHER RUN'S LOG IS NOT THE REST OF THIS ONE. A resume answered as some other
+// run is refused, and nothing of it is read.
+func TestTheStreamRefusesAnotherRunsLog(t *testing.T) {
+	requests := 0
+	c := server(t, func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if requests == 1 {
+			hj := w.(http.Hijacker)
+			conn, buf, _ := hj.Hijack()
+			buf.WriteString("HTTP/1.1 200 OK\r\nX-Job-Attempt: 1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nfirst\r\n")
+			buf.Flush()
+			conn.Close()
+			return
+		}
+		w.Header().Set("X-Job-Attempt", "2")
+		io.WriteString(w, " of the second run")
+	})
+	s := c.Stream(t.Context(), "j", 0, 0)
+	s.Backoff = time.Millisecond
+	var out bytes.Buffer
+	_, err := s.CopyTo(&out)
+	require.ErrorContains(t, err, "attempt 1 was asked for and attempt 2 was sent")
+	require.Equal(t, "first", out.String())
+}
+
+// A RUN WHOSE LOG WAS NOT KEPT ENDS THE STREAM AS SUCH, not as the end of a log:
+// a *LostLog naming the run and how much of it was read. A stream that had not
+// named its run yet takes the run from the refusal.
+func TestALostRunEndsTheStream(t *testing.T) {
+	gone := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Job-Attempt", "4")
+		w.WriteHeader(http.StatusGone)
+		io.WriteString(w, `{"error":"this run's log was not kept"}`)
+	}
+	c := server(t, gone)
+
+	_, err := c.Stream(t.Context(), "j", 0, 0).CopyTo(io.Discard)
+	var lost *LostLog
+	require.ErrorAs(t, err, &lost)
+	require.Equal(t, LostLog{Job: "j", Attempt: 4}, *lost)
+	require.Equal(t, "job j: the log of attempt 4 was not kept", err.Error())
+
+	_, err = c.Stream(t.Context(), "j", 2, 9).CopyTo(io.Discard)
+	require.ErrorAs(t, err, &lost)
+	require.Equal(t, LostLog{Job: "j", Attempt: 2, Offset: 9}, *lost)
+	require.Equal(t, "job j: the log of attempt 2 was not kept past byte 9", err.Error())
+}
+
+// A response that does not say which run it is cannot be resumed, so it is not
+// read at all — and asking again would get the same answer.
+func TestAResponseThatNamesNoRunIsRefused(t *testing.T) {
+	requests := 0
+	c := server(t, func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		io.WriteString(w, "a log")
+	})
+	_, err := c.Stream(t.Context(), "j", 0, 0).CopyTo(io.Discard)
+	require.ErrorIs(t, err, errUnnamedRun)
+	require.Equal(t, 1, requests)
+}
+
 func TestTheStreamGivesUpAfterItsRetries(t *testing.T) {
 	c := server(t, func(w http.ResponseWriter, r *http.Request) {
 		conn, _, _ := w.(http.Hijacker).Hijack()
 		conn.Close()
 	})
-	s := c.Stream(t.Context(), "j", 0)
+	s := c.Stream(t.Context(), "j", 0, 0)
 	s.Backoff, s.Retries = time.Millisecond, 2
 	_, err := s.CopyTo(io.Discard)
 	require.Error(t, err)
 }
 
 func TestTheStreamStopsOnARefusal(t *testing.T) {
-	c := server(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNotFound) })
-	_, err := c.Stream(t.Context(), "j", 0).CopyTo(io.Discard)
+	c := server(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "7")
+		w.WriteHeader(http.StatusNotFound)
+	})
+	_, err := c.Stream(t.Context(), "j", 0, 0).CopyTo(io.Discard)
 	require.True(t, IsStatus(err, http.StatusNotFound))
+	var refusal *Error
+	require.ErrorAs(t, err, &refusal)
+	require.Equal(t, "7", refusal.Header.Get("Retry-After"), "a refusal keeps the headers it came with")
 }
 
 func TestTheStreamRetriesAnUnreachableCloudThenStops(t *testing.T) {
 	c, err := New("http://127.0.0.1:1", Static("t"), nil)
 	require.NoError(t, err)
-	s := c.Stream(t.Context(), "j", 0)
+	s := c.Stream(t.Context(), "j", 0, 0)
 	s.Backoff, s.Retries = time.Millisecond, 1
 	_, err = s.Next()
 	require.Error(t, err)
 
 	ctx, cancel := context.WithCancel(t.Context())
-	s = c.Stream(ctx, "j", 0)
+	s = c.Stream(ctx, "j", 0, 0)
 	s.Backoff = time.Hour
 	go func() { time.Sleep(20 * time.Millisecond); cancel() }()
 	_, err = s.Next()
@@ -240,8 +344,11 @@ func TestTheStreamRetriesAnUnreachableCloudThenStops(t *testing.T) {
 }
 
 func TestTheStreamStopsWhenItsWriterDoes(t *testing.T) {
-	c := server(t, func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "data") })
-	_, err := c.Stream(t.Context(), "j", 0).CopyTo(failing{})
+	c := server(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Job-Attempt", "1")
+		io.WriteString(w, "data")
+	})
+	_, err := c.Stream(t.Context(), "j", 0, 0).CopyTo(failing{})
 	require.Error(t, err)
 }
 
@@ -258,10 +365,11 @@ func TestTheStreamAsksForASnapshotOnlyWhenTold(t *testing.T) {
 		mu.Lock()
 		asked = append(asked, r.URL.Path+"?"+r.URL.RawQuery)
 		mu.Unlock()
+		w.Header().Set("X-Job-Attempt", "1")
 		io.WriteString(w, "so far\n")
 	})
 
-	s := c.Stream(t.Context(), "j", 3)
+	s := c.Stream(t.Context(), "j", 0, 3)
 	s.Snapshot = true
 	var out bytes.Buffer
 	end, err := s.CopyTo(&out)
@@ -269,7 +377,7 @@ func TestTheStreamAsksForASnapshotOnlyWhenTold(t *testing.T) {
 	require.Equal(t, "so far\n", out.String())
 	require.Equal(t, int64(3+len("so far\n")), end)
 
-	_, err = c.Stream(t.Context(), "j", 0).CopyTo(io.Discard)
+	_, err = c.Stream(t.Context(), "j", 0, 0).CopyTo(io.Discard)
 	require.NoError(t, err)
 
 	mu.Lock()
@@ -279,9 +387,9 @@ func TestTheStreamAsksForASnapshotOnlyWhenTold(t *testing.T) {
 
 // A cancelled context during a backoff after a mid-stream drop ends the read.
 func TestTheStreamStopsWhenCancelledDuringBackoff(t *testing.T) {
-	c, _ := logServer(t, "0123456789", 100, 2)
+	c, _, _ := logServer(t, "0123456789", 100, 2)
 	ctx, cancel := context.WithCancel(t.Context())
-	s := c.Stream(ctx, "j", 0)
+	s := c.Stream(ctx, "j", 0, 0)
 	s.Backoff = time.Hour
 	chunk, err := s.Next()
 	require.NoError(t, err)
@@ -303,8 +411,6 @@ func TestBuildsByHandAndByUpload(t *testing.T) {
 			w.Write([]byte(`["prod"]`))
 		case "/projects/p/deployments/prod":
 			w.Write([]byte(`{"object":{}}`))
-		case "/job/j1/logs/k":
-			w.Write([]byte("the log"))
 		default:
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{"job_id":"j1"}`))
@@ -332,13 +438,6 @@ func TestBuildsByHandAndByUpload(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, `{"object":{}}`, string(compiled))
 
-	log, err := c.StoredLog(t.Context(), "j1", "k")
-	require.NoError(t, err)
-	body, err := io.ReadAll(log)
-	log.Close()
-	require.NoError(t, err)
-	require.Equal(t, "the log", string(body))
-
 	require.Equal(t, "POST /build/p  "+`{"commit_sha":"abc","ref":"refs/heads/main","repository_key":"git.test/a/b"}`, got[1])
 	require.Equal(t, "POST /upload/p ref=refs%2Fheads%2Fmain bundle", got[2])
 	require.Equal(t, "POST /upload/p ref=refs%2Fheads%2Fmain&repository=git.test%2Fa%2Flib code", got[3])
@@ -356,8 +455,6 @@ func TestBuildsTheCloudRefuses(t *testing.T) {
 	_, err = c.Published(t.Context(), "p", "prod")
 	require.Error(t, err)
 	_, err = c.Cloud(t.Context())
-	require.Error(t, err)
-	_, err = c.StoredLog(t.Context(), "j", "k")
 	require.Error(t, err)
 	_, err = c.Deployments(t.Context(), "p")
 	require.Error(t, err)

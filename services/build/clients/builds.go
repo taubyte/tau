@@ -159,39 +159,40 @@ func (c *BuildClient) Retry(ctx context.Context, jobID string) error {
 	})
 }
 
-// Follow streams a running build's output to emit, from `from` to the end of
-// it, and returns the offset it reached.
+// Follow streams one run's output to emit — the run `attempt` names, from
+// `from` to the end of it — and returns the offset it reached.
 //
 // THE OFFSET IS WHAT MAKES A RETRY SAFE, and it is the whole difference from
 // List above. List cannot be retried once it has handed an id onwards, because
 // the next peer would start again from the beginning and the caller would see
 // the same ids twice — so it strips the Unavailable code to stop the walk. Here
-// the request carries where the caller got to, so a walk to the next peer
-// RESUMES rather than repeats, and the code is left alone deliberately: only
-// the node writing the log can answer, every other one says Unavailable, and
+// the request carries the run and where in it the caller got to, so a walk to
+// the next peer RESUMES that run rather than repeating it or reading another
+// run's log from the same offset. The code is left alone deliberately: only the
+// node writing the log can answer, every other one says Unavailable, and
 // walking past them is exactly how the writer is found.
 //
 // SO A WALK THAT FINDS NO WRITER ENDS Unavailable, and that is a log still to
 // come — the job is queued, or claimed and not writing yet — which the caller
-// may ask for again. A job that has ended stops the walk at the leader with
+// may ask for again. A run that has ended stops the walk at the leader with
 // FailedPrecondition instead, since no node will write its log again: what it
-// logged is the one its record names.
+// logged is what its record files under its attempt, if anything.
 //
 // An emit that fails is the CALLER's failure — a hung-up HTTP client, most
 // likely — and is never a routing problem, so it stops the walk with its own
 // error.
-func (c *BuildClient) Follow(ctx context.Context, jobID string, from int64, emit func(data []byte, next int64) error) (int64, error) {
-	return c.read(ctx, jobID, from, false, emit)
+func (c *BuildClient) Follow(ctx context.Context, jobID string, attempt int32, from int64, emit func(data []byte, next int64) error) (int64, error) {
+	return c.read(ctx, jobID, attempt, from, false, emit)
 }
 
 // Snapshot is Follow up to what the log holds when it is asked rather than to
 // the end of the build, which goes on. It walks to the writer and resumes the
 // way Follow does.
-func (c *BuildClient) Snapshot(ctx context.Context, jobID string, from int64, emit func(data []byte, next int64) error) (int64, error) {
-	return c.read(ctx, jobID, from, true, emit)
+func (c *BuildClient) Snapshot(ctx context.Context, jobID string, attempt int32, from int64, emit func(data []byte, next int64) error) (int64, error) {
+	return c.read(ctx, jobID, attempt, from, true, emit)
 }
 
-func (c *BuildClient) read(ctx context.Context, jobID string, from int64, snapshot bool, emit func(data []byte, next int64) error) (int64, error) {
+func (c *BuildClient) read(ctx context.Context, jobID string, attempt int32, from int64, snapshot bool, emit func(data []byte, next int64) error) (int64, error) {
 	if emit == nil {
 		return from, connect.NewError(connect.CodeInternal, errors.New("build: follow needs somewhere to put the output"))
 	}
@@ -201,6 +202,7 @@ func (c *BuildClient) read(ctx context.Context, jobID string, from int64, snapsh
 		jobs := buildv2connect.NewJobServiceClient(client.HTTP(), client.URL())
 		stream, err := jobs.Follow(ctx, connect.NewRequest(&buildv2.FollowRequest{
 			JobId:    jobID,
+			Attempt:  attempt,
 			Offset:   offset,
 			Snapshot: snapshot,
 		}))

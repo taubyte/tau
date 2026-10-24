@@ -25,12 +25,14 @@ import (
 // Job is the frontend's job record.
 type Job = buildv2.Job
 
-// Error is a refusal from the frontend: its status and the message it chose to
-// give. A 404 is also what a denial looks like — the frontend does not say
-// whether a project exists to someone who may not touch it.
+// Error is a refusal from the frontend: its status, the message it chose to
+// give, and the headers it came with. A 404 is also what a denial looks like —
+// the frontend does not say whether a project exists to someone who may not
+// touch it.
 type Error struct {
 	Status  int
 	Message string
+	Header  http.Header
 }
 
 func (e *Error) Error() string {
@@ -116,7 +118,7 @@ func (c *Client) do(ctx context.Context, method string, path []string, query url
 			Error string `json:"error"`
 		}
 		json.NewDecoder(io.LimitReader(resp.Body, 4<<10)).Decode(&refusal)
-		return nil, &Error{Status: resp.StatusCode, Message: refusal.Error}
+		return nil, &Error{Status: resp.StatusCode, Message: refusal.Error, Header: resp.Header}
 	}
 	return resp, nil
 }
@@ -168,12 +170,24 @@ func (c *Client) Retry(ctx context.Context, jobID string) error {
 	return c.json(ctx, http.MethodPost, []string{"retry", jobID}, nil, nil)
 }
 
-// logs opens a job's log stream at byte offset from. The frontend keeps it open
-// while the job is queued and while it runs, or with snapshot ends it at what
-// the log holds now; the caller reads until EOF and, if the connection drops
-// first, reopens at the offset it had reached.
-func (c *Client) logs(ctx context.Context, jobID string, from int64, snapshot bool) (io.ReadCloser, error) {
+// attemptHeader names the run a log response is about.
+const attemptHeader = "X-Job-Attempt"
+
+// errUnnamedRun is a log response that does not say which run it is, which no
+// read can resume.
+var errUnnamedRun = errors.New("the cloud did not say which run the log is")
+
+// logs opens one run of a job's log at byte offset from — the run attempt
+// names, or with 0 the job's current one — and returns the run the response is
+// about. The frontend keeps it open while the run is to come and while it
+// runs, or with snapshot ends it at what the log holds now; the caller reads
+// until EOF and, if the connection drops first, reopens that run at the offset
+// it had reached.
+func (c *Client) logs(ctx context.Context, jobID string, attempt int32, from int64, snapshot bool) (io.ReadCloser, int32, error) {
 	q := url.Values{}
+	if attempt > 0 {
+		q.Set("attempt", strconv.FormatInt(int64(attempt), 10))
+	}
 	if from > 0 {
 		q.Set("offset", strconv.FormatInt(from, 10))
 	}
@@ -182,9 +196,23 @@ func (c *Client) logs(ctx context.Context, jobID string, from int64, snapshot bo
 	}
 	resp, err := c.do(ctx, http.MethodGet, []string{"job", jobID, "logs"}, q, nil)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return resp.Body, nil
+	run := runOf(resp.Header)
+	if run == 0 {
+		resp.Body.Close()
+		return nil, 0, errUnnamedRun
+	}
+	return resp.Body, run, nil
+}
+
+// runOf is the run a log response names, or 0 for none.
+func runOf(h http.Header) int32 {
+	run, err := strconv.ParseInt(h.Get(attemptHeader), 10, 32)
+	if err != nil || run < 1 {
+		return 0
+	}
+	return int32(run)
 }
 
 // Secrets lists the names set in a project's environment. Values never come
@@ -369,16 +397,6 @@ func (c *Client) Published(ctx context.Context, projectID, environment string) (
 	}
 	defer resp.Body.Close()
 	return io.ReadAll(resp.Body)
-}
-
-// StoredLog is the log a finished attempt of a job left, by the key its record
-// files it under.
-func (c *Client) StoredLog(ctx context.Context, jobID, key string) (io.ReadCloser, error) {
-	resp, err := c.do(ctx, http.MethodGet, []string{"job", jobID, "logs", key}, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	return resp.Body, nil
 }
 
 // The job statuses a caller waits through.

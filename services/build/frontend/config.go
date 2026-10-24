@@ -465,16 +465,16 @@ type Backend interface {
 	List(ctx context.Context, projectID string, emit func(jobID string) error) error
 	Cancel(ctx context.Context, jobID string) error
 	Retry(ctx context.Context, jobID string) error
-	// Follow streams a running build's output to emit, from `from` to the end
-	// of it, and returns the offset it reached. Only the backend node writing
-	// the log can answer; the others say Unavailable, which is what makes a
-	// pooled caller walk to the writer. Unavailable from all of them is a log
-	// no node is writing yet; FailedPrecondition is a job that has ended, whose
-	// log is the one its record names.
-	Follow(ctx context.Context, jobID string, from int64, emit func(data []byte, next int64) error) (int64, error)
+	// Follow streams one run's output to emit — the run `attempt` names, from
+	// `from` to the end of it — and returns the offset it reached. Only the
+	// backend node writing the log can answer; the others say Unavailable,
+	// which is what makes a pooled caller walk to the writer. Unavailable from
+	// all of them is a log no node is writing yet; FailedPrecondition is a run
+	// that has ended, whose log is what its record files under its attempt.
+	Follow(ctx context.Context, jobID string, attempt int32, from int64, emit func(data []byte, next int64) error) (int64, error)
 	// Snapshot is Follow up to what the log holds when it is asked: it ends
 	// there while the build goes on.
-	Snapshot(ctx context.Context, jobID string, from int64, emit func(data []byte, next int64) error) (int64, error)
+	Snapshot(ctx context.Context, jobID string, attempt int32, from int64, emit func(data []byte, next int64) error) (int64, error)
 }
 
 // ErrBadCredential is a token auth refused outright.
