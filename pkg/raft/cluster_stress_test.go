@@ -79,13 +79,13 @@ func bootstrapTimeoutForNodes(nodeCount int) time.Duration {
 	return timeout
 }
 
-// createStressNodes creates N connected nodes with full mesh peering
+// createStressNodes creates N nodes connected to nothing: a scenario links
+// each, once it serves the group, to the nodes before it (see link).
 // NOTE: Nodes must be manually closed - do not use t.Cleanup() as it closes them
 // while clusters are still active, causing "swarm closed" errors
 func createStressNodes(t *testing.T, count int) []taupeer.Node {
 	stressLog("createStressNodes: Starting creation of %d nodes", count)
 	nodes := make([]taupeer.Node, count)
-	nodeInfos := make([]peercore.AddrInfo, count)
 
 	// Create all nodes first
 	for i := 0; i < count; i++ {
@@ -118,19 +118,9 @@ func createStressNodes(t *testing.T, count int) []taupeer.Node {
 		}
 
 		nodes[i] = node
-		nodeInfos[i] = peercore.AddrInfo{ID: node.ID(), Addrs: node.Peer().Addrs()}
 		stressLog("createStressNodes: Node %d created: %s (took %v)", i, node.ID().String(), time.Since(start))
 	}
 
-	// Establish full mesh peering
-	stressLog("createStressNodes: Establishing full mesh peering")
-	for i := 0; i < count; i++ {
-		for j := 0; j < count; j++ {
-			if i != j {
-				nodes[i].Peering().AddPeer(nodeInfos[j])
-			}
-		}
-	}
 	stressLog("createStressNodes: Completed creation of %d nodes", count)
 	return nodes
 }
@@ -651,18 +641,11 @@ func testConcurrentJoin(t *testing.T, nodeCount int, iterations int) {
 		stressLog("--- Iteration %d/%d START: Creating %d nodes ---", iter+1, iterations, nodeCount)
 		t.Logf("Iteration %d/%d: Creating %d nodes", iter+1, iterations, nodeCount)
 
-		// Create nodes with full mesh
+		// Create nodes, meshed below as each serves the group
 		nodes := createStressNodes(t, nodeCount)
 		nodeIDs := make([]peercore.ID, nodeCount)
 		for i, node := range nodes {
 			nodeIDs[i] = node.ID()
-		}
-
-		// Wait for mesh connectivity
-		err := waitAllConnected(t, nodes, 30*time.Second)
-		if err != nil {
-			stressLog("--- Iteration %d/%d FAILED: mesh connectivity: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "failed to establish mesh connectivity")
 		}
 
 		namespace := fmt.Sprintf("stress-concurrent-%d-%d", nodeCount, iter)
@@ -701,6 +684,9 @@ func testConcurrentJoin(t *testing.T, nodeCount int, iterations int) {
 			}(i)
 		}
 
+		// Each node links to those before it once it serves the group, while
+		// every member waits out its bootstrap timeout
+		linkErr := linkAsTheyServe(t.Context(), namespace, nodes)
 		wg.Wait()
 		stressLog("Iteration %d/%d: All clusters created (took %v)", iter+1, iterations, time.Since(clusterStart))
 		if createErr != nil {
@@ -733,6 +719,13 @@ func testConcurrentJoin(t *testing.T, nodeCount int, iterations int) {
 			}
 			stressLog("Iteration %d/%d: Cleanup complete", iterNum, iterations)
 		}()
+
+		assert.NilError(t, linkErr, "failed to link the nodes")
+		err := waitAllConnected(t, nodes, 30*time.Second)
+		if err != nil {
+			stressLog("--- Iteration %d/%d FAILED: mesh connectivity: %v ---", iter+1, iterations, err)
+			assert.NilError(t, err, "failed to establish mesh connectivity")
+		}
 
 		// Verify leader elected - scale timeout with node count
 		leaderTimeout := time.Duration(nodeCount) * 500 * time.Millisecond
@@ -834,22 +827,16 @@ func testSequentialJoin(t *testing.T, nodeCount int, iterations int) {
 		stressLog("--- Iteration %d/%d START: Creating %d nodes ---", iter+1, iterations, nodeCount)
 		t.Logf("Iteration %d/%d: Creating %d nodes", iter+1, iterations, nodeCount)
 
-		// Create nodes with full mesh
+		// Create nodes, each linked to the members before it as it joins
 		nodes := createStressNodes(t, nodeCount)
 		nodeIDs := make([]peercore.ID, nodeCount)
 		for i, node := range nodes {
 			nodeIDs[i] = node.ID()
 		}
 
-		// Wait for mesh connectivity
-		err := waitAllConnected(t, nodes, 30*time.Second)
-		if err != nil {
-			stressLog("--- Iteration %d/%d FAILED: mesh connectivity: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "failed to establish mesh connectivity")
-		}
-
 		namespace := fmt.Sprintf("stress-sequential-%d-%d", nodeCount, iter)
 		clusters := make([]Cluster, nodeCount)
+		var err error
 
 		// First node starts the cluster (via discovery bootstrap)
 		bootTimeout := bootstrapTimeoutForNodes(nodeCount)
@@ -888,6 +875,7 @@ func testSequentialJoin(t *testing.T, nodeCount int, iterations int) {
 		for i := 1; i < nodeCount; i++ {
 			joinStart := time.Now()
 			stressLog("Iteration %d/%d: Node %d joining cluster (timeout: %v)", iter+1, iterations, i, joinTimeout)
+			assert.NilError(t, link(t.Context(), nodes[i], nodes[:i]...), "failed to link node %d", i)
 			clusters[i], err = New(
 				nodes[i],
 				namespace,
@@ -1041,18 +1029,12 @@ func TestStressCluster_PhasedJoin_20Nodes(t *testing.T) {
 func testPhasedJoin(t *testing.T, nodeCount int) {
 	stressLog("=== testPhasedJoin START: %d nodes ===", nodeCount)
 	testStart := time.Now()
-	// Create nodes with full mesh
+	// Create nodes, the first half meshed as it serves the group and each of
+	// the second half linked to the members before it as it joins
 	nodes := createStressNodes(t, nodeCount)
 	nodeIDs := make([]peercore.ID, nodeCount)
 	for i, node := range nodes {
 		nodeIDs[i] = node.ID()
-	}
-
-	// Wait for mesh connectivity
-	err := waitAllConnected(t, nodes, 30*time.Second)
-	if err != nil {
-		stressLog("testPhasedJoin FAILED: mesh connectivity: %v", err)
-		assert.NilError(t, err, "failed to establish mesh connectivity")
 	}
 
 	namespace := fmt.Sprintf("stress-phased-%d", nodeCount)
@@ -1094,6 +1076,7 @@ func testPhasedJoin(t *testing.T, nodeCount int) {
 		}(i)
 	}
 
+	linkErr := linkAsTheyServe(t.Context(), namespace, nodes[:firstHalf])
 	wg.Wait()
 	stressLog("testPhasedJoin: Phase 1: All clusters created (took %v)", time.Since(phase1Start))
 	if createErr != nil {
@@ -1122,6 +1105,8 @@ func testPhasedJoin(t *testing.T, nodeCount int) {
 		}
 		stressLog("testPhasedJoin: Cleanup complete")
 	}()
+
+	assert.NilError(t, linkErr, "failed to link the first half")
 
 	// Wait for first half to stabilize - scale timeout with node count
 	phase1Timeout := time.Duration(firstHalf) * 500 * time.Millisecond
@@ -1181,6 +1166,7 @@ func testPhasedJoin(t *testing.T, nodeCount int) {
 	for i := firstHalf; i < nodeCount; i++ {
 		joinStart := time.Now()
 		stressLog("testPhasedJoin: Phase 2: Node %d joining cluster", i)
+		assert.NilError(t, link(t.Context(), nodes[i], nodes[:i]...), "failed to link node %d", i)
 		var err error
 		clusters[i], err = New(
 			nodes[i],
@@ -1295,18 +1281,11 @@ func TestStressCluster_LeaderDistribution(t *testing.T) {
 		stressLog("--- Distribution Iteration %d/%d START ---", iter+1, iterations)
 		t.Logf("Iteration %d/%d", iter+1, iterations)
 
-		// Create nodes with full mesh
+		// Create nodes, meshed below as each serves the group
 		nodes := createStressNodes(t, nodeCount)
 		nodeIDs := make([]peercore.ID, nodeCount)
 		for i, node := range nodes {
 			nodeIDs[i] = node.ID()
-		}
-
-		// Wait for mesh connectivity
-		err := waitAllConnected(t, nodes, 30*time.Second)
-		if err != nil {
-			stressLog("--- Distribution Iteration %d/%d FAILED: mesh connectivity: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "failed to establish mesh connectivity")
 		}
 
 		namespace := fmt.Sprintf("stress-distribution-%d", iter)
@@ -1341,6 +1320,7 @@ func TestStressCluster_LeaderDistribution(t *testing.T) {
 			}(i)
 		}
 
+		linkErr := linkAsTheyServe(t.Context(), namespace, nodes)
 		wg.Wait()
 		if createErr != nil {
 			stressLog("--- Distribution Iteration %d/%d FAILED: cluster creation: %v ---", iter+1, iterations, createErr)
@@ -1372,6 +1352,13 @@ func TestStressCluster_LeaderDistribution(t *testing.T) {
 			}
 			stressLog("Distribution Iteration %d/%d: Cleanup complete", iterNum, iterations)
 		}()
+
+		assert.NilError(t, linkErr, "failed to link the nodes")
+		err := waitAllConnected(t, nodes, 30*time.Second)
+		if err != nil {
+			stressLog("--- Distribution Iteration %d/%d FAILED: mesh connectivity: %v ---", iter+1, iterations, err)
+			assert.NilError(t, err, "failed to establish mesh connectivity")
+		}
 
 		// Verify leader elected - scale timeout with node count (5 nodes for distribution test)
 		leaderTimeout := 60 * time.Second // Distribution test uses 5 nodes, so 60s is sufficient
