@@ -99,10 +99,13 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/taubyte/tau/pkg/specs"
@@ -641,26 +644,50 @@ func tarInto(w io.Writer, dir string) (int64, error) {
 // EVERY ENTRY IS CHECKED AGAINST THE DESTINATION. A tar is bytes from a store,
 // and an entry named `../../etc` would write outside the volume — the oldest
 // archive bug there is, and this one unpacks with the node's own privileges.
+//
+// AND EVERY ENTRY IS MADE THROUGH AN os.Root ON IT, because a name says nothing
+// about what is already on disk along its path: a link the archive made earlier
+// sits in the path of every entry after it. The root refuses to resolve a path
+// out of the volume, whatever links lie along the way.
 func untar(r io.Reader, dir string) error {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+
+	var links []string
+	shut := map[string]fs.FileMode{}
 	archive := tar.NewReader(r)
 	for {
 		header, err := archive.Next()
 		if errors.Is(err, io.EOF) {
-			return nil
+			if err := checkLinks(root, links); err != nil {
+				return err
+			}
+			return closeDirs(root, shut)
 		}
 		if err != nil {
 			return err
 		}
 
-		target, err := within(dir, header.Name)
+		name, err := within(header.Name)
 		if err != nil {
 			return err
 		}
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, fs.FileMode(header.Mode).Perm()); err != nil {
+			// A DIRECTORY ITS OWNER CANNOT LIST, ENTER OR WRITE IS CLOSED LAST.
+			// Made so at once, it would refuse the entries that go inside it,
+			// and the root, which opens every directory it passes through,
+			// could not pass through it.
+			perm := fs.FileMode(header.Mode).Perm()
+			if err := root.MkdirAll(name, perm|0o700); err != nil {
 				return err
+			}
+			if closed := 0o700 &^ perm; closed != 0 && name != "." {
+				shut[name] = closed
 			}
 		case tar.TypeSymlink:
 			// A LINK IS CHECKED WHERE IT POINTS, not only where it is written:
@@ -674,20 +701,21 @@ func untar(r io.Reader, dir string) error {
 			if filepath.IsAbs(filepath.FromSlash(header.Linkname)) {
 				return fmt.Errorf("volume: a checkpoint entry links to %q, which is outside the volume", header.Linkname)
 			}
-			if _, err := within(dir, filepath.Join(filepath.Dir(header.Name), header.Linkname)); err != nil {
+			if _, err := within(filepath.Join(filepath.Dir(header.Name), header.Linkname)); err != nil {
 				return err
 			}
-			if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
+			if err := root.MkdirAll(filepath.Dir(name), 0o750); err != nil {
 				return err
 			}
-			if err := os.Symlink(header.Linkname, target); err != nil && !errors.Is(err, fs.ErrExist) {
+			if err := root.Symlink(header.Linkname, name); err != nil && !errors.Is(err, fs.ErrExist) {
 				return err
 			}
+			links = append(links, name)
 		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
+			if err := root.MkdirAll(filepath.Dir(name), 0o750); err != nil {
 				return err
 			}
-			file, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, fs.FileMode(header.Mode).Perm())
+			file, err := root.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, fs.FileMode(header.Mode).Perm())
 			if err != nil {
 				return err
 			}
@@ -705,7 +733,50 @@ func untar(r io.Reader, dir string) error {
 	}
 }
 
-// within is the path an entry names inside dir, or an error when it names
+// checkLinks follows every link a checkpoint made, from where it sits.
+//
+// THE CHECK ON A TARGET READS IT FROM THE NAME THE ARCHIVE GAVE THE LINK, and
+// that is not where it leads once other links are on disk: one made before or
+// after it can sit along its target. So once all of them exist each is followed
+// again through the root, and one that leads out of the volume, or that the
+// root gives up following, refuses the restore. One that leads nowhere — to a
+// name that does not exist, or through a file — is kept.
+//
+// THEY ARE THE LINKS THIS MADE, followed by name. An archive makes a link no
+// other way here, so a data directory's every file need not be walked to find
+// them.
+func checkLinks(root *os.Root, links []string) error {
+	for _, name := range links {
+		_, err := root.Stat(name)
+		if err == nil || errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+			continue
+		}
+		return fmt.Errorf("volume: a checkpoint link %q does not resolve inside the volume: %w", name, err)
+	}
+	return nil
+}
+
+// closeDirs takes away what a directory's entry did not grant its owner, once
+// everything is unpacked. The deepest go first, so that a parent its owner
+// cannot pass through is closed after what is in it.
+func closeDirs(root *os.Root, shut map[string]fs.FileMode) error {
+	names := slices.Collect(maps.Keys(shut))
+	slices.SortFunc(names, func(a, b string) int {
+		return strings.Count(b, string(os.PathSeparator)) - strings.Count(a, string(os.PathSeparator))
+	})
+	for _, name := range names {
+		info, err := root.Stat(name)
+		if err != nil {
+			return err
+		}
+		if err := root.Chmod(name, info.Mode().Perm()&^shut[name]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// within is the name an entry has inside the volume, or an error when it names
 // somewhere else.
 //
 // IT REFUSES RATHER THAN CLAMPING. Joining a cleaned "/"+name onto the
@@ -713,23 +784,12 @@ func untar(r io.Reader, dir string) error {
 // SILENTLY REWRITES `../etc/passwd` into `etc/passwd`, so an archive that tried
 // to escape unpacks successfully somewhere else and nothing says it tried.
 // Nothing this node writes names a parent, so an entry that does is not one of
-// ours and is the thing worth failing on.
-func within(dir, name string) (string, error) {
-	outside := func() (string, error) {
-		return "", fmt.Errorf("volume: a checkpoint entry names %q, which is outside the volume", name)
-	}
-
+// ours and is the thing worth failing on. What this does not anticipate, a
+// drive letter say, the root the name is opened in refuses on its own.
+func within(name string) (string, error) {
 	clean := filepath.Clean(filepath.FromSlash(name))
 	if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(os.PathSeparator)) {
-		return outside()
+		return "", fmt.Errorf("volume: a checkpoint entry names %q, which is outside the volume", name)
 	}
-
-	// AND THE JOIN IS CHECKED TOO, because the two are not the same question on
-	// every platform: a volume name or a drive letter is absolute to the
-	// filesystem and not to filepath.IsAbs everywhere.
-	target := filepath.Join(dir, clean)
-	if target != dir && !strings.HasPrefix(target, dir+string(os.PathSeparator)) {
-		return outside()
-	}
-	return target, nil
+	return clean, nil
 }

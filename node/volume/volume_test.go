@@ -1214,6 +1214,175 @@ func TestAnEscapingEntryWritesNothing(t *testing.T) {
 	require.Empty(t, entries, "something was written outside the volume")
 }
 
+// TestNOENTRYLandsOutsideTheVolumeWhateverLinksPrecedeIt. Every name is checked
+// against the destination, and the links an archive has already made sit in the
+// path of every entry after them: neither may carry an entry out.
+func TestNoEntryLandsOutsideTheVolumeWhateverLinksPrecedeIt(t *testing.T) {
+	for _, last := range []struct {
+		name  string
+		entry tar.Header
+	}{
+		{"a file", tar.Header{Name: "y/escaped", Typeflag: tar.TypeReg, Mode: 0o640}},
+		{"a directory", tar.Header{Name: "y/escaped", Typeflag: tar.TypeDir, Mode: 0o750}},
+		{"a link", linkEntry("y/escaped", "anything")},
+	} {
+		t.Run(last.name, func(t *testing.T) {
+			root := t.TempDir()
+			_, err := restoring(t, root, entries(t, linkEntry("x", "."), linkEntry("x/y", ".."), last.entry))
+			require.Error(t, err, "the archive was accepted")
+
+			beside, err := os.ReadDir(filepath.Join(root, "volumes"))
+			require.NoError(t, err)
+			require.Len(t, beside, 1, "something was written beside the volume")
+		})
+	}
+}
+
+// TestNOTHINGIsWrittenThroughALinkThatLeadsOut, onto a file beside the volume.
+func TestNothingIsWrittenThroughALinkThatLeadsOut(t *testing.T) {
+	root := t.TempDir()
+	victim := filepath.Join(root, "volumes", "victim")
+	require.NoError(t, os.MkdirAll(filepath.Dir(victim), 0o750))
+	require.NoError(t, os.WriteFile(victim, []byte("untouched"), 0o640))
+
+	_, err := restoring(t, root, entries(t,
+		linkEntry("x", "."),
+		linkEntry("x/y", "../victim"),
+		tar.Header{Name: "y", Typeflag: tar.TypeReg, Mode: 0o640},
+	))
+	require.Error(t, err, "the archive was accepted")
+
+	content, err := os.ReadFile(victim)
+	require.NoError(t, err)
+	require.Equal(t, "untouched", string(content), "a file beside the volume was written")
+}
+
+// TestALINKIsJudgedFromWhereItLands, once every entry is on disk, and not from
+// the name the archive gave it.
+func TestALinkThatLeadsOutFromWhereItLandsIsRefused(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		links []tar.Header
+	}{
+		{"under a link to the volume", []tar.Header{linkEntry("x", "."), linkEntry("x/y", "..")}},
+		{"through a link made after it", []tar.Header{linkEntry("l", "x/.."), linkEntry("x", ".")}},
+		{"in a loop", []tar.Header{linkEntry("a", "b"), linkEntry("b", "a")}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := restoring(t, t.TempDir(), entries(t, c.links...))
+			require.ErrorContains(t, err, "does not resolve inside the volume")
+		})
+	}
+}
+
+// TestALINKThatLeadsNowhereIsKept: to a name that is not there, or through a
+// file. Neither leads anywhere, let alone out.
+func TestALinkThatLeadsNowhereIsKept(t *testing.T) {
+	links := map[string]string{"missing": "not-yet", "through": "PG_VERSION/child"}
+	headers := []tar.Header{{Name: "PG_VERSION", Typeflag: tar.TypeReg, Mode: 0o640}}
+	for name, target := range links {
+		headers = append(headers, linkEntry(name, target))
+	}
+
+	dir, err := restoring(t, t.TempDir(), entries(t, headers...))
+	require.NoError(t, err)
+
+	for name, want := range links {
+		target, err := os.Readlink(filepath.Join(dir, name))
+		require.NoError(t, err, name)
+		require.Equal(t, want, target, name)
+	}
+}
+
+// TestADIRECTORYItsOwnerCannotListOrWriteIsStillRestored, with what is inside
+// it, and ends with the mode its entry carried.
+func TestADirectoryItsOwnerCannotListOrWriteIsStillRestored(t *testing.T) {
+	for _, mode := range []int64{0o300, 0o500, 0o100} {
+		t.Run(strconv.FormatInt(mode, 8), func(t *testing.T) {
+			dir, err := restoring(t, t.TempDir(), entries(t,
+				tar.Header{Name: "drop", Typeflag: tar.TypeDir, Mode: mode},
+				tar.Header{Name: "drop/inner", Typeflag: tar.TypeDir, Mode: mode},
+				linkEntry("drop/inner/current", "../../PG_VERSION"),
+				tar.Header{Name: "drop/inner/rows", Typeflag: tar.TypeReg, Mode: 0o640},
+				tar.Header{Name: "PG_VERSION", Typeflag: tar.TypeReg, Mode: 0o640},
+			))
+			require.NoError(t, err)
+
+			for _, name := range []string{"drop", "drop/inner"} {
+				info, err := os.Stat(filepath.Join(dir, name))
+				require.NoError(t, err, name)
+				require.Equal(t, os.FileMode(mode), info.Mode().Perm()&0o700, "%s does not have the owner's rights its entry gave", name)
+			}
+
+			// Opened back up to look inside, and so the test can clean up.
+			require.NoError(t, os.Chmod(filepath.Join(dir, "drop"), 0o750))
+			require.NoError(t, os.Chmod(filepath.Join(dir, "drop", "inner"), 0o750))
+
+			target, err := os.Readlink(filepath.Join(dir, "drop", "inner", "current"))
+			require.NoError(t, err)
+			require.Equal(t, "../../PG_VERSION", target)
+			require.FileExists(t, filepath.Join(dir, "drop", "inner", "rows"))
+		})
+	}
+}
+
+// TestSETUIDSetgidAndStickyDoNotComeBack. Only the permission bits of a mode
+// are restored.
+func TestSetuidSetgidAndStickyDoNotComeBack(t *testing.T) {
+	dir, err := restoring(t, t.TempDir(), entries(t,
+		tar.Header{Name: "tools", Typeflag: tar.TypeDir, Mode: 0o750 | 0o7000},
+		tar.Header{Name: "tools/su", Typeflag: tar.TypeReg, Mode: 0o750 | 0o7000},
+	))
+	require.NoError(t, err)
+
+	for _, name := range []string{"tools", "tools/su"} {
+		info, err := os.Stat(filepath.Join(dir, name))
+		require.NoError(t, err, name)
+		require.Zero(t, info.Mode()&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky), "%s kept a special bit", name)
+	}
+}
+
+// restoring mounts a volume on a fresh node over root whose store holds archive
+// as the volume's last checkpoint.
+func restoring(t *testing.T, root string, archive []byte) (string, error) {
+	t.Helper()
+
+	handle := "shop/prod/QmData"
+	store, index := newBlobs(), newRows()
+	id := store.put(t, archive)
+	require.NoError(t, index.Put(t.Context(), recordedAt+handle, []byte(id)))
+
+	v, err := volume.New(root, store, &opening{rows: index}, &said{})
+	require.NoError(t, err)
+	t.Cleanup(func() { v.Close() })
+	return v.Mount(t.Context(), mountGrant(handle, nil))
+}
+
+// entries is an archive of the given headers, each regular file holding its
+// own name.
+func entries(t *testing.T, headers ...tar.Header) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+	archive := tar.NewWriter(&buf)
+	for _, header := range headers {
+		body := ""
+		if header.Typeflag == tar.TypeReg {
+			body = header.Name
+			header.Size = int64(len(body))
+		}
+		require.NoError(t, archive.WriteHeader(&header))
+		_, err := archive.Write([]byte(body))
+		require.NoError(t, err)
+	}
+	require.NoError(t, archive.Close())
+	return buf.Bytes()
+}
+
+func linkEntry(name, target string) tar.Header {
+	return tar.Header{Name: name, Typeflag: tar.TypeSymlink, Linkname: target, Mode: 0o777}
+}
+
 // TestADEVICEIsNotCreatedFromBytesInAStore. Nothing writes one into a checkpoint,
 // and making one is a privilege this has no reason to exercise.
 func TestACheckpointDoesNotCreateDevices(t *testing.T) {
