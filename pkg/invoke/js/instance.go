@@ -40,10 +40,11 @@ type instance struct {
 	reserve    engine.Value
 
 	// window is the buffer bytes cross through (see host.go), current the
-	// request being served, response what its handler answered, and waits
-	// whether it handed anything to waitUntil.
+	// request being served, seq its number, response what its handler
+	// answered, and waits whether it handed anything to waitUntil.
 	window   engine.Value
 	current  *invoke.Request
+	seq      int
 	response *invoke.Response
 	waits    bool
 
@@ -189,6 +190,7 @@ func (i *instance) handle(ctx context.Context, req *invoke.Request, deadline tim
 		req = &invoke.Request{}
 	}
 	i.current, i.response, i.waits = req, nil, false
+	i.seq++
 	defer func() { i.current, i.response = nil, nil }()
 
 	run, stop := i.bound(ctx, deadline)

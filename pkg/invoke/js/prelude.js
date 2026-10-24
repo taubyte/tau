@@ -251,19 +251,27 @@
   const textOf = (body) => (typeof body === "string" ? body : new TextDecoder().decode(body));
 
   let bodyOf;
+  let seqOf;
 
   class Body {
     #body;
     #used = false;
+    #seq;
 
     static {
       bodyOf = (b) => {
         if (b.#used) throw new TypeError("Body has already been used");
         return b.#body;
       };
+      seqOf = (b) => b.#seq;
     }
 
-    constructor(body) { this.#body = body; }
+    // seq numbers the request the platform handed in that these bytes are,
+    // and is 0 for any other body.
+    constructor(body, seq = 0) {
+      this.#body = body;
+      this.#seq = seq;
+    }
 
     get bodyUsed() { return this.#body !== null && this.#used; }
 
@@ -276,8 +284,20 @@
 
     async arrayBuffer() { return bytesOf(this.#take()).buffer; }
     async bytes() { return bytesOf(this.#take()); }
-    async text() { return textOf(this.#take()); }
-    async json() { return JSON.parse(textOf(this.#take())); }
+    async text() { return this.#text(); }
+    async json() { return JSON.parse(this.#text()); }
+
+    // #text decodes the body. A request the platform handed in is decoded
+    // from the bytes Go still holds while it is being served: copying them
+    // back across costs far more than the decode.
+    #text() {
+      const body = this.#take();
+      if (this.#seq !== 0 && typeof body !== "string") {
+        const text = host.requestText(this.#seq);
+        if (text !== null) return text;
+      }
+      return textOf(body);
+    }
   }
 
   // ── request ───────────────────────────────────────────────────────────
@@ -293,7 +313,7 @@
 
     constructor(input, init = undefined) {
       if (input === INCOMING) {
-        super(init.body);
+        super(init.body, init.seq);
         this.#method = init.method;
         this.#url = init.url;
         this.#headers = init.headers;
@@ -308,12 +328,16 @@
       if (NORMALIZED.includes(upper)) method = upper;
       const headers = new Headers(init.headers !== undefined ? init.headers : from ? from.#headers : undefined);
       let bytes = null;
+      let seq = 0;
       if (init.body !== undefined && init.body !== null) bytes = extract(init.body, headers);
-      else if (init.body === undefined && from) bytes = copyBody(bodyOf(from));
+      else if (init.body === undefined && from) {
+        bytes = copyBody(bodyOf(from));
+        seq = seqOf(from);
+      }
       if ((method === "GET" || method === "HEAD") && bytes !== null) {
         throw new TypeError("Request with GET/HEAD method cannot have body");
       }
-      super(bytes);
+      super(bytes, seq);
       this.#method = method;
       this.#url = from ? from.#url : String(input);
       this.#headers = headers;
@@ -492,12 +516,12 @@
   const serveWith = (handler) => {
     const env = {};
     return () => {
-      const [method, url, flat, n] = host.head();
+      const [method, url, flat, n, seq] = host.head();
       const headers = new Headers();
       const list = pairsOf(headers);
       for (let i = 0; i < flat.length; i += 2) list.push([flat[i], flat[i + 1]]);
       const body = n === 0 ? null : copyOut(n);
-      const request = new Request(INCOMING, { method, url, headers, body });
+      const request = new Request(INCOMING, { method, url, headers, body, seq });
       const { ctx, settle } = context();
       let answer;
       try {

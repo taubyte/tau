@@ -47,6 +47,7 @@ func (i *instance) hostObject(stdout, stderr io.Writer) (engine.Value, error) {
 			return true
 		})},
 		{"head", engine.Fn0(i.head)},
+		{"requestText", engine.Fn1(i.requestText)},
 		{"waiting", engine.Fn0(func() bool {
 			i.waits = true
 			return true
@@ -85,8 +86,8 @@ func (i *instance) view(n int) ([]byte, error) {
 	return view[:n], nil
 }
 
-// head is the request being served: its method, URL, header pairs, and the
-// length of the body handle has already put in the window.
+// head is the request being served: its method, URL, header pairs, the
+// length of the body handle has already put in the window, and its number.
 func (i *instance) head() []any {
 	req := i.current
 	method := req.Method
@@ -97,7 +98,17 @@ func (i *instance) head() []any {
 	if !strings.HasPrefix(target, "/") {
 		target = "/" + target
 	}
-	return []any{method, origin + target, pairs(req.Headers), len(req.Body)}
+	return []any{method, origin + target, pairs(req.Headers), len(req.Body), i.seq}
+}
+
+// requestText is the body of request seq decoded as a TextDecoder decodes
+// it, a leading BOM dropped, or null once that request is not being served.
+func (i *instance) requestText(seq int) any {
+	if i.current == nil || seq != i.seq {
+		return nil
+	}
+	text, _, _ := decodeUTF8(i.current.Body, false, false)
+	return strings.TrimPrefix(text, "\ufeff")
 }
 
 // respond takes the handler's answer: the status, the header pairs and the
