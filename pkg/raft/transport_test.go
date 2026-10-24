@@ -191,8 +191,8 @@ func TestCluster_AnEncryptedPairReplicates(t *testing.T) {
 	_, err := rand.Read(key)
 	require.NoError(t, err)
 
-	nodeA := taupeer.Mock(t.Context())
-	nodeB := taupeer.Mock(t.Context())
+	nodeA := newMockNode(t)
+	nodeB := newMockNode(t)
 	require.NoError(t, taupeer.LinkAllPeers())
 
 	a, err := New(nodeA, namespace, WithEncryptionKey(key), WithTimeouts(testTimeoutConfig()),

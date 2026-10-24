@@ -31,8 +31,8 @@ func connected(t *testing.T, n taupeer.Node, clusters ...Cluster) {
 // caller from outside the group, the way a node running no member reaches it.
 func callerOf(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batching) (Cluster, *client) {
 	t.Helper()
-	member := taupeer.Mock(t.Context())
-	caller := taupeer.Mock(t.Context())
+	member := newMockNode(t)
+	caller := newMockNode(t)
 	require.NoError(t, taupeer.LinkAllPeers())
 
 	cl, err := New(storeNode{Node: member, store: wrap(member.Store())}, namespace,
@@ -135,7 +135,7 @@ func TestClient_KeysMatchingNothingIsAnEmptyList(t *testing.T) {
 // group's protocol answers no call of it, and each says it failed.
 func TestClient_CallsToAPeerThatRunsNoMemberFail(t *testing.T) {
 	cl, _ := callerOf(t, "client-served", sameStore)
-	caller := taupeer.Mock(t.Context())
+	caller := newMockNode(t)
 	require.NoError(t, taupeer.LinkAllPeers())
 	connected(t, caller, cl)
 
@@ -187,8 +187,8 @@ func (garbledExport) ExportFSM(context.Context, *connect.Request[raftv2.ExportFS
 // empty one, which would merge as nothing at all.
 func TestClient_AStateThatWillNotDecodeIsAnError(t *testing.T) {
 	const namespace = "client-garbled-export"
-	server := taupeer.Mock(t.Context())
-	caller := taupeer.Mock(t.Context())
+	server := newMockNode(t)
+	caller := newMockNode(t)
 	require.NoError(t, taupeer.LinkAllPeers())
 	require.NoError(t, caller.Peer().Connect(t.Context(), peer.AddrInfo{ID: server.ID(), Addrs: server.Peer().Addrs()}))
 
@@ -242,7 +242,7 @@ func TestStream_AnExportTheLeaderCannotReadIsRefused(t *testing.T) {
 // asks for a barrier is served only by a member that can raise one; a member
 // that cannot answers ErrNotLeader rather than its own, possibly stale, state.
 func TestStream_AConsistentReadFromAMemberThatCannotBarrierIsRefused(t *testing.T) {
-	caller := taupeer.Mock(t.Context())
+	caller := newMockNode(t)
 	a, b := joinedPair(t, "stream-barrier-refused", sameStore)
 	connected(t, caller, a, b)
 	require.NoError(t, onLeader(t, []Cluster{a, b}, func(l Cluster) error {
@@ -305,7 +305,7 @@ func TestStream_JoinVoterNamingNoPeerIsRefused(t *testing.T) {
 // group for its state through whichever member it reaches, and a follower
 // forwards the call to its leader.
 func TestStream_ExportFSMAskedOfEitherMemberIsTheGroupsState(t *testing.T) {
-	caller := taupeer.Mock(t.Context())
+	caller := newMockNode(t)
 	a, b := joinedPair(t, "stream-export-either", sameStore)
 	connected(t, caller, a, b)
 	require.NoError(t, onLeader(t, []Cluster{a, b}, func(l Cluster) error {

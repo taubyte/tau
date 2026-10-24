@@ -20,8 +20,13 @@ import (
 	taupeer "github.com/taubyte/tau/p2p/peer"
 )
 
+// newMockNode is a mock node closed when the test ends: a mock makes a
+// repository of its own and only Close removes it. Cleanups run last in first
+// out, so a cluster whose cleanup is registered after its node closes first.
 func newMockNode(t *testing.T) taupeer.Node {
-	return taupeer.Mock(t.Context())
+	node := taupeer.Mock(t.Context())
+	t.Cleanup(node.Close)
+	return node
 }
 
 // testTimeoutConfig returns fast timeouts for testing
@@ -221,8 +226,8 @@ func onLeader(t testing.TB, clusters []Cluster, write func(Cluster) error) error
 // bootstrap timeout founds a group of its own.
 func joinedPair(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batching) (a, b Cluster) {
 	t.Helper()
-	nodeA := taupeer.Mock(t.Context())
-	nodeB := taupeer.Mock(t.Context())
+	nodeA := newMockNode(t)
+	nodeB := newMockNode(t)
 	require.NoError(t, taupeer.LinkAllPeers())
 
 	a, err := New(storeNode{Node: nodeA, store: wrap(nodeA.Store())}, namespace,

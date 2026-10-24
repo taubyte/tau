@@ -49,8 +49,8 @@ func waitLeader(t *testing.T, c Cluster, timeout time.Duration) {
 }
 
 func TestHealing_TwoSplitClusters_MergesFSM(t *testing.T) {
-	node1 := taupeer.Mock(t.Context())
-	node2 := taupeer.Mock(t.Context())
+	node1 := newMockNode(t)
+	node2 := newMockNode(t)
 
 	require.NoError(t, taupeer.LinkAllPeers())
 
@@ -134,7 +134,7 @@ func TestMergeCRDTDelta(t *testing.T) {
 }
 
 func TestHealing_MergeApply(t *testing.T) {
-	node := taupeer.Mock(t.Context())
+	node := newMockNode(t)
 	require.NoError(t, taupeer.LinkAllPeers())
 
 	c, err := New(node, "merge-apply", healingTestOptions()...)
@@ -177,7 +177,7 @@ func TestHealing_MergeApply(t *testing.T) {
 }
 
 func TestHealing_HealAck_Signal(t *testing.T) {
-	node := taupeer.Mock(t.Context())
+	node := newMockNode(t)
 	require.NoError(t, taupeer.LinkAllPeers())
 
 	h := &healer{
@@ -216,8 +216,8 @@ func TestHealing_HealAck_Signal(t *testing.T) {
 // node's discovery time to find the other side.
 func splitPair(t *testing.T, namespace string) (a, b Cluster) {
 	t.Helper()
-	nodeA := taupeer.Mock(t.Context())
-	nodeB := taupeer.Mock(t.Context())
+	nodeA := newMockNode(t)
+	nodeB := newMockNode(t)
 
 	opts := func() []Option {
 		return []Option{WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second), WithSnapshotRoot(t.TempDir())}
@@ -280,7 +280,7 @@ func TestHealing_ALoserRejoinsTheGroupItYieldedTo(t *testing.T) {
 // without waiting for it, so an apply still in flight landed after the wipe,
 // in state the yielding node had just thrown away.
 func TestHealing_AYieldWaitsForTheRaftItReplaces(t *testing.T) {
-	node := taupeer.Mock(t.Context())
+	node := newMockNode(t)
 	namespace := "yield-waits"
 	held := newHeldStore(node.Store(), ds.NewKey(path.Join(RaftStoragePrefix, namespace, "data", "held")))
 	defer held.letGo()
@@ -337,7 +337,7 @@ func (s *heldWipe) letGo() { s.out.Do(func() { close(s.release) }) }
 // which rebuilt a raft after Close returned, one nothing would ever shut down
 // and which ran past the close of the store under it.
 func TestCluster_CloseWaitsForAYieldInProgress(t *testing.T) {
-	node := taupeer.Mock(t.Context())
+	node := newMockNode(t)
 	namespace := "close-during-yield"
 	wipe := &heldWipe{
 		Batching: node.Store(),
@@ -405,8 +405,8 @@ func TestHealing_ASplitHealsByItself(t *testing.T) {
 // member forced to bootstrap: a bootstrapped alone, then b found it and joined.
 func formedPair(t *testing.T, namespace string) (a, b Cluster) {
 	t.Helper()
-	nodeA := taupeer.Mock(t.Context())
-	nodeB := taupeer.Mock(t.Context())
+	nodeA := newMockNode(t)
+	nodeB := newMockNode(t)
 
 	a, err := New(nodeA, namespace,
 		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(time.Second), WithSnapshotRoot(t.TempDir()))
@@ -501,7 +501,7 @@ func nodeOfCluster(cl Cluster) taupeer.Node { return cl.(*cluster).node }
 // reported, and one from a member, from nobody or from a name that is not a
 // peer is not.
 func TestHealing_AVoteFromANonMemberIsReported(t *testing.T) {
-	node := taupeer.Mock(t.Context())
+	node := newMockNode(t)
 	c, err := New(node, "foreign-votes", WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
 	require.NoError(t, err)
 	defer c.Close()
@@ -509,7 +509,7 @@ func TestHealing_AVoteFromANonMemberIsReported(t *testing.T) {
 
 	// A healer of its own, so nothing else drains what it reports.
 	h := newHealer(c.(*cluster))
-	stranger := taupeer.Mock(t.Context()).ID()
+	stranger := newMockNode(t).ID()
 	vote := func(from string) raft.Observation {
 		return raft.Observation{Data: raft.RequestVoteRequest{RPCHeader: raft.RPCHeader{ID: []byte(from)}}}
 	}
@@ -554,7 +554,7 @@ func TestHealing_AVoteFromANonMemberIsReported(t *testing.T) {
 // takes it in at once.
 func TestHealing_AForeignVoterIsTrackedAndAbsorbedByTheLeader(t *testing.T) {
 	a, b := formedPair(t, "foreign-voter")
-	stranger := taupeer.Mock(t.Context()).ID()
+	stranger := newMockNode(t).ID()
 
 	leader := leaderOf(t, a, b)
 	follower := a
@@ -582,7 +582,7 @@ func TestHealing_AForeignVoterIsTrackedAndAbsorbedByTheLeader(t *testing.T) {
 // either leaves its group as it was.
 func TestHealing_AMergeNeedsTheLeadAndTheOtherSide(t *testing.T) {
 	a, b := formedPair(t, "merge-preconditions")
-	stranger := taupeer.Mock(t.Context()).ID()
+	stranger := newMockNode(t).ID()
 	require.NoError(t, onLeader(t, []Cluster{a, b}, func(leader Cluster) error {
 		return leader.Set("k", []byte("v"), time.Second)
 	}))
@@ -634,7 +634,7 @@ func (p *exportingPeer) HealAck(context.Context, *connect.Request[raftv2.HealAck
 func TestHealing_AMergeTheStoreRefusesTellsNobodyToYield(t *testing.T) {
 	const namespace = "merge-refused"
 	store := newFaultStore()
-	winnerNode := taupeer.Mock(t.Context())
+	winnerNode := newMockNode(t)
 	w, err := New(storeNode{Node: winnerNode, store: store}, namespace,
 		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
 	require.NoError(t, err)
@@ -646,7 +646,7 @@ func TestHealing_AMergeTheStoreRefusesTellsNobodyToYield(t *testing.T) {
 	})
 	require.NoError(t, err)
 	other := &exportingPeer{state: state}
-	otherNode := taupeer.Mock(t.Context())
+	otherNode := newMockNode(t)
 	route, handler := raftv2connect.NewRaftServiceHandler(other)
 	mux := http.NewServeMux()
 	mux.Handle(route, handler)
