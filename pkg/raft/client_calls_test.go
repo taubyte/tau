@@ -115,6 +115,22 @@ func TestClient_AnEmptyValueReadsBackPresent(t *testing.T) {
 	require.Nil(t, value)
 }
 
+// TestClient_KeysMatchingNothingIsAnEmptyList: proto sends no list for an
+// empty one, and the client answers with an empty list rather than none.
+func TestClient_KeysMatchingNothingIsAnEmptyList(t *testing.T) {
+	cl, cli := callerOf(t, "client-empty-keys", sameStore)
+	require.NoError(t, cl.Set("held/1", []byte("v"), time.Second))
+
+	keys, err := cli.Keys("nothing/", idOf(cl))
+	require.NoError(t, err)
+	require.NotNil(t, keys)
+	require.Empty(t, keys)
+
+	keys, err = cli.Keys("held/", idOf(cl))
+	require.NoError(t, err)
+	require.Equal(t, []string{"held/1"}, keys)
+}
+
 // TestClient_CallsToAPeerThatRunsNoMemberFail: a peer that does not serve the
 // group's protocol answers no call of it, and each says it failed.
 func TestClient_CallsToAPeerThatRunsNoMemberFail(t *testing.T) {

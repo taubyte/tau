@@ -214,18 +214,23 @@ func onLeader(t testing.TB, clusters []Cluster, write func(Cluster) error) error
 
 // joinedPair is a group of two on linked mock nodes: a bootstrapped it and b
 // joined. Each runs on the store wrap makes of its node's own.
+//
+// b connects to a once a serves the group, so the identify that completes
+// the connection already lists a's protocols. Connected earlier, b learns them
+// only from identify's push, and a b that has not heard it within its
+// bootstrap timeout founds a group of its own.
 func joinedPair(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batching) (a, b Cluster) {
 	t.Helper()
 	nodeA := taupeer.Mock(t.Context())
 	nodeB := taupeer.Mock(t.Context())
 	require.NoError(t, taupeer.LinkAllPeers())
-	require.NoError(t, nodeB.Peer().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Peer().Addrs()}))
 
 	a, err := New(storeNode{Node: nodeA, store: wrap(nodeA.Store())}, namespace,
 		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
 	require.NoError(t, err)
 	t.Cleanup(func() { a.Close() })
 	waitLeader(t, a, 5*time.Second)
+	require.NoError(t, nodeB.Peer().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Peer().Addrs()}))
 
 	b, err = New(storeNode{Node: nodeB, store: wrap(nodeB.Store())}, namespace,
 		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(t.TempDir()))

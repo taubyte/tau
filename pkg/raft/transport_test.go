@@ -194,13 +194,13 @@ func TestCluster_AnEncryptedPairReplicates(t *testing.T) {
 	nodeA := taupeer.Mock(t.Context())
 	nodeB := taupeer.Mock(t.Context())
 	require.NoError(t, taupeer.LinkAllPeers())
-	require.NoError(t, nodeB.Peer().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Peer().Addrs()}))
 
 	a, err := New(nodeA, namespace, WithEncryptionKey(key), WithTimeouts(testTimeoutConfig()),
 		WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
 	require.NoError(t, err)
 	defer a.Close()
 	waitLeader(t, a, 5*time.Second)
+	require.NoError(t, nodeB.Peer().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Peer().Addrs()}))
 
 	b, err := New(nodeB, namespace, WithEncryptionKey(key), WithTimeouts(testTimeoutConfig()),
 		WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(t.TempDir()))

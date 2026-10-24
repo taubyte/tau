@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 )
 
 // TestEncryptedConn_AFrameReadInPiecesArrivesWhole: raft reads its transport
@@ -117,4 +118,41 @@ func TestEncryptedConn_AWriteToAPeerThatLeftFails(t *testing.T) {
 			require.Zero(t, n)
 		})
 	}
+}
+
+// TestEncryptedConn_AFrameSealedUnderAnotherKeyIsRefused: a peer holding
+// another key gets nothing it sends read as plaintext.
+func TestEncryptedConn_AFrameSealedUnderAnotherKeyIsRefused(t *testing.T) {
+	ours, theirs := make([]byte, AESKeySize), make([]byte, AESKeySize)
+	_, err := rand.Read(ours)
+	require.NoError(t, err)
+	_, err = rand.Read(theirs)
+	require.NoError(t, err)
+
+	near, far := net.Pipe()
+	defer near.Close()
+	defer far.Close()
+	writer, err := newEncryptedConn(near, keyToCipher(t, theirs))
+	require.NoError(t, err)
+	reader, err := newEncryptedConn(far, keyToCipher(t, ours))
+	require.NoError(t, err)
+	go func() {
+		writer.Write([]byte("not for this group"))
+	}()
+
+	n, err := reader.Read(make([]byte, 64))
+	require.ErrorContains(t, err, "decryption failed")
+	require.Zero(t, n)
+}
+
+// TestSealedCodec_RefusesWhatProtoCannotEncode: a message proto refuses, such
+// as a string that is not UTF-8, is refused before anything is sealed.
+func TestSealedCodec_RefusesWhatProtoCannotEncode(t *testing.T) {
+	key := make([]byte, AESKeySize)
+	_, err := rand.Read(key)
+	require.NoError(t, err)
+
+	sealed, err := sealedCodec{gcm: keyToCipher(t, key)}.Marshal(&raftv2.KeysRequest{Prefix: "\xff"})
+	require.Error(t, err)
+	require.Nil(t, sealed)
 }
