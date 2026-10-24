@@ -34,7 +34,10 @@ type CRDTBroadcast struct {
 	// incarnation is the sender's current incarnation.
 	Incarnation []byte `protobuf:"bytes,5,opt,name=incarnation,proto3" json:"incarnation,omitempty"`
 	// verdict answers a rejoining replica.
-	Verdict       *Verdict `protobuf:"bytes,6,opt,name=verdict,proto3" json:"verdict,omitempty"`
+	Verdict *Verdict `protobuf:"bytes,6,opt,name=verdict,proto3" json:"verdict,omitempty"`
+	// acks are the sender's entries for the incarnations that wrote lately:
+	// their authors learn what of theirs has reached the fleet.
+	Acks          []*Entry `protobuf:"bytes,7,rep,name=acks,proto3" json:"acks,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -107,6 +110,13 @@ func (x *CRDTBroadcast) GetIncarnation() []byte {
 func (x *CRDTBroadcast) GetVerdict() *Verdict {
 	if x != nil {
 		return x.Verdict
+	}
+	return nil
+}
+
+func (x *CRDTBroadcast) GetAcks() []*Entry {
+	if x != nil {
+		return x.Acks
 	}
 	return nil
 }
@@ -245,14 +255,15 @@ var File_bcast_proto protoreflect.FileDescriptor
 
 const file_bcast_proto_rawDesc = "" +
 	"\n" +
-	"\vbcast.proto\x12\acrdt.pb\x1a\vdelta.proto\"\xc8\x01\n" +
+	"\vbcast.proto\x12\acrdt.pb\x1a\vdelta.proto\"\xec\x01\n" +
 	"\rCRDTBroadcast\x12#\n" +
 	"\x05Heads\x18\x01 \x03(\v2\r.crdt.pb.HeadR\x05Heads\x12\x14\n" +
 	"\x05since\x18\x02 \x01(\x04R\x05since\x12\x10\n" +
 	"\x03now\x18\x03 \x01(\x04R\x03now\x12\x1c\n" +
 	"\trejoining\x18\x04 \x01(\bR\trejoining\x12 \n" +
 	"\vincarnation\x18\x05 \x01(\fR\vincarnation\x12*\n" +
-	"\averdict\x18\x06 \x01(\v2\x10.crdt.pb.VerdictR\averdict\"G\n" +
+	"\averdict\x18\x06 \x01(\v2\x10.crdt.pb.VerdictR\averdict\x12\"\n" +
+	"\x04acks\x18\a \x03(\v2\x0e.crdt.pb.EntryR\x04acks\"G\n" +
 	"\aVerdict\x12\x0e\n" +
 	"\x02to\x18\x01 \x01(\fR\x02to\x12\x16\n" +
 	"\x06rebase\x18\x02 \x01(\bR\x06rebase\x12\x14\n" +
@@ -280,17 +291,19 @@ var file_bcast_proto_goTypes = []any{
 	(*CRDTBroadcast)(nil), // 0: crdt.pb.CRDTBroadcast
 	(*Verdict)(nil),       // 1: crdt.pb.Verdict
 	(*Head)(nil),          // 2: crdt.pb.Head
-	(*Dot)(nil),           // 3: crdt.pb.Dot
+	(*Entry)(nil),         // 3: crdt.pb.Entry
+	(*Dot)(nil),           // 4: crdt.pb.Dot
 }
 var file_bcast_proto_depIdxs = []int32{
 	2, // 0: crdt.pb.CRDTBroadcast.Heads:type_name -> crdt.pb.Head
 	1, // 1: crdt.pb.CRDTBroadcast.verdict:type_name -> crdt.pb.Verdict
-	3, // 2: crdt.pb.Head.dot:type_name -> crdt.pb.Dot
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	3, // 2: crdt.pb.CRDTBroadcast.acks:type_name -> crdt.pb.Entry
+	4, // 3: crdt.pb.Head.dot:type_name -> crdt.pb.Dot
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_bcast_proto_init() }

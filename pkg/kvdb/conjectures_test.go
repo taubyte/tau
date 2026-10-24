@@ -131,7 +131,7 @@ func mergeOne(t testing.TB, r *Datastore, c cid.Cid) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.processNode(ctx, ng, d, nd); err != nil {
+	if _, err := r.processNode(ctx, r.currentGeneration(), ng, d, nd); err != nil {
 		t.Fatal(err)
 	}
 }

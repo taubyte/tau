@@ -232,7 +232,7 @@ func (store *Datastore) beginMerge() *merging {
 // heard takes what a block written by another incarnation says about fleet
 // time: its stamp, no further ahead of this replica's clock than the skew.
 func (m *merging) heard(author string, at uint64) {
-	if author == m.store.replica {
+	if author == m.store.replica || m.store.rejoining {
 		return
 	}
 	m.since = max(m.since, min(at, m.store.clock()+m.store.times.skew))
@@ -426,6 +426,11 @@ func (store *Datastore) mergeDelta(ctx context.Context, c cid.Cid, delta *pb.Del
 	m.cc.add(d, delta.GetPrev(), at, at+ttl)
 	if err := m.dropPending(ctx, d); err != nil {
 		return nil, err
+	}
+	if d.replica == store.replica {
+		if err := m.logOwn(d, delta); err != nil {
+			return nil, err
+		}
 	}
 	walk, err := m.link(ctx, delta.GetParents())
 	if err != nil {

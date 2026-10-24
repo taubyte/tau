@@ -78,14 +78,43 @@ type simReplica struct {
 	r      *Datastore
 	store  ds.Datastore
 	dag    *fetchThroughDAGSvc
+	out    *outbox
 	offset time.Duration
 	st     *simTime
 	opts   *Options
 }
 
+// outbox is a replica's side of the simulated network: what it broadcasts
+// waits here until the test delivers it, so the test decides who hears what
+// and when.
+type outbox struct {
+	mu   sync.Mutex
+	msgs [][]byte
+}
+
+func (o *outbox) Broadcast(_ context.Context, data []byte) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.msgs = append(o.msgs, append([]byte(nil), data...))
+	return nil
+}
+
+func (o *outbox) Next(ctx context.Context) ([]byte, error) {
+	<-ctx.Done()
+	return nil, ErrNoMoreBroadcast
+}
+
+func (o *outbox) take() [][]byte {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	out := o.msgs
+	o.msgs = nil
+	return out
+}
+
 func (s *simTime) replica(t testing.TB, name string, offset time.Duration) *simReplica {
 	t.Helper()
-	sr := &simReplica{name: name, store: dssync.MutexWrap(ds.NewMapDatastore()), dag: newFetchThrough(), offset: offset, st: s}
+	sr := &simReplica{name: name, store: dssync.MutexWrap(ds.NewMapDatastore()), dag: newFetchThrough(), out: &outbox{}, offset: offset, st: s}
 	sr.opts = s.options(offset)
 	sr.open(t)
 	return sr
@@ -95,7 +124,7 @@ func (sr *simReplica) open(t testing.TB) {
 	t.Helper()
 	o := replicaOptions(sr.opts, sr.name+": ")
 	o.DAGSyncerTimeout = time.Second
-	r, err := NewDatastore(sr.store, ds.NewKey("crdttest"), sr.dag, &nullBroadcaster{}, o)
+	r, err := NewDatastore(sr.store, ds.NewKey("crdttest"), sr.dag, sr.out, o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,6 +193,58 @@ func (s *simTime) heartbeat(t testing.TB, rs ...*simReplica) {
 	for _, sr := range rs {
 		if err := sr.r.hearFleet(context.Background(), s.ms()); err != nil {
 			t.Fatal(err)
+		}
+	}
+}
+
+// beat is one rebroadcast of sr: the gap check, then its heartbeat into its
+// outbox.
+func (sr *simReplica) beat() { sr.r.heartbeat(context.Background()) }
+
+// deliver hands what src has broadcast so far to each of dsts, which fetch
+// from src and from each other.
+func (s *simTime) deliver(t testing.TB, src *simReplica, dsts ...*simReplica) {
+	t.Helper()
+	msgs := src.out.take()
+	for _, dst := range dsts {
+		dst.reach(append([]*simReplica{src}, dsts...)...)
+		for _, data := range msgs {
+			msg, err := dst.r.decodeBroadcast(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dst.r.handleBroadcast(context.Background(), msg)
+		}
+	}
+}
+
+// exchange is a round among replicas in contact: each beats, and what each
+// broadcasts, answers included, reaches all the others, until nobody has
+// anything left to say.
+func (s *simTime) exchange(t testing.TB, rs ...*simReplica) {
+	t.Helper()
+	for _, sr := range rs {
+		sr.beat()
+	}
+	for range 8 {
+		quiet := true
+		for _, src := range rs {
+			var others []*simReplica
+			for _, o := range rs {
+				if o != src {
+					others = append(others, o)
+				}
+			}
+			src.out.mu.Lock()
+			pending := len(src.out.msgs) > 0
+			src.out.mu.Unlock()
+			if pending {
+				quiet = false
+				s.deliver(t, src, others...)
+			}
+		}
+		if quiet {
+			return
 		}
 	}
 }

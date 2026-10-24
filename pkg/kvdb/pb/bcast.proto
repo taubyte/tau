@@ -18,6 +18,9 @@ message CRDTBroadcast {
   bytes incarnation = 5;
   // verdict answers a rejoining replica.
   Verdict verdict = 6;
+  // acks are the sender's entries for the incarnations that wrote lately:
+  // their authors learn what of theirs has reached the fleet.
+  repeated Entry acks = 7;
 }
 
 // A Verdict tells one rejoining incarnation whether the sender can still

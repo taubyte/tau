@@ -150,6 +150,13 @@ func (hh *heads) apply(hc *headChanges) {
 	}
 }
 
+// reset forgets every head; the caller has removed them from the store.
+func (hh *heads) reset() {
+	hh.mu.Lock()
+	defer hh.mu.Unlock()
+	clear(hh.cache)
+}
+
 // add adds one head outside a merge.
 func (hh *heads) add(ctx context.Context, h Head) error {
 	if err := hh.store.Put(ctx, hh.key(h.Cid), encodeHead(h)); err != nil {

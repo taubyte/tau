@@ -793,12 +793,12 @@ func TestCRDTBatchBroadcast(t *testing.T) {
 		}
 	}
 
-	heads, err := replica.decodeBroadcast(mb.Last())
+	msg, err := replica.decodeBroadcast(mb.Last())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(heads) != 1 {
-		t.Errorf("Expected 1 head in broadcast, got %d: %s", len(heads), heads)
+	if len(msg.heads) != 1 {
+		t.Errorf("Expected 1 head in broadcast, got %d: %s", len(msg.heads), msg.heads)
 	}
 }
 

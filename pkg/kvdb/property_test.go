@@ -102,7 +102,7 @@ func tryMergeOne(r *Datastore, c cid.Cid) {
 	if err != nil {
 		return
 	}
-	r.processNode(ctx, ng, d, nd)
+	r.processNode(ctx, r.currentGeneration(), ng, d, nd)
 }
 
 func TestOrderIndependence(t *testing.T) {

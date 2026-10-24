@@ -110,7 +110,7 @@ func (store *Datastore) hearFleet(ctx context.Context, stamp uint64) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	stamp = min(stamp, store.clock()+store.times.skew)
-	if stamp <= store.since {
+	if store.rejoining || stamp <= store.since {
 		return nil
 	}
 	if err := store.store.Put(ctx, store.sinceKey(), binary.AppendUvarint(nil, stamp)); err != nil {
@@ -278,6 +278,7 @@ func (store *Datastore) maintain(ctx context.Context) error {
 	if err == nil {
 		_, err = store.purgeAncient(ctx)
 	}
+
 	due := dropped
 	if err == nil && !due {
 		due, err = store.refreshDue(ctx)

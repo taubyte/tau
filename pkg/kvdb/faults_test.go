@@ -501,7 +501,7 @@ func TestAChunkIsNotADelta(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.processNode(ctx, &crdtNodeGetter{r.dagService}, chunk, nd); err == nil {
+	if _, err := r.processNode(ctx, r.currentGeneration(), &crdtNodeGetter{r.dagService}, chunk, nd); err == nil {
 		t.Fatal("a chunk merged as a delta")
 	}
 }

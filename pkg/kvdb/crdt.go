@@ -27,7 +27,6 @@ import (
 	"time"
 
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
-	"google.golang.org/protobuf/proto"
 
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
@@ -299,6 +298,19 @@ type Datastore struct {
 	horizon uint64
 	// lastWrite is the uptime of this incarnation's last write.
 	lastWrite time.Duration
+	// rejoining is set while this replica waits to be judged after a gap,
+	// with the fleet time it had heard before it (see rejoin.go).
+	rejoining bool
+	gapFrom   uint64
+	// lastHeard and liveHeard are the uptimes it last heard any peer and a
+	// peer that was not rejoining; answered is when it last answered each
+	// rejoining incarnation.
+	lastHeard time.Duration
+	liveHeard time.Duration
+	answered  map[string]time.Duration
+	// generation changes when a rebase replaces the state: a walk begun
+	// under an older one merges nothing.
+	generation uint64
 
 	wg sync.WaitGroup
 
@@ -315,6 +327,7 @@ type dagJob struct {
 	nodeGetter *crdtNodeGetter // a node getter to use
 	delta      *pb.Delta       // the current delta
 	node       ipld.Node       // the current ipld Node
+	gen        uint64          // the generation the walk began under
 }
 
 type broadcastBatchHead struct {
@@ -357,6 +370,7 @@ func NewDatastore(
 		sendJobs:         make(chan *dagJob),
 		queuedChildren:   newCidSafeSet(),
 		ccChanged:        make(chan struct{}),
+		answered:         map[string]time.Duration{},
 	}
 	dstore.ttl.Store(durationMillis(opts.Retention))
 	dstore.times = timesOf(opts)
@@ -405,7 +419,9 @@ func NewDatastore(
 	}()
 	go func() {
 		defer dstore.wg.Done()
-		dstore.rebroadcast(ctx)
+		if !dstore.opts.manual {
+			dstore.rebroadcast(ctx)
+		}
 	}()
 	go func() {
 		defer dstore.wg.Done()
@@ -477,9 +493,18 @@ func (store *Datastore) open(ctx context.Context) error {
 
 	// Last, so that an open that fails never holds an incarnation.
 	store.lastWrite = store.times.up()
+	store.lastHeard = store.lastWrite
+	if err := store.loadRejoin(ctx); err != nil {
+		return fmt.Errorf("error loading the rejoin state: %w", err)
+	}
 	if inc, ok := incarnations.resume(store.incarnationKey(), store.cc.counter); ok {
 		store.replica, store.counter = inc.replica, inc.counter
 	} else if err := store.drawIncarnation(); err != nil {
+		return err
+	}
+	// A rebase that crashed before writing its own operations again writes
+	// them now.
+	if err := store.reissue(ctx); err != nil {
 		return err
 	}
 
@@ -629,40 +654,12 @@ func (store *Datastore) handleNext(ctx context.Context) {
 			continue
 		}
 
-		received, err := store.decodeBroadcast(data)
+		msg, err := store.decodeBroadcast(data)
 		if err != nil {
 			store.logger.Error(err)
 			continue
 		}
-
-		store.seenHeadsMux.Lock()
-		for _, head := range received {
-			store.seenHeads[head.Cid] = struct{}{}
-		}
-		store.seenHeadsMux.Unlock()
-
-		// A replica with no heads builds on what it heard rather than
-		// starting an orphan branch while it syncs.
-		if store.heads.Len() == 0 {
-			store.adoptHeads(ctx, received)
-		}
-
-		// Every head is walked on its own: a walk stuck fetching a block its
-		// author has since compacted away must not hold up the snapshot,
-		// heard later, that covers it and so ends the stuck walk.
-		for _, head := range received {
-			store.wg.Add(1)
-			go func(h Head) {
-				defer store.wg.Done()
-				store.processHead(ctx, h)
-			}(head)
-		}
-	}
-}
-
-func (store *Datastore) processHead(ctx context.Context, h Head) {
-	if err := store.handleBlock(ctx, h); err != nil {
-		store.logger.Errorf("error processing new head: %s", err)
+		store.handleBroadcast(ctx, msg)
 	}
 }
 
@@ -685,34 +682,6 @@ func (store *Datastore) adoptHeads(ctx context.Context, received []Head) {
 	}
 }
 
-// decodeBroadcast parses a CRDTBroadcast received via pubsub.
-func (store *Datastore) decodeBroadcast(data []byte) ([]Head, error) {
-	bcastData := pb.CRDTBroadcast{}
-	if err := proto.Unmarshal(data, &bcastData); err != nil {
-		return nil, err
-	}
-	out := make([]Head, 0, len(bcastData.Heads))
-	for _, protoHead := range bcastData.Heads {
-		c, err := cid.Cast(protoHead.Cid)
-		if err != nil {
-			return out, err
-		}
-		out = append(out, Head{Cid: c, Dot: dotFromPB(protoHead.GetDot()), At: protoHead.GetAt(), TTL: protoHead.GetTtl()})
-	}
-	return out, nil
-}
-
-func (store *Datastore) encodeBroadcast(heads []Head) ([]byte, error) {
-	bcastData := pb.CRDTBroadcast{}
-	for _, h := range heads {
-		if h.Cid == cid.Undef {
-			continue
-		}
-		bcastData.Heads = append(bcastData.Heads, &pb.Head{Cid: h.Cid.Bytes(), Dot: h.Dot.toPB(), At: h.At, Ttl: h.TTL})
-	}
-	return proto.Marshal(&bcastData)
-}
-
 func randomizeInterval(d time.Duration) time.Duration {
 	// 30% of the configured interval
 	leeway := (d * 30 / 100)
@@ -732,7 +701,7 @@ func (store *Datastore) rebroadcast(ctx context.Context) {
 			}
 			return
 		case <-timer.C:
-			store.rebroadcastHeads(ctx)
+			store.heartbeat(ctx)
 			timer.Reset(randomizeInterval(store.opts.RebroadcastInterval))
 		}
 	}
@@ -815,7 +784,7 @@ func (store *Datastore) rebroadcastHeads(ctx context.Context) {
 	clear(store.seenHeads)
 	store.seenHeadsMux.Unlock()
 
-	if err := store.broadcastHeads(ctx, headsToBroadcast); err != nil {
+	if err := store.send(ctx, headsToBroadcast); err != nil {
 		store.logger.Warnf("broadcast failed: %v", err)
 	}
 }
@@ -845,6 +814,17 @@ func (store *Datastore) isIndexed(ctx context.Context, c cid.Cid) (bool, error) 
 // handleBlock walks the branch under a head unless this replica already
 // covers or holds it.
 func (store *Datastore) handleBlock(ctx context.Context, h Head) error {
+	return store.handleBlockAt(ctx, store.currentGeneration(), h)
+}
+
+func (store *Datastore) currentGeneration() uint64 {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	return store.generation
+}
+
+// handleBlockAt is handleBlock for a walk begun under generation gen.
+func (store *Datastore) handleBlockAt(ctx context.Context, gen uint64, h Head) error {
 	if !h.Dot.isZero() && store.covered(h.Dot) {
 		return nil
 	}
@@ -858,7 +838,7 @@ func (store *Datastore) handleBlock(ctx context.Context, h Head) error {
 	if held {
 		return nil
 	}
-	err = store.handleBranch(ctx, []link{h.link()})
+	err = store.handleBranchAt(ctx, gen, []link{h.link()})
 	if err != nil {
 		store.retryLater(ctx, h.link())
 	}
@@ -890,6 +870,10 @@ func (store *Datastore) retryKey(d dot) ds.Key {
 // longer is abandoned and left to repair, so nothing it fetches late is
 // merged on the strength of a judgement made when it began.
 func (store *Datastore) handleBranch(ctx context.Context, from []link) error {
+	return store.handleBranchAt(ctx, store.currentGeneration(), from)
+}
+
+func (store *Datastore) handleBranchAt(ctx context.Context, gen uint64, from []link) error {
 	cctx, cancel := context.WithTimeout(ctx, store.opts.DeliveryBound)
 	defer cancel()
 
@@ -899,7 +883,7 @@ func (store *Datastore) handleBranch(ctx context.Context, from []link) error {
 	}
 
 	var session sync.WaitGroup
-	err := store.sendNewJobs(cctx, &session, dg, from)
+	err := store.sendNewJobs(cctx, gen, &session, dg, from)
 	session.Wait()
 	return err
 }
@@ -918,7 +902,7 @@ func (store *Datastore) dagWorker() {
 		default:
 		}
 
-		children, err := store.processNode(ctx, job.nodeGetter, job.delta, job.node)
+		children, err := store.processNode(ctx, job.gen, job.nodeGetter, job.delta, job.node)
 		if err != nil {
 			store.logger.Error(err)
 			store.retryLater(ctx, linkOf(job.node.Cid(), job.delta))
@@ -926,7 +910,7 @@ func (store *Datastore) dagWorker() {
 			continue
 		}
 		go func(j *dagJob) {
-			if err := store.sendNewJobs(ctx, j.session, j.nodeGetter, children); err != nil {
+			if err := store.sendNewJobs(ctx, j.gen, j.session, j.nodeGetter, children); err != nil {
 				store.logger.Error(err)
 				store.MarkDirty(ctx)
 			}
@@ -938,7 +922,7 @@ func (store *Datastore) dagWorker() {
 // sendNewJobs fetches the given blocks and queues each for a worker, skipping
 // the ones this replica covers by now or another job is already fetching.
 // It blocks until all jobs have been queued.
-func (store *Datastore) sendNewJobs(ctx context.Context, session *sync.WaitGroup, ng *crdtNodeGetter, links []link) error {
+func (store *Datastore) sendNewJobs(ctx context.Context, gen uint64, session *sync.WaitGroup, ng *crdtNodeGetter, links []link) error {
 	var fetch []cid.Cid
 	dots := map[cid.Cid]dot{}
 	now := store.dropClockNow()
@@ -980,6 +964,7 @@ func (store *Datastore) sendNewJobs(ctx context.Context, session *sync.WaitGroup
 			nodeGetter: ng,
 			delta:      deltaOpt.delta,
 			node:       deltaOpt.node,
+			gen:        gen,
 		}
 		select {
 		case store.sendJobs <- job:
@@ -1071,7 +1056,7 @@ func (store *Datastore) MarkClean(ctx context.Context) {
 }
 
 // processNode merges one fetched block and returns the parents to walk.
-func (store *Datastore) processNode(ctx context.Context, ng *crdtNodeGetter, delta *pb.Delta, node ipld.Node) ([]link, error) {
+func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNodeGetter, delta *pb.Delta, node ipld.Node) ([]link, error) {
 	current := node.Cid()
 	// Release the reservation whether or not the merge succeeds, or a
 	// failed block would stay reserved and stall every later walk of it.
@@ -1106,7 +1091,7 @@ func (store *Datastore) processNode(ctx context.Context, ng *crdtNodeGetter, del
 	defer store.mu.Unlock()
 
 	d := dotFromPB(delta.GetDot())
-	if store.cc.covers(d) {
+	if store.cc.covers(d) || gen != store.generation {
 		return nil, store.dropUnindexed(ctx, current, chunks)
 	}
 	if !delta.GetSnapshot() {
@@ -1149,6 +1134,11 @@ func (store *Datastore) processNode(ctx context.Context, ng *crdtNodeGetter, del
 	}
 	if _, err := store.purge(ctx, theirs); err != nil {
 		store.logger.Warnf("error purging what snapshot %s covers: %s", current, err)
+	}
+	if theirs != nil && d.replica != store.replica {
+		if err := store.reached(ctx, theirs); err != nil {
+			store.logger.Warnf("error forgetting what snapshot %s shows reached the fleet: %s", current, err)
+		}
 	}
 	return walk, nil
 }
@@ -1453,7 +1443,7 @@ func linkOf(c cid.Cid, delta *pb.Delta) link {
 func (store *Datastore) stamped(delta *pb.Delta) *pb.Delta {
 	delta.At = store.stampNow()
 	delta.Ttl = store.retention()
-	delta.Since = store.knownSince()
+	delta.Since = store.reportedSince()
 	delta.Horizon = store.horizon
 	return delta
 }
@@ -1657,10 +1647,15 @@ func (store *Datastore) dropOrphans(ctx context.Context) error {
 }
 
 func (store *Datastore) broadcastHeads(ctx context.Context, heads []Head) error {
-	if store.broadcaster == nil { // offline
+	if len(heads) == 0 { // nothing to announce
 		return nil
 	}
-	if len(heads) == 0 { // nothing to rebroadcast
+	return store.send(ctx, heads)
+}
+
+// send broadcasts heads, none included, with this replica's fleet time.
+func (store *Datastore) send(ctx context.Context, heads []Head) error {
+	if store.broadcaster == nil { // offline
 		return nil
 	}
 	store.logger.Debugf("broadcasting %s", heads)

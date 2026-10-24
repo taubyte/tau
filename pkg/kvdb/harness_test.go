@@ -18,6 +18,7 @@ import (
 	ds "github.com/ipfs/go-datastore"
 	query "github.com/ipfs/go-datastore/query"
 	ipld "github.com/ipfs/go-ipld-format"
+	"google.golang.org/protobuf/proto"
 )
 
 // fetchThroughDAGSvc is one replica's own blockstore that, on a local miss,
@@ -197,6 +198,26 @@ func syncReplicaHeads(t testing.TB, from, to *Datastore) {
 			t.Fatal(err)
 		}
 	}
+}
+
+// hear delivers src's heartbeat to dst, heads left out: its fleet time, its
+// rejoin state and what it has merged of who wrote lately. Tests that walk
+// heads directly exchange heartbeats this way, as replicas in contact do every
+// rebroadcast interval.
+func hear(t testing.TB, dst, src *Datastore) {
+	t.Helper()
+	src.mu.Lock()
+	b := src.message(nil, nil)
+	src.mu.Unlock()
+	data, err := proto.Marshal(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg, err := dst.decodeBroadcast(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dst.handleBroadcast(context.Background(), msg)
 }
 
 // syncHeadsLogged is syncReplicaHeads for a source whose heads may name a

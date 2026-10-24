@@ -40,6 +40,17 @@ func churn(t *testing.T, replicas []*Datastore, dagsyncs []*fetchThroughDAGSvc, 
 				t.Fatal(err)
 			}
 		}
+		// Replicas in contact hear each other every rebroadcast: a writer
+		// keeps its own operations until a peer's heartbeat shows it has
+		// merged them (rejoin.go), so a churn without heartbeats measures a
+		// fleet nobody acknowledges.
+		for _, src := range replicas {
+			for _, dst := range replicas {
+				if src != dst {
+					hear(t, dst, src)
+				}
+			}
+		}
 		for i := range replicas {
 			f := footprint(t, replicas[i], dagsyncs[i])
 			peak := first
