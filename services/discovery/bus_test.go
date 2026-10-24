@@ -7,7 +7,7 @@ import (
 	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/peer"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -25,35 +25,40 @@ import (
 // one that failed. A peer connected before the other gossiped hears of it only
 // from an identify push: sent once, and limited per subnet, which every mocknet
 // peer shares. Miss it and that peer never sends the other anything.
-func newSwarm(t *testing.T, n int) []*pubsub.PubSub {
+func newSwarm(t *testing.T, n int) []member {
 	t.Helper()
 
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
 
-	hosts := make([]host.Host, n)
-	out := make([]*pubsub.PubSub, n)
-	for i := range hosts {
+	out := make([]member, n)
+	for i := range out {
 		h, err := mn.GenPeer()
 		require.NoError(t, err)
 		ps, err := pubsub.NewGossipSub(t.Context(), h)
 		require.NoError(t, err)
-		hosts[i], out[i] = h, ps
+		out[i] = member{ps, h.ID()}
 	}
 	require.NoError(t, mn.LinkAll())
 	require.NoError(t, mn.ConnectAllButSelf())
 
-	for i, ps := range out {
-		for j, h := range hosts {
+	for i, m := range out {
+		for j, other := range out {
 			if i == j {
 				continue
 			}
 			require.Eventually(t, func() bool {
-				return slices.Contains(ps.ListPeers(""), h.ID())
+				return slices.Contains(m.ListPeers(""), other.id)
 			}, 30*time.Second, 10*time.Millisecond, "peer %d never opened a stream to peer %d", i, j)
 		}
 	}
 	return out
+}
+
+// member is a swarm peer's gossipsub and the id the other peers know it by.
+type member struct {
+	*pubsub.PubSub
+	id peer.ID
 }
 
 // TestEveryPeerOfALargeSwarmHasAStreamToEveryOther when the swarm is handed
@@ -96,24 +101,46 @@ func TestAReportCrossesTheMesh(t *testing.T) {
 
 // TestTwoCloudsDoNotPoolTheirLoadFigures. Two universes on one machine, or two
 // clouds bridged by a stray peer, would otherwise route each other's traffic.
+//
+// A report that could cross is given every chance to: the publisher knows the
+// other cloud's subscriber before it publishes, and a subscriber of its own
+// cloud hears the report before the other one is checked.
 func TestTwoCloudsDoNotMeet(t *testing.T) {
-	swarm := newSwarm(t, 2)
+	swarm := newSwarm(t, 3)
+	publisher, stranger, neighbour := swarm[0], swarm[1], swarm[2]
 
-	acme, err := NewBus(swarm[0], "acme")
+	other, err := NewBus(stranger, "somebody-else")
+	require.NoError(t, err)
+	crossed, err := other.Subscribe(t.Context())
 	require.NoError(t, err)
 
-	other, err := NewBus(swarm[1], "somebody-else")
+	same, err := NewBus(neighbour, "acme")
+	require.NoError(t, err)
+	heard, err := same.Subscribe(t.Context())
 	require.NoError(t, err)
 
-	reports, err := other.Subscribe(t.Context())
+	acme, err := NewBus(publisher, "acme")
 	require.NoError(t, err)
 
-	for range 5 {
-		require.NoError(t, acme.Publish(t.Context(), []byte("acme's business")))
-	}
+	require.Eventually(t, func() bool {
+		return slices.Contains(publisher.ListPeers(TopicOf("somebody-else")), stranger.id) &&
+			slices.Contains(publisher.ListPeers(TopicOf("acme")), neighbour.id)
+	}, 30*time.Second, 10*time.Millisecond, "the publisher never learned who subscribes to each topic")
+
+	require.Eventually(t, func() bool {
+		if err := acme.Publish(t.Context(), []byte("acme's business")); err != nil {
+			return false
+		}
+		select {
+		case <-heard:
+			return true
+		case <-time.After(200 * time.Millisecond):
+			return false
+		}
+	}, 30*time.Second, 100*time.Millisecond, "acme's own subscriber never heard acme")
 
 	select {
-	case got := <-reports:
+	case got := <-crossed:
 		t.Fatalf("a report crossed clouds: %q", got)
 	case <-time.After(500 * time.Millisecond):
 	}
