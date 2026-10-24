@@ -466,12 +466,16 @@
   };
 
   // context is a request's ctx, and what settles the work handed to it. It
-  // closes over nothing of the request's, since Go holds settle.
+  // closes over nothing of the request's, since it outlives the request. Go
+  // is told when there is work, and asks for settle only then.
   const context = () => {
     const waits = [];
     return {
       ctx: {
-        waitUntil(p) { waits.push(Promise.resolve(p)); },
+        waitUntil(p) {
+          waits.push(Promise.resolve(p));
+          host.waiting();
+        },
         // There is no origin to pass a request through to, so an exception
         // is a 500 either way.
         passThroughOnException() {},
@@ -479,6 +483,11 @@
       settle: () => (waits.length === 0 ? undefined : drain(waits)),
     };
   };
+
+  // current is the request being served: its answer, and what settles its
+  // waitUntil work. The answer reaches Go through respond, so Go asks for
+  // these only when it has to wait: a value Go holds stays pinned.
+  let current = null;
 
   const serveWith = (handler) => {
     const env = {};
@@ -500,13 +509,20 @@
         report(e);
         failure();
       });
-      return [answer, settle];
+      current = { answer, settle };
     };
   };
 
   return Object.freeze({
     // reserve grows the window to hold n bytes.
     reserve(n) { reserve(n); },
+
+    // answer is the request's answer: settled once Go has its response.
+    answer() { return current.answer; },
+
+    // settle settles the request's waitUntil work, or is undefined when there
+    // is none.
+    settle() { return current.settle(); },
 
     // bind finds the handler an export is, or says why there is none.
     bind(ns, name) {

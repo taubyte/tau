@@ -47,6 +47,10 @@ func (i *instance) hostObject(stdout, stderr io.Writer) (engine.Value, error) {
 			return true
 		})},
 		{"head", engine.Fn0(i.head)},
+		{"waiting", engine.Fn0(func() bool {
+			i.waits = true
+			return true
+		})},
 		{"respond", engine.Fn3E(i.respond)},
 		{"respondText", engine.Fn3(i.respondText)},
 		{"encode", engine.Fn1(i.encode)},
@@ -157,14 +161,16 @@ func (i *instance) decode(n int, fatal, stream bool) (any, error) {
 	return []any{text, rest}, nil
 }
 
-// fit puts a request body in the window, growing it from JS, where a full
-// arena can collect first.
+// fit puts a request body in the window. A window too small for it is grown
+// from JS, where a full arena can collect first.
 func (i *instance) fit(body []byte) error {
 	if len(body) == 0 {
 		return nil
 	}
-	if _, err := i.rt.Call(i.reserve, engine.Value{}, i.rt.ToValue(len(body))); err != nil {
-		return err
+	if room, ok := i.rt.Bytes(i.window); !ok || len(room) < len(body) {
+		if _, err := i.rt.Call(i.reserve, engine.Value{}, i.rt.ToValue(len(body))); err != nil {
+			return err
+		}
 	}
 	view, err := i.view(len(body))
 	if err != nil {

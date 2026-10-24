@@ -30,17 +30,22 @@ type instance struct {
 	rt      *engine.Runtime
 	timeout time.Duration
 
-	// serve is the handler, bound by the prelude; guard races a promise
-	// against a cancellation; reserve grows the window.
-	serve   engine.Value
-	guard   engine.Value
-	reserve engine.Value
+	// serve is the handler, bound by the prelude; answer and settleWork are the
+	// request's answer and its waitUntil work; guard races a promise against
+	// a cancellation; reserve grows the window.
+	serve      engine.Value
+	answer     engine.Value
+	settleWork engine.Value
+	guard      engine.Value
+	reserve    engine.Value
 
 	// window is the buffer bytes cross through (see host.go), current the
-	// request being served and response what its handler answered.
+	// request being served, response what its handler answered, and waits
+	// whether it handed anything to waitUntil.
 	window   engine.Value
 	current  *invoke.Request
 	response *invoke.Response
+	waits    bool
 
 	// gate is held by whatever uses the realm: a request, the waitUntil work
 	// it left running, or Close, which takes it for good.
@@ -116,6 +121,8 @@ func (i *instance) boot(r *Runtime, b *bundle, export string, stdout, stderr io.
 	if err != nil {
 		return fmt.Errorf("js: running the prelude: %w", err)
 	}
+	i.answer = glue.Get("answer")
+	i.settleWork = glue.Get("settle")
 	i.guard = glue.Get("guard")
 	i.reserve = glue.Get("reserve")
 	if r.realm != nil {
@@ -179,7 +186,7 @@ func (i *instance) handle(ctx context.Context, req *invoke.Request, deadline tim
 	if req == nil {
 		req = &invoke.Request{}
 	}
-	i.current, i.response = req, nil
+	i.current, i.response, i.waits = req, nil, false
 	defer func() { i.current, i.response = nil, nil }()
 
 	run, stop := i.bound(ctx, deadline)
@@ -191,17 +198,27 @@ func (i *instance) handle(ctx context.Context, req *invoke.Request, deadline tim
 			if err := i.fit(req.Body); err != nil {
 				return fmt.Errorf("%w: the request does not fit: %w", ErrOutOfMemory, err)
 			}
-			pair, err := i.rt.Call(i.serve, engine.Value{})
-			if err != nil {
+			// The answer reaches Go through respond, before the call returns
+			// unless the handler waits on the host. Only then is its promise
+			// fetched, since every Value Go holds is pinned until Go collects.
+			if _, err := i.rt.Call(i.serve, engine.Value{}); err != nil {
 				return err
 			}
-			if _, err := i.wait(run, pair.Get("0"), deadline); err != nil {
-				return err
+			if i.response == nil {
+				answer, err := i.rt.Call(i.answer, engine.Value{})
+				if err != nil {
+					return err
+				}
+				if _, err := i.wait(run, answer, deadline); err != nil {
+					return err
+				}
 			}
 			if resp = i.response; resp == nil {
 				return errors.New("js: the prelude answered nothing")
 			}
-			waiting, err = i.rt.Call(pair.Get("1"), engine.Value{})
+			if i.waits {
+				waiting, err = i.rt.Call(i.settleWork, engine.Value{})
+			}
 			return err
 		})
 	})
