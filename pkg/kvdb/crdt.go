@@ -338,8 +338,10 @@ type Datastore struct {
 	// sets them to what it found, none = unbounded; 0 means unknown.
 	lows lows
 	// generation changes when a rebase replaces the state: a walk begun
-	// under an older one merges nothing.
+	// under an older one merges nothing. rebuilding is the generation whose
+	// rebase still walks the judge's state, 0 when none does.
 	generation uint64
+	rebuilding uint64
 
 	wg sync.WaitGroup
 

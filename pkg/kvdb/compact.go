@@ -43,11 +43,22 @@ func (store *Datastore) compact(ctx context.Context, force bool) (int, error) {
 		store.mu.Unlock()
 		return 0, ErrClosed
 	}
+	// A rebase puts back what this replica wrote before the judge's state
+	// can refute it: nothing is carried in a snapshot until that state is
+	// walked.
+	if store.rebuilding != 0 {
+		store.compactDue = true
+		store.mu.Unlock()
+		return 0, nil
+	}
 	if _, err := store.expireLocked(ctx); err != nil {
 		store.mu.Unlock()
 		return 0, err
 	}
 	head, theirs, err := store.compactLocked(ctx, force)
+	if err == nil {
+		err = store.carried(ctx)
+	}
 	if err != nil || theirs == nil {
 		store.mu.Unlock()
 		return 0, err

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	ds "github.com/ipfs/go-datastore"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -294,32 +295,60 @@ func TestAMergeThatGrowsALaterSpanIsAcknowledged(t *testing.T) {
 }
 
 // TestARebaseInterruptedByACrashFinishesAtOpen: the own operations a rebase
-// keeps survive a crash before they are written again, and the next open
-// writes them.
+// keeps survive a crash before they are written again, or before a snapshot
+// carries them: the next open writes them, and the next maintenance takes
+// them to the fleet.
 func TestARebaseInterruptedByACrashFinishesAtOpen(t *testing.T) {
-	st := newSimTime()
-	a, c := st.replica(t, "a", 0), st.replica(t, "c", 0)
-	put(t, a.r, "/k", "v")
-	st.exchange(t, a, c)
-	put(t, c.r, "/p", "mine")
-	ctx := context.Background()
+	for _, before := range []string{"the writes", "the snapshot"} {
+		t.Run(before, func(t *testing.T) {
+			st := newSimTime()
+			a, c := st.replica(t, "a", 0), st.replica(t, "c", 0)
+			faulty := newFaultyDatastore(c.store)
+			c.store = faulty
+			c.reopen(t)
+			put(t, a.r, "/k", "v")
+			st.exchange(t, a, c)
+			put(t, c.r, "/p", "mine")
+			ctx := context.Background()
 
-	c.r.mu.Lock()
-	if err := c.r.dropAllButOwn(ctx, st.ms()); err != nil {
-		t.Fatal(err)
+			if before == "the writes" {
+				// The drop commits, and nothing after it.
+				commits := 0
+				faulty.SetFail(func(op string, _ ds.Key) error {
+					if op != "Commit" {
+						return nil
+					}
+					if commits++; commits > 1 {
+						return errFault
+					}
+					return nil
+				})
+			}
+			c.r.mu.Lock()
+			err := c.r.dropAllButOwn(ctx, st.ms())
+			c.r.mu.Unlock()
+			if (err != nil) != (before == "the writes") {
+				t.Fatalf("setup: the drop returned %v", err)
+			}
+			faulty.SetFail(nil)
+			if before == "the writes" {
+				// A compaction before the crash does not carry what was
+				// not written.
+				compact(t, c.r)
+			}
+			// The crash: the store as the rebase left it, reopened.
+			c.reopen(t)
+			c.wantValue(t, "/p", "mine")
+			c.maintain(t) // what maintenance does within an interval: a snapshot carries /p
+			if has, _ := c.store.Has(ctx, c.r.rebaseKey()); has {
+				t.Fatal("the rebase is still marked after the open wrote its operations")
+			}
+			st.exchange(t, a, c)
+			st.exchange(t, a, c)
+			a.wantValue(t, "/p", "mine")
+			c.wantValue(t, "/k", "v")
+		})
 	}
-	c.r.mu.Unlock()
-	// The crash: the store as the rebase left it, reopened.
-	c.reopen(t)
-	c.wantValue(t, "/p", "mine")
-	c.maintain(t) // what maintenance does within an interval: a snapshot carries /p
-	if has, _ := c.store.Has(ctx, c.r.rebaseKey()); has {
-		t.Fatal("the rebase is still marked after the open wrote its operations")
-	}
-	st.exchange(t, a, c)
-	st.exchange(t, a, c)
-	a.wantValue(t, "/p", "mine")
-	c.wantValue(t, "/k", "v")
 }
 
 // TestAFleetThatRestartsTogetherRejoins: when every replica opens again at
@@ -489,6 +518,74 @@ func TestAnOwnWriteSurvivesASecondRebase(t *testing.T) {
 		}
 		a.wantValue(t, "/own", "unsent")
 	}
+}
+
+// dropForRebase is what a rebase does before it lets go of the lock: what
+// happens next, before its walk of the judge's state ends, happens on the
+// state it leaves.
+func (sr *simReplica) dropForRebase(t testing.TB, since uint64) {
+	t.Helper()
+	sr.r.mu.Lock()
+	defer sr.r.mu.Unlock()
+	if err := sr.r.dropAllButOwn(context.Background(), since); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// walked is the end of a rebase's walk, the judge's state not fetched.
+func (sr *simReplica) walked(t testing.TB) {
+	t.Helper()
+	if err := sr.r.rebuild(context.Background(), sr.r.currentGeneration(), 0, message{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestAnOwnWriteSurvivesARebaseBeforeTheLastOneIsWalked: a rebase walks the
+// judge's state in the background, and a second one may come before that
+// walk ends. What the replica wrote and nobody acknowledged survives both.
+func TestAnOwnWriteSurvivesARebaseBeforeTheLastOneIsWalked(t *testing.T) {
+	st := newSimTime()
+	a, r := st.replica(t, "a", 0), st.replica(t, "r", 0)
+	st.settle(t, a, r)
+	put(t, r.r, "/only", "mine")
+	r.dropForRebase(t, st.ms())
+	r.dropForRebase(t, st.ms())
+	r.walked(t)
+	r.wantValue(t, "/only", "mine")
+}
+
+// TestAMaintenanceWhileARebaseWalksKeepsTheOwnWrites: the own operations of
+// a replica away for longer than T have expired, and a maintenance pass
+// outside a rejoin forgets those its state holds. One that comes while a
+// rebase walks the judge's state does not lose them.
+func TestAMaintenanceWhileARebaseWalksKeepsTheOwnWrites(t *testing.T) {
+	st := newSimTime()
+	a, b, r := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
+	st.settle(t, a, b, r)
+	put(t, r.r, "/only", "mine")
+	st.away(t, simRetention+2*simMargin, a, b)
+	r.beat()
+	if !r.rejoining() {
+		t.Fatal("setup: r should rejoin")
+	}
+	r.dropForRebase(t, st.ms())
+	r.maintain(t)
+	r.walked(t)
+	r.wantValue(t, "/only", "mine")
+}
+
+// TestADeleteWhileARebaseWalksStaysDeleted: a key this replica wrote and
+// then deletes while a rebase walks the judge's state stays deleted when the
+// rebase is done.
+func TestADeleteWhileARebaseWalksStaysDeleted(t *testing.T) {
+	st := newSimTime()
+	a, r := st.replica(t, "a", 0), st.replica(t, "r", 0)
+	st.settle(t, a, r)
+	put(t, r.r, "/only", "mine")
+	r.dropForRebase(t, st.ms())
+	del(t, r.r, "/only")
+	r.walked(t)
+	r.wantValue(t, "/only", "<deleted>")
 }
 
 // TestAWriteBeforeFirstContactSurvivesARebase (T8.7): what a replica wrote
@@ -681,5 +778,81 @@ func TestAJudgeStillWalkingTheFleetKnowsWhatItForgot(t *testing.T) {
 	st.exchange(t, a, b, c, f)
 	for _, sr := range []*simReplica{a, b, c, f} {
 		sr.wantValue(t, "/x", "<deleted>")
+	}
+}
+
+// TestTwoReplicasLeftToEachOtherStayTogetherAfterARejoin: one of two
+// replicas left to each other opens again and rejoins; what each says
+// reaches the other an interval later, so the rejoin takes longer than G.
+// The one that answered does not count that as a gap and rejoin in turn:
+// the two would pass the rejoin back and forth for ever, neither ever
+// hearing the other as the fleet.
+func TestTwoReplicasLeftToEachOtherStayTogetherAfterARejoin(t *testing.T) {
+	st := newSimTime()
+	a, b := st.replica(t, "a", 0), st.replica(t, "b", 0)
+	put(t, a.r, "/k", "v")
+	st.settle(t, a, b)
+	a.reopen(t)
+	deliver := func(msgs [][]byte, src, dst *simReplica) {
+		dst.reach(src, dst)
+		for _, data := range msgs {
+			msg, err := dst.r.decodeBroadcast(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dst.r.handleBroadcast(context.Background(), msg)
+		}
+	}
+	var fromA, fromB [][]byte
+	together := 0
+	for range 12 * gapIntervals {
+		st.advance(simRI)
+		a.beat()
+		b.beat()
+		deliver(fromA, a, b)
+		deliver(fromB, b, a)
+		fromA, fromB = a.out.take(), b.out.take()
+		if a.rejoining() || b.rejoining() {
+			together = 0
+		} else {
+			together++
+		}
+	}
+	if together < 4*gapIntervals {
+		t.Fatalf("two replicas left to each other did not stay together after a rejoin (together for the last %d intervals; a rejoining=%t, b rejoining=%t)", together, a.rejoining(), b.rejoining())
+	}
+}
+
+// TestAJudgeWhoseOkCannotEndARejoinStillRejoins: a replica that heard no
+// live peer for G, its gap reset lately (as a rebase leaves it), holds what
+// it holds as of a time older than the gap_from of the one peer it hears
+// rejoin. Its ok cannot end that rejoin, so answering it is no contact: it
+// rejoins in turn, takes the peer's time from it, and then ends the peer's
+// rejoin. Were its answers contact, neither would ever end.
+func TestAJudgeWhoseOkCannotEndARejoinStillRejoins(t *testing.T) {
+	st := newSimTime()
+	x, y := st.replica(t, "x", 0), st.replica(t, "y", 0)
+	put(t, x.r, "/k", "v")
+	older := st.ms()
+	st.settle(t, x, y)
+	x.reopen(t)
+	y.r.mu.Lock()
+	y.r.settledSince = older
+	clear(y.r.frontiers)
+	y.r.liveHeard = y.r.times.up() - 2*gapIntervals*simRI
+	y.r.lastHeard = y.r.times.up()
+	y.r.mu.Unlock()
+	together := 0
+	for range 12 * gapIntervals {
+		st.advance(simRI)
+		st.exchange(t, x, y)
+		if x.rejoining() || y.rejoining() {
+			together = 0
+		} else {
+			together++
+		}
+	}
+	if together < 4*gapIntervals {
+		t.Fatalf("a judge whose ok could not end a rejoin kept the two apart (together for the last %d intervals; x rejoining=%t, y rejoining=%t)", together, x.rejoining(), y.rejoining())
 	}
 }

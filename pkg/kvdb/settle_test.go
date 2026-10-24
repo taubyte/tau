@@ -662,8 +662,8 @@ func TestAJudgeDoesNotWaitForWhatAStaleSenderHolds(t *testing.T) {
 	st := newSimTime()
 	w, a, b, r := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
 	put(t, w.r, "/x", "v")
-	st.settle(t, w, a, b, r)
 	start := st.ms()
+	st.settle(t, w, a, b, r)
 	st.away(t, simRetention+2*simMargin, a, b, r)
 	// s says it last heard the fleet when /x was written, holding what
 	// nobody else does.
@@ -742,5 +742,261 @@ func TestARebasedReplicaVouchesForTheJudgeWhoseStateItHolds(t *testing.T) {
 	st.hear(t, x, []*simReplica{j}, j, x)
 	if j.rejoining() {
 		t.Fatal("a replica rebased on a judge's state did not vouch for that judge")
+	}
+}
+
+// TestARebasedJudgeDoesNotVouchBeforeItHoldsWhatItWasRebasedOn: a judge
+// rebased on a state it could not fetch holds nothing. Hearing a new peer
+// that holds nothing either, it does not vouch: the judge that rebased it is
+// live and holds a removal it does not, and once the holders forget it the
+// stale copy does not come back.
+func TestARebasedJudgeDoesNotVouchBeforeItHoldsWhatItWasRebasedOn(t *testing.T) {
+	st := newSimTime()
+	st.advance(20 * simRI)
+	w, a, b, r, j := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0), st.replica(t, "j", 0)
+	put(t, w.r, "/x", "removed")
+	st.settle(t, w, a, b, r, j)
+	st.advance(simRI)
+	del(t, a.r, "/x")
+	st.exchange(t, a, b)
+	st.away(t, simRetention+simMargin-3*simRI, a, b)
+	// j has not heard the fleet since before the removal: a rebases it, and
+	// j cannot fetch the state the verdict names.
+	j.beat()
+	st.hear(t, j, []*simReplica{a}, a, b)
+	st.hear(t, a, []*simReplica{j})
+	if j.rebases() != 1 {
+		t.Fatalf("setup: j rebases %d", j.rebases())
+	}
+	q := st.replica(t, "q", 0)
+	j.beat()
+	st.hear(t, j, []*simReplica{q}, j)
+	q.beat()
+	st.hear(t, q, []*simReplica{j}, q, j)
+	r.beat()
+	st.hear(t, r, []*simReplica{j}, j, q)
+	st.hear(t, j, []*simReplica{r}, j, q)
+	if !r.rejoining() {
+		t.Fatal("a judge rebased on a state it does not hold vouched for r")
+	}
+	for range 4 {
+		st.advance(simRI)
+		st.exchange(t, a, b)
+		a.maintain(t)
+		b.maintain(t)
+	}
+	compact(t, r.r)
+	st.exchange(t, a, b, r, j, q)
+	st.exchange(t, a, b, r, j, q)
+	for _, sr := range []*simReplica{a, b, r, j, q} {
+		if got := sr.value(t, "/x"); got != "<deleted>" {
+			t.Errorf("replica %s: /x = %s, want <deleted>", sr.name, got)
+		}
+	}
+}
+
+// TestAVerdictCountsAsItsJudgesFrontier: a judge's verdict says what it
+// holds, as its heartbeats do. A replica rebased on a state it could not
+// fetch, which has heard for long only a peer holding nothing, does not
+// vouch before the judge's next heartbeat: the judge holds a removal it does
+// not.
+func TestAVerdictCountsAsItsJudgesFrontier(t *testing.T) {
+	st := newSimTime()
+	st.advance(20 * simRI)
+	w, a, b, r := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
+	put(t, w.r, "/x", "removed")
+	st.settle(t, w, a, b, r)
+	before := st.ms()
+	st.advance(simRI)
+	del(t, a.r, "/x")
+	st.exchange(t, a, b)
+	// j and q hear only each other, and hold nothing: j has heard a fleet,
+	// q has heard it from j.
+	j, q := st.replica(t, "j", 0), st.replica(t, "q", 0)
+	j.r.mu.Lock()
+	j.r.since, j.r.sinceUp = before, j.r.times.up()
+	j.r.mu.Unlock()
+	for elapsed := time.Duration(0); elapsed < simRetention+simMargin-3*simRI; elapsed += simRI {
+		st.advance(simRI)
+		st.exchange(t, a, b)
+		a.maintain(t)
+		b.maintain(t)
+		j.beat()
+		q.beat()
+		st.hear(t, j, []*simReplica{q})
+		st.hear(t, q, []*simReplica{j})
+	}
+	if !j.settled() || j.rejoining() {
+		t.Fatalf("setup: j should be settled with q (settled=%t rejoining=%t)", j.settled(), j.rejoining())
+	}
+	// j says it last heard the fleet before the removal; a tells it to
+	// rebase, and j cannot fetch what a names.
+	j.r.mu.Lock()
+	j.r.since = before
+	j.r.mu.Unlock()
+	j.beat()
+	st.hear(t, j, []*simReplica{a})
+	st.hear(t, a, []*simReplica{j})
+	if j.rebases() != 1 {
+		t.Fatalf("setup: j rebases %d", j.rebases())
+	}
+	r.beat()
+	st.hear(t, r, []*simReplica{j})
+	st.hear(t, j, []*simReplica{r})
+	if !r.rejoining() {
+		t.Fatal("a replica rebased on a state it does not hold vouched for r before its judge's next heartbeat")
+	}
+	for range 4 {
+		st.advance(simRI)
+		st.exchange(t, a, b)
+		a.maintain(t)
+		b.maintain(t)
+	}
+	compact(t, r.r)
+	st.exchange(t, a, b, r, j, q)
+	st.exchange(t, a, b, r, j, q)
+	for _, sr := range []*simReplica{a, b, r, j, q} {
+		if got := sr.value(t, "/x"); got != "<deleted>" {
+			t.Errorf("replica %s: /x = %s, want <deleted>", sr.name, got)
+		}
+	}
+}
+
+// TestAJudgeWaitsBeforeTrustingANewPeerThatIsNotSettled (the heal window): a
+// judge that has heard its side for long first hears, as a partition heals,
+// a peer of the other side that joined it lately and holds nothing. That
+// peer is not settled and says nothing of the peers of its side; the judge
+// waits G before vouching, and hears them meanwhile. The replica it would
+// have vouched for holds the only copy, on its side, of what a removal held
+// on the other side refutes, and the removal is forgotten soon after the
+// heal: the copy does not come back.
+func TestAJudgeWaitsBeforeTrustingANewPeerThatIsNotSettled(t *testing.T) {
+	st := newSimTime()
+	st.advance(20 * simRI)
+	w, a, b, r := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
+	j, x := st.replica(t, "j", 0), st.replica(t, "x", 0)
+	put(t, w.r, "/x", "removed")
+	for range gapIntervals + 2 {
+		st.advance(simRI)
+		st.exchange(t, w, a, b, r)
+		st.exchange(t, j, x)
+	}
+	st.advance(simRI)
+	del(t, a.r, "/x")
+	// a and b on one side, j and x on the other, r cut off from both, until
+	// the removal has expired and is not forgotten yet.
+	for elapsed := time.Duration(0); elapsed < simRetention+simMargin-4*simRI; elapsed += simRI {
+		st.advance(simRI)
+		for _, side := range [][]*simReplica{{a, b}, {j, x}} {
+			st.exchange(t, side...)
+			for _, sr := range side {
+				sr.maintain(t)
+			}
+		}
+	}
+	// y joins a and b's side and hears them, holding nothing.
+	y := st.replica(t, "y", 0)
+	st.listen(t, []*simReplica{a, b}, y)
+	if !j.settled() {
+		t.Fatal("setup: j should be settled on its side")
+	}
+	// The heal: j hears y first, then r's rejoin.
+	y.beat()
+	st.hear(t, y, []*simReplica{j}, y)
+	r.beat()
+	if !r.rejoining() {
+		t.Fatal("setup: r should rejoin")
+	}
+	st.hear(t, r, []*simReplica{j}, j, x)
+	st.hear(t, j, []*simReplica{r}, j, x)
+	if !r.rejoining() {
+		t.Fatal("a judge that first heard a new peer that is not settled vouched for r at once")
+	}
+	for range 4 {
+		st.advance(simRI)
+		st.exchange(t, a, b)
+		a.maintain(t)
+		b.maintain(t)
+	}
+	compact(t, r.r)
+	st.exchange(t, a, b, r, j, x, y)
+	st.exchange(t, a, b, r, j, x, y)
+	for _, sr := range []*simReplica{a, b, r, j, x, y} {
+		if got := sr.value(t, "/x"); got != "<deleted>" {
+			t.Errorf("replica %s: /x = %s, want <deleted>", sr.name, got)
+		}
+	}
+}
+
+// TestAJudgeThatKeepsWritingDoesNotStarveARejoin: a judge's first ok stands
+// until the replica holds what it vouched with. A judge that writes every
+// interval answers every interval; the blocks its answer names reach the
+// replica an interval later. Were each answer to replace the last, the
+// replica would hold what the last one vouched with only after the next one
+// moved it on, for as long as the judge writes.
+func TestAJudgeThatKeepsWritingDoesNotStarveARejoin(t *testing.T) {
+	st := newSimTime()
+	a, b, r := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
+	st.settle(t, a, b, r)
+	r.reopen(t)
+	var late []Head
+	for i := range 3 {
+		if !r.rejoining() {
+			return
+		}
+		st.advance(simRI)
+		put(t, a.r, "/progress", fmt.Sprint(i))
+		st.exchange(t, a, b)
+		r.beat()
+		st.hear(t, r, []*simReplica{a}, a, b)
+		var heads []Head
+		for _, data := range a.out.take() {
+			msg, err := r.r.decodeBroadcast(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if msg.verdict != nil {
+				heads = msg.heads
+			}
+			r.reach()
+			r.r.handleBroadcast(context.Background(), msg)
+		}
+		if len(heads) == 0 {
+			t.Fatalf("setup: no verdict in round %d", i)
+		}
+		r.reach(a, b)
+		for _, h := range late {
+			if err := r.r.handleBlockAt(context.Background(), r.r.currentGeneration(), h); err != nil {
+				t.Fatal(err)
+			}
+		}
+		late = heads
+	}
+	if r.rejoining() {
+		t.Fatal("a rejoin answered every interval by a judge that writes, its blocks an interval late, did not end")
+	}
+}
+
+// TestARejoiningReplicaForgetsPeersItNoLongerHears: what a peer said it
+// holds is forgotten G after it was last heard, rejoining or not: a rejoin
+// that lasts keeps no frontier per incarnation it heard once.
+func TestARejoiningReplicaForgetsPeersItNoLongerHears(t *testing.T) {
+	st := newSimTime()
+	a, r := st.replica(t, "a", 0), st.replica(t, "r", 0)
+	st.settle(t, a, r)
+	r.reopen(t)
+	for i := range 30 {
+		st.advance(simRI)
+		r.beat()
+		r.r.handleBroadcast(context.Background(), message{incarnation: fmt.Sprint("peer-", i), since: st.ms(), now: st.ms(), context: newCausalContext()})
+	}
+	if !r.rejoining() {
+		t.Fatal("setup: r should still rejoin")
+	}
+	r.r.mu.Lock()
+	n := len(r.r.frontiers)
+	r.r.mu.Unlock()
+	if n > gapIntervals+1 {
+		t.Fatalf("a rejoining replica keeps %d frontiers of peers heard once, want at most %d", n, gapIntervals+1)
 	}
 }

@@ -29,7 +29,11 @@ import (
 // A replica knows it has heard every live peer once it has heard the fleet
 // for G without a break, or holds the frontier of a peer that was settled,
 // or holds the state of a judge that vouched for it or rebased it: it is
-// grounded.
+// grounded. A rebase ends it: what the replica held is gone. A peer first
+// heard less than G ago that has not said it is settled may be the first
+// heard of peers this replica has not heard yet, a fleet it was cut off from
+// among them: until it says so, or G has passed and those have been heard
+// too, this replica is not settled.
 //
 // What a replica holds is as recent as the fleet time it was last settled at
 // (settledSince), not the fleet time it last heard: a rejoin reports that,
@@ -45,11 +49,12 @@ func (store *Datastore) settledKey() ds.Key {
 	return store.namespace.ChildString(contextNs).ChildString(settledKey)
 }
 
-// A frontier is what a live peer last said it holds.
+// A frontier is what a live peer last said it holds, and when it was first
+// heard.
 type frontier struct {
-	cc      *causalContext
-	settled bool
-	heard   time.Duration
+	cc           *causalContext
+	settled      bool
+	first, heard time.Duration
 }
 
 // An ok is a verdict that vouched for this replica: its rejoin ends once it
@@ -89,13 +94,31 @@ func (k *known) containsSpan(s span) bool {
 	return false
 }
 
-// hearFrontier records what a live peer says it holds. The caller holds
-// store.mu.
+// hearFrontier records what a live peer says it holds, and forgets the peers
+// not heard for G, rejoining or not. The caller holds store.mu.
 func (store *Datastore) hearFrontier(msg message) {
+	up := store.times.up()
+	store.prune(up)
 	if msg.context == nil || msg.since == 0 || !store.plausible(msg.now) {
 		return
 	}
-	store.frontiers[msg.incarnation] = &frontier{cc: msg.context, settled: msg.settled, heard: store.times.up()}
+	first := up
+	if f := store.frontiers[msg.incarnation]; f != nil {
+		first = f.first
+	}
+	store.frontiers[msg.incarnation] = &frontier{cc: msg.context, settled: msg.settled, first: first, heard: up}
+}
+
+// prune forgets the peers not heard for G and the forgotten entries no
+// longer needed. The caller holds store.mu.
+func (store *Datastore) prune(up time.Duration) {
+	g := gapIntervals * store.opts.RebroadcastInterval
+	for inc, f := range store.frontiers {
+		if up-f.heard > g {
+			delete(store.frontiers, inc)
+		}
+	}
+	store.pruneForgotten(up)
 }
 
 // holds reports whether this replica holds all that a context says its
@@ -122,28 +145,27 @@ func (store *Datastore) holds(o *causalContext) bool {
 }
 
 // settled reports whether this replica holds all that every live peer said
-// it holds, at least one is live, and it is grounded. It forgets the peers
-// not heard for G. The caller holds store.mu.
+// it holds, at least one is live, none is new to it and unsettled, and it
+// is grounded. The caller holds store.mu.
 func (store *Datastore) settled() bool {
+	up := store.times.up()
+	store.prune(up)
 	if store.rejoining || store.since == 0 {
 		return false
 	}
-	up := store.times.up()
 	g := gapIntervals * store.opts.RebroadcastInterval
 	live, vouched, held := false, false, true
-	for inc, f := range store.frontiers {
-		if up-f.heard > g {
-			delete(store.frontiers, inc)
-			continue
-		}
+	for _, f := range store.frontiers {
 		live = true
+		if !f.settled && up-f.first < g {
+			return false
+		}
 		if !store.holds(f.cc) {
 			held = false
 			continue
 		}
 		vouched = vouched || f.settled
 	}
-	store.pruneForgotten(up)
 	if !live || !held {
 		return false
 	}

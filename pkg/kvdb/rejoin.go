@@ -19,16 +19,17 @@ import (
 // on its own word (T2 A1), and its own clock cannot say how long it was away.
 //
 // So a replica that opens with anything heard from a fleet, or that has heard
-// no peer that is not rejoining for three rebroadcast intervals, is
-// rejoining: it records the fleet time as of which it last held all its
-// peers held (its gap_from, see settle.go), reports that and nothing later,
-// walks nobody's heads, and nobody walks its. Every broadcast says so. A peer
-// that can judge answers: ok when it holds all the fleet holds and can still
-// refute anything removed since the gap_from (see stale), rebase when it
-// cannot refute it. An ok ends the gap once the replica holds what the judge
-// vouched with. A rebase replaces everything the replica holds with the
-// judge's state and writes again, under a new incarnation, what it wrote that
-// the judge does not cover: its own operations are never lost to a rebase.
+// no peer that is not rejoining, nor answered a rejoin it could end, for three
+// rebroadcast intervals, is rejoining: it records the fleet time as of which
+// it last held all its peers held (its gap_from, see settle.go), reports that
+// and nothing later, walks nobody's heads, and nobody walks its. Every
+// broadcast says so. A peer that can judge answers: ok when it holds all the
+// fleet holds and can still refute anything removed since the gap_from (see
+// stale), rebase when it cannot refute it. An ok ends the gap once the replica
+// holds what the judge vouched with. A rebase replaces everything the replica
+// holds with the judge's state and writes again, under a new incarnation, what
+// it wrote that the judge does not cover: its own operations are never lost to
+// a rebase.
 //
 // An ok is taken only from a judge that held all the fleet held as of a
 // fleet time at least as recent as the gap_from, a rebase only from one that
@@ -44,7 +45,7 @@ import (
 
 const (
 	rejoinKey = "j" // under the context: the gap_from while rejoining
-	rebaseKey = "x" // under the context: a rebase whose writes are not reissued yet
+	rebaseKey = "x" // under the context: a rebase whose writes no snapshot carries yet, empty until they are written
 	ownNs     = "o" // own operations not known to have reached the fleet
 )
 
@@ -467,6 +468,13 @@ func (store *Datastore) judge(ctx context.Context, msg message) (bool, []byte, e
 	if !store.answering(msg.incarnation) {
 		return false, nil, nil
 	}
+	// An answer the sender takes ends its rejoin, or rebases it, on what
+	// this replica holds: the two are one fleet, and hearing it rejoin is no
+	// gap. Were it one, two replicas left to each other would pass the
+	// rejoin back and forth for ever whenever one took G to end.
+	if stale || held >= msg.since {
+		store.lastHeard = store.times.up()
+	}
 	hs, _ := store.heads.List()
 	answer := store.message(hs, &verdict{to: msg.incarnation, rebase: stale, since: store.reportedSince(), held: held})
 	answer.Settled = settled
@@ -511,6 +519,11 @@ func (store *Datastore) answering(inc string) bool {
 func (store *Datastore) onVerdict(ctx context.Context, msg message) error {
 	v := msg.verdict
 	store.mu.Lock()
+	// A judge that is not rejoining is a live peer whatever it answers:
+	// what it says it holds counts like what any live peer says.
+	if !msg.rejoining {
+		store.hearFrontier(msg)
+	}
 	if v.to != store.replica || msg.now+store.times.window < store.clock() {
 		store.mu.Unlock()
 		return nil
@@ -519,12 +532,17 @@ func (store *Datastore) onVerdict(ctx context.Context, msg message) error {
 		// The judge must hold what this replica held when it left, and the
 		// rejoin ends once this replica holds what the judge vouched with,
 		// not when the ok arrives: a judge never heard again leaves it
-		// rejoining, for the next judge to answer.
+		// rejoining, for the next judge to answer. A judge's first ok
+		// stands until it is held or dropped: what it vouched with does not
+		// move, and a judge that writes would otherwise move it again with
+		// every answer, before this replica could reach it.
 		if !store.rejoining || msg.context == nil || v.held < store.reportedSince() {
 			store.mu.Unlock()
 			return nil
 		}
-		store.oks[msg.incarnation] = &ok{since: v.since, held: v.held, cc: msg.context, heard: store.times.up()}
+		if store.oks[msg.incarnation] == nil {
+			store.oks[msg.incarnation] = &ok{since: v.since, held: v.held, cc: msg.context, heard: store.times.up()}
+		}
 		gen := store.generation
 		store.mu.Unlock()
 		store.walkHeads(ctx, gen, msg.heads)
@@ -625,20 +643,26 @@ func (store *Datastore) reached(ctx context.Context, theirs *causalContext) erro
 	return t.commit(ctx)
 }
 
-// rebase replaces what this replica holds with the judge's state and writes
-// again what it wrote that the judge does not cover.
+// rebase replaces what this replica holds with the judge's state, keeping
+// what it wrote that the judge does not cover.
 //
 // It keeps its own operations not known to have reached the fleet, with the
 // value of every element of them still live here; draws a new incarnation,
 // so a verdict addressed to the old one is ignored and every walk begun
-// before is dropped when it merges; empties the rest of its namespace; walks
-// the judge's heads; and writes the kept operations again: a put as a new
-// element, a removal with its target. The marker it leaves until the writes
-// are done makes a crash in between write them again at the next open.
+// before is dropped when it merges; empties the rest of its namespace and
+// writes the kept operations again: a put as its element, a removal with its
+// target. The marker it leaves until the writes are done makes a crash in
+// between write them again at the next open. Then it walks the judge's
+// heads.
 //
-// The caller holds store.mu, which rebase releases. Only the drop is done
-// before it returns; the rest goes on in the background, so a judge that
-// vanishes leaves nothing waiting on its heads but that walk.
+// The caller holds store.mu, which rebase releases. Only the drop and the
+// writes are done before it returns, so nothing in between sees a state
+// without them: a second rebase, a maintenance pass, a write. The walk goes
+// on in the background, so a judge that vanishes leaves nothing waiting on
+// its heads but that walk, and no snapshot is written until it ends: the
+// kept operations are put back before the judge's state can refute them,
+// and a snapshot taken in between would carry what it refutes to replicas
+// that may have forgotten the refutation.
 func (store *Datastore) rebase(ctx context.Context, v *verdict, msg message) error {
 	if store.closed {
 		store.mu.Unlock()
@@ -650,6 +674,7 @@ func (store *Datastore) rebase(ctx context.Context, v *verdict, msg message) err
 		return err
 	}
 	gen := store.generation
+	store.rebuilding = gen
 	store.mu.Unlock()
 	if store.opts.manual {
 		return store.rebuild(ctx, gen, v.held, msg)
@@ -665,14 +690,16 @@ func (store *Datastore) rebase(ctx context.Context, v *verdict, msg message) err
 }
 
 // rebuild walks the judge's heads, takes the time the judge held all the
-// fleet held at once it holds what the judge did, then writes again the kept
-// operations and compacts.
+// fleet held at once it holds what the judge did, and compacts.
 func (store *Datastore) rebuild(ctx context.Context, gen, held uint64, msg message) error {
 	if err := store.handleBranchAt(ctx, gen, linksOf(msg.heads)); err != nil {
 		store.logger.Warnf("rebase: the judge's state is not all here yet: %s", err)
 		store.MarkDirty(ctx)
 	}
 	store.mu.Lock()
+	if store.rebuilding == gen {
+		store.rebuilding = 0
+	}
 	if gen == store.generation && held != 0 && msg.context != nil && store.holds(msg.context) {
 		if err := store.setSettled(ctx, held); err != nil {
 			store.mu.Unlock()
@@ -681,9 +708,6 @@ func (store *Datastore) rebuild(ctx context.Context, gen, held uint64, msg messa
 		store.grounded = true
 	}
 	store.mu.Unlock()
-	if err := store.reissue(ctx); err != nil {
-		return err
-	}
 	// What was put back reaches the fleet in a snapshot, now rather than at
 	// the next maintenance.
 	_, err := store.compact(ctx, true)
@@ -699,9 +723,9 @@ func linksOf(heads []Head) []link {
 }
 
 // dropAllButOwn empties the namespace but for the format, the shutdown mark
-// and the own operations, which keep the values still live, and starts over
-// with the judge's fleet time under a new incarnation. The caller holds
-// store.mu.
+// and the own operations, which keep the values still live, starts over with
+// the judge's fleet time under a new incarnation, and writes the own
+// operations again. The caller holds store.mu.
 //
 // What the old incarnation wrote and no longer holds was removed, by this
 // replica or by a removal it merged, and a removal it made before it first
@@ -824,7 +848,7 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 	store.horizon = 0
 	store.since, store.sinceUp = since, store.times.up()
 	store.rejoining, store.gapFrom = false, 0
-	store.settledSince = 0
+	store.settledSince, store.grounded = 0, false
 	clear(store.oks)
 	store.lastHeard = store.sinceUp
 	store.seenHeadsMux.Lock()
@@ -833,7 +857,7 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 	for _, k := range gone {
 		store.set.deleteHook(k)
 	}
-	return nil
+	return store.reissueLocked(ctx)
 }
 
 // removedSpans is spans less the counters held: the dots of an incarnation
@@ -861,25 +885,54 @@ func removedSpans(spans []span, held map[uint64]struct{}) []span {
 	return out
 }
 
-// reissue puts back every kept own operation the state does not cover, then
-// forgets those it covers and the rebase. The others stay in the log until a
-// peer acknowledges them or they expire, as before the rebase: nothing says
-// the snapshot that carries them reached anyone, and a second rebase must
-// put them back again.
+// reissue puts back every kept own operation the state does not cover,
+// forgets those it covers, and marks the rebase written: the next snapshot,
+// which carries what it put back, forgets the mark. The others stay in the
+// log until a peer acknowledges them or they expire, as before the rebase:
+// nothing says the snapshot that carries them reached anyone, and a second
+// rebase must put them back again.
 //
 // An element goes back under its own dot, as an ancient one, not as a new
 // write: if the fleet removed it while this replica was away and still knows
-// it, by the writer's entry or a pending removal, it is refused here and
-// wherever this replica's snapshot takes it, exactly as the stale copy would
-// have been. A new dot would escape a removal of the old one. A removal goes
-// out again as a new delta naming its target. The next maintenance compacts,
-// so the elements reach the fleet.
+// it, by the writer's entry or a pending removal, it is refused here, or
+// removed here when the judge's state is merged, and refused wherever this
+// replica's snapshot takes it, exactly as the stale copy would have been. A
+// new dot would escape a removal of the old one. A removal goes out again as
+// a new delta naming its target. The next snapshot, once the judge's state
+// is walked, takes the elements to the fleet.
 func (store *Datastore) reissue(ctx context.Context) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	marked, err := store.store.Has(ctx, store.rebaseKey())
-	if err != nil || !marked {
+	return store.reissueLocked(ctx)
+}
+
+// carried forgets a rebase once a snapshot carries what it put back: the one
+// just written, or the one that is the only head. A rebase whose writes are
+// not done stays marked for the next open. The caller holds store.mu.
+func (store *Datastore) carried(ctx context.Context) error {
+	mark, err := store.store.Get(ctx, store.rebaseKey())
+	if errors.Is(err, ds.ErrNotFound) || err == nil && len(mark) == 0 {
+		return nil
+	}
+	if err != nil {
 		return err
+	}
+	return store.store.Delete(ctx, store.rebaseKey())
+}
+
+// reissueLocked is reissue. The caller holds store.mu.
+func (store *Datastore) reissueLocked(ctx context.Context) error {
+	mark, err := store.store.Get(ctx, store.rebaseKey())
+	if errors.Is(err, ds.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if len(mark) > 0 {
+		// Written, and not carried yet: a crash came in between.
+		store.compactDue = true
+		return nil
 	}
 	delta := store.stamped(&pb.Delta{})
 	m := store.beginMerge()
@@ -948,7 +1001,7 @@ func (store *Datastore) reissue(ctx context.Context) error {
 		}
 		t.put(k, b)
 	}
-	t.del(store.rebaseKey())
+	t.put(store.rebaseKey(), []byte{1})
 	if err := t.commit(ctx); err != nil {
 		return err
 	}

@@ -130,3 +130,66 @@ func TestARebaseDoesNotWaitOnAVanishedJudge(t *testing.T) {
 		}
 	})
 }
+
+// TestARebaseWritesNoSnapshotBeforeItHasWalkedTheJudgesState: a rebase puts
+// back what the replica wrote before it lets go of its lock, so whatever
+// comes while the judge's state is walked reads it; and no snapshot carries
+// it before that walk ends, for the judge's state may refute it.
+func TestARebaseWritesNoSnapshotBeforeItHasWalkedTheJudgesState(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx := t.Context()
+		ns := ds.NewKey("crdttest")
+		rDs := dssync.MutexWrap(ds.NewMapDatastore())
+		since := millis(time.Now())
+		if err := rDs.Put(ctx, ns.ChildString(contextNs).ChildString(sinceKey), binary.AppendUvarint(nil, since)); err != nil {
+			t.Fatal(err)
+		}
+		in := &chanBroadcaster{in: make(chan []byte, 1)}
+		opts := replicaOptions(DefaultOptions(), "r: ")
+		// A maintenance pass, and no gap, while a fetch waits out its
+		// deadline.
+		opts.RebroadcastInterval = opts.DAGSyncerTimeout * 2 / 3
+		opts.RepairInterval = 0
+		r, err := NewDatastore(rDs, ns, &hangingDAG{newFetchThrough()}, in, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { r.Close() })
+		put(t, r, "/only", "mine")
+
+		now := millis(time.Now())
+		gone := merkledag.NodeWithData([]byte("only the judge held this"))
+		verdict, err := proto.Marshal(&pb.CRDTBroadcast{
+			Since:       since,
+			Now:         now,
+			Incarnation: []byte("judge"),
+			Verdict:     &pb.Verdict{To: []byte(r.currentIncarnation()), Rebase: true, Since: since},
+			Heads:       []*pb.Head{{Cid: gone.Cid().Bytes(), Dot: dot{replica: "judge", counter: 1}.toPB(), At: now, Ttl: durationMillis(opts.Retention)}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		in.in <- verdict
+		synctest.Wait()
+		if r.currentGeneration() != 1 {
+			t.Fatal("setup: r should have rebased")
+		}
+		if got := valueOf(t, r, ds.NewKey("/only")); got != "mine" {
+			t.Fatalf("while a rebase walks the judge's state, what the replica wrote is gone: /only = %s", got)
+		}
+		// A maintenance pass comes while the walk waits on the judge.
+		time.Sleep(opts.RebroadcastInterval)
+		synctest.Wait()
+		if n := r.heads.Len(); n != 0 {
+			t.Fatalf("a snapshot was written while the judge's state was walked (%d heads)", n)
+		}
+		time.Sleep(opts.DAGSyncerTimeout)
+		synctest.Wait()
+		if n := r.heads.Len(); n != 1 {
+			t.Fatalf("no snapshot carries what the rebase put back once the walk ended (%d heads)", n)
+		}
+		if got := valueOf(t, r, ds.NewKey("/only")); got != "mine" {
+			t.Fatalf("/only = %s after the rebase, want mine", got)
+		}
+	})
+}
