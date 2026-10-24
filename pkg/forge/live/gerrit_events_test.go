@@ -291,10 +291,10 @@ func (b *recordingBackend) List(context.Context, string, func(string) error) err
 }
 func (b *recordingBackend) Cancel(context.Context, string) error { return errors.New("unused") }
 func (b *recordingBackend) Retry(context.Context, string) error  { return errors.New("unused") }
-func (b *recordingBackend) Follow(context.Context, string, int64, func([]byte, int64) error) (int64, error) {
+func (b *recordingBackend) Follow(context.Context, string, int32, int64, func([]byte, int64) error) (int64, error) {
 	return 0, errors.New("unused")
 }
-func (b *recordingBackend) Snapshot(context.Context, string, int64, func([]byte, int64) error) (int64, error) {
+func (b *recordingBackend) Snapshot(context.Context, string, int32, int64, func([]byte, int64) error) (int64, error) {
 	return 0, errors.New("unused")
 }
 
