@@ -583,6 +583,11 @@ func durationOr(value string, fallback time.Duration) time.Duration {
 // whatever it points at into the checkpoint, and a link out of the directory is
 // a link out of the tenant's data.
 //
+// EACH ENTRY IS OPENED ONCE, THROUGH AN os.Root ON THE DIRECTORY, AND DESCRIBED
+// BY ITS OWN STAT. The workload keeps writing while this runs, so a name can
+// change between being listed and being read: what the checkpoint holds is the
+// entry that was opened, and nothing from outside the directory.
+//
 // A SOCKET IN THE DIRECTORY FAILS THE WHOLE CHECKPOINT, and that is stated
 // rather than worked around: archive/tar refuses to make a header for one, and
 // this walk asks it about every entry. A database whose socket lives in its data
@@ -591,52 +596,66 @@ func durationOr(value string, fallback time.Duration) time.Duration {
 // entry instead would mean a checkpoint that quietly holds less than the
 // directory did, which is the failure mode this package is here to prevent.
 func tarInto(w io.Writer, dir string) (int64, error) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return 0, err
+	}
+	defer root.Close()
+
 	archive := tar.NewWriter(w)
 	defer archive.Close()
 
 	var total int64
-	err := filepath.Walk(dir, func(path string, info fs.FileInfo, err error) error {
-		if err != nil {
+	err = fs.WalkDir(root.FS(), ".", func(name string, listed fs.DirEntry, err error) error {
+		if err != nil || name == "." {
 			return err
 		}
-		relative, err := filepath.Rel(dir, path)
-		if err != nil {
-			return err
-		}
-		if relative == "." {
-			return nil
-		}
-
-		link := ""
-		if info.Mode()&fs.ModeSymlink != 0 {
-			if link, err = os.Readlink(path); err != nil {
-				return err
-			}
-		}
-
-		header, err := tar.FileInfoHeader(info, link)
-		if err != nil {
-			return err
-		}
-		header.Name = filepath.ToSlash(relative)
-		if err := archive.WriteHeader(header); err != nil {
-			return err
-		}
-
-		if !info.Mode().IsRegular() {
-			return nil
-		}
-		file, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-
-		n, err := io.Copy(archive, file)
+		n, isDir, err := writeEntry(archive, root, name)
 		total += n
+		if err == nil && listed.IsDir() && !isDir {
+			return fs.SkipDir
+		}
 		return err
 	})
 	return total, err
+}
+
+// entry is one name in a volume as it was when it was opened: its own stat,
+// where it points when it is a link, and its bytes when it is a regular file.
+type entry struct {
+	info    fs.FileInfo
+	link    string
+	content *os.File
+}
+
+// writeEntry puts one name in the archive, and answers how many bytes of
+// content it carried and whether it was a directory when it was opened.
+//
+// THE CONTENT IS AS LONG AS THE HEADER SAYS, which is the size the file had
+// when it was opened: bytes a writer appends after that are the next
+// checkpoint's.
+func writeEntry(archive *tar.Writer, root *os.Root, name string) (int64, bool, error) {
+	opened, err := openEntry(root, name)
+	if err != nil {
+		return 0, false, err
+	}
+	if opened.content != nil {
+		defer opened.content.Close()
+	}
+
+	header, err := tar.FileInfoHeader(opened.info, opened.link)
+	if err != nil {
+		return 0, false, err
+	}
+	header.Name = name
+	if err := archive.WriteHeader(header); err != nil {
+		return 0, false, err
+	}
+	if opened.content == nil || !opened.info.Mode().IsRegular() {
+		return 0, opened.info.IsDir(), nil
+	}
+	n, err := io.CopyN(archive, opened.content, header.Size)
+	return n, false, err
 }
 
 // untar unpacks a checkpoint into a directory.

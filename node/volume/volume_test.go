@@ -1088,6 +1088,92 @@ func TestACheckpointHoldsWhatTheDirectoryHeld(t *testing.T) {
 	require.Equal(t, "real", held["link"].Linkname, "the link was followed")
 }
 
+// pausing is a store that stops reading a checkpoint after so many bytes, runs
+// meanwhile, then reads the rest. The walk writes into a pipe, so it is held
+// exactly there.
+type pausing struct {
+	*blobs
+	after     int
+	meanwhile func()
+}
+
+func (p *pausing) Put(ctx context.Context, content io.Reader) (string, error) {
+	head := make([]byte, p.after)
+	if _, err := io.ReadFull(content, head); err != nil {
+		return "", err
+	}
+	p.meanwhile()
+	return p.blobs.Put(ctx, io.MultiReader(bytes.NewReader(head), content))
+}
+
+// TestACHECKPOINTHoldsWhatItOpened. The walk runs while the workload writes, so
+// a name can change between being listed and being read: here it changes while
+// its header is being written. Nothing from outside the volume may reach the
+// checkpoint either way.
+func TestACheckpointHoldsOnlyWhatItOpened(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		prepare func(t *testing.T, dir, outside string)
+		swap    func(t *testing.T, dir, outside string)
+		kept    bool
+	}{
+		{
+			name: "a file that becomes a link",
+			prepare: func(t *testing.T, dir, outside string) {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "rows"), []byte("volume-data"), 0o640))
+				require.NoError(t, os.WriteFile(filepath.Join(outside, "rows"), []byte("host-secret"), 0o640))
+			},
+			swap: func(t *testing.T, dir, outside string) {
+				require.NoError(t, os.Symlink(filepath.Join(outside, "rows"), filepath.Join(dir, "rows.new")))
+				require.NoError(t, os.Rename(filepath.Join(dir, "rows.new"), filepath.Join(dir, "rows")))
+			},
+			kept: true,
+		},
+		{
+			name: "a directory that becomes a link",
+			prepare: func(t *testing.T, dir, outside string) {
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "base"), 0o750))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "base", "rows"), []byte("volume-data"), 0o640))
+				require.NoError(t, os.WriteFile(filepath.Join(outside, "rows"), []byte("host-secret"), 0o640))
+			},
+			swap: func(t *testing.T, dir, outside string) {
+				require.NoError(t, os.Rename(filepath.Join(dir, "base"), filepath.Join(dir, "moved")))
+				require.NoError(t, os.Symlink(outside, filepath.Join(dir, "base")))
+			},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			outside := t.TempDir()
+			store := newBlobs()
+			paused := &pausing{blobs: store, after: 511}
+			v, err := volume.New(t.TempDir(), paused, &opening{rows: newRows()}, &said{})
+			require.NoError(t, err)
+
+			dir, err := v.Mount(t.Context(), mountGrant("shop/prod/QmData", nil))
+			require.NoError(t, err)
+			c.prepare(t, dir, outside)
+
+			// ONE BYTE SHORT OF THE FIRST HEADER: the walk has looked at the
+			// first entry and is still writing what it found.
+			paused.meanwhile = func() { c.swap(t, dir, outside) }
+			written := v.CheckpointAll(t.Context())
+
+			store.mu.Lock()
+			defer store.mu.Unlock()
+			for _, archive := range store.held {
+				require.False(t, bytes.Contains(archive, []byte("host-secret")), "a checkpoint holds bytes from outside the volume")
+			}
+			if c.kept {
+				require.Equal(t, 1, written)
+				require.Len(t, store.held, 1)
+				for _, archive := range store.held {
+					require.True(t, bytes.Contains(archive, []byte("volume-data")), "the checkpoint lost the file it opened")
+				}
+			}
+		})
+	}
+}
+
 // TestARESTOREPutsBackWhatAWalkTook, which is the round trip the two halves are
 // only useful as: a file, an empty directory a workload expects to find, and a
 // link that is still a link.
