@@ -28,6 +28,9 @@ type healer struct {
 	healing       atomic.Bool
 	mu            sync.Mutex
 	superseded    atomic.Bool
+	// leaderChanged is when raft last reported this member gaining or losing
+	// a leader, in unix nanoseconds: up to then it knew one.
+	leaderChanged atomic.Int64
 }
 
 func newHealer(c *cluster) *healer {
@@ -69,6 +72,7 @@ func (h *healer) run(ctx context.Context) {
 		h.cluster.node.ID().ShortString(), checkInterval, SplitBrainDetectionCycles)
 
 	noLeaderCycles := 0
+	cycleStart := time.Now()
 
 	for {
 		select {
@@ -97,12 +101,14 @@ func (h *healer) run(ctx context.Context) {
 
 		if h.cluster.IsLeader() {
 			noLeaderCycles = 0
+			cycleStart = time.Now()
 			h.probeAndMergeAsLeader(ctx)
 			continue
 		}
 
-		_, leaderErr := h.cluster.Leader()
-		if leaderErr == nil {
+		hadLeader := h.hadLeaderSince(cycleStart)
+		cycleStart = time.Now()
+		if hadLeader {
 			noLeaderCycles = 0
 			continue
 		}
@@ -143,6 +149,17 @@ func (h *healer) healAcked(ctx context.Context, from peer.ID) {
 	h.yieldAndRejoin(ctx, from)
 }
 
+// hadLeaderSince reports whether this member knew a leader at any moment since
+// t. A probe that finds no leader may have caught an election: a group whose
+// leader steps down and is replaced between probes is not split, and only a
+// cycle with no leader in it counts toward split-brain handling.
+func (h *healer) hadLeaderSince(t time.Time) bool {
+	if _, err := h.cluster.Leader(); err == nil {
+		return true
+	}
+	return h.leaderChanged.Load() >= t.UnixNano()
+}
+
 // handleForeignVote reacts to a vote/pre-vote from a non-member peer.
 // Ensures the peer is tracked so findForeignPeers can discover it,
 // and if we're the leader, absorbs the orphan immediately.
@@ -164,14 +181,15 @@ func (h *healer) handleForeignVote(ctx context.Context, pid peer.ID) {
 	h.absorbOrphan(ctx, pid)
 }
 
-// registerVoteObserver registers a raft Observer that watches for
+// registerObserver registers a raft Observer that watches for
 // RequestPreVoteRequest and RequestVoteRequest from peers not in the
-// current configuration and notifies the healer.
-func (h *healer) registerVoteObserver() {
+// current configuration and notifies the healer, and for every change of
+// leader.
+func (h *healer) registerObserver() {
 	ch := make(chan hraft.Observation, 16)
 	observer := hraft.NewObserver(ch, false, func(o *hraft.Observation) bool {
 		switch o.Data.(type) {
-		case hraft.RequestVoteRequest, hraft.RequestPreVoteRequest:
+		case hraft.RequestVoteRequest, hraft.RequestPreVoteRequest, hraft.LeaderObservation:
 			return true
 		default:
 			return false
@@ -194,15 +212,18 @@ func (h *healer) registerVoteObserver() {
 				on.DeregisterObserver(observer)
 				return
 			case obs := <-ch:
-				h.processVoteObservation(obs)
+				h.processObservation(obs)
 			}
 		}
 	}()
 }
 
-func (h *healer) processVoteObservation(obs hraft.Observation) {
+func (h *healer) processObservation(obs hraft.Observation) {
 	var candidateID string
 	switch req := obs.Data.(type) {
+	case hraft.LeaderObservation:
+		h.leaderChanged.Store(time.Now().UnixNano())
+		return
 	case hraft.RequestPreVoteRequest:
 		candidateID = string(req.ID)
 	case hraft.RequestVoteRequest:

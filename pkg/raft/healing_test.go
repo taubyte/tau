@@ -455,9 +455,12 @@ func TestHealing_AnOrphanIsAbsorbed(t *testing.T) {
 // TestHealing_AGroupWithoutQuorumYieldsToTheGroupAheadOfIt: a member left
 // alone by its group's other member has no leader, and once it can see a
 // group of the same size that has committed more, its healer yields and the
-// member joins that group.
+// member joins that group. One leaderless cycle is a split, so a cycle is a
+// second: the group ahead runs leases of 25ms, which under load leave it
+// without a leader for longer than a 50ms cycle, and its healer took that for
+// a split and wiped it.
 func TestHealing_AGroupWithoutQuorumYieldsToTheGroupAheadOfIt(t *testing.T) {
-	probeEvery(t, 50*time.Millisecond)
+	probeEvery(t, time.Second)
 	before := SplitBrainDetectionCycles
 	SplitBrainDetectionCycles = 1
 	t.Cleanup(func() { SplitBrainDetectionCycles = before })
@@ -524,7 +527,7 @@ func TestHealing_AVoteFromANonMemberIsReported(t *testing.T) {
 		vote("not-a-peer"),
 		{Data: raft.LeaderObservation{}},
 	} {
-		h.processVoteObservation(ignored)
+		h.processObservation(ignored)
 	}
 	select {
 	case pid := <-h.foreignVoteCh:
@@ -532,8 +535,8 @@ func TestHealing_AVoteFromANonMemberIsReported(t *testing.T) {
 	default:
 	}
 
-	h.processVoteObservation(preVote(stranger.String()))
-	h.processVoteObservation(vote(stranger.String()))
+	h.processObservation(preVote(stranger.String()))
+	h.processObservation(vote(stranger.String()))
 	for range 2 {
 		select {
 		case pid := <-h.foreignVoteCh:
@@ -826,4 +829,25 @@ func TestHealing_AHealAckFromTheMembersOwnLeaderIsIgnored(t *testing.T) {
 	assert.Same(t, before, member.raft, "the member's raft was replaced")
 	_, held := member.Get("held")
 	assert.True(t, held, "the member wiped what its group holds")
+}
+
+// TestHealing_ACycleWithALeaderInItIsNotSplit: the healer sampled the leader
+// once per cycle, so a member caught between one leader stepping down and the
+// next one elected counted a leaderless cycle, and with a leaderless peer in
+// sight it wiped a group that was only holding an election. A cycle counts
+// only when the member knew no leader at any moment of it.
+func TestHealing_ACycleWithALeaderInItIsNotSplit(t *testing.T) {
+	a, b := formedPair(t, "heal-cycle-with-leader")
+	stranded := a.(*cluster)
+
+	cycleStart := time.Now()
+	require.NoError(t, b.Close())
+	require.Eventually(t, func() bool {
+		_, err := stranded.Leader()
+		return errors.Is(err, ErrNoLeader)
+	}, leaderWait, 10*time.Millisecond, "the member left alone kept naming a leader")
+
+	require.Eventually(t, func() bool { return stranded.healer.hadLeaderSince(cycleStart) },
+		5*time.Second, 10*time.Millisecond, "a cycle the member began with a leader counted as leaderless")
+	assert.False(t, stranded.healer.hadLeaderSince(time.Now()), "a cycle with no leader in it did not count")
 }

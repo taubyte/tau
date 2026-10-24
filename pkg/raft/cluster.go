@@ -174,7 +174,7 @@ func (c *cluster) initialize() (err error) {
 	}
 
 	c.healer = newHealer(c)
-	c.healer.registerVoteObserver()
+	c.healer.registerObserver()
 	go c.healer.run(c.ctx)
 
 	clusterLogger.Infof("[%s] raft initialization complete for namespace %s",
