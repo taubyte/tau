@@ -357,7 +357,10 @@ export TMPDIR="$tmp/$id"
 # --expand-environment=no hands the command its arguments as they were given.
 # systemd-run otherwise substitutes ${VAR} in them first, from its own
 # environment, so `sh -c 'echo "${x:-none}"'` ran as `echo ""`.
+#
+# The description is the command on one line: systemd shows one holding a
+# newline as [unprintable], and it is how a waiting run says what it waits for.
 exec systemd-run --user --scope -q --collect --slice="$slice" \
-  --unit="tau-cap-$id" --description="$*" --expand-environment=no \
+  --unit="tau-cap-$id" --description="${*//$'\n'/ }" --expand-environment=no \
   -p MemoryMax="$mem" -p MemoryHigh="$high" -p MemorySwapMax=0 \
   -p TasksMax=4096 -- sh -c 'exec 9>&-; exec "$@"' cap "$@"

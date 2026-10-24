@@ -61,6 +61,18 @@ func TestAWaitingGateIsNotStarvedBySmallRuns(t *testing.T) {
 	late.await(t)
 }
 
+// TestAWaiterNamesARunWhoseCommandHasNewlines starts a run whose script is
+// two lines. systemd shows a description holding a newline as [unprintable],
+// so the scope is described with the command on one line.
+func TestAWaiterNamesARunWhoseCommandHasNewlines(t *testing.T) {
+	c := newCapped(t)
+	in := c.start(t, small, nil, "true\ntrue")
+
+	gate := c.launch(t, "gate", small, nil, "true")
+	gate.says(t, in.unit+": sh -c true true; ")
+	assert.NotContains(t, gate.said(), "[unprintable]")
+}
+
 func TestGatesRunOneAtATime(t *testing.T) {
 	c := newCapped(t)
 	first := c.launch(t, "gate", small, nil, "true").await(t)
