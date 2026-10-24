@@ -7,12 +7,14 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/libp2p/go-libp2p/p2p/protocol/identify"
 	"github.com/stretchr/testify/require"
@@ -207,9 +209,21 @@ func TestAGossipReportSaysWhichWayEachStreamRuns(t *testing.T) {
 	t.Cleanup(func() { mn.Close() })
 
 	late, deaf := newHost(t, mn), newHost(t, mn)
-	newPubSub(t, deaf)
+
+	// deaf's router says when an RPC from late reaches it, which is late's
+	// stream up at both ends. late lists deaf among its peers sooner, while
+	// that stream is still being opened.
+	reached := make(chan struct{})
+	var once sync.Once
+	_, err := pubsub.NewGossipSub(t.Context(), deaf, pubsub.WithAppSpecificRpcInspector(func(from peer.ID, _ *pubsub.RPC) error {
+		if from == late.ID() {
+			once.Do(func() { close(reached) })
+		}
+		return nil
+	}))
+	require.NoError(t, err)
 	deaf.RemoveStreamHandler(identify.IDPush)
-	_, err := mn.ConnectPeers(late.ID(), deaf.ID())
+	_, err = mn.ConnectPeers(late.ID(), deaf.ID())
 	require.NoError(t, err)
 
 	// deaf has identified late before late gossips, so only the push it
@@ -218,8 +232,17 @@ func TestAGossipReportSaysWhichWayEachStreamRuns(t *testing.T) {
 		protos, err := deaf.Peerstore().GetProtocols(late.ID())
 		return err == nil && slices.Contains(protos, identify.ID)
 	}, 10*time.Second, 10*time.Millisecond)
-	ps := newPubSub(t, late)
-	require.Eventually(t, func() bool { return slices.Contains(ps.ListPeers(""), deaf.ID()) }, 10*time.Second, 10*time.Millisecond)
+
+	topic, err := newPubSub(t, late).Join("probe")
+	require.NoError(t, err)
+	sub, err := topic.Subscribe()
+	require.NoError(t, err)
+	t.Cleanup(sub.Cancel)
+	select {
+	case <-reached:
+	case <-time.After(10 * time.Second):
+		t.Fatal("nothing late sent ever reached deaf")
+	}
 
 	require.Equal(t, fmt.Sprintf("\ngossip with %s: its peerstore says it gossips false, a stream to it false, a stream from it true", late.ID()), gossipWith{deaf}.String())
 	require.Equal(t, fmt.Sprintf("\ngossip with %s: its peerstore says it gossips true, a stream to it true, a stream from it false", deaf.ID()), gossipWith{late}.String())
