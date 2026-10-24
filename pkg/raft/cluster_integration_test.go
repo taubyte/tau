@@ -1016,6 +1016,9 @@ func TestCluster_RejoinAfterLeave_Integration(t *testing.T) {
 	linkTo(t, node2, node1)
 	cluster2, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
 	assert.NilError(t, err, "failed to create cluster2")
+	// Closed here as well, for a failure before the leave below: a raft
+	// left running outlives the node's store and panics the test binary.
+	defer cluster2.Close()
 
 	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
 	assert.NilError(t, err, "node2 failed to join as voter")

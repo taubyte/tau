@@ -31,6 +31,9 @@ func bootstrapAndSnapshot(t *testing.T, snapDir, namespace string) {
 		WithTimeouts(fastSingleNode),
 	)
 	assert.NilError(t, err)
+	// Closed here as well, for a failure before the close below: a raft
+	// left running outlives the node's store and panics the test binary.
+	defer c.Close()
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
