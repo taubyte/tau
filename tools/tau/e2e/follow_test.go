@@ -94,7 +94,7 @@ func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 	}, 2*time.Minute, time.Second, "login never succeeded: %s", login.stderr)
 
 	work := t.TempDir()
-	require.NoError(t, copyProject(filepath.Join("..", "..", "..", "node", "dream", "projects", "with", "function"), work))
+	require.NoError(t, copyProject(filepath.Join("..", "..", "..", "node", "dream", "projects", "with", "function", "wasm"), work))
 	configRepo := repokey.Key{Host: f.Host(), Owner: fake.Namespace, Name: "follow"}
 	var link result
 	require.Eventually(t, func() bool {
