@@ -741,7 +741,13 @@ func (c *cluster) Barrier(timeout time.Duration) error {
 		return ErrShutdown
 	}
 
-	return c.raft.Barrier(timeout).Error()
+	if err := c.raft.Barrier(timeout).Error(); err != nil {
+		if err == raft.ErrNotLeader {
+			return ErrNotLeader
+		}
+		return err
+	}
+	return nil
 }
 
 func (c *cluster) IsLeader() bool {

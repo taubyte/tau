@@ -306,6 +306,20 @@ func TestCluster_CloseWaitsForALeaderThatRemovedItself(t *testing.T) {
 	require.NoError(t, <-setDone)
 }
 
+// TestCluster_BarrierOffTheLeaderIsNotLeader: every write path answers a
+// follower's refusal as ErrNotLeader, and Barrier passed raft's own error
+// through, so a caller testing for ErrNotLeader read a refused barrier as a
+// failure of some other kind.
+func TestCluster_BarrierOffTheLeaderIsNotLeader(t *testing.T) {
+	a, b := joinedPair(t, "barrier-off-the-leader", func(store ds.Batching) ds.Batching { return store })
+
+	// A member that removed itself follows and can never be elected again.
+	removed, left := removeTheLeader(t, a, b)
+
+	require.ErrorIs(t, removed.Barrier(time.Second), ErrNotLeader)
+	require.NoError(t, left.Barrier(time.Second))
+}
+
 func TestCluster_SingleNode_IsLeader(t *testing.T) {
 	node := newMockNode(t)
 

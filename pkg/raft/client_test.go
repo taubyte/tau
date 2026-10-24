@@ -4,9 +4,12 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"errors"
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+	"github.com/hashicorp/raft"
 	"github.com/stretchr/testify/require"
 	"gotest.tools/v3/assert"
 )
@@ -18,6 +21,16 @@ func TestNewClient(t *testing.T) {
 	require.NoError(t, err, "failed to create client")
 	require.NotNil(t, client, "client should not be nil")
 	defer client.Close()
+}
+
+// TestSentinel_RestoresWhatCrossedTheWireAsText: a remote error arrives as its
+// text alone, and a write forwarded to a leader that lost its lease mid-commit
+// could not be told from a failure that applied nothing.
+func TestSentinel_RestoresWhatCrossedTheWireAsText(t *testing.T) {
+	for _, sent := range []error{ErrNoLeader, ErrInvalidBarrier, ErrNotLeader, raft.ErrLeadershipLost} {
+		received := connect.NewError(connect.CodeUnknown, errors.New(sent.Error()))
+		require.ErrorIs(t, sentinel(received), sent)
+	}
 }
 
 func TestClient_Close(t *testing.T) {

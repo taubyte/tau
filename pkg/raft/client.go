@@ -11,6 +11,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/fxamacker/cbor/v2"
+	"github.com/hashicorp/raft"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -163,7 +164,7 @@ func first[T any](ctx context.Context, c *client, peers []peer.ID, timeout time.
 // sentinel turns a remote refusal back into the error the remote returned, so
 // errors.Is works across the wire for the ones callers branch on.
 func sentinel(err error) error {
-	for _, s := range []error{ErrNoLeader, ErrInvalidBarrier, ErrNotLeader} {
+	for _, s := range []error{ErrNoLeader, ErrInvalidBarrier, ErrNotLeader, raft.ErrLeadershipLost} {
 		if strings.Contains(err.Error(), s.Error()) {
 			return fmt.Errorf("%w: %v", s, err)
 		}
