@@ -2,6 +2,7 @@ package peer
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/network"
 	peercore "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/p2p/protocol/identify"
 	"github.com/stretchr/testify/require"
 
 	"github.com/taubyte/tau/p2p/keypair"
@@ -119,4 +121,25 @@ func TestAFileNobodyHasIsNotFound(t *testing.T) {
 	require.ErrorIs(t, err, errorClosed)
 	_, err = n.AddFileForCid(strings.NewReader("x"))
 	require.ErrorIs(t, err, errorClosed)
+}
+
+// TestABootstrapPeerGossipsToANodeThatJoins. The peer a node bootstraps from
+// learns it speaks gossipsub from the identify run as they connect, so it opens
+// its stream back without the identify push a late learner depends on. Here it
+// never gets one: a push is sent once and is limited per subnet, so a seed
+// taking many joiners at once misses most of them.
+func TestABootstrapPeerGossipsToANodeThatJoins(t *testing.T) {
+	seed, err := New(t.Context(), t.TempDir(), keypair.NewRaw(), nil, []string{"/ip4/127.0.0.1/tcp/0"}, nil, true, false)
+	require.NoError(t, err)
+	t.Cleanup(seed.Close)
+	seed.Peer().RemoveStreamHandler(identify.IDPush)
+
+	joiner, err := NewWithBootstrapList(t.Context(), t.TempDir(), keypair.NewRaw(), nil, []string{"/ip4/127.0.0.1/tcp/0"}, nil, true,
+		[]peercore.AddrInfo{{ID: seed.ID(), Addrs: seed.Peer().Addrs()}})
+	require.NoError(t, err)
+	t.Cleanup(joiner.Close)
+
+	require.Eventually(t, func() bool {
+		return slices.Contains(seed.Messaging().ListPeers(""), joiner.ID())
+	}, 10*time.Second, 10*time.Millisecond, "the seed never opened its gossip stream to the node that joined")
 }

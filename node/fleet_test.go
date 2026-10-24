@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -35,20 +36,41 @@ func fleet(t *testing.T, configs ...Config) []*Node {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
 
+	// EVERY HOST GOSSIPS BEFORE IT IS CONNECTED. A pubsub opens its stream to a
+	// peer when it starts or when identify says the peer gossips, and never
+	// retries one that failed. A host connected before its peer gossiped hears
+	// of it only from an identify push: sent once, limited per subnet (every
+	// mocknet peer is in one), and ignored if it lands while the attempt that
+	// will fail is in flight. Miss it and that host never sends the peer
+	// anything, reports included.
 	hosts := make([]host.Host, len(configs))
+	gossip := make([]*pubsub.PubSub, len(configs))
 	for i := range configs {
 		h, err := mn.GenPeer()
 		require.NoError(t, err)
 		hosts[i] = h
+		gossip[i] = newPubSub(t, h)
 	}
 	require.NoError(t, mn.LinkAll())
 	require.NoError(t, mn.ConnectAllButSelf())
 
+	// AND EVERY STREAM IS UP BEFORE A NODE IS BUILT. Identify answers from a
+	// snapshot its own goroutine refreshes, so under load a connection can still
+	// be told "no pubsub" and left to a push; building nodes pushes to every
+	// peer and would spend the budget that push needs.
+	for i, ps := range gossip {
+		for j, h := range hosts {
+			if i == j {
+				continue
+			}
+			require.Eventually(t, func() bool {
+				return slices.Contains(ps.ListPeers(""), h.ID())
+			}, 30*time.Second, 10*time.Millisecond, "node %d never opened a stream to node %d", i, j)
+		}
+	}
+
 	out := make([]*Node, len(configs))
 	for i, cfg := range configs {
-		ps, err := pubsub.NewGossipSub(t.Context(), hosts[i])
-		require.NoError(t, err)
-
 		// See makeNode: :53 is the operator's default and a test's to override,
 		// and a fleet needs a DIFFERENT port per node — which is what :0 gives.
 		if (len(cfg.Services) == 0 || cfg.runs(DNS)) && cfg.DNSListen == "" {
@@ -63,7 +85,7 @@ func fleet(t *testing.T, configs ...Config) []*Node {
 		// does not stand in for it.
 		n, err := New(cfg,
 			WithHost(hosts[i]),
-			WithPubSub(ps),
+			WithPubSub(gossip[i]),
 			WithDatabases(&memFactory{}),
 			WithRuntimes(&tier{name: "wasm"}),
 			WithRaft(func(string) (raft.Cluster, error) { return raft.NewMockCluster(), nil }),
@@ -86,6 +108,28 @@ func sees(t *testing.T, watcher *Node, name string) {
 	require.Eventually(t, func() bool {
 		return len(watcher.Discovery().Route(name, time.Minute)) > 0
 	}, 30*time.Second, 100*time.Millisecond, "%s never appeared in the view", name)
+}
+
+// TestEveryNodeOfALargeFleetHasAStreamToEveryOther when the fleet is handed
+// over. A host accepts ten identify pushes in a burst from one subnet, then one
+// every five seconds, and every mocknet peer is in one subnet, so sixteen nodes
+// are well past it. A fleet that relied on the push hands over nodes some
+// others never send to; with two it did so only now and then, under load.
+func TestEveryNodeOfALargeFleetHasAStreamToEveryOther(t *testing.T) {
+	configs := make([]Config, 16)
+	for i := range configs {
+		configs[i] = Config{Services: []string{Discovery}}
+	}
+	nodes := fleet(t, configs...)
+
+	for i, from := range nodes {
+		peers := from.opts.pubsub.(*pubsub.PubSub).ListPeers("")
+		for j, to := range nodes {
+			if i != j {
+				require.Contains(t, peers, to.opts.host.ID(), "node %d has no stream to node %d", i, j)
+			}
+		}
+	}
 }
 
 // TestAWorkerFindsARegisterItDoesNotRun. The whole point of a composition that

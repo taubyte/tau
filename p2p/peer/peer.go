@@ -6,6 +6,7 @@ import (
 	"io"
 	"math/rand"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/libp2p/go-libp2p"
@@ -234,7 +235,17 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, admission
 		opts = append(opts, p.SimpleAddrsFactory(swarmAnnounce, server))
 	}
 
+	// Gossipsub is up before the first connection. A peer learns this node
+	// speaks it from the identify it runs on connecting; one that connected
+	// earlier hears it only from a best-effort push, and if it misses that it
+	// never opens its pubsub stream here and nothing it publishes arrives. The
+	// DHT dials its bootstrap peers as soon as it exists, so it gets none until
+	// then.
+	var gossiping atomic.Bool
 	bootstrapHandler := func() []peer.AddrInfo {
+		if !gossiping.Load() {
+			return nil
+		}
 		return bootstrap.Peers
 	}
 
@@ -249,6 +260,31 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, admission
 	if err != nil {
 		return nil, fmt.Errorf("setting up libp2p failed: %w", err)
 	}
+
+	// Prep Discoverer
+	rng := rand.New(rand.NewSource(rand.Int63()))
+	p.drouter, err = discoveryBackoff.NewBackoffDiscovery(
+		discovery.NewRoutingDiscovery(p.dht),
+		discoveryBackoff.NewExponentialBackoff(DiscoveryBackoffMin, DiscoveryBackoffMax, discoveryBackoff.FullJitter, time.Second, 5.0, 0, rng),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating backoff discovery failed: %w", err)
+	}
+
+	// Prep messaging PUBSUB
+	p.messaging, err = pubsub.NewGossipSub(
+		p.ctx,
+		p.host,
+		pubsub.WithDiscovery(p.drouter),
+		pubsub.WithFloodPublish(true),
+		pubsub.WithMessageSigning(true),
+		pubsub.WithStrictSignatureVerification(true),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating gossip pubsub failed: %w", err)
+	}
+	p.topics = make(map[string]*pubsub.Topic)
+	gossiping.Store(true)
 
 	// Create DAG service (blockstore + bitswap + merkledag + unixfs)
 	p.dag, err = newDAG(p.ctx, p.store, p.host, p.dht)
@@ -281,30 +317,6 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, admission
 		}
 	}
 
-	// Prep Discoverer
-	rng := rand.New(rand.NewSource(rand.Int63()))
-	p.drouter, err = discoveryBackoff.NewBackoffDiscovery(
-		discovery.NewRoutingDiscovery(p.dht),
-		discoveryBackoff.NewExponentialBackoff(DiscoveryBackoffMin, DiscoveryBackoffMax, discoveryBackoff.FullJitter, time.Second, 5.0, 0, rng),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("creating backoff discovery failed: %w", err)
-	}
-
-	// Prep messaging PUBSUB
-	p.messaging, err = pubsub.NewGossipSub(
-		p.ctx,
-		p.host,
-		pubsub.WithDiscovery(p.drouter),
-		pubsub.WithFloodPublish(true),
-		pubsub.WithMessageSigning(true),
-		pubsub.WithStrictSignatureVerification(true),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("creating gossip pubsub failed: %w", err)
-	}
-
-	p.topics = make(map[string]*pubsub.Topic)
 	return &p, nil
 }
 
