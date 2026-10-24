@@ -294,6 +294,9 @@ func (b *recordingBackend) Retry(context.Context, string) error  { return errors
 func (b *recordingBackend) Follow(context.Context, string, int64, func([]byte, int64) error) (int64, error) {
 	return 0, errors.New("unused")
 }
+func (b *recordingBackend) Snapshot(context.Context, string, int64, func([]byte, int64) error) (int64, error) {
+	return 0, errors.New("unused")
+}
 
 // noCallers admits nobody: this test makes no caller's request.
 type noCallers struct{}
