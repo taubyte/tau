@@ -443,7 +443,7 @@ func TestNewFailures(t *testing.T) {
 	})
 
 	t.Run("a socket file nothing answers on", func(t *testing.T) {
-		socket := filepath.Join(t.TempDir(), "containerd.sock")
+		socket := filepath.Join(socketDir(t), "containerd.sock")
 		ln, err := net.Listen("unix", socket)
 		require.NoError(t, err)
 		ln.(*net.UnixListener).SetUnlinkOnClose(false)
@@ -474,7 +474,7 @@ func TestNewFailures(t *testing.T) {
 	})
 
 	t.Run("a socket that answers but is not containerd", func(t *testing.T) {
-		socket := filepath.Join(t.TempDir(), "containerd.sock")
+		socket := filepath.Join(socketDir(t), "containerd.sock")
 		ln, err := net.Listen("unix", socket)
 		require.NoError(t, err)
 		serveStandIn(t, ln, false, false)
@@ -484,7 +484,7 @@ func TestNewFailures(t *testing.T) {
 	})
 
 	t.Run("a daemon that does not report its version", func(t *testing.T) {
-		socket := filepath.Join(t.TempDir(), "containerd.sock")
+		socket := filepath.Join(socketDir(t), "containerd.sock")
 		ln, err := net.Listen("unix", socket)
 		require.NoError(t, err)
 		conns := &countingListener{Listener: ln}
@@ -574,7 +574,7 @@ func TestNewStartsARootlessDaemon(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 	t.Setenv("TMPDIR", t.TempDir())
 
-	socket := filepath.Join(t.TempDir(), "containerd.sock")
+	socket := filepath.Join(socketDir(t), "containerd.sock")
 	pidFile := filepath.Join(filepath.Dir(socket), "containerd.pid")
 
 	server := grpc.NewServer()

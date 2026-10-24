@@ -125,7 +125,7 @@ func TestEnsureContainerdRunningWithoutSocket(t *testing.T) {
 }
 
 func TestTestSocketConnection(t *testing.T) {
-	socket := filepath.Join(t.TempDir(), "containerd.sock")
+	socket := filepath.Join(socketDir(t), "containerd.sock")
 	backend := &ContainerdBackend{config: core.ContainerdConfig{SocketPath: socket}}
 
 	err := backend.testSocketConnection()

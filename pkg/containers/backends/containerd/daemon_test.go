@@ -19,12 +19,27 @@ import (
 	"github.com/taubyte/tau/pkg/containers/core"
 )
 
+// sockets is TMPDIR as the test binary started, before any test points TMPDIR
+// somewhere else, and socketDir makes a directory there for a test's unix
+// socket. A socket's path holds 107 bytes, and t.TempDir alone puts its
+// directory up to 79 below GOTMPDIR, which left a long test's containerd.sock
+// two or three to spare under the TMPDIR scripts/cap gives a run.
+var sockets = os.TempDir()
+
+func socketDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp(sockets, "s")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
+}
+
 func newTestDaemon(t *testing.T) *Daemon {
 	t.Helper()
 
 	daemon, err := NewDaemon(core.ContainerdConfig{
 		RootlessMode: core.RootlessModeEnabled,
-		SocketPath:   filepath.Join(t.TempDir(), "containerd.sock"),
+		SocketPath:   filepath.Join(socketDir(t), "containerd.sock"),
 	})
 	require.NoError(t, err)
 
