@@ -1,0 +1,120 @@
+package raft
+
+import (
+	"bytes"
+	"crypto/rand"
+	"net"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+)
+
+// TestEncryptedConn_AFrameReadInPiecesArrivesWhole: raft reads its transport
+// through a buffered reader, whose buffer is only partly free once it holds
+// unread bytes. A frame read into a smaller buffer is handed out over as many
+// reads as it takes, and the frames after it follow in order.
+func TestEncryptedConn_AFrameReadInPiecesArrivesWhole(t *testing.T) {
+	key := make([]byte, AESKeySize)
+	_, err := rand.Read(key)
+	require.NoError(t, err)
+
+	near, far := net.Pipe()
+	defer near.Close()
+	defer far.Close()
+	writer, err := newEncryptedConn(near, keyToCipher(t, key))
+	require.NoError(t, err)
+	reader, err := newEncryptedConn(far, keyToCipher(t, key))
+	require.NoError(t, err)
+
+	frames := [][]byte{bytes.Repeat([]byte("first frame "), 20), []byte("second")}
+	go func() {
+		for _, frame := range frames {
+			if _, err := writer.Write(frame); err != nil {
+				return
+			}
+		}
+	}()
+
+	require.NoError(t, reader.SetReadDeadline(time.Now().Add(5*time.Second)))
+	want := bytes.Join(frames, nil)
+	got := make([]byte, 0, len(want))
+	buf := make([]byte, 7)
+	for len(got) < len(want) {
+		n, err := reader.Read(buf)
+		require.NoError(t, err, "after %d of %d bytes", len(got), len(want))
+		got = append(got, buf[:n]...)
+	}
+	require.Equal(t, want, got)
+}
+
+// TestEncryptedConn_AFrameCutShortIsAnError: a peer that goes away partway
+// through a frame leaves a read that fails, not one that returns what came.
+func TestEncryptedConn_AFrameCutShortIsAnError(t *testing.T) {
+	key := make([]byte, AESKeySize)
+	_, err := rand.Read(key)
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name string
+		sent []byte
+	}{
+		{"inside the nonce", []byte{0, 0, 0, 32, 1, 2, 3}},
+		{"inside the sealed payload", append([]byte{0, 0, 0, 32}, make([]byte, nonceSize+5)...)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			near, far := net.Pipe()
+			defer far.Close()
+			reader, err := newEncryptedConn(far, keyToCipher(t, key))
+			require.NoError(t, err)
+			go func() {
+				near.Write(tc.sent)
+				near.Close()
+			}()
+
+			n, err := reader.Read(make([]byte, 64))
+			require.Error(t, err)
+			require.Zero(t, n)
+		})
+	}
+}
+
+// TestEncryptedConn_AWriteToAPeerThatLeftFails: a frame goes out as its
+// length, its nonce and its sealed payload, and a write that cannot finish
+// any of them fails.
+func TestEncryptedConn_AWriteToAPeerThatLeftFails(t *testing.T) {
+	key := make([]byte, AESKeySize)
+	_, err := rand.Read(key)
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name    string
+		readsOf int
+	}{
+		{"before the nonce", 4},
+		{"before the payload", 4 + nonceSize},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			near, far := net.Pipe()
+			defer near.Close()
+			writer, err := newEncryptedConn(near, keyToCipher(t, key))
+			require.NoError(t, err)
+			go func() {
+				buf := make([]byte, tc.readsOf)
+				read := 0
+				for read < tc.readsOf {
+					n, err := far.Read(buf[read:])
+					if err != nil {
+						break
+					}
+					read += n
+				}
+				far.Close()
+			}()
+
+			n, err := writer.Write([]byte("payload"))
+			require.Error(t, err)
+			require.Zero(t, n)
+		})
+	}
+}

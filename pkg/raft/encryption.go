@@ -22,6 +22,10 @@ type encryptedConn struct {
 	net.Conn
 	encrypt cipher.AEAD
 	decrypt cipher.AEAD
+
+	// unread is what is left of the last frame after a read whose buffer
+	// could not hold all of it.
+	unread []byte
 }
 
 func newEncryptedConn(conn net.Conn, gcm cipher.AEAD) (net.Conn, error) {
@@ -36,34 +40,42 @@ func newEncryptedConn(conn net.Conn, gcm cipher.AEAD) (net.Conn, error) {
 	}, nil
 }
 
+// Read hands a frame out over as many reads as the caller's buffer needs.
 func (ec *encryptedConn) Read(b []byte) (int, error) {
+	if len(ec.unread) == 0 {
+		plaintext, err := ec.readFrame()
+		if err != nil {
+			return 0, err
+		}
+		ec.unread = plaintext
+	}
+	n := copy(b, ec.unread)
+	ec.unread = ec.unread[n:]
+	return n, nil
+}
+
+func (ec *encryptedConn) readFrame() ([]byte, error) {
 	lenBuf := make([]byte, 4)
 	if _, err := io.ReadFull(ec.Conn, lenBuf); err != nil {
-		return 0, err
+		return nil, err
 	}
 	payloadLen := binary.BigEndian.Uint32(lenBuf)
 
 	nonce := make([]byte, nonceSize)
 	if _, err := io.ReadFull(ec.Conn, nonce); err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	ciphertext := make([]byte, payloadLen)
 	if _, err := io.ReadFull(ec.Conn, ciphertext); err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	plaintext, err := ec.decrypt.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		return 0, fmt.Errorf("decryption failed: %w", err)
+		return nil, fmt.Errorf("decryption failed: %w", err)
 	}
-
-	n := copy(b, plaintext)
-	if n < len(plaintext) {
-		return n, nil
-	}
-
-	return n, nil
+	return plaintext, nil
 }
 
 func (ec *encryptedConn) Write(b []byte) (int, error) {
