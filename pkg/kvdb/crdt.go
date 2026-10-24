@@ -837,9 +837,14 @@ func (store *Datastore) sendNewJobs(ctx context.Context, session *sync.WaitGroup
 		select {
 		case store.sendJobs <- job:
 		case <-ctx.Done():
-			// the job was never sent, so it cannot complete.
+			// The job was never sent, so it cannot complete; nor can the
+			// fetches not queued yet. Release them all for the next walk.
 			session.Done()
-			store.queuedChildren.Remove(job.node.Cid())
+			for _, c := range fetch {
+				if _, ok := queued[c]; !ok || c == job.node.Cid() {
+					store.queuedChildren.Remove(c)
+				}
+			}
 			return errors.Join(append(errs, ctx.Err())...)
 		}
 	}
@@ -938,9 +943,7 @@ func (store *Datastore) processNode(ctx context.Context, ng *crdtNodeGetter, del
 					fetched = append(fetched, c)
 				}
 			}
-			if derr := store.dropUnindexed(ctx, current, fetched); derr != nil {
-				store.logger.Warnf("error dropping a partly fetched snapshot: %s", derr)
-			}
+			store.dropFailed(ctx, current, fetched)
 			return nil, fmt.Errorf("error fetching snapshot %s: %w", current, err)
 		}
 	}
@@ -959,12 +962,14 @@ func (store *Datastore) processNode(ctx context.Context, ng *crdtNodeGetter, del
 		}
 		walk, err := store.mergeDelta(ctx, current, delta)
 		if err != nil {
+			store.dropFailed(ctx, current, nil)
 			return nil, fmt.Errorf("error merging delta from %s: %w", current, err)
 		}
 		return walk, nil
 	}
 	walk, theirs, err := store.mergeSnapshot(ctx, current, delta, chunks, elems)
 	if err != nil {
+		store.dropFailed(ctx, current, chunks)
 		return nil, fmt.Errorf("error merging snapshot %s: %w", current, err)
 	}
 	if _, err := store.purge(ctx, theirs); err != nil {
@@ -990,6 +995,14 @@ func (store *Datastore) dropUnindexed(ctx context.Context, root cid.Cid, chunks 
 		return nil
 	}
 	return store.dagService.RemoveMany(ctx, drop)
+}
+
+// dropFailed removes the fetched blocks of a merge that failed: they are not
+// indexed, so if a snapshot covers them before the retry nothing would.
+func (store *Datastore) dropFailed(ctx context.Context, root cid.Cid, chunks []cid.Cid) {
+	if err := store.dropUnindexed(ctx, root, chunks); err != nil {
+		store.logger.Warnf("error dropping the blocks of a failed merge: %s", err)
+	}
 }
 
 // fetchChunks fetches a snapshot's chunk blocks and returns them with every
@@ -1031,6 +1044,9 @@ func (store *Datastore) repairDAG(ctx context.Context) error {
 		store.logger.Infof("DAG repair finished. Took %s", time.Since(start).Truncate(time.Second))
 	}()
 
+	// Clean first, so a failure recorded while this repair runs keeps its
+	// mark for the next one.
+	store.MarkClean(ctx)
 	var todo []link
 	var done []ds.Key
 	for _, prefix := range []ds.Key{store.missingPrefix(), store.retryPrefix()} {
@@ -1072,7 +1088,6 @@ func (store *Datastore) repairDAG(ctx context.Context) error {
 		}
 	}
 
-	store.MarkClean(ctx)
 	if err := store.handleBranch(ctx, todo); err != nil {
 		store.MarkDirty(ctx)
 		return fmt.Errorf("error repairing: %w", err)
