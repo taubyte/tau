@@ -28,6 +28,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/taubyte/tau/pkg/containers/core"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestDetectRootlessMode(t *testing.T) {
@@ -507,4 +509,20 @@ func TestNamespaceDefaulted(t *testing.T) {
 		assert.False(t, strings.Contains(path, "/"+restrictedCgroup+"/"),
 			"a container that asked for nothing must not land where the egress rule looks, got %q", path)
 	}
+}
+
+// A WAIT ITS CONTEXT ENDED REPORTS THAT CONTEXT'S ERROR, however containerd
+// phrased the call it cut short; one that ended on its own reports its own.
+func TestEndedIsTheContextsErrorOnceItEnds(t *testing.T) {
+	cut := status.Error(codes.DeadlineExceeded, "stream terminated by RST_STREAM with error code: CANCEL")
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer cancel()
+	<-ctx.Done()
+	assert.ErrorIs(t, ended(ctx, cut), context.DeadlineExceeded)
+	assert.NoError(t, ended(ctx, nil), "a container that exited cleanly as the deadline passed exited cleanly")
+
+	live := context.Background()
+	assert.Same(t, cut, ended(live, cut))
+	assert.NoError(t, ended(live, nil))
 }

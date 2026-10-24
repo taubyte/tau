@@ -1157,27 +1157,39 @@ func (b *ContainerdBackend) Wait(ctx context.Context, id core.ContainerID) error
 
 	container, err := b.client.LoadContainer(ctx, string(id))
 	if err != nil {
-		return fmt.Errorf("failed to load container %s: %w", id, err)
+		return fmt.Errorf("failed to load container %s: %w", id, ended(ctx, err))
 	}
 
 	task, err := container.Task(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to get task for container %s: %w", id, err)
+		return fmt.Errorf("failed to get task for container %s: %w", id, ended(ctx, err))
 	}
 
 	exitStatusC, err := task.Wait(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to wait for container %s: %w", id, err)
+		return fmt.Errorf("failed to wait for container %s: %w", id, ended(ctx, err))
 	}
 
 	// Waiting succeeds whatever the container exited with: a non-zero status is
 	// the container's own result, reported through Inspect, not a failure to wait.
 	select {
 	case status := <-exitStatusC:
-		return status.Error()
+		return ended(ctx, status.Error())
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// ended is err, or ctx's own error once ctx has ended. containerd ends a call
+// its context cancelled with a status of its own that does not wrap the
+// context's error, and the exit channel carries that status as soon as the
+// context ends, so a select can see it before ctx.Done: a caller that set a
+// deadline must still get the deadline back.
+func ended(ctx context.Context, err error) error {
+	if err != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return err
 }
 
 // Logs returns logs for a container
