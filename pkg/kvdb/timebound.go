@@ -170,7 +170,7 @@ func (store *Datastore) hearFleet(ctx context.Context, stamp uint64) error {
 	}
 	store.since, store.sinceUp = stamp, store.times.up()
 	if rejoin {
-		return store.startRejoin(ctx)
+		return store.startRejoin(ctx, stamp)
 	}
 	return nil
 }
@@ -319,6 +319,7 @@ func (m *merging) forget(ctx context.Context, now uint64) (bool, error) {
 		if m.store.expired(k.expires, now) {
 			delete(m.cc.inc, r)
 			m.horizon = max(m.horizon, k.changed)
+			m.store.forgotten[r] = &forgottenEntry{k: k, at: m.store.times.up()}
 			dropped = true
 		}
 	}

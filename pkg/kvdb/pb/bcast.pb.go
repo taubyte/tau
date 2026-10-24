@@ -41,7 +41,14 @@ type CRDTBroadcast struct {
 	// horizon is the latest authored time of anything the sender has
 	// forgotten: a replica that hears it knows the fleet forgot that much
 	// before it holds any of the fleet's blocks.
-	Horizon       uint64 `protobuf:"varint,8,opt,name=horizon,proto3" json:"horizon,omitempty"`
+	Horizon uint64 `protobuf:"varint,8,opt,name=horizon,proto3" json:"horizon,omitempty"`
+	// context is the sender's causal context, in a heartbeat of a replica that
+	// has heard a fleet and is not rejoining, and in every verdict: what it
+	// holds, for a peer to tell whether it holds as much.
+	Context *Context `protobuf:"bytes,9,opt,name=context,proto3" json:"context,omitempty"`
+	// settled is set when the sender held, as it sent this, all that every
+	// peer it hears holds, and knows it has heard them all.
+	Settled       bool `protobuf:"varint,10,opt,name=settled,proto3" json:"settled,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -132,13 +139,30 @@ func (x *CRDTBroadcast) GetHorizon() uint64 {
 	return 0
 }
 
+func (x *CRDTBroadcast) GetContext() *Context {
+	if x != nil {
+		return x.Context
+	}
+	return nil
+}
+
+func (x *CRDTBroadcast) GetSettled() bool {
+	if x != nil {
+		return x.Settled
+	}
+	return false
+}
+
 // A Verdict tells one rejoining incarnation whether the sender can still
 // refute what it may carry (ok) or not (rebase), and the sender's since.
 type Verdict struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	To            []byte                 `protobuf:"bytes,1,opt,name=to,proto3" json:"to,omitempty"`
-	Rebase        bool                   `protobuf:"varint,2,opt,name=rebase,proto3" json:"rebase,omitempty"`
-	Since         uint64                 `protobuf:"varint,3,opt,name=since,proto3" json:"since,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	To     []byte                 `protobuf:"bytes,1,opt,name=to,proto3" json:"to,omitempty"`
+	Rebase bool                   `protobuf:"varint,2,opt,name=rebase,proto3" json:"rebase,omitempty"`
+	Since  uint64                 `protobuf:"varint,3,opt,name=since,proto3" json:"since,omitempty"`
+	// held is, in an ok, the fleet time as of which the sender holds all that
+	// the fleet held: what it vouches for.
+	Held          uint64 `protobuf:"varint,4,opt,name=held,proto3" json:"held,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -190,6 +214,13 @@ func (x *Verdict) GetRebase() bool {
 func (x *Verdict) GetSince() uint64 {
 	if x != nil {
 		return x.Since
+	}
+	return 0
+}
+
+func (x *Verdict) GetHeld() uint64 {
+	if x != nil {
+		return x.Held
 	}
 	return 0
 }
@@ -266,7 +297,7 @@ var File_bcast_proto protoreflect.FileDescriptor
 
 const file_bcast_proto_rawDesc = "" +
 	"\n" +
-	"\vbcast.proto\x12\acrdt.pb\x1a\vdelta.proto\"\x86\x02\n" +
+	"\vbcast.proto\x12\acrdt.pb\x1a\vdelta.proto\"\xcc\x02\n" +
 	"\rCRDTBroadcast\x12#\n" +
 	"\x05Heads\x18\x01 \x03(\v2\r.crdt.pb.HeadR\x05Heads\x12\x14\n" +
 	"\x05since\x18\x02 \x01(\x04R\x05since\x12\x10\n" +
@@ -275,11 +306,15 @@ const file_bcast_proto_rawDesc = "" +
 	"\vincarnation\x18\x05 \x01(\fR\vincarnation\x12*\n" +
 	"\averdict\x18\x06 \x01(\v2\x10.crdt.pb.VerdictR\averdict\x12\"\n" +
 	"\x04acks\x18\a \x03(\v2\x0e.crdt.pb.EntryR\x04acks\x12\x18\n" +
-	"\ahorizon\x18\b \x01(\x04R\ahorizon\"G\n" +
+	"\ahorizon\x18\b \x01(\x04R\ahorizon\x12*\n" +
+	"\acontext\x18\t \x01(\v2\x10.crdt.pb.ContextR\acontext\x12\x18\n" +
+	"\asettled\x18\n" +
+	" \x01(\bR\asettled\"[\n" +
 	"\aVerdict\x12\x0e\n" +
 	"\x02to\x18\x01 \x01(\fR\x02to\x12\x16\n" +
 	"\x06rebase\x18\x02 \x01(\bR\x06rebase\x12\x14\n" +
-	"\x05since\x18\x03 \x01(\x04R\x05since\"i\n" +
+	"\x05since\x18\x03 \x01(\x04R\x05since\x12\x12\n" +
+	"\x04held\x18\x04 \x01(\x04R\x04held\"i\n" +
 	"\x04Head\x12\x10\n" +
 	"\x03Cid\x18\x01 \x01(\fR\x03Cid\x12\x1e\n" +
 	"\x03dot\x18\x03 \x01(\v2\f.crdt.pb.DotR\x03dot\x12\x0e\n" +
@@ -304,18 +339,20 @@ var file_bcast_proto_goTypes = []any{
 	(*Verdict)(nil),       // 1: crdt.pb.Verdict
 	(*Head)(nil),          // 2: crdt.pb.Head
 	(*Entry)(nil),         // 3: crdt.pb.Entry
-	(*Dot)(nil),           // 4: crdt.pb.Dot
+	(*Context)(nil),       // 4: crdt.pb.Context
+	(*Dot)(nil),           // 5: crdt.pb.Dot
 }
 var file_bcast_proto_depIdxs = []int32{
 	2, // 0: crdt.pb.CRDTBroadcast.Heads:type_name -> crdt.pb.Head
 	1, // 1: crdt.pb.CRDTBroadcast.verdict:type_name -> crdt.pb.Verdict
 	3, // 2: crdt.pb.CRDTBroadcast.acks:type_name -> crdt.pb.Entry
-	4, // 3: crdt.pb.Head.dot:type_name -> crdt.pb.Dot
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	4, // 3: crdt.pb.CRDTBroadcast.context:type_name -> crdt.pb.Context
+	5, // 4: crdt.pb.Head.dot:type_name -> crdt.pb.Dot
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_bcast_proto_init() }

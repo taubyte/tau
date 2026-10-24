@@ -317,6 +317,18 @@ type Datastore struct {
 	// merged is when this replica last covered more of each incarnation:
 	// its heartbeats acknowledge those to their authors.
 	merged map[string]time.Duration
+	// frontiers are what each live peer last said it holds, contactFrom
+	// when this replica began hearing the fleet without a break, grounded
+	// whether it knows it has heard every live peer, settledSince the fleet
+	// time it last held all they held, forgotten the entries it dropped by
+	// expiry lately, and oks the verdicts that vouched for it while it
+	// rejoins (see settle.go).
+	frontiers    map[string]*frontier
+	contactFrom  time.Duration
+	grounded     bool
+	settledSince uint64
+	forgotten    map[string]*forgottenEntry
+	oks          map[string]*ok
 	// compactDue asks the next maintenance for a snapshot.
 	compactDue bool
 	// lows are lower bounds, kept so the frequent passes skip scans that
@@ -389,6 +401,9 @@ func NewDatastore(
 		ccChanged:        make(chan struct{}),
 		answered:         map[string]time.Duration{},
 		merged:           map[string]time.Duration{},
+		frontiers:        map[string]*frontier{},
+		forgotten:        map[string]*forgottenEntry{},
+		oks:              map[string]*ok{},
 	}
 	dstore.ttl.Store(durationMillis(opts.Retention))
 	dstore.times = timesOf(opts)
@@ -478,6 +493,9 @@ func (store *Datastore) open(ctx context.Context) error {
 		return err
 	}
 	if store.horizon, err = readMillis(ctx, store.store, store.horizonKey()); err != nil {
+		return err
+	}
+	if store.settledSince, err = readMillis(ctx, store.store, store.settledKey()); err != nil {
 		return err
 	}
 	store.sinceUp = store.times.up()
@@ -807,7 +825,7 @@ func (store *Datastore) rebroadcastHeads(ctx context.Context) {
 	clear(store.seenHeads)
 	store.seenHeadsMux.Unlock()
 
-	if err := store.send(ctx, headsToBroadcast); err != nil {
+	if err := store.send(ctx, headsToBroadcast, true); err != nil {
 		store.logger.Warnf("broadcast failed: %v", err)
 	}
 }
@@ -1143,6 +1161,7 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 			store.dropFailed(ctx, current, nil)
 			return nil, fmt.Errorf("error merging delta from %s: %w", current, err)
 		}
+		store.afterMerge(ctx)
 		return walk, nil
 	}
 	if d.replica != store.replica {
@@ -1184,7 +1203,17 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 			store.logger.Warnf("error forgetting what snapshot %s shows reached the fleet: %s", current, err)
 		}
 	}
+	store.afterMerge(ctx)
 	return walk, nil
+}
+
+// afterMerge is what a merge of another replica's block may complete: a rejoin
+// held open until this replica holds what a judge vouched with. The caller
+// holds store.mu.
+func (store *Datastore) afterMerge(ctx context.Context) {
+	if err := store.endRejoinIfHeld(ctx); err != nil {
+		store.logger.Errorf("ending the rejoin: %s", err)
+	}
 }
 
 // unmerged settles a block that will never be merged: nothing waits for it
@@ -1697,17 +1726,18 @@ func (store *Datastore) broadcastHeads(ctx context.Context, heads []Head) error 
 	if len(heads) == 0 { // nothing to announce
 		return nil
 	}
-	return store.send(ctx, heads)
+	return store.send(ctx, heads, false)
 }
 
-// send broadcasts heads, none included, with this replica's fleet time.
-func (store *Datastore) send(ctx context.Context, heads []Head) error {
+// send broadcasts heads, none included, with this replica's fleet time, and
+// its frontier when it is a heartbeat.
+func (store *Datastore) send(ctx context.Context, heads []Head, beat bool) error {
 	if store.broadcaster == nil { // offline
 		return nil
 	}
 	store.logger.Debugf("broadcasting %s", heads)
 
-	bcastBytes, err := store.encodeBroadcast(heads)
+	bcastBytes, err := store.encodeBroadcast(ctx, heads, beat)
 	if err != nil {
 		return err
 	}

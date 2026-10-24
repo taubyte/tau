@@ -22,7 +22,6 @@ import (
 	query "github.com/ipfs/go-datastore/query"
 	dstest "github.com/ipfs/go-datastore/test"
 	ipld "github.com/ipfs/go-ipld-format"
-	"google.golang.org/protobuf/proto"
 )
 
 // fetchThroughDAGSvc is one replica's own blockstore that, on a local miss,
@@ -215,10 +214,7 @@ func syncReplicaHeads(t testing.TB, from, to *Datastore) {
 // rebroadcast interval.
 func hear(t testing.TB, dst, src *Datastore) {
 	t.Helper()
-	src.mu.Lock()
-	b := src.message(nil, nil)
-	src.mu.Unlock()
-	data, err := proto.Marshal(b)
+	data, err := src.encodeBroadcast(context.Background(), nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}

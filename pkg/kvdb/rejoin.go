@@ -19,20 +19,24 @@ import (
 // on its own word (T2 A1), and its own clock cannot say how long it was away.
 //
 // So a replica that opens with anything heard from a fleet, or that has heard
-// no peer that is not rejoining for three rebroadcast intervals, is rejoining: it records the fleet
-// time it had heard before (its gap_from), reports that and nothing later,
+// no peer that is not rejoining for three rebroadcast intervals, is
+// rejoining: it records the fleet time as of which it last held all its
+// peers held (its gap_from, see settle.go), reports that and nothing later,
 // walks nobody's heads, and nobody walks its. Every broadcast says so. A peer
-// that can judge answers: ok when it can still refute anything removed since
-// the gap_from (see stale), rebase when it cannot. Ok ends the gap. Rebase
-// replaces everything the replica holds with the judge's state and writes
-// again, under a new incarnation, what it wrote that the judge does not
-// cover: its own operations are never lost to a rebase.
+// that can judge answers: ok when it holds all the fleet holds and can still
+// refute anything removed since the gap_from (see stale), rebase when it
+// cannot refute it. An ok ends the gap once the replica holds what the judge
+// vouched with. A rebase replaces everything the replica holds with the
+// judge's state and writes again, under a new incarnation, what it wrote that
+// the judge does not cover: its own operations are never lost to a rebase.
 //
-// A verdict is taken only from a judge that has heard at least as recent a
-// fleet as the replica had (authoritative), whose clock is not behind the
-// replica's, and only for the incarnation it names. A replica that has never
-// heard a fleet does not judge, and a rejoining one judges only while it hears
-// no live peer: it may be the one that is stale.
+// An ok is taken only from a judge that held all the fleet held as of a
+// fleet time at least as recent as the gap_from, a rebase only from one that
+// has heard a fleet that recent (authoritative), either only from a judge
+// whose clock is not behind the replica's, and only for the incarnation it
+// names. A replica that has never heard a fleet does not judge, and a
+// rejoining one judges only while it hears no live peer: it may be the one
+// that is stale.
 //
 // Every broadcast from a replica that is not rejoining is judged too: one
 // that reports a fleet time this replica could no longer vouch for is told to
@@ -69,12 +73,15 @@ type message struct {
 	incarnation string
 	verdict     *verdict
 	acks        *causalContext
+	context     *causalContext
+	settled     bool
 }
 
 type verdict struct {
 	to     string
 	rebase bool
 	since  uint64
+	held   uint64
 }
 
 // decodeBroadcast parses a CRDTBroadcast received via pubsub.
@@ -85,6 +92,9 @@ func (store *Datastore) decodeBroadcast(data []byte) (message, error) {
 	}
 	msg := message{since: b.GetSince(), now: b.GetNow(), horizon: b.GetHorizon(), rejoining: b.GetRejoining(), incarnation: string(b.GetIncarnation())}
 	msg.acks = contextFromPB(&pb.Context{Vector: b.GetAcks()})
+	if b.GetContext() != nil {
+		msg.context, msg.settled = contextFromPB(b.GetContext()), b.GetSettled()
+	}
 	for _, h := range b.GetHeads() {
 		c, err := cid.Cast(h.GetCid())
 		if err != nil {
@@ -93,7 +103,7 @@ func (store *Datastore) decodeBroadcast(data []byte) (message, error) {
 		msg.heads = append(msg.heads, Head{Cid: c, Dot: dotFromPB(h.GetDot()), At: h.GetAt(), TTL: h.GetTtl()})
 	}
 	if v := b.GetVerdict(); v != nil {
-		msg.verdict = &verdict{to: string(v.GetTo()), rebase: v.GetRebase(), since: v.GetSince()}
+		msg.verdict = &verdict{to: string(v.GetTo()), rebase: v.GetRebase(), since: v.GetSince(), held: v.GetHeld()}
 	}
 	return msg, nil
 }
@@ -116,7 +126,8 @@ func (store *Datastore) message(heads []Head, v *verdict) *pb.CRDTBroadcast {
 		b.Heads = append(b.Heads, &pb.Head{Cid: h.Cid.Bytes(), Dot: h.Dot.toPB(), At: h.At, Ttl: h.TTL})
 	}
 	if v != nil {
-		b.Verdict = &pb.Verdict{To: []byte(v.to), Rebase: v.rebase, Since: v.since}
+		b.Verdict = &pb.Verdict{To: []byte(v.to), Rebase: v.rebase, Since: v.since, Held: v.held}
+		b.Context = store.cc.toPB()
 	}
 	// What this replica merged lately, of whom: the authors stop keeping it
 	// for a rebase.
@@ -138,9 +149,15 @@ func (store *Datastore) message(heads []Head, v *verdict) *pb.CRDTBroadcast {
 	return b
 }
 
-func (store *Datastore) encodeBroadcast(heads []Head) ([]byte, error) {
+// encodeBroadcast is a broadcast of heads; a heartbeat of a replica that has
+// heard a fleet and is not rejoining carries its frontier too.
+func (store *Datastore) encodeBroadcast(ctx context.Context, heads []Head, beat bool) ([]byte, error) {
 	store.mu.Lock()
 	b := store.message(heads, nil)
+	if beat && !store.rejoining && store.since != 0 {
+		b.Settled = store.settle(ctx)
+		b.Context = store.cc.toPB()
+	}
 	store.mu.Unlock()
 	return proto.Marshal(b)
 }
@@ -183,14 +200,19 @@ func (store *Datastore) loadRejoin(ctx context.Context) error {
 	if store.since == 0 {
 		return nil
 	}
-	return store.startRejoin(ctx)
+	return store.startRejoin(ctx, store.held())
 }
 
-// startRejoin begins a rejoin from the fleet time last heard, recording it
-// before anything heard can move it. The caller holds store.mu or is
-// opening.
-func (store *Datastore) startRejoin(ctx context.Context) error {
-	gap := store.since
+// held is the fleet time what this replica holds is as recent as: the last
+// one it held all its live peers held at, or the earliest of all if it never
+// did. The caller holds store.mu or is opening.
+func (store *Datastore) held() uint64 {
+	return max(store.settledSince, 1)
+}
+
+// startRejoin begins a rejoin from gap, recording it before anything heard
+// can move it. The caller holds store.mu or is opening.
+func (store *Datastore) startRejoin(ctx context.Context, gap uint64) error {
 	if err := store.store.Put(ctx, store.rejoinKey(), binary.AppendUvarint(nil, gap)); err != nil {
 		return err
 	}
@@ -198,7 +220,7 @@ func (store *Datastore) startRejoin(ctx context.Context) error {
 		return err
 	}
 	store.rejoining, store.gapFrom = true, gap
-	store.logger.Warnf("rejoining: last heard the fleet at %d", gap)
+	store.logger.Warnf("rejoining: held what the fleet held at %d", gap)
 	return nil
 }
 
@@ -214,6 +236,7 @@ func (store *Datastore) endRejoin(ctx context.Context, since uint64) error {
 	}
 	store.rejoining, store.gapFrom = false, 0
 	store.since, store.sinceUp = since, store.times.up()
+	clear(store.oks)
 	// The judge was heard: the next gap counts from here.
 	store.lastHeard = store.sinceUp
 	return nil
@@ -231,6 +254,9 @@ func (store *Datastore) checkGap(ctx context.Context) error {
 		return nil
 	}
 	if store.rejoining {
+		if err := store.endRejoinIfHeld(ctx); err != nil || !store.rejoining {
+			return err
+		}
 		g := gapIntervals * store.opts.RebroadcastInterval
 		up := store.times.up()
 		if store.anyHeard != 0 && up-store.anyHeard <= g && (store.fleetHeard == 0 || up-store.fleetHeard > g) {
@@ -249,7 +275,7 @@ func (store *Datastore) rejoinIfAway(ctx context.Context) error {
 	if store.times.up()-store.lastHeard <= gapIntervals*store.opts.RebroadcastInterval {
 		return nil
 	}
-	return store.startRejoin(ctx)
+	return store.startRejoin(ctx, store.held())
 }
 
 // plausible reports whether a peer's clock, read a delivery ago, agrees with
@@ -289,6 +315,9 @@ func (store *Datastore) handleBroadcast(ctx context.Context, msg message) {
 	// behind tells no fleet time (hearFleet clamps it away), so a replica
 	// hearing only such a peer is as cut off as one hearing nobody.
 	if !msg.rejoining && msg.since != 0 && store.plausible(msg.now) {
+		if store.liveHeard == 0 || up-store.liveHeard > gapIntervals*store.opts.RebroadcastInterval {
+			store.contactFrom = up
+		}
 		store.lastHeard = up
 		store.liveHeard = up
 		// What the fleet forgot is known from the moment it is heard, not
@@ -298,6 +327,7 @@ func (store *Datastore) handleBroadcast(ctx context.Context, msg message) {
 			store.logger.Errorf("hearing the horizon: %s", err)
 		}
 	}
+	store.heardFrom(msg.incarnation)
 	gen := store.generation
 	err := store.reached(ctx, msg.acks)
 	store.mu.Unlock()
@@ -384,6 +414,7 @@ func (store *Datastore) judge(ctx context.Context, msg message) (bool, []byte, e
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	if !msg.rejoining && store.rejoining {
+		store.hearFrontier(msg)
 		return false, nil, nil
 	}
 	if !msg.rejoining && msg.since == 0 {
@@ -397,20 +428,39 @@ func (store *Datastore) judge(ctx context.Context, msg message) (bool, []byte, e
 	if store.reportedSince() < msg.since {
 		// The sender has heard a more recent fleet: nothing to judge, and
 		// nothing stale to walk.
+		if !msg.rejoining {
+			store.hearFrontier(msg)
+		}
 		return !msg.rejoining, nil, nil
 	}
 	stale, err := store.stale(ctx, msg.since)
 	if err != nil {
 		return false, nil, err
 	}
-	if !msg.rejoining && !stale {
-		return true, nil, nil
+	if !msg.rejoining {
+		if !stale {
+			store.hearFrontier(msg)
+			return true, nil, nil
+		}
+		// What it holds is not walked, so it is not waited for either.
+		delete(store.frontiers, msg.incarnation)
+	}
+	// A replica whose clock disagrees with this one's cannot hold what this
+	// one holds, and a rebase would only draw it a new incarnation again and
+	// again: its clock hurts only itself.
+	if !store.plausible(msg.now) {
+		return false, nil, nil
+	}
+	held, vouch, settled := store.vouching(ctx)
+	if !stale && !vouch {
+		return false, nil, nil
 	}
 	if !store.answering(msg.incarnation) {
 		return false, nil, nil
 	}
 	hs, _ := store.heads.List()
-	answer := store.message(hs, &verdict{to: msg.incarnation, rebase: stale, since: store.reportedSince()})
+	answer := store.message(hs, &verdict{to: msg.incarnation, rebase: stale, since: store.reportedSince(), held: held})
+	answer.Settled = settled
 	if stale {
 		store.logger.Warnf("%x last heard the fleet at %d: telling it to rebase", msg.incarnation, msg.since)
 	}
@@ -452,27 +502,32 @@ func (store *Datastore) answering(inc string) bool {
 func (store *Datastore) onVerdict(ctx context.Context, msg message) error {
 	v := msg.verdict
 	store.mu.Lock()
-	if v.to != store.replica || v.since < store.reportedSince() || msg.now+store.times.window < store.clock() {
+	if v.to != store.replica || msg.now+store.times.window < store.clock() {
 		store.mu.Unlock()
 		return nil
 	}
 	if !v.rebase {
-		if !store.rejoining {
+		// The judge must hold what this replica held when it left, and the
+		// rejoin ends once this replica holds what the judge vouched with,
+		// not when the ok arrives: a judge never heard again leaves it
+		// rejoining, for the next judge to answer.
+		if !store.rejoining || msg.context == nil || v.held < store.reportedSince() {
 			store.mu.Unlock()
 			return nil
 		}
-		err := store.endRejoin(ctx, v.since)
+		store.oks[msg.incarnation] = &ok{since: v.since, held: v.held, cc: msg.context, heard: store.times.up()}
 		gen := store.generation
 		store.mu.Unlock()
-		if err != nil {
-			return err
-		}
-		store.logger.Infof("rejoined: %x vouched for what this replica holds", msg.incarnation)
 		store.walkHeads(ctx, gen, msg.heads)
+		store.mu.Lock()
+		defer store.mu.Unlock()
+		return store.endRejoinIfHeld(ctx)
+	}
+	if v.since < store.reportedSince() {
+		store.mu.Unlock()
 		return nil
 	}
-	store.mu.Unlock()
-	return store.rebase(ctx, v.since, msg.heads)
+	return store.rebase(ctx, v, msg)
 }
 
 // heartbeat is one rebroadcast: start a rejoin if no peer was heard for G,
@@ -571,24 +626,52 @@ func (store *Datastore) reached(ctx context.Context, theirs *causalContext) erro
 // the judge's heads; and writes the kept operations again: a put as a new
 // element, a removal with its target. The marker it leaves until the writes
 // are done makes a crash in between write them again at the next open.
-func (store *Datastore) rebase(ctx context.Context, since uint64, heads []Head) error {
-	store.mu.Lock()
+//
+// The caller holds store.mu, which rebase releases. Only the drop is done
+// before it returns; the rest goes on in the background, so a judge that
+// vanishes leaves nothing waiting on its heads but that walk.
+func (store *Datastore) rebase(ctx context.Context, v *verdict, msg message) error {
 	if store.closed {
 		store.mu.Unlock()
 		return ErrClosed
 	}
-	store.logger.Warnf("rebasing on a judge that heard the fleet at %d", since)
-	if err := store.dropAllButOwn(ctx, since); err != nil {
+	store.logger.Warnf("rebasing on a judge that heard the fleet at %d", v.since)
+	if err := store.dropAllButOwn(ctx, v.since); err != nil {
 		store.mu.Unlock()
 		return err
 	}
 	gen := store.generation
 	store.mu.Unlock()
+	if store.opts.manual {
+		return store.rebuild(ctx, gen, v.held, msg)
+	}
+	store.wg.Add(1)
+	go func() {
+		defer store.wg.Done()
+		if err := store.rebuild(ctx, gen, v.held, msg); err != nil && ctx.Err() == nil {
+			store.logger.Errorf("rebase: %s", err)
+		}
+	}()
+	return nil
+}
 
-	if err := store.handleBranchAt(ctx, gen, linksOf(heads)); err != nil {
+// rebuild walks the judge's heads, takes the time the judge held all the
+// fleet held at once it holds what the judge did, then writes again the kept
+// operations and compacts.
+func (store *Datastore) rebuild(ctx context.Context, gen, held uint64, msg message) error {
+	if err := store.handleBranchAt(ctx, gen, linksOf(msg.heads)); err != nil {
 		store.logger.Warnf("rebase: the judge's state is not all here yet: %s", err)
 		store.MarkDirty(ctx)
 	}
+	store.mu.Lock()
+	if gen == store.generation && held != 0 && msg.context != nil && store.holds(msg.context) {
+		if err := store.setSettled(ctx, held); err != nil {
+			store.mu.Unlock()
+			return err
+		}
+		store.grounded = true
+	}
+	store.mu.Unlock()
 	if err := store.reissue(ctx); err != nil {
 		return err
 	}
@@ -710,6 +793,7 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 	}
 	store.stageContext(t, newCausalContext(), removed)
 	t.put(store.sinceKey(), binary.AppendUvarint(nil, since))
+	t.del(store.settledKey())
 	t.put(store.rebaseKey(), nil)
 	if err := t.commit(ctx); err != nil {
 		return err
@@ -731,6 +815,8 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 	store.horizon = 0
 	store.since, store.sinceUp = since, store.times.up()
 	store.rejoining, store.gapFrom = false, 0
+	store.settledSince = 0
+	clear(store.oks)
 	store.lastHeard = store.sinceUp
 	store.seenHeadsMux.Lock()
 	clear(store.seenHeads)

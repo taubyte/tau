@@ -176,6 +176,18 @@ func TestAVerdictFromAJudgeBehindIsIgnored(t *testing.T) {
 	slow.r.since = c.r.reportedSinceNow() // as if it had heard as much as c
 	slow.r.mu.Unlock()
 	st.deliver(t, c, slow)
+	if msgs := slow.out.take(); len(msgs) != 0 {
+		t.Fatal("a judge answered a replica whose clock it cannot trust")
+	}
+	// An ok it sent all the same is not taken.
+	slow.r.mu.Lock()
+	ok := slow.r.message(nil, &verdict{to: c.incarnation(), since: slow.r.since, held: slow.r.since})
+	slow.r.mu.Unlock()
+	data, err := proto.Marshal(ok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slow.out.msgs = [][]byte{data}
 	st.deliver(t, slow, c)
 	if !c.rejoining() {
 		t.Fatal("a stale replica took an ok from a judge whose clock is behind")
@@ -362,7 +374,7 @@ func TestAJudgeThatHeardLessIsNotTrusted(t *testing.T) {
 		t.Fatal("a judge that heard an older fleet than the replica answered it")
 	}
 	behind.r.mu.Lock()
-	ok := behind.r.message(nil, &verdict{to: c.incarnation(), since: gap - 1})
+	ok := behind.r.message(nil, &verdict{to: c.incarnation(), since: gap - 1, held: gap - 1})
 	behind.r.mu.Unlock()
 	data, err := proto.Marshal(ok)
 	if err != nil {
@@ -372,6 +384,20 @@ func TestAJudgeThatHeardLessIsNotTrusted(t *testing.T) {
 	st.deliver(t, behind, c)
 	if !c.rejoining() {
 		t.Fatal("a rejoining replica took an ok from a judge that heard an older fleet than it had")
+	}
+	// Nor from one that has heard a recent fleet and holds what the fleet
+	// held only as of before c left it.
+	behind.r.mu.Lock()
+	ok = behind.r.message(nil, &verdict{to: c.incarnation(), since: gap, held: gap - 1})
+	behind.r.mu.Unlock()
+	data, err = proto.Marshal(ok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	behind.out.msgs = [][]byte{data}
+	st.deliver(t, behind, c)
+	if !c.rejoining() {
+		t.Fatal("a rejoining replica took an ok from a judge that held the fleet's state only as of before it left")
 	}
 	st.exchange(t, a, c)
 	if c.rejoining() {
@@ -384,11 +410,18 @@ func TestAJudgeThatHeardLessIsNotTrusted(t *testing.T) {
 // time and not at its clock, so its removals are kept as long as anyone's.
 func TestASlowAuthorStampsTheFleetTimeItHeard(t *testing.T) {
 	st := newSimTime()
-	a, b, slow := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "slow", -simRetention/2)
+	a, b, slow := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "slow", -5*simS/2)
 	put(t, a.r, "/k", "v")
 	// Its own value: what the others write is ahead of its clock, and waits.
 	put(t, slow.r, "/s", "v")
 	st.exchange(t, a, b, slow)
+	// A rejoin ends once the replica holds its judge's state, and the
+	// judge's blocks carry the fleet's time, ahead of this clock: they must
+	// first age into its reach.
+	for range gapIntervals + 3 {
+		st.advance(simRI)
+		st.exchange(t, a, b, slow)
+	}
 	slow.reopen(t)
 	st.exchange(t, a, b, slow)
 	if slow.rejoining() {
