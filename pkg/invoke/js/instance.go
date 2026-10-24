@@ -48,8 +48,10 @@ type instance struct {
 	waits    bool
 
 	// gate is held by whatever uses the realm: a request, the waitUntil work
-	// it left running, or Close, which takes it for good.
-	gate chan struct{}
+	// it left running, or Close, which takes it for good. alarm is used under
+	// it.
+	gate  chan struct{}
+	alarm alarm
 
 	// life ends when Close starts, and ends whatever holds the gate with it.
 	life    context.Context
@@ -370,14 +372,21 @@ func (i *instance) bound(ctx context.Context, deadline time.Time) (context.Conte
 	}
 }
 
-// alarm interrupts the realm at the deadline, whatever is running in it.
+// alarm interrupts the realm at the deadline, whatever is running in it. An
+// instance has one, armed again for every call: an alarm that went off
+// retires the instance, so it never goes off twice.
 type alarm struct {
 	timer *time.Timer
 	fired chan struct{}
 }
 
 func (i *instance) arm(deadline time.Time) *alarm {
-	a := &alarm{fired: make(chan struct{})}
+	a := &i.alarm
+	if a.timer != nil {
+		a.timer.Reset(time.Until(deadline))
+		return a
+	}
+	a.fired = make(chan struct{})
 	a.timer = time.AfterFunc(time.Until(deadline), func() {
 		i.rt.Interrupt()
 		close(a.fired)
