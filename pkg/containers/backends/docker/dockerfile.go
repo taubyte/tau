@@ -3,334 +3,377 @@ package docker
 import (
 	"archive/tar"
 	"bytes"
-	"compress/bzip2"
-	"compress/gzip"
-	"encoding/binary"
+	"context"
 	"errors"
 	"fmt"
 	"io"
-	"path"
+	"regexp"
 	"strings"
+	"unicode"
 
-	"github.com/klauspost/compress/zstd"
+	"github.com/containerd/platforms"
+	"github.com/moby/buildkit/frontend/dockerfile/command"
+	"github.com/moby/buildkit/frontend/dockerfile/parser"
+	"github.com/moby/buildkit/frontend/dockerfile/shell"
+	"github.com/moby/moby/client"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/taubyte/tau/pkg/containers/reserve"
 )
 
-// remoteADD reports whether a Dockerfile asks the daemon to fetch a URL.
+// restrictContext is what a restricted build sends the daemon: the build
+// context spooled under dir, its Dockerfile checked, and the Dockerfile's base
+// images pinned to the ones whose build triggers were checked.
 //
-// ADD is the one instruction the daemon performs itself, in its own network
-// namespace, rather than in a container. The egress firewall matches the network
-// a restricted container runs on, so it does not and cannot cover a fetch the
-// daemon makes on the build's behalf — the destination would be whatever the
-// Dockerfile names. COPY does the same job for files that are in the context,
-// which is where a build's own files are.
-func remoteADD(dockerfile []byte) (string, bool) {
-	for _, line := range instructions(dockerfile) {
-		fields := strings.Fields(line)
-		if len(fields) < 2 || !strings.EqualFold(fields[0], "ADD") {
-			continue
-		}
-		for _, field := range fields[1:] {
-			if strings.HasPrefix(field, "--") {
-				continue // a flag, not a source
-			}
-			if strings.Contains(field, "://") {
-				return field, true
-			}
-		}
+// A RESTRICTED BUILD'S EGRESS IS ITS NETWORK, and the daemon fetches some things
+// itself, in its own network namespace, which the firewall does not and cannot
+// cover. With the classic builder, which a restricted build is pinned to, that is
+// the source of an ADD that is a URL once its variables are expanded; and an ADD
+// runs wherever an ONBUILD trigger runs, which is at the FROM of a later stage
+// built from the stage that declared it, and at the FROM of an image that carries
+// one. So such an ADD is refused in the Dockerfile, in its ONBUILD triggers, and in
+// the triggers of every base image. A base image is pulled from a registry the
+// same way the image of any container is, by the daemon's registry
+// configuration; that is not the build reaching the network, and is not checked.
+//
+// THE BASE IMAGE IS CHECKED BY ID AND BUILT BY ID: a tag can be pulled or retagged
+// between the check and the build, and the daemon would build FROM an image whose
+// triggers nobody read. The Dockerfile is appended to the context with each FROM
+// naming the image that was checked, on the lines the original FROM took, at the
+// name the daemon opens it at. A build that copies its Dockerfile into the image
+// copies that one.
+func (b *DockerBackend) restrictContext(ctx context.Context, buildContext io.Reader, name, dir string, floor reserve.Floor) (*buildContext, error) {
+	spooled, err := spoolContext(buildContext, dir, floor)
+	if err != nil {
+		return nil, err
 	}
-	return "", false
+	if err := b.pinDockerfile(ctx, spooled, name); err != nil {
+		spooled.remove()
+		return nil, err
+	}
+	return spooled, nil
 }
 
-// instructions returns a Dockerfile's instruction lines, comments dropped and
-// continuations joined, which is as much parsing as remoteADD needs.
-func instructions(dockerfile []byte) []string {
+func (b *DockerBackend) pinDockerfile(ctx context.Context, spooled *buildContext, name string) error {
+	header, dockerfile, at, err := spooled.dockerfile(name)
+	if err != nil || header == nil {
+		return err
+	}
+	pinned, err := b.pin(ctx, dockerfile)
+	if err != nil {
+		return err
+	}
+	return spooled.put(&tar.Header{
+		Typeflag: tar.TypeReg,
+		Name:     at,
+		Mode:     header.Mode,
+		Uid:      header.Uid,
+		Gid:      header.Gid,
+		Uname:    header.Uname,
+		Gname:    header.Gname,
+		ModTime:  header.ModTime,
+		Size:     int64(len(pinned)),
+	}, bytes.NewReader(pinned), nil)
+}
+
+// pin answers the Dockerfile with each FROM naming what was checked.
+//
+// Every FROM is written out again, an external image as its id, a stage and
+// scratch as their names, with nothing left for the daemon to expand: what the
+// daemon resolves is then what was resolved here, whatever its parser version
+// makes of a variable.
+func (b *DockerBackend) pin(ctx context.Context, dockerfile []byte) ([]byte, error) {
+	parsed, err := checkDockerfile(dockerfile)
+	if err != nil {
+		return nil, err
+	}
+
+	lines := strings.Split(string(dockerfile), "\n")
+	lex := shell.NewLex(parsed.EscapeToken)
+	stages := map[string]bool{}
 	var (
-		out     []string
-		current strings.Builder
+		meta     []string
+		seenFrom bool
 	)
+	for _, n := range parsed.AST.Children {
+		switch strings.ToLower(n.Value) {
+		case command.Arg:
+			if !seenFrom {
+				if meta, err = metaArgs(lex, n, meta); err != nil {
+					return nil, err
+				}
+			}
+		case command.From:
+			seenFrom = true
+			from, stage, err := b.from(ctx, lex, n, meta, stages)
+			if err != nil {
+				return nil, err
+			}
+			lines[n.StartLine-1] = from
+			for line := n.StartLine; line < n.EndLine; line++ {
+				lines[line] = ""
+			}
+			if stage != "" {
+				stages[stage] = true
+			}
+		}
+	}
 
-	for _, raw := range strings.Split(string(dockerfile), "\n") {
-		line := strings.TrimSpace(strings.TrimSuffix(raw, "\r"))
-		if line == "" || strings.HasPrefix(line, "#") {
+	pinned := []byte(strings.Join(lines, "\n"))
+	reparsed, err := checkDockerfile(pinned)
+	if err != nil {
+		return nil, err
+	}
+	if len(reparsed.AST.Children) != len(parsed.AST.Children) {
+		return nil, errors.New("restricted egress: the Dockerfile with its base images pinned reads as other instructions")
+	}
+	return pinned, nil
+}
+
+// metaArgs adds an ARG before the first FROM to what a FROM is expanded with:
+// its default, expanded with the ones before it. A build here passes no build
+// arguments, so the default is the value.
+func metaArgs(lex *shell.Lex, n *parser.Node, meta []string) ([]string, error) {
+	for word := n.Next; word != nil; word = word.Next {
+		key, value, ok := strings.Cut(word.Value, "=")
+		if !ok {
 			continue
 		}
-
-		if strings.HasSuffix(line, "\\") {
-			current.WriteString(strings.TrimSuffix(line, "\\"))
-			current.WriteString(" ")
-			continue
+		value, err := lex.ProcessWord(value, meta)
+		if err != nil {
+			return nil, fmt.Errorf("restricted egress: expanding `%s`: %w", n.Original, err)
 		}
-
-		current.WriteString(line)
-		out = append(out, current.String())
-		current.Reset()
+		meta = append(meta, key+"="+value)
 	}
-
-	if current.Len() > 0 {
-		out = append(out, current.String())
-	}
-	return out
+	return meta, nil
 }
 
-// readDockerfile returns the Dockerfile the daemon builds out of a build
-// context, with the context's bytes so the caller can still hand them to it.
-//
-// IT READS THE CONTEXT THE WAY THE DAEMON UNPACKS IT, because the Dockerfile is
-// read here only to be checked, and a check of any file but the one built
-// checks nothing. The daemon decompresses the context, unpacks its entries in
-// order so a later one replaces an earlier one of the same name, follows links
-// inside the context both while it unpacks and when it opens the Dockerfile,
-// and opens "dockerfile" when the default "Dockerfile" is not there.
-//
-// WHAT CANNOT BE READ THE SAME WAY IS REFUSED: an xz context, an entry the
-// daemon would refuse to unpack, and a Dockerfile that is not a regular file.
-// A context with no Dockerfile at all answers none, which is the daemon's error
-// to give.
-func readDockerfile(context io.Reader, name string) (dockerfile, buffered []byte, err error) {
-	buffered, err = io.ReadAll(context)
-	if err != nil {
-		return nil, nil, fmt.Errorf("reading build context: %w", err)
-	}
+// stageName is what the daemon takes as the name of a build stage.
+var stageName = regexp.MustCompile(`^[a-z][a-z0-9-_.]*$`)
 
-	root := &node{kind: tar.TypeDir, children: map[string]*node{}}
-	err = eachEntry(buffered, func(index int, header *tar.Header, _ io.Reader) (bool, error) {
-		return true, root.place(header, index)
-	})
-	if err != nil {
-		return nil, buffered, fmt.Errorf("reading build context: %w", err)
+// from resolves one FROM the way the classic builder does: an earlier stage of
+// that name, scratch, or an image, used where it is and pulled where it is not.
+// It answers the FROM to build instead and the name of the stage it begins.
+func (b *DockerBackend) from(ctx context.Context, lex *shell.Lex, n *parser.Node, meta []string, stages map[string]bool) (string, string, error) {
+	var words []string
+	for word := n.Next; word != nil; word = word.Next {
+		words = append(words, word.Value)
 	}
-
-	file, err := root.dockerfile(name)
-	if err != nil || file == nil {
-		return nil, buffered, err
-	}
-	err = eachEntry(buffered, func(index int, _ *tar.Header, content io.Reader) (bool, error) {
-		if index != file.entry {
-			return true, nil
+	var stage string
+	switch {
+	case len(words) == 1:
+	case len(words) == 3 && strings.EqualFold(words[1], "AS"):
+		stage = strings.ToLower(words[2])
+		if !stageName.MatchString(stage) || stages[stage] {
+			return "", "", fmt.Errorf("restricted egress: `%s` names its stage in a way the daemon refuses", n.Original)
 		}
-		dockerfile, err = io.ReadAll(content)
-		return false, err
-	})
-	if err != nil {
-		return nil, buffered, fmt.Errorf("reading %s from the build context: %w", name, err)
-	}
-	return dockerfile, buffered, nil
-}
-
-// node is one name in a build context as the daemon leaves it unpacked.
-type node struct {
-	// kind is tar.TypeDir, tar.TypeReg or tar.TypeSymlink, and zero for a
-	// device or a fifo, which nothing here reads.
-	kind byte
-
-	// link is where a symlink points.
-	link string
-
-	// entry is which entry of the context a regular file's bytes are. A hard
-	// link shares it, so the bytes are the ones the target had when it was
-	// linked, as they are on disk.
-	entry int
-
-	// children is a directory's.
-	children map[string]*node
-}
-
-// place unpacks one entry's name into the tree under root.
-func (root *node) place(header *tar.Header, index int) error {
-	if header.Typeflag == tar.TypeXGlobalHeader {
-		return nil
-	}
-	name, err := local(header.Name)
-	if err != nil || name == "." {
-		return err
-	}
-
-	under, base := path.Split(name)
-	parent, err := root.lookup(under, true)
-	if err != nil {
-		return err
-	}
-	if parent.kind != tar.TypeDir {
-		return fmt.Errorf("%q is under something that is not a directory", header.Name)
-	}
-
-	placed := &node{kind: header.Typeflag}
-	switch header.Typeflag {
-	case tar.TypeDir:
-		if existing := parent.children[base]; existing != nil && existing.kind == tar.TypeDir {
-			return nil
-		}
-		placed.children = map[string]*node{}
-	case tar.TypeReg:
-		placed.entry = index
-	case tar.TypeSymlink:
-		placed.link = header.Linkname
-	case tar.TypeLink:
-		if placed, err = root.linked(header.Linkname); err != nil {
-			return err
-		}
-	case tar.TypeChar, tar.TypeBlock, tar.TypeFifo:
-		placed.kind = 0
 	default:
-		return fmt.Errorf("the daemon does not unpack %q, of type %q", header.Name, header.Typeflag)
+		return "", "", fmt.Errorf("restricted egress: `%s` is not `FROM image [AS name]`", n.Original)
 	}
-	parent.children[base] = placed
+
+	base, err := lex.ProcessWord(words[0], meta)
+	if err != nil || base == "" {
+		return "", "", fmt.Errorf("restricted egress: `%s` names no base image (%v)", n.Original, err)
+	}
+
+	var (
+		platform *ocispec.Platform
+		flags    string
+	)
+	if len(n.Flags) > 1 {
+		return "", "", fmt.Errorf("restricted egress: `%s` takes one flag, --platform", n.Original)
+	}
+	for _, flag := range n.Flags {
+		value, ok := strings.CutPrefix(flag, "--platform=")
+		if !ok {
+			return "", "", fmt.Errorf("restricted egress: `%s` takes one flag, --platform", n.Original)
+		}
+		value, err := lex.ProcessWord(value, meta)
+		if err != nil {
+			return "", "", fmt.Errorf("restricted egress: expanding `%s`: %w", n.Original, err)
+		}
+		parsed, err := platforms.Parse(value)
+		if err != nil {
+			return "", "", fmt.Errorf("restricted egress: `%s`: %w", n.Original, err)
+		}
+		platform = &parsed
+		flags = " --platform=" + platforms.Format(parsed)
+	}
+
+	switch {
+	case stages[strings.ToLower(base)]:
+		base = strings.ToLower(base)
+	case base == "scratch":
+	default:
+		if base, err = b.checkedBase(ctx, base, platform); err != nil {
+			return "", "", err
+		}
+	}
+
+	from := "FROM" + flags + " " + base
+	if stage != "" {
+		from += " AS " + stage
+	}
+	return from, stage, nil
+}
+
+// checkedBase answers the id of the image a stage builds FROM, once the build
+// triggers it carries are checked.
+func (b *DockerBackend) checkedBase(ctx context.Context, name string, platform *ocispec.Platform) (string, error) {
+	var options []client.ImageInspectOption
+	var pull []ocispec.Platform
+	if platform != nil {
+		options = append(options, client.ImageInspectWithPlatform(platform))
+		pull = append(pull, *platform)
+	}
+	image, err := b.client.ImageInspect(ctx, name, options...)
+	if err != nil {
+		if err := b.pull(ctx, name, pull); err != nil {
+			return "", fmt.Errorf("restricted egress: base image: %w", err)
+		}
+		if image, err = b.client.ImageInspect(ctx, name, options...); err != nil {
+			return "", fmt.Errorf("restricted egress: base image %s: %w", name, err)
+		}
+	}
+	if image.ID == "" {
+		return "", fmt.Errorf("restricted egress: base image %s has no id", name)
+	}
+	if image.Config != nil {
+		for _, trigger := range image.Config.OnBuild {
+			if err := checkTrigger(trigger); err != nil {
+				return "", fmt.Errorf("base image %s: %w", name, err)
+			}
+		}
+	}
+	return image.ID, nil
+}
+
+// checkTrigger checks a base image's build trigger as the daemon runs it: parsed
+// on its own as a Dockerfile of one instruction.
+func checkTrigger(trigger string) error {
+	if strings.Contains(trigger, "\n") {
+		return fmt.Errorf("restricted egress cannot check the build trigger %q: it spans lines, which no ONBUILD it passes records", trigger)
+	}
+	_, err := checkDockerfile([]byte(trigger))
+	return err
+}
+
+// checkDockerfile parses a Dockerfile as the daemon does and refuses one that
+// can make the daemon fetch outside the build's network, or that the daemon's
+// parser could read as other instructions than this one does.
+//
+// THE PARSER IS buildkit's, the one the daemon embeds, at an older version than
+// any current daemon's. Where its versions differ in which lines make one
+// instruction, the Dockerfile is refused rather than read one way:
+//
+//   - the escape character is set by a parser directive, and which comment lines
+//     are directives has loosened release by release, so a directive-like
+//     comment this parser does not apply is refused (see directives);
+//   - which lines a heredoc takes has widened release by release, so an
+//     instruction holding "<<" is refused, since a heredoc cannot start without it;
+//   - an instruction this parser does not know is refused rather than ignored.
+//
+// Within an instruction, versions also differ in how flags and JSON are split
+// into words; an ADD is held to its whole text as well as to its words (see
+// fetches), so no reading of them finds a URL that this did not.
+func checkDockerfile(dockerfile []byte) (*parser.Result, error) {
+	if err := directives(dockerfile); err != nil {
+		return nil, err
+	}
+	parsed, err := parser.Parse(bytes.NewReader(dockerfile))
+	if err != nil {
+		return nil, fmt.Errorf("restricted egress: parsing the Dockerfile: %w", err)
+	}
+	for _, n := range parsed.AST.Children {
+		if err := checkInstruction(n); err != nil {
+			return nil, err
+		}
+	}
+	return parsed, nil
+}
+
+func checkInstruction(n *parser.Node) error {
+	keyword := strings.ToLower(n.Value)
+	if _, known := command.Commands[keyword]; !known {
+		return fmt.Errorf("restricted egress cannot check `%s`: the check does not know the instruction", n.Original)
+	}
+	switch {
+	case strings.Contains(n.Original, "<<"):
+		return fmt.Errorf("restricted egress cannot check `%s`: versions of the daemon's parser disagree on the lines a heredoc takes", n.Original)
+	case keyword == command.Add && fetches(n):
+		return fmt.Errorf("restricted egress cannot cover `%s`: the daemon fetches an ADD source that is a URL, or a variable that holds one, outside the build's network; use COPY for files in the context", n.Original)
+	case keyword == command.Onbuild && n.Next != nil && len(n.Next.Children) == 1:
+		if err := checkInstruction(n.Next.Children[0]); err != nil {
+			return fmt.Errorf("ONBUILD runs it in the build of any stage FROM this one: %w", err)
+		}
+	}
 	return nil
 }
 
-// linked is what a hard link to target is: the entry target names, itself
-// rather than where it leads when it is a link.
-func (root *node) linked(target string) (*node, error) {
-	name, err := local(target)
-	if err != nil {
-		return nil, err
+// unquoted drops what the daemon's word processing can remove from a word:
+// quotes, and either escape character.
+var unquoted = strings.NewReplacer(`"`, "", `'`, "", `\`, "", "`", "")
+
+// fetches reports whether an ADD can name a URL. The daemon fetches a source
+// that starts with http:// or https:// once its quotes, escapes and variables
+// are processed, so a "$" anywhere, or a "://" left once the quotes and escapes
+// are dropped, is taken for one. That is asked of the instruction as written, so
+// no version's reading of its words or flags can find a URL that was missed, and
+// of each word, which is where JSON's escapes are decoded.
+func fetches(n *parser.Node) bool {
+	texts := append([]string{n.Original}, n.Flags...)
+	for word := n.Next; word != nil; word = word.Next {
+		texts = append(texts, word.Value)
 	}
-	under, base := path.Split(name)
-	parent, err := root.lookup(under, false)
-	if err != nil {
-		return nil, err
+	for _, text := range texts {
+		if strings.Contains(text, "$") || strings.Contains(unquoted.Replace(text), "://") {
+			return true
+		}
 	}
-	var found *node
-	if parent != nil && parent.kind == tar.TypeDir {
-		found = parent.children[base]
-	}
-	if found == nil || found.kind == tar.TypeDir {
-		return nil, fmt.Errorf("a hard link to %q, which is not a file in the build context", target)
-	}
-	linked := *found
-	return &linked, nil
+	return false
 }
 
-// dockerfile is the file the daemon opens as the Dockerfile at name, nil when
-// there is none.
-func (root *node) dockerfile(name string) (*node, error) {
-	clean := path.Clean("./" + name)
-	if clean == ".." || strings.HasPrefix(clean, "../") {
-		return nil, fmt.Errorf("the Dockerfile %q is outside the build context", name)
-	}
-	file, err := root.lookup(clean, false)
-	if err == nil && file == nil && name == "Dockerfile" {
-		file, err = root.lookup("dockerfile", false)
-	}
-	switch {
-	case err != nil || file == nil:
-		return nil, err
-	case file.kind != tar.TypeReg:
-		return nil, fmt.Errorf("the Dockerfile %q is not a regular file in the build context", name)
-	}
-	return file, nil
-}
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 
-// lookupSteps is how many elements, links' included, the daemon follows in one
-// name before it gives up on it.
-const lookupSteps = 255
-
-// lookup follows name through the tree the way the daemon resolves a path in
-// a context: each link is read where it sits, an absolute one from the root,
-// and ".." stops at the root. A name that is not there answers nil, unless
-// create is set, when each missing directory along it is made, which is how an
-// entry's parent comes to exist.
-func (root *node) lookup(name string, create bool) (*node, error) {
-	at := []*node{root}
-	rest := strings.Split(name, "/")
-	for steps := 0; len(rest) > 0; steps++ {
-		if steps > lookupSteps {
-			return nil, fmt.Errorf("%q passes through too many links", name)
+// directives refuses a Dockerfile with a comment line that reads as a parser
+// directive to some version of the daemon's parser and was not applied by this
+// one. Directives are read from the first lines until one is not a directive,
+// and each release reads more lines as one: an unknown key ends the directives
+// for this parser and not for one that knows the key, and a later release takes
+// any whitespace after the "#". So the escape character the daemon reads could
+// be another than this parser read, and with it where every instruction ends.
+func directives(dockerfile []byte) error {
+	var applied parser.DirectiveParser
+	for i, line := range bytes.Split(dockerfile, []byte("\n")) {
+		if i == 0 {
+			line = bytes.TrimPrefix(line, utf8BOM)
 		}
-		part := rest[0]
-		rest = rest[1:]
-		switch part {
-		case "", ".":
-			continue
-		case "..":
-			if len(at) > 1 {
-				at = at[:len(at)-1]
-			}
-			continue
-		}
-
-		dir := at[len(at)-1]
-		if dir == nil {
-			at = append(at, nil)
-			continue
-		}
-		if dir.kind != tar.TypeDir {
-			return nil, fmt.Errorf("%q passes through something that is not a directory", name)
-		}
-		child := dir.children[part]
-		switch {
-		case child == nil && create:
-			child = &node{kind: tar.TypeDir, children: map[string]*node{}}
-			dir.children[part] = child
-		case child != nil && child.kind == tar.TypeSymlink:
-			if path.IsAbs(child.link) {
-				at = at[:1]
-			}
-			rest = append(strings.Split(child.link, "/"), rest...)
-			continue
-		}
-		at = append(at, child)
-	}
-	return at[len(at)-1], nil
-}
-
-// local is an entry's name relative to the root of the context, the way the
-// daemon reads one: a leading "/" is the root, and a name that climbs out of
-// it is refused.
-func local(name string) (string, error) {
-	clean := path.Clean(strings.TrimLeft(name, "/"))
-	if clean == ".." || strings.HasPrefix(clean, "../") {
-		return "", fmt.Errorf("%q is outside the build context", name)
-	}
-	return clean, nil
-}
-
-// eachEntry calls each with the entries of the tar a context holds, in order,
-// until it answers false.
-func eachEntry(context []byte, each func(index int, header *tar.Header, content io.Reader) (bool, error)) error {
-	stream, done, err := decompressed(context)
-	if err != nil {
-		return err
-	}
-	defer done()
-
-	reader := tar.NewReader(stream)
-	for index := 0; ; index++ {
-		header, err := reader.Next()
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
+		line = bytes.TrimLeftFunc(bytes.TrimRight(line, "\r\n"), unicode.IsSpace)
+		directive, err := applied.ParseLine(line)
 		if err != nil {
-			return err
+			return fmt.Errorf("restricted egress: parsing the Dockerfile: %w", err)
 		}
-		if more, err := each(index, header, reader); err != nil || !more {
-			return err
+		if directive != nil {
+			continue
 		}
+		if directiveLike(line) {
+			return fmt.Errorf("restricted egress cannot check a Dockerfile starting %q: versions of the daemon's parser disagree on whether it is a parser directive", line)
+		}
+		return nil
 	}
+	return nil
 }
 
-// decompressed is the tar inside a context, recognised by the magic numbers the
-// daemon tests for, in the order it tests them.
-func decompressed(context []byte) (io.Reader, func(), error) {
-	raw := bytes.NewReader(context)
-	switch {
-	case bytes.HasPrefix(context, []byte("BZh")):
-		return bzip2.NewReader(raw), func() {}, nil
-	case bytes.HasPrefix(context, []byte{0x1f, 0x8b, 0x08}):
-		gz, err := gzip.NewReader(raw)
-		if err != nil {
-			return nil, nil, err
-		}
-		return gz, func() { gz.Close() }, nil
-	case bytes.HasPrefix(context, []byte{0xfd, '7', 'z', 'X', 'Z', 0x00}):
-		return nil, nil, errors.New("an xz-compressed build context cannot be read here; send it uncompressed or gzip, bzip2 or zstd compressed")
-	case bytes.HasPrefix(context, []byte{0x28, 0xb5, 0x2f, 0xfd}),
-		len(context) >= 8 && binary.LittleEndian.Uint32(context)&0xfffffff0 == 0x184d2a50:
-		zs, err := zstd.NewReader(raw)
-		if err != nil {
-			return nil, nil, err
-		}
-		return zs, zs.Close, nil
+// directiveLike reports whether a line is "#", spaces, a key, spaces and "=",
+// which is looser than any version's directive.
+func directiveLike(line []byte) bool {
+	rest, ok := bytes.CutPrefix(line, []byte("#"))
+	if !ok {
+		return false
 	}
-	return raw, func() {}, nil
+	rest = bytes.TrimLeftFunc(rest, unicode.IsSpace)
+	key := bytes.IndexFunc(rest, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+	if key <= 0 {
+		return false
+	}
+	return bytes.HasPrefix(bytes.TrimLeftFunc(rest[key:], unicode.IsSpace), []byte("="))
 }

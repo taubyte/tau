@@ -48,6 +48,7 @@ require (
 	github.com/libp2p/go-libp2p-record v0.3.1
 	github.com/mattn/go-runewidth v0.0.16
 	github.com/miekg/dns v1.1.72
+	github.com/moby/buildkit v0.12.5
 	github.com/moby/moby/api v1.55.0
 	github.com/moby/moby/client v0.5.0
 	github.com/mr-tron/base58 v1.3.0

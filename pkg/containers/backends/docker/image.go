@@ -2,15 +2,18 @@ package docker
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 
+	"github.com/moby/moby/api/types/build"
 	"github.com/moby/moby/client"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/taubyte/tau/pkg/containers/core"
+	"github.com/taubyte/tau/pkg/containers/reserve"
 	"github.com/taubyte/tau/pkg/netguard"
 )
 
@@ -26,9 +29,15 @@ func (i *dockerImage) Pull(ctx context.Context) error {
 		return fmt.Errorf("Docker client not initialized")
 	}
 
-	reader, err := i.backend.client.ImagePull(ctx, i.name, client.ImagePullOptions{})
+	return i.backend.pull(ctx, i.name, nil)
+}
+
+// pull fetches an image from its registry, for the platforms given or the
+// daemon's own.
+func (b *DockerBackend) pull(ctx context.Context, name string, platforms []ocispec.Platform) error {
+	reader, err := b.client.ImagePull(ctx, name, client.ImagePullOptions{Platforms: platforms})
 	if err != nil {
-		return fmt.Errorf("failed to pull image %s: %w", i.name, err)
+		return fmt.Errorf("failed to pull image %s: %w", name, err)
 	}
 	defer reader.Close()
 
@@ -58,7 +67,8 @@ func (i *dockerImage) Pull(ctx context.Context) error {
 }
 
 // Build builds an image from a Dockerfile. The docker daemon builds natively,
-// so the context tar is handed straight to it.
+// so the context tar is handed straight to it, unless the build is restricted:
+// then what the daemon is sent is restrictContext's.
 func (i *dockerImage) Build(ctx context.Context, input *core.DockerfileBuild) error {
 	if i.backend.client == nil {
 		return fmt.Errorf("Docker client not initialized")
@@ -89,23 +99,39 @@ func (i *dockerImage) Build(ctx context.Context, input *core.DockerfileBuild) er
 		if err := netguard.InstallBridgeFilter(restrictedBridge); err != nil {
 			return fmt.Errorf("installing egress firewall (image not built): %w", err)
 		}
-		buildOptions.NetworkMode = restrictedNetwork
 
-		dockerfile, buffered, err := readDockerfile(buildContext, input.DockerfileName())
+		spooled, err := i.backend.restrictBuild(ctx, input, &buildOptions, "", reserve.Default)
 		if err != nil {
 			return err
 		}
-		if source, found := remoteADD(dockerfile); found {
-			return fmt.Errorf("restricted egress cannot cover `ADD %s`: the daemon fetches it outside the build's network; use COPY for files in the context", source)
+		defer spooled.remove()
+		if buildContext, err = spooled.finish(); err != nil {
+			return fmt.Errorf("spooling build context: %w", err)
 		}
-		buildContext = bytes.NewReader(buffered)
 	}
 
+	return i.backend.build(ctx, buildContext, buildOptions)
+}
+
+// restrictBuild readies a restricted build once its firewall is in place: on
+// the restricted network, with the classic builder, from the context
+// restrictContext makes of the one given.
+func (b *DockerBackend) restrictBuild(ctx context.Context, input *core.DockerfileBuild, buildOptions *client.ImageBuildOptions, dir string, floor reserve.Floor) (*buildContext, error) {
+	buildOptions.NetworkMode = restrictedNetwork
+	// What restrictContext holds a Dockerfile to is what the classic builder
+	// fetches; BuildKit is another builder with other rules.
+	buildOptions.Version = build.BuilderV1
+	return b.restrictContext(ctx, input.Context, input.DockerfileName(), dir, floor)
+}
+
+// build sends the daemon a build and answers once it has finished, with the
+// error the build stream reports.
+func (b *DockerBackend) build(ctx context.Context, buildContext io.Reader, buildOptions client.ImageBuildOptions) error {
 	buildOptions.Context = buildContext
 
-	buildResponse, err := i.backend.client.ImageBuild(ctx, buildContext, buildOptions)
+	buildResponse, err := b.client.ImageBuild(ctx, buildContext, buildOptions)
 	if err != nil {
-		return fmt.Errorf("failed to build image %s: %w", i.name, err)
+		return fmt.Errorf("failed to build image %s: %w", strings.Join(buildOptions.Tags, ", "), err)
 	}
 	defer buildResponse.Body.Close()
 
