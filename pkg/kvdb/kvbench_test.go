@@ -24,11 +24,12 @@ func benchDB(b *testing.B) (*kvDatabase, func()) {
 	f := New(node)
 	kv, err := f.New(logger, "bench", 10)
 	if err != nil {
+		node.Close()
 		cancel()
 		b.Fatalf("new kvdb: %v", err)
 	}
 	db := kv.(*kvDatabase)
-	return db, func() { db.Close(); cancel() }
+	return db, func() { db.Close(); node.Close(); cancel() }
 }
 
 func seed(b *testing.B, db *kvDatabase, n int) {

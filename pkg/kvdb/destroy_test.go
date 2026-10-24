@@ -42,7 +42,7 @@ func keysUnder(t *testing.T, node peer.Node, path string) int {
 // broadcaster never sees.
 func TestDestroyRemovesOnlyThisDatabase(t *testing.T) {
 	logger := logging.Logger("test")
-	node := peer.Mock(t.Context())
+	node := mockPeer(t)
 	f := New(node)
 
 	opened, err := f.New(logger, "databases/shop/prod/kv/QmGoing", 10)

@@ -14,6 +14,7 @@ import (
 func TestNewPubSubBroadcaster(t *testing.T) {
 	ctx := context.Background()
 	mockNode := peer.Mock(ctx)
+	defer mockNode.Close()
 	psub := mockNode.Messaging()
 
 	// Test successful creation
@@ -41,6 +42,7 @@ func TestPubSubBroadcaster_Broadcast(t *testing.T) {
 	defer cancel()
 
 	mockNode := peer.Mock(ctx)
+	defer mockNode.Close()
 	psub := mockNode.Messaging()
 
 	broadcaster, _ := NewPubSubBroadcaster(ctx, psub, "test-topic")
@@ -59,6 +61,7 @@ func TestPubSubBroadcaster_Next(t *testing.T) {
 	defer cancel()
 
 	mockNode := peer.Mock(ctx)
+	defer mockNode.Close()
 	psub := mockNode.Messaging()
 
 	broadcaster, _ := NewPubSubBroadcaster(ctx, psub, "test-topic")
@@ -85,6 +88,7 @@ func TestPubSubBroadcaster_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	mockNode := peer.Mock(ctx)
+	defer mockNode.Close()
 	psub := mockNode.Messaging()
 
 	broadcaster, _ := NewPubSubBroadcaster(ctx, psub, "test-topic-2")
@@ -108,6 +112,7 @@ func TestPubSubBroadcaster_ConcurrentOperations(t *testing.T) {
 	defer cancel()
 
 	mockNode := peer.Mock(ctx)
+	defer mockNode.Close()
 	psub := mockNode.Messaging()
 
 	broadcaster, _ := NewPubSubBroadcaster(ctx, psub, "test-topic")
@@ -142,6 +147,7 @@ func TestPubSubBroadcaster_BroadcastAndReceive(t *testing.T) {
 	defer cancel()
 
 	mockNode := peer.Mock(ctx)
+	defer mockNode.Close()
 	psub := mockNode.Messaging()
 
 	topic := "testTopic"
@@ -178,6 +184,7 @@ func TestPubSubBroadcaster_TopicRegistrationAndUnregistration(t *testing.T) {
 	defer cancel()
 
 	mockNode := peer.Mock(ctx)
+	defer mockNode.Close()
 	psub := mockNode.Messaging()
 
 	topic := "testTopicRegistration"

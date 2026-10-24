@@ -5,41 +5,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/taubyte/tau/core/kvdb"
-	keypair "github.com/taubyte/tau/p2p/keypair"
-
-	peer "github.com/taubyte/tau/p2p/peer"
-
 	logging "github.com/ipfs/go-log/v2"
 )
 
 var logger = logging.Logger("test.kvdb")
-
-var testDB kvdb.KVDB
-
-func init() {
-	ctx := context.Background()
-
-	node, err := peer.New(
-		ctx,
-		nil,
-		keypair.NewRaw(),
-		nil,
-		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11001)},
-		nil,
-		true,
-		false,
-	)
-	if err != nil {
-		panic(fmt.Sprintf("Peer creation returned error `%s`", err.Error()))
-	}
-
-	factory := New(node)
-	testDB, err = factory.New(logger, "test", 5)
-	if err != nil {
-		panic(err)
-	}
-}
 
 func equalStringSlices(a, b []string) bool {
 	if len(a) != len(b) {
@@ -54,6 +23,12 @@ func equalStringSlices(a, b []string) bool {
 }
 
 func TestAsyncRegExp(t *testing.T) {
+	testDB, err := New(mockPeer(t)).New(logger, "test", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer testDB.Close()
+
 	testKeys := []string{
 		"/Z/n", "/Z/n/1", "/Z/n/2@2",
 		"/Z/m", "/Z/m/1/1@3", "/Z/m/1/2",

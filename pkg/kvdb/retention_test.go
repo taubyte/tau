@@ -8,7 +8,6 @@ import (
 	"time"
 
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/fleet"
 )
 
@@ -51,7 +50,7 @@ func TestTheFleetSetsRetention(t *testing.T) {
 	logger := logging.Logger("test")
 	src := &fakeFleet{}
 	src.publish(t, fleet.Fleet{Retention: fleet.Duration(48 * time.Hour)})
-	f := New(peer.Mock(t.Context()), WithFleet(src.read, time.Hour)).(*factory)
+	f := New(mockPeer(t), WithFleet(src.read, time.Hour)).(*factory)
 
 	db, err := f.New(logger, "retention/a", 5)
 	if err != nil {
@@ -112,7 +111,7 @@ func TestTheFleetSetsRetention(t *testing.T) {
 // the fleet, and one too short refuses to open.
 func TestAFixedRetentionIsKeptAndChecked(t *testing.T) {
 	logger := logging.Logger("test")
-	f := New(peer.Mock(t.Context()), WithRetention(96*time.Hour)).(*factory)
+	f := New(mockPeer(t), WithRetention(96*time.Hour)).(*factory)
 	db, err := f.New(logger, "fixed/a", 5)
 	if err != nil {
 		t.Fatal(err)
@@ -125,7 +124,7 @@ func TestAFixedRetentionIsKeptAndChecked(t *testing.T) {
 		t.Fatal("a fixed T was moved")
 	}
 
-	short := New(peer.Mock(t.Context()), WithRetention(time.Minute))
+	short := New(mockPeer(t), WithRetention(time.Minute))
 	if _, err := short.New(logger, "fixed/b", 5); err == nil {
 		t.Fatal("a database opened with a T under ten margins")
 	}
@@ -138,7 +137,7 @@ func TestAFleetRetentionADatabaseCannotHoldFallsBack(t *testing.T) {
 	logger := logging.Logger("test")
 	src := &fakeFleet{}
 	src.publish(t, fleet.Fleet{Retention: fleet.Duration(8 * time.Hour)})
-	f := New(peer.Mock(t.Context()), WithFleet(src.read, time.Hour)).(*factory)
+	f := New(mockPeer(t), WithFleet(src.read, time.Hour)).(*factory)
 	// One hour between rebroadcasts makes the margin far above what 8h holds.
 	db, err := f.New(logger, "fallback/a", 3600)
 	if err != nil {
