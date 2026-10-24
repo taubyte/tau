@@ -42,24 +42,32 @@ import (
 //  4. a replica is rebased only after an absence of most of T, or a restore
 //     from an old backup.
 func TestTheFleetUnderTime(t *testing.T) {
+	t.Parallel()
 	seeds := 120
 	if testing.Short() {
 		seeds = 20
 	}
 	for seed := range seeds {
-		t.Run(fmt.Sprint(seed), func(t *testing.T) { runFleet(t, int64(seed), 1, false) })
+		t.Run(fmt.Sprint(seed), func(t *testing.T) {
+			t.Parallel()
+			runFleet(t, int64(seed), 1, false)
+		})
 	}
 }
 
 // TestTheFleetUnderTimeIsBoundedOverLongRuns runs a few seeds four times as
 // long: the bound after the quiesce is the same.
 func TestTheFleetUnderTimeIsBoundedOverLongRuns(t *testing.T) {
+	t.Parallel()
 	seeds := 8
 	if testing.Short() {
 		seeds = 2
 	}
 	for seed := range seeds {
-		t.Run(fmt.Sprint(seed), func(t *testing.T) { runFleet(t, int64(1000+seed), 4, false) })
+		t.Run(fmt.Sprint(seed), func(t *testing.T) {
+			t.Parallel()
+			runFleet(t, int64(1000+seed), 4, false)
+		})
 	}
 }
 
@@ -68,12 +76,16 @@ func TestTheFleetUnderTimeIsBoundedOverLongRuns(t *testing.T) {
 // revisions would: nothing removed comes back outside the residue, computed
 // with each removal's own T.
 func TestTheFleetUnderChangingTime(t *testing.T) {
+	t.Parallel()
 	seeds := 60
 	if testing.Short() {
 		seeds = 10
 	}
 	for seed := range seeds {
-		t.Run(fmt.Sprint(seed), func(t *testing.T) { runFleet(t, int64(2000+seed), 1, true) })
+		t.Run(fmt.Sprint(seed), func(t *testing.T) {
+			t.Parallel()
+			runFleet(t, int64(2000+seed), 1, true)
+		})
 	}
 }
 
@@ -113,6 +125,7 @@ type propBackup struct {
 
 type propFleet struct {
 	t       *testing.T
+	seed    int64
 	st      *simTime
 	rng     *rand.Rand
 	reps    []*simReplica
@@ -185,7 +198,7 @@ func (f *propFleet) pick() int {
 
 func (f *propFleet) add(offset time.Duration) int {
 	f.ids++
-	sr := f.st.replica(f.t, fmt.Sprintf("r%d", f.ids), offset)
+	sr := f.st.replica(f.t, f.name(), offset)
 	f.reps = append(f.reps, sr)
 	i := len(f.reps) - 1
 	f.gens[i] = 0
@@ -195,6 +208,11 @@ func (f *propFleet) add(offset time.Duration) int {
 	}
 	return i
 }
+
+// name is the id of replica number f.ids. Seeds run in parallel in one
+// process, and a store reopened takes back the incarnation its id last closed
+// under, so no two seeds share an id.
+func (f *propFleet) name() string { return fmt.Sprintf("s%d.r%d", f.seed, f.ids) }
 
 func (f *propFleet) setT(i int) {
 	t := time.Duration(1+f.rng.Intn(4)) * simRetention
@@ -481,7 +499,7 @@ func (f *propFleet) restore(i int) {
 func (f *propFleet) clone(i int) {
 	src := f.reps[i]
 	f.ids++
-	sr := &simReplica{name: fmt.Sprintf("r%d", f.ids), store: copyStore(f.t, src.store), dag: copyBlocks(f.t, src.dag), out: &outbox{}, offset: src.offset, st: f.st}
+	sr := &simReplica{name: f.name(), store: copyStore(f.t, src.store), dag: copyBlocks(f.t, src.dag), out: &outbox{}, offset: src.offset, st: f.st}
 	o := *src.opts
 	sr.opts = &o
 	sr.open(f.t)
@@ -788,7 +806,7 @@ func (f *propFleet) key() string {
 func runFleet(t *testing.T, seed int64, length int, tvaries bool) {
 	st := newSimTime()
 	rng := rand.New(rand.NewSource(seed))
-	f := &propFleet{t: t, st: st, rng: rng, wrong: -1, cut: map[[2]int]bool{}, puts: map[string]*propPut{}, gens: map[int]int{}, lastHeard: map[int]time.Time{}, tvaries: tvaries, incLast: map[string]time.Time{}, rejoins: map[int]bool{}, replaced: map[int]bool{}}
+	f := &propFleet{t: t, seed: seed, st: st, rng: rng, wrong: -1, cut: map[[2]int]bool{}, puts: map[string]*propPut{}, gens: map[int]int{}, lastHeard: map[int]time.Time{}, tvaries: tvaries, incLast: map[string]time.Time{}, rejoins: map[int]bool{}, replaced: map[int]bool{}}
 	n := 2 + rng.Intn(5)
 	wrong := rng.Intn(3) == 0
 	for i := range n {

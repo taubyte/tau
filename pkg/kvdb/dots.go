@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -108,8 +109,8 @@ func parseDotSegment(s string) (dot, error) {
 	if err != nil {
 		return dot{}, fmt.Errorf("bad dot segment %q: %w", s, err)
 	}
-	var counter uint64
-	if _, err := fmt.Sscanf(c, "%d", &counter); err != nil || len(c) != 20 {
+	counter, err := strconv.ParseUint(c, 10, 64)
+	if err != nil || len(c) != 20 {
 		return dot{}, fmt.Errorf("bad dot segment %q", s)
 	}
 	return dot{replica: string(replica), counter: counter}, nil

@@ -61,7 +61,8 @@ func TestOptionsVerify(t *testing.T) {
 }
 
 func TestDecodersRefuseGarbage(t *testing.T) {
-	for _, s := range []string{"", "x", "r.1", "r!!.00000000000000000001", "rAA.12", "rAA.abcdefghijklmnopqrst"} {
+	for _, s := range []string{"", "x", "r.1", "r!!.00000000000000000001", "rAA.12", "rAA.abcdefghijklmnopqrst",
+		"rAA.0000000000000000001x", "rAA. 0000000000000000001", "rAA.0000000000000000_001", "rAA.+0000000000000000001"} {
 		if _, err := parseDotSegment(s); err == nil {
 			t.Errorf("parseDotSegment(%q) accepted", s)
 		}

@@ -8,7 +8,6 @@ import (
 
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
-	dssync "github.com/ipfs/go-datastore/sync"
 	ipld "github.com/ipfs/go-ipld-format"
 )
 
@@ -114,7 +113,7 @@ func (o *outbox) take() [][]byte {
 
 func (s *simTime) replica(t testing.TB, name string, offset time.Duration) *simReplica {
 	t.Helper()
-	sr := &simReplica{name: name, store: dssync.MutexWrap(ds.NewMapDatastore()), dag: newFetchThrough(), out: &outbox{}, offset: offset, st: s}
+	sr := &simReplica{name: name, store: newSortedStore(), dag: newFetchThrough(), out: &outbox{}, offset: offset, st: s}
 	sr.opts = s.options(offset)
 	sr.opts.ReplicaID = []byte(name)
 	sr.open(t)

@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"os"
+	"path"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -17,6 +20,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
 	query "github.com/ipfs/go-datastore/query"
+	dstest "github.com/ipfs/go-datastore/test"
 	ipld "github.com/ipfs/go-ipld-format"
 	"google.golang.org/protobuf/proto"
 )
@@ -395,4 +399,151 @@ func namespaceKeys(t testing.TB, r *Datastore) int {
 		t.Fatal(err)
 	}
 	return n
+}
+
+// sortedStore is the tests' in-memory datastore: a map datastore that also
+// keeps its keys in order, so a prefix query reads only the keys under the
+// prefix where a map store reads every key it holds. Its results come in no
+// particular order, as a map store's do: the order a query returns is nothing
+// kvdb may rely on.
+type sortedStore struct {
+	mu   sync.RWMutex
+	keys []string
+	vals map[string][]byte
+}
+
+func newSortedStore() *sortedStore { return &sortedStore{vals: map[string][]byte{}} }
+
+func (s *sortedStore) put(k string, v []byte) {
+	if _, ok := s.vals[k]; !ok {
+		s.keys = slices.Insert(s.keys, sort.SearchStrings(s.keys, k), k)
+	}
+	s.vals[k] = v
+}
+
+func (s *sortedStore) del(k string) {
+	if _, ok := s.vals[k]; !ok {
+		return
+	}
+	delete(s.vals, k)
+	i := sort.SearchStrings(s.keys, k)
+	s.keys = slices.Delete(s.keys, i, i+1)
+}
+
+func (s *sortedStore) Put(_ context.Context, k ds.Key, v []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.put(k.String(), v)
+	return nil
+}
+
+func (s *sortedStore) Delete(_ context.Context, k ds.Key) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.del(k.String())
+	return nil
+}
+
+func (s *sortedStore) Get(_ context.Context, k ds.Key) ([]byte, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	v, ok := s.vals[k.String()]
+	if !ok {
+		return nil, ds.ErrNotFound
+	}
+	return v, nil
+}
+
+func (s *sortedStore) Has(_ context.Context, k ds.Key) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.vals[k.String()]
+	return ok, nil
+}
+
+func (s *sortedStore) GetSize(_ context.Context, k ds.Key) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	v, ok := s.vals[k.String()]
+	if !ok {
+		return -1, ds.ErrNotFound
+	}
+	return len(v), nil
+}
+
+// Query narrows to the keys under the prefix, cleaned as the naive query
+// cleans it, and leaves everything else, the prefix check included, to it.
+func (s *sortedStore) Query(_ context.Context, q query.Query) (query.Results, error) {
+	s.mu.RLock()
+	lo, hi := 0, len(s.keys)
+	if p := q.Prefix; p != "" {
+		if p[0] != '/' {
+			p = "/" + p
+		}
+		if p = path.Clean(p); p != "/" {
+			p += "/"
+			lo = sort.SearchStrings(s.keys, p)
+			hi = lo + sort.Search(len(s.keys)-lo, func(i int) bool { return !strings.HasPrefix(s.keys[lo+i], p) })
+		}
+	}
+	entries := make([]query.Entry, 0, hi-lo)
+	for _, k := range s.keys[lo:hi] {
+		e := query.Entry{Key: k, Size: len(s.vals[k])}
+		if !q.KeysOnly {
+			e.Value = s.vals[k]
+		}
+		entries = append(entries, e)
+	}
+	s.mu.RUnlock()
+	rand.Shuffle(len(entries), func(i, j int) { entries[i], entries[j] = entries[j], entries[i] })
+	return query.NaiveQueryApply(q, query.ResultsWithEntries(q, entries)), nil
+}
+
+func (s *sortedStore) Sync(context.Context, ds.Key) error { return nil }
+
+func (s *sortedStore) Close() error { return nil }
+
+func (s *sortedStore) Batch(context.Context) (ds.Batch, error) { return &sortedBatch{s: s}, nil }
+
+// TestTheSortedStoreIsADatastore holds the tests' store to the suite every
+// datastore is held to, the map store it stands in for included.
+func TestTheSortedStoreIsADatastore(t *testing.T) {
+	dstest.SubtestAll(t, newSortedStore())
+}
+
+// sortedBatch applies its writes in order, all under one lock, as a map
+// store's batch does under its mutex.
+type sortedBatch struct {
+	s   *sortedStore
+	ops []sortedOp
+}
+
+type sortedOp struct {
+	key   string
+	value []byte
+	del   bool
+}
+
+func (b *sortedBatch) Put(_ context.Context, k ds.Key, v []byte) error {
+	b.ops = append(b.ops, sortedOp{key: k.String(), value: v})
+	return nil
+}
+
+func (b *sortedBatch) Delete(_ context.Context, k ds.Key) error {
+	b.ops = append(b.ops, sortedOp{key: k.String(), del: true})
+	return nil
+}
+
+func (b *sortedBatch) Commit(context.Context) error {
+	b.s.mu.Lock()
+	defer b.s.mu.Unlock()
+	for _, op := range b.ops {
+		if op.del {
+			b.s.del(op.key)
+		} else {
+			b.s.put(op.key, op.value)
+		}
+	}
+	b.ops = nil
+	return nil
 }

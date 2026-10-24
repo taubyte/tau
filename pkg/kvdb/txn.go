@@ -128,7 +128,11 @@ func scanStore(ctx context.Context, store ds.Datastore, prefix ds.Key, fn func(k
 		return err
 	}
 	defer results.Close()
-	for r := range results.Next() {
+	for {
+		r, ok := results.NextSync()
+		if !ok {
+			return nil
+		}
 		if r.Error != nil {
 			return r.Error
 		}
@@ -136,5 +140,4 @@ func scanStore(ctx context.Context, store ds.Datastore, prefix ds.Key, fn func(k
 			return err
 		}
 	}
-	return nil
 }

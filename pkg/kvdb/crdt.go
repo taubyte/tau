@@ -596,13 +596,16 @@ func countPrefix(ctx context.Context, store ds.Datastore, prefix ds.Key) (int, e
 	}
 	defer results.Close()
 	n := 0
-	for r := range results.Next() {
+	for {
+		r, ok := results.NextSync()
+		if !ok {
+			return n, nil
+		}
 		if r.Error != nil {
 			return 0, r.Error
 		}
 		n++
 	}
-	return n, nil
 }
 
 func (store *Datastore) covered(d dot) bool {

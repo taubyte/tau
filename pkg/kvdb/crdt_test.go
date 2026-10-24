@@ -133,19 +133,16 @@ func newBroadcasters(t testing.TB, n int) ([]Broadcaster, context.CancelFunc) {
 func (mb *mockBroadcaster) Broadcast(ctx context.Context, data []byte) error {
 	var wg sync.WaitGroup
 
-	randg := rand.New(rand.NewSource(time.Now().UnixNano()))
-
 	for i, ch := range mb.chans {
-		n := randg.Int63n(100)
+		n := rand.Int63n(100)
 		if n < mb.dropProb.Load() {
 			continue
 		}
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			randg := rand.New(rand.NewSource(int64(i)))
 			// randomize when we send a little bit
-			if randg.Intn(100) < 30 {
+			if rand.Intn(100) < 30 {
 				// Sleep for a very small time that will
 				// effectively be pretty random
 				time.Sleep(time.Nanosecond)
@@ -184,7 +181,7 @@ func makeStore(t testing.TB, i int) ds.Datastore {
 
 	switch store {
 	case mapStore:
-		return dssync.MutexWrap(ds.NewMapDatastore())
+		return newSortedStore()
 	case pebbleStore:
 		folder := storeFolder(i)
 		err := os.MkdirAll(folder, 0o700)

@@ -265,7 +265,7 @@ func closeStore(t testing.TB, r *Datastore) {
 func copyStore(t testing.TB, store ds.Datastore) ds.Datastore {
 	t.Helper()
 	ctx := context.Background()
-	cp := dssync.MutexWrap(ds.NewMapDatastore())
+	cp := newSortedStore()
 	if err := scanStore(ctx, store, ds.NewKey("/"), func(k string, v []byte) error {
 		return cp.Put(ctx, ds.RawKey(k), v)
 	}); err != nil {
