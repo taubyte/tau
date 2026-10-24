@@ -917,6 +917,10 @@ func TestBadShutdownMark_PartialBranchRecovery(t *testing.T) {
 		writerDs := dssync.MutexWrap(ds.NewMapDatastore())
 		shared := newFetchThrough()
 		w := openTestStore(t, "w", writerDs, shared, time.Hour)
+		// Every store is closed on the way out, failing or not: a store left
+		// open leaves goroutines in the bubble, and synctest turns that
+		// into a panic that ends the whole test binary.
+		t.Cleanup(func() { w.Close() })
 		if err := w.Put(ctx, ds.NewKey("/k1"), []byte("v1")); err != nil {
 			t.Fatal(err)
 		}
@@ -932,6 +936,7 @@ func TestBadShutdownMark_PartialBranchRecovery(t *testing.T) {
 		local := newFetchThrough()
 		local.setRemotes(shared.DAGService)
 		d1 := openTestStore(t, "r1", mapDs, local, time.Hour)
+		t.Cleanup(func() { d1.Close() })
 		mergeOne(t, d1, hs[0].Cid)
 		if valueOf(t, d1, ds.NewKey("/k1")) != "<deleted>" {
 			t.Fatal("the parent should not be merged yet")
