@@ -155,10 +155,13 @@ func replicaOptions(opts *Options, name string) *Options {
 	return o
 }
 
-// makeNReplicasSeparateStores makes n replicas that do not broadcast: tests
-// drive every exchange with syncReplicaHeads, so the order is theirs. Each
-// replica has its own blockstore; replica i > 0 fetches from replica 0 until
-// a test points it elsewhere.
+// makeNReplicasSeparateStores makes n replicas that do not broadcast and run
+// nothing on their own (manual): tests drive every exchange with
+// syncReplicaHeads, and every repair, so the order is theirs. A repair loop
+// of their own would walk blocks a test's Repair then skips as already being
+// fetched, and the test would read a state still merging. Each replica has
+// its own blockstore; replica i > 0 fetches from replica 0 until a test
+// points it elsewhere.
 func makeNReplicasSeparateStores(t testing.TB, n int, opts *Options) ([]*Datastore, []*fetchThroughDAGSvc, func()) {
 	t.Helper()
 	return makeSeparateStoresWith(t, n, func(int) *Options { return opts })
@@ -172,8 +175,10 @@ func makeSeparateStoresWith(t testing.TB, n int, optsFor func(i int) *Options) (
 	replicas := make([]*Datastore, n)
 	for i := range replicas {
 		dagsyncs[i] = newFetchThrough()
+		o := replicaOptions(optsFor(i), fmt.Sprintf("sr#%d: ", i))
+		o.manual = true
 		var err error
-		replicas[i], err = NewDatastore(makeStore(t, i), ds.NewKey("crdttest"), dagsyncs[i], &nullBroadcaster{}, replicaOptions(optsFor(i), fmt.Sprintf("sr#%d: ", i)))
+		replicas[i], err = NewDatastore(makeStore(t, i), ds.NewKey("crdttest"), dagsyncs[i], &nullBroadcaster{}, o)
 		if err != nil {
 			t.Fatal(err)
 		}

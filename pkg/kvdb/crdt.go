@@ -163,8 +163,8 @@ type Options struct {
 	// replicas. Default: the boot clock.
 	Uptime func() time.Duration
 
-	// manual leaves what time drives, maintenance and heartbeats, to the
-	// caller: tests drive them step by step on a virtual clock.
+	// manual leaves what time drives, maintenance, heartbeats and repair,
+	// to the caller: tests drive them step by step.
 	manual bool
 }
 
@@ -447,7 +447,9 @@ func NewDatastore(
 	}()
 	go func() {
 		defer dstore.wg.Done()
-		dstore.repair(ctx)
+		if !dstore.opts.manual {
+			dstore.repair(ctx)
+		}
 	}()
 	go func() {
 		defer dstore.wg.Done()

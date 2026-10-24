@@ -987,3 +987,54 @@ func TestBadShutdownMark_PartialBranchRecovery(t *testing.T) {
 		}
 	})
 }
+
+// TestAManualReplicaRepairsOnlyWhenAsked: a replica whose caller drives what
+// time would runs no repair of its own, not even the pass a store left dirty
+// gets at open. That pass lands whenever its goroutine is scheduled; landing
+// after the caller's first walks, it fetches blocks they then skip as already
+// being fetched, and the caller reads a state still merging.
+func TestAManualReplicaRepairsOnlyWhenAsked(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx := t.Context()
+		shared := newFetchThrough()
+		w := openTestStore(t, "w", dssync.MutexWrap(ds.NewMapDatastore()), shared, time.Hour)
+		t.Cleanup(func() { w.Close() })
+		put(t, w, "/k1", "v1")
+		head := put(t, w, "/k2", "v2")
+
+		mapDs := dssync.MutexWrap(ds.NewMapDatastore())
+		local := newFetchThrough()
+		local.setRemotes(shared.DAGService)
+		open := func(name string) *Datastore {
+			o := replicaOptions(noAutoCompact(), name+": ")
+			o.manual = true
+			r, err := NewDatastore(mapDs, ds.NewKey("crdttest"), local, &nullBroadcaster{}, o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { r.Close() })
+			return r
+		}
+		r := open("r1")
+		mergeOne(t, r, head)
+		closeStore(t, r)
+		if err := mapDs.Put(ctx, ds.NewKey("crdttest").ChildString(badShutdownKey), nil); err != nil {
+			t.Fatal(err)
+		}
+
+		r = open("r2")
+		synctest.Wait()
+		if got := valueOf(t, r, ds.NewKey("/k1")); got != "<deleted>" {
+			t.Fatalf("a manual replica repaired on its own: /k1 = %s", got)
+		}
+		if !r.IsDirty(ctx) {
+			t.Fatal("a manual replica marked itself clean on its own")
+		}
+		if err := r.Repair(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if got := valueOf(t, r, ds.NewKey("/k1")); got != "v1" {
+			t.Fatalf("the repair it was asked for did not merge the missing parent: /k1 = %s", got)
+		}
+	})
+}
