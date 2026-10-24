@@ -1,0 +1,197 @@
+package volume_test
+
+import (
+	"context"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/taubyte/tau/node/volume"
+	"github.com/taubyte/tau/pkg/containers/reserve"
+)
+
+// restorer is a fresh node over root whose store holds archive as the volume's
+// last checkpoint, with what it says.
+func restorer(t *testing.T, root string, archive []byte) (*volume.Volumes, *said) {
+	t.Helper()
+
+	store, index, log := newBlobs(), newRows(), &said{}
+	id := store.put(t, archive)
+	require.NoError(t, index.Put(t.Context(), recordedAt+"shop/prod/QmData", []byte(id)))
+
+	v, err := volume.New(root, store, &opening{rows: index}, log)
+	require.NoError(t, err)
+	t.Cleanup(func() { v.Close() })
+	return v, log
+}
+
+// TestARESTOREOverItsQuotaIsServedAndSaid. A volume may grow past its quota
+// where it runs, and is said to have; refusing its checkpoint where it moved
+// would be a mount that fails for the tenant until somebody raised the quota.
+// So the restore is served, and said the way a checkpoint says it.
+func TestARestoreOverItsQuotaIsServedAndSaid(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		files  map[string]string
+		warned []string
+	}{
+		{"one file over it", map[string]string{"rows": "123456789"},
+			[]string{"volume: shop/prod/QmData restored 9 bytes and declared a quota of 8"}},
+		{"files that add up to more", map[string]string{"a": "12345", "b": "12345"},
+			[]string{"volume: shop/prod/QmData restored 10 bytes and declared a quota of 8"}},
+		{"exactly the quota", map[string]string{"a": "1234", "b": "5678"}, nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			v, log := restorer(t, t.TempDir(), tarOf(t, c.files))
+			dir, err := v.Mount(t.Context(), mountGrant("shop/prod/QmData", map[string]string{"quota": "8"}))
+			require.NoError(t, err)
+			for name, body := range c.files {
+				got, err := os.ReadFile(filepath.Join(dir, name))
+				require.NoError(t, err)
+				require.Equal(t, body, string(got))
+			}
+			require.Equal(t, c.warned, log.warned())
+		})
+	}
+}
+
+// disk is a filesystem holding whatever is under root, out of the bytes and
+// inodes it was given.
+type disk struct {
+	root          string
+	bytes, inodes int64
+}
+
+func (d disk) measure(string) (reserve.Usage, error) {
+	var used, entries int64
+	err := filepath.WalkDir(d.root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || path == d.root {
+			return err
+		}
+		entries++
+		info, err := entry.Info()
+		if err == nil && info.Mode().IsRegular() {
+			used += info.Size()
+		}
+		return err
+	})
+	return reserve.Usage{
+		Size: 100 << 20, Free: uint64(max(d.bytes-used, 0)),
+		Files: 100, FreeFiles: uint64(max(d.inodes-entries, 0)),
+	}, err
+}
+
+// noise is n bytes that are not zeros, so they land on disk.
+func noise(n int) string {
+	return strings.Repeat("x", n)
+}
+
+// TestARESTORELeavesTheDiskItsReserve, of bytes and of inodes. One that would
+// take the disk past it fails, says which volume and by how much, and leaves
+// nothing a later mount would take for a restore.
+func TestARestoreLeavesTheDiskItsReserve(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		files   map[string]string
+		inodes  int64
+		refused reserve.Error
+	}{
+		// Half of a 100MiB disk is held back, and 51MiB is free: the first
+		// MiB fits and the second does not.
+		{"bytes", map[string]string{"rows": noise(2 << 20)}, 100,
+			reserve.Error{Unit: "bytes", Free: 50 << 20, Want: 1 << 20, Reserve: 50 << 20}},
+		// Five of a hundred inodes are held back. The volumes directory and
+		// the restore's own take two of the nine free, then two files fit.
+		{"inodes", map[string]string{"a": "a", "b": "b", "c": "c"}, 9,
+			reserve.Error{Unit: "inodes", Free: 5, Want: 1, Reserve: 5}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			root := t.TempDir()
+			v, _ := restorer(t, root, tarOf(t, c.files))
+			volume.HoldTo(v, reserve.Floor{Space: 0.5, Inodes: 0.05, Measure: disk{root: root, bytes: 51 << 20, inodes: c.inodes}.measure})
+
+			_, err := v.Mount(t.Context(), mountGrant("shop/prod/QmData", nil))
+			require.ErrorContains(t, err, "volume: restoring shop/prod/QmData: reserve: the filesystem holding")
+			var refused *reserve.Error
+			require.ErrorAs(t, err, &refused)
+			refused.Path = ""
+			require.Equal(t, c.refused, *refused)
+
+			left, err := os.ReadDir(filepath.Join(root, "volumes"))
+			require.NoError(t, err)
+			require.Empty(t, left, "the refused restore left something behind")
+		})
+	}
+}
+
+// arriving is a checkpoint store whose one archive runs then once more than
+// after bytes of it have been read.
+type arriving struct {
+	*blobs
+	after int
+	then  func()
+}
+
+func (a *arriving) Get(ctx context.Context, id string) (io.ReadSeekCloser, error) {
+	content, err := a.blobs.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &partway{ReadSeekCloser: content, after: a.after, then: a.then}, nil
+}
+
+type partway struct {
+	io.ReadSeekCloser
+	after, read int
+	then        func()
+}
+
+func (p *partway) Read(b []byte) (int, error) {
+	n, err := p.ReadSeekCloser.Read(b)
+	p.read += n
+	if p.then != nil && p.read >= p.after {
+		p.then()
+		p.then = nil
+	}
+	return n, err
+}
+
+// TestWHATELSEFillsTheDiskWhileARestoreRunsCounts. The disk is read as the
+// restore writes, not once before it: here eight MiB fit when it starts, then
+// another writer takes five while it runs, and the restore stops at the
+// reserve instead of finishing on what it read at the start.
+func TestWhatElseFillsTheDiskWhileARestoreRunsCounts(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		meantime bool
+	}{{"alone", false}, {"with another writer", true}} {
+		t.Run(c.name, func(t *testing.T) {
+			root := t.TempDir()
+			store, index := newBlobs(), newRows()
+			id := store.put(t, tarOf(t, map[string]string{"rows": noise(8 << 20)}))
+			require.NoError(t, index.Put(t.Context(), recordedAt+"shop/prod/QmData", []byte(id)))
+
+			other := func() {}
+			if c.meantime {
+				other = func() { require.NoError(t, os.WriteFile(filepath.Join(root, "other"), []byte(noise(5<<20)), 0o600)) }
+			}
+			v, err := volume.New(root, &arriving{blobs: store, after: 2 << 20, then: other}, &opening{rows: index}, &said{})
+			require.NoError(t, err)
+			t.Cleanup(func() { v.Close() })
+			volume.HoldTo(v, reserve.Floor{Space: 0.5, Measure: disk{root: root, bytes: 60 << 20, inodes: 100}.measure})
+
+			_, err = v.Mount(t.Context(), mountGrant("shop/prod/QmData", nil))
+			if !c.meantime {
+				require.NoError(t, err)
+				return
+			}
+			var refused *reserve.Error
+			require.ErrorAs(t, err, &refused)
+		})
+	}
+}

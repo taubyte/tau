@@ -91,9 +91,14 @@
 // method: a Volumes implementation that hands back a path inside a size-capped
 // filesystem changes nothing above it.
 //
-// A RESTORE IS WHERE IT IS A WALL, because there it is this package writing the
-// bytes: it unpacks no more than the quota, and a checkpoint holding more
-// refuses the mount rather than filling the disk of the node it moved to.
+// A RESTORE IS HELD TO THE NODE'S DISK AND NOT TO THE QUOTA. A volume that grew
+// past its quota while it ran, which is allowed, has a checkpoint bigger than
+// the quota, and refusing that on the node it moved to would be a mount that
+// fails silently for the tenant until somebody raised the quota. What a restore
+// must not do is fill the disk of the node it lands on, so it leaves that disk
+// its reserve (see pkg/containers/reserve), fails without leaving anything when
+// it would not, and says when it unpacked more than the quota, as a checkpoint
+// does.
 package volume
 
 import (
@@ -112,6 +117,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/taubyte/tau/pkg/containers/reserve"
 	"github.com/taubyte/tau/pkg/specs"
 
 	"github.com/taubyte/tau/pkg/invoke"
@@ -176,6 +182,9 @@ type Volumes struct {
 	stores Stores
 	log    Log
 
+	// floor is what a restore leaves free on the disk it writes to.
+	floor reserve.Floor
+
 	mu   sync.Mutex
 	rows Rows
 	open map[string]*volume
@@ -238,7 +247,7 @@ func New(root string, assets Assets, stores Stores, log Log) (*Volumes, error) {
 	if log == nil {
 		return nil, errors.New("volume: nowhere to say that a volume is over its quota")
 	}
-	return &Volumes{root: root, assets: assets, stores: stores, log: log}, nil
+	return &Volumes{root: root, assets: assets, stores: stores, log: log, floor: reserve.Default}, nil
 }
 
 // The setting keys services/worker writes for a mount, which are the
@@ -383,7 +392,7 @@ func (v *Volumes) restore(ctx context.Context, handle, dir string, quota int64) 
 	if err := makeDir(staging); err != nil {
 		return err
 	}
-	err = untar(content, staging, quota)
+	unpacked, err := untar(content, staging, v.floor)
 	if err == nil {
 		err = os.Rename(staging, dir)
 	}
@@ -391,6 +400,12 @@ func (v *Volumes) restore(ctx context.Context, handle, dir string, quota int64) 
 		// What this leaves, the next restore of the volume clears first.
 		discard(staging)
 		return fmt.Errorf("volume: restoring %s: %w", handle, err)
+	}
+
+	// SAID AND SERVED, as at a checkpoint: see the package doc for why the
+	// quota is not what a restore is held to.
+	if quota > 0 && unpacked > quota {
+		v.log.Warnf("volume: %s restored %d bytes and declared a quota of %d", handle, unpacked, quota)
 	}
 	v.log.Infof("volume: restored %s from %s", handle, string(recorded))
 	return nil
@@ -694,7 +709,8 @@ func writeEntry(archive *tar.Writer, root *os.Root, name string) (int64, bool, e
 	return n, false, err
 }
 
-// untar unpacks a checkpoint into a directory.
+// untar unpacks a checkpoint into a directory, and answers how many bytes of
+// files it unpacked.
 //
 // EVERY ENTRY IS CHECKED AGAINST THE DESTINATION. A tar is bytes from a store,
 // and an entry named `../../etc` would write outside the volume — the oldest
@@ -705,20 +721,23 @@ func writeEntry(archive *tar.Writer, root *os.Root, name string) (int64, bool, e
 // sits in the path of every entry after it. The root refuses to resolve a path
 // out of the volume, whatever links lie along the way.
 //
-// AND NO MORE THAN THE QUOTA IS UNPACKED, when there is one. Each file's size
-// is checked before a byte of it is written: it is the size the entry will
-// write, and an entry whose holes the reader fills with zeros can name
-// terabytes in an archive of a few bytes.
-func untar(r io.Reader, dir string, quota int64) error {
+// AND THE DISK IT LANDS ON KEEPS ITS RESERVE, which is what bounds it. A
+// checkpoint can hold more than the volume's quota, and an entry whose holes
+// the reader fills with zeros can name terabytes in an archive of a few bytes.
+// So the filesystem is read before each entry is made and each chunk written,
+// and one that would leave less free than the floor fails the restore. A run of
+// zeros is left as a hole, so a sparse file stays sparse and only what lands on
+// disk is counted against the reserve.
+func untar(r io.Reader, dir string, floor reserve.Floor) (int64, error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer root.Close()
 
 	var (
-		links   []string
-		written int64
+		links    []string
+		unpacked int64
 	)
 	shut := map[string]fs.FileMode{}
 	archive := tar.NewReader(r)
@@ -726,17 +745,24 @@ func untar(r io.Reader, dir string, quota int64) error {
 		header, err := archive.Next()
 		if errors.Is(err, io.EOF) {
 			if err := checkLinks(root, links); err != nil {
-				return err
+				return unpacked, err
 			}
-			return closeDirs(root, shut)
+			return unpacked, closeDirs(root, shut)
 		}
 		if err != nil {
-			return err
+			return unpacked, err
 		}
 
 		name, err := within(header.Name)
 		if err != nil {
-			return err
+			return unpacked, err
+		}
+
+		switch header.Typeflag {
+		case tar.TypeDir, tar.TypeSymlink, tar.TypeReg:
+			if err := floor.Take(dir, 0, 1); err != nil {
+				return unpacked, err
+			}
 		}
 
 		switch header.Typeflag {
@@ -747,7 +773,7 @@ func untar(r io.Reader, dir string, quota int64) error {
 			// could not pass through it.
 			perm := fs.FileMode(header.Mode).Perm()
 			if err := root.MkdirAll(name, perm|0o700); err != nil {
-				return err
+				return unpacked, err
 			}
 			if closed := 0o700 &^ perm; closed != 0 {
 				shut[name] = closed
@@ -762,34 +788,31 @@ func untar(r io.Reader, dir string, quota int64) error {
 			// `/etc/passwd` into a path inside the volume that passes — while
 			// the link written on disk still points at /etc/passwd.
 			if filepath.IsAbs(filepath.FromSlash(header.Linkname)) {
-				return fmt.Errorf("volume: a checkpoint entry links to %q, which is outside the volume", header.Linkname)
+				return unpacked, fmt.Errorf("volume: a checkpoint entry links to %q, which is outside the volume", header.Linkname)
 			}
 			if _, err := within(filepath.Join(filepath.Dir(header.Name), header.Linkname)); err != nil {
-				return err
+				return unpacked, err
 			}
 			if err := root.MkdirAll(filepath.Dir(name), 0o750); err != nil {
-				return err
+				return unpacked, err
 			}
 			if err := root.Symlink(header.Linkname, name); err != nil && !errors.Is(err, fs.ErrExist) {
-				return err
+				return unpacked, err
 			}
 			links = append(links, name)
 		case tar.TypeReg:
-			if quota > 0 && header.Size > quota-written {
-				return fmt.Errorf("volume: the checkpoint holds more than the volume's quota of %d bytes", quota)
-			}
-			written += header.Size
 			if err := root.MkdirAll(filepath.Dir(name), 0o750); err != nil {
-				return err
+				return unpacked, err
 			}
 			file, err := root.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, fs.FileMode(header.Mode).Perm())
 			if err != nil {
-				return err
+				return unpacked, err
 			}
-			_, err = io.Copy(file, archive)
+			n, err := floor.Copy(file, archive)
+			unpacked += n
 			file.Close()
 			if err != nil {
-				return err
+				return unpacked, err
 			}
 		default:
 			// A device, a fifo, a hard link. Nothing writes one into a
