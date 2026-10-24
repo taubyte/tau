@@ -937,6 +937,53 @@ func TestARestoreLeftUnfinishedIsClearedByTheNext(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrNotExist, "the unfinished restore is still there")
 }
 
+// TestARESTOREUnpacksNoMoreThanTheQuota. There it is this package writing the
+// bytes, so the quota is a wall: a checkpoint holding more refuses the mount and
+// leaves nothing behind. Each file is measured by its header before any of it
+// is written, so a header naming far more than the archive carries is refused
+// on what it names.
+func TestARestoreUnpacksNoMoreThanTheQuota(t *testing.T) {
+	handle := "shop/prod/QmData"
+	quota := map[string]string{"quota": "8"}
+
+	huge := func(t *testing.T) []byte {
+		var buf bytes.Buffer
+		archive := tar.NewWriter(&buf)
+		require.NoError(t, archive.WriteHeader(&tar.Header{Name: "rows", Typeflag: tar.TypeReg, Mode: 0o640, Size: 1 << 40}))
+		_, err := archive.Write(make([]byte, 512))
+		require.NoError(t, err)
+		return buf.Bytes()
+	}
+
+	for _, c := range []struct {
+		name    string
+		archive func(t *testing.T) []byte
+		kept    []string
+	}{
+		{"one file over it", func(t *testing.T) []byte { return tarOf(t, map[string]string{"rows": "123456789"}) }, nil},
+		{"files that add up to more", func(t *testing.T) []byte { return tarOf(t, map[string]string{"a": "12345", "b": "12345"}) }, nil},
+		{"a file naming more than the archive holds", huge, nil},
+		{"exactly the quota", func(t *testing.T) []byte { return tarOf(t, map[string]string{"a": "1234", "b": "5678"}) }, []string{"a", "b"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			root := t.TempDir()
+			dir, err := node(t, root, c.archive(t)).Mount(t.Context(), mountGrant(handle, quota))
+			if c.kept != nil {
+				require.NoError(t, err)
+				for _, name := range c.kept {
+					require.FileExists(t, filepath.Join(dir, name))
+				}
+				return
+			}
+			require.ErrorContains(t, err, "more than the volume's quota of 8 bytes")
+
+			left, err := os.ReadDir(filepath.Join(root, "volumes"))
+			require.NoError(t, err)
+			require.Empty(t, left, "the refused restore left something behind")
+		})
+	}
+}
+
 // TestARECORDEDCheckpointWithNoStoreIsRefused. Having recorded one and having
 // nowhere to read it from is not the same as never having had one — the first is
 // a node missing its store, and answering an empty directory would hand a

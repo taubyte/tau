@@ -90,6 +90,10 @@
 // where the failure was silent and the tenant's. The upgrade path is one
 // method: a Volumes implementation that hands back a path inside a size-capped
 // filesystem changes nothing above it.
+//
+// A RESTORE IS WHERE IT IS A WALL, because there it is this package writing the
+// bytes: it unpacks no more than the quota, and a checkpoint holding more
+// refuses the mount rather than filling the disk of the node it moved to.
 package volume
 
 import (
@@ -304,6 +308,7 @@ func (v *Volumes) Mount(ctx context.Context, grant invoke.Grant) (string, error)
 	}()
 
 	dir := filepath.Join(v.root, "volumes", escapeHandle(grant.Handle))
+	quota := grant.Number(settingQuota)
 
 	// RESTORED ONLY WHEN THE DIRECTORY IS NEW. A node that already holds bytes
 	// holds the newer ones: the checkpoint is behind by up to an interval by
@@ -311,7 +316,7 @@ func (v *Volumes) Mount(ctx context.Context, grant invoke.Grant) (string, error)
 	// writes the checkpoint exists to bound.
 	switch _, err := os.Stat(dir); {
 	case errors.Is(err, fs.ErrNotExist):
-		if err := v.restore(ctx, grant.Handle, dir); err != nil {
+		if err := v.restore(ctx, grant.Handle, dir, quota); err != nil {
 			return "", err
 		}
 	case err != nil:
@@ -321,7 +326,7 @@ func (v *Volumes) Mount(ctx context.Context, grant invoke.Grant) (string, error)
 	opened := &volume{
 		handle: grant.Handle,
 		dir:    dir,
-		quota:  grant.Number(settingQuota),
+		quota:  quota,
 		every:  durationOr(grant.Settings[settingInterval], defaultCheckpoint),
 	}
 
@@ -342,7 +347,7 @@ func (v *Volumes) Mount(ctx context.Context, grant invoke.Grant) (string, error)
 // because the directory existing is what tells a later mount that its bytes are
 // here. One that a failed or refused restore left behind would be mounted as
 // though it had been restored.
-func (v *Volumes) restore(ctx context.Context, handle, dir string) error {
+func (v *Volumes) restore(ctx context.Context, handle, dir string, quota int64) error {
 	staging := dir + restoring
 	if err := discard(staging); err != nil {
 		return fmt.Errorf("volume: clearing an unfinished restore of %s: %w", handle, err)
@@ -378,7 +383,7 @@ func (v *Volumes) restore(ctx context.Context, handle, dir string) error {
 	if err := makeDir(staging); err != nil {
 		return err
 	}
-	err = untar(content, staging)
+	err = untar(content, staging, quota)
 	if err == nil {
 		err = os.Rename(staging, dir)
 	}
@@ -699,14 +704,22 @@ func writeEntry(archive *tar.Writer, root *os.Root, name string) (int64, bool, e
 // about what is already on disk along its path: a link the archive made earlier
 // sits in the path of every entry after it. The root refuses to resolve a path
 // out of the volume, whatever links lie along the way.
-func untar(r io.Reader, dir string) error {
+//
+// AND NO MORE THAN THE QUOTA IS UNPACKED, when there is one. Each file's size
+// is checked before a byte of it is written: it is the size the entry will
+// write, and an entry whose holes the reader fills with zeros can name
+// terabytes in an archive of a few bytes.
+func untar(r io.Reader, dir string, quota int64) error {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return err
 	}
 	defer root.Close()
 
-	var links []string
+	var (
+		links   []string
+		written int64
+	)
 	shut := map[string]fs.FileMode{}
 	archive := tar.NewReader(r)
 	for {
@@ -762,6 +775,10 @@ func untar(r io.Reader, dir string) error {
 			}
 			links = append(links, name)
 		case tar.TypeReg:
+			if quota > 0 && header.Size > quota-written {
+				return fmt.Errorf("volume: the checkpoint holds more than the volume's quota of %d bytes", quota)
+			}
+			written += header.Size
 			if err := root.MkdirAll(filepath.Dir(name), 0o750); err != nil {
 				return err
 			}
