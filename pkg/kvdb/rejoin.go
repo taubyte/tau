@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	cid "github.com/ipfs/go-cid"
@@ -609,6 +610,15 @@ func linksOf(heads []Head) []link {
 // and the own operations, which keep the values still live, and starts over
 // with the judge's fleet time under a new incarnation. The caller holds
 // store.mu.
+//
+// What the old incarnation wrote and no longer holds was removed, by this
+// replica or by a removal it merged, and a removal it made before it first
+// heard a fleet is in no log. The new context keeps those dots, as removals
+// written now: a copy of one, in the judge's state or anyone's, is refused
+// here, and the snapshot that carries the context removes it wherever it
+// goes. Left out of them are the elements still held, so what was
+// acknowledged and is not written again stays live, and the logged
+// operations, which reissue writes again.
 func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 	own := map[string]*pb.Delta{}
 	err := scanStore(ctx, store.store, store.ownPrefix(), func(k string, v []byte) error {
@@ -624,10 +634,14 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 	}
 	t := newTxn(store.store)
 	prefix := store.ownPrefix().String() + "/"
+	held := map[uint64]struct{}{}
 	for k, rec := range own {
 		d, err := parseDotSegment(strings.TrimPrefix(k, prefix))
 		if err != nil {
 			return err
+		}
+		if d.replica == store.replica {
+			held[d.counter] = struct{}{}
 		}
 		var live []*pb.Element
 		for _, e := range rec.GetElements() {
@@ -649,8 +663,9 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 
 	var blocks []cid.Cid
 	bp := store.blocksPrefix()
+	ep := store.set.elemsPrefix().String() + "/"
 	var keys []string
-	err = scanStore(ctx, store.store, store.namespace, func(k string, _ []byte) error {
+	err = scanStore(ctx, store.store, store.namespace, func(k string, v []byte) error {
 		switch {
 		case strings.HasPrefix(k, prefix),
 			k == store.versionKey().String(),
@@ -662,6 +677,14 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 				return err
 			}
 			blocks = append(blocks, c)
+		case strings.HasPrefix(k, ep):
+			el, err := store.set.parseElem(k, v)
+			if err != nil {
+				return err
+			}
+			if el.dot.replica == store.replica {
+				held[el.dot.counter] = struct{}{}
+			}
 		}
 		keys = append(keys, k)
 		return nil
@@ -677,6 +700,15 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 		}
 		t.del(ds.RawKey(k))
 	}
+	removed := newCausalContext()
+	if k := store.cc.inc[store.replica]; k != nil {
+		at := max(store.clock(), since)
+		gone := &known{spans: removedSpans(k.spans, held), changed: at, expires: max(at+store.retention(), k.expires)}
+		if len(gone.spans) > 0 {
+			removed.inc[store.replica] = gone
+		}
+	}
+	store.stageContext(t, newCausalContext(), removed)
 	t.put(store.sinceKey(), binary.AppendUvarint(nil, since))
 	t.put(store.rebaseKey(), nil)
 	if err := t.commit(ctx); err != nil {
@@ -694,7 +726,7 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 	}
 	store.heads.reset()
 	store.lows.pending, store.lows.block = none, none
-	store.setContext(newCausalContext())
+	store.setContext(removed)
 	store.liveCount, store.blockCount = 0, 0
 	store.horizon = 0
 	store.since, store.sinceUp = since, store.times.up()
@@ -707,6 +739,31 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 		store.set.deleteHook(k)
 	}
 	return nil
+}
+
+// removedSpans is spans less the counters held: the dots of an incarnation
+// that name no element held any more.
+func removedSpans(spans []span, held map[uint64]struct{}) []span {
+	counters := make([]uint64, 0, len(held))
+	for c := range held {
+		counters = append(counters, c)
+	}
+	slices.Sort(counters)
+	var out []span
+	for _, s := range spans {
+		lo := s.lo
+		i, _ := slices.BinarySearch(counters, s.lo+1)
+		for ; i < len(counters) && counters[i] <= s.hi; i++ {
+			if counters[i]-1 > lo {
+				out = append(out, span{lo: lo, hi: counters[i] - 1})
+			}
+			lo = counters[i]
+		}
+		if s.hi > lo {
+			out = append(out, span{lo: lo, hi: s.hi})
+		}
+	}
+	return out
 }
 
 // reissue puts back every kept own operation the state does not cover, then

@@ -485,6 +485,39 @@ func TestAWriteBeforeFirstContactSurvivesARebase(t *testing.T) {
 	}
 }
 
+// TestARemovalBeforeFirstContactSurvivesARebase (T8.7): what a replica
+// removed before it ever heard a fleet is no element any more, so nothing
+// logs it at first contact. A value it put that went out, and then removed
+// before the removal could leave, stays removed through a rebase: the rebase
+// keeps the dots the old incarnation wrote and no longer holds.
+func TestARemovalBeforeFirstContactSurvivesARebase(t *testing.T) {
+	st := newSimTime()
+	a, b, c := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
+	put(t, a.r, "/x", "removed")
+	st.deliver(t, a, b, c) // the put goes out, and nothing comes back
+	b.wantValue(t, "/x", "removed")
+	del(t, a.r, "/x")
+	a.out.take() // the removal never leaves
+	st.exchange(t, b, c)
+	b.beat()
+	st.deliver(t, b, a) // first contact, inbound only
+	a.out.take()
+	w := st.replica(t, "w", 0)
+	put(t, w.r, "/other", "v")
+	st.exchange(t, w, b, c)
+	del(t, b.r, "/other")
+	st.away(t, simRetention+2*simMargin, b, c)
+	a.beat()
+	st.exchange(t, a, b, c)
+	if a.rebases() != 1 {
+		t.Fatalf("setup: %d rebases, want 1", a.rebases())
+	}
+	st.exchange(t, a, b, c)
+	for _, sr := range []*simReplica{a, b, c} {
+		sr.wantValue(t, "/x", "<deleted>")
+	}
+}
+
 // TestAReplicaThatWroteBeforeAnyContactIsJudgedAtFirstContact (T8.4): what
 // a replica that never heard a fleet holds it wrote itself, and the fleet
 // may have removed and forgotten any of it. The first fleet time it hears
