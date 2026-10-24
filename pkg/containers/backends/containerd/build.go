@@ -24,6 +24,7 @@ import (
 	"github.com/moby/moby/api/pkg/stdcopy"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/taubyte/tau/pkg/containers/core"
+	"github.com/taubyte/tau/pkg/containers/reserve"
 )
 
 // containerd cannot build images itself, so BuildKit is run as an ordinary
@@ -160,7 +161,7 @@ func (i *containerdImage) Build(ctx context.Context, input *core.DockerfileBuild
 		}
 	}
 
-	if err := extractContext(input.Context, contextDir); err != nil {
+	if err := extractContext(input.Context, contextDir, reserve.Default); err != nil {
 		return fmt.Errorf("failed to unpack build context: %w", err)
 	}
 
@@ -330,7 +331,12 @@ func (b *ContainerdBackend) nameImage(ctx context.Context, name string, target o
 // nothing about where that link leads. So every entry is created through an
 // os.Root, which refuses to resolve a path out of dir, and once the tar is
 // unpacked every link in dir is followed from where it actually sits.
-func extractContext(r io.Reader, dir string) error {
+//
+// The disk it is unpacked onto keeps its reserve, because a context says
+// nothing in advance about how much it unpacks to: the filesystem is read
+// before each entry is made and each chunk is written, and a context that would
+// leave less free than floor is refused. A run of zeros is left as a hole.
+func extractContext(r io.Reader, dir string, floor reserve.Floor) error {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return err
@@ -370,6 +376,13 @@ func extractContext(r io.Reader, dir string) error {
 		// Ownership, times and extended attributes, file capabilities among
 		// them, are not carried over: what is unpacked belongs to this process.
 		switch header.Typeflag {
+		case tar.TypeDir, tar.TypeReg, tar.TypeSymlink:
+			if err := floor.Take(dir, 0, 1); err != nil {
+				return err
+			}
+		}
+
+		switch header.Typeflag {
 		case tar.TypeDir:
 			if err := root.MkdirAll(name, 0o755); err != nil {
 				return err
@@ -381,7 +394,7 @@ func extractContext(r io.Reader, dir string) error {
 			}
 			// Permission bits only: setuid, setgid and sticky have no place in a
 			// build context.
-			if err := writeFile(root, name, reader, header.FileInfo().Mode().Perm()); err != nil {
+			if err := writeFile(root, name, reader, header.FileInfo().Mode().Perm(), floor); err != nil {
 				return err
 			}
 
@@ -485,14 +498,14 @@ func confine(name string) (string, error) {
 	return cleaned, nil
 }
 
-func writeFile(root *os.Root, name string, r io.Reader, mode os.FileMode) error {
+func writeFile(root *os.Root, name string, r io.Reader, mode os.FileMode, floor reserve.Floor) error {
 	file, err := root.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 
-	if _, err := io.Copy(file, r); err != nil {
+	if _, err := floor.Copy(file, r); err != nil {
 		return err
 	}
 

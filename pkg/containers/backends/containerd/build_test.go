@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/taubyte/tau/pkg/containers/core"
+	"github.com/taubyte/tau/pkg/containers/reserve"
 )
 
 // tarOf builds a context tarball from a list of entries.
@@ -57,7 +59,7 @@ func TestExtractContext(t *testing.T) {
 			&tar.Header{Name: "sub", Typeflag: tar.TypeDir, Mode: 0o755},
 			file("Dockerfile"),
 			file("sub/app.go"),
-		), dir))
+		), dir, reserve.Default))
 
 		content, err := os.ReadFile(filepath.Join(dir, "Dockerfile"))
 		require.NoError(t, err)
@@ -71,7 +73,7 @@ func TestExtractContext(t *testing.T) {
 		// Not every tar writer emits directory headers.
 		dir := t.TempDir()
 
-		require.NoError(t, extractContext(tarOf(t, file("deep/nested/app.go")), dir))
+		require.NoError(t, extractContext(tarOf(t, file("deep/nested/app.go")), dir, reserve.Default))
 
 		_, err := os.Stat(filepath.Join(dir, "deep", "nested", "app.go"))
 		assert.NoError(t, err)
@@ -86,7 +88,7 @@ func TestExtractContext(t *testing.T) {
 			"../escaped.txt",
 			"sub/../../escaped.txt",
 		} {
-			err := extractContext(tarOf(t, file(name)), dir)
+			err := extractContext(tarOf(t, file(name)), dir, reserve.Default)
 			require.Error(t, err, "%q must be refused", name)
 			assert.Contains(t, err.Error(), "escapes")
 		}
@@ -104,7 +106,7 @@ func TestExtractContext(t *testing.T) {
 			"//etc/cron.d/twice":  "etc/cron.d/twice",
 		} {
 			dir := t.TempDir()
-			require.NoError(t, extractContext(tarOf(t, file(name)), dir), name)
+			require.NoError(t, extractContext(tarOf(t, file(name)), dir, reserve.Default), name)
 
 			content, err := os.ReadFile(filepath.Join(dir, landed))
 			require.NoError(t, err, "%s must land at %s", name, landed)
@@ -120,7 +122,7 @@ func TestExtractContext(t *testing.T) {
 				Name:     "secret",
 				Typeflag: tar.TypeSymlink,
 				Linkname: link,
-			}), dir)
+			}), dir, reserve.Default)
 
 			require.Error(t, err, "a link to %q must be refused", link)
 			assert.Contains(t, err.Error(), "outside")
@@ -148,7 +150,7 @@ func TestExtractContext(t *testing.T) {
 				&tar.Header{Name: "x", Typeflag: tar.TypeSymlink, Linkname: "."},
 				&tar.Header{Name: "x/y", Typeflag: tar.TypeSymlink, Linkname: ".."},
 				last.header,
-			), dir)
+			), dir, reserve.Default)
 			assert.Error(t, err, "%s must be refused", last.what)
 
 			beside, err := os.ReadDir(parent)
@@ -178,7 +180,7 @@ func TestExtractContext(t *testing.T) {
 				&tar.Header{Name: "x", Typeflag: tar.TypeSymlink, Linkname: "."},
 				&tar.Header{Name: "x/y", Typeflag: tar.TypeSymlink, Linkname: c.via},
 				c.header,
-			), dir)
+			), dir, reserve.Default)
 			assert.Error(t, err, "%s must be refused", c.what)
 
 			content, err := os.ReadFile(victim)
@@ -214,7 +216,7 @@ func TestExtractContext(t *testing.T) {
 			{"named with a trailing slash", []*tar.Header{symlink("x", "."), symlink("x/z", ".."), symlink("a", "z/")}},
 			{"in a loop", []*tar.Header{symlink("a", "b"), symlink("b", "a")}},
 		} {
-			err := extractContext(tarOf(t, c.entries...), t.TempDir())
+			err := extractContext(tarOf(t, c.entries...), t.TempDir(), reserve.Default)
 			require.Error(t, err, "a link %s must be refused", c.what)
 			assert.Contains(t, err.Error(), "does not resolve inside", c.what)
 		}
@@ -228,7 +230,7 @@ func TestExtractContext(t *testing.T) {
 		for name, target := range links {
 			entries = append(entries, &tar.Header{Name: name, Typeflag: tar.TypeSymlink, Linkname: target})
 		}
-		require.NoError(t, extractContext(tarOf(t, entries...), dir))
+		require.NoError(t, extractContext(tarOf(t, entries...), dir, reserve.Default))
 
 		for name, want := range links {
 			target, err := os.Readlink(filepath.Join(dir, name))
@@ -244,7 +246,7 @@ func TestExtractContext(t *testing.T) {
 			file("sub/real"),
 			&tar.Header{Name: "other/hard", Typeflag: tar.TypeLink, Linkname: "sub/real"},
 			&tar.Header{Name: "rooted", Typeflag: tar.TypeLink, Linkname: "/sub/real"},
-		), dir))
+		), dir, reserve.Default))
 
 		real, err := os.Stat(filepath.Join(dir, "sub", "real"))
 		require.NoError(t, err)
@@ -269,7 +271,7 @@ func TestExtractContext(t *testing.T) {
 
 			err := extractContext(tarOf(t,
 				&tar.Header{Name: "stolen", Typeflag: tar.TypeLink, Linkname: target},
-			), dir)
+			), dir, reserve.Default)
 			require.Error(t, err, "a hard link to %q must be refused", target)
 
 			_, err = os.Lstat(filepath.Join(dir, "stolen"))
@@ -293,7 +295,7 @@ func TestExtractContext(t *testing.T) {
 				&tar.Header{Name: "dir" + strconv.Itoa(i), Typeflag: tar.TypeDir, Mode: 0o755 | bits},
 			)
 		}
-		require.NoError(t, extractContext(tarOf(t, entries...), dir))
+		require.NoError(t, extractContext(tarOf(t, entries...), dir, reserve.Default))
 
 		for i := range special {
 			for _, name := range []string{"file" + strconv.Itoa(i), "dir" + strconv.Itoa(i)} {
@@ -310,7 +312,7 @@ func TestExtractContext(t *testing.T) {
 
 		owned := file("owned")
 		owned.Uid, owned.Gid = 4242, 4242
-		require.NoError(t, extractContext(tarOf(t, owned), dir))
+		require.NoError(t, extractContext(tarOf(t, owned), dir, reserve.Default))
 
 		info, err := os.Stat(filepath.Join(dir, "owned"))
 		require.NoError(t, err)
@@ -325,7 +327,7 @@ func TestExtractContext(t *testing.T) {
 		require.NoError(t, extractContext(tarOf(t,
 			file("real.txt"),
 			&tar.Header{Name: "link.txt", Typeflag: tar.TypeSymlink, Linkname: "real.txt"},
-		), dir))
+		), dir, reserve.Default))
 
 		target, err := os.Readlink(filepath.Join(dir, "link.txt"))
 		require.NoError(t, err)
@@ -339,7 +341,7 @@ func TestExtractContext(t *testing.T) {
 			require.NoError(t, extractContext(tarOf(t,
 				&tar.Header{Name: "dev/node", Typeflag: kind, Mode: 0o666},
 				file("Dockerfile"),
-			), dir))
+			), dir, reserve.Default))
 
 			_, err := os.Lstat(filepath.Join(dir, "dev", "node"))
 			assert.True(t, os.IsNotExist(err), "type %q has no place in a build context", kind)
@@ -350,12 +352,12 @@ func TestExtractContext(t *testing.T) {
 	})
 
 	t.Run("a truncated tar is an error", func(t *testing.T) {
-		err := extractContext(strings.NewReader("this is not a tar"), t.TempDir())
+		err := extractContext(strings.NewReader("this is not a tar"), t.TempDir(), reserve.Default)
 		assert.Error(t, err)
 	})
 
 	t.Run("a corrupt gzip stream is an error", func(t *testing.T) {
-		err := extractContext(bytes.NewReader([]byte{0x1f, 0x8b, 0xff, 0xff}), t.TempDir())
+		err := extractContext(bytes.NewReader([]byte{0x1f, 0x8b, 0xff, 0xff}), t.TempDir(), reserve.Default)
 		assert.ErrorContains(t, err, "reading build context")
 	})
 
@@ -368,12 +370,12 @@ func TestExtractContext(t *testing.T) {
 		require.NoError(t, writer.Close())
 
 		// The header and the start of the body, as a transfer that died leaves it.
-		err = extractContext(bytes.NewReader(buf.Bytes()[:512+10]), t.TempDir())
+		err = extractContext(bytes.NewReader(buf.Bytes()[:512+10]), t.TempDir(), reserve.Default)
 		assert.ErrorIs(t, err, io.ErrUnexpectedEOF)
 	})
 
 	t.Run("a directory that does not exist is an error", func(t *testing.T) {
-		err := extractContext(tarOf(t, file("Dockerfile")), filepath.Join(t.TempDir(), "missing"))
+		err := extractContext(tarOf(t, file("Dockerfile")), filepath.Join(t.TempDir(), "missing"), reserve.Default)
 		assert.Error(t, err)
 	})
 
@@ -401,7 +403,7 @@ func TestExtractContext(t *testing.T) {
 			{"a link where a file is", []*tar.Header{file("a"), link("a")}, 0},
 		} {
 			dir := t.TempDir()
-			assert.Error(t, extractContext(tarOf(t, c.entries...), dir), c.what)
+			assert.Error(t, extractContext(tarOf(t, c.entries...), dir, reserve.Default), c.what)
 
 			info, err := os.Lstat(filepath.Join(dir, "a"))
 			require.NoError(t, err, c.what)
@@ -595,11 +597,71 @@ func TestExtractContextAcceptsGzip(t *testing.T) {
 			source = bytes.NewReader(zipped.Bytes())
 		}
 
-		require.NoError(t, extractContext(source, dir), "gzipped=%v", compressed)
+		require.NoError(t, extractContext(source, dir, reserve.Default), "gzipped=%v", compressed)
 
 		content, err := os.ReadFile(filepath.Join(dir, "Dockerfile"))
 		require.NoError(t, err, "gzipped=%v", compressed)
 		assert.Equal(t, "FROM", string(content))
+	}
+}
+
+// filled is a filesystem holding whatever is under dir, out of the bytes and
+// inodes it was given.
+type filled struct {
+	dir           string
+	bytes, inodes int64
+}
+
+func (f filled) measure(string) (reserve.Usage, error) {
+	var used, entries int64
+	err := filepath.WalkDir(f.dir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || path == f.dir {
+			return err
+		}
+		entries++
+		info, err := entry.Info()
+		if err == nil && info.Mode().IsRegular() {
+			used += info.Size()
+		}
+		return err
+	})
+	return reserve.Usage{
+		Size: 100 << 20, Free: uint64(max(f.bytes-used, 0)),
+		Files: 100, FreeFiles: uint64(max(f.inodes-entries, 0)),
+	}, err
+}
+
+// TestEXTRACTCONTEXTLeavesTheDiskItsReserve. A context says nothing in advance
+// about how much it unpacks to, so the disk is read as it is unpacked: the
+// first MiB of a file fits and the second would take the disk past the
+// reserve, and the third of three entries would take its inodes past theirs.
+func TestExtractContextLeavesTheDiskItsReserve(t *testing.T) {
+	big := &tar.Header{Name: "big", Typeflag: tar.TypeReg, Mode: 0o644, Size: 2 << 20}
+	var buf bytes.Buffer
+	writer := tar.NewWriter(&buf)
+	require.NoError(t, writer.WriteHeader(big))
+	_, err := writer.Write(bytes.Repeat([]byte("x"), 2<<20))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	for _, c := range []struct {
+		name    string
+		context io.Reader
+		inodes  int64
+		refused reserve.Error
+	}{
+		{"bytes", &buf, 100, reserve.Error{Unit: "bytes", Free: 50 << 20, Want: 1 << 20, Reserve: 50 << 20}},
+		{"inodes", tarOf(t, file("a"), file("b"), file("c")), 7, reserve.Error{Unit: "inodes", Free: 5, Want: 1, Reserve: 5}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			floor := reserve.Floor{Space: 0.5, Inodes: 0.05, Measure: filled{dir: dir, bytes: 51 << 20, inodes: c.inodes}.measure}
+
+			var refused *reserve.Error
+			require.ErrorAs(t, extractContext(c.context, dir, floor), &refused)
+			refused.Path = ""
+			require.Equal(t, c.refused, *refused)
+		})
 	}
 }
 
