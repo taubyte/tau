@@ -316,6 +316,17 @@ higher() {
   fi
 }
 
+# fit LIMIT ROOM: LIMIT, or ROOM in bytes when LIMIT asks for more, or for none.
+fit() {
+  local n
+  n="$(bytes "$1")" || { echo "$1"; return; }
+  if [ "$n" = infinity ] || [ "$n" -gt "$2" ]; then
+    echo "$2"
+  else
+    echo "$1"
+  fi
+}
+
 # A shared slice bounds every capped run ADDED UP, which the per-scope ceiling
 # cannot: five runs each honestly under their own limit still summed past the
 # host. CPUQuota is here for the same reason — a sweep reaching load 32 makes the
@@ -327,9 +338,23 @@ higher() {
 # slice under a gate running at 96G, and the kernel OOM-killed the gate's make.
 # While a run is inside, each limit only rises, to the larger of what is set and
 # what is asked; the slice takes exactly what is asked once it is idle.
+#
+# ★ NO CALL ASKS FOR MORE THAN ITS HOST HAS. A total sized for a 123G build
+# host reached a 31G desktop through an exported TAU_CAP_TOTAL=96G; the slice
+# then bounded nothing, and two capped runs beside the desktop took the machine
+# to 29G used. What a call asks for is cut to a share of the host's RAM: 85%, or
+# half where a desktop session runs, which keeps the other half for the desktop.
 total="${TAU_CAP_TOTAL:-8G}"
 total_high="${TAU_CAP_TOTAL_HIGH:-6G}"
 cpu="${TAU_CAP_CPU:-400%}"
+ram="$(awk '/^MemTotal:/ { printf "%d", $2 * 1024 }' "${TAU_CAP_MEMINFO:-/proc/meminfo}")"
+if [ -n "$ram" ]; then
+  share=85
+  systemctl --user is-active -q graphical-session.target 2>/dev/null && share=50
+  room=$(( ram / 100 * share >> 20 << 20 ))
+  total="$(fit "$total" "$room")"
+  total_high="$(fit "$total_high" $(( room / 10 * 9 >> 20 << 20 )))"
+fi
 cg="$(systemctl --user show -p ControlGroup --value "$slice" 2>/dev/null)"
 if [ -n "$cg" ] && grep -qx 'populated 1' "/sys/fs/cgroup$cg/cgroup.events" 2>/dev/null; then
   cg="/sys/fs/cgroup$cg"

@@ -28,6 +28,7 @@ type capped struct {
 	slice   string
 	ns      string
 	runtime string
+	meminfo string
 }
 
 type limits struct {
@@ -86,6 +87,9 @@ func (c *capped) cmdAs(ctx context.Context, class string, l limits, args ...stri
 	)
 	if c.ns != "" {
 		cmd.Env = append(cmd.Env, "TAU_CAP_TMP="+c.ns)
+	}
+	if c.meminfo != "" {
+		cmd.Env = append(cmd.Env, "TAU_CAP_MEMINFO="+c.meminfo)
 	}
 	if class != "" {
 		cmd.Env = append(cmd.Env, "TAU_CAP_CLASS="+class)
@@ -340,6 +344,27 @@ func TestTheSliceIsOnlyLoweredWhenNothingIsInIt(t *testing.T) {
 	inside.kill(t)
 	c.run(t, small, "true")
 	assert.Equal(t, limits{fmt.Sprint(gib), fmt.Sprint(512 * mib), "1s"}, c.limits(t))
+}
+
+// TestASliceIsNeverGivenMoreThanItsHostHas gives cap a host of 4G and asks
+// for a terabyte: the slice gets its share of the 4G, half of it where a
+// desktop session runs, and what fits is still taken as asked.
+func TestASliceIsNeverGivenMoreThanItsHostHas(t *testing.T) {
+	c := newCapped(t)
+	c.meminfo = filepath.Join(t.TempDir(), "meminfo")
+	require.NoError(t, os.WriteFile(c.meminfo, []byte("MemTotal:        4194304 kB\nMemFree:          524288 kB\n"), 0o600))
+	const gib, mib = 1 << 30, 1 << 20
+
+	share := 85
+	if exec.Command("systemctl", "--user", "is-active", "-q", "graphical-session.target").Run() == nil {
+		share = 50
+	}
+	room := 4 * gib / 100 * share >> 20 << 20
+	c.run(t, limits{"1T", "1T", "100%"}, "true")
+	assert.Equal(t, limits{fmt.Sprint(room), fmt.Sprint(room / 10 * 9 >> 20 << 20), "1s"}, c.limits(t))
+
+	c.run(t, small, "true")
+	assert.Equal(t, limits{fmt.Sprint(gib), fmt.Sprint(512 * mib), "1s"}, c.limits(t), "what fits is taken as asked")
 }
 
 func TestAKilledRunsTMPDIRIsRemovedByTheNextRun(t *testing.T) {
