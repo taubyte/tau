@@ -1,0 +1,38 @@
+#!/bin/sh
+# leakcheck runs a test binary in a TMPDIR of its own, and fails it if the
+# binary leaves a peer's repository or a universe there.
+#
+# Used as `go test -exec scripts/leakcheck ...`, and ahead of the other wrapper
+# as `-exec 'scripts/leakcheck scripts/as-root'`. A test that never closes a
+# peer leaves the peer's repository behind even when it passes, and on a tmpfs
+# every page of it stays charged to the cgroup that wrote it. One directory per
+# binary is what says which package left it.
+#
+#   tb-node-*     the repository of a peer made without one (p2p/peer)
+#   universe-*    a dream universe
+#
+# Whatever else the binary leaves goes with its directory.
+#
+# t.TempDir follows GOTMPDIR, which keeps the TMPDIR the run already had, so a
+# test's own directories, and the unix sockets bound in them, are no deeper than
+# they were: a socket's path is limited to 108 bytes. What os.MkdirTemp makes,
+# a peer's repository among it, lands in the binary's directory.
+
+dir="$(mktemp -d "${TMPDIR:-/tmp}/XXX")" || exit 1
+
+GOTMPDIR="${GOTMPDIR:-${TMPDIR:-/tmp}}" TMPDIR="$dir" "$@"
+rc=$?
+
+leaks="$(cd "$dir" && ls -d tb-node-* universe-* 2>/dev/null)"
+if [ -n "$leaks" ]; then
+	echo "LEAK: $(pwd) left behind in its TMPDIR:"
+	echo "$leaks" | sed 's/^/	/'
+	[ "$rc" -ne 0 ] || rc=1
+fi
+
+# A binary run as root leaves root's files, and only root can remove them.
+rm -rf --one-file-system -- "$dir" 2>/dev/null ||
+	sudo -n rm -rf --one-file-system -- "$dir" 2>/dev/null ||
+	echo "leakcheck: could not remove $dir"
+
+exit "$rc"

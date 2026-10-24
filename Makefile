@@ -1,6 +1,12 @@
 GOMEMLIMIT ?= 4GiB
 FLAGS ?=
 
+# EVERY go test HERE RUNS ITS BINARIES THROUGH LEAKCHECK, which gives each
+# package's binary a TMPDIR of its own and fails the package if the binary
+# leaves a peer's repository or a universe behind (scripts/leakcheck). A target
+# whose binaries run as root puts it ahead of AS_ROOT, as one -exec.
+LEAKCHECK := $(CURDIR)/scripts/leakcheck
+
 # ONE DREAMING PACKAGE IS A MULTI-NODE UNIVERSE, so this is a share of the
 # MACHINE and not a fixed number. It was 4, which on a four-core box runs four
 # universes against four cores: the raft and crdt tests there do not fail an
@@ -46,15 +52,15 @@ DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xa
 TAU_PKGS = $(shell go list -e ./... 2>/dev/null | grep -v '/ee/')
 
 test:
-	go test -timeout 20m $(FLAGS) $(TAU_PKGS)
+	go test -exec $(LEAKCHECK) -timeout 20m $(FLAGS) $(TAU_PKGS)
 
 # test-cli tests the developer CLI, which is its own module (tools/tau, so the
 # root module never imports it and `./...` here never sweeps it in): its unit
 # tests, then the end-to-end run against a dream fleet (tag dreaming, which is
 # why DREAM_PKGS leaves tools/tau/ out — the root module cannot build it).
 test-cli:
-	cd tools/tau && go vet ./... && go test -timeout 10m $(FLAGS) ./...
-	cd tools/tau && GOMEMLIMIT=$(GOMEMLIMIT) go test -tags dreaming -timeout 20m $(FLAGS) ./e2e/
+	cd tools/tau && go vet ./... && go test -exec $(LEAKCHECK) -timeout 10m $(FLAGS) ./...
+	cd tools/tau && GOMEMLIMIT=$(GOMEMLIMIT) go test -exec $(LEAKCHECK) -tags dreaming -timeout 20m $(FLAGS) ./e2e/
 	$(MAKE) test-corpus
 
 # test-corpus puts every project under node/dream/projects through `tau build`
@@ -63,13 +69,13 @@ test-cli:
 # run on a machine builds the toolchain image the corpus names. RUN= replaces
 # the -run filter, e.g. RUN='^TestEveryCorpusProjectBuildsBothWays$$/^starter$$' (dollars doubled for make).
 test-corpus:
-	cd tools/tau && GOMEMLIMIT=$(GOMEMLIMIT) go test -exec $(AS_ROOT) -tags 'dreaming docker_integration' -timeout 150m -v $(FLAGS) -run '$(if $(RUN),$(RUN),^(TestEveryCorpusProjectBuildsBothWays|TestTheDomainCorpusBuildsBothWays)$$)' ./e2e/
+	cd tools/tau && GOMEMLIMIT=$(GOMEMLIMIT) go test -exec '$(LEAKCHECK) $(AS_ROOT)' -tags 'dreaming docker_integration' -timeout 150m -v $(FLAGS) -run '$(if $(RUN),$(RUN),^(TestEveryCorpusProjectBuildsBothWays|TestTheDomainCorpusBuildsBothWays)$$)' ./e2e/
 
 test-dreaming:
-	GOMEMLIMIT=$(GOMEMLIMIT) go test -tags dreaming -p $(DREAM_P) -timeout 30m $(FLAGS) $(DREAM_PKGS)
+	GOMEMLIMIT=$(GOMEMLIMIT) go test -exec $(LEAKCHECK) -tags dreaming -p $(DREAM_P) -timeout 30m $(FLAGS) $(DREAM_PKGS)
 
 test-raft:
-	GOMEMLIMIT=$(GOMEMLIMIT) go test -tags raft_integration -p 1 -timeout 20m $(FLAGS) ./pkg/raft/...
+	GOMEMLIMIT=$(GOMEMLIMIT) go test -exec $(LEAKCHECK) -tags raft_integration -p 1 -timeout 20m $(FLAGS) ./pkg/raft/...
 
 # Container backend integration suites. Both drive the same conformance suite
 # (pkg/containers/backends/conformance), which is what keeps docker and
@@ -81,12 +87,12 @@ test-raft:
 # test-containerd needs either a reachable /run/containerd/containerd.sock or
 # containerd + rootlesskit on PATH (plus subuid/subgid entries) for rootless.
 test-docker:
-	go test -tags docker_integration -run '_Integration$$' -p 1 -timeout 15m $(FLAGS) ./pkg/containers/...
+	go test -exec $(LEAKCHECK) -tags docker_integration -run '_Integration$$' -p 1 -timeout 15m $(FLAGS) ./pkg/containers/...
 
 # Run as root when the user is root or has passwordless sudo, skipped otherwise:
 # the system containerd socket is root's (scripts/as-root).
 test-containerd:
-	go test -exec $(AS_ROOT) -tags containerd_integration -run '_Integration$$' -p 1 -timeout 20m $(FLAGS) ./pkg/containers/...
+	go test -exec '$(LEAKCHECK) $(AS_ROOT)' -tags containerd_integration -run '_Integration$$' -p 1 -timeout 20m $(FLAGS) ./pkg/containers/...
 
 # cover-containers measures pkg/containers and its two backends the only way
 # that means anything for daemon-backed code: every pass that reaches them, each
@@ -105,8 +111,10 @@ test-containerd:
 #                       slirp4netns or pasta, and a system socket the user
 #                       cannot reach
 CONTAINERS_COVERPKG := ./pkg/containers,./pkg/containers/backends/containerd,./pkg/containers/backends/docker
-COVER_DIR ?= $${TMPDIR:-/tmp}/tau-containers-cover
-CONTAINERS_COVER = go test -coverpkg=$(CONTAINERS_COVERPKG) -p 1 -count=1 -timeout 30m $(FLAGS)
+# Not under TMPDIR: scripts/cap gives each run a TMPDIR of its own and removes
+# it once the run is over, and the passes of one report may be separate runs.
+COVER_DIR ?= /tmp/tau-containers-cover
+CONTAINERS_COVER = go test -exec $(LEAKCHECK) -coverpkg=$(CONTAINERS_COVERPKG) -p 1 -count=1 -timeout 30m $(FLAGS)
 
 cover-containers: cover-containers-unit cover-containers-docker cover-containers-root cover-containers-rootless cover-containers-report
 
@@ -117,7 +125,7 @@ cover-containers-docker:
 	mkdir -p $(COVER_DIR) && $(CONTAINERS_COVER) -tags docker_integration -run '_Integration$$' -coverprofile=$(COVER_DIR)/docker.out ./pkg/containers/...
 
 cover-containers-root:
-	mkdir -p $(COVER_DIR) && $(CONTAINERS_COVER) -exec $(AS_ROOT) -tags 'docker_integration containerd_integration' -coverprofile=$(COVER_DIR)/root.out ./pkg/containers/...
+	mkdir -p $(COVER_DIR) && $(CONTAINERS_COVER) -exec '$(LEAKCHECK) $(AS_ROOT)' -tags 'docker_integration containerd_integration' -coverprofile=$(COVER_DIR)/root.out ./pkg/containers/...
 
 cover-containers-rootless:
 	mkdir -p $(COVER_DIR) && $(CONTAINERS_COVER) -tags containerd_integration -run '_Integration$$' -coverprofile=$(COVER_DIR)/rootless.out ./pkg/containers/backends/containerd/
@@ -144,7 +152,7 @@ AS_ROOT := $(CURDIR)/scripts/as-root
 # store and reading them back, and a node's https listeners presenting them.
 # It needs nothing installed, so make test runs it too.
 test-acme:
-	go test -count=1 -v -timeout 10m ./pkg/certificate/acme/ ./services/cm/ && go test -count=1 -v -timeout 10m -run '^(TestAGeneratedNameIsIssuedByACMEAndServedOverTLS|TestTheZoneIsProvedByDNS01AndItsWildcardAnswersEveryService)$$' ./node/boot/
+	go test -exec $(LEAKCHECK) -count=1 -v -timeout 10m ./pkg/certificate/acme/ ./services/cm/ && go test -exec $(LEAKCHECK) -count=1 -v -timeout 10m -run '^(TestAGeneratedNameIsIssuedByACMEAndServedOverTLS|TestTheZoneIsProvedByDNS01AndItsWildcardAnswersEveryService)$$' ./node/boot/
 
 # test-acme-live issues from pebble in a container, a CA tau does not share a
 # process with, whose resolver is bind9 finding the cloud's zone by real NS and
@@ -153,23 +161,23 @@ test-acme:
 # build frontend verified to pebble's root. A delegation names port 53, so the
 # node's dns needs root; containers are host-networked, at pinned images.
 test-acme-live:
-	go test -exec $(AS_ROOT) -tags docker_integration -count=1 -v -timeout 10m -run '^TestARealCAIssuesThroughARealDelegation$$' ./node/boot/
+	go test -exec '$(LEAKCHECK) $(AS_ROOT)' -tags docker_integration -count=1 -v -timeout 10m -run '^TestARealCAIssuesThroughARealDelegation$$' ./node/boot/
 
 test-application:
-	go test -exec $(AS_ROOT) -tags 'dreaming docker_integration' -count=1 -v -timeout 10m -run '^(TestAnApplicationAnswersThroughTheGateway|TestAContainerWorkerRunsToCompletionPerInvocation|TestAChannelServedByAContainerDeliversToItsNamedPort)$$' ./node/dream/
+	go test -exec '$(LEAKCHECK) $(AS_ROOT)' -tags 'dreaming docker_integration' -count=1 -v -timeout 10m -run '^(TestAnApplicationAnswersThroughTheGateway|TestAContainerWorkerRunsToCompletionPerInvocation|TestAChannelServedByAContainerDeliversToItsNamedPort)$$' ./node/dream/
 
 # test-build runs the build service's builds in real containers, for the same
 # reason and under the same privilege as test-application: a build runs a
 # stranger's commands, and the engine will not start one it cannot firewall.
 
 test-build:
-	go test -exec $(AS_ROOT) -tags docker_integration -count=1 -v -timeout 15m -run '^TestARealBuild' ./services/build/artifact/
+	go test -exec '$(LEAKCHECK) $(AS_ROOT)' -tags docker_integration -count=1 -v -timeout 15m -run '^TestARealBuild' ./services/build/artifact/
 
 # test-external-databases deploys projects/with/database/{postgres,mysql}/sql
 # against real servers the test starts in docker. No firewall is installed for a
 # server the TEST runs, so it needs a docker daemon and no sudo.
 test-external-databases:
-	go test -tags 'dreaming docker_integration' -run '^TestAnExternal' -count=1 -timeout 15m $(FLAGS) ./node/dream/
+	go test -exec $(LEAKCHECK) -tags 'dreaming docker_integration' -run '^TestAnExternal' -count=1 -timeout 15m $(FLAGS) ./node/dream/
 
 # test-forges runs the forge drivers against real servers in docker: Gitea and
 # Forgejo for the gitea driver, GitLab CE for the gitlab driver, at the images
@@ -178,7 +186,7 @@ test-external-databases:
 # signed delivery pkg/forge verifies, and a clone with the deploy key. It needs
 # a docker daemon and no sudo; GitLab alone takes minutes to boot.
 test-forges:
-	go test -tags docker_integration -run '^TestAReal' -count=1 -v -p 1 -timeout 30m $(FLAGS) ./pkg/forge/live/
+	go test -exec $(LEAKCHECK) -tags docker_integration -run '^TestAReal' -count=1 -v -p 1 -timeout 30m $(FLAGS) ./pkg/forge/live/
 
 # test-taucorder runs tools/taucorder, which is its own module (the root never
 # imports it, so `make test` does not sweep it). It includes the end-to-end
@@ -186,7 +194,7 @@ test-forges:
 # the e2e run counts toward the code it exercises.
 TAUCORDER_COVER ?= $${TMPDIR:-/tmp}/taucorder.cover
 test-taucorder:
-	cd tools/taucorder && GOMEMLIMIT=$(GOMEMLIMIT) go test -timeout 20m -coverpkg=./... -coverprofile=$(TAUCORDER_COVER) $(FLAGS) ./... && go tool cover -func=$(TAUCORDER_COVER) | tail -1
+	cd tools/taucorder && GOMEMLIMIT=$(GOMEMLIMIT) go test -exec $(LEAKCHECK) -timeout 20m -coverpkg=./... -coverprofile=$(TAUCORDER_COVER) $(FLAGS) ./... && go tool cover -func=$(TAUCORDER_COVER) | tail -1
 
 test-all: test test-dreaming test-raft
 
@@ -214,7 +222,7 @@ proto-v2:
 	cd pkg/kvdb/pb && buf generate
 
 proto-v2-check:
-	go test $(FLAGS) ./tools/protogen/... ./pkg/proto/...
+	go test -exec $(LEAKCHECK) $(FLAGS) ./tools/protogen/... ./pkg/proto/...
 
 # Enterprise-build targets live in the ee submodule and are pulled in when it's
 # checked out (a no-op for an OSS-only tree). Run `make help-ee` for the list.
