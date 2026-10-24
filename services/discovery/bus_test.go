@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -16,6 +17,14 @@ import (
 // gets wrong — a topic joined per publish, a subscription nobody cancels, a
 // slow reader stalling the mesh — is invisible without one.
 
+// newSwarm is n peers on one mocknet, handed over once every one has a gossip
+// stream to every other.
+//
+// EVERY PEER GOSSIPS BEFORE IT IS CONNECTED. A gossipsub opens its stream to a
+// peer when it starts or when identify says the peer gossips, and never retries
+// one that failed. A peer connected before the other gossiped hears of it only
+// from an identify push: sent once, and limited per subnet, which every mocknet
+// peer shares. Miss it and that peer never sends the other anything.
 func newSwarm(t *testing.T, n int) []*pubsub.PubSub {
 	t.Helper()
 
@@ -23,21 +32,40 @@ func newSwarm(t *testing.T, n int) []*pubsub.PubSub {
 	t.Cleanup(func() { mn.Close() })
 
 	hosts := make([]host.Host, n)
+	out := make([]*pubsub.PubSub, n)
 	for i := range hosts {
 		h, err := mn.GenPeer()
 		require.NoError(t, err)
-		hosts[i] = h
+		ps, err := pubsub.NewGossipSub(t.Context(), h)
+		require.NoError(t, err)
+		hosts[i], out[i] = h, ps
 	}
 	require.NoError(t, mn.LinkAll())
 	require.NoError(t, mn.ConnectAllButSelf())
 
-	out := make([]*pubsub.PubSub, n)
-	for i, h := range hosts {
-		ps, err := pubsub.NewGossipSub(t.Context(), h)
-		require.NoError(t, err)
-		out[i] = ps
+	for i, ps := range out {
+		for j, h := range hosts {
+			if i == j {
+				continue
+			}
+			require.Eventually(t, func() bool {
+				return slices.Contains(ps.ListPeers(""), h.ID())
+			}, 30*time.Second, 10*time.Millisecond, "peer %d never opened a stream to peer %d", i, j)
+		}
 	}
 	return out
+}
+
+// TestEveryPeerOfALargeSwarmHasAStreamToEveryOther when the swarm is handed
+// over. A host takes ten identify pushes in a burst from one subnet, then one
+// every five seconds, so sixteen mocknet peers are past it: a swarm that
+// connected before it gossiped left some peers never sending to others.
+func TestEveryPeerOfALargeSwarmHasAStreamToEveryOther(t *testing.T) {
+	swarm := newSwarm(t, 16)
+
+	for i, ps := range swarm {
+		require.Len(t, ps.ListPeers(""), len(swarm)-1, "peer %d has no stream to some other peer", i)
+	}
 }
 
 // TestAReportReachesTheOtherSideOfTheMesh.
