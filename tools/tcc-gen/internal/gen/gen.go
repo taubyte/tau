@@ -21,6 +21,10 @@ const (
 	tsGenPath      = "pkg/tcc/taubyte/v2/explorer/src/gen/schema.ts"
 	jsonSchemaPath = "pkg/tcc/taubyte/v2/config.schema.json"
 
+	// clientTSPath is the same TypeScript, committed again in @taubyte/tcc,
+	// which publishes it to authors. A second copy is a second file to drift.
+	clientTSPath = "pkg/tcc/clients/js/src/gen/schema.ts"
+
 	// readersPath is the typed view of every kind, as it sits in a compiled
 	// object. It is generated for the reason the TS and the JSON Schema are:
 	// the paths are the vocabulary's, and a hand-written copy of them is a copy.
@@ -43,6 +47,7 @@ func Generate(root []*engine.Node) (map[string][]byte, error) {
 		return nil, err
 	}
 	out[filepath.FromSlash(tsGenPath)] = ts
+	out[filepath.FromSlash(clientTSPath)] = ts
 	js, err := schema.JSONSchema()
 	if err != nil {
 		return nil, err
