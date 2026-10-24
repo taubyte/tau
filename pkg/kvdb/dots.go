@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
 )
@@ -14,14 +15,69 @@ import (
 // A dot names one delta: the incarnation that wrote it and that incarnation's
 // counter for it. Counters start at 1, so the zero dot names nothing.
 //
-// An incarnation is one open of one store: the node's peer id followed by a
-// nonce drawn when the store is opened. It is never persisted for reuse. A
+// An incarnation is the node's peer id followed by a 128-bit nonce drawn at
+// random by the process that writes under it. The nonce is never persisted. A
 // store restored from a backup is byte-identical to the store it was copied
-// from, so nothing local could tell the two apart; drawing the nonce on every
-// open is what makes reusing a dot impossible rather than unlikely.
+// from, so nothing on disk could tell the two apart; because a nonce lives
+// only in the memory of the process that drew it, a restored store reuses a
+// dot only if two random 128-bit draws collide. Within one process, a store
+// that closes hands its incarnation to the next open of the same store (see
+// incarnationRegistry).
 type dot struct {
 	replica string
 	counter uint64
+}
+
+// incarnations is this process's registry of the incarnations closed stores
+// wrote under.
+var incarnations = newIncarnationRegistry()
+
+type incarnationKey struct {
+	replicaID string
+	namespace string
+}
+
+type incarnation struct {
+	replica string
+	counter uint64
+}
+
+// incarnationRegistry lets a store reopened in the process that closed it
+// continue the incarnation it closed, so a load/unload cycle does not grow
+// every replica's vector by one entry.
+//
+// It is safe because an entry is the incarnation's true last counter, written
+// under the store's lock as it closed and after its last write, and because
+// resuming takes the entry out: no two open stores ever write under one
+// incarnation. A store whose context does not reach that counter draws a new
+// one instead: it is a copy of the store taken earlier, or one emptied since,
+// and would chain its own writes past a gap in its own context.
+type incarnationRegistry struct {
+	mu     sync.Mutex
+	closed map[incarnationKey]incarnation
+}
+
+func newIncarnationRegistry() *incarnationRegistry {
+	return &incarnationRegistry{closed: map[incarnationKey]incarnation{}}
+}
+
+// resume takes the incarnation closed under k if reached, the opening store's
+// covered counter for it, is its last counter.
+func (r *incarnationRegistry) resume(k incarnationKey, reached func(replica string) uint64) (incarnation, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	inc, ok := r.closed[k]
+	if !ok || reached(inc.replica) != inc.counter {
+		return incarnation{}, false
+	}
+	delete(r.closed, k)
+	return inc, true
+}
+
+func (r *incarnationRegistry) release(k incarnationKey, inc incarnation) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.closed[k] = inc
 }
 
 func (d dot) isZero() bool { return d.counter == 0 }

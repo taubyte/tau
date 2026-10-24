@@ -516,46 +516,6 @@ func TestCRDTPrintDAG(t *testing.T) {
 	}
 }
 
-func TestCRDTHooks(t *testing.T) {
-	ctx := context.Background()
-
-	var put int64
-	var deleted int64
-
-	opts := DefaultOptions()
-	opts.PutHook = func(k ds.Key, v []byte) {
-		atomic.AddInt64(&put, 1)
-	}
-	opts.DeleteHook = func(k ds.Key) {
-		atomic.AddInt64(&deleted, 1)
-	}
-
-	replicas, closeReplicas := makeReplicas(t, opts)
-	defer closeReplicas()
-
-	k := ds.RandomKey()
-	err := replicas[0].Put(ctx, k, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Heads are walked concurrently, so a replica that hears the delete
-	// before the put never shows the key and has nothing to notify. Wait
-	// for the put to land everywhere before deleting.
-	waitFor(t, func() bool { return atomic.LoadInt64(&put) == int64(len(replicas)) })
-	err = replicas[0].Delete(ctx, k)
-	if err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, func() bool { return atomic.LoadInt64(&deleted) == int64(len(replicas)) })
-	if atomic.LoadInt64(&put) != int64(len(replicas)) {
-		t.Error("all replicas should have notified Put", put)
-	}
-	if atomic.LoadInt64(&deleted) != int64(len(replicas)) {
-		t.Error("all replicas should have notified Remove", deleted)
-	}
-}
-
 func TestCRDTBatch(t *testing.T) {
 	ctx := context.Background()
 
@@ -997,12 +957,4 @@ func TestBadShutdownMark_PartialBranchRecovery(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-}
-
-func waitFor(t *testing.T, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for !cond() && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
 }

@@ -53,6 +53,9 @@ func (store *Datastore) Compact(ctx context.Context) (int, error) {
 // there is nothing to fold: the only block held is the snapshot that is the
 // only head. The caller holds store.mu.
 func (store *Datastore) compactLocked(ctx context.Context) (Head, *causalContext, error) {
+	if store.closed {
+		return Head{}, nil, ErrClosed
+	}
 	hs, height := store.heads.List()
 	if len(hs) == 0 {
 		return Head{}, nil, nil

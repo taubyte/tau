@@ -62,6 +62,7 @@ const formatVersion uint64 = 3
 // Common errors.
 var (
 	ErrNoMoreBroadcast = errors.New("receiving blocks aborted since no new blocks will be broadcasted")
+	ErrClosed          = errors.New("crdt datastore is closed")
 )
 
 // A Broadcaster provides a way to send (notify) an opaque payload to
@@ -91,12 +92,19 @@ type Options struct {
 	// been already broadcasted by other replicas in the
 	// interval. Default: 1m.
 	RebroadcastInterval time.Duration
-	// The PutHook function is triggered whenever a key's value changes,
-	// by a local or a remote update. Default: nil.
+	// PutHook is called when a key's value, as Get reads it, appears or
+	// changes, by a local or a remote update, with the new value. A write
+	// of the bytes the key already holds is no change. Default: nil.
 	PutHook func(k ds.Key, v []byte)
-	// The DeleteHook function is triggered whenever a version of a key is
-	// removed, by a local or a remote update. The key may still hold
-	// another version; use Has() if that matters. Default: nil.
+	// DeleteHook is called when a key goes from present to absent, by a
+	// local or a remote update. A key that keeps a concurrent version is
+	// still present: if that version is now its value, PutHook is called
+	// instead. A removal merged before the value it removes is no change
+	// either, since this replica never shows that value. Default: nil.
+	//
+	// Each hook reports what one merge did to one key, after the merge
+	// commits: an overwrite calls PutHook only, and no merge calls both for
+	// one key.
 	DeleteHook func(k ds.Key)
 	// NumWorkers specifies the number of workers ready to
 	// retrieve and merge deltas while walking the DAGs. Default:
@@ -203,6 +211,7 @@ type Datastore struct {
 	ccChanged  chan struct{}
 	replica    string
 	counter    uint64
+	closed     bool
 	liveCount  int
 	blockCount int
 
@@ -321,8 +330,9 @@ func NewDatastore(
 	return dstore, nil
 }
 
-// open brings the store to the current format, loads its state and draws
-// this open's incarnation.
+// open brings the store to the current format, loads its state and takes an
+// incarnation: the one this store closed under earlier in this process, or a
+// new one.
 func (store *Datastore) open(ctx context.Context) error {
 	if err := store.checkFormat(ctx); err != nil {
 		return err
@@ -346,12 +356,6 @@ func (store *Datastore) open(ctx context.Context) error {
 		return err
 	}
 
-	nonce := make([]byte, 16)
-	if _, err := rand.Read(nonce); err != nil {
-		return fmt.Errorf("error drawing an incarnation: %w", err)
-	}
-	store.replica = string(append(append([]byte{}, store.opts.ReplicaID...), nonce...))
-
 	// The bad-shutdown key is present at startup only if the previous run
 	// did not Close: mark dirty so the repair loop retries the parents a
 	// walk left missing. Sync it now, or a crash before the next flush
@@ -371,9 +375,24 @@ func (store *Datastore) open(ctx context.Context) error {
 		return fmt.Errorf("error syncing bad-shutdown key: %w", err)
 	}
 
+	// Last, so that an open that fails never holds an incarnation.
+	if inc, ok := incarnations.resume(store.incarnationKey(), func(replica string) uint64 { return store.cc.vector[replica] }); ok {
+		store.replica, store.counter = inc.replica, inc.counter
+	} else {
+		nonce := make([]byte, 16)
+		if _, err := rand.Read(nonce); err != nil {
+			return fmt.Errorf("error drawing an incarnation: %w", err)
+		}
+		store.replica = string(append(append([]byte{}, store.opts.ReplicaID...), nonce...))
+	}
+
 	hs, maxHeight := store.heads.List()
 	store.logger.Infof("crdt Datastore created. Number of heads: %d. Current max-height: %d. Dirty: %t", len(hs), maxHeight, store.IsDirty(ctx))
 	return nil
+}
+
+func (store *Datastore) incarnationKey() incarnationKey {
+	return incarnationKey{replicaID: string(store.opts.ReplicaID), namespace: store.namespace.String()}
 }
 
 func (store *Datastore) versionKey() ds.Key {
@@ -1150,6 +1169,10 @@ type op struct {
 // versions are only ever the ones written concurrently.
 func (store *Datastore) write(ctx context.Context, ops []op) error {
 	store.mu.Lock()
+	if store.closed {
+		store.mu.Unlock()
+		return ErrClosed
+	}
 	delta := &pb.Delta{}
 	t := newTxn(store.store)
 	for _, o := range ops {
@@ -1244,11 +1267,17 @@ func (store *Datastore) Sync(ctx context.Context, prefix ds.Key) error {
 	return store.store.Sync(ctx, store.namespace)
 }
 
-// Close shuts down the CRDT datastore. It should not be used afterwards.
+// Close shuts down the CRDT datastore. A write after it fails with ErrClosed.
 func (store *Datastore) Close() error {
 	closeCtx := context.Background()
 	store.cancel()
 	store.wg.Wait()
+	store.mu.Lock()
+	if !store.closed {
+		store.closed = true
+		incarnations.release(store.incarnationKey(), incarnation{replica: store.replica, counter: store.counter})
+	}
+	store.mu.Unlock()
 	if store.IsDirty(closeCtx) {
 		store.logger.Warn("datastore is being closed marked as dirty")
 	}

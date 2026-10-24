@@ -117,12 +117,19 @@ func replicaOptions(opts *Options, name string) *Options {
 // a test points it elsewhere.
 func makeNReplicasSeparateStores(t testing.TB, n int, opts *Options) ([]*Datastore, []*fetchThroughDAGSvc, func()) {
 	t.Helper()
+	return makeSeparateStoresWith(t, n, func(int) *Options { return opts })
+}
+
+// makeSeparateStoresWith is makeNReplicasSeparateStores with options of each
+// replica's own.
+func makeSeparateStoresWith(t testing.TB, n int, optsFor func(i int) *Options) ([]*Datastore, []*fetchThroughDAGSvc, func()) {
+	t.Helper()
 	dagsyncs := make([]*fetchThroughDAGSvc, n)
 	replicas := make([]*Datastore, n)
 	for i := range replicas {
 		dagsyncs[i] = newFetchThrough()
 		var err error
-		replicas[i], err = NewDatastore(makeStore(t, i), ds.NewKey("crdttest"), dagsyncs[i], &nullBroadcaster{}, replicaOptions(opts, fmt.Sprintf("sr#%d: ", i)))
+		replicas[i], err = NewDatastore(makeStore(t, i), ds.NewKey("crdttest"), dagsyncs[i], &nullBroadcaster{}, replicaOptions(optsFor(i), fmt.Sprintf("sr#%d: ", i)))
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -187,7 +187,7 @@ func (m *merging) addElem(ctx context.Context, e element) {
 
 func (m *merging) removeElem(key string, d dot) {
 	m.t.del(m.store.set.elemKey(key, d))
-	m.touch(key).removed = true
+	m.touch(key)
 	m.live--
 }
 

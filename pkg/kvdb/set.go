@@ -145,15 +145,17 @@ func (s *set) liveElems(ctx context.Context, t *txn, key string) ([]element, err
 	return out, nil
 }
 
-// change is what a merge did to one key, for the hooks.
+// change is what a merge did to one key's value, for the hooks.
 type change struct {
-	removed bool
 	put     bool
 	value   []byte
 	deleted bool
 }
 
-// settle recomputes each touched key's winner and reports what changed.
+// settle recomputes each touched key's winner and reports what changed: put
+// when the key's value appeared or changed, deleted when it went from present
+// to absent. A new winner holding the same bytes is not a change, though its
+// priority is stored.
 func (s *set) settle(ctx context.Context, t *txn, touched map[string]*change) error {
 	for key, ch := range touched {
 		live, err := s.liveElems(ctx, t, key)
@@ -193,7 +195,10 @@ func (s *set) settle(ctx context.Context, t *txn, touched map[string]*change) er
 				}
 			}
 		}
-		if had && curPrio == best.priority && bytes.Equal(cur, best.value) {
+		if had && bytes.Equal(cur, best.value) {
+			if curPrio != best.priority {
+				t.put(s.priorityKey(key), encodePriority(best.priority))
+			}
 			continue
 		}
 		t.put(s.valueKey(key), best.value)
@@ -206,7 +211,7 @@ func (s *set) settle(ctx context.Context, t *txn, touched map[string]*change) er
 
 func (s *set) fireHooks(touched map[string]*change) {
 	for key, ch := range touched {
-		if ch.removed || ch.deleted {
+		if ch.deleted {
 			s.deleteHook(key)
 		}
 		if ch.put {
