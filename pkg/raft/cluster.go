@@ -217,24 +217,27 @@ func (c *cluster) handleBootstrap(raftConfig *raft.Config, transport raft.Transp
 	for {
 		select {
 		case <-ctx.Done():
-			clusterLogger.Infof("[%s] bootstrap timeout reached — proceeding to bootstrap decision",
-				c.node.ID().ShortString())
-			goto bootstrap
 		case <-ticker.C:
-			peers := c.raftProtocolPeers()
-			if len(peers) > 0 {
-				clusterLogger.Infof("[%s] found %d raft-protocol peers — attempting join",
-					c.node.ID().ShortString(), len(peers))
-				if successfullyCompleted, _ = c.tryJoinExistingCluster(peers, 1*time.Second); successfullyCompleted {
-					clusterLogger.Infof("[%s] joined existing cluster during discovery phase",
-						c.node.ID().ShortString())
-					return nil
-				}
+		}
+		// A tick and the deadline can be ready together, and select takes
+		// either: the deadline wins, and no join starts after it.
+		if ctx.Err() != nil {
+			break
+		}
+		peers := c.raftProtocolPeers()
+		if len(peers) > 0 {
+			clusterLogger.Infof("[%s] found %d raft-protocol peers — attempting join",
+				c.node.ID().ShortString(), len(peers))
+			if successfullyCompleted, _ = c.tryJoinExistingCluster(ctx, peers, 1*time.Second); successfullyCompleted {
+				clusterLogger.Infof("[%s] joined existing cluster during discovery phase",
+					c.node.ID().ShortString())
+				return nil
 			}
 		}
 	}
+	clusterLogger.Infof("[%s] bootstrap timeout reached — proceeding to bootstrap decision",
+		c.node.ID().ShortString())
 
-bootstrap:
 	threshold := time.Duration(float64(c.bootstrapTimeout) * c.bootstrapThreshold)
 
 	if c.tracker.isLateJoiner(threshold) {
@@ -253,7 +256,7 @@ bootstrap:
 	if len(founders) > 1 {
 		clusterLogger.Infof("[%s] multiple founders detected — trying to join existing cluster first",
 			c.node.ID().ShortString())
-		if successfullyCompleted, noLeader = c.tryJoinExistingCluster(founders, 5*time.Second); successfullyCompleted {
+		if successfullyCompleted, noLeader = c.tryJoinExistingCluster(c.ctx, founders, 5*time.Second); successfullyCompleted {
 			return nil
 		}
 		if !noLeader {
@@ -289,7 +292,7 @@ bootstrap:
 		if len(peers) > 0 {
 			clusterLogger.Infof("[%s] single founder with %d raft-protocol peers — attempting join",
 				c.node.ID().ShortString(), len(peers))
-			successfullyCompleted, noLeader = c.tryJoinExistingCluster(peers, 5*time.Second)
+			successfullyCompleted, noLeader = c.tryJoinExistingCluster(c.ctx, peers, 5*time.Second)
 
 			if successfullyCompleted {
 				return nil
@@ -450,7 +453,7 @@ func (c *cluster) requestVoterJoin(timeout time.Duration) {
 						c.node.ID().ShortString(), len(targets))
 				}
 				if len(targets) > 0 {
-					if err := c.raftClient.JoinVoter(c.node.ID(), timeout, targets...); err != nil {
+					if err := c.raftClient.JoinVoter(ctx, c.node.ID(), timeout, targets...); err != nil {
 						clusterLogger.Infof("[%s] voter join request failed: %v", c.node.ID().ShortString(), err)
 					} else {
 						clusterLogger.Infof("[%s] voter join request accepted", c.node.ID().ShortString())
@@ -461,46 +464,50 @@ func (c *cluster) requestVoterJoin(timeout time.Duration) {
 	}()
 }
 
-func (c *cluster) tryJoinExistingCluster(peers []peer.ID, timeout time.Duration) (bool, bool) {
+// tryJoinExistingCluster asks peers to let this node in until one does, one
+// says there is no leader to ask, or two seconds pass, within ctx. It reports
+// whether the node joined and whether it was told there is no leader.
+func (c *cluster) tryJoinExistingCluster(ctx context.Context, peers []peer.ID, timeout time.Duration) (bool, bool) {
 	if c.raftClient == nil {
 		return false, false
 	}
 
-	ctx, cancel := context.WithTimeout(c.ctx, 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 
-	sawNoLeader := false
-
 	for {
 		select {
 		case <-ctx.Done():
-			clusterLogger.Infof("[%s] tryJoinExistingCluster timed out (sawNoLeader=%v)",
-				c.node.ID().ShortString(), sawNoLeader)
-			return false, sawNoLeader
 		case <-ticker.C:
-			var targets []peer.ID
-			if leader, err := c.Leader(); err == nil && leader != c.node.ID() {
-				targets = []peer.ID{leader}
-			} else {
-				targets = make([]peer.ID, 0, len(peers))
-				for _, pid := range peers {
-					if pid != c.node.ID() {
-						targets = append(targets, pid)
-					}
+		}
+		if ctx.Err() != nil {
+			clusterLogger.Infof("[%s] tryJoinExistingCluster timed out", c.node.ID().ShortString())
+			return false, false
+		}
+		var targets []peer.ID
+		if leader, err := c.Leader(); err == nil && leader != c.node.ID() {
+			targets = []peer.ID{leader}
+		} else {
+			targets = make([]peer.ID, 0, len(peers))
+			for _, pid := range peers {
+				if pid != c.node.ID() {
+					targets = append(targets, pid)
 				}
 			}
-			if len(targets) == 0 {
-				continue
-			}
-			if err := c.raftClient.JoinVoter(c.node.ID(), timeout, targets...); err == nil {
-				clusterLogger.Infof("[%s] successfully joined existing cluster", c.node.ID().ShortString())
-				return true, false
-			} else if errors.Is(err, ErrNoLeader) || strings.Contains(err.Error(), ErrNoLeader.Error()) {
-				sawNoLeader = true
-			}
+		}
+		if len(targets) == 0 {
+			continue
+		}
+		err := c.raftClient.JoinVoter(ctx, c.node.ID(), timeout, targets...)
+		if err == nil {
+			clusterLogger.Infof("[%s] successfully joined existing cluster", c.node.ID().ShortString())
+			return true, false
+		}
+		if errors.Is(err, ErrNoLeader) || strings.Contains(err.Error(), ErrNoLeader.Error()) {
+			return false, true
 		}
 	}
 }

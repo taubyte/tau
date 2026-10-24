@@ -33,7 +33,7 @@ func WithForceBootstrap() Option {
 
 // WithBootstrapTimeout sets how long to wait for peers before auto-bootstrapping.
 // If no peers are discovered within this timeout, the node will bootstrap itself.
-// Default: 10s
+// Default: 30s
 func WithBootstrapTimeout(d time.Duration) Option {
 	return func(c *cluster) error {
 		c.bootstrapTimeout = d

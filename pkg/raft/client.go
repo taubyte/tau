@@ -45,8 +45,8 @@ type Client interface {
 
 // internalClient represents a Raft p2p client for internal cluster operations
 type internalClient interface {
-	// JoinVoter requests to join as a voter
-	JoinVoter(peerID peer.ID, timeout time.Duration, peers ...peer.ID) error
+	// JoinVoter requests to join as a voter, within ctx
+	JoinVoter(ctx context.Context, peerID peer.ID, timeout time.Duration, peers ...peer.ID) error
 	// ExchangePeers exchanges peer discovery information
 	ExchangePeers(ourStart time.Time, ourPeers map[string]int64, target peer.ID) (time.Time, map[string]int64, error)
 	ClusterInfo(target peer.ID) (*ClusterInfoResponse, error)
@@ -226,12 +226,12 @@ func (c *client) Delete(key string, timeout time.Duration, peers ...peer.ID) err
 	return nil
 }
 
-func (c *client) JoinVoter(peerID peer.ID, timeout time.Duration, peers ...peer.ID) error {
+func (c *client) JoinVoter(ctx context.Context, peerID peer.ID, timeout time.Duration, peers ...peer.ID) error {
 	clientLogger.Infof("sending joinVoter for %s to %d targets (timeout=%v)",
 		peerID.ShortString(), len(peers), timeout)
 
 	req := &raftv2.JoinVoterRequest{Peer: peerID.String(), TimeoutMs: timeout.Milliseconds()}
-	_, err := first(c.ctx, c, peers, sendToPeerTimeout+timeout, func(ctx context.Context, s raftv2connect.RaftServiceClient) (*connect.Response[raftv2.JoinVoterResponse], error) {
+	_, err := first(ctx, c, peers, sendToPeerTimeout+timeout, func(ctx context.Context, s raftv2connect.RaftServiceClient) (*connect.Response[raftv2.JoinVoterResponse], error) {
 		return s.JoinVoter(ctx, connect.NewRequest(req))
 	})
 	if err != nil {

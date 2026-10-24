@@ -81,7 +81,7 @@ func TestClient_ACallWithNowhereToGoFails(t *testing.T) {
 	require.ErrorContains(t, cli.Delete("k", time.Second), "no peers to send to")
 	_, err = cli.Keys("")
 	require.ErrorContains(t, err, "no peers to send to")
-	require.ErrorContains(t, cli.JoinVoter(idOf(cl), time.Second), "no peers to send to")
+	require.ErrorContains(t, cli.JoinVoter(t.Context(), idOf(cl), time.Second), "no peers to send to")
 
 	_, err = cli.Keys("", peer.ID(""))
 	require.ErrorContains(t, err, "keys failed")
@@ -151,7 +151,7 @@ func TestClient_CallsToAPeerThatRunsNoMemberFail(t *testing.T) {
 	require.ErrorContains(t, cli.Delete("k", time.Second, target), "delete failed")
 	_, err = cli.Keys("", target)
 	require.ErrorContains(t, err, "keys failed")
-	require.ErrorContains(t, cli.JoinVoter(caller.ID(), time.Second, target), "join voter failed")
+	require.ErrorContains(t, cli.JoinVoter(t.Context(), caller.ID(), time.Second, target), "join voter failed")
 	_, _, err = cli.ExchangePeers(time.Now(), nil, target)
 	require.Error(t, err)
 	_, err = cli.ClusterInfo(target)
@@ -274,7 +274,7 @@ func TestStream_JoinVoterNamingNobodyJoinsTheCaller(t *testing.T) {
 	fromB, err := newInternalClient(b.(*cluster).node, "stream-join-caller", nil)
 	require.NoError(t, err)
 	defer fromB.Close()
-	require.NoError(t, fromB.JoinVoter(peer.ID(""), 5*time.Second, idOf(a)))
+	require.NoError(t, fromB.JoinVoter(t.Context(), peer.ID(""), 5*time.Second, idOf(a)))
 
 	members, err := a.Members()
 	require.NoError(t, err)
@@ -342,7 +342,7 @@ func TestStream_AJoinAskedOfAFollowerIsForwardedToItsLeader(t *testing.T) {
 		follower = b
 	}
 	joiner := strangerID(t)
-	require.NoError(t, cli.JoinVoter(joiner, 5*time.Second, idOf(follower)))
+	require.NoError(t, cli.JoinVoter(t.Context(), joiner, 5*time.Second, idOf(follower)))
 	members, err := leader.Members()
 	require.NoError(t, err)
 	ids := make([]peer.ID, 0, len(members))

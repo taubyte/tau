@@ -247,22 +247,9 @@ func (s *raftStreamService) JoinVoter(ctx context.Context, req *connect.Request[
 		return connect.NewResponse(&raftv2.JoinVoterResponse{}), nil
 	}
 
-	leaderCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	if err := s.cluster.WaitForLeader(leaderCtx); err != nil {
-		streamLogger.Infof("[%s] joinVoter: no leader available to handle %s",
-			s.cluster.node.ID().ShortString(), peerID.ShortString())
-		return nil, ErrNoLeader
-	}
-	if s.cluster.IsLeader() {
-		if err := s.cluster.AddVoter(peerID, timeout); err != nil {
-			streamLogger.Warnf("[%s] joinVoter: AddVoter %s failed (after becoming leader): %v",
-				s.cluster.node.ID().ShortString(), peerID.ShortString(), err)
-			return nil, err
-		}
-		return connect.NewResponse(&raftv2.JoinVoterResponse{}), nil
-	}
-
+	// A member that knows no leader says so at once, and the joiner asks again
+	// on its own schedule: waiting here for an election held every join among
+	// founders, none of which has a leader, for two seconds.
 	streamLogger.Infof("[%s] joinVoter: forwarding request for %s to leader",
 		s.cluster.node.ID().ShortString(), peerID.ShortString())
 

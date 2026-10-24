@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"github.com/hashicorp/raft"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	taupeer "github.com/taubyte/tau/p2p/peer"
@@ -74,6 +76,67 @@ func TestCluster_NodesKeepTheirOwnSnapshots(t *testing.T) {
 	require.Empty(t, snaps, "b's store holds a's snapshot")
 	_, found := b.Get("only-a-wrote")
 	require.False(t, found, "b holds a write only a made")
+}
+
+// TestCluster_FoundersBootstrapWithinTheirTimeout: nodes that start a group
+// together wait out the bootstrap timeout, then decide who founds it. A member
+// asked to add a voter before any had a leader held the call two seconds
+// waiting for one, a join begun before the deadline ran past it, and a tick
+// ready with the deadline could start another, so founders took several times
+// their timeout. Each now returns within its timeout and a round of asking,
+// and the three form one group.
+func TestCluster_FoundersBootstrapWithinTheirTimeout(t *testing.T) {
+	const (
+		namespace = "founders-on-time"
+		timeout   = 2 * time.Second
+	)
+	nodes := []taupeer.Node{newMockNode(t), newMockNode(t), newMockNode(t)}
+	require.NoError(t, taupeer.LinkAllPeers())
+
+	type opened struct {
+		cl   Cluster
+		err  error
+		took time.Duration
+	}
+	results := make(chan opened, len(nodes))
+	for _, node := range nodes {
+		root := t.TempDir()
+		go func() {
+			began := time.Now()
+			cl, err := New(node, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(timeout), WithSnapshotRoot(root))
+			results <- opened{cl: cl, err: err, took: time.Since(began)}
+		}()
+	}
+	for _, node := range nodes {
+		require.Eventually(t, func() bool {
+			return slices.Contains(node.Peer().Mux().Protocols(), protocol.ID(Protocol(namespace)))
+		}, 5*time.Second, 5*time.Millisecond, "a founder never served the group")
+	}
+	for i, a := range nodes {
+		for _, b := range nodes[i+1:] {
+			require.NoError(t, a.Peer().Connect(t.Context(), peer.AddrInfo{ID: b.ID(), Addrs: b.Peer().Addrs()}))
+		}
+	}
+
+	var got []opened
+	for range nodes {
+		o := <-results
+		if o.err == nil {
+			t.Cleanup(func() { o.cl.Close() })
+		}
+		got = append(got, o)
+	}
+	clusters := make([]Cluster, 0, len(got))
+	for _, o := range got {
+		require.NoError(t, o.err)
+		assert.Less(t, o.took, timeout+timeout/2, "a founder took %v on a %v bootstrap timeout", o.took, timeout)
+		clusters = append(clusters, o.cl)
+	}
+	leader := leaderOf(t, clusters...)
+	require.Eventually(t, func() bool {
+		members, err := leader.Members()
+		return err == nil && len(members) == len(nodes)
+	}, leaderWait, 20*time.Millisecond, "the founders did not form one group")
 }
 
 func TestNew_ValidNamespace(t *testing.T) {

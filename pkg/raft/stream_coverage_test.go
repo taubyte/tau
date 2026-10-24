@@ -199,7 +199,7 @@ func TestClient_JoinVoter_Success_Integration(t *testing.T) {
 	defer client.Close()
 
 	// JoinVoter - client node joins cluster as voter
-	err = client.JoinVoter(clientNode.ID(), 5*time.Second, clusterNode.ID())
+	err = client.JoinVoter(t.Context(), clientNode.ID(), 5*time.Second, clusterNode.ID())
 	require.NoError(t, err, "JoinVoter should succeed")
 }
 
