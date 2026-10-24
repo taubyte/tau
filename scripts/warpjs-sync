@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Export warpjs at the pinned commit into .deps/warpjs, where go.mod's replace
+# points.
+#
+#   scripts/warpjs-sync            export scripts/warpjs.commit (no-op if current)
+#   scripts/warpjs-sync --update   pin warpjs master's current commit, then export
+#
+# ★ IT EXPORTS A COMMIT, NEVER THE CHECKOUT. The warpjs repo is somebody else's
+# working tree: it sits on whatever branch its own agent is on, often mid-edit.
+# `git archive` reads one commit and writes nothing to that repo, so what tau
+# builds against is the pinned master, and the same bytes on every machine.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+repo="${WARPJS_REPO:-$HOME/Documents/warpjs}"
+pin=scripts/warpjs.commit
+dest=.deps/warpjs
+
+if [ "${1:-}" = "--update" ]; then
+	git -C "$repo" rev-parse master >"$pin"
+fi
+want="$(cat "$pin")"
+
+if [ -f "$dest/.commit" ] && [ "$(cat "$dest/.commit")" = "$want" ]; then
+	exit 0
+fi
+
+rm -rf "$dest.tmp"
+mkdir -p "$dest.tmp"
+git -C "$repo" archive "$want" | tar -x -C "$dest.tmp"
+echo "$want" >"$dest.tmp/.commit"
+rm -rf "$dest"
+mv "$dest.tmp" "$dest"

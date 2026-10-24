@@ -65,7 +65,16 @@ ssh_opts=(-o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=10 -i "$key")
 #
 # Process substitution rather than a temp file: this script ends in `exec`, so
 # an EXIT trap would never fire and every run would leak one.
+#
+# ★ .deps/warpjs IS IGNORED AND STILL SHIPPED. go.mod replaces warpjs with that
+# export (scripts/warpjs-sync), so a tree without it does not build, and a clean
+# worktree never has it. Export the pinned commit first, then include it ahead of
+# the ignore list, since the first rule that matches wins.
+if [ -f scripts/warpjs.commit ]; then
+	scripts/warpjs-sync
+fi
 rsync -a --delete --exclude='.git/' \
+	--include='/.deps/' --include='/.deps/warpjs/***' \
 	--exclude-from=<(git ls-files --others --ignored --exclude-standard --directory | sed 's|^|/|') \
 	-e "ssh ${ssh_opts[*]}" ./ "$host:$dir/"
 

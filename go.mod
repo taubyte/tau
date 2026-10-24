@@ -290,3 +290,10 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
+
+// warpjs is built from a local export until it publishes a module path a public
+// module can require (its go.mod says `module warpjs`). scripts/warpjs-sync
+// exports the commit pinned in scripts/warpjs.commit into .deps/warpjs, never
+// the warpjs working tree, and scripts/rtest runs it and ships the export, so a
+// clean worktree builds on a build server too.
+replace warpjs => ./.deps/warpjs

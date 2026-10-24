@@ -206,3 +206,6 @@ tools/spore-drive/service/service
 
 # a stray `go build ./pkg/tcc/taubyte/v2/wasm` drops a 9MB binary here
 /wasm
+
+# warpjs is a replace of a local export; see scripts/warpjs-sync.
+/.deps/
