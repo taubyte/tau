@@ -351,3 +351,46 @@ func TestStream_AJoinAskedOfAFollowerIsForwardedToItsLeader(t *testing.T) {
 	}
 	require.ElementsMatch(t, []peer.ID{idOf(a), idOf(b), joiner}, ids)
 }
+
+// TestStream_AJoinAskedOfAFollowerBetweenLeadersWaitsForTheNext: a follower
+// whose leader is gone knows no leader until the group elects the next, and a
+// join asked of it meanwhile waits for that leader instead of being refused.
+// Three of four voters elect without the fourth, and commit a fifth.
+func TestStream_AJoinAskedOfAFollowerBetweenLeadersWaitsForTheNext(t *testing.T) {
+	const namespace = "stream-join-between-leaders"
+	caller := newMockNode(t)
+	group := joinedGroup(t, namespace, sameStore, 4)
+	connected(t, caller, group...)
+	cli, err := newInternalClient(caller, namespace, nil)
+	require.NoError(t, err)
+	defer cli.Close()
+
+	gone := leaderOf(t, group...)
+	var survivors []Cluster
+	for _, cl := range group {
+		if cl != gone {
+			survivors = append(survivors, cl)
+		}
+	}
+	require.NoError(t, gone.Close())
+	var follower Cluster
+	require.Eventually(t, func() bool {
+		for _, cl := range survivors {
+			if _, err := cl.Leader(); err != nil {
+				follower = cl
+				return true
+			}
+		}
+		return false
+	}, leaderWait, time.Millisecond, "every survivor kept naming the closed leader")
+
+	joiner := strangerID(t)
+	require.NoError(t, cli.JoinVoter(t.Context(), joiner, leaderWait, idOf(follower)))
+	members, err := leaderOf(t, survivors...).Members()
+	require.NoError(t, err)
+	ids := make([]peer.ID, 0, len(members))
+	for _, m := range members {
+		ids = append(ids, m.ID)
+	}
+	require.Contains(t, ids, joiner)
+}

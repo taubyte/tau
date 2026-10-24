@@ -309,34 +309,49 @@ func onLeader(t testing.TB, clusters []Cluster, write func(Cluster) error) error
 
 // joinedPair is a group of two on linked mock nodes: a bootstrapped it and b
 // joined. Each runs on the store wrap makes of its node's own.
-//
-// b connects to a once a serves the group, so the identify that completes
-// the connection already lists a's protocols. Connected earlier, b learns them
-// only from identify's push, and a b that has not heard it within its
-// bootstrap timeout founds a group of its own.
 func joinedPair(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batching) (a, b Cluster) {
 	t.Helper()
-	nodeA := newMockNode(t)
-	nodeB := newMockNode(t)
+	group := joinedGroup(t, namespace, wrap, 2)
+	return group[0], group[1]
+}
+
+// joinedGroup is a group of size on linked mock nodes: the first bootstrapped
+// it and each other joined in turn. Each runs on the store wrap makes of its
+// node's own.
+//
+// A joiner connects to the first once that one serves the group, so the
+// identify that completes the connection already lists its protocols.
+// Connected earlier, the joiner learns them only from identify's push, and one
+// that has not heard it within its bootstrap timeout founds a group of its own.
+func joinedGroup(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batching, size int) []Cluster {
+	t.Helper()
+	nodes := make([]taupeer.Node, size)
+	for i := range nodes {
+		nodes[i] = newMockNode(t)
+	}
 	require.NoError(t, taupeer.LinkAllPeers())
 
-	a, err := New(storeNode{Node: nodeA, store: wrap(nodeA.Store())}, namespace,
+	first, err := New(storeNode{Node: nodes[0], store: wrap(nodes[0].Store())}, namespace,
 		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
 	require.NoError(t, err)
-	t.Cleanup(func() { a.Close() })
-	waitLeader(t, a, 5*time.Second)
-	require.NoError(t, nodeB.Peer().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Peer().Addrs()}))
+	t.Cleanup(func() { first.Close() })
+	waitLeader(t, first, 5*time.Second)
 
-	b, err = New(storeNode{Node: nodeB, store: wrap(nodeB.Store())}, namespace,
-		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(t.TempDir()))
-	require.NoError(t, err)
-	t.Cleanup(func() { b.Close() })
+	group := []Cluster{first}
+	for _, node := range nodes[1:] {
+		require.NoError(t, node.Peer().Connect(t.Context(), peer.AddrInfo{ID: nodes[0].ID(), Addrs: nodes[0].Peer().Addrs()}))
+		joiner, err := New(storeNode{Node: node, store: wrap(node.Store())}, namespace,
+			WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(t.TempDir()))
+		require.NoError(t, err)
+		t.Cleanup(func() { joiner.Close() })
+		group = append(group, joiner)
 
-	require.Eventually(t, func() bool {
-		members, err := a.Members()
-		return err == nil && len(members) == 2
-	}, 10*time.Second, 20*time.Millisecond, "b never joined a")
-	return a, b
+		require.Eventually(t, func() bool {
+			members, err := first.Members()
+			return err == nil && len(members) == len(group)
+		}, 10*time.Second, 20*time.Millisecond, "member %d never joined", len(group))
+	}
+	return group
 }
 
 // removeTheLeader has whichever of a and b leads commit its own removal and
