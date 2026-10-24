@@ -60,11 +60,18 @@ func newCapped(t *testing.T) *capped {
 	t.Cleanup(func() {
 		exec.Command("systemctl", "--user", "stop", c.slice).Run()
 		exec.Command("systemctl", "--user", "revert", c.slice).Run()
+		os.Remove(filepath.Join(runtime, c.slice+".lock"))
+		os.Remove(filepath.Join(runtime, c.slice+".door"))
 	})
 	return c
 }
 
 func (c *capped) cmd(ctx context.Context, l limits, args ...string) *exec.Cmd {
+	return c.cmdAs(ctx, "", l, args...)
+}
+
+// cmdAs is cmd with TAU_CAP_CLASS set to class, or unset when class is empty.
+func (c *capped) cmdAs(ctx context.Context, class string, l limits, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, c.script, append([]string{"--"}, args...)...)
 	for _, kv := range os.Environ() {
 		if !strings.HasPrefix(kv, "TAU_CAP_") && !strings.HasPrefix(kv, "TAU_NO_CAP=") {
@@ -80,23 +87,39 @@ func (c *capped) cmd(ctx context.Context, l limits, args ...string) *exec.Cmd {
 	if c.ns != "" {
 		cmd.Env = append(cmd.Env, "TAU_CAP_TMP="+c.ns)
 	}
+	if class != "" {
+		cmd.Env = append(cmd.Env, "TAU_CAP_CLASS="+class)
+	}
 	return cmd
 }
 
 func (c *capped) run(t *testing.T, l limits, args ...string) string {
 	t.Helper()
+	return c.runAs(t, "", l, args...)
+}
+
+func (c *capped) runAs(t *testing.T, class string, l limits, args ...string) string {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
-	out, err := c.cmd(ctx, l, args...).CombinedOutput()
+	cmd := c.cmdAs(ctx, class, l, args...)
+	// A command killed for its deadline can leave what it started holding the
+	// output, and the failure is then never reported.
+	cmd.WaitDelay = 10 * time.Second
+	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "%s", out)
 	return string(out)
 }
 
 // running is a capped command that stays up until it is killed.
 type running struct {
+	cmd    *exec.Cmd
+	ready  string
+	out    string
 	tmpdir string
 	unit   string
-	done   chan error
+	done   chan struct{}
+	err    error
 	once   sync.Once
 }
 
@@ -104,46 +127,110 @@ type running struct {
 // run, and says where the run's TMPDIR is and which scope it is in.
 func (c *capped) start(t *testing.T, l limits, prefix []string, script string) *running {
 	t.Helper()
-	ready := filepath.Join(t.TempDir(), "ready")
-	sh := script + `; { echo "$TMPDIR"; cat /proc/self/cgroup; } > "$0.tmp" && mv "$0.tmp" "$0" && exec sleep 300`
-	cmd := c.cmd(context.Background(), l, append(prefix, "sh", "-c", sh, ready)...)
-	require.NoError(t, cmd.Start())
+	return c.launch(t, "", l, prefix, script).await(t)
+}
 
-	r := &running{done: make(chan error, 1)}
-	go func() { r.done <- cmd.Wait() }()
-	deadline := time.After(time.Minute)
-	for {
-		if _, err := os.Stat(ready); err == nil {
-			break
-		}
-		select {
-		case err := <-r.done:
-			require.Failf(t, "the run ended before it was ready", "%v", err)
-		case <-deadline:
-			require.FailNow(t, "the run was not ready within a minute")
-		case <-time.After(20 * time.Millisecond):
-		}
-	}
-
-	written, err := os.ReadFile(ready)
+// launch starts what start does without waiting for it, since a run may first
+// have to wait for its slice. What cap says goes to a file r.said reads.
+func (c *capped) launch(t *testing.T, class string, l limits, prefix []string, script string) *running {
+	t.Helper()
+	dir := t.TempDir()
+	r := &running{ready: filepath.Join(dir, "ready"), out: filepath.Join(dir, "out"), done: make(chan struct{})}
+	out, err := os.Create(r.out)
 	require.NoError(t, err)
-	lines := strings.Split(strings.TrimSpace(string(written)), "\n")
-	r.tmpdir, r.unit = lines[0], scopeOf(t, lines[1:])
+	defer out.Close()
+
+	sh := script + `; { echo "$TMPDIR"; cat /proc/self/cgroup; } > "$0.tmp" && mv "$0.tmp" "$0" && exec sleep 300`
+	r.cmd = c.cmdAs(context.Background(), class, l, append(prefix, "sh", "-c", sh, r.ready)...)
+	r.cmd.Stdout, r.cmd.Stderr = out, out
+	r.cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	require.NoError(t, r.cmd.Start())
+	go func() {
+		r.err = r.cmd.Wait()
+		close(r.done)
+	}()
 	t.Cleanup(func() { r.kill(t) })
 	return r
 }
 
+// await waits until the run's script has run.
+func (r *running) await(t *testing.T) *running {
+	t.Helper()
+	deadline := time.After(time.Minute)
+	for !r.started() {
+		select {
+		case <-r.done:
+			require.Failf(t, "the run ended before it was ready", "%v\n%s", r.err, r.said())
+		case <-deadline:
+			require.FailNow(t, "the run was not ready within a minute", "%s", r.said())
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+
+	written, err := os.ReadFile(r.ready)
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSpace(string(written)), "\n")
+	r.tmpdir, r.unit = lines[0], scopeOf(t, lines[1:])
+	return r
+}
+
+func (r *running) started() bool {
+	_, err := os.Stat(r.ready)
+	return err == nil
+}
+
+// said is everything cap and the run have printed so far.
+func (r *running) said() string {
+	out, _ := os.ReadFile(r.out)
+	return string(out)
+}
+
+// says waits until the run has printed text.
+func (r *running) says(t *testing.T, text string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Minute)
+	for !strings.Contains(r.said(), text) {
+		if time.Now().After(deadline) {
+			require.FailNow(t, "the run never said it", "%q\n%s", text, r.said())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// end kills the run's own process and nothing else, as a run ends whose top
+// process is gone while what it started is not.
+func (r *running) end(t *testing.T) {
+	t.Helper()
+	require.NoError(t, r.cmd.Process.Signal(syscall.SIGKILL))
+	select {
+	case <-r.done:
+	case <-time.After(time.Minute):
+		require.FailNow(t, "the run's process outlived SIGKILL")
+	}
+}
+
 // kill ends the run the way a killed test run ends, and waits until its scope
-// is gone.
+// is gone. A run that has not reached its scope is killed with its process
+// group, which is cap and whatever it is waiting in.
 func (r *running) kill(t *testing.T) {
 	r.once.Do(func() {
-		exec.Command("systemctl", "--user", "kill", "--signal=SIGKILL", r.unit).Run()
+		if r.unit != "" {
+			exec.Command("systemctl", "--user", "kill", "--signal=SIGKILL", r.unit).Run()
+		} else {
+			select {
+			case <-r.done:
+			default:
+				syscall.Kill(-r.cmd.Process.Pid, syscall.SIGKILL)
+			}
+		}
 		select {
 		case <-r.done:
 		case <-time.After(time.Minute):
-			t.Errorf("%s outlived SIGKILL", r.unit)
+			t.Errorf("%s outlived SIGKILL", r.cmd)
 		}
-		require.Eventually(t, func() bool { return !active(r.unit) }, time.Minute, 20*time.Millisecond)
+		if r.unit != "" {
+			require.Eventually(t, func() bool { return !active(r.unit) }, time.Minute, 20*time.Millisecond)
+		}
 	})
 }
 

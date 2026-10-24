@@ -18,7 +18,9 @@
 #
 # ★ IT RUNS UNDER cap ON THE FAR SIDE, for the reason scripts/cap exists: an
 # unbounded test run kills the host it is on, and the host being remote does not
-# make that acceptable.
+# make that acceptable. A `make` command there is a gate: it waits until no
+# other capped run is on the host, has the host to itself, and says what it
+# waits for. TAU_CAP_CLASS=gate or small classes a command the other way.
 set -euo pipefail
 
 host="${TAU_REMOTE:-192.168.29.12}"
@@ -95,4 +97,5 @@ done
 exec ssh "${ssh_opts[@]}" "$host" \
 	"cd $dir && PATH=/usr/local/go/bin:\$HOME/go/bin:\$PATH TAU_CAP_MEM=$mem \
 		TAU_CAP_TOTAL=${TAU_CAP_TOTAL:-8G} TAU_CAP_TOTAL_HIGH=${TAU_CAP_TOTAL_HIGH:-6G} \
-		TAU_CAP_CPU=${TAU_CAP_CPU:-400%} TAU_NO_CAP=${TAU_NO_CAP:-0} ./scripts/cap$remote"
+		TAU_CAP_CPU=${TAU_CAP_CPU:-400%} TAU_NO_CAP=${TAU_NO_CAP:-0} \
+		TAU_CAP_CLASS=$(printf '%q' "${TAU_CAP_CLASS:-}") ./scripts/cap$remote"

@@ -5,7 +5,8 @@
 #   scripts/cap -- go test -count=1 -p 2 ./pkg/stats/
 #   scripts/cap 2G -- go test -count=1 ./services/dns/
 #
-# MEM defaults to $TAU_CAP_MEM or 3G.
+# MEM defaults to $TAU_CAP_MEM or 3G. A `make` run is a gate, which waits until
+# it has the slice to itself (A GATE HAS THE SLICE TO ITSELF, below).
 #
 # ★★★ THE THING I HAD WRONG FOUR TIMES, taken from warpjs-itr2/scripts/cap after
 # the fourth desktop death:
@@ -77,8 +78,120 @@ fi
 
 # TAU_CAP_SLICE and TAU_CAP_TMP move the slice and the runs' temp directories
 # somewhere else, which is how a test of this script stays out of the real ones.
+# The slice's locks are named for it, so they move with it.
 slice="${TAU_CAP_SLICE:-tau-cap.slice}"
 tmp="${TAU_CAP_TMP:-/tmp/cap}"
+
+# ★ A GATE HAS THE SLICE TO ITSELF. Every capped run shares the slice's CPU
+# quota, and a suite with deadlines in it that shares the host fails tests that
+# describe nothing but the contention. A gate is a `make` suite, or any run with
+# TAU_CAP_CLASS=gate; every other run is small, as is a `make` run with
+# TAU_CAP_CLASS=small. Small runs share the slice with each other, never with a
+# gate, and a gate waits for the slice instead of sharing it.
+#
+# A small run takes the slice's lock shared and a gate takes it exclusively, for
+# the whole run: it rides into the scope on fd 8, and the kernel releases it once
+# the last process holding it is gone, a killed run's too. A gate then also waits
+# until nothing at all is left in the slice, since a process can hold no lock --
+# one an older cap started, or one that closed its descriptors -- and still be
+# using the host.
+#
+# ★ A WAITING GATE IS NOT STARVED. A shared lock is granted while others hold it
+# however long a gate has waited, so small runs arriving one after another would
+# keep a gate out for ever. So every run first passes the slice's door, fd 7. A
+# small run holds it only while it takes its shared lock; a gate takes it before
+# it waits and keeps it until it ends, so nothing gets in ahead of a waiting
+# gate, and whatever waits at the door is told which gate it waits for.
+#
+# A cap call from inside a run in the same slice is part of that run and takes
+# neither, since it would be waiting for the run it is in.
+class="${TAU_CAP_CLASS:-}"
+if [ -z "$class" ]; then
+  case "${1##*/}" in
+    make|gmake) class=gate ;;
+    *) class=small ;;
+  esac
+fi
+case "$class" in
+  gate|small) ;;
+  *)
+    echo "scripts/cap: TAU_CAP_CLASS is gate or small, not \"$class\"." >&2
+    exit 64
+    ;;
+esac
+
+# runs lists each live scope in the slice, with the command it was started with.
+runs() {
+  systemctl --user show -p Id -p Slice -p ActiveState -p Description 'tau-cap-*.scope' 2>/dev/null |
+    awk -v RS= -F '\n' -v slice="$slice" '{
+      id = ""; ours = 0; live = 1; what = ""
+      for (i = 1; i <= NF; i++) {
+        key = $i; sub(/=.*/, "", key); value = substr($i, length(key) + 2)
+        if (key == "Id") id = value
+        if (key == "Slice") ours = value == slice
+        if (key == "ActiveState") live = value != "inactive" && value != "failed"
+        if (key == "Description") what = value
+      }
+      if (id != "" && ours && live) print "  " id ": " what
+    }'
+}
+
+populated() {
+  local cg
+  cg="$(systemctl --user show -p ControlGroup --value "$slice" 2>/dev/null)"
+  [ -n "$cg" ] && grep -qx 'populated 1' "/sys/fs/cgroup$cg/cgroup.events" 2>/dev/null
+}
+
+still() {
+  echo "scripts/cap: still waiting for $slice, $(( (SECONDS - began) / 60 ))m on." >&2
+}
+
+# take FLAG FD WHY: takes the lock open on FD. When it has to wait it says why
+# and what is in the slice, and every five minutes that it still waits.
+take() {
+  flock -n "$1" "$2" && return
+  waited=1
+  echo "scripts/cap: $3" >&2
+  runs >&2
+  until flock -w 300 "$1" "$2"; do
+    still
+  done
+}
+
+began=$SECONDS
+waited=""
+case "$(grep '^0::' /proc/self/cgroup 2>/dev/null)" in
+  */"$slice"/tau-cap-*.scope) ;;
+  *)
+    door="$runtime/$slice.door"
+    exec 7>>"$door" 8>>"$runtime/$slice.lock"
+    holder="$(cat "$door" 2>/dev/null)"
+    take -x 7 "waiting for $slice${holder:+, held by a gate: $holder}"
+    if [ "$class" = gate ]; then
+      printf '%s (pid %s, since %s)\n' "$*" "$$" "$(date '+%F %T')" >"$door"
+      take -x 8 "this gate waits for the runs in $slice to end:"
+      if populated; then
+        waited=1
+        echo "scripts/cap: this gate waits for what is still in $slice, holding no lock:" >&2
+        runs >&2
+        polls=0
+        while populated; do
+          sleep 2
+          polls=$(( polls + 1 ))
+          [ $(( polls % 150 )) -ne 0 ] || still
+        done
+      fi
+    else
+      : >"$door"
+      take -s 8 "waiting for $slice:"
+      exec 7>&-
+    fi
+    if [ -n "$waited" ]; then
+      w=$(( SECONDS - began ))
+      printf 'scripts/cap: waited %dm%02ds for %s.\n' $(( w / 60 )) $(( w % 60 )) "$slice" >&2
+    fi
+    ;;
+esac
 
 # ★ ONE LOCK, HELD UNTIL THE NEW RUN IS INSIDE ITS SCOPE. Everything below looks
 # at the other runs and acts on what it sees — which scopes are alive, whether
