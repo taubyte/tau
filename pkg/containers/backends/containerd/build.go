@@ -8,12 +8,15 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/namespaces"
@@ -323,10 +326,10 @@ func (b *ContainerdBackend) nameImage(ctx context.Context, name string, target o
 // otherwise write outside the build or pull host files into the image.
 //
 // Checking names is not enough on its own, because a link the tar has already
-// made sits in the path of every entry after it. x -> . and then x/y -> .. are
-// each inside dir by name, yet together they make y the directory above dir.
-// So every entry is written through an os.Root, which refuses to resolve a
-// path out of dir.
+// made sits in the path of every entry after it, and an entry's name says
+// nothing about where that link leads. So every entry is created through an
+// os.Root, which refuses to resolve a path out of dir, and once the tar is
+// unpacked every link in dir is followed from where it actually sits.
 func extractContext(r io.Reader, dir string) error {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -353,7 +356,7 @@ func extractContext(r io.Reader, dir string) error {
 	for {
 		header, err := reader.Next()
 		if err == io.EOF {
-			return nil
+			return checkLinks(root)
 		}
 		if err != nil {
 			return fmt.Errorf("reading build context: %w", err)
@@ -364,6 +367,8 @@ func extractContext(r io.Reader, dir string) error {
 			return err
 		}
 
+		// Ownership, times and extended attributes, file capabilities among
+		// them, are not carried over: what is unpacked belongs to this process.
 		switch header.Typeflag {
 		case tar.TypeDir:
 			if err := root.MkdirAll(name, 0o755); err != nil {
@@ -374,11 +379,13 @@ func extractContext(r io.Reader, dir string) error {
 			if err := root.MkdirAll(filepath.Dir(name), 0o755); err != nil {
 				return err
 			}
-			if err := writeFile(root, name, reader, header.FileInfo().Mode()); err != nil {
+			// Permission bits only: setuid, setgid and sticky have no place in a
+			// build context.
+			if err := writeFile(root, name, reader, header.FileInfo().Mode().Perm()); err != nil {
 				return err
 			}
 
-		case tar.TypeSymlink, tar.TypeLink:
+		case tar.TypeSymlink:
 			if err := checkLink(header.Name, header.Linkname); err != nil {
 				return err
 			}
@@ -389,6 +396,20 @@ func extractContext(r io.Reader, dir string) error {
 				return err
 			}
 
+		case tar.TypeLink:
+			// A hard link names an earlier entry, by its name in the tar: from
+			// the root of the archive, not from the link's own directory.
+			target, err := confine(header.Linkname)
+			if err != nil {
+				return err
+			}
+			if err := root.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+				return err
+			}
+			if err := root.Link(target, name); err != nil {
+				return err
+			}
+
 		default:
 			// Devices, fifos and the like have no place in a build context.
 			continue
@@ -396,12 +417,40 @@ func extractContext(r io.Reader, dir string) error {
 	}
 }
 
-// checkLink refuses a link that would resolve outside the build context.
+// checkLinks follows every symlink in the unpacked context from where it sits,
+// and refuses one that leads out of it. checkLink cannot settle this as entries
+// arrive: it reads a target against the link's name, but the components of
+// that target can themselves be links, made before or after it, and a hard link
+// to a symlink is the same link in another directory.
+//
+// A link that leads nowhere, to a name that does not exist or through a file,
+// is kept: one to a file the build generates is ordinary, and nothing writes
+// into the context once it is unpacked. One the root stops following, past its
+// limit on links, is refused, since where it would lead is not known.
+func checkLinks(root *os.Root) error {
+	return fs.WalkDir(root.FS(), ".", func(name string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.Type() != fs.ModeSymlink {
+			return nil
+		}
+		_, err = root.Stat(name)
+		if err == nil || errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+			return nil
+		}
+		return fmt.Errorf("build context link %q does not resolve inside it: %w", name, err)
+	})
+}
+
+// checkLink refuses a link that would resolve outside the build context, as
+// far as the tar can tell.
 //
 // Unlike an entry's name, an absolute link target cannot be rooted into the
 // context and made safe: it is read where it points, so /etc/shadow means the
-// host's. A relative one is resolved against the link's own directory, which
-// is how it will be followed, and refused if it climbs out.
+// host's. A relative one is resolved against the directory the tar names for
+// the link, and refused if it climbs out. Where it really leads is for
+// checkLinks to settle, once everything is on disk.
 func checkLink(name, linkname string) error {
 	outside := fmt.Errorf("build context link %q points outside it, at %q", name, linkname)
 

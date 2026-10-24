@@ -9,7 +9,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -83,15 +85,8 @@ func TestExtractContext(t *testing.T) {
 		for _, name := range []string{
 			"../escaped.txt",
 			"sub/../../escaped.txt",
-			"/etc/cron.d/escaped",
 		} {
 			err := extractContext(tarOf(t, file(name)), dir)
-			if name == "/etc/cron.d/escaped" {
-				// An absolute path is rooted into the build directory rather
-				// than refused: it cannot escape, so it is harmless.
-				require.NoError(t, err, "%s", name)
-				continue
-			}
 			require.Error(t, err, "%q must be refused", name)
 			assert.Contains(t, err.Error(), "escapes")
 		}
@@ -99,6 +94,22 @@ func TestExtractContext(t *testing.T) {
 		// Nothing may exist above the build directory.
 		_, err := os.Stat(filepath.Join(filepath.Dir(dir), "escaped.txt"))
 		assert.True(t, os.IsNotExist(err), "an escaping entry must not be written")
+	})
+
+	// An absolute path is rooted into the build directory rather than refused:
+	// it cannot escape, so it is harmless.
+	t.Run("an absolute name is rooted into the build directory", func(t *testing.T) {
+		for name, landed := range map[string]string{
+			"/etc/cron.d/escaped": "etc/cron.d/escaped",
+			"//etc/cron.d/twice":  "etc/cron.d/twice",
+		} {
+			dir := t.TempDir()
+			require.NoError(t, extractContext(tarOf(t, file(name)), dir), name)
+
+			content, err := os.ReadFile(filepath.Join(dir, landed))
+			require.NoError(t, err, "%s must land at %s", name, landed)
+			assert.Equal(t, "content of "+name, string(content))
+		}
 	})
 
 	t.Run("a link pointing outside the context is refused", func(t *testing.T) {
@@ -116,33 +127,196 @@ func TestExtractContext(t *testing.T) {
 		}
 	})
 
-	// Each link here resolves inside the context from where the tar says it
-	// sits. On disk x is the context itself, so x/y lands at y and points
-	// above it, and an entry under y would be written there.
-	t.Run("links cannot carry a later entry out", func(t *testing.T) {
+	// Whatever links the tar has made, nothing after them may be written
+	// beside the context.
+	t.Run("no entry lands outside the context, whatever links precede it", func(t *testing.T) {
 		for _, last := range []struct {
 			what   string
 			header *tar.Header
 		}{
 			{"a file", file("y/escaped")},
 			{"a directory", &tar.Header{Name: "y/escaped", Typeflag: tar.TypeDir, Mode: 0o755}},
-			{"a link", &tar.Header{Name: "y/escaped", Typeflag: tar.TypeSymlink, Linkname: "anything"}},
+			{"a symlink", &tar.Header{Name: "y/escaped", Typeflag: tar.TypeSymlink, Linkname: "anything"}},
+			{"a hard link", &tar.Header{Name: "y/escaped", Typeflag: tar.TypeLink, Linkname: "real"}},
 		} {
 			parent := t.TempDir()
 			dir := filepath.Join(parent, "context")
 			require.NoError(t, os.Mkdir(dir, 0o755))
 
 			err := extractContext(tarOf(t,
+				file("real"),
 				&tar.Header{Name: "x", Typeflag: tar.TypeSymlink, Linkname: "."},
 				&tar.Header{Name: "x/y", Typeflag: tar.TypeSymlink, Linkname: ".."},
 				last.header,
 			), dir)
-			assert.Error(t, err, "%s reached through the links must be refused", last.what)
+			assert.Error(t, err, "%s must be refused", last.what)
 
 			beside, err := os.ReadDir(parent)
 			require.NoError(t, err)
 			require.Len(t, beside, 1, "%s was written beside the build context", last.what)
 		}
+	})
+
+	// Nor may an entry write through such a link, or make a hard link to what
+	// lies beyond one.
+	t.Run("no entry reaches outside the context through a link", func(t *testing.T) {
+		for _, c := range []struct {
+			what   string
+			via    string
+			header *tar.Header
+		}{
+			{"a file written over the link", "../victim", file("y")},
+			{"a hard link made through it", "..", &tar.Header{Name: "h", Typeflag: tar.TypeLink, Linkname: "y/victim"}},
+		} {
+			parent := t.TempDir()
+			dir := filepath.Join(parent, "context")
+			require.NoError(t, os.Mkdir(dir, 0o755))
+			victim := filepath.Join(parent, "victim")
+			require.NoError(t, os.WriteFile(victim, []byte("untouched"), 0o644))
+
+			err := extractContext(tarOf(t,
+				&tar.Header{Name: "x", Typeflag: tar.TypeSymlink, Linkname: "."},
+				&tar.Header{Name: "x/y", Typeflag: tar.TypeSymlink, Linkname: c.via},
+				c.header,
+			), dir)
+			assert.Error(t, err, "%s must be refused", c.what)
+
+			content, err := os.ReadFile(victim)
+			require.NoError(t, err)
+			assert.Equal(t, "untouched", string(content), "%s changed a file outside the context", c.what)
+
+			info, err := os.Stat(victim)
+			require.NoError(t, err)
+			assert.Equal(t, uint64(1), uint64(info.Sys().(*syscall.Stat_t).Nlink), "%s linked to a file outside the context", c.what)
+		}
+	})
+
+	// A link is judged by where it leads from where it sits on disk, after
+	// every entry is in place, not from where the tar names it.
+	t.Run("a link that leads out of the context from where it lands is refused", func(t *testing.T) {
+		directory := func(name string) *tar.Header {
+			return &tar.Header{Name: name, Typeflag: tar.TypeDir, Mode: 0o755}
+		}
+		symlink := func(name, target string) *tar.Header {
+			return &tar.Header{Name: name, Typeflag: tar.TypeSymlink, Linkname: target}
+		}
+		hardlink := func(name, target string) *tar.Header {
+			return &tar.Header{Name: name, Typeflag: tar.TypeLink, Linkname: target}
+		}
+
+		for _, c := range []struct {
+			what    string
+			entries []*tar.Header
+		}{
+			{"under a link to the context", []*tar.Header{symlink("x", "."), symlink("x/y", "..")}},
+			{"through a link made after it", []*tar.Header{symlink("l", "x/.."), symlink("x", ".")}},
+			{"hard linked into another directory", []*tar.Header{directory("a/b"), symlink("a/b/s", "../.."), hardlink("h", "a/b/s")}},
+			{"named with a trailing slash", []*tar.Header{symlink("x", "."), symlink("x/z", ".."), symlink("a", "z/")}},
+			{"in a loop", []*tar.Header{symlink("a", "b"), symlink("b", "a")}},
+		} {
+			err := extractContext(tarOf(t, c.entries...), t.TempDir())
+			require.Error(t, err, "a link %s must be refused", c.what)
+			assert.Contains(t, err.Error(), "does not resolve inside", c.what)
+		}
+	})
+
+	t.Run("a link that leads nowhere is kept", func(t *testing.T) {
+		dir := t.TempDir()
+
+		links := map[string]string{"generated": "out/app", "through": "f/child", "slashed": "f/"}
+		entries := []*tar.Header{file("f")}
+		for name, target := range links {
+			entries = append(entries, &tar.Header{Name: name, Typeflag: tar.TypeSymlink, Linkname: target})
+		}
+		require.NoError(t, extractContext(tarOf(t, entries...), dir))
+
+		for name, want := range links {
+			target, err := os.Readlink(filepath.Join(dir, name))
+			require.NoError(t, err, name)
+			assert.Equal(t, want, target, name)
+		}
+	})
+
+	t.Run("a hard link names an earlier entry from the root of the tar", func(t *testing.T) {
+		dir := t.TempDir()
+
+		require.NoError(t, extractContext(tarOf(t,
+			file("sub/real"),
+			&tar.Header{Name: "other/hard", Typeflag: tar.TypeLink, Linkname: "sub/real"},
+			&tar.Header{Name: "rooted", Typeflag: tar.TypeLink, Linkname: "/sub/real"},
+		), dir))
+
+		real, err := os.Stat(filepath.Join(dir, "sub", "real"))
+		require.NoError(t, err)
+
+		for _, name := range []string{"other/hard", "rooted"} {
+			info, err := os.Lstat(filepath.Join(dir, name))
+			require.NoError(t, err, name)
+			assert.True(t, info.Mode().IsRegular(), "%s must be a hard link, not a symlink", name)
+			assert.True(t, os.SameFile(real, info), "%s must be the entry it names", name)
+		}
+	})
+
+	// A hard link may only name an entry of the tar: never a file of the
+	// working directory, and never one outside the context.
+	t.Run("a hard link to anything but an earlier entry is refused", func(t *testing.T) {
+		cwd := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(cwd, "secret"), []byte("host"), 0o644))
+		t.Chdir(cwd)
+
+		for _, target := range []string{"secret", "../secret", "/etc/hostname"} {
+			dir := t.TempDir()
+
+			err := extractContext(tarOf(t,
+				&tar.Header{Name: "stolen", Typeflag: tar.TypeLink, Linkname: target},
+			), dir)
+			require.Error(t, err, "a hard link to %q must be refused", target)
+
+			_, err = os.Lstat(filepath.Join(dir, "stolen"))
+			assert.True(t, os.IsNotExist(err), "a hard link to %q must not be made", target)
+		}
+	})
+
+	t.Run("setuid, setgid and sticky are dropped", func(t *testing.T) {
+		dir := t.TempDir()
+
+		// What this process's umask makes of an ordinary 0755.
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "probe"), nil, 0o755))
+		probe, err := os.Stat(filepath.Join(dir, "probe"))
+		require.NoError(t, err)
+
+		special := []int64{0o4000, 0o2000, 0o1000, 0o7000}
+		var entries []*tar.Header
+		for i, bits := range special {
+			entries = append(entries,
+				&tar.Header{Name: "file" + strconv.Itoa(i), Typeflag: tar.TypeReg, Mode: 0o755 | bits},
+				&tar.Header{Name: "dir" + strconv.Itoa(i), Typeflag: tar.TypeDir, Mode: 0o755 | bits},
+			)
+		}
+		require.NoError(t, extractContext(tarOf(t, entries...), dir))
+
+		for i := range special {
+			for _, name := range []string{"file" + strconv.Itoa(i), "dir" + strconv.Itoa(i)} {
+				info, err := os.Stat(filepath.Join(dir, name))
+				require.NoError(t, err, name)
+				assert.Zero(t, info.Mode()&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky), "%s kept a special bit", name)
+				assert.Equal(t, probe.Mode().Perm(), info.Mode().Perm(), "%s must keep its permission bits", name)
+			}
+		}
+	})
+
+	t.Run("ownership is not taken from the tar", func(t *testing.T) {
+		dir := t.TempDir()
+
+		owned := file("owned")
+		owned.Uid, owned.Gid = 4242, 4242
+		require.NoError(t, extractContext(tarOf(t, owned), dir))
+
+		info, err := os.Stat(filepath.Join(dir, "owned"))
+		require.NoError(t, err)
+		stat := info.Sys().(*syscall.Stat_t)
+		assert.Equal(t, uint32(os.Geteuid()), stat.Uid)
+		assert.Equal(t, uint32(os.Getegid()), stat.Gid)
 	})
 
 	t.Run("a link inside the context is kept", func(t *testing.T) {
@@ -158,19 +332,21 @@ func TestExtractContext(t *testing.T) {
 		assert.Equal(t, "real.txt", target)
 	})
 
-	t.Run("device entries are skipped rather than created", func(t *testing.T) {
-		dir := t.TempDir()
+	t.Run("device and fifo entries are skipped rather than created", func(t *testing.T) {
+		for _, kind := range []byte{tar.TypeChar, tar.TypeBlock, tar.TypeFifo} {
+			dir := t.TempDir()
 
-		require.NoError(t, extractContext(tarOf(t,
-			&tar.Header{Name: "dev/null", Typeflag: tar.TypeChar, Mode: 0o666},
-			file("Dockerfile"),
-		), dir))
+			require.NoError(t, extractContext(tarOf(t,
+				&tar.Header{Name: "dev/node", Typeflag: kind, Mode: 0o666},
+				file("Dockerfile"),
+			), dir))
 
-		_, err := os.Stat(filepath.Join(dir, "dev", "null"))
-		assert.True(t, os.IsNotExist(err), "a device node has no place in a build context")
+			_, err := os.Lstat(filepath.Join(dir, "dev", "node"))
+			assert.True(t, os.IsNotExist(err), "type %q has no place in a build context", kind)
 
-		_, err = os.Stat(filepath.Join(dir, "Dockerfile"))
-		assert.NoError(t, err, "entries after a skipped one must still be extracted")
+			_, err = os.Stat(filepath.Join(dir, "Dockerfile"))
+			assert.NoError(t, err, "entries after a skipped one must still be extracted")
+		}
 	})
 
 	t.Run("a truncated tar is an error", func(t *testing.T) {
@@ -196,12 +372,20 @@ func TestExtractContext(t *testing.T) {
 		assert.ErrorIs(t, err, io.ErrUnexpectedEOF)
 	})
 
+	t.Run("a directory that does not exist is an error", func(t *testing.T) {
+		err := extractContext(tarOf(t, file("Dockerfile")), filepath.Join(t.TempDir(), "missing"))
+		assert.Error(t, err)
+	})
+
 	t.Run("entries that contradict each other are refused", func(t *testing.T) {
 		directory := func(name string) *tar.Header {
 			return &tar.Header{Name: name, Typeflag: tar.TypeDir, Mode: 0o755}
 		}
 		link := func(name string) *tar.Header {
 			return &tar.Header{Name: name, Typeflag: tar.TypeSymlink, Linkname: "x"}
+		}
+		hardlink := func(name string) *tar.Header {
+			return &tar.Header{Name: name, Typeflag: tar.TypeLink, Linkname: "a"}
 		}
 
 		for _, c := range []struct {
@@ -212,6 +396,7 @@ func TestExtractContext(t *testing.T) {
 			{"a directory under a file", []*tar.Header{file("a"), directory("a/b")}, 0},
 			{"a file under a file", []*tar.Header{file("a"), file("a/b")}, 0},
 			{"a link under a file", []*tar.Header{file("a"), link("a/b")}, 0},
+			{"a hard link under a file", []*tar.Header{file("a"), hardlink("a/b")}, 0},
 			{"a file where a directory is", []*tar.Header{directory("a"), file("a")}, os.ModeDir},
 			{"a link where a file is", []*tar.Header{file("a"), link("a")}, 0},
 		} {
@@ -222,6 +407,16 @@ func TestExtractContext(t *testing.T) {
 			require.NoError(t, err, c.what)
 			assert.Equal(t, c.kept, info.Mode().Type(), "%s: the entry already extracted must be left as it was", c.what)
 		}
+	})
+}
+
+func TestCheckLinks(t *testing.T) {
+	t.Run("a context that cannot be walked is an error", func(t *testing.T) {
+		root, err := os.OpenRoot(t.TempDir())
+		require.NoError(t, err)
+		require.NoError(t, root.Close())
+
+		assert.Error(t, checkLinks(root))
 	})
 }
 
