@@ -871,23 +871,54 @@ func TestAVerdictCountsAsItsJudgesFrontier(t *testing.T) {
 // on the other side refutes, and the removal is forgotten soon after the
 // heal: the copy does not come back.
 func TestAJudgeWaitsBeforeTrustingANewPeerThatIsNotSettled(t *testing.T) {
+	healWindow(t, false)
+}
+
+// TestAJudgeWaitsForAPeerItHasNotHeardForG: the heal window is a peer's, and
+// a peer not heard for G is new again. The first peer the judge hears of the
+// other side is one it heard on its own before, which went over and has
+// heard only the other side for longer than G, holding nothing of it: the
+// judge waits for it as for a peer it never heard.
+func TestAJudgeWaitsForAPeerItHasNotHeardForG(t *testing.T) {
+	healWindow(t, true)
+}
+
+// healWindow is the heal of TestAJudgeWaitsBeforeTrustingANewPeerThatIsNotSettled,
+// the peer first heard of the other side one the judge heard before the
+// partition if known.
+func healWindow(t *testing.T, known bool) {
 	st := newSimTime()
 	st.advance(20 * simRI)
 	w, a, b, r := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
 	j, x := st.replica(t, "j", 0), st.replica(t, "x", 0)
+	jside := []*simReplica{j, x}
+	var y *simReplica
+	if known {
+		y = st.replica(t, "y", 0)
+		jside = append(jside, y)
+	}
 	put(t, w.r, "/x", "removed")
 	for range gapIntervals + 2 {
 		st.advance(simRI)
 		st.exchange(t, w, a, b, r)
-		st.exchange(t, j, x)
+		st.exchange(t, jside...)
 	}
 	st.advance(simRI)
 	del(t, a.r, "/x")
 	// a and b on one side, j and x on the other, r cut off from both, until
-	// the removal has expired and is not forgotten yet.
-	for elapsed := time.Duration(0); elapsed < simRetention+simMargin-4*simRI; elapsed += simRI {
+	// the removal has expired and is not forgotten yet; y, if known, goes
+	// over for the last of it and hears a and b, holding nothing of theirs.
+	end := simRetention + simMargin - 4*simRI
+	for elapsed := time.Duration(0); elapsed < end; elapsed += simRI {
+		if known && end-elapsed <= (gapIntervals+1)*simRI {
+			st.listen(t, []*simReplica{a, b}, y)
+			st.exchange(t, j, x)
+			j.maintain(t)
+			x.maintain(t)
+			continue
+		}
 		st.advance(simRI)
-		for _, side := range [][]*simReplica{{a, b}, {j, x}} {
+		for _, side := range [][]*simReplica{{a, b}, jside} {
 			st.exchange(t, side...)
 			for _, sr := range side {
 				sr.maintain(t)
@@ -895,8 +926,13 @@ func TestAJudgeWaitsBeforeTrustingANewPeerThatIsNotSettled(t *testing.T) {
 		}
 	}
 	// y joins a and b's side and hears them, holding nothing.
-	y := st.replica(t, "y", 0)
+	if !known {
+		y = st.replica(t, "y", 0)
+	}
 	st.listen(t, []*simReplica{a, b}, y)
+	if known && y.rejoining() {
+		t.Fatal("setup: y should hear a and b as a live peer does")
+	}
 	if !j.settled() {
 		t.Fatal("setup: j should be settled on its side")
 	}
@@ -925,6 +961,93 @@ func TestAJudgeWaitsBeforeTrustingANewPeerThatIsNotSettled(t *testing.T) {
 		if got := sr.value(t, "/x"); got != "<deleted>" {
 			t.Errorf("replica %s: /x = %s, want <deleted>", sr.name, got)
 		}
+	}
+}
+
+// restartEmpty is a crash and a restart with nothing on disk: the process
+// and its store gone, the replica's id kept.
+func (sr *simReplica) restartEmpty(t testing.TB) {
+	t.Helper()
+	closeStore(t, sr.r)
+	forgetIncarnation(sr.r.incarnationKey())
+	sr.store, sr.dag = newSortedStore(), newFetchThrough()
+	sr.open(t)
+}
+
+// TestARejoinEndsWhileAPeerKeepsRestarting: the heal window is a peer's, not
+// an incarnation's. c restarts every two intervals with nothing on disk,
+// never up long enough to fetch what the fleet holds: at every restart a new
+// incarnation that is not settled. Were each incarnation new to the judges,
+// none would vouch for as long as c restarts; c is new once, and a rejoin
+// ends G after it was first heard.
+func TestARejoinEndsWhileAPeerKeepsRestarting(t *testing.T) {
+	st := newSimTime()
+	a, b, r := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
+	put(t, a.r, "/k", "v")
+	st.settle(t, a, b, r)
+	c := st.replica(t, "c", 0)
+	round := func() {
+		st.listen(t, []*simReplica{a, b, r}, c)
+		c.beat()
+		st.hear(t, c, []*simReplica{a, b, r})
+	}
+	round()
+	if a.settled() {
+		t.Fatal("setup: a should wait for c, a new peer that is not settled")
+	}
+	r.reopen(t)
+	for i := 1; r.rejoining(); i++ {
+		if i > gapIntervals+2 {
+			t.Fatalf("a peer restarting faster than G kept every judge from vouching for %d intervals", i-1)
+		}
+		if i%2 == 0 {
+			inc := c.incarnation()
+			c.restartEmpty(t)
+			if c.incarnation() == inc {
+				t.Fatal("setup: c should restart under a new incarnation")
+			}
+		}
+		round()
+	}
+}
+
+// TestAJudgeDoesNotWaitForAPeerItHeardAllAlong: a peer heard, whatever it
+// says, is not new. p's rejoin outlasts G, held up by a block it cannot
+// fetch, and ends with p not settled: its judges heard it rejoin all along
+// and do not wait for it as for a newcomer. A rolling restart whose rejoins
+// outlast G would otherwise leave the fleet without an ok for as long as it
+// rolls, each rejoin held up by the window of the one before.
+func TestAJudgeDoesNotWaitForAPeerItHeardAllAlong(t *testing.T) {
+	st := newSimTime()
+	a, b, p, r := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "p", 0), st.replica(t, "r", 0)
+	st.settle(t, a, b, p, r)
+	p.reopen(t)
+	put(t, a.r, "/w", "1")
+	for range gapIntervals + 1 {
+		st.listen(t, []*simReplica{a, b, r}, p)
+		p.beat()
+		st.hear(t, p, []*simReplica{a, b, r})
+	}
+	if !p.rejoining() {
+		t.Fatal("setup: p should still rejoin")
+	}
+	// p fetches what the oks vouched with from b, and hears what a wrote
+	// since without fetching it: its rejoin ends, and it is not settled.
+	p.pull(t, b)
+	put(t, a.r, "/u", "1")
+	a.beat()
+	st.hear(t, a, []*simReplica{p})
+	p.beat()
+	if p.rejoining() || p.settled() {
+		t.Fatalf("setup: p should have rejoined, not settled (rejoining=%t settled=%t)", p.rejoining(), p.settled())
+	}
+	st.hear(t, p, []*simReplica{a})
+	r.reopen(t)
+	r.beat()
+	st.hear(t, r, []*simReplica{a}, a)
+	st.hear(t, a, []*simReplica{r}, a)
+	if r.rejoining() {
+		t.Fatal("a judge waited, as for a newcomer, for a peer it heard all along")
 	}
 }
 
@@ -994,9 +1117,9 @@ func TestARejoiningReplicaForgetsPeersItNoLongerHears(t *testing.T) {
 		t.Fatal("setup: r should still rejoin")
 	}
 	r.r.mu.Lock()
-	n := len(r.r.frontiers)
+	n, m := len(r.r.frontiers), len(r.r.contacts)
 	r.r.mu.Unlock()
-	if n > gapIntervals+1 {
-		t.Fatalf("a rejoining replica keeps %d frontiers of peers heard once, want at most %d", n, gapIntervals+1)
+	if n > gapIntervals+1 || m > gapIntervals+1 {
+		t.Fatalf("a rejoining replica keeps %d frontiers and %d contacts of peers heard once, want at most %d each", n, m, gapIntervals+1)
 	}
 }

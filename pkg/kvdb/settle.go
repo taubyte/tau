@@ -33,7 +33,11 @@ import (
 // heard less than G ago that has not said it is settled may be the first
 // heard of peers this replica has not heard yet, a fleet it was cut off from
 // among them: until it says so, or G has passed and those have been heard
-// too, this replica is not settled.
+// too, this replica is not settled. First heard is the peer's, whatever it
+// says and under whatever incarnation: one heard again within G is the peer
+// heard all along, so a peer that restarts, is rebased or crash-loops holds
+// a judge back once, however often it does; one silent for G, as across a
+// partition, is new again.
 //
 // What a replica holds is as recent as the fleet time it was last settled at
 // (settledSince), not the fleet time it last heard: a rejoin reports that,
@@ -49,11 +53,17 @@ func (store *Datastore) settledKey() ds.Key {
 	return store.namespace.ChildString(contextNs).ChildString(settledKey)
 }
 
-// A frontier is what a live peer last said it holds, and when it was first
-// heard.
+// A frontier is what a live incarnation last said it holds, when it was
+// last heard, and when its peer was first heard.
 type frontier struct {
 	cc           *causalContext
 	settled      bool
+	first, heard time.Duration
+}
+
+// A contact is a peer heard without a break of G: when this replica began
+// hearing it, and when it last did.
+type contact struct {
 	first, heard time.Duration
 }
 
@@ -94,25 +104,42 @@ func (k *known) containsSpan(s span) bool {
 	return false
 }
 
-// hearFrontier records what a live peer says it holds, and forgets the peers
-// not heard for G, rejoining or not. The caller holds store.mu.
+// hearPeer records that the peer an incarnation was drawn by was heard at
+// up, forgetting first the peers not heard for G, rejoining or not, and
+// returns when this replica began hearing it without a break. The caller
+// holds store.mu.
+func (store *Datastore) hearPeer(incarnation string, up time.Duration) time.Duration {
+	store.prune(up)
+	p := peerOf(incarnation)
+	c := store.contacts[p]
+	if c == nil {
+		c = &contact{first: up}
+		store.contacts[p] = c
+	}
+	c.heard = up
+	return c.first
+}
+
+// hearFrontier records what a live peer says it holds. The caller holds
+// store.mu.
 func (store *Datastore) hearFrontier(msg message) {
 	up := store.times.up()
-	store.prune(up)
+	first := store.hearPeer(msg.incarnation, up)
 	if msg.context == nil || msg.since == 0 || !store.plausible(msg.now) {
 		return
-	}
-	first := up
-	if f := store.frontiers[msg.incarnation]; f != nil {
-		first = f.first
 	}
 	store.frontiers[msg.incarnation] = &frontier{cc: msg.context, settled: msg.settled, first: first, heard: up}
 }
 
-// prune forgets the peers not heard for G and the forgotten entries no
-// longer needed. The caller holds store.mu.
+// prune forgets the peers and incarnations not heard for G and the
+// forgotten entries no longer needed. The caller holds store.mu.
 func (store *Datastore) prune(up time.Duration) {
 	g := gapIntervals * store.opts.RebroadcastInterval
+	for p, c := range store.contacts {
+		if up-c.heard > g {
+			delete(store.contacts, p)
+		}
+	}
 	for inc, f := range store.frontiers {
 		if up-f.heard > g {
 			delete(store.frontiers, inc)

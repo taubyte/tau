@@ -308,6 +308,7 @@ func (store *Datastore) handleBroadcast(ctx context.Context, msg message) {
 	// nothing.
 	up := store.times.up()
 	store.anyHeard = up
+	store.hearPeer(msg.incarnation, up)
 	if msg.since != 0 {
 		store.fleetHeard = up
 	}

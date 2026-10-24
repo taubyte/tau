@@ -317,12 +317,14 @@ type Datastore struct {
 	// merged is when this replica last covered more of each incarnation:
 	// its heartbeats acknowledge those to their authors.
 	merged map[string]time.Duration
-	// frontiers are what each live peer last said it holds, contactFrom
-	// when this replica began hearing the fleet without a break, grounded
-	// whether it knows it has heard every live peer, settledSince the fleet
-	// time it last held all they held, forgotten the entries it dropped by
-	// expiry lately, and oks the verdicts that vouched for it while it
-	// rejoins (see settle.go).
+	// contacts are the peers heard without a break of G, frontiers what
+	// each live incarnation last said it holds, contactFrom when this
+	// replica began hearing the fleet without a break, grounded whether it
+	// knows it has heard every live peer, settledSince the fleet time it
+	// last held all they held, forgotten the entries it dropped by expiry
+	// lately, and oks the verdicts that vouched for it while it rejoins
+	// (see settle.go).
+	contacts     map[string]*contact
 	frontiers    map[string]*frontier
 	contactFrom  time.Duration
 	grounded     bool
@@ -403,6 +405,7 @@ func NewDatastore(
 		ccChanged:        make(chan struct{}),
 		answered:         map[string]time.Duration{},
 		merged:           map[string]time.Duration{},
+		contacts:         map[string]*contact{},
 		frontiers:        map[string]*frontier{},
 		forgotten:        map[string]*forgottenEntry{},
 		oks:              map[string]*ok{},
@@ -1462,10 +1465,23 @@ func (store *Datastore) idleRetire() error {
 	return store.drawIncarnation()
 }
 
+// nonceLen is the length of the nonce that ends every incarnation id.
+const nonceLen = 16
+
+// peerOf is the peer an incarnation was drawn by: its ReplicaID, or the
+// incarnation itself when it has none, as nothing then tells the
+// incarnations of one store from those of another.
+func peerOf(incarnation string) string {
+	if len(incarnation) <= nonceLen {
+		return incarnation
+	}
+	return incarnation[:len(incarnation)-nonceLen]
+}
+
 // drawIncarnation starts a new incarnation: the peer id and a nonce drawn
 // at random, its counter at 0. The caller holds store.mu or is opening.
 func (store *Datastore) drawIncarnation() error {
-	nonce := make([]byte, 16)
+	nonce := make([]byte, nonceLen)
 	if _, err := rand.Read(nonce); err != nil {
 		return fmt.Errorf("error drawing an incarnation: %w", err)
 	}
