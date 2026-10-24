@@ -12,10 +12,8 @@ import (
 	"testing/synctest"
 	"time"
 
-	blockstore "github.com/ipfs/boxo/blockstore"
 	"github.com/ipfs/boxo/ipld/merkledag"
 	mdutils "github.com/ipfs/boxo/ipld/merkledag/test"
-	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
 	query "github.com/ipfs/go-datastore/query"
 	dssync "github.com/ipfs/go-datastore/sync"
@@ -23,7 +21,6 @@ import (
 	pebbleds "github.com/ipfs/go-ds-pebble"
 	ipld "github.com/ipfs/go-ipld-format"
 	log "github.com/ipfs/go-log/v2"
-	"github.com/multiformats/go-multihash"
 )
 
 var (
@@ -178,27 +175,6 @@ func (mb *mockBroadcaster) Next(ctx context.Context) ([]byte, error) {
 	}
 }
 
-type mockDAGSvc struct {
-	ipld.DAGService
-	bs blockstore.Blockstore
-}
-
-func (mds *mockDAGSvc) Add(ctx context.Context, n ipld.Node) error {
-	return mds.DAGService.Add(ctx, n)
-}
-
-func (mds *mockDAGSvc) Get(ctx context.Context, c cid.Cid) (ipld.Node, error) {
-	nd, err := mds.DAGService.Get(ctx, c)
-	if err != nil {
-		return nd, err
-	}
-	return nd, nil
-}
-
-func (mds *mockDAGSvc) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.NodeOption {
-	return mds.DAGService.GetMany(ctx, cids)
-}
-
 func storeFolder(i int) string {
 	return fmt.Sprintf("test-pebble-%d", i)
 }
@@ -234,67 +210,44 @@ func makeNReplicas(t testing.TB, n int, opts *Options) ([]*Datastore, func()) {
 }
 
 func makeNReplicasWithBroadcasters(t testing.TB, n int, opts *Options, bcasts []Broadcaster, cancelBcasts context.CancelFunc) ([]*Datastore, func()) {
-	bs := mdutils.Bserv()
-	dagserv := merkledag.NewDAGService(bs)
-
-	replicaOpts := make([]*Options, n)
-	for i := range replicaOpts {
-		if opts == nil {
-			replicaOpts[i] = DefaultOptions()
-		} else {
-			copy := *opts
-			replicaOpts[i] = &copy
+	dagsyncs := make([]*fetchThroughDAGSvc, n)
+	for i := range dagsyncs {
+		dagsyncs[i] = newFetchThrough()
+	}
+	for i, d := range dagsyncs {
+		var peers []ipld.DAGService
+		for j, o := range dagsyncs {
+			if j != i {
+				peers = append(peers, o.DAGService)
+			}
 		}
-
-		replicaOpts[i].Logger = &testLogger{
-			name: fmt.Sprintf("r#%d: ", i),
-			l:    DefaultOptions().Logger,
-		}
-		replicaOpts[i].RebroadcastInterval = time.Second * 5
-		replicaOpts[i].NumWorkers = 5
-		replicaOpts[i].DAGSyncerTimeout = time.Second
+		d.setRemotes(peers...)
 	}
 
 	replicas := make([]*Datastore, n)
 	for i := range replicas {
-		dagsync := &mockDAGSvc{
-			DAGService: dagserv,
-			bs:         bs.Blockstore(),
-		}
-
+		o := replicaOptions(opts, fmt.Sprintf("r#%d: ", i))
+		o.RebroadcastInterval = time.Second * 5
+		o.NumWorkers = 5
 		var err error
-		replicas[i], err = NewDatastore(
-			makeStore(t, i),
-			// ds.NewLogDatastore(
-			// 	makeStore(t, i),
-			// 	fmt.Sprintf("crdt-test-%d", i),
-			// ),
-			ds.NewKey("crdttest"),
-			dagsync,
-			bcasts[i],
-			replicaOpts[i],
-		)
+		replicas[i], err = NewDatastore(makeStore(t, i), ds.NewKey("crdttest"), dagsyncs[i], bcasts[i], o)
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 	if debug {
-		// nolint:errcheck
 		log.SetLogLevel("crdt", "debug")
 	}
 
 	closeReplicas := func() {
 		cancelBcasts()
 		for i, r := range replicas {
-			err := r.Close()
-			if err != nil {
+			if err := r.Close(); err != nil {
 				t.Error(err)
 			}
-			// nolint:errcheck
 			os.RemoveAll(storeFolder(i))
 		}
 	}
-
 	return replicas, closeReplicas
 }
 
@@ -418,10 +371,7 @@ func TestCRDTReplication(t *testing.T) {
 	}
 
 	for _, r := range replicas {
-		list, _, err := r.heads.List(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
+		list, _ := r.heads.List()
 		t.Log(list)
 	}
 	// replicas[0].PrintDAG()
@@ -589,11 +539,15 @@ func TestCRDTHooks(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Heads are walked concurrently, so a replica that hears the delete
+	// before the put never shows the key and has nothing to notify. Wait
+	// for the put to land everywhere before deleting.
+	waitFor(t, func() bool { return atomic.LoadInt64(&put) == int64(len(replicas)) })
 	err = replicas[0].Delete(ctx, k)
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(100 * time.Millisecond)
+	waitFor(t, func() bool { return atomic.LoadInt64(&deleted) == int64(len(replicas)) })
 	if atomic.LoadInt64(&put) != int64(len(replicas)) {
 		t.Error("all replicas should have notified Put", put)
 	}
@@ -715,129 +669,6 @@ func TestCRDTNamespaceClash(t *testing.T) {
 	}
 }
 
-var _ ds.Datastore = (*syncedTrackDs)(nil)
-
-type syncedTrackDs struct {
-	ds.Datastore
-	syncs map[ds.Key]struct{}
-	set   *set
-}
-
-func (st *syncedTrackDs) Sync(ctx context.Context, k ds.Key) error {
-	st.syncs[k] = struct{}{}
-	return st.Datastore.Sync(ctx, k)
-}
-
-func (st *syncedTrackDs) isSynced(k ds.Key) bool {
-	prefixStr := k.String()
-	mustBeSynced := []ds.Key{
-		st.set.elemsPrefix(prefixStr),
-		st.set.tombsPrefix(prefixStr),
-		st.set.keyPrefix(keysNs).Child(k),
-	}
-
-	for k := range st.syncs {
-		synced := false
-		for _, t := range mustBeSynced {
-			if k == t || k.IsAncestorOf(t) {
-				synced = true
-				break
-			}
-		}
-		if !synced {
-			return false
-		}
-	}
-	return true
-}
-
-func TestCRDTSync(t *testing.T) {
-	ctx := context.Background()
-
-	opts := DefaultOptions()
-	replicas, closeReplicas := makeReplicas(t, opts)
-	defer closeReplicas()
-
-	syncedDs := &syncedTrackDs{
-		Datastore: replicas[0].set.store,
-		syncs:     make(map[ds.Key]struct{}),
-		set:       replicas[0].set,
-	}
-
-	replicas[0].set.store = syncedDs
-	k1 := ds.NewKey("/hello/bye")
-	k2 := ds.NewKey("/hello")
-	k3 := ds.NewKey("/hell")
-
-	err := replicas[0].Put(ctx, k1, []byte("value1"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = replicas[0].Put(ctx, k2, []byte("value2"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = replicas[0].Put(ctx, k3, []byte("value3"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = replicas[0].Sync(ctx, ds.NewKey("/hello"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if !syncedDs.isSynced(k1) {
-		t.Error("k1 should have been synced")
-	}
-
-	if !syncedDs.isSynced(k2) {
-		t.Error("k2 should have been synced")
-	}
-
-	if syncedDs.isSynced(k3) {
-		t.Error("k3 should have not been synced")
-	}
-}
-
-func TestCRDTBroadcastBackwardsCompat(t *testing.T) {
-	ctx := context.Background()
-	mh, err := multihash.Sum([]byte("emacs is best"), multihash.SHA2_256, -1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cidV0 := cid.NewCidV0(mh)
-
-	opts := DefaultOptions()
-	replicas, closeReplicas := makeReplicas(t, opts)
-	defer closeReplicas()
-
-	headsMap, err := replicas[0].decodeBroadcast(ctx, cidV0.Bytes())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(headsMap[""]) != 1 || !headsMap[""][0].Cid.Equals(cidV0) {
-		t.Error("should have returned a single cidV0", headsMap[""])
-	}
-
-	data, err := replicas[0].encodeBroadcast(ctx, headsMap[""])
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	headsMap2, err := replicas[0].decodeBroadcast(ctx, data)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(headsMap2[""]) != 1 || !headsMap2[""][0].Cid.Equals(cidV0) {
-		t.Error("should have reparsed cid0", headsMap2[""])
-	}
-}
-
 func BenchmarkQueryElements(b *testing.B) {
 	ctx := context.Background()
 	replicas, closeReplicas := makeNReplicas(b, 1, nil)
@@ -953,355 +784,6 @@ func TestCRDTPutPutDelete(t *testing.T) {
 	}
 }
 
-func TestMigration0to1(t *testing.T) {
-	replicas, closeReplicas := makeNReplicas(t, 1, nil)
-	defer closeReplicas()
-	replica := replicas[0]
-	ctx := context.Background()
-
-	nItems := 200
-	var keys []ds.Key
-	// Add nItems
-	for i := range nItems {
-		k := ds.RandomKey()
-		keys = append(keys, k)
-		v := fmt.Appendf(nil, "%d", i)
-		err := replica.Put(ctx, k, v)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-	}
-
-	// Overwrite n/2 items 5 times to have multiple tombstones per key
-	// later...
-	for range 5 {
-		for i := 0; i < nItems/2; i++ {
-			v := fmt.Appendf(nil, "%d", i)
-			err := replica.Put(ctx, keys[i], v)
-			if err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-
-	// delete keys
-	for i := 0; i < nItems/2; i++ {
-		err := replica.Delete(ctx, keys[i])
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	// And write them again
-	for i := 0; i < nItems/2; i++ {
-		err := replica.Put(ctx, keys[i], []byte("final value"))
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	// And now we manually put the wrong value
-	for i := 0; i < nItems/2; i++ {
-		valueK := replica.set.valueKey(keys[i].String())
-		err := replica.set.store.Put(ctx, valueK, []byte("wrong value"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		err = replica.set.setPriority(ctx, replica.set.store, keys[i].String(), 1)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	err := replica.migrate0to1(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for i := 0; i < nItems/2; i++ {
-		v, err := replica.Get(ctx, keys[i])
-		if err != nil {
-			t.Fatal(err)
-		}
-		if string(v) != "final value" {
-			t.Fatalf("value for elem %d should be final value: %s", i, string(v))
-		}
-	}
-}
-
-func TestCRDTDagNames(t *testing.T) {
-	// make 2 replicas
-	replicas, closeReplicas := makeNReplicas(t, 2, nil)
-	defer closeReplicas()
-
-	ctx := context.Background()
-
-	nItems := 50
-
-	// create delta manually for each item with store.set.Add()
-	// delta.SetDagName() alternatively to "dag1" and "dag2"
-	for i := range nItems {
-		k := ds.RandomKey()
-		v := fmt.Appendf(nil, "value-%d", i)
-
-		// Create delta manually
-		delta, err := replicas[0].set.Add(ctx, k.String(), v)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// Set different DAG names for alternating items
-		if i%2 == 0 {
-			delta.SetDagName("dag1")
-		} else {
-			delta.SetDagName("dag2")
-		}
-
-		// Commit the delta
-		_, err = replicas[0].publish(ctx, delta)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	// Wait for propagation
-	time.Sleep(100 * time.Millisecond)
-
-	// verify there are 2 distinct heads (.List())
-	heads, _, err := replicas[0].heads.List(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// replicas[0].PrintDAG(ctx)
-
-	if len(heads) != 2 {
-		t.Fatalf("Expected 2 heads, got %d", len(heads))
-	}
-
-	// verify one head has dagName set to "dag1" and the other to "dag2"
-	headDagNames := make(map[string]bool)
-	for _, head := range heads {
-		headDagNames[head.DAGName] = true
-	}
-
-	if !headDagNames["dag1"] {
-		t.Error("Expected a head with DAGName 'dag1'")
-	}
-
-	if !headDagNames["dag2"] {
-		t.Error("Expected a head with DAGName 'dag2'")
-	}
-
-	var expectedDagName string
-	visit := func(n ipld.Node) error {
-		dbytes, err := extractDelta(n)
-		if err != nil {
-			t.Fatal(err)
-		}
-		d := replicas[0].opts.crdtOpts.DeltaFactory()
-		d.Unmarshal(dbytes) // nolint:errcheck
-
-		if d.GetDagName() != expectedDagName {
-			return fmt.Errorf("wrong dagName in subtree: got %s, expected %s", d.GetDagName(), expectedDagName)
-		}
-		return nil
-	}
-
-	mcrdt := MerkleCRDT{replicas[0]}
-	for _, h := range heads {
-		expectedDagName = h.DAGName
-		err := mcrdt.Traverse(ctx, []cid.Cid{h.Cid}, visit)
-		if err != nil {
-			t.Error(err)
-		}
-	}
-}
-
-func TestCRDTHeadsSaveLoad(t *testing.T) {
-	// make 1 replica
-	replicas, closeReplicas := makeNReplicas(t, 1, nil)
-	defer closeReplicas()
-	replica := replicas[0]
-	ctx := context.Background()
-
-	// for dagname = range ["", "dag1", "dag2"]:
-	//  generate a random cid
-	//  add a head to the replica heads.
-	dagNames := []string{"", "dag1", "dag2"}
-	for _, dagName := range dagNames {
-		// Generate a random cid
-		k := ds.RandomKey()
-		pref := cid.Prefix{
-			Version: 1,
-		}
-
-		c, err := pref.Sum([]byte(k.String()))
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// Add a head to the replica heads
-		head := Head{
-			Cid: c,
-			HeadValue: HeadValue{
-				Height:  1,
-				DAGName: dagName,
-			},
-		}
-		err = replica.heads.Add(ctx, head)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	heads, err := newHeads(ctx, replica.store, replica.heads.namespace, replica.heads.namespaceDags, replica.heads.logger)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Verify there are 3 heads and they are the ones written before
-	newheads, _, err := heads.List(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(newheads) != 3 {
-		t.Fatalf("Expected 3 heads, got %d", len(newheads))
-	}
-
-	// Verify the heads have the correct DAG names
-	headDagNames := make(map[string]bool)
-	for _, head := range newheads {
-		headDagNames[head.DAGName] = true
-	}
-
-	if !headDagNames[""] {
-		t.Error("Expected a head with DAGName ''")
-	}
-
-	if !headDagNames["dag1"] {
-		t.Error("Expected a head with DAGName 'dag1'")
-	}
-
-	if !headDagNames["dag2"] {
-		t.Error("Expected a head with DAGName 'dag2'")
-	}
-}
-
-func TestCRDTIsProcessed(t *testing.T) {
-	replicas, closeReplicas := makeNReplicas(t, 1, nil)
-	defer closeReplicas()
-	mcrdt := MerkleCRDT{replicas[0]}
-	ctx := context.Background()
-
-	// A CID that was never added should not be processed.
-	mh, err := multihash.Sum([]byte("never-added"), multihash.SHA2_256, -1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	unknownCID := cid.NewCidV1(cid.DagProtobuf, mh)
-	processed, err := mcrdt.IsProcessed(ctx, unknownCID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if processed {
-		t.Error("unknown CID should not be processed")
-	}
-
-	// Put a value — this synchronously creates and processes a DAG block.
-	err = mcrdt.Put(ctx, ds.NewKey("/testkey"), []byte("testval"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// All head CIDs should be marked as processed now.
-	heads, _, err := mcrdt.Heads().List(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(heads) == 0 {
-		t.Fatal("expected at least one head after Put")
-	}
-	for _, head := range heads {
-		processed, err := mcrdt.IsProcessed(ctx, head.Cid)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !processed {
-			t.Errorf("head %s should be processed after Put", head.Cid)
-		}
-	}
-}
-
-func TestCRDTLenDag(t *testing.T) {
-	// make a replica
-	replicas, closeReplicas := makeNReplicas(t, 1, nil)
-	defer closeReplicas()
-	replica := replicas[0]
-	ctx := context.Background()
-
-	// publish one delta for dag1
-	k1 := ds.RandomKey()
-	v1 := []byte("value1")
-	delta1, err := replica.set.Add(ctx, k1.String(), v1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	delta1.SetDagName("dag1")
-	_, err = replica.publish(ctx, delta1)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// publish 2 deltas for dag2
-	k2 := ds.RandomKey()
-	v2 := []byte("value2")
-	delta2, err := replica.set.Add(ctx, k2.String(), v2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	delta2.SetDagName("dag2")
-	_, err = replica.publish(ctx, delta2)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	k3 := ds.RandomKey()
-	v3 := []byte("value3")
-	delta3, err := replica.set.Add(ctx, k3.String(), v3)
-	if err != nil {
-		t.Fatal(err)
-	}
-	delta3.SetDagName("dag2")
-	_, err = replica.publish(ctx, delta3)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	lenDag1, err := replica.heads.LenDAG(ctx, "dag1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if lenDag1 != 1 {
-		t.Errorf("Expected 1 head for dag1, got %d", lenDag1)
-	}
-
-	lenDag2, err := replica.heads.LenDAG(ctx, "dag2")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if lenDag2 != 1 {
-		t.Errorf("Expected 1 heads for dag2, got %d", lenDag2)
-	}
-
-	_, max, _ := replica.heads.ListDAG(ctx, "dag2")
-	if max != 2 {
-		t.Errorf("Expected height = 2 for dag2")
-	}
-}
-
 type memoryBroadcaster struct {
 	Broadcaster
 	last chan []byte
@@ -1343,62 +825,20 @@ func TestCRDTBatchBroadcast(t *testing.T) {
 	replica := replicas[0]
 	ctx := context.Background()
 
-	// publish one delta for dag1
-	k1 := ds.RandomKey()
-	v1 := []byte("value1")
-	delta1, err := replica.set.Add(ctx, k1.String(), v1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	delta1.SetDagName("dag1")
-	_, err = replica.publish(ctx, delta1)
-	if err != nil {
-		t.Fatal(err)
+	// Three sequential writes inside one batch window: each new head
+	// replaces the previous one, which became its parent.
+	for i := range 3 {
+		if err := replica.Put(ctx, ds.RandomKey(), fmt.Appendf(nil, "value%d", i)); err != nil {
+			t.Fatal(err)
+		}
 	}
 
-	// publish 2 deltas for dag2
-	k2 := ds.RandomKey()
-	v2 := []byte("value2")
-	delta2, err := replica.set.Add(ctx, k2.String(), v2)
+	heads, err := replica.decodeBroadcast(mb.Last())
 	if err != nil {
 		t.Fatal(err)
 	}
-	delta2.SetDagName("dag2")
-	_, err = replica.publish(ctx, delta2)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	k3 := ds.RandomKey()
-	v3 := []byte("value3")
-	delta3, err := replica.set.Add(ctx, k3.String(), v3)
-	if err != nil {
-		t.Fatal(err)
-	}
-	delta3.SetDagName("dag2")
-	_, err = replica.publish(ctx, delta3)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// wait for Next() to be called
-	data := mb.Last()
-
-	// calls decodeBroadcast on the response and verifies that there are 3 heads in the response
-	heads, err := replica.decodeBroadcast(ctx, data)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Should have one DAG with 2 heads since the last update in
-	// "dag2" replaced the previous head as it became a child.
-	var totalHeads int
-	for _, headList := range heads {
-		totalHeads += len(headList)
-	}
-
-	if totalHeads != 2 {
-		t.Errorf("Expected 2 heads in broadcast, got %d: %s", totalHeads, heads)
+	if len(heads) != 1 {
+		t.Errorf("Expected 1 head in broadcast, got %d: %s", len(heads), heads)
 	}
 }
 
@@ -1419,244 +859,6 @@ func makeNReplicasNoBcast(t testing.TB, n int, opts *Options) ([]*Datastore, fun
 		bcasts[i] = &nullBroadcaster{}
 	}
 	return makeNReplicasWithBroadcasters(t, n, opts, bcasts, func() {})
-}
-
-func TestPurgeDAG(t *testing.T) {
-	replicas, closeReplicas := makeNReplicasNoBcast(t, 1, nil)
-	t.Cleanup(closeReplicas)
-	replica := replicas[0]
-	mcrdt := MerkleCRDT{replica}
-	ctx := t.Context()
-
-	// Publish one delta under dag1 and two under dag2.
-	k1 := ds.NewKey("key1")
-	delta1, err := replica.set.Add(ctx, k1.String(), []byte("val1"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	delta1.SetDagName("dag1")
-	if _, err := replica.publish(ctx, delta1); err != nil {
-		t.Fatal(err)
-	}
-
-	k2 := ds.NewKey("key2")
-	delta2, err := replica.set.Add(ctx, k2.String(), []byte("val2"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	delta2.SetDagName("dag2")
-	if _, err := replica.publish(ctx, delta2); err != nil {
-		t.Fatal(err)
-	}
-
-	k3 := ds.NewKey("key3")
-	delta3, err := replica.set.Add(ctx, k3.String(), []byte("val3"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	delta3.SetDagName("dag2")
-	if _, err := replica.publish(ctx, delta3); err != nil {
-		t.Fatal(err)
-	}
-
-	// Collect dag1 head CIDs before purge so we can check IsProcessed later.
-	dag1Heads, _, err := replica.heads.ListDAG(ctx, "dag1")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Purge dag1.
-	n, err := mcrdt.PurgeDAG(ctx, "dag1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 1 {
-		t.Error("expected non-zero blocks removed for dag1")
-	}
-
-	// dag1 heads are gone.
-	dag1HeadsAfter, _, err := replica.heads.ListDAG(ctx, "dag1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(dag1HeadsAfter) != 0 {
-		t.Errorf("expected 0 dag1 heads after purge, got %d", len(dag1HeadsAfter))
-	}
-
-	// dag2 heads remain.
-	dag2Heads, _, err := replica.heads.ListDAG(ctx, "dag2")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(dag2Heads) != 1 {
-		t.Error("dag2 heads should survive purge of dag1")
-	}
-
-	// Set entry for k1 (dag1 key) is gone.
-	_, err = replica.set.Element(ctx, k1.String())
-	if !errors.Is(err, ds.ErrNotFound) {
-		t.Errorf("expected ErrNotFound for key1 after purge, got %v", err)
-	}
-
-	// Set entries for dag2 keys remain.
-	if _, err := replica.set.Element(ctx, k2.String()); err != nil {
-		t.Errorf("key2 should survive purge of dag1: %v", err)
-	}
-	if _, err := replica.set.Element(ctx, k3.String()); err != nil {
-		t.Errorf("key3 should survive purge of dag1: %v", err)
-	}
-
-	// Processed block markers for dag1 blocks are gone.
-	for _, h := range dag1Heads {
-		processed, err := mcrdt.IsProcessed(ctx, h.Cid)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if processed {
-			t.Errorf("dag1 CID %s should not be processed after purge", h.Cid)
-		}
-	}
-}
-
-func TestPurgeDAGIdempotent(t *testing.T) {
-	replicas, closeReplicas := makeNReplicasNoBcast(t, 1, nil)
-	t.Cleanup(closeReplicas)
-	mcrdt := MerkleCRDT{replicas[0]}
-	ctx := t.Context()
-
-	n, err := mcrdt.PurgeDAG(ctx, "nonexistent")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 0 {
-		t.Errorf("expected 0 blocks removed for unknown dagName, got %d", n)
-	}
-}
-
-func TestPurgeDAGMixedKey(t *testing.T) {
-	replicas, closeReplicas := makeNReplicasNoBcast(t, 1, nil)
-	t.Cleanup(closeReplicas)
-	replica := replicas[0]
-	mcrdt := MerkleCRDT{replica}
-	ctx := t.Context()
-
-	// Both dag1 and dag2 write to the same key with different values.
-	key := ds.NewKey("shared").String()
-
-	delta1, err := replica.set.Add(ctx, key, []byte("from-dag1"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	delta1.SetDagName("dag1")
-	if _, err := replica.publish(ctx, delta1); err != nil {
-		t.Fatal(err)
-	}
-
-	delta2, err := replica.set.Add(ctx, key, []byte("from-dag2"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	delta2.SetDagName("dag2")
-	if _, err := replica.publish(ctx, delta2); err != nil {
-		t.Fatal(err)
-	}
-
-	// Purge dag2.
-	if _, err := mcrdt.PurgeDAG(ctx, "dag2"); err != nil {
-		t.Fatal(err)
-	}
-
-	// The key should still exist with dag1's value.
-	val, err := replica.set.Element(ctx, key)
-	if err != nil {
-		t.Fatalf("key should survive after purging dag2: %v", err)
-	}
-	if string(val) != "from-dag1" {
-		t.Errorf("expected 'from-dag1', got %q", string(val))
-	}
-}
-
-func TestPurgeDAGCleanStore(t *testing.T) {
-	ctx := t.Context()
-	mapDs := dssync.MutexWrap(ds.NewMapDatastore())
-	dagserv := merkledag.NewDAGService(mdutils.Bserv())
-	dagsync := &mockDAGSvc{
-		DAGService: dagserv,
-		bs:         mdutils.Bserv().Blockstore(),
-	}
-
-	opts := DefaultOptions()
-	opts.Logger = &testLogger{
-		name: "purge-clean: ",
-		l:    DefaultOptions().Logger,
-	}
-
-	namespace := ds.NewKey("crdttest")
-	replica, err := NewDatastore(mapDs, namespace, dagsync, &nullBroadcaster{}, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { replica.Close() })
-
-	mcrdt := MerkleCRDT{replica}
-
-	// Publish two keys under dag1.
-	delta1, err := replica.set.Add(ctx, "key1", []byte("val1"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	delta1.SetDagName("dag1")
-	if _, err := replica.publish(ctx, delta1); err != nil {
-		t.Fatal(err)
-	}
-	delta2, err := replica.set.Add(ctx, "key2", []byte("val2"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	delta2.SetDagName("dag1")
-	if _, err := replica.publish(ctx, delta2); err != nil {
-		t.Fatal(err)
-	}
-
-	// Purge dag1.
-	n, err := mcrdt.PurgeDAG(ctx, "dag1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 2 {
-		t.Fatal("expected non-zero blocks removed")
-	}
-
-	// Query all keys remaining in the store.
-	results, err := mapDs.Query(ctx, query.Query{KeysOnly: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { results.Close() })
-
-	var remaining []string
-	for r := range results.Next() {
-		if r.Error != nil {
-			t.Fatal(r.Error)
-		}
-		remaining = append(remaining, r.Key)
-	}
-
-	// The only keys that should survive are datastore-level metadata keys
-	// not associated with any dagName: the version key and the
-	// bad-shutdown key (written by New and cleared by Close).
-	allowed := map[string]bool{
-		namespace.ChildString(versionKey).String():     true,
-		namespace.ChildString(badShutdownKey).String(): true,
-	}
-	for _, key := range remaining {
-		if !allowed[key] {
-			t.Errorf("unexpected key remaining after purge: %s", key)
-		}
-	}
-	if len(remaining) != len(allowed) {
-		t.Errorf("expected exactly %d datastore-level keys remaining, got %d: %v", len(allowed), len(remaining), remaining)
-	}
 }
 
 // openTestStore opens a Datastore on the given underlying ds/dagservice with
@@ -1732,7 +934,7 @@ func TestBadShutdownMark_DetectedOnStartup(t *testing.T) {
 	}
 
 	d := openTestStore(t, "recover", mapDs, dagServ, time.Hour)
-	defer func() { _ = d.Close() }()
+	defer d.Close()
 
 	if !d.IsDirty(ctx) {
 		t.Fatal("store should be dirty after detecting a prior bad shutdown")
@@ -1746,85 +948,61 @@ func TestBadShutdownMark_DetectedOnStartup(t *testing.T) {
 	}
 }
 
-// TestBadShutdownMark_PartialBranchRecovery builds a 2-node chain, fetches
-// the head's child, corrupts the datastore by deleting the child's processed
-// marker, and asserts that on reopen the bad-shutdown mark triggers a repair
-// that restores the missing state.
+// TestBadShutdownMark_PartialBranchRecovery: a replica that died after
+// merging a head and before walking to its parent is marked dirty on reopen,
+// and the repair walks the parent it recorded as missing.
 func TestBadShutdownMark_PartialBranchRecovery(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := t.Context()
+		writerDs := dssync.MutexWrap(ds.NewMapDatastore())
+		shared := newFetchThrough()
+		w := openTestStore(t, "w", writerDs, shared, time.Hour)
+		if err := w.Put(ctx, ds.NewKey("/k1"), []byte("v1")); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Put(ctx, ds.NewKey("/k2"), []byte("v2")); err != nil {
+			t.Fatal(err)
+		}
+		hs, _ := w.heads.List()
+		if len(hs) != 1 {
+			t.Fatalf("expected exactly 1 head after two sequential Puts, got %d", len(hs))
+		}
+
 		mapDs := dssync.MutexWrap(ds.NewMapDatastore())
-		dagServ := merkledag.NewDAGService(mdutils.Bserv())
-
-		d1 := openTestStore(t, "r1", mapDs, dagServ, time.Hour)
-		if err := d1.Put(ctx, ds.NewKey("/k1"), []byte("v1")); err != nil {
-			t.Fatal(err)
-		}
-		if err := d1.Put(ctx, ds.NewKey("/k2"), []byte("v2")); err != nil {
-			t.Fatal(err)
-		}
-
-		headsList, _, err := d1.heads.List(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(headsList) != 1 {
-			t.Fatalf("expected exactly 1 head after two sequential Puts, got %d", len(headsList))
-		}
-		headCid := headsList[0].Cid
-
-		headNode, err := dagServ.Get(ctx, headCid)
-		if err != nil {
-			t.Fatal(err)
-		}
-		links := headNode.Links()
-		if len(links) == 0 {
-			t.Fatal("head node should link to at least one prior block")
-		}
-		childCid := links[0].Cid
-		childProcessedKey := d1.processedBlockKey(childCid)
-
-		for _, c := range []cid.Cid{headCid, childCid} {
-			ok, err := d1.isProcessed(ctx, c)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !ok {
-				t.Fatalf("block %s should be processed before corruption", c)
-			}
+		local := newFetchThrough()
+		local.setRemotes(shared.DAGService)
+		d1 := openTestStore(t, "r1", mapDs, local, time.Hour)
+		mergeOne(t, d1, hs[0].Cid)
+		if valueOf(t, d1, ds.NewKey("/k1")) != "<deleted>" {
+			t.Fatal("the parent should not be merged yet")
 		}
 		if err := d1.Close(); err != nil {
-			t.Fatal(err)
-		}
-
-		// Corrupt the datastore: drop the child's processed marker and
-		// re-arm the bad-shutdown key so reopen detects an unclean prior
-		// run.
-		if err := mapDs.Delete(ctx, childProcessedKey); err != nil {
 			t.Fatal(err)
 		}
 		if err := mapDs.Put(ctx, ds.NewKey("crdttest").ChildString(badShutdownKey), nil); err != nil {
 			t.Fatal(err)
 		}
 
-		d2 := openTestStore(t, "r2", mapDs, dagServ, time.Hour)
-		t.Cleanup(func() { _ = d2.Close() })
-
-		if !d2.IsDirty(ctx) {
-			t.Fatal("store should be dirty after detecting a prior bad shutdown")
-		}
-
+		d2 := openTestStore(t, "r2", mapDs, local, time.Hour)
+		t.Cleanup(func() { d2.Close() })
 		synctest.Wait()
 
-		ok, err := d2.isProcessed(ctx, childCid)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !ok {
-			t.Fatal("child should be processed after repair")
+		if got := valueOf(t, d2, ds.NewKey("/k1")); got != "v1" {
+			t.Fatalf("repair should have merged the missing parent, /k1 = %s", got)
 		}
 		if d2.IsDirty(ctx) {
 			t.Fatal("store should be marked clean after successful repair")
 		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
 	})
+}
+
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
 }

@@ -68,7 +68,7 @@ func (x *CRDTBroadcast) GetHeads() []*Head {
 type Head struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Cid           []byte                 `protobuf:"bytes,1,opt,name=Cid,proto3" json:"Cid,omitempty"`
-	DagName       string                 `protobuf:"bytes,2,opt,name=DagName,proto3" json:"DagName,omitempty"`
+	Dot           *Dot                   `protobuf:"bytes,3,opt,name=dot,proto3" json:"dot,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -110,23 +110,23 @@ func (x *Head) GetCid() []byte {
 	return nil
 }
 
-func (x *Head) GetDagName() string {
+func (x *Head) GetDot() *Dot {
 	if x != nil {
-		return x.DagName
+		return x.Dot
 	}
-	return ""
+	return nil
 }
 
 var File_bcast_proto protoreflect.FileDescriptor
 
 const file_bcast_proto_rawDesc = "" +
 	"\n" +
-	"\vbcast.proto\x12\acrdt.pb\"4\n" +
+	"\vbcast.proto\x12\acrdt.pb\x1a\vdelta.proto\"4\n" +
 	"\rCRDTBroadcast\x12#\n" +
-	"\x05Heads\x18\x01 \x03(\v2\r.crdt.pb.HeadR\x05Heads\"2\n" +
+	"\x05Heads\x18\x01 \x03(\v2\r.crdt.pb.HeadR\x05Heads\"G\n" +
 	"\x04Head\x12\x10\n" +
-	"\x03Cid\x18\x01 \x01(\fR\x03Cid\x12\x18\n" +
-	"\aDagName\x18\x02 \x01(\tR\aDagNameB\x06Z\x04.;pbb\x06proto3"
+	"\x03Cid\x18\x01 \x01(\fR\x03Cid\x12\x1e\n" +
+	"\x03dot\x18\x03 \x01(\v2\f.crdt.pb.DotR\x03dotJ\x04\b\x02\x10\x03R\aDagNameB\x06Z\x04.;pbb\x06proto3"
 
 var (
 	file_bcast_proto_rawDescOnce sync.Once
@@ -144,14 +144,16 @@ var file_bcast_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_bcast_proto_goTypes = []any{
 	(*CRDTBroadcast)(nil), // 0: crdt.pb.CRDTBroadcast
 	(*Head)(nil),          // 1: crdt.pb.Head
+	(*Dot)(nil),           // 2: crdt.pb.Dot
 }
 var file_bcast_proto_depIdxs = []int32{
 	1, // 0: crdt.pb.CRDTBroadcast.Heads:type_name -> crdt.pb.Head
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	2, // 1: crdt.pb.Head.dot:type_name -> crdt.pb.Dot
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_bcast_proto_init() }
@@ -159,6 +161,7 @@ func file_bcast_proto_init() {
 	if File_bcast_proto != nil {
 		return
 	}
+	file_delta_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

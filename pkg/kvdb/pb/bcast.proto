@@ -1,6 +1,8 @@
 syntax = "proto3";
 package crdt.pb;
 
+import "delta.proto";
+
 option go_package = ".;pb";
 
 message CRDTBroadcast {
@@ -9,5 +11,7 @@ message CRDTBroadcast {
 
 message Head {
   bytes Cid = 1;
-  string DagName = 2;
+  reserved 2;
+  reserved "DagName";
+  Dot dot = 3;
 }

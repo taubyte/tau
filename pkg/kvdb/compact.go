@@ -3,316 +3,214 @@ package kvdb
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	cid "github.com/ipfs/go-cid"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
+	"google.golang.org/protobuf/proto"
 )
 
-// Compact rewrites a named DAG's live state as one or more small "snapshot"
-// generation blocks and purges the DAG history that is now redundant with
-// them, returning the number of DAG blocks purged. Compacting the default
-// (unnamed) DAG is Compact(ctx, "").
+// Compact folds this replica's whole state into a snapshot and drops every
+// local block the snapshot covers, returning how many it dropped.
 //
-// # What it does
+// A snapshot is a delta like any other: it has a dot of this incarnation and
+// links the current heads, plus every parent a merged block links that this
+// replica has not merged yet, so a replica reading it can still walk to
+// those. What it carries is a state: every live element with its own dot and
+// priority, the pending removals, and this replica's causal context.
+// Merging it is the same join as merging a delta (see merge.go), so it needs
+// no coordination: snapshots made concurrently, from stale views, or of
+// partly-walked histories all converge, and a removal the snapshot has seen
+// stays removed against any branch that still carries the element.
 //
-// Compact walks the named DAG's history locally (never touching the
-// network) starting from its current heads, exactly like PurgeDAG. For every
-// key touched by that history it computes the same "best value" that
-// findBestValue would (highest priority, ties broken by the greatest value)
-// and, separately, which of the key's tombstones must be carried forward
-// (see below). It then builds one or more new DAG blocks -- "snapshot"
-// nodes, marked as such via Delta.IsSnapshot -- containing exactly that
-// live state, linked to all the heads it covers, and merges them locally
-// (replacing the covered heads with the new snapshot head(s)). Finally it
-// purges the old DAG blocks and their set entries, and broadcasts the new
-// snapshot head(s).
+// Elements that do not fit in the root block go to chunk blocks the root
+// names; a reader fetches them all before it merges anything, so a snapshot
+// is never half-applied.
 //
-// A fresh replica that later fetches this DAG only ever needs the snapshot
-// block(s): it never descends into a snapshot node's links (see
-// processNode/repairDAG), which is what makes the old history safe to
-// purge. Per-element priorities are preserved exactly (see Item G3), so a
-// snapshot changes nothing about which value wins a concurrent write for a
-// still-being-replicated key.
-//
-// # Tombstones are carried by every generation
-//
-// A tombstone cannot be dropped once its target's block is purged: a
-// replica offline since before the delete may still hold the element, or
-// compact its stale view into a snapshot that re-exports it under its
-// original id, and only the tombstone refutes it. So every snapshot carries
-// every tombstone of the keys it touches. This keeps the tombstone set
-// growing with deletes; bounding it needs agreement on what every holder
-// has seen, which this package does not have.
-//
-// A carried tombstone's marker is written with an alias pointing at the
-// snapshot block that carries it (see putTombs), mirroring a re-homed
-// element's marker (S2): the tombstone's target id is often the very id being purged by THIS SAME Compact call, so
-// without an alias the purge below would immediately delete the marker it
-// just (re)wrote, and a later-arriving element for that id -- exactly the
-// kind of divergent write Compact must now tolerate -- would wrongly
-// resurrect the key. A plain (non-carried) tombstone is unaffected: it
-// keeps the alias-less, nil-valued marker it has always had.
-//
-// # Coordination-free
-//
-// Compact needs no coordination with anything else writing to this
-// dagName, same as every other operation this package exposes: concurrent
-// Puts, Deletes, and Compacts -- whether they observe the same view or
-// have diverged (different, unsynced sets of prior operations), and
-// regardless of the order replicas eventually exchange them in -- converge
-// to exactly the state the uncompacted history would have produced. This
-// holds because every element keeps its ORIGINAL id for its entire life,
-// including across compaction: a snapshot changes which block hosts an
-// element's storage (recorded as an alias on its marker, see putElems) but
-// never changes the element's identity, so a tombstone that targets an id
-// it observed before compaction ran keeps covering that exact element
-// afterwards, in every generation, on every replica -- compaction is pure
-// representation GC, invisible to the CRDT semantics. Local
-// Put/Delete/Batch.Commit calls on this same Datastore serialize against
-// Compact via compactMux (see addDAGNode) as an implementation detail, not
-// because concurrent remote writes would be unsafe.
-//
-// A few things remain worth noting, though none of them are correctness
-// requirements:
-//
-//   - Upgrade ordering. All replicas that may ever see this dagName's
-//     history should run a version of this package that understands
-//     snapshot deltas (this one) before Compact is called anywhere. This is
-//     the same rollout rule as any wire-format addition: an old-code
-//     replica does not know to avoid descending into a snapshot node's
-//     links, and would try to fetch purged blocks (failing) while also
-//     mis-attributing every element's priority to the snapshot's own
-//     height.
-//   - Compact when reasonably synced. Compaction works correctly regardless
-//     of how far behind other replicas are: a replica that is very far
-//     behind still converges correctly on reconnect (the snapshot resupplies
-//     live values and carries the tombstones it needs). Running it while
-//     replicas are reasonably caught up is purely an efficiency
-//     consideration -- it maximizes how much history gets folded away in one
-//     pass, rather than repeating the exercise generation after generation.
-//
-// # Purged-block bookkeeping trade-off
-//
-// Unlike PurgeDAG, Compact deliberately *keeps* the processed-block markers
-// for the CIDs it purges (instead of deleting them). They are tiny, and
-// their presence means that a stale rebroadcast of now-purged history (from
-// a lagging replica that has not yet reconnected) is recognized as already
-// processed and skipped, rather than triggering a doomed attempt to fetch a
-// block that no longer exists.
-//
-// # Receiver-side reclamation
-//
-// Compact itself only reclaims space on the replica that runs it, and a
-// fresh replica never downloads the purged history at all. A long-lived
-// replica that had already merged the covered history before the snapshot
-// arrived, however, starts out keeping its local copy of that history (set
-// markers and blocks): merging a snapshot does not, by itself, purge
-// anything on the receiving side.
-//
-// That residue is what Options.ReclaimOnSnapshot (default: on) reclaims
-// automatically. Every snapshot delta Compact produces carries generation
-// metadata -- snapshotTotal (the number of sibling snapshot nodes Compact
-// split this generation into) and snapshotId (an id shared by all of them,
-// deterministically derived from their covered heads). When a replica
-// merges one of these siblings (processNode, triggered from the normal DAG
-// walk -- never from a local publish, and never from Compact's own
-// processing of the nodes it just wrote, which would be a redundant
-// double-reclaim), it increments a per-generation counter. Once that
-// counter reaches snapshotTotal -- every sibling has now been merged, so
-// every live key's snapshot marker is in place -- it purges its own copy of
-// the covered history exactly as Compact would (reclaimCovered), and
-// records a done marker so the generation is never reclaimed twice. This
-// counter-driven wait is what avoids a visibility gap: reclaiming before
-// every sibling has merged could transiently drop a key whose surviving
-// value lives in a not-yet-merged sibling.
-//
-// This is a best-effort, soft-failure feature: any error along that path
-// (bumping the counter, walking, purging, writing the done marker) is
-// logged and otherwise swallowed -- it never fails the merge that triggered
-// it and never marks the datastore dirty. The main gap this leaves is a
-// crash between the merge being recorded and the counter increment, which
-// permanently loses one count for that generation (accepted as a
-// consequence of not making local Compact/merge state part of the same
-// transaction). Legacy snapshots produced by a pre-metadata version of this
-// package (empty snapshotId/snapshotTotal) are never auto-reclaimed either.
-//
-// Datastore.ReclaimCompacted is the manual/recovery path for all of the
-// above: crash-missed generations, ReclaimOnSnapshot=false deployments, and
-// legacy snapshots (for which it derives the same id Compact would have,
-// from the snapshot node's covered-heads links). It is safe to call at any
-// time and is idempotent (already-reclaimed generations are skipped via the
-// same done marker).
-func (store *Datastore) Compact(ctx context.Context, dagName string) (int, error) {
-	store.compactMux.Lock()
-	defer store.compactMux.Unlock()
-
-	coveredHeads, maxHeight, err := store.heads.ListDAG(ctx, dagName)
+// What it does not bound is the vector: one entry per incarnation that ever
+// wrote. Folding an entry away would need every holder to agree no delta of
+// that incarnation is still in flight, and that is an agreement step this
+// package does not take.
+func (store *Datastore) Compact(ctx context.Context) (int, error) {
+	store.mu.Lock()
+	head, theirs, err := store.compactLocked(ctx)
+	if err != nil || theirs == nil {
+		store.mu.Unlock()
+		return 0, err
+	}
+	n, err := store.purge(ctx, theirs)
+	store.mu.Unlock()
 	if err != nil {
-		return 0, fmt.Errorf("error listing heads: %w", err)
+		return n, err
 	}
-	if len(coveredHeads) == 0 {
-		return 0, nil
+	if err := store.broadcastHeads(ctx, []Head{head}); err != nil {
+		return n, fmt.Errorf("error broadcasting snapshot head: %w", err)
 	}
-
-	headCIDs := make([]cid.Cid, len(coveredHeads))
-	for i, h := range coveredHeads {
-		headCIDs[i] = h.Cid
-	}
-
-	dagCIDSet, setKeys, _, err := store.walkProcessedDAG(ctx, headCIDs)
-	if err != nil {
-		return 0, fmt.Errorf("error walking DAG: %w", err)
-	}
-
-	newPriority := maxHeight + 1
-
-	// Computed in a single pass over the elems/tombs namespaces (grouped by
-	// key, in deterministic key order) rather than one datastore Query per
-	// touched key -- see compactSnapshotState's doc comment for why that
-	// matters.
-	elements, tombstones, err := store.set.compactSnapshotState(ctx, setKeys, dagCIDSet)
-	if err != nil {
-		return 0, fmt.Errorf("error computing snapshot state: %w", err)
-	}
-
-	// snapshotID identifies this compaction generation: deterministic (no
-	// clock/rand) so that independently re-running Compact over the exact
-	// same covered heads always derives the same id. Shared by
-	// ReclaimCompacted (R6) for legacy-snapshot derivation.
-	snapshotID := snapshotGenerationID(headCIDs)
-
-	snapshotDeltas := store.buildSnapshotDeltas(dagName, newPriority, snapshotID, elements, tombstones)
-
-	// Apply all snapshot nodes locally before purging anything: the merge
-	// path (findBestValue et al., inside set.Merge) may still need to
-	// read the old blocks while processing them.
-	ng := &crdtNodeGetter{NodeGetter: store.dagService}
-	snapHeads := make([]Head, 0, len(snapshotDeltas))
-	for _, d := range snapshotDeltas {
-		node, err := store.putBlock(ctx, coveredHeads, d)
-		if err != nil {
-			return 0, fmt.Errorf("error writing snapshot block: %w", err)
-		}
-
-		snapHead := Head{Cid: node.Cid()}
-		snapHead.Height = newPriority
-		snapHead.DAGName = dagName
-
-		if _, err := store.processNode(ctx, ng, snapHead, d, node, false); err != nil {
-			return 0, fmt.Errorf("error processing snapshot block: %w", err)
-		}
-		snapHeads = append(snapHeads, snapHead)
-	}
-
-	// Purge the old history now that it has been fully folded into the
-	// snapshot(s). The new snapshot blocks are not part of dagCIDSet, so
-	// this cannot touch the markers just written above.
-	for key, kind := range setKeys {
-		if err := store.set.purgeKeyBlocks(ctx, key, dagCIDSet, kind&dagWalkElem != 0, kind&dagWalkTomb != 0); err != nil {
-			return 0, fmt.Errorf("error purging blocks for key %q: %w", key, err)
-		}
-	}
-
-	dagCIDs := make([]cid.Cid, 0, len(dagCIDSet))
-	for c := range dagCIDSet {
-		dagCIDs = append(dagCIDs, c)
-	}
-
-	// Unlike PurgeDAG, we intentionally do NOT delete the processed-block
-	// markers for the purged CIDs here -- see the doc comment above.
-	if err := store.dagService.RemoveMany(ctx, dagCIDs); err != nil {
-		return 0, fmt.Errorf("error removing purged blocks: %w", err)
-	}
-
-	// Heads were already replaced by the snapshot head(s) while
-	// processing the snapshot nodes above; nothing left to delete there.
-
-	if err := store.broadcastHeads(ctx, snapHeads); err != nil {
-		return 0, fmt.Errorf("error broadcasting snapshot heads: %w", err)
-	}
-
-	return len(dagCIDs), nil
+	return n, nil
 }
 
-// buildSnapshotDeltas packs elements and tombstones into one or more
-// snapshot Deltas (Delta.IsSnapshot() == true), greedily splitting into
-// sibling deltas whenever adding the next item would push a delta's
-// marshaled size past MaxBatchDeltaSize. Every returned delta independently
-// carries snapshot=true, dagName, priority and snapshotId: all of them are
-// meant to be linked to the exact same covered heads and become siblings
-// heads that collapse together on the next regular write to the DAG.
-// Once every sibling is known, snapshotTotal (len(result)) is stamped on all
-// of them -- this happens after the size-based split, so the extra few
-// bytes it adds can in principle push a delta slightly over
-// MaxBatchDeltaSize; that cap is already soft (see the single-oversized-item
-// case below), so this is not worth a re-split.
-//
-// Always returns at least one (possibly empty) delta, so that a pure
-// head-collapse -- no live elements, no tombstones to carry -- still
-// produces the covered-heads bookkeeping needed for convergence.
-func (store *Datastore) buildSnapshotDeltas(dagName string, priority uint64, snapshotID []byte, elements, tombstones []*pb.Element) []Delta {
-	newSnapshot := func() Delta {
-		d := store.newDelta()
-		d.SetDagName(dagName)
-		d.SetPriority(priority)
-		d.SetSnapshot(true)
-		d.SetSnapshotMeta(0, snapshotID) // total filled in once every sibling is known.
-		return d
+// compactLocked writes and merges the snapshot. It returns no context when
+// there is nothing to fold: the only block held is the snapshot that is the
+// only head. The caller holds store.mu.
+func (store *Datastore) compactLocked(ctx context.Context) (Head, *causalContext, error) {
+	hs, height := store.heads.List()
+	if len(hs) == 0 {
+		return Head{}, nil, nil
+	}
+	if folded, err := store.nothingToFold(ctx, hs); err != nil || folded {
+		return Head{}, nil, err
 	}
 
-	var result []Delta
-	cur := newSnapshot()
-	var curElems, curTombs []*pb.Element
-
-	appendItem := func(isTomb bool, e *pb.Element) {
-		if isTomb {
-			curTombs = append(curTombs, e)
-		} else {
-			curElems = append(curElems, e)
+	var elems []*pb.Element
+	err := scanStore(ctx, store.store, store.set.elemsPrefix(), func(k string, v []byte) error {
+		el, err := store.set.parseElem(k, v)
+		if err != nil {
+			return err
 		}
-		cur.SetElements(curElems)
-		cur.SetTombstones(curTombs)
-
-		// Split off a new sibling once the current one is over
-		// budget, as long as there is more than one item in it (a
-		// single oversized item cannot be split further, so it is
-		// left as-is, same as the existing MaxBatchDeltaSize handling
-		// for regular batches).
-		if cur.Size() > store.opts.MaxBatchDeltaSize && len(curElems)+len(curTombs) > 1 {
-			if isTomb {
-				curTombs = curTombs[:len(curTombs)-1]
-			} else {
-				curElems = curElems[:len(curElems)-1]
-			}
-			cur.SetElements(curElems)
-			cur.SetTombstones(curTombs)
-			result = append(result, cur)
-
-			cur = newSnapshot()
-			curElems, curTombs = nil, nil
-			if isTomb {
-				curTombs = append(curTombs, e)
-			} else {
-				curElems = append(curElems, e)
-			}
-			cur.SetElements(curElems)
-			cur.SetTombstones(curTombs)
+		elems = append(elems, &pb.Element{Key: el.key, Dot: el.dot.toPB(), Priority: el.priority, Value: el.value})
+		return nil
+	})
+	if err != nil {
+		return Head{}, nil, err
+	}
+	var pending []*pb.Element
+	err = scanStore(ctx, store.store, store.set.pendingPrefix(), func(k string, _ []byte) error {
+		key, d, err := store.set.parsePending(k)
+		if err != nil {
+			return err
 		}
+		pending = append(pending, &pb.Element{Key: key, Dot: d.toPB()})
+		return nil
+	})
+	if err != nil {
+		return Head{}, nil, err
 	}
 
-	for _, e := range elements {
-		appendItem(false, e)
-	}
-	for _, t := range tombstones {
-		appendItem(true, t)
+	links := append([]Head(nil), hs...)
+	missing := store.missingPrefix()
+	err = scanStore(ctx, store.store, missing, func(k string, v []byte) error {
+		d, err := parseDotSegment(strings.TrimPrefix(k, missing.String()+"/"))
+		if err != nil {
+			return err
+		}
+		c, err := cid.Cast(v)
+		if err != nil {
+			return err
+		}
+		if _, isHead := store.heads.Get(c); !isHead {
+			links = append(links, Head{Cid: c, Dot: d})
+		}
+		return nil
+	})
+	if err != nil {
+		return Head{}, nil, err
 	}
 
-	result = append(result, cur)
+	d, prev := store.nextDot()
+	root := &pb.Delta{
+		Snapshot:   true,
+		Dot:        d.toPB(),
+		Prev:       prev,
+		Priority:   height + 1,
+		Parents:    parentsOf(links),
+		Context:    store.cc.toPB(),
+		Tombstones: pending,
+	}
+	rest := store.fillRoot(root, elems)
 
-	total := uint32(len(result))
-	for _, d := range result {
-		d.SetSnapshotMeta(total, snapshotID)
+	var blocks []blockAt
+	var chunkCids []cid.Cid
+	for _, part := range store.chunk(rest) {
+		// The chunk carries the snapshot's dot so that no two snapshots
+		// ever share a chunk block: the index holds one dot per block.
+		nd, err := makeNode(&pb.Delta{Elements: part, Dot: d.toPB()}, nil)
+		if err != nil {
+			return Head{}, nil, err
+		}
+		blocks = append(blocks, blockAt{nd, kindChunk})
+		chunkCids = append(chunkCids, nd.Cid())
+		root.Chunks = append(root.Chunks, nd.Cid().Bytes())
+	}
+	nd, err := makeNode(root, links)
+	if err != nil {
+		return Head{}, nil, err
+	}
+	blocks = append(blocks, blockAt{nd, kindSnapshot})
+	if err := store.writeBlocks(ctx, d, blocks...); err != nil {
+		return Head{}, nil, err
 	}
 
-	return result
+	if _, _, err := store.mergeSnapshot(ctx, nd.Cid(), root, chunkCids, elems); err != nil {
+		store.discardBlocks(ctx, append(chunkCids, nd.Cid())...)
+		return Head{}, nil, fmt.Errorf("error merging snapshot: %w", err)
+	}
+	store.counter = d.counter
+	return Head{Cid: nd.Cid(), Height: root.Priority, Dot: d}, contextFromPB(root.Context), nil
+}
+
+// nothingToFold reports whether every block the store holds belongs to a
+// snapshot that is a head. Folding concurrent snapshots into one more would
+// free nothing, and replicas that each compacted would otherwise answer every
+// snapshot they merge with another one.
+func (store *Datastore) nothingToFold(ctx context.Context, hs []Head) (bool, error) {
+	headDots := map[dot]struct{}{}
+	for _, h := range hs {
+		headDots[h.Dot] = struct{}{}
+	}
+	work := false
+	err := scanStore(ctx, store.store, store.blocksPrefix(), func(_ string, v []byte) error {
+		kind, d, err := decodeBlock(v)
+		if err != nil {
+			return err
+		}
+		if _, isHead := headDots[d]; kind == kindDelta || !isHead {
+			work = true
+		}
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	if work {
+		return false, nil
+	}
+	missing, err := countPrefix(ctx, store.store, store.missingPrefix())
+	return missing == 0, err
+}
+
+// fillRoot puts as many elements in the root as fit under MaxBatchDeltaSize
+// and returns the rest.
+func (store *Datastore) fillRoot(root *pb.Delta, elems []*pb.Element) []*pb.Element {
+	size := proto.Size(root)
+	for i, e := range elems {
+		es := proto.Size(e) + 4
+		if size+es > store.opts.MaxBatchDeltaSize && i > 0 {
+			root.Elements = elems[:i]
+			return elems[i:]
+		}
+		size += es
+	}
+	root.Elements = elems
+	return nil
+}
+
+// chunk splits elements into parts of at most MaxBatchDeltaSize each; an
+// element bigger than that is a part of its own.
+func (store *Datastore) chunk(elems []*pb.Element) [][]*pb.Element {
+	var parts [][]*pb.Element
+	var cur []*pb.Element
+	size := 0
+	for _, e := range elems {
+		es := proto.Size(e) + 4
+		if len(cur) > 0 && size+es > store.opts.MaxBatchDeltaSize {
+			parts = append(parts, cur)
+			cur, size = nil, 0
+		}
+		cur = append(cur, e)
+		size += es
+	}
+	if len(cur) > 0 {
+		parts = append(parts, cur)
+	}
+	return parts
 }

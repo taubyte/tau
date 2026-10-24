@@ -509,6 +509,7 @@ func (srv *Service) retire(ctx context.Context, active *KeyMeta) error {
 	}
 
 	var failures []error
+	retired := 0
 	for _, v := range versions {
 		superseded, err := srv.supersededKeys(ctx, v, active)
 		if err != nil {
@@ -519,16 +520,20 @@ func (srv *Service) retire(ctx context.Context, active *KeyMeta) error {
 		for _, keyID := range superseded {
 			if err := srv.wrappings.DeleteKey(ctx, v, keyID); err != nil {
 				failures = append(failures, err)
+				continue
 			}
+			retired++
 		}
 	}
 
 	failures = append(failures, srv.dropGenesis(ctx))
 
-	// Deletion writes tombstones, so the store has to be compacted for the
-	// space to come back. Compact documents itself as coordination-free, so
-	// every node may run it.
-	return errors.Join(append(failures, srv.compact(ctx))...)
+	// Deletion writes tombstones, so the store is compacted once something
+	// was retired. Compact is coordination-free, so every node may run it.
+	if retired > 0 {
+		failures = append(failures, srv.compact(ctx))
+	}
+	return errors.Join(failures...)
 }
 
 // dropGenesis deletes this node's share of a one-member key nothing is wrapped

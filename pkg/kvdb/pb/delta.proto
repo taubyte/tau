@@ -3,26 +3,65 @@ package crdt.pb;
 
 option go_package = ".;pb";
 
+// A Dot names one delta: the incarnation that wrote it and that
+// incarnation's counter for it. An element's identity is (key, dot).
+message Dot {
+  bytes replica = 1;
+  uint64 counter = 2;
+}
+
+// A Parent is one block a delta links, with that block's dot, so a reader
+// can tell a parent it already covers without fetching it.
+message Parent {
+  bytes cid = 1;
+  Dot dot = 2;
+}
+
+// A CloudDot is a dot covered out of its author's order, with the author's
+// previous counter so the contiguous vector can absorb it once the gap fills.
+message CloudDot {
+  Dot dot = 1;
+  uint64 prev = 2;
+}
+
+// A Context is a causal context: for each incarnation, the counter up to
+// which its chain is covered, plus the dots covered beyond a gap.
+message Context {
+  repeated Dot vector = 1;
+  repeated CloudDot cloud = 2;
+}
+
 message Delta {
   repeated Element elements = 1;
+  // tombstones name the (key, dot) versions this delta removes. In a
+  // snapshot they are the removals whose target dot is not yet covered.
   repeated Element tombstones = 2;
   uint64 priority = 3;
-  string dagName = 4;
+  reserved 4, 6, 7;
+  reserved "dagName", "snapshotTotal", "snapshotId";
   bool snapshot = 5;
-  // snapshotTotal is the number of sibling snapshot nodes in this
-  // compaction generation (>= 1 in snapshot deltas; 0 otherwise).
-  uint32 snapshotTotal = 6;
-  // snapshotId identifies one compaction generation: all sibling snapshot
-  // nodes created by a single Compact() run carry the same id.
-  bytes snapshotId = 7;
+  Dot dot = 8;
+  // prev is the author's counter for its previous delta in the same
+  // incarnation, 0 for its first.
+  uint64 prev = 9;
+  repeated Parent parents = 10;
+  // context is, in a snapshot, the compactor's causal context when it
+  // compacted; it does not include the snapshot's own dot.
+  Context context = 11;
+  // chunks are the CIDs of the blocks holding the rest of a snapshot's
+  // elements, fetched with it and merged as one.
+  repeated bytes chunks = 12;
 }
 
 message Element {
-  // key+id must form a unique identifier
   string key = 1;
-  string id = 2;
+  reserved 2;
+  reserved "id";
   bytes value = 3;
-  // priority carries the element's original priority in snapshot deltas.
-  // 0 means "use the delta's priority" (all pre-snapshot data).
+  // priority is the element's own priority in snapshots; in a plain delta
+  // every element takes the delta's priority.
   uint64 priority = 4;
+  // dot is the element's dot in snapshots and the target's dot in
+  // tombstones; a plain delta's elements take the delta's dot.
+  Dot dot = 5;
 }

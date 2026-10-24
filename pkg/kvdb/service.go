@@ -113,6 +113,7 @@ func (f *factory) New(logger logging.StandardLogger, path string, rebroadcastInt
 
 	opts := DefaultOptions()
 	opts.Logger = logger
+	opts.ReplicaID = []byte(f.node.ID())
 	if rebroadcastIntervalSec == 0 {
 		rebroadcastIntervalSec = defaultRebroadcastIntervalSec
 	}
