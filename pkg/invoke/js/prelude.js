@@ -267,55 +267,40 @@
 
   const textOf = (body) => (typeof body === "string" ? body : new TextDecoder().decode(body));
 
-  let bodyOf;
-  let seqOf;
+  // A request or response keeps all it holds in one plain object behind one
+  // private name: the engine makes an object literal many times faster than
+  // a class instance with fields of its own and a super call. body is the
+  // body, used whether it was read, and seq the number of the request the
+  // platform handed in that it is, or 0.
 
-  class Body {
-    #body;
-    #used = false;
-    #seq;
+  const bodyIn = (s) => {
+    if (s.used) throw new TypeError("Body has already been used");
+    return s.body;
+  };
 
-    static {
-      bodyOf = (b) => {
-        if (b.#used) throw new TypeError("Body has already been used");
-        return b.#body;
-      };
-      seqOf = (b) => b.#seq;
+  const take = (s) => {
+    if (s.body === null) return "";
+    if (s.used) throw new TypeError("Body has already been used");
+    s.used = true;
+    return s.body;
+  };
+
+  // textIn decodes a body. A request the platform handed in is decoded from
+  // the bytes Go still holds while it is being served: copying them back
+  // across costs far more than the decode.
+  const textIn = (s) => {
+    const body = take(s);
+    if (s.seq !== 0 && typeof body !== "string") {
+      const text = host.requestText(s.seq);
+      if (text !== null) return text;
     }
+    return textOf(body);
+  };
 
-    // seq numbers the request the platform handed in that these bytes are,
-    // and is 0 for any other body.
-    constructor(body, seq = 0) {
-      this.#body = body;
-      this.#seq = seq;
-    }
-
-    get bodyUsed() { return this.#body !== null && this.#used; }
-
-    #take() {
-      if (this.#body === null) return "";
-      if (this.#used) throw new TypeError("Body has already been used");
-      this.#used = true;
-      return this.#body;
-    }
-
-    async arrayBuffer() { return bytesOf(this.#take()).buffer; }
-    async bytes() { return bytesOf(this.#take()); }
-    async text() { return this.#text(); }
-    async json() { return JSON.parse(this.#text()); }
-
-    // #text decodes the body. A request the platform handed in is decoded
-    // from the bytes Go still holds while it is being served: copying them
-    // back across costs far more than the decode.
-    #text() {
-      const body = this.#take();
-      if (this.#seq !== 0 && typeof body !== "string") {
-        const text = host.requestText(this.#seq);
-        if (text !== null) return text;
-      }
-      return textOf(body);
-    }
-  }
+  const headersIn = (s) => {
+    if (!isHeaders(s.headers)) s.headers = headersFrom(s.headers);
+    return s.headers;
+  };
 
   // ── request ───────────────────────────────────────────────────────────
 
@@ -323,55 +308,52 @@
   const NORMALIZED = ["DELETE", "GET", "HEAD", "OPTIONS", "POST", "PUT"];
   const FORBIDDEN = ["CONNECT", "TRACE", "TRACK"];
 
-  class Request extends Body {
-    #method;
-    #url;
-    #headers;
+  class Request {
+    #s;
 
+    // INCOMING is the platform handing a request in, and init its state.
     constructor(input, init = undefined) {
       if (input === INCOMING) {
-        super(init.body, init.seq);
-        this.#method = init.method;
-        this.#url = init.url;
-        this.#headers = init.flat;
+        this.#s = init;
         return;
       }
       init = init ?? {};
-      const from = input !== null && typeof input === "object" && #method in input ? input : null;
-      let method = init.method !== undefined ? String(init.method) : from ? from.#method : "GET";
+      const from = input !== null && typeof input === "object" && #s in input ? input.#s : null;
+      let method = init.method !== undefined ? String(init.method) : from ? from.method : "GET";
       if (!TOKEN.test(method)) throw new TypeError(`'${method}' is not a valid HTTP method`);
       const upper = method.toUpperCase();
       if (FORBIDDEN.includes(upper)) throw new TypeError(`'${method}' HTTP method is unsupported`);
       if (NORMALIZED.includes(upper)) method = upper;
-      const headers = new Headers(init.headers !== undefined ? init.headers : from ? from.#hdrs() : undefined);
+      const headers = new Headers(init.headers !== undefined ? init.headers : from ? headersIn(from) : undefined);
       let bytes = null;
       let seq = 0;
       if (init.body !== undefined && init.body !== null) {
         bytes = extract(init.body);
         if (typeof bytes === "string") typeText(headers);
       } else if (init.body === undefined && from) {
-        bytes = copyBody(bodyOf(from));
-        seq = seqOf(from);
+        bytes = copyBody(bodyIn(from));
+        seq = from.seq;
       }
       if ((method === "GET" || method === "HEAD") && bytes !== null) {
         throw new TypeError("Request with GET/HEAD method cannot have body");
       }
-      super(bytes, seq);
-      this.#method = method;
-      this.#url = from ? from.#url : String(input);
-      this.#headers = headers;
+      this.#s = { method, url: from ? from.url : String(input), headers, body: bytes, used: false, seq };
     }
 
-    get method() { return this.#method; }
-    get url() { return this.#url; }
+    get method() { return this.#s.method; }
+    get url() { return this.#s.url; }
+    get headers() { return headersIn(this.#s); }
     get redirect() { return "follow"; }
 
-    #hdrs() {
-      if (!isHeaders(this.#headers)) this.#headers = headersFrom(this.#headers);
-      return this.#headers;
+    get bodyUsed() {
+      const s = this.#s;
+      return s.body !== null && s.used;
     }
 
-    get headers() { return this.#hdrs(); }
+    async arrayBuffer() { return bytesOf(take(this.#s)).buffer; }
+    async bytes() { return bytesOf(take(this.#s)); }
+    async text() { return textIn(this.#s); }
+    async json() { return JSON.parse(textIn(this.#s)); }
 
     clone() { return new Request(this); }
     get [Symbol.toStringTag]() { return "Request"; }
@@ -391,19 +373,18 @@
 
   let answerOf;
 
-  class Response extends Body {
-    #status;
-    #statusText;
-    #headers;
+  class Response {
+    #s;
 
     static {
       answerOf = (r) => {
-        if (r === null || typeof r !== "object" || !(#status in r)) {
+        if (r === null || typeof r !== "object" || !(#s in r)) {
           throw new TypeError("The handler did not answer with a Response");
         }
-        const held = r.#headers;
+        const s = r.#s;
+        const held = s.headers;
         const flat = held === null ? [] : typeof held === "string" ? ["content-type", held] : pairsOf(held).flat();
-        respond(r.#status, flat, bodyOf(r));
+        respond(s.status, flat, bodyIn(s));
       };
     }
 
@@ -424,10 +405,8 @@
           else typeText(headers);
         }
       }
-      super(bytes);
-      this.#status = status;
-      this.#statusText = init.statusText === undefined ? "" : String(init.statusText);
-      this.#headers = headers;
+      const statusText = init.statusText === undefined ? "" : String(init.statusText);
+      this.#s = { status, statusText, headers, body: bytes, used: false, seq: 0 };
     }
 
     static json(data, init = undefined) {
@@ -436,7 +415,7 @@
       const given = init?.headers;
       if (given === undefined) {
         const r = new Response(text, { status: init?.status, statusText: init?.statusText });
-        r.#headers = "application/json";
+        r.#s.headers = "application/json";
         return r;
       }
       const headers = new Headers(given);
@@ -450,26 +429,32 @@
       return new Response(null, { status, headers: { location: String(url) } });
     }
 
-    get status() { return this.#status; }
-    get ok() { return this.#status >= 200 && this.#status <= 299; }
-    get statusText() { return this.#statusText; }
+    get status() { return this.#s.status; }
 
-    #hdrs() {
-      if (!isHeaders(this.#headers)) this.#headers = headersFrom(this.#headers);
-      return this.#headers;
+    get ok() {
+      const status = this.#s.status;
+      return status >= 200 && status <= 299;
     }
 
-    get headers() { return this.#hdrs(); }
+    get statusText() { return this.#s.statusText; }
+    get headers() { return headersIn(this.#s); }
     get type() { return "default"; }
     get url() { return ""; }
     get redirected() { return false; }
 
+    get bodyUsed() {
+      const s = this.#s;
+      return s.body !== null && s.used;
+    }
+
+    async arrayBuffer() { return bytesOf(take(this.#s)).buffer; }
+    async bytes() { return bytesOf(take(this.#s)); }
+    async text() { return textIn(this.#s); }
+    async json() { return JSON.parse(textIn(this.#s)); }
+
     clone() {
-      return new Response(copyBody(bodyOf(this)), {
-        status: this.#status,
-        statusText: this.#statusText,
-        headers: this.#hdrs(),
-      });
+      const s = this.#s;
+      return new Response(copyBody(bodyIn(s)), { status: s.status, statusText: s.statusText, headers: headersIn(s) });
     }
 
     get [Symbol.toStringTag]() { return "Response"; }
@@ -565,7 +550,7 @@
       const head = host.head();
       const n = head[3];
       const body = n === 0 ? null : copyOut(n);
-      const request = new Request(INCOMING, { method: head[0], url: head[1], flat: head[2], body, seq: head[4] });
+      const request = new Request(INCOMING, { method: head[0], url: head[1], headers: head[2], body, used: false, seq: head[4] });
       const { ctx, settle } = context();
       let answer;
       try {

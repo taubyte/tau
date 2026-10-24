@@ -145,6 +145,9 @@ export default {
     eq("an ArrayBuffer body", bytes(await new Response(new Uint8Array([9]).buffer).bytes()), [9]);
     eq("anything else is its string", await new Response(42).text(), "42");
     eq("tag", Object.prototype.toString.call(res), "[object Response]");
+    const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+    eq("body methods are the class's own", [own(Request.prototype, "text"), own(Response.prototype, "json"), own(Response.prototype, "bodyUsed")], [true, true, true]);
+    eq("as on the web platform", [Object.getPrototypeOf(Request.prototype), Object.getPrototypeOf(Response.prototype)].every((p) => p === Object.prototype), true);
     await throws("a status out of range", RangeError, () => new Response(null, { status: 600 }));
     await throws("a fractional status", RangeError, () => new Response(null, { status: 200.5 }));
     await throws("a body on a 204", TypeError, () => new Response("x", { status: 204 }));
