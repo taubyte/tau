@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"path"
@@ -609,21 +610,62 @@ func TestHealing_AMergeNeedsTheLeadAndTheOtherSide(t *testing.T) {
 }
 
 // exportingPeer stands for the other side of a split: it hands over one write
-// of its own and counts the healAcks it is sent, each of which would have it
-// wipe that write.
+// of its own, or refuses to when refuse is set, and counts the healAcks it is
+// sent, each of which would have it wipe that write.
 type exportingPeer struct {
 	raftv2connect.UnimplementedRaftServiceHandler
 	state    []byte
+	refuse   error
 	healAcks atomic.Int32
 }
 
 func (p *exportingPeer) ExportFSM(context.Context, *connect.Request[raftv2.ExportFSMRequest]) (*connect.Response[raftv2.ExportFSMResponse], error) {
+	if p.refuse != nil {
+		return nil, p.refuse
+	}
 	return connect.NewResponse(&raftv2.ExportFSMResponse{FsmState: p.state, Clock: 1}), nil
 }
 
 func (p *exportingPeer) HealAck(context.Context, *connect.Request[raftv2.HealAckRequest]) (*connect.Response[raftv2.HealAckResponse], error) {
 	p.healAcks.Add(1)
 	return connect.NewResponse(&raftv2.HealAckResponse{}), nil
+}
+
+// facing is a group of one running on store, connected to and tracking a node
+// that answers the group's protocol with other, the way the other side of a
+// split does.
+func facing(t *testing.T, namespace string, store ds.Batching, other raftv2connect.RaftServiceHandler) (*cluster, peer.ID) {
+	t.Helper()
+	winnerNode := newMockNode(t)
+	w, err := New(storeNode{Node: winnerNode, store: store}, namespace,
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	t.Cleanup(func() { w.Close() })
+	waitLeader(t, w, 5*time.Second)
+
+	otherNode := newMockNode(t)
+	route, handler := raftv2connect.NewRaftServiceHandler(other)
+	mux := http.NewServeMux()
+	mux.Handle(route, handler)
+	srv, err := rpc.Listen(t.Context(), otherNode.Peer(), protocol.ID(Protocol(namespace)), mux)
+	require.NoError(t, err)
+	t.Cleanup(func() { srv.Close() })
+
+	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, winnerNode.Peer().Connect(t.Context(), peer.AddrInfo{ID: otherNode.ID(), Addrs: otherNode.Peer().Addrs()}))
+	winner := w.(*cluster)
+	winner.tracker.addPeer(otherNode.ID())
+	require.Equal(t, []peer.ID{otherNode.ID()}, winner.healer.findForeignPeers())
+	return winner, otherNode.ID()
+}
+
+func oneWriteOfTheirs(t *testing.T) []byte {
+	t.Helper()
+	state, err := cbor.Marshal(map[string]CRDTEntry{
+		"theirs": {Value: []byte("v"), Timestamp: 1, WallClock: time.Now().UnixNano()},
+	})
+	require.NoError(t, err)
+	return state
 }
 
 // TestHealing_AMergeTheStoreRefusesTellsNobodyToYield: Apply reports what the
@@ -634,40 +676,86 @@ func (p *exportingPeer) HealAck(context.Context, *connect.Request[raftv2.HealAck
 func TestHealing_AMergeTheStoreRefusesTellsNobodyToYield(t *testing.T) {
 	const namespace = "merge-refused"
 	store := newFaultStore()
-	winnerNode := newMockNode(t)
-	w, err := New(storeNode{Node: winnerNode, store: store}, namespace,
-		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
-	require.NoError(t, err)
-	defer w.Close()
-	waitLeader(t, w, 5*time.Second)
-
-	state, err := cbor.Marshal(map[string]CRDTEntry{
-		"theirs": {Value: []byte("v"), Timestamp: 1, WallClock: time.Now().UnixNano()},
-	})
-	require.NoError(t, err)
-	other := &exportingPeer{state: state}
-	otherNode := newMockNode(t)
-	route, handler := raftv2connect.NewRaftServiceHandler(other)
-	mux := http.NewServeMux()
-	mux.Handle(route, handler)
-	srv, err := rpc.Listen(t.Context(), otherNode.Peer(), protocol.ID(Protocol(namespace)), mux)
-	require.NoError(t, err)
-	defer srv.Close()
-
-	require.NoError(t, taupeer.LinkAllPeers())
-	require.NoError(t, winnerNode.Peer().Connect(t.Context(), peer.AddrInfo{ID: otherNode.ID(), Addrs: otherNode.Peer().Addrs()}))
-	winner := w.(*cluster)
-	winner.tracker.addPeer(otherNode.ID())
-	require.Equal(t, []peer.ID{otherNode.ID()}, winner.healer.findForeignPeers())
+	other := &exportingPeer{state: oneWriteOfTheirs(t)}
+	winner, otherID := facing(t, namespace, store, other)
 	store.failPut(path.Join(RaftStoragePrefix, namespace, "data", "theirs"), errNoSpace)
 
-	winner.healer.executeMerge(t.Context(), otherNode.ID())
+	winner.healer.executeMerge(t.Context(), otherID)
 	assert.Zero(t, other.healAcks.Load(), "the loser was told to yield a write the merge never landed")
 
-	winner.healer.absorbOrphan(t.Context(), otherNode.ID())
+	winner.healer.absorbOrphan(t.Context(), otherID)
 	assert.Zero(t, other.healAcks.Load(), "the orphan was told to yield a write the merge never landed")
 
-	_, found, err := w.TryGet("theirs")
+	_, found, err := winner.TryGet("theirs")
 	require.NoError(t, err)
 	assert.False(t, found)
+}
+
+// TestHealing_AnOrphanWhoseStateIsNotTakenIsNotToldToYield: absorbOrphan sent
+// its healAck whatever became of the orphan's state, so an orphan whose export
+// failed, or whose state the leader could not merge against its own, wiped the
+// only copy of what it held.
+func TestHealing_AnOrphanWhoseStateIsNotTakenIsNotToldToYield(t *testing.T) {
+	t.Run("its export fails", func(t *testing.T) {
+		other := &exportingPeer{refuse: connect.NewError(connect.CodeUnavailable, errDisk)}
+		winner, orphan := facing(t, "orphan-export-refused", newFaultStore(), other)
+
+		winner.healer.absorbOrphan(t.Context(), orphan)
+		assert.Zero(t, other.healAcks.Load(), "an orphan whose state was never had was told to yield")
+	})
+
+	t.Run("the leader cannot read its own state", func(t *testing.T) {
+		const namespace = "orphan-own-state-unreadable"
+		store := newFaultStore()
+		other := &exportingPeer{state: oneWriteOfTheirs(t)}
+		winner, orphan := facing(t, namespace, store, other)
+		store.failScan(path.Join(RaftStoragePrefix, namespace, "data"), errDisk)
+
+		winner.healer.absorbOrphan(t.Context(), orphan)
+		assert.Zero(t, other.healAcks.Load(), "an orphan whose state was never merged was told to yield")
+	})
+}
+
+// TestHealing_AnOrphansWritesAreMergedBeforeItYields: a member that knows no
+// leader forwarded ExportFSM to the leader it did not have, so absorbOrphan,
+// which only ever asks a member that knows none, never merged an orphan's
+// state, and the healAck it sent anyway had the orphan wipe writes no other
+// member held. The default probe interval keeps the orphan's own healer quiet.
+func TestHealing_AnOrphansWritesAreMergedBeforeItYields(t *testing.T) {
+	const namespace = "orphan-writes"
+	a, b := formedPair(t, namespace)
+	require.NoError(t, onLeader(t, []Cluster{a, b}, func(leader Cluster) error {
+		return leader.Set("held", []byte("v"), time.Second)
+	}))
+	require.Eventually(t, func() bool {
+		_, onA := a.Get("held")
+		_, onB := b.Get("held")
+		return onA && onB
+	}, 5*time.Second, 20*time.Millisecond, "the write never reached both members")
+
+	gone := leaderOf(t, a, b)
+	orphan := a
+	if gone == a {
+		orphan = b
+	}
+	require.NoError(t, gone.Close())
+	require.Eventually(t, func() bool {
+		_, err := orphan.Leader()
+		return errors.Is(err, ErrNoLeader)
+	}, leaderWait, 10*time.Millisecond, "the member left alone kept naming a leader")
+
+	groupNode := newMockNode(t)
+	group, err := New(groupNode, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	t.Cleanup(func() { group.Close() })
+	waitLeader(t, group, 5*time.Second)
+	require.NoError(t, taupeer.LinkAllPeers())
+	connected(t, groupNode, orphan)
+
+	group.(*cluster).healer.absorbOrphan(t.Context(), idOf(orphan))
+
+	value, found, err := group.TryGet("held")
+	require.NoError(t, err)
+	require.True(t, found, "the orphan was told to yield a write the group never took")
+	require.Equal(t, []byte("v"), value)
 }

@@ -456,28 +456,35 @@ func (h *healer) absorbOrphan(ctx context.Context, orphan peer.ID) {
 		return
 	}
 
+	// A yield wipes the only copy of what the orphan holds, so it is told to
+	// yield only once all of that has landed here.
 	foreignState, _, err := h.cluster.raftClient.ExportFSM(orphan)
 	if err != nil {
-		healLogger.Warnf("[%s] export FSM from orphan %s failed (may not be leader there): %v",
+		healLogger.Warnf("[%s] export FSM from orphan %s failed: %v",
 			h.cluster.node.ID().ShortString(), orphan.ShortString(), err)
-	} else if len(foreignState) > 0 {
+		return
+	}
+	if len(foreignState) > 0 {
 		ourState, err := h.cluster.fsm.ExportState()
-		if err == nil {
-			warnForeignWallClockDrift(h.cluster.node.ID(), foreignState)
-			delta := mergeCRDTDelta(ourState, foreignState)
-			if len(delta) > 0 {
-				data, err := encodeMergeCommand(delta)
-				if err == nil {
-					// A yield wipes the only copy of what did not land.
-					if err := h.applyMerge(data); err != nil {
-						healLogger.Errorf("[%s] merge from orphan %s failed: %v",
-							h.cluster.node.ID().ShortString(), orphan.ShortString(), err)
-						return
-					}
-					healLogger.Infof("[%s] merged %d keys from orphan %s",
-						h.cluster.node.ID().ShortString(), len(delta), orphan.ShortString())
-				}
+		if err != nil {
+			healLogger.Errorf("[%s] export local FSM failed: %v", h.cluster.node.ID().ShortString(), err)
+			return
+		}
+		warnForeignWallClockDrift(h.cluster.node.ID(), foreignState)
+		delta := mergeCRDTDelta(ourState, foreignState)
+		if len(delta) > 0 {
+			data, err := encodeMergeCommand(delta)
+			if err != nil {
+				healLogger.Errorf("[%s] encode merge command failed: %v", h.cluster.node.ID().ShortString(), err)
+				return
 			}
+			if err := h.applyMerge(data); err != nil {
+				healLogger.Errorf("[%s] merge from orphan %s failed: %v",
+					h.cluster.node.ID().ShortString(), orphan.ShortString(), err)
+				return
+			}
+			healLogger.Infof("[%s] merged %d keys from orphan %s",
+				h.cluster.node.ID().ShortString(), len(delta), orphan.ShortString())
 		}
 	}
 

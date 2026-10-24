@@ -314,19 +314,23 @@ func (s *raftStreamService) ClusterInfo(ctx context.Context, req *connect.Reques
 	}), nil
 }
 
-// ExportFSM serves FSM state from the leader (followers forward).
+// ExportFSM serves the group's state: a follower that knows its leader
+// forwards to it, and a member that knows no leader, an orphan, serves its
+// own, which is the state the healer absorbing it has to merge.
 func (s *raftStreamService) ExportFSM(ctx context.Context, req *connect.Request[raftv2.ExportFSMRequest]) (*connect.Response[raftv2.ExportFSMResponse], error) {
 	from := remotePeer(ctx).ShortString()
 
 	if !s.cluster.IsLeader() {
-		streamLogger.Infof("[%s] exportFSM requested (from=%s) — forwarding to leader",
-			s.cluster.node.ID().ShortString(), from)
-		return forwardToLeader(ctx, s, "exportFSM", func(ctx context.Context, c raftv2connect.RaftServiceClient) (*connect.Response[raftv2.ExportFSMResponse], error) {
-			return c.ExportFSM(ctx, connect.NewRequest(&raftv2.ExportFSMRequest{}))
-		})
+		if _, err := s.cluster.Leader(); err == nil {
+			streamLogger.Infof("[%s] exportFSM requested (from=%s) — forwarding to leader",
+				s.cluster.node.ID().ShortString(), from)
+			return forwardToLeader(ctx, s, "exportFSM", func(ctx context.Context, c raftv2connect.RaftServiceClient) (*connect.Response[raftv2.ExportFSMResponse], error) {
+				return c.ExportFSM(ctx, connect.NewRequest(&raftv2.ExportFSMRequest{}))
+			})
+		}
 	}
 
-	streamLogger.Infof("[%s] exportFSM requested (from=%s) — serving as leader",
+	streamLogger.Infof("[%s] exportFSM requested (from=%s) — serving its own state",
 		s.cluster.node.ID().ShortString(), from)
 
 	state, err := s.cluster.fsm.ExportState()
