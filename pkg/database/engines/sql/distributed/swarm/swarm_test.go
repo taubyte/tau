@@ -102,8 +102,9 @@ func ledger() database.Spec {
 	}
 }
 
-// A WRITE ON ONE NODE IS READ ON THE OTHER, over the real stack: the generated
-// service on a libp2p stream for anti-entropy and gossipsub for the push. The
+// A WRITE ON ONE NODE IS READ ON THE OTHER, over the real stack: gossipsub
+// carries the push well inside musql's first anti-entropy round, so the
+// generated service is sync_test.go's to prove, with copies opened apart. The
 // schema is a guest's, created after the database is open.
 func TestTwoNodesHoldOneDatabase(t *testing.T) {
 	left, right := pair(t)
