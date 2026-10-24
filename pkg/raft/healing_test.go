@@ -3,18 +3,26 @@ package raft
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"path"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+	"github.com/fxamacker/cbor/v2"
 	"github.com/hashicorp/raft"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/rpc"
+	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2/raftv2connect"
 )
 
 // healingTestOptions uses fast timeouts and force-bootstrap so each mock node is its own single-node cluster.
@@ -598,4 +606,68 @@ func TestHealing_AMergeNeedsTheLeadAndTheOtherSide(t *testing.T) {
 		assert.Len(t, members, 2)
 		assert.Equal(t, []string{"k"}, cl.Keys(""))
 	}
+}
+
+// exportingPeer stands for the other side of a split: it hands over one write
+// of its own and counts the healAcks it is sent, each of which would have it
+// wipe that write.
+type exportingPeer struct {
+	raftv2connect.UnimplementedRaftServiceHandler
+	state    []byte
+	healAcks atomic.Int32
+}
+
+func (p *exportingPeer) ExportFSM(context.Context, *connect.Request[raftv2.ExportFSMRequest]) (*connect.Response[raftv2.ExportFSMResponse], error) {
+	return connect.NewResponse(&raftv2.ExportFSMResponse{FsmState: p.state, Clock: 1}), nil
+}
+
+func (p *exportingPeer) HealAck(context.Context, *connect.Request[raftv2.HealAckRequest]) (*connect.Response[raftv2.HealAckResponse], error) {
+	p.healAcks.Add(1)
+	return connect.NewResponse(&raftv2.HealAckResponse{}), nil
+}
+
+// TestHealing_AMergeTheStoreRefusesTellsNobodyToYield: Apply reports what the
+// state machine refused in its response and not in its error, so a merge the
+// winner's store refused was still followed by the healAck that has the other
+// side wipe the only copy of what it held, whether it was the loser of a split
+// or an orphan.
+func TestHealing_AMergeTheStoreRefusesTellsNobodyToYield(t *testing.T) {
+	const namespace = "merge-refused"
+	store := newFaultStore()
+	winnerNode := taupeer.Mock(t.Context())
+	w, err := New(storeNode{Node: winnerNode, store: store}, namespace,
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	defer w.Close()
+	waitLeader(t, w, 5*time.Second)
+
+	state, err := cbor.Marshal(map[string]CRDTEntry{
+		"theirs": {Value: []byte("v"), Timestamp: 1, WallClock: time.Now().UnixNano()},
+	})
+	require.NoError(t, err)
+	other := &exportingPeer{state: state}
+	otherNode := taupeer.Mock(t.Context())
+	route, handler := raftv2connect.NewRaftServiceHandler(other)
+	mux := http.NewServeMux()
+	mux.Handle(route, handler)
+	srv, err := rpc.Listen(t.Context(), otherNode.Peer(), protocol.ID(Protocol(namespace)), mux)
+	require.NoError(t, err)
+	defer srv.Close()
+
+	require.NoError(t, taupeer.LinkAllPeers())
+	require.NoError(t, winnerNode.Peer().Connect(t.Context(), peer.AddrInfo{ID: otherNode.ID(), Addrs: otherNode.Peer().Addrs()}))
+	winner := w.(*cluster)
+	winner.tracker.addPeer(otherNode.ID())
+	require.Equal(t, []peer.ID{otherNode.ID()}, winner.healer.findForeignPeers())
+	store.failPut(path.Join(RaftStoragePrefix, namespace, "data", "theirs"), errNoSpace)
+
+	winner.healer.executeMerge(t.Context(), otherNode.ID())
+	assert.Zero(t, other.healAcks.Load(), "the loser was told to yield a write the merge never landed")
+
+	winner.healer.absorbOrphan(t.Context(), otherNode.ID())
+	assert.Zero(t, other.healAcks.Load(), "the orphan was told to yield a write the merge never landed")
+
+	_, found, err := w.TryGet("theirs")
+	require.NoError(t, err)
+	assert.False(t, found)
 }

@@ -468,10 +468,14 @@ func (h *healer) absorbOrphan(ctx context.Context, orphan peer.ID) {
 			if len(delta) > 0 {
 				data, err := encodeMergeCommand(delta)
 				if err == nil {
-					if _, err := h.cluster.Apply(data, HealingMergeTimeout); err == nil {
-						healLogger.Infof("[%s] merged %d keys from orphan %s",
-							h.cluster.node.ID().ShortString(), len(delta), orphan.ShortString())
+					// A yield wipes the only copy of what did not land.
+					if err := h.applyMerge(data); err != nil {
+						healLogger.Errorf("[%s] merge from orphan %s failed: %v",
+							h.cluster.node.ID().ShortString(), orphan.ShortString(), err)
+						return
 					}
+					healLogger.Infof("[%s] merged %d keys from orphan %s",
+						h.cluster.node.ID().ShortString(), len(delta), orphan.ShortString())
 				}
 			}
 		}
@@ -512,7 +516,7 @@ func (h *healer) executeMerge(ctx context.Context, loserLeader peer.ID) {
 			healLogger.Errorf("encode merge command failed: %v", err)
 			return
 		}
-		if _, err := h.cluster.Apply(data, HealingMergeTimeout); err != nil {
+		if err := h.applyMerge(data); err != nil {
 			healLogger.Errorf("apply merge failed: %v", err)
 			return
 		}
@@ -521,6 +525,16 @@ func (h *healer) executeMerge(ctx context.Context, loserLeader peer.ID) {
 	}
 
 	h.addVotersAndHealAck()
+}
+
+// applyMerge applies a merge and reports the state machine's refusal as well
+// as raft's, since Apply carries the first in its response and not its error.
+func (h *healer) applyMerge(data []byte) error {
+	resp, err := h.cluster.Apply(data, HealingMergeTimeout)
+	if err != nil {
+		return err
+	}
+	return resp.Error
 }
 
 func (h *healer) addVotersAndHealAck() {
