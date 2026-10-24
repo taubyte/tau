@@ -150,12 +150,14 @@
   };
 
   let pairsOf;
+  let isHeaders;
 
   class Headers {
     #list = [];
 
     static {
       pairsOf = (h) => h.#list;
+      isHeaders = (h) => typeof h === "object" && h !== null && #list in h;
     }
 
     constructor(init = undefined) {
@@ -230,18 +232,33 @@
 
   // A body is a string, a Uint8Array in a buffer of its own, or null. A string
   // stays one until something asks for bytes, so a text response reaches Go as
-  // the string it was written as.
-  const extract = (body, headers) => {
-    if (body === null || body === undefined) return null;
-    if (typeof body === "string") {
-      if (!headers.has("content-type")) headers.set("content-type", "text/plain;charset=UTF-8");
-      return body;
-    }
+  // the string it was written as. extract makes one of what is not null; a
+  // string is text, of the type TEXT unless the headers say otherwise.
+  const TEXT = "text/plain;charset=UTF-8";
+
+  const extract = (body) => {
+    if (typeof body === "string") return body;
     if (body instanceof ArrayBuffer) return new Uint8Array(body.slice(0));
     if (ArrayBuffer.isView(body)) {
       return new Uint8Array(body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength));
     }
-    return extract(String(body), headers);
+    return String(body);
+  };
+
+  const typeText = (headers) => {
+    if (!headers.has("content-type")) headers.set("content-type", TEXT);
+  };
+
+  // A class instance costs far more to make than an object literal, so a
+  // request or response makes its Headers when something asks for them. Until
+  // then it holds what they would hold: the platform's flat pairs, the one
+  // content type its body implies, or null for none.
+  const headersFrom = (held) => {
+    const headers = new Headers();
+    const list = pairsOf(headers);
+    if (typeof held === "string") list.push(["content-type", held]);
+    else if (held !== null) for (let i = 0; i < held.length; i += 2) list.push([held[i], held[i + 1]]);
+    return headers;
   };
 
   const copyBody = (body) => (body === null || typeof body === "string" ? body : new Uint8Array(body.buffer.slice(0)));
@@ -316,7 +333,7 @@
         super(init.body, init.seq);
         this.#method = init.method;
         this.#url = init.url;
-        this.#headers = init.headers;
+        this.#headers = init.flat;
         return;
       }
       init = init ?? {};
@@ -326,11 +343,13 @@
       const upper = method.toUpperCase();
       if (FORBIDDEN.includes(upper)) throw new TypeError(`'${method}' HTTP method is unsupported`);
       if (NORMALIZED.includes(upper)) method = upper;
-      const headers = new Headers(init.headers !== undefined ? init.headers : from ? from.#headers : undefined);
+      const headers = new Headers(init.headers !== undefined ? init.headers : from ? from.#hdrs() : undefined);
       let bytes = null;
       let seq = 0;
-      if (init.body !== undefined && init.body !== null) bytes = extract(init.body, headers);
-      else if (init.body === undefined && from) {
+      if (init.body !== undefined && init.body !== null) {
+        bytes = extract(init.body);
+        if (typeof bytes === "string") typeText(headers);
+      } else if (init.body === undefined && from) {
         bytes = copyBody(bodyOf(from));
         seq = seqOf(from);
       }
@@ -345,8 +364,14 @@
 
     get method() { return this.#method; }
     get url() { return this.#url; }
-    get headers() { return this.#headers; }
     get redirect() { return "follow"; }
+
+    #hdrs() {
+      if (!isHeaders(this.#headers)) this.#headers = headersFrom(this.#headers);
+      return this.#headers;
+    }
+
+    get headers() { return this.#hdrs(); }
 
     clone() { return new Request(this); }
     get [Symbol.toStringTag]() { return "Request"; }
@@ -376,7 +401,9 @@
         if (r === null || typeof r !== "object" || !(#status in r)) {
           throw new TypeError("The handler did not answer with a Response");
         }
-        respond(r.#status, pairsOf(r.#headers).flat(), bodyOf(r));
+        const held = r.#headers;
+        const flat = held === null ? [] : typeof held === "string" ? ["content-type", held] : pairsOf(held).flat();
+        respond(r.#status, flat, bodyOf(r));
       };
     }
 
@@ -386,11 +413,16 @@
       if (!Number.isInteger(status) || status < 200 || status > 599) {
         throw new RangeError(`The status provided (${init.status}) is outside the range [200, 599]`);
       }
-      const headers = new Headers(init.headers);
+      const given = init.headers;
+      let headers = given === undefined ? null : new Headers(given);
       let bytes = null;
       if (body !== null && body !== undefined) {
         if (NULL_BODY.includes(status)) throw new TypeError(`A response with status ${status} cannot have a body`);
-        bytes = extract(body, headers);
+        bytes = extract(body);
+        if (typeof bytes === "string") {
+          if (headers === null) headers = TEXT;
+          else typeText(headers);
+        }
       }
       super(bytes);
       this.#status = status;
@@ -401,7 +433,13 @@
     static json(data, init = undefined) {
       const text = JSON.stringify(data);
       if (text === undefined) throw new TypeError("The value is not JSON serializable");
-      const headers = new Headers(init?.headers);
+      const given = init?.headers;
+      if (given === undefined) {
+        const r = new Response(text, { status: init?.status, statusText: init?.statusText });
+        r.#headers = "application/json";
+        return r;
+      }
+      const headers = new Headers(given);
       if (!headers.has("content-type")) headers.set("content-type", "application/json");
       return new Response(text, { status: init?.status, statusText: init?.statusText, headers });
     }
@@ -415,7 +453,13 @@
     get status() { return this.#status; }
     get ok() { return this.#status >= 200 && this.#status <= 299; }
     get statusText() { return this.#statusText; }
-    get headers() { return this.#headers; }
+
+    #hdrs() {
+      if (!isHeaders(this.#headers)) this.#headers = headersFrom(this.#headers);
+      return this.#headers;
+    }
+
+    get headers() { return this.#hdrs(); }
     get type() { return "default"; }
     get url() { return ""; }
     get redirected() { return false; }
@@ -424,7 +468,7 @@
       return new Response(copyBody(bodyOf(this)), {
         status: this.#status,
         statusText: this.#statusText,
-        headers: this.#headers,
+        headers: this.#hdrs(),
       });
     }
 
@@ -516,12 +560,12 @@
   const serveWith = (handler) => {
     const env = {};
     return () => {
-      const [method, url, flat, n, seq] = host.head();
-      const headers = new Headers();
-      const list = pairsOf(headers);
-      for (let i = 0; i < flat.length; i += 2) list.push([flat[i], flat[i + 1]]);
+      // Indexed, not destructured: destructuring runs Array.prototype's
+      // iterator, which the bundle can replace.
+      const head = host.head();
+      const n = head[3];
       const body = n === 0 ? null : copyOut(n);
-      const request = new Request(INCOMING, { method, url, headers, body, seq });
+      const request = new Request(INCOMING, { method: head[0], url: head[1], flat: head[2], body, seq: head[4] });
       const { ctx, settle } = context();
       let answer;
       try {
