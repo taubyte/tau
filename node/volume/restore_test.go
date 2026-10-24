@@ -1,11 +1,15 @@
 package volume_test
 
 import (
+	"archive/tar"
 	"context"
+	"errors"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -193,5 +197,98 @@ func TestWhatElseFillsTheDiskWhileARestoreRunsCounts(t *testing.T) {
 			var refused *reserve.Error
 			require.ErrorAs(t, err, &refused)
 		})
+	}
+}
+
+// synced is one thing a restore made durable: its path, whether the restore
+// was still beside the volume's directory then, and its mode.
+type synced struct {
+	path   string
+	staged bool
+	mode   fs.FileMode
+}
+
+// TestARESTOREIsOnDiskBeforeItIsInPlace. Every file and directory it made is
+// synced before the rename that puts it in place — a directory its owner
+// cannot write with the mode it ends with — and the directory it was renamed
+// into after it. Power lost at any point leaves no volume or all of it.
+func TestARestoreIsOnDiskBeforeItIsInPlace(t *testing.T) {
+	root := t.TempDir()
+	v, _ := restorer(t, root, entries(t,
+		tar.Header{Name: "d", Typeflag: tar.TypeDir, Mode: 0o750},
+		tar.Header{Name: "d/rows", Typeflag: tar.TypeReg, Mode: 0o640},
+		tar.Header{Name: "closed", Typeflag: tar.TypeDir, Mode: 0o500},
+		tar.Header{Name: "closed/rows", Typeflag: tar.TypeReg, Mode: 0o640},
+		tar.Header{Name: "top", Typeflag: tar.TypeReg, Mode: 0o640},
+		linkEntry("link", "top"),
+	))
+	volumes := filepath.Join(root, "volumes")
+	staging := filepath.Join(volumes, "shop%2Fprod%2FQmData%restoring")
+
+	var made []synced
+	volume.SyncWith(v, func(file *os.File) error {
+		info, err := file.Stat()
+		require.NoError(t, err)
+		_, err = os.Lstat(staging)
+		made = append(made, synced{path: filepath.Clean(file.Name()), staged: err == nil, mode: info.Mode().Perm()})
+		return file.Sync()
+	})
+
+	dir, err := v.Mount(t.Context(), mountGrant("shop/prod/QmData", nil))
+	require.NoError(t, err)
+	t.Cleanup(func() { os.Chmod(filepath.Join(dir, "closed"), 0o700) })
+
+	require.NotEmpty(t, made)
+	last := made[len(made)-1]
+	require.Equal(t, synced{path: volumes, staged: false, mode: last.mode}, last, "the directory the volume was renamed into is synced after it")
+
+	before := map[string]fs.FileMode{}
+	for _, one := range made[:len(made)-1] {
+		require.True(t, one.staged, "%s was synced after the rename", one.path)
+		rel, err := filepath.Rel(staging, one.path)
+		require.NoError(t, err)
+		before[rel] = one.mode
+	}
+	names := slices.Sorted(maps.Keys(before))
+	require.Equal(t, []string{".", "closed", "closed/rows", "d", "d/rows", "top"}, names)
+	require.Equal(t, fs.FileMode(0o500), before["closed"], "the closed directory was last synced before it was closed")
+}
+
+// TestARESTOREThatCannotBeMadeDurableIsNotServed: whichever sync fails, the
+// mount fails. Up to the rename nothing is left behind; after it, the volume is
+// all there, and the next mount serves it.
+func TestARestoreThatCannotBeMadeDurableIsNotServed(t *testing.T) {
+	archive := entries(t,
+		tar.Header{Name: "closed", Typeflag: tar.TypeDir, Mode: 0o500},
+		tar.Header{Name: "closed/rows", Typeflag: tar.TypeReg, Mode: 0o640},
+	)
+
+	// The file, ".", "closed", "closed" again once it is closed, then the
+	// volumes directory once the rename is done.
+	const syncs = 5
+	for fail := 1; fail <= syncs; fail++ {
+		root := t.TempDir()
+		v, _ := restorer(t, root, archive)
+		calls := 0
+		volume.SyncWith(v, func(file *os.File) error {
+			if calls++; calls == fail {
+				return errors.New("the disk went away")
+			}
+			return file.Sync()
+		})
+
+		_, err := v.Mount(t.Context(), mountGrant("shop/prod/QmData", nil))
+		require.ErrorContains(t, err, "the disk went away", "sync %d", fail)
+
+		left, err := os.ReadDir(filepath.Join(root, "volumes"))
+		require.NoError(t, err)
+		if fail < syncs {
+			require.Empty(t, left, "sync %d failed and left something behind", fail)
+			continue
+		}
+		dir, err := v.Mount(t.Context(), mountGrant("shop/prod/QmData", nil))
+		require.NoError(t, err)
+		os.Chmod(filepath.Join(dir, "closed"), 0o700)
+		require.FileExists(t, filepath.Join(dir, "closed", "rows"))
 	}
 }

@@ -99,6 +99,13 @@
 // its reserve (see pkg/containers/reserve), fails without leaving anything when
 // it would not, and says when it unpacked more than the quota, as a checkpoint
 // does.
+//
+// # A restore is on disk before it is in place
+//
+// Every file and directory a restore makes is synced before the rename that
+// puts it in place, and the directory it is renamed into after. A node that
+// loses power during a restore comes back holding either no volume, which the
+// next mount restores again, or all of it.
 package volume
 
 import (
@@ -182,8 +189,10 @@ type Volumes struct {
 	stores Stores
 	log    Log
 
-	// floor is what a restore leaves free on the disk it writes to.
+	// floor is what a restore leaves free on the disk it writes to, and sync
+	// is how it makes what it wrote durable.
 	floor reserve.Floor
+	sync  func(*os.File) error
 
 	mu   sync.Mutex
 	rows Rows
@@ -247,7 +256,7 @@ func New(root string, assets Assets, stores Stores, log Log) (*Volumes, error) {
 	if log == nil {
 		return nil, errors.New("volume: nowhere to say that a volume is over its quota")
 	}
-	return &Volumes{root: root, assets: assets, stores: stores, log: log, floor: reserve.Default}, nil
+	return &Volumes{root: root, assets: assets, stores: stores, log: log, floor: reserve.Default, sync: (*os.File).Sync}, nil
 }
 
 // The setting keys services/worker writes for a mount, which are the
@@ -392,9 +401,12 @@ func (v *Volumes) restore(ctx context.Context, handle, dir string, quota int64) 
 	if err := makeDir(staging); err != nil {
 		return err
 	}
-	unpacked, err := untar(content, staging, v.floor)
+	unpacked, err := untar(content, staging, v.floor, v.sync)
 	if err == nil {
 		err = os.Rename(staging, dir)
+	}
+	if err == nil {
+		err = syncDir(filepath.Dir(dir), v.sync)
 	}
 	if err != nil {
 		// What this leaves, the next restore of the volume clears first.
@@ -728,7 +740,10 @@ func writeEntry(archive *tar.Writer, root *os.Root, name string) (int64, bool, e
 // and one that would leave less free than the floor fails the restore. A run of
 // zeros is left as a hole, so a sparse file stays sparse and only what lands on
 // disk is counted against the reserve.
-func untar(r io.Reader, dir string, floor reserve.Floor) (int64, error) {
+//
+// AND EVERYTHING IS SYNCED, each file once it is written and each directory
+// once nothing more is made in it, with the mode it ends with.
+func untar(r io.Reader, dir string, floor reserve.Floor, sync func(*os.File) error) (int64, error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return 0, err
@@ -747,7 +762,10 @@ func untar(r io.Reader, dir string, floor reserve.Floor) (int64, error) {
 			if err := checkLinks(root, links); err != nil {
 				return unpacked, err
 			}
-			return unpacked, closeDirs(root, shut)
+			if err := syncDirs(root, sync); err != nil {
+				return unpacked, err
+			}
+			return unpacked, closeDirs(root, shut, sync)
 		}
 		if err != nil {
 			return unpacked, err
@@ -810,6 +828,9 @@ func untar(r io.Reader, dir string, floor reserve.Floor) (int64, error) {
 			}
 			n, err := floor.Copy(file, archive)
 			unpacked += n
+			if err == nil {
+				err = sync(file)
+			}
 			file.Close()
 			if err != nil {
 				return unpacked, err
@@ -855,7 +876,10 @@ func checkLinks(root *os.Root, links []string) error {
 // four directories down rather than two. So every name is followed to the path
 // it reaches before anything is closed, and that path is what is closed. The
 // volume itself is never closed, whatever name reaches it.
-func closeDirs(root *os.Root, shut map[string]fs.FileMode) error {
+//
+// EACH IS CLOSED THROUGH A HANDLE OPENED FIRST, and synced through it, since
+// once closed its owner could not open it again to make the mode durable.
+func closeDirs(root *os.Root, shut map[string]fs.FileMode, sync func(*os.File) error) error {
 	onDisk := map[string]fs.FileMode{}
 	for name, closed := range shut {
 		at, err := reached(root, name)
@@ -872,15 +896,49 @@ func closeDirs(root *os.Root, shut map[string]fs.FileMode) error {
 		return strings.Count(b, string(os.PathSeparator)) - strings.Count(a, string(os.PathSeparator))
 	})
 	for _, name := range names {
-		info, err := root.Lstat(name)
+		dir, err := root.Open(name)
 		if err != nil {
 			return err
 		}
-		if err := root.Chmod(name, info.Mode().Perm()&^onDisk[name]); err != nil {
+		info, err := dir.Stat()
+		if err == nil {
+			err = dir.Chmod(info.Mode().Perm() &^ onDisk[name])
+		}
+		if err == nil {
+			err = sync(dir)
+		}
+		dir.Close()
+		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// syncDirs syncs every directory under root, root's own among them, so the
+// names made in each are on disk.
+func syncDirs(root *os.Root, sync func(*os.File) error) error {
+	return fs.WalkDir(root.FS(), ".", func(name string, entry fs.DirEntry, err error) error {
+		if err != nil || !entry.IsDir() {
+			return err
+		}
+		dir, err := root.Open(name)
+		if err != nil {
+			return err
+		}
+		defer dir.Close()
+		return sync(dir)
+	})
+}
+
+// syncDir syncs one directory, by its path on the host.
+func syncDir(path string, sync func(*os.File) error) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return sync(dir)
 }
 
 // maxLinks is as many links as os.Root follows in one name, so a name it made
