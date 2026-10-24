@@ -16,6 +16,10 @@ import (
 
 var discoveryLogger = logging.Logger("raft-discovery")
 
+// A tracker looks for peers every 100ms while its member finds a group, and
+// every settledDiscoveryInterval once a group has it.
+const settledDiscoveryInterval = 30 * time.Second
+
 // peerTracker tracks discovered peers and their discovery times
 type peerTracker struct {
 	mu             sync.RWMutex

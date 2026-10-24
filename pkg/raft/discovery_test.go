@@ -3,6 +3,7 @@ package raft
 import (
 	"context"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -462,4 +463,60 @@ func TestDiscovery_APeerConnectedBeforeItServedTheGroupIsFound(t *testing.T) {
 			return err == nil && len(members) == len(nodes)
 		}, 10*time.Second, 20*time.Millisecond, "the nodes did not form one group")
 	})
+}
+
+// TestDiscovery_AMemberTheGroupLetsInLooksForPeersAsAFounderDoes: a tracker
+// looks for peers every 100ms while its member finds a group and every 30s
+// once it has one, but only a member whose bootstrap ended in a group slowed
+// down. A founder whose bootstrap ends before the lowest founder bootstraps
+// asks to be let in and returns, and the group lets it in later, and that
+// member exchanged peer lists with every peer it tracks ten times a second for
+// as long as it ran. A member the group lets in now settles too.
+func TestDiscovery_AMemberTheGroupLetsInLooksForPeersAsAFounderDoes(t *testing.T) {
+	const namespace = "let-in-settles"
+	nodes := []taupeer.Node{newMockNode(t), newMockNode(t)}
+	slices.SortFunc(nodes, func(a, b taupeer.Node) int { return strings.Compare(a.ID().String(), b.ID().String()) })
+	connectAllOf(t, nodes...)
+
+	// The lowest founder bootstraps the group once its own bootstrap ends,
+	// after the other's has.
+	bootstrap := []time.Duration{2 * time.Second, time.Second}
+	opened := make(chan *cluster, len(nodes))
+	failed := make(chan error, len(nodes))
+	for i, node := range nodes {
+		root := t.TempDir()
+		go func() {
+			cl, err := New(node, namespace,
+				WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(bootstrap[i]), WithSnapshotRoot(root))
+			if err != nil {
+				failed <- err
+				return
+			}
+			opened <- cl.(*cluster)
+		}()
+	}
+	var members []*cluster
+	for range nodes {
+		select {
+		case cl := <-opened:
+			t.Cleanup(func() { cl.Close() })
+			members = append(members, cl)
+		case err := <-failed:
+			t.Error(err)
+		}
+	}
+	require.Len(t, members, len(nodes))
+	require.Eventually(t, func() bool {
+		for _, m := range members {
+			if config, err := m.Members(); err != nil || len(config) != len(nodes) {
+				return false
+			}
+		}
+		return true
+	}, 10*time.Second, 20*time.Millisecond, "the founders did not form one group")
+
+	for _, m := range members {
+		require.Eventually(t, func() bool { return m.tracker.getDiscoveryInterval() == settledDiscoveryInterval },
+			5*time.Second, 20*time.Millisecond, "a member of the group still looks for peers at its bootstrap's pace")
+	}
 }

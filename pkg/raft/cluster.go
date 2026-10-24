@@ -194,9 +194,9 @@ func (c *cluster) handleBootstrap(raftConfig *raft.Config, transport raft.Transp
 	)
 	defer func() {
 		if successfullyCompleted {
-			c.tracker.setDiscoveryInterval(30 * time.Second)
-			clusterLogger.Infof("[%s] bootstrap completed successfully, discovery interval set to 30s",
-				c.node.ID().ShortString())
+			c.tracker.setDiscoveryInterval(settledDiscoveryInterval)
+			clusterLogger.Infof("[%s] bootstrap completed successfully, discovery interval set to %v",
+				c.node.ID().ShortString(), settledDiscoveryInterval)
 		}
 	}()
 
@@ -460,6 +460,7 @@ func (c *cluster) requestVoterJoin(timeout time.Duration) {
 						clusterLogger.Infof("[%s] voter join request failed: %v", c.node.ID().ShortString(), err)
 					} else {
 						c.joined.Store(true)
+						c.tracker.setDiscoveryInterval(settledDiscoveryInterval)
 						clusterLogger.Infof("[%s] voter join request accepted", c.node.ID().ShortString())
 					}
 				}
