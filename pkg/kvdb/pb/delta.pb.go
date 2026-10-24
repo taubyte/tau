@@ -21,8 +21,8 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// A Dot names one delta: the incarnation that wrote it and that
-// incarnation's counter for it. An element's identity is (key, dot).
+// A Dot names one delta: the incarnation that wrote it and that incarnation's
+// counter for it. An element's identity is (key, dot).
 type Dot struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Replica       []byte                 `protobuf:"bytes,1,opt,name=replica,proto3" json:"replica,omitempty"`
@@ -75,12 +75,15 @@ func (x *Dot) GetCounter() uint64 {
 	return 0
 }
 
-// A Parent is one block a delta links, with that block's dot, so a reader
-// can tell a parent it already covers without fetching it.
+// A Parent is one block a delta links, with that block's dot and stamps, so a
+// reader can tell a parent it already covers, or one nobody holds any more,
+// without fetching it.
 type Parent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Cid           []byte                 `protobuf:"bytes,1,opt,name=cid,proto3" json:"cid,omitempty"`
 	Dot           *Dot                   `protobuf:"bytes,2,opt,name=dot,proto3" json:"dot,omitempty"`
+	At            uint64                 `protobuf:"varint,3,opt,name=at,proto3" json:"at,omitempty"`
+	Ttl           uint64                 `protobuf:"varint,4,opt,name=ttl,proto3" json:"ttl,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -129,30 +132,49 @@ func (x *Parent) GetDot() *Dot {
 	return nil
 }
 
-// A CloudDot is a dot covered out of its author's order, with the author's
-// previous counter so the contiguous vector can absorb it once the gap fills.
-type CloudDot struct {
+func (x *Parent) GetAt() uint64 {
+	if x != nil {
+		return x.At
+	}
+	return 0
+}
+
+func (x *Parent) GetTtl() uint64 {
+	if x != nil {
+		return x.Ttl
+	}
+	return 0
+}
+
+// An Entry is what a context knows of one incarnation: the counters in
+// (base, counter] are covered, changed is the latest authored time of
+// anything merged about it, and expires the latest time any of that is still
+// needed. Times are milliseconds since the epoch.
+type Entry struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Dot           *Dot                   `protobuf:"bytes,1,opt,name=dot,proto3" json:"dot,omitempty"`
-	Prev          uint64                 `protobuf:"varint,2,opt,name=prev,proto3" json:"prev,omitempty"`
+	Replica       []byte                 `protobuf:"bytes,1,opt,name=replica,proto3" json:"replica,omitempty"`
+	Base          uint64                 `protobuf:"varint,2,opt,name=base,proto3" json:"base,omitempty"`
+	Counter       uint64                 `protobuf:"varint,3,opt,name=counter,proto3" json:"counter,omitempty"`
+	Changed       uint64                 `protobuf:"varint,4,opt,name=changed,proto3" json:"changed,omitempty"`
+	Expires       uint64                 `protobuf:"varint,5,opt,name=expires,proto3" json:"expires,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *CloudDot) Reset() {
-	*x = CloudDot{}
+func (x *Entry) Reset() {
+	*x = Entry{}
 	mi := &file_delta_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *CloudDot) String() string {
+func (x *Entry) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*CloudDot) ProtoMessage() {}
+func (*Entry) ProtoMessage() {}
 
-func (x *CloudDot) ProtoReflect() protoreflect.Message {
+func (x *Entry) ProtoReflect() protoreflect.Message {
 	mi := &file_delta_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -164,38 +186,121 @@ func (x *CloudDot) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use CloudDot.ProtoReflect.Descriptor instead.
-func (*CloudDot) Descriptor() ([]byte, []int) {
+// Deprecated: Use Entry.ProtoReflect.Descriptor instead.
+func (*Entry) Descriptor() ([]byte, []int) {
 	return file_delta_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *CloudDot) GetDot() *Dot {
+func (x *Entry) GetReplica() []byte {
 	if x != nil {
-		return x.Dot
+		return x.Replica
 	}
 	return nil
 }
 
-func (x *CloudDot) GetPrev() uint64 {
+func (x *Entry) GetBase() uint64 {
 	if x != nil {
-		return x.Prev
+		return x.Base
 	}
 	return 0
 }
 
-// A Context is a causal context: for each incarnation, the counter up to
-// which its chain is covered, plus the dots covered beyond a gap.
+func (x *Entry) GetCounter() uint64 {
+	if x != nil {
+		return x.Counter
+	}
+	return 0
+}
+
+func (x *Entry) GetChanged() uint64 {
+	if x != nil {
+		return x.Changed
+	}
+	return 0
+}
+
+func (x *Entry) GetExpires() uint64 {
+	if x != nil {
+		return x.Expires
+	}
+	return 0
+}
+
+// A Span is a run of an incarnation's counters covered out of order: (lo, hi].
+// The author's counters inside it that are not hi were never used.
+type Span struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Replica       []byte                 `protobuf:"bytes,1,opt,name=replica,proto3" json:"replica,omitempty"`
+	Lo            uint64                 `protobuf:"varint,2,opt,name=lo,proto3" json:"lo,omitempty"`
+	Hi            uint64                 `protobuf:"varint,3,opt,name=hi,proto3" json:"hi,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Span) Reset() {
+	*x = Span{}
+	mi := &file_delta_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Span) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Span) ProtoMessage() {}
+
+func (x *Span) ProtoReflect() protoreflect.Message {
+	mi := &file_delta_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Span.ProtoReflect.Descriptor instead.
+func (*Span) Descriptor() ([]byte, []int) {
+	return file_delta_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Span) GetReplica() []byte {
+	if x != nil {
+		return x.Replica
+	}
+	return nil
+}
+
+func (x *Span) GetLo() uint64 {
+	if x != nil {
+		return x.Lo
+	}
+	return 0
+}
+
+func (x *Span) GetHi() uint64 {
+	if x != nil {
+		return x.Hi
+	}
+	return 0
+}
+
+// A Context is a causal context: an entry per incarnation still known, plus
+// the spans covered beyond a gap in an entry.
 type Context struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Vector        []*Dot                 `protobuf:"bytes,1,rep,name=vector,proto3" json:"vector,omitempty"`
-	Cloud         []*CloudDot            `protobuf:"bytes,2,rep,name=cloud,proto3" json:"cloud,omitempty"`
+	Vector        []*Entry               `protobuf:"bytes,1,rep,name=vector,proto3" json:"vector,omitempty"`
+	Cloud         []*Span                `protobuf:"bytes,2,rep,name=cloud,proto3" json:"cloud,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Context) Reset() {
 	*x = Context{}
-	mi := &file_delta_proto_msgTypes[3]
+	mi := &file_delta_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -207,7 +312,7 @@ func (x *Context) String() string {
 func (*Context) ProtoMessage() {}
 
 func (x *Context) ProtoReflect() protoreflect.Message {
-	mi := &file_delta_proto_msgTypes[3]
+	mi := &file_delta_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -220,17 +325,17 @@ func (x *Context) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Context.ProtoReflect.Descriptor instead.
 func (*Context) Descriptor() ([]byte, []int) {
-	return file_delta_proto_rawDescGZIP(), []int{3}
+	return file_delta_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *Context) GetVector() []*Dot {
+func (x *Context) GetVector() []*Entry {
 	if x != nil {
 		return x.Vector
 	}
 	return nil
 }
 
-func (x *Context) GetCloud() []*CloudDot {
+func (x *Context) GetCloud() []*Span {
 	if x != nil {
 		return x.Cloud
 	}
@@ -255,14 +360,26 @@ type Delta struct {
 	Context *Context `protobuf:"bytes,11,opt,name=context,proto3" json:"context,omitempty"`
 	// chunks are the CIDs of the blocks holding the rest of a snapshot's
 	// elements, fetched with it and merged as one.
-	Chunks        [][]byte `protobuf:"bytes,12,rep,name=chunks,proto3" json:"chunks,omitempty"`
+	Chunks [][]byte `protobuf:"bytes,12,rep,name=chunks,proto3" json:"chunks,omitempty"`
+	// at is when the author wrote this block, in milliseconds since the epoch:
+	// the later of its clock and the fleet time it had last heard.
+	At uint64 `protobuf:"varint,13,opt,name=at,proto3" json:"at,omitempty"`
+	// ttl is the author's retention when it wrote this block, in milliseconds:
+	// what the block teaches is kept until at + ttl, plus the margin.
+	Ttl uint64 `protobuf:"varint,14,opt,name=ttl,proto3" json:"ttl,omitempty"`
+	// since is the fleet time the author had last heard: in a snapshot, how
+	// recent the state it carries is.
+	Since uint64 `protobuf:"varint,15,opt,name=since,proto3" json:"since,omitempty"`
+	// horizon is the latest authored time of anything the author has
+	// forgotten because it expired.
+	Horizon       uint64 `protobuf:"varint,16,opt,name=horizon,proto3" json:"horizon,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Delta) Reset() {
 	*x = Delta{}
-	mi := &file_delta_proto_msgTypes[4]
+	mi := &file_delta_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -274,7 +391,7 @@ func (x *Delta) String() string {
 func (*Delta) ProtoMessage() {}
 
 func (x *Delta) ProtoReflect() protoreflect.Message {
-	mi := &file_delta_proto_msgTypes[4]
+	mi := &file_delta_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -287,7 +404,7 @@ func (x *Delta) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Delta.ProtoReflect.Descriptor instead.
 func (*Delta) Descriptor() ([]byte, []int) {
-	return file_delta_proto_rawDescGZIP(), []int{4}
+	return file_delta_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Delta) GetElements() []*Element {
@@ -353,6 +470,34 @@ func (x *Delta) GetChunks() [][]byte {
 	return nil
 }
 
+func (x *Delta) GetAt() uint64 {
+	if x != nil {
+		return x.At
+	}
+	return 0
+}
+
+func (x *Delta) GetTtl() uint64 {
+	if x != nil {
+		return x.Ttl
+	}
+	return 0
+}
+
+func (x *Delta) GetSince() uint64 {
+	if x != nil {
+		return x.Since
+	}
+	return 0
+}
+
+func (x *Delta) GetHorizon() uint64 {
+	if x != nil {
+		return x.Horizon
+	}
+	return 0
+}
+
 type Element struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Key   string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -362,14 +507,19 @@ type Element struct {
 	Priority uint64 `protobuf:"varint,4,opt,name=priority,proto3" json:"priority,omitempty"`
 	// dot is the element's dot in snapshots and the target's dot in
 	// tombstones; a plain delta's elements take the delta's dot.
-	Dot           *Dot `protobuf:"bytes,5,opt,name=dot,proto3" json:"dot,omitempty"`
+	Dot *Dot `protobuf:"bytes,5,opt,name=dot,proto3" json:"dot,omitempty"`
+	// at and ttl are, for an element in a snapshot, the stamps of the delta
+	// that wrote it; for a tombstone, when the removal was written and how long
+	// it is needed, which is never less than its target is.
+	At            uint64 `protobuf:"varint,6,opt,name=at,proto3" json:"at,omitempty"`
+	Ttl           uint64 `protobuf:"varint,7,opt,name=ttl,proto3" json:"ttl,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Element) Reset() {
 	*x = Element{}
-	mi := &file_delta_proto_msgTypes[5]
+	mi := &file_delta_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -381,7 +531,7 @@ func (x *Element) String() string {
 func (*Element) ProtoMessage() {}
 
 func (x *Element) ProtoReflect() protoreflect.Message {
-	mi := &file_delta_proto_msgTypes[5]
+	mi := &file_delta_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -394,7 +544,7 @@ func (x *Element) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Element.ProtoReflect.Descriptor instead.
 func (*Element) Descriptor() ([]byte, []int) {
-	return file_delta_proto_rawDescGZIP(), []int{5}
+	return file_delta_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Element) GetKey() string {
@@ -425,6 +575,20 @@ func (x *Element) GetDot() *Dot {
 	return nil
 }
 
+func (x *Element) GetAt() uint64 {
+	if x != nil {
+		return x.At
+	}
+	return 0
+}
+
+func (x *Element) GetTtl() uint64 {
+	if x != nil {
+		return x.Ttl
+	}
+	return 0
+}
+
 var File_delta_proto protoreflect.FileDescriptor
 
 const file_delta_proto_rawDesc = "" +
@@ -432,16 +596,25 @@ const file_delta_proto_rawDesc = "" +
 	"\vdelta.proto\x12\acrdt.pb\"9\n" +
 	"\x03Dot\x12\x18\n" +
 	"\areplica\x18\x01 \x01(\fR\areplica\x12\x18\n" +
-	"\acounter\x18\x02 \x01(\x04R\acounter\":\n" +
+	"\acounter\x18\x02 \x01(\x04R\acounter\"\\\n" +
 	"\x06Parent\x12\x10\n" +
 	"\x03cid\x18\x01 \x01(\fR\x03cid\x12\x1e\n" +
-	"\x03dot\x18\x02 \x01(\v2\f.crdt.pb.DotR\x03dot\">\n" +
-	"\bCloudDot\x12\x1e\n" +
-	"\x03dot\x18\x01 \x01(\v2\f.crdt.pb.DotR\x03dot\x12\x12\n" +
-	"\x04prev\x18\x02 \x01(\x04R\x04prev\"X\n" +
-	"\aContext\x12$\n" +
-	"\x06vector\x18\x01 \x03(\v2\f.crdt.pb.DotR\x06vector\x12'\n" +
-	"\x05cloud\x18\x02 \x03(\v2\x11.crdt.pb.CloudDotR\x05cloud\"\xf8\x02\n" +
+	"\x03dot\x18\x02 \x01(\v2\f.crdt.pb.DotR\x03dot\x12\x0e\n" +
+	"\x02at\x18\x03 \x01(\x04R\x02at\x12\x10\n" +
+	"\x03ttl\x18\x04 \x01(\x04R\x03ttl\"\x83\x01\n" +
+	"\x05Entry\x12\x18\n" +
+	"\areplica\x18\x01 \x01(\fR\areplica\x12\x12\n" +
+	"\x04base\x18\x02 \x01(\x04R\x04base\x12\x18\n" +
+	"\acounter\x18\x03 \x01(\x04R\acounter\x12\x18\n" +
+	"\achanged\x18\x04 \x01(\x04R\achanged\x12\x18\n" +
+	"\aexpires\x18\x05 \x01(\x04R\aexpires\"@\n" +
+	"\x04Span\x12\x18\n" +
+	"\areplica\x18\x01 \x01(\fR\areplica\x12\x0e\n" +
+	"\x02lo\x18\x02 \x01(\x04R\x02lo\x12\x0e\n" +
+	"\x02hi\x18\x03 \x01(\x04R\x02hi\"V\n" +
+	"\aContext\x12&\n" +
+	"\x06vector\x18\x01 \x03(\v2\x0e.crdt.pb.EntryR\x06vector\x12#\n" +
+	"\x05cloud\x18\x02 \x03(\v2\r.crdt.pb.SpanR\x05cloud\"\xca\x03\n" +
 	"\x05Delta\x12,\n" +
 	"\belements\x18\x01 \x03(\v2\x10.crdt.pb.ElementR\belements\x120\n" +
 	"\n" +
@@ -454,13 +627,19 @@ const file_delta_proto_rawDesc = "" +
 	"\aparents\x18\n" +
 	" \x03(\v2\x0f.crdt.pb.ParentR\aparents\x12*\n" +
 	"\acontext\x18\v \x01(\v2\x10.crdt.pb.ContextR\acontext\x12\x16\n" +
-	"\x06chunks\x18\f \x03(\fR\x06chunksJ\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\a\x10\bR\adagNameR\rsnapshotTotalR\n" +
-	"snapshotId\"w\n" +
+	"\x06chunks\x18\f \x03(\fR\x06chunks\x12\x0e\n" +
+	"\x02at\x18\r \x01(\x04R\x02at\x12\x10\n" +
+	"\x03ttl\x18\x0e \x01(\x04R\x03ttl\x12\x14\n" +
+	"\x05since\x18\x0f \x01(\x04R\x05since\x12\x18\n" +
+	"\ahorizon\x18\x10 \x01(\x04R\ahorizonJ\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\a\x10\bR\adagNameR\rsnapshotTotalR\n" +
+	"snapshotId\"\x99\x01\n" +
 	"\aElement\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x03 \x01(\fR\x05value\x12\x1a\n" +
 	"\bpriority\x18\x04 \x01(\x04R\bpriority\x12\x1e\n" +
-	"\x03dot\x18\x05 \x01(\v2\f.crdt.pb.DotR\x03dotJ\x04\b\x02\x10\x03R\x02idB\x06Z\x04.;pbb\x06proto3"
+	"\x03dot\x18\x05 \x01(\v2\f.crdt.pb.DotR\x03dot\x12\x0e\n" +
+	"\x02at\x18\x06 \x01(\x04R\x02at\x12\x10\n" +
+	"\x03ttl\x18\a \x01(\x04R\x03ttlJ\x04\b\x02\x10\x03R\x02idB\x06Z\x04.;pbb\x06proto3"
 
 var (
 	file_delta_proto_rawDescOnce sync.Once
@@ -474,31 +653,31 @@ func file_delta_proto_rawDescGZIP() []byte {
 	return file_delta_proto_rawDescData
 }
 
-var file_delta_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_delta_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_delta_proto_goTypes = []any{
-	(*Dot)(nil),      // 0: crdt.pb.Dot
-	(*Parent)(nil),   // 1: crdt.pb.Parent
-	(*CloudDot)(nil), // 2: crdt.pb.CloudDot
-	(*Context)(nil),  // 3: crdt.pb.Context
-	(*Delta)(nil),    // 4: crdt.pb.Delta
-	(*Element)(nil),  // 5: crdt.pb.Element
+	(*Dot)(nil),     // 0: crdt.pb.Dot
+	(*Parent)(nil),  // 1: crdt.pb.Parent
+	(*Entry)(nil),   // 2: crdt.pb.Entry
+	(*Span)(nil),    // 3: crdt.pb.Span
+	(*Context)(nil), // 4: crdt.pb.Context
+	(*Delta)(nil),   // 5: crdt.pb.Delta
+	(*Element)(nil), // 6: crdt.pb.Element
 }
 var file_delta_proto_depIdxs = []int32{
-	0,  // 0: crdt.pb.Parent.dot:type_name -> crdt.pb.Dot
-	0,  // 1: crdt.pb.CloudDot.dot:type_name -> crdt.pb.Dot
-	0,  // 2: crdt.pb.Context.vector:type_name -> crdt.pb.Dot
-	2,  // 3: crdt.pb.Context.cloud:type_name -> crdt.pb.CloudDot
-	5,  // 4: crdt.pb.Delta.elements:type_name -> crdt.pb.Element
-	5,  // 5: crdt.pb.Delta.tombstones:type_name -> crdt.pb.Element
-	0,  // 6: crdt.pb.Delta.dot:type_name -> crdt.pb.Dot
-	1,  // 7: crdt.pb.Delta.parents:type_name -> crdt.pb.Parent
-	3,  // 8: crdt.pb.Delta.context:type_name -> crdt.pb.Context
-	0,  // 9: crdt.pb.Element.dot:type_name -> crdt.pb.Dot
-	10, // [10:10] is the sub-list for method output_type
-	10, // [10:10] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	0, // 0: crdt.pb.Parent.dot:type_name -> crdt.pb.Dot
+	2, // 1: crdt.pb.Context.vector:type_name -> crdt.pb.Entry
+	3, // 2: crdt.pb.Context.cloud:type_name -> crdt.pb.Span
+	6, // 3: crdt.pb.Delta.elements:type_name -> crdt.pb.Element
+	6, // 4: crdt.pb.Delta.tombstones:type_name -> crdt.pb.Element
+	0, // 5: crdt.pb.Delta.dot:type_name -> crdt.pb.Dot
+	1, // 6: crdt.pb.Delta.parents:type_name -> crdt.pb.Parent
+	4, // 7: crdt.pb.Delta.context:type_name -> crdt.pb.Context
+	0, // 8: crdt.pb.Element.dot:type_name -> crdt.pb.Dot
+	9, // [9:9] is the sub-list for method output_type
+	9, // [9:9] is the sub-list for method input_type
+	9, // [9:9] is the sub-list for extension type_name
+	9, // [9:9] is the sub-list for extension extendee
+	0, // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_delta_proto_init() }
@@ -512,7 +691,7 @@ func file_delta_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delta_proto_rawDesc), len(file_delta_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

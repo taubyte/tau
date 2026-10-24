@@ -15,9 +15,11 @@ import (
 // The set is an add-wins observed-remove set of (key, dot) elements with a
 // causal context (see causalContext), laid out as:
 //
-//	/e/<key segment>/<dot segment>  live element: varint priority, then value
+//	/e/<key segment>/<dot segment>  live element: varint priority, at and
+//	                                ttl, then value
 //	/t/<dot segment>/<key segment>  pending removal: the element is named by a
-//	                                tombstone but its dot is not yet covered
+//	                                tombstone but its dot is not covered; varint
+//	                                at and ttl of the removal
 //	/k/<key>/v, /k/<key>/p          the key's winning value and its priority
 //
 // A key's value is its live element with the highest priority, ties broken by
@@ -44,7 +46,21 @@ type element struct {
 	dot      dot
 	priority uint64
 	value    []byte
+	// at and ttl are the stamps of the delta that wrote the element.
+	at, ttl uint64
 }
+
+func (e element) expires() uint64 { return e.at + e.ttl }
+
+// A removal is a pending removal: the tombstone of (key, dot), written at at
+// and needed until at + ttl.
+type removal struct {
+	key     string
+	dot     dot
+	at, ttl uint64
+}
+
+func (r removal) expires() uint64 { return r.at + r.ttl }
 
 func (s *set) elemsPrefix() ds.Key { return s.namespace.ChildString(elemsNs) }
 
@@ -70,16 +86,44 @@ func (s *set) priorityKey(key string) ds.Key {
 	return s.namespace.ChildString(keysNs).Child(ds.NewKey(key)).ChildString(prioritySuffix)
 }
 
-func encodeMarker(prio uint64, value []byte) []byte {
-	return append(binary.AppendUvarint(nil, prio), value...)
+func encodeMarker(e element) []byte {
+	b := binary.AppendUvarint(nil, e.priority)
+	b = binary.AppendUvarint(b, e.at)
+	b = binary.AppendUvarint(b, e.ttl)
+	return append(b, e.value...)
 }
 
-func decodeMarker(b []byte) (uint64, []byte, error) {
-	p, n := binary.Uvarint(b)
-	if n <= 0 {
-		return 0, nil, errors.New("error decoding element")
+// uvarints reads n uvarints off the front of b and returns them with the rest.
+func uvarints(b []byte, n int) ([]uint64, []byte, error) {
+	out := make([]uint64, n)
+	for i := range out {
+		v, k := binary.Uvarint(b)
+		if k <= 0 {
+			return nil, nil, errors.New("error decoding varint")
+		}
+		out[i], b = v, b[k:]
 	}
-	return p, b[n:], nil
+	return out, b, nil
+}
+
+func decodeMarker(b []byte) (element, error) {
+	v, rest, err := uvarints(b, 3)
+	if err != nil {
+		return element{}, errors.New("error decoding element")
+	}
+	return element{priority: v[0], at: v[1], ttl: v[2], value: rest}, nil
+}
+
+func encodeStamps(at, ttl uint64) []byte {
+	return binary.AppendUvarint(binary.AppendUvarint(nil, at), ttl)
+}
+
+func decodeStamps(b []byte) (uint64, uint64, error) {
+	v, _, err := uvarints(b, 2)
+	if err != nil {
+		return 0, 0, errors.New("error decoding stamps")
+	}
+	return v[0], v[1], nil
 }
 
 func encodePriority(prio uint64) []byte { return binary.AppendUvarint(nil, prio+1) }
@@ -107,25 +151,34 @@ func (s *set) parseElem(k string, v []byte) (element, error) {
 	if err != nil {
 		return element{}, err
 	}
-	prio, value, err := decodeMarker(v)
+	el, err := decodeMarker(v)
 	if err != nil {
 		return element{}, err
 	}
-	return element{key: key, dot: d, priority: prio, value: value}, nil
+	el.key, el.dot = key, d
+	return el, nil
 }
 
-func (s *set) parsePending(k string) (string, dot, error) {
+// parsePending turns a full /t/<dot>/<key> entry back into a removal.
+func (s *set) parsePending(k string, v []byte) (removal, error) {
 	rel := strings.TrimPrefix(k, s.pendingPrefix().String()+"/")
 	dseg, kseg, ok := strings.Cut(rel, "/")
 	if !ok {
-		return "", dot{}, errors.New("bad pending key " + k)
+		return removal{}, errors.New("bad pending key " + k)
 	}
 	key, err := parseKeySegment(kseg)
 	if err != nil {
-		return "", dot{}, err
+		return removal{}, err
 	}
 	d, err := parseDotSegment(dseg)
-	return key, d, err
+	if err != nil {
+		return removal{}, err
+	}
+	at, ttl, err := decodeStamps(v)
+	if err != nil {
+		return removal{}, err
+	}
+	return removal{key: key, dot: d, at: at, ttl: ttl}, nil
 }
 
 // liveElems is every live element of key.

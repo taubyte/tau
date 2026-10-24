@@ -50,10 +50,11 @@ func assertNoLeak(t testing.TB, r *Datastore, d *fetchThroughDAGSvc) {
 		if err != nil {
 			return err
 		}
-		_, bd, err := decodeBlock(v)
+		b, err := decodeBlock(v)
 		if err != nil {
 			return err
 		}
+		bd := b.dot
 		if !r.covered(bd) {
 			t.Errorf("index entry %s has a dot %s nothing merged", c, bd)
 		}
@@ -308,11 +309,16 @@ func assertChained(t testing.TB, name string, r *Datastore, replica string, coun
 	t.Helper()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if v := r.cc.vector[replica]; v != counter {
+	if v := r.cc.counter(replica); v != counter {
 		t.Errorf("replica %s covers the incarnation up to %d, want %d", name, v, counter)
 	}
-	if len(r.cc.cloud) != 0 {
-		t.Errorf("replica %s holds dots past a gap: %v", name, r.cc.cloud)
+	if k := r.cc.inc[replica]; k == nil || k.spans[0].lo != 0 {
+		t.Errorf("replica %s does not hold the incarnation from its first counter", name)
+	}
+	for rep, k := range r.cc.inc {
+		if len(k.spans) != 1 {
+			t.Errorf("replica %s holds dots of %x past a gap: %v", name, rep, k.spans)
+		}
 	}
 }
 
@@ -350,7 +356,7 @@ func TestReopenContinuesTheIncarnation(t *testing.T) {
 	want(t, "peer", peer, map[string]string{"k": "3"})
 	for name, r := range map[string]*Datastore{"a": a, "peer": peer} {
 		assertChained(t, name, r, replica, last+1)
-		if n := len(r.cc.vector); n != 1 {
+		if n := len(r.cc.inc); n != 1 {
 			t.Errorf("replica %s holds %d vector entries for one incarnation", name, n)
 		}
 	}
@@ -379,7 +385,7 @@ func TestANewProcessDrawsANewIncarnation(t *testing.T) {
 	if d.replica != a.replica || d.counter != 1 || prev != 0 {
 		t.Fatalf("the first delta of a new incarnation is %s with prev %d", d, prev)
 	}
-	if n := len(a.cc.vector); n != 2 {
+	if n := len(a.cc.inc); n != 2 {
 		t.Fatalf("two incarnations wrote, the vector holds %d", n)
 	}
 }

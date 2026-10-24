@@ -7,6 +7,25 @@ option go_package = ".;pb";
 
 message CRDTBroadcast {
   repeated Head Heads = 1; // A list of heads
+  // since is the fleet time the sender had last heard; while it is
+  // rejoining, the fleet time it had heard before its gap.
+  uint64 since = 2;
+  // now is the sender's clock.
+  uint64 now = 3;
+  // rejoining is set while the sender waits to be judged after a gap.
+  bool rejoining = 4;
+  // incarnation is the sender's current incarnation.
+  bytes incarnation = 5;
+  // verdict answers a rejoining replica.
+  Verdict verdict = 6;
+}
+
+// A Verdict tells one rejoining incarnation whether the sender can still
+// refute what it may carry (ok) or not (rebase), and the sender's since.
+message Verdict {
+  bytes to = 1;
+  bool rebase = 2;
+  uint64 since = 3;
 }
 
 message Head {
@@ -14,4 +33,6 @@ message Head {
   reserved 2;
   reserved "DagName";
   Dot dot = 3;
+  uint64 at = 4;
+  uint64 ttl = 5;
 }

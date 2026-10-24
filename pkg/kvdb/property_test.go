@@ -75,8 +75,8 @@ func indexedBlocks(t testing.TB, r *Datastore) []cid.Cid {
 	var out []cid.Cid
 	prefix := r.blocksPrefix()
 	err := scanStore(context.Background(), r.store, prefix, func(k string, v []byte) error {
-		kind, _, err := decodeBlock(v)
-		if err != nil || kind == kindChunk {
+		b, err := decodeBlock(v)
+		if err != nil || b.kind == kindChunk {
 			return err
 		}
 		c, err := cidOfBlockKey(prefix, k)

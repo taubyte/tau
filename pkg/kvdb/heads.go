@@ -19,11 +19,15 @@ type Head struct {
 	Cid    cid.Cid
 	Height uint64
 	Dot    dot
+	// At and TTL are the block's stamps (see pb.Delta).
+	At, TTL uint64
 }
 
 func (h Head) String() string {
 	return fmt.Sprintf("{Cid: %s, Height: %d, Dot: %s}", h.Cid, h.Height, h.Dot)
 }
+
+func (h Head) link() link { return link{cid: h.Cid, dot: h.Dot, at: h.At, ttl: h.TTL} }
 
 // heads is the persisted head set with an in-memory copy. Changes are staged
 // in a merge's txn and applied to the copy once that txn commits.
@@ -60,19 +64,22 @@ func (hh *heads) key(c cid.Cid) ds.Key {
 }
 
 func encodeHead(h Head) []byte {
-	return append(binary.AppendUvarint(nil, h.Height), encodeDot(h.Dot)...)
+	b := binary.AppendUvarint(nil, h.Height)
+	b = binary.AppendUvarint(b, h.At)
+	b = binary.AppendUvarint(b, h.TTL)
+	return append(b, encodeDot(h.Dot)...)
 }
 
 func decodeHead(c cid.Cid, v []byte) (Head, error) {
-	height, n := binary.Uvarint(v)
-	if n <= 0 {
-		return Head{}, errors.New("error decoding head height")
+	f, rest, err := uvarints(v, 3)
+	if err != nil {
+		return Head{}, errors.New("error decoding head")
 	}
-	d, err := decodeDot(v[n:])
+	d, err := decodeDot(rest)
 	if err != nil {
 		return Head{}, err
 	}
-	return Head{Cid: c, Height: height, Dot: d}, nil
+	return Head{Cid: c, Height: f[0], At: f[1], TTL: f[2], Dot: d}, nil
 }
 
 func (hh *heads) Get(c cid.Cid) (Head, bool) {

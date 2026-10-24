@@ -21,13 +21,15 @@ import (
 // where an element is a (key, dot) pair and ctx covers a pair when it covers
 // the dot or holds a pending removal of that pair. A plain delta is the state
 // (its elements, {its dot}, its tombstones); a snapshot is the state of the
-// replica that compacted. The join is associative, commutative and
-// idempotent, so every replica that has merged the same deltas, in any order
-// and any number of times, holds the same state.
+// replica that compacted.
 //
-// It holds because three things hold: a dot is never reused (see dot), a
-// context covers an author's chain only up to a prefix it has merged (see
-// causalContext), and a state's elements are all covered by its own context.
+// What a context knows of an incarnation is forgotten once it is no longer
+// needed (see retire), and an element whose dot no context covers any more is
+// ancient: it is kept under its own dot, admitted by union, and removed by a
+// pending removal that lives as long as the removal is needed. The join is
+// the lattice join of what is still known; forgetting is the one step outside
+// it, and it only forgets what no replica in contact can still be shown
+// without (see the package's time-bound notes).
 
 type blockKind byte
 
@@ -37,10 +39,18 @@ const (
 	kindChunk
 )
 
-// A link is a parent block a delta names, with its dot.
+// A link is a block a delta names, with its dot and stamps.
 type link struct {
-	cid cid.Cid
-	dot dot
+	cid     cid.Cid
+	dot     dot
+	at, ttl uint64
+}
+
+// A block is what the index holds of a local block.
+type block struct {
+	kind    blockKind
+	dot     dot
+	at, ttl uint64
 }
 
 func (store *Datastore) blocksPrefix() ds.Key {
@@ -59,87 +69,136 @@ func (store *Datastore) missingKey(d dot) ds.Key {
 	return store.missingPrefix().ChildString(d.segment())
 }
 
-func (store *Datastore) vectorKey(replica string) ds.Key {
-	return store.namespace.ChildString(contextNs).ChildString("v").ChildString(replicaSegment(replica))
+func (store *Datastore) vectorPrefix() ds.Key {
+	return store.namespace.ChildString(contextNs).ChildString("v")
 }
 
-func (store *Datastore) cloudKey(d dot) ds.Key {
-	return store.namespace.ChildString(contextNs).ChildString("d").ChildString(d.segment())
+func (store *Datastore) cloudPrefix() ds.Key {
+	return store.namespace.ChildString(contextNs).ChildString("d")
+}
+
+func (store *Datastore) vectorKey(replica string) ds.Key {
+	return store.vectorPrefix().ChildString(replicaSegment(replica))
+}
+
+// cloudKey is where the span (lo, hi] of replica is kept: under its end.
+func (store *Datastore) cloudKey(replica string, hi uint64) ds.Key {
+	return store.cloudPrefix().ChildString(dot{replica: replica, counter: hi}.segment())
 }
 
 func cidOfBlockKey(prefix ds.Key, k string) (cid.Cid, error) {
 	return dshelp.DsKeyToCidV1(ds.NewKey(strings.TrimPrefix(k, prefix.String())), cid.DagProtobuf)
 }
 
-func encodeBlock(kind blockKind, d dot) []byte {
-	return append([]byte{byte(kind)}, encodeDot(d)...)
+func encodeBlock(b block) []byte {
+	v := append([]byte{byte(b.kind)}, encodeStamps(b.at, b.ttl)...)
+	return append(v, encodeDot(b.dot)...)
 }
 
-func decodeBlock(v []byte) (blockKind, dot, error) {
+func decodeBlock(v []byte) (block, error) {
 	if len(v) < 2 {
-		return 0, dot{}, errors.New("error decoding block entry")
+		return block{}, errors.New("error decoding block entry")
 	}
-	d, err := decodeDot(v[1:])
-	return blockKind(v[0]), d, err
+	st, rest, err := uvarints(v[1:], 2)
+	if err != nil {
+		return block{}, errors.New("error decoding block entry")
+	}
+	d, err := decodeDot(rest)
+	return block{kind: blockKind(v[0]), dot: d, at: st[0], ttl: st[1]}, err
+}
+
+// encodeLink is the value of a missing parent or a retry mark: the block's
+// stamps, then its CID.
+func encodeLink(l link) []byte {
+	return append(encodeStamps(l.at, l.ttl), l.cid.Bytes()...)
+}
+
+func decodeLink(d dot, v []byte) (link, error) {
+	st, rest, err := uvarints(v, 2)
+	if err != nil {
+		return link{}, errors.New("error decoding link")
+	}
+	c, err := cid.Cast(rest)
+	if err != nil {
+		return link{}, err
+	}
+	return link{cid: c, dot: d, at: st[0], ttl: st[1]}, nil
+}
+
+func encodeEntry(k *known) []byte {
+	b := binary.AppendUvarint(nil, k.spans[0].lo)
+	b = binary.AppendUvarint(b, k.spans[0].hi)
+	b = binary.AppendUvarint(b, k.changed)
+	return binary.AppendUvarint(b, k.expires)
 }
 
 func (store *Datastore) loadContext(ctx context.Context) (*causalContext, error) {
 	c := newCausalContext()
-	vp := store.namespace.ChildString(contextNs).ChildString("v")
+	vp := store.vectorPrefix()
 	err := scanStore(ctx, store.store, vp, func(k string, v []byte) error {
 		seg := strings.TrimPrefix(k, vp.String()+"/")
 		replica, err := segEncoding.DecodeString(strings.TrimPrefix(seg, "r"))
 		if err != nil {
 			return err
 		}
-		counter, n := binary.Uvarint(v)
-		if n <= 0 {
+		f, _, err := uvarints(v, 4)
+		if err != nil || f[1] <= f[0] {
 			return errors.New("error decoding vector entry")
 		}
-		c.vector[string(replica)] = counter
+		c.inc[string(replica)] = &known{spans: []span{{lo: f[0], hi: f[1]}}, changed: f[2], expires: f[3]}
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	dp := store.namespace.ChildString(contextNs).ChildString("d")
+	dp := store.cloudPrefix()
 	err = scanStore(ctx, store.store, dp, func(k string, v []byte) error {
 		d, err := parseDotSegment(strings.TrimPrefix(k, dp.String()+"/"))
 		if err != nil {
 			return err
 		}
-		prev, n := binary.Uvarint(v)
+		lo, n := binary.Uvarint(v)
 		if n <= 0 {
 			return errors.New("error decoding cloud entry")
 		}
-		if c.cloud[d.replica] == nil {
-			c.cloud[d.replica] = map[uint64]uint64{}
+		if kn := c.inc[d.replica]; kn != nil {
+			kn.insert(span{lo: lo, hi: d.counter})
 		}
-		c.cloud[d.replica][d.counter] = prev
 		return nil
 	})
 	return c, err
 }
 
-// stageContext writes the difference between two contexts.
+// stageContext writes the difference between two contexts, forgotten
+// incarnations included.
 func (store *Datastore) stageContext(t *txn, old, cur *causalContext) {
-	for r, v := range cur.vector {
-		if old.vector[r] != v {
-			t.put(store.vectorKey(r), binary.AppendUvarint(nil, v))
-		}
-	}
-	for r, cl := range old.cloud {
-		for k := range cl {
-			if _, ok := cur.cloud[r][k]; !ok {
-				t.del(store.cloudKey(dot{replica: r, counter: k}))
+	for r, o := range old.inc {
+		if cur.inc[r] == nil {
+			t.del(store.vectorKey(r))
+			for _, s := range o.spans[1:] {
+				t.del(store.cloudKey(r, s.hi))
 			}
 		}
 	}
-	for r, cl := range cur.cloud {
-		for k, p := range cl {
-			if _, ok := old.cloud[r][k]; !ok {
-				t.put(store.cloudKey(dot{replica: r, counter: k}), binary.AppendUvarint(nil, p))
+	for r, k := range cur.inc {
+		o := old.inc[r]
+		if o == nil || o.spans[0] != k.spans[0] || o.changed != k.changed || o.expires != k.expires {
+			t.put(store.vectorKey(r), encodeEntry(k))
+		}
+		was := map[uint64]uint64{}
+		if o != nil {
+			for _, s := range o.spans[1:] {
+				was[s.hi] = s.lo
 			}
+		}
+		for _, s := range k.spans[1:] {
+			if lo, ok := was[s.hi]; !ok || lo != s.lo {
+				t.put(store.cloudKey(r, s.hi), binary.AppendUvarint(nil, s.lo))
+			}
+			delete(was, s.hi)
+		}
+		for hi := range was {
+			t.del(store.cloudKey(r, hi))
 		}
 	}
 }
@@ -179,52 +238,65 @@ func (m *merging) hasElem(ctx context.Context, key string, d dot) (bool, error) 
 	return m.t.has(ctx, m.store.set.elemKey(key, d))
 }
 
-func (m *merging) addElem(ctx context.Context, e element) {
-	m.t.put(m.store.set.elemKey(e.key, e.dot), encodeMarker(e.priority, e.value))
+func (m *merging) addElem(e element) {
+	m.t.put(m.store.set.elemKey(e.key, e.dot), encodeMarker(e))
 	m.touch(e.key)
 	m.live++
 }
 
-func (m *merging) removeElem(key string, d dot) {
+// removeElem takes (key, d) out if it is here, and reports whether it was.
+func (m *merging) removeElem(ctx context.Context, key string, d dot) (bool, error) {
+	here, err := m.hasElem(ctx, key, d)
+	if err != nil || !here {
+		return false, err
+	}
 	m.t.del(m.store.set.elemKey(key, d))
 	m.touch(key)
 	m.live--
+	return true, nil
 }
 
-// remove applies a tombstone for (key, target): it takes the element out if
-// it is here, forgets it if the context already covers its dot, and otherwise
-// keeps it pending so the element is refused when it arrives.
-func (m *merging) remove(ctx context.Context, key string, target dot) error {
-	here, err := m.hasElem(ctx, key, target)
-	if err != nil {
+// remove applies a tombstone. The element goes if it is here. If the context
+// covers its dot, the context is what refutes any later copy of it; if not,
+// whether the element was here or not, a pending removal does, for as long as
+// the removal is needed: a copy may still be on its way, or held by a replica
+// whose snapshot has not reached this one yet.
+func (m *merging) remove(ctx context.Context, r removal) error {
+	if _, err := m.removeElem(ctx, r.key, r.dot); err != nil {
 		return err
 	}
-	switch {
-	case here:
-		m.removeElem(key, target)
-	case m.cc.covers(target):
-	default:
-		m.t.put(m.store.set.pendingKey(key, target), nil)
+	if m.cc.covers(r.dot) {
+		m.cc.touch(r.dot.replica, r.at, r.expires())
+		return nil
 	}
+	pk := m.store.set.pendingKey(r.key, r.dot)
+	if v, err := m.t.get(ctx, pk); err == nil {
+		at, ttl, err := decodeStamps(v)
+		if err != nil {
+			return err
+		}
+		if old := (removal{at: at, ttl: ttl}); old.expires() > r.expires() || (old.expires() == r.expires() && old.at >= r.at) {
+			return nil
+		}
+	} else if !errors.Is(err, ds.ErrNotFound) {
+		return err
+	}
+	m.t.put(pk, encodeStamps(r.at, r.ttl))
 	return nil
 }
 
-// admit adds an element unless the context says it was removed.
+// admit adds an element unless local, the context before this merge, covers
+// it and it is not here (it was removed), or a removal of it is pending.
 func (m *merging) admit(ctx context.Context, e element, local *causalContext) error {
 	here, err := m.hasElem(ctx, e.key, e.dot)
 	if err != nil || here || local.covers(e.dot) {
 		return err
 	}
-	pk := m.store.set.pendingKey(e.key, e.dot)
-	pending, err := m.t.has(ctx, pk)
-	if err != nil {
+	pending, err := m.t.has(ctx, m.store.set.pendingKey(e.key, e.dot))
+	if err != nil || pending {
 		return err
 	}
-	if pending {
-		m.t.del(pk)
-		return nil
-	}
-	m.addElem(ctx, e)
+	m.addElem(e)
 	return nil
 }
 
@@ -237,15 +309,15 @@ func (m *merging) link(ctx context.Context, parents []*pb.Parent) ([]link, error
 		if err != nil {
 			return nil, fmt.Errorf("bad parent cid: %w", err)
 		}
-		d := dotFromPB(p.GetDot())
+		l := link{cid: c, dot: dotFromPB(p.GetDot()), at: p.GetAt(), ttl: p.GetTtl()}
 		if _, isHead := m.store.heads.Get(c); isHead {
 			m.heads.removeHead(c)
 		}
-		if m.cc.covers(d) {
+		if m.cc.covers(l.dot) {
 			continue
 		}
-		m.t.put(m.store.missingKey(d), c.Bytes())
-		walk = append(walk, link{cid: c, dot: d})
+		m.t.put(m.store.missingKey(l.dot), encodeLink(l))
+		walk = append(walk, l)
 	}
 	return walk, nil
 }
@@ -258,16 +330,16 @@ func (m *merging) linked(ctx context.Context, d dot) (bool, error) {
 
 // settleBlock makes the merged block a head unless a merged block already
 // links it, and indexes it for purging.
-func (m *merging) settleBlock(c cid.Cid, d dot, height uint64, kind blockKind, linked bool) {
-	m.t.del(m.store.missingKey(d))
+func (m *merging) settleBlock(c cid.Cid, b block, height uint64, linked bool) {
+	m.t.del(m.store.missingKey(b.dot))
 	if !linked {
-		m.heads.addHead(Head{Cid: c, Height: height, Dot: d})
+		m.heads.addHead(Head{Cid: c, Height: height, Dot: b.dot, At: b.at, TTL: b.ttl})
 	}
-	m.indexBlock(c, kind, d)
+	m.indexBlock(c, b)
 }
 
-func (m *merging) indexBlock(c cid.Cid, kind blockKind, d dot) {
-	m.t.put(m.store.blockKey(c), encodeBlock(kind, d))
+func (m *merging) indexBlock(c cid.Cid, b block) {
+	m.t.put(m.store.blockKey(c), encodeBlock(b))
 	m.blocks++
 }
 
@@ -288,6 +360,15 @@ func (m *merging) commit(ctx context.Context) error {
 	return nil
 }
 
+// tombstoneOf reads a tombstone; one written without its own time takes the
+// delta's.
+func tombstoneOf(e *pb.Element, at uint64) removal {
+	if e.GetAt() != 0 {
+		at = e.GetAt()
+	}
+	return removal{key: e.GetKey(), dot: dotFromPB(e.GetDot()), at: at, ttl: e.GetTtl()}
+}
+
 // mergeDelta merges a plain delta and returns the parents to walk. The caller
 // holds store.mu.
 func (store *Datastore) mergeDelta(ctx context.Context, c cid.Cid, delta *pb.Delta) ([]link, error) {
@@ -298,23 +379,24 @@ func (store *Datastore) mergeDelta(ctx context.Context, c cid.Cid, delta *pb.Del
 	if store.cc.covers(d) {
 		return nil, nil
 	}
+	at, ttl := delta.GetAt(), delta.GetTtl()
 	m := store.beginMerge()
 	linked, err := m.linked(ctx, d)
 	if err != nil {
 		return nil, err
 	}
 	for _, tomb := range delta.GetTombstones() {
-		if err := m.remove(ctx, tomb.GetKey(), dotFromPB(tomb.GetDot())); err != nil {
+		if err := m.remove(ctx, tombstoneOf(tomb, at)); err != nil {
 			return nil, err
 		}
 	}
 	for _, e := range delta.GetElements() {
-		el := element{key: e.GetKey(), dot: d, priority: delta.GetPriority(), value: e.GetValue()}
+		el := element{key: e.GetKey(), dot: d, priority: delta.GetPriority(), value: e.GetValue(), at: at, ttl: ttl}
 		if err := m.admit(ctx, el, store.cc); err != nil {
 			return nil, err
 		}
 	}
-	m.cc.add(d, delta.GetPrev())
+	m.cc.add(d, delta.GetPrev(), at, at+ttl)
 	if err := m.dropPending(ctx, d); err != nil {
 		return nil, err
 	}
@@ -322,7 +404,7 @@ func (store *Datastore) mergeDelta(ctx context.Context, c cid.Cid, delta *pb.Del
 	if err != nil {
 		return nil, err
 	}
-	m.settleBlock(c, d, delta.GetPriority(), kindDelta, linked)
+	m.settleBlock(c, block{kind: kindDelta, dot: d, at: at, ttl: ttl}, delta.GetPriority(), linked)
 	return walk, m.commit(ctx)
 }
 
@@ -334,9 +416,32 @@ func (m *merging) dropPending(ctx context.Context, d dot) error {
 		return err
 	}
 	for _, e := range entries {
-		m.t.del(ds.RawKey(e.key))
+		if err := m.settlePending(e); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+// settlePending forgets a pending removal whose dot the context now covers.
+// What it knew passes to the context, so an incarnation's stamps are the same
+// whether a removal of one of its dots arrived before the dot or after it.
+func (m *merging) settlePending(e entry) error {
+	r, err := m.store.set.parsePending(e.key, e.value)
+	if err != nil {
+		return err
+	}
+	m.cc.touch(r.dot.replica, r.at, r.expires())
+	m.t.del(ds.RawKey(e.key))
+	return nil
+}
+
+// inGap reports whether c knows d's incarnation above d's counter yet does
+// not cover d: a state cannot hold such an element, since an element arrives
+// with its dot.
+func (c *causalContext) inGap(d dot) bool {
+	k := c.inc[d.replica]
+	return k != nil && d.counter > k.spans[0].lo && !k.covers(d.counter)
 }
 
 // mergeSnapshot joins a snapshot's state, root and chunks, as one merge. The
@@ -359,9 +464,9 @@ func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.D
 
 	inSnapshot := make(map[string]struct{}, len(elems))
 	for _, e := range elems {
-		el := element{key: e.GetKey(), dot: dotFromPB(e.GetDot()), priority: e.GetPriority(), value: e.GetValue()}
-		if el.dot.isZero() || !theirs.covers(el.dot) {
-			return nil, nil, fmt.Errorf("snapshot %s holds an element its context does not cover", c)
+		el := element{key: e.GetKey(), dot: dotFromPB(e.GetDot()), priority: e.GetPriority(), value: e.GetValue(), at: e.GetAt(), ttl: e.GetTtl()}
+		if el.dot.isZero() || theirs.inGap(el.dot) {
+			return nil, nil, fmt.Errorf("snapshot %s holds an element its context cannot have", c)
 		}
 		inSnapshot[m.store.set.elemKey(el.key, el.dot).String()] = struct{}{}
 		if err := m.admit(ctx, el, local); err != nil {
@@ -369,32 +474,32 @@ func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.D
 		}
 	}
 
-	// Ours that the snapshot covers and does not hold, it removed.
-	var gone []element
-	err = scanStore(ctx, store.store, store.set.elemsPrefix(), func(k string, v []byte) error {
-		if _, ok := inSnapshot[k]; ok {
-			return nil
-		}
-		el, err := store.set.parseElem(k, v)
-		if err != nil {
-			return err
-		}
-		if theirs.covers(el.dot) {
-			gone = append(gone, el)
-		}
-		return nil
-	})
+	// Ours that the snapshot covers and does not hold, it removed. An
+	// ancient element of ours is one it does not cover: it stays.
+	held, err := m.t.scan(ctx, store.set.elemsPrefix())
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, el := range gone {
-		m.removeElem(el.key, el.dot)
+	for _, e := range held {
+		if _, ok := inSnapshot[e.key]; ok {
+			continue
+		}
+		el, err := store.set.parseElem(e.key, e.value)
+		if err != nil {
+			return nil, nil, err
+		}
+		if theirs.covers(el.dot) {
+			if _, err := m.removeElem(ctx, el.key, el.dot); err != nil {
+				return nil, nil, err
+			}
+		}
 	}
 
 	m.cc.merge(theirs)
-	m.cc.add(d, root.GetPrev())
+	at, ttl := root.GetAt(), root.GetTtl()
+	m.cc.add(d, root.GetPrev(), at, at+ttl)
 	for _, tomb := range root.GetTombstones() {
-		if err := m.remove(ctx, tomb.GetKey(), dotFromPB(tomb.GetDot())); err != nil {
+		if err := m.remove(ctx, tombstoneOf(tomb, at)); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -413,9 +518,10 @@ func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.D
 			m.heads.removeHead(h.Cid)
 		}
 	}
-	m.settleBlock(c, d, root.GetPriority(), kindSnapshot, linked)
+	b := block{kind: kindSnapshot, dot: d, at: at, ttl: ttl}
+	m.settleBlock(c, b, root.GetPriority(), linked)
 	for _, ch := range chunks {
-		m.indexBlock(ch, kindChunk, d)
+		m.indexBlock(ch, block{kind: kindChunk, dot: d, at: at, ttl: ttl})
 	}
 	return walk, theirs, m.commit(ctx)
 }
@@ -428,12 +534,14 @@ func (m *merging) dropCovered(ctx context.Context) error {
 		return err
 	}
 	for _, e := range pending {
-		_, d, err := m.store.set.parsePending(e.key)
+		r, err := m.store.set.parsePending(e.key, e.value)
 		if err != nil {
 			return err
 		}
-		if m.cc.covers(d) {
-			m.t.del(ds.RawKey(e.key))
+		if m.cc.covers(r.dot) {
+			if err := m.settlePending(e); err != nil {
+				return err
+			}
 		}
 	}
 	missing, err := m.t.scan(ctx, m.store.missingPrefix())
@@ -461,11 +569,11 @@ func (store *Datastore) purge(ctx context.Context, covered *causalContext) (int,
 	var keys []ds.Key
 	prefix := store.blocksPrefix()
 	err := scanStore(ctx, store.store, prefix, func(k string, v []byte) error {
-		_, d, err := decodeBlock(v)
+		b, err := decodeBlock(v)
 		if err != nil {
 			return err
 		}
-		if !covered.covers(d) {
+		if !covered.covers(b.dot) {
 			return nil
 		}
 		c, err := cidOfBlockKey(prefix, k)
@@ -482,16 +590,21 @@ func (store *Datastore) purge(ctx context.Context, covered *causalContext) (int,
 	if err != nil || len(drop) == 0 {
 		return 0, err
 	}
+	return len(drop), store.dropBlocks(ctx, drop, keys)
+}
+
+// dropBlocks removes blocks and their index entries.
+func (store *Datastore) dropBlocks(ctx context.Context, drop []cid.Cid, keys []ds.Key) error {
 	if err := store.dagService.RemoveMany(ctx, drop); err != nil {
-		return 0, fmt.Errorf("error removing purged blocks: %w", err)
+		return fmt.Errorf("error removing purged blocks: %w", err)
 	}
 	t := newTxn(store.store)
 	for _, k := range keys {
 		t.del(k)
 	}
 	if err := t.commit(ctx); err != nil {
-		return 0, err
+		return err
 	}
 	store.blockCount -= len(drop)
-	return len(drop), nil
+	return nil
 }

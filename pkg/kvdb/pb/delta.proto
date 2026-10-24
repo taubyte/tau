@@ -3,32 +3,48 @@ package crdt.pb;
 
 option go_package = ".;pb";
 
-// A Dot names one delta: the incarnation that wrote it and that
-// incarnation's counter for it. An element's identity is (key, dot).
+// A Dot names one delta: the incarnation that wrote it and that incarnation's
+// counter for it. An element's identity is (key, dot).
 message Dot {
   bytes replica = 1;
   uint64 counter = 2;
 }
 
-// A Parent is one block a delta links, with that block's dot, so a reader
-// can tell a parent it already covers without fetching it.
+// A Parent is one block a delta links, with that block's dot and stamps, so a
+// reader can tell a parent it already covers, or one nobody holds any more,
+// without fetching it.
 message Parent {
   bytes cid = 1;
   Dot dot = 2;
+  uint64 at = 3;
+  uint64 ttl = 4;
 }
 
-// A CloudDot is a dot covered out of its author's order, with the author's
-// previous counter so the contiguous vector can absorb it once the gap fills.
-message CloudDot {
-  Dot dot = 1;
-  uint64 prev = 2;
+// An Entry is what a context knows of one incarnation: the counters in
+// (base, counter] are covered, changed is the latest authored time of
+// anything merged about it, and expires the latest time any of that is still
+// needed. Times are milliseconds since the epoch.
+message Entry {
+  bytes replica = 1;
+  uint64 base = 2;
+  uint64 counter = 3;
+  uint64 changed = 4;
+  uint64 expires = 5;
 }
 
-// A Context is a causal context: for each incarnation, the counter up to
-// which its chain is covered, plus the dots covered beyond a gap.
+// A Span is a run of an incarnation's counters covered out of order: (lo, hi].
+// The author's counters inside it that are not hi were never used.
+message Span {
+  bytes replica = 1;
+  uint64 lo = 2;
+  uint64 hi = 3;
+}
+
+// A Context is a causal context: an entry per incarnation still known, plus
+// the spans covered beyond a gap in an entry.
 message Context {
-  repeated Dot vector = 1;
-  repeated CloudDot cloud = 2;
+  repeated Entry vector = 1;
+  repeated Span cloud = 2;
 }
 
 message Delta {
@@ -51,6 +67,18 @@ message Delta {
   // chunks are the CIDs of the blocks holding the rest of a snapshot's
   // elements, fetched with it and merged as one.
   repeated bytes chunks = 12;
+  // at is when the author wrote this block, in milliseconds since the epoch:
+  // the later of its clock and the fleet time it had last heard.
+  uint64 at = 13;
+  // ttl is the author's retention when it wrote this block, in milliseconds:
+  // what the block teaches is kept until at + ttl, plus the margin.
+  uint64 ttl = 14;
+  // since is the fleet time the author had last heard: in a snapshot, how
+  // recent the state it carries is.
+  uint64 since = 15;
+  // horizon is the latest authored time of anything the author has
+  // forgotten because it expired.
+  uint64 horizon = 16;
 }
 
 message Element {
@@ -64,4 +92,9 @@ message Element {
   // dot is the element's dot in snapshots and the target's dot in
   // tombstones; a plain delta's elements take the delta's dot.
   Dot dot = 5;
+  // at and ttl are, for an element in a snapshot, the stamps of the delta
+  // that wrote it; for a tombstone, when the removal was written and how long
+  // it is needed, which is never less than its target is.
+  uint64 at = 6;
+  uint64 ttl = 7;
 }

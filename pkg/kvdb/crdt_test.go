@@ -830,6 +830,7 @@ func openTestStore(t testing.TB, name string, mapDs ds.Datastore, dagServ ipld.D
 	opts.Logger = &testLogger{name: name + ": ", l: DefaultOptions().Logger}
 	opts.RepairInterval = repair
 	opts.RebroadcastInterval = time.Hour // disable rebroadcast noise
+	opts.DeliveryBound = opts.DAGSyncerTimeout + opts.RebroadcastInterval
 	d, err := NewDatastore(mapDs, ds.NewKey("crdttest"), dagServ, &nullBroadcaster{}, opts)
 	if err != nil {
 		t.Fatal(err)

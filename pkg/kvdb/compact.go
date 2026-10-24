@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	cid "github.com/ipfs/go-cid"
+	ipld "github.com/ipfs/go-ipld-format"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
 	"google.golang.org/protobuf/proto"
 )
@@ -70,19 +71,19 @@ func (store *Datastore) compactLocked(ctx context.Context) (Head, *causalContext
 		if err != nil {
 			return err
 		}
-		elems = append(elems, &pb.Element{Key: el.key, Dot: el.dot.toPB(), Priority: el.priority, Value: el.value})
+		elems = append(elems, &pb.Element{Key: el.key, Dot: el.dot.toPB(), Priority: el.priority, Value: el.value, At: el.at, Ttl: el.ttl})
 		return nil
 	})
 	if err != nil {
 		return Head{}, nil, err
 	}
 	var pending []*pb.Element
-	err = scanStore(ctx, store.store, store.set.pendingPrefix(), func(k string, _ []byte) error {
-		key, d, err := store.set.parsePending(k)
+	err = scanStore(ctx, store.store, store.set.pendingPrefix(), func(k string, v []byte) error {
+		r, err := store.set.parsePending(k, v)
 		if err != nil {
 			return err
 		}
-		pending = append(pending, &pb.Element{Key: key, Dot: d.toPB()})
+		pending = append(pending, &pb.Element{Key: r.key, Dot: r.dot.toPB(), At: r.at, Ttl: r.ttl})
 		return nil
 	})
 	if err != nil {
@@ -96,12 +97,12 @@ func (store *Datastore) compactLocked(ctx context.Context) (Head, *causalContext
 		if err != nil {
 			return err
 		}
-		c, err := cid.Cast(v)
+		l, err := decodeLink(d, v)
 		if err != nil {
 			return err
 		}
-		if _, isHead := store.heads.Get(c); !isHead {
-			links = append(links, Head{Cid: c, Dot: d})
+		if _, isHead := store.heads.Get(l.cid); !isHead {
+			links = append(links, Head{Cid: l.cid, Dot: d, At: l.at, TTL: l.ttl})
 		}
 		return nil
 	})
@@ -110,7 +111,7 @@ func (store *Datastore) compactLocked(ctx context.Context) (Head, *causalContext
 	}
 
 	d, prev := store.nextDot()
-	root := &pb.Delta{
+	root := store.stamped(&pb.Delta{
 		Snapshot:   true,
 		Dot:        d.toPB(),
 		Prev:       prev,
@@ -118,19 +119,19 @@ func (store *Datastore) compactLocked(ctx context.Context) (Head, *causalContext
 		Parents:    parentsOf(links),
 		Context:    store.cc.toPB(),
 		Tombstones: pending,
-	}
+	})
 	rest := store.fillRoot(root, elems)
 
-	var blocks []blockAt
+	var nodes []ipld.Node
 	var chunkCids []cid.Cid
 	for _, part := range store.chunk(rest) {
 		// The chunk carries the snapshot's dot so that no two snapshots
 		// ever share a chunk block: the index holds one dot per block.
-		nd, err := makeNode(&pb.Delta{Elements: part, Dot: d.toPB()}, nil)
+		nd, err := makeNode(&pb.Delta{Elements: part, Dot: d.toPB(), At: root.At, Ttl: root.Ttl}, nil)
 		if err != nil {
 			return Head{}, nil, err
 		}
-		blocks = append(blocks, blockAt{nd, kindChunk})
+		nodes = append(nodes, nd)
 		chunkCids = append(chunkCids, nd.Cid())
 		root.Chunks = append(root.Chunks, nd.Cid().Bytes())
 	}
@@ -138,8 +139,8 @@ func (store *Datastore) compactLocked(ctx context.Context) (Head, *causalContext
 	if err != nil {
 		return Head{}, nil, err
 	}
-	blocks = append(blocks, blockAt{nd, kindSnapshot})
-	if err := store.writeBlocks(ctx, d, blocks...); err != nil {
+	nodes = append(nodes, nd)
+	if err := store.writeBlocks(ctx, block{kind: kindSnapshot, dot: d, at: root.At, ttl: root.Ttl}, nodes...); err != nil {
 		return Head{}, nil, err
 	}
 
@@ -148,7 +149,7 @@ func (store *Datastore) compactLocked(ctx context.Context) (Head, *causalContext
 		return Head{}, nil, fmt.Errorf("error merging snapshot: %w", err)
 	}
 	store.counter = d.counter
-	return Head{Cid: nd.Cid(), Height: root.Priority, Dot: d}, contextFromPB(root.Context), nil
+	return Head{Cid: nd.Cid(), Height: root.Priority, Dot: d, At: root.At, TTL: root.Ttl}, contextFromPB(root.Context), nil
 }
 
 // nothingToFold reports whether every block the store holds belongs to a
@@ -162,11 +163,11 @@ func (store *Datastore) nothingToFold(ctx context.Context, hs []Head) (bool, err
 	}
 	work := false
 	err := scanStore(ctx, store.store, store.blocksPrefix(), func(_ string, v []byte) error {
-		kind, d, err := decodeBlock(v)
+		b, err := decodeBlock(v)
 		if err != nil {
 			return err
 		}
-		if _, isHead := headDots[d]; kind == kindDelta || !isHead {
+		if _, isHead := headDots[b.dot]; b.kind == kindDelta || !isHead {
 			work = true
 		}
 		return nil

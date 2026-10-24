@@ -33,6 +33,12 @@ func TestOptionsVerify(t *testing.T) {
 		"batch size":  func(o *Options) { o.MaxBatchDeltaSize = 0 },
 		"repair":      func(o *Options) { o.RepairInterval = -1 },
 		"batch delay": func(o *Options) { o.BroadcastBatchDelay = -1 },
+		"clock":       func(o *Options) { o.Clock = nil },
+		"uptime":      func(o *Options) { o.Uptime = nil },
+		"delivery":    func(o *Options) { o.DeliveryBound = o.DAGSyncerTimeout },
+		"skew":        func(o *Options) { o.ClockSkew = -1 },
+		"margin":      func(o *Options) { o.Margin = o.minMargin() - 1 },
+		"retention":   func(o *Options) { o.Retention = retentionFactor*o.margin() - 1 },
 	} {
 		o := DefaultOptions()
 		mutate(o)
@@ -45,6 +51,12 @@ func TestOptionsVerify(t *testing.T) {
 	}
 	if err := DefaultOptions().verify(); err != nil {
 		t.Fatal(err)
+	}
+	o := DefaultOptions()
+	o.Margin = 2 * o.minMargin()
+	o.Retention = retentionFactor * o.Margin
+	if err := o.verify(); err != nil {
+		t.Fatalf("a margin above the least and a retention of ten margins: %s", err)
 	}
 }
 
@@ -68,14 +80,26 @@ func TestDecodersRefuseGarbage(t *testing.T) {
 	if _, err := decodeHead(cid.Undef, []byte{1}); err == nil {
 		t.Error("decodeHead accepted a height without a dot")
 	}
-	if _, _, err := decodeBlock([]byte{0}); err == nil {
+	if _, err := decodeBlock([]byte{0}); err == nil {
 		t.Error("decodeBlock accepted a kind without a dot")
 	}
-	if _, _, err := decodeBlock([]byte{0, 0x80}); err == nil {
+	if _, err := decodeBlock([]byte{0, 0x80}); err == nil {
+		t.Error("decodeBlock accepted broken stamps")
+	}
+	if _, err := decodeBlock([]byte{0, 1, 1, 0x80}); err == nil {
 		t.Error("decodeBlock accepted a broken dot")
 	}
-	if _, _, err := decodeMarker(nil); err == nil {
+	if _, err := decodeMarker(nil); err == nil {
 		t.Error("decodeMarker accepted nothing")
+	}
+	if _, _, err := decodeStamps([]byte{1}); err == nil {
+		t.Error("decodeStamps accepted one stamp")
+	}
+	if _, err := decodeLink(dot{}, []byte{1}); err == nil {
+		t.Error("decodeLink accepted one stamp")
+	}
+	if _, err := decodeLink(dot{}, []byte{1, 1, 0xff}); err == nil {
+		t.Error("decodeLink accepted a broken cid")
 	}
 	if _, err := decodePriority(nil); err == nil {
 		t.Error("decodePriority accepted nothing")
@@ -97,9 +121,12 @@ func TestDecodersRefuseGarbage(t *testing.T) {
 		t.Error("parseElem accepted an element without a priority")
 	}
 	for _, k := range []string{"/s/t/nokey", "/s/t/" + (dot{replica: "r", counter: 1}).segment() + "/x"} {
-		if _, _, err := s.parsePending(k); err == nil {
+		if _, err := s.parsePending(k, []byte{1, 1}); err == nil {
 			t.Errorf("parsePending(%q) accepted", k)
 		}
+	}
+	if _, err := s.parsePending("/s/t/"+(dot{replica: "r", counter: 1}).segment()+"/"+keySegment("/a"), nil); err == nil {
+		t.Error("parsePending accepted a removal without stamps")
 	}
 
 	if _, err := extractDelta(&fakeRawNode{}); err == nil {
@@ -125,26 +152,71 @@ type fakeRawNode struct{ ipld.Node }
 
 func TestContextAbsorbsAcrossGaps(t *testing.T) {
 	c := newCausalContext()
-	c.add(dot{replica: "a", counter: 3}, 2)
-	c.add(dot{replica: "a", counter: 5}, 3)
-	if c.vector["a"] != 0 || len(c.cloud["a"]) != 2 {
-		t.Fatalf("out-of-order dots should wait in the cloud: %v %v", c.vector, c.cloud)
+	a := func(n uint64) dot { return dot{replica: "a", counter: n} }
+	spans := func(c *causalContext, r string) []span { return c.inc[r].spans }
+
+	c.add(a(5), 4, 100, 200)
+	if got := spans(c, "a"); len(got) != 1 || got[0] != (span{4, 5}) || !c.covers(a(5)) || c.covers(a(4)) {
+		t.Fatalf("an incarnation first seen at 5 is known from its prev, 4: %v", got)
 	}
-	c.add(dot{replica: "a", counter: 2}, 0)
-	if c.vector["a"] != 5 || len(c.cloud) != 0 {
-		t.Fatalf("the chain 2,3,5 should be absorbed: %v %v", c.vector, c.cloud)
+	c.add(a(9), 7, 50, 300)
+	if got := spans(c, "a"); len(got) != 2 || !c.covers(a(9)) || c.covers(a(7)) || c.covers(a(6)) {
+		t.Fatalf("a dot past a gap waits in the cloud: %v", got)
 	}
+	if !c.covers(a(8)) {
+		t.Fatal("8 is a counter the author skipped after 7: covering it is harmless, and the span does")
+	}
+	if !c.inGap(a(6)) || c.inGap(a(4)) || c.inGap(a(9)) {
+		t.Fatal("6 is in the gap; 4 is below the base and 9 is covered")
+	}
+	c.add(a(7), 5, 10, 10)
+	if got := spans(c, "a"); len(got) != 1 || got[0] != (span{4, 9}) {
+		t.Fatalf("the chain 5,7,9 should join into one entry: %v", got)
+	}
+	c.add(a(4), 0, 10, 10)
+	if got := spans(c, "a"); len(got) != 1 || got[0] != (span{0, 9}) || c.counter("a") != 9 {
+		t.Fatalf("a dot below the base extends the entry down: %v", got)
+	}
+	if k := c.inc["a"]; k.changed != 100 || k.expires != 300 {
+		t.Fatalf("stamps join by max: changed %d expires %d", k.changed, k.expires)
+	}
+	c.add(a(3), 2, 1, 1)
+	if got := spans(c, "a"); len(got) != 1 || got[0] != (span{0, 9}) {
+		t.Fatalf("a covered dot changes nothing: %v", got)
+	}
+	c.touch("a", 400, 500)
+	c.touch("zz", 400, 500)
+	if k := c.inc["a"]; k.changed != 400 || k.expires != 500 || c.knows("zz") {
+		t.Fatal("touch moves a known incarnation's stamps and opens nothing")
+	}
+
 	o := newCausalContext()
-	o.add(dot{replica: "a", counter: 9}, 7)
-	o.add(dot{replica: "b", counter: 1}, 0)
+	o.add(a(20), 15, 1, 1)
+	o.add(dot{replica: "b", counter: 1}, 0, 2, 2)
 	c.merge(o)
 	back := contextFromPB(c.toPB())
-	if back.vector["a"] != 5 || back.cloud["a"][9] != 7 || back.vector["b"] != 1 {
-		t.Fatalf("context did not round-trip: %v %v", back.vector, back.cloud)
+	if got := spans(back, "a"); len(got) != 2 || got[0] != (span{0, 9}) || got[1] != (span{15, 20}) || back.counter("b") != 1 {
+		t.Fatalf("context did not round-trip: %v", back.toPB())
 	}
-	withZero := contextFromPB(&pb.Context{Cloud: []*pb.CloudDot{{}}})
-	if len(withZero.cloud) != 0 {
-		t.Fatal("a cloud entry without a dot was kept")
+	if back.counter("nobody") != 0 {
+		t.Fatal("an unknown incarnation has no counter")
+	}
+	// The join keeps the lowest span as the entry whichever side held it.
+	x, y := newCausalContext(), newCausalContext()
+	x.add(a(12), 10, 1, 1)
+	y.add(a(2), 0, 1, 1)
+	x.merge(y)
+	y.add(a(12), 10, 1, 1)
+	if x.toPB().String() != y.toPB().String() {
+		t.Fatalf("the same coverage in two orders reads differently:\n%v\n%v", x.toPB(), y.toPB())
+	}
+
+	odd := contextFromPB(&pb.Context{
+		Vector: []*pb.Entry{{Replica: []byte("e"), Base: 3, Counter: 3}},
+		Cloud:  []*pb.Span{{Replica: []byte("nobody"), Lo: 1, Hi: 2}},
+	})
+	if len(odd.inc) != 0 {
+		t.Fatalf("an empty entry and a span with no entry were kept: %v", odd.toPB())
 	}
 }
 
@@ -407,9 +479,12 @@ func TestMergeRefusesMalformedBlocks(t *testing.T) {
 		t.Error("a snapshot without a dot merged")
 	}
 	d := dot{replica: "x", counter: 1}
-	if _, _, err := r.mergeSnapshot(ctx, cid.Undef, &pb.Delta{Snapshot: true, Dot: d.toPB()}, nil,
-		[]*pb.Element{{Key: "/k", Dot: dot{replica: "y", counter: 1}.toPB()}}); err == nil {
-		t.Error("a snapshot holding an element its context does not cover merged")
+	// Its context knows y up to 1 and covers nothing past it, so it cannot
+	// hold y's third delta: an element arrives with its dot.
+	knowsY := &pb.Context{Vector: []*pb.Entry{{Replica: []byte("y"), Counter: 1}}}
+	if _, _, err := r.mergeSnapshot(ctx, cid.Undef, &pb.Delta{Snapshot: true, Dot: d.toPB(), Context: knowsY}, nil,
+		[]*pb.Element{{Key: "/k", Dot: dot{replica: "y", counter: 3}.toPB()}}); err == nil {
+		t.Error("a snapshot holding an element in a gap of its context merged")
 	}
 	if _, err := r.mergeDelta(ctx, cid.Undef, &pb.Delta{Dot: d.toPB(), Parents: []*pb.Parent{{Cid: []byte{1}}}}); err == nil {
 		t.Error("a delta with a broken parent merged")

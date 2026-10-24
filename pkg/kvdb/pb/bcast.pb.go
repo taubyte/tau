@@ -22,8 +22,19 @@ const (
 )
 
 type CRDTBroadcast struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Heads         []*Head                `protobuf:"bytes,1,rep,name=Heads,proto3" json:"Heads,omitempty"` // A list of heads
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Heads []*Head                `protobuf:"bytes,1,rep,name=Heads,proto3" json:"Heads,omitempty"` // A list of heads
+	// since is the fleet time the sender had last heard; while it is
+	// rejoining, the fleet time it had heard before its gap.
+	Since uint64 `protobuf:"varint,2,opt,name=since,proto3" json:"since,omitempty"`
+	// now is the sender's clock.
+	Now uint64 `protobuf:"varint,3,opt,name=now,proto3" json:"now,omitempty"`
+	// rejoining is set while the sender waits to be judged after a gap.
+	Rejoining bool `protobuf:"varint,4,opt,name=rejoining,proto3" json:"rejoining,omitempty"`
+	// incarnation is the sender's current incarnation.
+	Incarnation []byte `protobuf:"bytes,5,opt,name=incarnation,proto3" json:"incarnation,omitempty"`
+	// verdict answers a rejoining replica.
+	Verdict       *Verdict `protobuf:"bytes,6,opt,name=verdict,proto3" json:"verdict,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -65,17 +76,116 @@ func (x *CRDTBroadcast) GetHeads() []*Head {
 	return nil
 }
 
+func (x *CRDTBroadcast) GetSince() uint64 {
+	if x != nil {
+		return x.Since
+	}
+	return 0
+}
+
+func (x *CRDTBroadcast) GetNow() uint64 {
+	if x != nil {
+		return x.Now
+	}
+	return 0
+}
+
+func (x *CRDTBroadcast) GetRejoining() bool {
+	if x != nil {
+		return x.Rejoining
+	}
+	return false
+}
+
+func (x *CRDTBroadcast) GetIncarnation() []byte {
+	if x != nil {
+		return x.Incarnation
+	}
+	return nil
+}
+
+func (x *CRDTBroadcast) GetVerdict() *Verdict {
+	if x != nil {
+		return x.Verdict
+	}
+	return nil
+}
+
+// A Verdict tells one rejoining incarnation whether the sender can still
+// refute what it may carry (ok) or not (rebase), and the sender's since.
+type Verdict struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	To            []byte                 `protobuf:"bytes,1,opt,name=to,proto3" json:"to,omitempty"`
+	Rebase        bool                   `protobuf:"varint,2,opt,name=rebase,proto3" json:"rebase,omitempty"`
+	Since         uint64                 `protobuf:"varint,3,opt,name=since,proto3" json:"since,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Verdict) Reset() {
+	*x = Verdict{}
+	mi := &file_bcast_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Verdict) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Verdict) ProtoMessage() {}
+
+func (x *Verdict) ProtoReflect() protoreflect.Message {
+	mi := &file_bcast_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Verdict.ProtoReflect.Descriptor instead.
+func (*Verdict) Descriptor() ([]byte, []int) {
+	return file_bcast_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *Verdict) GetTo() []byte {
+	if x != nil {
+		return x.To
+	}
+	return nil
+}
+
+func (x *Verdict) GetRebase() bool {
+	if x != nil {
+		return x.Rebase
+	}
+	return false
+}
+
+func (x *Verdict) GetSince() uint64 {
+	if x != nil {
+		return x.Since
+	}
+	return 0
+}
+
 type Head struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Cid           []byte                 `protobuf:"bytes,1,opt,name=Cid,proto3" json:"Cid,omitempty"`
 	Dot           *Dot                   `protobuf:"bytes,3,opt,name=dot,proto3" json:"dot,omitempty"`
+	At            uint64                 `protobuf:"varint,4,opt,name=at,proto3" json:"at,omitempty"`
+	Ttl           uint64                 `protobuf:"varint,5,opt,name=ttl,proto3" json:"ttl,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Head) Reset() {
 	*x = Head{}
-	mi := &file_bcast_proto_msgTypes[1]
+	mi := &file_bcast_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -87,7 +197,7 @@ func (x *Head) String() string {
 func (*Head) ProtoMessage() {}
 
 func (x *Head) ProtoReflect() protoreflect.Message {
-	mi := &file_bcast_proto_msgTypes[1]
+	mi := &file_bcast_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -100,7 +210,7 @@ func (x *Head) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Head.ProtoReflect.Descriptor instead.
 func (*Head) Descriptor() ([]byte, []int) {
-	return file_bcast_proto_rawDescGZIP(), []int{1}
+	return file_bcast_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Head) GetCid() []byte {
@@ -117,16 +227,41 @@ func (x *Head) GetDot() *Dot {
 	return nil
 }
 
+func (x *Head) GetAt() uint64 {
+	if x != nil {
+		return x.At
+	}
+	return 0
+}
+
+func (x *Head) GetTtl() uint64 {
+	if x != nil {
+		return x.Ttl
+	}
+	return 0
+}
+
 var File_bcast_proto protoreflect.FileDescriptor
 
 const file_bcast_proto_rawDesc = "" +
 	"\n" +
-	"\vbcast.proto\x12\acrdt.pb\x1a\vdelta.proto\"4\n" +
+	"\vbcast.proto\x12\acrdt.pb\x1a\vdelta.proto\"\xc8\x01\n" +
 	"\rCRDTBroadcast\x12#\n" +
-	"\x05Heads\x18\x01 \x03(\v2\r.crdt.pb.HeadR\x05Heads\"G\n" +
+	"\x05Heads\x18\x01 \x03(\v2\r.crdt.pb.HeadR\x05Heads\x12\x14\n" +
+	"\x05since\x18\x02 \x01(\x04R\x05since\x12\x10\n" +
+	"\x03now\x18\x03 \x01(\x04R\x03now\x12\x1c\n" +
+	"\trejoining\x18\x04 \x01(\bR\trejoining\x12 \n" +
+	"\vincarnation\x18\x05 \x01(\fR\vincarnation\x12*\n" +
+	"\averdict\x18\x06 \x01(\v2\x10.crdt.pb.VerdictR\averdict\"G\n" +
+	"\aVerdict\x12\x0e\n" +
+	"\x02to\x18\x01 \x01(\fR\x02to\x12\x16\n" +
+	"\x06rebase\x18\x02 \x01(\bR\x06rebase\x12\x14\n" +
+	"\x05since\x18\x03 \x01(\x04R\x05since\"i\n" +
 	"\x04Head\x12\x10\n" +
 	"\x03Cid\x18\x01 \x01(\fR\x03Cid\x12\x1e\n" +
-	"\x03dot\x18\x03 \x01(\v2\f.crdt.pb.DotR\x03dotJ\x04\b\x02\x10\x03R\aDagNameB\x06Z\x04.;pbb\x06proto3"
+	"\x03dot\x18\x03 \x01(\v2\f.crdt.pb.DotR\x03dot\x12\x0e\n" +
+	"\x02at\x18\x04 \x01(\x04R\x02at\x12\x10\n" +
+	"\x03ttl\x18\x05 \x01(\x04R\x03ttlJ\x04\b\x02\x10\x03R\aDagNameB\x06Z\x04.;pbb\x06proto3"
 
 var (
 	file_bcast_proto_rawDescOnce sync.Once
@@ -140,20 +275,22 @@ func file_bcast_proto_rawDescGZIP() []byte {
 	return file_bcast_proto_rawDescData
 }
 
-var file_bcast_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_bcast_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_bcast_proto_goTypes = []any{
 	(*CRDTBroadcast)(nil), // 0: crdt.pb.CRDTBroadcast
-	(*Head)(nil),          // 1: crdt.pb.Head
-	(*Dot)(nil),           // 2: crdt.pb.Dot
+	(*Verdict)(nil),       // 1: crdt.pb.Verdict
+	(*Head)(nil),          // 2: crdt.pb.Head
+	(*Dot)(nil),           // 3: crdt.pb.Dot
 }
 var file_bcast_proto_depIdxs = []int32{
-	1, // 0: crdt.pb.CRDTBroadcast.Heads:type_name -> crdt.pb.Head
-	2, // 1: crdt.pb.Head.dot:type_name -> crdt.pb.Dot
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	2, // 0: crdt.pb.CRDTBroadcast.Heads:type_name -> crdt.pb.Head
+	1, // 1: crdt.pb.CRDTBroadcast.verdict:type_name -> crdt.pb.Verdict
+	3, // 2: crdt.pb.Head.dot:type_name -> crdt.pb.Dot
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_bcast_proto_init() }
@@ -168,7 +305,7 @@ func file_bcast_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_bcast_proto_rawDesc), len(file_bcast_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

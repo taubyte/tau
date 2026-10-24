@@ -57,7 +57,7 @@ const (
 // formatVersion is the on-disk format, stored as formatVersion+1 the way every
 // earlier format stored its own. A store holding any other version is emptied
 // on open and refills from its peers.
-const formatVersion uint64 = 3
+const formatVersion uint64 = 4
 
 // Common errors.
 var (
@@ -134,6 +134,58 @@ type Options struct {
 	// ReplicaID prefixes every incarnation id this store draws, normally
 	// the node's peer id. Default: none.
 	ReplicaID []byte
+
+	// Retention is T: how long what a delta teaches, a removal above all,
+	// is kept after it was written, and so how long a replica can be away
+	// and still rejoin with what it holds. Every delta carries its
+	// author's T, so a change of T applies to what is written from then on
+	// and replicas need not agree on it at any one moment (see
+	// SetRetention). It must be many times the Margin. Default: 30 days.
+	Retention time.Duration
+	// DeliveryBound is D: a delta written by a replica in contact reaches
+	// every replica in contact within it, walk and merge included. It is
+	// at least DAGSyncerTimeout plus RebroadcastInterval. Default: 10m.
+	DeliveryBound time.Duration
+	// ClockSkew is S, how far apart the clocks of correct replicas may be.
+	// A block stamped further ahead of this replica's clock waits until
+	// the clock reaches it. Default: 1m.
+	ClockSkew time.Duration
+	// Margin is m, how long after a judge stops vouching for what may
+	// still need something every replica in contact still holds it. At
+	// least 3D + 2S + 2*RebroadcastInterval; 0 means exactly that.
+	Margin time.Duration
+	// Clock is the wall clock every stamp, expiry and judgement reads.
+	// Default: time.Now.
+	Clock func() time.Time
+	// Uptime is the time since this machine booted, suspend included. It
+	// times this process's own intervals, never anything compared across
+	// replicas. Default: the boot clock.
+	Uptime func() time.Duration
+}
+
+// retentionFactor is how many margins T must be at least: "many times".
+const retentionFactor = 10
+
+// minMargin is the least margin the proofs allow for D, S and the
+// rebroadcast interval: a judge that answers on the last heartbeat it heard,
+// the answer's delivery, the walk that follows, and the skew both ways.
+func (opts *Options) minMargin() time.Duration {
+	return 3*opts.DeliveryBound + 2*opts.ClockSkew + 2*opts.RebroadcastInterval
+}
+
+func (opts *Options) margin() time.Duration {
+	if opts.Margin == 0 {
+		return opts.minMargin()
+	}
+	return opts.Margin
+}
+
+// checkRetention refuses a T that is not many times the margin.
+func (opts *Options) checkRetention(t time.Duration) error {
+	if t < retentionFactor*opts.margin() {
+		return fmt.Errorf("retention %s is under %d margins of %s", t, retentionFactor, opts.margin())
+	}
+	return nil
 }
 
 func (opts *Options) verify() error {
@@ -164,7 +216,19 @@ func (opts *Options) verify() error {
 	if opts.BroadcastBatchDelay < 0 {
 		return errors.New("invalid BroadcastBatchDelay")
 	}
-	return nil
+	if opts.Clock == nil || opts.Uptime == nil {
+		return errors.New("the clocks are undefined")
+	}
+	if opts.DeliveryBound < opts.DAGSyncerTimeout+opts.RebroadcastInterval {
+		return fmt.Errorf("delivery bound %s is under DAGSyncerTimeout plus RebroadcastInterval", opts.DeliveryBound)
+	}
+	if opts.ClockSkew < 0 {
+		return errors.New("invalid ClockSkew")
+	}
+	if opts.Margin != 0 && opts.Margin < opts.minMargin() {
+		return fmt.Errorf("margin %s is under %s", opts.Margin, opts.minMargin())
+	}
+	return opts.checkRetention(opts.Retention)
 }
 
 // DefaultOptions initializes an Options object with sensible defaults.
@@ -177,6 +241,11 @@ func DefaultOptions() *Options {
 		MaxBatchDeltaSize:   1 * 1024 * 1024, // 1MB,
 		RepairInterval:      time.Hour,
 		CompactAfterBlocks:  128,
+		Retention:           30 * 24 * time.Hour,
+		DeliveryBound:       10 * time.Minute,
+		ClockSkew:           time.Minute,
+		Clock:               time.Now,
+		Uptime:              bootClock,
 	}
 }
 
@@ -214,6 +283,9 @@ type Datastore struct {
 	closed     bool
 	liveCount  int
 	blockCount int
+
+	// ttl is the retention this replica stamps, in milliseconds.
+	ttl atomic.Uint64
 
 	wg sync.WaitGroup
 
@@ -273,6 +345,7 @@ func NewDatastore(
 		queuedChildren:   newCidSafeSet(),
 		ccChanged:        make(chan struct{}),
 	}
+	dstore.ttl.Store(durationMillis(opts.Retention))
 	dstore.set = &set{
 		store:     store,
 		namespace: namespace.ChildString(setNs),
@@ -376,7 +449,7 @@ func (store *Datastore) open(ctx context.Context) error {
 	}
 
 	// Last, so that an open that fails never holds an incarnation.
-	if inc, ok := incarnations.resume(store.incarnationKey(), func(replica string) uint64 { return store.cc.vector[replica] }); ok {
+	if inc, ok := incarnations.resume(store.incarnationKey(), store.cc.counter); ok {
 		store.replica, store.counter = inc.replica, inc.counter
 	} else {
 		nonce := make([]byte, 16)
@@ -390,6 +463,27 @@ func (store *Datastore) open(ctx context.Context) error {
 	store.logger.Infof("crdt Datastore created. Number of heads: %d. Current max-height: %d. Dirty: %t", len(hs), maxHeight, store.IsDirty(ctx))
 	return nil
 }
+
+// SetRetention changes T for what this replica writes from now on. What it
+// wrote before keeps the T it was written with, so lowering T forgets
+// nothing earlier than it was promised, and raising it keeps more.
+func (store *Datastore) SetRetention(t time.Duration) error {
+	if err := store.opts.checkRetention(t); err != nil {
+		return err
+	}
+	store.ttl.Store(durationMillis(t))
+	return nil
+}
+
+// retention is the T this replica stamps, in milliseconds.
+func (store *Datastore) retention() uint64 { return store.ttl.Load() }
+
+// clock is this replica's wall clock in milliseconds.
+func (store *Datastore) clock() uint64 { return millis(store.opts.Clock()) }
+
+// stampNow is the time a block written now carries. The caller holds
+// store.mu.
+func (store *Datastore) stampNow() uint64 { return store.clock() }
 
 func (store *Datastore) incarnationKey() incarnationKey {
 	return incarnationKey{replicaID: string(store.opts.ReplicaID), namespace: store.namespace.String()}
@@ -559,6 +653,7 @@ func (store *Datastore) adoptHeads(ctx context.Context, received []Head) {
 		}
 		head.Height = delta.GetPriority()
 		head.Dot = dotFromPB(delta.GetDot())
+		head.At, head.TTL = delta.GetAt(), delta.GetTtl()
 		if err := store.heads.add(ctx, head); err != nil {
 			store.logger.Error(err)
 		}
@@ -577,7 +672,7 @@ func (store *Datastore) decodeBroadcast(data []byte) ([]Head, error) {
 		if err != nil {
 			return out, err
 		}
-		out = append(out, Head{Cid: c, Dot: dotFromPB(protoHead.GetDot())})
+		out = append(out, Head{Cid: c, Dot: dotFromPB(protoHead.GetDot()), At: protoHead.GetAt(), TTL: protoHead.GetTtl()})
 	}
 	return out, nil
 }
@@ -588,7 +683,7 @@ func (store *Datastore) encodeBroadcast(heads []Head) ([]byte, error) {
 		if h.Cid == cid.Undef {
 			continue
 		}
-		bcastData.Heads = append(bcastData.Heads, &pb.Head{Cid: h.Cid.Bytes(), Dot: h.Dot.toPB()})
+		bcastData.Heads = append(bcastData.Heads, &pb.Head{Cid: h.Cid.Bytes(), Dot: h.Dot.toPB(), At: h.At, Ttl: h.TTL})
 	}
 	return proto.Marshal(&bcastData)
 }
@@ -735,19 +830,19 @@ func (store *Datastore) handleBlock(ctx context.Context, h Head) error {
 	if held {
 		return nil
 	}
-	err = store.handleBranch(ctx, []link{{cid: h.Cid, dot: h.Dot}})
+	err = store.handleBranch(ctx, []link{h.link()})
 	if err != nil {
-		store.retryLater(ctx, h.Cid, h.Dot)
+		store.retryLater(ctx, h.link())
 	}
 	return err
 }
 
 // retryLater records a block whose walk failed so repair retries it: a head
 // heard once may not be heard again.
-func (store *Datastore) retryLater(ctx context.Context, c cid.Cid, d dot) {
-	if !d.isZero() {
-		if err := store.store.Put(ctx, store.retryKey(d), c.Bytes()); err != nil {
-			store.logger.Warnf("error recording block %s to retry: %s", c, err)
+func (store *Datastore) retryLater(ctx context.Context, l link) {
+	if !l.dot.isZero() {
+		if err := store.store.Put(ctx, store.retryKey(l.dot), encodeLink(l)); err != nil {
+			store.logger.Warnf("error recording block %s to retry: %s", l.cid, err)
 		}
 	}
 	store.MarkDirty(ctx)
@@ -794,7 +889,7 @@ func (store *Datastore) dagWorker() {
 		children, err := store.processNode(ctx, job.nodeGetter, job.delta, job.node)
 		if err != nil {
 			store.logger.Error(err)
-			store.retryLater(ctx, job.node.Cid(), dotFromPB(job.delta.GetDot()))
+			store.retryLater(ctx, linkOf(job.node.Cid(), job.delta))
 			job.session.Done()
 			continue
 		}
@@ -1074,7 +1169,7 @@ func (store *Datastore) repairDAG(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			c, err := cid.Cast(v)
+			l, err := decodeLink(d, v)
 			if err != nil {
 				return err
 			}
@@ -1082,7 +1177,7 @@ func (store *Datastore) repairDAG(ctx context.Context) error {
 				done = append(done, ds.RawKey(k))
 				return nil
 			}
-			todo = append(todo, link{cid: c, dot: d})
+			todo = append(todo, l)
 			return nil
 		})
 		if err != nil {
@@ -1103,7 +1198,7 @@ func (store *Datastore) repairDAG(ctx context.Context) error {
 			return err
 		}
 		if !held {
-			todo = append(todo, link{cid: h.Cid, dot: h.Dot})
+			todo = append(todo, h.link())
 		}
 	}
 
@@ -1173,7 +1268,7 @@ func (store *Datastore) write(ctx context.Context, ops []op) error {
 		store.mu.Unlock()
 		return ErrClosed
 	}
-	delta := &pb.Delta{}
+	delta := store.stamped(&pb.Delta{})
 	t := newTxn(store.store)
 	for _, o := range ops {
 		live, err := store.set.liveElems(ctx, t, o.key)
@@ -1182,7 +1277,7 @@ func (store *Datastore) write(ctx context.Context, ops []op) error {
 			return err
 		}
 		for _, e := range live {
-			delta.Tombstones = append(delta.Tombstones, &pb.Element{Key: o.key, Dot: e.dot.toPB()})
+			delta.Tombstones = append(delta.Tombstones, tombstoneFor(delta, e))
 		}
 		if o.put {
 			delta.Elements = append(delta.Elements, &pb.Element{Key: o.key, Value: o.value})
@@ -1224,7 +1319,7 @@ func (store *Datastore) publishLocked(ctx context.Context, delta *pb.Delta) (Hea
 	if err != nil {
 		return Head{}, nil, fmt.Errorf("error creating new block: %w", err)
 	}
-	if err := store.writeBlocks(ctx, d, blockAt{nd, kindDelta}); err != nil {
+	if err := store.writeBlocks(ctx, block{kind: kindDelta, dot: d, at: delta.At, ttl: delta.Ttl}, nd); err != nil {
 		return Head{}, nil, err
 	}
 	if _, err := store.mergeDelta(ctx, nd.Cid(), delta); err != nil {
@@ -1232,15 +1327,38 @@ func (store *Datastore) publishLocked(ctx context.Context, delta *pb.Delta) (Hea
 		return Head{}, nil, fmt.Errorf("error processing new block: %w", err)
 	}
 	store.counter = d.counter
-	return Head{Cid: nd.Cid(), Height: delta.Priority, Dot: d}, hs, nil
+	return Head{Cid: nd.Cid(), Height: delta.Priority, Dot: d, At: delta.At, TTL: delta.Ttl}, hs, nil
 }
 
 func parentsOf(hs []Head) []*pb.Parent {
 	out := make([]*pb.Parent, 0, len(hs))
 	for _, h := range hs {
-		out = append(out, &pb.Parent{Cid: h.Cid.Bytes(), Dot: h.Dot.toPB()})
+		out = append(out, &pb.Parent{Cid: h.Cid.Bytes(), Dot: h.Dot.toPB(), At: h.At, Ttl: h.TTL})
 	}
 	return out
+}
+
+// linkOf is the link to a fetched block.
+func linkOf(c cid.Cid, delta *pb.Delta) link {
+	return link{cid: c, dot: dotFromPB(delta.GetDot()), at: delta.GetAt(), ttl: delta.GetTtl()}
+}
+
+// stamped sets a block this replica is about to write to now: when it is
+// written and how long what it teaches is kept.
+func (store *Datastore) stamped(delta *pb.Delta) *pb.Delta {
+	delta.At = store.stampNow()
+	delta.Ttl = store.retention()
+	return delta
+}
+
+// tombstoneFor is the tombstone delta writes for e: needed as long as delta
+// is, and never less long than e is.
+func tombstoneFor(delta *pb.Delta, e element) *pb.Element {
+	ttl := delta.Ttl
+	if exp := e.expires(); exp > delta.At+ttl {
+		ttl = exp - delta.At
+	}
+	return &pb.Element{Key: e.key, Dot: e.dot.toPB(), At: delta.At, Ttl: ttl}
 }
 
 // maybeCompact compacts once the store holds CompactAfterBlocks blocks and
@@ -1348,11 +1466,19 @@ type blockAt struct {
 
 // writeBlocks indexes blocks this replica authors before writing them, so a
 // crash before the merge that covers them leaves an index entry with a dot
-// the context does not cover, which the next open drops with its block.
-func (store *Datastore) writeBlocks(ctx context.Context, d dot, blocks ...blockAt) error {
+// the context does not cover, which the next open drops with its block. The
+// last node is the block itself, the ones before it its chunks.
+func (store *Datastore) writeBlocks(ctx context.Context, b block, nodes ...ipld.Node) error {
+	blocks := make([]blockAt, len(nodes))
+	for i, nd := range nodes {
+		blocks[i] = blockAt{node: nd, kind: b.kind}
+		if i < len(nodes)-1 {
+			blocks[i].kind = kindChunk
+		}
+	}
 	t := newTxn(store.store)
-	for _, b := range blocks {
-		t.put(store.blockKey(b.node.Cid()), encodeBlock(b.kind, d))
+	for _, ba := range blocks {
+		t.put(store.blockKey(ba.node.Cid()), encodeBlock(block{kind: ba.kind, dot: b.dot, at: b.at, ttl: b.ttl}))
 	}
 	if err := t.commit(ctx); err != nil {
 		return err
@@ -1395,11 +1521,11 @@ func (store *Datastore) dropOrphans(ctx context.Context) error {
 	var orphans []cid.Cid
 	prefix := store.blocksPrefix()
 	err := scanStore(ctx, store.store, prefix, func(k string, v []byte) error {
-		_, d, err := decodeBlock(v)
+		b, err := decodeBlock(v)
 		if err != nil {
 			return err
 		}
-		if store.cc.covers(d) {
+		if store.cc.covers(b.dot) {
 			return nil
 		}
 		c, err := cidOfBlockKey(prefix, k)
