@@ -220,6 +220,8 @@ type merging struct {
 	// set, is what a scan in it found and replaces them.
 	added   lows
 	scanned lows
+	// unerased are the erased records this merge forgets.
+	unerased []string
 }
 
 func (store *Datastore) beginMerge() *merging {
@@ -320,7 +322,9 @@ func (m *merging) refutes(r removal) bool {
 }
 
 // admit adds an element unless local, the context before this merge, covers
-// it and it is not here (it was removed), or a removal of it is pending.
+// it and it is not here (it was removed), or a removal of it is pending. One
+// a rebase erased is removed instead, by a pending removal that the next
+// snapshot of this replica, due now, carries to the replicas that hold it.
 func (m *merging) admit(ctx context.Context, e element, local *causalContext) error {
 	here, err := m.hasElem(ctx, e.key, e.dot)
 	if err != nil || here || local.covers(e.dot) {
@@ -329,6 +333,10 @@ func (m *merging) admit(ctx context.Context, e element, local *causalContext) er
 	pending, err := m.t.has(ctx, m.store.set.pendingKey(e.key, e.dot))
 	if err != nil || pending {
 		return err
+	}
+	if k := m.store.erased[e.dot.replica]; k != nil && k.covers(e.dot.counter) {
+		m.store.compactDue = true
+		return m.remove(ctx, removal{key: e.key, dot: e.dot, at: k.changed, ttl: k.expires - k.changed})
 	}
 	m.addElem(e)
 	return nil
@@ -397,6 +405,9 @@ func (m *merging) commit(ctx context.Context) error {
 		return err
 	}
 	m.store.horizon = m.horizon
+	for _, r := range m.unerased {
+		delete(m.store.erased, r)
+	}
 	if m.scanned.pending != 0 {
 		m.store.lows.pending = m.scanned.pending
 	}

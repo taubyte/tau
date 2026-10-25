@@ -298,6 +298,10 @@ type Datastore struct {
 	since   uint64
 	sinceUp time.Duration
 	horizon uint64
+	// erased is, for each incarnation a rebase replaced, the dots it wrote
+	// and no longer held (see dropAllButOwn), until they expire. Guarded by
+	// mu.
+	erased map[string]*known
 	// lastWrite is the uptime of this incarnation's last write.
 	lastWrite time.Duration
 	// rejoining is set while this replica waits to be judged after a gap,
@@ -410,6 +414,7 @@ func NewDatastore(
 		frontiers:        map[string]*frontier{},
 		forgotten:        map[string]*forgottenEntry{},
 		oks:              map[string]*ok{},
+		erased:           map[string]*known{},
 	}
 	dstore.ttl.Store(durationMillis(opts.Retention))
 	dstore.times = timesOf(opts)
@@ -494,6 +499,9 @@ func (store *Datastore) open(ctx context.Context) error {
 	}
 	if store.cc, err = store.loadContext(ctx); err != nil {
 		return fmt.Errorf("error loading the causal context: %w", err)
+	}
+	if store.erased, err = store.loadErased(ctx); err != nil {
+		return fmt.Errorf("error loading the erased dots: %w", err)
 	}
 	if store.since, err = readMillis(ctx, store.store, store.sinceKey()); err != nil {
 		return err
@@ -1182,18 +1190,7 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 		return walk, nil
 	}
 	if d.replica != store.replica {
-		// A snapshot is as recent as its author's fleet time. One written
-		// before its author heard any fleet (since 0) holds only that
-		// author's own writes, and is as recent as the oldest of them: any
-		// may have been removed, and the removal forgotten, after it was
-		// written, however late the snapshot is fetched.
-		since := delta.GetSince()
-		if since == 0 {
-			since = delta.GetAt()
-			for _, e := range elems {
-				since = min(since, e.GetAt())
-			}
-		}
+		since := snapshotSince(delta, elems)
 		stale, err := store.stale(ctx, since)
 		if err != nil {
 			store.dropFailed(ctx, current, chunks)

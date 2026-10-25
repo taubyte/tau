@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	cid "github.com/ipfs/go-cid"
@@ -285,6 +286,11 @@ func (store *Datastore) stale(ctx context.Context, since uint64) (bool, error) {
 			return true, nil
 		}
 	}
+	for _, k := range store.erased {
+		if k.changed >= floor && k.expires <= now {
+			return true, nil
+		}
+	}
 	if store.lows.pending > now {
 		return false, nil
 	}
@@ -308,8 +314,8 @@ func (store *Datastore) stale(ctx context.Context, since uint64) (bool, error) {
 }
 
 // forget drops from a merge everything that has expired by now: the
-// incarnations it no longer needs to know, and the pending removals no longer
-// needed. A removal is needed as long as its target is, so once it expires its
+// incarnations it no longer needs to know, the dots a rebase erased, and the
+// pending removals no longer needed. A removal is needed as long as its target is, so once it expires its
 // target's delta has expired too and is never merged (T8.12): a removal kept
 // for a dot that never comes would be kept forever. It reports whether
 // anything went.
@@ -320,6 +326,14 @@ func (m *merging) forget(ctx context.Context, now uint64) (bool, error) {
 			delete(m.cc.inc, r)
 			m.horizon = max(m.horizon, k.changed)
 			m.store.forgotten[r] = &forgottenEntry{k: k, at: m.store.times.up()}
+			dropped = true
+		}
+	}
+	for r, k := range m.store.erased {
+		if m.store.expired(k.expires, now) && !slices.Contains(m.unerased, r) {
+			m.t.del(m.store.erasedKey(r))
+			m.unerased = append(m.unerased, r)
+			m.horizon = max(m.horizon, k.changed)
 			dropped = true
 		}
 	}
@@ -410,8 +424,12 @@ func (store *Datastore) gone(l link, now uint64) bool {
 
 // refreshDue reports whether this replica holds a block, a snapshot root or a
 // delta, past half of its retention: it is folded into a new snapshot before
-// any replica stops following links to it. The caller holds store.mu.
+// any replica stops following links to it. So is a head snapshot this
+// replica would refuse now, see staleHead. The caller holds store.mu.
 func (store *Datastore) refreshDue(ctx context.Context) (bool, error) {
+	if stale, err := store.staleHead(ctx); err != nil || stale {
+		return stale, err
+	}
 	now := store.clock()
 	if store.lows.block > now {
 		return false, nil
@@ -433,6 +451,71 @@ func (store *Datastore) refreshDue(ctx context.Context) (bool, error) {
 		store.lows.block = low
 	}
 	return due, err
+}
+
+// staleHead reports whether a head is a snapshot that this replica, by what
+// it knows now, would refuse as stale were it another's, and one it wrote
+// now would not be. A replica that knows no more than this one refuses that
+// head too, and while it is a head here nothing else carries what it holds:
+// a snapshot another replica wrote before it last heard the fleet, or one
+// this replica wrote while it rejoined. The caller holds store.mu.
+func (store *Datastore) staleHead(ctx context.Context) (bool, error) {
+	if store.rejoining || store.since == 0 {
+		return false, nil
+	}
+	hs, _ := store.heads.List()
+	for _, h := range hs {
+		v, err := store.store.Get(ctx, store.blockKey(h.Cid))
+		if errors.Is(err, ds.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		b, err := decodeBlock(v)
+		if err != nil {
+			return false, err
+		}
+		if b.kind != kindSnapshot {
+			continue
+		}
+		cctx, cancel := context.WithTimeout(ctx, store.opts.DAGSyncerTimeout)
+		ng := &crdtNodeGetter{NodeGetter: store.dagService}
+		_, root, err := ng.GetDelta(cctx, h.Cid)
+		var elems []*pb.Element
+		if err == nil && root.GetSince() == 0 {
+			_, elems, err = store.fetchChunks(cctx, ng, root)
+		}
+		cancel()
+		if err != nil {
+			return false, err
+		}
+		stale, err := store.stale(ctx, snapshotSince(root, elems))
+		if err != nil {
+			return false, err
+		}
+		if stale {
+			behind, err := store.stale(ctx, store.since)
+			return !behind, err
+		}
+	}
+	return false, nil
+}
+
+// snapshotSince is how recent a snapshot is: its author's fleet time. One
+// written before its author heard any fleet (since 0) holds only that
+// author's own writes, and is as recent as the oldest of them: any may have
+// been removed, and the removal forgotten, after it was written, however late
+// the snapshot is fetched.
+func snapshotSince(root *pb.Delta, elems []*pb.Element) uint64 {
+	since := root.GetSince()
+	if since == 0 {
+		since = root.GetAt()
+		for _, e := range elems {
+			since = min(since, e.GetAt())
+		}
+	}
+	return since
 }
 
 // maintain is one pass of what time does to a store: forget what expired,

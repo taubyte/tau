@@ -1069,8 +1069,17 @@ func (f *propFleet) bound() {
 	live := len(window)
 	for _, i := range f.correct() {
 		r := f.reps[i].r
+		// An erased record is the entry of the incarnation a rebase replaced,
+		// kept as long as that entry would be.
 		r.mu.Lock()
-		entries := len(r.cc.inc)
+		known := map[string]bool{}
+		for rep := range r.cc.inc {
+			known[rep] = true
+		}
+		for rep := range r.erased {
+			known[rep] = true
+		}
+		entries := len(known)
 		r.mu.Unlock()
 		// A removal still within its own window is a write of the window, as
 		// a wrong clock's rebases keep writing; one past it must be gone.
@@ -1084,6 +1093,11 @@ func (f *propFleet) bound() {
 		})
 		r.mu.Lock()
 		for _, k := range r.cc.inc {
+			if r.expired(k.expires, dropAt) {
+				pending++
+			}
+		}
+		for _, k := range r.erased {
 			if r.expired(k.expires, dropAt) {
 				pending++
 			}
@@ -1122,6 +1136,9 @@ func (f *propFleet) bound() {
 			r.mu.Lock()
 			for rep, k := range r.cc.inc {
 				incs = append(incs, fmt.Sprintf("%x changed %d expires %d", rep, k.changed, k.expires))
+			}
+			for rep, k := range r.erased {
+				incs = append(incs, fmt.Sprintf("erased %x %v changed %d expires %d", rep, k.spans, k.changed, k.expires))
 			}
 			r.mu.Unlock()
 			scanStore(context.Background(), r.store, r.set.pendingPrefix(), func(k string, v []byte) error {

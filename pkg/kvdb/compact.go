@@ -143,9 +143,11 @@ func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *c
 		return Head{}, nil, err
 	}
 
-	// Its own entry forgotten, with nothing of its own left to refresh it,
-	// this incarnation writes no more, as idleRetire does for a write.
-	if store.counter != 0 && !store.cc.knows(store.replica) {
+	// Its own entry expired, with nothing of its own left to refresh it, this
+	// incarnation writes no more, as idleRetire does for a write: a peer
+	// whose clock runs ahead may have forgotten it already, though this
+	// replica forgets it only a margin later.
+	if k := store.cc.inc[store.replica]; store.counter != 0 && (k == nil || k.expires <= store.clock()) {
 		if err := store.drawIncarnation(); err != nil {
 			return Head{}, nil, err
 		}

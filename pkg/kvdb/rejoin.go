@@ -46,6 +46,7 @@ import (
 const (
 	rejoinKey = "j" // under the context: the gap_from while rejoining
 	rebaseKey = "x" // under the context: a rebase whose writes no snapshot carries yet, empty until they are written
+	erasedKey = "e" // under the context: per replaced incarnation, the dots it wrote and no longer held
 	ownNs     = "o" // own operations not known to have reached the fleet
 )
 
@@ -59,6 +60,50 @@ func (store *Datastore) rejoinKey() ds.Key {
 
 func (store *Datastore) rebaseKey() ds.Key {
 	return store.namespace.ChildString(contextNs).ChildString(rebaseKey)
+}
+
+func (store *Datastore) erasedPrefix() ds.Key {
+	return store.namespace.ChildString(contextNs).ChildString(erasedKey)
+}
+
+func (store *Datastore) erasedKey(replica string) ds.Key {
+	return store.erasedPrefix().ChildString(replicaSegment(replica))
+}
+
+func encodeErased(k *known) []byte {
+	b := binary.AppendUvarint(nil, k.changed)
+	b = binary.AppendUvarint(b, k.expires)
+	for _, s := range k.spans {
+		b = binary.AppendUvarint(b, s.lo)
+		b = binary.AppendUvarint(b, s.hi)
+	}
+	return b
+}
+
+func (store *Datastore) loadErased(ctx context.Context) (map[string]*known, error) {
+	out := map[string]*known{}
+	ep := store.erasedPrefix()
+	err := scanStore(ctx, store.store, ep, func(k string, v []byte) error {
+		replica, err := segEncoding.DecodeString(strings.TrimPrefix(strings.TrimPrefix(k, ep.String()+"/"), "r"))
+		if err != nil {
+			return err
+		}
+		f, rest, err := uvarints(v, 2)
+		if err != nil {
+			return err
+		}
+		e := &known{changed: f[0], expires: f[1]}
+		for len(rest) > 0 {
+			var s []uint64
+			if s, rest, err = uvarints(rest, 2); err != nil {
+				return err
+			}
+			e.insert(span{lo: s[0], hi: s[1]})
+		}
+		out[string(replica)] = e
+		return nil
+	})
+	return out, err
 }
 
 func (store *Datastore) ownPrefix() ds.Key { return store.namespace.ChildString(ownNs) }
@@ -749,12 +794,18 @@ func linksOf(heads []Head) []link {
 //
 // What the old incarnation wrote and no longer holds was removed, by this
 // replica or by a removal it merged, and a removal it made before it first
-// heard a fleet is in no log. The new context keeps those dots, as removals
-// written now: a copy of one, in the judge's state or anyone's, is refused
-// here, and the snapshot that carries the context removes it wherever it
-// goes. Left out of them are the elements still held, so what was
-// acknowledged and is not written again stays live, and the logged
-// operations, which reissue writes again.
+// heard a fleet is in no log. Those dots are kept as erased, removals written
+// now that live as long as an entry would: a copy of one, in the judge's
+// state or anyone's, is refused here and becomes a pending removal, which
+// the next snapshot takes wherever it goes. Left out of them are the
+// elements still held, so what was acknowledged and is not written again
+// stays live, and the logged operations, which reissue writes again.
+//
+// They are not put in the new context. A context covers a dot only once it
+// merged it, or a snapshot that did: the old incarnation's snapshots and the
+// deltas that removed only are among those dots, and a context claiming them
+// would skip the judge's state they hold, and tell every peer that merged
+// them that a snapshot of this replica holds it.
 func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 	own := map[string]*pb.Delta{}
 	err := scanStore(ctx, store.store, store.ownPrefix(), func(k string, v []byte) error {
@@ -804,6 +855,7 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 	err = scanStore(ctx, store.store, store.namespace, func(k string, v []byte) error {
 		switch {
 		case strings.HasPrefix(k, prefix),
+			strings.HasPrefix(k, store.erasedPrefix().String()+"/"),
 			k == store.versionKey().String(),
 			k == store.badShutdownKey().String():
 			return nil
@@ -836,15 +888,14 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 		}
 		t.del(ds.RawKey(k))
 	}
-	removed := newCausalContext()
+	var erased *known
 	if k := store.cc.inc[store.replica]; k != nil {
 		at := max(store.clock(), since)
-		gone := &known{spans: removedSpans(k.spans, held), changed: at, expires: max(at+store.retention(), k.expires)}
-		if len(gone.spans) > 0 {
-			removed.inc[store.replica] = gone
+		erased = &known{spans: removedSpans(k.spans, held), changed: at, expires: max(at+store.retention(), k.expires)}
+		if len(erased.spans) > 0 {
+			t.put(store.erasedKey(store.replica), encodeErased(erased))
 		}
 	}
-	store.stageContext(t, newCausalContext(), removed)
 	t.put(store.sinceKey(), binary.AppendUvarint(nil, since))
 	t.del(store.settledKey())
 	t.put(store.rebaseKey(), nil)
@@ -857,13 +908,16 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 		}
 	}
 
+	if erased != nil && len(erased.spans) > 0 {
+		store.erased[store.replica] = erased
+	}
 	store.generation++
 	if err := store.drawIncarnation(); err != nil {
 		return err
 	}
 	store.heads.reset()
 	store.lows.pending, store.lows.block = none, none
-	store.setContext(removed)
+	store.setContext(newCausalContext())
 	store.liveCount, store.blockCount = 0, 0
 	store.horizon = 0
 	store.since, store.sinceUp = since, store.times.up()
