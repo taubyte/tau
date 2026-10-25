@@ -173,10 +173,17 @@ func (f *fakeBackend) Start(_ context.Context, id core.ContainerID) error {
 		// and a port already taken fails the start. A fake that left it free
 		// let any process on the machine answer the readiness probe, which a
 		// gate running packages in parallel did.
+		//
+		// The same holds for a listen that handed back a closer and bound
+		// nothing: whether the port is held is read off the port, not off
+		// what listen returned.
 		if srv == nil {
 			if srv, err = publishOnly(m.HostPort); err != nil {
 				return err
 			}
+		} else if held, err := publishOnly(m.HostPort); err == nil {
+			inner := srv
+			srv = closerFunc(func() error { return errors.Join(inner.Close(), held.Close()) })
 		}
 		if srv != nil {
 			f.mu.Lock()

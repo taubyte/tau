@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -494,6 +495,35 @@ func TestAnImageThatNeitherListensNorPollsTimesOut(t *testing.T) {
 	_, err := e.Start(context.Background(), spec())
 	require.ErrorIs(t, err, ErrNotReady)
 	require.ErrorContains(t, err, "nothing polled the lambda runtime api either")
+}
+
+// TestAContainerThatBindsNothingCannotBeAnsweredForByAnotherProcess. Under a
+// parallel gate another process took the port of a container whose fake bound
+// nothing, answered the readiness probe, and Start called a dead container
+// ready. Here the other process is made to try at the first probe.
+func TestAContainerThatBindsNothingCannotBeAnsweredForByAnotherProcess(t *testing.T) {
+	rt := newFakeBackend()
+	rt.imagePresent = true
+	rt.listen = func(int) (closer, error) { return closerFunc(func() error { return nil }), nil }
+
+	var squat sync.Once
+	var dialer net.Dialer
+	e := newRuntime(t, rt, Image{Ref: "acme/shop:1"}, func() []Option {
+		return []Option{
+			WithReadyTimeout(150 * time.Millisecond), WithReadyInterval(10 * time.Millisecond),
+			WithDialer(func(ctx context.Context, network, addr string) (net.Conn, error) {
+				squat.Do(func() {
+					if l, err := net.Listen("tcp", addr); err == nil {
+						t.Cleanup(func() { l.Close() })
+					}
+				})
+				return dialer.DialContext(ctx, network, addr)
+			}),
+		}
+	})
+
+	_, err := e.Start(context.Background(), spec())
+	require.ErrorIs(t, err, ErrNotReady)
 }
 
 // TestAnInitErrorReachesWhoeverIsWaiting. A runtime client that cannot start —
