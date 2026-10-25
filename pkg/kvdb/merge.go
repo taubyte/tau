@@ -530,6 +530,7 @@ func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.D
 	if err != nil {
 		return nil, nil, err
 	}
+	var kept []element
 	for _, e := range held {
 		if _, ok := inSnapshot[e.key]; ok {
 			continue
@@ -538,10 +539,10 @@ func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.D
 		if err != nil {
 			return nil, nil, err
 		}
-		if theirs.covers(el.dot) {
-			if _, err := m.removeElem(ctx, el.key, el.dot); err != nil {
-				return nil, nil, err
-			}
+		if !theirs.covers(el.dot) {
+			kept = append(kept, el)
+		} else if _, err := m.removeElem(ctx, el.key, el.dot); err != nil {
+			return nil, nil, err
 		}
 	}
 
@@ -579,7 +580,78 @@ func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.D
 	for _, ch := range chunks {
 		m.indexBlock(ch, block{kind: kindChunk, dot: d, at: at, ttl: ttl})
 	}
-	return walk, theirs, m.commit(ctx)
+	differs := false
+	if !linked && m.collapses(hs) {
+		want := theirs.clone()
+		want.add(d, root.GetPrev(), at, at+ttl)
+		if differs, err = m.differs(ctx, want, elems, kept, root.GetTombstones(), at); err != nil {
+			return nil, nil, err
+		}
+	}
+	if err := m.commit(ctx); err != nil {
+		return nil, nil, err
+	}
+	if differs {
+		store.compactDue = true
+	}
+	return walk, theirs, nil
+}
+
+// collapses reports whether a merge leaves none of the heads hs it started
+// from: the block it merged is then the only one that tells a reader what
+// this replica holds.
+func (m *merging) collapses(hs []Head) bool {
+	for _, h := range hs {
+		if _, gone := m.heads.remove[h.Cid]; !gone {
+			return false
+		}
+	}
+	return true
+}
+
+// differs reports whether a snapshot merge leaves this replica with a state
+// other than the snapshot's, want being the snapshot's context with its own
+// dot: an element it holds refused, one it neither holds nor covers kept, or
+// a context entry, span, stamp or pending removal it lacks. With the
+// snapshot the only head, nothing else would ever carry the difference to a
+// replica that holds the snapshot, so the replica compacts. Snapshots that
+// agree, concurrent ones included, never answer each other.
+func (m *merging) differs(ctx context.Context, want *causalContext, elems []*pb.Element, kept []element, tombs []*pb.Element, at uint64) (bool, error) {
+	for r, k := range m.cc.inc {
+		o := want.inc[r]
+		if o == nil || !slices.Equal(o.spans, k.spans) || k.changed > o.changed || k.expires > o.expires {
+			return true, nil
+		}
+	}
+	carried := make(map[string]removal, len(tombs))
+	for _, tomb := range tombs {
+		r := tombstoneOf(tomb, at)
+		carried[m.store.set.pendingKey(r.key, r.dot).String()] = r
+	}
+	pending, err := m.t.scan(ctx, m.store.set.pendingPrefix())
+	if err != nil {
+		return false, err
+	}
+	for _, e := range pending {
+		r, err := m.store.set.parsePending(e.key, e.value)
+		if err != nil {
+			return false, err
+		}
+		if o, ok := carried[e.key]; !ok || r.expires() > o.expires() || (r.expires() == o.expires() && r.at > o.at) {
+			return true, nil
+		}
+	}
+	for _, el := range kept {
+		if here, err := m.hasElem(ctx, el.key, el.dot); err != nil || here {
+			return here, err
+		}
+	}
+	for _, e := range elems {
+		if here, err := m.hasElem(ctx, e.GetKey(), dotFromPB(e.GetDot())); err != nil || !here {
+			return !here, err
+		}
+	}
+	return false, nil
 }
 
 // dropCovered forgets every pending removal, missing parent and retry mark

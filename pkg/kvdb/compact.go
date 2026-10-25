@@ -183,14 +183,19 @@ func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *c
 	}
 	store.counter = d.counter
 	store.lastWrite = store.times.up()
+	store.compactDue = false
 	return Head{Cid: nd.Cid(), Height: root.Priority, Dot: d, At: root.At, TTL: root.Ttl}, contextFromPB(root.Context), nil
 }
 
 // nothingToFold reports whether every block the store holds belongs to a
-// snapshot that is a head. Folding concurrent snapshots into one more would
+// snapshot that is a head, and no merge left a state those snapshots do not
+// hold (compactDue). Folding concurrent snapshots into one more would
 // free nothing, and replicas that each compacted would otherwise answer every
 // snapshot they merge with another one.
 func (store *Datastore) nothingToFold(ctx context.Context, hs []Head) (bool, error) {
+	if store.compactDue {
+		return false, nil
+	}
 	headDots := map[dot]struct{}{}
 	for _, h := range hs {
 		headDots[h.Dot] = struct{}{}
