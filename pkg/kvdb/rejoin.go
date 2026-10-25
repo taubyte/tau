@@ -244,10 +244,11 @@ func (store *Datastore) endRejoin(ctx context.Context, since uint64) error {
 }
 
 // checkGap starts a rejoin when no peer of the fleet has been heard for G,
-// and ends one when the only peers heard for G have never heard a fleet:
-// they hold nothing that could be stale and can judge nobody, and this
-// replica, still reporting the fleet time it had before its gap, is judged
-// by that time if it ever meets the fleet again.
+// and ends one when the only peers heard for G whose clocks agree with this
+// one's have never heard a fleet: they hold nothing that could be stale and
+// can judge nobody, and this replica, still reporting the fleet time it had
+// before its gap, is judged by that time if it ever meets the fleet again. A
+// peer whose clock disagrees can judge nobody either, whatever it has heard.
 func (store *Datastore) checkGap(ctx context.Context) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
@@ -307,10 +308,12 @@ func (store *Datastore) handleBroadcast(ctx context.Context, msg message) {
 	// a replica that hears nothing else is as cut off as one that hears
 	// nothing.
 	up := store.times.up()
-	store.anyHeard = up
 	store.hearPeer(msg.incarnation, up)
-	if msg.since != 0 {
-		store.fleetHeard = up
+	if store.plausible(msg.now) {
+		store.anyHeard = up
+		if msg.since != 0 {
+			store.fleetHeard = up
+		}
 	}
 	// Contact with the fleet is a peer that is not rejoining, has heard a
 	// fleet, and whose clock agrees with this one: a peer far ahead or far

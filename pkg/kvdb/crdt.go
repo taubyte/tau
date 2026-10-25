@@ -309,8 +309,9 @@ type Datastore struct {
 	// answered is when it last answered each rejoining incarnation.
 	lastHeard time.Duration
 	liveHeard time.Duration
-	// anyHeard and fleetHeard are the uptimes it last heard any peer and a
-	// peer that has heard a fleet, 0 before the first.
+	// anyHeard and fleetHeard are the uptimes it last heard a peer whose
+	// clock agrees with this one's, and such a peer that has heard a fleet,
+	// 0 before the first.
 	anyHeard   time.Duration
 	fleetHeard time.Duration
 	answered   map[string]time.Duration

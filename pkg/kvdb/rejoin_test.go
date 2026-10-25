@@ -856,3 +856,42 @@ func TestAJudgeWhoseOkCannotEndARejoinStillRejoins(t *testing.T) {
 		t.Fatalf("a judge whose ok could not end a rejoin kept the two apart (together for the last %d intervals; x rejoining=%t, y rejoining=%t)", together, x.rejoining(), y.rejoining())
 	}
 }
+
+// TestARejoinAmongAWrongClockAndANewReplicaEnds: a replica whose only peers
+// are one whose clock it cannot agree with and one that never heard a fleet
+// ends its rejoin, as among new replicas alone: a clock that disagrees can
+// judge nobody, whatever it has heard. The new replica then hears the fleet's
+// time from it, and the wrong clock, which agrees with nobody, stays
+// rejoining.
+func TestARejoinAmongAWrongClockAndANewReplicaEnds(t *testing.T) {
+	st := newSimTime()
+	a, b := st.replica(t, "a", 0), st.replica(t, "b", 0)
+	w := st.replica(t, "w", 10*time.Minute)
+	st.settle(t, a, b)
+	st.exchange(t, a, b, w)
+	if w.since() == 0 {
+		t.Fatal("setup: w should have heard a fleet")
+	}
+	// b is gone: a hears only the wrong clock, and rejoins.
+	for range gapIntervals + 2 {
+		st.advance(simRI)
+		st.exchange(t, a, w)
+	}
+	if !a.rejoining() || !w.rejoining() {
+		t.Fatalf("setup: a and w should rejoin (a %t, w %t)", a.rejoining(), w.rejoining())
+	}
+	f := st.replica(t, "f", 0)
+	for range 2*gapIntervals + 2 {
+		st.advance(simRI)
+		st.exchange(t, a, w, f)
+	}
+	if a.rejoining() {
+		t.Fatal("a stays rejoining among a wrong clock and a replica that never heard a fleet")
+	}
+	if f.since() == 0 {
+		t.Fatal("the new replica never heard the fleet's time")
+	}
+	if !w.rejoining() {
+		t.Fatal("the wrong clock ended its rejoin among peers it cannot agree with")
+	}
+}
