@@ -356,19 +356,49 @@ func TestAJudgeThatVanishesAfterAnOkLeavesTheRejoinToTheNext(t *testing.T) {
 		st.advance(simRI)
 		b.beat()
 		r.beat()
+		r.r.mu.Lock()
+		_, held := r.r.oks[judge]
+		r.r.mu.Unlock()
+		if held && time.Duration(st.ms()-vanished)*time.Millisecond > gapIntervals*simRI {
+			t.Fatal("r keeps the ok of a judge not heard for G")
+		}
 		st.hear(t, b, []*simReplica{r}, b)
 		st.hear(t, r, []*simReplica{b}, b)
 		st.hear(t, b, []*simReplica{r}, b)
 		b.maintain(t)
-		r.r.mu.Lock()
-		_, held := r.r.oks[judge]
-		r.r.mu.Unlock()
-		if held && time.Duration(st.ms()-vanished)*time.Millisecond > gapIntervals*simRI+simRI {
-			t.Fatal("r keeps the ok of a judge not heard for G")
-		}
 	}
 	r.wantValue(t, "/k", "v")
 	r.wantValue(t, "/only", "<deleted>")
+}
+
+// TestAnotherJudgesOkEndsTheRejoinWhileTheFirstStands: a replica holding
+// the ok of a judge whose state it cannot fetch ends its rejoin on the next
+// judge's ok it can hold, though the first judge is still heard from and its
+// ok still stands: no judge's ok is waited for.
+func TestAnotherJudgesOkEndsTheRejoinWhileTheFirstStands(t *testing.T) {
+	st := newSimTime()
+	a, b, r := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
+	put(t, b.r, "/k", "v")
+	st.settle(t, a, b, r)
+	for range gapIntervals + 1 {
+		st.listen(t, []*simReplica{a, b})
+	}
+	r.beat()
+	if !r.rejoining() {
+		t.Fatal("setup: r should rejoin")
+	}
+	// a writes, after its last heartbeat, what nobody fetches, and vouches.
+	put(t, a.r, "/only", "a")
+	st.hear(t, r, []*simReplica{a, b}, b)
+	st.hear(t, a, []*simReplica{r}, b)
+	if !r.rejoining() {
+		t.Fatal("setup: an ok whose judge's state cannot be fetched ended the rejoin")
+	}
+	st.hear(t, b, []*simReplica{r}, b)
+	if r.rejoining() {
+		t.Fatal("r still rejoins after an ok it holds, while another judge's stands")
+	}
+	r.wantValue(t, "/k", "v")
 }
 
 // TestAJudgeThatVanishesAfterARebaseLeavesNothingWaiting: a judge tells a
@@ -617,22 +647,35 @@ func TestAJudgeIsSettledWhenAPeerSendsWhatItHasForgotten(t *testing.T) {
 }
 
 // TestAJudgeIsSettledWhenAPeerTouchesWhatItForgot: a removal a peer makes
-// before it forgets an entry keeps that entry there for the removal's
-// lifetime, while a judge that forgot it first holds the removal as a pending
-// one. The judge held all of the entry when it dropped it, and keeps that
-// record while a peer sends the entry: it holds it as well as anyone can.
+// before an entry expires keeps that entry there for the removal's lifetime,
+// while a judge that forgot it before the removal reached it holds the
+// removal as a pending one. The judge held all of the entry when it dropped
+// it, and keeps that record while a peer sends the entry: it holds it as well
+// as anyone can.
 func TestAJudgeIsSettledWhenAPeerTouchesWhatItForgot(t *testing.T) {
 	st := newSimTime()
 	w, a, j := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "j", 0)
 	start := st.ms()
 	put(t, w.r, "/e", "v")
 	st.settle(t, w, a, j)
-	for st.ms() < start+durationMillis(simRetention+simMargin) {
+	for st.ms() < start+durationMillis(simRetention) {
 		st.advance(simRI)
 		st.exchange(t, a, j)
 	}
-	// j forgets w's entry; a, which fetches nothing for a while, keeps it.
+	// a removes /e before w's entry expires, which touches it there; j hears
+	// a and fetches nothing until it has forgotten the entry.
+	del(t, a.r, "/e")
+	for st.ms() < start+durationMillis(simRetention+simMargin) {
+		st.advance(simRI)
+		a.beat()
+		j.beat()
+		st.hear(t, a, []*simReplica{j})
+		st.hear(t, j, []*simReplica{a}, j)
+	}
 	j.maintain(t)
+	if !a.knows(w.incarnation()) || j.knows(w.incarnation()) {
+		t.Fatal("setup: a should hold w's entry and j should have forgotten it")
+	}
 	keep := st.opts().DeliveryBound + st.opts().ClockSkew + gapIntervals*simRI
 	for elapsed := time.Duration(0); elapsed <= keep+simRI; elapsed += simRI {
 		st.advance(simRI)
@@ -641,12 +684,6 @@ func TestAJudgeIsSettledWhenAPeerTouchesWhatItForgot(t *testing.T) {
 		st.hear(t, a, []*simReplica{j}, a)
 		st.hear(t, j, []*simReplica{a})
 	}
-	if !a.knows(w.incarnation()) || j.knows(w.incarnation()) {
-		t.Fatal("setup: a should hold w's entry and j should have forgotten it")
-	}
-	del(t, a.r, "/e")
-	a.beat()
-	st.hear(t, a, []*simReplica{j}, a)
 	j.wantValue(t, "/e", "<deleted>")
 	if !j.settled() {
 		t.Fatal("a judge that held all of an entry when it forgot it is not settled while a peer still sends it")
