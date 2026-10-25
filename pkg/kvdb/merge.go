@@ -220,6 +220,10 @@ type merging struct {
 	// set, is what a scan in it found and replaces them.
 	added   lows
 	scanned lows
+	// pendingAt is the latest stamp of a pending removal this merge files,
+	// or of all it leaves once rescanned is set.
+	pendingAt uint64
+	rescanned bool
 	// unerased are the erased records this merge forgets.
 	unerased []string
 }
@@ -305,6 +309,7 @@ func (m *merging) remove(ctx context.Context, r removal) error {
 	}
 	m.t.put(pk, encodeStamps(r.at, r.ttl))
 	m.added.pending = min(m.added.pending, r.expires())
+	m.pendingAt = max(m.pendingAt, r.at)
 	return nil
 }
 
@@ -412,6 +417,11 @@ func (m *merging) commit(ctx context.Context) error {
 		m.store.lows.pending = m.scanned.pending
 	}
 	m.store.lows.lower(m.added)
+	if m.rescanned {
+		m.store.pendingAt = m.pendingAt
+	} else {
+		m.store.pendingAt = max(m.store.pendingAt, m.pendingAt)
+	}
 	if m.since != m.store.since {
 		m.store.since, m.store.sinceUp = m.since, m.store.times.up()
 	}
@@ -471,6 +481,9 @@ func (store *Datastore) mergeDelta(ctx context.Context, c cid.Cid, delta *pb.Del
 	if err := m.dropPending(ctx, d); err != nil {
 		return nil, err
 	}
+	if err := m.dropExtended(ctx, store.cc); err != nil {
+		return nil, err
+	}
 	if d.replica == store.replica {
 		if err := m.logOwn(d, delta); err != nil {
 			return nil, err
@@ -499,6 +512,44 @@ func (m *merging) dropPending(ctx context.Context, d dot) error {
 		if m.refutes(r) {
 			m.settlePending(e.key, r)
 		}
+	}
+	return nil
+}
+
+// dropExtended forgets the pending removals an entry this merge extended now
+// refutes: one filed because the entry, as this replica then knew it, had
+// expired when the removal was written, which a later delta of the
+// incarnation shows it had not. A replica that merged that delta first
+// touched the entry instead. Only a removal stamped at or after the entry's
+// old expiry can be one, so the pending removals are scanned only when one
+// may be stamped that late.
+func (m *merging) dropExtended(ctx context.Context, local *causalContext) error {
+	late := max(m.store.pendingAt, m.pendingAt)
+	extended := false
+	for r, k := range m.cc.inc {
+		if o := local.inc[r]; o != nil && k.expires > o.expires && o.expires+m.store.times.margin <= late {
+			extended = true
+			break
+		}
+	}
+	if !extended {
+		return nil
+	}
+	entries, err := m.t.scan(ctx, m.store.set.pendingPrefix())
+	if err != nil {
+		return err
+	}
+	m.pendingAt, m.rescanned = 0, true
+	for _, e := range entries {
+		r, err := m.store.set.parsePending(e.key, e.value)
+		if err != nil {
+			return err
+		}
+		if m.refutes(r) {
+			m.settlePending(e.key, r)
+			continue
+		}
+		m.pendingAt = max(m.pendingAt, r.at)
 	}
 	return nil
 }

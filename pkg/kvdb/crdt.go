@@ -349,6 +349,9 @@ type Datastore struct {
 	// expiry of a kept own operation. Every insertion lowers them; a scan
 	// sets them to what it found, none = unbounded; 0 means unknown.
 	lows lows
+	// pendingAt is at or above the latest stamp of a pending removal held
+	// here, none until a scan finds it.
+	pendingAt uint64
 	// generation changes when a rebase replaces the state: a walk begun
 	// under an older one merges nothing. rebuilding is the generation whose
 	// rebase still walks the judge's state, 0 when none does.
@@ -424,6 +427,7 @@ func NewDatastore(
 		forgotten:        map[string]*forgottenEntry{},
 		oks:              map[string]*ok{},
 		erased:           map[string]*known{},
+		pendingAt:        none,
 	}
 	dstore.ttl.Store(durationMillis(opts.Retention))
 	dstore.times = timesOf(opts)
