@@ -532,6 +532,24 @@ func TestHealing_ASplitHealsByItself(t *testing.T) {
 	leaderOf(t, a, b)
 }
 
+// TestHealing_ASettingChangedAfterNewIsNotReadByItsHealer: a healer read the
+// package's healing variables while it ran, and it runs on after Close
+// returns, so a test that set them for itself wrote under the healers of the
+// tests before it, which -race reported. A healer reads what its cluster was
+// built with.
+func TestHealing_ASettingChangedAfterNewIsNotReadByItsHealer(t *testing.T) {
+	c, err := New(newMockNode(t), "heal-settings",
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	defer c.Close()
+	waitLeader(t, c, 5*time.Second)
+
+	probeEvery(t, 50*time.Millisecond)
+	before := SplitBrainDetectionCycles
+	SplitBrainDetectionCycles = 1
+	t.Cleanup(func() { SplitBrainDetectionCycles = before })
+}
+
 // formedPair is a group of two that formed the way a fleet does, with no
 // member forced to bootstrap: a bootstrapped alone, then b found it and joined.
 func formedPair(t *testing.T, namespace string) (a, b Cluster) {

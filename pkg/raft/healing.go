@@ -66,12 +66,12 @@ func (h *healer) run(ctx context.Context) {
 	}
 
 	checkInterval := electionTimeout * 2
-	if checkInterval < HealingProbeInterval {
-		checkInterval = HealingProbeInterval
+	if checkInterval < h.cluster.healingProbeInterval {
+		checkInterval = h.cluster.healingProbeInterval
 	}
 
 	healLogger.Infof("[%s] healer started (check_interval=%v, detection_cycles=%d)",
-		h.cluster.node.ID().ShortString(), checkInterval, SplitBrainDetectionCycles)
+		h.cluster.node.ID().ShortString(), checkInterval, h.cluster.splitBrainDetectionCycles)
 
 	noLeaderCycles := 0
 	cycleStart := time.Now()
@@ -117,10 +117,10 @@ func (h *healer) run(ctx context.Context) {
 
 		noLeaderCycles++
 		healLogger.Infof("[%s] no leader detected (cycle %d/%d, state=%s)",
-			h.cluster.node.ID().ShortString(), noLeaderCycles, SplitBrainDetectionCycles,
+			h.cluster.node.ID().ShortString(), noLeaderCycles, h.cluster.splitBrainDetectionCycles,
 			h.member.raft.State())
 
-		if noLeaderCycles < SplitBrainDetectionCycles {
+		if noLeaderCycles < h.cluster.splitBrainDetectionCycles {
 			continue
 		}
 

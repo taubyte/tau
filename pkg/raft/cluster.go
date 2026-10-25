@@ -46,6 +46,11 @@ type cluster struct {
 
 	snapshotDir string
 
+	// The healing settings are read from the package's variables once, in
+	// New: a healer stops after Close returns, and still reads them.
+	healingProbeInterval      time.Duration
+	splitBrainDetectionCycles int
+
 	// member is what initialize builds and a yield takes down and builds
 	// again, while the methods, the stream handlers and the healers read it.
 	// A reader loads it once and reads the parts of one member.
@@ -97,6 +102,9 @@ func New(node taupeer.Node, namespace string, opts ...Option) (Cluster, error) {
 		forceBootstrap:     false,
 		bootstrapTimeout:   30 * time.Second,
 		bootstrapThreshold: 0.8,
+
+		healingProbeInterval:      HealingProbeInterval,
+		splitBrainDetectionCycles: SplitBrainDetectionCycles,
 	}
 
 	for _, opt := range opts {
