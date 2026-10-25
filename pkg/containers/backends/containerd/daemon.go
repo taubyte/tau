@@ -4,6 +4,7 @@ package containerd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -24,6 +25,9 @@ type Daemon struct {
 	process    *os.Process
 	socketPath string
 	stateFile  string
+
+	// exited closes when the process this daemon started has been reaped.
+	exited chan struct{}
 }
 
 // NewDaemon creates a new daemon manager
@@ -194,7 +198,7 @@ func (d *Daemon) startWithRootlesskit(ctx context.Context, containerdPath string
 		"--slirp4netns-sandbox=auto",
 		"--slirp4netns-seccomp=auto",
 		"--disable-host-loopback",
-		"--port-driver=builtin",
+		"--port-driver="+portDriverFor(netDriver),
 		"--copy-up=/etc",
 		"--copy-up=/run",
 		"--copy-up=/var/lib",
@@ -222,11 +226,29 @@ func (d *Daemon) startWithRootlesskit(ctx context.Context, containerdPath string
 		cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: int(dir.Fd())}
 	}
 
-	if err := cmd.Start(); err != nil {
+	// What rootlesskit and containerd say goes to a file beside the socket, and
+	// a start that fails quotes it: their refusal is the only account of why.
+	logPath := filepath.Join(socketDir, "containerd.log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open the daemon log: %w", err)
+	}
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+
+	err = cmd.Start()
+	logFile.Close()
+	if err != nil {
 		return fmt.Errorf("failed to start containerd via rootlesskit: %w", err)
 	}
 
+	exited := make(chan struct{})
+	go func() {
+		cmd.Wait()
+		close(exited)
+	}()
 	d.process = cmd.Process
+	d.exited = exited
 
 	if err := os.WriteFile(d.stateFile, []byte(fmt.Sprintf("%d", d.process.Pid)), 0644); err != nil {
 		d.process.Kill()
@@ -235,11 +257,39 @@ func (d *Daemon) startWithRootlesskit(ctx context.Context, containerdPath string
 
 	if err := d.waitForSocket(ctx, 30*time.Second); err != nil {
 		d.process.Kill()
+		<-exited
+		d.process = nil
 		os.Remove(d.stateFile)
-		return fmt.Errorf("containerd failed to start via rootlesskit: %w", err)
+		return fmt.Errorf("containerd failed to start via rootlesskit: %w%s", err, logTail(logPath))
 	}
 
 	return nil
+}
+
+// portDriverFor is the port driver a network driver works with. pasta
+// forwards ports itself, and rootlesskit refuses any driver but its own for it.
+func portDriverFor(netDriver string) string {
+	if netDriver == "pasta" {
+		return "implicit"
+	}
+	return "builtin"
+}
+
+// logTail is the end of the daemon log, as a suffix for an error.
+func logTail(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	const most = 2048
+	if len(data) > most {
+		data = data[len(data)-most:]
+	}
+	text := strings.TrimSpace(string(data))
+	if text == "" {
+		return ""
+	}
+	return ": " + text
 }
 
 // createRootlesskitWrapper creates a shell script that does bind-mounts and execs containerd
@@ -312,7 +362,11 @@ func (d *Daemon) Stop(ctx context.Context) error {
 		return nil
 	}
 
-	if d.process != nil {
+	if d.process != nil && d.exited != nil {
+		d.process.Kill()
+		<-d.exited
+		d.process = nil
+	} else if d.process != nil {
 		if err := d.process.Kill(); err != nil {
 			// Process might already be dead, try to wait anyway
 			d.process.Wait()
@@ -493,6 +547,8 @@ func (d *Daemon) waitForSocket(ctx context.Context, timeout time.Duration) error
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-d.exited:
+			return errors.New("it exited before its socket appeared")
 		case <-ticker.C:
 			if d.isSocketReady() {
 				return nil
