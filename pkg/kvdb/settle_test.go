@@ -962,6 +962,48 @@ func TestAPeerNamedAndNeverHeardIsWaitedForOnce(t *testing.T) {
 	}
 }
 
+// TestAVerdictNamesThePeersItsJudgeHeard: a verdict says whom its judge
+// heard as its heartbeat does. A judge that is not settled and heard a peer
+// this replica has not keeps it waiting, whether its heartbeat or a verdict
+// it gave was heard last.
+func TestAVerdictNamesThePeersItsJudgeHeard(t *testing.T) {
+	st := newSimTime()
+	j, k, q, z := st.replica(t, "j", 0), st.replica(t, "k", 0), st.replica(t, "q", 0), st.replica(t, "z", 0)
+	put(t, z.r, "/x", "v")
+	for range gapIntervals + 2 {
+		st.advance(simRI)
+		st.exchange(t, j, k)
+		st.exchange(t, q, z)
+	}
+	if !j.settled() || !k.settled() || !q.settled() {
+		t.Fatal("setup: j and k, q and z, should each be settled")
+	}
+	// k hears q, and cannot fetch what it holds; j hears k only.
+	q.beat()
+	st.hear(t, q, []*simReplica{k})
+	k.beat()
+	st.hear(t, k, []*simReplica{j})
+	if k.settled() || j.settled() {
+		t.Fatalf("setup: k should not be settled, nor j while k names q (k settled=%t, j settled=%t)", k.settled(), j.settled())
+	}
+	k.r.mu.Lock()
+	hs, _ := k.r.heads.List()
+	b := k.r.message(hs, &verdict{to: "elsewhere", rebase: true, since: k.r.reportedSince()})
+	k.r.mu.Unlock()
+	data, err := proto.Marshal(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg, err := j.r.decodeBroadcast(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j.r.handleBroadcast(context.Background(), msg)
+	if j.settled() {
+		t.Fatal("a verdict of a judge that is not settled ended the wait for the peer its heartbeat named")
+	}
+}
+
 // healWindow is the heal of TestAJudgeWaitsBeforeTrustingANewPeerThatIsNotSettled,
 // the peer first heard of the other side one the judge heard before the
 // partition if known, gone over for the last intervals over of it.
