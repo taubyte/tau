@@ -3,8 +3,14 @@ package peer
 import (
 	"bytes"
 	"context"
+	"strings"
+	"sync/atomic"
 	"testing"
 
+	blockstore "github.com/ipfs/boxo/blockstore"
+	"github.com/ipfs/go-datastore"
+	"github.com/ipfs/go-datastore/query"
+	dssync "github.com/ipfs/go-datastore/sync"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -62,4 +68,50 @@ func TestDAG_CloseIdempotent(t *testing.T) {
 func TestDefaultBootstrapPeers(t *testing.T) {
 	peers := DefaultBootstrapPeers()
 	assert.NotEmpty(t, peers, "should return the public IPFS bootstrap peers")
+}
+
+// lateQueryStore holds each query of the blocks until its context ends, and
+// remembers one that went on to read a store already closed: pebble panics
+// there.
+type lateQueryStore struct {
+	datastore.Batching
+	closed atomic.Bool
+	late   atomic.Bool
+}
+
+func (s *lateQueryStore) Query(ctx context.Context, q query.Query) (query.Results, error) {
+	if !strings.HasPrefix(q.Prefix, blockstore.BlockPrefix.String()) {
+		return s.Batching.Query(ctx, q)
+	}
+	<-ctx.Done()
+	if s.closed.Load() {
+		s.late.Store(true)
+	}
+	return s.Batching.Query(ctx, q)
+}
+
+func (s *lateQueryStore) Close() error {
+	s.closed.Store(true)
+	return s.Batching.Close()
+}
+
+// TestDAG_CloseWaitsForTheBloomBuild: the blockstore's bloom filter is built
+// by a goroutine that queries the store, and Close returned without it. Under
+// load that goroutine first ran after the node had closed its store, and the
+// query panicked with "pebble: closed", taking the process with it.
+func TestDAG_CloseWaitsForTheBloomBuild(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	n := Mock(ctx).(*node)
+	defer n.Close()
+
+	store := &lateQueryStore{Batching: dssync.MutexWrap(datastore.NewMapDatastore())}
+	dag, err := newDAG(ctx, store, n.host, n.dht)
+	require.NoError(t, err)
+
+	require.NoError(t, dag.Close())
+	require.NoError(t, store.Close())
+	cancel()
+	dag.bstore.(bloomBuild).Wait(context.Background())
+	assert.False(t, store.late.Load(), "the bloom build read the store after it was closed")
 }

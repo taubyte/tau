@@ -41,6 +41,8 @@ type DAGService struct {
 	bserv      blockservice.BlockService
 	exch       exchange.Interface
 	reprovider provider.System
+	cancel     context.CancelFunc
+	bloom      bloomBuild
 
 	closeOnce sync.Once
 	closeErr  error
@@ -49,12 +51,20 @@ type DAGService struct {
 // newDAG replicates ipfslite.New(ctx, store, nil, host, dht, &Config{}) with the
 // default (online) config both tau call sites used.
 func newDAG(ctx context.Context, store datastore.Batching, host host.Host, dht routing.Routing) (*DAGService, error) {
+	ctx, cancel := context.WithCancel(ctx)
+
 	// Blockstore: identity multihash support + ARC/bloom cache (hot path for HasBlock).
 	bs := blockstore.NewBlockstore(store, blockstore.WriteThrough(true))
 	bs = blockstore.NewIdStore(bs)
 	bs, err := blockstore.CachedBlockstore(ctx, bs, blockstore.DefaultCacheOpts())
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("setting up blockstore failed: %w", err)
+	}
+	bloom, ok := bs.(bloomBuild)
+	if !ok {
+		cancel()
+		return nil, errors.New("setting up blockstore failed: its cache builds no bloom filter to wait for")
 	}
 
 	// Bitswap (providerFinder nil: blocks found via broadcast to connected peers).
@@ -82,7 +92,9 @@ func newDAG(ctx context.Context, store datastore.Batching, host host.Host, dht r
 		provider.KeyProvider(bs.AllKeysChan),
 	)
 	if err != nil {
-		_ = bserv.Close()
+		cancel()
+		bserv.Close()
+		bloom.Wait(context.Background())
 		return nil, fmt.Errorf("setting up reprovider failed: %w", err)
 	}
 
@@ -92,6 +104,8 @@ func newDAG(ctx context.Context, store datastore.Batching, host host.Host, dht r
 		bserv:      bserv,
 		exch:       bswap,
 		reprovider: reprovider,
+		cancel:     cancel,
+		bloom:      bloom,
 	}
 
 	// autoclose: mirror ipfs-lite so a cancelled context still tears down.
@@ -105,10 +119,20 @@ func newDAG(ctx context.Context, store datastore.Batching, host host.Host, dht r
 	return d, nil
 }
 
-// Close tears down the reprovider and blockservice. Idempotent.
+// bloomBuild is the bloom cache, built by a goroutine that reads the whole
+// store and is done once Wait returns.
+type bloomBuild interface {
+	Wait(context.Context) error
+}
+
+// Close tears down the reprovider and blockservice, and returns once nothing
+// it started reads the store: its caller closes the store next, and pebble
+// panics on a read of a closed one. Idempotent.
 func (d *DAGService) Close() error {
 	d.closeOnce.Do(func() {
+		d.cancel()
 		d.closeErr = errors.Join(d.reprovider.Close(), d.bserv.Close())
+		d.bloom.Wait(context.Background())
 	})
 	return d.closeErr
 }
