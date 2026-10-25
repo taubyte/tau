@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -27,8 +28,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containerd/errdefs"
 	"github.com/miekg/dns"
 	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 
@@ -651,7 +654,7 @@ func sweepLive(t *testing.T) {
 			continue
 		}
 		t.Logf("removing %s (%s), left behind by test process %s", c.ID[:12], c.Image, c.Labels[liveOwner])
-		_, err := cli.ContainerRemove(ctx, c.ID, client.ContainerRemoveOptions{Force: true})
+		_, err := cli.ContainerRemove(ctx, c.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 		require.NoError(t, err)
 	}
 	nets, err := cli.NetworkList(ctx, client.NetworkListOptions{Filters: client.Filters{}.Add("label", liveOwner)})
@@ -664,6 +667,51 @@ func sweepLive(t *testing.T) {
 		}
 		_, err := cli.NetworkRemove(ctx, n.ID, client.NetworkRemoveOptions{})
 		require.NoError(t, err)
+	}
+}
+
+// A container a killed run left behind takes its anonymous volumes with it
+// when the next run sweeps it: bind9 declares VOLUMEs, so a sweep that kept
+// them left a volume behind for every container it removed.
+func TestTheLeftoverSweepTakesTheAnonymousVolumes(t *testing.T) {
+	gone := exec.Command("true")
+	require.NoError(t, gone.Run())
+
+	backend, err := docker.New(core.DockerConfig{})
+	require.NoError(t, err)
+	require.NoError(t, backend.Image(bindImage).Pull(t.Context()), "pulling %s", bindImage)
+	id, err := backend.Create(t.Context(), &core.ContainerConfig{
+		Image:  bindImage,
+		Labels: map[string]string{liveOwner: fmt.Sprint(gone.Process.Pid)},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { backend.Remove(context.Background(), id) })
+
+	cli, err := client.New(client.FromEnv)
+	require.NoError(t, err)
+	defer cli.Close()
+	res, err := cli.ContainerInspect(t.Context(), string(id), client.ContainerInspectOptions{})
+	require.NoError(t, err)
+	var anonymous []string
+	for _, m := range res.Container.Mounts {
+		if m.Type == mount.TypeVolume {
+			anonymous = append(anonymous, m.Name)
+		}
+	}
+	require.NotEmpty(t, anonymous, "%s declares VOLUMEs", bindImage)
+	t.Cleanup(func() {
+		for _, v := range anonymous {
+			cli.VolumeRemove(context.Background(), v, client.VolumeRemoveOptions{Force: true})
+		}
+	})
+
+	sweepLive(t)
+
+	_, err = cli.ContainerInspect(t.Context(), string(id), client.ContainerInspectOptions{})
+	require.True(t, errdefs.IsNotFound(err), "the sweep removes a container whose owner is gone: %v", err)
+	for _, v := range anonymous {
+		_, err := cli.VolumeInspect(t.Context(), v, client.VolumeInspectOptions{})
+		require.True(t, errdefs.IsNotFound(err), "the anonymous volume %s outlived its container: %v", v, err)
 	}
 }
 
