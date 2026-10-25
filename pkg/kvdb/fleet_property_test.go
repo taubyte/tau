@@ -143,7 +143,7 @@ type propFleet struct {
 	tvaries   bool
 	ids       int
 	// incLast is, per incarnation any replica held, the last time it was
-	// current.
+	// current or a removal of one of its values was written.
 	incLast map[string]time.Time
 	rejoins map[int]bool
 	// wrongName is the wrong clock's replica id.
@@ -151,7 +151,7 @@ type propFleet struct {
 	// replaced are the replicas whose state this step replaced: killed,
 	// restored or rebased.
 	replaced map[int]bool
-	logs     map[int]map[dot]bool
+	logs     map[int]map[dot]*pb.Delta
 	// tickSince is what each replica reported at the start of the round.
 	tickSince map[int]uint64
 }
@@ -272,6 +272,7 @@ func (f *propFleet) put(i int, key string) {
 		p.holders[i] = true
 	}
 	f.puts[value] = p
+	f.removing(seen)
 	if len(seen) > 0 {
 		f.rems = append(f.rems, &propRem{key: key, removes: seen, author: i, dot: d, at: f.now(), ttl: f.ttlOf(i), byWrong: i == f.wrong, reached: map[int]bool{}, mayReturn: map[*propPut]bool{}})
 	}
@@ -287,12 +288,22 @@ func (f *propFleet) del(i int, key string) {
 		f.t.Fatal(err)
 	}
 	d := f.lastDot(i)
+	f.removing(seen)
 	f.rems = append(f.rems, &propRem{key: key, removes: seen, author: i, dot: d, at: f.now(), ttl: f.ttlOf(i), byWrong: i == f.wrong, reached: map[int]bool{}, mayReturn: map[*propPut]bool{}})
 	var vs []string
 	for _, p := range seen {
 		vs = append(vs, p.value)
 	}
 	f.log("r%d del %s (%s) %s", i, key, strings.Join(vs, ","), d)
+}
+
+// removing records a removal of the values seen: applied to one of their
+// dots, it moves the entry of that dot's incarnation to its own time (R-C),
+// so the entry is known a T and a margin past it, live incarnation or not.
+func (f *propFleet) removing(seen []*propPut) {
+	for _, p := range seen {
+		f.incLast[p.dot.replica] = f.now()
+	}
 }
 
 // tick is one rebroadcast interval of D: everyone beats, what they say
@@ -526,20 +537,37 @@ func (f *propFleet) forgetReached(i int) {
 	}
 }
 
-// ownLog is the set of dots replica i keeps to write again after a rebase.
-func (f *propFleet) ownLog(i int) map[dot]bool {
+// ownLog is what replica i keeps to write again after a rebase, by dot.
+func (f *propFleet) ownLog(i int) map[dot]*pb.Delta {
 	r := f.reps[i].r
-	out := map[dot]bool{}
+	out := map[dot]*pb.Delta{}
 	prefix := r.ownPrefix().String() + "/"
-	scanStore(context.Background(), r.store, r.ownPrefix(), func(k string, v []byte) error {
+	err := scanStore(context.Background(), r.store, r.ownPrefix(), func(k string, v []byte) error {
 		d, err := parseDotSegment(strings.TrimPrefix(k, prefix))
-		if err == nil {
-			out[d] = true
+		if err != nil {
+			return err
 		}
 		rec := &pb.Delta{}
-		return proto.Unmarshal(v, rec)
+		if err := proto.Unmarshal(v, rec); err != nil {
+			return err
+		}
+		out[d] = rec
+		return nil
 	})
+	if err != nil {
+		f.t.Fatal(err)
+	}
 	return out
+}
+
+// coveredElsewhere reports whether a correct replica other than i covers d.
+func (f *propFleet) coveredElsewhere(i int, d dot) bool {
+	for _, j := range f.correct() {
+		if j != i && f.reps[j].r.covered(d) {
+			return true
+		}
+	}
+	return false
 }
 
 // liveValues is, per live replica, every value live on it: one scan each.
@@ -763,7 +791,7 @@ func (f *propFleet) act() {
 
 // keepLogs records what each replica keeps to write again after a rebase.
 func (f *propFleet) keepLogs() {
-	f.logs = map[int]map[dot]bool{}
+	f.logs = map[int]map[dot]*pb.Delta{}
 	for _, i := range f.live() {
 		f.logs[i] = f.ownLog(i)
 	}
@@ -1013,10 +1041,15 @@ func comparableState(t testing.TB, r *Datastore, edge func(expires uint64) bool)
 }
 
 // bound asserts property 3 after 3T with no writes. An incarnation is known
-// for T and a margin past its last write, so what a replica may still know is
-// one entry for each incarnation some replica wrote under in that window: the
-// current one of each live replica, and those a rebase or a restart replaced
-// within it.
+// for T and a margin past its last write or the last removal of one of its
+// values, so what a replica may still know is one entry for each incarnation
+// some replica wrote under or removed from in that window: the current one of
+// each live replica, and those a rebase or a restart replaced within it.
+//
+// An own operation is kept until a peer acknowledges it or its delta
+// expires, and a T may outlast the quiesce: one still within its delta that
+// no correct peer covers is one nobody can acknowledge, as what a rebase
+// writes again under its old dot is.
 func (f *propFleet) bound() {
 	f.t.Helper()
 	window := map[string]bool{}
@@ -1077,7 +1110,12 @@ func (f *propFleet) bound() {
 			return nil
 		})
 		retry := countEntries(f.t, r, r.retryPrefix())
-		own := countEntries(f.t, r, r.ownPrefix())
+		own := 0
+		for d, rec := range f.ownLog(i) {
+			if r.expired(rec.GetAt()+rec.GetTtl(), dropAt) || f.coveredElsewhere(i, d) {
+				own++
+			}
+		}
 		blocks := len(indexedBlocks(f.t, r))
 		if entries > live || pending != 0 || missing != 0 || retry != 0 || own != 0 || blocks > live+1 {
 			var incs []string
@@ -1101,12 +1139,12 @@ func (f *propFleet) bound() {
 				}
 				return nil
 			})
-			for d := range f.ownLog(i) {
+			for d, rec := range f.ownLog(i) {
 				var by []string
 				for _, j := range f.correct() {
 					by = append(by, fmt.Sprintf("r%d:%t", j, f.reps[j].r.covered(d)))
 				}
-				incs = append(incs, fmt.Sprintf("own %s covered %s", d, strings.Join(by, " ")))
+				incs = append(incs, fmt.Sprintf("own %s at %d ttl %d covered %s", d, rec.GetAt(), rec.GetTtl(), strings.Join(by, " ")))
 			}
 			sort.Strings(incs)
 			f.fail("r%d after 3T (now %d, drop clock %d): %d entries for %d live incarnations, %d expired kept, %d missing, %d retry, %d own, %d blocks\n%s",
