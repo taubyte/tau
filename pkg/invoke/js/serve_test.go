@@ -396,8 +396,14 @@ func TestWaitUntilAnswersAtOnceAndHoldsTheInstance(t *testing.T) {
 	f := newFixture(t, waiter)
 	p := f.pool(invoke.WithMaxInstances(1))
 
+	// The clock starts on a warm instance: a cold start is not the work the
+	// answer must not wait for, and under -race it alone outlasts the bound.
+	resp, err := p.Do(t.Context(), f.spec, get("/count"))
+	require.NoError(t, err)
+	require.Equal(t, "0", string(resp.Body))
+
 	began := time.Now()
-	resp, err := p.Do(t.Context(), f.spec, get("/later"))
+	resp, err = p.Do(t.Context(), f.spec, get("/later"))
 	require.NoError(t, err)
 	require.Equal(t, "answered", string(resp.Body))
 	require.Less(t, time.Since(began), 150*time.Millisecond, "the answer did not wait for the work")
@@ -444,9 +450,12 @@ func TestWaitUntilIsBoundedByTheDeadline(t *testing.T) {
 			f := newFixture(t, waiter)
 			f.spec.Timeout = 200 * time.Millisecond
 			p := f.pool()
+			resp, err := p.Do(t.Context(), f.spec, get("/count"))
+			require.NoError(t, err)
+			require.Equal(t, "0", string(resp.Body))
 
 			began := time.Now()
-			resp, err := p.Do(t.Context(), f.spec, get(path))
+			resp, err = p.Do(t.Context(), f.spec, get(path))
 			require.NoError(t, err)
 			require.Equal(t, "answered", string(resp.Body))
 			require.Less(t, time.Since(began), 150*time.Millisecond)
