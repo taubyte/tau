@@ -165,7 +165,7 @@ func (c *cluster) initialize() (err error) {
 
 	var trackerCtx context.Context
 	trackerCtx, c.stopTracker = context.WithCancel(c.ctx)
-	go c.tracker.runDiscoveryAndExchange(trackerCtx, c)
+	go c.tracker.runDiscoveryAndExchange(trackerCtx, c, c.raftClient)
 
 	c.streamService, err = newStreamService(c)
 	if err != nil {
@@ -432,41 +432,57 @@ func (c *cluster) requestVoterJoin(timeout time.Duration) {
 
 	clusterLogger.Infof("[%s] starting voter join request loop (timeout=%v)", c.node.ID().ShortString(), timeout)
 
-	go func() {
-		ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
-		defer cancel()
+	go c.askToJoin(c.raft, c.raftClient, c.tracker, timeout)
+}
 
-		ticker := time.NewTicker(500 * time.Millisecond)
-		defer ticker.Stop()
+// askToJoin asks the group to let this member in every 500ms, until it does or
+// 10s pass.
+//
+// IT ASKS FOR THE MEMBER THAT STARTED IT AND ENDS WITH THAT MEMBER. A yield
+// takes the member down and builds another in the same cluster, replacing the
+// raft, client and tracker in its fields while this goroutine runs on: it
+// reads only the ones it is handed, and stops once their raft is shut down.
+// The member a yield builds asks for itself.
+func (c *cluster) askToJoin(r *raft.Raft, client internalClient, tracker *peerTracker, timeout time.Duration) {
+	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
+	defer cancel()
 
-		for {
-			select {
-			case <-ctx.Done():
-				clusterLogger.Infof("[%s] voter join request loop ended (context done)", c.node.ID().ShortString())
-				return
-			case <-ticker.C:
-				var targets []peer.ID
-				if leader, err := c.Leader(); err == nil && leader != c.node.ID() {
-					targets = []peer.ID{leader}
-					clusterLogger.Infof("[%s] requesting voter join from leader %s",
-						c.node.ID().ShortString(), leader.ShortString())
-				} else {
-					targets = c.voterJoinTargets()
-					clusterLogger.Infof("[%s] requesting voter join from %d targets (no known leader)",
-						c.node.ID().ShortString(), len(targets))
-				}
-				if len(targets) > 0 {
-					if err := c.raftClient.JoinVoter(ctx, c.node.ID(), timeout, targets...); err != nil {
-						clusterLogger.Infof("[%s] voter join request failed: %v", c.node.ID().ShortString(), err)
-					} else {
-						c.joined.Store(true)
-						c.tracker.setDiscoveryInterval(settledDiscoveryInterval)
-						clusterLogger.Infof("[%s] voter join request accepted", c.node.ID().ShortString())
-					}
-				}
-			}
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			clusterLogger.Infof("[%s] voter join request loop ended (context done)", c.node.ID().ShortString())
+			return
+		case <-ticker.C:
 		}
-	}()
+		if r.State() == raft.Shutdown {
+			clusterLogger.Infof("[%s] voter join request loop ended (member taken down)", c.node.ID().ShortString())
+			return
+		}
+		var targets []peer.ID
+		if leader, err := leaderKnownTo(r); err == nil && leader != c.node.ID() {
+			targets = []peer.ID{leader}
+			clusterLogger.Infof("[%s] requesting voter join from leader %s",
+				c.node.ID().ShortString(), leader.ShortString())
+		} else {
+			targets = c.voterJoinTargets(tracker)
+			clusterLogger.Infof("[%s] requesting voter join from %d targets (no known leader)",
+				c.node.ID().ShortString(), len(targets))
+		}
+		if len(targets) == 0 {
+			continue
+		}
+		if err := client.JoinVoter(ctx, c.node.ID(), timeout, targets...); err != nil {
+			clusterLogger.Infof("[%s] voter join request failed: %v", c.node.ID().ShortString(), err)
+			continue
+		}
+		c.joined.Store(true)
+		tracker.setDiscoveryInterval(settledDiscoveryInterval)
+		clusterLogger.Infof("[%s] voter join request accepted", c.node.ID().ShortString())
+		return
+	}
 }
 
 // tryJoinExistingCluster asks peers to let this node in until one does, one
@@ -518,11 +534,13 @@ func (c *cluster) tryJoinExistingCluster(ctx context.Context, peers []peer.ID, t
 	}
 }
 
-func (c *cluster) protocolPeers(protocolID protocol.ID, includeTracker bool) []peer.ID {
+// protocolPeers are the peers listed as serving protocolID among those
+// connected and, given a tracker, those it tracks.
+func (c *cluster) protocolPeers(protocolID protocol.ID, tracker *peerTracker) []peer.ID {
 	targets := make(map[peer.ID]struct{})
 
-	if includeTracker && c.tracker != nil {
-		for _, pid := range c.tracker.allPeers() {
+	if tracker != nil {
+		for _, pid := range tracker.allPeers() {
 			if pid == c.node.ID() {
 				continue
 			}
@@ -553,14 +571,14 @@ func (c *cluster) protocolPeers(protocolID protocol.ID, includeTracker bool) []p
 	return result
 }
 
-func (c *cluster) voterJoinTargets() []peer.ID {
-	return c.protocolPeers(protocol.ID(Protocol(c.namespace)), true)
+func (c *cluster) voterJoinTargets(tracker *peerTracker) []peer.ID {
+	return c.protocolPeers(protocol.ID(Protocol(c.namespace)), tracker)
 }
 
 // raftProtocolPeers are the connected peers listed as serving the group's
 // protocol, the one a join is asked over.
 func (c *cluster) raftProtocolPeers() []peer.ID {
-	return c.protocolPeers(protocol.ID(Protocol(c.namespace)), false)
+	return c.protocolPeers(protocol.ID(Protocol(c.namespace)), nil)
 }
 
 // Close gracefully shuts down the Raft node
@@ -805,7 +823,12 @@ func (c *cluster) Leader() (peer.ID, error) {
 		return "", ErrShutdown
 	}
 
-	addr, _ := c.raft.LeaderWithID()
+	return leaderKnownTo(c.raft)
+}
+
+// leaderKnownTo is the leader r knows of.
+func leaderKnownTo(r *raft.Raft) (peer.ID, error) {
+	addr, _ := r.LeaderWithID()
 	if addr == "" {
 		return "", ErrNoLeader
 	}

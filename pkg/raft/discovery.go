@@ -219,8 +219,10 @@ func supportsRaftProtocol(h host.Host, pid peer.ID, raftProtocol protocol.ID) bo
 	return false
 }
 
-// runDiscoveryAndExchange discovers peers and exchanges lists until ctx is done
-func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) {
+// runDiscoveryAndExchange discovers peers and exchanges lists with them through
+// client until ctx is done. A yield replaces the cluster's client while the
+// round under way finishes, so it uses only the one it is handed.
+func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster, client internalClient) {
 	host := c.node.Peer()
 	raftProtocol := protocol.ID(Protocol(c.namespace))
 
@@ -250,10 +252,10 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) 
 				}
 			}
 
-			if c.raftClient != nil {
+			if client != nil {
 				for _, pid := range pt.allPeers() {
 					startTime, peersMap := pt.getPeersMap()
-					theirStart, theirPeers, err := c.raftClient.ExchangePeers(startTime, peersMap, pid)
+					theirStart, theirPeers, err := client.ExchangePeers(startTime, peersMap, pid)
 					if err != nil {
 						discoveryLogger.Infof("[%s] peer exchange with %s failed: %v",
 							pt.selfID.ShortString(), pid.ShortString(), err)

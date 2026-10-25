@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/hashicorp/raft"
 	ds "github.com/ipfs/go-datastore"
@@ -19,6 +20,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	taupeer "github.com/taubyte/tau/p2p/peer"
+	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
+	"github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2/raftv2connect"
 )
 
 // newMockNode is a mock node closed when the test ends: a mock makes a
@@ -1733,4 +1736,28 @@ func TestCluster_AMemberRestartedOnItsStateLeadsItsGroupAgain(t *testing.T) {
 	require.NoError(t, onLeader(t, []Cluster{again}, func(leader Cluster) error {
 		return leader.Set("after", []byte("v"), time.Second)
 	}))
+}
+
+// letInPeer answers every join the way a leader letting the member in does,
+// and counts the joins it is asked.
+type letInPeer struct {
+	raftv2connect.UnimplementedRaftServiceHandler
+	joins atomic.Int32
+}
+
+func (p *letInPeer) JoinVoter(context.Context, *connect.Request[raftv2.JoinVoterRequest]) (*connect.Response[raftv2.JoinVoterResponse], error) {
+	p.joins.Add(1)
+	return connect.NewResponse(&raftv2.JoinVoterResponse{}), nil
+}
+
+// TestCluster_AMemberLetInAsksNoMore: a member went on asking to be let in
+// every 500ms for the rest of its 10s once the group had let it in, and a
+// leader answers each ask by reading its configuration through its raft.
+func TestCluster_AMemberLetInAsksNoMore(t *testing.T) {
+	group := &letInPeer{}
+	member, _ := facing(t, "let-in-asks-no-more", newFaultStore(), group)
+
+	member.askToJoin(member.raft, member.raftClient, member.tracker, time.Second)
+	assert.Equal(t, int32(1), group.joins.Load(), "the member asked again once let in")
+	assert.True(t, member.joined.Load(), "the member does not know the group let it in")
 }

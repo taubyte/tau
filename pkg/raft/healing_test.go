@@ -314,6 +314,75 @@ func TestHealing_AYieldWaitsForTheRaftItReplaces(t *testing.T) {
 	assert.False(t, found, "an apply of the replaced raft outlived the wipe")
 }
 
+// TestHealing_AJoinEndsWithTheMemberAYieldTakesDown: a member's ask to be let
+// in read the cluster's raft, client and tracker each time it asked, and a
+// yield replaces all three, so the ask of the member taken down went on asking
+// for the member built in its place until its 10s ran out.
+func TestHealing_AJoinEndsWithTheMemberAYieldTakesDown(t *testing.T) {
+	c, err := New(newMockNode(t), "yield-ends-join",
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	defer c.Close()
+	waitLeader(t, c, 5*time.Second)
+
+	cl := c.(*cluster)
+	r, client, tracker := cl.raft, cl.raftClient, cl.tracker
+	start := time.Now()
+	asked := make(chan struct{})
+	go func() {
+		cl.askToJoin(r, client, tracker, time.Second)
+		close(asked)
+	}()
+	cl.healer.yieldAndRejoin(t.Context(), "")
+	<-asked
+	assert.Less(t, time.Since(start), 10*time.Second, "the ask of the member taken down ran its whole course")
+}
+
+// holdingPeer serves the group's protocol and holds every exchange of peers it
+// is asked for until the asker gives up, closing entered on the first.
+type holdingPeer struct {
+	raftv2connect.UnimplementedRaftServiceHandler
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (p *holdingPeer) ExchangePeers(ctx context.Context, _ *connect.Request[raftv2.ExchangePeersRequest]) (*connect.Response[raftv2.ExchangePeersResponse], error) {
+	p.once.Do(func() { close(p.entered) })
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+// TestHealing_AnExchangeAYieldCutsShortKeepsToItsMembersClient: a tracker's
+// round read the cluster's client for each peer it exchanged with, and a yield
+// replaces the client while the round under way runs to its end, so the round
+// it cut short read the field the yield writes with nothing ordering the two:
+// a data race -race reports.
+func TestHealing_AnExchangeAYieldCutsShortKeepsToItsMembersClient(t *testing.T) {
+	const namespace = "yield-mid-exchange"
+	held := &holdingPeer{entered: make(chan struct{})}
+	node := newMockNode(t)
+	for range 2 {
+		other := newMockNode(t)
+		route, handler := raftv2connect.NewRaftServiceHandler(held)
+		mux := http.NewServeMux()
+		mux.Handle(route, handler)
+		srv, err := rpc.Listen(t.Context(), other.Peer(), protocol.ID(Protocol(namespace)), mux)
+		require.NoError(t, err)
+		t.Cleanup(func() { srv.Close() })
+		require.NoError(t, taupeer.LinkAllPeers())
+		require.NoError(t, node.Peer().Connect(t.Context(), peer.AddrInfo{ID: other.ID(), Addrs: other.Peer().Addrs()}))
+	}
+
+	c, err := New(node, namespace,
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	defer c.Close()
+
+	// The tracker's first round exchanges with both, and the first holds it.
+	<-held.entered
+	c.(*cluster).healer.yieldAndRejoin(t.Context(), "")
+}
+
 // heldWipe holds the first delete under prefix until it is let go, so a test
 // can stop a yield inside its wipe.
 type heldWipe struct {
