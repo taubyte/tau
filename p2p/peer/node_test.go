@@ -203,6 +203,29 @@ func TestLinkAllPeers_Success(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestLinkAllPeers_LinksEachPairOfOpenNodesOnce: LinkAllPeers called the
+// mocknet's LinkAll, which adds a link for every ordered pair of every peer the
+// mocknet ever made on each call, closed ones included. pkg/raft links as it
+// goes, and four runs of it held 19 GB.
+func TestLinkAllPeers_LinksEachPairOfOpenNodesOnce(t *testing.T) {
+	a := Mock(t.Context())
+	defer a.Close()
+	b := Mock(t.Context())
+	defer b.Close()
+	c := Mock(t.Context())
+
+	require.NoError(t, LinkAllPeers())
+	require.NoError(t, LinkAllPeers())
+	assert.Len(t, mocknet.LinksBetweenPeers(a.ID(), b.ID()), 1)
+	assert.Len(t, mocknet.LinksBetweenPeers(a.ID(), c.ID()), 1)
+	assert.Empty(t, mocknet.LinksBetweenPeers(a.ID(), a.ID()))
+
+	c.Close()
+	require.NoError(t, LinkAllPeers())
+	assert.Empty(t, mocknet.LinksBetweenPeers(a.ID(), c.ID()), "a closed node is still linked")
+	assert.Len(t, mocknet.LinksBetweenPeers(a.ID(), b.ID()), 1)
+}
+
 func TestStandAlone(t *testing.T) {
 	bp := StandAlone()
 	assert.False(t, bp.Enable)

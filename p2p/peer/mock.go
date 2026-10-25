@@ -8,6 +8,7 @@ import (
 
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/peer"
 	discovery "github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	netmock "github.com/libp2p/go-libp2p/p2p/net/mock"
 
@@ -17,6 +18,9 @@ import (
 var (
 	mocknet     netmock.Mocknet
 	mocknetLock sync.Mutex
+	// mocks are the mock nodes LinkAllPeers links, until they close: the
+	// mocknet keeps every peer it ever made.
+	mocks = map[peer.ID]*node{}
 )
 
 func Mock(ctx context.Context) Node {
@@ -84,14 +88,49 @@ func Mock(ctx context.Context) Node {
 		logger.Warnf("mock DHT bootstrap failed: %v", err)
 	}
 
+	mocknetLock.Lock()
+	mocks[p.id] = &p
+	mocknetLock.Unlock()
+
 	return &p
 }
 
+// LinkAllPeers links every two open mock nodes that are not linked yet, and
+// unlinks the ones that closed. The mocknet's LinkAll adds a link for every
+// ordered pair of every peer it ever made on each call, so a process that
+// links as it goes held a quadratic number of them, of peers long closed.
 func LinkAllPeers() error {
 	mocknetLock.Lock()
 	defer mocknetLock.Unlock()
 	if mocknet == nil {
 		return fmt.Errorf("mocknet not initialized")
 	}
-	return mocknet.LinkAll()
+
+	open := make([]peer.ID, 0, len(mocks))
+	for id, n := range mocks {
+		if n.ctx.Err() == nil {
+			open = append(open, id)
+			continue
+		}
+		delete(mocks, id)
+		for _, other := range mocknet.Peers() {
+			for _, l := range mocknet.LinksBetweenPeers(id, other) {
+				if err := mocknet.Unlink(l); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	for i, a := range open {
+		for _, b := range open[i+1:] {
+			if len(mocknet.LinksBetweenPeers(a, b)) > 0 {
+				continue
+			}
+			if _, err := mocknet.LinkPeers(a, b); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
