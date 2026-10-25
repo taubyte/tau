@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -55,11 +56,22 @@ func main() {
 		Handler: h2c.NewHandler(mux, &http2.Server{}),
 	}
 
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
+	stopping, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// The mock lives as long as its runner holds its stdin open, so a runner
+	// killed outright still takes it along. That stdin is a pipe (Python) or a
+	// socket (Node); a terminal is no runner, and reading one from the
+	// background would stop the mock.
+	if fi, err := os.Stdin.Stat(); err == nil && fi.Mode()&(os.ModeNamedPipe|os.ModeSocket) != 0 {
+		go func() {
+			io.Copy(io.Discard, os.Stdin)
+			stop()
+		}()
+	}
 
 	go func() {
-		<-signalChan
+		<-stopping.Done()
 		shutdownCtx, shutdownCancel := context.WithTimeout(ctx, 5*time.Second)
 		defer shutdownCancel()
 		httpServer.Shutdown(shutdownCtx)

@@ -7,74 +7,54 @@ connectivity works before running the full integration tests.
 """
 
 import os
+import socket
 import sys
 import subprocess
-import time
+from urllib.parse import urlparse
 
 # Add the spore_drive module to the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from spore_drive.service_manager import check_service_health
+from tests.mock import start_mock, stop_mock
+
+
+def _answers(url: str) -> bool:
+    try:
+        socket.create_connection(("localhost", urlparse(url).port), timeout=5).close()
+    except ConnectionRefusedError:
+        return False
+    return True
+
 
 def test_mock_server_startup():
     """Test that the mock server can be started and responds."""
-    mock_server_path = os.path.join(
-        os.path.dirname(__file__), 
-        "..", "..", "mock"
-    )
-    
-    if not os.path.exists(mock_server_path):
-        assert False, f"Mock server directory not found: {mock_server_path}"
-    
-    main_go_path = os.path.join(mock_server_path, "main.go")
-    if not os.path.exists(main_go_path):
-        assert False, f"Mock server main.go not found: {main_go_path}"
-    
+    proc, url = start_mock()
     try:
-        process = subprocess.Popen(
-            ["go", "run", "."],
-            cwd=mock_server_path,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        
-        time.sleep(3)
-        
-        if process.stdout:
-            line = process.stdout.readline()
-            if line:
-                url = line.strip()
-                
-                try:
-                    port = int(url.split(":")[-1].rstrip("/"))
-                    
-                    if check_service_health(port):
-                        success = True
-                    else:
-                        success = False
-                except Exception as e:
-                    success = False
-                
-                process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
-                
-                assert success, "Mock server health check failed"
-            else:
-                process.terminate()
-                process.wait()
-                assert False, "Mock server didn't output URL"
-        else:
-            process.terminate()
-            process.wait()
-            assert False, "Mock server stdout not available"
-            
-    except Exception as e:
-        assert False, f"Failed to start mock server: {e}"
+        assert check_service_health(urlparse(url).port), "Mock server health check failed"
+    finally:
+        stop_mock(proc)
+
+
+def test_a_stopped_mock_no_longer_answers():
+    proc, url = start_mock()
+    try:
+        assert _answers(url)
+    finally:
+        stop_mock(proc)
+    assert not _answers(url)
+
+
+def test_a_mock_ends_when_its_stdin_closes():
+    """Closing the pipe is what killing its runner outright does to it."""
+    proc, url = start_mock()
+    try:
+        proc.stdin.close()
+        assert proc.wait(timeout=10) == 0
+    finally:
+        stop_mock(proc)
+    assert not _answers(url)
+
 
 def test_go_availability():
     """Test that Go is available."""

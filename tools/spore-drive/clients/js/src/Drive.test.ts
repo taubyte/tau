@@ -1,9 +1,11 @@
 import { PromiseClient, createPromiseClient, ConnectError, Code } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-node";
-import { exec, ChildProcess } from "child_process";
+import { execFile, spawn, ChildProcess } from "child_process";
 import * as fs from "fs/promises";
+import * as net from "net";
 import * as os from "os";
 import * as path from "path";
+import { promisify } from "util";
 import * as yaml from "js-yaml";
 import * as tar from "tar";
 
@@ -14,22 +16,45 @@ import { Drive, TauPath, TauLatest, TauVersion, TauUrl } from "./Drive";
 
 const FAKE_TAU = "/tmp/faketau";
 
-// startMock runs the Go mock (DriveService + MockSSHService) and resolves to
-// its base URL.
-export function startMock(dir: string, signal: AbortSignal): Promise<{ url: string; proc: ChildProcess }> {
+export interface Mock {
+  url: string;
+  proc: ChildProcess;
+  exited: Promise<void>;
+  // stop ends the server and resolves once it has exited.
+  stop(): Promise<void>;
+}
+
+// startMock runs a built Go mock (DriveService + MockSSHService) and resolves
+// once it serves. Its stdin is a pipe this process holds: the mock ends when
+// that closes, so a runner killed outright still takes its mock with it.
+export function startMock(bin: string): Promise<Mock> {
+  const proc = spawn(bin, [], { stdio: ["pipe", "pipe", "inherit"] });
+  const exited = new Promise<void>((r) => proc.once("exit", () => r()));
+  const stop = async () => {
+    proc.kill();
+    await exited;
+  };
   return new Promise((resolve, reject) => {
-    const proc = exec(`cd ${dir}; go run .`, { signal });
-    let done = false;
-    proc.stdout?.on("data", (d: string) => {
-      const m = String(d).match(/http:\/\/localhost:\d+\//);
-      if (m && !done) {
-        done = true;
-        resolve({ url: m[0], proc });
-      }
+    let out = "";
+    proc.stdout!.on("data", (d) => {
+      out += d;
+      const m = out.match(/http:\/\/localhost:\d+\//);
+      if (m) resolve({ url: m[0], proc, exited, stop });
     });
-    proc.on("error", (e) => {
-      if (!done) reject(e);
+    proc.once("error", reject);
+    exited.then(() => reject(new Error(`mock exited before serving (${proc.exitCode ?? proc.signalCode})`)));
+  });
+}
+
+// dial connects to url's port and resolves to "connected" or the error's code.
+function dial(url: string): Promise<string> {
+  return new Promise((resolve) => {
+    const s = net.connect(Number(new URL(url).port), "localhost");
+    s.once("connect", () => {
+      s.destroy();
+      resolve("connected");
     });
+    s.once("error", (e: NodeJS.ErrnoException) => resolve(e.code ?? e.message));
   });
 }
 
@@ -78,9 +103,43 @@ export async function configDir(dir: string, ports: Record<string, number>): Pro
   await fs.writeFile(path.join(dir, "keys/acme.key"), "ACME ACCOUNT KEY");
 }
 
+// The mock is built once for the file, into a temporary directory.
+let built: string;
+let bin: string;
+
+beforeAll(async () => {
+  built = await fs.mkdtemp(path.join(os.tmpdir(), "mock-"));
+  bin = path.join(built, "mock");
+  await promisify(execFile)("go", ["build", "-o", bin, "."], { cwd: "../mock" });
+});
+
+afterAll(() => fs.rm(built, { recursive: true, force: true }));
+
+describe("the mock", () => {
+  let server: Mock | undefined;
+
+  afterEach(async () => {
+    await server?.stop();
+  });
+
+  it("no longer answers once stopped", async () => {
+    server = await startMock(bin);
+    expect(await dial(server.url)).toBe("connected");
+    await server.stop();
+    expect(await dial(server.url)).toBe("ECONNREFUSED");
+  });
+
+  it("ends by itself when its stdin closes, as it does when its runner is killed", async () => {
+    server = await startMock(bin);
+    server.proc.stdin!.destroy();
+    await server.exited;
+    expect(server.proc.exitCode).toBe(0);
+    expect(await dial(server.url)).toBe("ECONNREFUSED");
+  }, 30000);
+});
+
 describe("Drive against the mock", () => {
-  const controller = new AbortController();
-  let mockProc: ChildProcess;
+  let server: Mock;
   let mock: PromiseClient<typeof MockSSHService>;
   let drive: Drive;
   let dir: string;
@@ -88,17 +147,13 @@ describe("Drive against the mock", () => {
   let run = 0;
 
   beforeAll(async () => {
-    const { url, proc } = await startMock("../mock", controller.signal);
-    mockProc = proc;
-    mock = createPromiseClient(MockSSHService, createConnectTransport({ baseUrl: url, httpVersion: "1.1" }));
-    drive = new Drive(url);
+    server = await startMock(bin);
+    mock = createPromiseClient(MockSSHService, createConnectTransport({ baseUrl: server.url, httpVersion: "1.1" }));
+    drive = new Drive(server.url);
     await fs.writeFile(FAKE_TAU, "");
   });
 
-  afterAll(async () => {
-    controller.abort();
-    await new Promise((r) => mockProc.on("close", r));
-  });
+  afterAll(() => server.stop());
 
   beforeEach(async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), "cloud-"));

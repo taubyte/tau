@@ -1,10 +1,14 @@
 """Starts the Go mock (DriveService + MockSSHService) and builds a config
 directory whose hosts are mock SSH servers."""
 
+import atexit
+import functools
 import io
 import os
+import shutil
 import subprocess
 import tarfile
+import tempfile
 import time
 from typing import Dict, List, Tuple
 
@@ -16,23 +20,39 @@ from spore_drive.proto.mock.v1 import ssh_pb2
 MOCK_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "mock")
 
 
+@functools.lru_cache(maxsize=None)
+def _binary() -> str:
+    """Builds the mock once per process, into a temporary directory."""
+    out = tempfile.mkdtemp(prefix="mock-")
+    atexit.register(shutil.rmtree, out, True)
+    path = os.path.join(out, "mock")
+    subprocess.run(["go", "build", "-o", path, "."], cwd=MOCK_DIR, check=True)
+    return path
+
+
 def start_mock() -> Tuple[subprocess.Popen, str]:
-    proc = subprocess.Popen(["go", "run", "."], cwd=MOCK_DIR, stdout=subprocess.PIPE,
+    """Runs the mock and returns it with its URL. Its stdin is a pipe this
+    process holds: the mock ends when that closes, so a runner killed outright
+    still takes its mock with it."""
+    proc = subprocess.Popen([_binary()], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.DEVNULL, text=True)
     line = proc.stdout.readline().strip()
     if not line.startswith("http"):
-        proc.kill()
+        stop_mock(proc)
         raise RuntimeError(f"mock did not start: {line!r}")
     return proc, line
 
 
 def stop_mock(proc: subprocess.Popen) -> None:
+    """Ends the mock server and waits for it to exit."""
     proc.terminate()
     try:
         proc.wait(timeout=10)
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait()
+    proc.stdin.close()
+    proc.stdout.close()
 
 
 def _ser(m):
