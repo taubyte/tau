@@ -143,6 +143,13 @@ func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *c
 		return Head{}, nil, err
 	}
 
+	// Its own entry forgotten, with nothing of its own left to refresh it,
+	// this incarnation writes no more, as idleRetire does for a write.
+	if store.counter != 0 && !store.cc.knows(store.replica) {
+		if err := store.drawIncarnation(); err != nil {
+			return Head{}, nil, err
+		}
+	}
 	d, prev := store.nextDot()
 	root := store.stamped(&pb.Delta{
 		Snapshot:   true,
