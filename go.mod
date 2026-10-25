@@ -14,6 +14,7 @@ require (
 	github.com/cockroachdb/pebble v0.0.0-20231218155426-48b54c29d8fe
 	github.com/cockroachdb/pebble/v2 v2.1.5
 	github.com/containerd/containerd v1.7.33
+	github.com/containerd/platforms v0.2.1
 	github.com/expr-lang/expr v1.17.8
 	github.com/fxamacker/cbor/v2 v2.9.1
 	github.com/go-git/go-billy/v5 v5.9.0
@@ -41,6 +42,7 @@ require (
 	github.com/ipsn/go-ipfs v0.0.0-20190407150747-8b9b72514244
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/jarcoal/httpmock v1.3.1
+	github.com/klauspost/compress v1.18.0
 	github.com/libp2p/go-libp2p v0.48.0
 	github.com/libp2p/go-libp2p-gostream v0.6.0
 	github.com/libp2p/go-libp2p-kad-dht v0.41.0
@@ -56,6 +58,7 @@ require (
 	github.com/multiformats/go-multicodec v0.10.0
 	github.com/multiformats/go-multihash v0.2.3
 	github.com/multiformats/go-varint v0.1.0
+	github.com/opencontainers/image-spec v1.1.1
 	github.com/opencontainers/runtime-spec v1.2.0
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.13.9
@@ -120,7 +123,6 @@ require (
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/fifo v1.1.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
-	github.com/containerd/platforms v0.2.1 // indirect
 	github.com/containerd/ttrpc v1.2.7 // indirect
 	github.com/containerd/typeurl/v2 v2.2.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
@@ -183,7 +185,6 @@ require (
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/jbenet/go-temp-err-catcher v0.1.0 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
-	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/koron/go-ssdp v0.0.6 // indirect
 	github.com/kr/fs v0.1.0 // indirect
@@ -227,7 +228,6 @@ require (
 	github.com/multiformats/go-multistream v0.6.1 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
-	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/opencontainers/selinux v1.13.1 // indirect
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
