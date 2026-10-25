@@ -285,7 +285,7 @@ func (m *merging) remove(ctx context.Context, r removal) error {
 	if _, err := m.removeElem(ctx, r.key, r.dot); err != nil {
 		return err
 	}
-	if m.cc.covers(r.dot) {
+	if m.refutes(r) {
 		m.cc.touch(r.dot.replica, r.at, r.expires())
 		return nil
 	}
@@ -304,6 +304,19 @@ func (m *merging) remove(ctx context.Context, r removal) error {
 	m.t.put(pk, encodeStamps(r.at, r.ttl))
 	m.added.pending = min(m.added.pending, r.expires())
 	return nil
+}
+
+// refutes reports whether the context refutes r's dot for it: it covers the
+// dot under an entry that had not expired when r was written. One expired by
+// then counts as forgotten, as it is wherever a drop clock has reached that
+// expiry, so that whether a removal touches the entry or is pending is
+// decided by the removal's own time, not by the receiver's clock.
+func (m *merging) refutes(r removal) bool {
+	if !m.cc.covers(r.dot) {
+		return false
+	}
+	k := m.cc.inc[r.dot.replica]
+	return k == nil || !m.store.expired(k.expires, r.at)
 }
 
 // admit adds an element unless local, the context before this merge, covers
@@ -460,32 +473,31 @@ func (store *Datastore) mergeDelta(ctx context.Context, c cid.Cid, delta *pb.Del
 	return walk, m.commit(ctx)
 }
 
-// dropPending forgets the pending removals of d's elements: d is covered now,
-// and every element of d that was named by one was refused on arrival.
+// dropPending forgets the pending removals of d's elements the context now
+// refutes: every element of d that was named by one was refused on arrival.
 func (m *merging) dropPending(ctx context.Context, d dot) error {
 	entries, err := m.t.scan(ctx, m.store.set.pendingPrefix().ChildString(d.segment()))
 	if err != nil {
 		return err
 	}
 	for _, e := range entries {
-		if err := m.settlePending(e); err != nil {
+		r, err := m.store.set.parsePending(e.key, e.value)
+		if err != nil {
 			return err
+		}
+		if m.refutes(r) {
+			m.settlePending(e.key, r)
 		}
 	}
 	return nil
 }
 
-// settlePending forgets a pending removal whose dot the context now covers.
+// settlePending forgets a pending removal the context now refutes.
 // What it knew passes to the context, so an incarnation's stamps are the same
 // whether a removal of one of its dots arrived before the dot or after it.
-func (m *merging) settlePending(e entry) error {
-	r, err := m.store.set.parsePending(e.key, e.value)
-	if err != nil {
-		return err
-	}
+func (m *merging) settlePending(key string, r removal) {
 	m.cc.touch(r.dot.replica, r.at, r.expires())
-	m.t.del(ds.RawKey(e.key))
-	return nil
+	m.t.del(ds.RawKey(key))
 }
 
 // mergeSnapshot joins a snapshot's state, root and chunks, as one merge. The
@@ -666,10 +678,8 @@ func (m *merging) dropCovered(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if m.cc.covers(r.dot) {
-			if err := m.settlePending(e); err != nil {
-				return err
-			}
+		if m.refutes(r) {
+			m.settlePending(e.key, r)
 		}
 	}
 	for _, prefix := range []ds.Key{m.store.missingPrefix(), m.store.retryPrefix()} {
