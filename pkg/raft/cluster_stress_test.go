@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -641,161 +642,163 @@ func testConcurrentJoin(t *testing.T, nodeCount int, iterations int) {
 	leaderDistribution := make(map[string]int)
 
 	for iter := 0; iter < iterations; iter++ {
-		iterStart := time.Now()
-		stressLog(t, "--- Iteration %d/%d START: Creating %d nodes ---", iter+1, iterations, nodeCount)
-		t.Logf("Iteration %d/%d: Creating %d nodes", iter+1, iterations, nodeCount)
+		func() {
+			iterStart := time.Now()
+			stressLog(t, "--- Iteration %d/%d START: Creating %d nodes ---", iter+1, iterations, nodeCount)
+			t.Logf("Iteration %d/%d: Creating %d nodes (%d goroutines)", iter+1, iterations, nodeCount, runtime.NumGoroutine())
 
-		// Create nodes, meshed below as each serves the group
-		nodes := createStressNodes(t, nodeCount)
-		nodeIDs := make([]peercore.ID, nodeCount)
-		for i, node := range nodes {
-			nodeIDs[i] = node.ID()
-		}
+			// Create nodes, meshed below as each serves the group
+			nodes := createStressNodes(t, nodeCount)
+			nodeIDs := make([]peercore.ID, nodeCount)
+			for i, node := range nodes {
+				nodeIDs[i] = node.ID()
+			}
 
-		namespace := fmt.Sprintf("stress-concurrent-%d-%d", nodeCount, iter)
-		stressLog(t, "Iteration %d/%d: Creating clusters with namespace: %s", iter+1, iterations, namespace)
+			namespace := fmt.Sprintf("stress-concurrent-%d-%d", nodeCount, iter)
+			stressLog(t, "Iteration %d/%d: Creating clusters with namespace: %s", iter+1, iterations, namespace)
 
-		// Create clusters concurrently
-		clusters := make([]Cluster, nodeCount)
-		var wg sync.WaitGroup
-		var mu sync.Mutex
-		var createErr error
-		clusterStart := time.Now()
+			// Create clusters concurrently
+			clusters := make([]Cluster, nodeCount)
+			var wg sync.WaitGroup
+			var mu sync.Mutex
+			var createErr error
+			clusterStart := time.Now()
 
-		for i := 0; i < nodeCount; i++ {
-			wg.Add(1)
-			go func(idx int) {
-				defer wg.Done()
-				bootTimeout := bootstrapTimeoutForNodes(nodeCount)
-				stressLog(t, "Iteration %d/%d: Creating cluster for node %d", iter+1, iterations, idx)
-				cl, err := New(
-					nodes[idx],
-					namespace,
-					WithTimeouts(stressTimeoutConfig()),
-					WithBootstrapTimeout(bootTimeout),
-				)
-				if err != nil {
-					stressLog(t, "Iteration %d/%d: ERROR creating cluster for node %d: %v", iter+1, iterations, idx, err)
-					mu.Lock()
-					if createErr == nil {
-						createErr = err
+			for i := 0; i < nodeCount; i++ {
+				wg.Add(1)
+				go func(idx int) {
+					defer wg.Done()
+					bootTimeout := bootstrapTimeoutForNodes(nodeCount)
+					stressLog(t, "Iteration %d/%d: Creating cluster for node %d", iter+1, iterations, idx)
+					cl, err := New(
+						nodes[idx],
+						namespace,
+						WithTimeouts(stressTimeoutConfig()),
+						WithBootstrapTimeout(bootTimeout),
+					)
+					if err != nil {
+						stressLog(t, "Iteration %d/%d: ERROR creating cluster for node %d: %v", iter+1, iterations, idx, err)
+						mu.Lock()
+						if createErr == nil {
+							createErr = err
+						}
+						mu.Unlock()
+					} else {
+						clusters[idx] = cl
+						stressLog(t, "Iteration %d/%d: SUCCESS creating cluster for node %d", iter+1, iterations, idx)
 					}
-					mu.Unlock()
-				} else {
-					clusters[idx] = cl
-					stressLog(t, "Iteration %d/%d: SUCCESS creating cluster for node %d", iter+1, iterations, idx)
-				}
-			}(i)
-		}
-
-		// Each node links to those before it once it serves the group, while
-		// every member waits out its bootstrap timeout
-		linkErr := linkAsTheyServe(t.Context(), namespace, nodes)
-		wg.Wait()
-		stressLog(t, "Iteration %d/%d: All clusters created (took %v)", iter+1, iterations, time.Since(clusterStart))
-		if createErr != nil {
-			stressLog(t, "--- Iteration %d/%d FAILED: cluster creation error: %v ---", iter+1, iterations, createErr)
-			assert.NilError(t, createErr, "failed to create clusters")
-		}
-
-		// Cleanup: Close clusters first, then nodes (with delay to let Raft finish)
-		// Capture nodes and clusters by value to avoid loop variable issues
-		iterNodes := nodes
-		iterClusters := clusters
-		iterNum := iter + 1
-		defer func() {
-			stressLog(t, "Iteration %d/%d: Starting cleanup", iterNum, iterations)
-			// Close all clusters first
-			for i, cl := range iterClusters {
-				if cl != nil {
-					stressLog(t, "Iteration %d/%d: Closing cluster %d", iterNum, iterations, i)
-					cl.Close()
-				}
+				}(i)
 			}
-			// Give Raft time to finish cleanup
-			time.Sleep(200 * time.Millisecond)
-			// Close all nodes
-			for i, node := range iterNodes {
-				if node != nil {
-					stressLog(t, "Iteration %d/%d: Closing node %d", iterNum, iterations, i)
-					node.Close()
-				}
+
+			// Each node links to those before it once it serves the group, while
+			// every member waits out its bootstrap timeout
+			linkErr := linkAsTheyServe(t.Context(), namespace, nodes)
+			wg.Wait()
+			stressLog(t, "Iteration %d/%d: All clusters created (took %v)", iter+1, iterations, time.Since(clusterStart))
+			if createErr != nil {
+				stressLog(t, "--- Iteration %d/%d FAILED: cluster creation error: %v ---", iter+1, iterations, createErr)
+				assert.NilError(t, createErr, "failed to create clusters")
 			}
-			stressLog(t, "Iteration %d/%d: Cleanup complete", iterNum, iterations)
+
+			// Cleanup: Close clusters first, then nodes (with delay to let Raft finish)
+			// Capture nodes and clusters by value to avoid loop variable issues
+			iterNodes := nodes
+			iterClusters := clusters
+			iterNum := iter + 1
+			defer func() {
+				stressLog(t, "Iteration %d/%d: Starting cleanup", iterNum, iterations)
+				// Close all clusters first
+				for i, cl := range iterClusters {
+					if cl != nil {
+						stressLog(t, "Iteration %d/%d: Closing cluster %d", iterNum, iterations, i)
+						cl.Close()
+					}
+				}
+				// Give Raft time to finish cleanup
+				time.Sleep(200 * time.Millisecond)
+				// Close all nodes
+				for i, node := range iterNodes {
+					if node != nil {
+						stressLog(t, "Iteration %d/%d: Closing node %d", iterNum, iterations, i)
+						node.Close()
+					}
+				}
+				stressLog(t, "Iteration %d/%d: Cleanup complete", iterNum, iterations)
+			}()
+
+			assert.NilError(t, linkErr, "failed to link the nodes")
+			err := waitAllConnected(t, nodes, 30*time.Second)
+			if err != nil {
+				stressLog(t, "--- Iteration %d/%d FAILED: mesh connectivity: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "failed to establish mesh connectivity")
+			}
+
+			// Verify leader elected - scale timeout with node count
+			leaderTimeout := time.Duration(nodeCount) * 500 * time.Millisecond
+			if leaderTimeout < 10*time.Second {
+				leaderTimeout = 10 * time.Second
+			}
+			if leaderTimeout > 30*time.Second {
+				leaderTimeout = 30 * time.Second
+			}
+			leaderID, err := verifyLeaderElected(t, clusters, leaderTimeout)
+			if err != nil {
+				stressLog(t, "--- Iteration %d/%d FAILED: leader election: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "failed to verify leader election")
+			}
+
+			// Verify all nodes are voters - scale timeout with node count
+			voterTimeout := time.Duration(nodeCount) * 500 * time.Millisecond
+			if voterTimeout < 10*time.Second {
+				voterTimeout = 10 * time.Second
+			}
+			if voterTimeout > 20*time.Second {
+				voterTimeout = 20 * time.Second
+			}
+			err = verifyAllVoters(t, clusters, nodeIDs, voterTimeout)
+			if err != nil {
+				stressLog(t, "--- Iteration %d/%d FAILED: voter verification: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "failed to verify all nodes are voters")
+			}
+
+			// Stricter health checks
+			stressLog(t, "--- Iteration %d/%d: Running strict health checks ---", iter+1, iterations)
+
+			// Verify Raft states (1 Leader, rest Followers)
+			err = verifyRaftStates(t, clusters)
+			if err != nil {
+				stressLog(t, "--- Iteration %d/%d FAILED: Raft states check: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "raft states check failed")
+			}
+
+			// Verify configuration consistency
+			err = verifyConfigurationConsistency(t, clusters)
+			if err != nil {
+				stressLog(t, "--- Iteration %d/%d FAILED: Configuration consistency: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "configuration consistency check failed")
+			}
+
+			// Verify cluster stability (500ms)
+			err = verifyClusterStability(t, clusters, 500*time.Millisecond)
+			if err != nil {
+				stressLog(t, "--- Iteration %d/%d FAILED: Cluster stability: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "cluster stability check failed")
+			}
+
+			// Verify FSM coherence - write values and verify they replicate
+			fsmPrefix := fmt.Sprintf("concurrent-%d-%d", nodeCount, iter)
+			err = verifyFSMCoherence(t, clusters, fsmPrefix, 10)
+			if err != nil {
+				stressLog(t, "--- Iteration %d/%d FAILED: FSM coherence: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "FSM coherence check failed")
+			}
+
+			// Track leader distribution
+			leaderDistribution[leaderID.String()]++
+
+			stressLog(t, "--- Iteration %d/%d SUCCESS: Leader %s elected, health checks passed, FSM coherent (took %v) ---", iter+1, iterations, leaderID.String(), time.Since(iterStart))
+			t.Logf("Iteration %d: Leader elected: %s", iter+1, leaderID)
 		}()
-
-		assert.NilError(t, linkErr, "failed to link the nodes")
-		err := waitAllConnected(t, nodes, 30*time.Second)
-		if err != nil {
-			stressLog(t, "--- Iteration %d/%d FAILED: mesh connectivity: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "failed to establish mesh connectivity")
-		}
-
-		// Verify leader elected - scale timeout with node count
-		leaderTimeout := time.Duration(nodeCount) * 500 * time.Millisecond
-		if leaderTimeout < 10*time.Second {
-			leaderTimeout = 10 * time.Second
-		}
-		if leaderTimeout > 30*time.Second {
-			leaderTimeout = 30 * time.Second
-		}
-		leaderID, err := verifyLeaderElected(t, clusters, leaderTimeout)
-		if err != nil {
-			stressLog(t, "--- Iteration %d/%d FAILED: leader election: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "failed to verify leader election")
-		}
-
-		// Verify all nodes are voters - scale timeout with node count
-		voterTimeout := time.Duration(nodeCount) * 500 * time.Millisecond
-		if voterTimeout < 10*time.Second {
-			voterTimeout = 10 * time.Second
-		}
-		if voterTimeout > 20*time.Second {
-			voterTimeout = 20 * time.Second
-		}
-		err = verifyAllVoters(t, clusters, nodeIDs, voterTimeout)
-		if err != nil {
-			stressLog(t, "--- Iteration %d/%d FAILED: voter verification: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "failed to verify all nodes are voters")
-		}
-
-		// Stricter health checks
-		stressLog(t, "--- Iteration %d/%d: Running strict health checks ---", iter+1, iterations)
-
-		// Verify Raft states (1 Leader, rest Followers)
-		err = verifyRaftStates(t, clusters)
-		if err != nil {
-			stressLog(t, "--- Iteration %d/%d FAILED: Raft states check: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "raft states check failed")
-		}
-
-		// Verify configuration consistency
-		err = verifyConfigurationConsistency(t, clusters)
-		if err != nil {
-			stressLog(t, "--- Iteration %d/%d FAILED: Configuration consistency: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "configuration consistency check failed")
-		}
-
-		// Verify cluster stability (500ms)
-		err = verifyClusterStability(t, clusters, 500*time.Millisecond)
-		if err != nil {
-			stressLog(t, "--- Iteration %d/%d FAILED: Cluster stability: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "cluster stability check failed")
-		}
-
-		// Verify FSM coherence - write values and verify they replicate
-		fsmPrefix := fmt.Sprintf("concurrent-%d-%d", nodeCount, iter)
-		err = verifyFSMCoherence(t, clusters, fsmPrefix, 10)
-		if err != nil {
-			stressLog(t, "--- Iteration %d/%d FAILED: FSM coherence: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "FSM coherence check failed")
-		}
-
-		// Track leader distribution
-		leaderDistribution[leaderID.String()]++
-
-		stressLog(t, "--- Iteration %d/%d SUCCESS: Leader %s elected, health checks passed, FSM coherent (took %v) ---", iter+1, iterations, leaderID.String(), time.Since(iterStart))
-		t.Logf("Iteration %d: Leader elected: %s", iter+1, leaderID)
 	}
 
 	// Log leader distribution
@@ -827,183 +830,185 @@ func testSequentialJoin(t *testing.T, nodeCount int, iterations int) {
 	leaderDistribution := make(map[string]int)
 
 	for iter := 0; iter < iterations; iter++ {
-		iterStart := time.Now()
-		stressLog(t, "--- Iteration %d/%d START: Creating %d nodes ---", iter+1, iterations, nodeCount)
-		t.Logf("Iteration %d/%d: Creating %d nodes", iter+1, iterations, nodeCount)
+		func() {
+			iterStart := time.Now()
+			stressLog(t, "--- Iteration %d/%d START: Creating %d nodes ---", iter+1, iterations, nodeCount)
+			t.Logf("Iteration %d/%d: Creating %d nodes (%d goroutines)", iter+1, iterations, nodeCount, runtime.NumGoroutine())
 
-		// Create nodes, each linked to the members before it as it joins
-		nodes := createStressNodes(t, nodeCount)
-		nodeIDs := make([]peercore.ID, nodeCount)
-		for i, node := range nodes {
-			nodeIDs[i] = node.ID()
-		}
+			// Create nodes, each linked to the members before it as it joins
+			nodes := createStressNodes(t, nodeCount)
+			nodeIDs := make([]peercore.ID, nodeCount)
+			for i, node := range nodes {
+				nodeIDs[i] = node.ID()
+			}
 
-		namespace := fmt.Sprintf("stress-sequential-%d-%d", nodeCount, iter)
-		clusters := make([]Cluster, nodeCount)
-		var err error
+			namespace := fmt.Sprintf("stress-sequential-%d-%d", nodeCount, iter)
+			clusters := make([]Cluster, nodeCount)
+			var err error
 
-		// First node starts the cluster (via discovery bootstrap)
-		bootTimeout := bootstrapTimeoutForNodes(nodeCount)
-		stressLog(t, "Iteration %d/%d: Creating first cluster node", iter+1, iterations)
-		clusters[0], err = New(
-			nodes[0],
-			namespace,
-			WithTimeouts(stressTimeoutConfig()),
-			WithBootstrapTimeout(bootTimeout),
-		)
-		if err != nil {
-			stressLog(t, "--- Iteration %d/%d FAILED: first cluster creation: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "failed to create first cluster")
-		}
-
-		// Wait for leader to be elected
-		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-		err = clusters[0].WaitForLeader(ctx)
-		cancel()
-		if err != nil {
-			stressLog(t, "--- Iteration %d/%d FAILED: wait for leader: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "failed to elect leader")
-		}
-		stressLog(t, "Iteration %d/%d: Leader elected", iter+1, iterations)
-
-		// Remaining nodes join sequentially
-		// Scale timeout based on node count - larger clusters need more time
-		joinTimeout := time.Duration(nodeCount) * 500 * time.Millisecond
-		if joinTimeout < 10*time.Second {
-			joinTimeout = 10 * time.Second
-		}
-		if joinTimeout > 30*time.Second {
-			joinTimeout = 30 * time.Second
-		}
-
-		for i := 1; i < nodeCount; i++ {
-			joinStart := time.Now()
-			stressLog(t, "Iteration %d/%d: Node %d joining cluster (timeout: %v)", iter+1, iterations, i, joinTimeout)
-			assert.NilError(t, link(t.Context(), nodes[i], nodes[:i]...), "failed to link node %d", i)
-			clusters[i], err = New(
-				nodes[i],
+			// First node starts the cluster (via discovery bootstrap)
+			bootTimeout := bootstrapTimeoutForNodes(nodeCount)
+			stressLog(t, "Iteration %d/%d: Creating first cluster node", iter+1, iterations)
+			clusters[0], err = New(
+				nodes[0],
 				namespace,
 				WithTimeouts(stressTimeoutConfig()),
 				WithBootstrapTimeout(bootTimeout),
 			)
 			if err != nil {
-				stressLog(t, "Iteration %d/%d: ERROR creating cluster for node %d: %v", iter+1, iterations, i, err)
-				assert.NilError(t, err, "failed to create cluster for node %d", i)
+				stressLog(t, "--- Iteration %d/%d FAILED: first cluster creation: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "failed to create first cluster")
 			}
 
-			// Wait for node to join - scale timeout with cluster size
-			err = waitForMember(t, clusters[0], nodes[i].ID(), raft.Voter, joinTimeout)
+			// Wait for leader to be elected
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			err = clusters[0].WaitForLeader(ctx)
+			cancel()
 			if err != nil {
-				// Get current members for debugging
-				members, _ := clusters[0].Members()
-				stressLog(t, "Iteration %d/%d: ERROR node %d failed to join after %v (current members: %d): %v", iter+1, iterations, i, time.Since(joinStart), len(members), err)
-				assert.NilError(t, err, "node %d failed to join as voter", i)
+				stressLog(t, "--- Iteration %d/%d FAILED: wait for leader: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "failed to elect leader")
+			}
+			stressLog(t, "Iteration %d/%d: Leader elected", iter+1, iterations)
+
+			// Remaining nodes join sequentially
+			// Scale timeout based on node count - larger clusters need more time
+			joinTimeout := time.Duration(nodeCount) * 500 * time.Millisecond
+			if joinTimeout < 10*time.Second {
+				joinTimeout = 10 * time.Second
+			}
+			if joinTimeout > 30*time.Second {
+				joinTimeout = 30 * time.Second
 			}
 
-			// Verify cluster size
-			members, err := clusters[0].Members()
+			for i := 1; i < nodeCount; i++ {
+				joinStart := time.Now()
+				stressLog(t, "Iteration %d/%d: Node %d joining cluster (timeout: %v)", iter+1, iterations, i, joinTimeout)
+				assert.NilError(t, link(t.Context(), nodes[i], nodes[:i]...), "failed to link node %d", i)
+				clusters[i], err = New(
+					nodes[i],
+					namespace,
+					WithTimeouts(stressTimeoutConfig()),
+					WithBootstrapTimeout(bootTimeout),
+				)
+				if err != nil {
+					stressLog(t, "Iteration %d/%d: ERROR creating cluster for node %d: %v", iter+1, iterations, i, err)
+					assert.NilError(t, err, "failed to create cluster for node %d", i)
+				}
+
+				// Wait for node to join - scale timeout with cluster size
+				err = waitForMember(t, clusters[0], nodes[i].ID(), raft.Voter, joinTimeout)
+				if err != nil {
+					// Get current members for debugging
+					members, _ := clusters[0].Members()
+					stressLog(t, "Iteration %d/%d: ERROR node %d failed to join after %v (current members: %d): %v", iter+1, iterations, i, time.Since(joinStart), len(members), err)
+					assert.NilError(t, err, "node %d failed to join as voter", i)
+				}
+
+				// Verify cluster size
+				members, err := clusters[0].Members()
+				if err != nil {
+					stressLog(t, "Iteration %d/%d: ERROR getting members: %v", iter+1, iterations, err)
+					assert.NilError(t, err, "failed to get members")
+				}
+				stressLog(t, "Iteration %d/%d: Node %d joined, cluster size: %d (took %v)", iter+1, iterations, i, len(members), time.Since(joinStart))
+				assert.Equal(t, len(members), i+1, "cluster should have %d members", i+1)
+
+				// Small delay between joins
+				time.Sleep(200 * time.Millisecond)
+			}
+
+			// Cleanup: Close clusters first, then nodes (with delay to let Raft finish)
+			// Capture nodes and clusters by value to avoid loop variable issues
+			iterNodes := nodes
+			iterClusters := clusters
+			iterNum := iter + 1
+			defer func() {
+				stressLog(t, "Iteration %d/%d: Starting cleanup", iterNum, iterations)
+				// Close all clusters first
+				for i, cl := range iterClusters {
+					if cl != nil {
+						stressLog(t, "Iteration %d/%d: Closing cluster %d", iterNum, iterations, i)
+						cl.Close()
+					}
+				}
+				// Give Raft time to finish cleanup
+				time.Sleep(200 * time.Millisecond)
+				// Close all nodes
+				for i, node := range iterNodes {
+					if node != nil {
+						stressLog(t, "Iteration %d/%d: Closing node %d", iterNum, iterations, i)
+						node.Close()
+					}
+				}
+				stressLog(t, "Iteration %d/%d: Cleanup complete", iterNum, iterations)
+			}()
+
+			// Verify leader still exists - scale timeout with node count
+			leaderTimeout := time.Duration(nodeCount) * 500 * time.Millisecond
+			if leaderTimeout < 10*time.Second {
+				leaderTimeout = 10 * time.Second
+			}
+			if leaderTimeout > 30*time.Second {
+				leaderTimeout = 30 * time.Second
+			}
+			leaderID, err := verifyLeaderElected(t, clusters, leaderTimeout)
 			if err != nil {
-				stressLog(t, "Iteration %d/%d: ERROR getting members: %v", iter+1, iterations, err)
-				assert.NilError(t, err, "failed to get members")
+				stressLog(t, "--- Iteration %d/%d FAILED: leader verification: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "failed to verify leader after sequential joins")
 			}
-			stressLog(t, "Iteration %d/%d: Node %d joined, cluster size: %d (took %v)", iter+1, iterations, i, len(members), time.Since(joinStart))
-			assert.Equal(t, len(members), i+1, "cluster should have %d members", i+1)
 
-			// Small delay between joins
-			time.Sleep(200 * time.Millisecond)
-		}
+			// Verify all nodes are voters - scale timeout with node count
+			voterTimeout := time.Duration(nodeCount) * 500 * time.Millisecond
+			if voterTimeout < 10*time.Second {
+				voterTimeout = 10 * time.Second
+			}
+			if voterTimeout > 20*time.Second {
+				voterTimeout = 20 * time.Second
+			}
+			err = verifyAllVoters(t, clusters, nodeIDs, voterTimeout)
+			if err != nil {
+				stressLog(t, "--- Iteration %d/%d FAILED: voter verification: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "failed to verify all nodes are voters")
+			}
 
-		// Cleanup: Close clusters first, then nodes (with delay to let Raft finish)
-		// Capture nodes and clusters by value to avoid loop variable issues
-		iterNodes := nodes
-		iterClusters := clusters
-		iterNum := iter + 1
-		defer func() {
-			stressLog(t, "Iteration %d/%d: Starting cleanup", iterNum, iterations)
-			// Close all clusters first
-			for i, cl := range iterClusters {
-				if cl != nil {
-					stressLog(t, "Iteration %d/%d: Closing cluster %d", iterNum, iterations, i)
-					cl.Close()
-				}
+			// Stricter health checks
+			stressLog(t, "--- Iteration %d/%d: Running strict health checks ---", iter+1, iterations)
+
+			// Verify Raft states (1 Leader, rest Followers)
+			err = verifyRaftStates(t, clusters)
+			if err != nil {
+				stressLog(t, "--- Iteration %d/%d FAILED: Raft states check: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "raft states check failed")
 			}
-			// Give Raft time to finish cleanup
-			time.Sleep(200 * time.Millisecond)
-			// Close all nodes
-			for i, node := range iterNodes {
-				if node != nil {
-					stressLog(t, "Iteration %d/%d: Closing node %d", iterNum, iterations, i)
-					node.Close()
-				}
+
+			// Verify configuration consistency
+			err = verifyConfigurationConsistency(t, clusters)
+			if err != nil {
+				stressLog(t, "--- Iteration %d/%d FAILED: Configuration consistency: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "configuration consistency check failed")
 			}
-			stressLog(t, "Iteration %d/%d: Cleanup complete", iterNum, iterations)
+
+			// Verify cluster stability (500ms)
+			err = verifyClusterStability(t, clusters, 500*time.Millisecond)
+			if err != nil {
+				stressLog(t, "--- Iteration %d/%d FAILED: Cluster stability: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "cluster stability check failed")
+			}
+
+			// Verify FSM coherence - write values and verify they replicate
+			fsmPrefix := fmt.Sprintf("sequential-%d-%d", nodeCount, iter)
+			err = verifyFSMCoherence(t, clusters, fsmPrefix, 10)
+			if err != nil {
+				stressLog(t, "--- Iteration %d/%d FAILED: FSM coherence: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "FSM coherence check failed")
+			}
+
+			// Track leader distribution
+			leaderDistribution[leaderID.String()]++
+
+			stressLog(t, "--- Iteration %d/%d SUCCESS: Leader %s, All %d nodes joined, FSM coherent (took %v) ---", iter+1, iterations, leaderID.String(), nodeCount, time.Since(iterStart))
+			t.Logf("Iteration %d: Leader: %s, All %d nodes joined", iter+1, leaderID, nodeCount)
 		}()
-
-		// Verify leader still exists - scale timeout with node count
-		leaderTimeout := time.Duration(nodeCount) * 500 * time.Millisecond
-		if leaderTimeout < 10*time.Second {
-			leaderTimeout = 10 * time.Second
-		}
-		if leaderTimeout > 30*time.Second {
-			leaderTimeout = 30 * time.Second
-		}
-		leaderID, err := verifyLeaderElected(t, clusters, leaderTimeout)
-		if err != nil {
-			stressLog(t, "--- Iteration %d/%d FAILED: leader verification: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "failed to verify leader after sequential joins")
-		}
-
-		// Verify all nodes are voters - scale timeout with node count
-		voterTimeout := time.Duration(nodeCount) * 500 * time.Millisecond
-		if voterTimeout < 10*time.Second {
-			voterTimeout = 10 * time.Second
-		}
-		if voterTimeout > 20*time.Second {
-			voterTimeout = 20 * time.Second
-		}
-		err = verifyAllVoters(t, clusters, nodeIDs, voterTimeout)
-		if err != nil {
-			stressLog(t, "--- Iteration %d/%d FAILED: voter verification: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "failed to verify all nodes are voters")
-		}
-
-		// Stricter health checks
-		stressLog(t, "--- Iteration %d/%d: Running strict health checks ---", iter+1, iterations)
-
-		// Verify Raft states (1 Leader, rest Followers)
-		err = verifyRaftStates(t, clusters)
-		if err != nil {
-			stressLog(t, "--- Iteration %d/%d FAILED: Raft states check: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "raft states check failed")
-		}
-
-		// Verify configuration consistency
-		err = verifyConfigurationConsistency(t, clusters)
-		if err != nil {
-			stressLog(t, "--- Iteration %d/%d FAILED: Configuration consistency: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "configuration consistency check failed")
-		}
-
-		// Verify cluster stability (500ms)
-		err = verifyClusterStability(t, clusters, 500*time.Millisecond)
-		if err != nil {
-			stressLog(t, "--- Iteration %d/%d FAILED: Cluster stability: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "cluster stability check failed")
-		}
-
-		// Verify FSM coherence - write values and verify they replicate
-		fsmPrefix := fmt.Sprintf("sequential-%d-%d", nodeCount, iter)
-		err = verifyFSMCoherence(t, clusters, fsmPrefix, 10)
-		if err != nil {
-			stressLog(t, "--- Iteration %d/%d FAILED: FSM coherence: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "FSM coherence check failed")
-		}
-
-		// Track leader distribution
-		leaderDistribution[leaderID.String()]++
-
-		stressLog(t, "--- Iteration %d/%d SUCCESS: Leader %s, All %d nodes joined, FSM coherent (took %v) ---", iter+1, iterations, leaderID.String(), nodeCount, time.Since(iterStart))
-		t.Logf("Iteration %d: Leader: %s, All %d nodes joined", iter+1, leaderID, nodeCount)
 	}
 
 	// Log leader distribution
@@ -1281,134 +1286,136 @@ func TestStressCluster_LeaderDistribution(t *testing.T) {
 	leaderDistribution := make(map[string]int)
 
 	for iter := 0; iter < iterations; iter++ {
-		iterStart := time.Now()
-		stressLog(t, "--- Distribution Iteration %d/%d START ---", iter+1, iterations)
-		t.Logf("Iteration %d/%d", iter+1, iterations)
+		func() {
+			iterStart := time.Now()
+			stressLog(t, "--- Distribution Iteration %d/%d START ---", iter+1, iterations)
+			t.Logf("Iteration %d/%d (%d goroutines)", iter+1, iterations, runtime.NumGoroutine())
 
-		// Create nodes, meshed below as each serves the group
-		nodes := createStressNodes(t, nodeCount)
-		nodeIDs := make([]peercore.ID, nodeCount)
-		for i, node := range nodes {
-			nodeIDs[i] = node.ID()
-		}
+			// Create nodes, meshed below as each serves the group
+			nodes := createStressNodes(t, nodeCount)
+			nodeIDs := make([]peercore.ID, nodeCount)
+			for i, node := range nodes {
+				nodeIDs[i] = node.ID()
+			}
 
-		namespace := fmt.Sprintf("stress-distribution-%d", iter)
+			namespace := fmt.Sprintf("stress-distribution-%d", iter)
 
-		// Create clusters concurrently
-		clusters := make([]Cluster, nodeCount)
-		var wg sync.WaitGroup
-		var mu sync.Mutex
-		var createErr error
-		bootTimeout := bootstrapTimeoutForNodes(nodeCount)
+			// Create clusters concurrently
+			clusters := make([]Cluster, nodeCount)
+			var wg sync.WaitGroup
+			var mu sync.Mutex
+			var createErr error
+			bootTimeout := bootstrapTimeoutForNodes(nodeCount)
 
-		for i := 0; i < nodeCount; i++ {
-			wg.Add(1)
-			go func(idx int) {
-				defer wg.Done()
-				cl, err := New(
-					nodes[idx],
-					namespace,
-					WithTimeouts(stressTimeoutConfig()),
-					WithBootstrapTimeout(bootTimeout),
-				)
-				if err != nil {
-					stressLog(t, "Distribution Iteration %d/%d: ERROR creating cluster for node %d: %v", iter+1, iterations, idx, err)
-					mu.Lock()
-					if createErr == nil {
-						createErr = err
+			for i := 0; i < nodeCount; i++ {
+				wg.Add(1)
+				go func(idx int) {
+					defer wg.Done()
+					cl, err := New(
+						nodes[idx],
+						namespace,
+						WithTimeouts(stressTimeoutConfig()),
+						WithBootstrapTimeout(bootTimeout),
+					)
+					if err != nil {
+						stressLog(t, "Distribution Iteration %d/%d: ERROR creating cluster for node %d: %v", iter+1, iterations, idx, err)
+						mu.Lock()
+						if createErr == nil {
+							createErr = err
+						}
+						mu.Unlock()
+					} else {
+						clusters[idx] = cl
 					}
-					mu.Unlock()
-				} else {
-					clusters[idx] = cl
-				}
-			}(i)
-		}
-
-		linkErr := linkAsTheyServe(t.Context(), namespace, nodes)
-		wg.Wait()
-		if createErr != nil {
-			stressLog(t, "--- Distribution Iteration %d/%d FAILED: cluster creation: %v ---", iter+1, iterations, createErr)
-			assert.NilError(t, createErr, "failed to create clusters")
-		}
-
-		// Cleanup: Close clusters first, then nodes (with delay to let Raft finish)
-		// Capture nodes and clusters by value to avoid loop variable issues
-		iterNodes := nodes
-		iterClusters := clusters
-		iterNum := iter + 1
-		defer func() {
-			stressLog(t, "Distribution Iteration %d/%d: Starting cleanup", iterNum, iterations)
-			// Close all clusters first
-			for i, cl := range iterClusters {
-				if cl != nil {
-					stressLog(t, "Distribution Iteration %d/%d: Closing cluster %d", iterNum, iterations, i)
-					cl.Close()
-				}
+				}(i)
 			}
-			// Give Raft time to finish cleanup
-			time.Sleep(200 * time.Millisecond)
-			// Close all nodes
-			for i, node := range iterNodes {
-				if node != nil {
-					stressLog(t, "Distribution Iteration %d/%d: Closing node %d", iterNum, iterations, i)
-					node.Close()
-				}
+
+			linkErr := linkAsTheyServe(t.Context(), namespace, nodes)
+			wg.Wait()
+			if createErr != nil {
+				stressLog(t, "--- Distribution Iteration %d/%d FAILED: cluster creation: %v ---", iter+1, iterations, createErr)
+				assert.NilError(t, createErr, "failed to create clusters")
 			}
-			stressLog(t, "Distribution Iteration %d/%d: Cleanup complete", iterNum, iterations)
+
+			// Cleanup: Close clusters first, then nodes (with delay to let Raft finish)
+			// Capture nodes and clusters by value to avoid loop variable issues
+			iterNodes := nodes
+			iterClusters := clusters
+			iterNum := iter + 1
+			defer func() {
+				stressLog(t, "Distribution Iteration %d/%d: Starting cleanup", iterNum, iterations)
+				// Close all clusters first
+				for i, cl := range iterClusters {
+					if cl != nil {
+						stressLog(t, "Distribution Iteration %d/%d: Closing cluster %d", iterNum, iterations, i)
+						cl.Close()
+					}
+				}
+				// Give Raft time to finish cleanup
+				time.Sleep(200 * time.Millisecond)
+				// Close all nodes
+				for i, node := range iterNodes {
+					if node != nil {
+						stressLog(t, "Distribution Iteration %d/%d: Closing node %d", iterNum, iterations, i)
+						node.Close()
+					}
+				}
+				stressLog(t, "Distribution Iteration %d/%d: Cleanup complete", iterNum, iterations)
+			}()
+
+			assert.NilError(t, linkErr, "failed to link the nodes")
+			err := waitAllConnected(t, nodes, 30*time.Second)
+			if err != nil {
+				stressLog(t, "--- Distribution Iteration %d/%d FAILED: mesh connectivity: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "failed to establish mesh connectivity")
+			}
+
+			// Verify leader elected - scale timeout with node count (5 nodes for distribution test)
+			leaderTimeout := 60 * time.Second // Distribution test uses 5 nodes, so 60s is sufficient
+			leaderID, err := verifyLeaderElected(t, clusters, leaderTimeout)
+			if err != nil {
+				stressLog(t, "--- Distribution Iteration %d/%d FAILED: leader election: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "failed to verify leader election")
+			}
+
+			// Stricter health checks
+			stressLog(t, "--- Distribution Iteration %d/%d: Running strict health checks ---", iter+1, iterations)
+
+			// Verify Raft states (1 Leader, rest Followers)
+			err = verifyRaftStates(t, clusters)
+			if err != nil {
+				stressLog(t, "--- Distribution Iteration %d/%d FAILED: Raft states check: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "raft states check failed")
+			}
+
+			// Verify configuration consistency
+			err = verifyConfigurationConsistency(t, clusters)
+			if err != nil {
+				stressLog(t, "--- Distribution Iteration %d/%d FAILED: Configuration consistency: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "configuration consistency check failed")
+			}
+
+			// Verify cluster stability (500ms)
+			err = verifyClusterStability(t, clusters, 500*time.Millisecond)
+			if err != nil {
+				stressLog(t, "--- Distribution Iteration %d/%d FAILED: Cluster stability: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "cluster stability check failed")
+			}
+
+			// Verify FSM coherence - write values and verify they replicate
+			fsmPrefix := fmt.Sprintf("distribution-%d", iter)
+			err = verifyFSMCoherence(t, clusters, fsmPrefix, 5)
+			if err != nil {
+				stressLog(t, "--- Distribution Iteration %d/%d FAILED: FSM coherence: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "FSM coherence check failed")
+			}
+
+			// Track leader distribution
+			leaderDistribution[leaderID.String()]++
+
+			stressLog(t, "--- Distribution Iteration %d/%d SUCCESS: Leader %s elected, FSM coherent (took %v) ---", iter+1, iterations, leaderID.String(), time.Since(iterStart))
+			t.Logf("Iteration %d: Leader elected: %s", iter+1, leaderID)
 		}()
-
-		assert.NilError(t, linkErr, "failed to link the nodes")
-		err := waitAllConnected(t, nodes, 30*time.Second)
-		if err != nil {
-			stressLog(t, "--- Distribution Iteration %d/%d FAILED: mesh connectivity: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "failed to establish mesh connectivity")
-		}
-
-		// Verify leader elected - scale timeout with node count (5 nodes for distribution test)
-		leaderTimeout := 60 * time.Second // Distribution test uses 5 nodes, so 60s is sufficient
-		leaderID, err := verifyLeaderElected(t, clusters, leaderTimeout)
-		if err != nil {
-			stressLog(t, "--- Distribution Iteration %d/%d FAILED: leader election: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "failed to verify leader election")
-		}
-
-		// Stricter health checks
-		stressLog(t, "--- Distribution Iteration %d/%d: Running strict health checks ---", iter+1, iterations)
-
-		// Verify Raft states (1 Leader, rest Followers)
-		err = verifyRaftStates(t, clusters)
-		if err != nil {
-			stressLog(t, "--- Distribution Iteration %d/%d FAILED: Raft states check: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "raft states check failed")
-		}
-
-		// Verify configuration consistency
-		err = verifyConfigurationConsistency(t, clusters)
-		if err != nil {
-			stressLog(t, "--- Distribution Iteration %d/%d FAILED: Configuration consistency: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "configuration consistency check failed")
-		}
-
-		// Verify cluster stability (500ms)
-		err = verifyClusterStability(t, clusters, 500*time.Millisecond)
-		if err != nil {
-			stressLog(t, "--- Distribution Iteration %d/%d FAILED: Cluster stability: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "cluster stability check failed")
-		}
-
-		// Verify FSM coherence - write values and verify they replicate
-		fsmPrefix := fmt.Sprintf("distribution-%d", iter)
-		err = verifyFSMCoherence(t, clusters, fsmPrefix, 5)
-		if err != nil {
-			stressLog(t, "--- Distribution Iteration %d/%d FAILED: FSM coherence: %v ---", iter+1, iterations, err)
-			assert.NilError(t, err, "FSM coherence check failed")
-		}
-
-		// Track leader distribution
-		leaderDistribution[leaderID.String()]++
-
-		stressLog(t, "--- Distribution Iteration %d/%d SUCCESS: Leader %s elected, FSM coherent (took %v) ---", iter+1, iterations, leaderID.String(), time.Since(iterStart))
-		t.Logf("Iteration %d: Leader elected: %s", iter+1, leaderID)
 	}
 
 	// Log detailed leader distribution
