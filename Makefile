@@ -161,7 +161,7 @@ test-acme:
 # build frontend verified to pebble's root. A delegation names port 53, so the
 # node's dns needs root; containers are host-networked, at pinned images.
 test-acme-live:
-	go test -exec '$(LEAKCHECK) $(AS_ROOT)' -tags docker_integration -count=1 -v -timeout 10m -run '^TestARealCAIssuesThroughARealDelegation$$' ./node/boot/
+	go test -exec '$(LEAKCHECK) $(AS_ROOT)' -tags docker_integration -count=1 -v -timeout 10m -run '^(TestARealCAIssuesThroughARealDelegation|TestTheLeftoverSweepTakesTheAnonymousVolumes)$$' ./node/boot/
 
 test-application:
 	go test -exec '$(LEAKCHECK) $(AS_ROOT)' -tags 'dreaming docker_integration' -count=1 -v -timeout 10m -run '^(TestAnApplicationAnswersThroughTheGateway|TestAContainerWorkerRunsToCompletionPerInvocation|TestAChannelServedByAContainerDeliversToItsNamedPort)$$' ./node/dream/
