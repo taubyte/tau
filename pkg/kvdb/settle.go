@@ -1,8 +1,10 @@
 package kvdb
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
+	"slices"
 	"time"
 
 	ds "github.com/ipfs/go-datastore"
@@ -25,6 +27,14 @@ import (
 // peer that cannot serve what it holds still counts: its frontier is heard,
 // and what it holds is held here only once it is fetched, from it or from
 // anyone.
+//
+// A peer that is not settled may also have heard peers this replica has not,
+// across a partition it bridges or one it crossed within G, where it is not
+// new: it sends the peers it heard with its frontier, and while one of them
+// is not heard here and was first listed less than G ago, this replica is
+// not settled. A listed peer is waited for once: one listed for G and never
+// heard is gone as any peer not heard for G is, and one heard is waited for
+// again only once it has gone unheard for G.
 //
 // A replica knows it has heard every live peer once it has heard the fleet
 // for G without a break, or holds the frontier of a peer that was settled,
@@ -58,6 +68,7 @@ func (store *Datastore) settledKey() ds.Key {
 type frontier struct {
 	cc           *causalContext
 	settled      bool
+	peers        []string
 	first, heard time.Duration
 }
 
@@ -65,6 +76,12 @@ type frontier struct {
 // hearing it, and when it last did.
 type contact struct {
 	first, heard time.Duration
+}
+
+// A listing is a peer a frontier names that this replica has not heard: when
+// one first named it, and when one last did.
+type listing struct {
+	first, last time.Duration
 }
 
 // An ok is a verdict that vouched for this replica: its rejoin ends once it
@@ -128,7 +145,34 @@ func (store *Datastore) hearFrontier(msg message) {
 	if msg.context == nil || msg.since == 0 || !store.plausible(msg.now) {
 		return
 	}
-	store.frontiers[msg.incarnation] = &frontier{cc: msg.context, settled: msg.settled, first: first, heard: up}
+	store.frontiers[msg.incarnation] = &frontier{cc: msg.context, settled: msg.settled, peers: msg.peers, first: first, heard: up}
+	self := peerOf(store.replica)
+	for _, p := range msg.peers {
+		if p == self || store.contacts[p] != nil {
+			continue
+		}
+		l := store.listed[p]
+		if l == nil {
+			l = &listing{first: up}
+			store.listed[p] = l
+		}
+		l.last = up
+	}
+}
+
+// heardPeers are the peers this replica heard within G, but itself. The
+// caller holds store.mu.
+func (store *Datastore) heardPeers() [][]byte {
+	store.prune(store.times.up())
+	self := peerOf(store.replica)
+	var out [][]byte
+	for p := range store.contacts {
+		if p != self {
+			out = append(out, []byte(p))
+		}
+	}
+	slices.SortFunc(out, bytes.Compare)
+	return out
 }
 
 // prune forgets the peers and incarnations not heard for G and the
@@ -143,6 +187,11 @@ func (store *Datastore) prune(up time.Duration) {
 	for inc, f := range store.frontiers {
 		if up-f.heard > g {
 			delete(store.frontiers, inc)
+		}
+	}
+	for p, l := range store.listed {
+		if up-l.last > g || store.contacts[p] != nil {
+			delete(store.listed, p)
 		}
 	}
 	store.pruneForgotten(up)
@@ -172,7 +221,8 @@ func (store *Datastore) holds(o *causalContext) bool {
 }
 
 // settled reports whether this replica holds all that every live peer said
-// it holds, at least one is live, none is new to it and unsettled, and it
+// it holds, at least one is live, none is new to it and unsettled, none
+// that is not settled names a peer it has not heard for less than G, and it
 // is grounded. The caller holds store.mu.
 func (store *Datastore) settled() bool {
 	up := store.times.up()
@@ -184,7 +234,7 @@ func (store *Datastore) settled() bool {
 	live, vouched, held := false, false, true
 	for _, f := range store.frontiers {
 		live = true
-		if !f.settled && up-f.first < g {
+		if !f.settled && (up-f.first < g || store.waitsFor(f, up, g)) {
 			return false
 		}
 		if !store.holds(f.cc) {
@@ -200,6 +250,21 @@ func (store *Datastore) settled() bool {
 		store.grounded = true
 	}
 	return store.grounded
+}
+
+// waitsFor reports whether a frontier names a peer this replica has not
+// heard and was first named less than G ago. The caller holds store.mu.
+func (store *Datastore) waitsFor(f *frontier, up, g time.Duration) bool {
+	self := peerOf(store.replica)
+	for _, p := range f.peers {
+		if p == self || store.contacts[p] != nil {
+			continue
+		}
+		if l := store.listed[p]; l != nil && up-l.first < g {
+			return true
+		}
+	}
+	return false
 }
 
 // settle is settled, and records the fleet time this replica is settled at.

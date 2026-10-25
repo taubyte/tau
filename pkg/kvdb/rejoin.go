@@ -121,6 +121,7 @@ type message struct {
 	acks        *causalContext
 	context     *causalContext
 	settled     bool
+	peers       []string
 }
 
 type verdict struct {
@@ -140,6 +141,9 @@ func (store *Datastore) decodeBroadcast(data []byte) (message, error) {
 	msg.acks = contextFromPB(&pb.Context{Vector: b.GetAcks()})
 	if b.GetContext() != nil {
 		msg.context, msg.settled = contextFromPB(b.GetContext()), b.GetSettled()
+		for _, p := range b.GetHeard() {
+			msg.peers = append(msg.peers, string(p))
+		}
 	}
 	for _, h := range b.GetHeads() {
 		c, err := cid.Cast(h.GetCid())
@@ -173,7 +177,7 @@ func (store *Datastore) message(heads []Head, v *verdict) *pb.CRDTBroadcast {
 	}
 	if v != nil {
 		b.Verdict = &pb.Verdict{To: []byte(v.to), Rebase: v.rebase, Since: v.since, Held: v.held}
-		b.Context = store.cc.toPB()
+		b.Context, b.Heard = store.cc.toPB(), store.heardPeers()
 	}
 	// What this replica merged lately, of whom: the authors stop keeping it
 	// for a rebase.
@@ -202,7 +206,7 @@ func (store *Datastore) encodeBroadcast(ctx context.Context, heads []Head, beat 
 	b := store.message(heads, nil)
 	if beat && !store.rejoining && store.since != 0 {
 		b.Settled = store.settle(ctx)
-		b.Context = store.cc.toPB()
+		b.Context, b.Heard = store.cc.toPB(), store.heardPeers()
 	}
 	store.mu.Unlock()
 	return proto.Marshal(b)

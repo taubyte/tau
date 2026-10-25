@@ -48,7 +48,10 @@ type CRDTBroadcast struct {
 	Context *Context `protobuf:"bytes,9,opt,name=context,proto3" json:"context,omitempty"`
 	// settled is set when the sender held, as it sent this, all that every
 	// peer it hears holds, and knows it has heard them all.
-	Settled       bool `protobuf:"varint,10,opt,name=settled,proto3" json:"settled,omitempty"`
+	Settled bool `protobuf:"varint,10,opt,name=settled,proto3" json:"settled,omitempty"`
+	// heard are the peers the sender heard within G, with its context: a peer
+	// that is not settled may have heard a fleet this replica has not.
+	Heard         [][]byte `protobuf:"bytes,11,rep,name=heard,proto3" json:"heard,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -151,6 +154,13 @@ func (x *CRDTBroadcast) GetSettled() bool {
 		return x.Settled
 	}
 	return false
+}
+
+func (x *CRDTBroadcast) GetHeard() [][]byte {
+	if x != nil {
+		return x.Heard
+	}
+	return nil
 }
 
 // A Verdict tells one rejoining incarnation whether the sender can still
@@ -297,7 +307,7 @@ var File_bcast_proto protoreflect.FileDescriptor
 
 const file_bcast_proto_rawDesc = "" +
 	"\n" +
-	"\vbcast.proto\x12\acrdt.pb\x1a\vdelta.proto\"\xcc\x02\n" +
+	"\vbcast.proto\x12\acrdt.pb\x1a\vdelta.proto\"\xe2\x02\n" +
 	"\rCRDTBroadcast\x12#\n" +
 	"\x05Heads\x18\x01 \x03(\v2\r.crdt.pb.HeadR\x05Heads\x12\x14\n" +
 	"\x05since\x18\x02 \x01(\x04R\x05since\x12\x10\n" +
@@ -309,7 +319,8 @@ const file_bcast_proto_rawDesc = "" +
 	"\ahorizon\x18\b \x01(\x04R\ahorizon\x12*\n" +
 	"\acontext\x18\t \x01(\v2\x10.crdt.pb.ContextR\acontext\x12\x18\n" +
 	"\asettled\x18\n" +
-	" \x01(\bR\asettled\"[\n" +
+	" \x01(\bR\asettled\x12\x14\n" +
+	"\x05heard\x18\v \x03(\fR\x05heard\"[\n" +
 	"\aVerdict\x12\x0e\n" +
 	"\x02to\x18\x01 \x01(\fR\x02to\x12\x16\n" +
 	"\x06rebase\x18\x02 \x01(\bR\x06rebase\x12\x14\n" +

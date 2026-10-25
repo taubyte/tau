@@ -32,6 +32,9 @@ message CRDTBroadcast {
   // settled is set when the sender held, as it sent this, all that every
   // peer it hears holds, and knows it has heard them all.
   bool settled = 10;
+  // heard are the peers the sender heard within G, with its context: a peer
+  // that is not settled may have heard a fleet this replica has not.
+  repeated bytes heard = 11;
 }
 
 // A Verdict tells one rejoining incarnation whether the sender can still

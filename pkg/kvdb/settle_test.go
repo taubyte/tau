@@ -871,7 +871,7 @@ func TestAVerdictCountsAsItsJudgesFrontier(t *testing.T) {
 // on the other side refutes, and the removal is forgotten soon after the
 // heal: the copy does not come back.
 func TestAJudgeWaitsBeforeTrustingANewPeerThatIsNotSettled(t *testing.T) {
-	healWindow(t, false)
+	healWindow(t, false, 0)
 }
 
 // TestAJudgeWaitsForAPeerItHasNotHeardForG: the heal window is a peer's, and
@@ -880,13 +880,55 @@ func TestAJudgeWaitsBeforeTrustingANewPeerThatIsNotSettled(t *testing.T) {
 // heard only the other side for longer than G, holding nothing of it: the
 // judge waits for it as for a peer it never heard.
 func TestAJudgeWaitsForAPeerItHasNotHeardForG(t *testing.T) {
-	healWindow(t, true)
+	healWindow(t, true, gapIntervals+1)
+}
+
+// TestAJudgeWaitsForThePeersAPeerThatCrossedOverHeard: the peer the judge
+// first hears of the other side is one it heard all along, which went over
+// only an interval before the heal and is not new. It is not settled, and
+// it names the peers it heard there, which the judge has not heard: the
+// judge waits for them as for a new peer.
+func TestAJudgeWaitsForThePeersAPeerThatCrossedOverHeard(t *testing.T) {
+	healWindow(t, true, 1)
+}
+
+// TestAPeerNamedAndNeverHeardIsWaitedForOnce: a peer that is not settled
+// names, beat after beat, a peer the judge never hears. The judge waits G
+// for it, then counts it gone, as it does any peer not heard for G: it does
+// not wait for as long as it is named.
+func TestAPeerNamedAndNeverHeardIsWaitedForOnce(t *testing.T) {
+	st := newSimTime()
+	j, y := st.replica(t, "j", 0), st.replica(t, "y", 0)
+	st.settle(t, j, y)
+	beat := func() {
+		st.advance(simRI)
+		y.beat()
+		for _, data := range y.out.take() {
+			msg, err := j.r.decodeBroadcast(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			msg.settled, msg.peers = false, append(msg.peers, "ghost")
+			j.r.handleBroadcast(context.Background(), msg)
+		}
+	}
+	for range gapIntervals {
+		beat()
+		if j.settled() {
+			t.Fatal("the judge settled within G of a peer that is not settled naming one it has not heard")
+		}
+	}
+	beat()
+	beat()
+	if !j.settled() {
+		t.Fatal("the judge still waits, past G, for a peer it never heard")
+	}
 }
 
 // healWindow is the heal of TestAJudgeWaitsBeforeTrustingANewPeerThatIsNotSettled,
 // the peer first heard of the other side one the judge heard before the
-// partition if known.
-func healWindow(t *testing.T, known bool) {
+// partition if known, gone over for the last intervals over of it.
+func healWindow(t *testing.T, known bool, over int) {
 	st := newSimTime()
 	st.advance(20 * simRI)
 	w, a, b, r := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
@@ -910,7 +952,7 @@ func healWindow(t *testing.T, known bool) {
 	// over for the last of it and hears a and b, holding nothing of theirs.
 	end := simRetention + simMargin - 4*simRI
 	for elapsed := time.Duration(0); elapsed < end; elapsed += simRI {
-		if known && end-elapsed <= (gapIntervals+1)*simRI {
+		if known && end-elapsed <= time.Duration(over)*simRI {
 			st.listen(t, []*simReplica{a, b}, y)
 			st.exchange(t, j, x)
 			j.maintain(t)

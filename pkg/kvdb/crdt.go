@@ -323,7 +323,8 @@ type Datastore struct {
 	// its heartbeats acknowledge those to their authors.
 	merged map[string]time.Duration
 	// contacts are the peers heard without a break of G, frontiers what
-	// each live incarnation last said it holds, contactFrom when this
+	// each live incarnation last said it holds, listed the peers frontiers
+	// name that this replica has not heard, contactFrom when this
 	// replica began hearing the fleet without a break, grounded whether it
 	// knows it has heard every live peer, settledSince the fleet time it
 	// last held all they held, forgotten the entries it dropped by expiry
@@ -331,6 +332,7 @@ type Datastore struct {
 	// (see settle.go).
 	contacts     map[string]*contact
 	frontiers    map[string]*frontier
+	listed       map[string]*listing
 	contactFrom  time.Duration
 	grounded     bool
 	settledSince uint64
@@ -411,6 +413,7 @@ func NewDatastore(
 		answered:         map[string]time.Duration{},
 		merged:           map[string]time.Duration{},
 		contacts:         map[string]*contact{},
+		listed:           map[string]*listing{},
 		frontiers:        map[string]*frontier{},
 		forgotten:        map[string]*forgottenEntry{},
 		oks:              map[string]*ok{},
