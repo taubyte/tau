@@ -558,6 +558,31 @@ func formedPair(t *testing.T, namespace string) (a, b Cluster) {
 	return a, b
 }
 
+// TestHealing_AnOrphanThePeerstoreDoesNotListIsAbsorbed: the healer looked for
+// foreign peers only among those the peerstore lists as serving the group, and
+// identify can leave a peer unlisted for good: a peer that begins to serve right
+// after connecting is listed only once its push lands, and an identify answer
+// built from the snapshot before it can land after it. The joiner of a formed
+// pair is such a peer, its one discovery probe spent before it served, and a
+// group that removed it never absorbed it.
+func TestHealing_AnOrphanThePeerstoreDoesNotListIsAbsorbed(t *testing.T) {
+	probeEvery(t, 50*time.Millisecond)
+	namespace := "heal-orphan-unlisted"
+	a, b := formedPair(t, namespace)
+
+	removed, left := removeTheLeader(t, a, b)
+	tracker := left.(*cluster).current().tracker
+	tracker.addPeer(idOf(removed))
+	tracker.firstProbe(idOf(removed))
+	require.NoError(t, left.(*cluster).node.Peer().Peerstore().RemoveProtocols(idOf(removed), protocol.ID(Protocol(namespace))))
+
+	require.Eventually(t, func() bool {
+		members, err := left.Members()
+		return err == nil && len(members) == 2
+	}, 20*time.Second, 50*time.Millisecond, "the orphan was never absorbed")
+	leaderOf(t, a, b)
+}
+
 // TestHealing_AnOrphanIsAbsorbed: a member removed from its group keeps
 // running with no leader, and the group's healer finds it and has it wipe its
 // state and join again.

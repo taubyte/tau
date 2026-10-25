@@ -370,7 +370,9 @@ func (h *healer) detectAndHeal(ctx context.Context) {
 	h.yieldAndRejoin(ctx, foreignLeader)
 }
 
-// findForeignPeers returns libp2p peers that advertise our protocol but are not raft members.
+// findForeignPeers returns the tracked peers that serve our protocol but are
+// not raft members. One the peerstore does not list is probed: what identify
+// recorded can be stale, and a member a group removed would never be absorbed.
 func (h *healer) findForeignPeers() []peer.ID {
 	host := h.cluster.node.Peer()
 	raftProtocol := protocol.ID(Protocol(h.cluster.namespace))
@@ -393,7 +395,7 @@ func (h *healer) findForeignPeers() []peer.ID {
 		if _, inConfig := memberSet[pid]; inConfig {
 			continue
 		}
-		if supportsRaftProtocol(host, pid, raftProtocol) {
+		if supportsRaftProtocol(host, pid, raftProtocol) || h.member.tracker.probe(h.cluster.ctx, host, pid, raftProtocol) {
 			foreign = append(foreign, pid)
 		}
 	}

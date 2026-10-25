@@ -188,21 +188,23 @@ func (pt *peerTracker) firstProbe(pid peer.ID) bool {
 	return true
 }
 
-// probe asks a connected peer whether it serves the group by opening a stream
-// on the group's protocol. The peerstore learns what a peer serves from the
-// identify run on connecting, so a peer that began to serve after the two
-// connected is listed only once identify's push arrives: one best-effort
-// attempt. A stream that negotiates the protocol is recorded in the peerstore
-// (basichost's NewStream), which lists the peer from then on.
-func (pt *peerTracker) probe(ctx context.Context, h host.Host, pid peer.ID, raftProtocol protocol.ID) {
+// probe asks a peer whether it serves the group by opening a stream on the
+// group's protocol, and reports whether it does. The peerstore learns what a
+// peer serves from the identify run on connecting, so a peer that began to
+// serve after the two connected is listed only once identify's push arrives:
+// one best-effort attempt, which an identify answer built before the push can
+// still overwrite. A stream that negotiates the protocol is recorded in the
+// peerstore (basichost's NewStream), which lists the peer from then on.
+func (pt *peerTracker) probe(ctx context.Context, h host.Host, pid peer.ID, raftProtocol protocol.ID) bool {
 	ctx, cancel := context.WithTimeout(ctx, sendToPeerTimeout)
 	defer cancel()
 	s, err := h.NewStream(ctx, pid, raftProtocol)
 	if err != nil {
-		return
+		return false
 	}
 	s.Reset()
 	pt.addPeer(pid)
+	return true
 }
 
 // supportsRaftProtocol checks if a peer explicitly supports the given raft protocol
