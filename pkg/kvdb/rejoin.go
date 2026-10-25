@@ -926,7 +926,7 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 	store.horizon = 0
 	store.since, store.sinceUp = since, store.times.up()
 	store.rejoining, store.gapFrom = false, 0
-	store.settledSince, store.grounded = 0, false
+	store.settledSince = 0
 	clear(store.oks)
 	store.lastHeard = store.sinceUp
 	store.seenHeadsMux.Lock()

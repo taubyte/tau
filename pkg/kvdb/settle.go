@@ -39,7 +39,8 @@ import (
 // A replica knows it has heard every live peer once it has heard the fleet
 // for G without a break, or holds the frontier of a peer that was settled,
 // or holds the state of a judge that vouched for it or rebased it: it is
-// grounded. A rebase ends it: what the replica held is gone. A peer first
+// grounded. A rebase keeps it: it empties what the replica holds, not whom
+// it has heard, and settled asks for both. A peer first
 // heard less than G ago that has not said it is settled may be the first
 // heard of peers this replica has not heard yet, a fleet it was cut off from
 // among them: until it says so, or G has passed and those have been heard
