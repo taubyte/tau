@@ -39,3 +39,35 @@ func TestAMergeForgetsWhatExpiredBeforeItReads(t *testing.T) {
 		t.Fatalf("what a merge forgot is still in the heads it carries: %v", hs)
 	}
 }
+
+// TestWhatAMergeForgetsIsCompactedAway (M4): an entry a merge's sweep
+// forgets asks for a snapshot as one maintenance forgets does, or the
+// replica's last snapshot, fresh and its only own block, carries the entry
+// until its half-life.
+func TestWhatAMergeForgetsIsCompactedAway(t *testing.T) {
+	st := newSimTime()
+	w, a, b := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0)
+	put(t, w.r, "/x", "1")
+	a.pull(t, w)
+	a.r.mu.Lock()
+	expires := a.r.cc.inc[w.r.replica].expires + a.r.times.margin
+	a.r.mu.Unlock()
+	for a.r.dropClockNow()+1 < expires {
+		st.advance(min(simRI, time.Duration(expires-1-a.r.dropClockNow())*time.Millisecond))
+		st.heartbeat(t, a, b)
+	}
+	a.refresh(t)
+	put(t, b.r, "/y", "2")
+	st.advance(time.Millisecond)
+	st.heartbeat(t, a, b)
+	a.pull(t, b)
+	if a.knows(w.r.replica) {
+		t.Fatal("setup: the merge should have forgotten the writer")
+	}
+	before := lastDot(a.r)
+	a.maintain(t)
+	if lastDot(a.r) == before {
+		t.Fatal("a forgot an entry in a merge and its next maintenance wrote no snapshot")
+	}
+	a.wantValue(t, "/x", "1")
+}
