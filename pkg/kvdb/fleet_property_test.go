@@ -809,6 +809,13 @@ func runFleet(t *testing.T, seed int64, length int, tvaries bool) {
 	f := &propFleet{t: t, seed: seed, st: st, rng: rng, wrong: -1, cut: map[[2]int]bool{}, puts: map[string]*propPut{}, gens: map[int]int{}, lastHeard: map[int]time.Time{}, tvaries: tvaries, incLast: map[string]time.Time{}, rejoins: map[int]bool{}, replaced: map[int]bool{}}
 	n := 2 + rng.Intn(5)
 	wrong := rng.Intn(3) == 0
+	if wrong && n == 2 {
+		// A wrong clock runs beside two correct ones at least: a correct
+		// replica alone with it hears no clock that agrees with its own,
+		// as the wrong one does not, and no judge can ever vouch for
+		// either.
+		n = 3
+	}
 	for i := range n {
 		offset := time.Duration(rng.Int63n(int64(simS))) - simS/2
 		if wrong && i == n-1 {
