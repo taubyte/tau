@@ -435,7 +435,8 @@ func (rx *receiver) await(t *testing.T, judge func(forge.Delivery) bool) bool {
 // container is one forge server this test started, through the repo's own
 // docker backend.
 type container struct {
-	out output
+	name string
+	out  output
 }
 
 // output collects what a container writes, as it writes it.
@@ -483,17 +484,22 @@ func start(t *testing.T, cfg *core.ContainerConfig) *container {
 	require.NoError(t, backend.Image(cfg.Image).Pull(t.Context()), "pulling %s", cfg.Image)
 	t.Logf("%s pulled in %s", cfg.Image, time.Since(pulled).Round(time.Second))
 
+	cli, err := client.New(client.FromEnv)
+	require.NoError(t, err)
+	t.Cleanup(func() { cli.Close() })
 	cfg.Labels = map[string]string{ownerLabel: fmt.Sprint(os.Getpid())}
 	id, err := backend.Create(t.Context(), cfg)
 	require.NoError(t, err)
-	c := &container{}
+	c := &container{name: string(id)}
 	t.Cleanup(func() {
 		if t.Failed() {
 			t.Logf("%s logs, tail:\n%s", cfg.Image, tail(c.logs(), 60))
 		}
 		ctx := context.Background()
 		backend.Stop(ctx, id)
-		backend.Remove(ctx, id)
+		if err := remove(ctx, cli, c.name); err != nil {
+			t.Errorf("removing %s: %v", c.name, err)
+		}
 	})
 	require.NoError(t, backend.Start(t.Context(), id))
 
@@ -543,9 +549,16 @@ func sweep(t *testing.T) {
 			continue
 		}
 		t.Logf("removing %s (%s), left behind by test process %s", c.ID[:12], c.Image, c.Labels[ownerLabel])
-		_, err := cli.ContainerRemove(ctx, c.ID, client.ContainerRemoveOptions{Force: true})
-		require.NoError(t, err)
+		require.NoError(t, remove(ctx, cli, c.ID))
 	}
+}
+
+// remove deletes a container the harness started, with the anonymous volumes
+// its image declares. Docker keeps those unless asked, and every forge image
+// declares some, so each removal without them left a forge's data on the host.
+func remove(ctx context.Context, cli *client.Client, id string) error {
+	_, err := cli.ContainerRemove(ctx, id, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
+	return err
 }
 
 // logs is everything the container has written so far.
