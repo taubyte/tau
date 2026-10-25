@@ -397,6 +397,12 @@ func (b *ContainerdBackend) Image(name string) core.Image {
 
 // Create creates a new container
 func (b *ContainerdBackend) Create(ctx context.Context, config *core.ContainerConfig) (core.ContainerID, error) {
+	return b.create(ctx, config)
+}
+
+// create creates a container with extra spec options layered last, for what
+// only this backend's own containers ask for.
+func (b *ContainerdBackend) create(ctx context.Context, config *core.ContainerConfig, extra ...oci.SpecOpts) (core.ContainerID, error) {
 	if b.client == nil {
 		return "", fmt.Errorf("containerd client not initialized")
 	}
@@ -457,7 +463,7 @@ func (b *ContainerdBackend) Create(ctx context.Context, config *core.ContainerCo
 	newContainer := []containerd.NewContainerOpts{
 		containerd.WithImage(image),
 		containerd.WithNewSnapshot(fmt.Sprintf("%s-snapshot", containerID), image),
-		containerd.WithNewSpec(append(imageOpts, opts...)...),
+		containerd.WithNewSpec(append(append(imageOpts, opts...), extra...)...),
 	}
 
 	// The runtime is the boundary an untrusted workload runs against, so it is

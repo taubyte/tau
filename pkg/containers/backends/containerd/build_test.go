@@ -6,6 +6,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"io"
 	"io/fs"
 	"os"
@@ -482,6 +483,34 @@ func TestBuildKitRecipe(t *testing.T) {
 
 	assert.NotContains(t, buildkitImage, ":latest",
 		"the builder must be pinned so builds do not change underneath us")
+}
+
+// The rootful builder sees its own cgroup as the root of the hierarchy, through
+// a namespace of its own and a writable mount of it that replaces the default
+// read-only one rather than shadowing it.
+func TestTheBuilderGetsItsOwnCgroupHierarchy(t *testing.T) {
+	spec := &specs.Spec{
+		Linux: &specs.Linux{},
+		Mounts: []specs.Mount{
+			{Destination: "/proc", Type: "proc", Source: "proc"},
+			{Destination: cgroupPath, Type: "cgroup", Source: "cgroup", Options: []string{"ro"}},
+		},
+	}
+	require.NoError(t, withOwnCgroupHierarchy()(context.Background(), nil, nil, spec))
+
+	assert.Contains(t, spec.Linux.Namespaces, specs.LinuxNamespace{Type: specs.CgroupNamespace})
+
+	var cgroupMounts []specs.Mount
+	for _, m := range spec.Mounts {
+		if m.Destination == cgroupPath {
+			cgroupMounts = append(cgroupMounts, m)
+		}
+	}
+	require.Len(t, cgroupMounts, 1)
+	assert.Equal(t, "cgroup", cgroupMounts[0].Type)
+	assert.Contains(t, cgroupMounts[0].Options, "rw")
+	assert.NotContains(t, cgroupMounts[0].Options, "ro")
+	assert.Equal(t, "/proc", spec.Mounts[0].Destination)
 }
 
 func TestBuildPrivileges(t *testing.T) {

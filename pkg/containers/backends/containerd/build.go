@@ -18,11 +18,14 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/namespaces"
+	"github.com/containerd/containerd/oci"
 	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/taubyte/tau/pkg/containers/core"
 	"github.com/taubyte/tau/pkg/containers/reserve"
 )
@@ -79,20 +82,20 @@ func buildkitFlags(rootless bool) []string {
 // writeBuildKitConfig writes the buildkitd configuration the builder is started
 // with, and returns its path on the host.
 //
-// It exists for one setting. BuildKit runs every RUN step in a runc container of
-// its own, and leaves that container's cgroup path empty unless it is told a
-// parent — so the steps would land at the root of the host hierarchy, outside
-// the subtree the egress rule matches, and a Dockerfile could do what build.sh
-// cannot. Naming the restricted parent puts every step inside it: the rule
-// matches the ancestor at that level, so nesting depth below it does not matter.
-//
-// The container sees the host's cgroup hierarchy at the same paths (it is bind
-// mounted, with no cgroup namespace), so the host path is the right one to name.
-func writeBuildKitConfig(workDir string, restrictEgress bool) (string, error) {
+// It exists for one setting, and only for a builder that sees the host's cgroup
+// hierarchy (see withOwnCgroupHierarchy for the one that does not). BuildKit
+// runs every RUN step in a runc container of its own, under a "buildkit" group
+// at the root of the hierarchy it sees unless it is told a parent — the host's
+// root, outside the subtree the egress rule matches, so a Dockerfile could do
+// what build.sh cannot. Naming the restricted parent puts every step inside it:
+// the rule matches the ancestor at that level, so nesting depth below it does
+// not matter. The hierarchy is bind mounted at the same paths, so the host path
+// is the right one to name.
+func writeBuildKitConfig(workDir string, restrictSteps bool) (string, error) {
 	path := filepath.Join(workDir, "buildkitd.toml")
 
 	config := "[worker.oci]\n"
-	if restrictEgress {
+	if restrictSteps {
 		parent, err := restrictedCgroupParent()
 		if err != nil {
 			return "", err
@@ -165,7 +168,7 @@ func (i *containerdImage) Build(ctx context.Context, input *core.DockerfileBuild
 		return fmt.Errorf("failed to unpack build context: %w", err)
 	}
 
-	configPath, err := writeBuildKitConfig(workDir, input.RestrictEgress)
+	configPath, err := writeBuildKitConfig(workDir, input.RestrictEgress && i.backend.isRootlessMode())
 	if err != nil {
 		return err
 	}
@@ -177,21 +180,70 @@ func (i *containerdImage) Build(ctx context.Context, input *core.DockerfileBuild
 	return i.importBuilt(ctx, filepath.Join(outputDir, buildOutputFile))
 }
 
-// runBuildKit runs one build and returns the builder's own output on failure —
-// that output is the compiler error, the missing package, the failed RUN.
-// keepCgroup keeps buildkitd in the cgroup it is started in. The image sets
-// BUILDKIT_SETUP_CGROUPV2_ROOT, and buildkitd then moves into an "init" group at
-// the root of the hierarchy it sees, which is the host's, passed through: out of
-// the restricted subtree the egress rule matches. Its own fetches, an ADD's URL,
-// a `# syntax=` frontend, a base image's triggers, would leave unfiltered while
-// only the RUN steps it parents are confined.
+// The moby/buildkit image sets BUILDKIT_SETUP_CGROUPV2_ROOT, and buildkitd then
+// moves every process it finds at the root of the cgroup hierarchy it sees,
+// itself included, into an "init" group there, and enables every controller at
+// that root. Shown the host's hierarchy, that root is the host's: buildkitd left
+// the cgroup its build was created in, with the build's limits and, restricted,
+// the egress rule its own fetches had to pass, and it changed which controllers
+// the host's root hands down.
+//
+// keepCgroup turns that off for the builder that sees the host's hierarchy.
 const keepCgroup = "BUILDKIT_SETUP_CGROUPV2_ROOT=0"
 
-func (i *containerdImage) runBuildKit(ctx context.Context, contextDir, outputDir, configPath, dockerfile string, restrictEgress bool) error {
-	env := buildkitFlags(i.backend.isRootlessMode())
-	if restrictEgress {
-		env = append(env, keepCgroup)
+// withOwnCgroupHierarchy gives the builder a cgroup namespace of its own, rooted
+// at the cgroup containerd creates it in, and a writable cgroup2 mount of that
+// namespace in place of the read-only one. The root buildkitd sees is then the
+// build's own cgroup: it moves into an "init" group below it, enables the
+// controllers there for the steps, and the runc it starts for each RUN step
+// creates the step's cgroup below it too. Everything the build runs stays
+// inside the cgroup its limits and the egress rule are attached to, each step
+// in a cgroup of its own, and nothing above it is written.
+func withOwnCgroupHierarchy() oci.SpecOpts {
+	return func(ctx context.Context, client oci.Client, c *containers.Container, spec *specs.Spec) error {
+		if err := oci.WithLinuxNamespace(specs.LinuxNamespace{Type: specs.CgroupNamespace})(ctx, client, c, spec); err != nil {
+			return err
+		}
+
+		mounts := []specs.Mount{}
+		for _, m := range spec.Mounts {
+			if m.Destination != cgroupPath {
+				mounts = append(mounts, m)
+			}
+		}
+		spec.Mounts = append(mounts, specs.Mount{
+			Destination: cgroupPath,
+			Type:        "cgroup",
+			Source:      "cgroup",
+			Options:     []string{"nosuid", "noexec", "nodev", "relatime", "rw"},
+		})
+		return nil
 	}
+}
+
+// runBuildKit runs one build and returns the builder's own output on failure —
+// that output is the compiler error, the missing package, the failed RUN.
+func (i *containerdImage) runBuildKit(ctx context.Context, contextDir, outputDir, configPath, dockerfile string, restrictEgress bool) error {
+	rootless := i.backend.isRootlessMode()
+
+	env := buildkitFlags(rootless)
+	volumes := []core.VolumeMount{
+		{Source: contextDir, Destination: buildContextPath, ReadOnly: true},
+		{Source: outputDir, Destination: buildOutputPath},
+		{Source: configPath, Destination: buildConfigPath, ReadOnly: true},
+	}
+	var own []oci.SpecOpts
+	if rootless {
+		// BuildKit runs a runc of its own for every step, and that runc
+		// refuses to start without a cgroup hierarchy it can see: "no cgroup
+		// mount found in mountinfo". Rootless containers get no cgroup mount
+		// of their own, so the host's is passed through.
+		env = append(env, keepCgroup)
+		volumes = append(volumes, core.VolumeMount{Source: cgroupPath, Destination: cgroupPath})
+	} else {
+		own = append(own, withOwnCgroupHierarchy())
+	}
+
 	config := &core.ContainerConfig{
 		Image: buildkitImage,
 		Command: []string{
@@ -206,23 +258,15 @@ func (i *containerdImage) runBuildKit(ctx context.Context, contextDir, outputDir
 		Env: env,
 		// The Dockerfile is repository content, so its RUN steps are untrusted
 		// code and get the same egress policy as build.sh. Restricting the
-		// builder is only half of it — see writeBuildKitConfig for the half that
-		// reaches the steps themselves.
-		Network: &core.NetworkConfig{RestrictEgress: restrictEgress},
-		Volumes: []core.VolumeMount{
-			{Source: contextDir, Destination: buildContextPath, ReadOnly: true},
-			{Source: outputDir, Destination: buildOutputPath},
-			{Source: configPath, Destination: buildConfigPath, ReadOnly: true},
-			// BuildKit runs a runc of its own for every step, and that runc
-			// refuses to start without a cgroup hierarchy it can see: "no cgroup
-			// mount found in mountinfo". Rootless containers get no cgroup mount
-			// of their own, so the host's is passed through.
-			{Source: cgroupPath, Destination: cgroupPath},
-		},
-		Privileges: buildPrivileges(i.backend.isRootlessMode()),
+		// builder is only half of it; the steps are the other, kept under the
+		// rule by withOwnCgroupHierarchy, or by writeBuildKitConfig where the
+		// builder sees the host's hierarchy.
+		Network:    &core.NetworkConfig{RestrictEgress: restrictEgress},
+		Volumes:    volumes,
+		Privileges: buildPrivileges(rootless),
 	}
 
-	id, err := i.backend.Create(ctx, config)
+	id, err := i.backend.create(ctx, config, own...)
 	if err != nil {
 		return fmt.Errorf("failed to create builder for image %s: %w", i.name, err)
 	}

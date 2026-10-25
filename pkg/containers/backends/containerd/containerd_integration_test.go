@@ -450,6 +450,189 @@ func TestRestrictedBuildFetchesThroughTheFirewall_Integration(t *testing.T) {
 	assert.EqualValues(t, 1, fetched.Load(), "the builder of a restricted build reached a node-local service")
 }
 
+// TestABuildStaysInItsOwnCgroup_Integration: the cgroup containerd creates the
+// builder in is the one its limits and, when restricted, the egress rule are
+// attached to, so buildkitd and every RUN step it starts must live inside it,
+// each step in a cgroup of its own. The moby/buildkit image asks buildkitd to
+// move into an "init" group at the root of the hierarchy it sees, and to enable
+// every controller there; with the host's hierarchy in view that is the host's
+// root, which this checks is left as it was.
+func TestABuildStaysInItsOwnCgroup_Integration(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("reading the builder's processes and programming nftables need root; run this test as root")
+	}
+	backend := newTestBackend(t)
+	if backend.isRootlessMode() {
+		t.Skip("needs the system containerd")
+	}
+
+	t.Cleanup(func() {
+		if err := netguard.Uninstall(); err != nil {
+			t.Logf("removing the egress table: %v", err)
+		}
+	})
+
+	for _, restrict := range []bool{false, true} {
+		t.Run(fmt.Sprintf("restricted=%v", restrict), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+
+			rootControllers := hostRootSubtreeControl(t)
+
+			name := fmt.Sprintf("tau-own-cgroup:%d", time.Now().UnixNano())
+			image := backend.Image(name)
+			t.Cleanup(func() { image.Remove(context.WithoutCancel(ctx)) })
+
+			buildCtx, stop := context.WithCancel(ctx)
+			defer stop()
+			built := make(chan error, 1)
+			go func() {
+				built <- image.Build(buildCtx, &core.DockerfileBuild{
+					Context:        tarOfDockerfile(t, fmt.Sprintf("FROM %s\nRUN [\"sleep\", \"3600\"]\n", testImage)),
+					RestrictEgress: restrict,
+				})
+			}()
+
+			own, kit, step := runningBuild(t, ctx, backend, name, built)
+			t.Logf("builder cgroup %s, buildkitd in %s, RUN step in %s", own, kit, step)
+
+			if restrict {
+				tree, err := cgroups()
+				require.NoError(t, err)
+				assert.True(t, cgroupWithin(own, tree.restrictedPath()), "a restricted builder was created outside the restricted subtree: %s", own)
+			}
+			assert.True(t, cgroupWithin(kit, own), "buildkitd left the build's cgroup %s for %s", own, kit)
+			assert.True(t, cgroupWithin(step, own), "a RUN step runs outside the build's cgroup %s, in %s", own, step)
+			assert.NotEqual(t, kit, step, "a RUN step has no cgroup of its own")
+			assert.Equal(t, rootControllers, hostRootSubtreeControl(t), "the build changed the controllers the host's root cgroup enables")
+
+			stop()
+			assert.Error(t, <-built, "a build whose step never ends was stopped")
+			assert.Equal(t, rootControllers, hostRootSubtreeControl(t), "the build changed the controllers the host's root cgroup enables")
+		})
+	}
+}
+
+func hostRootSubtreeControl(t *testing.T) string {
+	t.Helper()
+	controllers, err := os.ReadFile(filepath.Join(cgroupRoot, "cgroup.subtree_control"))
+	require.NoError(t, err)
+	return strings.TrimSpace(string(controllers))
+}
+
+func cgroupWithin(cgroup, ancestor string) bool {
+	return cgroup == ancestor || strings.HasPrefix(cgroup, strings.TrimSuffix(ancestor, "/")+"/")
+}
+
+// runningBuild waits for the builder of image name to be running a RUN step
+// that sleeps, and returns the cgroup containerd created the builder in, and
+// the cgroups buildkitd and the step are in, as the host sees them.
+func runningBuild(t *testing.T, ctx context.Context, backend *ContainerdBackend, name string, built <-chan error) (own, kit, step string) {
+	t.Helper()
+	nsCtx := namespaces.WithNamespace(ctx, backend.config.Namespace)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case err := <-built:
+			t.Fatalf("the build ended before its RUN step was seen: %v", err)
+		case <-ctx.Done():
+			t.Fatalf("the build's RUN step never started: %v", ctx.Err())
+		case <-ticker.C:
+		}
+
+		containers, err := backend.client.Containers(nsCtx)
+		require.NoError(t, err)
+		for _, c := range containers {
+			spec, err := c.Spec(nsCtx)
+			if err != nil || spec.Process == nil || !strings.Contains(strings.Join(spec.Process.Args, " "), "name="+name+",") {
+				continue
+			}
+			task, err := c.Task(nsCtx, nil)
+			if err != nil {
+				continue
+			}
+			parents := processParents(t)
+			kitPID := descendantNamed(parents, int(task.Pid()), "buildkitd")
+			if kitPID == 0 {
+				continue
+			}
+			stepPID := descendantNamed(parents, kitPID, "sleep")
+			if stepPID == 0 {
+				continue
+			}
+			return spec.Linux.CgroupsPath, processCgroup(t, kitPID), processCgroup(t, stepPID)
+		}
+	}
+}
+
+type process struct {
+	parent int
+	name   string
+}
+
+func processParents(t *testing.T) map[int]process {
+	t.Helper()
+	entries, err := os.ReadDir("/proc")
+	require.NoError(t, err)
+
+	processes := map[int]process{}
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil {
+			continue
+		}
+		stat, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "stat"))
+		if err != nil {
+			continue
+		}
+		// pid (comm) state ppid ...; comm may hold spaces and parentheses.
+		open, end := bytes.IndexByte(stat, '('), bytes.LastIndexByte(stat, ')')
+		if open < 0 || end < open {
+			continue
+		}
+		fields := strings.Fields(string(stat[end+1:]))
+		if len(fields) < 2 {
+			continue
+		}
+		parent, err := strconv.Atoi(fields[1])
+		if err != nil {
+			continue
+		}
+		processes[pid] = process{parent: parent, name: string(stat[open+1 : end])}
+	}
+	return processes
+}
+
+// descendantNamed returns a process called name below ancestor, or 0.
+func descendantNamed(processes map[int]process, ancestor int, name string) int {
+	for pid, p := range processes {
+		if p.name != name {
+			continue
+		}
+		for up := p.parent; up > 1; up = processes[up].parent {
+			if up == ancestor {
+				return pid
+			}
+		}
+	}
+	return 0
+}
+
+func processCgroup(t *testing.T, pid int) string {
+	t.Helper()
+	content, err := os.ReadFile(fmt.Sprintf("/proc/%d/cgroup", pid))
+	require.NoError(t, err)
+	for _, line := range strings.Split(strings.TrimSpace(string(content)), "\n") {
+		if own, ok := strings.CutPrefix(line, "0::"); ok {
+			return own
+		}
+	}
+	t.Fatalf("process %d has no cgroup v2 entry: %q", pid, content)
+	return ""
+}
+
 // tarOfDockerfile packs a one-file build context.
 func tarOfDockerfile(t *testing.T, dockerfile string) io.Reader {
 	t.Helper()
