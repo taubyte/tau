@@ -67,13 +67,13 @@ func TestCluster_NodesKeepTheirOwnSnapshots(t *testing.T) {
 	t.Cleanup(func() { a.Close() })
 	waitLeader(t, a, 5*time.Second)
 	require.NoError(t, a.Set("only-a-wrote", []byte("v"), time.Second))
-	require.NoError(t, a.(*cluster).raft.Snapshot().Error())
+	require.NoError(t, a.(*cluster).current().raft.Snapshot().Error())
 
 	b, err := New(newMockNode(t), namespace, opts...)
 	require.NoError(t, err, "b started from a's snapshot")
 	t.Cleanup(func() { b.Close() })
 	waitLeader(t, b, 5*time.Second)
-	snaps, err := b.(*cluster).snaps.List()
+	snaps, err := b.(*cluster).current().snaps.List()
 	require.NoError(t, err)
 	require.Empty(t, snaps, "b's store holds a's snapshot")
 	_, found := b.Get("only-a-wrote")
@@ -363,7 +363,7 @@ func removeTheLeader(t *testing.T, a, b Cluster) (removed, left Cluster) {
 		if removed == a {
 			left = b
 		}
-		removed.(*cluster).raft.RemoveServer(raft.ServerID(idOf(removed).String()), 0, 5*time.Second)
+		removed.(*cluster).current().raft.RemoveServer(raft.ServerID(idOf(removed).String()), 0, 5*time.Second)
 		settled := time.Now().Add(2 * time.Second)
 		for time.Now().Before(settled) {
 			members, err := left.Members()
@@ -1063,7 +1063,7 @@ func TestCluster_RaftClient(t *testing.T) {
 	defer cl.Close()
 
 	c := getClusterInternal(cl)
-	if c.raftClient == nil {
+	if c.current().raftClient == nil {
 		t.Error("expected raft client to be initialized")
 	}
 }
@@ -1076,7 +1076,7 @@ func TestCluster_StreamService(t *testing.T) {
 	defer cl.Close()
 
 	c := getClusterInternal(cl)
-	assert.NotNil(t, c.streamService, "expected stream service to be initialized")
+	assert.NotNil(t, c.current().streamService, "expected stream service to be initialized")
 }
 
 func TestCluster_Apply_NotLeader(t *testing.T) {
@@ -1757,7 +1757,7 @@ func TestCluster_AMemberLetInAsksNoMore(t *testing.T) {
 	group := &letInPeer{}
 	member, _ := facing(t, "let-in-asks-no-more", newFaultStore(), group)
 
-	member.askToJoin(member.raft, member.raftClient, member.tracker, time.Second)
+	member.askToJoin(member.current(), time.Second)
 	assert.Equal(t, int32(1), group.joins.Load(), "the member asked again once let in")
-	assert.True(t, member.joined.Load(), "the member does not know the group let it in")
+	assert.True(t, member.current().joined.Load(), "the member does not know the group let it in")
 }

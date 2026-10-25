@@ -64,7 +64,7 @@ func leaderService(t *testing.T) (Cluster, *raftStreamService) {
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
-	ss := getClusterInternal(cl).streamService
+	ss := getClusterInternal(cl).current().streamService
 	require.NotNil(t, ss, "stream service should be initialized")
 	return cl, ss
 }
@@ -187,13 +187,13 @@ func TestStreamService_Stop(t *testing.T) {
 	require.NoError(t, err, "failed to create cluster")
 
 	c := getClusterInternal(cl)
-	require.NotNil(t, c.streamService, "stream service should be initialized")
+	require.NotNil(t, c.current().streamService, "stream service should be initialized")
 
 	// Stop should not panic
-	c.streamService.stop()
+	c.current().streamService.stop()
 
 	// Stop again should not panic
-	c.streamService.stop()
+	c.current().streamService.stop()
 
 	cl.Close()
 }
@@ -201,7 +201,7 @@ func TestStreamService_Stop(t *testing.T) {
 func TestStreamService_HandleExchangePeers_WithTracker(t *testing.T) {
 	cl, ss := leaderService(t)
 	c := getClusterInternal(cl)
-	require.NotNil(t, c.tracker, "peer tracker should be initialized")
+	require.NotNil(t, c.current().tracker, "peer tracker should be initialized")
 
 	peer1Str := "QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt"
 
@@ -213,7 +213,7 @@ func TestStreamService_HandleExchangePeers_WithTracker(t *testing.T) {
 	assert.Assert(t, resp.Msg != nil)
 
 	// Verify the peer was merged
-	assert.Equal(t, len(c.tracker.peers), 2) // self + peer1
+	assert.Equal(t, len(c.current().tracker.peers), 2) // self + peer1
 }
 
 func TestStreamService_ForwardToLeader_NoLeader(t *testing.T) {
@@ -225,6 +225,6 @@ func TestStreamService_ForwardToLeader_NoLeader(t *testing.T) {
 
 	// Don't wait for leader - a write either applies (already leading) or
 	// is refused for want of one; it must not panic either way.
-	ss := getClusterInternal(cl).streamService
+	ss := getClusterInternal(cl).current().streamService
 	ss.Set(context.Background(), connect.NewRequest(&raftv2.SetRequest{Key: "test-key", Value: []byte("test-value")}))
 }

@@ -84,7 +84,7 @@ func TestClient_ExchangePeers(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, theirPeers, idOf(cl).String())
 	require.Contains(t, theirPeers, seen.ID().String(), "the member did not take the peer its caller had seen")
-	require.Contains(t, cl.(*cluster).tracker.allPeers(), seen.ID())
+	require.Contains(t, cl.(*cluster).current().tracker.allPeers(), seen.ID())
 }
 
 // TestClient_WithEncryption: a client holding the group's key reads and writes

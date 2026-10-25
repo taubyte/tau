@@ -32,7 +32,7 @@ func TestStreamService_HandleGet_WithBarrier_Integration(t *testing.T) {
 	// Test get through internal stream service handler with barrier
 	c := getClusterInternal(cl)
 	barrier := time.Second.Nanoseconds()
-	resp, err := c.streamService.Get(context.Background(), connect.NewRequest(&raftv2.GetRequest{Key: "barrier-key", BarrierNs: &barrier}))
+	resp, err := c.current().streamService.Get(context.Background(), connect.NewRequest(&raftv2.GetRequest{Key: "barrier-key", BarrierNs: &barrier}))
 	require.NoError(t, err, "Get with barrier should succeed")
 	require.True(t, resp.Msg.GetFound(), "expected found to be true")
 	assert.Equal(t, "barrier-value", string(resp.Msg.GetValue()))
@@ -55,13 +55,13 @@ func TestStreamService_HandleGet_WithBarrier_Invalid_Integration(t *testing.T) {
 
 	// Test with barrier <= 0
 	negative := int64(-1)
-	_, err = c.streamService.Get(context.Background(), connect.NewRequest(&raftv2.GetRequest{Key: "test-key", BarrierNs: &negative}))
+	_, err = c.current().streamService.Get(context.Background(), connect.NewRequest(&raftv2.GetRequest{Key: "test-key", BarrierNs: &negative}))
 	require.Error(t, err, "handleGet with negative barrier should fail")
 	require.ErrorIs(t, err, ErrInvalidBarrier, "should return ErrInvalidBarrier")
 
 	// Test with barrier > MaxGetHandlerBarrierTimeout
 	over := (MaxGetHandlerBarrierTimeout + time.Second).Nanoseconds()
-	_, err = c.streamService.Get(context.Background(), connect.NewRequest(&raftv2.GetRequest{Key: "test-key", BarrierNs: &over}))
+	_, err = c.current().streamService.Get(context.Background(), connect.NewRequest(&raftv2.GetRequest{Key: "test-key", BarrierNs: &over}))
 	require.Error(t, err, "handleGet with barrier > max should fail")
 	require.ErrorIs(t, err, ErrInvalidBarrier, "should return ErrInvalidBarrier")
 }

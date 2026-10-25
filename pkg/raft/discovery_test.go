@@ -301,13 +301,13 @@ func TestDiscovery_AGroupOnlyDiscoveryFindsIsJoined(t *testing.T) {
 	t.Cleanup(func() { a.Close() })
 
 	require.Eventually(t, func() bool {
-		return slices.Contains(a.(*cluster).tracker.allPeers(), nodeB.ID())
+		return slices.Contains(a.(*cluster).current().tracker.allPeers(), nodeB.ID())
 	}, 5*time.Second, 10*time.Millisecond, "a never tracked the member discovery found")
 	require.Eventually(t, func() bool {
 		members, err := b.Members()
 		return err == nil && len(members) == 2
 	}, 10*time.Second, 20*time.Millisecond, "a never joined the group discovery found")
-	require.NotContains(t, a.(*cluster).tracker.allPeers(), unreachable)
+	require.NotContains(t, a.(*cluster).current().tracker.allPeers(), unreachable)
 }
 
 // slowPoint answers a search only after delay, the way a DHT query takes its
@@ -516,7 +516,7 @@ func TestDiscovery_AMemberTheGroupLetsInLooksForPeersAsAFounderDoes(t *testing.T
 	}, 10*time.Second, 20*time.Millisecond, "the founders did not form one group")
 
 	for _, m := range members {
-		require.Eventually(t, func() bool { return m.tracker.getDiscoveryInterval() == settledDiscoveryInterval },
+		require.Eventually(t, func() bool { return m.current().tracker.getDiscoveryInterval() == settledDiscoveryInterval },
 			5*time.Second, 20*time.Millisecond, "a member of the group still looks for peers at its bootstrap's pace")
 	}
 }

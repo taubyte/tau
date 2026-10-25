@@ -41,7 +41,7 @@ func bootstrapAndSnapshot(t *testing.T, snapDir, namespace string) {
 	assert.NilError(t, c.Set("k", []byte("v"), 2*time.Second))
 
 	// Force a snapshot: snapDir now carries a configuration listing this node.
-	assert.NilError(t, c.(*cluster).raft.Snapshot().Error())
+	assert.NilError(t, c.(*cluster).current().raft.Snapshot().Error())
 	assert.NilError(t, c.Close())
 }
 

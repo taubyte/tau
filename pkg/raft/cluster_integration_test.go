@@ -1365,7 +1365,7 @@ func leadingNow(t *testing.T, clusters ...Cluster) (Cluster, uint64) {
 	deadline := time.Now().Add(leaderWait)
 	for {
 		leader := leaderOf(t, clusters...)
-		term := getClusterInternal(leader).raft.CurrentTerm()
+		term := getClusterInternal(leader).current().raft.CurrentTerm()
 		if leader.IsLeader() {
 			return leader, term
 		}
@@ -1390,12 +1390,12 @@ func rejoinSettled(back Cluster, members []Cluster, crashTerm uint64, writes map
 	if leader == nil {
 		return poll.Continue("the members do not all name the one member that leads")
 	}
-	term := getClusterInternal(leader).raft.CurrentTerm()
+	term := getClusterInternal(leader).current().raft.CurrentTerm()
 	if term <= crashTerm {
 		return poll.Continue("%s leads at term %d, not past the crash at term %d", idOf(leader), term, crashTerm)
 	}
 	for _, m := range members {
-		if got := getClusterInternal(m).raft.CurrentTerm(); got != term {
+		if got := getClusterInternal(m).current().raft.CurrentTerm(); got != term {
 			return poll.Continue("%s is at term %d, its leader at %d", idOf(m), got, term)
 		}
 		config, err := m.Members()
@@ -1414,8 +1414,8 @@ func rejoinSettled(back Cluster, members []Cluster, crashTerm uint64, writes map
 	if back != leader && back.State() != raft.Follower {
 		return poll.Continue("%s neither leads nor follows: %v", idOf(back), back.State())
 	}
-	commit := getClusterInternal(leader).raft.CommitIndex()
-	r := getClusterInternal(back).raft
+	commit := getClusterInternal(leader).current().raft.CommitIndex()
+	r := getClusterInternal(back).current().raft
 	if last, applied := r.LastIndex(), r.AppliedIndex(); last < commit || applied < commit {
 		return poll.Continue("%s logged to %d and applied to %d, short of its leader's commit index %d", idOf(back), last, applied, commit)
 	}
@@ -1497,7 +1497,7 @@ func TestCluster_LeaderRebootAndRejoin_Integration(t *testing.T) {
 	// Identify the new leader the survivors agree on, elected after the crash
 	newLeader := leaderOf(t, survivors...)
 	assert.Assert(t, idOf(newLeader) != idOf(crashed), "new leader must not be crashed node")
-	assert.Assert(t, getClusterInternal(newLeader).raft.CurrentTerm() > crashTerm,
+	assert.Assert(t, getClusterInternal(newLeader).current().raft.CurrentTerm() > crashTerm,
 		"the survivors' leader must lead at a term past the crash")
 
 	// Set data while old leader is down

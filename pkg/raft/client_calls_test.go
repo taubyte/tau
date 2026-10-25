@@ -64,7 +64,7 @@ func TestClient_ClusterInfoIsTheMembersOwnView(t *testing.T) {
 	require.Equal(t, idOf(cl).String(), info.NodeID)
 	require.Equal(t, 1, info.MemberCount)
 
-	stats := cl.(*cluster).raft.Stats()
+	stats := cl.(*cluster).current().raft.Stats()
 	require.Equal(t, parseUint64(stats["term"]), info.Term)
 	require.GreaterOrEqual(t, parseUint64(stats["last_log_index"]), info.LastIndex)
 	require.NotZero(t, info.LastIndex, "the write above is in the log")
@@ -426,7 +426,7 @@ func TestStream_AJoinAskedOfAMemberLetInBeforeItsLogWaitsForTheLeader(t *testing
 		WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(2*time.Second), WithSnapshotRoot(t.TempDir()))
 	require.NoError(t, err)
 	t.Cleanup(func() { late.Close() })
-	require.Eventually(t, late.(*cluster).joined.Load, leaderWait, 10*time.Millisecond, "the group never let the late member in")
+	require.Eventually(t, late.(*cluster).current().joined.Load, leaderWait, 10*time.Millisecond, "the group never let the late member in")
 	members, err := late.Members()
 	require.NoError(t, err)
 	require.Empty(t, members, "the late member holds a configuration")
@@ -465,6 +465,42 @@ func TestStream_AJoinAskedOfAMemberLetInBeforeItsLogWaitsForTheLeader(t *testing
 		ids = append(ids, m.ID)
 	}
 	require.Contains(t, ids, joiner)
+}
+
+// TestStream_AJoinAskedOfAMemberAYieldTookOutOfItsGroupIsRefusedAtOnce: a
+// member the group let in waits for the group's next leader when asked to add
+// a voter. A yield wipes the member out of its group, and the member it
+// rebuilt kept the mark of having been let in: in no group, it waited out
+// each join's budget instead of saying at once that it knows no leader.
+func TestStream_AJoinAskedOfAMemberAYieldTookOutOfItsGroupIsRefusedAtOnce(t *testing.T) {
+	const (
+		namespace = "stream-join-after-yield"
+		budget    = time.Second
+	)
+	caller := newMockNode(t)
+	a, b := joinedPair(t, namespace, sameStore)
+	require.True(t, b.(*cluster).current().joined.Load(), "the group never let b in")
+	require.NoError(t, a.Close())
+
+	connected(t, caller, b)
+	cli, err := newInternalClient(caller, namespace, nil)
+	require.NoError(t, err)
+	defer cli.Close()
+
+	yielded := make(chan struct{})
+	go func() {
+		defer close(yielded)
+		b.(*cluster).current().healer.Load().yieldAndRejoin(t.Context(), "")
+	}()
+	require.Eventually(t, func() bool {
+		info, err := cli.ClusterInfo(idOf(b))
+		return err == nil && info.MemberCount == 0
+	}, leaderWait, 10*time.Millisecond, "b never came back in no group")
+
+	began := time.Now()
+	require.ErrorIs(t, cli.JoinVoter(t.Context(), strangerID(t), budget, idOf(b)), ErrNoLeader)
+	require.Less(t, time.Since(began), budget, "a member in no group waited out a join's budget")
+	<-yielded
 }
 
 // TestStream_AJoinWhoseLeaderStopsLeadingIsAddedByTheNext: a leader that lost
@@ -517,7 +553,7 @@ func TestStream_AJoinWhoseLeaderStopsLeadingIsAddedByTheNext(t *testing.T) {
 	}, leaderWait, 5*time.Millisecond, "the leader never took the voter's change")
 
 	id := idOf(next).String()
-	require.NoError(t, leader.(*cluster).raft.LeadershipTransferToServer(raft.ServerID(id), raft.ServerAddress(id)).Error())
+	require.NoError(t, leader.(*cluster).current().raft.LeadershipTransferToServer(raft.ServerID(id), raft.ServerAddress(id)).Error())
 	for _, store := range stores {
 		store.failBatches(nil)
 	}

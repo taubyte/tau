@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/hashicorp/raft"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -33,6 +34,49 @@ func strangerID(t *testing.T) peer.ID {
 	id, err := peer.IDFromPublicKey(pub)
 	require.NoError(t, err)
 	return id
+}
+
+// TestCluster_AWriteInFlightWhenTheRaftShutsDownIsAnswered: raft drops the
+// future of a log it committed but had not applied when it shuts down, so a
+// write waiting on one never returned. Here the state machine holds the first
+// write while ten more commit behind it, and the member is closed.
+func TestCluster_AWriteInFlightWhenTheRaftShutsDownIsAnswered(t *testing.T) {
+	const (
+		namespace = "write-across-shutdown"
+		queued    = 10
+	)
+	node := newMockNode(t)
+	held := newHeldStore(node.Store(), ds.NewKey(path.Join(RaftStoragePrefix, namespace, "data", "held")))
+	defer held.letGo()
+	c, err := New(storeNode{Node: node, store: held}, namespace,
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	waitLeader(t, c, 5*time.Second)
+
+	r := c.(*cluster).current().raft
+	answered := make(chan error, queued+1)
+	go func() { answered <- c.Set("held", []byte("v"), time.Second) }()
+	<-held.entered
+	for i := range queued {
+		commit := r.CommitIndex()
+		go func() { answered <- c.Set(fmt.Sprint("queued-", i), []byte("v"), time.Second) }()
+		require.Eventually(t, func() bool { return r.CommitIndex() > commit }, leaderWait, time.Millisecond, "write %d never committed", i)
+	}
+
+	closed := make(chan error, 1)
+	go func() { closed <- c.Close() }()
+	require.Eventually(t, func() bool { return r.State() == raft.Shutdown }, leaderWait, time.Millisecond, "Close never shut the raft down")
+	held.letGo()
+	require.NoError(t, <-closed)
+
+	deadline := time.After(leaderWait)
+	for i := range queued + 1 {
+		select {
+		case <-answered:
+		case <-deadline:
+			t.Fatalf("%d of %d writes in flight at shutdown were never answered", queued+1-i, queued+1)
+		}
+	}
 }
 
 // TestCluster_AWriteTheStoreRefusesIsRefused: a write raft committed but the
@@ -103,7 +147,7 @@ func TestCluster_AMemberLeftAloneInAPairAcknowledgesNoWrite(t *testing.T) {
 		"add voter":     func() error { return alone.AddVoter(stranger, 5*time.Second) },
 		"remove server": func() error { return alone.RemoveServer(idOf(alone), 5*time.Second) },
 		"join voter": func() error {
-			_, err := alone.(*cluster).streamService.JoinVoter(context.Background(),
+			_, err := alone.(*cluster).current().streamService.JoinVoter(context.Background(),
 				connect.NewRequest(&raftv2.JoinVoterRequest{Peer: joiner.String(), TimeoutMs: 5000}))
 			return err
 		},

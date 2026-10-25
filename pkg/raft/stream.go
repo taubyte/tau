@@ -193,7 +193,7 @@ func forwardToLeader[T any](ctx context.Context, s *raftStreamService, what stri
 
 	streamLogger.Infof("[%s] forwarding %q to leader %s", s.cluster.node.ID().ShortString(), what, leader.ShortString())
 
-	cli, ok := s.cluster.raftClient.(*client)
+	cli, ok := s.cluster.current().raftClient.(*client)
 	if !ok {
 		return nil, fmt.Errorf("forwarding to leader failed: no client")
 	}
@@ -205,7 +205,7 @@ func forwardToLeader[T any](ctx context.Context, s *raftStreamService, what stri
 }
 
 func (s *raftStreamService) ExchangePeers(ctx context.Context, req *connect.Request[raftv2.ExchangePeersRequest]) (*connect.Response[raftv2.ExchangePeersResponse], error) {
-	tracker := s.cluster.tracker
+	tracker := s.cluster.current().tracker
 	m := req.Msg
 
 	if m.SeenAt != nil {
@@ -280,7 +280,8 @@ func (s *raftStreamService) awaitLeader(ctx context.Context) error {
 	if _, err := s.cluster.Leader(); err == nil {
 		return nil
 	}
-	if members, err := s.cluster.Members(); err != nil || (len(members) == 0 && !s.cluster.joined.Load()) {
+	m := s.cluster.current()
+	if members, err := m.members(); err != nil || (len(members) == 0 && !m.joined.Load()) {
 		return ErrNoLeader
 	}
 	if s.cluster.WaitForLeader(ctx) != nil {
@@ -301,21 +302,18 @@ func peerFromRequestOrCaller(ctx context.Context, named string) (peer.ID, error)
 
 // ClusterInfo returns this node's cluster view; does not require leadership.
 func (s *raftStreamService) ClusterInfo(ctx context.Context, req *connect.Request[raftv2.ClusterInfoRequest]) (*connect.Response[raftv2.ClusterInfoResponse], error) {
+	m := s.cluster.current()
 	leaderID := ""
-	if leader, err := s.cluster.Leader(); err == nil {
+	if leader, err := leaderKnownTo(m.raft); err == nil {
 		leaderID = leader.String()
 	}
 
-	var term uint64
-	var lastIdx uint64
-	if s.cluster.raft != nil {
-		stats := s.cluster.raft.Stats()
-		term = parseUint64(stats["term"])
-		lastIdx = parseUint64(stats["last_log_index"])
-	}
+	stats := m.raft.Stats()
+	term := parseUint64(stats["term"])
+	lastIdx := parseUint64(stats["last_log_index"])
 
 	memberCount := 0
-	if members, err := s.cluster.Members(); err == nil {
+	if members, err := m.members(); err == nil {
 		memberCount = len(members)
 	}
 
@@ -350,7 +348,8 @@ func (s *raftStreamService) ExportFSM(ctx context.Context, req *connect.Request[
 	streamLogger.Infof("[%s] exportFSM requested (from=%s) — serving its own state",
 		s.cluster.node.ID().ShortString(), from)
 
-	state, err := s.cluster.fsm.ExportState()
+	m := s.cluster.current()
+	state, err := m.fsm.ExportState()
 	if err != nil {
 		return nil, fmt.Errorf("exporting FSM state: %w", err)
 	}
@@ -360,7 +359,7 @@ func (s *raftStreamService) ExportFSM(ctx context.Context, req *connect.Request[
 		return nil, fmt.Errorf("marshaling FSM state: %w", err)
 	}
 
-	fsm := s.cluster.fsm.(*kvFSM)
+	fsm := m.fsm.(*kvFSM)
 	fsm.mu.RLock()
 	clock := fsm.clock
 	fsm.mu.RUnlock()
@@ -376,8 +375,8 @@ func (s *raftStreamService) HealAck(ctx context.Context, req *connect.Request[ra
 	streamLogger.Infof("[%s] received healAck from %s — signaling healer",
 		s.cluster.node.ID().ShortString(), fromPeer.ShortString())
 
-	if s.cluster.healer != nil {
-		s.cluster.healer.signalHealAck(fromPeer)
+	if h := s.cluster.current().healer.Load(); h != nil {
+		h.signalHealAck(fromPeer)
 	}
 
 	return connect.NewResponse(&raftv2.HealAckResponse{}), nil

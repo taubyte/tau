@@ -82,11 +82,11 @@ func TestHealing_TwoSplitClusters_MergesFSM(t *testing.T) {
 
 	cl1 := c1.(*cluster)
 	cl2 := c2.(*cluster)
-	cl1.tracker.addPeer(node2.ID())
-	cl2.tracker.addPeer(node1.ID())
+	cl1.current().tracker.addPeer(node2.ID())
+	cl2.current().tracker.addPeer(node1.ID())
 
-	info1 := cl1.healer.localClusterInfo()
-	info2 := cl2.healer.localClusterInfo()
+	info1 := cl1.current().healer.Load().localClusterInfo()
+	info2 := cl2.current().healer.Load().localClusterInfo()
 	winnerID := negotiateWinner(info1, info2)
 
 	var winner *cluster
@@ -100,7 +100,7 @@ func TestHealing_TwoSplitClusters_MergesFSM(t *testing.T) {
 		loser = cl1
 	}
 
-	winner.healer.executeMerge(t.Context(), loser.node.ID())
+	winner.current().healer.Load().executeMerge(t.Context(), loser.node.ID())
 
 	v, ok := winner.Get("from-c1")
 	assert.True(t, ok)
@@ -149,7 +149,7 @@ func TestHealing_MergeApply(t *testing.T) {
 	require.NoError(t, c.Set("another", []byte("local"), time.Second))
 
 	cl := c.(*cluster)
-	ourState, err := cl.fsm.ExportState()
+	ourState, err := cl.current().fsm.ExportState()
 	require.NoError(t, err)
 
 	foreignState := map[string]CRDTEntry{
@@ -237,15 +237,15 @@ func splitPair(t *testing.T, namespace string) (a, b Cluster) {
 
 	require.NoError(t, taupeer.LinkAllPeers())
 	require.NoError(t, nodeB.Peer().Connect(t.Context(), peer.AddrInfo{ID: nodeA.ID(), Addrs: nodeA.Peer().Addrs()}))
-	a.(*cluster).tracker.addPeer(nodeB.ID())
-	b.(*cluster).tracker.addPeer(nodeA.ID())
+	a.(*cluster).current().tracker.addPeer(nodeB.ID())
+	b.(*cluster).current().tracker.addPeer(nodeA.ID())
 	return a, b
 }
 
 // winnerOf is the side of a split that negotiateWinner keeps.
 func winnerOf(a, b Cluster) (winner, loser *cluster) {
 	ca, cb := a.(*cluster), b.(*cluster)
-	if negotiateWinner(ca.healer.localClusterInfo(), cb.healer.localClusterInfo()) == ca.node.ID().String() {
+	if negotiateWinner(ca.current().healer.Load().localClusterInfo(), cb.current().healer.Load().localClusterInfo()) == ca.node.ID().String() {
 		return ca, cb
 	}
 	return cb, ca
@@ -265,7 +265,7 @@ func TestHealing_ALoserRejoinsTheGroupItYieldedTo(t *testing.T) {
 	a, b := splitPair(t, "heal-rejoin")
 	winner, loser := winnerOf(a, b)
 
-	winner.healer.executeMerge(t.Context(), loser.node.ID())
+	winner.current().healer.Load().executeMerge(t.Context(), loser.node.ID())
 
 	require.Eventually(t, func() bool {
 		members, err := winner.Members()
@@ -298,7 +298,7 @@ func TestHealing_AYieldWaitsForTheRaftItReplaces(t *testing.T) {
 
 	yielded := make(chan struct{})
 	go func() {
-		c.(*cluster).healer.yieldAndRejoin(t.Context(), "")
+		c.(*cluster).current().healer.Load().yieldAndRejoin(t.Context(), "")
 		close(yielded)
 	}()
 	select {
@@ -326,16 +326,77 @@ func TestHealing_AJoinEndsWithTheMemberAYieldTakesDown(t *testing.T) {
 	waitLeader(t, c, 5*time.Second)
 
 	cl := c.(*cluster)
-	r, client, tracker := cl.raft, cl.raftClient, cl.tracker
+	m := cl.current()
 	start := time.Now()
 	asked := make(chan struct{})
 	go func() {
-		cl.askToJoin(r, client, tracker, time.Second)
+		cl.askToJoin(m, time.Second)
 		close(asked)
 	}()
-	cl.healer.yieldAndRejoin(t.Context(), "")
+	cl.current().healer.Load().yieldAndRejoin(t.Context(), "")
 	<-asked
 	assert.Less(t, time.Since(start), 10*time.Second, "the ask of the member taken down ran its whole course")
+}
+
+// TestHealing_AYieldRebuildsTheMemberItsReadersRead: a yield wrote the
+// cluster's raft, state machine, client and tracker while its methods, its
+// stream handlers and its healer's vote observer read them, with nothing
+// ordering the two: a data race -race reports, and a reader could pair the raft
+// of one member with the state machine of the next.
+func TestHealing_AYieldRebuildsTheMemberItsReadersRead(t *testing.T) {
+	const namespace = "yield-under-readers"
+	c, err := New(newMockNode(t), namespace,
+		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
+	require.NoError(t, err)
+	defer c.Close()
+	waitLeader(t, c, 5*time.Second)
+
+	caller := newMockNode(t)
+	require.NoError(t, taupeer.LinkAllPeers())
+	connected(t, caller, c)
+	cli, err := newInternalClient(caller, namespace, nil)
+	require.NoError(t, err)
+	defer cli.Close()
+
+	stop := make(chan struct{})
+	var readers sync.WaitGroup
+	read := func(f func()) {
+		readers.Add(1)
+		go func() {
+			defer readers.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					f()
+				}
+			}
+		}()
+	}
+	read(func() {
+		c.Members()
+		c.Leader()
+		c.State()
+	})
+	read(func() {
+		c.Set("k", []byte("v"), 50*time.Millisecond)
+		c.Get("k")
+		c.Keys("")
+		c.Barrier(50 * time.Millisecond)
+	})
+	read(func() {
+		cli.ClusterInfo(idOf(c))
+		cli.ExportFSM(idOf(c))
+		cli.ExchangePeers(time.Now(), nil, idOf(c))
+	})
+
+	for range 3 {
+		c.(*cluster).current().healer.Load().yieldAndRejoin(t.Context(), "")
+		waitLeader(t, c, 5*time.Second)
+	}
+	close(stop)
+	readers.Wait()
 }
 
 // holdingPeer serves the group's protocol and holds every exchange of peers it
@@ -380,7 +441,7 @@ func TestHealing_AnExchangeAYieldCutsShortKeepsToItsMembersClient(t *testing.T) 
 
 	// The tracker's first round exchanges with both, and the first holds it.
 	<-held.entered
-	c.(*cluster).healer.yieldAndRejoin(t.Context(), "")
+	c.(*cluster).current().healer.Load().yieldAndRejoin(t.Context(), "")
 }
 
 // heldWipe holds the first delete under prefix until it is let go, so a test
@@ -427,7 +488,7 @@ func TestCluster_CloseWaitsForAYieldInProgress(t *testing.T) {
 	cl := c.(*cluster)
 	yielded := make(chan struct{})
 	go func() {
-		cl.healer.yieldAndRejoin(t.Context(), "")
+		cl.current().healer.Load().yieldAndRejoin(t.Context(), "")
 		close(yielded)
 	}()
 	<-wipe.entered
@@ -443,7 +504,7 @@ func TestCluster_CloseWaitsForAYieldInProgress(t *testing.T) {
 	wipe.letGo()
 	require.NoError(t, <-closed)
 	<-yielded
-	assert.Equal(t, raft.Shutdown, cl.raft.State(), "a raft the yield built is still running after Close")
+	assert.Equal(t, raft.Shutdown, cl.current().raft.State(), "a raft the yield built is still running after Close")
 }
 
 // probeEvery runs the healers a test starts at interval, for the test.
@@ -505,7 +566,7 @@ func TestHealing_AnOrphanIsAbsorbed(t *testing.T) {
 	a, b := formedPair(t, "heal-orphan")
 
 	removed, left := removeTheLeader(t, a, b)
-	left.(*cluster).tracker.addPeer(idOf(removed))
+	left.(*cluster).current().tracker.addPeer(idOf(removed))
 	require.NoError(t, onLeader(t, []Cluster{left}, func(leader Cluster) error {
 		return leader.Set("after-removal", []byte("v"), time.Second)
 	}))
@@ -547,7 +608,7 @@ func TestHealing_AGroupWithoutQuorumYieldsToTheGroupAheadOfIt(t *testing.T) {
 	require.NoError(t, gone.Close())
 	require.NoError(t, nodeOfCluster(stranded).Peer().Connect(t.Context(),
 		peer.AddrInfo{ID: idOf(ahead), Addrs: nodeOfCluster(ahead).Peer().Addrs()}))
-	stranded.(*cluster).tracker.addPeer(idOf(ahead))
+	stranded.(*cluster).current().tracker.addPeer(idOf(ahead))
 
 	require.Eventually(t, func() bool {
 		members, err := ahead.Members()
@@ -581,7 +642,7 @@ func TestHealing_AVoteFromANonMemberIsReported(t *testing.T) {
 	waitLeader(t, c, 5*time.Second)
 
 	// A healer of its own, so nothing else drains what it reports.
-	h := newHealer(c.(*cluster))
+	h := newHealer(c.(*cluster), c.(*cluster).current())
 	stranger := newMockNode(t).ID()
 	vote := func(from string) raft.Observation {
 		return raft.Observation{Data: raft.RequestVoteRequest{RPCHeader: raft.RPCHeader{ID: []byte(from)}}}
@@ -635,19 +696,19 @@ func TestHealing_AForeignVoterIsTrackedAndAbsorbedByTheLeader(t *testing.T) {
 		follower = b
 	}
 
-	follower.(*cluster).healer.handleForeignVote(t.Context(), stranger)
-	assert.Contains(t, follower.(*cluster).tracker.allPeers(), stranger)
+	follower.(*cluster).current().healer.Load().handleForeignVote(t.Context(), stranger)
+	assert.Contains(t, follower.(*cluster).current().tracker.allPeers(), stranger)
 
 	// The stranger answers nothing, so the leader's absorb gives up after
 	// trying, and the leader still leads a group without it.
-	leader.(*cluster).healer.handleForeignVote(t.Context(), stranger)
-	assert.Contains(t, leader.(*cluster).tracker.allPeers(), stranger)
+	leader.(*cluster).current().healer.Load().handleForeignVote(t.Context(), stranger)
+	assert.Contains(t, leader.(*cluster).current().tracker.allPeers(), stranger)
 	members, err := leader.Members()
 	require.NoError(t, err)
 	assert.Len(t, members, 2)
 
 	require.NoError(t, a.Close())
-	a.(*cluster).healer.handleForeignVote(t.Context(), stranger)
+	a.(*cluster).current().healer.Load().handleForeignVote(t.Context(), stranger)
 }
 
 // TestHealing_AMergeNeedsTheLeadAndTheOtherSide: a member that does not lead
@@ -670,8 +731,8 @@ func TestHealing_AMergeNeedsTheLeadAndTheOtherSide(t *testing.T) {
 	if leader == a {
 		follower = b
 	}
-	follower.(*cluster).healer.executeMerge(t.Context(), idOf(leader))
-	leader.(*cluster).healer.executeMerge(t.Context(), stranger)
+	follower.(*cluster).current().healer.Load().executeMerge(t.Context(), idOf(leader))
+	leader.(*cluster).current().healer.Load().executeMerge(t.Context(), stranger)
 
 	for _, cl := range []Cluster{a, b} {
 		members, err := cl.Members()
@@ -726,8 +787,8 @@ func facing(t *testing.T, namespace string, store ds.Batching, other raftv2conne
 	require.NoError(t, taupeer.LinkAllPeers())
 	require.NoError(t, winnerNode.Peer().Connect(t.Context(), peer.AddrInfo{ID: otherNode.ID(), Addrs: otherNode.Peer().Addrs()}))
 	winner := w.(*cluster)
-	winner.tracker.addPeer(otherNode.ID())
-	require.Equal(t, []peer.ID{otherNode.ID()}, winner.healer.findForeignPeers())
+	winner.current().tracker.addPeer(otherNode.ID())
+	require.Equal(t, []peer.ID{otherNode.ID()}, winner.current().healer.Load().findForeignPeers())
 	return winner, otherNode.ID()
 }
 
@@ -752,10 +813,10 @@ func TestHealing_AMergeTheStoreRefusesTellsNobodyToYield(t *testing.T) {
 	winner, otherID := facing(t, namespace, store, other)
 	store.failPut(path.Join(RaftStoragePrefix, namespace, "data", "theirs"), errNoSpace)
 
-	winner.healer.executeMerge(t.Context(), otherID)
+	winner.current().healer.Load().executeMerge(t.Context(), otherID)
 	assert.Zero(t, other.healAcks.Load(), "the loser was told to yield a write the merge never landed")
 
-	winner.healer.absorbOrphan(t.Context(), otherID)
+	winner.current().healer.Load().absorbOrphan(t.Context(), otherID)
 	assert.Zero(t, other.healAcks.Load(), "the orphan was told to yield a write the merge never landed")
 
 	_, found, err := winner.TryGet("theirs")
@@ -772,7 +833,7 @@ func TestHealing_AnOrphanWhoseStateIsNotTakenIsNotToldToYield(t *testing.T) {
 		other := &exportingPeer{refuse: connect.NewError(connect.CodeUnavailable, errDisk)}
 		winner, orphan := facing(t, "orphan-export-refused", newFaultStore(), other)
 
-		winner.healer.absorbOrphan(t.Context(), orphan)
+		winner.current().healer.Load().absorbOrphan(t.Context(), orphan)
 		assert.Zero(t, other.healAcks.Load(), "an orphan whose state was never had was told to yield")
 	})
 
@@ -783,7 +844,7 @@ func TestHealing_AnOrphanWhoseStateIsNotTakenIsNotToldToYield(t *testing.T) {
 		winner, orphan := facing(t, namespace, store, other)
 		store.failScan(path.Join(RaftStoragePrefix, namespace, "data"), errDisk)
 
-		winner.healer.absorbOrphan(t.Context(), orphan)
+		winner.current().healer.Load().absorbOrphan(t.Context(), orphan)
 		assert.Zero(t, other.healAcks.Load(), "an orphan whose state was never merged was told to yield")
 	})
 }
@@ -824,7 +885,7 @@ func TestHealing_AnOrphansWritesAreMergedBeforeItYields(t *testing.T) {
 	require.NoError(t, taupeer.LinkAllPeers())
 	connected(t, groupNode, orphan)
 
-	group.(*cluster).healer.absorbOrphan(t.Context(), idOf(orphan))
+	group.(*cluster).current().healer.Load().absorbOrphan(t.Context(), idOf(orphan))
 
 	value, found, err := group.TryGet("held")
 	require.NoError(t, err)
@@ -868,7 +929,7 @@ func TestHealing_AJoinerIsNotTakenForAnOrphan(t *testing.T) {
 	joiner := &joiningPeer{}
 	leader, _ := facing(t, "heal-joiner", newFaultStore(), joiner)
 
-	leader.healer.probeAndMergeAsLeader(t.Context())
+	leader.current().healer.Load().probeAndMergeAsLeader(t.Context())
 	assert.Zero(t, joiner.healAcks.Load(), "a joiner was told to yield")
 	assert.Zero(t, joiner.exports.Load(), "a joiner was absorbed as an orphan")
 }
@@ -891,11 +952,11 @@ func TestHealing_AHealAckFromTheMembersOwnLeaderIsIgnored(t *testing.T) {
 		_, held := member.Get("held")
 		return err == nil && led == idOf(leader) && held
 	}, leaderWait, 10*time.Millisecond, "the member never followed its leader")
-	before, healer := member.raft, member.healer
+	before, healer := member.current().raft, member.current().healer.Load()
 
 	healer.healAcked(t.Context(), idOf(leader))
 	assert.False(t, healer.superseded.Load(), "the member yielded to its own leader")
-	assert.Same(t, before, member.raft, "the member's raft was replaced")
+	assert.Same(t, before, member.current().raft, "the member's raft was replaced")
 	_, held := member.Get("held")
 	assert.True(t, held, "the member wiped what its group holds")
 }
@@ -916,7 +977,7 @@ func TestHealing_ACycleWithALeaderInItIsNotSplit(t *testing.T) {
 		return errors.Is(err, ErrNoLeader)
 	}, leaderWait, 10*time.Millisecond, "the member left alone kept naming a leader")
 
-	require.Eventually(t, func() bool { return stranded.healer.hadLeaderSince(cycleStart) },
+	require.Eventually(t, func() bool { return stranded.current().healer.Load().hadLeaderSince(cycleStart) },
 		5*time.Second, 10*time.Millisecond, "a cycle the member began with a leader counted as leaderless")
-	assert.False(t, stranded.healer.hadLeaderSince(time.Now()), "a cycle with no leader in it did not count")
+	assert.False(t, stranded.current().healer.Load().hadLeaderSince(time.Now()), "a cycle with no leader in it did not count")
 }
