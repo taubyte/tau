@@ -1278,12 +1278,14 @@ func testPhasedJoin(t *testing.T, nodeCount int) {
 	t.Logf("Phase 2 complete: Leader %s, all %d nodes joined", leaderID, nodeCount)
 }
 
-// TestStressCluster_LeaderDistribution tests that different nodes can become leader
+// TestStressCluster_LeaderDistribution tests that different nodes can lead a
+// group: the lowest founder bootstraps each group and leads it first, and the
+// group follows another member once it hands the lead on. Each iteration makes
+// nodes of its own, so leader ids say nothing across iterations.
 func TestStressCluster_LeaderDistribution(t *testing.T) {
 	iterations := 10
 	nodeCount := 5
 	stressLog(t, "=== TestStressCluster_LeaderDistribution START: %d nodes, %d iterations ===", nodeCount, iterations)
-	leaderDistribution := make(map[string]int)
 
 	for iter := 0; iter < iterations; iter++ {
 		func() {
@@ -1410,30 +1412,38 @@ func TestStressCluster_LeaderDistribution(t *testing.T) {
 				assert.NilError(t, err, "FSM coherence check failed")
 			}
 
-			// Track leader distribution
-			leaderDistribution[leaderID.String()]++
+			movedTo, err := handOffLeadership(t, clusters, leaderID, leaderTimeout)
+			if err != nil {
+				stressLog(t, "--- Distribution Iteration %d/%d FAILED: leadership hand-off: %v ---", iter+1, iterations, err)
+				assert.NilError(t, err, "leadership hand-off failed")
+			}
 
-			stressLog(t, "--- Distribution Iteration %d/%d SUCCESS: Leader %s elected, FSM coherent (took %v) ---", iter+1, iterations, leaderID.String(), time.Since(iterStart))
-			t.Logf("Iteration %d: Leader elected: %s", iter+1, leaderID)
+			stressLog(t, "--- Distribution Iteration %d/%d SUCCESS: Leader %s elected, FSM coherent, lead handed to %s (took %v) ---", iter+1, iterations, leaderID.String(), movedTo.String(), time.Since(iterStart))
+			t.Logf("Iteration %d: Leader elected: %s, lead handed to %s", iter+1, leaderID, movedTo)
 		}()
 	}
+	stressLog(t, "=== TestStressCluster_LeaderDistribution COMPLETE: %d groups handed their lead on ===", iterations)
+}
 
-	// Log detailed leader distribution
-	stressLog(t, "=== TestStressCluster_LeaderDistribution COMPLETE: Leader distribution across %d iterations ===", iterations)
-	t.Logf("Leader distribution across %d iterations:", iterations)
-	uniqueLeaders := 0
-	for leaderID, count := range leaderDistribution {
-		percentage := float64(count) / float64(iterations) * 100
-		stressLog(t, "  Leader %s: %d times (%.1f%%)", leaderID, count, percentage)
-		t.Logf("  %s: %d times (%.1f%%)", leaderID, count, percentage)
-		uniqueLeaders++
+// handOffLeadership has the member of clusters that leads hand its lead on,
+// asking again while it still leads, and returns the member they all follow
+// once it is not from.
+func handOffLeadership(t *testing.T, clusters []Cluster, from peercore.ID, timeout time.Duration) (peercore.ID, error) {
+	stressLog(t, "handOffLeadership: moving the lead off %s (timeout: %v)", from, timeout)
+	deadline := time.Now().Add(timeout)
+	for {
+		if l := agreedLeader(clusters); l != nil {
+			if id := idOf(l); id != from {
+				stressLog(t, "handOffLeadership: SUCCESS - the lead moved to %s", id)
+				return id, nil
+			}
+			// A transfer that times out under load can still move the lead,
+			// so the next look, not its error, says whether it did.
+			l.TransferLeadership()
+		}
+		if time.Now().After(deadline) {
+			return "", fmt.Errorf("the lead never moved off %s within %v", from, timeout)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
-
-	// Verify at least 2 different nodes became leader
-	if uniqueLeaders < 2 {
-		stressLog(t, "=== TestStressCluster_LeaderDistribution FAILED: Only %d unique leader(s), expected at least 2 ===", uniqueLeaders)
-	}
-	assert.Assert(t, uniqueLeaders >= 2, "expected at least 2 different leaders, got %d", uniqueLeaders)
-	stressLog(t, "Total unique leaders: %d", uniqueLeaders)
-	t.Logf("Total unique leaders: %d", uniqueLeaders)
 }
