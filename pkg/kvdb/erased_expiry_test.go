@@ -61,6 +61,44 @@ func TestAnErasedDotIsKeptAcrossRebasesAndExpires(t *testing.T) {
 	}
 }
 
+// TestAnErasedCopyBesideAnOwnHeadIsCarriedAway: the copy is refused in a
+// merge that leaves this replica's own head beside the snapshot that brought
+// it, so no difference from a lone head asks for a snapshot. The refusal
+// does: without it the pending removal waits for a snapshot nothing asks
+// for, and the copy stays live where it came from.
+func TestAnErasedCopyBesideAnOwnHeadIsCarriedAway(t *testing.T) {
+	st := newSimTime()
+	j, r, w := st.replica(t, "j", 0), st.replica(t, "r", 0), st.replica(t, "w", 0)
+	put(t, r.r, "/x", "removed")
+	w.pull(t, r)
+	del(t, r.r, "/x")
+	j.pull(t, r)
+	compact(t, j.r)
+	r.pull(t, j)
+	first := r.incarnation()
+
+	st.advance(simRetention + 2*simMargin)
+	st.heartbeat(t, w)
+	w.maintain(t)
+	if w.knows(first) {
+		t.Fatal("setup: w still knows the writer of its copy")
+	}
+	r.dropForRebase(t, st.ms())
+	r.walked(t)
+	r.maintain(t)
+
+	put(t, r.r, "/y", "mine")
+	compact(t, w.r)
+	r.pull(t, w)
+	r.wantValue(t, "/x", "<deleted>")
+	if hs, _ := r.r.heads.List(); len(hs) < 2 {
+		t.Fatal("setup: r's own head should stand beside w's snapshot")
+	}
+	r.maintain(t)
+	w.pull(t, r)
+	w.wantValue(t, "/x", "<deleted>")
+}
+
 // TestAnErasedRecordAboutToExpireMakesAnOldSnapshotStale: once what a rebase
 // erased is due to be forgotten, a state from before the rebase may hold
 // what it refutes, and nothing will refute it after: it is refused.
