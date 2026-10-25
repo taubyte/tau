@@ -535,7 +535,7 @@ func (b *DockerBackend) Remove(ctx context.Context, id core.ContainerID) error {
 		return err
 	}
 
-	if _, err := b.client.ContainerRemove(ctx, dockerID, client.ContainerRemoveOptions{Force: true}); err != nil {
+	if _, err := b.client.ContainerRemove(ctx, dockerID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
 		return fmt.Errorf("failed to remove container %s: %w", id, err)
 	}
 
