@@ -151,6 +151,9 @@ func replicaOptions(opts *Options, name string) *Options {
 	}
 	o.Logger = &testLogger{name: name, l: DefaultOptions().Logger}
 	o.DAGSyncerTimeout = time.Second
+	if len(o.ReplicaID) == 0 {
+		o.ReplicaID = []byte(name)
+	}
 	return o
 }
 

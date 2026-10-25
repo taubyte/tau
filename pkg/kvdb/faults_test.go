@@ -292,6 +292,7 @@ func openOn(t *testing.T, store ds.Datastore, d ipld.DAGService, o *Options) (*D
 		o = noAutoCompact()
 	}
 	o.Logger = &testLogger{name: "f: ", l: DefaultOptions().Logger}
+	o.ReplicaID = []byte("f")
 	return NewDatastore(store, ds.NewKey("crdttest"), d, &nullBroadcaster{}, o)
 }
 
@@ -526,10 +527,28 @@ type errBroadcaster struct{ nullBroadcaster }
 
 func (errBroadcaster) Broadcast(context.Context, []byte) error { return errFault }
 
+// TestAStoreWithABroadcasterNeedsAReplicaID: without one, every restart of a
+// store is a new peer, which every judge waits G for, so one that crash-loops
+// holds every judge back for ever. An offline store hears no peer.
+func TestAStoreWithABroadcasterNeedsAReplicaID(t *testing.T) {
+	o := DefaultOptions()
+	if _, err := NewDatastore(dssync.MutexWrap(ds.NewMapDatastore()), ds.NewKey("x"), newFetchThrough(), &nullBroadcaster{}, o); err == nil {
+		t.Fatal("a store with a broadcaster opened without a ReplicaID")
+	}
+	r, err := NewDatastore(dssync.MutexWrap(ds.NewMapDatastore()), ds.NewKey("x"), newFetchThrough(), nil, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBroadcasting(t *testing.T) {
 	ctx := context.Background()
 	o := noAutoCompact()
 	o.Logger = DefaultOptions().Logger
+	o.ReplicaID = []byte("b")
 	r, err := NewDatastore(dssync.MutexWrap(ds.NewMapDatastore()), ds.NewKey("b"), newFetchThrough(), &errBroadcaster{}, o)
 	if err != nil {
 		t.Fatal(err)

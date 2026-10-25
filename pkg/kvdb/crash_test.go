@@ -87,7 +87,7 @@ func reopen(t testing.TB, old *Datastore, store ds.Datastore, dag ipld.DAGServic
 	if err := store.Put(context.Background(), ds.NewKey("crdttest").ChildString(badShutdownKey), nil); err != nil {
 		t.Fatal(err)
 	}
-	r, err := NewDatastore(store, ds.NewKey("crdttest"), dag, &nullBroadcaster{}, replicaOptions(noAutoCompact(), name))
+	r, err := NewDatastore(store, ds.NewKey("crdttest"), dag, &nullBroadcaster{}, onNode(replicaOptions(noAutoCompact(), name)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestCrashMidCompaction(t *testing.T) {
 			ctx := context.Background()
 			store := newFaultyDatastore(ds.NewMapDatastore())
 			dag := &removeFailing{fetchThroughDAGSvc: newFetchThrough()}
-			r, err := NewDatastore(store, ds.NewKey("crdttest"), dag, &nullBroadcaster{}, replicaOptions(noAutoCompact(), "crash: "))
+			r, err := NewDatastore(store, ds.NewKey("crdttest"), dag, &nullBroadcaster{}, onNode(replicaOptions(noAutoCompact(), "crash: ")))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -165,7 +165,7 @@ func TestRestoredBackupNeverReusesAnIncarnation(t *testing.T) {
 	live := dssync.MutexWrap(ds.NewMapDatastore())
 	dag := newFetchThrough()
 	open := func(store ds.Datastore, d ipld.DAGService, name string) *Datastore {
-		r, err := NewDatastore(store, ds.NewKey("crdttest"), d, &nullBroadcaster{}, replicaOptions(noAutoCompact(), name))
+		r, err := NewDatastore(store, ds.NewKey("crdttest"), d, &nullBroadcaster{}, onNode(replicaOptions(noAutoCompact(), name)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -245,9 +245,16 @@ func freshProcess(t testing.TB) {
 	t.Cleanup(func() { incarnations = old })
 }
 
+// onNode is the options of a store these tests reopen, or copy, on the node
+// that wrote it: every open has that node's ReplicaID.
+func onNode(o *Options) *Options {
+	o.ReplicaID = []byte("node")
+	return o
+}
+
 func openStore(t testing.TB, store ds.Datastore, dag ipld.DAGService, name string) *Datastore {
 	t.Helper()
-	r, err := NewDatastore(store, ds.NewKey("crdttest"), dag, &nullBroadcaster{}, replicaOptions(noAutoCompact(), name))
+	r, err := NewDatastore(store, ds.NewKey("crdttest"), dag, &nullBroadcaster{}, onNode(replicaOptions(noAutoCompact(), name)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -459,7 +466,7 @@ func TestConcurrentOpensNeverShareAnIncarnation(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			r, err := NewDatastore(copies[i], ds.NewKey("crdttest"), dag, &nullBroadcaster{}, replicaOptions(noAutoCompact(), fmt.Sprintf("copy %d: ", i)))
+			r, err := NewDatastore(copies[i], ds.NewKey("crdttest"), dag, &nullBroadcaster{}, onNode(replicaOptions(noAutoCompact(), fmt.Sprintf("copy %d: ", i))))
 			if err != nil {
 				t.Error(err)
 				return

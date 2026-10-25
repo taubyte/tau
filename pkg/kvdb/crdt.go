@@ -133,7 +133,10 @@ type Options struct {
 	// amortized. 0 disables. Default: 128.
 	CompactAfterBlocks int
 	// ReplicaID prefixes every incarnation id this store draws, normally
-	// the node's peer id. Default: none.
+	// the node's peer id. Required with a broadcaster: peers tell one
+	// store's incarnations from another's by it, and without it a store is
+	// a new peer at every restart, which every judge waits G for. Default:
+	// none.
 	ReplicaID []byte
 
 	// Retention is T: how long what a delta teaches, a removal above all,
@@ -392,6 +395,9 @@ func NewDatastore(
 	}
 	if err := opts.verify(); err != nil {
 		return nil, err
+	}
+	if bcast != nil && len(opts.ReplicaID) == 0 {
+		return nil, errors.New("a store with a broadcaster needs a ReplicaID")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

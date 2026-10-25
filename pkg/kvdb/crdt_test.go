@@ -851,6 +851,7 @@ func openTestStore(t testing.TB, name string, mapDs ds.Datastore, dagServ ipld.D
 	t.Helper()
 	opts := DefaultOptions()
 	opts.Logger = &testLogger{name: name + ": ", l: DefaultOptions().Logger}
+	opts.ReplicaID = []byte(name)
 	opts.RepairInterval = repair
 	opts.RebroadcastInterval = time.Hour // disable rebroadcast noise
 	opts.DeliveryBound = opts.DAGSyncerTimeout + opts.RebroadcastInterval
