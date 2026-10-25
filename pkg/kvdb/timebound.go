@@ -348,14 +348,19 @@ func (m *merging) forget(ctx context.Context, now uint64) (bool, error) {
 	return dropped, nil
 }
 
-// expireLocked forgets what has expired. The caller holds store.mu.
+// expireLocked forgets what has expired, and asks for a snapshot that no
+// longer carries it. The caller holds store.mu.
 func (store *Datastore) expireLocked(ctx context.Context) (bool, error) {
 	m := store.beginMerge()
 	dropped, err := m.forget(ctx, store.dropClock())
 	if err != nil || !dropped {
 		return false, err
 	}
-	return true, m.commit(ctx)
+	if err := m.commit(ctx); err != nil {
+		return false, err
+	}
+	store.compactDue = true
+	return true, nil
 }
 
 // purgeAncient drops every local block that no context covers any more and

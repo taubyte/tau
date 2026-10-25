@@ -1150,6 +1150,13 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 	store.mu.Lock()
 	defer store.mu.Unlock()
 
+	// What has expired goes before the merge reads the context, whether or
+	// not maintenance has run since: an entry kept past its expiry would
+	// refuse what every replica that forgot it admits.
+	if _, err := store.expireLocked(ctx); err != nil {
+		store.dropFailed(ctx, current, chunks)
+		return nil, err
+	}
 	d := dotFromPB(delta.GetDot())
 	if store.cc.covers(d) || gen != store.generation {
 		return nil, store.dropUnindexed(ctx, current, chunks)
