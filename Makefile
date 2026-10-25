@@ -37,7 +37,7 @@ DREAM_P ?= $(shell n=$$(nproc 2>/dev/null || echo 4); p=$$((n / 4)); [ $$p -lt 1
 # it fails the package outright rather than skipping it.
 DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xargs grep -L '//go:build dreaming && ee' | sed 's|^\./||' | grep -vE '^(ee/|tools/tau/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
-.PHONY: test test-cli test-acme test-acme-live test-dreaming test-raft test-docker test-containerd test-application test-build test-corpus test-external-databases forge-images test-forges test-containers cover-containers cover-containers-unit cover-containers-docker cover-containers-root cover-containers-rootless cover-containers-report test-taucorder test-all proto-v2 proto-v2-check
+.PHONY: test test-cli test-acme test-acme-live test-dreaming test-raft test-docker test-containerd test-application test-build test-corpus test-external-databases forge-images test-forges test-containers cover-containers cover-containers-unit cover-containers-docker cover-containers-root cover-containers-rootless cover-containers-report test-taucorder test-race test-all proto-v2 proto-v2-check
 
 # THE TIMEOUT IS EXPLICIT BECAUSE THE DEFAULT IS A GUESS ABOUT THE MACHINE.
 # go test allows a package 10 minutes unless told otherwise, and pkg/kvdb spends
@@ -53,6 +53,12 @@ TAU_PKGS = $(shell go list -e ./... 2>/dev/null | grep -v '/ee/')
 
 test:
 	go test -exec $(LEAKCHECK) -timeout 20m $(FLAGS) $(TAU_PKGS)
+
+# test-race is test under the race detector, plus pkg/raft's integration tag:
+# two raft races of 2026-10-24 failed nothing until a -race run read them.
+test-race:
+	go test -race -exec $(LEAKCHECK) -timeout 60m $(FLAGS) $(TAU_PKGS)
+	GOMEMLIMIT=$(GOMEMLIMIT) go test -race -exec $(LEAKCHECK) -tags raft_integration -p 1 -timeout 60m $(FLAGS) ./pkg/raft/...
 
 # test-cli tests the developer CLI, which is its own module (tools/tau, so the
 # root module never imports it and `./...` here never sweeps it in): its unit
