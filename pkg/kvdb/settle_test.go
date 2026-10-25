@@ -1123,3 +1123,73 @@ func TestARejoiningReplicaForgetsPeersItNoLongerHears(t *testing.T) {
 		t.Fatalf("a rejoining replica keeps %d frontiers and %d contacts of peers heard once, want at most %d each", n, m, gapIntervals+1)
 	}
 }
+
+// TestAnOkWhoseJudgeForgotPartOfItStillEndsTheRejoin: a judge's first ok
+// stands, and it may carry an entry the replica cannot fetch. Once the judge
+// has forgotten that entry by expiry, a later ok shows it, and the replica,
+// whose own clock stands still while it rejoins, no longer waits for it: it
+// ends its rejoin once it holds the rest.
+func TestAnOkWhoseJudgeForgotPartOfItStillEndsTheRejoin(t *testing.T) {
+	st := newSimTime()
+	w := st.replica(t, "w", 0)
+	a := st.replica(t, "a", 0)
+	b := st.replica(t, "b", 0)
+	put(t, w.r, "/old", "v")
+	writer := w.incarnation()
+	st.settle(t, w, a, b)
+
+	// w's entry expires at T+m; r's fleet starts shortly before, so what w
+	// last changed predates r's gap.
+	st.away(t, simRetention-10*simRI, a, b)
+	r := st.replica(t, "r", 0)
+	q := st.replica(t, "q", 0)
+	for range gapIntervals + 2 {
+		st.advance(simRI)
+		st.exchange(t, a, b)
+		st.exchange(t, r, q)
+		a.maintain(t)
+		b.maintain(t)
+	}
+	if !a.settled() || !r.settled() {
+		t.Fatal("setup: both fleets should be settled")
+	}
+
+	r.reopen(t)
+	r.beat()
+	st.hear(t, r, []*simReplica{a}, a, b)
+	st.hear(t, a, []*simReplica{r}) // the ok, nothing fetched
+	r.r.mu.Lock()
+	first := r.r.oks[a.incarnation()]
+	pinned := first != nil && first.cc.inc[writer] != nil
+	r.r.mu.Unlock()
+	if !pinned {
+		t.Fatal("setup: the first ok must carry w's entry")
+	}
+
+	for elapsed := time.Duration(0); elapsed < 2*simMargin; elapsed += simRI {
+		st.listen(t, []*simReplica{a, b}, r)
+		r.beat()
+		st.hear(t, r, []*simReplica{a}, a, b)
+		if elapsed >= simMargin {
+			// r fetches again once a and b have forgotten w.
+			st.hear(t, a, []*simReplica{r}, a, b)
+		} else {
+			st.hear(t, a, []*simReplica{r})
+		}
+	}
+	if a.knows(writer) || r.knows(writer) {
+		t.Fatal("setup: w's entry should be forgotten")
+	}
+	a.r.mu.Lock()
+	current := a.r.cc.clone()
+	a.r.mu.Unlock()
+	r.r.mu.Lock()
+	holdsCurrent := r.r.holds(current)
+	r.r.mu.Unlock()
+	if !holdsCurrent {
+		t.Fatal("setup: r must hold what its judge holds now")
+	}
+	if r.rejoining() {
+		t.Fatal("the rejoin waits for an entry its judge has forgotten")
+	}
+}

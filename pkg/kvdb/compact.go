@@ -56,7 +56,7 @@ func (store *Datastore) compact(ctx context.Context, force bool) (int, error) {
 		return 0, err
 	}
 	head, theirs, err := store.compactLocked(ctx, force)
-	if err == nil {
+	if err == nil && theirs != nil {
 		err = store.carried(ctx)
 	}
 	if err != nil || theirs == nil {

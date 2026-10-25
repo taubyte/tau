@@ -895,3 +895,61 @@ func TestARejoinAmongAWrongClockAndANewReplicaEnds(t *testing.T) {
 		t.Fatal("the wrong clock ended its rejoin among peers it cannot agree with")
 	}
 }
+
+// TestAnOwnWriteSurvivesMaintenanceBetweenTwoRebases: a rebase puts back what
+// the replica wrote and nobody acknowledged, and no snapshot carries it while
+// the judge's state is walked. A maintenance pass in between, outside a
+// rejoin and with the write's delta expired, keeps it in the log, and a
+// second rebase puts it back again.
+func TestAnOwnWriteSurvivesMaintenanceBetweenTwoRebases(t *testing.T) {
+	st := newSimTime()
+	a := st.replica(t, "a", 0)
+	b := st.replica(t, "b", 0)
+	r := st.replica(t, "r", 0)
+	st.settle(t, a, b, r)
+	put(t, r.r, "/only", "mine")
+	r.out.take() // nobody hears it, nobody acknowledges it
+
+	st.away(t, simRetention+2*simMargin, a, b)
+	r.beat()
+	if !r.rejoining() {
+		t.Fatal("setup: r should rejoin")
+	}
+	r.dropForRebase(t, st.ms())
+	// The walk of the judge's state has not ended.
+	r.r.mu.Lock()
+	r.r.rebuilding = r.r.generation
+	r.r.mu.Unlock()
+	r.maintain(t)
+	r.wantValue(t, "/only", "mine")
+
+	r.dropForRebase(t, st.ms())
+	r.wantValue(t, "/only", "mine")
+}
+
+// TestACompactionThatWritesNothingKeepsTheRebaseMarked: a rebase whose writes
+// no snapshot carries yet stays marked, so a reopen still owes a snapshot.
+// A compaction that finds nothing to fold writes none, and leaves the mark:
+// what was put back reaches the fleet after the next reopen.
+func TestACompactionThatWritesNothingKeepsTheRebaseMarked(t *testing.T) {
+	st := newSimTime()
+	a := st.replica(t, "a", 0)
+	r := st.replica(t, "r", 0)
+	st.settle(t, a, r)
+	put(t, r.r, "/only", "mine")
+	r.out.take()
+	r.dropForRebase(t, st.ms())
+
+	// Reopened with the writes done and no snapshot carrying them.
+	r.reopen(t)
+	mark, err := r.store.Get(context.Background(), r.r.rebaseKey())
+	if err != nil || len(mark) == 0 || r.r.heads.Len() != 0 {
+		t.Fatalf("setup: the writes marked done and no heads: mark=%v err=%v", mark, err)
+	}
+	compact(t, r.r)
+	r.reopen(t)
+	r.maintain(t)
+	st.exchange(t, a, r)
+	st.exchange(t, a, r)
+	a.wantValue(t, "/only", "mine")
+}

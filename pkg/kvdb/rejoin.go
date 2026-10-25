@@ -539,13 +539,24 @@ func (store *Datastore) onVerdict(ctx context.Context, msg message) error {
 		// rejoining, for the next judge to answer. A judge's first ok
 		// stands until it is held or dropped: what it vouched with does not
 		// move, and a judge that writes would otherwise move it again with
-		// every answer, before this replica could reach it.
+		// every answer, before this replica could reach it. It only loses
+		// the entries the judge has forgotten since, by expiry, as a later
+		// ok shows: nobody may hold them any more, and what the judge no
+		// longer knows it no longer refutes either, as its later ok says.
 		if !store.rejoining || msg.context == nil || v.held < store.reportedSince() {
 			store.mu.Unlock()
 			return nil
 		}
-		if store.oks[msg.incarnation] == nil {
+		if o := store.oks[msg.incarnation]; o == nil {
 			store.oks[msg.incarnation] = &ok{since: v.since, held: v.held, cc: msg.context, heard: store.times.up()}
+		} else {
+			cc := newCausalContext()
+			for r, k := range o.cc.inc {
+				if msg.context.inc[r] != nil {
+					cc.inc[r] = k
+				}
+			}
+			o.cc = cc
 		}
 		gen := store.generation
 		store.mu.Unlock()
@@ -592,11 +603,16 @@ func (m *merging) logOwn(d dot, delta *pb.Delta) error {
 // settleOwn forgets the own operations whose delta has expired, outside a
 // rejoin: no replica will merge that delta any more, and what it did is in
 // this replica's state, which its snapshots carry. While rejoining they are
-// kept, for a rebase. The caller holds store.mu.
+// kept, for a rebase, and so they are while a rebase's writes are carried by
+// no snapshot yet: what it put back is in no block, and a second rebase
+// before one would drop it. The caller holds store.mu.
 func (store *Datastore) settleOwn(ctx context.Context) error {
 	now := store.dropClock()
 	if store.rejoining || !store.expired(store.lows.own, now) {
 		return nil
+	}
+	if marked, err := store.store.Has(ctx, store.rebaseKey()); err != nil || marked {
+		return err
 	}
 	t := newTxn(store.store)
 	low := none
@@ -911,8 +927,9 @@ func (store *Datastore) reissue(ctx context.Context) error {
 }
 
 // carried forgets a rebase once a snapshot carries what it put back: the one
-// just written, or the one that is the only head. A rebase whose writes are
-// not done stays marked for the next open. The caller holds store.mu.
+// just written. A rebase whose writes are not done stays marked for the next
+// open, and so does one no snapshot has carried yet. The caller holds
+// store.mu.
 func (store *Datastore) carried(ctx context.Context) error {
 	mark, err := store.store.Get(ctx, store.rebaseKey())
 	if errors.Is(err, ds.ErrNotFound) || err == nil && len(mark) == 0 {
