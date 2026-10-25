@@ -561,15 +561,20 @@ func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.D
 	m.cc.merge(theirs)
 	at, ttl := root.GetAt(), root.GetTtl()
 	m.cc.add(d, root.GetPrev(), at, at+ttl)
+	now := store.dropClock()
 	for _, tomb := range root.GetTombstones() {
-		if err := m.remove(ctx, tombstoneOf(tomb, at)); err != nil {
-			return nil, nil, err
+		// One that has expired here is not applied, as the delta that
+		// wrote it would not be merged.
+		if r := tombstoneOf(tomb, at); !store.expired(r.expires(), now) {
+			if err := m.remove(ctx, r); err != nil {
+				return nil, nil, err
+			}
 		}
 	}
 	// What the snapshot still knew and this replica had already forgotten
 	// is forgotten again, at once: an entry lives as long as its stamps say,
 	// not as long as someone keeps sending it.
-	if _, err := m.forget(ctx, store.dropClock()); err != nil {
+	if _, err := m.forget(ctx, now); err != nil {
 		return nil, nil, err
 	}
 
