@@ -32,9 +32,15 @@ import (
 // across a partition it bridges or one it crossed within G, where it is not
 // new: it sends the peers it heard with its frontier, and while one of them
 // is not heard here and was first listed less than G ago, this replica is
-// not settled. A listed peer is waited for once: one listed for G and never
-// heard is gone as any peer not heard for G is, and one heard is waited for
-// again only once it has gone unheard for G.
+// not settled. A listed peer is waited for once per turn: one listed for G
+// and never heard is gone as any peer not heard for G is, and one heard is
+// waited for again only once it has gone unheard for G. A bridge that was
+// settled and is not may have just heard what a listed peer holds and not
+// fetched it yet: the peers it lists then are waited for again, G from that
+// turn. Only an incarnation that sent a settled frontier turns, so a restart
+// renews nothing; a bridge that says it is settled holds nothing back; and a
+// peer is listed at most G after its last lister heard it, so a gone peer
+// holds this replica back at most 2G.
 //
 // A replica knows it has heard every live peer once it has heard the fleet
 // for G without a break, or holds the frontier of a peer that was settled,
@@ -80,7 +86,7 @@ type contact struct {
 }
 
 // A listing is a peer a frontier names that this replica has not heard: when
-// one first named it, and when one last did.
+// one first named it, or named it on turning unsettled, and when one last did.
 type listing struct {
 	first, last time.Duration
 }
@@ -146,6 +152,8 @@ func (store *Datastore) hearFrontier(msg message) {
 	if msg.context == nil || msg.since == 0 || !store.plausible(msg.now) {
 		return
 	}
+	prev := store.frontiers[msg.incarnation]
+	turned := !msg.settled && prev != nil && prev.settled
 	store.frontiers[msg.incarnation] = &frontier{cc: msg.context, settled: msg.settled, peers: msg.peers, first: first, heard: up}
 	self := peerOf(store.replica)
 	for _, p := range msg.peers {
@@ -153,7 +161,7 @@ func (store *Datastore) hearFrontier(msg message) {
 			continue
 		}
 		l := store.listed[p]
-		if l == nil {
+		if l == nil || turned {
 			l = &listing{first: up}
 			store.listed[p] = l
 		}

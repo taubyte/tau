@@ -3,6 +3,7 @@ package kvdb
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -959,6 +960,127 @@ func TestAPeerNamedAndNeverHeardIsWaitedForOnce(t *testing.T) {
 	beat()
 	if !j.settled() {
 		t.Fatal("the judge still waits, past G, for a peer it never heard")
+	}
+}
+
+// TestAJudgeWaitsAgainForThePeersABridgeNamesWhenItTurns: y bridges the
+// judge's side to p, which the judge never hears, and has named p, settled,
+// since long before. Shortly before the other side forgets a removal, p
+// hears that side and fetches what it holds, and y hears p's frontier before
+// it can fetch it: y turns unsettled. The judge's wait for p, counted from
+// p's first naming, is long over; were it not renewed, the judge would vouch
+// for r, whose copy only that removal refutes, and once the holders forgot
+// it r's snapshot would bring the value back.
+func TestAJudgeWaitsAgainForThePeersABridgeNamesWhenItTurns(t *testing.T) {
+	st := newSimTime()
+	st.advance(20 * simRI)
+	w, a, b, r := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
+	j, k, y, p := st.replica(t, "j", 0), st.replica(t, "k", 0), st.replica(t, "y", 0), st.replica(t, "p", 0)
+	put(t, w.r, "/x", "removed")
+	round := func(side ...*simReplica) {
+		st.advance(simRI)
+		st.exchange(t, side...)
+		st.exchange(t, j, k, y)
+		st.exchange(t, y, p)
+	}
+	for range gapIntervals + 2 {
+		round(w, a, b, r)
+	}
+	st.advance(simRI)
+	del(t, a.r, "/x")
+	// a and b on one side, j, k and y on the other with p beyond y, r cut
+	// off from both, until the removal has expired and is not forgotten yet.
+	for elapsed := time.Duration(0); elapsed < simRetention+simMargin-4*simRI; elapsed += simRI {
+		round(a, b)
+		for _, sr := range []*simReplica{a, b, j, k, y, p} {
+			sr.maintain(t)
+		}
+	}
+	if !j.settled() || !y.settled() {
+		t.Fatalf("setup: j and y should be settled (j=%t y=%t)", j.settled(), y.settled())
+	}
+	// p hears a and b and fetches what they hold; y hears p and fetches
+	// nothing yet; j hears y, then r's rejoin.
+	st.listen(t, []*simReplica{a, b, p})
+	p.beat()
+	st.hear(t, p, []*simReplica{y})
+	y.beat()
+	if y.settled() {
+		t.Fatal("setup: y should not be settled, short of what p holds")
+	}
+	st.hear(t, y, []*simReplica{j}, j, k, y)
+	r.beat()
+	if !r.rejoining() {
+		t.Fatal("setup: r should rejoin")
+	}
+	st.hear(t, r, []*simReplica{j}, j, k)
+	st.hear(t, j, []*simReplica{r}, j, k)
+	vouched := !r.rejoining()
+	// a, b and p forget the removal before anything of r reaches them.
+	for range 4 {
+		st.advance(simRI)
+		st.exchange(t, a, b, p)
+		for _, sr := range []*simReplica{a, b, p} {
+			sr.maintain(t)
+		}
+	}
+	compact(t, r.r)
+	all := []*simReplica{a, b, p, r, j, k, y}
+	st.exchange(t, all...)
+	st.exchange(t, all...)
+	for _, sr := range all {
+		if got := sr.value(t, "/x"); got != "<deleted>" {
+			t.Errorf("replica %s: /x = %s, want <deleted> (j vouched for r: %t)", sr.name, got, vouched)
+		}
+	}
+}
+
+// TestABridgeHoldsAJudgeBackAtMostGEachTimeItTurns: a bridge naming a peer
+// the judge never hears holds it back G from each time it turns unsettled,
+// and not while it says it is settled: however often it turns, no wait
+// outlasts G. Its restart is no turn.
+func TestABridgeHoldsAJudgeBackAtMostGEachTimeItTurns(t *testing.T) {
+	st := newSimTime()
+	j, y := st.replica(t, "j", 0), st.replica(t, "y", 0)
+	st.settle(t, j, y)
+	beat := func(settled bool, incarnation string) {
+		st.advance(simRI)
+		j.beat()
+		st.hear(t, j, []*simReplica{y}, j)
+		y.beat()
+		for _, data := range y.out.take() {
+			msg, err := j.r.decodeBroadcast(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			msg.settled, msg.peers = settled, append(msg.peers, "ghost")
+			if incarnation != "" {
+				msg.incarnation = incarnation
+			}
+			j.r.handleBroadcast(context.Background(), msg)
+		}
+	}
+	for turn := range 3 {
+		beat(true, "")
+		if !j.settled() {
+			t.Fatalf("turn %d: a bridge that says it is settled held the judge back", turn)
+		}
+		for i := range gapIntervals {
+			beat(false, "")
+			if j.settled() {
+				t.Fatalf("turn %d: the judge settled %d intervals after a bridge naming a peer it never heard turned", turn, i+1)
+			}
+		}
+		beat(false, "")
+		beat(false, "")
+		if !j.settled() {
+			t.Fatalf("turn %d: the judge still waits, past G, for a peer a bridge named on turning", turn)
+		}
+	}
+	inc := y.incarnation()
+	beat(false, inc[:len(inc)-nonceLen]+strings.Repeat("z", nonceLen))
+	if !j.settled() {
+		t.Fatal("a bridge's new incarnation that is not settled renewed the wait")
 	}
 }
 
