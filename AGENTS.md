@@ -169,3 +169,39 @@ project is part of finishing them.
       `multihash length inconsistent`, not at compile.
 - [ ] If the compiled object differs from what you expected, is the COMPILER wrong, or
       were you? It is usually you.
+
+## Keep the garbage collector's work small
+
+The goal is as little GC work as possible. New code follows these rules; a whole-codebase
+audit comes later.
+
+### 1. Find the allocations before changing code.
+
+Profile first. A heap profile separates allocation volume (`alloc_space`) from retained
+memory (`inuse_space`); churn is the first, a leak the second. `go build -gcflags=-m` says
+why a value escapes to the heap. See the [GC guide](https://go.dev/doc/gc-guide).
+
+### 2. Reuse temporary storage.
+
+`sync.Pool` cuts allocation churn for short-lived buffers, but the runtime may drop its
+entries at any time. It cannot promise zero allocations and is never a durable cache.
+See [sync.Pool](https://pkg.go.dev/sync#Pool).
+
+### 3. Keep pointers out of bulk storage.
+
+The collector skips the contents of pointer-free memory (`[]byte`, slices of plain
+structs, indices instead of pointers), so large backing stores should hold none. That
+memory still counts toward the GC's heap target.
+
+### 4. Prove "zero garbage" with a measurement.
+
+A claim that an operation does not allocate needs a benchmark with `b.ReportAllocs()` or a
+test with `testing.AllocsPerRun`. That proves it for the one operation measured, never for
+the program as a whole. See [testing](https://pkg.go.dev/testing#AllocsPerRun).
+
+### Checklist
+
+- [ ] On a hot path, did a profile or `-gcflags=-m` show where it allocates?
+- [ ] Are short-lived buffers reused, without relying on `sync.Pool` to keep anything?
+- [ ] Is large backing storage free of pointers?
+- [ ] Is every "does not allocate" claim backed by `AllocsPerRun` or `ReportAllocs`?
