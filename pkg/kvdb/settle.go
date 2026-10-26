@@ -178,6 +178,9 @@ func (store *Datastore) hearFrontier(msg message) {
 		return
 	}
 	turned := !msg.settled && prev != nil && msg.turned > prev.turned
+	if !store.holds(msg.context) && (prev == nil || store.holds(prev.cc)) {
+		store.fell = true
+	}
 	store.frontiers[msg.incarnation] = &frontier{cc: msg.context, settled: msg.settled, peers: msg.peers, sent: msg.sent, turned: msg.turned, first: first, heard: up}
 	self := peerOf(store.replica)
 	for _, p := range msg.peers {
@@ -302,8 +305,11 @@ func (store *Datastore) waitsFor(f *frontier, up, g time.Duration) bool {
 }
 
 // markTurn stamps a frontier this replica sends with the count of the one
-// it last came to lack what a live peer said it holds in. The caller holds
-// store.mu.
+// it last came to lack what a live peer said it holds in: it turns when it
+// lacks some now and did not at its last frontier, or has heard since a
+// frontier it does not hold from a peer whose last one it held, as it may
+// have caught up in between. A peer it stays short of turns it once. The
+// caller holds store.mu.
 func (store *Datastore) markTurn(b *pb.CRDTBroadcast) {
 	lags := false
 	for _, f := range store.frontiers {
@@ -312,10 +318,10 @@ func (store *Datastore) markTurn(b *pb.CRDTBroadcast) {
 			break
 		}
 	}
-	if lags && !store.lagged {
+	if lags && (!store.lagged || store.fell) {
 		store.turned = b.Sent
 	}
-	store.lagged = lags
+	store.lagged, store.fell = lags, false
 	b.Turned = store.turned
 }
 

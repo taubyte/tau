@@ -1227,6 +1227,20 @@ func TestATurnHoldsAJudgeBackUntilTheBridgeSettles(t *testing.T) {
 // what it holds the judge sees no turn, but y's frontier says it turned,
 // and the judge waits for the peers y named in it.
 func TestATurnIsTheSendersToTell(t *testing.T) {
+	senderTurns(t, false)
+}
+
+// TestATurnBetweenTwoFramesIsATurn: y has been short of q's write for
+// longer than G, catches up, and falls short again on q's next write, all
+// between two of its frontiers. Both frontiers say y is short: y still
+// marks the second a turn, and the judge waits again.
+func TestATurnBetweenTwoFramesIsATurn(t *testing.T) {
+	senderTurns(t, true)
+}
+
+// senderTurns is TestATurnIsTheSendersToTell, y catching up and falling
+// short again between two frontiers if between.
+func senderTurns(t *testing.T, between bool) {
 	st := newSimTime()
 	j, y, q := st.replica(t, "j", 0), st.replica(t, "y", 0), st.replica(t, "q", 0)
 	st.settle(t, j, y, q)
@@ -1270,7 +1284,10 @@ func TestATurnIsTheSendersToTell(t *testing.T) {
 	if !y.settled() {
 		t.Fatal("setup: y should be settled once it holds what q wrote")
 	}
-	settled := send(y)
+	var settled [][]byte
+	if !between {
+		settled = send(y)
+	}
 	lag("2")
 	deliver(send(y))
 	deliver(settled)

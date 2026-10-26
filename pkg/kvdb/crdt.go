@@ -333,8 +333,9 @@ type Datastore struct {
 	// last held all they held, forgotten the entries it dropped by expiry
 	// lately, oks the verdicts that vouched for it while it rejoins, sent
 	// how many broadcasts it built, turned the sent of the frontier it last
-	// came to lack what a live peer holds in, and lagged whether it lacked
-	// it in its last frontier (see settle.go).
+	// came to lack what a live peer holds in, lagged whether it lacked it
+	// in its last frontier, and fell whether it has heard one since that it
+	// does not hold from a peer whose last one it held (see settle.go).
 	contacts     map[string]*contact
 	frontiers    map[string]*frontier
 	listed       map[string]*listing
@@ -345,7 +346,7 @@ type Datastore struct {
 	oks          map[string]*ok
 	sent         uint64
 	turned       uint64
-	lagged       bool
+	lagged, fell bool
 	// compactDue asks the next maintenance for a snapshot.
 	compactDue bool
 	// lows are lower bounds, kept so the frequent passes skip scans that
