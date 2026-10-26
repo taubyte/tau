@@ -33,8 +33,15 @@ type deltaOption struct {
 }
 
 // GetDeltas uses GetMany to obtain many deltas.
+//
+// A DELTA FETCHED IN TIME IS KEPT, however long the caller takes to read it.
+// The channel held one delta, and once ctx expired the next was dropped while
+// the caller was still queueing the one before for a worker: a walk whose
+// workers waited on store.mu lost blocks it had fetched, recorded them as
+// missing, and left them to the next repair, a minute later. The channel now
+// holds a delta for every cid, so handing one over never waits on the caller.
 func (ng *crdtNodeGetter) GetDeltas(ctx context.Context, cids []cid.Cid) <-chan *deltaOption {
-	deltaOpts := make(chan *deltaOption, 1)
+	deltaOpts := make(chan *deltaOption, len(cids))
 	go func() {
 		defer close(deltaOpts)
 		for nodeOpt := range ng.GetMany(ctx, cids) {
@@ -42,11 +49,7 @@ func (ng *crdtNodeGetter) GetDeltas(ctx context.Context, cids []cid.Cid) <-chan 
 			if opt.err == nil {
 				opt.delta, opt.err = extractDelta(nodeOpt.Node)
 			}
-			select {
-			case deltaOpts <- opt:
-			case <-ctx.Done():
-				return
-			}
+			deltaOpts <- opt
 		}
 	}()
 	return deltaOpts
