@@ -999,9 +999,19 @@ func TestAJudgeWaitsAgainWhenTheBridgesOlderHeartbeatArrivesAfterItsTurn(t *test
 	bridgeTurns(t, "reordered")
 }
 
+// TestAnOlderHeartbeatOfTheNamedPeerDoesNotReplaceItsNewerFrontier: after
+// the turn the judge holds p's frontier sent past it, which shows the
+// removal, and then p's heartbeat sent settled before p heard the other
+// side. The older one does not replace the newer: the judge does not hold
+// what p holds, and does not vouch.
+func TestAnOlderHeartbeatOfTheNamedPeerDoesNotReplaceItsNewerFrontier(t *testing.T) {
+	bridgeTurns(t, "newer")
+}
+
 // bridgeTurns is the turn of TestAJudgeWaitsAgainForThePeersABridgeNamesWhenItTurns,
 // the judge hearing p just before it ("before"), or hearing p's heartbeat
-// sent then ("late") or y's ("reordered") only after the turn.
+// sent then ("late") or y's ("reordered") only after the turn, or p's
+// only after p's frontier sent past the turn ("newer").
 func bridgeTurns(t *testing.T, variant string) {
 	st := newSimTime()
 	st.advance(20 * simRI)
@@ -1039,7 +1049,7 @@ func bridgeTurns(t *testing.T, variant string) {
 	}
 	var old [][]byte
 	switch variant {
-	case "late":
+	case "late", "newer":
 		p.beat()
 		old = p.out.take()
 	case "reordered":
@@ -1056,6 +1066,11 @@ func bridgeTurns(t *testing.T, variant string) {
 		t.Fatal("setup: y should not be settled, short of what p holds")
 	}
 	st.hear(t, y, []*simReplica{j}, j, y)
+	if variant == "newer" {
+		st.advance(2 * simS)
+		p.beat()
+		st.hear(t, p, []*simReplica{j})
+	}
 	j.reach(p, y)
 	for _, data := range old {
 		msg, err := j.r.decodeBroadcast(data)
