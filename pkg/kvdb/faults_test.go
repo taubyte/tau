@@ -569,11 +569,20 @@ func TestBroadcasting(t *testing.T) {
 	if err := r.broadcast(ctx, Head{}, nil); err != nil {
 		t.Fatal(err)
 	}
-	r.opts.BroadcastBatchDelay = time.Hour
-	if err := r.broadcast(ctx, Head{Cid: onlyHead(t, r)}, nil); err != nil {
+	// A batching replica is built as one: its batch worker reads the delay
+	// when it starts, so changing it on a running replica races that read.
+	batching := noAutoCompact()
+	batching.Logger = o.Logger
+	batching.ReplicaID = []byte("b")
+	batching.BroadcastBatchDelay = time.Hour
+	batched, err := NewDatastore(dssync.MutexWrap(ds.NewMapDatastore()), ds.NewKey("b"), newFetchThrough(), &errBroadcaster{}, batching)
+	if err != nil {
 		t.Fatal(err)
 	}
-	r.opts.BroadcastBatchDelay = 0
+	defer batched.Close()
+	if err := batched.broadcast(ctx, Head{Cid: onlyHead(t, r)}, nil); err != nil {
+		t.Fatal(err)
+	}
 	if got := r.InternalStats(ctx); len(got.Heads) != 1 || got.MaxHeight == 0 {
 		t.Fatalf("stats: %+v", got)
 	}
