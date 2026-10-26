@@ -7,6 +7,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -15,7 +16,7 @@ type Command struct {
 	ctx        context.Context
 	startDone  chan struct{}
 	sess       RemoteSession
-	sessClosed bool
+	sessClosed atomic.Bool
 	name       string
 	args       []string
 	env        map[string]string
@@ -62,33 +63,36 @@ func (c *Command) Run() error {
 }
 
 func (c *Command) CombinedOutput() ([]byte, error) {
-	var b []byte
-	err := c.sessionWrap(func() error {
-		var err error
-		b, err = c.sess.CombinedOutput(c.String())
-		if err != nil {
-			return fmt.Errorf("getting combined output of command %s: %w", c.String(), err)
-		}
-		return nil
-	})
-	return b, err
+	return c.output(c.sess.CombinedOutput, "getting combined output of command")
 }
 
 func (c *Command) Output() ([]byte, error) {
-	var b []byte
+	return c.output(c.sess.Output, "getting output of command")
+}
+
+// output hands the bytes back over a channel rather than through a variable:
+// a call abandoned to its context is still running when the caller has
+// returned, and must have nothing of the caller's left to write.
+func (c *Command) output(call func(string) ([]byte, error), doing string) ([]byte, error) {
+	out := make(chan []byte, 1)
 	err := c.sessionWrap(func() error {
-		var err error
-		b, err = c.sess.Output(c.String())
+		b, err := call(c.String())
+		out <- b
 		if err != nil {
-			return fmt.Errorf("getting output of command %s: %w", c.String(), err)
+			return fmt.Errorf("%s %s: %w", doing, c.String(), err)
 		}
 		return nil
 	})
-	return b, err
+	select {
+	case b := <-out:
+		return b, err
+	default:
+		return nil, err
+	}
 }
 
 func (c *Command) Start() error {
-	if c.sessClosed {
+	if c.sessClosed.Load() {
 		return errors.New("session closed")
 	}
 
@@ -101,7 +105,7 @@ func (c *Command) Start() error {
 		case <-c.startDone:
 		}
 		c.sess.Close()
-		c.sessClosed = true
+		c.sessClosed.Store(true)
 	}()
 
 	if err := c.sess.Start(c.String()); err != nil {
@@ -156,16 +160,17 @@ func (c *Command) String() string {
 }
 
 func (c *Command) sessionWrap(method func() error) error {
-	if c.sessClosed {
+	if c.sessClosed.Load() {
 		return errors.New("session closed")
 	}
 
 	defer func() {
 		c.sess.Close()
-		c.sessClosed = true
+		c.sessClosed.Store(true)
 	}()
 
-	retChan := make(chan error)
+	// Buffered, so a method abandoned to the context can still finish.
+	retChan := make(chan error, 1)
 	go func() {
 		retChan <- method()
 	}()

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"runtime"
 	"testing"
 	"time"
 
@@ -96,7 +97,7 @@ func TestCommandSessionClosed(t *testing.T) {
 	ctx := context.Background()
 	cmd, _ := New(ctx, mockSession, "ls")
 
-	cmd.sessClosed = true
+	cmd.sessClosed.Store(true)
 
 	mockSession.On("Run", mock.Anything).Return(errors.New("session closed")).Once()
 	err := cmd.Run()
@@ -296,4 +297,51 @@ func TestCommand_ArgumentsHandling(t *testing.T) {
 	cmd, _ := New(ctx, mockSession, "echo", Args(args...))
 
 	assert.Equal(t, `echo "a rg1" "arg2"`, cmd.String(), "Arguments should be correctly formatted and stored")
+}
+
+// TestAnOutputAbandonedToItsContextWritesNothingTheCallerRead. A command whose
+// context ends while its output is still coming returns at once, and the call
+// it left running must finish without writing what the caller already read,
+// and without blocking forever on a result nobody will take.
+func TestAnOutputAbandonedToItsContextWritesNothingTheCallerRead(t *testing.T) {
+	for _, method := range []string{"CombinedOutput", "Output"} {
+		t.Run(method, func(t *testing.T) {
+			mockSession := new(mocks.RemoteSession)
+			ctx, cancel := context.WithCancel(context.Background())
+			cmd, _ := New(ctx, mockSession, "ls")
+
+			release := make(chan time.Time)
+			mockSession.On(method, mock.Anything).WaitUntil(release).Return([]byte("late"), nil).Once()
+			mockSession.On("Signal", mock.Anything).Return(nil)
+			mockSession.On("Close").Return(nil)
+
+			before := runtime.NumGoroutine()
+			cancel()
+			var out []byte
+			var err error
+			if method == "Output" {
+				out, err = cmd.Output()
+			} else {
+				out, err = cmd.CombinedOutput()
+			}
+			assert.ErrorContains(t, err, "context done")
+			assert.Assert(t, out == nil)
+
+			close(release)
+			waitFor(t, func() bool { return runtime.NumGoroutine() <= before },
+				"the abandoned call never finished")
+		})
+	}
+}
+
+func waitFor(t *testing.T, cond func() bool, msg string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatal(msg)
+		}
+		runtime.Gosched()
+		time.Sleep(time.Millisecond)
+	}
 }
