@@ -22,7 +22,23 @@ import (
 	query "github.com/ipfs/go-datastore/query"
 	dstest "github.com/ipfs/go-datastore/test"
 	ipld "github.com/ipfs/go-ipld-format"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace/noop"
 )
+
+// TestMain installs a tracer provider before any replica starts. The
+// blockservice under every replica's DAG starts a span for each block it
+// gets, adds or deletes, and with no provider installed otel answers each of
+// those through one mutex for the whole process. Fifteen replicas walking
+// and purging at once queued a thousand goroutines on it: a compaction
+// purging its blocks held store.mu for up to 20s under -race on a loaded
+// host, the broadcast reader waited on store.mu, and every peer's broadcast
+// to it timed out; fetches waited on it past DAGSyncerTimeout and were left
+// to the next repair, a minute later.
+func TestMain(m *testing.M) {
+	otel.SetTracerProvider(noop.NewTracerProvider())
+	os.Exit(m.Run())
+}
 
 // fetchThroughDAGSvc is one replica's own blockstore that, on a local miss,
 // fetches the block from its remotes and keeps a copy, the way a bitswap
