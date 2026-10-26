@@ -37,10 +37,11 @@ import (
 // waited for again only once it has gone unheard for G. A bridge that was
 // settled and is not may have just heard what a listed peer holds and not
 // fetched it yet: the peers it lists then are waited for again, G from that
-// turn. Only an incarnation that sent a settled frontier turns, so a restart
-// renews nothing; a bridge that says it is settled holds nothing back; and a
-// peer is listed at most G after its last lister heard it, so a gone peer
-// holds this replica back at most 2G.
+// turn, those this replica heard before the turn among them, until it hears
+// them again. Only an incarnation that sent a settled frontier turns, so a
+// restart renews nothing; a bridge that says it is settled holds nothing
+// back; and a peer is listed at most G after its last lister heard it, so a
+// gone peer holds this replica back at most 2G.
 //
 // A replica knows it has heard every live peer once it has heard the fleet
 // for G without a break, or holds the frontier of a peer that was settled,
@@ -85,8 +86,9 @@ type contact struct {
 	first, heard time.Duration
 }
 
-// A listing is a peer a frontier names that this replica has not heard: when
-// one first named it, or named it on turning unsettled, and when one last did.
+// A listing is a peer a frontier names that this replica has not heard, or
+// has not heard since a frontier naming it turned unsettled: when one first
+// named it, or named it on turning, and when one last did.
 type listing struct {
 	first, last time.Duration
 }
@@ -157,7 +159,7 @@ func (store *Datastore) hearFrontier(msg message) {
 	store.frontiers[msg.incarnation] = &frontier{cc: msg.context, settled: msg.settled, peers: msg.peers, first: first, heard: up}
 	self := peerOf(store.replica)
 	for _, p := range msg.peers {
-		if p == self || store.contacts[p] != nil {
+		if p == self || !turned && store.contacts[p] != nil {
 			continue
 		}
 		l := store.listed[p]
@@ -199,7 +201,7 @@ func (store *Datastore) prune(up time.Duration) {
 		}
 	}
 	for p, l := range store.listed {
-		if up-l.last > g || store.contacts[p] != nil {
+		if up-l.last > g || store.heardSince(p, l.first) {
 			delete(store.listed, p)
 		}
 	}
@@ -262,18 +264,25 @@ func (store *Datastore) settled() bool {
 }
 
 // waitsFor reports whether a frontier names a peer this replica has not
-// heard and was first named less than G ago. The caller holds store.mu.
+// heard since it was listed, less than G ago. The caller holds store.mu.
 func (store *Datastore) waitsFor(f *frontier, up, g time.Duration) bool {
 	self := peerOf(store.replica)
 	for _, p := range f.peers {
-		if p == self || store.contacts[p] != nil {
+		if p == self {
 			continue
 		}
-		if l := store.listed[p]; l != nil && up-l.first < g {
+		if l := store.listed[p]; l != nil && up-l.first < g && !store.heardSince(p, l.first) {
 			return true
 		}
 	}
 	return false
+}
+
+// heardSince reports whether this replica has heard a peer at or since at.
+// The caller holds store.mu.
+func (store *Datastore) heardSince(p string, at time.Duration) bool {
+	c := store.contacts[p]
+	return c != nil && c.heard >= at
 }
 
 // settle is settled, and records the fleet time this replica is settled at.

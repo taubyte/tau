@@ -972,6 +972,20 @@ func TestAPeerNamedAndNeverHeardIsWaitedForOnce(t *testing.T) {
 // for r, whose copy only that removal refutes, and once the holders forgot
 // it r's snapshot would bring the value back.
 func TestAJudgeWaitsAgainForThePeersABridgeNamesWhenItTurns(t *testing.T) {
+	bridgeTurns(t, false)
+}
+
+// TestAJudgeWaitsAgainForAPeerItHeardBeforeABridgeTurned: the judge heard p
+// itself, settled, just before p heard the other side, and no more since.
+// What it holds of p is p's frontier before the turn: it waits for p as for
+// one it never heard.
+func TestAJudgeWaitsAgainForAPeerItHeardBeforeABridgeTurned(t *testing.T) {
+	bridgeTurns(t, true)
+}
+
+// bridgeTurns is the turn of TestAJudgeWaitsAgainForThePeersABridgeNamesWhenItTurns,
+// the judge hearing p just before it if heard.
+func bridgeTurns(t *testing.T, heard bool) {
 	st := newSimTime()
 	st.advance(20 * simRI)
 	w, a, b, r := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
@@ -998,6 +1012,13 @@ func TestAJudgeWaitsAgainForThePeersABridgeNamesWhenItTurns(t *testing.T) {
 	}
 	if !j.settled() || !y.settled() {
 		t.Fatalf("setup: j and y should be settled (j=%t y=%t)", j.settled(), y.settled())
+	}
+	if heard {
+		p.beat()
+		st.hear(t, p, []*simReplica{j}, p)
+		if !j.settled() {
+			t.Fatal("setup: j should be settled on hearing p, settled")
+		}
 	}
 	// p hears a and b and fetches what they hold; y hears p and fetches
 	// nothing yet; j hears y, then r's rejoin.
