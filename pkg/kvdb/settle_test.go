@@ -1187,6 +1187,51 @@ func TestATurnHoldsAJudgeBackUntilItHearsTheNamedPeerSinceTheTurn(t *testing.T) 
 	}
 }
 
+// TestAFrontierDoesNotGoBack: of two frontiers of one incarnation, the one
+// stamped later is held whatever order they arrive in, and of two stamped
+// the same millisecond, one that is not settled is held over one that is.
+func TestAFrontierDoesNotGoBack(t *testing.T) {
+	st := newSimTime()
+	j, y := st.replica(t, "j", 0), st.replica(t, "y", 0)
+	st.settle(t, j, y)
+	beat := func() message {
+		st.advance(simRI)
+		y.beat()
+		var hb message
+		for _, data := range y.out.take() {
+			msg, err := j.r.decodeBroadcast(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if msg.context != nil {
+				hb = msg
+			}
+		}
+		if hb.context == nil {
+			t.Fatal("setup: y sent no frontier")
+		}
+		return hb
+	}
+	held := func() *frontier {
+		j.r.mu.Lock()
+		defer j.r.mu.Unlock()
+		return j.r.frontiers[y.incarnation()]
+	}
+	older, newer := beat(), beat()
+	older.settled, newer.settled = true, false
+	j.r.handleBroadcast(context.Background(), newer)
+	j.r.handleBroadcast(context.Background(), older)
+	if f := held(); f.settled || f.at != newer.now {
+		t.Fatalf("an older frontier replaced a newer one (settled=%t at=%d, want %d)", f.settled, f.at, newer.now)
+	}
+	same := newer
+	same.settled = true
+	j.r.handleBroadcast(context.Background(), same)
+	if held().settled {
+		t.Fatal("a settled frontier replaced one stamped the same millisecond that is not")
+	}
+}
+
 // TestAVerdictNamesThePeersItsJudgeHeard: a verdict says whom its judge
 // heard as its heartbeat does. A judge that is not settled and heard a peer
 // this replica has not keeps it waiting, whether its heartbeat or a verdict
