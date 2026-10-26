@@ -157,10 +157,14 @@ func TestAnExpiredParentIsNeverFetched(t *testing.T) {
 	if _, err := b.r.expireLocked(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := b.r.purgeAncient(context.Background()); err != nil || n != 1 {
-		t.Fatalf("purging the expired block: %d, %v", n, err)
-	}
+	taken, err := b.r.purgeAncient(context.Background())
 	b.r.mu.Unlock()
+	if err != nil || len(taken) != 1 {
+		t.Fatalf("purging the expired block: %d, %v", len(taken), err)
+	}
+	if n, err := b.r.dropTaken(context.Background(), taken); err != nil || n != 1 {
+		t.Fatalf("dropping the expired block: %d, %v", n, err)
+	}
 	if b.dag.holds(old) {
 		t.Fatal("setup: b still holds the expired block")
 	}

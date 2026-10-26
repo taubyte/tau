@@ -2,6 +2,7 @@ package kvdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -63,14 +64,16 @@ func (store *Datastore) compact(ctx context.Context, force bool) (int, error) {
 		store.mu.Unlock()
 		return 0, err
 	}
-	n, err := store.purge(ctx, theirs)
+	covered, err := store.purge(ctx, theirs)
+	var ancient []cid.Cid
 	if err == nil {
-		var old int
-		old, err = store.purgeAncient(ctx)
-		n += old
+		ancient, err = store.purgeAncient(ctx)
 	}
 	store.mu.Unlock()
-	if err != nil {
+	n, derr := store.dropTaken(ctx, covered)
+	old, aerr := store.dropTaken(ctx, ancient)
+	n += old
+	if err = errors.Join(err, derr, aerr); err != nil {
 		return n, err
 	}
 	if err := store.broadcastHeads(ctx, []Head{head}); err != nil {
@@ -210,7 +213,11 @@ func (store *Datastore) nothingToFold(ctx context.Context, hs []Head) (bool, err
 		headDots[h.Dot] = struct{}{}
 	}
 	work := false
-	err := scanStore(ctx, store.store, store.blocksPrefix(), func(_ string, v []byte) error {
+	prefix := store.blocksPrefix()
+	err := scanStore(ctx, store.store, prefix, func(k string, v []byte) error {
+		if store.isTaken(prefix, k) {
+			return nil
+		}
 		b, err := decodeBlock(v)
 		if err != nil {
 			return err

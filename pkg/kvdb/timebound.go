@@ -377,42 +377,19 @@ func (store *Datastore) expireLocked(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-// purgeAncient drops every local block that no context covers any more and
-// whose own expiry has passed: no replica in contact needs it, and a link to
-// it is never followed. Heads stay until a block links them. The caller
-// holds store.mu.
-func (store *Datastore) purgeAncient(ctx context.Context) (int, error) {
+// purgeAncient takes every local block that no context covers any more and
+// whose own expiry has passed, for dropTaken: no replica in contact needs
+// it, and a link to it is never followed. Heads stay until a block links
+// them. The caller holds store.mu.
+func (store *Datastore) purgeAncient(ctx context.Context) ([]cid.Cid, error) {
 	now := store.dropClock()
 	// A block expires a margin past its whole ttl, after its half-life.
 	if store.lows.block > now {
-		return 0, nil
+		return nil, nil
 	}
-	var drop []cid.Cid
-	var keys []ds.Key
-	prefix := store.blocksPrefix()
-	err := scanStore(ctx, store.store, prefix, func(k string, v []byte) error {
-		b, err := decodeBlock(v)
-		if err != nil {
-			return err
-		}
-		if store.cc.covers(b.dot) || !store.expired(b.at+b.ttl, now) {
-			return nil
-		}
-		c, err := cidOfBlockKey(prefix, k)
-		if err != nil {
-			return err
-		}
-		if _, isHead := store.heads.Get(c); isHead {
-			return nil
-		}
-		drop = append(drop, c)
-		keys = append(keys, ds.RawKey(k))
-		return nil
+	return store.take(ctx, func(b block) bool {
+		return !store.cc.covers(b.dot) && store.expired(b.at+b.ttl, now)
 	})
-	if err != nil || len(drop) == 0 {
-		return 0, err
-	}
-	return len(drop), store.dropBlocks(ctx, drop, keys)
 }
 
 // gone reports whether a link names a block nobody needs any more: its dot is
@@ -436,7 +413,11 @@ func (store *Datastore) refreshDue(ctx context.Context) (bool, error) {
 	}
 	due := false
 	low := none
-	err := scanStore(ctx, store.store, store.blocksPrefix(), func(_ string, v []byte) error {
+	prefix := store.blocksPrefix()
+	err := scanStore(ctx, store.store, prefix, func(k string, v []byte) error {
+		if store.isTaken(prefix, k) {
+			return nil
+		}
 		b, err := decodeBlock(v)
 		if err != nil {
 			return err
@@ -528,8 +509,9 @@ func (store *Datastore) maintain(ctx context.Context) error {
 		return ErrClosed
 	}
 	dropped, err := store.expireLocked(ctx)
+	var ancient []cid.Cid
 	if err == nil {
-		_, err = store.purgeAncient(ctx)
+		ancient, err = store.purgeAncient(ctx)
 	}
 	if err == nil {
 		err = store.settleOwn(ctx)
@@ -541,6 +523,9 @@ func (store *Datastore) maintain(ctx context.Context) error {
 		due, err = store.refreshDue(ctx)
 	}
 	store.mu.Unlock()
+	if _, derr := store.dropTaken(ctx, ancient); err == nil {
+		err = derr
+	}
 	if err != nil || !due {
 		return err
 	}

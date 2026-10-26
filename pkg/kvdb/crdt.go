@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	mrand "math/rand"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -291,6 +292,10 @@ type Datastore struct {
 	closed     bool
 	liveCount  int
 	blockCount int
+	// purging holds the blocks a purge has taken and is dropping without
+	// mu, which dropping counts until they are gone.
+	purging  *cidSafeSet
+	dropping sync.WaitGroup
 
 	// ttl is the retention this replica stamps, in milliseconds.
 	ttl   atomic.Uint64
@@ -424,6 +429,7 @@ func NewDatastore(
 		jobQueue:         make(chan *dagJob, opts.NumWorkers),
 		sendJobs:         make(chan *dagJob),
 		queuedChildren:   newCidSafeSet(),
+		purging:          newCidSafeSet(),
 		ccChanged:        make(chan struct{}),
 		answered:         map[string]time.Duration{},
 		merged:           map[string]time.Duration{},
@@ -885,7 +891,12 @@ func (store *Datastore) logStats(ctx context.Context) {
 	}
 }
 
+// isIndexed reports whether this replica holds a block: indexed, and not
+// taken by a purge that is dropping it.
 func (store *Datastore) isIndexed(ctx context.Context, c cid.Cid) (bool, error) {
+	if store.purging.Has(c) {
+		return false, nil
+	}
 	return store.store.Has(ctx, store.blockKey(c))
 }
 
@@ -1174,8 +1185,16 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 		}
 	}
 
+	// What a snapshot lets this replica purge goes once the lock is
+	// released.
+	var taken []cid.Cid
 	store.mu.Lock()
-	defer store.mu.Unlock()
+	defer func() {
+		store.mu.Unlock()
+		if _, err := store.dropTaken(ctx, taken); err != nil {
+			store.logger.Warnf("error purging what snapshot %s covers: %s", current, err)
+		}
+	}()
 
 	// What has expired goes before the merge reads the context, whether or
 	// not maintenance has run since: an entry kept past its expiry would
@@ -1187,6 +1206,12 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 	d := dotFromPB(delta.GetDot())
 	if store.cc.covers(d) || gen != store.generation {
 		return nil, store.dropUnindexed(ctx, current, chunks)
+	}
+	// A block a purge has taken merges once the purge is done: the copy
+	// fetched may be the one it is dropping.
+	if store.purging.Has(current) || slices.ContainsFunc(chunks, store.purging.Has) {
+		store.dropFailed(ctx, current, chunks)
+		return nil, fmt.Errorf("block %s: %w", current, errTaken)
 	}
 	if !delta.GetSnapshot() {
 		for _, e := range delta.GetElements() {
@@ -1228,7 +1253,7 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 		store.dropFailed(ctx, current, chunks)
 		return nil, fmt.Errorf("error merging snapshot %s: %w", current, err)
 	}
-	if _, err := store.purge(ctx, theirs); err != nil {
+	if taken, err = store.purge(ctx, theirs); err != nil {
 		store.logger.Warnf("error purging what snapshot %s covers: %s", current, err)
 	}
 	if theirs != nil && d.replica != store.replica {
@@ -1615,6 +1640,7 @@ func (store *Datastore) Close() error {
 		incarnations.release(store.incarnationKey(), incarnation{replica: store.replica, counter: store.counter})
 	}
 	store.mu.Unlock()
+	store.dropping.Wait()
 	if store.IsDirty(closeCtx) {
 		store.logger.Warn("datastore is being closed marked as dirty")
 	}
@@ -1925,4 +1951,17 @@ func (s *cidSafeSet) Remove(c cid.Cid) {
 	s.mux.Lock()
 	defer s.mux.Unlock()
 	delete(s.set, c)
+}
+
+func (s *cidSafeSet) Has(c cid.Cid) bool {
+	s.mux.RLock()
+	defer s.mux.RUnlock()
+	_, ok := s.set[c]
+	return ok
+}
+
+func (s *cidSafeSet) Len() int {
+	s.mux.RLock()
+	defer s.mux.RUnlock()
+	return len(s.set)
 }

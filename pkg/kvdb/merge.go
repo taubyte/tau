@@ -767,51 +767,99 @@ func (m *merging) dropCovered(ctx context.Context) error {
 	return nil
 }
 
-// purge drops every local block a snapshot's context covers, except the
+// purge takes every local block a snapshot's context covers, except the
 // heads: the snapshot holds their state, and a reader reaching one through a
-// link sees its dot covered and does not fetch it. It returns how many
-// blocks it dropped. The caller holds store.mu.
-func (store *Datastore) purge(ctx context.Context, covered *causalContext) (int, error) {
-	var drop []cid.Cid
-	var keys []ds.Key
+// link sees its dot covered and does not fetch it. dropTaken removes them
+// once the caller has released store.mu. The caller holds store.mu.
+func (store *Datastore) purge(ctx context.Context, covered *causalContext) ([]cid.Cid, error) {
+	return store.take(ctx, func(b block) bool { return covered.covers(b.dot) })
+}
+
+var errTaken = errors.New("being dropped by a purge")
+
+// take takes the indexed blocks that pick chooses, other than the heads and
+// the blocks a purge has taken already, out of the count, and returns them
+// for dropTaken. Until it drops them a taken block is held by nothing: no
+// walk counts it, no merge indexes it again and no compaction folds it. The
+// caller holds store.mu.
+func (store *Datastore) take(ctx context.Context, pick func(block) bool) ([]cid.Cid, error) {
+	var taken []cid.Cid
 	prefix := store.blocksPrefix()
 	err := scanStore(ctx, store.store, prefix, func(k string, v []byte) error {
 		b, err := decodeBlock(v)
 		if err != nil {
 			return err
 		}
-		if !covered.covers(b.dot) {
+		if !pick(b) {
 			return nil
 		}
 		c, err := cidOfBlockKey(prefix, k)
 		if err != nil {
 			return err
 		}
-		if _, isHead := store.heads.Get(c); isHead {
+		if _, isHead := store.heads.Get(c); isHead || store.purging.Has(c) {
 			return nil
 		}
-		drop = append(drop, c)
-		keys = append(keys, ds.RawKey(k))
+		taken = append(taken, c)
 		return nil
 	})
-	if err != nil || len(drop) == 0 {
-		return 0, err
+	if err != nil || len(taken) == 0 || store.closed {
+		return nil, err
 	}
-	return len(drop), store.dropBlocks(ctx, drop, keys)
+	for _, c := range taken {
+		store.purging.Visit(c)
+	}
+	store.blockCount -= len(taken)
+	store.dropping.Add(1)
+	return taken, nil
 }
 
-// dropBlocks removes blocks and their index entries.
-func (store *Datastore) dropBlocks(ctx context.Context, drop []cid.Cid, keys []ds.Key) error {
-	if err := store.dagService.RemoveMany(ctx, drop); err != nil {
-		return fmt.Errorf("error removing purged blocks: %w", err)
+// isTaken reports whether the index entry at k names a block a purge has
+// taken.
+func (store *Datastore) isTaken(prefix ds.Key, k string) bool {
+	if store.purging.Len() == 0 {
+		return false
 	}
+	c, err := cidOfBlockKey(prefix, k)
+	return err == nil && store.purging.Has(c)
+}
+
+// dropTaken removes the blocks take returned, then their index entries, and
+// returns how many it dropped. The caller does not hold store.mu: removing
+// the blocks is the slow part of a purge, and the broadcast reader and every
+// walk wait on the lock. Nothing reads a taken block meanwhile: it is no
+// head, a walk reaching it sees it is not held, and a merge of it is refused
+// until the purge ends, for repair to retry. Its entry goes after it, so a
+// crash in between leaves an entry naming a block that is gone, which the
+// next purge takes again, and never a block nothing indexes.
+func (store *Datastore) dropTaken(ctx context.Context, taken []cid.Cid) (int, error) {
+	if len(taken) == 0 {
+		return 0, nil
+	}
+	defer store.dropping.Done()
+	err := store.dagService.RemoveMany(ctx, taken)
+	if err != nil {
+		err = fmt.Errorf("error removing purged blocks: %w", err)
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
 	t := newTxn(store.store)
-	for _, k := range keys {
-		t.del(k)
+	for _, c := range taken {
+		store.purging.Remove(c)
+		t.del(store.blockKey(c))
 	}
-	if err := t.commit(ctx); err != nil {
-		return err
+	if err == nil {
+		err = t.commit(ctx)
 	}
-	store.blockCount -= len(drop)
-	return nil
+	if err != nil {
+		// What is still indexed counts again, and the next purge takes it.
+		store.lows.block = 0
+		for _, c := range taken {
+			if held, herr := store.store.Has(ctx, store.blockKey(c)); herr == nil && held {
+				store.blockCount++
+			}
+		}
+		return 0, err
+	}
+	return len(taken), nil
 }
