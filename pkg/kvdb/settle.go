@@ -38,10 +38,12 @@ import (
 // settled and is not may have just heard what a listed peer holds and not
 // fetched it yet: the peers it lists then are waited for again, G from that
 // turn, heard or not, until this replica holds a frontier of theirs sent
-// after the turn: one heard after it may have been sent before. Only an incarnation that sent a settled
-// frontier turns, so a restart renews nothing; a bridge that says it is
-// settled holds nothing back; and a peer is named at most G after its last
-// lister heard it, so a gone peer holds this replica back at most 2G and a
+// after the turn, as one heard after it may have been sent before. The wait
+// is the turn's, not the bridge frontier's, which a heartbeat the bridge
+// sent earlier may overwrite. Only an incarnation that sent a settled
+// frontier turns, so a restart renews nothing; a bridge that stays settled
+// names no new wait; and a peer is named at most G after its last lister
+// heard it, so a gone peer holds this replica back at most 2G and a
 // delivery bound.
 //
 // A replica knows it has heard every live peer once it has heard the fleet
@@ -243,8 +245,8 @@ func (store *Datastore) holds(o *causalContext) bool {
 
 // settled reports whether this replica holds all that every live peer said
 // it holds, at least one is live, none is new to it and unsettled, none
-// that is not settled names a peer it has not heard for less than G, and it
-// is grounded. The caller holds store.mu.
+// that is not settled names a peer it has not heard for less than G, no
+// turn's wait is open, and it is grounded. The caller holds store.mu.
 func (store *Datastore) settled() bool {
 	up := store.times.up()
 	store.prune(up)
@@ -252,6 +254,11 @@ func (store *Datastore) settled() bool {
 		return false
 	}
 	g := gapIntervals * store.opts.RebroadcastInterval
+	for _, l := range store.listed {
+		if l.after != 0 && up-l.first < g {
+			return false
+		}
+	}
 	live, vouched, held := false, false, true
 	for _, f := range store.frontiers {
 		live = true
@@ -273,16 +280,15 @@ func (store *Datastore) settled() bool {
 	return store.grounded
 }
 
-// waitsFor reports whether a frontier names a peer listed less than G ago
-// that this replica has not heard, or that a frontier named on turning and
-// has not sent a frontier since. The caller holds store.mu.
+// waitsFor reports whether a frontier names a peer this replica has not
+// heard and was first named less than G ago. The caller holds store.mu.
 func (store *Datastore) waitsFor(f *frontier, up, g time.Duration) bool {
 	self := peerOf(store.replica)
 	for _, p := range f.peers {
 		if p == self {
 			continue
 		}
-		if l := store.listed[p]; l != nil && up-l.first < g && (l.after != 0 || store.contacts[p] == nil) {
+		if l := store.listed[p]; l != nil && up-l.first < g && store.contacts[p] == nil {
 			return true
 		}
 	}

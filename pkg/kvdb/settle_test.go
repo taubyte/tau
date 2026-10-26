@@ -972,7 +972,7 @@ func TestAPeerNamedAndNeverHeardIsWaitedForOnce(t *testing.T) {
 // for r, whose copy only that removal refutes, and once the holders forgot
 // it r's snapshot would bring the value back.
 func TestAJudgeWaitsAgainForThePeersABridgeNamesWhenItTurns(t *testing.T) {
-	bridgeTurns(t, false, false)
+	bridgeTurns(t, "")
 }
 
 // TestAJudgeWaitsAgainForAPeerItHeardBeforeABridgeTurned: the judge heard p
@@ -980,7 +980,7 @@ func TestAJudgeWaitsAgainForThePeersABridgeNamesWhenItTurns(t *testing.T) {
 // What it holds of p is p's frontier before the turn: it waits for p as for
 // one it never heard.
 func TestAJudgeWaitsAgainForAPeerItHeardBeforeABridgeTurned(t *testing.T) {
-	bridgeTurns(t, true, false)
+	bridgeTurns(t, "before")
 }
 
 // TestAJudgeWaitsAgainForAPeerWhoseOldHeartbeatArrivesAfterTheTurn: p's
@@ -988,13 +988,21 @@ func TestAJudgeWaitsAgainForAPeerItHeardBeforeABridgeTurned(t *testing.T) {
 // bridge's turn. Hearing p is no sign of what p holds since: the judge
 // still waits G from the turn.
 func TestAJudgeWaitsAgainForAPeerWhoseOldHeartbeatArrivesAfterTheTurn(t *testing.T) {
-	bridgeTurns(t, false, true)
+	bridgeTurns(t, "late")
+}
+
+// TestAJudgeWaitsAgainWhenTheBridgesOlderHeartbeatArrivesAfterItsTurn: y's
+// heartbeat sent settled before its turn reaches the judge after the turn
+// and replaces y's frontier there. The wait is the turn's: the judge still
+// waits for p.
+func TestAJudgeWaitsAgainWhenTheBridgesOlderHeartbeatArrivesAfterItsTurn(t *testing.T) {
+	bridgeTurns(t, "reordered")
 }
 
 // bridgeTurns is the turn of TestAJudgeWaitsAgainForThePeersABridgeNamesWhenItTurns,
-// the judge hearing p just before it if before, and p's heartbeat sent then
-// only after the turn if late.
-func bridgeTurns(t *testing.T, before, late bool) {
+// the judge hearing p just before it ("before"), or hearing p's heartbeat
+// sent then ("late") or y's ("reordered") only after the turn.
+func bridgeTurns(t *testing.T, variant string) {
 	st := newSimTime()
 	st.advance(20 * simRI)
 	w, a, b, r := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
@@ -1022,7 +1030,7 @@ func bridgeTurns(t *testing.T, before, late bool) {
 	if !j.settled() || !y.settled() {
 		t.Fatalf("setup: j and y should be settled (j=%t y=%t)", j.settled(), y.settled())
 	}
-	if before {
+	if variant == "before" {
 		p.beat()
 		st.hear(t, p, []*simReplica{j}, p)
 		if !j.settled() {
@@ -1030,9 +1038,13 @@ func bridgeTurns(t *testing.T, before, late bool) {
 		}
 	}
 	var old [][]byte
-	if late {
+	switch variant {
+	case "late":
 		p.beat()
 		old = p.out.take()
+	case "reordered":
+		y.beat()
+		old = y.out.take()
 	}
 	// p hears a and b and fetches what they hold; y hears p and fetches
 	// nothing yet; j hears y, then r's rejoin.
@@ -1044,7 +1056,7 @@ func bridgeTurns(t *testing.T, before, late bool) {
 		t.Fatal("setup: y should not be settled, short of what p holds")
 	}
 	st.hear(t, y, []*simReplica{j}, j, y)
-	j.reach(p)
+	j.reach(p, y)
 	for _, data := range old {
 		msg, err := j.r.decodeBroadcast(data)
 		if err != nil {
