@@ -1008,10 +1008,19 @@ func TestAnOlderHeartbeatOfTheNamedPeerDoesNotReplaceItsNewerFrontier(t *testing
 	bridgeTurns(t, "newer")
 }
 
+// TestATurnStampedByAClockThatSteppedBackIsTaken: y's clock steps back
+// within the skew just before its turn, which it stamps earlier than the
+// settled frontier the judge holds of it. The turn was sent later: the
+// judge takes it, and waits for p.
+func TestATurnStampedByAClockThatSteppedBackIsTaken(t *testing.T) {
+	bridgeTurns(t, "stepped")
+}
+
 // bridgeTurns is the turn of TestAJudgeWaitsAgainForThePeersABridgeNamesWhenItTurns,
 // the judge hearing p just before it ("before"), or hearing p's heartbeat
 // sent then ("late") or y's ("reordered") only after the turn, or p's
-// only after p's frontier sent past the turn ("newer").
+// only after p's frontier sent past the turn ("newer"), or y's turn stamped
+// by a clock that stepped back ("stepped").
 func bridgeTurns(t *testing.T, variant string) {
 	st := newSimTime()
 	st.advance(20 * simRI)
@@ -1065,7 +1074,18 @@ func bridgeTurns(t *testing.T, variant string) {
 	if y.settled() {
 		t.Fatal("setup: y should not be settled, short of what p holds")
 	}
-	st.hear(t, y, []*simReplica{j}, j, y)
+	turn := y.out.take()
+	j.reach(j, y)
+	for _, data := range turn {
+		msg, err := j.r.decodeBroadcast(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if variant == "stepped" {
+			msg.now -= uint64((2 * simS).Milliseconds())
+		}
+		j.r.handleBroadcast(context.Background(), msg)
+	}
 	if variant == "newer" {
 		st.advance(2 * simS)
 		p.beat()
@@ -1154,42 +1174,47 @@ func TestABridgeHoldsAJudgeBackAtMostGEachTimeItTurns(t *testing.T) {
 	}
 }
 
-// TestATurnHoldsAJudgeBackUntilItHearsTheNamedPeerSinceTheTurn: a bridge's
-// turn names a peer the judge hears too. The judge waits until it holds a
-// frontier that peer sent after the turn, past the skew, not for G.
-func TestATurnHoldsAJudgeBackUntilItHearsTheNamedPeerSinceTheTurn(t *testing.T) {
+// TestATurnHoldsAJudgeBackUntilTheBridgeSettles: a bridge's turn names a
+// peer the judge hears too. Hearing that peer since tells the judge nothing
+// of which of its frontiers the bridge heard: the judge waits until the
+// bridge says it is settled again, or G.
+func TestATurnHoldsAJudgeBackUntilTheBridgeSettles(t *testing.T) {
 	st := newSimTime()
 	j, y, q := st.replica(t, "j", 0), st.replica(t, "y", 0), st.replica(t, "q", 0)
 	st.settle(t, j, y, q)
+	turn := func(settled bool) {
+		y.beat()
+		for _, data := range y.out.take() {
+			msg, err := j.r.decodeBroadcast(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			msg.settled = settled
+			j.r.handleBroadcast(context.Background(), msg)
+		}
+	}
 	st.advance(simRI)
-	y.beat()
-	for _, data := range y.out.take() {
-		msg, err := j.r.decodeBroadcast(data)
-		if err != nil {
-			t.Fatal(err)
-		}
-		msg.settled = false
-		j.r.handleBroadcast(context.Background(), msg)
-	}
-	if j.settled() {
-		t.Fatal("the judge settled at a bridge's turn naming a peer it heard before it")
-	}
-	for range 2 {
+	turn(false)
+	for i := range gapIntervals - 1 {
 		if j.settled() {
-			t.Fatal("the judge settled on a frontier the named peer may have sent before the turn")
+			t.Fatalf("the judge settled %d intervals after a bridge's turn naming a peer it hears", i)
 		}
-		st.advance(simS)
+		st.advance(simRI)
 		q.beat()
 		st.hear(t, q, []*simReplica{j}, q)
 	}
+	if j.settled() {
+		t.Fatal("hearing the named peer after the turn ended the wait")
+	}
+	turn(true)
 	if !j.settled() {
-		t.Fatal("the judge still waits for a named peer whose frontier sent after the turn it holds")
+		t.Fatal("the judge still waits once the bridge says it is settled")
 	}
 }
 
 // TestAFrontierDoesNotGoBack: of two frontiers of one incarnation, the one
-// stamped later is held whatever order they arrive in, and of two stamped
-// the same millisecond, one that is not settled is held over one that is.
+// sent later is held whatever order they arrive in, and whatever its
+// sender's clock said: one that stepped back still stamps it later.
 func TestAFrontierDoesNotGoBack(t *testing.T) {
 	st := newSimTime()
 	j, y := st.replica(t, "j", 0), st.replica(t, "y", 0)
@@ -1221,14 +1246,14 @@ func TestAFrontierDoesNotGoBack(t *testing.T) {
 	older.settled, newer.settled = true, false
 	j.r.handleBroadcast(context.Background(), newer)
 	j.r.handleBroadcast(context.Background(), older)
-	if f := held(); f.settled || f.at != newer.now {
-		t.Fatalf("an older frontier replaced a newer one (settled=%t at=%d, want %d)", f.settled, f.at, newer.now)
+	if f := held(); f.settled || f.sent != newer.sent {
+		t.Fatalf("an older frontier replaced a newer one (settled=%t sent=%d, want %d)", f.settled, f.sent, newer.sent)
 	}
-	same := newer
-	same.settled = true
-	j.r.handleBroadcast(context.Background(), same)
-	if held().settled {
-		t.Fatal("a settled frontier replaced one stamped the same millisecond that is not")
+	stepped := beat()
+	stepped.settled, stepped.now = true, older.now
+	j.r.handleBroadcast(context.Background(), stepped)
+	if f := held(); !f.settled || f.sent != stepped.sent {
+		t.Fatalf("a frontier sent later under a clock that stepped back was not taken (settled=%t sent=%d, want %d)", f.settled, f.sent, stepped.sent)
 	}
 }
 

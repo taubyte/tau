@@ -36,18 +36,19 @@ import (
 // and never heard is gone as any peer not heard for G is, and one heard is
 // waited for again only once it has gone unheard for G. A bridge that was
 // settled and is not may have just heard what a listed peer holds and not
-// fetched it yet: the peers it lists then are waited for again, G from that
-// turn, heard or not, until this replica holds a frontier of theirs sent
-// after the turn, as one heard after it may have been sent before. Only an
+// fetched it yet: while it is not settled, the peers it lists then are
+// waited for again, G from that turn, heard here or not, since nothing this
+// replica hears tells it which of their frontiers the bridge heard. Only an
 // incarnation that sent a settled frontier turns, so a restart renews
 // nothing; a bridge that says it is settled holds nothing back; and a peer
 // is named at most G after its last lister heard it, so a gone peer holds
 // this replica back at most 2G and a delivery bound.
 //
-// Frontiers arrive in any order within the delivery bound. One stamped
-// before the frontier held of its incarnation is older and does not replace
-// it, nor does a settled one stamped the same millisecond as one that is
-// not: an older frontier would hide what its sender holds since, or a turn.
+// Frontiers arrive in any order within the delivery bound, and clocks may
+// step. Each broadcast carries the count of broadcasts its sender built: a
+// frontier counted no later than the one held of its incarnation was sent
+// before it, and does not replace it, which would hide what its sender
+// holds since, or a turn.
 //
 // A replica knows it has heard every live peer once it has heard the fleet
 // for G without a break, or holds the frontier of a peer that was settled,
@@ -77,13 +78,14 @@ func (store *Datastore) settledKey() ds.Key {
 	return store.namespace.ChildString(contextNs).ChildString(settledKey)
 }
 
-// A frontier is what a live incarnation last said it holds, its clock when
-// it said so, when it was last heard, and when its peer was first heard.
+// A frontier is what a live incarnation last said it holds, the count of
+// the broadcast it said so in, when it was last heard, and when its peer
+// was first heard.
 type frontier struct {
 	cc           *causalContext
 	settled      bool
 	peers        []string
-	at           uint64
+	sent         uint64
 	first, heard time.Duration
 }
 
@@ -95,12 +97,10 @@ type contact struct {
 
 // A listing is a peer a frontier names that this replica has not heard, or
 // any a frontier names on turning unsettled: when one first named it, or
-// named it on turning, and when one last did; for a turn, the clock past
-// which a frontier of that peer was sent after the turn (the turning
-// frontier's own and the skew).
+// named it on turning, when one last did, and whether a turn listed it.
 type listing struct {
 	first, last time.Duration
-	after       uint64
+	turned      bool
 }
 
 // An ok is a verdict that vouched for this replica: its rejoin ends once it
@@ -165,15 +165,12 @@ func (store *Datastore) hearFrontier(msg message) {
 		return
 	}
 	prev := store.frontiers[msg.incarnation]
-	if prev != nil && (msg.now < prev.at || msg.now == prev.at && msg.settled && !prev.settled) {
+	if prev != nil && msg.sent <= prev.sent {
 		prev.heard = up
 		return
 	}
 	turned := !msg.settled && prev != nil && prev.settled
-	store.frontiers[msg.incarnation] = &frontier{cc: msg.context, settled: msg.settled, peers: msg.peers, at: msg.now, first: first, heard: up}
-	if l := store.listed[peerOf(msg.incarnation)]; l != nil && l.after != 0 && msg.now > l.after {
-		delete(store.listed, peerOf(msg.incarnation))
-	}
+	store.frontiers[msg.incarnation] = &frontier{cc: msg.context, settled: msg.settled, peers: msg.peers, sent: msg.sent, first: first, heard: up}
 	self := peerOf(store.replica)
 	for _, p := range msg.peers {
 		if p == self || !turned && store.contacts[p] != nil {
@@ -181,10 +178,7 @@ func (store *Datastore) hearFrontier(msg message) {
 		}
 		l := store.listed[p]
 		if l == nil || turned {
-			l = &listing{first: up}
-			if turned {
-				l.after = msg.now + store.times.skew
-			}
+			l = &listing{first: up, turned: turned}
 			store.listed[p] = l
 		}
 		l.last = up
@@ -221,7 +215,7 @@ func (store *Datastore) prune(up time.Duration) {
 		}
 	}
 	for p, l := range store.listed {
-		if up-l.last > g || store.contacts[p] != nil && (l.after == 0 || up-l.first >= g) {
+		if up-l.last > g || store.contacts[p] != nil && (!l.turned || up-l.first >= g) {
 			delete(store.listed, p)
 		}
 	}
@@ -292,7 +286,7 @@ func (store *Datastore) waitsFor(f *frontier, up, g time.Duration) bool {
 		if p == self {
 			continue
 		}
-		if l := store.listed[p]; l != nil && up-l.first < g && (l.after != 0 || store.contacts[p] == nil) {
+		if l := store.listed[p]; l != nil && up-l.first < g && (l.turned || store.contacts[p] == nil) {
 			return true
 		}
 	}

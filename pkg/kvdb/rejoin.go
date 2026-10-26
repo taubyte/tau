@@ -122,6 +122,7 @@ type message struct {
 	context     *causalContext
 	settled     bool
 	peers       []string
+	sent        uint64
 }
 
 type verdict struct {
@@ -137,7 +138,7 @@ func (store *Datastore) decodeBroadcast(data []byte) (message, error) {
 	if err := proto.Unmarshal(data, &b); err != nil {
 		return message{}, err
 	}
-	msg := message{since: b.GetSince(), now: b.GetNow(), horizon: b.GetHorizon(), rejoining: b.GetRejoining(), incarnation: string(b.GetIncarnation())}
+	msg := message{since: b.GetSince(), now: b.GetNow(), sent: b.GetSent(), horizon: b.GetHorizon(), rejoining: b.GetRejoining(), incarnation: string(b.GetIncarnation())}
 	msg.acks = contextFromPB(&pb.Context{Vector: b.GetAcks()})
 	if b.GetContext() != nil {
 		msg.context, msg.settled = contextFromPB(b.GetContext()), b.GetSettled()
@@ -162,7 +163,9 @@ func (store *Datastore) decodeBroadcast(data []byte) (message, error) {
 // clock, whether it is rejoining, and a verdict if it answers one. The caller
 // holds store.mu.
 func (store *Datastore) message(heads []Head, v *verdict) *pb.CRDTBroadcast {
+	store.sent++
 	b := &pb.CRDTBroadcast{
+		Sent:        store.sent,
 		Since:       store.broadcastSince(),
 		Now:         store.clock(),
 		Rejoining:   store.rejoining,

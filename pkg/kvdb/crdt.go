@@ -331,8 +331,8 @@ type Datastore struct {
 	// replica began hearing the fleet without a break, grounded whether it
 	// knows it has heard every live peer, settledSince the fleet time it
 	// last held all they held, forgotten the entries it dropped by expiry
-	// lately, and oks the verdicts that vouched for it while it rejoins
-	// (see settle.go).
+	// lately, oks the verdicts that vouched for it while it rejoins, and
+	// sent how many broadcasts it built (see settle.go).
 	contacts     map[string]*contact
 	frontiers    map[string]*frontier
 	listed       map[string]*listing
@@ -341,6 +341,7 @@ type Datastore struct {
 	settledSince uint64
 	forgotten    map[string]*forgottenEntry
 	oks          map[string]*ok
+	sent         uint64
 	// compactDue asks the next maintenance for a snapshot.
 	compactDue bool
 	// lows are lower bounds, kept so the frequent passes skip scans that
