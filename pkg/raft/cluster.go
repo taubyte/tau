@@ -653,6 +653,12 @@ func (m *member) takeDown() error {
 // is never answered. A call in flight across a yield or a Close waited for it
 // forever. The goroutine waiting on a dropped future stays blocked: one per
 // log raft dropped, which only a shutdown does.
+//
+// AN ANSWER RAFT GAVE BEFORE IT SHUT DOWN IS READ, NOT RACED. down closes
+// once raft's goroutines have exited, so a log the state machine was given
+// has had its future answered by then; but the goroutine reading that answer
+// may not have run yet, and a write that landed was reported as ErrShutdown.
+// A future whose log the state machine was given is waited for.
 func (m *member) wait(f raft.Future) error {
 	answer := make(chan error, 1)
 	go func() { answer <- f.Error() }()
@@ -661,12 +667,31 @@ func (m *member) wait(f raft.Future) error {
 		return err
 	case <-m.down:
 	}
+	if m.applied(f) {
+		return <-answer
+	}
 	select {
 	case err := <-answer:
 		return err
 	default:
 		return ErrShutdown
 	}
+}
+
+// applied says whether the state machine was given f's log. It is read once
+// down is closed: raft sets a log's index on its own goroutines, which have
+// exited by then.
+func (m *member) applied(f raft.Future) bool {
+	indexed, ok := f.(raft.IndexFuture)
+	if !ok {
+		return false
+	}
+	fsm, ok := m.fsm.(*kvFSM)
+	if !ok {
+		return false
+	}
+	index := indexed.Index()
+	return index != 0 && index <= fsm.applied.Load()
 }
 
 func (m *member) isLeader() bool {

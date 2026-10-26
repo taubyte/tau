@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"connectrpc.com/connect"
@@ -461,6 +462,51 @@ func TestCluster_CloseWaitsForALeaderThatRemovedItself(t *testing.T) {
 	require.NoError(t, <-closed)
 	assert.True(t, heldOf(removed).finished.Load(), "Close returned before the write it was holding finished")
 	require.NoError(t, <-setDone)
+}
+
+// heldFuture is a future raft answered whose reader has not run yet: Error
+// returns once let is closed.
+type heldFuture struct {
+	index uint64
+	let   chan struct{}
+}
+
+func (f *heldFuture) Error() error {
+	<-f.let
+	return nil
+}
+
+func (f *heldFuture) Index() uint64 { return f.index }
+
+// TestMember_WaitReadsAnAnswerGivenBeforeShutdown: down closes once raft's
+// goroutines have exited, so a write whose log the state machine was given
+// was answered by then, but the goroutine reading that answer can still be
+// waiting to run. wait read down first and reported ErrShutdown for a write
+// that landed; under -race that failed
+// TestCluster_CloseWaitsForALeaderThatRemovedItself.
+func TestMember_WaitReadsAnAnswerGivenBeforeShutdown(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fsm := &kvFSM{}
+		fsm.applied.Store(7)
+		m := &member{fsm: fsm, down: make(chan struct{})}
+
+		given := &heldFuture{index: 7, let: make(chan struct{})}
+		answered := make(chan error, 1)
+		go func() { answered <- m.wait(given) }()
+		synctest.Wait()
+		close(m.down)
+		synctest.Wait()
+		close(given.let)
+		require.NoError(t, <-answered)
+
+		// A log the state machine was never given, and a future raft never
+		// queued, may never be answered: wait does not wait for them.
+		for _, index := range []uint64{8, 0} {
+			dropped := &heldFuture{index: index, let: make(chan struct{})}
+			require.ErrorIs(t, m.wait(dropped), ErrShutdown)
+			close(dropped.let)
+		}
+	})
 }
 
 // TestCluster_BarrierOffTheLeaderIsNotLeader: every write path answers a

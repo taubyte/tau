@@ -8,6 +8,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
@@ -77,6 +78,8 @@ type kvFSM struct {
 	prefix string
 	mu     sync.RWMutex
 	clock  uint64
+	// applied is the index of the last log Apply was given.
+	applied atomic.Uint64
 }
 
 // newKVFSM creates a new key-value FSM using the given datastore
@@ -95,6 +98,8 @@ func (f *kvFSM) dataKey(key string) ds.Key {
 
 // Apply implements raft.FSM.Apply — returns interface{} per the raft.FSM contract.
 func (f *kvFSM) Apply(log *raft.Log) interface{} {
+	defer f.applied.Store(log.Index)
+
 	var cmd Command
 	if err := cbor.Unmarshal(log.Data, &cmd); err != nil {
 		return FSMResponse{Error: ErrInvalidCommand}
