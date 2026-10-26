@@ -39,6 +39,10 @@ message CRDTBroadcast {
   // incarnation, the one sent later has the higher count, in whatever order
   // they arrive and whatever its clock said.
   uint64 sent = 12;
+  // turned is the sent of the frontier in which the sender last came to
+  // lack what a live peer said it holds: a peer that missed that one, or
+  // the one before it, still sees the turn.
+  uint64 turned = 13;
 }
 
 // A Verdict tells one rejoining incarnation whether the sender can still

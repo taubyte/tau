@@ -55,7 +55,11 @@ type CRDTBroadcast struct {
 	// sent counts what the sender broadcast: of two frontiers of one
 	// incarnation, the one sent later has the higher count, in whatever order
 	// they arrive and whatever its clock said.
-	Sent          uint64 `protobuf:"varint,12,opt,name=sent,proto3" json:"sent,omitempty"`
+	Sent uint64 `protobuf:"varint,12,opt,name=sent,proto3" json:"sent,omitempty"`
+	// turned is the sent of the frontier in which the sender last came to
+	// lack what a live peer said it holds: a peer that missed that one, or
+	// the one before it, still sees the turn.
+	Turned        uint64 `protobuf:"varint,13,opt,name=turned,proto3" json:"turned,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -170,6 +174,13 @@ func (x *CRDTBroadcast) GetHeard() [][]byte {
 func (x *CRDTBroadcast) GetSent() uint64 {
 	if x != nil {
 		return x.Sent
+	}
+	return 0
+}
+
+func (x *CRDTBroadcast) GetTurned() uint64 {
+	if x != nil {
+		return x.Turned
 	}
 	return 0
 }
@@ -318,7 +329,7 @@ var File_bcast_proto protoreflect.FileDescriptor
 
 const file_bcast_proto_rawDesc = "" +
 	"\n" +
-	"\vbcast.proto\x12\acrdt.pb\x1a\vdelta.proto\"\xf6\x02\n" +
+	"\vbcast.proto\x12\acrdt.pb\x1a\vdelta.proto\"\x8e\x03\n" +
 	"\rCRDTBroadcast\x12#\n" +
 	"\x05Heads\x18\x01 \x03(\v2\r.crdt.pb.HeadR\x05Heads\x12\x14\n" +
 	"\x05since\x18\x02 \x01(\x04R\x05since\x12\x10\n" +
@@ -332,7 +343,8 @@ const file_bcast_proto_rawDesc = "" +
 	"\asettled\x18\n" +
 	" \x01(\bR\asettled\x12\x14\n" +
 	"\x05heard\x18\v \x03(\fR\x05heard\x12\x12\n" +
-	"\x04sent\x18\f \x01(\x04R\x04sent\"[\n" +
+	"\x04sent\x18\f \x01(\x04R\x04sent\x12\x16\n" +
+	"\x06turned\x18\r \x01(\x04R\x06turned\"[\n" +
 	"\aVerdict\x12\x0e\n" +
 	"\x02to\x18\x01 \x01(\fR\x02to\x12\x16\n" +
 	"\x06rebase\x18\x02 \x01(\bR\x06rebase\x12\x14\n" +

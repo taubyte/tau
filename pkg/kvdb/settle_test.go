@@ -1133,7 +1133,10 @@ func TestABridgeHoldsAJudgeBackAtMostGEachTimeItTurns(t *testing.T) {
 	st := newSimTime()
 	j, y := st.replica(t, "j", 0), st.replica(t, "y", 0)
 	st.settle(t, j, y)
-	beat := func(settled bool, incarnation string) {
+	// A turn is the bridge's frontier marked with its own count, as one
+	// that comes to lack what a peer holds marks it.
+	var mark uint64
+	beat := func(settled, turns bool, incarnation string) {
 		st.advance(simRI)
 		j.beat()
 		st.hear(t, j, []*simReplica{y}, j)
@@ -1143,7 +1146,10 @@ func TestABridgeHoldsAJudgeBackAtMostGEachTimeItTurns(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			msg.settled, msg.peers = settled, append(msg.peers, "ghost")
+			if turns {
+				mark = msg.sent
+			}
+			msg.settled, msg.turned, msg.peers = settled, mark, append(msg.peers, "ghost")
 			if incarnation != "" {
 				msg.incarnation = incarnation
 			}
@@ -1151,24 +1157,24 @@ func TestABridgeHoldsAJudgeBackAtMostGEachTimeItTurns(t *testing.T) {
 		}
 	}
 	for turn := range 3 {
-		beat(true, "")
+		beat(true, false, "")
 		if !j.settled() {
 			t.Fatalf("turn %d: a bridge that says it is settled held the judge back", turn)
 		}
 		for i := range gapIntervals {
-			beat(false, "")
+			beat(false, i == 0, "")
 			if j.settled() {
 				t.Fatalf("turn %d: the judge settled %d intervals after a bridge naming a peer it never heard turned", turn, i+1)
 			}
 		}
-		beat(false, "")
-		beat(false, "")
+		beat(false, false, "")
+		beat(false, false, "")
 		if !j.settled() {
 			t.Fatalf("turn %d: the judge still waits, past G, for a peer a bridge named on turning", turn)
 		}
 	}
 	inc := y.incarnation()
-	beat(false, inc[:len(inc)-nonceLen]+strings.Repeat("z", nonceLen))
+	beat(false, true, inc[:len(inc)-nonceLen]+strings.Repeat("z", nonceLen))
 	if !j.settled() {
 		t.Fatal("a bridge's new incarnation that is not settled renewed the wait")
 	}
@@ -1190,6 +1196,9 @@ func TestATurnHoldsAJudgeBackUntilTheBridgeSettles(t *testing.T) {
 				t.Fatal(err)
 			}
 			msg.settled = settled
+			if !settled {
+				msg.turned = msg.sent
+			}
 			j.r.handleBroadcast(context.Background(), msg)
 		}
 	}
@@ -1209,6 +1218,64 @@ func TestATurnHoldsAJudgeBackUntilTheBridgeSettles(t *testing.T) {
 	turn(true)
 	if !j.settled() {
 		t.Fatal("the judge still waits once the bridge says it is settled")
+	}
+}
+
+// TestATurnIsTheSendersToTell: the judge has held y's frontier that is not
+// settled for longer than G; y settles, and turns again on what q wrote,
+// before the judge hears it settled. The settled one is overtaken and arrives last: from
+// what it holds the judge sees no turn, but y's frontier says it turned,
+// and the judge waits for the peers y named in it.
+func TestATurnIsTheSendersToTell(t *testing.T) {
+	st := newSimTime()
+	j, y, q := st.replica(t, "j", 0), st.replica(t, "y", 0), st.replica(t, "q", 0)
+	st.settle(t, j, y, q)
+	send := func(sr *simReplica) [][]byte {
+		sr.beat()
+		return sr.out.take()
+	}
+	deliver := func(msgs [][]byte) {
+		for _, data := range msgs {
+			msg, err := j.r.decodeBroadcast(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			j.r.handleBroadcast(context.Background(), msg)
+		}
+	}
+	lag := func(v string) {
+		st.advance(simRI)
+		put(t, q.r, "/q", v)
+		q.beat()
+		st.hear(t, q, []*simReplica{y})
+		if y.settled() {
+			t.Fatal("setup: y should not be settled, short of what q wrote")
+		}
+	}
+	lag("1")
+	j.pull(t, q)
+	deliver(send(y))
+	// y stays short of q's write for longer than G: the waits its first
+	// turn opened are over.
+	for range 3 * gapIntervals {
+		st.advance(simRI)
+		q.beat()
+		st.hear(t, q, []*simReplica{j, y})
+		j.beat()
+		st.hear(t, j, []*simReplica{y, q})
+		deliver(send(y))
+	}
+	st.advance(simRI)
+	y.pull(t, q)
+	if !y.settled() {
+		t.Fatal("setup: y should be settled once it holds what q wrote")
+	}
+	settled := send(y)
+	lag("2")
+	deliver(send(y))
+	deliver(settled)
+	if j.settled() {
+		t.Fatal("the judge settled on a bridge's turn it saw only through what the bridge said")
 	}
 }
 

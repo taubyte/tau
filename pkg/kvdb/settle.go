@@ -8,6 +8,7 @@ import (
 	"time"
 
 	ds "github.com/ipfs/go-datastore"
+	pb "github.com/taubyte/tau/pkg/kvdb/pb"
 )
 
 // A judge vouches only for what it holds.
@@ -34,15 +35,22 @@ import (
 // is not heard here and was first listed less than G ago, this replica is
 // not settled. A listed peer is waited for once per turn: one listed for G
 // and never heard is gone as any peer not heard for G is, and one heard is
-// waited for again only once it has gone unheard for G. A bridge that was
-// settled and is not may have just heard what a listed peer holds and not
-// fetched it yet: while it is not settled, the peers it lists then are
-// waited for again, G from that turn, heard here or not, since nothing this
-// replica hears tells it which of their frontiers the bridge heard. Only an
-// incarnation that sent a settled frontier turns, so a restart renews
-// nothing; a bridge that says it is settled holds nothing back; and a peer
-// is named at most G after its last lister heard it, so a gone peer holds
-// this replica back at most 2G and a delivery bound.
+// waited for again only once it has gone unheard for G.
+//
+// A bridge that comes to lack what a live peer said it holds may have just
+// heard what a listed peer holds and not fetched it yet: it turns. While its
+// frontier is not settled, the peers it named on turning are waited for
+// again, G from the turn, heard here or not, since nothing this replica
+// hears tells it which of their frontiers the bridge heard. The turn is the
+// bridge's to tell, as only it knows why it is not settled: each frontier
+// carries the count of the one its sender last turned in, so a turn whose
+// frontier, or the one before it, was overtaken or lost still renews the
+// waits, and a replica that is not settled only because it waits turns
+// nobody. A turn counts only against an earlier frontier of the same
+// incarnation, so a restart renews nothing; a bridge that says it is
+// settled holds nothing back; and a peer is named at most G after its last
+// lister heard it, so a gone peer holds this replica back at most 2G and a
+// delivery bound.
 //
 // Frontiers arrive in any order within the delivery bound, and clocks may
 // step. Each broadcast carries the count of broadcasts its sender built: a
@@ -79,13 +87,13 @@ func (store *Datastore) settledKey() ds.Key {
 }
 
 // A frontier is what a live incarnation last said it holds, the count of
-// the broadcast it said so in, when it was last heard, and when its peer
-// was first heard.
+// the broadcast it said so in and of the one it last turned in, when it was
+// last heard, and when its peer was first heard.
 type frontier struct {
 	cc           *causalContext
 	settled      bool
 	peers        []string
-	sent         uint64
+	sent, turned uint64
 	first, heard time.Duration
 }
 
@@ -169,8 +177,8 @@ func (store *Datastore) hearFrontier(msg message) {
 		prev.heard = up
 		return
 	}
-	turned := !msg.settled && prev != nil && prev.settled
-	store.frontiers[msg.incarnation] = &frontier{cc: msg.context, settled: msg.settled, peers: msg.peers, sent: msg.sent, first: first, heard: up}
+	turned := !msg.settled && prev != nil && msg.turned > prev.turned
+	store.frontiers[msg.incarnation] = &frontier{cc: msg.context, settled: msg.settled, peers: msg.peers, sent: msg.sent, turned: msg.turned, first: first, heard: up}
 	self := peerOf(store.replica)
 	for _, p := range msg.peers {
 		if p == self || !turned && store.contacts[p] != nil {
@@ -291,6 +299,24 @@ func (store *Datastore) waitsFor(f *frontier, up, g time.Duration) bool {
 		}
 	}
 	return false
+}
+
+// markTurn stamps a frontier this replica sends with the count of the one
+// it last came to lack what a live peer said it holds in. The caller holds
+// store.mu.
+func (store *Datastore) markTurn(b *pb.CRDTBroadcast) {
+	lags := false
+	for _, f := range store.frontiers {
+		if !store.holds(f.cc) {
+			lags = true
+			break
+		}
+	}
+	if lags && !store.lagged {
+		store.turned = b.Sent
+	}
+	store.lagged = lags
+	b.Turned = store.turned
 }
 
 // settle is settled, and records the fleet time this replica is settled at.

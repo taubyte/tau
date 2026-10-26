@@ -123,6 +123,7 @@ type message struct {
 	settled     bool
 	peers       []string
 	sent        uint64
+	turned      uint64
 }
 
 type verdict struct {
@@ -138,7 +139,7 @@ func (store *Datastore) decodeBroadcast(data []byte) (message, error) {
 	if err := proto.Unmarshal(data, &b); err != nil {
 		return message{}, err
 	}
-	msg := message{since: b.GetSince(), now: b.GetNow(), sent: b.GetSent(), horizon: b.GetHorizon(), rejoining: b.GetRejoining(), incarnation: string(b.GetIncarnation())}
+	msg := message{since: b.GetSince(), now: b.GetNow(), sent: b.GetSent(), turned: b.GetTurned(), horizon: b.GetHorizon(), rejoining: b.GetRejoining(), incarnation: string(b.GetIncarnation())}
 	msg.acks = contextFromPB(&pb.Context{Vector: b.GetAcks()})
 	if b.GetContext() != nil {
 		msg.context, msg.settled = contextFromPB(b.GetContext()), b.GetSettled()
@@ -210,6 +211,7 @@ func (store *Datastore) encodeBroadcast(ctx context.Context, heads []Head, beat 
 	if beat && !store.rejoining && store.since != 0 {
 		b.Settled = store.settle(ctx)
 		b.Context, b.Heard = store.cc.toPB(), store.heardPeers()
+		store.markTurn(b)
 	}
 	store.mu.Unlock()
 	return proto.Marshal(b)
@@ -534,6 +536,7 @@ func (store *Datastore) judge(ctx context.Context, msg message) (bool, []byte, e
 	hs, _ := store.heads.List()
 	answer := store.message(hs, &verdict{to: msg.incarnation, rebase: stale, since: store.reportedSince(), held: held})
 	answer.Settled = settled
+	store.markTurn(answer)
 	if stale {
 		store.logger.Warnf("%x last heard the fleet at %d: telling it to rebase", msg.incarnation, msg.since)
 	}
