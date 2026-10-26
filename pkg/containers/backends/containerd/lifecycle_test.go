@@ -259,7 +259,9 @@ func TestDaemonStartWithRootlesskit(t *testing.T) {
 		t.Setenv("XDG_RUNTIME_DIR", filepath.Join(home, "run"))
 		t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
 		t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
-		assert.Contains(t, startWithStandIn(t, "pasta"), "--net pasta --mtu 65520")
+		args := startWithStandIn(t, "pasta")
+		assert.Contains(t, args, "--net pasta --mtu 65520")
+		assert.Contains(t, args, "--port-driver=implicit", "rootlesskit refuses pasta with any port driver but its own")
 	})
 
 	t.Run("XDG directories defaulted under HOME", func(t *testing.T) {
@@ -276,7 +278,9 @@ func TestDaemonStartWithRootlesskit(t *testing.T) {
 		t.Setenv("XDG_RUNTIME_DIR", filepath.Join(home, "run"))
 		t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
 		t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
-		assert.Contains(t, startWithStandIn(t, "vpnkit"), "--net vpnkit --mtu 1500")
+		args := startWithStandIn(t, "vpnkit")
+		assert.Contains(t, args, "--net vpnkit --mtu 1500")
+		assert.Contains(t, args, "--port-driver=builtin")
 	})
 
 	t.Run("runtime directory defaulted to the user's", func(t *testing.T) {
@@ -732,10 +736,22 @@ func TestDaemonStartFailures(t *testing.T) {
 
 		assert.ErrorContains(t, daemon.Start(context.Background()), "failed to save PID")
 
-		state, err := daemon.process.Wait()
-		require.NoError(t, err)
-		status := state.Sys().(syscall.WaitStatus)
-		assert.True(t, status.Signaled() && status.Signal() == syscall.SIGKILL, "the daemon must have been killed, got %v", state)
+		require.NotNil(t, daemon.exitState, "Start returned before the daemon it killed was reaped")
+		status := daemon.exitState.Sys().(syscall.WaitStatus)
+		assert.True(t, status.Signaled() && status.Signal() == syscall.SIGKILL, "the daemon must have been killed, got %v", daemon.exitState)
+	})
+
+	// rootlesskit refusing its flags exits at once. The start waited out its
+	// whole budget on the socket of a process that was gone, and said only
+	// "context deadline exceeded": this is how every rootless start failed on
+	// the first hosts whose only network driver was pasta.
+	t.Run("a rootlesskit that exits says why, at once", func(t *testing.T) {
+		refuses := filepath.Join(t.TempDir(), "rootlesskit")
+		require.NoError(t, os.WriteFile(refuses, []byte("#!/bin/sh\necho 'error: network \"pasta\" requires port driver \"none\" or \"implicit\"' >&2\nexit 1\n"), 0o755))
+
+		err := start(t, context.Background(), refuses)
+		assert.ErrorContains(t, err, "exited before its socket appeared")
+		assert.ErrorContains(t, err, `requires port driver "none" or "implicit"`)
 	})
 
 	t.Run("containerd never answers", func(t *testing.T) {

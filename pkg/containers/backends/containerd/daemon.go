@@ -26,8 +26,10 @@ type Daemon struct {
 	socketPath string
 	stateFile  string
 
-	// exited closes when the process this daemon started has been reaped.
-	exited chan struct{}
+	// exited closes when the process this daemon started has been reaped,
+	// and exitState is how it ended.
+	exited    chan struct{}
+	exitState *os.ProcessState
 }
 
 // NewDaemon creates a new daemon manager
@@ -245,6 +247,7 @@ func (d *Daemon) startWithRootlesskit(ctx context.Context, containerdPath string
 	exited := make(chan struct{})
 	go func() {
 		cmd.Wait()
+		d.exitState = cmd.ProcessState
 		close(exited)
 	}()
 	d.process = cmd.Process
@@ -252,6 +255,8 @@ func (d *Daemon) startWithRootlesskit(ctx context.Context, containerdPath string
 
 	if err := os.WriteFile(d.stateFile, []byte(fmt.Sprintf("%d", d.process.Pid)), 0644); err != nil {
 		d.process.Kill()
+		<-exited
+		d.process = nil
 		return fmt.Errorf("failed to save PID: %w", err)
 	}
 
