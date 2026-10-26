@@ -37,11 +37,12 @@ import (
 // waited for again only once it has gone unheard for G. A bridge that was
 // settled and is not may have just heard what a listed peer holds and not
 // fetched it yet: the peers it lists then are waited for again, G from that
-// turn, those this replica heard before the turn among them, until it hears
-// them again. Only an incarnation that sent a settled frontier turns, so a
-// restart renews nothing; a bridge that says it is settled holds nothing
-// back; and a peer is listed at most G after its last lister heard it, so a
-// gone peer holds this replica back at most 2G.
+// turn, heard or not, until this replica holds a frontier of theirs sent
+// after the turn: one heard after it may have been sent before. Only an incarnation that sent a settled
+// frontier turns, so a restart renews nothing; a bridge that says it is
+// settled holds nothing back; and a peer is named at most G after its last
+// lister heard it, so a gone peer holds this replica back at most 2G and a
+// delivery bound.
 //
 // A replica knows it has heard every live peer once it has heard the fleet
 // for G without a break, or holds the frontier of a peer that was settled,
@@ -87,10 +88,13 @@ type contact struct {
 }
 
 // A listing is a peer a frontier names that this replica has not heard, or
-// has not heard since a frontier naming it turned unsettled: when one first
-// named it, or named it on turning, and when one last did.
+// any a frontier names on turning unsettled: when one first named it, or
+// named it on turning, and when one last did; for a turn, the clock past
+// which a frontier of that peer was sent after the turn (the turning
+// frontier's own and the skew).
 type listing struct {
 	first, last time.Duration
+	after       uint64
 }
 
 // An ok is a verdict that vouched for this replica: its rejoin ends once it
@@ -157,6 +161,9 @@ func (store *Datastore) hearFrontier(msg message) {
 	prev := store.frontiers[msg.incarnation]
 	turned := !msg.settled && prev != nil && prev.settled
 	store.frontiers[msg.incarnation] = &frontier{cc: msg.context, settled: msg.settled, peers: msg.peers, first: first, heard: up}
+	if l := store.listed[peerOf(msg.incarnation)]; l != nil && l.after != 0 && msg.now > l.after {
+		delete(store.listed, peerOf(msg.incarnation))
+	}
 	self := peerOf(store.replica)
 	for _, p := range msg.peers {
 		if p == self || !turned && store.contacts[p] != nil {
@@ -165,6 +172,9 @@ func (store *Datastore) hearFrontier(msg message) {
 		l := store.listed[p]
 		if l == nil || turned {
 			l = &listing{first: up}
+			if turned {
+				l.after = msg.now + store.times.skew
+			}
 			store.listed[p] = l
 		}
 		l.last = up
@@ -201,7 +211,7 @@ func (store *Datastore) prune(up time.Duration) {
 		}
 	}
 	for p, l := range store.listed {
-		if up-l.last > g || store.heardSince(p, l.first) {
+		if up-l.last > g || store.contacts[p] != nil && (l.after == 0 || up-l.first >= g) {
 			delete(store.listed, p)
 		}
 	}
@@ -263,26 +273,20 @@ func (store *Datastore) settled() bool {
 	return store.grounded
 }
 
-// waitsFor reports whether a frontier names a peer this replica has not
-// heard since it was listed, less than G ago. The caller holds store.mu.
+// waitsFor reports whether a frontier names a peer listed less than G ago
+// that this replica has not heard, or that a frontier named on turning and
+// has not sent a frontier since. The caller holds store.mu.
 func (store *Datastore) waitsFor(f *frontier, up, g time.Duration) bool {
 	self := peerOf(store.replica)
 	for _, p := range f.peers {
 		if p == self {
 			continue
 		}
-		if l := store.listed[p]; l != nil && up-l.first < g && !store.heardSince(p, l.first) {
+		if l := store.listed[p]; l != nil && up-l.first < g && (l.after != 0 || store.contacts[p] == nil) {
 			return true
 		}
 	}
 	return false
-}
-
-// heardSince reports whether this replica has heard a peer at or since at.
-// The caller holds store.mu.
-func (store *Datastore) heardSince(p string, at time.Duration) bool {
-	c := store.contacts[p]
-	return c != nil && c.heard >= at
 }
 
 // settle is settled, and records the fleet time this replica is settled at.
