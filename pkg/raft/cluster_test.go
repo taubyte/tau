@@ -352,8 +352,15 @@ func joinedGroup(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batch
 // removeTheLeader has whichever of a and b leads commit its own removal and
 // returns it with the member left leading. The removal is sent and not waited
 // on, because its future is answered by the FSM goroutine, which a test may be
-// holding; a leader that loses its lease before the removal commits is asked
-// again of whichever leads next.
+// holding.
+//
+// THE MEMBER LEFT MUST HOLD THE WHOLE LOG FIRST. A leader that removes itself
+// takes the new configuration at once and no longer campaigns; a member still
+// being sent the log when the leader's lease lapsed kept the configuration
+// that needs both votes, and the removed leader, whose log is longer, refused
+// it every one. Neither could lead again. So the removal is sent only once the
+// member left has stored every entry the leader has, its own admission among
+// them, and is sent again only if it never reached the leader's log.
 func removeTheLeader(t *testing.T, a, b Cluster) (removed, left Cluster) {
 	t.Helper()
 	deadline := time.Now().Add(leaderWait)
@@ -363,18 +370,43 @@ func removeTheLeader(t *testing.T, a, b Cluster) (removed, left Cluster) {
 		if removed == a {
 			left = b
 		}
-		removed.(*cluster).current().raft.RemoveServer(raft.ServerID(idOf(removed).String()), 0, 5*time.Second)
-		settled := time.Now().Add(2 * time.Second)
-		for time.Now().Before(settled) {
+		leader, follower := removed.(*cluster).current().raft, left.(*cluster).current().raft
+		for time.Now().Before(deadline) && removed.IsLeader() &&
+			!(follower.LastIndex() >= leader.LastIndex() && inConfiguration(follower, idOf(left))) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if !removed.IsLeader() {
+			continue
+		}
+		leader.RemoveServer(raft.ServerID(idOf(removed).String()), 0, 5*time.Second)
+		for time.Now().Before(deadline) {
 			members, err := left.Members()
 			if err == nil && len(members) == 1 && left.IsLeader() && removed.State() != raft.Leader {
 				return removed, left
+			}
+			if removed.State() != raft.Leader && inConfiguration(leader, idOf(removed)) {
+				break // refused: it no longer led when the removal was asked of it
 			}
 			time.Sleep(20 * time.Millisecond)
 		}
 	}
 	t.Fatalf("no leader committed its own removal within %v", leaderWait)
 	return nil, nil
+}
+
+// inConfiguration says whether r's latest configuration, committed or not,
+// holds id.
+func inConfiguration(r *raft.Raft, id peer.ID) bool {
+	future := r.GetConfiguration()
+	if future.Error() != nil {
+		return false
+	}
+	for _, server := range future.Configuration().Servers {
+		if server.ID == raft.ServerID(id.String()) {
+			return true
+		}
+	}
+	return false
 }
 
 // TestCluster_CloseWaitsForALeaderThatRemovedItself: raft's default is to shut
