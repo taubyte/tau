@@ -200,6 +200,8 @@ type Node struct {
 
 // New builds the services this node runs. It binds nothing and starts nothing.
 func New(cfg Config, opts ...Option) (*Node, error) {
+	installTracerProvider()
+
 	var o options
 	for _, apply := range opts {
 		if err := apply(&o); err != nil {
