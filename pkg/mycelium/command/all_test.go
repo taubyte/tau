@@ -310,8 +310,9 @@ func TestAnOutputAbandonedToItsContextWritesNothingTheCallerRead(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			cmd, _ := New(ctx, mockSession, "ls")
 
-			release := make(chan time.Time)
-			mockSession.On(method, mock.Anything).WaitUntil(release).Return([]byte("late"), nil).Once()
+			// After, not WaitUntil: a channel the test closes would order the
+			// late write after the caller's read, and hide the race from -race.
+			mockSession.On(method, mock.Anything).After(50*time.Millisecond).Return([]byte("late"), nil).Once()
 			mockSession.On("Signal", mock.Anything).Return(nil)
 			mockSession.On("Close").Return(nil)
 
@@ -327,7 +328,6 @@ func TestAnOutputAbandonedToItsContextWritesNothingTheCallerRead(t *testing.T) {
 			assert.ErrorContains(t, err, "context done")
 			assert.Assert(t, out == nil)
 
-			close(release)
 			waitFor(t, func() bool { return runtime.NumGoroutine() <= before },
 				"the abandoned call never finished")
 		})
