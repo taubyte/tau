@@ -342,11 +342,12 @@ func (x *Context) GetCloud() []*Span {
 	return nil
 }
 
+// A Delta is a block: a plain delta, whose elements and tombstones are what
+// it writes, or a snapshot, whose state is named by state.
 type Delta struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Elements []*Element             `protobuf:"bytes,1,rep,name=elements,proto3" json:"elements,omitempty"`
-	// tombstones name the (key, dot) versions this delta removes. In a
-	// snapshot they are the removals whose target dot is not yet covered.
+	// tombstones name the (key, dot) versions this delta removes.
 	Tombstones []*Element `protobuf:"bytes,2,rep,name=tombstones,proto3" json:"tombstones,omitempty"`
 	Priority   uint64     `protobuf:"varint,3,opt,name=priority,proto3" json:"priority,omitempty"`
 	Snapshot   bool       `protobuf:"varint,5,opt,name=snapshot,proto3" json:"snapshot,omitempty"`
@@ -355,12 +356,6 @@ type Delta struct {
 	// incarnation, 0 for its first.
 	Prev    uint64    `protobuf:"varint,9,opt,name=prev,proto3" json:"prev,omitempty"`
 	Parents []*Parent `protobuf:"bytes,10,rep,name=parents,proto3" json:"parents,omitempty"`
-	// context is, in a snapshot, the compactor's causal context when it
-	// compacted; it does not include the snapshot's own dot.
-	Context *Context `protobuf:"bytes,11,opt,name=context,proto3" json:"context,omitempty"`
-	// chunks are the CIDs of the blocks holding the rest of a snapshot's
-	// elements, fetched with it and merged as one.
-	Chunks [][]byte `protobuf:"bytes,12,rep,name=chunks,proto3" json:"chunks,omitempty"`
 	// at is when the author wrote this block, in milliseconds since the epoch:
 	// the later of its clock and the fleet time it had last heard.
 	At uint64 `protobuf:"varint,13,opt,name=at,proto3" json:"at,omitempty"`
@@ -372,7 +367,10 @@ type Delta struct {
 	Since uint64 `protobuf:"varint,15,opt,name=since,proto3" json:"since,omitempty"`
 	// horizon is the latest authored time of anything the author has
 	// forgotten because it expired.
-	Horizon       uint64 `protobuf:"varint,16,opt,name=horizon,proto3" json:"horizon,omitempty"`
+	Horizon uint64 `protobuf:"varint,16,opt,name=horizon,proto3" json:"horizon,omitempty"`
+	// state is, in a snapshot, the CID of the StateRoot block holding the
+	// state it carries (see state.proto).
+	State         []byte `protobuf:"bytes,17,opt,name=state,proto3" json:"state,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -456,20 +454,6 @@ func (x *Delta) GetParents() []*Parent {
 	return nil
 }
 
-func (x *Delta) GetContext() *Context {
-	if x != nil {
-		return x.Context
-	}
-	return nil
-}
-
-func (x *Delta) GetChunks() [][]byte {
-	if x != nil {
-		return x.Chunks
-	}
-	return nil
-}
-
 func (x *Delta) GetAt() uint64 {
 	if x != nil {
 		return x.At
@@ -498,19 +482,22 @@ func (x *Delta) GetHorizon() uint64 {
 	return 0
 }
 
+func (x *Delta) GetState() []byte {
+	if x != nil {
+		return x.State
+	}
+	return nil
+}
+
 type Element struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Key   string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	Value []byte                 `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
-	// priority is the element's own priority in snapshots; in a plain delta
-	// every element takes the delta's priority.
-	Priority uint64 `protobuf:"varint,4,opt,name=priority,proto3" json:"priority,omitempty"`
-	// dot is the element's dot in snapshots and the target's dot in
-	// tombstones; a plain delta's elements take the delta's dot.
+	// dot is the target's dot in a tombstone; a delta's elements take the
+	// delta's dot.
 	Dot *Dot `protobuf:"bytes,5,opt,name=dot,proto3" json:"dot,omitempty"`
-	// at and ttl are, for an element in a snapshot, the stamps of the delta
-	// that wrote it; for a tombstone, when the removal was written and how long
-	// it is needed, which is never less than its target is.
+	// at and ttl are, for a tombstone, when the removal was written and how
+	// long it is needed, which is never less than its target is.
 	At            uint64 `protobuf:"varint,6,opt,name=at,proto3" json:"at,omitempty"`
 	Ttl           uint64 `protobuf:"varint,7,opt,name=ttl,proto3" json:"ttl,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -561,13 +548,6 @@ func (x *Element) GetValue() []byte {
 	return nil
 }
 
-func (x *Element) GetPriority() uint64 {
-	if x != nil {
-		return x.Priority
-	}
-	return 0
-}
-
 func (x *Element) GetDot() *Dot {
 	if x != nil {
 		return x.Dot
@@ -614,7 +594,7 @@ const file_delta_proto_rawDesc = "" +
 	"\x02hi\x18\x03 \x01(\x04R\x02hi\"V\n" +
 	"\aContext\x12&\n" +
 	"\x06vector\x18\x01 \x03(\v2\x0e.crdt.pb.EntryR\x06vector\x12#\n" +
-	"\x05cloud\x18\x02 \x03(\v2\r.crdt.pb.SpanR\x05cloud\"\xca\x03\n" +
+	"\x05cloud\x18\x02 \x03(\v2\r.crdt.pb.SpanR\x05cloud\"\xb9\x03\n" +
 	"\x05Delta\x12,\n" +
 	"\belements\x18\x01 \x03(\v2\x10.crdt.pb.ElementR\belements\x120\n" +
 	"\n" +
@@ -625,21 +605,19 @@ const file_delta_proto_rawDesc = "" +
 	"\x03dot\x18\b \x01(\v2\f.crdt.pb.DotR\x03dot\x12\x12\n" +
 	"\x04prev\x18\t \x01(\x04R\x04prev\x12)\n" +
 	"\aparents\x18\n" +
-	" \x03(\v2\x0f.crdt.pb.ParentR\aparents\x12*\n" +
-	"\acontext\x18\v \x01(\v2\x10.crdt.pb.ContextR\acontext\x12\x16\n" +
-	"\x06chunks\x18\f \x03(\fR\x06chunks\x12\x0e\n" +
+	" \x03(\v2\x0f.crdt.pb.ParentR\aparents\x12\x0e\n" +
 	"\x02at\x18\r \x01(\x04R\x02at\x12\x10\n" +
 	"\x03ttl\x18\x0e \x01(\x04R\x03ttl\x12\x14\n" +
 	"\x05since\x18\x0f \x01(\x04R\x05since\x12\x18\n" +
-	"\ahorizon\x18\x10 \x01(\x04R\ahorizonJ\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\a\x10\bR\adagNameR\rsnapshotTotalR\n" +
-	"snapshotId\"\x99\x01\n" +
+	"\ahorizon\x18\x10 \x01(\x04R\ahorizon\x12\x14\n" +
+	"\x05state\x18\x11 \x01(\fR\x05stateJ\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\v\x10\fJ\x04\b\f\x10\rR\adagNameR\rsnapshotTotalR\n" +
+	"snapshotIdR\acontextR\x06chunks\"\x8d\x01\n" +
 	"\aElement\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x03 \x01(\fR\x05value\x12\x1a\n" +
-	"\bpriority\x18\x04 \x01(\x04R\bpriority\x12\x1e\n" +
+	"\x05value\x18\x03 \x01(\fR\x05value\x12\x1e\n" +
 	"\x03dot\x18\x05 \x01(\v2\f.crdt.pb.DotR\x03dot\x12\x0e\n" +
 	"\x02at\x18\x06 \x01(\x04R\x02at\x12\x10\n" +
-	"\x03ttl\x18\a \x01(\x04R\x03ttlJ\x04\b\x02\x10\x03R\x02idB\x06Z\x04.;pbb\x06proto3"
+	"\x03ttl\x18\a \x01(\x04R\x03ttlJ\x04\b\x02\x10\x03J\x04\b\x04\x10\x05R\x02idR\bpriorityB\x06Z\x04.;pbb\x06proto3"
 
 var (
 	file_delta_proto_rawDescOnce sync.Once
@@ -671,13 +649,12 @@ var file_delta_proto_depIdxs = []int32{
 	6, // 4: crdt.pb.Delta.tombstones:type_name -> crdt.pb.Element
 	0, // 5: crdt.pb.Delta.dot:type_name -> crdt.pb.Dot
 	1, // 6: crdt.pb.Delta.parents:type_name -> crdt.pb.Parent
-	4, // 7: crdt.pb.Delta.context:type_name -> crdt.pb.Context
-	0, // 8: crdt.pb.Element.dot:type_name -> crdt.pb.Dot
-	9, // [9:9] is the sub-list for method output_type
-	9, // [9:9] is the sub-list for method input_type
-	9, // [9:9] is the sub-list for extension type_name
-	9, // [9:9] is the sub-list for extension extendee
-	0, // [0:9] is the sub-list for field type_name
+	0, // 7: crdt.pb.Element.dot:type_name -> crdt.pb.Dot
+	8, // [8:8] is the sub-list for method output_type
+	8, // [8:8] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_delta_proto_init() }

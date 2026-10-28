@@ -38,8 +38,8 @@ func (r *removeFailing) Remove(ctx context.Context, c cid.Cid) error {
 
 var _ ipld.DAGService = (*removeFailing)(nil)
 
-// assertNoLeak checks that every block r holds is indexed, and that every
-// index entry names a block r holds.
+// assertNoLeak checks that every block r holds is indexed or an owned state
+// block, and that every index entry and owned block names a block r holds.
 func assertNoLeak(t testing.TB, r *Datastore, d *fetchThroughDAGSvc) {
 	t.Helper()
 	ctx := context.Background()
@@ -66,6 +66,12 @@ func assertNoLeak(t testing.TB, r *Datastore, d *fetchThroughDAGSvc) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	for c := range owned(t, r) {
+		indexed[c] = true
+		if !d.holds(c) {
+			t.Errorf("owned state block %s is gone", c)
+		}
 	}
 	ch, err := d.bs.AllKeysChan(ctx)
 	if err != nil {
@@ -147,8 +153,8 @@ func TestCrashMidCompaction(t *testing.T) {
 
 			compact(t, r)
 			assertNoLeak(t, r, dag.fetchThroughDAGSvc)
-			if n := dag.blockCount(t); n != 1 {
-				t.Errorf("after a clean compaction the store should hold its snapshot only, holds %d blocks", n)
+			if n := heldBesidesState(t, r, dag.fetchThroughDAGSvc); n != 1 {
+				t.Errorf("after a clean compaction the store should hold its snapshot and its state only, holds %d blocks besides its state", n)
 			}
 			syncReplicaHeads(t, r, control[0])
 			assertSameState(t, []string{"crashed", "control"}, r, control[0])

@@ -145,9 +145,9 @@ func TestH3FreshReplicaWalkingAStaleChainKeepsTheDelete(t *testing.T) {
 	assertSameState(t, []string{"A", "B", "F"}, a, b, f)
 }
 
-// H4: a snapshot whose elements span several chunk blocks is merged whole or
-// not at all; a replica that cannot fetch every chunk keeps what it has.
-func TestH4ChunkedSnapshotIsMergedWhole(t *testing.T) {
+// H4: a snapshot whose state spans several tree nodes is merged whole or
+// not at all; a replica that cannot fetch every node keeps what it has.
+func TestH4SnapshotStateIsMergedWhole(t *testing.T) {
 	opts := noAutoCompact()
 	opts.MaxBatchDeltaSize = 200
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 2, opts)
@@ -169,13 +169,11 @@ func TestH4ChunkedSnapshotIsMergedWhole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rootDelta.GetChunks()) < 2 {
-		t.Fatalf("test setup: want a snapshot in several chunks, got %d", len(rootDelta.GetChunks()))
+	nodes := stateBlocks(t, a, root)
+	if len(nodes) < 3 {
+		t.Fatalf("test setup: want a state of several tree nodes, got %d blocks", len(nodes))
 	}
-	held, err := cid.Cast(rootDelta.GetChunks()[1])
-	if err != nil {
-		t.Fatal(err)
-	}
+	held := nodes[len(nodes)-1]
 	nd, err := dagsyncs[0].DAGService.Get(ctx, held)
 	if err != nil {
 		t.Fatal(err)
@@ -236,9 +234,9 @@ func (d *droppingDAG) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.
 }
 
 // H4, the other way a fetch comes up short: the getter stops before the last
-// chunk and reports nothing. The snapshot is still not merged until it is
+// tree node and reports nothing. The snapshot is still not merged until it is
 // whole.
-func TestH4AChunkFetchThatEndsEarlyIsNotMerged(t *testing.T) {
+func TestH4AStateFetchThatEndsEarlyIsNotMerged(t *testing.T) {
 	opts := noAutoCompact()
 	opts.MaxBatchDeltaSize = 200
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 1, opts)
@@ -258,19 +256,17 @@ func TestH4AChunkFetchThatEndsEarlyIsNotMerged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rootDelta.GetChunks()) < 2 {
-		t.Fatalf("test setup: want a snapshot in several chunks, got %d", len(rootDelta.GetChunks()))
+	nodes := stateBlocks(t, a, root)
+	if len(nodes) < 3 {
+		t.Fatalf("test setup: want a state of several tree nodes, got %d blocks", len(nodes))
 	}
-	last, err := cid.Cast(rootDelta.GetChunks()[len(rootDelta.GetChunks())-1])
-	if err != nil {
-		t.Fatal(err)
-	}
+	last := nodes[len(nodes)-1]
 
 	dag := &droppingDAG{fetchThroughDAGSvc: newFetchThrough(), drop: map[cid.Cid]bool{last: true}}
 	dag.setRemotes(dagsyncs[0].DAGService)
 	// The test repairs X itself. The repair loop's first pass runs at
 	// open, and when it lands after the failed fetch it walks the snapshot
-	// while the chunk is still withheld and holds it until the test's
+	// while the node is still withheld and holds it until the test's
 	// repair has already found nothing to do.
 	xopts := replicaOptions(opts, "x: ")
 	xopts.RepairInterval = 0

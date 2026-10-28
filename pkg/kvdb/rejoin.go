@@ -862,13 +862,24 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 	bp := store.blocksPrefix()
 	ep := store.set.elemsPrefix().String() + "/"
 	var keys []string
+	op := store.ownedPrefix()
 	err = scanStore(ctx, store.store, store.namespace, func(k string, v []byte) error {
 		switch {
 		case strings.HasPrefix(k, prefix),
 			strings.HasPrefix(k, store.erasedPrefix().String()+"/"),
+			strings.HasPrefix(k, store.reclaimPrefix().String()+"/"),
 			k == store.versionKey().String(),
-			k == store.badShutdownKey().String():
+			k == store.badShutdownKey().String(),
+			k == store.namespace.ChildString(redoKey).String(),
+			k == store.appliedKey().String():
 			return nil
+		case strings.HasPrefix(k, op.String()+"/"):
+			// Nothing owns a state block any more: reclaim removes them.
+			c, err := cidOfBlockKey(op, k)
+			if err != nil {
+				return err
+			}
+			t.put(store.reclaimKey(c), nil)
 		case strings.HasPrefix(k, bp.String()+"/"):
 			c, err := cidOfBlockKey(bp, k)
 			if err != nil {
@@ -909,9 +920,13 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 	t.put(store.sinceKey(), binary.AppendUvarint(nil, since))
 	t.del(store.settledKey())
 	t.put(store.rebaseKey(), nil)
-	if err := t.commit(ctx); err != nil {
+	store.gcMu.Lock()
+	err = store.commitAtomic(ctx, t)
+	store.gcMu.Unlock()
+	if err != nil {
 		return err
 	}
+	store.base = stateBase{}
 	if len(blocks) > 0 {
 		if err := store.dagService.RemoveMany(ctx, blocks); err != nil {
 			store.logger.Warnf("rebase: removing the old blocks: %s", err)

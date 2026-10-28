@@ -295,15 +295,19 @@ func TestACrashWhileAPurgeDropsLeaksNothing(t *testing.T) {
 					t.Fatal(err)
 				}
 				for k := range ch {
-					if held, err := c.store.Has(ctx, c.blockKey(k)); err != nil || !held {
+					held, err := c.store.Has(ctx, c.blockKey(k))
+					if err == nil && !held {
+						held, err = c.store.Has(ctx, c.ownedKey(k))
+					}
+					if err != nil || !held {
 						t.Errorf("block %s is held and indexed nowhere: a leak", k)
 					}
 				}
 
 				compact(t, c)
 				assertNoLeak(t, c, crashedDag)
-				if n := crashedDag.blockCount(t); n != 1 {
-					t.Errorf("after a clean compaction the store should hold its snapshot only, holds %d blocks", n)
+				if n := heldBesidesState(t, c, crashedDag); n != 1 {
+					t.Errorf("after a clean compaction the store should hold its snapshot and its state only, holds %d blocks besides its state", n)
 				}
 				want(t, "compacted", c, kv)
 			})

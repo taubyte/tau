@@ -1,0 +1,31 @@
+syntax = "proto3";
+package crdt.pb;
+
+option go_package = ".;pb";
+
+// A StateRoot is the Data of the dag-pb block naming a snapshot's state: the
+// Merkle search trees of its elements, its pending removals and its causal
+// context. Its links are the roots of the trees present, in that order. The
+// format is specified in the kvdb package's state.go.
+message StateRoot {
+  // The format profile. Always 1.
+  uint32 format = 1;
+  bool elements = 2;
+  bool removals = 3;
+  bool context = 4;
+}
+
+// A Redo is a batch of writes recorded under one key before any of them is
+// applied, so a crash part way through applying them is finished on open.
+// seq numbers it; the batch that applies it records seq as applied last, so
+// a record already applied, or given up, is never applied again.
+message Redo {
+  repeated Write writes = 1;
+  uint64 seq = 2;
+}
+
+message Write {
+  bytes key = 1;
+  bytes value = 2;
+  bool delete = 3;
+}

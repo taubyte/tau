@@ -10,6 +10,7 @@ import (
 
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
+	ipld "github.com/ipfs/go-ipld-format"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
 	"google.golang.org/protobuf/proto"
 )
@@ -249,24 +250,27 @@ func (store *Datastore) ahead(at uint64) bool {
 // carriesAhead reports whether a snapshot holds anything stamped ahead: what
 // a clock far ahead wrote, carried by a snapshot its author wrote once the
 // clock was put right. It waits as the block that wrote it would have, so a
-// wrong clock's stamps never reach a correct replica's state.
-func (store *Datastore) carriesAhead(delta *pb.Delta, elems []*pb.Element) bool {
-	for _, e := range elems {
-		if store.ahead(e.GetAt()) {
-			return true
+// wrong clock's stamps never reach a correct replica's state. The trees'
+// summaries say what the latest stamp of each is.
+func (store *Datastore) carriesAhead(ctx context.Context, root *pb.Delta) (bool, error) {
+	stc, err := cid.Cast(root.GetState())
+	if err != nil {
+		return false, err
+	}
+	sr, err := loadStateRoot(ctx, store.dagService, stc)
+	if err != nil {
+		return false, err
+	}
+	for _, c := range []cid.Cid{sr.elems, sr.pending, sr.ctx} {
+		_, hi, any, err := treeStamps(ctx, stateTree(store.dagService, c))
+		if err != nil {
+			return false, err
+		}
+		if any && store.ahead(hi) {
+			return true, nil
 		}
 	}
-	for _, e := range delta.GetTombstones() {
-		if store.ahead(e.GetAt()) {
-			return true
-		}
-	}
-	for _, e := range delta.GetContext().GetVector() {
-		if store.ahead(e.GetChanged()) {
-			return true
-		}
-	}
-	return false
+	return false, nil
 }
 
 // stale reports whether a state as recent as since may hold an element this
@@ -423,7 +427,7 @@ func (store *Datastore) refreshDue(ctx context.Context) (bool, error) {
 			return err
 		}
 		low = min(low, b.at+b.ttl/2)
-		if b.kind != kindChunk && b.at+b.ttl/2 <= now {
+		if b.at+b.ttl/2 <= now {
 			due = true
 		}
 		return nil
@@ -463,15 +467,15 @@ func (store *Datastore) staleHead(ctx context.Context) (bool, error) {
 		cctx, cancel := context.WithTimeout(ctx, store.opts.DAGSyncerTimeout)
 		ng := &crdtNodeGetter{NodeGetter: store.dagService}
 		_, root, err := ng.GetDelta(cctx, h.Cid)
-		var elems []*pb.Element
-		if err == nil && root.GetSince() == 0 {
-			_, elems, err = store.fetchChunks(cctx, ng, root)
+		var since uint64
+		if err == nil {
+			since, err = store.snapshotSince(cctx, root, store.dagService)
 		}
 		cancel()
 		if err != nil {
 			return false, err
 		}
-		stale, err := store.stale(ctx, snapshotSince(root, elems))
+		stale, err := store.stale(ctx, since)
 		if err != nil {
 			return false, err
 		}
@@ -487,16 +491,29 @@ func (store *Datastore) staleHead(ctx context.Context) (bool, error) {
 // written before its author heard any fleet (since 0) holds only that
 // author's own writes, and is as recent as the oldest of them: any may have
 // been removed, and the removal forgotten, after it was written, however late
-// the snapshot is fetched.
-func snapshotSince(root *pb.Delta, elems []*pb.Element) uint64 {
+// the snapshot is fetched. The elements tree's summary says which is oldest.
+func (store *Datastore) snapshotSince(ctx context.Context, root *pb.Delta, dags ipld.DAGService) (uint64, error) {
 	since := root.GetSince()
-	if since == 0 {
-		since = root.GetAt()
-		for _, e := range elems {
-			since = min(since, e.GetAt())
-		}
+	if since != 0 {
+		return since, nil
 	}
-	return since
+	since = root.GetAt()
+	stc, err := cid.Cast(root.GetState())
+	if err != nil {
+		return 0, err
+	}
+	sr, err := loadStateRoot(ctx, dags, stc)
+	if err != nil {
+		return 0, err
+	}
+	lo, _, any, err := treeStamps(ctx, stateTree(dags, sr.elems))
+	if err != nil {
+		return 0, err
+	}
+	if any {
+		since = min(since, lo)
+	}
+	return since, nil
 }
 
 // maintain is one pass of what time does to a store: forget what expired,
@@ -525,6 +542,9 @@ func (store *Datastore) maintain(ctx context.Context) error {
 	store.mu.Unlock()
 	if _, derr := store.dropTaken(ctx, ancient); err == nil {
 		err = derr
+	}
+	if _, rerr := store.reclaim(ctx); err == nil {
+		err = rerr
 	}
 	if err != nil || !due {
 		return err

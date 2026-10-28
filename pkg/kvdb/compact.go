@@ -7,9 +7,8 @@ import (
 	"strings"
 
 	cid "github.com/ipfs/go-cid"
-	ipld "github.com/ipfs/go-ipld-format"
+	ds "github.com/ipfs/go-datastore"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
-	"google.golang.org/protobuf/proto"
 )
 
 // Compact folds this replica's whole state into a snapshot and drops every
@@ -18,16 +17,18 @@ import (
 // A snapshot is a delta like any other: it has a dot of this incarnation and
 // links the current heads, plus every parent a merged block links that this
 // replica has not merged yet, so a replica reading it can still walk to
-// those. What it carries is a state: every live element with its own dot and
-// priority, the pending removals, and this replica's causal context.
-// Merging it is the same join as merging a delta (see merge.go), so it needs
-// no coordination: snapshots made concurrently, from stale views, or of
-// partly-walked histories all converge, and a removal the snapshot has seen
-// stays removed against any branch that still carries the element.
+// those. What it carries is a state (see state.go): every live element with
+// its own dot and priority, the pending removals, and this replica's causal
+// context. Merging it is the same join as merging a delta (see merge.go), so
+// it needs no coordination: snapshots made concurrently, from stale views,
+// or of partly-walked histories all converge, and a removal the snapshot has
+// seen stays removed against any branch that still carries the element.
 //
-// Elements that do not fit in the root block go to chunk blocks the root
-// names; a reader fetches them all before it merges anything, so a snapshot
-// is never half-applied.
+// The state's trees are the last snapshot's with the records the journal
+// names applied, so a snapshot writes only the tree nodes on the paths of
+// what changed, and shares the rest with the snapshots before it. A reader
+// fetches every node it does not hold before it merges anything, so a
+// snapshot is never half-applied.
 //
 // The vector is bounded by time: an incarnation is forgotten once nothing
 // merged about it is needed any more (see timebound.go), and compacting
@@ -62,6 +63,9 @@ func (store *Datastore) compact(ctx context.Context, force bool) (int, error) {
 	}
 	if err != nil || theirs == nil {
 		store.mu.Unlock()
+		if _, rerr := store.reclaim(ctx); err == nil {
+			err = rerr
+		}
 		return 0, err
 	}
 	covered, err := store.purge(ctx, theirs)
@@ -73,7 +77,8 @@ func (store *Datastore) compact(ctx context.Context, force bool) (int, error) {
 	n, derr := store.dropTaken(ctx, covered)
 	old, aerr := store.dropTaken(ctx, ancient)
 	n += old
-	if err = errors.Join(err, derr, aerr); err != nil {
+	_, rerr := store.reclaim(ctx)
+	if err = errors.Join(err, derr, aerr, rerr); err != nil {
 		return n, err
 	}
 	if err := store.broadcastHeads(ctx, []Head{head}); err != nil {
@@ -101,34 +106,9 @@ func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *c
 		}
 	}
 
-	var elems []*pb.Element
-	err := scanStore(ctx, store.store, store.set.elemsPrefix(), func(k string, v []byte) error {
-		el, err := store.set.parseElem(k, v)
-		if err != nil {
-			return err
-		}
-		elems = append(elems, &pb.Element{Key: el.key, Dot: el.dot.toPB(), Priority: el.priority, Value: el.value, At: el.at, Ttl: el.ttl})
-		return nil
-	})
-	if err != nil {
-		return Head{}, nil, err
-	}
-	var pending []*pb.Element
-	err = scanStore(ctx, store.store, store.set.pendingPrefix(), func(k string, v []byte) error {
-		r, err := store.set.parsePending(k, v)
-		if err != nil {
-			return err
-		}
-		pending = append(pending, &pb.Element{Key: r.key, Dot: r.dot.toPB(), At: r.at, Ttl: r.ttl})
-		return nil
-	})
-	if err != nil {
-		return Head{}, nil, err
-	}
-
 	links := append([]Head(nil), hs...)
 	missing := store.missingPrefix()
-	err = scanStore(ctx, store.store, missing, func(k string, v []byte) error {
+	err := scanStore(ctx, store.store, missing, func(k string, v []byte) error {
 		d, err := parseDotSegment(strings.TrimPrefix(k, missing.String()+"/"))
 		if err != nil {
 			return err
@@ -146,6 +126,29 @@ func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *c
 		return Head{}, nil, err
 	}
 
+	ov, state, err := store.buildState(ctx)
+	if err != nil {
+		return Head{}, nil, err
+	}
+	fresh, err := ov.fresh([]cid.Cid{state}, func(c cid.Cid) (bool, error) {
+		return store.store.Has(ctx, store.ownedKey(c))
+	})
+	if err != nil {
+		return Head{}, nil, err
+	}
+	written := make([]cid.Cid, len(fresh))
+	for i, nd := range fresh {
+		written[i] = nd.Cid()
+	}
+	err = store.stage(ctx, written, true)
+	defer store.unstage(written)
+	if err != nil {
+		return Head{}, nil, err
+	}
+	if err := store.dagService.AddMany(ctx, fresh); err != nil {
+		return Head{}, nil, fmt.Errorf("error writing the snapshot's state: %w", err)
+	}
+
 	// Its own entry expired, with nothing of its own left to refresh it, this
 	// incarnation writes no more, as idleRetire does for a write: a peer
 	// whose clock runs ahead may have forgotten it already, though this
@@ -157,46 +160,95 @@ func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *c
 	}
 	d, prev := store.nextDot()
 	root := store.stamped(&pb.Delta{
-		Snapshot:   true,
-		Dot:        d.toPB(),
-		Prev:       prev,
-		Priority:   height + 1,
-		Parents:    parentsOf(links),
-		Context:    store.cc.toPB(),
-		Tombstones: pending,
+		Snapshot: true,
+		Dot:      d.toPB(),
+		Prev:     prev,
+		Priority: height + 1,
+		Parents:  parentsOf(links),
+		State:    state.Bytes(),
 	})
-	rest := store.fillRoot(root, elems)
-
-	var nodes []ipld.Node
-	var chunkCids []cid.Cid
-	for _, part := range store.chunk(rest) {
-		// The chunk carries the snapshot's dot so that no two snapshots
-		// ever share a chunk block: the index holds one dot per block.
-		nd, err := makeNode(&pb.Delta{Elements: part, Dot: d.toPB(), At: root.At, Ttl: root.Ttl}, nil)
-		if err != nil {
-			return Head{}, nil, err
-		}
-		nodes = append(nodes, nd)
-		chunkCids = append(chunkCids, nd.Cid())
-		root.Chunks = append(root.Chunks, nd.Cid().Bytes())
-	}
 	nd, err := makeNode(root, links)
 	if err != nil {
 		return Head{}, nil, err
 	}
-	nodes = append(nodes, nd)
-	if err := store.writeBlocks(ctx, block{kind: kindSnapshot, dot: d, at: root.At, ttl: root.Ttl}, nodes...); err != nil {
+	if err := store.writeBlocks(ctx, block{kind: kindSnapshot, dot: d, at: root.At, ttl: root.Ttl}, nd); err != nil {
 		return Head{}, nil, err
 	}
 
-	if _, _, err := store.mergeSnapshot(ctx, nd.Cid(), root, chunkCids, elems); err != nil {
-		store.discardBlocks(ctx, append(chunkCids, nd.Cid())...)
+	_, theirs, err := store.mergeSnapshot(ctx, nd.Cid(), root, ov)
+	if err != nil {
+		store.discardBlocks(ctx, nd.Cid())
 		return Head{}, nil, fmt.Errorf("error merging snapshot: %w", err)
 	}
 	store.counter = d.counter
 	store.lastWrite = store.times.up()
 	store.compactDue = false
-	return Head{Cid: nd.Cid(), Height: root.Priority, Dot: d, At: root.At, TTL: root.Ttl}, contextFromPB(root.Context), nil
+	return Head{Cid: nd.Cid(), Height: root.Priority, Dot: d, At: root.At, TTL: root.Ttl}, theirs, nil
+}
+
+// buildState makes the trees of the state this replica holds, in an
+// overlay over its DAG: the base's with every record the journal names
+// brought up to date, and the context's. It returns the StateRoot's CID.
+// The caller holds store.mu.
+func (store *Datastore) buildState(ctx context.Context) (*overlay, cid.Cid, error) {
+	ov := newOverlay(store.dagService)
+	elems := stateTree(ov, store.base.elems)
+	err := scanStore(ctx, store.store, store.journal.elemsPrefix(), func(k string, _ []byte) error {
+		key, d, err := store.journal.parseElemMark(k)
+		if err != nil {
+			return err
+		}
+		v, err := store.store.Get(ctx, store.set.elemKey(key, d))
+		switch {
+		case errors.Is(err, ds.ErrNotFound):
+			elems, err = elems.Delete(ctx, elemTreeKey(key, d))
+		case err == nil:
+			var el element
+			if el, err = decodeMarker(v); err == nil {
+				el.key, el.dot = key, d
+				elems, err = elems.Put(ctx, elemTreeKey(key, d), elemValue(el))
+			}
+		}
+		return err
+	})
+	if err != nil {
+		return nil, cid.Undef, err
+	}
+	pending := stateTree(ov, store.base.pending)
+	err = scanStore(ctx, store.store, store.journal.pendingPrefix(), func(k string, _ []byte) error {
+		b, key, d, err := store.journal.parsePendingMark(k)
+		if err != nil {
+			return err
+		}
+		v, err := store.store.Get(ctx, store.set.pendingKey(key, d))
+		if err != nil && !errors.Is(err, ds.ErrNotFound) {
+			return err
+		}
+		if err == nil {
+			at, ttl, err := decodeStamps(v)
+			if err != nil {
+				return err
+			}
+			if r := (removal{key: key, dot: d, at: at, ttl: ttl}); bucket(r.expires()) == b {
+				pending, err = pending.Put(ctx, pendingTreeKey(r), pendingValue(r))
+				return err
+			}
+		}
+		pending, err = pending.Delete(ctx, pendingTreeKeyIn(b, key, d))
+		return err
+	})
+	if err != nil {
+		return nil, cid.Undef, err
+	}
+	cc, err := contextTree(ctx, ov, store.cc)
+	if err != nil {
+		return nil, cid.Undef, err
+	}
+	nd, err := stateRoot{elems: elems.Root(), pending: pending.Root(), ctx: cc.Root()}.node()
+	if err != nil {
+		return nil, cid.Undef, err
+	}
+	return ov, nd.Cid(), ov.Add(ctx, nd)
 }
 
 // nothingToFold reports whether every block the store holds belongs to a
@@ -235,41 +287,4 @@ func (store *Datastore) nothingToFold(ctx context.Context, hs []Head) (bool, err
 	}
 	missing, err := countPrefix(ctx, store.store, store.missingPrefix())
 	return missing == 0, err
-}
-
-// fillRoot puts as many elements in the root as fit under MaxBatchDeltaSize
-// and returns the rest.
-func (store *Datastore) fillRoot(root *pb.Delta, elems []*pb.Element) []*pb.Element {
-	size := proto.Size(root)
-	for i, e := range elems {
-		es := proto.Size(e) + 4
-		if size+es > store.opts.MaxBatchDeltaSize && i > 0 {
-			root.Elements = elems[:i]
-			return elems[i:]
-		}
-		size += es
-	}
-	root.Elements = elems
-	return nil
-}
-
-// chunk splits elements into parts of at most MaxBatchDeltaSize each; an
-// element bigger than that is a part of its own.
-func (store *Datastore) chunk(elems []*pb.Element) [][]*pb.Element {
-	var parts [][]*pb.Element
-	var cur []*pb.Element
-	size := 0
-	for _, e := range elems {
-		es := proto.Size(e) + 4
-		if len(cur) > 0 && size+es > store.opts.MaxBatchDeltaSize {
-			parts = append(parts, cur)
-			cur, size = nil, 0
-		}
-		cur = append(cur, e)
-		size += es
-	}
-	if len(cur) > 0 {
-		parts = append(parts, cur)
-	}
-	return parts
 }

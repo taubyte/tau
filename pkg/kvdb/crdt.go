@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	mrand "math/rand"
-	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -57,7 +56,7 @@ const (
 // formatVersion is the on-disk format, stored as formatVersion+1 the way every
 // earlier format stored its own. A store holding any other version is emptied
 // on open and refills from its peers.
-const formatVersion uint64 = 4
+const formatVersion uint64 = 5
 
 // Common errors.
 var (
@@ -267,10 +266,22 @@ type Datastore struct {
 	opts   *Options
 	logger logging.StandardLogger
 
+	// store is raw behind the journal, which marks every state record
+	// written through it.
 	store     ds.Datastore
+	raw       ds.Datastore
+	journal   *journal
 	namespace ds.Key
 	set       *set
 	heads     *heads
+	// base is the state's trees as they were when the journal was last
+	// emptied. Guarded by mu.
+	base stateBase
+	// gcMu serializes every change of what owns a state block with reclaim,
+	// and guards staged, the blocks operations in progress will acquire.
+	// It is taken after mu.
+	gcMu   sync.Mutex
+	staged map[cid.Cid]int
 
 	dagService       ipld.DAGService
 	broadcaster      Broadcaster
@@ -440,6 +451,7 @@ func NewDatastore(
 		oks:              map[string]*ok{},
 		erased:           map[string]*known{},
 		pendingAt:        none,
+		staged:           map[cid.Cid]int{},
 	}
 	dstore.ttl.Store(durationMillis(opts.Retention))
 	dstore.times = timesOf(opts)
@@ -458,6 +470,10 @@ func NewDatastore(
 			}
 		},
 	}
+	dstore.raw = store
+	dstore.journal = newJournal(store, namespace, dstore.set)
+	dstore.store = &journaled{Datastore: store, j: dstore.journal}
+	dstore.set.store = dstore.store
 
 	if err := dstore.open(ctx); err != nil {
 		cancel()
@@ -517,6 +533,9 @@ func (store *Datastore) open(ctx context.Context) error {
 	if err := store.checkFormat(ctx); err != nil {
 		return err
 	}
+	if err := store.replay(ctx); err != nil {
+		return err
+	}
 
 	var err error
 	if store.heads, err = newHeads(ctx, store.store, store.namespace.ChildString(headsNs)); err != nil {
@@ -524,6 +543,9 @@ func (store *Datastore) open(ctx context.Context) error {
 	}
 	if store.cc, err = store.loadContext(ctx); err != nil {
 		return fmt.Errorf("error loading the causal context: %w", err)
+	}
+	if store.base, err = store.loadBase(ctx); err != nil {
+		return fmt.Errorf("error loading the state base: %w", err)
 	}
 	if store.erased, err = store.loadErased(ctx); err != nil {
 		return fmt.Errorf("error loading the erased dots: %w", err)
@@ -541,6 +563,9 @@ func (store *Datastore) open(ctx context.Context) error {
 	store.ccRead.Store(store.cc)
 	if err := store.dropOrphans(ctx); err != nil {
 		return fmt.Errorf("error dropping unmerged blocks: %w", err)
+	}
+	if _, err := store.reclaim(ctx); err != nil {
+		return fmt.Errorf("error removing unowned state blocks: %w", err)
 	}
 	if store.liveCount, err = countPrefix(ctx, store.store, store.set.elemsPrefix()); err != nil {
 		return err
@@ -634,8 +659,8 @@ func (store *Datastore) checkFormat(ctx context.Context) error {
 			return nil
 		}
 		store.logger.Warnf("crdt store at %s is in another format; emptying it", store.namespace)
-		t := newTxn(store.store)
-		if err := scanStore(ctx, store.store, store.namespace, func(k string, _ []byte) error {
+		t := newTxn(store.raw)
+		if err := scanStore(ctx, store.raw, store.namespace, func(k string, _ []byte) error {
 			t.del(ds.RawKey(k))
 			return nil
 		}); err != nil {
@@ -1034,6 +1059,15 @@ func (store *Datastore) sendNewJobs(ctx context.Context, gen uint64, session *sy
 		return nil
 	}
 
+	// What is fetched is marked first: a crash before its merge indexes it
+	// leaves it to reclaim, not held by nothing for ever.
+	if err := store.stage(ctx, fetch, true); err != nil {
+		store.unstage(fetch)
+		for _, c := range fetch {
+			store.queuedChildren.Remove(c)
+		}
+		return err
+	}
 	cctx, cancel := context.WithTimeout(ctx, store.opts.DAGSyncerTimeout)
 	defer cancel()
 	waiting := make([]dot, 0, len(fetch))
@@ -1069,6 +1103,7 @@ func (store *Datastore) sendNewJobs(ctx context.Context, gen uint64, session *sy
 			for _, c := range fetch {
 				if _, ok := queued[c]; !ok || c == job.node.Cid() {
 					store.queuedChildren.Remove(c)
+					store.unstage([]cid.Cid{c})
 				}
 			}
 			return errors.Join(append(errs, ctx.Err())...)
@@ -1084,6 +1119,7 @@ func (store *Datastore) sendNewJobs(ctx context.Context, gen uint64, session *sy
 			continue
 		}
 		store.queuedChildren.Remove(c)
+		store.unstage([]cid.Cid{c})
 		if d := dots[c]; d.isZero() || !store.covered(d) {
 			stillMissing++
 		}
@@ -1155,33 +1191,29 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 	// Release the reservation whether or not the merge succeeds, or a
 	// failed block would stay reserved and stall every later walk of it.
 	defer store.queuedChildren.Remove(current)
+	defer store.unstage([]cid.Cid{current})
 
 	// A block stamped ahead of this replica's clock by more than the skew
 	// waits for the clock: a clock far ahead delays only its owner's writes.
 	if store.ahead(delta.GetAt()) {
-		store.dropFailed(ctx, current, nil)
+		store.dropFailed(ctx, current)
 		return nil, fmt.Errorf("block %s: %w", current, errAhead)
 	}
 
-	var elems []*pb.Element
-	var chunks []cid.Cid
 	if delta.GetSnapshot() {
-		var err error
-		if chunks, elems, err = store.fetchChunks(ctx, ng, delta); err != nil {
-			// What was fetched is not indexed, and nothing would ever
-			// purge it; the next walk fetches it again.
-			var fetched []cid.Cid
-			for _, b := range delta.GetChunks() {
-				if c, cerr := cid.Cast(b); cerr == nil {
-					fetched = append(fetched, c)
-				}
-			}
-			store.dropFailed(ctx, current, fetched)
+		staged, err := store.fetchState(ctx, ng, delta)
+		defer store.unstage(staged)
+		if err != nil {
+			store.dropFailed(ctx, current)
 			return nil, fmt.Errorf("error fetching snapshot %s: %w", current, err)
 		}
-		if store.carriesAhead(delta, elems) {
-			store.dropFailed(ctx, current, chunks)
-			return nil, fmt.Errorf("snapshot %s: %w", current, errAhead)
+		ahead, err := store.carriesAhead(ctx, delta)
+		if err != nil || ahead {
+			store.dropFailed(ctx, current)
+			if err == nil {
+				err = errAhead
+			}
+			return nil, fmt.Errorf("snapshot %s: %w", current, err)
 		}
 	}
 
@@ -1194,23 +1226,28 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 		if _, err := store.dropTaken(ctx, taken); err != nil {
 			store.logger.Warnf("error purging what snapshot %s covers: %s", current, err)
 		}
+		if delta.GetSnapshot() {
+			if _, err := store.reclaim(ctx); err != nil {
+				store.logger.Warnf("error removing unowned state blocks: %s", err)
+			}
+		}
 	}()
 
 	// What has expired goes before the merge reads the context, whether or
 	// not maintenance has run since: an entry kept past its expiry would
 	// refuse what every replica that forgot it admits.
 	if _, err := store.expireLocked(ctx); err != nil {
-		store.dropFailed(ctx, current, chunks)
+		store.dropFailed(ctx, current)
 		return nil, err
 	}
 	d := dotFromPB(delta.GetDot())
 	if store.cc.covers(d) || gen != store.generation {
-		return nil, store.dropUnindexed(ctx, current, chunks)
+		return nil, store.dropUnindexed(ctx, current)
 	}
 	// A block a purge has taken merges once the purge is done: the copy
 	// fetched may be the one it is dropping.
-	if store.purging.Has(current) || slices.ContainsFunc(chunks, store.purging.Has) {
-		store.dropFailed(ctx, current, chunks)
+	if store.purging.Has(current) {
+		store.dropFailed(ctx, current)
 		return nil, fmt.Errorf("block %s: %w", current, errTaken)
 	}
 	if !delta.GetSnapshot() {
@@ -1223,21 +1260,25 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 			// Too old to be merged: what it added that is still live is
 			// in a snapshot by now, and what it removed may already be
 			// forgotten.
-			return nil, store.unmerged(ctx, current, d, nil, delta.GetAt())
+			return nil, store.unmerged(ctx, current, d, delta.GetAt())
 		}
 		walk, err := store.mergeDelta(ctx, current, delta)
 		if err != nil {
-			store.dropFailed(ctx, current, nil)
+			store.dropFailed(ctx, current)
 			return nil, fmt.Errorf("error merging delta from %s: %w", current, err)
 		}
 		store.afterMerge(ctx)
 		return walk, nil
 	}
 	if d.replica != store.replica {
-		since := snapshotSince(delta, elems)
+		since, err := store.snapshotSince(ctx, delta, store.dagService)
+		if err != nil {
+			store.dropFailed(ctx, current)
+			return nil, err
+		}
 		stale, err := store.stale(ctx, since)
 		if err != nil {
-			store.dropFailed(ctx, current, chunks)
+			store.dropFailed(ctx, current)
 			return nil, err
 		}
 		if stale {
@@ -1245,12 +1286,12 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 			// this replica can no longer refute: what it holds may have
 			// been removed, and it is never merged.
 			store.logger.Warnf("refusing snapshot %s: written by a replica that had heard nothing since %d", current, since)
-			return nil, store.unmerged(ctx, current, d, chunks, 0)
+			return nil, store.unmerged(ctx, current, d, 0)
 		}
 	}
-	walk, theirs, err := store.mergeSnapshot(ctx, current, delta, chunks, elems)
+	walk, theirs, err := store.mergeSnapshot(ctx, current, delta, store.dagService)
 	if err != nil {
-		store.dropFailed(ctx, current, chunks)
+		store.dropFailed(ctx, current)
 		return nil, fmt.Errorf("error merging snapshot %s: %w", current, err)
 	}
 	if taken, err = store.purge(ctx, theirs); err != nil {
@@ -1275,10 +1316,10 @@ func (store *Datastore) afterMerge(ctx context.Context) {
 }
 
 // unmerged settles a block that will never be merged: nothing waits for it
-// any more, the blocks fetched for it go, and the horizon takes forgot, the
+// any more, the block fetched for it goes, and the horizon takes forgot, the
 // time of what it taught if that is being forgotten. The caller holds
 // store.mu.
-func (store *Datastore) unmerged(ctx context.Context, c cid.Cid, d dot, chunks []cid.Cid, forgot uint64) error {
+func (store *Datastore) unmerged(ctx context.Context, c cid.Cid, d dot, forgot uint64) error {
 	m := store.beginMerge()
 	m.horizon = max(m.horizon, forgot)
 	m.t.del(store.missingKey(d))
@@ -1286,65 +1327,84 @@ func (store *Datastore) unmerged(ctx context.Context, c cid.Cid, d dot, chunks [
 	if err := m.commit(ctx); err != nil {
 		return err
 	}
-	return store.dropUnindexed(ctx, c, chunks)
+	return store.dropUnindexed(ctx, c)
 }
 
-// dropUnindexed removes blocks fetched for a dot this replica already covers
-// and never indexed: no purge would find them otherwise.
-func (store *Datastore) dropUnindexed(ctx context.Context, root cid.Cid, chunks []cid.Cid) error {
-	var drop []cid.Cid
-	for _, c := range append([]cid.Cid{root}, chunks...) {
-		held, err := store.isIndexed(ctx, c)
-		if err != nil {
-			return err
-		}
-		if !held {
-			drop = append(drop, c)
-		}
+// dropUnindexed removes a block fetched for a dot this replica already
+// covers and never indexed: no purge would find it otherwise. What a
+// snapshot's state brought is not owned, and goes with the next reclaim.
+func (store *Datastore) dropUnindexed(ctx context.Context, c cid.Cid) error {
+	held, err := store.isIndexed(ctx, c)
+	if err != nil || held {
+		return err
 	}
-	if len(drop) == 0 {
-		return nil
-	}
-	return store.dagService.RemoveMany(ctx, drop)
+	return store.dagService.Remove(ctx, c)
 }
 
-// dropFailed removes the fetched blocks of a merge that failed: they are not
-// indexed, so if a snapshot covers them before the retry nothing would.
-func (store *Datastore) dropFailed(ctx context.Context, root cid.Cid, chunks []cid.Cid) {
-	if err := store.dropUnindexed(ctx, root, chunks); err != nil {
+// dropFailed removes the fetched block of a merge that failed: it is not
+// indexed, so if a snapshot covers it before the retry nothing would.
+func (store *Datastore) dropFailed(ctx context.Context, c cid.Cid) {
+	if err := store.dropUnindexed(ctx, c); err != nil {
 		store.logger.Warnf("error dropping the blocks of a failed merge: %s", err)
 	}
 }
 
-// fetchChunks fetches a snapshot's chunk blocks and returns them with every
-// element of the snapshot, root included.
-func (store *Datastore) fetchChunks(ctx context.Context, ng *crdtNodeGetter, root *pb.Delta) ([]cid.Cid, []*pb.Element, error) {
-	elems := append([]*pb.Element(nil), root.GetElements()...)
-	if len(root.GetChunks()) == 0 {
-		return nil, elems, nil
-	}
-	chunks := make([]cid.Cid, 0, len(root.GetChunks()))
-	for _, b := range root.GetChunks() {
-		c, err := cid.Cast(b)
-		if err != nil {
-			return nil, nil, err
-		}
-		chunks = append(chunks, c)
+// fetchState fetches every block of a snapshot's state this replica does
+// not own, level by level, so a peer that shares most of it with this
+// replica sends only the nodes on the paths that changed. Every block of
+// the state is staged first, the ones not owned marked for removal, until
+// the merge acquires them or reclaim removes them; it returns them for
+// unstage.
+func (store *Datastore) fetchState(ctx context.Context, ng *crdtNodeGetter, root *pb.Delta) ([]cid.Cid, error) {
+	stc, err := cid.Cast(root.GetState())
+	if err != nil {
+		return nil, fmt.Errorf("no state: %w", err)
 	}
 	cctx, cancel := context.WithTimeout(ctx, store.opts.DAGSyncerTimeout)
 	defer cancel()
-	got := 0
-	for opt := range ng.GetDeltas(cctx, chunks) {
-		if opt.err != nil {
-			return nil, nil, opt.err
+	var staged []cid.Cid
+	seen := map[cid.Cid]struct{}{stc: {}}
+	frontier := []cid.Cid{stc}
+	for len(frontier) > 0 {
+		var owned, want []cid.Cid
+		for _, c := range frontier {
+			has, err := store.store.Has(ctx, store.ownedKey(c))
+			if err != nil {
+				return staged, err
+			}
+			if has {
+				owned = append(owned, c)
+			} else {
+				want = append(want, c)
+			}
 		}
-		elems = append(elems, opt.delta.GetElements()...)
-		got++
+		staged = append(staged, owned...)
+		if err := store.stage(ctx, owned, false); err != nil {
+			return staged, err
+		}
+		staged = append(staged, want...)
+		if err := store.stage(ctx, want, true); err != nil {
+			return staged, err
+		}
+		frontier = nil
+		got := 0
+		for opt := range ng.GetMany(cctx, want) {
+			if opt.Err != nil {
+				return staged, opt.Err
+			}
+			got++
+			for _, l := range opt.Node.Links() {
+				if _, ok := seen[l.Cid]; !ok {
+					seen[l.Cid] = struct{}{}
+					frontier = append(frontier, l.Cid)
+				}
+			}
+		}
+		if got != len(want) {
+			return staged, fmt.Errorf("fetched %d of %d state blocks", got, len(want))
+		}
 	}
-	if got != len(chunks) {
-		return nil, nil, fmt.Errorf("fetched %d of %d chunks", got, len(chunks))
-	}
-	return chunks, elems, nil
+	return staged, nil
 }
 
 // repairDAG retries every parent a merged block links and this replica does
@@ -1711,15 +1771,11 @@ type blockAt struct {
 
 // writeBlocks indexes blocks this replica authors before writing them, so a
 // crash before the merge that covers them leaves an index entry with a dot
-// the context does not cover, which the next open drops with its block. The
-// last node is the block itself, the ones before it its chunks.
+// the context does not cover, which the next open drops with its block.
 func (store *Datastore) writeBlocks(ctx context.Context, b block, nodes ...ipld.Node) error {
 	blocks := make([]blockAt, len(nodes))
 	for i, nd := range nodes {
 		blocks[i] = blockAt{node: nd, kind: b.kind}
-		if i < len(nodes)-1 {
-			blocks[i].kind = kindChunk
-		}
 	}
 	t := newTxn(store.store)
 	for _, ba := range blocks {
@@ -1787,11 +1843,7 @@ func (store *Datastore) dropOrphans(ctx context.Context) error {
 	if err := store.dagService.RemoveMany(ctx, orphans); err != nil {
 		return err
 	}
-	t := newTxn(store.store)
-	for _, c := range orphans {
-		t.del(store.blockKey(c))
-	}
-	return t.commit(ctx)
+	return store.unindex(ctx, orphans)
 }
 
 func (store *Datastore) broadcastHeads(ctx context.Context, heads []Head) error {

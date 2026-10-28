@@ -1,3 +1,5 @@
 // Package pb contains generated protobuf types. Regenerate with
-// `make proto-v2` from the repository root.
+// `go generate` in this directory.
 package pb
+
+//go:generate buf generate

@@ -3,7 +3,6 @@ package kvdb
 import (
 	"context"
 	"fmt"
-	"maps"
 	"testing"
 
 	cid "github.com/ipfs/go-cid"
@@ -209,8 +208,16 @@ func TestACoveredBlockIsNeverFetched(t *testing.T) {
 	defer f.Close()
 
 	syncReplicaHeads(t, a, f)
-	if got := dag.take(); !maps.Equal(got, map[cid.Cid]int{snapshot: 1}) {
-		t.Errorf("syncing a snapshot fetched %v, want the snapshot %s alone", got, snapshot)
+	got := dag.take()
+	if got[snapshot] != 1 {
+		t.Errorf("syncing a snapshot fetched it %d times", got[snapshot])
+	}
+	delete(got, snapshot)
+	for _, c := range stateBlocks(t, a, snapshot) {
+		delete(got, c)
+	}
+	if len(got) != 0 {
+		t.Errorf("syncing a snapshot fetched %v, want the snapshot %s and its state alone", got, snapshot)
 	}
 	if n, err := countPrefix(ctx, f.store, f.missingPrefix()); err != nil || n != 0 {
 		t.Errorf("the fresh replica records %d covered parents as missing (%v)", n, err)

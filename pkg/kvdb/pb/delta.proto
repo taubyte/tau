@@ -47,26 +47,21 @@ message Context {
   repeated Span cloud = 2;
 }
 
+// A Delta is a block: a plain delta, whose elements and tombstones are what
+// it writes, or a snapshot, whose state is named by state.
 message Delta {
   repeated Element elements = 1;
-  // tombstones name the (key, dot) versions this delta removes. In a
-  // snapshot they are the removals whose target dot is not yet covered.
+  // tombstones name the (key, dot) versions this delta removes.
   repeated Element tombstones = 2;
   uint64 priority = 3;
-  reserved 4, 6, 7;
-  reserved "dagName", "snapshotTotal", "snapshotId";
+  reserved 4, 6, 7, 11, 12;
+  reserved "dagName", "snapshotTotal", "snapshotId", "context", "chunks";
   bool snapshot = 5;
   Dot dot = 8;
   // prev is the author's counter for its previous delta in the same
   // incarnation, 0 for its first.
   uint64 prev = 9;
   repeated Parent parents = 10;
-  // context is, in a snapshot, the compactor's causal context when it
-  // compacted; it does not include the snapshot's own dot.
-  Context context = 11;
-  // chunks are the CIDs of the blocks holding the rest of a snapshot's
-  // elements, fetched with it and merged as one.
-  repeated bytes chunks = 12;
   // at is when the author wrote this block, in milliseconds since the epoch:
   // the later of its clock and the fleet time it had last heard.
   uint64 at = 13;
@@ -79,22 +74,21 @@ message Delta {
   // horizon is the latest authored time of anything the author has
   // forgotten because it expired.
   uint64 horizon = 16;
+  // state is, in a snapshot, the CID of the StateRoot block holding the
+  // state it carries (see state.proto).
+  bytes state = 17;
 }
 
 message Element {
   string key = 1;
-  reserved 2;
-  reserved "id";
+  reserved 2, 4;
+  reserved "id", "priority";
   bytes value = 3;
-  // priority is the element's own priority in snapshots; in a plain delta
-  // every element takes the delta's priority.
-  uint64 priority = 4;
-  // dot is the element's dot in snapshots and the target's dot in
-  // tombstones; a plain delta's elements take the delta's dot.
+  // dot is the target's dot in a tombstone; a delta's elements take the
+  // delta's dot.
   Dot dot = 5;
-  // at and ttl are, for an element in a snapshot, the stamps of the delta
-  // that wrote it; for a tombstone, when the removal was written and how long
-  // it is needed, which is never less than its target is.
+  // at and ttl are, for a tombstone, when the removal was written and how
+  // long it is needed, which is never less than its target is.
   uint64 at = 6;
   uint64 ttl = 7;
 }

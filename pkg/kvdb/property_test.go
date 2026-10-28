@@ -69,16 +69,12 @@ func liveIDs(t testing.TB, r *Datastore) []string {
 }
 
 // indexedBlocks is every block r holds that a walk could reach: deltas and
-// snapshot roots, not chunks.
+// snapshots, not the blocks of their states.
 func indexedBlocks(t testing.TB, r *Datastore) []cid.Cid {
 	t.Helper()
 	var out []cid.Cid
 	prefix := r.blocksPrefix()
-	err := scanStore(context.Background(), r.store, prefix, func(k string, v []byte) error {
-		b, err := decodeBlock(v)
-		if err != nil || b.kind == kindChunk {
-			return err
-		}
+	err := scanStore(context.Background(), r.store, prefix, func(k string, _ []byte) error {
 		c, err := cidOfBlockKey(prefix, k)
 		if err != nil {
 			return err

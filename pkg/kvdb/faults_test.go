@@ -474,12 +474,16 @@ func TestMergeRefusesMalformedBlocks(t *testing.T) {
 	if _, err := r.mergeDelta(ctx, cid.Undef, &pb.Delta{}); err == nil {
 		t.Error("a delta without a dot merged")
 	}
-	if _, _, err := r.mergeSnapshot(ctx, cid.Undef, &pb.Delta{Snapshot: true}, nil, nil); err == nil {
+	if _, _, err := r.mergeSnapshot(ctx, cid.Undef, &pb.Delta{Snapshot: true}, r.dagService); err == nil {
 		t.Error("a snapshot without a dot merged")
 	}
 	d := dot{replica: "x", counter: 1}
-	if _, _, err := r.mergeSnapshot(ctx, cid.Undef, &pb.Delta{Snapshot: true, Dot: d.toPB()}, nil,
-		[]*pb.Element{{Key: "/k"}}); err == nil {
+	if _, _, err := r.mergeSnapshot(ctx, cid.Undef, &pb.Delta{Snapshot: true, Dot: d.toPB()}, r.dagService); err == nil {
+		t.Error("a snapshot without a state merged")
+	}
+	noDot := elemTreeKey("/k", dot{replica: "x"})
+	state := putState(t, r.dagService, map[string][]byte{string(noDot): elemValue(element{})}, nil, nil)
+	if _, _, err := r.mergeSnapshot(ctx, cid.Undef, &pb.Delta{Snapshot: true, Dot: d.toPB(), State: state.Bytes()}, r.dagService); err == nil {
 		t.Error("a snapshot holding an element with no dot merged")
 	}
 	if _, err := r.mergeDelta(ctx, cid.Undef, &pb.Delta{Dot: d.toPB(), Parents: []*pb.Parent{{Cid: []byte{1}}}}); err == nil {
@@ -502,24 +506,28 @@ func TestAChunkIsNotADelta(t *testing.T) {
 	}
 }
 
-func TestASnapshotWithAMissingChunkIsNotMerged(t *testing.T) {
+func TestASnapshotWithAMissingStateIsNotMerged(t *testing.T) {
 	ctx := context.Background()
 	replicas, _, done := makeNReplicasSeparateStores(t, 1, noAutoCompact())
 	defer done()
 	r := replicas[0]
-	root := &pb.Delta{Snapshot: true, Dot: dot{replica: "x", counter: 1}.toPB(), Chunks: [][]byte{{1, 2}}}
-	if _, _, err := r.fetchChunks(ctx, &crdtNodeGetter{r.dagService}, root); err == nil {
-		t.Fatal("a broken chunk cid was accepted")
+	root := &pb.Delta{Snapshot: true, Dot: dot{replica: "x", counter: 1}.toPB(), State: []byte{1, 2}}
+	staged, err := r.fetchState(ctx, &crdtNodeGetter{r.dagService}, root)
+	r.unstage(staged)
+	if err == nil {
+		t.Fatal("a broken state cid was accepted")
 	}
-	missing, err := makeNode(&pb.Delta{}, nil)
+	missing, err := stateRoot{}.node()
 	if err != nil {
 		t.Fatal(err)
 	}
-	root.Chunks = [][]byte{missing.Cid().Bytes()}
+	root.State = missing.Cid().Bytes()
 	cctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
-	if _, _, err := r.fetchChunks(cctx, &crdtNodeGetter{r.dagService}, root); err == nil {
-		t.Fatal("a chunk nobody holds was fetched")
+	staged, err = r.fetchState(cctx, &crdtNodeGetter{r.dagService}, root)
+	r.unstage(staged)
+	if err == nil {
+		t.Fatal("a state nobody holds was fetched")
 	}
 }
 
