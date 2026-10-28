@@ -163,7 +163,7 @@ func (o *op) insert(r ref, below uint32, e entry, lvl uint32) (ref, bool, error)
 		return ref{}, false, err
 	}
 	if lvl > n.level {
-		l, rt, err := o.splitNode(n, e.key)
+		l, rt, err := o.splitNode(n, r, e.key)
 		if err != nil {
 			return ref{}, false, err
 		}
@@ -218,14 +218,22 @@ func (o *op) split(r ref, below uint32, key []byte) (ref, ref, error) {
 	if err != nil {
 		return ref{}, ref{}, err
 	}
-	return o.splitNode(n, key)
+	return o.splitNode(n, r, key)
 }
 
-func (o *op) splitNode(n *node, key []byte) (ref, ref, error) {
+// splitNode splits n, whose ref is self. A side that keeps all of n is
+// self, not a copy of it.
+func (o *op) splitNode(n *node, self ref, key []byte) (ref, ref, error) {
 	i, _ := n.search(key)
 	l, r, err := o.split(n.kids[i], n.level, key)
 	if err != nil {
 		return ref{}, ref{}, err
+	}
+	switch {
+	case i == 0 && r.c == n.kids[0].c:
+		return l, self, nil
+	case i == len(n.entries) && l.c == n.kids[i].c:
+		return self, r, nil
 	}
 	if i > 0 {
 		kids := append(append(make([]ref, 0, i+1), n.kids[:i]...), l)
