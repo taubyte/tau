@@ -512,9 +512,8 @@ func TestASnapshotWithAMissingStateIsNotMerged(t *testing.T) {
 	defer done()
 	r := replicas[0]
 	root := &pb.Delta{Snapshot: true, Dot: dot{replica: "x", counter: 1}.toPB(), State: []byte{1, 2}}
-	staged, err := r.fetchState(ctx, &crdtNodeGetter{r.dagService}, root)
-	r.unstage(staged)
-	if err == nil {
+	f, err := r.fetchState(ctx, &crdtNodeGetter{r.dagService}, cid.Undef, root)
+	if f != nil || err == nil {
 		t.Fatal("a broken state cid was accepted")
 	}
 	missing, err := stateRoot{}.node()
@@ -524,8 +523,8 @@ func TestASnapshotWithAMissingStateIsNotMerged(t *testing.T) {
 	root.State = missing.Cid().Bytes()
 	cctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
-	staged, err = r.fetchState(cctx, &crdtNodeGetter{r.dagService}, root)
-	r.unstage(staged)
+	f, err = r.fetchState(cctx, &crdtNodeGetter{r.dagService}, cid.Undef, root)
+	r.leaveFetch(f, true)
 	if err == nil {
 		t.Fatal("a state nobody holds was fetched")
 	}

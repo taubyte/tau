@@ -517,7 +517,7 @@ func (store *Datastore) snapshotSince(ctx context.Context, root *pb.Delta, dags 
 }
 
 // maintain is one pass of what time does to a store: forget what expired,
-// drop the blocks nobody needs, and compact when a held block is half way to
+// drop the state fetches and the blocks nobody needs, and compact when a held block is half way to
 // its expiry or something the last snapshot carries has been forgotten.
 func (store *Datastore) maintain(ctx context.Context) error {
 	store.mu.Lock()
@@ -539,7 +539,9 @@ func (store *Datastore) maintain(ctx context.Context) error {
 	if err == nil && !due {
 		due, err = store.refreshDue(ctx)
 	}
+	dropClock := store.dropClock()
 	store.mu.Unlock()
+	store.sweepFetches(dropClock)
 	if _, derr := store.dropTaken(ctx, ancient); err == nil {
 		err = derr
 	}

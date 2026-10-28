@@ -64,6 +64,10 @@ var (
 	snapChanges = []int{1, 10, 100}
 )
 
+// stalledAttempts is how many repairs in a row that fetch no state block
+// end a catch-up.
+const stalledAttempts = 3
+
 // snapStore is a Datastore over its own pebble store, metered.
 type snapStore struct {
 	r  *Datastore
@@ -141,14 +145,28 @@ func (f *snapStore) Compact(ctx context.Context) error {
 
 func (f *snapStore) Maintain(ctx context.Context) error { return f.r.maintain(ctx) }
 
+// CatchUp walks from's heads, then repairs as the repair loop would until
+// nothing is missing: a state larger than one fetch attempt arrives over
+// several. It gives up after stalledAttempts repairs in a row that fetch
+// no state block.
 func (f *snapStore) CatchUp(ctx context.Context, from snapReplica) error {
 	hs, _ := from.(*snapStore).r.heads.List()
+	var err error
 	for _, h := range hs {
-		if err := f.r.handleBlock(ctx, h); err != nil {
+		err = errors.Join(err, f.r.handleBlock(ctx, h))
+	}
+	for stalled := 0; f.r.IsDirty(ctx); {
+		before := f.r.stateFetched(ctx)
+		if err = f.r.Repair(ctx); err == nil {
+			break
+		}
+		if f.r.stateFetched(ctx) > before {
+			stalled = 0
+		} else if stalled++; stalled == stalledAttempts {
 			return err
 		}
 	}
-	return nil
+	return err
 }
 
 func (f *snapStore) Close() error { return errors.Join(f.r.Close(), f.st.Close()) }

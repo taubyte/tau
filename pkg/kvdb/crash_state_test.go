@@ -326,6 +326,26 @@ func TestACrashAtAnyWriteRecovers(t *testing.T) {
 
 func sameKV(a, b map[string][]byte) bool { return maps.EqualFunc(a, b, bytes.Equal) }
 
+// A stateFault fails op, on the keys under prefix if it names one.
+type stateFault struct{ op, prefix string }
+
+// stateFaults is every kind of operation on every kind of key a state lives
+// under, and each operation that names no key.
+func stateFaults() []stateFault {
+	keyed := []string{"Get", "Put", "Delete", "Has", "Query", "BatchPut", "BatchDelete"}
+	prefixes := []string{"/j/", "/n/", "/x/", "/sr", "/w", "/b/", "/s/e/", "/s/t/", "/c/"}
+	var faults []stateFault
+	for _, p := range prefixes {
+		for _, op := range keyed {
+			faults = append(faults, stateFault{op, p})
+		}
+	}
+	for _, op := range []string{"Batch", "Commit", "Sync"} {
+		faults = append(faults, stateFault{op, ""})
+	}
+	return append(faults, stateFault{"none", ""})
+}
+
 // TestAStateStoreFaultIsSurvived fails, in turn, each kind of operation on
 // each kind of key a state lives under while a replica compacts, merges a
 // peer's snapshot that shares part of its state and compacts again. Once
@@ -334,20 +354,7 @@ func sameKV(a, b map[string][]byte) bool { return maps.EqualFunc(a, b, bytes.Equ
 // roots', and it holds no block nothing indexes or owns.
 func TestAStateStoreFaultIsSurvived(t *testing.T) {
 	ctx := context.Background()
-	keyed := []string{"Get", "Put", "Delete", "Has", "Query", "BatchPut", "BatchDelete"}
-	prefixes := []string{"/j/", "/n/", "/x/", "/sr", "/w", "/b/", "/s/e/", "/s/t/", "/c/"}
-	type fault struct{ op, prefix string }
-	var faults []fault
-	for _, p := range prefixes {
-		for _, op := range keyed {
-			faults = append(faults, fault{op, p})
-		}
-	}
-	for _, op := range []string{"Batch", "Commit", "Sync"} {
-		faults = append(faults, fault{op, ""})
-	}
-	faults = append(faults, fault{"none", ""})
-	for _, f := range faults {
+	for _, f := range stateFaults() {
 		t.Run(f.op+f.prefix, func(t *testing.T) {
 			store := newFaultyDatastore(ds.NewMapDatastore())
 			own := &removeFailing{fetchThroughDAGSvc: newFetchThrough()}
@@ -406,6 +413,169 @@ func TestAStateStoreFaultIsSurvived(t *testing.T) {
 			}
 			if got := queryAll(t, r); !sameKV(got, want) {
 				t.Fatalf("healed, the replica holds %v, want %v", got, want)
+			}
+			assertTreesMatch(t, r)
+			assertCounts(t, r)
+			assertNoLeak(t, r, own.fetchThroughDAGSvc)
+		})
+	}
+}
+
+// TestACrashInAResumedFetchRecovers kills a replica at each write, in turn,
+// of a catch-up that goes on from an attempt that fetched part of a peer's
+// state, with maintenance and its reclaim between attempts, and of the
+// compaction after it. What it left on disk holds the state of before the
+// merge or of after it, its trees are its records, every reference count is
+// its roots', and once it catches up again and compacts it holds the peer's
+// state and no block that nothing indexes or owns.
+func TestACrashInAResumedFetchRecovers(t *testing.T) {
+	ctx := context.Background()
+	// The peer only serves its state, so one does for every crash.
+	peerDag := newFetchThrough()
+	peer := manualReplica(t, dssync.MutexWrap(ds.NewMapDatastore()), peerDag, "peer: ")
+	defer peer.Close()
+	seedKeys(t, peer, 60, "p")
+	compact(t, peer)
+	per := len(stateClosure(t, peer))/3 + 1
+	for at := 0; at < 20000; at++ {
+		inner := dssync.MutexWrap(ds.NewMapDatastore())
+		own := newFetchThrough()
+		c := &crashPoint{t: t, at: -1, store: inner, dag: own}
+		r := manualReplica(t, &crashStore{Datastore: inner, c: c}, &crashDAG{fetchThroughDAGSvc: own, c: c}, "crashing: ")
+		link := newRationed(peerDag.DAGService)
+		own.setRemotes(link)
+
+		for i := range 4 {
+			put(t, r, fmt.Sprintf("/r%02d", i), fmt.Sprintf("v%d", i))
+		}
+		compact(t, r)
+		before := queryAll(t, r)
+		after := maps.Clone(before)
+		maps.Copy(after, queryAll(t, peer))
+		link.refill(per)
+		syncHeadsLogged(t, peer, r)
+		if !r.IsDirty(ctx) {
+			t.Fatal("the first attempt fetched the whole state")
+		}
+
+		c.arm(at)
+		err := func() error {
+			if _, err := attemptCatchUp(t, r, peer, link, per, 50); err != nil {
+				return err
+			}
+			_, err := r.Compact(ctx)
+			return err
+		}()
+		if !c.crashed {
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := queryAll(t, r); !sameKV(got, after) {
+				t.Fatalf("without a crash the replica holds %d keys, want %d", len(got), len(after))
+			}
+			assertTreesMatch(t, r)
+			assertCounts(t, r)
+			assertNoLeak(t, r, own)
+			if at < 50 {
+				t.Fatalf("the run wrote only %d times", at)
+			}
+			t.Logf("%d writes, %d state blocks fetched %d at a time", at, len(stateClosure(t, peer)), per)
+			r.Close()
+			return
+		}
+		r.Close()
+
+		if err := c.disk.Put(ctx, ds.NewKey("crdttest").ChildString(badShutdownKey), nil); err != nil {
+			t.Fatal(err)
+		}
+		forgetIncarnation(r.incarnationKey())
+		c.blocks.setRemotes(peerDag.DAGService)
+		re := manualReplica(t, c.disk, c.blocks, "reopened: ")
+		got := queryAll(t, re)
+		if !sameKV(got, before) && !sameKV(got, after) {
+			t.Fatalf("crash at write %d: the replica holds %d keys, neither the %d of before nor the %d of after", at, len(got), len(before), len(after))
+		}
+		assertTreesMatch(t, re)
+		assertCounts(t, re)
+		syncReplicaHeads(t, peer, re)
+		if err := re.Repair(ctx); err != nil {
+			t.Fatalf("crash at write %d: %v", at, err)
+		}
+		compact(t, re)
+		if got := queryAll(t, re); !sameKV(got, after) {
+			t.Fatalf("crash at write %d: caught up again, the replica holds %d keys, want %d", at, len(got), len(after))
+		}
+		assertTreesMatch(t, re)
+		assertCounts(t, re)
+		assertNoLeak(t, re, c.blocks)
+		if t.Failed() {
+			t.Fatalf("crash at write %d", at)
+		}
+		re.Close()
+	}
+	t.Fatal("the run never ended")
+}
+
+// TestAStateStoreFaultInAResumedFetchIsSurvived fails, in turn, each kind of
+// operation on each kind of key a state lives under while a replica goes on
+// fetching a peer's state that one attempt fetched part of, with maintenance
+// and its reclaim between attempts, and compacts. Once the store heals and
+// the replica reopens and catches up again, it holds the peer's state, its
+// trees are its records, every reference count is its roots', and it holds
+// no block nothing indexes or owns.
+func TestAStateStoreFaultInAResumedFetchIsSurvived(t *testing.T) {
+	ctx := context.Background()
+	for _, f := range stateFaults() {
+		t.Run(f.op+f.prefix, func(t *testing.T) {
+			store := newFaultyDatastore(ds.NewMapDatastore())
+			own := &removeFailing{fetchThroughDAGSvc: newFetchThrough()}
+			r := manualReplica(t, store, own, "faulty: ")
+			peerDag := newFetchThrough()
+			peer := manualReplica(t, dssync.MutexWrap(ds.NewMapDatastore()), peerDag, "peer: ")
+			defer peer.Close()
+			link := newRationed(peerDag.DAGService)
+			own.setRemotes(link)
+			for i := range 10 {
+				put(t, r, fmt.Sprintf("/r%02d", i), fmt.Sprintf("v%d", i))
+			}
+			compact(t, r)
+			seedKeys(t, peer, 120, "p")
+			compact(t, peer)
+			want := queryAll(t, r)
+			maps.Copy(want, queryAll(t, peer))
+			per := len(stateClosure(t, peer))/3 + 1
+			link.refill(per)
+			syncHeadsLogged(t, peer, r)
+			if !r.IsDirty(ctx) {
+				t.Fatal("the first attempt fetched the whole state")
+			}
+
+			prefix := ds.NewKey("crdttest").String() + f.prefix
+			store.SetFail(func(op string, k ds.Key) error {
+				if op == f.op && (f.prefix == "" || strings.HasPrefix(k.String(), prefix)) {
+					return errFault
+				}
+				return nil
+			})
+			own.fail.Store(f.prefix == "/b/")
+			_, err := attemptCatchUp(t, r, peer, link, per, 20)
+			_, cerr := r.Compact(ctx)
+			t.Logf("with the fault: %v", errors.Join(err, cerr))
+			store.SetFail(nil)
+			own.fail.Store(false)
+
+			closeStore(t, r)
+			if err := store.Put(ctx, ds.NewKey("crdttest").ChildString(badShutdownKey), nil); err != nil {
+				t.Fatal(err)
+			}
+			r = manualReplica(t, store, own, "healed: ")
+			defer r.Close()
+			if _, err := attemptCatchUp(t, r, peer, link, per, 20); err != nil {
+				t.Fatalf("healed: %v", err)
+			}
+			compact(t, r)
+			if got := queryAll(t, r); !sameKV(got, want) {
+				t.Fatalf("healed, the replica holds %d keys, want %d", len(got), len(want))
 			}
 			assertTreesMatch(t, r)
 			assertCounts(t, r)

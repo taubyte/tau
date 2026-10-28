@@ -36,8 +36,9 @@ import (
 // indexing a fetched delta or snapshot, unmarks it. reclaim removes the
 // marked blocks that nothing owns or indexes and no operation in progress
 // has staged: a compaction or a fetch stages every block it will acquire or
-// index, so none goes before. After a crash nothing is staged, and whatever
-// a compaction or a fetch wrote and never kept goes.
+// index, so none goes before. A state fetch keeps its blocks staged across
+// attempts until it is dropped (see stateFetch). After a crash nothing is
+// staged, and whatever a compaction or a fetch wrote and never kept goes.
 const (
 	ownedNs    = "n"
 	reclaimNs  = "x"

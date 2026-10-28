@@ -282,6 +282,10 @@ type Datastore struct {
 	// It is taken after mu.
 	gcMu   sync.Mutex
 	staged map[cid.Cid]int
+	// fetches are the state fetches in progress, by state root (see
+	// stateFetch). fetchMu is taken alone.
+	fetchMu sync.Mutex
+	fetches map[cid.Cid]*stateFetch
 
 	dagService       ipld.DAGService
 	broadcaster      Broadcaster
@@ -452,6 +456,7 @@ func NewDatastore(
 		erased:           map[string]*known{},
 		pendingAt:        none,
 		staged:           map[cid.Cid]int{},
+		fetches:          map[cid.Cid]*stateFetch{},
 	}
 	dstore.ttl.Store(durationMillis(opts.Retention))
 	dstore.times = timesOf(opts)
@@ -1200,9 +1205,20 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 		return nil, fmt.Errorf("block %s: %w", current, errAhead)
 	}
 
+	// The state fetch is left before reclaim runs: once nothing is left to
+	// merge it for, what it staged goes with that reclaim.
+	var fetch *stateFetch
+	settled := false
+	leave := func() {
+		if fetch != nil {
+			store.leaveFetch(fetch, settled)
+			fetch = nil
+		}
+	}
+	defer leave()
 	if delta.GetSnapshot() {
-		staged, err := store.fetchState(ctx, ng, delta)
-		defer store.unstage(staged)
+		var err error
+		fetch, err = store.fetchState(ctx, ng, current, delta)
 		if err != nil {
 			store.dropFailed(ctx, current)
 			return nil, fmt.Errorf("error fetching snapshot %s: %w", current, err)
@@ -1226,6 +1242,7 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 		if _, err := store.dropTaken(ctx, taken); err != nil {
 			store.logger.Warnf("error purging what snapshot %s covers: %s", current, err)
 		}
+		leave()
 		if delta.GetSnapshot() {
 			if _, err := store.reclaim(ctx); err != nil {
 				store.logger.Warnf("error removing unowned state blocks: %s", err)
@@ -1242,6 +1259,7 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 	}
 	d := dotFromPB(delta.GetDot())
 	if store.cc.covers(d) || gen != store.generation {
+		settled = store.cc.covers(d)
 		return nil, store.dropUnindexed(ctx, current)
 	}
 	// A block a purge has taken merges once the purge is done: the copy
@@ -1286,6 +1304,7 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 			// this replica can no longer refute: what it holds may have
 			// been removed, and it is never merged.
 			store.logger.Warnf("refusing snapshot %s: written by a replica that had heard nothing since %d", current, since)
+			settled = true
 			return nil, store.unmerged(ctx, current, d, 0)
 		}
 	}
@@ -1294,6 +1313,7 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 		store.dropFailed(ctx, current)
 		return nil, fmt.Errorf("error merging snapshot %s: %w", current, err)
 	}
+	settled = true
 	if taken, err = store.purge(ctx, theirs); err != nil {
 		store.logger.Warnf("error purging what snapshot %s covers: %s", current, err)
 	}
@@ -1347,64 +1367,6 @@ func (store *Datastore) dropFailed(ctx context.Context, c cid.Cid) {
 	if err := store.dropUnindexed(ctx, c); err != nil {
 		store.logger.Warnf("error dropping the blocks of a failed merge: %s", err)
 	}
-}
-
-// fetchState fetches every block of a snapshot's state this replica does
-// not own, level by level, so a peer that shares most of it with this
-// replica sends only the nodes on the paths that changed. Every block of
-// the state is staged first, the ones not owned marked for removal, until
-// the merge acquires them or reclaim removes them; it returns them for
-// unstage.
-func (store *Datastore) fetchState(ctx context.Context, ng *crdtNodeGetter, root *pb.Delta) ([]cid.Cid, error) {
-	stc, err := cid.Cast(root.GetState())
-	if err != nil {
-		return nil, fmt.Errorf("no state: %w", err)
-	}
-	cctx, cancel := context.WithTimeout(ctx, store.opts.DAGSyncerTimeout)
-	defer cancel()
-	var staged []cid.Cid
-	seen := map[cid.Cid]struct{}{stc: {}}
-	frontier := []cid.Cid{stc}
-	for len(frontier) > 0 {
-		var owned, want []cid.Cid
-		for _, c := range frontier {
-			has, err := store.store.Has(ctx, store.ownedKey(c))
-			if err != nil {
-				return staged, err
-			}
-			if has {
-				owned = append(owned, c)
-			} else {
-				want = append(want, c)
-			}
-		}
-		staged = append(staged, owned...)
-		if err := store.stage(ctx, owned, false); err != nil {
-			return staged, err
-		}
-		staged = append(staged, want...)
-		if err := store.stage(ctx, want, true); err != nil {
-			return staged, err
-		}
-		frontier = nil
-		got := 0
-		for opt := range ng.GetMany(cctx, want) {
-			if opt.Err != nil {
-				return staged, opt.Err
-			}
-			got++
-			for _, l := range opt.Node.Links() {
-				if _, ok := seen[l.Cid]; !ok {
-					seen[l.Cid] = struct{}{}
-					frontier = append(frontier, l.Cid)
-				}
-			}
-		}
-		if got != len(want) {
-			return staged, fmt.Errorf("fetched %d of %d state blocks", got, len(want))
-		}
-	}
-	return staged, nil
 }
 
 // repairDAG retries every parent a merged block links and this replica does
