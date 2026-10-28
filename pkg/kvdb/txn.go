@@ -3,7 +3,6 @@ package kvdb
 import (
 	"context"
 	"sort"
-	"strings"
 
 	ds "github.com/ipfs/go-datastore"
 	query "github.com/ipfs/go-datastore/query"
@@ -16,10 +15,15 @@ type txn struct {
 	store  ds.Datastore
 	writes map[string][]byte // nil value: deleted
 	order  []string
+	// sorted orders the written keys, so a scan reads only the ones under
+	// its prefix: a merge scans once per key it touched.
+	sorted keyIndex
+	// steps counts the index nodes scans visited.
+	steps int
 }
 
 func newTxn(store ds.Datastore) *txn {
-	return &txn{store: store, writes: map[string][]byte{}}
+	return &txn{store: store, writes: map[string][]byte{}, sorted: keyIndex{root: -1}}
 }
 
 func (t *txn) put(k ds.Key, v []byte) {
@@ -36,6 +40,7 @@ func (t *txn) del(k ds.Key) {
 func (t *txn) set(k string, v []byte) {
 	if _, ok := t.writes[k]; !ok {
 		t.order = append(t.order, k)
+		t.sorted.insert(t.order)
 	}
 	t.writes[k] = v
 }
@@ -72,23 +77,102 @@ func (t *txn) scan(ctx context.Context, prefix ds.Key) ([]entry, error) {
 	}); err != nil {
 		return nil, err
 	}
-	p := prefix.String() + "/"
-	for k, v := range t.writes {
-		if !strings.HasPrefix(k, p) {
-			continue
-		}
-		if v == nil {
+	// Every key under p sorts in [p, p with its '/' raised to '0').
+	p := prefix.String()
+	t.steps += t.sorted.each(t.order, p+"/", p+"0", func(k string) {
+		if v := t.writes[k]; v == nil {
 			delete(found, k)
 		} else {
 			found[k] = v
 		}
-	}
+	})
 	out := make([]entry, 0, len(found))
 	for k, v := range found {
 		out = append(out, entry{key: k, value: v})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].key < out[j].key })
 	return out, nil
+}
+
+// A keyIndex is a treap over the positions of an append-only key list,
+// ordered by key. Its nodes are positions, so it holds no pointers, and a
+// node's priority is a hash of its position, so its shape is a function of
+// the keys alone.
+type keyIndex struct {
+	left, right []int32
+	root        int32
+}
+
+func treapPriority(n int32) uint64 {
+	z := uint64(n) + 0x9e3779b97f4a7c15
+	z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9
+	z = (z ^ (z >> 27)) * 0x94d049bb133111eb
+	return z ^ (z >> 31)
+}
+
+// insert adds the last key of keys, which must not already be in the index.
+func (x *keyIndex) insert(keys []string) {
+	n := int32(len(keys) - 1)
+	x.left, x.right = append(x.left, -1), append(x.right, -1)
+	l, r := x.split(keys, x.root, keys[n])
+	x.root = x.join(x.join(l, n), r)
+}
+
+// split cuts the subtree at n into the keys below k and the rest.
+func (x *keyIndex) split(keys []string, n int32, k string) (int32, int32) {
+	if n < 0 {
+		return -1, -1
+	}
+	if keys[n] < k {
+		l, r := x.split(keys, x.right[n], k)
+		x.right[n] = l
+		return n, r
+	}
+	l, r := x.split(keys, x.left[n], k)
+	x.left[n] = r
+	return l, n
+}
+
+// join joins two subtrees, every key of a below every key of b.
+func (x *keyIndex) join(a, b int32) int32 {
+	if a < 0 {
+		return b
+	}
+	if b < 0 {
+		return a
+	}
+	if treapPriority(a) > treapPriority(b) {
+		x.right[a] = x.join(x.right[a], b)
+		return a
+	}
+	x.left[b] = x.join(a, x.left[b])
+	return b
+}
+
+// each calls fn, in key order, with every key in [lo, hi), and returns the
+// number of nodes it visited.
+func (x *keyIndex) each(keys []string, lo, hi string, fn func(k string)) int {
+	return x.walk(keys, x.root, lo, hi, fn)
+}
+
+func (x *keyIndex) walk(keys []string, n int32, lo, hi string, fn func(k string)) int {
+	steps := 0
+	for n >= 0 {
+		steps++
+		k := keys[n]
+		if k < lo {
+			n = x.right[n]
+			continue
+		}
+		if k >= hi {
+			n = x.left[n]
+			continue
+		}
+		steps += x.walk(keys, x.left[n], lo, hi, fn)
+		fn(k)
+		n = x.right[n]
+	}
+	return steps
 }
 
 func (t *txn) commit(ctx context.Context) error {
