@@ -1,0 +1,6 @@
+version: v2
+plugins:
+  # pinned to v1.36.11 — the google.golang.org/protobuf version in go.mod
+  - local: protoc-gen-go
+    out: .
+    opt: paths=source_relative
