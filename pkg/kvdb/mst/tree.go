@@ -222,18 +222,24 @@ func (o *op) split(r ref, below uint32, key []byte) (ref, ref, error) {
 }
 
 // splitNode splits n, whose ref is self. A side that keeps all of n is
-// self, not a copy of it.
+// self, not a copy of it, with n's summary: the ref of a root has none.
 func (o *op) splitNode(n *node, self ref, key []byte) (ref, ref, error) {
 	i, _ := n.search(key)
 	l, r, err := o.split(n.kids[i], n.level, key)
 	if err != nil {
 		return ref{}, ref{}, err
 	}
+	whole := func() ref {
+		if self.sum == nil {
+			self.sum = n.summary(o.t.sum)
+		}
+		return self
+	}
 	switch {
 	case i == 0 && r.c == n.kids[0].c:
-		return l, self, nil
+		return l, whole(), nil
 	case i == len(n.entries) && l.c == n.kids[i].c:
-		return self, r, nil
+		return whole(), r, nil
 	}
 	if i > 0 {
 		kids := append(append(make([]ref, 0, i+1), n.kids[:i]...), l)

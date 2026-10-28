@@ -180,3 +180,43 @@ func TestBuild(t *testing.T) {
 		t.Fatalf("build wrote %d nodes for a tree of %d", s.adds.Load(), len(ns))
 	}
 }
+
+// TestARootSplitKeepsItsSummary puts a key above every level in a tree,
+// before and after all of its keys: the old root becomes a whole subtree of
+// the new one, which must carry its summary as Build writes it.
+func TestARootSplitKeepsItsSummary(t *testing.T) {
+	ctx := context.Background()
+	find := func(first byte, ok func(uint32) bool, n int) [][]byte {
+		var out [][]byte
+		for i := 0; len(out) < n; i++ {
+			if k := []byte{first, byte(i >> 8), byte(i)}; ok(Level(k)) {
+				out = append(out, k)
+			}
+		}
+		return out
+	}
+	low := find(0x80, func(l uint32) bool { return l == 0 }, 40)
+	above := func(l uint32) bool { return l >= 1 }
+	for _, top := range [][]byte{find(0x00, above, 1)[0], find(0xff, above, 1)[0]} {
+		s := newStore()
+		tr := New(s, WithSummarizer(maxSummary{}))
+		want := map[string][]byte{}
+		var err error
+		for i, k := range low {
+			if tr, err = tr.Put(ctx, k, stamped(uint64(i))); err != nil {
+				t.Fatal(err)
+			}
+			want[string(k)] = stamped(uint64(i))
+		}
+		if tr, err = tr.Put(ctx, top, stamped(99)); err != nil {
+			t.Fatal(err)
+		}
+		want[string(top)] = stamped(99)
+		if err := tr.Verify(ctx); err != nil {
+			t.Errorf("after putting %x: %v", top, err)
+		}
+		if built := build(t, s, want, WithSummarizer(maxSummary{})); tr.Root() != built.Root() {
+			t.Errorf("after putting %x the root is %s, Build gives %s", top, tr.Root(), built.Root())
+		}
+	}
+}
