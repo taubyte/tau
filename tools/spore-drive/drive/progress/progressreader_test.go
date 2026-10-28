@@ -172,3 +172,54 @@ func TestReader_WithoutPercentage(t *testing.T) {
 
 	<-done
 }
+
+// TestReader_ReportsByItsClock: a report is due when the reader's clock has
+// moved an interval since the last one, and only then.
+func TestReader_ReportsByItsClock(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opts []Option
+		want []int
+	}{
+		{"percentage", []Option{Percentage()}, []int{40, 80, 100}},
+		{"bytes", nil, []int{4, 8, 10}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clock := time.Unix(0, 0)
+			pr, err := New(time.Second, append(tc.opts, WithReader(bytes.NewReader(make([]byte, 10)), 10), WithClock(func() time.Time { return clock }))...)
+			assert.NilError(t, err)
+
+			buf := make([]byte, 2)
+			for _, advance := range []time.Duration{0, time.Second, 0, time.Second, 0} {
+				clock = clock.Add(advance)
+				n, err := pr.Read(buf)
+				assert.NilError(t, err)
+				assert.Equal(t, n, 2)
+			}
+			_, err = pr.Read(buf)
+			assert.Equal(t, err, io.EOF)
+
+			var got []int
+			for p := range pr.ProgressChan() {
+				got = append(got, p)
+			}
+			assert.DeepEqual(t, got, tc.want)
+		})
+	}
+}
+
+func TestReader_RefusesWhatItCannotUse(t *testing.T) {
+	for _, tc := range []struct {
+		opt  Option
+		want string
+	}{
+		{WithClock(nil), "clock cannot be nil"},
+		{WithReader(nil, 1), "reader cannot be nil"},
+		{WithReader(bytes.NewReader(nil), 0), "length must be greater than 0"},
+		{WithContext(nil), "context cannot be nil"},
+		{Percentage(), "a buffer or reader must be provided"},
+	} {
+		_, err := New(time.Second, tc.opt)
+		assert.ErrorContains(t, err, tc.want)
+	}
+}

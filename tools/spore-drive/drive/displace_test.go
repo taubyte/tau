@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -36,14 +37,27 @@ func TestDisplace(t *testing.T) {
 	sd, err := New(p)
 	assert.NilError(t, err)
 	sd.(*sporedrive).tauBinary = make([]byte, 1024)
-	testDisplace(t, sd, DefaultRoot, nil)
+	testDisplace(t, sd, DefaultRoot, nil, 0)
+}
+
+// TestDisplaceCountsTheReportsOfItsOwnClock: the upload's reports are timed by
+// the drive's clock, so a host slow to open the file (100ms here, on the
+// bubble's clock) adds no report the drive's clock did not allow.
+func TestDisplaceCountsTheReportsOfItsOwnClock(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		_, p := fixtures.VirtConfig()
+		sd, err := New(p)
+		assert.NilError(t, err)
+		sd.(*sporedrive).tauBinary = make([]byte, 1024)
+		testDisplace(t, sd, DefaultRoot, nil, 100*time.Millisecond)
+	})
 }
 
 func TestDisplaceWithoutUpdatingTau(t *testing.T) {
 	_, p := fixtures.VirtConfig()
 	sd, err := New(p)
 	assert.NilError(t, err)
-	testDisplace(t, sd, DefaultRoot, nil)
+	testDisplace(t, sd, DefaultRoot, nil, 0)
 }
 
 // TestDisplaceStreamsTheSecretsToInit: one bundle, sealed once, reaches every
@@ -55,10 +69,10 @@ func TestDisplaceStreamsTheSecretsToInit(t *testing.T) {
 	p = withCloud(t, fs, p, signIn)
 	sd, err := New(p, WithRoot("/opt/tau"))
 	assert.NilError(t, err)
-	testDisplace(t, sd, "/opt/tau", []string{"correct-horse", "$argon2id$", "gh-secret", "corp-secret", "ACCOUNT KEY"})
+	testDisplace(t, sd, "/opt/tau", []string{"correct-horse", "$argon2id$", "gh-secret", "corp-secret", "ACCOUNT KEY"}, 0)
 }
 
-func testDisplace(t *testing.T, sd Spore, root string, secrets []string) {
+func testDisplace(t *testing.T, sd Spore, root string, secrets []string, openDelay time.Duration) {
 	sdrive := sd.(*sporedrive)
 	sdrive.now = func() time.Time { return fixedNow }
 	updatingTau := (sdrive.tauBinary != nil)
@@ -112,7 +126,9 @@ func testDisplace(t *testing.T, sd Spore, root string, secrets []string) {
 		// upload tau
 		if updatingTau {
 			tauf, _ := rhfs.OpenFile("/tmp/tau", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0750)
-			rh.On("OpenFile", "/tmp/tau", os.O_CREATE|os.O_RDWR|os.O_TRUNC, fs.FileMode(0750)).Once().Return(tauf, nil)
+			rh.On("OpenFile", "/tmp/tau", os.O_CREATE|os.O_RDWR|os.O_TRUNC, fs.FileMode(0750)).Once().Run(func(mock.Arguments) {
+				time.Sleep(openDelay)
+			}).Return(tauf, nil)
 		}
 
 		// the unit is written on every deploy

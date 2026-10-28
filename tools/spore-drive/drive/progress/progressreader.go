@@ -19,6 +19,7 @@ type Reader struct {
 	interval     time.Duration
 	ctx          context.Context
 	reportAsPerc bool
+	now          func() time.Time
 }
 
 type Option func(*Reader) error
@@ -58,6 +59,17 @@ func WithContext(ctx context.Context) Option {
 	}
 }
 
+// WithClock sets what the interval between reports is measured with.
+func WithClock(now func() time.Time) Option {
+	return func(pr *Reader) error {
+		if now == nil {
+			return errors.New("clock cannot be nil")
+		}
+		pr.now = now
+		return nil
+	}
+}
+
 func Percentage() Option {
 	return func(pr *Reader) error {
 		pr.reportAsPerc = true
@@ -67,9 +79,9 @@ func Percentage() Option {
 
 func New(interval time.Duration, opts ...Option) (*Reader, error) {
 	pr := &Reader{
-		ch:         make(chan int, 64),
-		interval:   interval,
-		lastReport: time.Now(),
+		ch:       make(chan int, 64),
+		interval: interval,
+		now:      time.Now,
 	}
 
 	for _, opt := range opts {
@@ -81,6 +93,7 @@ func New(interval time.Duration, opts ...Option) (*Reader, error) {
 	if pr.reader == nil {
 		return nil, errors.New("a buffer or reader must be provided")
 	}
+	pr.lastReport = pr.now()
 
 	return pr, nil
 }
@@ -109,7 +122,7 @@ func (pr *Reader) Read(p []byte) (n int, err error) {
 	n, err = pr.reader.Read(p)
 	pr.bytesRead += n
 
-	now := time.Now()
+	now := pr.now()
 	if pr.bytesRead != pr.lastPos && now.Sub(pr.lastReport) >= pr.interval {
 		if pr.reportAsPerc {
 			percent := int(math.Ceil(float64(pr.bytesRead) / float64(pr.totalSize) * 100))

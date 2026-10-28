@@ -160,7 +160,7 @@ func updateResolvedConf(ctx context.Context, h remoteHost, resolvers []string) e
 }
 
 func (d *sporedrive) uploadTau(ctx context.Context, h remoteHost, path string) (<-chan int, <-chan error, error) {
-	rdr, err := preader.New(100*time.Millisecond, preader.WithContext(ctx), preader.WithBuffer(d.tauBinary), preader.Percentage())
+	rdr, err := preader.New(100*time.Millisecond, preader.WithContext(ctx), preader.WithBuffer(d.tauBinary), preader.Percentage(), preader.WithClock(d.now))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read tau binary: %w", err)
 	}

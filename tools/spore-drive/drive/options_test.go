@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/spf13/afero"
 	host "github.com/taubyte/tau/pkg/mycelium/host"
@@ -207,7 +208,7 @@ func TestADerivedKeyNeedsAPrimaryOne(t *testing.T) {
 
 func TestUploadsReportAHostThatCannotBeWritten(t *testing.T) {
 	ro := &fsHost{fs: afero.NewReadOnlyFs(afero.NewMemMapFs())}
-	d := &sporedrive{tauBinary: []byte("tau")}
+	d := &sporedrive{tauBinary: []byte("tau"), now: time.Now}
 	_, _, err := d.uploadTau(context.Background(), ro, "/tb/bin/tau")
 	assert.ErrorContains(t, err, "failed to open")
 	assert.ErrorContains(t, d.uploadConfig(ro, instance{name: "node"}), "failed to open")
