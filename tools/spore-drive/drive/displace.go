@@ -184,6 +184,40 @@ func (d *sporedrive) uploadTau(ctx context.Context, h remoteHost, path string) (
 	return rdr.ProgressChan(), eCh, nil
 }
 
+// relayUpload forwards an upload's progress and errors until the upload is
+// done. eCh closes only after the copy returned, so every report the reader
+// made is already buffered in pCh by then and is relayed before returning: a
+// select that saw both ready could otherwise take the close first and drop it.
+func relayUpload(ctx context.Context, pCh <-chan int, eCh <-chan error, progress func(int), fail func(error)) error {
+	for {
+		select {
+		case err, ok := <-eCh:
+			if !ok {
+				for {
+					select {
+					case p, ok := <-pCh:
+						if !ok {
+							return nil
+						}
+						progress(p)
+					default:
+						return nil
+					}
+				}
+			}
+			fail(err)
+		case p, ok := <-pCh:
+			if !ok {
+				pCh = nil
+				continue
+			}
+			progress(p)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
 // uploadConfig writes a node's file to /tmp/<instance>.yaml. Its keys travel
 // inline, as boot.File reads them, so there are no key files beside it.
 func (d *sporedrive) uploadConfig(h remoteHost, inst instance) error {
@@ -481,25 +515,12 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 		// Upload to /tmp
 		if updatingTau {
 			pushProgress("upload tau", 0)
-			if pCh, eCh, err := d.uploadTau(ctx, r, "/tmp/tau"); err != nil {
+			pCh, eCh, err := d.uploadTau(ctx, r, "/tmp/tau")
+			if err != nil {
 				return fmt.Errorf("failed to upload tau to /tmp: %w", err)
-			} else {
-			tauBinaryUpload:
-				for {
-					select {
-					case err, ok := <-eCh:
-						if !ok {
-							break tauBinaryUpload
-						}
-						pushError("upload tau", err)
-					case pr, ok := <-pCh:
-						if ok {
-							pushProgress("upload tau", pr)
-						}
-					case <-ctx.Done():
-						return pushError("upload tau", ctx.Err())
-					}
-				}
+			}
+			if err := relayUpload(ctx, pCh, eCh, func(p int) { pushProgress("upload tau", p) }, func(err error) { pushError("upload tau", err) }); err != nil {
+				return pushError("upload tau", err)
 			}
 
 			pushProgress("upload tau", 100)

@@ -305,3 +305,46 @@ WantedBy = multi-user.target
 		}
 	}
 }
+
+// TestRelayUploadKeepsReportsMadeBeforeTheUploadEnded: the reader's last
+// reports and the end of the upload are ready together, and a select may take
+// the end first. Each round offers it that choice; without the drain, a round
+// keeps all its reports with a chance of one in two.
+func TestRelayUploadKeepsReportsMadeBeforeTheUploadEnded(t *testing.T) {
+	for range 200 {
+		pCh := make(chan int, 2)
+		pCh <- 50
+		pCh <- 100
+		eCh := make(chan error, 1)
+		eCh <- errors.New("short write")
+		close(eCh)
+
+		var got []int
+		var failed []error
+		assert.NilError(t, relayUpload(context.Background(), pCh, eCh, func(p int) { got = append(got, p) }, func(err error) { failed = append(failed, err) }))
+		assert.DeepEqual(t, got, []int{50, 100})
+		assert.Equal(t, len(failed), 1)
+	}
+}
+
+func TestRelayUploadOutlivesTheReportsClosing(t *testing.T) {
+	pCh := make(chan int, 1)
+	pCh <- 100
+	close(pCh)
+	eCh := make(chan error)
+	done := make(chan error)
+	var got []int
+	go func() {
+		done <- relayUpload(context.Background(), pCh, eCh, func(p int) { got = append(got, p) }, func(error) {})
+	}()
+	close(eCh)
+	assert.NilError(t, <-done)
+	assert.DeepEqual(t, got, []int{100})
+}
+
+func TestRelayUploadStopsWithItsContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := relayUpload(ctx, make(chan int), make(chan error), func(int) {}, func(error) {})
+	assert.ErrorIs(t, err, context.Canceled)
+}
