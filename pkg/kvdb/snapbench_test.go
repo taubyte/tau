@@ -3,7 +3,6 @@ package kvdb
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"math/rand/v2"
 	"sync/atomic"
@@ -25,14 +24,10 @@ import (
 // small change, to hold, to fetch for a peer one snapshot behind, under a
 // steady write stream, and when only time has passed. Blocks and bytes are
 // counted where the replica's DAG service sees them.
-//
-// A snapshot design registers in snapDesigns and is measured with
-// -snapbench.design=<name>. Benchmark names and workloads do not depend on
-// the design, so two runs compare with benchstat.
+// Benchmark names and workloads do not depend on how a snapshot is laid
+// out, so runs before and after a change to it compare with benchstat.
 
-var snapDesignFlag = flag.String("snapbench.design", "flat", "the snapshot design BenchmarkSnapshot* measures")
-
-// snapReplica is one replica of a snapshot design, as the benchmarks drive it.
+// snapReplica is one replica, as the benchmarks drive it.
 type snapReplica interface {
 	// PutAll writes n keys in one batch.
 	PutAll(ctx context.Context, n int, kv func(i int) (string, []byte)) error
@@ -48,7 +43,7 @@ type snapReplica interface {
 	Close() error
 }
 
-// snapEnv is what a design opens a replica with. Every block the replica
+// snapEnv is what a replica is opened with. Every block the replica
 // writes or fetches goes through dag, where the benchmarks count it; dir is
 // the replica's own, for its datastore; opts carries the clock, the
 // retention and CompactAfterBlocks.
@@ -58,10 +53,6 @@ type snapEnv struct {
 	dag  ipld.DAGService
 	opts *Options
 }
-
-type snapDesign func(tb testing.TB, env snapEnv) snapReplica
-
-var snapDesigns = map[string]snapDesign{"flat": openFlatSnap}
 
 const (
 	snapValueSize = 100
@@ -73,28 +64,55 @@ var (
 	snapChanges = []int{1, 10, 100}
 )
 
-// flatSnap is today's snapshot: one delta carrying the whole state, its
-// overflow in chunk blocks.
-type flatSnap struct {
+// snapStore is a Datastore over its own pebble store, metered.
+type snapStore struct {
 	r  *Datastore
-	st ds.Datastore
+	st *dsMeter
 }
 
-func openFlatSnap(tb testing.TB, env snapEnv) snapReplica {
+// dsMeter counts the bytes written to a datastore, keys and values, batches
+// included.
+type dsMeter struct {
+	ds.Batching
+	written atomic.Int64
+}
+
+func (m *dsMeter) Put(ctx context.Context, k ds.Key, v []byte) error {
+	m.written.Add(int64(len(k.String()) + len(v)))
+	return m.Batching.Put(ctx, k, v)
+}
+
+func (m *dsMeter) Batch(ctx context.Context) (ds.Batch, error) {
+	b, err := m.Batching.Batch(ctx)
+	return &dsMeterBatch{Batch: b, m: m}, err
+}
+
+type dsMeterBatch struct {
+	ds.Batch
+	m *dsMeter
+}
+
+func (b *dsMeterBatch) Put(ctx context.Context, k ds.Key, v []byte) error {
+	b.m.written.Add(int64(len(k.String()) + len(v)))
+	return b.Batch.Put(ctx, k, v)
+}
+
+func openSnap(tb testing.TB, env snapEnv) snapReplica {
 	tb.Helper()
-	st, err := pebbleds.NewDatastore(env.dir)
+	pst, err := pebbleds.NewDatastore(env.dir)
 	if err != nil {
 		tb.Fatal(err)
 	}
+	st := &dsMeter{Batching: pst}
 	r, err := NewDatastore(st, ds.NewKey("snapbench"), env.dag, &nullBroadcaster{}, env.opts)
 	if err != nil {
 		st.Close()
 		tb.Fatal(err)
 	}
-	return &flatSnap{r: r, st: st}
+	return &snapStore{r: r, st: st}
 }
 
-func (f *flatSnap) PutAll(ctx context.Context, n int, kv func(i int) (string, []byte)) error {
+func (f *snapStore) PutAll(ctx context.Context, n int, kv func(i int) (string, []byte)) error {
 	bt, err := f.r.Batch(ctx)
 	if err != nil {
 		return err
@@ -108,23 +126,23 @@ func (f *flatSnap) PutAll(ctx context.Context, n int, kv func(i int) (string, []
 	return bt.Commit(ctx)
 }
 
-func (f *flatSnap) Put(ctx context.Context, key string, value []byte) error {
+func (f *snapStore) Put(ctx context.Context, key string, value []byte) error {
 	return f.r.Put(ctx, ds.RawKey(key), value)
 }
 
-func (f *flatSnap) Get(ctx context.Context, key string) ([]byte, error) {
+func (f *snapStore) Get(ctx context.Context, key string) ([]byte, error) {
 	return f.r.Get(ctx, ds.RawKey(key))
 }
 
-func (f *flatSnap) Compact(ctx context.Context) error {
+func (f *snapStore) Compact(ctx context.Context) error {
 	_, err := f.r.Compact(ctx)
 	return err
 }
 
-func (f *flatSnap) Maintain(ctx context.Context) error { return f.r.maintain(ctx) }
+func (f *snapStore) Maintain(ctx context.Context) error { return f.r.maintain(ctx) }
 
-func (f *flatSnap) CatchUp(ctx context.Context, from snapReplica) error {
-	hs, _ := from.(*flatSnap).r.heads.List()
+func (f *snapStore) CatchUp(ctx context.Context, from snapReplica) error {
+	hs, _ := from.(*snapStore).r.heads.List()
 	for _, h := range hs {
 		if err := f.r.handleBlock(ctx, h); err != nil {
 			return err
@@ -133,7 +151,7 @@ func (f *flatSnap) CatchUp(ctx context.Context, from snapReplica) error {
 	return nil
 }
 
-func (f *flatSnap) Close() error { return errors.Join(f.r.Close(), f.st.Close()) }
+func (f *snapStore) Close() error { return errors.Join(f.r.Close(), f.st.Close()) }
 
 // dagMeter counts the blocks passing through a DAG service, and their bytes.
 type dagMeter struct {
@@ -253,13 +271,9 @@ type snapNode struct {
 
 func newSnapNode(b *testing.B, name string, opts *Options) *snapNode {
 	b.Helper()
-	design, ok := snapDesigns[*snapDesignFlag]
-	if !ok {
-		b.Fatalf("no snapshot design %q", *snapDesignFlag)
-	}
 	local := newFetchThrough()
 	n := &snapNode{local: local, own: &dagMeter{DAGService: local}, serve: &dagMeter{DAGService: local.DAGService}}
-	n.snapReplica = design(b, snapEnv{name: name, dir: b.TempDir(), dag: n.own, opts: replicaOptions(opts, name)})
+	n.snapReplica = openSnap(b, snapEnv{name: name, dir: b.TempDir(), dag: n.own, opts: replicaOptions(opts, name)})
 	b.Cleanup(func() {
 		if err := n.Close(); err != nil {
 			b.Error(err)
@@ -267,6 +281,9 @@ func newSnapNode(b *testing.B, name string, opts *Options) *snapNode {
 	})
 	return n
 }
+
+// dsWritten is how many bytes n has written to its datastore.
+func (n *snapNode) dsWritten() int64 { return n.snapReplica.(*snapStore).st.written.Load() }
 
 // fetchFrom makes peer the only replica n fetches from.
 func (n *snapNode) fetchFrom(peer *snapNode) { n.local.setRemotes(peer.serve) }
@@ -392,21 +409,24 @@ func BenchmarkSnapshotCompact(b *testing.B) {
 				w.seed(b, r)
 				mustSnap(b, r.Compact(ctx))
 				var total meterReading
+				var dsTotal int64
 				b.ReportAllocs()
 				b.ResetTimer()
 				for range b.N {
 					b.StopTimer()
 					w.changeKeys(b, r, k)
-					before := r.own.read()
+					before, dsBefore := r.own.read(), r.dsWritten()
 					b.StartTimer()
 					mustSnap(b, r.Compact(ctx))
 					b.StopTimer()
 					total.add(r.own.read().since(before))
+					dsTotal += r.dsWritten() - dsBefore
 					w.check(b, r)
 					b.StartTimer()
 				}
 				b.StopTimer()
 				blocks, bytes := r.held(b)
+				reportPer(b, dsTotal, b.N, "ds-written-B/op")
 				reportPer(b, total.addedBytes, b.N, "written-B/op")
 				reportPer(b, total.added, b.N, "written-blocks/op")
 				b.ReportMetric(float64(bytes), "snapshot-B")
@@ -432,21 +452,24 @@ func BenchmarkSnapshotCatchUp(b *testing.B) {
 				mustSnap(b, a.Compact(ctx))
 				mustSnap(b, lag.CatchUp(ctx, a.snapReplica))
 				var total meterReading
+				var dsTotal int64
 				b.ReportAllocs()
 				b.ResetTimer()
 				for range b.N {
 					b.StopTimer()
 					w.changeKeys(b, a, k)
 					mustSnap(b, a.Compact(ctx))
-					before := a.serve.read()
+					before, dsBefore := a.serve.read(), lag.dsWritten()
 					b.StartTimer()
 					mustSnap(b, lag.CatchUp(ctx, a.snapReplica))
 					b.StopTimer()
 					total.add(a.serve.read().since(before))
+					dsTotal += lag.dsWritten() - dsBefore
 					w.check(b, lag)
 					b.StartTimer()
 				}
 				b.StopTimer()
+				reportPer(b, dsTotal, b.N, "ds-written-B/op")
 				reportPer(b, total.gotBytes, b.N, "fetched-B/op")
 				reportPer(b, total.got, b.N, "fetched-blocks/op")
 				reportPer(b, total.miss, b.N, "missed-blocks/op")
@@ -578,10 +601,6 @@ type netSnapNode struct {
 
 func newNetSnapNode(b *testing.B, name string, opts *Options) *netSnapNode {
 	b.Helper()
-	design, ok := snapDesigns[*snapDesignFlag]
-	if !ok {
-		b.Fatalf("no snapshot design %q", *snapDesignFlag)
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	node, err := taupeer.New(ctx, b.TempDir(), keypair.NewRaw(), nil, []string{"/ip4/127.0.0.1/tcp/0"}, nil, true, false)
 	if err != nil {
@@ -595,7 +614,7 @@ func newNetSnapNode(b *testing.B, name string, opts *Options) *netSnapNode {
 	}
 	m := &dagMeter{DAGService: node.DAG()}
 	n := &netSnapNode{node: node, meter: m, cancel: cancel}
-	n.snapReplica = design(b, snapEnv{name: name, dir: b.TempDir(), dag: &sessionMeter{dagMeter: m, sessions: node.DAG()}, opts: replicaOptions(opts, name)})
+	n.snapReplica = openSnap(b, snapEnv{name: name, dir: b.TempDir(), dag: &sessionMeter{dagMeter: m, sessions: node.DAG()}, opts: replicaOptions(opts, name)})
 	return n
 }
 

@@ -3,6 +3,7 @@ package kvdb
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"maps"
 	"os"
@@ -20,8 +21,13 @@ import (
 // through the tree diff, which reads only the records the trees disagree on
 // and those the journal names, and through an oracle that decides every
 // record either side holds. The two must write the same thing, down to the
-// byte; a merge where they do not panics.
-func init() {
+// byte; a merge where they do not panics. A run of benchmarks goes without:
+// the oracle reads every record of every merge, which is what the
+// benchmarks measure the tree path for not doing.
+func installOracle() {
+	if flag.Lookup("test.bench").Value.String() != "" {
+		return
+	}
 	checkSnapshot = func(ctx context.Context, store *Datastore, c cid.Cid, root *pb.Delta, s *snapState, p *snapshotMerge) error {
 		if err := againstOracle(ctx, store, c, root, s, p); err != nil {
 			// A panic unwinding through a test's deferred Close waits on the

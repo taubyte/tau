@@ -3,6 +3,7 @@ package kvdb
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -37,6 +38,8 @@ import (
 // to the next repair, a minute later.
 func TestMain(m *testing.M) {
 	otel.SetTracerProvider(noop.NewTracerProvider())
+	flag.Parse()
+	installOracle()
 	os.Exit(m.Run())
 }
 
