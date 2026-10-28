@@ -56,7 +56,7 @@ const (
 // formatVersion is the on-disk format, stored as formatVersion+1 the way every
 // earlier format stored its own. A store holding any other version is emptied
 // on open and refills from its peers.
-const formatVersion uint64 = 5
+const formatVersion uint64 = 6
 
 // Common errors.
 var (

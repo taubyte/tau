@@ -42,9 +42,16 @@ const (
 	ownedNs    = "n"
 	reclaimNs  = "x"
 	baseKey    = "sr"
-	redoKey    = "w"
+	redoNs     = "w"
+	redoMark   = "wr"
 	appliedKey = "wa"
 )
+
+// redoChunkBytes bounds a chunk of an atomic commit's record. One value
+// holding a whole commit, all of a cold catch-up's state, is decompressed by
+// every lookup the store's index sends to its block, long after it is
+// applied and deleted.
+const redoChunkBytes = 4 << 10
 
 // reclaimBatch bounds the blocks reclaim removes under gcMu at a time:
 // every merge that changes ownership waits for it.
@@ -247,12 +254,14 @@ func (store *Datastore) reclaimSome(ctx context.Context) (int, bool, error) {
 }
 
 // commitAtomic commits t so that a crash at any point leaves all of its
-// writes or none, whatever batches the store has: they are recorded under
-// one key first, with a sequence number, then applied in one batch, in no
-// particular order, and only then is that number recorded as applied; open
-// applies a record that is not. A batch that fails is given up the same way, so on a store whose
-// batches are atomic an error leaves none of the writes. It writes past the
-// journaling store, recording the journal's marks with the rest.
+// writes or none, whatever batches the store has: they are recorded first,
+// in chunks under their sequence number, then a mark names the number and
+// the chunk count, then they are applied in one batch, in no particular
+// order, and only then is that number recorded as applied; open applies a
+// marked record that is not. A batch that fails is given up the same way,
+// so on a store whose batches are atomic an error leaves none of the
+// writes. It writes past the journaling store, recording the journal's
+// marks with the rest.
 func (store *Datastore) commitAtomic(ctx context.Context, t *txn) error {
 	if len(t.writes) == 0 {
 		return nil
@@ -261,7 +270,18 @@ func (store *Datastore) commitAtomic(ctx context.Context, t *txn) error {
 	if err != nil {
 		return err
 	}
-	redo := &pb.Redo{Writes: make([]*pb.Write, 0, len(t.order)+1), Seq: seq + 1}
+	seq++
+	var chunks []*pb.Redo
+	cur, size := &pb.Redo{Seq: seq}, 0
+	add := func(w *pb.Write) {
+		n := proto.Size(w)
+		if size > 0 && size+n > redoChunkBytes {
+			chunks = append(chunks, cur)
+			cur, size = &pb.Redo{Seq: seq}, 0
+		}
+		cur.Writes = append(cur.Writes, w)
+		size += n
+	}
 	for _, k := range t.order {
 		v := t.writes[k]
 		marks, err := store.journal.marks(ctx, k, v)
@@ -269,73 +289,153 @@ func (store *Datastore) commitAtomic(ctx context.Context, t *txn) error {
 			return err
 		}
 		for _, m := range marks {
-			redo.Writes = append(redo.Writes, &pb.Write{Key: []byte(m)})
+			add(&pb.Write{Key: []byte(m)})
 		}
-		redo.Writes = append(redo.Writes, &pb.Write{Key: []byte(k), Value: v, Delete: v == nil})
+		add(&pb.Write{Key: []byte(k), Value: v, Delete: v == nil})
 	}
-	data, err := proto.Marshal(redo)
-	if err != nil {
-		return err
-	}
-	rk := store.namespace.ChildString(redoKey)
-	if err := store.raw.Put(ctx, rk, data); err != nil {
-		return err
-	}
-	err = store.raw.Sync(ctx, rk)
+	chunks = append(chunks, cur)
+	err = store.recordRedo(ctx, seq, chunks)
 	if err == nil {
-		err = store.applyRedo(ctx, redo)
+		err = store.applyRedo(ctx, seq, chunks)
 	}
 	if err != nil {
-		return errors.Join(err, store.raw.Put(ctx, store.appliedKey(), binary.AppendUvarint(nil, redo.Seq)))
+		return errors.Join(err, store.raw.Put(ctx, store.appliedKey(), binary.AppendUvarint(nil, seq)))
+	}
+	// The commit is applied whatever happens to its record now: what is
+	// left of it, open removes.
+	if err := store.dropChunks(ctx, seq, len(chunks)); err != nil {
+		store.logger.Errorf("error removing the record of commit %d: %s", seq, err)
 	}
 	return nil
 }
 
-func (store *Datastore) appliedKey() ds.Key { return store.namespace.ChildString(appliedKey) }
-
-func (store *Datastore) applyRedo(ctx context.Context, redo *pb.Redo) error {
+func (store *Datastore) dropChunks(ctx context.Context, seq uint64, n int) error {
 	b, err := batchOf(ctx, store.raw)
 	if err != nil {
 		return err
 	}
-	for _, w := range redo.GetWrites() {
-		if w.GetDelete() {
-			err = b.Delete(ctx, ds.RawKey(string(w.GetKey())))
-		} else {
-			v := w.GetValue()
-			if v == nil {
-				v = []byte{}
-			}
-			err = b.Put(ctx, ds.RawKey(string(w.GetKey())), v)
+	for i := range n {
+		if err := b.Delete(ctx, store.redoChunkKey(seq, i)); err != nil {
+			return err
 		}
+	}
+	return b.Commit(ctx)
+}
+
+func (store *Datastore) appliedKey() ds.Key  { return store.namespace.ChildString(appliedKey) }
+func (store *Datastore) redoMarkKey() ds.Key { return store.namespace.ChildString(redoMark) }
+func (store *Datastore) redoPrefix() ds.Key  { return store.namespace.ChildString(redoNs) }
+
+func (store *Datastore) redoChunkKey(seq uint64, i int) ds.Key {
+	return store.redoPrefix().ChildString(fmt.Sprintf("%020d", seq)).ChildString(fmt.Sprintf("%020d", i))
+}
+
+// recordRedo writes the chunks of record seq durably, then the mark that
+// makes it whole.
+func (store *Datastore) recordRedo(ctx context.Context, seq uint64, chunks []*pb.Redo) error {
+	b, err := batchOf(ctx, store.raw)
+	if err != nil {
+		return err
+	}
+	for i, c := range chunks {
+		data, err := proto.Marshal(c)
 		if err != nil {
+			return err
+		}
+		if err := b.Put(ctx, store.redoChunkKey(seq, i), data); err != nil {
 			return err
 		}
 	}
 	if err := b.Commit(ctx); err != nil {
 		return err
 	}
-	return store.raw.Put(ctx, store.appliedKey(), binary.AppendUvarint(nil, redo.GetSeq()))
+	if err := store.raw.Sync(ctx, store.redoPrefix()); err != nil {
+		return err
+	}
+	mark := binary.AppendUvarint(binary.AppendUvarint(nil, seq), uint64(len(chunks)))
+	if err := store.raw.Put(ctx, store.redoMarkKey(), mark); err != nil {
+		return err
+	}
+	return store.raw.Sync(ctx, store.redoMarkKey())
 }
 
-// replay applies the atomic commit a crash interrupted, if any.
-func (store *Datastore) replay(ctx context.Context) error {
-	data, err := store.raw.Get(ctx, store.namespace.ChildString(redoKey))
-	if errors.Is(err, ds.ErrNotFound) {
-		return nil
-	}
+func (store *Datastore) applyRedo(ctx context.Context, seq uint64, chunks []*pb.Redo) error {
+	b, err := batchOf(ctx, store.raw)
 	if err != nil {
 		return err
 	}
-	var redo pb.Redo
-	if err := proto.Unmarshal(data, &redo); err != nil {
-		return fmt.Errorf("error reading the interrupted commit: %w", err)
+	for _, c := range chunks {
+		for _, w := range c.GetWrites() {
+			if w.GetDelete() {
+				err = b.Delete(ctx, ds.RawKey(string(w.GetKey())))
+			} else {
+				v := w.GetValue()
+				if v == nil {
+					v = []byte{}
+				}
+				err = b.Put(ctx, ds.RawKey(string(w.GetKey())), v)
+			}
+			if err != nil {
+				return err
+			}
+		}
 	}
-	applied, err := readMillis(ctx, store.raw, store.appliedKey())
-	if err != nil || redo.GetSeq() <= applied {
+	if err := b.Commit(ctx); err != nil {
 		return err
 	}
-	return store.applyRedo(ctx, &redo)
+	return store.raw.Put(ctx, store.appliedKey(), binary.AppendUvarint(nil, seq))
+}
+
+// replay applies the atomic commit a crash interrupted, if any, and removes
+// what is left of every record.
+func (store *Datastore) replay(ctx context.Context) error {
+	mark, err := store.raw.Get(ctx, store.redoMarkKey())
+	if err != nil && !errors.Is(err, ds.ErrNotFound) {
+		return err
+	}
+	if err == nil {
+		seq, n1 := binary.Uvarint(mark)
+		count, n2 := uint64(0), 0
+		if n1 > 0 {
+			count, n2 = binary.Uvarint(mark[n1:])
+		}
+		if n1 <= 0 || n2 <= 0 {
+			return fmt.Errorf("error decoding the interrupted commit's mark")
+		}
+		applied, err := readMillis(ctx, store.raw, store.appliedKey())
+		if err != nil {
+			return err
+		}
+		if seq > applied {
+			chunks := make([]*pb.Redo, count)
+			for i := range chunks {
+				data, err := store.raw.Get(ctx, store.redoChunkKey(seq, i))
+				if err != nil {
+					return fmt.Errorf("error reading the interrupted commit: %w", err)
+				}
+				chunks[i] = &pb.Redo{}
+				if err := proto.Unmarshal(data, chunks[i]); err != nil {
+					return fmt.Errorf("error reading the interrupted commit: %w", err)
+				}
+				if chunks[i].GetSeq() != seq {
+					return fmt.Errorf("interrupted commit %d holds a chunk of commit %d", seq, chunks[i].GetSeq())
+				}
+			}
+			if err := store.applyRedo(ctx, seq, chunks); err != nil {
+				return err
+			}
+		}
+	}
+	b, err := batchOf(ctx, store.raw)
+	if err != nil {
+		return err
+	}
+	if err := scanStore(ctx, store.raw, store.redoPrefix(), func(k string, _ []byte) error {
+		return b.Delete(ctx, ds.RawKey(k))
+	}); err != nil {
+		return err
+	}
+	return b.Commit(ctx)
 }
 
 // A stateBase is the trees the journal is applied to: the state's elements

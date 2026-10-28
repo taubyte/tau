@@ -870,7 +870,8 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 			strings.HasPrefix(k, store.reclaimPrefix().String()+"/"),
 			k == store.versionKey().String(),
 			k == store.badShutdownKey().String(),
-			k == store.namespace.ChildString(redoKey).String(),
+			strings.HasPrefix(k, store.redoPrefix().String()+"/"),
+			k == store.redoMarkKey().String(),
 			k == store.appliedKey().String():
 			return nil
 		case strings.HasPrefix(k, op.String()+"/"):
