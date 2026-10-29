@@ -516,11 +516,17 @@ func TestASnapshotWithAMissingStateIsNotMerged(t *testing.T) {
 	if f != nil || err == nil {
 		t.Fatal("a broken state cid was accepted")
 	}
-	missing, err := stateRoot{}.node()
+	nobody := dag.NodeWithData([]byte("held by nobody"))
+	if err := nobody.SetCidBuilder(v1Prefix); err != nil {
+		t.Fatal(err)
+	}
+	sr := stateRoot{elems: nobody.Cid()}
+	missing, err := sr.node()
 	if err != nil {
 		t.Fatal(err)
 	}
 	root.State = missing.Cid().Bytes()
+	carryState(root, sr, nil)
 	cctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 	f, err = r.fetchState(cctx, &crdtNodeGetter{r.dagService}, cid.Undef, root, nil)

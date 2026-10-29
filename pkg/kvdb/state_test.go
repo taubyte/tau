@@ -229,7 +229,7 @@ func TestStateRootDecodingRefusesWhatItDoesNotWrite(t *testing.T) {
 	unknown := bad(&pb.StateRoot{Format: stateFormat}, 0)
 	unknown.(*dag.ProtoNode).SetData(append(unknown.(*dag.ProtoNode).Data(), 0x78, 1))
 	for name, nd := range map[string]ipld.Node{
-		"format":        bad(&pb.StateRoot{Format: 2}, 0),
+		"format":        bad(&pb.StateRoot{Format: stateFormat + 1}, 0),
 		"missing link":  bad(&pb.StateRoot{Format: stateFormat, Elements: true}, 0),
 		"extra link":    bad(&pb.StateRoot{Format: stateFormat}, 1),
 		"unknown field": unknown,

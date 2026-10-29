@@ -155,9 +155,10 @@ func TestH4SnapshotStateIsMergedWhole(t *testing.T) {
 	a, x := replicas[0], replicas[1]
 	ctx := context.Background()
 
+	// More than a snapshot carries, so some of it is fetched.
 	all := map[string]string{}
-	for i := range 40 {
-		k, v := fmt.Sprintf("key-%02d", i), fmt.Sprintf("value-%02d", i)
+	for i := range 400 {
+		k, v := fmt.Sprintf("key-%03d", i), fmt.Sprintf("value-%03d", i)
 		put(t, a, k, v)
 		all[k] = v
 	}
@@ -174,6 +175,9 @@ func TestH4SnapshotStateIsMergedWhole(t *testing.T) {
 		t.Fatalf("test setup: want a state of several tree nodes, got %d blocks", len(nodes))
 	}
 	held := nodes[len(nodes)-1]
+	if carriedBy(rootDelta)[held] {
+		t.Fatal("test setup: the snapshot carries its last tree node")
+	}
 	nd, err := dagsyncs[0].DAGService.Get(ctx, held)
 	if err != nil {
 		t.Fatal(err)
@@ -244,9 +248,10 @@ func TestH4AStateFetchThatEndsEarlyIsNotMerged(t *testing.T) {
 	a := replicas[0]
 	ctx := context.Background()
 
+	// More than a snapshot carries, so some of it is fetched.
 	all := map[string]string{}
-	for i := range 40 {
-		k, v := fmt.Sprintf("key-%02d", i), fmt.Sprintf("value-%02d", i)
+	for i := range 400 {
+		k, v := fmt.Sprintf("key-%03d", i), fmt.Sprintf("value-%03d", i)
 		put(t, a, k, v)
 		all[k] = v
 	}
@@ -261,6 +266,9 @@ func TestH4AStateFetchThatEndsEarlyIsNotMerged(t *testing.T) {
 		t.Fatalf("test setup: want a state of several tree nodes, got %d blocks", len(nodes))
 	}
 	last := nodes[len(nodes)-1]
+	if carriedBy(rootDelta)[last] {
+		t.Fatal("test setup: the snapshot carries its last tree node")
+	}
 
 	dag := &droppingDAG{fetchThroughDAGSvc: newFetchThrough(), drop: map[cid.Cid]bool{last: true}}
 	dag.setRemotes(dagsyncs[0].DAGService)

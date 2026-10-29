@@ -322,6 +322,40 @@ func (m *Delta) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i -= len(m.unknownFields)
 		copy(dAtA[i:], m.unknownFields)
 	}
+	if len(m.Inline) > 0 {
+		for iNdEx := len(m.Inline) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Inline[iNdEx])
+			copy(dAtA[i:], m.Inline[iNdEx])
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Inline[iNdEx])))
+			i--
+			dAtA[i] = 0x1
+			i--
+			dAtA[i] = 0xa2
+		}
+	}
+	if len(m.Trees) > 0 {
+		for iNdEx := len(m.Trees) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Trees[iNdEx])
+			copy(dAtA[i:], m.Trees[iNdEx])
+			i = protohelpers.EncodeVarint(dAtA, i, uint64(len(m.Trees[iNdEx])))
+			i--
+			dAtA[i] = 0x1
+			i--
+			dAtA[i] = 0x9a
+		}
+	}
+	if m.Root != nil {
+		size, err := m.Root.MarshalToSizedBufferVT(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(size))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0x92
+	}
 	if len(m.State) > 0 {
 		i -= len(m.State)
 		copy(dAtA[i:], m.State)
@@ -558,11 +592,15 @@ func (m *Delta) ResetVT() {
 		}
 		f2 := m.Parents[:0]
 		f3 := m.State[:0]
+		f4 := m.Trees[:0]
+		f5 := m.Inline[:0]
 		m.Reset()
 		m.Elements = f0
 		m.Tombstones = f1
 		m.Parents = f2
 		m.State = f3
+		m.Trees = f4
+		m.Inline = f5
 	}
 }
 func (m *Delta) ReturnToVTPool() {
@@ -759,6 +797,22 @@ func (m *Delta) SizeVT() (n int) {
 	l = len(m.State)
 	if l > 0 {
 		n += 2 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	if m.Root != nil {
+		l = m.Root.SizeVT()
+		n += 2 + l + protohelpers.SizeOfVarint(uint64(l))
+	}
+	if len(m.Trees) > 0 {
+		for _, b := range m.Trees {
+			l = len(b)
+			n += 2 + l + protohelpers.SizeOfVarint(uint64(l))
+		}
+	}
+	if len(m.Inline) > 0 {
+		for _, b := range m.Inline {
+			l = len(b)
+			n += 2 + l + protohelpers.SizeOfVarint(uint64(l))
+		}
 	}
 	n += len(m.unknownFields)
 	return n
@@ -1813,6 +1867,106 @@ func (m *Delta) UnmarshalVT(dAtA []byte) error {
 			if m.State == nil {
 				m.State = []byte{}
 			}
+			iNdEx = postIndex
+		case 18:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Root", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Root == nil {
+				m.Root = &StateRoot{}
+			}
+			if err := m.Root.UnmarshalVT(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 19:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Trees", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Trees = append(m.Trees, make([]byte, postIndex-iNdEx))
+			copy(m.Trees[len(m.Trees)-1], dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 20:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Inline", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Inline = append(m.Inline, make([]byte, postIndex-iNdEx))
+			copy(m.Inline[len(m.Inline)-1], dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -3033,6 +3187,104 @@ func (m *Delta) UnmarshalVTUnsafe(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.State = dAtA[iNdEx:postIndex]
+			iNdEx = postIndex
+		case 18:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Root", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Root == nil {
+				m.Root = &StateRoot{}
+			}
+			if err := m.Root.UnmarshalVTUnsafe(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 19:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Trees", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Trees = append(m.Trees, dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 20:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Inline", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protohelpers.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return protohelpers.ErrInvalidLength
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Inline = append(m.Inline, dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex

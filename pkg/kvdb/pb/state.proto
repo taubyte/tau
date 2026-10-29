@@ -8,7 +8,7 @@ option go_package = ".;pb";
 // context. Its links are the roots of the trees present, in that order. The
 // format is specified in the kvdb package's state.go.
 message StateRoot {
-  // The format profile. Always 1.
+  // The format profile. Always 2.
   uint32 format = 1;
   bool elements = 2;
   bool removals = 3;

@@ -22,7 +22,7 @@ import (
 // they came to it, and a snapshot shares every subtree it did not change
 // with the one before it.
 //
-// # State format profile 1
+// # State format profile 2
 //
 // This is the whole definition of a state's bytes. Anything that changes it
 // is a new profile, with a new value of StateRoot.format.
@@ -60,11 +60,27 @@ import (
 // the greatest, 16 bytes. A tree with no entry is absent.
 //
 // The StateRoot is a dag-pb block (CIDv1, dag-pb, sha2-256) whose Data is
-// the StateRoot message of pb/state.proto as Go protobuf marshals it
-// deterministically, written with mst's rules for a Node: format 1, and a
-// flag for each tree present. Its links are the roots of the trees present,
-// in the order E, P, C, each with an empty Name and a Tsize of 0. The empty
-// state is a StateRoot with no flag set and no link.
+// the StateRoot message of pb/state.proto, its fields in field order and
+// none at its zero value, written with mst's rules for a Node: format 2, and a flag for each tree present. Its links are the roots
+// of the trees present, in the order E, P, C, each with an empty Name and a
+// Tsize of 0. The empty state is a StateRoot with no flag set and no link.
+//
+// A snapshot (pb/delta.proto) names its state by the StateRoot's CID,
+// state, and carries the block itself: root is its StateRoot message and
+// trees the CIDs of its links, in order, each as its binary bytes. It also
+// carries, in inline, the bytes of whole blocks of its trees: of the blocks
+// its author wrote for it, none that a state it already held reaches,
+// those breadth first from the roots of E, P and C in that order, each
+// block's links in their order, a block taken only when its parent is and
+// none that would take the total over 16384 bytes.
+//
+// A reader rebuilds the StateRoot block from root and trees and refuses the
+// snapshot unless its CID is state. It takes each inline block, in order,
+// as the block whose CID is CIDv1, dag-pb, sha2-256 of its bytes, and
+// refuses the snapshot when no block it took before, the StateRoot
+// included, links that CID, when one is taken twice, or when the blocks
+// total more than 16384 bytes. What the blocks it took link that it holds
+// neither inline nor already, it fetches.
 //
 // A reader refuses a StateRoot with unknown fields, another format or a
 // link count that is not its flag count, and a record whose key or value
@@ -72,7 +88,7 @@ import (
 // length, a bucket that is not its record's, or spans that are not as
 // above.
 const (
-	stateFormat = 1
+	stateFormat = 2
 	bucketWidth = 3_600_000
 )
 
@@ -259,21 +275,26 @@ type stateRoot struct {
 	elems, pending, ctx cid.Cid
 }
 
-func (s stateRoot) node() (*dag.ProtoNode, error) {
-	msg := pb.StateRoot{Format: stateFormat, Elements: s.elems.Defined(), Removals: s.pending.Defined(), Context: s.ctx.Defined()}
-	data, err := msg.MarshalVT()
-	if err != nil {
-		return nil, err
-	}
-	nd := dag.NodeWithData(data)
-	var present [3]cid.Cid
-	n := 0
+// message sets msg to the StateRoot block's Data, and returns its links.
+func (s stateRoot) message(msg *pb.StateRoot) (present [3]cid.Cid, n int) {
+	msg.Format, msg.Elements, msg.Removals, msg.Context = stateFormat, s.elems.Defined(), s.pending.Defined(), s.ctx.Defined()
 	for _, c := range [...]cid.Cid{s.elems, s.pending, s.ctx} {
 		if c.Defined() {
 			present[n] = c
 			n++
 		}
 	}
+	return present, n
+}
+
+func (s stateRoot) node() (*dag.ProtoNode, error) {
+	var msg pb.StateRoot
+	present, n := s.message(&msg)
+	data, err := msg.MarshalVT()
+	if err != nil {
+		return nil, err
+	}
+	nd := dag.NodeWithData(data)
 	if err := setLinks(nd, n, func(i int) cid.Cid { return present[i] }); err != nil {
 		return nil, err
 	}
@@ -289,25 +310,41 @@ func decodeStateRoot(nd ipld.Node) (stateRoot, error) {
 	if err := msg.UnmarshalVT(pn.Data()); err != nil {
 		return stateRoot{}, fmt.Errorf("state root %s: %w", nd.Cid(), err)
 	}
-	if msg.Format != stateFormat || len(msg.ProtoReflect().GetUnknown()) > 0 {
-		return stateRoot{}, fmt.Errorf("state root %s: %w", nd.Cid(), errMalformedState)
-	}
 	links := pn.Links()
+	s, err := stateRootOf(&msg, len(links), func(i int) (cid.Cid, error) { return links[i].Cid, nil })
+	if err != nil {
+		return stateRoot{}, fmt.Errorf("state root %s: %w", nd.Cid(), err)
+	}
+	return s, nil
+}
+
+// stateRootOf is the state a StateRoot's Data msg names with its n links,
+// link(0) .. link(n-1).
+func stateRootOf(msg *pb.StateRoot, n int, link func(int) (cid.Cid, error)) (stateRoot, error) {
+	if msg.Format != stateFormat || len(msg.ProtoReflect().GetUnknown()) > 0 {
+		return stateRoot{}, errMalformedState
+	}
 	var s stateRoot
-	for _, slot := range []struct {
+	i := 0
+	for _, slot := range [...]struct {
 		present bool
 		c       *cid.Cid
 	}{{msg.Elements, &s.elems}, {msg.Removals, &s.pending}, {msg.Context, &s.ctx}} {
 		if !slot.present {
 			continue
 		}
-		if len(links) == 0 {
-			return stateRoot{}, fmt.Errorf("state root %s: %w", nd.Cid(), errMalformedState)
+		if i == n {
+			return stateRoot{}, errMalformedState
 		}
-		*slot.c, links = links[0].Cid, links[1:]
+		c, err := link(i)
+		if err != nil {
+			return stateRoot{}, err
+		}
+		*slot.c = c
+		i++
 	}
-	if len(links) != 0 {
-		return stateRoot{}, fmt.Errorf("state root %s: %w", nd.Cid(), errMalformedState)
+	if i != n {
+		return stateRoot{}, errMalformedState
 	}
 	return s, nil
 }

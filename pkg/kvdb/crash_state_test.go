@@ -624,11 +624,8 @@ func TestACrashInAResumedFetchRecovers(t *testing.T) {
 func crashInAResumedFetch(t *testing.T, lose bool) {
 	ctx := context.Background()
 	// The peer only serves its state, so one does for every crash.
-	peerDag := newFetchThrough()
-	peer := manualReplica(t, dssync.MutexWrap(ds.NewMapDatastore()), peerDag, "peer: ")
+	peer, peerDag := widePeer(t, 60, 4)
 	defer peer.Close()
-	seedKeys(t, peer, 60, "p")
-	compact(t, peer)
 	per := len(stateClosure(t, peer))/3 + 1
 	for at := 0; at < 20000; at++ {
 		inner := dssync.MutexWrap(ds.NewMapDatastore())
@@ -723,8 +720,7 @@ func TestAStateStoreFaultInAResumedFetchIsSurvived(t *testing.T) {
 			store := newFaultyDatastore(ds.NewMapDatastore())
 			own := &removeFailing{fetchThroughDAGSvc: newFetchThrough()}
 			r := manualReplica(t, store, own, "faulty: ")
-			peerDag := newFetchThrough()
-			peer := manualReplica(t, dssync.MutexWrap(ds.NewMapDatastore()), peerDag, "peer: ")
+			peer, peerDag := widePeer(t, 120, 6)
 			defer peer.Close()
 			link := newRationed(peerDag.DAGService)
 			own.setRemotes(link)
@@ -732,8 +728,6 @@ func TestAStateStoreFaultInAResumedFetchIsSurvived(t *testing.T) {
 				put(t, r, fmt.Sprintf("/r%02d", i), fmt.Sprintf("v%d", i))
 			}
 			compact(t, r)
-			seedKeys(t, peer, 120, "p")
-			compact(t, peer)
 			want := queryAll(t, r)
 			maps.Copy(want, queryAll(t, peer))
 			per := len(stateClosure(t, peer))/3 + 1

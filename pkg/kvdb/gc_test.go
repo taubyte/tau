@@ -30,11 +30,13 @@ func TestARetiredRootKeepsWhatAFetchReuses(t *testing.T) {
 	own.setRemotes(link)
 	peerDag.setRemotes(own.DAGService)
 
-	seedKeys(t, r, 400, "k")
+	// The peer changes more than its snapshot carries, so some of it is
+	// fetched, and leaves most of r's subtrees as they were.
+	seedKeys(t, r, 1000, "k")
 	compact(t, r)
 	syncReplicaHeads(t, r, peer)
-	for i := range 10 {
-		put(t, peer, fmt.Sprintf("/k%04d", i*37), "peer")
+	for i := range 40 {
+		put(t, peer, fmt.Sprintf("/k%04d", i*25), "peer")
 	}
 	compact(t, peer)
 	want := queryAll(t, peer)

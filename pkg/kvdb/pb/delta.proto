@@ -1,6 +1,8 @@
 syntax = "proto3";
 package crdt.pb;
 
+import "state.proto";
+
 option go_package = ".;pb";
 
 // A Dot names one delta: the incarnation that wrote it and that incarnation's
@@ -77,6 +79,14 @@ message Delta {
   // state is, in a snapshot, the CID of the StateRoot block holding the
   // state it carries (see state.proto).
   bytes state = 17;
+  // root and trees are, in a snapshot, that StateRoot block's Data and the
+  // CIDs of its links, in order: a reader rebuilds the block from them.
+  StateRoot root = 18;
+  repeated bytes trees = 19;
+  // inline are, in a snapshot, whole blocks of its state's trees, each
+  // linked by the StateRoot or by a block before it, at most 16 KiB in all
+  // (see the kvdb package's state.go).
+  repeated bytes inline = 20;
 }
 
 message Element {

@@ -183,6 +183,11 @@ func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *c
 		Parents:  parentsOf(links),
 		State:    state.Bytes(),
 	})
+	sr, err := decodeStateRoot(ov.added[state])
+	if err != nil {
+		return Head{}, nil, err
+	}
+	carryState(root, sr, fresh)
 	nd, err := makeNode(root, links)
 	if err != nil {
 		return Head{}, nil, err

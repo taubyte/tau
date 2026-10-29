@@ -250,13 +250,19 @@ func (store *Datastore) fetchDead(f *stateFetch, now time.Duration, dropClock ui
 // nodes on the paths that changed. Every block is an intent of the fetch
 // before it is fetched, until the merge publishes it or the fetch is
 // dropped. An attempt that runs out of time keeps what it fetched for the
-// next one. Unless the state's cid is malformed, it returns the fetch with
-// the caller as one of its users: the caller leaves it, merged once a
-// merge has settled the snapshot.
+// next one. Unless the state's cid, or what the snapshot carries of the
+// state (see carried), is malformed, it returns the fetch with the caller
+// as one of its users: the caller leaves it, merged once a merge has
+// settled the snapshot.
 func (store *Datastore) fetchState(ctx context.Context, ng *crdtNodeGetter, c cid.Cid, root *pb.Delta, held *heldDAG) (*stateFetch, error) {
 	stc, err := cid.Cast(root.GetState())
 	if err != nil {
 		return nil, fmt.Errorf("no state: %w", err)
+	}
+	cs := takeCarried()
+	defer cs.putBack()
+	if err := cs.verify(stc, root); err != nil {
+		return nil, fmt.Errorf("state %s: %w", stc, err)
 	}
 	f := store.beginFetch(stc, linkOf(c, root))
 	store.sweepFetches(ctx, store.dropClockNow())
@@ -267,11 +273,7 @@ func (store *Datastore) fetchState(ctx context.Context, ng *crdtNodeGetter, c ci
 	}
 	defer f.unlock()
 	if f.b == nil {
-		f.b = takeFetchBuffers()
-		store.gcMu.Lock()
-		store.beginSession(f.b.sess)
-		store.gcMu.Unlock()
-		if err := store.discover(ctx, f, []cid.Cid{stc}); err != nil {
+		if err := store.seed(ctx, f, cs, held); err != nil {
 			return f, err
 		}
 	}

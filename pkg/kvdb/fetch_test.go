@@ -82,7 +82,8 @@ func (store *Datastore) stateFetched(ctx context.Context) int {
 	return n
 }
 
-// stateClosure is every block of the state r's only head carries.
+// stateClosure is every block of the state r's only head names that the
+// head does not carry itself: the ones a reader fetches.
 func stateClosure(t testing.TB, r *Datastore) []cid.Cid {
 	t.Helper()
 	ctx := context.Background()
@@ -106,6 +107,9 @@ func stateClosure(t testing.TB, r *Datastore) []cid.Cid {
 		for _, l := range nd.Links() {
 			todo = append(todo, l.Cid)
 		}
+	}
+	for c := range carriedBy(root) {
+		delete(seen, c)
 	}
 	return slices.Collect(maps.Keys(seen))
 }

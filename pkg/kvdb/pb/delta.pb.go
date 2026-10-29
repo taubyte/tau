@@ -370,7 +370,15 @@ type Delta struct {
 	Horizon uint64 `protobuf:"varint,16,opt,name=horizon,proto3" json:"horizon,omitempty"`
 	// state is, in a snapshot, the CID of the StateRoot block holding the
 	// state it carries (see state.proto).
-	State         []byte `protobuf:"bytes,17,opt,name=state,proto3" json:"state,omitempty"`
+	State []byte `protobuf:"bytes,17,opt,name=state,proto3" json:"state,omitempty"`
+	// root and trees are, in a snapshot, that StateRoot block's Data and the
+	// CIDs of its links, in order: a reader rebuilds the block from them.
+	Root  *StateRoot `protobuf:"bytes,18,opt,name=root,proto3" json:"root,omitempty"`
+	Trees [][]byte   `protobuf:"bytes,19,rep,name=trees,proto3" json:"trees,omitempty"`
+	// inline are, in a snapshot, whole blocks of its state's trees, each
+	// linked by the StateRoot or by a block before it, at most 16 KiB in all
+	// (see the kvdb package's state.go).
+	Inline        [][]byte `protobuf:"bytes,20,rep,name=inline,proto3" json:"inline,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -489,6 +497,27 @@ func (x *Delta) GetState() []byte {
 	return nil
 }
 
+func (x *Delta) GetRoot() *StateRoot {
+	if x != nil {
+		return x.Root
+	}
+	return nil
+}
+
+func (x *Delta) GetTrees() [][]byte {
+	if x != nil {
+		return x.Trees
+	}
+	return nil
+}
+
+func (x *Delta) GetInline() [][]byte {
+	if x != nil {
+		return x.Inline
+	}
+	return nil
+}
+
 type Element struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Key   string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -573,7 +602,7 @@ var File_delta_proto protoreflect.FileDescriptor
 
 const file_delta_proto_rawDesc = "" +
 	"\n" +
-	"\vdelta.proto\x12\acrdt.pb\"9\n" +
+	"\vdelta.proto\x12\acrdt.pb\x1a\vstate.proto\"9\n" +
 	"\x03Dot\x12\x18\n" +
 	"\areplica\x18\x01 \x01(\fR\areplica\x12\x18\n" +
 	"\acounter\x18\x02 \x01(\x04R\acounter\"\\\n" +
@@ -594,7 +623,7 @@ const file_delta_proto_rawDesc = "" +
 	"\x02hi\x18\x03 \x01(\x04R\x02hi\"V\n" +
 	"\aContext\x12&\n" +
 	"\x06vector\x18\x01 \x03(\v2\x0e.crdt.pb.EntryR\x06vector\x12#\n" +
-	"\x05cloud\x18\x02 \x03(\v2\r.crdt.pb.SpanR\x05cloud\"\xb9\x03\n" +
+	"\x05cloud\x18\x02 \x03(\v2\r.crdt.pb.SpanR\x05cloud\"\x8f\x04\n" +
 	"\x05Delta\x12,\n" +
 	"\belements\x18\x01 \x03(\v2\x10.crdt.pb.ElementR\belements\x120\n" +
 	"\n" +
@@ -610,7 +639,10 @@ const file_delta_proto_rawDesc = "" +
 	"\x03ttl\x18\x0e \x01(\x04R\x03ttl\x12\x14\n" +
 	"\x05since\x18\x0f \x01(\x04R\x05since\x12\x18\n" +
 	"\ahorizon\x18\x10 \x01(\x04R\ahorizon\x12\x14\n" +
-	"\x05state\x18\x11 \x01(\fR\x05stateJ\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\v\x10\fJ\x04\b\f\x10\rR\adagNameR\rsnapshotTotalR\n" +
+	"\x05state\x18\x11 \x01(\fR\x05state\x12&\n" +
+	"\x04root\x18\x12 \x01(\v2\x12.crdt.pb.StateRootR\x04root\x12\x14\n" +
+	"\x05trees\x18\x13 \x03(\fR\x05trees\x12\x16\n" +
+	"\x06inline\x18\x14 \x03(\fR\x06inlineJ\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\v\x10\fJ\x04\b\f\x10\rR\adagNameR\rsnapshotTotalR\n" +
 	"snapshotIdR\acontextR\x06chunks\"\x8d\x01\n" +
 	"\aElement\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
@@ -633,13 +665,14 @@ func file_delta_proto_rawDescGZIP() []byte {
 
 var file_delta_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_delta_proto_goTypes = []any{
-	(*Dot)(nil),     // 0: crdt.pb.Dot
-	(*Parent)(nil),  // 1: crdt.pb.Parent
-	(*Entry)(nil),   // 2: crdt.pb.Entry
-	(*Span)(nil),    // 3: crdt.pb.Span
-	(*Context)(nil), // 4: crdt.pb.Context
-	(*Delta)(nil),   // 5: crdt.pb.Delta
-	(*Element)(nil), // 6: crdt.pb.Element
+	(*Dot)(nil),       // 0: crdt.pb.Dot
+	(*Parent)(nil),    // 1: crdt.pb.Parent
+	(*Entry)(nil),     // 2: crdt.pb.Entry
+	(*Span)(nil),      // 3: crdt.pb.Span
+	(*Context)(nil),   // 4: crdt.pb.Context
+	(*Delta)(nil),     // 5: crdt.pb.Delta
+	(*Element)(nil),   // 6: crdt.pb.Element
+	(*StateRoot)(nil), // 7: crdt.pb.StateRoot
 }
 var file_delta_proto_depIdxs = []int32{
 	0, // 0: crdt.pb.Parent.dot:type_name -> crdt.pb.Dot
@@ -649,12 +682,13 @@ var file_delta_proto_depIdxs = []int32{
 	6, // 4: crdt.pb.Delta.tombstones:type_name -> crdt.pb.Element
 	0, // 5: crdt.pb.Delta.dot:type_name -> crdt.pb.Dot
 	1, // 6: crdt.pb.Delta.parents:type_name -> crdt.pb.Parent
-	0, // 7: crdt.pb.Element.dot:type_name -> crdt.pb.Dot
-	8, // [8:8] is the sub-list for method output_type
-	8, // [8:8] is the sub-list for method input_type
-	8, // [8:8] is the sub-list for extension type_name
-	8, // [8:8] is the sub-list for extension extendee
-	0, // [0:8] is the sub-list for field type_name
+	7, // 7: crdt.pb.Delta.root:type_name -> crdt.pb.StateRoot
+	0, // 8: crdt.pb.Element.dot:type_name -> crdt.pb.Dot
+	9, // [9:9] is the sub-list for method output_type
+	9, // [9:9] is the sub-list for method input_type
+	9, // [9:9] is the sub-list for extension type_name
+	9, // [9:9] is the sub-list for extension extendee
+	0, // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_delta_proto_init() }
@@ -662,6 +696,7 @@ func file_delta_proto_init() {
 	if File_delta_proto != nil {
 		return
 	}
+	file_state_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

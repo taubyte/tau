@@ -27,7 +27,7 @@ const (
 // format is specified in the kvdb package's state.go.
 type StateRoot struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The format profile. Always 1.
+	// The format profile. Always 2.
 	Format        uint32 `protobuf:"varint,1,opt,name=format,proto3" json:"format,omitempty"`
 	Elements      bool   `protobuf:"varint,2,opt,name=elements,proto3" json:"elements,omitempty"`
 	Removals      bool   `protobuf:"varint,3,opt,name=removals,proto3" json:"removals,omitempty"`
