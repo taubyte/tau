@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -760,5 +761,162 @@ func TestKVDatabaseSurface(t *testing.T) {
 	paths, err := f.(*factory).Paths(ctx, "", 1)
 	if err != nil || len(paths) == 0 {
 		t.Fatalf("paths: %v %v", paths, err)
+	}
+}
+
+// askMeter is a DAG service whose sessions, through which a replica walks
+// and fetches, record each block of a state that is asked for once it has
+// arrived, and which counts every block the replica writes itself.
+type askMeter struct {
+	*fetchThroughDAGSvc
+	state map[cid.Cid]bool
+
+	mu           sync.Mutex
+	arrived      map[cid.Cid]bool
+	again        []cid.Cid
+	written      map[cid.Cid]int
+	writtenTwice []cid.Cid
+}
+
+func newAskMeter(d *fetchThroughDAGSvc, state []cid.Cid) *askMeter {
+	m := &askMeter{fetchThroughDAGSvc: d, state: map[cid.Cid]bool{}, arrived: map[cid.Cid]bool{}, written: map[cid.Cid]int{}}
+	for _, c := range state {
+		m.state[c] = true
+	}
+	return m
+}
+
+func (m *askMeter) Session(context.Context) ipld.NodeGetter { return askGetter{m} }
+
+func (m *askMeter) asked(c cid.Cid) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.arrived[c] {
+		m.again = append(m.again, c)
+	}
+}
+
+func (m *askMeter) got(c cid.Cid) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.state[c] {
+		m.arrived[c] = true
+	}
+}
+
+func (m *askMeter) Add(ctx context.Context, nd ipld.Node) error {
+	m.mu.Lock()
+	if m.written[nd.Cid()]++; m.written[nd.Cid()] == 2 {
+		m.writtenTwice = append(m.writtenTwice, nd.Cid())
+	}
+	m.mu.Unlock()
+	return m.fetchThroughDAGSvc.Add(ctx, nd)
+}
+
+func (m *askMeter) AddMany(ctx context.Context, nds []ipld.Node) error {
+	for _, nd := range nds {
+		if err := m.Add(ctx, nd); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type askGetter struct{ m *askMeter }
+
+func (g askGetter) Get(ctx context.Context, c cid.Cid) (ipld.Node, error) {
+	g.m.asked(c)
+	nd, err := g.m.fetchThroughDAGSvc.Get(ctx, c)
+	if err == nil {
+		g.m.got(c)
+	}
+	return nd, err
+}
+
+func (g askGetter) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.NodeOption {
+	out := make(chan *ipld.NodeOption, len(cids))
+	go func() {
+		defer close(out)
+		for _, c := range cids {
+			nd, err := g.Get(ctx, c)
+			out <- &ipld.NodeOption{Node: nd, Err: err}
+		}
+	}()
+	return out
+}
+
+// TestAFailedDiscoverLeavesTheFetchToGoOn fails, in turn, each write of an
+// intent while a replica fetches a peer's state: the staging that wrote it
+// fails, and the attempt with it. The next attempt goes on from there: once
+// caught up the replica holds the peer's state, no block of it that arrived
+// was asked for again and no block was written twice, its members are what
+// its roots reach and it holds no block nothing indexes or reaches. A
+// discover that forgot what it could not record left those blocks neither
+// wanted nor held, and an attempt that found nothing wanted took the fetch
+// for complete.
+func TestAFailedDiscoverLeavesTheFetchToGoOn(t *testing.T) {
+	ctx := context.Background()
+	// Deep enough that a fetch discovers what the blocks it fetched link.
+	peer, peerDag := widePeer(t, 1000, 64)
+	defer peer.Close()
+	state := stateClosure(t, peer)
+	want := queryAll(t, peer)
+	for at := 0; ; at++ {
+		store := newFaultyDatastore(ds.NewMapDatastore())
+		own := newFetchThrough()
+		own.setRemotes(peerDag.DAGService)
+		m := newAskMeter(own, state)
+		r := manualReplica(t, store, m, "faulty: ")
+		prefix := r.intentPrefix().String() + "/"
+		var n atomic.Int64
+		store.SetFail(func(op string, k ds.Key) error {
+			if op == "Put" && strings.HasPrefix(k.String(), prefix) && n.Add(1)-1 == int64(at) {
+				return errFault
+			}
+			return nil
+		})
+		hs, _ := peer.heads.List()
+		var err error
+		for _, h := range hs {
+			err = errors.Join(err, r.handleBlock(ctx, h))
+		}
+		store.SetFail(nil)
+		if n.Load() <= int64(at) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			// The carried blocks', the seed's discover, and at least one
+			// of what fetched blocks link.
+			if at < 3 {
+				t.Fatalf("a catch-up wrote intents only %d times", at)
+			}
+			t.Logf("%d intent writes, %d state blocks", at, len(state))
+			closeStore(t, r)
+			return
+		}
+		t.Logf("intent write %d failed: %v", at, err)
+		for i := 0; r.IsDirty(ctx); i++ {
+			if i == 10 {
+				t.Fatalf("intent write %d failed: the replica still misses blocks after %d repairs", at, i)
+			}
+			if err := r.Repair(ctx); err != nil {
+				t.Logf("intent write %d failed: repair: %v", at, err)
+			}
+		}
+		if got := queryAll(t, r); !sameKV(got, want) {
+			t.Fatalf("intent write %d failed: the replica holds %d keys, want %d", at, len(got), len(want))
+		}
+		m.mu.Lock()
+		if len(m.again) > 0 || len(m.writtenTwice) > 0 {
+			t.Errorf("intent write %d failed: %d state blocks asked for after they arrived, %d blocks written twice", at, len(m.again), len(m.writtenTwice))
+		}
+		m.mu.Unlock()
+		if err := r.maintain(ctx); err != nil {
+			t.Fatal(err)
+		}
+		assertTreesMatch(t, r)
+		assertReach(t, r)
+		assertNoLeak(t, r, own)
+		closeStore(t, r)
 	}
 }

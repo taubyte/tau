@@ -51,10 +51,13 @@ type stateFetch struct {
 // grown to the size of the states fetched.
 type fetchBuffers struct {
 	// sess holds every block of the closure the fetch has seen, and
-	// want[next:] are the ones not received yet.
-	sess *gcSession
-	want []cid.Cid
-	next int
+	// want[next:] are the ones not received yet. unstaged are blocks of
+	// the closure a discover could not record, the next one's to take
+	// first.
+	sess     *gcSession
+	want     []cid.Cid
+	next     int
+	unstaged []cid.Cid
 
 	// Scratch for one attempt, events empty between attempts.
 	events                        chan fetchEvent
@@ -80,7 +83,7 @@ func (b *fetchBuffers) wanted() []cid.Cid { return b.want[b.next:] }
 // putBack returns b to the pool, keeping its storage and none of the cids
 // it held.
 func (b *fetchBuffers) putBack() {
-	for _, s := range []*[]cid.Cid{&b.want, &b.failed, &b.parents, &b.linked, &b.kept, &b.fresh} {
+	for _, s := range []*[]cid.Cid{&b.want, &b.unstaged, &b.failed, &b.parents, &b.linked, &b.kept, &b.fresh} {
 		clear((*s)[:cap(*s)])
 		*s = (*s)[:0]
 	}
@@ -286,15 +289,23 @@ func (store *Datastore) fetchState(ctx context.Context, ng *crdtNodeGetter, c ci
 	return f, nil
 }
 
-// discover takes the blocks of f's closure among cids it does not hold
-// yet: a subtree the roots reach is reused, and every other block recorded
-// as an intent and wanted. A block it could not record is not held yet.
+// discover takes the blocks of f's closure among cids, and those an
+// earlier discover could not, that it does not hold yet: a subtree the
+// roots reach is reused, and every other block recorded as an intent and
+// wanted. What it cannot record stays f's to take next time, so a failure
+// leaves no block of the closure neither wanted nor held.
 func (store *Datastore) discover(ctx context.Context, f *stateFetch, cids []cid.Cid) error {
 	b := f.b
-	fresh, err := store.intend(ctx, b.sess, cids, b.fresh[:0])
+	b.unstaged = append(b.unstaged, cids...)
+	fresh, err := store.intend(ctx, b.sess, b.unstaged, b.fresh[:0])
 	b.fresh = fresh
 	b.requeue(b.fresh)
-	return err
+	if err != nil {
+		return err
+	}
+	clear(b.unstaged)
+	b.unstaged = b.unstaged[:0]
+	return nil
 }
 
 // wantWindow bounds how many blocks one fetch has asked for and not yet
@@ -323,11 +334,16 @@ type fetchEvent struct {
 // asks for what each links as soon as it arrives rather than once its whole
 // level has. What a block links is staged before it is asked for, so an
 // attempt that stops anywhere leaves every block it has not received
-// wanted, for the next one to go on from. A block that could not be fetched
-// is asked for again while others still arrive; the attempt ends once none
-// does. Gets run under cctx, staging under ctx.
+// wanted or still to stage, for the next one to go on from. A block that
+// could not be fetched is asked for again while others still arrive; the
+// attempt ends once none does. Gets run under cctx, staging under ctx.
 func (store *Datastore) fetchWanted(ctx, cctx context.Context, ng ipld.NodeGetter, f *stateFetch, held *heldDAG) error {
 	b := f.b
+	if len(b.unstaged) > 0 {
+		if err := store.discover(ctx, f, nil); err != nil {
+			return err
+		}
+	}
 	gctx, stop := context.WithCancel(cctx)
 	events := b.events
 	gets, arrived := 0, false
@@ -344,10 +360,19 @@ func (store *Datastore) fetchWanted(ctx, cctx context.Context, ng ipld.NodeGette
 	defer func() {
 		stop()
 		for gets > 0 {
-			if ev := <-events; ev.asked != nil {
+			switch ev := <-events; {
+			case ev.asked != nil:
 				ended(ev.asked)
+			case ev.err == nil && b.received(ev.node):
+				held.keep(ev.node)
 			}
 		}
+		// What arrived once the attempt stopped is the next one's to stage.
+		b.unstaged = append(b.unstaged, b.linked...)
+		clear(b.linked)
+		b.linked = b.linked[:0]
+		clear(b.parents)
+		b.parents = b.parents[:0]
 		b.settle()
 		b.requeue(b.failed)
 		b.failed = b.failed[:0]
@@ -408,18 +433,14 @@ func (store *Datastore) fetchWanted(ctx, cctx context.Context, ng ipld.NodeGette
 		store.fetchMu.Lock()
 		f.progress = store.times.up()
 		store.fetchMu.Unlock()
-		// A block leaves the wanted ones once what it links is staged.
 		err := store.discover(ctx, f, b.linked)
 		clear(b.linked)
 		b.linked = b.linked[:0]
-		if err != nil {
-			b.requeue(b.parents)
-			clear(b.parents)
-			b.parents = b.parents[:0]
-			return errors.Join(errs, err)
-		}
 		clear(b.parents)
 		b.parents = b.parents[:0]
+		if err != nil {
+			return errors.Join(errs, err)
+		}
 	}
 }
 

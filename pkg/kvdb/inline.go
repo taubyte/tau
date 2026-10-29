@@ -180,8 +180,8 @@ func (cs *carried) take(nd ipld.Node) error {
 // seed begins f's first attempt with what its snapshot carries, staged as
 // a fetched block is: what the roots do not reach becomes an intent of f
 // before it is written, and what the blocks written link that none carried
-// is wanted. A failure ends the session, for the next attempt to begin
-// again.
+// is discovered. A failure before the blocks are written ends the session,
+// for the next attempt to begin again.
 func (store *Datastore) seed(ctx context.Context, f *stateFetch, cs *carried, held *heldDAG) error {
 	f.b = takeFetchBuffers()
 	store.gcMu.Lock()
@@ -191,9 +191,11 @@ func (store *Datastore) seed(ctx context.Context, f *stateFetch, cs *carried, he
 		store.releaseFetch(ctx, f)
 		return err
 	}
-	return nil
+	return store.discover(ctx, f, cs.cids)
 }
 
+// stageCarried writes what the snapshot carries that the roots do not
+// reach, and leaves in cs.cids what the blocks it wrote link.
 func (store *Datastore) stageCarried(ctx context.Context, f *stateFetch, cs *carried, held *heldDAG) error {
 	for _, nd := range cs.nodes {
 		cs.cids = append(cs.cids, nd.Cid())
@@ -223,5 +225,5 @@ func (store *Datastore) stageCarried(ctx context.Context, f *stateFetch, cs *car
 			cs.cids = append(cs.cids, l.c)
 		}
 	}
-	return store.discover(ctx, f, cs.cids)
+	return nil
 }
