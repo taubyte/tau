@@ -468,3 +468,99 @@ func TestPrintReport(t *testing.T) {
 		t.Fatalf("clean report missing the summary line, got:\n%s", b.String())
 	}
 }
+
+const besideBufGenYAML = `version: v2
+plugins:
+  - local: protoc-gen-go
+    out: .
+    opt: paths=source_relative
+`
+
+// TestCheck_BesideSources covers a module that generates into its own
+// directory: only its *.pb.go files are compared, so the .proto, the
+// buf.gen.yaml and any hand-written file beside them are not drift.
+func TestCheck_BesideSources(t *testing.T) {
+	requireBuf(t)
+	root := t.TempDir()
+	dir := "modB"
+	abs := filepath.Join(root, dir)
+	if err := os.MkdirAll(abs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"buf.gen.yaml": besideBufGenYAML,
+		"ping.proto":   testProto,
+		"generate.go":  "package ping\n",
+	} {
+		if err := os.WriteFile(filepath.Join(abs, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeGoModPinningInstalledProtocGenGo(t, root)
+
+	before, err := Check(root, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before.Diffs) != 1 || before.Diffs[0].Kind != "generated" || before.Diffs[0].Rel != "ping.pb.go" {
+		t.Fatalf("want ping.pb.go reported as missing, got %+v", before.Diffs)
+	}
+
+	if err := generate(abs, abs); err != nil {
+		t.Fatal(err)
+	}
+	clean, err := Check(root, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if clean.Checked != 1 || len(clean.Diffs) != 0 {
+		t.Fatalf("want one clean generated file, got %d checked, %+v", clean.Checked, clean.Diffs)
+	}
+
+	target := filepath.Join(abs, "ping.pb.go")
+	orig, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, append(bytes.Clone(orig), "\n// hand-edited\n"...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dirty, err := Check(root, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dirty.Diffs) != 1 || dirty.Diffs[0].Kind != "differs" {
+		t.Fatalf("want one 'differs' diff, got %+v", dirty.Diffs)
+	}
+}
+
+func TestModuleOut(t *testing.T) {
+	dir := t.TempDir()
+	if out, err := moduleOut(dir); err != nil || out != "gen" {
+		t.Fatalf("no buf.gen.yaml: got %q, %v", out, err)
+	}
+	for _, c := range []struct {
+		yaml, want string
+		fails      bool
+	}{
+		{yaml: testBufGenYAML, want: "gen"},
+		{yaml: besideBufGenYAML, want: "."},
+		{yaml: "version: v2\nplugins: []\n", want: "gen"},
+		{yaml: "version: v2\nplugins:\n  - local: a\n    out: gen\n  - local: b\n    out: .\n", fails: true},
+		{yaml: "plugins: [", fails: true},
+	} {
+		if err := os.WriteFile(filepath.Join(dir, "buf.gen.yaml"), []byte(c.yaml), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		out, err := moduleOut(dir)
+		if c.fails {
+			if err == nil {
+				t.Fatalf("%q: want an error, got %q", c.yaml, out)
+			}
+			continue
+		}
+		if err != nil || out != c.want {
+			t.Fatalf("%q: got %q, %v, want %q", c.yaml, out, err, c.want)
+		}
+	}
+}

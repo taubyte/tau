@@ -1,10 +1,14 @@
 package kvdb
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"testing"
 	"testing/synctest"
+	"unsafe"
 
+	dag "github.com/ipfs/boxo/ipld/merkledag"
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
@@ -66,4 +70,67 @@ func TestGetDeltasKeepsWhatWasFetchedInTime(t *testing.T) {
 			t.Fatalf("got %d of the %d deltas fetched", got, len(cids))
 		}
 	})
+}
+
+// TestBlockCodecAllocations bounds what a delta block costs to make and to
+// read. Reading allocates the delta and its dot, each element and its dot,
+// and the element slice as it grows (five times to 16), and copies none of
+// the block's bytes; making allocates the data,
+// the ProtoNode, the links with the copy SetLinks makes, and the hasher
+// SetCidBuilder makes only to check it can (two).
+func TestBlockCodecAllocations(t *testing.T) {
+	delta := &pb.Delta{Priority: 3, Dot: dot{replica: "replica-id-0000000000000000", counter: 7}.toPB(), At: 1, Ttl: 2}
+	for i := range 16 {
+		delta.Elements = append(delta.Elements, &pb.Element{
+			Key:   fmt.Sprintf("/some/key/%04d", i),
+			Value: bytes.Repeat([]byte{byte(i)}, 64),
+			Dot:   delta.Dot,
+		})
+	}
+	parent, err := makeNode(&pb.Delta{Priority: 1}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	heads := []Head{{Cid: parent.Cid()}, {Cid: parent.Cid()}}
+	nd, err := makeNode(delta, heads)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := testing.AllocsPerRun(200, func() {
+		if _, err := extractDelta(nd); err != nil {
+			t.Fatal(err)
+		}
+	})
+	made := testing.AllocsPerRun(200, func() {
+		if _, err := makeNode(delta, heads); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Logf("read %v, make %v", read, made)
+	if read > 2+2*16+5 {
+		t.Errorf("reading a block of 16 elements: %v allocations, want at most %d", read, 2+2*16+5)
+	}
+	if made > 6 {
+		t.Errorf("making a block: %v allocations, want at most 6", made)
+	}
+}
+
+// TestDecodedDeltaAliasesItsBlock: reading a delta copies none of its
+// block's bytes.
+func TestDecodedDeltaAliasesItsBlock(t *testing.T) {
+	nd, err := makeNode(&pb.Delta{Elements: []*pb.Element{{Key: "/a", Value: []byte("one")}, {Key: "/b", Value: []byte("two")}}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := nd.(*dag.ProtoNode).Data()
+	delta, err := extractDelta(nd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := delta.Elements[1].Value; &v[0] != &data[bytes.Index(data, []byte("two"))] {
+		t.Fatal("the value was copied out of the block")
+	}
+	if k := delta.Elements[1].Key; unsafe.StringData(k) != &data[bytes.Index(data, []byte("/b"))] {
+		t.Fatal("the key was copied out of the block")
+	}
 }

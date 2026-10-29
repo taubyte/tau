@@ -8,7 +8,6 @@ import (
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
-	"google.golang.org/protobuf/proto"
 )
 
 // crdtNodeGetter wraps an ipld.NodeGetter with methods that decode the
@@ -60,8 +59,10 @@ func extractDelta(nd ipld.Node) (*pb.Delta, error) {
 	if !ok {
 		return nil, errors.New("node is not a ProtoNode")
 	}
+	// The delta's bytes and strings alias the block's data, which is never
+	// written to once made, for as long as the delta is held.
 	delta := &pb.Delta{}
-	if err := proto.Unmarshal(protonode.Data(), delta); err != nil {
+	if err := delta.UnmarshalVTUnsafe(protonode.Data()); err != nil {
 		return nil, err
 	}
 	return delta, nil
@@ -69,17 +70,33 @@ func extractDelta(nd ipld.Node) (*pb.Delta, error) {
 
 // makeNode makes the block for delta, linking the given heads.
 func makeNode(delta *pb.Delta, heads []Head) (ipld.Node, error) {
-	data, err := proto.Marshal(delta)
+	data, err := delta.MarshalVT()
 	if err != nil {
 		return nil, err
 	}
 	nd := dag.NodeWithData(data)
-	for _, h := range heads {
-		if err := nd.AddRawLink("", &ipld.Link{Cid: h.Cid}); err != nil {
-			return nil, err
-		}
+	if err := setLinks(nd, len(heads), func(i int) cid.Cid { return heads[i].Cid }); err != nil {
+		return nil, err
 	}
-	// Ensure we work with CIDv1
-	err = nd.SetCidBuilder(dag.V1CidPrefix())
-	return nd, err
+	return nd, nd.SetCidBuilder(v1Prefix)
+}
+
+// v1Prefix is the builder of every block's cid, made once: as an interface
+// it would otherwise be allocated per block.
+var v1Prefix cid.Builder = dag.V1CidPrefix()
+
+// setLinks gives nd the n links at(0) .. at(n-1) with one allocation for
+// them: SetLinks keeps the pointers and copies only the slice of them.
+func setLinks(nd *dag.ProtoNode, n int, at func(int) cid.Cid) error {
+	if n == 0 {
+		return nil
+	}
+	links := make([]ipld.Link, n)
+	var buf [32]*ipld.Link
+	ptrs := buf[:0]
+	for i := range links {
+		links[i].Cid = at(i)
+		ptrs = append(ptrs, &links[i])
+	}
+	return nd.SetLinks(ptrs)
 }

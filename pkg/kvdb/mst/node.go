@@ -6,12 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 
 	dag "github.com/ipfs/boxo/ipld/merkledag"
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
 	pb "github.com/taubyte/tau/pkg/kvdb/mst/pb"
-	"google.golang.org/protobuf/proto"
 )
 
 // Format is the format profile this package reads and writes.
@@ -141,42 +141,62 @@ func sharedPrefix(a, b []byte) int {
 	return n
 }
 
-var marshal = proto.MarshalOptions{Deterministic: true}
+// v1Prefix is the builder of every node's cid, made once: as an interface
+// it would otherwise be allocated per node.
+var v1Prefix cid.Builder = dag.V1CidPrefix()
 
-// encode makes the block for n.
+// encode makes the block for n. Its message comes from a pool and borrows
+// n's bytes until it is marshalled.
 func encode(n *node) (*dag.ProtoNode, error) {
-	es := make([]pb.Entry, len(n.entries))
-	msg := &pb.Node{
-		Format:      Format,
-		Level:       n.level,
-		Left:        n.kids[0].c.Defined(),
-		LeftSummary: n.kids[0].sum,
-		Entries:     make([]*pb.Entry, len(n.entries)),
-	}
+	msg := pb.NodeFromVTPool()
+	defer msg.ReturnToVTPool()
+	msg.Format = Format
+	msg.Level = n.level
+	msg.Left = n.kids[0].c.Defined()
+	msg.LeftSummary = n.kids[0].sum
+	msg.Entries = slices.Grow(msg.Entries[:0], len(n.entries))[:len(n.entries)]
 	var prev []byte
 	for i, e := range n.entries {
+		pe := msg.Entries[i]
+		if pe == nil {
+			pe = pb.EntryFromVTPool()
+			msg.Entries[i] = pe
+		}
 		shared := sharedPrefix(prev, e.key)
-		es[i].Shared = uint32(shared)
-		es[i].Suffix = e.key[shared:]
-		es[i].Value = e.val
-		es[i].Right = n.kids[i+1].c.Defined()
-		es[i].RightSummary = n.kids[i+1].sum
-		msg.Entries[i] = &es[i]
+		pe.Shared = uint32(shared)
+		pe.Suffix = e.key[shared:]
+		pe.Value = e.val
+		pe.Right = n.kids[i+1].c.Defined()
+		pe.RightSummary = n.kids[i+1].sum
 		prev = e.key
 	}
-	data, err := marshal.Marshal(msg)
+	data, err := msg.MarshalVT()
 	if err != nil {
 		return nil, err
 	}
 	nd := dag.NodeWithData(data)
+	count := 0
 	for _, k := range n.kids {
 		if k.c.Defined() {
-			if err := nd.AddRawLink("", &ipld.Link{Cid: k.c}); err != nil {
-				return nil, err
-			}
+			count++
 		}
 	}
-	return nd, nd.SetCidBuilder(dag.V1CidPrefix())
+	if count > 0 {
+		// SetLinks keeps the pointers and copies only the slice of them.
+		links := make([]ipld.Link, 0, count)
+		var buf [32]*ipld.Link
+		ptrs := buf[:0]
+		for _, k := range n.kids {
+			if k.c.Defined() {
+				links = append(links, ipld.Link{Cid: k.c})
+				ptrs = append(ptrs, &links[len(links)-1])
+			}
+		}
+		if err := nd.SetLinks(ptrs); err != nil {
+			return nil, err
+		}
+	}
+	return nd, nd.SetCidBuilder(v1Prefix)
 }
 
 func protoNode(nd ipld.Node) (*dag.ProtoNode, error) {
@@ -197,8 +217,14 @@ func decode(nd ipld.Node, below uint32) (*node, error) {
 	if err != nil {
 		return nil, malformed(c, "%s", err)
 	}
-	var msg pb.Node
-	if err := proto.Unmarshal(pn.Data(), &msg); err != nil {
+	// The message's bytes alias the block's data from here: a block is never
+	// written to once made, and the node keeps only clipped slices of it, so
+	// no append through them can reach the bytes after. The message goes
+	// back to the pool when decode returns; the node's slices live as long
+	// as the node.
+	msg := pb.NodeFromVTPool()
+	defer msg.ReturnToVTPool()
+	if err := msg.UnmarshalVTUnsafe(pn.Data()); err != nil {
 		return nil, malformed(c, "%s", err)
 	}
 	if msg.Format != Format {
@@ -241,7 +267,7 @@ func decode(nd ipld.Node, below uint32) (*node, error) {
 		li++
 		return nil
 	}
-	if err := slot(0, msg.Left, msg.LeftSummary); err != nil {
+	if err := slot(0, msg.Left, slices.Clip(msg.LeftSummary)); err != nil {
 		return nil, err
 	}
 	keys := make([]byte, 0, size)
@@ -261,8 +287,8 @@ func decode(nd ipld.Node, below uint32) (*node, error) {
 				return nil, fmt.Errorf("%w in %s", ErrUnsorted, c)
 			}
 		}
-		n.entries[i] = entry{key: key, val: e.Value}
-		if err := slot(i+1, e.Right, e.RightSummary); err != nil {
+		n.entries[i] = entry{key: key, val: slices.Clip(e.Value)}
+		if err := slot(i+1, e.Right, slices.Clip(e.RightSummary)); err != nil {
 			return nil, err
 		}
 		prev = key

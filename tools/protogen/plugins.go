@@ -118,6 +118,7 @@ func checkPluginVersions(repoRoot, absDir string) error {
 type bufGenYAML struct {
 	Plugins []struct {
 		Local string `yaml:"local"`
+		Out   string `yaml:"out"`
 	} `yaml:"plugins"`
 }
 

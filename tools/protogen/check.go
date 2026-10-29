@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Diff describes one file that does not match between the freshly generated
@@ -43,7 +45,9 @@ type Result struct {
 // a developer running `buf generate` there would; -o prepends to the out:
 // paths in the template rather than replacing them, so the result lands at
 // <scratch>/gen — and diffs it against the tree already committed at
-// protoDir/gen.
+// protoDir/gen. A module whose buf.gen.yaml generates into "." (beside its
+// sources, as pkg/kvdb/pb does) is diffed at its own root instead, over its
+// *.pb.go files only.
 //
 // Checked is always the union of both sides, not just what regeneration
 // produced: if the generator silently starts producing nothing, whatever is
@@ -66,6 +70,11 @@ func Check(repoRoot, protoDir string) (Result, error) {
 		return Result{}, fmt.Errorf("scan %s for .proto sources: %w", protoDir, err)
 	}
 
+	out, err := moduleOut(absDir)
+	if err != nil {
+		return Result{}, fmt.Errorf("%s: %w", protoDir, err)
+	}
+
 	generated := map[string][]byte{}
 	if hasSource {
 		if _, err := lookBuf(); err != nil {
@@ -85,15 +94,19 @@ func Check(repoRoot, protoDir string) (Result, error) {
 			return Result{}, fmt.Errorf("buf generate in %s: %w", protoDir, err)
 		}
 
-		generated, err = readTree(filepath.Join(scratch, "gen"))
+		generated, err = readTree(filepath.Join(scratch, out))
 		if err != nil {
 			return Result{}, err
 		}
 	}
 
-	committed, err := readTree(filepath.Join(absDir, "gen"))
+	committed, err := readTree(filepath.Join(absDir, out))
 	if err != nil {
 		return Result{}, err
+	}
+	if out == "." {
+		keepGenerated(generated)
+		keepGenerated(committed)
 	}
 
 	rels := make(map[string]bool, len(generated)+len(committed))
@@ -202,6 +215,47 @@ func anyProtoFiles(dir string) (bool, error) {
 		return nil
 	})
 	return found, err
+}
+
+// moduleOut is the directory, relative to absDir, that absDir's
+// buf.gen.yaml generates into: "gen" for pkg/proto, "." for a module whose
+// generated files sit beside its sources. Every plugin must share it. A
+// module without a buf.gen.yaml has nothing to generate, and is checked as
+// a gen/ module.
+func moduleOut(absDir string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(absDir, "buf.gen.yaml"))
+	if os.IsNotExist(err) {
+		return "gen", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read buf.gen.yaml: %w", err)
+	}
+	var cfg bufGenYAML
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return "", fmt.Errorf("parse buf.gen.yaml: %w", err)
+	}
+	out := ""
+	for _, p := range cfg.Plugins {
+		o := filepath.Clean(p.Out)
+		if out != "" && o != out {
+			return "", fmt.Errorf("buf.gen.yaml plugins generate into both %s and %s", out, o)
+		}
+		out = o
+	}
+	if out == "" {
+		return "gen", nil
+	}
+	return out, nil
+}
+
+// keepGenerated drops every file but generated Go from a tree read at a
+// module's own root, where the sources and buf.gen.yaml sit too.
+func keepGenerated(files map[string][]byte) {
+	for rel := range files {
+		if !strings.HasSuffix(rel, ".pb.go") {
+			delete(files, rel)
+		}
+	}
 }
 
 // readTree reads every regular file under root into memory, keyed by its

@@ -248,3 +248,47 @@ func TestCRDTHooks(t *testing.T) {
 		absent(t, "b", b, "k")
 	})
 }
+
+// TestPutHookCannotWriteIntoABlock: a merged value aliases the block it came
+// in, so a PutHook that writes into the bytes it is given must be handed a
+// copy, or it would change a block, and what Get and every later reader of
+// that block see.
+func TestPutHookCannotWriteIntoABlock(t *testing.T) {
+	replicas, _, done := makeSeparateStoresWith(t, 2, func(i int) *Options {
+		o := noAutoCompact()
+		if i == 1 {
+			o.PutHook = func(k ds.Key, v []byte) {
+				for j := range v {
+					v[j] = 'X'
+				}
+			}
+		}
+		return o
+	})
+	defer done()
+	a, b := replicas[0], replicas[1]
+	put(t, a, "k", "hello")
+	syncReplicaHeads(t, a, b)
+	ctx := context.Background()
+	got, err := b.Get(ctx, ds.NewKey("k"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "hello" {
+		t.Fatalf("b reads %q", got)
+	}
+	hs, _ := b.heads.List()
+	for _, h := range hs {
+		nd, err := b.dagService.Get(ctx, h.Cid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		delta, err := extractDelta(nd)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v := string(delta.GetElements()[0].GetValue()); v != "hello" {
+			t.Fatalf("the block now holds %q", v)
+		}
+	}
+}

@@ -13,7 +13,6 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/taubyte/tau/pkg/kvdb/mst"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
-	"google.golang.org/protobuf/proto"
 )
 
 // A snapshot carries a state: its live elements, its pending removals and
@@ -260,23 +259,25 @@ type stateRoot struct {
 	elems, pending, ctx cid.Cid
 }
 
-var stateMarshal = proto.MarshalOptions{Deterministic: true}
-
 func (s stateRoot) node() (*dag.ProtoNode, error) {
-	msg := &pb.StateRoot{Format: stateFormat, Elements: s.elems.Defined(), Removals: s.pending.Defined(), Context: s.ctx.Defined()}
-	data, err := stateMarshal.Marshal(msg)
+	msg := pb.StateRoot{Format: stateFormat, Elements: s.elems.Defined(), Removals: s.pending.Defined(), Context: s.ctx.Defined()}
+	data, err := msg.MarshalVT()
 	if err != nil {
 		return nil, err
 	}
 	nd := dag.NodeWithData(data)
-	for _, c := range []cid.Cid{s.elems, s.pending, s.ctx} {
+	var present [3]cid.Cid
+	n := 0
+	for _, c := range [...]cid.Cid{s.elems, s.pending, s.ctx} {
 		if c.Defined() {
-			if err := nd.AddRawLink("", &ipld.Link{Cid: c}); err != nil {
-				return nil, err
-			}
+			present[n] = c
+			n++
 		}
 	}
-	return nd, nd.SetCidBuilder(dag.V1CidPrefix())
+	if err := setLinks(nd, n, func(i int) cid.Cid { return present[i] }); err != nil {
+		return nil, err
+	}
+	return nd, nd.SetCidBuilder(v1Prefix)
 }
 
 func decodeStateRoot(nd ipld.Node) (stateRoot, error) {
@@ -285,7 +286,7 @@ func decodeStateRoot(nd ipld.Node) (stateRoot, error) {
 		return stateRoot{}, err
 	}
 	var msg pb.StateRoot
-	if err := proto.Unmarshal(pn.Data(), &msg); err != nil {
+	if err := msg.UnmarshalVT(pn.Data()); err != nil {
 		return stateRoot{}, fmt.Errorf("state root %s: %w", nd.Cid(), err)
 	}
 	if msg.Format != stateFormat || len(msg.ProtoReflect().GetUnknown()) > 0 {

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	mrand "math/rand"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -466,7 +467,8 @@ func NewDatastore(
 	dstore.set.logger = opts.Logger
 	dstore.set.putHook = func(k string, v []byte) {
 		if opts.PutHook != nil {
-			opts.PutHook(ds.NewKey(k), v)
+			// A merged value aliases the block it came in.
+			opts.PutHook(ds.NewKey(k), slices.Clone(v))
 		}
 	}
 	dstore.set.deleteHook = func(k string) {

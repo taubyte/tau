@@ -4,3 +4,13 @@ plugins:
   - local: protoc-gen-go
     out: .
     opt: paths=source_relative
+  # pinned to v0.6.1-0.20240319094008-0393e58bdf10 — the github.com/planetscale/vtprotobuf version in go.mod
+  - local: protoc-gen-go-vtproto
+    out: .
+    opt:
+      - paths=source_relative
+      - features=marshal+unmarshal+unmarshal_unsafe+size+pool
+      - pool=*.Delta
+      - pool=*.Element
+      - pool=*.Dot
+      - pool=*.Parent
