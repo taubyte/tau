@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 	pebbleds "github.com/ipfs/go-ds-pebble"
 	ipld "github.com/ipfs/go-ipld-format"
 	peercore "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/taubyte/tau/p2p/helpers"
 	"github.com/taubyte/tau/p2p/keypair"
 	taupeer "github.com/taubyte/tau/p2p/peer"
 )
@@ -620,7 +622,9 @@ type netSnapNode struct {
 func newNetSnapNode(b *testing.B, name string, opts *Options) *netSnapNode {
 	b.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	node, err := taupeer.New(ctx, b.TempDir(), keypair.NewRaw(), nil, []string{"/ip4/127.0.0.1/tcp/0"}, nil, true, false)
+	repo := b.TempDir()
+	recordReprovided(b, repo)
+	node, err := taupeer.New(ctx, repo, keypair.NewRaw(), nil, []string{"/ip4/127.0.0.1/tcp/0"}, nil, true, false)
 	if err != nil {
 		cancel()
 		b.Fatal(err)
@@ -634,6 +638,24 @@ func newNetSnapNode(b *testing.B, name string, opts *Options) *netSnapNode {
 	n := &netSnapNode{node: node, meter: m, cancel: cancel}
 	n.snapReplica = openSnap(b, snapEnv{name: name, dir: b.TempDir(), dag: &sessionMeter{dagMeter: m, sessions: node.DAG()}, opts: replicaOptions(opts, name)})
 	return n
+}
+
+// recordReprovided records in the node repository at repo a reprovide
+// done now. A node announces every block it holds to the DHT a minute after
+// it starts, unless it did within its interval; that sweep allocated about
+// 60 MB at 100k keys, no part of a catch-up, and landed in a timed one or
+// not depending on how long the setup took, so a run measured it or not.
+func recordReprovided(b *testing.B, repo string) {
+	b.Helper()
+	st, err := helpers.NewDatastore(repo)
+	if err != nil {
+		b.Fatal(err)
+	}
+	now := strconv.FormatInt(time.Now().UnixNano(), 10)
+	err = st.Put(context.Background(), ds.NewKey("/repro/reprovide/lastreprovide"), []byte(now))
+	if err = errors.Join(err, st.Close()); err != nil {
+		b.Fatal(err)
+	}
 }
 
 func (n *netSnapNode) close(b *testing.B) {
