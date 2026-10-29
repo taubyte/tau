@@ -940,7 +940,12 @@ func (store *Datastore) stage(ctx context.Context, cids []cid.Cid, mark bool) er
 	for _, c := range cids {
 		t.put(store.reclaimKey(c), nil)
 	}
-	return t.commit(ctx)
+	err := t.commit(ctx)
+	t.release()
+	if err != nil {
+		return err
+	}
+	return store.raw.Sync(ctx, store.reclaimPrefix())
 }
 
 func (store *Datastore) unstage(cids []cid.Cid) {
@@ -1017,13 +1022,18 @@ func (store *Datastore) reclaimSome(ctx context.Context) (int, bool, error) {
 		t.del(ds.RawKey(k))
 		return nil
 	})
-	if err != nil {
+	if err != nil || len(t.order) == 0 {
 		return 0, false, err
 	}
 	if len(drop) > 0 {
 		if err := store.dagService.RemoveMany(ctx, drop); err != nil {
 			return 0, false, fmt.Errorf("error removing unindexed blocks: %w", err)
 		}
+	}
+	// A mark goes once what it found is durable: the entry of a block
+	// indexed, the removal of one that is not.
+	if err := store.syncBlocks(ctx); err != nil {
+		return 0, false, err
 	}
 	return len(drop), more, t.commit(ctx)
 }

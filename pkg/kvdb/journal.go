@@ -20,15 +20,17 @@ import (
 //	/j/t/<bucket>/<dot segment>/<key segment>  a pending removal, under the
 //	                                           bucket of an expiry it had
 //
-// Every write of a record marks it ahead of the write, so a crash in between
-// leaves at worst a mark for a record that did not change, which the next
-// compaction finds unchanged. A pending removal is
+// Every write of a record marks it, durably, ahead of the write, so a crash
+// in between leaves at worst a mark for a record that did not change, which
+// the next compaction finds unchanged, even on a store that keeps any
+// subset of the writes no Sync covered. A pending removal is
 // marked under the bucket it had before the write and the one it has after,
 // since its tree key is its bucket's.
 const journalNs = "j"
 
 type journal struct {
 	inner                            ds.Datastore
+	root                             ds.Key
 	elems, pending, jElems, jPending string
 }
 
@@ -36,6 +38,7 @@ func newJournal(inner ds.Datastore, namespace ds.Key, set *set) *journal {
 	j := namespace.ChildString(journalNs)
 	return &journal{
 		inner:    inner,
+		root:     j,
 		elems:    set.elemsPrefix().String() + "/",
 		pending:  set.pendingPrefix().String() + "/",
 		jElems:   j.ChildString("e").String() + "/",
@@ -148,25 +151,33 @@ type journaled struct {
 }
 
 func (s *journaled) Put(ctx context.Context, key ds.Key, value []byte) error {
-	if err := s.j.eachMark(ctx, key.String(), value, func(m string) error {
-		return s.Datastore.Put(ctx, ds.RawKey(m), []byte{})
-	}); err != nil {
+	if err := s.markDurably(ctx, key, value); err != nil {
 		return err
 	}
 	return s.Datastore.Put(ctx, key, value)
 }
 
 func (s *journaled) Delete(ctx context.Context, key ds.Key) error {
-	if err := s.j.eachMark(ctx, key.String(), nil, func(m string) error {
-		return s.Datastore.Put(ctx, ds.RawKey(m), []byte{})
-	}); err != nil {
+	if err := s.markDurably(ctx, key, nil); err != nil {
 		return err
 	}
 	return s.Datastore.Delete(ctx, key)
 }
 
-// Batch is a batch whose marks are committed, in a batch of their own,
-// before its writes: a store's batch need not apply its writes in order.
+func (s *journaled) markDurably(ctx context.Context, key ds.Key, value []byte) error {
+	marked := false
+	if err := s.j.eachMark(ctx, key.String(), value, func(m string) error {
+		marked = true
+		return s.Datastore.Put(ctx, ds.RawKey(m), []byte{})
+	}); err != nil || !marked {
+		return err
+	}
+	return s.Datastore.Sync(ctx, s.j.root)
+}
+
+// Batch is a batch whose marks are committed, in a batch of their own, and
+// synced before its writes: a store's batch need not apply its writes in
+// order, nor keep them in order once committed.
 func (s *journaled) Batch(ctx context.Context) (ds.Batch, error) {
 	b, err := batchOf(ctx, s.Datastore)
 	if err != nil {
@@ -181,19 +192,26 @@ func (s *journaled) Batch(ctx context.Context) (ds.Batch, error) {
 
 type journaledBatch struct {
 	ds.Batch
-	marks ds.Batch
-	j     *journal
+	marks  ds.Batch
+	marked bool
+	j      *journal
 }
 
 func (b *journaledBatch) mark(ctx context.Context, key ds.Key, value []byte) error {
 	return b.j.eachMark(ctx, key.String(), value, func(m string) error {
+		b.marked = true
 		return b.marks.Put(ctx, ds.RawKey(m), []byte{})
 	})
 }
 
 func (b *journaledBatch) Commit(ctx context.Context) error {
-	if err := b.marks.Commit(ctx); err != nil {
-		return err
+	if b.marked {
+		if err := b.marks.Commit(ctx); err != nil {
+			return err
+		}
+		if err := b.j.inner.Sync(ctx, b.j.root); err != nil {
+			return err
+		}
 	}
 	return b.Batch.Commit(ctx)
 }

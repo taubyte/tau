@@ -1789,38 +1789,36 @@ func (b *crdtBatch) Commit(ctx context.Context) error {
 	return b.store.write(ctx, ops)
 }
 
-type blockAt struct {
-	node ipld.Node
-	kind blockKind
-}
-
-// writeBlocks indexes blocks this replica authors before writing them, so a
-// crash before the merge that covers them leaves an index entry with a dot
-// the context does not cover, which the next open drops with its block.
+// writeBlocks indexes blocks this replica authors, durably, before writing
+// them, as a store may keep any subset of the writes no Sync has covered;
+// the merge that covers them makes them durable before it records them. A
+// crash before that merge leaves index entries whose dot the context does
+// not cover, which the next open drops with whatever of their blocks is
+// held: never a block nothing indexes, nor a merged entry naming a block
+// that is gone.
 func (store *Datastore) writeBlocks(ctx context.Context, b block, nodes ...ipld.Node) error {
-	blocks := make([]blockAt, len(nodes))
-	for i, nd := range nodes {
-		blocks[i] = blockAt{node: nd, kind: b.kind}
-	}
 	t := newTxn(store.store)
-	for _, ba := range blocks {
-		t.put(store.blockKey(ba.node.Cid()), encodeBlock(block{kind: ba.kind, dot: b.dot, at: b.at, ttl: b.ttl}))
+	for _, nd := range nodes {
+		t.put(store.blockKey(nd.Cid()), encodeBlock(b))
 	}
 	err := t.commit(ctx)
 	t.release()
+	if err == nil {
+		err = store.raw.Sync(ctx, store.blocksPrefix())
+	}
 	if err != nil {
 		return err
 	}
 	cctx, cancel := context.WithTimeout(ctx, store.opts.DAGSyncerTimeout)
 	defer cancel()
-	for _, b := range blocks {
-		if err := store.dagService.Add(cctx, b.node); err != nil {
-			cids := make([]cid.Cid, len(blocks))
-			for i, b := range blocks {
-				cids[i] = b.node.Cid()
+	for _, nd := range nodes {
+		if err := store.dagService.Add(cctx, nd); err != nil {
+			cids := make([]cid.Cid, len(nodes))
+			for i, nd := range nodes {
+				cids[i] = nd.Cid()
 			}
 			store.discardBlocks(ctx, cids...)
-			return fmt.Errorf("error writing new block %s: %w", b.node.Cid(), err)
+			return fmt.Errorf("error writing new block %s: %w", nd.Cid(), err)
 		}
 	}
 	return nil

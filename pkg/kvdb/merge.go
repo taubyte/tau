@@ -400,9 +400,11 @@ func (m *merging) settleBlock(c cid.Cid, b block, height uint64, linked bool) {
 	m.indexBlock(c, b)
 }
 
+// indexBlock indexes c. A fetched block's reclaim mark stays until reclaim
+// finds it indexed: deleted with the merge, of which a store may keep any
+// part, it could go while the entry does not stay.
 func (m *merging) indexBlock(c cid.Cid, b block) {
 	m.t.put(m.store.blockKey(c), encodeBlock(b))
-	m.t.del(m.store.reclaimKey(c))
 	m.added.block = min(m.added.block, b.at+b.ttl/2)
 	m.blocks++
 }
@@ -514,7 +516,10 @@ func (store *Datastore) mergeDelta(ctx context.Context, c cid.Cid, delta *pb.Del
 		return nil, err
 	}
 	m.settleBlock(c, block{kind: kindDelta, dot: d, at: at, ttl: ttl}, delta.GetPriority(), linked)
-	err = m.commit(ctx)
+	// The block the merge records is durable before the merge is.
+	if err = store.syncBlocks(ctx); err == nil {
+		err = m.commit(ctx)
+	}
 	m.t.release()
 	return walk, err
 }

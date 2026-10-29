@@ -31,7 +31,10 @@ var errCrash = errors.New("crashed")
 // With lose set it is a power loss instead: from the moment it is armed it
 // keeps what is durable apart, and the copy is that, every write no Sync
 // covered lost. A datastore write is durable once a Sync of a prefix above
-// it returns, a block once the blocks are synced.
+// it returns, a block once the blocks are synced. With some set too, the
+// loss keeps a subset of the writes no Sync covered, drawn from some, as a
+// store that keeps no order among them does, and a Sync is a point to
+// crash at as well.
 type crashPoint struct {
 	t     testing.TB
 	mu    sync.Mutex
@@ -40,6 +43,7 @@ type crashPoint struct {
 	dag   *fetchThroughDAGSvc
 
 	lose          bool
+	some          *rand.Rand
 	durable       ds.Datastore
 	durableBlocks *fetchThroughDAGSvc
 	pending       []volatileEvent
@@ -67,9 +71,24 @@ func (c *crashPoint) step() error {
 		c.crashed = true
 		if c.lose {
 			c.disk, c.blocks = copyStore(c.t, c.durable), copyBlocks(c.t, c.durableBlocks)
+			c.keepSome()
 		} else {
 			c.disk, c.blocks = copyStore(c.t, c.store), copyBlocks(c.t, c.dag)
 		}
+		return errCrash
+	}
+	return nil
+}
+
+// syncPoint fails a Sync once crashed, and with some set is a point to
+// crash at.
+func (c *crashPoint) syncPoint() error {
+	if c.some != nil {
+		return c.step()
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.crashed {
 		return errCrash
 	}
 	return nil
@@ -101,6 +120,59 @@ func (c *crashPoint) wroteBlock(e blockEvent) {
 	}
 }
 
+// keepSome applies to what a power loss left a subset of the writes no
+// Sync covered, each kept or lost as some draws. The caller holds c.mu.
+func (c *crashPoint) keepSome() {
+	if c.some == nil {
+		return
+	}
+	for _, e := range c.pending {
+		if c.some.IntN(2) == 0 {
+			applyEvent(c.t, c.disk, e)
+		}
+	}
+	for _, e := range c.pendingBlocks {
+		if c.some.IntN(2) == 0 {
+			applyBlockEvent(c.t, c.blocks, e)
+		}
+	}
+}
+
+// covers reports whether a Sync of prefix makes the datastore write e
+// durable.
+func covers(prefix ds.Key, e volatileEvent) bool {
+	return prefix.String() == "/" || prefix == e.key || prefix.IsAncestorOf(e.key)
+}
+
+func applyEvent(t testing.TB, d ds.Datastore, e volatileEvent) {
+	t.Helper()
+	ctx := context.Background()
+	var err error
+	switch {
+	case e.del:
+		err = d.Delete(ctx, e.key)
+	default:
+		err = d.Put(ctx, e.key, e.value)
+	}
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func applyBlockEvent(t testing.TB, d *fetchThroughDAGSvc, e blockEvent) {
+	t.Helper()
+	ctx := context.Background()
+	var err error
+	if e.nd != nil {
+		err = d.DAGService.Add(ctx, e.nd)
+	} else {
+		err = d.DAGService.Remove(ctx, e.removed)
+	}
+	if err != nil {
+		t.Error(err)
+	}
+}
+
 // synced makes durable the writes under prefix.
 func (c *crashPoint) synced(prefix ds.Key) {
 	c.mu.Lock()
@@ -108,21 +180,12 @@ func (c *crashPoint) synced(prefix ds.Key) {
 	if !c.lose || c.durable == nil || c.crashed {
 		return
 	}
-	ctx := context.Background()
 	kept := c.pending[:0]
 	for _, e := range c.pending {
-		if prefix.String() != "/" && prefix != e.key && !prefix.IsAncestorOf(e.key) {
-			kept = append(kept, e)
-			continue
-		}
-		var err error
-		if e.del {
-			err = c.durable.Delete(ctx, e.key)
+		if covers(prefix, e) {
+			applyEvent(c.t, c.durable, e)
 		} else {
-			err = c.durable.Put(ctx, e.key, e.value)
-		}
-		if err != nil {
-			c.t.Error(err)
+			kept = append(kept, e)
 		}
 	}
 	c.pending = kept
@@ -134,17 +197,8 @@ func (c *crashPoint) syncedBlocks() {
 	if !c.lose || c.durable == nil || c.crashed {
 		return
 	}
-	ctx := context.Background()
 	for _, e := range c.pendingBlocks {
-		var err error
-		if e.nd != nil {
-			err = c.durableBlocks.DAGService.Add(ctx, e.nd)
-		} else {
-			err = c.durableBlocks.DAGService.Remove(ctx, e.removed)
-		}
-		if err != nil {
-			c.t.Error(err)
-		}
+		applyBlockEvent(c.t, c.durableBlocks, e)
 	}
 	c.pendingBlocks = nil
 }
@@ -173,11 +227,8 @@ func (s *crashStore) Delete(ctx context.Context, k ds.Key) error {
 }
 
 func (s *crashStore) Sync(ctx context.Context, prefix ds.Key) error {
-	s.c.mu.Lock()
-	crashed := s.c.crashed
-	s.c.mu.Unlock()
-	if crashed {
-		return errCrash
+	if err := s.c.syncPoint(); err != nil {
+		return err
 	}
 	s.c.synced(prefix)
 	return s.Datastore.Sync(ctx, prefix)
@@ -220,11 +271,8 @@ func (d *crashDAG) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.Nod
 }
 
 func (d *crashDAG) SyncBlocks(context.Context) error {
-	d.c.mu.Lock()
-	crashed := d.c.crashed
-	d.c.mu.Unlock()
-	if crashed {
-		return errCrash
+	if err := d.c.syncPoint(); err != nil {
+		return err
 	}
 	d.c.syncedBlocks()
 	return nil
@@ -412,18 +460,43 @@ func assertTreesMatch(t testing.TB, r *Datastore) {
 // what it left on disk: it holds the state of before that step or of after
 // it, its trees are its records, its members are what its roots reach, and
 // a clean compaction leaves no block that nothing indexes or reaches. Lost,
-// the crash is a power loss that keeps no write a Sync did not cover.
+// the crash is a power loss that keeps no write a Sync did not cover; some
+// lost, one that keeps any of them.
 func TestACrashAtAnyWriteRecovers(t *testing.T) {
-	t.Run("kept", func(t *testing.T) { crashAtAnyWrite(t, false) })
-	t.Run("lost", func(t *testing.T) { crashAtAnyWrite(t, true) })
+	for _, m := range crashModes {
+		t.Run(m.String(), func(t *testing.T) { crashAtAnyWrite(t, m) })
+	}
 }
 
-func crashAtAnyWrite(t *testing.T, lose bool) {
+// A crashMode is what a crash keeps of the writes no Sync covered: all of
+// them, as a process that dies does, none, or some.
+type crashMode int
+
+const (
+	keptAll crashMode = iota
+	lostAll
+	lostSome
+)
+
+var crashModes = []crashMode{keptAll, lostAll, lostSome}
+
+func (m crashMode) String() string { return [...]string{"kept", "lost", "some lost"}[m] }
+
+// crashAt is a crash point at write at, of mode m.
+func crashAt(t testing.TB, m crashMode, at int, store ds.Datastore, dag *fetchThroughDAGSvc) *crashPoint {
+	c := &crashPoint{t: t, at: -1, store: store, dag: dag, lose: m != keptAll}
+	if m == lostSome {
+		c.some = rand.New(rand.NewPCG(uint64(at), 1))
+	}
+	return c
+}
+
+func crashAtAnyWrite(t *testing.T, m crashMode) {
 	ctx := context.Background()
 	for at := 0; at < 20000; at++ {
 		inner := dssync.MutexWrap(ds.NewMapDatastore())
 		own := newFetchThrough()
-		c := &crashPoint{t: t, at: -1, store: inner, dag: own, lose: lose}
+		c := crashAt(t, m, at, inner, own)
 		r := manualReplica(t, &crashStore{Datastore: inner, c: c}, &crashDAG{fetchThroughDAGSvc: own, c: c}, "crashing: ")
 		peerDag := newFetchThrough()
 		peer := manualReplica(t, dssync.MutexWrap(ds.NewMapDatastore()), peerDag, "peer: ")
@@ -615,13 +688,15 @@ func TestAStateStoreFaultIsSurvived(t *testing.T) {
 // merge or of after it, its trees are its records, its members are what
 // its roots reach, and once it catches up again and compacts it holds the
 // peer's state and no block that nothing indexes or reaches. Lost, the
-// crash is a power loss that keeps no write a Sync did not cover.
+// crash is a power loss that keeps no write a Sync did not cover; some
+// lost, one that keeps any of them.
 func TestACrashInAResumedFetchRecovers(t *testing.T) {
-	t.Run("kept", func(t *testing.T) { crashInAResumedFetch(t, false) })
-	t.Run("lost", func(t *testing.T) { crashInAResumedFetch(t, true) })
+	for _, m := range crashModes {
+		t.Run(m.String(), func(t *testing.T) { crashInAResumedFetch(t, m) })
+	}
 }
 
-func crashInAResumedFetch(t *testing.T, lose bool) {
+func crashInAResumedFetch(t *testing.T, m crashMode) {
 	ctx := context.Background()
 	// The peer only serves its state, so one does for every crash.
 	peer, peerDag := widePeer(t, 100, 4)
@@ -630,7 +705,7 @@ func crashInAResumedFetch(t *testing.T, lose bool) {
 	for at := 0; at < 20000; at++ {
 		inner := dssync.MutexWrap(ds.NewMapDatastore())
 		own := newFetchThrough()
-		c := &crashPoint{t: t, at: -1, store: inner, dag: own, lose: lose}
+		c := crashAt(t, m, at, inner, own)
 		r := manualReplica(t, &crashStore{Datastore: inner, c: c}, &crashDAG{fetchThroughDAGSvc: own, c: c}, "crashing: ")
 		link := newRationed(peerDag.DAGService)
 		own.setRemotes(link)
@@ -782,12 +857,20 @@ type volatileStore struct {
 	events []volatileEvent
 }
 
-// A volatileEvent is a Put, a Delete, or with sync set a Sync of key.
+// A volatileEvent is a Put, a Delete, or with sync set a Sync of key. With
+// nd or removed it is a block written or removed, and with blocks a Sync of
+// the blocks.
 type volatileEvent struct {
 	key       ds.Key
 	value     []byte
 	del, sync bool
+
+	nd      ipld.Node
+	removed cid.Cid
+	blocks  bool
 }
+
+func (e volatileEvent) block() bool { return e.nd != nil || e.removed.Defined() }
 
 func (s *volatileStore) record(e volatileEvent) {
 	s.mu.Lock()
@@ -813,17 +896,22 @@ func (s *volatileStore) Sync(ctx context.Context, prefix ds.Key) error {
 }
 
 // unsynced is the writes among the first n events no Sync among them
-// covers.
+// covers. A block is durable once the blocks are synced, or, kept in the
+// datastore, once all of it is.
 func unsynced(events []volatileEvent, n int) []int {
 	var out []int
 	for i := range n {
 		e := events[i]
-		if e.sync {
+		if e.sync || e.blocks {
 			continue
 		}
 		covered := false
 		for _, s := range events[i+1 : n] {
-			covered = covered || s.sync && (s.key.String() == "/" || s.key == e.key || s.key.IsAncestorOf(e.key))
+			if e.block() {
+				covered = covered || s.blocks || s.sync && s.key.String() == "/"
+			} else {
+				covered = covered || s.sync && covers(s.key, e)
+			}
 		}
 		if !covered {
 			out = append(out, i)
@@ -832,26 +920,189 @@ func unsynced(events []volatileEvent, n int) []int {
 	return out
 }
 
-// afterLoss is base with the first n events applied, but for the unsynced
-// writes lost names.
+// afterLoss is base with the datastore writes among the first n events
+// applied, but for the unsynced writes lost names.
 func afterLoss(t testing.TB, base ds.Datastore, events []volatileEvent, n int, lost map[int]bool) ds.Datastore {
 	t.Helper()
-	ctx := context.Background()
 	disk := copyStore(t, base)
 	for i, e := range events[:n] {
-		var err error
-		switch {
-		case e.sync || lost[i]:
-		case e.del:
-			err = disk.Delete(ctx, e.key)
-		default:
-			err = disk.Put(ctx, e.key, e.value)
-		}
-		if err != nil {
-			t.Fatal(err)
+		if !e.sync && !e.blocks && !e.block() && !lost[i] {
+			applyEvent(t, disk, e)
 		}
 	}
 	return disk
+}
+
+// blocksAfterLoss is base with the blocks among the first n events written
+// and removed, but for the unsynced ones lost names.
+func blocksAfterLoss(t testing.TB, base *fetchThroughDAGSvc, events []volatileEvent, n int, lost map[int]bool) *fetchThroughDAGSvc {
+	t.Helper()
+	blocks := copyBlocks(t, base)
+	for i, e := range events[:n] {
+		if e.block() && !lost[i] {
+			applyBlockEvent(t, blocks, blockEvent{nd: e.nd, removed: e.removed})
+		}
+	}
+	return blocks
+}
+
+// volatileDAG records the blocks a replica writes and removes among its
+// store's events. It keeps its blocks in that datastore, synced with all of
+// it; syncingVolatileDAG keeps them apart, synced by SyncBlocks.
+type volatileDAG struct {
+	*fetchThroughDAGSvc
+	s *volatileStore
+}
+
+func (d *volatileDAG) Add(ctx context.Context, nd ipld.Node) error {
+	d.s.record(volatileEvent{nd: nd})
+	return d.fetchThroughDAGSvc.Add(ctx, nd)
+}
+
+func (d *volatileDAG) AddMany(ctx context.Context, nds []ipld.Node) error {
+	for _, nd := range nds {
+		if err := d.Add(ctx, nd); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Get fetches through to the remotes, and a block it fetches is a write.
+func (d *volatileDAG) Get(ctx context.Context, c cid.Cid) (ipld.Node, error) {
+	held := d.holds(c)
+	nd, err := d.fetchThroughDAGSvc.Get(ctx, c)
+	if err == nil && !held {
+		d.s.record(volatileEvent{nd: nd})
+	}
+	return nd, err
+}
+
+func (d *volatileDAG) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.NodeOption {
+	out := make(chan *ipld.NodeOption, len(cids))
+	go func() {
+		defer close(out)
+		for _, c := range cids {
+			nd, err := d.Get(ctx, c)
+			out <- &ipld.NodeOption{Node: nd, Err: err}
+		}
+	}()
+	return out
+}
+
+func (d *volatileDAG) Remove(ctx context.Context, c cid.Cid) error {
+	d.s.record(volatileEvent{removed: c})
+	return d.fetchThroughDAGSvc.Remove(ctx, c)
+}
+
+func (d *volatileDAG) RemoveMany(ctx context.Context, cids []cid.Cid) error {
+	for _, c := range cids {
+		if err := d.Remove(ctx, c); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type syncingVolatileDAG struct{ *volatileDAG }
+
+func (d syncingVolatileDAG) SyncBlocks(context.Context) error {
+	d.s.record(volatileEvent{blocks: true})
+	return nil
+}
+
+// TestAWriteSurvivesAnyLoss powers a replica off after each event of a put,
+// a delete and the merge of a peer's write, every write to its datastore,
+// block and Sync, keeping every subset of the writes no Sync covered, with
+// its blocks in a store of their own and in its datastore. It reopens
+// holding the values of before one of them or after it, every block it
+// holds is indexed or a root reaches it, every block it indexes is held,
+// and once it compacts its trees are its records. A block written before
+// its index entry was durable could outlive the entry, a leak; a merge
+// recorded before its block was durable could outlive the block, an entry
+// and a head naming nothing; a record written before its journal mark was
+// durable could outlive the mark, and the trees then miss it.
+func TestAWriteSurvivesAnyLoss(t *testing.T) {
+	t.Run("blocks apart", func(t *testing.T) { writeSurvivesAnyLoss(t, true) })
+	t.Run("blocks in the datastore", func(t *testing.T) { writeSurvivesAnyLoss(t, false) })
+}
+
+func writeSurvivesAnyLoss(t *testing.T, apart bool) {
+	inner := dssync.MutexWrap(ds.NewMapDatastore())
+	vs := &volatileStore{Datastore: inner}
+	own := newFetchThrough()
+	vd := &volatileDAG{fetchThroughDAGSvc: own, s: vs}
+	var d ipld.DAGService = vd
+	if apart {
+		d = syncingVolatileDAG{vd}
+	}
+	r := manualReplica(t, vs, d, "volatile: ")
+	peerDag := newFetchThrough()
+	peer := manualReplica(t, dssync.MutexWrap(ds.NewMapDatastore()), peerDag, "peer: ")
+	defer peer.Close()
+	own.setRemotes(peerDag.DAGService)
+	put(t, r, "/a", "old")
+	put(t, r, "/b", "old")
+	compact(t, r)
+	put(t, peer, "/c", "peer")
+	base, baseBlocks := copyStore(t, inner), copyBlocks(t, own)
+	vs.mu.Lock()
+	vs.on = true
+	vs.mu.Unlock()
+	put(t, r, "/a", "new")
+	del(t, r, "/b")
+	syncReplicaHeads(t, peer, r)
+	vs.mu.Lock()
+	vs.on = false
+	events := vs.events
+	vs.mu.Unlock()
+	closeStore(t, r)
+	forgetIncarnation(r.incarnationKey())
+	states := []map[string][]byte{
+		{"/a": []byte("old"), "/b": []byte("old")},
+		{"/a": []byte("new"), "/b": []byte("old")},
+		{"/a": []byte("new")},
+		{"/a": []byte("new"), "/c": []byte("peer")},
+	}
+
+	rng := rand.New(rand.NewPCG(3, 4))
+	runs := 0
+	for n := 0; n <= len(events); n++ {
+		u := unsynced(events, n)
+		subsets := 1 << min(len(u), 10)
+		for s := range subsets {
+			lost := map[int]bool{}
+			for b, i := range u {
+				if len(u) > 10 {
+					lost[i] = rng.IntN(2) == 0
+				} else {
+					lost[i] = s&(1<<b) != 0
+				}
+			}
+			disk, blocks := afterLoss(t, base, events, n, lost), blocksAfterLoss(t, baseBlocks, events, n, lost)
+			blocks.setRemotes(peerDag.DAGService)
+			re, err := NewDatastore(disk, ds.NewKey("crdttest"), blocks, &nullBroadcaster{}, onManual(replicaOptions(noAutoCompact(), "reopened: ")))
+			if err != nil {
+				t.Fatalf("power off after event %d, losing %v of %v: the replica does not open: %v", n, lost, u, err)
+			}
+			got := queryAll(t, re)
+			if !slices.ContainsFunc(states, func(s map[string][]byte) bool { return sameKV(got, s) }) {
+				t.Errorf("the replica holds %q, none of %q", got, states)
+			}
+			assertNoLeak(t, re, blocks)
+			assertReach(t, re)
+			compact(t, re)
+			assertTreesMatch(t, re)
+			assertNoLeak(t, re, blocks)
+			if t.Failed() {
+				t.Fatalf("power off after event %d, losing %v of %v", n, lost, u)
+			}
+			closeStore(t, re)
+			forgetIncarnation(re.incarnationKey())
+			runs++
+		}
+	}
+	t.Logf("%d events, %d losses", len(events), runs)
 }
 
 // TestAnAtomicCommitSurvivesAnyLoss powers a replica off after each write
