@@ -221,7 +221,8 @@ func TestAStateLargerThanOneAttemptArrives(t *testing.T) {
 	a, b := replicas[0], replicas[1]
 	link := newRationed(dagsyncs[0].DAGService)
 	dagsyncs[1].setRemotes(link)
-	seedKeys(t, a, 400, "k")
+	// More than a snapshot carries, so most of it is fetched.
+	seedKeys(t, a, 1000, "k")
 	compact(t, a)
 	state := stateClosure(t, a)
 	per := len(state)/4 + 1
@@ -265,7 +266,8 @@ func TestANewerHeadReusesWhatTheOlderOneStaged(t *testing.T) {
 	a, b := replicas[0], replicas[1]
 	link := newRationed(dagsyncs[0].DAGService)
 	dagsyncs[1].setRemotes(link)
-	seedKeys(t, a, 400, "k")
+	// More than a snapshot carries, so most of it is fetched.
+	seedKeys(t, a, 1000, "k")
 	compact(t, a)
 
 	link.refill(len(stateClosure(t, a))/3 + 1)
@@ -320,7 +322,8 @@ func TestAFetchNothingFeedsIsDropped(t *testing.T) {
 	a, b := replicas[0], replicas[1]
 	link := newRationed(dagsyncs[0].DAGService)
 	dagsyncs[1].setRemotes(link)
-	seedKeys(t, a, 400, "k")
+	// More than a snapshot carries, so most of it is fetched.
+	seedKeys(t, a, 1000, "k")
 	compact(t, a)
 	empty := dagsyncs[1].blockCount(t)
 

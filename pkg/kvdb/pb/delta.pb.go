@@ -376,7 +376,7 @@ type Delta struct {
 	Root  *StateRoot `protobuf:"bytes,18,opt,name=root,proto3" json:"root,omitempty"`
 	Trees [][]byte   `protobuf:"bytes,19,rep,name=trees,proto3" json:"trees,omitempty"`
 	// inline are, in a snapshot, whole blocks of its state's trees, each
-	// linked by the StateRoot or by a block before it, at most 16 KiB in all
+	// linked by the StateRoot or by a block before it, at most 32 KiB in all
 	// (see the kvdb package's state.go).
 	Inline        [][]byte `protobuf:"bytes,20,rep,name=inline,proto3" json:"inline,omitempty"`
 	unknownFields protoimpl.UnknownFields

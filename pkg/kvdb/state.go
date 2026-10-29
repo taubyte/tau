@@ -72,14 +72,14 @@ import (
 // its author wrote for it, none that a state it already held reaches,
 // those breadth first from the roots of E, P and C in that order, each
 // block's links in their order, a block taken only when its parent is and
-// none that would take the total over 16384 bytes.
+// none that would take the total over 32768 bytes.
 //
 // A reader rebuilds the StateRoot block from root and trees and refuses the
 // snapshot unless its CID is state. It takes each inline block, in order,
 // as the block whose CID is CIDv1, dag-pb, sha2-256 of its bytes, and
 // refuses the snapshot when no block it took before, the StateRoot
 // included, links that CID, when one is taken twice, or when the blocks
-// total more than 16384 bytes. What the blocks it took link that it holds
+// total more than 32768 bytes. What the blocks it took link that it holds
 // neither inline nor already, it fetches.
 //
 // A reader refuses a StateRoot with unknown fields, another format or a

@@ -15,7 +15,7 @@ import (
 )
 
 // inlineBudget bounds the bytes of the tree blocks a snapshot carries.
-const inlineBudget = 16 << 10
+const inlineBudget = 32 << 10
 
 var (
 	errStateMismatch  = errors.New("the state root a snapshot carries is not its state")

@@ -157,8 +157,8 @@ func TestH4SnapshotStateIsMergedWhole(t *testing.T) {
 
 	// More than a snapshot carries, so some of it is fetched.
 	all := map[string]string{}
-	for i := range 400 {
-		k, v := fmt.Sprintf("key-%03d", i), fmt.Sprintf("value-%03d", i)
+	for i := range 1000 {
+		k, v := fmt.Sprintf("key-%04d", i), fmt.Sprintf("value-%04d", i)
 		put(t, a, k, v)
 		all[k] = v
 	}
@@ -250,8 +250,8 @@ func TestH4AStateFetchThatEndsEarlyIsNotMerged(t *testing.T) {
 
 	// More than a snapshot carries, so some of it is fetched.
 	all := map[string]string{}
-	for i := range 400 {
-		k, v := fmt.Sprintf("key-%03d", i), fmt.Sprintf("value-%03d", i)
+	for i := range 1000 {
+		k, v := fmt.Sprintf("key-%04d", i), fmt.Sprintf("value-%04d", i)
 		put(t, a, k, v)
 		all[k] = v
 	}

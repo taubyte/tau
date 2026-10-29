@@ -84,7 +84,7 @@ message Delta {
   StateRoot root = 18;
   repeated bytes trees = 19;
   // inline are, in a snapshot, whole blocks of its state's trees, each
-  // linked by the StateRoot or by a block before it, at most 16 KiB in all
+  // linked by the StateRoot or by a block before it, at most 32 KiB in all
   // (see the kvdb package's state.go).
   repeated bytes inline = 20;
 }

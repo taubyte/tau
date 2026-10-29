@@ -624,7 +624,7 @@ func TestACrashInAResumedFetchRecovers(t *testing.T) {
 func crashInAResumedFetch(t *testing.T, lose bool) {
 	ctx := context.Background()
 	// The peer only serves its state, so one does for every crash.
-	peer, peerDag := widePeer(t, 60, 4)
+	peer, peerDag := widePeer(t, 100, 4)
 	defer peer.Close()
 	per := len(stateClosure(t, peer))/3 + 1
 	for at := 0; at < 20000; at++ {
@@ -720,7 +720,7 @@ func TestAStateStoreFaultInAResumedFetchIsSurvived(t *testing.T) {
 			store := newFaultyDatastore(ds.NewMapDatastore())
 			own := &removeFailing{fetchThroughDAGSvc: newFetchThrough()}
 			r := manualReplica(t, store, own, "faulty: ")
-			peer, peerDag := widePeer(t, 120, 6)
+			peer, peerDag := widePeer(t, 200, 6)
 			defer peer.Close()
 			link := newRationed(peerDag.DAGService)
 			own.setRemotes(link)
