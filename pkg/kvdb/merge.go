@@ -596,6 +596,23 @@ type snapState struct {
 	sr             stateRoot
 	elems, pending *mst.Tree
 	cc             *causalContext
+	// look reads records of elems and pending, sharing the nodes on the
+	// paths it has read.
+	lookElems, lookPending *mst.Editor
+}
+
+func (s *snapState) elem(ctx context.Context, tk []byte) ([]byte, bool, error) {
+	if s.lookElems == nil {
+		s.lookElems = s.elems.Edit()
+	}
+	return s.lookElems.Get(ctx, tk)
+}
+
+func (s *snapState) removal(ctx context.Context, tk []byte) ([]byte, bool, error) {
+	if s.lookPending == nil {
+		s.lookPending = s.pending.Edit()
+	}
+	return s.lookPending.Get(ctx, tk)
 }
 
 func readState(ctx context.Context, dags ipld.DAGService, c cid.Cid) (*snapState, error) {
@@ -707,7 +724,7 @@ func (store *Datastore) enumerate(ctx context.Context, s *snapState) (*mergeSet,
 		}
 		ms.journal++
 		tk := elemTreeKey(key, d)
-		v, has, err := s.elems.Get(ctx, tk)
+		v, has, err := s.elem(ctx, tk)
 		if err != nil {
 			return err
 		}
@@ -723,7 +740,7 @@ func (store *Datastore) enumerate(ctx context.Context, s *snapState) (*mergeSet,
 		}
 		ms.journal++
 		tk := pendingTreeKeyIn(b, key, d)
-		v, has, err := s.pending.Get(ctx, tk)
+		v, has, err := s.removal(ctx, tk)
 		if err != nil {
 			return err
 		}
@@ -1061,7 +1078,7 @@ func (m *merging) residual(ctx context.Context, s *snapState, ms *mergeSet) (map
 		if ec, ok := ms.elems[string(tk)]; ok {
 			theirs = ec.theirs
 		} else {
-			v, has, err := s.elems.Get(ctx, tk)
+			v, has, err := s.elem(ctx, tk)
 			if err != nil {
 				return err
 			}
@@ -1098,7 +1115,7 @@ func (m *merging) residual(ctx context.Context, s *snapState, ms *mergeSet) (map
 			if pc, ok := ms.pending[string(tk)]; ok {
 				theirs = pc.theirs
 			} else {
-				v, has, err := s.pending.Get(ctx, tk)
+				v, has, err := s.removal(ctx, tk)
 				if err != nil {
 					return err
 				}
@@ -1179,7 +1196,7 @@ func (m *merging) differs(ctx context.Context, want *causalContext, s *snapState
 		}
 		o, ok := carried[m.store.set.pendingKey(key, d).String()]
 		if !ok {
-			v, has, err := s.pending.Get(ctx, pendingTreeKey(*r))
+			v, has, err := s.removal(ctx, pendingTreeKey(*r))
 			if err != nil || !has {
 				return !has, err
 			}

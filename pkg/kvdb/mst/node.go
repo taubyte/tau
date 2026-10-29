@@ -67,11 +67,18 @@ type entry struct {
 	key, val []byte
 }
 
-// A ref is a subtree slot: its root, undefined for none, and its summary.
+// A ref is a subtree slot: its root, undefined for none, and its summary;
+// or, while a change is under way, the node it made and has not encoded.
 type ref struct {
 	c   cid.Cid
 	sum []byte
+	n   *node
 }
+
+func (r ref) present() bool { return r.c.Defined() || r.n != nil }
+
+// is reports whether r and o are the same subtree.
+func (r ref) is(o ref) bool { return r.c == o.c && r.n == o.n }
 
 // A node in memory has one more kid than it has entries: kids[i] holds the
 // keys between entries[i-1] and entries[i].

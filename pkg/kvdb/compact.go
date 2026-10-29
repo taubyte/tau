@@ -192,7 +192,7 @@ func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *c
 // The caller holds store.mu.
 func (store *Datastore) buildState(ctx context.Context) (*overlay, cid.Cid, error) {
 	ov := newOverlay(store.dagService)
-	elems := stateTree(ov, store.base.elems)
+	elems := stateTree(ov, store.base.elems).Edit()
 	err := scanStore(ctx, store.store, store.journal.elemsPrefix(), func(k string, _ []byte) error {
 		key, d, err := store.journal.parseElemMark(k)
 		if err != nil {
@@ -201,12 +201,12 @@ func (store *Datastore) buildState(ctx context.Context) (*overlay, cid.Cid, erro
 		v, err := store.store.Get(ctx, store.set.elemKey(key, d))
 		switch {
 		case errors.Is(err, ds.ErrNotFound):
-			elems, err = elems.Delete(ctx, elemTreeKey(key, d))
+			err = elems.Delete(ctx, elemTreeKey(key, d))
 		case err == nil:
 			var el element
 			if el, err = decodeMarker(v); err == nil {
 				el.key, el.dot = key, d
-				elems, err = elems.Put(ctx, elemTreeKey(key, d), elemValue(el))
+				err = elems.Put(ctx, elemTreeKey(key, d), elemValue(el))
 			}
 		}
 		return err
@@ -214,7 +214,7 @@ func (store *Datastore) buildState(ctx context.Context) (*overlay, cid.Cid, erro
 	if err != nil {
 		return nil, cid.Undef, err
 	}
-	pending := stateTree(ov, store.base.pending)
+	pending := stateTree(ov, store.base.pending).Edit()
 	err = scanStore(ctx, store.store, store.journal.pendingPrefix(), func(k string, _ []byte) error {
 		b, key, d, err := store.journal.parsePendingMark(k)
 		if err != nil {
@@ -230,13 +230,19 @@ func (store *Datastore) buildState(ctx context.Context) (*overlay, cid.Cid, erro
 				return err
 			}
 			if r := (removal{key: key, dot: d, at: at, ttl: ttl}); bucket(r.expires()) == b {
-				pending, err = pending.Put(ctx, pendingTreeKey(r), pendingValue(r))
-				return err
+				return pending.Put(ctx, pendingTreeKey(r), pendingValue(r))
 			}
 		}
-		pending, err = pending.Delete(ctx, pendingTreeKeyIn(b, key, d))
-		return err
+		return pending.Delete(ctx, pendingTreeKeyIn(b, key, d))
 	})
+	if err != nil {
+		return nil, cid.Undef, err
+	}
+	et, err := elems.Tree(ctx)
+	if err != nil {
+		return nil, cid.Undef, err
+	}
+	pt, err := pending.Tree(ctx)
 	if err != nil {
 		return nil, cid.Undef, err
 	}
@@ -244,7 +250,7 @@ func (store *Datastore) buildState(ctx context.Context) (*overlay, cid.Cid, erro
 	if err != nil {
 		return nil, cid.Undef, err
 	}
-	nd, err := stateRoot{elems: elems.Root(), pending: pending.Root(), ctx: cc.Root()}.node()
+	nd, err := stateRoot{elems: et.Root(), pending: pt.Root(), ctx: cc.Root()}.node()
 	if err != nil {
 		return nil, cid.Undef, err
 	}
