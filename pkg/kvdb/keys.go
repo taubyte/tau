@@ -87,8 +87,16 @@ func hashKey(prefix string, c cid.Cid) ds.Key {
 	if len(h) == 0 {
 		return ds.RawKey(prefix)
 	}
-	b := make([]byte, 0, len(prefix)+1+segEncoding.EncodedLen(len(h)))
-	return dsKey(segEncoding.AppendEncode(append(append(b, prefix...), '/'), h))
+	return dsKey(appendHashKey(make([]byte, 0, len(prefix)+1+segEncoding.EncodedLen(len(h))), prefix, c))
+}
+
+// appendHashKey appends the bytes of hashKey(prefix, c) to b.
+func appendHashKey(b []byte, prefix string, c cid.Cid) []byte {
+	b = append(b, prefix...)
+	if h := hashOf(c); len(h) > 0 {
+		b = segEncoding.AppendEncode(append(b, '/'), h)
+	}
+	return b
 }
 
 // dotKey is prefix/<the segment of d>.

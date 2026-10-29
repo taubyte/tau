@@ -589,7 +589,7 @@ func TestAFetchSpellsOwnershipAsTheStoreDoes(t *testing.T) {
 	for _, c := range cids[:2] {
 		cids = append(cids, cid.NewCidV0(c.Hash()), cid.NewCidV1(cid.Raw, c.Hash()))
 	}
-	b := a.takeFetchBuffers()
+	b := takeFetchBuffers()
 	defer b.putBack()
 	keys := map[cidKey]cid.Cid{}
 	for _, c := range cids {
@@ -625,7 +625,7 @@ func TestReceivingABlockAllocatesOnlyItsLinks(t *testing.T) {
 		t.Fatalf("no block of the state links more than %d", len(nd.Links()))
 	}
 
-	f := &stateFetch{b: a.takeFetchBuffers()}
+	f := &stateFetch{b: takeFetchBuffers()}
 	defer f.b.putBack()
 	receive := func() {
 		f.b.asked[keyOf(nd.Cid())] = struct{}{}
@@ -703,7 +703,7 @@ func TestAFetchAttemptCostsLittleBeyondItsBlocks(t *testing.T) {
 	}
 	held := heldNodes{nd.Cid(): nd}
 
-	f := &stateFetch{b: a.takeFetchBuffers()}
+	f := &stateFetch{b: takeFetchBuffers()}
 	defer f.b.putBack()
 	attempt := func() {
 		f.b.seen[keyOf(nd.Cid())] = struct{}{}

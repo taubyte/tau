@@ -3,7 +3,6 @@ package kvdb
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base32"
 	"errors"
 	"fmt"
 	"sync"
@@ -65,7 +64,6 @@ type fetchBuffers struct {
 	failed, parents, linked, kept []cid.Cid
 	owned, fresh                  []cid.Cid
 	key                           []byte
-	prefix                        string
 }
 
 var fetchBufferPool = sync.Pool{New: func() any {
@@ -76,10 +74,8 @@ var fetchBufferPool = sync.Pool{New: func() any {
 	}
 }}
 
-func (store *Datastore) takeFetchBuffers() *fetchBuffers {
-	b := fetchBufferPool.Get().(*fetchBuffers)
-	b.prefix = store.ownedPrefix().String()
-	return b
+func takeFetchBuffers() *fetchBuffers {
+	return fetchBufferPool.Get().(*fetchBuffers)
 }
 
 func (b *fetchBuffers) wanted() []cid.Cid { return b.want[b.next:] }
@@ -116,20 +112,10 @@ func keyOf(c cid.Cid) cidKey {
 	return sha256.Sum256([]byte(ks))
 }
 
-// mhKeyEncoding is how dshelp spells a multihash in a datastore key.
-var mhKeyEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
-
 // ownedKey is store.ownedKey(c) built in b's key buffer, which the key
 // shares: it is valid until the next call.
 func (b *fetchBuffers) ownedKey(store *Datastore, c cid.Cid) ds.Key {
-	ks := c.KeyString()
-	if len(ks) != len(dagPBSHA256)+32 || ks[:len(dagPBSHA256)] != dagPBSHA256 {
-		return store.ownedKey(c)
-	}
-	var hash [34]byte
-	copy(hash[:], ks[2:])
-	b.key = append(append(b.key[:0], b.prefix...), '/')
-	b.key = mhKeyEncoding.AppendEncode(b.key, hash[:])
+	b.key = appendHashKey(b.key[:0], store.pre.owned, c)
 	return ds.RawKey(unsafe.String(unsafe.SliceData(b.key), len(b.key)))
 }
 
@@ -290,7 +276,7 @@ func (store *Datastore) fetchState(ctx context.Context, ng *crdtNodeGetter, c ci
 	}
 	defer f.unlock()
 	if f.b == nil {
-		f.b = store.takeFetchBuffers()
+		f.b = takeFetchBuffers()
 		if err := store.discover(ctx, f, []cid.Cid{stc}); err != nil {
 			return f, err
 		}
