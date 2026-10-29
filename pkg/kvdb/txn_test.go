@@ -90,3 +90,52 @@ func TestTxnScanWorkStaysLogarithmic(t *testing.T) {
 		t.Fatalf("%d scans over %d writes visited %d entries, want at most %d", n, len(tx.order), tx.steps, limit)
 	}
 }
+
+// TestCmpAfterIsCompareWithTheByte: cmpAfter(k, p, c) orders k against p
+// followed by c, without making that string.
+func TestCmpAfterIsCompareWithTheByte(t *testing.T) {
+	rng := rand.New(rand.NewPCG(3, 4))
+	word := func() string {
+		b := make([]byte, rng.IntN(5))
+		for i := range b {
+			b[i] = "/0a."[rng.IntN(4)]
+		}
+		return string(b)
+	}
+	for range 20000 {
+		k, p := word(), word()
+		for _, c := range []byte{'/', '0'} {
+			if got, want := cmpAfter(k, p, c), strings.Compare(k, p+string(c)); got != want {
+				t.Fatalf("cmpAfter(%q, %q, %q) = %d, want %d", k, p, c, got, want)
+			}
+		}
+	}
+}
+
+// TestAReleasedTxnIsEmpty: a txn handed back is reused with nothing of what
+// it held, and one that grew past reusedWrites is not kept.
+func TestAReleasedTxnIsEmpty(t *testing.T) {
+	ctx := context.Background()
+	store := ds.NewMapDatastore()
+	for range 3 {
+		tx := newTxn(store)
+		if len(tx.writes) != 0 || len(tx.order) != 0 || tx.sorted.root != -1 || len(tx.sorted.left) != 0 {
+			t.Fatal("a new txn holds writes")
+		}
+		got, err := tx.scan(ctx, ds.NewKey("/a"))
+		if err != nil || len(got) != 0 {
+			t.Fatalf("a new txn scans %v, %v", got, err)
+		}
+		tx.put(ds.NewKey("/a/b"), []byte("x"))
+		tx.del(ds.NewKey("/a/c"))
+		tx.release()
+	}
+	big := newTxn(store)
+	for i := range reusedWrites + 1 {
+		big.put(ds.NewKey(fmt.Sprint("/a/", i)), nil)
+	}
+	big.release()
+	if len(big.order) != reusedWrites+1 {
+		t.Fatal("a txn too large to keep was cleared for reuse")
+	}
+}

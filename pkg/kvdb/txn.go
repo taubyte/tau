@@ -2,7 +2,9 @@ package kvdb
 
 import (
 	"context"
-	"sort"
+	"slices"
+	"strings"
+	"sync"
 
 	ds "github.com/ipfs/go-datastore"
 	query "github.com/ipfs/go-datastore/query"
@@ -22,8 +24,33 @@ type txn struct {
 	steps int
 }
 
+// txnPool keeps released txns, with the storage they grew.
+var txnPool = sync.Pool{New: func() any {
+	return &txn{writes: map[string][]byte{}, sorted: keyIndex{root: -1}}
+}}
+
+// reusedWrites bounds the txns kept for reuse: a map keeps its buckets once
+// cleared, and one that held a whole state is not worth keeping.
+const reusedWrites = 1 << 10
+
 func newTxn(store ds.Datastore) *txn {
-	return &txn{store: store, writes: map[string][]byte{}, sorted: keyIndex{root: -1}}
+	t := txnPool.Get().(*txn)
+	t.store = store
+	return t
+}
+
+// release hands t back for reuse once its owner is done with it: nothing
+// may read or write it after.
+func (t *txn) release() {
+	if len(t.order) > reusedWrites {
+		return
+	}
+	clear(t.writes)
+	clear(t.order)
+	t.order = t.order[:0]
+	t.sorted = keyIndex{left: t.sorted.left[:0], right: t.sorted.right[:0], root: -1}
+	t.store, t.steps = nil, 0
+	txnPool.Put(t)
 }
 
 func (t *txn) put(k ds.Key, v []byte) {
@@ -70,27 +97,38 @@ type entry struct {
 // scan returns every entry under prefix, pending writes included, in key
 // order.
 func (t *txn) scan(ctx context.Context, prefix ds.Key) ([]entry, error) {
-	found := map[string][]byte{}
+	var out []entry
 	if err := scanStore(ctx, t.store, prefix, func(k string, v []byte) error {
-		found[k] = v
+		out = append(out, entry{key: k, value: v})
 		return nil
 	}); err != nil {
 		return nil, err
 	}
-	// Every key under p sorts in [p, p with its '/' raised to '0').
-	p := prefix.String()
-	t.steps += t.sorted.each(t.order, p+"/", p+"0", func(k string) {
-		if v := t.writes[k]; v == nil {
-			delete(found, k)
-		} else {
-			found[k] = v
+	byKey := func(a, b entry) int { return strings.Compare(a.key, b.key) }
+	if !slices.IsSortedFunc(out, byKey) {
+		slices.SortFunc(out, byKey)
+	}
+	// Pending writes replace what the store holds; a deleted entry is
+	// left with an empty key, and an added one sorted in after.
+	stored, dropped := len(out), false
+	t.steps += t.sorted.each(t.order, prefix.String(), func(k string) {
+		v := t.writes[k]
+		i, found := slices.BinarySearchFunc(out[:stored], k, func(e entry, k string) int { return strings.Compare(e.key, k) })
+		switch {
+		case found && v == nil:
+			out[i].key, dropped = "", true
+		case found:
+			out[i].value = v
+		case v != nil:
+			out = append(out, entry{key: k, value: v})
 		}
 	})
-	out := make([]entry, 0, len(found))
-	for k, v := range found {
-		out = append(out, entry{key: k, value: v})
+	if dropped {
+		out = slices.DeleteFunc(out, func(e entry) bool { return e.key == "" })
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].key < out[j].key })
+	if len(out) > 0 && !slices.IsSortedFunc(out, byKey) {
+		slices.SortFunc(out, byKey)
+	}
 	return out, nil
 }
 
@@ -149,30 +187,50 @@ func (x *keyIndex) join(a, b int32) int32 {
 	return b
 }
 
-// each calls fn, in key order, with every key in [lo, hi), and returns the
-// number of nodes it visited.
-func (x *keyIndex) each(keys []string, lo, hi string, fn func(k string)) int {
-	return x.walk(keys, x.root, lo, hi, fn)
+// each calls fn, in key order, with every key under prefix p, and returns
+// the number of nodes it visited. Every key under p sorts in [p+"/", p+"0"),
+// '0' being the byte after '/'.
+func (x *keyIndex) each(keys []string, p string, fn func(k string)) int {
+	return x.walk(keys, x.root, p, fn)
 }
 
-func (x *keyIndex) walk(keys []string, n int32, lo, hi string, fn func(k string)) int {
+func (x *keyIndex) walk(keys []string, n int32, p string, fn func(k string)) int {
 	steps := 0
 	for n >= 0 {
 		steps++
 		k := keys[n]
-		if k < lo {
+		if cmpAfter(k, p, '/') < 0 {
 			n = x.right[n]
 			continue
 		}
-		if k >= hi {
+		if cmpAfter(k, p, '0') >= 0 {
 			n = x.left[n]
 			continue
 		}
-		steps += x.walk(keys, x.left[n], lo, hi, fn)
+		steps += x.walk(keys, x.left[n], p, fn)
 		fn(k)
 		n = x.right[n]
 	}
 	return steps
+}
+
+// cmpAfter compares k with p followed by the byte c, without making that
+// string.
+func cmpAfter(k, p string, c byte) int {
+	n := min(len(k), len(p))
+	if r := strings.Compare(k[:n], p[:n]); r != 0 || len(k) <= len(p) {
+		if r == 0 {
+			return -1
+		}
+		return r
+	}
+	switch {
+	case k[len(p)] < c:
+		return -1
+	case k[len(p)] > c || len(k) > len(p)+1:
+		return 1
+	}
+	return 0
 }
 
 func (t *txn) commit(ctx context.Context) error {

@@ -15,13 +15,14 @@ import (
 
 // prefixes are the store's key prefixes, each without its trailing slash.
 type prefixes struct {
-	blocks, missing, owned, reclaim, vector, cloud, redo string
+	blocks, missing, retry, owned, reclaim, vector, cloud, redo string
 }
 
 func newPrefixes(ns ds.Key) prefixes {
 	return prefixes{
 		blocks:  ns.ChildString(processedBlocksNs).String(),
 		missing: ns.ChildString(missingNs).String(),
+		retry:   ns.ChildString(retryNs).String(),
 		owned:   ns.ChildString(ownedNs).String(),
 		reclaim: ns.ChildString(reclaimNs).String(),
 		vector:  ns.ChildString(contextNs).ChildString("v").String(),

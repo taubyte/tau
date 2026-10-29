@@ -84,14 +84,17 @@ func cidOfBlockKey(prefix ds.Key, k string) (cid.Cid, error) {
 	return dshelp.DsKeyToCidV1(ds.NewKey(strings.TrimPrefix(k, prefix.String())), cid.DagProtobuf)
 }
 
+// encodeBlock is the kind, the stamps, the state's cid with its length, and
+// the dot, in one allocation.
 func encodeBlock(b block) []byte {
-	v := append([]byte{byte(b.kind)}, encodeStamps(b.at, b.ttl)...)
-	var sc []byte
+	var sc string
 	if b.state.Defined() {
-		sc = b.state.Bytes()
+		sc = b.state.KeyString()
 	}
+	v := make([]byte, 0, 1+4*binary.MaxVarintLen64+len(sc)+len(b.dot.replica))
+	v = binary.AppendUvarint(binary.AppendUvarint(append(v, byte(b.kind)), b.at), b.ttl)
 	v = append(binary.AppendUvarint(v, uint64(len(sc))), sc...)
-	return append(v, encodeDot(b.dot)...)
+	return append(binary.AppendUvarint(v, b.dot.counter), b.dot.replica...)
 }
 
 func decodeBlock(v []byte) (block, error) {
@@ -511,7 +514,9 @@ func (store *Datastore) mergeDelta(ctx context.Context, c cid.Cid, delta *pb.Del
 		return nil, err
 	}
 	m.settleBlock(c, block{kind: kindDelta, dot: d, at: at, ttl: ttl}, delta.GetPriority(), linked)
-	return walk, m.commit(ctx)
+	err = m.commit(ctx)
+	m.t.release()
+	return walk, err
 }
 
 // dropPending forgets the pending removals of d's elements the context now

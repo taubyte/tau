@@ -1,6 +1,9 @@
 package kvdb
 
 import (
+	"bytes"
+	"context"
+	"encoding/binary"
 	"fmt"
 	"testing"
 
@@ -16,6 +19,10 @@ func TestKeysAreTheirSegments(t *testing.T) {
 	ns := ds.NewKey("/ns")
 	s := newSet(nil, ns.ChildString(setNs))
 	pre := newPrefixes(ns)
+	hh, err := newHeads(context.Background(), ds.NewMapDatastore(), ns.ChildString(headsNs))
+	if err != nil {
+		t.Fatal(err)
+	}
 	d := dot{replica: "replica\x00\xff", counter: 42}
 	h, err := mh.Sum([]byte("block"), mh.SHA2_256, -1)
 	if err != nil {
@@ -36,7 +43,9 @@ func TestKeysAreTheirSegments(t *testing.T) {
 			{func() ds.Key { return s.elemKey(k, d) }, ds.NewKey(s.elems).ChildString(keySegment(k)).ChildString(d.segment())},
 			{func() ds.Key { return s.pendingKey(k, d) }, ds.NewKey(s.pending).ChildString(d.segment()).ChildString(keySegment(k))},
 			{func() ds.Key { return dotKey(pre.missing, d) }, ds.NewKey(pre.missing).ChildString(d.segment())},
+			{func() ds.Key { return dotKey(pre.retry, d) }, ns.ChildString(retryNs).ChildString(d.segment())},
 			{func() ds.Key { return hashKey(pre.owned, c) }, ds.NewKey(pre.owned).Child(dshelp.MultihashToDsKey(c.Hash()))},
+			{func() ds.Key { return hh.key(c) }, ns.ChildString(headsNs).Child(dshelp.MultihashToDsKey(c.Hash()))},
 		}
 		for i, tc := range cases {
 			if got := tc.got(); got != tc.want {
@@ -49,5 +58,107 @@ func TestKeysAreTheirSegments(t *testing.T) {
 	}
 	if got, want := fmt.Sprint(appendCounter(nil, 7)), fmt.Sprint([]byte(fmt.Sprintf("%020d", 7))); got != want {
 		t.Fatalf("counter %s, want %s", got, want)
+	}
+}
+
+// TestParsedSegmentsAreInterned: a dot segment parses to its dot without
+// allocating once its replica has been seen, as does a dot read from a
+// message or a value; a key segment costs the one string it makes.
+func TestParsedSegmentsAreInterned(t *testing.T) {
+	d := dot{replica: "replica\x00\xff-interned", counter: 42}
+	seg := d.segment()
+	got, err := parseDotSegment(seg)
+	if err != nil || got != d {
+		t.Fatalf("parsed %v, %v", got, err)
+	}
+	if a := testing.AllocsPerRun(100, func() {
+		if _, err := parseDotSegment(seg); err != nil {
+			t.Fatal(err)
+		}
+	}); a != 0 {
+		t.Fatalf("parsing a dot segment: %.0f allocations", a)
+	}
+	p, v := d.toPB(), encodeDot(d)
+	if dotFromPB(p) != d {
+		t.Fatal("dot from its message")
+	}
+	if got, err := decodeDot(v); err != nil || got != d {
+		t.Fatalf("dot from its value: %v, %v", got, err)
+	}
+	if a := testing.AllocsPerRun(100, func() {
+		dotFromPB(p)
+		if _, err := decodeDot(v); err != nil {
+			t.Fatal(err)
+		}
+	}); a != 0 {
+		t.Fatalf("reading a dot: %.0f allocations", a)
+	}
+
+	long := string(make([]byte, 200))
+	for _, k := range []string{"", "/a", "x\x00y", long} {
+		ks := keySegment(k)
+		if got, err := parseKeySegment(ks); err != nil || got != k {
+			t.Fatalf("key %q parsed to %q, %v", k, got, err)
+		}
+		if a := testing.AllocsPerRun(100, func() {
+			if _, err := parseKeySegment(ks); err != nil {
+				t.Fatal(err)
+			}
+		}); a > 1 {
+			t.Fatalf("parsing the segment of %q: %.0f allocations", k, a)
+		}
+	}
+	if _, err := parseKeySegment("k!!"); err == nil {
+		t.Fatal("a bad key segment parsed")
+	}
+	if _, err := parseDotSegment("r!!." + fmt.Sprintf("%020d", 1)); err == nil {
+		t.Fatal("a bad dot segment parsed")
+	}
+}
+
+// TestInternTableForgetsAtItsLimit: the table empties itself instead of
+// growing with every incarnation a long-lived store has seen.
+func TestInternTableForgetsAtItsLimit(t *testing.T) {
+	tab := &internTable{m: map[string]string{}, raw: map[string]string{}}
+	for i := range internedLimit + 1 {
+		r := fmt.Sprintf("replica-%d", i)
+		if got, err := tab.of(segEncoding.EncodeToString([]byte(r))); err != nil || got != r {
+			t.Fatalf("%q: %q, %v", r, got, err)
+		}
+		if got := tab.bytes([]byte(r)); got != r {
+			t.Fatalf("%q: %q", r, got)
+		}
+	}
+	if len(tab.m) > internedLimit || len(tab.raw) > internedLimit {
+		t.Fatalf("the table holds %d and %d replicas", len(tab.m), len(tab.raw))
+	}
+}
+
+// TestABlockRecordIsOneAllocation: a block's record is its kind, stamps,
+// state and dot as they were spelled field by field, made in one
+// allocation, and reads back as the block.
+func TestABlockRecordIsOneAllocation(t *testing.T) {
+	h, err := mh.Sum([]byte("state"), mh.SHA2_256, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range []block{
+		{kind: kindDelta, dot: dot{replica: "r\x00", counter: 300}, at: 1 << 40, ttl: 7},
+		{kind: kindDelta, dot: dot{replica: "rr", counter: 1}, at: 5, ttl: 1 << 20, state: cid.NewCidV1(cid.DagProtobuf, h)},
+	} {
+		want := append([]byte{byte(b.kind)}, encodeStamps(b.at, b.ttl)...)
+		want = append(binary.AppendUvarint(want, uint64(len(b.state.Bytes()))), b.state.Bytes()...)
+		want = append(want, encodeDot(b.dot)...)
+		got := encodeBlock(b)
+		if !bytes.Equal(got, want) {
+			t.Fatalf("record %x, want %x", got, want)
+		}
+		back, err := decodeBlock(got)
+		if err != nil || back != b {
+			t.Fatalf("read back %+v, %v", back, err)
+		}
+		if a := testing.AllocsPerRun(100, func() { encodeBlock(b) }); a != 1 {
+			t.Fatalf("encoding a block record: %.0f allocations", a)
+		}
 	}
 }

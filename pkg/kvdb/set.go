@@ -115,18 +115,29 @@ func encodeMarker(e element) []byte {
 // uvarints reads n uvarints off the front of b and returns them with the rest.
 func uvarints(b []byte, n int) ([]uint64, []byte, error) {
 	out := make([]uint64, n)
+	rest, err := uvarintsInto(out, b)
+	if err != nil {
+		return nil, nil, err
+	}
+	return out, rest, nil
+}
+
+// uvarintsInto reads len(out) uvarints from b into out, and returns what
+// follows them.
+func uvarintsInto(out []uint64, b []byte) ([]byte, error) {
 	for i := range out {
 		v, k := binary.Uvarint(b)
 		if k <= 0 {
-			return nil, nil, errors.New("error decoding varint")
+			return nil, errors.New("error decoding varint")
 		}
 		out[i], b = v, b[k:]
 	}
-	return out, b, nil
+	return b, nil
 }
 
 func decodeMarker(b []byte) (element, error) {
-	v, rest, err := uvarints(b, 3)
+	var v [3]uint64
+	rest, err := uvarintsInto(v[:], b)
 	if err != nil {
 		return element{}, errors.New("error decoding element")
 	}
@@ -138,7 +149,8 @@ func encodeStamps(at, ttl uint64) []byte {
 }
 
 func decodeStamps(b []byte) (uint64, uint64, error) {
-	v, _, err := uvarints(b, 2)
+	var v [2]uint64
+	_, err := uvarintsInto(v[:], b)
 	if err != nil {
 		return 0, 0, errors.New("error decoding stamps")
 	}

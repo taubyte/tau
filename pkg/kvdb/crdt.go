@@ -978,9 +978,7 @@ func (store *Datastore) retryLater(ctx context.Context, l link) {
 
 func (store *Datastore) retryPrefix() ds.Key { return store.namespace.ChildString(retryNs) }
 
-func (store *Datastore) retryKey(d dot) ds.Key {
-	return store.retryPrefix().ChildString(d.segment())
-}
+func (store *Datastore) retryKey(d dot) ds.Key { return dotKey(store.pre.retry, d) }
 
 // handleBranch walks down from the given blocks and returns once the walk is
 // done. A block that cannot be fetched marks the store dirty: it is still
@@ -1497,21 +1495,25 @@ func (store *Datastore) write(ctx context.Context, ops []op) error {
 		store.mu.Unlock()
 		return err
 	}
-	delta := store.stamped(&pb.Delta{})
+	delta := store.stamped(pb.DeltaFromVTPool())
+	defer releaseDelta(delta)
 	t := newTxn(store.store)
 	for _, o := range ops {
 		live, err := store.set.liveElems(ctx, t, o.key)
 		if err != nil {
+			t.release()
 			store.mu.Unlock()
 			return err
 		}
 		for _, e := range live {
-			delta.Tombstones = append(delta.Tombstones, tombstoneFor(delta, e))
+			tombstoneFor(delta, e, grow(&delta.Tombstones, pb.ElementFromVTPool))
 		}
 		if o.put {
-			delta.Elements = append(delta.Elements, &pb.Element{Key: o.key, Value: o.value})
+			el := grow(&delta.Elements, pb.ElementFromVTPool)
+			el.Key, el.Value = o.key, o.value
 		}
 	}
+	t.release()
 	if len(delta.Elements)+len(delta.Tombstones) == 0 {
 		store.mu.Unlock()
 		return nil
@@ -1576,10 +1578,14 @@ func (store *Datastore) nextDot() (dot, uint64) {
 func (store *Datastore) publishLocked(ctx context.Context, delta *pb.Delta) (Head, []Head, error) {
 	d, prev := store.nextDot()
 	hs, height := store.heads.List()
-	delta.Dot = d.toPB()
+	delta.Dot = d.pooledPB()
 	delta.Prev = prev
 	delta.Priority = height + 1
-	delta.Parents = parentsOf(hs)
+	delta.Parents = delta.Parents[:0]
+	for _, h := range hs {
+		p := grow(&delta.Parents, pb.ParentFromVTPool)
+		p.Cid, p.Dot, p.At, p.Ttl = bytesOf(h.Cid.KeyString()), h.Dot.pooledPB(), h.At, h.TTL
+	}
 
 	nd, err := makeNode(delta, hs)
 	if err != nil {
@@ -1620,14 +1626,57 @@ func (store *Datastore) stamped(delta *pb.Delta) *pb.Delta {
 	return delta
 }
 
-// tombstoneFor is the tombstone delta writes for e: needed as long as delta
-// is, and never less long than e is.
-func tombstoneFor(delta *pb.Delta, e element) *pb.Element {
+// tombstoneFor makes tomb the tombstone delta writes for e: needed as long
+// as delta is, and never less long than e is.
+func tombstoneFor(delta *pb.Delta, e element, tomb *pb.Element) {
 	ttl := delta.Ttl
 	if exp := e.expires(); exp > delta.At+ttl {
 		ttl = exp - delta.At
 	}
-	return &pb.Element{Key: e.key, Dot: e.dot.toPB(), At: delta.At, Ttl: ttl}
+	tomb.Key, tomb.Dot, tomb.At, tomb.Ttl = e.key, e.dot.pooledPB(), delta.At, ttl
+}
+
+// grow extends *s by one message, reusing the one a pooled message kept in
+// its capacity, or taking one from get.
+func grow[T any](s *[]*T, get func() *T) *T {
+	n := len(*s)
+	if n < cap(*s) {
+		*s = (*s)[:n+1]
+		if m := (*s)[n]; m != nil {
+			return m
+		}
+	} else {
+		*s = append(*s, nil)
+	}
+	m := get()
+	(*s)[n] = m
+	return m
+}
+
+// releaseDelta returns a write's delta to the pool, once it is published.
+// The messages it holds borrow their bytes (the values written, replicas and
+// cids as they are held as strings); they are cleared first, so the pool
+// keeps none of them and no later use can write into them. Pooled messages
+// are only ever filled and marshalled, never unmarshalled into.
+func releaseDelta(delta *pb.Delta) {
+	for _, els := range [][]*pb.Element{delta.Elements, delta.Tombstones} {
+		for _, e := range els {
+			e.Value = nil
+			if e.Dot != nil {
+				e.Dot.Replica = nil
+			}
+		}
+	}
+	for _, p := range delta.Parents {
+		p.Cid = nil
+		if p.Dot != nil {
+			p.Dot.Replica = nil
+		}
+	}
+	if delta.Dot != nil {
+		delta.Dot.Replica = nil
+	}
+	delta.ReturnToVTPool()
 }
 
 // maybeCompact compacts once the store holds CompactAfterBlocks blocks and
@@ -1746,7 +1795,9 @@ func (store *Datastore) writeBlocks(ctx context.Context, b block, nodes ...ipld.
 	for _, ba := range blocks {
 		t.put(store.blockKey(ba.node.Cid()), encodeBlock(block{kind: ba.kind, dot: b.dot, at: b.at, ttl: b.ttl}))
 	}
-	if err := t.commit(ctx); err != nil {
+	err := t.commit(ctx)
+	t.release()
+	if err != nil {
 		return err
 	}
 	cctx, cancel := context.WithTimeout(ctx, store.opts.DAGSyncerTimeout)

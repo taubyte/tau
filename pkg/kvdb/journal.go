@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unsafe"
 
 	ds "github.com/ipfs/go-datastore"
 )
@@ -58,41 +59,53 @@ func (j *journal) pendingMark(rest string, stamps []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return j.jPending + fmt.Sprintf("%020d", bucket(at+ttl)) + "/" + rest, nil
+	b := make([]byte, 0, len(j.jPending)+counterDigits+1+len(rest))
+	b = append(append(appendCounter(append(b, j.jPending...), bucket(at+ttl)), '/'), rest...)
+	return unsafe.String(unsafe.SliceData(b), len(b)), nil
 }
 
-// marks are the journal keys a write of key marks; value is nil for a
-// delete.
 func (j *journal) marks(ctx context.Context, key string, value []byte) ([]string, error) {
+	var out []string
+	err := j.eachMark(ctx, key, value, func(m string) error {
+		out = append(out, m)
+		return nil
+	})
+	return out, err
+}
+
+// eachMark calls fn with each journal mark a write of value under key makes,
+// a nil value being a delete.
+func (j *journal) eachMark(ctx context.Context, key string, value []byte, fn func(string) error) error {
 	if rest, ok := strings.CutPrefix(key, j.elems); ok {
-		return []string{j.jElems + rest}, nil
+		return fn(j.jElems + rest)
 	}
 	rest, ok := strings.CutPrefix(key, j.pending)
 	if !ok {
-		return nil, nil
+		return nil
 	}
-	var out []string
+	var first string
 	old, err := j.inner.Get(ctx, ds.RawKey(key))
 	switch {
 	case err == nil:
-		m, err := j.pendingMark(rest, old)
-		if err != nil {
-			return nil, err
+		if first, err = j.pendingMark(rest, old); err != nil {
+			return err
 		}
-		out = append(out, m)
+		if err := fn(first); err != nil {
+			return err
+		}
 	case !errors.Is(err, ds.ErrNotFound):
-		return nil, err
+		return err
 	}
 	if value != nil {
 		m, err := j.pendingMark(rest, value)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		if len(out) == 0 || out[0] != m {
-			out = append(out, m)
+		if m != first {
+			return fn(m)
 		}
 	}
-	return out, nil
+	return nil
 }
 
 // parseElemMark reads the element an element mark names.
@@ -135,27 +148,19 @@ type journaled struct {
 }
 
 func (s *journaled) Put(ctx context.Context, key ds.Key, value []byte) error {
-	marks, err := s.j.marks(ctx, key.String(), value)
-	if err != nil {
+	if err := s.j.eachMark(ctx, key.String(), value, func(m string) error {
+		return s.Datastore.Put(ctx, ds.RawKey(m), []byte{})
+	}); err != nil {
 		return err
-	}
-	for _, m := range marks {
-		if err := s.Datastore.Put(ctx, ds.RawKey(m), []byte{}); err != nil {
-			return err
-		}
 	}
 	return s.Datastore.Put(ctx, key, value)
 }
 
 func (s *journaled) Delete(ctx context.Context, key ds.Key) error {
-	marks, err := s.j.marks(ctx, key.String(), nil)
-	if err != nil {
+	if err := s.j.eachMark(ctx, key.String(), nil, func(m string) error {
+		return s.Datastore.Put(ctx, ds.RawKey(m), []byte{})
+	}); err != nil {
 		return err
-	}
-	for _, m := range marks {
-		if err := s.Datastore.Put(ctx, ds.RawKey(m), []byte{}); err != nil {
-			return err
-		}
 	}
 	return s.Datastore.Delete(ctx, key)
 }
@@ -181,16 +186,9 @@ type journaledBatch struct {
 }
 
 func (b *journaledBatch) mark(ctx context.Context, key ds.Key, value []byte) error {
-	marks, err := b.j.marks(ctx, key.String(), value)
-	if err != nil {
-		return err
-	}
-	for _, m := range marks {
-		if err := b.marks.Put(ctx, ds.RawKey(m), []byte{}); err != nil {
-			return err
-		}
-	}
-	return nil
+	return b.j.eachMark(ctx, key.String(), value, func(m string) error {
+		return b.marks.Put(ctx, ds.RawKey(m), []byte{})
+	})
 }
 
 func (b *journaledBatch) Commit(ctx context.Context) error {

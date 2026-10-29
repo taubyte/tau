@@ -34,13 +34,14 @@ func (h Head) link() link { return link{cid: h.Cid, dot: h.Dot, at: h.At, ttl: h
 type heads struct {
 	store     ds.Datastore
 	namespace ds.Key
+	prefix    string
 
 	mu    sync.RWMutex
 	cache map[cid.Cid]Head
 }
 
 func newHeads(ctx context.Context, store ds.Datastore, namespace ds.Key) (*heads, error) {
-	hh := &heads{store: store, namespace: namespace, cache: map[cid.Cid]Head{}}
+	hh := &heads{store: store, namespace: namespace, prefix: namespace.String(), cache: map[cid.Cid]Head{}}
 	err := scanStore(ctx, store, namespace, func(k string, v []byte) error {
 		c, err := dshelp.DsKeyToCidV1(ds.NewKey(strings.TrimPrefix(k, namespace.String())), cid.DagProtobuf)
 		if err != nil {
@@ -59,8 +60,10 @@ func newHeads(ctx context.Context, store ds.Datastore, namespace ds.Key) (*heads
 	return hh, nil
 }
 
+// key is the namespace's child dshelp.MultihashToDsKey names c by, built in
+// one allocation.
 func (hh *heads) key(c cid.Cid) ds.Key {
-	return hh.namespace.Child(dshelp.MultihashToDsKey(c.Hash()))
+	return hashKey(hh.prefix, c)
 }
 
 func encodeHead(h Head) []byte {

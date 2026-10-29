@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unsafe"
 
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
 )
@@ -105,7 +106,7 @@ func parseDotSegment(s string) (dot, error) {
 	if !ok || !strings.HasPrefix(r, "r") {
 		return dot{}, fmt.Errorf("bad dot segment %q", s)
 	}
-	replica, err := segEncoding.DecodeString(r[1:])
+	replica, err := replicas.of(r[1:])
 	if err != nil {
 		return dot{}, fmt.Errorf("bad dot segment %q: %w", s, err)
 	}
@@ -113,7 +114,72 @@ func parseDotSegment(s string) (dot, error) {
 	if err != nil || len(c) != 20 {
 		return dot{}, fmt.Errorf("bad dot segment %q", s)
 	}
-	return dot{replica: string(replica), counter: counter}, nil
+	return dot{replica: replica, counter: counter}, nil
+}
+
+// replicas interns the replicas dot segments name. A store reads few
+// incarnations and many keys naming each, and parsing one would otherwise
+// make a string per key read. The table empties itself at internedLimit, so
+// a store that sees many incarnations over its life does not keep them all.
+var replicas = &internTable{m: map[string]string{}, raw: map[string]string{}}
+
+const internedLimit = 1 << 12
+
+// An internTable maps a replica's segment, and the replica itself, to one
+// string of it.
+type internTable struct {
+	mu     sync.RWMutex
+	m, raw map[string]string
+}
+
+// bytes is the replica b holds.
+func (t *internTable) bytes(b []byte) string {
+	t.mu.RLock()
+	r, ok := t.raw[string(b)]
+	t.mu.RUnlock()
+	if ok {
+		return r
+	}
+	r = string(b)
+	t.mu.Lock()
+	if len(t.raw) >= internedLimit {
+		clear(t.raw)
+	}
+	t.raw[r] = r
+	t.mu.Unlock()
+	return r
+}
+
+// of is the replica the base32 segment enc spells.
+func (t *internTable) of(enc string) (string, error) {
+	t.mu.RLock()
+	r, ok := t.m[enc]
+	t.mu.RUnlock()
+	if ok {
+		return r, nil
+	}
+	r, err := decodeSegment(enc)
+	if err != nil {
+		return "", err
+	}
+	t.mu.Lock()
+	if len(t.m) >= internedLimit {
+		clear(t.m)
+	}
+	t.m[strings.Clone(enc)] = r
+	t.mu.Unlock()
+	return r, nil
+}
+
+// decodeSegment is the string the base32 segment enc spells, made in one
+// allocation: DecodeString decodes into a buffer of its own, which nothing
+// else holds, and the string is made over it.
+func decodeSegment(enc string) (string, error) {
+	b, err := segEncoding.DecodeString(enc)
+	if err != nil || len(b) == 0 {
+		return "", err
+	}
+	return unsafe.String(&b[0], len(b)), nil
 }
 
 // keySegment encodes a user key as one segment, so that the markers of "/a"
@@ -126,11 +192,11 @@ func parseKeySegment(s string) (string, error) {
 	if !strings.HasPrefix(s, "k") {
 		return "", fmt.Errorf("bad key segment %q", s)
 	}
-	b, err := segEncoding.DecodeString(s[1:])
+	k, err := decodeSegment(s[1:])
 	if err != nil {
 		return "", fmt.Errorf("bad key segment %q: %w", s, err)
 	}
-	return string(b), nil
+	return k, nil
 }
 
 func (d dot) toPB() *pb.Dot {
@@ -140,8 +206,19 @@ func (d dot) toPB() *pb.Dot {
 	return &pb.Dot{Replica: []byte(d.replica), Counter: d.counter}
 }
 
+// pooledPB is d as a pooled message for a delta this replica writes, its
+// replica borrowed until releaseDelta clears it.
+func (d dot) pooledPB() *pb.Dot {
+	if d.isZero() {
+		return nil
+	}
+	p := pb.DotFromVTPool()
+	p.Replica, p.Counter = bytesOf(d.replica), d.counter
+	return p
+}
+
 func dotFromPB(p *pb.Dot) dot {
-	return dot{replica: string(p.GetReplica()), counter: p.GetCounter()}
+	return dot{replica: replicas.bytes(p.GetReplica()), counter: p.GetCounter()}
 }
 
 // encodeDot is the value form of a dot: varint counter, then the replica.
@@ -155,5 +232,5 @@ func decodeDot(b []byte) (dot, error) {
 	if n <= 0 {
 		return dot{}, errors.New("error decoding dot")
 	}
-	return dot{counter: c, replica: string(b[n:])}, nil
+	return dot{counter: c, replica: replicas.bytes(b[n:])}, nil
 }
