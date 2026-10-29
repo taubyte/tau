@@ -174,9 +174,16 @@ func TestH4SnapshotStateIsMergedWhole(t *testing.T) {
 	if len(nodes) < 3 {
 		t.Fatalf("test setup: want a state of several tree nodes, got %d blocks", len(nodes))
 	}
-	held := nodes[len(nodes)-1]
-	if carriedBy(rootDelta)[held] {
-		t.Fatal("test setup: the snapshot carries its last tree node")
+	// A tree node the snapshot does not carry, the last one there is.
+	carried := carriedBy(rootDelta)
+	held := cid.Undef
+	for _, c := range nodes {
+		if !carried[c] {
+			held = c
+		}
+	}
+	if !held.Defined() {
+		t.Fatal("test setup: the snapshot carries every tree node")
 	}
 	nd, err := dagsyncs[0].DAGService.Get(ctx, held)
 	if err != nil {
