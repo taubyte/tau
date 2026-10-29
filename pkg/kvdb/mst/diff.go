@@ -3,6 +3,8 @@ package mst
 import (
 	"bytes"
 	"context"
+	"slices"
+	"strings"
 
 	cid "github.com/ipfs/go-cid"
 )
@@ -40,12 +42,12 @@ type cursor struct {
 	opened []cid.Cid
 }
 
-func newCursor(t *Tree) *cursor {
-	c := &cursor{t: t}
+// reset starts c on t, keeping its storage.
+func (c *cursor) reset(t *Tree) {
+	c.t, c.stack, c.opened = t, c.stack[:0], c.opened[:0]
 	if t.root.Defined() {
 		c.stack = append(c.stack, item{sub: t.root, below: noLevel})
 	}
-	return c
 }
 
 func (c *cursor) head() *item {
@@ -95,14 +97,13 @@ func (c *cursor) open(ctx context.Context) error {
 // higher root level is opened, both when the levels are equal, since only
 // the lower one can equal a subtree of the higher. A subtree facing an entry
 // is opened.
-func walk(ctx context.Context, a, b *Tree, fn func(Change) error) (*cursor, *cursor, error) {
-	ca, cb := newCursor(a), newCursor(b)
+func walk(ctx context.Context, ca, cb *cursor, fn func(Change) error) error {
 	for {
 		ha, hb := ca.head(), cb.head()
 		var err error
 		switch {
 		case ha == nil && hb == nil:
-			return ca, cb, nil
+			return nil
 		case ha == nil || hb == nil:
 			c, h, kind := ca, ha, Removed
 			if ha == nil {
@@ -123,10 +124,10 @@ func walk(ctx context.Context, a, b *Tree, fn func(Change) error) (*cursor, *cur
 			}
 			var la, lb uint32
 			if la, err = ca.level(ctx); err != nil {
-				return nil, nil, err
+				return err
 			}
 			if lb, err = cb.level(ctx); err != nil {
-				return nil, nil, err
+				return err
 			}
 			if la >= lb {
 				err = ca.open(ctx)
@@ -156,7 +157,7 @@ func walk(ctx context.Context, a, b *Tree, fn func(Change) error) (*cursor, *cur
 			}
 		}
 		if err != nil {
-			return nil, nil, err
+			return err
 		}
 	}
 }
@@ -180,33 +181,63 @@ func emit(fn func(Change) error, kind Kind, old, new entry) error {
 // the nodes of subtrees whose CIDs differ, which for k changed keys is
 // O(k × depth) nodes. The trees may be over different DAGServices.
 func Diff(ctx context.Context, a, b *Tree, fn func(Change) error) error {
-	_, _, err := walk(ctx, a, b, fn)
-	return err
+	var ca, cb cursor
+	ca.reset(a)
+	cb.reset(b)
+	return walk(ctx, &ca, &cb, fn)
 }
 
 // DiffNodes returns the CIDs of the nodes only a reaches and those only b
 // reaches. A peer that holds a and is given b's root fetches exactly onlyB.
 func DiffNodes(ctx context.Context, a, b *Tree) (onlyA, onlyB []cid.Cid, err error) {
-	ca, cb, err := walk(ctx, a, b, nil)
-	if err != nil {
-		return nil, nil, err
-	}
-	return minus(ca.opened, cb.opened), minus(cb.opened, ca.opened), nil
+	var d Differ
+	return d.Nodes(ctx, a, b)
 }
 
-// minus is x without the CIDs in y. A node either tree reaches is either
-// inside a subtree both share, which neither opens, or opened by the walk,
-// so the opened sets alone tell the trees' nodes apart.
-func minus(x, y []cid.Cid) []cid.Cid {
-	in := make(map[cid.Cid]struct{}, len(y))
-	for _, c := range y {
-		in[c] = struct{}{}
+// A Differ finds the nodes two trees do not share, as DiffNodes does, in
+// storage it keeps from one call to the next: once that has grown to the
+// trees it compares, a call allocates nothing but what reading their nodes
+// does.
+type Differ struct {
+	a, b         cursor
+	onlyA, onlyB []cid.Cid
+}
+
+// Nodes is DiffNodes in d's storage. What it returns is valid until d's
+// next call.
+func (d *Differ) Nodes(ctx context.Context, a, b *Tree) (onlyA, onlyB []cid.Cid, err error) {
+	d.a.reset(a)
+	d.b.reset(b)
+	// The stacks keep no node once the call is over.
+	defer func() {
+		clear(d.a.stack[:cap(d.a.stack)])
+		clear(d.b.stack[:cap(d.b.stack)])
+	}()
+	if err := walk(ctx, &d.a, &d.b, nil); err != nil {
+		return nil, nil, err
 	}
-	var out []cid.Cid
-	for _, c := range x {
-		if _, ok := in[c]; !ok {
-			out = append(out, c)
+	// A node either tree reaches is either inside a subtree both share,
+	// which neither opens, or opened by the walk, so the opened sets alone
+	// tell the trees' nodes apart.
+	x, y := d.a.opened, d.b.opened
+	slices.SortFunc(x, compareCids)
+	slices.SortFunc(y, compareCids)
+	d.onlyA, d.onlyB = d.onlyA[:0], d.onlyB[:0]
+	i, j := 0, 0
+	for i < len(x) || j < len(y) {
+		switch {
+		case j == len(y) || i < len(x) && compareCids(x[i], y[j]) < 0:
+			d.onlyA = append(d.onlyA, x[i])
+			i++
+		case i == len(x) || compareCids(x[i], y[j]) > 0:
+			d.onlyB = append(d.onlyB, y[j])
+			j++
+		default:
+			i++
+			j++
 		}
 	}
-	return out
+	return d.onlyA, d.onlyB, nil
 }
+
+func compareCids(a, b cid.Cid) int { return strings.Compare(a.KeyString(), b.KeyString()) }
