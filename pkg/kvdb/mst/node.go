@@ -212,10 +212,18 @@ func malformed(c cid.Cid, format string, args ...any) error {
 
 // decode reads the node in nd, which must sit below a node of level below.
 func decode(nd ipld.Node, below uint32) (*node, error) {
+	n, _, err := decodeNode(nd, below, nil)
+	return n, err
+}
+
+// decodeNode is decode, but for a node own wants, given its level and what
+// it would cost to keep (footprint), it copies every byte the node holds
+// into one buffer of its own, and returns that cost; otherwise 0.
+func decodeNode(nd ipld.Node, below uint32, own func(level uint32, size int) bool) (*node, int, error) {
 	c := nd.Cid()
 	pn, err := protoNode(nd)
 	if err != nil {
-		return nil, malformed(c, "%s", err)
+		return nil, 0, malformed(c, "%s", err)
 	}
 	// The message's bytes alias the block's data from here: a block is never
 	// written to once made, and the node keeps only clipped slices of it, so
@@ -225,32 +233,55 @@ func decode(nd ipld.Node, below uint32) (*node, error) {
 	msg := pb.NodeFromVTPool()
 	defer msg.ReturnToVTPool()
 	if err := msg.UnmarshalVTUnsafe(pn.Data()); err != nil {
-		return nil, malformed(c, "%s", err)
+		return nil, 0, malformed(c, "%s", err)
 	}
 	if msg.Format != Format {
-		return nil, fmt.Errorf("%w %d in %s", ErrFormat, msg.Format, c)
+		return nil, 0, fmt.Errorf("%w %d in %s", ErrFormat, msg.Format, c)
 	}
 	if len(msg.ProtoReflect().GetUnknown()) > 0 {
-		return nil, malformed(c, "unknown fields")
+		return nil, 0, malformed(c, "unknown fields")
 	}
 	if len(msg.Entries) == 0 {
-		return nil, malformed(c, "no entries")
+		return nil, 0, malformed(c, "no entries")
 	}
 	if msg.Level >= below {
-		return nil, malformed(c, "level %d under level %d", msg.Level, below)
+		return nil, 0, malformed(c, "level %d under level %d", msg.Level, below)
 	}
-	size := 0
+	size, owned := 0, len(msg.LeftSummary)
 	for _, e := range msg.Entries {
 		if len(e.ProtoReflect().GetUnknown()) > 0 {
-			return nil, malformed(c, "unknown fields")
+			return nil, 0, malformed(c, "unknown fields")
 		}
 		size += int(e.Shared) + len(e.Suffix)
+		owned += len(e.Value) + len(e.RightSummary)
 	}
 	links := pn.Links()
+	cost := 0
+	if own != nil {
+		cids := 0
+		for _, l := range links {
+			cids += len(l.Cid.KeyString())
+		}
+		if cost = footprint(len(msg.Entries), size+owned, cids); own(msg.Level, cost) {
+			size += owned
+		} else {
+			cost = 0
+		}
+	}
 	n := &node{
 		level:   msg.Level,
 		entries: make([]entry, len(msg.Entries)),
 		kids:    make([]ref, len(msg.Entries)+1),
+	}
+	buf := make([]byte, 0, size)
+	// held is b, or b copied into buf when the node owns its bytes.
+	held := func(b []byte) []byte {
+		if cost == 0 {
+			return slices.Clip(b)
+		}
+		start := len(buf)
+		buf = append(buf, b...)
+		return buf[start:len(buf):len(buf)]
 	}
 	li := 0
 	slot := func(i int, present bool, sum []byte) error {
@@ -263,38 +294,37 @@ func decode(nd ipld.Node, below uint32) (*node, error) {
 		if li == len(links) {
 			return malformed(c, "more subtrees than links")
 		}
-		n.kids[i] = ref{c: links[li].Cid, sum: sum}
+		n.kids[i] = ref{c: links[li].Cid, sum: held(sum)}
 		li++
 		return nil
 	}
-	if err := slot(0, msg.Left, slices.Clip(msg.LeftSummary)); err != nil {
-		return nil, err
+	if err := slot(0, msg.Left, msg.LeftSummary); err != nil {
+		return nil, 0, err
 	}
-	keys := make([]byte, 0, size)
 	var prev []byte
 	for i, e := range msg.Entries {
 		if int(e.Shared) > len(prev) || (i == 0 && e.Shared > 0) {
-			return nil, malformed(c, "entry %d shares more than the previous key", i)
+			return nil, 0, malformed(c, "entry %d shares more than the previous key", i)
 		}
-		start := len(keys)
-		keys = append(append(keys, prev[:e.Shared]...), e.Suffix...)
-		key := keys[start:len(keys):len(keys)]
+		start := len(buf)
+		buf = append(append(buf, prev[:e.Shared]...), e.Suffix...)
+		key := buf[start:len(buf):len(buf)]
 		if i > 0 {
 			switch bytes.Compare(prev, key) {
 			case 0:
-				return nil, fmt.Errorf("%w in %s", ErrDuplicateKey, c)
+				return nil, 0, fmt.Errorf("%w in %s", ErrDuplicateKey, c)
 			case 1:
-				return nil, fmt.Errorf("%w in %s", ErrUnsorted, c)
+				return nil, 0, fmt.Errorf("%w in %s", ErrUnsorted, c)
 			}
 		}
-		n.entries[i] = entry{key: key, val: slices.Clip(e.Value)}
-		if err := slot(i+1, e.Right, slices.Clip(e.RightSummary)); err != nil {
-			return nil, err
+		n.entries[i] = entry{key: key, val: held(e.Value)}
+		if err := slot(i+1, e.Right, e.RightSummary); err != nil {
+			return nil, 0, err
 		}
 		prev = key
 	}
 	if li != len(links) {
-		return nil, malformed(c, "%d links for %d subtrees", len(links), li)
+		return nil, 0, malformed(c, "%d links for %d subtrees", len(links), li)
 	}
-	return n, nil
+	return n, cost, nil
 }

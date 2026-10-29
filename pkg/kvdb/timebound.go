@@ -262,7 +262,7 @@ func (store *Datastore) carriesAhead(ctx context.Context, root *pb.Delta, dags i
 		return false, err
 	}
 	for _, c := range []cid.Cid{sr.elems, sr.pending, sr.ctx} {
-		_, hi, any, err := treeStamps(ctx, stateTree(dags, c))
+		_, hi, any, err := treeStamps(ctx, store.tree(dags, c))
 		if err != nil {
 			return false, err
 		}
@@ -506,7 +506,7 @@ func (store *Datastore) snapshotSince(ctx context.Context, root *pb.Delta, dags 
 	if err != nil {
 		return 0, err
 	}
-	lo, _, any, err := treeStamps(ctx, stateTree(dags, sr.elems))
+	lo, _, any, err := treeStamps(ctx, store.tree(dags, sr.elems))
 	if err != nil {
 		return 0, err
 	}

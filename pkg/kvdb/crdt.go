@@ -170,6 +170,9 @@ type Options struct {
 	// manual leaves what time drives, maintenance, heartbeats and repair,
 	// to the caller: tests drive them step by step.
 	manual bool
+	// treeCache is the budget of the store's cache of tree nodes, in
+	// bytes; 0 for treeCacheBytes.
+	treeCache int
 }
 
 // retentionFactor is how many margins T must be at least: "many times".
@@ -288,6 +291,10 @@ type Datastore struct {
 	// stateFetch). fetchMu is taken alone.
 	fetchMu sync.Mutex
 	fetches map[cid.Cid]*stateFetch
+
+	// trees caches the upper levels of the state trees, for every tree the
+	// store reads (see tree).
+	trees *treeCache
 
 	dagService       ipld.DAGService
 	broadcaster      Broadcaster
@@ -441,6 +448,7 @@ func NewDatastore(
 		namespace:        namespace,
 		pre:              newPrefixes(namespace),
 		dagService:       dagSyncer,
+		trees:            newTreeCache(opts),
 		broadcaster:      bcast,
 		broadcastBatchCh: make(chan broadcastBatchHead, 32000),
 		seenHeads:        make(map[cid.Cid]struct{}),
@@ -1658,9 +1666,9 @@ func grow[T any](s *[]*T, get func() *T) *T {
 
 // releaseDelta returns a write's delta to the pool, once it is published.
 // The messages it holds borrow their bytes (the keys and values written,
-// replicas and cids as they are held as strings); they are cleared first, so the pool
-// keeps none of them and no later use can write into them. Pooled messages
-// are only ever filled and marshalled, never unmarshalled into.
+// replicas and cids as they are held as strings); they are cleared first, so
+// the pool keeps none of them and no later use can write into them. Pooled
+// messages are only ever filled and marshalled, never unmarshalled into.
 func releaseDelta(delta *pb.Delta) {
 	for _, els := range [][]*pb.Element{delta.Elements, delta.Tombstones} {
 		for _, e := range els {

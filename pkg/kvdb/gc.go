@@ -744,13 +744,13 @@ func (ch *rootChange) finish(ctx context.Context, t *txn) error {
 // holds gcMu.
 func (store *Datastore) onlyIn(ctx context.Context, c cid.Cid, trees []cid.Cid) ([]cidKey, error) {
 	gc := &store.gc
-	a := stateTree(&gc.recent, c)
+	a := store.tree(&gc.recent, c)
 	gc.cand = gc.cand[:0]
 	if len(trees) == 0 {
 		trees = noTrees
 	}
 	for i, l := range trees {
-		onlyA, _, err := gc.differ.Nodes(ctx, a, stateTree(&gc.recent, l))
+		onlyA, _, err := gc.differ.Nodes(ctx, a, store.tree(&gc.recent, l))
 		if err != nil {
 			return nil, err
 		}

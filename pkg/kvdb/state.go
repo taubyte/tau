@@ -270,6 +270,25 @@ func stateTree(dags ipld.DAGService, root cid.Cid) *mst.Tree {
 	return mst.Load(dags, root, mst.WithSummarizer(stamps{}))
 }
 
+// treeCacheBytes is the budget of a store's cache of tree nodes: the upper
+// levels of its state, which every merge and compaction passes through.
+const treeCacheBytes = 256 << 10
+
+type treeCache = mst.Cache
+
+func newTreeCache(opts *Options) *treeCache {
+	if opts.treeCache > 0 {
+		return mst.NewCache(opts.treeCache)
+	}
+	return mst.NewCache(treeCacheBytes)
+}
+
+// tree is the state tree at root over dags, reading through the store's
+// cache of tree nodes.
+func (store *Datastore) tree(dags ipld.DAGService, root cid.Cid) *mst.Tree {
+	return mst.Load(dags, root, mst.WithSummarizer(stamps{}), mst.WithCache(store.trees))
+}
+
 // A stateRoot names a state's three trees, cid.Undef for an empty one.
 type stateRoot struct {
 	elems, pending, ctx cid.Cid

@@ -167,7 +167,7 @@ func TestTheOracleChecksEveryMerge(t *testing.T) {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	s, err := readState(ctx, b.dagService, cid.MustParse(root.GetState()))
+	s, err := b.readState(ctx, b.dagService, cid.MustParse(root.GetState()))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -609,13 +609,13 @@ func (s *snapState) removal(ctx context.Context, tk []byte) ([]byte, bool, error
 	return s.lookPending.Get(ctx, tk)
 }
 
-func readState(ctx context.Context, dags ipld.DAGService, c cid.Cid) (*snapState, error) {
+func (store *Datastore) readState(ctx context.Context, dags ipld.DAGService, c cid.Cid) (*snapState, error) {
 	sr, err := loadStateRoot(ctx, dags, c)
 	if err != nil {
 		return nil, err
 	}
-	s := &snapState{root: c, sr: sr, elems: stateTree(dags, sr.elems), pending: stateTree(dags, sr.pending)}
-	if s.cc, err = readContext(ctx, stateTree(dags, sr.ctx)); err != nil {
+	s := &snapState{root: c, sr: sr, elems: store.tree(dags, sr.elems), pending: store.tree(dags, sr.pending)}
+	if s.cc, err = readContext(ctx, store.tree(dags, sr.ctx)); err != nil {
 		return nil, fmt.Errorf("state %s: %w", c, err)
 	}
 	return s, nil
@@ -699,13 +699,13 @@ func (ms *mergeSet) addPending(tk []byte, theirs []byte, has bool) error {
 // in nothing else.
 func (store *Datastore) enumerate(ctx context.Context, s *snapState) (*mergeSet, error) {
 	ms := newMergeSet()
-	err := mst.Diff(ctx, stateTree(store.dagService, store.base.elems), s.elems, func(ch mst.Change) error {
+	err := mst.Diff(ctx, store.tree(store.dagService, store.base.elems), s.elems, func(ch mst.Change) error {
 		return ms.addElem(ch.Key, ch.New, ch.Kind != mst.Removed)
 	})
 	if err != nil {
 		return nil, err
 	}
-	err = mst.Diff(ctx, stateTree(store.dagService, store.base.pending), s.pending, func(ch mst.Change) error {
+	err = mst.Diff(ctx, store.tree(store.dagService, store.base.pending), s.pending, func(ch mst.Change) error {
 		return ms.addPending(ch.Key, ch.New, ch.Kind != mst.Removed)
 	})
 	if err != nil {
@@ -771,7 +771,7 @@ func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.D
 	if err != nil {
 		return nil, nil, fmt.Errorf("snapshot %s has no state: %w", c, err)
 	}
-	s, err := readState(ctx, dags, stc)
+	s, err := store.readState(ctx, dags, stc)
 	if err != nil {
 		return nil, nil, err
 	}

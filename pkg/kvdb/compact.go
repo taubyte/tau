@@ -216,7 +216,7 @@ func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *c
 // The caller holds store.mu.
 func (store *Datastore) buildState(ctx context.Context) (*overlay, cid.Cid, error) {
 	ov := newOverlay(store.dagService)
-	elems := stateTree(ov, store.base.elems).Edit()
+	elems := store.tree(ov, store.base.elems).Edit()
 	err := scanStore(ctx, store.store, store.journal.elemsPrefix(), func(k string, _ []byte) error {
 		key, d, err := store.journal.parseElemMark(k)
 		if err != nil {
@@ -238,7 +238,7 @@ func (store *Datastore) buildState(ctx context.Context) (*overlay, cid.Cid, erro
 	if err != nil {
 		return nil, cid.Undef, err
 	}
-	pending := stateTree(ov, store.base.pending).Edit()
+	pending := store.tree(ov, store.base.pending).Edit()
 	err = scanStore(ctx, store.store, store.journal.pendingPrefix(), func(k string, _ []byte) error {
 		b, key, d, err := store.journal.parsePendingMark(k)
 		if err != nil {

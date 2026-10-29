@@ -16,9 +16,10 @@ var Stop = errors.New("mst: stop")
 // A Tree is an immutable handle on one root. Its methods are safe for
 // concurrent use when its DAGService is.
 type Tree struct {
-	dags ipld.DAGService
-	sum  Summarizer
-	root cid.Cid
+	dags  ipld.DAGService
+	sum   Summarizer
+	cache *Cache
+	root  cid.Cid
 }
 
 type Option func(*Tree)
@@ -48,15 +49,34 @@ func Load(dags ipld.DAGService, root cid.Cid, opts ...Option) *Tree {
 func (t *Tree) Root() cid.Cid { return t.root }
 
 func (t *Tree) with(root cid.Cid) *Tree {
-	return &Tree{dags: t.dags, sum: t.sum, root: root}
+	return &Tree{dags: t.dags, sum: t.sum, cache: t.cache, root: root}
 }
 
 func (t *Tree) load(ctx context.Context, c cid.Cid, below uint32) (*node, error) {
+	if t.cache == nil {
+		nd, err := t.dags.Get(ctx, c)
+		if err != nil {
+			return nil, err
+		}
+		return decode(nd, below)
+	}
+	if n := t.cache.get(c); n != nil {
+		if n.level >= below {
+			return nil, malformed(c, "level %d under level %d", n.level, below)
+		}
+		return n, nil
+	}
 	nd, err := t.dags.Get(ctx, c)
 	if err != nil {
 		return nil, err
 	}
-	return decode(nd, below)
+	n, cost, err := decodeNode(nd, below, func(level uint32, size int) bool {
+		return t.cache.wants(level, size, below == noLevel)
+	})
+	if err == nil && cost > 0 {
+		t.cache.add(c, n, cost)
+	}
+	return n, err
 }
 
 // Get returns the value of key and whether the tree holds it.
