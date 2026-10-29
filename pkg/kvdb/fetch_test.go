@@ -708,7 +708,7 @@ func TestAFetchAttemptCostsLittleBeyondItsBlocks(t *testing.T) {
 	attempt := func() {
 		f.b.seen[keyOf(nd.Cid())] = struct{}{}
 		f.b.requeue([]cid.Cid{nd.Cid()})
-		if err := a.fetchWanted(ctx, ctx, held, f); err != nil {
+		if err := a.fetchWanted(ctx, ctx, held, f, nil); err != nil {
 			t.Fatal(err)
 		}
 		a.unstage(f.b.held)

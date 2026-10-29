@@ -262,7 +262,7 @@ func (store *Datastore) fetchDead(f *stateFetch, now time.Duration, dropClock ui
 // for the next one. Unless the state's cid is malformed, it returns the
 // fetch with the caller as one of its users: the caller leaves it, merged
 // once a merge owns the state.
-func (store *Datastore) fetchState(ctx context.Context, ng *crdtNodeGetter, c cid.Cid, root *pb.Delta) (*stateFetch, error) {
+func (store *Datastore) fetchState(ctx context.Context, ng *crdtNodeGetter, c cid.Cid, root *pb.Delta, held *heldDAG) (*stateFetch, error) {
 	stc, err := cid.Cast(root.GetState())
 	if err != nil {
 		return nil, fmt.Errorf("no state: %w", err)
@@ -281,7 +281,7 @@ func (store *Datastore) fetchState(ctx context.Context, ng *crdtNodeGetter, c ci
 			return f, err
 		}
 	}
-	if err := store.fetchWanted(ctx, cctx, ng, f); err != nil {
+	if err := store.fetchWanted(ctx, cctx, ng, f, held); err != nil {
 		return f, err
 	}
 	store.fetchMu.Lock()
@@ -370,7 +370,7 @@ type fetchEvent struct {
 // wanted, for the next one to go on from. A block that could not be fetched
 // is asked for again while others still arrive; the attempt ends once none
 // does. Gets run under cctx, staging under ctx.
-func (store *Datastore) fetchWanted(ctx, cctx context.Context, ng ipld.NodeGetter, f *stateFetch) error {
+func (store *Datastore) fetchWanted(ctx, cctx context.Context, ng ipld.NodeGetter, f *stateFetch, held *heldDAG) error {
 	b := f.b
 	gctx, stop := context.WithCancel(cctx)
 	events := b.events
@@ -402,8 +402,9 @@ func (store *Datastore) fetchWanted(ctx, cctx context.Context, ng ipld.NodeGette
 			ended(ev.asked)
 		case ev.err != nil:
 			errs = errors.Join(errs, ev.err)
-		default:
-			arrived = b.received(ev.node) || arrived
+		case b.received(ev.node):
+			held.keep(ev.node)
+			arrived = true
 		}
 	}
 	for {

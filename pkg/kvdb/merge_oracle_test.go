@@ -160,7 +160,7 @@ func TestTheOracleChecksEveryMerge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, err := b.fetchState(ctx, &crdtNodeGetter{b.dagService}, snap, root)
+	f, err := b.fetchState(ctx, &crdtNodeGetter{b.dagService}, snap, root, nil)
 	defer b.leaveFetch(f, true)
 	if err != nil {
 		t.Fatal(err)

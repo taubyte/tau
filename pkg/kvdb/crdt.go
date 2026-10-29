@@ -1209,6 +1209,7 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 	// The state fetch is left before reclaim runs: once nothing is left to
 	// merge it for, what it staged goes with that reclaim.
 	var fetch *stateFetch
+	var held *heldDAG
 	settled := false
 	leave := func() {
 		if fetch != nil {
@@ -1219,12 +1220,13 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 	defer leave()
 	if delta.GetSnapshot() {
 		var err error
-		fetch, err = store.fetchState(ctx, ng, current, delta)
+		held = newHeldDAG(store.dagService)
+		fetch, err = store.fetchState(ctx, ng, current, delta, held)
 		if err != nil {
 			store.dropFailed(ctx, current)
 			return nil, fmt.Errorf("error fetching snapshot %s: %w", current, err)
 		}
-		ahead, err := store.carriesAhead(ctx, delta)
+		ahead, err := store.carriesAhead(ctx, delta, held)
 		if err != nil || ahead {
 			store.dropFailed(ctx, current)
 			if err == nil {
@@ -1290,7 +1292,7 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 		return walk, nil
 	}
 	if d.replica != store.replica {
-		since, err := store.snapshotSince(ctx, delta, store.dagService)
+		since, err := store.snapshotSince(ctx, delta, held)
 		if err != nil {
 			store.dropFailed(ctx, current)
 			return nil, err
@@ -1309,7 +1311,7 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 			return nil, store.unmerged(ctx, current, d, 0)
 		}
 	}
-	walk, theirs, err := store.mergeSnapshot(ctx, current, delta, store.dagService)
+	walk, theirs, err := store.mergeSnapshot(ctx, current, delta, held)
 	if err != nil {
 		store.dropFailed(ctx, current)
 		return nil, fmt.Errorf("error merging snapshot %s: %w", current, err)

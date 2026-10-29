@@ -252,17 +252,17 @@ func (store *Datastore) ahead(at uint64) bool {
 // clock was put right. It waits as the block that wrote it would have, so a
 // wrong clock's stamps never reach a correct replica's state. The trees'
 // summaries say what the latest stamp of each is.
-func (store *Datastore) carriesAhead(ctx context.Context, root *pb.Delta) (bool, error) {
+func (store *Datastore) carriesAhead(ctx context.Context, root *pb.Delta, dags ipld.DAGService) (bool, error) {
 	stc, err := cid.Cast(root.GetState())
 	if err != nil {
 		return false, err
 	}
-	sr, err := loadStateRoot(ctx, store.dagService, stc)
+	sr, err := loadStateRoot(ctx, dags, stc)
 	if err != nil {
 		return false, err
 	}
 	for _, c := range []cid.Cid{sr.elems, sr.pending, sr.ctx} {
-		_, hi, any, err := treeStamps(ctx, stateTree(store.dagService, c))
+		_, hi, any, err := treeStamps(ctx, stateTree(dags, c))
 		if err != nil {
 			return false, err
 		}

@@ -100,3 +100,49 @@ func setLinks(nd *dag.ProtoNode, n int, at func(int) cid.Cid) error {
 	}
 	return nd.SetLinks(ptrs)
 }
+
+// heldLimit bounds how many blocks a heldDAG keeps.
+const heldLimit = 1 << 12
+
+// A heldDAG is the DAG one snapshot merge reads: it keeps, up to heldLimit,
+// the blocks its state fetch received and those the merge has read, so that
+// a block is decoded once per merge rather than once per tree that reads
+// it. It is used by one goroutine at a time and dropped with the merge.
+type heldDAG struct {
+	ipld.DAGService
+	nodes map[cid.Cid]ipld.Node
+}
+
+func newHeldDAG(dags ipld.DAGService) *heldDAG {
+	return &heldDAG{DAGService: dags, nodes: map[cid.Cid]ipld.Node{}}
+}
+
+func (h *heldDAG) keep(nd ipld.Node) {
+	if h != nil && len(h.nodes) < heldLimit {
+		h.nodes[nd.Cid()] = nd
+	}
+}
+
+func (h *heldDAG) Get(ctx context.Context, c cid.Cid) (ipld.Node, error) {
+	if nd, ok := h.nodes[c]; ok {
+		return nd, nil
+	}
+	nd, err := h.DAGService.Get(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	h.keep(nd)
+	return nd, nil
+}
+
+func (h *heldDAG) Remove(ctx context.Context, c cid.Cid) error {
+	delete(h.nodes, c)
+	return h.DAGService.Remove(ctx, c)
+}
+
+func (h *heldDAG) RemoveMany(ctx context.Context, cids []cid.Cid) error {
+	for _, c := range cids {
+		delete(h.nodes, c)
+	}
+	return h.DAGService.RemoveMany(ctx, cids)
+}

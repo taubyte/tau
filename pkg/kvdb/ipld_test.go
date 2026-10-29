@@ -134,3 +134,38 @@ func TestDecodedDeltaAliasesItsBlock(t *testing.T) {
 		t.Fatal("the key was copied out of the block")
 	}
 }
+
+// TestASnapshotMergeReadsEachBlockOnce: a replica catching up fetches the
+// blocks of a state, then reads them to check their stamps, to load the
+// state and to diff it against its own. Each of those used to read every
+// block it needed back from the blockstore and decode it again; the merge
+// now reads each block of the state once, the fetch's own read included.
+func TestASnapshotMergeReadsEachBlockOnce(t *testing.T) {
+	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 2, noAutoCompact())
+	defer done()
+	a, b := replicas[0], replicas[1]
+	for i := range 300 {
+		put(t, a, fmt.Sprintf("/k/%03d", i), "v")
+	}
+	compact(t, a)
+	counting := &countingDAG{fetchThroughDAGSvc: dagsyncs[1], fetched: map[cid.Cid]int{}}
+	b.dagService = counting
+	syncReplicaHeads(t, a, b)
+	reads := counting.take()
+	blocks, again := 0, 0
+	for _, level := range stateLevels(t, a) {
+		for _, nd := range level {
+			blocks++
+			if n := reads[nd.Cid()]; n > 1 {
+				again++
+			}
+		}
+	}
+	t.Logf("%d of the state's %d blocks read more than once", again, blocks)
+	if blocks < 10 {
+		t.Fatalf("setup: a state of %d blocks", blocks)
+	}
+	if again != 0 {
+		t.Fatalf("%d of the state's %d blocks were read more than once", again, blocks)
+	}
+}
