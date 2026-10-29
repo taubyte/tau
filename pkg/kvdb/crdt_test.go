@@ -918,7 +918,10 @@ func TestBadShutdownMark_DetectedOnStartup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	d := openTestStore(t, "recover", mapDs, dagServ, time.Hour)
+	// The repair loop's first pass runs at once and cleans a store with
+	// nothing missing, so with it on the mark is gone whenever it wins the
+	// race to the check. Run the repair by hand instead.
+	d := openTestStore(t, "recover", mapDs, dagServ, 0)
 	defer d.Close()
 
 	if !d.IsDirty(ctx) {
@@ -930,6 +933,12 @@ func TestBadShutdownMark_DetectedOnStartup(t *testing.T) {
 	}
 	if !has {
 		t.Fatal("bad-shutdown key should still be present (re-armed for next run)")
+	}
+	if err := d.Repair(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if d.IsDirty(ctx) {
+		t.Fatal("a repair with nothing missing should leave the store clean")
 	}
 }
 
