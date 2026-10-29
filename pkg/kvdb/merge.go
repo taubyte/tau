@@ -58,37 +58,26 @@ type block struct {
 	state   cid.Cid
 }
 
-func (store *Datastore) blocksPrefix() ds.Key {
-	return store.namespace.ChildString(processedBlocksNs)
-}
+func (store *Datastore) blocksPrefix() ds.Key { return ds.RawKey(store.pre.blocks) }
 
-func (store *Datastore) blockKey(c cid.Cid) ds.Key {
-	return store.blocksPrefix().Child(dshelp.MultihashToDsKey(c.Hash()))
-}
+func (store *Datastore) blockKey(c cid.Cid) ds.Key { return hashKey(store.pre.blocks, c) }
 
-func (store *Datastore) missingPrefix() ds.Key {
-	return store.namespace.ChildString(missingNs)
-}
+func (store *Datastore) missingPrefix() ds.Key { return ds.RawKey(store.pre.missing) }
 
-func (store *Datastore) missingKey(d dot) ds.Key {
-	return store.missingPrefix().ChildString(d.segment())
-}
+func (store *Datastore) missingKey(d dot) ds.Key { return dotKey(store.pre.missing, d) }
 
-func (store *Datastore) vectorPrefix() ds.Key {
-	return store.namespace.ChildString(contextNs).ChildString("v")
-}
+func (store *Datastore) vectorPrefix() ds.Key { return ds.RawKey(store.pre.vector) }
 
-func (store *Datastore) cloudPrefix() ds.Key {
-	return store.namespace.ChildString(contextNs).ChildString("d")
-}
+func (store *Datastore) cloudPrefix() ds.Key { return ds.RawKey(store.pre.cloud) }
 
 func (store *Datastore) vectorKey(replica string) ds.Key {
-	return store.vectorPrefix().ChildString(replicaSegment(replica))
+	b := make([]byte, 0, len(store.pre.vector)+1+replicaSegmentLen(replica))
+	return dsKey(appendReplicaSegment(append(append(b, store.pre.vector...), '/'), replica))
 }
 
 // cloudKey is where the span (lo, hi] of replica is kept: under its end.
 func (store *Datastore) cloudKey(replica string, hi uint64) ds.Key {
-	return store.cloudPrefix().ChildString(dot{replica: replica, counter: hi}.segment())
+	return dotKey(store.pre.cloud, dot{replica: replica, counter: hi})
 }
 
 func cidOfBlockKey(prefix ds.Key, k string) (cid.Cid, error) {
@@ -528,7 +517,7 @@ func (store *Datastore) mergeDelta(ctx context.Context, c cid.Cid, delta *pb.Del
 // dropPending forgets the pending removals of d's elements the context now
 // refutes: every element of d that was named by one was refused on arrival.
 func (m *merging) dropPending(ctx context.Context, d dot) error {
-	entries, err := m.t.scan(ctx, m.store.set.pendingPrefix().ChildString(d.segment()))
+	entries, err := m.t.scan(ctx, dotKey(m.store.set.pending, d))
 	if err != nil {
 		return err
 	}

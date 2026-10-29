@@ -93,6 +93,26 @@ func (s *meteredStore) Query(ctx context.Context, q query.Query) (query.Results,
 	return query.ResultsWithEntries(q, all), nil
 }
 
+func (s *meteredStore) Batch(ctx context.Context) (ds.Batch, error) {
+	b, err := batchOf(ctx, s.Datastore)
+	return &meteredBatch{Batch: b, m: s.m}, err
+}
+
+type meteredBatch struct {
+	ds.Batch
+	m *workMeter
+}
+
+func (b *meteredBatch) Put(ctx context.Context, k ds.Key, v []byte) error {
+	b.m.add(func(w *work) { w.writes++ })
+	return b.Batch.Put(ctx, k, v)
+}
+
+func (b *meteredBatch) Delete(ctx context.Context, k ds.Key) error {
+	b.m.add(func(w *work) { w.writes++ })
+	return b.Batch.Delete(ctx, k)
+}
+
 type meteredDAG struct {
 	ipld.DAGService
 	m *workMeter
@@ -122,6 +142,7 @@ func warmReplica(t testing.TB, n int) (*Datastore, *workMeter) {
 	o := replicaOptions(newSimTime().options(0), "warm")
 	o.CompactAfterBlocks = 0
 	o.manual = true
+	o.Logger = DefaultOptions().Logger
 	r, err := NewDatastore(&meteredStore{Datastore: newSortedStore(), m: m}, ds.NewKey("warm"),
 		&meteredDAG{DAGService: newFetchThrough(), m: m}, &nullBroadcaster{}, o)
 	if err != nil {

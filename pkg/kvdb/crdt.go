@@ -272,6 +272,7 @@ type Datastore struct {
 	raw       ds.Datastore
 	journal   *journal
 	namespace ds.Key
+	pre       prefixes
 	set       *set
 	heads     *heads
 	// base is the state's trees as they were when the journal was last
@@ -437,6 +438,7 @@ func NewDatastore(
 		logger:           opts.Logger,
 		store:            store,
 		namespace:        namespace,
+		pre:              newPrefixes(namespace),
 		dagService:       dagSyncer,
 		broadcaster:      bcast,
 		broadcastBatchCh: make(chan broadcastBatchHead, 32000),
@@ -460,20 +462,17 @@ func NewDatastore(
 	}
 	dstore.ttl.Store(durationMillis(opts.Retention))
 	dstore.times = timesOf(opts)
-	dstore.set = &set{
-		store:     store,
-		namespace: namespace.ChildString(setNs),
-		logger:    opts.Logger,
-		putHook: func(k string, v []byte) {
-			if opts.PutHook != nil {
-				opts.PutHook(ds.NewKey(k), v)
-			}
-		},
-		deleteHook: func(k string) {
-			if opts.DeleteHook != nil {
-				opts.DeleteHook(ds.NewKey(k))
-			}
-		},
+	dstore.set = newSet(store, namespace.ChildString(setNs))
+	dstore.set.logger = opts.Logger
+	dstore.set.putHook = func(k string, v []byte) {
+		if opts.PutHook != nil {
+			opts.PutHook(ds.NewKey(k), v)
+		}
+	}
+	dstore.set.deleteHook = func(k string) {
+		if opts.DeleteHook != nil {
+			opts.DeleteHook(ds.NewKey(k))
+		}
 	}
 	dstore.raw = store
 	dstore.journal = newJournal(store, namespace, dstore.set)

@@ -380,7 +380,7 @@ func TestTheJournalMarksEveryRecordWrite(t *testing.T) {
 	ctx := context.Background()
 	inner := ds.NewMapDatastore()
 	ns := ds.NewKey("j")
-	s := &set{namespace: ns.ChildString(setNs)}
+	s := newSet(nil, ns.ChildString(setNs))
 	j := newJournal(inner, ns, s)
 	store := &journaled{Datastore: inner, j: j}
 	d := dot{"r", 4}

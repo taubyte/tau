@@ -112,7 +112,7 @@ func TestDecodersRefuseGarbage(t *testing.T) {
 		t.Error("the zero dot names nothing, so it is always covered")
 	}
 
-	s := &set{namespace: ds.NewKey("/s")}
+	s := newSet(nil, ds.NewKey("/s"))
 	for _, k := range []string{"/s/e/nokey", "/s/e/x/r.1", "/s/e/" + keySegment("/a") + "/bad"} {
 		if _, err := s.parseElem(k, []byte{1}); err == nil {
 			t.Errorf("parseElem(%q) accepted", k)

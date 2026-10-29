@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 
-	dshelp "github.com/ipfs/boxo/datastore/dshelp"
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
 	ipld "github.com/ipfs/go-ipld-format"
@@ -58,16 +57,12 @@ const redoChunkBytes = 4 << 10
 // every merge that changes ownership waits for it.
 const reclaimBatch = 512
 
-func (store *Datastore) ownedPrefix() ds.Key   { return store.namespace.ChildString(ownedNs) }
-func (store *Datastore) reclaimPrefix() ds.Key { return store.namespace.ChildString(reclaimNs) }
+func (store *Datastore) ownedPrefix() ds.Key   { return ds.RawKey(store.pre.owned) }
+func (store *Datastore) reclaimPrefix() ds.Key { return ds.RawKey(store.pre.reclaim) }
 
-func (store *Datastore) ownedKey(c cid.Cid) ds.Key {
-	return store.ownedPrefix().Child(dshelp.MultihashToDsKey(c.Hash()))
-}
+func (store *Datastore) ownedKey(c cid.Cid) ds.Key { return hashKey(store.pre.owned, c) }
 
-func (store *Datastore) reclaimKey(c cid.Cid) ds.Key {
-	return store.reclaimPrefix().Child(dshelp.MultihashToDsKey(c.Hash()))
-}
+func (store *Datastore) reclaimKey(c cid.Cid) ds.Key { return hashKey(store.pre.reclaim, c) }
 
 // refs changes ownership inside one txn. Blocks are read through ng.
 type refs struct {
@@ -325,10 +320,12 @@ func (store *Datastore) dropChunks(ctx context.Context, seq uint64, n int) error
 
 func (store *Datastore) appliedKey() ds.Key  { return store.namespace.ChildString(appliedKey) }
 func (store *Datastore) redoMarkKey() ds.Key { return store.namespace.ChildString(redoMark) }
-func (store *Datastore) redoPrefix() ds.Key  { return store.namespace.ChildString(redoNs) }
+func (store *Datastore) redoPrefix() ds.Key  { return ds.RawKey(store.pre.redo) }
 
 func (store *Datastore) redoChunkKey(seq uint64, i int) ds.Key {
-	return store.redoPrefix().ChildString(fmt.Sprintf("%020d", seq)).ChildString(fmt.Sprintf("%020d", i))
+	b := make([]byte, 0, len(store.pre.redo)+2+2*counterDigits)
+	b = appendCounter(append(append(b, store.pre.redo...), '/'), seq)
+	return dsKey(appendCounter(append(b, '/'), uint64(i)))
 }
 
 // recordRedo writes the chunks of record seq durably, then the mark that

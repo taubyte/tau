@@ -34,11 +34,14 @@ const (
 )
 
 type set struct {
-	store      ds.Datastore
-	namespace  ds.Key
-	putHook    func(key string, v []byte)
-	deleteHook func(key string)
-	logger     logging.StandardLogger
+	store     ds.Datastore
+	namespace ds.Key
+	// elems, pending and keys are the prefixes of the elements, the
+	// pending removals and the values.
+	elems, pending, keys string
+	putHook              func(key string, v []byte)
+	deleteHook           func(key string)
+	logger               logging.StandardLogger
 }
 
 type element struct {
@@ -62,28 +65,44 @@ type removal struct {
 
 func (r removal) expires() uint64 { return r.at + r.ttl }
 
-func (s *set) elemsPrefix() ds.Key { return s.namespace.ChildString(elemsNs) }
+// newSet is the set under namespace in store.
+func newSet(store ds.Datastore, namespace ds.Key) *set {
+	return &set{
+		store:     store,
+		namespace: namespace,
+		elems:     namespace.ChildString(elemsNs).String(),
+		pending:   namespace.ChildString(pendingNs).String(),
+		keys:      namespace.ChildString(keysNs).String(),
+	}
+}
+
+func (s *set) elemsPrefix() ds.Key { return ds.RawKey(s.elems) }
 
 func (s *set) keyElemsPrefix(key string) ds.Key {
-	return s.elemsPrefix().ChildString(keySegment(key))
+	b := make([]byte, 0, len(s.elems)+1+keySegmentLen(key))
+	return dsKey(appendKeySegment(append(append(b, s.elems...), '/'), key))
 }
 
 func (s *set) elemKey(key string, d dot) ds.Key {
-	return s.keyElemsPrefix(key).ChildString(d.segment())
+	b := make([]byte, 0, len(s.elems)+2+keySegmentLen(key)+dotSegmentLen(d))
+	b = appendKeySegment(append(append(b, s.elems...), '/'), key)
+	return dsKey(appendDotSegment(append(b, '/'), d))
 }
 
-func (s *set) pendingPrefix() ds.Key { return s.namespace.ChildString(pendingNs) }
+func (s *set) pendingPrefix() ds.Key { return ds.RawKey(s.pending) }
 
 func (s *set) pendingKey(key string, d dot) ds.Key {
-	return s.pendingPrefix().ChildString(d.segment()).ChildString(keySegment(key))
+	b := make([]byte, 0, len(s.pending)+2+dotSegmentLen(d)+keySegmentLen(key))
+	b = appendDotSegment(append(append(b, s.pending...), '/'), d)
+	return dsKey(appendKeySegment(append(b, '/'), key))
 }
 
 func (s *set) valueKey(key string) ds.Key {
-	return s.namespace.ChildString(keysNs).Child(ds.NewKey(key)).ChildString(valueSuffix)
+	return ds.RawKey(s.keys + ds.NewKey(key).String() + "/" + valueSuffix)
 }
 
 func (s *set) priorityKey(key string) ds.Key {
-	return s.namespace.ChildString(keysNs).Child(ds.NewKey(key)).ChildString(prioritySuffix)
+	return ds.RawKey(s.keys + ds.NewKey(key).String() + "/" + prioritySuffix)
 }
 
 func encodeMarker(e element) []byte {
