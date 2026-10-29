@@ -381,7 +381,18 @@ func (store *Datastore) applyRedo(ctx context.Context, seq uint64, chunks []*pb.
 	if err := b.Commit(ctx); err != nil {
 		return err
 	}
-	return store.raw.Put(ctx, store.appliedKey(), binary.AppendUvarint(nil, seq))
+	// The writes are durable before the number that says they are applied,
+	// and that number before anything removes the record: a store that
+	// keeps writes it was not asked to sync in no particular order could
+	// otherwise keep the number and lose writes, or lose the number and keep
+	// the removal of the record that would have applied them.
+	if err := store.raw.Sync(ctx, store.namespace); err != nil {
+		return err
+	}
+	if err := store.raw.Put(ctx, store.appliedKey(), binary.AppendUvarint(nil, seq)); err != nil {
+		return err
+	}
+	return store.raw.Sync(ctx, store.appliedKey())
 }
 
 // replay applies the atomic commit a crash interrupted, if any, and removes

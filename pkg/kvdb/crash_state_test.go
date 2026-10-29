@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math/rand/v2"
 	"strings"
 	"sync"
 	"testing"
@@ -582,4 +583,175 @@ func TestAStateStoreFaultInAResumedFetchIsSurvived(t *testing.T) {
 			assertNoLeak(t, r, own.fetchThroughDAGSvc)
 		})
 	}
+}
+
+// A volatileStore is a datastore that keeps what it was not asked to sync
+// in memory, in no particular order: a power loss keeps any subset of the
+// writes no Sync has covered since, and every write a Sync covered. It
+// records each write and each Sync, in order, while recording is on.
+type volatileStore struct {
+	ds.Datastore
+	mu     sync.Mutex
+	on     bool
+	events []volatileEvent
+}
+
+// A volatileEvent is a Put, a Delete, or with sync set a Sync of key.
+type volatileEvent struct {
+	key       ds.Key
+	value     []byte
+	del, sync bool
+}
+
+func (s *volatileStore) record(e volatileEvent) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.on {
+		s.events = append(s.events, e)
+	}
+}
+
+func (s *volatileStore) Put(ctx context.Context, k ds.Key, v []byte) error {
+	s.record(volatileEvent{key: k, value: bytes.Clone(v)})
+	return s.Datastore.Put(ctx, k, v)
+}
+
+func (s *volatileStore) Delete(ctx context.Context, k ds.Key) error {
+	s.record(volatileEvent{key: k, del: true})
+	return s.Datastore.Delete(ctx, k)
+}
+
+func (s *volatileStore) Sync(ctx context.Context, prefix ds.Key) error {
+	s.record(volatileEvent{key: prefix, sync: true})
+	return s.Datastore.Sync(ctx, prefix)
+}
+
+// unsynced is the writes among the first n events no Sync among them
+// covers.
+func unsynced(events []volatileEvent, n int) []int {
+	var out []int
+	for i := range n {
+		e := events[i]
+		if e.sync {
+			continue
+		}
+		covered := false
+		for _, s := range events[i+1 : n] {
+			covered = covered || s.sync && (s.key.String() == "/" || s.key == e.key || s.key.IsAncestorOf(e.key))
+		}
+		if !covered {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// afterLoss is base with the first n events applied, but for the unsynced
+// writes lost names.
+func afterLoss(t testing.TB, base ds.Datastore, events []volatileEvent, n int, lost map[int]bool) ds.Datastore {
+	t.Helper()
+	ctx := context.Background()
+	disk := copyStore(t, base)
+	for i, e := range events[:n] {
+		var err error
+		switch {
+		case e.sync || lost[i]:
+		case e.del:
+			err = disk.Delete(ctx, e.key)
+		default:
+			err = disk.Put(ctx, e.key, e.value)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	return disk
+}
+
+// TestAnAtomicCommitSurvivesAnyLoss powers a replica off after each write
+// and Sync of an atomic commit, keeping every subset of the writes no Sync
+// covered: the replica reopens and holds all of the commit's writes or none.
+// Without a Sync between applying the writes and recording the commit as
+// applied, and another before its record is removed, a loss could keep the
+// mark and lose a write, or lose the mark and keep the record's removal,
+// and the store then would not open.
+func TestAnAtomicCommitSurvivesAnyLoss(t *testing.T) {
+	ctx := context.Background()
+	inner := dssync.MutexWrap(ds.NewMapDatastore())
+	vs := &volatileStore{Datastore: inner}
+	r := manualReplica(t, vs, newFetchThrough(), "volatile: ")
+	ns := r.namespace.ChildString("zz")
+	if err := r.store.Put(ctx, ns.ChildString("gone"), []byte("old")); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.store.Put(ctx, ns.ChildString("changed"), []byte("old")); err != nil {
+		t.Fatal(err)
+	}
+	old := map[string]string{"gone": "old", "changed": "old"}
+	want := map[string]string{"changed": "new", "added": "new", "more": "new"}
+	base := copyStore(t, inner)
+	vs.mu.Lock()
+	vs.on = true
+	vs.mu.Unlock()
+	tx := newTxn(r.store)
+	tx.del(ns.ChildString("gone"))
+	for k, v := range want {
+		tx.put(ns.ChildString(k), []byte(v))
+	}
+	r.gcMu.Lock()
+	err := r.commitAtomic(ctx, tx)
+	r.gcMu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vs.mu.Lock()
+	vs.on = false
+	events := vs.events
+	vs.mu.Unlock()
+	closeStore(t, r)
+	forgetIncarnation(r.incarnationKey())
+
+	rng := rand.New(rand.NewPCG(1, 2))
+	runs := 0
+	for n := 0; n <= len(events); n++ {
+		u := unsynced(events, n)
+		subsets := 1 << len(u)
+		if len(u) > 10 {
+			subsets = 1 << 10
+		}
+		for s := range subsets {
+			lost := map[int]bool{}
+			for b, i := range u {
+				if len(u) > 10 {
+					lost[i] = rng.IntN(2) == 0
+				} else {
+					lost[i] = s&(1<<b) != 0
+				}
+			}
+			disk := afterLoss(t, base, events, n, lost)
+			re, err := NewDatastore(disk, ds.NewKey("crdttest"), newFetchThrough(), &nullBroadcaster{}, onManual(replicaOptions(noAutoCompact(), "reopened: ")))
+			if err != nil {
+				t.Fatalf("power off after event %d, losing %v of %v: the replica does not open: %v", n, lost, u, err)
+			}
+			got := map[string]string{}
+			if err := scanStore(ctx, re.store, ns, func(k string, v []byte) error {
+				got[strings.TrimPrefix(k, ns.String()+"/")] = string(v)
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if !maps.Equal(got, old) && !maps.Equal(got, want) {
+				t.Fatalf("power off after event %d, losing %v of %v: the replica holds %v, neither %v nor %v", n, lost, u, got, old, want)
+			}
+			closeStore(t, re)
+			forgetIncarnation(re.incarnationKey())
+			runs++
+		}
+	}
+	t.Logf("%d events, %d losses", len(events), runs)
+}
+
+func onManual(o *Options) *Options {
+	o.manual = true
+	return o
 }
