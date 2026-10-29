@@ -38,6 +38,11 @@ func dsKey(b []byte) ds.Key {
 	return ds.RawKey(unsafe.String(unsafe.SliceData(b), len(b)))
 }
 
+// stringOf is the string b spells, over b's bytes. b must not change after.
+func stringOf(b []byte) string {
+	return unsafe.String(unsafe.SliceData(b), len(b))
+}
+
 func bytesOf(s string) []byte {
 	return unsafe.Slice(unsafe.StringData(s), len(s))
 }

@@ -465,7 +465,7 @@ func tombstoneOf(e *pb.Element, at uint64) removal {
 	if e.GetAt() != 0 {
 		at = e.GetAt()
 	}
-	return removal{key: e.GetKey(), dot: dotFromPB(e.GetDot()), at: at, ttl: e.GetTtl()}
+	return removal{key: stringOf(e.GetKey()), dot: dotFromPB(e.GetDot()), at: at, ttl: e.GetTtl()}
 }
 
 // mergeDelta merges a plain delta and returns the parents to walk. The caller
@@ -492,7 +492,7 @@ func (store *Datastore) mergeDelta(ctx context.Context, c cid.Cid, delta *pb.Del
 		}
 	}
 	for _, e := range delta.GetElements() {
-		el := element{key: e.GetKey(), dot: d, priority: delta.GetPriority(), value: e.GetValue(), at: at, ttl: ttl}
+		el := element{key: stringOf(e.GetKey()), dot: d, priority: delta.GetPriority(), value: e.GetValue(), at: at, ttl: ttl}
 		if err := m.admit(ctx, el, store.cc); err != nil {
 			return nil, err
 		}

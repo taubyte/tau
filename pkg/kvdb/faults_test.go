@@ -496,7 +496,7 @@ func TestAChunkIsNotADelta(t *testing.T) {
 	replicas, _, done := makeNReplicasSeparateStores(t, 1, noAutoCompact())
 	defer done()
 	r := replicas[0]
-	chunk := &pb.Delta{Dot: dot{replica: "x", counter: 1}.toPB(), Elements: []*pb.Element{{Key: "/k", Dot: dot{replica: "x", counter: 1}.toPB()}}}
+	chunk := &pb.Delta{Dot: dot{replica: "x", counter: 1}.toPB(), Elements: []*pb.Element{{Key: []byte("/k"), Dot: dot{replica: "x", counter: 1}.toPB()}}}
 	nd, err := makeNode(chunk, nil)
 	if err != nil {
 		t.Fatal(err)

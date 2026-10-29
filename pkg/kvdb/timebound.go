@@ -216,7 +216,7 @@ func (store *Datastore) logHeld(t *txn, held []element) error {
 			rec = &pb.Delta{At: el.at, Ttl: el.ttl, Priority: el.priority}
 			recs[el.dot] = rec
 		}
-		rec.Elements = append(rec.Elements, &pb.Element{Key: el.key, Value: el.value})
+		rec.Elements = append(rec.Elements, &pb.Element{Key: bytesOf(el.key), Value: el.value})
 	}
 	for d, rec := range recs {
 		b, err := proto.Marshal(rec)

@@ -90,7 +90,7 @@ message Delta {
 }
 
 message Element {
-  string key = 1;
+  bytes key = 1;
   reserved 2, 4;
   reserved "id", "priority";
   bytes value = 3;

@@ -863,7 +863,7 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 		}
 		var live []*pb.Element
 		for _, e := range rec.GetElements() {
-			here, err := store.store.Has(ctx, store.set.elemKey(e.GetKey(), d))
+			here, err := store.store.Has(ctx, store.set.elemKey(stringOf(e.GetKey()), d))
 			if err != nil {
 				return err
 			}
@@ -1090,7 +1090,7 @@ func (store *Datastore) reissueLocked(ctx context.Context) error {
 			kept[ds.RawKey(k)] = &pb.Delta{Elements: rec.GetElements(), At: rec.GetAt(), Ttl: rec.GetTtl(), Priority: rec.GetPriority()}
 		}
 		for _, e := range rec.GetElements() {
-			el := element{key: e.GetKey(), dot: d, priority: rec.GetPriority(), value: e.GetValue(), at: rec.GetAt(), ttl: rec.GetTtl()}
+			el := element{key: stringOf(e.GetKey()), dot: d, priority: rec.GetPriority(), value: e.GetValue(), at: rec.GetAt(), ttl: rec.GetTtl()}
 			if err := m.admit(ctx, el, store.cc); err != nil {
 				return err
 			}

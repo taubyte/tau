@@ -520,7 +520,7 @@ func (x *Delta) GetInline() [][]byte {
 
 type Element struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	Key   string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Key   []byte                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	Value []byte                 `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
 	// dot is the target's dot in a tombstone; a delta's elements take the
 	// delta's dot.
@@ -563,11 +563,11 @@ func (*Element) Descriptor() ([]byte, []int) {
 	return file_delta_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *Element) GetKey() string {
+func (x *Element) GetKey() []byte {
 	if x != nil {
 		return x.Key
 	}
-	return ""
+	return nil
 }
 
 func (x *Element) GetValue() []byte {
@@ -645,7 +645,7 @@ const file_delta_proto_rawDesc = "" +
 	"\x06inline\x18\x14 \x03(\fR\x06inlineJ\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\a\x10\bJ\x04\b\v\x10\fJ\x04\b\f\x10\rR\adagNameR\rsnapshotTotalR\n" +
 	"snapshotIdR\acontextR\x06chunks\"\x8d\x01\n" +
 	"\aElement\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x03key\x18\x01 \x01(\fR\x03key\x12\x14\n" +
 	"\x05value\x18\x03 \x01(\fR\x05value\x12\x1e\n" +
 	"\x03dot\x18\x05 \x01(\v2\f.crdt.pb.DotR\x03dot\x12\x0e\n" +
 	"\x02at\x18\x06 \x01(\x04R\x02at\x12\x10\n" +

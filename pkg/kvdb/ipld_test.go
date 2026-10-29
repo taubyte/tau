@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"testing"
 	"testing/synctest"
-	"unsafe"
 
 	dag "github.com/ipfs/boxo/ipld/merkledag"
 	cid "github.com/ipfs/go-cid"
@@ -82,7 +81,7 @@ func TestBlockCodecAllocations(t *testing.T) {
 	delta := &pb.Delta{Priority: 3, Dot: dot{replica: "replica-id-0000000000000000", counter: 7}.toPB(), At: 1, Ttl: 2}
 	for i := range 16 {
 		delta.Elements = append(delta.Elements, &pb.Element{
-			Key:   fmt.Sprintf("/some/key/%04d", i),
+			Key:   fmt.Appendf(nil, "/some/key/%04d", i),
 			Value: bytes.Repeat([]byte{byte(i)}, 64),
 			Dot:   delta.Dot,
 		})
@@ -118,7 +117,7 @@ func TestBlockCodecAllocations(t *testing.T) {
 // TestDecodedDeltaAliasesItsBlock: reading a delta copies none of its
 // block's bytes.
 func TestDecodedDeltaAliasesItsBlock(t *testing.T) {
-	nd, err := makeNode(&pb.Delta{Elements: []*pb.Element{{Key: "/a", Value: []byte("one")}, {Key: "/b", Value: []byte("two")}}}, nil)
+	nd, err := makeNode(&pb.Delta{Elements: []*pb.Element{{Key: []byte("/a"), Value: []byte("one")}, {Key: []byte("/b"), Value: []byte("two")}}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +129,7 @@ func TestDecodedDeltaAliasesItsBlock(t *testing.T) {
 	if v := delta.Elements[1].Value; &v[0] != &data[bytes.Index(data, []byte("two"))] {
 		t.Fatal("the value was copied out of the block")
 	}
-	if k := delta.Elements[1].Key; unsafe.StringData(k) != &data[bytes.Index(data, []byte("/b"))] {
+	if k := delta.Elements[1].Key; &k[0] != &data[bytes.Index(data, []byte("/b"))] {
 		t.Fatal("the key was copied out of the block")
 	}
 }

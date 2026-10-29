@@ -57,7 +57,7 @@ const (
 // formatVersion is the on-disk format, stored as formatVersion+1 the way every
 // earlier format stored its own. A store holding any other version is emptied
 // on open and refills from its peers.
-const formatVersion uint64 = 7
+const formatVersion uint64 = 8
 
 // Common errors.
 var (
@@ -1513,7 +1513,7 @@ func (store *Datastore) write(ctx context.Context, ops []op) error {
 		}
 		if o.put {
 			el := grow(&delta.Elements, pb.ElementFromVTPool)
-			el.Key, el.Value = o.key, o.value
+			el.Key, el.Value = bytesOf(o.key), o.value
 		}
 	}
 	t.release()
@@ -1636,7 +1636,7 @@ func tombstoneFor(delta *pb.Delta, e element, tomb *pb.Element) {
 	if exp := e.expires(); exp > delta.At+ttl {
 		ttl = exp - delta.At
 	}
-	tomb.Key, tomb.Dot, tomb.At, tomb.Ttl = e.key, e.dot.pooledPB(), delta.At, ttl
+	tomb.Key, tomb.Dot, tomb.At, tomb.Ttl = bytesOf(e.key), e.dot.pooledPB(), delta.At, ttl
 }
 
 // grow extends *s by one message, reusing the one a pooled message kept in
@@ -1657,14 +1657,14 @@ func grow[T any](s *[]*T, get func() *T) *T {
 }
 
 // releaseDelta returns a write's delta to the pool, once it is published.
-// The messages it holds borrow their bytes (the values written, replicas and
-// cids as they are held as strings); they are cleared first, so the pool
+// The messages it holds borrow their bytes (the keys and values written,
+// replicas and cids as they are held as strings); they are cleared first, so the pool
 // keeps none of them and no later use can write into them. Pooled messages
 // are only ever filled and marshalled, never unmarshalled into.
 func releaseDelta(delta *pb.Delta) {
 	for _, els := range [][]*pb.Element{delta.Elements, delta.Tombstones} {
 		for _, e := range els {
-			e.Value = nil
+			e.Key, e.Value = nil, nil
 			if e.Dot != nil {
 				e.Dot.Replica = nil
 			}

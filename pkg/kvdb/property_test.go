@@ -32,10 +32,10 @@ func (o *oracle) record(t testing.TB, r *Datastore) {
 	}
 	d := dotFromPB(delta.GetDot())
 	for _, e := range delta.GetElements() {
-		o.elems[elemID(e.GetKey(), d)] = struct{}{}
+		o.elems[elemID(string(e.GetKey()), d)] = struct{}{}
 	}
 	for _, e := range delta.GetTombstones() {
-		o.tombs[elemID(e.GetKey(), dotFromPB(e.GetDot()))] = struct{}{}
+		o.tombs[elemID(string(e.GetKey()), dotFromPB(e.GetDot()))] = struct{}{}
 	}
 }
 
