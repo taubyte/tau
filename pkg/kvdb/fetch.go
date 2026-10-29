@@ -6,7 +6,6 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
-	"slices"
 	"sync"
 	"time"
 	"unsafe"
@@ -60,7 +59,8 @@ type fetchBuffers struct {
 	want []cid.Cid
 	next int
 
-	// Scratch for one attempt.
+	// Scratch for one attempt, events empty between attempts.
+	events                        chan fetchEvent
 	asked                         map[cidKey]struct{}
 	failed, parents, linked, kept []cid.Cid
 	owned, fresh                  []cid.Cid
@@ -69,7 +69,11 @@ type fetchBuffers struct {
 }
 
 var fetchBufferPool = sync.Pool{New: func() any {
-	return &fetchBuffers{seen: map[cidKey]struct{}{}, asked: map[cidKey]struct{}{}}
+	return &fetchBuffers{
+		seen:   map[cidKey]struct{}{},
+		asked:  map[cidKey]struct{}{},
+		events: make(chan fetchEvent, wantWindow),
+	}
 }}
 
 func (store *Datastore) takeFetchBuffers() *fetchBuffers {
@@ -383,7 +387,7 @@ type fetchEvent struct {
 func (store *Datastore) fetchWanted(ctx, cctx context.Context, ng ipld.NodeGetter, f *stateFetch) error {
 	b := f.b
 	gctx, stop := context.WithCancel(cctx)
-	events := make(chan fetchEvent, wantWindow)
+	events := b.events
 	gets, arrived := 0, false
 	var errs error
 	ended := func(batch []cid.Cid) {
@@ -402,6 +406,7 @@ func (store *Datastore) fetchWanted(ctx, cctx context.Context, ng ipld.NodeGette
 				ended(ev.asked)
 			}
 		}
+		b.settle()
 		b.requeue(b.failed)
 		b.failed = b.failed[:0]
 	}()
@@ -418,8 +423,9 @@ func (store *Datastore) fetchWanted(ctx, cctx context.Context, ng ipld.NodeGette
 	for {
 		want := b.wanted()
 		if n := min(wantWindow-len(b.asked), len(want)); n > 0 && (n == len(want) || n >= wantBatch) && gctx.Err() == nil {
-			batch := slices.Clone(want[:n])
-			clear(want[:n])
+			// The get reads its batch where it lies in the wanted queue,
+			// which moves only once the attempt's gets are over.
+			batch := want[:n:n]
 			b.next += n
 			for _, c := range batch {
 				b.asked[keyOf(c)] = struct{}{}
@@ -439,6 +445,7 @@ func (store *Datastore) fetchWanted(ctx, cctx context.Context, ng ipld.NodeGette
 			if !arrived || gctx.Err() != nil {
 				return errors.Join(errs, fmt.Errorf("%d state blocks not fetched yet", len(b.wanted())+len(b.failed)))
 			}
+			b.settle()
 			b.requeue(b.failed)
 			b.failed, arrived = b.failed[:0], false
 			continue
@@ -491,11 +498,16 @@ func (b *fetchBuffers) received(nd ipld.Node) bool {
 
 // requeue wants cids again, after those wanted now.
 func (b *fetchBuffers) requeue(cids []cid.Cid) {
-	if b.next == len(b.want) {
-		b.want, b.next = b.want[:0], 0
-	}
 	b.want = append(b.want, cids...)
 	clear(cids)
+}
+
+// settle moves the blocks still wanted to the front of the queue, once no
+// get reads it.
+func (b *fetchBuffers) settle() {
+	n := copy(b.want, b.want[b.next:])
+	clear(b.want[n:])
+	b.want, b.next = b.want[:n], 0
 }
 
 func hasKey(m map[cidKey]struct{}, k cidKey) bool {

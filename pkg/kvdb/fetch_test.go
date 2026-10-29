@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"runtime"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -13,6 +14,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
 	ipld "github.com/ipfs/go-ipld-format"
+	"github.com/taubyte/tau/pkg/kvdb/mst"
 )
 
 // rationed serves at most left blocks until refilled: a peer behind a link
@@ -161,6 +163,48 @@ func seedKeys(t testing.TB, r *Datastore, n int, prefix string) {
 	if err := b.Commit(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// seedLevels writes, in one batch, keys whose elements have exactly the
+// given mst levels, in key order: the level of an element is a function of
+// its key and the dot the batch carries, so the shape of r's elements tree
+// is the one the levels spell, whatever incarnation r drew.
+func seedLevels(t testing.TB, r *Datastore, levels ...uint32) {
+	t.Helper()
+	r.mu.Lock()
+	d, _ := r.nextDot()
+	r.mu.Unlock()
+	b, err := r.Batch(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for i := 0; n < len(levels); i++ {
+		k := ds.NewKey(fmt.Sprintf("/k%08d", i))
+		if mst.Level(elemTreeKey(k.String(), d)) != levels[n] {
+			continue
+		}
+		if err := b.Put(context.Background(), k, []byte(fmt.Sprintf("v%d", i))); err != nil {
+			t.Fatal(err)
+		}
+		n++
+	}
+	if err := b.Commit(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if r.counter != d.counter {
+		t.Fatalf("the batch carried counter %d, not %d", r.counter, d.counter)
+	}
+}
+
+// fan is the levels of a root of level 1 with width leaves: a key of
+// level 0 between and around width-1 keys of level 1.
+func fan(width int) []uint32 {
+	levels := make([]uint32, 2*width-1)
+	for i := 1; i < len(levels); i += 2 {
+		levels[i] = 1
+	}
+	return levels
 }
 
 // TestAStateLargerThanOneAttemptArrives: a state whose closure one fetch
@@ -331,36 +375,43 @@ func newServingPeer(limit int) *servingPeer {
 
 func (p *servingPeer) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.NodeOption {
 	out := make(chan *ipld.NodeOption, len(cids))
-	var wg sync.WaitGroup
-	for _, c := range cids {
-		local := p.holds(c)
-		p.mu.Lock()
-		served := local || p.wanted < p.limit
+	// The wants of one get reach the peer together, as one message: every
+	// one of them is kept or dropped before any is answered.
+	type want struct{ local, served, held bool }
+	wants := make([]want, len(cids))
+	p.mu.Lock()
+	for i, c := range cids {
+		w := want{local: p.holds(c), held: p.hold[c]}
+		w.served = w.local || p.wanted < p.limit
 		switch {
-		case !served:
+		case !w.served:
 			p.dropped++
-		case !local:
+		case !w.local:
 			p.wanted++
 			p.most = max(p.most, p.wanted)
 		}
-		if p.release[c] && !p.hold[c] {
+		if p.release[c] && !w.held {
 			select {
 			case <-p.released:
 			default:
 				close(p.released)
 			}
 		}
-		held := p.hold[c]
-		p.mu.Unlock()
+		wants[i] = w
+	}
+	p.mu.Unlock()
+	var wg sync.WaitGroup
+	for i, c := range cids {
+		w := wants[i]
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if !served {
+			if !w.served {
 				<-ctx.Done()
 				out <- &ipld.NodeOption{Err: ctx.Err()}
 				return
 			}
-			if held {
+			if w.held {
 				select {
 				case <-p.released:
 				case <-ctx.Done():
@@ -371,7 +422,7 @@ func (p *servingPeer) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.
 			if err == nil {
 				nd, err = p.Get(ctx, c)
 			}
-			if !local {
+			if !w.local {
 				p.mu.Lock()
 				p.wanted--
 				p.mu.Unlock()
@@ -449,7 +500,7 @@ func TestAFetchWantsNoMoreThanAPeerKeeps(t *testing.T) {
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 1, noAutoCompact())
 	defer done()
 	a := replicas[0]
-	seedKeys(t, a, 11000, "k")
+	seedLevels(t, a, fan(wantWindow+1)...)
 	compact(t, a)
 	widest := 0
 	for _, l := range stateLevels(t, a) {
@@ -480,17 +531,30 @@ func TestABlockIsAskedForOnceItsParentArrives(t *testing.T) {
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 1, noAutoCompact())
 	defer done()
 	a := replicas[0]
-	seedKeys(t, a, 1000, "k")
+	// A root of level 2 with one key, over two blocks of level 1 that
+	// each link two leaves.
+	seedLevels(t, a, 0, 1, 0, 2, 0, 1, 0)
 	compact(t, a)
 	var level []ipld.Node
-	for _, l := range stateLevels(t, a) {
-		if len(l) > 1 && len(l[0].Links()) > 0 && len(l[1].Links()) > 0 {
-			level = l
+	levels := stateLevels(t, a)
+	for _, l := range levels {
+		var parents []ipld.Node
+		for _, nd := range l {
+			if len(nd.Links()) > 0 {
+				parents = append(parents, nd)
+			}
+		}
+		if len(parents) > 1 {
+			level = parents
 			break
 		}
 	}
 	if level == nil {
-		t.Fatal("no level has two blocks with children")
+		var widths []int
+		for _, l := range levels {
+			widths = append(widths, len(l))
+		}
+		t.Fatalf("no level of %v has two blocks with children", widths)
 	}
 
 	p := newServingPeer(wantWindow)
@@ -547,7 +611,7 @@ func TestReceivingABlockAllocatesOnlyItsLinks(t *testing.T) {
 	replicas, _, done := makeNReplicasSeparateStores(t, 1, noAutoCompact())
 	defer done()
 	a := replicas[0]
-	seedKeys(t, a, 1000, "k")
+	seedLevels(t, a, fan(16)...)
 	compact(t, a)
 	var nd ipld.Node
 	for _, level := range stateLevels(t, a) {
@@ -578,5 +642,80 @@ func TestReceivingABlockAllocatesOnlyItsLinks(t *testing.T) {
 	receive()
 	if n := testing.AllocsPerRun(100, receive); n > 1 {
 		t.Fatalf("receiving a block of %d links allocates %.1f times", len(nd.Links()), n)
+	}
+}
+
+// heldNodes serves nodes it holds, as a getter of many hands them out.
+type heldNodes map[cid.Cid]ipld.Node
+
+func (h heldNodes) Get(_ context.Context, c cid.Cid) (ipld.Node, error) {
+	if nd, ok := h[c]; ok {
+		return nd, nil
+	}
+	return nil, ipld.ErrNotFound{Cid: c}
+}
+
+func (h heldNodes) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.NodeOption {
+	out := make(chan *ipld.NodeOption, len(cids))
+	for _, c := range cids {
+		nd, err := h.Get(ctx, c)
+		out <- &ipld.NodeOption{Node: nd, Err: err}
+	}
+	close(out)
+	return out
+}
+
+// bytesPerRun is testing.AllocsPerRun counting bytes.
+func bytesPerRun(runs int, f func()) uint64 {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
+	f()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	for range runs {
+		f()
+	}
+	runtime.ReadMemStats(&after)
+	return (after.TotalAlloc - before.TotalAlloc) / uint64(runs)
+}
+
+// TestAFetchAttemptCostsLittleBeyondItsBlocks: an attempt that fetches one
+// block whose links are owned allocates a small fixed amount beyond the
+// block, its get and its goroutines: its buffers, the queue its gets read
+// and the channel they answer on are the fetch's, reused from one attempt to
+// the next.
+func TestAFetchAttemptCostsLittleBeyondItsBlocks(t *testing.T) {
+	ctx := context.Background()
+	replicas, _, done := makeNReplicasSeparateStores(t, 1, noAutoCompact())
+	defer done()
+	a := replicas[0]
+	seedLevels(t, a, fan(16)...)
+	compact(t, a)
+	var nd ipld.Node
+	for _, level := range stateLevels(t, a)[1:] {
+		for _, n := range level {
+			if nd == nil && len(n.Links()) > 0 {
+				nd = n
+			}
+		}
+	}
+	if nd == nil {
+		t.Fatal("no block below the state's root links another")
+	}
+	held := heldNodes{nd.Cid(): nd}
+
+	f := &stateFetch{b: a.takeFetchBuffers()}
+	defer f.b.putBack()
+	attempt := func() {
+		f.b.seen[keyOf(nd.Cid())] = struct{}{}
+		f.b.requeue([]cid.Cid{nd.Cid()})
+		if err := a.fetchWanted(ctx, ctx, held, f); err != nil {
+			t.Fatal(err)
+		}
+		a.unstage(f.b.held)
+		clear(f.b.seen)
+		f.b.held = f.b.held[:0]
+	}
+	if n := bytesPerRun(100, attempt); n > 2048 {
+		t.Fatalf("an attempt fetching one block allocates %d bytes", n)
 	}
 }
