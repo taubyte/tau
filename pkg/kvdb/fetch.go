@@ -2,11 +2,18 @@ package kvdb
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base32"
 	"errors"
 	"fmt"
+	"slices"
+	"sync"
 	"time"
+	"unsafe"
 
 	cid "github.com/ipfs/go-cid"
+	ds "github.com/ipfs/go-datastore"
+	ipld "github.com/ipfs/go-ipld-format"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
 )
 
@@ -38,10 +45,88 @@ type stateFetch struct {
 	complete bool
 
 	// Guarded by busy while f has users, and owned by whoever ends it once
-	// it has none.
+	// it has none. Nil until its first attempt.
+	b *fetchBuffers
+}
+
+// fetchBuffers is what a state fetch holds and works in, reused from one
+// fetch to the next: receiving a block allocates nothing once they have
+// grown to the size of the states fetched.
+type fetchBuffers struct {
+	// held is every block staged for the fetch, seen the same blocks as
+	// keys, and want[next:] those not received yet.
 	held []cid.Cid
-	seen map[cid.Cid]struct{}
+	seen map[cidKey]struct{}
 	want []cid.Cid
+	next int
+
+	// Scratch for one attempt.
+	asked                         map[cidKey]struct{}
+	failed, parents, linked, kept []cid.Cid
+	owned, fresh                  []cid.Cid
+	key                           []byte
+	prefix                        string
+}
+
+var fetchBufferPool = sync.Pool{New: func() any {
+	return &fetchBuffers{seen: map[cidKey]struct{}{}, asked: map[cidKey]struct{}{}}
+}}
+
+func (store *Datastore) takeFetchBuffers() *fetchBuffers {
+	b := fetchBufferPool.Get().(*fetchBuffers)
+	b.prefix = store.ownedPrefix().String()
+	return b
+}
+
+func (b *fetchBuffers) wanted() []cid.Cid { return b.want[b.next:] }
+
+// putBack returns b to the pool, keeping its storage and none of the cids
+// it held.
+func (b *fetchBuffers) putBack() {
+	for _, s := range []*[]cid.Cid{&b.held, &b.want, &b.failed, &b.parents, &b.linked, &b.kept, &b.owned, &b.fresh} {
+		clear((*s)[:cap(*s)])
+		*s = (*s)[:0]
+	}
+	clear(b.seen)
+	clear(b.asked)
+	b.next = 0
+	fetchBufferPool.Put(b)
+}
+
+// A cidKey is a block's identity as a fixed-size value: the digest of a
+// CIDv1 dag-pb sha2-256 cid, every block a state holds, or the sha2-256 of
+// any other cid's bytes. A set of them holds no pointers.
+type cidKey [32]byte
+
+// dagPBSHA256 is the prefix of a CIDv1 dag-pb cid with a 32-byte sha2-256
+// digest: version, codec, hash function, digest length.
+const dagPBSHA256 = "\x01\x70\x12\x20"
+
+func keyOf(c cid.Cid) cidKey {
+	ks := c.KeyString()
+	if len(ks) == len(dagPBSHA256)+32 && ks[:len(dagPBSHA256)] == dagPBSHA256 {
+		var k cidKey
+		copy(k[:], ks[len(dagPBSHA256):])
+		return k
+	}
+	return sha256.Sum256([]byte(ks))
+}
+
+// mhKeyEncoding is how dshelp spells a multihash in a datastore key.
+var mhKeyEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
+
+// ownedKey is store.ownedKey(c) built in b's key buffer, which the key
+// shares: it is valid until the next call.
+func (b *fetchBuffers) ownedKey(store *Datastore, c cid.Cid) ds.Key {
+	ks := c.KeyString()
+	if len(ks) != len(dagPBSHA256)+32 || ks[:len(dagPBSHA256)] != dagPBSHA256 {
+		return store.ownedKey(c)
+	}
+	var hash [34]byte
+	copy(hash[:], ks[2:])
+	b.key = append(append(b.key[:0], b.prefix...), '/')
+	b.key = mhKeyEncoding.AppendEncode(b.key, hash[:])
+	return ds.RawKey(unsafe.String(unsafe.SliceData(b.key), len(b.key)))
 }
 
 func (f *stateFetch) lock(ctx context.Context) error {
@@ -134,9 +219,13 @@ func (store *Datastore) dropFetchLocked(f *stateFetch) {
 }
 
 func (store *Datastore) releaseFetch(f *stateFetch) {
-	held := f.held
-	f.held, f.seen, f.want = nil, nil, nil
-	store.unstage(held)
+	b := f.b
+	if b == nil {
+		return
+	}
+	f.b = nil
+	store.unstage(b.held)
+	b.putBack()
 }
 
 // sweepFetches drops every fetch no attempt is using that will never be
@@ -175,7 +264,7 @@ func (store *Datastore) fetchDead(f *stateFetch, now time.Duration, dropClock ui
 }
 
 // fetchState fetches every block of a snapshot's state this replica does
-// not own, level by level, so a peer that shares most of it with this
+// not own, so a peer that shares most of it with this
 // replica sends only the nodes on the paths that changed. Every block of
 // the state is staged before it is fetched, the ones not owned marked for
 // removal, until the merge acquires them or reclaim removes them once the
@@ -196,50 +285,14 @@ func (store *Datastore) fetchState(ctx context.Context, ng *crdtNodeGetter, c ci
 		return f, err
 	}
 	defer f.unlock()
-	if f.seen == nil {
-		f.seen = map[cid.Cid]struct{}{}
+	if f.b == nil {
+		f.b = store.takeFetchBuffers()
 		if err := store.discover(ctx, f, []cid.Cid{stc}); err != nil {
 			return f, err
 		}
 	}
-	for len(f.want) > 0 {
-		var next []cid.Cid
-		got := make(map[cid.Cid]struct{}, len(f.want))
-		var ferr error
-		for opt := range ng.GetMany(cctx, f.want) {
-			if opt.Err != nil {
-				ferr = errors.Join(ferr, opt.Err)
-				continue
-			}
-			got[opt.Node.Cid()] = struct{}{}
-			for _, l := range opt.Node.Links() {
-				next = append(next, l.Cid)
-			}
-		}
-		if len(got) > 0 {
-			store.fetchMu.Lock()
-			f.progress = store.times.up()
-			store.fetchMu.Unlock()
-		}
-		// What the fetched blocks link is staged before they leave the
-		// wanted ones, even when the attempt stops here: the next one goes
-		// on from it.
-		if err := store.discover(ctx, f, next); err != nil {
-			return f, errors.Join(ferr, err)
-		}
-		rest := f.want[:0]
-		for _, w := range f.want {
-			if _, ok := got[w]; !ok {
-				rest = append(rest, w)
-			}
-		}
-		clear(f.want[len(rest):])
-		f.want = rest
-		// A level that fetched something goes on, through what is held
-		// here, until one fetches nothing.
-		if len(got) == 0 {
-			return f, errors.Join(ferr, fmt.Errorf("%d state blocks not fetched yet", len(rest)))
-		}
+	if err := store.fetchWanted(ctx, cctx, ng, f); err != nil {
+		return f, err
 	}
 	store.fetchMu.Lock()
 	f.complete = true
@@ -251,42 +304,201 @@ func (store *Datastore) fetchState(ctx context.Context, ng *crdtNodeGetter, c ci
 // the ones owned, whose closure is held, as they are, and the others
 // marked, to be fetched. A block it could not stage is not seen yet.
 func (store *Datastore) discover(ctx context.Context, f *stateFetch, cids []cid.Cid) error {
-	var owned, want []cid.Cid
-	here := make(map[cid.Cid]struct{}, len(cids))
+	b := f.b
+	b.owned, b.fresh = b.owned[:0], b.fresh[:0]
+	unsee := func(cids []cid.Cid) {
+		for _, c := range cids {
+			delete(b.seen, keyOf(c))
+		}
+	}
 	for _, c := range cids {
-		if _, ok := f.seen[c]; ok {
+		k := keyOf(c)
+		if _, ok := b.seen[k]; ok {
 			continue
 		}
-		if _, ok := here[c]; ok {
-			continue
-		}
-		here[c] = struct{}{}
-		has, err := store.store.Has(ctx, store.ownedKey(c))
+		b.seen[k] = struct{}{}
+		// Has does not keep the key.
+		has, err := store.store.Has(ctx, b.ownedKey(store, c))
 		if err != nil {
+			delete(b.seen, k)
+			unsee(b.owned)
+			unsee(b.fresh)
 			return err
 		}
 		if has {
-			owned = append(owned, c)
+			b.owned = append(b.owned, c)
 		} else {
-			want = append(want, c)
+			b.fresh = append(b.fresh, c)
 		}
 	}
 	// stage counts every block before it marks any: f holds them all
 	// either way.
-	f.held = append(f.held, owned...)
-	if err := store.stage(ctx, owned, false); err != nil {
+	b.held = append(b.held, b.owned...)
+	if err := store.stage(ctx, b.owned, false); err != nil {
+		unsee(b.owned)
+		unsee(b.fresh)
 		return err
 	}
-	for _, c := range owned {
-		f.seen[c] = struct{}{}
+	if len(b.fresh) == 0 {
+		return nil
 	}
-	f.held = append(f.held, want...)
-	if err := store.stage(ctx, want, true); err != nil {
+	b.held = append(b.held, b.fresh...)
+	if err := store.stage(ctx, b.fresh, true); err != nil {
+		unsee(b.fresh)
 		return err
 	}
-	for _, c := range want {
-		f.seen[c] = struct{}{}
-	}
-	f.want = append(f.want, want...)
+	b.requeue(b.fresh)
 	return nil
+}
+
+// wantWindow bounds how many blocks one fetch has asked for and not yet
+// received. A bitswap server keeps at most 1024 wants from a peer and drops
+// the rest unanswered, and the client asks again only when it rebroadcasts:
+// a fetch that asked for a whole level of a large state at once received
+// 1024 blocks and waited out its attempt for the others. The window leaves
+// room under that bound for the other fetches asking the same peer.
+const wantWindow = 512
+
+// wantBatch is the fewest blocks a fetch asks for at once while more are
+// wanted than that: bitswap sends a peer one message of wants every 20ms
+// however many gets they come from, and each get costs a session want and
+// its goroutines.
+const wantBatch = wantWindow / 8
+
+// A fetchEvent is a block a fetch received, a get that failed, or, with
+// asked set, the end of one get of many.
+type fetchEvent struct {
+	node  ipld.Node
+	err   error
+	asked []cid.Cid
+}
+
+// fetchWanted fetches f's wanted blocks, at most wantWindow at a time, and
+// asks for what each links as soon as it arrives rather than once its whole
+// level has. What a block links is staged before it is asked for, so an
+// attempt that stops anywhere leaves every block it has not received
+// wanted, for the next one to go on from. A block that could not be fetched
+// is asked for again while others still arrive; the attempt ends once none
+// does. Gets run under cctx, staging under ctx.
+func (store *Datastore) fetchWanted(ctx, cctx context.Context, ng ipld.NodeGetter, f *stateFetch) error {
+	b := f.b
+	gctx, stop := context.WithCancel(cctx)
+	events := make(chan fetchEvent, wantWindow)
+	gets, arrived := 0, false
+	var errs error
+	ended := func(batch []cid.Cid) {
+		gets--
+		for _, c := range batch {
+			if k := keyOf(c); hasKey(b.asked, k) {
+				delete(b.asked, k)
+				b.failed = append(b.failed, c)
+			}
+		}
+	}
+	defer func() {
+		stop()
+		for gets > 0 {
+			if ev := <-events; ev.asked != nil {
+				ended(ev.asked)
+			}
+		}
+		b.requeue(b.failed)
+		b.failed = b.failed[:0]
+	}()
+	handle := func(ev fetchEvent) {
+		switch {
+		case ev.asked != nil:
+			ended(ev.asked)
+		case ev.err != nil:
+			errs = errors.Join(errs, ev.err)
+		default:
+			arrived = b.received(ev.node) || arrived
+		}
+	}
+	for {
+		want := b.wanted()
+		if n := min(wantWindow-len(b.asked), len(want)); n > 0 && (n == len(want) || n >= wantBatch) && gctx.Err() == nil {
+			batch := slices.Clone(want[:n])
+			clear(want[:n])
+			b.next += n
+			for _, c := range batch {
+				b.asked[keyOf(c)] = struct{}{}
+			}
+			gets++
+			go func() {
+				for opt := range ng.GetMany(gctx, batch) {
+					events <- fetchEvent{node: opt.Node, err: opt.Err}
+				}
+				events <- fetchEvent{asked: batch}
+			}()
+		}
+		if gets == 0 {
+			if len(b.wanted()) == 0 && len(b.failed) == 0 {
+				return nil
+			}
+			if !arrived || gctx.Err() != nil {
+				return errors.Join(errs, fmt.Errorf("%d state blocks not fetched yet", len(b.wanted())+len(b.failed)))
+			}
+			b.requeue(b.failed)
+			b.failed, arrived = b.failed[:0], false
+			continue
+		}
+		handle(<-events)
+		for more := true; more; {
+			select {
+			case ev := <-events:
+				handle(ev)
+			default:
+				more = false
+			}
+		}
+		if len(b.parents) == 0 {
+			continue
+		}
+		store.fetchMu.Lock()
+		f.progress = store.times.up()
+		store.fetchMu.Unlock()
+		// A block leaves the wanted ones once what it links is staged.
+		err := store.discover(ctx, f, b.linked)
+		clear(b.linked)
+		b.linked = b.linked[:0]
+		if err != nil {
+			b.requeue(b.parents)
+			clear(b.parents)
+			b.parents = b.parents[:0]
+			return errors.Join(errs, err)
+		}
+		clear(b.parents)
+		b.parents = b.parents[:0]
+	}
+}
+
+// received takes nd, if it was asked for, as a parent whose links are to
+// be staged.
+func (b *fetchBuffers) received(nd ipld.Node) bool {
+	c := nd.Cid()
+	k := keyOf(c)
+	if !hasKey(b.asked, k) {
+		return false
+	}
+	delete(b.asked, k)
+	b.parents = append(b.parents, c)
+	for _, l := range nd.Links() {
+		b.linked = append(b.linked, l.Cid)
+	}
+	return true
+}
+
+// requeue wants cids again, after those wanted now.
+func (b *fetchBuffers) requeue(cids []cid.Cid) {
+	if b.next == len(b.want) {
+		b.want, b.next = b.want[:0], 0
+	}
+	b.want = append(b.want, cids...)
+	clear(cids)
+}
+
+func hasKey(m map[cidKey]struct{}, k cidKey) bool {
+	_, ok := m[k]
+	return ok
 }
