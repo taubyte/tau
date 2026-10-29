@@ -75,7 +75,7 @@ func (store *Datastore) stateFetched(ctx context.Context) int {
 			continue
 		}
 		if f.b != nil {
-			n += len(f.b.seen) - len(f.b.wanted())
+			n += len(f.b.sess.intents) - len(f.b.wanted())
 		}
 		f.unlock()
 	}
@@ -241,7 +241,7 @@ func TestAStateLargerThanOneAttemptArrives(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertTreesMatch(t, b)
-	assertCounts(t, b)
+	assertReach(t, b)
 	assertNoLeak(t, b, dagsyncs[1])
 }
 
@@ -290,7 +290,7 @@ func TestANewerHeadReusesWhatTheOlderOneStaged(t *testing.T) {
 	if err := b.maintain(ctx); err != nil {
 		t.Fatal(err)
 	}
-	assertCounts(t, b)
+	assertReach(t, b)
 	assertNoLeak(t, b, dagsyncs[1])
 	if n := fetchesInProgress(b); n != 0 {
 		t.Fatalf("%d state fetches are still kept", n)
@@ -347,7 +347,7 @@ func TestAFetchNothingFeedsIsDropped(t *testing.T) {
 	if got := dagsyncs[1].blockCount(t); got != empty {
 		t.Fatalf("b holds %d blocks, %d before the fetch", got, empty)
 	}
-	assertCounts(t, b)
+	assertReach(t, b)
 	assertNoLeak(t, b, dagsyncs[1])
 }
 
@@ -518,7 +518,7 @@ func TestAFetchWantsNoMoreThanAPeerKeeps(t *testing.T) {
 	if got, want := queryAll(t, b), queryAll(t, a); !sameKV(got, want) {
 		t.Fatalf("b holds %d keys, want %d", len(got), len(want))
 	}
-	assertCounts(t, b)
+	assertReach(t, b)
 	assertNoLeak(t, b, p.fetchThroughDAGSvc)
 }
 
@@ -572,35 +572,8 @@ func TestABlockIsAskedForOnceItsParentArrives(t *testing.T) {
 	if got, want := queryAll(t, b), queryAll(t, a); !sameKV(got, want) {
 		t.Fatalf("b holds %d keys, want %d", len(got), len(want))
 	}
-	assertCounts(t, b)
+	assertReach(t, b)
 	assertNoLeak(t, b, p.fetchThroughDAGSvc)
-}
-
-// TestAFetchSpellsOwnershipAsTheStoreDoes: the ownership key a fetch
-// builds in its buffer is the store's, for state blocks and for any other
-// cid, and no two cids share a fetch key.
-func TestAFetchSpellsOwnershipAsTheStoreDoes(t *testing.T) {
-	replicas, _, done := makeNReplicasSeparateStores(t, 1, noAutoCompact())
-	defer done()
-	a := replicas[0]
-	seedKeys(t, a, 50, "k")
-	compact(t, a)
-	cids := stateClosure(t, a)
-	for _, c := range cids[:2] {
-		cids = append(cids, cid.NewCidV0(c.Hash()), cid.NewCidV1(cid.Raw, c.Hash()))
-	}
-	b := takeFetchBuffers()
-	defer b.putBack()
-	keys := map[cidKey]cid.Cid{}
-	for _, c := range cids {
-		if got, want := b.ownedKey(a, c).String(), a.ownedKey(c).String(); got != want {
-			t.Errorf("%s: the fetch spells %s, the store %s", c, got, want)
-		}
-		if o, ok := keys[keyOf(c)]; ok {
-			t.Errorf("%s and %s share a fetch key", o, c)
-		}
-		keys[keyOf(c)] = c
-	}
 }
 
 // TestReceivingABlockAllocatesOnlyItsLinks: once a fetch's buffers have
@@ -635,9 +608,8 @@ func TestReceivingABlockAllocatesOnlyItsLinks(t *testing.T) {
 		if err := a.discover(ctx, f, f.b.linked); err != nil {
 			t.Fatal(err)
 		}
-		a.unstage(f.b.held)
-		clear(f.b.seen)
-		f.b.held, f.b.linked, f.b.parents = f.b.held[:0], f.b.linked[:0], f.b.parents[:0]
+		f.b.sess.reset()
+		f.b.linked, f.b.parents = f.b.linked[:0], f.b.parents[:0]
 	}
 	receive()
 	if n := testing.AllocsPerRun(100, receive); n > 1 {
@@ -679,7 +651,7 @@ func bytesPerRun(runs int, f func()) uint64 {
 }
 
 // TestAFetchAttemptCostsLittleBeyondItsBlocks: an attempt that fetches one
-// block whose links are owned allocates a small fixed amount beyond the
+// block whose links the roots reach allocates a small fixed amount beyond the
 // block, its get and its goroutines: its buffers, the queue its gets read
 // and the channel they answer on are the fetch's, reused from one attempt to
 // the next.
@@ -706,14 +678,12 @@ func TestAFetchAttemptCostsLittleBeyondItsBlocks(t *testing.T) {
 	f := &stateFetch{b: takeFetchBuffers()}
 	defer f.b.putBack()
 	attempt := func() {
-		f.b.seen[keyOf(nd.Cid())] = struct{}{}
+		f.b.sess.marks[keyOf(nd.Cid())] = markIntent
 		f.b.requeue([]cid.Cid{nd.Cid()})
 		if err := a.fetchWanted(ctx, ctx, held, f, nil); err != nil {
 			t.Fatal(err)
 		}
-		a.unstage(f.b.held)
-		clear(f.b.seen)
-		f.b.held = f.b.held[:0]
+		f.b.sess.reset()
 	}
 	if n := bytesPerRun(100, attempt); n > 2048 {
 		t.Fatalf("an attempt fetching one block allocates %d bytes", n)

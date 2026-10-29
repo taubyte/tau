@@ -883,25 +883,19 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 	bp := store.blocksPrefix()
 	ep := store.set.elemsPrefix().String() + "/"
 	var keys []string
-	op := store.ownedPrefix()
 	err = scanStore(ctx, store.store, store.namespace, func(k string, v []byte) error {
 		switch {
 		case strings.HasPrefix(k, prefix),
 			strings.HasPrefix(k, store.erasedPrefix().String()+"/"),
 			strings.HasPrefix(k, store.reclaimPrefix().String()+"/"),
+			strings.HasPrefix(k, store.intentPrefix().String()+"/"),
+			strings.HasPrefix(k, store.manifestPrefix().String()+"/"),
 			k == store.versionKey().String(),
 			k == store.badShutdownKey().String(),
 			strings.HasPrefix(k, store.redoPrefix().String()+"/"),
 			k == store.redoMarkKey().String(),
 			k == store.appliedKey().String():
 			return nil
-		case strings.HasPrefix(k, op.String()+"/"):
-			// Nothing owns a state block any more: reclaim removes them.
-			c, err := cidOfBlockKey(op, k)
-			if err != nil {
-				return err
-			}
-			t.put(store.reclaimKey(c), nil)
 		case strings.HasPrefix(k, bp.String()+"/"):
 			c, err := cidOfBlockKey(bp, k)
 			if err != nil {
@@ -942,8 +936,22 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 	t.put(store.sinceKey(), binary.AppendUvarint(nil, since))
 	t.del(store.settledKey())
 	t.put(store.rebaseKey(), nil)
+	// Every root goes: the index entries, the base and the pins. What the
+	// sessions in progress reuse becomes theirs.
 	store.gcMu.Lock()
-	err = store.commitAtomic(ctx, t)
+	ch := store.changeRoots()
+	ch.retireAll()
+	err = ch.prepare(ctx, t)
+	if err == nil {
+		err = store.commitAtomic(ctx, t)
+	}
+	if err == nil {
+		ch.apply()
+		for _, p := range store.gc.pins {
+			p.released.Store(true)
+		}
+		clear(store.gc.pins)
+	}
 	store.gcMu.Unlock()
 	if err != nil {
 		return err

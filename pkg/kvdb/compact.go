@@ -130,9 +130,27 @@ func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *c
 	if err != nil {
 		return Head{}, nil, err
 	}
+	// The compaction is a session (see gc.go): what the roots reach it
+	// reuses, and what it writes is an intent first, until the merge below
+	// publishes it.
+	sess := store.gc.compaction
+	store.gcMu.Lock()
+	store.beginSession(sess)
+	store.gcMu.Unlock()
+	defer func() {
+		if err := store.endSession(ctx, sess); err != nil {
+			store.logger.Warnf("error removing what a compaction wrote: %s", err)
+		}
+	}()
+	store.gcMu.Lock()
 	fresh, err := ov.fresh([]cid.Cid{state}, func(c cid.Cid) (bool, error) {
-		return store.store.Has(ctx, store.ownedKey(c))
+		if !store.gc.member(keyOf(c)) {
+			return false, nil
+		}
+		sess.claim(&store.gc, c, nil)
+		return true, nil
 	})
+	store.gcMu.Unlock()
 	if err != nil {
 		return Head{}, nil, err
 	}
@@ -140,9 +158,7 @@ func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *c
 	for i, nd := range fresh {
 		written[i] = nd.Cid()
 	}
-	err = store.stage(ctx, written, true)
-	defer store.unstage(written)
-	if err != nil {
+	if _, err := store.intend(ctx, sess, written, nil); err != nil {
 		return Head{}, nil, err
 	}
 	if err := store.dagService.AddMany(ctx, fresh); err != nil {
@@ -175,11 +191,14 @@ func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *c
 		return Head{}, nil, err
 	}
 
-	_, theirs, err := store.mergeSnapshot(ctx, nd.Cid(), root, ov)
+	_, theirs, err := store.mergeSnapshot(ctx, nd.Cid(), root, ov, sess)
 	if err != nil {
 		store.discardBlocks(ctx, nd.Cid())
 		return Head{}, nil, fmt.Errorf("error merging snapshot: %w", err)
 	}
+	store.gcMu.Lock()
+	store.gc.recent.nodes = ov.added
+	store.gcMu.Unlock()
 	store.counter = d.counter
 	store.lastWrite = store.times.up()
 	store.compactDue = false

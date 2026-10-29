@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"maps"
 	"math/rand/v2"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	mdutils "github.com/ipfs/boxo/ipld/merkledag/test"
 	cid "github.com/ipfs/go-cid"
@@ -25,6 +27,11 @@ var errCrash = errors.New("crashed")
 // its blockstore, and at the one numbered at takes a copy of both, which is
 // what a process that died just before that write leaves on disk. That
 // write and every one after it fail.
+//
+// With lose set it is a power loss instead: from the moment it is armed it
+// keeps what is durable apart, and the copy is that, every write no Sync
+// covered lost. A datastore write is durable once a Sync of a prefix above
+// it returns, a block once the blocks are synced.
 type crashPoint struct {
 	t     testing.TB
 	mu    sync.Mutex
@@ -32,9 +39,21 @@ type crashPoint struct {
 	store ds.Datastore
 	dag   *fetchThroughDAGSvc
 
+	lose          bool
+	durable       ds.Datastore
+	durableBlocks *fetchThroughDAGSvc
+	pending       []volatileEvent
+	pendingBlocks []blockEvent
+
 	disk    ds.Datastore
 	blocks  *fetchThroughDAGSvc
 	crashed bool
+}
+
+// A blockEvent is a block written, or removed.
+type blockEvent struct {
+	nd      ipld.Node
+	removed cid.Cid
 }
 
 func (c *crashPoint) step() error {
@@ -46,7 +65,11 @@ func (c *crashPoint) step() error {
 	c.n++
 	if c.at >= 0 && c.n-1 == c.at {
 		c.crashed = true
-		c.disk, c.blocks = copyStore(c.t, c.store), copyBlocks(c.t, c.dag)
+		if c.lose {
+			c.disk, c.blocks = copyStore(c.t, c.durable), copyBlocks(c.t, c.durableBlocks)
+		} else {
+			c.disk, c.blocks = copyStore(c.t, c.store), copyBlocks(c.t, c.dag)
+		}
 		return errCrash
 	}
 	return nil
@@ -56,6 +79,74 @@ func (c *crashPoint) arm(at int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.n, c.at = 0, at
+	if c.lose && at >= 0 {
+		c.durable, c.durableBlocks = copyStore(c.t, c.store), copyBlocks(c.t, c.dag)
+		c.pending, c.pendingBlocks = nil, nil
+	}
+}
+
+func (c *crashPoint) wrote(e volatileEvent) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.lose && c.durable != nil {
+		c.pending = append(c.pending, e)
+	}
+}
+
+func (c *crashPoint) wroteBlock(e blockEvent) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.lose && c.durable != nil {
+		c.pendingBlocks = append(c.pendingBlocks, e)
+	}
+}
+
+// synced makes durable the writes under prefix.
+func (c *crashPoint) synced(prefix ds.Key) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.lose || c.durable == nil || c.crashed {
+		return
+	}
+	ctx := context.Background()
+	kept := c.pending[:0]
+	for _, e := range c.pending {
+		if prefix.String() != "/" && prefix != e.key && !prefix.IsAncestorOf(e.key) {
+			kept = append(kept, e)
+			continue
+		}
+		var err error
+		if e.del {
+			err = c.durable.Delete(ctx, e.key)
+		} else {
+			err = c.durable.Put(ctx, e.key, e.value)
+		}
+		if err != nil {
+			c.t.Error(err)
+		}
+	}
+	c.pending = kept
+}
+
+func (c *crashPoint) syncedBlocks() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.lose || c.durable == nil || c.crashed {
+		return
+	}
+	ctx := context.Background()
+	for _, e := range c.pendingBlocks {
+		var err error
+		if e.nd != nil {
+			err = c.durableBlocks.DAGService.Add(ctx, e.nd)
+		} else {
+			err = c.durableBlocks.DAGService.Remove(ctx, e.removed)
+		}
+		if err != nil {
+			c.t.Error(err)
+		}
+	}
+	c.pendingBlocks = nil
 }
 
 // crashStore has no batches of its own, so a batch commits as the writes
@@ -69,6 +160,7 @@ func (s *crashStore) Put(ctx context.Context, k ds.Key, v []byte) error {
 	if err := s.c.step(); err != nil {
 		return err
 	}
+	s.c.wrote(volatileEvent{key: k, value: bytes.Clone(v)})
 	return s.Datastore.Put(ctx, k, v)
 }
 
@@ -76,7 +168,19 @@ func (s *crashStore) Delete(ctx context.Context, k ds.Key) error {
 	if err := s.c.step(); err != nil {
 		return err
 	}
+	s.c.wrote(volatileEvent{key: k, del: true})
 	return s.Datastore.Delete(ctx, k)
+}
+
+func (s *crashStore) Sync(ctx context.Context, prefix ds.Key) error {
+	s.c.mu.Lock()
+	crashed := s.c.crashed
+	s.c.mu.Unlock()
+	if crashed {
+		return errCrash
+	}
+	s.c.synced(prefix)
+	return s.Datastore.Sync(ctx, prefix)
 }
 
 type crashDAG struct {
@@ -88,7 +192,42 @@ func (d *crashDAG) Add(ctx context.Context, nd ipld.Node) error {
 	if err := d.c.step(); err != nil {
 		return err
 	}
+	d.c.wroteBlock(blockEvent{nd: nd})
 	return d.fetchThroughDAGSvc.Add(ctx, nd)
+}
+
+// Get fetches through to the remotes, as fetchThroughDAGSvc does, and a
+// block it fetches is a write.
+func (d *crashDAG) Get(ctx context.Context, c cid.Cid) (ipld.Node, error) {
+	held := d.holds(c)
+	nd, err := d.fetchThroughDAGSvc.Get(ctx, c)
+	if err == nil && !held {
+		d.c.wroteBlock(blockEvent{nd: nd})
+	}
+	return nd, err
+}
+
+func (d *crashDAG) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.NodeOption {
+	out := make(chan *ipld.NodeOption, len(cids))
+	go func() {
+		defer close(out)
+		for _, c := range cids {
+			nd, err := d.Get(ctx, c)
+			out <- &ipld.NodeOption{Node: nd, Err: err}
+		}
+	}()
+	return out
+}
+
+func (d *crashDAG) SyncBlocks(context.Context) error {
+	d.c.mu.Lock()
+	crashed := d.c.crashed
+	d.c.mu.Unlock()
+	if crashed {
+		return errCrash
+	}
+	d.c.syncedBlocks()
+	return nil
 }
 
 func (d *crashDAG) AddMany(ctx context.Context, nds []ipld.Node) error {
@@ -104,6 +243,7 @@ func (d *crashDAG) Remove(ctx context.Context, c cid.Cid) error {
 	if err := d.c.step(); err != nil {
 		return err
 	}
+	d.c.wroteBlock(blockEvent{removed: c})
 	return d.fetchThroughDAGSvc.Remove(ctx, c)
 }
 
@@ -127,46 +267,86 @@ func manualReplica(t testing.TB, store ds.Datastore, dag ipld.DAGService, name s
 	return r
 }
 
-// assertCounts checks every reference count against the roots: one per
-// indexed snapshot's state and per base tree, and one per link from a block
-// they reach.
-func assertCounts(t testing.TB, r *Datastore) {
+// assertReach checks the members against the roots the store records:
+// every indexed snapshot's state, the base's trees and every pin. The
+// members are exactly what those reach, every one held, and nothing is
+// left of a manifest or of a session that is not in progress.
+func assertReach(t testing.TB, r *Datastore) {
 	t.Helper()
 	ctx := context.Background()
-	want := map[cid.Cid]uint64{}
+	r.gcMu.Lock()
+	defer r.gcMu.Unlock()
+	local, _ := r.dagService.(interface{ holds(cid.Cid) bool })
+	want := map[cid.Cid]bool{}
 	var stack []cid.Cid
-	ref := func(c cid.Cid) {
-		if c.Defined() {
-			if want[c] == 0 {
-				stack = append(stack, c)
-			}
-			want[c]++
+	root := func(c cid.Cid) {
+		if c.Defined() && !want[c] {
+			want[c] = true
+			stack = append(stack, c)
 		}
 	}
-	prefix := r.blocksPrefix()
-	err := scanStore(ctx, r.store, prefix, func(_ string, v []byte) error {
+	err := scanStore(ctx, r.store, r.blocksPrefix(), func(_ string, v []byte) error {
 		b, err := decodeBlock(v)
-		ref(b.state)
+		root(b.state)
 		return err
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ref(r.base.elems)
-	ref(r.base.pending)
+	if err := scanStore(ctx, r.store, r.pinPrefix(), func(_ string, v []byte) error {
+		c, err := cid.Cast(v)
+		root(c)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	root(r.base.elems)
+	root(r.base.pending)
 	for len(stack) > 0 {
 		c := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
+		if local != nil && !local.holds(c) {
+			t.Errorf("state block %s a root reaches is gone", c)
+			continue
+		}
 		nd, err := r.dagService.Get(ctx, c)
 		if err != nil {
-			t.Fatalf("owned state block %s: %s", c, err)
+			t.Fatalf("state block %s a root reaches: %s", c, err)
 		}
 		for _, l := range nd.Links() {
-			ref(l.Cid)
+			root(l.Cid)
 		}
 	}
-	if got := owned(t, r); !maps.Equal(got, want) {
-		t.Errorf("reference counts are %v, the roots make them %v", got, want)
+	got := map[cid.Cid]bool{}
+	for k := range r.gc.members {
+		got[cidOf(k)] = true
+	}
+	if !maps.Equal(got, want) {
+		for c := range want {
+			if !got[c] {
+				t.Errorf("%s: the roots reach it, the members do not hold it", c)
+			}
+		}
+		for c := range got {
+			if !want[c] {
+				t.Errorf("%s: a member no root reaches", c)
+			}
+		}
+	}
+	if n, err := countPrefix(ctx, r.store, r.manifestPrefix()); err != nil || n != 0 || len(r.gc.manifests) != 0 {
+		t.Errorf("%d manifest chunks are left (%d not drained): %v", n, len(r.gc.manifests), err)
+	}
+	if err := scanStore(ctx, r.store, r.intentPrefix(), func(k string, _ []byte) error {
+		s, _, err := parseChunkKey(r.intentPrefix(), k)
+		if err != nil {
+			return err
+		}
+		if !slices.ContainsFunc(r.gc.sessions, func(x *gcSession) bool { return x.id == s }) {
+			t.Errorf("intents %s are left of a session that is over", k)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -230,14 +410,20 @@ func assertTreesMatch(t testing.TB, r *Datastore) {
 // compaction, the merge of a peer's snapshot that shares most of its state,
 // and a second compaction with what they purge and reclaim, and reopens
 // what it left on disk: it holds the state of before that step or of after
-// it, its trees are its records, every reference count is its roots', and a
-// clean compaction leaves no block that nothing indexes or owns.
+// it, its trees are its records, its members are what its roots reach, and
+// a clean compaction leaves no block that nothing indexes or reaches. Lost,
+// the crash is a power loss that keeps no write a Sync did not cover.
 func TestACrashAtAnyWriteRecovers(t *testing.T) {
+	t.Run("kept", func(t *testing.T) { crashAtAnyWrite(t, false) })
+	t.Run("lost", func(t *testing.T) { crashAtAnyWrite(t, true) })
+}
+
+func crashAtAnyWrite(t *testing.T, lose bool) {
 	ctx := context.Background()
 	for at := 0; at < 20000; at++ {
 		inner := dssync.MutexWrap(ds.NewMapDatastore())
 		own := newFetchThrough()
-		c := &crashPoint{t: t, at: -1, store: inner, dag: own}
+		c := &crashPoint{t: t, at: -1, store: inner, dag: own, lose: lose}
 		r := manualReplica(t, &crashStore{Datastore: inner, c: c}, &crashDAG{fetchThroughDAGSvc: own, c: c}, "crashing: ")
 		peerDag := newFetchThrough()
 		peer := manualReplica(t, dssync.MutexWrap(ds.NewMapDatastore()), peerDag, "peer: ")
@@ -258,7 +444,7 @@ func TestACrashAtAnyWriteRecovers(t *testing.T) {
 		compact(t, peer)
 		if at == 0 {
 			assertTreesMatch(t, r)
-			assertCounts(t, r)
+			assertReach(t, r)
 			if t.Failed() {
 				t.Fatal("before any crash")
 			}
@@ -289,7 +475,7 @@ func TestACrashAtAnyWriteRecovers(t *testing.T) {
 				t.Fatalf("without a crash the replica holds %v, want %v", got, after)
 			}
 			assertTreesMatch(t, r)
-			assertCounts(t, r)
+			assertReach(t, r)
 			if at < 50 {
 				t.Fatalf("the run wrote only %d times", at)
 			}
@@ -311,10 +497,10 @@ func TestACrashAtAnyWriteRecovers(t *testing.T) {
 			t.Fatalf("crash at write %d: the replica holds %v, which is neither %v nor %v", at, got, before, after)
 		}
 		assertTreesMatch(t, re)
-		assertCounts(t, re)
+		assertReach(t, re)
 		compact(t, re)
 		assertTreesMatch(t, re)
-		assertCounts(t, re)
+		assertReach(t, re)
 		assertNoLeak(t, re, c.blocks)
 		if t.Failed() {
 			t.Fatalf("crash at write %d", at)
@@ -334,7 +520,7 @@ type stateFault struct{ op, prefix string }
 // under, and each operation that names no key.
 func stateFaults() []stateFault {
 	keyed := []string{"Get", "Put", "Delete", "Has", "Query", "BatchPut", "BatchDelete"}
-	prefixes := []string{"/j/", "/n/", "/x/", "/sr", "/w", "/b/", "/s/e/", "/s/t/", "/c/"}
+	prefixes := []string{"/j/", "/i/", "/g/", "/p/", "/x/", "/sr", "/w", "/b/", "/s/e/", "/s/t/", "/c/"}
 	var faults []stateFault
 	for _, p := range prefixes {
 		for _, op := range keyed {
@@ -351,8 +537,8 @@ func stateFaults() []stateFault {
 // each kind of key a state lives under while a replica compacts, merges a
 // peer's snapshot that shares part of its state and compacts again. Once
 // the store heals and the replica reopens and does it all again, it holds
-// the peer's state, its trees are its records, every reference count is its
-// roots', and it holds no block nothing indexes or owns.
+// the peer's state, its trees are its records, its members are what its
+// roots reach, and it holds no block nothing indexes or reaches.
 func TestAStateStoreFaultIsSurvived(t *testing.T) {
 	ctx := context.Background()
 	for _, f := range stateFaults() {
@@ -416,7 +602,7 @@ func TestAStateStoreFaultIsSurvived(t *testing.T) {
 				t.Fatalf("healed, the replica holds %v, want %v", got, want)
 			}
 			assertTreesMatch(t, r)
-			assertCounts(t, r)
+			assertReach(t, r)
 			assertNoLeak(t, r, own.fetchThroughDAGSvc)
 		})
 	}
@@ -426,10 +612,16 @@ func TestAStateStoreFaultIsSurvived(t *testing.T) {
 // of a catch-up that goes on from an attempt that fetched part of a peer's
 // state, with maintenance and its reclaim between attempts, and of the
 // compaction after it. What it left on disk holds the state of before the
-// merge or of after it, its trees are its records, every reference count is
-// its roots', and once it catches up again and compacts it holds the peer's
-// state and no block that nothing indexes or owns.
+// merge or of after it, its trees are its records, its members are what
+// its roots reach, and once it catches up again and compacts it holds the
+// peer's state and no block that nothing indexes or reaches. Lost, the
+// crash is a power loss that keeps no write a Sync did not cover.
 func TestACrashInAResumedFetchRecovers(t *testing.T) {
+	t.Run("kept", func(t *testing.T) { crashInAResumedFetch(t, false) })
+	t.Run("lost", func(t *testing.T) { crashInAResumedFetch(t, true) })
+}
+
+func crashInAResumedFetch(t *testing.T, lose bool) {
 	ctx := context.Background()
 	// The peer only serves its state, so one does for every crash.
 	peerDag := newFetchThrough()
@@ -441,7 +633,7 @@ func TestACrashInAResumedFetchRecovers(t *testing.T) {
 	for at := 0; at < 20000; at++ {
 		inner := dssync.MutexWrap(ds.NewMapDatastore())
 		own := newFetchThrough()
-		c := &crashPoint{t: t, at: -1, store: inner, dag: own}
+		c := &crashPoint{t: t, at: -1, store: inner, dag: own, lose: lose}
 		r := manualReplica(t, &crashStore{Datastore: inner, c: c}, &crashDAG{fetchThroughDAGSvc: own, c: c}, "crashing: ")
 		link := newRationed(peerDag.DAGService)
 		own.setRemotes(link)
@@ -475,7 +667,7 @@ func TestACrashInAResumedFetchRecovers(t *testing.T) {
 				t.Fatalf("without a crash the replica holds %d keys, want %d", len(got), len(after))
 			}
 			assertTreesMatch(t, r)
-			assertCounts(t, r)
+			assertReach(t, r)
 			assertNoLeak(t, r, own)
 			if at < 50 {
 				t.Fatalf("the run wrote only %d times", at)
@@ -497,7 +689,7 @@ func TestACrashInAResumedFetchRecovers(t *testing.T) {
 			t.Fatalf("crash at write %d: the replica holds %d keys, neither the %d of before nor the %d of after", at, len(got), len(before), len(after))
 		}
 		assertTreesMatch(t, re)
-		assertCounts(t, re)
+		assertReach(t, re)
 		syncReplicaHeads(t, peer, re)
 		if err := re.Repair(ctx); err != nil {
 			t.Fatalf("crash at write %d: %v", at, err)
@@ -507,7 +699,7 @@ func TestACrashInAResumedFetchRecovers(t *testing.T) {
 			t.Fatalf("crash at write %d: caught up again, the replica holds %d keys, want %d", at, len(got), len(after))
 		}
 		assertTreesMatch(t, re)
-		assertCounts(t, re)
+		assertReach(t, re)
 		assertNoLeak(t, re, c.blocks)
 		if t.Failed() {
 			t.Fatalf("crash at write %d", at)
@@ -522,8 +714,8 @@ func TestACrashInAResumedFetchRecovers(t *testing.T) {
 // fetching a peer's state that one attempt fetched part of, with maintenance
 // and its reclaim between attempts, and compacts. Once the store heals and
 // the replica reopens and catches up again, it holds the peer's state, its
-// trees are its records, every reference count is its roots', and it holds
-// no block nothing indexes or owns.
+// trees are its records, its members are what its roots reach, and it
+// holds no block nothing indexes or reaches.
 func TestAStateStoreFaultInAResumedFetchIsSurvived(t *testing.T) {
 	ctx := context.Background()
 	for _, f := range stateFaults() {
@@ -579,7 +771,7 @@ func TestAStateStoreFaultInAResumedFetchIsSurvived(t *testing.T) {
 				t.Fatalf("healed, the replica holds %d keys, want %d", len(got), len(want))
 			}
 			assertTreesMatch(t, r)
-			assertCounts(t, r)
+			assertReach(t, r)
 			assertNoLeak(t, r, own.fetchThroughDAGSvc)
 		})
 	}
@@ -754,4 +946,205 @@ func TestAnAtomicCommitSurvivesAnyLoss(t *testing.T) {
 func onManual(o *Options) *Options {
 	o.manual = true
 	return o
+}
+
+// assertHoldsExactly checks that r holds no block but what its roots reach,
+// what it indexes and what a session in progress means to keep, and that
+// every block its roots reach is held.
+func assertHoldsExactly(t testing.TB, r *Datastore, d *fetchThroughDAGSvc) {
+	t.Helper()
+	ctx := context.Background()
+	assertReach(t, r)
+	r.gcMu.Lock()
+	defer r.gcMu.Unlock()
+	ch, err := d.bs.AllKeysChan(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k := range ch {
+		c := cid.NewCidV1(cid.DagProtobuf, k.Hash())
+		indexed, err := r.store.Has(ctx, r.blockKey(c))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if indexed || r.gc.member(keyOf(c)) || r.gc.holds(keyOf(c)) {
+			continue
+		}
+		t.Errorf("block %s is held, and no root reaches it, nothing indexes it and no session holds it", c)
+	}
+}
+
+// abandonFetches drops every state fetch no attempt is using, as their
+// expiry would.
+func abandonFetches(ctx context.Context, r *Datastore) {
+	r.fetchMu.Lock()
+	var dead []*stateFetch
+	for _, f := range r.fetches {
+		if f.users == 0 {
+			dead = append(dead, f)
+		}
+	}
+	for _, f := range dead {
+		r.dropFetchLocked(f)
+	}
+	r.fetchMu.Unlock()
+	for _, f := range dead {
+		r.releaseFetch(ctx, f)
+	}
+}
+
+// TestTheCollectorKeepsExactlyWhatIsReached runs random sequences of
+// writes, compactions on both sides, merges of a peer's snapshots, fetches
+// abandoned part way, pins taken, released and expired, and crashes at a
+// random write of any of them. After every step, once reclaimed, the
+// replica holds exactly what its roots reach, what it indexes and what its
+// sessions in progress hold, its members are exactly what its roots reach,
+// and its trees are its records.
+func TestTheCollectorKeepsExactlyWhatIsReached(t *testing.T) {
+	for seed := range uint64(16) {
+		t.Run(fmt.Sprint(seed), func(t *testing.T) { collectorRun(t, seed, 200) })
+	}
+}
+
+func collectorRun(t *testing.T, seed uint64, steps int) {
+	ctx := context.Background()
+	rng := rand.New(rand.NewPCG(seed, 99))
+	inner := dssync.MutexWrap(ds.NewMapDatastore())
+	own := newFetchThrough()
+	c := &crashPoint{t: t, at: -1, store: inner, dag: own}
+	r := manualReplica(t, &crashStore{Datastore: inner, c: c}, &crashDAG{fetchThroughDAGSvc: own, c: c}, "r: ")
+	peerDag := newFetchThrough()
+	peer := manualReplica(t, dssync.MutexWrap(ds.NewMapDatastore()), peerDag, "peer: ")
+	defer peer.Close()
+	link := newRationed(peerDag.DAGService)
+	own.setRemotes(link)
+	peerDag.setRemotes(own.DAGService)
+	var pins []*statePin
+	defer func() { r.Close() }()
+
+	op := func(kind int) error {
+		switch kind {
+		case 0:
+			for range 1 + rng.IntN(6) {
+				k := fmt.Sprintf("/r%02d", rng.IntN(40))
+				if rng.IntN(4) == 0 {
+					if err := r.Delete(ctx, ds.NewKey(k)); err != nil {
+						return err
+					}
+				} else if err := r.Put(ctx, ds.NewKey(k), []byte(fmt.Sprint(rng.Uint32()))); err != nil {
+					return err
+				}
+			}
+		case 1:
+			for range 1 + rng.IntN(20) {
+				k := ds.NewKey(fmt.Sprintf("/p%02d", rng.IntN(60)))
+				if rng.IntN(4) == 0 {
+					if err := peer.Delete(ctx, k); err != nil {
+						t.Fatal(err)
+					}
+				} else if err := peer.Put(ctx, k, []byte(fmt.Sprint(rng.Uint32()))); err != nil {
+					t.Fatal(err)
+				}
+			}
+			compact(t, peer)
+		case 2:
+			_, err := r.Compact(ctx)
+			return err
+		case 3:
+			link.refill(1 << 30)
+			hs, _ := peer.heads.List()
+			for _, h := range hs {
+				if err := r.handleBlock(ctx, h); err != nil {
+					return err
+				}
+			}
+		case 4:
+			link.refill(1 + rng.IntN(4))
+			hs, _ := peer.heads.List()
+			for _, h := range hs {
+				if err := r.handleBlock(ctx, h); err != nil {
+					t.Logf("partial fetch: %v", err)
+				}
+			}
+			if rng.IntN(2) == 0 {
+				abandonFetches(ctx, r)
+			}
+		case 5:
+			r.gcMu.Lock()
+			var states []cid.Cid
+			for _, lr := range r.gc.roots {
+				if lr.kind == stateRootKind {
+					states = append(states, lr.c)
+				}
+			}
+			r.gcMu.Unlock()
+			if len(states) == 0 {
+				return nil
+			}
+			slices.SortFunc(states, func(a, b cid.Cid) int { return strings.Compare(a.KeyString(), b.KeyString()) })
+			lease := time.Hour
+			if rng.IntN(2) == 0 {
+				lease = 0
+			}
+			p, err := r.pinState(ctx, states[rng.IntN(len(states))], lease)
+			if errors.Is(err, errTooManyPins) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			pins = append(pins, p)
+		case 6:
+			if len(pins) == 0 {
+				return nil
+			}
+			i := rng.IntN(len(pins))
+			if err := pins[i].Release(ctx); err != nil {
+				return err
+			}
+			pins = slices.Delete(pins, i, i+1)
+		}
+		return nil
+	}
+
+	for step := range steps {
+		kind := rng.IntN(7)
+		crash := rng.IntN(5) == 0
+		if crash {
+			c.arm(rng.IntN(120))
+		}
+		err := op(kind)
+		if crash {
+			c.mu.Lock()
+			crashed := c.crashed
+			c.mu.Unlock()
+			if crashed {
+				t.Logf("step %d: crash in op %d: %v", step, kind, err)
+				r.Close()
+				if err := c.disk.Put(ctx, ds.NewKey("crdttest").ChildString(badShutdownKey), nil); err != nil {
+					t.Fatal(err)
+				}
+				forgetIncarnation(r.incarnationKey())
+				own = c.blocks
+				own.setRemotes(link)
+				c = &crashPoint{t: t, at: -1, store: c.disk, dag: own}
+				r = manualReplica(t, &crashStore{Datastore: c.store, c: c}, &crashDAG{fetchThroughDAGSvc: own, c: c}, "reopened: ")
+				pins = nil
+				err = nil
+			} else {
+				c.arm(-1)
+			}
+		}
+		if err != nil {
+			t.Fatalf("step %d, op %d: %v", step, kind, err)
+		}
+		if _, err := r.reclaim(ctx); err != nil {
+			t.Fatalf("step %d, op %d: reclaim: %v", step, kind, err)
+		}
+		assertHoldsExactly(t, r, own)
+		assertTreesMatch(t, r)
+		if t.Failed() {
+			t.Fatalf("step %d, op %d", step, kind)
+		}
+	}
 }

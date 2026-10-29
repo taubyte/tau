@@ -38,8 +38,9 @@ func (r *removeFailing) Remove(ctx context.Context, c cid.Cid) error {
 
 var _ ipld.DAGService = (*removeFailing)(nil)
 
-// assertNoLeak checks that every block r holds is indexed or an owned state
-// block, and that every index entry and owned block names a block r holds.
+// assertNoLeak checks that every block r holds is indexed or a state block
+// its roots reach, and that every index entry and such block names a block
+// r holds.
 func assertNoLeak(t testing.TB, r *Datastore, d *fetchThroughDAGSvc) {
 	t.Helper()
 	ctx := context.Background()
@@ -70,7 +71,7 @@ func assertNoLeak(t testing.TB, r *Datastore, d *fetchThroughDAGSvc) {
 	for c := range owned(t, r) {
 		indexed[c] = true
 		if !d.holds(c) {
-			t.Errorf("owned state block %s is gone", c)
+			t.Errorf("state block %s a root reaches is gone", c)
 		}
 	}
 	ch, err := d.bs.AllKeysChan(ctx)

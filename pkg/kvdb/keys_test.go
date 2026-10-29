@@ -44,7 +44,7 @@ func TestKeysAreTheirSegments(t *testing.T) {
 			{func() ds.Key { return s.pendingKey(k, d) }, ds.NewKey(s.pending).ChildString(d.segment()).ChildString(keySegment(k))},
 			{func() ds.Key { return dotKey(pre.missing, d) }, ds.NewKey(pre.missing).ChildString(d.segment())},
 			{func() ds.Key { return dotKey(pre.retry, d) }, ns.ChildString(retryNs).ChildString(d.segment())},
-			{func() ds.Key { return hashKey(pre.owned, c) }, ds.NewKey(pre.owned).Child(dshelp.MultihashToDsKey(c.Hash()))},
+			{func() ds.Key { return hashKey(pre.reclaim, c) }, ds.NewKey(pre.reclaim).Child(dshelp.MultihashToDsKey(c.Hash()))},
 			{func() ds.Key { return hh.key(c) }, ns.ChildString(headsNs).Child(dshelp.MultihashToDsKey(c.Hash()))},
 		}
 		for i, tc := range cases {

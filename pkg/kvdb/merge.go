@@ -233,8 +233,8 @@ type merging struct {
 	rescanned bool
 	// unerased are the erased records this merge forgets.
 	unerased []string
-	// atomic commits with commitAtomic: the merge changes what owns state
-	// blocks.
+	// atomic commits with commitAtomic: the merge changes the roots that
+	// keep state blocks.
 	atomic bool
 	// base is the state base the merge leaves, when it moves it.
 	base *stateBase
@@ -756,9 +756,10 @@ func sortedKeys[V any](m map[string]V) []string {
 
 // mergeSnapshot joins the state a snapshot carries, whose blocks dags holds,
 // as one merge. Only the records its trees and this replica's may disagree
-// on are read (see enumerate); every other one both hold alike. The caller
-// holds store.mu.
-func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.Delta, dags ipld.DAGService) ([]link, *causalContext, error) {
+// on are read (see enumerate); every other one both hold alike. The state's
+// closure is what the roots reach and sess's intents: the merge publishes
+// them, with the root that now reaches them. The caller holds store.mu.
+func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.Delta, dags ipld.DAGService, sess *gcSession) ([]link, *causalContext, error) {
 	d := dotFromPB(root.GetDot())
 	if d.isZero() {
 		return nil, nil, fmt.Errorf("snapshot %s has no dot", c)
@@ -790,20 +791,38 @@ func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.D
 	m := p.m
 	store.gcMu.Lock()
 	defer store.gcMu.Unlock()
-	refs := store.refsIn(m.t, dags)
-	if err := refs.acquire(ctx, stc); err != nil {
+	if err := store.drainLocked(ctx); err != nil {
 		return nil, nil, err
 	}
+	if !store.gc.reaches(sess, stc) {
+		return nil, nil, fmt.Errorf("snapshot %s: its state is not held", c)
+	}
+	ch := store.changeRoots()
+	ch.addState(stc, s.sr)
 	// The base moves to the snapshot's trees when that leaves no more to
 	// apply than the journal holds now: they are the trees a peer holds,
 	// and the next snapshot then shares them.
 	if len(p.residual) <= ms.journal {
-		if err := m.rebase(ctx, refs, s, p.residual); err != nil {
+		if err := m.rebase(ctx, ch, s, p.residual); err != nil {
 			return nil, nil, err
 		}
 	}
+	if sess != nil && !sess.published {
+		ch.publish(sess, m.t)
+	}
+	if err := ch.prepare(ctx, m.t); err != nil {
+		return nil, nil, err
+	}
+	// What the commit makes a root reach is durable before it does.
+	if err := store.syncBlocks(ctx); err != nil {
+		return nil, nil, err
+	}
 	if err := m.commit(ctx); err != nil {
 		return nil, nil, err
+	}
+	ch.apply()
+	if sess != nil && !sess.published {
+		store.published(sess)
 	}
 	if p.differs {
 		store.compactDue = true
@@ -917,11 +936,9 @@ func (store *Datastore) prepareSnapshot(ctx context.Context, c cid.Cid, root *pb
 
 // rebase moves the base to s's trees and makes the journal name exactly the
 // records this replica holds otherwise than s, residual.
-func (m *merging) rebase(ctx context.Context, refs *refs, s *snapState, residual map[string]bool) error {
+func (m *merging) rebase(ctx context.Context, ch *rootChange, s *snapState, residual map[string]bool) error {
 	b := stateBase{elems: s.sr.elems, pending: s.sr.pending}
-	if err := refs.setBase(ctx, m.store.base, b); err != nil {
-		return err
-	}
+	ch.setBase(m.t, m.store.base, b)
 	m.base = &b
 	for _, prefix := range []ds.Key{m.store.journal.elemsPrefix(), m.store.journal.pendingPrefix()} {
 		if err := scanStore(ctx, m.store.store, prefix, func(k string, _ []byte) error {
@@ -1329,10 +1346,10 @@ func (store *Datastore) isTaken(prefix ds.Key, k string) bool {
 // the blocks is the slow part of a purge, and the broadcast reader and every
 // walk wait on the lock. Nothing reads a taken block meanwhile: it is no
 // head, a walk reaching it sees it is not held, and a merge of it is refused
-// until the purge ends, for repair to retry. Its entry goes after it, so a
-// crash in between leaves an entry naming a block that is gone, which the
-// next purge takes again, and never a block nothing indexes. A snapshot's
-// state is released with its entry.
+// until the purge ends, for repair to retry. Its entry goes after it, once
+// its removal is durable, so a crash in between leaves an entry naming a
+// block that is gone, which the next purge takes again, and never a block
+// nothing indexes. A snapshot's state is retired with its entry.
 func (store *Datastore) dropTaken(ctx context.Context, taken []cid.Cid) (int, error) {
 	if len(taken) == 0 {
 		return 0, nil
@@ -1341,6 +1358,8 @@ func (store *Datastore) dropTaken(ctx context.Context, taken []cid.Cid) (int, er
 	err := store.dagService.RemoveMany(ctx, taken)
 	if err != nil {
 		err = fmt.Errorf("error removing purged blocks: %w", err)
+	} else {
+		err = store.syncBlocks(ctx)
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
@@ -1363,14 +1382,14 @@ func (store *Datastore) dropTaken(ctx context.Context, taken []cid.Cid) (int, er
 	return len(taken), nil
 }
 
-// unindex removes the index entries of cids, releasing the state each
-// snapshot among them holds, as one atomic commit. The caller holds
-// store.mu.
+// unindex removes the index entries of cids, retiring the state each
+// snapshot among them names, with the manifest of what that leaves
+// unreached, as one atomic commit. The caller holds store.mu.
 func (store *Datastore) unindex(ctx context.Context, cids []cid.Cid) error {
 	store.gcMu.Lock()
 	defer store.gcMu.Unlock()
 	t := newTxn(store.store)
-	refs := store.refsIn(t, store.dagService)
+	ch := store.changeRoots()
 	for _, c := range cids {
 		v, err := store.store.Get(ctx, store.blockKey(c))
 		if errors.Is(err, ds.ErrNotFound) {
@@ -1383,10 +1402,15 @@ func (store *Datastore) unindex(ctx context.Context, cids []cid.Cid) error {
 		if err != nil {
 			return err
 		}
-		if err := refs.release(ctx, b.state); err != nil {
-			return err
-		}
+		ch.remove(b.state)
 		t.del(store.blockKey(c))
 	}
-	return store.commitAtomic(ctx, t)
+	if err := ch.prepare(ctx, t); err != nil {
+		return err
+	}
+	if err := store.commitAtomic(ctx, t); err != nil {
+		return err
+	}
+	ch.apply()
+	return nil
 }

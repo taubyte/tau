@@ -77,24 +77,23 @@ func stateBlocks(t testing.TB, r *Datastore, snap cid.Cid) []cid.Cid {
 	return out
 }
 
-// owned is every state block r owns, with its count.
-func owned(t testing.TB, r *Datastore) map[cid.Cid]uint64 {
+// owned is every state block r's roots reach.
+func owned(t testing.TB, r *Datastore) map[cid.Cid]bool {
 	t.Helper()
-	out := map[cid.Cid]uint64{}
-	prefix := r.ownedPrefix()
-	err := scanStore(context.Background(), r.store, prefix, func(k string, v []byte) error {
-		c, err := cidOfBlockKey(prefix, k)
-		if err != nil {
-			return err
-		}
-		n, _ := binary.Uvarint(v)
-		out[c] = n
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
+	r.gcMu.Lock()
+	defer r.gcMu.Unlock()
+	out := map[cid.Cid]bool{}
+	for k := range r.gc.members {
+		out[cidOf(k)] = true
 	}
 	return out
+}
+
+// reaches reports whether a root of store reaches c.
+func (store *Datastore) reaches(c cid.Cid) bool {
+	store.gcMu.Lock()
+	defer store.gcMu.Unlock()
+	return store.gc.member(keyOf(c))
 }
 
 // heldBesidesState is how many blocks d holds that r does not own as state.

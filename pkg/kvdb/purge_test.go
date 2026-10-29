@@ -297,7 +297,7 @@ func TestACrashWhileAPurgeDropsLeaksNothing(t *testing.T) {
 				for k := range ch {
 					held, err := c.store.Has(ctx, c.blockKey(k))
 					if err == nil && !held {
-						held, err = c.store.Has(ctx, c.ownedKey(k))
+						held = c.reaches(cid.NewCidV1(cid.DagProtobuf, k.Hash()))
 					}
 					if err != nil || !held {
 						t.Errorf("block %s is held and indexed nowhere: a leak", k)

@@ -161,7 +161,7 @@ func TestTheOracleChecksEveryMerge(t *testing.T) {
 		t.Fatal(err)
 	}
 	f, err := b.fetchState(ctx, &crdtNodeGetter{b.dagService}, snap, root, nil)
-	defer b.leaveFetch(f, true)
+	defer b.leaveFetch(ctx, f, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestTheOracleChecksEveryMerge(t *testing.T) {
 	if err := againstOracle(ctx, b, snap, root, s, blind); err == nil {
 		t.Fatal("a merge that read no record agrees with the oracle")
 	}
-	if _, _, err := b.mergeSnapshot(ctx, snap, root, b.dagService); err != nil {
+	if _, _, err := b.mergeSnapshot(ctx, snap, root, b.dagService, f.b.sess); err != nil {
 		t.Fatal(err)
 	}
 	if oracleChecks.Load() <= before+1 {

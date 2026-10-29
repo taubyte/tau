@@ -57,7 +57,7 @@ const (
 // formatVersion is the on-disk format, stored as formatVersion+1 the way every
 // earlier format stored its own. A store holding any other version is emptied
 // on open and refills from its peers.
-const formatVersion uint64 = 6
+const formatVersion uint64 = 7
 
 // Common errors.
 var (
@@ -279,11 +279,11 @@ type Datastore struct {
 	// base is the state's trees as they were when the journal was last
 	// emptied. Guarded by mu.
 	base stateBase
-	// gcMu serializes every change of what owns a state block with reclaim,
-	// and guards staged, the blocks operations in progress will acquire.
-	// It is taken after mu.
-	gcMu   sync.Mutex
-	staged map[cid.Cid]int
+	// gcMu serializes every change of the roots, the sessions and what they
+	// hold, and the removal of what nothing reaches (see gc.go). It is taken
+	// after mu.
+	gcMu sync.Mutex
+	gc   collector
 	// fetches are the state fetches in progress, by state root (see
 	// stateFetch). fetchMu is taken alone.
 	fetchMu sync.Mutex
@@ -458,7 +458,7 @@ func NewDatastore(
 		oks:              map[string]*ok{},
 		erased:           map[string]*known{},
 		pendingAt:        none,
-		staged:           map[cid.Cid]int{},
+		gc:               newCollector(dagSyncer),
 		fetches:          map[cid.Cid]*stateFetch{},
 	}
 	dstore.ttl.Store(durationMillis(opts.Retention))
@@ -567,11 +567,14 @@ func (store *Datastore) open(ctx context.Context) error {
 	}
 	store.sinceUp = store.times.up()
 	store.ccRead.Store(store.cc)
+	if err := store.openGC(ctx); err != nil {
+		return fmt.Errorf("error loading what the state's roots reach: %w", err)
+	}
 	if err := store.dropOrphans(ctx); err != nil {
 		return fmt.Errorf("error dropping unmerged blocks: %w", err)
 	}
 	if _, err := store.reclaim(ctx); err != nil {
-		return fmt.Errorf("error removing unowned state blocks: %w", err)
+		return fmt.Errorf("error removing unreached blocks: %w", err)
 	}
 	if store.liveCount, err = countPrefix(ctx, store.store, store.set.elemsPrefix()); err != nil {
 		return err
@@ -1211,7 +1214,7 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 	settled := false
 	leave := func() {
 		if fetch != nil {
-			store.leaveFetch(fetch, settled)
+			store.leaveFetch(ctx, fetch, settled)
 			fetch = nil
 		}
 	}
@@ -1246,7 +1249,7 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 		leave()
 		if delta.GetSnapshot() {
 			if _, err := store.reclaim(ctx); err != nil {
-				store.logger.Warnf("error removing unowned state blocks: %s", err)
+				store.logger.Warnf("error removing unreached state blocks: %s", err)
 			}
 		}
 	}()
@@ -1309,7 +1312,7 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 			return nil, store.unmerged(ctx, current, d, 0)
 		}
 	}
-	walk, theirs, err := store.mergeSnapshot(ctx, current, delta, held)
+	walk, theirs, err := store.mergeSnapshot(ctx, current, delta, held, fetch.b.sess)
 	if err != nil {
 		store.dropFailed(ctx, current)
 		return nil, fmt.Errorf("error merging snapshot %s: %w", current, err)
@@ -1353,7 +1356,7 @@ func (store *Datastore) unmerged(ctx context.Context, c cid.Cid, d dot, forgot u
 
 // dropUnindexed removes a block fetched for a dot this replica already
 // covers and never indexed: no purge would find it otherwise. What a
-// snapshot's state brought is not owned, and goes with the next reclaim.
+// snapshot's state brought is its fetch's, and goes once that ends.
 func (store *Datastore) dropUnindexed(ctx context.Context, c cid.Cid) error {
 	held, err := store.isIndexed(ctx, c)
 	if err != nil || held {
@@ -1822,6 +1825,10 @@ func (store *Datastore) discardBlocks(ctx context.Context, cids ...cid.Cid) {
 		store.logger.Warnf("error removing unmerged blocks: %s", err)
 		return
 	}
+	if err := store.syncBlocks(ctx); err != nil {
+		store.logger.Warnf("error removing unmerged blocks: %s", err)
+		return
+	}
 	t := newTxn(store.store)
 	for _, c := range cids {
 		t.del(store.blockKey(c))
@@ -1857,6 +1864,9 @@ func (store *Datastore) dropOrphans(ctx context.Context) error {
 	}
 	store.logger.Warnf("dropping %d blocks written and never merged", len(orphans))
 	if err := store.dagService.RemoveMany(ctx, orphans); err != nil {
+		return err
+	}
+	if err := store.syncBlocks(ctx); err != nil {
 		return err
 	}
 	return store.unindex(ctx, orphans)

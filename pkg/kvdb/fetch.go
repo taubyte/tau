@@ -7,29 +7,28 @@ import (
 	"fmt"
 	"sync"
 	"time"
-	"unsafe"
 
 	cid "github.com/ipfs/go-cid"
-	ds "github.com/ipfs/go-datastore"
 	ipld "github.com/ipfs/go-ipld-format"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
 )
 
 // A stateFetch is the fetch of one state's closure, kept across attempts.
 // An attempt is bounded by DAGSyncerTimeout, and a state larger than one
-// attempt can fetch arrives over several: what an attempt fetched stays
-// staged, and the next goes on from the blocks it was still waiting for.
-// Nothing of it is visible until a merge acquires the closure.
+// attempt can fetch arrives over several: what an attempt fetched stays the
+// fetch's, and the next goes on from the blocks it was still waiting for.
+// Nothing of it is visible until a merge publishes the closure.
 //
-// A fetch is dropped, and what it staged left to reclaim, once none of the
-// snapshots it was begun for can be merged any more (covered or gone), once
-// a newer snapshot of the same author has fetched its whole closure
-// (superseded), or once it has fetched nothing for D: D bounds how long what
-// a replica in contact holds takes to reach this one, so a fetch that has
-// received nothing in D has no source in contact. A superseded fetch is kept
-// until its successor's walk is done, and that walk reads what it fetched as
-// held. A restart drops every fetch: their blocks are marked, and reclaim
-// on open removes them.
+// A fetch is a session of the collector (see gc.go): it reuses every
+// subtree the roots already reach, and records every other block it asks
+// for as an intent before it asks. It is dropped, and what it fetched that
+// no root reaches removed, once none of the snapshots it was begun for can
+// be merged any more (covered or gone), once a newer snapshot of the same
+// author has fetched its whole closure (superseded), or once it has fetched
+// nothing for D: D bounds how long what a replica in contact holds takes to
+// reach this one, so a fetch that has received nothing in D has no source
+// in contact. A superseded fetch is kept until its successor's walk is
+// done. A restart drops every fetch: open removes their intents.
 type stateFetch struct {
 	root cid.Cid
 	busy chan struct{}
@@ -51,10 +50,9 @@ type stateFetch struct {
 // fetch to the next: receiving a block allocates nothing once they have
 // grown to the size of the states fetched.
 type fetchBuffers struct {
-	// held is every block staged for the fetch, seen the same blocks as
-	// keys, and want[next:] those not received yet.
-	held []cid.Cid
-	seen map[cidKey]struct{}
+	// sess holds every block of the closure the fetch has seen, and
+	// want[next:] are the ones not received yet.
+	sess *gcSession
 	want []cid.Cid
 	next int
 
@@ -62,13 +60,12 @@ type fetchBuffers struct {
 	events                        chan fetchEvent
 	asked                         map[cidKey]struct{}
 	failed, parents, linked, kept []cid.Cid
-	owned, fresh                  []cid.Cid
-	key                           []byte
+	fresh                         []cid.Cid
 }
 
 var fetchBufferPool = sync.Pool{New: func() any {
 	return &fetchBuffers{
-		seen:   map[cidKey]struct{}{},
+		sess:   newSession(),
 		asked:  map[cidKey]struct{}{},
 		events: make(chan fetchEvent, wantWindow),
 	}
@@ -83,11 +80,11 @@ func (b *fetchBuffers) wanted() []cid.Cid { return b.want[b.next:] }
 // putBack returns b to the pool, keeping its storage and none of the cids
 // it held.
 func (b *fetchBuffers) putBack() {
-	for _, s := range []*[]cid.Cid{&b.held, &b.want, &b.failed, &b.parents, &b.linked, &b.kept, &b.owned, &b.fresh} {
+	for _, s := range []*[]cid.Cid{&b.want, &b.failed, &b.parents, &b.linked, &b.kept, &b.fresh} {
 		clear((*s)[:cap(*s)])
 		*s = (*s)[:0]
 	}
-	clear(b.seen)
+	b.sess.reset()
 	clear(b.asked)
 	b.next = 0
 	fetchBufferPool.Put(b)
@@ -110,13 +107,6 @@ func keyOf(c cid.Cid) cidKey {
 		return k
 	}
 	return sha256.Sum256([]byte(ks))
-}
-
-// ownedKey is store.ownedKey(c) built in b's key buffer, which the key
-// shares: it is valid until the next call.
-func (b *fetchBuffers) ownedKey(store *Datastore, c cid.Cid) ds.Key {
-	b.key = appendHashKey(b.key[:0], store.pre.owned, c)
-	return ds.RawKey(unsafe.String(unsafe.SliceData(b.key), len(b.key)))
 }
 
 func (f *stateFetch) lock(ctx context.Context) error {
@@ -183,10 +173,10 @@ func (store *Datastore) inherit(r string) {
 	}
 }
 
-// leaveFetch ends the caller's use of f: with merged, its closure is
-// owned now and f is dropped. The last user of a dropped fetch releases
-// what it staged.
-func (store *Datastore) leaveFetch(f *stateFetch, merged bool) {
+// leaveFetch ends the caller's use of f: with merged, a merge has settled
+// the snapshot and f is dropped. The last user of a dropped fetch ends its
+// session.
+func (store *Datastore) leaveFetch(ctx context.Context, f *stateFetch, merged bool) {
 	store.fetchMu.Lock()
 	if merged {
 		store.dropFetchLocked(f)
@@ -195,7 +185,7 @@ func (store *Datastore) leaveFetch(f *stateFetch, merged bool) {
 	release := f.ended && f.users == 0
 	store.fetchMu.Unlock()
 	if release {
-		store.releaseFetch(f)
+		store.releaseFetch(ctx, f)
 	}
 }
 
@@ -208,19 +198,21 @@ func (store *Datastore) dropFetchLocked(f *stateFetch) {
 	f.ended = true
 }
 
-func (store *Datastore) releaseFetch(f *stateFetch) {
+func (store *Datastore) releaseFetch(ctx context.Context, f *stateFetch) {
 	b := f.b
 	if b == nil {
 		return
 	}
 	f.b = nil
-	store.unstage(b.held)
+	if err := store.endSession(ctx, b.sess); err != nil {
+		store.logger.Warnf("error removing what a dropped state fetch fetched: %s", err)
+	}
 	b.putBack()
 }
 
 // sweepFetches drops every fetch no attempt is using that will never be
 // merged, is superseded, or has fetched nothing for D.
-func (store *Datastore) sweepFetches(dropClock uint64) {
+func (store *Datastore) sweepFetches(ctx context.Context, dropClock uint64) {
 	now := store.times.up()
 	store.fetchMu.Lock()
 	var dead []*stateFetch
@@ -234,7 +226,7 @@ func (store *Datastore) sweepFetches(dropClock uint64) {
 	}
 	store.fetchMu.Unlock()
 	for _, f := range dead {
-		store.releaseFetch(f)
+		store.releaseFetch(ctx, f)
 	}
 }
 
@@ -253,22 +245,21 @@ func (store *Datastore) fetchDead(f *stateFetch, now time.Duration, dropClock ui
 	return now-f.progress > store.opts.DeliveryBound
 }
 
-// fetchState fetches every block of a snapshot's state this replica does
-// not own, so a peer that shares most of it with this
-// replica sends only the nodes on the paths that changed. Every block of
-// the state is staged before it is fetched, the ones not owned marked for
-// removal, until the merge acquires them or reclaim removes them once the
-// fetch is dropped. An attempt that runs out of time keeps what it fetched
-// for the next one. Unless the state's cid is malformed, it returns the
-// fetch with the caller as one of its users: the caller leaves it, merged
-// once a merge owns the state.
+// fetchState fetches every block of a snapshot's state the roots do not
+// reach, so a peer that shares most of it with this replica sends only the
+// nodes on the paths that changed. Every block is an intent of the fetch
+// before it is fetched, until the merge publishes it or the fetch is
+// dropped. An attempt that runs out of time keeps what it fetched for the
+// next one. Unless the state's cid is malformed, it returns the fetch with
+// the caller as one of its users: the caller leaves it, merged once a
+// merge has settled the snapshot.
 func (store *Datastore) fetchState(ctx context.Context, ng *crdtNodeGetter, c cid.Cid, root *pb.Delta, held *heldDAG) (*stateFetch, error) {
 	stc, err := cid.Cast(root.GetState())
 	if err != nil {
 		return nil, fmt.Errorf("no state: %w", err)
 	}
 	f := store.beginFetch(stc, linkOf(c, root))
-	store.sweepFetches(store.dropClockNow())
+	store.sweepFetches(ctx, store.dropClockNow())
 	cctx, cancel := context.WithTimeout(ctx, store.opts.DAGSyncerTimeout)
 	defer cancel()
 	if err := f.lock(cctx); err != nil {
@@ -277,6 +268,9 @@ func (store *Datastore) fetchState(ctx context.Context, ng *crdtNodeGetter, c ci
 	defer f.unlock()
 	if f.b == nil {
 		f.b = takeFetchBuffers()
+		store.gcMu.Lock()
+		store.beginSession(f.b.sess)
+		store.gcMu.Unlock()
 		if err := store.discover(ctx, f, []cid.Cid{stc}); err != nil {
 			return f, err
 		}
@@ -290,55 +284,15 @@ func (store *Datastore) fetchState(ctx context.Context, ng *crdtNodeGetter, c ci
 	return f, nil
 }
 
-// discover stages the blocks of f's closure among cids it has not seen:
-// the ones owned, whose closure is held, as they are, and the others
-// marked, to be fetched. A block it could not stage is not seen yet.
+// discover takes the blocks of f's closure among cids it does not hold
+// yet: a subtree the roots reach is reused, and every other block recorded
+// as an intent and wanted. A block it could not record is not held yet.
 func (store *Datastore) discover(ctx context.Context, f *stateFetch, cids []cid.Cid) error {
 	b := f.b
-	b.owned, b.fresh = b.owned[:0], b.fresh[:0]
-	unsee := func(cids []cid.Cid) {
-		for _, c := range cids {
-			delete(b.seen, keyOf(c))
-		}
-	}
-	for _, c := range cids {
-		k := keyOf(c)
-		if _, ok := b.seen[k]; ok {
-			continue
-		}
-		b.seen[k] = struct{}{}
-		// Has does not keep the key.
-		has, err := store.store.Has(ctx, b.ownedKey(store, c))
-		if err != nil {
-			delete(b.seen, k)
-			unsee(b.owned)
-			unsee(b.fresh)
-			return err
-		}
-		if has {
-			b.owned = append(b.owned, c)
-		} else {
-			b.fresh = append(b.fresh, c)
-		}
-	}
-	// stage counts every block before it marks any: f holds them all
-	// either way.
-	b.held = append(b.held, b.owned...)
-	if err := store.stage(ctx, b.owned, false); err != nil {
-		unsee(b.owned)
-		unsee(b.fresh)
-		return err
-	}
-	if len(b.fresh) == 0 {
-		return nil
-	}
-	b.held = append(b.held, b.fresh...)
-	if err := store.stage(ctx, b.fresh, true); err != nil {
-		unsee(b.fresh)
-		return err
-	}
+	fresh, err := store.intend(ctx, b.sess, cids, b.fresh[:0])
+	b.fresh = fresh
 	b.requeue(b.fresh)
-	return nil
+	return err
 }
 
 // wantWindow bounds how many blocks one fetch has asked for and not yet

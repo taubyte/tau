@@ -541,7 +541,7 @@ func (store *Datastore) maintain(ctx context.Context) error {
 	}
 	dropClock := store.dropClock()
 	store.mu.Unlock()
-	store.sweepFetches(dropClock)
+	store.sweepFetches(ctx, dropClock)
 	if _, derr := store.dropTaken(ctx, ancient); err == nil {
 		err = derr
 	}

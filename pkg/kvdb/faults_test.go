@@ -474,16 +474,16 @@ func TestMergeRefusesMalformedBlocks(t *testing.T) {
 	if _, err := r.mergeDelta(ctx, cid.Undef, &pb.Delta{}); err == nil {
 		t.Error("a delta without a dot merged")
 	}
-	if _, _, err := r.mergeSnapshot(ctx, cid.Undef, &pb.Delta{Snapshot: true}, r.dagService); err == nil {
+	if _, _, err := r.mergeSnapshot(ctx, cid.Undef, &pb.Delta{Snapshot: true}, r.dagService, nil); err == nil {
 		t.Error("a snapshot without a dot merged")
 	}
 	d := dot{replica: "x", counter: 1}
-	if _, _, err := r.mergeSnapshot(ctx, cid.Undef, &pb.Delta{Snapshot: true, Dot: d.toPB()}, r.dagService); err == nil {
+	if _, _, err := r.mergeSnapshot(ctx, cid.Undef, &pb.Delta{Snapshot: true, Dot: d.toPB()}, r.dagService, nil); err == nil {
 		t.Error("a snapshot without a state merged")
 	}
 	noDot := elemTreeKey("/k", dot{replica: "x"})
 	state := putState(t, r.dagService, map[string][]byte{string(noDot): elemValue(element{})}, nil, nil)
-	if _, _, err := r.mergeSnapshot(ctx, cid.Undef, &pb.Delta{Snapshot: true, Dot: d.toPB(), State: state.Bytes()}, r.dagService); err == nil {
+	if _, _, err := r.mergeSnapshot(ctx, cid.Undef, &pb.Delta{Snapshot: true, Dot: d.toPB(), State: state.Bytes()}, r.dagService, nil); err == nil {
 		t.Error("a snapshot holding an element with no dot merged")
 	}
 	if _, err := r.mergeDelta(ctx, cid.Undef, &pb.Delta{Dot: d.toPB(), Parents: []*pb.Parent{{Cid: []byte{1}}}}); err == nil {
@@ -524,7 +524,7 @@ func TestASnapshotWithAMissingStateIsNotMerged(t *testing.T) {
 	cctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 	f, err = r.fetchState(cctx, &crdtNodeGetter{r.dagService}, cid.Undef, root, nil)
-	r.leaveFetch(f, true)
+	r.leaveFetch(ctx, f, true)
 	if err == nil {
 		t.Fatal("a state nobody holds was fetched")
 	}
