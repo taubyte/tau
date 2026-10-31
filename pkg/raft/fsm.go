@@ -82,10 +82,12 @@ type kvFSM struct {
 	applied atomic.Uint64
 }
 
-// newKVFSM creates a new key-value FSM using the given datastore
+// newKVFSM creates a new key-value FSM using the given datastore. A log raft
+// committed is applied whole: cancelling ctx, as Close does, stops raft, not
+// an apply under way.
 func newKVFSM(ctx context.Context, store ds.Batching, prefix string) FSM {
 	return &kvFSM{
-		ctx:    ctx,
+		ctx:    context.WithoutCancel(ctx),
 		store:  store,
 		prefix: prefix,
 	}

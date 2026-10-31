@@ -2,6 +2,7 @@ package raft
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/hashicorp/raft"
 	"github.com/ipfs/go-datastore"
 	dsync "github.com/ipfs/go-datastore/sync"
+	"github.com/taubyte/tau/pkg/pebbleds"
 )
 
 func newTestStore() datastore.Batching {
@@ -955,5 +957,29 @@ func TestKVFSM_SnapshotAndRestore_RoundTrip(t *testing.T) {
 		if string(val) != expectedValue {
 			t.Errorf("key %s: expected %s, got %s", key, expectedValue, val)
 		}
+	}
+}
+
+// A store that honours its context, as pebbleds does, still takes a log raft
+// committed once the cluster's context is cancelled: Close cancels it while
+// the state machine may be inside an apply.
+func TestKVFSM_AppliesACommittedLogPastCancellation(t *testing.T) {
+	store, err := pebbleds.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	fsm := newKVFSM(ctx, store, "/raft/test")
+	cancel()
+	data, err := cbor.Marshal(Command{Type: CommandSet, Set: &SetCommand{Key: "k", Value: []byte("v")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp := fsm.Apply(&raft.Log{Data: data, Index: 1}).(FSMResponse); resp.Error != nil {
+		t.Fatalf("a committed log failed to apply after cancellation: %v", resp.Error)
+	}
+	if v, ok := fsm.Get("k"); !ok || string(v) != "v" {
+		t.Fatalf("got %q %v", v, ok)
 	}
 }
