@@ -32,6 +32,9 @@ type known struct {
 	// gen is the generation of the context that may change k in place. A
 	// clone shares its entries, and copies one before it changes it.
 	gen uint64
+	// buf holds the spans of an entry own made, while they are few, in the
+	// entry's allocation.
+	buf [2]span
 }
 
 func (k *known) covers(counter uint64) bool {
@@ -124,9 +127,12 @@ func (c *causalContext) own(replica string) *known {
 	switch {
 	case k == nil:
 		k = &known{gen: c.gen}
+		k.spans = k.buf[:0]
 		c.inc[replica] = k
 	case k.gen != c.gen:
-		k = &known{spans: slices.Clone(k.spans), changed: k.changed, expires: k.expires, gen: c.gen}
+		n := &known{changed: k.changed, expires: k.expires, gen: c.gen}
+		n.spans = append(n.buf[:0], k.spans...)
+		k = n
 		c.inc[replica] = k
 	}
 	return k
