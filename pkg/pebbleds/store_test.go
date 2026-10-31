@@ -427,3 +427,21 @@ func TestBatchResetClosed(t *testing.T) {
 		t.Fatalf("reset over a closed store: %v", err)
 	}
 }
+
+// A scan of every key, its scratch reused from a scan with a prefix.
+func TestScanEverythingAfterAPrefix(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	for _, k := range []string{"/a", "/b"} {
+		must(t, s.Put(ctx, ds.RawKey(k), nil))
+	}
+	for range 3 {
+		must(t, s.Scan([]byte("/a"), func(_, _ []byte) error { return nil }))
+		n := 0
+		must(t, s.Scan(nil, func(_, _ []byte) error { n++; return nil }))
+		must(t, s.Scan([]byte{}, func(_, _ []byte) error { n++; return nil }))
+		if n != 4 {
+			t.Fatalf("an empty prefix scanned %d keys twice, want 2 each", n)
+		}
+	}
+}

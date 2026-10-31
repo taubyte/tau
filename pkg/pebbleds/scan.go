@@ -44,6 +44,11 @@ func (s *Store) walk(sc *scratch, lower, upper []byte, fn func(k, v []byte) erro
 		return ErrClosed
 	}
 	defer s.leave()
+	// An empty lower bound bounds nothing; pebble's race builds read its
+	// first byte.
+	if len(lower) == 0 {
+		lower = nil
+	}
 	sc.opts = pebble.IterOptions{LowerBound: lower, UpperBound: upper}
 	it, err := s.db.NewIter(&sc.opts)
 	if err != nil {
