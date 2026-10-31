@@ -1254,16 +1254,17 @@ func (store *Datastore) commitAtomic(ctx context.Context, t *txn) error {
 	r.start(3 * len(t.order))
 	defer r.done()
 	var chunks []*pb.Redo
-	cur, size := &pb.Redo{Seq: seq}, 0
+	cur, size, first := &pb.Redo{Seq: seq}, 0, 0
 	add := func(key, value []byte, del bool) {
 		r.writes = append(r.writes, pb.Write{Key: key, Value: value, Delete: del})
 		w := &r.writes[len(r.writes)-1]
 		n := w.SizeVT()
 		if size > 0 && size+n > redoChunkBytes {
 			chunks = append(chunks, cur)
-			cur, size = &pb.Redo{Seq: seq}, 0
+			cur, size, first = &pb.Redo{Seq: seq}, 0, len(r.ptrs)
 		}
-		cur.Writes = append(cur.Writes, w)
+		r.ptrs = append(r.ptrs, w)
+		cur.Writes = r.ptrs[first:len(r.ptrs):len(r.ptrs)]
 		size += n
 	}
 	view := func(k []byte, fn func(v []byte) error) error { return store.view(ctx, k, fn) }
@@ -1517,6 +1518,7 @@ func (ch *rootChange) setBase(t *txn, from, to stateBase) {
 // being built.
 type redoScratch struct {
 	writes     []pb.Write
+	ptrs       []*pb.Write
 	keys, look []byte
 }
 
@@ -1527,14 +1529,16 @@ const keptRedo = 1 << 12
 // writes, which must not move while it is made.
 func (r *redoScratch) start(n int) {
 	if cap(r.writes) > keptRedo {
-		r.writes = nil
+		r.writes, r.ptrs = nil, nil
 	}
 	r.writes = slices.Grow(r.writes[:0], n)
+	r.ptrs = slices.Grow(r.ptrs[:0], n)
 	r.keys = r.keys[:0]
 }
 
 // done lets go of what the commit's writes named.
 func (r *redoScratch) done() {
 	clear(r.writes)
-	r.writes = r.writes[:0]
+	clear(r.ptrs)
+	r.writes, r.ptrs = r.writes[:0], r.ptrs[:0]
 }

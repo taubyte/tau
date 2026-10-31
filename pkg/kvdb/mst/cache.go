@@ -205,8 +205,9 @@ const (
 	slotSize = int(unsafe.Sizeof(cacheSlot{})) + cidLen + 4
 )
 
-// footprint is what keeping a node costs: the node, its entries and kids,
-// its buffer of buf bytes, its kids' CIDs of cids bytes, and its slot.
+// footprint is what keeping a node costs: the node, room for entries
+// entries and their kids, its buffer of buf bytes, its kids' CIDs of cids
+// bytes, and its slot.
 func footprint(entries, buf, cids int) int {
 	return slotSize + nodeSize + entries*entrySize + (entries+1)*refSize + buf + cids
 }

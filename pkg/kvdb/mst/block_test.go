@@ -1,7 +1,9 @@
 package mst
 
 import (
+	"bytes"
 	"reflect"
+	"slices"
 	"testing"
 
 	cid "github.com/ipfs/go-cid"
@@ -9,7 +11,7 @@ import (
 )
 
 // TestCidOverIsACid: a cid.Cid is one string of the cid's bytes, which
-// cidOver casts to; go-cid changing that fails here, not in a read.
+// CidOver casts to; go-cid changing that fails here, not in a read.
 func TestCidOverIsACid(t *testing.T) {
 	typ := reflect.TypeFor[cid.Cid]()
 	if typ.NumField() != 1 || typ.Field(0).Type.Kind() != reflect.String {
@@ -20,7 +22,7 @@ func TestCidOverIsACid(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []cid.Cid{cid.NewCidV0(h), cid.NewCidV1(cid.Raw, h), cid.NewCidV1(cid.DagCBOR, h)} {
-		got, ok := cidOver([]byte(want.KeyString()))
+		got, ok := CidOver([]byte(want.KeyString()))
 		if !ok || got != want || got.String() != want.String() || !got.Equals(want) {
 			t.Fatalf("%s came back as %v (%v)", want, got, ok)
 		}
@@ -32,11 +34,52 @@ func TestCidOverIsACid(t *testing.T) {
 		"trailing byte":      append([]byte(cid.NewCidV1(cid.Raw, h).KeyString()), 0),
 		"non-minimal varint": append([]byte{0x81, 0x00}, []byte(cid.NewCidV1(cid.Raw, h).KeyString())[1:]...),
 	} {
-		if _, ok := cidOver(b); ok {
+		if _, ok := CidOver(b); ok {
 			t.Errorf("%s: taken for a cid", name)
 		}
 		if _, err := cid.Cast(b); err == nil {
 			t.Errorf("%s: go-cid takes it", name)
+		}
+	}
+}
+
+// TestABlockCidSharesItsBytes: a new Block's cid lies past the block's
+// bytes, which an append cannot reach.
+func TestABlockCidSharesItsBytes(t *testing.T) {
+	h, err := mh.Sum([]byte("x"), mh.SHA2_256, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := NewBlock([]byte("data"), []cid.Cid{cid.NewCidV1(cid.Raw, h)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum, err := mh.Sum(b.RawData(), mh.SHA2_256, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := cid.NewCidV1(cid.Raw, sum)
+	if b.Cid() != want || !IsBlockCid(b.Cid()) {
+		t.Fatalf("cid %s, want %s", b.Cid(), want)
+	}
+	if grown := append(b.RawData(), make([]byte, 64)...); &grown[0] == &b.RawData()[0] || b.Cid() != want {
+		t.Fatalf("an append to the block reached its cid: %s", b.Cid())
+	}
+}
+
+// TestABlockInItsBufferIsTheBlockOfItsBytes: a block made in a BlockBuffer
+// is the block BlockOf makes of the same bytes, with or without the room.
+func TestABlockInItsBufferIsTheBlockOfItsBytes(t *testing.T) {
+	want, err := NewBlock([]byte("data"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	room := BlockBuffer(len(want.RawData()))
+	copy(room, want.RawData())
+	for _, raw := range [][]byte{room, slices.Clip(bytes.Clone(want.RawData()))} {
+		b, err := BlockInBuffer(raw)
+		if err != nil || b.Cid() != want.Cid() || !bytes.Equal(b.RawData(), want.RawData()) || cap(b.RawData()) != len(b.RawData()) {
+			t.Fatalf("block %v (%v), want %s", b, err, want.Cid())
 		}
 	}
 }

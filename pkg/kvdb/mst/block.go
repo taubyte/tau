@@ -43,14 +43,11 @@ func NewBlock(data []byte, links []cid.Cid) (*Block, error) {
 		msg.Links[i] = cidBytes(l)
 	}
 	msg.Data = data
-	raw := make([]byte, msg.SizeVT())
+	raw := BlockBuffer(msg.SizeVT())
 	if _, err := msg.MarshalToSizedBufferVT(raw); err != nil {
 		return nil, err
 	}
-	c, err := blockCid(raw)
-	if err != nil {
-		return nil, err
-	}
+	raw, c := sealBlock(raw)
 	// Data is the last field, so the last bytes.
 	return &Block{c: c, raw: raw, data: raw[len(raw)-len(data):]}, nil
 }
@@ -58,6 +55,27 @@ func NewBlock(data []byte, links []cid.Cid) (*Block, error) {
 // BlockPrefix is the first bytes of every Block's cid: CIDv1, raw, and a
 // 32-byte sha2-256.
 const BlockPrefix = "\x01\x55\x12\x20"
+
+// BlockBuffer is a buffer for the size bytes of a block, made with room
+// after them for the block's cid, which BlockInBuffer puts there.
+func BlockBuffer(size int) []byte {
+	return make([]byte, size, size+len(BlockPrefix)+sha256.Size)
+}
+
+// BlockInBuffer is BlockOf for raw, a BlockBuffer.
+func BlockInBuffer(raw []byte) (*Block, error) {
+	if cap(raw)-len(raw) < len(BlockPrefix)+sha256.Size {
+		return BlockOf(raw)
+	}
+	raw, c := sealBlock(raw)
+	return ParseBlock(c, raw)
+}
+
+// sealBlock writes raw's cid in the room after raw's bytes, and returns raw
+// clipped, so no append reaches the cid, with the cid over its bytes.
+func sealBlock(raw []byte) ([]byte, cid.Cid) {
+	return raw[:len(raw):len(raw)], CastCid(appendBlockCid(raw[len(raw):], raw))
+}
 
 // BlockOf is the Block raw, the bytes of a pb.Block, spells, under raw's
 // cid.
@@ -71,11 +89,13 @@ func BlockOf(raw []byte) (*Block, error) {
 
 // blockCid is the CIDv1 raw sha2-256 cid of raw.
 func blockCid(raw []byte) (cid.Cid, error) {
-	var h [2 + sha256.Size]byte
-	h[0], h[1] = mh.SHA2_256, sha256.Size
+	return CastCid(appendBlockCid(make([]byte, 0, len(BlockPrefix)+sha256.Size), raw)), nil
+}
+
+// appendBlockCid appends the bytes of raw's cid to b.
+func appendBlockCid(b, raw []byte) []byte {
 	sum := sha256.Sum256(raw)
-	copy(h[2:], sum[:])
-	return cid.NewCidV1(cid.Raw, h[:]), nil
+	return append(append(b, BlockPrefix...), sum[:]...)
 }
 
 // IsBlockCid reports whether c names a Block: CIDv1, raw, a 32-byte
@@ -132,7 +152,7 @@ func DecodeBlock(nd blocks.Block, links []cid.Cid) ([]byte, []cid.Cid, error) {
 	}
 	links = slices.Grow(links, len(msg.Links))
 	for _, l := range msg.Links {
-		c, ok := cidOver(l)
+		c, ok := CidOver(l)
 		if !ok {
 			return nil, links, fmt.Errorf("%w %s: a link that is not a cid", ErrNotABlock, nd.Cid())
 		}
@@ -141,20 +161,21 @@ func DecodeBlock(nd blocks.Block, links []cid.Cid) ([]byte, []cid.Cid, error) {
 	return msg.Data, links, nil
 }
 
-// cidOver is the cid b spells, over b's bytes, or false when b is not
+// CidOver is the cid b spells, over b's bytes, or false when b is not
 // exactly one cid as go-cid reads one: a CIDv0, or a CIDv1 of minimally
 // encoded varints and a multihash of the length it gives. b must never
 // change after. A cid.Cid is a string of a cid's bytes, which the cast
 // relies on and TestCidOverIsACid checks.
-func cidOver(b []byte) (cid.Cid, bool) {
+func CidOver(b []byte) (cid.Cid, bool) {
 	if !isCid(b) {
 		return cid.Undef, false
 	}
-	return castCid(b), true
+	return CastCid(b), true
 }
 
-// castCid is the cid b, a cid's bytes, holds, over b's bytes.
-func castCid(b []byte) cid.Cid {
+// CastCid is the cid b, a cid's bytes, holds, over b's bytes, which must
+// never change after.
+func CastCid(b []byte) cid.Cid {
 	s := unsafe.String(unsafe.SliceData(b), len(b))
 	return *(*cid.Cid)(unsafe.Pointer(&s))
 }

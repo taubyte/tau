@@ -90,6 +90,45 @@ func (d dot) String() string {
 
 var segEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 
+const segAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+
+// segValues is the value of each byte of segAlphabet, and 0xff for any
+// other byte.
+var segValues = func() (t [256]byte) {
+	for i := range t {
+		t[i] = 0xff
+	}
+	for i := range len(segAlphabet) {
+		t[segAlphabet[i]] = byte(i)
+	}
+	return
+}()
+
+var errSegment = errors.New("not a segment")
+
+// appendSegDecode appends the bytes src spells in segEncoding to b, as its
+// AppendDecode does, without the copy of src that makes; it refuses a
+// trailing partial byte AppendDecode drops.
+func appendSegDecode(b, src []byte) ([]byte, error) {
+	var acc uint64
+	bits := 0
+	for _, ch := range src {
+		v := segValues[ch]
+		if v == 0xff {
+			return b, errSegment
+		}
+		acc = acc<<5 | uint64(v)
+		if bits += 5; bits >= 8 {
+			bits -= 8
+			b = append(b, byte(acc>>bits))
+		}
+	}
+	if bits >= 5 {
+		return b, errSegment
+	}
+	return b, nil
+}
+
 // segment encodes the dot as one datastore key segment that sorts by replica
 // and then by counter: the counter is zero-padded to 20 digits so byte order
 // is numeric order.

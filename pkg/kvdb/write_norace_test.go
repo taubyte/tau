@@ -24,8 +24,11 @@ import (
 // 24, and 18 once blocks were written past the block service and bitswap
 // told of them in batches, 12 once the block store answered from memory in
 // place of boxo's cache, 11 once a delta was marshalled with its block, 10
-// once a context entry copied for a change kept its few spans in itself. Over the tests' map store it was 250 before its txns, its delta and
-// its broadcast were reused or borrowed, and 171 after.
+// once a context entry copied for a change kept its few spans in itself, 7
+// once a block's cid shared its allocation, a parent that was a head was
+// named by the head's own cid, and the heads were listed in storage the
+// store keeps. Over the tests' map store it was 250 before its txns, its
+// delta and its broadcast were reused or borrowed, and 171 after.
 func TestAPutAllocations(t *testing.T) {
 	ctx := context.Background()
 	check := checkSnapshot
@@ -46,7 +49,7 @@ func TestAPutAllocations(t *testing.T) {
 		}
 	})
 	t.Logf("a put: %.0f allocations", a)
-	if a > 12 {
-		t.Errorf("a put: %.0f allocations, want at most 12", a)
+	if a > 8 {
+		t.Errorf("a put: %.0f allocations, want at most 8", a)
 	}
 }

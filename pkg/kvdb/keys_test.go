@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math/rand/v2"
 	"testing"
 
 	dshelp "github.com/ipfs/boxo/datastore/dshelp"
@@ -159,6 +160,48 @@ func TestABlockRecordIsOneAllocation(t *testing.T) {
 		}
 		if a := testing.AllocsPerRun(100, func() { encodeBlock(b) }); a != 1 {
 			t.Fatalf("encoding a block record: %.0f allocations", a)
+		}
+	}
+}
+
+func TestABlockKeyNamesItsCidInOneAllocation(t *testing.T) {
+	prefix := ds.NewKey("/ns/b")
+	h, err := mh.Sum([]byte("block"), mh.SHA2_256, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := cid.NewCidV1(cid.Raw, h)
+	k := hashKey(prefix.String(), c).String()
+	got, err := cidOfBlockKey(prefix, k)
+	if err != nil || got != c {
+		t.Fatalf("cid of %s: %s, %v; want %s", k, got, err, c)
+	}
+	if a := testing.AllocsPerRun(100, func() { cidOfBlockKey(prefix, k) }); a != 1 {
+		t.Fatalf("reading a block key: %.0f allocations", a)
+	}
+	for _, bad := range []string{prefix.String(), prefix.String() + "/!!", prefix.String() + "/AE"} {
+		if _, err := cidOfBlockKey(prefix, bad); err == nil {
+			t.Fatalf("cid of %q: no error", bad)
+		}
+	}
+}
+
+func TestASegmentDecodesAsItsEncoding(t *testing.T) {
+	rng := rand.New(rand.NewPCG(1, 2))
+	for n := range 40 {
+		src := make([]byte, n)
+		for i := range src {
+			src[i] = byte(rng.Uint32())
+		}
+		enc := segEncoding.EncodeToString(src)
+		got, err := appendSegDecode([]byte("x"), []byte(enc))
+		if err != nil || !bytes.Equal(got, append([]byte("x"), src...)) {
+			t.Fatalf("%q decoded to %x, %v; want %x", enc, got, err, src)
+		}
+	}
+	for _, bad := range []string{"A", "AAA", "AAAAAA", "a", "AE=", "A1", "AE/"} {
+		if _, err := appendSegDecode(nil, []byte(bad)); err == nil {
+			t.Fatalf("%q decoded", bad)
 		}
 	}
 }

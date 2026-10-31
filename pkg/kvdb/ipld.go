@@ -82,11 +82,11 @@ func makeNode(delta *pb.Delta, heads []Head) (ipld.Node, error) {
 		msg.Links = append(msg.Links, bytesOf(h.Cid.KeyString()))
 	}
 	msg.Data = delta
-	raw := make([]byte, msg.SizeVT())
+	raw := mst.BlockBuffer(msg.SizeVT())
 	if _, err := msg.MarshalToSizedBufferVT(raw); err != nil {
 		return nil, err
 	}
-	return mst.BlockOf(raw)
+	return mst.BlockInBuffer(raw)
 }
 
 // readBlock is the block c names, read through dags' BlockReader when it is

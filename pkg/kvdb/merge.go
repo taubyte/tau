@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strings"
 
-	dshelp "github.com/ipfs/boxo/datastore/dshelp"
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
 	ipld "github.com/ipfs/go-ipld-format"
@@ -83,8 +82,29 @@ func (store *Datastore) cloudKey(replica string, hi uint64) ds.Key {
 	return dotKey(store.pre.cloud, dot{replica: replica, counter: hi})
 }
 
+// cidOfBlockKey is the raw CIDv1 of the block whose index entry is at k,
+// under prefix.
 func cidOfBlockKey(prefix ds.Key, k string) (cid.Cid, error) {
-	return dshelp.DsKeyToCidV1(ds.NewKey(strings.TrimPrefix(k, prefix.String())), cid.Raw)
+	var buf [96]byte
+	c, err := cidOverBlockKey(buf[:0], prefix, bytesOf(k))
+	if err != nil {
+		return cid.Undef, err
+	}
+	return mst.CastCid(bytesOf(strings.Clone(c.KeyString()))), nil
+}
+
+// cidOverBlockKey is cidOfBlockKey over the bytes it appends to b.
+func cidOverBlockKey(b []byte, prefix ds.Key, k []byte) (cid.Cid, error) {
+	seg := bytes.TrimPrefix(bytes.TrimPrefix(k, bytesOf(prefix.String())), []byte{'/'})
+	b, err := appendSegDecode(binary.AppendUvarint(binary.AppendUvarint(b, 1), cid.Raw), seg)
+	if err != nil {
+		return cid.Undef, fmt.Errorf("block key %q: %w", k, err)
+	}
+	c, ok := mst.CidOver(b)
+	if !ok {
+		return cid.Undef, fmt.Errorf("block key %q: not a multihash", k)
+	}
+	return c, nil
 }
 
 // encodeBlock is the kind, the stamps, the state's cid with its length, and
@@ -400,17 +420,25 @@ func (m *merging) link(ctx context.Context, parents []*pb.Parent) ([]link, error
 	now := m.store.dropClock()
 	var walk []link
 	for _, p := range parents {
-		c, err := cid.Cast(p.GetCid())
-		if err != nil {
-			return nil, fmt.Errorf("bad parent cid: %w", err)
+		// c is over the message's bytes until it is the head's own, or a
+		// copy for the walk.
+		c, ok := mst.CidOver(p.GetCid())
+		if !ok {
+			return nil, fmt.Errorf("bad parent cid %x", p.GetCid())
 		}
-		l := link{cid: c, dot: dotFromPB(p.GetDot()), at: p.GetAt(), ttl: p.GetTtl()}
-		if _, isHead := m.store.heads.Get(c); isHead {
+		h, isHead := m.store.heads.Get(c)
+		if isHead {
+			c = h.Cid
 			m.heads.removeHead(c)
 		}
+		l := link{dot: dotFromPB(p.GetDot()), at: p.GetAt(), ttl: p.GetTtl()}
 		if m.cc.covers(l.dot) || m.store.expired(l.at+l.ttl, now) {
 			continue
 		}
+		if !isHead {
+			c = mst.CastCid(bytesOf(strings.Clone(c.KeyString())))
+		}
+		l.cid = c
 		m.t.put(m.t.key(appendDotKey(m.t.buf(), m.store.pre.missing, l.dot)), m.t.keep(appendLink(m.t.buf(), l)))
 		walk = append(walk, l)
 	}
@@ -1404,7 +1432,10 @@ var errTaken = errors.New("being dropped by a purge")
 // walk counts it, no merge indexes it again and no compaction folds it. The
 // caller holds store.mu.
 func (store *Datastore) take(ctx context.Context, pick func(block) bool) ([]cid.Cid, error) {
-	var taken []cid.Cid
+	// The cids taken are kept in one buffer, each over its bytes there once
+	// the scan is done; until then, one is over buf.
+	var ids []byte
+	var ends []int
 	prefix := store.blocksPrefix()
 	err := scanBytes(ctx, store.store, prefix, func(k, v []byte) error {
 		b, err := decodeBlock(v)
@@ -1414,18 +1445,26 @@ func (store *Datastore) take(ctx context.Context, pick func(block) bool) ([]cid.
 		if !pick(b) {
 			return nil
 		}
-		c, err := cidOfBlockKey(prefix, stringOf(k))
+		var buf [96]byte
+		c, err := cidOverBlockKey(buf[:0], prefix, k)
 		if err != nil {
 			return err
 		}
 		if _, isHead := store.heads.Get(c); isHead || store.purging.Has(c) {
 			return nil
 		}
-		taken = append(taken, c)
+		ids = append(ids, c.KeyString()...)
+		ends = append(ends, len(ids))
 		return nil
 	})
-	if err != nil || len(taken) == 0 || store.closed {
+	if err != nil || len(ends) == 0 || store.closed {
 		return nil, err
+	}
+	taken := make([]cid.Cid, len(ends))
+	start := 0
+	for i, end := range ends {
+		taken[i] = mst.CastCid(ids[start:end:end])
+		start = end
 	}
 	for _, c := range taken {
 		store.purging.Visit(c)

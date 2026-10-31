@@ -49,3 +49,21 @@ func TestDecodedBytesCannotReachTheBlock(t *testing.T) {
 		t.Fatal("unexpected node shape")
 	}
 }
+
+// TestANodeIsMadeInOneAllocation: a node holds its entries and kids in the
+// allocation it is made in, up to the largest class.
+func TestANodeIsMadeInOneAllocation(t *testing.T) {
+	for _, entries := range []int{1, 8, 9, 16, 17, 32, 33, 64, 65} {
+		n := newNode(3, entries)
+		if n.level != 3 || len(n.entries) != entries || len(n.kids) != entries+1 || cap(n.entries) != nodeRoom(entries) {
+			t.Fatalf("%d entries: level %d, %d entries, %d kids, room for %d", entries, n.level, len(n.entries), len(n.kids), cap(n.entries))
+		}
+		want := 1.0
+		if entries > 64 {
+			want = 3
+		}
+		if a := testing.AllocsPerRun(100, func() { newNode(3, entries) }); a != want {
+			t.Fatalf("%d entries: %v allocations, want %v", entries, a, want)
+		}
+	}
+}

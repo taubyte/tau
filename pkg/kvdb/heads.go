@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -103,10 +104,15 @@ func (hh *heads) Len() int {
 
 // List returns the heads and the greatest height among them.
 func (hh *heads) List() ([]Head, uint64) {
+	return hh.appendList(nil)
+}
+
+// appendList is List appending the heads to out.
+func (hh *heads) appendList(out []Head) ([]Head, uint64) {
 	hh.mu.RLock()
 	defer hh.mu.RUnlock()
 	var maxHeight uint64
-	out := make([]Head, 0, len(hh.cache))
+	out = slices.Grow(out, len(hh.cache))
 	for _, h := range hh.cache {
 		out = append(out, h)
 		if h.Height > maxHeight {

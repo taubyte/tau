@@ -88,7 +88,7 @@ func (c *Cache) recount() int {
 			buf += len(k.sum)
 			cids += len(k.c.KeyString())
 		}
-		total += footprint(len(n.entries), buf, cids)
+		total += footprint(cap(n.entries), buf, cids)
 	}
 	return total
 }

@@ -387,8 +387,9 @@ type Datastore struct {
 	// ccWaited is set once someone holds ccChanged to wait on.
 	ccWaited bool
 	// spareMerge is a finished delta merge, kept for the next; build is
-	// buildState's storage.
+	// buildState's storage, and parents the heads a write's block links.
 	spareMerge *merging
+	parents    []Head
 	build      stateBuild
 	redo       redoScratch
 	// compactDue asks the next maintenance for a snapshot.
@@ -1553,6 +1554,10 @@ func (store *Datastore) write(ctx context.Context, ops []op) error {
 		return nil
 	}
 	head, replaced, err := store.publishLocked(ctx, delta)
+	if store.opts.BroadcastBatchDelay > 0 {
+		// A batched broadcast keeps them.
+		replaced = slices.Clone(replaced)
+	}
 	store.mu.Unlock()
 	if err != nil {
 		return err
@@ -1607,11 +1612,14 @@ func (store *Datastore) nextDot() (dot, uint64) {
 }
 
 // publishLocked writes delta as a new block over the current heads and merges
-// it. The counter advances only once the merge commits, so a failed write
-// leaves no gap in this incarnation's chain. The caller holds store.mu.
+// it, and returns the block's head and the heads it links, which last until
+// store.mu is released. The counter advances only once the merge commits, so
+// a failed write leaves no gap in this incarnation's chain. The caller holds
+// store.mu.
 func (store *Datastore) publishLocked(ctx context.Context, delta *pb.Delta) (Head, []Head, error) {
 	d, prev := store.nextDot()
-	hs, height := store.heads.List()
+	hs, height := store.heads.appendList(store.parents[:0])
+	store.parents = hs
 	delta.Dot = d.pooledPB()
 	delta.Prev = prev
 	delta.Priority = height + 1

@@ -87,6 +87,69 @@ type node struct {
 	kids    []ref
 }
 
+// A decoded node is made with its entries and kids in one allocation, with
+// room for as many entries as the smallest class that holds them; a node
+// past the largest class makes them apart.
+type (
+	node8 struct {
+		n node
+		e [8]entry
+		k [9]ref
+	}
+	node16 struct {
+		n node
+		e [16]entry
+		k [17]ref
+	}
+	node32 struct {
+		n node
+		e [32]entry
+		k [33]ref
+	}
+	node64 struct {
+		n node
+		e [64]entry
+		k [65]ref
+	}
+)
+
+// nodeRoom is the entries a node of entries is made with room for.
+func nodeRoom(entries int) int {
+	switch {
+	case entries <= 8:
+		return 8
+	case entries <= 16:
+		return 16
+	case entries <= 32:
+		return 32
+	case entries <= 64:
+		return 64
+	}
+	return entries
+}
+
+func newNode(level uint32, entries int) *node {
+	switch nodeRoom(entries) {
+	case 8:
+		s := new(node8)
+		s.n = node{level: level, entries: s.e[:entries], kids: s.k[:entries+1]}
+		return &s.n
+	case 16:
+		s := new(node16)
+		s.n = node{level: level, entries: s.e[:entries], kids: s.k[:entries+1]}
+		return &s.n
+	case 32:
+		s := new(node32)
+		s.n = node{level: level, entries: s.e[:entries], kids: s.k[:entries+1]}
+		return &s.n
+	case 64:
+		s := new(node64)
+		s.n = node{level: level, entries: s.e[:entries], kids: s.k[:entries+1]}
+		return &s.n
+	}
+	return &node{level: level, entries: make([]entry, entries), kids: make([]ref, entries+1)}
+}
+
 // search returns the index of key among the entries, or the slot it would
 // be in.
 func (n *node) search(key []byte) (int, bool) {
@@ -239,17 +302,13 @@ func decodeNode(nd blocks.Block, below uint32, own func(level uint32, size int) 
 		for _, l := range links {
 			cids += len(l.KeyString())
 		}
-		if cost = footprint(len(msg.Entries), size+owned, cids); own(msg.Level, cost) {
+		if cost = footprint(nodeRoom(len(msg.Entries)), size+owned, cids); own(msg.Level, cost) {
 			size += owned + cids
 		} else {
 			cost = 0
 		}
 	}
-	n := &node{
-		level:   msg.Level,
-		entries: make([]entry, len(msg.Entries)),
-		kids:    make([]ref, len(msg.Entries)+1),
-	}
+	n := newNode(msg.Level, len(msg.Entries))
 	buf := make([]byte, 0, size)
 	// held is b, or b copied into buf when the node owns its bytes.
 	held := func(b []byte) []byte {
@@ -275,7 +334,7 @@ func decodeNode(nd blocks.Block, below uint32, own func(level uint32, size int) 
 		// takes it over its own.
 		l := links[li]
 		if cost != 0 {
-			l = castCid(held(cidBytes(l)))
+			l = CastCid(held(cidBytes(l)))
 		}
 		n.kids[i] = ref{c: l, sum: held(sum)}
 		li++
