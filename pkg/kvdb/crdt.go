@@ -386,8 +386,10 @@ type Datastore struct {
 	msgAcks  []pb.Entry
 	// ccWaited is set once someone holds ccChanged to wait on.
 	ccWaited bool
-	// spareMerge is a finished delta merge, kept for the next.
+	// spareMerge is a finished delta merge, kept for the next; build is
+	// buildState's storage.
 	spareMerge *merging
+	build      stateBuild
 	// compactDue asks the next maintenance for a snapshot.
 	compactDue bool
 	// lows are lower bounds, kept so the frequent passes skip scans that
@@ -1385,7 +1387,7 @@ func (store *Datastore) dropUnindexed(ctx context.Context, c cid.Cid) error {
 	if err != nil || held {
 		return err
 	}
-	return store.dagService.Remove(ctx, c)
+	return store.removeBlocks(ctx, []cid.Cid{c})
 }
 
 // dropFailed removes the fetched block of a merge that failed: it is not
@@ -1834,21 +1836,57 @@ func (store *Datastore) writeBlocks(ctx context.Context, b block, nodes ...ipld.
 	}
 	// Adding a block writes it locally and tells bitswap it is held: no
 	// peer is waited on, so no timeout bounds it.
-	w, direct := store.dagService.(BlockWriter)
 	for _, nd := range nodes {
-		var err error
-		if direct {
-			err = w.WriteBlock(ctx, nd)
-		} else {
-			err = store.dagService.Add(ctx, nd)
+		if err = store.addBlock(ctx, nd); err != nil {
+			break
 		}
-		if err != nil {
-			cids := make([]cid.Cid, len(nodes))
-			for i, nd := range nodes {
-				cids[i] = nd.Cid()
-			}
-			store.discardBlocks(ctx, cids...)
-			return fmt.Errorf("error writing new block %s: %w", nd.Cid(), err)
+	}
+	if err != nil {
+		cids := make([]cid.Cid, len(nodes))
+		for i, nd := range nodes {
+			cids[i] = nd.Cid()
+		}
+		store.discardBlocks(ctx, cids...)
+		return fmt.Errorf("error writing new blocks: %w", err)
+	}
+	return nil
+}
+
+// A BlockRemover removes blocks from where its DAG service keeps them,
+// without the block service's context and span per block. A DAG service
+// that is one is removed from through it; peer.DAGService is.
+type BlockRemover interface {
+	DeleteBlocks(ctx context.Context, cids []cid.Cid) error
+}
+
+// removeBlocks removes cids' blocks from where the DAG service keeps blocks,
+// through its BlockRemover when it is one.
+func (store *Datastore) removeBlocks(ctx context.Context, cids []cid.Cid) error {
+	if r, ok := store.dagService.(BlockRemover); ok {
+		return r.DeleteBlocks(ctx, cids)
+	}
+	return store.dagService.RemoveMany(ctx, cids)
+}
+
+// addBlock writes nd where the DAG service keeps blocks, through its
+// BlockWriter when it is one, else its Add.
+func (store *Datastore) addBlock(ctx context.Context, nd ipld.Node) error {
+	if w, ok := store.dagService.(BlockWriter); ok {
+		return w.WriteBlock(ctx, nd)
+	}
+	return store.dagService.Add(ctx, nd)
+}
+
+// addBlocks writes nodes where the DAG service keeps blocks, through its
+// BlockWriter when it is one, else its AddMany.
+func (store *Datastore) addBlocks(ctx context.Context, nodes []ipld.Node) error {
+	w, direct := store.dagService.(BlockWriter)
+	if !direct {
+		return store.dagService.AddMany(ctx, nodes)
+	}
+	for _, nd := range nodes {
+		if err := w.WriteBlock(ctx, nd); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -1857,7 +1895,7 @@ func (store *Datastore) writeBlocks(ctx context.Context, b block, nodes ...ipld.
 // discardBlocks removes blocks this replica wrote and did not merge, with
 // their index entries. A failure leaves them to the next open.
 func (store *Datastore) discardBlocks(ctx context.Context, cids ...cid.Cid) {
-	if err := store.dagService.RemoveMany(ctx, cids); err != nil {
+	if err := store.removeBlocks(ctx, cids); err != nil {
 		store.logger.Warnf("error removing unmerged blocks: %s", err)
 		return
 	}
@@ -1899,7 +1937,7 @@ func (store *Datastore) dropOrphans(ctx context.Context) error {
 		return err
 	}
 	store.logger.Warnf("dropping %d blocks written and never merged", len(orphans))
-	if err := store.dagService.RemoveMany(ctx, orphans); err != nil {
+	if err := store.removeBlocks(ctx, orphans); err != nil {
 		return err
 	}
 	if err := store.syncBlocks(ctx); err != nil {

@@ -194,6 +194,11 @@ func (d *DAGService) WriteBlock(ctx context.Context, b blocks.Block) error {
 	return d.writer.WriteBlock(ctx, b)
 }
 
+// DeleteBlocks removes cids' blocks from the store (BlockWriter).
+func (d *DAGService) DeleteBlocks(ctx context.Context, cids []cid.Cid) error {
+	return d.writer.DeleteBlocks(ctx, cids)
+}
+
 // HasBlock reports whether a block is available locally.
 func (d *DAGService) HasBlock(ctx context.Context, c cid.Cid) (bool, error) {
 	return d.bstore.Has(ctx, c)

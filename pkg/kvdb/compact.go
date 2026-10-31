@@ -1,14 +1,17 @@
 package kvdb
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
+	"github.com/taubyte/tau/pkg/pebbleds"
 )
 
 // Compact folds this replica's whole state into a snapshot and drops every
@@ -161,7 +164,7 @@ func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *c
 	if _, err := store.intend(ctx, sess, written, nil); err != nil {
 		return Head{}, nil, err
 	}
-	if err := store.dagService.AddMany(ctx, fresh); err != nil {
+	if err := store.addBlocks(ctx, fresh); err != nil {
 		return Head{}, nil, fmt.Errorf("error writing the snapshot's state: %w", err)
 	}
 
@@ -216,22 +219,31 @@ func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *c
 // The caller holds store.mu.
 func (store *Datastore) buildState(ctx context.Context) (*overlay, cid.Cid, error) {
 	ov := newOverlay(store.dagService)
+	// What the editors keep until they write their trees is in the store's
+	// arena; keys looked up, in scratch.
+	b := &store.build
+	b.reset()
 	elems := store.tree(ov, store.base.elems).Edit()
-	err := scanStore(ctx, store.store, store.journal.elemsPrefix(), func(k string, _ []byte) error {
-		key, d, err := store.journal.parseElemMark(k)
+	err := scanBytes(ctx, store.store, store.journal.elemsPrefix(), func(k, _ []byte) error {
+		rest := k[len(store.journal.jElems):]
+		key, d, err := b.elemMark(rest)
 		if err != nil {
 			return err
 		}
-		v, err := store.store.Get(ctx, store.set.elemKey(key, d))
-		switch {
-		case errors.Is(err, ds.ErrNotFound):
-			err = elems.Delete(ctx, elemTreeKey(key, d))
-		case err == nil:
-			var el element
-			if el, err = decodeMarker(v); err == nil {
-				el.key, el.dot = key, d
-				err = elems.Put(ctx, elemTreeKey(key, d), elemValue(el))
+		b.look = append(append(b.look[:0], store.journal.elems...), rest...)
+		found := false
+		err = store.view(ctx, b.look, func(v []byte) error {
+			found = true
+			el, err := decodeMarker(v)
+			if err != nil {
+				return err
 			}
+			el.key, el.dot = key, d
+			return elems.Put(ctx, b.keep(appendElemTreeKey(b.buf(), key, d)), b.keep(appendElemValue(b.buf(), el)))
+		})
+		if errors.Is(err, ds.ErrNotFound) && !found {
+			b.look = appendElemTreeKey(b.look[:0], key, d)
+			return elems.Delete(ctx, b.look)
 		}
 		return err
 	})
@@ -239,25 +251,33 @@ func (store *Datastore) buildState(ctx context.Context) (*overlay, cid.Cid, erro
 		return nil, cid.Undef, err
 	}
 	pending := store.tree(ov, store.base.pending).Edit()
-	err = scanStore(ctx, store.store, store.journal.pendingPrefix(), func(k string, _ []byte) error {
-		b, key, d, err := store.journal.parsePendingMark(k)
+	err = scanBytes(ctx, store.store, store.journal.pendingPrefix(), func(k, _ []byte) error {
+		rest := k[len(store.journal.jPending):]
+		bk, key, d, err := b.pendingMark(rest)
 		if err != nil {
 			return err
 		}
-		v, err := store.store.Get(ctx, store.set.pendingKey(key, d))
-		if err != nil && !errors.Is(err, ds.ErrNotFound) {
-			return err
-		}
-		if err == nil {
+		b.look = append(append(b.look[:0], store.journal.pending...), rest[counterDigits+1:]...)
+		put := false
+		err = store.view(ctx, b.look, func(v []byte) error {
 			at, ttl, err := decodeStamps(v)
 			if err != nil {
 				return err
 			}
-			if r := (removal{key: key, dot: d, at: at, ttl: ttl}); bucket(r.expires()) == b {
-				return pending.Put(ctx, pendingTreeKey(r), pendingValue(r))
+			if r := (removal{key: key, dot: d, at: at, ttl: ttl}); bucket(r.expires()) == bk {
+				put = true
+				return pending.Put(ctx, b.keep(appendPendingTreeKey(b.buf(), bk, key, d)), b.keep(appendPendingValue(b.buf(), r)))
 			}
+			return nil
+		})
+		if err != nil && !errors.Is(err, ds.ErrNotFound) {
+			return err
 		}
-		return pending.Delete(ctx, pendingTreeKeyIn(b, key, d))
+		if put {
+			return nil
+		}
+		b.look = appendPendingTreeKey(b.look[:0], bk, key, d)
+		return pending.Delete(ctx, b.look)
 	})
 	if err != nil {
 		return nil, cid.Undef, err
@@ -317,4 +337,94 @@ func (store *Datastore) nothingToFold(ctx context.Context, hs []Head) (bool, err
 	}
 	missing, err := countPrefix(ctx, store.store, store.missingPrefix())
 	return missing == 0, err
+}
+
+// A stateBuild is the storage buildState uses again from one compaction to
+// the next: the arena of what its editors keep until they write their
+// trees, and scratch for a key it looks up and a key it decodes.
+type stateBuild struct {
+	arena, look, key []byte
+}
+
+// keptBuild bounds the arena a store keeps between compactions.
+const keptBuild = 1 << 20
+
+func (b *stateBuild) reset() {
+	if cap(b.arena) > keptBuild {
+		b.arena = nil
+	}
+	b.arena = b.arena[:0]
+}
+
+// buf is what the next kept bytes are appended to; keep claims them.
+func (b *stateBuild) buf() []byte { return b.arena }
+
+func (b *stateBuild) keep(x []byte) []byte {
+	start := len(b.arena)
+	b.arena = x
+	return x[start:len(x):len(x)]
+}
+
+// elemMark reads the element an element mark names from rest, the mark
+// after its prefix: <key segment>/<dot segment>. The key is over b's
+// scratch until the next mark.
+func (b *stateBuild) elemMark(rest []byte) (string, dot, error) {
+	i := bytes.IndexByte(rest, '/')
+	if i < 1 {
+		return "", dot{}, fmt.Errorf("bad journal key %q", rest)
+	}
+	key, err := b.keySegment(rest[:i])
+	if err != nil {
+		return "", dot{}, err
+	}
+	d, err := parseDotSegment(stringOf(rest[i+1:]))
+	return key, d, err
+}
+
+// pendingMark reads the bucket and removal a pending mark names from rest:
+// <bucket>/<dot segment>/<key segment>.
+func (b *stateBuild) pendingMark(rest []byte) (uint64, string, dot, error) {
+	if len(rest) < counterDigits+2 || rest[counterDigits] != '/' {
+		return 0, "", dot{}, fmt.Errorf("bad journal key %q", rest)
+	}
+	bk, err := strconv.ParseUint(stringOf(rest[:counterDigits]), 10, 64)
+	if err != nil {
+		return 0, "", dot{}, err
+	}
+	tail := rest[counterDigits+1:]
+	i := bytes.IndexByte(tail, '/')
+	if i < 1 {
+		return 0, "", dot{}, fmt.Errorf("bad journal key %q", rest)
+	}
+	d, err := parseDotSegment(stringOf(tail[:i]))
+	if err != nil {
+		return 0, "", dot{}, err
+	}
+	key, err := b.keySegment(tail[i+1:])
+	return bk, key, d, err
+}
+
+// keySegment decodes a key segment into b's scratch.
+func (b *stateBuild) keySegment(seg []byte) (string, error) {
+	if len(seg) == 0 || seg[0] != 'k' {
+		return "", fmt.Errorf("bad key segment %q", seg)
+	}
+	var err error
+	if b.key, err = segEncoding.AppendDecode(b.key[:0], seg[1:]); err != nil {
+		return "", fmt.Errorf("bad key segment %q: %w", seg, err)
+	}
+	return stringOf(b.key), nil
+}
+
+// view calls fn with the value the store holds at k, lent for the call, or
+// returns ds.ErrNotFound.
+func (store *Datastore) view(ctx context.Context, k []byte, fn func(v []byte) error) error {
+	if s, ok := below(store.store).(*pebbleds.Store); ok {
+		return s.View(k, fn)
+	}
+	v, err := store.store.Get(ctx, ds.RawKey(string(k)))
+	if err != nil {
+		return err
+	}
+	return fn(v)
 }

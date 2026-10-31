@@ -12,6 +12,8 @@ import (
 
 	"github.com/ipfs/boxo/bitswap"
 	bsnet "github.com/ipfs/boxo/bitswap/network/bsnet"
+	blockstore "github.com/ipfs/boxo/blockstore"
+	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
 	ipld "github.com/ipfs/go-ipld-format"
@@ -52,8 +54,11 @@ type snapReplica interface {
 type snapEnv struct {
 	name string
 	dir  string
-	dag  ipld.DAGService
-	opts *Options
+	// store, when set, is the store the replica runs on, else one opened
+	// at dir.
+	store *pebbleds.Store
+	dag   ipld.DAGService
+	opts  *Options
 }
 
 const (
@@ -79,9 +84,12 @@ type snapStore struct {
 
 func openSnap(tb testing.TB, env snapEnv) snapReplica {
 	tb.Helper()
-	pst, err := pebbleds.Open(env.dir)
-	if err != nil {
-		tb.Fatal(err)
+	pst := env.store
+	if pst == nil {
+		var err error
+		if pst, err = pebbleds.Open(env.dir); err != nil {
+			tb.Fatal(err)
+		}
 	}
 	r, err := NewDatastore(pst, ds.NewKey("snapbench"), env.dag, &nullBroadcaster{}, env.opts)
 	if err != nil {
@@ -170,6 +178,23 @@ func (m *dagMeter) countGet(nd ipld.Node, err error) {
 	m.gotBytes.Add(int64(len(nd.RawData())))
 }
 
+// WriteBlock writes b, a node, through the DAG service's BlockWriter or its
+// Add, counted as an add.
+func (m *dagMeter) WriteBlock(ctx context.Context, b blocks.Block) error {
+	var err error
+	if w, ok := m.DAGService.(BlockWriter); ok {
+		err = w.WriteBlock(ctx, b)
+	} else {
+		err = m.DAGService.Add(ctx, b.(ipld.Node))
+	}
+	if err != nil {
+		return err
+	}
+	m.added.Add(1)
+	m.addedBytes.Add(int64(len(b.RawData())))
+	return nil
+}
+
 func (m *dagMeter) Add(ctx context.Context, nd ipld.Node) error {
 	if err := m.DAGService.Add(ctx, nd); err != nil {
 		return err
@@ -226,6 +251,22 @@ func (m *dagMeter) Remove(ctx context.Context, c cid.Cid) error {
 	return nil
 }
 
+// DeleteBlocks removes cids' blocks through the DAG service's BlockRemover
+// or its RemoveMany, counted as removed.
+func (m *dagMeter) DeleteBlocks(ctx context.Context, cids []cid.Cid) error {
+	var err error
+	if r, ok := m.DAGService.(BlockRemover); ok {
+		err = r.DeleteBlocks(ctx, cids)
+	} else {
+		err = m.DAGService.RemoveMany(ctx, cids)
+	}
+	if err != nil {
+		return err
+	}
+	m.removed.Add(int64(len(cids)))
+	return nil
+}
+
 func (m *dagMeter) RemoveMany(ctx context.Context, cids []cid.Cid) error {
 	if err := m.DAGService.RemoveMany(ctx, cids); err != nil {
 		return err
@@ -264,9 +305,16 @@ type snapNode struct {
 
 func newSnapNode(b *testing.B, name string, opts *Options) *snapNode {
 	b.Helper()
-	local := newFetchThrough()
-	n := &snapNode{local: local, own: &dagMeter{DAGService: local}, serve: &dagMeter{DAGService: local.DAGService}}
-	n.snapReplica = openSnap(b, snapEnv{name: name, dir: b.TempDir(), dag: n.own, opts: replicaOptions(opts, name)})
+	// A node's DAG: its blocks in its own store, under the identity layer,
+	// written past the block service.
+	pst, err := pebbleds.Open(b.TempDir())
+	if err != nil {
+		b.Fatal(err)
+	}
+	node := newFetchThroughOn(b, blockstore.NewIdStore(pst.Blockstore()))
+	local := node.fetchThroughDAGSvc
+	n := &snapNode{local: local, own: &dagMeter{DAGService: node}, serve: &dagMeter{DAGService: local.DAGService}}
+	n.snapReplica = openSnap(b, snapEnv{name: name, store: pst, dag: n.own, opts: replicaOptions(opts, name)})
 	b.Cleanup(func() {
 		if err := n.Close(); err != nil {
 			b.Error(err)

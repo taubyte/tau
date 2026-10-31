@@ -971,7 +971,7 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 	}
 	store.base = stateBase{}
 	if len(blocks) > 0 {
-		if err := store.dagService.RemoveMany(ctx, blocks); err != nil {
+		if err := store.removeBlocks(ctx, blocks); err != nil {
 			store.logger.Warnf("rebase: removing the old blocks: %s", err)
 		}
 	}

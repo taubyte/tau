@@ -7,6 +7,7 @@ import (
 	"github.com/ipfs/boxo/blockstore"
 	exchange "github.com/ipfs/boxo/exchange"
 	blocks "github.com/ipfs/go-block-format"
+	"github.com/ipfs/go-cid"
 )
 
 // notifyBatch bounds the blocks one call tells the exchange of, and the
@@ -56,6 +57,18 @@ func (w *BlockWriter) WriteBlock(ctx context.Context, b blocks.Block) error {
 	default:
 		if err := w.exch.NotifyNewBlocks(ctx, b); err != nil {
 			logger.Errorf("telling the exchange of %s: %v", b.Cid(), err)
+		}
+	}
+	return nil
+}
+
+// DeleteBlocks removes cids' blocks from the store, as the block service's
+// DeleteBlock does, without its context and span per block. Removing an
+// absent block is not an error.
+func (w *BlockWriter) DeleteBlocks(ctx context.Context, cids []cid.Cid) error {
+	for _, c := range cids {
+		if err := w.bs.DeleteBlock(ctx, c); err != nil {
+			return err
 		}
 	}
 	return nil

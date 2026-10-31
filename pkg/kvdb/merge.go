@@ -1401,7 +1401,7 @@ func (store *Datastore) dropTaken(ctx context.Context, taken []cid.Cid) (int, er
 		return 0, nil
 	}
 	defer store.dropping.Done()
-	err := store.dagService.RemoveMany(ctx, taken)
+	err := store.removeBlocks(ctx, taken)
 	if err != nil {
 		err = fmt.Errorf("error removing purged blocks: %w", err)
 	} else {

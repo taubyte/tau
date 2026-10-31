@@ -148,3 +148,33 @@ func TestBlockWriterStoreFails(t *testing.T) {
 		t.Fatal("the exchange heard of a block not stored")
 	}
 }
+
+func TestBlockWriterDeletes(t *testing.T) {
+	ctx := context.Background()
+	bs := newBlockstore()
+	w := NewBlockWriter(bs, &heard{})
+	defer w.Close()
+	a, b := blocks.NewBlock([]byte("a")), blocks.NewBlock([]byte("b"))
+	for _, blk := range []blocks.Block{a, b} {
+		if err := w.WriteBlock(ctx, blk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.DeleteBlocks(ctx, []cid.Cid{a.Cid(), b.Cid(), blocks.NewBlock([]byte("never")).Cid()}); err != nil {
+		t.Fatal(err)
+	}
+	for _, blk := range []blocks.Block{a, b} {
+		if has, err := bs.Has(ctx, blk.Cid()); err != nil || has {
+			t.Fatalf("a deleted block is held: %v %v", has, err)
+		}
+	}
+	refusing := NewBlockWriter(failingDeletes{bs}, &heard{})
+	defer refusing.Close()
+	if err := refusing.DeleteBlocks(ctx, []cid.Cid{a.Cid()}); err == nil {
+		t.Fatal("a delete the store refused succeeded")
+	}
+}
+
+type failingDeletes struct{ blockstore.Blockstore }
+
+func (failingDeletes) DeleteBlock(context.Context, cid.Cid) error { return errors.New("refused") }

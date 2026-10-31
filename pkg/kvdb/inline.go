@@ -217,7 +217,7 @@ func (store *Datastore) stageCarried(ctx context.Context, f *stateFetch, cs *car
 		held.keep(nd)
 	}
 	if len(cs.written) > 0 {
-		if err := store.dagService.AddMany(ctx, cs.written); err != nil {
+		if err := store.addBlocks(ctx, cs.written); err != nil {
 			return err
 		}
 	}

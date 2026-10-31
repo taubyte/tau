@@ -131,7 +131,11 @@ func readEscaped(b []byte) (string, []byte, error) {
 }
 
 func elemTreeKey(key string, d dot) []byte {
-	b := appendEscaped(make([]byte, 0, len(key)+len(d.replica)+12), key)
+	return appendElemTreeKey(make([]byte, 0, len(key)+len(d.replica)+12), key, d)
+}
+
+func appendElemTreeKey(b []byte, key string, d dot) []byte {
+	b = appendEscaped(b, key)
 	b = appendEscaped(b, d.replica)
 	return binary.BigEndian.AppendUint64(b, d.counter)
 }
@@ -168,11 +172,12 @@ func contextTreeKey(replica string, k *known) []byte {
 	return append(binary.BigEndian.AppendUint64(make([]byte, 0, 8+len(replica)), bucket(k.expires)), replica...)
 }
 
-func elemValue(e element) []byte {
-	b := make([]byte, 24, 24+len(e.value))
-	binary.BigEndian.PutUint64(b, e.at)
-	binary.BigEndian.PutUint64(b[8:], e.ttl)
-	binary.BigEndian.PutUint64(b[16:], e.priority)
+func elemValue(e element) []byte { return appendElemValue(make([]byte, 0, 24+len(e.value)), e) }
+
+func appendElemValue(b []byte, e element) []byte {
+	b = binary.BigEndian.AppendUint64(b, e.at)
+	b = binary.BigEndian.AppendUint64(b, e.ttl)
+	b = binary.BigEndian.AppendUint64(b, e.priority)
 	return append(b, e.value...)
 }
 
@@ -190,8 +195,10 @@ func parseElemValue(key string, d dot, v []byte) (element, error) {
 	return e, nil
 }
 
-func pendingValue(r removal) []byte {
-	return binary.BigEndian.AppendUint64(binary.BigEndian.AppendUint64(make([]byte, 0, 16), r.at), r.ttl)
+func pendingValue(r removal) []byte { return appendPendingValue(make([]byte, 0, 16), r) }
+
+func appendPendingValue(b []byte, r removal) []byte {
+	return binary.BigEndian.AppendUint64(binary.BigEndian.AppendUint64(b, r.at), r.ttl)
 }
 
 func parsePending(b []byte, v []byte) (removal, error) {
@@ -481,8 +488,9 @@ func (o *overlay) fresh(roots []cid.Cid, owned func(cid.Cid) (bool, error)) ([]i
 }
 
 func pendingTreeKeyIn(b uint64, key string, d dot) []byte {
-	k := binary.BigEndian.AppendUint64(make([]byte, 0, 8+len(key)+len(d.replica)+12), b)
-	k = appendEscaped(k, key)
-	k = appendEscaped(k, d.replica)
-	return binary.BigEndian.AppendUint64(k, d.counter)
+	return appendPendingTreeKey(make([]byte, 0, 8+len(key)+len(d.replica)+12), b, key, d)
+}
+
+func appendPendingTreeKey(k []byte, b uint64, key string, d dot) []byte {
+	return appendElemTreeKey(binary.BigEndian.AppendUint64(k, b), key, d)
 }

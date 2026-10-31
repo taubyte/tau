@@ -15,7 +15,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ipfs/boxo/blockservice"
 	blockstore "github.com/ipfs/boxo/blockstore"
+	"github.com/ipfs/boxo/exchange/offline"
 	"github.com/ipfs/boxo/ipld/merkledag"
 	mdutils "github.com/ipfs/boxo/ipld/merkledag/test"
 	cid "github.com/ipfs/go-cid"
@@ -23,6 +25,7 @@ import (
 	query "github.com/ipfs/go-datastore/query"
 	dstest "github.com/ipfs/go-datastore/test"
 	ipld "github.com/ipfs/go-ipld-format"
+	"github.com/taubyte/tau/p2p/peer"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace/noop"
 )
@@ -58,6 +61,22 @@ type fetchThroughDAGSvc struct {
 func newFetchThrough() *fetchThroughDAGSvc {
 	bserv := mdutils.Bserv()
 	return &fetchThroughDAGSvc{DAGService: merkledag.NewDAGService(bserv), bs: bserv.Blockstore()}
+}
+
+// A nodeFetchThrough is a fetch-through DAG that writes and removes blocks
+// as a node's DAG service does. A wrapper of a fetch-through DAG that
+// counts or fails its writes must not be one, or kvdb writes past it.
+type nodeFetchThrough struct {
+	*fetchThroughDAGSvc
+	*peer.BlockWriter
+}
+
+// newFetchThroughOn is a node's fetch-through DAG over bs, offline.
+func newFetchThroughOn(t testing.TB, bs blockstore.Blockstore) nodeFetchThrough {
+	exch := offline.Exchange(bs)
+	w := peer.NewBlockWriter(bs, exch)
+	t.Cleanup(w.Close)
+	return nodeFetchThrough{&fetchThroughDAGSvc{DAGService: merkledag.NewDAGService(blockservice.New(bs, exch)), bs: bs}, w}
 }
 
 func (f *fetchThroughDAGSvc) setRemotes(r ...ipld.DAGService) {

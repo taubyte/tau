@@ -472,7 +472,7 @@ func (store *Datastore) drainLocked(ctx context.Context) error {
 				}
 				cids = append(cids, cidOf(k))
 				if len(cids) == reclaimBatch {
-					if err := store.dagService.RemoveMany(ctx, cids); err != nil {
+					if err := store.removeBlocks(ctx, cids); err != nil {
 						return fmt.Errorf("error removing unreached state blocks: %w", err)
 					}
 					cids = cids[:0]
@@ -480,7 +480,7 @@ func (store *Datastore) drainLocked(ctx context.Context) error {
 			}
 		}
 		if len(cids) > 0 {
-			if err := store.dagService.RemoveMany(ctx, cids); err != nil {
+			if err := store.removeBlocks(ctx, cids); err != nil {
 				return fmt.Errorf("error removing unreached state blocks: %w", err)
 			}
 			cids = cids[:0]
@@ -1030,7 +1030,7 @@ func (store *Datastore) reclaimSome(ctx context.Context) (int, bool, error) {
 		return 0, false, err
 	}
 	if len(drop) > 0 {
-		if err := store.dagService.RemoveMany(ctx, drop); err != nil {
+		if err := store.removeBlocks(ctx, drop); err != nil {
 			return 0, false, fmt.Errorf("error removing unindexed blocks: %w", err)
 		}
 	}
