@@ -272,9 +272,18 @@ func TestH4AStateFetchThatEndsEarlyIsNotMerged(t *testing.T) {
 	if len(nodes) < 3 {
 		t.Fatalf("test setup: want a state of several tree nodes, got %d blocks", len(nodes))
 	}
-	last := nodes[len(nodes)-1]
-	if carriedBy(rootDelta)[last] {
-		t.Fatal("test setup: the snapshot carries its last tree node")
+	// A tree node the snapshot does not carry, the last one there is: the
+	// trees' shape turns on the incarnation drawn, and a small tree's last
+	// node can be in the carried prefix.
+	carried := carriedBy(rootDelta)
+	last := cid.Undef
+	for _, c := range nodes {
+		if !carried[c] {
+			last = c
+		}
+	}
+	if !last.Defined() {
+		t.Fatal("test setup: the snapshot carries every tree node")
 	}
 
 	dag := &droppingDAG{fetchThroughDAGSvc: newFetchThrough(), drop: map[cid.Cid]bool{last: true}}
