@@ -222,9 +222,10 @@ func dotFromPB(p *pb.Dot) dot {
 }
 
 // encodeDot is the value form of a dot: varint counter, then the replica.
-func encodeDot(d dot) []byte {
-	buf := binary.AppendUvarint(nil, d.counter)
-	return append(buf, d.replica...)
+func encodeDot(d dot) []byte { return appendDot(nil, d) }
+
+func appendDot(b []byte, d dot) []byte {
+	return append(binary.AppendUvarint(b, d.counter), d.replica...)
 }
 
 func decodeDot(b []byte) (dot, error) {

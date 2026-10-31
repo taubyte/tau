@@ -66,11 +66,13 @@ func (hh *heads) key(c cid.Cid) ds.Key {
 	return hashKey(hh.prefix, c)
 }
 
-func encodeHead(h Head) []byte {
-	b := binary.AppendUvarint(nil, h.Height)
+func encodeHead(h Head) []byte { return appendHead(nil, h) }
+
+func appendHead(b []byte, h Head) []byte {
+	b = binary.AppendUvarint(b, h.Height)
 	b = binary.AppendUvarint(b, h.At)
 	b = binary.AppendUvarint(b, h.TTL)
-	return append(b, encodeDot(h.Dot)...)
+	return appendDot(b, h.Dot)
 }
 
 func decodeHead(c cid.Cid, v []byte) (Head, error) {
@@ -135,10 +137,10 @@ func (hc *headChanges) removeHead(c cid.Cid) {
 
 func (hh *heads) stage(t *txn, hc *headChanges) {
 	for c := range hc.remove {
-		t.del(hh.key(c))
+		t.del(t.key(appendHashKey(t.buf(), hh.prefix, c)))
 	}
 	for c, h := range hc.add {
-		t.put(hh.key(c), encodeHead(h))
+		t.put(t.key(appendHashKey(t.buf(), hh.prefix, c)), t.keep(appendHead(t.buf(), h)))
 	}
 }
 

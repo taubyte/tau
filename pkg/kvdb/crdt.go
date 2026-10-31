@@ -381,6 +381,11 @@ type Datastore struct {
 	msg      pb.CRDTBroadcast
 	msgHeads []pb.Head
 	msgDots  []pb.Dot
+	msgReps  []string
+	// ccWaited is set once someone holds ccChanged to wait on.
+	ccWaited bool
+	// spareMerge is a finished delta merge, kept for the next.
+	spareMerge *merging
 	// compactDue asks the next maintenance for a snapshot.
 	compactDue bool
 	// lows are lower bounds, kept so the frequent passes skip scans that
@@ -722,8 +727,10 @@ func (store *Datastore) setContext(c *causalContext) {
 	store.cc = c
 	store.ccRead.Store(c)
 	store.ccMu.Lock()
-	close(store.ccChanged)
-	store.ccChanged = make(chan struct{})
+	if store.ccWaited {
+		close(store.ccChanged)
+		store.ccChanged, store.ccWaited = make(chan struct{}), false
+	}
 	store.ccMu.Unlock()
 }
 
@@ -731,6 +738,7 @@ func (store *Datastore) setContext(c *causalContext) {
 func (store *Datastore) contextChanged() <-chan struct{} {
 	store.ccMu.Lock()
 	defer store.ccMu.Unlock()
+	store.ccWaited = true
 	return store.ccChanged
 }
 
@@ -1804,7 +1812,7 @@ func (b *crdtBatch) Commit(ctx context.Context) error {
 func (store *Datastore) writeBlocks(ctx context.Context, b block, nodes ...ipld.Node) error {
 	t := newTxn(store.store)
 	for _, nd := range nodes {
-		t.put(store.blockKey(nd.Cid()), encodeBlock(b))
+		t.put(t.key(appendHashKey(t.buf(), store.pre.blocks, nd.Cid())), t.keep(appendBlock(t.buf(), b)))
 	}
 	err := t.commit(ctx)
 	t.release()

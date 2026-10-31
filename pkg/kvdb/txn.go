@@ -70,6 +70,20 @@ func (t *txn) release() {
 	txnPool.Put(t)
 }
 
+// buf is what t's next key or value is appended to; keep then claims it.
+func (t *txn) buf() []byte { return t.vals }
+
+// keep claims what was appended to buf: it lives until t is released.
+// Nothing else may append to buf in between.
+func (t *txn) keep(b []byte) []byte {
+	start := len(t.vals)
+	t.vals = b
+	return b[start:len(b):len(b)]
+}
+
+// key is keep for a key.
+func (t *txn) key(b []byte) ds.Key { return dsKey(t.keep(b)) }
+
 func (t *txn) put(k ds.Key, v []byte) {
 	if v == nil {
 		v = []byte{}

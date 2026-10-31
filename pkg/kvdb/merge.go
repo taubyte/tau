@@ -71,8 +71,11 @@ func (store *Datastore) vectorPrefix() ds.Key { return ds.RawKey(store.pre.vecto
 func (store *Datastore) cloudPrefix() ds.Key { return ds.RawKey(store.pre.cloud) }
 
 func (store *Datastore) vectorKey(replica string) ds.Key {
-	b := make([]byte, 0, len(store.pre.vector)+1+replicaSegmentLen(replica))
-	return dsKey(appendReplicaSegment(append(append(b, store.pre.vector...), '/'), replica))
+	return dsKey(store.appendVectorKey(make([]byte, 0, len(store.pre.vector)+1+replicaSegmentLen(replica)), replica))
+}
+
+func (store *Datastore) appendVectorKey(b []byte, replica string) []byte {
+	return appendReplicaSegment(append(append(b, store.pre.vector...), '/'), replica)
 }
 
 // cloudKey is where the span (lo, hi] of replica is kept: under its end.
@@ -87,11 +90,14 @@ func cidOfBlockKey(prefix ds.Key, k string) (cid.Cid, error) {
 // encodeBlock is the kind, the stamps, the state's cid with its length, and
 // the dot, in one allocation.
 func encodeBlock(b block) []byte {
+	return appendBlock(make([]byte, 0, 1+4*binary.MaxVarintLen64+len(b.state.KeyString())+len(b.dot.replica)), b)
+}
+
+func appendBlock(v []byte, b block) []byte {
 	var sc string
 	if b.state.Defined() {
 		sc = b.state.KeyString()
 	}
-	v := make([]byte, 0, 1+4*binary.MaxVarintLen64+len(sc)+len(b.dot.replica))
 	v = binary.AppendUvarint(binary.AppendUvarint(append(v, byte(b.kind)), b.at), b.ttl)
 	v = append(binary.AppendUvarint(v, uint64(len(sc))), sc...)
 	return append(binary.AppendUvarint(v, b.dot.counter), b.dot.replica...)
@@ -117,8 +123,10 @@ func decodeBlock(v []byte) (block, error) {
 
 // encodeLink is the value of a missing parent or a retry mark: the block's
 // stamps, then its CID.
-func encodeLink(l link) []byte {
-	return append(encodeStamps(l.at, l.ttl), l.cid.Bytes()...)
+func encodeLink(l link) []byte { return appendLink(nil, l) }
+
+func appendLink(b []byte, l link) []byte {
+	return append(appendStamps(b, l.at, l.ttl), l.cid.KeyString()...)
 }
 
 func decodeLink(d dot, v []byte) (link, error) {
@@ -133,8 +141,10 @@ func decodeLink(d dot, v []byte) (link, error) {
 	return link{cid: c, dot: d, at: st[0], ttl: st[1]}, nil
 }
 
-func encodeEntry(k *known) []byte {
-	b := binary.AppendUvarint(nil, k.spans[0].lo)
+func encodeEntry(k *known) []byte { return appendEntry(nil, k) }
+
+func appendEntry(b []byte, k *known) []byte {
+	b = binary.AppendUvarint(b, k.spans[0].lo)
 	b = binary.AppendUvarint(b, k.spans[0].hi)
 	b = binary.AppendUvarint(b, k.changed)
 	return binary.AppendUvarint(b, k.expires)
@@ -191,7 +201,7 @@ func (store *Datastore) stageContext(t *txn, old, cur *causalContext) {
 	for r, k := range cur.inc {
 		o := old.inc[r]
 		if o == nil || o.spans[0] != k.spans[0] || o.changed != k.changed || o.expires != k.expires {
-			t.put(store.vectorKey(r), encodeEntry(k))
+			t.put(t.key(store.appendVectorKey(t.buf(), r)), t.keep(appendEntry(t.buf(), k)))
 		}
 		was := map[uint64]uint64{}
 		if o != nil {
@@ -218,7 +228,7 @@ type merging struct {
 	t       *txn
 	cc      *causalContext
 	heads   *headChanges
-	touched map[string]*change
+	touched map[string]change
 	live    int
 	blocks  int
 	horizon uint64
@@ -241,17 +251,34 @@ type merging struct {
 }
 
 func (store *Datastore) beginMerge() *merging {
-	return &merging{
-		store:   store,
-		t:       newTxn(store.store),
-		cc:      store.cc.clone(),
-		heads:   newHeadChanges(),
-		touched: map[string]*change{},
-		horizon: store.horizon,
-		since:   store.since,
-		added:   lows{none, none, none},
+	m := &merging{heads: newHeadChanges(), touched: map[string]change{}}
+	store.startMerge(m)
+	return m
+}
+
+// startMerge readies m, new or kept from an earlier merge, for a merge.
+func (store *Datastore) startMerge(m *merging) {
+	heads, touched, unerased := m.heads, m.touched, m.unerased[:0]
+	clear(heads.add)
+	clear(heads.remove)
+	clear(touched)
+	clear(unerased[:cap(unerased)])
+	*m = merging{
+		store:    store,
+		t:        newTxn(store.store),
+		cc:       store.cc.clone(),
+		heads:    heads,
+		touched:  touched,
+		unerased: unerased,
+		horizon:  store.horizon,
+		since:    store.since,
+		added:    lows{none, none, none},
 	}
 }
+
+// keptMerge bounds the merges kept for the next: maps keep their buckets
+// once cleared, and a merge of a large batch's is not worth keeping.
+const keptMerge = 1 << 10
 
 // heard takes what a block written by another incarnation says about fleet
 // time: its stamp, no further ahead of this replica's clock than the skew.
@@ -263,21 +290,26 @@ func (m *merging) heard(author string, at uint64) {
 	m.since = max(m.since, min(at, m.store.clock()+m.store.times.skew))
 }
 
-func (m *merging) touch(key string) *change {
-	ch := m.touched[key]
-	if ch == nil {
-		ch = &change{}
-		m.touched[key] = ch
+func (m *merging) touch(key string) {
+	if _, ok := m.touched[key]; !ok {
+		m.touched[key] = change{}
 	}
-	return ch
+}
+
+func (m *merging) elemKey(key string, d dot) ds.Key {
+	return m.t.key(m.store.set.appendElemKey(m.t.buf(), key, d))
+}
+
+func (m *merging) pendingKey(key string, d dot) ds.Key {
+	return m.t.key(m.store.set.appendPendingKey(m.t.buf(), key, d))
 }
 
 func (m *merging) hasElem(ctx context.Context, key string, d dot) (bool, error) {
-	return m.t.has(ctx, m.store.set.elemKey(key, d))
+	return m.t.has(ctx, m.elemKey(key, d))
 }
 
 func (m *merging) addElem(e element) {
-	m.t.put(m.store.set.elemKey(e.key, e.dot), encodeMarker(e))
+	m.t.put(m.elemKey(e.key, e.dot), m.t.keep(appendMarker(m.t.buf(), e)))
 	m.touch(e.key)
 	m.live++
 }
@@ -288,7 +320,7 @@ func (m *merging) removeElem(ctx context.Context, key string, d dot) (bool, erro
 	if err != nil || !here {
 		return false, err
 	}
-	m.t.del(m.store.set.elemKey(key, d))
+	m.t.del(m.elemKey(key, d))
 	m.touch(key)
 	m.live--
 	return true, nil
@@ -307,7 +339,7 @@ func (m *merging) remove(ctx context.Context, r removal) error {
 		m.cc.touch(r.dot.replica, r.at, r.expires())
 		return nil
 	}
-	pk := m.store.set.pendingKey(r.key, r.dot)
+	pk := m.pendingKey(r.key, r.dot)
 	if v, err := m.t.get(ctx, pk); err == nil {
 		at, ttl, err := decodeStamps(v)
 		if err != nil {
@@ -319,7 +351,7 @@ func (m *merging) remove(ctx context.Context, r removal) error {
 	} else if !errors.Is(err, ds.ErrNotFound) {
 		return err
 	}
-	m.t.put(pk, encodeStamps(r.at, r.ttl))
+	m.t.put(pk, m.t.keep(appendStamps(m.t.buf(), r.at, r.ttl)))
 	m.added.pending = min(m.added.pending, r.expires())
 	m.pendingAt = max(m.pendingAt, r.at)
 	return nil
@@ -347,7 +379,7 @@ func (m *merging) admit(ctx context.Context, e element, local *causalContext) er
 	if err != nil || here || local.covers(e.dot) {
 		return err
 	}
-	pending, err := m.t.has(ctx, m.store.set.pendingKey(e.key, e.dot))
+	pending, err := m.t.has(ctx, m.pendingKey(e.key, e.dot))
 	if err != nil || pending {
 		return err
 	}
@@ -377,7 +409,7 @@ func (m *merging) link(ctx context.Context, parents []*pb.Parent) ([]link, error
 		if m.cc.covers(l.dot) || m.store.expired(l.at+l.ttl, now) {
 			continue
 		}
-		m.t.put(m.store.missingKey(l.dot), encodeLink(l))
+		m.t.put(m.t.key(appendDotKey(m.t.buf(), m.store.pre.missing, l.dot)), m.t.keep(appendLink(m.t.buf(), l)))
 		walk = append(walk, l)
 	}
 	return walk, nil
@@ -386,14 +418,14 @@ func (m *merging) link(ctx context.Context, parents []*pb.Parent) ([]link, error
 // linked reports whether a merged block already links d. It is read before
 // the merge changes the context, which drops missing entries it covers.
 func (m *merging) linked(ctx context.Context, d dot) (bool, error) {
-	return m.t.has(ctx, m.store.missingKey(d))
+	return m.t.has(ctx, m.t.key(appendDotKey(m.t.buf(), m.store.pre.missing, d)))
 }
 
 // settleBlock makes the merged block a head unless a merged block already
 // links it, and indexes it for purging.
 func (m *merging) settleBlock(c cid.Cid, b block, height uint64, linked bool) {
-	m.t.del(m.store.missingKey(b.dot))
-	m.t.del(m.store.retryKey(b.dot))
+	m.t.del(m.t.key(appendDotKey(m.t.buf(), m.store.pre.missing, b.dot)))
+	m.t.del(m.t.key(appendDotKey(m.t.buf(), m.store.pre.retry, b.dot)))
 	if !linked {
 		m.heads.addHead(Head{Cid: c, Height: height, Dot: b.dot, At: b.at, TTL: b.ttl})
 	}
@@ -404,7 +436,7 @@ func (m *merging) settleBlock(c cid.Cid, b block, height uint64, linked bool) {
 // finds it indexed: deleted with the merge, of which a store may keep any
 // part, it could go while the entry does not stay.
 func (m *merging) indexBlock(c cid.Cid, b block) {
-	m.t.put(m.store.blockKey(c), encodeBlock(b))
+	m.t.put(m.t.key(appendHashKey(m.t.buf(), m.store.pre.blocks, c)), m.t.keep(appendBlock(m.t.buf(), b)))
 	m.added.block = min(m.added.block, b.at+b.ttl/2)
 	m.blocks++
 }
@@ -481,7 +513,12 @@ func (store *Datastore) mergeDelta(ctx context.Context, c cid.Cid, delta *pb.Del
 		return nil, nil
 	}
 	at, ttl := delta.GetAt(), delta.GetTtl()
-	m := store.beginMerge()
+	m := store.spareMerge
+	if store.spareMerge = nil; m == nil {
+		m = store.beginMerge()
+	} else {
+		store.startMerge(m)
+	}
 	m.horizon = max(m.horizon, delta.GetHorizon())
 	m.heard(d.replica, at)
 	linked, err := m.linked(ctx, d)
@@ -521,13 +558,17 @@ func (store *Datastore) mergeDelta(ctx context.Context, c cid.Cid, delta *pb.Del
 		err = m.commit(ctx)
 	}
 	m.t.release()
+	m.t, m.cc = nil, nil
+	if len(m.touched) <= keptMerge && len(m.heads.add)+len(m.heads.remove) <= keptMerge {
+		store.spareMerge = m
+	}
 	return walk, err
 }
 
 // dropPending forgets the pending removals of d's elements the context now
 // refutes: every element of d that was named by one was refused on arrival.
 func (m *merging) dropPending(ctx context.Context, d dot) error {
-	entries, err := m.t.scan(ctx, dotKey(m.store.set.pending, d))
+	entries, err := m.t.scan(ctx, m.t.key(appendDotKey(m.t.buf(), m.store.set.pending, d)))
 	if err != nil {
 		return err
 	}
@@ -982,7 +1023,7 @@ func (m *merging) rebase(ctx context.Context, ch *rootChange, s *snapState, resi
 
 // localElem is the element (key, d) this merge leaves, if any.
 func (m *merging) localElem(ctx context.Context, key string, d dot) (*element, error) {
-	v, err := m.t.get(ctx, m.store.set.elemKey(key, d))
+	v, err := m.t.get(ctx, m.elemKey(key, d))
 	if errors.Is(err, ds.ErrNotFound) {
 		return nil, nil
 	}
@@ -1000,7 +1041,7 @@ func (m *merging) localElem(ctx context.Context, key string, d dot) (*element, e
 // localPending is the pending removal of (key, d) this merge leaves, if
 // any.
 func (m *merging) localPending(ctx context.Context, key string, d dot) (*removal, error) {
-	v, err := m.t.get(ctx, m.store.set.pendingKey(key, d))
+	v, err := m.t.get(ctx, m.pendingKey(key, d))
 	if errors.Is(err, ds.ErrNotFound) {
 		return nil, nil
 	}

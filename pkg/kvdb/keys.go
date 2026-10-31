@@ -109,6 +109,9 @@ func appendHashKey(b []byte, prefix string, c cid.Cid) []byte {
 
 // dotKey is prefix/<the segment of d>.
 func dotKey(prefix string, d dot) ds.Key {
-	b := make([]byte, 0, len(prefix)+1+dotSegmentLen(d))
-	return dsKey(appendDotSegment(append(append(b, prefix...), '/'), d))
+	return dsKey(appendDotKey(make([]byte, 0, len(prefix)+1+dotSegmentLen(d)), prefix, d))
+}
+
+func appendDotKey(b []byte, prefix string, d dot) []byte {
+	return appendDotSegment(append(append(b, prefix...), '/'), d)
 }

@@ -1,7 +1,10 @@
 package kvdb
 
 import (
+	"maps"
+	"slices"
 	"sort"
+	"sync/atomic"
 
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
 )
@@ -26,6 +29,9 @@ type known struct {
 	spans   []span
 	changed uint64
 	expires uint64
+	// gen is the generation of the context that may change k in place. A
+	// clone shares its entries, and copies one before it changes it.
+	gen uint64
 }
 
 func (k *known) covers(counter uint64) bool {
@@ -33,32 +39,19 @@ func (k *known) covers(counter uint64) bool {
 	return i < len(k.spans) && k.spans[i].lo < counter
 }
 
-// insert adds s to the spans, joining every span it overlaps or touches.
+// insert adds s to the spans, joining every span it overlaps or touches. It
+// changes k's spans in place: k must be its context's own.
 func (k *known) insert(s span) {
 	if s.hi <= s.lo {
 		return
 	}
-	out := make([]span, 0, len(k.spans)+1)
-	placed := false
-	for _, o := range k.spans {
-		switch {
-		case o.touches(s):
-			s = span{lo: min(o.lo, s.lo), hi: max(o.hi, s.hi)}
-		case o.hi < s.lo:
-			out = append(out, o)
-		default:
-			if !placed {
-				out = append(out, s)
-				placed = true
-			}
-			out = append(out, o)
-		}
+	// The spans below i end before s starts; those in [i, j) touch it.
+	i := sort.Search(len(k.spans), func(i int) bool { return k.spans[i].hi >= s.lo })
+	j := i
+	for ; j < len(k.spans) && k.spans[j].touches(s); j++ {
+		s = span{lo: min(k.spans[j].lo, s.lo), hi: max(k.spans[j].hi, s.hi)}
 	}
-	if !placed {
-		out = append(out, s)
-		sort.Slice(out, func(i, j int) bool { return out[i].lo < out[j].lo })
-	}
-	k.spans = out
+	k.spans = slices.Replace(k.spans, i, j, s)
 }
 
 func (k *known) stamp(changed, expires uint64) {
@@ -75,10 +68,15 @@ func (k *known) stamp(changed, expires uint64) {
 // retire); its elements are ancient and are kept under their own dots.
 type causalContext struct {
 	inc map[string]*known
+	gen uint64
 }
 
+// contextGens numbers contexts, so an entry names the one it belongs to
+// without keeping it.
+var contextGens atomic.Uint64
+
 func newCausalContext() *causalContext {
-	return &causalContext{inc: map[string]*known{}}
+	return &causalContext{inc: map[string]*known{}, gen: contextGens.Add(1)}
 }
 
 func (c *causalContext) covers(d dot) bool {
@@ -114,32 +112,39 @@ func (c *causalContext) add(d dot, prev, at, expires uint64) {
 	if prev >= d.counter {
 		prev = d.counter - 1
 	}
-	k := c.inc[d.replica]
-	if k == nil {
-		k = &known{}
-		c.inc[d.replica] = k
-	}
+	k := c.own(d.replica)
 	k.insert(span{lo: prev, hi: d.counter})
 	k.stamp(at, expires)
+}
+
+// own is c's entry for replica, made c's own: a new one if c has none, a
+// copy if c shares it.
+func (c *causalContext) own(replica string) *known {
+	k := c.inc[replica]
+	switch {
+	case k == nil:
+		k = &known{gen: c.gen}
+		c.inc[replica] = k
+	case k.gen != c.gen:
+		k = &known{spans: slices.Clone(k.spans), changed: k.changed, expires: k.expires, gen: c.gen}
+		c.inc[replica] = k
+	}
+	return k
 }
 
 // touch records that something authored at at, needed until expires, changed
 // what is known of an incarnation the context knows: a removal of one of its
 // dots.
 func (c *causalContext) touch(replica string, at, expires uint64) {
-	if k := c.inc[replica]; k != nil {
-		k.stamp(at, expires)
+	if k := c.inc[replica]; k != nil && (k.changed < at || k.expires < expires) {
+		c.own(replica).stamp(at, expires)
 	}
 }
 
 // merge joins o into c: coverage by union, the stamps by max.
 func (c *causalContext) merge(o *causalContext) {
 	for r, ok := range o.inc {
-		k := c.inc[r]
-		if k == nil {
-			k = &known{}
-			c.inc[r] = k
-		}
+		k := c.own(r)
 		for _, s := range ok.spans {
 			k.insert(s)
 		}
@@ -147,18 +152,23 @@ func (c *causalContext) merge(o *causalContext) {
 	}
 }
 
+// clone is a context equal to c that shares c's entries until it changes
+// them.
 func (c *causalContext) clone() *causalContext {
-	n := newCausalContext()
-	n.merge(c)
+	n := &causalContext{inc: make(map[string]*known, len(c.inc)), gen: contextGens.Add(1)}
+	maps.Copy(n.inc, c.inc)
 	return n
 }
 
-func (c *causalContext) replicas() []string {
-	out := make([]string, 0, len(c.inc))
+func (c *causalContext) replicas() []string { return c.appendReplicas(nil) }
+
+// appendReplicas appends c's replicas to out, sorted.
+func (c *causalContext) appendReplicas(out []string) []string {
+	start := len(out)
 	for r := range c.inc {
 		out = append(out, r)
 	}
-	sort.Strings(out)
+	slices.Sort(out[start:])
 	return out
 }
 

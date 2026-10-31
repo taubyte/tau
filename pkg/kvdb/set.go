@@ -84,29 +84,41 @@ func (s *set) keyElemsPrefix(key string) ds.Key {
 }
 
 func (s *set) elemKey(key string, d dot) ds.Key {
-	b := make([]byte, 0, len(s.elems)+2+keySegmentLen(key)+dotSegmentLen(d))
+	return dsKey(s.appendElemKey(make([]byte, 0, len(s.elems)+2+keySegmentLen(key)+dotSegmentLen(d)), key, d))
+}
+
+func (s *set) appendElemKey(b []byte, key string, d dot) []byte {
 	b = appendKeySegment(append(append(b, s.elems...), '/'), key)
-	return dsKey(appendDotSegment(append(b, '/'), d))
+	return appendDotSegment(append(b, '/'), d)
 }
 
 func (s *set) pendingPrefix() ds.Key { return ds.RawKey(s.pending) }
 
 func (s *set) pendingKey(key string, d dot) ds.Key {
-	b := make([]byte, 0, len(s.pending)+2+dotSegmentLen(d)+keySegmentLen(key))
+	return dsKey(s.appendPendingKey(make([]byte, 0, len(s.pending)+2+dotSegmentLen(d)+keySegmentLen(key)), key, d))
+}
+
+func (s *set) appendPendingKey(b []byte, key string, d dot) []byte {
 	b = appendDotSegment(append(append(b, s.pending...), '/'), d)
-	return dsKey(appendKeySegment(append(b, '/'), key))
+	return appendKeySegment(append(b, '/'), key)
 }
 
-func (s *set) valueKey(key string) ds.Key {
-	return ds.RawKey(s.keys + ds.NewKey(key).String() + "/" + valueSuffix)
+func (s *set) valueKey(key string) ds.Key { return dsKey(s.appendValueKey(nil, key)) }
+
+func (s *set) priorityKey(key string) ds.Key { return dsKey(s.appendPriorityKey(nil, key)) }
+
+func (s *set) appendValueKey(b []byte, key string) []byte {
+	return append(append(append(append(b, s.keys...), ds.NewKey(key).String()...), '/'), valueSuffix...)
 }
 
-func (s *set) priorityKey(key string) ds.Key {
-	return ds.RawKey(s.keys + ds.NewKey(key).String() + "/" + prioritySuffix)
+func (s *set) appendPriorityKey(b []byte, key string) []byte {
+	return append(append(append(append(b, s.keys...), ds.NewKey(key).String()...), '/'), prioritySuffix...)
 }
 
-func encodeMarker(e element) []byte {
-	b := binary.AppendUvarint(nil, e.priority)
+func encodeMarker(e element) []byte { return appendMarker(nil, e) }
+
+func appendMarker(b []byte, e element) []byte {
+	b = binary.AppendUvarint(b, e.priority)
 	b = binary.AppendUvarint(b, e.at)
 	b = binary.AppendUvarint(b, e.ttl)
 	return append(b, e.value...)
@@ -144,8 +156,10 @@ func decodeMarker(b []byte) (element, error) {
 	return element{priority: v[0], at: v[1], ttl: v[2], value: rest}, nil
 }
 
-func encodeStamps(at, ttl uint64) []byte {
-	return binary.AppendUvarint(binary.AppendUvarint(nil, at), ttl)
+func encodeStamps(at, ttl uint64) []byte { return appendStamps(nil, at, ttl) }
+
+func appendStamps(b []byte, at, ttl uint64) []byte {
+	return binary.AppendUvarint(binary.AppendUvarint(b, at), ttl)
 }
 
 func decodeStamps(b []byte) (uint64, uint64, error) {
@@ -157,7 +171,9 @@ func decodeStamps(b []byte) (uint64, uint64, error) {
 	return v[0], v[1], nil
 }
 
-func encodePriority(prio uint64) []byte { return binary.AppendUvarint(nil, prio+1) }
+func encodePriority(prio uint64) []byte { return appendPriority(nil, prio) }
+
+func appendPriority(b []byte, prio uint64) []byte { return binary.AppendUvarint(b, prio+1) }
 
 func decodePriority(data []byte) (uint64, error) {
 	prio, n := binary.Uvarint(data)
@@ -246,8 +262,8 @@ type change struct {
 // when the key's value appeared or changed, deleted when it went from present
 // to absent. A new winner holding the same bytes is not a change, though its
 // priority is stored.
-func (s *set) settle(ctx context.Context, t *txn, touched map[string]*change) error {
-	for key, ch := range touched {
+func (s *set) settle(ctx context.Context, t *txn, touched map[string]change) error {
+	for key := range touched {
 		live, err := s.liveElems(ctx, t, key)
 		if err != nil {
 			return err
@@ -260,22 +276,22 @@ func (s *set) settle(ctx context.Context, t *txn, touched map[string]*change) er
 				best = e
 			}
 		}
-		cur, err := t.get(ctx, s.valueKey(key))
+		cur, err := t.get(ctx, t.key(s.appendValueKey(t.buf(), key)))
 		had := err == nil
 		if err != nil && !errors.Is(err, ds.ErrNotFound) {
 			return err
 		}
 		if best == nil {
 			if had {
-				t.del(s.valueKey(key))
-				t.del(s.priorityKey(key))
-				ch.deleted = true
+				t.del(t.key(s.appendValueKey(t.buf(), key)))
+				t.del(t.key(s.appendPriorityKey(t.buf(), key)))
+				touched[key] = change{deleted: true}
 			}
 			continue
 		}
 		curPrio := uint64(0)
 		if had {
-			p, err := t.get(ctx, s.priorityKey(key))
+			p, err := t.get(ctx, t.key(s.appendPriorityKey(t.buf(), key)))
 			if err != nil && !errors.Is(err, ds.ErrNotFound) {
 				return err
 			}
@@ -287,19 +303,18 @@ func (s *set) settle(ctx context.Context, t *txn, touched map[string]*change) er
 		}
 		if had && bytes.Equal(cur, best.value) {
 			if curPrio != best.priority {
-				t.put(s.priorityKey(key), encodePriority(best.priority))
+				t.put(t.key(s.appendPriorityKey(t.buf(), key)), t.keep(appendPriority(t.buf(), best.priority)))
 			}
 			continue
 		}
-		t.put(s.valueKey(key), best.value)
-		t.put(s.priorityKey(key), encodePriority(best.priority))
-		ch.put = true
-		ch.value = best.value
+		t.put(t.key(s.appendValueKey(t.buf(), key)), best.value)
+		t.put(t.key(s.appendPriorityKey(t.buf(), key)), t.keep(appendPriority(t.buf(), best.priority)))
+		touched[key] = change{put: true, value: best.value}
 	}
 	return nil
 }
 
-func (s *set) fireHooks(touched map[string]*change) {
+func (s *set) fireHooks(touched map[string]change) {
 	for key, ch := range touched {
 		if ch.deleted {
 			s.deleteHook(key)

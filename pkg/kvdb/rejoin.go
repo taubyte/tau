@@ -218,7 +218,9 @@ func (store *Datastore) message(heads []Head, v *verdict) *pb.CRDTBroadcast {
 	if len(store.merged) == 0 {
 		return b
 	}
-	for _, r := range store.cc.replicas() {
+	store.msgReps = store.cc.appendReplicas(store.msgReps[:0])
+	defer clear(store.msgReps)
+	for _, r := range store.msgReps {
 		if _, ok := store.merged[r]; !ok {
 			continue
 		}
