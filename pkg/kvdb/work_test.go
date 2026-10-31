@@ -8,6 +8,9 @@ import (
 
 	"github.com/cockroachdb/pebble/v2"
 	"github.com/cockroachdb/pebble/v2/vfs"
+	"github.com/ipfs/boxo/blockservice"
+	"github.com/ipfs/boxo/exchange/offline"
+	"github.com/ipfs/boxo/ipld/merkledag"
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
 	query "github.com/ipfs/go-datastore/query"
@@ -140,7 +143,7 @@ func (d *meteredDAG) AddMany(ctx context.Context, nds []ipld.Node) error {
 // when told to, over the tests' in-memory store, metered.
 func warmReplica(t testing.TB, n int) (*Datastore, *workMeter) {
 	m := &workMeter{}
-	return warmReplicaOn(t, n, &meteredStore{Datastore: newSortedStore(), m: m}, m), m
+	return warmReplicaOn(t, n, &meteredStore{Datastore: newSortedStore(), m: m}, &meteredDAG{DAGService: newFetchThrough(), m: m}), m
 }
 
 // warmPebble is warmReplica over the store a node runs, kept in memory:
@@ -156,18 +159,20 @@ func warmPebble(t testing.TB, n int) *Datastore {
 			t.Error(err)
 		}
 	})
-	return warmReplicaOn(t, n, st, &workMeter{})
+	// The DAG a node runs, offline: the store's blocks, behind a block
+	// service and merkledag.
+	dag := merkledag.NewDAGService(blockservice.New(st.Blockstore(), offline.Exchange(st.Blockstore())))
+	return warmReplicaOn(t, n, st, dag)
 }
 
-func warmReplicaOn(t testing.TB, n int, st ds.Datastore, m *workMeter) *Datastore {
+func warmReplicaOn(t testing.TB, n int, st ds.Datastore, dag ipld.DAGService) *Datastore {
 	t.Helper()
 	ctx := context.Background()
 	o := replicaOptions(newSimTime().options(0), "warm")
 	o.CompactAfterBlocks = 0
 	o.manual = true
 	o.Logger = DefaultOptions().Logger
-	r, err := NewDatastore(st, ds.NewKey("warm"),
-		&meteredDAG{DAGService: newFetchThrough(), m: m}, &nullBroadcaster{}, o)
+	r, err := NewDatastore(st, ds.NewKey("warm"), dag, &nullBroadcaster{}, o)
 	if err != nil {
 		t.Fatal(err)
 	}

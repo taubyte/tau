@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
 )
 
@@ -21,6 +22,7 @@ func TestAllocs(t *testing.T) {
 	view := func(v []byte) error { return nil }
 	scan := func(_, _ []byte) error { return nil }
 	dk := ds.RawKey("/p/b")
+	bs, blk := s.Blockstore(), block(t, "block", cid.Raw)
 	cases := []struct {
 		name string
 		max  float64
@@ -40,6 +42,17 @@ func TestAllocs(t *testing.T) {
 			}
 		}},
 		{"Put", 0, func() { must(t, s.Put(ctx, dk, key)) }},
+		{"Blockstore.Put", 0, func() { must(t, bs.Put(ctx, blk)) }},
+		{"Blockstore.Has", 0, func() {
+			if _, err := bs.Has(ctx, blk.Cid()); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"Blockstore.Get", 2, func() {
+			if _, err := bs.Get(ctx, blk.Cid()); err != nil {
+				t.Fatal(err)
+			}
+		}},
 	}
 	for _, c := range cases {
 		c.fn()

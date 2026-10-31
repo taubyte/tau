@@ -385,3 +385,45 @@ func TestConcurrent(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestBatchReset(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	b, err := s.NewBatch()
+	must(t, err)
+	if b.Store() != s {
+		t.Fatal("a batch names its store")
+	}
+	must(t, b.Set([]byte("/dropped"), []byte("x")))
+	must(t, b.Reset())
+	must(t, b.Set([]byte("/k"), []byte("v")))
+	must(t, b.Commit(ctx))
+	if has, err := s.Has(ctx, ds.RawKey("/dropped")); err != nil || has {
+		t.Fatalf("Reset drops what the batch held: %v %v", has, err)
+	}
+	if w := s.Written(); w != int64(len("/k")+len("v")) {
+		t.Fatalf("written %d", w)
+	}
+	must(t, b.Reset())
+	must(t, b.Set([]byte("/k2"), []byte("v2")))
+	must(t, b.Commit(ctx))
+	if got, err := s.Get(ctx, ds.RawKey("/k2")); err != nil || string(got) != "v2" {
+		t.Fatalf("a committed batch, reset, writes again: %q %v", got, err)
+	}
+	must(t, s.Put(ctx, ds.RawKey("/p"), []byte("1")))
+	if w := s.Written(); w != int64(len("/k")+len("v")+len("/k2")+len("v2")+len("/p")+len("1")) {
+		t.Fatalf("written %d", w)
+	}
+}
+
+func TestBatchResetClosed(t *testing.T) {
+	s, err := Open(t.TempDir())
+	must(t, err)
+	b, err := s.NewBatch()
+	must(t, err)
+	must(t, b.Commit(context.Background()))
+	must(t, s.Close())
+	if err := b.Reset(); !errors.Is(err, ErrClosed) {
+		t.Fatalf("reset over a closed store: %v", err)
+	}
+}

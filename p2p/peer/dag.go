@@ -26,6 +26,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/routing"
 	multihash "github.com/multiformats/go-multihash"
+	"github.com/taubyte/tau/pkg/pebbleds"
 )
 
 // DAGService is tau's in-house replacement for ipfs-lite's Peer: the minimal
@@ -54,7 +55,12 @@ func newDAG(ctx context.Context, store datastore.Batching, host host.Host, dht r
 	ctx, cancel := context.WithCancel(ctx)
 
 	// Blockstore: identity multihash support + ARC/bloom cache (hot path for HasBlock).
-	bs := blockstore.NewBlockstore(store, blockstore.WriteThrough(true))
+	var bs blockstore.Blockstore
+	if pst, ok := store.(*pebbleds.Store); ok {
+		bs = pst.Blockstore()
+	} else {
+		bs = blockstore.NewBlockstore(store, blockstore.WriteThrough(true))
+	}
 	bs = blockstore.NewIdStore(bs)
 	bs, err := blockstore.CachedBlockstore(ctx, bs, blockstore.DefaultCacheOpts())
 	if err != nil {
