@@ -1,6 +1,7 @@
 package kvdb
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"slices"
@@ -307,12 +308,14 @@ func (t *txn) commit(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// A go-datastore may keep the key and value it is given, and t's
+	// storage is used again once t is released: it is given copies.
 	for _, k := range t.order {
 		v := t.writes[k]
 		if v == nil {
-			err = b.Delete(ctx, ds.RawKey(k))
+			err = b.Delete(ctx, ds.RawKey(strings.Clone(k)))
 		} else {
-			err = b.Put(ctx, ds.RawKey(k), v)
+			err = b.Put(ctx, ds.RawKey(strings.Clone(k)), bytes.Clone(v))
 		}
 		if err != nil {
 			return err
