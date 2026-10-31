@@ -9,6 +9,7 @@ package mst
 import (
 	"context"
 	"math/rand/v2"
+	"runtime/debug"
 	"testing"
 
 	cid "github.com/ipfs/go-cid"
@@ -19,6 +20,9 @@ import (
 // reads does. DiffNodes allocated its cursors, their stacks, the opened
 // lists, a map of one of them and both results on every call.
 func TestDifferAllocatesOnlyItsReads(t *testing.T) {
+	// A collection empties sync.Pool, and either count could take it: the
+	// two are counted with none.
+	defer debug.SetGCPercent(debug.SetGCPercent(-1))
 	ctx := context.Background()
 	s := newStore()
 	a, _ := bigTree(t, s)
