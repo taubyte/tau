@@ -20,6 +20,7 @@ import (
 	ihelpers "github.com/ipfs/boxo/ipld/unixfs/importer/helpers"
 	ufsio "github.com/ipfs/boxo/ipld/unixfs/io"
 	provider "github.com/ipfs/boxo/provider"
+	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	ipld "github.com/ipfs/go-ipld-format"
@@ -44,6 +45,7 @@ type DAGService struct {
 	reprovider provider.System
 	cancel     context.CancelFunc
 	bloom      bloomBuild
+	writer     *BlockWriter
 
 	closeOnce sync.Once
 	closeErr  error
@@ -112,6 +114,7 @@ func newDAG(ctx context.Context, store datastore.Batching, host host.Host, dht r
 		reprovider: reprovider,
 		cancel:     cancel,
 		bloom:      bloom,
+		writer:     NewBlockWriter(bs, bswap),
 	}
 
 	// autoclose: mirror ipfs-lite so a cancelled context still tears down.
@@ -137,6 +140,7 @@ type bloomBuild interface {
 func (d *DAGService) Close() error {
 	d.closeOnce.Do(func() {
 		d.cancel()
+		d.writer.Close()
 		d.closeErr = errors.Join(d.reprovider.Close(), d.bserv.Close())
 		d.bloom.Wait(context.Background())
 	})
@@ -177,6 +181,11 @@ func (d *DAGService) GetFile(ctx context.Context, c cid.Cid) (ufsio.ReadSeekClos
 
 // BlockStore exposes the underlying blockstore.
 func (d *DAGService) BlockStore() blockstore.Blockstore { return d.bstore }
+
+// WriteBlock stores b and tells bitswap it is held, in batches (BlockWriter).
+func (d *DAGService) WriteBlock(ctx context.Context, b blocks.Block) error {
+	return d.writer.WriteBlock(ctx, b)
+}
 
 // HasBlock reports whether a block is available locally.
 func (d *DAGService) HasBlock(ctx context.Context, c cid.Cid) (bool, error) {

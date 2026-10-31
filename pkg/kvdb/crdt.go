@@ -29,6 +29,7 @@ import (
 
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
 
+	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
 	query "github.com/ipfs/go-datastore/query"
@@ -1803,6 +1804,14 @@ func (b *crdtBatch) Commit(ctx context.Context) error {
 	return b.store.write(ctx, ops)
 }
 
+// A BlockWriter stores a block where its DAG service keeps blocks and tells
+// the exchange it is held, without the block service's context and span per
+// block or its asking first whether the block is held. A DAG service that is
+// one is written through it; peer.DAGService is.
+type BlockWriter interface {
+	WriteBlock(ctx context.Context, b blocks.Block) error
+}
+
 // writeBlocks indexes blocks this replica authors, durably, before writing
 // them, as a store may keep any subset of the writes no Sync has covered;
 // the merge that covers them makes them durable before it records them. A
@@ -1825,8 +1834,15 @@ func (store *Datastore) writeBlocks(ctx context.Context, b block, nodes ...ipld.
 	}
 	// Adding a block writes it locally and tells bitswap it is held: no
 	// peer is waited on, so no timeout bounds it.
+	w, direct := store.dagService.(BlockWriter)
 	for _, nd := range nodes {
-		if err := store.dagService.Add(ctx, nd); err != nil {
+		var err error
+		if direct {
+			err = w.WriteBlock(ctx, nd)
+		} else {
+			err = store.dagService.Add(ctx, nd)
+		}
+		if err != nil {
 			cids := make([]cid.Cid, len(nodes))
 			for i, nd := range nodes {
 				cids[i] = nd.Cid()

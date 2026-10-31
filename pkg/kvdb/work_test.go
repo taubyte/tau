@@ -9,12 +9,14 @@ import (
 	"github.com/cockroachdb/pebble/v2"
 	"github.com/cockroachdb/pebble/v2/vfs"
 	"github.com/ipfs/boxo/blockservice"
+	blockstore "github.com/ipfs/boxo/blockstore"
 	"github.com/ipfs/boxo/exchange/offline"
 	"github.com/ipfs/boxo/ipld/merkledag"
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
 	query "github.com/ipfs/go-datastore/query"
 	ipld "github.com/ipfs/go-ipld-format"
+	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/pebbleds"
 )
 
@@ -159,10 +161,24 @@ func warmPebble(t testing.TB, n int) *Datastore {
 			t.Error(err)
 		}
 	})
-	// The DAG a node runs, offline: the store's blocks, behind a block
-	// service and merkledag.
-	dag := merkledag.NewDAGService(blockservice.New(st.Blockstore(), offline.Exchange(st.Blockstore())))
-	return warmReplicaOn(t, n, st, dag)
+	// The DAG a node runs, offline: the store's blocks under its identity
+	// and cache layers, behind a block service and merkledag, written as a
+	// node writes them.
+	bs, err := blockstore.CachedBlockstore(context.Background(), blockstore.NewIdStore(st.Blockstore()), blockstore.DefaultCacheOpts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	exch := offline.Exchange(bs)
+	w := peer.NewBlockWriter(bs, exch)
+	t.Cleanup(w.Close)
+	return warmReplicaOn(t, n, st, nodeDAG{DAGService: merkledag.NewDAGService(blockservice.New(bs, exch)), BlockWriter: w})
+}
+
+// nodeDAG is merkledag over a block service, writing blocks as
+// peer.DAGService does.
+type nodeDAG struct {
+	ipld.DAGService
+	*peer.BlockWriter
 }
 
 func warmReplicaOn(t testing.TB, n int, st ds.Datastore, dag ipld.DAGService) *Datastore {
