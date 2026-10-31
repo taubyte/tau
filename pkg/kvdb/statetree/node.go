@@ -1,4 +1,4 @@
-package mst
+package statetree
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
-	pb "github.com/taubyte/tau/pkg/kvdb/mst/pb"
+	pb "github.com/taubyte/tau/pkg/kvdb/statetree/pb"
 )
 
 // Format is the format profile this package reads and writes.
@@ -22,10 +22,10 @@ const levelDomain = "tau/mst/v1/level"
 const noLevel = math.MaxUint32
 
 var (
-	ErrMalformed    = errors.New("mst: malformed node")
-	ErrFormat       = errors.New("mst: unknown format")
-	ErrUnsorted     = errors.New("mst: keys out of order")
-	ErrDuplicateKey = errors.New("mst: duplicate key")
+	ErrMalformed    = errors.New("statetree: malformed node")
+	ErrFormat       = errors.New("statetree: unknown format")
+	ErrUnsorted     = errors.New("statetree: keys out of order")
+	ErrDuplicateKey = errors.New("statetree: duplicate key")
 )
 
 // Level is the level of key in format profile 1.

@@ -13,12 +13,12 @@ import (
 	"time"
 
 	cid "github.com/ipfs/go-cid"
-	"github.com/taubyte/tau/pkg/kvdb/mst"
+	"github.com/taubyte/tau/pkg/kvdb/statetree"
 )
 
 // TestARetirementAllocatesLittleBeyondItsDiffs: planning what a retired
 // root leaves unreached allocates what its diffs do, which is what reading
-// their nodes does (see mst.Differ), and a small fixed amount besides,
+// their nodes does (see statetree.Differ), and a small fixed amount besides,
 // however many nodes it finds unreached: the candidates are digests in
 // storage the collector keeps. Releasing a root walked every node it
 // released and took and gave back a count for each child of each, every
@@ -70,7 +70,7 @@ func TestARetirementAllocatesLittleBeyondItsDiffs(t *testing.T) {
 				}
 			}
 		}
-		var d mst.Differ
+		var d statetree.Differ
 		diffs := func() {
 			for _, p := range pairs {
 				if _, _, err := d.Nodes(ctx, stateTree(r.dagService, p[0]), stateTree(r.dagService, p[1])); err != nil {

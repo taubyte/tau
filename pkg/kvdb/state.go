@@ -11,12 +11,12 @@ import (
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
-	"github.com/taubyte/tau/pkg/kvdb/mst"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
+	"github.com/taubyte/tau/pkg/kvdb/statetree"
 )
 
 // A snapshot carries a state: its live elements, its pending removals and
-// its causal context, as three Merkle search trees (package mst) named by
+// its causal context, as three Merkle search trees (package statetree) named by
 // one StateRoot block. The state is a pure function of those records, so
 // two replicas holding the same state hold the same StateRoot CID, however
 // they came to it, and a snapshot shares every subtree it did not change
@@ -54,14 +54,14 @@ import (
 // next's lo); the first is the incarnation's entry. A context's tree does
 // not hold the dot of the snapshot that carries it.
 //
-// Every tree is an mst profile 2 tree with the stamps summarizer: a
+// Every tree is a statetree profile 2 tree with the stamps summarizer: a
 // record's stamp is the first 8 bytes of its value (at, or changed for the
 // context), and a subtree's summary is the least stamp under it followed by
 // the greatest, 16 bytes. A tree with no entry is absent.
 //
-// The StateRoot is an mst Block (CIDv1, raw, sha2-256 of its bytes) whose
+// The StateRoot is a statetree Block (CIDv1, raw, sha2-256 of its bytes) whose
 // data is the StateRoot message of pb/state.proto, its fields in field
-// order and none at its zero value, written with mst's rules for a Node:
+// order and none at its zero value, written with statetree's rules for a Node:
 // format 2, and a flag for each tree present. Its links are the roots of
 // the trees present, in the order E, P, C. The empty state is a StateRoot
 // with no flag set and no link.
@@ -296,27 +296,27 @@ func summaryRange(s []byte) (uint64, uint64) {
 	return binary.BigEndian.Uint64(s), binary.BigEndian.Uint64(s[8:])
 }
 
-func stateTree(dags ipld.DAGService, root cid.Cid) *mst.Tree {
-	return mst.Load(dags, root, mst.WithSummarizer(stamps{}))
+func stateTree(dags ipld.DAGService, root cid.Cid) *statetree.Tree {
+	return statetree.Load(dags, root, statetree.WithSummarizer(stamps{}))
 }
 
 // treeCacheBytes is the budget of a store's cache of tree nodes: the upper
 // levels of its state, which every merge and compaction passes through.
 const treeCacheBytes = 256 << 10
 
-type treeCache = mst.Cache
+type treeCache = statetree.Cache
 
 func newTreeCache(opts *Options) *treeCache {
 	if opts.treeCache > 0 {
-		return mst.NewCache(opts.treeCache)
+		return statetree.NewCache(opts.treeCache)
 	}
-	return mst.NewCache(treeCacheBytes)
+	return statetree.NewCache(treeCacheBytes)
 }
 
 // tree is the state tree at root over dags, reading through the store's
 // cache of tree nodes.
-func (store *Datastore) tree(dags ipld.DAGService, root cid.Cid) *mst.Tree {
-	return mst.Load(dags, root, mst.WithSummarizer(stamps{}), mst.WithCache(store.trees))
+func (store *Datastore) tree(dags ipld.DAGService, root cid.Cid) *statetree.Tree {
+	return statetree.Load(dags, root, statetree.WithSummarizer(stamps{}), statetree.WithCache(store.trees))
 }
 
 // A stateRoot names a state's three trees, cid.Undef for an empty one.
@@ -336,19 +336,19 @@ func (s stateRoot) message(msg *pb.StateRoot) (present [3]cid.Cid, n int) {
 	return present, n
 }
 
-func (s stateRoot) node() (*mst.Block, error) {
+func (s stateRoot) node() (*statetree.Block, error) {
 	var msg pb.StateRoot
 	present, n := s.message(&msg)
 	data, err := msg.MarshalVT()
 	if err != nil {
 		return nil, err
 	}
-	return mst.NewBlock(data, present[:n])
+	return statetree.NewBlock(data, present[:n])
 }
 
 func decodeStateRoot(nd ipld.Node) (stateRoot, error) {
 	var buf [3]cid.Cid
-	data, links, err := mst.DecodeBlock(nd, buf[:0])
+	data, links, err := statetree.DecodeBlock(nd, buf[:0])
 	if err != nil {
 		return stateRoot{}, err
 	}
@@ -403,24 +403,24 @@ func loadStateRoot(ctx context.Context, ng ipld.NodeGetter, c cid.Cid) (stateRoo
 }
 
 // contextTree is the tree of cc.
-func contextTree(ctx context.Context, dags ipld.DAGService, cc *causalContext) (*mst.Tree, error) {
+func contextTree(ctx context.Context, dags ipld.DAGService, cc *causalContext) (*statetree.Tree, error) {
 	type kv struct{ k, v []byte }
 	entries := make([]kv, 0, len(cc.inc))
 	for r, k := range cc.inc {
 		entries = append(entries, kv{contextTreeKey(r, k), contextValue(k)})
 	}
 	slices.SortFunc(entries, func(a, b kv) int { return bytes.Compare(a.k, b.k) })
-	return mst.Build(ctx, dags, func(yield func([]byte, []byte) bool) {
+	return statetree.Build(ctx, dags, func(yield func([]byte, []byte) bool) {
 		for _, e := range entries {
 			if !yield(e.k, e.v) {
 				return
 			}
 		}
-	}, mst.WithSummarizer(stamps{}))
+	}, statetree.WithSummarizer(stamps{}))
 }
 
 // readContext reads the context a tree holds.
-func readContext(ctx context.Context, t *mst.Tree) (*causalContext, error) {
+func readContext(ctx context.Context, t *statetree.Tree) (*causalContext, error) {
 	cc := newCausalContext()
 	err := t.Range(ctx, nil, nil, func(key, v []byte) error {
 		r, k, err := parseContextEntry(key, v)
@@ -437,7 +437,7 @@ func readContext(ctx context.Context, t *mst.Tree) (*causalContext, error) {
 }
 
 // treeStamps is the least and greatest stamp in t, and whether it has any.
-func treeStamps(ctx context.Context, t *mst.Tree) (uint64, uint64, bool, error) {
+func treeStamps(ctx context.Context, t *statetree.Tree) (uint64, uint64, bool, error) {
 	s, err := t.Summary(ctx)
 	if err != nil || s == nil {
 		return 0, 0, false, err

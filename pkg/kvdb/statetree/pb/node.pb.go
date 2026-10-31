@@ -25,7 +25,7 @@ const (
 // are the block's links, in key order, and the node names each one
 // by position: the flags below say which subtree slots hold one, and the
 // n-th set flag, counting left first and then each entry's right in order,
-// is the n-th link. The format is specified in the mst package's doc.
+// is the n-th link. The format is specified in the statetree package's doc.
 type Node struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The format profile. Always 2.
@@ -193,13 +193,13 @@ var File_node_proto protoreflect.FileDescriptor
 const file_node_proto_rawDesc = "" +
 	"\n" +
 	"\n" +
-	"node.proto\x12\bkvdb.mst\"\x96\x01\n" +
+	"node.proto\x12\x0ekvdb.statetree\"\x9c\x01\n" +
 	"\x04Node\x12\x16\n" +
 	"\x06format\x18\x01 \x01(\rR\x06format\x12\x14\n" +
 	"\x05level\x18\x02 \x01(\rR\x05level\x12\x12\n" +
 	"\x04left\x18\x03 \x01(\bR\x04left\x12!\n" +
-	"\fleft_summary\x18\x04 \x01(\fR\vleftSummary\x12)\n" +
-	"\aentries\x18\x05 \x03(\v2\x0f.kvdb.mst.EntryR\aentries\"\x88\x01\n" +
+	"\fleft_summary\x18\x04 \x01(\fR\vleftSummary\x12/\n" +
+	"\aentries\x18\x05 \x03(\v2\x15.kvdb.statetree.EntryR\aentries\"\x88\x01\n" +
 	"\x05Entry\x12\x16\n" +
 	"\x06shared\x18\x01 \x01(\rR\x06shared\x12\x16\n" +
 	"\x06suffix\x18\x02 \x01(\fR\x06suffix\x12\x14\n" +
@@ -221,11 +221,11 @@ func file_node_proto_rawDescGZIP() []byte {
 
 var file_node_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_node_proto_goTypes = []any{
-	(*Node)(nil),  // 0: kvdb.mst.Node
-	(*Entry)(nil), // 1: kvdb.mst.Entry
+	(*Node)(nil),  // 0: kvdb.statetree.Node
+	(*Entry)(nil), // 1: kvdb.statetree.Entry
 }
 var file_node_proto_depIdxs = []int32{
-	1, // 0: kvdb.mst.Node.entries:type_name -> kvdb.mst.Entry
+	1, // 0: kvdb.statetree.Node.entries:type_name -> kvdb.statetree.Entry
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name

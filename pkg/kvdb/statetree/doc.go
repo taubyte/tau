@@ -1,8 +1,8 @@
-// Package mst is a Merkle search tree (Auvolat and Taïani, SRDS 2019): an
-// ordered map of byte keys to byte values whose shape is a pure function of
-// its contents, so two trees holding the same entries have the same root CID
-// whatever order they were written in. It knows nothing of what the keys and
-// values mean.
+// Package statetree is the Merkle search tree (Auvolat and Taïani, SRDS
+// 2019) a kvdb snapshot keeps its state in: an ordered map of byte keys to
+// byte values whose shape is a pure function of its contents, so two trees
+// holding the same entries have the same root CID whatever order they were
+// written in. It knows nothing of what the keys and values mean.
 //
 // A Tree is an immutable handle on a root CID over an ipld.DAGService. Put
 // and Delete return a new Tree, write only the nodes on the changed path,
@@ -76,4 +76,4 @@
 // it is a pure function of the subtree's contents. Without one, every
 // summary is empty. Summaries are part of the bytes: the same entries under
 // two summarizers are two different trees.
-package mst
+package statetree

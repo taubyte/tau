@@ -3,7 +3,7 @@
 // The race detector makes sync.Pool drop what is put in it at random, so
 // what a pooled message saves is counted only without it.
 
-package mst
+package statetree
 
 import "testing"
 

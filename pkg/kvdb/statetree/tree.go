@@ -1,4 +1,4 @@
-package mst
+package statetree
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 
 // Stop ends a Range or Scan early when its function returns it; the
 // iteration then returns nil.
-var Stop = errors.New("mst: stop")
+var Stop = errors.New("statetree: stop")
 
 // A Tree is an immutable handle on one root. Its methods are safe for
 // concurrent use when its DAGService is.

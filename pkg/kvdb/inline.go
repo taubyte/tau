@@ -9,8 +9,8 @@ import (
 
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
-	"github.com/taubyte/tau/pkg/kvdb/mst"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
+	"github.com/taubyte/tau/pkg/kvdb/statetree"
 )
 
 // inlineBudget bounds the bytes of the tree blocks a snapshot carries.
@@ -125,7 +125,7 @@ func (cs *carried) verify(stc cid.Cid, root *pb.Delta) error {
 		}
 		c := cs.links[i].c
 		cs.links = slices.Delete(cs.links, i, i+1)
-		nd, err := mst.ParseBlock(c, raw)
+		nd, err := statetree.ParseBlock(c, raw)
 		if err != nil {
 			return errMalformedState
 		}

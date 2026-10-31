@@ -103,7 +103,7 @@ message Element {
   uint64 ttl = 7;
 }
 
-// A DeltaBlock is the block of a delta, as an mst Block: its links, then
+// A DeltaBlock is the block of a delta, as a statetree Block: its links, then
 // the delta as its data. A message is written as its bytes, so a
 // DeltaBlock's bytes are the Block's, marshalled in one pass.
 message DeltaBlock {

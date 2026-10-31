@@ -6,8 +6,8 @@ import (
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
-	"github.com/taubyte/tau/pkg/kvdb/mst"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
+	"github.com/taubyte/tau/pkg/kvdb/statetree"
 )
 
 // crdtNodeGetter wraps an ipld.NodeGetter with methods that decode the
@@ -55,7 +55,7 @@ func (ng *crdtNodeGetter) GetDeltas(ctx context.Context, cids []cid.Cid) <-chan 
 }
 
 func extractDelta(nd ipld.Node) (*pb.Delta, error) {
-	data, err := mst.BlockData(nd)
+	data, err := statetree.BlockData(nd)
 	if err != nil {
 		return nil, err
 	}
@@ -82,17 +82,17 @@ func makeNode(delta *pb.Delta, heads []Head) (ipld.Node, error) {
 		msg.Links = append(msg.Links, bytesOf(h.Cid.KeyString()))
 	}
 	msg.Data = delta
-	raw := mst.BlockBuffer(msg.SizeVT())
+	raw := statetree.BlockBuffer(msg.SizeVT())
 	if _, err := msg.MarshalToSizedBufferVT(raw); err != nil {
 		return nil, err
 	}
-	return mst.BlockInBuffer(raw)
+	return statetree.BlockInBuffer(raw)
 }
 
 // readBlock is the block c names, read through dags' BlockReader when it is
 // one, else decoded by its Get.
 func readBlock(ctx context.Context, dags ipld.NodeGetter, c cid.Cid) (blocks.Block, error) {
-	if r, ok := dags.(mst.BlockReader); ok {
+	if r, ok := dags.(statetree.BlockReader); ok {
 		return r.ReadBlock(ctx, c)
 	}
 	return dags.Get(ctx, c)
@@ -100,7 +100,7 @@ func readBlock(ctx context.Context, dags ipld.NodeGetter, c cid.Cid) (blocks.Blo
 
 // blockLinks appends the links of nd, one of kvdb's blocks, to into.
 func blockLinks(nd ipld.Node, into []cid.Cid) ([]cid.Cid, error) {
-	_, links, err := mst.DecodeBlock(nd, into)
+	_, links, err := statetree.DecodeBlock(nd, into)
 	return links, err
 }
 

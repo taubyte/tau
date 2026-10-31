@@ -15,21 +15,21 @@ import (
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
 	ipld "github.com/ipfs/go-ipld-format"
-	"github.com/taubyte/tau/pkg/kvdb/mst"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
+	"github.com/taubyte/tau/pkg/kvdb/statetree"
 	"google.golang.org/protobuf/proto"
 )
 
 func buildTree(t testing.TB, dags ipld.DAGService, entries map[string][]byte) cid.Cid {
 	t.Helper()
 	keys := sortedKeys(entries)
-	tr, err := mst.Build(context.Background(), dags, func(yield func([]byte, []byte) bool) {
+	tr, err := statetree.Build(context.Background(), dags, func(yield func([]byte, []byte) bool) {
 		for _, k := range keys {
 			if !yield([]byte(k), entries[k]) {
 				return
 			}
 		}
-	}, mst.WithSummarizer(stamps{}))
+	}, statetree.WithSummarizer(stamps{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestStateRootDecodingRefusesWhatItDoesNotWrite(t *testing.T) {
 		for range links {
 			cids = append(cids, leaf.Cid())
 		}
-		nd, err := mst.NewBlock(data, cids)
+		nd, err := statetree.NewBlock(data, cids)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -18,7 +18,7 @@ import (
 	ds "github.com/ipfs/go-datastore"
 	dssync "github.com/ipfs/go-datastore/sync"
 	ipld "github.com/ipfs/go-ipld-format"
-	"github.com/taubyte/tau/pkg/kvdb/mst"
+	"github.com/taubyte/tau/pkg/kvdb/statetree"
 )
 
 var errCrash = errors.New("crashed")
@@ -439,7 +439,7 @@ func assertTreesMatch(t testing.TB, r *Datastore) {
 			t.Fatal(err)
 		}
 		for _, pair := range [][2]cid.Cid{{gs.elems, ws.elems}, {gs.pending, ws.pending}, {gs.ctx, ws.ctx}} {
-			if err := mst.Diff(ctx, stateTree(gov, pair[0]), stateTree(wov, pair[1]), func(ch mst.Change) error {
+			if err := statetree.Diff(ctx, stateTree(gov, pair[0]), stateTree(wov, pair[1]), func(ch statetree.Change) error {
 				t.Errorf("  %d %x: journal gives %x, store holds %x", ch.Kind, ch.Key, ch.Old, ch.New)
 				return nil
 			}); err != nil {

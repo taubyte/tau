@@ -1,5 +1,5 @@
 syntax = "proto3";
-package kvdb.mst;
+package kvdb.statetree;
 
 option go_package = ".;pb";
 
@@ -7,7 +7,7 @@ option go_package = ".;pb";
 // are the block's links, in key order, and the node names each one
 // by position: the flags below say which subtree slots hold one, and the
 // n-th set flag, counting left first and then each entry's right in order,
-// is the n-th link. The format is specified in the mst package's doc.
+// is the n-th link. The format is specified in the statetree package's doc.
 message Node {
   // The format profile. Always 2.
   uint32 format = 1;

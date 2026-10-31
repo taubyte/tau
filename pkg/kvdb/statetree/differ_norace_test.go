@@ -4,7 +4,7 @@
 // decoding a node takes its message from one, so allocations are counted
 // only without it.
 
-package mst
+package statetree
 
 import (
 	"context"

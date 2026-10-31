@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	cid "github.com/ipfs/go-cid"
-	"github.com/taubyte/tau/pkg/kvdb/mst"
+	"github.com/taubyte/tau/pkg/kvdb/statetree"
 )
 
 // TestAMergeReadsItsBaseFromTheCacheOfTreeNodes: a snapshot merge diffs its
@@ -41,7 +41,7 @@ func TestAMergeReadsItsBaseFromTheCacheOfTreeNodes(t *testing.T) {
 		}
 		compact(t, a)
 		base := b.base
-		closure, err := mst.Reachable(ctx, dagsyncs[1], base.elems, base.pending)
+		closure, err := statetree.Reachable(ctx, dagsyncs[1], base.elems, base.pending)
 		if err != nil {
 			t.Fatal(err)
 		}

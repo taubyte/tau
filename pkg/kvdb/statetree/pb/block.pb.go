@@ -21,7 +21,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// A block mst and kvdb write: the cids it links, in order, then its data.
+// A block statetree and kvdb write: the cids it links, in order, then its data.
 type Block struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Each a binary cid.
@@ -79,7 +79,7 @@ var File_block_proto protoreflect.FileDescriptor
 
 const file_block_proto_rawDesc = "" +
 	"\n" +
-	"\vblock.proto\x12\bkvdb.mst\"1\n" +
+	"\vblock.proto\x12\x0ekvdb.statetree\"1\n" +
 	"\x05Block\x12\x14\n" +
 	"\x05links\x18\x01 \x03(\fR\x05links\x12\x12\n" +
 	"\x04data\x18\x02 \x01(\fR\x04dataB\x06Z\x04.;pbb\x06proto3"
@@ -98,7 +98,7 @@ func file_block_proto_rawDescGZIP() []byte {
 
 var file_block_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_block_proto_goTypes = []any{
-	(*Block)(nil), // 0: kvdb.mst.Block
+	(*Block)(nil), // 0: kvdb.statetree.Block
 }
 var file_block_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type

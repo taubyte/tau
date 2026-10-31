@@ -20,13 +20,13 @@ func TestNoDrift(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := protogen.Check(root, "pkg/kvdb/mst/pb")
+	result, err := protogen.Check(root, "pkg/kvdb/statetree/pb")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var b strings.Builder
 	protogen.PrintReport(&b, result)
 	if len(result.Diffs) > 0 || result.Checked == 0 {
-		t.Fatalf("pkg/kvdb/mst/pb drifted from `buf generate`:\n%s", b.String())
+		t.Fatalf("pkg/kvdb/statetree/pb drifted from `buf generate`:\n%s", b.String())
 	}
 }

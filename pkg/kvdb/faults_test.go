@@ -17,8 +17,8 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/taubyte/tau/p2p/peer"
-	"github.com/taubyte/tau/pkg/kvdb/mst"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
+	"github.com/taubyte/tau/pkg/kvdb/statetree"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -135,7 +135,7 @@ func TestDecodersRefuseGarbage(t *testing.T) {
 	if _, err := extractDelta(dag.NewRawNode([]byte{0xff, 0xff})); err == nil {
 		t.Error("extractDelta accepted a block that is not one of kvdb's")
 	}
-	if garbage, err := mst.NewBlock([]byte{0xff, 0xff}, nil); err != nil {
+	if garbage, err := statetree.NewBlock([]byte{0xff, 0xff}, nil); err != nil {
 		t.Fatal(err)
 	} else if _, err := extractDelta(garbage); err == nil {
 		t.Error("extractDelta accepted garbage")
@@ -520,7 +520,7 @@ func TestASnapshotWithAMissingStateIsNotMerged(t *testing.T) {
 	if f != nil || err == nil {
 		t.Fatal("a broken state cid was accepted")
 	}
-	nobody, err := mst.NewBlock([]byte("held by nobody"), nil)
+	nobody, err := statetree.NewBlock([]byte("held by nobody"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

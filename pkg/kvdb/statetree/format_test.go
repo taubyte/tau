@@ -1,4 +1,4 @@
-package mst
+package statetree
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
 	multihash "github.com/multiformats/go-multihash"
-	pb "github.com/taubyte/tau/pkg/kvdb/mst/pb"
+	pb "github.com/taubyte/tau/pkg/kvdb/statetree/pb"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 )

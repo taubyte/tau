@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	cid "github.com/ipfs/go-cid"
-	"github.com/taubyte/tau/pkg/kvdb/mst"
+	"github.com/taubyte/tau/pkg/kvdb/statetree"
 )
 
 // TestVerifyingACarriedStateAllocatesWhatItsBlocksDo: checking what a
@@ -46,7 +46,7 @@ func TestVerifyingACarriedStateAllocatesWhatItsBlocksDo(t *testing.T) {
 			t.Fatal("the rebuilt StateRoot is not the state")
 		}
 		for i, raw := range root.GetInline() {
-			nd, err := mst.ParseBlock(cids[i], raw)
+			nd, err := statetree.ParseBlock(cids[i], raw)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -1,4 +1,4 @@
-package mst
+package statetree
 
 import (
 	"crypto/sha256"
@@ -12,7 +12,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
 	mh "github.com/multiformats/go-multihash"
-	pb "github.com/taubyte/tau/pkg/kvdb/mst/pb"
+	pb "github.com/taubyte/tau/pkg/kvdb/statetree/pb"
 )
 
 // A Block is a block of a tree, or of kvdb: the pb.Block of the cids it
@@ -29,7 +29,7 @@ type Block struct {
 var _ ipld.Node = (*Block)(nil)
 
 // ErrNotABlock is returned for bytes that are not a Block.
-var ErrNotABlock = errors.New("mst: not a block")
+var ErrNotABlock = errors.New("statetree: not a block")
 
 // NewBlock is the block of data linking links. It keeps neither.
 func NewBlock(data []byte, links []cid.Cid) (*Block, error) {
@@ -214,7 +214,7 @@ func (b *Block) RawData() []byte { return b.raw }
 
 func (b *Block) Cid() cid.Cid { return b.c }
 
-func (b *Block) String() string { return "[mst block " + b.c.String() + "]" }
+func (b *Block) String() string { return "[statetree block " + b.c.String() + "]" }
 
 func (b *Block) Loggable() map[string]any { return map[string]any{"block": b.c} }
 

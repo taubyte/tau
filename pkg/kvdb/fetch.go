@@ -10,8 +10,8 @@ import (
 
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
-	"github.com/taubyte/tau/pkg/kvdb/mst"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
+	"github.com/taubyte/tau/pkg/kvdb/statetree"
 )
 
 // A stateFetch is the fetch of one state's closure, kept across attempts.
@@ -95,15 +95,15 @@ func (b *fetchBuffers) putBack() {
 }
 
 // A cidKey is a block's identity as a fixed-size value: the digest of a
-// block's cid (mst.BlockPrefix), every block a state holds, or the sha2-256
+// block's cid (statetree.BlockPrefix), every block a state holds, or the sha2-256
 // of any other cid's bytes. A set of them holds no pointers.
 type cidKey [32]byte
 
 func keyOf(c cid.Cid) cidKey {
 	ks := c.KeyString()
-	if len(ks) == len(mst.BlockPrefix)+32 && ks[:len(mst.BlockPrefix)] == mst.BlockPrefix {
+	if len(ks) == len(statetree.BlockPrefix)+32 && ks[:len(statetree.BlockPrefix)] == statetree.BlockPrefix {
 		var k cidKey
-		copy(k[:], ks[len(mst.BlockPrefix):])
+		copy(k[:], ks[len(statetree.BlockPrefix):])
 		return k
 	}
 	return sha256.Sum256([]byte(ks))

@@ -1,4 +1,4 @@
-package mst
+package statetree
 
 import (
 	"sync"

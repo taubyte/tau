@@ -12,8 +12,8 @@ import (
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
 	ipld "github.com/ipfs/go-ipld-format"
-	"github.com/taubyte/tau/pkg/kvdb/mst"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
+	"github.com/taubyte/tau/pkg/kvdb/statetree"
 )
 
 // Every merge is the join of the add-wins observed-remove set with a causal
@@ -90,7 +90,7 @@ func cidOfBlockKey(prefix ds.Key, k string) (cid.Cid, error) {
 	if err != nil {
 		return cid.Undef, err
 	}
-	return mst.CastCid(bytesOf(strings.Clone(c.KeyString()))), nil
+	return statetree.CastCid(bytesOf(strings.Clone(c.KeyString()))), nil
 }
 
 // cidOverBlockKey is cidOfBlockKey over the bytes it appends to b.
@@ -100,7 +100,7 @@ func cidOverBlockKey(b []byte, prefix ds.Key, k []byte) (cid.Cid, error) {
 	if err != nil {
 		return cid.Undef, fmt.Errorf("block key %q: %w", k, err)
 	}
-	c, ok := mst.CidOver(b)
+	c, ok := statetree.CidOver(b)
 	if !ok {
 		return cid.Undef, fmt.Errorf("block key %q: not a multihash", k)
 	}
@@ -422,7 +422,7 @@ func (m *merging) link(ctx context.Context, parents []*pb.Parent) ([]link, error
 	for _, p := range parents {
 		// c is over the message's bytes until it is the head's own, or a
 		// copy for the walk.
-		c, ok := mst.CidOver(p.GetCid())
+		c, ok := statetree.CidOver(p.GetCid())
 		if !ok {
 			return nil, fmt.Errorf("bad parent cid %x", p.GetCid())
 		}
@@ -436,7 +436,7 @@ func (m *merging) link(ctx context.Context, parents []*pb.Parent) ([]link, error
 			continue
 		}
 		if !isHead {
-			c = mst.CastCid(bytesOf(strings.Clone(c.KeyString())))
+			c = statetree.CastCid(bytesOf(strings.Clone(c.KeyString())))
 		}
 		l.cid = c
 		m.t.put(m.t.key(appendDotKey(m.t.buf(), m.store.pre.missing, l.dot)), m.t.keep(appendLink(m.t.buf(), l)))
@@ -671,11 +671,11 @@ func (m *merging) settlePending(key string, r removal) {
 type snapState struct {
 	root           cid.Cid
 	sr             stateRoot
-	elems, pending *mst.Tree
+	elems, pending *statetree.Tree
 	cc             *causalContext
 	// look reads records of elems and pending, sharing the nodes on the
 	// paths it has read.
-	lookElems, lookPending *mst.Editor
+	lookElems, lookPending *statetree.Editor
 }
 
 func (s *snapState) elem(ctx context.Context, tk []byte) ([]byte, bool, error) {
@@ -825,14 +825,14 @@ func (ms *mergeSet) addPending(tk []byte, theirs []byte, has bool) error {
 // in nothing else.
 func (store *Datastore) enumerate(ctx context.Context, s *snapState) (*mergeSet, error) {
 	ms := newMergeSet()
-	err := mst.Diff(ctx, store.tree(store.dagService, store.base.elems), s.elems, func(ch mst.Change) error {
-		return ms.addElem(ch.Key, ch.New, ch.Kind != mst.Removed)
+	err := statetree.Diff(ctx, store.tree(store.dagService, store.base.elems), s.elems, func(ch statetree.Change) error {
+		return ms.addElem(ch.Key, ch.New, ch.Kind != statetree.Removed)
 	})
 	if err != nil {
 		return nil, err
 	}
-	err = mst.Diff(ctx, store.tree(store.dagService, store.base.pending), s.pending, func(ch mst.Change) error {
-		return ms.addPending(ch.Key, ch.New, ch.Kind != mst.Removed)
+	err = statetree.Diff(ctx, store.tree(store.dagService, store.base.pending), s.pending, func(ch statetree.Change) error {
+		return ms.addPending(ch.Key, ch.New, ch.Kind != statetree.Removed)
 	})
 	if err != nil {
 		return nil, err
@@ -1472,7 +1472,7 @@ func (store *Datastore) take(ctx context.Context, pick func(block) bool) ([]cid.
 	taken := make([]cid.Cid, len(ends))
 	start := 0
 	for i, end := range ends {
-		taken[i] = mst.CastCid(ids[start:end:end])
+		taken[i] = statetree.CastCid(ids[start:end:end])
 		start = end
 	}
 	for _, c := range taken {

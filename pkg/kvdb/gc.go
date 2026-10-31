@@ -14,8 +14,8 @@ import (
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
 	ipld "github.com/ipfs/go-ipld-format"
-	"github.com/taubyte/tau/pkg/kvdb/mst"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
+	"github.com/taubyte/tau/pkg/kvdb/statetree"
 	"github.com/taubyte/tau/pkg/pebbleds"
 	"google.golang.org/protobuf/proto"
 )
@@ -32,7 +32,7 @@ import (
 // one is held: a root is admitted only once its whole closure is. There
 // are no counts. When roots retire, what only they reached is found by
 // diffing each of their trees against every tree of the same kind a root
-// still has (mst.Differ): a subtree two trees share is passed over unread,
+// still has (statetree.Differ): a subtree two trees share is passed over unread,
 // so the work is the paths that differ, never the children they share.
 // That garbage is recorded, in chunks, as a deletion manifest committed
 // with the retirement, atomically, while the retired trees can still be
@@ -140,13 +140,13 @@ func parseChunkKey(prefix ds.Key, k string) (uint64, uint64, error) {
 // isStateCid reports whether c is a cid a state block may have.
 func isStateCid(c cid.Cid) bool {
 	ks := c.KeyString()
-	return len(ks) == len(mst.BlockPrefix)+len(cidKey{}) && ks[:len(mst.BlockPrefix)] == mst.BlockPrefix
+	return len(ks) == len(statetree.BlockPrefix)+len(cidKey{}) && ks[:len(statetree.BlockPrefix)] == statetree.BlockPrefix
 }
 
 // cidOf is the state block named by k.
 func cidOf(k cidKey) cid.Cid {
-	var b [len(mst.BlockPrefix) + len(cidKey{})]byte
-	copy(b[copy(b[:], mst.BlockPrefix):], k[:])
+	var b [len(statetree.BlockPrefix) + len(cidKey{})]byte
+	copy(b[copy(b[:], statetree.BlockPrefix):], k[:])
 	c, err := cid.Cast(b[:])
 	if err != nil {
 		panic(err)
@@ -258,7 +258,7 @@ type collector struct {
 	recent recentDAG
 	// Storage a root change reuses, one change at a time.
 	change          rootChange
-	differ          mst.Differ
+	differ          statetree.Differ
 	cand, next      []cidKey
 	seen            map[cidKey]bool
 	live, retired   []*liveRoot

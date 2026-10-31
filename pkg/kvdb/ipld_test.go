@@ -9,8 +9,8 @@ import (
 
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
-	"github.com/taubyte/tau/pkg/kvdb/mst"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
+	"github.com/taubyte/tau/pkg/kvdb/statetree"
 )
 
 // fetchedGetter answers GetMany with nodes it already holds.
@@ -120,7 +120,7 @@ func TestDecodedDeltaAliasesItsBlock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := mst.BlockData(nd)
+	data, err := statetree.BlockData(nd)
 	if err != nil {
 		t.Fatal(err)
 	}

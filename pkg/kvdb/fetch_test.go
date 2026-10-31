@@ -14,7 +14,7 @@ import (
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
 	ipld "github.com/ipfs/go-ipld-format"
-	"github.com/taubyte/tau/pkg/kvdb/mst"
+	"github.com/taubyte/tau/pkg/kvdb/statetree"
 )
 
 // rationed serves at most left blocks until refilled: a peer behind a link
@@ -168,7 +168,7 @@ func seedKeys(t testing.TB, r *Datastore, n int, prefix string) {
 }
 
 // seedLevels writes, in one batch, keys whose elements have exactly the
-// given mst levels, in key order: the level of an element is a function of
+// given statetree levels, in key order: the level of an element is a function of
 // its key and the dot the batch carries, so the shape of r's elements tree
 // is the one the levels spell, whatever incarnation r drew.
 func seedLevels(t testing.TB, r *Datastore, levels ...uint32) {
@@ -183,7 +183,7 @@ func seedLevels(t testing.TB, r *Datastore, levels ...uint32) {
 	n := 0
 	for i := 0; n < len(levels); i++ {
 		k := ds.NewKey(fmt.Sprintf("/k%08d", i))
-		if mst.Level(elemTreeKey(k.String(), d)) != levels[n] {
+		if statetree.Level(elemTreeKey(k.String(), d)) != levels[n] {
 			continue
 		}
 		if err := b.Put(context.Background(), k, []byte(fmt.Sprintf("v%d", i))); err != nil {
