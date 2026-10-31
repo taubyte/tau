@@ -16,6 +16,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/hashicorp/raft"
 	ds "github.com/ipfs/go-datastore"
+	query "github.com/ipfs/go-datastore/query"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/stretchr/testify/assert"
@@ -1002,6 +1003,33 @@ func TestHealing_AHealAckFromTheMembersOwnLeaderIsIgnored(t *testing.T) {
 	assert.Same(t, before, member.current().raft, "the member's raft was replaced")
 	_, held := member.Get("held")
 	assert.True(t, held, "the member wiped what its group holds")
+}
+
+// TestHealing_AWipeFinishesWhateverCancelsItsContext: a yield wiped the
+// member's raft state with the cluster's context, which a Close during the
+// yield cancels; a store that honours its context then kept part of it, and
+// the raft built over it found a log it could not read and panicked.
+func TestHealing_AWipeFinishesWhateverCancelsItsContext(t *testing.T) {
+	node := newMockNode(t)
+	namespace := "heal-wipe-cancelled"
+	cl, err := New(node, namespace, healingTestOptions()...)
+	require.NoError(t, err)
+	t.Cleanup(func() { cl.Close() })
+	waitLeader(t, cl, 5*time.Second)
+	require.NoError(t, cl.Set("held", []byte("v"), time.Second))
+
+	c := cl.(*cluster)
+	m := c.current()
+	m.takeDown()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	m.healer.Load().wipeRaftState(ctx)
+
+	results, err := node.Store().Query(t.Context(), query.Query{Prefix: path.Join(RaftStoragePrefix, namespace), KeysOnly: true})
+	require.NoError(t, err)
+	left, err := results.Rest()
+	require.NoError(t, err)
+	assert.Empty(t, left, "a wipe under a cancelled context left raft state behind")
 }
 
 // TestHealing_ACycleWithALeaderInItIsNotSplit: the healer sampled the leader

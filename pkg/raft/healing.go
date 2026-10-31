@@ -646,7 +646,11 @@ func (h *healer) yieldAndRejoin(ctx context.Context, winnerLeader peer.ID) {
 // are still in the store, under keys the winning group never committed. It is a
 // voter; the next election it wins serves them, behind a barrier, as committed
 // state.
+// wipeRaftState removes the member's logs, stable state and applied data.
+// It finishes whatever cancels ctx, as Close does: a raft built over a store
+// it half wiped finds logs it cannot read, and panics.
 func (h *healer) wipeRaftState(ctx context.Context) {
+	ctx = context.WithoutCancel(ctx)
 	store := h.cluster.node.Store()
 	storagePrefix := path.Join(RaftStoragePrefix, h.cluster.namespace)
 
