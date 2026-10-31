@@ -390,6 +390,7 @@ type Datastore struct {
 	// buildState's storage.
 	spareMerge *merging
 	build      stateBuild
+	redo       redoScratch
 	// compactDue asks the next maintenance for a snapshot.
 	compactDue bool
 	// lows are lower bounds, kept so the frequent passes skip scans that

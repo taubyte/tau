@@ -15,6 +15,7 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/taubyte/tau/pkg/kvdb/mst"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
+	"github.com/taubyte/tau/pkg/pebbleds"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -1239,10 +1240,17 @@ func (store *Datastore) commitAtomic(ctx context.Context, t *txn) error {
 		return err
 	}
 	seq++
+	// The writes are the txn's keys and values, lent, and its marks, built
+	// in storage the store keeps; the record is made of them, then applied.
+	r := &store.redo
+	r.start(3 * len(t.order))
+	defer r.done()
 	var chunks []*pb.Redo
 	cur, size := &pb.Redo{Seq: seq}, 0
-	add := func(w *pb.Write) {
-		n := proto.Size(w)
+	add := func(key, value []byte, del bool) {
+		r.writes = append(r.writes, pb.Write{Key: key, Value: value, Delete: del})
+		w := &r.writes[len(r.writes)-1]
+		n := w.SizeVT()
 		if size > 0 && size+n > redoChunkBytes {
 			chunks = append(chunks, cur)
 			cur, size = &pb.Redo{Seq: seq}, 0
@@ -1250,16 +1258,19 @@ func (store *Datastore) commitAtomic(ctx context.Context, t *txn) error {
 		cur.Writes = append(cur.Writes, w)
 		size += n
 	}
+	view := func(k []byte, fn func(v []byte) error) error { return store.view(ctx, k, fn) }
+	mark := func(m []byte) error {
+		start := len(r.keys)
+		r.keys = append(r.keys, m...)
+		add(r.keys[start:len(r.keys):len(r.keys)], nil, false)
+		return nil
+	}
 	for _, k := range t.order {
 		v := t.writes[k]
-		marks, err := store.journal.marks(ctx, k, v)
-		if err != nil {
+		if _, err := store.journal.appendMarks(&r.look, k, v, view, mark); err != nil {
 			return err
 		}
-		for _, m := range marks {
-			add(&pb.Write{Key: []byte(m)})
-		}
-		add(&pb.Write{Key: []byte(k), Value: v, Delete: v == nil})
+		add(bytesOf(k), v, v == nil)
 	}
 	chunks = append(chunks, cur)
 	err = store.recordRedo(ctx, seq, chunks)
@@ -1306,7 +1317,7 @@ func (store *Datastore) recordRedo(ctx context.Context, seq uint64, chunks []*pb
 		return err
 	}
 	for i, c := range chunks {
-		data, err := proto.Marshal(c)
+		data, err := c.MarshalVT()
 		if err != nil {
 			return err
 		}
@@ -1332,16 +1343,26 @@ func (store *Datastore) applyRedo(ctx context.Context, seq uint64, chunks []*pb.
 	if err != nil {
 		return err
 	}
+	// A pebbleds store copies what its batch is given; another may keep it,
+	// and a write's key and value are a txn's, used again once it is done.
+	_, copies := store.raw.(*pebbleds.Store)
 	for _, c := range chunks {
 		for _, w := range c.GetWrites() {
+			k := stringOf(w.GetKey())
+			if !copies {
+				k = string(w.GetKey())
+			}
 			if w.GetDelete() {
-				err = b.Delete(ctx, ds.RawKey(string(w.GetKey())))
+				err = b.Delete(ctx, ds.RawKey(k))
 			} else {
 				v := w.GetValue()
-				if v == nil {
+				switch {
+				case v == nil:
 					v = []byte{}
+				case !copies:
+					v = bytes.Clone(v)
 				}
-				err = b.Put(ctx, ds.RawKey(string(w.GetKey())), v)
+				err = b.Put(ctx, ds.RawKey(k), v)
 			}
 			if err != nil {
 				return err
@@ -1481,4 +1502,31 @@ func (ch *rootChange) setBase(t *txn, from, to stateBase) {
 	ch.remove(from.elems)
 	ch.remove(from.pending)
 	t.put(ch.store.baseKey(), encodeBase(to))
+}
+
+// redoScratch is what commitAtomic uses again from one commit to the next:
+// the writes of its record, the keys of its marks, and scratch for a mark
+// being built.
+type redoScratch struct {
+	writes     []pb.Write
+	keys, look []byte
+}
+
+// keptRedo bounds the writes a store keeps room for between commits.
+const keptRedo = 1 << 12
+
+// start readies r for a commit of at most n writes: the record points into
+// writes, which must not move while it is made.
+func (r *redoScratch) start(n int) {
+	if cap(r.writes) > keptRedo {
+		r.writes = nil
+	}
+	r.writes = slices.Grow(r.writes[:0], n)
+	r.keys = r.keys[:0]
+}
+
+// done lets go of what the commit's writes named.
+func (r *redoScratch) done() {
+	clear(r.writes)
+	r.writes = r.writes[:0]
 }

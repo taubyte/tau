@@ -338,7 +338,7 @@ func (t *txn) commitTo(ctx context.Context, s *pebbleds.Store, j *journal) error
 	for _, k := range t.order {
 		v := t.writes[k]
 		if j != nil {
-			m, err := j.markInto(s, t.marks, &t.prefix, k, v)
+			m, err := t.markTo(s, j, k, v)
 			if err != nil {
 				return err
 			}
@@ -362,6 +362,39 @@ func (t *txn) commitTo(ctx context.Context, s *pebbleds.Store, j *journal) error
 		}
 	}
 	return t.batch.Commit(ctx)
+}
+
+// markTo sets in t's batch of marks each mark a write of v under k makes,
+// as appendMarks does, reading what k holds in s.
+func (t *txn) markTo(s *pebbleds.Store, j *journal, k string, v []byte) (bool, error) {
+	if rest, ok := strings.CutPrefix(k, j.elems); ok {
+		t.prefix = j.appendElemMark(t.prefix[:0], rest)
+		return true, t.marks.Set(t.prefix, nil)
+	}
+	rest, ok := strings.CutPrefix(k, j.pending)
+	if !ok {
+		return false, nil
+	}
+	had, old := false, uint64(0)
+	err := s.View(bytesOf(k), func(stamps []byte) error {
+		b, err := stampsBucket(stamps)
+		had, old = true, b
+		return err
+	})
+	if err != nil && !errors.Is(err, ds.ErrNotFound) {
+		return false, err
+	}
+	bs, n, err := pendingBuckets(had, old, v)
+	if err != nil {
+		return false, err
+	}
+	for _, b := range bs[:n] {
+		t.prefix = j.appendPendingMark(t.prefix[:0], b, rest)
+		if err := t.marks.Set(t.prefix, nil); err != nil {
+			return false, err
+		}
+	}
+	return n > 0, nil
 }
 
 // batchFor is b emptied, or a new batch when b is not one of s's.

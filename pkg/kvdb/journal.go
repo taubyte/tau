@@ -5,10 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"unsafe"
 
 	ds "github.com/ipfs/go-datastore"
-	"github.com/taubyte/tau/pkg/pebbleds"
 )
 
 // The journal names every state record changed since the state's trees
@@ -57,96 +55,92 @@ func (j *journal) pendingMarkIn(b uint64, key string, d dot) string {
 	return j.jPending + fmt.Sprintf("%020d", b) + "/" + d.segment() + "/" + keySegment(key)
 }
 
-func (j *journal) pendingMark(rest string, stamps []byte) (string, error) {
-	at, ttl, err := decodeStamps(stamps)
-	if err != nil {
-		return "", err
-	}
-	b := make([]byte, 0, len(j.jPending)+counterDigits+1+len(rest))
-	b = append(append(appendCounter(append(b, j.jPending...), bucket(at+ttl)), '/'), rest...)
-	return unsafe.String(unsafe.SliceData(b), len(b)), nil
-}
-
-func (j *journal) marks(ctx context.Context, key string, value []byte) ([]string, error) {
-	var out []string
-	err := j.eachMark(ctx, key, value, func(m string) error {
-		out = append(out, m)
-		return nil
-	})
-	return out, err
-}
-
-// eachMark calls fn with each journal mark a write of value under key makes,
-// a nil value being a delete.
-func (j *journal) eachMark(ctx context.Context, key string, value []byte, fn func(string) error) error {
-	if rest, ok := strings.CutPrefix(key, j.elems); ok {
-		return fn(j.jElems + rest)
-	}
-	rest, ok := strings.CutPrefix(key, j.pending)
-	if !ok {
-		return nil
-	}
-	var first string
-	old, err := j.inner.Get(ctx, ds.RawKey(key))
-	switch {
-	case err == nil:
-		if first, err = j.pendingMark(rest, old); err != nil {
-			return err
-		}
-		if err := fn(first); err != nil {
-			return err
-		}
-	case !errors.Is(err, ds.ErrNotFound):
-		return err
-	}
-	if value != nil {
-		m, err := j.pendingMark(rest, value)
+// view reads key from the store the journal marks, for appendMarks.
+func (j *journal) view(ctx context.Context) func(k []byte, fn func(v []byte) error) error {
+	return func(k []byte, fn func(v []byte) error) error {
+		v, err := j.inner.Get(ctx, ds.RawKey(string(k)))
 		if err != nil {
 			return err
 		}
-		if m != first {
-			return fn(m)
-		}
+		return fn(v)
 	}
-	return nil
 }
 
-// markInto sets in marks each mark eachMark names, built in *buf, reading
-// the value key holds from s. It reports whether there was any.
-func (j *journal) markInto(s *pebbleds.Store, marks *pebbleds.Batch, buf *[]byte, key string, value []byte) (bool, error) {
+// appendMarks hands set each journal mark a write of value under key makes,
+// a nil value being a delete: an element's, or a pending removal's under the
+// bucket it had before the write and the one it has after. A mark is built
+// in *buf and lent for the call; view reads the value key holds. It reports
+// whether there was any.
+func (j *journal) appendMarks(buf *[]byte, key string, value []byte, view func(k []byte, fn func(v []byte) error) error, set func(m []byte) error) (bool, error) {
 	if rest, ok := strings.CutPrefix(key, j.elems); ok {
-		*buf = append(append((*buf)[:0], j.jElems...), rest...)
-		return true, marks.Set(*buf, nil)
+		*buf = j.appendElemMark((*buf)[:0], rest)
+		return true, set(*buf)
 	}
 	rest, ok := strings.CutPrefix(key, j.pending)
 	if !ok {
 		return false, nil
 	}
-	marked, had := false, uint64(0)
-	err := s.View(bytesOf(key), func(old []byte) error {
-		at, ttl, err := decodeStamps(old)
-		if err != nil {
-			return err
-		}
-		marked, had = true, bucket(at+ttl)
-		*buf = append(append(appendCounter(append((*buf)[:0], j.jPending...), had), '/'), rest...)
-		return marks.Set(*buf, nil)
+	had, old := false, uint64(0)
+	err := view(bytesOf(key), func(v []byte) error {
+		b, err := stampsBucket(v)
+		had, old = true, b
+		return err
 	})
 	if err != nil && !errors.Is(err, ds.ErrNotFound) {
 		return false, err
 	}
-	if value == nil {
-		return marked, nil
-	}
-	at, ttl, err := decodeStamps(value)
+	bs, n, err := pendingBuckets(had, old, value)
 	if err != nil {
 		return false, err
 	}
-	if b := bucket(at + ttl); !marked || b != had {
-		*buf = append(append(appendCounter(append((*buf)[:0], j.jPending...), b), '/'), rest...)
-		return true, marks.Set(*buf, nil)
+	for _, b := range bs[:n] {
+		*buf = j.appendPendingMark((*buf)[:0], b, rest)
+		if err := set(*buf); err != nil {
+			return false, err
+		}
 	}
-	return marked, nil
+	return n > 0, nil
+}
+
+// appendElemMark appends the mark of the element whose key, after the
+// elements' prefix, is rest.
+func (j *journal) appendElemMark(b []byte, rest string) []byte {
+	return append(append(b, j.jElems...), rest...)
+}
+
+// appendPendingMark appends the mark of the pending removal whose key,
+// after the pending removals' prefix, is rest, under bucket bk.
+func (j *journal) appendPendingMark(b []byte, bk uint64, rest string) []byte {
+	return append(append(appendCounter(append(b, j.jPending...), bk), '/'), rest...)
+}
+
+// pendingBuckets is the buckets a write of value marks a pending removal
+// under, given the bucket old it had, when it had one: that one, and the
+// one value has if it is another; a nil value is a delete.
+func pendingBuckets(had bool, old uint64, value []byte) ([2]uint64, int, error) {
+	var bs [2]uint64
+	n := 0
+	if had {
+		bs[n] = old
+		n++
+	}
+	if value != nil {
+		b, err := stampsBucket(value)
+		if err != nil {
+			return bs, 0, err
+		}
+		if !had || b != old {
+			bs[n] = b
+			n++
+		}
+	}
+	return bs, n, nil
+}
+
+// stampsBucket is the bucket of a pending removal's stamps.
+func stampsBucket(v []byte) (uint64, error) {
+	at, ttl, err := decodeStamps(v)
+	return bucket(at + ttl), err
 }
 
 // journaled is the store a Datastore writes through: every write of a
@@ -171,11 +165,11 @@ func (s *journaled) Delete(ctx context.Context, key ds.Key) error {
 }
 
 func (s *journaled) markDurably(ctx context.Context, key ds.Key, value []byte) error {
-	marked := false
-	if err := s.j.eachMark(ctx, key.String(), value, func(m string) error {
-		marked = true
-		return s.Datastore.Put(ctx, ds.RawKey(m), []byte{})
-	}); err != nil || !marked {
+	var buf []byte
+	marked, err := s.j.appendMarks(&buf, key.String(), value, s.j.view(ctx), func(m []byte) error {
+		return s.Datastore.Put(ctx, ds.RawKey(string(m)), []byte{})
+	})
+	if err != nil || !marked {
 		return err
 	}
 	return s.Datastore.Sync(ctx, s.j.root)
@@ -204,10 +198,12 @@ type journaledBatch struct {
 }
 
 func (b *journaledBatch) mark(ctx context.Context, key ds.Key, value []byte) error {
-	return b.j.eachMark(ctx, key.String(), value, func(m string) error {
-		b.marked = true
-		return b.marks.Put(ctx, ds.RawKey(m), []byte{})
+	var buf []byte
+	marked, err := b.j.appendMarks(&buf, key.String(), value, b.j.view(ctx), func(m []byte) error {
+		return b.marks.Put(ctx, ds.RawKey(string(m)), []byte{})
 	})
+	b.marked = b.marked || marked
+	return err
 }
 
 func (b *journaledBatch) Commit(ctx context.Context) error {
