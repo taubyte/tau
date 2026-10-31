@@ -15,7 +15,8 @@ import (
 // TestAPutAllocations bounds what an overwrite on a warm replica allocates,
 // on the store a node runs, kept in memory: 133 once scans lent the store's
 // bytes, 60 once keys and values were built in the txn's storage, contexts
-// shared what they did not change, and delta merges reused theirs. Over the tests' map store it was 250 before its txns, its delta and
+// shared what they did not change, and delta merges reused theirs, 49 once
+// a txn wrote pebbleds in batches it keeps. Over the tests' map store it was 250 before its txns, its delta and
 // its broadcast were reused or borrowed, and 171 after.
 func TestAPutAllocations(t *testing.T) {
 	ctx := context.Background()
@@ -37,7 +38,7 @@ func TestAPutAllocations(t *testing.T) {
 		}
 	})
 	t.Logf("a put: %.0f allocations", a)
-	if a > 62 {
-		t.Errorf("a put: %.0f allocations, want at most 62", a)
+	if a > 51 {
+		t.Errorf("a put: %.0f allocations, want at most 51", a)
 	}
 }

@@ -34,6 +34,8 @@ type Store struct {
 	write *pebble.WriteOptions
 	noWAL bool
 
+	// written counts the bytes of the keys and values written.
+	written atomic.Int64
 	// users counts the calls in flight; Close waits for them.
 	users  atomic.Int64
 	closed atomic.Bool
@@ -174,8 +176,13 @@ func (s *Store) Put(_ context.Context, key ds.Key, value []byte) error {
 	if err := s.db.Set(keyBytes(key), value, s.write); err != nil {
 		return fmt.Errorf("pebbleds: set: %w", err)
 	}
+	s.written.Add(int64(len(key.String()) + len(value)))
 	return nil
 }
+
+// Written is how many bytes of keys and values the store has written:
+// every Put, and every Set of a committed batch.
+func (s *Store) Written() int64 { return s.written.Load() }
 
 // Delete removes key. Removing an absent key is not an error.
 func (s *Store) Delete(_ context.Context, key ds.Key) error {

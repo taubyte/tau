@@ -382,6 +382,7 @@ type Datastore struct {
 	msgHeads []pb.Head
 	msgDots  []pb.Dot
 	msgReps  []string
+	msgAcks  []pb.Entry
 	// ccWaited is set once someone holds ccChanged to wait on.
 	ccWaited bool
 	// spareMerge is a finished delta merge, kept for the next.

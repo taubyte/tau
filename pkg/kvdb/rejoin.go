@@ -220,14 +220,18 @@ func (store *Datastore) message(heads []Head, v *verdict) *pb.CRDTBroadcast {
 	}
 	store.msgReps = store.cc.appendReplicas(store.msgReps[:0])
 	defer clear(store.msgReps)
+	acks := store.msgAcks[:0]
 	for _, r := range store.msgReps {
 		if _, ok := store.merged[r]; !ok {
 			continue
 		}
-		k := store.cc.inc[r]
-		for _, s := range k.spans {
-			b.Acks = append(b.Acks, &pb.Entry{Replica: bytesOf(r), Base: s.lo, Counter: s.hi})
+		for _, s := range store.cc.inc[r].spans {
+			acks = append(acks, pb.Entry{Replica: bytesOf(r), Base: s.lo, Counter: s.hi})
 		}
+	}
+	store.msgAcks = acks
+	for i := range acks {
+		b.Acks = append(b.Acks, &acks[i])
 	}
 	return b
 }

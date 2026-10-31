@@ -70,40 +70,11 @@ var (
 // end a catch-up.
 const stalledAttempts = 3
 
-// snapStore is a Datastore over its own pebble store, metered.
+// snapStore is a Datastore over its own pebble store, which counts what it
+// writes.
 type snapStore struct {
 	r  *Datastore
-	st *dsMeter
-}
-
-// dsMeter counts the bytes written to a datastore, keys and values, batches
-// included.
-type dsMeter struct {
-	ds.Batching
-	written atomic.Int64
-}
-
-func (m *dsMeter) Put(ctx context.Context, k ds.Key, v []byte) error {
-	m.written.Add(int64(len(k.String()) + len(v)))
-	return m.Batching.Put(ctx, k, v)
-}
-
-// readsFrom is the store under m: m meters writes only.
-func (m *dsMeter) readsFrom() ds.Datastore { return m.Batching }
-
-func (m *dsMeter) Batch(ctx context.Context) (ds.Batch, error) {
-	b, err := m.Batching.Batch(ctx)
-	return &dsMeterBatch{Batch: b, m: m}, err
-}
-
-type dsMeterBatch struct {
-	ds.Batch
-	m *dsMeter
-}
-
-func (b *dsMeterBatch) Put(ctx context.Context, k ds.Key, v []byte) error {
-	b.m.written.Add(int64(len(k.String()) + len(v)))
-	return b.Batch.Put(ctx, k, v)
+	st *pebbleds.Store
 }
 
 func openSnap(tb testing.TB, env snapEnv) snapReplica {
@@ -112,13 +83,12 @@ func openSnap(tb testing.TB, env snapEnv) snapReplica {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	st := &dsMeter{Batching: pst}
-	r, err := NewDatastore(st, ds.NewKey("snapbench"), env.dag, &nullBroadcaster{}, env.opts)
+	r, err := NewDatastore(pst, ds.NewKey("snapbench"), env.dag, &nullBroadcaster{}, env.opts)
 	if err != nil {
-		st.Close()
+		pst.Close()
 		tb.Fatal(err)
 	}
-	return &snapStore{r: r, st: st}
+	return &snapStore{r: r, st: pst}
 }
 
 func (f *snapStore) PutAll(ctx context.Context, n int, kv func(i int) (string, []byte)) error {
@@ -306,7 +276,7 @@ func newSnapNode(b *testing.B, name string, opts *Options) *snapNode {
 }
 
 // dsWritten is how many bytes n has written to its datastore.
-func (n *snapNode) dsWritten() int64 { return n.snapReplica.(*snapStore).st.written.Load() }
+func (n *snapNode) dsWritten() int64 { return n.snapReplica.(*snapStore).st.Written() }
 
 // fetchFrom makes peer the only replica n fetches from.
 func (n *snapNode) fetchFrom(peer *snapNode) { n.local.setRemotes(peer.serve) }

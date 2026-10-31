@@ -18,6 +18,8 @@ var ErrCommitted = errors.New("pebbleds: batch already committed")
 type Batch struct {
 	s *Store
 	b *pebble.Batch
+	// n counts the bytes Set was given.
+	n int64
 }
 
 var _ ds.Batch = (*Batch)(nil)
@@ -44,6 +46,7 @@ func (b *Batch) Set(k, v []byte) error {
 	if err := b.b.Set(k, v, nil); err != nil {
 		return fmt.Errorf("pebbleds: batch set: %w", err)
 	}
+	b.n += int64(len(k) + len(v))
 	return nil
 }
 
@@ -80,7 +83,26 @@ func (b *Batch) Commit(context.Context) error {
 	if err := b.b.Commit(b.s.write); err != nil {
 		return fmt.Errorf("pebbleds: commit: %w", err)
 	}
+	b.s.written.Add(b.n)
 	err := b.b.Close()
-	b.b = nil
+	b.b, b.n = nil, 0
 	return err
 }
+
+// Reset empties b, committed or not, so it can be used again.
+func (b *Batch) Reset() error {
+	if b.b != nil {
+		b.b.Reset()
+		b.n = 0
+		return nil
+	}
+	if !b.s.enter() {
+		return ErrClosed
+	}
+	defer b.s.leave()
+	b.b, b.n = b.s.db.NewBatch(), 0
+	return nil
+}
+
+// Store is the store b writes.
+func (b *Batch) Store() *Store { return b.s }

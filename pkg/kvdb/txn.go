@@ -32,6 +32,9 @@ type txn struct {
 	ents   []entry
 	elems  []element
 	prefix []byte
+	// marks and batch are the batches commit writes a pebbleds store with,
+	// kept across uses.
+	marks, batch *pebbleds.Batch
 }
 
 // txnPool keeps released txns, with the storage they grew.
@@ -292,6 +295,14 @@ func (t *txn) commit(ctx context.Context) error {
 	if len(t.writes) == 0 {
 		return nil
 	}
+	var j *journal
+	under := t.store
+	if js, ok := under.(*journaled); ok {
+		j, under = js.j, js.Datastore
+	}
+	if s, ok := under.(*pebbleds.Store); ok {
+		return t.commitTo(ctx, s, j)
+	}
 	b, err := batchOf(ctx, t.store)
 	if err != nil {
 		return err
@@ -310,6 +321,54 @@ func (t *txn) commit(ctx context.Context) error {
 	return b.Commit(ctx)
 }
 
+// commitTo commits t to s in t's own batches, the marks j asks for, when it
+// is not nil, committed and synced first, as journaled's batch does.
+func (t *txn) commitTo(ctx context.Context, s *pebbleds.Store, j *journal) error {
+	var err error
+	if t.marks, err = batchFor(t.marks, s); err != nil {
+		return err
+	}
+	if t.batch, err = batchFor(t.batch, s); err != nil {
+		return err
+	}
+	marked := false
+	for _, k := range t.order {
+		v := t.writes[k]
+		if j != nil {
+			m, err := j.markInto(s, t.marks, &t.prefix, k, v)
+			if err != nil {
+				return err
+			}
+			marked = marked || m
+		}
+		if v == nil {
+			err = t.batch.Remove(bytesOf(k))
+		} else {
+			err = t.batch.Set(bytesOf(k), v)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	if marked {
+		if err := t.marks.Commit(ctx); err != nil {
+			return err
+		}
+		if err := s.Sync(ctx, j.root); err != nil {
+			return err
+		}
+	}
+	return t.batch.Commit(ctx)
+}
+
+// batchFor is b emptied, or a new batch when b is not one of s's.
+func batchFor(b *pebbleds.Batch, s *pebbleds.Store) (*pebbleds.Batch, error) {
+	if b == nil || b.Store() != s {
+		return s.NewBatch()
+	}
+	return b, b.Reset()
+}
+
 // batchOf is the store's own batch when it has one, and otherwise a batch
 // that applies its writes in order on commit.
 func batchOf(ctx context.Context, store ds.Datastore) (ds.Batch, error) {
@@ -319,24 +378,12 @@ func batchOf(ctx context.Context, store ds.Datastore) (ds.Batch, error) {
 	return ds.NewBasicBatch(store), nil
 }
 
-// A readsThrough wraps a store without changing what reading it returns:
-// kvdb reads the store under it.
-type readsThrough interface {
-	readsFrom() ds.Datastore
-}
-
 // below is the store a read of store reaches.
 func below(store ds.Datastore) ds.Datastore {
-	for {
-		switch s := store.(type) {
-		case *journaled:
-			store = s.Datastore
-		case readsThrough:
-			store = s.readsFrom()
-		default:
-			return store
-		}
+	if j, ok := store.(*journaled); ok {
+		return j.Datastore
 	}
+	return store
 }
 
 // scanStore calls fn with every entry under prefix, in no order to rely

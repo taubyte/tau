@@ -9,6 +9,7 @@ import (
 	"unsafe"
 
 	ds "github.com/ipfs/go-datastore"
+	"github.com/taubyte/tau/pkg/pebbleds"
 )
 
 // The journal names every state record changed since the state's trees
@@ -109,6 +110,44 @@ func (j *journal) eachMark(ctx context.Context, key string, value []byte, fn fun
 		}
 	}
 	return nil
+}
+
+// markInto sets in marks each mark eachMark names, built in *buf, reading
+// the value key holds from s. It reports whether there was any.
+func (j *journal) markInto(s *pebbleds.Store, marks *pebbleds.Batch, buf *[]byte, key string, value []byte) (bool, error) {
+	if rest, ok := strings.CutPrefix(key, j.elems); ok {
+		*buf = append(append((*buf)[:0], j.jElems...), rest...)
+		return true, marks.Set(*buf, nil)
+	}
+	rest, ok := strings.CutPrefix(key, j.pending)
+	if !ok {
+		return false, nil
+	}
+	marked, had := false, uint64(0)
+	err := s.View(bytesOf(key), func(old []byte) error {
+		at, ttl, err := decodeStamps(old)
+		if err != nil {
+			return err
+		}
+		marked, had = true, bucket(at+ttl)
+		*buf = append(append(appendCounter(append((*buf)[:0], j.jPending...), had), '/'), rest...)
+		return marks.Set(*buf, nil)
+	})
+	if err != nil && !errors.Is(err, ds.ErrNotFound) {
+		return false, err
+	}
+	if value == nil {
+		return marked, nil
+	}
+	at, ttl, err := decodeStamps(value)
+	if err != nil {
+		return false, err
+	}
+	if b := bucket(at + ttl); !marked || b != had {
+		*buf = append(append(appendCounter(append((*buf)[:0], j.jPending...), b), '/'), rest...)
+		return true, marks.Set(*buf, nil)
+	}
+	return marked, nil
 }
 
 // parseElemMark reads the element an element mark names.
