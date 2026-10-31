@@ -542,13 +542,25 @@ func (store *Datastore) mergeDelta(ctx context.Context, c cid.Cid, delta *pb.Del
 	if store.cc.covers(d) {
 		return nil, nil
 	}
-	at, ttl := delta.GetAt(), delta.GetTtl()
 	m := store.spareMerge
 	if store.spareMerge = nil; m == nil {
 		m = store.beginMerge()
 	} else {
 		store.startMerge(m)
 	}
+	walk, err := m.delta(ctx, c, d, delta)
+	m.t.release()
+	m.t, m.cc = nil, nil
+	if len(m.touched) <= keptMerge && len(m.heads.add)+len(m.heads.remove) <= keptMerge {
+		store.spareMerge = m
+	}
+	return walk, err
+}
+
+// delta merges delta, the block c of dot d, in m.
+func (m *merging) delta(ctx context.Context, c cid.Cid, d dot, delta *pb.Delta) ([]link, error) {
+	store := m.store
+	at, ttl := delta.GetAt(), delta.GetTtl()
 	m.horizon = max(m.horizon, delta.GetHorizon())
 	m.heard(d.replica, at)
 	linked, err := m.linked(ctx, d)
@@ -584,15 +596,10 @@ func (store *Datastore) mergeDelta(ctx context.Context, c cid.Cid, delta *pb.Del
 	}
 	m.settleBlock(c, block{kind: kindDelta, dot: d, at: at, ttl: ttl}, delta.GetPriority(), linked)
 	// The block the merge records is durable before the merge is.
-	if err = store.syncBlocks(ctx); err == nil {
-		err = m.commit(ctx)
+	if err := store.syncBlocks(ctx); err != nil {
+		return nil, err
 	}
-	m.t.release()
-	m.t, m.cc = nil, nil
-	if len(m.touched) <= keptMerge && len(m.heads.add)+len(m.heads.remove) <= keptMerge {
-		store.spareMerge = m
-	}
-	return walk, err
+	return walk, m.commit(ctx)
 }
 
 // dropPending forgets the pending removals of d's elements the context now
@@ -903,6 +910,7 @@ func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.D
 	if err != nil {
 		return nil, nil, err
 	}
+	defer p.m.t.endReads()
 	if checkSnapshot != nil {
 		if err := checkSnapshot(ctx, store, c, root, s, p); err != nil {
 			return nil, nil, err
@@ -972,6 +980,7 @@ func (store *Datastore) prepareSnapshot(ctx context.Context, c cid.Cid, root *pb
 	local := store.cc
 	m := store.beginMerge()
 	m.atomic = true
+	defer m.t.endReads()
 	m.horizon = max(m.horizon, root.GetHorizon())
 	m.heard(d.replica, root.GetAt())
 	linked, err := m.linked(ctx, d)

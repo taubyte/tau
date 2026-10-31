@@ -2,6 +2,7 @@ package kvdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/bits"
 	"math/rand/v2"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	ds "github.com/ipfs/go-datastore"
+	"github.com/taubyte/tau/pkg/pebbleds"
 )
 
 // A scan sees the store under the pending writes, deletes included, in key
@@ -137,5 +139,71 @@ func TestAReleasedTxnIsEmpty(t *testing.T) {
 	big.release()
 	if len(big.order) != reusedWrites+1 {
 		t.Fatal("a txn too large to keep was cleared for reuse")
+	}
+}
+
+// A txn over a pebbleds store reads it through one reader, made at its first
+// read: every read sees the store as it was then, under the pending writes.
+// Commit and release close it.
+func TestATxnReadsThroughOneReader(t *testing.T) {
+	ctx := context.Background()
+	store, err := pebbleds.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	for _, k := range []string{"/a/1", "/a/2"} {
+		if err := store.Put(ctx, ds.NewKey(k), []byte(k)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tx := newTxn(store)
+	tx.put(ds.NewKey("/a/3"), []byte("/a/3"))
+	if v, err := tx.get(ctx, ds.NewKey("/a/1")); err != nil || string(v) != "/a/1" {
+		t.Fatalf("get: %q %v", v, err)
+	}
+	rd := tx.rd
+	if rd == nil {
+		t.Fatal("a read made no reader")
+	}
+	if err := store.Delete(ctx, ds.NewKey("/a/2")); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := tx.has(ctx, ds.NewKey("/a/2")); err != nil || !ok {
+		t.Fatalf("has: %v %v, want the store as it was at the first read", ok, err)
+	}
+	got, err := tx.scan(ctx, ds.NewKey("/a"))
+	if err != nil || fmt.Sprint(got) != fmt.Sprint([]entry{{"/a/1", []byte("/a/1")}, {"/a/2", []byte("/a/2")}, {"/a/3", []byte("/a/3")}}) {
+		t.Fatalf("scan: %v %v", got, err)
+	}
+	if tx.rd != rd {
+		t.Fatal("a txn made a second reader")
+	}
+	if err := tx.commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if tx.rd != nil {
+		t.Fatal("commit left the reader open")
+	}
+	if ok, err := tx.has(ctx, ds.NewKey("/a/2")); err != nil || ok {
+		t.Fatalf("has after commit: %v %v, want the store as it is now", ok, err)
+	}
+	tx.release()
+	if tx.rd != nil {
+		t.Fatal("release left the reader open")
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	tx = newTxn(store)
+	defer tx.release()
+	if _, err := tx.get(ctx, ds.NewKey("/a/1")); !errors.Is(err, pebbleds.ErrClosed) {
+		t.Fatalf("get of a closed store: %v", err)
+	}
+	if _, err := tx.has(ctx, ds.NewKey("/a/1")); !errors.Is(err, pebbleds.ErrClosed) {
+		t.Fatalf("has of a closed store: %v", err)
+	}
+	if _, err := tx.scan(ctx, ds.NewKey("/a")); !errors.Is(err, pebbleds.ErrClosed) {
+		t.Fatalf("scan of a closed store: %v", err)
 	}
 }

@@ -372,6 +372,7 @@ func (m *merging) forget(ctx context.Context, now uint64) (bool, error) {
 // longer carries it. The caller holds store.mu.
 func (store *Datastore) expireLocked(ctx context.Context) (bool, error) {
 	m := store.beginMerge()
+	defer m.t.endReads()
 	dropped, err := m.forget(ctx, store.dropClock())
 	if err != nil || !dropped {
 		return false, err

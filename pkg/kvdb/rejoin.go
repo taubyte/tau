@@ -1079,6 +1079,7 @@ func (store *Datastore) reissueLocked(ctx context.Context) error {
 	}
 	delta := store.stamped(&pb.Delta{})
 	m := store.beginMerge()
+	defer m.t.endReads()
 	var done []ds.Key
 	kept := map[ds.Key]*pb.Delta{}
 	prefix := store.ownPrefix().String() + "/"

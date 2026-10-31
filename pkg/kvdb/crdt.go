@@ -1377,6 +1377,7 @@ func (store *Datastore) afterMerge(ctx context.Context) {
 // store.mu.
 func (store *Datastore) unmerged(ctx context.Context, c cid.Cid, d dot, forgot uint64) error {
 	m := store.beginMerge()
+	defer m.t.endReads()
 	m.horizon = max(m.horizon, forgot)
 	m.t.del(store.missingKey(d))
 	m.t.del(store.retryKey(d))

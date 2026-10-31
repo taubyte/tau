@@ -46,8 +46,10 @@ type Store struct {
 	closed atomic.Bool
 	mu     sync.Mutex
 	idle   *sync.Cond
-	// queries are the open query results, which Close ends.
+	// queries are the open query results, and readers the open readers,
+	// which Close ends.
 	queries map[*queryIter]struct{}
+	readers map[*Reader]struct{}
 	// blocks is what the store knows in memory of the blocks it holds.
 	blocks blockMemory
 }
@@ -118,7 +120,7 @@ func Open(path string, opts ...Option) (*Store, error) {
 		}
 		return nil, fmt.Errorf("pebbleds: open %s: %w", path, err)
 	}
-	s := &Store{db: db, write: c.write, noWAL: po.DisableWAL, cache: cache, queries: map[*queryIter]struct{}{}}
+	s := &Store{db: db, write: c.write, noWAL: po.DisableWAL, cache: cache, queries: map[*queryIter]struct{}{}, readers: map[*Reader]struct{}{}}
 	s.idle = sync.NewCond(&s.mu)
 	return s, nil
 }
@@ -276,9 +278,9 @@ func (s *Store) DiskUsage(context.Context) (uint64, error) {
 	return s.db.Metrics().DiskSpaceUsage(), nil
 }
 
-// Close ends open queries, waits for calls in flight, flushes and closes
-// the database. Calls made after it return ErrClosed. It must not be called
-// from inside a callback the store is running.
+// Close ends open queries and readers, waits for calls in flight, flushes
+// and closes the database. Calls made after it return ErrClosed. It must
+// not be called from inside a callback the store is running.
 func (s *Store) Close() error {
 	if !s.closed.CompareAndSwap(false, true) {
 		return nil
@@ -293,9 +295,17 @@ func (s *Store) Close() error {
 	for q := range s.queries {
 		open = append(open, q)
 	}
+	readers := make([]*Reader, 0, len(s.readers))
+	for r := range s.readers {
+		readers = append(readers, r)
+	}
+	clear(s.readers)
 	s.mu.Unlock()
 	for _, q := range open {
 		q.end()
+	}
+	for _, r := range readers {
+		r.it.Close()
 	}
 	if err := s.db.Flush(); err != nil {
 		logger.Errorf("flush before close: %v", err)

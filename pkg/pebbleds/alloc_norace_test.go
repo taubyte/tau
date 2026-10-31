@@ -23,6 +23,9 @@ func TestAllocs(t *testing.T) {
 	scan := func(_, _ []byte) error { return nil }
 	dk := ds.RawKey("/p/b")
 	bs, blk := s.Blockstore(), block(t, "block", cid.Raw)
+	r, err := s.NewReader()
+	must(t, err)
+	defer r.Close()
 	cases := []struct {
 		name string
 		max  float64
@@ -31,6 +34,17 @@ func TestAllocs(t *testing.T) {
 		{"View", 0, func() { must(t, s.View(key, view)) }},
 		{"Scan", 0, func() { must(t, s.Scan(prefix, scan)) }},
 		{"Range", 0, func() { must(t, s.Range(prefix, nil, scan)) }},
+		{"Reader.View", 0, func() { must(t, r.View(key, view)) }},
+		{"Reader.Scan", 0, func() { must(t, r.Scan(prefix, scan)) }},
+		{"Reader.Scan then View", 0, func() {
+			must(t, r.Scan(prefix, scan))
+			must(t, r.View(key, view))
+		}},
+		{"NewReader and Close", 0, func() {
+			r, err := s.NewReader()
+			must(t, err)
+			must(t, r.Close())
+		}},
 		{"Has", 0, func() {
 			if _, err := s.Has(ctx, dk); err != nil {
 				t.Fatal(err)

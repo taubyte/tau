@@ -36,6 +36,10 @@ type txn struct {
 	// marks and batch are the batches commit writes a pebbleds store with,
 	// kept across uses.
 	marks, batch *pebbleds.Batch
+	// rd is what reads of a pebbleds store go through, made at the first
+	// and closed at commit or release: every read sees the store as it was
+	// then.
+	rd *pebbleds.Reader
 }
 
 // txnPool keeps released txns, with the storage they grew.
@@ -60,6 +64,7 @@ func newTxn(store ds.Datastore) *txn {
 // release hands t back for reuse once its owner is done with it: nothing
 // may read or write it after.
 func (t *txn) release() {
+	t.endReads()
 	if len(t.order) > reusedWrites || cap(t.vals) > reusedVals {
 		return
 	}
@@ -72,6 +77,24 @@ func (t *txn) release() {
 	t.store, t.steps, t.vals = nil, 0, t.vals[:0]
 	t.ents, t.elems = t.ents[:0], t.elems[:0]
 	txnPool.Put(t)
+}
+
+func (t *txn) reader(s *pebbleds.Store) (*pebbleds.Reader, error) {
+	if t.rd == nil {
+		rd, err := s.NewReader()
+		if err != nil {
+			return nil, err
+		}
+		t.rd = rd
+	}
+	return t.rd, nil
+}
+
+func (t *txn) endReads() {
+	if t.rd != nil {
+		t.rd.Close()
+		t.rd = nil
+	}
 }
 
 // buf is what t's next key or value is appended to; keep then claims it.
@@ -119,8 +142,12 @@ func (t *txn) get(ctx context.Context, k ds.Key) ([]byte, error) {
 	if !ok {
 		return t.store.Get(ctx, k)
 	}
+	rd, err := t.reader(s)
+	if err != nil {
+		return nil, err
+	}
 	var out []byte
-	err := s.View(bytesOf(k.String()), func(v []byte) error {
+	err = rd.View(bytesOf(k.String()), func(v []byte) error {
 		start := len(t.vals)
 		t.vals = append(t.vals, v...)
 		out = t.vals[start:len(t.vals):len(t.vals)]
@@ -134,7 +161,11 @@ func (t *txn) has(ctx context.Context, k ds.Key) (bool, error) {
 		return v != nil, nil
 	}
 	if s, ok := below(t.store).(*pebbleds.Store); ok {
-		err := s.View(bytesOf(k.String()), func([]byte) error { return nil })
+		rd, err := t.reader(s)
+		if err != nil {
+			return false, err
+		}
+		err = rd.View(bytesOf(k.String()), func([]byte) error { return nil })
 		if errors.Is(err, ds.ErrNotFound) {
 			return false, nil
 		}
@@ -154,13 +185,24 @@ type entry struct {
 func (t *txn) scan(ctx context.Context, prefix ds.Key) ([]entry, error) {
 	out := t.ents[:0]
 	defer func() { t.ents = out[:0] }()
-	if err := scanBytes(ctx, t.store, prefix, func(k, v []byte) error {
+	keep := func(k, v []byte) error {
 		start := len(t.vals)
 		t.vals = append(append(t.vals, k...), v...)
 		mid := start + len(k)
 		out = append(out, entry{key: stringOf(t.vals[start:mid]), value: t.vals[mid:len(t.vals):len(t.vals)]})
 		return nil
-	}); err != nil {
+	}
+	var err error
+	if s, ok := below(t.store).(*pebbleds.Store); ok {
+		var rd *pebbleds.Reader
+		if rd, err = t.reader(s); err == nil {
+			var buf [128]byte
+			err = rd.Scan(scanPrefix(buf[:0], prefix), keep)
+		}
+	} else {
+		err = scanBytes(ctx, t.store, prefix, keep)
+	}
+	if err != nil {
 		return nil, err
 	}
 	byKey := func(a, b entry) int { return strings.Compare(a.key, b.key) }
@@ -293,6 +335,7 @@ func cmpAfter(k, p string, c byte) int {
 }
 
 func (t *txn) commit(ctx context.Context) error {
+	t.endReads()
 	if len(t.writes) == 0 {
 		return nil
 	}
@@ -430,14 +473,19 @@ func scanStore(ctx context.Context, store ds.Datastore, prefix ds.Key, fn func(k
 
 // scanBytes is scanStore lending the key too: k is valid only until fn
 // returns.
+// scanPrefix appends to dst the bytes every key under prefix starts with.
+func scanPrefix(dst []byte, prefix ds.Key) []byte {
+	dst = append(dst, prefix.String()...)
+	if len(dst) != 1 {
+		dst = append(dst, '/')
+	}
+	return dst
+}
+
 func scanBytes(ctx context.Context, store ds.Datastore, prefix ds.Key, fn func(k, v []byte) error) error {
 	if s, ok := below(store).(*pebbleds.Store); ok {
 		var buf [128]byte
-		p := append(buf[:0], prefix.String()...)
-		if len(p) != 1 {
-			p = append(p, '/')
-		}
-		return s.Scan(p, fn)
+		return s.Scan(scanPrefix(buf[:0], prefix), fn)
 	}
 	results, err := store.Query(ctx, query.Query{Prefix: prefix.String()})
 	if err != nil {
