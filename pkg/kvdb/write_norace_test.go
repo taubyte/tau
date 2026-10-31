@@ -18,7 +18,9 @@ import (
 // shared what they did not change, and delta merges reused theirs, 49 once
 // a txn wrote pebbleds in batches it keeps, 40 with the node's block store
 // over pebbleds behind the replica's DAG instead of the tests' map store, 20
-// once blocks were kvdb's own, not dag-pb built through ipld-prime. Over the tests' map store it was 250 before its txns, its delta and
+// once blocks were kvdb's own, not dag-pb built through ipld-prime, 16 once
+// a link's cid was read over its block's bytes and adding a block took no
+// timeout. Over the tests' map store it was 250 before its txns, its delta and
 // its broadcast were reused or borrowed, and 171 after.
 func TestAPutAllocations(t *testing.T) {
 	ctx := context.Background()
@@ -40,7 +42,7 @@ func TestAPutAllocations(t *testing.T) {
 		}
 	})
 	t.Logf("a put: %.0f allocations", a)
-	if a > 22 {
-		t.Errorf("a put: %.0f allocations, want at most 22", a)
+	if a > 18 {
+		t.Errorf("a put: %.0f allocations, want at most 18", a)
 	}
 }

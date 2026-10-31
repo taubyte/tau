@@ -1823,10 +1823,10 @@ func (store *Datastore) writeBlocks(ctx context.Context, b block, nodes ...ipld.
 	if err != nil {
 		return err
 	}
-	cctx, cancel := context.WithTimeout(ctx, store.opts.DAGSyncerTimeout)
-	defer cancel()
+	// Adding a block writes it locally and tells bitswap it is held: no
+	// peer is waited on, so no timeout bounds it.
 	for _, nd := range nodes {
-		if err := store.dagService.Add(cctx, nd); err != nil {
+		if err := store.dagService.Add(ctx, nd); err != nil {
 			cids := make([]cid.Cid, len(nodes))
 			for i, nd := range nodes {
 				cids[i] = nd.Cid()

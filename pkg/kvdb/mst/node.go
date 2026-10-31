@@ -235,7 +235,7 @@ func decodeNode(nd ipld.Node, below uint32, own func(level uint32, size int) boo
 			cids += len(l.KeyString())
 		}
 		if cost = footprint(len(msg.Entries), size+owned, cids); own(msg.Level, cost) {
-			size += owned
+			size += owned + cids
 		} else {
 			cost = 0
 		}
@@ -266,7 +266,13 @@ func decodeNode(nd ipld.Node, below uint32, own func(level uint32, size int) boo
 		if li == len(links) {
 			return malformed(c, "more subtrees than links")
 		}
-		n.kids[i] = ref{c: links[li], sum: held(sum)}
+		// A cid read is over the block's bytes: a node that owns its bytes
+		// takes it over its own.
+		l := links[li]
+		if cost != 0 {
+			l = castCid(held(cidBytes(l)))
+		}
+		n.kids[i] = ref{c: l, sum: held(sum)}
 		li++
 		return nil
 	}

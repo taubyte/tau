@@ -9,10 +9,9 @@ import "testing"
 
 // TestNodeCodecAllocations bounds what encoding and decoding a node costs:
 // a decode allocates the node, its entries, its kids, one buffer for its
-// keys, the slice of its links and each link's cid, which merkledag's dag-pb
-// decode made before it while the block was dag-pb, and copies none of the
-// block's bytes; an encode allocates the data, the block's bytes, its cid
-// and the Block.
+// keys and the slice of its links, and copies none of the block's bytes, a
+// link's cid among them; an encode allocates the data, the block's bytes,
+// its cid and the Block.
 func TestNodeCodecAllocations(t *testing.T) {
 	n := wideNode(t)
 	nd, err := encode(n)
@@ -29,8 +28,8 @@ func TestNodeCodecAllocations(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("decode: %v allocations, %d links", a, len(links))
-	if want := 5 + float64(len(links)); a > want {
-		t.Errorf("decode: %v allocations, want at most %v", a, want)
+	if a > 5 {
+		t.Errorf("decode: %v allocations, want at most 5", a)
 	}
 	a = testing.AllocsPerRun(200, func() {
 		if _, err := encode(n); err != nil {

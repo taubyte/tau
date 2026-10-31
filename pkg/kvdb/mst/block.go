@@ -2,6 +2,7 @@ package mst
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"slices"
@@ -38,8 +39,7 @@ func NewBlock(data []byte, links []cid.Cid) (*Block, error) {
 	}()
 	msg.Links = slices.Grow(msg.Links[:0], len(links))[:len(links)]
 	for i, l := range links {
-		k := l.KeyString()
-		msg.Links[i] = unsafe.Slice(unsafe.StringData(k), len(k))
+		msg.Links[i] = cidBytes(l)
 	}
 	msg.Data = data
 	raw := make([]byte, msg.SizeVT())
@@ -121,13 +121,61 @@ func DecodeBlock(nd ipld.Node, links []cid.Cid) ([]byte, []cid.Cid, error) {
 	}
 	links = slices.Grow(links, len(msg.Links))
 	for _, l := range msg.Links {
-		c, err := cid.Cast(l)
-		if err != nil {
-			return nil, links, fmt.Errorf("%w %s: %w", ErrNotABlock, nd.Cid(), err)
+		c, ok := cidOver(l)
+		if !ok {
+			return nil, links, fmt.Errorf("%w %s: a link that is not a cid", ErrNotABlock, nd.Cid())
 		}
 		links = append(links, c)
 	}
 	return msg.Data, links, nil
+}
+
+// cidOver is the cid b spells, over b's bytes, or false when b is not
+// exactly one cid as go-cid reads one: a CIDv0, or a CIDv1 of minimally
+// encoded varints and a multihash of the length it gives. b must never
+// change after. A cid.Cid is a string of a cid's bytes, which the cast
+// relies on and TestCidOverIsACid checks.
+func cidOver(b []byte) (cid.Cid, bool) {
+	if !isCid(b) {
+		return cid.Undef, false
+	}
+	return castCid(b), true
+}
+
+// castCid is the cid b, a cid's bytes, holds, over b's bytes.
+func castCid(b []byte) cid.Cid {
+	s := unsafe.String(unsafe.SliceData(b), len(b))
+	return *(*cid.Cid)(unsafe.Pointer(&s))
+}
+
+// cidBytes is c's bytes, over c's string.
+func cidBytes(c cid.Cid) []byte {
+	k := c.KeyString()
+	return unsafe.Slice(unsafe.StringData(k), len(k))
+}
+
+func isCid(b []byte) bool {
+	if len(b) == 34 && b[0] == mh.SHA2_256 && b[1] == 32 {
+		return true
+	}
+	rest := b
+	var v [4]uint64
+	for i := range v {
+		x, n := binary.Uvarint(rest)
+		if n <= 0 || n != uvarintLen(x) {
+			return false
+		}
+		v[i], rest = x, rest[n:]
+	}
+	return v[0] == 1 && v[3] == uint64(len(rest))
+}
+
+func uvarintLen(x uint64) int {
+	n := 1
+	for ; x >= 0x80; x >>= 7 {
+		n++
+	}
+	return n
 }
 
 func (b *Block) RawData() []byte { return b.raw }
