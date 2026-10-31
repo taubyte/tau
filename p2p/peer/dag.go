@@ -34,8 +34,8 @@ import (
 // boxo glue (blockstore + bitswap + merkledag + unixfs + reprovider) that
 // provides an ipld.DAGService plus UnixFS Add/Get. Defaults are frozen to match
 // ipfs-lite v1.8.6 exactly (CIDv1, sha2-256, balanced layout, default chunker,
-// ARC+bloom cached blockstore, 12h reprovide) so CIDs and on-disk/wire formats
-// stay interoperable with nodes still running ipfs-lite.
+// 12h reprovide) so CIDs and on-disk/wire formats stay interoperable with
+// nodes still running ipfs-lite.
 type DAGService struct {
 	ipld.DAGService // merkledag: Add/Get/Remove/...
 
@@ -56,23 +56,25 @@ type DAGService struct {
 func newDAG(ctx context.Context, store datastore.Batching, host host.Host, dht routing.Routing) (*DAGService, error) {
 	ctx, cancel := context.WithCancel(ctx)
 
-	// Blockstore: identity multihash support + ARC/bloom cache (hot path for HasBlock).
+	// Blockstore: identity multihash support over the store's blocks. A
+	// pebbleds store answers HasBlock, the hot path, from its tables' bloom
+	// filters; any other store gets boxo's ARC/bloom cache.
 	var bs blockstore.Blockstore
+	var bloom bloomBuild = noBloom{}
 	if pst, ok := store.(*pebbleds.Store); ok {
-		bs = pst.Blockstore()
+		bs = blockstore.NewIdStore(pst.Blockstore())
 	} else {
-		bs = blockstore.NewBlockstore(store, blockstore.WriteThrough(true))
-	}
-	bs = blockstore.NewIdStore(bs)
-	bs, err := blockstore.CachedBlockstore(ctx, bs, blockstore.DefaultCacheOpts())
-	if err != nil {
-		cancel()
-		return nil, fmt.Errorf("setting up blockstore failed: %w", err)
-	}
-	bloom, ok := bs.(bloomBuild)
-	if !ok {
-		cancel()
-		return nil, errors.New("setting up blockstore failed: its cache builds no bloom filter to wait for")
+		cached, err := blockstore.CachedBlockstore(ctx, blockstore.NewIdStore(blockstore.NewBlockstore(store, blockstore.WriteThrough(true))), blockstore.DefaultCacheOpts())
+		if err != nil {
+			cancel()
+			return nil, fmt.Errorf("setting up blockstore failed: %w", err)
+		}
+		built, ok := cached.(bloomBuild)
+		if !ok {
+			cancel()
+			return nil, errors.New("setting up blockstore failed: its cache builds no bloom filter to wait for")
+		}
+		bs, bloom = cached, built
 	}
 
 	// Bitswap (providerFinder nil: blocks found via broadcast to connected peers).
@@ -133,6 +135,11 @@ func newDAG(ctx context.Context, store datastore.Batching, host host.Host, dht r
 type bloomBuild interface {
 	Wait(context.Context) error
 }
+
+// noBloom is no bloom cache: nothing to wait for.
+type noBloom struct{}
+
+func (noBloom) Wait(context.Context) error { return nil }
 
 // Close tears down the reprovider and blockservice, and returns once nothing
 // it started reads the store: its caller closes the store next, and pebble

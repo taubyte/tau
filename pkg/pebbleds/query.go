@@ -13,7 +13,10 @@ import (
 // Query runs q on a pebble iterator, pulled by the caller: there is no
 // goroutine behind the results. Ordering by key, either way, is the
 // iterator's own; any other order sorts every match in memory.
-func (s *Store) Query(_ context.Context, q query.Query) (query.Results, error) {
+func (s *Store) Query(ctx context.Context, q query.Query) (query.Results, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	switch {
 	case len(q.Orders) == 0:
 		return s.query(q, false)

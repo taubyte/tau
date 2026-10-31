@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cockroachdb/pebble/v2"
+	"github.com/cockroachdb/pebble/v2/bloom"
 	"github.com/cockroachdb/pebble/v2/vfs"
 	ds "github.com/ipfs/go-datastore"
 	query "github.com/ipfs/go-datastore/query"
@@ -442,6 +444,46 @@ func TestScanEverythingAfterAPrefix(t *testing.T) {
 		must(t, s.Scan([]byte{}, func(_, _ []byte) error { n++; return nil }))
 		if n != 4 {
 			t.Fatalf("an empty prefix scanned %d keys twice, want 2 each", n)
+		}
+	}
+}
+
+// A store filters its tables with bloom filters unless told otherwise.
+func TestBloomFilters(t *testing.T) {
+	o := &pebble.Options{FS: vfs.NewMem()}
+	s, err := Open("db", WithPebbleOptions(o))
+	must(t, err)
+	must(t, s.Close())
+	if o.Levels[0].FilterPolicy != bloom.FilterPolicy(10) {
+		t.Fatalf("filter %v", o.Levels[0].FilterPolicy)
+	}
+	o = &pebble.Options{FS: vfs.NewMem(), Levels: [7]pebble.LevelOptions{{FilterPolicy: pebble.NoFilterPolicy}}}
+	s, err = Open("db", WithPebbleOptions(o))
+	must(t, err)
+	must(t, s.Close())
+	if o.Levels[0].FilterPolicy != pebble.NoFilterPolicy {
+		t.Fatalf("a filter the caller chose was replaced: %v", o.Levels[0].FilterPolicy)
+	}
+}
+
+// A store's block cache keeps what it reads: pebble's own, made from
+// CacheSize, keeps nothing.
+func TestBlockCacheKeeps(t *testing.T) {
+	ctx := context.Background()
+	for _, o := range []*pebble.Options{{}, {CacheSize: 32 << 20}} {
+		s := open(t, WithPebbleOptions(o))
+		b, err := s.NewBatch()
+		must(t, err)
+		for i := range 10000 {
+			must(t, b.Set([]byte(fmt.Sprintf("/k/%05d", i)), []byte("v")))
+		}
+		must(t, b.Commit(ctx))
+		must(t, s.db.Flush())
+		for range 100 {
+			must(t, s.View([]byte("/k/00042"), func([]byte) error { return nil }))
+		}
+		if m := s.db.Metrics().BlockCache; m.Hits == 0 || m.Count == 0 {
+			t.Fatalf("CacheSize %d: the block cache kept nothing: %+v", o.CacheSize, m)
 		}
 	}
 }

@@ -3,8 +3,10 @@ package pebbleds
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
+	"github.com/cockroachdb/pebble/v2"
 	"github.com/ipfs/boxo/blockstore"
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
@@ -167,4 +169,75 @@ func TestBlockstoreCidV0(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("a key that is no block's is skipped: %d", n)
 	}
+}
+
+// BenchmarkBlockstoreHas: a block store's Has, the call bitswap makes for
+// every block a peer wants, of a block held and of one not, over 100k
+// blocks in tables: boxo's ARC and bloom cache over a store with no
+// filters, as a node had it, against this store's own bloom filters.
+func BenchmarkBlockstoreHas(b *testing.B) {
+	ctx := context.Background()
+	const n = 100_000
+	stores := map[string]func(b *testing.B) blockstore.Blockstore{
+		"boxo-cache": func(b *testing.B) blockstore.Blockstore {
+			s, err := Open(b.TempDir(), WithPebbleOptions(&pebble.Options{Levels: [7]pebble.LevelOptions{{FilterPolicy: pebble.NoFilterPolicy}}}))
+			must(b, err)
+			b.Cleanup(func() { must(b, s.Close()) })
+			fill(b, s, n)
+			cctx, cancel := context.WithCancel(ctx)
+			b.Cleanup(cancel)
+			bs, err := blockstore.CachedBlockstore(cctx, blockstore.NewIdStore(s.Blockstore()), blockstore.DefaultCacheOpts())
+			must(b, err)
+			must(b, bs.(interface{ Wait(context.Context) error }).Wait(ctx))
+			return bs
+		},
+		"pebble-bloom": func(b *testing.B) blockstore.Blockstore {
+			s := open(b)
+			fill(b, s, n)
+			return blockstore.NewIdStore(s.Blockstore())
+		},
+	}
+	for _, name := range []string{"boxo-cache", "pebble-bloom"} {
+		b.Run(name, func(b *testing.B) {
+			bs := stores[name](b)
+			held := make([]cid.Cid, 1024)
+			absent := make([]cid.Cid, 1024)
+			for i := range held {
+				held[i] = block(b, fmt.Sprint(i*97), cid.Raw).Cid()
+				absent[i] = block(b, fmt.Sprint("absent", i), cid.Raw).Cid()
+			}
+			for _, c := range []struct {
+				name string
+				cids []cid.Cid
+				want bool
+			}{{"hit", held, true}, {"miss", absent, false}} {
+				b.Run(c.name, func(b *testing.B) {
+					b.ReportAllocs()
+					for i := range b.N {
+						has, err := bs.Has(ctx, c.cids[i%len(c.cids)])
+						if err != nil || has != c.want {
+							b.Fatalf("has %v %v", has, err)
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
+// fill writes the blocks of 0 .. n-1 and flushes them to tables.
+func fill(b *testing.B, s *Store, n int) {
+	b.Helper()
+	ctx := context.Background()
+	bs := s.Blockstore()
+	batch := make([]blocks.Block, 0, 1000)
+	for i := range n {
+		batch = append(batch, block(b, fmt.Sprint(i), cid.Raw))
+		if len(batch) == cap(batch) {
+			must(b, bs.PutMany(ctx, batch))
+			batch = batch[:0]
+		}
+	}
+	must(b, bs.PutMany(ctx, batch))
+	must(b, s.db.Flush())
 }

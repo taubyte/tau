@@ -162,12 +162,9 @@ func warmPebble(t testing.TB, n int) *Datastore {
 		}
 	})
 	// The DAG a node runs, offline: the store's blocks under its identity
-	// and cache layers, behind a block service and merkledag, written as a
-	// node writes them.
-	bs, err := blockstore.CachedBlockstore(context.Background(), blockstore.NewIdStore(st.Blockstore()), blockstore.DefaultCacheOpts())
-	if err != nil {
-		t.Fatal(err)
-	}
+	// layer, behind a block service and merkledag, written as a node writes
+	// them.
+	bs := blockstore.NewIdStore(st.Blockstore())
 	exch := offline.Exchange(bs)
 	w := peer.NewBlockWriter(bs, exch)
 	t.Cleanup(w.Close)
