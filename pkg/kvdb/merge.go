@@ -107,7 +107,8 @@ func decodeBlock(v []byte) (block, error) {
 	if len(v) < 2 {
 		return block{}, errors.New("error decoding block entry")
 	}
-	st, rest, err := uvarints(v[1:], 3)
+	var st [3]uint64
+	rest, err := uvarintsInto(st[:], v[1:])
 	if err != nil || uint64(len(rest)) < st[2] {
 		return block{}, errors.New("error decoding block entry")
 	}
@@ -130,7 +131,8 @@ func appendLink(b []byte, l link) []byte {
 }
 
 func decodeLink(d dot, v []byte) (link, error) {
-	st, rest, err := uvarints(v, 2)
+	var st [2]uint64
+	rest, err := uvarintsInto(st[:], v)
 	if err != nil {
 		return link{}, errors.New("error decoding link")
 	}
@@ -686,12 +688,55 @@ type pendCase struct {
 // those whose record may differ between this replica and the snapshot. The
 // join keeps any other record as it is, since both hold it alike.
 type mergeSet struct {
+	// elems and pending are keyed by tree keys over bytes that never
+	// change: a tree node's, or one made for the set.
 	elems   map[string]elemCase
 	pending map[string]pendCase
 	// pendingOf is the tree keys pending names for each removal, journal
 	// the number of marks the journal holds.
 	pendingOf map[string][]string
 	journal   int
+	// els and rems are where the records theirs points to are kept, 64 to
+	// an allocation, and keys the tree keys the set makes, a chunk at a
+	// time.
+	els  []element
+	rems []removal
+	keys []byte
+}
+
+// keyChunk is the room the set makes for its tree keys at a time.
+const keyChunk = 4 << 10
+
+// keyBuf is what the set's next tree key is appended to; keepKey claims it.
+func (ms *mergeSet) keyBuf() []byte {
+	if cap(ms.keys)-len(ms.keys) < 256 {
+		ms.keys = make([]byte, 0, keyChunk)
+	}
+	return ms.keys
+}
+
+func (ms *mergeSet) keepKey(b []byte) []byte {
+	start := len(ms.keys)
+	ms.keys = b
+	return b[start:len(b):len(b)]
+}
+
+const mergeSlab = 64
+
+func (ms *mergeSet) keepElem(e element) *element {
+	if len(ms.els) == cap(ms.els) {
+		ms.els = make([]element, 0, mergeSlab)
+	}
+	ms.els = append(ms.els, e)
+	return &ms.els[len(ms.els)-1]
+}
+
+func (ms *mergeSet) keepRemoval(r removal) *removal {
+	if len(ms.rems) == cap(ms.rems) {
+		ms.rems = make([]removal, 0, mergeSlab)
+	}
+	ms.rems = append(ms.rems, r)
+	return &ms.rems[len(ms.rems)-1]
 }
 
 func newMergeSet() *mergeSet {
@@ -712,9 +757,9 @@ func (ms *mergeSet) addElem(tk []byte, theirs []byte, has bool) error {
 		if err != nil {
 			return err
 		}
-		c.theirs = &el
+		c.theirs = ms.keepElem(el)
 	}
-	ms.elems[string(tk)] = c
+	ms.elems[stringOf(tk)] = c
 	return nil
 }
 
@@ -732,11 +777,11 @@ func (ms *mergeSet) addPending(tk []byte, theirs []byte, has bool) error {
 		if err != nil {
 			return err
 		}
-		c.theirs = &r
+		c.theirs = ms.keepRemoval(r)
 	}
-	ms.pending[string(tk)] = c
+	ms.pending[stringOf(tk)] = c
 	id := idOf(key, d)
-	ms.pendingOf[id] = append(ms.pendingOf[id], string(tk))
+	ms.pendingOf[id] = append(ms.pendingOf[id], stringOf(tk))
 	return nil
 }
 
@@ -757,13 +802,14 @@ func (store *Datastore) enumerate(ctx context.Context, s *snapState) (*mergeSet,
 	if err != nil {
 		return nil, err
 	}
-	err = scanStore(ctx, store.store, store.journal.elemsPrefix(), func(k string, _ []byte) error {
-		key, d, err := store.journal.parseElemMark(k)
+	var sb stateBuild
+	err = scanBytes(ctx, store.store, store.journal.elemsPrefix(), func(k, _ []byte) error {
+		key, d, err := sb.elemMark(k[len(store.journal.jElems):])
 		if err != nil {
 			return err
 		}
 		ms.journal++
-		tk := elemTreeKey(key, d)
+		tk := ms.keepKey(appendElemTreeKey(ms.keyBuf(), key, d))
 		v, has, err := s.elem(ctx, tk)
 		if err != nil {
 			return err
@@ -773,13 +819,13 @@ func (store *Datastore) enumerate(ctx context.Context, s *snapState) (*mergeSet,
 	if err != nil {
 		return nil, err
 	}
-	err = scanStore(ctx, store.store, store.journal.pendingPrefix(), func(k string, _ []byte) error {
-		b, key, d, err := store.journal.parsePendingMark(k)
+	err = scanBytes(ctx, store.store, store.journal.pendingPrefix(), func(k, _ []byte) error {
+		b, key, d, err := sb.pendingMark(k[len(store.journal.jPending):])
 		if err != nil {
 			return err
 		}
 		ms.journal++
-		tk := pendingTreeKeyIn(b, key, d)
+		tk := ms.keepKey(appendPendingTreeKey(ms.keyBuf(), b, key, d))
 		v, has, err := s.removal(ctx, tk)
 		if err != nil {
 			return err

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"slices"
+	"strings"
 	"testing"
 
 	dag "github.com/ipfs/boxo/ipld/merkledag"
@@ -407,16 +408,23 @@ func TestTheJournalMarksEveryRecordWrite(t *testing.T) {
 	if err := store.Put(ctx, ns.ChildString("other"), nil); err != nil {
 		t.Fatal(err)
 	}
+	var sb stateBuild
+	parseElemMark := func(k string) (string, dot, error) {
+		return sb.elemMark([]byte(strings.TrimPrefix(k, j.jElems)))
+	}
+	parsePendingMark := func(k string) (uint64, string, dot, error) {
+		return sb.pendingMark([]byte(strings.TrimPrefix(k, j.jPending)))
+	}
 	var elems, pending []string
 	if err := scanStore(ctx, inner, j.elemsPrefix(), func(k string, _ []byte) error {
-		key, md, err := j.parseElemMark(k)
+		key, md, err := parseElemMark(k)
 		elems = append(elems, fmt.Sprintf("%s@%d", key, md.counter))
 		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := scanStore(ctx, inner, j.pendingPrefix(), func(k string, _ []byte) error {
-		b, key, md, err := j.parsePendingMark(k)
+		b, key, md, err := parsePendingMark(k)
 		pending = append(pending, fmt.Sprintf("%d:%s@%d", b, key, md.counter))
 		return err
 	}); err != nil {
@@ -430,12 +438,12 @@ func TestTheJournalMarksEveryRecordWrite(t *testing.T) {
 		t.Error("a removal with no stamps was marked")
 	}
 	for _, bad := range []string{j.jElems + "nokey", j.jElems + "kMFRA/x"} {
-		if _, _, err := j.parseElemMark(bad); err == nil {
+		if _, _, err := parseElemMark(bad); err == nil {
 			t.Errorf("%s parsed", bad)
 		}
 	}
 	for _, bad := range []string{j.jPending + "1/2", j.jPending + "x/" + d.segment() + "/" + keySegment("/k"), j.jPending + "1/x/" + keySegment("/k")} {
-		if _, _, _, err := j.parsePendingMark(bad); err == nil {
+		if _, _, _, err := parsePendingMark(bad); err == nil {
 			t.Errorf("%s parsed", bad)
 		}
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"unsafe"
 
@@ -148,38 +147,6 @@ func (j *journal) markInto(s *pebbleds.Store, marks *pebbleds.Batch, buf *[]byte
 		return true, marks.Set(*buf, nil)
 	}
 	return marked, nil
-}
-
-// parseElemMark reads the element an element mark names.
-func (j *journal) parseElemMark(k string) (string, dot, error) {
-	kseg, dseg, ok := strings.Cut(strings.TrimPrefix(k, j.jElems), "/")
-	if !ok {
-		return "", dot{}, fmt.Errorf("bad journal key %q", k)
-	}
-	key, err := parseKeySegment(kseg)
-	if err != nil {
-		return "", dot{}, err
-	}
-	d, err := parseDotSegment(dseg)
-	return key, d, err
-}
-
-// parsePendingMark reads the bucket and removal a pending mark names.
-func (j *journal) parsePendingMark(k string) (uint64, string, dot, error) {
-	parts := strings.Split(strings.TrimPrefix(k, j.jPending), "/")
-	if len(parts) != 3 {
-		return 0, "", dot{}, fmt.Errorf("bad journal key %q", k)
-	}
-	b, err := strconv.ParseUint(parts[0], 10, 64)
-	if err != nil {
-		return 0, "", dot{}, err
-	}
-	d, err := parseDotSegment(parts[1])
-	if err != nil {
-		return 0, "", dot{}, err
-	}
-	key, err := parseKeySegment(parts[2])
-	return b, key, d, err
 }
 
 // journaled is the store a Datastore writes through: every write of a

@@ -76,7 +76,8 @@ func appendHead(b []byte, h Head) []byte {
 }
 
 func decodeHead(c cid.Cid, v []byte) (Head, error) {
-	f, rest, err := uvarints(v, 3)
+	var f [3]uint64
+	rest, err := uvarintsInto(f[:], v)
 	if err != nil {
 		return Head{}, errors.New("error decoding head")
 	}

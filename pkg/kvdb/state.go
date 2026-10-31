@@ -106,7 +106,28 @@ func appendEscaped(b []byte, s string) []byte {
 	return append(b, 0, 1)
 }
 
+// readEscaped reads an escaped string off the front of b. One with no
+// escaped byte is over b's bytes, which must not change after; one with
+// some is a copy.
 func readEscaped(b []byte) (string, []byte, error) {
+	for i := 0; i+1 < len(b); i++ {
+		if b[i] != 0 {
+			continue
+		}
+		switch b[i+1] {
+		case 1:
+			return stringOf(b[:i]), b[i+2:], nil
+		case 0xff:
+			return readUnescaped(b)
+		default:
+			return "", nil, errMalformedState
+		}
+	}
+	return "", nil, errMalformedState
+}
+
+// readUnescaped is readEscaped of a string with escaped bytes, copied out.
+func readUnescaped(b []byte) (string, []byte, error) {
 	var out []byte
 	for i := 0; i < len(b); i++ {
 		if b[i] != 0 {
@@ -149,7 +170,8 @@ func parseElemTreeKey(b []byte) (string, dot, error) {
 	if err != nil || len(rest) != 8 {
 		return "", dot{}, errMalformedState
 	}
-	d := dot{replica: replica, counter: binary.BigEndian.Uint64(rest)}
+	// A dot's replica is the interned one, as everywhere.
+	d := dot{replica: replicas.bytes(bytesOf(replica)), counter: binary.BigEndian.Uint64(rest)}
 	if d.isZero() {
 		return "", dot{}, errMalformedState
 	}
