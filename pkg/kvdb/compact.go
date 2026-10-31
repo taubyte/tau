@@ -314,10 +314,9 @@ func (store *Datastore) nothingToFold(ctx context.Context, hs []Head) (bool, err
 	for _, h := range hs {
 		headDots[h.Dot] = struct{}{}
 	}
-	work := false
 	prefix := store.blocksPrefix()
-	err := scanStore(ctx, store.store, prefix, func(k string, v []byte) error {
-		if store.isTaken(prefix, k) {
+	err := scanBytes(ctx, store.store, prefix, func(k, v []byte) error {
+		if store.isTaken(prefix, stringOf(k)) {
 			return nil
 		}
 		b, err := decodeBlock(v)
@@ -325,18 +324,18 @@ func (store *Datastore) nothingToFold(ctx context.Context, hs []Head) (bool, err
 			return err
 		}
 		if _, isHead := headDots[b.dot]; b.kind == kindDelta || !isHead {
-			work = true
+			return errFound
 		}
 		return nil
 	})
+	if errors.Is(err, errFound) {
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}
-	if work {
-		return false, nil
-	}
-	missing, err := countPrefix(ctx, store.store, store.missingPrefix())
-	return missing == 0, err
+	missing, err := anyUnder(ctx, store.store, store.missingPrefix())
+	return !missing, err
 }
 
 // A stateBuild is the storage buildState uses again from one compaction to

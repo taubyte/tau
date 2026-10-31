@@ -1068,20 +1068,20 @@ func (m *merging) rebase(ctx context.Context, ch *rootChange, s *snapState, resi
 }
 
 // localElem is the element (key, d) this merge leaves, if any.
-func (m *merging) localElem(ctx context.Context, key string, d dot) (*element, error) {
+func (m *merging) localElem(ctx context.Context, key string, d dot) (element, bool, error) {
 	v, err := m.t.get(ctx, m.elemKey(key, d))
 	if errors.Is(err, ds.ErrNotFound) {
-		return nil, nil
+		return element{}, false, nil
 	}
 	if err != nil {
-		return nil, err
+		return element{}, false, err
 	}
 	el, err := decodeMarker(v)
 	if err != nil {
-		return nil, err
+		return element{}, false, err
 	}
 	el.key, el.dot = key, d
-	return &el, nil
+	return el, true, nil
 }
 
 // localPending is the pending removal of (key, d) this merge leaves, if
@@ -1171,33 +1171,39 @@ func (m *merging) pendingKeys(ctx context.Context, key string, d dot, ms *mergeS
 func (m *merging) residual(ctx context.Context, s *snapState, ms *mergeSet) (map[string]bool, error) {
 	out := map[string]bool{}
 	elemDone := map[string]bool{}
-	checkElem := func(key string, d dot) error {
-		tk := elemTreeKey(key, d)
-		if elemDone[string(tk)] {
+	// checkElem checks the element (key, d), whose tree key tk is over
+	// bytes that never change, or nil to be made in ms.
+	checkElem := func(tk []byte, key string, d dot) error {
+		if tk == nil {
+			tk = ms.keepKey(appendElemTreeKey(ms.keyBuf(), key, d))
+		}
+		if elemDone[stringOf(tk)] {
 			return nil
 		}
-		elemDone[string(tk)] = true
-		var theirs *element
-		if ec, ok := ms.elems[string(tk)]; ok {
-			theirs = ec.theirs
+		elemDone[stringOf(tk)] = true
+		var theirs element
+		has := false
+		if ec, ok := ms.elems[stringOf(tk)]; ok {
+			if ec.theirs != nil {
+				theirs, has = *ec.theirs, true
+			}
 		} else {
-			v, has, err := s.elem(ctx, tk)
+			v, found, err := s.elem(ctx, tk)
 			if err != nil {
 				return err
 			}
-			if has {
-				el, err := parseElemValue(key, d, v)
-				if err != nil {
+			if found {
+				if theirs, err = parseElemValue(key, d, v); err != nil {
 					return err
 				}
-				theirs = &el
+				has = true
 			}
 		}
-		mine, err := m.localElem(ctx, key, d)
+		mine, here, err := m.localElem(ctx, key, d)
 		if err != nil {
 			return err
 		}
-		if (mine == nil) != (theirs == nil) || (mine != nil && !bytes.Equal(elemValue(*mine), elemValue(*theirs))) {
+		if here != has || (here && !sameElem(mine, theirs)) {
 			out[m.store.journal.elemMark(key, d)] = true
 		}
 		return nil
@@ -1240,8 +1246,8 @@ func (m *merging) residual(ctx context.Context, s *snapState, ms *mergeSet) (map
 		}
 		return nil
 	}
-	for _, ec := range ms.elems {
-		if err := checkElem(ec.key, ec.dot); err != nil {
+	for tk, ec := range ms.elems {
+		if err := checkElem(bytesOf(tk), ec.key, ec.dot); err != nil {
 			return nil, err
 		}
 	}
@@ -1254,9 +1260,15 @@ func (m *merging) residual(ctx context.Context, s *snapState, ms *mergeSet) (map
 		if pending {
 			return checkPending(key, d)
 		}
-		return checkElem(key, d)
+		return checkElem(nil, key, d)
 	})
 	return out, err
+}
+
+// sameElem reports whether a and b, one record's, hold the same version: a
+// tree holds the same value for both.
+func sameElem(a, b element) bool {
+	return a.at == b.at && a.ttl == b.ttl && a.priority == b.priority && bytes.Equal(a.value, b.value)
 }
 
 // collapses reports whether a merge leaves none of the heads hs it started
@@ -1394,7 +1406,7 @@ var errTaken = errors.New("being dropped by a purge")
 func (store *Datastore) take(ctx context.Context, pick func(block) bool) ([]cid.Cid, error) {
 	var taken []cid.Cid
 	prefix := store.blocksPrefix()
-	err := scanStore(ctx, store.store, prefix, func(k string, v []byte) error {
+	err := scanBytes(ctx, store.store, prefix, func(k, v []byte) error {
 		b, err := decodeBlock(v)
 		if err != nil {
 			return err
@@ -1402,7 +1414,7 @@ func (store *Datastore) take(ctx context.Context, pick func(block) bool) ([]cid.
 		if !pick(b) {
 			return nil
 		}
-		c, err := cidOfBlockKey(prefix, k)
+		c, err := cidOfBlockKey(prefix, stringOf(k))
 		if err != nil {
 			return err
 		}
@@ -1481,9 +1493,11 @@ func (store *Datastore) unindex(ctx context.Context, cids []cid.Cid) error {
 	store.gcMu.Lock()
 	defer store.gcMu.Unlock()
 	t := newTxn(store.store)
+	defer t.release()
 	ch := store.changeRoots()
 	for _, c := range cids {
-		v, err := store.store.Get(ctx, store.blockKey(c))
+		k := t.key(appendHashKey(t.buf(), store.pre.blocks, c))
+		v, err := t.get(ctx, k)
 		if errors.Is(err, ds.ErrNotFound) {
 			continue
 		}
@@ -1495,7 +1509,7 @@ func (store *Datastore) unindex(ctx context.Context, cids []cid.Cid) error {
 			return err
 		}
 		ch.remove(b.state)
-		t.del(store.blockKey(c))
+		t.del(k)
 	}
 	if err := ch.prepare(ctx, t); err != nil {
 		return err

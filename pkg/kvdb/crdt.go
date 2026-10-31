@@ -706,22 +706,27 @@ func (store *Datastore) checkFormat(ctx context.Context) error {
 }
 
 func countPrefix(ctx context.Context, store ds.Datastore, prefix ds.Key) (int, error) {
-	results, err := store.Query(ctx, query.Query{Prefix: prefix.String(), KeysOnly: true})
+	n := 0
+	err := scanBytes(ctx, store, prefix, func(_, _ []byte) error {
+		n++
+		return nil
+	})
 	if err != nil {
 		return 0, err
 	}
-	defer results.Close()
-	n := 0
-	for {
-		r, ok := results.NextSync()
-		if !ok {
-			return n, nil
-		}
-		if r.Error != nil {
-			return 0, r.Error
-		}
-		n++
+	return n, nil
+}
+
+// errFound ends a scan that found what it looked for.
+var errFound = errors.New("found")
+
+// anyUnder reports whether store holds a key under prefix.
+func anyUnder(ctx context.Context, store ds.Datastore, prefix ds.Key) (bool, error) {
+	err := scanBytes(ctx, store, prefix, func(_, _ []byte) error { return errFound })
+	if errors.Is(err, errFound) {
+		return true, nil
 	}
+	return false, err
 }
 
 func (store *Datastore) covered(d dot) bool {
