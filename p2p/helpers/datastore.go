@@ -6,8 +6,7 @@ import (
 	"strings"
 
 	"github.com/ipfs/go-datastore"
-
-	pds "github.com/ipfs/go-ds-pebble"
+	"github.com/taubyte/tau/pkg/pebbleds"
 
 	pebblev1 "github.com/cockroachdb/pebble"
 	pebblev2 "github.com/cockroachdb/pebble/v2"
@@ -19,13 +18,13 @@ func NewDatastore(path string) (datastore.Batching, error) {
 		return nil, fmt.Errorf("failed to cleanup interrupted migration: %w", err)
 	}
 
-	ds, err := pds.NewDatastore(path, nil)
+	ds, err := pebbleds.Open(path)
 	if err != nil {
 		if msg := err.Error(); strings.Contains(msg, "major version 1,") && strings.Contains(msg, "no longer supported") {
 			if err = MigratePebbleV1ToV2(path); err != nil {
 				return nil, err
 			}
-			return pds.NewDatastore(path, nil)
+			return pebbleds.Open(path)
 		}
 		return nil, err
 	}

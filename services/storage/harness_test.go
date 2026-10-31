@@ -17,9 +17,9 @@ import (
 	ds "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
 	dssync "github.com/ipfs/go-datastore/sync"
-	pebbleds "github.com/ipfs/go-ds-pebble"
 	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"
+	"github.com/taubyte/tau/pkg/pebbleds"
 
 	"github.com/taubyte/tau/pkg/kvdb"
 )
@@ -139,7 +139,7 @@ var _ Datastore = (*unorderedMem)(nil)
 // the one whose byte order this design rests on.
 func newPebble(t *testing.T) Datastore {
 	t.Helper()
-	store, err := pebbleds.NewDatastore(t.TempDir(), nil)
+	store, err := pebbleds.Open(t.TempDir())
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
 	return store

@@ -18,9 +18,9 @@ import (
 	query "github.com/ipfs/go-datastore/query"
 	dssync "github.com/ipfs/go-datastore/sync"
 	dstest "github.com/ipfs/go-datastore/test"
-	pebbleds "github.com/ipfs/go-ds-pebble"
 	ipld "github.com/ipfs/go-ipld-format"
 	log "github.com/ipfs/go-log/v2"
+	"github.com/taubyte/tau/pkg/pebbleds"
 )
 
 var (
@@ -189,7 +189,7 @@ func makeStore(t testing.TB, i int) ds.Datastore {
 			t.Fatal(err)
 		}
 
-		dstore, err := pebbleds.NewDatastore(folder)
+		dstore, err := pebbleds.Open(folder)
 		if err != nil {
 			t.Fatal(err)
 		}
