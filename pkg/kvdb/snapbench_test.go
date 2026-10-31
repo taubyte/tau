@@ -169,7 +169,7 @@ func (m *dagMeter) countAdd(nd ipld.Node) {
 	m.addedBytes.Add(int64(len(nd.RawData())))
 }
 
-func (m *dagMeter) countGet(nd ipld.Node, err error) {
+func (m *dagMeter) countGet(nd blocks.Block, err error) {
 	if err != nil {
 		m.miss.Add(1)
 		return
@@ -219,6 +219,13 @@ func (m *dagMeter) Get(ctx context.Context, c cid.Cid) (ipld.Node, error) {
 
 func (m *dagMeter) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.NodeOption {
 	return m.getMany(ctx, m.DAGService, cids)
+}
+
+func (m *dagMeter) ReadBlock(ctx context.Context, c cid.Cid) (blocks.Block, error) {
+	m.calls.Add(1)
+	b, err := readBlock(ctx, m.DAGService, c)
+	m.countGet(b, err)
+	return b, err
 }
 
 // get and getMany count one call each, and every block they return.

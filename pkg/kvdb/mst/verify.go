@@ -19,7 +19,7 @@ func (t *Tree) verify(ctx context.Context, r ref, below uint32, lo, hi []byte) (
 	if !r.c.Defined() {
 		return nil, nil
 	}
-	nd, err := t.dags.Get(ctx, r.c)
+	nd, err := t.read(ctx, r.c)
 	if err != nil {
 		return nil, err
 	}

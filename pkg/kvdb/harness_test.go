@@ -20,6 +20,7 @@ import (
 	"github.com/ipfs/boxo/exchange/offline"
 	"github.com/ipfs/boxo/ipld/merkledag"
 	mdutils "github.com/ipfs/boxo/ipld/merkledag/test"
+	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
 	query "github.com/ipfs/go-datastore/query"
@@ -77,6 +78,16 @@ func newFetchThroughOn(t testing.TB, bs blockstore.Blockstore) nodeFetchThrough 
 	w := peer.NewBlockWriter(bs, exch)
 	t.Cleanup(w.Close)
 	return nodeFetchThrough{&fetchThroughDAGSvc{DAGService: merkledag.NewDAGService(blockservice.New(bs, exch)), bs: bs}, w}
+}
+
+// ReadBlock reads a block held from the blockstore, and fetches one that is
+// not as Get does.
+func (n nodeFetchThrough) ReadBlock(ctx context.Context, c cid.Cid) (blocks.Block, error) {
+	b, err := n.bs.Get(ctx, c)
+	if ipld.IsNotFound(err) {
+		return n.Get(ctx, c)
+	}
+	return b, err
 }
 
 func (f *fetchThroughDAGSvc) setRemotes(r ...ipld.DAGService) {

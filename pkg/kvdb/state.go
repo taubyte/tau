@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 
+	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/taubyte/tau/pkg/kvdb/mst"
@@ -462,6 +463,13 @@ func (o *overlay) Get(ctx context.Context, c cid.Cid) (ipld.Node, error) {
 		return nd, nil
 	}
 	return o.DAGService.Get(ctx, c)
+}
+
+func (o *overlay) ReadBlock(ctx context.Context, c cid.Cid) (blocks.Block, error) {
+	if nd, ok := o.added[c]; ok {
+		return nd, nil
+	}
+	return readBlock(ctx, o.DAGService, c)
 }
 
 func (o *overlay) Add(_ context.Context, nd ipld.Node) error {

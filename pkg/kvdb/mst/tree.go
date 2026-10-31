@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 
+	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
 )
@@ -49,17 +50,30 @@ func Load(dags ipld.DAGService, root cid.Cid, opts ...Option) *Tree {
 // Root is the CID of the root node, cid.Undef for the empty tree.
 func (t *Tree) Root() cid.Cid { return t.root }
 
+// A BlockReader reads a block as it is stored, without decoding it as an
+// IPLD node. A tree whose DAG service is one reads its nodes through it.
+type BlockReader interface {
+	ReadBlock(ctx context.Context, c cid.Cid) (blocks.Block, error)
+}
+
+func (t *Tree) read(ctx context.Context, c cid.Cid) (blocks.Block, error) {
+	if r, ok := t.dags.(BlockReader); ok {
+		return r.ReadBlock(ctx, c)
+	}
+	return t.dags.Get(ctx, c)
+}
+
 func (t *Tree) with(root cid.Cid) *Tree {
 	return &Tree{dags: t.dags, sum: t.sum, cache: t.cache, root: root}
 }
 
 func (t *Tree) load(ctx context.Context, c cid.Cid, below uint32) (*node, error) {
 	if t.cache == nil {
-		nd, err := t.dags.Get(ctx, c)
+		b, err := t.read(ctx, c)
 		if err != nil {
 			return nil, err
 		}
-		return decode(nd, below)
+		return decode(b, below)
 	}
 	if n := t.cache.get(c); n != nil {
 		if n.level >= below {
@@ -67,11 +81,11 @@ func (t *Tree) load(ctx context.Context, c cid.Cid, below uint32) (*node, error)
 		}
 		return n, nil
 	}
-	nd, err := t.dags.Get(ctx, c)
+	b, err := t.read(ctx, c)
 	if err != nil {
 		return nil, err
 	}
-	n, cost, err := decodeNode(nd, below, func(level uint32, size int) bool {
+	n, cost, err := decodeNode(b, below, func(level uint32, size int) bool {
 		return t.cache.wants(level, size, below == noLevel)
 	})
 	if err == nil && cost > 0 {
@@ -446,10 +460,14 @@ func (t *Tree) Edit() *Editor {
 	return &Editor{o: op{t: t, seen: map[cid.Cid]*node{}}, root: ref{c: t.root}}
 }
 
-// Put sets key to value.
+// Put sets key to value. The Editor keeps key and value, which must not
+// change until Tree returns.
 func (e *Editor) Put(ctx context.Context, key, value []byte) error {
 	e.o.ctx = ctx
-	r, changed, err := e.o.insert(e.root, noLevel, newEntry(key, value), Level(key))
+	if len(value) == 0 {
+		value = nil
+	}
+	r, changed, err := e.o.insert(e.root, noLevel, entry{key: key, val: value}, Level(key))
 	if err == nil && changed {
 		e.root = r
 	}

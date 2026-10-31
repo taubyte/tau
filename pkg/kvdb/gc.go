@@ -10,6 +10,7 @@ import (
 	"time"
 	"unsafe"
 
+	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
 	ipld "github.com/ipfs/go-ipld-format"
@@ -784,6 +785,13 @@ func (r *recentDAG) Get(ctx context.Context, c cid.Cid) (ipld.Node, error) {
 		return nd, nil
 	}
 	return r.DAGService.Get(ctx, c)
+}
+
+func (r *recentDAG) ReadBlock(ctx context.Context, c cid.Cid) (blocks.Block, error) {
+	if nd, ok := r.nodes[c]; ok {
+		return nd, nil
+	}
+	return readBlock(ctx, r.DAGService, c)
 }
 
 // openReader reads what open needs of the roots: every block is held, and

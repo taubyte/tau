@@ -3,6 +3,7 @@ package kvdb
 import (
 	"context"
 
+	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/taubyte/tau/pkg/kvdb/mst"
@@ -86,6 +87,15 @@ func makeNode(delta *pb.Delta, heads []Head) (ipld.Node, error) {
 		return nil, err
 	}
 	return mst.BlockOf(raw)
+}
+
+// readBlock is the block c names, read through dags' BlockReader when it is
+// one, else decoded by its Get.
+func readBlock(ctx context.Context, dags ipld.NodeGetter, c cid.Cid) (blocks.Block, error) {
+	if r, ok := dags.(mst.BlockReader); ok {
+		return r.ReadBlock(ctx, c)
+	}
+	return dags.Get(ctx, c)
 }
 
 // blockLinks appends the links of nd, one of kvdb's blocks, to into.

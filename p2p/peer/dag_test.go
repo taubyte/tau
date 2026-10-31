@@ -6,8 +6,10 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	blockstore "github.com/ipfs/boxo/blockstore"
+	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
 	dssync "github.com/ipfs/go-datastore/sync"
@@ -50,6 +52,28 @@ func TestDAG_HasBlock(t *testing.T) {
 	has, err = dag.BlockStore().Has(ctx, c)
 	require.NoError(t, err)
 	assert.True(t, has)
+}
+
+func TestDAG_ReadBlock(t *testing.T) {
+	ctx := context.Background()
+	node := Mock(ctx)
+	require.NotNil(t, node)
+	defer node.Close()
+
+	dag := node.DAG()
+	held := blocks.NewBlock([]byte("read block content"))
+	require.NoError(t, dag.WriteBlock(ctx, held))
+
+	b, err := dag.ReadBlock(ctx, held.Cid())
+	require.NoError(t, err)
+	assert.Equal(t, held.Cid(), b.Cid())
+	assert.Equal(t, held.RawData(), b.RawData())
+
+	// A block not held is asked of the exchange, which no peer answers.
+	fetch, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	_, err = dag.ReadBlock(fetch, blocks.NewBlock([]byte("not held")).Cid())
+	assert.Error(t, err)
 }
 
 func TestDAG_CloseIdempotent(t *testing.T) {

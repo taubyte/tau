@@ -8,6 +8,7 @@ import (
 	"slices"
 	"unsafe"
 
+	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
 	mh "github.com/multiformats/go-multihash"
@@ -97,7 +98,7 @@ func ParseBlock(c cid.Cid, raw []byte) (*Block, error) {
 }
 
 // BlockData is nd's block's data, over nd's bytes.
-func BlockData(nd ipld.Node) ([]byte, error) {
+func BlockData(nd blocks.Block) ([]byte, error) {
 	if b, ok := nd.(*Block); ok && b.data != nil {
 		return b.data, nil
 	}
@@ -117,7 +118,7 @@ func BlockData(nd ipld.Node) ([]byte, error) {
 
 // DecodeBlock reads nd as a Block: its data, over nd's bytes, and its links
 // appended to links.
-func DecodeBlock(nd ipld.Node, links []cid.Cid) ([]byte, []cid.Cid, error) {
+func DecodeBlock(nd blocks.Block, links []cid.Cid) ([]byte, []cid.Cid, error) {
 	msg := pb.BlockFromVTPool()
 	defer func() {
 		clear(msg.Links)

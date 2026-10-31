@@ -199,6 +199,16 @@ func (d *DAGService) DeleteBlocks(ctx context.Context, cids []cid.Cid) error {
 	return d.writer.DeleteBlocks(ctx, cids)
 }
 
+// ReadBlock is the block c names, read from the store without decoding it
+// as an IPLD node; a block not held is fetched as Get fetches it.
+func (d *DAGService) ReadBlock(ctx context.Context, c cid.Cid) (blocks.Block, error) {
+	b, err := d.bstore.Get(ctx, c)
+	if ipld.IsNotFound(err) {
+		return d.DAGService.Get(ctx, c)
+	}
+	return b, err
+}
+
 // HasBlock reports whether a block is available locally.
 func (d *DAGService) HasBlock(ctx context.Context, c cid.Cid) (bool, error) {
 	return d.bstore.Has(ctx, c)

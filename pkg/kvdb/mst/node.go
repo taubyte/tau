@@ -8,8 +8,8 @@ import (
 	"math"
 	"slices"
 
+	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
-	ipld "github.com/ipfs/go-ipld-format"
 	pb "github.com/taubyte/tau/pkg/kvdb/mst/pb"
 )
 
@@ -189,7 +189,7 @@ func malformed(c cid.Cid, format string, args ...any) error {
 }
 
 // decode reads the node in nd, which must sit below a node of level below.
-func decode(nd ipld.Node, below uint32) (*node, error) {
+func decode(nd blocks.Block, below uint32) (*node, error) {
 	n, _, err := decodeNode(nd, below, nil)
 	return n, err
 }
@@ -197,7 +197,7 @@ func decode(nd ipld.Node, below uint32) (*node, error) {
 // decodeNode is decode, but for a node own wants, given its level and what
 // it would cost to keep (footprint), it copies every byte the node holds
 // into one buffer of its own, and returns that cost; otherwise 0.
-func decodeNode(nd ipld.Node, below uint32, own func(level uint32, size int) bool) (*node, int, error) {
+func decodeNode(nd blocks.Block, below uint32, own func(level uint32, size int) bool) (*node, int, error) {
 	c := nd.Cid()
 	data, links, err := DecodeBlock(nd, nil)
 	if err != nil {

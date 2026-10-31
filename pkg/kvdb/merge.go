@@ -1033,9 +1033,9 @@ func (m *merging) rebase(ctx context.Context, ch *rootChange, s *snapState, resi
 	ch.setBase(m.t, m.store.base, b)
 	m.base = &b
 	for _, prefix := range []ds.Key{m.store.journal.elemsPrefix(), m.store.journal.pendingPrefix()} {
-		if err := scanStore(ctx, m.store.store, prefix, func(k string, _ []byte) error {
-			if !residual[k] {
-				m.t.del(ds.RawKey(k))
+		if err := scanBytes(ctx, m.store.store, prefix, func(k, _ []byte) error {
+			if !residual[string(k)] {
+				m.t.del(m.t.key(append(m.t.buf(), k...)))
 			}
 			return nil
 		}); err != nil {
