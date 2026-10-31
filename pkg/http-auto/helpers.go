@@ -57,15 +57,17 @@ func (s *Service) getProjectId(name string) (string, error) {
 		return "", fmt.Errorf("failed functionSpec HttpPath with %v", err)
 	}
 
-	// Check function to grab projcetID. If fails check website. If fails then not found
-	tnsPath, err = s.tnsClient.Fetch(p)
+	// Fetch the host's own links key: fetching the bare host path returns the
+	// subtree of every subdomain below it, so an apex with indexed subdomains
+	// would resolve to (or fail on) its children instead of itself.
+	tnsPath, err = s.tnsClient.Fetch(p.Versioning().Links())
 	if err != nil || tnsPath.Interface() == nil {
 		p, err = websiteSpec.Tns().HttpPath(name)
 		if err != nil {
 			return "", fmt.Errorf("failed websiteSpec HttpPath with %v", err)
 		}
 
-		tnsPath, err = s.tnsClient.Fetch(p)
+		tnsPath, err = s.tnsClient.Fetch(p.Versioning().Links())
 		if err != nil {
 			return "", fmt.Errorf("failed tns fetch with %v", err)
 		}
