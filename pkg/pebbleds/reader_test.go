@@ -123,3 +123,9 @@ func TestCloseEndsReaders(t *testing.T) {
 		t.Fatalf("a reader made after Close: %v", err)
 	}
 }
+
+func TestAStoreKeepsAPrefixOfItsWrites(t *testing.T) {
+	if !open(t).KeepsPrefix() {
+		t.Fatal("a pebble store says a crash may keep a later write and lose an earlier one")
+	}
+}

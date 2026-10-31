@@ -273,9 +273,14 @@ type Datastore struct {
 
 	// store is raw behind the journal, which marks every state record
 	// written through it.
-	store     ds.Datastore
-	raw       ds.Datastore
-	journal   *journal
+	store   ds.Datastore
+	raw     ds.Datastore
+	journal *journal
+	// logged is set when raw keeps a prefix of its writes and the DAG
+	// service writes its blocks to raw: a write raw keeps then has every
+	// earlier write kept, blocks included, so no Sync is needed to order
+	// them (see sharesLog).
+	logged    bool
 	namespace ds.Key
 	pre       prefixes
 	set       *set
@@ -501,6 +506,7 @@ func NewDatastore(
 		}
 	}
 	dstore.raw = store
+	dstore.logged = sharesLog(store, dagSyncer)
 	dstore.journal = newJournal(store, namespace, dstore.set)
 	dstore.store = &journaled{Datastore: store, j: dstore.journal}
 	dstore.set.store = dstore.store
@@ -1843,7 +1849,7 @@ func (store *Datastore) writeBlocks(ctx context.Context, b block, nodes ...ipld.
 	}
 	err := t.commit(ctx)
 	t.release()
-	if err == nil {
+	if err == nil && !store.logged {
 		err = store.raw.Sync(ctx, store.blocksPrefix())
 	}
 	if err != nil {

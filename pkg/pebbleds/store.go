@@ -269,6 +269,11 @@ func (s *Store) Sync(ctx context.Context, _ ds.Key) error {
 	return nil
 }
 
+// KeepsPrefix reports that a crash leaves the store a prefix of its writes:
+// pebble writes them to one log, in commit order, and replays an unbroken
+// run of it, and it flushes its memtables in order.
+func (s *Store) KeepsPrefix() bool { return true }
+
 // DiskUsage is the space pebble's files take.
 func (s *Store) DiskUsage(context.Context) (uint64, error) {
 	if !s.enter() {

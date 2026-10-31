@@ -513,6 +513,28 @@ type BlockSyncer interface {
 	SyncBlocks(ctx context.Context) error
 }
 
+// A PrefixLog is a datastore a crash leaves a prefix of its writes: no
+// write it keeps was made after one it lost.
+type PrefixLog interface {
+	KeepsPrefix() bool
+}
+
+// A BlockLogger is a DAGService that writes its blocks to the datastore
+// BlockLog names, in order with that datastore's other writes.
+type BlockLogger interface {
+	BlockLog() ds.Datastore
+}
+
+// sharesLog reports whether store keeps a prefix of its writes and dags
+// writes its blocks to it, as a node's store and DAG do: what Syncs order
+// between the two is then ordered by the store.
+func sharesLog(store ds.Datastore, dags ipld.DAGService) bool {
+	p, prefix := store.(PrefixLog)
+	l, logged := dags.(BlockLogger)
+	_, apart := dags.(BlockSyncer)
+	return prefix && p.KeepsPrefix() && logged && !apart && l.BlockLog() == store
+}
+
 // syncBlocks makes durable every block written so far, and first what the
 // store wrote before them: the index entry written before a block it
 // names is never lost while the block is kept.

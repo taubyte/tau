@@ -471,8 +471,6 @@ func scanStore(ctx context.Context, store ds.Datastore, prefix ds.Key, fn func(k
 	return scanBytes(ctx, store, prefix, func(k, v []byte) error { return fn(string(k), v) })
 }
 
-// scanBytes is scanStore lending the key too: k is valid only until fn
-// returns.
 // scanPrefix appends to dst the bytes every key under prefix starts with.
 func scanPrefix(dst []byte, prefix ds.Key) []byte {
 	dst = append(dst, prefix.String()...)
@@ -482,6 +480,8 @@ func scanPrefix(dst []byte, prefix ds.Key) []byte {
 	return dst
 }
 
+// scanBytes is scanStore lending the key too: k is valid only until fn
+// returns.
 func scanBytes(ctx context.Context, store ds.Datastore, prefix ds.Key, fn func(k, v []byte) error) error {
 	if s, ok := below(store).(*pebbleds.Store); ok {
 		var buf [128]byte

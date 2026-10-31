@@ -157,12 +157,17 @@ func (f *snapStore) Close() error { return errors.Join(f.r.Close(), f.st.Close()
 // dagMeter counts the blocks passing through a DAG service, and their bytes.
 type dagMeter struct {
 	ipld.DAGService
+	// log is the store the blocks are written to, when it is the
+	// replica's own, as a node's are.
+	log ds.Datastore
 
 	added, addedBytes   atomic.Int64
 	got, gotBytes, miss atomic.Int64
 	calls               atomic.Int64
 	removed             atomic.Int64
 }
+
+func (m *dagMeter) BlockLog() ds.Datastore { return m.log }
 
 func (m *dagMeter) countAdd(nd ipld.Node) {
 	m.added.Add(1)
@@ -320,7 +325,7 @@ func newSnapNode(b *testing.B, name string, opts *Options) *snapNode {
 	}
 	node := newFetchThroughOn(b, blockstore.NewIdStore(pst.Blockstore()))
 	local := node.fetchThroughDAGSvc
-	n := &snapNode{local: local, own: &dagMeter{DAGService: node}, serve: &dagMeter{DAGService: local.DAGService}}
+	n := &snapNode{local: local, own: &dagMeter{DAGService: node, log: pst}, serve: &dagMeter{DAGService: local.DAGService}}
 	n.snapReplica = openSnap(b, snapEnv{name: name, store: pst, dag: n.own, opts: replicaOptions(opts, name)})
 	b.Cleanup(func() {
 		if err := n.Close(); err != nil {

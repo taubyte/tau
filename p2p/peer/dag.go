@@ -40,6 +40,7 @@ type DAGService struct {
 	ipld.DAGService // merkledag: Add/Get/Remove/...
 
 	bstore     blockstore.Blockstore
+	store      datastore.Batching
 	bserv      blockservice.BlockService
 	exch       exchange.Interface
 	reprovider provider.System
@@ -111,6 +112,7 @@ func newDAG(ctx context.Context, store datastore.Batching, host host.Host, dht r
 	d := &DAGService{
 		DAGService: merkledag.NewDAGService(bserv),
 		bstore:     bs,
+		store:      store,
 		bserv:      bserv,
 		exch:       bswap,
 		reprovider: reprovider,
@@ -198,6 +200,10 @@ func (d *DAGService) WriteBlock(ctx context.Context, b blocks.Block) error {
 func (d *DAGService) DeleteBlocks(ctx context.Context, cids []cid.Cid) error {
 	return d.writer.DeleteBlocks(ctx, cids)
 }
+
+// BlockLog is the datastore d writes its blocks to, the one it was made
+// over, in order with the store's other writes.
+func (d *DAGService) BlockLog() datastore.Datastore { return d.store }
 
 // ReadBlock is the block c names, read from the store without decoding it
 // as an IPLD node; a block not held is fetched as Get fetches it.

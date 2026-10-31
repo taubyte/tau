@@ -920,6 +920,21 @@ func unsynced(events []volatileEvent, n int) []int {
 	return out
 }
 
+// unsyncedTail is the writes among the first n events after the last
+// Sync: in a store that keeps a prefix of its writes, a Sync of any key
+// makes every write before it durable.
+func unsyncedTail(events []volatileEvent, n int) []int {
+	var out []int
+	for i := range n {
+		if events[i].sync || events[i].blocks {
+			out = out[:0]
+			continue
+		}
+		out = append(out, i)
+	}
+	return out
+}
+
 // afterLoss is base with the datastore writes among the first n events
 // applied, but for the unsynced writes lost names.
 func afterLoss(t testing.TB, base ds.Datastore, events []volatileEvent, n int, lost map[int]bool) ds.Datastore {
@@ -1006,6 +1021,20 @@ func (d *volatileDAG) RemoveMany(ctx context.Context, cids []cid.Cid) error {
 
 type syncingVolatileDAG struct{ *volatileDAG }
 
+// A prefixStore is a volatileStore a power loss leaves a prefix of the
+// writes no Sync covered, as pebble's log does; loggedDAG writes its blocks
+// to it, as a node's DAG writes to the node's store.
+type prefixStore struct{ *volatileStore }
+
+func (prefixStore) KeepsPrefix() bool { return true }
+
+type loggedDAG struct {
+	*volatileDAG
+	log prefixStore
+}
+
+func (d loggedDAG) BlockLog() ds.Datastore { return d.log }
+
 func (d syncingVolatileDAG) SyncBlocks(context.Context) error {
 	d.s.record(volatileEvent{blocks: true})
 	return nil
@@ -1014,7 +1043,8 @@ func (d syncingVolatileDAG) SyncBlocks(context.Context) error {
 // TestAWriteSurvivesAnyLoss powers a replica off after each event of a put,
 // a delete and the merge of a peer's write, every write to its datastore,
 // block and Sync, keeping every subset of the writes no Sync covered, with
-// its blocks in a store of their own and in its datastore. It reopens
+// its blocks in a store of their own and in its datastore; and, in a store
+// that keeps a prefix of them with its blocks, every prefix. It reopens
 // holding the values of before one of them or after it, every block it
 // holds is indexed or a root reaches it, every block it indexes is held,
 // and once it compacts its trees are its records. A block written before
@@ -1023,20 +1053,46 @@ func (d syncingVolatileDAG) SyncBlocks(context.Context) error {
 // and a head naming nothing; a record written before its journal mark was
 // durable could outlive the mark, and the trees then miss it.
 func TestAWriteSurvivesAnyLoss(t *testing.T) {
-	t.Run("blocks apart", func(t *testing.T) { writeSurvivesAnyLoss(t, true) })
-	t.Run("blocks in the datastore", func(t *testing.T) { writeSurvivesAnyLoss(t, false) })
+	t.Run("blocks apart", func(t *testing.T) { writeSurvivesAnyLoss(t, blocksApart) })
+	t.Run("blocks in the datastore", func(t *testing.T) { writeSurvivesAnyLoss(t, blocksIn) })
+	t.Run("a shared log", func(t *testing.T) { writeSurvivesAnyLoss(t, sharedLog) })
 }
 
-func writeSurvivesAnyLoss(t *testing.T, apart bool) {
+// Where a replica's blocks are: apart, synced by SyncBlocks; in its
+// datastore, synced with it; or in a datastore that keeps a prefix of its
+// writes, the blocks among them.
+type blockPlace int
+
+const (
+	blocksApart blockPlace = iota
+	blocksIn
+	sharedLog
+)
+
+func (p blockPlace) String() string {
+	return [...]string{"blocks apart", "blocks in the datastore", "a shared log"}[p]
+}
+
+func writeSurvivesAnyLoss(t *testing.T, place blockPlace) {
 	inner := dssync.MutexWrap(ds.NewMapDatastore())
 	vs := &volatileStore{Datastore: inner}
 	own := newFetchThrough()
 	vd := &volatileDAG{fetchThroughDAGSvc: own, s: vs}
-	var d ipld.DAGService = vd
-	if apart {
+	var (
+		d     ipld.DAGService = vd
+		store ds.Datastore    = vs
+	)
+	switch place {
+	case blocksApart:
 		d = syncingVolatileDAG{vd}
+	case sharedLog:
+		log := prefixStore{vs}
+		d, store = loggedDAG{volatileDAG: vd, log: log}, log
 	}
-	r := manualReplica(t, vs, d, "volatile: ")
+	r := manualReplica(t, store, d, "volatile: ")
+	if r.logged != (place == sharedLog) {
+		t.Fatalf("a replica over %v orders by a shared log: %v", place, r.logged)
+	}
 	peerDag := newFetchThrough()
 	peer := manualReplica(t, dssync.MutexWrap(ds.NewMapDatastore()), peerDag, "peer: ")
 	defer peer.Close()
@@ -1050,6 +1106,10 @@ func writeSurvivesAnyLoss(t *testing.T, apart bool) {
 	vs.on = true
 	vs.mu.Unlock()
 	put(t, r, "/a", "new")
+	vs.mu.Lock()
+	putEvents := slices.Clone(vs.events)
+	vs.mu.Unlock()
+	assertPutSyncs(t, place, putEvents)
 	del(t, r, "/b")
 	syncReplicaHeads(t, peer, r)
 	vs.mu.Lock()
@@ -1069,13 +1129,20 @@ func writeSurvivesAnyLoss(t *testing.T, apart bool) {
 	runs := 0
 	for n := 0; n <= len(events); n++ {
 		u := unsynced(events, n)
-		subsets := 1 << min(len(u), 10)
-		for s := range subsets {
+		losses := 1 << min(len(u), 10)
+		if place == sharedLog {
+			u = unsyncedTail(events, n)
+			losses = len(u) + 1
+		}
+		for s := range losses {
 			lost := map[int]bool{}
 			for b, i := range u {
-				if len(u) > 10 {
+				switch {
+				case place == sharedLog:
+					lost[i] = b >= s
+				case len(u) > 10:
 					lost[i] = rng.IntN(2) == 0
-				} else {
+				default:
 					lost[i] = s&(1<<b) != 0
 				}
 			}
@@ -1103,6 +1170,28 @@ func writeSurvivesAnyLoss(t *testing.T, apart bool) {
 		}
 	}
 	t.Logf("%d events, %d losses", len(events), runs)
+}
+
+// assertPutSyncs checks the Syncs of a put: one for its index entry, one
+// for its block, two when its blocks are apart, and one for its journal
+// marks; in a shared log, only the marks', which follows the block, so a
+// head is never broadcast naming a block a power loss can take.
+func assertPutSyncs(t *testing.T, place blockPlace, events []volatileEvent) {
+	t.Helper()
+	syncs, block, synced := 0, -1, false
+	for i, e := range events {
+		switch {
+		case e.nd != nil && block < 0:
+			block = i
+		case e.sync || e.blocks:
+			syncs++
+			synced = synced || block >= 0
+		}
+	}
+	want := [...]int{blocksApart: 4, blocksIn: 3, sharedLog: 1}[place]
+	if syncs != want || block < 0 || !synced {
+		t.Fatalf("a put over %v syncs %d times, a block at %d, synced after it: %v; want %d Syncs, one after the block", place, syncs, block, synced, want)
+	}
 }
 
 // TestAnAtomicCommitSurvivesAnyLoss powers a replica off after each write

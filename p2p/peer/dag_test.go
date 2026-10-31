@@ -76,6 +76,15 @@ func TestDAG_ReadBlock(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// A node's DAG writes its blocks to the node's store, the log kvdb orders
+// its own writes and the blocks' by.
+func TestDAG_BlockLogIsTheNodesStore(t *testing.T) {
+	node := Mock(context.Background())
+	require.NotNil(t, node)
+	defer node.Close()
+	assert.True(t, node.DAG().BlockLog() == node.Store())
+}
+
 func TestDAG_CloseIdempotent(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	node := Mock(ctx)

@@ -595,9 +595,14 @@ func (m *merging) delta(ctx context.Context, c cid.Cid, d dot, delta *pb.Delta) 
 		return nil, err
 	}
 	m.settleBlock(c, block{kind: kindDelta, dot: d, at: at, ttl: ttl}, delta.GetPriority(), linked)
-	// The block the merge records is durable before the merge is.
-	if err := store.syncBlocks(ctx); err != nil {
-		return nil, err
+	// The block the merge records is durable before the merge is. In a
+	// shared log the merge is kept only with the block, and the Sync of
+	// its journal marks, which every local write makes, has the block
+	// durable before a head naming it is broadcast.
+	if !store.logged {
+		if err := store.syncBlocks(ctx); err != nil {
+			return nil, err
+		}
 	}
 	return walk, m.commit(ctx)
 }
