@@ -8,14 +8,13 @@ import (
 	"math"
 	"slices"
 
-	dag "github.com/ipfs/boxo/ipld/merkledag"
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
 	pb "github.com/taubyte/tau/pkg/kvdb/mst/pb"
 )
 
 // Format is the format profile this package reads and writes.
-const Format = 1
+const Format = 2
 
 const levelDomain = "tau/mst/v1/level"
 
@@ -141,13 +140,9 @@ func sharedPrefix(a, b []byte) int {
 	return n
 }
 
-// v1Prefix is the builder of every node's cid, made once: as an interface
-// it would otherwise be allocated per node.
-var v1Prefix cid.Builder = dag.V1CidPrefix()
-
 // encode makes the block for n. Its message comes from a pool and borrows
 // n's bytes until it is marshalled.
-func encode(n *node) (*dag.ProtoNode, error) {
+func encode(n *node) (*Block, error) {
 	msg := pb.NodeFromVTPool()
 	defer msg.ReturnToVTPool()
 	msg.Format = Format
@@ -174,36 +169,14 @@ func encode(n *node) (*dag.ProtoNode, error) {
 	if err != nil {
 		return nil, err
 	}
-	nd := dag.NodeWithData(data)
-	count := 0
+	var buf [32]cid.Cid
+	links := buf[:0]
 	for _, k := range n.kids {
 		if k.c.Defined() {
-			count++
+			links = append(links, k.c)
 		}
 	}
-	if count > 0 {
-		// SetLinks keeps the pointers and copies only the slice of them.
-		links := make([]ipld.Link, 0, count)
-		var buf [32]*ipld.Link
-		ptrs := buf[:0]
-		for _, k := range n.kids {
-			if k.c.Defined() {
-				links = append(links, ipld.Link{Cid: k.c})
-				ptrs = append(ptrs, &links[len(links)-1])
-			}
-		}
-		if err := nd.SetLinks(ptrs); err != nil {
-			return nil, err
-		}
-	}
-	return nd, nd.SetCidBuilder(v1Prefix)
-}
-
-func protoNode(nd ipld.Node) (*dag.ProtoNode, error) {
-	if pn, ok := nd.(*dag.ProtoNode); ok {
-		return pn, nil
-	}
-	return dag.DecodeProtobuf(nd.RawData())
+	return NewBlock(data, links)
 }
 
 func malformed(c cid.Cid, format string, args ...any) error {
@@ -221,7 +194,7 @@ func decode(nd ipld.Node, below uint32) (*node, error) {
 // into one buffer of its own, and returns that cost; otherwise 0.
 func decodeNode(nd ipld.Node, below uint32, own func(level uint32, size int) bool) (*node, int, error) {
 	c := nd.Cid()
-	pn, err := protoNode(nd)
+	data, links, err := DecodeBlock(nd, nil)
 	if err != nil {
 		return nil, 0, malformed(c, "%s", err)
 	}
@@ -232,7 +205,7 @@ func decodeNode(nd ipld.Node, below uint32, own func(level uint32, size int) boo
 	// as the node.
 	msg := pb.NodeFromVTPool()
 	defer msg.ReturnToVTPool()
-	if err := msg.UnmarshalVTUnsafe(pn.Data()); err != nil {
+	if err := msg.UnmarshalVTUnsafe(data); err != nil {
 		return nil, 0, malformed(c, "%s", err)
 	}
 	if msg.Format != Format {
@@ -255,12 +228,11 @@ func decodeNode(nd ipld.Node, below uint32, own func(level uint32, size int) boo
 		size += int(e.Shared) + len(e.Suffix)
 		owned += len(e.Value) + len(e.RightSummary)
 	}
-	links := pn.Links()
 	cost := 0
 	if own != nil {
 		cids := 0
 		for _, l := range links {
-			cids += len(l.Cid.KeyString())
+			cids += len(l.KeyString())
 		}
 		if cost = footprint(len(msg.Entries), size+owned, cids); own(msg.Level, cost) {
 			size += owned
@@ -294,7 +266,7 @@ func decodeNode(nd ipld.Node, below uint32, own func(level uint32, size int) boo
 		if li == len(links) {
 			return malformed(c, "more subtrees than links")
 		}
-		n.kids[i] = ref{c: links[li].Cid, sum: held(sum)}
+		n.kids[i] = ref{c: links[li], sum: held(sum)}
 		li++
 		return nil
 	}

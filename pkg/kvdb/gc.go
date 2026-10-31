@@ -63,7 +63,7 @@ import (
 //	/p/<id>               a pinned state
 //	/x/<cid>              a fetched delta block not indexed yet
 //
-// A state block is CIDv1 dag-pb sha2-256, which a fetch checks before it
+// A state block is CIDv1 raw sha2-256, which a fetch checks before it
 // asks for one, so it is named by its digest, 32 bytes: the sets of them
 // hold no pointers, and the records are their digests end to end.
 //
@@ -138,13 +138,13 @@ func parseChunkKey(prefix ds.Key, k string) (uint64, uint64, error) {
 // isStateCid reports whether c is a cid a state block may have.
 func isStateCid(c cid.Cid) bool {
 	ks := c.KeyString()
-	return len(ks) == len(dagPBSHA256)+len(cidKey{}) && ks[:len(dagPBSHA256)] == dagPBSHA256
+	return len(ks) == len(mst.BlockPrefix)+len(cidKey{}) && ks[:len(mst.BlockPrefix)] == mst.BlockPrefix
 }
 
 // cidOf is the state block named by k.
 func cidOf(k cidKey) cid.Cid {
-	var b [len(dagPBSHA256) + len(cidKey{})]byte
-	copy(b[copy(b[:], dagPBSHA256):], k[:])
+	var b [len(mst.BlockPrefix) + len(cidKey{})]byte
+	copy(b[copy(b[:], mst.BlockPrefix):], k[:])
 	c, err := cid.Cast(b[:])
 	if err != nil {
 		panic(err)
@@ -849,8 +849,12 @@ func (ch *rootChange) rescue(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("reading reused state block %s: %w", cidOf(k), err)
 			}
-			for _, l := range nd.Links() {
-				if lk := keyOf(l.Cid); !stays(lk) {
+			links, err := blockLinks(nd, nil)
+			if err != nil {
+				return fmt.Errorf("reading reused state block %s: %w", cidOf(k), err)
+			}
+			for _, l := range links {
+				if lk := keyOf(l); !stays(lk) {
 					stack = append(stack, lk)
 				}
 			}
@@ -1210,8 +1214,8 @@ func (store *Datastore) markClosure(ctx context.Context, c cid.Cid) error {
 			return fmt.Errorf("reading state block %s: %w", c, err)
 		}
 		store.gc.members[k] = struct{}{}
-		for _, l := range nd.Links() {
-			stack = append(stack, l.Cid)
+		if stack, err = blockLinks(nd, stack); err != nil {
+			return fmt.Errorf("reading state block %s: %w", c, err)
 		}
 	}
 	return nil

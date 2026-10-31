@@ -57,7 +57,7 @@ const (
 // formatVersion is the on-disk format, stored as formatVersion+1 the way every
 // earlier format stored its own. A store holding any other version is emptied
 // on open and refills from its peers.
-const formatVersion uint64 = 8
+const formatVersion uint64 = 9
 
 // Common errors.
 var (
@@ -1995,11 +1995,15 @@ func (store *Datastore) DotDAG(ctx context.Context, w io.Writer) error {
 		if _, err := fmt.Fprintf(w, "%s [label=\"%d | %s | snapshot=%t: +%d -%d\"]\n", c, delta.GetPriority(), dotFromPB(delta.GetDot()), delta.GetSnapshot(), len(delta.GetElements()), len(delta.GetTombstones())); err != nil {
 			return err
 		}
-		for _, l := range nd.Links() {
-			if _, err := fmt.Fprintf(w, "%s -> %s\n", c, l.Cid); err != nil {
+		links, err := blockLinks(nd, nil)
+		if err != nil {
+			return err
+		}
+		for _, l := range links {
+			if _, err := fmt.Fprintf(w, "%s -> %s\n", c, l); err != nil {
 				return err
 			}
-			stack = append(stack, l.Cid)
+			stack = append(stack, l)
 		}
 	}
 	_, err := fmt.Fprintln(w, "}")

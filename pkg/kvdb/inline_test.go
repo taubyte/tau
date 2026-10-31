@@ -211,9 +211,7 @@ func treeBlocks(t testing.TB, r *Datastore, root *pb.Delta) [][]byte {
 		}
 		queue = queue[1:]
 		out = append(out, nd.RawData())
-		for _, l := range nd.Links() {
-			queue = append(queue, l.Cid)
-		}
+		queue = append(queue, blockLinksOf(t, nd)...)
 	}
 	return out
 }

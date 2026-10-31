@@ -10,9 +10,8 @@ import (
 	"crypto/sha256"
 	"testing"
 
-	dag "github.com/ipfs/boxo/ipld/merkledag"
-	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
+	"github.com/taubyte/tau/pkg/kvdb/mst"
 )
 
 // TestVerifyingACarriedStateAllocatesWhatItsBlocksDo: checking what a
@@ -47,11 +46,12 @@ func TestVerifyingACarriedStateAllocatesWhatItsBlocksDo(t *testing.T) {
 			t.Fatal("the rebuilt StateRoot is not the state")
 		}
 		for i, raw := range root.GetInline() {
-			blk, err := blocks.NewBlockWithCid(raw, cids[i])
+			nd, err := mst.ParseBlock(cids[i], raw)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := dag.DecodeProtobufBlock(blk); err != nil {
+			var buf [32]cid.Cid
+			if _, err := blockLinks(nd, buf[:0]); err != nil {
 				t.Fatal(err)
 			}
 		}

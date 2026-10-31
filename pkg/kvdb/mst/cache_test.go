@@ -8,7 +8,6 @@ import (
 	"testing"
 	"unsafe"
 
-	dag "github.com/ipfs/boxo/ipld/merkledag"
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
 	mh "github.com/multiformats/go-multihash"
@@ -122,7 +121,7 @@ func TestACachedNodeOwnsItsBytes(t *testing.T) {
 		t.Fatalf("the cache holds %d nodes", len(held))
 	}
 	for id, n := range held {
-		data := s.nodes[id].(*dag.ProtoNode).Data()
+		data := blockData(t, s.nodes[id])
 		for _, e := range n.entries {
 			if within(e.key, data) || within(e.val, data) {
 				t.Fatalf("cached node %s holds bytes of its block", id)
@@ -147,7 +146,7 @@ func TestACachedNodeOwnsItsBytes(t *testing.T) {
 	if err != nil || cost != 0 {
 		t.Fatal(cost, err)
 	}
-	if !within(n.entries[0].val, s.nodes[leaf].(*dag.ProtoNode).Data()) {
+	if !within(n.entries[0].val, blockData(t, s.nodes[leaf])) {
 		t.Fatal("a node the cache does not keep copied its block")
 	}
 }
@@ -338,4 +337,13 @@ func TestACacheKeepsOnlyNodesOfItsCIDs(t *testing.T) {
 	if c.get(v0) != nil || c.Used() != 0 {
 		t.Fatal("a CIDv0 node was kept")
 	}
+}
+
+func blockData(t *testing.T, nd ipld.Node) []byte {
+	t.Helper()
+	data, err := BlockData(nd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }

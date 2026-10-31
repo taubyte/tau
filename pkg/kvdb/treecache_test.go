@@ -48,7 +48,7 @@ func TestAMergeReadsItsBaseFromTheCacheOfTreeNodes(t *testing.T) {
 		bottom := map[cid.Cid]bool{}
 		if err := closure.ForEach(func(c cid.Cid) error {
 			nd, err := dagsyncs[1].Get(ctx, c)
-			bottom[c] = err == nil && len(nd.Links()) == 0 && c != base.elems && c != base.pending
+			bottom[c] = err == nil && len(blockLinksOf(t, nd)) == 0 && c != base.elems && c != base.pending
 			return err
 		}); err != nil {
 			t.Fatal(err)

@@ -43,7 +43,7 @@ type heads struct {
 func newHeads(ctx context.Context, store ds.Datastore, namespace ds.Key) (*heads, error) {
 	hh := &heads{store: store, namespace: namespace, prefix: namespace.String(), cache: map[cid.Cid]Head{}}
 	err := scanStore(ctx, store, namespace, func(k string, v []byte) error {
-		c, err := dshelp.DsKeyToCidV1(ds.NewKey(strings.TrimPrefix(k, namespace.String())), cid.DagProtobuf)
+		c, err := dshelp.DsKeyToCidV1(ds.NewKey(strings.TrimPrefix(k, namespace.String())), cid.Raw)
 		if err != nil {
 			return fmt.Errorf("bad head key %s: %w", k, err)
 		}

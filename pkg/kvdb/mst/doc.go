@@ -15,7 +15,7 @@
 // it with the store's not-found error, and Missing finds the nodes of a tree
 // that are not held, so a caller can complete its closure first.
 //
-// # Format profile 1
+// # Format profile 2
 //
 // This is the whole definition of a tree's bytes. Anything that changes it
 // is a new profile, with a new value of Node.format.
@@ -38,19 +38,18 @@
 // parent's. Levels with no key in a slot are skipped, so no node has zero
 // entries, and a slot with no keys has no subtree.
 //
-// A node is a dag-pb block (CIDv1, codec dag-pb 0x70, multihash sha2-256),
-// built as kvdb builds its delta blocks: Data is the protobuf Node in
-// pb/node.proto, and Links are the node's subtrees in key order, each with
-// an empty Name and a Tsize of 0. dag-pb's encoder sorts links by Name with
-// a stable sort, so with every Name empty the order written is the order
-// added.
+// A node is a Block (pb/block.proto) under a CIDv1 cid, codec raw 0x55,
+// multihash sha2-256 of the block's bytes, as kvdb's blocks are: links, the
+// binary cids of the node's subtrees in key order, then data, the Node
+// message in pb/node.proto. A DAG service keeps it as an opaque block; this
+// package reads its links itself.
 //
-// Data is the Node message as Go protobuf marshals it deterministically:
+// Both messages are marshalled as vtprotobuf marshals them deterministically:
 // fields in field-number order, varints in their shortest form, and no field
 // written that holds its zero value (proto3 implicit presence; nothing is
-// optional). Its fields:
+// optional). A Block holds no field but links and data; a Node's fields:
 //
-//	format        1 for this profile.
+//	format        2 for this profile.
 //	level         the level of every key in the node.
 //	left          whether a subtree precedes the first entry.
 //	left_summary  the summary of that subtree (below), else empty.
@@ -69,7 +68,7 @@
 // first and then each entry's right in order, is the n-th link. The number
 // of links equals the number of set flags. A node with unknown fields, no
 // entries, keys out of order, a shared prefix longer than the previous key,
-// or a format other than 1 is refused.
+// or a format other than 2 is refused.
 //
 // A tree may carry a Summarizer. A subtree's summary is then the fold, with
 // Merge, of Leaf(key, value) over its entries in key order; Merge is

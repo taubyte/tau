@@ -21,14 +21,14 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// A Node is the Data of one dag-pb block of a Merkle search tree. Its
-// subtrees are the block's links, in key order, and the node names each one
+// A Node is the data of one Block of a Merkle search tree. Its subtrees
+// are the block's links, in key order, and the node names each one
 // by position: the flags below say which subtree slots hold one, and the
 // n-th set flag, counting left first and then each entry's right in order,
 // is the n-th link. The format is specified in the mst package's doc.
 type Node struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The format profile. Always 1.
+	// The format profile. Always 2.
 	Format uint32 `protobuf:"varint,1,opt,name=format,proto3" json:"format,omitempty"`
 	// The level of every key in this node.
 	Level uint32 `protobuf:"varint,2,opt,name=level,proto3" json:"level,omitempty"`

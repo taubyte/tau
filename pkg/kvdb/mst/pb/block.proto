@@ -1,0 +1,11 @@
+syntax = "proto3";
+package kvdb.mst;
+
+option go_package = ".;pb";
+
+// A block mst and kvdb write: the cids it links, in order, then its data.
+message Block {
+  // Each a binary cid.
+  repeated bytes links = 1;
+  bytes data = 2;
+}

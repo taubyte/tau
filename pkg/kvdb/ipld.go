@@ -2,11 +2,10 @@ package kvdb
 
 import (
 	"context"
-	"errors"
 
-	dag "github.com/ipfs/boxo/ipld/merkledag"
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
+	"github.com/taubyte/tau/pkg/kvdb/mst"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
 )
 
@@ -55,14 +54,14 @@ func (ng *crdtNodeGetter) GetDeltas(ctx context.Context, cids []cid.Cid) <-chan 
 }
 
 func extractDelta(nd ipld.Node) (*pb.Delta, error) {
-	protonode, ok := nd.(*dag.ProtoNode)
-	if !ok {
-		return nil, errors.New("node is not a ProtoNode")
+	data, err := mst.BlockData(nd)
+	if err != nil {
+		return nil, err
 	}
 	// The delta's bytes and strings alias the block's data, which is never
 	// written to once made, for as long as the delta is held.
 	delta := &pb.Delta{}
-	if err := delta.UnmarshalVTUnsafe(protonode.Data()); err != nil {
+	if err := delta.UnmarshalVTUnsafe(data); err != nil {
 		return nil, err
 	}
 	return delta, nil
@@ -74,31 +73,18 @@ func makeNode(delta *pb.Delta, heads []Head) (ipld.Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	nd := dag.NodeWithData(data)
-	if err := setLinks(nd, len(heads), func(i int) cid.Cid { return heads[i].Cid }); err != nil {
-		return nil, err
+	var buf [8]cid.Cid
+	links := buf[:0]
+	for _, h := range heads {
+		links = append(links, h.Cid)
 	}
-	return nd, nd.SetCidBuilder(v1Prefix)
+	return mst.NewBlock(data, links)
 }
 
-// v1Prefix is the builder of every block's cid, made once: as an interface
-// it would otherwise be allocated per block.
-var v1Prefix cid.Builder = dag.V1CidPrefix()
-
-// setLinks gives nd the n links at(0) .. at(n-1) with one allocation for
-// them: SetLinks keeps the pointers and copies only the slice of them.
-func setLinks(nd *dag.ProtoNode, n int, at func(int) cid.Cid) error {
-	if n == 0 {
-		return nil
-	}
-	links := make([]ipld.Link, n)
-	var buf [32]*ipld.Link
-	ptrs := buf[:0]
-	for i := range links {
-		links[i].Cid = at(i)
-		ptrs = append(ptrs, &links[i])
-	}
-	return nd.SetLinks(ptrs)
+// blockLinks appends the links of nd, one of kvdb's blocks, to into.
+func blockLinks(nd ipld.Node, into []cid.Cid) ([]cid.Cid, error) {
+	_, links, err := mst.DecodeBlock(nd, into)
+	return links, err
 }
 
 // heldLimit bounds how many blocks a heldDAG keeps.

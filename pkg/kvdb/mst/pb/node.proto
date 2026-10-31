@@ -3,13 +3,13 @@ package kvdb.mst;
 
 option go_package = ".;pb";
 
-// A Node is the Data of one dag-pb block of a Merkle search tree. Its
-// subtrees are the block's links, in key order, and the node names each one
+// A Node is the data of one Block of a Merkle search tree. Its subtrees
+// are the block's links, in key order, and the node names each one
 // by position: the flags below say which subtree slots hold one, and the
 // n-th set flag, counting left first and then each entry's right in order,
 // is the n-th link. The format is specified in the mst package's doc.
 message Node {
-  // The format profile. Always 1.
+  // The format profile. Always 2.
   uint32 format = 1;
   // The level of every key in this node.
   uint32 level = 2;

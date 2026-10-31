@@ -17,6 +17,7 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/pkg/kvdb/mst"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
 	"google.golang.org/protobuf/proto"
 )
@@ -131,10 +132,12 @@ func TestDecodersRefuseGarbage(t *testing.T) {
 		t.Error("parsePending accepted a removal without stamps")
 	}
 
-	if _, err := extractDelta(&fakeRawNode{}); err == nil {
-		t.Error("extractDelta accepted a node that is not a ProtoNode")
+	if _, err := extractDelta(dag.NewRawNode([]byte{0xff, 0xff})); err == nil {
+		t.Error("extractDelta accepted a block that is not one of kvdb's")
 	}
-	if _, err := extractDelta(dag.NodeWithData([]byte{0xff, 0xff})); err == nil {
+	if garbage, err := mst.NewBlock([]byte{0xff, 0xff}, nil); err != nil {
+		t.Fatal(err)
+	} else if _, err := extractDelta(garbage); err == nil {
 		t.Error("extractDelta accepted garbage")
 	}
 	r := &Datastore{logger: DefaultOptions().Logger}
@@ -517,8 +520,8 @@ func TestASnapshotWithAMissingStateIsNotMerged(t *testing.T) {
 	if f != nil || err == nil {
 		t.Fatal("a broken state cid was accepted")
 	}
-	nobody := dag.NodeWithData([]byte("held by nobody"))
-	if err := nobody.SetCidBuilder(v1Prefix); err != nil {
+	nobody, err := mst.NewBlock([]byte("held by nobody"), nil)
+	if err != nil {
 		t.Fatal(err)
 	}
 	sr := stateRoot{elems: nobody.Cid()}
@@ -711,7 +714,7 @@ func TestAdoptingHeadsBeforeSyncing(t *testing.T) {
 	}
 	want(t, "r", r, map[string]string{"/a": "1", "/b": "2"})
 	dagsyncs[1].setRemotes()
-	r.adoptHeads(ctx, []Head{{Cid: cid.NewCidV1(cid.DagProtobuf, head.Hash())}})
+	r.adoptHeads(ctx, []Head{{Cid: cid.NewCidV1(cid.Raw, head.Hash())}})
 }
 
 func TestKVDatabaseSurface(t *testing.T) {

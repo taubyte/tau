@@ -68,9 +68,9 @@ func stateBlocks(t testing.TB, r *Datastore, snap cid.Cid) []cid.Cid {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, l := range nd.Links() {
-			if !slices.Contains(out, l.Cid) {
-				out = append(out, l.Cid)
+		for _, l := range blockLinksOf(t, nd) {
+			if !slices.Contains(out, l) {
+				out = append(out, l)
 			}
 		}
 	}
@@ -213,28 +213,36 @@ func TestStateRootDecodingRefusesWhatItDoesNotWrite(t *testing.T) {
 			t.Errorf("%s: came back as %+v (%v)", name, got, err)
 		}
 	}
+	block := func(data []byte, links int) ipld.Node {
+		var cids []cid.Cid
+		for range links {
+			cids = append(cids, leaf.Cid())
+		}
+		nd, err := mst.NewBlock(data, cids)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return nd
+	}
 	bad := func(msg *pb.StateRoot, links int) ipld.Node {
 		data, err := proto.Marshal(msg)
 		if err != nil {
 			t.Fatal(err)
 		}
-		nd := dag.NodeWithData(data)
-		for range links {
-			if err := nd.AddRawLink("", &ipld.Link{Cid: leaf.Cid()}); err != nil {
-				t.Fatal(err)
-			}
-		}
-		return nd
+		return block(data, links)
 	}
-	unknown := bad(&pb.StateRoot{Format: stateFormat}, 0)
-	unknown.(*dag.ProtoNode).SetData(append(unknown.(*dag.ProtoNode).Data(), 0x78, 1))
+	known, err := proto.Marshal(&pb.StateRoot{Format: stateFormat})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknown := block(append(known, 0x78, 1), 0)
 	for name, nd := range map[string]ipld.Node{
 		"format":        bad(&pb.StateRoot{Format: stateFormat + 1}, 0),
 		"missing link":  bad(&pb.StateRoot{Format: stateFormat, Elements: true}, 0),
 		"extra link":    bad(&pb.StateRoot{Format: stateFormat}, 1),
 		"unknown field": unknown,
-		"not protobuf":  dag.NodeWithData([]byte{0xff}),
-		"raw":           dag.NewRawNode([]byte{1}),
+		"not protobuf":  block([]byte{0xff}, 0),
+		"not a block":   dag.NewRawNode([]byte{1}),
 	} {
 		if _, err := decodeStateRoot(nd); err == nil {
 			t.Errorf("%s: decoded", name)

@@ -142,9 +142,7 @@ func stateBlocksOf(t testing.TB, r *Datastore, c cid.Cid) []cid.Cid {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, l := range nd.Links() {
-			out = append(out, l.Cid)
-		}
+		out = append(out, blockLinksOf(t, nd)...)
 	}
 	return out
 }

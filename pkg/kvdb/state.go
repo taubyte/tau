@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"slices"
 
-	dag "github.com/ipfs/boxo/ipld/merkledag"
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/taubyte/tau/pkg/kvdb/mst"
@@ -54,16 +53,17 @@ import (
 // next's lo); the first is the incarnation's entry. A context's tree does
 // not hold the dot of the snapshot that carries it.
 //
-// Every tree is an mst profile 1 tree with the stamps summarizer: a
+// Every tree is an mst profile 2 tree with the stamps summarizer: a
 // record's stamp is the first 8 bytes of its value (at, or changed for the
 // context), and a subtree's summary is the least stamp under it followed by
 // the greatest, 16 bytes. A tree with no entry is absent.
 //
-// The StateRoot is a dag-pb block (CIDv1, dag-pb, sha2-256) whose Data is
-// the StateRoot message of pb/state.proto, its fields in field order and
-// none at its zero value, written with mst's rules for a Node: format 2, and a flag for each tree present. Its links are the roots
-// of the trees present, in the order E, P, C, each with an empty Name and a
-// Tsize of 0. The empty state is a StateRoot with no flag set and no link.
+// The StateRoot is an mst Block (CIDv1, raw, sha2-256 of its bytes) whose
+// data is the StateRoot message of pb/state.proto, its fields in field
+// order and none at its zero value, written with mst's rules for a Node:
+// format 2, and a flag for each tree present. Its links are the roots of
+// the trees present, in the order E, P, C. The empty state is a StateRoot
+// with no flag set and no link.
 //
 // A snapshot (pb/delta.proto) names its state by the StateRoot's CID,
 // state, and carries the block itself: root is its StateRoot message and
@@ -76,7 +76,7 @@ import (
 //
 // A reader rebuilds the StateRoot block from root and trees and refuses the
 // snapshot unless its CID is state. It takes each inline block, in order,
-// as the block whose CID is CIDv1, dag-pb, sha2-256 of its bytes, and
+// as the block whose CID is CIDv1, raw, sha2-256 of its bytes, and
 // refuses the snapshot when no block it took before, the StateRoot
 // included, links that CID, when one is taken twice, or when the blocks
 // total more than 32768 bytes. What the blocks it took link that it holds
@@ -306,31 +306,27 @@ func (s stateRoot) message(msg *pb.StateRoot) (present [3]cid.Cid, n int) {
 	return present, n
 }
 
-func (s stateRoot) node() (*dag.ProtoNode, error) {
+func (s stateRoot) node() (*mst.Block, error) {
 	var msg pb.StateRoot
 	present, n := s.message(&msg)
 	data, err := msg.MarshalVT()
 	if err != nil {
 		return nil, err
 	}
-	nd := dag.NodeWithData(data)
-	if err := setLinks(nd, n, func(i int) cid.Cid { return present[i] }); err != nil {
-		return nil, err
-	}
-	return nd, nd.SetCidBuilder(v1Prefix)
+	return mst.NewBlock(data, present[:n])
 }
 
 func decodeStateRoot(nd ipld.Node) (stateRoot, error) {
-	pn, err := protoNode(nd)
+	var buf [3]cid.Cid
+	data, links, err := mst.DecodeBlock(nd, buf[:0])
 	if err != nil {
 		return stateRoot{}, err
 	}
 	var msg pb.StateRoot
-	if err := msg.UnmarshalVT(pn.Data()); err != nil {
+	if err := msg.UnmarshalVT(data); err != nil {
 		return stateRoot{}, fmt.Errorf("state root %s: %w", nd.Cid(), err)
 	}
-	links := pn.Links()
-	s, err := stateRootOf(&msg, len(links), func(i int) (cid.Cid, error) { return links[i].Cid, nil })
+	s, err := stateRootOf(&msg, len(links), func(i int) (cid.Cid, error) { return links[i], nil })
 	if err != nil {
 		return stateRoot{}, fmt.Errorf("state root %s: %w", nd.Cid(), err)
 	}
@@ -366,13 +362,6 @@ func stateRootOf(msg *pb.StateRoot, n int, link func(int) (cid.Cid, error)) (sta
 		return stateRoot{}, errMalformedState
 	}
 	return s, nil
-}
-
-func protoNode(nd ipld.Node) (*dag.ProtoNode, error) {
-	if pn, ok := nd.(*dag.ProtoNode); ok {
-		return pn, nil
-	}
-	return dag.DecodeProtobuf(nd.RawData())
 }
 
 func loadStateRoot(ctx context.Context, ng ipld.NodeGetter, c cid.Cid) (stateRoot, error) {
@@ -483,8 +472,9 @@ func (o *overlay) fresh(roots []cid.Cid, owned func(cid.Cid) (bool, error)) ([]i
 			continue
 		}
 		out = append(out, nd)
-		for _, l := range nd.Links() {
-			stack = append(stack, l.Cid)
+		var err error
+		if stack, err = blockLinks(nd, stack); err != nil {
+			return nil, err
 		}
 	}
 	return out, nil

@@ -84,7 +84,7 @@ func (store *Datastore) cloudKey(replica string, hi uint64) ds.Key {
 }
 
 func cidOfBlockKey(prefix ds.Key, k string) (cid.Cid, error) {
-	return dshelp.DsKeyToCidV1(ds.NewKey(strings.TrimPrefix(k, prefix.String())), cid.DagProtobuf)
+	return dshelp.DsKeyToCidV1(ds.NewKey(strings.TrimPrefix(k, prefix.String())), cid.Raw)
 }
 
 // encodeBlock is the kind, the stamps, the state's cid with its length, and

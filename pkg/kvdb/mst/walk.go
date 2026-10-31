@@ -9,12 +9,18 @@ import (
 )
 
 // Reachable is every node any of roots reaches. A node's subtrees are its
-// block's links, so this is merkledag's own walk; a subtree two roots share
-// is walked once. The caller collects what it does not hold; this package
+// block's links, walked by merkledag's walk; a subtree two roots share is
+// walked once. The caller collects what it does not hold; this package
 // never removes a node.
 func Reachable(ctx context.Context, ng ipld.NodeGetter, roots ...cid.Cid) (*cid.Set, error) {
 	set := cid.NewSet()
-	links := dag.GetLinksWithDAG(ng)
+	links := func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
+		nd, err := ng.Get(ctx, c)
+		if err != nil {
+			return nil, err
+		}
+		return linksOf(nd)
+	}
 	for _, r := range roots {
 		if !r.Defined() {
 			continue
@@ -45,11 +51,24 @@ func Missing(ctx context.Context, ng ipld.NodeGetter, root cid.Cid, complete fun
 		if err != nil {
 			return nil, err
 		}
-		return nd.Links(), nil
+		return linksOf(nd)
 	}
 	visit := func(c cid.Cid) bool { return complete == nil || !complete(c) }
 	if err := dag.Walk(ctx, links, root, visit); err != nil {
 		return nil, err
 	}
 	return missing, nil
+}
+
+// linksOf is nd's block's links, as the links merkledag's walk follows.
+func linksOf(nd ipld.Node) ([]*ipld.Link, error) {
+	_, cids, err := DecodeBlock(nd, nil)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*ipld.Link, len(cids))
+	for i, c := range cids {
+		out[i] = &ipld.Link{Cid: c}
+	}
+	return out, nil
 }

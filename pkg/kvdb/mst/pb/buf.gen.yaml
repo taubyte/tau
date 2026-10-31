@@ -12,3 +12,4 @@ plugins:
       - features=marshal+unmarshal+unmarshal_unsafe+size+pool
       - pool=*.Node
       - pool=*.Entry
+      - pool=*.Block

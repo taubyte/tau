@@ -57,10 +57,11 @@ func TestReachable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The blockstore keys blocks by multihash and lists them as raw CIDs.
+	// The blockstore keys blocks by multihash and lists them as raw CIDs,
+	// which a node's is.
 	var dead []cid.Cid
 	for c := range keys {
-		if !got.Has(cid.NewCidV1(cid.DagProtobuf, c.Hash())) {
+		if !got.Has(c) {
 			dead = append(dead, c)
 		}
 	}

@@ -104,9 +104,7 @@ func stateClosure(t testing.TB, r *Datastore) []cid.Cid {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, l := range nd.Links() {
-			todo = append(todo, l.Cid)
-		}
+		todo = append(todo, blockLinksOf(t, nd)...)
 	}
 	for c := range carriedBy(root) {
 		delete(seen, c)
@@ -468,9 +466,7 @@ func stateLevels(t testing.TB, r *Datastore) [][]ipld.Node {
 				t.Fatal(err)
 			}
 			level = append(level, nd)
-			for _, l := range nd.Links() {
-				below = append(below, l.Cid)
-			}
+			below = append(below, blockLinksOf(t, nd)...)
 		}
 		levels = append(levels, level)
 		next = below
@@ -547,7 +543,7 @@ func TestABlockIsAskedForOnceItsParentArrives(t *testing.T) {
 	for _, l := range levels {
 		var parents []ipld.Node
 		for _, nd := range l {
-			if len(nd.Links()) > 0 {
+			if len(blockLinksOf(t, nd)) > 0 {
 				parents = append(parents, nd)
 			}
 		}
@@ -568,8 +564,8 @@ func TestABlockIsAskedForOnceItsParentArrives(t *testing.T) {
 	p.hold = map[cid.Cid]bool{level[0].Cid(): true}
 	p.release = map[cid.Cid]bool{}
 	for _, nd := range level[1:] {
-		for _, l := range nd.Links() {
-			p.release[l.Cid] = true
+		for _, l := range blockLinksOf(t, nd) {
+			p.release[l] = true
 		}
 	}
 	b := catchUpThrough(t, a, dagsyncs[0], p)
@@ -585,7 +581,8 @@ func TestABlockIsAskedForOnceItsParentArrives(t *testing.T) {
 
 // TestReceivingABlockAllocatesOnlyItsLinks: once a fetch's buffers have
 // grown, taking a block it asked for and staging what it links allocates
-// nothing but the copy of the links merkledag hands out.
+// nothing but each link's cid, which reading the block's links makes and
+// merkledag's dag-pb decode made before, while blocks were dag-pb.
 func TestReceivingABlockAllocatesOnlyItsLinks(t *testing.T) {
 	ctx := context.Background()
 	replicas, _, done := makeNReplicasSeparateStores(t, 1, noAutoCompact())
@@ -596,13 +593,14 @@ func TestReceivingABlockAllocatesOnlyItsLinks(t *testing.T) {
 	var nd ipld.Node
 	for _, level := range stateLevels(t, a) {
 		for _, n := range level {
-			if nd == nil || len(n.Links()) > len(nd.Links()) {
+			if nd == nil || len(blockLinksOf(t, n)) > len(blockLinksOf(t, nd)) {
 				nd = n
 			}
 		}
 	}
-	if len(nd.Links()) < 8 {
-		t.Fatalf("no block of the state links more than %d", len(nd.Links()))
+	links := len(blockLinksOf(t, nd))
+	if links < 8 {
+		t.Fatalf("no block of the state links more than %d", links)
 	}
 
 	f := &stateFetch{b: takeFetchBuffers()}
@@ -619,8 +617,8 @@ func TestReceivingABlockAllocatesOnlyItsLinks(t *testing.T) {
 		f.b.linked, f.b.parents = f.b.linked[:0], f.b.parents[:0]
 	}
 	receive()
-	if n := testing.AllocsPerRun(100, receive); n > 1 {
-		t.Fatalf("receiving a block of %d links allocates %.1f times", len(nd.Links()), n)
+	if n := testing.AllocsPerRun(100, receive); n > float64(links) {
+		t.Fatalf("receiving a block of %d links allocates %.1f times", links, n)
 	}
 }
 
@@ -672,7 +670,7 @@ func TestAFetchAttemptCostsLittleBeyondItsBlocks(t *testing.T) {
 	var nd ipld.Node
 	for _, level := range stateLevels(t, a)[1:] {
 		for _, n := range level {
-			if nd == nil && len(n.Links()) > 0 {
+			if nd == nil && len(blockLinksOf(t, n)) > 0 {
 				nd = n
 			}
 		}

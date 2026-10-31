@@ -10,6 +10,7 @@ import (
 
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
+	"github.com/taubyte/tau/pkg/kvdb/mst"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
 )
 
@@ -94,19 +95,15 @@ func (b *fetchBuffers) putBack() {
 }
 
 // A cidKey is a block's identity as a fixed-size value: the digest of a
-// CIDv1 dag-pb sha2-256 cid, every block a state holds, or the sha2-256 of
-// any other cid's bytes. A set of them holds no pointers.
+// block's cid (mst.BlockPrefix), every block a state holds, or the sha2-256
+// of any other cid's bytes. A set of them holds no pointers.
 type cidKey [32]byte
-
-// dagPBSHA256 is the prefix of a CIDv1 dag-pb cid with a 32-byte sha2-256
-// digest: version, codec, hash function, digest length.
-const dagPBSHA256 = "\x01\x70\x12\x20"
 
 func keyOf(c cid.Cid) cidKey {
 	ks := c.KeyString()
-	if len(ks) == len(dagPBSHA256)+32 && ks[:len(dagPBSHA256)] == dagPBSHA256 {
+	if len(ks) == len(mst.BlockPrefix)+32 && ks[:len(mst.BlockPrefix)] == mst.BlockPrefix {
 		var k cidKey
-		copy(k[:], ks[len(dagPBSHA256):])
+		copy(k[:], ks[len(mst.BlockPrefix):])
 		return k
 	}
 	return sha256.Sum256([]byte(ks))
@@ -454,8 +451,10 @@ func (b *fetchBuffers) received(nd ipld.Node) bool {
 	}
 	delete(b.asked, k)
 	b.parents = append(b.parents, c)
-	for _, l := range nd.Links() {
-		b.linked = append(b.linked, l.Cid)
+	// A block whose links do not decode stages none, and the merge refuses
+	// it when it reads it.
+	if linked, err := blockLinks(nd, b.linked); err == nil {
+		b.linked = linked
 	}
 	return true
 }

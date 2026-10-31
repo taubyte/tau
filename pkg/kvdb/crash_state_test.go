@@ -361,8 +361,8 @@ func assertReach(t testing.TB, r *Datastore) {
 		if err != nil {
 			t.Fatalf("state block %s a root reaches: %s", c, err)
 		}
-		for _, l := range nd.Links() {
-			root(l.Cid)
+		for _, l := range blockLinksOf(t, nd) {
+			root(l)
 		}
 	}
 	got := map[cid.Cid]bool{}
@@ -1207,7 +1207,7 @@ func assertHoldsExactly(t testing.TB, r *Datastore, d *fetchThroughDAGSvc) {
 		t.Fatal(err)
 	}
 	for k := range ch {
-		c := cid.NewCidV1(cid.DagProtobuf, k.Hash())
+		c := cid.NewCidV1(cid.Raw, k.Hash())
 		indexed, err := r.store.Has(ctx, r.blockKey(c))
 		if err != nil {
 			t.Fatal(err)

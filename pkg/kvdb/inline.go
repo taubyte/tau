@@ -7,10 +7,9 @@ import (
 	"slices"
 	"sync"
 
-	dag "github.com/ipfs/boxo/ipld/merkledag"
-	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
+	"github.com/taubyte/tau/pkg/kvdb/mst"
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
 )
 
@@ -56,8 +55,10 @@ func carryState(root *pb.Delta, sr stateRoot, written []ipld.Node) {
 		}
 		size += len(raw)
 		root.Inline = append(root.Inline, raw)
-		for _, l := range nd.Links() {
-			queue = append(queue, l.Cid)
+		// A block this replica just wrote decodes; one that did not would
+		// have nothing to follow.
+		if links, err := blockLinks(nd, queue); err == nil {
+			queue = links
 		}
 	}
 }
@@ -124,13 +125,9 @@ func (cs *carried) verify(stc cid.Cid, root *pb.Delta) error {
 		}
 		c := cs.links[i].c
 		cs.links = slices.Delete(cs.links, i, i+1)
-		blk, err := blocks.NewBlockWithCid(raw, c)
+		nd, err := mst.ParseBlock(c, raw)
 		if err != nil {
-			return err
-		}
-		nd, err := dag.DecodeProtobufBlock(blk)
-		if err != nil {
-			return err
+			return errMalformedState
 		}
 		if err := cs.take(nd); err != nil {
 			return err
@@ -167,12 +164,17 @@ func (cs *carried) linked(k cidKey) int {
 
 // take appends nd, and its links.
 func (cs *carried) take(nd ipld.Node) error {
+	var buf [32]cid.Cid
+	links, err := blockLinks(nd, buf[:0])
+	if err != nil {
+		return errMalformedState
+	}
 	cs.nodes = append(cs.nodes, nd)
-	for _, l := range nd.Links() {
-		if !isStateCid(l.Cid) {
+	for _, l := range links {
+		if !isStateCid(l) {
 			return errMalformedState
 		}
-		cs.links = append(cs.links, carriedLink{k: keyOf(l.Cid), c: l.Cid, parent: len(cs.nodes) - 1})
+		cs.links = append(cs.links, carriedLink{k: keyOf(l), c: l, parent: len(cs.nodes) - 1})
 	}
 	return nil
 }

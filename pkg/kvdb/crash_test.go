@@ -79,7 +79,7 @@ func assertNoLeak(t testing.TB, r *Datastore, d *fetchThroughDAGSvc) {
 		t.Fatal(err)
 	}
 	for c := range ch {
-		if !indexed[cid.NewCidV1(cid.DagProtobuf, c.Hash())] {
+		if !indexed[cid.NewCidV1(cid.Raw, c.Hash())] {
 			t.Errorf("block %s is held and indexed nowhere: a leak", c)
 		}
 	}

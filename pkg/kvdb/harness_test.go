@@ -570,3 +570,13 @@ func (b *sortedBatch) Commit(context.Context) error {
 	b.ops = nil
 	return nil
 }
+
+// blockLinksOf is the links of nd, one of kvdb's blocks.
+func blockLinksOf(t testing.TB, nd ipld.Node) []cid.Cid {
+	t.Helper()
+	links, err := blockLinks(nd, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return links
+}
