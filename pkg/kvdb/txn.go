@@ -2,12 +2,14 @@ package kvdb
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"sync"
 
 	ds "github.com/ipfs/go-datastore"
 	query "github.com/ipfs/go-datastore/query"
+	"github.com/taubyte/tau/pkg/pebbleds"
 )
 
 // txn collects every write of one merge and commits them as one batch, so a
@@ -22,6 +24,14 @@ type txn struct {
 	sorted keyIndex
 	// steps counts the index nodes scans visited.
 	steps int
+	// vals holds what reads copied out of the store: a key or value read
+	// lives until t is released.
+	vals []byte
+	// ents is what scan returned last, elems what liveElems did, and
+	// prefix the bytes of the prefix a scan is building.
+	ents   []entry
+	elems  []element
+	prefix []byte
 }
 
 // txnPool keeps released txns, with the storage they grew.
@@ -30,8 +40,12 @@ var txnPool = sync.Pool{New: func() any {
 }}
 
 // reusedWrites bounds the txns kept for reuse: a map keeps its buckets once
-// cleared, and one that held a whole state is not worth keeping.
-const reusedWrites = 1 << 10
+// cleared, and one that held a whole state is not worth keeping. reusedVals
+// bounds the scanned values a kept txn keeps room for.
+const (
+	reusedWrites = 1 << 10
+	reusedVals   = 1 << 16
+)
 
 func newTxn(store ds.Datastore) *txn {
 	t := txnPool.Get().(*txn)
@@ -42,14 +56,17 @@ func newTxn(store ds.Datastore) *txn {
 // release hands t back for reuse once its owner is done with it: nothing
 // may read or write it after.
 func (t *txn) release() {
-	if len(t.order) > reusedWrites {
+	if len(t.order) > reusedWrites || cap(t.vals) > reusedVals {
 		return
 	}
 	clear(t.writes)
 	clear(t.order)
 	t.order = t.order[:0]
 	t.sorted = keyIndex{left: t.sorted.left[:0], right: t.sorted.right[:0], root: -1}
-	t.store, t.steps = nil, 0
+	clear(t.ents[:cap(t.ents)])
+	clear(t.elems[:cap(t.elems)])
+	t.store, t.steps, t.vals = nil, 0, t.vals[:0]
+	t.ents, t.elems = t.ents[:0], t.elems[:0]
 	txnPool.Put(t)
 }
 
@@ -72,6 +89,7 @@ func (t *txn) set(k string, v []byte) {
 	t.writes[k] = v
 }
 
+// get returns the value at k, which lives until t is released.
 func (t *txn) get(ctx context.Context, k ds.Key) ([]byte, error) {
 	if v, ok := t.writes[k.String()]; ok {
 		if v == nil {
@@ -79,12 +97,30 @@ func (t *txn) get(ctx context.Context, k ds.Key) ([]byte, error) {
 		}
 		return v, nil
 	}
-	return t.store.Get(ctx, k)
+	s, ok := below(t.store).(*pebbleds.Store)
+	if !ok {
+		return t.store.Get(ctx, k)
+	}
+	var out []byte
+	err := s.View(bytesOf(k.String()), func(v []byte) error {
+		start := len(t.vals)
+		t.vals = append(t.vals, v...)
+		out = t.vals[start:len(t.vals):len(t.vals)]
+		return nil
+	})
+	return out, err
 }
 
 func (t *txn) has(ctx context.Context, k ds.Key) (bool, error) {
 	if v, ok := t.writes[k.String()]; ok {
 		return v != nil, nil
+	}
+	if s, ok := below(t.store).(*pebbleds.Store); ok {
+		err := s.View(bytesOf(k.String()), func([]byte) error { return nil })
+		if errors.Is(err, ds.ErrNotFound) {
+			return false, nil
+		}
+		return err == nil, err
 	}
 	return t.store.Has(ctx, k)
 }
@@ -95,11 +131,16 @@ type entry struct {
 }
 
 // scan returns every entry under prefix, pending writes included, in key
-// order.
+// order, until the next scan on t. Its keys and values live until t is
+// released.
 func (t *txn) scan(ctx context.Context, prefix ds.Key) ([]entry, error) {
-	var out []entry
-	if err := scanStore(ctx, t.store, prefix, func(k string, v []byte) error {
-		out = append(out, entry{key: k, value: v})
+	out := t.ents[:0]
+	defer func() { t.ents = out[:0] }()
+	if err := scanBytes(ctx, t.store, prefix, func(k, v []byte) error {
+		start := len(t.vals)
+		t.vals = append(append(t.vals, k...), v...)
+		mid := start + len(k)
+		out = append(out, entry{key: stringOf(t.vals[start:mid]), value: t.vals[mid:len(t.vals):len(t.vals)]})
 		return nil
 	}); err != nil {
 		return nil, err
@@ -264,7 +305,43 @@ func batchOf(ctx context.Context, store ds.Datastore) (ds.Batch, error) {
 	return ds.NewBasicBatch(store), nil
 }
 
+// A readsThrough wraps a store without changing what reading it returns:
+// kvdb reads the store under it.
+type readsThrough interface {
+	readsFrom() ds.Datastore
+}
+
+// below is the store a read of store reaches.
+func below(store ds.Datastore) ds.Datastore {
+	for {
+		switch s := store.(type) {
+		case *journaled:
+			store = s.Datastore
+		case readsThrough:
+			store = s.readsFrom()
+		default:
+			return store
+		}
+	}
+}
+
+// scanStore calls fn with every entry under prefix, in no order to rely
+// on. v is valid only until fn returns.
 func scanStore(ctx context.Context, store ds.Datastore, prefix ds.Key, fn func(k string, v []byte) error) error {
+	return scanBytes(ctx, store, prefix, func(k, v []byte) error { return fn(string(k), v) })
+}
+
+// scanBytes is scanStore lending the key too: k is valid only until fn
+// returns.
+func scanBytes(ctx context.Context, store ds.Datastore, prefix ds.Key, fn func(k, v []byte) error) error {
+	if s, ok := below(store).(*pebbleds.Store); ok {
+		var buf [128]byte
+		p := append(buf[:0], prefix.String()...)
+		if len(p) != 1 {
+			p = append(p, '/')
+		}
+		return s.Scan(p, fn)
+	}
 	results, err := store.Query(ctx, query.Query{Prefix: prefix.String()})
 	if err != nil {
 		return err
@@ -278,7 +355,7 @@ func scanStore(ctx context.Context, store ds.Datastore, prefix ds.Key, fn func(k
 		if r.Error != nil {
 			return r.Error
 		}
-		if err := fn(r.Key, r.Value); err != nil {
+		if err := fn(bytesOf(r.Key), r.Value); err != nil {
 			return err
 		}
 	}

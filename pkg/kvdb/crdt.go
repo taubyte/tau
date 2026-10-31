@@ -376,6 +376,11 @@ type Datastore struct {
 	sent         uint64
 	turned       uint64
 	lagged, fell bool
+	// msg is the broadcast message builds, with the heads and dots it
+	// points to, reused: each is marshalled before store.mu is released.
+	msg      pb.CRDTBroadcast
+	msgHeads []pb.Head
+	msgDots  []pb.Dot
 	// compactDue asks the next maintenance for a snapshot.
 	compactDue bool
 	// lows are lower bounds, kept so the frequent passes skip scans that
@@ -1891,14 +1896,12 @@ func (store *Datastore) send(ctx context.Context, heads []Head, beat bool) error
 	if store.broadcaster == nil { // offline
 		return nil
 	}
-	store.logger.Debugf("broadcasting %s", heads)
-
 	bcastBytes, err := store.encodeBroadcast(ctx, heads, beat)
 	if err != nil {
 		return err
 	}
 	if err := store.broadcaster.Broadcast(ctx, bcastBytes); err != nil {
-		return fmt.Errorf("error broadcasting %s: %w", heads, err)
+		return fmt.Errorf("error broadcasting %d heads: %w", len(heads), err)
 	}
 	return nil
 }

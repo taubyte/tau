@@ -162,17 +162,21 @@ func (store *Datastore) decodeBroadcast(data []byte) (message, error) {
 
 // message is what this replica broadcasts now: heads, its fleet time and
 // clock, whether it is rejoining, and a verdict if it answers one. Its
-// incarnation and heads borrow the bytes of the strings that hold them, so
-// it is only marshalled. The caller holds store.mu.
+// incarnation and heads borrow the bytes of the strings that hold them, and
+// it is the store's one message, so it is marshalled before store.mu is
+// released, and nothing else. The caller holds store.mu.
 func (store *Datastore) message(heads []Head, v *verdict) *pb.CRDTBroadcast {
 	store.sent++
-	b := &pb.CRDTBroadcast{
+	b := &store.msg
+	*b = pb.CRDTBroadcast{
 		Sent:        store.sent,
 		Since:       store.broadcastSince(),
 		Now:         store.clock(),
 		Rejoining:   store.rejoining,
 		Incarnation: bytesOf(store.replica),
 		Horizon:     store.horizon,
+		Heads:       b.Heads[:0],
+		Acks:        b.Acks[:0],
 	}
 	n := 0
 	for _, h := range heads {
@@ -181,9 +185,11 @@ func (store *Datastore) message(heads []Head, v *verdict) *pb.CRDTBroadcast {
 		}
 	}
 	if n > 0 {
-		hs := make([]pb.Head, n)
-		dots := make([]pb.Dot, n)
-		b.Heads = make([]*pb.Head, 0, n)
+		hs := slices.Grow(store.msgHeads[:0], n)[:n]
+		dots := slices.Grow(store.msgDots[:0], n)[:n]
+		store.msgHeads, store.msgDots = hs, dots
+		clear(hs)
+		clear(dots)
 		for _, h := range heads {
 			if !h.Cid.Defined() {
 				continue
@@ -234,8 +240,9 @@ func (store *Datastore) encodeBroadcast(ctx context.Context, heads []Head, beat 
 		b.Context, b.Heard = store.cc.toPB(), store.heardPeers()
 		store.markTurn(b)
 	}
+	data, err := b.MarshalVT()
 	store.mu.Unlock()
-	return b.MarshalVT()
+	return data, err
 }
 
 // broadcastSince is the fleet time a broadcast reports: reportedSince, or 0

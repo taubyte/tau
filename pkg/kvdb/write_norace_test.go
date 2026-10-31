@@ -13,14 +13,15 @@ import (
 )
 
 // TestAPutAllocations bounds what an overwrite on a warm replica allocates,
-// the bench store's own work included: 250 before its txns, its delta and
-// its broadcast were reused or borrowed, 171 after.
+// on the store a node runs, kept in memory: 133 once scans lent the store's
+// bytes. Over the tests' map store it was 250 before its txns, its delta and
+// its broadcast were reused or borrowed, and 171 after.
 func TestAPutAllocations(t *testing.T) {
 	ctx := context.Background()
 	check := checkSnapshot
 	checkSnapshot = nil
 	defer func() { checkSnapshot = check }()
-	r, _ := warmReplica(t, 4000)
+	r := warmPebble(t, 4000)
 	keys := make([]ds.Key, 4000)
 	values := make([][]byte, 4000)
 	for i := range keys {
@@ -35,7 +36,7 @@ func TestAPutAllocations(t *testing.T) {
 		}
 	})
 	t.Logf("a put: %.0f allocations", a)
-	if a > 175 {
-		t.Errorf("a put: %.0f allocations, want at most 175", a)
+	if a > 135 {
+		t.Errorf("a put: %.0f allocations, want at most 135", a)
 	}
 }

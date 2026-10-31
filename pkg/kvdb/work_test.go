@@ -6,10 +6,13 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/cockroachdb/pebble/v2"
+	"github.com/cockroachdb/pebble/v2/vfs"
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
 	query "github.com/ipfs/go-datastore/query"
 	ipld "github.com/ipfs/go-ipld-format"
+	"github.com/taubyte/tau/pkg/pebbleds"
 )
 
 // work counts what an operation asks of the stores under a replica.
@@ -134,16 +137,36 @@ func (d *meteredDAG) AddMany(ctx context.Context, nds []ipld.Node) error {
 }
 
 // warmReplica is a replica holding n keys, compacted, that compacts only
-// when told to.
+// when told to, over the tests' in-memory store, metered.
 func warmReplica(t testing.TB, n int) (*Datastore, *workMeter) {
+	m := &workMeter{}
+	return warmReplicaOn(t, n, &meteredStore{Datastore: newSortedStore(), m: m}, m), m
+}
+
+// warmPebble is warmReplica over the store a node runs, kept in memory:
+// what it allocates is what a node's store allocates.
+func warmPebble(t testing.TB, n int) *Datastore {
+	t.Helper()
+	st, err := pebbleds.Open("db", pebbleds.WithPebbleOptions(&pebble.Options{FS: vfs.NewMem()}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := st.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	return warmReplicaOn(t, n, st, &workMeter{})
+}
+
+func warmReplicaOn(t testing.TB, n int, st ds.Datastore, m *workMeter) *Datastore {
 	t.Helper()
 	ctx := context.Background()
-	m := &workMeter{}
 	o := replicaOptions(newSimTime().options(0), "warm")
 	o.CompactAfterBlocks = 0
 	o.manual = true
 	o.Logger = DefaultOptions().Logger
-	r, err := NewDatastore(&meteredStore{Datastore: newSortedStore(), m: m}, ds.NewKey("warm"),
+	r, err := NewDatastore(st, ds.NewKey("warm"),
 		&meteredDAG{DAGService: newFetchThrough(), m: m}, &nullBroadcaster{}, o)
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +191,7 @@ func warmReplica(t testing.TB, n int) (*Datastore, *workMeter) {
 	if _, err := r.Compact(ctx); err != nil {
 		t.Fatal(err)
 	}
-	return r, m
+	return r
 }
 
 func warmKey(i int) ds.Key { return ds.RawKey(fmt.Sprintf("/k/%010d", i)) }
@@ -288,11 +311,17 @@ func BenchmarkHotPut(b *testing.B) {
 	check := checkSnapshot
 	checkSnapshot = nil
 	defer func() { checkSnapshot = check }()
-	r, _ := warmReplica(b, 4000)
+	r := warmPebble(b, 4000)
+	keys := make([]ds.Key, 4000)
+	values := make([][]byte, 4000)
+	for i := range keys {
+		keys[i], values[i] = warmKey(i), warmValue(i, 1)
+	}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := range b.N {
-		if err := r.Put(ctx, warmKey((i*7919)%4000), warmValue(i, 1)); err != nil {
+		k := (i * 7919) % 4000
+		if err := r.Put(ctx, keys[k], values[k]); err != nil {
 			b.Fatal(err)
 		}
 	}

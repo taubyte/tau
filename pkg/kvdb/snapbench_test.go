@@ -14,12 +14,12 @@ import (
 	bsnet "github.com/ipfs/boxo/bitswap/network/bsnet"
 	cid "github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
-	pebbleds "github.com/ipfs/go-ds-pebble"
 	ipld "github.com/ipfs/go-ipld-format"
 	peercore "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/p2p/helpers"
 	"github.com/taubyte/tau/p2p/keypair"
 	taupeer "github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/pkg/pebbleds"
 )
 
 // The snapshot benchmarks measure what a snapshot costs: to write after a
@@ -88,6 +88,9 @@ func (m *dsMeter) Put(ctx context.Context, k ds.Key, v []byte) error {
 	return m.Batching.Put(ctx, k, v)
 }
 
+// readsFrom is the store under m: m meters writes only.
+func (m *dsMeter) readsFrom() ds.Datastore { return m.Batching }
+
 func (m *dsMeter) Batch(ctx context.Context) (ds.Batch, error) {
 	b, err := m.Batching.Batch(ctx)
 	return &dsMeterBatch{Batch: b, m: m}, err
@@ -105,7 +108,7 @@ func (b *dsMeterBatch) Put(ctx context.Context, k ds.Key, v []byte) error {
 
 func openSnap(tb testing.TB, env snapEnv) snapReplica {
 	tb.Helper()
-	pst, err := pebbleds.NewDatastore(env.dir)
+	pst, err := pebbleds.Open(env.dir)
 	if err != nil {
 		tb.Fatal(err)
 	}

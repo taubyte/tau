@@ -1,6 +1,7 @@
 package kvdb
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -200,6 +201,7 @@ func (store *Datastore) heldElements(ctx context.Context) ([]element, error) {
 		if err != nil {
 			return err
 		}
+		el.value = bytes.Clone(el.value)
 		held = append(held, el)
 		return nil
 	})

@@ -212,21 +212,27 @@ func (s *set) parsePending(k string, v []byte) (removal, error) {
 	return removal{key: key, dot: d, at: at, ttl: ttl}, nil
 }
 
-// liveElems is every live element of key.
+// liveElems is every live element of key, until the next liveElems on t.
 func (s *set) liveElems(ctx context.Context, t *txn, key string) ([]element, error) {
-	entries, err := t.scan(ctx, s.keyElemsPrefix(key))
+	t.prefix = appendKeySegment(append(append(t.prefix[:0], s.elems...), '/'), key)
+	entries, err := t.scan(ctx, dsKey(t.prefix))
 	if err != nil {
 		return nil, err
 	}
-	out := make([]element, 0, len(entries))
+	t.elems = t.elems[:0]
 	for _, e := range entries {
-		el, err := s.parseElem(e.key, e.value)
+		d, err := parseDotSegment(e.key[len(t.prefix)+1:])
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, el)
+		el, err := decodeMarker(e.value)
+		if err != nil {
+			return nil, err
+		}
+		el.key, el.dot = key, d
+		t.elems = append(t.elems, el)
 	}
-	return out, nil
+	return t.elems, nil
 }
 
 // change is what a merge did to one key's value, for the hooks.
