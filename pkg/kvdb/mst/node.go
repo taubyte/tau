@@ -52,14 +52,14 @@ func Level(key []byte) uint32 {
 	return l
 }
 
-// A Summarizer gives each subtree a summary of its entries. Leaf summarises
-// one entry and Merge two adjacent runs of entries, left before right. Merge
-// must be associative, both must be pure functions of their arguments, and
-// what they return must not share memory with those arguments, which they
-// must not modify.
+// A Summarizer gives each subtree a summary of its entries. Leaf appends to
+// dst the summary of one entry, and Merge the summary of two adjacent runs
+// of entries, left before right. Merge must be associative, and both pure
+// functions of their arguments, which they must not modify; Merge must read
+// left and right before it writes, as dst may share memory with either.
 type Summarizer interface {
-	Leaf(key, value []byte) []byte
-	Merge(left, right []byte) []byte
+	Leaf(dst, key, value []byte) []byte
+	Merge(dst, left, right []byte) []byte
 }
 
 type entry struct {
@@ -109,25 +109,30 @@ func (n *node) summary(s Summarizer) []byte {
 	if s == nil {
 		return nil
 	}
+	// acc holds the summary so far, its first sum bytes (none while sum is
+	// -1), then room for the next entry's.
 	var acc []byte
-	have := false
-	add := func(x []byte) {
-		if have {
-			acc = s.Merge(acc, x)
+	sum := -1
+	take := func(x []byte) {
+		if sum < 0 {
+			acc = append(acc[:0], x...)
 		} else {
-			acc, have = x, true
+			acc = s.Merge(acc[:0], acc[:sum], x)
 		}
+		sum = len(acc)
 	}
 	for i, e := range n.entries {
 		if n.kids[i].c.Defined() {
-			add(n.kids[i].sum)
+			take(n.kids[i].sum)
 		}
-		add(s.Leaf(e.key, e.val))
+		base := max(sum, 0)
+		acc = s.Leaf(acc[:base], e.key, e.val)
+		take(acc[base:])
 	}
 	if last := n.kids[len(n.entries)]; last.c.Defined() {
-		add(last.sum)
+		take(last.sum)
 	}
-	return acc
+	return acc[:sum:sum]
 }
 
 func sharedPrefix(a, b []byte) int {

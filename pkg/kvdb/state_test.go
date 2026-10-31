@@ -272,7 +272,7 @@ func TestStampsSummarizeTheLeastAndGreatest(t *testing.T) {
 	if _, _, any, err := treeStamps(ctx, stateTree(dags, cid.Undef)); err != nil || any {
 		t.Fatalf("the empty tree has stamps (%v)", err)
 	}
-	if got := (stamps{}).Leaf(nil, []byte{1}); !bytes.Equal(got, make([]byte, 16)) {
+	if got := (stamps{}).Leaf(nil, nil, []byte{1}); !bytes.Equal(got, make([]byte, 16)) {
 		t.Errorf("a short value's stamp is %x", got)
 	}
 	if lo, hi := summaryRange([]byte{1}); lo != 0 || hi != 0 {

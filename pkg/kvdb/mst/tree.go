@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"slices"
 
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
@@ -251,6 +252,12 @@ func (o *op) insert(r ref, below uint32, e entry, lvl uint32) (ref, bool, error)
 		if err != nil {
 			return ref{}, false, err
 		}
+		// A node held in memory is changed in place: nothing else reaches it.
+		if r.n == n {
+			n.entries = slices.Insert(n.entries, i, e)
+			n.kids = slices.Replace(n.kids, i, i+1, l, rt)
+			return ref{n: n}, true, nil
+		}
 		return ref{n: &node{
 			level:   n.level,
 			entries: append(append(append(make([]entry, 0, len(n.entries)+1), n.entries[:i]...), e), n.entries[i:]...),
@@ -365,6 +372,11 @@ func (o *op) remove(r ref, below uint32, key []byte, lvl uint32) (ref, bool, err
 	}
 	if len(n.entries) == 1 {
 		return mid, true, nil
+	}
+	if r.n == n {
+		n.entries = slices.Delete(n.entries, i, i+1)
+		n.kids = slices.Replace(n.kids, i, i+2, mid)
+		return ref{n: n}, true, nil
 	}
 	return ref{n: &node{
 		level:   n.level,

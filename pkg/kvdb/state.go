@@ -277,15 +277,15 @@ func stampOf(v []byte) uint64 {
 	return binary.BigEndian.Uint64(v)
 }
 
-func (stamps) Leaf(_, v []byte) []byte {
+func (stamps) Leaf(dst, _, v []byte) []byte {
 	s := stampOf(v)
-	return binary.BigEndian.AppendUint64(binary.BigEndian.AppendUint64(make([]byte, 0, 16), s), s)
+	return binary.BigEndian.AppendUint64(binary.BigEndian.AppendUint64(dst, s), s)
 }
 
-func (stamps) Merge(a, b []byte) []byte {
+func (stamps) Merge(dst, a, b []byte) []byte {
 	lo, hi := summaryRange(a)
 	blo, bhi := summaryRange(b)
-	return binary.BigEndian.AppendUint64(binary.BigEndian.AppendUint64(make([]byte, 0, 16), min(lo, blo)), max(hi, bhi))
+	return binary.BigEndian.AppendUint64(binary.BigEndian.AppendUint64(dst, min(lo, blo)), max(hi, bhi))
 }
 
 func summaryRange(s []byte) (uint64, uint64) {

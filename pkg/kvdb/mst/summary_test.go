@@ -1,7 +1,6 @@
 package mst
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -15,16 +14,16 @@ import (
 // start with, the shape of "nothing in here expires before t".
 type maxSummary struct{}
 
-func (maxSummary) Leaf(_, v []byte) []byte {
+func (maxSummary) Leaf(dst, _, v []byte) []byte {
 	var x uint64
 	if len(v) >= 8 {
 		x = binary.BigEndian.Uint64(v)
 	}
-	return binary.BigEndian.AppendUint64(nil, x)
+	return binary.BigEndian.AppendUint64(dst, x)
 }
 
-func (maxSummary) Merge(a, b []byte) []byte {
-	return binary.BigEndian.AppendUint64(nil, max(binary.BigEndian.Uint64(a), binary.BigEndian.Uint64(b)))
+func (maxSummary) Merge(dst, a, b []byte) []byte {
+	return binary.BigEndian.AppendUint64(dst, max(binary.BigEndian.Uint64(a), binary.BigEndian.Uint64(b)))
 }
 
 func stamped(at uint64) []byte {
@@ -122,7 +121,7 @@ func TestSummary(t *testing.T) {
 
 type otherSummary struct{ maxSummary }
 
-func (otherSummary) Merge(a, b []byte) []byte { return append(bytes.Clone(a), 0) }
+func (otherSummary) Merge(dst, a, _ []byte) []byte { return append(append(dst, a...), 0) }
 
 func TestBuild(t *testing.T) {
 	ctx := context.Background()
