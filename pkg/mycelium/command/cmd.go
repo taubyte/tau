@@ -169,6 +169,13 @@ func (c *Command) sessionWrap(method func() error) error {
 		c.sessClosed.Store(true)
 	}()
 
+	// A command whose context is done is not run: once the method is
+	// started, a quick one can finish before the select below runs, and
+	// the select then picks either case.
+	if err := c.ctx.Err(); err != nil {
+		return fmt.Errorf("context done: %w", err)
+	}
+
 	// Buffered, so a method abandoned to the context can still finish.
 	retChan := make(chan error, 1)
 	go func() {

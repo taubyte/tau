@@ -208,11 +208,9 @@ func TestCommandsessionWrapContextCancellation(t *testing.T) {
 	mockSession.On("Close").Return(nil).Once()
 	mockSession.On("Signal", mock.Anything).Return(nil).Once()
 
-	go func() {
-		cancel() // Cancel the context to trigger the cancellation path in sessionWrap
-	}()
-
+	// Cancelled while the command runs, so the cancellation path signals it.
 	err := cmd.sessionWrap(func() error {
+		cancel()
 		time.Sleep(100 * time.Millisecond) // Simulate some work
 		return nil
 	})
@@ -229,15 +227,29 @@ func TestCommandsessionWrapContextCancellationFailedInt(t *testing.T) {
 	mockSession.On("Signal", ssh.SIGINT).Return(errors.ErrUnsupported).Once()
 	mockSession.On("Signal", ssh.SIGKILL).Return(nil).Once()
 
-	go func() {
-		cancel() // Cancel the context to trigger the cancellation path in sessionWrap
-	}()
-
+	// Cancelled while the command runs, so the cancellation path signals it.
 	err := cmd.sessionWrap(func() error {
+		cancel()
 		time.Sleep(100 * time.Millisecond) // Simulate some work
 		return nil
 	})
 	assert.ErrorContains(t, err, "context done")
+}
+
+// A command whose context is already done is not run, however quickly it
+// would finish: the session's call is never made.
+func TestACommandPastItsContextIsNotRun(t *testing.T) {
+	mockSession := new(mocks.RemoteSession)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd, err := New(ctx, mockSession, "echo", Args("hello"))
+	assert.NilError(t, err)
+	mockSession.On("Close").Return(nil)
+
+	_, err = cmd.CombinedOutput()
+	assert.ErrorContains(t, err, "context done: context canceled")
+	mockSession.AssertNotCalled(t, "CombinedOutput", mock.Anything)
+	mockSession.AssertNotCalled(t, "Signal", mock.Anything)
 }
 
 func TestCommandStartAndWaitErrorHandling(t *testing.T) {
