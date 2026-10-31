@@ -1041,7 +1041,15 @@ func TestHealing_ACycleWithALeaderInItIsNotSplit(t *testing.T) {
 	a, b := formedPair(t, "heal-cycle-with-leader")
 	stranded := a.(*cluster)
 
-	cycleStart := time.Now()
+	// The cycle begins when the member knows a leader in it: the member the
+	// pair formed around can lose its quorum to the one just added, slow to
+	// answer, before the pair is handed back.
+	var cycleStart time.Time
+	require.Eventually(t, func() bool {
+		cycleStart = time.Now()
+		_, err := stranded.Leader()
+		return err == nil
+	}, leaderWait, 10*time.Millisecond, "the member never knew a leader")
 	require.NoError(t, b.Close())
 	require.Eventually(t, func() bool {
 		_, err := stranded.Leader()
