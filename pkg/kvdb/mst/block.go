@@ -58,6 +58,16 @@ func NewBlock(data []byte, links []cid.Cid) (*Block, error) {
 // 32-byte sha2-256.
 const BlockPrefix = "\x01\x55\x12\x20"
 
+// BlockOf is the Block raw, the bytes of a pb.Block, spells, under raw's
+// cid.
+func BlockOf(raw []byte) (*Block, error) {
+	c, err := blockCid(raw)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBlock(c, raw)
+}
+
 // blockCid is the CIDv1 raw sha2-256 cid of raw.
 func blockCid(raw []byte) (cid.Cid, error) {
 	var h [2 + sha256.Size]byte

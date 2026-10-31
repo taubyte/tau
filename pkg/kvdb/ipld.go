@@ -67,18 +67,25 @@ func extractDelta(nd ipld.Node) (*pb.Delta, error) {
 	return delta, nil
 }
 
-// makeNode makes the block for delta, linking the given heads.
+// makeNode makes the block for delta, linking the given heads, in one
+// marshal of a DeltaBlock.
 func makeNode(delta *pb.Delta, heads []Head) (ipld.Node, error) {
-	data, err := delta.MarshalVT()
-	if err != nil {
+	msg := pb.DeltaBlockFromVTPool()
+	defer func() {
+		// The delta is the caller's: the pool must not take it back too.
+		msg.Data = nil
+		clear(msg.Links)
+		msg.ReturnToVTPool()
+	}()
+	for _, h := range heads {
+		msg.Links = append(msg.Links, bytesOf(h.Cid.KeyString()))
+	}
+	msg.Data = delta
+	raw := make([]byte, msg.SizeVT())
+	if _, err := msg.MarshalToSizedBufferVT(raw); err != nil {
 		return nil, err
 	}
-	var buf [8]cid.Cid
-	links := buf[:0]
-	for _, h := range heads {
-		links = append(links, h.Cid)
-	}
-	return mst.NewBlock(data, links)
+	return mst.BlockOf(raw)
 }
 
 // blockLinks appends the links of nd, one of kvdb's blocks, to into.

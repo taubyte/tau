@@ -23,7 +23,7 @@ import (
 // timeout. With the node's identity and cache layers over its block store,
 // 24, and 18 once blocks were written past the block service and bitswap
 // told of them in batches, 12 once the block store answered from memory in
-// place of boxo's cache. Over the tests' map store it was 250 before its txns, its delta and
+// place of boxo's cache, 11 once a delta was marshalled with its block. Over the tests' map store it was 250 before its txns, its delta and
 // its broadcast were reused or borrowed, and 171 after.
 func TestAPutAllocations(t *testing.T) {
 	ctx := context.Background()
@@ -45,7 +45,7 @@ func TestAPutAllocations(t *testing.T) {
 		}
 	})
 	t.Logf("a put: %.0f allocations", a)
-	if a > 14 {
-		t.Errorf("a put: %.0f allocations, want at most 14", a)
+	if a > 13 {
+		t.Errorf("a put: %.0f allocations, want at most 13", a)
 	}
 }

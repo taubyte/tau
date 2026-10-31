@@ -102,3 +102,11 @@ message Element {
   uint64 at = 6;
   uint64 ttl = 7;
 }
+
+// A DeltaBlock is the block of a delta, as an mst Block: its links, then
+// the delta as its data. A message is written as its bytes, so a
+// DeltaBlock's bytes are the Block's, marshalled in one pass.
+message DeltaBlock {
+  repeated bytes links = 1;
+  Delta data = 2;
+}

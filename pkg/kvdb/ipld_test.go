@@ -74,8 +74,8 @@ func TestGetDeltasKeepsWhatWasFetchedInTime(t *testing.T) {
 // TestBlockCodecAllocations bounds what a delta block costs to make and to
 // read. Reading allocates the delta and its dot, each element and its dot,
 // and the element slice as it grows (five times to 16), and copies none of
-// the block's bytes; making allocates the delta's bytes, the block's, its
-// cid and the Block.
+// the block's bytes; making allocates the block's bytes, the delta's among
+// them, its cid and the Block.
 func TestBlockCodecAllocations(t *testing.T) {
 	delta := &pb.Delta{Priority: 3, Dot: dot{replica: "replica-id-0000000000000000", counter: 7}.toPB(), At: 1, Ttl: 2}
 	for i := range 16 {
@@ -108,8 +108,8 @@ func TestBlockCodecAllocations(t *testing.T) {
 	if read > 2+2*16+5 {
 		t.Errorf("reading a block of 16 elements: %v allocations, want at most %d", read, 2+2*16+5)
 	}
-	if made > 4 {
-		t.Errorf("making a block: %v allocations, want at most 4", made)
+	if made > 3 {
+		t.Errorf("making a block: %v allocations, want at most 3", made)
 	}
 }
 

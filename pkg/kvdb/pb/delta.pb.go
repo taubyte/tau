@@ -598,6 +598,61 @@ func (x *Element) GetTtl() uint64 {
 	return 0
 }
 
+// A DeltaBlock is the block of a delta, as an mst Block: its links, then
+// the delta as its data. A message is written as its bytes, so a
+// DeltaBlock's bytes are the Block's, marshalled in one pass.
+type DeltaBlock struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Links         [][]byte               `protobuf:"bytes,1,rep,name=links,proto3" json:"links,omitempty"`
+	Data          *Delta                 `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeltaBlock) Reset() {
+	*x = DeltaBlock{}
+	mi := &file_delta_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeltaBlock) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeltaBlock) ProtoMessage() {}
+
+func (x *DeltaBlock) ProtoReflect() protoreflect.Message {
+	mi := &file_delta_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeltaBlock.ProtoReflect.Descriptor instead.
+func (*DeltaBlock) Descriptor() ([]byte, []int) {
+	return file_delta_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *DeltaBlock) GetLinks() [][]byte {
+	if x != nil {
+		return x.Links
+	}
+	return nil
+}
+
+func (x *DeltaBlock) GetData() *Delta {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
 var File_delta_proto protoreflect.FileDescriptor
 
 const file_delta_proto_rawDesc = "" +
@@ -649,7 +704,11 @@ const file_delta_proto_rawDesc = "" +
 	"\x05value\x18\x03 \x01(\fR\x05value\x12\x1e\n" +
 	"\x03dot\x18\x05 \x01(\v2\f.crdt.pb.DotR\x03dot\x12\x0e\n" +
 	"\x02at\x18\x06 \x01(\x04R\x02at\x12\x10\n" +
-	"\x03ttl\x18\a \x01(\x04R\x03ttlJ\x04\b\x02\x10\x03J\x04\b\x04\x10\x05R\x02idR\bpriorityB\x06Z\x04.;pbb\x06proto3"
+	"\x03ttl\x18\a \x01(\x04R\x03ttlJ\x04\b\x02\x10\x03J\x04\b\x04\x10\x05R\x02idR\bpriority\"F\n" +
+	"\n" +
+	"DeltaBlock\x12\x14\n" +
+	"\x05links\x18\x01 \x03(\fR\x05links\x12\"\n" +
+	"\x04data\x18\x02 \x01(\v2\x0e.crdt.pb.DeltaR\x04dataB\x06Z\x04.;pbb\x06proto3"
 
 var (
 	file_delta_proto_rawDescOnce sync.Once
@@ -663,32 +722,34 @@ func file_delta_proto_rawDescGZIP() []byte {
 	return file_delta_proto_rawDescData
 }
 
-var file_delta_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_delta_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_delta_proto_goTypes = []any{
-	(*Dot)(nil),       // 0: crdt.pb.Dot
-	(*Parent)(nil),    // 1: crdt.pb.Parent
-	(*Entry)(nil),     // 2: crdt.pb.Entry
-	(*Span)(nil),      // 3: crdt.pb.Span
-	(*Context)(nil),   // 4: crdt.pb.Context
-	(*Delta)(nil),     // 5: crdt.pb.Delta
-	(*Element)(nil),   // 6: crdt.pb.Element
-	(*StateRoot)(nil), // 7: crdt.pb.StateRoot
+	(*Dot)(nil),        // 0: crdt.pb.Dot
+	(*Parent)(nil),     // 1: crdt.pb.Parent
+	(*Entry)(nil),      // 2: crdt.pb.Entry
+	(*Span)(nil),       // 3: crdt.pb.Span
+	(*Context)(nil),    // 4: crdt.pb.Context
+	(*Delta)(nil),      // 5: crdt.pb.Delta
+	(*Element)(nil),    // 6: crdt.pb.Element
+	(*DeltaBlock)(nil), // 7: crdt.pb.DeltaBlock
+	(*StateRoot)(nil),  // 8: crdt.pb.StateRoot
 }
 var file_delta_proto_depIdxs = []int32{
-	0, // 0: crdt.pb.Parent.dot:type_name -> crdt.pb.Dot
-	2, // 1: crdt.pb.Context.vector:type_name -> crdt.pb.Entry
-	3, // 2: crdt.pb.Context.cloud:type_name -> crdt.pb.Span
-	6, // 3: crdt.pb.Delta.elements:type_name -> crdt.pb.Element
-	6, // 4: crdt.pb.Delta.tombstones:type_name -> crdt.pb.Element
-	0, // 5: crdt.pb.Delta.dot:type_name -> crdt.pb.Dot
-	1, // 6: crdt.pb.Delta.parents:type_name -> crdt.pb.Parent
-	7, // 7: crdt.pb.Delta.root:type_name -> crdt.pb.StateRoot
-	0, // 8: crdt.pb.Element.dot:type_name -> crdt.pb.Dot
-	9, // [9:9] is the sub-list for method output_type
-	9, // [9:9] is the sub-list for method input_type
-	9, // [9:9] is the sub-list for extension type_name
-	9, // [9:9] is the sub-list for extension extendee
-	0, // [0:9] is the sub-list for field type_name
+	0,  // 0: crdt.pb.Parent.dot:type_name -> crdt.pb.Dot
+	2,  // 1: crdt.pb.Context.vector:type_name -> crdt.pb.Entry
+	3,  // 2: crdt.pb.Context.cloud:type_name -> crdt.pb.Span
+	6,  // 3: crdt.pb.Delta.elements:type_name -> crdt.pb.Element
+	6,  // 4: crdt.pb.Delta.tombstones:type_name -> crdt.pb.Element
+	0,  // 5: crdt.pb.Delta.dot:type_name -> crdt.pb.Dot
+	1,  // 6: crdt.pb.Delta.parents:type_name -> crdt.pb.Parent
+	8,  // 7: crdt.pb.Delta.root:type_name -> crdt.pb.StateRoot
+	0,  // 8: crdt.pb.Element.dot:type_name -> crdt.pb.Dot
+	5,  // 9: crdt.pb.DeltaBlock.data:type_name -> crdt.pb.Delta
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_delta_proto_init() }
@@ -703,7 +764,7 @@ func file_delta_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delta_proto_rawDesc), len(file_delta_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
