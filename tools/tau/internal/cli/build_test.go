@@ -109,9 +109,6 @@ func readBuilt(t *testing.T, dir, environment string) []built {
 	return out
 }
 
-// A BUILD ON THIS MACHINE IS THE CLOUD'S BUILD: the plan and recipe a cloud
-// reads from the compiled deployment, run in a copy of the tree, with the
-// product filed by environment and resource and named by its recipe.
 func TestABuildOnThisMachineIsTheCloudsBuild(t *testing.T) {
 	x := newTester(t)
 	buildable(t, x)
@@ -142,8 +139,6 @@ func TestABuildOnThisMachineIsTheCloudsBuild(t *testing.T) {
 	require.Contains(t, text, b.Recipe[:12])
 }
 
-// THE WORKING TREE IS WHAT GIT WOULD SHIP: tracked and untracked files, not
-// the ignored ones. --clean is HEAD and nothing else.
 func TestWhatTreeABuildReads(t *testing.T) {
 	x := newTester(t)
 	buildable(t, x)
@@ -177,7 +172,6 @@ func TestWhatTreeABuildReads(t *testing.T) {
 	require.Contains(t, r.stderr, "--clean reads HEAD")
 }
 
-// WHAT A BUILD REFUSES, each before anything runs.
 func TestWhatABuildRefuses(t *testing.T) {
 	x := newTester(t)
 	buildable(t, x)
@@ -222,7 +216,6 @@ func TestWhatABuildRefuses(t *testing.T) {
 	require.Contains(t, r.stderr, "building function/hello for prod")
 }
 
-// A BRANCH THAT FEEDS NOTHING builds nothing, and says to name one that does.
 func TestABranchThatFeedsNoDeployment(t *testing.T) {
 	x := newTester(t)
 	buildable(t, x)
@@ -237,8 +230,6 @@ func TestABranchThatFeedsNoDeployment(t *testing.T) {
 	x.ok("build", x.dir, "--env", "prod", "--branch", "feature")
 }
 
-// A BUILD-TIME SECRET comes from this machine's environment, and one that is
-// not set is refused by the name to set.
 func TestABuildTimeSecretOnThisMachine(t *testing.T) {
 	x := newTester(t)
 	buildable(t, x)
@@ -265,7 +256,6 @@ func TestABuildTimeSecretOnThisMachine(t *testing.T) {
 	require.Equal(t, "S3_TOKEN_X", envName("s3-token.x"))
 }
 
-// A RESOURCE BUILT FROM ANOTHER REPOSITORY is that repository's to build.
 func TestAResourceFromAnotherRepositoryIsNotBuiltHere(t *testing.T) {
 	x := newTester(t)
 	buildable(t, x)
@@ -283,8 +273,6 @@ func TestAResourceFromAnotherRepositoryIsNotBuiltHere(t *testing.T) {
 	require.Contains(t, text, "nothing in main's deployments is built from this directory")
 }
 
-// AGAINST A CLOUD A BUILD PUBLISHES NOTHING; a development cloud is handed it
-// and deploys it, and the build is as good as that deploy.
 func TestABuildIsHandedOnlyToACloudThatTakesOne(t *testing.T) {
 	x := newTester(t)
 	buildable(t, x)
@@ -322,7 +310,6 @@ func TestABuildIsHandedOnlyToACloudThatTakesOne(t *testing.T) {
 	require.Contains(t, r.stderr, "stored: built proj-linked upload", "the deploy's log is shown")
 }
 
-// A CLOUD THAT CANNOT BE ASKED leaves the build on this machine, and says so.
 func TestABuildForACloudThatCannotBeAsked(t *testing.T) {
 	x := newTester(t)
 	buildable(t, x)
@@ -333,7 +320,6 @@ func TestABuildForACloudThatCannotBeAsked(t *testing.T) {
 	require.Contains(t, r.stderr, "built here only")
 }
 
-// --published BUILDS AGAINST WHAT THE CLOUD RUNS, and hands nothing back.
 func TestABuildAgainstThePublishedConfiguration(t *testing.T) {
 	x := newTester(t)
 	buildable(t, x)
@@ -372,7 +358,6 @@ func compiledOf(t *testing.T, x *tester) []byte {
 	return compiled
 }
 
-// AN ENGINE THAT CANNOT RUN refuses the build by its own reason.
 func TestABuildWhoseEngineFails(t *testing.T) {
 	x := newTester(t)
 	buildable(t, x)
@@ -388,8 +373,6 @@ func (failing) Make(context.Context, artifact.Spec, io.Writer) (io.ReadCloser, e
 	return nil, errors.New("no daemon")
 }
 
-// A WALKED TREE skips dot-directories, as a repository's ignore rules would
-// skip a .git.
 func TestATreeOutsideARepository(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".cache"), 0o755))
@@ -407,9 +390,6 @@ func TestATreeOutsideARepository(t *testing.T) {
 	require.False(t, underTau(".taurus"))
 }
 
-// A CODE REPOSITORY IS BUILT AGAINST WHAT IS PUBLISHED: its configuration is in
-// another repository, so the cloud's deployments say what it makes, and it
-// builds the resources whose source names it — found by its origin.
 func TestACodeRepositoryBuildsAgainstWhatIsPublished(t *testing.T) {
 	x := newTester(t)
 	buildable(t, x)

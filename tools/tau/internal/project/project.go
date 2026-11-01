@@ -27,7 +27,6 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// Project is an open project directory.
 type Project struct {
 	dir     string
 	s       *schema.Session
@@ -177,7 +176,6 @@ func (p *Project) CheckField(res []string, field, text string) error {
 	return p.s.ValidateField(res, strings.Split(field, "."), value)
 }
 
-// Issues is what res still owes.
 func (p *Project) Issues(res []string) []Issue { return p.s.ValidateResource(res) }
 
 func parseValue(text string) (any, error) {

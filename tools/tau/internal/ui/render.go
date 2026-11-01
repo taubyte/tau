@@ -163,7 +163,6 @@ func (t Theme) Jobs(jobs []*buildv2.Job) string {
 	return t.table([]string{"JOB", "STATUS", "REPOSITORY", "REF", "COMMIT", "TRY", "QUEUED"}, rows)
 }
 
-// Job renders one job in full.
 func (t Theme) Job(j *buildv2.Job) string {
 	var b strings.Builder
 	field := func(k, v string) { fmt.Fprintf(&b, "%s %s\n", t.Muted.Render(fmt.Sprintf("%-11s", k)), v) }
@@ -267,7 +266,6 @@ func namesIn(object map[string]any) map[string]string {
 	return out
 }
 
-// Kinds renders the vocabulary's kinds.
 func (t Theme) Kinds(kinds []session.Kind) string {
 	var b strings.Builder
 	b.WriteString(t.Title.Render("kinds") + "\n")
@@ -290,5 +288,4 @@ func (t Theme) Issues(issues []project.Issue) string {
 	return b.String()
 }
 
-// Done renders a success line.
 func (t Theme) Done(msg string) string { return t.OK.Render("✓") + " " + msg + "\n" }

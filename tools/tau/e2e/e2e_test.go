@@ -1,11 +1,9 @@
 //go:build dreaming
 
-// Package e2e runs the CLI against a real v2 fleet: a dream universe of two
-// nodes running the build frontend (the public role) and a third running every
-// private service they reach — auth, the build backend, secrets, register.
-// `tau link` works at the fake forge itself, with the credential the forge
-// sign-in handed back; the fleet only verifies deliveries with what the link
-// stored and clones over the deploy key it installed.
+// Package e2e runs the CLI against a real v2 fleet: a dream universe with two build
+// frontends and a node running every private service. `tau link` works at the fake
+// forge with the credential its sign-in returned; the fleet verifies deliveries
+// with what the link stored and clones over the deploy key it installed.
 package e2e
 
 import (
@@ -123,10 +121,6 @@ func gitEnv(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 }
 
-// THE CLIENT DOES THE FORGE WORK, THE CLOUD ONLY VERIFIES AND CLONES. An
-// organization's repositories, named with no prefix of any kind, are created
-// by the CLI with its own forge credential, wired, pushed, and built; the
-// project is then shared with a second tau user by a grant, and unshared.
 func TestTheCLIAgainstARealFleet(t *testing.T) {
 	t.Setenv(config.EnvConfig, filepath.Join(t.TempDir(), "config.yaml"))
 	t.Setenv(config.EnvToken, "")

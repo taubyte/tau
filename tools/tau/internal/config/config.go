@@ -50,7 +50,6 @@ type ForgeToken struct {
 	Login   string `yaml:"login,omitempty"`
 }
 
-// Config is the whole file.
 type Config struct {
 	Current  string             `yaml:"current,omitempty"`
 	Profiles map[string]Profile `yaml:"profiles,omitempty"`

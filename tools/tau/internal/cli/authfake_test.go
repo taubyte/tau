@@ -250,8 +250,6 @@ func (a *fakeAuth) Renew(_ context.Context, req *connect.Request[authv2.RenewReq
 	return connect.NewResponse(&authv2.ForgeToken{Host: req.Msg.GetHost(), AccessToken: forgeToken, ExpiresUnix: a.now() + 3600}), nil
 }
 
-// ── users ────────────────────────────────────────────────────────────────────
-
 func (a *fakeAuth) admin(h interface{ Get(string) string }) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()

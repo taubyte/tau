@@ -82,10 +82,8 @@ func NewFollow(title string, source Chunks, theme Theme) *Follow {
 	}
 }
 
-// Init starts the spinner and the first read.
 func (m *Follow) Init() tea.Cmd { return tea.Batch(m.spin.Tick, readNext(m.source)) }
 
-// Update is the model's one state transition.
 func (m *Follow) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -143,7 +141,6 @@ func (m *Follow) refresh() {
 	}
 }
 
-// View draws the log, the status line and the help.
 func (m *Follow) View() string {
 	if !m.ready {
 		return m.spin.View() + " connecting…"
@@ -158,8 +155,6 @@ func (m *Follow) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, m.view.View(), status, m.help.View(m.keys))
 }
 
-// Log is everything read so far.
 func (m *Follow) Log() string { return m.log.String() }
 
-// Done reports whether the log ended.
 func (m *Follow) Done() bool { return m.done }

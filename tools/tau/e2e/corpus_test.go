@@ -38,20 +38,12 @@ import (
 	"github.com/taubyte/tau/tools/tau/internal/config"
 )
 
-// corpus_test.go puts every project under node/dream/projects/ through both of
-// the ways a developer's project reaches a cloud: `tau build`, which builds on
-// this machine and hands a universe the result, and `tau ci run`, which has the
-// universe's own CI clone and build the pushed commit. Each must deploy and be
-// served, a refused project must be refused by name both ways, and the two
-// must build the same thing: the same recipe, the same artifact.
-//
-// THE SOURCES ARE THE FIXTURE CRATES. A corpus project names `services/<x>` and
-// a published build image; the repository each project is pushed as is the
-// project's documents with those crates under services/ and the world they
-// build against at wit/ — so what runs is what the image made from source, on
-// whichever side built it. A function in a language other than Rust is
-// built from its directory under pkg/invoke/wasm/fixtures/languages, and one the
-// js tier runs from its directory under pkg/invoke/js/fixtures.
+// Every project under node/dream/projects/ goes through both ways a project reaches
+// a cloud: `tau build` (built here, handed to a universe) and `tau ci run` (the
+// universe's CI builds the pushed commit). Each must deploy and serve, a refused
+// project must be refused by name both ways, and both must build the same recipe.
+// Sources are the fixture crates (and pkg/invoke/wasm/fixtures/languages,
+// pkg/invoke/js/fixtures), placed under services/ with the world at wit/.
 
 // crateOf is the fixture crate a source path is: by its own name, unless named here.
 var crateOf = map[string]string{"hello": "handler", "keeper": "cacher", "reader": "cacher"}
@@ -305,7 +297,6 @@ func pushed(t *testing.T, f *fake.Served, r codeRepo) {
 	}
 }
 
-// TestEveryCorpusProjectBuildsBothWays.
 func TestEveryCorpusProjectBuildsBothWays(t *testing.T) {
 	for _, c := range corpus {
 		name := c.name
@@ -382,9 +373,8 @@ var corpus = []corpusCase{
 	{name: "with/database/distributed/sql/crdt", probes: []probe{
 		{function: "keeper", method: http.MethodPost, path: "/query/ledger", body: "SELECT 1", status: 200},
 	}},
-	// AN EXTERNAL DATABASE IS A SERVER THE CLOUD IS POINTED AT, which this
-	// universe has none of; that it serves is test-external-databases'. Here
-	// it deploys, builds both ways and resolves.
+	// An external database needs a server this universe lacks
+	// (test-external-databases serves it); here it deploys, builds and resolves.
 	{name: "with/database/mysql/sql"},
 	{name: "with/database/postgres/sql"},
 	{name: "with/dns", probes: []probe{
@@ -514,7 +504,6 @@ func (u *underTest) bothWays(t *testing.T, c corpusCase) {
 		c.prepare(t, work)
 	}
 
-	// ── tau build: this machine builds, the universe deploys what it was handed.
 	local := tau("build", work, "-o", "json")
 	if c.refused != "" {
 		require.NotZero(t, local.code, "tau build of a refused project")
@@ -550,7 +539,6 @@ func (u *underTest) bothWays(t *testing.T, c corpusCase) {
 		}
 	}
 
-	// ── tau ci run: the universe clones the pushed commit and builds it itself.
 	ci := tau("ci", "run", "--dir", work, "-o", "json")
 	var ran struct{ Job, Status string }
 	if c.refused != "" {
@@ -579,8 +567,8 @@ func (u *underTest) bothWays(t *testing.T, c corpusCase) {
 		answered(t, serving, id, p)
 	}
 
-	// ── local == CI: the same recipes, built for the same resources. The bytes
-	// are the toolchain's business: a compiler need not be reproducible.
+	// Local and CI build the same recipes for the same resources; the bytes are the
+	// toolchain's business.
 	local1, cloned := map[string]string{}, map[string]string{}
 	recipes := 0
 	for i, b := range uploads {
@@ -715,13 +703,6 @@ func (z *txtZone) LookupTXT(_ context.Context, name string) ([]string, error) {
 	return nil, errors.New("no such host")
 }
 
-// TestTheDomainCorpusBuildsBothWays. A custom domain is the one refusal no
-// project can carry alone: shop.test is stolen only from a project that proved
-// it. So the four domain projects share one universe that serves nothing
-// unproven, in the order an attacker would need: the owner proves and deploys
-// shop.test, a second project naming it with the owner's record is refused,
-// the owner's child zone deploys under the proven parent, and the second
-// project's own proof of that child is refused anyway.
 func TestTheDomainCorpusBuildsBothWays(t *testing.T) {
 	dns := &txtZone{m: map[string][]string{}}
 	u := signedIn(t, func(c *node.Config) {

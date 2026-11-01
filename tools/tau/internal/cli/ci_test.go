@@ -10,8 +10,6 @@ import (
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 )
 
-// A BUILD BY HAND names the linked configuration repository, the checked-out
-// branch and its head — all resolved here — and follows the job to its end.
 func TestCIRunQueuesThisCheckoutsHead(t *testing.T) {
 	x := newTester(t)
 	buildable(t, x)
@@ -38,7 +36,6 @@ func TestCIRunQueuesThisCheckoutsHead(t *testing.T) {
 	require.Equal(t, "proj-1 github.com/acme/pay refs/heads/main "+strings.Repeat("a", 40), x.f.queued[2])
 }
 
-// A JOB THAT FAILS fails the command; what the cloud refuses is its reason.
 func TestCIRunThatFailsOrIsRefused(t *testing.T) {
 	x := newTester(t)
 	x.login()
@@ -72,7 +69,6 @@ func TestCIRunThatFailsOrIsRefused(t *testing.T) {
 	require.NotZero(t, r.code)
 }
 
-// A RUNNING JOB IS FOLLOWED LIVE, and its end read from its record.
 func TestCIRunFollowsARunningJob(t *testing.T) {
 	x := newTester(t)
 	x.login()
@@ -85,10 +81,6 @@ func TestCIRunFollowsARunningJob(t *testing.T) {
 	require.NotContains(t, r.stderr, "stored:", "it was followed live, so the stored log is not printed again")
 }
 
-// A JOB WHOSE NODE WENT AWAY RUNS AGAIN, and tau ci run follows the run the job
-// is on: the first run's log as far as it went, a note that it stops there, and
-// the rerun's log from its own start — never the rerun's bytes carried on from
-// the first run's offset.
 func TestCIRunFollowsARerunFromItsStart(t *testing.T) {
 	x := newTester(t)
 	x.login()
@@ -106,9 +98,6 @@ func TestCIRunFollowsARerunFromItsStart(t *testing.T) {
 	require.Contains(t, r.stdout, "success")
 }
 
-// A RUN WHOSE READ WAS REFUSED IS LEFT, NOT RESUMED, once the job is on the next
-// one, and a note says how far it was read. An ended job whose log cannot be
-// read says so and still ends by its record.
 func TestCIRunMovesOnFromARunItCouldNotRead(t *testing.T) {
 	x := newTester(t)
 	x.login()

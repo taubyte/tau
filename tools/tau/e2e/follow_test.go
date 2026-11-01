@@ -68,18 +68,6 @@ func (w *watched) String() string {
 	return w.buf.String()
 }
 
-// A BUILD IS WATCHED WHILE IT RUNS. `tau ci run` prints the build's first line
-// while the build is still holding, which is the job's live log followed from
-// the node running it to the CLI; the failure's own output then follows, and
-// `tau logs` reads all of it back once the job has ended.
-//
-// While it holds, `tau logs` prints what it has logged so far and exits, and
-// `tau logs --follow` stays until the build ends, printing the rest as it comes.
-//
-// AND A SECOND COMMIT'S JOB WAITS BEHIND IT, since the fleet has one build
-// backend: queued, `tau logs` prints nothing, says why on stderr and exits,
-// while `tau logs --follow` waits for the job to start and follows it to the
-// end — the whole of its log, however soon after the release it ran.
 func TestTauCIRunFollowsALiveBuild(t *testing.T) {
 	engine := &heldEngine{release: make(chan struct{})}
 	t.Setenv(config.EnvConfig, filepath.Join(t.TempDir(), "config.yaml"))

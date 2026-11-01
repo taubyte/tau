@@ -25,19 +25,10 @@ import (
 	"github.com/taubyte/tau/tools/tau/internal/project"
 )
 
-// build.go is `tau build`: the project built on this machine, by the build a
-// cloud runs.
-//
-// THE DECISION IS THE CLOUD'S OWN. The project is compiled here the way every
-// other command compiles it, and the compiled deployments go through the same
-// plan and the same recipes a cloud's build reads them through
-// (artifact.Plan, artifact.Recipe), into the same engine on this machine's
-// container daemon. So what this builds is what a push would build, named by
-// the same recipe digest a job log prints.
-//
-// AGAINST A CLOUD IT PUBLISHES NOTHING. A development cloud that says it takes
-// uploads (a dream universe) is handed the tree and what was built from it,
-// and deploys it as it would a push; any other cloud is told nothing.
+// build.go is `tau build`: the project built on this machine by the same plan,
+// recipes (artifact.Plan, artifact.Recipe) and engine a cloud's build uses, named by
+// the same recipe digest. It publishes nothing, except to a development cloud that
+// takes uploads (a dream universe), which deploys the result as a push.
 
 // OutDir is where a build's products land, per environment, relative to the
 // project directory.
@@ -211,14 +202,10 @@ func sourceName(res specs.Buildable) string {
 	return "the configuration repository"
 }
 
-// planFor reads what the build is planned from.
-//
-// A DIRECTORY WITH NO PROJECT IS A CODE REPOSITORY, or one named with --repo:
-// its configuration is in another repository, so what it builds is read from
-// what the cloud published, and it builds the resources whose source names it.
-// A project directory compiles its own deployments, refused by name where a
-// cloud would refuse them, unless --published says to build against the
-// cloud's.
+// planFor reads what the build is planned from. A directory with no project (or
+// --repo) is a code repository, built against what the cloud published for the
+// resources naming it. A project directory compiles its own deployments, refused
+// where a cloud would refuse them, unless --published builds against the cloud's.
 func planFor(cmd *cobra.Command, env Env, dir, tree, branch string) (source, error) {
 	p, err := project.Open(tree)
 	if err != nil {

@@ -23,12 +23,6 @@ import (
 	"github.com/taubyte/tau/tools/tau/internal/config"
 )
 
-// A console holds a tau token and the forge credential its sign-in handed
-// back, and calls the forge itself. This drives what the console note says a
-// client writes, with nothing but a forge session and plain HTTP to the cloud:
-// a repository created and pushed at the forge, its hook and deploy key
-// installed there, the project registered, the credentials handed over, and a
-// push confirmed and queued. The cloud is asked nothing about any forge.
 func TestTheConsolePathAgainstARealFleet(t *testing.T) {
 	t.Setenv(config.EnvConfig, filepath.Join(t.TempDir(), "config.yaml"))
 	t.Setenv(config.EnvToken, "")
@@ -128,10 +122,8 @@ func TestTheConsolePathAgainstARealFleet(t *testing.T) {
 		return code == http.StatusOK && json.Unmarshal(out, &ids) == nil && len(ids) == 1
 	}, time.Minute, time.Second, "the push queued no job")
 
-	// A rotation, as the client makes it: a new secret installed at the forge,
-	// then handed to the cloud. A delivery signed with the old one — in flight,
-	// or from a hook not yet updated — still verifies for the grace; the new
-	// one verifies at once; anything else is refused.
+	// A rotation as the client makes it: a delivery signed with the old secret still
+	// verifies for the grace, the new one at once, anything else is refused.
 	rotated, err := forge.NewSecret()
 	require.NoError(t, err)
 	require.NoError(t, s.RemovePushHook(t.Context(), repo, hook.Handle))

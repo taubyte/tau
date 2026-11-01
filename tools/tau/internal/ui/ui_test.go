@@ -37,7 +37,6 @@ func golden(t *testing.T, name, got string) {
 	require.Equal(t, string(want), got)
 }
 
-// Findings worst first, details indented, deferred checks listed, one tally.
 func TestReportRendersFindingsWorstFirst(t *testing.T) {
 	r := project.Report{
 		Findings: []session.Note{
@@ -85,8 +84,6 @@ func TestIssuesAndKinds(t *testing.T) {
 	require.Equal(t, "• execution.call  required\n", th.Issues([]project.Issue{{Field: []string{"execution", "call"}, Message: "required"}}))
 	require.Contains(t, th.Kinds([]session.Kind{{Name: "namespace", Container: true}, {Name: "function"}}), "(a scope")
 }
-
-// ── the live log view ────────────────────────────────────────────────────────
 
 type chunks struct {
 	parts  []string
@@ -170,8 +167,6 @@ func TestFollowBeforeItsSize(t *testing.T) {
 	require.Contains(t, m.View(), "job j")
 }
 
-// ── the wait ─────────────────────────────────────────────────────────────────
-
 func TestWaitPollsUntilDone(t *testing.T) {
 	n := 0
 	m := NewWait("waiting", time.Millisecond, func() (string, bool, error) {
@@ -208,8 +203,6 @@ func TestWaitFailsAndCanBeStopped(t *testing.T) {
 	require.Equal(t, tea.QuitMsg{}, cmd())
 }
 
-// ── prompts, in huh's accessible mode so they read plain lines ───────────────
-
 func TestHuhPrompts(t *testing.T) {
 	h := func(in string) Huh { return Huh{In: strings.NewReader(in), Out: io.Discard, Accessible: true} }
 
@@ -241,8 +234,6 @@ func TestHuhPrompts(t *testing.T) {
 
 }
 
-// Jobs, a job, a table, secrets and a done line render the job and the rows
-// they were handed, newest first, with no colour on a plain writer.
 func TestTheJobAndListRenderers(t *testing.T) {
 	th := plain()
 	require.Contains(t, th.Jobs(nil), "no jobs yet")

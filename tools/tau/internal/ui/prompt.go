@@ -36,7 +36,6 @@ func (h Huh) run(field huh.Field) error {
 	return form.Run()
 }
 
-// Input asks for one line of text.
 func (h Huh) Input(title, description string, validate func(string) error) (string, error) {
 	var v string
 	in := huh.NewInput().Title(title).Description(description).Value(&v)
@@ -52,13 +51,11 @@ func (h Huh) Secret(title, description string) (string, error) {
 	return v, h.run(huh.NewInput().Title(title).Description(description).EchoMode(huh.EchoModePassword).Value(&v))
 }
 
-// Confirm asks yes or no.
 func (h Huh) Confirm(title string) (bool, error) {
 	var v bool
 	return v, h.run(huh.NewConfirm().Title(title).Value(&v))
 }
 
-// Select asks for one of options.
 func (h Huh) Select(title string, options []string) (string, error) {
 	var v string
 	return v, h.run(huh.NewSelect[string]().Title(title).Options(huh.NewOptions(options...)...).Value(&v))

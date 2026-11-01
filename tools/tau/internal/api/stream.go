@@ -9,17 +9,10 @@ import (
 	"time"
 )
 
-// LogStream reads one run of a job's log, chunk by chunk, resuming at the byte
-// offset it had reached when the connection drops. EOF from the frontend is the
-// end of that run's log: the frontend holds the stream open while the run is to
-// come and while it runs, and closes it when there is nothing more to come.
-//
-// THE RUN IS PINNED: the first response names it and every resume names it
-// back. An offset is a position in one run's log, and a job whose node went
-// away runs again with a log of its own, from byte zero — resumed without its
-// run, the new log's bytes would carry on from the old one's offset as if they
-// were the rest of it. A run whose log was not kept ends the stream with a
-// *LostLog rather than EOF.
+// LogStream reads one run of a job's log chunk by chunk, resuming at its byte
+// offset after a drop; EOF is the end of that run's log. The run is pinned: a job
+// that runs again has a new log from byte zero, so resuming without the run would
+// splice two logs. A run whose log was not kept ends with *LostLog.
 type LogStream struct {
 	c       *Client
 	ctx     context.Context
@@ -151,7 +144,6 @@ func (s *LogStream) drop() {
 	}
 }
 
-// Close releases the connection.
 func (s *LogStream) Close() error {
 	s.drop()
 	return nil

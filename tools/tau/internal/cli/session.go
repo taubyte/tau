@@ -25,11 +25,9 @@ import (
 	"github.com/taubyte/tau/tools/tau/internal/config"
 )
 
-// session.go is signing in to a cloud and to forges.
-//
-// THE PROFILE HOLDS THE TAU TOKEN (and the refresh token that renews it), and
-// the forge credentials forge sign-ins handed back, per host. The CLI acts at
-// a forge with its own credential; the cloud keeps none.
+// session.go is signing in to a cloud and to forges. The profile holds the tau
+// token, its refresh token, and the forge credentials per host; the cloud keeps
+// none.
 
 // profileClient is a client for profile name that renews its token and saves
 // the renewal, unless the token came from $TAU_TOKEN.
@@ -47,15 +45,10 @@ func profileClient(env Env, cfg *config.Config, name string, p config.Profile) (
 	return api.New(p.Cloud, tokens, env.HTTP)
 }
 
-// profileSaver writes each token Refreshing keeps to profile name, the moment
-// it is kept, unless the token came from $TAU_TOKEN. start is the token the
-// profile held when this process read it.
-//
-// THE FILE ON DISK, NOT THE COPY READ AT START: another tau process may have
-// saved a newer token of this session, or signed in again, since. While the
-// file still holds the token this process last saw there, nobody else has
-// written and the save stands; otherwise it stands only if it supersedes
-// what is there (api.Supersedes), the rule Refreshing applies in memory.
+// profileSaver writes each token Refreshing keeps to profile name, unless it came
+// from $TAU_TOKEN. start is the token held when this process read the profile. It
+// compares against the file on disk: if it still holds what this process last
+// saw, the save stands; otherwise only if it supersedes (api.Supersedes).
 func profileSaver(env Env, cfg *config.Config, name, start string) func(token string, expires int64, refresh string) {
 	if os.Getenv(config.EnvToken) != "" {
 		return func(string, int64, string) {}

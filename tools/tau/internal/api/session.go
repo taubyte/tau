@@ -67,7 +67,6 @@ func (c *Client) Anonymous() authv2connect.SessionServiceClient {
 	return authv2connect.NewSessionServiceClient(c.http, c.base.String())
 }
 
-// Users is auth's user management.
 func (c *Client) Users() authv2connect.UserServiceClient {
 	return authv2connect.NewUserServiceClient(c.authed, c.base.String())
 }
@@ -108,9 +107,9 @@ func (r *Refreshing) Access(ctx context.Context) (string, error) {
 	return r.Token, nil
 }
 
-// Supersedes says whether token may replace than in a profile: than is not a
-// tau token, or both are of one session and token was issued later. A token of another session never
-// replaces one: that is a sign-in this process did not make.
+// Supersedes says whether token may replace than in a profile: than is not a tau
+// token, or both share a session and token was issued later. Another session's
+// token never replaces one.
 func Supersedes(token, than string) bool {
 	got, ok := orderOf(token)
 	if !ok {

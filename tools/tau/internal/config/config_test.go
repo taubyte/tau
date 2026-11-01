@@ -133,7 +133,6 @@ func TestLinks(t *testing.T) {
 	require.Error(t, WriteLink(file, Link{ProjectID: "p"}))
 }
 
-// A token from the environment is used as it is: no refresh rides with it.
 func TestAnEnvironmentTokenCarriesNoRefresh(t *testing.T) {
 	t.Setenv(EnvCloud, "")
 	t.Setenv(EnvToken, "tenv")
@@ -164,7 +163,6 @@ func TestLoadAndLinkWhereAFileIs(t *testing.T) {
 	require.Error(t, WriteLink(file, Link{}), "a link cannot go under a file")
 }
 
-// A file that names no profiles at all still loads as one that can take one.
 func TestLoadANullProfileMap(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	require.NoError(t, os.WriteFile(path, []byte("profiles: null\n"), 0o600))

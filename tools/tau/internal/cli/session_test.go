@@ -21,8 +21,6 @@ func (x *tester) profile() config.Profile {
 	return cfg.Profiles[cfg.Current]
 }
 
-// The profile holds the tau token, and a forge sign-in leaves no forge token
-// in the config file.
 func TestASSOSignInPastedKeepsTheForgeCredential(t *testing.T) {
 	x := newTester(t)
 	x.stdin = forgeToken + "\n"
@@ -114,8 +112,6 @@ func TestPasswordSignIn(t *testing.T) {
 	require.Contains(t, r.stderr, "--name is required")
 }
 
-// A token about to expire is renewed before it is used, and the renewal is
-// saved.
 func TestATokenIsRenewedAndKept(t *testing.T) {
 	x := newTester(t)
 	x.f.auth.expiresIn = 30
@@ -139,7 +135,6 @@ func TestATokenIsRenewedAndKept(t *testing.T) {
 	require.Contains(t, r.stderr, "tau login")
 }
 
-// A token from the environment is never written to the config.
 func TestAnEnvironmentTokenIsNotSaved(t *testing.T) {
 	x := newTester(t)
 	x.login()
@@ -150,7 +145,6 @@ func TestAnEnvironmentTokenIsNotSaved(t *testing.T) {
 	require.Equal(t, goodToken, x.profile().Token)
 }
 
-// Connecting a forge keeps the session and hands back the connection.
 func TestForgeConnect(t *testing.T) {
 	x := newTester(t)
 	x.stdin = forgeToken + "\n"
@@ -355,9 +349,6 @@ func readFile(path string) (string, error) {
 	return string(b), err
 }
 
-// A kept token is written the moment it is kept, against the file as it is
-// now: a newer token another process saved of the same session, or a new
-// sign-in, is never overwritten by an older one.
 func TestARenewalIsSavedNewestWinsOnDisk(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")

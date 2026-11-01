@@ -35,7 +35,6 @@ func TestNewRefusesWhatIsNotACloudURL(t *testing.T) {
 	require.Equal(t, "https://build.example.com/base", c.Base())
 }
 
-// Path segments are escaped, so an id cannot add a segment of its own.
 func TestPathSegmentsAreEscaped(t *testing.T) {
 	var got string
 	c := server(t, func(w http.ResponseWriter, r *http.Request) {
@@ -169,8 +168,6 @@ func TestSecretsRoundTrip(t *testing.T) {
 	require.NoError(t, c.UnsetSecret(t.Context(), "p", "prod", "A"))
 }
 
-// ── the resumable log ────────────────────────────────────────────────────────
-
 // logServer serves log from ?offset=, as run 1 unless asked for another, cutting
 // the connection after cut bytes on the first `drops` requests. It keeps the
 // query each request asked with.
@@ -221,9 +218,6 @@ func TestTheStreamResumesAtTheOffsetReached(t *testing.T) {
 	require.Equal(t, int32(3), requests.Load())
 }
 
-// A RESUME NAMES THE RUN IT RESUMES. The first response names the job's
-// current run; every reconnect after it asks for that run, at the offset
-// reached, so the bytes that follow can only be that run's.
 func TestTheStreamResumesTheRunItWasReading(t *testing.T) {
 	c, _, asked := logServer(t, "0123456789", 2, 3)
 	s := c.Stream(t.Context(), "j", 0, 0)
@@ -243,8 +237,6 @@ func TestTheStreamResumesTheRunItWasReading(t *testing.T) {
 	require.Equal(t, []string{"attempt=7&offset=2", "attempt=7&offset=6"}, asked())
 }
 
-// ANOTHER RUN'S LOG IS NOT THE REST OF THIS ONE. A resume answered as some other
-// run is refused, and nothing of it is read.
 func TestTheStreamRefusesAnotherRunsLog(t *testing.T) {
 	requests := 0
 	c := server(t, func(w http.ResponseWriter, r *http.Request) {
@@ -268,9 +260,6 @@ func TestTheStreamRefusesAnotherRunsLog(t *testing.T) {
 	require.Equal(t, "first", out.String())
 }
 
-// A RUN WHOSE LOG WAS NOT KEPT ENDS THE STREAM AS SUCH, not as the end of a log:
-// a *LostLog naming the run and how much of it was read. A stream that had not
-// named its run yet takes the run from the refusal.
 func TestALostRunEndsTheStream(t *testing.T) {
 	gone := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Job-Attempt", "4")
@@ -291,8 +280,6 @@ func TestALostRunEndsTheStream(t *testing.T) {
 	require.Equal(t, "job j: the log of attempt 2 was not kept past byte 9", err.Error())
 }
 
-// A response that does not say which run it is cannot be resumed, so it is not
-// read at all — and asking again would get the same answer.
 func TestAResponseThatNamesNoRunIsRefused(t *testing.T) {
 	requests := 0
 	c := server(t, func(w http.ResponseWriter, r *http.Request) {
@@ -356,8 +343,6 @@ type failing struct{}
 
 func (failing) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
 
-// A SNAPSHOT IS ASKED FOR, never assumed: the frontend ends that response at
-// what the log holds now, and a stream that did not ask is a follow.
 func TestTheStreamAsksForASnapshotOnlyWhenTold(t *testing.T) {
 	var mu sync.Mutex
 	var asked []string
@@ -385,7 +370,6 @@ func TestTheStreamAsksForASnapshotOnlyWhenTold(t *testing.T) {
 	require.Equal(t, []string{"/job/j/logs?offset=3&snapshot=true", "/job/j/logs?"}, asked)
 }
 
-// A cancelled context during a backoff after a mid-stream drop ends the read.
 func TestTheStreamStopsWhenCancelledDuringBackoff(t *testing.T) {
 	c, _, _ := logServer(t, "0123456789", 100, 2)
 	ctx, cancel := context.WithCancel(t.Context())

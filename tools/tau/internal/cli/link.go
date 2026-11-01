@@ -24,25 +24,16 @@ import (
 	"github.com/taubyte/tau/tools/tau/internal/project"
 )
 
-// link.go is `tau link`: register project.yaml's id on a cloud for the
-// project's repositories, and wire each repository to the cloud.
-//
-// EVERYTHING AT THE FORGE IS DONE HERE, with this profile's own forge
-// credential; the cloud never acts at a forge for anyone. Per repository the
-// CLI generates a webhook secret and an ed25519 deploy key, installs the hook
-// (to https://build-frontend.<fqdn>/hook/<id>) and the read-only deploy key,
-// and hands the cloud the secret and the key's private half under
-// pkg/linkcreds' names. With --create it first creates repositories that do
-// not exist yet, in whatever namespace the key names; with --push it pushes
-// the project directory to the configuration repository last, so that push is
-// the first build.
-//
-// A REPOSITORY THAT ALREADY HAS THIS CLOUD'S HOOK was linked before. Link asks
-// (or takes --replace-hook / --keep-hook): replacing deletes that hook and
-// this cloud's deploy key and installs new ones after the new credentials are
-// stored; keeping leaves that repository's hook and stored credentials alone.
-//
-// --manual installs nothing and prints what to install by hand.
+// link.go is `tau link`: register project.yaml's id on a cloud for the project's
+// repositories and wire each one, doing everything at the forge with this
+// profile's own credential (the cloud never acts at a forge). Per repository it
+// generates a webhook secret and an ed25519 deploy key, installs the hook (to
+// https://build-frontend.<fqdn>/hook/<id>) and the read-only key, and hands the
+// cloud the secret and private key under pkg/linkcreds' names. --create creates
+// missing repositories; --push pushes the project last, so that push is the first
+// build. A repository already holding this cloud's hook is replaced or kept (asked,
+// or --replace-hook / --keep-hook). --manual installs nothing and prints what to
+// install.
 
 func linkCommand(env Env) *cobra.Command {
 	cmd := &cobra.Command{

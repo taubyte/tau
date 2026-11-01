@@ -59,9 +59,6 @@ func hooksOn(t *testing.T, x *tester, f *fake.Forge, key repokey.Key) ([]forge.I
 	return hooks, keys
 }
 
-// THE CLI DOES THE FORGE WORK with its own credential: each repository gets
-// its own secret and deploy key, installed at the forge from here, and the
-// cloud is only handed the private halves and the registration.
 func TestLinkInstallsEverythingFromTheClient(t *testing.T) {
 	x, f := linkTester(t)
 	id := projectYAMLID(t, x.dir)
@@ -103,8 +100,6 @@ func TestLinkInstallsEverythingFromTheClient(t *testing.T) {
 	require.Contains(t, x.ok("projects"), id)
 }
 
-// AN ORGANIZATION'S REPOSITORIES, under any name, are created and linked like
-// anyone's: the namespace is the key's, never the signed-in login's.
 func TestLinkCreatesOrgOwnedRepositories(t *testing.T) {
 	x, f := linkTester(t)
 	id := projectYAMLID(t, x.dir)
@@ -127,7 +122,6 @@ func TestLinkCreatesOrgOwnedRepositories(t *testing.T) {
 	require.Contains(t, r.stderr, "creating "+f.Keys().Uncreatable.String())
 }
 
-// A NESTED GROUP is a namespace like any other.
 func TestLinkANestedGitLabGroup(t *testing.T) {
 	x, f := linkTesterOn(t, fake.New(fake.GitLabLike))
 	id := projectYAMLID(t, x.dir)
@@ -142,8 +136,6 @@ func TestLinkANestedGitLabGroup(t *testing.T) {
 	require.Equal(t, hookOf(id), hooks[0].Callback)
 }
 
-// AN ID SOMEBODY ELSE CLAIMED IS SHOWN AS THE CLOUD SAID IT, and nothing is
-// stored or installed.
 func TestLinkShowsAClaimedIdsRefusal(t *testing.T) {
 	x, f := linkTester(t)
 	id := projectYAMLID(t, x.dir)
@@ -158,8 +150,6 @@ func TestLinkShowsAClaimedIdsRefusal(t *testing.T) {
 	require.Empty(t, f.LastHookWire(), "nothing reached the forge")
 }
 
-// --manual installs nothing and prints, per repository, the forge's wire form
-// of that repository's secret.
 func TestLinkManualPrintsWhatToInstall(t *testing.T) {
 	x, f := linkTester(t)
 	id := projectYAMLID(t, x.dir)
@@ -208,8 +198,6 @@ func TestLinkRefusals(t *testing.T) {
 	x.ok("link", "--dir", x.dir)
 }
 
-// THE CLOUD'S NAME decides the callback; a cloud that has none needs one
-// named, which also serves a development cloud reached over http.
 func TestLinkCallback(t *testing.T) {
 	x, f := linkTester(t)
 	id := projectYAMLID(t, x.dir)
@@ -222,8 +210,6 @@ func TestLinkCallback(t *testing.T) {
 	require.Equal(t, "http://127.0.0.1:9/hook/"+id, hooks[0].Callback)
 }
 
-// A SIGN-IN THAT HANDED BACK NO FORGE CREDENTIAL cannot act at the forge, and
-// says how to get one.
 func TestLinkNeedsAForgeCredential(t *testing.T) {
 	x := newTester(t)
 	f := fake.New(fake.GitHubLike)
@@ -242,8 +228,6 @@ func TestLinkNeedsAForgeCredential(t *testing.T) {
 	require.Contains(t, r.stderr, "unauthorized")
 }
 
-// AN EXPIRED FORGE CREDENTIAL is renewed through the cloud and kept; one
-// that cannot be renewed says to sign in again.
 func TestLinkRenewsAnExpiredForgeCredential(t *testing.T) {
 	x := newTester(t)
 	f := fake.New(fake.GitHubLike)
@@ -285,7 +269,6 @@ func loadTestConfig(t *testing.T) *config.Config {
 	return cfg
 }
 
-// A SECOND LINK FINDS THE FIRST ONE'S HOOK and asks before replacing it.
 func TestRelinkAsksAboutTheHookAlreadyInstalled(t *testing.T) {
 	x, f := linkTester(t)
 	id := projectYAMLID(t, x.dir)
@@ -327,8 +310,6 @@ func TestRelinkAsksAboutTheHookAlreadyInstalled(t *testing.T) {
 	require.NotZero(t, x.run("link", "--dir", x.dir, "--config-repo", cfg.String()).code)
 }
 
-// A CLOUD THAT CANNOT STORE THE CREDENTIALS stops the link before anything is
-// installed on the forge.
 func TestLinkStopsWhereItFails(t *testing.T) {
 	x, f := linkTester(t)
 	x.f.failSecrets = true
@@ -344,8 +325,6 @@ func TestNoProjectsYet(t *testing.T) {
 	require.Equal(t, "[]\n", x.ok("projects", "-o", "json"))
 }
 
-// --push makes the directory the configuration repository's first commit,
-// pushed over https with the forge credential, which lands nowhere on disk.
 func TestLinkPushesTheProject(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")

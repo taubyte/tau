@@ -214,18 +214,12 @@ func logsCommand(env Env) *cobra.Command {
 	return cmd
 }
 
-// showLog prints a job's log: what it holds now, or with follow, everything
-// until the job ends. At a terminal, following draws the live view; anywhere
-// else the bytes go to stdout as they arrive.
-//
-// IT IS ONE RUN'S LOG, the job's current one, read the same way whatever the
-// run is doing: the frontend serves an ended run's from where its record files
-// it under that run. Read here by the record's last entry instead, a cancelled
-// job's log was the previous run's while its own was still being stored.
+// showLog prints the job's current run's log: what it holds now, or with follow,
+// everything until the job ends (a live view at a terminal, raw bytes otherwise).
+// An ended run's log is the one its record files under that run.
 func showLog(cmd *cobra.Command, env Env, cl *api.Client, id string, from int64, follow bool) error {
-	// A QUEUED JOB HAS LOGGED NOTHING, and stderr says so, so that an empty log
-	// does not read as a build that printed nothing. Following it waits: the
-	// frontend holds the stream open until the job starts.
+	// A queued job has logged nothing, and stderr says so; following waits for it to
+	// start.
 	j, err := cl.Job(cmd.Context(), id)
 	queued := err == nil && j.GetStatus() == api.JobQueued
 	notes := env.Stderr
@@ -307,10 +301,8 @@ func retryCommand(env Env) *cobra.Command {
 	return cmd
 }
 
-// deployCommand is push-driven, because that is the only way a v2 cloud builds:
-// the frontend has no manual trigger, only the forge's webhook. So deploying is
-// pushing; this says what to push and, with --wait, waits for the job the push
-// starts and follows its log.
+// deployCommand is push-driven, the only way a v2 cloud builds: it says what to
+// push and, with --wait, follows the job the push starts.
 func deployCommand(env Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "deploy",

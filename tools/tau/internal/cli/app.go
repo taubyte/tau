@@ -1,16 +1,10 @@
-// Package cli is the tau command line: cobra commands over the build
-// frontend's API (internal/api) and the schema session (internal/project),
-// drawn by internal/ui.
+// Package cli is the tau command line: cobra commands over the build frontend's API
+// (internal/api) and the schema session (internal/project), drawn by internal/ui.
 //
-// EVERY COMMAND RUNS WITHOUT A TERMINAL. A value a command would ask for is
-// also a flag; it asks only when stdin and stdout are both a terminal, and
-// otherwise fails naming the flag. --output json prints the data and nothing
-// else, and --yes stands in for every confirmation.
-//
-// Cobra rather than urfave/cli (which the node binary uses) because a developer
-// CLI needs flags after arguments (`tau new function hello --set …`) and flags
-// shared by every command (`-o json`); urfave/cli v2 stops parsing flags at the
-// first argument and has no persistent flags.
+// Every command runs without a terminal: a value a command asks for is also a flag,
+// asked only when stdin and stdout are terminals; --output json prints only data and
+// --yes stands in for every confirmation. Cobra over urfave/cli for flags after
+// arguments and persistent flags.
 package cli
 
 import (
@@ -58,7 +52,6 @@ type Env struct {
 	Engine artifact.Engine
 }
 
-// System is the Env of a real process.
 func System() Env {
 	interactive := term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
 	return Env{
@@ -89,7 +82,6 @@ type exitError struct {
 
 func (e *exitError) Error() string { return e.msg }
 
-// New builds the root command over env.
 func New(env Env) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "tau",
@@ -144,8 +136,6 @@ func Run(env Env, args []string) int {
 	return code
 }
 
-// ── flags ────────────────────────────────────────────────────────────────────
-
 func addDir(cmd *cobra.Command) {
 	cmd.Flags().StringP("dir", "C", ".", "the project directory")
 }
@@ -189,8 +179,6 @@ func flagStrings(cmd *cobra.Command, name string) []string {
 	v, _ := cmd.Flags().GetStringArray(name)
 	return v
 }
-
-// ── shared helpers ───────────────────────────────────────────────────────────
 
 func jsonOut(cmd *cobra.Command) bool { return flagString(cmd, "output") == "json" }
 

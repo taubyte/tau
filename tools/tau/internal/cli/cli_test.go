@@ -15,8 +15,6 @@ import (
 	"github.com/taubyte/tau/tools/tau/internal/config"
 )
 
-// ── login / profiles ─────────────────────────────────────────────────────────
-
 func TestLoginStoresTheTokenPrivately(t *testing.T) {
 	x := newTester(t)
 	x.login()
@@ -94,7 +92,6 @@ func TestLoginRefusals(t *testing.T) {
 	require.Contains(t, x.ok("profiles"), "no profiles")
 }
 
-// At a terminal, login asks for what it was not given — the password hidden.
 func TestLoginPromptsAtATerminal(t *testing.T) {
 	x := newTester(t)
 	x.interactive = true
@@ -102,8 +99,6 @@ func TestLoginPromptsAtATerminal(t *testing.T) {
 	x.ok("login")
 	require.Equal(t, []string{"Cloud URL (the build frontend)", "Sign in with", "User", "Password"}, x.prompter.asked)
 }
-
-// ── project: init / new / validate / views ──────────────────────────────────
 
 func TestInitValidateViews(t *testing.T) {
 	x := newTester(t)
@@ -183,8 +178,6 @@ func TestNewWritesAResourceAndRefusesAnIncompleteOne(t *testing.T) {
 	require.NotZero(t, x.run("new", "function", "x", "--dir", x.dir, "--set", "execution.memory=lots").code)
 }
 
-// At a terminal, new asks for the kind, the name and each field still owed,
-// checking each answer against the field's rule.
 func TestNewPromptsForWhatTheResourceOwes(t *testing.T) {
 	x := newTester(t)
 	x.ok("init", "shop", "--dir", x.dir)
@@ -223,8 +216,6 @@ func TestStatus(t *testing.T) {
 	x.link("proj-unknown")
 	require.Contains(t, x.ok("status", "--dir", x.dir), "not found")
 }
-
-// ── jobs / job / logs / cancel / retry ───────────────────────────────────────
 
 func TestJobs(t *testing.T) {
 	x := newTester(t)
@@ -289,10 +280,6 @@ func TestLogs(t *testing.T) {
 	require.Contains(t, x.run("logs", "nope", "-f").stderr, "not found")
 }
 
-// WITHOUT --follow, A RUNNING JOB'S LOG IS WHAT IT HAS LOGGED SO FAR, and tau
-// logs exits while the job goes on, the way docker logs and kubectl logs do
-// without -f. With --follow each line is printed as it arrives and the command
-// ends with the job. Once the job has ended, both print the whole log.
 func TestLogsOfAJobStillRunning(t *testing.T) {
 	x := newTester(t)
 	x.login()
@@ -338,9 +325,6 @@ func TestLogsOfAJobStillRunning(t *testing.T) {
 	require.Equal(t, "stored: step one\nstep two\n", x.ok("logs", "job-run", "--follow"))
 }
 
-// A QUEUED JOB HAS LOGGED NOTHING YET. tau logs prints nothing, exits 0 and
-// says on stderr that the job is queued; tau logs --follow says so too, waits
-// for the job to start, and follows it to the end.
 func TestLogsOfAQueuedJob(t *testing.T) {
 	x := newTester(t)
 	x.login()
@@ -373,10 +357,6 @@ func TestLogsOfAQueuedJob(t *testing.T) {
 	require.Equal(t, "step one\nstep two\n", followed.String())
 }
 
-// A FOLLOW THAT DROPS RESUMES THE RUN IT WAS READING, so a job whose node went
-// away and ran again is not read on into the rerun: its bytes would carry on
-// from the dropped run's offset as if they were the rest of it. tau logs
-// --follow says where the lost run's log stops, and fails.
 func TestLogsNeverSpliceTwoRuns(t *testing.T) {
 	x := newTester(t)
 	x.login()
@@ -402,9 +382,6 @@ func TestLogsNeverSpliceTwoRuns(t *testing.T) {
 	require.Contains(t, r.stderr, "job job-2: the log of attempt 2 was not kept")
 }
 
-// A CANCELLED JOB'S LOG IS ITS LAST RUN'S, also while that run's log is still
-// being stored and the record names only the run before it: tau logs reads the
-// run, not the record's last entry.
 func TestLogsOfACancelledJobAreItsLastRuns(t *testing.T) {
 	x := newTester(t)
 	x.login()
@@ -439,8 +416,6 @@ func TestCancelAndRetry(t *testing.T) {
 	require.NotZero(t, x.run("retry").code)
 	require.NotZero(t, x.run("cancel").code)
 }
-
-// ── deploy ───────────────────────────────────────────────────────────────────
 
 func TestDeployIsPushDriven(t *testing.T) {
 	x := newTester(t)
@@ -477,8 +452,6 @@ func TestDeployWaitFollowsTheNextJob(t *testing.T) {
 
 	require.NotZero(t, x.run("deploy", "--project", "proj-nope", "--wait").code)
 }
-
-// ── secrets ──────────────────────────────────────────────────────────────────
 
 func TestSecrets(t *testing.T) {
 	x := newTester(t)

@@ -38,8 +38,6 @@ func starterFiles(t *testing.T) []string {
 	return files
 }
 
-// THE STARTER BUILDS FROM SOURCE: the crate its function names, and tau's
-// world at the path the crate reads it from.
 func TestTheStarterShipsItsSource(t *testing.T) {
 	dir := initStarter(t)
 	for _, f := range []string{"services/hello/Cargo.toml", "services/hello/Cargo.lock", "services/hello/src/lib.rs", "wit/handler.wit"} {
@@ -50,8 +48,6 @@ func TestTheStarterShipsItsSource(t *testing.T) {
 	require.Contains(t, string(lib), `path: "../../wit"`)
 }
 
-// THE STARTER'S WORLD IS THE HOST'S. The copy exists because this module cannot
-// embed a file outside it; this is what keeps it from drifting.
 func TestTheStartersWorldIsTheHosts(t *testing.T) {
 	host := filepath.Join("..", "..", "..", "..", "pkg", "invoke", "wasm", "wit")
 	var want []string
@@ -79,7 +75,6 @@ func TestTheStartersWorldIsTheHosts(t *testing.T) {
 	require.Equal(t, want, got)
 }
 
-// A source file that cannot be written fails init.
 func TestInitWhereTheSourceCannotBeWritten(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "services"), []byte("a file where the directory goes"), 0o644))
@@ -87,7 +82,6 @@ func TestInitWhereTheSourceCannotBeWritten(t *testing.T) {
 	require.Error(t, err)
 }
 
-// The starter compiles clean — the whole reason init compiles before writing.
 func TestTheStarterCompilesAndAuditsClean(t *testing.T) {
 	dir := initStarter(t)
 	p, err := Open(dir)
@@ -118,8 +112,6 @@ func TestInitRefusesANameTheSchemaRefuses(t *testing.T) {
 	require.Error(t, err)
 }
 
-// A new resource gets a minted id, reports what it owes, and is written only
-// once asked; untouched documents are not rewritten.
 func TestNewResourceFromTheSchema(t *testing.T) {
 	dir := initStarter(t)
 	gw := filepath.Join(dir, "gateway", "front.yaml")
@@ -204,8 +196,6 @@ func TestTheProjectIdIsProjectYAMLs(t *testing.T) {
 	require.Empty(t, empty.ID())
 }
 
-// A DEPLOYMENT COMPILES AS A CLOUD'S DEPLOY COMPILES IT: the branch picks the
-// deployments, and the bytes are the compiled object a register is published.
 func TestTheStarterCompilesForItsDeployment(t *testing.T) {
 	p, err := Open(initStarter(t))
 	require.NoError(t, err)
@@ -231,7 +221,6 @@ func TestAProjectWithNoEnvironmentTableFeedsNothing(t *testing.T) {
 	require.Empty(t, p.Deployments("main"))
 }
 
-// A value is checked against the field's rule without being set.
 func TestCheckFieldAsksWithoutSetting(t *testing.T) {
 	p, err := Open(initStarter(t))
 	require.NoError(t, err)
@@ -242,8 +231,6 @@ func TestCheckFieldAsksWithoutSetting(t *testing.T) {
 	require.NoError(t, p.SetField(res, "description", ""), "an empty value is the empty string")
 }
 
-// A REPORT IS BROKEN BY A COMPILE ERROR OR A BROKEN FINDING, and by nothing
-// milder.
 func TestWhatABrokenReportIs(t *testing.T) {
 	require.True(t, Report{Error: "x"}.Broken())
 	require.True(t, Report{Findings: []session.Note{{Severity: string(schema.Broken)}}}.Broken())
@@ -251,8 +238,6 @@ func TestWhatABrokenReportIs(t *testing.T) {
 	require.False(t, Report{}.Broken())
 }
 
-// A PROJECT THAT DOES NOT COMPILE is reported as one, and a directory that is
-// not a project answers nothing.
 func TestValidatingWhatDoesNotCompile(t *testing.T) {
 	dir := initStarter(t)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "function", "hello.yaml"), []byte("execution: {memory: lots}\n"), 0o644))
@@ -291,8 +276,6 @@ func TestSavingIntoWhatCannotBeWritten(t *testing.T) {
 	require.Error(t, err)
 }
 
-// A starter that cannot be written is not half written: init fails, and a
-// name the schema refuses is refused before anything touches the disk.
 func TestInitIntoWhatCannotBeWritten(t *testing.T) {
 	parent := t.TempDir()
 	blocked := filepath.Join(parent, "shop")
@@ -312,8 +295,6 @@ func TestSavingOverADirectory(t *testing.T) {
 	require.Error(t, err)
 }
 
-// A project with nothing in it compiles to nothing to say, and says so as an
-// empty list rather than none.
 func TestAnEmptyProjectHasNoFindings(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "project.yaml"), []byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nname: empty\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
@@ -343,9 +324,6 @@ func brokenOf(r Report) []string {
 	return out
 }
 
-// WHETHER A CLOUD SERVES A REGION IS THE CLOUD'S TO SAY. A project placed in
-// regions it names passes; an edge across the regions it names is refused,
-// because no cloud can carry it.
 func TestValidateLeavesWhetherARegionIsServedToTheCloud(t *testing.T) {
 	for _, name := range []string{"with/placement", "with/views"} {
 		r := corpusProject(t, name).Validate(t.Context(), "prod")

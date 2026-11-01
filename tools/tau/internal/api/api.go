@@ -81,7 +81,6 @@ func New(base string, tokens Tokens, hc *http.Client) (*Client, error) {
 	return &Client{base: u, tokens: tokens, http: hc, authed: &authed}, nil
 }
 
-// Base is the frontend's URL.
 func (c *Client) Base() string { return c.base.String() }
 
 func (c *Client) do(ctx context.Context, method string, path []string, query url.Values, body io.Reader) (*http.Response, error) {
@@ -135,14 +134,12 @@ func (c *Client) json(ctx context.Context, method string, path []string, body io
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
-// Jobs lists a project's job ids.
 func (c *Client) Jobs(ctx context.Context, projectID string) ([]string, error) {
 	var ids []string
 	err := c.json(ctx, http.MethodGet, []string{"jobs", projectID}, nil, &ids)
 	return ids, err
 }
 
-// Job reads one job.
 func (c *Client) Job(ctx context.Context, jobID string) (*Job, error) {
 	resp, err := c.do(ctx, http.MethodGet, []string{"job", jobID}, nil, nil)
 	if err != nil {
@@ -160,12 +157,10 @@ func (c *Client) Job(ctx context.Context, jobID string) (*Job, error) {
 	return job, nil
 }
 
-// Cancel cancels a job.
 func (c *Client) Cancel(ctx context.Context, jobID string) error {
 	return c.json(ctx, http.MethodPost, []string{"cancel", jobID}, nil, nil)
 }
 
-// Retry queues a job again.
 func (c *Client) Retry(ctx context.Context, jobID string) error {
 	return c.json(ctx, http.MethodPost, []string{"retry", jobID}, nil, nil)
 }
@@ -177,12 +172,10 @@ const attemptHeader = "X-Job-Attempt"
 // read can resume.
 var errUnnamedRun = errors.New("the cloud did not say which run the log is")
 
-// logs opens one run of a job's log at byte offset from — the run attempt
-// names, or with 0 the job's current one — and returns the run the response is
-// about. The frontend keeps it open while the run is to come and while it
-// runs, or with snapshot ends it at what the log holds now; the caller reads
-// until EOF and, if the connection drops first, reopens that run at the offset
-// it had reached.
+// logs opens one run of a job's log at byte offset from (the run attempt names, or
+// 0 for the current one) and returns that run. The frontend holds it open while the
+// run is to come or running, or with snapshot ends at what is there; a caller
+// reopens the same run at its offset after a drop.
 func (c *Client) logs(ctx context.Context, jobID string, attempt int32, from int64, snapshot bool) (io.ReadCloser, int32, error) {
 	q := url.Values{}
 	if attempt > 0 {
@@ -223,12 +216,10 @@ func (c *Client) Secrets(ctx context.Context, projectID, environment string) ([]
 	return names, err
 }
 
-// SetSecret sets one secret's value.
 func (c *Client) SetSecret(ctx context.Context, projectID, environment, name string, value []byte) error {
 	return c.json(ctx, http.MethodPut, []string{"secrets", projectID, environment, name}, bytes.NewReader(value), nil)
 }
 
-// UnsetSecret removes one secret.
 func (c *Client) UnsetSecret(ctx context.Context, projectID, environment, name string) error {
 	return c.json(ctx, http.MethodDelete, []string{"secrets", projectID, environment, name}, nil, nil)
 }

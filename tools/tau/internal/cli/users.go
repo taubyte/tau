@@ -12,8 +12,6 @@ import (
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
 
-// users.go is a cloud's users, for its admins, and anyone's own API tokens.
-
 func roleName(r authv2.Role) string {
 	switch r {
 	case authv2.Role_ROLE_ADMIN:

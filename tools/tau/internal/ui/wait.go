@@ -53,7 +53,6 @@ func (m *Wait) check() tea.Cmd {
 // Init polls at once and starts the spinner.
 func (m *Wait) Init() tea.Cmd { return tea.Batch(m.spin.Tick, m.check()) }
 
-// Update is the model's one state transition.
 func (m *Wait) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case pollMsg:
@@ -77,7 +76,6 @@ func (m *Wait) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// View draws the spinner and status.
 func (m *Wait) View() string {
 	switch {
 	case m.Err != nil:
@@ -88,7 +86,6 @@ func (m *Wait) View() string {
 	return m.spin.View() + " " + m.theme.Title.Render(m.title) + " " + m.theme.Muted.Render(m.status) + "\n"
 }
 
-// Status is the last status seen.
 func (m *Wait) Status() string { return m.status }
 
 // Done reports whether the wait ended with its thing arrived.

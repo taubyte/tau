@@ -28,7 +28,6 @@ type Link struct {
 // ErrNotLinked is a directory no `tau link` has run in.
 var ErrNotLinked = errors.New("this directory is not linked to a project: run `tau link`, or pass --project")
 
-// ReadLink reads dir's link.
 func ReadLink(dir string) (*Link, error) {
 	data, err := os.ReadFile(filepath.Join(dir, LinkFile))
 	if errors.Is(err, os.ErrNotExist) {
@@ -47,7 +46,6 @@ func ReadLink(dir string) (*Link, error) {
 	return &l, nil
 }
 
-// WriteLink writes dir's link.
 func WriteLink(dir string, l Link) error {
 	path := filepath.Join(dir, LinkFile)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
