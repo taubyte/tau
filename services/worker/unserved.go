@@ -21,9 +21,12 @@ var ErrUnserved = errors.New("worker: the workload declares something this cloud
 // applied carries what a tier honours and refuses what none does. It runs after the
 // spec is otherwise complete, so it judges by the real runtime.
 func applied(spec *invoke.Spec, t Target, proj *specs.Project, r specs.Resource, resourceID string) error {
-	var refused []string
+	return appliedWith(spec, t, proj, r, resourceID, specs.ReadWorkloadBlock(r))
+}
 
-	workload := specs.ReadWorkloadBlock(r)
+// appliedWith is applied over a workload block the caller already read.
+func appliedWith(spec *invoke.Spec, t Target, proj *specs.Project, r specs.Resource, resourceID string, workload specs.WorkloadBlock) error {
+	var refused []string
 
 	// A CPU ceiling is a CFS quota, which only a container has; a wasm guest is metered
 	// in fuel and pages.

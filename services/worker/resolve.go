@@ -61,10 +61,11 @@ type Secrets interface {
 func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *specs.Project, r specs.Resource, resourceID string) (invoke.Spec, error) {
 	// A kind this service answers itself has no runtime or artifact; asking for them
 	// would refuse it before Invoke's own branch.
+	workload := specs.ReadWorkloadBlock(r)
 	var runtime, artifact string
 	if !servedHere(t.Kind) {
 		var err error
-		if runtime, err = runtimeOf(t.Kind, specs.ReadWorkloadBlock(r)); err != nil {
+		if runtime, err = runtimeOf(t.Kind, workload); err != nil {
 			return invoke.Spec{}, err
 		}
 		if artifact, err = s.artifactOf(ctx, t, r, resourceID); err != nil {
@@ -72,7 +73,6 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *
 		}
 	}
 
-	workload := specs.ReadWorkloadBlock(r)
 	env, err := s.envOf(ctx, t, workload.Variables)
 	if err != nil {
 		return invoke.Spec{}, err
@@ -124,7 +124,7 @@ func (s *Service) spec(ctx context.Context, t Target, p register.Pointer, proj *
 	// Carried where a tier honours it, refused by name where none does; a kind served
 	// here runs on no tier.
 	if runtime != "" {
-		if err := applied(&spec, t, proj, r, resourceID); err != nil {
+		if err := appliedWith(&spec, t, proj, r, resourceID, workload); err != nil {
 			return invoke.Spec{}, err
 		}
 	}
