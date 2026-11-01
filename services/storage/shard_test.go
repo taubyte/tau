@@ -44,9 +44,6 @@ func TestShardOfIsDeterministicAndInRange(t *testing.T) {
 	require.Less(t, first, uint16(Shards))
 }
 
-// TestEveryInstanceOfABucketSharesItsShard is what makes an instance limit
-// countable: the count is a listing under one bucket, in one shard, rather
-// than a fan-out.
 func TestEveryInstanceOfABucketSharesItsShard(t *testing.T) {
 	want, err := shardOf(bucket(t, "proj", "prod", "receipts"))
 	require.NoError(t, err)
@@ -58,9 +55,6 @@ func TestEveryInstanceOfABucketSharesItsShard(t *testing.T) {
 	}
 }
 
-// TestAWhaleProjectSpreadsOverShards is the reason sharding is by bucket and
-// not by project: a project-sharded layout puts one tenant's whole metadata
-// load on R nodes.
 func TestAWhaleProjectSpreadsOverShards(t *testing.T) {
 	seen := map[uint16]int{}
 	for i := 0; i < 2000; i++ {
@@ -79,10 +73,6 @@ func TestAWhaleProjectSpreadsOverShards(t *testing.T) {
 	require.NotEqual(t, prod, staging)
 }
 
-// TestADevCloudOpensAsManyShardsAsItHasBuckets is the graft that fixes the
-// dev-cloud problem: the catalog drives which shards exist, so a three-node
-// cloud with five buckets does not subscribe to two hundred and fifty-six
-// topics.
 func TestADevCloudOpensAsManyShardsAsItHasBuckets(t *testing.T) {
 	ms := members(3)
 	var buckets []Address
@@ -105,9 +95,6 @@ func TestADevCloudOpensAsManyShardsAsItHasBuckets(t *testing.T) {
 	require.LessOrEqual(t, len(occupied), 5)
 }
 
-// TestDesiredNeedsBothConditions is the point of the two-input rule: HRW alone
-// opens empty shards, and the catalog alone opens shards this node does not
-// hold.
 func TestDesiredNeedsBothConditions(t *testing.T) {
 	ms := members(30)
 	var buckets []Address
@@ -142,9 +129,6 @@ func TestOccupiedShardsRefusesAnInvalidAddress(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoAddress)
 }
 
-// TestIndexAndBytePlacementAreIndependent is the single structural claim that
-// lets a bucket be larger than one node. If they tracked each other, every
-// object of a bucket would land on the same R nodes its index does.
 func TestIndexAndBytePlacementAreIndependent(t *testing.T) {
 	ms := members(12)
 	b := bucket(t, "proj", "prod", "receipts")
@@ -216,9 +200,6 @@ func TestShardSetOpensWhatIsDesiredAndClosesWhatIsNot(t *testing.T) {
 	require.Empty(t, set.held())
 }
 
-// TestAFailedOpenClosesNothing is the window that would otherwise drop a shard
-// this node still holds the only reachable copy of, and the failure would be
-// silent — a read returns "not found" rather than an error.
 func TestAFailedOpenClosesNothing(t *testing.T) {
 	ctx := context.Background()
 	opener := newCountingOpener()
@@ -235,8 +216,6 @@ func TestAFailedOpenClosesNothing(t *testing.T) {
 	require.Empty(t, opener.closed)
 }
 
-// TestAFailedCloseStillDropsTheShard: the alternative is a store this node
-// believes it holds and has already stopped reading.
 func TestAFailedCloseStillDropsTheShard(t *testing.T) {
 	ctx := context.Background()
 	opener := newCountingOpener()

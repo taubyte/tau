@@ -6,59 +6,23 @@ import (
 	"time"
 )
 
-// clock.go is the stamp a version row is keyed by, and the two refusals that
-// keep a broken clock from becoming a data-loss event.
+// A hybrid logical clock: 48 bits of physical milliseconds and 16 bits of logical
+// counter, packed into the uint64 the worker ABI expects. A writer that has seen a
+// version stamps strictly greater than it (Observe); causally unrelated writes are
+// ordered arbitrarily but identically everywhere, by key byte order. A stamp is an
+// address, not an identity: the identity is stamp and writer.
 //
-// A HYBRID LOGICAL CLOCK: 48 bits of physical milliseconds, then 16 bits of a
-// logical counter, packed into the uint64 the worker ABI already expects
-// (put -> u64, open(name, version), versions(name) -> list<u64>).
+// Two refusals keep a broken clock from losing data:
 //
-// WHAT IT BUYS. Causality without a leader: a writer that has SEEN an earlier
-// version stamps strictly greater than it, because Observe pulls the local
-// clock past every stamp it merges. Two writes with no causal path between
-// them are ordered arbitrarily — but IDENTICALLY on every replica, because the
-// order is byte order over the key and the key carries the stamp. That is the
-// fourth guarantee in the brief's §1, and it is what makes "no write silently
-// discarded" safe: two surviving writes need a winner every reader agrees on.
+//  1. A remote stamp more than maxSkew ahead does not move this clock
+//     (ErrRemoteClockSkew). The record is still merged; the fleet just does not
+//     inherit the skewed clock.
+//  2. A local clock gone backwards past maxSkew refuses to mint
+//     (ErrLocalClockSkew). Since rule 1 bounds accepted stamps, the physical
+//     component can only exceed now()+maxSkew if this node's wall clock jumped
+//     back, and minting then would put later writes below earlier ones.
 //
-// WHAT IT IS NOT. It is an ADDRESS, not an identity. The identity of a version
-// is its key — stamp AND writer. Two nodes writing in the same millisecond with
-// the same logical counter mint the same u64 and still produce two distinct
-// rows, resolved deterministically; what becomes ambiguous is only
-// open(name, u64), and the fix for that class is an opaque string version id in
-// the ABI rather than anything this file can do. Recorded in doc.go as a
-// vocabulary finding, not papered over here.
-//
-// ── THE TWO REFUSALS ─────────────────────────────────────────────────────
-//
-// An HLC's known failure is one badly-skewed node dragging every clock in the
-// fleet forward, permanently, because every other node advances past the stamp
-// it saw. A design that omits this is incomplete, so:
-//
-//  1. A REMOTE STAMP FURTHER AHEAD THAN maxSkew DOES NOT MOVE THIS CLOCK.
-//     Observe returns ErrRemoteClockSkew and advances nothing. The record is
-//     still merged by whoever called — it must be, it is a CRDT and refusing it
-//     would be discarding a write — so the skewed node's rows are all still
-//     there and still resolve; what does not happen is the rest of the fleet
-//     inheriting its clock.
-//
-//  2. A LOCAL CLOCK THAT HAS GONE BACKWARDS PAST maxSkew REFUSES TO MINT.
-//     Now returns ErrLocalClockSkew. Because rule 1 bounds every accepted stamp
-//     to at most local-now plus maxSkew at the moment it was accepted, and
-//     time only moves forward, the physical component of this clock can only
-//     exceed now()+maxSkew if THIS node's wall clock jumped backwards. That is
-//     the one clock fault a node can diagnose about itself with no peer's help,
-//     and it is the one that matters: minting from a backwards clock produces
-//     stamps below ones already handed out, so a later write loses to an
-//     earlier one on every replica at once.
-//
-// Neither refusal is a lock, an election or a round trip. They are two
-// comparisons against the local clock.
-//
-// AND NO DELETION DECISION READS THIS CLOCK. gc.go times its grace window from
-// when a node first OBSERVED a tombstone, recorded locally and monotonically,
-// never from the stamp's physical part — so there is no clock trust anywhere on
-// the path that destroys data.
+// No deletion decision reads this clock: gc.go times grace from local observation.
 
 const (
 	// stampLogicalBits is the width of the logical counter inside the packed
@@ -143,13 +107,8 @@ func (c *Clock) Now() (uint64, error) {
 	return PackStamp(c.physical, c.logical)
 }
 
-// Observe advances this clock past a stamp seen on a remote record, so a
-// writer that has seen a version stamps strictly greater than it.
-//
-// It returns ErrRemoteClockSkew, and advances nothing, for a stamp whose
-// physical part is further ahead of local time than the skew budget. THE
-// CALLER STILL MERGES THE RECORD: refusing to merge would be discarding a
-// write, which is the one thing this service does not do.
+// Observe advances this clock past a remote stamp. A stamp too far ahead returns
+// ErrRemoteClockSkew and advances nothing; the caller still merges the record.
 func (c *Clock) Observe(stamp uint64) error {
 	physicalNow, err := c.physicalNow()
 	if err != nil {

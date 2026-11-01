@@ -23,8 +23,6 @@ func openGates(observed time.Time) Gates {
 	}
 }
 
-// TestEveryGateClosesByName: a caller that cannot say which gate closed cannot
-// be trusted to delete data, so each failure names itself.
 func TestEveryGateClosesByName(t *testing.T) {
 	now := time.UnixMilli(1_700_000_000_000)
 	observed := now.Add(-48 * time.Hour)
@@ -63,10 +61,6 @@ func TestEveryGateClosesByName(t *testing.T) {
 	require.Contains(t, err.Error(), "purpose(99)")
 }
 
-// TestTheTwoPurposesAskDifferentQuestions. A misplacement drop has no
-// tombstone to time a grace window from, and a dead object has nobody to prove
-// possession. Conflating them is what let v1 drop a copy because another node
-// SAID it had one.
 func TestTheTwoPurposesAskDifferentQuestions(t *testing.T) {
 	now := time.UnixMilli(1_700_000_000_000)
 	grace := 24 * time.Hour
@@ -163,8 +157,7 @@ func TestTheSweepFreesWhatNothingReferences(t *testing.T) {
 	require.Equal(t, 2, got.Deleted)
 	require.Empty(t, got.Incomplete)
 
-	// Every leaf of the live object survives. v1's DeleteFile removes exactly
-	// one block, orphaning every leaf of every multi-chunk object forever.
+	// Every leaf of the live object survives.
 	for _, label := range []string{"live-root", "live-a", "live-b", "live-leaf"} {
 		have, err := blocks.Has(ctx, ids[label])
 		require.NoError(t, err)
@@ -187,11 +180,6 @@ func TestTheSweepFreesWhatNothingReferences(t *testing.T) {
 	require.Zero(t, got.Deleted)
 }
 
-// TestTheSweepNeverTouchesABlockItDidNotIndex is the correctness landmine none
-// of the three designs called out. The node's blockstore is shared with
-// pkg/kvdb's own Merkle-DAG blocks — every delta of every replicated store on
-// this node — so a sweep that enumerated the blockstore would delete the CRDT's
-// own history.
 func TestTheSweepNeverTouchesABlockItDidNotIndex(t *testing.T) {
 	ctx := context.Background()
 	clk := newFixedClock(1_700_000_000_000)
@@ -220,8 +208,6 @@ func TestTheSweepNeverTouchesABlockItDidNotIndex(t *testing.T) {
 	require.Equal(t, 2, blocks.held()-1, "only the foreign blocks and the live root remain")
 }
 
-// TestASharedBlockSurvivesTheDeleteOfOneTenantsObject: cross-tenant dedup is
-// preserved, and the reference row is what makes it safe.
 func TestASharedBlockSurvivesTheDeleteOfOneTenantsObject(t *testing.T) {
 	ctx := context.Background()
 	clk := newFixedClock(1_700_000_000_000)
@@ -252,9 +238,6 @@ func TestASharedBlockSurvivesTheDeleteOfOneTenantsObject(t *testing.T) {
 	require.Zero(t, blocks.held())
 }
 
-// TestAnIncompleteWalkDeletesNothing is the naive-implementation trap: skip a
-// missing child and the grandchild below it is unmarked and freed, even though
-// it is part of a live object.
 func TestAnIncompleteWalkDeletesNothing(t *testing.T) {
 	ctx := context.Background()
 	clk := newFixedClock(1_700_000_000_000)
@@ -333,9 +316,6 @@ func TestADiamondMarksEachBlockOnce(t *testing.T) {
 	require.Equal(t, 4, got.Marked, "a shared leaf is marked once, not twice")
 }
 
-// TestABloomMarkerNeverForgetsALiveBlock is the contract that makes a Bloom
-// admissible here at all: it has false positives and no false negatives, so
-// its error mode is a space leak.
 func TestABloomMarkerNeverForgetsALiveBlock(t *testing.T) {
 	m, err := NewBloomMarker(2000, 0.01)
 	require.NoError(t, err)
@@ -358,9 +338,6 @@ func TestABloomMarkerNeverForgetsALiveBlock(t *testing.T) {
 	require.NoError(t, err, "a zero hint is floored, not refused")
 }
 
-// TestAFalsePositiveLeaksRatherThanDeletes drives the sweep with the worst
-// possible marker — one that claims everything is reachable — and asserts the
-// direction of the error: nothing dies.
 func TestAFalsePositiveLeaksRatherThanDeletes(t *testing.T) {
 	ctx := context.Background()
 	clk := newFixedClock(1_700_000_000_000)
@@ -382,10 +359,6 @@ func TestAFalsePositiveLeaksRatherThanDeletes(t *testing.T) {
 	require.Equal(t, 2, blocks.held())
 }
 
-// TestARealBloomFalsePositiveKeepsADeadBlock finds an actual collision in a
-// deliberately undersized filter and shows the sweep keeps that block. It is
-// the same claim as the test above, made against the real filter rather than a
-// stand-in.
 func TestARealBloomFalsePositiveKeepsADeadBlock(t *testing.T) {
 	m, err := NewBloomMarker(1, 0.5)
 	require.NoError(t, err)
@@ -403,8 +376,6 @@ func TestARealBloomFalsePositiveKeepsADeadBlock(t *testing.T) {
 	require.True(t, m.Marked(live), "and the live block is still marked")
 }
 
-// TestANodeKilledMidSweepLosesNothingAndTheNextSweepConverges is §14's mandate:
-// there must be a test that kills a node mid-sweep.
 func TestANodeKilledMidSweepLosesNothingAndTheNextSweepConverges(t *testing.T) {
 	ctx := context.Background()
 	clk := newFixedClock(1_700_000_000_000)
@@ -455,10 +426,6 @@ func TestANodeKilledMidSweepLosesNothingAndTheNextSweepConverges(t *testing.T) {
 	require.Equal(t, 2, blocks.held())
 }
 
-// TestTheBlockGoesBeforeItsIndexRow is the ordering argument, measured from the
-// crash window it protects. A crash between the two leaves an index row naming
-// a block that is gone, which the next sweep resolves for free; the other order
-// leaves a block nothing indexes, which no sweep can ever find again.
 func TestTheBlockGoesBeforeItsIndexRow(t *testing.T) {
 	ctx := context.Background()
 	clk := newFixedClock(1_700_000_000_000)
@@ -520,10 +487,6 @@ func TestASweepPropagatesEveryFailure(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 }
 
-// TestBlocksHasNoDoorForEnumeratingTheBlockstore is the census behind the
-// landmine above: the narrow interface is narrow because the wide version is a
-// data-destruction bug, and that has to fail at compile time rather than in
-// review.
 func TestBlocksHasNoDoorForEnumeratingTheBlockstore(t *testing.T) {
 	tp := reflect.TypeOf((*Blocks)(nil)).Elem()
 	var methods []string

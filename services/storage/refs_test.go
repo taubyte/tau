@@ -29,9 +29,6 @@ func TestNewLocalNeedsAStoreAndDefaultsItsClock(t *testing.T) {
 	require.NotNil(t, l.now)
 }
 
-// TestAnInstanceIsOneSegmentAndRoundTrips: a reference row's depth must not
-// depend on any identity's content, or a bucket named to look like a path eats
-// the boundaries around it.
 func TestAnInstanceIsOneSegmentAndRoundTrips(t *testing.T) {
 	rng := rand.New(rand.NewSource(31))
 	for i := 0; i < 1500; i++ {
@@ -157,10 +154,6 @@ func TestTheBlockIndexIsWhatTheSweepEnumerates(t *testing.T) {
 	require.ErrorIs(t, l.Forget(ctx, cid.Undef), ErrNotThisServicesRow)
 }
 
-// TestTwoTenantsPushingIdenticalBytesLeaveTwoReferences is the dedup hole
-// closed. The second push finds the DAG already present and imports nothing;
-// without this row the holder would be ignorant of the second reference, and
-// deleting the first tenant's object would free bytes the second still uses.
 func TestTwoTenantsPushingIdenticalBytesLeaveTwoReferences(t *testing.T) {
 	ctx := context.Background()
 	clk := newFixedClock(1_700_000_000_000)
@@ -216,10 +209,6 @@ func TestReferencesListsEverythingAndReferencesToNarrows(t *testing.T) {
 	require.ErrorIs(t, l.Dereference(ctx, r1, Address{}, "x", 1), ErrNoAddress)
 }
 
-// TestATombstoneObservationIsLocalAndMonotonic is gate 4's input, and it is
-// what keeps every clock in the fleet out of the path that destroys data. A
-// peer with a clock a year fast cannot shorten anybody's grace window, and a
-// restart that re-scans a shard cannot reset one that had nearly elapsed.
 func TestATombstoneObservationIsLocalAndMonotonic(t *testing.T) {
 	ctx := context.Background()
 	clk := newFixedClock(1_700_000_000_000)
@@ -259,8 +248,6 @@ func TestATombstoneObservationIsLocalAndMonotonic(t *testing.T) {
 	require.ErrorIs(t, l.ForgetTombstone(ctx, Address{}, "x", 1), ErrNoAddress)
 }
 
-// TestObservingATombstoneMarksTheInstanceDirty: the counter is what lets a
-// sweep be proportional to what changed rather than to what exists.
 func TestObservingATombstoneMarksTheInstanceDirty(t *testing.T) {
 	ctx := context.Background()
 	clk := newFixedClock(1_700_000_000_000)

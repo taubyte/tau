@@ -9,55 +9,17 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 )
 
-// fleet.go is where R and K come from.
+// R and K come from the published fleet document. R must be computed with
+// identically or nodes disagree about placement forever; K is what the cloud
+// promises, and a per-node K drifts invisibly (a bring-up node left at 1 acks writes
+// alone).
 //
-// # They are the cloud's numbers, and they used to be each node's config
-//
-// R is the first kind of published number: one every node must compute with
-// identically. Placement takes three inputs and two of them heal — a declaration
-// read at an older register revision, and a membership view that has not
-// caught up. R did not. Two nodes configured differently
-// computed different desired sets forever, disagreed about which shards each
-// should open at all, and billed a tenant's bytes at whichever node was asked.
-//
-// K is the second kind: one that states what this cloud promises. Two nodes
-// with different K do not disagree about a shared quantity — each waits for its
-// own count — so the failure is quieter and worse. An operator writes
-// Barrier: 1 to bring one node up, adds two more, forgets the first, and that
-// node acks writes alone forever. Nothing compares two nodes' barriers, so no
-// peer, test or caller can see it. A guarantee that varies per node is not a
-// guarantee the cloud can state.
-//
-// # Absent, unreachable, and never read are three different answers
-//
-//	NOT PUBLISHED   this cloud has said nothing -> the defaults, which every
-//	                node reaches identically, so they still agree
-//	UNREACHABLE     change nothing; keep the last values read
-//	NEVER READ      see below, and it is not one rule
-//
-// # NEVER READ IS TWO RULES, BECAUSE R AND K ARE NOT THE SAME KIND OF NUMBER
-//
-// R's unknown is ADDITIVE-ONLY. A node with no R may serve every read, open
-// every shard, import blocks and write reference rows: a copy too many costs
-// space. What it may not do is drop a misplaced block, because gate 5 is
-// ProvenHolders < R and a node with no R has no right-hand side — guessing 3
-// where the cloud says 5 drops bytes two replicas short.
-//
-// It may still collect a DEAD object, and that asymmetry is deliberate rather
-// than an oversight: gates 1-4 never mention R, and a dead object is dead at
-// every replication factor. Refusing dead-object collection on an unknown R
-// would stop reclamation on every node that lost the register — a disk
-// exhaustion bought for no safety at all.
-//
-// K's unknown is FAIL-CLOSED. A put that cannot learn K cannot say how many
-// acknowledgements it waited for, and the only honest answer is to fail the
-// write. Picking a number is the same shipped lie reached from a third
-// direction.
-//
-// THE COST IS STATED RATHER THAN DISCOVERED: a cold storage node booting into a
-// register outage is READ-ONLY. That is the right direction — a refused write
-// is visible and a lied-to write is not — but it is a real availability change,
-// and doc.go carries it too.
+//	NOT PUBLISHED   the defaults, which every node reaches identically
+//	UNREACHABLE     keep the last values read
+//	NEVER READ      R: additive-only. Serve, open shards, import, collect dead
+//	                objects (gates 1-4 never mention R), but never drop a
+//	                misplaced block (gate 5 compares against R).
+//	                K: fail-closed. A put that cannot learn K fails.
 
 // fleetSource is the slice of a register this needs. It is asserted rather than
 // required of register.Registry, because a consumer that only resolves projects
@@ -67,13 +29,8 @@ type fleetSource interface {
 	Object(ctx context.Context, id register.ObjectID) ([]byte, error)
 }
 
-// fleetPolicy reads and remembers what the cloud promises about objects.
-//
-// IT IS NOT services/database's fleetFloor SHARED. The two differ in exactly
-// the thing a shared type would have to state — what known == false authorises
-// — and a type whose contract is "it depends who is asking" is worse than the
-// seventy lines it saves. Database's unknown floor costs nothing while a node
-// keeps serving reads; this one closes the write path.
+// fleetPolicy reads and remembers what the cloud promises about objects. Not shared
+// with services/database's fleetFloor: what an unknown value authorises differs.
 type fleetPolicy struct {
 	from fleetSource
 
@@ -85,16 +42,8 @@ type fleetPolicy struct {
 	barrier  int
 }
 
-// read answers R and K, and whether this node has ever learned them.
-//
-// ONE READER FOR BOTH NUMBERS AND NOT TWO. They come from one object at one
-// revision, and reading them separately would let a node compute with R from
-// revision 7 and K from revision 8 — which is the K > R window Resolved exists
-// to close, reopened by the reader.
-//
-// THE THIRD RETURN IS NOT A CONVENIENCE. A node that has never read them does
-// not know how many copies an object is supposed to have, and gate 5 is a
-// comparison against that number; nor does it know what a write promised.
+// read answers R and K from one document at one revision, and whether this node has
+// ever learned them.
 func (f *fleetPolicy) read(ctx context.Context) (replicas, barrier int, known bool) {
 	if f == nil || f.from == nil {
 		// A SERVICE COMPOSED WITHOUT A FLEET SOURCE knows the defaults and
@@ -136,10 +85,8 @@ func (f *fleetPolicy) read(ctx context.Context) (replicas, barrier int, known bo
 	}
 	promised, err := document.Storage.Resolved(DefaultReplicas, DefaultBarrier)
 	if err != nil {
-		// A PAIR THAT CANNOT BE CORRECT IS THE SAME CASE, and it arrives here
-		// rather than at startup now that it is the cloud's to declare: a
-		// barrier above the replica target would fail every write, so the
-		// document is refused exactly like one that will not parse.
+		// A barrier above the replica target would fail every write, so the document is
+		// refused like one that will not parse.
 		return f.replicas, f.barrier, f.known
 	}
 

@@ -16,9 +16,6 @@ func (m *recordingMeter) Record(_ context.Context, ev Accounted) {
 
 var _ Meter = (*recordingMeter)(nil)
 
-// TestAnAccountedWriteIsAlsoAnEmission is the whole point of meter.go: the
-// counter and the event describe the same operation, and the event carries the
-// tenant the counter cannot.
 func TestAnAccountedWriteIsAlsoAnEmission(t *testing.T) {
 	ctx := context.Background()
 	m := &recordingMeter{}
@@ -48,9 +45,6 @@ func TestAnAccountedWriteIsAlsoAnEmission(t *testing.T) {
 	require.Equal(t, uint64(60), u.Used())
 }
 
-// TestAWriteThatFailedIsNotEmitted. An emission is a claim that something
-// happened. If it is built before the row moves, or from a path that returns
-// an error, a sink totals writes the store never took.
 func TestAWriteThatFailedIsNotEmitted(t *testing.T) {
 	ctx := context.Background()
 	m := &recordingMeter{}
@@ -61,9 +55,6 @@ func TestAWriteThatFailedIsNotEmitted(t *testing.T) {
 	require.Empty(t, m.events, "the store refused both, so nothing was accounted and nothing happened")
 }
 
-// TestOnlyARefusalIsEmittedByAdmit. Admit is a question, and asking it is not
-// an event. Being turned away is, and it is the one the rows cannot show —
-// they look identical either side of a refusal.
 func TestOnlyARefusalIsEmittedByAdmit(t *testing.T) {
 	ctx := context.Background()
 	m := &recordingMeter{}
@@ -96,8 +87,6 @@ func TestOnlyARefusalIsEmittedByAdmit(t *testing.T) {
 	require.Empty(t, m.events)
 }
 
-// TestNoMeterIsTheOrdinaryCase. Every other test in this package builds an
-// index without one.
 func TestNoMeterIsTheOrdinaryCase(t *testing.T) {
 	ctx := context.Background()
 	i := index{store: newOrderedMem()}

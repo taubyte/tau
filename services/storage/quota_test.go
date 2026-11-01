@@ -33,10 +33,6 @@ func TestUsageIsASumOverPerWriterRows(t *testing.T) {
 	})
 }
 
-// TestConcurrentWritersDoNotLoseEachOthersAccounting is why a counter is
-// allowed to exist in a replicated store at all: each row has exactly one
-// writer, so a read-modify-write on it is AGENTS-legal and nothing is
-// contended.
 func TestConcurrentWritersDoNotLoseEachOthersAccounting(t *testing.T) {
 	ctx := context.Background()
 	a := addr(t)
@@ -110,9 +106,6 @@ func TestAdmissionIsCheckedAgainstTheSum(t *testing.T) {
 	require.True(t, ok)
 }
 
-// TestTwoCoordinatorsCanOvershootByOneObjectEach is the bound stated in the
-// file header, as a test. It cannot drift further, because each coordinator's
-// own row is authoritative for its own writes.
 func TestTwoCoordinatorsCanOvershootByOneObjectEach(t *testing.T) {
 	ctx := context.Background()
 	a := addr(t)

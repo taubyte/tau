@@ -11,15 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// failures_test.go drives the paths where the layer BELOW this one misbehaves:
-// a scan that fails partway rather than at the door, a store that answers with
-// a row outside the namespace it was asked about, a delete that succeeds while
-// the row that names it does not.
-//
-// They are here rather than scattered because they share one claim: EVERY ONE
-// OF THEM IS AN ERROR, never a zero, an empty list or a skipped row. A scan
-// that swallowed a mid-stream failure would report an object as having no
-// versions, and the caller above cannot tell that from a deleted one.
+// Paths where the layer below misbehaves. Every one must be an error, never a zero,
+// an empty list or a skipped row.
 
 // midScanFailure returns entries whose second carries an error, which is how a
 // datastore reports a failure that happens after the query was accepted.
@@ -174,10 +167,6 @@ func TestAtRefusesAForeignRowAtTheStamp(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotThisServicesRow)
 }
 
-// TestTheSweepStopsWhenItsOwnBookkeepingFails. Every one of these leaves the
-// blockstore in a state the next sweep converges from, which is the property
-// that makes an abort safe: nothing here is half-applied in a way a retry
-// cannot finish.
 func TestTheSweepStopsWhenItsOwnBookkeepingFails(t *testing.T) {
 	ctx := context.Background()
 	clk := newFixedClock(1_700_000_000_000)
@@ -218,9 +207,6 @@ func TestTheSweepStopsWhenItsOwnBookkeepingFails(t *testing.T) {
 	require.ErrorIs(t, err, errInjected)
 }
 
-// TestTwoReferencesToOneRootWalkItOnce: the roots are deduplicated before the
-// walk, so a block shared by a thousand objects is marked once rather than a
-// thousand times.
 func TestTwoReferencesToOneRootWalkItOnce(t *testing.T) {
 	ctx := context.Background()
 	clk := newFixedClock(1_700_000_000_000)

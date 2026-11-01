@@ -10,83 +10,27 @@ import (
 	"github.com/ipfs/go-cid"
 )
 
-// gc.go is where bytes are destroyed, so it is the file with the most
-// conditions in it and the fewest clever ideas.
-//
-// TWO DELETIONS THAT LOOK ALIKE AND ARE NOT:
+// Two deletions, separate on purpose:
 //
 //	A DEAD OBJECT     nobody references these bytes any more. Gates 1-4.
 //	A MISPLACEMENT    somebody does, but not here. Gates 1, 2 and 5.
 //
-// They are separate deliberately, and v1 is why: it conflated a CLAIM with
-// POSSESSION and let a data-destruction path trust a peer's self-assertion
-// that it held a copy (registry.go -> stream.go -> migration/sweep.go). A node
-// dropping its copy because another node SAID it had one is a node deleting
-// the last copy.
+//  1. Authority: this node holds the referencing shard and is HRW-desired for it
+//     under the stable membership set.
+//  2. No co-holder is behind: a replica that has not merged its peers' heads may
+//     be missing the re-create.
+//  3. The reference walk was definitive: an unreachable index holder means
+//     unknown, never dead.
+//  4. The grace window has elapsed, timed from local observation (refs.go).
+//  5. Misplacement only: R other holders passed a possession probe (an HMAC over
+//     nonce-chosen blocks), and R is the cloud's.
 //
-// ── THE FIVE GATES ───────────────────────────────────────────────────────
-//
-//  1. THIS NODE HAS AUTHORITY. It holds the referencing shard AND is
-//     HRW-desired for it under the STABLE membership set. A node that just
-//     lost the shard has no standing to read the truth, and a node that
-//     merely opened it has not been told it should have.
-//
-//  2. NO CO-HOLDER IS BEHIND. A replica that has not merged a head its peers
-//     advertised must not conclude that anything is dead: what it cannot see
-//     may be the re-create. The signal is the shard store's own heads against
-//     the heads seen on the topic — *kvdb.Datastore.InternalStats().Heads —
-//     and wiring it is the service round's; the GATE is here so that round has
-//     somewhere to put the answer rather than a decision to re-litigate.
-//
-//  3. THE REFERENCE WALK WAS DEFINITIVE. A byte holder does not learn of a
-//     delete by subscribing to a shard it does not hold — it ASKS. An
-//     unreachable index holder means UNKNOWN, never DEAD. That is v1's one
-//     piece of discipline worth carrying verbatim (reconcile.go's rule that a
-//     register outage is not a deletion), and it is the difference between a
-//     partition costing availability and a partition costing data.
-//
-//  4. THE GRACE WINDOW HAS ELAPSED, TIMED FROM LOCAL OBSERVATION. Never from
-//     the stamp's physical component. See refs.go: this is what keeps every
-//     clock in the fleet out of the path that destroys data.
-//
-//  5. FOR A MISPLACEMENT DROP ONLY: R OTHER HOLDERS HAVE PASSED A POSSESSION
-//     PROBE. Passed, not claimed. The probe is a nonce and an HMAC over blocks
-//     at nonce-derived offsets — one or two block reads, unforgeable without
-//     the bytes — so A REPLICA COUNT BECOMES A MEASUREMENT. The probe itself is
-//     an RPC and belongs to that round; the gate counts PROVEN holders and has
-//     no door that takes a claimed one. AND R IS THE CLOUD'S, so a node that
-//     has never read it fails this gate outright rather than guessing at the
-//     number a delete is measured against (Policy, and fleet.go).
-//
-// ── THE SWEEP, AND THE ONE ENUMERATION IT MAY MAKE ───────────────────────
-//
-// Mark every block reachable from a live root; then walk THIS SERVICE'S OWN
-// BLOCK INDEX and delete what is unmarked. It never enumerates the blockstore,
-// because the blockstore is shared with pkg/kvdb's own Merkle-DAG blocks and
-// with every other consumer on the node (refs.go says this at length, and
-// config.go's Blocks interface has no door for it).
-//
-// A FALSE POSITIVE KEEPS A DEAD BLOCK; IT CAN NEVER DELETE A LIVE ONE. That is
-// the direction every approximation here runs in, and it is why a Bloom filter
-// is admissible at all: a Bloom has false positives and no false negatives, so
-// its error mode is a space leak. Space leaks; data does not.
-//
-// AN INCOMPLETE WALK DELETES NOTHING. If a live root's DAG cannot be walked to
-// its leaves on this node, the set of blocks below it is unknown, and an
-// unknown set cannot be subtracted from. The sweep reports the roots it could
-// not finish and deletes nothing at all that cycle. It is self-healing rather
-// than an operator step: a byte holder writes its reference row only after the
-// whole DAG is verified present, so an incomplete walk is a real anomaly, and
-// the repair loop refetching it is what clears it.
-//
-// AND IT MUST SWEEP THE WHOLE DAG, NOT THE ROOT. v1's DeleteFile removes
-// exactly one block (p2p/peer/dag.go's merkledag.Remove -> one DeleteBlock),
-// orphaning every leaf of every multi-chunk object permanently — and there is
-// no blockstore GC anywhere in v1's tree to collect them later.
+// The sweep marks every block reachable from a live root, then deletes unmarked
+// blocks from this service's own block index, never the shared blockstore. A false
+// positive keeps a dead block; an incomplete walk deletes nothing that cycle and
+// heals once the missing block returns. It sweeps the whole DAG, not the root.
 
-// Purpose is why blocks are being deleted. It selects which gates apply, and
-// it is an argument rather than a guess because the two cases genuinely differ
-// and reading one for the other is how v1 dropped copies.
+// Purpose is why blocks are being deleted, selecting which gates apply.
 type Purpose int
 
 const (
@@ -108,9 +52,8 @@ func (p Purpose) String() string {
 	}
 }
 
-// Gates is the evidence a deletion decision rests on. Every field is something
-// this node MEASURED, and there is no field for something a peer said about
-// itself.
+// Gates is the evidence a deletion rests on: all measured by this node, nothing a
+// peer said about itself.
 type Gates struct {
 	// HoldsShard is gate 1a: this node has the referencing shard open.
 	HoldsShard bool
@@ -137,15 +80,9 @@ type Gates struct {
 	ProvenHolders int
 }
 
-// Policy is what the cloud promises, as the gate that destroys data sees it.
-// It is neither measured nor a peer's claim, which is why it is an argument
-// and not a Gates field.
-//
-// Known IS NOT A NICETY. A node that has never read the cloud's replica target
-// has no right-hand side for gate 5: guessing three where the cloud says five
-// drops bytes two replicas short, and guessing three where it says two is
-// harmless and is still a guess on the path that destroys data. See fleet.go
-// for why the same unknown does NOT stop a dead-object collection.
+// Policy is what the cloud promises, as the deleting gate sees it. Without Known,
+// gate 5 has no right-hand side; see fleet.go for why dead objects are still
+// collected.
 type Policy struct {
 	// Replicas is R as the cloud published it. It is meaningless unless Known.
 	Replicas int
@@ -154,13 +91,8 @@ type Policy struct {
 	Known bool
 }
 
-// Open reports whether every gate that applies to this purpose is open, and
-// names the first one that is not. A caller that cannot say which gate closed
-// cannot be trusted to delete data, so the error always says.
-//
-// POLICY IS A WHOLE ARGUMENT AND NOT TWO. An R and a "do I have an R" passed
-// separately are two things a caller can get from different reads; one value
-// carries the answer and its own validity together.
+// Open reports whether every gate for this purpose is open, naming the first that is
+// not. Policy is one argument so R and its validity come from one read.
 func (g Gates) Open(p Purpose, now time.Time, grace time.Duration, policy Policy) error {
 	if !g.HoldsShard {
 		return fmt.Errorf("%w: %s: this node does not hold the referencing shard", ErrGateClosed, p)
@@ -184,11 +116,7 @@ func (g Gates) Open(p Purpose, now time.Time, grace time.Duration, policy Policy
 			return fmt.Errorf("%w: %s: observed %s ago, grace is %s", ErrGateClosed, p, elapsed, grace)
 		}
 	case MisplacementDrop:
-		// THE FLOOR IS THE RIGHT-HAND SIDE OF A DELETE, so a node without one
-		// does not get to pick. Gates 1-4 above needed no R, which is why a
-		// DEAD object is still collectable here — a dead object is dead at
-		// every replication factor, and refusing that would stop reclamation
-		// on every node that lost the register for no safety at all.
+		// R is the right-hand side of a misplacement drop; a node without one does not pick.
 		if !policy.Known {
 			return fmt.Errorf("%w: %s: this node has never read the cloud's replica target", ErrGateClosed, p)
 		}
@@ -293,21 +221,10 @@ type SweepResult struct {
 	Incomplete []cid.Cid
 }
 
-// Sweep marks from every live reference and frees what is unreachable.
-//
-// ORDER: THE BLOCK GOES BEFORE ITS INDEX ROW. A crash between the two leaves
-// an index row naming a block that is gone, which the next sweep resolves for
-// free — it marks nothing, deletes a block that is already absent, and drops
-// the row. The other order leaves a block nothing indexes, which no sweep can
-// ever find again: a permanent leak, invisible, growing.
-//
-// THAT IS NOT THE SAME ORDERING AS A DELETE'S. A delete writes the REFERENCE
-// first and frees the bytes later — v1 does that one backwards, freeing bytes
-// at methods.go:231 before dropping the reference at :235, so a crash between
-// them leaves a live reference to bytes that are gone. The two orderings point
-// opposite ways because they protect opposite things: a reference outliving
-// its bytes is a broken read, and a block outliving its index row is an
-// unreclaimable leak.
+// Sweep marks from every live reference and frees what is unreachable. The block goes
+// before its index row: a crash between leaves a row the next sweep resolves, while
+// the other order leaks a block nothing indexes. (A delete is the opposite: the
+// reference first, so no live reference outlives its bytes.)
 func (s *Sweeper) Sweep(ctx context.Context) (SweepResult, error) {
 	refs, err := s.local.References(ctx)
 	if err != nil {
@@ -367,18 +284,9 @@ func (s *Sweeper) Sweep(ctx context.Context) (SweepResult, error) {
 	return result, nil
 }
 
-// mark walks one root's DAG, marking every block it reaches, and reports
-// whether it reached the leaves.
-//
-// IT NEVER LEAVES THE NODE. Blocks.Links is a local-only door by contract
-// (config.go), implemented over an offline session so a walk cannot block on a
-// peer — a sweep that waited on the network would hold a deletion decision
-// open across a partition, which is gate 3's failure wearing a different hat.
-//
-// A block this node does not hold makes the walk INCOMPLETE rather than
-// finished: this node may hold a descendant of it, and marking would then miss
-// that descendant and delete it. Naive implementations skip the missing child
-// and lose a live grandchild.
+// mark walks one root's DAG and reports whether it reached the leaves, never leaving
+// the node. A block this node lacks makes the walk incomplete rather than skipped,
+// since this node may hold its descendants.
 func (s *Sweeper) mark(ctx context.Context, root cid.Cid, marker Marker) (marked int, complete bool, err error) {
 	visited := make(map[string]struct{})
 	stack := []cid.Cid{root}

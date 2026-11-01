@@ -10,13 +10,7 @@ import (
 	ds "github.com/ipfs/go-datastore"
 )
 
-// store.go is the key layout — the ONLY file in this package that builds a
-// key. Every other file asks it for a key or a prefix rather than
-// concatenating a path itself, so there is exactly one place that has to agree
-// with itself about the shape of a key, and one place to read when asking
-// whether two rows can collide.
-//
-// ── THE GRAMMAR ──────────────────────────────────────────────────────────
+// The key layout, and the only file in this package that builds a replicated key:
 //
 //	/b/<proj>/<env>/<bkt>/<inst>/o/<hexname>/<^stamp:016x>/<writer>  version row
 //	/b/<proj>/<env>/<bkt>/<inst>/u/<writer>/added                    uint64
@@ -24,38 +18,12 @@ import (
 //	/b/<proj>/<env>/<bkt>/<inst>/u/<writer>/checkpoint               uint64
 //	/b/<proj>/<env>/<bkt>/i/<inst>                                   admission row
 //
-// A segment is a LITERAL spelled out in this file, an IDENTITY through
-// segment(), an OBJECT NAME through objectSegment(), or a fixed-width hex
-// stamp. Three encodings, and each is chosen for a property the layout rests
-// on.
+// Identities are unpadded base64url, so each is one segment that is never "." or
+// ".." and never merges with a neighbour. An encoded identity is at least two
+// characters, so the one-letter literals are unreachable from one.
 //
-// ── IDENTITIES ARE BASE64URL, AND v1 SHOWS WHY ───────────────────────────
-//
-// segment() is services/auth/store.go's, carried rather than re-derived:
-// unpadded base64url, alphabet A-Za-z0-9-_, so an encoded id never contains
-// "/" and is never "." or "..". Every boundary in every key is at a fixed
-// segment index, whatever the id was.
-//
-// v1's storage identity is mh.Hash(m.ProjectId + m.ApplicationId + m.Match)
-// (v1's services/hoarder/registry.go:44) — an UNSEPARATED CONCATENATION, so
-// ("ab","c") and ("a","bc") are one identity, and v2 would add two more fields
-// to that concatenation. That is two tenants sharing a namespace, the same
-// class as the repository takeover services/auth/store.go records at
-// length. Here the four identity parts are four segments and cannot merge at
-// any length.
-//
-// A one-character segment is impossible: base64url of one byte is two
-// characters and of zero bytes is the empty string, which is refused. So the
-// literals "o", "u" and "i" cannot be produced by segment(), and an instance
-// named to look like a literal cannot file its rows in the admission
-// namespace. TestALiteralIsUnreachableFromAnEncodedIdentity is that claim.
-//
-// ── THE OBJECT NAME IS HEX, AND THIS IS THE MEASURED PART ────────────────
-//
-// An object name is caller-controlled, arbitrary bytes, and it is the one
-// input to this layout that nobody vets. Spliced raw it does not survive
-// go-datastore's cleaning, and the failures are not exotic — probe-measured on
-// this tree, over /b/P/E/B/I/o/<name>:
+// Object names are caller-controlled bytes and do not survive go-datastore's
+// cleaning raw:
 //
 //	"a"                -> /b/P/E/B/I/o/a          )  TWO NAMES, ONE KEY
 //	"a/"               -> /b/P/E/B/I/o/a          )
@@ -65,53 +33,13 @@ import (
 //	".."               -> /b/P/E/B/I              THE /o/ PREFIX IS GONE
 //	"../../etc/passwd" -> /b/P/E/B/etc/passwd     AND SO IS THE INSTANCE
 //
-// The last two are a namespace escape from a value a guest chooses. Rejecting
-// empty, "." and ".." segments does not close it — it does not catch "a/" or
-// "a//b" at all — and it makes a security property depend on a validator
-// matching every case ds.NewKey cleans, forever.
+// Hex makes any name one segment, preserves order and prefixes (base64url does not),
+// and every hex digit sorts above the "/" in kvdb's "<key>/v" physical layout, so a
+// prefix name cannot sort after its extension. It doubles key length.
 //
-// Hex closes the CLASS. It is fixed-width per byte over an alphabet of
-// [0-9a-f], which excludes "/", ".", every separator and every control
-// character, so an object name of ANY bytes is exactly one segment that
-// ds.NewKey leaves untouched.
-//
-// AND HEX IS ORDER-PRESERVING WHERE THE RAW NAME IS, which is what makes an
-// ordered list under a byte prefix possible at all. Two properties, both
-// probe-measured and both tested here:
-//
-//   - hex(a) < hex(b) exactly when a < b, and hex(p) is a prefix of hex(n)
-//     exactly when p is a byte prefix of n — because the encoding is
-//     fixed-width and its alphabet is ordered. base64url is neither: it gives
-//     up list ordering, which is fatal the moment a bucket sits under a
-//     gateway mount and route.strip_prefix makes the path below it the key.
-//
-//   - IT ALSO SURVIVES THE PHYSICAL LAYOUT UNDERNEATH, which no design in the
-//     brief noticed. pkg/kvdb stores an element at <ns>/keys/<key>/v, so the
-//     bytes actually compared carry a "/" (0x2f) after the key. For a raw
-//     name, a key that is a prefix of another sorts AFTER it whenever the
-//     longer name continues with a byte below 0x2f — "a" vs "a-b" ('-' is
-//     0x2d) inverts. Every hex digit is 0x30..0x39 or 0x61..0x66, all above
-//     0x2f, so the inversion cannot happen for a hex name.
-//     TestTheSuffixedPhysicalKeyWouldInvertOrderForRawNames measures both
-//     directions.
-//
-// COST: 2x the key length. Stated, and worth it.
-//
-// ── THE STAMP IS COMPLEMENTED AND ZERO-PADDED ────────────────────────────
-//
-// <^stamp:016x> is the bitwise complement of the HLC, sixteen hex digits, so
-// byte order over the segment is DESCENDING stamp order and "the current
-// version" is the first row under the object's prefix. Zero-padded because
-// byte order is the only sort order there is (AGENTS.md §7), and complemented
-// because a scan wants newest first. Both are load-bearing and both are
-// tested: unpadded, 10 sorts before 2.
-//
-// ── AND THERE IS NO BUCKET META KEY ──────────────────────────────────────
-//
-// A bucket's declared shape — its size, its versioning flag, its instance
-// limit — comes from the compiled config, not from a row. So the one key every
-// writer to a bucket would have contended on does not exist. That is not an
-// omission; it is the AGENTS.md §1 checklist answered by not having the key.
+// The stamp is complemented so byte order is newest-first, and zero-padded since
+// byte order is the only sort. There is no bucket meta key: a bucket's shape comes
+// from the compiled config.
 
 const (
 	// bucketsRoot is where every replicated row in this service lives.
@@ -154,9 +82,7 @@ func unsegment(s string) (string, error) {
 	return string(raw), nil
 }
 
-// objectSegment encodes an object name into exactly one path segment. See the
-// grammar above: this is the encoding that closes the namespace escape, and it
-// is the one that keeps `list` ordered.
+// objectSegment encodes an object name into exactly one hex path segment.
 func objectSegment(name string) (string, error) {
 	if name == "" {
 		return "", ErrEmptyObjectName
@@ -208,12 +134,9 @@ func stampFromSegment(s string) (uint64, error) {
 	return ^v, nil
 }
 
-// Bucket is a storage resource in one environment: the unit a shard is chosen
-// for, and the unit an instance limit counts against.
-//
-// Its fields are unexported and it is only constructible through NewBucket,
-// which validates. The zero Bucket builds no key — see ErrNoAddress — rather
-// than building one rooted at "/b///", where every boundary has moved.
+// Bucket is a storage resource in one environment: the unit a shard is chosen for
+// and an instance limit counts against. Only NewBucket builds one; the zero Bucket
+// builds no key.
 type Bucket struct {
 	project     string
 	environment string
@@ -224,16 +147,9 @@ type Bucket struct {
 	root string
 }
 
-// NewBucket validates and encodes. It is the only door.
-//
-// THE ENVIRONMENT SEGMENT IS THE ONE THE CALLER PASSES, AND FOR A SHADOW
-// ENVIRONMENT THAT MUST BE THE PARENT'S. Nothing in the v2 schema states this:
-// PerEnv() on storage's size puts the environment in the runtime key, and
-// HANDOVER.md says a shadow shares its parent's state, but the rule that the
-// key's environment segment is the parent's is derivable only from
-// Environment.Of. It is a decision this package makes and cannot enforce,
-// stated here so it is a decision rather than an accident. See doc.go's
-// vocabulary findings.
+// NewBucket validates and encodes. For a shadow environment the caller must pass the
+// parent's environment, since a shadow shares its parent's state; the schema does not
+// state this.
 func NewBucket(project, environment, name string) (Bucket, error) {
 	if project == "" || environment == "" || name == "" {
 		return Bucket{}, fmt.Errorf("%w: bucket (%q, %q, %q)", ErrEmptyIdentity, project, environment, name)
@@ -304,10 +220,8 @@ func (b Bucket) instanceFromAdmissionKey(key string) (string, error) {
 	return unsegment(rest)
 }
 
-// Address is one bucket instance: the thing an object key is rooted at.
-//
-// Like Bucket it is only constructible through a validating door, and the zero
-// value builds no key.
+// Address is one bucket instance, the root of an object key. Only validating
+// constructors build one; the zero value builds no key.
 type Address struct {
 	bucket   Bucket
 	instance string
@@ -364,14 +278,9 @@ func (a Address) objectPrefix(name string) (string, error) {
 	return root + "/" + seg, nil
 }
 
-// listPrefix is the RAW BYTE prefix that selects every object whose name
-// begins with namePrefix. The empty prefix selects the whole instance.
-//
-// It is raw rather than a namespace on purpose, and a caller must filter with
-// it rather than hand it to query.Query.Prefix: an object name is ONE segment,
-// so a partial name is a partial segment, and every prefix mechanism in
-// go-datastore appends "/" and matches whole segments only. What that costs is
-// written down in doc.go, because it is a real cost and not a rounding error.
+// listPrefix is the raw byte prefix selecting every object whose name begins with
+// namePrefix; the empty prefix selects the whole instance. Filter with it, never pass
+// it as query.Query.Prefix (which matches whole segments only).
 func (a Address) listPrefix(namePrefix string) (string, error) {
 	root, err := a.objectsPrefix()
 	if err != nil {
@@ -380,16 +289,8 @@ func (a Address) listPrefix(namePrefix string) (string, error) {
 	return root + "/" + namePrefixSegment(namePrefix), nil
 }
 
-// versionKey is the row one write produces.
-//
-// THE WRITER IS IN THE KEY, and that is the whole reason this layout is safe:
-// two nodes writing the same object at the same stamp write two DIFFERENT
-// keys, so AGENTS.md §1 — "if two nodes can write the same key with different
-// content, one write is silently discarded" — holds by construction rather
-// than by discipline. v1 left a TODO over a read-modify-write on an LWW CRDT
-// asking what happens when two nodes update a version at the same time
-// (v1's services/substrate/components/storage/storage/methods.go:79). This is the
-// answer: nothing happens, because they are not the same key.
+// versionKey is the row one write produces. The writer is in the key, so two nodes
+// writing one object at one stamp write two different keys.
 func (a Address) versionKey(name string, stamp uint64, writer string) (string, error) {
 	prefix, err := a.objectPrefix(name)
 	if err != nil {

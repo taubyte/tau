@@ -92,8 +92,6 @@ func TestTheLogicalCounterRefusesRatherThanWraps(t *testing.T) {
 	require.Greater(t, s, last)
 }
 
-// TestAWriterThatSawAVersionStampsStrictlyGreater is causality without a
-// leader — the whole reason the clock is hybrid rather than physical.
 func TestAWriterThatSawAVersionStampsStrictlyGreater(t *testing.T) {
 	clk := newFixedClock(1_700_000_000_000)
 	c := NewClock(clk.now, 5*time.Minute)
@@ -148,9 +146,6 @@ func TestObserveTakesTheHigherLogicalWithinOneMillisecond(t *testing.T) {
 	require.Equal(t, uint16(501), logical)
 }
 
-// TestASkewedPeerDoesNotDragThisClock is the HLC's known failure mode, closed.
-// One node with a clock a year fast would otherwise pull every clock in the
-// fleet forward permanently, because each of them advances past what it saw.
 func TestASkewedPeerDoesNotDragThisClock(t *testing.T) {
 	clk := newFixedClock(1_700_000_000_000)
 	c := NewClock(clk.now, 5*time.Minute)
@@ -186,8 +181,6 @@ func TestASkewedPeerDoesNotDragThisClock(t *testing.T) {
 	require.ErrorIs(t, c.Observe(pastBudget), ErrRemoteClockSkew)
 }
 
-// TestANodeWhoseOwnClockWentBackwardsRefusesToMint is the second refusal, and
-// it is the one clock fault a node can diagnose about itself with no help.
 func TestANodeWhoseOwnClockWentBackwardsRefusesToMint(t *testing.T) {
 	clk := newFixedClock(1_700_000_000_000)
 	c := NewClock(clk.now, 5*time.Minute)
@@ -260,10 +253,6 @@ func TestConcurrentMintingNeverRepeatsAStamp(t *testing.T) {
 	require.Len(t, seen, 4000)
 }
 
-// TestTwoNodesInOneMillisecondMintOneStampAndStillProduceTwoRows is the
-// ambiguity the packed u64 leaves, stated as a test rather than hidden. It is
-// why a version id wants to be an opaque string in the ABI — the key is the
-// identity, and the stamp is only an address.
 func TestTwoNodesInOneMillisecondMintOneStampAndStillProduceTwoRows(t *testing.T) {
 	clk := newFixedClock(1_700_000_000_000)
 	a := NewClock(clk.now, time.Minute)

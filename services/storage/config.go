@@ -13,39 +13,13 @@ import (
 	"github.com/taubyte/tau/pkg/kvdb"
 )
 
-// config.go declares what this service is built from, and it declares the
-// three things service-conventions.md separates rather than one bag: CONFIG is
-// what an operator wrote down; THE NODE is passed in explicitly; RESOURCES are
-// narrow interfaces injected by whatever composes the node.
-//
-// WHAT AN OPERATOR WRITES DOWN PER NODE IS NOW FOUR DURATIONS, and that is the
-// whole of it. R and K are not here: they are what the CLOUD promises, and a
-// cloud-wide number configured per node is two nodes promising different
-// things with no way to notice. They are published once and read by every node
-// — pkg/fleet, and fleet.go. The four that remain are per-node facts by
-// construction: a clock budget is about this machine's NTP peer, a grace
-// window is timed from what THIS node observed, and the two membership
-// timescales make a node reach the same answer later rather than a different
-// answer forever.
-//
-// EVERY INTERFACE HERE IS DECLARED BY THE CONSUMER AND IS AS NARROW AS THE USE.
-// In particular there is no peer.Node anywhere in this package. peer.Node
-// bundles a host, a DHT, a datastore, a DAG and pubsub, and a test that wanted
-// any one of them got a DHT bootstrap and an on-disk datastore with it. What
-// this half of the service actually needs is a key-value store with an ordered
-// query, a way to ask whether a block is here, and a catalog of which buckets
-// exist. Those are three interfaces, and every one of them has an in-memory
-// implementation in this package's tests.
+// An operator configures four per-node durations. R and K are the cloud's, published
+// once (pkg/fleet, fleet.go), since a cloud-wide promise configured per node cannot
+// be noticed drifting. Every interface here is declared by the consumer and narrow:
+// no peer.Node, and each has an in-memory test implementation.
 
-// Config is what an operator declared. It is a plain immutable value: no
-// setters, no live objects, nothing that had to be constructed, and it
-// survives a round trip through yaml.
-//
-// REPLICATION POLICY IS THE PLATFORM'S, NOT A BUCKET'S, and the vocabulary
-// says so: the cache kind carries "NO MECHANISM AND NO REPLICA COUNT. How
-// copies are kept is the platform's to change." So R and K are published once
-// for the cloud and read by every node from it — pkg/fleet.Storage and
-// fleet.go — and there is no per-bucket override and no per-node one either.
+// Config is what an operator declared: a plain value that round-trips through yaml.
+// Replication policy is the platform's, not a bucket's or a node's.
 type Config struct {
 	// MaxSkew is how far ahead of local time a remote stamp may be and still
 	// advance this node's clock. Default 5m. See clock.go.
@@ -63,8 +37,7 @@ type Config struct {
 }
 
 // withDefaults fills the zero fields and refuses a combination that cannot be
-// correct. It is called once, by whatever constructs the service, and every
-// consumer in this package reads the result rather than re-deriving a default.
+// correct. Called once by the constructor.
 func (c Config) withDefaults() (Config, error) {
 	if c.MaxSkew == 0 {
 		c.MaxSkew = DefaultMaxSkew
@@ -88,44 +61,19 @@ func (c Config) withDefaults() (Config, error) {
 	return c, nil
 }
 
-// DefaultReplicas is R when the cloud has published no fleet document, and
-// DefaultBarrier is K.
-//
-// EVERY NODE REACHES THEM THE SAME WAY, which is what keeps a cloud that has
-// declared nothing in agreement with itself: a definitive absence read by two
-// nodes is the same absence.
-//
-// THREE, BECAUSE THE SHARD ARITHMETIC IS SIZED FOR IT. shard.go's 256 shards
-// at R=3 is 768 shard-replicas over a fleet, which is the figure every cost
-// statement in this package is written against; it is also two copies surviving
-// one node going, on a service whose whole reason to exist rather than a
-// directory on a worker is that the bytes outlive the machine.
-//
-// TWO, BECAUSE A BARRIER OF ONE IS NOT A BARRIER. A write acked by the node
-// that took it has not left that node, which is the failure a durability
-// barrier exists to make impossible. Two is the smallest number that means a
-// second machine has the bytes before the caller is told so — and it is below
-// three deliberately, because waiting for every replica makes a single slow
-// node the write latency of the cloud.
+// DefaultReplicas is R and DefaultBarrier is K when the cloud has published no fleet
+// document; every node reaches them identically. Three replicas, the figure the shard
+// arithmetic (256 shards) is sized for. A barrier of two, since one has not left the
+// node and waiting for all three makes one slow node the cloud's write latency.
 const (
 	DefaultReplicas = 3
 	DefaultBarrier  = 2
 )
 
-// Datastore is the slice of go-datastore this service's index needs, declared
-// here so nothing in this package can reach sideways out of the shard it was
-// handed.
-//
-// THERE IS NO Close. A shard's lifetime belongs to shard.go, which opened it;
-// a door that can close a store two other readers are using is a door this
-// package does not need. THERE IS NO AllKeysChan either, and that absence is
-// gc.go's: the node's blockstore is shared with every other consumer, and a
-// sweep that enumerated it would be enumerating kvdb's own Merkle-DAG blocks.
-//
-// *kvdb.Datastore satisfies it, which is compile-verified below rather than
-// asserted. That matters because THIS SERVICE OWNS ITS OWN STORE CONSTRUCTION
-// deliberately, because the index needs go-datastore's prefix queries, which
-// core/kvdb.KVDB does not have. Nothing in this service calls Compact.
+// Datastore is the slice of go-datastore this service's index needs. No Close (a
+// shard's lifetime is shard.go's) and no AllKeysChan (the blockstore is shared with
+// kvdb's own DAG blocks). *kvdb.Datastore satisfies it; this service builds its own
+// store because it needs prefix queries, which core/kvdb.KVDB lacks.
 type Datastore interface {
 	Get(ctx context.Context, key ds.Key) ([]byte, error)
 	Has(ctx context.Context, key ds.Key) (bool, error)
@@ -137,28 +85,18 @@ type Datastore interface {
 
 var _ Datastore = (*kvdb.Datastore)(nil)
 
-// Catalog is which buckets this cloud declares. It is the compiled config,
-// which the register holds — reached through an interface so this package does
-// not depend on it, and so a node that supplies no catalog runs rather than
-// blocks. Nothing in the node supplies one yet. Declaring the dependency makes
-// it explicit, and it is what shard.go asks "does this shard hold
-// anything" so a three-node dev cloud with five buckets opens five topics and
-// not two hundred and fifty-six.
+// Catalog is which buckets this cloud declares, from the compiled config. An
+// interface so a node supplying none still runs; nothing supplies one yet. shard.go
+// asks it whether a shard holds anything, so a small cloud opens few topics.
 type Catalog interface {
 	// Buckets lists every bucket instance the cloud declares. A storage node
 	// reads it to decide which shards exist; it is never a per-request call.
 	Buckets(ctx context.Context) ([]Address, error)
 }
 
-// Blocks is the byte plane as the index half of this service sees it: enough
-// to ask whether bytes are here and to release them, and nothing that could
-// fetch from the network. A DAG walk that could leave the node is a sweep that
-// blocks on a peer, and a sweep that blocks on a peer is a sweep that holds a
-// deletion decision open across a partition.
-//
-// The byte plane's own file (blocks.go, a later round) implements this over
-// *peer.DAGService. It is an interface here because gc.go is written against
-// it and gc.go must be testable with no libp2p host, no bitswap and no DHT.
+// Blocks is the byte plane as the index half sees it: has, local links, delete, and
+// nothing that fetches from the network, so a sweep never holds a deletion decision
+// open across a partition. To be implemented over *peer.DAGService.
 type Blocks interface {
 	// Has reports whether a block is in this node's blockstore.
 	Has(ctx context.Context, c cid.Cid) (bool, error)

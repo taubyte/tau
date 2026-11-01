@@ -36,19 +36,13 @@ func TestCurrentIsTheNewestRowOnEveryBackend(t *testing.T) {
 		require.Equal(t, "cid-100", v.Record.RootCID)
 		require.Equal(t, "peerA", v.Writer)
 
-		// And the full list is descending, which is the same order the keys
-		// are in — no sort happened anywhere.
+		// The full list is descending, the keys' own order.
 		vs, err := i.Versions(ctx, a, "photo.jpg", 0)
 		require.NoError(t, err)
 		require.Equal(t, []uint64{100, 10, 3, 2, 1}, stamps(vs))
 	})
 }
 
-// TestTwoWritersNamingOneKeyBothSurvive is the defect v1 shipped, inverted.
-// v1 does a read-modify-write on an LWW CRDT and carries a TODO asking what
-// happens when two nodes update a version at the same time; the answer there is
-// that one of them vanishes with no error to either caller. Here they are two
-// keys, so there is nothing to discard.
 func TestTwoWritersNamingOneKeyBothSurvive(t *testing.T) {
 	eachBackend(t, func(t *testing.T, store Datastore) {
 		ctx := context.Background()
@@ -79,13 +73,6 @@ func TestTwoWritersNamingOneKeyBothSurvive(t *testing.T) {
 	})
 }
 
-// TestTheKeyOrderAndTheResolutionOrderAreOneOrder is the property the whole
-// design rests on and the one a naive implementation breaks: byte order over
-// the keys and Order() over the parsed rows must be the SAME order.
-//
-// The trap is the tie-break. base64url is not order-preserving, so ordering by
-// the writer's own bytes and ordering by the writer's SEGMENT are different
-// orders, and two replicas using one each would resolve one object two ways.
 func TestTheKeyOrderAndTheResolutionOrderAreOneOrder(t *testing.T) {
 	a := addr(t)
 	rng := rand.New(rand.NewSource(21))
@@ -128,8 +115,6 @@ func TestTheKeyOrderAndTheResolutionOrderAreOneOrder(t *testing.T) {
 	require.False(t, ok)
 }
 
-// TestOrderDoesNotReorderItsCaller is the same rule Rank follows: a resolution
-// that sorts in place makes a caller's second call depend on its first.
 func TestOrderDoesNotReorderItsCaller(t *testing.T) {
 	a := addr(t)
 	var vs []Version
@@ -146,9 +131,6 @@ func TestOrderDoesNotReorderItsCaller(t *testing.T) {
 	require.Equal(t, before, vs)
 }
 
-// TestADeleteIsARowAndARaceWithAWriteLosesNothing is AGENTS.md §5 answered:
-// a delete is an LWW write too, so a delete racing a re-create can lose one of
-// them — unless the delete is a row rather than a key removal.
 func TestADeleteIsARowAndARaceWithAWriteLosesNothing(t *testing.T) {
 	eachBackend(t, func(t *testing.T, store Datastore) {
 		ctx := context.Background()
@@ -198,9 +180,6 @@ func TestADeleteIsARowAndARaceWithAWriteLosesNothing(t *testing.T) {
 	})
 }
 
-// TestAKvdbDeleteWouldHaveDiscardedOne is the control for the test above: it
-// runs the same race against the store's OWN delete, which is what a design
-// keying /o/<name> -> cid would have to use, and shows the row is gone.
 func TestAKvdbDeleteWouldHaveDiscardedOne(t *testing.T) {
 	ctx := context.Background()
 	store := newOrderedMem()

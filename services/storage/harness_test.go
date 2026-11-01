@@ -24,18 +24,9 @@ import (
 	"github.com/taubyte/tau/pkg/kvdb"
 )
 
-// harness_test.go is the test doubles, and the first one is a mandate rather
-// than a convenience.
-//
-// THE IN-MEMORY DOUBLE IS AN ORDERED STORE. ds.MapDatastore is not, and the
-// difference is not academic: the same rows written under one object name come
-// back from pebble in exact descending-stamp order and come back from the map
-// store in Go's randomised map order, so a "limit 1" answer against it changes
-// BETWEEN RUNS OF THE SAME BINARY. pkg/kvdb's own harness defaults to the map
-// store, so a storage suite that copied it would be green while testing
-// nothing about the property the whole pointer design rests on.
-// TestTheMapStoreIsUnorderedAndTheDoubleIsNot measures both, and every store
-// test below runs against three real backends rather than one double.
+// The in-memory double is ordered: ds.MapDatastore returns rows in Go's randomised
+// map order, so a "limit 1" answer changes between runs. Store tests run against
+// three real backends.
 
 // orderedMem is an in-memory Datastore that returns rows in key order — the
 // realistic model of pebble, and the double every test that is not
@@ -116,8 +107,7 @@ func (o *orderedMem) Query(_ context.Context, q query.Query) (query.Results, err
 
 var _ Datastore = (*orderedMem)(nil)
 
-// unorderedMem wraps ds.MapDatastore so a test can say, in one type, "this is
-// the double the brief forbids".
+// unorderedMem wraps ds.MapDatastore, the double the ordering tests reject.
 type unorderedMem struct{ inner *ds.MapDatastore }
 
 func newUnorderedMem() *unorderedMem { return &unorderedMem{inner: ds.NewMapDatastore()} }
@@ -135,8 +125,7 @@ func (u *unorderedMem) Query(ctx context.Context, q query.Query) (query.Results,
 
 var _ Datastore = (*unorderedMem)(nil)
 
-// newPebble is a real on-disk pebble store: the backend production runs on and
-// the one whose byte order this design rests on.
+// newPebble is a real on-disk pebble store, the production backend.
 func newPebble(t *testing.T) Datastore {
 	t.Helper()
 	store, err := pebbleds.Open(t.TempDir())
@@ -145,12 +134,8 @@ func newPebble(t *testing.T) Datastore {
 	return store
 }
 
-// newCRDT is a real *kvdb.Datastore over pebble WITH A NIL BROADCASTER, which
-// pkg/kvdb treats as offline with explicit guards. It is the production type,
-// and it is here because it puts a THIRD physical layout under the same keys:
-// kvdb stores an element at <ns>/keys/<key>/v, so the bytes actually compared
-// carry a "/" after the key. That suffix is what would invert list order for a
-// raw object name, and it is why the object key is hex.
+// newCRDT is a real *kvdb.Datastore over pebble with a nil broadcaster (offline). Its
+// physical layout puts "/v" after each key, which is why object keys are hex.
 func newCRDT(t *testing.T) Datastore {
 	t.Helper()
 	backing := dssync.MutexWrap(ds.NewMapDatastore())
@@ -303,7 +288,7 @@ func testCID(t *testing.T, label string) cid.Cid {
 	return cid.NewCidV1(cid.Raw, h)
 }
 
-// staticCatalog is the compiled config that does not exist yet.
+// staticCatalog stands in for the compiled config.
 type staticCatalog struct {
 	buckets []Address
 	err     error

@@ -14,10 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// realisticNames is the input every encoding property below is driven over. It
-// is not a list of names somebody thought were tricky: the first block is what
-// ds.NewKey was measured to mangle, and the rest is what an object store
-// actually holds.
+// realisticNames drives every encoding property: first what ds.NewKey was measured
+// to mangle, then what an object store holds.
 func realisticNames() []string {
 	return []string{
 		"a", "a/", "a//b", "a/./b", "a/../b", "..", ".", "../../etc/passwd",
@@ -60,10 +58,6 @@ func TestUnsegmentRefusesAForeignSegment(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotThisServicesRow)
 }
 
-// TestALiteralIsUnreachableFromAnEncodedIdentity is what lets "o", "u" and "i"
-// be literals in a path that also holds caller-chosen identities. base64url of
-// one byte is two characters and of zero bytes is empty, so no non-empty id
-// encodes to one character.
 func TestALiteralIsUnreachableFromAnEncodedIdentity(t *testing.T) {
 	rng := rand.New(rand.NewSource(12))
 	for i := 0; i < 5000; i++ {
@@ -78,9 +72,6 @@ func TestALiteralIsUnreachableFromAnEncodedIdentity(t *testing.T) {
 	}
 }
 
-// TestObjectNamesRoundTripAndSurviveCleaning is the property the whole tenancy
-// story at the naming plane rests on: an object name of ANY bytes is one
-// segment, ds.NewKey leaves the key alone, and the name comes back exactly.
 func TestObjectNamesRoundTripAndSurviveCleaning(t *testing.T) {
 	a := addr(t)
 	rng := rand.New(rand.NewSource(13))
@@ -104,9 +95,6 @@ func TestObjectNamesRoundTripAndSurviveCleaning(t *testing.T) {
 	}
 }
 
-// TestTheNamesDsNewKeyMangles is the measurement the encoding choice was made
-// from, run here so it stays true rather than staying quoted. Spliced raw,
-// six of these nineteen names collide or escape; encoded, none do.
 func TestTheNamesDsNewKeyMangles(t *testing.T) {
 	a := addr(t)
 
@@ -153,9 +141,6 @@ func TestAnEmptyObjectNameIsRefused(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotThisServicesRow)
 }
 
-// TestHexIsOrderAndPrefixPreserving is the second half of why hex and not
-// base64url: a list under a byte prefix has to be exact and ordered, and
-// base64url gives up the ordering.
 func TestHexIsOrderAndPrefixPreserving(t *testing.T) {
 	rng := rand.New(rand.NewSource(14))
 	names := append(realisticNames(), "")
@@ -182,9 +167,6 @@ func TestHexIsOrderAndPrefixPreserving(t *testing.T) {
 	}
 }
 
-// TestBase64urlWouldLoseListOrdering is the control for the test above: it
-// names the encoding that was refused and shows the property it fails, so
-// "hex costs 2x, and it is worth it" is a measurement rather than a preference.
 func TestBase64urlWouldLoseListOrdering(t *testing.T) {
 	// base64url's alphabet is not in ASCII order: index 52 is "0" (ASCII 48)
 	// and index 0 is "A" (ASCII 65), so a leading byte of 0xd0 — the first
@@ -201,15 +183,6 @@ func TestBase64urlWouldLoseListOrdering(t *testing.T) {
 	require.NotEqual(t, raw, byB64, "base64url is expected to reorder these; if it stopped, this argument needs rewriting")
 }
 
-// TestTheSuffixedPhysicalKeyWouldInvertOrderForRawNames is a finding none of
-// the three designs made, and it is a second, independent reason the object
-// name is hex.
-//
-// pkg/kvdb stores an element at <ns>/keys/<key>/v. So the bytes a backend
-// actually sorts carry a "/" (0x2f) immediately after the key. For a raw name,
-// a key that is a prefix of another sorts AFTER it whenever the longer name
-// continues with a byte below 0x2f — and "-" is 0x2d. Every hex digit is above
-// 0x2f, so the inversion cannot occur for an encoded name.
 func TestTheSuffixedPhysicalKeyWouldInvertOrderForRawNames(t *testing.T) {
 	const suffix = "/v"
 
@@ -336,9 +309,6 @@ func TestAnEmptyIdentityIsRefusedAtEveryDoor(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotThisServicesRow)
 }
 
-// TestTwoTenantsWhoseNamesConcatenateAlikeAreTwoNamespaces is v1's defect,
-// closed. v1's identity is a hash of ProjectId+ApplicationId+Match with no
-// separator, so ("ab","c") and ("a","bc") are one identity and one namespace.
 func TestTwoTenantsWhoseNamesConcatenateAlikeAreTwoNamespaces(t *testing.T) {
 	pairs := [][4]string{
 		{"ab", "c", "d", "e"},
@@ -364,9 +334,6 @@ func TestTwoTenantsWhoseNamesConcatenateAlikeAreTwoNamespaces(t *testing.T) {
 	}
 }
 
-// TestAnInstanceCannotFileRowsInTheAdmissionNamespace is the concrete form of
-// the literal-unreachability argument: the instance name is caller-chosen, and
-// the admission rows are a sibling of every instance's rows.
 func TestAnInstanceCannotFileRowsInTheAdmissionNamespace(t *testing.T) {
 	b, err := NewBucket("proj", "prod", "receipts")
 	require.NoError(t, err)
@@ -462,10 +429,6 @@ func TestListPrefixIsARawBytePrefixAndTheEmptyOneSelectsEverything(t *testing.T)
 	}
 }
 
-// TestAListPrefixCannotBeAQueryNamespace is the finding behind chain.go's
-// two-prefix scan door, asserted rather than asserted-in-prose: an object name
-// is one segment, so a partial name is a partial segment, and every prefix
-// mechanism go-datastore offers appends "/".
 func TestAListPrefixCannotBeAQueryNamespace(t *testing.T) {
 	a := addr(t)
 	p, err := a.listPrefix("photos/2024")
@@ -515,10 +478,6 @@ func TestUsageKeysAreOneWriterEach(t *testing.T) {
 	}
 }
 
-// TestTheMapStoreIsUnorderedAndTheDoubleIsNot is §14's mandate as a test. It
-// also states the consequence: because chain.go's resolution asks for
-// OrderByKey explicitly, it is right even on the store that has no order — and
-// a door that inherited the backend's order would not be.
 func TestTheMapStoreIsUnorderedAndTheDoubleIsNot(t *testing.T) {
 	ctx := context.Background()
 	a := addr(t)
@@ -551,9 +510,7 @@ func TestTheMapStoreIsUnorderedAndTheDoubleIsNot(t *testing.T) {
 
 	um := newUnorderedMem()
 	write(um)
-	// Run it enough times that Go's randomised map order shows itself. If this
-	// ever stops being true, the map store became ordered and §14's mandate can
-	// be revisited — not before.
+	// Enough runs for Go's randomised map order to show.
 	disagreed := false
 	for i := 0; i < 200 && !disagreed; i++ {
 		if !equalStrings(unorderedRun(um), sortedWant) {

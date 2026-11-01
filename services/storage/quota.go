@@ -9,58 +9,12 @@ import (
 	ds "github.com/ipfs/go-datastore"
 )
 
-// quota.go is the accounting rows §4 defines, and the honest name for what
-// they add up to: A CONVERGENT APPROXIMATE CEILING WITH A STATED OVERSHOOT
-// BOUND, not a hard quota.
-//
-// ── WHY A COUNTER IS ALLOWED TO EXIST HERE AT ALL ────────────────────────
-//
-// AGENTS.md §1 kills read-modify-write on a replicated key, and a usage
-// counter is exactly that. It is legal here for one reason and only that one:
-// each row is keyed by its WRITER, so /u/<writer>/added has exactly one writer
-// in the whole cloud and there is no key two nodes can write differently. Used
-// is a SUM over those rows, computed on read — the same shape as the version
-// list, one level down.
-//
-//	sum(added) - sum(removed)   over every writer's rows
-//
-// Concurrent writers each add to their own row, so nothing is lost and no node
-// has to see another's row to write its own.
-//
-// ── THE OVERSHOOT, BOUNDED AND STATED ────────────────────────────────────
-//
-// A ceiling checked against a value that converges is a ceiling two
-// coordinators can cross at once. The bound is:
-//
-//	(concurrent coordinators) x (largest in-flight object)
-//
-// and that is the whole story: it cannot drift further, because every
-// coordinator's own row is authoritative for its own writes and the sum
-// converges once their deltas merge.
-//
-// A HARD CEILING NEEDS A FENCE AND THE FENCE IS REFUSED. The leaderless shape
-// that would give overshoot zero is budget sub-leasing — each of R holders owns
-// 1/R of the quota and hands out sub-leases — and it is named rather than built
-// (brief §11). Saying "approximately 1GB" in doc.go is better than a number
-// that is wrong under exactly the conditions that make it matter.
-//
-// ── ADMISSION IS CHECKED ON THE HOLDER ───────────────────────────────────
-//
-// Not on the coordinator, which may be any node and holds no rows. v1's hole
-// is worth naming because it is not a subtle one: its admitWrite is
-// `return nil` in BOTH builds, so its over-capacity code can never be
-// returned by anything.
-//
-// ── AND size IS PER INSTANCE ─────────────────────────────────────────────
-//
-// The vocabulary parks what `size` means when a bucket holds many instances
-// (decisions-answered.md §3a), and it is the question a quota cannot be
-// enforced without. PER INSTANCE is free — the holder checks a local sum and
-// coordinates with nobody. TOTAL ACROSS INSTANCES is one counter shared by
-// every instance's holder, which is a contended value: precisely what
-// consensus is for, on the kind this design just argued out of consensus.
-// THIS IMPLEMENTS PER INSTANCE and doc.go says so as a finding rather than
-// leaving it to be discovered from the code.
+// The accounting rows add up to a convergent approximate ceiling, not a hard quota.
+// A counter is legal here because each row is keyed by its writer, so no key has two
+// writers; usage is sum(added) - sum(removed) over every writer's rows, computed on
+// read. Two coordinators can cross the ceiling at once, bounded by (concurrent
+// coordinators) x (largest in-flight object). A hard ceiling needs a fence, which is
+// not built. Admission runs on the holder. `size` is per instance.
 
 // Usage is a bucket instance's accounting, summed over every writer.
 type Usage struct {
@@ -105,16 +59,10 @@ func (i index) Remove(ctx context.Context, a Address, writer string, bytes uint6
 	return nil
 }
 
-// Checkpoint records the truth the sweep recomputed from live version sizes,
-// so a new holder taking over cold has somewhere to start from other than a
-// full scan.
-//
-// THE UNBOUNDED SCAN THIS DOES NOT QUITE CLOSE, said out loud: if the newest
-// checkpoint is stale, a new holder still walks the rows above it, admitting
-// meanwhile against the last figure plus a margin. So the ceiling is SOFTEST
-// EXACTLY WHEN A NODE HAS JUST FAILED. Checkpoint frequency is the tunable
-// that trades that against write amplification, and nobody has chosen it —
-// choosing it badly reproduces v1's O(objects) cost on a different path.
+// Checkpoint records the usage the sweep recomputed, so a new holder starts from it
+// rather than a full scan. A stale checkpoint still means walking the rows above it,
+// so the ceiling is softest right after a node fails; frequency trades that against
+// write amplification.
 func (i index) Checkpoint(ctx context.Context, a Address, writer string, used uint64) error {
 	key, err := a.usageKey(writer, usageCheckpoint)
 	if err != nil {
@@ -192,9 +140,8 @@ func (i index) Usage(ctx context.Context, a Address) (Usage, error) {
 	return u, nil
 }
 
-// Admit is the ceiling check, and it runs ON THE HOLDER. It returns the
-// overshoot bound alongside its answer so a caller reporting a refusal can
-// report an honest one.
+// Admit is the ceiling check, run on the holder. It returns the usage, so a refusal
+// can report the current overshoot bound.
 func (i index) Admit(ctx context.Context, a Address, capacity, incoming uint64) (bool, Usage, error) {
 	u, err := i.Usage(ctx, a)
 	if err != nil {

@@ -30,9 +30,8 @@ func TestConfigRefusesWhatCannotBeCorrect(t *testing.T) {
 		cfg  Config
 		says string
 	}{
-		// R and K are not here. They are the cloud's, so the pair that cannot
-		// be correct is refused where it is read — pkg/fleet.Storage.Resolved,
-		// and TestAPairThatCannotBeCorrectIsRefused in fleet_test.go.
+		// R and K are the cloud's; an impossible pair is refused where it is read
+		// (pkg/fleet.Storage.Resolved).
 		{"negative grace", Config{GraceGC: -time.Hour}, "must be positive"},
 		{"negative skew", Config{MaxSkew: -time.Hour}, "must be positive"},
 		{"stabilize below liveness", Config{Liveness: 90 * time.Second, Stabilize: 60 * time.Second}, "faster than acknowledgement"},
@@ -45,8 +44,7 @@ func TestConfigRefusesWhatCannotBeCorrect(t *testing.T) {
 }
 
 func TestAStaticCatalogSatisfiesTheDependency(t *testing.T) {
-	// The compiled-config service does not exist. Declaring the dependency as
-	// a one-method interface is what makes that explicit rather than blocking.
+	// No compiled-config service exists; the one-method interface makes that explicit.
 	ctx := context.Background()
 	cat := staticCatalog{buckets: []Address{addr(t)}}
 	got, err := cat.Buckets(ctx)
@@ -58,11 +56,6 @@ func TestAStaticCatalogSatisfiesTheDependency(t *testing.T) {
 	require.Len(t, shards, 1)
 }
 
-// TestRaftAppearsNowhere is the owner test, held by the compiler's own import
-// graph rather than by a reviewer remembering. Raft is used for nothing here:
-// not the pointer, not placement, not the durability barrier, not quota, not
-// GC, not compaction scheduling. The one structure that would earn it — a
-// per-bucket index range-split table — is deferred, and doc.go says why.
 func TestRaftAppearsNowhere(t *testing.T) {
 	for _, dir := range []string{".", "../../pkg/placement", "../../pkg/membership"} {
 		fset := token.NewFileSet()
@@ -83,11 +76,6 @@ func TestRaftAppearsNowhere(t *testing.T) {
 	}
 }
 
-// TestNoPeerNodeAnywhere holds config.go's other structural claim: this service
-// never holds a peer.Node. peer.Node bundles a host, a DHT, a datastore, a DAG
-// and pubsub, so a test that wanted one of them got a DHT bootstrap and an
-// on-disk datastore with it — and every test in this package runs in memory
-// because nothing here can reach for it.
 func TestNoPeerNodeAnywhere(t *testing.T) {
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, ".", func(fi os.FileInfo) bool {
@@ -105,10 +93,6 @@ func TestNoPeerNodeAnywhere(t *testing.T) {
 	}
 }
 
-// TestOnlyStoreGoBuildsAKey is the census that keeps the grammar in one place.
-// Every other file asks store.go or refs.go for a key; a file that started
-// concatenating its own would be a second place that has to agree with the
-// first about where a boundary is, and boundaries are what tenancy is made of.
 func TestOnlyStoreGoBuildsAKey(t *testing.T) {
 	// The two files that may name a key literal, and why:
 	//   store.go  the replicated grammar
@@ -144,9 +128,6 @@ func TestOnlyStoreGoBuildsAKey(t *testing.T) {
 	require.GreaterOrEqual(t, checked, 5, "the census read almost nothing, which is how it passes for free")
 }
 
-// TestTheStorageBriefsSurfaceIsWhatIsExported pins the exported names so the
-// next round — the RPC surface and the byte plane — reads a stable API rather
-// than whatever this package happens to have today.
 func TestTheStorageBriefsSurfaceIsWhatIsExported(t *testing.T) {
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, ".", func(fi os.FileInfo) bool {

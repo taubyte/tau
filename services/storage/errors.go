@@ -2,17 +2,11 @@ package storage
 
 import "errors"
 
-// errors.go is this package's sentinel set. It is deliberately NOT a
-// connect.NewError code table yet: the RPC surface is a later round, and the
-// mapping from these to wire codes belongs beside the handlers that return
-// them. What is here is what the logic half can go wrong about, named once so
-// no two files spell the same failure differently.
+// Sentinels for the logic half; mapping them to wire codes belongs beside the future
+// handlers.
 var (
-	// ErrEmptyIdentity is the key grammar's one precondition, failed. An empty
-	// project, environment, bucket, instance or writer would encode to an
-	// empty segment, and go-datastore removes an empty segment when it cleans
-	// a key — a removed segment is a MOVED BOUNDARY, which is the class
-	// services/auth lost a repository to. See store.go.
+	// ErrEmptyIdentity is an empty project, environment, bucket, instance or writer.
+	// go-datastore removes an empty segment when cleaning a key, which moves a boundary.
 	ErrEmptyIdentity = errors.New("storage: an identity segment is empty")
 
 	// ErrNoAddress is a key builder reached through an Address that NewAddress

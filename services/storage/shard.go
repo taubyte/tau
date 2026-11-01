@@ -12,59 +12,16 @@ import (
 	"github.com/taubyte/tau/pkg/placement"
 )
 
-// shard.go is why this service does not have one replicated database per
-// bucket.
+// The index is sharded by a cloud constant, not instanced per bucket: a shard is one
+// store plus one gossip topic, so topic count tracks Shards rather than the number of
+// buckets ever declared. A node opens a shard only if HRW desires it and the catalog
+// says it is occupied, so most nodes on a large fleet hold no index. Sharding is by
+// bucket, so a large tenant spreads; a bucket's instances stay together so the
+// instance limit is countable.
 //
-// THE INDEX IS SHARDED BY A CLOUD CONSTANT, NOT INSTANCED PER BUCKET. A shard
-// is one store plus one gossip topic. There are Shards of them, always, and a
-// bucket lands in one by hashing its address. So TOPIC COUNT STOPS TRACKING
-// BUCKET POPULATION: it tracks Shards, which does not move when a tenant
-// creates its ten-thousandth bucket.
-//
-// The alternative — a database and a topic per bucket instance — is what a
-// design reaches for first because it gives perfect tenancy isolation, and it
-// is a wall rather than a cost: gossipsub topic count, subscription churn and
-// mesh maintenance all scale with the number of buckets a cloud has ever
-// declared, and none of them degrade gracefully.
-//
-// ── AND A NODE OPENS A SHARD ONLY IF IT IS BOTH DESIRED AND OCCUPIED ─────
-//
-// desiredShards takes TWO inputs and needs both. HRW says which shards this
-// node would hold; THE CATALOG says which shards exist at all. A three-node
-// dev cloud with five buckets opens about five shards, not two hundred and
-// fifty-six, because two hundred and fifty-one of them contain nothing.
-//
-// The direction that falls out of this is the right one: on a large fleet most
-// nodes hold no index at all and only bytes, and the per-node index cost peaks
-// at Shards*R/N — so THE INDEX COST IS HIGHEST EXACTLY WHERE THE DATA IS
-// SMALLEST.
-//
-// ── SHARDING BY BUCKET, NOT BY PROJECT ───────────────────────────────────
-//
-// A whale project's buckets spread across shards instead of piling into one.
-// Project-sharding would co-locate a tenant — better locality for a
-// cross-bucket listing, which this service does not offer and never will
-// (§"across buckets: nothing") — at the price of a hotspot proportional to the
-// largest tenant. For data at rest, spreading wins.
-//
-// A bucket's INSTANCES stay together, because the shard is chosen from the
-// bucket's key and not the instance's: an instance limit is counted per
-// bucket, and counting it would otherwise be a cross-shard read.
-//
-// ── Shards IS A ONE-WAY DOOR ─────────────────────────────────────────────
-//
-// Changing it re-homes every bucket in the cloud at once. It stays fixed until
-// index range-splitting lands, which is the one structure in this design that
-// would earn a consensus group (doc.go says why, and why it is deferred).
-//
-// HOW TO CHOOSE IT, so the next person does not have to re-derive it: Shards
-// bounds the per-node topic count at Shards*R/N and bounds the SMALLEST unit
-// that can be rebalanced. Too small and one shard is a hotspot no membership
-// change can relieve; too large and a small cloud pays subscription overhead
-// for empty shards — which the catalog gate already answers, which is why the
-// constant leans large. 256 with R=3 is 768 shard-replicas over a fleet: 8 per
-// node at 96 nodes, 77 at 10, and 256 on a single-node cloud that has 256
-// occupied shards, which a single-node cloud does not.
+// Shards is a one-way door: changing it re-homes every bucket. It bounds per-node
+// topics at Shards*R/N and the smallest rebalanceable unit; it leans large because
+// the catalog gate makes empty shards free. 256 at R=3 is 8 per node at 96 nodes.
 const Shards = 256
 
 // shardOf is the bucket's shard. It hashes the bucket's KEY — the encoded
@@ -132,17 +89,9 @@ func newShardSet(opener ShardOpener) (*shardSet, error) {
 	return &shardSet{opener: opener, open: map[uint16]Datastore{}}, nil
 }
 
-// reconcile brings the open set to `desired`: opens what is missing, closes
-// what is no longer wanted.
-//
-// IT OPENS BEFORE IT CLOSES, and it closes nothing if an open failed. The
-// window in the other order is a node that has dropped a shard it still holds
-// the only reachable copy of, and the failure is silent — a read against it
-// returns "not found" rather than an error.
-//
-// A CLOSE FAILURE IS REPORTED AND THE SHARD IS STILL DROPPED from the open
-// set: the alternative is a store this node believes it holds and has already
-// stopped reading.
+// reconcile brings the open set to `desired`. It opens before it closes, and closes
+// nothing if an open failed, since a dropped last-reachable shard reads as "not
+// found". A failed close still drops the shard from the set.
 func (s *shardSet) reconcile(ctx context.Context, desired map[uint16]struct{}) (opened, closed []uint16, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

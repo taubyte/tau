@@ -13,61 +13,23 @@ import (
 	"github.com/ipfs/go-datastore/query"
 )
 
-// refs.go is the node-local half of the layout: four structures that are never
-// replicated, are rebuildable from the buckets this node holds, and exist so
-// that A DELETION DECISION IS MADE LOCALLY WITH NO DISTRIBUTED REFCOUNT.
+// The node-local rows, never replicated and rebuildable, so deletion is decided
+// locally with no distributed refcount:
 //
-//	/local/blk/<cid>                                    this service's OWN
+//	/local/blk/<cid>                                    this service's own
 //	                                                    block index
 //	/local/ref/<rootcid>/<bkt>/<hexname>/<^stamp>       the reference list
 //	/local/tomb/<bkt>/<hexname>/<^stamp>                when a tombstone was
-//	                                                    first OBSERVED here
+//	                                                    first observed here
 //	/local/dirty/<bkt>                                  the dirty counter
 //
-// ── THE BLOCK INDEX IS THE CORRECTNESS LANDMINE ──────────────────────────
-//
-// THE NODE'S BLOCKSTORE IS NOT THIS SERVICE'S. It is shared with pkg/kvdb's
-// own Merkle-DAG blocks — every delta of every replicated store on this node —
-// and with every other consumer of the same peer. A sweep that enumerated
-// blockstore.AllKeysChan and deleted what it could not account for would delete
-// the CRDT's own history.
-//
-// So this service writes /local/blk/<cid> for EVERY block it imports, and the
-// sweep enumerates THAT and nothing else. It is the reason config.go's Blocks
-// interface has no AllKeysChan: the door is not narrow by taste, it is narrow
-// because the wide version is a data-destruction bug.
-//
-// ── THE REFERENCE LIST IS WRITTEN EVEN WHEN THE BLOCK WAS ALREADY HERE ───
-//
-// This is the dedup hole, and it is easy to miss. A second tenant pushes bytes
-// this node already holds; the import finds the DAG present and does nothing;
-// the holder is now ignorant of the second reference, and deleting the first
-// tenant's object frees blocks the second one is still using.
-//
-// So a reference row is written on EVERY push that lands here, present or not.
-// The row is keyed by (root, bucket instance, object, stamp), so a re-push of
-// the same version writes the same row and two tenants pushing identical bytes
-// write two.
-//
-// ── WHY NO DISTRIBUTED REFCOUNT IS NEEDED ────────────────────────────────
-//
-// A block reaches a node only because some push put it there, and every push
-// records its reference locally. So THE NODE'S REFERENCE LIST IS COMPLETE FOR
-// THAT NODE, and completeness is what a refcount would have bought. A refcount
-// would additionally be a contended counter replicated between nodes, which is
-// the one shape AGENTS.md §1 forbids outright.
-//
-// ── THE TOMBSTONE OBSERVATION IS LOCAL AND MONOTONIC ─────────────────────
-//
-// The grace window before blocks are released is timed from WHEN THIS NODE
-// FIRST SAW THE TOMBSTONE, recorded here, and never from the stamp's physical
-// component. That is what keeps every clock out of the path that destroys
-// data: a peer with a clock a year fast cannot shorten anybody's grace window,
-// because nothing on that path reads its clock.
-//
-// FIRST OBSERVATION WINS. Re-observing does not move the row forward, so a
-// process restart that re-scans a shard cannot reset a grace window that was
-// nearly elapsed, and cannot extend one either.
+// The blockstore is shared with kvdb's own DAG blocks, so the sweep enumerates only
+// /local/blk, written for every imported block. A reference row is written on every
+// push that lands here, even when the blocks were already present, or a second
+// tenant's reference is lost and the first tenant's delete frees its bytes. Every
+// block arrives by a push that records its reference, so the local list is complete.
+// Tombstone observation is local and first-write-wins, so no clock can shorten a
+// grace window and a restart cannot reset one.
 
 const (
 	localRoot = "/local"
@@ -135,7 +97,6 @@ type Local struct {
 	now   func() time.Time
 }
 
-// NewLocal builds the node-local row set.
 func NewLocal(store Datastore, now func() time.Time) (*Local, error) {
 	if store == nil {
 		return nil, errors.New("storage: no local store")
@@ -281,9 +242,8 @@ func (l *Local) IndexedBlocks(ctx context.Context) ([]cid.Cid, error) {
 	return out, nil
 }
 
-// Reference records that a bucket instance's object version uses a root, on
-// this node. IT IS WRITTEN EVEN WHEN EVERY BLOCK WAS ALREADY PRESENT — see the
-// file header: that is the dedup hole, and this is what closes it.
+// Reference records that a bucket instance's object version uses a root, on this
+// node, even when every block was already present (see the file header).
 func (l *Local) Reference(ctx context.Context, root cid.Cid, a Address, name string, stamp uint64) error {
 	key, err := refKey(root, a, name, stamp)
 	if err != nil {
@@ -383,9 +343,8 @@ func (l *Local) ForgetTombstone(ctx context.Context, a Address, name string, sta
 	return l.store.Delete(ctx, ds.RawKey(key))
 }
 
-// MarkDirty bumps a bucket instance's deletion counter. It is node-local, so
-// it has exactly one writer and a read-modify-write on it is legal — the one
-// condition AGENTS.md §1 attaches to a counter.
+// MarkDirty bumps a bucket instance's deletion counter; node-local, so it has one
+// writer.
 func (l *Local) MarkDirty(ctx context.Context, a Address) error {
 	key, err := dirtyKey(a)
 	if err != nil {
