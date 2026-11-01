@@ -45,21 +45,12 @@ import (
 	"github.com/taubyte/tau/services/gateway"
 )
 
-// acme_live_test is issuance with nothing in process but tau: pebble is a CA
-// in its own container, and it resolves through a bind9 recursive resolver
-// that finds the cloud's zone by real delegation — a bind9 parent for
-// example.test holding NS and glue for tau.example.test that point at the
-// fleet's two dns nodes.
-//
-// A delegation names port 53 and bind9 answers only on an address an
-// interface holds, so every node takes the gateway address of a bridge of its
-// own — that is what discovery hands out in A records — and the bind9s sit on
-// the first. Binding port 53 needs root: make test-acme-live. pebble is
-// host-networked and reaches every node directly.
-//
-// In front of each dns node's listener is a forwarder on <address>:53 that
-// records what it was asked, which is how the test knows a lookup reached
-// tau and was not answered from a cache.
+// Issuance with nothing in process but tau: pebble in its own container, resolving
+// through a bind9 recursive resolver that finds the cloud's zone by real delegation (a
+// bind9 parent for example.test with NS and glue for tau.example.test pointing at the
+// fleet's two dns nodes). Port 53 needs root: make test-acme-live. Each dns node is
+// fronted by a forwarder on <address>:53 recording questions, proving lookups reached
+// tau rather than a cache.
 
 const (
 	pebbleImage = "ghcr.io/letsencrypt/pebble:2.10.0"
@@ -237,8 +228,6 @@ func liveNode(t *testing.T, ca *livePebble, cfg cm.CertificateConfig, addr strin
 	})
 }
 
-// ─────────────────────────────── dns ───────────────────────────────
-
 // forwarder is a dns node's address as the parent's glue names it. It passes
 // every query to the node's own listener and records the question.
 type forwarder struct {
@@ -373,8 +362,6 @@ func resolve(server, name string, qtype uint16) []dns.RR {
 	return in.Answer
 }
 
-// ─────────────────────────────── pebble ───────────────────────────────
-
 type livePebble struct {
 	container             *liveContainer
 	directory, management string
@@ -507,8 +494,6 @@ func selfSigned(t *testing.T, dir string) string {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "key.pem"), pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0o644))
 	return string(certPEM)
 }
-
-// ─────────────────────────────── containers ───────────────────────────────
 
 // liveOwner names the test process that started a container, as
 // pkg/forge/live does: a run killed by -timeout runs no Cleanup, and the next
@@ -670,9 +655,6 @@ func sweepLive(t *testing.T) {
 	}
 }
 
-// A container a killed run left behind takes its anonymous volumes with it
-// when the next run sweeps it: bind9 declares VOLUMEs, so a sweep that kept
-// them left a volume behind for every container it removed.
 func TestTheLeftoverSweepTakesTheAnonymousVolumes(t *testing.T) {
 	gone := exec.Command("true")
 	require.NoError(t, gone.Run())

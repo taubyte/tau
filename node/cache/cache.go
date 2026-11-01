@@ -1,45 +1,12 @@
-// Package cache backs `taubyte:cache/store` on this node.
+// Package cache backs `taubyte:cache/store`: an adapter between the wasm tier's four
+// methods and two sentinels and pkg/cache's eviction and lifetimes, given only a store
+// opener.
 //
-// # Why it is its own package
-//
-// It is an ADAPTER: it sits between the wasm tier, which knows four methods and
-// two sentinels, and pkg/cache, which knows eviction and lifetimes and nothing
-// about a guest. The composition root is the only place that may NAME both —
-// but naming them and implementing the adapter are different jobs, and
-// conflating them is how node/ grew to eight thousand lines with twenty-two of
-// these in one namespace.
-//
-// So the root hands this one thing it can ask: somewhere to put rows.
-// Everything this package needs is in its own signature, which is the property a
-// type taking *Node does not have — that one can reach anything the node has, so
-// nothing about it says what it actually depends on, and it cannot be built
-// anywhere except beside the node.
-//
-// # One database for every cache this node serves
-//
-// A kvdb per cache would be a CRDT, a broadcaster and a pubsub topic per
-// resource — dozens on a node running a handful of projects — and every one of
-// them would have to be opened before the first request that touched it. One
-// database, with the handle as the key prefix, is the same isolation with one
-// set of moving parts: pkg/cache appends "/" to the prefix so a cache called
-// QmA cannot see QmAB's.
-//
-// # An open cache is kept, because seeding is not free
-//
-// pkg/cache scans what this node already holds when it opens, which is what
-// makes its ceiling exact rather than optimistic. That scan is bounded by the
-// declared size — it reads at most `size` bytes — but paying it per invocation
-// would put it on the request path. So an opened cache is remembered by handle
-// and reused, which is safe because a cache is a value over a store and the
-// store is what replicates.
-//
-// # What a redeploy does to it
-//
-// Nothing, and that is deliberate. A cache's DATA survives a deploy; only its
-// declared size and lifetime can change, and those are read from the grant when
-// it is first opened. A resource whose ttl an author shortened keeps serving
-// the old one on a node that already had it open — the vocabulary calls a ttl
-// "a floor, not a guarantee" and this is one of the ways it is not one.
+// One database serves every cache on the node, keyed by handle prefix (pkg/cache
+// appends "/" so QmA cannot see QmAB). An opened cache is kept per handle, since
+// opening seeds it by scanning the store. A redeploy keeps the open cache: a
+// shortened ttl is not seen until reopened, and the vocabulary calls ttl a floor, not
+// a guarantee.
 package cache
 
 import (
@@ -56,13 +23,8 @@ import (
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// Stores opens the one database every cache on this node shares.
-//
-// ONE METHOD AND NOT kvdb.Factory, whose New also takes a logger and a
-// rebroadcast interval — a node's decisions about a store, which a cache holds
-// no opinion about — and whose result has to be registered with the closers the
-// root keeps. What is left here is the only part a cache needs, and it is asked
-// for once, lazily, so a node that serves no cache opens no database.
+// Stores opens the one database every cache on this node shares, lazily, so a node
+// serving no cache opens none.
 type Stores interface {
 	Store() (pkgcache.Store, error)
 }
@@ -79,12 +41,8 @@ type Caches struct {
 
 var _ wasmtier.Caches = (*Caches)(nil)
 
-// New wires the adapter.
-//
-// stores MAY NOT BE NIL, because a cache with nowhere to put rows is a cache
-// that fails every request — and the root has something to hand over even on a
-// node whose operator gave it no database factory: that node's store refuses,
-// by name, the first time a workload actually reaches a cache.
+// New wires the adapter. stores may not be nil; a node with no database factory still
+// hands one over, which refuses by name on first use.
 func New(stores Stores) (*Caches, error) {
 	if stores == nil {
 		return nil, errors.New("cache: no store to keep a cache in")
@@ -136,16 +94,8 @@ func (c *Caches) backing() (pkgcache.Store, error) {
 	return store, nil
 }
 
-// translated is the adapter's other half: it turns pkg/cache's sentinels into
-// the tier's.
-//
-// THE TIER MUST NOT IMPORT pkg/cache. Its seam is four methods and two
-// sentinels, so any backing can satisfy it — a musql-backed one, a cloud
-// bucket, an in-process map. Translating here is what keeps that true, and it
-// is the ONE thing three passing unit tests could not catch between them: a
-// miss that arrived as an unknown error was reported to the guest as
-// `unavailable`, so every cache miss read as an outage and an author would
-// have written a retry around the thing a cache does most.
+// translated turns pkg/cache's sentinels into the tier's, so the tier never imports
+// pkg/cache and a miss is not reported to a guest as `unavailable`.
 type translated struct{ *pkgcache.Cache }
 
 func (t translated) Get(ctx context.Context, key string) ([]byte, error) {

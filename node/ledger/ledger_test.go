@@ -17,21 +17,8 @@ import (
 	databaseService "github.com/taubyte/tau/services/database"
 )
 
-// ledger_test is `consensus: raft`: the store, and the table of groups it is
-// opened over.
-//
-// WHAT IS UNDER TEST IS THE GATING AND NOT THE CONSENSUS. hashicorp/raft orders
-// the writes; what this package has to hold is that a node which may not answer
-// says so, names who may, and never answers an empty ledger for a group it
-// cannot reach.
-//
-// EVERY ONE OF THESE USED TO NEED A NODE — a mocknet host, a register, a worker
-// and a started composition — to assert what a ledger answers. What a ledger
-// depends on is one function now, so a group that will not form, a group that
-// was closed underneath a caller and a barrier with no quorum are all ordinary
-// fixtures.
-
-// ─────────────────────────────── doubles ───────────────────────────────
+// The gating, not the consensus: a node that may not answer says so, names who may,
+// and never answers an empty ledger for a group it cannot reach.
 
 // follower is a cluster that is not the leader, or that fails where raft fails.
 // It exists because the mock is a no-op leader — every write succeeds — and
@@ -190,8 +177,6 @@ func (f *follower) did() (barriers int, budgets []time.Duration, closed bool) {
 	return f.barriers, append([]time.Duration(nil), f.budgets...), f.closed
 }
 
-// ─────────────────────────────── fixtures ───────────────────────────────
-
 func ledgerSpec() database.Spec {
 	return database.Spec{
 		Type: database.KV, Engine: database.Tau, Consensus: database.Raft,
@@ -257,12 +242,6 @@ func over(t *testing.T, c raft.Cluster) database.Store {
 	return store
 }
 
-// ─────────────────────────────── the name ───────────────────────────────
-
-// TestTHEGROUPISNAMEDBYWHATADDRESSESTHEDATABASE, under this package's own root:
-// the same Spec.Prefix node/database gives its crdt store, so the group and the
-// store agree by construction rather than by two expressions that happen to
-// match.
 func TestTheGroupIsNamedByWhatAddressesTheDatabase(t *testing.T) {
 	name, err := ledger.Namespace(ledgerSpec())
 	require.NoError(t, err)
@@ -283,22 +262,12 @@ func TestTheGroupIsNamedByWhatAddressesTheDatabase(t *testing.T) {
 	require.ErrorIs(t, err, database.ErrUnaddressable)
 }
 
-// TestANODEWITHNOWHERETOOPENAGROUPKEEPSNOLEDGER, which is what makes the
-// service's refusal by name true: the composer either handed this node a way to
-// open a group or it did not.
 func TestANodeWithNowhereToOpenAGroupKeepsNoLedger(t *testing.T) {
 	_, err := ledger.New(nil, 0)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "no way to open a group")
 }
 
-// ─────────────────────────── leadership ───────────────────────────
-
-// TestAWRITEOFFTHELEADERISREFUSEDANDNAMESWHOLEADS.
-//
-// `raft: one holder at a time, so a write costs a round trip and nothing is
-// silently discarded.` A follower that accepted the write would have to merge it
-// later, which is the crdt promise wearing the other one's name.
 func TestALedgerRefusesAWriteOffItsLeaderAndSaysWhoLeads(t *testing.T) {
 	cluster := notLeading()
 	cluster.leaderID = followerLeader(t)
@@ -337,10 +306,6 @@ func followerLeader(t *testing.T) libp2ppeer.ID {
 	return id
 }
 
-// TestLOSINGTHELEASEMIDWRITEISSTILLNOTLEADING. Leadership can go between the
-// check and the apply; when it does, raft says so, and the caller is told the
-// same thing it would have been told a moment earlier rather than being handed a
-// store failure it gives up on.
 func TestLosingLeadershipMidWriteIsStillNotLeading(t *testing.T) {
 	cluster := leading()
 	cluster.wrote = raft.ErrNotLeader
@@ -355,10 +320,6 @@ func TestLosingLeadershipMidWriteIsStillNotLeading(t *testing.T) {
 	require.ErrorContains(t, store.Delete(t.Context(), "entry-1"), "the log is full")
 }
 
-// TestAREADTAKESABARRIER, because applied state without one can be older than
-// the write that already returned to its caller — and because a partitioned
-// leader answers IsLeader true until its lease runs out, so the barrier is the
-// leadership proof as much as it is the lag fix.
 func TestALedgerReadsBehindABarrier(t *testing.T) {
 	cluster := leading()
 	store := over(t, cluster)
@@ -393,12 +354,6 @@ func TestALedgerReadsBehindABarrier(t *testing.T) {
 	require.Empty(t, empty)
 }
 
-// TestABARRIERTHATFAILSISNOTANEMPTYLEDGER.
-//
-// Keys CANNOT fail: a closed cluster and a nil state machine both answer an empty
-// slice, so a group that is gone and a ledger nobody has written to are one
-// answer. "The ledger is empty" is a fact a caller acts on, so the check that can
-// fail has to be the one that runs first.
 func TestABarrierThatFailsIsNotAnEmptyLedger(t *testing.T) {
 	cluster := leading()
 	cluster.barrier = errors.New("no quorum")
@@ -416,11 +371,6 @@ func TestABarrierThatFailsIsNotAnEmptyLedger(t *testing.T) {
 	require.ErrorContains(t, err, "no quorum")
 }
 
-// TestAMISSFROMAGROUPTHATISGONEISNOTAMISS.
-//
-// A closed cluster and a nil state machine both answer empty, and the kv engine
-// turns that into "no such key" — which is a fact a ledger's reader acts on. The
-// barrier proves leadership BEFORE the read; this is the window after it.
 func TestAMissFromAGroupThatIsGoneIsNotAMiss(t *testing.T) {
 	cluster := leading()
 	store := over(t, cluster)
@@ -449,12 +399,6 @@ func TestAMissFromAGroupThatIsGoneIsNotAMiss(t *testing.T) {
 	require.Nil(t, keys)
 }
 
-// ─────────────────────────────── the budget ───────────────────────────────
-
-// TestACANCELLEDCALLERDOESNOTPAYTHEFULLBUDGET. pkg/raft takes a duration and not
-// a context, so a caller that has already given up would otherwise hold a commit
-// open for the whole of the ledger's budget — on a request path where the gateway
-// timed out seconds ago.
 func TestACancelledCallerDoesNotPayTheFullBudget(t *testing.T) {
 	cluster := leading()
 	store := over(t, cluster)
@@ -495,9 +439,6 @@ type expired struct{ context.Context }
 func (expired) Deadline() (time.Time, bool) { return time.Now().Add(-time.Second), true }
 func (expired) Err() error                  { return nil }
 
-// TestTHEDEFAULTBUDGETISTHEPACKAGES, so a composer that states nothing gets the
-// one written down rather than zero — which pkg/raft would read as "no wait at
-// all".
 func TestACallerWithNoDeadlinePaysTheLedgersBudget(t *testing.T) {
 	cluster := leading()
 	_, store := formed(t, answering(cluster).Groups, 0)
@@ -509,15 +450,6 @@ func TestACallerWithNoDeadlinePaysTheLedgersBudget(t *testing.T) {
 	require.Equal(t, ledger.Budget, budgets[len(budgets)-1])
 }
 
-// ─────────────────────────── the table of groups ───────────────────────────
-
-// TestAGROUPTHATHASNOTFORMEDISREFUSEDANDNEVERWAITEDON.
-//
-// raft.New blocks for as long as thirty seconds looking for peers so that a
-// cloud does not bootstrap a single-node cluster it later has to heal. That is
-// right at boot and wrong on a request path: node/queue.go measured what it
-// costs, which is every caller queued behind the first one and an invocation
-// that timed out.
 func TestAGroupThatHasNotFormedIsRefusedAndNeverWaitedOn(t *testing.T) {
 	cluster := leading()
 	asked := answering(cluster)
@@ -562,13 +494,6 @@ func TestAGroupThatHasNotFormedIsRefusedAndNeverWaitedOn(t *testing.T) {
 	require.True(t, shut)
 }
 
-// TestAGROUPTHATCOULDNOTBEOPENEDSAYSSOANDISTRIEDAGAIN.
-//
-// It says so rather than looking like one that has not finished forming — an
-// operator retrying forever is the failure a named refusal exists to stop. And it
-// is tried again, because raft.New spends thirty seconds on whatever the disk,
-// the host and the network were doing at the time: a failure left in the table
-// would make one bad minute permanent for that ledger on this node.
 func TestAGroupThatCouldNotBeOpenedSaysSoAndIsTriedAgain(t *testing.T) {
 	asked := &opens{answer: func() (raft.Cluster, error) { return nil, errors.New("no disk") }}
 
@@ -593,10 +518,6 @@ func TestAGroupThatCouldNotBeOpenedSaysSoAndIsTriedAgain(t *testing.T) {
 	}, 10*time.Second, 10*time.Millisecond, "a group that failed to open was never tried again")
 }
 
-// TestAGROUPTHATOPENEDTONOTHINGISNOTAGROUPTHATISFORMING. An opener answering no
-// cluster and no reason is a node on its way out; a caller told "still forming"
-// retries here for a group that will never form, and what it should do is ask
-// another voter.
 func TestAGroupThatOpenedToNothingIsRefusedAsClosed(t *testing.T) {
 	asked := &opens{answer: func() (raft.Cluster, error) { return nil, nil }}
 
@@ -616,12 +537,6 @@ func TestAGroupThatOpenedToNothingIsRefusedAsClosed(t *testing.T) {
 	require.NoError(t, l.Close())
 }
 
-// TestANODEONITSWAYOUTOPENSNOMOREGROUPS.
-//
-// Close empties the table, and a request already past the resident lookup would
-// otherwise open a fresh one afterwards — a live voter with a protocol handler, a
-// heartbeat and a vote in a quorum, that nothing will ever close again. A node
-// that has shut down would leave it behind.
 func TestANodeOnItsWayOutOpensNoMoreGroups(t *testing.T) {
 	cluster := leading()
 	asked := answering(cluster)
@@ -650,8 +565,6 @@ func TestANodeOnItsWayOutOpensNoMoreGroups(t *testing.T) {
 	require.Equal(t, 1, asked.asked(), "a node that had shut down opened another raft group")
 }
 
-// TestCLOSINGCARRIESWHATAGROUPSAIDONITSWAYDOWN, rather than reporting a clean
-// shutdown for a group that did not have one.
 func TestClosingCarriesWhatAGroupSaidOnItsWayDown(t *testing.T) {
 	cluster := leading()
 	cluster.closeErr = errors.New("the log would not flush")
@@ -660,8 +573,6 @@ func TestClosingCarriesWhatAGroupSaidOnItsWayDown(t *testing.T) {
 	require.ErrorContains(t, l.Close(), "the log would not flush")
 }
 
-// TestCLOSINGWAITSFORAGROUPTHATISSTILLFORMING, because tearing one down
-// mid-bootstrap would leave the goroutine writing into a closed store.
 func TestClosingWaitsForAGroupThatIsStillForming(t *testing.T) {
 	cluster := leading()
 	asked := answering(cluster)

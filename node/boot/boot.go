@@ -1,31 +1,15 @@
-// Package boot turns a file an operator wrote into a running v2 node.
+// Package boot turns a file an operator wrote into a running v2 node: read yaml,
+// build the machine's resources (a libp2p identity, gossipsub, a data directory),
+// hand them to node/, and serve what comes back.
 //
-// # What this is, and what it deliberately is not
+// The file is node.Config plus what a machine has rather than a cloud (listen
+// addresses, bootstrap peers, data directory): a decode, not a translation. v1's
+// shape files are not read.
 //
-// It is the last mile: read a yaml file, build the machine's resources — a
-// libp2p identity, a gossipsub, a place to keep data — hand them to
-// node/, and serve what comes back.
-//
-// IT IS NOT A SECOND CONFIGURATION SYSTEM. The file's shape IS node.Config plus
-// the handful of things a machine has rather than a cloud: where it listens,
-// who it dials, where its data lives. Every v2 service's Config was written to
-// be a plain value that survives a round trip through yaml precisely so that
-// this layer is a decode and not a translation — a translation is where an
-// operator's setting quietly stops meaning what the struct says.
-//
-// It does not read v1's shape files. Those carry v1's concepts, and a v2 node
-// that consumed them would have to decide what each of them means here, which
-// is a mapping nobody could check.
-//
-// # Admission is the default and an open network is a decision
-//
-// Every v2 service trusts the peers it is connected to — that is the OSS trust
-// model, stated in .notes/tee/v2-seam.md — so a peer is admitted only by a
-// certificate from the cloud's CA, checked in the libp2p handshake in both
-// directions (p2p/sectls). A node with no certificate would be a node whose
-// register any stranger can publish into, so omitting one does not open the
-// network; it refuses to start, and `open: true` is how somebody says they
-// meant it.
+// Every v2 service trusts its connected peers, so a peer is admitted only by a
+// certificate from the cloud's CA, checked both ways in the libp2p handshake
+// (p2p/sectls). A node without one refuses to start; `open: true` says an open
+// network was meant.
 package boot
 
 import (
@@ -96,16 +80,11 @@ type File struct {
 	// serves nothing there, which is right for a node that runs no gateway.
 	HTTP string `yaml:"http"`
 
-	// HTTPS is where the gateway is served over TLS, e.g. ":8443". Empty
-	// terminates nothing, and a node facing the internet then sits behind
-	// something that does.
-	//
-	// EACH HANDSHAKE IS ANSWERED BY THE GATEWAY THAT SERVES ITS NAME: the
-	// cloud's own wildcard (node.gateway.wildcard) for a generated name, the
-	// secret a gateway names for one that provides its own, and an ACME
-	// issuance (node.cm.certificate) for a
-	// generated name the wildcard does not cover — see services/gateway's
-	// tls.go. The CA's HTTP-01 challenges are answered on HTTP.
+	// HTTPS is where the gateway is served over TLS, e.g. ":8443"; empty terminates
+	// nothing. Each handshake is answered by the gateway serving its name: the cloud's
+	// wildcard (node.gateway.wildcard), a gateway's own secret, or an ACME issuance
+	// (node.cm.certificate) for a generated name the wildcard misses (services/gateway's
+	// tls.go). HTTP-01 challenges are answered on HTTP.
 	HTTPS string `yaml:"https"`
 }
 
@@ -165,14 +144,9 @@ func (f File) withDefaults() (File, error) {
 type Running struct {
 	Node *node.Node
 
-	// Found is what answered for the service Reach was asked for, captured at
-	// the moment it answered.
-	//
-	// IT IS NOT RE-ASKED. A second Route can come back empty — the view has a
-	// freshness window and the node that answered may have fallen out of it
-	// between the two calls — and a caller that re-asked would be handed an
-	// empty slice with no way to tell "gone" from "never was". Start leaves
-	// this nil.
+	// Found is what answered for the service Reach was asked for, captured when it
+	// answered and not re-asked: the view's freshness window can drop it. Start leaves
+	// it nil.
 	Found []stats.Node
 
 	peer   peer.Node
@@ -352,14 +326,8 @@ func listen(address string, handler http.Handler, config *tls.Config) (*http.Ser
 		return nil, fmt.Errorf("boot: listening on %s: %w", address, err)
 	}
 
-	// READ AND HEADER TIMEOUTS ARE NOT OPTIONAL ON A PUBLIC LISTENER. A
-	// connection that never finishes its request line parks a goroutine until
-	// the peer goes away, and the peer is the internet.
-	//
-	// Addr IS WHAT WAS TAKEN, not what was asked for. Serve never reads it —
-	// only ListenAndServe does — so it is carried for Address(), and an
-	// operator who wrote `:0` has no other way to learn the port. It was left
-	// unset, which made Address() answer "" for every node that was serving.
+	// Read and header timeouts are mandatory on a public listener. Addr is what was
+	// bound, carried for Address() so an operator who wrote `:0` learns the port.
 	server := &http.Server{
 		Addr:              listener.Addr().String(),
 		Handler:           handler,
@@ -428,13 +396,8 @@ func (r *Running) Close() error {
 	return err
 }
 
-// identity is this node's libp2p key, minted when the file names none.
-//
-// A NEW IDENTITY EVERY RESTART IS ALMOST NEVER WHAT SOMEBODY MEANT. Anything
-// that remembered this peer — a bootstrap list, another node's discovery view, a
-// pinned address — forgets it, and the node rejoins as a stranger. It is minted
-// rather than refused because a first run has to be possible without generating
-// a key by hand, and it is logged so the second run is a choice.
+// identity is this node's libp2p key, minted and logged when the file names none,
+// since a new identity every restart makes the node a stranger to its fleet.
 func identity(encoded string) ([]byte, error) {
 	if encoded != "" {
 		return decode("privatekey", encoded)
@@ -455,9 +418,8 @@ func identity(encoded string) ([]byte, error) {
 	return out, nil
 }
 
-// decode reads a base64 field, and says which one when it cannot.
-// admission is nil for an open node with no certificate, which then speaks
-// stock libp2p TLS.
+// admission is nil for an open node with no certificate, which then speaks stock
+// libp2p TLS.
 func (f File) admission(privateKey []byte) (*sectls.Credentials, error) {
 	if f.CA == "" && f.Certificate == "" {
 		return nil, nil
@@ -484,15 +446,9 @@ func decode(name, value string) ([]byte, error) {
 	return out, nil
 }
 
-// Reach starts the smallest node that can find the fleet: it runs discovery and
-// nothing else, joins the swarm this file describes, and waits until it has
-// seen a node running the service asked for.
-//
-// IT IS A NODE AND NOT A DIAL. Which node runs a service is a routing question
-// answered from live measurements, and a command that dialled a peer an
-// operator typed would be a second answer to it — one that is wrong whenever
-// the fleet moved. This joins, listens, and asks the same view everything else
-// asks.
+// Reach starts the smallest node that can find the fleet: discovery only, joined to
+// the swarm, waiting until it sees a node running the service. A node rather than a
+// dial, so it asks the same view as everything else.
 func Reach(ctx context.Context, f File, service string, within time.Duration) (*Running, error) {
 	f.Node = node.Config{Services: []string{node.Discovery}, Cloud: f.Node.Cloud, Discovery: f.Node.Discovery}
 	f.HTTP = ""

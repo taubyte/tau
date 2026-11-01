@@ -34,10 +34,6 @@ func restorer(t *testing.T, root string, archive []byte) (*volume.Volumes, *said
 	return v, log
 }
 
-// TestARESTOREOverItsQuotaIsServedAndSaid. A volume may grow past its quota
-// where it runs, and is said to have; refusing its checkpoint where it moved
-// would be a mount that fails for the tenant until somebody raised the quota.
-// So the restore is served, and said the way a checkpoint says it.
 func TestARestoreOverItsQuotaIsServedAndSaid(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -99,9 +95,6 @@ func noise(n int) string {
 	return string(b)
 }
 
-// TestARESTORELeavesTheDiskItsReserve, of bytes and of inodes. One that would
-// take the disk past it fails, says which volume and by how much, and leaves
-// nothing a later mount would take for a restore.
 func TestARestoreLeavesTheDiskItsReserve(t *testing.T) {
 	for _, c := range []struct {
 		name    string
@@ -169,10 +162,6 @@ func (p *partway) Read(b []byte) (int, error) {
 	return n, err
 }
 
-// TestWHATELSEFillsTheDiskWhileARestoreRunsCounts. The disk is read as the
-// restore writes, not once before it: here eight MiB fit when it starts, then
-// another writer takes five while it runs, and the restore stops at the
-// reserve instead of finishing on what it read at the start.
 func TestWhatElseFillsTheDiskWhileARestoreRunsCounts(t *testing.T) {
 	for _, c := range []struct {
 		name     string
@@ -212,10 +201,6 @@ type synced struct {
 	mode   fs.FileMode
 }
 
-// TestARESTOREIsOnDiskBeforeItIsInPlace. Every file and directory it made is
-// synced before the rename that puts it in place — a directory its owner
-// cannot write with the mode it ends with — and the directory it was renamed
-// into after it. Power lost at any point leaves no volume or all of it.
 func TestARestoreIsOnDiskBeforeItIsInPlace(t *testing.T) {
 	root := t.TempDir()
 	v, _ := restorer(t, root, entries(t,
@@ -258,9 +243,6 @@ func TestARestoreIsOnDiskBeforeItIsInPlace(t *testing.T) {
 	require.Equal(t, fs.FileMode(0o500), before["closed"], "the closed directory was last synced before it was closed")
 }
 
-// TestARESTOREThatCannotBeMadeDurableIsNotServed: whichever sync fails, the
-// mount fails. Up to the rename nothing is left behind; after it, the volume is
-// all there, and the next mount serves it.
 func TestARestoreThatCannotBeMadeDurableIsNotServed(t *testing.T) {
 	archive := entries(t,
 		tar.Header{Name: "closed", Typeflag: tar.TypeDir, Mode: 0o500},

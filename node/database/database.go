@@ -1,77 +1,21 @@
-// Package database backs the four data models the `database` kind declares, and
-// keeps the copies of a database this node holds.
+// Package database backs the `database` kind's four data models and keeps the copies
+// this node holds. Two adapters: one between the wasm tier and pkg/database's
+// registry, one between the engines' store requests and the replicated kvdb or
+// node/ledger's raft groups.
 //
-// # Why it is its own package
-//
-// Both halves are ADAPTERS. The first sits between the wasm tier, which knows a
-// grant and four sets of verbs, and pkg/database, which knows a Spec and a
-// registry of engines. The second sits between those engines, which ask for the
-// store ONE database's entries live in, and two things that answer — a replicated
-// kvdb the composition root opens, and a raft group node/ledger holds. The root
-// is the only place that may NAME all of those — but naming them and implementing
-// the adapters are different jobs, and conflating them is how node/ grew to eight
-// thousand lines with twenty-two of these in one namespace.
-//
-// So the root hands these what they can ask. Everything this package needs is in
-// its own signature, which is the property a type taking *Node does not have:
-// that one can reach anything the node has, so nothing about it says what it
-// actually depends on, and it cannot be built anywhere except beside the node.
-//
-// # Four data models, one registry, one connection per handle
-//
-// `database` is four models — kv, sql, document, vector — on one axis and two
-// consensus resolutions on another. Which model a grant names decides which
-// surface the connection has to answer; whichever it is, it is opened once and
-// kept, because a pool is what database/sql already is and because a kv
-// connection is a prefix over a store that is already open.
-//
-// # No driver is linked here, and that is pkg/database's decision
-//
-// database/sql is a registry: a driver registers itself from its own init, so a
-// deployment that wants Postgres imports one and registers the engine —
+// Each grant's connection is opened once and kept. No driver is linked here
+// (pkg/database's decision); a composer registers what it wants:
 //
 //	import _ "github.com/jackc/pgx/v5/stdlib"
 //	node.WithDatabaseEngines(reg)  // reg holds sql.Postgres("pgx")
 //
-// tau therefore links no database driver, which is what lets the same binary
-// serve a cloud that has one and a cloud that does not. A node with nothing
-// registered answers every database call by naming what IS registered, which is a
-// message an operator can act on rather than a connection that hangs.
+// tau's own engines are registered here, so `type: kv` needs nothing provisioned (see
+// TauBacked). A credential reference is resolved through the vault only when a
+// connection opens, so no password is ever in a spec.
 //
-// tau's own engines are the exception and are registered HERE rather than by a
-// composer: that is what makes `type: kv` work with nothing to provision — a
-// project declares a database and gets one from the swarm it is already on. Which
-// models those cover is [TauBacked].
-//
-// # The credential is resolved here and nowhere earlier
-//
-// The compiled resource carries a REFERENCE to a secret. It is resolved at the
-// moment a connection is opened, through the same vault a workload reads a
-// run-time variable from — so a password is never in a spec, which is logged,
-// cached, compared and handed to a tier.
-//
-// # A store per database, which is a topic per database
-//
-// That is the point rather than a side effect — see database.Stores. One store
-// for all of them meant every subscriber held every database's rows, so
-// placement decided nothing, and a Delete was a tombstone every replica applied:
-// dropping a copy this node no longer holds deleted the copy the node that just
-// acquired it holds.
-//
-// # What it holds is read off the disk and not off the table
-//
-// A restarted node holds everything it held before and has opened none of it. A
-// holder that answered from its warm table would say it holds nothing, and every
-// move that needed it would either wait forever or, worse, count its "not held"
-// as a reason for somebody else to let go.
-//
-// # And a released copy is not served from the table again
-//
-// Destroying a database closes the store it destroys. A node that kept that
-// store in the table it serves from went on answering every later call out of a
-// closed store — not-found for rows another node holds, and the CRDT's own
-// bookkeeping written back under the prefix that was just removed, which makes
-// this node advertise a database it does not have.
+// One store per database (see database.Stores). Holdings are read off disk, since a
+// restarted node has opened nothing, and a released copy's closed store is dropped
+// from the table so it is never served again.
 package database
 
 import (
@@ -93,12 +37,8 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// Secrets resolves the secret a connection's credentials were declared as.
-//
-// ONE METHOD AND NOT A VAULT, whose other half is the developer's — Set, Delete
-// and List, reached from the build frontend — and which also has a lifetime: a
-// stream to whichever node holds the secrets service. Neither is a connection's
-// business. What it needs is one read.
+// Secrets resolves the secret a connection's credentials were declared as: one read,
+// not the vault.
 type Secrets interface {
 	Secret(ctx context.Context, project, environment, name string) (string, error)
 }
@@ -122,17 +62,8 @@ var (
 	_ wasmtier.VectorStores   = (*Databases)(nil)
 )
 
-// New wires the adapter.
-//
-// registry MAY BE NIL, and that is the ordinary build: nothing here links a
-// driver, so a node whose composer registered no engine serves the three models
-// tau backs itself and refuses the rest BY NAME rather than hanging on a
-// connection nobody can make.
-//
-// stores and secrets may not be nil. Without somewhere to put entries tau's own
-// engines cannot be registered at all, and without a way to read a secret a
-// database declaring a credential would connect with an empty password and be
-// refused by the server for the wrong reason.
+// New wires the adapter. registry may be nil (no driver linked): tau's models are
+// served and the rest refused by name. stores and secrets may not be nil.
 func New(registry *database.Registry, stores database.Stores, secrets Secrets) (*Databases, error) {
 	if stores == nil {
 		return nil, errors.New("database: nowhere to keep the entries of the databases tau backs itself")
@@ -150,15 +81,8 @@ var (
 	// ErrNotSQL is a database whose data model this tier does not serve yet.
 	ErrNotSQL = errors.New("database: only the sql data model is served")
 
-	// ErrConsensusUnserved is a ledger reached through this node's OWN engines
-	// rather than through the database service.
-	//
-	// IT IS REFUSED BY NAME AND NEVER MERGED. These engines are the fallback
-	// for a node that runs no database service and can reach none, and a raft
-	// database has nothing to keep its order in there: no group, no owner, and
-	// nowhere to send a write that this node may not make. Serving it as crdt
-	// would resolve two entries into one with no error to anybody, which is the
-	// one thing the declaration exists to prevent.
+	// ErrConsensusUnserved is a raft database reached through this node's fallback
+	// engines, which have no group to keep its order; refused, never merged.
 	ErrConsensusUnserved = errors.New("database: a raft database is kept by the database service and not by this node's own engines")
 )
 
@@ -434,20 +358,11 @@ func (k keyValue) Keys(ctx context.Context, prefix string) ([]string, error) {
 func (k keyValue) Get(ctx context.Context, key string) ([]byte, error) {
 	value, err := k.KVConn.Get(ctx, key)
 	if err != nil && errors.Is(err, kvengine.ErrNotFound) {
-		// THE TIER'S MISS AND NOT THE ENGINE'S, which is the same translation
-		// node/cache.go makes and the same bug it was written to stop: an
-		// unrecognised error becomes `unavailable`, so every miss would read
-		// as an outage.
+		// The tier's miss, not the engine's, or every miss reads as an outage.
 		return nil, fmt.Errorf("%w: %w", wasmtier.ErrNotFound, err)
 	}
 	return value, err
 }
-
-// openFor resolves one grant into a connection of the given data model, and
-// keeps it.
-//
-// A CONNECTION IS KEPT BECAUSE A POOL IS WHAT database/sql ALREADY IS, and
-// because a kv connection is a prefix over a store that is already open —
 
 // openFor resolves one grant into a connection of the given data model, and
 // keeps it.
@@ -500,12 +415,8 @@ func (d *Databases) specOf(ctx context.Context, grant invoke.Grant, want databas
 		Project:     project,
 		Environment: environment,
 
-		// THE RESOLVED ID AND NOT THE AUTHOR'S LABEL. A label is local to the
-		// resource that wrote it — two workloads may call one database
-		// different things, and two different databases may both be called
-		// `tokens` — so a kv engine keying its rows on the label would put two
-		// databases in one key space. It is the id for every engine and not
-		// just that one, because Spec.Name is what ADDRESSES the resource.
+		// The resolved id, not the author's label: labels are per workload and not unique,
+		// and Spec.Name addresses the resource.
 		Name:     keyedAs(id),
 		Address:  grant.Settings[keys.host],
 		Database: grant.Settings[keys.database],
@@ -527,16 +438,9 @@ func (d *Databases) specOf(ctx context.Context, grant invoke.Grant, want databas
 		return database.Spec{}, fmt.Errorf("%w: %s", ErrConsensusUnserved, grant.Label)
 	}
 
-	// TLS IS ON UNLESS THE AUTHOR WROTE `disable`, which is the vocabulary's
-	// own polarity: absent means verify-full and turning it off is a word
-	// somebody had to write.
-	//
-	// `require` IS SERVED AS verify-full, which is STRONGER than asked.
-	// pkg/database carries a bool and cannot say "encrypted but unverified";
-	// serving the weaker of the two would be quietly accepting a network
-	// attacker as the server, so the stronger one is what happens — and a
-	// server with a certificate this node will not verify fails to connect,
-	// loudly, instead of connecting to whoever answered.
+	// TLS is on unless the author wrote `disable`. `require` is served as verify-full:
+	// pkg/database carries a bool, and the weaker reading would accept a network
+	// attacker as the server.
 	spec.Credentials.TLS = keys.tls == "" || grant.Settings[keys.tls] != keys.disabled
 
 	// PER-TYPE DECLARATIONS TRAVEL AS OPTIONS. A vector's width and metric mean
@@ -561,38 +465,17 @@ func (d *Databases) specOf(ctx context.Context, grant invoke.Grant, want databas
 	return spec, nil
 }
 
-// keyedAs is the id an engine keys its rows under.
-//
-// AN ADMITTED INSTANCE IS PART OF THE HANDLE — `<project>/<env>/<id>/<instance>`
-// — which every backing that prefixes by handle isolates for free. A database
-// is the one that does not: pkg/database's engines build a key prefix from
-// Spec.Name and REFUSE a name containing "/", so an instance's handle made
-// every kv, document and vector database permanently unopenable, with the
-// error cached under the handle for the life of the node.
-//
-// So the separator is folded here, where the handle is read back apart, rather
-// than changed in the handle — which node/cache, node/storage and the gateway's
-// bus attach all depend on. A resource id is a CID and carries no
-// ":", and an instance name is already refused if it carries a "/", so the
-// mapping is injective and two instances never share a key space.
+// keyedAs is the id an engine keys its rows under. An admitted instance makes the
+// handle `<project>/<env>/<id>/<instance>`, and pkg/database refuses a name with "/",
+// so the separator is folded to ":" here. A CID has no ":" and an instance name no
+// "/", so the mapping is injective.
 func keyedAs(id string) string { return strings.ReplaceAll(id, "/", ":") }
 
-// engines is the registry this node serves from, with tau's own kv engine in
-// it.
-//
-// THE kv ENGINE IS REGISTERED BY THIS NODE AND NOT BY A COMPOSER, which is what
-// makes `type: kv` work with nothing to provision: a project declares a
-// database and gets one from the swarm it is already on. Every other engine
-// reaches a server somebody else runs, so those are the composer's to register
-// — see WithDatabaseEngines.
-//
-// It is opened on FIRST USE. A node that serves no kv database never opens the
-// store, which is the same rule the cache backing keeps.
+// engines is the registry this node serves from, with tau's own engines registered
+// on first use so a declared kv needs nothing provisioned. Other engines are the
+// composer's (WithDatabaseEngines).
 func (d *Databases) engines(ctx context.Context, want database.Type) (*database.Registry, error) {
-	// TAU'S OWN ENGINES ARE THIS NODE'S TO REGISTER, and the rest are a
-	// composer's — see the doc above. kv, document and vector are backed by the
-	// swarm's own store; sql is not, and TauBacked is where that is said once
-	// so a test can hold the vocabulary to it.
+	// Only the models tau backs (TauBacked); sql is not the swarm's store.
 	if !tauBacks(want) {
 		if d.registry == nil {
 			return nil, ErrNoEngines
@@ -668,14 +551,9 @@ var keysOf = map[string]modelKeys{
 	},
 }
 
-// Settings is every attribute path this adapter reads off a grant.
-//
-// IT IS EXPORTED SO THE ROOT CAN HOLD IT TO THE VOCABULARY. A renamed attribute
-// does not fail here: the key is absent, the read is a zero value, and a declared
-// host silently becomes no host, a declared width no width, and `tls: disable`
-// the state an author has to write a word to reach. node/settings_test.go walks
-// this list against the schema, and its own doc carries the post-mortem that test
-// came out of.
+// Settings is every attribute path this adapter reads off a grant, exported so
+// node/settings_test.go can hold it to the vocabulary: a renamed attribute would
+// silently drop a host, a width, or `tls: disable`.
 var Settings = func() []string {
 	out := []string{settingType}
 	for _, keys := range keysOf {
@@ -689,16 +567,9 @@ var Settings = func() []string {
 	return out
 }()
 
-// credentials reads the secret the configuration referenced.
-//
-// THE SECRET IS "username:password", split on the FIRST colon — the userinfo
-// shape a connection URL already uses, and the one that lets a password contain
-// a colon. A secret with no colon is a password with no user, which is what a
-// server that authenticates by password alone wants.
-//
-// The vocabulary says only "Secret holding the credentials to connect with", so
-// this is a convention rather than a rule it states. It is written down here
-// because the alternative — inventing a username — is worse.
+// credentials reads the secret the configuration referenced, as "username:password"
+// split on the first colon (a URL's userinfo shape); no colon is a password alone.
+// A convention, since the vocabulary does not say.
 func (d *Databases) credentials(ctx context.Context, project, environment, reference string) (username, password string, err error) {
 	value, err := d.secrets.Secret(ctx, project, environment, reference)
 	if err != nil {

@@ -8,9 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestAPATHIsFollowedToWhereItIsOnDisk, which is what closeDirs closes: every
-// link along the name followed, a ".." taken from where the link led, and a
-// name that leads out or round in a loop refused rather than guessed at.
 func TestAPathIsFollowedToWhereItIsOnDisk(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "a", "b", "c"), 0o750))

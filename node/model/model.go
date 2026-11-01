@@ -1,45 +1,12 @@
-// Package model backs `taubyte:model/inference` on this node.
+// Package model backs `taubyte:model/inference`: an adapter between a guest that
+// knows a model's name and providers that each want a different envelope, credential
+// header and answer shape. Everything about where inference happens is on the model
+// resource, carried in the grant; a workload passes only a name.
 //
-// # Why it is its own package
-//
-// It is an ADAPTER: it sits between a guest that knows a model's NAME and three
-// providers that each want a different envelope, a different credential header
-// and a different answer shape. The composition root is the only place that may
-// name the node's vault and its placement router — but naming them and speaking
-// somebody else's wire format are different jobs, and conflating them is how
-// node/ grew to eight thousand lines with twenty-two of these in one namespace.
-//
-// So the root hands this two questions it can ask, and everything this package
-// needs is in its own signature.
-//
-// # The resource is the configuration and the caller has none
-//
-// Everything about where inference happens — the endpoint, the wire format, the
-// credential, the parameters — is on the model resource, carried here in the
-// grant's settings. A workload passes a NAME, and an author moves a project
-// between providers without touching a guest.
-//
-// # Three formats, because the vocabulary offers three
-//
-// `openai`, `anthropic` and `ollama`. The first and third are the same request
-// shape — plenty of things that are not OpenAI serve the OpenAI format, which
-// is exactly what the vocabulary's own doc says the field is for — and
-// anthropic differs in three ways that matter: the system turn is a top-level
-// field rather than a message, `max_tokens` is required, and the answer is a
-// list of content blocks.
-//
-// # What is refused and what is unavailable
-//
-// A provider that ANSWERED and said no is refused: a malformed request, a
-// filtered one, a context that does not fit. It will fail again the same way,
-// so a caller that retries is wasting its budget. Anything else — a dial that
-// failed, a timeout, a 5xx — is unavailable, and retrying is reasonable.
-//
-// # The credential never appears in a log line
-//
-// It is read from the vault at the call and put in a header. It is not in the
-// spec, not in the grant, and no error here carries the response body of a
-// request that had it in a header.
+// Formats: `openai` and `ollama` share a shape; `anthropic` puts the system turn at
+// the top level, requires `max_tokens` and answers in content blocks. A provider that
+// answered no is refused (retrying fails the same way); a failed dial, timeout or 5xx
+// is unavailable. The credential is read from the vault at the call and never logged.
 package model
 
 import (
@@ -88,20 +55,9 @@ type Secrets interface {
 	Secret(ctx context.Context, project, environment, name string) (string, error)
 }
 
-// Inferences is the adapter. Construct it with New.
-//
-// IT HOLDS A SECRET RESOLVER RATHER THAN THE NODE, which is the same seam the
-// worker and the proxy take: a credential is read through whichever resolver the
-// composition settled on — an injected one, a node's own vault, or one in the
-// fleet — and nothing here needs to know which.
-//
-// BOTH ARE READ AT THE CALL AND NOT CAPTURED, which is not a style choice: the
-// wasm tier is composed before placement is opened, so a struct that took the
-// router at construction would take nil on every node there is. What each
-// function ANSWERS may be nil, and that is a node with no vault or no placement;
-// what it may not be is a typed nil in an interface — a nil *placement.Workers
-// put in one is not nil, so every `== nil` here would pass and the first call
-// would panic. The function is the one place that check can be made.
+// Inferences is the adapter, holding a secret resolver and a placement router as
+// functions read at the call: the wasm tier is composed before placement. Each may
+// answer nil, never a typed nil in an interface.
 type Inferences struct {
 	secrets func() Secrets
 	workers func() Workers

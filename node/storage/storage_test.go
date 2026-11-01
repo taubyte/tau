@@ -24,17 +24,8 @@ import (
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// storage_test is the node's half of an object: the bytes go into the
-// content-addressed store and the NAME goes into a replicated row, which is what
-// makes two objects with the same content one object and still two names.
-//
-// EVERY ONE OF THESE USED TO NEED A NODE — a register, a worker, a mocknet host
-// and a started composition — to assert what a bucket answers. The cases that
-// matter most are the ones a node made hardest to reach: an index that cannot be
-// read, a row that vanished mid-listing, a row that is not a row. They are
-// ordinary rows here.
-
-// ---------------------------------------------------------------- doubles
+// The node's half of an object: bytes in the content-addressed store, the name in a
+// replicated row.
 
 // blobs is an Assets double: a content-addressed store over a map.
 //
@@ -116,16 +107,8 @@ type nopSeekCloser struct{ *bytes.Reader }
 
 func (nopSeekCloser) Close() error { return nil }
 
-// rows is a Rows double over a map, in the shape the root actually hands over:
-// node/cache.go's adapter over a kvdb.
-//
-// IT NORMALISES EVERY KEY THE WAY A REAL STORE DOES — see datastoreKey. Without
-// that this fake would be more permissive than what it stands in for, in both
-// directions at once: a listed key would come back without the leading slash a
-// real one carries, which makes a prefix trim look correct when in production it
-// trims nothing; and a key holding `..` would be a distinct map entry here while
-// a real store resolves it into somebody else's bucket. Both of those are bugs
-// this code shipped, and a fake without this is why their tests passed.
+// rows is a Rows double over a map that normalises keys as a real store does
+// (datastoreKey), or it would hide prefix and `..` bugs.
 type rows struct {
 	mu   sync.Mutex
 	held map[string][]byte
@@ -248,8 +231,6 @@ func (o *opening) times() int {
 	return o.asked
 }
 
-// ---------------------------------------------------------------- fixtures
-
 // What one row may hold, in S3's own numbers.
 //
 // THEY ARE SPELLED OUT HERE rather than read off the package: they bound a row
@@ -297,9 +278,6 @@ func opened(t *testing.T, size int64) (wasmtier.Bucket, *blobs, *rows) {
 	return bucket, store, index
 }
 
-// ---------------------------------------------------------------- construction
-
-// TestANODEWithNoAssetStoreSaysSO, rather than answering every read with a miss.
 func TestEveryDependencyABucketCannotDoWithoutIsRefused(t *testing.T) {
 	_, err := storage.New(nil, &opening{rows: newRows()}, nil)
 	require.ErrorIs(t, err, storage.ErrNoObjectStore)
@@ -312,8 +290,6 @@ func TestEveryDependencyABucketCannotDoWithoutIsRefused(t *testing.T) {
 	require.NoError(t, b.Close(), "closing releases nothing of its own")
 }
 
-// TestANINDEXThatCannotBeOpenedRefusesTheBucket, once, on the first open that
-// needs it — a node serving no bucket opens no database at all.
 func TestTheIndexIsAskedForOnce(t *testing.T) {
 	stores := &opening{rows: newRows()}
 	b, err := storage.New(newBlobs(), stores, nil)
@@ -332,10 +308,6 @@ func TestTheIndexIsAskedForOnce(t *testing.T) {
 	require.ErrorContains(t, err, "no database factory")
 }
 
-// ---------------------------------------------------------------- the two halves
-
-// TestTHEBYTESGoIntoTheContentAddressedStoreAndTheNameIntoARow, and the row is
-// where every node in the cloud has to agree it is.
 func TestAnObjectIsACidAndAName(t *testing.T) {
 	bucket, store, index := opened(t, 0)
 	ctx := t.Context()
@@ -351,8 +323,6 @@ func TestAnObjectIsACidAndAName(t *testing.T) {
 	require.Equal(t, []string{"/objects/shop/prod/QmBucket/2026/01"}, index.keys())
 }
 
-// TestTWOOBJECTSWithTheSameContentAreONEBlob, which is what content-addressing
-// buys and is the reason a delete removes the name and not the bytes.
 func TestIdenticalObjectsShareTheirBytes(t *testing.T) {
 	bucket, store, _ := opened(t, 0)
 	ctx := t.Context()
@@ -368,8 +338,6 @@ func TestIdenticalObjectsShareTheirBytes(t *testing.T) {
 	require.Len(t, listing.Objects, 2)
 }
 
-// TestADELETERemovesTheNameAndLeavesTheBytes, because they may be another
-// name's — collecting them is a different job with a different safety argument.
 func TestDeletingLeavesTheBytes(t *testing.T) {
 	bucket, store, _ := opened(t, 0)
 	ctx := t.Context()
@@ -393,8 +361,6 @@ func TestDeletingLeavesTheBytes(t *testing.T) {
 	require.ErrorIs(t, bucket.Delete(ctx, "a"), wasmtier.ErrNotFound)
 }
 
-// TestTWOBucketsDoNotSeeEachOther, and a handle that is a PREFIX of another's is
-// the case that catches a missing separator.
 func TestBucketsAreScopedByHandle(t *testing.T) {
 	b, _, _ := serving(t)
 	ctx := t.Context()
@@ -418,13 +384,6 @@ func TestBucketsAreScopedByHandle(t *testing.T) {
 	require.Equal(t, "mine", string(object.Body))
 }
 
-// TestANAMEThatWouldLeaveItsBucketIsRefused, on every verb.
-//
-// THE STORE PATH-CLEANS EVERY KEY, so `../../prod/QmOther/secret` appended to a
-// bucket's prefix does not miss — it RESOLVES, into another deployment's bucket.
-// A guest in staging could read, overwrite and delete production objects, with no
-// error anywhere on the path. That is what the fake's own normalisation is for:
-// without it these names would be harmless map entries.
 func TestANameThatLeavesTheBucketIsRefused(t *testing.T) {
 	bucket, _, index := opened(t, 0)
 	ctx := t.Context()
@@ -455,7 +414,6 @@ func TestANameThatLeavesTheBucketIsRefused(t *testing.T) {
 	require.Equal(t, []string{"/objects/shop/prod/QmBucket/mine"}, index.keys())
 }
 
-// TestANOBJECTWithNoNameCannotBeFoundAgain.
 func TestAnUnnamedObjectIsRefused(t *testing.T) {
 	bucket, _, _ := opened(t, 0)
 
@@ -469,9 +427,6 @@ func TestAnUnnamedObjectIsRefused(t *testing.T) {
 	require.Empty(t, listing.Objects)
 }
 
-// ---------------------------------------------------------------- what a row says
-
-// TestHEADAnswersWithoutReadingTheBytes.
 func TestHeadIsTheRowAlone(t *testing.T) {
 	bucket, store, _ := opened(t, 0)
 	ctx := t.Context()
@@ -490,9 +445,6 @@ func TestHeadIsTheRowAlone(t *testing.T) {
 	require.ErrorIs(t, err, wasmtier.ErrNotFound)
 }
 
-// TestTHEROWCarriesTheMomentItWasWritten, off this node's own clock so a test
-// that moves time moves what an object says — and off the machine's when the
-// composer injected none.
 func TestTheModifiedTimeIsTheNodesClock(t *testing.T) {
 	at := time.Unix(1_700_000_000, 0)
 	b, err := storage.New(newBlobs(), &opening{rows: newRows()}, func() time.Time { return at })
@@ -516,8 +468,6 @@ func TestTheModifiedTimeIsTheNodesClock(t *testing.T) {
 	require.InDelta(t, time.Now().Unix(), info.Modified, 60)
 }
 
-// TestTHECONTENTTYPEAndMetadataAreKept, which is what makes an object servable
-// over HTTP by anything that reads this bucket.
 func TestAnObjectKeepsItsTypeAndMetadata(t *testing.T) {
 	bucket, _, _ := opened(t, 0)
 	ctx := t.Context()
@@ -550,8 +500,6 @@ func TestAnObjectKeepsItsTypeAndMetadata(t *testing.T) {
 	require.Nil(t, info.Metadata)
 }
 
-// TestTHEETAGIsTheContentId, which is what makes it a STRONG etag: it changes
-// exactly when the bytes do, and two names holding one content share it.
 func TestTheEtagIsTheContentId(t *testing.T) {
 	bucket, store, _ := opened(t, 0)
 	ctx := t.Context()
@@ -576,8 +524,6 @@ func TestTheEtagIsTheContentId(t *testing.T) {
 	require.Equal(t, first, info.ETag)
 }
 
-// TestAROWWhoseBytesHaveNotArrivedIsNotAMiss. Telling the caller "not found"
-// would tell it to write the object again, over something on its way.
 func TestBytesThatHaveNotArrivedAreNotAMiss(t *testing.T) {
 	bucket, store, _ := opened(t, 0)
 	ctx := t.Context()
@@ -596,9 +542,6 @@ func TestBytesThatHaveNotArrivedAreNotAMiss(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestBYTESThatStopHalfwayAreAnErrorAndNotAShortObject. A guest handed the first
-// half of an object with no error would write it back, or serve it, as the whole
-// thing.
 func TestBytesThatStopHalfwayAreAnError(t *testing.T) {
 	bucket, store, _ := opened(t, 0)
 	ctx := t.Context()
@@ -615,9 +558,6 @@ func TestBytesThatStopHalfwayAreAnError(t *testing.T) {
 	require.NotErrorIs(t, err, wasmtier.ErrNotFound)
 }
 
-// TestAROWThatIsNotARowSaysSO rather than answering an object of zeroes: a
-// listing that folded it in would hand a guest a size and an etag that are not
-// anything's.
 func TestAnIndexRowThatIsNotOneIsAnError(t *testing.T) {
 	bucket, _, index := opened(t, 0)
 	ctx := t.Context()
@@ -631,8 +571,6 @@ func TestAnIndexRowThatIsNotOneIsAnError(t *testing.T) {
 	require.ErrorContains(t, err, "is not one")
 }
 
-// TestANINDEXThatCannotBeReadIsNotAMiss either, for the same reason the bytes
-// are not: a miss is a statement about the name.
 func TestAnIndexThatCannotBeReadIsNotAMiss(t *testing.T) {
 	store, index := newBlobs(), newRows()
 	b, err := storage.New(store, &opening{rows: index}, nil)
@@ -652,8 +590,6 @@ func TestAnIndexThatCannotBeReadIsNotAMiss(t *testing.T) {
 	require.NotErrorIs(t, bucket.Delete(t.Context(), "k"), wasmtier.ErrNotFound)
 }
 
-// TestAWRITEThatCouldNotBeRecordedIsAnError. The bytes are in the store and
-// nothing can find them, which is not a write that happened.
 func TestAWriteThatCannotBeRecordedIsAnError(t *testing.T) {
 	store, index := newBlobs(), newRows()
 	index.putErr = errors.New("the row was rejected")
@@ -667,8 +603,6 @@ func TestAWriteThatCannotBeRecordedIsAnError(t *testing.T) {
 	require.ErrorContains(t, err, "the row was rejected")
 }
 
-// TestBYTESThatCouldNotBeStoredNameTheObject, because a guest that wrote ten of
-// them needs to know which one did not land.
 func TestBytesThatCannotBeStoredAreAnError(t *testing.T) {
 	store, index := newBlobs(), newRows()
 	store.putErr = errors.New("the dag is closed")
@@ -683,10 +617,6 @@ func TestBytesThatCannotBeStoredAreAnError(t *testing.T) {
 	require.Empty(t, index.keys(), "a name was recorded for bytes nothing holds")
 }
 
-// ---------------------------------------------------------------- the ceiling
-
-// TestTHECEILINGIsAWallAndNotAMeasurement. A write that would take the bucket
-// past its declared size is refused with an arm the caller can act on.
 func TestABucketRefusesToGrowPastItsSize(t *testing.T) {
 	bucket, _, _ := opened(t, 16)
 	ctx := t.Context()
@@ -702,8 +632,6 @@ func TestABucketRefusesToGrowPastItsSize(t *testing.T) {
 	require.ErrorIs(t, err, wasmtier.ErrNotFound)
 }
 
-// TestREPLACINGAnObjectDoesNotCountTwice, because replacing a 10-byte object
-// with a 10-byte one does not grow anything.
 func TestOverwritingAnObjectDoesNotFillTheBucket(t *testing.T) {
 	bucket, _, _ := opened(t, 16)
 	ctx := t.Context()
@@ -718,10 +646,6 @@ func TestOverwritingAnObjectDoesNotFillTheBucket(t *testing.T) {
 	require.Equal(t, "9876543210", string(object.Body))
 }
 
-// TestABUCKETThatDeclaredNoSizeHasNoCeiling, for invoke.Grant.Number's reason:
-// the vocabulary requires the field, so an absent one is a composer that did not
-// read it — a bug to find in a log, where a bucket that refused every write
-// would be an outage.
 func TestABucketWithNoDeclaredSizeIsNotFull(t *testing.T) {
 	bucket, _, _ := opened(t, 0)
 
@@ -731,9 +655,6 @@ func TestABucketWithNoDeclaredSizeIsNotFull(t *testing.T) {
 	}
 }
 
-// TestTHECEILINGIsScannedAndAnUnreadableIndexIsNotRoom. A scan that failed says
-// so rather than reading as an empty bucket, which would let a write past the
-// size its author declared.
 func TestACeilingThatCannotBeCountedRefusesTheWrite(t *testing.T) {
 	store, index := newBlobs(), newRows()
 	b, err := storage.New(store, &opening{rows: index}, nil)
@@ -751,9 +672,6 @@ func TestACeilingThatCannotBeCountedRefusesTheWrite(t *testing.T) {
 	require.ErrorContains(t, err, "could not be scanned")
 }
 
-// TestAROWThatIsNotARowDoesNotCountTowardsTheCeiling, and does not fail the
-// write either: what it holds is unknown, and refusing every write to a bucket
-// because one row is corrupt would take a whole resource down.
 func TestACorruptRowDoesNotBlockTheBucket(t *testing.T) {
 	bucket, _, index := opened(t, 64)
 	ctx := t.Context()
@@ -764,11 +682,6 @@ func TestACorruptRowDoesNotBlockTheBucket(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestTHEROWIsBoundedAndNotOnlyTheBYTES. The bucket's declared size bounds what
-// goes to the content-addressed store; the key, the content type and the user
-// metadata go into a kvdb row every peer replicates, and nothing else bounds
-// those — so a guest writing a megabyte of metadata per object would fill every
-// node's datastore while the bucket reported itself empty.
 func TestAnIndexRowIsBounded(t *testing.T) {
 	bucket, _, index := opened(t, 0)
 	ctx := t.Context()
@@ -803,9 +716,6 @@ func TestAnIndexRowIsBounded(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// ---------------------------------------------------------------- the listing
-
-// TestENTRIESAreSortedAndPrefixed.
 func TestEntriesAreSortedUnderAPrefix(t *testing.T) {
 	bucket, _, _ := opened(t, 0)
 	ctx := t.Context()
@@ -822,8 +732,6 @@ func TestEntriesAreSortedUnderAPrefix(t *testing.T) {
 	require.Equal(t, "2026/02", listing.Objects[1].Key)
 }
 
-// TestADELIMITERCollapsesEverythingPastIt, which is what makes a flat bucket
-// browsable as folders and is why S3's listing takes one.
 func TestADelimiterFoldsIntoCommonPrefixes(t *testing.T) {
 	bucket, _, _ := opened(t, 0)
 	ctx := t.Context()
@@ -846,10 +754,6 @@ func TestADelimiterFoldsIntoCommonPrefixes(t *testing.T) {
 	require.Empty(t, inside.Objects)
 }
 
-// TestALISTINGPagesAndTheTokenResumesWhereItStopped. This is the assertion the
-// token's whole shape exists for: a page that ended on a COMMON PREFIX consumed
-// several objects to produce it, so a token naming the prefix would walk them
-// again and answer the same prefix twice.
 func TestAListingResumesAfterEverythingItConsumed(t *testing.T) {
 	bucket, _, _ := opened(t, 0)
 	ctx := t.Context()
@@ -882,8 +786,6 @@ func TestAListingResumesAfterEverythingItConsumed(t *testing.T) {
 	require.False(t, third.Truncated, "and the last page says so")
 }
 
-// TestOBJECTSAndPrefixesCountTogether, as S3 counts them: a caller that asked
-// for two things gets two things however they were produced.
 func TestAPageCountsPrefixesAsKeys(t *testing.T) {
 	bucket, _, _ := opened(t, 0)
 	ctx := t.Context()
@@ -900,8 +802,6 @@ func TestAPageCountsPrefixesAsKeys(t *testing.T) {
 	require.True(t, page.Truncated)
 }
 
-// TestATOKENThisBucketNeverIssuedIsAnArmTheCallerFixes, rather than a different
-// page or an outage.
 func TestAnUnissuedContinuationTokenIsRefused(t *testing.T) {
 	bucket, _, _ := opened(t, 0)
 
@@ -910,9 +810,6 @@ func TestAnUnissuedContinuationTokenIsRefused(t *testing.T) {
 	require.ErrorIs(t, err, storage.ErrBadContinuation)
 }
 
-// TestAPAGEIsCappedEvenWhenNothingAsks, so a bucket with a million objects
-// cannot be pulled through the ABI in one call by a guest that passed 0 — or by
-// one that asked for five thousand.
 func TestAListingIsCappedAtWhatS3Caps(t *testing.T) {
 	bucket, _, _ := opened(t, 0)
 	ctx := t.Context()
@@ -936,9 +833,6 @@ func TestAListingIsCappedAtWhatS3Caps(t *testing.T) {
 	require.False(t, page.Truncated)
 }
 
-// TestAROWThatVanishedMidListingIsConsumed. It is not this call's business to
-// report somebody else's delete — but it IS consumed, or a resume would stop on
-// it forever.
 func TestARowThatVanishedMidListingIsSkippedAndConsumed(t *testing.T) {
 	bucket, _, index := opened(t, 0)
 	ctx := t.Context()
@@ -971,8 +865,6 @@ func TestARowThatVanishedMidListingIsSkippedAndConsumed(t *testing.T) {
 	require.Equal(t, "c", next.Objects[0].Key, "the resume stopped on the row that vanished")
 }
 
-// TestALISTINGReadsTheROWSAndNotTheBYTES, which is what makes a page of a
-// thousand objects one scan rather than a thousand fetches from the DAG.
 func TestAListingDoesNotFetchTheBytes(t *testing.T) {
 	bucket, store, _ := opened(t, 0)
 	ctx := t.Context()
@@ -989,10 +881,6 @@ func TestAListingDoesNotFetchTheBytes(t *testing.T) {
 	require.NotEmpty(t, listing.Objects[0].ETag)
 }
 
-// TestTHEROWIsTheSAMEBYTESWhoeverWroteIt, which is the kvdb rule this package's
-// doc states: a value two nodes write differently is a key a CRDT cannot hold.
-// Metadata is a map and encoding/json sorts a map's keys, so the order a guest
-// passed them in cannot reach the row.
 func TestTheRowIsByteIdenticalWhateverOrderTheMetadataCameIn(t *testing.T) {
 	ctx := t.Context()
 	at := time.Unix(1_700_000_000, 0)

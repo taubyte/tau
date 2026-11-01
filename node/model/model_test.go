@@ -19,15 +19,8 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// model_test drives a real HTTP provider, because what this backing does is
-// speak somebody else's wire format — and a test that asserted on the struct it
-// built would pass for a request no provider accepts.
-//
-// It needed no node before this package existed either, which is the point: the
-// two collaborators were already functions returning interfaces. What the move
-// buys is that they are now the WHOLE of what it can reach, and the three tests
-// that used to build an adapter by struct literal say in their own signature
-// which half of it they are exercising.
+// Drives a real HTTP provider, since asserting on the built struct would pass for a
+// request no provider accepts.
 
 // provider is a fake endpoint that records what it was sent.
 type provider struct {
@@ -115,9 +108,6 @@ func ask(t *testing.T, g invoke.Grant, req *invoke.Inference) (*invoke.Answer, e
 	return asking(t, nil, nil).Infer(context.Background(), g, req)
 }
 
-// TestTHEQUESTIONSARENOTOPTIONAL. What they answer may be nil -- a node with no
-// vault, a node that reaches no workload -- but a backing that cannot ask is one
-// whose collaborators were captured, which on this node is capturing nil.
 func TestTheAdapterNeedsBothQuestions(t *testing.T) {
 	_, err := model.New(nil, func() model.Workers { return nil })
 	require.ErrorContains(t, err, "credential")
@@ -132,7 +122,6 @@ const openaiReply = `{"choices":[{"message":{"role":"assistant","content":"hello
 const anthropicReply = `{"content":[{"type":"text","text":"hello "},{"type":"tool_use"},{"type":"text","text":"there"}],
 	"stop_reason":"end_turn","usage":{"input_tokens":11,"output_tokens":3}}`
 
-// TestTHEOPENAIFORMATISWHATAPROVIDERGETS, at the path it serves.
 func TestAnOpenAiModelIsCalledInItsOwnFormat(t *testing.T) {
 	p := newProvider(t, openaiReply)
 
@@ -152,8 +141,6 @@ func TestAnOpenAiModelIsCalledInItsOwnFormat(t *testing.T) {
 	require.Equal(t, uint32(3), out.Usage.OutputTokens)
 }
 
-// TestOLLAMAISTHEOPENAIFORMAT, which is the whole reason the field is called
-// `format` and not `provider`.
 func TestAnOllamaModelSpeaksTheSameShape(t *testing.T) {
 	p := newProvider(t, openaiReply)
 
@@ -165,8 +152,6 @@ func TestAnOllamaModelSpeaksTheSameShape(t *testing.T) {
 	require.Equal(t, "claude-opus-5", p.sent(t)["model"])
 }
 
-// TestANTHROPICDIFFERSINTHREEWAYS, and each of them is a 400 rather than a
-// degraded answer if it is got wrong.
 func TestAnAnthropicModelGetsItsOwnShape(t *testing.T) {
 	p := newProvider(t, anthropicReply)
 
@@ -193,8 +178,6 @@ func TestAnAnthropicModelGetsItsOwnShape(t *testing.T) {
 	require.Equal(t, uint32(11), out.Usage.InputTokens)
 }
 
-// TestTHECREDENTIALGOESWHERETHEFORMATEXPECTS. Getting this wrong is a 401 that
-// reads like a bad key.
 func TestTheCredentialIsSentTheWayEachFormatWants(t *testing.T) {
 	for _, c := range []struct {
 		format string
@@ -228,9 +211,6 @@ func TestTheCredentialIsSentTheWayEachFormatWants(t *testing.T) {
 	}
 }
 
-// TestNOCREDENTIALISNOHEADER. A model served by something on this machine needs
-// none, and refusing it would make the credential decide whether inference
-// exists at all.
 func TestAModelWithNoCredentialSendsNoAuthorization(t *testing.T) {
 	p := newProvider(t, openaiReply)
 
@@ -241,7 +221,6 @@ func TestAModelWithNoCredentialSendsNoAuthorization(t *testing.T) {
 	require.Empty(t, p.header.Get("authorization"))
 }
 
-// TestWHATTHERESOURCEDECLARESISSENT when the caller said nothing.
 func TestTheResourcesOwnParametersReachTheProvider(t *testing.T) {
 	p := newProvider(t, openaiReply)
 
@@ -258,8 +237,6 @@ func TestTheResourcesOwnParametersReachTheProvider(t *testing.T) {
 	require.Equal(t, []any{"END", "HALT"}, body["stop"], "a list, back out of the one key it travels in")
 }
 
-// TestTHECALLERADDSTOTHESTOPLISTRATHERTHANREPLACINGIT: an author's stop
-// sequence is a rule about what this model may emit.
 func TestACallersStopSequencesAreAddedToTheResources(t *testing.T) {
 	p := newProvider(t, openaiReply)
 
@@ -272,8 +249,6 @@ func TestACallersStopSequencesAreAddedToTheResources(t *testing.T) {
 	require.Equal(t, []any{"END", "MINE"}, p.sent(t)["stop"])
 }
 
-// TestAPROVIDERTHATSAIDNOISREFUSED, and one that could not answer is not: a
-// caller retries the second and wastes its budget on the first.
 func TestA4xxIsRefusedAndA5xxIsNot(t *testing.T) {
 	for _, c := range []struct {
 		status  int
@@ -298,7 +273,6 @@ func TestA4xxIsRefusedAndA5xxIsNot(t *testing.T) {
 	}
 }
 
-// TestAMODELWITHNOWHERETOSEND is named rather than dialled.
 func TestAModelWithNoEndpointIsRefusedByName(t *testing.T) {
 	_, err := ask(t, invoke.Grant{
 		Kind: "model", Label: "brain", Handle: "shop/prod/QmModel", Ops: []string{"infer"},
@@ -308,7 +282,6 @@ func TestAModelWithNoEndpointIsRefusedByName(t *testing.T) {
 	require.ErrorIs(t, err, model.ErrNoEndpoint)
 }
 
-// TestALOCALMODELISNOTBUILT, and says so rather than dialling something else.
 func TestALocallyServedModelIsNamedAsMissing(t *testing.T) {
 	_, err := ask(t, invoke.Grant{
 		Kind: "model", Label: "brain", Handle: "shop/prod/QmModel", Ops: []string{"infer"},
@@ -320,7 +293,6 @@ func TestALocallyServedModelIsNamedAsMissing(t *testing.T) {
 	require.ErrorContains(t, err, "served by a workload")
 }
 
-// TestAFORMATTHISNODEDOESNOTSPEAK is refused rather than guessed at.
 func TestAnUnknownFormatIsRefused(t *testing.T) {
 	p := newProvider(t, openaiReply)
 
@@ -352,9 +324,6 @@ func (d *dialled) Conn(ctx context.Context, at specs.Address, port string) (net.
 	return (&net.Dialer{}).DialContext(ctx, "tcp", d.to)
 }
 
-// TestALOCALLYSERVEDMODELISAWORKLOAD, reached through placement rather than a
-// URL — which is the same dial a proxy makes, and the reason nothing here had
-// to invent one.
 func TestALocalModelIsDialledThroughPlacement(t *testing.T) {
 	p := newProvider(t, openaiReply)
 	where := &dialled{to: strings.TrimPrefix(p.URL, "http://")}
@@ -391,9 +360,6 @@ func TestALocalModelIsDialledThroughPlacement(t *testing.T) {
 	require.Equal(t, "llama-3.1-70b", p.sent(t)["model"])
 }
 
-// TestTHEPLACEHOLDERHOSTREACHESNORESOLVER. The dialler ignores it, and it is
-// under .invalid so that a bug letting it through asks for a name that cannot
-// exist rather than one somebody owns.
 func TestALocalModelsUrlIsNotAResolvableName(t *testing.T) {
 	p := newProvider(t, openaiReply)
 	where := &dialled{to: strings.TrimPrefix(p.URL, "http://")}
@@ -413,7 +379,6 @@ func TestALocalModelsUrlIsNotAResolvableName(t *testing.T) {
 	require.Equal(t, "model.invalid", p.host)
 }
 
-// TestALOCALMODELONANODETHATREACHESNOWORKLOAD is named rather than dialled.
 func TestALocalModelWithNoPlacementIsRefusedByName(t *testing.T) {
 	_, err := ask(t, invoke.Grant{
 		Kind: "model", Handle: "shop/prod/QmModel", Ops: []string{"infer"},
@@ -425,7 +390,6 @@ func TestALocalModelWithNoPlacementIsRefusedByName(t *testing.T) {
 	require.ErrorContains(t, err, "reaches none")
 }
 
-// TestALOCALMODELTHATNAMESNOWORKLOAD.
 func TestALocalModelWithNoWorkloadIsRefused(t *testing.T) {
 	_, err := asking(t, nil, &dialled{}).
 		Infer(context.Background(), invoke.Grant{
@@ -452,7 +416,6 @@ func oneTool() []invoke.Tool {
 	}}
 }
 
-// TestTOOLSREACHOPENAIINITSOWNENVELOPE, and the calls come back out of it.
 func TestAnOpenAiModelIsSentToolsAndAnswersWithCalls(t *testing.T) {
 	p := newProvider(t, openaiToolReply)
 
@@ -478,8 +441,6 @@ func TestAnOpenAiModelIsSentToolsAndAnswersWithCalls(t *testing.T) {
 	require.JSONEq(t, `{"id":"42"}`, out.ToolCalls[0].Arguments)
 }
 
-// TestANTHROPICTAKESTOOLSUNWRAPPED, and answers with blocks rather than a list
-// beside the text.
 func TestAnAnthropicModelIsSentToolsInItsOwnShape(t *testing.T) {
 	p := newProvider(t, anthropicToolReply)
 
@@ -502,8 +463,6 @@ func TestAnAnthropicModelIsSentToolsInItsOwnShape(t *testing.T) {
 	require.JSONEq(t, `{"id":"42"}`, out.ToolCalls[0].Arguments)
 }
 
-// TestATOOLRESULTISAUSERTURNFORANTHROPIC. It is the one mapping here that is a
-// 400 rather than a degraded answer: that API has no `tool` role.
 func TestAToolResultIsSentAsAUserTurnWithBlocks(t *testing.T) {
 	p := newProvider(t, anthropicReply)
 
@@ -540,8 +499,6 @@ func TestAToolResultIsSentAsAUserTurnWithBlocks(t *testing.T) {
 	require.Equal(t, "found it", block["content"])
 }
 
-// TestATOOLRESULTISATOOLTURNFOROPENAI, which is the same fact spelled the
-// other way — and getting the two confused is a 400 on whichever is wrong.
 func TestAToolResultIsSentAsAToolTurnForOpenAi(t *testing.T) {
 	p := newProvider(t, openaiReply)
 
@@ -567,9 +524,6 @@ func TestAToolResultIsSentAsAToolTurnForOpenAi(t *testing.T) {
 	require.Equal(t, "call_1", result["tool_call_id"])
 }
 
-// TestAMODELPRODUCEDNOTHINGISNOTSENTASJSON. The arguments come from an LLM,
-// which is not a source that can be relied on to produce well-formed JSON — and
-// a provider handed a malformed field refuses the whole request.
 func TestMalformedArgumentsBecomeAnEmptyObject(t *testing.T) {
 	p := newProvider(t, anthropicReply)
 
@@ -586,9 +540,6 @@ func TestMalformedArgumentsBecomeAnEmptyObject(t *testing.T) {
 	require.Equal(t, map[string]any{}, blocks[0].(map[string]any)["input"])
 }
 
-// TestASCHEMATHATISNOTJSONISREPLACED rather than sent. It would be a 400 from
-// every provider, and a tool the model can still call is a better answer to the
-// caller's mistake than a request that fails outright.
 func TestAnUnparseableSchemaBecomesAnObject(t *testing.T) {
 	for _, format := range []string{"openai", "anthropic"} {
 		reply := openaiReply
@@ -614,8 +565,6 @@ func TestAnUnparseableSchemaBecomesAnObject(t *testing.T) {
 	}
 }
 
-// TestNOTOOLSISNOFIELD, so a plain completion looks exactly as it did before
-// this existed.
 func TestACompletionWithNoToolsSendsNoToolsField(t *testing.T) {
 	for _, format := range []string{"openai", "anthropic"} {
 		reply := openaiReply
@@ -632,10 +581,6 @@ func TestACompletionWithNoToolsSendsNoToolsField(t *testing.T) {
 	}
 }
 
-// ── the ways a call does not happen ──────────────────────────────────────────
-
-// TestANENDPOINTTHATISNOTAURLISREFUSEDBEFOREADIAL, which is an author's typo
-// rather than a provider being down.
 func TestAnEndpointThatIsNotAUrlIsRefused(t *testing.T) {
 	_, err := ask(t, modelGrant("http://a b", "openai", nil), &invoke.Inference{
 		Messages: []invoke.Message{{Role: "user", Content: "hi"}},
@@ -644,9 +589,6 @@ func TestAnEndpointThatIsNotAUrlIsRefused(t *testing.T) {
 	require.NotErrorIs(t, err, wasmtier.ErrRefusedByProvider, "nobody answered, so nobody refused")
 }
 
-// TestAPROVIDERTHATCANNOTBEREACHEDISUNAVAILABLEANDNOTREFUSED, so a caller
-// retrying is reasonable — and the endpoint is named, because that is what an
-// operator checks.
 func TestAProviderThatCannotBeReachedIsNotARefusal(t *testing.T) {
 	p := newProvider(t, openaiReply)
 	endpoint := p.URL
@@ -660,8 +602,6 @@ func TestAProviderThatCannotBeReachedIsNotARefusal(t *testing.T) {
 	require.NotErrorIs(t, err, wasmtier.ErrRefusedByProvider)
 }
 
-// TestANANSWERTHATSTOPSHALFWAYISREPORTED rather than parsed as far as it got: a
-// truncated body is not a shorter answer, it is no answer.
 func TestAnAnswerThatStopsHalfWayIsReported(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("content-type", "application/json")
@@ -677,9 +617,6 @@ func TestAnAnswerThatStopsHalfWayIsReported(t *testing.T) {
 	require.ErrorContains(t, err, srv.URL)
 }
 
-// TestAHANDLETHATADDRESSESNODEPLOYMENTISREFUSED rather than reaching a secret or
-// a workload composed out of empty segments. Both halves read the handle, so
-// both are asserted.
 func TestAHandleThatNamesNoDeploymentIsRefused(t *testing.T) {
 	p := newProvider(t, openaiReply)
 
@@ -705,8 +642,6 @@ func TestAHandleThatNamesNoDeploymentIsRefused(t *testing.T) {
 	}
 }
 
-// TestAMODELTHATISNEITHERREMOTENORLOCAL is a resource compiled against a
-// vocabulary this node does not have, and it is named rather than dialled.
 func TestAModelThatDeclaresNoKindIsRefused(t *testing.T) {
 	for _, kind := range []string{"", "somewhere-else"} {
 		_, err := ask(t, invoke.Grant{
@@ -717,8 +652,6 @@ func TestAModelThatDeclaresNoKindIsRefused(t *testing.T) {
 	}
 }
 
-// TestAMODELTHATNAMESNOIDENTIFIERISREFUSED. The identifier is the provider's own
-// name for the weights; without it there is nothing to ask for.
 func TestAModelWithNoIdentifierIsRefused(t *testing.T) {
 	p := newProvider(t, openaiReply)
 
@@ -732,10 +665,6 @@ func TestAModelWithNoIdentifierIsRefused(t *testing.T) {
 	require.ErrorContains(t, err, "identifier")
 }
 
-// ── the credential ───────────────────────────────────────────────────────────
-
-// TestAMODELTHATNAMESACREDENTIALONANODETHATREADSNONE is refused rather than
-// called without it, which would be a 401 read as a bad key.
 func TestACredentialOnANodeWithNoVaultIsRefused(t *testing.T) {
 	p := newProvider(t, openaiReply)
 
@@ -745,8 +674,6 @@ func TestACredentialOnANodeWithNoVaultIsRefused(t *testing.T) {
 	require.ErrorContains(t, err, "reads no secret")
 }
 
-// TestACREDENTIALTHATCOULDNOTBEREADISREPORTED, and the value never appears in
-// the error — the vault's own failure does.
 func TestACredentialThatCannotBeReadIsReported(t *testing.T) {
 	p := newProvider(t, openaiReply)
 
@@ -766,10 +693,6 @@ func (v *failingVault) Secret(context.Context, string, string, string) (string, 
 	return "", v.err
 }
 
-// ── what comes back ──────────────────────────────────────────────────────────
-
-// TestANANSWERTHATISNOTTHISFORMATISREPORTED for both shapes, because a provider
-// serving the other one is exactly what a mistyped `format` looks like.
 func TestAnAnswerInTheWrongShapeIsReported(t *testing.T) {
 	for _, format := range []string{"openai", "anthropic"} {
 		p := newProvider(t, `not json at all`)
@@ -781,8 +704,6 @@ func TestAnAnswerInTheWrongShapeIsReported(t *testing.T) {
 	}
 }
 
-// TestAPROVIDERTHATANSWEREDNOTHINGISNOTANEMPTYCOMPLETION. A guest handed "" for
-// an answer cannot tell it from a model that had nothing to say.
 func TestAnAnswerWithNoChoicesIsReported(t *testing.T) {
 	p := newProvider(t, `{"usage":{"prompt_tokens":1}}`)
 
@@ -792,9 +713,6 @@ func TestAnAnswerWithNoChoicesIsReported(t *testing.T) {
 	require.ErrorContains(t, err, "no choices")
 }
 
-// TestAREFUSALSDETAILISBOUNDED. It is somebody else's server on the other end and
-// what it says goes into an error a guest sees; an unbounded body would be this
-// node's memory and this node's log.
 func TestALongRefusalIsTruncated(t *testing.T) {
 	p := newProvider(t, strings.Repeat("x", 4096))
 	p.status = http.StatusBadRequest
@@ -806,11 +724,6 @@ func TestALongRefusalIsTruncated(t *testing.T) {
 	require.Less(t, len(err.Error()), 700, "the provider's detail is cut at 512")
 }
 
-// ── what the caller asked for ────────────────────────────────────────────────
-
-// TestTHECALLERSCEILINGISWHATISSENT when it set one. It has already been clamped
-// by the host — see pkg/invoke/wasm/model.go — so what arrives here is a number
-// the author's ceiling permits.
 func TestACallersMaxTokensReplacesTheDefault(t *testing.T) {
 	p := newProvider(t, anthropicReply)
 
@@ -823,8 +736,6 @@ func TestACallersMaxTokensReplacesTheDefault(t *testing.T) {
 	require.EqualValues(t, 7, p.sent(t)["max_tokens"])
 }
 
-// TestANUNREADABLEPARAMETERISNOPARAMETER rather than a refusal: the provider's
-// own default is a better answer than a call that does not happen.
 func TestAnUnparseableParameterIsLeftOut(t *testing.T) {
 	p := newProvider(t, openaiReply)
 

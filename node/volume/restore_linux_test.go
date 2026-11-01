@@ -12,9 +12,6 @@ import (
 	"github.com/taubyte/tau/node/volume"
 )
 
-// TestASPARSEFileStaysSparseWhereItIsRestored. The checkpoint holds the zeros a
-// sparse file reads as; written back as zeros they would take the space the
-// file never took where it came from.
 func TestASparseFileStaysSparseWhereItIsRestored(t *testing.T) {
 	v, store, index, _ := holding(t)
 	dir, err := v.Mount(t.Context(), mountGrant("shop/prod/QmData", nil))
@@ -46,10 +43,6 @@ func TestASparseFileStaysSparseWhereItIsRestored(t *testing.T) {
 	require.True(t, bytes.Equal(append(make([]byte, size), "end"...), content), "the restored file differs")
 }
 
-// TestAWALKReadsAFilesDataAndNotItsHoles. A hole goes into the archive as the
-// zeros it reads as, and reading those off the disk would cost the walk the
-// file's length rather than what it holds. What it read comes back where it
-// was, and the rest comes back as holes.
 func TestAWalkReadsAFilesDataAndNotItsHoles(t *testing.T) {
 	v, store, index, _ := holding(t)
 	var read int64

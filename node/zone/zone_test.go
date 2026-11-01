@@ -15,14 +15,8 @@ import (
 	"github.com/taubyte/tau/services/worker"
 )
 
-// zone_test is the reason this package exists.
-//
-// Every one of these ran through a whole dream universe when the adapter took
-// *Node: a register, a worker, a discovery view and a component tier, to assert
-// which label the walk tried second. Three interfaces later they are maps and
-// counters, and the cases that were impractical to reach — the index answering
-// for an apex whose project will not load, a zone naming a resolver on a node
-// with no tier — are ordinary table rows.
+// The adapter over maps and counters, including the index answering for an apex whose
+// project will not load and a resolver on a node with no tier.
 
 // index is a Hosts double: a name to a deployment, and a record of the walk.
 type index struct {
@@ -123,8 +117,6 @@ func zoning(t *testing.T, apex string, extra ...map[string]any) (*index, *held) 
 		&held{projects: map[string]*specs.Project{"shop/prod": projectWith(t, z)}}
 }
 
-// --- construction -----------------------------------------------------------
-
 func TestTheAdapterNeedsAnIndexAndProjects(t *testing.T) {
 	i, h := zoning(t, "example.com")
 
@@ -139,10 +131,6 @@ func TestTheAdapterNeedsAnIndexAndProjects(t *testing.T) {
 	require.NotNil(t, z)
 }
 
-// --- the walk ---------------------------------------------------------------
-
-// TestTHEWALKISMOSTSPECIFICFIRST, which is the precedence a real resolver
-// applies between two delegations.
 func TestTheWalkTriesTheNameThenItsParents(t *testing.T) {
 	i, h := zoning(t, "example.com")
 	z, err := zone.New(i, h, nil)
@@ -157,8 +145,6 @@ func TestTheWalkTriesTheNameThenItsParents(t *testing.T) {
 		"most specific first, and it stopped at the one that answered")
 }
 
-// TestITSTOPSATTWOLABELS: a query for `com` is not a zone anybody declares, and
-// walking to the root would ask the index about every public suffix on a miss.
 func TestTheWalkStopsAtTwoLabels(t *testing.T) {
 	i, h := zoning(t, "example.com")
 	z, err := zone.New(i, h, nil)
@@ -176,9 +162,6 @@ func TestTheWalkStopsAtTwoLabels(t *testing.T) {
 	require.Empty(t, i.asked, "a single label is not walked at all")
 }
 
-// TestAPROJECTTHATWILLNOTLOADSTOPSTHEWALK. The index says this project owns the
-// apex; the next label up is not the answer, this one is, and it is unavailable.
-// Carrying on would answer from a zone that does not cover the name.
 func TestAnUnreadableProjectStopsTheWalk(t *testing.T) {
 	i, h := zoning(t, "example.com")
 	h.err = errors.New("register unreachable")
@@ -191,8 +174,6 @@ func TestAnUnreadableProjectStopsTheWalk(t *testing.T) {
 	require.ErrorContains(t, err, "example.com", "and which apex it was reading for")
 }
 
-// TestANINDEXEDNAMEWITHNOZONEISAGATEWAYHOST, so the walk carries on: a project
-// may serve shop.example.com from a gateway and still declare example.com.
 func TestAnIndexedNameThatIsNotAZoneKeepsWalking(t *testing.T) {
 	i, h := zoning(t, "example.com")
 	i.at["shop.example.com"] = [2]string{"shop", "prod"}
@@ -217,8 +198,6 @@ func TestANameNoZoneCoversAnswersNothing(t *testing.T) {
 	require.Empty(t, lines)
 }
 
-// --- the records arm --------------------------------------------------------
-
 func TestRecordsComeOffTheZoneThatCoversTheName(t *testing.T) {
 	i, h := zoning(t, "example.com", map[string]any{
 		"records": []any{"@ 3600 IN MX 10 mail.example.com.", "www 300 IN A 1.2.3.4"},
@@ -231,8 +210,6 @@ func TestRecordsComeOffTheZoneThatCoversTheName(t *testing.T) {
 	require.Equal(t, "example.com", apex)
 	require.Equal(t, []string{"@ 3600 IN MX 10 mail.example.com.", "www 300 IN A 1.2.3.4"}, lines)
 }
-
-// --- the resolver arm -------------------------------------------------------
 
 func TestTheResolverIsFoundAsAnyOtherFunction(t *testing.T) {
 	i, h := zoning(t, "example.com", map[string]any{
@@ -259,8 +236,6 @@ func TestTheResolverIsFoundAsAnyOtherFunction(t *testing.T) {
 	require.Equal(t, "geo.example.com.", g.asked[0].Name)
 }
 
-// TestTHREEWAYSTONOBODYWASASKED, none of which is a statement about the name --
-// a nil answer with a nil error, so the server carries on.
 func TestNobodyIsAskedWhenThereIsNothingToAsk(t *testing.T) {
 	t.Run("no zone covers it", func(t *testing.T) {
 		i, h := zoning(t, "example.com", map[string]any{

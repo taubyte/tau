@@ -53,9 +53,6 @@ func bare(t *testing.T) File {
 	}
 }
 
-// TestANodeTheFleetWouldRefuseRefusesToStart: its own certificate is checked
-// the way every peer would check it, so a bad one is a boot error naming why
-// rather than a node that runs alone.
 func TestANodeTheFleetWouldRefuseRefusesToStart(t *testing.T) {
 	other, err := sectls.NewCA("another", time.Hour)
 	require.NoError(t, err)
@@ -94,8 +91,6 @@ func TestANodeTheFleetWouldRefuseRefusesToStart(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoCertificate)
 }
 
-// TestAPeerFromAnotherCAIsNotAdmitted, in either direction, and one from the
-// same CA is.
 func TestAPeerFromAnotherCAIsNotAdmitted(t *testing.T) {
 	first, err := Start(t.Context(), admit(t, bare(t)))
 	require.NoError(t, err)

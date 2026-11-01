@@ -32,12 +32,9 @@ import (
 	secretsService "github.com/taubyte/tau/services/secrets"
 )
 
-// acme_test is REAL ISSUANCE FROM A REAL ACME SERVER: pebble, Let's Encrypt's
-// test CA, runs in this process; it resolves names through the node's own dns
-// service — which answers DNS-01 too — fetches HTTP-01 answers from the
-// node's own clear listener, and signs certificates the node's certificate
-// service keeps and its listeners present to a client that trusts pebble's
-// root and nothing else.
+// Real issuance from pebble, Let's Encrypt's test CA, in process: it resolves through
+// the node's dns (which answers DNS-01), fetches HTTP-01 from the node's clear
+// listener, and the node presents the certificates to a client trusting only pebble.
 
 // pebble serves an ACME directory over TLS. Its validation authority is built
 // once the node is up, because it must be told the node's http port.
@@ -184,8 +181,6 @@ func cloudAccount(t *testing.T) string {
 	return string(blob)
 }
 
-// TestAGeneratedNameIsIssuedByACMEAndServedOverTLS proves it by HTTP-01, for
-// a cloud whose zone is served elsewhere and points at its gateways.
 func TestAGeneratedNameIsIssuedByACMEAndServedOverTLS(t *testing.T) {
 	const cloud = "tau.example.io"
 	compiled, hosts, name := fixtureWithHosts(t, cloud)
@@ -220,10 +215,6 @@ func TestAGeneratedNameIsIssuedByACMEAndServedOverTLS(t *testing.T) {
 	require.Equal(t, serial, res.TLS.PeerCertificates[0].SerialNumber, "the same certificate, from the node's root")
 }
 
-// TestTheZoneIsProvedByDNS01AndItsWildcardAnswersEveryService is the default
-// shape: the node's dns server answers its zone, so every name in it is
-// proved by DNS-01 — a generated name its own certificate, and the zone's
-// wildcard the cloud's services, on the listener every service takes.
 func TestTheZoneIsProvedByDNS01AndItsWildcardAnswersEveryService(t *testing.T) {
 	const cloud = "tau.example.io"
 	compiled, hosts, name := fixtureWithHosts(t, cloud)

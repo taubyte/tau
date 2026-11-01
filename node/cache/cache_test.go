@@ -15,17 +15,8 @@ import (
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// cache_test is the reason this package exists.
-//
-// Every one of these ran a whole node when the adapter took *Node — a mocknet
-// host, a gossipsub, a register and a kvdb factory — to assert that opening one
-// handle twice seeds it once. One interface later the backing is a map, and the
-// cases that were awkward to reach — a store that fails the first time and
-// works the next, a seed that cannot be read — are ordinary rows.
-//
-// THE CACHES THEMSELVES ARE REAL. pkg/cache is what enforces the ceiling and
-// the lifetime, and what raises the two sentinels this adapter translates; a
-// double for it would leave the translation asserting against itself.
+// The adapter over a map, with real pkg/cache caches, so the translation is not
+// asserted against itself.
 
 // rows is a Store double: a map, and a record of what was asked of it.
 type rows struct {
@@ -126,18 +117,11 @@ func grant(handle string, settings map[string]string) invoke.Grant {
 	}
 }
 
-// --- construction -----------------------------------------------------------
-
 func TestTheAdapterNeedsSomewhereToPutRows(t *testing.T) {
 	_, err := cache.New(nil)
 	require.ErrorContains(t, err, "no store")
 }
 
-// --- one database, one seed -------------------------------------------------
-
-// TestONEDATABASEHOLDSEVERYCACHE. A kvdb per cache would be a CRDT, a
-// broadcaster and a pubsub topic per resource; one store with the handle as the
-// prefix is the same isolation with one set of moving parts.
 func TestEveryCacheSharesOneStore(t *testing.T) {
 	c, held := caching(t)
 
@@ -148,9 +132,6 @@ func TestEveryCacheSharesOneStore(t *testing.T) {
 	require.Equal(t, 1, held.asked, "three caches, one store")
 }
 
-// TestANOPENEDCACHEISKEPT, because pkg/cache scans what this node already holds
-// when it opens and paying that per invocation would put it on the request path.
-// The scan is the assertion: a second open that seeded again would list twice.
 func TestOpeningTheSameHandleTwiceSeedsItOnce(t *testing.T) {
 	c, held := caching(t)
 
@@ -170,8 +151,6 @@ func TestOpeningTheSameHandleTwiceSeedsItOnce(t *testing.T) {
 	require.Equal(t, "v", string(value))
 }
 
-// TestTWOHANDLESARETWOCACHES, and the check that matters is that one cannot
-// read the other.
 func TestTwoHandlesDoNotSeeEachOther(t *testing.T) {
 	c, _ := caching(t)
 	ctx := t.Context()
@@ -193,9 +172,6 @@ func TestTwoHandlesDoNotSeeEachOther(t *testing.T) {
 	require.Equal(t, []string{"k"}, names)
 }
 
-// TestANENVIRONMENTISITSOWNDATA. One declaration, two deployments: staging's
-// entries and production's are the same cache in the config and different rows
-// in the store.
 func TestTwoDeploymentsOfOneCacheAreSeparate(t *testing.T) {
 	c, _ := caching(t)
 	ctx := t.Context()
@@ -210,10 +186,6 @@ func TestTwoDeploymentsOfOneCacheAreSeparate(t *testing.T) {
 	require.Error(t, err, "staging cannot read production's")
 }
 
-// --- what the target declared -----------------------------------------------
-
-// TestTHEDECLAREDCEILINGISENFORCED, from the settings the grant carried rather
-// than from a lookup this backing would have to make on the request path.
 func TestTheDeclaredSizeIsEnforced(t *testing.T) {
 	c, _ := caching(t)
 	ctx := t.Context()
@@ -230,8 +202,6 @@ func TestTheDeclaredSizeIsEnforced(t *testing.T) {
 	require.Len(t, names, 2, "the ceiling held")
 }
 
-// TestTHEDECLAREDLIFETIMEREACHESTHECACHE, which is asserted by an entry that is
-// already gone rather than by parsing the setting twice.
 func TestTheDeclaredLifetimeIsRead(t *testing.T) {
 	c, _ := caching(t)
 	ctx := t.Context()
@@ -250,8 +220,6 @@ func TestTheDeclaredLifetimeIsRead(t *testing.T) {
 	require.Equal(t, "v", string(value))
 }
 
-// TestANUNREADABLESETTINGISNOLIMITRATHERTHANAREFUSAL. A cache with no ceiling
-// is a bug to find in a log; one that refuses every write is an outage.
 func TestAnUnparseableSettingIsNoLimit(t *testing.T) {
 	c, _ := caching(t)
 	ctx := t.Context()
@@ -274,12 +242,6 @@ func TestAnUnparseableSettingIsNoLimit(t *testing.T) {
 	require.Equal(t, "0123456789", string(value), "and nothing expired either")
 }
 
-// --- a store that is not there ----------------------------------------------
-
-// TestASTORETHATCANNOTBEOPENEDISREPORTEDBYNAME, which on a real node is an
-// operator who gave it no database factory -- and it is asked again on the next
-// request rather than being remembered as broken, because the thing that failed
-// is outside this package.
 func TestAStoreThatCannotBeOpenedIsReportedAndRetried(t *testing.T) {
 	held := &opener{store: newRows(), err: errors.New("no database factory")}
 	c, err := cache.New(held)
@@ -294,8 +256,6 @@ func TestAStoreThatCannotBeOpenedIsReportedAndRetried(t *testing.T) {
 	require.Equal(t, 2, held.asked, "the failure was not cached")
 }
 
-// TestASEEDTHATCANNOTBEREADISNOTANEMPTYCACHE. Starting empty would make the
-// first writes after it free, so the ceiling would hold twice as much.
 func TestACacheThatCannotBeSeededIsRefused(t *testing.T) {
 	held := &opener{store: newRows()}
 	held.store.listErr = errors.New("the store is unreachable")
@@ -307,15 +267,6 @@ func TestACacheThatCannotBeSeededIsRefused(t *testing.T) {
 	require.ErrorContains(t, err, "unreachable")
 }
 
-// --- the sentinels the tier acts on -----------------------------------------
-
-// TestAMISSARRIVESASTHETIERSMISS, WHICH THREE PASSING UNIT TESTS DID NOT CATCH.
-//
-// pkg/cache has its own ErrNotFound and pkg/invoke/wasm has another; the tier
-// maps anything it does not recognise onto the guest's `unavailable` arm. So a
-// cache miss — the common case, the thing a cache is FOR — was reported to
-// every guest as an outage, and an author would have written a retry around it.
-// Each package was right on its own and the composition was wrong.
 func TestPkgCacheSentinelsBecomeTierSentinels(t *testing.T) {
 	c, _ := caching(t)
 	ctx := t.Context()
@@ -339,8 +290,6 @@ func TestPkgCacheSentinelsBecomeTierSentinels(t *testing.T) {
 	require.ErrorIs(t, err, wasmtier.ErrNotFound, "the reused cache is wrapped too")
 }
 
-// TestANYTHINGELSEISLEFTALONE, so a store that could not answer stays
-// distinguishable from one that had nothing to say.
 func TestAnUnrecognisedFailureIsNotTranslated(t *testing.T) {
 	c, held := caching(t)
 	ctx := t.Context()
@@ -365,7 +314,6 @@ func TestAnUnrecognisedFailureIsNotTranslated(t *testing.T) {
 	require.NotErrorIs(t, err, wasmtier.ErrNotFound, "a store that could not look is not a miss")
 }
 
-// TestDELETINGWHATISNOTTHERESUCCEEDS, and a delete is translated like the rest.
 func TestDeleteAndListComeBackThroughTheTranslation(t *testing.T) {
 	c, _ := caching(t)
 	ctx := t.Context()

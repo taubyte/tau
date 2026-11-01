@@ -20,10 +20,6 @@ func write(t *testing.T, content string) string {
 	return path
 }
 
-// TestTheFileIsTheConfigAndNotATranslationOfIt. Every v2 service's Config was
-// written to survive a round trip through yaml precisely so this layer is a
-// decode — a translation is where an operator's setting quietly stops meaning
-// what the struct says.
 func TestTheFileIsTheConfig(t *testing.T) {
 	f, err := Read(write(t, `
 node:
@@ -56,9 +52,6 @@ http: ":8080"
 	require.Equal(t, ":8080", f.HTTP)
 }
 
-// TestANodeWithNoCertificateDoesNotJoinAnOpenNetwork. Every v2 service trusts
-// the peers it is connected to, so a node that admits anyone is a node whose
-// register any stranger can publish into.
 func TestAMissingCertificateIsRefused(t *testing.T) {
 	_, err := Read(write(t, "root: /var/lib/tau\n"))
 	require.ErrorIs(t, err, ErrNoCertificate)
@@ -94,22 +87,17 @@ func TestAFileThatIsNotOne(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestKeysAreBase64AndSayWhichOneIsNot.
 func TestKeysAreBase64(t *testing.T) {
 	_, err := Start(t.Context(), File{Open: true, PrivateKey: "not base64!"})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "privatekey")
 }
 
-// TestStartRefusesBeforeItBindsAnything. A node that would join the public
-// network must not get as far as a listener.
 func TestStartRefusesAnOpenNetworkItWasNotToldAbout(t *testing.T) {
 	_, err := Start(t.Context(), File{Root: t.TempDir()})
 	require.ErrorIs(t, err, ErrNoCertificate)
 }
 
-// TestTheExampleConfigParsesBackIntoItself, so `tau v2 config` cannot print
-// something `tau v2 start` refuses.
 func TestTheExampleRoundTrips(t *testing.T) {
 	example := File{
 		Node:      node.Config{Services: node.All, Cloud: "acme"},
@@ -130,12 +118,6 @@ func TestTheExampleRoundTrips(t *testing.T) {
 	require.Equal(t, example.HTTP, back.HTTP)
 }
 
-// TestANodeActuallyStARTS: a real libp2p host on an ephemeral port, a real
-// gossipsub, a real datastore on disk, and the gateway bound.
-//
-// THIS IS THE ONLY TEST THAT PROVES THE LAST MILE. Everything above is a decode;
-// what this catches is a resource that cannot be built from what the file says
-// — which is the whole reason this package exists.
 func TestANodeStartsAndServes(t *testing.T) {
 	f := admit(t, File{
 		Node:   node.Config{Services: []string{node.Register, node.Discovery, node.Gateway}},
@@ -163,8 +145,6 @@ func TestANodeStartsAndServes(t *testing.T) {
 	require.NoError(t, running.Close(), "close is idempotent enough to be deferred")
 }
 
-// TestANodeWithNoGatewayServesNothing, and asking it to is not an error: a
-// worker-only node has no handler to bind.
 func TestANodeWithNoGatewayBindsNothing(t *testing.T) {
 	f := admit(t, File{
 		Node:   node.Config{Services: []string{node.Register}},
@@ -184,8 +164,6 @@ func TestANodeWithNoGatewayBindsNothing(t *testing.T) {
 	require.Empty(t, running.SecureAddress())
 }
 
-// TestAnAddressAlreadyTakenIsReportedAtBoot rather than as a gateway nobody can
-// reach.
 func TestAnAddressAlreadyTaken(t *testing.T) {
 	held, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -201,19 +179,12 @@ func TestAnAddressAlreadyTaken(t *testing.T) {
 	require.Contains(t, err.Error(), "listening on")
 }
 
-// TestAnUnstartedRunningAnswersNothing. Reach hands one of these back to a CLI
-// that may have failed to find anything, and a nil peer is what "nothing was
-// started" looks like from there — a panic would be the CLI's, not the fleet's.
 func TestAnUnstartedRunningAnswersNothing(t *testing.T) {
 	var r Running
 	require.Nil(t, r.Host())
 	require.Empty(t, r.Address(), "nothing is being served")
 }
 
-// TestANodeThatCannotBeBuiltFromTheFileStopsThePeerToo. Everything Start opens
-// before the node — the libp2p host, the datastore on disk — is this function's
-// to close when the node refuses; leaving them would hold the root directory
-// and the port after a start that failed.
 func TestANodeThatCannotBeBuiltClosesWhatWasOpened(t *testing.T) {
 	root := t.TempDir()
 	f := admit(t, File{
@@ -237,10 +208,6 @@ func TestANodeThatCannotBeBuiltClosesWhatWasOpened(t *testing.T) {
 	require.NoError(t, running.Close())
 }
 
-// TestANodeWithBootstrapPeersUsesTheOtherConstructor. A node with peers dials
-// them; a node with none is the first one. Handing the second an empty list
-// bootstraps it against nobody and then waits for a swarm it will never be
-// introduced to.
 func TestANodeWithBootstrapPeersDialsThem(t *testing.T) {
 	first, err := Start(t.Context(), admit(t, File{
 		Node:   node.Config{Services: []string{node.Register, node.Discovery}},
@@ -266,9 +233,6 @@ func TestANodeWithBootstrapPeersDialsThem(t *testing.T) {
 	require.NotEqual(t, first.Host().ID(), second.Host().ID())
 }
 
-// TestAServingNodeSaysWhereItIsBound. The port may have been :0, so what a
-// caller was given and what was taken are two different facts — and the second
-// is the one a client can connect to.
 func TestAServingNodeSaysWhereItIsBound(t *testing.T) {
 	running, err := Start(t.Context(), admit(t, File{
 		Node:   node.Config{Services: []string{node.Register, node.Discovery, node.Gateway}},
@@ -288,9 +252,6 @@ func TestAServingNodeSaysWhereItIsBound(t *testing.T) {
 	require.NotEqual(t, "0", port)
 }
 
-// TestAConfiguredIdentityIsTheOneUsed. A new identity every restart is almost
-// never what somebody meant: anything that remembered this peer — a bootstrap
-// list, another node's view, a pinned address — forgets it.
 func TestAConfiguredIdentityIsTheOneUsed(t *testing.T) {
 	minted, err := identity("")
 	require.NoError(t, err)

@@ -89,9 +89,6 @@ func newWorkers(t *testing.T, router Router, opts ...Option) (*Workers, host.Hos
 	return w, h
 }
 
-// TestAWarmNodeIsPreferred. A worker that already holds the compiled project
-// serves without fetching one, and the fetch it saves is a whole project over
-// the wire.
 func TestAWarmNodeIsPreferred(t *testing.T) {
 	local := &recording{}
 
@@ -111,8 +108,6 @@ func TestAWarmNodeIsPreferred(t *testing.T) {
 	require.Equal(t, []string{"worker/shop/prod", "worker"}, router.questions())
 }
 
-// TestANodeThatHoldsNothingStillTakesIt. Preferring a warm node is an
-// optimisation; requiring one would make a project's first request impossible.
 func TestANodeThatHoldsNothingStillTakesIt(t *testing.T) {
 	local := &recording{}
 
@@ -125,9 +120,6 @@ func TestANodeThatHoldsNothingStillTakesIt(t *testing.T) {
 	require.Equal(t, 1, local.count())
 }
 
-// TestANodeIsNotOfferedTwice. It is in both lists whenever it is warm, and
-// trying it again as a "cold" candidate would spend an attempt on a node that
-// just refused.
 func TestANodeIsNotOfferedTwice(t *testing.T) {
 	local := &recording{err: errors.New("no route to peer")}
 
@@ -142,7 +134,6 @@ func TestANodeIsNotOfferedTwice(t *testing.T) {
 	require.Equal(t, 1, local.count(), "the same node was tried twice")
 }
 
-// TestNothingReadyIsSaidPlainly rather than as a timeout.
 func TestNothingReadyIsSaidPlainly(t *testing.T) {
 	w, _ := newWorkers(t, &table{byName: map[string][]stats.Node{}})
 
@@ -150,9 +141,6 @@ func TestNothingReadyIsSaidPlainly(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoWorkers)
 }
 
-// TestAFailureToREACHANodeIsRetried and a failure OF the request is not: a 500
-// from a workload is that workload's answer, and sending it somewhere else
-// would run it twice.
 func TestOnlyAnUnreachableNodeIsRetried(t *testing.T) {
 	for _, c := range []struct {
 		name    string
@@ -176,8 +164,6 @@ func TestOnlyAnUnreachableNodeIsRetried(t *testing.T) {
 	}
 }
 
-// TestTheAttemptBudgetIsSpentAndNoMore. A request that has been refused three
-// times is not going to be taken by the fourth, and the caller is waiting.
 func TestTheAttemptBudgetIsBounded(t *testing.T) {
 	local := &recording{err: errors.New("no route to peer")}
 
@@ -194,9 +180,6 @@ func TestTheAttemptBudgetIsBounded(t *testing.T) {
 	require.Equal(t, 2, local.count())
 }
 
-// TestANodeThatIsNotAPeerIsSkipped rather than failing the request: a router
-// answering with something that is not a peer id is a broken report, and the
-// next candidate may be fine.
 func TestANonPeerCandidateIsSkipped(t *testing.T) {
 	local := &recording{}
 
@@ -209,9 +192,6 @@ func TestANonPeerCandidateIsSkipped(t *testing.T) {
 	require.Equal(t, 1, local.count())
 }
 
-// TestANodeDoesNotFavourItself. WithLocal saves a stream to this node when the
-// router picks it; it does not change which node is picked. Favouring itself is
-// how one node in a fleet serves everything it is asked and nothing it is not.
 func TestANodeDoesNotFavourItself(t *testing.T) {
 	local := &recording{}
 
@@ -248,7 +228,6 @@ func TestWhatItRefuses(t *testing.T) {
 	}
 }
 
-// TestCloseIsIdempotentAndFinal.
 func TestCloseIsIdempotentAndFinal(t *testing.T) {
 	router := &table{byName: map[string][]stats.Node{}}
 	w, h := newWorkers(t, router)
@@ -303,10 +282,6 @@ func (f *full) Conn(context.Context, worker.Target, string) (net.Conn, error) {
 	return f.conn, nil
 }
 
-// TestEveryVerbIsPlacedTheSameWay. A transformer, a gateway router, a proxy
-// router and a proxy transformer are all workloads of the same deployment, so
-// the node that is warm for the project is warm for them too — and each one
-// goes through the same choice rather than a second one beside it.
 func TestEveryVerbIsPlacedTheSameWay(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -356,9 +331,6 @@ func TestEveryVerbIsPlacedTheSameWay(t *testing.T) {
 	}
 }
 
-// TestAWorkerThatServesNoSuchWorldSaysSo. A worker is not required to offer
-// every world, so the refusal names which one it does not run rather than
-// looking like a node that could not be reached.
 func TestAWorkerThatServesNoSuchWorldSaysSo(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -396,7 +368,6 @@ func TestAWorkerThatServesNoSuchWorldSaysSo(t *testing.T) {
 	}
 }
 
-// TestAConnectionToOurOwnWorkloadIsNotAStreamToOurselves.
 func TestAConnectionToOurOwnWorkloadIsNotAStreamToOurselves(t *testing.T) {
 	here, there := net.Pipe()
 	t.Cleanup(func() { here.Close(); there.Close() })
@@ -412,8 +383,6 @@ func TestAConnectionToOurOwnWorkloadIsNotAStreamToOurselves(t *testing.T) {
 	require.Equal(t, 1, local.count())
 }
 
-// TestAConnectionHasNowhereToGoWhenNoNodeIsReady. The refusal is the same one
-// an invocation gets, because the choice that produced it is the same choice.
 func TestAConnectionHasNowhereToGoWhenNoNodeIsReady(t *testing.T) {
 	w, _ := newWorkers(t, &table{byName: map[string][]stats.Node{}}, WithLocal(&full{}))
 
@@ -421,9 +390,6 @@ func TestAConnectionHasNowhereToGoWhenNoNodeIsReady(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoWorkers)
 }
 
-// TestAPeerThatIsNotOneIsNotTried. A discovery row carrying a string that does not
-// decode is not a node that could not be reached — nothing was dialed — so it
-// is reported rather than retried.
 func TestAPeerThatIsNotOneIsNotTried(t *testing.T) {
 	router := &table{byName: map[string][]stats.Node{
 		"worker": {{Peer: "not-a-peer-id"}},
@@ -434,7 +400,6 @@ func TestAPeerThatIsNotOneIsNotTried(t *testing.T) {
 	require.ErrorContains(t, err, "is not a peer")
 }
 
-// TestAReportIsAlwaysOlderThanNothing.
 func TestAReportIsAlwaysOlderThanNothing(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })

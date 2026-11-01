@@ -10,9 +10,6 @@ import (
 	"github.com/taubyte/tau/node"
 )
 
-// A COMMAND IS NOT A NODE, but it has to talk to one, and the only way into a
-// private swarm is to join it. Reach is that: a discovery-only node in a directory
-// it owns, held open just long enough to find who runs what.
 func TestReachFindsAServiceInTheFleet(t *testing.T) {
 	fleet, err := Start(t.Context(), admit(t, File{
 		Node:   node.Config{Services: []string{node.Register, node.Discovery}, Cloud: "acme"},
@@ -45,7 +42,6 @@ func TestReachFindsAServiceInTheFleet(t *testing.T) {
 	require.NoDirExists(t, client.temporary)
 }
 
-// A service nobody runs is a wait that ends, and says why.
 func TestReachGivesUp(t *testing.T) {
 	_, err := Reach(t.Context(), admit(t, File{
 		Listen: []string{"/ip4/127.0.0.1/tcp/0"},
@@ -59,10 +55,6 @@ func TestReachRefusesTheSameFileStartRefuses(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoCertificate)
 }
 
-// AN ADDRESS THAT DOES NOT NAME WHO IS ON IT is the operator mistake this
-// catches: /ip4/…/tcp/… is a socket, and on a private swarm the peer id is the
-// whole question. Dropping it silently produces a node that finds nobody and
-// says nothing about why.
 func TestBootstrapAddressesNameAPeer(t *testing.T) {
 	_, err := Start(t.Context(), admit(t, File{
 		Root:      t.TempDir(),
@@ -88,9 +80,6 @@ func addresses(t *testing.T, r *Running) []string {
 	return out
 }
 
-// TestReachStopsWhenTheCallerDoes. The wait is the CLI's, and a Ctrl-C during
-// it has to take the temporary node with it — a client that kept joining the
-// swarm after its process was told to stop is a peer nobody can account for.
 func TestReachStopsWhenTheCallerDoes(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	go func() {

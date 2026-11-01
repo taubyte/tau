@@ -16,16 +16,9 @@ import (
 	"github.com/taubyte/tau/services/worker"
 )
 
-// primitive_test is the reason this package exists.
-//
-// Every one of these used to need a node: a register with a project published
-// in it, a raft group formed, and for half of them a second node and a real
-// gossipsub, to assert that a send carried the grant it was handed. The
-// composition tests that DO need all of that are still in node/ and still prove
-// the thing only they can — which namespace an item landed in, and which arm
-// answered for it. What is here is the part that was never about a fleet: that
-// every call resolves the reach, that a reach which refuses refuses every call,
-// and that nothing is lost between the two shapes of a schedule.
+// The adapter alone: every call resolves the reach, a refusing reach refuses every
+// call, and nothing is lost between the two schedule shapes. Which namespace an item
+// lands in is node/'s test.
 
 // answering stands in for whichever arm the reach handed back — this node's own
 // primitives service, or a stream to one across the swarm. The backing cannot
@@ -167,9 +160,6 @@ func everyCall() []struct {
 	}
 }
 
-// TestEVERYCALLASKSTHEREACH, which is the property that makes a node composed
-// before it can see a fleet work at all: the arm is resolved per call, so a
-// service that appeared after this backing was built is still found.
 func TestEveryCallResolvesTheReachAgain(t *testing.T) {
 	for _, one := range everyCall() {
 		t.Run(one.name, func(t *testing.T) {
@@ -182,9 +172,6 @@ func TestEveryCallResolvesTheReachAgain(t *testing.T) {
 	}
 }
 
-// TestAREACHTHATREFUSESREFUSESEVERYCALL, and it refuses with the reach's own
-// sentence — a node that can reach no primitives service says so, rather than
-// accepting the item and dropping it.
 func TestAReachThatRefusesRefusesEveryCall(t *testing.T) {
 	unreachable := errors.New("no primitives service is reachable")
 
@@ -205,10 +192,6 @@ func TestAReachThatRefusesRefusesEveryCall(t *testing.T) {
 	}
 }
 
-// TestASERVICETHATREFUSESISREPORTEDASITIS, not rewritten: ErrNotDeclared,
-// ErrForming and ErrNotLeading are all things node/dispatch.go matches on by
-// name, so a backing that wrapped them would break the one caller that reads
-// them.
 func TestTheServicesOwnRefusalIsWhatTheCallerGets(t *testing.T) {
 	refused := errors.New("that queue is not declared")
 
@@ -225,19 +208,12 @@ func TestTheServicesOwnRefusalIsWhatTheCallerGets(t *testing.T) {
 	}
 }
 
-// TestNOREACHISREFUSEDWHEREITISBUILT rather than on the first send. A backing
-// with nothing to resolve fails every call, and the root has something to hand
-// over even on a node that can reach no service at all.
 func TestABackingWithNoReachIsRefused(t *testing.T) {
 	_, err := primitive.New(nil)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "reach")
 }
 
-// TestASENDCARRIESTHEGRANTTHEIDANDTHEBYTES. The service reads the queue's
-// visibility timeout, its retry budget and its dead letter out of the
-// declaration the grant names, so a backing that dropped the grant would open a
-// queue with somebody else's configuration.
 func TestASendCarriesWhatItWasHanded(t *testing.T) {
 	b, _, service := backing(t)
 
@@ -248,10 +224,6 @@ func TestASendCarriesWhatItWasHanded(t *testing.T) {
 	require.Equal(t, []byte("ship it"), service.sends[0].data)
 }
 
-// TestACLAIMCARRIESTHECEILINGANDHANDSBACKWHATITGOT. The dispatcher asks for one
-// at a time on purpose — see node/dispatch.go on visibility timers — so the
-// number has to reach the service rather than being a batch size this layer
-// chose.
 func TestAClaimCarriesItsCeilingAndAnswersWithTheItems(t *testing.T) {
 	b, _, service := backing(t)
 	service.delivery = primitives.Delivery{ID: "order-1", Data: []byte("ship it"), Attempt: 2, Token: "t"}
@@ -262,10 +234,6 @@ func TestAClaimCarriesItsCeilingAndAnswersWithTheItems(t *testing.T) {
 	require.Equal(t, []claim{{jobs(), 1}}, service.claims)
 }
 
-// TestASETTLECARRIESTHEDELIVERYVERBATIMANDTHEVERDICT. The token identifies THIS
-// delivery and a settle carrying one the queue no longer holds is refused —
-// which is the only thing stopping a consumer whose claim expired from
-// acknowledging work somebody else now has.
 func TestASettleCarriesTheDeliveryAndTheVerdict(t *testing.T) {
 	item := primitives.Delivery{ID: "order-1", Attempt: 3, Token: "round-trip-me", Deadline: time.Unix(1, 0)}
 
@@ -279,8 +247,6 @@ func TestASettleCarriesTheDeliveryAndTheVerdict(t *testing.T) {
 	}
 }
 
-// TestADEPTHANSWERSWITHALLTHREENUMBERS, the dead letter included: nothing can
-// name one, so this is the only way anybody sees it at all.
 func TestADepthAnswersWithWhatTheServiceHolds(t *testing.T) {
 	b, _, service := backing(t)
 	service.depth = primitives.Depth{Ready: 3, Claimed: 1, Dead: 2}
@@ -291,8 +257,6 @@ func TestADepthAnswersWithWhatTheServiceHolds(t *testing.T) {
 	require.Equal(t, []invoke.Grant{jobs()}, service.depths)
 }
 
-// TestANAPPENDANSWERSWITHTHECURSORITLANDEDAT, which is what a guest hands back
-// to read what follows.
 func TestAnAppendAnswersWithItsCursor(t *testing.T) {
 	b, _, service := backing(t)
 	service.cursor = "00000000000000000001"
@@ -305,9 +269,6 @@ func TestAnAppendAnswersWithItsCursor(t *testing.T) {
 	require.Equal(t, jobs(), service.appends[0].grant)
 }
 
-// TestAREADCARRIESTHECURSORANDTHELIMITANDHANDSBACKTHERECORDS. Both are the
-// caller's position in the log, so a backing that dropped either would answer a
-// different question than the guest asked.
 func TestAReadCarriesTheCursorAndTheLimit(t *testing.T) {
 	b, _, service := backing(t)
 	service.records = []wasmtier.Record{{Cursor: "2", At: 7, Data: []byte("second")}}
@@ -317,8 +278,6 @@ func TestAReadCarriesTheCursorAndTheLimit(t *testing.T) {
 	require.Equal(t, service.records, got)
 	require.Equal(t, []read{{jobs(), "1", 10}}, service.reads)
 }
-
-// ---------------------------------------------------------------- schedules
 
 // holding is a Deployments double: the crons a worker resolved.
 type holding struct {
@@ -356,10 +315,6 @@ func aCron() worker.Schedule {
 	}
 }
 
-// TestEVERYFIELDOFASCHEDULECROSSES, and nothing but a test checks it. A
-// schedule dropped here is a cron that never fires; a FIELD dropped here is
-// worse — a nightly job whose timezone was lost fires at the right time in the
-// wrong place, and every log line about it looks correct.
 func TestEveryFieldOfAScheduleCrosses(t *testing.T) {
 	got := primitive.Schedules(t.Context(), &holding{held: []worker.Schedule{aCron()}})
 	require.Len(t, got, 1)
@@ -386,9 +341,6 @@ func TestEveryFieldOfAScheduleCrosses(t *testing.T) {
 	require.Equal(t, from.Refused, to.Refused)
 }
 
-// TestATARGETSWHOLEIDENTITYCROSSES. A fire names the workload by project,
-// deployment, scope, kind and name — and the scope is the half a copy forgets,
-// which would fire whatever a project root happens to call `invoice`.
 func TestEveryFieldOfATargetCrosses(t *testing.T) {
 	got := primitive.Schedules(t.Context(), &holding{held: []worker.Schedule{aCron()}})
 	require.Len(t, got[0].Fires, 1)
@@ -409,15 +361,10 @@ func TestEveryFieldOfATargetCrosses(t *testing.T) {
 	}, got[0].Fires[0])
 }
 
-// TestANODEWITHNOWORKERANSWERSNOSCHEDULES rather than panicking on a field the
-// composition has not filled in yet: the service's first pass can run before
-// openWorker has returned.
 func TestANodeWithNoWorkerHoldsNoSchedules(t *testing.T) {
 	require.Nil(t, primitive.Schedules(t.Context(), nil))
 }
 
-// TestAWORKERTHATHASRESOLVEDNOTHINGANSWERSANEMPTYONE, which the service's pass
-// over none does nothing with — the same answer, and not a refusal.
 func TestAWorkerHoldingNoCronsAnswersEmpty(t *testing.T) {
 	holds := &holding{}
 	got := primitive.Schedules(t.Context(), holds)
@@ -425,9 +372,6 @@ func TestAWorkerHoldingNoCronsAnswersEmpty(t *testing.T) {
 	require.Equal(t, 1, holds.asked)
 }
 
-// TestACRONTHATEDGESTONOTHINGSTILLCROSSES. What a schedule owes is the
-// service's question — see Schedule.owes — so translating one that edges
-// nowhere is right and dropping it here would hide a refusal the composer wrote.
 func TestACronThatFiresNothingStillCrosses(t *testing.T) {
 	bare := worker.Schedule{Handle: "shop/prod/QmIdle", Name: "idle", Refused: "every edge was refused"}
 

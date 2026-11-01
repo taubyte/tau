@@ -11,28 +11,11 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// wire.go is the three formats the vocabulary offers, and nothing else.
-//
-// # Two shapes, not three
-//
-// `openai` and `ollama` are the same request and the same answer — which is the
-// whole reason the vocabulary's field is called `format` and not `provider`:
-// plenty of things that are not OpenAI serve the OpenAI format. `anthropic` is
-// the one that differs, in three ways that each break a naive translation:
-//
-//   - the SYSTEM turn is a top-level field, not a message. Sending it as a
-//     message is a 400, not a degraded answer.
-//   - `max_tokens` is REQUIRED. There is no provider default to fall back on.
-//   - the answer is a list of content BLOCKS, so the text is assembled rather
-//     than read out of one field.
-//
-// # What the resource declares and the caller may not have
-//
-// Temperature and top_p come from the resource unless the caller set
-// temperature. `max_tokens` has already been clamped by the host — see
-// pkg/invoke/wasm/model.go — so what arrives here is a number the author's
-// ceiling permits. The stop list is the resource's plus the caller's, in that
-// order, because an author's stop sequence is a rule and not a default.
+// The vocabulary's three formats, two shapes: `openai` and `ollama` share one;
+// `anthropic` puts the system turn at the top level (a message is a 400), requires
+// `max_tokens`, and answers in content blocks. Temperature and top_p come from the
+// resource unless the caller set temperature; `max_tokens` is already clamped by the
+// host (pkg/invoke/wasm/model.go); stop lists are the resource's then the caller's.
 
 // openaiRequest is the shape openai and ollama both take.
 type openaiRequest struct {

@@ -27,11 +27,8 @@ import (
 	"github.com/taubyte/tau/services/gateway"
 )
 
-// tls_test is a REAL HANDSHAKE AGAINST THE NODE'S OWN LISTENER: the file names
-// an https address and the cloud's wildcard, a project with a generated
-// gateway is published, and a TLS client dialling that name is answered with
-// the wildcard and reaches the gateway. A test of configuration alone would
-// pass for a node that bound the address in the clear.
+// A real handshake against the node's listener: the wildcard answers a generated
+// gateway name and reaches the gateway.
 
 func wildcardFor(t *testing.T, name string) (certificate.Pair, *x509.CertPool) {
 	t.Helper()
@@ -91,7 +88,6 @@ func fixtureWithHosts(t *testing.T, cloud string) ([]byte, []string, string) {
 	return compiled, hosts, generated
 }
 
-// TestTheNodeTerminatesAGeneratedNameWithTheCloudsWildcard.
 func TestTheNodeTerminatesAGeneratedNameWithTheCloudsWildcard(t *testing.T) {
 	const cloud = "tau.example.io"
 	compiled, hosts, name := fixtureWithHosts(t, cloud)
@@ -137,7 +133,6 @@ func TestTheNodeTerminatesAGeneratedNameWithTheCloudsWildcard(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestTheHTTPSAddressIsInTheFile.
 func TestTheHTTPSAddressIsInTheFile(t *testing.T) {
 	out, err := yaml.Marshal(File{HTTPS: ":8443", Open: true})
 	require.NoError(t, err)
@@ -146,7 +141,6 @@ func TestTheHTTPSAddressIsInTheFile(t *testing.T) {
 	require.Equal(t, ":8443", back.HTTPS)
 }
 
-// TestAnHTTPSAddressAlreadyTakenIsAnError, and the node is not left half up.
 func TestAnHTTPSAddressAlreadyTakenIsAnError(t *testing.T) {
 	first, err := Start(t.Context(), admit(t, File{
 		Node:   node.Config{Services: []string{node.Register, node.Discovery, node.Gateway}},

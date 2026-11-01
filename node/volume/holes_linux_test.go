@@ -7,9 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestWHERETheFilesystemCannotSayAFileIsDataThroughout. An lseek that fails is
-// answered by reading the rest, rather than by zeros or a failed walk: the
-// walk then reads a file as it did before it asked.
 func TestWhereTheFilesystemCannotSayAFileIsDataThroughout(t *testing.T) {
 	r, w, err := os.Pipe()
 	require.NoError(t, err)

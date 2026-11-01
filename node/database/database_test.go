@@ -18,16 +18,8 @@ import (
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// database_test is the copies of a database this node keeps: which store one's
-// entries go into, what it says it holds, and what letting go of one does to the
-// table it serves from.
-//
-// EVERY ONE OF THESE USED TO NEED A NODE — a mocknet host, a register, a worker
-// and a started composition — to assert which store a spec reached. A factory
-// that cannot be asked what it holds, a store that cannot be released and a
-// release racing a read are ordinary fixtures here.
-
-// ---------------------------------------------------------------- doubles
+// The copies a node keeps: which store a database's entries go into, what it holds,
+// and what releasing one does to the table.
 
 // stores is a Stores double: one store per NAME, which is what a real factory
 // gives — a database is named, and opening it twice is opening the same rows. A
@@ -189,8 +181,6 @@ func (d *disk) Paths(_ context.Context, under string, depth int) ([]string, erro
 	return out, nil
 }
 
-// ---------------------------------------------------------------- fixtures
-
 func kvSpec(project, name string) database.Spec {
 	return database.Spec{
 		Type: database.KV, Engine: database.Tau, Consensus: database.CRDT,
@@ -217,11 +207,6 @@ func holdings(t *testing.T, s backing.Stores, l backing.Ledgers, d backing.Disk)
 	return h
 }
 
-// ---------------------------------------------------------------- the name
-
-// TestONENAMEADDRESSESADATABASEANDNAMESITSTOPIC, so the store a request reaches,
-// the topic its rows travel on and the path a release evicts agree by
-// construction rather than by three expressions that happen to match.
 func TestOneNameAddressesADatabaseAndNamesItsTopic(t *testing.T) {
 	name, err := backing.Name(kvSpec("shop", "QmSessions"))
 	require.NoError(t, err)
@@ -232,17 +217,10 @@ func TestOneNameAddressesADatabaseAndNamesItsTopic(t *testing.T) {
 	require.ErrorIs(t, err, database.ErrUnaddressable)
 }
 
-// TestTHECACHESANDTHEDATABASESARENOTONESTORE. They are different kinds with
-// different lifetimes: a cache evicts and a database does not, and one CRDT
-// holding both would make a cache's churn the database's replication traffic.
 func TestADatabaseIsNamedUnderItsOwnPrefix(t *testing.T) {
 	require.Equal(t, "databases", backing.Prefix)
 }
 
-// ---------------------------------------------------------------- construction
-
-// TestANODEWITHNOWHERETOPUTENTRIESISACOMPOSITIONFAULT, refused where it can be
-// named rather than on the first write.
 func TestNewHoldingsRefusesWhatItCannotDoWithout(t *testing.T) {
 	_, err := backing.NewHoldings(nil, &ledgers{}, nil)
 	require.ErrorContains(t, err, "nowhere to keep")
@@ -257,11 +235,6 @@ func TestNewHoldingsRefusesWhatItCannotDoWithout(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// ---------------------------------------------------------------- entries
-
-// TestASTOREPERDATABASEANDNOTONEFORALLOFTHEM, which is a pubsub topic per
-// database: one store for every database on a node is one topic carrying every
-// database's rows, and then placement decides nothing.
 func TestAStoreIsOpenedPerDatabaseAndKept(t *testing.T) {
 	kept := newStores()
 	h := holdings(t, kept, &ledgers{}, nil)
@@ -291,8 +264,6 @@ func TestAStoreIsOpenedPerDatabaseAndKept(t *testing.T) {
 	require.Len(t, opened, 3, "reopening a held database opened another store: %v", opened)
 }
 
-// TestTWODATABASESDONOTSEEEACHOTHERSROWS, and neither do two deployments of one
-// — which follows from the name and is asserted through the door an engine uses.
 func TestTwoDatabasesAreTwoSetsOfRows(t *testing.T) {
 	h := holdings(t, newStores(), &ledgers{}, nil)
 
@@ -317,9 +288,6 @@ func TestTwoDatabasesAreTwoSetsOfRows(t *testing.T) {
 	}
 }
 
-// TestALEDGERISASTORETOO, which is the whole of the difference between the two
-// resolutions: the engine above is unchanged, and what `consensus` picks is
-// where the four methods go.
 func TestTheConsensusPicksTheStoreAndNotASecondEngine(t *testing.T) {
 	kept, ordered := newStores(), &ledgers{store: &rows{held: map[string][]byte{}}}
 	h := holdings(t, kept, ordered, nil)
@@ -351,8 +319,6 @@ func TestTheConsensusPicksTheStoreAndNotASecondEngine(t *testing.T) {
 	require.ErrorContains(t, err, "no group")
 }
 
-// TestASPECTHATADDRESSESNOTHINGOPENSNOTHING, rather than opening a store under
-// a name that is a path into somebody else's.
 func TestAnUnaddressableSpecOpensNoStore(t *testing.T) {
 	kept := newStores()
 	h := holdings(t, kept, &ledgers{}, nil)
@@ -364,8 +330,6 @@ func TestAnUnaddressableSpecOpensNoStore(t *testing.T) {
 	require.Empty(t, opened)
 }
 
-// TestASTORETHATCOULDNOTBEOPENEDISNOTREMEMBERED, so the next request tries
-// again instead of reading one bad moment back out of the table forever.
 func TestAStoreThatCouldNotBeOpenedIsNotKept(t *testing.T) {
 	kept := newStores()
 	kept.openErr = errors.New("no database factory")
@@ -380,13 +344,6 @@ func TestAStoreThatCouldNotBeOpenedIsNotKept(t *testing.T) {
 	require.NotNil(t, store)
 }
 
-// ---------------------------------------------------------------- held
-
-// TestHOLDINGISASKEDOFTHEDISKANDNOTOFTHETABLE. A restarted node holds
-// everything it held before and has opened none of it; a holder answering from
-// its warm table would say it holds nothing, and every move that needed it would
-// either wait forever or count its "not held" as a reason for somebody else to
-// let go.
 func TestHeldIsAnsweredFromTheDiskAndNotTheTable(t *testing.T) {
 	has := &disk{holds: map[string]bool{backing.Prefix + "/shop/prod/kv/QmA": true}}
 	h := holdings(t, newStores(), &ledgers{}, has)
@@ -406,8 +363,6 @@ func TestHeldIsAnsweredFromTheDiskAndNotTheTable(t *testing.T) {
 	require.False(t, h.Held(t.Context(), kvSpec("shop", "QmA")))
 }
 
-// TestAFACTORYTHATCANNOTBEASKEDHOLDSNOTHING. Answering "yes" on a guess would
-// let a peer drop the last copy.
 func TestAFactoryThatCannotBeAskedHoldsNothing(t *testing.T) {
 	h := holdings(t, newStores(), &ledgers{}, nil)
 
@@ -415,11 +370,6 @@ func TestAFactoryThatCannotBeAskedHoldsNothing(t *testing.T) {
 	require.Nil(t, h.OnDisk(t.Context()))
 }
 
-// ---------------------------------------------------------------- on disk
-
-// TestONDISKISFOURSEGMENTSBELOWTHEPREFIX, which is what Spec.Prefix writes:
-// project, environment, model, name. Everything under that is the CRDT's own
-// structure and enumerating it would report internals as databases.
 func TestOnDiskReadsBackWhatTheNameWrote(t *testing.T) {
 	has := &disk{paths: []string{
 		backing.Prefix + "/shop/prod/kv/QmA",
@@ -444,15 +394,6 @@ func TestOnDiskReadsBackWhatTheNameWrote(t *testing.T) {
 	require.Nil(t, h.OnDisk(t.Context()))
 }
 
-// ---------------------------------------------------------------- letting go
-
-// TestARELEASEDDATABASEISNOTSERVEDFROMTHETABLEAGAIN.
-//
-// Destroying a database closes the store it destroys. A node that kept that
-// store in the table it serves from went on answering every later call out of a
-// closed store — not-found for rows another node holds, and the CRDT's own
-// bookkeeping written back under the prefix that was just removed, which makes
-// this node advertise a database it does not have.
 func TestAReleasedDatabaseIsNotServedFromTheTableAgain(t *testing.T) {
 	kept := newStores()
 	h := holdings(t, kept, &ledgers{}, nil)
@@ -474,9 +415,6 @@ func TestAReleasedDatabaseIsNotServedFromTheTableAgain(t *testing.T) {
 	require.NotSame(t, first, again)
 }
 
-// TestACOPYTHISNODENEVEROPENEDCANSTILLBERELEASED, because not open is not
-// absent: a restarted node holds bytes it has never opened, and placement moving
-// that database off it has to be able to land.
 func TestADatabaseThatWasNeverOpenedIsStillReleased(t *testing.T) {
 	kept := newStores()
 	h := holdings(t, kept, &ledgers{}, nil)
@@ -488,9 +426,6 @@ func TestADatabaseThatWasNeverOpenedIsStillReleased(t *testing.T) {
 	require.Equal(t, []string{backing.Prefix + "/shop/prod/kv/QmNeverOpened"}, released)
 }
 
-// TestARELEASETHATFAILEDISNOTARELEASE, and it is the caller that is told: a
-// sweep that counted a failed drop as done would advertise this node as no
-// longer a holder while its bytes are still here.
 func TestAReleaseThatFailedSaysSo(t *testing.T) {
 	kept := newStores()
 	kept.releaseErr = errors.New("this store cannot release a database it holds")
@@ -505,19 +440,6 @@ func TestAReleaseThatFailedSaysSo(t *testing.T) {
 	require.Empty(t, released)
 }
 
-// TestARELEASERACINGTHEREQUESTPATHISONETABLEANDONELOCK. Run with -race: a
-// placement sweep letting go of a copy and a request opening one reach the same
-// table, and a torn map here is a store nothing ever closes.
-//
-// WHAT THIS DOES NOT ASSERT, BECAUSE IT IS NOT TRUE. The drop from the table and
-// the destroy are two steps: a request that opens the store between them leaves
-// a live entry for a database that is then destroyed, and this node serves that
-// closed store until it restarts. They are two steps BY DESIGN — holding the
-// table's lock across a destroy would stop every open on the node for as long as
-// the destroy takes — so the window is real and is stated rather than narrowed by
-// an assertion that would only ever say the window was short. What IS asserted,
-// deterministically, is the sequence that matters: see
-// TestAReleasedDatabaseIsNotServedFromTheTableAgain.
 func TestAReleaseRacingTheRequestPath(t *testing.T) {
 	stores := newStores()
 	h := holdings(t, stores, &ledgers{}, nil)
@@ -557,13 +479,8 @@ func TestAReleaseRacingTheRequestPath(t *testing.T) {
 	}
 }
 
-// ========================================================================== the four worlds
-
-// A FAKE ENGINE AND NOT A FAKE DRIVER. What this file tests is the composition
-// — a grant becomes a Spec, a credential is resolved, a connection is kept —
-// and pkg/database's own tests already cover building a DSN and wrapping a
-// pool. Registering an engine is the seam; going through database/sql to reach
-// it would be testing somebody else's registry.
+// A fake engine, not a fake driver: this tests the composition (grant to Spec,
+// credential resolved, connection kept); DSN building is pkg/database's test.
 
 type fakeEngine struct {
 	name string
@@ -736,10 +653,6 @@ func tauOnly(t *testing.T) (*backing.Databases, *stores) {
 	return tierOver(t, nil, newVault())
 }
 
-// ── the connection ───────────────────────────────────────────────────────────
-
-// TestAGrantBecomesAConnection, with every field of the compiled resource
-// arriving where pkg/database expects it.
 func TestAGrantOpensTheDatabaseItNames(t *testing.T) {
 	engine := &fakeEngine{name: "postgres"}
 	d, _ := tierWith(t, engine)
@@ -761,8 +674,6 @@ func TestAGrantOpensTheDatabaseItNames(t *testing.T) {
 	require.True(t, spec.Credentials.TLS)
 }
 
-// TestAConnectionIsKept, because database/sql is already a pool and opening per
-// invocation would discard it on every request.
 func TestTheConnectionIsOpenedOnce(t *testing.T) {
 	engine := &fakeEngine{name: "postgres"}
 	d, _ := tierWith(t, engine)
@@ -776,8 +687,6 @@ func TestTheConnectionIsOpenedOnce(t *testing.T) {
 	require.Len(t, engine.conn.statements, 3)
 }
 
-// TestTwoDeploymentsAreTwoConnections, because a handle carries the deployment
-// and staging must not write to production's server.
 func TestTwoHandlesAreTwoConnections(t *testing.T) {
 	engine := &fakeEngine{name: "postgres"}
 	d, _ := tierWith(t, engine)
@@ -792,10 +701,6 @@ func TestTwoHandlesAreTwoConnections(t *testing.T) {
 	require.Equal(t, "staging", engine.specs[1].Environment)
 }
 
-// ── tls ──────────────────────────────────────────────────────────────────────
-
-// TestTlsIsOnUnlessSomebodyWroteDisable, which is the vocabulary's own
-// polarity: the safe state is the one an author reaches by writing nothing.
 func TestTlsPolarity(t *testing.T) {
 	for value, want := range map[string]bool{
 		"":            true,
@@ -819,10 +724,6 @@ func TestTlsPolarity(t *testing.T) {
 	}
 }
 
-// ── credentials ──────────────────────────────────────────────────────────────
-
-// TestTheCredentialIsResolvedFromTheVault and never carried in the spec, which
-// is logged, cached and compared.
 func TestACredentialIsReadFromTheVault(t *testing.T) {
 	engine := &fakeEngine{name: "postgres"}
 	d, v := tierWith(t, engine)
@@ -839,7 +740,6 @@ func TestACredentialIsReadFromTheVault(t *testing.T) {
 	require.Equal(t, "s3cret", engine.specs[0].Credentials.Password)
 }
 
-// TestAPasswordMayContainAColon, which is why the split is on the FIRST one.
 func TestOnlyTheFirstColonSplits(t *testing.T) {
 	engine := &fakeEngine{name: "postgres"}
 	d, v := tierWith(t, engine)
@@ -855,8 +755,6 @@ func TestOnlyTheFirstColonSplits(t *testing.T) {
 	require.Equal(t, "a:b:c", engine.specs[0].Credentials.Password)
 }
 
-// TestASecretWithNoColonIsAPasswordAlone, which is what a server that
-// authenticates by password wants.
 func TestNoColonIsAPasswordWithNoUser(t *testing.T) {
 	engine := &fakeEngine{name: "postgres"}
 	d, v := tierWith(t, engine)
@@ -872,8 +770,6 @@ func TestNoColonIsAPasswordWithNoUser(t *testing.T) {
 	require.Equal(t, "justapassword", engine.specs[0].Credentials.Password)
 }
 
-// TestACredentialThatCannotBeReadIsNotAConnection, rather than connecting with
-// an empty password and being refused by the server for the wrong reason.
 func TestAMissingCredentialFailsTheOpen(t *testing.T) {
 	engine := &fakeEngine{name: "postgres"}
 	d, _ := tierWith(t, engine)
@@ -887,9 +783,6 @@ func TestAMissingCredentialFailsTheOpen(t *testing.T) {
 	require.Empty(t, engine.specs, "nothing was opened")
 }
 
-// ── rows ─────────────────────────────────────────────────────────────────────
-
-// TestRowsComeBackFlat, row-major, which is the shape the ABI carries.
 func TestAResultSetIsRowMajor(t *testing.T) {
 	engine := &fakeEngine{name: "postgres", conn: &fakeConn{rows: &fakeRows{
 		cols: []string{"id", "name"},
@@ -903,10 +796,6 @@ func TestAResultSetIsRowMajor(t *testing.T) {
 	require.Equal(t, []any{int64(1), "alice", int64(2), "bob"}, rows.Values)
 }
 
-// ── what this node cannot serve ──────────────────────────────────────────────
-
-// TestANodeWithNoEngineSaysSo rather than hanging on a connection nobody can
-// make.
 func TestNoEngineRegisteredIsNamed(t *testing.T) {
 	d, _ := tauOnly(t)
 
@@ -915,8 +804,6 @@ func TestNoEngineRegisteredIsNamed(t *testing.T) {
 	require.ErrorIs(t, err, backing.ErrNoEngines)
 }
 
-// TestAnUnregisteredEngineIsNamed, and the message says which engines this
-// build does have.
 func TestAnEngineNobodyRegisteredIsRefused(t *testing.T) {
 	engine := &fakeEngine{name: "postgres"}
 	d, _ := tierWith(t, engine)
@@ -929,9 +816,6 @@ func TestAnEngineNobodyRegisteredIsRefused(t *testing.T) {
 	require.ErrorContains(t, err, "mysql")
 }
 
-// TestOnlySqlIsServedYet. kv, document and vector are the same kind with
-// different verbs, and each is its own interface when it lands — so a resource
-// on one is told, not connected to something that answers nothing.
 func TestAnotherDataModelIsRefusedByName(t *testing.T) {
 	engine := &fakeEngine{name: "postgres"}
 	d, _ := tierWith(t, engine)
@@ -943,8 +827,6 @@ func TestAnotherDataModelIsRefusedByName(t *testing.T) {
 	}
 }
 
-// TestAServersRefusalIsNotAnOutage, which is what lets the tier tell a caller
-// to fix a statement rather than retry it.
 func TestAStatementTheServerRefusedIsMarked(t *testing.T) {
 	engine := &fakeEngine{name: "postgres", conn: &fakeConn{execErr: errors.New("syntax error")}}
 	d, _ := tierWith(t, engine)
@@ -954,7 +836,6 @@ func TestAStatementTheServerRefusedIsMarked(t *testing.T) {
 	require.ErrorContains(t, err, "syntax error")
 }
 
-// TestConnectionsAreClosedWithTheNode.
 func TestClosingReleasesTheConnections(t *testing.T) {
 	engine := &fakeEngine{name: "postgres"}
 	d, _ := tierWith(t, engine)
@@ -967,8 +848,6 @@ func TestClosingReleasesTheConnections(t *testing.T) {
 	require.NoError(t, d.Close(), "Close is idempotent")
 }
 
-// ── tau's own kv engine ──────────────────────────────────────────────────────
-
 func kvGrantFor(handle string) invoke.Grant {
 	return invoke.Grant{
 		Kind: "database", Label: "tokens", Handle: handle,
@@ -977,9 +856,6 @@ func kvGrantFor(handle string) invoke.Grant {
 	}
 }
 
-// TestAKvDatabaseNEEDSNOTHINGPROVISIONED, which is the whole difference between
-// declaring a database and going to get one first. No composer registered an
-// engine here.
 func TestAKvDatabaseWorksWithNoEngineRegistered(t *testing.T) {
 	d, _ := tauOnly(t)
 	ctx := t.Context()
@@ -1002,12 +878,6 @@ func TestAKvDatabaseWorksWithNoEngineRegistered(t *testing.T) {
 	require.ErrorIs(t, err, wasmtier.ErrNotFound, "the tier's miss, so it is not read as an outage")
 }
 
-// TestAStoreIsOpenedPerDatabaseAndOnlyIfUsed.
-//
-// LAZY is the rule the cache backing keeps: a node serving no kv database opens
-// nothing. PER DATABASE is what replaced "one store for all of them" — a store
-// is a pubsub topic, so a node now carries as many as it HOLDS rather than one
-// carrying every database's rows.
 func TestTheKvStoreIsLazyAndPerDatabase(t *testing.T) {
 	d, kept := tauOnly(t)
 
@@ -1039,7 +909,6 @@ func TestTheKvStoreIsLazyAndPerDatabase(t *testing.T) {
 	require.Len(t, opened, before, "reopening a held database opened another store")
 }
 
-// TestTwoKvDatabasesDoNotSeeEachOther, and neither do two deployments of one.
 func TestKvDatabasesAreIsolated(t *testing.T) {
 	d, _ := tauOnly(t)
 	ctx := t.Context()
@@ -1065,8 +934,6 @@ func TestKvDatabasesAreIsolated(t *testing.T) {
 	}
 }
 
-// TestAComposersOwnKvEngineWins, so a deployment that has something better than
-// the swarm's own store is not overridden by it.
 func TestARegisteredKvEngineIsNotReplaced(t *testing.T) {
 	engine := &fakeKV{}
 	d, kept := tierOver(t, registryWith(t, engine), newVault())
@@ -1080,8 +947,6 @@ func TestARegisteredKvEngineIsNotReplaced(t *testing.T) {
 	require.NotContains(t, opened, backing.Prefix, "and the node's own store was never opened")
 }
 
-// TestAKvDatabaseNeedsSomewhereToPutIt, so a node with no database factory
-// says so rather than panicking on the first write.
 func TestAKvDatabaseNeedsAStore(t *testing.T) {
 	nowhere := newStores()
 	nowhere.openErr = errors.New("node: no database factory to open a cache with")
@@ -1117,8 +982,6 @@ func (fakeKVConn) Watch(context.Context, string) (<-chan string, error) {
 	return nil, errors.New("not served")
 }
 
-// ── tau's own document engine ────────────────────────────────────────────────
-
 func docGrantFor(handle string) invoke.Grant {
 	return invoke.Grant{
 		Kind: "database", Label: "orders", Handle: handle,
@@ -1127,8 +990,6 @@ func docGrantFor(handle string) invoke.Grant {
 	}
 }
 
-// TestADocumentDatabaseAlsoNeedsNothingProvisioned, and it crosses this backing
-// as JSON — which is where pkg/database's map meets the ABI's bytes.
 func TestADocumentDatabaseWorksWithNoEngineRegistered(t *testing.T) {
 	d, _ := tauOnly(t)
 	ctx := t.Context()
@@ -1151,8 +1012,6 @@ func TestADocumentDatabaseWorksWithNoEngineRegistered(t *testing.T) {
 	require.ErrorIs(t, err, wasmtier.ErrNotFound, "the tier's miss, not the engine's")
 }
 
-// TestAnEmptyFilterIsEverythingAndAnEmptyAnswerIsAnArray, so a guest parses the
-// answer the same way whether or not anything matched.
 func TestFindWithNoFilterAnswersAnArray(t *testing.T) {
 	d, _ := tauOnly(t)
 	ctx := t.Context()
@@ -1165,8 +1024,6 @@ func TestFindWithNoFilterAnswersAnArray(t *testing.T) {
 	require.JSONEq(t, `[]`, string(found), "an empty array and not null")
 }
 
-// TestBadJsonIsMalformedInBothDirections, which is its own arm because a caller
-// fixes it and does not retry it.
 func TestABadDocumentIsMalformed(t *testing.T) {
 	d, _ := tauOnly(t)
 	ctx := t.Context()
@@ -1180,9 +1037,6 @@ func TestABadDocumentIsMalformed(t *testing.T) {
 	require.ErrorIs(t, err, wasmtier.ErrMalformed)
 }
 
-// TestTheTwoOwnEnginesDoNotShareAStoreAtALL, which is stronger than the key-space
-// separation this used to assert: they are not in the same store, so they cannot
-// collide and a drop in one cannot reach the other's replicas.
 func TestKvAndDocumentsDoNotCollide(t *testing.T) {
 	d, kept := tauOnly(t)
 	ctx := t.Context()
@@ -1213,8 +1067,6 @@ func TestKvAndDocumentsDoNotCollide(t *testing.T) {
 		"a store holding every database was opened after all: %v", opened)
 }
 
-// ── tau's own vector engine ──────────────────────────────────────────────────
-
 func vecGrantFor(handle, metric string) invoke.Grant {
 	return invoke.Grant{
 		Kind: "database", Label: "knowledge", Handle: handle,
@@ -1226,8 +1078,6 @@ func vecGrantFor(handle, metric string) invoke.Grant {
 	}
 }
 
-// TestNearestNeighbourWithNothingProvisioned, which completes the four data
-// models the `database` kind declares.
 func TestAVectorDatabaseWorksWithNoEngineRegistered(t *testing.T) {
 	d, _ := tauOnly(t)
 	ctx := t.Context()
@@ -1251,8 +1101,6 @@ func TestAVectorDatabaseWorksWithNoEngineRegistered(t *testing.T) {
 	require.Len(t, found, 1)
 }
 
-// TestTheDeclaredMetricReachesTheEngine, because it has to match how the model
-// was trained and getting it wrong ranks badly rather than erroring.
 func TestTheMetricComesOffTheResource(t *testing.T) {
 	d, _ := tauOnly(t)
 	ctx := t.Context()
@@ -1269,7 +1117,6 @@ func TestTheMetricComesOffTheResource(t *testing.T) {
 	require.Equal(t, "long", found[0].ID, "dot carries magnitude")
 }
 
-// TestTheDeclaredWidthIsEnforcedThroughTheBacking.
 func TestAWrongWidthIsTheTiersError(t *testing.T) {
 	d, _ := tauOnly(t)
 	ctx := t.Context()
@@ -1291,13 +1138,6 @@ func TestABadMetaIsMalformed(t *testing.T) {
 		wasmtier.ErrMalformed)
 }
 
-// TestALEDGERISNOTKEPTBYTHISNODESOWNENGINES.
-//
-// These engines are the fallback for a node that runs no database service and
-// can reach none. A ledger has nothing to keep its order in there — no group, no
-// owner, nowhere to send a write this node may not make — so it is refused BY
-// NAME, off the word the author wrote, BEFORE a store is asked for. Serving it as
-// crdt would resolve two entries into one with no error to anybody.
 func TestALedgerIsNotKeptByThisNodesOwnEngines(t *testing.T) {
 	d, kept := tauOnly(t)
 
@@ -1318,8 +1158,6 @@ func TestALedgerIsNotKeptByThisNodesOwnEngines(t *testing.T) {
 	_, err = d.OpenKV(t.Context(), crdt)
 	require.NoError(t, err)
 }
-
-// ================================================================ the guards
 
 // twoFaced is an engine that answers its model's surface for the registry's
 // PROBE and something else for a real database.
@@ -1354,8 +1192,6 @@ type closeOnly struct{}
 
 func (closeOnly) Close() error { return nil }
 
-// TestANENGINETHATANSWERSNONEOFITSMODELSOPERATIONSISREFUSED, per model, rather
-// than panicking on the first call a guest makes.
 func TestAConnectionWithoutItsModelsSurfaceIsRefused(t *testing.T) {
 	for _, c := range []struct {
 		model   database.Type
@@ -1433,8 +1269,6 @@ func (pretend) Search(context.Context, []float32, int) ([]database.Match, error)
 }
 func (pretend) Upsert(context.Context, string, []float32, map[string]any) error { return nil }
 
-// ================================================ what an engine hands back
-
 // answering is a document and vector engine a test drives directly: the two
 // models with no corpus cell anywhere, so what their adapters do with a nil
 // answer, an engine sentinel and a value that will not marshal is asserted here
@@ -1480,10 +1314,6 @@ func (c *answeringConn) Upsert(context.Context, string, []float32, map[string]an
 	return c.err
 }
 
-// TestANILANSWERISANEMPTYARRAYANDNOTnull, so a guest parses what came back the
-// same way whether or not anything matched. An engine answering nil is allowed —
-// pkg/database says nothing about it — and tau's own does not, which is why this
-// needs an engine of its own.
 func TestADocumentEngineAnsweringNilIsStillAnArray(t *testing.T) {
 	conn := &answeringConn{}
 	d, _ := tierWith(t, &answering{model: database.Document, conn: conn})
@@ -1496,10 +1326,6 @@ func TestADocumentEngineAnsweringNilIsStillAnArray(t *testing.T) {
 	require.JSONEq(t, `[]`, string(found), "an empty array and not null")
 }
 
-// TestTHEENGINESSENTINELSBECOMETHETIERS, which is the same job node/cache does
-// and the same bug it was written to stop: an unrecognised error becomes
-// `unavailable`, so a miss would read as an outage and a document that is not a
-// document would read as one too.
 func TestTheDocumentEnginesSentinelsBecomeTheTiers(t *testing.T) {
 	conn := &answeringConn{}
 	d, _ := tierWith(t, &answering{model: database.Document, conn: conn})
@@ -1525,8 +1351,6 @@ func TestTheDocumentEnginesSentinelsBecomeTheTiers(t *testing.T) {
 	require.NotErrorIs(t, err, wasmtier.ErrNotFound)
 }
 
-// TestAMATCHWHOSEMETAWILLNOTMARSHALISMALFORMEDANDNOTAPANIC. The ABI carries a
-// vector's meta as JSON, so what an engine attached has to survive the crossing.
 func TestAMatchWhoseMetaCannotBeJsonIsMalformed(t *testing.T) {
 	conn := &answeringConn{matches: []database.Match{
 		{ID: "east", Score: 1, Meta: map[string]any{"where": make(chan int)}},
@@ -1545,11 +1369,6 @@ func TestAMatchWhoseMetaCannotBeJsonIsMalformed(t *testing.T) {
 	require.ErrorContains(t, err, "the index is rebuilding")
 }
 
-// ================================================================ result sets
-
-// TestASTATEMENTTHATFAILEDMIDRESULTSETISSTILLTHESERVERSANSWER, at every point a
-// result set can fail: naming its columns, reading a row, and the error a driver
-// only reports once the rows are done.
 func TestEveryFailureReadingAResultSetIsTheServers(t *testing.T) {
 	for _, conn := range []*fakeConn{
 		{queryErr: errors.New("the statement was refused")},
@@ -1573,10 +1392,6 @@ func TestEveryFailureReadingAResultSetIsTheServers(t *testing.T) {
 	require.NotErrorIs(t, err, wasmtier.ErrStatementFailed)
 }
 
-// ================================================================ construction
-
-// TestTHEADAPTERREFUSESWHATITCANNOTDOWITHOUT, where it can be named rather than
-// on the first request that reaches a database.
 func TestNewRefusesWhatItCannotDoWithout(t *testing.T) {
 	kept := newStores()
 	entries := holdings(t, kept, &ledgers{}, nil).Entries

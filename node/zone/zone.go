@@ -1,25 +1,7 @@
-// Package zone answers DNS for the zones a project declares.
-//
-// # Why it is its own package
-//
-// It is an ADAPTER: it sits between the DNS server, which knows nothing about
-// projects, and the worker and component tier, which know nothing about DNS. The
-// composition root is the only place that may NAME all three — but naming them
-// and implementing the adapter are different jobs, and conflating them is how
-// node/ grew to 8,000 lines with twenty-two of these in one namespace.
-//
-// So the root constructs this and hands it three things it can ask. Everything
-// this package needs is in its own signature, which is the property a type
-// taking *Node does not have: that one can reach anything the node has, so
-// nothing about it says what it actually depends on, and it cannot be built
-// anywhere except beside the node.
-//
-// # What it does
-//
-// Both arms of a zone. The records an author wrote, and the function they named
-// for the names no file could carry. Finding which zone covers a query name is a
-// walk up its labels and is shared by both, because two loops is how the arms
-// would come to disagree about which zone a name is in.
+// Package zone answers DNS for the zones a project declares: an adapter between the
+// DNS server and the worker and component tier. Both arms, the records an author
+// wrote and the resolver function they named, share one walk up the labels to the
+// covering zone.
 package zone
 
 import (
@@ -90,26 +72,9 @@ type covered struct {
 	environment string
 }
 
-// covering walks a query name up its labels to the zone that declares it.
-//
-// # The walk is up the labels, and it stops at the first zone
-//
-// A query for `mail.shop.example.com` may be answered by a zone declared at
-// `shop.example.com` or at `example.com`, and the index maps an exact name to a
-// project. So the name is tried, then its parent, then its parent's — most
-// specific first, which is the same precedence a resolver would apply between
-// two delegations.
-//
-// IT STOPS AT TWO LABELS. A query for `com` or `.` is not a zone anybody here
-// declares, and walking to the root would ask the index about every public
-// suffix on every miss.
-//
-// # What it costs on a miss
-//
-// One index lookup per label, and a miss is the ordinary case for a server that
-// also answers routed names. The lookups are what the index is for and the
-// answer is cached by whatever holds the project — but a deep name that matches
-// nothing pays for its depth, which is stated rather than hidden.
+// covering walks a query name up its labels to the zone that declares it, most
+// specific first, stopping at two labels so a miss does not query every public
+// suffix. A miss costs one index lookup per label.
 func (z *Zones) covering(ctx context.Context, name string) (*covered, error) {
 	labels := strings.Split(strings.ToLower(strings.TrimSuffix(name, ".")), ".")
 
@@ -171,13 +136,8 @@ func (z *Zones) Resolve(ctx context.Context, q invoke.Question) (*invoke.Resolut
 		return nil, nil
 	}
 
-	// THE RESOLVER'S OWN SPEC, resolved like any other function — its own access
-	// block, its own limits, its own artifact. Nothing about being a resolver
-	// changes how it is found.
-	//
-	// THE ASKER IS NOBODY, because a zone's namespace arrives absolute: the
-	// compiler resolved it where the project was open, and pkg/specs states the
-	// absolute-or-relative rule once so that no consumer keeps half of it.
+	// The resolver's own spec, resolved like any function. The asker is nobody: the
+	// zone's namespace arrives absolute (pkg/specs).
 	resolver, err := z.projects.Resolve(ctx, worker.Target{
 		Project:     at.project,
 		Environment: at.environment,

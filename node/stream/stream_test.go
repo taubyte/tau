@@ -14,14 +14,8 @@ import (
 	gateway "github.com/taubyte/tau/services/gateway"
 )
 
-// stream_test is the reason this package exists.
-//
-// Every one of these ran a whole node when the adapter took *Node — a register,
-// a worker, a kvdb factory and a component tier — to assert which topic name a
-// handle goes on the wire as. One interface later what is left is a gossipsub
-// over one mocknet peer, which is the only part that cannot be faked: a
-// *pubsub.Topic is a concrete type nobody but a real router hands out, and a
-// double for it would leave "the topic is joined once" asserting against itself.
+// A real gossipsub over one mocknet peer: a *pubsub.Topic is concrete, and a double
+// would make "joined once" assert against itself.
 
 // gossiping is a router over one peer. Publishing delivers to this peer's own
 // subscriptions, which is the whole of what an attachment needs.
@@ -78,11 +72,6 @@ func publishing(t *testing.T, kind string) (*stream.Streams, *joiner) {
 	return s, gossip
 }
 
-// --- construction -----------------------------------------------------------
-
-// TestTHEKINDISNOTOPTIONAL. It is what keeps a stream and a bus of one id apart
-// on the wire, so a backing with none would deliver each other's messages to
-// both.
 func TestTheAdapterNeedsToKnowWhichKindItServes(t *testing.T) {
 	gossip := &joiner{ps: gossiping(t)}
 
@@ -98,8 +87,6 @@ func TestTheAdapterNeedsToKnowWhichKindItServes(t *testing.T) {
 	}
 }
 
-// TestANODEWITHNOCLOUDISSTILLANODE: a development node names none, and every
-// node on it leaves the same gap in the same place.
 func TestNoCloudIsAllowed(t *testing.T) {
 	gossip := &joiner{ps: gossiping(t)}
 
@@ -111,10 +98,6 @@ func TestNoCloudIsAllowed(t *testing.T) {
 	require.Equal(t, []string{"/tau/stream//shop/prod/QmOrders"}, gossip.joined)
 }
 
-// --- the topic name ---------------------------------------------------------
-
-// TestTWOPROJECTSUSINGONENAMENEVERMEET, which is the property the vocabulary
-// states about a stream's name and this is where it is kept.
 func TestTheTopicCarriesTheProjectAndDeployment(t *testing.T) {
 	mine := stream.Topic(stream.Stream, "cloud", "shop/prod/QmOrders")
 	theirs := stream.Topic(stream.Stream, "cloud", "other/prod/QmOrders")
@@ -125,33 +108,22 @@ func TestTheTopicCarriesTheProjectAndDeployment(t *testing.T) {
 	require.Equal(t, "/tau/stream/cloud/shop/prod/QmOrders", mine)
 }
 
-// TestTWOCLOUDSSHARINGAMACHINEDONOTDELIVEREACHOTHERSMESSAGES, which is the same
-// reason discovery' own bus is scoped by cloud.
 func TestTheTopicCarriesTheCloud(t *testing.T) {
 	require.NotEqual(t,
 		stream.Topic(stream.Stream, "one", "shop/prod/QmOrders"),
 		stream.Topic(stream.Stream, "two", "shop/prod/QmOrders"))
 }
 
-// TestTHELABELISNOTONTHEWIRE. The handle carries the resolved id; an author's
-// label is theirs and two projects may both use `orders`.
 func TestTheTopicIsNotTheLabel(t *testing.T) {
 	require.NotContains(t, stream.Topic(stream.Stream, "cloud", "shop/prod/QmOrders"), "orders")
 }
 
-// TestABUSANDASTREAMDONOTCROSS, even on one handle: two kinds may share an id
-// space and a project with both would otherwise deliver each other's messages.
 func TestTheKindIsInTheTopic(t *testing.T) {
 	require.NotEqual(t,
 		stream.Topic(stream.Stream, "cloud", "shop/prod/QmX"),
 		stream.Topic(stream.Bus, "cloud", "shop/prod/QmX"))
 }
 
-// --- joining ----------------------------------------------------------------
-
-// TestATOPICISJOINEDONCEANDKEPT. Joining is what starts the gossip machinery for
-// a topic, so a publisher that rejoined per message would churn the mesh it
-// depends on — the same reason services/discovery' bus joins once.
 func TestATopicIsJoinedOncePerHandle(t *testing.T) {
 	s, gossip := publishing(t, stream.Stream)
 	ctx := t.Context()
@@ -164,9 +136,6 @@ func TestATopicIsJoinedOncePerHandle(t *testing.T) {
 	require.Len(t, gossip.joined, 2, "a second handle is a second topic")
 }
 
-// TestONEBACKINGPERKIND, so a bus and a stream on one node reach different
-// topics through different values — and the check that matters is the name that
-// went to the router, not the map they are keyed in.
 func TestAStreamAndABusJoinDifferentTopicsForOneHandle(t *testing.T) {
 	gossip := &joiner{ps: gossiping(t)}
 
@@ -187,8 +156,6 @@ func TestAStreamAndABusJoinDifferentTopicsForOneHandle(t *testing.T) {
 	}, gossip.joined, "one handle, two topics")
 }
 
-// TestANODEWITHNOPUBSUBCANNOTPUBLISH, and says so rather than panicking on the
-// first message.
 func TestPublishingNeedsPubSub(t *testing.T) {
 	bare, err := stream.New(nil, stream.Stream, "cloud")
 	require.NoError(t, err, "a node with no gossip still composes")
@@ -197,8 +164,6 @@ func TestPublishingNeedsPubSub(t *testing.T) {
 	require.ErrorIs(t, err, stream.ErrNoPubSub)
 }
 
-// TestAJOINTHATFAILEDISNAMED, because the handle is the only thing an operator
-// can look up in a config.
 func TestAJoinThatFailsCarriesTheHandle(t *testing.T) {
 	s, gossip := publishing(t, stream.Stream)
 	gossip.err = errors.New("the router is shutting down")
@@ -208,9 +173,6 @@ func TestAJoinThatFailsCarriesTheHandle(t *testing.T) {
 	require.ErrorContains(t, err, "shop/prod/QmOrders")
 }
 
-// TestTOPICSARERELEASEDWITHTHENODE, so a node that published does not leak the
-// gossip machinery it started. A publish afterwards joins again, which is what
-// says the topics were actually let go of.
 func TestClosingReleasesTheTopics(t *testing.T) {
 	s, gossip := publishing(t, stream.Stream)
 
@@ -221,8 +183,6 @@ func TestClosingReleasesTheTopics(t *testing.T) {
 	require.NoError(t, s.Publish(t.Context(), "shop/prod/QmOrders", []byte("x")))
 	require.Len(t, gossip.joined, 2)
 }
-
-// --- attaching --------------------------------------------------------------
 
 func attaching(t *testing.T) (*stream.Streams, *stream.Buses, *joiner) {
 	t.Helper()
@@ -238,10 +198,6 @@ func TestABusNeedsABackingToBeAViewOf(t *testing.T) {
 	require.ErrorContains(t, err, "no backing")
 }
 
-// TestANATTACHMENTGETSWHATTHETIERPUBLISHES. The gateway's browser and the wasm
-// tier's `bus.publish` reach one topic, which is the whole reason a handle is
-// composed once: a workload publishing to what the author wrote as one bus has
-// to arrive where the browser is listening.
 func TestAnAttachmentGetsWhatTheTierPublishes(t *testing.T) {
 	tier, buses, _ := attaching(t)
 	ctx := t.Context()
@@ -257,8 +213,6 @@ func TestAnAttachmentGetsWhatTheTierPublishes(t *testing.T) {
 	require.Equal(t, "hello", string(message))
 }
 
-// TestEVERYTHINGATTACHEDGETSWHATISSENT, the sender included — which is the
-// kind's own definition and the reason there is no envelope and no sender id.
 func TestASecondAttachmentGetsItToo(t *testing.T) {
 	_, buses, _ := attaching(t)
 	ctx := t.Context()
@@ -281,8 +235,6 @@ func TestASecondAttachmentGetsItToo(t *testing.T) {
 	}
 }
 
-// TestTHETOPICISJOINEDONCEHOWEVERMANYATTACH. A second join is a second mesh for
-// one topic, and a browser would be on the one the workload is not.
 func TestAttachingDoesNotRejoinTheTopic(t *testing.T) {
 	tier, buses, gossip := attaching(t)
 	ctx := t.Context()
@@ -297,8 +249,6 @@ func TestAttachingDoesNotRejoinTheTopic(t *testing.T) {
 	require.Len(t, gossip.joined, 1, "three attachments and a publish, one joined topic")
 }
 
-// TestCLOSINGONEATTACHMENTLEAVESTHEOTHERS, because a subscription is per caller
-// and the topic outlives all of them.
 func TestClosingOneAttachmentLeavesTheOthers(t *testing.T) {
 	tier, buses, gossip := attaching(t)
 	ctx := t.Context()
@@ -318,8 +268,6 @@ func TestClosingOneAttachmentLeavesTheOthers(t *testing.T) {
 	require.Len(t, gossip.joined, 1, "and the topic was not left")
 }
 
-// TestABUSANDASTREAMDONOTMEET on the wire either, which the topic names say and
-// this proves with a live subscription that receives nothing.
 func TestAnAttachmentDoesNotSeeAStream(t *testing.T) {
 	_, buses, gossip := attaching(t)
 	ctx := t.Context()
@@ -341,8 +289,6 @@ func TestAnAttachmentDoesNotSeeAStream(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
-// TestATTACHINGNEEDSPUBSUB, and says so rather than handing back an attachment
-// that never delivers.
 func TestAttachingNeedsPubSub(t *testing.T) {
 	bare, err := stream.New(nil, stream.Bus, "cloud")
 	require.NoError(t, err)
@@ -354,9 +300,6 @@ func TestAttachingNeedsPubSub(t *testing.T) {
 	require.ErrorIs(t, err, stream.ErrNoPubSub)
 }
 
-// TestASUBSCRIPTIONTHATCOULDNOTBEOPENEDISNOTANATTACHMENT. The topic is joined
-// and the subscription is the part that failed, which is a different failure from
-// having no gossip at all and is reported as one.
 func TestASubscriptionThatFailsIsReported(t *testing.T) {
 	gossip := &joiner{ps: gossiping(t), closed: true}
 	backing, err := stream.New(gossip, stream.Bus, "cloud")

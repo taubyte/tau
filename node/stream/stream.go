@@ -1,35 +1,8 @@
-// Package stream backs `taubyte:stream/publisher` and `taubyte:bus/publisher` on
-// this node, and the browser's end of a bus.
-//
-// # Why it is its own package
-//
-// It is an ADAPTER: it sits between two things that publish — a wasm tier that
-// knows a handle and some bytes, and a gateway that knows a browser — and
-// gossipsub, which knows a topic name. The composition root is the only place
-// that may NAME all three, but naming them and implementing the adapter are
-// different jobs, and conflating them is how node/ grew to eight thousand lines
-// with twenty-two of these in one namespace.
-//
-// So the root hands this the gossip and says which kind it is. Everything this
-// package needs is in its own signature, which is the property a type taking
-// *Node does not have: that one can reach anything the node has, so nothing
-// about it says what it actually depends on, and it cannot be built anywhere
-// except beside the node.
-//
-// # A topic is joined once and kept
-//
-// Joining is what starts the gossip machinery for a topic, so a publisher that
-// rejoined per message would churn the mesh it depends on — the same reason
-// services/discovery' bus joins once. So topics are kept by handle, and the handle
-// is already scoped to a project and a deployment, which is what keeps two
-// projects publishing to a stream they both call `orders` apart.
-//
-// # What it does not do
-//
-// SUBSCRIBE, in the vocabulary's sense. That verb is a DELIVERY — the platform
-// invokes a workload when a message arrives — so it is a trigger and not
-// something a guest calls. What is here is the browser's attachment, which is
-// one caller's own subscription and ends when it disconnects.
+// Package stream backs `taubyte:stream/publisher`, `taubyte:bus/publisher` and the
+// browser's end of a bus: an adapter between publishers (the wasm tier, the gateway)
+// and gossipsub. A topic is joined once and kept per handle; handles are scoped to a
+// deployment. Subscribing in the vocabulary's sense is a delivery trigger, not here;
+// the browser's attachment is one caller's own subscription.
 package stream
 
 import (
@@ -87,19 +60,10 @@ var _ wasmtier.Streams = (*Streams)(nil)
 // that talks to anything else.
 var ErrNoPubSub = errors.New("stream: no pubsub to publish over")
 
-// New wires the adapter.
-//
-// gossip MAY BE NIL, and that is a node whose operator gave it none: the tier is
-// handed a publisher anyway, and a workload that reaches a stream is refused by
-// name on the first message rather than being refused at start for a resource it
-// might never touch.
-//
-// THE KIND MAY NOT BE EMPTY. It is what keeps a stream and a bus of one id
-// apart on the wire, so a backing with none would deliver each other's messages
-// to both.
-//
-// The cloud may be: a development node names no cloud, and every node on it
-// leaves the same gap in the same place.
+// New wires the adapter. gossip may be nil: a workload reaching a stream is then
+// refused on its first message, not at start. The kind may not be empty, since it
+// keeps a stream and a bus of one id apart. The cloud may be empty on a development
+// node.
 func New(gossip Gossip, kind, cloud string) (*Streams, error) {
 	if kind != Stream && kind != Bus {
 		return nil, fmt.Errorf("stream: %q is not a kind this backing serves; it serves %q and %q", kind, Stream, Bus)
@@ -107,7 +71,6 @@ func New(gossip Gossip, kind, cloud string) (*Streams, error) {
 	return &Streams{gossip: gossip, kind: kind, cloud: cloud}, nil
 }
 
-// Publish sends one message to the topic a handle names.
 func (s *Streams) Publish(ctx context.Context, handle string, message []byte) error {
 	topic, err := s.topic(handle)
 	if err != nil {
@@ -143,20 +106,9 @@ func (s *Streams) topic(handle string) (*pubsub.Topic, error) {
 	return joined, nil
 }
 
-// Topic is what goes on the wire.
-//
-// IT IS NOT THE LABEL AN AUTHOR WROTE. The handle already carries the project,
-// the deployment and the resource's id, so two projects using the name `orders`
-// never meet — which is the property the vocabulary states and this is where it
-// is kept.
-//
-// THE KIND IS IN IT because a stream and a bus are different resources that may
-// share an id space; a project with both would otherwise cross them.
-//
-// IT IS EXPORTED BECAUSE IT IS A CONTRACT, not a detail: whatever comes to
-// dispatch a `subscribe`, and whatever attaches a browser, has to listen on
-// exactly what a publish reaches, and a second derivation of it is the parallel
-// table this vocabulary keeps deleting.
+// Topic is what goes on the wire: kind, cloud and the handle (which carries project,
+// deployment and id), never the author's label. Exported as a contract: anything
+// dispatching `subscribe` or attaching a browser must listen on exactly this.
 func Topic(kind, cloud, handle string) string {
 	return strings.Join([]string{"/tau", kind, cloud, handle}, "/")
 }

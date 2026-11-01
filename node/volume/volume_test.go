@@ -27,16 +27,8 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// volume_test is about bytes that have to survive two things: the container they
-// were written from, and the node it ran on.
-//
-// EVERY ONE OF THESE USED TO NEED A NODE — a register, a worker, a mocknet host
-// and a started composition — to assert things about a tar and a directory. The
-// cases that matter most are the ones a node made hardest to reach: a store whose
-// read fails, a pointer naming bytes nobody has, a second cold start arriving
-// while the first is still unpacking. They are ordinary rows here.
-
-// ---------------------------------------------------------------- doubles
+// Bytes that must survive the container and the node, tested against fakes: a
+// failing store read, a pointer to missing bytes, a second cold start mid-restore.
 
 // blobs is an Assets double: a content-addressed store over a map.
 //
@@ -259,8 +251,6 @@ func (s *said) told() []string {
 	return append([]string(nil), s.infos...)
 }
 
-// ---------------------------------------------------------------- fixtures
-
 // recordedAt is where a checkpoint's pointer lives.
 //
 // IT IS SPELLED OUT HERE rather than read off the package: the key is a
@@ -330,10 +320,6 @@ func headers(t *testing.T, checkpoint []byte) map[string]tar.Header {
 	}
 }
 
-// ---------------------------------------------------------------- construction
-
-// TestANodeWithNoRootHoldsNoVolumes, and says so by name — a container started
-// without the filesystem it declared writes into its own layer and loses it.
 func TestEveryDependencyAVolumeCannotDoWithoutIsRefused(t *testing.T) {
 	store, index, log := newBlobs(), newRows(), &said{}
 
@@ -357,10 +343,6 @@ func TestEveryDependencyAVolumeCannotDoWithoutIsRefused(t *testing.T) {
 	require.Contains(t, strings.Join(log.warned(), "\n"), volume.ErrNoStore.Error())
 }
 
-// ---------------------------------------------------------------- a directory
-
-// TestAMountISADirectory, and the directory is under this node's own root rather
-// than anywhere a handle could point.
 func TestMountingMakesADirectory(t *testing.T) {
 	root := t.TempDir()
 	v, err := volume.New(root, newBlobs(), &opening{rows: newRows()}, &said{})
@@ -381,9 +363,6 @@ func TestMountingMakesADirectory(t *testing.T) {
 	require.Equal(t, dir, again)
 }
 
-// TestAHANDLEIsONEPathSegment. A handle carries slashes — project, environment,
-// id — and a directory per segment would put one project's volumes inside
-// another project's name.
 func TestAHandleDoesNotBecomeAPathTree(t *testing.T) {
 	root := t.TempDir()
 	v, err := volume.New(root, newBlobs(), &opening{rows: newRows()}, &said{})
@@ -395,9 +374,6 @@ func TestAHandleDoesNotBecomeAPathTree(t *testing.T) {
 	require.NotContains(t, filepath.Base(dir), "/")
 }
 
-// TestTWODeploymentsAreTWODirectories, which is the same property every other
-// handle has — and the escape escapes ITSELF, so a handle that spells the
-// escape cannot be spelled two ways into one directory.
 func TestVolumesAreScopedByHandle(t *testing.T) {
 	v, _, _, _ := holding(t)
 
@@ -414,8 +390,6 @@ func TestVolumesAreScopedByHandle(t *testing.T) {
 	require.Len(t, held, 5)
 }
 
-// TestADIRECTORYThatCannotBeMadeIsAnError rather than a mount that answers a
-// path nothing is there.
 func TestAVolumeDirectoryThatCannotBeMadeIsRefused(t *testing.T) {
 	// A ROOT THAT IS A FILE. Every path under it is not a directory, which is
 	// not "does not exist" — and reading it as one would be answering a mount
@@ -439,9 +413,6 @@ func TestAVolumeDirectoryThatCannotBeMadeIsRefused(t *testing.T) {
 	require.ErrorContains(t, err, "making a volume directory")
 }
 
-// ---------------------------------------------------------------- the pointer
-
-// TestTheCheckpointRecordsWHERE, in a replicated row any node may write.
 func TestACheckpointIsRecorded(t *testing.T) {
 	v, store, index, _ := holding(t)
 	handle := "shop/prod/QmData"
@@ -461,10 +432,6 @@ func TestACheckpointIsRecorded(t *testing.T) {
 	require.True(t, bytesHeld, "the pointer names no object: %s", recorded)
 }
 
-// TestNOTHINGIsWrittenWhenNothingChanged. Unchanged bytes are the same object,
-// and that is what keeps a node that no longer runs the workload from putting its
-// own older bytes back over the pointer every interval until somebody notices a
-// database that lost a day.
 func TestAnUnchangedVolumeWritesNoPointer(t *testing.T) {
 	v, _, index, _ := holding(t)
 	handle := "shop/prod/QmData"
@@ -495,8 +462,6 @@ func TestAnUnchangedVolumeWritesNoPointer(t *testing.T) {
 	require.Equal(t, 2, index.written())
 }
 
-// TestTHESTOREIsOpenedONCE, on the first checkpoint that needs it — a node that
-// mounts nothing opens no database at all.
 func TestTheStoreIsAskedForOnce(t *testing.T) {
 	store, index, log := newBlobs(), newRows(), &said{}
 	stores := &opening{rows: index}
@@ -515,9 +480,6 @@ func TestTheStoreIsAskedForOnce(t *testing.T) {
 	require.Equal(t, 1, stores.times(), "the database was opened per pass")
 }
 
-// TestANODEWithNowhereToRecordStillMounts. Having no store is not having an
-// empty one: the directory is made and served, and every checkpoint says why it
-// could not be recorded.
 func TestAVolumeWithNoRowStillMounts(t *testing.T) {
 	log := &said{}
 	v, err := volume.New(t.TempDir(), newBlobs(),
@@ -532,8 +494,6 @@ func TestAVolumeWithNoRowStillMounts(t *testing.T) {
 	require.Contains(t, strings.Join(log.warned(), "\n"), "no database factory")
 }
 
-// TestAPOINTERThatCouldNotBeWrittenIsSaidAndIsNotCounted. The bytes are in the
-// store and nothing can find them, which is a checkpoint that did not happen.
 func TestAPointerThatCannotBeWrittenIsNotACheckpoint(t *testing.T) {
 	store, index, log := newBlobs(), newRows(), &said{}
 	index.putErr = errors.New("the row was rejected")
@@ -547,8 +507,6 @@ func TestAPointerThatCannotBeWrittenIsNotACheckpoint(t *testing.T) {
 	require.Contains(t, strings.Join(log.warned(), "\n"), "the row was rejected")
 }
 
-// TestBYTESThatCouldNotBeStoredAreSaid, naming the handle: a checkpoint is
-// per-volume and an operator has to know which one.
 func TestBytesThatCannotBeStoredAreSaid(t *testing.T) {
 	store, index, log := newBlobs(), newRows(), &said{}
 	store.putErr = errors.New("the disk is full")
@@ -564,9 +522,6 @@ func TestBytesThatCannotBeStoredAreSaid(t *testing.T) {
 	require.Contains(t, warned, "the disk is full")
 }
 
-// TestAFailingCheckpointDoesNotStopTheOthers. A pass over every due volume is
-// one pass: the one whose walk failed is said and skipped, and the rest are
-// still written.
 func TestAFailingCheckpointDoesNotStopTheOthers(t *testing.T) {
 	v, _, index, log := holding(t)
 
@@ -586,15 +541,6 @@ func TestAFailingCheckpointDoesNotStopTheOthers(t *testing.T) {
 	require.True(t, held, "the volume that was still there was not checkpointed")
 }
 
-// ---------------------------------------------------------------- the interval
-
-// TestTHEDECLAREDIntervalReachesTheVolume, which it did not: the composer never
-// carried `checkpoint/interval`, so a volume asking to be checkpointed every ten
-// seconds was checkpointed every minute and a restore lost fifty seconds more
-// than its author budgeted for.
-//
-// AND ONLY WHAT IS DUE IS WALKED, so a volume asking for an hour is not tarred
-// every tick.
 func TestOnlyVolumesWhoseIntervalHasElapsedAreWalked(t *testing.T) {
 	for _, c := range []struct {
 		name     string
@@ -633,9 +579,6 @@ func TestOnlyVolumesWhoseIntervalHasElapsedAreWalked(t *testing.T) {
 	}
 }
 
-// TestTHEQUOTAIsMeasuredAndIsSAID. It is not a wall — see the package doc for
-// why — and what it must not be is silent: the warning IS the enforcement, so it
-// carries what the walk found and what the author declared.
 func TestGoingOverTheQuotaIsSaid(t *testing.T) {
 	v, _, _, log := holding(t)
 	grant := mountGrant("shop/prod/QmData", map[string]string{"quota": "8"})
@@ -649,8 +592,6 @@ func TestGoingOverTheQuotaIsSaid(t *testing.T) {
 		log.warned())
 }
 
-// TestAVolumeWithinItsQuotaSaysNothing, and neither does one that declared none
-// — a warning on every checkpoint of every volume is a warning nobody reads.
 func TestStayingUnderTheQuotaIsSilent(t *testing.T) {
 	for _, declared := range []string{"1024", "", "a lot"} {
 		v, _, _, log := holding(t)
@@ -668,15 +609,6 @@ func TestStayingUnderTheQuotaIsSilent(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------- the move
-
-// TestTHEBYTESSurviveTheNode: a checkpoint is written, a second node with the
-// same store and a different root restores it.
-//
-// NEITHER NODE IS SPECIAL. The pointer is a replicated row rather than a raft
-// write, so the node holding the volume records it wherever placement put the
-// workload — which is the whole point: a leader-only write meant every other
-// node checkpointed nothing, silently.
 func TestAVolumeIsRestoredOnAnotherNode(t *testing.T) {
 	store, index := newBlobs(), newRows()
 	node := func() *volume.Volumes {
@@ -710,9 +642,6 @@ func TestAVolumeIsRestoredOnAnotherNode(t *testing.T) {
 	require.Equal(t, "alice", string(rows), "a nested file came back too")
 }
 
-// TestALIVEDirectoryIsNotOVERWRITTENByAnOlderCheckpoint. The checkpoint is behind
-// by up to an interval by construction, so restoring over bytes this node already
-// holds would lose exactly the writes it exists to bound.
 func TestAnExistingDirectoryIsNotRestoredOver(t *testing.T) {
 	root := t.TempDir()
 	store, index := newBlobs(), newRows()
@@ -742,14 +671,6 @@ func TestAnExistingDirectoryIsNotRestoredOver(t *testing.T) {
 	require.Equal(t, "new", string(rows), "the checkpoint overwrote live data")
 }
 
-// TestTheNodeAWorkloadLeftDoesNotPutItsOldBytesBack.
-//
-// A node never stops holding a volume: Mount has no opposite, and the tier's
-// seam is one method. So when placement moves a workload, the node it left keeps
-// checkpointing a directory nothing writes to any more — into the same replicated
-// key the node now running it writes. The old one writes last as often as its
-// interval comes round, and the pointer ends up naming bytes from before the
-// move.
 func TestTheNodeAWorkloadLeftDoesNotPutItsOldBytesBack(t *testing.T) {
 	store, index := newBlobs(), newRows()
 	grant := mountGrant("shop/prod/QmData", nil)
@@ -795,10 +716,6 @@ func TestTheNodeAWorkloadLeftDoesNotPutItsOldBytesBack(t *testing.T) {
 		"the node the workload left put its own older bytes back over the pointer")
 }
 
-// ---------------------------------------------------------------- a restore
-
-// TestARESTOREIsSaid, because a directory that arrived from somewhere else is the
-// one thing an operator reading a log about a moved workload is looking for.
 func TestARestoreSaysWhereItCameFrom(t *testing.T) {
 	v, store, index, log := holding(t)
 	handle := "shop/prod/QmData"
@@ -812,9 +729,6 @@ func TestARestoreSaysWhereItCameFrom(t *testing.T) {
 	require.Equal(t, []string{"volume: restored " + handle + " from " + id}, log.told())
 }
 
-// TestARESTOREThatCannotBeTrustedRefusesTheMount. Every one of these is a
-// workload about to be told it has a database it does not have, so the mount
-// fails rather than answering an empty directory.
 func TestARestoreThatCannotBeCompletedRefusesTheMount(t *testing.T) {
 	handle := "shop/prod/QmData"
 
@@ -889,11 +803,6 @@ func TestARestoreThatCannotBeCompletedRefusesTheMount(t *testing.T) {
 	}
 }
 
-// TestAFRAMEWiderThanACheckpointIsRefusedBeforeItIsAllocated. A frame names the
-// window its decoder must hold, as a window or as the content of a single
-// segment, and a checkpoint is bytes from a store: a dozen of them naming half
-// a gigabyte would have the restore allocate it. One wider than a checkpoint is
-// written with is refused, and nothing that size is allocated.
 func TestAFrameWiderThanACheckpointIsRefusedBeforeItIsAllocated(t *testing.T) {
 	handle := "shop/prod/QmData"
 	magic := []byte{0x28, 0xb5, 0x2f, 0xfd}
@@ -935,10 +844,6 @@ func TestAFrameWiderThanACheckpointIsRefusedBeforeItIsAllocated(t *testing.T) {
 	}
 }
 
-// TestARESTOREThatFailsLeavesNothingALaterMountTakes. The directory existing is
-// what tells a mount the bytes are there, so a restore that failed or was
-// refused leaves none: the next mount would otherwise hand the workload what
-// the first one stopped halfway through, as though it were the checkpoint.
 func TestARestoreThatFailsLeavesNothingALaterMountTakes(t *testing.T) {
 	handle := "shop/prod/QmData"
 
@@ -1013,9 +918,6 @@ func node(t *testing.T, root string, archive []byte) *volume.Volumes {
 	return v
 }
 
-// TestARESTORELeftUnfinishedIsClearedByTheNext. A node that stops midway leaves
-// its restore where it was being unpacked, beside the volume's directory, and
-// possibly with directories in it already closed.
 func TestARestoreLeftUnfinishedIsClearedByTheNext(t *testing.T) {
 	root := t.TempDir()
 	unfinished := filepath.Join(root, "volumes", "shop%2Fprod%2FQmData%restoring")
@@ -1032,10 +934,6 @@ func TestARestoreLeftUnfinishedIsClearedByTheNext(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrNotExist, "the unfinished restore is still there")
 }
 
-// TestARECORDEDCheckpointWithNoStoreIsRefused. Having recorded one and having
-// nowhere to read it from is not the same as never having had one — the first is
-// a node missing its store, and answering an empty directory would hand a
-// workload an empty database.
 func TestARecordedCheckpointWithNoStoreRefusesTheMount(t *testing.T) {
 	index := newRows()
 	handle := "shop/prod/QmData"
@@ -1048,14 +946,6 @@ func TestARecordedCheckpointWithNoStoreRefusesTheMount(t *testing.T) {
 	require.ErrorIs(t, err, volume.ErrNoStore)
 }
 
-// TestAROWThatCannotBeREADIsReadAsNoCheckpoint, WHICH IS A PROPERTY THIS PACKAGE
-// DOES NOT HOLD and is written down rather than fixed.
-//
-// A store that cannot be read is indistinguishable here from one that never had
-// a pointer, so the mount succeeds with an empty directory — the exact shape the
-// rest of this package exists to prevent. What the fix costs is a mount that
-// fails on a transient read of a replicated row, and which of the two is worse is
-// the operator's call rather than this file's.
 func TestAPointerThatCannotBeReadIsReadAsNoCheckpoint(t *testing.T) {
 	index := newRows()
 	index.getErr = errors.New("the row could not be read")
@@ -1071,8 +961,6 @@ func TestAPointerThatCannotBeReadIsReadAsNoCheckpoint(t *testing.T) {
 	require.Empty(t, entries)
 }
 
-// TestANEMPTYPointerIsNoPointer. A row somebody wrote nothing into names no
-// object, and reading it as one would ask the store for "".
 func TestAnEmptyPointerIsNoCheckpoint(t *testing.T) {
 	v, store, index, _ := holding(t)
 	handle := "shop/prod/QmData"
@@ -1085,11 +973,6 @@ func TestAnEmptyPointerIsNoCheckpoint(t *testing.T) {
 	require.Zero(t, gets, "the store was asked for an object nobody named")
 }
 
-// ---------------------------------------------------------------- one opener
-
-// TestONEOPENERPerHandle. Two cold starts of one workload race here, and the
-// loser used to get the directory back while the winner was still unpacking into
-// it — a container mounting a half-restored database.
 func TestASecondColdStartWaitsForTheRestore(t *testing.T) {
 	v, store, index, _ := holding(t)
 	handle := "shop/prod/QmData"
@@ -1158,10 +1041,6 @@ func TestASecondColdStartWaitsForTheRestore(t *testing.T) {
 	require.Equal(t, "16", string(version))
 }
 
-// ---------------------------------------------------------------- the loop
-
-// TestTheLoopCheckpointsOnItsTick, which is what makes a checkpoint something an
-// author declares rather than something somebody remembers to ask for.
 func TestTheLoopCheckpointsOnItsTick(t *testing.T) {
 	v, _, index, _ := holding(t)
 	handle := "shop/prod/QmData"
@@ -1190,10 +1069,6 @@ func TestTheLoopCheckpointsOnItsTick(t *testing.T) {
 	}
 }
 
-// TestTheLoopWritesOnTheWayOut. A planned shutdown is the one moment the interval
-// is wrong: whatever was written since the last tick is inside the budget the
-// author declared, and throwing it away turns a clean restart into the loss a
-// crash was supposed to bound.
 func TestTheLoopWritesOnTheWayOut(t *testing.T) {
 	v, _, index, _ := holding(t)
 	handle := "shop/prod/QmData"
@@ -1222,10 +1097,6 @@ func TestTheLoopWritesOnTheWayOut(t *testing.T) {
 	require.True(t, held, "the final checkpoint was not written")
 }
 
-// ---------------------------------------------------------------- closing
-
-// TestClosingStopsHoldingVolumesAndKeepsTheDirectories. The bytes are what a
-// restart finds; re-reading them from the store would be slower and older.
 func TestClosingStopsHoldingVolumesAndKeepsTheDirectories(t *testing.T) {
 	v, _, _, _ := holding(t)
 	grant := mountGrant("shop/prod/QmData", nil)
@@ -1248,11 +1119,6 @@ func TestClosingStopsHoldingVolumesAndKeepsTheDirectories(t *testing.T) {
 	require.Equal(t, dir, again)
 }
 
-// ---------------------------------------------------------------- the archive
-
-// TestWHATACHECKPOINTHOLDS: every file, every empty directory, and a symlink as
-// a LINK rather than a copy of whatever it pointed at — following one would pull
-// the other end into the tenant's checkpoint.
 func TestACheckpointHoldsWhatTheDirectoryHeld(t *testing.T) {
 	v, store, _, _ := holding(t)
 
@@ -1308,11 +1174,6 @@ func (h *handed) Put(ctx context.Context, content io.Reader) (string, error) {
 	return h.blobs.Put(ctx, &body)
 }
 
-// TestASPARSEFileCostsTheStoreWhatItHolds. A database preallocates, so a file
-// can be long and hold almost nothing, and the archive carries its holes as
-// zeros. The store is handed the data and a few bytes for each run of them —
-// not the file's length, which it would otherwise read, hash and serve back —
-// and in a handful of reads rather than one for each of those few bytes.
 func TestASparseFileCostsTheStoreWhatItHolds(t *testing.T) {
 	store, index := &handed{blobs: newBlobs()}, newRows()
 	grant := mountGrant("shop/prod/QmData", nil)
@@ -1372,10 +1233,6 @@ func (p *pausing) Write(b []byte) (int, error) {
 	return n + rest, err
 }
 
-// TestACHECKPOINTHoldsWhatItOpened. The walk runs while the workload writes, so
-// a name can change between being listed and being read: here it changes while
-// its header is being written. Nothing from outside the volume may reach the
-// checkpoint either way.
 func TestACheckpointHoldsOnlyWhatItOpened(t *testing.T) {
 	for _, c := range []struct {
 		name    string
@@ -1428,9 +1285,6 @@ func TestACheckpointHoldsOnlyWhatItOpened(t *testing.T) {
 	}
 }
 
-// TestAFILEThatShrinksUnderTheWalkFailsIt, as reading it plainly did. Its
-// header has already said how long it is, and what it no longer holds is not
-// made up as a hole.
 func TestAFileThatShrinksUnderTheWalkFailsIt(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "rows")
@@ -1447,9 +1301,6 @@ func TestAFileThatShrinksUnderTheWalkFailsIt(t *testing.T) {
 	require.ErrorIs(t, err, io.EOF)
 }
 
-// TestARESTOREPutsBackWhatAWalkTook, which is the round trip the two halves are
-// only useful as: a file, an empty directory a workload expects to find, and a
-// link that is still a link.
 func TestARestorePutsBackWhatTheWalkTook(t *testing.T) {
 	store, index := newBlobs(), newRows()
 	grant := mountGrant("shop/prod/QmData", nil)
@@ -1484,14 +1335,6 @@ func TestARestorePutsBackWhatTheWalkTook(t *testing.T) {
 	require.Equal(t, "../PG_VERSION", target)
 }
 
-// TestWHATACHECKPOINTMUSTNOTBEAbleToDo.
-//
-// A tar is bytes from a store and this unpacks it with the node's own
-// privileges, so every entry is checked against the destination — the oldest
-// archive bug there is. It REFUSES rather than clamping: joining a cleaned
-// "/"+name onto the destination does keep the write inside, and it silently
-// rewrites `../etc/passwd` into `etc/passwd`, so an archive that tried to escape
-// unpacks somewhere else and nothing says it tried.
 func TestACheckpointCannotWriteOutsideTheVolume(t *testing.T) {
 	handle := "shop/prod/QmData"
 
@@ -1551,8 +1394,6 @@ func TestACheckpointCannotWriteOutsideTheVolume(t *testing.T) {
 	}
 }
 
-// TestNOTHINGIsWrittenOutsideTheVolumeEitherWay: the refusal is checked, and so
-// is the filesystem it was protecting.
 func TestAnEscapingEntryWritesNothing(t *testing.T) {
 	root := t.TempDir()
 	outside := filepath.Join(root, "outside")
@@ -1573,9 +1414,6 @@ func TestAnEscapingEntryWritesNothing(t *testing.T) {
 	require.Empty(t, entries, "something was written outside the volume")
 }
 
-// TestNOENTRYLandsOutsideTheVolumeWhateverLinksPrecedeIt. Every name is checked
-// against the destination, and the links an archive has already made sit in the
-// path of every entry after them: neither may carry an entry out.
 func TestNoEntryLandsOutsideTheVolumeWhateverLinksPrecedeIt(t *testing.T) {
 	for _, last := range []struct {
 		name  string
@@ -1597,7 +1435,6 @@ func TestNoEntryLandsOutsideTheVolumeWhateverLinksPrecedeIt(t *testing.T) {
 	}
 }
 
-// TestNOTHINGIsWrittenThroughALinkThatLeadsOut, onto a file beside the volume.
 func TestNothingIsWrittenThroughALinkThatLeadsOut(t *testing.T) {
 	root := t.TempDir()
 	victim := filepath.Join(root, "volumes", "victim")
@@ -1616,8 +1453,6 @@ func TestNothingIsWrittenThroughALinkThatLeadsOut(t *testing.T) {
 	require.Equal(t, "untouched", string(content), "a file beside the volume was written")
 }
 
-// TestALINKIsJudgedFromWhereItLands, once every entry is on disk, and not from
-// the name the archive gave it.
 func TestALinkThatLeadsOutFromWhereItLandsIsRefused(t *testing.T) {
 	for _, c := range []struct {
 		name  string
@@ -1634,8 +1469,6 @@ func TestALinkThatLeadsOutFromWhereItLandsIsRefused(t *testing.T) {
 	}
 }
 
-// TestALINKThatLeadsNowhereIsKept: to a name that is not there, or through a
-// file. Neither leads anywhere, let alone out.
 func TestALinkThatLeadsNowhereIsKept(t *testing.T) {
 	links := map[string]string{"missing": "not-yet", "through": "PG_VERSION/child"}
 	headers := []tar.Header{{Name: "PG_VERSION", Typeflag: tar.TypeReg, Mode: 0o640}}
@@ -1653,8 +1486,6 @@ func TestALinkThatLeadsNowhereIsKept(t *testing.T) {
 	}
 }
 
-// TestADIRECTORYItsOwnerCannotListOrWriteIsStillRestored, with what is inside
-// it, and ends with the mode its entry carried.
 func TestADirectoryItsOwnerCannotListOrWriteIsStillRestored(t *testing.T) {
 	for _, mode := range []int64{0o300, 0o500, 0o100} {
 		t.Run(strconv.FormatInt(mode, 8), func(t *testing.T) {
@@ -1685,8 +1516,6 @@ func TestADirectoryItsOwnerCannotListOrWriteIsStillRestored(t *testing.T) {
 	}
 }
 
-// TestADIRECTORYIsClosedWhereItsNameLeadsOnDisk, deepest there first. A name's
-// own depth says nothing once a link lies along it.
 func TestADirectoryIsClosedWhereItsNameLeadsOnDisk(t *testing.T) {
 	t.Run("deeper on disk than its name", func(t *testing.T) {
 		dir, err := restoring(t, t.TempDir(), entries(t,
@@ -1726,8 +1555,6 @@ func TestADirectoryIsClosedWhereItsNameLeadsOnDisk(t *testing.T) {
 	})
 }
 
-// TestSETUIDSetgidAndStickyDoNotComeBack. Only the permission bits of a mode
-// are restored.
 func TestSetuidSetgidAndStickyDoNotComeBack(t *testing.T) {
 	dir, err := restoring(t, t.TempDir(), entries(t,
 		tar.Header{Name: "tools", Typeflag: tar.TypeDir, Mode: 0o750 | 0o7000},
@@ -1783,8 +1610,6 @@ func linkEntry(name, target string) tar.Header {
 	return tar.Header{Name: name, Typeflag: tar.TypeSymlink, Linkname: target, Mode: 0o777}
 }
 
-// TestADEVICEIsNotCreatedFromBytesInAStore. Nothing writes one into a checkpoint,
-// and making one is a privilege this has no reason to exercise.
 func TestACheckpointDoesNotCreateDevices(t *testing.T) {
 	v, store, index, _ := holding(t)
 	handle := "shop/prod/QmData"
@@ -1814,9 +1639,6 @@ func TestACheckpointDoesNotCreateDevices(t *testing.T) {
 	require.FileExists(t, filepath.Join(dir, "PG_VERSION"))
 }
 
-// TestAFILEComesBackWithTheModeItWentInWith, which for a database's data
-// directory is not cosmetic: postgres refuses to start on a data directory
-// anything else can read.
 func TestARestoredFileKeepsItsMode(t *testing.T) {
 	v, store, index, _ := holding(t)
 	handle := "shop/prod/QmData"
@@ -1841,10 +1663,6 @@ func TestARestoredFileKeepsItsMode(t *testing.T) {
 	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 }
 
-// TestANARCHIVEWhoseEntriesCollideIsRefused. A checkpoint this node wrote has a
-// file or a directory at each name and never both; bytes from a store are not
-// that by assumption, and half-unpacking one would mount a directory nobody can
-// explain.
 func TestAnArchiveThatCannotBeUnpackedIsRefused(t *testing.T) {
 	handle := "shop/prod/QmData"
 
@@ -1907,17 +1725,6 @@ func TestAnArchiveThatCannotBeUnpackedIsRefused(t *testing.T) {
 	}
 }
 
-// TestAVOLUMEHoldingASocketCannotBeCheckpointed, WHICH IS A PROPERTY THIS
-// PACKAGE DOES NOT HOLD and is written down rather than fixed.
-//
-// archive/tar refuses to make a header for a socket, and the walk asks it about
-// every entry — so ONE socket in a data directory fails the whole checkpoint,
-// every interval, and the volume stops surviving its node. It is a realistic
-// shape: an image whose `unix_socket_directories` is the data directory puts one
-// there while the database runs.
-//
-// What it is NOT is silent: the pass says so with the handle, every interval,
-// which is the same loudness the quota gets and for the same reason.
 func TestAVolumeHoldingASocketIsNotCheckpointed(t *testing.T) {
 	// A socket's path holds 107 bytes, and this test's t.TempDir and the
 	// volume's own layout already take 100 of them below TMPDIR.
@@ -1948,10 +1755,6 @@ func TestAVolumeHoldingASocketIsNotCheckpointed(t *testing.T) {
 	require.Equal(t, 1, v.CheckpointAll(t.Context()))
 }
 
-// TestASTOREThatRefusesBeforeReadingDoesNotWedgeTheWalk. The tar is streamed
-// into the store through a pipe, so a store that answers without draining leaves
-// a goroutine blocked on a write nobody will read — and that goroutine holds a
-// directory handle and the volume's turn in the pass.
 func TestAStoreThatRefusesWithoutReadingIsStillAnError(t *testing.T) {
 	store, index, log := newBlobs(), newRows(), &said{}
 	store.refuseUnread = errors.New("the dag is closed")
@@ -1987,9 +1790,6 @@ func link(t *testing.T, name, target string) []byte {
 	return buf.Bytes()
 }
 
-// TestTHEQUOTAIsTheAuthorsNumberAndNotAParse. `quota` arrives as a string off a
-// compiled object, and every backing that reads a count off a grant reads it the
-// same way — see invoke.Grant.Number.
 func TestTheQuotaIsReadAsANumber(t *testing.T) {
 	v, _, _, log := holding(t)
 

@@ -1,37 +1,7 @@
 // Package primitive is this node's side of services/primitives: the reach every
-// caller here sends, appends and claims through, and what the service is told
-// about the crons this node holds.
-//
-// # Why it is its own package
-//
-// Both halves are ADAPTERS. The first sits between everything on this node that
-// touches the `sync` kind — a guest sending to a queue or appending to a log,
-// the dispatcher claiming from one — and a reach that answers WHICH primitives
-// service this node uses. The second sits between a worker that resolved some
-// crons and a service that fires them, neither of which may import the other.
-// The composition root is the only place that may NAME any of that — but naming
-// them and implementing the adapter are different jobs, and conflating them is
-// how node/ grew to eight thousand lines with twenty-two of these in one
-// namespace.
-//
-// So the root hands each of these exactly what it can ask. Everything this
-// package needs is in its own signature, which is the property a type taking
-// *Node does not have: that one can reach anything the node has, so nothing
-// about it says what it actually depends on, and it cannot be built anywhere
-// except beside the node.
-//
-// # Its name is the service's and not the kind's
-//
-// The vocabulary's word for what the first half backs is `sync`, and a package
-// called that would shadow the standard library in the root that has to import
-// both. So it is named for the service whose two types it reaches.
-//
-// # What is not here
-//
-// WHICH ARM — this node's own service or one across the swarm — and which node
-// a window of the clock is handed to. Both are read off the same discovery view
-// every other locator on this node reads, so they stay with the composition
-// that has the view; what is here is what is asked once an arm has been chosen.
+// caller sends, appends and claims through, and the crons reported to the service.
+// Named for the service, since `sync` would shadow the standard library. Which arm
+// (local service or remote) and where a clock window goes are the composition's.
 package primitive
 
 import (
@@ -148,21 +118,10 @@ type Deployments interface {
 	Schedules(ctx context.Context) []worker.Schedule
 }
 
-// Schedules is every cron in the deployments a worker holds, in the shape the
-// primitives service reads them.
-//
-// IT IS THE ONE PLACE THE TWO SHAPES MEET, which is what keeps a consensus
-// service from importing a compute one: the composer holds both and neither
-// holds the other.
-//
-// holds MAY BE NIL, and that is a node whose worker has not been built yet, or
-// one that runs none: it answers none, and the service's pass over none does
-// nothing. A node that has resolved nothing answers none the same way.
-//
-// EVERY FIELD CROSSES, and nothing checks that but a test. A schedule dropped
-// here is an outage nobody sees — a cron that never fires — and a FIELD dropped
-// here is worse: a nightly job whose timezone was lost fires at the right time
-// in the wrong place, and every log line about it looks correct.
+// Schedules is every cron in the deployments a worker holds, in the primitives
+// service's shape, the one place the two shapes meet. holds may be nil (no worker
+// yet). Every field must cross: a lost timezone fires a nightly job at the right time
+// in the wrong place.
 func Schedules(ctx context.Context, holds Deployments) []primitives.Schedule {
 	if holds == nil {
 		return nil

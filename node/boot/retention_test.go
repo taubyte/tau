@@ -11,9 +11,6 @@ import (
 	fleetdoc "github.com/taubyte/tau/pkg/fleet"
 )
 
-// TestTheFleetDocumentIsReadFromTheNodesRegister: before the node is up, and on
-// a node with no register, there is no answer; a register with no document
-// says so; a published one is read as published.
 func TestTheFleetDocumentIsReadFromTheNodesRegister(t *testing.T) {
 	var running atomic.Pointer[node.Node]
 	src := fleetDocument(&running)
@@ -48,8 +45,6 @@ func TestTheFleetDocumentIsReadFromTheNodesRegister(t *testing.T) {
 	require.Equal(t, 72*time.Hour, time.Duration(got.Retention))
 }
 
-// TestANodeWithNoRegisterHasNoFleetSource: it keeps the default, as it does
-// for the replication floor.
 func TestANodeWithNoRegisterHasNoFleetSource(t *testing.T) {
 	f := admit(t, File{
 		Node:   node.Config{Services: []string{node.Discovery}},

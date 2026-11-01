@@ -1,131 +1,25 @@
-// Package volume gives a container the filesystem its config declared.
+// Package volume gives a container the filesystem its config declared: an adapter
+// over a root directory, a content-addressed store for checkpoint bytes, a
+// replicated row for each pointer, and a log. A volume is POSIX (fsync, rename,
+// locks), the one thing a node keeps as a real directory. Serving it beats refusing
+// it: without one a container's database would vanish with its layer.
 //
-// # Why it is its own package
+// Any node holding a volume checkpoints it into a kvdb row any node may write. A node
+// whose workload moved keeps the handle, so it writes only a checkpoint whose content
+// differs from what it last wrote: the walk is deterministic and the store
+// content-addressed, so an idle copy produces the same cid and writes nothing.
+// Several workloads mounting one volume read-write would need a shared filesystem.
 //
-// It is an ADAPTER: it sits between the container tier, which knows a mount
-// grant and a path, and two stores that know nothing about either — a
-// content-addressed one the bytes go into, and a replicated row that remembers
-// where. The composition root is the only place that may NAME all of those —
-// but naming them and holding a directory are different jobs, and conflating
-// them is how node/ grew to eight thousand lines with twenty-two of these in one
-// namespace.
+// Every `checkpoint/interval` the directory is tarred into the store and the cid
+// recorded; a node with no bytes restores the last one. Restores are crash-consistent,
+// not quiesced. The quota is measured at each checkpoint and warned about, not
+// enforced (that needs project quotas or a loopback image). A restore is held to the
+// node's disk reserve (pkg/containers/reserve), not the quota, and synced before its
+// final rename, so power loss leaves no volume or all of it.
 //
-// So the root hands this four things: a directory to keep volumes under, a byte
-// store, somewhere to record a pointer, and somewhere to say what it found.
-// Everything this package needs is in its own signature, which is the property a
-// type taking *Node does not have: that one can reach anything the node has, so
-// nothing about it says what it actually depends on, and it cannot be built
-// anywhere except beside the node.
-//
-// # It is the one thing a node keeps as a directory
-//
-// Everything else a node holds is content-addressed or replicated. A volume is
-// POSIX — a database's data directory, with fsync and rename and locks — so it
-// is a real directory on a real disk, and that is why a node has a root at all
-// (see node.WithRoot).
-//
-// # Why serving it beats refusing it
-//
-// A container declaring `volume: {pgdata: {ops: [mount-rw], path:
-// /var/lib/postgresql/data}}` and started WITHOUT one writes its database into
-// the container's own layer and loses it when the container goes — silently.
-// That is why the tier refused, and it was right to while there was nothing to
-// give it. It is also the single most common shape a compose import produces,
-// so refusing it meant an imported stack with a database could not run at all.
-//
-// # Every node that holds a volume checkpoints it
-//
-// The pointer used to be a raft write, which is LEADER-ONLY — and a volume is
-// mounted wherever placement put the workload, not on the leader. So on every
-// other node the checkpoint returned success without writing anything: nothing
-// reached the store, no pointer was recorded, and the node counted the volume
-// as checkpointed. The workload then moved and restored an empty directory.
-// That is the exact silent loss the mount refusal existed to prevent, one level
-// up.
-//
-// It is a replicated kvdb row now, which any node may write. That makes the key
-// one SEVERAL nodes can write, so what stops the wrong one winning is that a
-// node only writes a checkpoint whose content it has not already written.
-//
-// A NODE NEVER STOPS HOLDING A VOLUME — Mount has no opposite, and the tier's
-// seam is one method. So when placement moves a workload, the node it left
-// keeps the handle and keeps checkpointing a directory nothing writes to any
-// more. Both nodes write one key in a CRDT, the old one writes last as often as
-// its interval comes round, and the pointer ends up naming bytes from before
-// the move. Everything written since is gone on the next restore, silently,
-// which is the loss this package exists to prevent.
-//
-// Unchanged bytes are the same object, because the store is content-addressed
-// and the walk is deterministic: same files, same tar, same cid. So a node whose
-// workload has gone produces the id it produced last time and writes nothing,
-// while the node actually running the workload produces a new one and does. The
-// genuinely shared case — the vocabulary lets more than one workload mount a
-// volume read-write — is still divergent data before any pointer is written,
-// and needs a shared filesystem rather than a rule here.
-//
-// # A moved workload restores, and what it loses is stated
-//
-// The bytes are node-local, so placement moving a workload would find an empty
-// directory. What closes that is the vocabulary's own answer: `checkpoint`. The
-// directory is walked, tarred and put in the content-addressed store every
-// `checkpoint/interval`, the cid is recorded in a replicated row, and a node
-// opening a volume it has no bytes for restores the last one.
-//
-// WHAT A RESTORE GIVES BACK IS CRASH-CONSISTENT AND NOT QUIESCED, which is the
-// vocabulary's own sentence: the walk runs while writers keep writing, so it
-// holds what a power cut leaves behind. Anything that recovers on its own — a
-// journal, a WAL — recovers; nothing here promises a consistent moment across
-// several writers and nothing here could without stopping them for the walk.
-//
-// # The quota is measured and is not a wall
-//
-// `quota` is Required and the vocabulary calls it hard. THIS IMPLEMENTATION
-// MEASURES IT AT EACH CHECKPOINT AND DOES NOT ENFORCE IT: a portable hard limit
-// on a directory needs either a filesystem that has project quotas or a
-// loopback image, and neither is something a node can assume it has.
-//
-// It is served rather than refused because the failure is LOUD AND IS THE
-// OPERATOR'S: a workload over its quota fills a disk the node can see, and the
-// node says so on every checkpoint. That is the opposite of the mount refusal,
-// where the failure was silent and the tenant's. The upgrade path is one
-// method: a Volumes implementation that hands back a path inside a size-capped
-// filesystem changes nothing above it.
-//
-// A RESTORE IS HELD TO THE NODE'S DISK AND NOT TO THE QUOTA. A volume that grew
-// past its quota while it ran, which is allowed, has a checkpoint bigger than
-// the quota, and refusing that on the node it moved to would be a mount that
-// fails silently for the tenant until somebody raised the quota. What a restore
-// must not do is fill the disk of the node it lands on, so it leaves that disk
-// its reserve (see pkg/containers/reserve), fails without leaving anything when
-// it would not, and says when it unpacked more than the quota, as a checkpoint
-// does.
-//
-// # A restore is on disk before it is in place
-//
-// Every file and directory a restore makes is synced before the rename that
-// puts it in place, and the directory it is renamed into after. A node that
-// loses power during a restore comes back holding either no volume, which the
-// next mount restores again, or all of it.
-//
-// # A checkpoint stores what the files hold, not how long they are
-//
-// A database preallocates, so a file's length says little about what is in it:
-// four gigabytes long with a megabyte written is a megabyte on disk. archive/tar
-// cannot write a sparse entry, so a hole goes into the archive as zeros, and
-// every one of them was read off the disk, handed to the store and hashed there
-// a chunk at a time, then streamed back out on the node that restored it.
-//
-// So the walk asks the filesystem where a file's data is and reads only that,
-// filling the holes with zeros it never read, and the archive is compressed on
-// its way to the store, where a run of zeros is a few bytes. The zeros still
-// pass through the compressor, once each way, and that is what a long file
-// costs now. The compression is pinned — one encoder, one level, one window —
-// so the same files are still the same bytes, and the same cid.
-//
-// A RESTORE HOLDS NO MORE HISTORY THAN A CHECKPOINT IS WRITTEN WITH. A frame is
-// bytes from a store, and one naming a window of half a gigabyte would have the
-// decoder allocate it; one wider than a checkpoint's is refused before anything
-// is allocated for it.
+// The walk reads only a file's data extents and writes holes as zeros into a pinned
+// compressor, so same files are still the same cid. A restore refuses a frame whose
+// window is wider than a checkpoint's before allocating it.
 package volume
 
 import (
@@ -164,17 +58,8 @@ type Assets interface {
 	Get(ctx context.Context, id string) (io.ReadSeekCloser, error)
 }
 
-// Rows is where a checkpoint's pointer is recorded.
-//
-// TWO METHODS AND NOT A kvdb, whose New also takes a logger and a rebroadcast
-// interval — a node's decisions about a store, which a volume holds no opinion
-// about — and whose result has to be registered with the closers the root keeps.
-// What is left is what a checkpoint needs: read one row, write one row.
-//
-// "NOT THERE" IS A bool AND NOT AN ERROR, because it is the ordinary answer
-// here: a volume nobody has ever checkpointed is every volume's first mount, and
-// a backing that reported it as an error would make a fresh directory
-// indistinguishable from a store that could not be read.
+// Rows is where a checkpoint's pointer is recorded: read one row, write one row. "Not
+// there" is a bool: a never-checkpointed volume is every first mount.
 type Rows interface {
 	Get(ctx context.Context, key string) ([]byte, bool, error)
 	Put(ctx context.Context, key string, value []byte) error
@@ -189,16 +74,9 @@ type Stores interface {
 	Store() (Rows, error)
 }
 
-// Log is where this adapter tells an operator what it found.
-//
-// TWO METHODS AND NOT A LOGGER, which carries Debug, Error, Fatal, Panic and a
-// sugared variant of each: a volume backing has two things to say — that a
-// restore happened, and that something an operator has to act on did not — and
-// a parameter wide enough to end the process is wider than that.
-//
-// IT IS A DEPENDENCY AND NOT A PACKAGE-LEVEL LOGGER because the quota is
-// MEASURED RATHER THAN ENFORCED, so the warning is the whole of the enforcement.
-// A line nobody can assert on is a promise nobody keeps.
+// Log is where this adapter tells an operator what it found: two methods, and a
+// dependency rather than a package logger, since the quota warning is the whole of
+// its enforcement and must be assertable.
 type Log interface {
 	Infof(format string, args ...any)
 	Warnf(format string, args ...any)
@@ -296,13 +174,8 @@ const (
 	settingInterval = specs.VolumeCheckpointKeyInterval
 )
 
-// Settings is every attribute path this adapter reads off a grant.
-//
-// IT IS EXPORTED SO THE ROOT CAN HOLD IT TO THE VOCABULARY. A renamed attribute
-// does not fail here: the key is absent, the read is a zero value, and a
-// declared interval silently becomes the default. node/settings_test.go walks
-// this list against the schema, and its own doc carries the post-mortem that
-// test came out of.
+// Settings is every attribute path this adapter reads off a grant, exported so
+// node/settings_test.go can hold it to the vocabulary.
 var Settings = []string{settingQuota, settingInterval}
 
 const (
@@ -317,10 +190,8 @@ const (
 // Mount gives back the host directory this grant names, restoring it from the
 // last checkpoint if this node has never held it.
 func (v *Volumes) Mount(ctx context.Context, grant invoke.Grant) (string, error) {
-	// ONE OPENER PER HANDLE. Two cold starts of one workload race here, and the
-	// loser used to get the directory back while the winner was still unpacking
-	// into it — a container mounting a half-restored database. The second
-	// caller waits for the first rather than repeating its work.
+	// One opener per handle: a second cold start waits rather than mounting a
+	// half-restored directory.
 	for {
 		v.mu.Lock()
 		if held, ok := v.open[grant.Handle]; ok {
@@ -408,12 +279,8 @@ func (v *Volumes) restore(ctx context.Context, handle, dir string, quota int64) 
 		return makeDir(dir)
 	}
 
-	// A READ THAT FAILED IS READ AS "NOTHING WAS RECORDED", and that is the one
-	// place this package's own argument is not held: a store that cannot be
-	// read yields an empty directory rather than a refusal, which is the shape
-	// the rest of this file exists to prevent. It is stated rather than fixed
-	// because the fix is a mount that fails on a transient read, and which of
-	// those is worse is a call the operator's own retry policy makes.
+	// A failed read is treated as "nothing recorded", giving an empty directory: the
+	// alternative is a mount failing on a transient read.
 	recorded, found, err := rows.Get(ctx, checkpointPrefix+handle)
 	if err != nil || !found || len(recorded) == 0 {
 		return makeDir(dir)
@@ -728,25 +595,12 @@ func unpack(r io.Reader, dir string, floor reserve.Floor, sync func(*os.File) er
 	return untar(decompressed, dir, floor, sync)
 }
 
-// tarInto walks a directory into a tar stream and reports the total content
-// size — which is what the quota is measured against.
-//
-// SYMLINKS ARE WRITTEN AS SYMLINKS AND NOT FOLLOWED. Following one would copy
-// whatever it points at into the checkpoint, and a link out of the directory is
-// a link out of the tenant's data.
-//
-// EACH ENTRY IS OPENED ONCE, THROUGH AN os.Root ON THE DIRECTORY, AND DESCRIBED
-// BY ITS OWN STAT. The workload keeps writing while this runs, so a name can
-// change between being listed and being read: what the checkpoint holds is the
-// entry that was opened, and nothing from outside the directory.
-//
-// A SOCKET IN THE DIRECTORY FAILS THE WHOLE CHECKPOINT, and that is stated
-// rather than worked around: archive/tar refuses to make a header for one, and
-// this walk asks it about every entry. A database whose socket lives in its data
-// directory therefore has a volume that never checkpoints while it is running,
-// and what says so is the warning the pass makes every interval. Skipping the
-// entry instead would mean a checkpoint that quietly holds less than the
-// directory did, which is the failure mode this package is here to prevent.
+// tarInto walks a directory into a tar stream and reports the total content size
+// (what the quota is measured against). Symlinks are written, not followed. Each
+// entry is opened once through an os.Root and described by its own stat, so a name
+// changing mid-walk cannot pull in anything outside. A socket fails the whole
+// checkpoint (archive/tar refuses it) and is warned about each interval; skipping it
+// would silently checkpoint less than the directory holds.
 func tarInto(w io.Writer, dir string, read func(*os.File, []byte, int64) (int, error)) (int64, error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -847,28 +701,11 @@ func (h *holes) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// untar unpacks a checkpoint's archive into a directory, and answers how many
-// bytes of files it unpacked.
-//
-// EVERY ENTRY IS CHECKED AGAINST THE DESTINATION. A tar is bytes from a store,
-// and an entry named `../../etc` would write outside the volume — the oldest
-// archive bug there is, and this one unpacks with the node's own privileges.
-//
-// AND EVERY ENTRY IS MADE THROUGH AN os.Root ON IT, because a name says nothing
-// about what is already on disk along its path: a link the archive made earlier
-// sits in the path of every entry after it. The root refuses to resolve a path
-// out of the volume, whatever links lie along the way.
-//
-// AND THE DISK IT LANDS ON KEEPS ITS RESERVE, which is what bounds it. A
-// checkpoint can hold more than the volume's quota, and an entry whose holes
-// the reader fills with zeros can name terabytes in an archive of a few bytes.
-// So the filesystem is read before each entry is made and each chunk written,
-// and one that would leave less free than the floor fails the restore. A run of
-// zeros is left as a hole, so a sparse file stays sparse and only what lands on
-// disk is counted against the reserve.
-//
-// AND EVERYTHING IS SYNCED, each file once it is written and each directory
-// once nothing more is made in it, with the mode it ends with.
+// untar unpacks a checkpoint's archive into a directory and answers the bytes it
+// unpacked. Every entry is confined to the destination and created through an
+// os.Root, since earlier links lie along later paths. The disk keeps its reserve,
+// checked before each entry and chunk, with zero runs left as holes. Everything is
+// synced, files when written and directories when complete.
 func untar(r io.Reader, dir string, floor reserve.Floor, sync func(*os.File) error) (int64, error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {

@@ -16,41 +16,12 @@ import (
 	sqlengine "github.com/taubyte/tau/pkg/database/engines/sql"
 )
 
-// engines.go is what a machine can connect to.
-//
-// # Why a v2 cloud has to ship these
-//
-// The vocabulary names external engines per data model — `sql` is backed by
-// postgres and mysql, `document` by mongo — and until something registered them
-// a project writing `sql: {postgres: {host: db.example.com}}` compiled,
-// deployed, and answered its first query with "no database engine is registered
-// in this build". Bringing your own Postgres is the ordinary shape on every
-// platform this competes with, so a cloud that cannot is not competing.
-//
-// # A registration is not a fork
-//
-// pkg/database's Registry decides what a node can do by what got registered,
-// and pkg/database/engines/sql is one adapter over any database/sql driver. So
-// adding a managed Postgres, a proxy, or a driver somebody prefers is a line
-// here rather than a change to any of the layers below.
-//
-// # tau's own engines are not here
-//
-// `kv`, `document` and `vector` on the `distributed` engine are the node's to
-// register, because they are backed by the swarm this node is already on and
-// need nothing provisioned. See node/database's `engines`, which registers them
-// on first use and lets a composer's own win.
+// What a machine can connect to: the external engines the vocabulary names
+// (postgres, mysql, mongo), so bringing your own database works. Adding one is a
+// registration here. tau's own engines are registered by node/database.
 
-// DatabaseEngines is the registry a machine serves external databases from.
-//
-// EXPORTED FOR node/dream, which composes nodes without boot and must still
-// reach the same engines: a cloud in dream that could not open an external
-// postgres would prove nothing about one that can.
-//
-// A REGISTRATION FAILURE IS A REFUSAL TO START. An engine that cannot open the
-// probe spec is an engine whose surface is wrong, which is a build fault rather
-// than an operator's — and a node that started anyway would answer every query
-// for that engine with a message about a registry instead.
+// DatabaseEngines is the registry a machine serves external databases from, exported
+// for node/dream. A registration failure refuses the start: it is a build fault.
 func DatabaseEngines(ctx context.Context) (*database.Registry, error) {
 	registry := database.NewRegistry()
 

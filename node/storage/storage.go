@@ -1,59 +1,12 @@
-// Package storage backs `taubyte:storage/objects` on this node — the `storage`
-// kind at `type: object`, served as the S3 object API.
+// Package storage backs `taubyte:storage/objects`, the `storage` kind at
+// `type: object` as the S3 object API: an adapter over a content-addressed store for
+// bytes and a replicated row for each name.
 //
-// # Why it is its own package
-//
-// It is an ADAPTER: it sits between the wasm tier, which knows five methods and
-// three sentinels, and two stores that know nothing about an object — a
-// content-addressed one holding the bytes, and a replicated row holding the
-// name. The composition root is the only place that may NAME all of those — but
-// naming them and implementing the object API are different jobs, and conflating
-// them is how node/ grew to eight thousand lines with twenty-two of these in one
-// namespace.
-//
-// So the root hands this what it can ask: somewhere to put bytes, somewhere to
-// put rows, and a clock. Everything this package needs is in its own signature,
-// which is the property a type taking *Node does not have: that one can reach
-// anything the node has, so nothing about it says what it actually depends on,
-// and it cannot be built anywhere except beside the node.
-//
-// # Content-addressed underneath, named on top
-//
-// The BYTES go into the same store a build's artifacts do, so two objects with
-// the same content are one object and neither the swarm nor the disk holds it
-// twice. What this adds is a NAME: one row per object, in a replicated kvdb,
-// keyed by the bucket's handle and the object's name.
-//
-// That split is why the two halves have different durability, and it is worth
-// stating: the row replicates the way every other kvdb row does, and the bytes
-// replicate the way every other content-addressed object does. An object whose
-// row has reached a node and whose bytes have not is a `get` that waits on the
-// DAG, which is the same shape a component that has not been fetched has.
-//
-// # A delete removes the name and not the bytes
-//
-// The bytes are content-addressed, so they may be another name's, another
-// version's, or another project's. Collecting the ones nothing points at is a
-// different job with a different safety argument — it has to know about every
-// pointer in the cloud — and doing it from here would be a delete that can
-// remove somebody else's object.
-//
-// # `versioning` is honoured by not collecting
-//
-// The vocabulary's `object/versioning` keeps historical versions. Since nothing
-// collects, a replaced object's bytes stay in the store either way — so a
-// bucket with versioning off is served STRONGER than it asked, which is the
-// safe direction. What is missing is a way to ASK for an old version, and there
-// is no verb for it: `get` takes a name and nothing else.
-//
-// # The size is enforced by scanning the index
-//
-// `size` is Required and it is a real ceiling here, not a measurement: a write
-// that would take the bucket past it is refused with `full`, which is an arm of
-// its own precisely so a caller can act on it. The scan is proportional to the
-// number of objects in the bucket, which is the honest cost of not keeping a
-// total — and a total is a counter, which is the one thing AGENTS.md says a
-// kvdb key must never be: a value two nodes write differently.
+// Same content is one object; the row and the bytes replicate separately, so a row
+// can arrive before its bytes. A delete removes the name, not the bytes, which may be
+// another name's. Nothing collects, so `object/versioning` off is served stronger than
+// asked; there is no verb to read an old version. `size` is enforced by scanning the
+// index, since a running total would be a contended counter.
 package storage
 
 import (
@@ -84,21 +37,9 @@ type Assets interface {
 	Get(ctx context.Context, id string) (io.ReadSeekCloser, error)
 }
 
-// Rows is the index: one row per object, keyed by the bucket's handle and the
-// object's name.
-//
-// FOUR METHODS AND NOT A kvdb, whose New also takes a logger and a rebroadcast
-// interval — a node's decisions about a store, which a bucket holds no opinion
-// about — and whose result has to be registered with the closers the root keeps.
-//
-// "NOT THERE" IS A bool AND NOT AN ERROR, because this is where a miss is
-// decided: the tier's own ErrNotFound is what a guest must see for a name
-// nobody wrote, and a backing that reported it as an error would make every
-// miss indistinguishable from a store that could not be read — which is a
-// retry loop around the thing a `get` does most.
-//
-// LIST ANSWERS WHOLE KEYS, prefix and all, in whatever shape the store
-// normalises them into. See [bucket.name] for what that cost once.
+// Rows is the index: one row per object, keyed by the bucket's handle and the name.
+// "Not there" is a bool, so a miss is never confused with an unreadable store. List
+// answers whole keys as the store normalises them (see bucket.name).
 type Rows interface {
 	Get(ctx context.Context, key string) ([]byte, bool, error)
 	Put(ctx context.Context, key string, value []byte) error
@@ -160,30 +101,13 @@ const (
 	settingType = specs.StorageKeyType
 )
 
-// Settings is every attribute path this adapter reads off a grant.
-//
-// IT IS EXPORTED SO THE ROOT CAN HOLD IT TO THE VOCABULARY. A renamed attribute
-// does not fail here: the key is absent, the read is a zero value, and a
-// declared ceiling silently becomes no ceiling at all. node/settings_test.go
-// walks this list against the schema, and its own doc carries the post-mortem
-// that test came out of.
+// Settings is every attribute path this adapter reads off a grant, exported so
+// node/settings_test.go can hold it to the vocabulary.
 var Settings = []string{settingSize, settingType}
 
-// objectRow is what the index holds for one object.
-//
-// THE CID IS THE ONLY THING THAT COULD NOT BE RECOMPUTED. Size and modified
-// could be read back off the bytes and the DAG, and they are here because
-// `head` exists to answer without touching either.
-//
-// THE CID IS ALSO THE ETAG, which is what an etag is supposed to be: a token
-// that changes exactly when the content does. S3 gives a weak one for anything
-// multipart; a content id is strong for everything.
-//
-// METADATA IS A MAP AND NOT A LIST, because that is what it is — a header name
-// appearing twice is one header — and because encoding/json sorts a map's keys,
-// so two nodes writing the same object write the same bytes. That is the kvdb
-// rule this package's doc states, and a list whose order came from the caller
-// would break it.
+// objectRow is what the index holds for one object. The CID is the etag, strong for
+// everything; size and modified let `head` answer without the bytes. Metadata is a map
+// so encoding/json sorts it and two nodes write the same bytes.
 type objectRow struct {
 	CID         string            `json:"cid"`
 	Size        int64             `json:"size"`
@@ -385,26 +309,10 @@ func (b *bucket) Delete(ctx context.Context, key string) error {
 	return b.rows.Delete(ctx, at)
 }
 
-// List is ListObjectsV2: a page of objects under a prefix, with a delimiter
-// collapsing everything past it into common prefixes.
-//
-// # The token is the last key CONSUMED, not the last one answered
-//
-// A page that ends on a common prefix has read every object under it to produce
-// that one line, and a token naming the prefix would resume before them — so
-// the same objects would be walked again and the same prefix answered on every
-// page after it. What is encoded is the last name this call looked at, so a
-// resume skips exactly what was accounted for whether it was answered as an
-// object or folded into a prefix.
-//
-// It is base64 because S3's is opaque and callers should not assemble one: a
-// token this bucket did not issue is `bad-request`, not a silently different
-// page.
-//
-// # Objects and prefixes count against max-keys together
-//
-// As S3 counts them. A page of 1000 folders is a page, and a caller that asked
-// for 10 gets at most 10 things back however they were produced.
+// List is ListObjectsV2: a page under a prefix, a delimiter folding names into common
+// prefixes. The token (opaque base64) is the last name consumed, so a page ending on
+// a common prefix resumes past all its members. Objects and prefixes count together
+// against max-keys, as S3 counts them.
 func (b *bucket) List(ctx context.Context, request wasmtier.ListRequest) (wasmtier.Listing, error) {
 	after, err := decodeContinuation(request.Token)
 	if err != nil {
@@ -447,13 +355,8 @@ func (b *bucket) List(ctx context.Context, request wasmtier.ListRequest) (wasmti
 
 		prefix, collapses := collapse(name, request.Prefix, request.Delimiter)
 
-		// A NAME UNDER A PREFIX ALREADY ANSWERED IS CONSUMED BEFORE THE PAGE IS
-		// CHECKED, and that ordering is the whole correctness of the token. A
-		// page that ends on a common prefix has read every object under it to
-		// produce that one line; stopping at the first of them would hand back
-		// a cursor that resumes INSIDE the prefix, walk its siblings again and
-		// answer the same prefix on the next page — forever, for a prefix with
-		// more members than the page holds.
+		// A name under an already-answered prefix is consumed before the page is checked, or
+		// the token would resume inside the prefix and repeat it forever.
 		if collapses && folded[prefix] {
 			last = name
 			continue
@@ -494,14 +397,8 @@ func (b *bucket) List(ctx context.Context, request wasmtier.ListRequest) (wasmti
 // S3's own number, which is what every client's paging loop is written around.
 const maxObjectKeys = 1000
 
-// What one row may hold beside the content id, in S3's own numbers.
-//
-// THESE ARE A CEILING ON A REPLICATED STORE AND NOT A STYLE RULE. The bucket's
-// declared size bounds the BYTES, which go to the content-addressed store; the
-// key, the content type and the user metadata go into a kvdb row that every
-// node holding this deployment replicates, and nothing else bounds them. A
-// guest writing a megabyte of metadata per object would fill every peer's
-// datastore while the bucket reported itself empty.
+// What one row may hold beside the content id, in S3's numbers. The size bounds only
+// the bytes; these bound the replicated row every peer holds.
 const (
 	maxObjectKeyBytes    = 1024
 	maxObjectTypeBytes   = 256
@@ -606,14 +503,8 @@ func (b *bucket) row(ctx context.Context, key string) (objectRow, error) {
 	return row, nil
 }
 
-// name is the object's own name, with this bucket's prefix off it.
-//
-// A kvdb List ANSWERS WITH A LEADING SLASH, because the store normalises every
-// key through a datastore path — so trimming the prefix as this package spells
-// it (no leading slash) trimmed nothing, `row` then looked the object up under
-// the prefix twice over and missed, and a listing answered empty for a bucket
-// that was full. `held` counted the same nothing, which made the declared size
-// a ceiling on one object rather than on the bucket.
+// name is the object's name with this bucket's prefix off. A kvdb List answers with a
+// leading slash, so the prefix is trimmed as the store spells it.
 func (b *bucket) name(key string) string {
 	return strings.TrimPrefix(strings.TrimPrefix(key, "/"), strings.TrimPrefix(b.prefix, "/"))
 }
@@ -621,18 +512,9 @@ func (b *bucket) name(key string) string {
 // ErrBadObjectName is a name that would not stay inside its bucket.
 var ErrBadObjectName = errors.New("storage: an object name may not be empty or contain a path segment of . or ..")
 
-// named is the key one object sits at, or an error when the name would leave
-// this bucket.
-//
-// THE STORE PATH-CLEANS EVERY KEY, so `../../prod/QmOther/secret` appended to
-// this bucket's prefix does not miss — it RESOLVES, into another deployment's
-// bucket. A guest in staging could read, overwrite and delete production
-// objects, with no error anywhere on the path.
-//
-// It refuses rather than cleaning, which is the same answer node/volume's
-// `within` gives a checkpoint entry and for the same reason: nothing legitimate
-// names a parent, so a name that does is not one of ours and is worth failing
-// on rather than silently rewriting into some other object.
+// named is the key one object sits at, refusing a name that would leave the bucket:
+// the store path-cleans keys, so `../../prod/QmOther/secret` would resolve into
+// another deployment's bucket.
 func (b *bucket) named(key string) (string, error) {
 	if err := insideBucket(key); err != nil {
 		return "", err

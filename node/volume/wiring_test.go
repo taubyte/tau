@@ -19,9 +19,6 @@ type quiet struct{}
 func (quiet) Infof(string, ...any) {}
 func (quiet) Warnf(string, ...any) {}
 
-// TestANODESRestoresKeepItsReserveAndSyncThroughTheFile: what New wires is the
-// node's reserve, and the file's own Sync, which fails on a file that is
-// already closed where one that synced nothing would not.
 func TestANodesRestoresKeepItsReserveAndSyncThroughTheFile(t *testing.T) {
 	v, err := New(t.TempDir(), nil, noStore{}, quiet{})
 	require.NoError(t, err)

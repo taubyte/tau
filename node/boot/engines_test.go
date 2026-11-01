@@ -10,17 +10,8 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// engines_test is the one direction that matters: EVERY EXTERNAL ENGINE THE
-// VOCABULARY NAMES IS ONE A MACHINE CAN OPEN.
-//
-// A project writing `sql: {postgres: {host: db.example.com}}` compiles and
-// deploys whatever this file says. Before it, that project answered its first
-// query with "no database engine is registered in this build" — discovered by a
-// user rather than by us, which is the shape this repository keeps deleting.
+// Every external engine the vocabulary names is one a machine can open.
 
-// TestTheDriversAreLinkedAndTheEnginesRegister. A registration opens a probe
-// connection and checks the surface, so this also proves the adapters answer
-// the operations `sql` declares.
 func TestTheExternalSqlEnginesRegister(t *testing.T) {
 	registry, err := DatabaseEngines(t.Context())
 	require.NoError(t, err)
@@ -33,12 +24,6 @@ func TestTheExternalSqlEnginesRegister(t *testing.T) {
 	require.True(t, names["mysql"], "registered: %v", names)
 }
 
-// TestEVERYEXTERNALENGINETheVocabularyNamesCanBeOpened, and the ones that
-// cannot are listed here as knowingly absent.
-//
-// A fifth engine added to the schema with no adapter is a project that
-// compiles, deploys and refuses every query — and this is where that is
-// noticed rather than in somebody's logs.
 func TestEveryExternalDatabaseEngineIsAdapted(t *testing.T) {
 	registry, err := DatabaseEngines(t.Context())
 	require.NoError(t, err)
@@ -52,17 +37,8 @@ func TestEveryExternalDatabaseEngineIsAdapted(t *testing.T) {
 		}
 	}
 
-	// TAU'S OWN ARE THE NODE'S TO REGISTER and are not in this registry — it
-	// opens them on first use against the swarm's store, so they are absent
-	// here by design rather than missing.
-	//
-	// FOR THE MODELS IT ACTUALLY BACKS, and that qualifier is the whole fix.
-	// This used to skip tau's engine for EVERY model, which assumed the node
-	// opens a distributed one for all four. It does not: nodeDatabase.TauBacked() is
-	// kv, document and vector, and `sql: {engine: distributed}` compiled,
-	// deployed and answered every query with "no database engine is registered
-	// in this build" — with this test green over it, because this was the line
-	// that looked away.
+	// tau's own engines are the node's, but only for the models it backs
+	// (nodeDatabase.TauBacked: kv, document, vector).
 	tauEngine := schema.TauEngine()
 	tauBacks := map[string]bool{}
 	for _, model := range nodeDatabase.TauBacked() {

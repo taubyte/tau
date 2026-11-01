@@ -1,31 +1,8 @@
-// Package placement chooses which node runs a request, and is the one place
-// that choice is made.
-//
-// # Why it is its own package
-//
-// A gateway needs it and so does anything else that hands work to a worker. If
-// each of them picked a peer, there would be two routers disagreeing under
-// exactly the load that makes routing matter — and the second one would be
-// discovered when a node was overloaded, not before.
-//
-// # What it routes on
-//
-// LIVE MEASUREMENTS AND NOT A HASH. services/discovery already carries what every
-// node says about itself — how loaded it is, whether it is ready, and what it
-// can answer for cheaply — so the choice is the least loaded node that has the
-// project warm, then the least loaded node at all.
-//
-// The second half is not a fallback so much as the normal case for a project
-// nobody has run yet: a worker that holds nothing can still run anything, it
-// just fetches the compiled project first. Preferring a warm node is an
-// optimisation; requiring one would make a first request impossible.
-//
-// # A failure to reach a node is not a failure of the request
-//
-// A node can go while its last report is still fresh — that is what a freshness
-// window means — so a connect failure moves to the next candidate. What is NOT
-// retried is a request the node answered: a 500 from a workload is that
-// workload's answer, and sending it somewhere else would run it twice.
+// Package placement chooses which node runs a request, the one place that choice is
+// made. It routes on discovery's live measurements: the least loaded node with the
+// project warm, then the least loaded at all (any worker can fetch the project). A
+// failure to reach a node moves to the next candidate; a node that answered is the
+// answer, since retrying a 500 would run the workload twice.
 package placement
 
 import (
@@ -101,7 +78,6 @@ var (
 	ErrNoWorkers = errors.New("placement: no worker is ready to take this")
 )
 
-// Defaults.
 const (
 	// DefaultMaxAge is how stale a node's report may be and still be routed to.
 	// It is the same order as the report interval: a node that has not spoken
@@ -114,7 +90,6 @@ const (
 	DefaultAttempts = 3
 )
 
-// Option configures a Workers.
 type Option func(*options) error
 
 type options struct {

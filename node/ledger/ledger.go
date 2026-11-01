@@ -1,73 +1,21 @@
-// Package ledger keeps a `consensus: raft` database's entries in the order one
-// group committed them.
+// Package ledger keeps a `consensus: raft` database's entries in the order one group
+// committed them: an adapter between pkg/database's four-method store and a raft
+// cluster, given only a group opener. A ledger is a store, so the kv engine serves
+// it unchanged.
 //
-// # Why it is its own package
+// One group per database: each is its own protocol, heartbeats, log and snapshots,
+// but one group for every ledger would serialize all writes through one leader and
+// make placement meaningless. Placement bounds the count: a node opens only the
+// ledgers it votes for.
 //
-// It is an ADAPTER: it sits between pkg/database, which knows four methods over
-// a store and nothing about consensus, and a raft cluster, which knows a log and
-// nothing about databases. The composition root is the only place that may NAME
-// both — but naming them and implementing the store are different jobs, and
-// conflating them is how node/ grew to eight thousand lines with twenty-two of
-// these in one namespace.
+// pkg/raft has no conditional write and Get reads applied state, so writes are
+// refused off the leader (naming it), and reads take a Barrier first, which also
+// proves leadership: a partitioned leader cannot commit one and fails instead of
+// answering stale. A Barrier appends a log entry, so reads grow the log; VerifyLeader
+// plus an applied-index wait would be cheaper, but pkg/raft exposes neither.
 //
-// So the root hands this one thing it can ask: a way to open the group for a
-// namespace. Everything this package needs is in its own signature, which is the
-// property a type taking *Node does not have: that one can reach anything the
-// node has, so nothing about it says what it actually depends on, and it cannot
-// be built anywhere except beside the node.
-//
-// # A ledger is a store, which is the whole of the difference
-//
-// pkg/database's kv engine is generic over four methods and does the
-// per-database prefixing itself, so every other property of a kv database is
-// unchanged here by construction rather than by a second implementation agreeing
-// with the first. What `consensus: raft` changes is WHERE the four methods go.
-//
-// # One group per database
-//
-// The cost of that is real: each namespace is its own libp2p protocol, its own
-// heartbeat set, its own log and its own snapshot store. What is NOT affordable
-// is the alternative. One group for every ledger on a node would serialize the
-// cloud's writes through one leader, put every project's entries in every
-// voter's state machine — making placement a decoration, which is the failure
-// database.Stores was rewritten to end — and make leaving it RemoveServer over
-// everybody's rows at once, with no local drop to reach for. What bounds the
-// count is placement: a node opens a group only for the ledgers it is a voter
-// for, which is the same bound a topic per database already has.
-//
-// # A follower refuses rather than answering stale
-//
-// pkg/raft has no conditional write and Get reads APPLIED state, which lags on a
-// follower and lags on a leader that has just won an election. So both halves
-// are gated:
-//
-//   - a write is Set/Delete, which raft refuses off the leader anyway. The
-//     refusal is made here first, and carries WHO leads, so the caller is told
-//     what happened rather than reading it out of a transport error.
-//   - a read takes a Barrier first, because "the value I just wrote" is the one
-//     question a ledger's reader always asks, and applied state without a
-//     barrier can be older than the write that already returned.
-//
-// THE BARRIER IS ALSO THE LEADERSHIP PROOF, which is the half that is not about
-// lag. A partitioned leader answers IsLeader true until its lease expires and
-// its state machine is stale — it would answer "no such key" for an entry that
-// is committed. A barrier cannot commit without a quorum, so that node fails
-// instead of lying.
-//
-// WHAT IT COSTS, SAID RATHER THAN HIDDEN: hashicorp/raft's Barrier appends a log
-// entry, so a read-heavy ledger grows its log and its snapshot churn at READ
-// rate. The cheaper correct rule is VerifyLeader — a quorum heartbeat with no
-// log entry — paired with a wait on the applied index; pkg/raft's Cluster
-// exposes neither, and hand-rolling a leadership check here would be wrong in
-// exactly the window it exists for. That is the follow-up, and it is a change to
-// pkg/raft rather than to this package.
-//
-// # Nothing here forwards
-//
-// A store that dialled would be a second write path with its own failure modes,
-// reaching back up through the service that composed it — node/queue.go's rule.
-// What it does instead is name the leader, which is what lets services/database
-// send the one operation there.
+// Nothing forwards: the store names the leader so services/database can send the
+// operation there.
 package ledger
 
 import (
@@ -91,10 +39,8 @@ import (
 // all of which only the composition root holds.
 type Groups func(namespace string) (raft.Cluster, error)
 
-// Domain is where a ledger's group lives. It is NOT the queues' namespace: a
-// project's entries and this cloud's own work are different lifetimes, different
-// sizes and different blast radii — node/queue.go's argument, and it holds
-// harder here because a ledger is somebody's system of record.
+// Domain is where a ledger's group lives, apart from the queues' namespace: a system
+// of record has a different lifetime and blast radius.
 const Domain = "/tau/databases/v2"
 
 // Budget is what one write or one barrier may cost.
@@ -180,14 +126,9 @@ func (l *Ledgers) Store(spec database.Spec) (database.Store, error) {
 	}, nil
 }
 
-// group answers a database's group, starting its formation if nothing has.
-//
-// IT NEVER BLOCKS. raft.New waits up to thirty seconds for peers to appear so
-// that a cloud does not bootstrap a single-node cluster it later has to heal —
-// right at boot and wrong on a request path, where node/queue.go measured what
-// it costs: the first caller paid it, every other caller queued behind the same
-// lock, and the invocation timed out. So the group is opened in the background
-// and a call that arrives before it exists is refused by name.
+// group answers a database's group, starting its formation if needed. It never
+// blocks: raft.New waits up to thirty seconds for peers, so the group opens in the
+// background and an early call is refused by name.
 func (l *Ledgers) group(namespace string) (raft.Cluster, error) {
 	l.mu.Lock()
 	if l.gone {
@@ -223,15 +164,8 @@ func (l *Ledgers) group(namespace string) (raft.Cluster, error) {
 	defer l.mu.Unlock()
 	switch {
 	case g.err != nil:
-		// AN OPEN THAT FAILED IS NOT A LEDGER THAT IS OVER. raft.New spends
-		// thirty seconds looking for peers and gives up on whatever the disk,
-		// the host or the network was doing at the time; leaving the failure in
-		// the map would make one bad minute permanent for that database on this
-		// node. The entry goes, so the NEXT call starts a fresh attempt.
-		//
-		// AND THE REASON TRAVELS RATHER THAN "STILL FORMING", which is what an
-		// operator needs: the one that retries forever is the refusal that says
-		// nothing about why.
+		// A failed open is not a finished ledger: the entry is removed so the next call
+		// retries, and the reason is returned rather than "still forming".
 		delete(l.groups, namespace)
 		return nil, fmt.Errorf("ledger: opening %s: %w", namespace, g.err)
 	case g.cluster == nil:
@@ -243,9 +177,8 @@ func (l *Ledgers) group(namespace string) (raft.Cluster, error) {
 	return g.cluster, nil
 }
 
-// Close releases every group this node opened, once each has finished opening —
-// tearing one down mid-bootstrap would leave the goroutine writing into a closed
-// store, which is node/queue.go's rule and the same failure.
+// Close releases every group this node opened, once each has finished opening;
+// tearing one down mid-bootstrap would write into a closed store.
 func (l *Ledgers) Close() error {
 	l.mu.Lock()
 	groups := l.groups
@@ -343,14 +276,9 @@ func missed(cluster raft.Cluster) error {
 	return databaseService.NotLeading{}
 }
 
-// leading is this node's group, if this node may answer for it at all.
-//
-// A GROUP THAT HAS NOT ELECTED YET IS NOT A GROUP THAT REFUSED, and the
-// difference reaches the caller: NotLeading with nobody named is "ask again",
-// NotLeading with a peer is "ask that one". Neither waits. The deleted first
-// version of this waited one write timeout for an election, because refusing was
-// all it could otherwise do; with somewhere to send the call there is something
-// better to do than hold the caller.
+// leading is this node's group, if it may answer for it. A group with no leader yet is
+// NotLeading with nobody named ("ask again"); one with a leader names it. Neither
+// waits.
 func (s *Ledger) leading(ctx context.Context) (raft.Cluster, time.Duration, error) {
 	budget, err := s.remaining(ctx)
 	if err != nil {
@@ -396,12 +324,7 @@ func (s *Ledger) remaining(ctx context.Context) (time.Duration, error) {
 }
 
 // current is what a read costs: leadership, and a barrier so applied state is
-// everything committed.
-//
-// LEADING IS NOT THE SAME AS KNOWING — the sentence node/cron.go carries too. A
-// node that has just won an election holds committed entries it has not applied,
-// so a read without this can be older than a write that already returned to its
-// caller.
+// everything committed. A new leader holds committed entries it has not applied.
 func (s *Ledger) current(ctx context.Context) (raft.Cluster, error) {
 	cluster, budget, err := s.leading(ctx)
 	if err != nil {

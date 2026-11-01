@@ -16,22 +16,9 @@ import (
 	"github.com/taubyte/tau/services/worker"
 )
 
-// admit_test is the reason this package exists.
-//
-// Every one of these used to need a node: a register with a project published in
-// it, a worker started, a runtime injected and a component tier swapped out
-// afterwards, to assert that a validator which could not be RUN is not a
-// refusal. The cases that mattered most were the ones a node made hardest to
-// reach — a row that cannot be read, a ceiling whose count fails, a guard this
-// node has no tier for — and they are ordinary table rows now.
-//
-// WHAT A DREAM TEST PROVES AND THIS CANNOT is that a real component compiled
-// against the validator world answers at all: node/dream/instance_test.go runs
-// the fixture's own `may_open` end to end. What THIS proves is the half that is
-// this node's policy — which of three answers a caller gets, and that none of
-// them is silently a yes.
-
-// ---------------------------------------------------------------- doubles
+// The decision with all three collaborators faked: which of three answers a caller
+// gets, and that none is silently a yes. A real validator end to end is
+// node/dream/instance_test.go.
 
 // storing is a Rows double: the replicated row an admission is recorded in.
 type storing struct {
@@ -164,8 +151,6 @@ func (r *resolving) asked() []worker.Target {
 	return append([]worker.Target(nil), r.targets...)
 }
 
-// ---------------------------------------------------------------- fixtures
-
 // The paths the composer writes for an `instances:` block. They are spelled
 // literally here and held to admit.Settings below, which node/settings_test.go
 // holds to the vocabulary — so a renamed attribute fails somewhere instead of
@@ -177,9 +162,6 @@ const (
 	keyScope     = "instances/validator/namespace"
 )
 
-// TestTHEKEYSITREADSARETHEONESITNAMES, which is what makes the fixtures below
-// evidence of anything: node/settings_test.go walks admit.Settings against the
-// schema, so the two lists have to be the same four paths.
 func TestTheSettingsItPublishesAreTheOnesItReads(t *testing.T) {
 	require.ElementsMatch(t, []string{keyAdmission, keyLimit, keyValidator, keyScope}, admit.Settings)
 }
@@ -225,12 +207,6 @@ func admitting(t *testing.T, answers *deciding) (*admit.Admissions, *resolving, 
 
 func saysYes() *deciding { return &deciding{verdict: wasmtier.Verdict{Admitted: true}} }
 
-// ---------------------------------------------------------------- wiring
-
-// TestWHATITCANNOTWORKWITHOUTISREFUSEDWHEREITISBUILT. A decision with nothing to
-// record is a validator invoked on every open, and a decision with no way to
-// reach a control cannot answer at all — both are compositions, so both are
-// refused at construction rather than on a request.
 func TestAnAdmitterWithoutItsCollaboratorsIsRefused(t *testing.T) {
 	answers := saysYes()
 	tier := func() admit.Tier { return answers }
@@ -258,9 +234,6 @@ func TestAnAdmitterWithoutItsCollaboratorsIsRefused(t *testing.T) {
 	require.NotNil(t, a)
 }
 
-// TestTHEDATABASEISOPENEDONCE, on the first admission that needs one — so a node
-// nothing ever asks about an instance opens none, and one asked a thousand times
-// opens one.
 func TestTheStoreIsOpenedOnceAndNotBeforeItIsNeeded(t *testing.T) {
 	answers := saysYes()
 	stores := &opening{rows: &storing{}}
@@ -278,9 +251,6 @@ func TestTheStoreIsOpenedOnceAndNotBeforeItIsNeeded(t *testing.T) {
 	require.Equal(t, 1, stores.asked)
 }
 
-// TestANODEWITHNOSTORETOWRITETOSAYSSO rather than admitting what it cannot
-// record — an admission nobody wrote down is a validator asked again on the next
-// open, on every node, forever.
 func TestAStoreThatCannotBeOpenedRefusesTheAdmission(t *testing.T) {
 	answers := saysYes()
 	missing := errors.New("no database factory to open a cache with")
@@ -296,10 +266,6 @@ func TestAStoreThatCannotBeOpenedRefusesTheAdmission(t *testing.T) {
 	require.Empty(t, answers.seen(), "the validator was asked about an instance that could not be recorded")
 }
 
-// ---------------------------------------------------------------- the decision
-
-// TestTHEVALIDATORIsInvoked, and it is told which instance and which store — a
-// workload deciding for two stores has nothing else to tell them apart by.
 func TestAdmittingInvokesTheValidator(t *testing.T) {
 	answers := saysYes()
 	a, found, _ := admitting(t, answers)
@@ -323,9 +289,6 @@ func TestAdmittingInvokesTheValidator(t *testing.T) {
 	}}, found.asked())
 }
 
-// TestTHEVALIDATORSNAMESPACEISWALKEDASTHEGRAMMARWRITESIT. The composer resolved
-// it already, so an absolute path is what arrives — and a consumer keeping half
-// of that rule would look for the function under the project root.
 func TestTheValidatorIsLookedForInTheNamespaceTheBlockNames(t *testing.T) {
 	for _, one := range []struct {
 		namespace string
@@ -350,8 +313,6 @@ func TestTheValidatorIsLookedForInTheNamespaceTheBlockNames(t *testing.T) {
 	}
 }
 
-// TestAVALIDATORThatSaysNoIsAREFUSALAndNotAFailure: the target declared who
-// decides, and this is that decision.
 func TestAValidatorThatRefuses(t *testing.T) {
 	a, _, rows := admitting(t, &deciding{verdict: wasmtier.Verdict{Refused: "over its plan"}})
 
@@ -362,9 +323,6 @@ func TestAValidatorThatRefuses(t *testing.T) {
 	require.Empty(t, rows.held, "a refusal was recorded as an admission")
 }
 
-// TestUNDECIDEDISNOTAREFUSAL, which a status code had no room to say. Telling a
-// caller their instance was turned down when nothing decided sends them to argue
-// with a policy that never fired.
 func TestAValidatorThatDoesNotDecideIsNotARefusal(t *testing.T) {
 	a, _, rows := admitting(t, &deciding{verdict: wasmtier.Verdict{Undecided: "the plan service did not answer"}})
 
@@ -375,10 +333,6 @@ func TestAValidatorThatDoesNotDecideIsNotARefusal(t *testing.T) {
 	require.Empty(t, rows.held)
 }
 
-// TestAVALIDATORThatCouldNotBeRunIsNotAREFUSALEITHER. Admitting anyway would
-// grant what the target said somebody else decides; saying "not admitted" would
-// tell the caller their instance was turned down, which is a different thing to
-// act on.
 func TestAValidatorThatCannotRunIsNotARefusal(t *testing.T) {
 	a, _, rows := admitting(t, &deciding{err: errors.New("the component would not start")})
 
@@ -389,9 +343,6 @@ func TestAValidatorThatCannotRunIsNotARefusal(t *testing.T) {
 	require.Empty(t, rows.held)
 }
 
-// TestAVALIDATORTHATCANNOTBEFOUNDISNOTAREFUSALEITHER, and this one is the arm a
-// deploy reaches: a store naming a function somebody deleted. Nothing decided,
-// so nothing was refused.
 func TestAValidatorThatCannotBeResolvedIsNotARefusal(t *testing.T) {
 	answers := saysYes()
 	a, found, rows := admitting(t, answers)
@@ -405,9 +356,6 @@ func TestAValidatorThatCannotBeResolvedIsNotARefusal(t *testing.T) {
 	require.Empty(t, rows.held)
 }
 
-// TestNONEOFTHETHREEWAYSTHISCANFAILREADSASPERMISSION, said once over all of
-// them: an admission is granted by exactly one thing, which is a validator that
-// answered yes.
 func TestNoFailureHereIsEverAYes(t *testing.T) {
 	for _, one := range []struct {
 		name  string
@@ -440,9 +388,6 @@ func TestNoFailureHereIsEverAYes(t *testing.T) {
 	}
 }
 
-// TestACOUNTTHATCANNOTBEREADREFUSESrather than admitting past a ceiling nobody
-// could check. The limit is the ceiling against runaway, and an unreadable count
-// is not the same fact as an absent one.
 func TestACeilingThatCannotBeCountedRefuses(t *testing.T) {
 	answers := saysYes()
 	broken := errors.New("store is gone")
@@ -456,8 +401,6 @@ func TestACeilingThatCannotBeCountedRefuses(t *testing.T) {
 	require.Empty(t, answers.seen())
 }
 
-// TestTHEDECISIONIsRecorded, so a validator is asked once per instance rather
-// than once per call — which matters because a validator may have side effects.
 func TestAnAdmittedInstanceIsNotAskedAgain(t *testing.T) {
 	answers := saysYes()
 	a, _, rows := admitting(t, answers)
@@ -479,8 +422,6 @@ func TestAnAdmittedInstanceIsNotAskedAgain(t *testing.T) {
 	require.Len(t, answers.seen(), 1)
 }
 
-// TestCLOSINGFORGETSWHATTHISNODEADMITTEDANDNOTTHEDECISION. The rows are not
-// this node's, so a node that comes back reads them and asks nobody.
 func TestClosingForgetsTheMemoryAndNotTheRows(t *testing.T) {
 	answers := saysYes()
 	a, _, rows := admitting(t, answers)
@@ -493,9 +434,6 @@ func TestClosingForgetsTheMemoryAndNotTheRows(t *testing.T) {
 	require.Len(t, answers.seen(), 1, "the row was there and the validator was asked again")
 }
 
-// TestAROWTHATCANNOTBEREADISNOTANABSENTONE. "Not there" is the ordinary answer
-// and it is a bool; anything else is a store that could not be read, and
-// admitting on it would ask a validator whose answer cannot be recorded.
 func TestARowThatCannotBeReadRefuses(t *testing.T) {
 	answers := saysYes()
 	broken := errors.New("store is gone")
@@ -509,10 +447,6 @@ func TestARowThatCannotBeReadRefuses(t *testing.T) {
 	require.Empty(t, answers.seen())
 }
 
-// ---------------------------------------------------------------- the ceiling
-
-// TestTHECEILINGHolds, and refusing at it is the same arm a validator's no is —
-// both are "this instance may not exist".
 func TestTheLimitRefusesFurtherInstances(t *testing.T) {
 	a, _, _ := admitting(t, saysYes())
 
@@ -528,10 +462,6 @@ func TestTheLimitRefusesFurtherInstances(t *testing.T) {
 	require.NoError(t, a.Admit(t.Context(), invoke.Spec{}, manyGrant("2"), "a"))
 }
 
-// TestALIMITTHATISNOTANUMBERISNOCEILING, which the vocabulary makes a required
-// sentence: an absent or unreadable one means the composer did not read it, and
-// refusing every instance over a field nobody wrote would be an outage where
-// this is a bug to find in a log.
 func TestALimitThatSaysNothingIsNoCeiling(t *testing.T) {
 	for _, limit := range []string{"0", "", "lots", "-1"} {
 		t.Run(limit, func(t *testing.T) {
@@ -544,8 +474,6 @@ func TestALimitThatSaysNothingIsNoCeiling(t *testing.T) {
 	}
 }
 
-// TestTWOSTORESDoNotShareACeiling, because the count is scoped by handle the
-// way everything else is.
 func TestInstancesAreCountedPerStore(t *testing.T) {
 	a, _, _ := admitting(t, saysYes())
 
@@ -557,11 +485,6 @@ func TestInstancesAreCountedPerStore(t *testing.T) {
 		"a second store's first instance was counted against the first store")
 }
 
-// ---------------------------------------------------------------- refusals
-
-// TestANINSTANCENAMEISONESEGMENT. `..` is not a name that misses — it RESOLVES,
-// to the deployment's own prefix, so admitting it would write one row that every
-// other store in the deployment then reads as its own admission.
 func TestAnInstanceNameThatIsNotOneSegmentIsRefused(t *testing.T) {
 	for _, name := range []string{"", ".", "..", "a/b", "../QmOther"} {
 		t.Run(name, func(t *testing.T) {
@@ -576,8 +499,6 @@ func TestAnInstanceNameThatIsNotOneSegmentIsRefused(t *testing.T) {
 	}
 }
 
-// TestASTOREThatNamesNoValidatorIsRefused, which is a compiled object the
-// vocabulary does not allow — the block's fields are required together.
 func TestAStoreWithNoValidatorIsRefused(t *testing.T) {
 	a, _, _ := admitting(t, saysYes())
 
@@ -587,10 +508,6 @@ func TestAStoreWithNoValidatorIsRefused(t *testing.T) {
 	require.ErrorIs(t, a.Admit(t.Context(), invoke.Spec{}, grant, "room"), admit.ErrNoValidator)
 }
 
-// TestANODEWITHNOTHINGTORUNACONTROLWITHREFUSESBYNAME. It is one fact — this
-// node cannot run a control — whether what is missing is the component tier or
-// the worker that finds the function, and neither is a statement about the
-// instance.
 func TestANodeThatCannotRunAValidatorRefusesByName(t *testing.T) {
 	answers := saysYes()
 
@@ -614,8 +531,6 @@ func TestANodeThatCannotRunAValidatorRefusesByName(t *testing.T) {
 	}
 }
 
-// TestAHANDLEThatNamesNoDeploymentIsRefused rather than invoking something in
-// whatever project an empty name resolves to.
 func TestAMalformedHandleIsNotInvoked(t *testing.T) {
 	for _, handle := range []string{"nonsense", "shop/prod", "shop//QmSessions", "/prod/QmSessions"} {
 		t.Run(handle, func(t *testing.T) {
@@ -634,12 +549,6 @@ func TestAMalformedHandleIsNotInvoked(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------- a browser
-
-// TestABrowserAndAWorkloadAskTheSameValidator. A workload opening
-// `chat/room-42` and a browser attaching to `/room-42` are the same question
-// about the same instance, and two answers to it would be two security policies
-// for one config block.
 func TestABrowserAndAWorkloadAskTheSameValidator(t *testing.T) {
 	answers := saysYes()
 	a, _, _ := admitting(t, answers)
@@ -671,8 +580,6 @@ func TestABrowserAndAWorkloadAskTheSameValidator(t *testing.T) {
 	require.Len(t, answers.seen(), 1, "the same instance was not validated twice")
 }
 
-// TestABrowserTurnedAwayIsARefusal, reaching the browser as the validator's own
-// words — the same string a workload would get.
 func TestABrowserTurnedAwayIsARefusal(t *testing.T) {
 	a, _, _ := admitting(t, &deciding{verdict: wasmtier.Verdict{Refused: "that room is full"}})
 
@@ -681,11 +588,6 @@ func TestABrowserTurnedAwayIsARefusal(t *testing.T) {
 	require.ErrorContains(t, err, "that room is full")
 }
 
-// ---------------------------------------------------------------- a request
-
-// TestAGUARDEDROUTEASKSTHEFUNCTIONTHEROUTENAMED, and it answers with the ops the
-// request gets rather than a bool: a route to a bus needs "may listen, may not
-// send" to be sayable.
 func TestAGuardedRouteAsksTheFunctionItNames(t *testing.T) {
 	answers := saysYes()
 	answers.admission = &invoke.Admission{Granted: []string{"listen"}}
@@ -709,8 +611,6 @@ func TestAGuardedRouteAsksTheFunctionItNames(t *testing.T) {
 	require.Equal(t, []*invoke.Request{request}, answers.requests)
 }
 
-// TestANODETHATCANNOTRUNAGUARDREFUSESTHEREQUEST, by name and naming the
-// function — which is the only answer that is not "this request may pass".
 func TestARouteGuardedByAFunctionThisNodeCannotRun(t *testing.T) {
 	answers := saysYes()
 
@@ -734,7 +634,6 @@ func TestARouteGuardedByAFunctionThisNodeCannotRun(t *testing.T) {
 	}
 }
 
-// TestAGUARDTHATCANNOTBEFOUNDDOESNOTLETTHEREQUESTTHROUGH.
 func TestAGuardThatCannotBeResolvedRefusesTheRequest(t *testing.T) {
 	answers := saysYes()
 	a, found, _ := admitting(t, answers)
@@ -746,8 +645,6 @@ func TestAGuardThatCannotBeResolvedRefusesTheRequest(t *testing.T) {
 	require.Empty(t, answers.requests)
 }
 
-// TestAGUARDTHATFAILEDTORUNDOESNOTLETTHEREQUESTTHROUGHEITHER, which is the same
-// distinction the instance side makes: an error is never permission.
 func TestAGuardThatFailsToRunRefusesTheRequest(t *testing.T) {
 	answers := saysYes()
 	answers.admitErr = errors.New("the component would not start")
@@ -758,10 +655,6 @@ func TestAGuardThatFailsToRunRefusesTheRequest(t *testing.T) {
 	require.Error(t, err)
 }
 
-// ---------------------------------------------------------------- at once
-
-// TestTWOCOLDOPENSOPENONESTORE, which is what the one mutex over the memory and
-// the store is for. Run with -race.
 func TestConcurrentFirstOpensOpenOneStore(t *testing.T) {
 	answers := saysYes()
 	stores := &opening{rows: &storing{}}
