@@ -10,8 +10,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// fakeRegistry answers the two reads a cache makes and counts them, because
-// every claim this file makes is about how MANY times the wire was touched.
+// fakeRegistry answers the two reads a cache makes and counts them.
 type fakeRegistry struct {
 	mu sync.Mutex
 
@@ -127,8 +126,7 @@ func TestAPointerIsTrustedForTheDeployBudgetAndNoLonger(t *testing.T) {
 	assert.Equal(t, resolves, 1)
 	assert.Equal(t, fetches, 1)
 
-	// A DEPLOY LANDS, and until the budget expires the old code keeps
-	// answering. That is the promise the TTL is.
+	// A deploy lands, and until the budget expires the old code keeps answering.
 	reg.put(at, "two", 2)
 	_, pointer, err = c.At(t.Context(), at)
 	assert.NilError(t, err)
@@ -191,8 +189,7 @@ func TestAFailedLoadIsNotRemembered(t *testing.T) {
 	assert.ErrorContains(t, err, "register unreachable")
 	assert.Equal(t, c.Held(), 0)
 
-	// THE BAD MOMENT PASSES and the project loads. Caching the failure would
-	// have made it permanent.
+	// The bad moment passes and the project loads.
 	reg.objectErr = nil
 	body, _, err := c.At(t.Context(), at)
 	assert.NilError(t, err)

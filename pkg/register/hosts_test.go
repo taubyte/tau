@@ -15,9 +15,6 @@ func publish(t *testing.T, r *Register, project, environment string, revision ui
 	require.NoError(t, err)
 }
 
-// TestAGatewayAsksWhoseNameThisIs. Everything in this file exists for that one
-// read: a request arrives carrying a Host header and something has to say which
-// project's it is before anything else can happen.
 func TestAGatewayAsksWhoseNameThisIs(t *testing.T) {
 	r, _ := newRegister(t)
 	publish(t, r, "shop", "prod", 1, "shop.example.com", "api.example.com")
@@ -34,9 +31,6 @@ func TestAGatewayAsksWhoseNameThisIs(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoHost)
 }
 
-// TestANameIsMatchedHoweverItWasTyped. DNS is case-insensitive and a Host
-// header carries whatever the client typed, so a table keyed by what the author
-// wrote would miss half the requests for the same name.
 func TestANameIsMatchedHoweverItWasTyped(t *testing.T) {
 	r, _ := newRegister(t)
 	publish(t, r, "shop", "prod", 1, "Shop.Example.COM")
@@ -48,10 +42,6 @@ func TestANameIsMatchedHoweverItWasTyped(t *testing.T) {
 	}
 }
 
-// TestFirstClaimWins. Two projects on one cloud can both write
-// `shop.example.com` into their config, and whichever deployed second would
-// otherwise take the first one's traffic — a takeover performed by an ordinary
-// deploy.
 func TestFirstClaimWins(t *testing.T) {
 	r, _ := newRegister(t)
 	publish(t, r, "shop", "prod", 1, "shop.example.com")
@@ -72,8 +62,6 @@ func TestFirstClaimWins(t *testing.T) {
 	require.Equal(t, "shop", project)
 }
 
-// TestOneEnvironmentDoesNotTakeAnothersName, even inside one project. One name
-// has one destination, and prod and staging are two.
 func TestOneEnvironmentDoesNotTakeAnothersName(t *testing.T) {
 	r, _ := newRegister(t)
 	publish(t, r, "shop", "prod", 1, "shop.example.com")
@@ -85,9 +73,6 @@ func TestOneEnvironmentDoesNotTakeAnothersName(t *testing.T) {
 	require.ErrorIs(t, err, ErrHostClaimed)
 }
 
-// TestRepublishingKeepsWhatItStillClaims and lets go of what it does not — or a
-// gateway that was renamed would hold its old name forever and nobody could
-// ever use it again.
 func TestARepublishReleasesWhatItDropped(t *testing.T) {
 	r, _ := newRegister(t)
 	publish(t, r, "shop", "prod", 1, "shop.example.com", "old.example.com")
@@ -110,9 +95,6 @@ func TestARepublishReleasesWhatItDropped(t *testing.T) {
 	require.Equal(t, "blog", project)
 }
 
-// TestNoNameIsTakenIfOneIsRefused. A publish that took half the names and then
-// hit one somebody else holds would leave the cloud answering for a deploy that
-// did not happen.
 func TestNoNameIsTakenIfOneIsRefused(t *testing.T) {
 	r, _ := newRegister(t)
 	publish(t, r, "shop", "prod", 1, "taken.example.com")
@@ -127,9 +109,6 @@ func TestNoNameIsTakenIfOneIsRefused(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoHost, "nothing was claimed")
 }
 
-// TestPublishingNoNamesIsOrdinary. Most environments have none — a project of
-// functions reached through somebody else's gateway, an environment nothing
-// points at yet.
 func TestPublishingNoNamesIsOrdinary(t *testing.T) {
 	r, _ := newRegister(t)
 	publish(t, r, "shop", "prod", 1)
@@ -139,8 +118,6 @@ func TestPublishingNoNamesIsOrdinary(t *testing.T) {
 	require.Equal(t, uint64(1), p.Revision)
 }
 
-// TestBlankNamesAreDropped rather than claimed. An empty Host key would be a
-// row every lookup for a missing name would find.
 func TestBlankNamesAreDropped(t *testing.T) {
 	r, store := newRegister(t)
 	publish(t, r, "shop", "prod", 1, "", "   ", "real.example.com")
@@ -152,7 +129,6 @@ func TestBlankNamesAreDropped(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestAClaimRowThatIsNotOneIsNotAnAnswer.
 func TestAClaimRowThatIsNotOneIsNotAnAnswer(t *testing.T) {
 	r, store := newRegister(t)
 	require.NoError(t, store.Put(ctx, hostKey("shop.example.com"), []byte("nonsense")))
@@ -161,8 +137,6 @@ func TestAClaimRowThatIsNotOneIsNotAnAnswer(t *testing.T) {
 	require.ErrorIs(t, err, ErrMalformedPointer)
 }
 
-// TestAnUnreachableStoreDoesNotReadAsAFreeName. Answering "nobody holds this"
-// while the store is down would let the next publish take somebody else's name.
 func TestAnUnreachableStoreDoesNotReadAsAFreeName(t *testing.T) {
 	r, err := New(WithStore(&unreadableStore{NewMemStore()}))
 	require.NoError(t, err)
@@ -178,9 +152,6 @@ func TestAnUnreachableStoreDoesNotReadAsAFreeName(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestAFailedClaimWriteMovesNothing. The names go in before the pointer, so a
-// store that refused one leaves the environment on the revision it was already
-// running rather than on a deploy whose names never took.
 func TestAFailedClaimWriteMovesNothing(t *testing.T) {
 	for _, prefix := range []string{hostPrefix, claimsPrefix} {
 		store := &failingStore{MemStore: NewMemStore(), failOn: prefix}
@@ -198,8 +169,6 @@ func TestAFailedClaimWriteMovesNothing(t *testing.T) {
 	}
 }
 
-// TestAFailedReleaseIsReported rather than leaving a name pointing at a deploy
-// that is no longer there.
 func TestAFailedReleaseIsReported(t *testing.T) {
 	store := &sometimesFailingStore{MemStore: NewMemStore()}
 	r, err := New(WithStore(store))

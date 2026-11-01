@@ -20,8 +20,6 @@ func publishCut(t *testing.T, r *Register, rev uint64, views map[string]string) 
 	return p
 }
 
-// A DESTINATION READS ITS OWN VIEW, an empty one is still a view, and a destination
-// the deployment does not list has none.
 func TestADestinationReadsItsView(t *testing.T) {
 	r, _ := newRegister(t)
 	publishCut(t, r, 1, map[string]string{"region-1": "region-1 view", "region-2": "region-2 view"})
@@ -52,8 +50,6 @@ func TestADestinationReadsItsView(t *testing.T) {
 	require.Equal(t, m.Object, p.Object)
 }
 
-// A DESTINATION LEARNS WHAT IS ITS BUSINESS FROM ITS OWN PREFIX, and stops holding a
-// deployment withdrawn from it.
 func TestADestinationLearnsItsAssignments(t *testing.T) {
 	r, _ := newRegister(t)
 	publishCut(t, r, 1, map[string]string{"region-1": "a", "region-2": "b"})
@@ -75,7 +71,7 @@ func TestADestinationLearnsItsAssignments(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"shop/prod"}, names(r1))
 
-	// REVISION 2 IS NOT IN region-2 ANY MORE: its old row remains, and it is not listed.
+	// Revision 2 is not in region-2 any more: its old row remains, and it is not listed.
 	publishCut(t, r, 2, map[string]string{"region-1": "a2"})
 	r2, err = r.Assigned(ctx, "region-2")
 	require.NoError(t, err)
@@ -97,8 +93,6 @@ func TestADestinationLearnsItsAssignments(t *testing.T) {
 	require.Empty(t, none)
 }
 
-// WHAT HAS NOT ARRIVED IS WAITED FOR: a newer manifest whose view is missing, or a row
-// whose manifest is missing, reads as the newest revision that is whole.
 func TestAReaderToleratesWhatHasNotArrived(t *testing.T) {
 	r, store := newRegister(t)
 	publishCut(t, r, 1, map[string]string{"region-1": "region-1 1"})
@@ -123,7 +117,6 @@ func TestAReaderToleratesWhatHasNotArrived(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotPublished)
 }
 
-// TWO PUBLISHERS OF ONE REVISION WRITE TWO ENTRIES, and every reader picks the same one.
 func TestConcurrentRevisionsResolveTheSameEverywhere(t *testing.T) {
 	a, store := newRegister(t)
 	b, err := New(WithStore(store))
@@ -148,7 +141,6 @@ func TestConcurrentRevisionsResolveTheSameEverywhere(t *testing.T) {
 	require.Equal(t, entries[0].manifest, va.Manifest, "the lowest manifest id wins a tie")
 }
 
-// A PUBLICATION NOBODY CUT IS THE WHOLE OBJECT IN EVERY DESTINATION, indexed in none.
 func TestAnUncutPublicationIsWholeEverywhere(t *testing.T) {
 	r, _ := newRegister(t)
 	_, err := r.Publish(ctx, Publication{Project: "shop", Environment: "prod", Revision: 1, Compiled: []byte("all")})
@@ -201,7 +193,7 @@ func TestViewsRefuseWhatAddressesNothing(t *testing.T) {
 		require.Error(t, call())
 	}
 
-	// A MANIFEST THAT IS PRESENT AND UNREADABLE IS DATA LOSS, not "not published".
+	// A manifest that is present and unreadable is data loss, not "not published".
 	store.m[objectKey("bad")] = []byte("manifest 1\nrevision x\n")
 	store.m[manifestKey("shop", "prod", 9, "bad")] = nil
 	_, err = r.ResolveView(ctx, "shop", "prod", "region-1")
@@ -227,7 +219,6 @@ func TestManifestsRoundTrip(t *testing.T) {
 	require.True(t, strings.HasPrefix(string(encodeManifest(m)), "manifest 1\n"))
 }
 
-// A STORE THAT CANNOT ANSWER IS SAID AS SUCH, never as "nothing here".
 func TestViewsSayAStoreThatFails(t *testing.T) {
 	broken := failing{MemStore: NewMemStore()}
 	r, err := New(WithStore(&broken))

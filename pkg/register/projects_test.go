@@ -135,11 +135,6 @@ func merge(t *testing.T, a, b *MemStore) {
 	require.Equal(t, a.Keys(), b.Keys())
 }
 
-// TestTwoNodesRacingForOneIdAgreeOnTheOwner is the race the store cannot
-// prevent: two nodes accept a claim on one id at the same moment, neither
-// seeing the other. After replication both claims exist, and every node picks
-// the same owner — the earlier one — while the loser's repositories belong to
-// nobody.
 func TestTwoNodesRacingForOneIdAgreeOnTheOwner(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
@@ -201,8 +196,6 @@ func TestTwoNodesRacingForOneIdAgreeOnTheOwner(t *testing.T) {
 	}
 }
 
-// TestARaceSeenAfterTheWriteIsReported: a claim that lands and then, on its
-// own final read, finds an earlier one is refused rather than reported as won.
 func TestARaceSeenAfterTheWriteIsReported(t *testing.T) {
 	store := &racingStore{MemStore: NewMemStore()}
 	r := linked(t, store, func() time.Time { return time.Unix(500, 0) })
@@ -283,8 +276,6 @@ func TestALinkIsRefusedWhenItNamesNothing(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoClaimant)
 }
 
-// TestAnUnreadableRowOwnsNothing: a row that cannot be ordered cannot win, and
-// one bad write must not deny the owner every read.
 func TestAnUnreadableRowOwnsNothing(t *testing.T) {
 	store := NewMemStore()
 	r := linked(t, store, nil)
@@ -338,8 +329,6 @@ func TestAStoreThatCannotLookIsNotAMissingProject(t *testing.T) {
 	}
 }
 
-// TestEveryStoreFailureDuringALinkSurfaces fails each read and write of a link
-// in turn, after a healthy one, so no step's error is swallowed.
 func TestEveryStoreFailureDuringALinkSurfaces(t *testing.T) {
 	for n := 1; ; n++ {
 		store := &countingStore{MemStore: NewMemStore()}
@@ -399,10 +388,6 @@ func (s *countingStore) List(c context.Context, p string) ([]string, error) {
 	return s.MemStore.List(c, p)
 }
 
-// TestPublicationsAndRecordsNeverTouchEachOther: the two tables share a store
-// and nothing else. Every publication key is outside r/, every record key is
-// inside it, and each side's writes — a publish, a link, a republish dropping
-// a resource and a name, a relink — leave the other side's rows byte-identical.
 func TestPublicationsAndRecordsNeverTouchEachOther(t *testing.T) {
 	store := NewMemStore()
 	r := linked(t, store, nil)

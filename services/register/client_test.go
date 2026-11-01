@@ -11,9 +11,6 @@ import (
 	pkgregister "github.com/taubyte/tau/pkg/register"
 )
 
-// TestTheClientIsTheSameRegister — every sentinel a local register returns
-// comes back from a remote one, so a consumer holds one interface and one error
-// path whether the register is in this process or across a stream.
 func TestTheClientIsTheSameRegister(t *testing.T) {
 	h := newHarness(t, pkgregister.NewMemStore())
 	c := newClient(t, h)
@@ -77,9 +74,6 @@ func TestACorruptedPointerReachesTheClientAsOne(t *testing.T) {
 	require.ErrorIs(t, err, pkgregister.ErrMalformedPointer)
 }
 
-// TestAStoreFailureIsNotASentinel. There is no sentinel for "the store is
-// unreachable", and inventing one here would be this package deciding what a
-// store failure means. It arrives as the connect error it is.
 func TestAStoreFailureIsNotASentinel(t *testing.T) {
 	h := newHarness(t, brokenStore{pkgregister.NewMemStore()})
 	c := newClient(t, h)
@@ -96,11 +90,6 @@ func TestNewClientRefusesNonsense(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestAStatusThatMatchesNoSentinelIsLeftAlone. `wire` maps two sentinels onto
-// NotFound today, so nothing on the wire produces a third — but a status this
-// package did not build is exactly what arrives when the other end is a
-// different version, and inventing a sentinel for it would be worse than
-// passing it through.
 func TestAStatusThatMatchesNoSentinelIsLeftAlone(t *testing.T) {
 	for _, code := range []connect.Code{connect.CodeNotFound, connect.CodeInvalidArgument} {
 		err := unwire(connect.NewError(code, errors.New("something this package never wrote")))
@@ -116,8 +105,6 @@ func TestAStatusThatMatchesNoSentinelIsLeftAlone(t *testing.T) {
 	require.Equal(t, plain, unwire(plain))
 }
 
-// TestTheHostTableIsTheSameThroughTheClient — the sentinels for a name nobody
-// holds and a name somebody else holds survive the wire like the rest.
 func TestTheHostTableIsTheSameThroughTheClient(t *testing.T) {
 	h := newHarness(t, pkgregister.NewMemStore())
 	c := newClient(t, h)
@@ -143,8 +130,6 @@ func TestTheHostTableIsTheSameThroughTheClient(t *testing.T) {
 	require.ErrorIs(t, err, pkgregister.ErrHostClaimed)
 }
 
-// A DESTINATION'S READS CROSS THE WIRE UNCHANGED: its view, its assignments, and the
-// difference between a destination not listed and a deployment not published.
 func TestViewsCrossTheWire(t *testing.T) {
 	h := newHarness(t, pkgregister.NewMemStore())
 	c := newClient(t, h)

@@ -75,8 +75,6 @@ func TestTheClaimantOwnsAndGrantsGiveTheHighestRole(t *testing.T) {
 	require.Equal(t, pid, ids[0].ID)
 }
 
-// A REVOCATION IS ITS OWN KEY AND WINS: the grant row stays, and nothing reads
-// it as live again.
 func TestARevocationWins(t *testing.T) {
 	store := NewMemStore()
 	r := ownedBy(t, store)
@@ -140,8 +138,6 @@ func TestGrantRefusals(t *testing.T) {
 	}
 }
 
-// A ROW THAT DOES NOT READ AS A GRANT GRANTS NOTHING, and a key that is not one
-// is skipped.
 func TestUnreadableGrantRowsGrantNothing(t *testing.T) {
 	store := NewMemStore()
 	r := ownedBy(t, store)

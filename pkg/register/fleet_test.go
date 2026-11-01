@@ -7,17 +7,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestTheFleetIsPUBLISHEDLIKEAPROJECT, because the reason is the same one: a
-// value every node must compute with identically needs a revision, so that a
-// node which is behind is behind by something it can see and name.
 func TestAFleetDocumentIsPublishedAndResolved(t *testing.T) {
 	r, err := New(WithStore(NewMemStore()))
 	require.NoError(t, err)
 	ctx := t.Context()
 
-	// NOT PUBLISHED IS ITS OWN ANSWER, and never an empty document: a reader
-	// has to tell "this cloud said nothing, use the default" from "the store
-	// could not be reached, change nothing".
+	// Not published is its own answer, never an empty document.
 	_, err = r.ResolveFleet(ctx)
 	require.ErrorIs(t, err, ErrNotPublished)
 
@@ -34,9 +29,6 @@ func TestAFleetDocumentIsPublishedAndResolved(t *testing.T) {
 	require.JSONEq(t, `{"replication":3}`, string(raw))
 }
 
-// TestAFLOORDOESNOTGOBACKWARDS. One that did on one node and not another would
-// be two nodes computing different placements with no way to tell which was
-// stale.
 func TestAFleetRevisionOnlyMovesForward(t *testing.T) {
 	r, err := New(WithStore(NewMemStore()))
 	require.NoError(t, err)
@@ -58,8 +50,6 @@ func TestAFleetRevisionOnlyMovesForward(t *testing.T) {
 	require.Equal(t, uint64(5), at.Revision)
 }
 
-// TestAnEmptyFleetDocumentIsRefused, the same as an empty project: a pointer to
-// nothing is not a deploy.
 func TestAnEmptyFleetDocumentIsRefused(t *testing.T) {
 	r, err := New(WithStore(NewMemStore()))
 	require.NoError(t, err)

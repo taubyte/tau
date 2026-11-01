@@ -9,48 +9,27 @@ import (
 	"strings"
 )
 
-// views.go is what one DESTINATION of a deployment reads.
+// A deploy publishes the whole compiled object and one view per destination: the
+// part a place running part of the project holds. A view is bytes under a name.
 //
-// A deploy publishes the whole compiled object and, beside it, one view per
-// destination — the part of the object a place that runs part of the project holds.
-// What a destination is, and how a view is cut, is not this package's: a view is bytes
-// under a name, exactly as the whole object is.
-//
-// # Three things are written, and none is ever rewritten
-//
-//	o/<id>                                                 every object — views, the whole one, the manifest
+//	o/<id>                                                 every object: views, the whole one, the manifest
 //	m/<project>/<env>/<revision>/<manifest>                one revision's manifest
 //	d/<destination>/<project>/<env>/<revision>/<manifest>  that destination is in it
 //
-// THE MANIFEST IS AN OBJECT LIKE ANY OTHER, named by its content: it says which object
-// each destination of one revision holds, and which object is the whole. So one revision
-// of one deployment is one immutable fact, and the two index rows that point at it carry
-// nothing but their keys.
+// The manifest is an object named by its content, saying which object each
+// destination of one revision holds and which is the whole. Nothing is rewritten.
 //
-// NOTHING HERE HAS A WRITER IT CAN COLLIDE WITH. The store is replicated and merges
-// concurrent writes per key with the last writer winning, and Publish's lock is held by
-// one process — so two nodes publishing at once are not ordered by anything. Every key
-// above carries everything that tells its entry apart, the manifest's own content
-// address included, so two publishes write two entries rather than one over the other.
-// Which one is CURRENT is resolved on read, identically on every node: the highest
-// revision, and the lowest manifest id among equals.
+// Publish's lock is per process, so two nodes publishing at once are unordered.
+// Every key carries the manifest's address, so two publishes write two entries, and
+// the current one is resolved on read: highest revision, then lowest manifest id.
+// The revision is zero-padded so byte order is numeric order.
 //
-// THE REVISION IS ZERO-PADDED so byte order is numeric order, which is the only sort a
-// prefix listing has.
+// Replication delivers rows in any order, so a reader that finds the newest revision
+// incomplete reads the newest whole one instead.
 //
-// # A reader tolerates what has not arrived yet
-//
-// Replication delivers rows in no particular order, so an index row can arrive before
-// the manifest it names, and a manifest before the view it names. A reader that finds
-// the newest revision incomplete reads the newest one that is whole instead, and moves
-// on when the rest lands — never an error for a deployment that is merely in flight.
-//
-// # Empty is not unknown
-//
-// A destination a revision lists holds a view even when the view holds nothing: the
-// deployment reached it and placed nothing there, which is how a destination learns a
-// resource was REMOVED from it. A destination a revision does not list is not one of
-// that deployment's, and asking for its view is ErrNoView.
+// A destination a revision lists holds a view even when it is empty: that is how
+// it learns a resource was removed. Asking for an unlisted destination's view is
+// ErrNoView.
 
 var (
 	// ErrNoView is a destination the current revision of a deployment does not list.
@@ -197,9 +176,8 @@ func (r *Register) publishViews(ctx context.Context, p Publication, object Objec
 	if err := r.store.Put(ctx, objectKey(id), body); err != nil {
 		return fmt.Errorf("register: storing the manifest: %w", err)
 	}
-	// THE DESTINATIONS BEFORE THE MANIFEST'S OWN ROW. A destination listing its rows and
-	// a reader resolving the deployment then agree as soon as either can see the
-	// manifest at all.
+	// The destinations before the manifest's own row, so a destination and a reader
+	// agree as soon as either sees the manifest.
 	for d := range m.Views {
 		if err := r.store.Put(ctx, destinationKey(d, p.Project, p.Environment, p.Revision, id), nil); err != nil {
 			return fmt.Errorf("register: assigning %s/%s to %s: %w", p.Project, p.Environment, d, err)
@@ -294,13 +272,9 @@ func (r *Register) Manifest(ctx context.Context, project, environment string) (M
 }
 
 // ResolveView is the read a destination makes: which object it holds of this
-// deployment, now.
-//
-// THE NEWEST REVISION WHOSE VIEW HAS ARRIVED. The newest manifest decides whether the
-// destination is one of the deployment's at all — a destination it does not list is
-// ErrNoView, whatever older revisions said, which is how a deployment withdrawn from a
-// destination stops being served there. Its view not having arrived yet is not that:
-// the destination keeps reading the newest revision it can, and moves on when it lands.
+// deployment, now. The newest manifest decides whether the destination belongs at
+// all (else ErrNoView, which is how a withdrawn deployment stops being served); if
+// its view has not arrived, the newest revision whose view has is read.
 func (r *Register) ResolveView(ctx context.Context, project, environment, destination string) (ViewPointer, error) {
 	if err := checkName(destination, ErrNoDestination); err != nil {
 		return ViewPointer{}, err
@@ -346,12 +320,9 @@ func (r *Register) ResolveView(ctx context.Context, project, environment, destin
 	return ViewPointer{}, fmt.Errorf("%w: %s/%s for %s", ErrNotPublished, project, environment, destination)
 }
 
-// Assigned is every deployment a destination currently holds a view of, sorted.
-//
-// IT IS HOW A DESTINATION LEARNS OF A DEPLOYMENT NEWLY ITS BUSINESS without reading
-// every project: one prefix of its own. A row says the destination was in some revision;
-// whether it still is, is the deployment's current manifest's to say, so a deployment
-// withdrawn from the destination is not listed even though its old rows remain.
+// Assigned is every deployment a destination currently holds a view of, sorted, read
+// from its own prefix. The current manifest decides membership, so a withdrawn
+// deployment is not listed though its old rows remain.
 func (r *Register) Assigned(ctx context.Context, destination string) ([]Assignment, error) {
 	if err := checkName(destination, ErrNoDestination); err != nil {
 		return nil, err

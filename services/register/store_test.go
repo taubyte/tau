@@ -54,10 +54,6 @@ func (f *fakeKV) Put(_ context.Context, key string, v []byte) error {
 	return nil
 }
 
-// TestTheKVStoreSeparatesMissingFromBroken. This is the whole reason
-// pkg/register's Store has three results: a store that answered both with a
-// miss would make Resolve report an environment as never deployed while the
-// swarm was simply unreachable.
 func TestTheKVStoreSeparatesMissingFromBroken(t *testing.T) {
 	db := &fakeKV{rows: map[string][]byte{}}
 	s, err := NewKVStore(db)
@@ -91,13 +87,6 @@ func TestTheKVStoreRefusesNoDatabase(t *testing.T) {
 	require.Error(t, err)
 }
 
-// LIST RETURNS WHOLE KEYS, NOT SUFFIXES, and pkg/register's Environments
-// trims the prefix off what comes back — so if kvdb ever answered relative
-// keys, every deployment name would come back as the whole pointer key and a
-// build would look for a deployment nobody declared.
-//
-// It is checked against a REAL kvdb rather than the fake above, because the
-// fake is this file's own answer to the question and would agree with itself.
 func TestListReturnsWholeKeys(t *testing.T) {
 	factory := kvdbmock.New()
 	t.Cleanup(factory.Close)

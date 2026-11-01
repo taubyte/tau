@@ -12,9 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ctx is the tests' context. Nothing here exercises cancellation — the
-// MemStore never blocks — so one background context reads better than the same
-// two lines in thirty tests.
 var ctx = context.Background()
 
 func newRegister(t *testing.T) (*Register, *MemStore) {
@@ -25,9 +22,6 @@ func newRegister(t *testing.T) (*Register, *MemStore) {
 	return r, store
 }
 
-// TestTheRuntimeReadsAPointerAndKeepsTheObject is the whole shape: publishing
-// moves a small pointer, and the object it names never changes, so a reader that
-// already has it is done.
 func TestTheRuntimeReadsAPointerAndKeepsTheObject(t *testing.T) {
 	r, _ := newRegister(t)
 	compiled := []byte(`{"function":{"checkout":{"execution":{"memory":"32MB"}}}}`)
@@ -45,8 +39,6 @@ func TestTheRuntimeReadsAPointerAndKeepsTheObject(t *testing.T) {
 	require.Equal(t, compiled, got)
 }
 
-// TestTheSameConfigurationIsTheSameObject. Two identical compilations produce
-// one id, which is what makes "I already have this" answerable without asking.
 func TestTheSameConfigurationIsTheSameObject(t *testing.T) {
 	r, store := newRegister(t)
 	compiled := []byte("the same bytes")
@@ -57,8 +49,8 @@ func TestTheSameConfigurationIsTheSameObject(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, first, second)
 
-	// And it was stored once: an object's key is its content. Each revision's manifest
-	// is an object too, and the two say different revisions.
+	// Stored once: an object's key is its content. Each revision's manifest is an object
+	// too.
 	objects := 0
 	for _, k := range store.Keys() {
 		if len(k) > 2 && k[:2] == "o/" {
@@ -72,7 +64,6 @@ func TestTheSameConfigurationIsTheSameObject(t *testing.T) {
 	require.Equal(t, IDOf(compiled), first, "the id is the content address, not a counter")
 }
 
-// TestDifferentConfigurationsAreDifferentObjects.
 func TestDifferentConfigurationsAreDifferentObjects(t *testing.T) {
 	r, _ := newRegister(t)
 
@@ -89,8 +80,6 @@ func TestDifferentConfigurationsAreDifferentObjects(t *testing.T) {
 	require.Equal(t, []byte("memory: 32MB"), old)
 }
 
-// TestEnvironmentsAreIndependent. execution/memory is PerEnv() in the schema, so
-// staging and prod resolving to the same object would defeat the point.
 func TestEnvironmentsAreIndependent(t *testing.T) {
 	r, _ := newRegister(t)
 
@@ -126,8 +115,6 @@ func TestProjectsAreIndependent(t *testing.T) {
 	require.Equal(t, []byte("shop"), got)
 }
 
-// TestALateArrivalCannotRollAnEnvironmentBack. A retry, a node catching up or a
-// replayed message must not put back code somebody already replaced.
 func TestALateArrivalCannotRollAnEnvironmentBack(t *testing.T) {
 	r, _ := newRegister(t)
 
@@ -147,9 +134,6 @@ func TestALateArrivalCannotRollAnEnvironmentBack(t *testing.T) {
 	require.Equal(t, []byte("current"), got, "nothing moved")
 }
 
-// TestARollbackIsAForwardPublish. "Go back to Tuesday's build" is a new
-// revision naming an old object, so the history says what happened rather than
-// having a reversal erase it.
 func TestARollbackIsAForwardPublish(t *testing.T) {
 	r, _ := newRegister(t)
 	tuesday := []byte("the good one")
@@ -187,9 +171,6 @@ func TestAnUnknownObjectIsSaidPlainly(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoObject)
 }
 
-// TestANameMayNotContainTheSeparator. Without this, project "a/prod" with
-// environment "prod" and project "a" with environment "prod/prod" address the
-// same row, and one deploy silently overwrites another project's.
 func TestANameMayNotContainTheSeparator(t *testing.T) {
 	r, _ := newRegister(t)
 
@@ -231,9 +212,6 @@ func TestPublishRefusesWhatCannotBeAddressed(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoEnvironment)
 }
 
-// TestTheObjectIsWrittenBeforeThePointer. A pointer that arrived before its
-// object is an environment that resolves to nothing, which is worse than one
-// that has not been updated yet.
 func TestTheObjectIsWrittenBeforeThePointer(t *testing.T) {
 	store := &orderedStore{MemStore: NewMemStore()}
 	r, err := New(WithStore(store))
@@ -247,8 +225,6 @@ func TestTheObjectIsWrittenBeforeThePointer(t *testing.T) {
 	require.True(t, strings.HasPrefix(last, "p/"), "the pointer went last, got %q", last)
 }
 
-// TestAFailedObjectWriteMovesNothing. Half a publish must not leave an
-// environment pointing at something that is not there.
 func TestAFailedObjectWriteMovesNothing(t *testing.T) {
 	store := &failingStore{MemStore: NewMemStore(), failOn: "o/"}
 	r, err := New(WithStore(store))
@@ -271,9 +247,6 @@ func TestAFailedPointerWriteIsReported(t *testing.T) {
 	require.Contains(t, err.Error(), "shop/prod")
 }
 
-// TestAMalformedPointerIsNotAnUnpublishedOne. Answering ErrNotPublished for a
-// corrupted row would have the runtime report 404 for an environment that has
-// been serving for months, and nothing in that answer names the broken part.
 func TestAMalformedPointerIsNotAnUnpublishedOne(t *testing.T) {
 	r, store := newRegister(t)
 
@@ -286,9 +259,6 @@ func TestAMalformedPointerIsNotAnUnpublishedOne(t *testing.T) {
 	}
 }
 
-// TestAPublishRepairsAMalformedPointer. Reading is where a broken row is
-// reported; writing is where it gets fixed. A publish that refused would leave
-// an environment repairable only by hand.
 func TestAPublishRepairsAMalformedPointer(t *testing.T) {
 	r, store := newRegister(t)
 	require.NoError(t, store.Put(ctx, pointerKey("shop", "prod"), []byte("garbage")))
@@ -301,8 +271,6 @@ func TestAPublishRepairsAMalformedPointer(t *testing.T) {
 	require.Equal(t, uint64(1), p.Revision)
 }
 
-// TestAnUnreachableStoreSaysSo rather than reporting an empty register. The two
-// answers make a caller do opposite things.
 func TestAnUnreachableStoreSaysSo(t *testing.T) {
 	r, err := New(WithStore(&unreadableStore{NewMemStore()}))
 	require.NoError(t, err)
@@ -319,9 +287,6 @@ func TestAnUnreachableStoreSaysSo(t *testing.T) {
 	require.Error(t, err, "a publish cannot check the revision it must beat")
 }
 
-// TestConcurrentPublishesToOneEnvironmentPickOneWinner, and it is the highest
-// revision. The store has no compare-and-set, so the read of the current
-// revision and the write of the new one are one step under the lock.
 func TestConcurrentPublishesToOneEnvironmentPickOneWinner(t *testing.T) {
 	r, _ := newRegister(t)
 
@@ -374,8 +339,6 @@ func TestTheMemStoreDoesNotAliasItsCaller(t *testing.T) {
 	require.Equal(t, []string{"k"}, s.Keys())
 }
 
-// ─────────────────────────── stores for the tests ───────────────────────────
-
 type orderedStore struct {
 	*MemStore
 	mu     sync.Mutex
@@ -423,12 +386,6 @@ func (s *sometimesFailingStore) Put(ctx context.Context, key string, value []byt
 	return s.MemStore.Put(ctx, key, value)
 }
 
-// ── which deployments a project has ──────────────────────────────────────
-
-// IT IS WHAT A CODE BUILD ASKS FIRST. A push to a code repository knows a
-// project and a branch; which deployments that branch feeds is in the compiled
-// object, and reading the compiled object needs the name of a deployment to
-// read it from.
 func TestEnvironments(t *testing.T) {
 	r, _ := newRegister(t)
 
@@ -455,8 +412,6 @@ func TestEnvironments(t *testing.T) {
 	require.Equal(t, []string{"production"}, got)
 }
 
-// A PROJECT NOBODY HAS PUBLISHED IS AN EMPTY LIST AND NOT AN ERROR: the
-// question has an answer and the answer is none.
 func TestEnvironmentsOfAProjectNobodyPublished(t *testing.T) {
 	r, _ := newRegister(t)
 	got, err := r.Environments(ctx, "never-deployed")
@@ -464,9 +419,6 @@ func TestEnvironmentsOfAProjectNobodyPublished(t *testing.T) {
 	require.Empty(t, got)
 }
 
-// A PROJECT WHOSE NAME PREFIXES ANOTHER'S must not collect its deployments —
-// the separator is refused inside a name precisely so this scan can be a prefix
-// scan, and this is the test that says so.
 func TestOneProjectDoesNotCollectAnothersDeployments(t *testing.T) {
 	r, _ := newRegister(t)
 
@@ -494,8 +446,7 @@ func TestOneProjectDoesNotCollectAnothersDeployments(t *testing.T) {
 func TestEnvironmentsRefusesWhatIsNotAProject(t *testing.T) {
 	r, _ := newRegister(t)
 
-	// THE CALLER'S MISTAKE IS NOT DATA LOSS: ErrMalformedPointer is a stored
-	// row that is present and unreadable, and the wire turns it into DataLoss.
+	// An empty project is the caller's mistake, not data loss.
 	_, err := r.Environments(ctx, "")
 	require.ErrorIs(t, err, ErrNoProject)
 
@@ -503,7 +454,6 @@ func TestEnvironmentsRefusesWhatIsNotAProject(t *testing.T) {
 	require.ErrorIs(t, err, ErrSeparator)
 }
 
-// A store that cannot look is not a project with no deployments.
 func TestEnvironmentsWhenTheStoreCannotLook(t *testing.T) {
 	r, err := New(WithStore(unlistable{NewMemStore()}))
 	require.NoError(t, err)

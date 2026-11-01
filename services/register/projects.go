@@ -11,13 +11,8 @@ import (
 	registerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/register/v2"
 )
 
-// projects.go is the project table's wire surface: pkg/register's projects.go
-// over its calls, each a decode, a call and the shared code table.
-//
-// AUTHORIZATION IS NOT HERE either. Whether the claimant may write to the
-// repositories it names is the build frontend's to establish before it calls
-// Link; this service records what an authorized caller asked for. That is the
-// same OSS trust model Publish states.
+// Authorization is not here: whether the claimant may write to the repositories it
+// names is the build frontend's to establish before it calls Link.
 
 func (h *handler) Link(ctx context.Context, req *connect.Request[registerv2.LinkRequest]) (*connect.Response[registerv2.ProjectRecord], error) {
 	rec, err := h.s.reg.LinkProject(ctx, pkgregister.Link{

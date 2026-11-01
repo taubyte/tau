@@ -11,43 +11,27 @@ import (
 	"time"
 )
 
-// projects.go is the register's second table: which project id belongs to
-// which repositories, written when a developer links a project and before
-// anything is ever published for it.
+// The project table: which project id belongs to which repositories, written when a
+// developer links a project. The id is the author's (`id` in project.yaml); this
+// table decides who may publish under it: the configuration repository that claimed
+// it first.
 //
-// THE PROJECT ID IS THE AUTHOR'S. It is the `id` in project.yaml, minted by
-// tcc's generator on the developer's machine; nothing here generates one. What
-// this table decides is who may publish under it: the configuration repository
-// that claimed the id first.
-//
-// IT SHARES A STORE WITH THE PUBLICATIONS AND NOTHING ELSE. Every key below
-// sits under recordsPrefix ("r/"), and no publication key does — publications
-// own o/, p/, h/, c/, m/ and d/. Publish never writes under r/ and nothing in
-// this file writes outside it, so neither table can overwrite or delete a row
-// of the other. The one link between them is a READ: a deploy checks that the
-// compiled project's id is claimed by the repository it was pushed to
-// (services/build/deploy) before it publishes.
-//
-// # The key layout, and why each discriminator is in the path
+// Every key sits under recordsPrefix ("r/"); publications own o/, p/, h/, c/, m/ and
+// d/, so neither table can overwrite the other. A deploy reads this table to check
+// the compiled id is claimed by the repository pushed to (services/build/deploy).
 //
 //	r/claim/<project>/<config>          {at, claimant}  one per (project, config repository)
 //	r/code/<project>/<config>/<code>    {at}            one per code repository a claim attaches
 //	r/repo/<repository>/<project>       {at, config}    one per (repository, project) that claims it
 //	r/mine/<claimant>/<project>         {at, config}    one per (claimant, project): "my projects"
 //
-// <config>, <code>, <repository> and <claimant> are base64url of the
-// normalised value, because a repository key is `host/owner/name` and a
-// separator inside a segment would let two keys spell one row.
+// <config>, <code>, <repository> and <claimant> are base64url of the normalised
+// value, since a repository key `host/owner/name` holds separators.
 //
-// NO ROW IS EVER CONTENDED. The store is a CRDT with last-write-wins per key
-// and no compare-and-set, so two nodes linking the same id from different
-// repositories at the same moment both succeed locally. They write DIFFERENT
-// keys — the claiming repository is in the path — and both claims survive the
-// merge. Which one owns the id is then decided on READ, the same way on every
-// node: the earliest `at`, then the smaller repository key. A claim that can
-// already see an earlier one is refused when it is made; one that could not is
-// simply never the owner on read. The same rule decides a repository two
-// projects attach.
+// No row is contended. The store is last-write-wins per key, so two nodes linking
+// one id from different repositories write different keys and both claims survive.
+// The owner is decided on read, identically everywhere: earliest `at`, then the
+// smaller repository key. The same rule decides a repository two projects attach.
 
 const (
 	recordsPrefix = "r" + sep
@@ -114,9 +98,8 @@ type RepositoryRecord struct {
 	Configures bool
 }
 
-// claimRow is every record's value. Repo is the repository as it was SPELLED
-// when linked — what a forge compares a delivery's repository against — while
-// the key holds the normalised form every comparison here uses.
+// claimRow is every record's value. Repo is the repository as spelled when linked,
+// which a forge compares against; the key holds the normalised form.
 type claimRow struct {
 	At       int64  `json:"at"`
 	Claimant string `json:"claimant,omitempty"`
@@ -161,16 +144,11 @@ func repoKey(repository, project string) string {
 
 func mineKey(claimant, project string) string { return minePrefix + segment(claimant) + sep + project }
 
-// LinkProject claims l.Project for l.Config and attaches l.Code.
+// LinkProject claims l.Project for l.Config and attaches l.Code. A relink keeps the
+// claim's original time, so it never moves a project later in the order.
 //
-// A RELINK IS NOT A NEW CLAIM. A claim already held keeps the time it was
-// first made, so linking again — to attach another code repository, or after
-// a lost response — never moves a project later in the order.
-//
-// The checks before the writes are what turn the common, uncontended case into
-// a clear refusal. They guarantee nothing under concurrency (another node can
-// write between the read and the write); the resolution rule is what makes
-// that outcome safe, and the final read reports it when it is already visible.
+// The checks before the writes give a clear refusal in the uncontended case and
+// guarantee nothing under concurrency; the resolution rule makes that safe.
 func (r *Register) LinkProject(ctx context.Context, l Link) (ProjectRecord, error) {
 	if err := checkName(l.Project, ErrNoProject); err != nil {
 		return ProjectRecord{}, err
@@ -225,9 +203,7 @@ func (r *Register) LinkProject(ctx context.Context, l Link) (ProjectRecord, erro
 		}
 	}
 
-	// THE CLAIM FIRST, so the repository rows below are valid the moment they
-	// land: a repository row only counts when its project's owning claim names
-	// the same configuration repository.
+	// The claim first, so the repository rows are valid the moment they land.
 	write := r.putOnce
 	if l.Replace {
 		write = r.put
@@ -278,8 +254,6 @@ func claimedBy(project, config string) error {
 		ErrProjectClaimed, project, config)
 }
 
-// putOnce writes a row that is absent and leaves one that is present: every
-// row here is a fact about a moment, and rewriting it would move the moment.
 // unlink tombstones what a replacing link no longer holds: every other claim
 // on the id, and each repository the new set leaves out. The store has no
 // Delete, so a row is released by writing it empty, which row reads as absent.
@@ -341,6 +315,8 @@ func (r *Register) put(ctx context.Context, key string, row claimRow) error {
 	return nil
 }
 
+// putOnce writes a row that is absent and leaves one that is present: every
+// row here is a fact about a moment, and rewriting it would move the moment.
 func (r *Register) putOnce(ctx context.Context, key string, row claimRow) error {
 	v, found, err := r.store.Get(ctx, key)
 	if err != nil {
@@ -390,9 +366,7 @@ func (r *Register) project(ctx context.Context, id string) (ProjectRecord, error
 		if !ok {
 			continue
 		}
-		// A CODE REPOSITORY ATTACHED HERE AND OWNED ELSEWHERE IS NOT THIS
-		// PROJECT'S: two projects attaching one repository resolve like two
-		// claims on one id.
+		// A code repository attached here and owned elsewhere is not this project's.
 		held, ok, err := r.repository(ctx, code)
 		if err != nil {
 			return ProjectRecord{}, err

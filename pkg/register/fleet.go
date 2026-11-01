@@ -6,21 +6,14 @@ import (
 	"fmt"
 )
 
-// fleet.go is the one pointer that is not a project's.
-//
-// A FLEET IS A SINGLETON, so its key is not a prefix: there is one cloud, and
-// the row is the cloud's own document. Everything else about it is the project
-// pointer's rule, because the reason is the same one — a value every node must
-// compute with identically needs a revision so that a node which is behind is
-// behind by something it can see.
+// A fleet is a singleton: one cloud, so its key is not a prefix. It carries a
+// revision like a project pointer, so a node that is behind can see it.
 
 const fleetKey = "f"
 
-// PublishFleet moves the cloud's own document forward.
-//
-// THE SAME MONOTONE RULE AS A PROJECT'S, and for a sharper reason: a floor that
-// went backwards on one node and not another would be two nodes computing
-// different placements with no way to tell which was stale.
+// PublishFleet moves the cloud's own document forward, with the same monotone rule
+// as a project: a floor that went backwards on one node would give two nodes
+// different placements.
 func (r *Register) PublishFleet(ctx context.Context, revision uint64, document []byte) (ObjectID, error) {
 	if len(document) == 0 {
 		return "", ErrEmptyObject
@@ -48,13 +41,9 @@ func (r *Register) PublishFleet(ctx context.Context, revision uint64, document [
 	return id, nil
 }
 
-// ResolveFleet is what the cloud currently declares about itself.
-//
-// NOT PUBLISHED IS ErrNotPublished AND NEVER AN EMPTY DOCUMENT, so a reader can
-// tell "this cloud has said nothing, use your default" from "the store cannot
-// be reached, change nothing" — which are opposite instructions, and getting
-// them the wrong way round means either every node picking its own floor or
-// every node freezing on a transient error.
+// ResolveFleet is what the cloud currently declares about itself. Nothing published
+// is ErrNotPublished, never an empty document, so a reader can tell "use your
+// default" from "the store cannot be reached, change nothing".
 func (r *Register) ResolveFleet(ctx context.Context) (Pointer, error) {
 	p, ok, err := r.fleet(ctx)
 	if err != nil {

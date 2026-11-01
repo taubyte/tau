@@ -1,8 +1,6 @@
-// Package dream runs the register on a peer of an in-process mesh.
-//
-// The store is a real replicated kvdb, not a map, because the interesting
-// question a universe can answer about a register is the one a map cannot:
-// whether a project published against one node resolves on another.
+// Package dream runs the register on a peer of an in-process mesh, over a real
+// replicated kvdb, so a universe can show a project published on one node resolving
+// on another.
 package dream
 
 import (
@@ -21,9 +19,7 @@ import (
 // name is the register's kvdb.
 const name = "register"
 
-// rebroadcastSeconds is how often the CRDT under the store re-announces its
-// heads. Five is what every other kvdb in this repo uses; the register has no
-// reason to differ, and differing would be a number to explain.
+// rebroadcastSeconds matches every other kvdb in this repo.
 const rebroadcastSeconds = 5
 
 var logger = log.Logger("tau.register.dream")
@@ -66,12 +62,8 @@ func create(ctx context.Context, h host.Host, node peer.Node) (io.Closer, error)
 	return closer{svc: svc, db: db}, nil
 }
 
-// closer stops the service, then the database it was reading.
-//
-// THE DATABASE IS CLOSED HERE BECAUSE IT WAS OPENED HERE. register.Service
-// takes a store and never closes it — the store is handed in by whatever
-// composed the node and is shared with the services composed beside it — so
-// this is the one place that owns this particular one.
+// closer stops the service, then the database it was reading. The database was
+// opened here; register.Service never closes the store it is handed.
 type closer struct {
 	svc *register.Service
 	db  interface{ Close() }

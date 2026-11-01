@@ -1,59 +1,24 @@
-// Package register is where a compiled project lives and what the runtime reads
-// on every invocation.
-//
-// # The chain this is the end of
+// Package register holds compiled projects and is what the runtime reads on every
+// invocation.
 //
 //	a user writes the v2 schema
-//	  -> tcc COMPILES it
-//	    -> the compiled object is published HERE
+//	  -> tcc compiles it
+//	    -> the compiled object is published here
 //	      -> the runtime reads it here, per resource and per environment
 //
 // Every runtime value that is not node configuration comes from that read.
-// `execution/memory` and `execution/timeout` are Required() and PerEnv() in
-// pkg/tcc/taubyte/v2/schema; they are not operator settings and not constructor
-// arguments, and this is the only place they can come from.
 //
-// v1 called this tns. The name said name resolution; the job is holding what has
-// been published and answering lookups, which is a register.
+// A compiled project is immutable and named by its content, so a reader may keep it
+// forever. A pointer, one per (project, environment), names the object that
+// environment runs plus its revision; it is small and the only thing a hot reader
+// re-reads.
 //
-// # Two things, and only one of them changes
+// A pointer refuses a revision not higher than its own: a late publish cannot roll
+// an environment back, and a rollback is an ordinary publish of the previous object
+// under a new revision.
 //
-// A COMPILED PROJECT IS IMMUTABLE AND NAMED BY ITS CONTENT. Publishing the same
-// configuration twice produces the same id, and an id names one object for all
-// time. So a reader that has an object may keep it forever and never ask again —
-// which is what makes a read on every invocation affordable.
-//
-// A POINTER IS WHAT MOVES. One per (project, environment), naming the object
-// that environment currently runs, plus the revision that put it there. It is
-// small, and it is the only thing a hot reader has to re-read.
-//
-// That split is the whole design. Without it the runtime would re-fetch a whole
-// compiled project to answer "how much memory does this function get", on every
-// call, forever.
-//
-// # A revision never goes backwards
-//
-// Revisions are the deploy counter, and a pointer refuses one that is not higher
-// than the one it holds. Two consequences, both wanted:
-//
-//   - a publish that arrives late — a retry, a node catching up, a replayed
-//     message — cannot roll an environment back to code somebody already
-//     replaced;
-//   - a ROLLBACK is an ordinary publish of the previous object under a NEW
-//     revision, so "go back to what we ran on Tuesday" is a forward operation
-//     and leaves a trail, rather than a reversal that erases what happened.
-//
-// # What is not decided here
-//
-// HOW OBJECTS AND POINTERS ARE STORED OR REPLICATED. This is a state machine
-// over an injected store, so what it means to publish and resolve is a unit
-// test rather than a cluster fixture. The consistency a pointer needs is a
-// deployment question and the store answers it.
-//
-// WHAT IS INSIDE AN OBJECT. The bytes are tcc's compiled output and this package
-// does not parse them. A register that understood the vocabulary would have to
-// change every time the vocabulary did, and every consumer would then be reading
-// this package's idea of the schema instead of the schema.
+// Storage and replication belong to the injected store; the bytes are tcc's output
+// and this package does not parse them.
 package register
 
 import (
@@ -80,28 +45,18 @@ var (
 	ErrStaleRevision = errors.New("register: a revision that does not move forward")
 	ErrSeparator     = errors.New("register: a name may not contain the key separator")
 
-	// ErrHostClaimed is a name another project already answers on.
-	//
-	// FIRST CLAIM WINS, AND A LATER ONE IS REFUSED. Two projects on one cloud
-	// can both write `shop.example.com` into their config, and whichever
-	// deployed second would otherwise take the first one's traffic — which is
-	// a takeover performed by an ordinary deploy. That the claimant owns the
-	// zone at all is a different question and not this package's: it is proved
-	// once, elsewhere, before a name is ever published.
+	// ErrHostClaimed is a name another project already answers on. First claim
+	// wins: otherwise an ordinary deploy could take another project's traffic.
+	// Zone ownership is proved elsewhere, before a name is published.
 	ErrHostClaimed = errors.New("register: another project already answers on this name")
 
-	// ErrMalformedPointer is a pointer row that is present and unreadable.
-	//
-	// IT IS NOT ErrNotPublished, and the difference is the point: a runtime
-	// told "not published" would answer 404 for an environment that has been
-	// serving for months, and nothing in that answer says the store is the
-	// broken part.
+	// ErrMalformedPointer is a pointer row that is present and unreadable, distinct
+	// from ErrNotPublished so a broken store is not reported as a 404.
 	ErrMalformedPointer = errors.New("register: a pointer that cannot be read")
 )
 
 // ObjectID is the content address of a compiled project: the hex sha256 of its
-// bytes. Two identical compilations produce the same id, which is what lets a
-// reader cache one forever.
+// bytes.
 type ObjectID string
 
 // IDOf is the content address of these bytes.
@@ -115,8 +70,7 @@ type Pointer struct {
 	// Object is the compiled project in force.
 	Object ObjectID
 
-	// Revision is the deploy counter. It only ever increases — see the package
-	// doc on why a rollback is a forward publish.
+	// Revision is the deploy counter. It only ever increases.
 	Revision uint64
 }
 
@@ -142,25 +96,13 @@ type Store interface {
 	Get(ctx context.Context, key string) ([]byte, bool, error)
 	Put(ctx context.Context, key string, value []byte) error
 
-	// List is every key under a prefix, in any order.
-	//
-	// IT IS A PREFIX AND NOT A QUERY, which is the whole of what this state
-	// machine ever asks of a store: the key grammar puts a project's pointers
-	// under one prefix on purpose, so "which deployments does this project
-	// have" is a scan of one range rather than an index somebody has to keep
-	// in step with the pointers.
-	//
-	// A store that cannot enumerate is not usable here, and that is a
-	// deliberate widening: the alternative was a second index of environment
-	// names beside the pointers, written by the same writer, which is one more
-	// thing that can disagree with the thing it describes.
+	// List is every key under a prefix, in any order. The key grammar puts a
+	// project's pointers under one prefix so its deployments are one range scan.
 	List(ctx context.Context, prefix string) ([]string, error)
 }
 
-// keys. THE SEPARATOR MAY NOT APPEAR IN A NAME, and that is checked rather than
-// assumed: a project called "a/prod" and an environment called "prod" would
-// otherwise address the same row as project "a", environment "prod/prod", and
-// one deploy would silently overwrite another project's.
+// The separator may not appear in a name, and that is checked: otherwise project
+// "a/prod", environment "prod" and project "a", environment "prod/prod" share a row.
 const (
 	sep           = "/"
 	objectPrefix  = "o" + sep
@@ -170,22 +112,12 @@ const (
 )
 
 // guarded is the injected store with the key grammar enforced on the way in.
-//
-// EVERY KEY HERE IS A FIXED PREFIX PLUS SOMEBODY ELSE'S TEXT -- a fqdn out of a
-// Host header, a project and an environment out of a publication -- and the
-// stores this runs over put the key through ds.NewKey, which is path.Clean. So
-// a name holding ".." collapsed the prefix away before the row was touched:
+// Keys are a fixed prefix plus outside text, and the stores clean keys with
+// path.Clean, so ".." would escape the prefix:
 //
 //	hostKey("../p/victim/prod")  ->  "h/../p/victim/prod"  ->  /p/victim/prod
 //
-// which READS another project's pointer on a request whose Host header said so,
-// and WRITES one on a publish whose project declared that name. A legitimate
-// fqdn, project or environment holds no such segment, so nothing addressable is
-// lost by refusing it.
-//
-// IT IS ONE WRAPPER AND NOT A CHECK IN EACH BUILDER. There are four builders
-// and fourteen call sites; a rule spelled at each of them is a rule the
-// fifteenth forgets.
+// No legitimate fqdn, project or environment holds such a segment.
 type guarded struct{ Store }
 
 func (g guarded) Get(ctx context.Context, key string) ([]byte, bool, error) {
@@ -202,10 +134,8 @@ func (g guarded) Put(ctx context.Context, key string, value []byte) error {
 	return g.Store.Put(ctx, key, value)
 }
 
-// List checks the prefix WITHOUT its trailing separator, which is load-bearing
-// rather than cosmetic: "p/shop/" is how a scan says shop's deployments and not
-// shopX's, and path.Clean drops that slash. Trimming one before asking keeps
-// the boundary the caller meant while still refusing a prefix that traverses.
+// List checks the prefix without its trailing separator: "p/shop/" scopes the
+// scan away from "p/shopX", and path.Clean would drop that slash.
 func (g guarded) List(ctx context.Context, prefix string) ([]string, error) {
 	if err := storekey.Canonical(strings.TrimSuffix(prefix, sep)); err != nil {
 		return nil, err
@@ -227,10 +157,8 @@ func claimsKey(project, environment string) string {
 	return claimsPrefix + project + sep + environment
 }
 
-// owner is the value under a host key. An EMPTY value is an unclaimed name
-// rather than a missing row: the store has Get and Put and no Delete, so
-// releasing a name is writing a tombstone over it. That is also the honest
-// shape for a replicated store, where a deletion is a tombstone anyway.
+// owner is the value under a host key. An empty value is an unclaimed name: the
+// store has no Delete, so releasing a name writes a tombstone.
 func owner(project, environment string) string { return project + sep + environment }
 
 // Register holds compiled projects and what each environment points at.
@@ -293,12 +221,8 @@ func WithStore(s Store) Option {
 	}
 }
 
-// Publish stores a compiled project and points an environment at it.
-//
-// IT IS TWO WRITES AND THE ORDER MATTERS. The object goes first, so a reader
-// that sees a pointer can always fetch what it names. A pointer that arrived
-// before its object would be an environment that resolves to nothing, which is
-// worse than one that has not been updated yet.
+// Publish stores a compiled project and points an environment at it. The object
+// goes first, so a reader that sees a pointer can always fetch what it names.
 func (r *Register) Publish(ctx context.Context, p Publication) (ObjectID, error) {
 	if err := checkName(p.Project, ErrNoProject); err != nil {
 		return "", err
@@ -316,11 +240,8 @@ func (r *Register) Publish(ctx context.Context, p Publication) (ObjectID, error)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// A MALFORMED POINTER DOES NOT BLOCK A PUBLISH. Reading is where a broken
-	// row must be reported; writing is where it gets fixed. Refusing here
-	// would leave an environment that can only be repaired by hand, and the
-	// incoming revision is authoritative either way — there is nothing to
-	// compare it against.
+	// A malformed pointer does not block a publish: writing is where it gets fixed,
+	// and the incoming revision has nothing to compare against.
 	current, ok, err := r.pointer(ctx, project, environment)
 	if err != nil && !errors.Is(err, ErrMalformedPointer) {
 		return "", err
@@ -335,16 +256,12 @@ func (r *Register) Publish(ctx context.Context, p Publication) (ObjectID, error)
 	if err := r.store.Put(ctx, objectKey(id), compiled); err != nil {
 		return "", fmt.Errorf("register: storing the compiled project: %w", err)
 	}
-	// THE NAMES BEFORE THE POINTER, for the same reason as the object: a
-	// pointer that moved while the names still sent traffic somewhere else
-	// would be a deploy that took effect for some requests and not others. A
-	// refused claim leaves the environment on the revision it was already
-	// running.
+	// The names before the pointer, so a deploy does not take effect for some requests
+	// and not others. A refused claim leaves the environment on its current revision.
 	if err := r.claim(ctx, project, environment, p.Hosts); err != nil {
 		return "", err
 	}
-	// THE VIEWS BEFORE THE POINTER too: a pointer that moved ahead of its manifest
-	// would be a revision its destinations could not read yet.
+	// The views before the pointer too, so its destinations can read the revision.
 	if err := r.publishViews(ctx, p, id); err != nil {
 		return "", err
 	}
@@ -372,9 +289,7 @@ func (r *Register) claim(ctx context.Context, project, environment string, hosts
 		}
 	}
 
-	// EVERY CLAIM IS CHECKED BEFORE ANY IS WRITTEN. A publish that took half
-	// the names and then hit one somebody else holds would leave the cloud
-	// answering for a deploy that did not happen.
+	// Every claim is checked before any is written, so a refusal takes no names.
 	for _, h := range sortedKeys(wanted) {
 		at, found, err := r.store.Get(ctx, hostKey(h))
 		if err != nil {
@@ -414,12 +329,8 @@ func (r *Register) claims(ctx context.Context, project, environment string) ([]s
 	return strings.Split(string(b), "\n"), nil
 }
 
-// ResolveHost is the read a gateway makes: a request arrived for this name, so
-// whose is it.
-//
-// IT IS CASE-INSENSITIVE because DNS is, and a Host header carries whatever the
-// client typed. A table keyed by what the author happened to write would miss
-// half the requests for the same name.
+// ResolveHost is the read a gateway makes: whose is this name. It is
+// case-insensitive, as DNS is.
 func (r *Register) ResolveHost(ctx context.Context, fqdn string) (project, environment string, err error) {
 	fqdn = strings.ToLower(strings.TrimSpace(fqdn))
 	if fqdn == "" {
@@ -441,10 +352,7 @@ func (r *Register) ResolveHost(ctx context.Context, fqdn string) (project, envir
 	return project, environment, nil
 }
 
-// Publication is one publish. It is a value rather than five parameters because
-// the names an environment answers on are part of what a deploy declares, and a
-// sixth positional argument is where a caller starts passing them in the wrong
-// order.
+// Publication is one publish.
 type Publication struct {
 	Project     string
 	Environment string
@@ -453,28 +361,18 @@ type Publication struct {
 	// Compiled is tcc's output, opaque here.
 	Compiled []byte
 
-	// Hosts are the fully-qualified names this environment answers on.
-	//
-	// THE REGISTER DOES NOT DERIVE THEM, and that is the same rule as not
-	// parsing the object: a name is the label a resource chose, the zone that
-	// answers for it and — for a generated one — the cloud's own fqdn, which is
-	// not in the config at all. Deriving them here would put the vocabulary and
-	// the operator's cloud name inside a package that is meant to hold neither.
+	// Hosts are the fully-qualified names this environment answers on. The register
+	// does not derive them: that needs the vocabulary and the cloud's fqdn.
 	Hosts []string
 
 	// Views is the object each destination holds of this revision, opaque here as
-	// Compiled is. NIL IS A PUBLICATION NOBODY CUT: every destination reads the whole
+	// Compiled is. Nil is a publication nobody cut: every destination reads the whole
 	// object. An empty, non-nil list is a deployment cut for no destination at all.
-	// See views.go.
 	Views []View
 }
 
-// Resolve is the read the runtime makes: what does this environment run, and
-// under which revision.
-//
-// It returns the POINTER and not the object, because the pointer is the part
-// that changes. A caller that already holds the object this names has nothing
-// left to do — that is the whole reason objects are content-addressed.
+// Resolve is the read the runtime makes: what does this environment run, and under
+// which revision. It returns the pointer, since the object it names is immutable.
 func (r *Register) Resolve(ctx context.Context, project, environment string) (Pointer, error) {
 	if err := checkName(project, ErrNoProject); err != nil {
 		return Pointer{}, err
@@ -492,23 +390,12 @@ func (r *Register) Resolve(ctx context.Context, project, environment string) (Po
 	return p, nil
 }
 
-// Object is one compiled project by its content address.
 // Environments is every deployment of a project that has ever been published,
-// sorted.
-//
-// IT IS WHAT A CODE BUILD ASKS FIRST. A push to a code repository knows a
-// project and a branch; which deployments that branch feeds is in the compiled
-// object, and reading the compiled object needs the name of a deployment to
-// read it from. This is that name.
-//
-// A project nobody has published is an empty list and not an error: the
-// question "which deployments does it have" has an answer, and the answer is
-// none.
+// sorted. A code build asks it first: which deployments a branch feeds is in the
+// compiled object, which is read through a deployment name. A project nobody has
+// published is an empty list.
 func (r *Register) Environments(ctx context.Context, project string) ([]string, error) {
-	// THE CALLER'S MISTAKE IS NOT DATA LOSS. ErrMalformedPointer is a stored
-	// row that is present and unreadable, and reporting a bad argument with it
-	// would tell a caller who sent an empty project that this register had lost
-	// something.
+	// An empty project is the caller's mistake, not ErrMalformedPointer's data loss.
 	if project == "" {
 		return nil, ErrNoProject
 	}
@@ -524,22 +411,13 @@ func (r *Register) Environments(ctx context.Context, project string) ([]string, 
 
 	out := make([]string, 0, len(keys))
 	for _, key := range keys {
-		// THE PREFIX IS CUT WHEREVER IT IS AND NOT TRIMMED FROM THE FRONT. A
-		// store answers a listing with the key it holds, which it normalised
-		// into a datastore path — so what comes back is `/pointers/shop/prod`
-		// and a front-anchored trim of `pointers/shop/` matches nothing, leaves
-		// the whole key, and the separator check below then drops every
-		// environment this project has. That is this function returning empty
-		// on a real store while its test passed against a double that answered
-		// the un-normalised key.
+		// Cut wherever the prefix is: a store answers with its own normalised key
+		// (`/pointers/shop/prod`), which a front-anchored trim would miss.
 		_, name, found := strings.Cut(key, prefix)
 		if !found {
 			continue
 		}
-		// A KEY WITH A SEPARATOR LEFT IN IT IS NOT ONE OF THIS PROJECT'S. The
-		// grammar refuses the separator inside a name, so anything still
-		// carrying one under this prefix belongs to a longer project name that
-		// happens to start the same way.
+		// A separator left in the name means a longer project name sharing this prefix.
 		if name == "" || strings.Contains(name, sep) {
 			continue
 		}
@@ -549,6 +427,7 @@ func (r *Register) Environments(ctx context.Context, project string) ([]string, 
 	return out, nil
 }
 
+// Object is one compiled project by its content address.
 func (r *Register) Object(ctx context.Context, id ObjectID) ([]byte, error) {
 	if id == "" {
 		return nil, ErrNoObject
@@ -591,9 +470,8 @@ func checkName(s string, empty error) error {
 	return nil
 }
 
-// A pointer is stored as "<revision> <object>": two fields, no library, and
-// readable in a store dump. It is not protobuf because nothing outside this
-// package decodes it — what crosses the wire is the RPC surface, not this row.
+// A pointer is stored as "<revision> <object>". Nothing outside this package
+// decodes it.
 func encodePointer(p Pointer) []byte {
 	return fmt.Appendf(nil, "%d %s", p.Revision, p.Object)
 }
@@ -652,8 +530,7 @@ func (s *MemStore) Put(_ context.Context, key string, value []byte) error {
 	return nil
 }
 
-// Keys is every key held, sorted. It exists for tests and for a dump; nothing
-// in this package's own logic iterates.
+// Keys is every key held, sorted.
 func (s *MemStore) Keys() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
