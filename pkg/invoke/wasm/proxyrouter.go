@@ -12,21 +12,9 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// proxyrouter.go is the host half of `taubyte:proxy-router` — the function a
-// proxy names instead of a fixed forward.
-//
-// # It is handed bytes, where a gateway router is handed a request
-//
-// That is the whole difference between the two worlds, and it is why they are
-// two. A raw connection carries a peer address and then bytes; everything a
-// gateway router reads off a parsed request is this one's to recognise.
-//
-// # Pooled, because the whole prefix comes back every time
-//
-// A router that had to remember a connection between calls would have to be
-// pinned to it. Handing the accumulated prefix over on each call costs a copy
-// and buys an ordinary pooled instance that any warm worker can run — the same
-// trade transformer.go and router.go make.
+// proxyrouter.go is the host half of `taubyte:proxy-router`, the function a proxy
+// names instead of a fixed forward. It is handed a peer address and bytes, not a
+// request; the whole prefix comes back on every call, so instances stay pooled.
 
 // WorldProxyRouter is `implements: proxy-router`.
 const WorldProxyRouter = specs.WorkloadBlockImplementsProxyRouter
@@ -41,10 +29,9 @@ const (
 	directRefuse
 )
 
-// ErrNotAProxyRouter is a component that answered with a shape this world does
-// not have. It is an error rather than a default because every default is
-// wrong: forwarding invents a destination, and closing tells a client the
-// service refused it when what happened is that the router is broken.
+// ErrNotAProxyRouter is a component answering in a shape this world lacks; an
+// error, since forwarding would invent a destination and closing would blame the
+// service.
 var ErrNotAProxyRouter = errors.New("wasm: that component did not answer as a proxy router")
 
 // Direct asks this instance where one connection should go.
@@ -53,8 +40,7 @@ func (f *function) Direct(ctx context.Context, conn *invoke.Connection, peeked [
 		return nil, fmt.Errorf("%w: this is a %s and directs nothing", ErrUnsupportedWorld, f.world)
 	}
 	if peeked == nil {
-		// A nil list is an empty one and not a null: the world says list<u8>,
-		// which has no absent case.
+		// A nil list is empty: list<u8> has no absent case.
 		peeked = []byte{}
 	}
 
@@ -68,9 +54,8 @@ func (f *function) Direct(ctx context.Context, conn *invoke.Connection, peeked [
 	return directionFrom(out[0], f.export)
 }
 
-// connectionValue lowers the world's `connection` record. It is shared with
-// proxytransformer.go, whose world declares the same record for the same
-// reason: one function can serve several proxies and has to tell them apart.
+// connectionValue lowers the `connection` record, shared with
+// proxytransformer.go.
 func connectionValue(c *invoke.Connection) component.Value {
 	if c == nil {
 		c = &invoke.Connection{}
@@ -116,8 +101,7 @@ func directionFrom(value component.Value, export string) (*invoke.Direction, err
 			return nil, fmt.Errorf("%w: %s asked for more bytes without saying how many", ErrNotAProxyRouter, export)
 		}
 		if want == 0 {
-			// A ROUTER THAT WANTS NO MORE THAN IT HAS WILL NEVER DECIDE, and
-			// the loop that honoured it would spin on the same prefix forever.
+			// A router asking for no more than it has would never decide.
 			return nil, fmt.Errorf("%w: %s asked for more bytes and named none", ErrNotAProxyRouter, export)
 		}
 		return &invoke.Direction{More: want}, nil

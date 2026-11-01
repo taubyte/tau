@@ -21,8 +21,6 @@ import (
 
 const hello = `export default { fetch(request) { return new Response("hello " + request.method); } };`
 
-// TestBothModesServe: every engine mode runs the same handler, and the tier
-// says which one it runs.
 func TestBothModesServe(t *testing.T) {
 	modes := []js.Mode{js.ModeBytecode}
 	if engine.NativeSupported() {
@@ -65,7 +63,6 @@ func TestNewRefusesWhatItCannotUse(t *testing.T) {
 	require.ErrorIs(t, err, js.ErrNoRoom)
 }
 
-// TestStartRefusesBeforeFetchingAnything what this tier cannot run.
 func TestStartRefusesBeforeFetchingAnything(t *testing.T) {
 	f := newFixture(t, hello)
 	cases := map[string]struct {
@@ -122,8 +119,6 @@ func TestStartSaysWhenTheAssetCannotBeRead(t *testing.T) {
 	require.ErrorContains(t, err, "the disk went away")
 }
 
-// TestUnservedGrantsAreSaidOutLoud: no capability reaches JS yet, so a
-// function that declared one is told its env is empty, kind by kind.
 func TestUnservedGrantsAreSaidOutLoud(t *testing.T) {
 	var said []string
 	f := newFixture(t, hello, js.WithWarn(func(format string, args ...any) {
@@ -139,8 +134,6 @@ func TestUnservedGrantsAreSaidOutLoud(t *testing.T) {
 	require.Equal(t, []string{f.spec.Name, "cache, storage"}, said[1:])
 }
 
-// TestAnEntryWithoutAHandlerIsRefusedByName at Start, rather than failing on
-// the first request.
 func TestAnEntryWithoutAHandlerIsRefusedByName(t *testing.T) {
 	cases := map[string]struct {
 		worker string
@@ -173,7 +166,6 @@ func TestAnEntryWithoutAHandlerIsRefusedByName(t *testing.T) {
 	require.Equal(t, "named", string(serve(t, f.start(), get("/")).Body), "execution/call names the export")
 }
 
-// TestAnEntryThatDoesNotEvaluateIsRefused, naming the file and the reason.
 func TestAnEntryThatDoesNotEvaluateIsRefused(t *testing.T) {
 	cases := map[string]struct{ worker, want string }{
 		"a syntax error":    {`export default {`, "SyntaxError"},
@@ -190,8 +182,6 @@ func TestAnEntryThatDoesNotEvaluateIsRefused(t *testing.T) {
 	}
 }
 
-// TestAModuleThatNeverFinishesLoadingHitsTheDeadline: a cold start is bounded
-// as a request is, top-level await included.
 func TestAModuleThatNeverFinishesLoadingHitsTheDeadline(t *testing.T) {
 	for name, worker := range map[string]string{
 		"a top-level loop":  `for (;;) {} export default {};`,
@@ -211,9 +201,6 @@ func TestAModuleThatNeverFinishesLoadingHitsTheDeadline(t *testing.T) {
 	require.Equal(t, "awaited", string(serve(t, f.start(), get("/")).Body), "a top-level await that settles loads")
 }
 
-// TestARealmTooSmallToStartIsRefused by name, with the size it was given, and
-// a bundle that does not fit its arena is refused as out of memory. Neither
-// hands back an instance.
 func TestARealmTooSmallToStartIsRefused(t *testing.T) {
 	f := newFixture(t, hello)
 	f.spec.Memory = 256 << 10
@@ -229,8 +216,6 @@ func TestARealmTooSmallToStartIsRefused(t *testing.T) {
 	require.True(t, inst == nil)
 }
 
-// TestModulesResolveInsideTheArchive: relative, parent and root-anchored
-// imports between the archive's own modules.
 func TestModulesResolveInsideTheArchive(t *testing.T) {
 	f := newFixtureFiles(t, map[string]string{
 		"worker.js": `
@@ -244,8 +229,6 @@ export default { fetch() { return new Response(greet() + mark); } };`,
 	require.Equal(t, "hi there!", string(serve(t, f.start(), get("/")).Body))
 }
 
-// TestNothingOfTheHostReachesTheRealm: no process, no require, and an import
-// of a built-in or a package is a TypeError naming it.
 func TestNothingOfTheHostReachesTheRealm(t *testing.T) {
 	f := newFixtureFiles(t, map[string]string{
 		"worker.js": `
@@ -292,8 +275,6 @@ func manifest(entry string, format int) []byte {
 	return []byte(`{"format":` + string(rune('0'+format)) + `,"entry":"` + entry + `"}`)
 }
 
-// TestACorruptArchiveIsRefusedByName, each way an artifact can fail to be
-// one, before any realm is started for it.
 func TestACorruptArchiveIsRefusedByName(t *testing.T) {
 	worker := []byte(hello)
 	good := zipOf(t, map[string][]byte{archive.ManifestName: manifest("worker.js", 1), "worker.js": worker}, zip.Deflate)
@@ -353,8 +334,6 @@ func TestAnArchiveLargerThanTheCeilingIsRefused(t *testing.T) {
 	require.ErrorContains(t, err, "unpacks to more than")
 }
 
-// TestAnArchiveFromAnotherToolStillReads: directory entries are skipped, and
-// a member named twice is refused rather than one of them silently winning.
 func TestAnArchiveFromAnotherToolStillReads(t *testing.T) {
 	var buf bytes.Buffer
 	z := zip.NewWriter(&buf)
@@ -390,8 +369,6 @@ func TestAnArchiveFromAnotherToolStillReads(t *testing.T) {
 	require.ErrorContains(t, err, `"worker.js" twice`)
 }
 
-// TestACompiledFormShipsBesideItsSource: stage 1 runs the source, and the
-// `.warp` slot is accepted as the layout defines it.
 func TestACompiledFormShipsBesideItsSource(t *testing.T) {
 	prog, err := engine.Compile("worker.js", `1 + 1`)
 	require.NoError(t, err)

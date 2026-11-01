@@ -15,10 +15,8 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// EVERY TEST HERE RUNS A REAL COMPONENT, built by a real toolchain from
-// wit/handler.wit (fixtures/handler). That is the only thing that can show the
-// host's lowering and lifting agree with generated bindings — a fake would
-// agree with whatever this package assumed.
+// Every test runs a real component built from wit/handler.wit (fixtures/handler), so
+// lowering and lifting agree with generated bindings.
 
 // handler is the fixture: it echoes the path in a header, prefixes any header
 // it was sent, answers a status derived from the method, and returns the method
@@ -65,11 +63,6 @@ func start(t *testing.T, r *wasm.Runtime, spec invoke.Spec) invoke.Instance {
 	return instance
 }
 
-// ── the round trip ───────────────────────────────────────────────────────
-
-// A REQUEST GOES IN AND A RESPONSE COMES BACK, through generated bindings, with
-// every field of the world exercised: two strings, a list of records, and a
-// list of bytes, in both directions.
 func TestAComponentAnswersARequest(t *testing.T) {
 	instance := start(t, tier(t, handler(t)), invoke.Spec{Name: "shop/prod/function/checkout"})
 
@@ -87,9 +80,6 @@ func TestAComponentAnswersARequest(t *testing.T) {
 	require.Equal(t, []string{"abc"}, res.Headers["x-echo-x-trace"], "and a header the caller sent")
 }
 
-// THE COMPILER CAN BE TURNED OFF, and the same component answers the same way
-// interpreted. An unset mode is the compiler; a mode this tier does not know is
-// refused when the tier is built, not at the first request.
 func TestTheEngineModeIsTheOperators(t *testing.T) {
 	require.Equal(t, wasm.ModeCompiler, tier(t, handler(t)).Mode())
 
@@ -105,10 +95,6 @@ func TestTheEngineModeIsTheOperators(t *testing.T) {
 	require.ErrorContains(t, err, `"jit"`)
 }
 
-// A SPEC FOR ANOTHER TIER IS REFUSED BY NAME, at every way into this one. The
-// pool never hands one here, but a guard, a validator, a resolver and a request
-// authorizer are asked through the tier directly, and a function's runtime is
-// the author's to choose.
 func TestAnotherTiersSpecIsRefusedByName(t *testing.T) {
 	r := tier(t, handler(t))
 	spec := invoke.Spec{Runtime: "js", Name: "shop/prod/function/checkout", Artifact: "bafycomponent"}
@@ -134,9 +120,6 @@ func TestAnotherTiersSpecIsRefusedByName(t *testing.T) {
 	start(t, r, spec)
 }
 
-// THE STATUS IS THE GUEST'S, so a test can tell a real dispatch from a
-// constant — and a guest that fails does so by returning one rather than by
-// trapping, because a trap takes the instance with it.
 func TestTheGuestDecidesTheStatus(t *testing.T) {
 	instance := start(t, tier(t, handler(t)), invoke.Spec{Name: "fn"})
 
@@ -152,9 +135,6 @@ func TestTheGuestDecidesTheStatus(t *testing.T) {
 	}
 }
 
-// A HEADER MAY APPEAR MORE THAN ONCE, which is why the world carries a list of
-// pairs rather than a map — Set-Cookie is the example that breaks every
-// map-shaped API.
 func TestAHeaderMayRepeat(t *testing.T) {
 	instance := start(t, tier(t, handler(t)), invoke.Spec{Name: "fn"})
 
@@ -166,8 +146,6 @@ func TestAHeaderMayRepeat(t *testing.T) {
 	require.Equal(t, []string{"a=1", "b=2"}, res.Headers["x-echo-set-cookie"])
 }
 
-// An empty request is a valid one: a pubsub delivery has no method and no path,
-// and the world says so by making them strings rather than an option.
 func TestAnEmptyRequest(t *testing.T) {
 	instance := start(t, tier(t, handler(t)), invoke.Spec{Name: "fn"})
 
@@ -182,10 +160,6 @@ func TestAnEmptyRequest(t *testing.T) {
 	require.Equal(t, 204, res.Status)
 }
 
-// ── which export ─────────────────────────────────────────────────────────
-
-// THE EXPORT IS NAMED BY THE AUTHOR, so a project with two functions in one
-// component is two exports rather than two components.
 func TestTheConfigurationNamesTheExport(t *testing.T) {
 	r := tier(t, handler(t))
 
@@ -197,9 +171,7 @@ func TestTheConfigurationNamesTheExport(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 200, res.Status)
 
-	// A configuration that names none falls back to the world's own export, so
-	// a component built straight from handler.wit runs without the config
-	// repeating what the world already says.
+	// No export configured falls back to the world's own.
 	require.Equal(t, "handle", wasm.DefaultExport)
 
 	// An export the component does not have is named, rather than a nil three
@@ -215,16 +187,9 @@ func TestTheConfigurationNamesTheExport(t *testing.T) {
 	require.ErrorContains(t, err, "not_an_export")
 }
 
-// ── the sandbox ──────────────────────────────────────────────────────────
-
-// A GUEST GETS THE RESOURCE'S VARIABLES AND NOTHING ELSE, which is the same
-// posture the container tier's restricted egress states from the other
-// direction: there a firewall takes reach away, here there was never any.
 func TestTheEnvironmentIsTheResourcesOwn(t *testing.T) {
-	// The fixture does not read the environment, so what this proves is that
-	// declaring one neither fails instantiation nor changes the answer — the
-	// wiring is exercised by the guest that does read it, and the shape is
-	// asserted where it is built.
+	// The fixture ignores the environment; this only proves declaring one changes
+	// nothing.
 	instance := start(t, tier(t, handler(t)), invoke.Spec{
 		Name: "fn",
 		Env:  map[string]string{"API_BASE": "https://api.example.com", "REGION": "eu"},
@@ -235,9 +200,6 @@ func TestTheEnvironmentIsTheResourcesOwn(t *testing.T) {
 	require.Equal(t, 200, res.Status)
 }
 
-// A GUEST THAT WILL NOT STOP IS STOPPED. The pool bounds a request with a
-// context, and without close-on-context-done a guest in a loop would hold the
-// goroutine until the process ended.
 func TestACancelledContextEndsTheCall(t *testing.T) {
 	instance := start(t, tier(t, handler(t)), invoke.Spec{Name: "fn"})
 
@@ -248,11 +210,6 @@ func TestACancelledContextEndsTheCall(t *testing.T) {
 	require.Error(t, err, "a call under a dead context does not run")
 }
 
-// ── the memory ceiling ───────────────────────────────────────────────────
-
-// A CEILING IS ROUNDED UP TO WHOLE PAGES, because a limit below what the author
-// asked for is a workload that fails for a reason the configuration does not
-// state.
 func TestTheMemoryCeilingIsHonoured(t *testing.T) {
 	// 32MB is the fixture project's own function limit, and a component runs
 	// inside it.
@@ -266,8 +223,6 @@ func TestTheMemoryCeilingIsHonoured(t *testing.T) {
 	_, err = tier(t, handler(t)).Start(t.Context(), invoke.Spec{Artifact: "bafycomponent", Memory: 1})
 	require.Error(t, err, "a component whose minimum memory exceeds one page cannot instantiate")
 }
-
-// ── what it refuses ──────────────────────────────────────────────────────
 
 func TestWhatItRefuses(t *testing.T) {
 	_, err := wasm.New(nil)
@@ -297,10 +252,6 @@ func TestWhatItRefuses(t *testing.T) {
 	require.ErrorContains(t, err, "instantiating")
 }
 
-// ── it is a pool tier ────────────────────────────────────────────────────
-
-// Scale-to-zero, warm reuse and the concurrency rule are the pool's, and this
-// package decides none of them.
 func TestItIsAPoolTier(t *testing.T) {
 	r := tier(t, handler(t))
 
@@ -325,9 +276,7 @@ func TestItIsAPoolTier(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, pool.Warm(spec))
 
-	// A NEW REVISION IS A NEW INSTANCE, which is what makes a deploy a deploy:
-	// the old one drains on its own idle timer and nothing reaches into a
-	// running guest to swap its code.
+	// A new revision is a new instance.
 	next := spec
 	next.Revision = "rev2"
 	_, err = pool.Do(t.Context(), next, &invoke.Request{Method: "GET"})
@@ -336,10 +285,6 @@ func TestItIsAPoolTier(t *testing.T) {
 	require.Equal(t, 1, pool.Warm(next))
 }
 
-// A GUEST'S OWN OUTPUT GOES WHERE THE COMPOSER SAYS, per workload — a tier is
-// built once and runs many, so a single writer handed in at construction would
-// interleave every function on the node into one stream with nothing saying
-// which wrote what.
 func TestAGuestsOutputIsRoutedPerWorkload(t *testing.T) {
 	var asked []string
 	r, err := wasm.New(&store{content: handler(t)},
@@ -358,8 +303,6 @@ func TestAGuestsOutputIsRoutedPerWorkload(t *testing.T) {
 	require.Equal(t, []string{"shop/prod/function/checkout", "shop/prod/function/reserve"}, asked)
 }
 
-// A sink that answers nil discards, which is what a node with nowhere to put a
-// guest's output does rather than holding a buffer nothing reads.
 func TestASinkThatAnswersNothing(t *testing.T) {
 	r, err := wasm.New(&store{content: handler(t)},
 		wasm.WithOutput(func(invoke.Spec) (io.Writer, io.Writer) { return nil, nil }))
@@ -375,19 +318,11 @@ func TestASinkThatAnswersNothing(t *testing.T) {
 	require.Equal(t, 200, res.Status)
 }
 
-// THE HOST INTERFACE IS CHECKED BEFORE ANYTHING IS FETCHED. A component built
-// as an authorizer instantiates perfectly well and is then called with a
-// handler's signature — it would not fail cleanly, it would be handed bytes it
-// reads as something else, which is the failure `implements` exists to prevent.
 func TestAWorldThisTierDoesNotServe(t *testing.T) {
 	r := tier(t, handler(t))
 
-	// THE POOLED WORLDS ARE NOT AMONG THESE. Both transformers and both
-	// routers are started like a handler, because each runs per request, per
-	// connection or per chunk and none of their answers can be kept. What
-	// Start refuses is the worlds with their own doors: an authorizer and an
-	// instance validator are asked once and their answers ARE kept, so each
-	// instantiates per question through its own entry point.
+	// Start refuses the worlds with their own entry points (authorizer, instance
+	// validator); the pooled ones start like a handler.
 	for _, world := range []string{"authorizer", "instance-validator"} {
 		_, err := r.Start(t.Context(), invoke.Spec{
 			Name:     "shop/prod/function/gate",
@@ -398,8 +333,7 @@ func TestAWorldThisTierDoesNotServe(t *testing.T) {
 		require.ErrorContains(t, err, world)
 	}
 
-	// `handler` is served, and so is a resource that says nothing — the schema
-	// defaults it, so an empty setting is the default rather than an absence.
+	// `handler` is served, and so is an empty setting, which the schema defaults.
 	for _, world := range []string{wasm.WorldHandler, ""} {
 		instance, err := r.Start(t.Context(), invoke.Spec{
 			Artifact: "bafycomponent",
@@ -410,7 +344,6 @@ func TestAWorldThisTierDoesNotServe(t *testing.T) {
 	}
 }
 
-// THE ENTRYPOINT IS THE AUTHOR'S, and it arrives as the vocabulary spells it.
 func TestTheEntrypointComesFromTheConfiguration(t *testing.T) {
 	instance := start(t, tier(t, handler(t)), invoke.Spec{
 		Name:     "shop/prod/function/checkout",
@@ -422,9 +355,6 @@ func TestTheEntrypointComesFromTheConfiguration(t *testing.T) {
 	require.Equal(t, 200, res.Status)
 }
 
-// A COMPONENT MAY USE WEBASSEMBLY 3.0. componentize-py's CPython initialises a
-// global with an extended constant expression; fixtures/v3.wasm is the
-// smallest handler that does, and a tier that left 3.0 off refuses it.
 func TestAComponentMayUseWebAssembly3(t *testing.T) {
 	code, err := os.ReadFile("fixtures/v3.wasm")
 	require.NoError(t, err, "run `wasm-tools parse v3.wat -o v3.wasm` in fixtures")

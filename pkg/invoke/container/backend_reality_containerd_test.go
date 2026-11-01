@@ -12,13 +12,6 @@ import (
 	"github.com/taubyte/tau/pkg/containers/core"
 )
 
-// The containerd half of backend_reality_test.go's question, and it had its own
-// answer: containerd takes host networking and used to refuse any port mapping
-// beside it, so the tier's config was rejected here for a different reason than
-// docker rejected it for. Both are fixed, and both are only provable against a
-// real daemon.
-//
-//	go test -tags "linux containerd_integration" ./pkg/invoke/container/
 func TestTheConfigThisTierBuildsIsAcceptedByContainerd(t *testing.T) {
 	backend, err := containerd.New(core.ContainerdConfig{})
 	require.NoError(t, err, "no containerd to ask")

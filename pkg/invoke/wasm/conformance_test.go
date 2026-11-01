@@ -11,18 +11,6 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// conformance_test holds this tier's capability register to the vocabulary.
-//
-// # Why the register needs holding at all
-//
-// hostComponents() is this tier's answer to "which kinds and types do I serve",
-// written by hand. The composer hands it a grant for EVERY kind on purpose, so
-// that a tier can see what it cannot do — and a kind with no row was dropped
-// here without a word until unserved() landed beside this.
-//
-// A ROW OR AN ADMISSION, and nothing in between. A capability that is not
-// served yet is fine; a capability nobody noticed stopped being served is not.
-// So the vocabulary is walked and every name must be one or the other.
 func TestEveryCapabilityIsServedOrAdmittedUnserved(t *testing.T) {
 	rows := map[string]bool{}
 	for _, c := range hostComponents() {
@@ -71,9 +59,6 @@ func TestEveryCapabilityIsServedOrAdmittedUnserved(t *testing.T) {
 		"these are declared by the vocabulary and this tier neither serves them nor admits it does not - a guest declaring one gets no host function, no error at start, and no log line")
 }
 
-// TestACAPABILITYTHISTIERCANNOTSERVEISREPORTED, which is the other half: the
-// register above says what is knowingly unserved, and this says an operator
-// hears about it when a workload actually declares one.
 func TestAnUnservedGrantIsWarnedAbout(t *testing.T) {
 	var said []string
 	r := &Runtime{warn: func(format string, args ...any) {
@@ -94,9 +79,6 @@ func TestAnUnservedGrantIsWarnedAbout(t *testing.T) {
 	require.Contains(t, said[0], "shop/prod/function/checkout", "and which workload declared it")
 }
 
-// TestAMOUNTISREFUSEDRATHERTHANWARNEDABOUT — it is the one unserved capability
-// that loses data instead of failing, so it must not be softened into a line in
-// a log that a workload then starts past.
 func TestAMountIsNotWarnedAboutBecauseItIsRefused(t *testing.T) {
 	var said []string
 	r := &Runtime{warn: func(format string, args ...any) {

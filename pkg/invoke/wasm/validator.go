@@ -12,23 +12,10 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// validator.go is the host half of `taubyte:instance-validator` — the function
-// a store that holds many names to decide who may open one.
-//
-// # It is the authorizer's sibling and the third world this tier drives
-//
-// The two ask different questions — "what may this caller do to this store" and
-// "may this caller open THIS instance of it" — and the vocabulary names them
-// separately, so they are separate worlds with separate exports. What they share
-// is the shape of the answer: a decision, a refusal to decide, and nothing in
-// between.
-//
-// # Nothing is kept here
-//
-// An authorizer's answer is the complete set for a caller and a target, so a
-// host may keep it. An admission is about ONE instance and the node remembers
-// which instances it admitted rather than what the validator said — see
-// node/admit, which had that memory before this world existed.
+// validator.go is the host half of `taubyte:instance-validator`, the function a
+// many-instance store names to decide who may open one. The authorizer's sibling
+// with its own question and export. Nothing is kept here; node/admit remembers
+// admitted instances.
 
 // WorldValidator is `implements: instance-validator`.
 const WorldValidator = specs.WorkloadBlockImplementsInstanceValidator
@@ -43,10 +30,8 @@ const (
 	verdictUndecided
 )
 
-// ErrNotAValidator is a component that answered with a shape this world does not
-// have. It is the author's bug rather than the caller's, and nobody should be
-// told their instance was turned down because somebody else's component is
-// malformed.
+// ErrNotAValidator is a component answering in a shape this world lacks: the
+// author's bug, not a refusal.
 var ErrNotAValidator = errors.New("wasm: that component did not answer as an instance validator")
 
 // Store is what is being opened.
@@ -62,21 +47,16 @@ type Opening struct {
 	Instance string
 }
 
-// Verdict is what came back. Exactly one of Refused and Undecided is set when
-// Admitted is false, and the difference is who the string is for: a refusal is
-// the caller's to read, and an undecided is an operator's.
+// Verdict is what came back. When not Admitted, exactly one of Refused (for the
+// caller) and Undecided (for an operator) is set.
 type Verdict struct {
 	Admitted  bool
 	Refused   string
 	Undecided string
 }
 
-// Admit instantiates spec as an instance validator and asks it about one
-// instance.
-//
-// AN INSTANCE PER QUESTION, for the reason Authorize gives: a decision has no
-// state worth keeping between calls, and a warm pool of validators would be a
-// second lifecycle to reason about for something asked once per instance.
+// Admit instantiates spec as an instance validator and asks about one instance; an
+// instance per question, as for Authorize.
 func (r *Runtime) Admit(ctx context.Context, spec invoke.Spec, o Opening) (Verdict, error) {
 	instance, runtime, err := r.instantiate(ctx, spec, WorldValidator)
 	if err != nil {
@@ -94,8 +74,7 @@ func (r *Runtime) Admit(ctx context.Context, spec invoke.Spec, o Opening) (Verdi
 	return verdictFrom(out[0], spec.Name)
 }
 
-// openingValue lowers an Opening into the world's `opening` record. A record is
-// its fields in order — see questionValue, which says why that matters.
+// openingValue lowers an Opening into the `opening` record, fields in order.
 func openingValue(o Opening) component.Value {
 	scope := make([]component.Value, 0, len(o.Who.Scope))
 	for _, name := range o.Who.Scope {
@@ -107,11 +86,7 @@ func openingValue(o Opening) component.Value {
 	return []component.Value{who, what, o.Instance}
 }
 
-// verdictFrom lifts the world's `verdict` variant back.
-//
-// A SHAPE NOBODY UNDERSTANDS ADMITS NOTHING. What came back was produced by
-// somebody else's component, and a malformed answer read as an admission is the
-// failure this control exists to prevent.
+// verdictFrom lifts the `verdict` variant back; a malformed answer admits nothing.
 func verdictFrom(value component.Value, name string) (Verdict, error) {
 	var variant *component.VariantValue
 	switch v := value.(type) {
@@ -124,9 +99,7 @@ func verdictFrom(value component.Value, name string) (Verdict, error) {
 	}
 
 	reason := func() (string, bool) {
-		// AN ARM DECLARED WITH A TYPE ALWAYS HAS ONE, but an empty string
-		// lowers as a nil payload — which is a legitimate "no reason given"
-		// rather than a malformed answer.
+		// An empty reason lowers as a nil payload: no reason given, not malformed.
 		if variant.Payload == nil {
 			return "", true
 		}

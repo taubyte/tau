@@ -15,17 +15,14 @@ import (
 	js "github.com/taubyte/tau/pkg/invoke/js"
 )
 
-// The benchmarks here measure four different things, and keep them apart:
+// The benchmarks measure four things apart:
 //
 //	BenchmarkEngine  JS doing CPU work, called warm from Go: the engine itself
 //	BenchmarkCall    an empty function called from Go: what one call costs
 //	BenchmarkServe   Serve on a warm instance: the tier's request path
 //	BenchmarkWarmup  a process's first realm, and its first native code
 //
-// STEADY STATE EXCLUDES WARM-UP. The first three warm one instance until it
-// stops getting faster, then time that instance for every -count round, so a
-// native compile never lands inside the timing window. BenchmarkWarmup is the
-// warm-up, measured on its own.
+// The first three warm one instance until it stops getting faster before timing.
 
 const workers = `
 let calls = 0;
@@ -57,8 +54,6 @@ func modes() []js.Mode {
 	return out
 }
 
-// BenchmarkColdStart is Start and the first request: what a request that finds
-// nothing warm pays.
 func BenchmarkColdStart(b *testing.B) {
 	for _, size := range []struct {
 		name, src string
@@ -83,9 +78,8 @@ func BenchmarkColdStart(b *testing.B) {
 	}
 }
 
-// minWarm is the least the first instance of a benchmark is warmed for. A
-// process's first native realm compiles for most of a second; one that
-// replaces it finds that code cached.
+// minWarm is the least the first instance is warmed: a process's first native
+// realm compiles for most of a second.
 const minWarm = time.Second
 
 // warm calls f in batches until a batch is within a tenth of the one before
@@ -109,12 +103,10 @@ func warm(f func() error, least time.Duration) error {
 	}
 }
 
-// engineFault is warpjs failing inside a call: its collector's panic
-// (warpjs-asks.md, "Found building pkg/invoke/js", item 1) or a Go runtime
-// error from a corrupted arena, which the tier turns into an error and a
-// retired instance. A benchmark that meets one replaces the instance with the
-// timer stopped and reports how often as "replaced", since it measures speed
-// and the fault is tracked where it belongs. Each distinct one is logged once.
+// engineFault is warpjs failing inside a call (a collector panic, or a runtime
+// error from a corrupted arena), which the tier turns into a retired instance. The
+// benchmark replaces the instance with the timer stopped and reports the count as
+// "replaced".
 func engineFault(b *testing.B, err error) bool {
 	msg := err.Error()
 	if !strings.Contains(msg, "Sweep found") && !strings.Contains(msg, "runtime error") && !strings.Contains(msg, "the engine panicked") {
@@ -281,9 +273,6 @@ func (r *realm) time(b *testing.B) {
 	b.ReportMetric(float64(r.replaced-before), "replaced")
 }
 
-// BenchmarkEngine is the engine running CPU-bound JS (a numeric loop, string
-// building and scanning, array building and its builtins) in a tier realm,
-// called warm from Go with no bounds armed.
 func BenchmarkEngine(b *testing.B) {
 	for _, k := range []struct {
 		name string
@@ -304,9 +293,6 @@ func BenchmarkEngine(b *testing.B) {
 	}
 }
 
-// BenchmarkCall is an empty exported function called from Go: bare, and the
-// way the tier calls, under RunContext with a deadline, which arms the
-// engine's own bounds around every outermost call.
 func BenchmarkCall(b *testing.B) {
 	bounded, cancel := context.WithTimeout(context.Background(), time.Hour)
 	defer cancel()
@@ -332,10 +318,6 @@ func BenchmarkCall(b *testing.B) {
 // objectsN is how many objects one call builds.
 const objectsN = 100
 
-// BenchmarkObjects is what building one object costs, by kind: the platform's
-// Headers, Response and Request, a promise chain like the one each request
-// makes, and a derived class with private fields against a class with one and
-// an object literal. ns/object is per object.
 func BenchmarkObjects(b *testing.B) {
 	for _, kind := range []string{"literal", "flat", "derived", "headers", "response", "request", "promise"} {
 		for _, mode := range modes() {
@@ -411,9 +393,6 @@ func (s *server) serve() error {
 	return err
 }
 
-// BenchmarkServe is one request to a warm instance: the handler does nothing
-// (empty), reads and writes headers and text (workers), or echoes a body as
-// bytes or as text.
 func BenchmarkServe(b *testing.B) {
 	body := func(n int) []byte {
 		out := make([]byte, n)
@@ -467,18 +446,6 @@ func BenchmarkServe(b *testing.B) {
 // process-wide, so only a process's first realm shows the warm-up.
 const onceOnly = "BenchmarkWarmup measures a process's first realm: run one sub-benchmark per process, with -benchtime=1x -count=1"
 
-// BenchmarkWarmup is what a process pays before the steady state the others
-// time, reported as metrics rather than ns/op.
-//
-// realms/<mode> starts three realms in turn and serves each 2000 requests:
-// how long Start took, the first request, the first thousand together, and
-// the median of the second thousand.
-//
-// native/<mode> calls the loop kernel 500 times in a fresh realm: the first
-// call, the call from which it runs at steady speed (within 1.5x of the median
-// of the last hundred), the time spent in the calls before it, and the steady
-// call. On a native mode, the time before the first steady call is the time
-// to native code.
 func BenchmarkWarmup(b *testing.B) {
 	for _, mode := range modes() {
 		b.Run("realms/"+string(mode), func(b *testing.B) {

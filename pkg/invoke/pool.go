@@ -10,12 +10,8 @@ import (
 	"time"
 )
 
-// pool.go is the serverless part: what is warm, how many run, how many
-// requests one takes at a time, and when they go away.
-//
-// NONE OF IT IS ENGINE-SPECIFIC, which is why it is here rather than repeated
-// in three implementations that would each get it subtly differently. An engine
-// starts a thing and serves a request; everything below decides when.
+// pool.go is the serverless part: what is warm, how many run, how many requests one
+// takes, and when they go away; none of it engine-specific.
 
 // Defaults.
 const (
@@ -24,10 +20,7 @@ const (
 	DefaultTimeout      = 30 * time.Second
 )
 
-// Option configures a Pool. Everything optional is a With…; the only thing a
-// pool cannot be built without is at least one runtime, and that is an error
-// rather than a positional argument because a caller composing a node registers
-// tiers one at a time as it discovers which are available.
+// Option configures a Pool; at least one runtime is required.
 type Option func(*options) error
 
 type options struct {
@@ -38,9 +31,8 @@ type options struct {
 	now          func() time.Time
 }
 
-// WithRuntime registers a tier. Call it once per tier; a spec naming one that
-// was never registered is refused rather than defaulted, because silently
-// running a container spec on the wasm tier would be a very confusing failure.
+// WithRuntime registers a tier; a spec naming an unregistered one is refused, never
+// defaulted.
 func WithRuntime(rts ...Runtime) Option {
 	return func(o *options) error {
 		for _, rt := range rts {
@@ -53,11 +45,8 @@ func WithRuntime(rts ...Runtime) Option {
 	}
 }
 
-// WithIdleTimeout is how long an instance with no work is kept before it is
-// closed. Default 5m.
-//
-// THIS IS SCALE-TO-ZERO: when the last instance of a spec ages out, that spec
-// costs nothing until the next request, which then pays a cold start.
+// WithIdleTimeout is how long an idle instance is kept; default 5m. When a spec's
+// last instance ages out it costs nothing until the next request's cold start.
 func WithIdleTimeout(d time.Duration) Option {
 	return func(o *options) error {
 		if d <= 0 {
@@ -68,13 +57,8 @@ func WithIdleTimeout(d time.Duration) Option {
 	}
 }
 
-// WithMaxInstances is how many instances of ONE spec may exist at once.
-// Default 32.
-//
-// IT IS PER SPEC AND NOT GLOBAL, deliberately. A global cap lets one busy
-// function starve every other function on the node, which is the
-// noisy-neighbour failure that is hardest to diagnose because the victim's own
-// numbers all look fine.
+// WithMaxInstances is how many instances of one spec may exist; default 32. Per
+// spec, so one busy function cannot starve the rest of the node.
 func WithMaxInstances(n int) Option {
 	return func(o *options) error {
 		if n < 1 {
@@ -147,19 +131,9 @@ type group struct {
 	// never has to wait.
 	sem chan struct{}
 
-	// starting is closed when the cold start currently in flight finishes, and
-	// is nil when none is.
-	//
-	// WITHOUT IT A BURST ON A COLD SPEC STARTS AN INSTANCE PER REQUEST. Every
-	// arrival finds no warm slot, and every one of them starts its own — so a
-	// spec with concurrency 4 that could have served the whole burst from one
-	// instance instead starts MaxInstances of them. With a wasm module that is
-	// wasteful; with a container it is seconds of latency and hundreds of
-	// megabytes each, for a burst that one instance would have absorbed.
-	//
-	// So the first arrival starts, and the rest WAIT for it and then look
-	// again. They only start their own if the instance that appears is already
-	// full to its concurrency.
+	// starting is closed when the in-flight cold start finishes, nil when none is.
+	// Without it a burst on a cold spec would start one instance per request; waiters
+	// look again and start their own only if the new instance is already full.
 	starting chan struct{}
 }
 
@@ -203,20 +177,9 @@ func (p *Pool) Do(ctx context.Context, spec Spec, req *Request) (*Response, erro
 	return out, err
 }
 
-// Transform runs one request through spec as a TRANSFORMER, on a pooled
-// instance, and answers with what it decided.
-//
-// IT IS POOLED FOR THE SAME REASON A HANDLER IS, and that is the whole argument
-// for it being here rather than in the tier. An authorizer or an instance
-// validator is asked once per caller and its answer is kept, so each can afford
-// to instantiate per question; a transformer runs on EVERY request and nothing
-// about its answer can be kept. Everything this pool does — warm slots,
-// cold-start deduplication, per-spec concurrency, idle timeout, scale to zero —
-// is about when to start and reuse a thing, not about what the thing answers.
-//
-// A TIER THAT CANNOT TRANSFORM SAYS SO. Only the component tier serves this
-// world; a container is a process that answers requests and has no second
-// export to call.
+// Transform runs one request through spec as a transformer on a pooled instance.
+// Pooled because a transformer runs on every request and its answer cannot be
+// kept. A tier that cannot transform says so.
 func (p *Pool) Transform(ctx context.Context, spec Spec, req *Request) (*Outcome, error) {
 	var out *Outcome
 	err := p.on(ctx, spec, func(ctx context.Context, inst Instance) error {
@@ -231,10 +194,8 @@ func (p *Pool) Transform(ctx context.Context, spec Spec, req *Request) (*Outcome
 	return out, err
 }
 
-// Route asks spec, as a ROUTER, where one request should go.
-//
-// POOLED FOR THE SAME REASON Transform IS: a router decides per request and
-// nothing about its answer can be kept.
+// Route asks spec, as a router, where one request should go; pooled like
+// Transform.
 func (p *Pool) Route(ctx context.Context, spec Spec, req *Request) (*Routing, error) {
 	var out *Routing
 	err := p.on(ctx, spec, func(ctx context.Context, inst Instance) error {
@@ -249,11 +210,8 @@ func (p *Pool) Route(ctx context.Context, spec Spec, req *Request) (*Routing, er
 	return out, err
 }
 
-// Direct asks spec, as a PROXY ROUTER, where one connection should go.
-//
-// POOLED FOR THE SAME REASON Route IS, and it stays pooled across the peek loop
-// because the whole prefix is handed over on every call — so no instance has to
-// remember a connection, and none is pinned to the node it landed on.
+// Direct asks spec, as a proxy router, where one connection should go. Each call
+// hands over the whole prefix, so no instance remembers a connection.
 func (p *Pool) Direct(ctx context.Context, spec Spec, conn *Connection, peeked []byte) (*Direction, error) {
 	var out *Direction
 	err := p.on(ctx, spec, func(ctx context.Context, inst Instance) error {
@@ -268,13 +226,8 @@ func (p *Pool) Direct(ctx context.Context, spec Spec, conn *Connection, peeked [
 	return out, err
 }
 
-// Shape runs one chunk of a connection through spec as a PROXY TRANSFORMER.
-//
-// IT IS CALLED PER CHUNK, which is the one place this pool's economics differ
-// from the rest: a handler pays a pooled call per request and this pays one per
-// chunk in each direction. What keeps it pooled anyway is that the transformer
-// remembers nothing — its state comes in and goes out with the call, so any
-// warm instance of the spec can take the next chunk.
+// Shape runs one chunk of a connection through spec as a proxy transformer; pooled
+// because its state travels with the call.
 func (p *Pool) Shape(ctx context.Context, spec Spec, s *Stream) (*Shaping, error) {
 	var out *Shaping
 	err := p.on(ctx, spec, func(ctx context.Context, inst Instance) error {
@@ -289,22 +242,10 @@ func (p *Pool) Shape(ctx context.Context, spec Spec, s *Stream) (*Shaping, error
 	return out, err
 }
 
-// Conn opens a connection to one of spec's ports and holds the instance for as
-// long as the connection lives.
-//
-// IT IS THE ONE CALL HERE THAT OUTLIVES ITSELF. Do and Transform borrow a slot
-// for the duration of a call and give it back; a connection is held by whoever
-// dialled it, for as long as they like, so the slot goes back when the
-// connection closes and not before. That is what makes the instance's
-// concurrency ceiling mean the same thing for a socket as it does for a
-// request, and what stops the idle reaper closing a container somebody is
-// talking to.
-//
-// THE SEMAPHORE IS HELD TOO, which is the part worth saying out loud: a spec
-// whose connections are all long-lived reaches its ceiling and then queues,
-// exactly as a spec under sustained request load does. A proxy that wanted more
-// than that would be asking for a bigger ceiling, which is a number its author
-// writes.
+// Conn opens a connection to one of spec's ports and holds the instance and its
+// semaphore token until the connection closes, so the concurrency ceiling means
+// the same for a socket as for a request and the reaper never closes a container
+// in use.
 func (p *Pool) Conn(ctx context.Context, spec Spec, port string) (net.Conn, error) {
 	if err := spec.validate(); err != nil {
 		return nil, err
@@ -347,10 +288,8 @@ func (p *Pool) Conn(ctx context.Context, spec Spec, port string) (net.Conn, erro
 		return nil, fmt.Errorf("%w: the %s tier hands out no connection", ErrNoRuntime, spec.Runtime)
 	}
 
-	// NO CALL TIMEOUT HERE, unlike Do. A connection has no duration this
-	// package could know: a database session is measured in hours and a health
-	// probe in milliseconds, and cutting either at a default would be this
-	// package inventing a policy. What bounds the DIAL is the caller's context.
+	// No call timeout: a connection's duration is the caller's; the caller's context
+	// bounds the dial.
 	conn, err := dials.Dial(ctx, port)
 	if err != nil {
 		release(true)
@@ -369,18 +308,9 @@ type pooled struct {
 	sem     chan struct{}
 }
 
-// CloseWrite forwards a half-close to the connection underneath.
-//
-// IT HAS TO BE WRITTEN OUT because this type embeds the net.Conn INTERFACE, and
-// promotion through an interface gives only that interface's methods. A caller
-// type-asserting for CloseWrite on a pooled connection would find nothing and
-// fall back to closing the whole thing — which ends the half a query protocol is
-// waiting on, so the client's request is delivered and the answer never comes.
-//
-// It reports whether the connection underneath could do it, rather than
-// swallowing the answer: a caller that cannot half-close needs to know, because
-// its alternative is a full close and pretending otherwise leaves the far end
-// waiting for an EOF nobody sent.
+// CloseWrite forwards a half-close, written out because embedding the net.Conn
+// interface does not promote it; a caller falling back to a full close would lose
+// the answer. It reports whether the connection could.
 func (c *pooled) CloseWrite() error {
 	cw, ok := c.Conn.(interface{ CloseWrite() error })
 	if !ok {
@@ -391,9 +321,7 @@ func (c *pooled) CloseWrite() error {
 
 func (c *pooled) Close() error {
 	err := c.Conn.Close()
-	// ONCE, because Close on a net.Conn is routinely called twice — a defer and
-	// an explicit one — and releasing twice would hand the slot out to two
-	// callers at the same ceiling.
+	// Once: Close is often called twice, and releasing twice would double the ceiling.
 	c.once.Do(func() {
 		c.release(false)
 		<-c.sem
@@ -425,11 +353,8 @@ func (p *Pool) on(ctx context.Context, spec Spec, fn func(context.Context, Insta
 	sem := g.sem
 	p.mu.Unlock()
 
-	// Wait for room. THIS IS WHERE A BURST QUEUES rather than failing: a
-	// serverless platform that returned 503 the moment every instance was busy
-	// would be useless under exactly the traffic it exists for. The caller's
-	// context is what bounds the wait, so a client that has given up stops
-	// occupying a place in the queue.
+	// Wait for room: a burst queues rather than failing, bounded by the caller's
+	// context.
 	select {
 	case sem <- struct{}{}:
 	case <-ctx.Done():
@@ -463,20 +388,9 @@ func (p *Pool) on(ctx context.Context, spec Spec, fn func(context.Context, Insta
 	return err
 }
 
-// Linger keeps the instance serving ctx's call checked out after the call has
-// answered, until done is called. failed retires the instance, as a failed call
-// would.
-//
-// IT IS FOR WORK A CALL LEAVES RUNNING ON PURPOSE: a JS handler hands
-// `ctx.waitUntil` a promise the response must not wait for. The caller gets its
-// answer at once, and the slot stays held, so the instance is neither handed
-// another request nor reaped while that work runs on it. The accounting is the
-// slot's own and the semaphore's own, just held longer.
-//
-// It must be claimed before the call returns, and a call that fails releases
-// its slot at once whatever it claimed. ok is false when ctx is not a pooled
-// call's: a caller driving an instance directly has no slot to keep, so the
-// instance has to finish the work before it answers.
+// Linger keeps the instance serving ctx's call checked out after it answered, until
+// done is called (failed retires it), for work like `ctx.waitUntil`. It must be
+// claimed before the call returns; ok is false outside a pooled call.
 func Linger(ctx context.Context) (done func(failed bool), ok bool) {
 	l, ok := ctx.Value(lingerKey{}).(*linger)
 	if !ok {
@@ -496,11 +410,8 @@ type linger struct {
 
 func (l *linger) done(failed bool) { l.once.Do(func() { l.settled <- failed }) }
 
-// acquire finds a slot with room, or starts one.
-//
-// STARTING HAPPENS OUTSIDE THE LOCK. A cold start is the slowest thing this
-// package does — seconds for a container — and holding the pool's mutex across
-// it would make one cold start block every other spec on the node.
+// acquire finds a slot with room or starts one, outside the lock so one cold start
+// does not block other specs.
 func (p *Pool) acquire(ctx context.Context, rt Runtime, spec Spec) (*slot, error) {
 	for {
 		p.mu.Lock()
@@ -542,10 +453,7 @@ func (p *Pool) acquire(ctx context.Context, rt Runtime, spec Spec) (*slot, error
 		g.starting = started
 		p.mu.Unlock()
 
-		// STARTING HAPPENS OUTSIDE THE LOCK. A cold start is the slowest thing
-		// this package does — seconds for a container — and holding the pool's
-		// mutex across it would make one cold start block every other spec on
-		// the node.
+		// Outside the lock.
 		inst, err := rt.Start(ctx, spec)
 
 		p.mu.Lock()
@@ -569,13 +477,9 @@ func (p *Pool) acquire(ctx context.Context, rt Runtime, spec Spec) (*slot, error
 	}
 }
 
-// release returns a slot, or discards it if the request failed.
-//
-// A FAILED REQUEST RETIRES THE INSTANCE. The pool cannot tell "this request was
-// malformed" from "this process is now wedged", and the second is the one that
-// costs: a broken instance kept warm serves every subsequent request badly,
-// which looks like an intermittent fault rather than a dead worker. Throwing it
-// away costs one cold start and is the cheap side of that trade.
+// release returns a slot, or retires the instance if the request failed: a
+// malformed request and a wedged process look alike, and a cold start is cheaper
+// than a broken warm instance.
 func (p *Pool) release(spec Spec, s *slot, failed bool) {
 	p.mu.Lock()
 	s.inUse--
@@ -595,9 +499,7 @@ func (p *Pool) release(spec Spec, s *slot, failed bool) {
 	inUse := s.inUse
 	p.mu.Unlock()
 
-	// Another goroutine may still be inside Serve on this instance when
-	// Concurrency > 1. Closing under it would turn one failure into several,
-	// so the last one out closes.
+	// With Concurrency > 1 others may still be in Serve, so the last one out closes.
 	if inUse == 0 {
 		s.inst.Close()
 	}
@@ -617,10 +519,8 @@ func (p *Pool) groupFor(spec Spec) *group {
 	return g
 }
 
-// Reap closes instances that have been idle longer than IdleTimeout and returns
-// how many it closed. This is scale-to-zero, and it is a method rather than a
-// private ticker so that "an idle spec costs nothing" is a unit test with an
-// injected clock instead of a sleep.
+// Reap closes instances idle longer than IdleTimeout and returns how many, a method
+// so scale-to-zero is testable with an injected clock.
 func (p *Pool) Reap() int {
 	now := p.opts.now()
 

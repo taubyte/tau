@@ -12,15 +12,9 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// kv.go is the host half of `taubyte:kv/store` — the `database` kind at
-// `type: kv`, which is tau's own engine and the one a project gets with nothing
-// to provision.
-//
-// IT IS DELIBERATELY NOT cache.go WITH A FLAG. The verbs are the same four and
-// the kinds are not: a cache may lose an entry and a database may not. Sharing
-// one interface would let an author reach a system of record through a door
-// labelled "this may vanish", and sharing one host function would mean the
-// difference lived in a boolean nobody reads.
+// kv.go is the host half of `taubyte:kv/store`, the `database` kind at `type: kv`
+// (tau's own engine). Not cache.go with a flag: a cache may lose entries and a
+// database may not, so they are separate interfaces.
 
 const kvInterface = "taubyte:kv/store@0.1.0"
 
@@ -33,10 +27,7 @@ const (
 	opKVList   = "list"
 )
 
-// keysExport is what the guest calls. It is `keys` and not `list` because the
-// verb the CONFIGURATION writes is `list`, and `list` is a WIT keyword — the
-// cache escapes it as `%list`; here the record shape made a plain name
-// cheaper. The op checked is still `list`.
+// keysExport is the guest's call for the `list` verb; `list` is a WIT keyword.
 const keysExport = "keys"
 
 // The error variant's cases, in the order handler.wit declares them.
@@ -59,11 +50,8 @@ type KV interface {
 	Keys(ctx context.Context, prefix string) ([]string, error)
 }
 
-// KVs opens the one a grant names.
-//
-// THE METHOD IS NAMED FOR WHAT IT OPENS rather than being a bare Open: the
-// `database` kind has four data models and a node backs more than one of them,
-// so one type has to satisfy this seam and the document one at once.
+// KVs opens the kv database a grant names; named rather than Open so one type can
+// back several data models.
 type KVs interface {
 	OpenKV(ctx context.Context, grant invoke.Grant) (KV, error)
 }
@@ -73,12 +61,8 @@ func WithKV(k KVs) Option {
 	return func(r *Runtime) { r.kv = k }
 }
 
-// kvGrantsOf is the DATABASE grants whose data model is kv.
-//
-// THE KIND IS `database` AND THE TYPE SELECTS THE INTERFACE, which is the
-// vocabulary's own shape: four data models under one kind, each with its own
-// verbs. So a grant is filtered by kind here and by `type` in the composer,
-// which is where the compiled resource was read.
+// kvGrantsOf is the database grants whose data model is kv: filtered by kind here
+// and by `type` in the composer.
 func kvGrantsOf(spec invoke.Spec) map[string]invoke.Grant {
 	var out map[string]invoke.Grant
 	for _, g := range spec.Reaches {
@@ -233,9 +217,7 @@ func (r *Runtime) kvImports(spec invoke.Spec) []component.Option {
 	}
 }
 
-// kvArm maps a Go error onto the arm the guest sees. A MISS IS ITS OWN ARM, for
-// cache.go's reason: folding it into `unavailable` makes every miss read as an
-// outage.
+// kvArm maps a Go error onto the guest's arm; a miss is its own arm.
 func kvArm(err error) *component.VariantValue {
 	if errors.Is(err, ErrNotFound) {
 		return kvFailure(errKVNotFound, "")

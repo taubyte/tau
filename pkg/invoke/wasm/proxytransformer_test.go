@@ -10,10 +10,8 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// A REAL PROXY TRANSFORMER. The fixture BUFFERS — it holds bytes until a
-// newline and then emits the whole line — which is the one thing this world's
-// design rests on: a pass-through fixture would pass whether or not the host
-// carried the state back at all.
+// A real transformer that buffers until a newline, so the host is shown to carry
+// state back.
 
 func sieve(t *testing.T) []byte {
 	t.Helper()
@@ -39,8 +37,6 @@ func chunk(state []byte, way invoke.Way, body string, last bool) *invoke.Stream 
 	return &invoke.Stream{Conn: pgConn(), Way: way, State: state, Chunk: []byte(body), Last: last}
 }
 
-// TestTHESTATECROSSESBOTHWAYS, which is what keeps a transformer pooled: it
-// remembers nothing itself, so the next chunk can go to any warm instance.
 func TestATransformerBuffersAcrossChunksThroughTheHost(t *testing.T) {
 	sh := shaping(t)
 
@@ -56,8 +52,6 @@ func TestATransformerBuffersAcrossChunksThroughTheHost(t *testing.T) {
 	require.Equal(t, "se", string(second.Pass.State), "and the start of the next one is still held")
 }
 
-// TestTHELASTCHUNKISTHELASTCHANCE. Whatever is still held has no newline
-// coming, so it goes out rather than being swallowed.
 func TestTheFinalChunkFlushesWhatIsHeld(t *testing.T) {
 	sh := shaping(t)
 
@@ -67,7 +61,6 @@ func TestTheFinalChunkFlushesWhatIsHeld(t *testing.T) {
 	require.Empty(t, out.Pass.State, "and it is holding nothing afterwards")
 }
 
-// TestTHEDIRECTIONSARETOLDAPART, and the host calls it for both.
 func TestTheTwoDirectionsAreShapedSeparately(t *testing.T) {
 	sh := shaping(t)
 
@@ -81,8 +74,6 @@ func TestTheTwoDirectionsAreShapedSeparately(t *testing.T) {
 	require.Empty(t, out.Pass.State)
 }
 
-// TestACLOSEISADECISION, not a failure — which is why it is an arm of the
-// verdict rather than an error.
 func TestATransformerCanCloseTheConnection(t *testing.T) {
 	sh := shaping(t)
 
@@ -92,8 +83,6 @@ func TestATransformerCanCloseTheConnection(t *testing.T) {
 	require.Equal(t, "it was asked to stop", out.Refused)
 }
 
-// TestANEMPTYCHUNKISNOTANULL. The world says list<u8> in three places and none
-// of them has an absent case.
 func TestATransformerIsCalledWithNothingAtAll(t *testing.T) {
 	sh := shaping(t)
 
@@ -104,7 +93,6 @@ func TestATransformerIsCalledWithNothingAtAll(t *testing.T) {
 	require.Empty(t, out.Pass.State)
 }
 
-// TestAHANDLERISNOTAPROXYTRANSFORMER.
 func TestOnlyAProxyTransformerShapes(t *testing.T) {
 	instance := start(t, tier(t, handler(t)), invoke.Spec{
 		Name: "not_a_sieve", Artifact: "bafyhandler",
@@ -118,7 +106,6 @@ func TestOnlyAProxyTransformerShapes(t *testing.T) {
 	require.ErrorContains(t, err, "shapes nothing")
 }
 
-// TestAPROXYTRANSFORMERDOESNOTROUTE, from the other side.
 func TestAProxyTransformerDirectsNothing(t *testing.T) {
 	instance := start(t, tier(t, sieve(t)), invoke.Spec{
 		Name:     "edge_sieve",

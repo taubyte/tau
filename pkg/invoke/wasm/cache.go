@@ -12,33 +12,11 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// cache.go is the host half of `taubyte:cache/store` — the first capability a
-// guest gets beyond answering a request.
-//
-// # The configuration is the grant, and it is checked here
-//
-// A workload's `cache:` block names what it reaches and with which verbs. The
-// compiler carries that through to invoke.Spec.Reaches, and every call below
-// resolves the guest's label against it BEFORE the store is touched: a label
-// nobody declared is `no-such-cache`, and a verb nobody asked for is `denied`.
-//
-// THERE IS NO SECOND PLACE TO WIDEN IT. The tier does not consult a policy, a
-// node setting, or the cache resource itself — a grant that is not in the
-// compiled object does not exist, which is what makes "what can this function
-// touch" answerable by reading the repository.
-//
-// # What is deliberately not here
-//
-// AN AUTHORIZER. The vocabulary lets a cache name one — a function the target
-// consults per operation — and this tier does not call it. A cache that
-// declares one is refused where the grant is built (see the composer), rather
-// than served as if it had not: serving it would be granting access the target
-// said somebody else decides.
-//
-// A WATCH. `cache` declares the verb and the host ABI never had an export for
-// it; whether it is a stream or a poll is undecided (see .notes/v2's WIT port).
-// A resource asking for it gets `denied` from the op check, which is the honest
-// answer: the platform does not do it yet.
+// cache.go is the host half of `taubyte:cache/store`. The workload's `cache:`
+// block, carried in invoke.Spec.Reaches, is checked before the store is touched:
+// an undeclared label is `no-such-cache`, an unrequested verb `denied`. There is no
+// second place to widen it. A cache naming an authorizer is refused by the
+// composer; `watch` has no export yet and gets `denied`.
 
 // cacheInterface is the WIT interface these imports satisfy. The version
 // suffix is stripped when matched, so one registration serves every patch.
@@ -68,10 +46,8 @@ var (
 	// refused at Start rather than at the first call.
 	ErrNoCaches = errors.New("wasm: this resource reaches a cache and this tier has nothing to open one with")
 
-	// ErrNotFound is what a Caches implementation returns for a miss. The tier
-	// maps it onto the guest's `not-found` arm, and anything else onto
-	// `unavailable` — so a store that reported a miss as a failure would make
-	// every cache miss look like an outage.
+	// ErrNotFound is a Caches miss, mapped to `not-found`; anything else is
+	// `unavailable`.
 	ErrNotFound = errors.New("wasm: no such entry")
 
 	// ErrTooLarge is a value bigger than the whole cache.
@@ -86,17 +62,11 @@ type Cache interface {
 	List(ctx context.Context, prefix string) ([]string, error)
 }
 
-// Caches opens the cache a grant names.
-//
-// IT IS A SEAM BECAUSE A CACHE IS A REPLICATED STORE and this package's job is
-// the ABI. What a handle means, where the bytes live and how a ceiling is
-// enforced are pkg/cache's and the composer's; what is here is the lowering,
-// the grant check and the mapping from a Go error onto an arm of a variant.
+// Caches opens the cache a grant names; storage and ceilings are pkg/cache's and
+// the composer's.
 type Caches interface {
-	// Open takes the whole grant rather than its handle, because what the
-	// backing needs beyond "which one" — the declared lifetime and ceiling —
-	// is on it. A handle alone would make the backing resolve it back into a
-	// resource, which means the register on the request path.
+	// Open takes the whole grant, whose settings carry the lifetime and ceiling, so the
+	// backing never resolves a handle via the register.
 	Open(ctx context.Context, grant invoke.Grant) (Cache, error)
 }
 
@@ -124,26 +94,16 @@ func grantsOf(spec invoke.Spec) map[string]invoke.Grant {
 
 const cacheKind = specs.KindCache
 
-// cacheImports registers the four functions for one instantiation.
-//
-// THE GRANTS ARE CAPTURED HERE, per instance, and not read per call. A spec is
-// one revision of one resource, so its access block cannot change under a
-// running instance — and a lookup that reached back into shared state would be
-// a lookup that could answer differently between two calls of one request.
+// cacheImports registers the four functions per instance, capturing the grants:
+// a spec's access block cannot change under a running instance.
 func (r *Runtime) cacheImports(spec invoke.Spec) []component.Option {
-	// THE FOUR ARE REGISTERED EVEN WHEN NOTHING IS GRANTED, and that is the
-	// difference between a clean refusal and a dead instance. An import a
-	// component declares and the host does not provide is a TRAP — the guest
-	// takes the whole instance with it — so a workload that calls a cache it
-	// never declared would die instead of being told `no-such-cache`. A guest
-	// bug is not a reason to lose warm state.
+	// Registered even with nothing granted: a missing import traps and kills the
+	// instance, where a registered one can answer `no-such-cache`.
 	grants := grantsOf(spec)
 
 	// open resolves a label to a cache, or to the arm that says why not.
 	open := func(ctx context.Context, label, op string) (Cache, *component.VariantValue) {
-		// A REFUSED GRANT SAYS WHY, because "denied" alone would send an
-		// author looking at their own ops list for a reason that is not there
-		// — and the same is true of an instance a validator turned down.
+		// A refused grant says why rather than a bare "denied".
 		grant, why := r.addressed(ctx, spec, grants, label, op)
 		if why != nil {
 			if why.missing {
@@ -156,9 +116,8 @@ func (r *Runtime) cacheImports(spec invoke.Spec) []component.Option {
 		}
 
 		if r.caches == nil {
-			// Unreachable while Start refuses a granted spec on a tier with no
-			// backing. Kept because the alternative is a nil dereference in a
-			// host function, which traps.
+			// Unreachable while Start refuses a granted spec with no backing; a nil dereference
+			// here would trap.
 			return nil, failure(errUnavailable, "this node has nothing to open a cache with")
 		}
 
@@ -290,11 +249,8 @@ func (r *Runtime) cacheImports(spec invoke.Spec) []component.Option {
 	}
 }
 
-// arm maps a Go error onto the variant case the guest sees.
-//
-// A MISS IS ITS OWN ARM. Folding it into `unavailable` would make every cache
-// miss — the common case, the thing a cache is for — read as an outage, and an
-// author would write a retry around it.
+// arm maps a Go error onto the guest's variant case; a miss is its own arm so it is
+// never read as an outage.
 func arm(err error) *component.VariantValue {
 	switch {
 	case errors.Is(err, ErrNotFound):
@@ -302,10 +258,7 @@ func arm(err error) *component.VariantValue {
 	case errors.Is(err, ErrTooLarge):
 		return failure(errTooLarge, "")
 	default:
-		// THE STORE'S OWN WORDS DO CROSS HERE, unlike on a public ingress:
-		// this reaches the workload's author, who owns both sides, and a
-		// message that said only "unavailable" would make a misconfigured
-		// cache indistinguishable from an unreachable peer.
+		// The store's words cross here: they reach the workload's own author.
 		return failure(errUnavailable, err.Error())
 	}
 }
@@ -339,12 +292,8 @@ func twoStrings(args []component.Value) (first, second string, err error) {
 	return first, second, nil
 }
 
-// liftU32 reads a u32 argument.
-//
-// A WIDENED SCALAR IS ACCEPTED, for the reason wazy's own ListDesc doc gives:
-// both the narrow and the widened shape cross the ABI, and which one arrives
-// depends on how a guest's bindings lowered it rather than on anything the
-// caller wrote.
+// liftU32 reads a u32 argument, accepting a widened scalar too, as either crosses
+// the ABI.
 func liftU32(v component.Value) (uint32, error) {
 	switch n := v.(type) {
 	case uint32:
@@ -361,16 +310,8 @@ func liftU32(v component.Value) (uint32, error) {
 	return 0, fmt.Errorf("expected a u32, got %T", v)
 }
 
-// byteList lowers a Go slice into the list<u8> the ABI wants.
-//
-// IT IS A []byte AND NOT A []Value. wazy specialises list<u8> to the Go slice
-// — which is what wasm.go's own requestValue already hands it for the request
-// body — so building a Value per byte would be a 200KB allocation of interfaces
-// per call, and the engine would reject it anyway.
-//
-// A NIL SLICE IS AN EMPTY LIST AND NOT A NIL VALUE: a stored empty value is a
-// legitimate answer, and lowering it as nothing would hand the guest an absent
-// case its type does not have.
+// byteList lowers a slice into list<u8> as a []byte, which wazy specialises; a nil
+// slice becomes an empty list, never an absent value.
 func byteList(value []byte) []byte {
 	if value == nil {
 		return []byte{}
@@ -378,9 +319,7 @@ func byteList(value []byte) []byte {
 	return value
 }
 
-// readBytes lifts the guest's list<u8>. The specialised shape is what arrives;
-// the general one is accepted because a list that came from somewhere other
-// than a guest's own vector is still a list.
+// readBytes lifts list<u8>, accepting the general shape too.
 func readBytes(v component.Value) ([]byte, error) {
 	switch value := v.(type) {
 	case []byte:

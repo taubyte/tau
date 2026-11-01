@@ -12,21 +12,9 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// secret.go is the host half of `taubyte:secret/vault`.
-//
-// # It is the rotation path, not a second way to do the same thing
-//
-// A secret already reaches a workload as an environment variable, resolved once
-// at start. That is right for most of them and wrong for exactly one case: a
-// rotated secret does not reach a running instance. Reading it here takes
-// effect on the next call, which is what makes "rotation needs no push" true
-// rather than "rotation needs no push, only a redeploy".
-//
-// # The value is not cached here
-//
-// Whatever backs this may cache; this does not. A host function that remembered
-// a secret for the life of an instance would be the environment variable again,
-// wearing a function call.
+// secret.go is the host half of `taubyte:secret/vault`: the rotation path, since an
+// environment variable resolved at start never sees a rotated secret. Not cached
+// here, or it would be the environment variable again.
 
 const secretInterface = "taubyte:secret/vault@0.1.0"
 
@@ -46,19 +34,14 @@ var (
 	// backing.
 	ErrNoSecrets = errors.New("wasm: this resource reads a secret and this tier has nothing to read one with")
 
-	// ErrNotSet is a declared secret with no value. It is its OWN arm and never
-	// an empty string: a workload handed "" for its database password fails
-	// somewhere else, later, as an application that looks broken.
+	// ErrNotSet is a declared secret with no value: its own arm, never an empty string.
 	ErrNotSet = errors.New("wasm: nothing is set under that name")
 )
 
 const secretKind = specs.KindSecret
 
-// Secrets reads the value a grant names.
-//
-// THE METHOD IS NAMED FOR WHAT IT TAKES, like KVs and DocumentStores: one type
-// backs this and services/worker's own Secrets seam, and that one resolves a
-// secret from a project, an environment and an id rather than from a grant.
+// Secrets reads the value a grant names; the method is named so one type also backs
+// services/worker's Secrets seam.
 type Secrets interface {
 	SecretFor(ctx context.Context, grant invoke.Grant) ([]byte, error)
 }
@@ -133,12 +116,8 @@ func (r *Runtime) secretImports(spec invoke.Spec) []component.Option {
 	}
 }
 
-// secretArm maps a Go error onto the arm the guest sees.
-//
-// THE VALUE IS NEVER IN THE MESSAGE, and neither is anything a backing might
-// have wrapped it with. `not-set` carries nothing at all: the caller already
-// knows which name it asked for, and a message here would be one more place a
-// secret's name travels.
+// secretArm maps a Go error onto the guest's arm. The value never appears in a
+// message, and `not-set` carries nothing.
 func secretArm(err error) *component.VariantValue {
 	if errors.Is(err, ErrNotSet) {
 		return secretFailure(errNotSet, "")

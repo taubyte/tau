@@ -10,10 +10,7 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// A REAL INSTANCE VALIDATOR, for the reason every other fixture here exists.
-// Before this world was built a validator was driven as a handler with the
-// instance in a header, so what these tests cover is a mechanism that replaced a
-// stopgap rather than one that replaced nothing.
+// A real instance validator.
 
 func admitter(t *testing.T) []byte {
 	t.Helper()
@@ -41,7 +38,6 @@ func anOpening(instance string) wasm.Opening {
 	}
 }
 
-// TestAnAdmissionIsAYesAndCarriesNothingElse.
 func TestAValidatorAdmits(t *testing.T) {
 	r := tier(t, admitter(t))
 
@@ -52,7 +48,6 @@ func TestAValidatorAdmits(t *testing.T) {
 	require.Empty(t, verdict.Undecided)
 }
 
-// TestAREFUSALCarriesTheValidatorsOwnWords, which is what a caller acts on.
 func TestAValidatorRefusesWithAReason(t *testing.T) {
 	r := tier(t, admitter(t))
 
@@ -63,9 +58,6 @@ func TestAValidatorRefusesWithAReason(t *testing.T) {
 	require.Empty(t, verdict.Undecided)
 }
 
-// TestUNDECIDEDISITSOWNARM, and a status code had no room for it — which is
-// half the reason this world exists. The two are different things to act on:
-// one is a policy's answer and the other is a policy that did not answer.
 func TestAValidatorThatDeclinesToDecideIsNotARefusal(t *testing.T) {
 	r := tier(t, admitter(t))
 
@@ -76,11 +68,6 @@ func TestAValidatorThatDeclinesToDecideIsNotARefusal(t *testing.T) {
 	require.Contains(t, verdict.Undecided, "did not answer")
 }
 
-// TestTheWHOLEOpeningSurvivesTheRecord. `admitted` carries nothing, so a yes
-// cannot show that the record arrived intact — the fixture borrows a refusal's
-// string to hand the opening back, which is the only room there is. A
-// transposition of two fields in `opening` is invisible to every other
-// assertion here.
 func TestTheWholeOpeningReachesTheGuest(t *testing.T) {
 	r := tier(t, admitter(t))
 
@@ -89,10 +76,6 @@ func TestTheWholeOpeningReachesTheGuest(t *testing.T) {
 	require.Equal(t, "saw:shop/prod/function/chat/[shop,local]:cache/sessions", verdict.Refused)
 }
 
-// TestABROWSERISNOTAWORKLOADANDSAYSSOBYITSKIND. The gateway asks this same
-// validator about a browser attaching at the edge, which has a deployment and
-// nothing else. The world states that an empty kind means exactly that, so it
-// has to survive the lowering as an empty string rather than a trap.
 func TestACallerThatIsNotAWorkloadLowersCleanly(t *testing.T) {
 	r := tier(t, admitter(t))
 
@@ -106,8 +89,6 @@ func TestACallerThatIsNotAWorkloadLowersCleanly(t *testing.T) {
 		"the empty kind is what tells a validator this came from the internet")
 }
 
-// ── the world gate, in both directions ───────────────────────────────────
-
 func TestAdmitRefusesAHandler(t *testing.T) {
 	r := tier(t, handler(t))
 
@@ -116,9 +97,6 @@ func TestAdmitRefusesAHandler(t *testing.T) {
 	require.Contains(t, err.Error(), "instance-validator", "and names the world that was wanted")
 }
 
-// TestAndAnAuthorizerIsNotAValidatorEither, which is the check that matters
-// most of the three: the two worlds are the closest to each other, both decide,
-// and their exports have different names and different shapes.
 func TestAdmitRefusesAnAuthorizer(t *testing.T) {
 	r := tier(t, guard(t))
 

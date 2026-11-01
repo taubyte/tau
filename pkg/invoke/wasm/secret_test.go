@@ -53,7 +53,6 @@ func secretGrant(label, handle string, ops ...string) []invoke.Grant {
 	return []invoke.Grant{{Kind: "secret", Label: label, Handle: handle, Ops: ops}}
 }
 
-// TestAGuestReadsASecretItDeclared.
 func TestAComponentReadsASecret(t *testing.T) {
 	vault := newHeld()
 	vault.set("shop/prod/QmStripe", []byte("sk_live"))
@@ -67,8 +66,6 @@ func TestAComponentReadsASecret(t *testing.T) {
 	require.Equal(t, "sk_live", string(res.Body))
 }
 
-// TestROTATIONTAKESEFFECTONTHENEXTCALL, which is the entire reason this exists
-// beside the environment variable that carries a secret at start.
 func TestARotatedSecretIsSeenWithoutARestart(t *testing.T) {
 	vault := newHeld()
 	vault.set("h", []byte("old"))
@@ -86,9 +83,6 @@ func TestARotatedSecretIsSeenWithoutARestart(t *testing.T) {
 	require.Equal(t, 2, vault.count(), "it is not cached in the tier")
 }
 
-// TestAMissIsItsOwnArm, never an empty string: a workload handed "" for its
-// database password fails somewhere else, later, as an application that looks
-// broken.
 func TestASecretThatIsNotSetIsNotAnEmptyString(t *testing.T) {
 	vault := newHeld()
 	instance := start(t, tier(t, cacher(t), wasm.WithSecrets(vault)), invoke.Spec{
@@ -114,8 +108,6 @@ func TestAnUndeclaredSecretIsRefused(t *testing.T) {
 	require.Zero(t, vault.count(), "nothing was read")
 }
 
-// TestTheVALUEIsNeverInAMessage, and neither is anything a backing wrapped it
-// with — an error reaches a log, and a log is read by people.
 func TestNoFailureCarriesTheValue(t *testing.T) {
 	vault := newHeld()
 	vault.err = errors.New("reading shop/prod/QmStripe: the swarm is unreachable")
@@ -137,8 +129,6 @@ func TestATierWithNoSecretsRefusesAWorkloadThatReadsOne(t *testing.T) {
 	require.ErrorIs(t, err, wasm.ErrNoSecrets)
 }
 
-// TestThereIsNoWriteVerb: the vocabulary declares one and it is a read, so the
-// interface has one function. A workload cannot rotate its own secret.
 func TestTheInterfaceIsOneRead(t *testing.T) {
 	vault := newHeld()
 	vault.set("h", []byte("v"))

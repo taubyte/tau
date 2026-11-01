@@ -12,27 +12,11 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// storage.go is the host half of `taubyte:storage/objects` — the `storage` kind
-// at `type: object`.
-//
-// # It is the S3 object API
-//
-// Get, Head, Put, Delete, ListObjectsV2, with an etag, a content type, user
-// metadata, a delimiter that collapses prefixes and a continuation token. Every
-// client an author already has is written against those; a shape of our own
-// would be a shape all of them need an adapter for.
-//
-// See wit/deps/storage/storage.wit for what is deliberately deferred — range
-// reads and multipart, both of which want a streaming body rather than another
-// `list<u8>`.
-//
-// # It is not kv.go with a third name
-//
-// The verbs overlap and the thing does not: a kv database holds values a guest
-// wrote and this holds OBJECTS, which have a size, a type and a modification
-// time worth asking about without reading them, and which are content-addressed
-// underneath so two identical ones are one. `head` is what that difference
-// buys, and a shared interface would have nowhere to put it.
+// storage.go is the host half of `taubyte:storage/objects`, the `storage` kind at
+// `type: object`: the S3 object API (Get, Head, Put, Delete, ListObjectsV2 with
+// etag, content type, metadata, delimiter and continuation token), so existing
+// clients fit. Range reads and multipart wait for a streaming body. Not kv.go:
+// objects have size, type and mtime worth asking about without reading (`head`).
 
 const storageInterface = "taubyte:storage/objects@0.1.0"
 
@@ -60,17 +44,11 @@ var (
 	// backing.
 	ErrNoStorage = errors.New("wasm: this resource reaches storage and this tier has nothing to open a bucket with")
 
-	// ErrFull is a bucket at the size its author declared. It is its own arm
-	// because a caller acts on it — write less, delete something — where an
-	// `unavailable` reads as an outage.
+	// ErrFull is a bucket at its declared size, its own arm since a caller acts on it.
 	ErrFull = errors.New("wasm: the bucket is at its declared size")
 
-	// ErrBadRequest is a request that does not make sense: a continuation token
-	// this bucket never issued, a key with a path segment in it. S3's 400, and
-	// its own arm because a caller FIXES it rather than retrying it.
-	//
-	// It is not document.go's ErrMalformed, which is about the SHAPE OF A VALUE
-	// rather than of a request — a caller fixes each one somewhere else.
+	// ErrBadRequest is a request that makes no sense (an unissued token, a key with a
+	// path segment): S3's 400, fixed rather than retried.
 	ErrBadRequest = errors.New("wasm: that request cannot be served as written")
 )
 
@@ -87,8 +65,7 @@ type Metadata struct {
 type Info struct {
 	Key string
 
-	// ETag is the entity tag. This cloud's IS the object's content id, so it
-	// changes exactly when the content does — which is what an etag is for.
+	// ETag is the object's content id, so it changes exactly when the content does.
 	ETag string
 
 	Size int64
@@ -111,8 +88,7 @@ type Object struct {
 	Body []byte
 }
 
-// ListRequest is ListObjectsV2's, as one value for the reason the WIT record
-// exists: four loose parameters at a call site say nothing about which is which.
+// ListRequest is ListObjectsV2's parameters as one value.
 type ListRequest struct {
 	Prefix string
 
@@ -155,8 +131,7 @@ type Bucket interface {
 	List(ctx context.Context, request ListRequest) (Listing, error)
 }
 
-// Buckets opens the one a grant names. The method is named for what it opens,
-// for the reason KVs.OpenKV is.
+// Buckets opens the bucket a grant names.
 type Buckets interface {
 	OpenBucket(ctx context.Context, grant invoke.Grant) (Bucket, error)
 }
@@ -169,13 +144,9 @@ func WithStorage(b Buckets) Option {
 // storageKind is the vocabulary's own name for the kind.
 const storageKind = specs.KindStorage
 
-// storageGrantsOf is every storage grant, whatever its type.
-//
-// THE TYPE IS NOT FILTERED HERE, unlike a database's. A storage declaring
-// `streaming` is a grant this interface cannot serve, and dropping it would
-// tell the guest "no such storage" — which reads as a typo in a label that is
-// perfectly correct. The composer refuses it by name instead, and what arrives
-// here is a refused grant carrying the reason.
+// storageGrantsOf is every storage grant, whatever its type: a `streaming` one
+// arrives refused by the composer with its reason, not dropped as "no such
+// storage".
 func storageGrantsOf(spec invoke.Spec) map[string]invoke.Grant {
 	var out map[string]invoke.Grant
 	for _, g := range spec.Reaches {
@@ -190,14 +161,8 @@ func storageGrantsOf(spec invoke.Spec) map[string]invoke.Grant {
 	return out
 }
 
-// servableStorage is the storage grants this tier would have to serve — the
-// refused ones do not count.
-//
-// A REFUSED GRANT MUST NOT REFUSE THE WORKLOAD. The composer refuses a
-// `streaming` storage by name, and a node with no bucket backing would
-// otherwise decline to start a resource whose only storage was one it was never
-// going to serve anyway — turning a per-target refusal back into a per-workload
-// one, which is exactly what Grant.Refused exists to avoid.
+// servableStorage is the storage grants this tier must serve; refused ones don't
+// count, so a per-target refusal never refuses the whole workload.
 func servableStorage(spec invoke.Spec) map[string]invoke.Grant {
 	var out map[string]invoke.Grant
 	for label, g := range storageGrantsOf(spec) {
@@ -441,8 +406,7 @@ func (r *Runtime) storageImports(spec invoke.Spec) []component.Option {
 	}
 }
 
-// infoValue is one object's metadata as the record the interface declares. A
-// record lowers as a flat list of its fields in declaration order.
+// infoValue lowers an object's metadata as its record: fields in declaration order.
 func infoValue(info Info) component.Value {
 	metadata := make([]component.Value, 0, len(info.Metadata))
 	for _, entry := range info.Metadata {

@@ -1,27 +1,9 @@
-// Package archive is the artifact a JS function ships as, and the writer the
-// build's post-step packs it with.
-//
-// # A zip, because a function is more than one file
-//
-// An esbuild bundle can be split into chunks, carries source maps, and will
-// carry compiled `.warp` forms once the engine can compile a module. So the
-// artifact is a zip holding all of them and a manifest saying which module is
-// the entry and which engine compiled what is in it.
-//
-// # The bundle always ships, compiled or not
-//
-// A `.warp` file is only good on the engine that wrote it. engine.LoadProgram
-// refuses one from another version outright, so the source inside it cannot
-// be reached after a mismatch. Every compiled form therefore sits next to the
-// source it came from, and a node whose engine differs runs that source.
-//
-// # The engine is the cache key
-//
-// The manifest names the warpjs module version and engine.BytecodeVersion. The
-// bytecode version alone is not enough: it numbers the container format, and
-// nothing ties it to the opcode set. A warpjs built from a local directory
-// reports "(devel)", which identifies no code, so a compiled form stamped with
-// it cannot be trusted by any reader.
+// Package archive is the artifact a JS function ships as: a zip of the bundle, its
+// chunks, source maps and any compiled `.warp` forms, with a manifest naming the
+// entry module and the engine that compiled. The source always ships beside a
+// compiled form, since a `.warp` loads only on the engine that wrote it. The cache
+// key is the warpjs module version plus engine.BytecodeVersion; a "(devel)" build
+// identifies no code.
 package archive
 
 import (
@@ -103,11 +85,8 @@ func versionIn(deps []*debug.Module) string {
 	return ""
 }
 
-// CheckName refuses a member name that is not a clean, relative,
-// slash-separated path, or that is the manifest's own.
-//
-// A MODULE SPECIFIER IS RESOLVED AGAINST THESE NAMES, so a name that could be
-// spelled two ways would be one module under two keys.
+// CheckName refuses a member name that is not a clean, relative, slash-separated
+// path, or is the manifest's, so a module cannot have two names.
 func CheckName(name string) error {
 	if name == "" || name == ManifestName || strings.HasPrefix(name, "/") ||
 		strings.Contains(name, `\`) || path.Clean(name) != name ||

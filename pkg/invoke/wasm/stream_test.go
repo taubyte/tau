@@ -12,9 +12,8 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// EVERY TEST HERE DRIVES THE REAL COMPONENT, the same one the cache tests use:
-// "/publish/<stream>/" with the body as the message, answering with the NAME of
-// the arm it got back.
+// The real component: "/publish/<stream>/" with the body as message, answering the
+// arm's name.
 
 // publisher records what was published, by handle.
 type publisher struct {
@@ -45,8 +44,6 @@ func streamGrant(label, handle string, ops ...string) []invoke.Grant {
 	return []invoke.Grant{{Kind: "stream", Label: label, Handle: handle, Ops: ops}}
 }
 
-// TestAGuestPublishesToAStreamItDeclared — the whole capability, through
-// generated bindings.
 func TestAComponentPublishes(t *testing.T) {
 	sent := newPublisher()
 	instance := start(t, tier(t, cacher(t), wasm.WithStreams(sent)), invoke.Spec{
@@ -60,7 +57,6 @@ func TestAComponentPublishes(t *testing.T) {
 		"the label resolved to the handle")
 }
 
-// TestAnEmptyMessagePublishes, because a signal with no payload is a message.
 func TestAnEmptyMessageIsStillAMessage(t *testing.T) {
 	sent := newPublisher()
 	instance := start(t, tier(t, cacher(t), wasm.WithStreams(sent)), invoke.Spec{
@@ -71,8 +67,6 @@ func TestAnEmptyMessageIsStillAMessage(t *testing.T) {
 	require.Len(t, sent.messages("h"), 1)
 	require.Empty(t, sent.messages("h")[0])
 }
-
-// ── the grant is the authorization, here too ─────────────────────────────────
 
 func TestAnUndeclaredStreamIsRefused(t *testing.T) {
 	sent := newPublisher()
@@ -86,10 +80,6 @@ func TestAnUndeclaredStreamIsRefused(t *testing.T) {
 	require.Empty(t, sent.messages("h"), "nothing was sent")
 }
 
-// TestSubscribeBuysNothing. The vocabulary's other verb is a DELIVERY, not a
-// call — the platform invokes a workload when a message arrives — so a resource
-// that asked for it is told, rather than left waiting on something that never
-// comes.
 func TestAGrantForSubscribeDoesNotAllowPublish(t *testing.T) {
 	sent := newPublisher()
 	instance := start(t, tier(t, cacher(t), wasm.WithStreams(sent)), invoke.Spec{
@@ -102,8 +92,6 @@ func TestAGrantForSubscribeDoesNotAllowPublish(t *testing.T) {
 	require.Empty(t, sent.messages("h"))
 }
 
-// TestARefusedGrantSaysWhy, so an engine this cloud has no driver for does not
-// read as a typo.
 func TestARefusedStreamCarriesItsReason(t *testing.T) {
 	sent := newPublisher()
 	instance := start(t, tier(t, cacher(t), wasm.WithStreams(sent)), invoke.Spec{
@@ -120,7 +108,6 @@ func TestARefusedStreamCarriesItsReason(t *testing.T) {
 	require.Empty(t, sent.messages("h"))
 }
 
-// TestACacheGrantIsNotAStreamGrant, so one label cannot be spent on the other.
 func TestAGrantOfAnotherKindDoesNotPublish(t *testing.T) {
 	sent := newPublisher()
 	instance := start(t, tier(t, cacher(t), wasm.WithCaches(newCaches("h")), wasm.WithStreams(sent)),
@@ -136,8 +123,6 @@ func TestAGrantOfAnotherKindDoesNotPublish(t *testing.T) {
 	require.Equal(t, "no-such-stream:orders", string(res.Body))
 }
 
-// ── when there is nothing behind the grant ───────────────────────────────────
-
 func TestATierWithNoStreamsRefusesAWorkloadThatPublishes(t *testing.T) {
 	_, err := tier(t, cacher(t)).Start(t.Context(), invoke.Spec{
 		Name: "fn", Artifact: "bafy", Reaches: streamGrant("orders", "h", "publish"),
@@ -145,8 +130,6 @@ func TestATierWithNoStreamsRefusesAWorkloadThatPublishes(t *testing.T) {
 	require.ErrorIs(t, err, wasm.ErrNoStreams)
 }
 
-// TestATierWithNoStreamsStillRunsEverythingElse, and a guest that publishes
-// anyway is refused rather than killed — an unprovided import is a trap.
 func TestATierWithNoStreamsRunsAWorkloadThatPublishesToNothing(t *testing.T) {
 	instance := start(t, tier(t, cacher(t)), invoke.Spec{Name: "fn"})
 
@@ -172,8 +155,6 @@ func TestAPublishFailureIsUnavailable(t *testing.T) {
 	require.Contains(t, string(res.Body), "the swarm is unreachable")
 }
 
-// TestBothCapabilitiesInOneComponent, because they are registered together and
-// a component that uses one must not lose the other.
 func TestACacheAndAStreamInOneWorkload(t *testing.T) {
 	backing := newCaches("QmCache")
 	sent := newPublisher()
@@ -192,14 +173,10 @@ func TestACacheAndAStreamInOneWorkload(t *testing.T) {
 	require.Len(t, sent.messages("QmOrders"), 1)
 }
 
-// ── the bus ──────────────────────────────────────────────────────────────────
-
 func busGrant(label, handle string, ops ...string) []invoke.Grant {
 	return []invoke.Grant{{Kind: "bus", Label: label, Handle: handle, Ops: ops}}
 }
 
-// TestAGuestPublishesToABus. The sending is a stream's; what differs is the
-// kind, and the handle carries that.
 func TestAComponentPublishesToABus(t *testing.T) {
 	sent := newPublisher()
 	instance := start(t, tier(t, cacher(t), wasm.WithBus(sent)), invoke.Spec{
@@ -211,8 +188,6 @@ func TestAComponentPublishesToABus(t *testing.T) {
 	require.Equal(t, [][]byte{[]byte("hello")}, sent.messages("shop/prod/QmChat"))
 }
 
-// TestABusAndAStreamAreTWODOORS, even when a project uses one label for both —
-// which is why the two interfaces exist rather than one with a kind argument.
 func TestABusGrantIsNotAStreamGrant(t *testing.T) {
 	streams := newPublisher()
 	buses := newPublisher()
@@ -245,9 +220,6 @@ func TestAnUndeclaredBusIsRefused(t *testing.T) {
 	require.Empty(t, sent.messages("h"))
 }
 
-// TestSubscribeOnABusBuysNothingEither. It is an ATTACHMENT — a websocket at
-// the bus's own host, or a workload the platform delivers to — and the
-// attaching is the gateway's to serve.
 func TestAGrantForBusSubscribeDoesNotPublish(t *testing.T) {
 	sent := newPublisher()
 	instance := start(t, tier(t, cacher(t), wasm.WithBus(sent)), invoke.Spec{

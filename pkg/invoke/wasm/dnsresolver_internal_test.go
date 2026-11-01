@@ -7,16 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// WHAT CAME BACK WAS PRODUCED BY SOMEBODY ELSE'S COMPONENT, and for DNS a
-// malformed answer is worse than a malformed grant. An arm this world does not
-// have, read as `absent`, is NXDOMAIN — which is cacheable AS AN ABSENCE, so one
-// broken resolver would teach every resolver that asked that the name does not
-// exist, and keep teaching it for the negative TTL.
-//
-// The happy paths are proven against the real fixture in dnsresolver_test.go.
-// These are the ones a real component cannot produce, which is exactly why they
-// need a unit test: a resolver built against a world that has since moved
-// produces precisely these.
 func TestAMalformedAnswerIsNeverAnAnswer(t *testing.T) {
 	for _, one := range []struct {
 		name  string
@@ -56,19 +46,12 @@ func TestAMalformedAnswerIsNeverAnAnswer(t *testing.T) {
 	}
 }
 
-// TestAVARIANTBYVALUEISLIFTEDTOO. wazy may hand back either, and a resolver
-// whose answer arrived by value rather than by pointer has still answered.
 func TestAnAnswerByValueIsLifted(t *testing.T) {
 	got, err := resolutionFrom(component.VariantValue{Disc: answerAbsent}, "warren")
 	require.NoError(t, err)
 	require.False(t, got.Exists)
 }
 
-// TestANILPAYLOADONRECORDSISEMPTYANDNOTMALFORMED. The world says an empty list
-// in `records` is not a refusal, and an empty list arrives as a nil payload —
-// reading that as a bad shape would turn "this name holds nothing of that type"
-// into an author's bug, and the caller would then get an error where it should
-// get NOERROR.
 func TestAnEmptyRecordListIsNotMalformed(t *testing.T) {
 	got, err := resolutionFrom(&component.VariantValue{Disc: answerRecords, Payload: nil}, "warren")
 	require.NoError(t, err)

@@ -12,46 +12,24 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// authorizer.go is the host half of `taubyte:authorizer` — the world a
-// resource's own `authorizer:` block names.
-//
-// # It is the second world this tier can drive, and the first was the only one
-//
-// `implements:` names seven and only the handler was built, so a component
-// declaring any other was refused at Start rather than called with a handler's
-// signature. That refusal is still right and it is still there; what changed is
-// that one more world now has an entry point of its own to be refused INTO.
-//
-// # Asked about one operation, answered with a set
-//
-// See the WIT. The host is free to keep the set because the contract says it is
-// the whole answer for this caller on this target — which is what keeps a
-// decision off the hot path of a cache. Where that keeping happens is the
-// composer's, not this package's: see the Authorizers seam below.
+// authorizer.go is the host half of `taubyte:authorizer`, the world a resource's
+// `authorizer:` block names. The authorizer is asked about one op and answers with
+// the full set the caller gets on the target, so the host may keep it and keep
+// decisions off the hot path; where it is kept is the composer's (Authorizers).
 
-// The vocabulary's own paths, as the composer writes them onto a guarded
-// grant. The namespace arrives RESOLVED — the outward walk an omitted one means
-// happens where the compiled project is open, which is the rule servedBy states
-// for a channel.
+// The vocabulary's paths the composer writes onto a guarded grant; the namespace
+// arrives resolved.
 const (
 	settingAuthorizer      = specs.AuthorizerKeyName
 	settingAuthorizerScope = specs.AuthorizerKeyNamespace
 )
 
-// Authorizers answers what one caller may do to one guarded target.
-//
-// IT IS A SEAM BECAUSE THIS TIER RUNS ONE WORKLOAD AND CANNOT REACH ANOTHER —
-// the argument node/admit makes for the instance validator, and it holds
-// harder here: asking means resolving a second function, instantiating it as a
-// different world and calling it, none of which a running guest's tier has any
-// business doing on its own.
+// Authorizers answers what one caller may do to one guarded target: a seam, since
+// asking means running a second function as another world, which this tier must
+// not do itself.
 type Authorizers interface {
-	// Ops is every op this caller gets on this grant's target. The op being
-	// attempted is passed because the WIT asks about one — what comes back is
-	// the whole set, which is what keeps a decision off a cache's hot path.
-	//
-	// ErrUndecided means the guard ran and declined to answer, which is a
-	// different thing for a caller to read than a guard that could not be run.
+	// Ops is every op this caller gets on the grant's target; op is the one attempted.
+	// ErrUndecided means the guard ran and declined to answer.
 	Ops(ctx context.Context, spec invoke.Spec, grant invoke.Grant, op string) ([]string, error)
 }
 
@@ -73,9 +51,7 @@ func contains(ops []string, op string) bool {
 // WorldAuthorizer is `implements: authorizer`.
 const WorldAuthorizer = specs.WorkloadBlockImplementsAuthorizer
 
-// authorizeExport is fixed, unlike a handler's. A resource names the FUNCTION
-// that guards it, not an export inside it, so there is no `execution/call` here
-// to carry a second name.
+// authorizeExport is fixed: a resource names the guarding function, not an export.
 const authorizeExport = "authorize"
 
 // The decision variant's arms, in the order the WIT declares them.
@@ -85,32 +61,21 @@ const (
 )
 
 var (
-	// ErrNotAnAuthorizer is a component that answered with a shape this world
-	// does not have. It is separate from a refusal because it is the AUTHOR's
-	// bug rather than the caller's, and nobody should be told they were denied
-	// because somebody else's component is malformed.
+	// ErrNotAnAuthorizer is a component answering in a shape this world lacks: the
+	// author's bug, not a denial.
 	ErrNotAnAuthorizer = errors.New("wasm: that component did not answer as an authorizer")
 
-	// ErrNoAuthorizers is a spec with a guarded grant on a tier composed with
-	// nothing to ask. It is a construction fault rather than a guest's, so it
-	// is refused at Start — the same trade every capability's backing makes,
-	// and a stronger one here: the alternative to refusing early is denying
-	// every operation on that target later, which reads to an author as their
-	// own authorizer saying no.
+	// ErrNoAuthorizers is a guarded grant on a tier with nothing to ask, refused at
+	// Start rather than denying every op later.
 	ErrNoAuthorizers = errors.New("wasm: this resource is guarded by an authorizer and this tier has nothing to ask")
 
-	// ErrUndecided is an authorizer that ran and declined to decide. It is not
-	// a refusal: a refusal is a decision, and telling a caller it was turned
-	// down when nothing decided sends them to argue with a policy that never
-	// fired.
+	// ErrUndecided is an authorizer that ran and declined to decide, which is not a
+	// refusal.
 	ErrUndecided = errors.New("wasm: the authorizer did not decide")
 )
 
-// Caller is the workload doing the reaching.
-//
-// IT IS THE SAME SHAPE `taubyte:workload/identity` HANDS A GUEST ABOUT ITSELF,
-// because "who am I" and "who is calling me" are one question asked from two
-// ends and two spellings of it would drift.
+// Caller is the workload doing the reaching, the same shape
+// `taubyte:workload/identity` gives a guest about itself.
 type Caller struct {
 	Project     string
 	Environment string
@@ -120,9 +85,8 @@ type Caller struct {
 	Scope []string
 }
 
-// Target is what is being reached. Label is what the CALLER wrote in its access
-// block — not the target's name and not its id, because an authorizer keyed off
-// the id would be deciding about a resource the caller cannot name.
+// Target is what is being reached. Label is what the caller wrote, not the target's
+// name or id.
 type Target struct {
 	Kind     string
 	Label    string
@@ -136,17 +100,15 @@ type Question struct {
 	Op   string
 }
 
-// Decision is what came back. Granted is every op this caller gets on this
-// target — an empty one is a refusal that was DECIDED, which is why it is not
-// the same as Undecided being set.
+// Decision is what came back: Granted is every op the caller gets, empty being a
+// decided refusal, unlike Undecided.
 type Decision struct {
 	Granted   []string
 	Undecided string
 }
 
-// guardedGrants are the grants of a spec whose target names an authorizer. A
-// REFUSED grant is not among them, for the reason servableStorage states: a
-// per-target refusal must not become a per-workload one.
+// guardedGrants are a spec's grants whose target names an authorizer; refused
+// grants excluded, so a per-target refusal stays per target.
 func guardedGrants(spec invoke.Spec) []invoke.Grant {
 	var out []invoke.Grant
 	for _, g := range spec.Reaches {
@@ -157,14 +119,9 @@ func guardedGrants(spec invoke.Spec) []invoke.Grant {
 	return out
 }
 
-// Authorize instantiates spec as an authorizer and asks it one question.
-//
-// AN INSTANCE PER QUESTION, AND THAT IS WHY THE ANSWER IS A SET. A decision has
-// no state worth keeping between calls — it is a pure function of the question
-// and whatever it reads — while a warm pool of authorizers would be a second
-// lifecycle to reason about for something asked once per caller per resource.
-// The cost is a cold start, and the contract's set is what stops that landing
-// on every operation.
+// Authorize instantiates spec as an authorizer and asks it one question. An
+// instance per question: a decision has no state worth keeping, and the returned
+// set keeps the cold start off every op.
 func (r *Runtime) Authorize(ctx context.Context, spec invoke.Spec, q Question) (Decision, error) {
 	instance, runtime, err := r.instantiate(ctx, spec, WorldAuthorizer)
 	if err != nil {
@@ -182,11 +139,8 @@ func (r *Runtime) Authorize(ctx context.Context, spec invoke.Spec, q Question) (
 	return decisionFrom(out[0], spec.Name)
 }
 
-// questionValue lowers a Question into the world's `question` record.
-//
-// A RECORD IS ITS FIELDS IN ORDER — the same thing requestValue says about
-// handler.wit, and the same hazard: reordering the record in the WIT without
-// reordering it here transposes two strings silently.
+// questionValue lowers a Question into the world's record: fields in WIT order, so
+// a reordered WIT must be matched here.
 func questionValue(q Question) component.Value {
 	scope := make([]component.Value, 0, len(q.Who.Scope))
 	for _, name := range q.Who.Scope {
@@ -198,12 +152,8 @@ func questionValue(q Question) component.Value {
 	return []component.Value{who, what, q.Op}
 }
 
-// decisionFrom lifts the world's `decision` variant back.
-//
-// EVERY FIELD IS CHECKED, for the reason responseFrom gives: what came back was
-// produced by somebody else's component, and a shape that is not this world's is
-// an error naming the authorizer rather than a panic three frames later. An
-// authorizer that answers nonsense must not read as a grant.
+// decisionFrom lifts the world's `decision` variant back, checking every field: a
+// malformed answer must never read as a grant.
 func decisionFrom(value component.Value, name string) (Decision, error) {
 	var variant *component.VariantValue
 	switch v := value.(type) {
@@ -225,9 +175,7 @@ func decisionFrom(value component.Value, name string) (Decision, error) {
 		return Decision{Undecided: why}, nil
 
 	case decisionGranted:
-		// A GRANT OF NOTHING IS STILL A GRANT. An empty list arrives as a nil
-		// payload rather than an empty slice, and reading that as "malformed"
-		// would turn the commonest refusal into an author's bug.
+		// An empty list arrives as a nil payload; it is a grant of nothing, not malformed.
 		if variant.Payload == nil {
 			return Decision{Granted: []string{}}, nil
 		}

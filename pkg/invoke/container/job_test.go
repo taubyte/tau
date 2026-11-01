@@ -29,8 +29,6 @@ func named(env []string, name string) bool {
 	return false
 }
 
-// TestARunGetsTheRequestOnStdinAndAnswersWithStdout: the contract's first line,
-// and what it does NOT get — a port, a Runtime API, anything that listens.
 func TestARunGetsTheRequestOnStdinAndAnswersWithStdout(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
@@ -63,8 +61,6 @@ func TestARunGetsTheRequestOnStdinAndAnswersWithStdout(t *testing.T) {
 	require.Len(t, removed, 1, "and the run's container is gone after it")
 }
 
-// TestEveryRequestIsItsOwnRun: two requests are two containers, each with its
-// own id, so nothing one run leaves behind is seen by the next.
 func TestEveryRequestIsItsOwnRun(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
@@ -94,8 +90,6 @@ func TestEveryRequestIsItsOwnRun(t *testing.T) {
 	require.NotEqual(t, ids[0], ids[1])
 }
 
-// TestARunThatFailsSaysHowItEnded: the code and the end of stderr, which is
-// where a batch job explains itself.
 func TestARunThatFailsSaysHowItEnded(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
@@ -115,8 +109,6 @@ func TestARunThatFailsSaysHowItEnded(t *testing.T) {
 	require.Len(t, removed, 1, "a failed run is removed too")
 }
 
-// TestAFailedRunCarriesOnlyTheEndOfStderr: a job that logs megabytes before it
-// dies must not put them all in an error.
 func TestAFailedRunCarriesOnlyTheEndOfStderr(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
@@ -132,7 +124,6 @@ func TestAFailedRunCarriesOnlyTheEndOfStderr(t *testing.T) {
 	require.Less(t, len(err.Error()), stderrTail+256)
 }
 
-// TestARunPastItsTimeoutIsKilledAndSaysSo.
 func TestARunPastItsTimeoutIsKilledAndSaysSo(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
@@ -155,7 +146,6 @@ func TestARunPastItsTimeoutIsKilledAndSaysSo(t *testing.T) {
 	require.Len(t, removed, 1)
 }
 
-// TestAJobPullsItsImageOnceAtStart, so a request does not pay for it.
 func TestAJobPullsItsImageOnceAtStart(t *testing.T) {
 	rt := newFakeBackend()
 	rt.run = func(*core.ContainerConfig, []byte) (string, string, int) { return "", "", 0 }

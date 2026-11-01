@@ -1,42 +1,24 @@
-// Package js runs a JavaScript function on warpjs, in the worker's own
-// process, the way pkg/invoke/wasm runs a component on wazy.
+// Package js runs a JavaScript function on warpjs in the worker's own process, as
+// pkg/invoke/wasm runs a component on wazy.
 //
-// # One realm per instance, one request at a time
+// An instance is one realm with its own arena, serving one request at a time;
+// concurrency comes from the pool. Module state persists across requests, as per
+// isolate on Workers, and a realm only runs one revision of one resource.
 //
-// An instance is one engine.Runtime: one realm with its own arena. A realm is
-// used from one goroutine at a time, so an instance serves one request at a
-// time, and concurrency comes from the pool starting more of them. Module state
-// persists across the requests one instance serves, as it does per isolate on
-// Workers. A realm only ever runs one revision of one resource, so nothing
-// crosses tenants through it.
+// The handler is the Workers shape: the entry's default export (or the one
+// `execution/call` names) is an object with `fetch(request, env, ctx)`. The prelude
+// supplies Request, Response, Headers, TextEncoder, TextDecoder and console. `env`
+// is empty until host capabilities reach JS; `ctx.waitUntil` keeps the instance
+// checked out until its work settles or the deadline hits.
 //
-// # The handler is the Workers shape
+// `execution/memory` is the arena cap and `execution/timeout` the deadline; a call
+// hitting either retires the instance. The deadline is armed three ways until
+// warpjs bounds its job drains: automatic drains at the end of each outermost
+// call, RunContext per request, and a timer interrupt (a fired timer retires the
+// instance even if the call finished).
 //
-// The entry module's default export (or the one `execution/call` names) is an
-// object with `fetch(request, env, ctx)`. The platform's prelude gives the realm
-// Request, Response, Headers, TextEncoder, TextDecoder and console, which warpjs
-// does not have. `env` is empty until host capabilities reach JS, and
-// `ctx.waitUntil` keeps the instance checked out until what it was handed
-// settles or the deadline hits.
-//
-// # Limits are the engine's, and a realm that hits one is not reused
-//
-// `execution/memory` is the arena cap and `execution/timeout` the deadline. A
-// call that runs out of either fails with a typed error and retires the
-// instance: a realm interrupted mid-mutation is not handed another request.
-//
-// THE DEADLINE IS ARMED THREE WAYS until warpjs bounds its job drains: promise
-// jobs drain automatically at the end of every outermost call (never
-// WithManualJobs, whose drains have no limit), every request runs under
-// RunContext with its deadline, and a timer interrupts the realm at the
-// deadline. A timer that fired retires the instance even when the call
-// finished, since its interrupt would otherwise kill the next one.
-//
-// # Nothing of the host reaches a tenant realm
-//
-// No nodejs Registry and no `process` are installed: warpjs's core modules
-// register process-wide and `process.env` is the host's. The module host serves
-// what the archive holds and refuses every other specifier by name.
+// Nothing of the host reaches a tenant realm: no nodejs Registry, no `process`,
+// and every specifier the archive does not hold is refused.
 package js
 
 import (
@@ -128,12 +110,8 @@ const (
 	ModeJIT Mode = "native+jit"
 )
 
-// DefaultNativeMode is what an arch with a native backend runs when nothing
-// names a mode.
-//
-// PROVISIONAL. The numbers it was chosen on measured the request path and JIT
-// warm-up rather than how fast code runs, so it is this one constant, and
-// nothing else depends on which mode it names.
+// DefaultNativeMode is what an arch with a native backend runs when no mode is
+// named. Provisional: chosen on request-path and warm-up numbers, not code speed.
 const DefaultNativeMode = ModeJIT
 
 // DefaultMode is DefaultNativeMode where the engine has a native backend for

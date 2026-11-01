@@ -13,25 +13,11 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// model.go is the host half of `taubyte:model/inference`.
-//
-// # It takes a name, and that is the whole point
-//
-// A model resource carries the endpoint, the wire format, the credential and
-// the parameters. A workload reaching an LLM by hand carries a copy of all
-// four, which is how a provider key ends up in an environment variable on every
-// caller and how rotating it becomes an edit per workload.
-//
-// # What the guest may and may not change
-//
-// Temperature and the stop list are the caller's to add to. `max-tokens` is
-// CLAMPED by what the resource declares, because the vocabulary calls it "a
-// cost ceiling as much as a length one" — a guest that could raise it would be
-// lifting a limit its author wrote. Asking for less is allowed and is the
-// reason this is a clamp rather than a refusal.
-//
-// The clamp is applied HERE rather than in whatever backs it, so that every
-// backing gets it for free and none of them can forget.
+// model.go is the host half of `taubyte:model/inference`. A guest names a model
+// resource, which carries endpoint, format, credential and parameters, so no
+// caller holds a provider key. Temperature and stop sequences are the caller's to
+// add; `max-tokens` is clamped to the resource's ceiling (a cost ceiling), here so
+// every backing gets it.
 
 const modelInterface = "taubyte:model/inference@0.1.0"
 
@@ -52,9 +38,8 @@ var (
 	// backing.
 	ErrNoInference = errors.New("wasm: this resource calls a model and this tier has nothing to call one with")
 
-	// ErrRefusedByProvider is a provider that answered and said no — a request
-	// it would refuse again the same way. It is its own error because the
-	// caller acts on it differently from one it could not reach.
+	// ErrRefusedByProvider is a provider that answered no, as against being
+	// unreachable.
 	ErrRefusedByProvider = errors.New("wasm: the provider refused that request")
 )
 
@@ -166,8 +151,7 @@ func (r *Runtime) modelImports(spec invoke.Spec) []component.Option {
 			return nil, fmt.Errorf("model.infer: %w", err)
 		}
 		if len(req.Messages) == 0 {
-			// A CALL WITH NOTHING TO SAY is refused here rather than paid for:
-			// every provider bills the round trip and none of them answer it.
+			// A call with no messages is refused rather than billed.
 			return errorResult(modelFailure(errModelRefused, "there are no messages in that request")), nil
 		}
 		clamp(req, grant)
@@ -184,11 +168,8 @@ func (r *Runtime) modelImports(spec invoke.Spec) []component.Option {
 	}
 }
 
-// clamp holds the caller to the ceiling its author wrote.
-//
-// A RESOURCE THAT DECLARED NONE CLAMPS NOTHING, which is the vocabulary's own
-// default: absent means the provider's own ceiling rather than a number tau
-// invented.
+// clamp holds max-tokens to the resource's declared ceiling; none declared clamps
+// nothing.
 func clamp(req *invoke.Inference, grant invoke.Grant) {
 	raw, ok := grant.Settings[SettingMaxTokens]
 	if !ok {
@@ -239,9 +220,7 @@ func inferenceFrom(value component.Value) (*invoke.Inference, error) {
 		})
 	}
 
-	// AN OPTION IS nil FOR none AND THE INNER VALUE OTHERWISE, so absent and
-	// zero stay different — which they are: temperature 0 is a value an author
-	// writes on purpose.
+	// An option is nil for none, so absent and zero stay different.
 	if t, ok := fields[1].(float64); ok {
 		out.Temperature = &t
 	}
@@ -275,8 +254,7 @@ func inferenceFrom(value component.Value) (*invoke.Inference, error) {
 			return nil, errors.New("a tool is not three strings")
 		}
 		if name == "" {
-			// A TOOL WITH NO NAME CANNOT BE CALLED BACK. The model would answer
-			// with an empty name and the caller would have nothing to look up.
+			// A tool with no name cannot be called back.
 			return nil, errors.New("a tool must have a name")
 		}
 		out.Tools = append(out.Tools, invoke.Tool{Name: name, Description: description, Schema: schema})

@@ -1,62 +1,21 @@
-// Package wasm runs a component.
+// Package wasm runs a component: a WebAssembly component with a declared WIT world,
+// so any toolchain emitting one works, unlike v1's hand-rolled host ABI.
 //
-// # It is the differentiator, and it is the component model
+// wit/handler.wit is the world. Request and response types live in the world
+// itself, because a type `use`d from an imported interface leaves the export's
+// signature unresolvable from the component's own type section. Every imported
+// capability is its own versioned WIT package under wit/deps, matched by one row
+// in host.go.
 //
-// A tau function compiles to a WebAssembly component and this runs it. Not a
-// core module with a hand-rolled host ABI — v1's shape, where the guest and the
-// host agreed by convention and a guest written in any other language had to
-// reimplement that convention — but a component with a declared WIT world, so
-// what a guest exports is described by the artifact itself and any toolchain
-// that emits a component can produce one.
+// `execution/call` names the export, so one component can hold several functions.
+// A component exporting `wasi:http/incoming-handler` is the standard world (what
+// wasmtime serve, Spin and wasmCloud run) and runs unmodified; the instance's
+// exports say which.
 //
-// wit/handler.wit is that world. The REQUEST AND RESPONSE types live in the
-// world rather than in an imported interface for a reason that is mechanical: a
-// `use` from an imported interface leaves the export's signature referring to a
-// type a host reading the component's own type section cannot resolve, and the
-// call cannot be flattened at all.
-//
-// # One package per capability, and one host component per package
-//
-// Everything the world IMPORTS is its own WIT package under wit/deps —
-// taubyte:cache, taubyte:sql, taubyte:storage, thirteen of them — each with its
-// own version and its own world, so a capability moves without moving what a
-// guest of another was built against, and a world serving a subset of them is
-// expressible at all. host.go is the matching register on this side: one row
-// per package, so a capability is a file on each side rather than two more
-// lines in an instantiation.
-//
-// # The export is named by the author
-//
-// `execution/call` names it, so a project with two functions in one component
-// is two exports rather than two components. The world declares the SHAPE; the
-// host calls whatever the configuration says.
-//
-// # Two worlds, and a component is recognised by what it exports
-//
-// A component exporting `wasi:http/incoming-handler` is the standard world —
-// what wasmtime serve, Spin and wasmCloud run — and it runs here unmodified.
-// One exporting a bare function is the world above. Nothing declares which; the
-// instance says what it exports and this reads it.
-//
-// # The sandbox is empty by default, and that is the whole posture
-//
-// A guest gets no filesystem, no sockets, no environment beyond what the
-// resource declared, and no clock beyond WASI's. The one door out is HTTP, and
-// it is GOVERNED rather than absent: `egress` on the resource says where, and
-// empty means nowhere (egress.go). A component that exports the standard world
-// usually imports the outgoing half beside it, so refusing that outright would
-// refuse a large share of what this tier exists to be able to run.
-//
-// It is the same rule the container tier states with a firewall, arrived at
-// with the only mechanism a wasm guest has — there is no socket to filter,
-// because the guest never gets one.
-//
-// # One runtime per instance, and why
-//
-// A memory ceiling is a property of a wazy runtime rather than of a module, and
-// every resource declares its own — so a runtime shared across specs could only
-// carry one of them. The compilation cache is shared instead, which is where
-// the cost actually is: two instances of one revision compile once.
+// The sandbox is empty by default: no filesystem, sockets or environment beyond the
+// resource's. Outbound HTTP is governed by the resource's `egress` over the node's
+// floor (egress.go). Each instance gets its own wazy runtime since a memory ceiling
+// is per runtime; the compilation cache is shared.
 package wasm
 
 import (
@@ -87,26 +46,18 @@ const (
 	// SettingCall is the exported symbol to enter the component at.
 	SettingCall = specs.WorkloadBlockKeyExecutionCall
 
-	// SettingImplements is which host interface the component was built
-	// against. The schema defaults it to WorldHandler, so a resource that says
-	// nothing still says handler.
+	// SettingImplements is the host interface the component was built against;
+	// schema-defaulted to WorldHandler.
 	SettingImplements = specs.WorkloadBlockKeyImplements
 )
 
-// WorldHandler is the only host interface this tier serves: a component that
-// takes a request and answers with a response.
-//
-// THE OTHERS ARE REFUSED BY NAME. An authorizer takes a caller and an
-// operation; a gateway-transformer takes a parsed HTTP request; a router
-// answers with a destination. Calling one of them with a handler's signature
-// would not fail cleanly — it would hand a component bytes it reads as
-// something else, which is the failure the vocabulary added `implements` to
-// prevent.
+// WorldHandler is a component taking a request and answering a response. Worlds
+// this tier does not start are refused by name, since calling one with a handler's
+// signature would misread its bytes.
 const WorldHandler = specs.WorkloadBlockImplementsHandler
 
-// pooledWorlds is what Start can bring up, and worldExports is the export each
-// of them is driven through. A world with no fixed export takes the one the
-// configuration names, which only the handler does.
+// pooledWorlds is what Start can bring up, and worldExports each one's export; only
+// the handler takes the configured export.
 var (
 	pooledWorlds = map[string]bool{
 		WorldHandler:            true,
@@ -124,8 +75,7 @@ var (
 	}
 )
 
-// startableWorlds is what Start can bring up, sorted — for a message that has to
-// name them without keeping a second copy of the set.
+// startableWorlds is what Start can bring up, sorted, for messages.
 func startableWorlds() []string {
 	out := make([]string, 0, len(pooledWorlds))
 	for world := range pooledWorlds {
@@ -135,20 +85,14 @@ func startableWorlds() []string {
 	return out
 }
 
-// httpWorld is the standard world's export. A component exporting it is driven
-// as an HTTP handler; anything else is called by name.
-//
-// IT IS MATCHED WITHOUT ITS VERSION, because a component is built against
-// whichever wasi:http its toolchain shipped — 0.2.0 through 0.2.12 and onward —
-// and refusing one for its minor version would refuse components that work.
+// httpWorld is the standard world's export, matched without its version, since
+// toolchains ship different wasi:http minors.
 const httpWorld = "wasi:http/incoming-handler"
 
 // pageSize is WebAssembly's, and the unit a memory ceiling is expressed in.
 const pageSize = 64 << 10
 
-// DefaultExport is called when the configuration names none. It is the world's
-// own export name, so a component built straight from wit/handler.wit runs
-// without the configuration having to repeat what the world already says.
+// DefaultExport is called when no export is configured: the world's own name.
 const DefaultExport = "handle"
 
 var (
@@ -156,27 +100,17 @@ var (
 	ErrNoArtifact  = errors.New("wasm: the spec names no artifact")
 	ErrUnknownMode = errors.New("wasm: unknown engine mode")
 
-	// ErrNoMounts is a component that declared a filesystem. It is refused
-	// rather than started without one — see the container tier's own
-	// ErrNoMounts for why this is the one unserved capability that refuses
-	// instead of warning.
+	// ErrNoMounts is a component declaring a filesystem, refused (see the container
+	// tier's ErrNoMounts).
 	ErrNoMounts = errors.New("wasm: a component is given no filesystem, and the workload declared a mount")
 
-	// ErrUnsupportedWorld is a component built against a host interface this
-	// tier does not start.
-	//
-	// ITS TEXT SAID "runs the handler interface and nothing else yet" while
-	// pooledWorlds held five. A message that names a capability set goes stale
-	// the moment the set grows, and this one had — so an author who declared a
-	// world Start does not pool was told this tier runs only handlers, which is
-	// false and sends them to change the wrong thing. The set is named at the
-	// call site now, from the set itself.
+	// ErrUnsupportedWorld is a component built against a host interface this tier does
+	// not start; the startable set is named at the call site so the message never goes
+	// stale.
 	ErrUnsupportedWorld = errors.New("wasm: this tier does not start that host interface")
 
-	// ErrNotAHandler is a component whose export does not have the shape
-	// wit/handler.wit declares. It is reported against the EXPORT rather than
-	// the component, because a component may export several and only one of
-	// them is what the configuration named.
+	// ErrNotAHandler is an export not shaped as wit/handler.wit declares, reported
+	// against the export.
 	ErrNotAHandler = errors.New("wasm: that export does not answer with a response")
 )
 
@@ -215,23 +149,13 @@ type Runtime struct {
 	// is the process default; a test points it at a scratch backend.
 	transport http.RoundTripper
 
-	// warn is how this tier tells an operator about a capability it was handed
-	// and cannot serve. Nil says nothing, which is what a tier composed without
-	// somewhere to put it does.
+	// warn tells an operator about a capability handed over that cannot be served; nil
+	// says nothing.
 	warn func(format string, args ...any)
 
-	// output is where a guest's own writes go, per workload.
-	//
-	// IT IS A FUNCTION OF THE SPEC because a tier is built once and runs many
-	// workloads: a single writer handed in at construction would interleave
-	// every function on the node into one stream with nothing saying which
-	// wrote what.
-	//
-	// WHAT IS STILL MISSING is per-INVOCATION attribution. stdout belongs to an
-	// instance rather than to a call, so at a concurrency above one — which the
-	// Lambda model's default of one is deliberately not — two requests' output
-	// interleaves. Closing that means a sink on invoke.Instance.Serve, which is
-	// a change to every tier.
+	// output is where a guest's writes go, per workload so functions do not interleave.
+	// Per-invocation attribution is still missing: above concurrency one, two requests'
+	// output interleaves.
 	output func(spec invoke.Spec) (stdout, stderr io.Writer)
 
 	// caches backs `taubyte:cache/store`. Nil is a tier that runs everything
@@ -295,10 +219,7 @@ var _ invoke.Runtime = (*Runtime)(nil)
 // Option configures a Runtime.
 type Option func(*Runtime)
 
-// WithOutput is where a guest's stdout and stderr go, chosen per workload.
-//
-// A nil function, or one that answers nil, discards them — which is what a node
-// with nowhere to put them does, rather than holding a buffer nothing reads.
+// WithOutput is where a guest's stdout and stderr go, per workload; nil discards.
 func WithOutput(sink func(spec invoke.Spec) (stdout, stderr io.Writer)) Option {
 	return func(r *Runtime) { r.output = sink }
 }
@@ -356,14 +277,9 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 		return nil, fmt.Errorf("%w: %s", ErrNoArtifact, spec.Name)
 	}
 
-	// WHICH WORLD THIS SPEC IS, and Start drives two of them.
-	//
-	// A handler, the two transformers and the two routers are all POOLED —
-	// they run per request, per connection or per chunk, and none of their
-	// answers can be kept — so all of them arrive here, and the instance
-	// remembers which it is so the wrong export is never called on it. An
-	// authorizer and an instance validator have their own entry points because
-	// they are asked once and their answers ARE kept.
+	// Which world this spec is. Handler, transformers and routers are pooled (none of
+	// their answers can be kept), and the instance remembers its world so the wrong
+	// export is never called; authorizers and validators have their own entry points.
 	world := spec.Settings[SettingImplements]
 	if world == "" {
 		world = WorldHandler
@@ -384,9 +300,7 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 	}
 
 	if fixed, ok := worldExports[world]; ok {
-		// FIXED, unlike a handler's. A gateway or a proxy names the FUNCTION
-		// it passes traffic through, not an export inside it, so there is no
-		// `execution/call` here to carry a second name.
+		// Fixed: a gateway or proxy names the function, not an export.
 		export = fixed
 	}
 
@@ -399,31 +313,13 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 	}, nil
 }
 
-// instantiate fetches a component, checks it is the world the caller is about
-// to drive it as, and brings it up.
-//
-// THE WORLD IS AN ARGUMENT BECAUSE THE ENTRY POINT IS THE THING THAT KNOWS IT.
-// Serve drives a `handle(request) -> response`; Authorize drives an
-// `authorize(question) -> decision`. A component built for one of those
-// instantiates perfectly well under the other and then reads the arguments it is
-// handed as something else, which is the failure `implements` exists to prevent
-// — so each entry point names the world it can actually call.
-//
-// IT CHECKS THE DECLARATION AND NOT THE ARTIFACT, which is worth being exact
-// about. This catches "asked to authorize with a component the config calls a
-// handler", before anything is fetched. It does not catch a component MIS-BUILT
-// against its own declaration: the runtime offers no way to ask whether a bare
-// world export exists without calling it, so that one surfaces on the first call
-// as an unknown export. Probing it here would mean invoking somebody's
-// transformer with a fabricated request at start-up, which is worse.
-//
-// AN EMPTY `implements` IS THE HANDLER, which is what the schema defaults it to,
-// so a world that is not the handler must be written down to be run as one.
+// instantiate fetches a component, checks its declared world matches the one the
+// caller will drive, and brings it up. It checks the declaration, not the
+// artifact: a component mis-built against its own declaration surfaces on the first
+// call. An empty `implements` is the handler.
 func (r *Runtime) instantiate(ctx context.Context, spec invoke.Spec, world string) (*component.Instance, wazy.Runtime, error) {
-	// A SPEC FOR ANOTHER TIER IS REFUSED BY NAME. The pool picks a tier by
-	// spec.Runtime, but a guard, a validator and a resolver are asked through
-	// this tier directly, and nothing else stops what another engine runs from
-	// reaching wazy as bytes it cannot parse.
+	// A spec for another tier is refused: guards, validators and resolvers reach this
+	// tier directly, not through the pool.
 	if spec.Runtime != "" && spec.Runtime != Name {
 		return nil, nil, fmt.Errorf("%w: %s runs on the %q tier, and this is the %s tier",
 			invoke.ErrNoRuntime, spec.Name, spec.Runtime, Name)
@@ -441,26 +337,20 @@ func (r *Runtime) instantiate(ctx context.Context, spec invoke.Spec, world strin
 			ErrUnsupportedWorld, spec.Name, declared, world)
 	}
 
-	// A DECLARED FILESYSTEM IS REFUSED HERE TOO, and for a stronger reason than
-	// the container tier's: a guest has no filesystem at all. The sandbox
-	// preopens no directory on purpose, so a workload that declared a mount
-	// would write into a WASI shim's memory and lose it at the end of the
-	// instance rather than at the end of the deploy.
+	// A declared filesystem is refused: no directory is preopened, so writes would
+	// vanish with the instance.
 	if mounted := spec.Mounted(); len(mounted) > 0 {
 		return nil, nil, fmt.Errorf("%w: %s wants %s, and a component is given no filesystem",
 			ErrNoMounts, spec.Name, mounted[0].Label)
 	}
 
-	// A GUARDED GRANT NEEDS SOMETHING TO ASK. It is checked here beside the
-	// capability backings rather than in the register, because an authorizer is
-	// not a capability: it hangs off every kind that declares Ops() rather than
-	// being one of them.
+	// A guarded grant needs something to ask; checked here since an authorizer hangs off
+	// every kind rather than being a capability.
 	if guarded := guardedGrants(spec); len(guarded) > 0 && r.authorizers == nil {
 		return nil, nil, fmt.Errorf("%w: %s reaches %s", ErrNoAuthorizers, spec.Name, guarded[0].Label)
 	}
 
-	// EVERY CAPABILITY'S HOST HALF, and the refusal for one that is granted
-	// with nothing behind it. See host.go: the register is the list of them.
+	// Every capability's host half (host.go).
 	r.unserved(spec)
 
 	imports, err := r.imports(spec)
@@ -502,12 +392,8 @@ func (r *Runtime) instantiate(ctx context.Context, spec invoke.Spec, world strin
 	return instance, runtime, nil
 }
 
-// exportsHTTPWorld reports whether this component is the standard world.
-//
-// IT ASKS THE INSTANCE rather than the configuration, because which world a
-// component implements is a property of the artifact and nothing an author
-// should have to restate — a component built for wasmtime serve carries the
-// answer with it.
+// exportsHTTPWorld reports whether this component is the standard world, read from
+// the instance.
 func exportsHTTPWorld(instance *component.Instance) bool {
 	for _, name := range instance.InstanceExports() {
 		if strings.HasPrefix(name, httpWorld) {
@@ -517,11 +403,8 @@ func exportsHTTPWorld(instance *component.Instance) bool {
 	return false
 }
 
-// sandbox is what a guest may reach.
-//
-// AN EMPTY WASIConfig IS THE POINT: no preopened directory, no sockets, and no
-// environment but the resource's own. Every one of those is a grant somebody
-// has to make rather than something to be taken away later.
+// sandbox is what a guest may reach: an empty WASIConfig, with only the resource's
+// environment.
 func (r *Runtime) sandbox(spec invoke.Spec) []component.Option {
 	var stdout, stderr io.Writer
 	if r.output != nil {
@@ -533,11 +416,8 @@ func (r *Runtime) sandbox(spec invoke.Spec) []component.Option {
 		Stderr: stderr,
 		Env:    environment(spec.Env),
 
-		// THE STANDARD WORLD IS ALWAYS REGISTERED, because whether a component
-		// needs it cannot be known before instantiating it — its imports are
-		// what instantiation resolves. What that would otherwise hand a guest,
-		// an unrestricted HTTP client, is closed by the allowlist rather than
-		// by leaving the world out.
+		// The standard world is always registered, since imports resolve only at
+		// instantiation; the allowlist governs the client.
 		EnableHTTP: true,
 		HTTPClient: egressFor(spec.Egress, r.transport),
 	})
@@ -558,11 +438,8 @@ func environment(env map[string]string) []string {
 	return out
 }
 
-// memoryPages is a byte ceiling as whole WebAssembly pages, rounded UP.
-//
-// ROUNDED UP because a limit below what the author asked for is a workload that
-// fails for a reason the configuration does not state — and the overshoot is at
-// most one page.
+// memoryPages is a byte ceiling in whole pages, rounded up so the limit is never
+// below what was asked.
 func memoryPages(bytes int64) uint32 {
 	if bytes <= 0 {
 		return 0
@@ -582,10 +459,7 @@ type function struct {
 	instance *component.Instance
 	export   string
 
-	// world is which of the two started worlds this is, so the wrong export is
-	// never called on it — a transformer driven as a handler would be handed a
-	// request it reads as a request and answer with an outcome the caller reads
-	// as a response.
+	// world is which started world this is, so the wrong export is never called.
 	world string
 
 	// http says this component is the standard world, so it is driven as an
@@ -622,12 +496,8 @@ func (f *function) Serve(ctx context.Context, req *invoke.Request) (*invoke.Resp
 	return responseFrom(out[0], f.export)
 }
 
-// requestValue lowers a Request into the world's `request` record.
-//
-// A RECORD IS ITS FIELDS IN ORDER, which is the component model's own value
-// shape — so this is the one place the field ORDER in wit/handler.wit is
-// load-bearing, and reordering it there without reordering it here would be a
-// silent transposition of two strings.
+// requestValue lowers a Request into the `request` record. Fields in order, so
+// wit/handler.wit's field order is load-bearing here.
 func requestValue(req *invoke.Request) component.Value {
 	if req == nil {
 		req = &invoke.Request{}
@@ -650,11 +520,7 @@ func requestValue(req *invoke.Request) component.Value {
 	return []component.Value{req.Method, req.Path, headers, body}
 }
 
-// responseFrom lifts the world's `response` record back.
-//
-// EVERY FIELD IS CHECKED. What comes back was produced by a stranger's
-// component, so a shape that is not this world's is an error naming the export
-// rather than a panic three frames later.
+// responseFrom lifts the `response` record back, checking every field.
 func responseFrom(value component.Value, export string) (*invoke.Response, error) {
 	fields, ok := value.([]component.Value)
 	if !ok || len(fields) != 3 {

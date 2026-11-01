@@ -12,20 +12,10 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// workflow.go is the host half of `taubyte:workflow/runs`.
-//
-// # It is one function over the queue backing, and it is still not `queue.send`
-//
-// A workflow lowers to one queue per step and starting a run IS sending to the
-// first step's queue — so this reaches the same backing `queue.send` does, with
-// the handle the composer resolved from the workflow's own `entry/start`
-// record.
-//
-// WHAT MAKES IT A SEPARATE INTERFACE IS THE GRANT. An author who wrote
-// `workflow: checkout: {ops: [start]}` granted a pipeline, not the queues it
-// became; serving that through the queue interface would let a caller push
-// straight into `checkout_charge` and skip the step that reserves the stock.
-// The two doors carry different permissions, so there are two doors.
+// workflow.go is the host half of `taubyte:workflow/runs`. Starting a run is a send
+// to the first step's queue, on the queue backing, but a separate interface because
+// the grant differs: a workflow grant must not let a caller push into a later step's
+// queue.
 
 const workflowInterface = "taubyte:workflow/runs@0.1.0"
 
@@ -120,14 +110,8 @@ func (r *Runtime) workflowImports(spec invoke.Spec) []component.Option {
 			return errorResult(workflowFailure(errWorkflowDenied, label+" cannot start")), nil
 		}
 
-		// THE COMPOSER RESOLVED WHERE A START LANDS. A tier that read the
-		// workflow to find out would need the compiled project on the request
-		// path, which is the whole reason a grant carries a handle at all.
-		//
-		// AND THE REBUILD IS SHARED — see invoke.StartGrant. It was this
-		// function's alone, and the other firer of a start passed the
-		// workflow's own grant instead: an item in a queue named after the
-		// workflow, which no consumer ever opens.
+		// The composer resolved where a start lands; the grant rebuild is invoke.StartGrant,
+		// shared with every other firer.
 		queued, ok := invoke.StartGrant(grant)
 		if !ok {
 			return errorResult(workflowFailure(errWorkflowUnavailable,

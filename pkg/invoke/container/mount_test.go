@@ -11,18 +11,9 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// mount_test.go is about the one unserved capability that LOSES DATA.
-//
-// Everything else an access block declares fails where it is used: a database
-// nothing connected to is a connection error the workload itself reports, at
-// the moment it tries. A VOLUME does not. A container started without the
-// filesystem it declared writes into its own layer, which is discarded with the
-// container — and nothing anywhere says so until somebody goes looking for the
-// data.
-//
-// So it refuses — WHEN THERE IS NOTHING TO GIVE IT. A tier handed a Volumes
-// backing puts the directory it is handed at the path the author wrote, which
-// is what makes an imported compose stack with a database run at all.
+// A volume is the one unserved capability that loses data rather than failing, so
+// it is refused when there is nothing to mount, and mounted at the author's path
+// when a Volumes backing exists.
 
 // mountTier is a runtime over a backend that starts and listens, so a test can
 // tell "it refused" from "it could not have started anyway".
@@ -53,8 +44,6 @@ func TestAWorkloadThatDeclaresAMountIsRefused(t *testing.T) {
 	require.ErrorContains(t, err, "discarded with the container")
 }
 
-// TestTheRefusalNamesEveryMount, sorted, so a workload with three of them gets
-// one message naming all three rather than one at a time across three deploys.
 func TestEveryMountIsNamedAtOnce(t *testing.T) {
 	_, err := mountTier(t, nil).Start(context.Background(), invoke.Spec{
 		Name:     "app",
@@ -69,8 +58,6 @@ func TestEveryMountIsNamedAtOnce(t *testing.T) {
 	require.ErrorContains(t, err, "pgdata at /var/lib/postgresql/data, uploads at /srv/uploads")
 }
 
-// TestAMountWithNoPathIsStillRefused, because the path is the entry's and an
-// entry that omitted it is still a filesystem nobody gets.
 func TestAMountWithNoPathIsRefused(t *testing.T) {
 	_, err := mountTier(t, nil).Start(context.Background(), invoke.Spec{
 		Name: "app", Artifact: "x",
@@ -81,9 +68,6 @@ func TestAMountWithNoPathIsRefused(t *testing.T) {
 	require.ErrorContains(t, err, "data at an unnamed path")
 }
 
-// TestEverythingElseWarnsAndStarts. A database, a cache or a stream this tier
-// does not inject fails where the workload uses it, loudly and by itself — so
-// refusing would take down a workload over something it may never touch.
 func TestOtherUnservedAccessWarnsRatherThanRefusing(t *testing.T) {
 	var warnings []string
 	runtime := mountTier(t, func() []Option {
@@ -106,8 +90,6 @@ func TestOtherUnservedAccessWarnsRatherThanRefusing(t *testing.T) {
 	require.Contains(t, joined, "cache, database", "sorted, and both named")
 }
 
-// TestAWorkloadThatReachesNothingIsQuiet, so the warning means something when
-// it appears.
 func TestNoAccessMeansNoWarning(t *testing.T) {
 	var warnings []string
 	runtime := mountTier(t, func() []Option {
@@ -124,8 +106,6 @@ func TestNoAccessMeansNoWarning(t *testing.T) {
 	}
 }
 
-// ── and what happens when there IS something to mount ────────────────────────
-
 // fakeVolumes hands back a path per label and records what it was asked for.
 type fakeVolumes struct {
 	err   error
@@ -140,8 +120,6 @@ func (f *fakeVolumes) Mount(_ context.Context, grant invoke.Grant) (string, erro
 	return "/srv/tau/volumes/" + grant.Label, nil
 }
 
-// TestTHEDIRECTORYReachesTheContainerAtThePathTheAuthorWrote, which is the
-// whole of what this tier does with a volume.
 func TestADeclaredMountBecomesAContainerMount(t *testing.T) {
 	disks := &fakeVolumes{}
 	rt := newFakeBackend()
@@ -168,8 +146,6 @@ func TestADeclaredMountBecomesAContainerMount(t *testing.T) {
 	require.Equal(t, "pgdata", disks.asked[0].Label)
 }
 
-// TestREADONLYIsTheGRANTSOwnDistinction. `mount-ro` and `mount-rw` are two
-// verbs, and serving the first as the second would widen a grant.
 func TestAReadOnlyGrantIsMountedReadOnly(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
@@ -188,8 +164,6 @@ func TestAReadOnlyGrantIsMountedReadOnly(t *testing.T) {
 	require.True(t, rt.created[0].Volumes[0].ReadOnly)
 }
 
-// TestTWOMountsAreSortedByWhereTheyLand, so a container's config is the same on
-// every node rather than depending on a map walk.
 func TestMountsAreOrderedByDestination(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
@@ -212,9 +186,6 @@ func TestMountsAreOrderedByDestination(t *testing.T) {
 	require.Equal(t, "/var/lib/wal", mounts[1].Destination)
 }
 
-// TestAVOLUMEThisCloudRefusedIsNotMountedAnyway. A refused grant is the
-// composer saying it will not serve this target, and starting the container
-// without it is the exact data loss the refusal exists to prevent.
 func TestARefusedMountGrantStillRefusesTheWorkload(t *testing.T) {
 	tier := mountTier(t, func() []Option { return []Option{WithVolumes(&fakeVolumes{})} })
 
@@ -229,7 +200,6 @@ func TestARefusedMountGrantStillRefusesTheWorkload(t *testing.T) {
 	require.ErrorContains(t, err, "this cloud has no disk for it")
 }
 
-// TestABackingThatCannotGiveADirectoryRefuses rather than starting without one.
 func TestAVolumeBackingThatFailsRefusesTheWorkload(t *testing.T) {
 	tier := mountTier(t, func() []Option {
 		return []Option{WithVolumes(&fakeVolumes{err: fmt.Errorf("no room")})}

@@ -12,35 +12,11 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// channel.go is the host half of `taubyte:channel/dialer` — the vocabulary's
-// `channel` kind, which is what v1 called p2p.
-//
-// # The name is the vocabulary's and the rename is load-bearing
-//
-// `p2p` names the TRANSPORT rather than the thing, the way `http` would be a
-// poor name for a route. What this is, is a named, ordered conduit between
-// exactly two workloads inside one project — the way in that is not an ingress
-// — and libp2p is how it is carried. Anyone reading v1's
-// v1's `services/substrate/components/p2p/` is reading this.
-//
-// # One verb, and it is a write
-//
-// `dial` is the kind's only op and the vocabulary classifies it as a write,
-// because what travels is opaque: nothing on this side can look at the bytes
-// and decide the call only read something.
-//
-// # Request and response, and the conduit that is not here yet
-//
-// `dial` sends a body and answers with one. That is the shape almost every use
-// of v1's p2p actually had — ask the sidecar, get the answer — and it needs no
-// handle outliving the call.
-//
-// A GENUINE CONDUIT IS A WIT `resource`, and it is deliberately not declared:
-// streaming both ways means an own<channel> over `wasi:io/streams`, and the far
-// end has to hold a connection open per caller. Declaring that before anything
-// serves it would publish a promise no backing keeps. `dial` is not a stepping
-// stone that gets thrown away either — it stays exactly as it reads when a
-// `connect` returning a resource lands beside it.
+// channel.go is the host half of `taubyte:channel/dialer`, the `channel` kind (v1's
+// p2p): a named conduit between two workloads in one project, carried by libp2p.
+// `dial`, a write since the bytes are opaque, sends a body and returns one. A
+// streaming conduit would be a WIT resource over `wasi:io/streams`, not declared
+// until something serves it; `dial` stays beside it.
 
 const channelInterface = "taubyte:channel/dialer@0.1.0"
 
@@ -73,17 +49,11 @@ var (
 	ErrChannelFailed = errors.New("wasm: the channel's far end refused")
 )
 
-// Channels dials the one a grant names.
-//
-// IT IS A SEAM BECAUSE A CHANNEL IS A LIBP2P PROTOCOL and this package's job is
-// the ABI. What a handle means on the wire, how the project's identity is
-// prepended to the protocol name and which peer answers are the composer's and
-// the transport's.
+// Channels dials the channel a grant names; the wire protocol and peer selection
+// are the composer's and the transport's.
 type Channels interface {
-	// Dial sends a body to whatever serves this channel and answers with what
-	// came back. It is bounded by ctx, which carries the CALLER's timeout: a
-	// channel declares no deadline of its own, and the workload waiting is the
-	// one whose budget is being spent.
+	// Dial sends a body to whatever serves this channel and returns the answer, bounded
+	// by the caller's ctx.
 	Dial(ctx context.Context, grant invoke.Grant, body []byte) ([]byte, error)
 }
 
@@ -110,9 +80,8 @@ func channelGrantsOf(spec invoke.Spec) map[string]invoke.Grant {
 	return out
 }
 
-// servableChannels is the channel grants this tier would have to serve — the
-// refused ones do not count, for the reason servableStorage states: a
-// per-target refusal must not become a per-workload one.
+// servableChannels is the channel grants this tier must serve; refused ones don't
+// count.
 func servableChannels(spec invoke.Spec) map[string]invoke.Grant {
 	var out map[string]invoke.Grant
 	for label, g := range channelGrantsOf(spec) {

@@ -1,30 +1,12 @@
-// Package static serves a built site.
+// Package static serves a built site as a compute tier: fetching and unpacking is a
+// cold start, disk the reason to evict, so the pool handles the lifecycle. The
+// artifact is the gzipped tar the build stores (services/build/artifact).
 //
-// # It is a compute tier, and that is not a stretch
+//	static  an unmatched path returns the not-found document with 404
+//	spa     an unmatched path returns the index document with 200, for the page's
+//	        own router
 //
-// A site has a cold start — fetching the artifact and unpacking it — a warm
-// state, and a reason to be evicted, which is disk. Those are the three things
-// pkg/invoke's pool decides, so a site gets scale-to-zero and idle reclamation
-// for free and this package decides none of it.
-//
-// # What it serves
-//
-// A website's build leaves a directory, which the build service stores as one
-// gzipped tar (services/build/artifact). So the artifact in a Spec is a content
-// id rather than an image reference, and starting an instance is: fetch it,
-// unpack it into a directory this instance owns, and answer paths out of it.
-//
-// # The two modes, and why the difference matters
-//
-//	static  an unmatched path returns the not-found document with 404.
-//	spa     an unmatched path returns the index document with 200, because the
-//	        page's own router renders the route.
-//
-// GETTING THIS WRONG IS THE MOST COMMON WAY A DEPLOYED SINGLE-PAGE APP LOOKS
-// BROKEN: every route works until somebody reloads the page, and then the
-// server is asked for /orders/42 and has never heard of it. The vocabulary
-// makes the author say which, and this honours it rather than guessing from
-// whether a not-found document happens to exist.
+// The author chooses; this never guesses from whether a not-found document exists.
 package static
 
 import (
@@ -62,12 +44,8 @@ const (
 // DefaultIndex is the vocabulary's own default for `serve/index`.
 const DefaultIndex = "index.html"
 
-// maxArtifact bounds what one site may unpack to.
-//
-// A LIMIT IS NOT OPTIONAL ON A DECOMPRESSOR. A gzipped tar is a stranger's
-// bytes — it came out of a build running a repository's own commands — and a
-// few kilobytes of it can name terabytes. This is the ceiling, and it is
-// generous enough that no real site meets it.
+// maxArtifact bounds what one site may unpack to: the tar is a stranger's bytes and
+// a few kilobytes can name terabytes.
 const maxArtifact = 2 << 30
 
 var (
@@ -109,9 +87,7 @@ func (r *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 	}
 	defer content.Close()
 
-	// ITS OWN DIRECTORY, REMOVED WITH IT, so two revisions of one site can be
-	// warm at once — which is what makes a rollback warm and a deploy not a
-	// restart.
+	// Its own directory, removed with it, so two revisions can be warm at once.
 	root, err := os.MkdirTemp("", "tau-site-")
 	if err != nil {
 		return nil, fmt.Errorf("static: %w", err)
@@ -149,9 +125,8 @@ func (s *site) Close() error { return os.RemoveAll(s.root) }
 
 // Serve answers one request out of the unpacked directory.
 func (s *site) Serve(_ context.Context, req *invoke.Request) (*invoke.Response, error) {
-	// A SITE ANSWERS READS. A POST to a static site is not a route the author
-	// wrote, and answering 200 with the index for it would make a broken form
-	// look like a working one.
+	// A site answers reads only; a 200 with the index for a POST would hide a broken
+	// form.
 	switch req.Method {
 	case "", http.MethodGet, http.MethodHead:
 	default:
@@ -165,9 +140,7 @@ func (s *site) Serve(_ context.Context, req *invoke.Request) (*invoke.Response, 
 		return answer(http.StatusOK, name, body, req.Method), nil
 	}
 
-	// SPA: AN UNMATCHED PATH IS THE INDEX, WITH 200, because the page's own
-	// router renders the route. Without this every route works until somebody
-	// reloads the page.
+	// SPA: an unmatched path is the index with 200.
 	if s.mode == ModeSPA {
 		if body, name, ok := s.read(s.index); ok {
 			return answer(http.StatusOK, name, body, req.Method), nil
@@ -184,10 +157,8 @@ func (s *site) Serve(_ context.Context, req *invoke.Request) (*invoke.Response, 
 
 // read resolves a request path to a file in the site.
 func (s *site) read(request string) (body []byte, name string, ok bool) {
-	// THE PATH IS THE INTERNET'S. It is cleaned as an absolute path first, so
-	// every `..` is resolved before anything touches the filesystem, and then
-	// joined under the root — the same two-step net/http's own file server
-	// uses, and the reason a single-step Join is not enough.
+	// Cleaned as an absolute path first so every `..` resolves before the join, as
+	// net/http's file server does.
 	cleaned := path.Clean("/" + strings.TrimPrefix(request, "/"))
 	full := filepath.Join(s.root, filepath.FromSlash(cleaned))
 
@@ -196,8 +167,7 @@ func (s *site) read(request string) (body []byte, name string, ok bool) {
 		return nil, "", false
 	}
 
-	// A DIRECTORY IS ITS INDEX, and a directory with no index is not a listing:
-	// serving one would publish every file a build happened to leave behind.
+	// A directory is its index, never a listing.
 	if info.IsDir() {
 		full = filepath.Join(full, s.index)
 		if info, err = os.Stat(full); err != nil || info.IsDir() {
@@ -228,12 +198,8 @@ func answer(status int, name string, body []byte, method string) *invoke.Respons
 	return &invoke.Response{Status: status, Headers: headers, Body: body}
 }
 
-// contentType is the extension's, and octet-stream for one nothing claims.
-//
-// IT NEVER SNIFFS THE BODY. A build's output is a stranger's bytes, and
-// guessing text/html for one of them is how a file somebody uploaded becomes a
-// script on the site's own origin. The header beside it says the same thing to
-// the browser.
+// contentType is the extension's, octet-stream otherwise; it never sniffs, so an
+// uploaded file cannot become a script on the site's origin.
 func contentType(name string) string {
 	if t := mime.TypeByExtension(filepath.Ext(name)); t != "" {
 		return t
@@ -260,10 +226,8 @@ func unpack(content io.Reader, root string) error {
 			return err
 		}
 
-		// AN ENTRY THAT CLIMBS OUT IS REFUSED, NOT SKIPPED. A tar whose members
-		// escape their root is not a site with one bad file in it; it is an
-		// archive built to write somewhere else, and unpacking the rest of it
-		// would be doing most of what it asked.
+		// An entry that climbs out is refused, not skipped: the archive was built to write
+		// elsewhere.
 		target, ok := within(root, header.Name)
 		if !ok {
 			return fmt.Errorf("static: %q climbs out of the site", header.Name)
@@ -284,9 +248,7 @@ func unpack(content io.Reader, root string) error {
 				return err
 			}
 		default:
-			// A SYMLINK IS NOT UNPACKED. One pointing at /etc would turn every
-			// later read of it into a read of that file, on a request path the
-			// internet reaches.
+			// A symlink is not unpacked.
 			continue
 		}
 	}
@@ -303,9 +265,8 @@ func writeFile(target string, content io.Reader, room int64) (int64, error) {
 	}
 	defer file.Close()
 
-	// LIMITED, AND THE LIMIT IS CHECKED BY OVERSHOOTING IT BY ONE. Copying
-	// exactly `room` bytes and stopping is indistinguishable from a file that
-	// happens to be exactly that long.
+	// Copy one byte past the room left, so a file exactly at the limit is told apart
+	// from one beyond it.
 	n, err := io.Copy(file, io.LimitReader(content, room+1))
 	if err != nil {
 		return n, err

@@ -17,12 +17,8 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// storage_test drives the object store through a REAL COMPONENT, which is the
-// only thing that shows the records this interface carries survive both
-// directions of the ABI. It is the deepest shape in the tree: `get` answers a
-// record CONTAINING a record containing a list of records, and `list` takes one
-// record and answers another — and a shape that lifts wrong is a field read off
-// the wrong offset rather than an error.
+// Through a real component: the deepest record shapes in the tree (a record in a
+// record holding a list of records), where a wrong lift reads the wrong offset.
 
 // storageGrant is one bucket a workload may reach.
 func storageGrant(label, handle string, ops ...string) invoke.Grant {
@@ -80,9 +76,8 @@ type memBucket struct {
 	asked wasm.ListRequest
 }
 
-// etagOf is the fake's content id: a hash of the bytes, so two objects with the
-// same content carry the same etag — which is the property the real store gets
-// from being content-addressed and the one a random string would not show.
+// etagOf hashes the bytes, so identical content shares an etag as in the real
+// store.
 func etagOf(body []byte) string {
 	sum := sha256.Sum256(body)
 	return "bafy" + hex.EncodeToString(sum[:8])
@@ -215,8 +210,6 @@ func storing(t *testing.T, ops ...string) (invoke.Instance, *buckets) {
 	return instance, store
 }
 
-// TestTHEBYTESAGuestWroteAreTheBytesItGets, which is the one claim no in-process
-// fake can make on its own.
 func TestAnObjectRoundTrips(t *testing.T) {
 	instance, _ := storing(t)
 
@@ -232,8 +225,6 @@ func TestAnObjectRoundTrips(t *testing.T) {
 	require.Equal(t, "a receipt", string(res.Body))
 }
 
-// TestTHEETAGIsTheContent, which is what an etag is for: it changes exactly
-// when the bytes do, and two objects holding the same bytes share one.
 func TestTwoObjectsWithOneContentShareAnEtag(t *testing.T) {
 	instance, _ := storing(t)
 
@@ -245,8 +236,6 @@ func TestTwoObjectsWithOneContentShareAnEtag(t *testing.T) {
 	require.NotEqual(t, string(first.Body), string(third.Body))
 }
 
-// TestTHECONTENTTYPEAndTheMetadataTravelWithTheBytes, which is the half of
-// PutObject that makes an object servable over HTTP by anything else.
 func TestAnObjectCarriesItsTypeAndMetadata(t *testing.T) {
 	instance, _ := storing(t)
 
@@ -266,8 +255,6 @@ func TestAnObjectCarriesItsTypeAndMetadata(t *testing.T) {
 		string(got.Body))
 }
 
-// TestHEADIsTheWholeReasonThisIsNotKV: what is known about an object without
-// pulling it through the ABI, as a record that has to survive lowering.
 func TestHeadAnswersTheMetadataAlone(t *testing.T) {
 	instance, _ := storing(t)
 
@@ -281,8 +268,6 @@ func TestHeadAnswersTheMetadataAlone(t *testing.T) {
 		"every field of the record the host lowered, read back inside the guest")
 }
 
-// TestALISTOfRecordsSurvivesTheABI, sorted, which is the second shape this
-// interface carries that nothing before it did.
 func TestEntriesComeBackAsRecords(t *testing.T) {
 	instance, _ := storing(t)
 
@@ -297,8 +282,6 @@ func TestEntriesComeBackAsRecords(t *testing.T) {
 	require.Equal(t, "2026/01:3\n2026/02:3", string(res.Body), "sorted, and 2025 not in it")
 }
 
-// TestADELIMITERCollapsesAPrefix, which is what makes a bucket browsable as
-// folders — and is the reason S3's own listing takes one.
 func TestAListingCollapsesOnTheDelimiter(t *testing.T) {
 	instance, store := storing(t)
 
@@ -318,8 +301,6 @@ func TestAListingCollapsesOnTheDelimiter(t *testing.T) {
 	require.Equal(t, "/", store.byName["h"].asked.Delimiter)
 }
 
-// TestALISTINGIsPaged, which is the half of ListObjectsV2 a bucket with a
-// million objects makes non-optional.
 func TestAListingPagesAndSaysSo(t *testing.T) {
 	instance, store := storing(t)
 
@@ -344,8 +325,6 @@ func TestAListingPagesAndSaysSo(t *testing.T) {
 	require.Equal(t, "b", store.byName["h"].asked.Token)
 }
 
-// TestATOKENThisBucketNeverIssuedIsItsOwnArm, so a caller FIXES it rather than
-// retrying a listing that will refuse it forever.
 func TestABadContinuationTokenIsNotAnOutage(t *testing.T) {
 	instance, _ := storing(t)
 
@@ -356,8 +335,6 @@ func TestABadContinuationTokenIsNotAnOutage(t *testing.T) {
 	require.True(t, strings.HasPrefix(string(res.Body), "bad-request:"), "got %q", res.Body)
 }
 
-// TestAMISSIsItsOwnArm, so a caller can tell "not there" from "the store is
-// down" — which is the whole reason `not-found` is a case.
 func TestAMissingObjectIsNotAnOutage(t *testing.T) {
 	instance, _ := storing(t)
 
@@ -366,8 +343,6 @@ func TestAMissingObjectIsNotAnOutage(t *testing.T) {
 	require.Equal(t, "not-found", string(res.Body))
 }
 
-// TestABUCKETAtItsSizeSaysSO, and says it in an arm of its own: a caller acts on
-// full — write less, delete something — and an `unavailable` reads as an outage.
 func TestAFullBucketIsItsOwnArm(t *testing.T) {
 	instance, store := storing(t)
 	store.byName["h"].full = 4
@@ -377,8 +352,6 @@ func TestAFullBucketIsItsOwnArm(t *testing.T) {
 	require.True(t, strings.HasPrefix(string(res.Body), "full:"), "got %q", res.Body)
 }
 
-// TestANOBJECTIsDeleted, and deleting one that is not there is a miss rather
-// than a success.
 func TestDeletingAnObject(t *testing.T) {
 	instance, _ := storing(t)
 
@@ -391,10 +364,6 @@ func TestDeletingAnObject(t *testing.T) {
 	require.Equal(t, "not-found", string(res.Body))
 }
 
-// ── the grant ────────────────────────────────────────────────────────────────
-
-// TestEVERYVerbIsCheckedSeparately. A read grant is not a write grant, and the
-// check happens before the store is touched.
 func TestAReadOnlyGrantCannotWrite(t *testing.T) {
 	instance, store := storing(t, "get", "head", "list")
 
@@ -404,8 +373,6 @@ func TestAReadOnlyGrantCannotWrite(t *testing.T) {
 	require.Empty(t, store.opened, "and nothing was opened to find that out")
 }
 
-// TestALABELTheConfigNeverGrantedIsRefusedByNAME, which reads as a typo rather
-// than as an outage.
 func TestAnUngrantedBucketIsRefusedByName(t *testing.T) {
 	instance, _ := storing(t)
 
@@ -414,8 +381,6 @@ func TestAnUngrantedBucketIsRefusedByName(t *testing.T) {
 	require.Equal(t, "no-such-storage:somebody-elses", string(res.Body))
 }
 
-// TestAREFUSEDGrantCarriesTheReason, so an author is told which target and why
-// rather than that a label does not exist.
 func TestARefusedStorageGrantSaysWhy(t *testing.T) {
 	store := newBuckets("h")
 	instance := start(t, tier(t, cacher(t), wasm.WithStorage(store)), invoke.Spec{
@@ -433,8 +398,6 @@ func TestARefusedStorageGrantSaysWhy(t *testing.T) {
 	require.Empty(t, store.opened)
 }
 
-// TestAWORKLOADWhoseOnlyStorageIsREFUSEDStillStarts on a tier with no bucket
-// backing — a per-target refusal must not become a per-workload one.
 func TestARefusedStorageDoesNotNeedABacking(t *testing.T) {
 	instance := start(t, tier(t, cacher(t)), invoke.Spec{
 		Name: "fn",
@@ -449,9 +412,6 @@ func TestARefusedStorageDoesNotNeedABacking(t *testing.T) {
 	require.Contains(t, string(res.Body), "streaming")
 }
 
-// TestANodeWithNothingToOpenABucketWithRefusesTheWorkload, which is the shape
-// every other capability keeps: a servable grant with no backing is a
-// composition fault rather than a call that fails later.
 func TestAServableStorageGrantNeedsABacking(t *testing.T) {
 	_, err := tier(t, cacher(t)).Start(t.Context(), invoke.Spec{
 		Name: "fn", Artifact: "bafy",
@@ -460,9 +420,6 @@ func TestAServableStorageGrantNeedsABacking(t *testing.T) {
 	require.ErrorIs(t, err, wasm.ErrNoStorage)
 }
 
-// TestTHEIMPORTIsRegisteredEvenWithNoGrant. An unprovided component import is a
-// TRAP that takes the instance with it, so a guest built against the world runs
-// whether or not it was granted anything.
 func TestTheStorageImportExistsWithoutAGrant(t *testing.T) {
 	instance := start(t, tier(t, cacher(t)), invoke.Spec{Name: "fn"})
 

@@ -10,10 +10,8 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// A REAL ROUTER. The fixture ECHOES the path it was given into the destination
-// it returns, which is what separates "the arms work" from "the request
-// crossed" — a router that ignored its argument and returned a constant would
-// satisfy every assertion about which arm was taken.
+// A real router echoing its path into the destination, so a constant answer would
+// fail.
 
 func picker(t *testing.T) []byte {
 	t.Helper()
@@ -39,7 +37,6 @@ func routing(t *testing.T) invoke.Routes {
 	return as
 }
 
-// TestAROUTERAnswersWithAnAddressAndTheRequestReachedIt.
 func TestARouterPicksADestination(t *testing.T) {
 	out, err := routing(t).Route(t.Context(), &invoke.Request{Method: "GET", Path: "/orders/42"})
 	require.NoError(t, err)
@@ -52,8 +49,6 @@ func TestARouterPicksADestination(t *testing.T) {
 	require.Equal(t, "saw_orders_42", out.To.Name, "the path it was handed, echoed back")
 }
 
-// TestAROUTERMayNameANamespace, which is how one gateway reaches a workload in
-// a namespace it does not live in.
 func TestARouterCanNameANamespace(t *testing.T) {
 	out, err := routing(t).Route(t.Context(), &invoke.Request{Method: "GET", Path: "/shop/cart"})
 	require.NoError(t, err)
@@ -61,9 +56,6 @@ func TestARouterCanNameANamespace(t *testing.T) {
 	require.Equal(t, "checkout", out.To.Name)
 }
 
-// TestAROUTERMayANSWERItself. A redirect is the obvious case: it needs no
-// workload, and making the gateway invoke one to produce a 302 would be a cold
-// start for a header.
 func TestARouterCanAnswerItself(t *testing.T) {
 	out, err := routing(t).Route(t.Context(), &invoke.Request{Method: "GET", Path: "/answer"})
 	require.NoError(t, err)
@@ -72,10 +64,6 @@ func TestARouterCanAnswerItself(t *testing.T) {
 	require.Equal(t, []string{"/elsewhere"}, out.Answer.Headers["location"])
 }
 
-// TestNONEIsADecisionAndNotAFailure. The router ran, understood the request and
-// says nothing here handles it — which is a 404. A router that could not be run
-// is a different thing, because a routing table that cannot be read is not the
-// same as a path that is not in it.
 func TestARouterThatMatchesNothingSaysSo(t *testing.T) {
 	out, err := routing(t).Route(t.Context(), &invoke.Request{Method: "GET", Path: "/nothing"})
 	require.NoError(t, err, "deciding that nothing handles it is an answer")
@@ -83,8 +71,6 @@ func TestARouterThatMatchesNothingSaysSo(t *testing.T) {
 	require.Nil(t, out.Answer)
 	require.Equal(t, "no rule matched", out.None)
 }
-
-// ── the world gate ───────────────────────────────────────────────────────
 
 func TestATransformerIsNotARouter(t *testing.T) {
 	instance := start(t, tier(t, shaper(t)), shaperSpec())

@@ -18,47 +18,18 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// lambda.go makes an AWS Lambda container image run here unmodified.
-//
-// # Why this exists at all
-//
-// A Lambda container image does not listen for a request. It embeds AWS's
-// runtime interface client, which POLLS an endpoint for work — so on a tier
-// that waits for something to listen, it starts, answers nothing, and times
-// out. That is the one import this platform could not finish, and it is the
-// reason the container engine exists as a serverless tier in the first place.
-//
-// # It needs no binary from AWS
-//
-// The Lambda Runtime API is a documented HTTP protocol, and the client reads
-// the address to poll out of AWS_LAMBDA_RUNTIME_API. So this tier SERVES that
-// protocol itself: three endpoints, on a loopback port, per instance. Nothing
-// is downloaded, nothing is injected into the image, and the image is byte for
-// byte the one that ran on Lambda.
+// lambda.go runs an AWS Lambda container image unmodified. Such an image polls an
+// endpoint for work instead of listening, so this tier serves the documented
+// Lambda Runtime API itself, on a loopback port per instance:
 //
 //	GET  /2018-06-01/runtime/invocation/next            hand it the next event
 //	POST /2018-06-01/runtime/invocation/{id}/response   take the result
 //	POST /2018-06-01/runtime/invocation/{id}/error      take the failure
 //	POST /2018-06-01/runtime/init/error                 it died starting up
 //
-// # It is always on, and that is what makes it no-config
-//
-// Which of the two shapes an image is cannot be known before it runs: a
-// Dockerfile that happens to call itself a Lambda is not a signal, and asking
-// an author to declare it would be asking them to describe an image they did
-// not build. So the address is always in the environment and the listener is
-// always bound; a container that ignores an unknown variable is unaffected, and
-// whichever signal arrives first — the container listening, or the client
-// polling — decides how requests reach it.
-//
-// # The event is API Gateway v2
-//
-// A handler is called with an EVENT and not an HTTP request, so an HTTP request
-// has to be rendered as one. Payload format 2.0 is what a Lambda Function URL
-// delivers, which is the shape a function reached over HTTP was most likely
-// written against — and the response half of the same format is what it returns.
-// A handler that answers with something else is treated as having returned a
-// body, which is what a Function URL does too.
+// It is always on: whichever arrives first, a listener or a poll, decides how
+// requests reach the container. Requests are rendered as API Gateway payload 2.0
+// events, what a Function URL delivers.
 
 // The Runtime API's own paths. They carry the date because AWS versions them
 // that way, and an image built against a different one would not poll here.
@@ -69,10 +40,8 @@ const (
 	initErrorPath  = runtimeAPIRoot + "init/error"
 )
 
-// requestIDHeader is what the client reads to know which invocation it is
-// answering. Everything else the protocol defines — deadline, ARN, trace id —
-// is optional, and inventing an ARN for a function that is not on AWS would be
-// putting a lie in the environment.
+// requestIDHeader tells the client which invocation it answers; the protocol's
+// optional fields are left out rather than faked.
 const requestIDHeader = "Lambda-Runtime-Aws-Request-Id"
 
 var (
@@ -85,12 +54,8 @@ var (
 	ErrLambdaGone = errors.New("container: the lambda runtime client is not polling")
 )
 
-// lambdaAPI is one instance's Runtime API.
-//
-// ONE INVOCATION AT A TIME, which is not a simplification: a Lambda runtime
-// client polls for the next event only after answering the previous one, so the
-// protocol itself is serial. Concurrency above one is more INSTANCES, which is
-// what invoke.Spec.Concurrency already means and what the pool already does.
+// lambdaAPI is one instance's Runtime API, one invocation at a time as the protocol
+// is serial; concurrency is more instances.
 type lambdaAPI struct {
 	listener net.Listener
 	server   *http.Server
@@ -189,10 +154,8 @@ func (a *lambdaAPI) finish(w http.ResponseWriter, r *http.Request, failure error
 	a.mu.Unlock()
 
 	if call == nil {
-		// AN ANSWER TO AN INVOCATION NOBODY IS WAITING ON. A client that
-		// retried, or one answering after the caller's context ended. It is
-		// accepted and dropped rather than erroring: the protocol has no way
-		// for the client to do anything useful with a refusal.
+		// An answer nobody waits on is accepted and dropped; the client could do nothing
+		// with a refusal.
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
@@ -255,8 +218,6 @@ func (a *lambdaAPI) Close() error {
 	return a.server.Close()
 }
 
-// ── the event, and the answer ────────────────────────────────────────────────
-
 // lambdaEvent renders an invocation as API Gateway payload format 2.0.
 func lambdaEvent(req *invoke.Request, id string) ([]byte, error) {
 	path := req.Path
@@ -310,13 +271,8 @@ func lambdaEvent(req *invoke.Request, id string) ([]byte, error) {
 	})
 }
 
-// lambdaResponse reads what the handler returned.
-//
-// A HANDLER THAT ANSWERED WITH SOMETHING ELSE HAS ANSWERED WITH A BODY, which
-// is what a Function URL does too — a handler returning a bare string or a
-// plain object is a 200 whose body is that value, and treating it as a
-// malformed proxy response would break every handler that was never written
-// for one.
+// lambdaResponse reads what the handler returned; anything not a proxy response is
+// a 200 with that body, as a Function URL treats it.
 func lambdaResponse(raw []byte) *invoke.Response {
 	res := &invoke.Response{Status: http.StatusOK, Body: raw}
 	if len(raw) == 0 {
@@ -364,10 +320,7 @@ func readAllLimited(r *http.Request) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(r.Body, maxLambdaResponse))
 }
 
-// requestID is what this invocation is called on the wire. It is derived from
-// the clock and a counter rather than being a UUID: nothing outside this
-// instance ever sees it, and the protocol only needs the response to name the
-// invocation it answers.
+// The invocation id comes from a counter; only this instance ever sees it.
 var lambdaCounter atomic
 
 type atomic struct {

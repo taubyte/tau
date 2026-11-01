@@ -11,15 +11,8 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// httpauthorizer_test drives `taubyte:authorizer/http-authorizer` against a
-// REAL component, for the reason every other world's test gives: a double
-// would agree with whatever this package assumed.
-//
-// IT IS ALSO THE PROOF THE RUNTIME NEEDED NOTHING NEW. This world's request is
-// the record requestValue already lowers for the handler, the router and the
-// transformer, and its decision is the variant decisionFrom already lifts for
-// the authorizer — so if wazy carries those two shapes it carries this world,
-// and a green run here is what says so rather than an argument that it should.
+// Against a real component. The request record and decision variant are the ones
+// already used by other worlds, so a green run shows wazy needs nothing new.
 
 // doorman is the fixture: it denies when asked to by header and otherwise
 // grants a PARTIAL set — `subscribe` and never `publish`.
@@ -47,9 +40,6 @@ func aRequest(headers map[string][]string) *invoke.Request {
 	}
 }
 
-// TestAnHttpAuthorizerAnswersWithTheOpsAndNotAYesOrNo — the grant arm, and the
-// reason the answer is a list: "may listen, may not send" is unsayable as a
-// bool, and it is the decision an attachment actually needs.
 func TestAnHttpAuthorizerGrantsTheOpsItChose(t *testing.T) {
 	r := tier(t, doorman(t))
 
@@ -60,8 +50,6 @@ func TestAnHttpAuthorizerGrantsTheOpsItChose(t *testing.T) {
 		"the guard granted one op and withheld the other, which a yes could not say")
 }
 
-// TestADenialCarriesAReasonForTheOperator — the other arm. The reason is not
-// for the caller: composing what a caller sees is a transformer's job.
 func TestAnHttpAuthorizerDeniesWithAReason(t *testing.T) {
 	r := tier(t, doorman(t))
 
@@ -72,9 +60,6 @@ func TestAnHttpAuthorizerDeniesWithAReason(t *testing.T) {
 	require.Equal(t, "not on the list", admission.Denied)
 }
 
-// TestTheWorldGateHoldsHere too: a handler instantiates perfectly well and
-// would read a request as a request, answering with a response the caller
-// would read as a decision.
 func TestAuthorizeRequestRefusesAHandler(t *testing.T) {
 	r := tier(t, handler(t))
 

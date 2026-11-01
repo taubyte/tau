@@ -13,15 +13,10 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// EVERY TEST HERE DRIVES A REAL COMPONENT THROUGH THE CAPABILITY. The guest
-// (fixtures/cacher) is built by cargo-component against the same wit the host
-// implements, so what is proven is that the host's lowering and the generated
-// bindings agree — including the arms of the error variant, which no fake could
-// show.
-//
-// The guest reads "/<op>/<cache>/<key>" from the path and answers with the
-// value, or with the NAME of the arm it got back. So an assertion on the body
-// is an assertion about which refusal the host produced.
+// Every test drives a real component (fixtures/cacher, built against the same
+// wit), so lowering and the error arms are shown to agree with generated bindings.
+// The guest reads "/<op>/<cache>/<key>" and answers with the value or the arm's
+// name.
 
 func cacher(t *testing.T) []byte {
 	t.Helper()
@@ -159,10 +154,6 @@ func callWith(t *testing.T, instance invoke.Instance, path string, body []byte, 
 	return res
 }
 
-// ── the round trip ───────────────────────────────────────────────────────────
-
-// TestAGuestWritesAndReadsItsCache — the whole point, through generated
-// bindings, with the bytes crossing the ABI in both directions.
 func TestAComponentReadsAndWritesACache(t *testing.T) {
 	backing := newCaches("shop/prod/QmSessions")
 	r := tier(t, cacher(t), wasm.WithCaches(backing))
@@ -206,8 +197,6 @@ func TestEveryVerbCrossesTheABI(t *testing.T) {
 	require.Equal(t, "not-found", string(res.Body))
 }
 
-// TestAnEmptyValueSurvives, because a stored empty value is a legitimate
-// answer and lowering it as nothing would trap.
 func TestAnEmptyValueIsNotNothing(t *testing.T) {
 	instance := start(t, tier(t, cacher(t), wasm.WithCaches(newCaches("h"))), invoke.Spec{
 		Name: "fn", Reaches: grants("sessions", "h", "get", "put"),
@@ -220,26 +209,6 @@ func TestAnEmptyValueIsNotNothing(t *testing.T) {
 	require.Empty(t, res.Body)
 }
 
-// TestAMegabyteSurvivesBothDirections, in and out — a roundtrip lowers the
-// value into the guest, up to the host, and back.
-//
-// IT USED TO BE 8KiB, AND THE NUMBER WAS NOT THIS PACKAGE'S. wazy's canonical
-// ABI bounds-checked an allocation against a Go slice of the guest's memory
-// CAPTURED BEFORE cabi_realloc, so a value that made the guest grow was
-// rejected on a growth that had succeeded. The limit was never a size but "what
-// is left below the end", so it shrank as this fixture learned capabilities —
-// 24KiB at three interfaces, 8KiB at six.
-//
-// FIXED UPSTREAM in wazy 35e45b48 (#58): Realloc.GrowMem returns the
-// post-realloc view and every site checks against that.
-//
-// AND IT IS NOT THREE ONE-LINE BOUNDS CHECKS, which an earlier note here said
-// and was wrong. The same stale-slice shape runs through storeRecord, storeList
-// and encodeScalarList: a record whose first field is a string grows the
-// memory, and fields 1..n then write at low, still-in-range offsets — they pass
-// a leaf check and land in a detached backing array. Patching the three leaves
-// would have turned a loud error into silent corruption; the live view has to
-// be threaded back out through the store tree.
 func TestALargeValueSurvivesBothDirections(t *testing.T) {
 	instance := start(t, tier(t, cacher(t), wasm.WithCaches(newCaches("h"))), invoke.Spec{
 		Name: "fn", Memory: 32 << 20, Reaches: grants("sessions", "h", "get", "put"),
@@ -255,10 +224,6 @@ func TestALargeValueSurvivesBothDirections(t *testing.T) {
 	require.Equal(t, value, res.Body)
 }
 
-// TestAGuestTakesARequestBodyWORTHTAKING. Every serverless platform this
-// competes with accepts megabytes; until the guest's memory grew correctly this
-// one accepted tens of kilobytes, which is the difference between a platform
-// and a demo.
 func TestAMultiMegabyteBodyCrosses(t *testing.T) {
 	instance := start(t, tier(t, handler(t)), invoke.Spec{Name: "fn", Memory: 64 << 20})
 
@@ -272,10 +237,6 @@ func TestAMultiMegabyteBodyCrosses(t *testing.T) {
 	require.Equal(t, append([]byte("GET "), body...), res.Body)
 }
 
-// ── the grant is the authorization ───────────────────────────────────────────
-
-// TestACacheNobodyDeclaredIsRefusedBeforeTheStoreIsTouched. The configuration
-// is the grant, and there is no second place to widen it.
 func TestAnUndeclaredCacheIsRefused(t *testing.T) {
 	backing := newCaches("h")
 	instance := start(t, tier(t, cacher(t), wasm.WithCaches(backing)), invoke.Spec{
@@ -288,8 +249,6 @@ func TestAnUndeclaredCacheIsRefused(t *testing.T) {
 	require.Empty(t, backing.seen(), "nothing was opened")
 }
 
-// TestAVerbNobodyAskedForIsRefused. A resource that declared `ops: [get]` reads
-// and does not write, and the refusal names which.
 func TestAnUngrantedVerbIsDenied(t *testing.T) {
 	backing := newCaches("h")
 	instance := start(t, tier(t, cacher(t), wasm.WithCaches(backing)), invoke.Spec{
@@ -315,9 +274,6 @@ func TestAnUngrantedVerbIsDenied(t *testing.T) {
 	require.Equal(t, []string{"h"}, backing.seen())
 }
 
-// TestWatchIsNotImplementedAndSaysSo. The verb exists in the vocabulary, the
-// host ABI never had an export for it, and a resource asking for it gets the
-// op check's answer rather than silence.
 func TestAGrantForWatchBuysNothing(t *testing.T) {
 	instance := start(t, tier(t, cacher(t), wasm.WithCaches(newCaches("h"))), invoke.Spec{
 		Name: "fn", Reaches: grants("sessions", "h", "watch"),
@@ -328,15 +284,12 @@ func TestAGrantForWatchBuysNothing(t *testing.T) {
 	require.Equal(t, "denied:sessions cannot get", string(res.Body))
 }
 
-// TestAGrantForAnotherKindIsNotACacheGrant, so a `storage:` entry cannot be
-// spent on a cache — the label matches and the kind does not.
 func TestAGrantOfAnotherKindDoesNotOpenACache(t *testing.T) {
 	instance := start(t, tier(t,
 		cacher(t),
 		wasm.WithCaches(newCaches("h")),
-		// The storage grant is servable, so the tier needs a backing for it —
-		// which is beside the point of this test and is what makes it one:
-		// the grant is REAL and still is not a cache.
+		// The storage grant is servable, so it needs a backing; it is real and still not a
+		// cache.
 		wasm.WithStorage(newBuckets()),
 	), invoke.Spec{
 		Name: "fn",
@@ -351,11 +304,6 @@ func TestAGrantOfAnotherKindDoesNotOpenACache(t *testing.T) {
 	require.Equal(t, "no-such-cache:sessions", string(res.Body))
 }
 
-// ── when there is nothing behind the grant ───────────────────────────────────
-
-// TestAGrantWithNoBackingIsRefusedAtStart, not at the first call: a workload
-// that would fail every request touching its cache should not start and then
-// look healthy until somebody exercises that path.
 func TestATierWithNoCachesRefusesAWorkloadThatNeedsOne(t *testing.T) {
 	_, err := tier(t, cacher(t)).Start(t.Context(), invoke.Spec{
 		Name: "fn", Artifact: "bafy", Reaches: grants("sessions", "h", "get"),
@@ -363,13 +311,6 @@ func TestATierWithNoCachesRefusesAWorkloadThatNeedsOne(t *testing.T) {
 	require.ErrorIs(t, err, wasm.ErrNoCaches)
 }
 
-// TestATierWithNoCachesStillRunsEverythingElse, because most workloads reach
-// no cache and a tier that refused them all would be useless.
-//
-// AND A GUEST THAT CALLS ONE ANYWAY IS REFUSED RATHER THAN KILLED. An import a
-// component declares and the host does not provide is a trap that takes the
-// instance with it, so the four functions are registered even when nothing is
-// granted — a guest bug is not a reason to lose warm state.
 func TestATierWithNoCachesRunsAWorkloadThatNeedsNone(t *testing.T) {
 	instance := start(t, tier(t, cacher(t)), invoke.Spec{Name: "fn"})
 
@@ -383,11 +324,6 @@ func TestATierWithNoCachesRunsAWorkloadThatNeedsNone(t *testing.T) {
 	require.Equal(t, 404, res.Status)
 }
 
-// ── when the store fails ─────────────────────────────────────────────────────
-
-// TestAStoreFailureIsNotAMiss. A caller retries one and recomputes for the
-// other, so folding an outage into `not-found` would make every miss look like
-// a success and every outage look like a miss.
 func TestAnUnreachableStoreIsItsOwnArm(t *testing.T) {
 	backing := newCaches("h")
 	backing.byName["h"].err = errors.New("the swarm is unreachable")
@@ -403,8 +339,6 @@ func TestAnUnreachableStoreIsItsOwnArm(t *testing.T) {
 		"the store's own words reach the author, who owns both sides")
 }
 
-// TestACacheThatCannotBeOpenedIsUnavailable, which is different from one that
-// was never granted.
 func TestAnOpenFailureIsUnavailable(t *testing.T) {
 	backing := newCaches()
 	backing.err = errors.New("no store on this node")
@@ -418,8 +352,6 @@ func TestAnOpenFailureIsUnavailable(t *testing.T) {
 	require.Contains(t, string(res.Body), "unavailable:no store on this node")
 }
 
-// TestAValueTooLargeIsItsOwnArm, so an author can tell "it will never fit"
-// from "it is not there".
 func TestTooLargeIsItsOwnArm(t *testing.T) {
 	backing := newCaches("h")
 	backing.byName["h"].err = wasm.ErrTooLarge
@@ -433,10 +365,6 @@ func TestTooLargeIsItsOwnArm(t *testing.T) {
 	require.Equal(t, "too-large", string(res.Body))
 }
 
-// ── two caches, two grants ───────────────────────────────────────────────────
-
-// TestOneWorkloadReachesTwoCaches, each by its own label, each resolving to its
-// own handle.
 func TestTwoLabelsResolveToTwoCaches(t *testing.T) {
 	backing := newCaches("QmSessions", "QmOrders")
 	instance := start(t, tier(t, cacher(t), wasm.WithCaches(backing)), invoke.Spec{
@@ -456,12 +384,6 @@ func TestTwoLabelsResolveToTwoCaches(t *testing.T) {
 	require.Equal(t, "theirs", string(res.Body))
 }
 
-// ── a filesystem a component never gets ──────────────────────────────────────
-
-// TestAComponentThatDeclaresAMountIsRefused. The sandbox preopens no directory
-// on purpose, so a guest started with a declared mount would write into a WASI
-// shim's memory and lose it at the end of the INSTANCE — sooner even than the
-// container tier's, which loses it at the end of the container.
 func TestAComponentDeclaringAMountIsRefused(t *testing.T) {
 	_, err := tier(t, cacher(t)).Start(t.Context(), invoke.Spec{
 		Name: "fn", Artifact: "bafy",
@@ -476,20 +398,12 @@ func TestAComponentDeclaringAMountIsRefused(t *testing.T) {
 	require.ErrorContains(t, err, "no filesystem")
 }
 
-// TestAGrantOfAnotherKindStillStarts, so the refusal is about mounts and not
-// about access blocks.
-//
-// `storage` and not `database`: a kind this tier serves refuses at Start when
-// nothing backs it, which is a different rule and has its own test.
 func TestAComponentWithOtherGrantsStarts(t *testing.T) {
 	instance := start(t, tier(t, cacher(t), wasm.WithCaches(newCaches("h"))), invoke.Spec{
 		Name: "fn",
 		Reaches: []invoke.Grant{
 			{Kind: "cache", Label: "sessions", Handle: "h", Ops: []string{"get"}},
-			// A KIND THIS TIER HAS NO INTERFACE FOR. `mcp` is one; `storage`
-			// was the example here until it gained an interface, and `sync` at
-			// `type: log` was the example after that until it gained one too —
-			// which is the direction this is meant to travel.
+			// A kind this tier has no interface for.
 			{Kind: "mcp", Label: "tools", Ops: []string{"list"}},
 		},
 	})

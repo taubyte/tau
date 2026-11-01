@@ -15,10 +15,8 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// The URL a request arrives at, and what a non-HTTP invocation arrives as:
-// the wasm tier's standard world uses the same. The host is a placeholder: the
-// gateway already matched the name, and a handler acting on it would be acting
-// on a routing decision it cannot see.
+// The URL a request arrives at, and what a non-HTTP invocation arrives as, as in
+// the wasm tier. The host is a placeholder: the gateway already matched the name.
 const (
 	origin        = "http://workload.invalid"
 	defaultMethod = "POST"
@@ -202,9 +200,8 @@ func (i *instance) handle(ctx context.Context, req *invoke.Request, deadline tim
 			if err := i.fit(req.Body); err != nil {
 				return fmt.Errorf("%w: the request does not fit: %w", ErrOutOfMemory, err)
 			}
-			// The answer reaches Go through respond, before the call returns
-			// unless the handler waits on the host. Only then is its promise
-			// fetched, since every Value Go holds is pinned until Go collects.
+			// The answer reaches Go through respond; only then is the promise fetched, since
+			// every Value Go holds is pinned until Go collects.
 			if _, err := i.rt.Call(i.serve, engine.Value{}); err != nil {
 				return err
 			}

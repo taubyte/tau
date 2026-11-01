@@ -12,23 +12,11 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// http.go drives a component that exports the standard world.
-//
-// # It is an adapter and nothing more
-//
-// wazy synthesizes the guest's WASI types from a net/http request and writes
-// back what the guest produced, so what is left here is turning invoke's own
-// Request and Response into and out of net/http's. That is the whole of what
-// makes a component built for wasmtime serve, Spin or wasmCloud run here.
-//
-// # A non-HTTP invocation still reaches it
-//
-// A pubsub delivery has no method and no path, and this gives it POST and "/"
-// — because the standard world has no way to express an invocation that is not
-// an HTTP exchange, and refusing to deliver one at all would be worse than
-// delivering it as the closest thing the world can say. A component whose
-// author wants the difference exports the native world instead, which carries
-// it exactly.
+// http.go drives a component exporting the standard world, adapting invoke's
+// Request and Response to and from net/http for wazy; that is what lets components
+// built for wasmtime, Spin or wasmCloud run here. A non-HTTP invocation arrives as
+// POST "/", the closest the standard world can say; the native world carries the
+// difference exactly.
 
 // defaultMethod and defaultPath are what a non-HTTP invocation arrives as.
 const (
@@ -55,10 +43,7 @@ func (f *function) serveHTTP(ctx context.Context, req *invoke.Request) (*invoke.
 		body = bytes.NewReader(req.Body)
 	}
 
-	// THE HOST IS A PLACEHOLDER AND NOT THE CALLER'S. What reached this node
-	// was routed by a gateway that already matched the name; handing the guest
-	// a host it might act on would be handing it a routing decision that was
-	// made somewhere it cannot see.
+	// The host is a placeholder: the gateway already routed on the real name.
 	inbound := httptest.NewRequestWithContext(ctx, method, "http://workload.invalid"+path, body)
 	for name, values := range req.Headers {
 		for _, value := range values {

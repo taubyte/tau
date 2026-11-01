@@ -15,10 +15,9 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// probe_test holds the two things a workload declares about itself that this
-// tier applies: a CPU ceiling, and an HTTP readiness check.
+// The two self-declarations this tier applies: a CPU ceiling and an HTTP readiness
+// check.
 
-// TestACPUCeilingIsACFSQuota: 250 millicores is 25ms of CPU in every 100ms.
 func TestACPUCeilingIsACFSQuota(t *testing.T) {
 	e, err := New(ImageFromSpec, WithBackend(newFakeBackend()))
 	require.NoError(t, err)
@@ -34,8 +33,6 @@ func TestACPUCeilingIsACFSQuota(t *testing.T) {
 	require.Nil(t, e.config(Image{Ref: "acme/shop:1"}, nil, 0, "", nil).Resources)
 }
 
-// TestTheSpecsCeilingReachesTheImage, which is what the default resolver hands
-// the backend.
 func TestTheSpecsCeilingReachesTheImage(t *testing.T) {
 	img, err := ImageFromSpec(invoke.Spec{Artifact: "acme/shop:1", CPU: 500, Memory: 64 << 20})
 	require.NoError(t, err)
@@ -60,9 +57,6 @@ func answering(asked *syncatomic.Int32, status func(path string) int) func(port 
 	}
 }
 
-// TestADeclaredProbeIsAskedUntilItAnswers. An accepted connection is not
-// enough when the author named a path: a server that is up and still warming
-// answers 503, and an instance handed work then fails it.
 func TestADeclaredProbeIsAskedUntilItAnswers(t *testing.T) {
 	backend := newFakeBackend()
 	var asked syncatomic.Int32
@@ -85,7 +79,6 @@ func TestADeclaredProbeIsAskedUntilItAnswers(t *testing.T) {
 	require.GreaterOrEqual(t, asked.Load(), int32(4), "ready only once the path answered 2xx")
 }
 
-// TestAProbeThatNeverAnswersIsNotReady, within the budget.
 func TestAProbeThatNeverAnswersIsNotReady(t *testing.T) {
 	backend := newFakeBackend()
 	var asked syncatomic.Int32
@@ -101,8 +94,6 @@ func TestAProbeThatNeverAnswersIsNotReady(t *testing.T) {
 	require.Positive(t, asked.Load(), "the listener was up — it was the probe that said no")
 }
 
-// TestTheProbeAsksTheNamedPort and not whichever sorted first: `admin` sorts
-// before `http`, and only `admin` says ready.
 func TestTheProbeAsksTheNamedPort(t *testing.T) {
 	backend := newFakeBackend()
 	var (

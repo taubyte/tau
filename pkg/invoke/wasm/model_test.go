@@ -13,10 +13,8 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// model_test drives the REAL component through GENERATED bindings, which is the
-// only thing that proves the record shapes in model.wit and the type table in
-// model.go agree. Everything else about this capability could be right and a
-// field in the wrong position would still hand the guest somebody else's value.
+// Through generated bindings, the only proof model.wit's record shapes and
+// model.go's type table agree.
 
 // thinking is an inference backing that records what it was asked.
 type thinking struct {
@@ -60,8 +58,6 @@ func modelGrant(label string, ops []string, settings map[string]string) []invoke
 	}}
 }
 
-// TestEVERYFIELDOFTHEANSWERCROSSES, not only the text — which is what a
-// fixture echoing the whole record is for.
 func TestAComponentCallsAModelAndReadsTheWholeAnswer(t *testing.T) {
 	brain := newThinking()
 
@@ -81,8 +77,6 @@ func TestAComponentCallsAModelAndReadsTheWholeAnswer(t *testing.T) {
 	require.Equal(t, "what is it", asked.Messages[0].Content)
 }
 
-// TestAGUESTCANNOTRAISETHECEILINGITSAUTHORWROTE. The fixture asks for a
-// million tokens on every call; what the backing sees is the resource's number.
 func TestAGuestsRequestIsClampedToTheResourcesCeiling(t *testing.T) {
 	brain := newThinking()
 
@@ -99,8 +93,6 @@ func TestAGuestsRequestIsClampedToTheResourcesCeiling(t *testing.T) {
 	require.Equal(t, uint32(512), *asked.MaxTokens, "the author's ceiling, not the guest's million")
 }
 
-// TestNODECLAREDCEILINGISTHEGUESTSOWN, which is the vocabulary's default:
-// absent means the provider's.
 func TestWithNoDeclaredCeilingTheGuestsRequestStands(t *testing.T) {
 	brain := newThinking()
 
@@ -115,8 +107,6 @@ func TestWithNoDeclaredCeilingTheGuestsRequestStands(t *testing.T) {
 	require.Equal(t, uint32(1_000_000), *asked.MaxTokens)
 }
 
-// TestAMODELITDIDNOTDECLARE is its own arm, which reads as a typo rather than
-// as an outage.
 func TestCallingAModelWithNoGrantIsNoSuchModel(t *testing.T) {
 	instance := start(t, tier(t, cacher(t), wasm.WithInference(newThinking())), invoke.Spec{
 		Name: "fn", Reaches: modelGrant("brain", []string{"infer"}, nil),
@@ -127,9 +117,6 @@ func TestCallingAModelWithNoGrantIsNoSuchModel(t *testing.T) {
 	require.Equal(t, "no-such-model:other", string(res.Body))
 }
 
-// TestAGRANTWITHOUTTHEVERB is denied. `infer` is the one verb this kind has,
-// so a grant that does not carry it is a resource that may name the model and
-// not call it.
 func TestAModelGrantedWithoutInferIsDenied(t *testing.T) {
 	instance := start(t, tier(t, cacher(t), wasm.WithInference(newThinking())), invoke.Spec{
 		Name: "fn", Reaches: modelGrant("brain", nil, nil),
@@ -140,8 +127,6 @@ func TestAModelGrantedWithoutInferIsDenied(t *testing.T) {
 	require.True(t, strings.HasPrefix(string(res.Body), "denied:"), string(res.Body))
 }
 
-// TestAREFUSEDTARGETISREFUSEDPERMODEL, not per workload: a cloud that will not
-// serve one model must not take the whole resource down.
 func TestARefusedModelIsDeniedWithItsReason(t *testing.T) {
 	grants := modelGrant("brain", []string{"infer"}, nil)
 	grants[0].Refused = "no provider for that region"
@@ -155,8 +140,6 @@ func TestARefusedModelIsDeniedWithItsReason(t *testing.T) {
 	require.Equal(t, "denied:no provider for that region", string(res.Body))
 }
 
-// TestTHETWOFAILUREARMSARETOLDAPART. A caller retries `unavailable` and wastes
-// its budget retrying `refused`.
 func TestARefusalAndAnOutageAreDifferentArms(t *testing.T) {
 	for _, c := range []struct {
 		err  error
@@ -178,10 +161,6 @@ func TestARefusalAndAnOutageAreDifferentArms(t *testing.T) {
 	}
 }
 
-// TestAGRANTWITHNOTHINGBEHINDIT is refused at Start rather than at the first
-// call, which is the rule every capability here follows: a workload that would
-// fail every request touching its model should not look healthy until somebody
-// exercises that path.
 func TestAModelGrantWithNoBackingIsRefusedAtStart(t *testing.T) {
 	_, err := tier(t, cacher(t)).Start(t.Context(), invoke.Spec{
 		Name: "fn", Artifact: "bafycacher",
@@ -190,10 +169,6 @@ func TestAModelGrantWithNoBackingIsRefusedAtStart(t *testing.T) {
 	require.ErrorIs(t, err, wasm.ErrNoInference)
 }
 
-// TestTHEMODELASKSANDTHECALLERRUNSIT. Nothing in the host runs a tool, which
-// is what keeps a loop the caller's program rather than a behaviour hidden
-// inside a host function — so what this proves is that the ASKING crosses, in
-// both directions, through generated bindings.
 func TestAComponentSendsToolsAndReadsBackWhatTheModelWants(t *testing.T) {
 	brain := newThinking()
 	brain.answer = invoke.Answer{
@@ -222,8 +197,6 @@ func TestAComponentSendsToolsAndReadsBackWhatTheModelWants(t *testing.T) {
 	require.JSONEq(t, `{"type":"object","properties":{"id":{"type":"string"}}}`, asked.Tools[0].Schema)
 }
 
-// TestAPLAINCOMPLETIONSENDSNOTOOLS, so a caller that wants prose pays nothing
-// for a feature it is not using.
 func TestACompletionWithNoToolsCarriesNone(t *testing.T) {
 	brain := newThinking()
 

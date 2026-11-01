@@ -12,26 +12,10 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// database.go is the host half of `taubyte:sql/store`, for the `sql`
-// data model.
-//
-// It is cache.go's shape again — a label resolved against the grant, an op
-// check before anything is touched, a refusal that says why — with one thing
-// the other two do not have: VALUES THAT ARE NOT BYTES. A SQL argument is a
-// string, an integer, a float, a boolean, a blob or NULL, and each has to cross
-// the ABI as itself, because binding a number as text is how a query stops
-// using an index.
-//
-// # What is not here
-//
-// THE OTHER THREE TYPES. `kv`, `document` and `vector` are the same kind with
-// different verbs, and each is its own interface when it lands.
-//
-// A TRANSACTION. Nothing in the vocabulary declares one — `query` and `exec`
-// are the whole surface — so a guest that needs one issues BEGIN and COMMIT as
-// statements and gets whatever its connection gives it. Making that reliable
-// means a connection pinned across calls, which is a resource in the WIT sense
-// and a decision about what a "session" is; neither is guessed at here.
+// sql.go is the host half of `taubyte:sql/store`, cache.go's shape with typed
+// values: a SQL argument crosses as itself, since binding a number as text defeats
+// an index. No transaction: none is declared, so BEGIN and COMMIT are statements
+// on whatever connection a call gets.
 
 const sqlInterface = "taubyte:sql/store@0.1.0"
 
@@ -63,9 +47,8 @@ var (
 	// without a backing. Like ErrNoCaches it is a construction fault.
 	ErrNoSQL = errors.New("wasm: this resource reaches a database and this tier has nothing to open one with")
 
-	// ErrStatementFailed is what a backing returns when the SERVER said no — a
-	// syntax error, a constraint, a permission. The tier gives it its own arm
-	// because a caller retries an outage and fixes a statement.
+	// ErrStatementFailed is the server refusing (syntax, constraint, permission), its
+	// own arm since a caller fixes it rather than retries.
 	ErrStatementFailed = errors.New("wasm: the database refused the statement")
 )
 
@@ -76,25 +59,21 @@ type Rows struct {
 	Values  []any
 }
 
-// SQL is what a guest queries through.
-//
-// THE WHOLE GRANT IS PASSED, as with a cache: what the backing needs beyond
-// "which one" — the engine, the address, the credential to resolve — is on it,
-// and a handle alone would make the backing resolve it back into a resource.
+// SQL is what a guest queries through, handed the whole grant (engine, address,
+// credential).
 type SQL interface {
 	Query(ctx context.Context, grant invoke.Grant, statement string, args []any) (Rows, error)
 	Exec(ctx context.Context, grant invoke.Grant, statement string, args []any) (Outcome, error)
 }
 
-// Outcome is what a write changed — the same two numbers every SQL client
-// reports, and 0 for either when the driver did not say. See the WIT's own note
-// on why `last-insert-id` is not portable and `RETURNING` is.
+// Outcome is what a write changed, 0 when the driver did not say; see the WIT on
+// why RETURNING is portable and last-insert-id is not.
 type Outcome struct {
 	Affected     int64
 	LastInsertID int64
 }
 
-// WithDatabases is what backs `taubyte:sql/store`.
+// WithSQL is what backs `taubyte:sql/store`.
 func WithSQL(d SQL) Option {
 	return func(r *Runtime) { r.sqlStore = d }
 }
@@ -104,12 +83,8 @@ const (
 	sqlModel     = specs.DatabaseTypeSql
 )
 
-// sqlGrantsOf is the database grants whose data model is SQL.
-//
-// THE KIND IS `database` AND THE TYPE SELECTS THE INTERFACE. Four data models
-// live under one kind with different verbs, so filtering by kind alone would
-// make a kv database refuse to start on a tier that serves only sql — and the
-// two are served by different interfaces.
+// sqlGrantsOf is the database grants whose data model is SQL: filtered by type too,
+// since each data model has its own interface.
 func sqlGrantsOf(spec invoke.Spec) map[string]invoke.Grant {
 	var out map[string]invoke.Grant
 	for _, g := range spec.Reaches {
@@ -274,11 +249,7 @@ func statementArgs(op string, args []component.Value) (label, statement string, 
 	return label, statement, bound, nil
 }
 
-// liftSQL turns one guest value into what a driver binds.
-//
-// NULL IS A NIL AND NOT AN EMPTY STRING, which is the whole reason the variant
-// has its own case: binding "" where the author meant NULL writes a row that
-// does not match `IS NULL` and does not violate a NOT NULL constraint either.
+// liftSQL turns one guest value into what a driver binds; NULL is nil, never "".
 func liftSQL(v component.Value) (any, error) {
 	variant, ok := v.(component.VariantValue)
 	if !ok {
@@ -299,12 +270,8 @@ func liftSQL(v component.Value) (any, error) {
 	}
 }
 
-// lowerSQL turns what a driver scanned into a guest value.
-//
-// A TYPE THIS INTERFACE CANNOT NAME BECOMES ITS TEXT rather than an error: a
-// driver may hand back a time, a decimal or a UUID, and refusing the whole
-// result set because one column is a timestamp would make most tables
-// unreadable. What is NOT done is guessing a number out of it.
+// lowerSQL turns a scanned value into a guest value; a type the interface cannot
+// name (time, decimal, UUID) becomes its text, never a guessed number.
 func lowerSQL(v any) component.Value {
 	switch value := v.(type) {
 	case nil:
@@ -330,11 +297,7 @@ func lowerSQL(v any) component.Value {
 	}
 }
 
-// sqlArm maps a Go error onto the arm the guest sees.
-//
-// A STATEMENT THE SERVER REFUSED IS NOT AN OUTAGE. A caller retries one and
-// fixes the other, and folding them together would have every syntax error
-// retried until a timeout.
+// sqlArm maps a Go error onto the guest's arm; a refused statement is not an outage.
 func sqlArm(err error) *component.VariantValue {
 	if errors.Is(err, ErrStatementFailed) {
 		return sqlFailure(errStatementFailed, err.Error())

@@ -12,14 +12,8 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// router.go is the host half of `taubyte:gateway-router` — the function a
-// gateway names instead of a static route, or instead of one route's handler.
-//
-// # Pooled, like a transformer
-//
-// It decides per request and nothing about the answer can be kept, so it is an
-// ordinary pooled instance rather than one instantiated per question. See
-// transformer.go, which makes the same trade for the same reason.
+// router.go is the host half of `taubyte:gateway-router`, the function a gateway
+// names instead of a static route or a route's handler; pooled like a transformer.
 
 // WorldGatewayRouter is `implements: gateway-router`.
 const WorldGatewayRouter = specs.WorkloadBlockImplementsGatewayRouter
@@ -34,11 +28,8 @@ const (
 	routeNone
 )
 
-// ErrNotARouter is a component that answered with a shape this world does not
-// have. It is an error rather than a default because every default here is
-// wrong: sending the request somewhere invents a destination, and answering 404
-// tells a client the path does not exist when what happened is that the router
-// is broken.
+// ErrNotARouter is a component answering in a shape this world lacks; an error,
+// since any default would invent a destination or a false 404.
 var ErrNotARouter = errors.New("wasm: that component did not answer as a router")
 
 // Route asks this instance where one request should go.

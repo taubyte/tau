@@ -9,9 +9,6 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// workflow_test is the one verb a workflow has, and the reason it is its own
-// door rather than a queue send with a nicer name.
-
 // startGrant is a workflow a workload may begin a run of, as the composer
 // writes one: the grant is the WORKFLOW's and the handle it carries is the
 // first step's queue.
@@ -43,8 +40,6 @@ func starting(t *testing.T, grants ...invoke.Grant) (invoke.Instance, *work) {
 	return instance, sent
 }
 
-// TestSTARTINGARunIsSendingToTheFirstStEP, at the handle the workflow's own
-// entry record named — so no caller works it out from the step's name.
 func TestStartingAWorkflowQueuesTheFirstStep(t *testing.T) {
 	instance, sent := starting(t)
 
@@ -53,10 +48,6 @@ func TestStartingAWorkflowQueuesTheFirstStep(t *testing.T) {
 	require.Equal(t, [][3]string{{"shop/prod/QmFirstStep", "order-1", "what it carries"}}, sent.pushed())
 }
 
-// TestTHEGRANTISTheWorkflowsAndNotTheQueues. An author who wrote `workflow:
-// checkout: {ops: [start]}` granted a pipeline; spending that through the queue
-// interface would let a caller push straight into a later step and skip the one
-// that reserves the stock.
 func TestAWorkflowGrantIsNotAQueueGrant(t *testing.T) {
 	instance, sent := starting(t)
 
@@ -66,7 +57,6 @@ func TestAWorkflowGrantIsNotAQueueGrant(t *testing.T) {
 	require.Empty(t, sent.pushed())
 }
 
-// TestAWORKFLOWTheConfigNeverGrantedIsRefusedByNAME.
 func TestAnUngrantedWorkflowIsRefusedByName(t *testing.T) {
 	instance, sent := starting(t)
 
@@ -76,8 +66,6 @@ func TestAnUngrantedWorkflowIsRefusedByName(t *testing.T) {
 	require.Empty(t, sent.pushed())
 }
 
-// TestTHEVERBIsCheckedToo, so a grant that names a workflow without `start`
-// starts nothing.
 func TestAGrantWithoutStartCannotStart(t *testing.T) {
 	instance, sent := starting(t, startGrant("checkout", "shop/prod/QmFirstStep", "read"))
 
@@ -87,8 +75,6 @@ func TestAGrantWithoutStartCannotStart(t *testing.T) {
 	require.Empty(t, sent.pushed())
 }
 
-// TestAWORKFLOWWithNoEntryRecordStartsNothing, rather than guessing which of
-// its queues is first.
 func TestAWorkflowWithNoEntryIsUnavailable(t *testing.T) {
 	grant := startGrant("checkout", "")
 	delete(grant.Settings, "entry/start/handle")
@@ -102,7 +88,6 @@ func TestAWorkflowWithNoEntryIsUnavailable(t *testing.T) {
 	require.Empty(t, sent.pushed())
 }
 
-// TestAREFUSEDWorkflowGrantSaysWhy.
 func TestARefusedWorkflowSaysWhy(t *testing.T) {
 	grant := startGrant("checkout", "shop/prod/QmFirstStep")
 	grant.Refused = "workflow \"checkout\" records no entry point"
@@ -116,8 +101,6 @@ func TestARefusedWorkflowSaysWhy(t *testing.T) {
 	require.Empty(t, sent.pushed())
 }
 
-// TestANodeThatCannotQueueRefusesTheWorkload, which is the shape every other
-// capability keeps.
 func TestAServableWorkflowNeedsAQueueBacking(t *testing.T) {
 	_, err := tier(t, cacher(t)).Start(t.Context(), invoke.Spec{
 		Name: "fn", Artifact: "bafy",
@@ -126,8 +109,6 @@ func TestAServableWorkflowNeedsAQueueBacking(t *testing.T) {
 	require.ErrorIs(t, err, wasm.ErrNoWorkflows)
 }
 
-// TestTHEIMPORTIsRegisteredWithNoGrant, because an unprovided component import
-// is a trap that takes the instance with it.
 func TestTheWorkflowImportExistsWithoutAGrant(t *testing.T) {
 	instance := start(t, tier(t, cacher(t)), invoke.Spec{Name: "fn"})
 

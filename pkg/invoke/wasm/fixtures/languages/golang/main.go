@@ -1,21 +1,15 @@
-// A function in Go, built by the standard toolchain: it answers the language,
-// the method, the path and the body, so a caller can tell which component
-// served it.
-//
-// Standard Go has no WIT bindings generator: wit-bindgen-go's output uses
-// parameter types gc's go:wasmexport and go:wasmimport refuse. So the export
-// is lowered by hand, following the component model's canonical ABI for tau's
-// handler world, which flattens `handle: func(req: request) -> response` to
-// eight i32 parameters and an i32 pointer to the response.
+// A function in Go, built by the standard toolchain, answering the language,
+// method, path and body. Standard Go has no WIT bindings generator (gc's
+// wasmexport refuses wit-bindgen-go's types), so the export is lowered by hand per
+// the canonical ABI: `handle` flattens to eight i32 parameters and an i32 response
+// pointer.
 package main
 
 import "unsafe"
 
-// THE REALLOC IS cabi_export_realloc AND NOT cabi_realloc. wit-component
-// hands a main module's cabi_realloc to the WASI adapter too, which calls it
-// from inside the Go runtime's own WASI calls during _initialize; Go cannot be
-// re-entered there and throws. Under this name it serves only the export, and
-// the adapter allocates for itself.
+// The realloc is cabi_export_realloc, not cabi_realloc: wit-component would hand
+// cabi_realloc to the WASI adapter too, which calls it inside the Go runtime's own
+// WASI calls during _initialize, where Go cannot be re-entered.
 
 // held keeps what the host was handed alive until it has read it; the
 // component model calls cabi_post_handle once it has.

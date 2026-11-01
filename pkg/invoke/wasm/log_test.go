@@ -13,12 +13,10 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// log_test drives `taubyte:log/records` through a REAL COMPONENT: a record
-// crosses as bytes, comes back with the cursor the host issued, and the cursor
-// goes back in to read what follows.
+// Through a real component: a record crosses as bytes, returns with its cursor, and
+// the cursor reads what follows.
 
-// memLog is a Logs over a slice. It is deliberately dense and ordered, because
-// what the ABI has to carry is a cursor a caller hands back — not a number.
+// memLog is a Logs over a slice; what the ABI must carry is an opaque cursor.
 type memLog struct {
 	mu      sync.Mutex
 	records map[string][]wasm.Record
@@ -90,8 +88,6 @@ func logging(t *testing.T, ops ...string) (invoke.Instance, *memLog) {
 	return instance, backing
 }
 
-// TestARecordGoesOnTheEndAndComesBackInOrder — the whole claim, through
-// generated bindings, with the cursor the host issued going back in.
 func TestALogAppendsAndReadsForward(t *testing.T) {
 	instance, _ := logging(t)
 
@@ -113,16 +109,13 @@ func TestALogAppendsAndReadsForward(t *testing.T) {
 	require.True(t, strings.HasSuffix(lines[0], ":one"), "got %q", lines[0])
 	require.True(t, strings.HasSuffix(lines[2], ":three"), "got %q", lines[2])
 
-	// AND A CURSOR READS WHAT FOLLOWS IT, not what it names — which is what
-	// makes a reader able to resume without seeing a record twice.
+	// A cursor reads what follows it, so a reader resumes without repeats.
 	after := call(t, instance, "/read/audit/"+first, nil)
 	require.Equal(t, 200, after.Status, string(after.Body))
 	require.NotContains(t, string(after.Body), ":one")
 	require.Contains(t, string(after.Body), ":two")
 }
 
-// TestREADINGCONSUMESNOTHING, which is the whole difference from a queue: two
-// reads from the beginning answer the same records.
 func TestReadingALogConsumesNothing(t *testing.T) {
 	instance, _ := logging(t)
 	require.Equal(t, 200, call(t, instance, "/append/audit/", []byte("kept")).Status)
@@ -133,7 +126,6 @@ func TestReadingALogConsumesNothing(t *testing.T) {
 	require.Contains(t, string(first.Body), ":kept")
 }
 
-// TestALIMITBoundsThePage, so a reader of a long log is not handed all of it.
 func TestALogPageIsBounded(t *testing.T) {
 	instance, _ := logging(t)
 	for _, line := range []string{"a", "b", "c", "d"} {
@@ -145,10 +137,6 @@ func TestALogPageIsBounded(t *testing.T) {
 	require.Len(t, strings.Split(string(res.Body), "\n"), 2)
 }
 
-// ── the grant is the authorization ───────────────────────────────────────────
-
-// TestAPPENDIsAWriteAndREADIsARead, checked separately and before the backing
-// is touched.
 func TestALogGrantWithoutAppendCannotWrite(t *testing.T) {
 	instance, backing := logging(t, "read")
 
@@ -169,12 +157,8 @@ func TestAnUndeclaredLogIsRefusedByName(t *testing.T) {
 	require.Equal(t, "no-such-log:somebody-elses", string(res.Body))
 }
 
-// TestAQUEUEGrantIsNotALogGrant. `sync` is one kind with two types, and the
-// type selects the interface — so a queue's grant is invisible here, exactly as
-// a kv database's is to the sql interface.
 func TestAQueueGrantIsNotVisibleToTheLogInterface(t *testing.T) {
-	// The tier is given both backings, because a queue grant with no queue
-	// behind it is refused at Start — which would prove the wrong thing.
+	// Both backings, since a queue grant with no queue is refused at Start.
 	instance := start(t,
 		tier(t, cacher(t), wasm.WithLogs(newLog()), wasm.WithQueues(&work{})),
 		invoke.Spec{
@@ -190,8 +174,6 @@ func TestAQueueGrantIsNotVisibleToTheLogInterface(t *testing.T) {
 	require.Equal(t, "no-such-log:jobs", string(res.Body))
 }
 
-// TestANodeWithNothingToAppendToRefusesTheWorkload, the shape every capability
-// keeps: a granted capability with no backing is a composition fault.
 func TestALogGrantNeedsABacking(t *testing.T) {
 	_, err := tier(t, cacher(t)).Start(t.Context(), invoke.Spec{
 		Name: "fn", Artifact: "bafy",
@@ -200,8 +182,6 @@ func TestALogGrantNeedsABacking(t *testing.T) {
 	require.ErrorIs(t, err, wasm.ErrNoLogs)
 }
 
-// TestTHEIMPORTIsRegisteredEvenWithNoGrant. An unprovided import is a TRAP that
-// takes the instance with it.
 func TestTheLogImportExistsWithoutAGrant(t *testing.T) {
 	instance := start(t, tier(t, cacher(t)), invoke.Spec{Name: "fn"})
 
@@ -210,8 +190,6 @@ func TestTheLogImportExistsWithoutAGrant(t *testing.T) {
 	require.Equal(t, "no-such-log:anything", string(res.Body))
 }
 
-// TestABADCursorIsItsOwnArm, so a caller starts over rather than retrying a
-// position this log can never answer.
 func TestABadCursorIsNotAnOutage(t *testing.T) {
 	instance, _ := logging(t)
 

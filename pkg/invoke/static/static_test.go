@@ -17,8 +17,6 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/static"
 )
 
-// ── a site, as a build leaves it ─────────────────────────────────────────
-
 // tarball is what services/build/artifact stores for a directory output.
 func tarball(t *testing.T, files map[string]string) []byte {
 	t.Helper()
@@ -84,8 +82,6 @@ func get(t *testing.T, instance invoke.Instance, path string) *invoke.Response {
 	return res
 }
 
-// ── what it serves ───────────────────────────────────────────────────────
-
 func TestASiteServesItsFiles(t *testing.T) {
 	instance := serve(t, map[string]string{
 		"index.html":     "<h1>shop</h1>",
@@ -98,9 +94,7 @@ func TestASiteServesItsFiles(t *testing.T) {
 	require.Equal(t, "<h1>shop</h1>", string(res.Body))
 	require.Contains(t, res.Headers["Content-Type"][0], "text/html")
 
-	// THE TYPE IS THE EXTENSION'S AND NEVER THE BODY'S: guessing text/html for
-	// a build's output is how a file somebody uploaded becomes a script on the
-	// site's own origin.
+	// The type is the extension's, never sniffed.
 	res = get(t, instance, "/assets/app.js")
 	require.Equal(t, http.StatusOK, res.Status)
 	require.Contains(t, res.Headers["Content-Type"][0], "javascript")
@@ -114,8 +108,6 @@ func TestASiteServesItsFiles(t *testing.T) {
 	}
 }
 
-// A DIRECTORY WITH NO INDEX IS NOT A LISTING: serving one would publish every
-// file a build happened to leave behind.
 func TestADirectoryIsNotAListing(t *testing.T) {
 	instance := serve(t, map[string]string{
 		"index.html":        "<h1>shop</h1>",
@@ -129,9 +121,6 @@ func TestADirectoryIsNotAListing(t *testing.T) {
 	require.NotContains(t, string(res.Body), "keys.pem")
 }
 
-// GETTING THIS WRONG IS THE MOST COMMON WAY A DEPLOYED SINGLE-PAGE APP LOOKS
-// BROKEN: every route works until somebody reloads the page, and then the
-// server is asked for /orders/42 and has never heard of it.
 func TestSPAModeAnswersAnUnknownPathWithTheIndex(t *testing.T) {
 	files := map[string]string{"index.html": "<div id=app></div>", "404.html": "<h1>gone</h1>"}
 
@@ -156,8 +145,6 @@ func TestSPAModeAnswersAnUnknownPathWithTheIndex(t *testing.T) {
 	require.Empty(t, res.Body)
 }
 
-// A custom index is honoured in both modes, because the vocabulary lets an
-// author name one.
 func TestACustomIndex(t *testing.T) {
 	files := map[string]string{"home.html": "<h1>home</h1>"}
 
@@ -170,8 +157,6 @@ func TestACustomIndex(t *testing.T) {
 	})
 	require.Equal(t, "<h1>home</h1>", string(get(t, spa, "/anything").Body))
 }
-
-// ── the path is the internet's ───────────────────────────────────────────
 
 func TestARequestCannotClimbOutOfTheSite(t *testing.T) {
 	instance := serve(t, map[string]string{"index.html": "<h1>shop</h1>"}, nil)
@@ -189,9 +174,6 @@ func TestARequestCannotClimbOutOfTheSite(t *testing.T) {
 	}
 }
 
-// A SITE ANSWERS READS. A POST to a static site is not a route the author
-// wrote, and answering 200 with the index for it would make a broken form look
-// like a working one.
 func TestASiteAnswersReads(t *testing.T) {
 	instance := serve(t, map[string]string{"index.html": "<h1>shop</h1>"},
 		map[string]string{static.SettingMode: static.ModeSPA})
@@ -211,12 +193,6 @@ func TestASiteAnswersReads(t *testing.T) {
 	require.Equal(t, []string{"13"}, res.Headers["Content-Length"])
 }
 
-// ── the artifact is a stranger's ─────────────────────────────────────────
-
-// AN ENTRY THAT CLIMBS OUT IS REFUSED, NOT SKIPPED. A tar whose members escape
-// their root is not a site with one bad file in it; it is an archive built to
-// write somewhere else, and unpacking the rest of it would be doing most of
-// what it asked.
 func TestAnArchiveThatWritesOutsideItsRootIsRefused(t *testing.T) {
 	var out bytes.Buffer
 	gz := gzip.NewWriter(&out)
@@ -238,8 +214,6 @@ func TestAnArchiveThatWritesOutsideItsRootIsRefused(t *testing.T) {
 	require.NoFileExists(t, "/tmp/tau-escaped")
 }
 
-// A SYMLINK IS NOT UNPACKED. One pointing at /etc would turn every later read
-// of it into a read of that file, on a request path the internet reaches.
 func TestASymlinkIsNotUnpacked(t *testing.T) {
 	var out bytes.Buffer
 	gz := gzip.NewWriter(&out)
@@ -267,10 +241,6 @@ func TestASymlinkIsNotUnpacked(t *testing.T) {
 	require.Equal(t, http.StatusOK, get(t, instance, "/").Status)
 }
 
-// ── cold start, and what it leaves behind ────────────────────────────────
-
-// ITS OWN DIRECTORY, REMOVED WITH IT, so two revisions of one site can be warm
-// at once — which is what makes a rollback warm and a deploy not a restart.
 func TestAnInstanceOwnsItsDirectory(t *testing.T) {
 	r, err := static.New(&store{content: tarball(t, map[string]string{"index.html": "one"})})
 	require.NoError(t, err)
@@ -312,8 +282,6 @@ func TestWhatItRefuses(t *testing.T) {
 	require.ErrorContains(t, err, "unpacking")
 }
 
-// The tier plugs into the pool like any other, which is where scale-to-zero and
-// idle reclamation come from — this package decides none of it.
 func TestItIsAPoolTier(t *testing.T) {
 	r, err := static.New(&store{content: tarball(t, map[string]string{"index.html": "<h1>shop</h1>"})})
 	require.NoError(t, err)
@@ -338,14 +306,9 @@ func TestItIsAPoolTier(t *testing.T) {
 	require.Equal(t, 1, pool.Warm(spec))
 }
 
-// A LIMIT IS NOT OPTIONAL ON A DECOMPRESSOR. A gzipped tar is a stranger's
-// bytes — it came out of a build running a repository's own commands — and a
-// few kilobytes of it can name terabytes.
 func TestASiteLargerThanTheCeilingIsRefused(t *testing.T) {
-	// A header claiming a size the body does not have is the cheap half of the
-	// attack; the expensive half is a body that really is that large. Either
-	// way the copy is what is bounded, so a truncated one is what this can
-	// stand up without writing two gigabytes.
+	// The copy is what is bounded, so a truncated large body stands in for two
+	// gigabytes.
 	var out bytes.Buffer
 	gz := gzip.NewWriter(&out)
 	archive := tar.NewWriter(gz)
@@ -364,8 +327,6 @@ func TestASiteLargerThanTheCeilingIsRefused(t *testing.T) {
 	require.Error(t, err, "an artifact that does not end is not a site")
 }
 
-// A directory entry in the archive is created, so a site whose build wrote
-// empty directories unpacks the same way it was made.
 func TestDirectoriesInTheArchive(t *testing.T) {
 	var out bytes.Buffer
 	gz := gzip.NewWriter(&out)
@@ -389,8 +350,6 @@ func TestDirectoriesInTheArchive(t *testing.T) {
 	require.Equal(t, body, string(get(t, instance, "/assets/app.js").Body))
 }
 
-// A FILE NOTHING CLAIMS IS OCTET-STREAM. Sniffing the body is how a file
-// somebody uploaded becomes a script on the site's own origin.
 func TestAnUnknownExtensionIsNotGuessed(t *testing.T) {
 	instance := serve(t, map[string]string{
 		"index.html":   "<h1>shop</h1>",
@@ -402,8 +361,6 @@ func TestAnUnknownExtensionIsNotGuessed(t *testing.T) {
 	require.Equal(t, "application/octet-stream", res.Headers["Content-Type"][0])
 }
 
-// A SETTING WRITTEN AS EMPTY IS THE DEFAULT, not an empty index that matches
-// the directory itself.
 func TestAnEmptySettingIsTheDefault(t *testing.T) {
 	instance := serve(t, map[string]string{"index.html": "<h1>shop</h1>"}, map[string]string{
 		static.SettingIndex: "",
@@ -412,8 +369,6 @@ func TestAnEmptySettingIsTheDefault(t *testing.T) {
 	require.Equal(t, http.StatusOK, get(t, instance, "/").Status)
 }
 
-// A not-found document the build did not produce is a bare 404 rather than an
-// error: the site is still serving everything it does have.
 func TestANotFoundDocumentThatIsNotThere(t *testing.T) {
 	instance := serve(t, map[string]string{"index.html": "<h1>shop</h1>"},
 		map[string]string{static.SettingNotFound: "404.html"})

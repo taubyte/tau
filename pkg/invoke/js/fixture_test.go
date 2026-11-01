@@ -14,10 +14,6 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/js/archive"
 )
 
-// THE CORPUS'S JS SOURCE ANSWERS BEFORE ANY BUNDLER TOUCHES IT. An archive holds
-// modules, so the fixture's two files load as the two modules they are, and
-// what the corpus asserts of the bundled function is asserted here without
-// docker: the method and the body, whole.
 func TestTheCorpusFixtureAnswersTheMethodAndTheBody(t *testing.T) {
 	files := map[string][]byte{}
 	for _, name := range []string{"src/index.js", "src/answer.js"} {

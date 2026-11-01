@@ -10,10 +10,8 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// A REAL PROXY ROUTER. The fixture answers from what it was SHOWN — the name
-// the proxy answers on and the first four bytes — so a router that ignored its
-// arguments and returned a constant would satisfy every assertion about which
-// arm was taken.
+// A real proxy router answering from what it was shown (the proxy's name and the
+// first four bytes), so a constant answer would fail.
 
 func usher(t *testing.T) []byte {
 	t.Helper()
@@ -44,8 +42,6 @@ func pgConn() *invoke.Connection {
 	}
 }
 
-// TestAPROXYROUTERASKSTOSEEENOUGH. A protocol identifies itself in its first
-// bytes and the host cannot know how many that is — so the router says.
 func TestAProxyRouterAsksForMoreBytes(t *testing.T) {
 	out, err := directing(t).Direct(t.Context(), pgConn(), []byte("pg"))
 	require.NoError(t, err)
@@ -57,16 +53,12 @@ func TestAProxyRouterAsksForMoreBytes(t *testing.T) {
 	require.True(t, out.Enough(4), "and it has once four bytes have arrived")
 }
 
-// TestANEMPTYPEEKISNOTANULL. The world says list<u8>, which has no absent
-// case, so the first call of every connection carries an empty list.
 func TestAProxyRouterIsCalledWithNoBytesAtAll(t *testing.T) {
 	out, err := directing(t).Direct(t.Context(), pgConn(), nil)
 	require.NoError(t, err)
 	require.Equal(t, uint32(4), out.More)
 }
 
-// TestAPROXYROUTERNAMESAPORT, which is the field a gateway router has no use
-// for: a workload binds several and a connection has to arrive at one.
 func TestAProxyRouterPicksADestinationAndANamedPort(t *testing.T) {
 	out, err := directing(t).Direct(t.Context(), pgConn(), []byte("pgwire-startup"))
 	require.NoError(t, err)
@@ -78,8 +70,6 @@ func TestAProxyRouterPicksADestinationAndANamedPort(t *testing.T) {
 	require.Equal(t, "pg", out.To.Port, "which of the workload's ports to stream to")
 }
 
-// TestTHECONNECTIONCROSSEDINTACT, which is what the echo is for: the name and
-// the bytes both come back inside the destination.
 func TestAProxyRouterSeesTheConnectionAndTheBytes(t *testing.T) {
 	out, err := directing(t).Direct(t.Context(), pgConn(), []byte("heyo there"))
 	require.NoError(t, err)
@@ -89,8 +79,6 @@ func TestAProxyRouterSeesTheConnectionAndTheBytes(t *testing.T) {
 	require.Empty(t, out.To.Namespace, "an empty namespace means the proxy's own scope")
 }
 
-// TestAREFUSALISADECISION, not a failure: the router ran, read the bytes and
-// says this connection does not belong here.
 func TestAProxyRouterCanRefuseAConnection(t *testing.T) {
 	out, err := directing(t).Direct(t.Context(), pgConn(), []byte("nope, not you"))
 	require.NoError(t, err)
@@ -100,9 +88,6 @@ func TestAProxyRouterCanRefuseAConnection(t *testing.T) {
 		"and it answers from the source it was told about")
 }
 
-// TestAHANDLERISNOTAPROXYROUTER. A component built for one world instantiates
-// perfectly well under another and then reads its arguments as something else,
-// which is the failure `implements` exists to prevent.
 func TestOnlyAProxyRouterDirects(t *testing.T) {
 	instance := start(t, tier(t, handler(t)), invoke.Spec{
 		Name: "not_a_router", Artifact: "bafyhandler",
@@ -116,7 +101,6 @@ func TestOnlyAProxyRouterDirects(t *testing.T) {
 	require.ErrorContains(t, err, "directs nothing")
 }
 
-// TestAPROXYROUTERDOESNOTTRANSFORM, from the other side.
 func TestAProxyRouterShapesNothing(t *testing.T) {
 	instance := start(t, tier(t, usher(t)), invoke.Spec{
 		Name:     "edge_usher",

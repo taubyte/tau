@@ -16,9 +16,8 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// EVERY TEST HERE DRIVES THE REAL COMPONENT. The guest renders each value with
-// its CASE visible — "integer:-42" rather than "-42" — which is what proves a
-// number crossed as a number rather than as its digits.
+// Against the real component, which renders each value with its case
+// ("integer:-42"), proving types crossed as themselves.
 
 // server is a database, as this tier sees one.
 type server struct {
@@ -61,9 +60,7 @@ func (s *server) seen() ([]string, [][]any) {
 	return append([]string(nil), s.statements...), append([][]any(nil), s.bound...)
 }
 
-// dbGrant is a SQL database grant. The `type` setting is what selects the
-// interface — four data models live under one kind — so a grant without it
-// reaches neither.
+// dbGrant is a SQL grant; the `type` setting selects the interface.
 func dbGrant(label, handle string, ops ...string) []invoke.Grant {
 	return []invoke.Grant{{
 		Kind: "database", Label: label, Handle: handle, Ops: ops,
@@ -71,10 +68,6 @@ func dbGrant(label, handle string, ops ...string) []invoke.Grant {
 	}}
 }
 
-// ── the round trip ───────────────────────────────────────────────────────────
-
-// TestAGuestQueriesAndReadsTheRows, with every value case crossing back as
-// itself.
 func TestAComponentQueries(t *testing.T) {
 	db := &server{rows: wasm.Rows{
 		Columns: []string{"id", "name", "score", "live", "blob", "missing"},
@@ -118,9 +111,6 @@ func TestAComponentExecs(t *testing.T) {
 	require.Equal(t, "3/41", string(res.Body))
 }
 
-// TestEveryArgumentCaseIsBoundAsITSELF. Binding a number as text is how a query
-// stops using an index, and binding "" where the author meant NULL writes a row
-// that matches neither `IS NULL` nor a NOT NULL constraint.
 func TestEveryArgumentCrossesAsItsOwnType(t *testing.T) {
 	db := &server{affected: 1}
 	instance := start(t, tier(t, cacher(t), wasm.WithSQL(db)), invoke.Spec{
@@ -137,8 +127,6 @@ func TestEveryArgumentCrossesAsItsOwnType(t *testing.T) {
 	}, bound[0])
 }
 
-// ── the grant is the authorization ───────────────────────────────────────────
-
 func TestAnUndeclaredDatabaseIsRefused(t *testing.T) {
 	db := &server{}
 	instance := start(t, tier(t, cacher(t), wasm.WithSQL(db)), invoke.Spec{
@@ -153,9 +141,6 @@ func TestAnUndeclaredDatabaseIsRefused(t *testing.T) {
 	require.Empty(t, statements, "nothing reached the server")
 }
 
-// TestQueryDoesNotBuyExec, which is the whole reason the vocabulary calls exec
-// a write: the host cannot classify arbitrary SQL, so an author who asked for
-// reads gets reads.
 func TestAReadGrantCannotWrite(t *testing.T) {
 	db := &server{}
 	instance := start(t, tier(t, cacher(t), wasm.WithSQL(db)), invoke.Spec{
@@ -186,10 +171,6 @@ func TestARefusedDatabaseCarriesItsReason(t *testing.T) {
 	require.Contains(t, string(res.Body), "does not ship")
 }
 
-// ── the two failures, told apart ─────────────────────────────────────────────
-
-// TestAStatementTheServerRefusedIsNotAnOutage. A caller retries one and fixes
-// the other; folding them together has every syntax error retried to a timeout.
 func TestARefusedStatementIsItsOwnArm(t *testing.T) {
 	db := &server{err: fmt.Errorf("%w: syntax error at or near \"slect\"", wasm.ErrStatementFailed)}
 	instance := start(t, tier(t, cacher(t), wasm.WithSQL(db)), invoke.Spec{
@@ -214,8 +195,6 @@ func TestAnUnreachableServerIsUnavailable(t *testing.T) {
 	require.Contains(t, string(res.Body), "connection refused")
 }
 
-// ── when there is nothing behind the grant ───────────────────────────────────
-
 func TestATierWithNoDatabasesRefusesAWorkloadThatNeedsOne(t *testing.T) {
 	_, err := tier(t, cacher(t)).Start(t.Context(), invoke.Spec{
 		Name: "fn", Artifact: "bafy", Reaches: dbGrant("ledger", "h", "query"),
@@ -234,8 +213,6 @@ func TestATierWithNoDatabasesRunsAWorkloadThatNeedsNone(t *testing.T) {
 	require.Equal(t, 500, call(t, instance, "/query/other/", nil).Status)
 }
 
-// TestAllThreeCapabilitiesInOneComponent, because they are registered together
-// and a component that uses one must not lose the others.
 func TestACacheAStreamAndADatabaseInOneWorkload(t *testing.T) {
 	backing := newCaches("QmCache")
 	sent := newPublisher()
@@ -261,8 +238,6 @@ func TestACacheAStreamAndADatabaseInOneWorkload(t *testing.T) {
 	require.Equal(t, []string{"insert"}, statements)
 	require.Len(t, sent.messages("QmOrders"), 1)
 }
-
-// ── the kv data model ────────────────────────────────────────────────────────
 
 // keyValues is a kv database, as this tier sees one.
 type keyValues struct {
@@ -328,8 +303,6 @@ func kvGrant(label, handle string, ops ...string) []invoke.Grant {
 	}}
 }
 
-// TestAGuestReadsAndWritesAKvDatabase — tau's own engine, which is the one a
-// project gets with nothing to provision.
 func TestAComponentUsesAKvDatabase(t *testing.T) {
 	db := newKeyValues()
 	instance := start(t, tier(t, cacher(t), wasm.WithKV(db)), invoke.Spec{
@@ -353,8 +326,6 @@ func TestAComponentUsesAKvDatabase(t *testing.T) {
 	require.Equal(t, "not-found", string(res.Body), "a miss is its own arm and not an outage")
 }
 
-// TestAKvGrantIsNotASqlGrant, so one label cannot be spent on the other door —
-// which matters because both are the `database` kind.
 func TestTheDataModelSelectsTheInterface(t *testing.T) {
 	db := newKeyValues()
 	server := &server{}
@@ -385,9 +356,6 @@ func TestAnUngrantedKvVerbIsDenied(t *testing.T) {
 	require.Equal(t, "denied:tokens cannot put", string(res.Body))
 }
 
-// TestWatchBuysNothing: the vocabulary declares it and the store underneath has
-// no change feed, so a resource asking for it is told rather than handed a
-// channel that never delivers.
 func TestAGrantForWatchDoesNotRead(t *testing.T) {
 	db := newKeyValues()
 	instance := start(t, tier(t, cacher(t), wasm.WithKV(db)), invoke.Spec{
@@ -405,8 +373,6 @@ func TestATierWithNoKvRefusesAWorkloadThatNeedsOne(t *testing.T) {
 	})
 	require.ErrorIs(t, err, wasm.ErrNoKV)
 }
-
-// ── the document data model ──────────────────────────────────────────────────
 
 // collection is a document database, as this tier sees one.
 type collection struct {
@@ -483,8 +449,6 @@ func docGrant(label, handle string, ops ...string) []invoke.Grant {
 	}}
 }
 
-// TestAGuestStoresAndFindsDocuments — the document crosses as JSON, which is
-// what keeps this interface stable while its shape is the author's business.
 func TestAComponentUsesADocumentDatabase(t *testing.T) {
 	docs := newCollection()
 	instance := start(t, tier(t, cacher(t), wasm.WithDocuments(docs)), invoke.Spec{
@@ -511,8 +475,6 @@ func TestAComponentUsesADocumentDatabase(t *testing.T) {
 	require.Equal(t, "not-found", string(res.Body))
 }
 
-// TestAMalformedDocumentIsItsOwnArm, because a caller fixes it and does not
-// retry it.
 func TestABadDocumentIsMalformedAndNotAnOutage(t *testing.T) {
 	docs := newCollection()
 	instance := start(t, tier(t, cacher(t), wasm.WithDocuments(docs)), invoke.Spec{
@@ -524,7 +486,6 @@ func TestABadDocumentIsMalformedAndNotAnOutage(t *testing.T) {
 	require.Contains(t, string(res.Body), "malformed:")
 }
 
-// TestAnEmptyFilterIsEverything, and an empty BODY is an empty filter.
 func TestAnEmptyFilterCrossesAsEmpty(t *testing.T) {
 	docs := newCollection()
 	instance := start(t, tier(t, cacher(t), wasm.WithDocuments(docs)), invoke.Spec{
@@ -537,7 +498,6 @@ func TestAnEmptyFilterCrossesAsEmpty(t *testing.T) {
 	require.Equal(t, []string{""}, docs.filters())
 }
 
-// TestThreeDataModelsAreThreeDoors, all under the `database` kind.
 func TestEachDataModelIsItsOwnDoor(t *testing.T) {
 	docs := newCollection()
 	kv := newKeyValues()
@@ -580,8 +540,6 @@ func TestATierWithNoDocumentsRefusesAWorkloadThatNeedsOne(t *testing.T) {
 	})
 	require.ErrorIs(t, err, wasm.ErrNoDocuments)
 }
-
-// ── the vector data model ────────────────────────────────────────────────────
 
 // index is a vector database, as this tier sees one.
 type index struct {
@@ -660,8 +618,6 @@ func vecGrant(label, handle string, ops ...string) []invoke.Grant {
 	}}
 }
 
-// TestAGuestUpsertsAndSearches — an embedding crosses as list<f32> in both
-// directions, which is the one place a number list is the natural shape.
 func TestAComponentSearchesAVectorDatabase(t *testing.T) {
 	idx := newIndex()
 	instance := start(t, tier(t, cacher(t), wasm.WithVectors(idx)), invoke.Spec{
@@ -684,7 +640,6 @@ func TestAComponentSearchesAVectorDatabase(t *testing.T) {
 	require.Equal(t, "north:0.000:", string(res.Body))
 }
 
-// TestKBoundsWhatComesBack.
 func TestSearchHonoursK(t *testing.T) {
 	idx := newIndex()
 	instance := start(t, tier(t, cacher(t), wasm.WithVectors(idx)), invoke.Spec{
@@ -700,8 +655,6 @@ func TestSearchHonoursK(t *testing.T) {
 	require.Len(t, strings.Split(string(res.Body), ","), 2)
 }
 
-// TestTheWrongWidthIsItsOwnArm, because it is a mistake in the CALLER: the
-// answer would be meaningless rather than late.
 func TestAWrongWidthEmbeddingIsNamed(t *testing.T) {
 	idx := newIndex()
 	instance := start(t, tier(t, cacher(t), wasm.WithVectors(idx)), invoke.Spec{
@@ -735,8 +688,6 @@ func TestATierWithNoVectorsRefusesAWorkloadThatNeedsOne(t *testing.T) {
 	require.ErrorIs(t, err, wasm.ErrNoVectors)
 }
 
-// TestFourDataModelsAreFourDoors, all under the `database` kind — which is the
-// whole of what that kind declares.
 func TestEveryDataModelIsItsOwnDoor(t *testing.T) {
 	idx := newIndex()
 	instance := start(t, tier(t, cacher(t),

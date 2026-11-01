@@ -8,11 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// proxy_pool_test drives the two calls a proxy makes of the pool. Both are
-// POOLED — the router is asked once per connection and the transformer once per
-// chunk — and both refuse a tier that does not serve their world rather than
-// defaulting, because every default is wrong: forwarding invents a destination
-// and passing bytes on is a filter silently not filtering.
+// The two calls a proxy makes of the pool, both pooled, and both refusing a tier
+// that does not serve their world rather than defaulting.
 
 // steering is an instance that serves both proxy worlds, recording what it was
 // handed so a test can prove the arguments crossed.
@@ -56,7 +53,6 @@ func conn() *Connection {
 	return &Connection{Source: "203.0.113.7:51000", Host: "db.example.com", Protocol: "postgres", Transport: "tcp"}
 }
 
-// TestAROUTERISASKEDONTHEPOOLSOWNSLOT, and what it was handed crossed intact.
 func TestThePoolAsksAProxyRouterWhereAConnectionGoes(t *testing.T) {
 	inst := &steering{direct: func() (*Direction, error) {
 		return &Direction{To: &Endpoint{Kind: "application", Name: "db", Port: "pg"}}, nil
@@ -72,7 +68,6 @@ func TestThePoolAsksAProxyRouterWhereAConnectionGoes(t *testing.T) {
 	require.Equal(t, "pgwire", string(inst.sawPeeked))
 }
 
-// TestATRANSFORMERISASKEDPERCHUNK, with the state the host is carrying.
 func TestThePoolRunsAChunkThroughAProxyTransformer(t *testing.T) {
 	inst := &steering{shape: func() (*Shaping, error) {
 		return &Shaping{Pass: &Shaped{Out: []byte("OUT"), State: []byte("held")}}, nil
@@ -91,8 +86,6 @@ func TestThePoolRunsAChunkThroughAProxyTransformer(t *testing.T) {
 	require.True(t, inst.sawStream.Last)
 }
 
-// TestATIERTHATSERVESNEITHERWORLDSAYSSO rather than defaulting. A container is
-// a process that answers requests and has no second export to call.
 func TestATierThatRunsNeitherProxyWorldRefuses(t *testing.T) {
 	p, _ := newPool(t, newFakeRuntime("fake"), nil)
 
@@ -105,9 +98,6 @@ func TestATierThatRunsNeitherProxyWorldRefuses(t *testing.T) {
 	require.ErrorContains(t, err, "no proxy transformer")
 }
 
-// TestAFAILUREREACHESTHECALLER unchanged, because what happens to a connection
-// when its router or its filter cannot run is the proxy's decision and not the
-// pool's.
 func TestThePoolPassesAProxyWorldsFailureBack(t *testing.T) {
 	boom := errors.New("the component trapped")
 
@@ -124,8 +114,6 @@ func TestThePoolPassesAProxyWorldsFailureBack(t *testing.T) {
 	require.ErrorIs(t, err, boom)
 }
 
-// TestAROUTERTHATWANTSNOMOREBYTES is a router that will never decide, and
-// Enough is what the peek loop asks to notice it.
 func TestEnoughIsWhatStopsAPeekLoopSpinning(t *testing.T) {
 	require.True(t, (&Direction{More: 4}).Enough(4), "it has been shown what it asked for")
 	require.True(t, (&Direction{More: 4}).Enough(9), "and more than it asked for")

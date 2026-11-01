@@ -14,25 +14,11 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// host.go is what the prelude reaches in Go: the request and response, the
-// console's sink, and UTF-8 in both directions, which a JS loop over every
-// byte would make the slowest part of a body.
-//
-// # Bytes cross through one window, never as a Value
-//
-// Every JS value that reaches Go as an engine.Value is pinned until Go's
-// collector runs the pin's cleanup, however soon Go drops it. A body handed
-// over as a Value stays in the arena until then, and on a node whose Go heap
-// is large that is thousands of requests later: a 16 MiB realm serving 128 KiB
-// responses ran out of arena with nothing in it live. So every function here
-// is typed (engine.Fn*), whose strings and numbers convert without a Value, and
-// bytes go through the window: one ArrayBuffer per realm, pinned once, that
-// both sides copy into and out of. The prelude grows it, and the grown one
-// replaces it.
-//
-// THE WINDOW IS ONLY EVER USED WITHIN ONE SYNCHRONOUS STRETCH: written and read
-// with no JS in between, so a promise reaction cannot overwrite bytes the other
-// side has not read yet.
+// host.go is what the prelude reaches in Go: request and response, the console
+// sink, and UTF-8 both ways. Every engine.Value reaching Go stays pinned until Go
+// collects, so these functions are typed (engine.Fn*) and bytes cross through one
+// pinned per-realm ArrayBuffer window, grown from JS. The window is only used
+// within one synchronous stretch, so no promise reaction overwrites unread bytes.
 
 var errWindow = errors.New("js: the prelude's window does not hold what it was told")
 
@@ -232,10 +218,8 @@ func wellFormed(s string) []byte {
 // stream, an incomplete sequence at the end is held back, and rest is how many
 // bytes that is.
 func decodeUTF8(b []byte, fatal, stream bool) (text string, rest int, ok bool) {
-	// Well-formed input decodes to itself: utf8.Valid refuses what the
-	// decoder replaces (surrogates, overlong forms, beyond U+10FFFF), and a
-	// valid input has no incomplete tail to hold back. Byte at a time, a
-	// 128 KiB body spent half its request here.
+	// Valid UTF-8 decodes to itself with no tail to hold back; the byte loop is only
+	// for the rest.
 	if utf8.Valid(b) {
 		return string(b), 0, true
 	}

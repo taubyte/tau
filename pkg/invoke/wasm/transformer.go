@@ -13,25 +13,15 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// transformer.go is the host half of `taubyte:gateway-transformer` — the
-// functions a gateway or a proxy declares that traffic passes through.
-//
-// # It is pooled, and that is what makes it different from the other two
-//
-// An authorizer and an instance validator are asked once per caller and their
-// answers are kept, so each instantiates per question and the cold start
-// amortises away. A transformer runs on EVERY request and nothing about its
-// answer can be kept — it is a function of the request. Instantiating a small
-// component measures at ~13ms on this tree, which is not something to add to
-// every request at the edge, so a transformer is an ordinary pooled instance
-// and Start brings it up: see invoke.Pool, none of whose warm-slot,
-// cold-start-deduplication or scale-to-zero logic is about what gets called.
+// transformer.go is the host half of `taubyte:gateway-transformer`. Unlike an
+// authorizer or validator, whose answers are kept, a transformer runs on every
+// request, and a ~13ms instantiation cannot be added to each, so it is a pooled
+// instance Start brings up.
 
 // WorldGatewayTransformer is `implements: gateway-transformer`.
 const WorldGatewayTransformer = specs.WorkloadBlockImplementsGatewayTransformer
 
-// transformExport is fixed: a gateway names the function, not an export inside
-// it.
+// transformExport is fixed: a gateway names the function, not an export.
 const transformExport = "transform"
 
 // The outcome variant's arms, in the order the WIT declares them.
@@ -40,10 +30,8 @@ const (
 	outcomeAnswer
 )
 
-// ErrNotATransformer is a component that answered with a shape this world does
-// not have. A transformer whose answer cannot be read must not be treated as
-// "carry on" — that would be a filter silently not filtering, which is the
-// failure `fail: closed` exists to prevent.
+// ErrNotATransformer is a component answering in a shape this world lacks; never
+// treated as "carry on".
 var ErrNotATransformer = errors.New("wasm: that component did not answer as a transformer")
 
 // Transform runs one request through this instance.
@@ -62,13 +50,8 @@ func (f *function) Transform(ctx context.Context, req *invoke.Request) (*invoke.
 	return outcomeFrom(out[0], f.export)
 }
 
-// outcomeFrom lifts the world's `outcome` variant back.
-//
-// EVERY FIELD IS CHECKED for the reason responseFrom gives, and the stakes are
-// higher here: this decides whether a request carries on. A shape nobody
-// understands is an error, which the gateway then treats as the transformer
-// having failed — and what that means is the author's to say, per entry, with
-// `fail: closed` or `fail: open`.
+// outcomeFrom lifts the `outcome` variant back, checking every field; a malformed
+// answer is a failed transformer, handled per the entry's `fail:`.
 func outcomeFrom(value component.Value, export string) (*invoke.Outcome, error) {
 	var variant *component.VariantValue
 	switch v := value.(type) {
@@ -99,8 +82,8 @@ func outcomeFrom(value component.Value, export string) (*invoke.Outcome, error) 
 	return nil, fmt.Errorf("%w: %s answered with arm %d", ErrNotATransformer, export, variant.Disc)
 }
 
-// requestFrom lifts the world's `request` record — the reverse of requestValue,
-// and the only place this tier reads one back out of a guest.
+// requestFrom lifts the `request` record, the only place this tier reads one back
+// from a guest.
 func requestFrom(value component.Value, export string) (*invoke.Request, error) {
 	fields, ok := value.([]component.Value)
 	if !ok || len(fields) != 4 {
@@ -118,12 +101,8 @@ func requestFrom(value component.Value, export string) (*invoke.Request, error) 
 		return nil, err
 	}
 
-	// CANONICALISED, because a header name is case-insensitive and this map is
-	// not. Everything upstream fills it from net/http, which canonicalises —
-	// `X-Card` — and a guest writes whatever it writes. A transformer adding
-	// `x-shaped` would otherwise produce a request whose next reader misses it
-	// looking for `X-Shaped`, and the miss is silent: the header is right there,
-	// under a key nobody asks for.
+	// Canonicalised: header names are case-insensitive and this map is not, so a guest's
+	// `x-shaped` would be missed under `X-Shaped`.
 	canonical := make(map[string][]string, len(headers))
 	for name, values := range headers {
 		key := http.CanonicalHeaderKey(name)

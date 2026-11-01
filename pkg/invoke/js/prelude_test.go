@@ -175,8 +175,6 @@ func TestThePreludeBehavesAsTheWebPlatformDoes(t *testing.T) {
 	}
 }
 
-// TestAUsedOrForeignResponseIsA500: the platform reads a Response through its
-// own slots, so a used body or a look-alike object is refused.
 func TestAUsedOrForeignResponseIsA500(t *testing.T) {
 	f := newFixture(t, `
 export default {

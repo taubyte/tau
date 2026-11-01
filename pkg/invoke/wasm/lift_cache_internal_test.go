@@ -7,22 +7,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// lift_cache_internal_test covers the guest→host boundary of the cache world.
-//
-// # Why these deserve their own test
-//
-// WHAT CROSSES HERE IS SUPPLIED BY A GUEST, and a guest is an untrusted actor in
-// this system — not a peer, not an operator, code somebody deployed. So every one
-// of these has to REFUSE a shape it does not understand rather than coerce it:
-// misreading an argument is how a cache operation lands on a key its caller never
-// named.
-//
-// They are also the shapes a real component cannot easily produce, which is why
-// the fixtures did not reach them. A guest whose bindings lowered a scalar the
-// other legal way, or one built against a world that has since moved, produces
-// precisely these — and the widening cases are not hypothetical: wazy's own
-// ListDesc doc says both the narrow and the widened form cross the ABI depending
-// on how a guest's bindings lowered it.
+// The guest-to-host boundary of the cache world: a guest is untrusted, so every
+// lift refuses a shape it does not understand. Widened scalars are legal per
+// wazy's ListDesc.
 
 func TestTwoStringsRefusesAnythingElse(t *testing.T) {
 	first, second, err := twoStrings([]component.Value{"sessions", "abc"})
@@ -47,9 +34,6 @@ func TestTwoStringsRefusesAnythingElse(t *testing.T) {
 	}
 }
 
-// TestAWIDENEDSCALARISSTILLAU32. Which shape arrives depends on how a guest's
-// bindings lowered it, so refusing the widened one would fail for a guest that
-// is not doing anything wrong.
 func TestLiftU32TakesEveryShapeThatCrossesTheABI(t *testing.T) {
 	for _, one := range []struct {
 		name  string
@@ -74,9 +58,6 @@ func TestLiftU32TakesEveryShapeThatCrossesTheABI(t *testing.T) {
 		"a string that happens to look like a number is not one")
 }
 
-// TestANILSLICEISANEMPTYLIST. A stored empty value is a legitimate answer, and
-// lowering it as nothing would hand the guest an absent case its type does not
-// have.
 func TestByteListNeverLowersNothing(t *testing.T) {
 	require.Equal(t, []byte{}, byteList(nil))
 	require.NotNil(t, byteList(nil), "an empty list, not a nil value")

@@ -10,57 +10,21 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// instance.go is how a guest names ONE OF MANY.
-//
-// # The vocabulary's `instances:` block, finally meaning something
-//
-// Four kinds may declare that they hold many instances rather than one — cache,
-// database, storage and bus — each admitted by a function the target names and
-// bounded by a ceiling it declares. Until now nothing honoured it: a workload
-// reaching such a store got the store, once, with no admission and no count, so
-// the config's own security control silently did not exist. The composer
-// refused the grant rather than serving that, which was right and made the
-// block unusable.
-//
-// # The instance travels in the LABEL, and that is not a hack
-//
-// A label is `^[a-zA-Z_][a-zA-Z0-9_]*$` in the vocabulary — it CANNOT contain a
-// slash — so `sessions/room-42` splits at the first one with no ambiguity ever.
-// The alternative is an `instance: string` parameter on all twenty-three host
-// functions, which every caller of a single-instance store passes empty: a
-// required argument that is almost always nothing, on every call, forever.
-//
-// What the label parameter already means is "which one", and this is the whole
-// of that question rather than half of it.
-//
-// # An instance is a handle, so no backing changes
-//
-// Every backing here already scopes its keys by `Grant.Handle`. An admitted
-// instance is that handle with the instance appended, so a cache, a kv
-// database, a document store and a bucket each isolate one instance from
-// another by the mechanism they already use for two resources. Nothing below
-// this file knows instances exist.
-//
-// # Admission is a seam because it invokes a function
-//
-// Deciding whether an instance may exist means running the workload the target
-// named, which this tier cannot do: it runs one workload and has no way to
-// reach another. So it asks whoever composed it — see Admitter, and
-// node/admit for the implementation that invokes through the worker and
-// counts against the ceiling.
+// instance.go is how a guest names one of many: the `instances:` block on cache,
+// database, storage and bus. The instance travels in the label, `sessions/room-42`,
+// unambiguous since a label cannot contain a slash. An admitted instance is the
+// grant's handle with the instance appended, so every backing isolates instances
+// with the mechanism it already uses. Admission runs a function this tier cannot
+// reach, so it asks an Admitter (node/admit).
 
-// Admitter decides whether a caller may open one instance of a store.
-//
-// IT IS ASKED BEFORE ANYTHING IS TOUCHED, and it is asked per open rather than
-// per call: an implementation that has already admitted an instance should say
-// so cheaply, because this is on the request path.
+// Admitter decides whether a caller may open one instance of a store, asked per
+// open on the request path, so repeat admissions should be cheap.
 type Admitter interface {
 	Admit(ctx context.Context, spec invoke.Spec, grant invoke.Grant, instance string) error
 }
 
-// WithAdmission is what decides whether an instance may exist. A tier without
-// one refuses every instance of every store that declares `instances:`, which
-// is the same answer the composer used to give for the whole grant.
+// WithAdmission decides whether an instance may exist; without it every instance of
+// an `instances:` store is refused.
 func WithAdmission(a Admitter) Option {
 	return func(r *Runtime) { r.admission = a }
 }
@@ -88,15 +52,11 @@ const (
 // reason is why an open did not happen, in the three shapes every interface
 // here has an arm for.
 type reason struct {
-	// missing says the label names nothing this workload was granted, which
-	// every interface reports as its own `no-such-…` arm because it reads as a
-	// typo rather than as an outage.
+	// missing says the label names nothing granted: a `no-such-…` arm.
 	missing bool
 
-	// unavailable says the platform could not answer, as against a decision it
-	// answered with. A VALIDATOR THAT COULD NOT BE RUN IS NOT A REFUSAL: telling
-	// a caller its instance was turned down when the cloud never asked sends
-	// somebody to argue with a policy that did not fire.
+	// unavailable says the platform could not answer; a validator that could not run is
+	// not a refusal.
 	unavailable bool
 
 	detail string
@@ -106,12 +66,8 @@ func missingLabel(label string) *reason { return &reason{missing: true, detail: 
 func denied(detail string) *reason      { return &reason{detail: detail} }
 func unreachable(detail string) *reason { return &reason{unavailable: true, detail: detail} }
 
-// addressed resolves what a guest named: which grant, whether it is legal to
-// address that resource this way, and whether this instance is admitted.
-//
-// It is the whole of the check every interface's `open` does, in one place,
-// because seven copies of "is this the resource or one of its instances" is
-// seven places for the answer to differ.
+// addressed resolves what a guest named: which grant, whether it may be addressed
+// this way, and whether the instance is admitted. Every interface's open uses it.
 func (r *Runtime) addressed(ctx context.Context, spec invoke.Spec, grants map[string]invoke.Grant, name, op string) (invoke.Grant, *reason) {
 	label, instance, addressed := strings.Cut(name, "/")
 
@@ -126,19 +82,9 @@ func (r *Runtime) addressed(ctx context.Context, spec invoke.Spec, grants map[st
 		return invoke.Grant{}, denied(label + " cannot " + op)
 	}
 
-	// AN AUTHORIZER NARROWS AND CANNOT WIDEN, which is what putting it AFTER
-	// Allows means rather than instead of it. The access block stays the
-	// ceiling: a guard that could hand back an op its own configuration never
-	// asked for would make the config stop describing what the workload can do,
-	// and the config is the thing a reader has.
-	//
-	// IT FAILS CLOSED, and that is where this parts from the instance validator
-	// in node/admit. That one treats "could not be run" as not a
-	// refusal, because telling a caller its instance was turned down when
-	// nothing asked sends them to argue with a policy that never fired. Here the
-	// target has said in its own configuration that somebody else decides, so
-	// serving it when that somebody cannot be reached grants exactly the access
-	// it said was not ours to grant.
+	// An authorizer narrows and cannot widen: it runs after Allows, so the access block
+	// stays the ceiling. It fails closed, unlike the instance validator: the target
+	// said somebody else decides, so an unreachable authorizer grants nothing.
 	if grant.Settings[settingAuthorizer] != "" {
 		if r.authorizers == nil {
 			return invoke.Grant{}, denied(label + " is guarded and this tier has nothing to ask")
@@ -181,10 +127,8 @@ func (r *Runtime) addressed(ctx context.Context, spec invoke.Spec, grants map[st
 	}
 
 	if strings.Contains(instance, "/") {
-		// An instance name is a KEY, not a path: it is looked up exactly, a
-		// separator in it would make one instance reachable by two names, and
-		// the store path-cleans a key so `..` would resolve into another
-		// store's rows rather than missing.
+		// An instance name is a key: no separator, and no `..` that a store's path cleaning
+		// would resolve into another store's rows.
 		return invoke.Grant{}, denied("an instance name may not be empty or contain /")
 	}
 
@@ -198,9 +142,7 @@ func (r *Runtime) addressed(ctx context.Context, spec invoke.Spec, grants map[st
 		return invoke.Grant{}, unreachable(err.Error())
 	}
 
-	// THE INSTANCE IS PART OF THE HANDLE, which is what makes every backing
-	// isolate one instance from another with the mechanism it already uses for
-	// two resources.
+	// The instance is part of the handle.
 	grant.Handle += "/" + instance
 	return grant, nil
 }

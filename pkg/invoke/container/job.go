@@ -15,26 +15,17 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// job.go runs a workload that RUNS TO COMPLETION (invoke.Spec.Completes): every
-// request is one run of the image, its payload on stdin, its exit the answer.
-//
-// # The contract, which is the whole design
+// job.go runs a workload that runs to completion (invoke.Spec.Completes): each
+// request is one run of the image.
 //
 //	stdin                   the request's body, then EOF
-//	TAU_INVOCATION_ID       one id per run, for the image's own logs
-//	exit 0                  200, and the body is what it wrote to stdout
-//	exit n                  refused: ErrJobFailed, the code, the tail of stderr
-//	past the timeout        killed and refused: ErrJobTimedOut
+//	TAU_INVOCATION_ID       one id per run
+//	exit 0                  200, body is stdout
+//	exit n                  ErrJobFailed, with the code and the tail of stderr
+//	past the timeout        killed: ErrJobTimedOut
 //
-// It is Cloud Run Jobs' and a Kubernetes Job's shape, and it asks nothing of the
-// image: no port, no protocol, no SDK. A batch image built for anywhere else
-// runs here unmodified, which is the point of a container tier.
-//
-// # One container per request
-//
-// So Concurrency is parallel runs and nothing is shared between them: a run
-// that leaves a file behind leaves it in a container that is then removed.
-// Start does what one run should not pay for — the pull — and nothing else.
+// Cloud Run Jobs' and a Kubernetes Job's shape, so batch images run unmodified.
+// One container per request; Start only pulls.
 
 var (
 	// ErrJobFailed is a run that exited non-zero. It carries the code and the

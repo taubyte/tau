@@ -1,44 +1,14 @@
-// Package container runs a container as a serverless tier.
+// Package container runs a container as a serverless tier: request in, response
+// out. The container listens on $PORT and answers, the contract Heroku, Cloud
+// Run, Fly and Render use, so an imported app usually needs no change.
 //
-// It is the first real implementation of invoke.Runtime, and it is what makes
-// "bring the code you already have" true: a wasm component is the
-// differentiator, but a container is what runs the thing somebody already
-// built.
+// The engine allocates a free host port itself and passes it in $PORT, because
+// neither backend reports an assigned port or IP (port mappings are docker-only,
+// containerd runs without CNI). Docker maps host to container; containerd is on
+// the host network. Each instance gets its own port.
 //
-// # The runtime contract is tau's
-//
-// Request in, response out. A container function is HANDED a request — it does
-// not poll anything, and no vendor's invocation protocol appears here. What the
-// container sees is an ordinary HTTP server's job: listen on $PORT, answer.
-// That is the same contract Heroku, Cloud Run, Fly and Render all use, which is
-// why an imported app usually needs no change at all.
-//
-// # Addressing, and why the engine picks the port
-//
-// This is forced by pkg/containers and it is worth stating so nobody "fixes" it:
-//
-//   - core.NetworkConfig.PortMappings is documented DOCKER ONLY; the containerd
-//     backend runs without CNI and accepts only host and none modes.
-//   - core.ContainerInfo carries ID, Status, ExitCode, StartedAt, Image and
-//     Resources — and NO assigned IP or resolved port.
-//
-// So an ephemeral mapping cannot be read back, and a bridge IP does not exist on
-// one of the two backends. The engine therefore ALLOCATES a free host port
-// itself and tells the container which one to use, via $PORT. On docker it also
-// maps host→container so the number means the same thing inside; on containerd
-// the container is on the host network and already does. One scheme, both
-// backends, no change to pkg/containers.
-//
-// Each instance gets its own port, so the pool starting N instances of one spec
-// for concurrency does not collide.
-//
-// # Readiness is dialled, not assumed
-//
-// A container that has STARTED is not a container that is LISTENING. Start
-// blocks until the port accepts a connection or the deadline passes, because
-// invoke.Pool calls Start on the request path — returning early would hand the
-// first request to a socket nobody is on yet, and that failure would be
-// attributed to the request rather than to the cold start.
+// Start blocks until the port accepts a connection, since invoke.Pool starts on
+// the request path.
 package container
 
 import (
@@ -68,40 +38,21 @@ var (
 	ErrNoBackend = errors.New("container: no container backend")
 	ErrNoImage   = errors.New("container: a spec with no image has nothing to run")
 
-	// ErrNoSuchPort is a caller naming a port this workload never declared. It
-	// is a config fault rather than a runtime one — the vocabulary's Ref would
-	// have caught a name that matched nothing — so it says which workload and
-	// which name rather than failing to connect.
+	// ErrNoSuchPort is a caller naming a port the workload never declared, a config
+	// fault.
 	ErrNoSuchPort = errors.New("container: that workload declares no port by that name")
 	ErrNotReady   = errors.New("container: the container never listened")
 	ErrClosed     = errors.New("container: instance is closed")
 	ErrExited     = errors.New("container: the container exited")
 
-	// ErrNoMounts is a workload that declared a filesystem this tier cannot
-	// give it.
-	//
-	// IT IS A REFUSAL AND THE ONLY ONE OF ITS KIND HERE, because it is the only
-	// unserved capability that LOSES DATA rather than failing. A container
-	// declaring `volume: {pgdata: {ops: [mount-rw], path: /var/lib/postgresql/data}}`
-	// and started without it writes its database into the container's own
-	// layer, which is discarded when the container is — and nothing anywhere
-	// says so until somebody looks for the data.
-	//
-	// Everything else in an access block fails LOUDLY when it is absent: a
-	// database it cannot reach is a connection error the workload reports. Those
-	// are warned about (see unserved) and started.
+	// ErrNoMounts is a workload declaring a filesystem this tier cannot give it, the
+	// one unserved capability refused rather than warned about, since running without
+	// it loses data silently (a database writing into the discarded container layer).
 	ErrNoMounts = errors.New("container: this tier cannot mount a filesystem, and the workload declared one")
 )
 
-// Backend is the slice of a container backend this runtime needs.
-//
-// IT IS DECLARED HERE, BY THE CONSUMER, AND IS AS NARROW AS THE USE — the same
-// doctrine services/storage states about not taking a peer.Node to get at one
-// datastore. core.Backend has eleven methods covering builds, logs, image
-// cleanup and health checks; running a function needs six. Declaring the six is
-// what lets every test in this package run with no daemon anywhere.
-//
-// *containers.Client and any core.Backend satisfy it.
+// Backend is the slice of a container backend this runtime needs, declared by the
+// consumer so tests need no daemon; any core.Backend satisfies it.
 type Backend interface {
 	Create(ctx context.Context, cfg *core.ContainerConfig) (core.ContainerID, error)
 	Start(ctx context.Context, id core.ContainerID) error
@@ -116,10 +67,7 @@ type Backend interface {
 	Logs(ctx context.Context, id core.ContainerID) (io.ReadCloser, error)
 }
 
-// Option configures the runtime. The backend is the only thing it cannot work
-// without, and it is a With… like everything else so a caller composing a node
-// registers what it found rather than filling a struct whose shape it has to
-// know.
+// Option configures the runtime; the backend is required.
 type Option func(*options) error
 
 type options struct {
@@ -133,13 +81,8 @@ type options struct {
 	warn          func(format string, args ...any)
 }
 
-// Volumes gives this tier the host directory a mount grant names.
-//
-// IT IS A SEAM BECAUSE THE BYTES ARE NOT THIS PACKAGE'S. Where a volume lives,
-// how it survives being moved and what its quota costs are all the composer's —
-// this tier's whole job is to put the path it is handed at the path the author
-// wrote. A tier without one refuses a workload that declared a mount, which is
-// what ErrNoMounts is for.
+// Volumes gives this tier the host directory a mount grant names; where volumes
+// live is the composer's. Without one, a workload declaring a mount is refused.
 type Volumes interface {
 	// Mount resolves one mount grant to a directory on this host. It is called
 	// on the request path, once per cold start, so it must not walk anything
@@ -147,8 +90,7 @@ type Volumes interface {
 	Mount(ctx context.Context, grant invoke.Grant) (string, error)
 }
 
-// WithVolumes is what turns a declared filesystem into a real one. Without it
-// a workload that declares a mount is refused.
+// WithVolumes turns a declared filesystem into a real one.
 func WithVolumes(v Volumes) Option {
 	return func(o *options) error {
 		if v == nil {
@@ -170,10 +112,8 @@ func WithBackend(b Backend) Option {
 	}
 }
 
-// WithWarn is where this tier says something an operator has to know but that
-// is not a reason to refuse a workload.
-//
-// THERE IS EXACTLY ONE SUCH THING and it is egress. See Start.
+// WithWarn is where this tier reports what an operator must know but is no reason
+// to refuse a workload.
 func WithWarn(warn func(format string, args ...any)) Option {
 	return func(o *options) error {
 		if warn == nil {
@@ -279,16 +219,12 @@ func (o *options) withDefaults() error {
 type Runtime struct {
 	opts options
 
-	// image is what to run for a spec, and it is injected rather than derived.
-	// A Spec names WHAT to run and a revision; turning that into an image
-	// reference is the build service's knowledge, not this package's, and
-	// guessing a naming convention here would hardcode one.
+	// image resolves a spec to an image; injected because the naming is the build
+	// service's knowledge.
 	image func(invoke.Spec) (Image, error)
 }
 
-// Image is everything the engine needs to know about what to run. It comes from
-// whatever composed the node — for a built resource that is the build service's
-// output; for an imported one it may be a registry reference the user gave.
+// Image is what the engine runs, from whatever composed the node.
 type Image struct {
 	// Ref is the image reference, e.g. "registry/app@sha256:…".
 	Ref string
@@ -296,8 +232,7 @@ type Image struct {
 	// Command overrides the image's entrypoint. Usually empty.
 	Command []string
 
-	// Env is what the container gets on top of PORT. The engine sets PORT
-	// itself and refuses to let this override it — see start().
+	// Env is added on top of PORT, which it may not override.
 	Env map[string]string
 
 	// Memory is the hard memory limit in bytes. Zero means the runtime's
@@ -311,14 +246,8 @@ type Image struct {
 // ImageFunc resolves a spec to an image.
 type ImageFunc func(invoke.Spec) (Image, error)
 
-// ImageFromSpec is the ImageFunc for a composer whose Spec already carries
-// everything: the worker reads the artifact, the memory limit and the
-// environment off the compiled resource, so there is nothing left to look up.
-//
-// It exists so that the common case is a named function rather than the same
-// four-line closure at every composition root, and the injected ImageFunc stays
-// for the cases that are not it — a registry mirror, a local override, a tier
-// whose artifact is not a reference at all.
+// ImageFromSpec is the ImageFunc for a Spec that already carries the artifact,
+// limits and environment.
 func ImageFromSpec(spec invoke.Spec) (Image, error) {
 	return Image{Ref: spec.Artifact, Env: spec.Env, Memory: spec.Memory, CPU: spec.CPU}, nil
 }
@@ -368,25 +297,15 @@ func (e *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 		return e.startJob(ctx, spec, img, mounts)
 	}
 
-	// WHAT THIS WORKLOAD LISTENS ON, and there are two products here.
-	//
-	// A workload that DECLARED ports binds the numbers it declared, because
-	// that is what an off-the-shelf image does: postgres binds 5432 whatever
-	// anybody tells it. One that declared none is built for this platform and
-	// is told a number in $PORT.
-	//
-	// The second was the only one this tier had, which meant the first did not
-	// work at all — an ephemeral host port mapped to the same ephemeral number,
-	// while the container listened on 5432 and nothing reached it.
+	// A workload that declared ports binds those numbers, as off-the-shelf images do;
+	// one that declared none is told a number in $PORT.
 	ports, port, err := e.portsFor(spec)
 	if err != nil {
 		return nil, err
 	}
 
-	// WHICH HOST PORT ANSWERS WHICH NAME, kept so a caller that was told a name
-	// — a proxy's `forward.port`, a channel's `serve.port`, a gateway route's
-	// handler port — can be given a connection to the right socket rather than
-	// to whichever one happened to sort first.
+	// Which host port answers which declared name, so a caller naming a port reaches
+	// the right socket.
 	reachable := make(map[string]int, len(spec.Ports))
 	for i, name := range sortedPortNames(spec.Ports) {
 		reachable[name] = ports[i].HostPort
@@ -438,31 +357,11 @@ func (e *Runtime) Start(ctx context.Context, spec invoke.Spec) (invoke.Instance,
 	return inst, nil
 }
 
-// config is what the container is created with, and every security-relevant
-// field is set HERE rather than left to a backend default.
-//
-// EGRESS IS RESTRICTED BECAUSE THIS IS UNTRUSTED CODE. pkg/builder is the only
-// other caller of pkg/containers and it restricts egress too, but for a
-// different reason and with a different threat model — a build runs a
-// repository's own script, this runs whatever a tenant deployed. The settings
-// must not be copied across on the assumption that both are "containers we run".
-//
-// RestrictEgress blocks node-local and RFC1918 destinations — the cloud metadata
-// endpoint, loopback and the private network — while leaving the public internet
-// reachable, because a function that cannot make an outbound call is not a
-// serverless function. It is fail-closed in the backend: no firewall, no start.
 // portsFor is every port this container is reached on, and the one $PORT names.
-//
-// ON DOCKER A DECLARED PORT IS TRANSLATED: the host side is allocated and the
-// container side is the number the author declared, so two workloads that both
-// bind 5432 sit on one node without colliding.
-//
-// ON CONTAINERD IT CANNOT BE. There is no CNI, the container shares the host's
-// network namespace, and a mapping that translates is refused by the backend —
-// so the host port IS the declared number and two workloads declaring the same
-// one collide. That is a property of the backend rather than a choice made here,
-// and it is the backend that says so: this asks for the mapping either way and
-// the conformance refusal is what a containerd operator sees.
+// On docker a declared port is translated (allocated host side, declared
+// container side), so two workloads can bind 5432. On containerd the host port is
+// the declared number and two such workloads collide; the backend's conformance
+// refusal says so.
 func (e *Runtime) portsFor(spec invoke.Spec) (mapped []core.PortMapping, told int, err error) {
 	if len(spec.Ports) == 0 {
 		port, err := e.opts.port()
@@ -491,14 +390,16 @@ func (e *Runtime) portsFor(spec invoke.Spec) (mapped []core.PortMapping, told in
 	return mapped, mapped[0].HostPort, nil
 }
 
+// config is what the container is created with, every security-relevant field set
+// here rather than left to a backend default. Egress is restricted because this is
+// a tenant's code: node-local, metadata and private ranges are blocked, the public
+// internet reachable, fail-closed in the backend.
 func (e *Runtime) config(img Image, ports []core.PortMapping, port int, runtimeAPI string, mounts []core.VolumeMount) *core.ContainerConfig {
 	env := make([]string, 0, len(img.Env)+2)
 	for k, v := range img.Env {
 		if k == "PORT" {
-			// Refused rather than honoured: the engine dials the port it
-			// allocated, so a container listening somewhere else is a container
-			// that never becomes ready — a confusing timeout instead of a clear
-			// refusal.
+			// Refused: the engine dials the port it allocated, so honouring it would only
+			// time out.
 			continue
 		}
 		env = append(env, k+"="+v)
@@ -509,10 +410,7 @@ func (e *Runtime) config(img Image, ports []core.PortMapping, port int, runtimeA
 		env = append(env, "PORT="+strconv.Itoa(port))
 	}
 
-	// THE LAMBDA RUNTIME API'S ADDRESS IS ALWAYS SET, and an image that is not
-	// a Lambda ignores a variable it does not read. Setting it only for images
-	// somebody declared to be Lambdas would mean asking an author to describe
-	// an image they did not build.
+	// The Lambda Runtime API address is always set; non-Lambda images ignore it.
 	if runtimeAPI != "" {
 		env = append(env, "AWS_LAMBDA_RUNTIME_API="+runtimeAPI)
 	}
@@ -522,27 +420,13 @@ func (e *Runtime) config(img Image, ports []core.PortMapping, port int, runtimeA
 		Command: img.Command,
 		Env:     env,
 		Network: &core.NetworkConfig{
-			// NO MODE IS NAMED, and that is the fix for a configuration BOTH
-			// backends refused. Naming "host" asked each of them for something
-			// it cannot do: docker cannot filter egress on host networking, so
-			// it refuses the pair outright; containerd has no CNI, so it takes
-			// host networking and refuses a port mapping beside it. Every
-			// container workload failed to create, and no test saw it because
-			// the only backend this package tests against is a fake — see
-			// backend_reality_test.go.
-			//
-			// What the tier states is the INTENT: keep this workload off the
-			// node's own network, and let it be reached on this port. How that
-			// is realised is the backend's — docker puts it on tau's restricted
-			// bridge and maps the port, containerd shares the host's namespace
-			// where the mapping is already true.
+			// No network mode is named: "host" was refused by both backends (docker cannot
+			// filter egress on host networking, containerd refuses a mapping beside it). The
+			// tier states the intent and each backend realises it (backend_reality_test.go).
 			PortMappings:   ports,
 			RestrictEgress: true,
 		},
-		// WHAT THE AUTHOR DECLARED IT MOUNTS. Both backends take a host path;
-		// neither takes a named volume on containerd, and nothing here creates
-		// one — the directory is the composer's and this puts it where the
-		// access entry said.
+		// The declared mounts, as host paths.
 		Volumes: mounts,
 	}
 	if img.Memory > 0 || img.CPU > 0 {
@@ -554,22 +438,15 @@ func (e *Runtime) config(img Image, ports []core.PortMapping, port int, runtimeA
 		cfg.Resources.CPUPeriod = cpuPeriod
 		cfg.Resources.CPUQuota = img.CPU * cpuPeriod / 1000
 	}
-	// Privileges stays nil. Nothing a function does needs a capability, a host
-	// device or an unconfined seccomp profile, and the one caller that does need
-	// them (BuildKit assembling layers) is not this one.
+	// Privileges stays nil: nothing a function does needs one.
 	return cfg
 }
 
 // cpuPeriod is the CFS period a CPU ceiling is expressed over, in microseconds.
 const cpuPeriod = 100_000
 
-// sortedPortNames is the declared names in a stable order.
-//
-// SORTED, so the mapping a backend is handed does not depend on a map walk —
-// two starts of one spec would otherwise allocate host ports in a different
-// order and a log would read as if something had changed. It is also what makes
-// portsFor and the reachable map agree about which allocation belongs to which
-// name, by walking the same order twice.
+// sortedPortNames is the declared names in a stable order, so allocation is
+// deterministic and portsFor and reachable agree.
 func sortedPortNames(ports map[string]int) []string {
 	names := make([]string, 0, len(ports))
 	for name := range ports {
@@ -579,16 +456,9 @@ func sortedPortNames(ports map[string]int) []string {
 	return names
 }
 
-// Dial opens a connection to one of this workload's declared ports, by name.
-//
-// IT IS THE SEAM AN L4 CALLER NEEDS AND THE ONLY ONE. Serve answers a request
-// and buffers both halves; a proxy carries bytes it cannot parse, for as long as
-// the client keeps the socket open, so it needs the socket rather than a
-// round-trip. invoke.Dials is the interface, and only this tier implements it:
-// a component has no listening socket at all.
-//
-// AN EMPTY NAME IS THE ONE PORT A WORKLOAD THAT DECLARED NONE WAS GIVEN, which
-// keeps a proxy with no `forward.port` working against a $PORT-style workload.
+// Dial opens a connection to one of this workload's declared ports by name, for
+// L4 callers that need the socket rather than a round trip (invoke.Dials). An
+// empty name is the $PORT of a workload that declared none.
 func (i *instance) Dial(ctx context.Context, name string) (net.Conn, error) {
 	port := i.port
 	if name != "" {
@@ -607,15 +477,9 @@ func (i *instance) Dial(ctx context.Context, name string) (net.Conn, error) {
 	return conn, nil
 }
 
-// freePort asks the kernel for one and immediately gives it back.
-//
-// THERE IS A RACE HERE AND IT IS THE ORDINARY ONE: between closing and the
-// container binding, something else could take the port. The alternatives are
-// worse — holding the listener open means the container cannot bind at all, and
-// there is no way to read an ephemeral port back out of either backend
-// (core.ContainerInfo has no port field). A lost race surfaces as a container
-// that fails to bind and therefore fails readiness, which is a clear error
-// rather than a silent misroute.
+// freePort asks the kernel for a port and gives it back. Something else may take it
+// before the container binds; that surfaces as a failed readiness, and there is no
+// way to read an ephemeral port back from either backend.
 func freePort() (int, error) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -637,10 +501,8 @@ type instance struct {
 	// is reached on `port` alone.
 	reachable map[string]int
 
-	// lambda is this instance's Lambda Runtime API. It is always bound and
-	// mostly unused: which of the two shapes an image is cannot be known before
-	// it runs, so the address is always in the environment and whichever signal
-	// arrives first decides. See lambda.go.
+	// lambda is this instance's Lambda Runtime API, always bound: whichever signal
+	// arrives first decides what the image is (lambda.go).
 	lambda *lambdaAPI
 
 	// polls is set when the runtime client polled before the container
@@ -655,16 +517,9 @@ var _ invoke.Instance = (*instance)(nil)
 
 func (i *instance) addr() string { return "127.0.0.1:" + strconv.Itoa(i.port) }
 
-// waitReady waits for EITHER signal: the container accepting on its port, or
-// the Lambda runtime client asking for work. Whichever comes first is what this
-// image is, and there is no third state — a container that does neither runs out
-// of budget exactly as it did before.
-//
-// IT ALSO WATCHES FOR THE CONTAINER DYING. An image whose entrypoint exits
-// immediately — a bad command, a missing file, a crash on boot — would otherwise
-// burn the whole ReadyTimeout before saying anything, and say the wrong thing
-// when it did. Inspect tells us it is gone; that is a different error and a
-// much more useful one.
+// waitReady waits for the port to accept or the Lambda client to poll, whichever
+// comes first, and watches for the container dying so a crash on boot does not
+// burn the whole ReadyTimeout.
 func (i *instance) waitReady(ctx context.Context) error {
 	deadline := time.Now().Add(i.eng.opts.readyTimeout)
 	t := time.NewTicker(i.eng.opts.readyInterval)
@@ -781,10 +636,8 @@ func (i *instance) Serve(ctx context.Context, req *invoke.Request) (*invoke.Resp
 		}
 	}
 
-	// A CLIENT PER REQUEST, WITH NO CONNECTION REUSE ACROSS INSTANCES. The pool
-	// may retire this instance the moment the request fails, and a pooled
-	// transport holding a keep-alive to a container that has been removed hands
-	// the next caller a connection to nothing.
+	// A client per request: the pool may retire this instance, and a pooled keep-alive
+	// would outlive the container.
 	client := &http.Client{Transport: &http.Transport{DialContext: i.eng.opts.dial}}
 	defer client.CloseIdleConnections()
 
@@ -805,11 +658,8 @@ func (i *instance) Serve(ctx context.Context, req *invoke.Request) (*invoke.Resp
 	}, nil
 }
 
-// Close stops and removes the container. It is safe to call twice.
-//
-// REMOVE HAPPENS EVEN IF STOP FAILED. A node that left a container behind every
-// time a stop timed out would fill its disk with dead containers, and the pool
-// retires instances routinely — every failed request is one.
+// Close stops and removes the container, removing even if stop failed; safe to
+// call twice.
 func (i *instance) Close() error {
 	i.mu.Lock()
 	if i.closed {
@@ -847,33 +697,8 @@ func (i *instance) serveLambda(ctx context.Context, req *invoke.Request) (*invok
 	return lambdaResponse(result), nil
 }
 
-// egressGap says out loud that this tier cannot narrow what a resource
-// declared.
-//
-// THE VOCABULARY PROMISES MORE THAN THIS TIER DELIVERS, and that is worth a
-// line in an operator's log rather than silence. `egress` is a per-workload
-// ALLOWLIST layered on the node-wide deny floor; what a container gets is the
-// floor — no node-local service, no metadata endpoint, no private range — and
-// then the whole public internet. A resource naming three hosts reaches more
-// than three.
-//
-// IT IS NOT A REFUSAL, and that is a judgement rather than an oversight.
-// Refusing would make a configuration the vocabulary explicitly allows
-// unrunnable, and the floor alone is already stricter than what a container
-// gets on every platform this is competing with. What it is not is what the
-// author wrote, so the author's own operator is told.
-//
-// Closing it means resolving the allowlist to addresses and programming them
-// into the same nftables set the floor uses — which is a real piece of work
-// with a real hazard (a name's addresses change under you, and DNS rebinding
-// is the attack that lives in that gap), not a line here.
-// mounts resolves every filesystem this workload declared, or refuses.
-//
-// A MOUNT WITH NO PATH IS REFUSED TOO. The vocabulary makes the path Required
-// on the entry precisely because a mount with nowhere to appear is not a mount,
-// and the kind that needs it most is a database in a container, where pointing
-// postgres at the wrong directory means it initialises an empty one on local
-// disk and loses everything.
+// mounts resolves every declared filesystem or refuses. A mount with no path is
+// refused too.
 func (e *Runtime) mounts(ctx context.Context, spec invoke.Spec) ([]core.VolumeMount, error) {
 	mounted := spec.Mounted()
 	if len(mounted) == 0 {
@@ -930,13 +755,8 @@ const (
 	opMountRW        = "mount-rw"
 )
 
-// unserved warns about every other capability the workload declared and this
-// tier does not provide.
-//
-// A WARNING AND NOT A REFUSAL, because each of these fails where it is used: a
-// database nothing connected to it is a connection error the workload itself
-// reports, at the moment it tries. What the warning buys is that the operator
-// sees it at start rather than reading somebody's stack trace.
+// unserved warns about every other declared capability this tier lacks; each fails
+// where it is used, so a warning at start is enough.
 func (e *Runtime) unserved(spec invoke.Spec) {
 	if e.opts.warn == nil {
 		return
@@ -963,6 +783,11 @@ func (e *Runtime) unserved(spec invoke.Spec) {
 		spec.Name, strings.Join(names, ", "))
 }
 
+// egressGap warns that this tier cannot narrow a declared egress allowlist: a
+// container gets the deny floor and then the whole public internet. Not a refusal,
+// since the vocabulary allows the config and the floor is already strict; closing
+// it means programming resolved addresses into the floor's nftables set, with DNS
+// rebinding as the hazard.
 func (e *Runtime) egressGap(spec invoke.Spec) {
 	if len(spec.Egress) == 0 || e.opts.warn == nil {
 		return

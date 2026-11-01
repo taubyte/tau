@@ -12,17 +12,9 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// document.go is the host half of `taubyte:document/store` — the `database`
-// kind at `type: document`.
-//
-// # The bytes are the JSON
-//
-// A document is an arbitrary nested object and the canonical ABI has no type
-// for one. Declaring a variant deep enough would be declaring JSON in WIT, and
-// every guest would translate to and from its own JSON anyway — so the document
-// crosses as bytes and a guest uses the parser it already has. The host does
-// not read them beyond checking they decode, which is what keeps this interface
-// stable while the shape of a document stays the author's business.
+// document.go is the host half of `taubyte:document/store`, the `database` kind at
+// `type: document`. A document crosses as JSON bytes, since the canonical ABI has
+// no type for an arbitrary object; the host only checks it decodes.
 
 const documentInterface = "taubyte:document/store@0.1.0"
 
@@ -33,9 +25,8 @@ const (
 	opDocQuery  = "query"
 )
 
-// findExport is what the guest calls. The VERB is `query` — which is what the
-// configuration writes and what the op check tests — and the function is
-// `find`, because `query` reads as SQL's and this is not that.
+// findExport is the guest's call for the `query` verb, named `find` since it is not
+// SQL.
 const findExport = "find"
 
 // The error variant's cases, in the order handler.wit declares them.
@@ -52,10 +43,8 @@ var (
 	// composed without a backing.
 	ErrNoDocuments = errors.New("wasm: this resource reaches a document database and this tier has nothing to open one with")
 
-	// ErrMalformed is a document that is not a JSON object, in either
-	// direction. It is its OWN arm because a caller fixes it and does not retry
-	// it — the same distinction the sql interface draws between a refused
-	// statement and an outage.
+	// ErrMalformed is a document that is not a JSON object, its own arm since a caller
+	// fixes rather than retries it.
 	ErrMalformed = errors.New("wasm: that is not a json object")
 )
 
@@ -69,8 +58,7 @@ type Documents interface {
 	Find(ctx context.Context, filter []byte) ([]byte, error)
 }
 
-// DocumentStores opens the one a grant names. See KVs for why the method is
-// named rather than being a bare Open.
+// DocumentStores opens the store a grant names (see KVs for the method name).
 type DocumentStores interface {
 	OpenDocuments(ctx context.Context, grant invoke.Grant) (Documents, error)
 }
@@ -161,10 +149,7 @@ func (r *Runtime) documentImports(spec invoke.Spec) []component.Option {
 		return db.Get(ctx, id)
 	})
 
-	// FIND TAKES ITS FILTER AS A STRING, not a byte list, because the guest
-	// already has it as JSON text and the extra lowering would be a copy for
-	// nothing. The ANSWER is bytes, because a result set is not text a guest
-	// wants to build a string out of.
+	// The filter is a string, as the guest already holds JSON text; the answer is bytes.
 	find, findFD, findResolve := reader(opDocQuery, func(db Documents, ctx context.Context, filter string) ([]byte, error) {
 		return db.Find(ctx, []byte(filter))
 	})
@@ -225,8 +210,8 @@ func (r *Runtime) documentImports(spec invoke.Spec) []component.Option {
 	}
 }
 
-// docArm maps a Go error onto the arm the guest sees. A MISS and A MALFORMED
-// DOCUMENT are each their own, because a caller acts differently on all three.
+// docArm maps a Go error onto the guest's arm; a miss and a malformed document each
+// get their own.
 func docArm(err error) *component.VariantValue {
 	switch {
 	case errors.Is(err, ErrNotFound):

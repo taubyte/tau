@@ -18,13 +18,8 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// lambda_test.go speaks the Lambda Runtime API the way a real runtime interface
-// client does: poll for work, do something with the event, post the result.
-//
-// IT IS A CLIENT AND NOT A MOCK OF THIS PACKAGE. What has to be right is that
-// an image nobody here wrote — one built for AWS — can drive this, and the only
-// way to show that is to implement the protocol from its own description rather
-// than from this file's idea of it.
+// A Lambda runtime client implemented from the protocol's description, not from
+// this package, so an AWS-built image is shown to drive it.
 
 // runtimeClient is a Lambda runtime interface client, in miniature: it polls
 // /next forever and answers each event with what handle returns.
@@ -32,10 +27,8 @@ type runtimeClient struct {
 	address string
 	handle  func(event []byte) (result []byte, failed bool)
 
-	// ctx cancels the long poll. WITHOUT IT THE CLEANUP DEADLOCKS: /next blocks
-	// until there is work, so a client asked to stop sits in a request that
-	// only ends when the server does — and the server's own cleanup runs after
-	// this one.
+	// ctx cancels the long poll, or cleanup deadlocks: /next blocks until the server
+	// itself ends.
 	ctx    context.Context
 	cancel context.CancelFunc
 
@@ -127,10 +120,6 @@ func newAPI(t *testing.T) *lambdaAPI {
 	return api
 }
 
-// ── the protocol ─────────────────────────────────────────────────────────────
-
-// TestARuntimeClientGetsWorkAndAnswers — the whole loop, spoken by something
-// that only knows AWS's documentation.
 func TestTheRuntimeAPIDriversAClient(t *testing.T) {
 	api := newAPI(t)
 	startClient(t, api.address(), echoHandler)
@@ -140,8 +129,6 @@ func TestTheRuntimeAPIDriversAClient(t *testing.T) {
 	require.JSONEq(t, `{"hello":"world"}`, string(result))
 }
 
-// TestThePollIsTheReadySignal, because a Lambda image never listens and a tier
-// waiting for it to would time out on every one.
 func TestPollingIsWhatSaysItIsReady(t *testing.T) {
 	api := newAPI(t)
 
@@ -159,8 +146,6 @@ func TestPollingIsWhatSaysItIsReady(t *testing.T) {
 	}
 }
 
-// TestAHandlerThatFailsIsAnError, carrying its own message — which is what an
-// author needs and what a stack trace in a container log does not give them.
 func TestAFailedInvocationCarriesTheHandlersMessage(t *testing.T) {
 	api := newAPI(t)
 	startClient(t, api.address(), func([]byte) ([]byte, bool) {
@@ -172,9 +157,6 @@ func TestAFailedInvocationCarriesTheHandlersMessage(t *testing.T) {
 	require.ErrorContains(t, err, "table not found")
 }
 
-// TestInvocationsAreSerial, which is the protocol's own shape: a client polls
-// for the next event only after answering the previous one. Concurrency above
-// one is more INSTANCES, which is what the pool already does.
 func TestTwoInvocationsRunOneAfterTheOther(t *testing.T) {
 	api := newAPI(t)
 
@@ -212,9 +194,6 @@ func TestTwoInvocationsRunOneAfterTheOther(t *testing.T) {
 	require.Equal(t, 1, peak, "the protocol is serial")
 }
 
-// TestAnAbandonedInvocationDoesNotHoldTheClient. A caller whose context ended
-// is gone; the client will still answer, and that answer is dropped rather than
-// held against a goroutine nobody is waiting on.
 func TestACancelledInvocationIsDropped(t *testing.T) {
 	api := newAPI(t)
 
@@ -239,8 +218,6 @@ func TestACancelledInvocationIsDropped(t *testing.T) {
 	require.JSONEq(t, `{"second":true}`, string(result))
 }
 
-// TestNothingIsHandedOutBeforeThereIsWork, so a client that polls first — which
-// every one of them does — waits rather than getting an empty event.
 func TestAPollWithNoWorkWaits(t *testing.T) {
 	api := newAPI(t)
 
@@ -272,10 +249,6 @@ func TestAPollWithNoWorkWaits(t *testing.T) {
 	}
 }
 
-// ── the event, and the answer ────────────────────────────────────────────────
-
-// TestTheEventIsPayloadFormat2, which is what a Lambda Function URL delivers —
-// the shape a function reached over HTTP was most likely written against.
 func TestTheEventIsApiGatewayV2(t *testing.T) {
 	raw, err := lambdaEvent(&invoke.Request{
 		Method:  http.MethodPost,
@@ -303,8 +276,6 @@ func TestTheEventIsApiGatewayV2(t *testing.T) {
 	require.Equal(t, "/orders", http["path"])
 }
 
-// TestABinaryBodyIsBase64, so a JPEG is not mangled by being put in a JSON
-// string.
 func TestANonTextBodyIsEncoded(t *testing.T) {
 	body := []byte{0xff, 0xd8, 0xff, 0xe0, 0x00}
 
@@ -320,7 +291,6 @@ func TestANonTextBodyIsEncoded(t *testing.T) {
 	require.Equal(t, body, decoded)
 }
 
-// TestAProxyResponseIsRead, which is the other half of the same format.
 func TestAProxyShapedAnswerIsRead(t *testing.T) {
 	res := lambdaResponse([]byte(`{
 		"statusCode": 201,
@@ -335,9 +305,6 @@ func TestAProxyShapedAnswerIsRead(t *testing.T) {
 	require.Equal(t, `{"ok":true}`, string(res.Body))
 }
 
-// TestAHandlerThatAnsweredWithSomethingElseAnsweredWithABody, which is what a
-// Function URL does — treating it as malformed would break every handler that
-// was never written for a proxy response.
 func TestAnUnshapedAnswerIsABody(t *testing.T) {
 	for _, raw := range []string{`"just a string"`, `{"id":1}`, `[1,2,3]`, `not json at all`} {
 		res := lambdaResponse([]byte(raw))
@@ -355,8 +322,6 @@ func TestABase64ProxyBodyIsDecoded(t *testing.T) {
 	require.Equal(t, "hello", string(res.Body))
 }
 
-// TestARequestIdIsUnique, because two invocations in flight would otherwise
-// answer each other.
 func TestRequestIdsDoNotRepeat(t *testing.T) {
 	seen := map[string]bool{}
 	for range 1000 {
@@ -365,8 +330,6 @@ func TestRequestIdsDoNotRepeat(t *testing.T) {
 		seen[id] = true
 	}
 }
-
-// ── through the tier ─────────────────────────────────────────────────────────
 
 // envOf reads one variable out of a container's environment, the way the image
 // itself would.
@@ -379,15 +342,11 @@ func envOf(env []string, name string) string {
 	return ""
 }
 
-// TestAnImageThatPollsRunsWithoutListening — the whole claim, through Start and
-// Serve, with a "container" that behaves the way an AWS Lambda image does:
-// it binds nothing and asks the runtime API for work.
 func TestALambdaImageRunsOnThisTier(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
 
-	// The container LISTENS ON NOTHING. If the tier still needed a socket this
-	// would time out, which is exactly what it did before.
+	// The container listens on nothing; a tier needing a socket would time out.
 	rt.listen = func(int) (closer, error) { return closerFunc(func() error { return nil }), nil }
 	started := make(chan *runtimeClient, 1)
 
@@ -441,9 +400,6 @@ func TestALambdaImageRunsOnThisTier(t *testing.T) {
 	}
 }
 
-// TestTheAddressIsAlwaysInTheEnvironment, which is what makes this no-config:
-// an image that is not a Lambda ignores a variable it does not read, and
-// nobody has to declare which shape an image they did not build is.
 func TestEveryContainerIsToldWhereTheRuntimeApiIs(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
@@ -459,8 +415,6 @@ func TestEveryContainerIsToldWhereTheRuntimeApiIs(t *testing.T) {
 	require.NotEmpty(t, envOf(rt.created[0].Env, "AWS_LAMBDA_RUNTIME_API"))
 }
 
-// TestAnOrdinaryImageIsUnaffected: it listens, so it is served over HTTP and
-// the runtime API is never used.
 func TestAListeningImageStillGoesOverHttp(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
@@ -472,17 +426,13 @@ func TestAListeningImageStillGoesOverHttp(t *testing.T) {
 
 	require.False(t, inst.(*instance).polls, "nothing polled, so it is not a lambda")
 
-	// The fake "container" answers 418, which is how a test tells a real proxy
-	// from a constant — and it proves the HTTP path, not the runtime API, was
-	// what served this.
+	// The fake answers 418, proving the HTTP path served this, not the runtime API.
 	res, err := inst.Serve(context.Background(), &invoke.Request{Method: http.MethodGet, Path: "/"})
 	require.NoError(t, err)
 	require.Equal(t, http.StatusTeapot, res.Status)
 	require.Equal(t, []string{"/"}, res.Headers["X-Echo-Path"])
 }
 
-// TestAnImageThatDoesNEITHERStillTimesOut, so the second signal did not turn a
-// broken container into a healthy one.
 func TestAnImageThatNeitherListensNorPollsTimesOut(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
@@ -497,10 +447,6 @@ func TestAnImageThatNeitherListensNorPollsTimesOut(t *testing.T) {
 	require.ErrorContains(t, err, "nothing polled the lambda runtime api either")
 }
 
-// TestAContainerThatBindsNothingCannotBeAnsweredForByAnotherProcess. Under a
-// parallel gate another process took the port of a container whose fake bound
-// nothing, answered the readiness probe, and Start called a dead container
-// ready. Here the other process is made to try at the first probe.
 func TestAContainerThatBindsNothingCannotBeAnsweredForByAnotherProcess(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
@@ -526,9 +472,6 @@ func TestAContainerThatBindsNothingCannotBeAnsweredForByAnotherProcess(t *testin
 	require.ErrorIs(t, err, ErrNotReady)
 }
 
-// TestAnInitErrorReachesWhoeverIsWaiting. A runtime client that cannot start —
-// a missing handler, a broken import — posts to /init/error and then never
-// polls, so a caller with nothing to wait on would hang until its context ended.
 func TestAnInitErrorFailsThePendingInvocation(t *testing.T) {
 	api := newAPI(t)
 
@@ -556,9 +499,6 @@ func TestAnInitErrorFailsThePendingInvocation(t *testing.T) {
 	require.ErrorContains(t, err, "no handler named index.handler")
 }
 
-// TestAnAnswerToAnInvocationNOBODYIsWaitingOnIsDropped, rather than erroring:
-// the protocol gives the client no way to do anything useful with a refusal,
-// and a retry after the caller has gone is the ordinary case.
 func TestAnAnswerForAnUnknownInvocationIsAccepted(t *testing.T) {
 	api := newAPI(t)
 
@@ -570,8 +510,6 @@ func TestAnAnswerForAnUnknownInvocationIsAccepted(t *testing.T) {
 	require.Equal(t, http.StatusAccepted, res.StatusCode)
 }
 
-// TestClosingIsIdempotent, because an instance closes its API and the pool may
-// close the instance twice.
 func TestClosingTheRuntimeApiTwiceIsFine(t *testing.T) {
 	api, err := newLambdaAPI()
 	require.NoError(t, err)
@@ -580,8 +518,6 @@ func TestClosingTheRuntimeApiTwiceIsFine(t *testing.T) {
 	require.NoError(t, api.Close())
 }
 
-// TestAPollAfterCloseDoesNotHang, so a client still running when the instance
-// went does not hold a connection open forever.
 func TestTheApiStopsAnsweringWhenItIsClosed(t *testing.T) {
 	api, err := newLambdaAPI()
 	require.NoError(t, err)

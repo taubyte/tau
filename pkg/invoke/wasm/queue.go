@@ -12,31 +12,11 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// queue.go is the host half of `taubyte:queue/producer` — the `sync` kind at
-// `type: queue`.
-//
-// THE KIND IS `sync` AND THE TYPE SELECTS THIS INTERFACE, the same way `database`
-// at `type: sql` selects sql.go's. A grant is filtered by kind AND type here for
-// exactly that reason: `sync` also covers a log, whose verbs are not these and
-// whose backing is a different thing, and a filter on kind alone would hand a
-// log's grant to the producer.
-//
-// # Only send, and that is a different absence from stream's
-//
-// `stream.subscribe` is not served because its semantics are UNSETTLED — a
-// pubsub message reaching every node that runs the subscriber would invoke it
-// once per node, and which of fan-out and exactly-once is meant is a product
-// decision. A queue has no such question: a claim is exclusive and leader-only,
-// so exactly one consumer gets an item and an unacknowledged one comes back.
-// What `receive` needs is a DISPATCHER — something that claims and invokes —
-// and not a function a guest calls, which is why there is none here.
-//
-// # not-writable is its own arm
-//
-// pkg/queue refuses a write off the raft leader and deliberately does not
-// forward. A caller RETRIES that and nothing about the request was wrong, which
-// is a different instruction from "the store is unreachable" and a very
-// different one from "you may not".
+// queue.go is the host half of `taubyte:queue/producer`, the `sync` kind at
+// `type: queue` (filtered by type too, as a log is also `sync`). Only send: a
+// queue's `receive` needs a dispatcher that claims and invokes, not a guest call.
+// not-writable is its own arm: pkg/queue refuses writes off the leader and the
+// caller retries.
 
 const queueInterface = "taubyte:queue/producer@0.1.0"
 

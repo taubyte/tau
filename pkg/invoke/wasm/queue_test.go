@@ -45,7 +45,6 @@ func queueGrant(label, handle string, ops ...string) []invoke.Grant {
 	}}
 }
 
-// TestAGuestSendsToAQueue, with the label resolved to the handle.
 func TestAComponentSendsWork(t *testing.T) {
 	q := newWork()
 	instance := start(t, tier(t, cacher(t), wasm.WithQueues(q)), invoke.Spec{
@@ -57,8 +56,6 @@ func TestAComponentSendsWork(t *testing.T) {
 	require.Equal(t, [][3]string{{"shop/prod/QmJobs", "order:1", "charge it"}}, q.pushed())
 }
 
-// TestAnIdIsTheCALLERS, which is what makes a retry safe: the same id twice is
-// one item and not two deliveries of the same work.
 func TestTheIdCrossesAsWritten(t *testing.T) {
 	q := newWork()
 	instance := start(t, tier(t, cacher(t), wasm.WithQueues(q)), invoke.Spec{
@@ -85,8 +82,6 @@ func TestAnUndeclaredQueueIsRefused(t *testing.T) {
 	require.Empty(t, q.pushed())
 }
 
-// TestReceiveBuysNothing. It is a DELIVERY — the platform claims an item and
-// invokes a workload — so it needs a dispatcher and not a host function.
 func TestAGrantForReceiveDoesNotSend(t *testing.T) {
 	q := newWork()
 	instance := start(t, tier(t, cacher(t), wasm.WithQueues(q)), invoke.Spec{
@@ -99,8 +94,6 @@ func TestAGrantForReceiveDoesNotSend(t *testing.T) {
 	require.Empty(t, q.pushed())
 }
 
-// TestNotWritableIsItsOwnArm, because a caller RETRIES that and nothing about
-// the request was wrong — which is a different instruction from an outage.
 func TestAWriteOffTheLeaderTellsTheCallerToRetry(t *testing.T) {
 	q := newWork()
 	q.err = fmt.Errorf("%w: node is a follower", wasm.ErrNotWritable)

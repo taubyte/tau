@@ -8,12 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// AN ABSENT LIST IS THE FLOOR ALONE AND NOT "NOWHERE". It is the vocabulary's
-// own sentence — "layered on the node-wide deny floor, which it can never
-// widen; absent means the floor alone" — and the opposite of what this file
-// said first: a resource that names nothing asked for no NARROWING, not for
-// isolation, and reading it the other way would make every function that calls
-// an API fail with a message about a list its author never knew to write.
 func TestAnAbsentListIsTheFloorAlone(t *testing.T) {
 	var reached string
 	client := egressFor(nil, roundTrip(func(r *http.Request) { reached = r.URL.Host }))
@@ -23,8 +17,7 @@ func TestAnAbsentListIsTheFloorAlone(t *testing.T) {
 	res.Body.Close()
 	require.Equal(t, "api.stripe.com", reached)
 
-	// And the floor is still under it, which is what "can never widen" means:
-	// the transport a real one gets refuses a private range at the dial.
+	// And the floor is still under it.
 	require.NotNil(t, floor())
 }
 
@@ -39,8 +32,7 @@ func TestAnAllowedHostIsReached(t *testing.T) {
 	res.Body.Close()
 	require.Equal(t, "api.stripe.com", reached)
 
-	// A HOST NAME IS CASE-INSENSITIVE and the author wrote a name rather than
-	// an endpoint, so the port it is reached on is not part of the match.
+	// Case-insensitive, and the port is not part of the match.
 	res, err = client.Get("https://API.Stripe.com:8443/v1/charges")
 	require.NoError(t, err)
 	res.Body.Close()
@@ -50,8 +42,6 @@ func TestAnAllowedHostIsReached(t *testing.T) {
 	require.ErrorContains(t, err, "evil.example")
 }
 
-// A WILDCARD IS ONE LABEL AND NEVER THE WHOLE NAME — the same rule every
-// certificate follows, so an author's intuition about it is already right.
 func TestAWildcardIsOneLabel(t *testing.T) {
 	client := egressFor([]string{"*.stripe.com"}, roundTrip(nil))
 
@@ -82,8 +72,6 @@ func TestWildcardOfAName(t *testing.T) {
 	require.Equal(t, "", wildcard(".com"))
 }
 
-// Whitespace around a name in the configuration is the author's typing, not a
-// different host.
 func TestAnEgressEntryIsTrimmed(t *testing.T) {
 	client := egressFor([]string{"  api.stripe.com  "}, roundTrip(nil))
 

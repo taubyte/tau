@@ -12,23 +12,9 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// proxytransformer.go is the host half of `taubyte:proxy-transformer` — the
-// functions a proxy declares that a connection's bytes pass through.
-//
-// # A chunk, not a request
-//
-// A gateway transformer sees one request and answers once. A proxy carries a
-// conversation with no point at which the whole of it exists, so this is called
-// per chunk and per direction.
-//
-// # The state comes back out, which is what keeps it pooled
-//
-// A transformer that buffers has to remember something between chunks, and the
-// obvious way to give it that — one instance per connection — pins the instance
-// to the node the connection landed on for as long as it lives, and pays a
-// ~13ms cold start to do it. So the state is a blob the guest hands back and
-// the host carries, and the instance stays an ordinary pooled one that any warm
-// worker can run.
+// proxytransformer.go is the host half of `taubyte:proxy-transformer`, called per
+// chunk and direction. A buffering transformer's state is a blob it returns and
+// the host carries, so instances stay pooled instead of pinned per connection.
 
 // WorldProxyTransformer is `implements: proxy-transformer`.
 const WorldProxyTransformer = specs.WorkloadBlockImplementsProxyTransformer
@@ -42,10 +28,8 @@ const (
 	verdictClose
 )
 
-// ErrNotAProxyTransformer is a component that answered with a shape this world
-// does not have. An answer that cannot be read must not be treated as "carry
-// on": that would be a filter silently not filtering, which is the failure
-// `fail: closed` exists to prevent.
+// ErrNotAProxyTransformer is a component answering in a shape this world lacks;
+// never treated as "carry on", which would be a filter silently not filtering.
 var ErrNotAProxyTransformer = errors.New("wasm: that component did not answer as a proxy transformer")
 
 // Shape runs one chunk through this instance.
@@ -70,8 +54,7 @@ func streamValue(s *invoke.Stream) component.Value {
 		s = &invoke.Stream{}
 	}
 
-	// A nil list is an empty one and not a null: the world says list<u8>,
-	// which has no absent case.
+	// A nil list is empty: list<u8> has no absent case.
 	state, chunk := s.State, s.Chunk
 	if state == nil {
 		state = []byte{}

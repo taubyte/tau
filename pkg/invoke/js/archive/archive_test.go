@@ -31,8 +31,6 @@ func unpack(t *testing.T, data []byte) (*zip.Reader, map[string][]byte) {
 	return z, out
 }
 
-// TestAnArchiveCarriesItsManifestAndEveryFile, deflated, with the manifest
-// first so a reader learns what it holds before anything else.
 func TestAnArchiveCarriesItsManifestAndEveryFile(t *testing.T) {
 	files := map[string][]byte{
 		"worker.js":          []byte(`export default { fetch() {} }`),
@@ -59,8 +57,6 @@ func TestAnArchiveCarriesItsManifestAndEveryFile(t *testing.T) {
 	require.Equal(t, files, got)
 }
 
-// TestOneBuildIsOneDigest: members are sorted and carry no timestamp, so
-// packing the same files twice gives the same bytes.
 func TestOneBuildIsOneDigest(t *testing.T) {
 	files := map[string][]byte{"b.js": []byte("b"), "a.js": []byte("a"), "worker.js": []byte("w")}
 	var one, two bytes.Buffer
@@ -117,8 +113,6 @@ func TestAWriteThatFailsSaysSo(t *testing.T) {
 		"failing while a member that does not compress is written")
 }
 
-// TestTheEngineIsTheOneThisBinaryLinks. A directory replace reports
-// "(devel)", which is the reason a reader cannot trust it.
 func TestTheEngineIsTheOneThisBinaryLinks(t *testing.T) {
 	info, ok := debug.ReadBuildInfo()
 	require.True(t, ok)

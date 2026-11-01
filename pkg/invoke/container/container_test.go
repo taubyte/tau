@@ -23,13 +23,8 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// THE FAKE RUNTIME'S "CONTAINER" IS A REAL HTTP SERVER ON A REAL PORT.
-//
-// That is what makes this package testable with no daemon anywhere while still
-// exercising the part that actually matters: the engine allocates a port, tells
-// the container about it via $PORT, dials until it answers, and proxies a real
-// request over a real socket. A fake that returned a canned response would test
-// none of that — the addressing scheme IS the design here.
+// The fake backend's "container" is a real HTTP server on a real port, so the
+// allocate, $PORT, dial and proxy path is exercised for real.
 
 type fakeBackend struct {
 	mu sync.Mutex
@@ -150,12 +145,7 @@ func (f *fakeBackend) Start(_ context.Context, id core.ContainerID) error {
 		listen = echoServer
 	}
 
-	// EVERY MAPPED PORT IS BOUND, not just the one in $PORT. A container that
-	// declares two ports listens on two, and a fake that bound one would be
-	// more permissive than the thing it stands in for in exactly the direction
-	// that hides a bug — a caller reaching the wrong socket would still find
-	// something answering. That is how the storage double let three bugs
-	// through; see the sweep of 2026-09-05.
+	// Every mapped port is bound, so a caller reaching the wrong socket finds nothing.
 	bound := map[int]bool{}
 	for _, m := range cfg.Network.PortMappings {
 		if bound[m.HostPort] {
@@ -167,16 +157,8 @@ func (f *fakeBackend) Start(_ context.Context, id core.ContainerID) error {
 		if err != nil {
 			return err
 		}
-		// A CONTAINER THAT BINDS NOTHING STILL HAS ITS PORT PUBLISHED. Docker's
-		// proxy holds a published host port whether or not anything inside
-		// listens, so a dial is refused and no other process can take it —
-		// and a port already taken fails the start. A fake that left it free
-		// let any process on the machine answer the readiness probe, which a
-		// gate running packages in parallel did.
-		//
-		// The same holds for a listen that handed back a closer and bound
-		// nothing: whether the port is held is read off the port, not off
-		// what listen returned.
+		// A container that binds nothing still has its port held, as docker's proxy does,
+		// so no other process can answer the probe.
 		if srv == nil {
 			if srv, err = publishOnly(m.HostPort); err != nil {
 				return err
@@ -364,8 +346,6 @@ func spec() invoke.Spec {
 	return invoke.Spec{Runtime: Name, Name: "shop", Revision: "r1", Concurrency: 1}
 }
 
-// TestARequestReachesTheContainerAndComesBack, over a real socket, through the
-// port the engine chose.
 func TestARequestReachesTheContainerAndComesBack(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
@@ -389,9 +369,6 @@ func TestARequestReachesTheContainerAndComesBack(t *testing.T) {
 	require.Equal(t, "hello", http.Header(resp.Headers).Get("X-Probe-Seen"), "headers reach the container")
 }
 
-// TestTheEngineTellsTheContainerWhichPortToUse — the whole addressing scheme.
-// PORT is the convention every PaaS uses, which is why an imported app needs no
-// change.
 func TestTheEngineTellsTheContainerWhichPortToUse(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
@@ -410,22 +387,13 @@ func TestTheEngineTellsTheContainerWhichPortToUse(t *testing.T) {
 	require.Equal(t, port, created[0].Network.PortMappings[0].HostPort)
 	require.Equal(t, port, created[0].Network.PortMappings[0].ContainerPort,
 		"the number means the same thing inside and out")
-	// THE TIER NAMES NO NETWORK MODE, and that is load-bearing rather than an
-	// omission. It used to ask for "host", which docker refuses to combine with
-	// restricted egress and containerd refuses to combine with a port mapping —
-	// so every container workload failed to create on both, and this package
-	// could not see it because the backend here is a fake that accepts
-	// anything. What the tier states is the intent; the backend realises it.
-	// See backend_reality_test.go, which asks a real daemon.
+	// The tier names no network mode (backend_reality_test.go asks a real daemon).
 	require.Empty(t, created[0].Network.Mode,
 		"naming a mode asks each backend for something it cannot do")
 	require.True(t, created[0].Network.RestrictEgress,
 		"and the intent that does travel is: keep it off the node's network")
 }
 
-// TestAnImageCannotOverridePort. The engine dials the port it allocated, so a
-// container listening elsewhere never becomes ready — a confusing timeout
-// instead of a clear refusal.
 func TestAnImageCannotOverridePort(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
@@ -446,9 +414,6 @@ func TestAnImageCannotOverridePort(t *testing.T) {
 	require.NotEqual(t, "PORT=9999", ports[0])
 }
 
-// TestUntrustedCodeGetsConfinedByDefault. These are set here rather than left to
-// a backend default, and they are NOT copied from pkg/builder, which runs a
-// repository's own script under a different threat model.
 func TestUntrustedCodeGetsConfinedByDefault(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
@@ -467,9 +432,6 @@ func TestUntrustedCodeGetsConfinedByDefault(t *testing.T) {
 	require.Equal(t, int64(256<<20), created[0].Resources.Memory)
 }
 
-// TestStartWaitsUntilTheContainerIsListening. A container that has STARTED is
-// not one that is LISTENING, and returning early hands the first request to a
-// socket nobody is on.
 func TestStartWaitsUntilTheContainerIsListening(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
@@ -503,7 +465,6 @@ func TestStartWaitsUntilTheContainerIsListening(t *testing.T) {
 	require.Equal(t, http.StatusTeapot, resp.Status)
 }
 
-// TestAContainerThatNeverListensFailsWithinTheBudget rather than hanging.
 func TestAContainerThatNeverListensFailsWithinTheBudget(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
@@ -519,9 +480,6 @@ func TestAContainerThatNeverListensFailsWithinTheBudget(t *testing.T) {
 	require.Len(t, removed, 1)
 }
 
-// TestAContainerThatExitsIsReportedAsExitedNotAsSlow. An entrypoint that dies
-// immediately would otherwise burn the whole ready budget and then say the wrong
-// thing.
 func TestAContainerThatExitsIsReportedAsExitedNotAsSlow(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
@@ -549,8 +507,6 @@ func TestAContainerThatExitsIsReportedAsExitedNotAsSlow(t *testing.T) {
 	require.Less(t, time.Since(start), 3*time.Second, "it did not wait out the ready budget")
 }
 
-// TestEachInstanceGetsItsOwnPort. The pool starts N instances of one spec for
-// concurrency; two containers on one port is the bug this prevents.
 func TestEachInstanceGetsItsOwnPort(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
@@ -568,7 +524,6 @@ func TestEachInstanceGetsItsOwnPort(t *testing.T) {
 	require.NotEqual(t, portFromEnv(created[0].Env), portFromEnv(created[1].Env))
 }
 
-// TestAnAbsentImageIsPulled, and a present one is not.
 func TestAnAbsentImageIsPulled(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = false
@@ -622,9 +577,6 @@ func TestCloseStopsAndRemoves(t *testing.T) {
 	require.ErrorIs(t, err, ErrClosed)
 }
 
-// TestRemoveHappensEvenWhenStopFails. A node that left a container behind every
-// time a stop timed out would fill its disk — and the pool retires instances
-// routinely, since every failed request is one.
 func TestRemoveHappensEvenWhenStopFails(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
@@ -714,8 +666,6 @@ func TestOptionsAreValidated(t *testing.T) {
 	require.Equal(t, Name, e.Name())
 }
 
-// TestItIsAnEngineThePoolCanUse — the point of the whole package. This is the
-// pool's warm-reuse, concurrency and scale-to-zero running over real containers.
 func TestItIsAnEngineThePoolCanUse(t *testing.T) {
 	rt := newFakeBackend()
 	rt.imagePresent = true
@@ -737,8 +687,6 @@ func TestItIsAnEngineThePoolCanUse(t *testing.T) {
 	require.Equal(t, 1, pool.Warm(s))
 }
 
-// TestTheFreePortAllocatorReturnsSomethingBindable — the production path, which
-// no other test uses because they all inject.
 func TestTheFreePortAllocatorReturnsSomethingBindable(t *testing.T) {
 	p, err := freePort()
 	require.NoError(t, err)
@@ -749,9 +697,6 @@ func TestTheFreePortAllocatorReturnsSomethingBindable(t *testing.T) {
 	l.Close()
 }
 
-// TestEveryOptionRefusesWhatItCannotUse. An option that silently accepted a
-// nonsense value would push the failure to the first request, where it reads as
-// a runtime fault rather than a configuration one.
 func TestEveryOptionRefusesWhatItCannotUse(t *testing.T) {
 	resolve := func(invoke.Spec) (Image, error) { return Image{}, nil }
 
@@ -792,10 +737,6 @@ func TestTheOptionsThatAreAcceptedTakeEffect(t *testing.T) {
 	require.NotNil(t, e.opts.dial)
 }
 
-// THE VOCABULARY PROMISES MORE THAN THIS TIER DELIVERS, and that is worth a
-// line in an operator's log rather than silence: `egress` is a per-workload
-// allowlist layered on the node-wide deny floor, and what a container gets is
-// the floor and then the whole public internet.
 func TestAnEgressAllowlistIsReportedRatherThanEnforced(t *testing.T) {
 	var said []string
 	e := newRuntime(t, newFakeBackend(), Image{Ref: "ghcr.io/acme/api:1.4"}, func() []Option {
@@ -817,8 +758,6 @@ func TestAnEgressAllowlistIsReportedRatherThanEnforced(t *testing.T) {
 	require.Contains(t, said[0], "cannot narrow")
 }
 
-// A resource that declared none is not warned about, because there is nothing
-// it asked for that it did not get.
 func TestNoAllowlistIsNotWarnedAbout(t *testing.T) {
 	var said []string
 	e := newRuntime(t, newFakeBackend(), Image{Ref: "ghcr.io/acme/api:1.4"}, func() []Option {
@@ -836,16 +775,9 @@ func TestWithWarnRefusesNil(t *testing.T) {
 	require.Error(t, err)
 }
 
-// ── declared ports ───────────────────────────────────────────────────────
+// A container binding a fixed port, like postgres on 5432, must be mapped to what
+// it actually binds.
 
-// A CONTAINER THAT BINDS A FIXED PORT IS THE ORDINARY CASE AND IT DID NOT WORK.
-// The tier allocated one ephemeral port, told the workload about it in $PORT and
-// mapped that number to ITSELF — which serves a program written to be told where
-// to listen and serves nothing else. postgres binds 5432 because that is what
-// postgres does, and every off-the-shelf image anybody would import is in that
-// second group.
-
-// TestADeclaredPortIsMappedToWhatTheContainerActuallyBinds.
 func TestADeclaredPortIsTranslated(t *testing.T) {
 	backend := newFakeBackend()
 	e := newRuntime(t, backend, Image{Ref: "ghcr.io/acme/postgres:16"}, nil)
@@ -866,8 +798,6 @@ func TestADeclaredPortIsTranslated(t *testing.T) {
 		"the host side is allocated, so two workloads that both bind 5432 do not collide")
 }
 
-// TestEVERYDeclaredPortIsMapped, not just one — a workload listening on two is
-// reachable on two.
 func TestEveryDeclaredPortIsMapped(t *testing.T) {
 	backend := newFakeBackend()
 	e := newRuntime(t, backend, Image{Ref: "ghcr.io/acme/many:1"}, nil)
@@ -891,8 +821,6 @@ func TestEveryDeclaredPortIsMapped(t *testing.T) {
 	require.Equal(t, map[int]bool{8080: true, 9090: true, 9100: true}, inside)
 }
 
-// TestTheMAPPINGDoesNotDependOnAMapWalk. Two starts of one spec allocating host
-// ports in a different order would make a log read as if something had changed.
 func TestTheMappingIsOrderedByName(t *testing.T) {
 	backend := newFakeBackend()
 	e := newRuntime(t, backend, Image{Ref: "ghcr.io/acme/many:1"}, nil)
@@ -920,8 +848,6 @@ func TestTheMappingIsOrderedByName(t *testing.T) {
 	require.Equal(t, order(created[0]), order(created[1]))
 }
 
-// TestAWorkloadThatDECLARESNoneKeepsThePORTContract, which is still right for
-// something built for this platform: it is told a number and binds it.
 func TestNoDeclaredPortsKeepsTheEphemeralContract(t *testing.T) {
 	backend := newFakeBackend()
 	e := newRuntime(t, backend, Image{Ref: "ghcr.io/acme/api:1.4"}, nil)
@@ -937,8 +863,6 @@ func TestNoDeclaredPortsKeepsTheEphemeralContract(t *testing.T) {
 	require.Equal(t, mapped[0].HostPort, portFromEnv(created[0].Env))
 }
 
-// TestPORTIsStillSetWhenPortsAreDeclared, because an image that reads it is not
-// made to stop by an author declaring where it listens.
 func TestPortIsSetToADeclaredPortsHostSide(t *testing.T) {
 	backend := newFakeBackend()
 	e := newRuntime(t, backend, Image{Ref: "ghcr.io/acme/postgres:16"}, nil)
@@ -952,13 +876,8 @@ func TestPortIsSetToADeclaredPortsHostSide(t *testing.T) {
 	require.Equal(t, created[0].Network.PortMappings[0].HostPort, portFromEnv(created[0].Env))
 }
 
-// ── dialling a named port ────────────────────────────────────────────────
+// A proxy needs the socket, not a round trip.
 
-// A PROXY CARRIES BYTES IT CANNOT PARSE, for as long as the client holds the
-// socket open, so it needs the socket rather than a round-trip. Serve buffers
-// both halves and answers a request; Dial hands over the connection.
-
-// TestDialReachesTheNamedPortAndNotWhicheverSortedFirst.
 func TestDialReachesTheNamedPort(t *testing.T) {
 	backend := newFakeBackend()
 	// Two ports, and the one we want is NOT the first by name: `admin` sorts
@@ -989,8 +908,6 @@ func TestDialReachesTheNamedPort(t *testing.T) {
 		"the host side of the port named pg, not the one that sorted first")
 }
 
-// TestDialWithNoNameReachesTheONEPortAWorkloadThatDeclaredNoneWasGiven, which
-// keeps a proxy with no `forward.port` working against a $PORT-style workload.
 func TestDialWithNoNameReachesTheOnlyPort(t *testing.T) {
 	backend := newFakeBackend()
 	e := newRuntime(t, backend, Image{Ref: "ghcr.io/acme/api:1.4"}, nil)
@@ -1006,7 +923,6 @@ func TestDialWithNoNameReachesTheOnlyPort(t *testing.T) {
 	require.Equal(t, portFromEnv(created[0].Env), conn.RemoteAddr().(*net.TCPAddr).Port)
 }
 
-// TestANameTHATWASNEVERDECLAREDSaysSo rather than connecting to something else.
 func TestDialRefusesAnUndeclaredPort(t *testing.T) {
 	e := newRuntime(t, newFakeBackend(), Image{Ref: "ghcr.io/acme/db:16"}, nil)
 

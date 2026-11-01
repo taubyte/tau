@@ -10,71 +10,27 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// host.go is the register of capabilities this tier can serve.
-//
-// # One host component per capability
-//
-// Each of the worlds under wit/deps is one entry here: what the vocabulary
-// calls it, how to find a spec's grants of it, whether this tier was composed
-// with anything to serve it, and the imports to register for one instantiation.
-// Adding a capability is one row and one file; it is not an edit to Start.
-//
-// That matters beyond tidiness. Start used to check ten backings and append ten
-// import sets in a hand-unrolled block whose order had drifted out of any
-// pattern — a check for one capability sitting between the appends of two
-// others — and the next two capabilities were going to be another four lines
-// wedged into the same place. A capability is a thing; this is the list of them.
-//
-// # Only what is needed, and what still stands in the way
-//
-// MEASURED: a component's import section names only the interfaces it actually
-// calls. `fixtures/handler.wasm` is built against the same world as
-// `fixtures/cacher.wasm` and imports NONE of the taubyte interfaces, while the
-// cacher imports all thirteen — so the artifact itself already says which host
-// components it needs.
-//
-// This tier cannot read that yet: wazy exposes no way to decode a component's
-// imports short of instantiating it, so every capability is registered for
-// every workload. See .notes/v2/wazy-request.md, which asks for exactly the one
-// function that closes it — at which point `register` gains a filter and
-// nothing else here changes.
-//
-// # And they are registered even when nothing is granted
-//
-// An import a component declares and the host does not provide is a TRAP: the
-// call panics inside wazy and takes the instance with it. So a workload calling
-// a capability it never declared must still find a host function there, to be
-// told `no-such-cache` and carry on. A guest bug is not a reason to lose warm
-// state.
-//
-// The two rules meet cleanly: register what the ARTIFACT imports, refuse per
-// call what the CONFIGURATION did not grant.
+// host.go is the register of capabilities this tier serves, one row per world under
+// wit/deps; adding a capability is one row and one file. A component's imports
+// name only what it calls, but wazy cannot decode them without instantiating
+// (.notes/v2/wazy-request.md), so every capability is registered for every
+// workload. Registering even ungranted ones matters: a missing import traps and
+// kills the instance, while a registered one can refuse per call.
 
 // hostComponent is one capability's host half.
 type hostComponent struct {
 	// name is the capability as the vocabulary spells it, for a message.
 	name string
 
-	// iface is the WIT interface this row serves, exactly as a component's
-	// import section spells it.
-	//
-	// IT IS HERE SO THE TWO SIDES CAN BE COMPARED. host_test.go reads
-	// wit/handler.wit and asserts this register covers every interface the
-	// world imports and imports nothing it does not — which is the one mistake
-	// this table exists to make impossible and could otherwise only be found by
-	// a guest trapping in production.
+	// iface is the WIT interface this row serves, as an import section spells it;
+	// host_test.go holds the register to wit/handler.wit both ways.
 	iface string
 
-	// reaches is the grants of this capability that this tier would have to
-	// serve. A grant the composer already refused does not count — see
-	// servableStorage for why that distinction is not cosmetic.
+	// reaches is the grants this tier must serve; refused grants don't count.
 	reaches func(invoke.Spec) map[string]invoke.Grant
 
-	// backed is whether this tier was composed with something to serve it.
-	//
-	// IT ANSWERS A BOOL RATHER THAN THE BACKING because a nil *fakeCaches in an
-	// interface field is not equal to nil, and a table handing back `any` would
-	// need reflection to ask a question each row can answer in four characters.
+	// backed is whether this tier was composed with a backing, a bool because a typed
+	// nil in an interface is not nil.
 	backed func(*Runtime) bool
 
 	// missing is what a granted capability with no backing is refused with.
@@ -84,12 +40,8 @@ type hostComponent struct {
 	register func(*Runtime, invoke.Spec) []component.Option
 }
 
-// hostComponents is every capability this tier serves, in the order a guest
-// meets them: the data models first, then the pipes, then what a workload
-// learns about itself.
-//
-// IT IS A FUNCTION AND NOT A PACKAGE VARIABLE so that a `backed` closure can
-// read a field off the Runtime it is asked about rather than off a global.
+// hostComponents is every capability served, in the order a guest meets them; a
+// function so `backed` closures read the Runtime asked about.
 func hostComponents() []hostComponent {
 	return []hostComponent{
 		{
@@ -212,11 +164,8 @@ func hostComponents() []hostComponent {
 			register: (*Runtime).modelImports,
 		},
 		{
-			// WHAT THE WORKLOAD IS. It is authority over nothing, so there is
-			// no grant to find and nothing to back it — a row with no `reaches`
-			// is always registered and never refused. It is in the register
-			// anyway because this is the list of capabilities, and one missing
-			// from it is one nobody finds.
+			// What the workload is: authority over nothing, so always registered and never
+			// refused.
 			name:     "workload",
 			iface:    workloadInterface,
 			register: (*Runtime).workloadImports,
@@ -224,13 +173,8 @@ func hostComponents() []hostComponent {
 	}
 }
 
-// imports is every host component's registration for one instantiation, and the
-// refusal for one that is granted with nothing behind it.
-//
-// A GRANT WITH NOTHING BEHIND IT IS A CONSTRUCTION FAULT, so it is refused at
-// Start rather than at the first call: a workload that would fail every request
-// touching its cache should not be started and then look healthy until somebody
-// exercises that path.
+// imports is every capability's registration for one instantiation; a granted
+// capability with no backing is refused at Start rather than failing per request.
 func (r *Runtime) imports(spec invoke.Spec) ([]component.Option, error) {
 	var out []component.Option
 	for _, c := range hostComponents() {
@@ -242,31 +186,10 @@ func (r *Runtime) imports(spec invoke.Spec) ([]component.Option, error) {
 	return out, nil
 }
 
-// unserved warns about every capability a workload declared that no host
-// component here answers.
-//
-// # The composer hands this tier everything on purpose
-//
-// services/worker builds a grant for EVERY kind, and says why: "A tier has to
-// be able to see what it CANNOT do for a workload — a container declaring a
-// volume it will not get is data written to a layer that vanishes — and it
-// cannot see that from a list filtered down to what already works."
-//
-// That was half a mechanism. The producer was derived and correct, and this
-// tier then dropped whatever it had no row for without a word: `imports` only
-// looks at rows that exist, so a grant matching none of them is never seen at
-// all. A guest calling into it gets no host function, no error at start, and no
-// log line — the failure arrives as a missing import or a no-such-target at the
-// call site, which reads as a broken component rather than a capability this
-// cloud does not ship.
-//
-// A WARNING AND NOT A REFUSAL, exactly as the container tier's: each of these
-// fails where it is used, and what the warning buys is that an operator sees it
-// at start rather than in somebody's stack trace.
-//
-// A MOUNT IS NOT REPORTED HERE because it is REFUSED — see ErrNoMounts. It is
-// the one unserved capability that loses data instead of failing, so it never
-// reaches this.
+// unserved warns about every declared capability no row here answers. The composer
+// passes every kind's grant so a tier can see what it cannot do; without this a
+// guest would fail at the call with no word at start. A warning, as in the
+// container tier; mounts are refused instead (ErrNoMounts).
 func (r *Runtime) unserved(spec invoke.Spec) {
 	if r.warn == nil {
 		return

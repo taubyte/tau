@@ -9,11 +9,6 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// workload_test drives `taubyte:workload/identity` — the one capability that is
-// authority over nothing and therefore needs no grant.
-
-// TestAWorkloadIsToldWhatItIs, every field of it, read back inside the guest —
-// which is what shows a record with a list in the middle lowers correctly.
 func TestAComponentLearnsWhatItIs(t *testing.T) {
 	instance := start(t, tier(t, cacher(t), wasm.WithNode("12D3KooWNode")), invoke.Spec{
 		Name:        "shop/prod/function/QmCheckout",
@@ -33,8 +28,6 @@ func TestAComponentLearnsWhatItIs(t *testing.T) {
 		string(res.Body))
 }
 
-// TestITNEEDSNoGrant, which is the whole argument for the capability existing
-// at all: it answers about the instance and reaches nothing.
 func TestAWorkloadWithNoAccessBlockStillKnowsItself(t *testing.T) {
 	instance := start(t, tier(t, cacher(t)), invoke.Spec{
 		Name: "fn", Project: "shop", Environment: "dev", Kind: "function", Label: "hello",
@@ -46,8 +39,6 @@ func TestAWorkloadWithNoAccessBlockStillKnowsItself(t *testing.T) {
 		"and an empty field is empty rather than invented")
 }
 
-// TestATIERWithNoNodeIdentityAnswersEmpty rather than naming something. A test
-// runs that way, and so does anything embedding this package directly.
 func TestAnUnnamedNodeIsEmptyAndNotGuessed(t *testing.T) {
 	instance := start(t, tier(t, cacher(t)), invoke.Spec{Name: "fn", Project: "shop"})
 

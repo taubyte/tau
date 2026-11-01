@@ -7,16 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// WHAT CAME BACK WAS PRODUCED BY SOMEBODY ELSE'S COMPONENT, so every shape that
-// is not this world's has to be an error naming the authorizer rather than a
-// panic three frames later — and, more importantly, rather than a GRANT. A
-// malformed answer read as permission is the one failure mode this whole
-// control exists to prevent.
-//
-// The happy paths are proven against the real fixture in authorizer_test.go.
-// These are the ones a real component cannot produce, which is exactly why they
-// need a unit test: a guard that has been tampered with, or built against a
-// world that has since moved, produces precisely these.
 func TestAMalformedDecisionIsNeverAGrant(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -41,10 +31,6 @@ func TestAMalformedDecisionIsNeverAGrant(t *testing.T) {
 	}
 }
 
-// TestAnEmptyGrantArrivesAsNIL and must not be read as malformed — it is the
-// commonest refusal there is. The fixture proves this end to end; this pins the
-// lifting rule on its own, because the two are easy to conflate when reading
-// decisionFrom and only one of them is a bug.
 func TestAGrantOfNothingIsStillAGrant(t *testing.T) {
 	decision, err := decisionFrom(&component.VariantValue{Disc: decisionGranted, Payload: nil}, "keeper")
 	require.NoError(t, err)
@@ -53,8 +39,6 @@ func TestAGrantOfNothingIsStillAGrant(t *testing.T) {
 	require.Empty(t, decision.Undecided)
 }
 
-// TestAVariantArrivesEitherWay. wazy hands back a pointer today; a value is the
-// same answer and lifting must not depend on which.
 func TestADecisionLiftsByValueOrPointer(t *testing.T) {
 	want := []string{"get", "put"}
 	payload := []component.Value{"get", "put"}
@@ -68,11 +52,6 @@ func TestADecisionLiftsByValueOrPointer(t *testing.T) {
 	require.Equal(t, want, byValue.Granted)
 }
 
-// TestTheQuestionLowersInTheWITsOWNORDER. questionValue is the one place the
-// field order in the world file is load-bearing, and a transposition there is
-// silent: two strings swap and everything still typechecks. The fixture catches
-// it end to end; this says which position each field is in, so a reader of the
-// WIT can check it against this without running anything.
 func TestTheQuestionLowersInFieldOrder(t *testing.T) {
 	value := questionValue(Question{
 		Who:  Caller{Project: "p", Environment: "e", Kind: "k", Name: "n", Scope: []string{"a", "b"}},
@@ -95,8 +74,6 @@ func TestTheQuestionLowersInFieldOrder(t *testing.T) {
 	require.Equal(t, "get", fields[2])
 }
 
-// TestAnEmptySCOPEISANEMPTYLISTANDNOTANULL — the world says list<string>, which
-// has no absent case, and a nil there traps rather than lowering.
 func TestACallerAtTheRootLowersAnEmptyScope(t *testing.T) {
 	fields := questionValue(Question{}).([]component.Value)
 	who := fields[0].([]component.Value)

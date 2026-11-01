@@ -15,13 +15,9 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/js/archive"
 )
 
-// bundle.go reads the archive an artifact is (see package archive) and serves
-// its modules to a realm.
-//
-// STAGE 1 LOADS EVERY MODULE FROM SOURCE. warpjs cannot compile an ES module,
-// so a `.warp` member has nothing to be loaded into yet. The reader still holds
-// the archive to the layout's rule that a compiled form ships beside its
-// source, so an archive this reader takes is one a later reader can use.
+// bundle.go reads the archive an artifact is and serves its modules to a realm.
+// Every module loads from source (warpjs cannot compile an ES module yet), but the
+// reader still requires each `.warp` to ship beside its source.
 
 // DefaultMaxArchive bounds an archive, packed and unpacked, unless WithMaxArchive
 // says otherwise.
@@ -132,13 +128,8 @@ func (b *bundle) host() engine.ModuleHost {
 	return engine.ModuleHost{Resolve: b.resolve, Load: b.load}
 }
 
-// resolve finds a module in the archive. A relative specifier resolves
-// against the module importing it, and one starting with "/" against the
-// archive's root.
-//
-// A BARE SPECIFIER IS REFUSED, `node:` ones included: this tier serves no
-// package and no built-in, so `import "node:fs"` fails as a TypeError naming
-// what was asked for rather than reaching anything of the host's.
+// resolve finds a module in the archive: relative to the importer, or from the
+// root for "/". A bare specifier, `node:` included, is refused as a TypeError.
 func (b *bundle) resolve(req engine.ModuleRequest) (string, error) {
 	if len(req.Attributes) > 0 {
 		return "", fmt.Errorf("%w: %q is imported with attributes, which this tier does not serve", ErrNoModule, req.Specifier)

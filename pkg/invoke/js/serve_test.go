@@ -31,9 +31,6 @@ export default {
 };
 `
 
-// TestAColdStartThenWarmCallsKeepModuleState. The second call must not pay a
-// cold start, and module state persisting is how that is visible: one realm
-// served all three.
 func TestAColdStartThenWarmCallsKeepModuleState(t *testing.T) {
 	f := newFixture(t, counter)
 	inst := f.start()
@@ -52,9 +49,6 @@ func TestAColdStartThenWarmCallsKeepModuleState(t *testing.T) {
 	require.Equal(t, 1, p.Warm(f.spec))
 }
 
-// TestOneRequestAtATimePerInstance. A realm is used from one goroutine at a
-// time: a second request waits for the first, even across the first one's
-// await, rather than entering the realm while it is suspended.
 func TestOneRequestAtATimePerInstance(t *testing.T) {
 	f := newFixture(t, `
 let active = 0, most = 0;
@@ -87,7 +81,6 @@ export default {
 	require.GreaterOrEqual(t, time.Since(began), 200*time.Millisecond, "the second waited for the first")
 }
 
-// TestAWaitingRequestGivesUpWithItsCaller.
 func TestAWaitingRequestGivesUpWithItsCaller(t *testing.T) {
 	f := newFixture(t, `export default { async fetch() { await later(300); return new Response("slow"); } };`)
 	inst := f.start()
@@ -103,8 +96,6 @@ func TestAWaitingRequestGivesUpWithItsCaller(t *testing.T) {
 	require.Less(t, time.Since(began), 200*time.Millisecond)
 }
 
-// TestTheRequestRoundTrips: the method, URL, headers and body reach the
-// handler, and its status, headers and body come back.
 func TestTheRequestRoundTrips(t *testing.T) {
 	f := newFixture(t, `
 export default {
@@ -149,10 +140,6 @@ export default {
 	require.Equal(t, []string{"http://workload.invalid/relative"}, resp.Headers["X-Url"])
 }
 
-// TestARequestBodyReadsTheSameWhenever. text and json decode the bytes Go
-// holds while the request is served, and the copy the realm holds once it is
-// not: a body read then, read late from waitUntil, kept for a later request
-// or read through a clone, reads the same.
 func TestARequestBodyReadsTheSameWhenever(t *testing.T) {
 	f := newFixture(t, `
 let late = "";
@@ -223,9 +210,6 @@ export default {
 	require.Nil(t, resp.Headers)
 }
 
-// TestAThrownErrorIsA500AndTheInstanceLivesOn. A JS exception is the
-// handler's failure, not the realm's: the caller gets a 500, the author's log
-// gets the stack, and the next request is served by the same realm.
 func TestAThrownErrorIsA500AndTheInstanceLivesOn(t *testing.T) {
 	f := newFixture(t, counter)
 	inst := f.start()
@@ -251,8 +235,6 @@ func TestAThrownErrorIsA500AndTheInstanceLivesOn(t *testing.T) {
 	require.Equal(t, 1, p.Warm(f.spec), "and the pool keeps it")
 }
 
-// TestAnEndlessLoopHitsTheDeadlineAndRetires, and so does a spinning promise
-// reaction, which is the one warpjs's manual job drains would not stop.
 func TestAnEndlessLoopHitsTheDeadlineAndRetires(t *testing.T) {
 	for _, path := range []string{"/spin", "/spin-then", "/hold"} {
 		t.Run(path, func(t *testing.T) {
@@ -282,8 +264,6 @@ func TestAnEndlessLoopHitsTheDeadlineAndRetires(t *testing.T) {
 	}
 }
 
-// TestTheSpecsTimeoutBoundsADirectCall: a caller with no deadline still has
-// the spec's.
 func TestTheSpecsTimeoutBoundsADirectCall(t *testing.T) {
 	f := newFixture(t, counter)
 	f.spec.Timeout = 100 * time.Millisecond
@@ -292,8 +272,6 @@ func TestTheSpecsTimeoutBoundsADirectCall(t *testing.T) {
 	require.ErrorIs(t, err, js.ErrDeadline)
 }
 
-// TestACancelledCallerStopsTheWait, and the realm it abandoned mid-request is
-// retired.
 func TestACancelledCallerStopsTheWait(t *testing.T) {
 	f := newFixture(t, `export default { async fetch() { await later(10000); return new Response("late"); } };`)
 	inst := f.start()
@@ -319,8 +297,6 @@ export default {
 };
 `
 
-// TestAMemoryBlowUpIsTypedAndRetires, with no host panic: the arena is the
-// limit, and a realm that hit it is not reused.
 func TestAMemoryBlowUpIsTypedAndRetires(t *testing.T) {
 	f := newFixture(t, hog)
 	f.spec.Memory = 16 << 20
@@ -340,9 +316,6 @@ func TestAMemoryBlowUpIsTypedAndRetires(t *testing.T) {
 	require.Zero(t, p.Warm(f.spec))
 }
 
-// TestARequestTooBigForTheArenaIsRefused: building the request is Go-side,
-// where the engine's constructors panic on a full arena. It is a refusal, not
-// a crash.
 func TestARequestTooBigForTheArenaIsRefused(t *testing.T) {
 	f := newFixture(t, hog)
 	f.spec.Memory = 16 << 20
@@ -389,9 +362,6 @@ export default {
 };
 `
 
-// TestWaitUntilAnswersAtOnceAndHoldsTheInstance. Through the pool the
-// response goes back before the work it left settles, and the instance is
-// handed nothing else until it has.
 func TestWaitUntilAnswersAtOnceAndHoldsTheInstance(t *testing.T) {
 	f := newFixture(t, waiter)
 	p := f.pool(invoke.WithMaxInstances(1))
@@ -426,8 +396,6 @@ func TestWaitUntilAnswersAtOnceAndHoldsTheInstance(t *testing.T) {
 	require.Equal(t, 1, p.Warm(f.spec))
 }
 
-// TestWaitUntilWithoutAPoolFinishesFirst: driven directly there is no slot to
-// keep, so the answer waits for the work.
 func TestWaitUntilWithoutAPoolFinishesFirst(t *testing.T) {
 	f := newFixture(t, waiter)
 	inst := f.start()
@@ -442,8 +410,6 @@ func TestWaitUntilWithoutAPoolFinishesFirst(t *testing.T) {
 	require.Equal(t, "1", string(serve(t, inst, get("/count")).Body), "and costs the realm nothing")
 }
 
-// TestWaitUntilIsBoundedByTheDeadline: work that never settles, or spins,
-// ends at the deadline and retires the instance, after its answer went back.
 func TestWaitUntilIsBoundedByTheDeadline(t *testing.T) {
 	for _, path := range []string{"/forever", "/spin"} {
 		t.Run(path, func(t *testing.T) {
@@ -470,8 +436,6 @@ func TestWaitUntilIsBoundedByTheDeadline(t *testing.T) {
 	}
 }
 
-// TestClosingEndsWhatIsRunning, promptly: a request waiting on its handler and
-// waitUntil work left in a pool both end with the instance.
 func TestClosingEndsWhatIsRunning(t *testing.T) {
 	f := newFixture(t, `
 export default {
@@ -510,8 +474,6 @@ export default {
 	require.Less(t, time.Since(began), time.Second)
 }
 
-// TestConsoleGoesToTheInstancesLog: log, info and debug to stdout, warn and
-// error to stderr, one line per call.
 func TestConsoleGoesToTheInstancesLog(t *testing.T) {
 	f := newFixture(t, `
 export default {
@@ -545,7 +507,6 @@ export default {
 	require.True(t, strings.HasPrefix(f.logs.err(), "careful\nRangeError: bad range\n"), f.logs.err())
 }
 
-// TestAFunctionWithNowhereToLogStillRuns.
 func TestAFunctionWithNowhereToLogStillRuns(t *testing.T) {
 	f := &fixture{t: t, store: &store{}, logs: &logs{}}
 	f.store.put("asset", pack(t, map[string]string{"worker.js": `export default { fetch() { console.log("x"); console.error("y"); return new Response("ok"); } };`}))
@@ -556,10 +517,6 @@ func TestAFunctionWithNowhereToLogStillRuns(t *testing.T) {
 	require.Equal(t, "ok", string(serve(t, f.start(), get("/")).Body))
 }
 
-// TestALongLivedInstanceDoesNotFillItsArena: a JS value that reaches Go is
-// pinned until Go's collector gets to it, so nothing a request carries may
-// reach Go as one. An instance whose responses, request bodies and log lines
-// add up to far more than its arena keeps serving.
 func TestALongLivedInstanceDoesNotFillItsArena(t *testing.T) {
 	f := newFixture(t, `
 const text = "x".repeat(128 << 10);

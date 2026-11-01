@@ -9,20 +9,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// host_test holds the two sides of the ABI to each other.
-//
-// EVERY CAPABILITY IS TWO FILES NOW — a WIT package under wit/deps and a row in
-// host.go — and the failure mode of that shape is adding one and forgetting the
-// other. A world that imports an interface nothing registers is a guest that
-// TRAPS on its first call to it, taking the instance with it; a row for an
-// interface the world does not import is a registration nobody can reach.
-//
-// Neither is visible from any other test here, because every one of them drives
-// a fixture that was built before the mismatch.
+// Holds wit/deps and host.go's rows to each other: a world import nothing registers
+// traps a guest; a row the world does not import is unreachable.
 
-// worldImport matches the import lines of wit/handler.wit. The `%` a keyword
-// package needs in WIT SOURCE is not in the name a component carries, so it is
-// dropped — see the stream package.
+// worldImport matches wit/handler.wit's import lines; the `%` a keyword package
+// needs in WIT source is not in a component's name.
 var worldImport = regexp.MustCompile(`(?m)^\s*import\s+([a-z0-9:%/@.\-]+);`)
 
 // importsOfTheWorld is what wit/handler.wit says a guest may reach.
@@ -54,7 +45,6 @@ func importsOf(t *testing.T, path string) []string {
 	return out
 }
 
-// TestTHEREGISTERCoversTheWorldExactly.
 func TestEveryImportedInterfaceHasAHostComponent(t *testing.T) {
 	var registered []string
 	for _, c := range hostComponents() {
@@ -68,18 +58,6 @@ func TestEveryImportedInterfaceHasAHostComponent(t *testing.T) {
 		"wit/handler.wit and host.go disagree about what this tier serves")
 }
 
-// TestASECONDWORLDCANONLYREACHWHATTHEFIRSTONESERVES.
-//
-// `implements:` names seven worlds and this tier now carries the WIT for five of
-// them. A second world is a SUBSET of the capabilities — that subsetting is half
-// the reason the packages were split up in the first place — so every interface
-// it names has to be one the host actually backs. A world importing a capability
-// with no host half is a world nothing can run, and the way that is discovered
-// today is a guest trapping on a missing import at its first call.
-//
-// It is a subset check and NOT equality, which is the difference from the test
-// above: the handler world is the union by definition, and an authorizer that
-// imported all of it would be claiming a decision may do anything.
 func TestASecondWorldReachesOnlyWhatThisTierServes(t *testing.T) {
 	served := map[string]bool{}
 	for _, c := range hostComponents() {
@@ -102,9 +80,6 @@ func TestASecondWorldReachesOnlyWhatThisTierServes(t *testing.T) {
 	}
 }
 
-// TestEVERYRowThatCanBeGrantedCanBeRefused. A capability with grants and no
-// backing must have something to say at Start; one without grants must not
-// claim a backing it never checks.
 func TestARowWithGrantsHasABackingAndAnError(t *testing.T) {
 	for _, c := range hostComponents() {
 		if c.reaches == nil {
@@ -117,8 +92,6 @@ func TestARowWithGrantsHasABackingAndAnError(t *testing.T) {
 	}
 }
 
-// TestNoTwoRowsServeOneInterface, which would make the second registration lose
-// silently to the first.
 func TestEachInterfaceIsRegisteredOnce(t *testing.T) {
 	seen := map[string]string{}
 	for _, c := range hostComponents() {

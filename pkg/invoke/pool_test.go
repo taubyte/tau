@@ -128,8 +128,6 @@ func spec(name, rev string) Spec {
 	return Spec{Runtime: "fake", Name: name, Revision: rev}
 }
 
-// TestAWarmInstanceIsReused — the whole reason a pool exists. The second
-// request must not pay a cold start.
 func TestAWarmInstanceIsReused(t *testing.T) {
 	e := newFakeRuntime("fake")
 	p, _ := newPool(t, e, nil)
@@ -146,9 +144,6 @@ func TestAWarmInstanceIsReused(t *testing.T) {
 	require.Equal(t, 1, p.Warm(spec("shop", "r1")))
 }
 
-// TestANewRevisionNeverSharesAnInstance. This is what makes a deploy a deploy:
-// new code runs in new instances, and nothing reaches into a running process to
-// swap what it executes.
 func TestANewRevisionNeverSharesAnInstance(t *testing.T) {
 	e := newFakeRuntime("fake")
 	p, _ := newPool(t, e, nil)
@@ -169,9 +164,6 @@ func TestANewRevisionNeverSharesAnInstance(t *testing.T) {
 		"which is what makes a rollback warm rather than a cold start")
 }
 
-// TestConcurrencyOneMeansOneRequestAtATimePerInstance. Code written for a
-// serverless platform is routinely not safe to enter twice; a platform that
-// quietly shares an instance turns that into corruption rather than a queue.
 func TestConcurrencyOneMeansOneRequestAtATimePerInstance(t *testing.T) {
 	e := newFakeRuntime("fake")
 	release := make(chan struct{})
@@ -204,8 +196,6 @@ func TestConcurrencyOneMeansOneRequestAtATimePerInstance(t *testing.T) {
 	require.Equal(t, 3, started)
 }
 
-// TestConcurrencyAboveOneSharesAnInstance, and never exceeds what the spec
-// allows.
 func TestConcurrencyAboveOneSharesAnInstance(t *testing.T) {
 	e := newFakeRuntime("fake")
 	release := make(chan struct{})
@@ -233,9 +223,6 @@ func TestConcurrencyAboveOneSharesAnInstance(t *testing.T) {
 	wg.Wait()
 }
 
-// TestABurstQueuesRatherThanFailing. A serverless platform that returned an
-// error the moment every instance was busy would be useless under exactly the
-// traffic it exists for.
 func TestABurstQueuesRatherThanFailing(t *testing.T) {
 	e := newFakeRuntime("fake")
 	gate := make(chan struct{})
@@ -273,7 +260,6 @@ func TestABurstQueuesRatherThanFailing(t *testing.T) {
 	require.LessOrEqual(t, e.maxLive, 2, "and the instance cap held throughout")
 }
 
-// TestAWaitingCallerThatGivesUpStopsWaiting.
 func TestAWaitingCallerThatGivesUpStopsWaiting(t *testing.T) {
 	e := newFakeRuntime("fake")
 	block := make(chan struct{})
@@ -296,7 +282,6 @@ func TestAWaitingCallerThatGivesUpStopsWaiting(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
-// TestAnIdleSpecCostsNothing — scale to zero, on an injected clock.
 func TestAnIdleSpecCostsNothing(t *testing.T) {
 	e := newFakeRuntime("fake")
 	p, clock := newPool(t, e, func() []Option { return []Option{WithIdleTimeout(time.Minute)} })
@@ -324,8 +309,6 @@ func TestAnIdleSpecCostsNothing(t *testing.T) {
 	require.Equal(t, 2, started)
 }
 
-// TestABusyInstanceIsNeverReaped even if it has been serving one long request
-// since before the idle window.
 func TestABusyInstanceIsNeverReaped(t *testing.T) {
 	e := newFakeRuntime("fake")
 	block := make(chan struct{})
@@ -346,10 +329,6 @@ func TestABusyInstanceIsNeverReaped(t *testing.T) {
 	close(block)
 }
 
-// TestAFailedRequestRetiresTheInstance. The pool cannot tell a malformed
-// request from a wedged process, and a broken instance kept warm serves every
-// subsequent request badly — which reads as an intermittent fault rather than a
-// dead worker.
 func TestAFailedRequestRetiresTheInstance(t *testing.T) {
 	e := newFakeRuntime("fake")
 	boom := errors.New("the guest panicked")
@@ -364,7 +343,6 @@ func TestAFailedRequestRetiresTheInstance(t *testing.T) {
 	require.Equal(t, 1, closed)
 }
 
-// TestATimeoutIsEnforcedPerRequest.
 func TestATimeoutIsEnforcedPerRequest(t *testing.T) {
 	e := newFakeRuntime("fake")
 	e.serve = func(ctx context.Context, req *Request) (*Response, error) {
@@ -392,8 +370,6 @@ func TestTheDefaultTimeoutAppliesWhenTheSpecIsSilent(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
-// TestAnUnknownEngineIsRefusedRatherThanDefaulted. Running a container spec on
-// the wasm engine would be a very confusing failure.
 func TestAnUnknownEngineIsRefusedRatherThanDefaulted(t *testing.T) {
 	p, _ := newPool(t, newFakeRuntime("fake"), nil)
 
@@ -403,7 +379,6 @@ func TestAnUnknownEngineIsRefusedRatherThanDefaulted(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoRuntime)
 }
 
-// TestTwoEnginesCoexist — the point of the seam.
 func TestTwoEnginesCoexist(t *testing.T) {
 	wasm, ctr := newFakeRuntime("wasm"), newFakeRuntime("container")
 	p, err := NewPool(WithRuntime(wasm, ctr))
@@ -486,7 +461,6 @@ func TestCloseShutsEverythingDownAndIsIdempotent(t *testing.T) {
 	require.ErrorIs(t, err, ErrPoolClosed)
 }
 
-// TestTheReaperRunsOnItsOwn.
 func TestTheReaperRunsOnItsOwn(t *testing.T) {
 	e := newFakeRuntime("fake")
 	p, clock := newPool(t, e, func() []Option { return []Option{WithIdleTimeout(time.Millisecond)} })
@@ -508,11 +482,6 @@ func TestWarmIsZeroForSomethingNeverRun(t *testing.T) {
 	require.Zero(t, p.Warm(spec("never", "r1")))
 }
 
-// TestAnInstanceStartedIntoAClosingPoolIsNotLeaked. A cold start happens
-// OUTSIDE the pool's lock — deliberately, since holding it across a container
-// start would block every other spec on the node — so a Close can land while an
-// instance is coming up. The instance that arrives late has to be closed rather
-// than parked in a pool nobody will drain.
 func TestAnInstanceStartedIntoAClosingPoolIsNotLeaked(t *testing.T) {
 	e := newFakeRuntime("fake")
 	starting := make(chan struct{})
@@ -552,11 +521,6 @@ func (e *slowStartRuntime) Start(ctx context.Context, spec Spec) (Instance, erro
 	return e.fakeRuntime.Start(ctx, spec)
 }
 
-// TestABurstOnAColdSpecStartsOneInstance, not one per request. Without
-// single-flight every arrival finds no warm slot and starts its own, so a spec
-// whose concurrency could absorb the whole burst from one instance instead
-// starts MaxInstances of them — seconds of latency and hundreds of megabytes
-// each, once the engine is containers.
 func TestABurstOnAColdSpecStartsOneInstance(t *testing.T) {
 	e := newFakeRuntime("fake")
 	slow := make(chan struct{})
@@ -590,8 +554,6 @@ func TestABurstOnAColdSpecStartsOneInstance(t *testing.T) {
 	require.Equal(t, 1, p.Warm(s))
 }
 
-// TestAWaiterStartsItsOwnWhenTheFirstInstanceIsFull. Single-flight must not
-// become a cap: at concurrency 1 the second request needs a second instance.
 func TestAWaiterStartsItsOwnWhenTheFirstInstanceIsFull(t *testing.T) {
 	e := newFakeRuntime("fake")
 	hold := make(chan struct{})
@@ -616,7 +578,6 @@ func TestAWaiterStartsItsOwnWhenTheFirstInstanceIsFull(t *testing.T) {
 	wg.Wait()
 }
 
-// TestAFailedColdStartReleasesTheWaiters rather than leaving them parked.
 func TestAFailedColdStartReleasesTheWaiters(t *testing.T) {
 	e := newFakeRuntime("fake")
 	e.startErr = errors.New("image not found")
@@ -665,7 +626,6 @@ func (e *gatedStartRuntime) Start(ctx context.Context, spec Spec) (Instance, err
 	return e.fakeRuntime.Start(ctx, spec)
 }
 
-// TestEveryPoolOptionRefusesWhatItCannotUse.
 func TestEveryPoolOptionRefusesWhatItCannotUse(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -685,8 +645,6 @@ func TestEveryPoolOptionRefusesWhatItCannotUse(t *testing.T) {
 	}
 }
 
-// TestAPoolWithNoRuntimesCanRunNothing, and says so at construction rather than
-// on the first request.
 func TestAPoolWithNoRuntimesCanRunNothing(t *testing.T) {
 	_, err := NewPool()
 	require.ErrorIs(t, err, ErrNoRuntimes)
@@ -713,13 +671,8 @@ func TestPoolOptionsThatAreAcceptedTakeEffect(t *testing.T) {
 	require.Equal(t, c.now(), p.opts.now())
 }
 
-// ── transformers ─────────────────────────────────────────────────────────
-
-// A TRANSFORMER IS POOLED FOR THE SAME REASONS A HANDLER IS, and that claim is
-// the whole argument for Transform living here rather than in the tier. It runs
-// on every request and nothing about its answer can be kept, so the cold start
-// it would otherwise pay each time — measured at ~13ms for a small component —
-// is exactly what these warm slots exist to remove.
+// A transformer is pooled because it runs on every request (~13ms cold start for a
+// small component).
 
 func (i *fakeInstance) Transform(_ context.Context, req *Request) (*Outcome, error) {
 	if req.Path == "/reject" {
@@ -730,7 +683,6 @@ func (i *fakeInstance) Transform(_ context.Context, req *Request) (*Outcome, err
 	return &Outcome{Forward: &forwarded}, nil
 }
 
-// TestFIVETRANSFORMSAreONEColdStart.
 func TestTransformReusesAWarmInstance(t *testing.T) {
 	e := newFakeRuntime("wasm")
 	p, err := NewPool(WithRuntime(e))
@@ -748,10 +700,6 @@ func TestTransformReusesAWarmInstance(t *testing.T) {
 	require.Equal(t, 1, started, "five transforms, one cold start")
 }
 
-// TestATransformerAndAHandlerOfONESpecShareNothing, which is not a subtlety:
-// they are different specs — a gateway names a different function for each — so
-// they are different groups, and a transformer's instances never serve a
-// request.
 func TestATransformerIsItsOwnGroup(t *testing.T) {
 	e := newFakeRuntime("wasm")
 	p, err := NewPool(WithRuntime(e))
@@ -767,8 +715,6 @@ func TestATransformerIsItsOwnGroup(t *testing.T) {
 	require.Equal(t, 2, started, "two functions, two groups")
 }
 
-// TestTHEANSWERArmStopsTheChain, through the pool, so the outcome is what the
-// caller receives rather than something the pool flattens.
 func TestTransformCarriesAnAnswerBack(t *testing.T) {
 	e := newFakeRuntime("wasm")
 	p, err := NewPool(WithRuntime(e))
@@ -781,9 +727,6 @@ func TestTransformCarriesAnAnswerBack(t *testing.T) {
 	require.Equal(t, 403, out.Answer.Status)
 }
 
-// TestATIERTHATCANNOTTRANSFORMSaysSo rather than serving the request as if the
-// transformer were not there. A container is a process that answers requests and
-// has no second export to call.
 func TestATierThatCannotTransformIsRefused(t *testing.T) {
 	e := &handlerOnlyRuntime{name: "container"}
 	p, err := NewPool(WithRuntime(e))
@@ -811,12 +754,7 @@ func (handlerOnlyInstance) Serve(context.Context, *Request) (*Response, error) {
 }
 func (handlerOnlyInstance) Close() error { return nil }
 
-// ── connections ──────────────────────────────────────────────────────────
-
-// A CONNECTION OUTLIVES THE CALL THAT OPENED IT, which is the one thing here
-// that Do and Transform do not do. The slot goes back when the connection
-// closes, so an instance somebody is talking to is not idle and a spec whose
-// connections are all long-lived reaches its ceiling and queues.
+// A connection outlives the call that opened it: its slot returns on close.
 
 func (i *fakeInstance) Dial(_ context.Context, port string) (net.Conn, error) {
 	if port == "refused" {
@@ -828,9 +766,7 @@ func (i *fakeInstance) Dial(_ context.Context, port string) (net.Conn, error) {
 		return client, nil
 	}
 
-	// A REAL SOCKET, because what is being pooled here is a connection and a
-	// pipe is not one: it cannot half-close, which is the property the thing
-	// above this cares about most.
+	// A real socket, since a pipe cannot half-close.
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
@@ -849,7 +785,6 @@ func connSpec() Spec {
 	return Spec{Runtime: "wasm", Name: "db", Artifact: "img", Revision: "1", Concurrency: 1}
 }
 
-// TestTheINSTANCEIsHeldWhileTheConnectionIsOpen.
 func TestAConnectionHoldsItsInstance(t *testing.T) {
 	e := newFakeRuntime("wasm")
 	// ONE INSTANCE, ONE AT A TIME. The pool's ceiling is MaxInstances ×
@@ -886,9 +821,6 @@ func TestAConnectionHoldsItsInstance(t *testing.T) {
 	require.Equal(t, 1, started, "one instance served both, one after the other")
 }
 
-// TestCLOSINGTwiceReleasesOnce. Close on a net.Conn is routinely called twice —
-// a defer and an explicit one — and releasing twice would hand one slot to two
-// callers at the same ceiling.
 func TestClosingAConnectionTwiceReleasesOnce(t *testing.T) {
 	e := newFakeRuntime("wasm")
 	p, err := NewPool(WithRuntime(e), WithMaxInstances(1))
@@ -899,9 +831,7 @@ func TestClosingAConnectionTwiceReleasesOnce(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, c.Close())
 
-	// THE SECOND CLOSE MAY WELL ERROR — a real socket says "use of closed
-	// network connection" where a pipe says nothing — and that is not what this
-	// is about. What must not happen is a second RELEASE.
+	// The second Close may error; what must not happen is a second release.
 	_ = c.Close()
 
 	// If the second Close released again, this one would find a free slot that
@@ -925,7 +855,6 @@ func TestClosingAConnectionTwiceReleasesOnce(t *testing.T) {
 	}
 }
 
-// TestADIALThatFailsGivesTheSlotBack rather than leaking it.
 func TestAFailedDialReleasesTheSlot(t *testing.T) {
 	e := newFakeRuntime("wasm")
 	p, err := NewPool(WithRuntime(e))
@@ -943,8 +872,6 @@ func TestAFailedDialReleasesTheSlot(t *testing.T) {
 	c.Close()
 }
 
-// TestATIERTHATHANDSOUTNoConnectionSaysSo — a component has no listening
-// socket, so asking one for a connection is a question it cannot answer.
 func TestATierThatCannotDialIsRefused(t *testing.T) {
 	p, err := NewPool(WithRuntime(&handlerOnlyRuntime{name: "container"}))
 	require.NoError(t, err)
@@ -954,14 +881,6 @@ func TestATierThatCannotDialIsRefused(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoRuntime)
 }
 
-// TestAPooledConnectionCanStillBeHALFClosed.
-//
-// This wrapper embeds the net.Conn INTERFACE, and promotion through an
-// interface gives only that interface's methods — so CloseWrite was invisible
-// through it and a caller type-asserting for one found nothing. What that cost
-// was not obvious: the caller fell back to closing the whole connection, which
-// ends the half a query protocol is waiting on. The request was delivered and
-// the answer never came.
 func TestAPooledConnectionForwardsCloseWrite(t *testing.T) {
 	e := newFakeRuntime("wasm")
 	p, err := NewPool(WithRuntime(e))
@@ -977,9 +896,6 @@ func TestAPooledConnectionForwardsCloseWrite(t *testing.T) {
 	require.NoError(t, cw.CloseWrite())
 }
 
-// TestAndItSaysSoWhenItCannot, rather than reporting a half-close that never
-// happened — a caller whose only alternative is a full close needs to know,
-// because the far end is otherwise waiting for an EOF nobody sent.
 func TestAPooledConnectionReportsAnImpossibleHalfClose(t *testing.T) {
 	e := newFakeRuntime("wasm")
 	e.pipe = true
@@ -995,15 +911,6 @@ func TestAPooledConnectionReportsAnImpossibleHalfClose(t *testing.T) {
 	require.Error(t, err, "net.Pipe cannot half-close and must not pretend to")
 }
 
-// TestASETTINGReadAsANumberIsReadTheSameWayByEveryBacking.
-//
-// Four of them had spelled this parse themselves — a cache's size, a volume's
-// quota, a bucket's size, a store's instance limit — and every one of them read
-// an absent or unparseable field as "no limit" rather than as a refusal. It is
-// one method now, and this is the table that says what the fallback is: the
-// vocabulary makes these fields required, so a missing one is a composer that did
-// not read it, which is a bug to find in a log where a store that refused every
-// request would be an outage.
 func TestASettingReadAsANumber(t *testing.T) {
 	for _, c := range []struct {
 		setting string
@@ -1035,9 +942,6 @@ func TestASettingReadAsANumber(t *testing.T) {
 	require.Zero(t, Grant{}.Number("size"))
 }
 
-// TestALingeringCallAnswersAtOnceAndHoldsItsSlot. A JS handler's waitUntil work
-// runs after the response: the caller must not wait for it, and the instance it
-// runs on must be neither reaped nor handed another request until it is over.
 func TestALingeringCallAnswersAtOnceAndHoldsItsSlot(t *testing.T) {
 	e := newFakeRuntime("fake")
 	settle := make(chan func(bool), 2)
@@ -1080,8 +984,6 @@ func TestALingeringCallAnswersAtOnceAndHoldsItsSlot(t *testing.T) {
 	require.Zero(t, closed)
 }
 
-// TestALingerThatFailsRetiresTheInstance. Work stopped at its deadline leaves a
-// realm interrupted mid-mutation, which is not reused.
 func TestALingerThatFailsRetiresTheInstance(t *testing.T) {
 	e := newFakeRuntime("fake")
 	settle := make(chan func(bool), 1)
@@ -1102,8 +1004,6 @@ func TestALingerThatFailsRetiresTheInstance(t *testing.T) {
 	require.Zero(t, p.Warm(s))
 }
 
-// TestAFailedCallReleasesWhatItClaimed. A call that fails retires its instance
-// at once, and the done it claimed before failing does nothing and never blocks.
 func TestAFailedCallReleasesWhatItClaimed(t *testing.T) {
 	e := newFakeRuntime("fake")
 	boom := errors.New("the handler failed after claiming")
@@ -1127,8 +1027,6 @@ func TestAFailedCallReleasesWhatItClaimed(t *testing.T) {
 	require.Equal(t, 1, closed)
 }
 
-// TestLingerNeedsAPooledCall. A caller driving an instance directly has no
-// slot to keep.
 func TestLingerNeedsAPooledCall(t *testing.T) {
 	done, ok := Linger(t.Context())
 	require.False(t, ok)

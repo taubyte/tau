@@ -14,11 +14,8 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// EVERY TEST HERE RUNS A REAL AUTHORIZER, built by a real toolchain from
-// wit/deps/taubyte-authorizer. It is the only thing that can show the host's
-// lowering and lifting agree with generated bindings nobody here wrote — a fake
-// would agree with whatever this package assumed, which is the mistake the
-// storage double made (see the sweep of 2026-09-05).
+// Every test runs a real authorizer built from wit/deps/taubyte-authorizer, so the
+// host's lowering is shown to agree with generated bindings.
 
 // guard is the fixture. It grants the op it was asked about plus one synthetic
 // entry encoding the whole question, refuses `forbidden` with an empty grant,
@@ -49,12 +46,6 @@ func aQuestion() wasm.Question {
 	}
 }
 
-// ── the round trip ───────────────────────────────────────────────────────
-
-// TestTheWHOLEQuestionSurvivesTheRecord. A record is its fields in order, so a
-// transposition in the WIT or in questionValue is invisible to any assertion
-// that only checks the decision — the fixture echoes what it was handed back
-// through the ops list precisely so this cannot pass while the order is wrong.
 func TestTheWholeQuestionReachesTheGuest(t *testing.T) {
 	r := tier(t, guard(t))
 
@@ -73,10 +64,6 @@ func TestTheWholeQuestionReachesTheGuest(t *testing.T) {
 	require.Contains(t, decision.Granted, "get", "and the op it was asked about")
 }
 
-// TestAnEmptyGrantIsADecisionAndNotAMalformedAnswer. It is the commonest
-// refusal there is, and it arrives as a nil payload rather than an empty slice
-// — reading that as "this component is broken" would turn every `no` into an
-// author's bug.
 func TestARefusalIsAnEmptyGrantAndNotAnError(t *testing.T) {
 	r := tier(t, guard(t))
 
@@ -90,9 +77,6 @@ func TestARefusalIsAnEmptyGrantAndNotAnError(t *testing.T) {
 	require.Empty(t, decision.Granted)
 }
 
-// TestUNDECIDEDIsItsOwnArm. A guard that ran and declined is not a guard that
-// said no: telling a caller it was turned down when nothing decided sends them
-// to argue with a policy that never fired.
 func TestAGuardThatDeclinesToDecideSaysSo(t *testing.T) {
 	r := tier(t, guard(t))
 
@@ -105,11 +89,6 @@ func TestAGuardThatDeclinesToDecideSaysSo(t *testing.T) {
 	require.Contains(t, decision.Undecided, "no opinion")
 }
 
-// ── the world gate, in both directions ───────────────────────────────────
-
-// TestAHandlerIsNotAnAuthorizer. It would instantiate perfectly well and then
-// be handed a question it reads as a request, which is the failure `implements`
-// exists to prevent — so the entry point names the world it can actually call.
 func TestAuthorizeRefusesAHandler(t *testing.T) {
 	r := tier(t, handler(t))
 
@@ -119,17 +98,12 @@ func TestAuthorizeRefusesAHandler(t *testing.T) {
 	require.Contains(t, err.Error(), "authorizer", "and which world was wanted")
 }
 
-// TestAndTheGateIsSTILLCLOSEDTheOtherWay, which is the half that was already
-// there: Serve drives `handle(request) -> response`, and an authorizer has
-// neither that name nor that signature.
 func TestStartStillRefusesAnAuthorizer(t *testing.T) {
 	r := tier(t, guard(t))
 
 	_, err := r.Start(t.Context(), guardSpec())
 	require.ErrorIs(t, err, wasm.ErrUnsupportedWorld)
 }
-
-// ── the grant check ──────────────────────────────────────────────────────
 
 // asked records what a guard was asked and answers with what it was told to.
 type asked struct {
@@ -156,8 +130,6 @@ func guarded(label, handle string, ops ...string) []invoke.Grant {
 	}}
 }
 
-// TestAGuardNARROWS. The access block asked for get and put; the guard grants
-// only get, and the put it did not grant is refused with the guard named.
 func TestAGuardNarrowsWhatTheAccessBlockAsked(t *testing.T) {
 	ask := &asked{ops: []string{"get"}}
 	instance := start(t, tier(t, cacher(t), wasm.WithCaches(newCaches("h")), wasm.WithAuthorizers(ask)),
@@ -171,9 +143,6 @@ func TestAGuardNarrowsWhatTheAccessBlockAsked(t *testing.T) {
 	require.Contains(t, ask.saw, "checkout/sessions/put", "the guard was asked about the op attempted")
 }
 
-// TestAGuardCANNOTWIDEN. It is asked AFTER the access block is checked, not
-// instead of it, so an op the config never requested is refused before the
-// guard is even consulted — the config stays the thing a reader has.
 func TestAGuardCannotGrantWhatTheConfigNeverAsked(t *testing.T) {
 	ask := &asked{ops: []string{"get", "put", "delete"}}
 	instance := start(t, tier(t, cacher(t), wasm.WithCaches(newCaches("h")), wasm.WithAuthorizers(ask)),
@@ -185,11 +154,6 @@ func TestAGuardCannotGrantWhatTheConfigNeverAsked(t *testing.T) {
 		"the guard is never asked to widen, so it is not asked at all")
 }
 
-// TestAGuardTHATCANNOTBERUNDENIES, and this is where an authorizer parts from
-// the instance validator in node/admit. That one treats "could not be
-// run" as not a refusal. Here the target has said in its own configuration that
-// somebody else decides, so serving it when that somebody cannot be reached
-// grants exactly the access it said was not ours to grant.
 func TestAGuardThatCannotBeRunDenies(t *testing.T) {
 	ask := &asked{err: errors.New("the guard is on fire")}
 	instance := start(t, tier(t, cacher(t), wasm.WithCaches(newCaches("h")), wasm.WithAuthorizers(ask)),
@@ -200,8 +164,6 @@ func TestAGuardThatCannotBeRunDenies(t *testing.T) {
 	require.Contains(t, string(res.Body), "on fire", "and says what went wrong")
 }
 
-// TestUNDECIDEDReachesTheGuestAsItsOwnSentence, so an operator reading a log
-// can tell a policy that said no from one that never answered.
 func TestAGuardThatDidNotDecideDenies(t *testing.T) {
 	ask := &asked{err: fmt.Errorf("%w: keeper had no opinion", wasm.ErrUndecided)}
 	instance := start(t, tier(t, cacher(t), wasm.WithCaches(newCaches("h")), wasm.WithAuthorizers(ask)),
@@ -212,10 +174,6 @@ func TestAGuardThatDidNotDecideDenies(t *testing.T) {
 	require.Contains(t, string(res.Body), "no opinion")
 }
 
-// TestAGuardedGRANTONATIERWITHNOTHINGTOASKISREFUSEDATStart. It is a
-// construction fault rather than a guest's, and the alternative to refusing
-// early is denying every operation later — which reads to an author as their
-// own authorizer saying no.
 func TestAGuardedSpecNeedsSomethingToAsk(t *testing.T) {
 	_, err := tier(t, cacher(t), wasm.WithCaches(newCaches("h"))).Start(t.Context(), invoke.Spec{
 		Name: "fn", Artifact: "bafy", Reaches: guarded("sessions", "h", "get"),
@@ -224,9 +182,6 @@ func TestAGuardedSpecNeedsSomethingToAsk(t *testing.T) {
 	require.Contains(t, err.Error(), "sessions", "and names which grant")
 }
 
-// TestAREFUSEDGrantDoesNotDemandAGuard, for the reason servableStorage states:
-// a per-target refusal must not become a per-workload one. The workload still
-// starts; that one target is dead.
 func TestARefusedGuardedGrantDoesNotStopTheWorkload(t *testing.T) {
 	dead := guarded("sessions", "h", "get")
 	dead[0].Refused = "this cloud cannot serve it"
@@ -237,8 +192,6 @@ func TestARefusedGuardedGrantDoesNotStopTheWorkload(t *testing.T) {
 	require.NoError(t, err, "nothing will ask about a grant nothing can use")
 }
 
-// TestAnUnguardedGrantIsNeverAsked, so the cost of the mechanism falls only on
-// the targets that declared one.
 func TestAnUnguardedGrantAsksNobody(t *testing.T) {
 	ask := &asked{ops: []string{"get"}}
 	instance := start(t, tier(t, cacher(t), wasm.WithCaches(newCaches("h")), wasm.WithAuthorizers(ask)),

@@ -12,14 +12,9 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// vector.go is the host half of `taubyte:vector/store` — the `database` kind
-// at `type: vector`, and the fourth and last data model that kind declares.
-//
-// AN EMBEDDING CROSSES AS list<f32> and not as JSON, which is the one place in
-// this world where a number list is the natural shape: an embedding IS a vector
-// of floats, and carrying a thousand of them as text would mean parsing them
-// twice per call for nothing. The META beside it is JSON, for document.go's
-// reason — it is an arbitrary object and the ABI has no type for one.
+// vector.go is the host half of `taubyte:vector/store`, the `database` kind at
+// `type: vector`. An embedding crosses as list<f32>, never text; its meta is JSON,
+// as in document.go.
 
 const vectorInterface = "taubyte:vector/store@0.1.0"
 
@@ -43,9 +38,8 @@ var (
 	// without a backing.
 	ErrNoVectors = errors.New("wasm: this resource reaches a vector database and this tier has nothing to open one with")
 
-	// ErrWrongWidth is an embedding that is not the database's declared width.
-	// It is its own arm because it is a mistake in the CALLER and not an
-	// outage: the answer would be meaningless rather than late.
+	// ErrWrongWidth is an embedding not matching the declared width: a caller's
+	// mistake, not an outage.
 	ErrWrongWidth = errors.New("wasm: that is not this database's vector width")
 )
 
@@ -65,8 +59,7 @@ type Vectors interface {
 	Delete(ctx context.Context, id string) error
 }
 
-// VectorStores opens the one a grant names. See KVs for why the method is named
-// rather than being a bare Open.
+// VectorStores opens the vector database a grant names.
 type VectorStores interface {
 	OpenVectors(ctx context.Context, grant invoke.Grant) (Vectors, error)
 }
@@ -238,9 +231,8 @@ func (r *Runtime) vectorImports(spec invoke.Spec) []component.Option {
 	}
 }
 
-// readFloats lifts a list<f32>. wazy specialises it to a Go slice the way it
-// does list<u8>; the general shape is accepted for the same reason readBytes
-// accepts it.
+// readFloats lifts a list<f32>, specialised by wazy like list<u8>; the general shape
+// is accepted too.
 func readFloats(v component.Value) ([]float32, error) {
 	switch value := v.(type) {
 	case []float32:

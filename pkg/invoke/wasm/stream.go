@@ -12,19 +12,9 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// stream.go is the host half of `taubyte:stream/publisher`.
-//
-// It is cache.go's shape with one call instead of four, and deliberately so: a
-// second capability that resolved its label differently, or reported a refusal
-// differently, would be a second contract for authors to learn.
-//
-// # Only publish crosses
-//
-// `stream` declares `subscribe` as well, and it is a DELIVERY rather than a
-// call — the platform invokes a workload when a message arrives. There is no
-// host function for it and there should not be one; a resource that asked for
-// it is refused by the op check, which says what the platform does not do
-// rather than leaving a guest waiting on something that never arrives.
+// stream.go is the host half of `taubyte:stream/publisher`, cache.go's shape with
+// one call. Only publish: `subscribe` is a delivery the platform makes, so the op
+// check refuses it.
 
 const (
 	streamInterface = "taubyte:stream/publisher@0.1.0"
@@ -52,24 +42,19 @@ var (
 	ErrNoBus = errors.New("wasm: this resource publishes to a bus and this tier has nothing to publish with")
 )
 
-// Streams is what a guest publishes through.
-//
-// ONE METHOD, TAKING THE HANDLE. What a handle means and which topic it becomes
-// is the composer's; this package's job is the ABI and the grant check.
+// Streams is what a guest publishes through; what a handle means is the composer's.
 type Streams interface {
 	Publish(ctx context.Context, handle string, message []byte) error
 }
 
-// WithStreams is what backs `taubyte:stream/publisher`. Optional: a tier without
-// one runs everything that publishes to nothing, and refuses at Start anything
-// that does.
+// WithStreams is what backs `taubyte:stream/publisher`; without it a publishing
+// workload is refused at Start.
 func WithStreams(s Streams) Option {
 	return func(r *Runtime) { r.streams = s }
 }
 
-// WithBus is what backs `taubyte:bus/publisher`. It is the same interface as a
-// stream's because sending is the same act; what differs is the kind, and the
-// handle carries that.
+// WithBus is what backs `taubyte:bus/publisher`, the same interface since sending
+// is the same act.
 func WithBus(s Streams) Option {
 	return func(r *Runtime) { r.bus = s }
 }
@@ -101,20 +86,14 @@ func publishableGrants(spec invoke.Spec, kind string) map[string]invoke.Grant {
 	return out
 }
 
-// streamImports registers publish for one instantiation. Like the cache's, it
-// is registered even when nothing is granted: an unprovided import is a trap
-// that takes the instance with it.
+// streamImports registers publish for one instantiation, even with nothing granted,
+// since a missing import traps.
 func (r *Runtime) streamImports(spec invoke.Spec) []component.Option {
 	return r.publishImports(spec, streamInterface, streamGrantsOf(spec), errNoSuchStream, r.streams)
 }
 
-// busImports is the same function on a different kind.
-//
-// TWO INTERFACES AND ONE IMPLEMENTATION, because the kinds genuinely differ in
-// what they KEEP rather than in how a workload sends: a stream reaches every
-// subscriber and a bus reaches everything attached and keeps nothing. Sharing
-// the host code is right; sharing the interface would let an author reach an
-// ephemeral bus through a door labelled with a stream's promise.
+// busImports shares the host code under a separate interface, so an ephemeral bus
+// is never reached through a stream's promise.
 func (r *Runtime) busImports(spec invoke.Spec) []component.Option {
 	return r.publishImports(spec, busInterface, busGrantsOf(spec), errNoSuchBus, r.bus)
 }
@@ -149,12 +128,8 @@ func (r *Runtime) publishImports(spec invoke.Spec, iface string, grants map[stri
 			return nil, fmt.Errorf("stream.publish: %w", err)
 		}
 
-		// A REFUSED GRANT SAYS WHY — an engine this cloud has no driver for
-		// reads as a typo otherwise — and so does an instance a validator
-		// turned down. A BUS MAY HOLD MANY INSTANCES and a stream may not, so
-		// the same resolver settles both: the block's presence is what decides,
-		// and neither this function nor the caller has to know which kind it is
-		// talking to.
+		// A refused grant says why. A bus may hold many instances, so the shared resolver
+		// settles both kinds.
 		grant, why := r.addressed(ctx, spec, grants, label, opPublish)
 		if why != nil {
 			if why.missing {

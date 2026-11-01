@@ -12,19 +12,9 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// log.go is the host half of `taubyte:log/records` — the `sync` kind at
-// `type: log`.
-//
-// THE KIND IS `sync` AND THE TYPE SELECTS THIS INTERFACE, the same way
-// `database` at `type: sql` selects sql.go's. A grant is filtered by kind AND
-// type here for that reason: `sync` also covers a queue, whose verbs are not
-// these and whose backing is a different thing.
-//
-// # What a log promises that a queue does not
-//
-// Reading consumes nothing. Every reader keeps its own cursor, so two workloads
-// reading one log both see every record — which is why `read` is a plain call
-// and there is no claim, no acknowledgement and no visibility timeout here.
+// log.go is the host half of `taubyte:log/records`, the `sync` kind at `type: log`,
+// filtered by kind and type since a queue is also `sync`. Reading consumes
+// nothing: every reader keeps its own cursor, so there is no claim or ack.
 
 const logInterface = "taubyte:log/records@0.1.0"
 
@@ -75,12 +65,8 @@ type Record struct {
 	Data []byte
 }
 
-// Logs is what a guest appends to and reads.
-//
-// IT IS A SEAM BECAUSE ORDER IS A DISTRIBUTED PROBLEM and this package's job is
-// the ABI. Who decides the order, where the bytes live and what retention drops
-// are the node's — see node/log.go, which serialises appends through the raft
-// leader and keeps the records in the replicated store.
+// Logs is what a guest appends to and reads; ordering and retention are the node's
+// (node/log.go serialises appends through the raft leader).
 type Logs interface {
 	// Append adds one record and answers the cursor it landed at.
 	Append(ctx context.Context, grant invoke.Grant, data []byte) (string, error)
@@ -95,8 +81,7 @@ func WithLogs(l Logs) Option {
 	return func(r *Runtime) { r.logs = l }
 }
 
-// logGrantsOf is the log grants this tier would have to serve — refused ones do
-// not count, for the reason servableStorage states.
+// logGrantsOf is the log grants this tier must serve; refused ones don't count.
 func logGrantsOf(spec invoke.Spec) map[string]invoke.Grant {
 	var out map[string]invoke.Grant
 	for _, g := range spec.Reaches {

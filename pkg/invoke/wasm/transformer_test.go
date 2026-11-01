@@ -10,11 +10,8 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// A REAL TRANSFORMER. Reading a `request` back OUT of a guest is something
-// nothing else in this tree does — every other lift here produces a response, a
-// decision or a verdict — so the fixture deliberately CHANGES what it forwards.
-// A pass-through would pass whether or not the host read the forwarded request
-// at all.
+// A real transformer that changes what it forwards, so the host is shown to read the
+// forwarded request.
 
 func shaper(t *testing.T) []byte {
 	t.Helper()
@@ -41,7 +38,6 @@ func transforming(t *testing.T) invoke.Transforms {
 	return as
 }
 
-// TestTheCHANGEDRequestIsWhatCarriesOn.
 func TestATransformerForwardsAModifiedRequest(t *testing.T) {
 	out, err := transforming(t).Transform(t.Context(), &invoke.Request{
 		Method:  "POST",
@@ -56,19 +52,13 @@ func TestATransformerForwardsAModifiedRequest(t *testing.T) {
 	require.Equal(t, "POST", out.Forward.Method)
 	require.Equal(t, "/checkout", out.Forward.Path)
 	require.Equal(t, "shaped:pay", string(out.Forward.Body), "the body it changed, not the one it was given")
-	// CANONICAL KEYS BOTH WAYS. The guest wrote `x-shaped` in lower case, and a
-	// header name is case-insensitive — a forwarded request whose next reader
-	// misses it looking for `X-Shaped` would be a silent loss, so the lift
-	// canonicalises.
+	// Canonical keys: the guest wrote `x-shaped`.
 	require.Equal(t, []string{"POST:/checkout"}, out.Forward.Headers["X-Shaped"],
 		"a header carrying what it saw, which is how the whole request is shown to have crossed")
 	require.Equal(t, []string{"4111"}, out.Forward.Headers["X-Card"], "the headers it was sent survive")
 	require.NotContains(t, out.Forward.Headers, "x-shaped", "and only under the canonical key")
 }
 
-// TestATransformerCanSTOPTheChain, which is the other arm and the reason
-// `outcome` is a variant rather than a request: a filter rejects without the
-// request ever reaching a workload.
 func TestATransformerCanAnswerAndStop(t *testing.T) {
 	out, err := transforming(t).Transform(t.Context(), &invoke.Request{
 		Method:  "GET",
@@ -84,8 +74,6 @@ func TestATransformerCanAnswerAndStop(t *testing.T) {
 	require.Equal(t, []string{"shaper"}, out.Answer.Headers["x-shaped-by"])
 }
 
-// TestAnEmptyBodyForwardsAsEmptyAndNotAsNothing — the world says list<u8>,
-// which has no absent case, and the fixture prefixes it either way.
 func TestATransformerForwardsAnEmptyBody(t *testing.T) {
 	out, err := transforming(t).Transform(t.Context(), &invoke.Request{Method: "GET", Path: "/"})
 	require.NoError(t, err)
@@ -93,12 +81,6 @@ func TestATransformerForwardsAnEmptyBody(t *testing.T) {
 	require.Equal(t, "shaped:", string(out.Forward.Body))
 }
 
-// ── the world gate ───────────────────────────────────────────────────────
-
-// TestAHandlerDoesNotTransform, and a transformer answers no request. Both
-// directions matter: a transformer driven as a handler would be handed a request
-// it reads as a request and answer with an outcome the caller reads as a
-// response, which is the one failure that would look like it worked.
 func TestAHandlerIsNotATransformer(t *testing.T) {
 	instance := start(t, tier(t, handler(t)), invoke.Spec{Name: "checkout", Artifact: "bafy"})
 
@@ -116,8 +98,6 @@ func TestATransformerAnswersNoRequest(t *testing.T) {
 	require.Contains(t, err.Error(), wasm.WorldGatewayTransformer)
 }
 
-// TestAndTheDECIDINGWorldsAreStillTheirOwnDoors: an authorizer is not started
-// at all, because it is asked once and its answer is kept.
 func TestStartRefusesTheDecidingWorlds(t *testing.T) {
 	r := tier(t, guard(t))
 
