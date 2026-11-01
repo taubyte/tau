@@ -727,6 +727,44 @@ func TestHealing_AVoteFromANonMemberIsReported(t *testing.T) {
 	assert.Len(t, h.foreignVoteCh, cap(h.foreignVoteCh))
 }
 
+// TestHealing_AnObservationRaftDroppedCountsAsALeaderChange: raft drops an
+// observation the healer's channel has no room for, and the healer, which
+// learns of a change of leader only by observation, took a cycle whose
+// leader it lost for leaderless.
+func TestHealing_AnObservationRaftDroppedCountsAsALeaderChange(t *testing.T) {
+	h := &healer{}
+	ch := make(chan raft.Observation)
+	var dropped atomic.Uint64
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		h.watch(ctx, ch, dropped.Load)
+		close(done)
+	}()
+	defer func() {
+		cancel()
+		<-done
+	}()
+
+	// A vote observation arrives, and none was dropped: no change of leader.
+	start := time.Now()
+	ch <- raft.Observation{Data: raft.RequestVoteRequest{}}
+	ch <- raft.Observation{Data: raft.RequestVoteRequest{}}
+	assert.Zero(t, h.leaderChanged.Load(), "a vote counted as a change of leader")
+
+	// Raft dropped one, then delivers the next: the dropped one counts.
+	dropped.Add(1)
+	ch <- raft.Observation{Data: raft.RequestVoteRequest{}}
+	ch <- raft.Observation{Data: raft.RequestVoteRequest{}}
+	assert.GreaterOrEqual(t, h.leaderChanged.Load(), start.UnixNano(), "an observation raft dropped did not count as a change of leader")
+
+	// Counted once: no more dropped, no more changes.
+	counted := h.leaderChanged.Load()
+	ch <- raft.Observation{Data: raft.RequestVoteRequest{}}
+	ch <- raft.Observation{Data: raft.RequestVoteRequest{}}
+	assert.Equal(t, counted, h.leaderChanged.Load(), "a drop counted again")
+}
+
 // TestHealing_AForeignVoterIsTrackedAndAbsorbedByTheLeader: a follower only
 // remembers a foreign voter, so that its own probes can find it; a leader
 // takes it in at once.

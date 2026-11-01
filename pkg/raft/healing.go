@@ -203,16 +203,30 @@ func (h *healer) registerObserver() {
 	on.RegisterObserver(observer)
 
 	go func() {
-		for {
-			select {
-			case <-h.cluster.ctx.Done():
-				on.DeregisterObserver(observer)
-				return
-			case obs := <-ch:
-				h.processObservation(obs)
+		h.watch(h.cluster.ctx, ch, observer.GetNumDropped)
+		on.DeregisterObserver(observer)
+	}()
+}
+
+// watch processes what the observer delivers until ctx is done. Raft drops
+// an observation the channel has no room for, and one it dropped may have
+// been a change of leader: once dropped, which counts what it dropped, has
+// grown, the leader counts as changed then, so a cycle is never taken for
+// leaderless on an observation the healer did not get.
+func (h *healer) watch(ctx context.Context, ch <-chan hraft.Observation, dropped func() uint64) {
+	var seen uint64
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case obs := <-ch:
+			h.processObservation(obs)
+			if d := dropped(); d != seen {
+				seen = d
+				h.leaderChanged.Store(time.Now().UnixNano())
 			}
 		}
-	}()
+	}
 }
 
 func (h *healer) processObservation(obs hraft.Observation) {
