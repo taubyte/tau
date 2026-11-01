@@ -11,10 +11,6 @@ import (
 	"github.com/taubyte/tau/pkg/secrets/tdh"
 )
 
-// TestCorruptEntriesAreSkippedOrRefused pins how the shared stores treat bytes
-// they cannot decode: a listing skips them, so one bad entry cannot hide every
-// good one, while a direct read of the bad entry is an error rather than a zero
-// value.
 func TestCorruptEntriesAreSkippedOrRefused(t *testing.T) {
 	srv, client, _ := single(t)
 	ctx := t.Context()
@@ -74,9 +70,6 @@ func TestKeyMetaRefusesElementsItCannotDecode(t *testing.T) {
 	require.ErrorContains(t, err, "verification coefficient 0")
 }
 
-// TestAShareThatCannotBeOpenedIsNotAShare covers every way a stored share can
-// be unusable. Each must be an error, because a node that took a damaged share
-// for a real one would serve partials no threshold can combine.
 func TestAShareThatCannotBeOpenedIsNotAShare(t *testing.T) {
 	srv, client, _ := single(t)
 	ctx := t.Context()
@@ -130,9 +123,6 @@ func TestAShareThatCannotBeOpenedIsNotAShare(t *testing.T) {
 	require.NoError(t, (&shareStore{}).Close(), "a store that never opened closes cleanly")
 }
 
-// TestAPartialNeedsAShareThatOpens drives the damaged share through the
-// service: the node must refuse to serve a partial rather than serve a wrong
-// one, and must stop offering the key.
 func TestAPartialNeedsAShareThatOpens(t *testing.T) {
 	srv, client, _ := single(t)
 	ctx := t.Context()

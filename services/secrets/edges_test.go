@@ -249,9 +249,6 @@ func (broken) List(context.Context, string) ([]string, error) { return nil, errB
 func (broken) Get(context.Context, string) ([]byte, error)    { return nil, errBroken }
 func (broken) Compact(context.Context) (int, error)           { return 0, errBroken }
 
-// TestRetiringCompactsTheRealStore is the regression for an assertion that was
-// never true: compact looked for Compact(ctx, string) on the production store,
-// which had no such method, so it returned nil without compacting anything.
 func TestRetiringCompactsTheRealStore(t *testing.T) {
 	srv, _, _ := single(t)
 	_, ok := srv.db.(coreKvdb.Compactor)

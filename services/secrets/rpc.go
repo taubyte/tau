@@ -13,7 +13,6 @@ import (
 	"github.com/taubyte/tau/pkg/secrets/tdh"
 )
 
-// mount serves both generated services behind one listener.
 func (srv *Service) mount() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle(secretsv2connect.NewSecretsServiceHandler(&secretsHandler{srv}))

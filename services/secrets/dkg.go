@@ -104,14 +104,9 @@ func (srv *Service) ensureKey(ctx context.Context) error {
 	members := srv.roster()
 
 	if holder, epoch, roster, found := srv.peerWithKey(members); found {
-		// A ROUND THIS NODE IS IN CAN FINISH ELSEWHERE FIRST. Nodes that
-		// bootstrap together join each other's round through a contribution
-		// before their own ensureKey gets this far, so a peer that already
-		// completed is very often completing the round this node is part of.
-		// That is not a key to wait to replicate -- it is this node's own
-		// round, one contribution from done -- and calling it an error made a
-		// concurrent bootstrap fail whenever one member finished a moment
-		// before another asked. Wait for it instead.
+		// A round this node is in can complete on a peer first: nodes bootstrapping together
+		// join each other's round. That is this node's own round, one contribution from done,
+		// so wait for it rather than failing.
 		if r, joined := srv.joined(roundID(epoch, roster)); joined {
 			return srv.await(ctx, r)
 		}

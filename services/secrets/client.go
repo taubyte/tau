@@ -51,7 +51,6 @@ func NewClient(h host.Host, members func() []peerCore.ID, local func() *Service)
 	return &Client{host: h, members: members, local: local, conns: peers{host: h, open: map[peerCore.ID]*rpc.Client{}}}, nil
 }
 
-// Close releases the streams this client opened.
 func (c *Client) Close() error {
 	c.conns.close()
 	return nil
@@ -325,7 +324,6 @@ func (c *Client) partials(ctx context.Context, v version, key *groupKeyOf, write
 	return partials, nil
 }
 
-// Delete removes a secret.
 func (c *Client) Delete(ctx context.Context, ref Ref) error {
 	if err := ref.Validate(); err != nil {
 		return err

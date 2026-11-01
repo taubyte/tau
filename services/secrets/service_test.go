@@ -162,11 +162,8 @@ func (c *cluster) launch(t *testing.T, node peerNode.Node, db coreKvdb.KVDB, pat
 func (c *cluster) serve(t *testing.T, node peerNode.Node, db coreKvdb.KVDB, path string) *Service {
 	t.Helper()
 
-	// MEMBERSHIP IS STATED, as discovery states it on a node. It used to be
-	// read off identify's record of which peers speak the protocol, and a
-	// service starts listening after its node has connected, so that record
-	// arrived only by an identify push -- late under load, and on a busy
-	// machine never inside the mesh wait.
+	// Membership is stated, as discovery states it on a node, rather than read off
+	// identify, whose record of a late-listening service arrives only by a push.
 	opts := append([]Option{WithRoot(path), WithPubSub(node.Messaging()), WithBootstrapDelay(never), WithMembers(c.memberIDs), WithReplacedRetention(0)}, c.opts...)
 	srv, err := New(node.Peer(), db, opts...)
 	require.NoError(t, err)
@@ -517,9 +514,6 @@ func TestRejectsUnusableReferences(t *testing.T) {
 	}
 }
 
-// Two secrets with the same name in different namespaces are two secrets. This
-// is the whole point of the two-part reference: without it, one project's
-// "db-password" is the other project's.
 func TestNamespacesIsolateNames(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -665,10 +659,6 @@ func TestNodeOffersOnlyKeysItHolds(t *testing.T) {
 	assert.Equal(t, foreign.Epoch, epoch)
 }
 
-// TestRetirementNeedsNoAgreement pins the rule that replaced the retirement
-// quorum: each deletion is justified by a fact about the one secret it touches,
-// so a single node can collect redundant wrappings on its own -- and never
-// touches key material, which is what made the old cross-node check necessary.
 func TestRetirementNeedsNoAgreement(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -716,9 +706,6 @@ func TestRetirementNeedsNoAgreement(t *testing.T) {
 	assert.Equal(t, plaintext, got)
 }
 
-// TestSurvivesRestart is the property a real deployment depends on every time a
-// node is upgraded: shares are on disk, so a restarted node comes back able to
-// serve partials for the keys it already held.
 func TestSurvivesRestart(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -757,8 +744,6 @@ func TestSurvivesRestart(t *testing.T) {
 	assert.Equal(t, plaintext, got)
 }
 
-// TestSurvivesLosingANode pins what the threshold is FOR: at 2-of-3 a machine
-// can be lost without taking the secrets with it.
 func TestSurvivesLosingANode(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -791,9 +776,6 @@ func TestSurvivesLosingANode(t *testing.T) {
 	require.Error(t, err, "a secret was readable below its threshold")
 }
 
-// TestReconcileLoopRunsOnItsOwn exercises the path production actually uses:
-// nobody calls reconcile, the nodes' own loops do, and the pubsub announcement
-// is what wakes them rather than a test driving each step.
 func TestReconcileLoopRunsOnItsOwn(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -826,10 +808,6 @@ func TestReconcileLoopRunsOnItsOwn(t *testing.T) {
 	assert.Equal(t, plaintext, got)
 }
 
-// TestConcurrentReconciliation runs every node's reconciliation at once during a
-// rotation, which is what actually happens when a roster change reaches them
-// all together. Concurrent passes must not produce competing keys or corrupt a
-// carry-forward.
 func TestConcurrentReconciliation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -890,14 +868,6 @@ func TestConcurrentReconciliation(t *testing.T) {
 	}
 }
 
-// TestGrowsOneNodeAtATime walks the deployment story: a cluster starts as one
-// node and gains members one at a time. After every step the whole system must
-// still work -- the secrets written under earlier, smaller keys stay readable,
-// new secrets can be written, and the threshold tracks the roster.
-//
-// This is the arc the scheme is supposed to make invisible: the same protocol
-// at n=1 as at n=4, no upgrade step, and security improving for data already at
-// rest as members join.
 func TestGrowsOneNodeAtATime(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -993,13 +963,6 @@ func TestGrowsOneNodeAtATime(t *testing.T) {
 	readAll(t, 4)
 }
 
-// TestShrinksOneNodeAtATime is the mirror of the growth walk: nodes are removed
-// one at a time and the cluster must rotate down onto the smaller roster with
-// every secret carried across.
-//
-// It walks all the way to a single node. The threshold is capped at n-1, so the
-// survivors always still reach the old key's threshold and can carry every
-// secret across -- at every size, with nobody telling them to.
 func TestShrinksOneNodeAtATime(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1068,12 +1031,6 @@ func TestShrinksOneNodeAtATime(t *testing.T) {
 	}
 }
 
-// TestShrinksToASingleNode is the case that used to lose every secret.
-//
-// A two-node key is threshold 1, because the threshold is capped so one node can
-// always be lost. Nothing announces a departure -- a removed node just stops
-// answering -- so the survivor has to be able to carry everything forward on its
-// own, with no operator step and nothing to restore from.
 func TestShrinksToASingleNode(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1124,18 +1081,6 @@ func mustActive(t *testing.T, ctx context.Context, srv *Service) *KeyMeta {
 	return key
 }
 
-// TestRetirementProvesTheReplacementOpens pins the check that stops retirement
-// from destroying a secret.
-//
-// A wrapping under the active key exists as soon as one node writes it, but it
-// is only readable once enough members durably hold a share of that key.
-// Deleting the older wrapping on existence alone therefore destroys the secret
-// whenever the replacement cannot reach its threshold: the last readable copy
-// goes and an unopenable one remains.
-//
-// Here the replacement is deliberately unopenable -- a wrapping written under a
-// key whose members hold no shares at all -- so retirement must refuse to
-// collect the wrapping that still works.
 func TestRetirementProvesTheReplacementOpens(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1191,18 +1136,6 @@ func TestRetirementProvesTheReplacementOpens(t *testing.T) {
 	assert.Equal(t, plaintext, got)
 }
 
-// TestRebuildsALostShareWithoutRotating is the rejoin path.
-//
-// A node whose share cannot be opened -- its at-rest key changed, its directory
-// came back from a backup -- used to be stuck forever: it holds no key, so it
-// asks peers whether one exists, they say yes, and it waits for a share that is
-// node-local and will never replicate. Meanwhile the others see an unchanged
-// roster and never rotate, so the cluster silently runs one holder short of what
-// its own metadata advertises.
-//
-// The fix is repair rather than rotation: dealing is deterministic, so the other
-// members replay exactly what they dealt and the node rebuilds the same share.
-// The epoch does not move and no secret is re-encrypted.
 func TestRebuildsALostShareWithoutRotating(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1263,14 +1196,6 @@ func TestRebuildsALostShareWithoutRotating(t *testing.T) {
 	assert.Equal(t, plaintext, got)
 }
 
-// TestReplayOnlyServesTheCaller pins the constraint that keeps replay from being
-// a cheaper attack than the one it replaces.
-//
-// A contribution is the share destined for one member. If a node served the
-// contribution addressed to somebody else, a caller could collect t of them and
-// reconstruct the group secret outright -- rather than having to ask t nodes to
-// decrypt one secret at a time. So the recipient is the caller's own
-// authenticated identity, never a name it supplies.
 func TestReplayOnlyServesTheCaller(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1298,14 +1223,6 @@ func TestReplayOnlyServesTheCaller(t *testing.T) {
 	assert.NotEmpty(t, out.ShareValue)
 }
 
-// TestRetirementNeverDeletesANewerKey pins that "superseded" means strictly
-// older by epoch, not merely "not the key I picked".
-//
-// A node whose share of a newer key is broken falls back to serving an older
-// one. If retirement treated everything other than its own choice as
-// superseded, that node would delete the newer key's wrappings -- the ones every
-// healthy node is using. The same shape appears after a partition heals, where
-// two keys sit at the same epoch and each side would delete the other's.
 func TestRetirementNeverDeletesANewerKey(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1357,15 +1274,6 @@ func TestRetirementNeverDeletesANewerKey(t *testing.T) {
 	assert.Equal(t, plaintext, got)
 }
 
-// TestRotatesWhenTheKeyAgesOut covers the trigger a steady production cluster
-// actually fires: nothing joins, nothing leaves, the key simply gets old.
-//
-// Every other rotation test here drives rotation by changing the roster, so the
-// age path -- the 30-day default in production -- had never executed. The age is
-// set to seconds so it can.
-//
-// The roster never changes, so age is the only thing that can cause a rotation:
-// the assertions before and after the key ages are what make that the proof.
 func TestRotatesWhenTheKeyAgesOut(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1419,8 +1327,6 @@ func TestRotatesWhenTheKeyAgesOut(t *testing.T) {
 	assert.Equal(t, plaintext, got)
 }
 
-// TestZeroRotationAgeDisablesTheTrigger pins the documented escape hatch: with
-// the age set to zero a key never rotates on time alone, however old it gets.
 func TestZeroRotationAgeDisablesTheTrigger(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1460,12 +1366,6 @@ func (c *fakeClock) advance(d time.Duration) {
 	c.mu.Unlock()
 }
 
-// TestABootstrapWaitsForItsOwnRoundWhenAPeerFinishedItFirst is the interleaving
-// behind TestConcurrentBootstrapAgreesOnOneKey's intermittent failure, held
-// still: this node has joined a round through a peer's contribution and is
-// still one contribution short, while a peer that already completed the same
-// round answers that it has a key. ensureKey used to call that "a key to
-// replicate" and fail; it is this node's own round, and it waits for it.
 func TestABootstrapWaitsForItsOwnRoundWhenAPeerFinishedItFirst(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1503,9 +1403,6 @@ func TestABootstrapWaitsForItsOwnRoundWhenAPeerFinishedItFirst(t *testing.T) {
 	require.NoError(t, <-done)
 }
 
-// TestABootstrapStillRefusesAKeyItIsNotPartOf: a peer serving a key over a
-// roster this node is not in is a cluster this node joined late, and the
-// answer is still to wait for the rotation that will include it.
 func TestABootstrapStillRefusesAKeyItIsNotPartOf(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

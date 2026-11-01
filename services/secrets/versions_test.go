@@ -38,11 +38,6 @@ func versionsOn(t *testing.T, ctx context.Context, srv *Service, ref Ref) int {
 	return len(versions)
 }
 
-// TestARewriteAfterRotationIsReadEverywhere is the regression for a re-Set
-// after several members carried a secret forward. The record used to be one
-// key, so the rewrite replaced its ciphertext while the carry-forward wrappings
-// of the old data key stayed beside it; a reader paired the new ciphertext with
-// an old wrapping and the secret was unreadable for good.
 func TestARewriteAfterRotationIsReadEverywhere(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -101,10 +96,6 @@ func skewed(offsets ...time.Duration) Option {
 	}
 }
 
-// TestASequentialRewriteWinsWhateverTheClocks: the second write comes from a
-// node whose clock is two hours behind the first writer's. It still wins,
-// because a version is never stamped earlier than the newest one its writer has
-// seen.
 func TestASequentialRewriteWinsWhateverTheClocks(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -137,9 +128,6 @@ func TestASequentialRewriteWinsWhateverTheClocks(t *testing.T) {
 	}, settleFor, 200*time.Millisecond, "the superseded version was not pruned")
 }
 
-// TestANewRosterRotatesOnceOnItsOwn: a member joining is noticed without a
-// reconcile tick, confirmed by a second pass a moment later, and costs exactly
-// one new epoch.
 func TestANewRosterRotatesOnceOnItsOwn(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -175,8 +163,6 @@ func TestANewRosterRotatesOnceOnItsOwn(t *testing.T) {
 	}
 }
 
-// TestAProjectNamedCloudCannotReachTheCloudScope: the scope kind is a path
-// segment of its own, so no project name spells a cloud secret's key.
 func TestAProjectNamedCloudCannotReachTheCloudScope(t *testing.T) {
 	_, client, _ := single(t)
 	ctx := t.Context()
@@ -205,8 +191,6 @@ func TestAProjectNamedCloudCannotReachTheCloudScope(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidRef)
 }
 
-// TestANewerVersionThisNodeCannotOpenIsKept: pruning keeps what it cannot
-// prove is superseded, and a read serves the newest version that opens.
 func TestANewerVersionThisNodeCannotOpenIsKept(t *testing.T) {
 	srv, client, _ := single(t)
 	ctx := t.Context()
@@ -235,8 +219,6 @@ func TestANewerVersionThisNodeCannotOpenIsKept(t *testing.T) {
 	assert.Zero(t, versionsOn(t, ctx, srv, r), "a delete removes every version")
 }
 
-// TestAnUnreadableSecretDoesNotStopRetirement: one version that cannot be
-// carried forward is reported, and every other secret's old wrappings still go.
 func TestAnUnreadableSecretDoesNotStopRetirement(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -288,15 +270,6 @@ func bundleOf(t *testing.T, values map[Ref]string) *secretsv2.InitBundle {
 	return bundle
 }
 
-// TestInitOnEveryNodeSurvivesOneLostBeforeStart is the regression for the
-// seeding flow. Every node is handed the same sealed bundle and writes it under
-// a one-member key of its own; one node never starts. The survivors rotate to
-// their real roster, every secret stays readable, and the one-member keys'
-// wrappings and shares are gone.
-//
-// It used to be that each node wrote its own ciphertext under its own key, so a
-// secret whose only writer died was unreadable forever, and the error carrying
-// it forward returned before retirement ran at all.
 func TestInitOnEveryNodeSurvivesOneLostBeforeStart(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -369,8 +342,6 @@ func TestInitOnEveryNodeSurvivesOneLostBeforeStart(t *testing.T) {
 	assert.Len(t, real.Members, 2)
 }
 
-// TestInitOnANodeHoldingAKeyWritesUnderIt: a node that already holds a real
-// key wraps under it, and no epoch is started.
 func TestInitOnANodeHoldingAKeyWritesUnderIt(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -396,7 +367,6 @@ func TestInitOnANodeHoldingAKeyWritesUnderIt(t *testing.T) {
 	assert.Equal(t, "salt", string(got))
 }
 
-// TestInitRefusesABundleThatDoesNotHoldTogether.
 func TestInitRefusesABundleThatDoesNotHoldTogether(t *testing.T) {
 	srv, _, _ := single(t)
 	ctx := t.Context()
@@ -430,8 +400,6 @@ func TestInitRefusesABundleThatDoesNotHoldTogether(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestVersionStepsReportAFailingStore: init, set and delete surface a store
-// failure rather than write half of a version.
 func TestVersionStepsReportAFailingStore(t *testing.T) {
 	srv, _, _ := single(t)
 	ctx := t.Context()
@@ -456,8 +424,6 @@ func TestVersionStepsReportAFailingStore(t *testing.T) {
 	require.ErrorIs(t, srv.Set(ctx, Ref{Scope: Cloud("auth")}, []byte("c"), key.KeyID, &tdh.Wrapping{}), ErrInvalidRef)
 }
 
-// TestAVersionStillHeldByARosterMemberIsNotAbandoned: the rule only fires
-// for keys none of whose members are in the newest key.
 func TestAVersionStillHeldByARosterMemberIsNotAbandoned(t *testing.T) {
 	srv, client, _ := single(t)
 	ctx := t.Context()
@@ -568,16 +534,12 @@ func ownerAway(t *testing.T, ctx context.Context, away bool) {
 	assert.Equal(t, "v2", string(got))
 }
 
-// TestANewestVersionItsOwnerHasNotCarriedForwardIsKeptAndWins: the owner of
-// the newest version is gone before carrying it forward, then returns.
 func TestANewestVersionItsOwnerHasNotCarriedForwardIsKeptAndWins(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	ownerAway(t, ctx, false)
 }
 
-// TestAnOwnerReturningWithAStaleStoreKeepsTheOlderVersion: the same, with the
-// owner's database closed while it was away, so it returns on a stale view.
 func TestAnOwnerReturningWithAStaleStoreKeepsTheOlderVersion(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -18,10 +18,6 @@ import (
 	"github.com/taubyte/tau/pkg/secrets/tdh"
 )
 
-// TestRepairIsBestEffortAndRetries pins repairShares' contract: a member that
-// cannot replay makes one pass fail quietly, leaves the node a non-holder rather
-// than inventing a share, and the next pass -- once the member is back --
-// rebuilds the same share without moving the epoch.
 func TestRepairIsBestEffortAndRetries(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -55,10 +51,6 @@ func TestRepairIsBestEffortAndRetries(t *testing.T) {
 	assert.Equal(t, key.KeyID, mustActive(t, ctx, damaged).KeyID, "repair moved the epoch")
 }
 
-// TestRepairLeavesKeysNothingIsWrappedUnder pins the guard that stops a node
-// holding only its private key from pulling back shares of epochs the cluster
-// has moved past: a key no secret uses and that is not active is never
-// repaired, even with every member up and able to replay it.
 func TestRepairLeavesKeysNothingIsWrappedUnder(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -89,8 +81,6 @@ func TestRepairLeavesKeysNothingIsWrappedUnder(t *testing.T) {
 	}, settleFor, 200*time.Millisecond, "repair ignored a key a secret is wrapped under")
 }
 
-// TestWithoutStatedMembersTheRosterIsWhoSpeaksTheProtocol covers the default
-// membership source: peers advertising the secrets protocol, and nobody else.
 func TestWithoutStatedMembersTheRosterIsWhoSpeaksTheProtocol(t *testing.T) {
 	ctx := t.Context()
 	name := fmt.Sprintf("secrets-%d", clusters.Add(1))
@@ -126,10 +116,6 @@ func TestWithoutStatedMembersTheRosterIsWhoSpeaksTheProtocol(t *testing.T) {
 	}, 60*time.Second, 100*time.Millisecond, "the roster never settled on the peers speaking the protocol")
 }
 
-// TestARebuiltShareIsCheckedBeforeItIsKept pins recoverShare's refusals. A
-// share that does not match the published key must never reach the disk: it
-// would look healthy there, so repair would never run again, and the node would
-// poison every decryption it joined.
 func TestARebuiltShareIsCheckedBeforeItIsKept(t *testing.T) {
 	srv, client, _ := single(t)
 	ctx := t.Context()
@@ -184,9 +170,6 @@ func TestSetRefusesWhatItCannotStore(t *testing.T) {
 	require.Empty(t, versions, "a refused Set left a record behind")
 }
 
-// TestAClientRefusesBadReferencesBeforeAskingAnyone: with nobody to ask, an
-// invalid reference must still come back as ErrInvalidRef, which proves the
-// check runs locally rather than costing a round trip per member.
 func TestAClientRefusesBadReferencesBeforeAskingAnyone(t *testing.T) {
 	node := peerNode.Mock(t.Context())
 	t.Cleanup(func() { node.Close() })
@@ -207,9 +190,6 @@ func TestAClientRefusesBadReferencesBeforeAskingAnyone(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoMembers)
 }
 
-// TestReconciliationStepsReportAFailingStore: every step that walks the stored
-// secrets must surface a store failure rather than conclude there is nothing to
-// do, or a node with a broken store would quietly skip carrying secrets forward.
 func TestReconciliationStepsReportAFailingStore(t *testing.T) {
 	ctx := t.Context()
 	db := broken{}
@@ -222,9 +202,6 @@ func TestReconciliationStepsReportAFailingStore(t *testing.T) {
 	require.ErrorIs(t, err, errBroken)
 }
 
-// TestARoundMustNameItsEpochAndRoster: a round id is derived from its epoch and
-// members, so a contribution claiming an id that does not match them is refused
-// rather than joined under the wrong roster.
 func TestARoundMustNameItsEpochAndRoster(t *testing.T) {
 	srv, _, node := single(t)
 	members := []string{node.ID().String()}

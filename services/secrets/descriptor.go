@@ -7,18 +7,13 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/secrets/v2/secretsv2connect"
 )
 
-// Protocol is the libp2p protocol id this service listens on: "/" plus the
-// proto package with dots as slashes, walked off the schema rather than typed
-// here.
+// Protocol is the libp2p protocol id this service listens on, walked off the schema.
 var Protocol = rpc.Protocol(secretsv2connect.SecretsServiceName)
 
-// Ingress states which side of the trust boundary a service is on.
 type Ingress int
 
 const (
-	// IngressNone is p2p-only, and the default so silence is safe.
 	IngressNone Ingress = iota
-	// IngressPublic binds pkg/http and faces the internet.
 	IngressPublic
 )
 
@@ -28,12 +23,8 @@ type descriptor struct {
 	Ingress  Ingress
 }
 
-// Descriptor states that the secrets service answers other tau nodes only.
-//
-// IT MUST STAY THAT WAY, and of everything in v2 this is the one where the
-// reason needs no elaboration: Get returns the value. There is no
-// authorization on any call, so a public ingress would put every secret every
-// project holds on the internet.
+// Descriptor states that the secrets service answers other tau nodes only. Get returns
+// the value and no call is authorized, so a public ingress would expose every secret.
 var Descriptor = descriptor{
 	Name:     "secrets",
 	Protocol: Protocol,

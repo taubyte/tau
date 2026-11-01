@@ -26,9 +26,6 @@ func (c *manualClock) advance(d time.Duration) {
 	c.at = c.at.Add(d)
 }
 
-// TestTheReplacedVersionIsServedUntilItsRetentionEnds: the version the newest
-// replaced is readable, with when it was replaced; what it replaced is pruned
-// at once, and it is pruned itself once the retention has passed.
 func TestTheReplacedVersionIsServedUntilItsRetentionEnds(t *testing.T) {
 	clock := &manualClock{at: time.Now()}
 	srv, client, _ := single(t, WithClock(clock.now), WithReplacedRetention(time.Hour))
