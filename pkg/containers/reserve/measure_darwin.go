@@ -2,7 +2,6 @@ package reserve
 
 import "golang.org/x/sys/unix"
 
-// measured reads the filesystem holding path.
 func measured(path string) (Usage, error) {
 	var st unix.Statfs_t
 	if err := unix.Statfs(path, &st); err != nil {

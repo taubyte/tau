@@ -23,18 +23,10 @@ import (
 // It is read whole, and nothing written by hand comes near it.
 const maxDockerfile = 1 << 20
 
-// buildContext is a build context spooled to a file, re-encoded as the plain
-// tar the daemon is then sent.
-//
-// IT IS ON DISK AND NOT IN MEMORY, because a context is as big as the repository
-// it is built from, and a compressed one says nothing in advance about how much
-// it unpacks to. It is written under the disk's reserve (pkg/containers/reserve)
-// for the same reason: the filesystem is read before every chunk, and a context
-// that would leave less free than the reserve is refused.
-//
-// IT IS RE-ENCODED rather than kept as it came, so the decompression and the tar
-// reading happen once, here, and the daemon reads the tar this read. What is
-// checked of the context is then what is sent.
+// buildContext is a build context spooled to a file and re-encoded as the plain tar
+// the daemon is sent. On disk, under the disk's reserve, since a compressed context
+// says nothing in advance about its size. Re-encoded so what is checked is what is
+// sent.
 type buildContext struct {
 	file  *os.File
 	floor reserve.Floor
@@ -203,7 +195,6 @@ type node struct {
 	// as they are on disk.
 	at int64
 
-	// children is a directory's.
 	children map[string]*node
 }
 

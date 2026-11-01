@@ -1,5 +1,5 @@
-// Package core provides core interfaces and types for container backends
-// This package is separate from the main containers package to avoid import cycles
+// Package core holds the container backend interfaces and types, separate from
+// pkg/containers to avoid import cycles.
 package core
 
 import (
@@ -10,14 +10,11 @@ import (
 )
 
 var (
-	// ErrBuildNotSupported is returned when a backend doesn't support building images
 	ErrBuildNotSupported = errors.New("build not supported by this backend")
 )
 
-// ContainerID is a type-safe identifier for containers
 type ContainerID string
 
-// BackendType identifies which backend a configuration or build input is for
 type BackendType string
 
 const (
@@ -25,14 +22,10 @@ const (
 	BackendTypeDocker     BackendType = "docker"
 )
 
-// Backend defines the interface for container runtime backends
 type Backend interface {
-	// BackendType returns which backend this is (docker, containerd, etc.)
 	BackendType() BackendType
-	// Image operations - returns an Image interface for image management
 	Image(name string) Image
 
-	// Container operations
 	Create(ctx context.Context, config *ContainerConfig) (ContainerID, error)
 	Start(ctx context.Context, id ContainerID) error
 	Stop(ctx context.Context, id ContainerID) error
@@ -55,45 +48,32 @@ type Backend interface {
 	// image the backend can see, including ones tau never pulled.
 	Clean(ctx context.Context, age time.Duration, reference string) error
 
-	// Backend-specific operations
 	HealthCheck(ctx context.Context) error
 	Capabilities() BackendCapabilities
 }
 
-// Image defines the interface for image operations
 type Image interface {
-	// Pull retrieves the image from a registry/repository
 	Pull(ctx context.Context) error
-	// Build builds the image from a Dockerfile.
-	// Returns ErrBuildNotSupported if the backend cannot build.
+	// Build returns ErrBuildNotSupported if the backend cannot build.
 	Build(ctx context.Context, input *DockerfileBuild) error
-	// Exists checks if the image exists locally
 	Exists(ctx context.Context) bool
-	// Remove removes the image from the backend
 	Remove(ctx context.Context) error
-	// Name returns the image name/identifier
 	Name() string
-	// Digest returns the image digest
 	Digest(ctx context.Context) (string, error)
-	// Tags returns all tags for this image
 	Tags(ctx context.Context) ([]string, error)
 }
 
-// DockerfileBuild is everything needed to build an image from a Dockerfile:
-// a tar of the build context, and the name of the Dockerfile within it.
 type DockerfileBuild struct {
 	// RestrictEgress confines the build the same way NetworkConfig does for a
 	// container. A Dockerfile is repository content, so its RUN steps are as
 	// untrusted as anything else the repository ships.
 	RestrictEgress bool
 
-	// Context is a tar stream of the build directory.
 	Context io.Reader
 	// Dockerfile is the path within the context; empty means "Dockerfile".
 	Dockerfile string
 }
 
-// DockerfileName returns the Dockerfile to build, defaulting to "Dockerfile".
 func (d *DockerfileBuild) DockerfileName() string {
 	if d.Dockerfile == "" {
 		return "Dockerfile"
@@ -101,7 +81,6 @@ func (d *DockerfileBuild) DockerfileName() string {
 	return d.Dockerfile
 }
 
-// BackendCapabilities describes what a backend supports
 type BackendCapabilities struct {
 	// SupportsBuild reports whether the backend can build an image from a
 	// Dockerfile. containerd cannot without BuildKit, so callers building
@@ -109,7 +88,6 @@ type BackendCapabilities struct {
 	SupportsBuild bool
 }
 
-// ContainerInfo contains information about a container
 type ContainerInfo struct {
 	ID        ContainerID
 	Status    string
@@ -119,7 +97,6 @@ type ContainerInfo struct {
 	Resources *ResourceLimits
 }
 
-// ResourceLimits defines resource constraints for containers
 type ResourceLimits struct {
 	Memory     int64 // Memory limit in bytes
 	MemorySwap int64 // Total memory + swap limit in bytes (-1 for unlimited swap)
@@ -129,14 +106,13 @@ type ResourceLimits struct {
 	PIDs       int64 // Maximum number of PIDs
 }
 
-// ContainerConfig holds all configuration for creating a container
 type ContainerConfig struct {
 	Image     string
 	Command   []string
 	Env       []string
 	WorkDir   string
-	Volumes   []VolumeMount  // Unified volume mounts
-	Network   *NetworkConfig // Unified network configuration
+	Volumes   []VolumeMount
+	Network   *NetworkConfig
 	Resources *ResourceLimits
 
 	// Stdin is what the container's process reads on its standard input, then
@@ -165,10 +141,9 @@ type Privileges struct {
 	// Devices from the host to expose, by path (e.g. "/dev/fuse").
 	Devices []string
 
-	// Unconfined drops the runtime's default seccomp and AppArmor profiles.
-	//
-	// ponytail: one switch for both, because the only caller wants both off.
-	// Split into per-profile settings if anything ever needs finer control.
+	// Unconfined drops the runtime's default seccomp and AppArmor profiles. One switch
+	// for both because the only caller wants both off; split it if something needs
+	// finer control.
 	Unconfined bool
 
 	// Privileged removes essentially all confinement. Only ask for it where the
@@ -179,18 +154,16 @@ type Privileges struct {
 	Privileged bool
 }
 
-// VolumeMount represents a volume mount configuration
 type VolumeMount struct {
 	Source      string // Source path on host OR volume name when IsVolumeName
-	Destination string // Destination path in container
-	ReadOnly    bool   // Whether the mount is read-only
+	Destination string
+	ReadOnly    bool
 
 	// IsVolumeName treats Source as a named volume rather than a host path.
 	// Docker only: containerd has no volume manager and rejects these.
 	IsVolumeName bool
 }
 
-// NetworkConfig represents unified network configuration
 type NetworkConfig struct {
 	// Network mode: bridge, host, none, custom.
 	// The containerd backend runs without CNI and accepts only host and none.
@@ -199,7 +172,6 @@ type NetworkConfig struct {
 	// Port mappings: host port -> container port. Docker only.
 	PortMappings []PortMapping
 
-	// DNS servers
 	DNS []string
 
 	// RestrictEgress makes the backend install a host firewall that blocks the
@@ -211,7 +183,6 @@ type NetworkConfig struct {
 	RestrictEgress bool
 }
 
-// PortMapping represents a port mapping
 type PortMapping struct {
 	HostPort      int
 	ContainerPort int

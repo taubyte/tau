@@ -23,7 +23,6 @@ import (
 	"github.com/taubyte/tau/pkg/containers/reserve"
 )
 
-// tarOf builds a context tarball from a list of entries.
 func tarOf(t *testing.T, entries ...*tar.Header) io.Reader {
 	t.Helper()
 
@@ -94,7 +93,6 @@ func TestExtractContext(t *testing.T) {
 			assert.Contains(t, err.Error(), "escapes")
 		}
 
-		// Nothing may exist above the build directory.
 		_, err := os.Stat(filepath.Join(filepath.Dir(dir), "escaped.txt"))
 		assert.True(t, os.IsNotExist(err), "an escaping entry must not be written")
 	})
@@ -457,9 +455,6 @@ func TestBuildWithoutClient(t *testing.T) {
 	assert.Contains(t, err.Error(), "not initialized")
 }
 
-// The recipe is what makes BuildKit work, and it differs by mode: each flag
-// copes with being unprivileged, and buildkitd refuses to start if asked for
-// them as real root.
 func TestBuildKitRecipe(t *testing.T) {
 	rootless := buildkitFlags(true)
 	require.Len(t, rootless, 1)
@@ -485,9 +480,6 @@ func TestBuildKitRecipe(t *testing.T) {
 		"the builder must be pinned so builds do not change underneath us")
 }
 
-// The rootful builder sees its own cgroup as the root of the hierarchy, through
-// a namespace of its own and a writable mount of it that replaces the default
-// read-only one rather than shadowing it.
 func TestTheBuilderGetsItsOwnCgroupHierarchy(t *testing.T) {
 	spec := &specs.Spec{
 		Linux: &specs.Linux{},
@@ -603,8 +595,6 @@ func TestPrivilegeSpecOpts(t *testing.T) {
 	})
 }
 
-// The tarball a builder produces is gzipped; a test or an API caller usually
-// writes a bare tar. Both have to unpack, or a real build fails at the door.
 func TestExtractContextAcceptsGzip(t *testing.T) {
 	for _, compressed := range []bool{false, true} {
 		dir := t.TempDir()
@@ -660,10 +650,6 @@ func (f filled) measure(string) (reserve.Usage, error) {
 	}, err
 }
 
-// TestEXTRACTCONTEXTLeavesTheDiskItsReserve. A context says nothing in advance
-// about how much it unpacks to, so the disk is read as it is unpacked: the
-// first MiB of a file fits and the second would take the disk past the
-// reserve, and the third of three entries would take its inodes past theirs.
 func TestExtractContextLeavesTheDiskItsReserve(t *testing.T) {
 	big := &tar.Header{Name: "big", Typeflag: tar.TypeReg, Mode: 0o644, Size: 2 << 20}
 	var buf bytes.Buffer
@@ -694,8 +680,6 @@ func TestExtractContextLeavesTheDiskItsReserve(t *testing.T) {
 	}
 }
 
-// An untrusted workload gets a process cap it did not ask for; anything else is
-// left alone, and a caller's own limit wins.
 func TestRestrictedResources(t *testing.T) {
 	if !resourceLimitsAvailable() {
 		t.Skip("no cgroup subtree here to carry limits")

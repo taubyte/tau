@@ -17,13 +17,11 @@ import (
 	"github.com/taubyte/tau/pkg/netguard"
 )
 
-// dockerImage implements the core.Image interface for Docker
 type dockerImage struct {
 	backend *DockerBackend
 	name    string
 }
 
-// Pull retrieves the image from a registry/repository
 func (i *dockerImage) Pull(ctx context.Context) error {
 	if i.backend.client == nil {
 		return fmt.Errorf("Docker client not initialized")
@@ -168,8 +166,8 @@ func (b *DockerBackend) build(ctx context.Context, buildContext io.Reader, build
 	return nil
 }
 
-// Exists checks if the image exists locally using ImageList with reference filter.
-// If the filter returns 0 images, ImageInspectWithRaw is tried as fallback (same resolution as "docker run").
+// Exists checks the local images by reference filter, falling back to an inspect
+// (the resolution "docker run" uses).
 func (i *dockerImage) Exists(ctx context.Context) bool {
 	if i.backend.client == nil {
 		return false
@@ -190,7 +188,6 @@ func (i *dockerImage) Exists(ctx context.Context) bool {
 	return true
 }
 
-// Remove removes the image from the backend
 func (i *dockerImage) Remove(ctx context.Context) error {
 	if i.backend.client == nil {
 		return fmt.Errorf("Docker client not initialized")
@@ -208,12 +205,10 @@ func (i *dockerImage) Remove(ctx context.Context) error {
 	return nil
 }
 
-// Name returns the image name/identifier
 func (i *dockerImage) Name() string {
 	return i.name
 }
 
-// Digest returns the image digest
 func (i *dockerImage) Digest(ctx context.Context) (string, error) {
 	if i.backend.client == nil {
 		return "", fmt.Errorf("Docker client not initialized")
@@ -237,7 +232,6 @@ func (i *dockerImage) Digest(ctx context.Context) (string, error) {
 	return digest, nil
 }
 
-// Tags returns all tags for this image
 func (i *dockerImage) Tags(ctx context.Context) ([]string, error) {
 	if i.backend.client == nil {
 		return nil, fmt.Errorf("Docker client not initialized")

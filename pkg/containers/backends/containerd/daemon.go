@@ -19,7 +19,6 @@ import (
 	"github.com/taubyte/tau/pkg/containers/core"
 )
 
-// Daemon manages containerd daemon lifecycle for auto-start functionality
 type Daemon struct {
 	config     core.ContainerdConfig
 	process    *os.Process
@@ -32,9 +31,7 @@ type Daemon struct {
 	exitState *os.ProcessState
 }
 
-// NewDaemon creates a new daemon manager
 func NewDaemon(config core.ContainerdConfig) (*Daemon, error) {
-	// Determine if we need rootless mode
 	isRootless := config.RootlessMode == core.RootlessModeEnabled ||
 		(config.RootlessMode == core.RootlessModeAuto && os.Geteuid() != 0)
 
@@ -53,7 +50,6 @@ func NewDaemon(config core.ContainerdConfig) (*Daemon, error) {
 	}
 
 	if isRootless {
-		// Rootless mode: use XDG directories
 		currentUser, err := user.Current()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get current user: %w", err)
@@ -94,7 +90,6 @@ func NewDaemon(config core.ContainerdConfig) (*Daemon, error) {
 	}, nil
 }
 
-// Start starts the containerd daemon if not already running
 func (d *Daemon) Start(ctx context.Context) error {
 	if d.isRunning() {
 		return nil
@@ -115,7 +110,6 @@ func (d *Daemon) Start(ctx context.Context) error {
 	return d.startWithRootlesskit(ctx, containerdPath)
 }
 
-// startWithRootlesskit starts containerd via rootlesskit (like nerdctl does)
 func (d *Daemon) startWithRootlesskit(ctx context.Context, containerdPath string) error {
 	rootlesskitPath, err := d.findRootlesskitBinary()
 	if err != nil {
@@ -297,7 +291,6 @@ func logTail(path string) string {
 	return ": " + text
 }
 
-// createRootlesskitWrapper creates a shell script that does bind-mounts and execs containerd
 func (d *Daemon) createRootlesskitWrapper(containerdPath, configPath, rootDir, stateDir, socketDir, xdgRuntimeDir, xdgDataHome, xdgConfigHome string) (string, error) {
 	tmpFile, err := os.CreateTemp("", "tau-containerd-rootless-*.sh")
 	if err != nil {
@@ -361,7 +354,6 @@ exec %q --config %q
 	return scriptPath, nil
 }
 
-// Stop stops the containerd daemon
 func (d *Daemon) Stop(ctx context.Context) error {
 	if !d.isRunning() {
 		return nil
@@ -383,7 +375,6 @@ func (d *Daemon) Stop(ctx context.Context) error {
 		}
 		d.process = nil
 	} else {
-		// Try to find and kill process from PID file
 		if data, err := os.ReadFile(d.stateFile); err == nil {
 			var pid int
 			if n, err := fmt.Sscanf(string(data), "%d", &pid); err == nil && n == 1 {
@@ -401,7 +392,6 @@ func (d *Daemon) Stop(ctx context.Context) error {
 	return nil
 }
 
-// isRunning checks if the containerd daemon is running
 func (d *Daemon) isRunning() bool {
 	if d.process == nil {
 		if data, err := os.ReadFile(d.stateFile); err == nil {
@@ -425,7 +415,6 @@ func (d *Daemon) isRunning() bool {
 	return d.process.Signal(syscall.Signal(0)) == nil
 }
 
-// findContainerdBinary finds the containerd binary path
 func (d *Daemon) findContainerdBinary() (string, error) {
 	if d.config.ContainerdPath != "" {
 		return d.config.ContainerdPath, nil
@@ -439,7 +428,6 @@ func (d *Daemon) findContainerdBinary() (string, error) {
 	return "", fmt.Errorf("containerd binary not found in PATH")
 }
 
-// findRootlesskitBinary finds the rootlesskit binary path
 func (d *Daemon) findRootlesskitBinary() (string, error) {
 	if d.config.RootlesskitPath != "" {
 		return d.config.RootlesskitPath, nil
@@ -454,7 +442,6 @@ func (d *Daemon) findRootlesskitBinary() (string, error) {
 	return "", fmt.Errorf("rootlesskit binary not found in PATH")
 }
 
-// detectRootlesskitNetwork detects the best network driver for rootlesskit
 func (d *Daemon) detectRootlesskitNetwork() (string, error) {
 	if path, err := exec.LookPath("slirp4netns"); err == nil {
 		cmd := exec.Command(path, "--help")
@@ -468,7 +455,6 @@ func (d *Daemon) detectRootlesskitNetwork() (string, error) {
 		return "pasta", nil
 	}
 
-	// Check for vpnkit
 	if _, err := exec.LookPath("vpnkit"); err == nil {
 		return "vpnkit", nil
 	}
@@ -476,7 +462,6 @@ func (d *Daemon) detectRootlesskitNetwork() (string, error) {
 	return "", fmt.Errorf("no suitable rootlesskit network driver found (need slirp4netns >= v0.4.0, pasta, or vpnkit)")
 }
 
-// createConfigFile creates a containerd config file
 func (d *Daemon) createConfigFile(rootDir, stateDir, socketPath, debugSocketPath, configDir string) (string, error) {
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create containerd directory: %w", err)
@@ -540,7 +525,6 @@ version = 2
 	return configPath, nil
 }
 
-// waitForSocket waits for the containerd socket to be available
 func (d *Daemon) waitForSocket(ctx context.Context, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -562,14 +546,11 @@ func (d *Daemon) waitForSocket(ctx context.Context, timeout time.Duration) error
 	}
 }
 
-// isSocketReady checks if the socket is ready for connections
 func (d *Daemon) isSocketReady() bool {
-	// First check if socket file exists
 	if _, err := os.Stat(d.socketPath); err != nil {
 		return false
 	}
 
-	// Try to connect to the socket to test if containerd is responding
 	conn, err := d.connectToSocket()
 	if err != nil {
 		return false
@@ -578,12 +559,10 @@ func (d *Daemon) isSocketReady() bool {
 	return true
 }
 
-// connectToSocket attempts to connect to the containerd socket
 func (d *Daemon) connectToSocket() (net.Conn, error) {
 	return net.Dial("unix", d.socketPath)
 }
 
-// HealthCheck checks if the daemon is healthy
 func (d *Daemon) HealthCheck(ctx context.Context) error {
 	if !d.isRunning() {
 		return fmt.Errorf("containerd daemon is not running")

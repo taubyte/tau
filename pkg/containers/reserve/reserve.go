@@ -1,19 +1,9 @@
 // Package reserve keeps a share of a node's filesystem free while bytes from
-// somewhere else are written to it.
-//
-// A volume restored from a checkpoint and a build context unpacked for a
-// builder are both written by the node, from bytes it did not choose, onto a
-// disk everything else on the node shares. Neither has a size it can be held
-// to in advance: a volume may have grown past its quota while it ran, which is
-// allowed, and a compressed context says nothing about how much it unpacks to.
-// What such a write must not do is take the filesystem down to nothing, because
-// then every other writer on it fails — the node's own stores among them.
-//
-// So the bound is on the filesystem rather than on the write: a write never
-// leaves less free than a share of the filesystem's space and of its inodes.
-// The filesystem is read again before every chunk, so writers that run at the
-// same time, and anything else filling the disk meanwhile, count against the
-// same reserve. Each writer can overshoot it by at most one chunk.
+// elsewhere are written to it. A restored volume and an unpacked build context have
+// no size to be held to in advance, and must not take the shared disk down to
+// nothing. So the bound is on the filesystem: a write never leaves less free than a
+// share of its space and inodes. It is read again before every chunk, so concurrent
+// writers count against the same reserve; each can overshoot by at most one chunk.
 package reserve
 
 import (
@@ -47,18 +37,10 @@ type Usage struct {
 	Files, FreeFiles uint64
 }
 
-// Default is the reserve every write of this kind leaves on a node, which has
-// no notion of a reserve of its own to use instead.
-//
-// ITS SPACE IS WHAT systemd-journald LEAVES FREE FOR EVERYTHING ELSE on the
-// filesystem it writes to, SystemKeepFree's default: 15% of it, but never more
-// than 4GiB. A share, because a small disk fills in a small number of bytes; and
-// capped, because a share of a large disk is far more than anything else on it
-// needs to keep working, and holding it back would refuse a restore on a disk
-// with hundreds of gigabytes free.
-//
-// ITS INODES ARE KUBELET'S, the nodefs.inodesFree<5% at which it starts evicting
-// from a node, since journald keeps none back.
+// Default is the reserve every such write leaves. Space is systemd-journald's
+// SystemKeepFree default: 15%, capped at 4GiB so a large disk is not refused with
+// hundreds of gigabytes free. Inodes are kubelet's nodefs.inodesFree<5% eviction
+// threshold.
 var Default = Floor{Space: 0.15, Most: 4 << 30, Inodes: 0.05}
 
 // Error is a write the reserve refused, with the numbers it refused it on.

@@ -206,10 +206,6 @@ func spooledSize(dir string) (int64, error) {
 	return info.Size(), nil
 }
 
-// TestSpoolReadsWhatTheDaemonBuilds: the Dockerfile read here is checked
-// before a restricted build, so it has to be the one the daemon then builds,
-// out of a context that holds what the one sent held, or the context is
-// refused.
 func TestSpoolReadsWhatTheDaemonBuilds(t *testing.T) {
 	for _, c := range daemonContexts(t) {
 		t.Run(c.name, func(t *testing.T) {
@@ -239,8 +235,6 @@ func TestSpoolReadsWhatTheDaemonBuilds(t *testing.T) {
 	}
 }
 
-// TestADockerfilePutWhereItLiesIsTheOneRead: the pinned Dockerfile goes where
-// the one read lies once its links are followed, so it is the one opened.
 func TestADockerfilePutWhereItLiesIsTheOneRead(t *testing.T) {
 	pinned := regular("", "pinned").body
 	for _, c := range daemonContexts(t) {
@@ -263,9 +257,6 @@ func TestADockerfilePutWhereItLiesIsTheOneRead(t *testing.T) {
 	}
 }
 
-// TestSpoolWritesTheContextOutAsItReadsIt: a context is as big as the
-// repository it is built from, so it goes to disk as it arrives, with no more
-// than a chunk or two of it in memory at any time.
 func TestSpoolWritesTheContextOutAsItReadsIt(t *testing.T) {
 	const pieces = 16
 	dir := t.TempDir()
@@ -305,8 +296,6 @@ func TestSpoolWritesTheContextOutAsItReadsIt(t *testing.T) {
 	assert.Len(t, entries[0].body, pieces*reserve.Chunk)
 }
 
-// TestSpoolLeavesTheDiskItsReserve: the spool is read against the reserve
-// before every chunk, and one that would pass it is refused and removed.
 func TestSpoolLeavesTheDiskItsReserve(t *testing.T) {
 	dir := t.TempDir()
 	// A 16MiB disk with 12MiB free, half of it held back: 4MiB of spool fit.
@@ -443,9 +432,6 @@ func imageJSON(t *testing.T, id string, triggers ...string) http.HandlerFunc {
 	return jsonBody(string(body))
 }
 
-// TestPinNamesEachBaseByTheImageChecked: every FROM is written out again with
-// nothing left to expand, an image by the id that was checked, on the lines
-// the original took.
 func TestPinNamesEachBaseByTheImageChecked(t *testing.T) {
 	backend, daemon := newFakeDaemonBackend(t, map[string]http.HandlerFunc{
 		"GET /images/alpine/json":    imageJSON(t, "sha256:aaa"),
@@ -485,8 +471,6 @@ func TestPinNamesEachBaseByTheImageChecked(t *testing.T) {
 	assert.False(t, daemon.called("POST /images/create"), "a base the daemon has is not pulled")
 }
 
-// TestPinPullsABaseTheDaemonDoesNotHave, as the classic builder does when it
-// is not told to pull: a base it has is used, one it does not is pulled.
 func TestPinPullsABaseTheDaemonDoesNotHave(t *testing.T) {
 	inspects := 0
 	backend, daemon := newFakeDaemonBackend(t, map[string]http.HandlerFunc{
@@ -557,8 +541,6 @@ func TestPinRefusesAFromTheDaemonWouldNotBuild(t *testing.T) {
 	assert.False(t, daemon.called("GET /images/alpine/json"), "a FROM refused as written is not looked up")
 }
 
-// TestPinInspectsTheBaseForItsPlatform: the triggers checked are the ones of
-// the image the daemon builds FROM, which for --platform is that platform's.
 func TestPinInspectsTheBaseForItsPlatform(t *testing.T) {
 	daemon := &fakeDaemon{routes: map[string]http.HandlerFunc{
 		"GET /images/alpine/json": func(w http.ResponseWriter, r *http.Request) {
@@ -582,8 +564,6 @@ func TestPinInspectsTheBaseForItsPlatform(t *testing.T) {
 	require.ErrorContains(t, err, "base image alpine")
 }
 
-// TestRestrictContextAppendsThePinnedDockerfile where the daemon opens it,
-// after everything the context held.
 func TestRestrictContextAppendsThePinnedDockerfile(t *testing.T) {
 	backend, _ := newFakeDaemonBackend(t, map[string]http.HandlerFunc{
 		"GET /images/alpine/json": imageJSON(t, "sha256:aaa"),
@@ -696,9 +676,6 @@ func TestFetchCasesAreCheckedAsTheySay(t *testing.T) {
 	}
 }
 
-// TestARestrictedBuildIsClassicOnTheRestrictedNetwork: what the check holds a
-// Dockerfile to is what the classic builder fetches, so that is the builder a
-// restricted build asks for, whatever the daemon's default.
 func TestARestrictedBuildIsClassicOnTheRestrictedNetwork(t *testing.T) {
 	backend, _ := newFakeDaemonBackend(t, nil)
 	var options client.ImageBuildOptions

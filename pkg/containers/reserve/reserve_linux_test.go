@@ -8,8 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestARUNOfZerosIsAHole: what was sparse where it came from takes no more
-// space where it lands.
 func TestARunOfZerosIsAHole(t *testing.T) {
 	file := made(t)
 	content := append(make([]byte, 64*Chunk), "end"...)

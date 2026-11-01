@@ -1,9 +1,6 @@
 //go:build linux
 
-// Unit tests for the containerd backend. Everything here runs without a
-// containerd daemon, without docker and without the network: the tests that
-// need a live runtime live in containerd_integration_test.go behind the
-// containerd_integration tag.
+// Unit tests for the containerd backend, run without a daemon, docker or the network.
 
 package containerd
 
@@ -246,9 +243,6 @@ func TestSpecOpts(t *testing.T) {
 	})
 }
 
-// A restricted container is handed only the resolvers it may reach. A host's
-// own are often loopback or private, and the egress rule denies both, so passing
-// them on would leave the container resolving nothing.
 func TestPermittedNameservers(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "resolv.conf")
 	require.NoError(t, os.WriteFile(path, []byte(`# generated
@@ -312,10 +306,6 @@ func findMount(t *testing.T, spec *specs.Spec, destination string) specs.Mount {
 	return specs.Mount{}
 }
 
-// containerd hands out stdout and stderr as two plain streams with no log store
-// behind them, so the backend drains them as the container runs and frames the
-// result the way stdcopy expects. These tests drive that path with in-memory
-// streams — no daemon involved.
 func TestLogs(t *testing.T) {
 	newBackend := func(stdout, stderr io.ReadCloser) *ContainerdBackend {
 		tio := &taskIO{stdout: stdout, stderr: stderr}
@@ -352,7 +342,7 @@ func TestLogs(t *testing.T) {
 	t.Run("output larger than one copy buffer survives", func(t *testing.T) {
 		// io.Copy works in 32KiB chunks, so this crosses many frames and
 		// interleaves the two streams in the collected output.
-		payload := strings.Repeat("0123456789abcdef", 64*1024) // 1 MiB
+		payload := strings.Repeat("0123456789abcdef", 64*1024)
 		backend := newBackend(
 			io.NopCloser(strings.NewReader(payload)),
 			io.NopCloser(strings.NewReader(payload)),
@@ -377,7 +367,6 @@ func TestLogs(t *testing.T) {
 
 		written := make(chan error, 1)
 		go func() {
-			// Far more than any pipe buffer.
 			_, err := containerStdout.Write(bytes.Repeat([]byte("x"), 4<<20))
 			written <- err
 		}()
@@ -521,9 +510,6 @@ func TestTaskIOCloseIsIdempotent(t *testing.T) {
 	assert.True(t, os.IsNotExist(err), "the FIFO directory must be removed, not leaked")
 }
 
-// Every containerd call needs a namespace, and the egress firewall names the
-// cgroup it matches after it, so a backend built without one must not end up
-// with an empty string.
 func TestNamespaceDefaulted(t *testing.T) {
 	assert.Equal(t, defaultNamespace, withDefaults(core.ContainerdConfig{}).Namespace,
 		"a config literal with no namespace is what the backend manager builds")
@@ -543,8 +529,6 @@ func TestNamespaceDefaulted(t *testing.T) {
 	}
 }
 
-// A WAIT ITS CONTEXT ENDED REPORTS THAT CONTEXT'S ERROR, however containerd
-// phrased the call it cut short; one that ended on its own reports its own.
 func TestEndedIsTheContextsErrorOnceItEnds(t *testing.T) {
 	cut := status.Error(codes.DeadlineExceeded, "stream terminated by RST_STREAM with error code: CANCEL")
 

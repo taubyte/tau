@@ -1,8 +1,7 @@
 //go:build linux && containerd_integration
 
-// Integration tests for the containerd backend. These need a real containerd —
-// either a system daemon at /run/containerd/containerd.sock, or containerd plus
-// rootlesskit on PATH so a rootless one can be started. Run them with
+// Integration tests for the containerd backend. They need a system daemon at
+// /run/containerd/containerd.sock, or containerd plus rootlesskit on PATH. Run with
 // `make test-containerd`.
 
 package containerd
@@ -97,9 +96,6 @@ func requireBinary(t *testing.T, name string) {
 	require.NoError(t, err, "%s must be on PATH for the rootless path", name)
 }
 
-// TestConformance_Integration is the shared suite every backend must pass. It
-// is what makes docker and containerd interchangeable rather than merely
-// both present.
 func TestConformance_Integration(t *testing.T) {
 	conformance.Run(t, conformance.Backend{
 		Backend: newTestBackend(t),
@@ -208,15 +204,6 @@ func countTempFIFODirs(t *testing.T) int {
 	return count
 }
 
-// TestRestrictedEgress_Integration is the end-to-end proof of the container half
-// of netguard on this backend. A restricted container must not reach a
-// node-local service, must still reach the public internet, and must still
-// resolve names — a workload that cannot resolve cannot fetch anything, which is
-// a broken node, not a secured one. An unrestricted container sharing the
-// namespace must be left alone, which is what confines the filter to the
-// workloads that asked for it.
-//
-// It needs root (nftables) and rootful containerd.
 func TestRestrictedEgress_Integration(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("programming nftables needs CAP_NET_ADMIN; run this test as root")
@@ -325,14 +312,6 @@ awk '/^CapEff/{print "CAPEFF=" $2}' /proc/self/status
 		"the firewall caught an unrestricted container in the same namespace (got %q)", after)
 }
 
-// TestRestrictedEgressDockerfile_Integration is the same proof one level down.
-// A repository's Dockerfile is untrusted code too, and its RUN steps execute in
-// runc containers BuildKit spawns — not in the container tau created. They are
-// confined only because the builder is told to parent them inside the restricted
-// cgroup, so this is the test that the parenting actually happened.
-//
-// The build itself is the other half of the assertion: it has to reach a
-// registry and resolve its name through the same firewall.
 func TestRestrictedEgressDockerfile_Integration(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("programming nftables needs CAP_NET_ADMIN; run this test as root")
@@ -402,12 +381,6 @@ RUN nc -w 3 127.0.0.1 %s </dev/null >/dev/null 2>&1 && echo LOCAL_REACHED > /pro
 		"a Dockerfile RUN step reached a node-local service (got %q)", stdout.String())
 }
 
-// TestRestrictedBuildFetchesThroughTheFirewall_Integration: BuildKit fetches an
-// ADD's URL itself, and so it does the frontend a `# syntax=` line names and the
-// triggers a base image carries. Those fetches are confined because the builder
-// runs inside the restricted container, which is what this proves: a URL on a
-// node-local service is fetched by an unrestricted build and never reached by a
-// restricted one.
 func TestRestrictedBuildFetchesThroughTheFirewall_Integration(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("programming nftables needs CAP_NET_ADMIN; run this test as root")
@@ -450,13 +423,6 @@ func TestRestrictedBuildFetchesThroughTheFirewall_Integration(t *testing.T) {
 	assert.EqualValues(t, 1, fetched.Load(), "the builder of a restricted build reached a node-local service")
 }
 
-// TestABuildStaysInItsOwnCgroup_Integration: the cgroup containerd creates the
-// builder in is the one its limits and, when restricted, the egress rule are
-// attached to, so buildkitd and every RUN step it starts must live inside it,
-// each step in a cgroup of its own. The moby/buildkit image asks buildkitd to
-// move into an "init" group at the root of the hierarchy it sees, and to enable
-// every controller there; with the host's hierarchy in view that is the host's
-// root, which this checks is left as it was.
 func TestABuildStaysInItsOwnCgroup_Integration(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("reading the builder's processes and programming nftables need root; run this test as root")
@@ -633,13 +599,11 @@ func processCgroup(t *testing.T, pid int) string {
 	return ""
 }
 
-// tarOfDockerfile packs a one-file build context.
 func tarOfDockerfile(t *testing.T, dockerfile string) io.Reader {
 	t.Helper()
 	return tarOfFiles(t, map[string]string{"Dockerfile": dockerfile})
 }
 
-// tarOfFiles packs a build context of the given files, by name.
 func tarOfFiles(t *testing.T, files map[string]string) io.Reader {
 	t.Helper()
 
@@ -677,12 +641,6 @@ func effectiveCaps(t *testing.T, output string) uint64 {
 	return 0
 }
 
-// TestRestrictedEgressRootless_Integration is the same proof for the rootless
-// daemon, which is the mode a node should prefer: there is no privileged
-// container anywhere in it, and a container's traffic leaves through a userspace
-// network stack, so a raw frame cannot reach a device at all. What the host sees
-// are sockets belonging to the daemon, which is why the daemon is started inside
-// the restricted cgroup — the rule finds them by that or not at all.
 func TestRestrictedEgressRootless_Integration(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("programming nftables needs CAP_NET_ADMIN; run this test as root")
@@ -726,7 +684,6 @@ func TestRestrictedEgressRootless_Integration(t *testing.T) {
 	t.Logf("restricted cgroup %s at level %d, limits available: %v",
 		tree.restrictedPath(), tree.level(), tree.limitsAvailable())
 
-	// The daemon, in the restricted cgroup, as the unprivileged user.
 	daemon := exec.Command("setpriv", "--reuid", user, "--regid", user, "--init-groups",
 		"rootlesskit", "--net", "slirp4netns", "--disable-host-loopback", "--copy-up=/etc",
 		"sh", "-c", fmt.Sprintf(
@@ -755,8 +712,6 @@ func TestHealthCheck_Integration(t *testing.T) {
 	assert.NoError(t, backend.testSocketConnection())
 }
 
-// TestAnotherInstanceAdoptsAContainer_Integration is a node restarting: the
-// backend that started a container is gone, and a fresh one has only the id.
 func TestAnotherInstanceAdoptsAContainer_Integration(t *testing.T) {
 	first := newTestBackend(t)
 	ctx := context.Background()
@@ -837,8 +792,6 @@ func TestCreateRefusesAnUnsupportedNetworkMode_Integration(t *testing.T) {
 	assert.ErrorContains(t, err, "failed to build OCI spec options")
 }
 
-// TestLostDaemonConnection is every operation after the connection to
-// containerd is gone: each reports it, none panics.
 func TestLostDaemonConnection_Integration(t *testing.T) {
 	backend := newTestBackend(t)
 	ctx := context.Background()
@@ -867,9 +820,6 @@ func TestFailingBuildReportsTheBuilderOutput_Integration(t *testing.T) {
 	assert.Contains(t, err.Error(), "the-step-said-this", "the builder's own output is the reason a build failed")
 }
 
-// A container whose process cannot start must be startable again with the same
-// error, not "already exists": a container holds one task, and the failed one
-// has to go.
 func TestFailedStartCanBeRetried_Integration(t *testing.T) {
 	backend := newTestBackend(t)
 	ctx := context.Background()
@@ -903,9 +853,6 @@ func TestStartTwice_Integration(t *testing.T) {
 	assert.ErrorIs(t, backend.Wait(waitCtx, id), context.DeadlineExceeded, "Wait gives up with its context")
 }
 
-// Clean is what gets a build node its disk back: an image older than the age it
-// is given goes. Scoped to one reference it touches nothing else, which is also
-// what lets this prove a deletion without emptying the machine it runs on.
 func TestCleanRemovesAnOldImage_Integration(t *testing.T) {
 	backend := newTestBackend(t)
 	ctx := context.Background()
@@ -927,10 +874,6 @@ func TestCleanRemovesAnOldImage_Integration(t *testing.T) {
 	assert.True(t, image.Exists(ctx), "a sweep scoped to one reference must leave every other image")
 }
 
-// A node that names a runtime for untrusted workloads gets it for every
-// restricted container, and only for those. The handler named here exists on no
-// node, so starting the restricted container fails, and the failure names the
-// runtime containerd was asked to use.
 func TestRestrictedContainersRunOnTheNamedRuntime_Integration(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("programming nftables needs CAP_NET_ADMIN; run this test as root")
@@ -975,9 +918,6 @@ func TestRestrictedContainersRunOnTheNamedRuntime_Integration(t *testing.T) {
 	assert.NotEqual(t, runtime, ordinary, "an ordinary container keeps containerd's default")
 }
 
-// An image whose record outlived its content — a pull or import that died
-// halfway, or a content store cleaned underneath it — is refused at Create with
-// the reason, rather than made into a container that cannot run.
 func TestCreateRefusesAnImageWithoutContent_Integration(t *testing.T) {
 	backend := newTestBackend(t)
 	ctx := context.Background()
@@ -991,8 +931,6 @@ func TestCreateRefusesAnImageWithoutContent_Integration(t *testing.T) {
 	assert.ErrorContains(t, err, "failed to read config of image "+name)
 }
 
-// Rebuilding under a name already in use is how an image is updated: the name
-// moves to the new build rather than refusing it or keeping the old one.
 func TestRebuildMovesTheName_Integration(t *testing.T) {
 	backend := newTestBackend(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -1021,8 +959,6 @@ func TestRebuildMovesTheName_Integration(t *testing.T) {
 	assert.NotEqual(t, first, build("two"), "the name must move to the second build")
 }
 
-// Start makes the container's FIFOs in a temporary directory. When it cannot,
-// it says so and leaves the container as it was, so the next Start runs it.
 func TestStartWithoutATempDirectory_Integration(t *testing.T) {
 	backend := newTestBackend(t)
 	ctx := context.Background()

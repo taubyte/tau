@@ -32,9 +32,6 @@ func newTestBackend(t *testing.T) *DockerBackend {
 	return backend
 }
 
-// TestConformance_Integration is the shared suite every backend must pass. It
-// is what makes docker and containerd interchangeable rather than merely both
-// present.
 func TestConformance_Integration(t *testing.T) {
 	conformance.Run(t, conformance.Backend{
 		Backend: newTestBackend(t),
@@ -53,10 +50,6 @@ func TestHealthCheckIntegration_Integration(t *testing.T) {
 	require.NoError(t, newTestBackend(t).HealthCheck(context.Background()))
 }
 
-// An image that declares a VOLUME gets a fresh anonymous volume in every
-// container made from it, and nothing but that container's removal ever takes
-// the volume away: left behind, one piles up per removal. A named volume the
-// caller mounted is the caller's, and outlives the container.
 func TestRemoveTakesTheAnonymousVolumesWithIt_Integration(t *testing.T) {
 	backend := newTestBackend(t)
 	ctx := t.Context()

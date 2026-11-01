@@ -16,9 +16,6 @@ func fixed(usage Usage) func(string) (Usage, error) {
 	return func(string) (Usage, error) { return usage, nil }
 }
 
-// TestTHEFLOORIsWhatIsLeftAfterTheWrite: a write that leaves exactly the
-// reserve free goes ahead, and one byte or inode more is refused with the
-// numbers it was refused on.
 func TestTheFloorIsWhatIsLeftAfterTheWrite(t *testing.T) {
 	floor := Floor{Space: 0.05, Inodes: 0.05, Measure: fixed(Usage{Size: 1000, Free: 100, Files: 100, FreeFiles: 10})}
 
@@ -36,9 +33,6 @@ func TestTheFloorIsWhatIsLeftAfterTheWrite(t *testing.T) {
 	require.ErrorAs(t, floor.Take("/v", 101, 0), &refused, "more than is free at all")
 }
 
-// TestONLYWhatIsAskedForIsChecked: writing into a file that exists takes no
-// inode, so a filesystem already short of inodes still takes its bytes — and
-// asking for nothing reads nothing.
 func TestOnlyWhatIsAskedForIsChecked(t *testing.T) {
 	short := Floor{Space: 0.05, Inodes: 0.05, Measure: fixed(Usage{Size: 1000, Free: 900, Files: 100, FreeFiles: 1})}
 	require.NoError(t, short.Take("/v", 10, 0))
@@ -49,16 +43,11 @@ func TestOnlyWhatIsAskedForIsChecked(t *testing.T) {
 	require.ErrorContains(t, unread.Take("/v", 1, 0), "reading the filesystem holding /v: read")
 }
 
-// TestATOTALThatIsNotReportedHoldsNothingBack: btrfs and an unbounded tmpfs
-// report no count of inodes, and refusing every file there would refuse every
-// restore on them.
 func TestATotalThatIsNotReportedHoldsNothingBack(t *testing.T) {
 	floor := Floor{Space: 0.5, Inodes: 0.5, Measure: fixed(Usage{})}
 	require.NoError(t, floor.Take("/v", 1<<40, 1<<20))
 }
 
-// TestTHEFILESYSTEMIsReadForReal. A floor of the whole filesystem can never be
-// left, since something is always on it, and a floor of nothing always can.
 func TestTheFilesystemIsReadForReal(t *testing.T) {
 	dir := t.TempDir()
 
@@ -76,8 +65,6 @@ func TestTheFilesystemIsReadForReal(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
-// TestTHEDEFAULTIsJournaldsSpaceAndKubeletsInodes: 15% of the space up to
-// 4GiB, and 5% of the inodes, read off the filesystem itself.
 func TestTheDefaultIsJournaldsSpaceAndKubeletsInodes(t *testing.T) {
 	require.Equal(t, Floor{Space: 0.15, Most: 4 << 30, Inodes: 0.05}, Default)
 
@@ -107,8 +94,6 @@ func made(t *testing.T) *os.File {
 	return file
 }
 
-// TestACOPYHoldsWhatItRead, whatever runs of zeros lie in it and wherever they
-// end, including a file that is nothing but a hole.
 func TestACopyHoldsWhatItRead(t *testing.T) {
 	data := bytes.Repeat([]byte("data"), block)
 	for name, content := range map[string][]byte{
@@ -145,9 +130,6 @@ func (c *counted) measure(string) (Usage, error) {
 	return Usage{Size: 100 * Chunk, Free: c.free}, nil
 }
 
-// TestTHEFILESYSTEMIsReadBeforeEveryChunk, so whatever else writes to it while
-// a copy runs counts: here another writer takes the space halfway through, and
-// the copy stops there rather than finishing on what it read at the start.
 func TestTheFilesystemIsReadBeforeEveryChunk(t *testing.T) {
 	disk := &counted{free: 100 * Chunk}
 	floor := Floor{Space: 0.5, Measure: disk.measure}
@@ -179,9 +161,6 @@ func (r *taking) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// TestAHOLEReadsNothingAndAReaderThatFailsIsSaid: a chunk of zeros takes no
-// reserve and so needs no reading, and src's own io.ErrUnexpectedEOF is an
-// error rather than the end of a short file.
 func TestAHoleReadsNothingAndAReaderThatFailsIsSaid(t *testing.T) {
 	disk := &counted{}
 	_, err := Floor{Space: 0.5, Measure: disk.measure}.Copy(made(t), bytes.NewReader(make([]byte, 3*Chunk)))
@@ -196,8 +175,6 @@ type failing struct{ err error }
 
 func (f failing) Read([]byte) (int, error) { return 0, f.err }
 
-// TestAFILEThatCannotBeWrittenIsSaid, and so is one whose length cannot be
-// read or set.
 func TestAFileThatCannotBeWrittenIsSaid(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "file")
 	require.NoError(t, os.WriteFile(path, nil, 0o600))

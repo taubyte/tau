@@ -20,27 +20,18 @@ import (
 	"github.com/taubyte/tau/pkg/containers/reserve"
 )
 
-// restrictContext is what a restricted build sends the daemon: the build
-// context spooled under dir, its Dockerfile checked, and the Dockerfile's base
-// images pinned to the ones whose build triggers were checked.
+// restrictContext is what a restricted build sends the daemon: the context spooled
+// under dir, its Dockerfile checked, and base images pinned to the ones checked.
 //
-// A RESTRICTED BUILD'S EGRESS IS ITS NETWORK, and the daemon fetches some things
-// itself, in its own network namespace, which the firewall does not and cannot
-// cover. With the classic builder, which a restricted build is pinned to, that is
-// the source of an ADD that is a URL once its variables are expanded; and an ADD
-// runs wherever an ONBUILD trigger runs, which is at the FROM of a later stage
-// built from the stage that declared it, and at the FROM of an image that carries
-// one. So such an ADD is refused in the Dockerfile, in its ONBUILD triggers, and in
-// the triggers of every base image. A base image is pulled from a registry the
-// same way the image of any container is, by the daemon's registry
-// configuration; that is not the build reaching the network, and is not checked.
+// The daemon fetches some things itself, in its own network namespace, outside the
+// firewall. With the classic builder that is an ADD whose expanded source is a URL,
+// which also runs wherever an ONBUILD trigger runs. So such an ADD is refused in the
+// Dockerfile, its ONBUILD triggers, and every base image's triggers. Pulling a base
+// image is the daemon's registry configuration, not the build reaching the network.
 //
-// THE BASE IMAGE IS CHECKED BY ID AND BUILT BY ID: a tag can be pulled or retagged
-// between the check and the build, and the daemon would build FROM an image whose
-// triggers nobody read. The Dockerfile is appended to the context with each FROM
-// naming the image that was checked, on the lines the original FROM took, at the
-// name the daemon opens it at. A build that copies its Dockerfile into the image
-// copies that one.
+// The base image is checked by id and built by id, since a tag can move between the
+// check and the build: the Dockerfile is appended to the context with each FROM
+// naming the checked image, on the original FROM's lines.
 func (b *DockerBackend) restrictContext(ctx context.Context, buildContext io.Reader, name, dir string, floor reserve.Floor) (*buildContext, error) {
 	spooled, err := spoolContext(buildContext, dir, floor)
 	if err != nil {

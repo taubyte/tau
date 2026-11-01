@@ -1,11 +1,7 @@
-// Package conformance holds the behaviour every container backend must
-// exhibit. Docker and containerd are interchangeable only if they agree on
-// what a run does — exit codes, log content and framing, environment, working
-// directory, bind mounts, cleanup — so both backends run this one suite
-// instead of each carrying its own hand-written and quietly divergent set.
-//
-// The suite is driven from each backend's integration tests, which already
-// gate on their runtime being present.
+// Package conformance is the behaviour every container backend must exhibit (exit
+// codes, log content and framing, environment, working directory, bind mounts,
+// cleanup), run by each backend's integration tests so docker and containerd stay
+// interchangeable.
 package conformance
 
 import (
@@ -66,7 +62,6 @@ func Run(t *testing.T, b Backend) {
 	})
 }
 
-// result is what one container run produced.
 type result struct {
 	stdout   string
 	stderr   string
@@ -116,7 +111,6 @@ func run(t *testing.T, b Backend, config *core.ContainerConfig) result {
 	return result{stdout: stdout.String(), stderr: stderr.String(), exitCode: info.ExitCode}
 }
 
-// sh runs a shell snippet in the container.
 func sh(script string) *core.ContainerConfig {
 	return &core.ContainerConfig{Command: []string{"/bin/sh", "-c", script}}
 }
@@ -342,14 +336,12 @@ func testBuildFromDockerfile(t *testing.T, b Backend) {
 
 	assert.True(t, image.Exists(ctx), "a built image must exist locally")
 
-	// The point of building is running what was built, under the name asked for.
 	got := run(t, Backend{Backend: b.Backend, Image: name}, sh("cat /marker"))
 
 	assert.Equal(t, 0, got.exitCode, "the built image must run, stderr: %s", got.stderr)
 	assert.Contains(t, got.stdout, "built-by-tau", "the built layer must be present")
 }
 
-// tarOfDockerfile packs a one-file build context.
 func tarOfDockerfile(t *testing.T, dockerfile string) io.Reader {
 	t.Helper()
 

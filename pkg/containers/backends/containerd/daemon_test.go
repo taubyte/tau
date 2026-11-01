@@ -1,9 +1,5 @@
 //go:build linux
 
-// Unit tests for daemon lifecycle bookkeeping. Every test points the daemon at
-// a temp directory: writing to the real per-user socket path would fight with,
-// and can kill, a containerd the developer is actually using.
-
 package containerd
 
 import (

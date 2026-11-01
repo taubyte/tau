@@ -32,7 +32,6 @@ import (
 	"github.com/taubyte/tau/pkg/netguard"
 )
 
-// Client represents a containerd client connection
 type Client struct {
 	*containerd.Client
 	ctx    context.Context
@@ -46,9 +45,9 @@ type taskIO struct {
 	stderr   io.ReadCloser
 	task     containerd.Task
 	fifoSet  *cio.FIFOSet
-	fifoDir  string        // Directory where FIFOs are created
-	directIO *cio.DirectIO // DirectIO instance for cleanup
-	io       cio.IO        // IO instance for cleanup
+	fifoDir  string
+	directIO *cio.DirectIO
+	io       cio.IO
 
 	// logs holds the container's output, docker-framed, collected as it is
 	// produced. grew is closed and replaced on every append, and done closes
@@ -142,17 +141,16 @@ func (f *follower) Read(p []byte) (int, error) {
 	}
 }
 
-// ContainerdBackend implements the core.Backend interface for containerd
 type ContainerdBackend struct {
 	config core.ContainerdConfig
-	client *Client // containerd client (to be implemented)
-	daemon *Daemon // daemon manager (to be implemented)
+	client *Client
+	daemon *Daemon
 
 	// mu guards tasks and containers: a backend is shared across goroutines
 	// (one per build step), and Create/Start/Stop/Remove all mutate both.
 	mu         sync.Mutex
-	tasks      map[core.ContainerID]*taskIO              // Store tasks and their IO for log access
-	containers map[core.ContainerID]containerd.Container // Store containers for cleanup
+	tasks      map[core.ContainerID]*taskIO
+	containers map[core.ContainerID]containerd.Container
 
 	// stdins are what Start writes to the containers created with one: a task's
 	// IO is made at Start, so the stream waits here from Create.
@@ -239,7 +237,6 @@ func withDefaults(config core.ContainerdConfig) core.ContainerdConfig {
 	return config
 }
 
-// New creates a new containerd backend
 func New(config core.ContainerdConfig) (*ContainerdBackend, error) {
 	backend := &ContainerdBackend{
 		config:     withDefaults(config),
@@ -271,7 +268,6 @@ func New(config core.ContainerdConfig) (*ContainerdBackend, error) {
 	return backend, nil
 }
 
-// detectRootlessMode detects if we should run in rootless mode
 func (b *ContainerdBackend) detectRootlessMode() error {
 	currentUser, err := user.Current()
 	if err != nil {
@@ -280,7 +276,6 @@ func (b *ContainerdBackend) detectRootlessMode() error {
 
 	isRoot := currentUser.Uid == "0"
 
-	// If RootlessMode is explicitly set (not auto), respect it
 	if b.config.RootlessMode != core.RootlessModeAuto {
 		if b.config.RootlessMode == core.RootlessModeEnabled && isRoot {
 			return fmt.Errorf("cannot enable rootless mode when running as root")
@@ -291,7 +286,6 @@ func (b *ContainerdBackend) detectRootlessMode() error {
 		return nil
 	}
 
-	// Auto-detect: enable rootless mode if not running as root
 	if isRoot {
 		b.config.RootlessMode = core.RootlessModeDisabled
 	} else {
@@ -301,12 +295,10 @@ func (b *ContainerdBackend) detectRootlessMode() error {
 	return nil
 }
 
-// isRootlessMode returns true if running in rootless mode
 func (b *ContainerdBackend) isRootlessMode() bool {
 	return b.config.RootlessMode == core.RootlessModeEnabled
 }
 
-// ensureContainerdRunning ensures containerd daemon is running
 func (b *ContainerdBackend) ensureContainerdRunning(ctx context.Context) error {
 	socketPath, err := b.getSocketPath()
 	if err != nil {
@@ -323,12 +315,10 @@ func (b *ContainerdBackend) ensureContainerdRunning(ctx context.Context) error {
 		}
 	}
 
-	// If AutoStart is enabled, start containerd (only in rootless mode)
 	if b.config.AutoStart && b.isRootlessMode() {
 		return b.daemon.Start(ctx)
 	}
 
-	// For RootlessModeDisabled, assume containerd is running system-wide
 	if b.config.RootlessMode == core.RootlessModeDisabled {
 		return fmt.Errorf("containerd not running at system socket %s - please start containerd system-wide", socketPath)
 	}
@@ -336,7 +326,6 @@ func (b *ContainerdBackend) ensureContainerdRunning(ctx context.Context) error {
 	return fmt.Errorf("containerd socket not found at %s and AutoStart is disabled", socketPath)
 }
 
-// getSocketPath returns the appropriate socket path
 func (b *ContainerdBackend) getSocketPath() (string, error) {
 	if b.config.SocketPath != "" {
 		return b.config.SocketPath, nil
@@ -354,7 +343,6 @@ func (b *ContainerdBackend) getSocketPath() (string, error) {
 	return "/run/containerd/containerd.sock", nil
 }
 
-// initClient initializes the containerd client
 func (b *ContainerdBackend) initClient() error {
 	socketPath, err := b.getSocketPath()
 	if err != nil {
@@ -382,8 +370,6 @@ func (b *ContainerdBackend) initClient() error {
 	return nil
 }
 
-// Image returns an Image interface for the given image name
-// BackendType returns core.BackendTypeContainerd
 func (b *ContainerdBackend) BackendType() core.BackendType {
 	return core.BackendTypeContainerd
 }
@@ -395,7 +381,6 @@ func (b *ContainerdBackend) Image(name string) core.Image {
 	}
 }
 
-// Create creates a new container
 func (b *ContainerdBackend) Create(ctx context.Context, config *core.ContainerConfig) (core.ContainerID, error) {
 	return b.create(ctx, config)
 }
@@ -536,9 +521,6 @@ func imageSpecOpts(ctx context.Context, image containerd.Image) ([]oci.SpecOpts,
 	return opts, nil
 }
 
-// specOpts builds the spec options tau layers on top of the image's own
-// configuration: its command, environment, working directory, mounts, network
-// and resource limits.
 func specOpts(config *core.ContainerConfig) ([]oci.SpecOpts, error) {
 	opts := []oci.SpecOpts{}
 
@@ -576,22 +558,15 @@ func specOpts(config *core.ContainerConfig) ([]oci.SpecOpts, error) {
 	if config.Network != nil && config.Network.RestrictEgress && !privileged(config.Privileges) {
 		// Last, so it also takes back what the privileges above handed out.
 		//
-		// CAP_NET_RAW is how a container walks around an IP-layer filter:
-		// AF_PACKET writes straight to the device and never passes the output
-		// hook the rule lives in, and a restricted container here shares the
-		// host's network namespace. Dropping it from the bounding set denies it
-		// to everything the container spawns, too.
+		// CAP_NET_RAW lets a container bypass an IP-layer filter: AF_PACKET writes straight
+		// to the device, skipping the output hook the rule lives in, and a restricted
+		// container shares the host's network namespace. Dropped from the bounding set, it
+		// is denied to everything the container spawns.
 		//
-		// Not for privileged containers, and the exception is not cosmetic: the
-		// only privileged caller is the builder, and both halves of BuildKit
-		// refuse to run without these. Its per-step runc needs CAP_NET_ADMIN to
-		// attach the cgroup device filter ("bpf_prog_query(BPF_CGROUP_DEVICE)
-		// failed") and asks for the default capability set for each step, which
-		// includes CAP_NET_RAW — a bounding set missing it fails the step with
-		// "unable to apply caps". So a Dockerfile's RUN steps are confined by
-		// the cgroup rule but keep AF_PACKET; giving those steps a network
-		// namespace of their own is what would close that, and it is a change to
-		// how BuildKit is run, not to this policy.
+		// Not for privileged containers: the only one is the builder, and BuildKit's per-step
+		// runc needs CAP_NET_ADMIN for the cgroup device filter and CAP_NET_RAW in each
+		// step's default set. So a Dockerfile's RUN steps are confined by the cgroup rule but
+		// keep AF_PACKET; a network namespace per step would close that.
 		opts = append(opts, oci.WithDroppedCapabilities([]string{"CAP_NET_RAW"}))
 	}
 
@@ -674,7 +649,6 @@ func privilegeSpecOpts(privileges *core.Privileges) []oci.SpecOpts {
 	return opts
 }
 
-// volumeMounts turns the unified volume mounts into OCI bind mounts.
 func volumeMounts(volumes []core.VolumeMount) ([]specs.Mount, error) {
 	mounts := make([]specs.Mount, 0, len(volumes))
 
@@ -701,13 +675,6 @@ func volumeMounts(volumes []core.VolumeMount) ([]specs.Mount, error) {
 	return mounts, nil
 }
 
-// networkSpecOpts resolves the network mode.
-//
-// This backend runs containerd bare, with no CNI plugin to build a bridge in a
-// private network namespace. containerd's default spec unshares the network,
-// which would leave a container with no route out at all, so the default here
-// is to share the host's — differing from docker, which bridges by default.
-// A bridged mode is refused rather than silently downgraded to one or the other.
 // portMappings is the config's mappings, or nothing when it declares no network.
 func portMappings(network *core.NetworkConfig) []core.PortMapping {
 	if network == nil {
@@ -716,6 +683,10 @@ func portMappings(network *core.NetworkConfig) []core.PortMapping {
 	return network.PortMappings
 }
 
+// networkSpecOpts resolves the network mode. containerd runs here without CNI, and
+// its default spec unshares the network, leaving no route out, so the default is
+// the host's network (docker bridges by default). A bridged mode is refused rather
+// than silently downgraded.
 func networkSpecOpts(network *core.NetworkConfig) ([]oci.SpecOpts, error) {
 	mode := "host"
 	if network != nil && network.Mode != "" {
@@ -728,15 +699,8 @@ func networkSpecOpts(network *core.NetworkConfig) ([]oci.SpecOpts, error) {
 
 	switch mode {
 	case "host":
-		// A MAPPING THAT TRANSLATES A PORT IS THE ONE THIS CANNOT DO. Host
-		// networking already puts the container on the host's ports, so
-		// 8080->8080 is a request host networking has met rather than one it
-		// must refuse — and refusing it rejected every workload the container
-		// tier starts, which always names the port it will dial.
-		//
-		// A mapping to a DIFFERENT host port is a real translation, and there
-		// is nothing here to do it with: saying so beats binding the wrong
-		// number and timing out.
+		// Host networking already puts the container on the host's ports, so only a mapping
+		// to a different host port, a real translation, is refused.
 		for _, m := range portMappings(network) {
 			if m.HostPort != m.ContainerPort {
 				return nil, fmt.Errorf(
@@ -902,7 +866,6 @@ func resourceSpecOpts(resources *core.ResourceLimits) []oci.SpecOpts {
 	return opts
 }
 
-// Start starts a container
 func (b *ContainerdBackend) Start(ctx context.Context, id core.ContainerID) error {
 	if b.client == nil {
 		return fmt.Errorf("containerd client not initialized")
@@ -991,7 +954,6 @@ func (b *ContainerdBackend) Start(ctx context.Context, id core.ContainerID) erro
 	return nil
 }
 
-// Stop stops a container
 func (b *ContainerdBackend) Stop(ctx context.Context, id core.ContainerID) error {
 	if b.client == nil {
 		return fmt.Errorf("containerd client not initialized")
@@ -1082,7 +1044,6 @@ func killAndWait(ctx context.Context, task containerd.Task) error {
 	return nil
 }
 
-// waitUntilStopped polls a task's status until it is no longer running.
 func waitUntilStopped(ctx context.Context, task containerd.Task, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -1110,7 +1071,6 @@ func waitUntilStopped(ctx context.Context, task containerd.Task, timeout time.Du
 	}
 }
 
-// Remove removes a container
 func (b *ContainerdBackend) Remove(ctx context.Context, id core.ContainerID) error {
 	if b.client == nil {
 		return fmt.Errorf("containerd client not initialized")
@@ -1153,7 +1113,6 @@ func (b *ContainerdBackend) Remove(ctx context.Context, id core.ContainerID) err
 	return nil
 }
 
-// Wait waits for a container to exit
 func (b *ContainerdBackend) Wait(ctx context.Context, id core.ContainerID) error {
 	if b.client == nil {
 		return fmt.Errorf("containerd client not initialized")
@@ -1206,7 +1165,6 @@ func ended(ctx context.Context, err error) error {
 	return err
 }
 
-// Logs returns logs for a container
 func (b *ContainerdBackend) Logs(ctx context.Context, id core.ContainerID) (io.ReadCloser, error) {
 	if b.client == nil {
 		return nil, fmt.Errorf("containerd client not initialized")
@@ -1251,7 +1209,6 @@ func (f *streamFramer) Write(p []byte) (int, error) {
 	return f.w.Write(p)
 }
 
-// Inspect returns information about a container
 func (b *ContainerdBackend) Inspect(ctx context.Context, id core.ContainerID) (*core.ContainerInfo, error) {
 	if b.client == nil {
 		return nil, fmt.Errorf("containerd client not initialized")
@@ -1334,7 +1291,6 @@ func (b *ContainerdBackend) Clean(ctx context.Context, age time.Duration, refere
 	return errors.Join(errs...)
 }
 
-// HealthCheck performs a health check on the backend
 func (b *ContainerdBackend) HealthCheck(ctx context.Context) error {
 	if b.client == nil {
 		return fmt.Errorf("containerd client not initialized")
@@ -1350,14 +1306,12 @@ func (b *ContainerdBackend) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-// Capabilities returns the backend capabilities
 func (b *ContainerdBackend) Capabilities() core.BackendCapabilities {
 	// Builds run BuildKit in a container (see build.go), so this backend can
 	// build wherever it can run.
 	return core.BackendCapabilities{SupportsBuild: true}
 }
 
-// testSocketConnection checks if we can connect to the containerd socket.
 func (b *ContainerdBackend) testSocketConnection() error {
 	socketPath, err := b.getSocketPath()
 	if err != nil {

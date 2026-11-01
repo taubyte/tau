@@ -18,7 +18,6 @@ import (
 	"github.com/taubyte/tau/pkg/containers/gc"
 )
 
-// Test Path Variables
 const (
 	FixturesDir   = "fixtures"
 	DockerDir     = "fixtures/docker"
@@ -29,7 +28,6 @@ const (
 	testGCImage   = "taubyte/test:gc"
 )
 
-// Test Variables
 var (
 	message           = "testing message"
 	basicCommand      = []string{"echo", message}
@@ -170,7 +168,6 @@ func TestContainerCleanUpInterval_Integration(t *testing.T) {
 		return
 	}
 
-	// Image was just built; verify it exists locally.
 	img, err := cli.Image(ctx, testGCImage)
 	if err != nil {
 		if img == nil || !img.Exists(ctx) {
@@ -199,7 +196,6 @@ func TestContainerCleanUpInterval_Integration(t *testing.T) {
 
 	time.Sleep(25 * time.Second)
 
-	// After cleanup interval, image should be gone (GC removes images older than MaxAge).
 	img2, err2 := cli.Image(ctx, testGCImage)
 	if err2 == nil && img2 != nil && img2.Exists(ctx) {
 		t.Error("Expected image to be removed after clean interval")

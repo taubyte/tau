@@ -30,13 +30,9 @@ import (
 	"github.com/taubyte/tau/pkg/containers/reserve"
 )
 
-// containerd cannot build images itself, so BuildKit is run as an ordinary
-// container on this very backend and its output imported. Nothing has to be
-// installed on the host and no daemon has to be kept alive for it: the build
-// is one container that exits when it is done.
-//
-// Pinned rather than tracking latest — a builder that changes underneath you
-// changes everyone's builds.
+// containerd cannot build images, so BuildKit runs as an ordinary container on this
+// backend and its output is imported: nothing installed on the host, no daemon kept
+// alive. Pinned, since a builder changing underneath changes everyone's builds.
 const buildkitImage = "docker.io/moby/buildkit:v0.32.2"
 
 // Where the build's inputs and outputs are mounted inside that container.
@@ -79,18 +75,12 @@ func buildkitFlags(rootless bool) []string {
 	return []string{"BUILDKITD_FLAGS=" + flags}
 }
 
-// writeBuildKitConfig writes the buildkitd configuration the builder is started
-// with, and returns its path on the host.
-//
-// It exists for one setting, and only for a builder that sees the host's cgroup
-// hierarchy (see withOwnCgroupHierarchy for the one that does not). BuildKit
-// runs every RUN step in a runc container of its own, under a "buildkit" group
-// at the root of the hierarchy it sees unless it is told a parent — the host's
-// root, outside the subtree the egress rule matches, so a Dockerfile could do
-// what build.sh cannot. Naming the restricted parent puts every step inside it:
-// the rule matches the ancestor at that level, so nesting depth below it does
-// not matter. The hierarchy is bind mounted at the same paths, so the host path
-// is the right one to name.
+// writeBuildKitConfig writes the buildkitd configuration and returns its host path.
+// It exists for one setting, for a builder that sees the host's cgroup hierarchy:
+// BuildKit runs each RUN step under a "buildkit" group at the root it sees unless
+// told a parent, which would be outside the subtree the egress rule matches. Naming
+// the restricted parent puts every step inside it. The hierarchy is bind mounted at
+// the same paths, so the host path is the right one.
 func writeBuildKitConfig(workDir string, restrictSteps bool) (string, error) {
 	path := filepath.Join(workDir, "buildkitd.toml")
 
@@ -133,8 +123,6 @@ func buildPrivileges(rootless bool) *core.Privileges {
 	}
 }
 
-// Build builds the image from a Dockerfile by running BuildKit in a container
-// and importing what it produces.
 func (i *containerdImage) Build(ctx context.Context, input *core.DockerfileBuild) error {
 	if i.backend.client == nil {
 		return fmt.Errorf("containerd client not initialized")
@@ -376,22 +364,12 @@ func (b *ContainerdBackend) nameImage(ctx context.Context, name string, target o
 	return err
 }
 
-// extractContext unpacks a build context tar into dir.
-//
-// The tar comes from a user's repository, so every entry is confined to dir: an
-// entry named ../../etc/cron.d/x, or a symlink pointing at /etc/shadow, would
-// otherwise write outside the build or pull host files into the image.
-//
-// Checking names is not enough on its own, because a link the tar has already
-// made sits in the path of every entry after it, and an entry's name says
-// nothing about where that link leads. So every entry is created through an
-// os.Root, which refuses to resolve a path out of dir, and once the tar is
-// unpacked every link in dir is followed from where it actually sits.
-//
-// The disk it is unpacked onto keeps its reserve, because a context says
-// nothing in advance about how much it unpacks to: the filesystem is read
-// before each entry is made and each chunk is written, and a context that would
-// leave less free than floor is refused. A run of zeros is left as a hole.
+// extractContext unpacks a build context tar into dir. The tar comes from a user's
+// repository, so every entry is confined to dir: each is created through an os.Root,
+// and once unpacked every link is followed from where it actually sits, since earlier
+// links lie in the path of later entries. The disk keeps its reserve: free space is
+// read before each entry and chunk, and a context leaving less than floor is refused.
+// Runs of zeros are left as holes.
 func extractContext(r io.Reader, dir string, floor reserve.Floor) error {
 	root, err := os.OpenRoot(dir)
 	if err != nil {

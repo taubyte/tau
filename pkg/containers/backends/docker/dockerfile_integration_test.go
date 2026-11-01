@@ -75,19 +75,6 @@ func labelOf(t *testing.T, backend *DockerBackend, tag, label string) string {
 	return built.Config.Labels[label]
 }
 
-// TestReadDockerfileAgreesWithTheDaemon_Integration builds every context and
-// every Dockerfile the unit tests check with a real daemon.
-//
-// For a context: where the spool reads a Dockerfile, the daemon built that one,
-// and built the one put where it was read from once the context is spooled,
-// which is where a restricted build puts its pinned Dockerfile; where the spool
-// reads none, the daemon built nothing. A context it refuses has nothing to
-// agree on.
-//
-// For a Dockerfile: one the check lets through makes the daemon fetch nothing,
-// as written and as a restricted build sends it, and one it refuses makes the
-// daemon fetch, unless the case says the check refuses more there than the
-// daemon fetches.
 func TestReadDockerfileAgreesWithTheDaemon_Integration(t *testing.T) {
 	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err)
@@ -162,10 +149,6 @@ func TestReadDockerfileAgreesWithTheDaemon_Integration(t *testing.T) {
 	}
 }
 
-// TestABaseImageIsCheckedAndBuiltByID_Integration: a base image's ONBUILD ADD
-// fetches when a stage is built FROM it, so a restricted build FROM it is
-// refused; and a tag moved to such an image after the check cannot swap it in,
-// because what is built names the checked image by id.
 func TestABaseImageIsCheckedAndBuiltByID_Integration(t *testing.T) {
 	backend := newTestBackend(t)
 	fetches := serveFetches(t)

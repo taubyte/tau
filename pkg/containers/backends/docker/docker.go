@@ -21,7 +21,6 @@ import (
 	"github.com/taubyte/tau/pkg/netguard"
 )
 
-// DockerBackend implements the core.Backend interface for Docker
 type DockerBackend struct {
 	config core.DockerConfig
 	client *client.Client
@@ -29,7 +28,7 @@ type DockerBackend struct {
 	// mu guards containers: a backend is shared across goroutines (one per
 	// build step), and Create/Remove/every lookup mutate the map.
 	mu         sync.Mutex
-	containers map[core.ContainerID]string // Map container ID to Docker container ID
+	containers map[core.ContainerID]string
 
 	// stdins are what Start attaches to the containers created with one, held
 	// from Create because docker only takes a stream from an attach, and an
@@ -57,7 +56,6 @@ func (b *DockerBackend) forgetContainer(id core.ContainerID) {
 	delete(b.containers, id)
 }
 
-// New creates a new Docker backend
 func New(config core.DockerConfig) (*DockerBackend, error) {
 	backend := &DockerBackend{
 		config:     config,
@@ -75,12 +73,9 @@ func New(config core.DockerConfig) (*DockerBackend, error) {
 	return backend, nil
 }
 
-// resolveDockerHost returns the Docker host to use, matching the docker CLI when possible.
-// When config.Host and DOCKER_HOST are unset, reads the current context from the Docker
-// config file (same location and layout as the Docker CLI: ~/.docker/config.json or
-// DOCKER_CONFIG) and the context endpoint from the context store (contexts/<name>/meta.json
-// or contexts/meta/<hash>/meta.json per Docker's store layout). This keeps behaviour
-// portable and aligned with the Docker CLI without adding a direct dependency on
+// resolveDockerHost returns the Docker host to use, matching the docker CLI. With
+// config.Host and DOCKER_HOST unset, it reads the current context from the Docker
+// config file and its endpoint from the context store, without depending on
 // github.com/docker/cli (which can pull in incompatible moby/client versions).
 // Returns ("", false) when no host should be forced.
 func resolveDockerHost(configHost string) (host string, use bool) {
@@ -112,11 +107,9 @@ func resolveDockerHost(configHost string) (host string, use bool) {
 	if cfg.CurrentContext == "default" {
 		return "", false
 	}
-	// Try legacy path: contexts/<name>/meta.json
 	metaPath := filepath.Join(dir, "contexts", cfg.CurrentContext, "meta.json")
 	data, err = os.ReadFile(metaPath)
 	if err != nil {
-		// Docker stores context metadata under contexts/meta/<hash>/meta.json with Name field
 		metaDir := filepath.Join(dir, "contexts", "meta")
 		entries, listErr := os.ReadDir(metaDir)
 		if listErr != nil {
@@ -159,7 +152,6 @@ func resolveDockerHost(configHost string) (host string, use bool) {
 	return meta.Endpoints.Docker.Host, true
 }
 
-// initClient initializes the Docker client
 func (b *DockerBackend) initClient() error {
 	var opts []client.Opt
 
@@ -181,12 +173,10 @@ func (b *DockerBackend) initClient() error {
 	return nil
 }
 
-// BackendType returns core.BackendTypeDocker
 func (b *DockerBackend) BackendType() core.BackendType {
 	return core.BackendTypeDocker
 }
 
-// Image returns an Image interface for the given image name
 func (b *DockerBackend) Image(name string) core.Image {
 	return &dockerImage{
 		backend: b,
@@ -194,7 +184,6 @@ func (b *DockerBackend) Image(name string) core.Image {
 	}
 }
 
-// Create creates a new container
 func (b *DockerBackend) Create(ctx context.Context, config *core.ContainerConfig) (core.ContainerID, error) {
 	if b.client == nil {
 		return "", fmt.Errorf("Docker client not initialized")
@@ -262,7 +251,6 @@ const (
 	restrictedBridge  = "tau-netguard0" // must fit IFNAMSIZ (16 with the NUL)
 )
 
-// ensureRestrictedNetwork creates the restricted network if it is missing.
 func (b *DockerBackend) ensureRestrictedNetwork(ctx context.Context) error {
 	if _, err := b.client.NetworkInspect(ctx, restrictedNetwork, client.NetworkInspectOptions{}); err == nil {
 		return nil
@@ -281,7 +269,6 @@ func (b *DockerBackend) ensureRestrictedNetwork(ctx context.Context) error {
 	return nil
 }
 
-// createDockerConfig converts core.ContainerConfig to Docker API types
 func (b *DockerBackend) createDockerConfig(config *core.ContainerConfig) (*container.Config, *container.HostConfig, *network.NetworkingConfig, error) {
 	containerConfig := &container.Config{
 		Image: config.Image,
@@ -436,8 +423,7 @@ func applyPrivileges(hostConfig *container.HostConfig, privileges *core.Privileg
 	hostConfig.Privileged = privileges.Privileged
 }
 
-// getDockerID gets the Docker container ID for the given container ID
-// Tries the map first, then falls back to looking up by name
+// getDockerID maps a container ID to docker's, falling back to a lookup by name.
 func (b *DockerBackend) getDockerID(ctx context.Context, id core.ContainerID) (string, error) {
 	if dockerID, ok := b.lookupContainer(id); ok {
 		return dockerID, nil
@@ -459,7 +445,6 @@ func (b *DockerBackend) getDockerID(ctx context.Context, id core.ContainerID) (s
 	return "", fmt.Errorf("container %s not found", id)
 }
 
-// Start starts a container
 func (b *DockerBackend) Start(ctx context.Context, id core.ContainerID) error {
 	if b.client == nil {
 		return fmt.Errorf("Docker client not initialized")
@@ -505,7 +490,6 @@ func (b *DockerBackend) Start(ctx context.Context, id core.ContainerID) error {
 	return nil
 }
 
-// Stop stops a container
 func (b *DockerBackend) Stop(ctx context.Context, id core.ContainerID) error {
 	if b.client == nil {
 		return fmt.Errorf("Docker client not initialized")
@@ -524,7 +508,6 @@ func (b *DockerBackend) Stop(ctx context.Context, id core.ContainerID) error {
 	return nil
 }
 
-// Remove removes a container
 func (b *DockerBackend) Remove(ctx context.Context, id core.ContainerID) error {
 	if b.client == nil {
 		return fmt.Errorf("Docker client not initialized")
@@ -578,7 +561,6 @@ func (b *DockerBackend) Clean(ctx context.Context, age time.Duration, reference 
 	return errors.Join(errs...)
 }
 
-// Wait waits for a container to exit
 func (b *DockerBackend) Wait(ctx context.Context, id core.ContainerID) error {
 	if b.client == nil {
 		return fmt.Errorf("Docker client not initialized")
@@ -606,7 +588,6 @@ func (b *DockerBackend) Wait(ctx context.Context, id core.ContainerID) error {
 	return nil
 }
 
-// Logs returns logs for a container
 func (b *DockerBackend) Logs(ctx context.Context, id core.ContainerID) (io.ReadCloser, error) {
 	if b.client == nil {
 		return nil, fmt.Errorf("Docker client not initialized")
@@ -629,7 +610,6 @@ func (b *DockerBackend) Logs(ctx context.Context, id core.ContainerID) (io.ReadC
 	return logs, nil
 }
 
-// Inspect returns information about a container
 func (b *DockerBackend) Inspect(ctx context.Context, id core.ContainerID) (*core.ContainerInfo, error) {
 	if b.client == nil {
 		return nil, fmt.Errorf("Docker client not initialized")
@@ -680,7 +660,6 @@ func (b *DockerBackend) Inspect(ctx context.Context, id core.ContainerID) (*core
 	return containerInfo, nil
 }
 
-// HealthCheck performs a health check on the backend
 func (b *DockerBackend) HealthCheck(ctx context.Context) error {
 	if b.client == nil {
 		return fmt.Errorf("Docker client not initialized")
@@ -694,7 +673,6 @@ func (b *DockerBackend) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-// Capabilities returns the backend capabilities
 func (b *DockerBackend) Capabilities() core.BackendCapabilities {
 	return core.BackendCapabilities{SupportsBuild: true}
 }

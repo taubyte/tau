@@ -9,10 +9,9 @@ import (
 	"time"
 )
 
-// Run starts the container and waits for the container to exit before returning the container logs.
-// Logs are returned even when the container exits with a non-zero status so callers
-// can inspect build output (e.g. compiler errors); that status comes back as an
-// error wrapping ErrorExitCode.
+// Run starts the container, waits for it to exit and returns its logs. Logs are
+// returned on a non-zero exit too, so callers see build output; that status comes
+// back as an error wrapping ErrorExitCode.
 func (c *Container) Run(ctx context.Context) (*MuxedReadCloser, error) {
 	var buf bytes.Buffer
 	err := c.run(ctx, func(stream io.Reader) error {
@@ -91,8 +90,7 @@ func (c *Container) run(ctx context.Context, consume func(io.Reader) error) erro
 	return nil
 }
 
-// Wait calls the ContainerWait method for the container, and returns once a response has been received.
-// If there is an error response then wait will return the error
+// Wait returns once the container has exited, or waiting failed.
 func (c *Container) Wait(ctx context.Context) error {
 	imageName := ""
 	if c.image != nil {
@@ -106,7 +104,6 @@ func (c *Container) Wait(ctx context.Context) error {
 	return nil
 }
 
-// Cleanup removes the container from the docker host client.
 func (c *Container) Cleanup(ctx context.Context) error {
 	if err := c.backend.Remove(ctx, c.id); err != nil {
 		return fmt.Errorf("removing container with id `%s` failed with: %s", c.id, err)

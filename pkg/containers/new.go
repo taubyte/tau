@@ -6,19 +6,15 @@ import (
 
 	"github.com/taubyte/tau/pkg/containers/core"
 
-	_ "github.com/taubyte/tau/pkg/containers/backends/containerd" // Register containerd backend (if available)
-	_ "github.com/taubyte/tau/pkg/containers/backends/docker"     // Register docker backend
+	_ "github.com/taubyte/tau/pkg/containers/backends/containerd"
+	_ "github.com/taubyte/tau/pkg/containers/backends/docker"
 )
 
 type Option func(*Client) error
 
-// WithBackend uses a backend the caller already built, instead of detecting
-// one.
-//
-// AN OPERATOR NAMES A BACKEND AND A SOCKET in the node's own configuration, and
-// a client that auto-detected beside it could pick the other one — so a build
-// would run on a daemon nobody configured while the workloads ran on the one
-// they did.
+// WithBackend uses a backend the caller already built instead of detecting one: an
+// operator names a backend and socket in the node's configuration, and detection
+// could pick the other daemon.
 func WithBackend(b core.Backend) Option {
 	return func(c *Client) error {
 		if b == nil {
@@ -29,7 +25,7 @@ func WithBackend(b core.Backend) Option {
 	}
 }
 
-// do not show progress output
+// Verbose shows progress output.
 func Verbose() Option {
 	return func(c *Client) error {
 		c.progressOutput = true
@@ -37,8 +33,8 @@ func Verbose() Option {
 	}
 }
 
-// New creates a new dockerClient with default Options.
-// Backend is initialized immediately (Docker first, fallback to containerd).
+// New creates a client, initialising the backend immediately (docker first, then
+// containerd) unless WithBackend gave one.
 func New(options ...Option) (dockerClient *Client, err error) {
 	dockerClient = &Client{
 		progressOutput: false,
@@ -50,10 +46,7 @@ func New(options ...Option) (dockerClient *Client, err error) {
 		}
 	}
 
-	// A BACKEND THE CALLER ALREADY CHOSE IS NOT RE-CHOSEN. An operator names a
-	// backend and a socket in the node's own configuration; a client that
-	// auto-detected beside it could pick the other one, so a build would run on
-	// a daemon nobody configured while the workloads ran on the one they did.
+	// A backend the caller chose is not re-chosen (see WithBackend).
 	if dockerClient.backend != nil {
 		return dockerClient, nil
 	}

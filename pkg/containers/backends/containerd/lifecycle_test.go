@@ -246,9 +246,6 @@ func TestDaemonStartNeedsItsBinaries(t *testing.T) {
 	assert.ErrorContains(t, daemon.Start(context.Background()), "network driver")
 }
 
-// TestDaemonStartWithRootlesskit runs the whole rootless start with a stand-in
-// rootlesskit that only sleeps. The test plays containerd by listening on the
-// socket once the daemon has recorded the process, which is what Start waits for.
 func TestDaemonStartWithRootlesskit(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("rootless start is refused to root")
@@ -562,10 +559,6 @@ func (c *countedConn) Close() error {
 	return c.Conn.Close()
 }
 
-// TestNewStartsARootlessDaemon is the path a rootless node takes when nothing
-// answers yet: New starts the daemon itself, then connects to it. rootlesskit
-// is a stand-in that only sleeps, and the test plays containerd on the socket
-// once the daemon has recorded the process, which is what Start waits for.
 func TestNewStartsARootlessDaemon(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("rootless mode is refused to root")
