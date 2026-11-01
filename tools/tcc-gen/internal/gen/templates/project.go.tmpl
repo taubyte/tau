@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -333,7 +334,8 @@ func (p *Project) under(cursor []string, depth int) [][]string {
 // workflow step's queue and driver, every agent's loop and memory —
 // unreachable from the read path while the compiler emitted them correctly.
 func (p *Project) scopeCursor(scope []string) ([]string, error) {
-	cursor := []string{projectsSeg, p.id}
+	cursor := make([]string, 2, 2+2*len(scope))
+	cursor[0], cursor[1] = projectsSeg, p.id
 	for _, name := range scope {
 		kind, id, ok := p.scopeAt(cursor, name)
 		if !ok {
@@ -737,7 +739,7 @@ func (r Resource) Reaches(kind string) []Reach {
 	shape := accessShape()
 
 	out := make([]Reach, 0, len(entries))
-	for _, label := range r.Keys(kind) {
+	for label := range entries {
 		entry := entries.Sub(label)
 
 		// AN ENTRY WITHOUT `ops` IS NOT A GRANT. It is a resource lowered into
@@ -775,7 +777,7 @@ func (r Resource) Reaches(kind string) []Reach {
 	// SORTED, because Resource.Keys walks a map and does not sort — so two
 	// reads of one resource returned its grants in different orders, which is
 	// a spec that differs between two resolves of the same revision.
-	sort.Slice(out, func(i, j int) bool { return out[i].Label < out[j].Label })
+	slices.SortFunc(out, func(a, b Reach) int { return strings.Compare(a.Label, b.Label) })
 	return out
 }
 
