@@ -11,10 +11,6 @@ import (
 	dssync "github.com/ipfs/go-datastore/sync"
 )
 
-// TestAPinKeepsAStateForItsLeaseOnly: a pinned state outlives the purge of
-// its snapshot, readable through the pin, until the lease ends: reading
-// through it then fails, though the blocks are not gone yet, and the next
-// reclaim removes what only the pin reached.
 func TestAPinKeepsAStateForItsLeaseOnly(t *testing.T) {
 	ctx := context.Background()
 	st := newSimTime()
@@ -76,9 +72,6 @@ func TestAPinKeepsAStateForItsLeaseOnly(t *testing.T) {
 	}
 }
 
-// TestPinsAreBoundedAndEndWithTheProcess: no more than maxStatePins are
-// held at once; one released frees its place and is fenced; a restart
-// releases every pin, whose reader went with the process.
 func TestPinsAreBoundedAndEndWithTheProcess(t *testing.T) {
 	ctx := context.Background()
 	store := dssync.MutexWrap(ds.NewMapDatastore())
@@ -132,7 +125,6 @@ func TestPinsAreBoundedAndEndWithTheProcess(t *testing.T) {
 	assertHoldsExactly(t, re, own)
 }
 
-// stateBlocksOf is every block of the state root c.
 func stateBlocksOf(t testing.TB, r *Datastore, c cid.Cid) []cid.Cid {
 	t.Helper()
 	ctx := context.Background()

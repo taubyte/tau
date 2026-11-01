@@ -9,7 +9,6 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 )
 
-// recording is a DAGService that records the CIDs it is asked for.
 type recording struct {
 	ipld.DAGService
 	got []cid.Cid
@@ -20,7 +19,6 @@ func (r *recording) Get(ctx context.Context, c cid.Cid) (ipld.Node, error) {
 	return r.DAGService.Get(ctx, c)
 }
 
-// differCase is a 200k-key tree and a copy of it with k changes.
 func differCase(t *testing.T, a *Tree, rng *rand.Rand, k int) *Tree {
 	t.Helper()
 	b := a
@@ -31,8 +29,6 @@ func differCase(t *testing.T, a *Tree, rng *rand.Rand, k int) *Tree {
 	return b
 }
 
-// TestAReusedDifferAgreesWithDiffNodes: a Differ that compares tree after
-// tree in the same storage finds the nodes DiffNodes finds, every time.
 func TestAReusedDifferAgreesWithDiffNodes(t *testing.T) {
 	ctx := context.Background()
 	s := newStore()

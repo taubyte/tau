@@ -15,7 +15,6 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 )
 
-// counting is a DAGService that counts the nodes read and written.
 type counting struct {
 	ipld.DAGService
 	bs         blockstore.Blockstore
@@ -106,8 +105,7 @@ func entries(t testing.TB, tr *Tree) map[string][]byte {
 	return m
 }
 
-// nodes is every node under root, read by decoding each one rather than by
-// merkledag's walk, with the length of the longest root-to-node path.
+// nodes decodes each node rather than using merkledag's walk.
 func nodes(t testing.TB, s ipld.DAGService, root cid.Cid) (map[cid.Cid]struct{}, int) {
 	t.Helper()
 	out := map[cid.Cid]struct{}{}
@@ -135,7 +133,6 @@ func nodes(t testing.TB, s ipld.DAGService, root cid.Cid) (map[cid.Cid]struct{},
 	return out, depth
 }
 
-// pathLen is how many nodes Get reads to reach k.
 func pathLen(t testing.TB, s *counting, tr *Tree, k []byte) int {
 	t.Helper()
 	s.reset()

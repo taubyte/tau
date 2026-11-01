@@ -107,9 +107,8 @@ func appendEscaped(b []byte, s string) []byte {
 	return append(b, 0, 1)
 }
 
-// readEscaped reads an escaped string off the front of b. One with no
-// escaped byte is over b's bytes, which must not change after; one with
-// some is a copy.
+// A string with no escaped byte aliases b, which must not change after; one
+// with some is a copy.
 func readEscaped(b []byte) (string, []byte, error) {
 	for i := 0; i+1 < len(b); i++ {
 		if b[i] != 0 {
@@ -127,7 +126,6 @@ func readEscaped(b []byte) (string, []byte, error) {
 	return "", nil, errMalformedState
 }
 
-// readUnescaped is readEscaped of a string with escaped bytes, copied out.
 func readUnescaped(b []byte) (string, []byte, error) {
 	var out []byte
 	for i := 0; i < len(b); i++ {
@@ -267,8 +265,7 @@ func parseContextEntry(key, v []byte) (string, *known, error) {
 	return string(key[8:]), k, nil
 }
 
-// stamps is the summarizer of every state tree: the least and the greatest
-// stamp under a subtree.
+// stamps summarizes a subtree by the least and greatest stamp under it.
 type stamps struct{}
 
 func stampOf(v []byte) uint64 {
@@ -300,8 +297,6 @@ func stateTree(dags ipld.DAGService, root cid.Cid) *statetree.Tree {
 	return statetree.Load(dags, root, statetree.WithSummarizer(stamps{}))
 }
 
-// treeCacheBytes is the budget of a store's cache of tree nodes: the upper
-// levels of its state, which every merge and compaction passes through.
 const treeCacheBytes = 256 << 10
 
 type treeCache = statetree.Cache
@@ -313,18 +308,15 @@ func newTreeCache(opts *Options) *treeCache {
 	return statetree.NewCache(treeCacheBytes)
 }
 
-// tree is the state tree at root over dags, reading through the store's
-// cache of tree nodes.
 func (store *Datastore) tree(dags ipld.DAGService, root cid.Cid) *statetree.Tree {
 	return statetree.Load(dags, root, statetree.WithSummarizer(stamps{}), statetree.WithCache(store.trees))
 }
 
-// A stateRoot names a state's three trees, cid.Undef for an empty one.
+// cid.Undef for an empty tree.
 type stateRoot struct {
 	elems, pending, ctx cid.Cid
 }
 
-// message sets msg to the StateRoot block's Data, and returns its links.
 func (s stateRoot) message(msg *pb.StateRoot) (present [3]cid.Cid, n int) {
 	msg.Format, msg.Elements, msg.Removals, msg.Context = stateFormat, s.elems.Defined(), s.pending.Defined(), s.ctx.Defined()
 	for _, c := range [...]cid.Cid{s.elems, s.pending, s.ctx} {
@@ -363,8 +355,6 @@ func decodeStateRoot(nd ipld.Node) (stateRoot, error) {
 	return s, nil
 }
 
-// stateRootOf is the state a StateRoot's Data msg names with its n links,
-// link(0) .. link(n-1).
 func stateRootOf(msg *pb.StateRoot, n int, link func(int) (cid.Cid, error)) (stateRoot, error) {
 	if msg.Format != stateFormat || len(msg.ProtoReflect().GetUnknown()) > 0 {
 		return stateRoot{}, errMalformedState
@@ -402,7 +392,6 @@ func loadStateRoot(ctx context.Context, ng ipld.NodeGetter, c cid.Cid) (stateRoo
 	return decodeStateRoot(nd)
 }
 
-// contextTree is the tree of cc.
 func contextTree(ctx context.Context, dags ipld.DAGService, cc *causalContext) (*statetree.Tree, error) {
 	type kv struct{ k, v []byte }
 	entries := make([]kv, 0, len(cc.inc))
@@ -419,7 +408,6 @@ func contextTree(ctx context.Context, dags ipld.DAGService, cc *causalContext) (
 	}, statetree.WithSummarizer(stamps{}))
 }
 
-// readContext reads the context a tree holds.
 func readContext(ctx context.Context, t *statetree.Tree) (*causalContext, error) {
 	cc := newCausalContext()
 	err := t.Range(ctx, nil, nil, func(key, v []byte) error {
@@ -436,7 +424,6 @@ func readContext(ctx context.Context, t *statetree.Tree) (*causalContext, error)
 	return cc, err
 }
 
-// treeStamps is the least and greatest stamp in t, and whether it has any.
 func treeStamps(ctx context.Context, t *statetree.Tree) (uint64, uint64, bool, error) {
 	s, err := t.Summary(ctx)
 	if err != nil || s == nil {
@@ -446,9 +433,9 @@ func treeStamps(ctx context.Context, t *statetree.Tree) (uint64, uint64, bool, e
 	return lo, hi, true, nil
 }
 
-// An overlay holds the blocks a tree change writes in memory, over the
-// store's DAG: a run of changes writes each node of its path every time,
-// and only the nodes the final trees reach are worth writing.
+// An overlay holds in memory the blocks a run of tree changes writes: each
+// change rewrites its path, and only the nodes the final trees reach are worth
+// writing.
 type overlay struct {
 	ipld.DAGService
 	added map[cid.Cid]ipld.Node
@@ -484,9 +471,8 @@ func (o *overlay) AddMany(_ context.Context, nds []ipld.Node) error {
 	return nil
 }
 
-// fresh is the blocks under roots the overlay holds and owned does not
-// name, the ones to write: a block it does not hold is already in the
-// store, and an owned one is held with everything under it.
+// fresh is the blocks under roots the overlay holds and owned does not name:
+// one it does not hold is already stored, an owned one held with all below it.
 func (o *overlay) fresh(roots []cid.Cid, owned func(cid.Cid) (bool, error)) ([]ipld.Node, error) {
 	var out []ipld.Node
 	seen := map[cid.Cid]struct{}{}

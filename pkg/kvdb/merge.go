@@ -41,15 +41,14 @@ const (
 	kindSnapshot
 )
 
-// A link is a block a delta names, with its dot and stamps.
 type link struct {
 	cid     cid.Cid
 	dot     dot
 	at, ttl uint64
 }
 
-// A block is what the index holds of a local block. A merged snapshot's
-// names its state, which it holds a reference to.
+// A block is what the index holds of a local block; a merged snapshot's names
+// its state.
 type block struct {
 	kind    blockKind
 	dot     dot
@@ -77,13 +76,11 @@ func (store *Datastore) appendVectorKey(b []byte, replica string) []byte {
 	return appendReplicaSegment(append(append(b, store.pre.vector...), '/'), replica)
 }
 
-// cloudKey is where the span (lo, hi] of replica is kept: under its end.
+// The span (lo, hi] is kept under its end.
 func (store *Datastore) cloudKey(replica string, hi uint64) ds.Key {
 	return dotKey(store.pre.cloud, dot{replica: replica, counter: hi})
 }
 
-// cidOfBlockKey is the raw CIDv1 of the block whose index entry is at k,
-// under prefix.
 func cidOfBlockKey(prefix ds.Key, k string) (cid.Cid, error) {
 	var buf [96]byte
 	c, err := cidOverBlockKey(buf[:0], prefix, bytesOf(k))
@@ -93,7 +90,6 @@ func cidOfBlockKey(prefix ds.Key, k string) (cid.Cid, error) {
 	return statetree.CastCid(bytesOf(strings.Clone(c.KeyString()))), nil
 }
 
-// cidOverBlockKey is cidOfBlockKey over the bytes it appends to b.
 func cidOverBlockKey(b []byte, prefix ds.Key, k []byte) (cid.Cid, error) {
 	seg := bytes.TrimPrefix(bytes.TrimPrefix(k, bytesOf(prefix.String())), []byte{'/'})
 	b, err := appendSegDecode(binary.AppendUvarint(binary.AppendUvarint(b, 1), cid.Raw), seg)
@@ -107,8 +103,8 @@ func cidOverBlockKey(b []byte, prefix ds.Key, k []byte) (cid.Cid, error) {
 	return c, nil
 }
 
-// encodeBlock is the kind, the stamps, the state's cid with its length, and
-// the dot, in one allocation.
+// Kind, stamps, the state's cid with its length, then the dot, in one
+// allocation.
 func encodeBlock(b block) []byte {
 	return appendBlock(make([]byte, 0, 1+4*binary.MaxVarintLen64+len(b.state.KeyString())+len(b.dot.replica)), b)
 }
@@ -142,8 +138,7 @@ func decodeBlock(v []byte) (block, error) {
 	return b, err
 }
 
-// encodeLink is the value of a missing parent or a retry mark: the block's
-// stamps, then its CID.
+// The stamps, then the CID.
 func encodeLink(l link) []byte { return appendLink(nil, l) }
 
 func appendLink(b []byte, l link) []byte {
@@ -209,8 +204,8 @@ func (store *Datastore) loadContext(ctx context.Context) (*causalContext, error)
 	return c, err
 }
 
-// stageContext writes the difference between two contexts, forgotten
-// incarnations included.
+// stageContext writes what changed between old and cur, forgotten incarnations
+// included.
 func (store *Datastore) stageContext(t *txn, old, cur *causalContext) {
 	for r, o := range old.inc {
 		if cur.inc[r] == nil {
@@ -243,8 +238,6 @@ func (store *Datastore) stageContext(t *txn, old, cur *causalContext) {
 	}
 }
 
-// merging is one merge in progress: its writes, its next context, its head
-// edits and what it did to each key.
 type merging struct {
 	store   *Datastore
 	t       *txn
@@ -263,13 +256,11 @@ type merging struct {
 	// or of all it leaves once rescanned is set.
 	pendingAt uint64
 	rescanned bool
-	// unerased are the erased records this merge forgets.
-	unerased []string
+	unerased  []string
 	// atomic commits with commitAtomic: the merge changes the roots that
 	// keep state blocks.
 	atomic bool
-	// base is the state base the merge leaves, when it moves it.
-	base *stateBase
+	base   *stateBase
 }
 
 func (store *Datastore) beginMerge() *merging {
@@ -278,7 +269,6 @@ func (store *Datastore) beginMerge() *merging {
 	return m
 }
 
-// startMerge readies m, new or kept from an earlier merge, for a merge.
 func (store *Datastore) startMerge(m *merging) {
 	heads, touched, unerased := m.heads, m.touched, m.unerased[:0]
 	clear(heads.add)
@@ -298,13 +288,11 @@ func (store *Datastore) startMerge(m *merging) {
 	}
 }
 
-// keptMerge bounds the merges kept for the next: maps keep their buckets
-// once cleared, and a merge of a large batch's is not worth keeping.
+// Maps keep their buckets once cleared, so a large batch's merge is not kept.
 const keptMerge = 1 << 10
 
-// heard takes what a block written by another incarnation says about fleet
-// time: its stamp, no further ahead of this replica's clock than the skew.
-// A replica that merged anything of anyone else's has heard a fleet.
+// heard takes a block's stamp as fleet time, no further ahead than the skew. A
+// replica that merged anything of anyone else's has heard a fleet.
 func (m *merging) heard(author string, at uint64) {
 	if author == m.store.replica || m.store.rejoining {
 		return
@@ -336,7 +324,6 @@ func (m *merging) addElem(e element) {
 	m.live++
 }
 
-// removeElem takes (key, d) out if it is here, and reports whether it was.
 func (m *merging) removeElem(ctx context.Context, key string, d dot) (bool, error) {
 	here, err := m.hasElem(ctx, key, d)
 	if err != nil || !here {
@@ -348,11 +335,9 @@ func (m *merging) removeElem(ctx context.Context, key string, d dot) (bool, erro
 	return true, nil
 }
 
-// remove applies a tombstone. The element goes if it is here. If the context
-// covers its dot, the context is what refutes any later copy of it; if not,
-// whether the element was here or not, a pending removal does, for as long as
-// the removal is needed: a copy may still be on its way, or held by a replica
-// whose snapshot has not reached this one yet.
+// The element goes if here. If the context covers its dot, the context refutes
+// any later copy; if not, a pending removal does, for as long as the removal
+// is needed: a copy may still be on its way.
 func (m *merging) remove(ctx context.Context, r removal) error {
 	if _, err := m.removeElem(ctx, r.key, r.dot); err != nil {
 		return err
@@ -379,11 +364,9 @@ func (m *merging) remove(ctx context.Context, r removal) error {
 	return nil
 }
 
-// refutes reports whether the context refutes r's dot for it: it covers the
-// dot under an entry that had not expired when r was written. One expired by
-// then counts as forgotten, as it is wherever a drop clock has reached that
-// expiry, so that whether a removal touches the entry or is pending is
-// decided by the removal's own time, not by the receiver's clock.
+// refutes reports whether the context covers r's dot under an entry that had
+// not expired when r was written. One expired by then counts as forgotten, so
+// the removal's own time decides, not the receiver's clock.
 func (m *merging) refutes(r removal) bool {
 	if !m.cc.covers(r.dot) {
 		return false
@@ -392,10 +375,9 @@ func (m *merging) refutes(r removal) bool {
 	return k == nil || !m.store.expired(k.expires, r.at)
 }
 
-// admit adds an element unless local, the context before this merge, covers
-// it and it is not here (it was removed), or a removal of it is pending. One
-// a rebase erased is removed instead, by a pending removal that the next
-// snapshot of this replica, due now, carries to the replicas that hold it.
+// admit adds an element unless local, the context before this merge, covers it
+// and it is gone, or a removal of it is pending. One a rebase erased is
+// removed instead, by a pending removal the next snapshot carries.
 func (m *merging) admit(ctx context.Context, e element, local *causalContext) error {
 	here, err := m.hasElem(ctx, e.key, e.dot)
 	if err != nil || here || local.covers(e.dot) {
@@ -413,9 +395,8 @@ func (m *merging) admit(ctx context.Context, e element, local *causalContext) er
 	return nil
 }
 
-// link records a merged block's parents: a covered parent is no longer a
-// head, an uncovered one is missing and is returned to be walked, unless it
-// has expired, when no holder keeps it any more.
+// A covered parent stops being a head; an uncovered one is missing and
+// returned to be walked, unless it has expired, when nobody keeps it.
 func (m *merging) link(ctx context.Context, parents []*pb.Parent) ([]link, error) {
 	now := m.store.dropClock()
 	var walk []link
@@ -445,14 +426,12 @@ func (m *merging) link(ctx context.Context, parents []*pb.Parent) ([]link, error
 	return walk, nil
 }
 
-// linked reports whether a merged block already links d. It is read before
-// the merge changes the context, which drops missing entries it covers.
+// It is read before the merge changes the context, which drops missing entries
+// it covers.
 func (m *merging) linked(ctx context.Context, d dot) (bool, error) {
 	return m.t.has(ctx, m.t.key(appendDotKey(m.t.buf(), m.store.pre.missing, d)))
 }
 
-// settleBlock makes the merged block a head unless a merged block already
-// links it, and indexes it for purging.
 func (m *merging) settleBlock(c cid.Cid, b block, height uint64, linked bool) {
 	m.t.del(m.t.key(appendDotKey(m.t.buf(), m.store.pre.missing, b.dot)))
 	m.t.del(m.t.key(appendDotKey(m.t.buf(), m.store.pre.retry, b.dot)))
@@ -462,9 +441,9 @@ func (m *merging) settleBlock(c cid.Cid, b block, height uint64, linked bool) {
 	m.indexBlock(c, b)
 }
 
-// indexBlock indexes c. A fetched block's reclaim mark stays until reclaim
-// finds it indexed: deleted with the merge, of which a store may keep any
-// part, it could go while the entry does not stay.
+// A fetched block's reclaim mark stays until reclaim finds it indexed: deleted
+// with the merge, of which a store may keep any part, it could go while the
+// entry does not.
 func (m *merging) indexBlock(c cid.Cid, b block) {
 	m.t.put(m.t.key(appendHashKey(m.t.buf(), m.store.pre.blocks, c)), m.t.keep(appendBlock(m.t.buf(), b)))
 	m.added.block = min(m.added.block, b.at+b.ttl/2)
@@ -523,8 +502,7 @@ func (m *merging) commit(ctx context.Context) error {
 	return nil
 }
 
-// tombstoneOf reads a tombstone; one written without its own time takes the
-// delta's.
+// A tombstone written without its own time takes the delta's.
 func tombstoneOf(e *pb.Element, at uint64) removal {
 	if e.GetAt() != 0 {
 		at = e.GetAt()
@@ -532,8 +510,7 @@ func tombstoneOf(e *pb.Element, at uint64) removal {
 	return removal{key: stringOf(e.GetKey()), dot: dotFromPB(e.GetDot()), at: at, ttl: e.GetTtl()}
 }
 
-// mergeDelta merges a plain delta and returns the parents to walk. The caller
-// holds store.mu.
+// The caller holds store.mu.
 func (store *Datastore) mergeDelta(ctx context.Context, c cid.Cid, delta *pb.Delta) ([]link, error) {
 	d := dotFromPB(delta.GetDot())
 	if d.isZero() {
@@ -557,7 +534,6 @@ func (store *Datastore) mergeDelta(ctx context.Context, c cid.Cid, delta *pb.Del
 	return walk, err
 }
 
-// delta merges delta, the block c of dot d, in m.
 func (m *merging) delta(ctx context.Context, c cid.Cid, d dot, delta *pb.Delta) ([]link, error) {
 	store := m.store
 	at, ttl := delta.GetAt(), delta.GetTtl()
@@ -607,8 +583,8 @@ func (m *merging) delta(ctx context.Context, c cid.Cid, d dot, delta *pb.Delta) 
 	return walk, m.commit(ctx)
 }
 
-// dropPending forgets the pending removals of d's elements the context now
-// refutes: every element of d that was named by one was refused on arrival.
+// Every element of d named by a pending removal was refused on arrival, so the
+// removals the context now refutes go.
 func (m *merging) dropPending(ctx context.Context, d dot) error {
 	entries, err := m.t.scan(ctx, m.t.key(appendDotKey(m.t.buf(), m.store.set.pending, d)))
 	if err != nil {
@@ -626,13 +602,11 @@ func (m *merging) dropPending(ctx context.Context, d dot) error {
 	return nil
 }
 
-// dropExtended forgets the pending removals an entry this merge extended now
-// refutes: one filed because the entry, as this replica then knew it, had
-// expired when the removal was written, which a later delta of the
-// incarnation shows it had not. A replica that merged that delta first
-// touched the entry instead. Only a removal stamped at or after the entry's
-// old expiry can be one, so the pending removals are scanned only when one
-// may be stamped that late.
+// dropExtended forgets pending removals an entry this merge extended now
+// refutes: filed because the entry seemed expired when the removal was
+// written, which a later delta shows it had not. Only a removal stamped at or
+// after the old expiry can be one, so the scan runs only when one may be that
+// late.
 func (m *merging) dropExtended(ctx context.Context, local *causalContext) error {
 	late := max(m.store.pendingAt, m.pendingAt)
 	extended := false
@@ -664,15 +638,13 @@ func (m *merging) dropExtended(ctx context.Context, local *causalContext) error 
 	return nil
 }
 
-// settlePending forgets a pending removal the context now refutes.
-// What it knew passes to the context, so an incarnation's stamps are the same
-// whether a removal of one of its dots arrived before the dot or after it.
+// What the removal knew passes to the context, so an incarnation's stamps are
+// the same whether a removal of its dot arrived before the dot or after.
 func (m *merging) settlePending(key string, r removal) {
 	m.cc.touch(r.dot.replica, r.at, r.expires())
 	m.t.del(ds.RawKey(key))
 }
 
-// A snapState is the state a snapshot carries, read from its trees.
 type snapState struct {
 	root           cid.Cid
 	sr             stateRoot
@@ -710,8 +682,8 @@ func (store *Datastore) readState(ctx context.Context, dags ipld.DAGService, c c
 }
 
 // An elemCase is an element a snapshot merge decides, with the snapshot's
-// record of it, nil when it holds none; a pendCase the same of a pending
-// removal under one tree key.
+// record of it, nil for none; a pendCase likewise for a pending removal under
+// one tree key.
 type elemCase struct {
 	key    string
 	dot    dot
@@ -724,30 +696,28 @@ type pendCase struct {
 	theirs *removal
 }
 
-// A mergeSet is every record a snapshot merge has to decide, by tree key:
-// those whose record may differ between this replica and the snapshot. The
-// join keeps any other record as it is, since both hold it alike.
+// A mergeSet is every record whose value may differ between this replica and
+// the snapshot, by tree key; the join keeps every other record as both hold
+// it.
 type mergeSet struct {
-	// elems and pending are keyed by tree keys over bytes that never
-	// change: a tree node's, or one made for the set.
+	// Keyed by tree keys over bytes that never change: a tree node's or one made
+	// for the set.
 	elems   map[string]elemCase
 	pending map[string]pendCase
 	// pendingOf is the tree keys pending names for each removal, journal
 	// the number of marks the journal holds.
 	pendingOf map[string][]string
 	journal   int
-	// els and rems are where the records theirs points to are kept, 64 to
-	// an allocation, and keys the tree keys the set makes, a chunk at a
-	// time.
+	// els and rems hold the records theirs points to, 64 to an allocation; keys
+	// holds the tree keys the set makes, a chunk at a time.
 	els  []element
 	rems []removal
 	keys []byte
 }
 
-// keyChunk is the room the set makes for its tree keys at a time.
 const keyChunk = 4 << 10
 
-// keyBuf is what the set's next tree key is appended to; keepKey claims it.
+// keyBuf is where the next tree key is appended; keepKey claims it.
 func (ms *mergeSet) keyBuf() []byte {
 	if cap(ms.keys)-len(ms.keys) < 256 {
 		ms.keys = make([]byte, 0, keyChunk)
@@ -826,8 +796,7 @@ func (ms *mergeSet) addPending(tk []byte, theirs []byte, has bool) error {
 }
 
 // enumerate is the records whose trees differ between the base and s, and
-// those the journal names: what this replica holds differs from the base
-// in nothing else.
+// those the journal names: this replica differs from the base in nothing else.
 func (store *Datastore) enumerate(ctx context.Context, s *snapState) (*mergeSet, error) {
 	ms := newMergeSet()
 	err := statetree.Diff(ctx, store.tree(store.dagService, store.base.elems), s.elems, func(ch statetree.Change) error {
@@ -886,11 +855,10 @@ func sortedKeys[V any](m map[string]V) []string {
 	return out
 }
 
-// mergeSnapshot joins the state a snapshot carries, whose blocks dags holds,
-// as one merge. Only the records its trees and this replica's may disagree
-// on are read (see enumerate); every other one both hold alike. The state's
-// closure is what the roots reach and sess's intents: the merge publishes
-// them, with the root that now reaches them. The caller holds store.mu.
+// mergeSnapshot joins a snapshot's state, whose blocks dags holds, as one
+// merge, reading only the records the two may disagree on (see enumerate). The
+// merge publishes the state's closure, the roots' reach and sess's intents,
+// with the root that now reaches it. The caller holds store.mu.
 func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.Delta, dags ipld.DAGService, sess *gcSession) ([]link, *causalContext, error) {
 	d := dotFromPB(root.GetDot())
 	if d.isZero() {
@@ -963,13 +931,12 @@ func (store *Datastore) mergeSnapshot(ctx context.Context, c cid.Cid, root *pb.D
 	return p.walk, s.cc, nil
 }
 
-// checkSnapshot, when set, is shown every snapshot merge before it commits.
+// checkSnapshot is a test hook shown every snapshot merge before it commits.
 var checkSnapshot func(ctx context.Context, store *Datastore, c cid.Cid, root *pb.Delta, s *snapState, p *snapshotMerge) error
 
-// A snapshotMerge is a snapshot merge decided and not yet committed: its
-// writes, the parents to walk, whether it leaves a state other than the
-// snapshot's, and the journal it would leave with the snapshot's trees as
-// the base.
+// A snapshotMerge is decided and not yet committed: its writes, the parents to
+// walk, whether it leaves a state other than the snapshot's, and the journal
+// it would leave with the snapshot's trees as the base.
 type snapshotMerge struct {
 	m        *merging
 	walk     []link
@@ -977,7 +944,6 @@ type snapshotMerge struct {
 	residual map[string]bool
 }
 
-// prepareSnapshot decides the merge of s, deciding each record ms names.
 // The caller holds store.mu.
 func (store *Datastore) prepareSnapshot(ctx context.Context, c cid.Cid, root *pb.Delta, s *snapState, ms *mergeSet) (*snapshotMerge, error) {
 	d := dotFromPB(root.GetDot())
@@ -1069,7 +1035,7 @@ func (store *Datastore) prepareSnapshot(ctx context.Context, c cid.Cid, root *pb
 }
 
 // rebase moves the base to s's trees and makes the journal name exactly the
-// records this replica holds otherwise than s, residual.
+// records held otherwise than in s.
 func (m *merging) rebase(ctx context.Context, ch *rootChange, s *snapState, residual map[string]bool) error {
 	b := stateBase{elems: s.sr.elems, pending: s.sr.pending}
 	ch.setBase(m.t, m.store.base, b)
@@ -1109,7 +1075,6 @@ func (m *merging) rebase(ctx context.Context, ch *rootChange, s *snapState, resi
 	return nil
 }
 
-// localElem is the element (key, d) this merge leaves, if any.
 func (m *merging) localElem(ctx context.Context, key string, d dot) (element, bool, error) {
 	v, err := m.t.get(ctx, m.elemKey(key, d))
 	if errors.Is(err, ds.ErrNotFound) {
@@ -1126,8 +1091,6 @@ func (m *merging) localElem(ctx context.Context, key string, d dot) (element, bo
 	return el, true, nil
 }
 
-// localPending is the pending removal of (key, d) this merge leaves, if
-// any.
 func (m *merging) localPending(ctx context.Context, key string, d dot) (*removal, error) {
 	v, err := m.t.get(ctx, m.pendingKey(key, d))
 	if errors.Is(err, ds.ErrNotFound) {
@@ -1143,8 +1106,6 @@ func (m *merging) localPending(ctx context.Context, key string, d dot) (*removal
 	return &removal{key: key, dot: d, at: at, ttl: ttl}, nil
 }
 
-// written calls fn with the identity of every element and pending removal
-// the merge writes.
 func (m *merging) written(fn func(pending bool, key string, d dot) error) error {
 	ep, pp := m.store.set.elemsPrefix().String()+"/", m.store.set.pendingPrefix().String()+"/"
 	for _, k := range m.t.order {
@@ -1179,9 +1140,8 @@ func (m *merging) written(fn func(pending bool, key string, d dot) error) error 
 	return nil
 }
 
-// pendingKeys is every tree key a pending removal of (key, d) may sit under
-// here or in s: the one this merge leaves, the one the store held, and
-// those ms names for it.
+// A pending removal of (key, d) may sit under the key this merge leaves, the
+// one the store held, and those ms names.
 func (m *merging) pendingKeys(ctx context.Context, key string, d dot, ms *mergeSet) [][]byte {
 	var out [][]byte
 	add := func(tk []byte) {
@@ -1205,16 +1165,13 @@ func (m *merging) pendingKeys(ctx context.Context, key string, d dot, ms *mergeS
 	return out
 }
 
-// residual is the journal this replica would have with s's trees as its
-// base: a mark for every record it holds otherwise than s. Only the records
-// ms names and those the merge writes can differ: the base holds every
-// other one as s does, and the journal names every record this replica
-// changed since.
+// residual is the journal this replica would have with s's trees as its base.
+// Only records ms names and those the merge writes can differ: the base holds
+// every other as s does.
 func (m *merging) residual(ctx context.Context, s *snapState, ms *mergeSet) (map[string]bool, error) {
 	out := map[string]bool{}
 	elemDone := map[string]bool{}
-	// checkElem checks the element (key, d), whose tree key tk is over
-	// bytes that never change, or nil to be made in ms.
+	// tk is over bytes that never change, or nil to be made in ms.
 	checkElem := func(tk []byte, key string, d dot) error {
 		if tk == nil {
 			tk = ms.keepKey(appendElemTreeKey(ms.keyBuf(), key, d))
@@ -1307,15 +1264,13 @@ func (m *merging) residual(ctx context.Context, s *snapState, ms *mergeSet) (map
 	return out, err
 }
 
-// sameElem reports whether a and b, one record's, hold the same version: a
-// tree holds the same value for both.
+// Same version: a tree holds the same value for both.
 func sameElem(a, b element) bool {
 	return a.at == b.at && a.ttl == b.ttl && a.priority == b.priority && bytes.Equal(a.value, b.value)
 }
 
-// collapses reports whether a merge leaves none of the heads hs it started
-// from: the block it merged is then the only one that tells a reader what
-// this replica holds.
+// collapses reports whether the merge leaves none of the heads hs: its block
+// is then the only one telling a reader what this replica holds.
 func (m *merging) collapses(hs []Head) bool {
 	for _, h := range hs {
 		if _, gone := m.heads.remove[h.Cid]; !gone {
@@ -1325,14 +1280,11 @@ func (m *merging) collapses(hs []Head) bool {
 	return true
 }
 
-// differs reports whether a snapshot merge leaves this replica with a state
-// other than the snapshot's, want being the snapshot's context with its own
-// dot: an element it holds refused, one it neither holds nor covers kept, or
-// a context entry, span, stamp or pending removal it lacks. With the
-// snapshot the only head, nothing else would ever carry the difference to a
-// replica that holds the snapshot, so the replica compacts. Snapshots that
-// agree, concurrent ones included, never answer each other. Only the
-// records ms names and those the merge writes can differ.
+// differs reports whether a snapshot merge leaves a state other than the
+// snapshot's (want is its context with its own dot). With the snapshot the
+// only head nothing else would carry the difference, so the replica compacts;
+// snapshots that agree never answer each other. Only records ms names and
+// those the merge writes can differ.
 func (m *merging) differs(ctx context.Context, want *causalContext, s *snapState, ms *mergeSet, kept []element) (bool, error) {
 	for r, k := range m.cc.inc {
 		o := want.inc[r]
@@ -1396,8 +1348,6 @@ func (m *merging) differs(ctx context.Context, want *causalContext, s *snapState
 	return false, nil
 }
 
-// dropCovered forgets every pending removal, missing parent and retry mark
-// the context now covers.
 func (m *merging) dropCovered(ctx context.Context) error {
 	pending, err := m.t.scan(ctx, m.store.set.pendingPrefix())
 	if err != nil {
@@ -1430,24 +1380,21 @@ func (m *merging) dropCovered(ctx context.Context) error {
 	return nil
 }
 
-// purge takes every local block a snapshot's context covers, except the
-// heads: the snapshot holds their state, and a reader reaching one through a
-// link sees its dot covered and does not fetch it. dropTaken removes them
-// once the caller has released store.mu. The caller holds store.mu.
+// purge takes every local block a snapshot's context covers except the heads:
+// a reader reaching one sees its dot covered and does not fetch it. dropTaken
+// removes them after store.mu is released. The caller holds store.mu.
 func (store *Datastore) purge(ctx context.Context, covered *causalContext) ([]cid.Cid, error) {
 	return store.take(ctx, func(b block) bool { return covered.covers(b.dot) })
 }
 
 var errTaken = errors.New("being dropped by a purge")
 
-// take takes the indexed blocks that pick chooses, other than the heads and
-// the blocks a purge has taken already, out of the count, and returns them
-// for dropTaken. Until it drops them a taken block is held by nothing: no
-// walk counts it, no merge indexes it again and no compaction folds it. The
-// caller holds store.mu.
+// Until dropTaken drops them, taken blocks are held by nothing: no walk counts
+// them, no merge indexes them again and no compaction folds them. The caller
+// holds store.mu.
 func (store *Datastore) take(ctx context.Context, pick func(block) bool) ([]cid.Cid, error) {
-	// The cids taken are kept in one buffer, each over its bytes there once
-	// the scan is done; until then, one is over buf.
+	// The taken cids share one buffer once the scan is done; until then a cid is
+	// over buf.
 	var ids []byte
 	var ends []int
 	prefix := store.blocksPrefix()
@@ -1488,8 +1435,6 @@ func (store *Datastore) take(ctx context.Context, pick func(block) bool) ([]cid.
 	return taken, nil
 }
 
-// isTaken reports whether the index entry at k names a block a purge has
-// taken.
 func (store *Datastore) isTaken(prefix ds.Key, k string) bool {
 	if store.purging.Len() == 0 {
 		return false
@@ -1498,15 +1443,11 @@ func (store *Datastore) isTaken(prefix ds.Key, k string) bool {
 	return err == nil && store.purging.Has(c)
 }
 
-// dropTaken removes the blocks take returned, then their index entries, and
-// returns how many it dropped. The caller does not hold store.mu: removing
-// the blocks is the slow part of a purge, and the broadcast reader and every
-// walk wait on the lock. Nothing reads a taken block meanwhile: it is no
-// head, a walk reaching it sees it is not held, and a merge of it is refused
-// until the purge ends, for repair to retry. Its entry goes after it, once
-// its removal is durable, so a crash in between leaves an entry naming a
-// block that is gone, which the next purge takes again, and never a block
-// nothing indexes. A snapshot's state is retired with its entry.
+// dropTaken runs without store.mu: removing blocks is slow, and the broadcast
+// reader and every walk wait on the lock. A taken block is no head, a walk sees
+// it is not held, and its merge is refused until the purge ends. Its entry
+// goes once its removal is durable, so a crash leaves at worst an entry naming
+// a gone block, which the next purge takes again.
 func (store *Datastore) dropTaken(ctx context.Context, taken []cid.Cid) (int, error) {
 	if len(taken) == 0 {
 		return 0, nil
@@ -1539,9 +1480,9 @@ func (store *Datastore) dropTaken(ctx context.Context, taken []cid.Cid) (int, er
 	return len(taken), nil
 }
 
-// unindex removes the index entries of cids, retiring the state each
-// snapshot among them names, with the manifest of what that leaves
-// unreached, as one atomic commit. The caller holds store.mu.
+// unindex removes cids' entries and retires the states snapshots among them
+// name, with the manifest of what that leaves unreached, in one atomic commit.
+// The caller holds store.mu.
 func (store *Datastore) unindex(ctx context.Context, cids []cid.Cid) error {
 	store.gcMu.Lock()
 	defer store.gcMu.Unlock()

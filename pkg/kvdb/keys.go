@@ -9,11 +9,10 @@ import (
 	ds "github.com/ipfs/go-datastore"
 )
 
-// A key is built in one allocation: its prefix is computed once per store,
-// and each segment is encoded straight into the key's buffer, in the form
-// keySegment, dot.segment and dshelp's block keys give.
+// A key is built in one allocation: its prefix is computed once per store and
+// each segment encoded straight into its buffer.
 
-// prefixes are the store's key prefixes, each without its trailing slash.
+// Each prefix is without its trailing slash.
 type prefixes struct {
 	blocks, missing, retry, intents, manifests, pins, reclaim, vector, cloud, redo string
 }
@@ -33,12 +32,12 @@ func newPrefixes(ns ds.Key) prefixes {
 	}
 }
 
-// dsKey is the key b spells. b must not change after.
+// b must not change after.
 func dsKey(b []byte) ds.Key {
 	return ds.RawKey(unsafe.String(unsafe.SliceData(b), len(b)))
 }
 
-// stringOf is the string b spells, over b's bytes. b must not change after.
+// stringOf aliases b, which must not change after.
 func stringOf(b []byte) string {
 	return unsafe.String(unsafe.SliceData(b), len(b))
 }
@@ -67,8 +66,7 @@ func appendDotSegment(b []byte, d dot) []byte {
 	return appendCounter(append(appendReplicaSegment(b, d.replica), '.'), d.counter)
 }
 
-// appendCounter appends n zero-padded to counterDigits, so byte order is
-// numeric order.
+// Zero-padded so byte order is numeric order.
 func appendCounter(b []byte, n uint64) []byte {
 	var digits [counterDigits]byte
 	s := strconv.AppendUint(digits[:0], n, 10)
@@ -78,7 +76,7 @@ func appendCounter(b []byte, n uint64) []byte {
 	return append(b, s...)
 }
 
-// hashOf is the multihash of c, without copying it.
+// hashOf does not copy.
 func hashOf(c cid.Cid) []byte {
 	b := bytesOf(c.KeyString())
 	if len(b) == 0 || c.Version() == 0 {
@@ -98,7 +96,6 @@ func hashKey(prefix string, c cid.Cid) ds.Key {
 	return dsKey(appendHashKey(make([]byte, 0, len(prefix)+1+segEncoding.EncodedLen(len(h))), prefix, c))
 }
 
-// appendHashKey appends the bytes of hashKey(prefix, c) to b.
 func appendHashKey(b []byte, prefix string, c cid.Cid) []byte {
 	b = append(b, prefix...)
 	if h := hashOf(c); len(h) > 0 {
@@ -107,7 +104,6 @@ func appendHashKey(b []byte, prefix string, c cid.Cid) []byte {
 	return b
 }
 
-// dotKey is prefix/<the segment of d>.
 func dotKey(prefix string, d dot) ds.Key {
 	return dsKey(appendDotKey(make([]byte, 0, len(prefix)+1+dotSegmentLen(d)), prefix, d))
 }

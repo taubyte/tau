@@ -13,12 +13,11 @@ import (
 	pb "github.com/taubyte/tau/pkg/kvdb/statetree/pb"
 )
 
-// Format is the format profile this package reads and writes.
 const Format = 2
 
 const levelDomain = "tau/mst/v1/level"
 
-// noLevel bounds a root, which may be at any level.
+// A root may be at any level.
 const noLevel = math.MaxUint32
 
 var (
@@ -28,7 +27,6 @@ var (
 	ErrDuplicateKey = errors.New("statetree: duplicate key")
 )
 
-// Level is the level of key in format profile 1.
 func Level(key []byte) uint32 {
 	var buf [128]byte
 	in := buf[:0]
@@ -52,11 +50,10 @@ func Level(key []byte) uint32 {
 	return l
 }
 
-// A Summarizer gives each subtree a summary of its entries. Leaf appends to
-// dst the summary of one entry, and Merge the summary of two adjacent runs
-// of entries, left before right. Merge must be associative, and both pure
-// functions of their arguments, which they must not modify; Merge must read
-// left and right before it writes, as dst may share memory with either.
+// A Summarizer folds entries into subtree summaries. Leaf appends one entry's
+// summary to dst, Merge that of two adjacent runs, left first. Both must be
+// pure and leave their arguments unmodified; Merge must be associative and
+// read left and right before writing, as dst may alias either.
 type Summarizer interface {
 	Leaf(dst, key, value []byte) []byte
 	Merge(dst, left, right []byte) []byte
@@ -66,8 +63,8 @@ type entry struct {
 	key, val []byte
 }
 
-// A ref is a subtree slot: its root, undefined for none, and its summary;
-// or, while a change is under way, the node it made and has not encoded.
+// A ref is a subtree's root and summary, undefined for none, or while a change
+// is under way the unencoded node it made.
 type ref struct {
 	c   cid.Cid
 	sum []byte
@@ -76,7 +73,6 @@ type ref struct {
 
 func (r ref) present() bool { return r.c.Defined() || r.n != nil }
 
-// is reports whether r and o are the same subtree.
 func (r ref) is(o ref) bool { return r.c == o.c && r.n == o.n }
 
 // A node in memory has one more kid than it has entries: kids[i] holds the
@@ -87,9 +83,8 @@ type node struct {
 	kids    []ref
 }
 
-// A decoded node is made with its entries and kids in one allocation, with
-// room for as many entries as the smallest class that holds them; a node
-// past the largest class makes them apart.
+// A node is made with its entries and kids in one allocation, sized to the
+// smallest class that holds them; past the largest they are made apart.
 type (
 	node8 struct {
 		n node
@@ -113,7 +108,6 @@ type (
 	}
 )
 
-// nodeRoom is the entries a node of entries is made with room for.
 func nodeRoom(entries int) int {
 	switch {
 	case entries <= 8:
@@ -150,8 +144,6 @@ func newNode(level uint32, entries int) *node {
 	return &node{level: level, entries: make([]entry, entries), kids: make([]ref, entries+1)}
 }
 
-// search returns the index of key among the entries, or the slot it would
-// be in.
 func (n *node) search(key []byte) (int, bool) {
 	lo, hi := 0, len(n.entries)
 	for lo < hi {
@@ -251,26 +243,24 @@ func malformed(c cid.Cid, format string, args ...any) error {
 	return fmt.Errorf("%w %s: %s", ErrMalformed, c, fmt.Sprintf(format, args...))
 }
 
-// decode reads the node in nd, which must sit below a node of level below.
+// nd must sit under a node of level below.
 func decode(nd blocks.Block, below uint32) (*node, error) {
 	n, _, err := decodeNode(nd, below, nil)
 	return n, err
 }
 
-// decodeNode is decode, but for a node own wants, given its level and what
-// it would cost to keep (footprint), it copies every byte the node holds
-// into one buffer of its own, and returns that cost; otherwise 0.
+// decodeNode is decode, but when own accepts the node's level and footprint
+// the node copies its bytes into one buffer of its own, and that cost is
+// returned; otherwise 0.
 func decodeNode(nd blocks.Block, below uint32, own func(level uint32, size int) bool) (*node, int, error) {
 	c := nd.Cid()
 	data, links, err := DecodeBlock(nd, nil)
 	if err != nil {
 		return nil, 0, malformed(c, "%s", err)
 	}
-	// The message's bytes alias the block's data from here: a block is never
-	// written to once made, and the node keeps only clipped slices of it, so
-	// no append through them can reach the bytes after. The message goes
-	// back to the pool when decode returns; the node's slices live as long
-	// as the node.
+	// The message aliases the block's data. Blocks never change and the node
+	// keeps only clipped slices, so no append reaches past them; the message
+	// returns to the pool when decode does.
 	msg := pb.NodeFromVTPool()
 	defer msg.ReturnToVTPool()
 	if err := msg.UnmarshalVTUnsafe(data); err != nil {
@@ -310,7 +300,6 @@ func decodeNode(nd blocks.Block, below uint32, own func(level uint32, size int) 
 	}
 	n := newNode(msg.Level, len(msg.Entries))
 	buf := make([]byte, 0, size)
-	// held is b, or b copied into buf when the node owns its bytes.
 	held := func(b []byte) []byte {
 		if cost == 0 {
 			return slices.Clip(b)
@@ -330,8 +319,7 @@ func decodeNode(nd blocks.Block, below uint32, own func(level uint32, size int) 
 		if li == len(links) {
 			return malformed(c, "more subtrees than links")
 		}
-		// A cid read is over the block's bytes: a node that owns its bytes
-		// takes it over its own.
+		// A link aliases the block; a node that owns its bytes takes it over its own.
 		l := links[li]
 		if cost != 0 {
 			l = CastCid(held(cidBytes(l)))

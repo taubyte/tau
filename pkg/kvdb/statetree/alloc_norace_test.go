@@ -1,17 +1,15 @@
 //go:build !race
 
-// The race detector makes sync.Pool drop what is put in it at random, so
-// what a pooled message saves is counted only without it.
+// sync.Pool drops entries at random under the race detector, so allocations
+// are counted without it.
 
 package statetree
 
 import "testing"
 
-// TestNodeCodecAllocations bounds what encoding and decoding a node costs:
-// a decode allocates the node with its entries and kids, one buffer for
-// its keys and the slice of its links, and copies none of the block's bytes, a
-// link's cid among them; an encode allocates the data, the block's bytes
-// with its cid, and the Block.
+// A decode allocates the node, its key buffer and its links, copying none of
+// the block's bytes; an encode allocates the data, the block with its cid, and
+// the Block.
 func TestNodeCodecAllocations(t *testing.T) {
 	n := wideNode(t)
 	nd, err := encode(n)
@@ -42,8 +40,6 @@ func TestNodeCodecAllocations(t *testing.T) {
 	}
 }
 
-// TestABlockInItsBufferIsOneAllocation: the Block; its cid is in the
-// buffer.
 func TestABlockInItsBufferIsOneAllocation(t *testing.T) {
 	want, err := NewBlock([]byte("data"), nil)
 	if err != nil {

@@ -12,12 +12,9 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 )
 
-// gcPrefixes are every namespace a collector has kept its records under:
-// reference counts and reclaim marks, intents, manifests and pins.
+// Every namespace a collector has kept records under, past ones included.
 var gcPrefixes = []string{"/n/", "/x/", "/i/", "/g/", "/p/"}
 
-// gcCounter counts the operations on the keys of a collector's records
-// under ns, and the blocks written and removed.
 type gcCounter struct {
 	ns                  string
 	ops, writes, remove atomic.Int64
@@ -101,13 +98,6 @@ func (d *gcCountedDAG) RemoveMany(ctx context.Context, cids []cid.Cid) error {
 	return d.DAGService.RemoveMany(ctx, cids)
 }
 
-// TestCollectionWorkIsWhatChanged: what the collector asks of the store
-// for a compaction grows with the blocks the compaction writes and the
-// blocks it leaves unreached, not with the children those share with the
-// trees that stay, nor with the size of the store. Each new tree node took
-// a reference on every child it links, and dropping the old snapshot gave
-// each back: shared children cost a read and a write twice, and every one
-// of those was recorded and applied as part of the commit.
 func TestCollectionWorkIsWhatChanged(t *testing.T) {
 	ctx := context.Background()
 	check := checkSnapshot

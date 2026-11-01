@@ -34,10 +34,8 @@ const (
 )
 
 type set struct {
-	store     ds.Datastore
-	namespace ds.Key
-	// elems, pending and keys are the prefixes of the elements, the
-	// pending removals and the values.
+	store                ds.Datastore
+	namespace            ds.Key
 	elems, pending, keys string
 	putHook              func(key string, v []byte)
 	deleteHook           func(key string)
@@ -65,7 +63,6 @@ type removal struct {
 
 func (r removal) expires() uint64 { return r.at + r.ttl }
 
-// newSet is the set under namespace in store.
 func newSet(store ds.Datastore, namespace ds.Key) *set {
 	return &set{
 		store:     store,
@@ -124,7 +121,6 @@ func appendMarker(b []byte, e element) []byte {
 	return append(b, e.value...)
 }
 
-// uvarints reads n uvarints off the front of b and returns them with the rest.
 func uvarints(b []byte, n int) ([]uint64, []byte, error) {
 	out := make([]uint64, n)
 	rest, err := uvarintsInto(out, b)
@@ -134,8 +130,6 @@ func uvarints(b []byte, n int) ([]uint64, []byte, error) {
 	return out, rest, nil
 }
 
-// uvarintsInto reads len(out) uvarints from b into out, and returns what
-// follows them.
 func uvarintsInto(out []uint64, b []byte) ([]byte, error) {
 	for i := range out {
 		v, k := binary.Uvarint(b)
@@ -183,7 +177,6 @@ func decodePriority(data []byte) (uint64, error) {
 	return prio - 1, nil
 }
 
-// parseElem turns a full /e/<key>/<dot> entry back into an element.
 func (s *set) parseElem(k string, v []byte) (element, error) {
 	rel := strings.TrimPrefix(k, s.elemsPrefix().String()+"/")
 	kseg, dseg, ok := strings.Cut(rel, "/")
@@ -206,7 +199,6 @@ func (s *set) parseElem(k string, v []byte) (element, error) {
 	return el, nil
 }
 
-// parsePending turns a full /t/<dot>/<key> entry back into a removal.
 func (s *set) parsePending(k string, v []byte) (removal, error) {
 	rel := strings.TrimPrefix(k, s.pendingPrefix().String()+"/")
 	dseg, kseg, ok := strings.Cut(rel, "/")
@@ -228,7 +220,7 @@ func (s *set) parsePending(k string, v []byte) (removal, error) {
 	return removal{key: key, dot: d, at: at, ttl: ttl}, nil
 }
 
-// liveElems is every live element of key, until the next liveElems on t.
+// The result lasts until the next liveElems on t.
 func (s *set) liveElems(ctx context.Context, t *txn, key string) ([]element, error) {
 	t.prefix = appendKeySegment(append(append(t.prefix[:0], s.elems...), '/'), key)
 	entries, err := t.scan(ctx, dsKey(t.prefix))
@@ -251,17 +243,14 @@ func (s *set) liveElems(ctx context.Context, t *txn, key string) ([]element, err
 	return t.elems, nil
 }
 
-// change is what a merge did to one key's value, for the hooks.
 type change struct {
 	put     bool
 	value   []byte
 	deleted bool
 }
 
-// settle recomputes each touched key's winner and reports what changed: put
-// when the key's value appeared or changed, deleted when it went from present
-// to absent. A new winner holding the same bytes is not a change, though its
-// priority is stored.
+// A new winner holding the same bytes is no change, though its priority is
+// stored.
 func (s *set) settle(ctx context.Context, t *txn, touched map[string]change) error {
 	for key := range touched {
 		live, err := s.liveElems(ctx, t, key)
@@ -325,17 +314,14 @@ func (s *set) fireHooks(touched map[string]change) {
 	}
 }
 
-// Element retrieves the value of an element from the CRDT set.
 func (s *set) Element(ctx context.Context, key string) ([]byte, error) {
 	return s.store.Get(ctx, s.valueKey(key))
 }
 
-// InSet returns true if the key has a live element.
 func (s *set) InSet(ctx context.Context, key string) (bool, error) {
 	return s.store.Has(ctx, s.valueKey(key))
 }
 
-// Elements returns every key with a live element under the query's prefix.
 func (s *set) Elements(ctx context.Context, q query.Query) (query.Results, error) {
 	keyNamespacePrefix := s.namespace.ChildString(keysNs)
 	keyNamespacePrefixStr := keyNamespacePrefix.String()

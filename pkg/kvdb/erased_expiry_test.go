@@ -2,20 +2,15 @@ package kvdb
 
 import "testing"
 
-// TestAnErasedDotIsKeptAcrossRebasesAndExpires: what a rebase erased is
-// kept through a reopen and a later rebase; a copy of what it names, held
-// where its writer is forgotten, is refused and removed there by the next
-// snapshot; and it is forgotten once it expires, its time passing to the
-// horizon.
 func TestAnErasedDotIsKeptAcrossRebasesAndExpires(t *testing.T) {
 	st := newSimTime()
 	j, r, w := st.replica(t, "j", 0), st.replica(t, "r", 0), st.replica(t, "w", 0)
 	put(t, r.r, "/x", "removed")
-	w.pull(t, r) // w takes the put and never hears the removal
+	w.pull(t, r)
 	del(t, r.r, "/x")
 	j.pull(t, r)
 	compact(t, j.r)
-	r.pull(t, j) // j's snapshot acknowledges both: r's log forgets them
+	r.pull(t, j)
 	if n := countEntries(t, r.r, r.r.ownPrefix()); n != 0 {
 		t.Fatalf("setup: %d own operations still logged", n)
 	}
@@ -33,7 +28,7 @@ func TestAnErasedDotIsKeptAcrossRebasesAndExpires(t *testing.T) {
 	r.reopen(t)
 	r.dropForRebase(t, st.ms())
 	r.walked(t)
-	r.maintain(t) // the snapshot the rebase left due
+	r.maintain(t)
 	r.r.mu.Lock()
 	e := r.r.erased[first]
 	r.r.mu.Unlock()
@@ -44,7 +39,7 @@ func TestAnErasedDotIsKeptAcrossRebasesAndExpires(t *testing.T) {
 	compact(t, w.r)
 	r.pull(t, w)
 	r.wantValue(t, "/x", "<deleted>")
-	r.maintain(t) // the refusal makes a snapshot due
+	r.maintain(t)
 	w.pull(t, r)
 	w.wantValue(t, "/x", "<deleted>")
 
@@ -61,11 +56,6 @@ func TestAnErasedDotIsKeptAcrossRebasesAndExpires(t *testing.T) {
 	}
 }
 
-// TestAnErasedCopyBesideAnOwnHeadIsCarriedAway: the copy is refused in a
-// merge that leaves this replica's own head beside the snapshot that brought
-// it, so no difference from a lone head asks for a snapshot. The refusal
-// does: without it the pending removal waits for a snapshot nothing asks
-// for, and the copy stays live where it came from.
 func TestAnErasedCopyBesideAnOwnHeadIsCarriedAway(t *testing.T) {
 	st := newSimTime()
 	j, r, w := st.replica(t, "j", 0), st.replica(t, "r", 0), st.replica(t, "w", 0)
@@ -99,9 +89,6 @@ func TestAnErasedCopyBesideAnOwnHeadIsCarriedAway(t *testing.T) {
 	w.wantValue(t, "/x", "<deleted>")
 }
 
-// TestAnErasedRecordAboutToExpireMakesAnOldSnapshotStale: once what a rebase
-// erased is due to be forgotten, a state from before the rebase may hold
-// what it refutes, and nothing will refute it after: it is refused.
 func TestAnErasedRecordAboutToExpireMakesAnOldSnapshotStale(t *testing.T) {
 	st := newSimTime()
 	j, r, w := st.replica(t, "j", 0), st.replica(t, "r", 0), st.replica(t, "w", 0)

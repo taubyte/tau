@@ -10,8 +10,8 @@ import (
 	mh "github.com/multiformats/go-multihash"
 )
 
-// TestCidOverIsACid: a cid.Cid is one string of the cid's bytes, which
-// CidOver casts to; go-cid changing that fails here, not in a read.
+// CidOver casts bytes to a cid.Cid: this fails if go-cid stops holding a cid
+// as one string of its bytes.
 func TestCidOverIsACid(t *testing.T) {
 	typ := reflect.TypeFor[cid.Cid]()
 	if typ.NumField() != 1 || typ.Field(0).Type.Kind() != reflect.String {
@@ -43,8 +43,6 @@ func TestCidOverIsACid(t *testing.T) {
 	}
 }
 
-// TestABlockCidSharesItsBytes: a new Block's cid lies past the block's
-// bytes, which an append cannot reach.
 func TestABlockCidSharesItsBytes(t *testing.T) {
 	h, err := mh.Sum([]byte("x"), mh.SHA2_256, -1)
 	if err != nil {
@@ -67,8 +65,6 @@ func TestABlockCidSharesItsBytes(t *testing.T) {
 	}
 }
 
-// TestABlockInItsBufferIsTheBlockOfItsBytes: a block made in a BlockBuffer
-// is the block BlockOf makes of the same bytes, with or without the room.
 func TestABlockInItsBufferIsTheBlockOfItsBytes(t *testing.T) {
 	want, err := NewBlock([]byte("data"), nil)
 	if err != nil {

@@ -13,7 +13,6 @@ import (
 	"github.com/taubyte/tau/pkg/kvdb/statetree"
 )
 
-// fetchedGetter answers GetMany with nodes it already holds.
 type fetchedGetter struct {
 	ipld.NodeGetter
 	nodes []ipld.Node
@@ -28,12 +27,6 @@ func (g *fetchedGetter) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipl
 	return out
 }
 
-// TestGetDeltasKeepsWhatWasFetchedInTime: a walk reads a delta, queues it
-// for a worker, and reads the next. The channel held one delta, so while the
-// walk waited on its workers the next was held back, and once the fetch's
-// context expired it was dropped: a block fetched in time was recorded as
-// missing and left to the next repair. Under load TestCRDTPriority waited a
-// minute for that repair.
 func TestGetDeltasKeepsWhatWasFetchedInTime(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		g := &fetchedGetter{}
@@ -71,11 +64,9 @@ func TestGetDeltasKeepsWhatWasFetchedInTime(t *testing.T) {
 	})
 }
 
-// TestBlockCodecAllocations bounds what a delta block costs to make and to
-// read. Reading allocates the delta and its dot, each element and its dot,
-// and the element slice as it grows (five times to 16), and copies none of
-// the block's bytes; making allocates the block's bytes, the delta's among
-// them, its cid and the Block.
+// Reading allocates the delta and its dot, each element and its dot, and the
+// element slice as it grows (five times to 16), copying none of the block;
+// making allocates the block's bytes, its cid and the Block.
 func TestBlockCodecAllocations(t *testing.T) {
 	delta := &pb.Delta{Priority: 3, Dot: dot{replica: "replica-id-0000000000000000", counter: 7}.toPB(), At: 1, Ttl: 2}
 	for i := range 16 {
@@ -113,8 +104,6 @@ func TestBlockCodecAllocations(t *testing.T) {
 	}
 }
 
-// TestDecodedDeltaAliasesItsBlock: reading a delta copies none of its
-// block's bytes.
 func TestDecodedDeltaAliasesItsBlock(t *testing.T) {
 	nd, err := makeNode(&pb.Delta{Elements: []*pb.Element{{Key: []byte("/a"), Value: []byte("one")}, {Key: []byte("/b"), Value: []byte("two")}}}, nil)
 	if err != nil {
@@ -136,11 +125,6 @@ func TestDecodedDeltaAliasesItsBlock(t *testing.T) {
 	}
 }
 
-// TestASnapshotMergeReadsEachBlockOnce: a replica catching up fetches the
-// blocks of a state, then reads them to check their stamps, to load the
-// state and to diff it against its own. Each of those used to read every
-// block it needed back from the blockstore and decode it again; the merge
-// now reads each block of the state once, the fetch's own read included.
 func TestASnapshotMergeReadsEachBlockOnce(t *testing.T) {
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 2, noAutoCompact())
 	defer done()

@@ -6,12 +6,6 @@ import (
 	"time"
 )
 
-// TestARemovalOfAnExpiredEntryIsPendingWhateverTheReceiversClock (M6): a
-// removal of a dot whose entry had expired by the time the removal was
-// written is filed as a pending removal, as a replica that forgot the entry
-// files it, even by a replica whose drop clock has not reached that expiry
-// yet. Touching the entry instead would keep it, and the coverage it gives
-// every other dot of the incarnation, alive for another T.
 func TestARemovalOfAnExpiredEntryIsPendingWhateverTheReceiversClock(t *testing.T) {
 	st := newSimTime()
 	w, a, r := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "r", -simS/2)
@@ -46,15 +40,6 @@ func TestARemovalOfAnExpiredEntryIsPendingWhateverTheReceiversClock(t *testing.T
 	r.wantValue(t, "/j", "u")
 }
 
-// TestARemovalOfAnExpiredEntryStaysPendingWhenItsDeltaArrivesAfter (D.08): a
-// removal written after its target's entry expired, by a clock ahead within
-// the skew, can reach a replica before the delta it removes, and that
-// replica, its clock short of the expiry, still merges the delta. The merge
-// leaves the removal pending, as a replica that merged the delta first files
-// it: settling it by coverage would touch the entry with the removal's
-// stamps, the two replicas would hold different states from the same blocks,
-// and the one that got them in this order would keep the entry alive for
-// another T.
 func TestARemovalOfAnExpiredEntryStaysPendingWhenItsDeltaArrivesAfter(t *testing.T) {
 	st := newSimTime()
 	w, a := st.replica(t, "w", 0), st.replica(t, "a", 0)
@@ -106,12 +91,6 @@ func TestARemovalOfAnExpiredEntryStaysPendingWhenItsDeltaArrivesAfter(t *testing
 	}
 }
 
-// TestARemovalTouchesItsEntryWhateverOrderItsIncarnationsDeltasArrive: a
-// removal written after its target's delta expired, by a clock ahead within
-// the skew, touches the entry when a later delta of the same incarnation
-// kept it alive when the removal was written. A replica that merges that
-// later delta only after the removal, having filed it as pending, settles it
-// then, and holds the state a replica that merged the delta first holds.
 func TestARemovalTouchesItsEntryWhateverOrderItsIncarnationsDeltasArrive(t *testing.T) {
 	st := newSimTime()
 	w, a := st.replica(t, "w", 0), st.replica(t, "a", 0)

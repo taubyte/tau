@@ -14,34 +14,26 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// A replica that has been out of contact may carry elements the fleet has
-// removed and has since forgotten removing. It must not merge into the fleet
-// on its own word (T2 A1), and its own clock cannot say how long it was away.
+// A replica that was out of contact may carry elements the fleet removed and
+// has since forgotten removing, and its own clock cannot say how long it was
+// away. So a replica that opens having heard a fleet, or that has heard no
+// live peer for G, is rejoining: it records the fleet time as of which it last
+// held all its peers held (its gap_from, see settle.go), reports only that,
+// walks nobody's heads, and nobody walks its. A peer that can judge answers ok
+// when it holds all the fleet holds and can still refute anything removed
+// since the gap_from (see stale), rebase when it cannot. An ok ends the gap
+// once the replica holds what the judge vouched with. A rebase replaces the
+// replica's state with the judge's and writes again, under a new incarnation,
+// what it wrote that the judge does not cover.
 //
-// So a replica that opens with anything heard from a fleet, or that has heard
-// no peer that is not rejoining, nor answered a rejoin it could end, for three
-// rebroadcast intervals, is rejoining: it records the fleet time as of which
-// it last held all its peers held (its gap_from, see settle.go), reports that
-// and nothing later, walks nobody's heads, and nobody walks its. Every
-// broadcast says so. A peer that can judge answers: ok when it holds all the
-// fleet holds and can still refute anything removed since the gap_from (see
-// stale), rebase when it cannot refute it. An ok ends the gap once the replica
-// holds what the judge vouched with. A rebase replaces everything the replica
-// holds with the judge's state and writes again, under a new incarnation, what
-// it wrote that the judge does not cover: its own operations are never lost to
-// a rebase.
-//
-// An ok is taken only from a judge that held all the fleet held as of a
-// fleet time at least as recent as the gap_from, a rebase only from one that
-// has heard a fleet that recent (authoritative), either only from a judge
-// whose clock is not behind the replica's, and only for the incarnation it
-// names. A replica that has never heard a fleet does not judge, and a
-// rejoining one judges only while it hears no live peer: it may be the one
-// that is stale.
-//
-// Every broadcast from a replica that is not rejoining is judged too: one
-// that reports a fleet time this replica could no longer vouch for is told to
-// rebase, and its heads are not walked.
+// An ok is taken only from a judge that held all the fleet held as of a time
+// at least as recent as the gap_from, a rebase only from one that has heard a
+// fleet that recent; either only from a judge whose clock is not behind, and
+// only for the incarnation it names. A replica that never heard a fleet does
+// not judge, and a rejoining one judges only while it hears no live peer. A
+// broadcast from a replica that is not rejoining is judged too: one reporting
+// a fleet time this replica can no longer vouch for is told to rebase, and its
+// heads are not walked.
 
 const (
 	rejoinKey = "j" // under the context: the gap_from while rejoining
@@ -110,7 +102,6 @@ func (store *Datastore) ownPrefix() ds.Key { return store.namespace.ChildString(
 
 func (store *Datastore) ownKey(d dot) ds.Key { return store.ownPrefix().ChildString(d.segment()) }
 
-// A message is a decoded broadcast.
 type message struct {
 	heads       []Head
 	since, now  uint64
@@ -133,7 +124,6 @@ type verdict struct {
 	held   uint64
 }
 
-// decodeBroadcast parses a CRDTBroadcast received via pubsub.
 func (store *Datastore) decodeBroadcast(data []byte) (message, error) {
 	b := pb.CRDTBroadcast{}
 	if err := b.UnmarshalVT(data); err != nil {
@@ -160,11 +150,9 @@ func (store *Datastore) decodeBroadcast(data []byte) (message, error) {
 	return msg, nil
 }
 
-// message is what this replica broadcasts now: heads, its fleet time and
-// clock, whether it is rejoining, and a verdict if it answers one. Its
-// incarnation and heads borrow the bytes of the strings that hold them, and
-// it is the store's one message, so it is marshalled before store.mu is
-// released, and nothing else. The caller holds store.mu.
+// message is the store's one broadcast message: its incarnation and heads
+// borrow the bytes of the strings holding them, so it is marshalled before
+// store.mu is released. The caller holds store.mu.
 func (store *Datastore) message(heads []Head, v *verdict) *pb.CRDTBroadcast {
 	store.sent++
 	b := &store.msg
@@ -236,8 +224,8 @@ func (store *Datastore) message(heads []Head, v *verdict) *pb.CRDTBroadcast {
 	return b
 }
 
-// encodeBroadcast is a broadcast of heads; a heartbeat of a replica that has
-// heard a fleet and is not rejoining carries its frontier too.
+// A heartbeat of a replica that has heard a fleet and is not rejoining carries
+// its frontier too.
 func (store *Datastore) encodeBroadcast(ctx context.Context, heads []Head, beat bool) ([]byte, error) {
 	store.mu.Lock()
 	b := store.message(heads, nil)
@@ -251,9 +239,8 @@ func (store *Datastore) encodeBroadcast(ctx context.Context, heads []Head, beat 
 	return data, err
 }
 
-// broadcastSince is the fleet time a broadcast reports: reportedSince, or 0
-// for a replica that has never heard a fleet, which holds only what it wrote
-// itself and can judge nobody. The caller holds store.mu.
+// 0 for a replica that never heard a fleet: it holds only what it wrote and
+// judges nobody. The caller holds store.mu.
 func (store *Datastore) broadcastSince() uint64 {
 	if store.since == 0 {
 		return 0
@@ -261,8 +248,8 @@ func (store *Datastore) broadcastSince() uint64 {
 	return store.reportedSince()
 }
 
-// reportedSince is the fleet time this replica vouches for: its gap_from
-// while rejoining, what it holds otherwise. The caller holds store.mu.
+// reportedSince is the fleet time vouched for: the gap_from while rejoining,
+// what is held otherwise. The caller holds store.mu.
 func (store *Datastore) reportedSince() uint64 {
 	if store.rejoining {
 		return store.gapFrom
@@ -270,9 +257,8 @@ func (store *Datastore) reportedSince() uint64 {
 	return store.knownSince()
 }
 
-// loadRejoin restores the rejoin state at open: a rejoin interrupted by a
-// crash goes on with the gap_from it had, and a replica that has heard a
-// fleet before starts one, since it cannot tell how long it was closed.
+// A rejoin a crash interrupted goes on with its gap_from, and a replica that
+// has heard a fleet starts one, since it cannot tell how long it was closed.
 func (store *Datastore) loadRejoin(ctx context.Context) error {
 	gap, err := store.store.Get(ctx, store.rejoinKey())
 	switch {
@@ -292,15 +278,15 @@ func (store *Datastore) loadRejoin(ctx context.Context) error {
 	return store.startRejoin(ctx, store.held())
 }
 
-// held is the fleet time what this replica holds is as recent as: the last
-// one it held all its live peers held at, or the earliest of all if it never
-// did. The caller holds store.mu or is opening.
+// held is the fleet time as of which this replica last held all its live peers
+// held, or the earliest of all if it never did. The caller holds store.mu or is
+// opening.
 func (store *Datastore) held() uint64 {
 	return max(store.settledSince, 1)
 }
 
-// startRejoin begins a rejoin from gap, recording it before anything heard
-// can move it. The caller holds store.mu or is opening.
+// The gap is recorded before anything heard can move it. The caller holds
+// store.mu or is opening.
 func (store *Datastore) startRejoin(ctx context.Context, gap uint64) error {
 	if err := store.store.Put(ctx, store.rejoinKey(), binary.AppendUvarint(nil, gap)); err != nil {
 		return err
@@ -313,8 +299,7 @@ func (store *Datastore) startRejoin(ctx context.Context, gap uint64) error {
 	return nil
 }
 
-// endRejoin ends a rejoin on an ok: the fleet time heard is the judge's. The
-// caller holds store.mu.
+// On an ok the fleet time heard is the judge's. The caller holds store.mu.
 func (store *Datastore) endRejoin(ctx context.Context, since uint64) error {
 	t := newTxn(store.store)
 	t.del(store.rejoinKey())
@@ -331,12 +316,10 @@ func (store *Datastore) endRejoin(ctx context.Context, since uint64) error {
 	return nil
 }
 
-// checkGap starts a rejoin when no peer of the fleet has been heard for G,
-// and ends one when the only peers heard for G whose clocks agree with this
-// one's have never heard a fleet: they hold nothing that could be stale and
-// can judge nobody, and this replica, still reporting the fleet time it had
-// before its gap, is judged by that time if it ever meets the fleet again. A
-// peer whose clock disagrees can judge nobody either, whatever it has heard.
+// checkGap starts a rejoin when no fleet peer has been heard for G, and ends
+// one when the only peers heard for G whose clocks agree have never heard a
+// fleet: they can judge nobody, and this replica keeps reporting its old fleet
+// time. A peer whose clock disagrees judges nobody either.
 func (store *Datastore) checkGap(ctx context.Context) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
@@ -358,8 +341,7 @@ func (store *Datastore) checkGap(ctx context.Context) error {
 	return store.rejoinIfAway(ctx)
 }
 
-// rejoinIfAway starts a rejoin when no peer of the fleet has been heard for
-// G. The caller holds store.mu, and the replica has heard a fleet and is not
+// The caller holds store.mu; the replica has heard a fleet and is not
 // rejoining.
 func (store *Datastore) rejoinIfAway(ctx context.Context) error {
 	if store.times.up()-store.lastHeard <= gapIntervals*store.opts.RebroadcastInterval {
@@ -369,14 +351,13 @@ func (store *Datastore) rejoinIfAway(ctx context.Context) error {
 }
 
 // plausible reports whether a peer's clock, read a delivery ago, agrees with
-// this replica's within the skew. The caller holds store.mu.
+// this one's within the skew. The caller holds store.mu.
 func (store *Datastore) plausible(now uint64) bool {
 	clock := store.clock()
 	window := durationMillis(store.opts.DeliveryBound + store.opts.ClockSkew)
 	return now <= clock+store.times.skew && now+window >= clock
 }
 
-// handleBroadcast is what a replica does with what it hears.
 func (store *Datastore) handleBroadcast(ctx context.Context, msg message) {
 	store.mu.Lock()
 	if store.closed || msg.incarnation == store.replica {
@@ -485,9 +466,8 @@ func (store *Datastore) currentIncarnation() string {
 	return store.replica
 }
 
-// walkHeads walks every head on its own: a walk stuck fetching a block its
-// author has since compacted away must not hold up the snapshot, heard
-// later, that covers it and so ends the stuck walk.
+// Each head is walked on its own: a walk stuck on a block its author compacted
+// away must not hold up the snapshot, heard later, that covers it.
 func (store *Datastore) walkHeads(ctx context.Context, gen uint64, heads []Head) {
 	if store.opts.manual {
 		// A test driving time walks in step with what it delivers.
@@ -509,9 +489,9 @@ func (store *Datastore) walkHeads(ctx context.Context, gen uint64, heads []Head)
 	}
 }
 
-// judge answers a rejoining sender if it can, tells a sender that is not
-// rejoining to rebase if it could no longer vouch for it, and reports whether
-// the sender's heads are to be walked, and the answer to broadcast if any.
+// judge answers a rejoining sender if it can, tells one that is not rejoining
+// to rebase if it can no longer vouch for it, and reports whether to walk the
+// sender's heads and the answer to broadcast, if any.
 func (store *Datastore) judge(ctx context.Context, msg message) (bool, []byte, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
@@ -578,9 +558,8 @@ func (store *Datastore) judge(ctx context.Context, msg message) (bool, []byte, e
 	return false, data, err
 }
 
-// canJudge reports whether this replica may answer a rejoining one: it has
-// heard a fleet, and it is not rejoining itself while a live peer, who would
-// judge better, is in earshot. The caller holds store.mu.
+// A rejoining replica judges only while no live peer, who would judge better,
+// is in earshot. The caller holds store.mu.
 func (store *Datastore) canJudge() bool {
 	if store.since == 0 {
 		return false
@@ -591,8 +570,8 @@ func (store *Datastore) canJudge() bool {
 	return store.liveHeard == 0 || store.times.up()-store.liveHeard > gapIntervals*store.opts.RebroadcastInterval
 }
 
-// answering reports whether to answer an incarnation now: at most once per
-// rebroadcast interval each. The caller holds store.mu.
+// At most once per rebroadcast interval per incarnation. The caller holds
+// store.mu.
 func (store *Datastore) answering(inc string) bool {
 	now := store.times.up()
 	if last, ok := store.answered[inc]; ok && now-last < store.opts.RebroadcastInterval {
@@ -607,8 +586,6 @@ func (store *Datastore) answering(inc string) bool {
 	return true
 }
 
-// onVerdict takes a verdict addressed to this incarnation from a judge it
-// can trust with it.
 func (store *Datastore) onVerdict(ctx context.Context, msg message) error {
 	v := msg.verdict
 	store.mu.Lock()
@@ -661,9 +638,8 @@ func (store *Datastore) onVerdict(ctx context.Context, msg message) error {
 	return store.rebase(ctx, v, msg)
 }
 
-// heartbeat is one rebroadcast: start a rejoin if no peer was heard for G,
-// then announce the heads nobody else announced, with this replica's fleet
-// time, even when there are none.
+// heartbeat starts a rejoin if no peer was heard for G, then announces the
+// heads nobody else did, with the fleet time, even when there are none.
 func (store *Datastore) heartbeat(ctx context.Context) {
 	if err := store.checkGap(ctx); err != nil {
 		store.logger.Errorf("checking for a gap: %s", err)
@@ -671,9 +647,8 @@ func (store *Datastore) heartbeat(ctx context.Context) {
 	store.rebroadcastHeads(ctx)
 }
 
-// logOwn records, in a merge of this replica's own delta, what the delta
-// wrote, for as long as it may not have reached the fleet: a rebase writes it
-// again. The caller holds store.mu.
+// logOwn records what this replica's own delta wrote for as long as it may not
+// have reached the fleet: a rebase writes it again. The caller holds store.mu.
 func (m *merging) logOwn(d dot, delta *pb.Delta) error {
 	// A replica that has never heard a fleet is never judged stale: what it
 	// still holds when it first hears one is logged then (hearFleet).
@@ -689,12 +664,11 @@ func (m *merging) logOwn(d dot, delta *pb.Delta) error {
 	return nil
 }
 
-// settleOwn forgets the own operations whose delta has expired, outside a
-// rejoin: no replica will merge that delta any more, and what it did is in
-// this replica's state, which its snapshots carry. While rejoining they are
-// kept, for a rebase, and so they are while a rebase's writes are carried by
-// no snapshot yet: what it put back is in no block, and a second rebase
-// before one would drop it. The caller holds store.mu.
+// settleOwn forgets own operations whose delta expired, outside a rejoin:
+// nothing will merge that delta, and the state its snapshots carry holds what
+// it did. They are kept while rejoining, and while a rebase's writes are in no
+// snapshot yet, since a second rebase before one would drop them. The caller
+// holds store.mu.
 func (store *Datastore) settleOwn(ctx context.Context) error {
 	now := store.dropClock()
 	if store.rejoining || !store.expired(store.lows.own, now) {
@@ -727,9 +701,8 @@ func (store *Datastore) settleOwn(ctx context.Context) error {
 	return nil
 }
 
-// reached forgets the own operations a peer's context covers: that peer has
-// merged them, so they are in the fleet whatever happens to this replica.
-// The caller holds store.mu.
+// A peer whose context covers an own operation merged it, so it is in the
+// fleet. The caller holds store.mu.
 func (store *Datastore) reached(ctx context.Context, theirs *causalContext) error {
 	if theirs == nil || len(theirs.inc) == 0 || store.lows.own == none {
 		return nil
@@ -752,26 +725,18 @@ func (store *Datastore) reached(ctx context.Context, theirs *causalContext) erro
 	return t.commit(ctx)
 }
 
-// rebase replaces what this replica holds with the judge's state, keeping
-// what it wrote that the judge does not cover.
+// rebase replaces this replica's state with the judge's. It keeps its own
+// operations not known to have reached the fleet, with the values still live,
+// draws a new incarnation so late verdicts and earlier walks are ignored,
+// empties the namespace, and writes the kept operations again, leaving a
+// marker so a crash in between writes them at the next open. It then walks the
+// judge's heads.
 //
-// It keeps its own operations not known to have reached the fleet, with the
-// value of every element of them still live here; draws a new incarnation,
-// so a verdict addressed to the old one is ignored and every walk begun
-// before is dropped when it merges; empties the rest of its namespace and
-// writes the kept operations again: a put as its element, a removal with its
-// target. The marker it leaves until the writes are done makes a crash in
-// between write them again at the next open. Then it walks the judge's
-// heads.
-//
-// The caller holds store.mu, which rebase releases. Only the drop and the
-// writes are done before it returns, so nothing in between sees a state
-// without them: a second rebase, a maintenance pass, a write. The walk goes
-// on in the background, so a judge that vanishes leaves nothing waiting on
-// its heads but that walk, and no snapshot is written until it ends: the
-// kept operations are put back before the judge's state can refute them,
-// and a snapshot taken in between would carry what it refutes to replicas
-// that may have forgotten the refutation.
+// The caller holds store.mu, which rebase releases once the drop and the
+// writes are done, so nothing sees a state without them. The walk runs in the
+// background and no snapshot is written until it ends: one taken in between
+// would carry what the judge's state refutes to replicas that may have
+// forgotten the refutation.
 func (store *Datastore) rebase(ctx context.Context, v *verdict, msg message) error {
 	if store.closed {
 		store.mu.Unlock()
@@ -798,8 +763,8 @@ func (store *Datastore) rebase(ctx context.Context, v *verdict, msg message) err
 	return nil
 }
 
-// rebuild walks the judge's heads, takes the time the judge held all the
-// fleet held at once it holds what the judge did, and compacts.
+// rebuild walks the judge's heads, takes the judge's settled time once it
+// holds what the judge did, and compacts.
 func (store *Datastore) rebuild(ctx context.Context, gen, held uint64, msg message) error {
 	if err := store.handleBranchAt(ctx, gen, linksOf(msg.heads)); err != nil {
 		store.logger.Warnf("rebase: the judge's state is not all here yet: %s", err)
@@ -832,24 +797,16 @@ func linksOf(heads []Head) []link {
 }
 
 // dropAllButOwn empties the namespace but for the format, the shutdown mark
-// and the own operations, which keep the values still live, starts over with
-// the judge's fleet time under a new incarnation, and writes the own
-// operations again. The caller holds store.mu.
+// and the own operations, starts over with the judge's fleet time under a new
+// incarnation, and writes the own operations again. The caller holds store.mu.
 //
-// What the old incarnation wrote and no longer holds was removed, by this
-// replica or by a removal it merged, and a removal it made before it first
-// heard a fleet is in no log. Those dots are kept as erased, removals written
-// now that live as long as an entry would: a copy of one, in the judge's
-// state or anyone's, is refused here and becomes a pending removal, which
-// the next snapshot takes wherever it goes. Left out of them are the
-// elements still held, so what was acknowledged and is not written again
-// stays live, and the logged operations, which reissue writes again.
-//
-// They are not put in the new context. A context covers a dot only once it
-// merged it, or a snapshot that did: the old incarnation's snapshots and the
-// deltas that removed only are among those dots, and a context claiming them
-// would skip the judge's state they hold, and tell every peer that merged
-// them that a snapshot of this replica holds it.
+// What the old incarnation wrote and no longer holds was removed, and a
+// removal made before it first heard a fleet is in no log, so those dots are
+// kept as erased: a copy of one, in anyone's state, is refused here and
+// becomes a pending removal the next snapshot carries. They are not put in the
+// new context, which covers a dot only once it merged it: a context claiming
+// them would skip the judge's state and tell peers a snapshot of this replica
+// holds it.
 func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 	own := map[string]*pb.Delta{}
 	err := scanStore(ctx, store.store, store.ownPrefix(), func(k string, v []byte) error {
@@ -1002,8 +959,8 @@ func (store *Datastore) dropAllButOwn(ctx context.Context, since uint64) error {
 	return store.reissueLocked(ctx)
 }
 
-// removedSpans is spans less the counters held: the dots of an incarnation
-// that name no element held any more.
+// removedSpans is spans less the counters held: dots that name no element
+// held any more.
 func removedSpans(spans []span, held map[uint64]struct{}) []span {
 	counters := make([]uint64, 0, len(held))
 	for c := range held {
@@ -1027,31 +984,22 @@ func removedSpans(spans []span, held map[uint64]struct{}) []span {
 	return out
 }
 
-// reissue puts back every kept own operation the state does not cover,
-// forgets those it covers, and marks the rebase written: the next snapshot,
-// which carries what it put back, forgets the mark. The others stay in the
-// log until a peer acknowledges them or they expire, as before the rebase:
-// nothing says the snapshot that carries them reached anyone, and a second
-// rebase must put them back again.
+// reissue puts back every kept own operation the state does not cover, forgets
+// those it covers, and marks the rebase written until the next snapshot
+// carries it. The rest stay logged until acknowledged or expired: nothing says
+// that snapshot reached anyone.
 //
-// An element goes back under its own dot, as an ancient one, not as a new
-// write: if the fleet removed it while this replica was away and still knows
-// it, by the writer's entry or a pending removal, it is refused here, or
-// removed here when the judge's state is merged, and refused wherever this
-// replica's snapshot takes it, exactly as the stale copy would have been. A
-// new dot would escape a removal of the old one. A removal goes out again as
-// a new delta naming its target. The next snapshot, once the judge's state
-// is walked, takes the elements to the fleet.
+// An element goes back under its own dot, as an ancient one, so a removal the
+// fleet still knows refutes it as it would the stale copy; a new dot would
+// escape it. A removal goes out again as a new delta naming its target.
 func (store *Datastore) reissue(ctx context.Context) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	return store.reissueLocked(ctx)
 }
 
-// carried forgets a rebase once a snapshot carries what it put back: the one
-// just written. A rebase whose writes are not done stays marked for the next
-// open, and so does one no snapshot has carried yet. The caller holds
-// store.mu.
+// carried forgets a rebase once the snapshot just written carries what it put
+// back. The caller holds store.mu.
 func (store *Datastore) carried(ctx context.Context) error {
 	mark, err := store.store.Get(ctx, store.rebaseKey())
 	if errors.Is(err, ds.ErrNotFound) || err == nil && len(mark) == 0 {
@@ -1063,7 +1011,6 @@ func (store *Datastore) carried(ctx context.Context) error {
 	return store.store.Delete(ctx, store.rebaseKey())
 }
 
-// reissueLocked is reissue. The caller holds store.mu.
 func (store *Datastore) reissueLocked(ctx context.Context) error {
 	mark, err := store.store.Get(ctx, store.rebaseKey())
 	if errors.Is(err, ds.ErrNotFound) {

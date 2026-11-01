@@ -9,14 +9,6 @@ import (
 	"github.com/taubyte/tau/pkg/kvdb/statetree"
 )
 
-// TestAMergeReadsItsBaseFromTheCacheOfTreeNodes: a snapshot merge diffs its
-// state against the base, and retires the base's paths it replaced. The
-// base's upper levels are the nodes the last merge read from the snapshot
-// it merged, and they are read from the store's cache of tree nodes: of the
-// base's own nodes, a merge reads from the store only nodes of level 0, the
-// ones with no subtree, on the paths of the keys that changed. Every merge
-// used to read the base's paths, roots included, back from the blockstore
-// and decode them again.
 func TestAMergeReadsItsBaseFromTheCacheOfTreeNodes(t *testing.T) {
 	// The oracle reads every record of every merge.
 	check := checkSnapshot
@@ -79,9 +71,6 @@ func TestAMergeReadsItsBaseFromTheCacheOfTreeNodes(t *testing.T) {
 	assertTreesMatch(t, b)
 }
 
-// TestTheCacheOfTreeNodesStaysWithinItsBudget: through a long run of
-// writes, compactions and merges on both sides, the cache of tree nodes
-// never holds more than its budget, the default or a small one.
 func TestTheCacheOfTreeNodesStaysWithinItsBudget(t *testing.T) {
 	const small = 16 << 10
 	replicas, dagsyncs, done := makeSeparateStoresWith(t, 2, func(i int) *Options {
@@ -127,10 +116,6 @@ func TestTheCacheOfTreeNodesStaysWithinItsBudget(t *testing.T) {
 	assertTreesMatch(t, b)
 }
 
-// TestACachedNodeIsNoProofItIsHeld: a node the cache keeps may be one the
-// collector has since removed. A state that reaches it again has it
-// fetched, as any block the store no longer holds: what a store holds is
-// what its collector says, never what its cache can decode.
 func TestACachedNodeIsNoProofItIsHeld(t *testing.T) {
 	ctx := context.Background()
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 2, noAutoCompact())

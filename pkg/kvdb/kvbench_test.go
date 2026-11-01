@@ -9,11 +9,6 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 )
 
-// kvdb ops benchmarks. They exercise only the public kvdb API (factory New ->
-// KVDB Put/Get/Delete/List/Batch) so the same file runs unchanged against the
-// pre-vendor baseline (ipfs/go-ds-crdt v0.6.7) and the vendored dag-compaction
-// fork, for a like-for-like benchstat comparison.
-
 var benchValue = []byte("benchmark-value-payload-0123456789")
 
 func benchDB(b *testing.B) (*kvDatabase, func()) {
@@ -42,7 +37,6 @@ func seed(b *testing.B, db *kvDatabase, n int) {
 	}
 }
 
-// Put: sequential writes of distinct keys.
 func BenchmarkKVDB_Put(b *testing.B) {
 	db, done := benchDB(b)
 	defer done()
@@ -56,8 +50,6 @@ func BenchmarkKVDB_Put(b *testing.B) {
 	}
 }
 
-// Overwrite: repeated writes to a single key. This grows the CRDT version chain
-// on the baseline; the fork's compaction/reclaim collapses it.
 func BenchmarkKVDB_Overwrite(b *testing.B) {
 	db, done := benchDB(b)
 	defer done()
@@ -71,9 +63,6 @@ func BenchmarkKVDB_Overwrite(b *testing.B) {
 	}
 }
 
-// DeleteManyVersions: delete a key that has accumulated many versions. The
-// baseline walks the whole version chain; the fork's compaction keeps it short.
-// Each iteration builds a fresh N-version key (untimed) then times the delete.
 func BenchmarkKVDB_DeleteManyVersions(b *testing.B) {
 	db, done := benchDB(b)
 	defer done()
@@ -96,8 +85,6 @@ func BenchmarkKVDB_DeleteManyVersions(b *testing.B) {
 	}
 }
 
-// KeysOnly: enumerate keys over a large keyspace of 1KiB values. Keys-only
-// queries shouldn't pay for values; a bloated DAG makes the baseline walk more.
 func BenchmarkKVDB_KeysOnly(b *testing.B) {
 	db, done := benchDB(b)
 	defer done()
@@ -122,7 +109,6 @@ func BenchmarkKVDB_KeysOnly(b *testing.B) {
 	}
 }
 
-// Get: reads over a pre-seeded keyspace.
 func BenchmarkKVDB_Get(b *testing.B) {
 	db, done := benchDB(b)
 	defer done()
@@ -138,7 +124,6 @@ func BenchmarkKVDB_Get(b *testing.B) {
 	}
 }
 
-// Delete: delete over a pre-seeded keyspace (tombstones).
 func BenchmarkKVDB_Delete(b *testing.B) {
 	db, done := benchDB(b)
 	defer done()
@@ -153,7 +138,6 @@ func BenchmarkKVDB_Delete(b *testing.B) {
 	}
 }
 
-// List: enumerate a pre-seeded keyspace (walks the merged CRDT set).
 func BenchmarkKVDB_List(b *testing.B) {
 	db, done := benchDB(b)
 	defer done()
@@ -168,7 +152,6 @@ func BenchmarkKVDB_List(b *testing.B) {
 	}
 }
 
-// Batch: grouped writes committed together.
 func BenchmarkKVDB_Batch(b *testing.B) {
 	db, done := benchDB(b)
 	defer done()

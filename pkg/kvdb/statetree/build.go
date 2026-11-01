@@ -8,9 +8,9 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 )
 
-// A frame is one node Build has open: the entries it has so far, packed in
-// buf at offs (key start, key end and value end for each), and the subtree
-// before each of them. The subtree after the last is still being built.
+// A frame is one node Build has open: its entries packed in buf at offs (key
+// start, key end and value end each) and the subtree before each. The subtree
+// after the last is still being built.
 type frame struct {
 	level uint32
 	buf   []byte
@@ -36,7 +36,6 @@ func (f *frame) add(key, value []byte, before ref) {
 	f.kids = append(f.kids, before)
 }
 
-// buildFlush is how many nodes Build holds before adding them.
 const buildFlush = 1024
 
 type builder struct {
@@ -47,8 +46,8 @@ type builder struct {
 	carry   ref
 }
 
-// close finishes the top frame with last as its final subtree and makes it
-// the carry, the finished subtree to the right of the frame below it.
+// close finishes the top frame with last as its final subtree; it becomes the
+// carry for the frame below.
 func (b *builder) close(last ref) error {
 	f := &b.frames[b.top-1]
 	f.kids = append(f.kids, last)
@@ -80,11 +79,9 @@ func (b *builder) push(lvl uint32) *frame {
 	return f
 }
 
-// Build makes the tree holding the entries of seq, which must come in
-// strictly ascending key order: an equal key, whatever its value, fails
-// with ErrDuplicateKey and a lower one with ErrUnsorted. It writes each node
-// once, and the result is the tree any order of Puts of the same entries
-// gives.
+// Build makes the tree of seq, whose keys must be strictly ascending
+// (ErrDuplicateKey, ErrUnsorted otherwise). It writes each node once, and the
+// tree is the one any order of Puts gives.
 func Build(ctx context.Context, dags ipld.DAGService, seq iter.Seq2[[]byte, []byte], opts ...Option) (*Tree, error) {
 	t := New(dags, opts...)
 	b := &builder{o: op{ctx: ctx, t: t}}

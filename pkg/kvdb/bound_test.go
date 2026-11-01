@@ -8,17 +8,11 @@ import (
 	ds "github.com/ipfs/go-datastore"
 )
 
-// footprint is everything a replica stores: its datastore entries and the
-// blocks in its own blockstore.
 func footprint(t testing.TB, r *Datastore, d *fetchThroughDAGSvc) int {
 	t.Helper()
 	return namespaceKeys(t, r) + d.blockCount(t)
 }
 
-// churn runs write cycles round-robin over the replicas, each replica
-// syncing from the previous writer before it writes, and returns each
-// replica's peak footprint over the first and the second half of the run. A
-// cycle puts a key and deletes it, or only puts it when overwrite is set.
 func churn(t *testing.T, replicas []*Datastore, dagsyncs []*fetchThroughDAGSvc, cycles int, key func(int) string, overwrite bool) (first, second []int) {
 	t.Helper()
 	ctx := context.Background()
@@ -40,10 +34,8 @@ func churn(t *testing.T, replicas []*Datastore, dagsyncs []*fetchThroughDAGSvc, 
 				t.Fatal(err)
 			}
 		}
-		// Replicas in contact hear each other every rebroadcast: a writer
-		// keeps its own operations until a peer's heartbeat shows it has
-		// merged them (rejoin.go), so a churn without heartbeats measures a
-		// fleet nobody acknowledges.
+		// A writer keeps its operations until a peer's heartbeat shows it merged
+		// them, so the replicas hear each other every round.
 		for _, src := range replicas {
 			for _, dst := range replicas {
 				if src != dst {
@@ -77,8 +69,6 @@ func TestStorageIsBoundedUnderChurn(t *testing.T) {
 		{"unique keys, one replica", 1, func(c int) string { return fmt.Sprintf("k%d", c) }, false},
 		{"same key, three replicas", 3, func(int) string { return "k" }, false},
 		{"unique keys, three replicas", 3, func(c int) string { return fmt.Sprintf("k%d", c) }, false},
-		// Overwrites only: a put removes the versions it observed, so the
-		// key keeps one live version however often it is written.
 		{"same key overwritten, one replica", 1, func(int) string { return "k" }, true},
 		{"same key overwritten, three replicas", 3, func(int) string { return "k" }, true},
 	} {
@@ -89,10 +79,8 @@ func TestStorageIsBoundedUnderChurn(t *testing.T) {
 			defer done()
 
 			first, second := churn(t, replicas, dagsyncs, cycles, tc.key, tc.overwrite)
-			// At most one key is live at the end of a cycle: what a
-			// replica may hold is that key, the blocks since its last
-			// snapshot, the snapshot, and one vector entry per
-			// incarnation. None of that grows with the number of cycles.
+			// One live key, the blocks since the last snapshot, the snapshot and one
+			// vector entry per incarnation: none of it grows with the cycles.
 			limit := 4*opts.CompactAfterBlocks + 8*tc.replicas
 			for i := range replicas {
 				if second[i] > first[i] || second[i] > limit {

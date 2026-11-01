@@ -10,7 +10,6 @@ import (
 	cid "github.com/ipfs/go-cid"
 )
 
-// reading is a store read as stored blocks, never decoded as IPLD nodes.
 type reading struct {
 	*counting
 	reads atomic.Int64

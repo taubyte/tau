@@ -32,8 +32,6 @@ type loggingSyncingDAG struct{ loggingDAG }
 
 func (loggingSyncingDAG) SyncBlocks(context.Context) error { return nil }
 
-// A store and a DAG share a log only when the store keeps a prefix of its
-// writes and the DAG writes its blocks to that store, not apart.
 func TestAStoreAndADAGShareALog(t *testing.T) {
 	pst, err := pebbleds.Open(t.TempDir())
 	if err != nil {
@@ -61,9 +59,8 @@ func TestAStoreAndADAGShareALog(t *testing.T) {
 	}
 }
 
-// pebbleNode is a node's DAG over its pebbleds store: blocks go to the
-// store, which it names as its log. onBlock, when set, is called after each
-// block it writes.
+// pebbleNode is a node's DAG over its pebbleds store, which it names as its
+// log. onBlock, when set, runs after each block it writes.
 type pebbleNode struct {
 	nodeFetchThrough
 	log     *pebbleds.Store
@@ -89,13 +86,8 @@ func openPebbleNode(t testing.TB, fs vfs.FS) *pebbleNode {
 	return &pebbleNode{nodeFetchThrough: newFetchThroughOn(t, blockstore.NewIdStore(pst.Blockstore())), log: pst}
 }
 
-// A replica on pebble that orders its writes by pebble's log, with no Sync
-// between its index entries, blocks and merges, is powered off in every
-// step of a run of puts, a delete and a peer's merge: as each block is
-// written and once the step is done, keeping none, some or all of what was
-// not synced. Each copy reopens holding the values of the step before, its
-// own or the one after, every block it holds indexed or reached and every
-// one it indexes held, and once it compacts its trees are its records.
+// Power is lost as each block is written and after each step, keeping none,
+// some or all of what was not synced; each copy must reopen whole.
 func TestASharedLogSurvivesAPowerLossOnPebble(t *testing.T) {
 	fs := vfs.NewCrashableMem()
 	n := openPebbleNode(t, fs)

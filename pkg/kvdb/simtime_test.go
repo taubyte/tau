@@ -11,10 +11,9 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 )
 
-// The time-bound tests run on a virtual clock: one virtual now the test
-// advances, read by each replica through an offset of its own, and a virtual
-// uptime that is the time elapsed. Nothing time drives runs on its own
-// (Options.manual); the test calls maintain, and hears, itself.
+// The time-bound tests run on a virtual clock the test advances, read by each
+// replica through an offset of its own, with uptime the time elapsed. Nothing
+// time drives runs on its own: the test maintains and delivers.
 const (
 	simD         = 2 * time.Second
 	simS         = time.Second
@@ -54,7 +53,6 @@ func (s *simTime) uptime() time.Duration {
 	return s.now.Sub(s.start)
 }
 
-// ms is the virtual now in milliseconds, as stamps read it.
 func (s *simTime) ms() uint64 { return millis(s.at(0)()) }
 
 func (s *simTime) options(offset time.Duration) *Options {
@@ -70,8 +68,6 @@ func (s *simTime) options(offset time.Duration) *Options {
 	return o
 }
 
-// simReplica is one replica on the virtual clock, with what it needs to be
-// reopened, copied or restored.
 type simReplica struct {
 	name   string
 	r      *Datastore
@@ -83,9 +79,7 @@ type simReplica struct {
 	opts   *Options
 }
 
-// outbox is a replica's side of the simulated network: what it broadcasts
-// waits here until the test delivers it, so the test decides who hears what
-// and when.
+// What a replica broadcasts waits in its outbox until the test delivers it.
 type outbox struct {
 	mu   sync.Mutex
 	msgs [][]byte
@@ -132,7 +126,6 @@ func (sr *simReplica) open(t testing.TB) {
 	t.Cleanup(func() { sr.r.Close() })
 }
 
-// reopen closes the replica cleanly and opens it again in this process.
 func (sr *simReplica) reopen(t testing.TB) {
 	t.Helper()
 	closeStore(t, sr.r)
@@ -146,7 +139,6 @@ func (sr *simReplica) maintain(t testing.TB) {
 	}
 }
 
-// reach points sr's fetches at the given replicas' blocks.
 func (sr *simReplica) reach(others ...*simReplica) {
 	var rs []ipld.DAGService
 	for _, o := range others {
@@ -155,7 +147,6 @@ func (sr *simReplica) reach(others ...*simReplica) {
 	sr.dag.setRemotes(rs...)
 }
 
-// pull walks, on sr, every head of src.
 func (sr *simReplica) pull(t testing.TB, src *simReplica) {
 	t.Helper()
 	sr.reach(src)
@@ -186,8 +177,6 @@ func (sr *simReplica) horizon() uint64 {
 	return sr.r.horizon
 }
 
-// heartbeat is what the replicas in contact hear from each other every
-// rebroadcast: the fleet's time.
 func (s *simTime) heartbeat(t testing.TB, rs ...*simReplica) {
 	t.Helper()
 	for _, sr := range rs {
@@ -197,12 +186,9 @@ func (s *simTime) heartbeat(t testing.TB, rs ...*simReplica) {
 	}
 }
 
-// beat is one rebroadcast of sr: the gap check, then its heartbeat into its
-// outbox.
 func (sr *simReplica) beat() { sr.r.heartbeat(context.Background()) }
 
-// deliver hands what src has broadcast so far to each of dsts, which fetch
-// from src and from each other.
+// The dsts fetch from src and from each other.
 func (s *simTime) deliver(t testing.TB, src *simReplica, dsts ...*simReplica) {
 	t.Helper()
 	msgs := src.out.take()
@@ -218,9 +204,7 @@ func (s *simTime) deliver(t testing.TB, src *simReplica, dsts ...*simReplica) {
 	}
 }
 
-// exchange is a round among replicas in contact: each beats, and what each
-// broadcasts, answers included, reaches all the others, until nobody has
-// anything left to say.
+// exchange repeats rounds until nobody has anything left to say.
 func (s *simTime) exchange(t testing.TB, rs ...*simReplica) {
 	t.Helper()
 	for _, sr := range rs {
@@ -249,7 +233,6 @@ func (s *simTime) exchange(t testing.TB, rs ...*simReplica) {
 	}
 }
 
-// mergeBlock merges one of src's blocks on sr, alone.
 func (sr *simReplica) mergeBlock(src *simReplica, c cid.Cid) {
 	sr.reach(src)
 	tryMergeOne(sr.r, c)

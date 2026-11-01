@@ -16,7 +16,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// chanBroadcaster hands its replica what the test sends it.
 type chanBroadcaster struct{ in chan []byte }
 
 func (c *chanBroadcaster) Broadcast(context.Context, []byte) error { return nil }
@@ -30,8 +29,8 @@ func (c *chanBroadcaster) Next(ctx context.Context) ([]byte, error) {
 	}
 }
 
-// hangingDAG fetches what its remotes hold and waits out the deadline on
-// anything else, as a fetch from a peer that is gone does.
+// hangingDAG serves what its remotes hold and waits out the deadline on
+// anything else, as a fetch from a gone peer does.
 type hangingDAG struct{ *fetchThroughDAGSvc }
 
 func (h *hangingDAG) Get(ctx context.Context, c cid.Cid) (ipld.Node, error) {
@@ -55,10 +54,6 @@ func (h *hangingDAG) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.N
 	return out
 }
 
-// TestARebaseDoesNotWaitOnAVanishedJudge: a rebase on a judge that is gone
-// walks its heads in the background, and a replica left with no heads adopts
-// what it hears in the background too; it goes on hearing and merging what
-// live peers send while those wait out their fetches.
 func TestARebaseDoesNotWaitOnAVanishedJudge(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := t.Context()
@@ -131,10 +126,6 @@ func TestARebaseDoesNotWaitOnAVanishedJudge(t *testing.T) {
 	})
 }
 
-// TestARebaseWritesNoSnapshotBeforeItHasWalkedTheJudgesState: a rebase puts
-// back what the replica wrote before it lets go of its lock, so whatever
-// comes while the judge's state is walked reads it; and no snapshot carries
-// it before that walk ends, for the judge's state may refute it.
 func TestARebaseWritesNoSnapshotBeforeItHasWalkedTheJudgesState(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := t.Context()

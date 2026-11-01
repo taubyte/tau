@@ -59,8 +59,7 @@ func TestLevelDoesNotAllocate(t *testing.T) {
 	}
 }
 
-// The roots of fixed key sets, frozen. A change to any of them is a change
-// of format profile.
+// Frozen roots: a change to any is a change of format profile.
 func TestRootVectors(t *testing.T) {
 	cases := []struct {
 		n    int
@@ -86,13 +85,10 @@ func TestRootVectors(t *testing.T) {
 	}
 }
 
-// A node's exact bytes: the Node protobuf, then the Block around it, with
-// links in key order.
 func TestNodeVector(t *testing.T) {
 	ctx := context.Background()
 	s := newStore()
-	// Keys at level 0 around one key of a higher level, so the root has a
-	// subtree on each side.
+	// Level-0 keys around one higher key, so the root has a subtree on each side.
 	var hi []byte
 	for i := 0; hi == nil; i++ {
 		if k := fmt.Appendf(nil, "k%d", i); Level(k) == 1 {
@@ -147,7 +143,6 @@ func TestNodeVector(t *testing.T) {
 	}
 }
 
-// block makes a Block holding msg and links, the way encode does.
 func block(t *testing.T, msg proto.Message, links ...cid.Cid) *Block {
 	t.Helper()
 	data, err := proto.Marshal(msg)
@@ -202,7 +197,6 @@ func TestDecodeRefuses(t *testing.T) {
 	}
 }
 
-// Verify refuses trees that decode but are not what this package writes.
 func TestVerifyRefuses(t *testing.T) {
 	ctx := context.Background()
 	s := newStore()

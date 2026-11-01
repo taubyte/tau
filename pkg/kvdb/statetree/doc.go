@@ -1,19 +1,10 @@
 // Package statetree is the Merkle search tree (Auvolat and Taïani, SRDS
 // 2019) a kvdb snapshot keeps its state in: an ordered map of byte keys to
-// byte values whose shape is a pure function of its contents, so two trees
-// holding the same entries have the same root CID whatever order they were
-// written in. It knows nothing of what the keys and values mean.
+// byte values whose shape, and so its root CID, depends only on its contents.
 //
-// A Tree is an immutable handle on a root CID over an ipld.DAGService. Put
-// and Delete return a new Tree, write only the nodes on the changed path,
-// and share every other node with the tree they started from. Nothing in
-// this package ever removes a node: nodes are shared between roots, so
-// reachability (Reachable) and anything built on it is the caller's.
-//
-// Every read goes through the DAGService. A CID being known is never taken
-// to mean its block is held: an absent node fails the operation that needed
-// it with the store's not-found error, and Missing finds the nodes of a tree
-// that are not held, so a caller can complete its closure first.
+// Trees are immutable and share nodes, so this package never removes one. A
+// known CID is never taken to mean its block is held: a node not held fails
+// the read with the store's not-found error.
 //
 // # Format profile 2
 //

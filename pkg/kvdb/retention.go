@@ -14,7 +14,7 @@ import (
 // what was last read.
 type FleetSource func(ctx context.Context) (doc []byte, published bool, err error)
 
-// retentionOf is the T a fleet document states, 0 for the default.
+// 0 means the default.
 func retentionOf(doc []byte, published bool) (time.Duration, error) {
 	if !published {
 		return 0, nil
@@ -26,9 +26,8 @@ func retentionOf(doc []byte, published bool) (time.Duration, error) {
 	return time.Duration(d.Retention), nil
 }
 
-// applyFleet reads the fleet document once and moves every database to its
-// T. A document that cannot be read, or a T some open database cannot hold,
-// changes nothing: every node refuses it the same way.
+// An unreadable document, or a T some open database cannot hold, changes
+// nothing, as every node refuses it the same way.
 func (f *factory) applyFleet(ctx context.Context, src FleetSource) {
 	doc, published, err := src(ctx)
 	if err != nil {
@@ -58,9 +57,7 @@ func (f *factory) followFleet(ctx context.Context, src FleetSource, every time.D
 	}
 }
 
-// setRetention moves every open database, and every one opened after, to T,
-// 0 meaning the default. It changes nothing unless every open database can
-// hold it.
+// 0 means the default. Nothing changes unless every open database can hold t.
 func (f *factory) setRetention(t time.Duration) error {
 	f.dbsLock.Lock()
 	defer f.dbsLock.Unlock()

@@ -12,8 +12,7 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 )
 
-// The holes H1-H5 and the counterexamples of
-// .notes/v2/kvdb-tombstone-reclaim.md, each driven deterministically.
+// The holes H1-H5 and counterexamples of .notes/v2/kvdb-tombstone-reclaim.md.
 
 func onlyHead(t testing.TB, r *Datastore) cid.Cid {
 	t.Helper()
@@ -62,8 +61,6 @@ func noAutoCompact() *Options {
 	return o
 }
 
-// H1: a replica that merged (D,7) before (D,6) and compacted must not lose
-// (D,6), on itself or on a replica that installs its snapshot.
 func TestH1OutOfOrderMergeThenCompactLosesNothing(t *testing.T) {
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 3, noAutoCompact())
 	defer done()
@@ -85,8 +82,6 @@ func TestH1OutOfOrderMergeThenCompactLosesNothing(t *testing.T) {
 	assertSameState(t, []string{"A", "F"}, a, f)
 }
 
-// H2: a tombstone merged before the element it removes rides in the
-// snapshot, so a replica that installs the snapshot refuses the element.
 func TestH2TombstoneBeforeAddSurvivesCompaction(t *testing.T) {
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 3, noAutoCompact())
 	defer done()
@@ -115,9 +110,6 @@ func TestH2TombstoneBeforeAddSurvivesCompaction(t *testing.T) {
 	assertSameState(t, []string{"D", "A", "F"}, d, a, f)
 }
 
-// H3: the removal rule runs on every merge, not only between snapshots. A
-// fresh replica that installed A's snapshot (X removed) and then walks B's
-// chain, which still links the block that added X, keeps X removed.
 func TestH3FreshReplicaWalkingAStaleChainKeepsTheDelete(t *testing.T) {
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 3, noAutoCompact())
 	defer done()
@@ -145,8 +137,6 @@ func TestH3FreshReplicaWalkingAStaleChainKeepsTheDelete(t *testing.T) {
 	assertSameState(t, []string{"A", "B", "F"}, a, b, f)
 }
 
-// H4: a snapshot whose state spans several tree nodes is merged whole or
-// not at all; a replica that cannot fetch every node keeps what it has.
 func TestH4SnapshotStateIsMergedWhole(t *testing.T) {
 	opts := noAutoCompact()
 	opts.MaxBatchDeltaSize = 200
@@ -213,9 +203,8 @@ func TestH4SnapshotStateIsMergedWhole(t *testing.T) {
 	assertSameState(t, []string{"A", "X"}, a, x)
 }
 
-// droppingDAG ends a GetMany early, with no error, at the first block in
-// drop: what a getter does when its context ends mid-fetch, since nothing
-// obliges it to report each block it did not send.
+// droppingDAG ends a GetMany early, without error, at the first block in drop,
+// as a getter whose context ends mid-fetch may.
 type droppingDAG struct {
 	*fetchThroughDAGSvc
 
@@ -244,9 +233,6 @@ func (d *droppingDAG) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.
 	return out
 }
 
-// H4, the other way a fetch comes up short: the getter stops before the last
-// tree node and reports nothing. The snapshot is still not merged until it is
-// whole.
 func TestH4AStateFetchThatEndsEarlyIsNotMerged(t *testing.T) {
 	opts := noAutoCompact()
 	opts.MaxBatchDeltaSize = 200
@@ -318,9 +304,6 @@ func TestH4AStateFetchThatEndsEarlyIsNotMerged(t *testing.T) {
 	assertSameState(t, []string{"A", "X"}, a, x)
 }
 
-// H5: one context per store. A delete issued by one writer of an element
-// another writer added survives a compaction, against the adder's stale
-// chain.
 func TestH5ADeleteOfAnotherWritersElementSurvivesCompaction(t *testing.T) {
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 4, noAutoCompact())
 	defer done()
@@ -343,9 +326,6 @@ func TestH5ADeleteOfAnotherWritersElementSurvivesCompaction(t *testing.T) {
 	assertSameState(t, []string{"A", "F"}, a, f)
 }
 
-// The generation-window counterexample: B compacts its own stale view as
-// many times as A compacts the real one. Generation numbers cannot tell the
-// fork apart; dots can.
 func TestStaleForkCompactedInStepDoesNotResurrect(t *testing.T) {
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 3, noAutoCompact())
 	defer done()
@@ -385,9 +365,6 @@ func TestStaleForkCompactedInStepDoesNotResurrect(t *testing.T) {
 	want(t, "R", r, map[string]string{"x": "<deleted>"})
 }
 
-// The compaction-as-a-DAG-head counterexample: A deletes X and compacts away
-// its history; B, offline, puts Y and compacts {X, Y}. A fresh replica that
-// merges both kills X and keeps Y, in either order.
 func TestCompactionCounterexampleKillsXKeepsY(t *testing.T) {
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 2, noAutoCompact())
 	defer done()
@@ -417,8 +394,6 @@ func TestCompactionCounterexampleKillsXKeepsY(t *testing.T) {
 	}
 }
 
-// The review's three-way case: A deleted X and compacted; B, offline, put Y
-// with X live; C put Z with X live. Every merge order gives {Y, Z}.
 func TestThreeWayCompactionsConvergeInEveryOrder(t *testing.T) {
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 3, noAutoCompact())
 	defer done()
@@ -452,8 +427,6 @@ func TestThreeWayCompactionsConvergeInEveryOrder(t *testing.T) {
 	}
 }
 
-// Concurrent compactions of the same view both merge, and every replica ends
-// with the same state.
 func TestConcurrentCompactionsOfTheSameViewConverge(t *testing.T) {
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 3, noAutoCompact())
 	defer done()
@@ -488,10 +461,6 @@ func TestConcurrentCompactionsOfTheSameViewConverge(t *testing.T) {
 	}
 }
 
-// TestCompactingAgainFoldsNothing: a replica that holds only snapshots it
-// heads, made here or merged, has nothing to fold. Compacting anyway would
-// write a snapshot that frees nothing, and replicas that compact after a
-// merge would answer every snapshot with another one, forever.
 func TestCompactingAgainFoldsNothing(t *testing.T) {
 	for _, concurrent := range []bool{false, true} {
 		t.Run(fmt.Sprintf("concurrent=%t", concurrent), func(t *testing.T) {
@@ -529,7 +498,6 @@ func TestCompactingAgainFoldsNothing(t *testing.T) {
 	}
 }
 
-// A delete concurrent with a compaction that still holds the element wins.
 func TestCompactConcurrentDeleteWins(t *testing.T) {
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 2, noAutoCompact())
 	defer done()
@@ -549,8 +517,6 @@ func TestCompactConcurrentDeleteWins(t *testing.T) {
 	assertSameState(t, []string{"A", "B"}, a, b)
 }
 
-// Heads do not depend on delivery order: a snapshot merged after a delta that
-// links it is not a head.
 func TestHeadsDoNotDependOnOrder(t *testing.T) {
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 3, noAutoCompact())
 	defer done()

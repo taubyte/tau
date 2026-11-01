@@ -13,7 +13,6 @@ import (
 	ds "github.com/ipfs/go-datastore"
 )
 
-// hookLog is one replica's hook calls, in the order it made them.
 type hookLog struct {
 	mu    sync.Mutex
 	calls []string
@@ -25,9 +24,8 @@ func (l *hookLog) record(call string) {
 	l.calls = append(l.calls, call)
 }
 
-// take returns the calls made since the last take, by key: one merge calls
-// the hooks of the keys it touched in no set order, and one key's calls in
-// the order they happened.
+// One merge calls the hooks of the keys it touched in no set order, and one
+// key's calls in order.
 func (l *hookLog) take() map[string][]string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -40,10 +38,8 @@ func (l *hookLog) take() map[string][]string {
 	return out
 }
 
-// hooked makes n replicas that record their hook calls. The test drives
-// every exchange, and a hook fires inside the merge that causes it, so a
-// step's calls have all been made when the step returns. Every call must be
-// expected by the end of the test.
+// A hook fires inside the merge that causes it, so a step's calls are all made
+// when it returns; every call must be expected by the end.
 func hooked(t *testing.T, n int) ([]*Datastore, []*fetchThroughDAGSvc, []*hookLog) {
 	t.Helper()
 	logs := make([]*hookLog, n)
@@ -66,7 +62,6 @@ func hooked(t *testing.T, n int) ([]*Datastore, []*fetchThroughDAGSvc, []*hookLo
 	return replicas, dagsyncs, logs
 }
 
-// expect checks that the calls since the last check are exactly want.
 func expect(t *testing.T, step string, l *hookLog, want ...string) {
 	t.Helper()
 	got := l.take()
@@ -87,10 +82,6 @@ func absent(t *testing.T, name string, r *Datastore, k string) {
 	}
 }
 
-// TestCRDTHooks pins the hook contract: a hook reports a change to what Get
-// reads, on the replica it happened on. PutHook when a key's value appears or
-// changes, DeleteHook when a key goes from present to absent, nothing for a
-// merge that leaves the value as it was.
 func TestCRDTHooks(t *testing.T) {
 	t.Run("put then delete", func(t *testing.T) {
 		replicas, _, logs := hooked(t, 3)
@@ -249,10 +240,6 @@ func TestCRDTHooks(t *testing.T) {
 	})
 }
 
-// TestPutHookCannotWriteIntoABlock: a merged value aliases the block it came
-// in, so a PutHook that writes into the bytes it is given must be handed a
-// copy, or it would change a block, and what Get and every later reader of
-// that block see.
 func TestPutHookCannotWriteIntoABlock(t *testing.T) {
 	replicas, _, done := makeSeparateStoresWith(t, 2, func(i int) *Options {
 		o := noAutoCompact()

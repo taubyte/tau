@@ -11,8 +11,6 @@ import (
 	"github.com/taubyte/tau/pkg/fleet"
 )
 
-// fakeFleet is a register that publishes, withholds or fails to read a fleet
-// document on demand.
 type fakeFleet struct {
 	mu        sync.Mutex
 	doc       []byte
@@ -42,10 +40,6 @@ func ttlOf(t *testing.T, db any) time.Duration {
 	return time.Duration(db.(*kvDatabase).datastore.retention()) * time.Millisecond
 }
 
-// TestTheFleetSetsRetention: every database a node opens writes under the T
-// the cloud publishes, an open one moves when the document does, and a
-// document that is unreadable, corrupt or names a T a database cannot hold
-// changes nothing.
 func TestTheFleetSetsRetention(t *testing.T) {
 	logger := logging.Logger("test")
 	src := &fakeFleet{}
@@ -107,8 +101,6 @@ func TestTheFleetSetsRetention(t *testing.T) {
 	}
 }
 
-// TestAFixedRetentionIsKeptAndChecked: a T the caller chose is not moved by
-// the fleet, and one too short refuses to open.
 func TestAFixedRetentionIsKeptAndChecked(t *testing.T) {
 	logger := logging.Logger("test")
 	f := New(mockPeer(t), WithRetention(96*time.Hour)).(*factory)
@@ -130,9 +122,6 @@ func TestAFixedRetentionIsKeptAndChecked(t *testing.T) {
 	}
 }
 
-// TestAFleetRetentionADatabaseCannotHoldFallsBack: a database whose margin a
-// published T does not cover opens under the default, as every node opening
-// it does.
 func TestAFleetRetentionADatabaseCannotHoldFallsBack(t *testing.T) {
 	logger := logging.Logger("test")
 	src := &fakeFleet{}

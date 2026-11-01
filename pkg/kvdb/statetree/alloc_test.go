@@ -8,7 +8,6 @@ import (
 	cid "github.com/ipfs/go-cid"
 )
 
-// wideNode is a node of 16 entries with a subtree on every other slot.
 func wideNode(t testing.TB) *node {
 	t.Helper()
 	leaf, err := encode(&node{entries: []entry{{key: []byte("leaf"), val: []byte("v")}}, kids: make([]ref, 2)})
@@ -25,9 +24,6 @@ func wideNode(t testing.TB) *node {
 	return n
 }
 
-// TestDecodedBytesCannotReachTheBlock: a decoded value or summary shares
-// the block's bytes, so appending to one must make a copy rather than write
-// over the bytes that follow it in the block.
 func TestDecodedBytesCannotReachTheBlock(t *testing.T) {
 	nd, err := encode(wideNode(t))
 	if err != nil {
@@ -50,8 +46,6 @@ func TestDecodedBytesCannotReachTheBlock(t *testing.T) {
 	}
 }
 
-// TestANodeIsMadeInOneAllocation: a node holds its entries and kids in the
-// allocation it is made in, up to the largest class.
 func TestANodeIsMadeInOneAllocation(t *testing.T) {
 	for _, entries := range []int{1, 8, 9, 16, 17, 32, 33, 64, 65} {
 		n := newNode(3, entries)

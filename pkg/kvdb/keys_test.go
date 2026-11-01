@@ -14,8 +14,6 @@ import (
 	mh "github.com/multiformats/go-multihash"
 )
 
-// TestKeysAreTheirSegments: a key built in place is the key the segment
-// functions spell, and costs one allocation.
 func TestKeysAreTheirSegments(t *testing.T) {
 	ns := ds.NewKey("/ns")
 	s := newSet(nil, ns.ChildString(setNs))
@@ -62,9 +60,6 @@ func TestKeysAreTheirSegments(t *testing.T) {
 	}
 }
 
-// TestParsedSegmentsAreInterned: a dot segment parses to its dot without
-// allocating once its replica has been seen, as does a dot read from a
-// message or a value; a key segment costs the one string it makes.
 func TestParsedSegmentsAreInterned(t *testing.T) {
 	d := dot{replica: "replica\x00\xff-interned", counter: 42}
 	seg := d.segment()
@@ -117,8 +112,6 @@ func TestParsedSegmentsAreInterned(t *testing.T) {
 	}
 }
 
-// TestInternTableForgetsAtItsLimit: the table empties itself instead of
-// growing with every incarnation a long-lived store has seen.
 func TestInternTableForgetsAtItsLimit(t *testing.T) {
 	tab := &internTable{m: map[string]string{}, raw: map[string]string{}}
 	for i := range internedLimit + 1 {
@@ -135,9 +128,6 @@ func TestInternTableForgetsAtItsLimit(t *testing.T) {
 	}
 }
 
-// TestABlockRecordIsOneAllocation: a block's record is its kind, stamps,
-// state and dot as they were spelled field by field, made in one
-// allocation, and reads back as the block.
 func TestABlockRecordIsOneAllocation(t *testing.T) {
 	h, err := mh.Sum([]byte("state"), mh.SHA2_256, -1)
 	if err != nil {

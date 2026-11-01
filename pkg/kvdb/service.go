@@ -56,16 +56,14 @@ type factory struct {
 
 var slogger = logging.Logger("kvdb")
 
-// A FactoryOption configures a factory.
 type FactoryOption func(*factory)
 
-// WithRetention fixes T for every database the factory opens.
 func WithRetention(t time.Duration) FactoryOption {
 	return func(f *factory) { f.retention, f.fixed = t, true }
 }
 
-// WithFleet keeps T at what the cloud's fleet document says, read now and
-// then every interval for as long as the node runs.
+// WithFleet keeps T at what the cloud's fleet document says, reread every
+// interval while the node runs.
 func WithFleet(src FleetSource, every time.Duration) FactoryOption {
 	return func(f *factory) {
 		f.applyFleet(f.node.Context(), src)
@@ -155,13 +153,9 @@ func (f *factory) New(logger logging.StandardLogger, path string, rebroadcastInt
 			slogger.Errorf("the fleet's retention cannot hold %s: %s; keeping %s", path, err, opts.Retention)
 		}
 	}
-	// THE KEY AND HOW BIG THE VALUE WAS, NEVER THE VALUE. Every write a
-	// workload makes — a cache entry, a database row, an object's metadata —
-	// arrives here, so logging `v` puts guest data in the node's log the moment
-	// an operator raises this logger to info, which is exactly what an operator
-	// does when something is wrong. It also copied every value written whether
-	// or not the level was on: the conversion happens at the call site, before
-	// Infof gets to check.
+	// The key and the value's size, never the value: every workload write arrives
+	// here, so logging v would put guest data in the node's log the moment an
+	// operator raises this logger.
 	opts.PutHook = func(k ds.Key, v []byte) {
 		logger.Infof("Added: [%s] (%d bytes)", k, len(v))
 	}
@@ -186,18 +180,11 @@ func (k *kvDatabase) Factory() kvdb.Factory {
 	return k.factory
 }
 
-// Destroy closes this database and removes what this node holds for it.
-//
-// IT GOES UNDER THE CRDT RATHER THAN THROUGH IT. The replicated set lives at a
-// key prefix inside the node's own datastore — see New, which opens it at
-// `crdt/<path>` — so removing that prefix is a local write the broadcaster
-// never sees. Going through Delete would publish a tombstone per key, and every
-// replica would apply it: the node letting go would delete the database for the
-// whole fleet.
-//
-// CLOSE FIRST, so nothing is writing into the prefix while it is being removed
-// and the topic is already unsubscribed. Close also drops this database from the
-// factory, so a later New opens it again from whatever the fleet still holds.
+// Destroy closes this database and removes what this node holds for it. It
+// goes under the CRDT, removing its prefix in the node's own datastore: Delete
+// would publish a tombstone per key and every replica would apply it. Close
+// comes first, so nothing writes into the prefix and a later New reopens it
+// from what the fleet still holds.
 func (kvd *kvDatabase) Destroy(ctx context.Context) error {
 	path := kvd.path
 	store := kvd.factory.node.Store()
@@ -227,16 +214,9 @@ func (kvd *kvDatabase) Destroy(ctx context.Context) error {
 	return batch.Commit(ctx)
 }
 
-// Holding reports whether this node has any bytes for a database path, WITHOUT
-// opening it.
-//
-// THE WITHOUT IS THE POINT. Opening subscribes, so a node that answered "do you
-// hold this?" by opening would become a holder because it was asked — and would
-// then answer a digest that looks converged, authorising a drop by a node whose
-// replacement it never was.
-//
-// It reads the same prefix Destroy removes, so it is true for a copy this node
-// has never opened in this run: a restarted node holds what it held.
+// Holding reports whether this node has bytes for path without opening it:
+// opening subscribes, and a node that opened to answer would become a holder
+// because it was asked. A restarted node holds what it held.
 func (f *factory) Holding(ctx context.Context, path string) (bool, error) {
 	results, err := f.node.Store().Query(ctx, query.Query{
 		Prefix: ds.NewKey("crdt/" + path).String(), KeysOnly: true, Limit: 1,
@@ -253,12 +233,8 @@ func (f *factory) Holding(ctx context.Context, path string) (bool, error) {
 	return held, nil
 }
 
-// Paths is every database path this node has bytes for under a prefix, cut to
-// `depth` segments below it.
-//
-// THE DEPTH IS THE CALLER'S, because only the caller knows how it names a
-// database — the keys below that are the CRDT's own structure, and a reader
-// that guessed where the name ends would enumerate internals as databases.
+// Paths cuts to depth segments below under. The depth is the caller's: only it
+// knows where a database name ends and the CRDT's own keys begin.
 func (f *factory) Paths(ctx context.Context, under string, depth int) ([]string, error) {
 	results, err := f.node.Store().Query(ctx, query.Query{
 		Prefix: ds.NewKey("crdt/" + under).String(), KeysOnly: true,

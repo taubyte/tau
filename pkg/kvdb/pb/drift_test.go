@@ -8,9 +8,6 @@ import (
 	"github.com/taubyte/tau/tools/protogen"
 )
 
-// TestNoDrift fails if the generated files here differ from what the pinned
-// plugins in buf.gen.yaml produce from the .proto sources. Regenerate with
-// `go generate` in this directory.
 func TestNoDrift(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {

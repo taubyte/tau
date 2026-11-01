@@ -17,9 +17,8 @@ func (sr *simReplica) rejoining() bool {
 
 func (sr *simReplica) incarnation() string { return sr.r.currentIncarnation() }
 
-// away keeps replicas in contact for d of virtual time, a heartbeat round
-// and a maintenance pass every rebroadcast interval, while the others hear
-// nothing.
+// away keeps inContact in contact for d of virtual time, beating and
+// maintaining every rebroadcast interval, while the others hear nothing.
 func (s *simTime) away(t testing.TB, d time.Duration, inContact ...*simReplica) {
 	t.Helper()
 	for elapsed := time.Duration(0); elapsed < d; elapsed += simRI {
@@ -31,10 +30,6 @@ func (s *simTime) away(t testing.TB, d time.Duration, inContact ...*simReplica) 
 	}
 }
 
-// TestAReopenedReplicaRejoinsAndIsVouchedFor: a replica that heard a fleet
-// and opens again cannot tell how long it was closed. It rejoins: nobody
-// walks its heads until a peer that can still refute what it might carry
-// says so.
 func TestAReopenedReplicaRejoinsAndIsVouchedFor(t *testing.T) {
 	st := newSimTime()
 	a, b := st.replica(t, "a", 0), st.replica(t, "b", 0)
@@ -46,11 +41,11 @@ func TestAReopenedReplicaRejoinsAndIsVouchedFor(t *testing.T) {
 	if !b.rejoining() {
 		t.Fatal("a replica that heard a fleet opened without rejoining")
 	}
-	put(t, b.r, "/y", "1") // writes never wait
+	put(t, b.r, "/y", "1")
 	b.beat()
 	st.deliver(t, b, a)
 	a.wantValue(t, "/y", "<deleted>") // nobody walks a rejoining replica
-	st.deliver(t, a, b)               // the ok
+	st.deliver(t, a, b)
 	if b.rejoining() {
 		t.Fatal("an ok from a peer did not end the rejoin")
 	}
@@ -58,10 +53,6 @@ func TestAReopenedReplicaRejoinsAndIsVouchedFor(t *testing.T) {
 	a.wantValue(t, "/y", "1")
 }
 
-// TestAStaleReplicaIsRebasedAndKeepsWhatItWrote (T8.7): a replica away for
-// longer than the fleet keeps removals is rebased on a judge's state, never
-// shows what the fleet removed meanwhile, and writes again what it wrote
-// while away.
 func TestAStaleReplicaIsRebasedAndKeepsWhatItWrote(t *testing.T) {
 	st := newSimTime()
 	w, a, b, c := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
@@ -75,7 +66,7 @@ func TestAStaleReplicaIsRebasedAndKeepsWhatItWrote(t *testing.T) {
 	del(t, a.r, "/k")
 	put(t, c.r, "/p", "mine")
 	st.away(t, simRetention+2*simMargin, a, b)
-	c.beat() // c has heard nobody for longer than G
+	c.beat()
 	if !c.rejoining() {
 		t.Fatal("a replica that heard nobody for longer than G is not rejoining")
 	}
@@ -94,9 +85,6 @@ func TestAStaleReplicaIsRebasedAndKeepsWhatItWrote(t *testing.T) {
 	}
 }
 
-// TestARejoiningReplicaReportsItsGap (T8.4): a stale replica that hears a
-// heartbeat before it is judged does not take that heartbeat's time: it
-// reports the time it had before its gap, and is judged by it.
 func TestARejoiningReplicaReportsItsGap(t *testing.T) {
 	st := newSimTime()
 	w, a, b, c := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
@@ -108,7 +96,7 @@ func TestARejoiningReplicaReportsItsGap(t *testing.T) {
 	gap := c.r.reportedSinceNow()
 
 	a.beat()
-	st.deliver(t, a, c) // c hears a's fresh heartbeat first
+	st.deliver(t, a, c)
 	if got := c.r.reportedSinceNow(); got != gap {
 		t.Fatalf("a rejoining replica reports %d after hearing a heartbeat, want its gap_from %d", got, gap)
 	}
@@ -125,8 +113,6 @@ func (store *Datastore) reportedSinceNow() uint64 {
 	return store.reportedSince()
 }
 
-// TestALateVerdictIsDeadOnArrival (T8.9): a rebase draws a new incarnation,
-// so a second verdict for the old one, arriving late, changes nothing.
 func TestALateVerdictIsDeadOnArrival(t *testing.T) {
 	st := newSimTime()
 	w, a, b, c := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
@@ -136,7 +122,7 @@ func TestALateVerdictIsDeadOnArrival(t *testing.T) {
 	st.away(t, simRetention+2*simMargin, a, b)
 
 	c.beat()
-	st.deliver(t, c, a, b) // both judges answer
+	st.deliver(t, c, a, b)
 	first := a.out.take()
 	second := b.out.take()
 	if len(first) == 0 || len(second) == 0 {
@@ -144,7 +130,7 @@ func TestALateVerdictIsDeadOnArrival(t *testing.T) {
 	}
 	a.out.msgs = first
 	before := c.incarnation()
-	st.deliver(t, a, c) // c rebases on a
+	st.deliver(t, a, c)
 	rebased := c.incarnation()
 	if rebased == before {
 		t.Fatal("setup: the first verdict should have rebased c")
@@ -152,17 +138,13 @@ func TestALateVerdictIsDeadOnArrival(t *testing.T) {
 	put(t, c.r, "/after", "1")
 
 	b.out.msgs = second
-	st.deliver(t, b, c) // the late verdict, for the old incarnation
+	st.deliver(t, b, c)
 	if c.incarnation() != rebased {
 		t.Fatal("a verdict for an incarnation that is gone was acted on")
 	}
 	c.wantValue(t, "/after", "1")
 }
 
-// TestAVerdictFromAJudgeBehindIsIgnored (T8.8): a judge whose clock is behind
-// the replica's may still hold what the fleet has forgotten and vouch for a
-// stale replica; its verdict is not taken. Nor is one from a judge that has
-// heard an older fleet than the replica had.
 func TestAVerdictFromAJudgeBehindIsIgnored(t *testing.T) {
 	st := newSimTime()
 	w, a, b, c := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
@@ -193,7 +175,7 @@ func TestAVerdictFromAJudgeBehindIsIgnored(t *testing.T) {
 	if !c.rejoining() {
 		t.Fatal("a stale replica took an ok from a judge whose clock is behind")
 	}
-	c.wantValue(t, "/k", "v") // still its own stale state, walked by nobody
+	c.wantValue(t, "/k", "v")
 
 	st.exchange(t, a, b, c)
 	st.exchange(t, a, b, c)
@@ -201,8 +183,6 @@ func TestAVerdictFromAJudgeBehindIsIgnored(t *testing.T) {
 	a.wantValue(t, "/k", "<deleted>")
 }
 
-// TestAReplicaThatHearsPeersDoesNotRejoin: G of silence starts a rejoin;
-// heartbeats keep it from starting, writes or not.
 func TestAReplicaThatHearsPeersDoesNotRejoin(t *testing.T) {
 	st := newSimTime()
 	a, b := st.replica(t, "a", 0), st.replica(t, "b", 0)
@@ -222,9 +202,6 @@ func TestAReplicaThatHearsPeersDoesNotRejoin(t *testing.T) {
 	}
 }
 
-// TestAQuietFleetVouchesForAReplicaThatWasNeverAway: heartbeats carry the
-// fleet's time even with no heads, so after a long quiet spell in contact a
-// replica that restarts is judged by a recent time and is not rebased.
 func TestAQuietFleetVouchesForAReplicaThatWasNeverAway(t *testing.T) {
 	st := newSimTime()
 	w, a, b := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0)
@@ -246,9 +223,6 @@ func TestAQuietFleetVouchesForAReplicaThatWasNeverAway(t *testing.T) {
 	}
 }
 
-// TestAPeersAcksForgetTheOwnOperations: what a peer's heartbeat shows it has
-// merged is no longer kept for a rebase. What a replica wrote before it first
-// heard anyone is logged when it does.
 func TestAPeersAcksForgetTheOwnOperations(t *testing.T) {
 	st := newSimTime()
 	a, b := st.replica(t, "a", 0), st.replica(t, "b", 0)
@@ -268,12 +242,6 @@ func TestAPeersAcksForgetTheOwnOperations(t *testing.T) {
 	}
 }
 
-// TestAMergeThatGrowsALaterSpanIsAcknowledged: a peer that missed one of an
-// author's deltas covers the ones after it as a span of their own, and every
-// later write it merges grows that span. Each merge is acknowledged: a peer
-// that acknowledged only changes to an entry's first span would never
-// acknowledge the author again while the gap stays, and the author would
-// keep, and write again after a rebase, everything it wrote since.
 func TestAMergeThatGrowsALaterSpanIsAcknowledged(t *testing.T) {
 	st := newSimTime()
 	a, b := st.replica(t, "a", 0), st.replica(t, "b", 0)
@@ -294,10 +262,6 @@ func TestAMergeThatGrowsALaterSpanIsAcknowledged(t *testing.T) {
 	}
 }
 
-// TestARebaseInterruptedByACrashFinishesAtOpen: the own operations a rebase
-// keeps survive a crash before they are written again, or before a snapshot
-// carries them: the next open writes them, and the next maintenance takes
-// them to the fleet.
 func TestARebaseInterruptedByACrashFinishesAtOpen(t *testing.T) {
 	for _, before := range []string{"the writes", "the snapshot"} {
 		t.Run(before, func(t *testing.T) {
@@ -339,7 +303,7 @@ func TestARebaseInterruptedByACrashFinishesAtOpen(t *testing.T) {
 			// The crash: the store as the rebase left it, reopened.
 			c.reopen(t)
 			c.wantValue(t, "/p", "mine")
-			c.maintain(t) // what maintenance does within an interval: a snapshot carries /p
+			c.maintain(t)
 			if has, _ := c.store.Has(ctx, c.r.rebaseKey()); has {
 				t.Fatal("the rebase is still marked after the open wrote its operations")
 			}
@@ -351,9 +315,6 @@ func TestARebaseInterruptedByACrashFinishesAtOpen(t *testing.T) {
 	}
 }
 
-// TestAFleetThatRestartsTogetherRejoins: when every replica opens again at
-// once there is no live peer; the rejoining ones judge each other, and the
-// one that heard the most recent fleet vouches for the rest.
 func TestAFleetThatRestartsTogetherRejoins(t *testing.T) {
 	st := newSimTime()
 	a, b, c := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
@@ -380,10 +341,6 @@ func TestAFleetThatRestartsTogetherRejoins(t *testing.T) {
 	a.wantValue(t, "/after", "1")
 }
 
-// TestAJudgeThatHeardLessIsNotTrusted (T8.8): a judge whose fleet time is
-// older than the replica's gap knows less than the replica did when it left;
-// its ok is not taken, and its rebase would be a bootstrap from a staler
-// state.
 func TestAJudgeThatHeardLessIsNotTrusted(t *testing.T) {
 	st := newSimTime()
 	a, c := st.replica(t, "a", 0), st.replica(t, "c", 0)
@@ -398,7 +355,7 @@ func TestAJudgeThatHeardLessIsNotTrusted(t *testing.T) {
 	behind.r.since = gap - 1 // heard the fleet, a moment before c left it
 	behind.r.mu.Unlock()
 	c.beat()
-	st.deliver(t, c, behind) // behind will not judge a replica that heard more
+	st.deliver(t, c, behind)
 	if msgs := behind.out.take(); len(msgs) != 0 {
 		t.Fatal("a judge that heard an older fleet than the replica answered it")
 	}
@@ -434,9 +391,6 @@ func TestAJudgeThatHeardLessIsNotTrusted(t *testing.T) {
 	}
 }
 
-// TestASlowAuthorStampsTheFleetTimeItHeard (T8.11): a replica whose clock is
-// behind writes, once it has heard the fleet's time from a judge, at that
-// time and not at its clock, so its removals are kept as long as anyone's.
 func TestASlowAuthorStampsTheFleetTimeItHeard(t *testing.T) {
 	st := newSimTime()
 	a, b, slow := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "slow", -5*simS/2)
@@ -465,11 +419,6 @@ func TestASlowAuthorStampsTheFleetTimeItHeard(t *testing.T) {
 	}
 }
 
-// TestAReplicaThatHearsAPeerAfterAGapRejoinsFirst (T8.4): a replica whose
-// timers stood still while it was away, a machine suspended for longer than
-// T, may hear a peer before its own heartbeat checks the gap. It rejoins all
-// the same: what it held while away is judged, not vouched for by the first
-// message it hears.
 func TestAReplicaThatHearsAPeerAfterAGapRejoinsFirst(t *testing.T) {
 	st := newSimTime()
 	w, a, b, c := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
@@ -492,10 +441,6 @@ func TestAReplicaThatHearsAPeerAfterAGapRejoinsFirst(t *testing.T) {
 	}
 }
 
-// TestAnOwnWriteSurvivesASecondRebase (T8.7): a rebase puts back what the
-// replica wrote and nobody acknowledged, and keeps it in the log: the
-// snapshot that carries it may never reach anyone, and the next rebase puts
-// it back again.
 func TestAnOwnWriteSurvivesASecondRebase(t *testing.T) {
 	st := newSimTime()
 	a, b, c := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
@@ -510,8 +455,8 @@ func TestAnOwnWriteSurvivesASecondRebase(t *testing.T) {
 		del(t, b.r, "/other")
 		st.away(t, simRetention+2*simMargin, b, c)
 		a.beat()
-		st.deliver(t, a, b) // its rejoin
-		st.deliver(t, b, a) // the verdict; what a writes after never leaves
+		st.deliver(t, a, b)
+		st.deliver(t, b, a)
 		a.out.take()
 		if got := a.rebases(); got != i+1 {
 			t.Fatalf("setup: %d rebases, want %d", got, i+1)
@@ -520,9 +465,8 @@ func TestAnOwnWriteSurvivesASecondRebase(t *testing.T) {
 	}
 }
 
-// dropForRebase is what a rebase does before it lets go of the lock: what
-// happens next, before its walk of the judge's state ends, happens on the
-// state it leaves.
+// dropForRebase is a rebase up to releasing the lock: what follows happens on
+// the state it leaves, before its walk ends.
 func (sr *simReplica) dropForRebase(t testing.TB, since uint64) {
 	t.Helper()
 	sr.r.mu.Lock()
@@ -532,7 +476,7 @@ func (sr *simReplica) dropForRebase(t testing.TB, since uint64) {
 	}
 }
 
-// walked is the end of a rebase's walk, the judge's state not fetched.
+// walked ends a rebase's walk without the judge's state fetched.
 func (sr *simReplica) walked(t testing.TB) {
 	t.Helper()
 	if err := sr.r.rebuild(context.Background(), sr.r.currentGeneration(), 0, message{}); err != nil {
@@ -540,9 +484,6 @@ func (sr *simReplica) walked(t testing.TB) {
 	}
 }
 
-// TestAnOwnWriteSurvivesARebaseBeforeTheLastOneIsWalked: a rebase walks the
-// judge's state in the background, and a second one may come before that
-// walk ends. What the replica wrote and nobody acknowledged survives both.
 func TestAnOwnWriteSurvivesARebaseBeforeTheLastOneIsWalked(t *testing.T) {
 	st := newSimTime()
 	a, r := st.replica(t, "a", 0), st.replica(t, "r", 0)
@@ -554,10 +495,6 @@ func TestAnOwnWriteSurvivesARebaseBeforeTheLastOneIsWalked(t *testing.T) {
 	r.wantValue(t, "/only", "mine")
 }
 
-// TestAMaintenanceWhileARebaseWalksKeepsTheOwnWrites: the own operations of
-// a replica away for longer than T have expired, and a maintenance pass
-// outside a rejoin forgets those its state holds. One that comes while a
-// rebase walks the judge's state does not lose them.
 func TestAMaintenanceWhileARebaseWalksKeepsTheOwnWrites(t *testing.T) {
 	st := newSimTime()
 	a, b, r := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
@@ -574,9 +511,6 @@ func TestAMaintenanceWhileARebaseWalksKeepsTheOwnWrites(t *testing.T) {
 	r.wantValue(t, "/only", "mine")
 }
 
-// TestADeleteWhileARebaseWalksStaysDeleted: a key this replica wrote and
-// then deletes while a rebase walks the judge's state stays deleted when the
-// rebase is done.
 func TestADeleteWhileARebaseWalksStaysDeleted(t *testing.T) {
 	st := newSimTime()
 	a, r := st.replica(t, "a", 0), st.replica(t, "r", 0)
@@ -588,9 +522,6 @@ func TestADeleteWhileARebaseWalksStaysDeleted(t *testing.T) {
 	r.wantValue(t, "/only", "<deleted>")
 }
 
-// TestAWriteBeforeFirstContactSurvivesARebase (T8.7): what a replica wrote
-// before it ever heard a fleet is logged like anything it writes, so a
-// rebase after it was heard puts it back.
 func TestAWriteBeforeFirstContactSurvivesARebase(t *testing.T) {
 	st := newSimTime()
 	a, b, c := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
@@ -598,7 +529,7 @@ func TestAWriteBeforeFirstContactSurvivesARebase(t *testing.T) {
 	a.out.take()
 	st.exchange(t, b, c)
 	b.beat()
-	st.deliver(t, b, a) // first contact, inbound only
+	st.deliver(t, b, a)
 	a.out.take()
 	w := st.replica(t, "w", 0)
 	put(t, w.r, "/other", "v")
@@ -615,22 +546,17 @@ func TestAWriteBeforeFirstContactSurvivesARebase(t *testing.T) {
 	}
 }
 
-// TestARemovalBeforeFirstContactSurvivesARebase (T8.7): what a replica
-// removed before it ever heard a fleet is no element any more, so nothing
-// logs it at first contact. A value it put that went out, and then removed
-// before the removal could leave, stays removed through a rebase: the rebase
-// keeps the dots the old incarnation wrote and no longer holds.
 func TestARemovalBeforeFirstContactSurvivesARebase(t *testing.T) {
 	st := newSimTime()
 	a, b, c := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
 	put(t, a.r, "/x", "removed")
-	st.deliver(t, a, b, c) // the put goes out, and nothing comes back
+	st.deliver(t, a, b, c)
 	b.wantValue(t, "/x", "removed")
 	del(t, a.r, "/x")
-	a.out.take() // the removal never leaves
+	a.out.take()
 	st.exchange(t, b, c)
 	b.beat()
-	st.deliver(t, b, a) // first contact, inbound only
+	st.deliver(t, b, a)
 	a.out.take()
 	w := st.replica(t, "w", 0)
 	put(t, w.r, "/other", "v")
@@ -648,20 +574,15 @@ func TestARemovalBeforeFirstContactSurvivesARebase(t *testing.T) {
 	}
 }
 
-// TestAReplicaThatWroteBeforeAnyContactIsJudgedAtFirstContact (T8.4): what
-// a replica that never heard a fleet holds it wrote itself, and the fleet
-// may have removed and forgotten any of it. The first fleet time it hears
-// does not vouch for that: it rejoins from its oldest write, and is rebased
-// when that is too old to be judged.
 func TestAReplicaThatWroteBeforeAnyContactIsJudgedAtFirstContact(t *testing.T) {
 	st := newSimTime()
 	a, b, c := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
 	put(t, a.r, "/x", "removed")
-	st.deliver(t, a, b, c) // its write goes out, and nothing comes back
+	st.deliver(t, a, b, c)
 	b.wantValue(t, "/x", "removed")
 	del(t, b.r, "/x")
 	st.away(t, simRetention+2*simMargin, b, c)
-	a.maintain(t) // its own log forgets the write, long expired
+	a.maintain(t)
 	if n := countEntries(t, a.r, a.r.ownPrefix()); n != 0 {
 		t.Fatalf("setup: a still logs %d writes", n)
 	}
@@ -681,10 +602,6 @@ func TestAReplicaThatWroteBeforeAnyContactIsJudgedAtFirstContact(t *testing.T) {
 	}
 }
 
-// TestACopyRestoredFromBeforeFirstContactIsJudged (T8.4): a backup taken
-// before the replica heard anyone opens as a replica that never heard a
-// fleet, holding what the fleet has since removed and forgotten. It is
-// judged at first contact like one, not vouched for by it.
 func TestACopyRestoredFromBeforeFirstContactIsJudged(t *testing.T) {
 	st := newSimTime()
 	a, b, c := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
@@ -699,11 +616,11 @@ func TestACopyRestoredFromBeforeFirstContactIsJudged(t *testing.T) {
 	a.store, a.dag = saved, blocks
 	a.open(t)
 	a.maintain(t)
-	st.exchange(t, a, b, c) // first contact: it rejoins
+	st.exchange(t, a, b, c)
 	if !a.rejoining() {
 		t.Fatal("a copy from before first contact took the first fleet time it heard")
 	}
-	st.exchange(t, a, b, c) // and is judged
+	st.exchange(t, a, b, c)
 	if a.rebases() != 1 {
 		t.Fatalf("%d rebases, want 1", a.rebases())
 	}
@@ -712,10 +629,6 @@ func TestACopyRestoredFromBeforeFirstContactIsJudged(t *testing.T) {
 	}
 }
 
-// TestAnExpiredIncarnationLeavesTheAcknowledgements: a heartbeat acknowledges
-// what was merged lately of each incarnation still known. One forgotten in
-// between leaves that list too, or every incarnation that expired right
-// after a merge would stay in memory for good.
 func TestAnExpiredIncarnationLeavesTheAcknowledgements(t *testing.T) {
 	st := newSimTime()
 	w, a, c := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "c", 0)
@@ -729,7 +642,7 @@ func TestAnExpiredIncarnationLeavesTheAcknowledgements(t *testing.T) {
 		t.Fatal("setup: b should know the writer")
 	}
 	st.advance(2 * simRI)
-	b.maintain(t) // the writer expires before b's next heartbeat
+	b.maintain(t)
 	st.away(t, 3*simRetention, a, b, c)
 	b.r.mu.Lock()
 	_, kept := b.r.merged[inc]
@@ -739,11 +652,6 @@ func TestAnExpiredIncarnationLeavesTheAcknowledgements(t *testing.T) {
 	}
 }
 
-// TestAJudgeStillWalkingTheFleetKnowsWhatItForgot (T8.8): a replica that has
-// just heard the fleet, its walk of the fleet's heads still in flight, holds
-// none of the fleet's blocks and so none of their horizons. The heartbeat
-// that told it the fleet's time told it what the fleet forgot too: it does
-// not vouch for a replica that may hold what nobody can refute any more.
 func TestAJudgeStillWalkingTheFleetKnowsWhatItForgot(t *testing.T) {
 	st := newSimTime()
 	w, a, b, c := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
@@ -754,7 +662,7 @@ func TestAJudgeStillWalkingTheFleetKnowsWhatItForgot(t *testing.T) {
 
 	f := st.replica(t, "f", 0)
 	b.beat()
-	f.reach() // nothing of b's fetched yet
+	f.reach()
 	for _, data := range b.out.take() {
 		msg, err := f.r.decodeBroadcast(data)
 		if err != nil {
@@ -781,12 +689,6 @@ func TestAJudgeStillWalkingTheFleetKnowsWhatItForgot(t *testing.T) {
 	}
 }
 
-// TestTwoReplicasLeftToEachOtherStayTogetherAfterARejoin: one of two
-// replicas left to each other opens again and rejoins; what each says
-// reaches the other an interval later, so the rejoin takes longer than G.
-// The one that answered does not count that as a gap and rejoin in turn:
-// the two would pass the rejoin back and forth for ever, neither ever
-// hearing the other as the fleet.
 func TestTwoReplicasLeftToEachOtherStayTogetherAfterARejoin(t *testing.T) {
 	st := newSimTime()
 	a, b := st.replica(t, "a", 0), st.replica(t, "b", 0)
@@ -823,12 +725,6 @@ func TestTwoReplicasLeftToEachOtherStayTogetherAfterARejoin(t *testing.T) {
 	}
 }
 
-// TestAJudgeWhoseOkCannotEndARejoinStillRejoins: a replica that heard no
-// live peer for G, its gap reset lately (as a rebase leaves it), holds what
-// it holds as of a time older than the gap_from of the one peer it hears
-// rejoin. Its ok cannot end that rejoin, so answering it is no contact: it
-// rejoins in turn, takes the peer's time from it, and then ends the peer's
-// rejoin. Were its answers contact, neither would ever end.
 func TestAJudgeWhoseOkCannotEndARejoinStillRejoins(t *testing.T) {
 	st := newSimTime()
 	x, y := st.replica(t, "x", 0), st.replica(t, "y", 0)
@@ -857,12 +753,6 @@ func TestAJudgeWhoseOkCannotEndARejoinStillRejoins(t *testing.T) {
 	}
 }
 
-// TestARejoinAmongAWrongClockAndANewReplicaEnds: a replica whose only peers
-// are one whose clock it cannot agree with and one that never heard a fleet
-// ends its rejoin, as among new replicas alone: a clock that disagrees can
-// judge nobody, whatever it has heard. The new replica then hears the fleet's
-// time from it, and the wrong clock, which agrees with nobody, stays
-// rejoining.
 func TestARejoinAmongAWrongClockAndANewReplicaEnds(t *testing.T) {
 	st := newSimTime()
 	a, b := st.replica(t, "a", 0), st.replica(t, "b", 0)
@@ -896,11 +786,6 @@ func TestARejoinAmongAWrongClockAndANewReplicaEnds(t *testing.T) {
 	}
 }
 
-// TestAnOwnWriteSurvivesMaintenanceBetweenTwoRebases: a rebase puts back what
-// the replica wrote and nobody acknowledged, and no snapshot carries it while
-// the judge's state is walked. A maintenance pass in between, outside a
-// rejoin and with the write's delta expired, keeps it in the log, and a
-// second rebase puts it back again.
 func TestAnOwnWriteSurvivesMaintenanceBetweenTwoRebases(t *testing.T) {
 	st := newSimTime()
 	a := st.replica(t, "a", 0)
@@ -908,7 +793,7 @@ func TestAnOwnWriteSurvivesMaintenanceBetweenTwoRebases(t *testing.T) {
 	r := st.replica(t, "r", 0)
 	st.settle(t, a, b, r)
 	put(t, r.r, "/only", "mine")
-	r.out.take() // nobody hears it, nobody acknowledges it
+	r.out.take()
 
 	st.away(t, simRetention+2*simMargin, a, b)
 	r.beat()
@@ -927,10 +812,6 @@ func TestAnOwnWriteSurvivesMaintenanceBetweenTwoRebases(t *testing.T) {
 	r.wantValue(t, "/only", "mine")
 }
 
-// TestACompactionThatWritesNothingKeepsTheRebaseMarked: a rebase whose writes
-// no snapshot carries yet stays marked, so a reopen still owes a snapshot.
-// A compaction that finds nothing to fold writes none, and leaves the mark:
-// what was put back reaches the fleet after the next reopen.
 func TestACompactionThatWritesNothingKeepsTheRebaseMarked(t *testing.T) {
 	st := newSimTime()
 	a := st.replica(t, "a", 0)

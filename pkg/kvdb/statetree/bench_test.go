@@ -71,7 +71,6 @@ func BenchmarkGet(b *testing.B) {
 	}
 }
 
-// BenchmarkDiff diffs a tree against itself with ten keys changed.
 func BenchmarkDiff(b *testing.B) {
 	ctx := context.Background()
 	for _, n := range sizes {

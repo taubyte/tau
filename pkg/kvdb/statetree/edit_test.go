@@ -11,9 +11,6 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 )
 
-// TestEditorIsOneAtATime: a run of changes through an Editor gives the tree
-// the same Puts and Deletes give one at a time, with the same summaries,
-// and reads what it has changed so far.
 func TestEditorIsOneAtATime(t *testing.T) {
 	ctx := context.Background()
 	s := newStore()
@@ -84,7 +81,6 @@ func TestEditorIsOneAtATime(t *testing.T) {
 			t.Fatalf("round %d: %d entries, want %d", round, len(g), len(want))
 		}
 	}
-	// Emptied through an Editor, a tree is the empty tree.
 	ed := base.Edit()
 	for k := range m {
 		if err := ed.Delete(ctx, []byte(k)); err != nil {
@@ -100,7 +96,6 @@ func TestEditorIsOneAtATime(t *testing.T) {
 	}
 }
 
-// perCid is a DAGService that counts the reads of each node.
 type perCid struct {
 	*counting
 	mu    sync.Mutex
@@ -114,10 +109,6 @@ func (p *perCid) Get(ctx context.Context, c cid.Cid) (ipld.Node, error) {
 	return p.counting.Get(ctx, c)
 }
 
-// TestEditorWritesEachNodeOnce: an Editor reads each node at most once and
-// writes exactly the nodes the new tree holds that the old one does not,
-// however many of its changes pass through a node. One at a time, every
-// change rewrites its whole path.
 func TestEditorWritesEachNodeOnce(t *testing.T) {
 	ctx := context.Background()
 	s := newStore()

@@ -17,13 +17,10 @@ import (
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
 )
 
-// Every snapshot merge of every test in this package is decided twice:
-// through the tree diff, which reads only the records the trees disagree on
-// and those the journal names, and through an oracle that decides every
-// record either side holds. The two must write the same thing, down to the
-// byte; a merge where they do not panics. A run of benchmarks goes without:
-// the oracle reads every record of every merge, which is what the
-// benchmarks measure the tree path for not doing.
+// Every snapshot merge is decided twice, through the tree diff and through an
+// oracle that decides every record either side holds; the two must write the
+// same bytes or the merge panics. Benchmarks run without it, as it reads what
+// the tree path exists not to.
 func installOracle() {
 	if flag.Lookup("test.bench").Value.String() != "" {
 		return
@@ -41,7 +38,6 @@ func installOracle() {
 
 var oracleChecks atomic.Int64
 
-// everything is every record s holds and every one this replica holds.
 func everything(ctx context.Context, store *Datastore, s *snapState) (*mergeSet, error) {
 	ms := newMergeSet()
 	if err := s.elems.Range(ctx, nil, nil, func(k, v []byte) error { return ms.addElem(k, v, true) }); err != nil {
@@ -76,8 +72,6 @@ func sameContext(a, b *causalContext) bool {
 	})
 }
 
-// againstOracle decides the merge p decided again through everything, and
-// reports how the two differ.
 func againstOracle(ctx context.Context, store *Datastore, c cid.Cid, root *pb.Delta, s *snapState, p *snapshotMerge) error {
 	oracleChecks.Add(1)
 	ms, err := everything(ctx, store, s)
@@ -140,8 +134,6 @@ func joinLines(lines []string) string {
 	return b.String()
 }
 
-// TestTheOracleChecksEveryMerge: the check runs, and it is not vacuous: a
-// merge that decides nothing is told apart from the oracle's.
 func TestTheOracleChecksEveryMerge(t *testing.T) {
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 2, noAutoCompact())
 	defer done()

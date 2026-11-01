@@ -34,8 +34,6 @@ func TestHistoryIndependence(t *testing.T) {
 			t.Fatalf("order %d: root %s, want %s", round, tr.Root(), ref.Root())
 		}
 	}
-	// Through keys that come and go, values that are overwritten, and
-	// deletes of keys never held.
 	for round := range 8 {
 		tr := New(s)
 		for _, i := range rng.Perm(n + n/2) {
@@ -60,7 +58,6 @@ func TestHistoryIndependence(t *testing.T) {
 		}
 		verify(t, tr)
 	}
-	// Emptied in any order, a tree is the empty tree again.
 	tr := ref
 	for _, i := range rng.Perm(n) {
 		tr = del(t, tr, key(i))
@@ -141,8 +138,8 @@ func modelRange(m model, start, end []byte) []string {
 }
 
 func randKey(rng *rand.Rand) []byte {
-	// A small alphabet and short keys, so keys share prefixes, collide, and
-	// include the empty key and keys of high level.
+	// Short keys from a small alphabet share prefixes, collide, and include the
+	// empty key and keys of high level.
 	k := make([]byte, rng.IntN(5))
 	for i := range k {
 		k[i] = "ab\x00\xff/"[rng.IntN(5)]
@@ -271,7 +268,6 @@ func TestPutUnchangedWritesNothing(t *testing.T) {
 	}
 }
 
-// The 100k tree the sharing and diff tests change, built once.
 func bigTree(t testing.TB, s *counting) (*Tree, map[string][]byte) {
 	m := map[string][]byte{}
 	for i := range 100_000 {
@@ -319,8 +315,6 @@ func TestStructuralSharing(t *testing.T) {
 		s.reset()
 		check("insert "+string(k), put(t, tr, k, []byte("new")), 2*depth+1)
 	}
-	// A key above every level, at the edge and in the middle, splits the
-	// tree down its whole height.
 	for _, prefix := range []string{"/high/", "/k/00100000/"} {
 		k := highKey(t, prefix, 5)
 		s.reset()
@@ -387,8 +381,6 @@ func TestDiffMinimal(t *testing.T) {
 			t.Fatalf("%d changes: DiffNodes gave %d and %d nodes, want %d and %d", k, len(onlyA), len(onlyB), len(minusSet(all, bs)), len(minusSet(bs, all)))
 		}
 	}
-	// A key above every level splits the tree down its whole height, and
-	// the subtrees either side of the split are still matched, not read.
 	for _, l := range []uint32{2, 3, 5} {
 		k := highKey(t, "/k/00100000/", l)
 		b := put(t, a, k, []byte("high"))
@@ -403,7 +395,6 @@ func TestDiffMinimal(t *testing.T) {
 			t.Logf("level %d key: diff read %d nodes", l, gets)
 		}
 	}
-	// Equal trees read nothing.
 	s.reset()
 	if got := diffOf(t, a, Load(s, a.Root())); len(got) != 0 || s.gets.Load() != 0 {
 		t.Fatalf("diff of a tree with itself: %d changes, %d gets", len(got), s.gets.Load())

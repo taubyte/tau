@@ -75,7 +75,6 @@ func (l *lows) lower(o lows) {
 	l.own = min(l.own, o.own)
 }
 
-// times are the durations the rules read, in milliseconds.
 type times struct {
 	margin uint64 // m
 	window uint64 // D + 2S: how much earlier than a replica's since what it missed may be stamped
@@ -92,12 +91,10 @@ func timesOf(opts *Options) times {
 	}
 }
 
-// dropClock is the time this replica forgets by. The caller holds store.mu.
-//
-// While rejoining it stands still at the fleet time heard before the gap: a
-// replica out of contact forgets nothing, so that what it vouches for, and
-// what another rejoining replica rebuilt from it holds, is judged by what it
-// knew when it left.
+// dropClock is the time this replica forgets by. While rejoining it stands at
+// the fleet time heard before the gap: a replica out of contact forgets
+// nothing, so what it vouches for is judged by what it knew when it left. The
+// caller holds store.mu.
 func (store *Datastore) dropClock() uint64 {
 	now := store.clock()
 	switch {
@@ -109,18 +106,16 @@ func (store *Datastore) dropClock() uint64 {
 	return min(now, store.since+durationMillis(store.times.up()-store.sinceUp))
 }
 
-// dropClockNow is dropClock for a caller that does not hold store.mu: a
-// walk deciding which links name blocks nobody holds any more.
+// dropClockNow is dropClock for a caller not holding store.mu.
 func (store *Datastore) dropClockNow() uint64 {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	return store.dropClock()
 }
 
-// knownSince is how recent what this replica holds is: the fleet time it last
-// heard, or its clock if it has never heard a peer, since then it holds
-// nothing of anyone else's that could have gone stale. The caller holds
-// store.mu.
+// knownSince is the fleet time last heard, or the clock for a replica that
+// never heard a peer, whose state holds nothing of anyone's that could be
+// stale. The caller holds store.mu.
 func (store *Datastore) knownSince() uint64 {
 	if store.since == 0 {
 		return store.clock()
@@ -128,18 +123,12 @@ func (store *Datastore) knownSince() uint64 {
 	return store.since
 }
 
-// hearFleet takes a peer's word for the fleet's time, no further ahead of
-// this replica's clock than the skew.
-//
-// The first time a replica hears one, everything it holds it wrote itself,
-// before it had heard anyone, and nothing logged it for a rebase. Once an
-// element has expired by a margin, the fleet may have removed it and
-// forgotten the removal, which outlives what it removes by no more: taking
-// the fleet's time would vouch for it. Such a replica rejoins instead, from
-// the time of the oldest element it holds, and is judged from there. One
-// whose elements are all younger takes the time, and logs them as its own
-// operations: from now on it can be judged stale, and a rebase must put
-// them back.
+// hearFleet takes a peer's word for the fleet's time, no further ahead of the
+// clock than the skew. The first time, everything held was written before
+// hearing anyone and nothing logged it: once an element has expired by a
+// margin the fleet may have removed it and forgotten the removal, so such a
+// replica rejoins from its oldest element's time instead. One whose elements
+// are all younger takes the time and logs them as its own operations.
 func (store *Datastore) hearFleet(ctx context.Context, stamp uint64) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
@@ -178,8 +167,8 @@ func (store *Datastore) hearFleet(ctx context.Context, stamp uint64) error {
 	return nil
 }
 
-// hearHorizon takes a peer's horizon, no further ahead of this replica's
-// clock than the skew. The caller holds store.mu.
+// The horizon is taken no further ahead of the clock than the skew. The caller
+// holds store.mu.
 func (store *Datastore) hearHorizon(ctx context.Context, h uint64) error {
 	h = min(h, store.clock()+store.times.skew)
 	if h <= store.horizon {
@@ -192,8 +181,7 @@ func (store *Datastore) hearHorizon(ctx context.Context, h uint64) error {
 	return nil
 }
 
-// heldElements is every element this replica holds. The caller holds
-// store.mu.
+// The caller holds store.mu.
 func (store *Datastore) heldElements(ctx context.Context) ([]element, error) {
 	var held []element
 	err := scanStore(ctx, store.store, store.set.elemsPrefix(), func(k string, v []byte) error {
@@ -208,8 +196,7 @@ func (store *Datastore) heldElements(ctx context.Context) ([]element, error) {
 	return held, err
 }
 
-// logHeld logs elements as the own operations that wrote them, one record
-// per dot, as logOwn would have. The caller holds store.mu.
+// One record per dot, as logOwn would have written. The caller holds store.mu.
 func (store *Datastore) logHeld(t *txn, held []element) error {
 	recs := map[dot]*pb.Delta{}
 	for _, el := range held {
@@ -231,7 +218,7 @@ func (store *Datastore) logHeld(t *txn, held []element) error {
 	return nil
 }
 
-// fleetNow is the latest of the drop clock and the fleet time heard: what a
+// fleetNow is the later of the drop clock and the fleet time heard: what a
 // judge compares expiries against. The caller holds store.mu.
 func (store *Datastore) fleetNow() uint64 {
 	return max(store.dropClock(), store.since)
@@ -243,17 +230,14 @@ func (store *Datastore) expired(expires uint64, now uint64) bool {
 
 var errAhead = errors.New("stamped ahead of this replica's clock")
 
-// ahead reports whether a block stamped at is further ahead of this
-// replica's clock than the skew.
 func (store *Datastore) ahead(at uint64) bool {
 	return at > store.clock()+store.times.skew
 }
 
-// carriesAhead reports whether a snapshot holds anything stamped ahead: what
-// a clock far ahead wrote, carried by a snapshot its author wrote once the
-// clock was put right. It waits as the block that wrote it would have, so a
-// wrong clock's stamps never reach a correct replica's state. The trees'
-// summaries say what the latest stamp of each is.
+// carriesAhead reports whether a snapshot holds anything stamped ahead, written
+// by a clock far ahead and carried once it was put right. It waits as the
+// writing block would have, so a wrong clock's stamps never reach a correct
+// state; the trees' summaries give each tree's latest stamp.
 func (store *Datastore) carriesAhead(ctx context.Context, root *pb.Delta, dags ipld.DAGService) (bool, error) {
 	stc, err := cid.Cast(root.GetState())
 	if err != nil {
@@ -319,12 +303,11 @@ func (store *Datastore) stale(ctx context.Context, since uint64) (bool, error) {
 	return danger, err
 }
 
-// forget drops from a merge everything that has expired by now: the
-// incarnations it no longer needs to know, the dots a rebase erased, and the
-// pending removals no longer needed. A removal is needed as long as its target is, so once it expires its
-// target's delta has expired too and is never merged (T8.12): a removal kept
-// for a dot that never comes would be kept forever. It reports whether
-// anything went.
+// forget drops what has expired: incarnations no longer needed, dots a rebase
+// erased, and pending removals no longer needed. A removal is needed as long
+// as its target, whose delta has expired too once it does and is never merged;
+// kept for a dot that never comes, it would be kept forever. It reports
+// whether anything went.
 func (m *merging) forget(ctx context.Context, now uint64) (bool, error) {
 	dropped := false
 	for r, k := range m.cc.inc {
@@ -368,8 +351,8 @@ func (m *merging) forget(ctx context.Context, now uint64) (bool, error) {
 	return dropped, nil
 }
 
-// expireLocked forgets what has expired, and asks for a snapshot that no
-// longer carries it. The caller holds store.mu.
+// expireLocked asks for a snapshot that no longer carries what it forgot. The
+// caller holds store.mu.
 func (store *Datastore) expireLocked(ctx context.Context) (bool, error) {
 	m := store.beginMerge()
 	defer m.t.endReads()
@@ -384,10 +367,9 @@ func (store *Datastore) expireLocked(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-// purgeAncient takes every local block that no context covers any more and
-// whose own expiry has passed, for dropTaken: no replica in contact needs
-// it, and a link to it is never followed. Heads stay until a block links
-// them. The caller holds store.mu.
+// purgeAncient takes every local block no context covers whose expiry has
+// passed, for dropTaken: no replica in contact needs it and no link to it is
+// followed. Heads stay until a block links them. The caller holds store.mu.
 func (store *Datastore) purgeAncient(ctx context.Context) ([]cid.Cid, error) {
 	now := store.dropClock()
 	// A block expires a margin past its whole ttl, after its half-life.
@@ -399,17 +381,15 @@ func (store *Datastore) purgeAncient(ctx context.Context) ([]cid.Cid, error) {
 	})
 }
 
-// gone reports whether a link names a block nobody needs any more: its dot is
-// not covered here and its expiry has passed, so every holder has purged it.
-// The caller holds store.mu or reads the context without it.
+// gone: its dot is not covered and its expiry has passed, so every holder has
+// purged it. The caller holds store.mu or reads the context without it.
 func (store *Datastore) gone(l link, now uint64) bool {
 	return !store.covered(l.dot) && store.expired(l.at+l.ttl, now)
 }
 
-// refreshDue reports whether this replica holds a block, a snapshot root or a
-// delta, past half of its retention: it is folded into a new snapshot before
-// any replica stops following links to it. So is a head snapshot this
-// replica would refuse now, see staleHead. The caller holds store.mu.
+// refreshDue reports whether a held block is past half its retention, to be
+// folded into a new snapshot before any replica stops following links to it,
+// or a head snapshot is stale (see staleHead). The caller holds store.mu.
 func (store *Datastore) refreshDue(ctx context.Context) (bool, error) {
 	if stale, err := store.staleHead(ctx); err != nil || stale {
 		return stale, err
@@ -490,11 +470,9 @@ func (store *Datastore) staleHead(ctx context.Context) (bool, error) {
 	return false, nil
 }
 
-// snapshotSince is how recent a snapshot is: its author's fleet time. One
-// written before its author heard any fleet (since 0) holds only that
-// author's own writes, and is as recent as the oldest of them: any may have
-// been removed, and the removal forgotten, after it was written, however late
-// the snapshot is fetched. The elements tree's summary says which is oldest.
+// snapshotSince is a snapshot's author's fleet time. One written before its
+// author heard any fleet holds only the author's writes and is as recent as
+// the oldest of them, which the elements tree's summary gives.
 func (store *Datastore) snapshotSince(ctx context.Context, root *pb.Delta, dags ipld.DAGService) (uint64, error) {
 	since := root.GetSince()
 	if since != 0 {
@@ -519,9 +497,9 @@ func (store *Datastore) snapshotSince(ctx context.Context, root *pb.Delta, dags 
 	return since, nil
 }
 
-// maintain is one pass of what time does to a store: forget what expired,
-// drop the state fetches and the blocks nobody needs, and compact when a held block is half way to
-// its expiry or something the last snapshot carries has been forgotten.
+// maintain forgets what expired, drops state fetches and blocks nobody needs,
+// and compacts when a held block is half way to its expiry or something the
+// last snapshot carries was forgotten.
 func (store *Datastore) maintain(ctx context.Context) error {
 	store.mu.Lock()
 	if store.closed {

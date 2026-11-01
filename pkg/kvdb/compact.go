@@ -14,43 +14,25 @@ import (
 	"github.com/taubyte/tau/pkg/pebbleds"
 )
 
-// Compact folds this replica's whole state into a snapshot and drops every
-// local block the snapshot covers, returning how many it dropped.
-//
-// A snapshot is a delta like any other: it has a dot of this incarnation and
-// links the current heads, plus every parent a merged block links that this
-// replica has not merged yet, so a replica reading it can still walk to
-// those. What it carries is a state (see state.go): every live element with
-// its own dot and priority, the pending removals, and this replica's causal
-// context. Merging it is the same join as merging a delta (see merge.go), so
-// it needs no coordination: snapshots made concurrently, from stale views,
-// or of partly-walked histories all converge, and a removal the snapshot has
-// seen stays removed against any branch that still carries the element.
-//
-// The state's trees are the last snapshot's with the records the journal
-// names applied, so a snapshot writes only the tree nodes on the paths of
-// what changed, and shares the rest with the snapshots before it. A reader
-// fetches every node it does not hold before it merges anything, so a
-// snapshot is never half-applied.
-//
-// The vector is bounded by time: an incarnation is forgotten once nothing
-// merged about it is needed any more (see timebound.go), and compacting
-// first forgets what has expired.
+// Compact folds the whole state into a snapshot and drops the local blocks it
+// covers, returning how many. A snapshot is a delta carrying a state (see
+// state.go), merged by the same join as a delta, so snapshots made
+// concurrently or from stale views converge without coordination. Its trees
+// share every unchanged node with the snapshot before, and a reader fetches
+// all it lacks before merging, so a snapshot is never half-applied.
 func (store *Datastore) Compact(ctx context.Context) (int, error) {
 	return store.compact(ctx, false)
 }
 
-// compact compacts; forced, it writes a snapshot even when every block held
-// is a head snapshot, to replace one that has grown old.
+// Forced, it writes a snapshot even when the only blocks held are head
+// snapshots, to replace an old one.
 func (store *Datastore) compact(ctx context.Context, force bool) (int, error) {
 	store.mu.Lock()
 	if store.closed {
 		store.mu.Unlock()
 		return 0, ErrClosed
 	}
-	// A rebase puts back what this replica wrote before the judge's state
-	// can refute it: nothing is carried in a snapshot until that state is
-	// walked.
+	// Nothing is carried in a snapshot until a rebase's judge state is walked.
 	if store.rebuilding != 0 {
 		store.compactDue = true
 		store.mu.Unlock()
@@ -90,8 +72,7 @@ func (store *Datastore) compact(ctx context.Context, force bool) (int, error) {
 	return n, nil
 }
 
-// compactLocked writes and merges the snapshot. It returns no context when
-// there is nothing to fold: the only block held is the snapshot that is the
+// It returns no context when the only block held is the snapshot that is the
 // only head. The caller holds store.mu.
 func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *causalContext, error) {
 	if store.closed {
@@ -133,9 +114,8 @@ func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *c
 	if err != nil {
 		return Head{}, nil, err
 	}
-	// The compaction is a session (see gc.go): what the roots reach it
-	// reuses, and what it writes is an intent first, until the merge below
-	// publishes it.
+	// A compaction is a gc session: it reuses what the roots reach, and what it
+	// writes is an intent until the merge below publishes it.
 	sess := store.gc.compaction
 	store.gcMu.Lock()
 	store.beginSession(sess)
@@ -168,10 +148,9 @@ func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *c
 		return Head{}, nil, fmt.Errorf("error writing the snapshot's state: %w", err)
 	}
 
-	// Its own entry expired, with nothing of its own left to refresh it, this
-	// incarnation writes no more, as idleRetire does for a write: a peer
-	// whose clock runs ahead may have forgotten it already, though this
-	// replica forgets it only a margin later.
+	// With its own entry expired and nothing left to refresh it, this incarnation
+	// stops writing, as idleRetire does: a peer whose clock runs ahead may have
+	// forgotten it.
 	if k := store.cc.inc[store.replica]; store.counter != 0 && (k == nil || k.expires <= store.clock()) {
 		if err := store.drawIncarnation(); err != nil {
 			return Head{}, nil, err
@@ -213,14 +192,11 @@ func (store *Datastore) compactLocked(ctx context.Context, force bool) (Head, *c
 	return Head{Cid: nd.Cid(), Height: root.Priority, Dot: d, At: root.At, TTL: root.Ttl}, theirs, nil
 }
 
-// buildState makes the trees of the state this replica holds, in an
-// overlay over its DAG: the base's with every record the journal names
-// brought up to date, and the context's. It returns the StateRoot's CID.
-// The caller holds store.mu.
+// buildState makes the state's trees in an overlay over the DAG: the base's
+// with the journal's records applied, and the context's. The caller holds
+// store.mu.
 func (store *Datastore) buildState(ctx context.Context) (*overlay, cid.Cid, error) {
 	ov := newOverlay(store.dagService)
-	// What the editors keep until they write their trees is in the store's
-	// arena; keys looked up, in scratch.
 	b := &store.build
 	b.reset()
 	elems := store.tree(ov, store.base.elems).Edit()
@@ -301,11 +277,9 @@ func (store *Datastore) buildState(ctx context.Context) (*overlay, cid.Cid, erro
 	return ov, nd.Cid(), ov.Add(ctx, nd)
 }
 
-// nothingToFold reports whether every block the store holds belongs to a
-// snapshot that is a head, and no merge left a state those snapshots do not
-// hold (compactDue). Folding concurrent snapshots into one more would
-// free nothing, and replicas that each compacted would otherwise answer every
-// snapshot they merge with another one.
+// nothingToFold reports whether every block held belongs to a head snapshot
+// and no merge left a state they lack. Folding them again frees nothing, and
+// replicas would answer every snapshot with another.
 func (store *Datastore) nothingToFold(ctx context.Context, hs []Head) (bool, error) {
 	if store.compactDue {
 		return false, nil
@@ -338,14 +312,10 @@ func (store *Datastore) nothingToFold(ctx context.Context, hs []Head) (bool, err
 	return !missing, err
 }
 
-// A stateBuild is the storage buildState uses again from one compaction to
-// the next: the arena of what its editors keep until they write their
-// trees, and scratch for a key it looks up and a key it decodes.
 type stateBuild struct {
 	arena, look, key []byte
 }
 
-// keptBuild bounds the arena a store keeps between compactions.
 const keptBuild = 1 << 20
 
 func (b *stateBuild) reset() {
@@ -355,7 +325,7 @@ func (b *stateBuild) reset() {
 	b.arena = b.arena[:0]
 }
 
-// buf is what the next kept bytes are appended to; keep claims them.
+// buf is where the next kept bytes are appended; keep claims them.
 func (b *stateBuild) buf() []byte { return b.arena }
 
 func (b *stateBuild) keep(x []byte) []byte {
@@ -364,9 +334,8 @@ func (b *stateBuild) keep(x []byte) []byte {
 	return x[start:len(x):len(x)]
 }
 
-// elemMark reads the element an element mark names from rest, the mark
-// after its prefix: <key segment>/<dot segment>. The key is over b's
-// scratch until the next mark.
+// rest is <key segment>/<dot segment>. The key is in b's scratch until the
+// next mark.
 func (b *stateBuild) elemMark(rest []byte) (string, dot, error) {
 	i := bytes.IndexByte(rest, '/')
 	if i < 1 {
@@ -380,8 +349,7 @@ func (b *stateBuild) elemMark(rest []byte) (string, dot, error) {
 	return key, d, err
 }
 
-// pendingMark reads the bucket and removal a pending mark names from rest:
-// <bucket>/<dot segment>/<key segment>.
+// rest is <bucket>/<dot segment>/<key segment>.
 func (b *stateBuild) pendingMark(rest []byte) (uint64, string, dot, error) {
 	if len(rest) < counterDigits+2 || rest[counterDigits] != '/' {
 		return 0, "", dot{}, fmt.Errorf("bad journal key %q", rest)
@@ -403,7 +371,6 @@ func (b *stateBuild) pendingMark(rest []byte) (uint64, string, dot, error) {
 	return bk, key, d, err
 }
 
-// keySegment decodes a key segment into b's scratch.
 func (b *stateBuild) keySegment(seg []byte) (string, error) {
 	if len(seg) == 0 || seg[0] != 'k' {
 		return "", fmt.Errorf("bad key segment %q", seg)
@@ -415,8 +382,7 @@ func (b *stateBuild) keySegment(seg []byte) (string, error) {
 	return stringOf(b.key), nil
 }
 
-// view calls fn with the value the store holds at k, lent for the call, or
-// returns ds.ErrNotFound.
+// The value is lent to fn for the call.
 func (store *Datastore) view(ctx context.Context, k []byte, fn func(v []byte) error) error {
 	if s, ok := below(store.store).(*pebbleds.Store); ok {
 		return s.View(k, fn)

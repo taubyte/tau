@@ -24,38 +24,25 @@ import (
 	"github.com/taubyte/tau/pkg/pebbleds"
 )
 
-// The snapshot benchmarks measure what a snapshot costs: to write after a
-// small change, to hold, to fetch for a peer one snapshot behind, under a
-// steady write stream, and when only time has passed. Blocks and bytes are
-// counted where the replica's DAG service sees them.
-// Benchmark names and workloads do not depend on how a snapshot is laid
-// out, so runs before and after a change to it compare with benchstat.
+// Benchmark names and workloads do not depend on a snapshot's layout, so runs
+// before and after a change to it compare with benchstat.
 
-// snapReplica is one replica, as the benchmarks drive it.
 type snapReplica interface {
-	// PutAll writes n keys in one batch.
 	PutAll(ctx context.Context, n int, kv func(i int) (string, []byte)) error
 	Put(ctx context.Context, key string, value []byte) error
 	Get(ctx context.Context, key string) ([]byte, error)
-	// Compact folds the replica's state into a snapshot.
 	Compact(ctx context.Context) error
-	// Maintain is one pass of what time does to the replica.
 	Maintain(ctx context.Context) error
-	// CatchUp merges every head of from, fetching what it lacks through
-	// its DAG service.
 	CatchUp(ctx context.Context, from snapReplica) error
 	Close() error
 }
 
-// snapEnv is what a replica is opened with. Every block the replica
-// writes or fetches goes through dag, where the benchmarks count it; dir is
-// the replica's own, for its datastore; opts carries the clock, the
-// retention and CompactAfterBlocks.
+// Every block the replica writes or fetches goes through dag, where it is
+// counted.
 type snapEnv struct {
 	name string
 	dir  string
-	// store, when set, is the store the replica runs on, else one opened
-	// at dir.
+	// store, when set, is the store the replica runs on; else one is opened at dir.
 	store *pebbleds.Store
 	dag   ipld.DAGService
 	opts  *Options
@@ -75,8 +62,6 @@ var (
 // end a catch-up.
 const stalledAttempts = 3
 
-// snapStore is a Datastore over its own pebble store, which counts what it
-// writes.
 type snapStore struct {
 	r  *Datastore
 	st *pebbleds.Store
@@ -128,10 +113,7 @@ func (f *snapStore) Compact(ctx context.Context) error {
 
 func (f *snapStore) Maintain(ctx context.Context) error { return f.r.maintain(ctx) }
 
-// CatchUp walks from's heads, then repairs as the repair loop would until
-// nothing is missing: a state larger than one fetch attempt arrives over
-// several. It gives up after stalledAttempts repairs in a row that fetch
-// no state block.
+// A state larger than one fetch attempt arrives over several repairs.
 func (f *snapStore) CatchUp(ctx context.Context, from snapReplica) error {
 	hs, _ := from.(*snapStore).r.heads.List()
 	var err error
@@ -154,7 +136,6 @@ func (f *snapStore) CatchUp(ctx context.Context, from snapReplica) error {
 
 func (f *snapStore) Close() error { return errors.Join(f.r.Close(), f.st.Close()) }
 
-// dagMeter counts the blocks passing through a DAG service, and their bytes.
 type dagMeter struct {
 	ipld.DAGService
 	// log is the store the blocks are written to, when it is the
@@ -183,8 +164,6 @@ func (m *dagMeter) countGet(nd blocks.Block, err error) {
 	m.gotBytes.Add(int64(len(nd.RawData())))
 }
 
-// WriteBlock writes b, a node, through the DAG service's BlockWriter or its
-// Add, counted as an add.
 func (m *dagMeter) WriteBlock(ctx context.Context, b blocks.Block) error {
 	var err error
 	if w, ok := m.DAGService.(BlockWriter); ok {
@@ -233,7 +212,7 @@ func (m *dagMeter) ReadBlock(ctx context.Context, c cid.Cid) (blocks.Block, erro
 	return b, err
 }
 
-// get and getMany count one call each, and every block they return.
+// get and getMany count one call each and every block they return.
 func (m *dagMeter) get(ctx context.Context, ng ipld.NodeGetter, c cid.Cid) (ipld.Node, error) {
 	m.calls.Add(1)
 	nd, err := ng.Get(ctx, c)
@@ -263,8 +242,6 @@ func (m *dagMeter) Remove(ctx context.Context, c cid.Cid) error {
 	return nil
 }
 
-// DeleteBlocks removes cids' blocks through the DAG service's BlockRemover
-// or its RemoveMany, counted as removed.
 func (m *dagMeter) DeleteBlocks(ctx context.Context, cids []cid.Cid) error {
 	var err error
 	if r, ok := m.DAGService.(BlockRemover); ok {
@@ -287,7 +264,6 @@ func (m *dagMeter) RemoveMany(ctx context.Context, cids []cid.Cid) error {
 	return nil
 }
 
-// meterReading is a dagMeter's counters at one moment.
 type meterReading struct{ added, addedBytes, got, gotBytes, miss int64 }
 
 func (m *dagMeter) read() meterReading {
@@ -306,8 +282,8 @@ func (r *meterReading) add(o meterReading) {
 	r.miss += o.miss
 }
 
-// snapNode is a replica with its own blockstore, metered twice: own counts
-// what the replica asks of its DAG service, serve what peers fetch from it.
+// own counts what the replica asks of its DAG service, serve what peers fetch
+// from it.
 type snapNode struct {
 	snapReplica
 	local *fetchThroughDAGSvc
@@ -335,13 +311,10 @@ func newSnapNode(b *testing.B, name string, opts *Options) *snapNode {
 	return n
 }
 
-// dsWritten is how many bytes n has written to its datastore.
 func (n *snapNode) dsWritten() int64 { return n.snapReplica.(*snapStore).st.Written() }
 
-// fetchFrom makes peer the only replica n fetches from.
 func (n *snapNode) fetchFrom(peer *snapNode) { n.local.setRemotes(peer.serve) }
 
-// held is how many blocks n's blockstore holds, and their bytes.
 func (n *snapNode) held(b *testing.B) (int64, int64) {
 	b.Helper()
 	ctx := context.Background()
@@ -361,10 +334,8 @@ func (n *snapNode) held(b *testing.B) (int64, int64) {
 	return blocks, bytes
 }
 
-// snapWorkload is a state of n keys with values of snapValueSize random
-// bytes, and the changes made to it, all drawn from one fixed seed. Keys and
-// values live in flat byte arenas, so the harness hands the collector no
-// pointers to trace.
+// Keys and values live in flat byte arenas, so the harness hands the collector
+// no pointers.
 type snapWorkload struct {
 	n      int
 	keys   []byte
@@ -410,8 +381,6 @@ func (w *snapWorkload) seed(b *testing.B, r snapReplica) {
 	}
 }
 
-// changeKeys gives k distinct keys, spread over the state from a random
-// start, a new value each, one write per key.
 func (w *snapWorkload) changeKeys(b *testing.B, r snapReplica, k int) {
 	b.Helper()
 	ctx := context.Background()
@@ -426,7 +395,6 @@ func (w *snapWorkload) changeKeys(b *testing.B, r snapReplica, k int) {
 	copy(w.value(w.last), w.change[(k-1)*snapValueSize:k*snapValueSize])
 }
 
-// check fails unless r holds the last value the workload wrote.
 func (w *snapWorkload) check(b *testing.B, r snapReplica) {
 	b.Helper()
 	got, err := r.Get(context.Background(), w.key(w.last))
@@ -617,9 +585,6 @@ func BenchmarkSnapshotExpiry(b *testing.B) {
 	}
 }
 
-// sessionMeter is a dagMeter over a DAG service that makes sessions, as a
-// node's does; the replica walks a branch through one, and its gets are
-// counted with the rest.
 type sessionMeter struct {
 	*dagMeter
 	sessions SessionDAGService
@@ -642,9 +607,6 @@ func (g *getterMeter) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.
 	return g.m.getMany(ctx, g.NodeGetter, cids)
 }
 
-// netSnapNode is a replica on a libp2p node of its own, listening on
-// loopback TCP, its DAG service the node's: blockstore, bitswap and
-// merkledag, as a running node has them.
 type netSnapNode struct {
 	snapReplica
 	node   taupeer.Node
@@ -673,11 +635,9 @@ func newNetSnapNode(b *testing.B, name string, opts *Options) *netSnapNode {
 	return n
 }
 
-// recordReprovided records in the node repository at repo a reprovide
-// done now. A node announces every block it holds to the DHT a minute after
-// it starts, unless it did within its interval; that sweep allocated about
-// 60 MB at 100k keys, no part of a catch-up, and landed in a timed one or
-// not depending on how long the setup took, so a run measured it or not.
+// A node announces every block to the DHT a minute after it starts unless it
+// did within its interval; that sweep allocated about 60 MB at 100k keys and
+// landed in a timed run or not depending on setup time.
 func recordReprovided(b *testing.B, repo string) {
 	b.Helper()
 	st, err := helpers.NewDatastore(repo)
@@ -699,8 +659,7 @@ func (n *netSnapNode) close(b *testing.B) {
 	n.cancel()
 }
 
-// connect connects n to peer and returns once identify has told n that
-// peer speaks bitswap.
+// connect returns once identify has told n that peer speaks bitswap.
 func (n *netSnapNode) connect(b *testing.B, peer *netSnapNode) {
 	b.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -739,8 +698,6 @@ func (n *netSnapNode) bitswap(b *testing.B) *bitswap.Stat {
 	return st
 }
 
-// netReading is what a catch-up cost on the wire: what the lagging node
-// received, what the serving node was asked, and the gets the replica made.
 type netReading struct {
 	blocks, bytes, dups, wants, replies, calls int64
 }

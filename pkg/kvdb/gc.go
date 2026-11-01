@@ -20,58 +20,38 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// A state's blocks, its StateRoot and the nodes of its trees, are shared:
-// one node sits under any number of snapshots, this replica's and those it
-// merged, and under the base the journal is applied to. No dot owns one, so
-// the purge that drops a snapshot's block cannot drop its state. A state
-// block is kept while a root reaches it. The roots are the StateRoot of
-// each indexed snapshot (its index entry names it), the base's trees, and
-// each state pinned for a reader (see statePin).
+// A state's blocks are shared between snapshots and the base, so no dot owns
+// one: a state block is kept while a root reaches it. The roots are each
+// indexed snapshot's StateRoot, the base's trees and each pinned state (see
+// statePin).
 //
-// The blocks the roots reach are the members, known in memory, and every
-// one is held: a root is admitted only once its whole closure is. There
-// are no counts. When roots retire, what only they reached is found by
-// diffing each of their trees against every tree of the same kind a root
-// still has (statetree.Differ): a subtree two trees share is passed over unread,
-// so the work is the paths that differ, never the children they share.
-// That garbage is recorded, in chunks, as a deletion manifest committed
-// with the retirement, atomically, while the retired trees can still be
-// read. The manifest's blocks are then removed, an absent one counting as
-// removed, and the manifest goes once the removals are durable. Admitting a
-// root, pinning one or staging a block first drains every manifest, so
-// nothing a manifest names is reached again before it is gone.
+// The blocks the roots reach, the members, are known in memory and all held:
+// a root is admitted only once its whole closure is. When roots retire, what
+// only they reached is found by diffing their trees against every remaining
+// tree of the same kind (statetree.Differ), recorded as a deletion manifest in
+// the commit that retires them, then removed; the manifest goes once the
+// removals are durable. Admitting a root, pinning one or staging a block first
+// drains every manifest. Diffing within a kind suffices: removal and context
+// keys begin with two zero bytes no escaped element key can, and their values
+// differ in length, so no node sits in trees of two kinds.
 //
-// A block is protected by its cid wherever it sits, and diffing trees of
-// one kind only is enough for that: no node can sit in trees of two kinds,
-// since a removal's or a context entry's key begins with two zero bytes,
-// which no escaped element key can, and removal and context values differ
-// in length; and every entry of a tree a merge admits was parsed as its
-// kind's, or equals one of an admitted tree. A StateRoot is no tree node.
-//
-// A block written or fetched before a root reaches it belongs to a session,
-// a compaction or a state fetch, which records it as an intent, durably, in
-// chunks under the session, before it is written. The merge that publishes
-// the session's state removes its intents in the commit that admits the
-// root. A session that ends otherwise leaves the intents no root reaches
-// and no other session holds to a manifest. A session reuses what the
-// members hold instead of writing or fetching it again, and holds what it
-// reuses: should the roots that reach it retire before the session's merge,
-// the blocks it would lose become the session's intents, recorded with the
-// retirement. After a crash no session is left, and open removes every
-// intent no root reaches.
+// A block written or fetched before a root reaches it belongs to a session, a
+// compaction or a state fetch, which durably records it as an intent first.
+// The merge that publishes the session's state removes its intents in the
+// commit that admits the root; a session that ends otherwise turns the intents
+// nothing else holds into a manifest. A session holds the members it reuses:
+// should their roots retire first, those blocks become its intents. After a
+// crash open removes every intent no root reaches.
 //
 //	/i/<session>/<chunk>  a session's intents
 //	/g/<seq>/<chunk>      a deletion manifest
 //	/p/<id>               a pinned state
 //	/x/<cid>              a fetched delta block not indexed yet
 //
-// A state block is CIDv1 raw sha2-256, which a fetch checks before it
-// asks for one, so it is named by its digest, 32 bytes: the sets of them
-// hold no pointers, and the records are their digests end to end.
-//
-// Delta blocks are kept by the index, not by roots: a walk marks what it
-// fetches (/x/) and indexing a block unmarks it; reclaim removes a marked
-// block nothing indexes or stages.
+// State blocks are CIDv1 raw sha2-256, named by their 32-byte digest, so the
+// sets and records of them hold no pointers. Delta blocks are kept by the
+// index instead: a walk marks what it fetches (/x/), indexing unmarks it, and
+// reclaim removes a marked block nothing indexes or stages.
 const (
 	intentNs   = "i"
 	manifestNs = "g"
@@ -83,18 +63,14 @@ const (
 	appliedKey = "wa"
 )
 
-// redoChunkBytes bounds a chunk of an atomic commit's record. One value
-// holding a whole commit, all of a cold catch-up's state, is decompressed by
-// every lookup the store's index sends to its block, long after it is
-// applied and deleted.
+// One value holding a whole commit would be decompressed by every lookup the
+// index sends to its block, long after it is applied.
 const redoChunkBytes = 4 << 10
 
-// chunkDigests bounds the digests a chunk of intents or of a manifest
-// holds, for the same reason.
+// chunkDigests bounds a chunk of intents or of a manifest likewise.
 const chunkDigests = redoChunkBytes / len(cidKey{})
 
-// reclaimBatch bounds the blocks reclaim removes under gcMu at a time:
-// every merge that changes ownership waits for it.
+// Every merge that changes ownership waits for a batch under gcMu.
 const reclaimBatch = 512
 
 func (store *Datastore) reclaimPrefix() ds.Key  { return ds.RawKey(store.pre.reclaim) }
@@ -119,7 +95,6 @@ func (store *Datastore) manifestKey(seq, i uint64) ds.Key {
 	return chunkKey(store.pre.manifests, seq, i)
 }
 
-// parseChunkKey is the two numbers of a chunk key under prefix.
 func parseChunkKey(prefix ds.Key, k string) (uint64, uint64, error) {
 	rest := k[min(len(k), len(prefix.String())+1):]
 	if len(rest) != 2*counterDigits+1 || rest[counterDigits] != '/' {
@@ -137,13 +112,11 @@ func parseChunkKey(prefix ds.Key, k string) (uint64, uint64, error) {
 	return n[0], n[1], nil
 }
 
-// isStateCid reports whether c is a cid a state block may have.
 func isStateCid(c cid.Cid) bool {
 	ks := c.KeyString()
 	return len(ks) == len(statetree.BlockPrefix)+len(cidKey{}) && ks[:len(statetree.BlockPrefix)] == statetree.BlockPrefix
 }
 
-// cidOf is the state block named by k.
 func cidOf(k cidKey) cid.Cid {
 	var b [len(statetree.BlockPrefix) + len(cidKey{})]byte
 	copy(b[copy(b[:], statetree.BlockPrefix):], k[:])
@@ -178,8 +151,6 @@ func hasSorted(keys []cidKey, k cidKey) bool {
 	return ok
 }
 
-// A rootKind is what a root names: a StateRoot, or the root of one of the
-// base's trees.
 type rootKind uint8
 
 const (
@@ -188,7 +159,6 @@ const (
 	pendingRootKind
 )
 
-// A liveRoot is a root with the number of records naming it.
 type liveRoot struct {
 	c    cid.Cid
 	kind rootKind
@@ -196,7 +166,6 @@ type liveRoot struct {
 	n    int
 }
 
-// trees is the trees r names: elements, pending removals and context.
 func (r *liveRoot) trees() [3]cid.Cid {
 	switch r.kind {
 	case elemsRootKind:
@@ -207,9 +176,9 @@ func (r *liveRoot) trees() [3]cid.Cid {
 	return [3]cid.Cid{r.sr.elems, r.sr.pending, r.sr.ctx}
 }
 
-// A gcSession is a compaction or a state fetch: the blocks it means to
-// write or fetch before a merge publishes them, its intents, and the
-// members it reuses, which it holds until it ends.
+// A gcSession is a compaction or a state fetch: the blocks it means to write or
+// fetch before a merge publishes them, its intents, and the members it reuses,
+// held until it ends.
 type gcSession struct {
 	id        uint64
 	marks     map[cidKey]uint8
@@ -232,7 +201,6 @@ func (s *gcSession) reset() {
 	s.chunks, s.published = 0, false
 }
 
-// A manifest is a deletion manifest not drained yet.
 type manifest struct {
 	seq    uint64
 	chunks uint64
@@ -244,8 +212,7 @@ type collector struct {
 	roots    map[cidKey]*liveRoot
 	staged   map[cidKey]int
 	sessions []*gcSession
-	// ended are sessions whose intents could not be removed when they
-	// ended, for reclaim to retry.
+	// ended are sessions whose intents could not be removed, for reclaim to retry.
 	ended     []*gcSession
 	manifests []manifest
 	pins      map[uint64]*statePin
@@ -253,8 +220,8 @@ type collector struct {
 	nextSession, nextManifest, nextPin uint64
 
 	compaction *gcSession
-	// recent reads the nodes the last compaction wrote from memory: the
-	// diff that retires the snapshot before it reads them next.
+	// recent serves the nodes the last compaction wrote from memory, for the diff
+	// that retires the snapshot before them.
 	recent recentDAG
 	// Storage a root change reuses, one change at a time.
 	change          rootChange
@@ -282,7 +249,6 @@ func (gc *collector) member(k cidKey) bool {
 	return ok
 }
 
-// holds reports whether a session in progress, or a walk, holds k.
 func (gc *collector) holds(k cidKey) bool {
 	if gc.staged[k] > 0 {
 		return true
@@ -295,8 +261,7 @@ func (gc *collector) holds(k cidKey) bool {
 	return false
 }
 
-// begin registers s as a session in progress, with a new number. The
-// caller holds gcMu.
+// The caller holds gcMu.
 func (store *Datastore) beginSession(s *gcSession) {
 	s.reset()
 	s.id = store.gc.nextSession
@@ -310,9 +275,9 @@ func (gc *collector) unregister(s *gcSession) {
 	}
 }
 
-// claim takes the blocks of cids s does not hold yet: a member is
-// borrowed, any other becomes an intent, appended to fresh. The caller
-// holds gcMu and records the new intents before it writes or fetches them.
+// claim borrows members and makes every other block an intent, appended to
+// fresh. The caller holds gcMu and records the new intents before writing or
+// fetching them.
 func (s *gcSession) claim(gc *collector, c cid.Cid, fresh []cid.Cid) []cid.Cid {
 	k := keyOf(c)
 	if _, ok := s.marks[k]; ok {
@@ -328,8 +293,8 @@ func (s *gcSession) claim(gc *collector, c cid.Cid, fresh []cid.Cid) []cid.Cid {
 	return append(fresh, c)
 }
 
-// unclaim forgets the last n intents s claimed, which it could not record.
-// The caller holds gcMu.
+// unclaim forgets the last n intents, which could not be recorded. The caller
+// holds gcMu.
 func (s *gcSession) unclaim(n int) {
 	for _, k := range s.intents[len(s.intents)-n:] {
 		delete(s.marks, k)
@@ -337,8 +302,8 @@ func (s *gcSession) unclaim(n int) {
 	s.intents = s.intents[:len(s.intents)-n]
 }
 
-// recordIntents durably records s's last n intents, in chunks numbered
-// from first, before what they name is written or fetched.
+// recordIntents makes the intents durable before what they name is written or
+// fetched.
 func (store *Datastore) recordIntents(ctx context.Context, s *gcSession, first uint64, keys []cidKey) error {
 	for i := 0; len(keys) > 0; i++ {
 		n := min(len(keys), chunkDigests)
@@ -356,8 +321,7 @@ func (store *Datastore) recordIntents(ctx context.Context, s *gcSession, first u
 
 func chunksFor(n int) uint64 { return uint64((n + chunkDigests - 1) / chunkDigests) }
 
-// intend claims cids for s and records the intents that are new. The
-// returned blocks are the ones to write or fetch; a failure leaves s as it
+// The returned blocks are the ones to write or fetch; a failure leaves s as it
 // was.
 func (store *Datastore) intend(ctx context.Context, s *gcSession, cids []cid.Cid, fresh []cid.Cid) ([]cid.Cid, error) {
 	store.gcMu.Lock()
@@ -389,9 +353,9 @@ func (store *Datastore) intend(ctx context.Context, s *gcSession, cids []cid.Cid
 	return fresh, nil
 }
 
-// endSession ends s: unless a merge published its state, what it fetched
-// or wrote that no root reaches and no other session holds goes, through a
-// manifest recorded before its intents go.
+// Unless a merge published its state, what s fetched or wrote that no root
+// reaches and no other session holds goes, through a manifest recorded before
+// its intents go.
 func (store *Datastore) endSession(ctx context.Context, s *gcSession) error {
 	store.gcMu.Lock()
 	defer store.gcMu.Unlock()
@@ -406,9 +370,7 @@ func (store *Datastore) endSession(ctx context.Context, s *gcSession) error {
 	return store.drainLocked(ctx)
 }
 
-// dropIntentsLocked turns the intents of an ended session into a manifest
-// of those no root reaches and no session holds, then removes them. The
-// caller holds gcMu.
+// The caller holds gcMu.
 func (store *Datastore) dropIntentsLocked(ctx context.Context, session, chunks uint64, intents []cidKey) error {
 	gc := &store.gc
 	gc.cand = gc.cand[:0]
@@ -435,7 +397,6 @@ func (store *Datastore) dropIntentsLocked(ctx context.Context, session, chunks u
 	return t.commit(ctx)
 }
 
-// recordManifest stages the manifest of keys in t.
 func (store *Datastore) recordManifest(t *txn, keys []cidKey) manifest {
 	m := manifest{seq: store.gc.nextManifest}
 	store.gc.nextManifest++
@@ -448,10 +409,9 @@ func (store *Datastore) recordManifest(t *txn, keys []cidKey) manifest {
 	return m
 }
 
-// drainLocked removes the blocks of every manifest, then the manifests,
-// durably: one a crash brought back could otherwise remove a block a root
-// reaches again since. A block a root or a session holds again is passed
-// over all the same. The caller holds gcMu.
+// Manifests go only once their removals are durable: one a crash brought back
+// could otherwise remove a block a root reaches again since. A block a root or
+// session holds again is passed over. The caller holds gcMu.
 func (store *Datastore) drainLocked(ctx context.Context) error {
 	gc := &store.gc
 	var cids []cid.Cid
@@ -505,10 +465,9 @@ func (store *Datastore) drainLocked(ctx context.Context) error {
 	return nil
 }
 
-// A BlockSyncer is a DAGService that keeps the blocks it writes in memory
-// until SyncBlocks makes them durable. One that is not one is taken to keep
-// its blocks in the datastore the store is given, as the node's does, so
-// that syncing that datastore syncs them.
+// A BlockSyncer keeps the blocks it writes in memory until SyncBlocks makes
+// them durable. A DAGService that is not one is taken to keep its blocks in
+// the store's datastore, so syncing that syncs them.
 type BlockSyncer interface {
 	SyncBlocks(ctx context.Context) error
 }
@@ -525,9 +484,8 @@ type BlockLogger interface {
 	BlockLog() ds.Datastore
 }
 
-// sharesLog reports whether store keeps a prefix of its writes and dags
-// writes its blocks to it, as a node's store and DAG do: what Syncs order
-// between the two is then ordered by the store.
+// When store keeps a prefix of its writes and dags writes its blocks to it, as
+// a node's do, the store orders what Syncs would.
 func sharesLog(store ds.Datastore, dags ipld.DAGService) bool {
 	p, prefix := store.(PrefixLog)
 	l, logged := dags.(BlockLogger)
@@ -535,9 +493,8 @@ func sharesLog(store ds.Datastore, dags ipld.DAGService) bool {
 	return prefix && p.KeepsPrefix() && logged && !apart && l.BlockLog() == store
 }
 
-// syncBlocks makes durable every block written so far, and first what the
-// store wrote before them: the index entry written before a block it
-// names is never lost while the block is kept.
+// syncBlocks syncs the store first, so an index entry written before a block
+// it names is never lost while the block is kept.
 func (store *Datastore) syncBlocks(ctx context.Context) error {
 	s, ok := store.dagService.(BlockSyncer)
 	if !ok {
@@ -549,8 +506,8 @@ func (store *Datastore) syncBlocks(ctx context.Context) error {
 	return s.SyncBlocks(ctx)
 }
 
-// A rootChange is a change of the roots, planned under gcMu and applied
-// once the commit that records it has.
+// A rootChange is planned under gcMu and applied once the commit that records
+// it has.
 type rootChange struct {
 	store  *Datastore
 	deltas []rootDelta
@@ -579,8 +536,7 @@ type rescue struct {
 	first uint64
 }
 
-// changeRoots begins a change of the roots, in the collector's storage:
-// one is planned and applied under gcMu before the next begins.
+// One change is planned and applied under gcMu before the next begins.
 func (store *Datastore) changeRoots() *rootChange {
 	ch := &store.gc.change
 	p := &ch.plan
@@ -589,7 +545,6 @@ func (store *Datastore) changeRoots() *rootChange {
 	return ch
 }
 
-// add counts one more record naming the StateRoot sr, at c.
 func (ch *rootChange) addState(c cid.Cid, sr stateRoot) {
 	if c.Defined() {
 		ch.deltas = append(ch.deltas, rootDelta{k: keyOf(c), r: liveRoot{c: c, kind: stateRootKind, sr: sr}, d: 1})
@@ -602,7 +557,6 @@ func (ch *rootChange) add(c cid.Cid, kind rootKind) {
 	}
 }
 
-// retireAll retires every root.
 func (ch *rootChange) retireAll() {
 	for k, r := range ch.store.gc.roots {
 		ch.deltas = append(ch.deltas, rootDelta{k: k, d: -r.n})
@@ -615,7 +569,6 @@ func (ch *rootChange) remove(c cid.Cid) {
 	}
 }
 
-// count is how many records will name k.
 func (ch *rootChange) count(k cidKey) int {
 	n := 0
 	if r := ch.store.gc.roots[k]; r != nil {
@@ -629,7 +582,6 @@ func (ch *rootChange) count(k cidKey) int {
 	return n
 }
 
-// root is the root k, as it is or as the change adds it.
 func (ch *rootChange) root(k cidKey) *liveRoot {
 	if r := ch.store.gc.roots[k]; r != nil {
 		return r
@@ -642,7 +594,6 @@ func (ch *rootChange) root(k cidKey) *liveRoot {
 	return nil
 }
 
-// live is every root the change leaves, retired every one it retires.
 func (ch *rootChange) roots() (live, retired []*liveRoot, err error) {
 	gc := &ch.store.gc
 	seen := gc.seen
@@ -681,9 +632,8 @@ func (ch *rootChange) roots() (live, retired []*liveRoot, err error) {
 	return live, retired, nil
 }
 
-// prepare plans the change and stages its records in t: the manifest of
-// what it leaves unreached, and the intents of the sessions it rescues.
-// The caller holds gcMu.
+// prepare stages the manifest of what the change leaves unreached and the
+// intents of the sessions it rescues. The caller holds gcMu.
 func (ch *rootChange) prepare(ctx context.Context, t *txn) error {
 	store := ch.store
 	gc := &store.gc
@@ -735,8 +685,6 @@ func (ch *rootChange) prepare(ctx context.Context, t *txn) error {
 	return ch.finish(ctx, t)
 }
 
-// finish rescues what sessions reuse from the plan's gone, and stages the
-// manifest of the rest and the rescued intents in t.
 func (ch *rootChange) finish(ctx context.Context, t *txn) error {
 	store := ch.store
 	gc := &store.gc
@@ -764,8 +712,7 @@ func (ch *rootChange) finish(ctx context.Context, t *txn) error {
 	return nil
 }
 
-// onlyIn is the nodes of the tree c that none of trees has. The caller
-// holds gcMu.
+// The caller holds gcMu.
 func (store *Datastore) onlyIn(ctx context.Context, c cid.Cid, trees []cid.Cid) ([]cidKey, error) {
 	gc := &store.gc
 	a := store.tree(&gc.recent, c)
@@ -795,8 +742,6 @@ func (store *Datastore) onlyIn(ctx context.Context, c cid.Cid, trees []cid.Cid) 
 	return gc.cand, nil
 }
 
-// A recentDAG is the store's DAG with the nodes the last compaction wrote
-// held in memory.
 type recentDAG struct {
 	ipld.DAGService
 	nodes map[cid.Cid]ipld.Node
@@ -816,8 +761,8 @@ func (r *recentDAG) ReadBlock(ctx context.Context, c cid.Cid) (blocks.Block, err
 	return readBlock(ctx, r.DAGService, c)
 }
 
-// openReader reads what open needs of the roots: every block is held, and
-// one that is not fails in DAGSyncerTimeout rather than waits for a peer.
+// Every block open needs is held, so one that is not fails in DAGSyncerTimeout
+// rather than waits for a peer.
 func (store *Datastore) openReader() ipld.NodeGetter {
 	return boundedGetter{store.dagService, store.opts.DAGSyncerTimeout}
 }
@@ -836,10 +781,8 @@ func (g boundedGetter) Get(ctx context.Context, c cid.Cid) (ipld.Node, error) {
 	return g.NodeGetter.Get(ctx, c)
 }
 
-// noTrees is a tree with nothing in it, to diff against.
 var noTrees = []cid.Cid{cid.Undef}
 
-// intersect keeps the keys of a, sorted, that sorted b also has.
 func intersect(a, b []cidKey) []cidKey {
 	out, j := a[:0], 0
 	for _, k := range a {
@@ -853,10 +796,9 @@ func intersect(a, b []cidKey) []cidKey {
 	return out
 }
 
-// rescue finds, for each session in progress, the blocks of the plan's
-// gone under what it borrowed: they become its intents. A borrowed block
-// that stays a member holds its whole closure; one that does not is walked
-// down to the members.
+// A borrowed block of the plan's gone becomes its session's intent; one that
+// stays a member holds its whole closure, one that does not is walked down to
+// the members.
 func (ch *rootChange) rescue(ctx context.Context) error {
 	store := ch.store
 	gc := &store.gc
@@ -906,8 +848,7 @@ func (ch *rootChange) rescued(k cidKey) bool {
 	return false
 }
 
-// apply makes the change, once its commit has: the roots, the members,
-// the rescued intents, and the manifest to drain. The caller holds gcMu.
+// apply runs once the change's commit has. The caller holds gcMu.
 func (ch *rootChange) apply() {
 	gc := &ch.store.gc
 	for _, d := range ch.deltas {
@@ -935,17 +876,16 @@ func (ch *rootChange) apply() {
 	}
 }
 
-// publish admits the change's new StateRoot, whose closure the members and
-// s's intents hold, and with it s's intents, removed in t. The caller holds
-// gcMu.
+// The new StateRoot's closure is held by the members and s's intents, which
+// are removed in t. The caller holds gcMu.
 func (ch *rootChange) publish(s *gcSession, t *txn) {
 	for i := range s.chunks {
 		t.del(ch.store.intentKey(s.id, i))
 	}
 }
 
-// published makes s's intents members, once the commit that admits its
-// root has. The caller holds gcMu.
+// published runs once the commit admitting s's root has. The caller holds
+// gcMu.
 func (store *Datastore) published(s *gcSession) {
 	for _, k := range s.intents {
 		store.gc.members[k] = struct{}{}
@@ -953,15 +893,13 @@ func (store *Datastore) published(s *gcSession) {
 	s.published = true
 }
 
-// reaches reports whether the members or s's intents hold c.
 func (gc *collector) reaches(s *gcSession, c cid.Cid) bool {
 	k := keyOf(c)
 	return gc.member(k) || s != nil && s.marks[k] == markIntent
 }
 
-// stage keeps cids, delta blocks a walk fetches, from reclaim until
-// unstage. With mark, each one is also marked for removal, durably, before
-// the caller fetches it.
+// stage keeps delta blocks a walk fetches from reclaim until unstage; with
+// mark, each is first marked for removal, durably.
 func (store *Datastore) stage(ctx context.Context, cids []cid.Cid, mark bool) error {
 	store.gcMu.Lock()
 	defer store.gcMu.Unlock()
@@ -994,10 +932,7 @@ func (store *Datastore) unstage(cids []cid.Cid) {
 	}
 }
 
-// reclaim drains every manifest, releases the pins that have expired,
-// retries the sessions whose intents could not be removed, and removes
-// every marked delta block that nothing indexes or stages. It returns how
-// many delta blocks it removed.
+// reclaim returns how many delta blocks it removed.
 func (store *Datastore) reclaim(ctx context.Context) (int, error) {
 	if err := store.reclaimState(ctx); err != nil {
 		return 0, err
@@ -1073,9 +1008,8 @@ func (store *Datastore) reclaimSome(ctx context.Context) (int, bool, error) {
 	return len(drop), more, t.commit(ctx)
 }
 
-// openGC loads the roots and their members, drains the manifests a crash
-// left, and ends what a crash interrupted: the pins of the process that
-// took them and the sessions in progress. Nothing else runs yet.
+// openGC loads the roots and members, drains the manifests a crash left, and
+// ends what it interrupted: pins and sessions. Nothing else runs yet.
 func (store *Datastore) openGC(ctx context.Context) error {
 	store.gcMu.Lock()
 	defer store.gcMu.Unlock()
@@ -1229,7 +1163,7 @@ func (store *Datastore) openGC(ctx context.Context) error {
 	return store.drainLocked(ctx)
 }
 
-// markClosure makes every block under c a member. The caller holds gcMu.
+// The caller holds gcMu.
 func (store *Datastore) markClosure(ctx context.Context, c cid.Cid) error {
 	ng := store.openReader()
 	stack := []cid.Cid{c}
@@ -1252,15 +1186,12 @@ func (store *Datastore) markClosure(ctx context.Context, c cid.Cid) error {
 	return nil
 }
 
-// commitAtomic commits t so that a crash at any point leaves all of its
-// writes or none, whatever batches the store has: they are recorded first,
-// in chunks under their sequence number, then a mark names the number and
-// the chunk count, then they are applied in one batch, in no particular
-// order, and only then is that number recorded as applied; open applies a
-// marked record that is not. A batch that fails is given up the same way,
-// so on a store whose batches are atomic an error leaves none of the
-// writes. It writes past the journaling store, recording the journal's
-// marks with the rest.
+// commitAtomic leaves all of t's writes or none after a crash, whatever
+// batches the store has: the writes are recorded in chunks, a mark names their
+// number and chunk count, they are applied in one batch, and only then is the
+// number recorded as applied; open applies a marked record that is not. A
+// failed batch is given up the same way. It writes past the journaling store,
+// recording the journal's marks with the rest.
 func (store *Datastore) commitAtomic(ctx context.Context, t *txn) error {
 	if len(t.writes) == 0 {
 		return nil
@@ -1340,8 +1271,7 @@ func (store *Datastore) redoChunkKey(seq uint64, i int) ds.Key {
 	return chunkKey(store.pre.redo, seq, uint64(i))
 }
 
-// recordRedo writes the chunks of record seq durably, then the mark that
-// makes it whole.
+// The chunks are durable before the mark that makes the record whole.
 func (store *Datastore) recordRedo(ctx context.Context, seq uint64, chunks []*pb.Redo) error {
 	b, err := batchOf(ctx, store.raw)
 	if err != nil {
@@ -1469,8 +1399,8 @@ func (store *Datastore) replay(ctx context.Context) error {
 	return b.Commit(ctx)
 }
 
-// A stateBase is the trees the journal is applied to: the state's elements
-// and pending removals as they were when the journal was last emptied.
+// A stateBase is the trees the journal is applied to: the elements and pending
+// removals as of the journal's last emptying.
 type stateBase struct {
 	elems, pending cid.Cid
 }
@@ -1522,8 +1452,7 @@ func (store *Datastore) loadBase(ctx context.Context) (stateBase, error) {
 	return decodeBase(v)
 }
 
-// setBase stages a move of the base to b in t, its trees counted as roots
-// in ch.
+// setBase stages the move in t and counts the new trees as roots in ch.
 func (ch *rootChange) setBase(t *txn, from, to stateBase) {
 	if from == to {
 		return
@@ -1535,20 +1464,15 @@ func (ch *rootChange) setBase(t *txn, from, to stateBase) {
 	t.put(ch.store.baseKey(), encodeBase(to))
 }
 
-// redoScratch is what commitAtomic uses again from one commit to the next:
-// the writes of its record, the keys of its marks, and scratch for a mark
-// being built.
 type redoScratch struct {
 	writes     []pb.Write
 	ptrs       []*pb.Write
 	keys, look []byte
 }
 
-// keptRedo bounds the writes a store keeps room for between commits.
 const keptRedo = 1 << 12
 
-// start readies r for a commit of at most n writes: the record points into
-// writes, which must not move while it is made.
+// The record points into writes, which must not move while it is made.
 func (r *redoScratch) start(n int) {
 	if cap(r.writes) > keptRedo {
 		r.writes, r.ptrs = nil, nil
@@ -1558,7 +1482,6 @@ func (r *redoScratch) start(n int) {
 	r.keys = r.keys[:0]
 }
 
-// done lets go of what the commit's writes named.
 func (r *redoScratch) done() {
 	clear(r.writes)
 	clear(r.ptrs)

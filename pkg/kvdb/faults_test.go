@@ -346,8 +346,6 @@ func TestAnotherFormatIsEmptied(t *testing.T) {
 	}
 }
 
-// addFailing is a DAG service whose Add fails, and whose RemoveMany can be
-// made to.
 type addFailing struct {
 	*fetchThroughDAGSvc
 	addFails    atomic.Bool
@@ -544,9 +542,6 @@ type errBroadcaster struct{ nullBroadcaster }
 
 func (errBroadcaster) Broadcast(context.Context, []byte) error { return errFault }
 
-// TestAStoreWithABroadcasterNeedsAReplicaID: without one, every restart of a
-// store is a new peer, which every judge waits G for, so one that crash-loops
-// holds every judge back for ever. An offline store hears no peer.
 func TestAStoreWithABroadcasterNeedsAReplicaID(t *testing.T) {
 	o := DefaultOptions()
 	if _, err := NewDatastore(dssync.MutexWrap(ds.NewMapDatastore()), ds.NewKey("x"), newFetchThrough(), &nullBroadcaster{}, o); err == nil {
@@ -767,9 +762,8 @@ func TestKVDatabaseSurface(t *testing.T) {
 	}
 }
 
-// askMeter is a DAG service whose sessions, through which a replica walks
-// and fetches, record each block of a state that is asked for once it has
-// arrived, and which counts every block the replica writes itself.
+// askMeter's sessions record each state block asked for after it arrived, and
+// it counts every block the replica writes.
 type askMeter struct {
 	*fetchThroughDAGSvc
 	state map[cid.Cid]bool
@@ -848,15 +842,6 @@ func (g askGetter) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.Nod
 	return out
 }
 
-// TestAFailedDiscoverLeavesTheFetchToGoOn fails, in turn, each write of an
-// intent while a replica fetches a peer's state: the staging that wrote it
-// fails, and the attempt with it. The next attempt goes on from there: once
-// caught up the replica holds the peer's state, no block of it that arrived
-// was asked for again and no block was written twice, its members are what
-// its roots reach and it holds no block nothing indexes or reaches. A
-// discover that forgot what it could not record left those blocks neither
-// wanted nor held, and an attempt that found nothing wanted took the fetch
-// for complete.
 func TestAFailedDiscoverLeavesTheFetchToGoOn(t *testing.T) {
 	ctx := context.Background()
 	// Deep enough that a fetch discovers what the blocks it fetched link.

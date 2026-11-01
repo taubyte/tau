@@ -13,8 +13,6 @@ import (
 	taupeer "github.com/taubyte/tau/p2p/peer"
 )
 
-// anyKey is a key that is not UTF-8: its bytes are the key, whatever they
-// spell.
 var anyKey = ds.RawKey("/k\xff\xfe\x00\xc3\x28")
 
 func mustGet(t testing.TB, r *Datastore, k ds.Key, want []byte) {
@@ -28,11 +26,6 @@ func mustGet(t testing.TB, r *Datastore, k ds.Key, want []byte) {
 	}
 }
 
-// TestAKeyOfAnyBytesRoundTrips: a key is bytes. One that is not UTF-8 is
-// written, merged as a delta, compacted, merged from a snapshot, caught up
-// over the network and removed like any other. A delta's keys were protobuf
-// strings, and the record of a replica's own write, encoded with a UTF-8
-// check, refused such a key once the replica had heard its fleet.
 func TestAKeyOfAnyBytesRoundTrips(t *testing.T) {
 	ctx := context.Background()
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 3, noAutoCompact())
@@ -87,8 +80,8 @@ func TestAKeyOfAnyBytesRoundTrips(t *testing.T) {
 	}
 }
 
-// A netPeer is a replica on a libp2p node of its own over loopback TCP,
-// every block it lacks fetched through bitswap.
+// A netPeer is a replica on its own libp2p node over loopback TCP, fetching
+// blocks through bitswap.
 type netPeer struct {
 	r    *Datastore
 	node taupeer.Node
@@ -149,7 +142,6 @@ func (n *netPeer) connect(t *testing.T, peer *netPeer) {
 	}
 }
 
-// catchUp walks peer's heads, then repairs until nothing is missing.
 func (n *netPeer) catchUp(t *testing.T, peer *netPeer) {
 	t.Helper()
 	ctx := context.Background()

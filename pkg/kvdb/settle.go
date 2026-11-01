@@ -126,7 +126,6 @@ type forgottenEntry struct {
 	at time.Duration
 }
 
-// contains reports whether every span of o lies in one of k's.
 func (k *known) contains(o *known) bool {
 	if k == nil {
 		return false
@@ -148,10 +147,9 @@ func (k *known) containsSpan(s span) bool {
 	return false
 }
 
-// hearPeer records that the peer an incarnation was drawn by was heard at
-// up, forgetting first the peers not heard for G, rejoining or not, and
-// returns when this replica began hearing it without a break. The caller
-// holds store.mu.
+// hearPeer forgets peers not heard for G, rejoining or not, then records the
+// incarnation's peer as heard at up and returns when it began hearing it
+// without a break. The caller holds store.mu.
 func (store *Datastore) hearPeer(incarnation string, up time.Duration) time.Duration {
 	store.prune(up)
 	p := peerOf(incarnation)
@@ -164,8 +162,7 @@ func (store *Datastore) hearPeer(incarnation string, up time.Duration) time.Dura
 	return c.first
 }
 
-// hearFrontier records what a live peer says it holds. The caller holds
-// store.mu.
+// The caller holds store.mu.
 func (store *Datastore) hearFrontier(msg message) {
 	up := store.times.up()
 	first := store.hearPeer(msg.incarnation, up)
@@ -196,8 +193,7 @@ func (store *Datastore) hearFrontier(msg message) {
 	}
 }
 
-// heardPeers are the peers this replica heard within G, but itself. The
-// caller holds store.mu.
+// heardPeers leaves this replica out. The caller holds store.mu.
 func (store *Datastore) heardPeers() [][]byte {
 	store.prune(store.times.up())
 	self := peerOf(store.replica)
@@ -211,8 +207,7 @@ func (store *Datastore) heardPeers() [][]byte {
 	return out
 }
 
-// prune forgets the peers and incarnations not heard for G and the
-// forgotten entries no longer needed. The caller holds store.mu.
+// The caller holds store.mu.
 func (store *Datastore) prune(up time.Duration) {
 	g := gapIntervals * store.opts.RebroadcastInterval
 	for p, c := range store.contacts {
@@ -325,8 +320,8 @@ func (store *Datastore) markTurn(b *pb.CRDTBroadcast) {
 	b.Turned = store.turned
 }
 
-// settle is settled, and records the fleet time this replica is settled at.
-// The caller holds store.mu.
+// settle records the fleet time this replica is settled at. The caller holds
+// store.mu.
 func (store *Datastore) settle(ctx context.Context) bool {
 	if !store.settled() {
 		return false
@@ -389,8 +384,7 @@ func (store *Datastore) vouching(ctx context.Context) (uint64, bool, bool) {
 	return store.held(), true, false
 }
 
-// heardFrom keeps the ok of a judge that is still heard. The caller holds
-// store.mu.
+// heardFrom keeps the ok of a judge still heard. The caller holds store.mu.
 func (store *Datastore) heardFrom(inc string) {
 	if o := store.oks[inc]; o != nil {
 		o.heard = store.times.up()

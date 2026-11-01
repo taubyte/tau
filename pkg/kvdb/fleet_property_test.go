@@ -55,8 +55,6 @@ func TestTheFleetUnderTime(t *testing.T) {
 	}
 }
 
-// TestTheFleetUnderTimeIsBoundedOverLongRuns runs a few seeds four times as
-// long: the bound after the quiesce is the same.
 func TestTheFleetUnderTimeIsBoundedOverLongRuns(t *testing.T) {
 	t.Parallel()
 	seeds := 8
@@ -71,10 +69,6 @@ func TestTheFleetUnderTimeIsBoundedOverLongRuns(t *testing.T) {
 	}
 }
 
-// TestTheFleetUnderChangingTime runs the property with T changed on random
-// replicas at random times, up and down, as replicas reading different fleet
-// revisions would: nothing removed comes back outside the residue, computed
-// with each removal's own T.
 func TestTheFleetUnderChangingTime(t *testing.T) {
 	t.Parallel()
 	seeds := 60
@@ -144,15 +138,13 @@ type propFleet struct {
 	ids       int
 	// incLast is, per incarnation any replica held, the last time it was
 	// current or a removal of one of its values was written.
-	incLast map[string]time.Time
-	rejoins map[int]bool
-	// wrongName is the wrong clock's replica id.
+	incLast   map[string]time.Time
+	rejoins   map[int]bool
 	wrongName string
 	// replaced are the replicas whose state this step replaced: killed,
 	// restored or rebased.
-	replaced map[int]bool
-	logs     map[int]map[dot]*pb.Delta
-	// tickSince is what each replica reported at the start of the round.
+	replaced  map[int]bool
+	logs      map[int]map[dot]*pb.Delta
 	tickSince map[int]uint64
 }
 
@@ -222,7 +214,6 @@ func (f *propFleet) setT(i int) {
 	f.log("r%d T=%s", i, t)
 }
 
-// values is every live value of key at replica i, mapped to its put.
 func (f *propFleet) values(i int, key string) []*propPut {
 	sr := f.reps[i]
 	els, err := sr.r.set.liveElems(context.Background(), newTxn(sr.r.store), key)
@@ -353,7 +344,6 @@ func (f *propFleet) tick() {
 	}
 }
 
-// deliver hands one of i's broadcasts to j.
 func (f *propFleet) deliver(i, j int, data []byte) {
 	f.reach(j)
 	msg, err := f.reps[j].r.decodeBroadcast(data)
@@ -382,7 +372,6 @@ func (f *propFleet) deliver(i, j int, data []byte) {
 	}
 }
 
-// reach points j's fetches at every replica whose blocks can reach it.
 func (f *propFleet) reach(j int) {
 	var from []*simReplica
 	for _, i := range f.live() {
@@ -405,13 +394,11 @@ func (f *propFleet) healAll() {
 	f.log("heal all")
 }
 
-// partition cuts the replicas into two groups, both ways or one way, or cuts
-// one replica off.
 func (f *propFleet) partition() {
 	live := f.live()
 	f.cut = map[[2]int]bool{}
 	switch f.rng.Intn(3) {
-	case 0: // one replica off, both ways
+	case 0:
 		x := live[f.rng.Intn(len(live))]
 		for _, j := range live {
 			if j != x {
@@ -527,7 +514,6 @@ func (f *propFleet) clone(i int) {
 	f.log("clone r%d as r%d", i, j)
 }
 
-// forgetReached is what a replica whose state was replaced no longer holds.
 func (f *propFleet) forgetReached(i int) {
 	for _, p := range f.puts {
 		delete(p.reached, i)
@@ -537,7 +523,6 @@ func (f *propFleet) forgetReached(i int) {
 	}
 }
 
-// ownLog is what replica i keeps to write again after a rebase, by dot.
 func (f *propFleet) ownLog(i int) map[dot]*pb.Delta {
 	r := f.reps[i].r
 	out := map[dot]*pb.Delta{}
@@ -560,7 +545,6 @@ func (f *propFleet) ownLog(i int) map[dot]*pb.Delta {
 	return out
 }
 
-// coveredElsewhere reports whether a correct replica other than i covers d.
 func (f *propFleet) coveredElsewhere(i int, d dot) bool {
 	for _, j := range f.correct() {
 		if j != i && f.reps[j].r.covered(d) {
@@ -570,7 +554,6 @@ func (f *propFleet) coveredElsewhere(i int, d dot) bool {
 	return false
 }
 
-// liveValues is, per live replica, every value live on it: one scan each.
 func (f *propFleet) liveValues() map[int]map[string]bool {
 	out := map[int]map[string]bool{}
 	for _, i := range f.live() {
@@ -587,7 +570,6 @@ func (f *propFleet) liveValues() map[int]map[string]bool {
 	return out
 }
 
-// observe updates, after a step, what the oracle needs about who holds what.
 func (f *propFleet) observe() {
 	now := f.now()
 	correct := f.correct()
@@ -703,7 +685,6 @@ func (f *propFleet) observe() {
 	}
 }
 
-// rebased records a rebase found after the fact.
 func (f *propFleet) rebased(i int) {
 	f.log("r%d rebased", i)
 	f.forgetReached(i)
@@ -720,7 +701,6 @@ func (f *propFleet) rebasedFrom(i int, since uint64) {
 	f.forgetReached(i)
 }
 
-// step is one random action.
 func (f *propFleet) act() {
 	f.step++
 	f.replaced = map[int]bool{}
@@ -776,7 +756,6 @@ func (f *propFleet) act() {
 			f.setT(i)
 		}
 	default:
-		// One head set, one way.
 		j := f.pick()
 		if j != i {
 			f.reps[i].beat()
@@ -789,7 +768,6 @@ func (f *propFleet) act() {
 	f.observe()
 }
 
-// keepLogs records what each replica keeps to write again after a rebase.
 func (f *propFleet) keepLogs() {
 	f.logs = map[int]map[dot]*pb.Delta{}
 	for _, i := range f.live() {
@@ -862,7 +840,6 @@ func runFleet(t *testing.T, seed int64, length int, tvaries bool) {
 			f.log("r%d has a clock off by %s", i, offset)
 		}
 	}
-	// Everyone hears everyone before anything happens.
 	f.tick()
 	steps := length * (60 + rng.Intn(80))
 	for range steps {
@@ -885,8 +862,6 @@ func runFleet(t *testing.T, seed int64, length int, tvaries bool) {
 	f.bound()
 }
 
-// compactAll is the quiesce's "compact all" (T7.1): every live replica folds
-// what it holds into a snapshot.
 func (f *propFleet) compactAll() {
 	for _, i := range f.live() {
 		if _, err := f.reps[i].r.Compact(context.Background()); err != nil {
@@ -927,7 +902,6 @@ func (f *propFleet) settle() {
 	f.observe()
 }
 
-// check asserts properties 1 and 2 on the correct replicas.
 func (f *propFleet) check(when string) {
 	f.t.Helper()
 	correct := f.correct()
@@ -991,14 +965,13 @@ func (f *propFleet) check(when string) {
 	}
 }
 
-// wrongAuthor reports whether a dot is the wrong clock's replica's: an
-// incarnation id is the replica's name followed by a 16-byte nonce.
+// An incarnation id is the replica's name followed by a 16-byte nonce.
 func (f *propFleet) wrongAuthor(d dot) bool {
 	return f.wrong >= 0 && len(d.replica) > 16 && d.replica[:len(d.replica)-16] == f.wrongName
 }
 
-// comparableState is crdtState without the pending removals and context
-// entries whose expiry is near enough that replicas may differ on it.
+// comparableState leaves out pending removals and context entries near enough
+// to expiry that replicas may differ on them.
 func comparableState(t testing.TB, r *Datastore, edge func(expires uint64) bool) string {
 	t.Helper()
 	ctx := context.Background()

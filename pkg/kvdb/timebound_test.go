@@ -9,10 +9,6 @@ import (
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
 )
 
-// TestAnIncarnationIsForgottenOnceExpired: a writer that goes quiet is
-// forgotten a margin after what it wrote expires, and not before; what it
-// wrote stays, ancient, under its own dot; and a reopen does not bring the
-// entry back (T8.13: stageContext deletes).
 func TestAnIncarnationIsForgottenOnceExpired(t *testing.T) {
 	st := newSimTime()
 	w, r := st.replica(t, "w", 0), st.replica(t, "r", 0)
@@ -46,10 +42,6 @@ func TestAnIncarnationIsForgottenOnceExpired(t *testing.T) {
 	r.wantValue(t, "/k", "v")
 }
 
-// TestARemovalOfAnAncientElementOutlivesAStaleCopy: removing an element whose
-// writer is forgotten leaves a pending removal even though the element was
-// here (T8.1), and that pending removal refuses a copy of the element in a
-// snapshot written before the removal, for as long as the removal is needed.
 func TestARemovalOfAnAncientElementOutlivesAStaleCopy(t *testing.T) {
 	st := newSimTime()
 	w, a, b := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0)
@@ -86,9 +78,6 @@ func TestARemovalOfAnAncientElementOutlivesAStaleCopy(t *testing.T) {
 	}
 }
 
-// TestAnAncientElementSurvivesASnapshotThatNeverKnewItsWriter (R-S, T8.13):
-// a snapshot covers only what its compactor knows, so an element of a writer
-// it never knew, or forgot, is not one it removed.
 func TestAnAncientElementSurvivesASnapshotThatNeverKnewItsWriter(t *testing.T) {
 	st := newSimTime()
 	w, a := st.replica(t, "w", 0), st.replica(t, "a", 0)
@@ -106,9 +95,6 @@ func TestAnAncientElementSurvivesASnapshotThatNeverKnewItsWriter(t *testing.T) {
 	a.wantValue(t, "/y", "2")
 }
 
-// TestALateDeltaIsNotMergedOnceExpired (T8.12): a delta that arrives after its
-// own expiry is not merged, so a put whose removal was forgotten cannot come
-// back through it.
 func TestALateDeltaIsNotMergedOnceExpired(t *testing.T) {
 	st := newSimTime()
 	w, b := st.replica(t, "w", 0), st.replica(t, "b", 0)
@@ -132,9 +118,6 @@ func TestALateDeltaIsNotMergedOnceExpired(t *testing.T) {
 	}
 }
 
-// TestAnExpiredParentIsNeverFetched (R-P links): a link to a block nobody
-// covers and whose expiry has passed is not followed: every holder has
-// purged it, and fetching it would only wait for the timeout.
 func TestAnExpiredParentIsNeverFetched(t *testing.T) {
 	st := newSimTime()
 	a, b := st.replica(t, "a", 0), st.replica(t, "b", 0)
@@ -190,9 +173,6 @@ func TestAnExpiredParentIsNeverFetched(t *testing.T) {
 	f.wantValue(t, "/k", "v")
 }
 
-// TestABlockFromTheFutureWaits (T8.11): a block stamped further ahead of the
-// receiver's clock than the skew is not merged until the clock reaches it,
-// so a clock far ahead delays its owner's writes and nothing else.
 func TestABlockFromTheFutureWaits(t *testing.T) {
 	st := newSimTime()
 	fast, c := st.replica(t, "fast", time.Hour), st.replica(t, "c", 0)
@@ -211,9 +191,6 @@ func TestABlockFromTheFutureWaits(t *testing.T) {
 	c.wantValue(t, "/k", "v")
 }
 
-// TestAStaleSnapshotIsRefused: a snapshot whose compactor had not heard the
-// fleet since before a removal this replica has already forgotten may hold
-// the removed element, and is never merged.
 func TestAStaleSnapshotIsRefused(t *testing.T) {
 	st := newSimTime()
 	w, a, c := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "c", 0)
@@ -235,9 +212,6 @@ func TestAStaleSnapshotIsRefused(t *testing.T) {
 	a.wantValue(t, "/k", "<deleted>")
 }
 
-// TestAnOldSnapshotIsReplaced: a held block half way to its expiry is folded
-// into a new snapshot, so no replica in contact ever holds only blocks a
-// fresh replica would refuse to walk.
 func TestAnOldSnapshotIsReplaced(t *testing.T) {
 	st := newSimTime()
 	a := st.replica(t, "a", 0)
@@ -262,9 +236,6 @@ func TestAnOldSnapshotIsReplaced(t *testing.T) {
 	a.wantValue(t, "/k", "v")
 }
 
-// TestAnIdleWriterDrawsANewIncarnation (T8.3): a write after this
-// incarnation was idle more than half the retention starts a new one, so it
-// never writes under an incarnation its peers may have forgotten.
 func TestAnIdleWriterDrawsANewIncarnation(t *testing.T) {
 	st := newSimTime()
 	a := st.replica(t, "a", 0)
@@ -282,9 +253,6 @@ func TestAnIdleWriterDrawsANewIncarnation(t *testing.T) {
 	}
 }
 
-// TestAWriterForgottenAndHeardAgainIsKnownFromItsPrev (T8.3): a peer that
-// forgot an incarnation and then hears it again knows it from the prev of
-// the delta it heard, so the chain absorbs and nothing below is claimed.
 func TestAWriterForgottenAndHeardAgainIsKnownFromItsPrev(t *testing.T) {
 	st := newSimTime()
 	w, b := st.replica(t, "w", 0), st.replica(t, "b", 0)
@@ -321,9 +289,6 @@ func TestAWriterForgottenAndHeardAgainIsKnownFromItsPrev(t *testing.T) {
 	b.wantValue(t, "/old", "1")
 }
 
-// TestTwoSightingsWithAGapKeepTheGap (T8.3): replicas that first saw an
-// incarnation at different counters join their knowledge as two spans, and
-// a dot in between is still taken when it arrives.
 func TestTwoSightingsWithAGapKeepTheGap(t *testing.T) {
 	st := newSimTime()
 	w := st.replica(t, "w", 0)
@@ -340,8 +305,6 @@ func TestTwoSightingsWithAGapKeepTheGap(t *testing.T) {
 	b.wantValue(t, "/ko", "v")
 }
 
-// TestTheHorizonTravelsWithBlocks: what a replica forgot is carried by every
-// block it writes, so a replica that merges one judges from it.
 func TestTheHorizonTravelsWithBlocks(t *testing.T) {
 	st := newSimTime()
 	w, a, b := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0)
@@ -359,8 +322,6 @@ func TestTheHorizonTravelsWithBlocks(t *testing.T) {
 	}
 }
 
-// TestRetentionChangesWhatIsWrittenNext: SetRetention changes the T new
-// blocks carry; what was written keeps its own.
 func TestRetentionChangesWhatIsWrittenNext(t *testing.T) {
 	st := newSimTime()
 	a := st.replica(t, "a", 0)
@@ -389,10 +350,6 @@ func deltaAt(t testing.TB, sr *simReplica, c cid.Cid) *pb.Delta {
 	return d
 }
 
-// TestARemovalKeepsItsWritersEntry (R-C): removing an element moves its
-// writer's entry to the removal's time, so a writer that went quiet long
-// before is still known, and the removal refuted, for a full T after the
-// removal rather than after the write.
 func TestARemovalKeepsItsWritersEntry(t *testing.T) {
 	st := newSimTime()
 	w, a, b, c := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
@@ -422,9 +379,6 @@ func TestARemovalKeepsItsWritersEntry(t *testing.T) {
 	}
 }
 
-// TestAPendingRemovalExpiresWhereverItTravels (T8.11): a pending removal
-// expires at the time written in it, however many snapshots carry it back and
-// forth between replicas that keep compacting.
 func TestAPendingRemovalExpiresWhereverItTravels(t *testing.T) {
 	st := newSimTime()
 	w, a, b := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0)
@@ -450,11 +404,6 @@ func TestAPendingRemovalExpiresWhereverItTravels(t *testing.T) {
 	}
 }
 
-// TestASnapshotWrittenBeforeAnyContactIsJudgedByItsOldestElement (T8.8): a
-// snapshot written by a replica that had heard no fleet holds that
-// replica's own writes, and is only as recent as the oldest of them. Fetched
-// late, after the fleet removed one and forgot the removal, it is refused,
-// whatever T it was written under.
 func TestASnapshotWrittenBeforeAnyContactIsJudgedByItsOldestElement(t *testing.T) {
 	ctx := context.Background()
 	st := newSimTime()
@@ -490,11 +439,6 @@ func TestASnapshotWrittenBeforeAnyContactIsJudgedByItsOldestElement(t *testing.T
 	b.wantValue(t, "/x", "<deleted>")
 }
 
-// TestASnapshotCarryingStampsFromTheFutureWaits (T8.11): a replica whose
-// clock ran far ahead and was put right still holds what it wrote then, and
-// so does every snapshot it writes after. A correct replica merges none of
-// it before its own clock gets there, so the wrong clock's stamps, and the
-// incarnation they would keep known for as long, never reach its state.
 func TestASnapshotCarryingStampsFromTheFutureWaits(t *testing.T) {
 	st := newSimTime()
 	fast, b, c := st.replica(t, "fast", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)

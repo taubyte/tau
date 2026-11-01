@@ -108,7 +108,7 @@ type mockBroadcaster struct {
 	ctx      context.Context
 	chans    []chan []byte
 	myChan   chan []byte
-	dropProb *atomic.Int64 // probability of dropping a message instead of broadcasting it
+	dropProb *atomic.Int64
 	t        testing.TB
 }
 
@@ -141,10 +141,7 @@ func (mb *mockBroadcaster) Broadcast(ctx context.Context, data []byte) error {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			// randomize when we send a little bit
 			if rand.Intn(100) < 30 {
-				// Sleep for a very small time that will
-				// effectively be pretty random
 				time.Sleep(time.Nanosecond)
 			}
 			timer := time.NewTimer(5 * time.Second)
@@ -283,7 +280,6 @@ func TestCRDTReplication(t *testing.T) {
 	replicas, closeReplicas := makeReplicas(t, nil)
 	defer closeReplicas()
 
-	// Add nItems choosing the replica randomly
 	var written []dot
 	for i := range nItems {
 		k := ds.RandomKey()
@@ -298,7 +294,6 @@ func TestCRDTReplication(t *testing.T) {
 
 	waitCovered(t, replicas, written...)
 
-	// Query all items
 	q := query.Query{
 		KeysOnly: true,
 	}
@@ -306,7 +301,6 @@ func TestCRDTReplication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// nolint:errcheck
 	defer results.Close()
 	rest, err := results.Rest()
 	if err != nil {
@@ -316,7 +310,6 @@ func TestCRDTReplication(t *testing.T) {
 		t.Fatalf("expected %d elements", nItems)
 	}
 
-	// make sure each item has arrived to every replica
 	for _, res := range rest {
 		for _, r := range replicas {
 			ok, err := r.Has(ctx, ds.NewKey(res.Key))
@@ -329,7 +322,6 @@ func TestCRDTReplication(t *testing.T) {
 		}
 	}
 
-	// give a new value for each item
 	written = written[:0]
 	for _, r := range rest {
 		n := randGen.Intn(len(replicas))
@@ -342,12 +334,10 @@ func TestCRDTReplication(t *testing.T) {
 
 	waitCovered(t, replicas, written...)
 
-	// query everything again
 	results, err = replicas[0].Query(ctx, q)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// nolint:errcheck
 	defer results.Close()
 
 	total := 0
@@ -375,22 +365,8 @@ func TestCRDTReplication(t *testing.T) {
 		list, _ := r.heads.List()
 		t.Log(list)
 	}
-	// replicas[0].PrintDAG()
-	// fmt.Println("==========================================================")
-	// replicas[1].PrintDAG()
 }
 
-// TestCRDTPriority tests that given multiple concurrent updates from several
-// replicas on the same key, the resulting values converge to the same key.
-//
-// It does this by launching one go routine for every replica, where it replica
-// writes the value #replica-number repeteadly (nItems-times).
-//
-// Finally, it puts a final value for a single key in the first replica and
-// checks that all replicas got it.
-//
-// If key priority rules are respected, the "last" update emitted for the key
-// K (which could have come from any replica) should take place everywhere.
 func TestCRDTPriority(t *testing.T) {
 	ctx := context.Background()
 	nItems := 50
@@ -453,9 +429,6 @@ func TestCRDTPriority(t *testing.T) {
 		}
 	}
 
-	// replicas[14].PrintDAG()
-	// fmt.Println("=======================================================")
-	// replicas[1].PrintDAG()
 }
 
 func TestCRDTCatchUp(t *testing.T) {
@@ -468,7 +441,6 @@ func TestCRDTCatchUp(t *testing.T) {
 	br := r.broadcaster.(*mockBroadcaster)
 	br.dropProb.Store(101)
 
-	// this items will not get to anyone
 	var written []dot
 	for range nItems {
 		k := ds.RandomKey()
@@ -494,7 +466,6 @@ func TestCRDTCatchUp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// nolint:errcheck
 	defer results.Close()
 	rest, err := results.Rest()
 	if err != nil {
@@ -512,7 +483,6 @@ func TestCRDTPrintDAG(t *testing.T) {
 	replicas, closeReplicas := makeReplicas(t, nil)
 	defer closeReplicas()
 
-	// this items will not get to anyone
 	for range nItems {
 		k := ds.RandomKey()
 		err := replicas[0].Put(ctx, k, nil)
@@ -540,7 +510,6 @@ func TestCRDTBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// This should be batched
 	k := ds.RandomKey()
 	err = btch.Put(ctx, k, make([]byte, 200))
 	if err != nil {
@@ -666,7 +635,6 @@ func BenchmarkQueryElements(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	// nolint:errcheck
 	defer results.Close()
 
 	totalSize := 0
@@ -707,7 +675,6 @@ func TestCRDTPutPutDelete(t *testing.T) {
 
 	k := ds.NewKey("k1")
 
-	// r0 - put put delete
 	err := replicas[0].Put(ctx, k, []byte("r0-1"))
 	if err != nil {
 		t.Fatal(err)
@@ -721,7 +688,6 @@ func TestCRDTPutPutDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// r1 - put
 	err = replicas[1].Put(ctx, k, []byte("r1-1"))
 	if err != nil {
 		t.Fatal(err)
@@ -756,11 +722,9 @@ func TestCRDTPutPutDelete(t *testing.T) {
 	if string(r0Res) != string(r1Res) {
 		fmt.Printf("r0Res: %s\nr1Res: %s\n", string(r0Res), string(r1Res))
 		t.Log("r0 dag")
-		// nolint:errcheck
 		replicas[0].PrintDAG(ctx)
 
 		t.Log("r1 dag")
-		// nolint:errcheck
 		replicas[1].PrintDAG(ctx)
 
 		t.Fatal("r0 and r1 should have the same value")
@@ -791,9 +755,7 @@ func (mb *memoryBroadcaster) Last() []byte {
 }
 
 func TestCRDTBatchBroadcast(t *testing.T) {
-	// makes DefaultOptions
 	opts := DefaultOptions()
-	// sets the BroadcastBatchDelay to 1 second
 	opts.BroadcastBatchDelay = 250 * time.Millisecond
 
 	bcaster, cancel := newBroadcasters(t, 1)
@@ -802,7 +764,6 @@ func TestCRDTBatchBroadcast(t *testing.T) {
 		last:        make(chan []byte),
 	}
 
-	// makes 1 replica
 	replicas, closeReplicas := makeNReplicasWithBroadcasters(t, 1, opts, []Broadcaster{mb}, cancel)
 	defer closeReplicas()
 	replica := replicas[0]
@@ -825,9 +786,8 @@ func TestCRDTBatchBroadcast(t *testing.T) {
 	}
 }
 
-// nullBroadcaster is a no-op broadcaster for tests that don't need replication.
-// Its Next() blocks until ctx is cancelled, preventing background goroutines
-// from interfering with operations that require exclusive access (e.g. PurgeDAG).
+// nullBroadcaster's Next blocks until ctx is done, so no background merge
+// interferes with operations that need exclusive access.
 type nullBroadcaster struct{}
 
 func (nb *nullBroadcaster) Broadcast(_ context.Context, _ []byte) error { return nil }
@@ -844,16 +804,13 @@ func makeNReplicasNoBcast(t testing.TB, n int, opts *Options) ([]*Datastore, fun
 	return makeNReplicasWithBroadcasters(t, n, opts, bcasts, func() {})
 }
 
-// openTestStore opens a Datastore on the given underlying ds/dagservice with
-// sensible defaults for the bad-shutdown tests (null broadcaster, short
-// repair interval when requested).
 func openTestStore(t testing.TB, name string, mapDs ds.Datastore, dagServ ipld.DAGService, repair time.Duration) *Datastore {
 	t.Helper()
 	opts := DefaultOptions()
 	opts.Logger = &testLogger{name: name + ": ", l: DefaultOptions().Logger}
 	opts.ReplicaID = []byte(name)
 	opts.RepairInterval = repair
-	opts.RebroadcastInterval = time.Hour // disable rebroadcast noise
+	opts.RebroadcastInterval = time.Hour
 	opts.DeliveryBound = opts.DAGSyncerTimeout + opts.RebroadcastInterval
 	d, err := NewDatastore(mapDs, ds.NewKey("crdttest"), dagServ, &nullBroadcaster{}, opts)
 	if err != nil {
@@ -862,9 +819,6 @@ func openTestStore(t testing.TB, name string, mapDs ds.Datastore, dagServ ipld.D
 	return d
 }
 
-// TestBadShutdownMark_CleanCloseNoDirty verifies that on a clean
-// New/Close/New cycle, the store is never marked dirty. The bad-shutdown
-// key is present while a Datastore is open and removed by Close.
 func TestBadShutdownMark_CleanCloseNoDirty(t *testing.T) {
 	ctx := t.Context()
 	mapDs := dssync.MutexWrap(ds.NewMapDatastore())
@@ -902,18 +856,12 @@ func TestBadShutdownMark_CleanCloseNoDirty(t *testing.T) {
 	}
 }
 
-// TestBadShutdownMark_DetectedOnStartup verifies that if the bad-shutdown
-// key is present at startup (simulating a previous run that crashed before
-// Close), the store is marked dirty and the key is re-armed for the next
-// run.
 func TestBadShutdownMark_DetectedOnStartup(t *testing.T) {
 	ctx := t.Context()
 	mapDs := dssync.MutexWrap(ds.NewMapDatastore())
 	dagServ := merkledag.NewDAGService(mdutils.Bserv())
 	bsKey := ds.NewKey("crdttest").ChildString(badShutdownKey)
 
-	// Simulate state left behind by a crashed prior run: bs key present,
-	// no clean Close ever ran.
 	if err := mapDs.Put(ctx, bsKey, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -942,9 +890,6 @@ func TestBadShutdownMark_DetectedOnStartup(t *testing.T) {
 	}
 }
 
-// TestBadShutdownMark_PartialBranchRecovery: a replica that died after
-// merging a head and before walking to its parent is marked dirty on reopen,
-// and the repair walks the parent it recorded as missing.
 func TestBadShutdownMark_PartialBranchRecovery(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := t.Context()
@@ -998,11 +943,6 @@ func TestBadShutdownMark_PartialBranchRecovery(t *testing.T) {
 	})
 }
 
-// TestAManualReplicaRepairsOnlyWhenAsked: a replica whose caller drives what
-// time would runs no repair of its own, not even the pass a store left dirty
-// gets at open. That pass lands whenever its goroutine is scheduled; landing
-// after the caller's first walks, it fetches blocks they then skip as already
-// being fetched, and the caller reads a state still merging.
 func TestAManualReplicaRepairsOnlyWhenAsked(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := t.Context()

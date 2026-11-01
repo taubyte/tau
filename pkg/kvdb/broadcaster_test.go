@@ -10,14 +10,12 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 )
 
-// TestNewPubSubBroadcaster tests the creation of a new PubSubBroadcaster.
 func TestNewPubSubBroadcaster(t *testing.T) {
 	ctx := context.Background()
 	mockNode := peer.Mock(ctx)
 	defer mockNode.Close()
 	psub := mockNode.Messaging()
 
-	// Test successful creation
 	broadcaster, err := NewPubSubBroadcaster(ctx, psub, "test-topic")
 	if err != nil {
 		t.Fatalf("Failed to create new broadcaster: %v", err)
@@ -26,17 +24,14 @@ func TestNewPubSubBroadcaster(t *testing.T) {
 		t.Fatal("Expected non-nil broadcaster, got nil")
 	}
 
-	// Test creation with existing topic
 	_, err = NewPubSubBroadcaster(ctx, psub, "test-topic")
 	if err != nil {
 		t.Fatalf("Failed to create broadcaster with existing topic: %v", err)
 	}
 
-	// Cleanup
 	broadcaster.topic.Close()
 }
 
-// TestPubSubBroadcaster_Broadcast tests the broadcast functionality.
 func TestPubSubBroadcaster_Broadcast(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -48,14 +43,12 @@ func TestPubSubBroadcaster_Broadcast(t *testing.T) {
 	broadcaster, _ := NewPubSubBroadcaster(ctx, psub, "test-topic")
 	defer broadcaster.topic.Close()
 
-	// Test broadcasting a message
 	err := broadcaster.Broadcast(ctx, []byte("test message"))
 	if err != nil {
 		t.Fatalf("Failed to broadcast message: %v", err)
 	}
 }
 
-// TestPubSubBroadcaster_Next tests the receiving of messages.
 func TestPubSubBroadcaster_Next(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -67,13 +60,11 @@ func TestPubSubBroadcaster_Next(t *testing.T) {
 	broadcaster, _ := NewPubSubBroadcaster(ctx, psub, "test-topic")
 	defer broadcaster.topic.Close()
 
-	// Start a goroutine to broadcast a message after a delay
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 		broadcaster.Broadcast(ctx, []byte("test message"))
 	}()
 
-	// Test receiving a message
 	msg, err := broadcaster.Next(ctx)
 	if err != nil {
 		t.Fatalf("Failed to receive message: %v", err)
@@ -83,7 +74,6 @@ func TestPubSubBroadcaster_Next(t *testing.T) {
 	}
 }
 
-// TestPubSubBroadcaster_ContextCancellation tests the behavior when the context is cancelled.
 func TestPubSubBroadcaster_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -94,19 +84,16 @@ func TestPubSubBroadcaster_ContextCancellation(t *testing.T) {
 	broadcaster, _ := NewPubSubBroadcaster(ctx, psub, "test-topic-2")
 	defer broadcaster.topic.Close()
 
-	// Cancel the context
 	cancel()
 
 	time.Sleep(100 * time.Millisecond)
 
-	// Test that Next returns an error after context cancellation
 	_, err := broadcaster.Next(ctx)
 	if !errors.Is(err, ErrNoMoreBroadcast) {
 		t.Fatalf("Expected ErrNoMoreBroadcast after context cancellation, got %v", err)
 	}
 }
 
-// TestPubSubBroadcaster_ConcurrentOperations tests concurrent broadcasting and receiving.
 func TestPubSubBroadcaster_ConcurrentOperations(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -121,7 +108,6 @@ func TestPubSubBroadcaster_ConcurrentOperations(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 
-	// Start a goroutine to receive a message
 	go func() {
 		defer wg.Done()
 		msg, err := broadcaster.Next(ctx)
@@ -133,7 +119,6 @@ func TestPubSubBroadcaster_ConcurrentOperations(t *testing.T) {
 		}
 	}()
 
-	// Broadcast a message
 	err := broadcaster.Broadcast(ctx, []byte("test message"))
 	if err != nil {
 		t.Fatalf("Failed to broadcast message: %v", err)
@@ -198,9 +183,9 @@ func TestPubSubBroadcaster_TopicRegistrationAndUnregistration(t *testing.T) {
 		t.Errorf("Expected topic '%s' to be registered", topic)
 	}
 
-	cancel() // This should unregister the topic
+	cancel()
 
-	time.Sleep(100 * time.Millisecond) // Give some time for the goroutine to unregister the topic
+	time.Sleep(100 * time.Millisecond)
 
 	if getTopic(key) != nil {
 		t.Errorf("Expected topic '%s' to be unregistered after context cancellation", topic)

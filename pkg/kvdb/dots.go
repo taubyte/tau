@@ -13,24 +13,16 @@ import (
 	pb "github.com/taubyte/tau/pkg/kvdb/pb"
 )
 
-// A dot names one delta: the incarnation that wrote it and that incarnation's
-// counter for it. Counters start at 1, so the zero dot names nothing.
-//
-// An incarnation is the node's peer id followed by a 128-bit nonce drawn at
-// random by the process that writes under it. The nonce is never persisted. A
-// store restored from a backup is byte-identical to the store it was copied
-// from, so nothing on disk could tell the two apart; because a nonce lives
-// only in the memory of the process that drew it, a restored store reuses a
-// dot only if two random 128-bit draws collide. Within one process, a store
-// that closes hands its incarnation to the next open of the same store (see
+// A dot names one delta: its incarnation and that incarnation's counter, from
+// 1. An incarnation is the node's peer id and a random 128-bit nonce that is
+// never persisted, so a store restored from a backup draws a new one; within
+// one process a closing store hands its incarnation to the next open (see
 // incarnationRegistry).
 type dot struct {
 	replica string
 	counter uint64
 }
 
-// incarnations is this process's registry of the incarnations closed stores
-// wrote under.
 var incarnations = newIncarnationRegistry()
 
 type incarnationKey struct {
@@ -44,16 +36,11 @@ type incarnation struct {
 }
 
 // incarnationRegistry lets a store reopened in the process that closed it
-// continue the incarnation it closed, so a load/unload cycle does not grow
-// every replica's vector by one entry.
-//
-// It is safe because an entry is the incarnation's true last counter, written
-// under the store's lock as it closes, after its last write: a closed store
-// writes nothing more. And resuming takes the entry out, so no two open
-// stores ever write under one incarnation. A store whose context does not
-// reach that counter draws a new one instead: it is a copy of the store taken
-// earlier, or one emptied since, and would chain its own writes past a gap in
-// its own context.
+// continue its incarnation, so a load/unload cycle does not grow every vector.
+// An entry is the true last counter, written under the store's lock after its
+// last write, and resuming takes it out, so no two open stores share an
+// incarnation. A store whose context does not reach that counter draws a new
+// one.
 type incarnationRegistry struct {
 	mu     sync.Mutex
 	closed map[incarnationKey]incarnation
@@ -63,8 +50,8 @@ func newIncarnationRegistry() *incarnationRegistry {
 	return &incarnationRegistry{closed: map[incarnationKey]incarnation{}}
 }
 
-// resume takes the incarnation closed under k if reached, the opening store's
-// covered counter for it, is its last counter.
+// resume takes the incarnation closed under k when reached gives its last
+// counter.
 func (r *incarnationRegistry) resume(k incarnationKey, reached func(replica string) uint64) (incarnation, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -92,8 +79,7 @@ var segEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 
 const segAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
 
-// segValues is the value of each byte of segAlphabet, and 0xff for any
-// other byte.
+// 0xff marks a byte outside segAlphabet.
 var segValues = func() (t [256]byte) {
 	for i := range t {
 		t[i] = 0xff
@@ -106,9 +92,8 @@ var segValues = func() (t [256]byte) {
 
 var errSegment = errors.New("not a segment")
 
-// appendSegDecode appends the bytes src spells in segEncoding to b, as its
-// AppendDecode does, without the copy of src that makes; it refuses a
-// trailing partial byte AppendDecode drops.
+// appendSegDecode is segEncoding.AppendDecode without the copy of src it makes,
+// and it refuses a trailing partial byte AppendDecode drops.
 func appendSegDecode(b, src []byte) ([]byte, error) {
 	var acc uint64
 	bits := 0
@@ -129,9 +114,7 @@ func appendSegDecode(b, src []byte) ([]byte, error) {
 	return b, nil
 }
 
-// segment encodes the dot as one datastore key segment that sorts by replica
-// and then by counter: the counter is zero-padded to 20 digits so byte order
-// is numeric order.
+// The counter is zero-padded to 20 digits so byte order is numeric order.
 func (d dot) segment() string {
 	return replicaSegment(d.replica) + "." + fmt.Sprintf("%020d", d.counter)
 }
@@ -156,22 +139,17 @@ func parseDotSegment(s string) (dot, error) {
 	return dot{replica: replica, counter: counter}, nil
 }
 
-// replicas interns the replicas dot segments name. A store reads few
-// incarnations and many keys naming each, and parsing one would otherwise
-// make a string per key read. The table empties itself at internedLimit, so
-// a store that sees many incarnations over its life does not keep them all.
+// replicas interns the replicas dot segments name, so parsing a key does not
+// make a string per key. It empties at internedLimit.
 var replicas = &internTable{m: map[string]string{}, raw: map[string]string{}}
 
 const internedLimit = 1 << 12
 
-// An internTable maps a replica's segment, and the replica itself, to one
-// string of it.
 type internTable struct {
 	mu     sync.RWMutex
 	m, raw map[string]string
 }
 
-// bytes is the replica b holds.
 func (t *internTable) bytes(b []byte) string {
 	t.mu.RLock()
 	r, ok := t.raw[string(b)]
@@ -189,7 +167,6 @@ func (t *internTable) bytes(b []byte) string {
 	return r
 }
 
-// of is the replica the base32 segment enc spells.
 func (t *internTable) of(enc string) (string, error) {
 	t.mu.RLock()
 	r, ok := t.m[enc]
@@ -210,9 +187,8 @@ func (t *internTable) of(enc string) (string, error) {
 	return r, nil
 }
 
-// decodeSegment is the string the base32 segment enc spells, made in one
-// allocation: DecodeString decodes into a buffer of its own, which nothing
-// else holds, and the string is made over it.
+// One allocation: DecodeString's buffer is held by nothing else, and the
+// string is made over it.
 func decodeSegment(enc string) (string, error) {
 	b, err := segEncoding.DecodeString(enc)
 	if err != nil || len(b) == 0 {
@@ -221,8 +197,8 @@ func decodeSegment(enc string) (string, error) {
 	return unsafe.String(&b[0], len(b)), nil
 }
 
-// keySegment encodes a user key as one segment, so that the markers of "/a"
-// are never under the prefix of the markers of "/a/b".
+// keySegment encodes a key as one segment, so the markers of "/a" are never
+// under the prefix of those of "/a/b".
 func keySegment(key string) string {
 	return "k" + segEncoding.EncodeToString([]byte(key))
 }
@@ -245,8 +221,7 @@ func (d dot) toPB() *pb.Dot {
 	return &pb.Dot{Replica: []byte(d.replica), Counter: d.counter}
 }
 
-// pooledPB is d as a pooled message for a delta this replica writes, its
-// replica borrowed until releaseDelta clears it.
+// The replica is borrowed until releaseDelta clears it.
 func (d dot) pooledPB() *pb.Dot {
 	if d.isZero() {
 		return nil
@@ -260,7 +235,7 @@ func dotFromPB(p *pb.Dot) dot {
 	return dot{replica: replicas.bytes(p.GetReplica()), counter: p.GetCounter()}
 }
 
-// encodeDot is the value form of a dot: varint counter, then the replica.
+// A varint counter, then the replica.
 func encodeDot(d dot) []byte { return appendDot(nil, d) }
 
 func appendDot(b []byte, d dot) []byte {

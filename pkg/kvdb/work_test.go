@@ -20,7 +20,6 @@ import (
 	"github.com/taubyte/tau/pkg/pebbleds"
 )
 
-// work counts what an operation asks of the stores under a replica.
 type work struct {
 	reads, scans, scanned, writes int
 	dagReads, dagWrites           int
@@ -38,8 +37,6 @@ func (w work) since(o work) work {
 	}
 }
 
-// workMeter counts the datastore operations and DAG operations of one
-// replica.
 type workMeter struct {
 	mu sync.Mutex
 	w  work
@@ -141,15 +138,13 @@ func (d *meteredDAG) AddMany(ctx context.Context, nds []ipld.Node) error {
 	return d.DAGService.AddMany(ctx, nds)
 }
 
-// warmReplica is a replica holding n keys, compacted, that compacts only
-// when told to, over the tests' in-memory store, metered.
 func warmReplica(t testing.TB, n int) (*Datastore, *workMeter) {
 	m := &workMeter{}
 	return warmReplicaOn(t, n, &meteredStore{Datastore: newSortedStore(), m: m}, &meteredDAG{DAGService: newFetchThrough(), m: m}), m
 }
 
-// warmPebble is warmReplica over the store a node runs, kept in memory:
-// what it allocates is what a node's store allocates.
+// warmPebble runs on a node's store, in memory, so what it allocates is what a
+// node's store allocates.
 func warmPebble(t testing.TB, n int) *Datastore {
 	t.Helper()
 	st, err := pebbleds.Open("db", pebbleds.WithPebbleOptions(&pebble.Options{FS: vfs.NewMem()}))
@@ -171,8 +166,7 @@ func warmPebble(t testing.TB, n int) *Datastore {
 	return warmReplicaOn(t, n, st, nodeDAG{DAGService: merkledag.NewDAGService(blockservice.New(bs, exch)), BlockWriter: w})
 }
 
-// nodeDAG is merkledag over a block service, writing blocks as
-// peer.DAGService does.
+// nodeDAG writes blocks as peer.DAGService does.
 type nodeDAG struct {
 	ipld.DAGService
 	*peer.BlockWriter
@@ -220,10 +214,6 @@ func warmValue(i, round int) []byte {
 	return v
 }
 
-// TestCompactionWorkIsBounded: what a compaction asks of the stores grows
-// with the records it changes, not with the records the store holds. A tree
-// node a compaction changes many times is read once: one at a time, every
-// changed record read its whole path again, and again to look it up.
 func TestCompactionWorkIsBounded(t *testing.T) {
 	ctx := context.Background()
 	check := checkSnapshot
@@ -261,8 +251,6 @@ func TestCompactionWorkIsBounded(t *testing.T) {
 	}
 }
 
-// benchCompact measures a compaction of changes records in a warm store of
-// n keys, the Puts before it left out.
 func benchCompact(b *testing.B, n, changes int) {
 	ctx := context.Background()
 	r, _ := warmReplica(b, n)
@@ -291,9 +279,6 @@ func BenchmarkHotCompact(b *testing.B) {
 	}
 }
 
-// TestCompactionAllocs: a compaction allocates in proportion to the
-// records it changes. Applied one at a time, every change decoded and
-// encoded each tree node on its path again.
 func TestCompactionAllocs(t *testing.T) {
 	ctx := context.Background()
 	check := checkSnapshot

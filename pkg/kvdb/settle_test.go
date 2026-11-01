@@ -10,9 +10,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// hear hands what src has broadcast so far to each of dsts, which fetch from
-// the given replicas only: they hear src, and may not be able to fetch what
-// it holds.
+// The dsts fetch only from fetch: they hear src and may be unable to fetch
+// what it holds.
 func (s *simTime) hear(t testing.TB, src *simReplica, dsts []*simReplica, fetch ...*simReplica) {
 	t.Helper()
 	msgs := src.out.take()
@@ -28,9 +27,8 @@ func (s *simTime) hear(t testing.TB, src *simReplica, dsts []*simReplica, fetch 
 	}
 }
 
-// listen is one rebroadcast interval: the replicas in contact beat, hear and
-// fetch from each other, answers included, and maintain; the listeners hear
-// them and fetch nothing.
+// listen is one rebroadcast interval: inContact beat, hear, fetch from each
+// other and maintain; listeners hear them and fetch nothing.
 func (s *simTime) listen(t testing.TB, inContact []*simReplica, listeners ...*simReplica) {
 	t.Helper()
 	s.advance(simRI)
@@ -87,8 +85,8 @@ func (s *simTime) listen(t testing.TB, inContact []*simReplica, listeners ...*si
 	}
 }
 
-// settle keeps the replicas in contact, heartbeats only, until each holds
-// all the others hold and knows it has heard them all.
+// settle exchanges heartbeats until each replica holds all the others hold and
+// knows it heard them all.
 func (s *simTime) settle(t testing.TB, rs ...*simReplica) {
 	t.Helper()
 	for range gapIntervals + 2 {
@@ -108,11 +106,6 @@ func (sr *simReplica) settled() bool {
 	return sr.r.settled()
 }
 
-// TestAnUninformedJudgeDoesNotVouchForAnExpiringRefutation (residual A): a
-// judge that hears the fleet and has not merged what it holds cannot see a
-// removal the fleet holds that has expired and is not forgotten yet. It does
-// not vouch for a replica that only that removal still refutes, and once the
-// holders forget it the stale copy does not come back.
 func TestAnUninformedJudgeDoesNotVouchForAnExpiringRefutation(t *testing.T) {
 	st := newSimTime()
 	st.advance(20 * simRI)
@@ -137,7 +130,7 @@ func TestAnUninformedJudgeDoesNotVouchForAnExpiringRefutation(t *testing.T) {
 	if !r.rejoining() {
 		t.Fatal("setup: r should rejoin")
 	}
-	st.deliver(t, r, j) // only j hears the rejoin
+	st.deliver(t, r, j)
 	st.deliver(t, j, r)
 	if !r.rejoining() || r.rebases() != 0 {
 		t.Fatalf("a judge that does not hold what the fleet holds vouched for r (rejoining=%t rebases=%d)", r.rejoining(), r.rebases())
@@ -160,11 +153,6 @@ func TestAnUninformedJudgeDoesNotVouchForAnExpiringRefutation(t *testing.T) {
 	}
 }
 
-// TestPeersSettleAgainOnceAPeerHoldingWhatNobodyFetchedIsGone: a peer
-// writes, announces it, and is gone before anyone fetched the block. While it
-// is heard, what it said it holds counts and nobody vouches; once it has not
-// been heard for G the others hold all that every live peer holds again, and
-// a rejoin is answered well before the block expires.
 func TestPeersSettleAgainOnceAPeerHoldingWhatNobodyFetchedIsGone(t *testing.T) {
 	st := newSimTime()
 	c, a, b, r := st.replica(t, "c", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
@@ -206,10 +194,6 @@ func TestPeersSettleAgainOnceAPeerHoldingWhatNobodyFetchedIsGone(t *testing.T) {
 	}
 }
 
-// TestALivePeerThatCannotServeStillCounts: a peer that keeps heartbeating
-// while nobody can fetch its blocks counts all the same. A removal only it
-// holds is still refuting: no judge that does not hold it vouches for a
-// replica it refutes, and the removed value does not come back.
 func TestALivePeerThatCannotServeStillCounts(t *testing.T) {
 	st := newSimTime()
 	st.advance(20 * simRI)
@@ -266,10 +250,6 @@ func TestALivePeerThatCannotServeStillCounts(t *testing.T) {
 	}
 }
 
-// TestAnOkFollowedByAFailedFetchLeavesTheReplicaRejoining (A4): a replica
-// vouched for advances its fleet time only once it holds what the judge
-// vouched with. A fetch of the judge's heads that fails leaves it rejoining
-// and reporting the time it had, until a later ok's state is fetched.
 func TestAnOkFollowedByAFailedFetchLeavesTheReplicaRejoining(t *testing.T) {
 	st := newSimTime()
 	a, b, r := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
@@ -287,7 +267,7 @@ func TestAnOkFollowedByAFailedFetchLeavesTheReplicaRejoining(t *testing.T) {
 	gap, since := r.r.reportedSinceNow(), r.since()
 
 	st.hear(t, r, []*simReplica{a}, a, b)
-	st.hear(t, a, []*simReplica{r}) // the ok, and nothing of a's to fetch
+	st.hear(t, a, []*simReplica{r})
 	if !r.rejoining() {
 		t.Fatal("an ok ended the rejoin before the replica held what the judge vouched with")
 	}
@@ -315,12 +295,6 @@ func (sr *simReplica) since() uint64 {
 	return sr.r.since
 }
 
-// TestAJudgeThatVanishesAfterAnOkLeavesTheRejoinToTheNext: a judge vouches,
-// then is never heard again, and what only it held cannot be fetched. The
-// replica stays rejoining with the time it had, drops that ok once the judge
-// is not heard for G, and ends its rejoin on the next judge's ok; nothing
-// only the vanished judge held is needed for that, and no peer waits for the
-// vanished judge for longer than G.
 func TestAJudgeThatVanishesAfterAnOkLeavesTheRejoinToTheNext(t *testing.T) {
 	st := newSimTime()
 	a, b, r := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
@@ -344,7 +318,7 @@ func TestAJudgeThatVanishesAfterAnOkLeavesTheRejoinToTheNext(t *testing.T) {
 	if !r.rejoining() {
 		t.Fatal("setup: b does not hold what a holds and should not vouch yet")
 	}
-	st.hear(t, a, []*simReplica{r}, b) // a's ok; then a is never heard again
+	st.hear(t, a, []*simReplica{r}, b)
 	if !r.rejoining() || r.r.reportedSinceNow() != gap {
 		t.Fatal("an ok whose judge's state cannot be fetched ended the rejoin")
 	}
@@ -372,10 +346,6 @@ func TestAJudgeThatVanishesAfterAnOkLeavesTheRejoinToTheNext(t *testing.T) {
 	r.wantValue(t, "/only", "<deleted>")
 }
 
-// TestAnotherJudgesOkEndsTheRejoinWhileTheFirstStands: a replica holding
-// the ok of a judge whose state it cannot fetch ends its rejoin on the next
-// judge's ok it can hold, though the first judge is still heard from and its
-// ok still stands: no judge's ok is waited for.
 func TestAnotherJudgesOkEndsTheRejoinWhileTheFirstStands(t *testing.T) {
 	st := newSimTime()
 	a, b, r := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
@@ -402,10 +372,6 @@ func TestAnotherJudgesOkEndsTheRejoinWhileTheFirstStands(t *testing.T) {
 	r.wantValue(t, "/k", "v")
 }
 
-// TestAJudgeThatVanishesAfterARebaseLeavesNothingWaiting: a judge tells a
-// stale replica to rebase and is gone before any of its blocks is fetched.
-// The rebase completes all the same: the replica keeps what it wrote, takes
-// what the live peers hold, and holds all they hold within G.
 func TestAJudgeThatVanishesAfterARebaseLeavesNothingWaiting(t *testing.T) {
 	st := newSimTime()
 	w, a, b, r := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
@@ -430,7 +396,7 @@ func TestAJudgeThatVanishesAfterARebaseLeavesNothingWaiting(t *testing.T) {
 	b.out.msgs = [][]byte{data}
 	st.hear(t, b, []*simReplica{r})
 	st.hear(t, r, []*simReplica{a}, a, b)
-	st.hear(t, a, []*simReplica{r}) // the rebase; then a is never heard again
+	st.hear(t, a, []*simReplica{r})
 	if r.rejoining() || r.incarnation() == before {
 		t.Fatal("setup: a should have rebased r")
 	}
@@ -459,10 +425,6 @@ func TestAJudgeThatVanishesAfterARebaseLeavesNothingWaiting(t *testing.T) {
 	}
 }
 
-// TestAJudgeThatHeardNoFrontierDoesNotVouch: a replica that hears the fleet
-// only through the heads announced as they are written, and none of its
-// heartbeats, knows the fleet is there and not what it holds: it does not
-// vouch.
 func TestAJudgeThatHeardNoFrontierDoesNotVouch(t *testing.T) {
 	st := newSimTime()
 	a, b, r := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
@@ -486,8 +448,8 @@ func TestAJudgeThatHeardNoFrontierDoesNotVouch(t *testing.T) {
 	}
 }
 
-// expiringRemoval is a fleet a, b that holds a removal of r's /x expired and
-// not forgotten yet, r cut off since before it: an informed judge rebases r.
+// expiringRemoval is a fleet a, b holding a removal of r's /x expired and not
+// forgotten yet, with r cut off since before it: an informed judge rebases r.
 func expiringRemoval(t *testing.T, st *simTime) (a, b, r *simReplica) {
 	t.Helper()
 	st.advance(20 * simRI)
@@ -502,11 +464,6 @@ func expiringRemoval(t *testing.T, st *simTime) (a, b, r *simReplica) {
 	return a, b, r
 }
 
-// TestANewJudgeDoesNotVouchUntilItKnowsItHeardTheFleet: a replica that has
-// just joined and holds all that the one peer it heard holds cannot tell
-// whether another peer holds more: that peer may have just joined too. It
-// vouches only once it has heard the fleet for G, or holds what a peer that
-// was settled holds.
 func TestANewJudgeDoesNotVouchUntilItKnowsItHeardTheFleet(t *testing.T) {
 	st := newSimTime()
 	a, b, r := expiringRemoval(t, st)
@@ -540,9 +497,6 @@ func TestANewJudgeDoesNotVouchUntilItKnowsItHeardTheFleet(t *testing.T) {
 	}
 }
 
-// TestAJudgeHoldingWhatASettledPeerHoldsVouchesAtOnce: a replica that has
-// just joined and holds all that settled peers hold knows it holds what the
-// fleet holds, and vouches without waiting G.
 func TestAJudgeHoldingWhatASettledPeerHoldsVouchesAtOnce(t *testing.T) {
 	st := newSimTime()
 	a, b, r := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
@@ -565,10 +519,6 @@ func TestAJudgeHoldingWhatASettledPeerHoldsVouchesAtOnce(t *testing.T) {
 	}
 }
 
-// TestAReplicaThatNeverHeldWhatItsPeersHeldRejoinsFromNoTime: a replica
-// that heard the fleet's time without ever holding what the fleet held
-// rejoins from no time at all: as a judge it vouches for nobody who held
-// more, and it is judged as one that may hold anything.
 func TestAReplicaThatNeverHeldWhatItsPeersHeldRejoinsFromNoTime(t *testing.T) {
 	st := newSimTime()
 	a, b, r := expiringRemoval(t, st)
@@ -596,15 +546,12 @@ func TestAReplicaThatNeverHeldWhatItsPeersHeldRejoinsFromNoTime(t *testing.T) {
 	b.wantValue(t, "/x", "<deleted>")
 }
 
-// TestASettledReplicaRejoinsFromTheTimeItLastHeldAfterAClose: the time a
-// replica last held all its live peers held is kept across a close: open
-// again, it rejoins from it.
 func TestASettledReplicaRejoinsFromTheTimeItLastHeldAfterAClose(t *testing.T) {
 	st := newSimTime()
 	a, b := st.replica(t, "a", 0), st.replica(t, "b", 0)
 	put(t, a.r, "/k", "v")
 	st.settle(t, a, b)
-	b.beat() // records the time it holds what a holds
+	b.beat()
 	b.r.mu.Lock()
 	held := b.r.settledSince
 	b.r.mu.Unlock()
@@ -617,9 +564,6 @@ func TestASettledReplicaRejoinsFromTheTimeItLastHeldAfterAClose(t *testing.T) {
 	}
 }
 
-// TestAJudgeIsSettledWhenAPeerSendsWhatItHasForgotten: a peer that has not
-// forgotten an entry yet sends it; a judge that never held it, and whose
-// horizon is past it, holds it as well as anyone can.
 func TestAJudgeIsSettledWhenAPeerSendsWhatItHasForgotten(t *testing.T) {
 	st := newSimTime()
 	w, a, b := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0)
@@ -638,7 +582,7 @@ func TestAJudgeIsSettledWhenAPeerSendsWhatItHasForgotten(t *testing.T) {
 	b.beat()
 	st.hear(t, b, []*simReplica{j}, b)
 	b.beat()
-	st.hear(t, b, []*simReplica{a}) // a fetches nothing
+	st.hear(t, b, []*simReplica{a})
 	if !a.knows(w.incarnation()) || b.knows(w.incarnation()) || j.knows(w.incarnation()) {
 		t.Fatal("setup: a should hold w's entry, b should have forgotten it and j never held it")
 	}
@@ -647,12 +591,6 @@ func TestAJudgeIsSettledWhenAPeerSendsWhatItHasForgotten(t *testing.T) {
 	}
 }
 
-// TestAJudgeIsSettledWhenAPeerTouchesWhatItForgot: a removal a peer makes
-// before an entry expires keeps that entry there for the removal's lifetime,
-// while a judge that forgot it before the removal reached it holds the
-// removal as a pending one. The judge held all of the entry when it dropped
-// it, and keeps that record while a peer sends the entry: it holds it as well
-// as anyone can.
 func TestAJudgeIsSettledWhenAPeerTouchesWhatItForgot(t *testing.T) {
 	st := newSimTime()
 	w, a, j := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "j", 0)
@@ -693,9 +631,6 @@ func TestAJudgeIsSettledWhenAPeerTouchesWhatItForgot(t *testing.T) {
 
 func (s *simTime) opts() *Options { return s.options(0) }
 
-// TestAJudgeDoesNotWaitForWhatAStaleSenderHolds: what a replica told to
-// rebase says it holds is not walked, so it is not waited for: the judge
-// stays settled and vouches for others.
 func TestAJudgeDoesNotWaitForWhatAStaleSenderHolds(t *testing.T) {
 	st := newSimTime()
 	w, a, b, r := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
@@ -724,10 +659,6 @@ func TestAJudgeDoesNotWaitForWhatAStaleSenderHolds(t *testing.T) {
 	}
 }
 
-// TestAReplicaHearingOnlyRejoiningPeersVouchesForThem: once its rejoin ends,
-// a replica may hear no peer that is not rejoining. It vouches for them as of
-// the time it holds, as a rejoining judge does, so the rejoins end rather
-// than pass from one replica to the other.
 func TestAReplicaHearingOnlyRejoiningPeersVouchesForThem(t *testing.T) {
 	st := newSimTime()
 	a, b := st.replica(t, "a", 0), st.replica(t, "b", 0)
@@ -749,10 +680,6 @@ func TestAReplicaHearingOnlyRejoiningPeersVouchesForThem(t *testing.T) {
 	}
 }
 
-// TestARebasedReplicaVouchesForTheJudgeWhoseStateItHolds: a replica rebased
-// on a judge's state, once it holds it, holds what the judge held, so when
-// the two hear nobody else it vouches for the judge in turn rather than
-// leave it rejoining.
 func TestARebasedReplicaVouchesForTheJudgeWhoseStateItHolds(t *testing.T) {
 	st := newSimTime()
 	w, a, j := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "j", 0)
@@ -783,11 +710,6 @@ func TestARebasedReplicaVouchesForTheJudgeWhoseStateItHolds(t *testing.T) {
 	}
 }
 
-// TestARebasedJudgeDoesNotVouchBeforeItHoldsWhatItWasRebasedOn: a judge
-// rebased on a state it could not fetch holds nothing. Hearing a new peer
-// that holds nothing either, it does not vouch: the judge that rebased it is
-// live and holds a removal it does not, and once the holders forget it the
-// stale copy does not come back.
 func TestARebasedJudgeDoesNotVouchBeforeItHoldsWhatItWasRebasedOn(t *testing.T) {
 	st := newSimTime()
 	st.advance(20 * simRI)
@@ -833,11 +755,6 @@ func TestARebasedJudgeDoesNotVouchBeforeItHoldsWhatItWasRebasedOn(t *testing.T) 
 	}
 }
 
-// TestAVerdictCountsAsItsJudgesFrontier: a judge's verdict says what it
-// holds, as its heartbeats do. A replica rebased on a state it could not
-// fetch, which has heard for long only a peer holding nothing, does not
-// vouch before the judge's next heartbeat: the judge holds a removal it does
-// not.
 func TestAVerdictCountsAsItsJudgesFrontier(t *testing.T) {
 	st := newSimTime()
 	st.advance(20 * simRI)
@@ -900,40 +817,18 @@ func TestAVerdictCountsAsItsJudgesFrontier(t *testing.T) {
 	}
 }
 
-// TestAJudgeWaitsBeforeTrustingANewPeerThatIsNotSettled (the heal window): a
-// judge that has heard its side for long first hears, as a partition heals,
-// a peer of the other side that joined it lately and holds nothing. That
-// peer is not settled and says nothing of the peers of its side; the judge
-// waits G before vouching, and hears them meanwhile. The replica it would
-// have vouched for holds the only copy, on its side, of what a removal held
-// on the other side refutes, and the removal is forgotten soon after the
-// heal: the copy does not come back.
 func TestAJudgeWaitsBeforeTrustingANewPeerThatIsNotSettled(t *testing.T) {
 	healWindow(t, false, 0)
 }
 
-// TestAJudgeWaitsForAPeerItHasNotHeardForG: the heal window is a peer's, and
-// a peer not heard for G is new again. The first peer the judge hears of the
-// other side is one it heard on its own before, which went over and has
-// heard only the other side for longer than G, holding nothing of it: the
-// judge waits for it as for a peer it never heard.
 func TestAJudgeWaitsForAPeerItHasNotHeardForG(t *testing.T) {
 	healWindow(t, true, gapIntervals+1)
 }
 
-// TestAJudgeWaitsForThePeersAPeerThatCrossedOverHeard: the peer the judge
-// first hears of the other side is one it heard all along, which went over
-// only an interval before the heal and is not new. It is not settled, and
-// it names the peers it heard there, which the judge has not heard: the
-// judge waits for them as for a new peer.
 func TestAJudgeWaitsForThePeersAPeerThatCrossedOverHeard(t *testing.T) {
 	healWindow(t, true, 1)
 }
 
-// TestAPeerNamedAndNeverHeardIsWaitedForOnce: a peer that is not settled
-// names, beat after beat, a peer the judge never hears. The judge waits G
-// for it, then counts it gone, as it does any peer not heard for G: it does
-// not wait for as long as it is named.
 func TestAPeerNamedAndNeverHeardIsWaitedForOnce(t *testing.T) {
 	st := newSimTime()
 	j, y := st.replica(t, "j", 0), st.replica(t, "y", 0)
@@ -963,55 +858,26 @@ func TestAPeerNamedAndNeverHeardIsWaitedForOnce(t *testing.T) {
 	}
 }
 
-// TestAJudgeWaitsAgainForThePeersABridgeNamesWhenItTurns: y bridges the
-// judge's side to p, which the judge never hears, and has named p, settled,
-// since long before. Shortly before the other side forgets a removal, p
-// hears that side and fetches what it holds, and y hears p's frontier before
-// it can fetch it: y turns unsettled. The judge's wait for p, counted from
-// p's first naming, is long over; were it not renewed, the judge would vouch
-// for r, whose copy only that removal refutes, and once the holders forgot
-// it r's snapshot would bring the value back.
 func TestAJudgeWaitsAgainForThePeersABridgeNamesWhenItTurns(t *testing.T) {
 	bridgeTurns(t, "")
 }
 
-// TestAJudgeWaitsAgainForAPeerItHeardBeforeABridgeTurned: the judge heard p
-// itself, settled, just before p heard the other side, and no more since.
-// What it holds of p is p's frontier before the turn: it waits for p as for
-// one it never heard.
 func TestAJudgeWaitsAgainForAPeerItHeardBeforeABridgeTurned(t *testing.T) {
 	bridgeTurns(t, "before")
 }
 
-// TestAJudgeWaitsAgainForAPeerWhoseOldHeartbeatArrivesAfterTheTurn: p's
-// heartbeat sent before it heard the other side reaches the judge after the
-// bridge's turn. Hearing p is no sign of what p holds since: the judge
-// still waits G from the turn.
 func TestAJudgeWaitsAgainForAPeerWhoseOldHeartbeatArrivesAfterTheTurn(t *testing.T) {
 	bridgeTurns(t, "late")
 }
 
-// TestAJudgeWaitsAgainWhenTheBridgesOlderHeartbeatArrivesAfterItsTurn: y's
-// heartbeat sent settled before its turn reaches the judge after the turn
-// and replaces y's frontier there. The wait is the turn's: the judge still
-// waits for p.
 func TestAJudgeWaitsAgainWhenTheBridgesOlderHeartbeatArrivesAfterItsTurn(t *testing.T) {
 	bridgeTurns(t, "reordered")
 }
 
-// TestAnOlderHeartbeatOfTheNamedPeerDoesNotReplaceItsNewerFrontier: after
-// the turn the judge holds p's frontier sent past it, which shows the
-// removal, and then p's heartbeat sent settled before p heard the other
-// side. The older one does not replace the newer: the judge does not hold
-// what p holds, and does not vouch.
 func TestAnOlderHeartbeatOfTheNamedPeerDoesNotReplaceItsNewerFrontier(t *testing.T) {
 	bridgeTurns(t, "newer")
 }
 
-// TestATurnStampedByAClockThatSteppedBackIsTaken: y's clock steps back
-// within the skew just before its turn, which it stamps earlier than the
-// settled frontier the judge holds of it. The turn was sent later: the
-// judge takes it, and waits for p.
 func TestATurnStampedByAClockThatSteppedBackIsTaken(t *testing.T) {
 	bridgeTurns(t, "stepped")
 }
@@ -1125,10 +991,6 @@ func bridgeTurns(t *testing.T, variant string) {
 	}
 }
 
-// TestABridgeHoldsAJudgeBackAtMostGEachTimeItTurns: a bridge naming a peer
-// the judge never hears holds it back G from each time it turns unsettled,
-// and not while it says it is settled: however often it turns, no wait
-// outlasts G. Its restart is no turn.
 func TestABridgeHoldsAJudgeBackAtMostGEachTimeItTurns(t *testing.T) {
 	st := newSimTime()
 	j, y := st.replica(t, "j", 0), st.replica(t, "y", 0)
@@ -1180,10 +1042,6 @@ func TestABridgeHoldsAJudgeBackAtMostGEachTimeItTurns(t *testing.T) {
 	}
 }
 
-// TestATurnHoldsAJudgeBackUntilTheBridgeSettles: a bridge's turn names a
-// peer the judge hears too. Hearing that peer since tells the judge nothing
-// of which of its frontiers the bridge heard: the judge waits until the
-// bridge says it is settled again, or G.
 func TestATurnHoldsAJudgeBackUntilTheBridgeSettles(t *testing.T) {
 	st := newSimTime()
 	j, y, q := st.replica(t, "j", 0), st.replica(t, "y", 0), st.replica(t, "q", 0)
@@ -1221,19 +1079,10 @@ func TestATurnHoldsAJudgeBackUntilTheBridgeSettles(t *testing.T) {
 	}
 }
 
-// TestATurnIsTheSendersToTell: the judge has held y's frontier that is not
-// settled for longer than G; y settles, and turns again on what q wrote,
-// before the judge hears it settled. The settled one is overtaken and arrives last: from
-// what it holds the judge sees no turn, but y's frontier says it turned,
-// and the judge waits for the peers y named in it.
 func TestATurnIsTheSendersToTell(t *testing.T) {
 	senderTurns(t, false)
 }
 
-// TestATurnBetweenTwoFramesIsATurn: y has been short of q's write for
-// longer than G, catches up, and falls short again on q's next write, all
-// between two of its frontiers. Both frontiers say y is short: y still
-// marks the second a turn, and the judge waits again.
 func TestATurnBetweenTwoFramesIsATurn(t *testing.T) {
 	senderTurns(t, true)
 }
@@ -1296,9 +1145,6 @@ func senderTurns(t *testing.T, between bool) {
 	}
 }
 
-// TestAFrontierDoesNotGoBack: of two frontiers of one incarnation, the one
-// sent later is held whatever order they arrive in, and whatever its
-// sender's clock said: one that stepped back still stamps it later.
 func TestAFrontierDoesNotGoBack(t *testing.T) {
 	st := newSimTime()
 	j, y := st.replica(t, "j", 0), st.replica(t, "y", 0)
@@ -1341,10 +1187,6 @@ func TestAFrontierDoesNotGoBack(t *testing.T) {
 	}
 }
 
-// TestAVerdictNamesThePeersItsJudgeHeard: a verdict says whom its judge
-// heard as its heartbeat does. A judge that is not settled and heard a peer
-// this replica has not keeps it waiting, whether its heartbeat or a verdict
-// it gave was heard last.
 func TestAVerdictNamesThePeersItsJudgeHeard(t *testing.T) {
 	st := newSimTime()
 	j, k, q, z := st.replica(t, "j", 0), st.replica(t, "k", 0), st.replica(t, "q", 0), st.replica(t, "z", 0)
@@ -1464,8 +1306,8 @@ func healWindow(t *testing.T, known bool, over int) {
 	}
 }
 
-// restartEmpty is a crash and a restart with nothing on disk: the process
-// and its store gone, the replica's id kept.
+// restartEmpty is a crash and restart with nothing on disk, the replica's id
+// kept.
 func (sr *simReplica) restartEmpty(t testing.TB) {
 	t.Helper()
 	closeStore(t, sr.r)
@@ -1474,12 +1316,6 @@ func (sr *simReplica) restartEmpty(t testing.TB) {
 	sr.open(t)
 }
 
-// TestARejoinEndsWhileAPeerKeepsRestarting: the heal window is a peer's, not
-// an incarnation's. c restarts every two intervals with nothing on disk,
-// never up long enough to fetch what the fleet holds: at every restart a new
-// incarnation that is not settled. Were each incarnation new to the judges,
-// none would vouch for as long as c restarts; c is new once, and a rejoin
-// ends G after it was first heard.
 func TestARejoinEndsWhileAPeerKeepsRestarting(t *testing.T) {
 	st := newSimTime()
 	a, b, r := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
@@ -1511,12 +1347,6 @@ func TestARejoinEndsWhileAPeerKeepsRestarting(t *testing.T) {
 	}
 }
 
-// TestAJudgeDoesNotWaitForAPeerItHeardAllAlong: a peer heard, whatever it
-// says, is not new. p's rejoin outlasts G, held up by a block it cannot
-// fetch, and ends with p not settled: its judges heard it rejoin all along
-// and do not wait for it as for a newcomer. A rolling restart whose rejoins
-// outlast G would otherwise leave the fleet without an ok for as long as it
-// rolls, each rejoin held up by the window of the one before.
 func TestAJudgeDoesNotWaitForAPeerItHeardAllAlong(t *testing.T) {
 	st := newSimTime()
 	a, b, p, r := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "p", 0), st.replica(t, "r", 0)
@@ -1551,12 +1381,6 @@ func TestAJudgeDoesNotWaitForAPeerItHeardAllAlong(t *testing.T) {
 	}
 }
 
-// TestAJudgeThatKeepsWritingDoesNotStarveARejoin: a judge's first ok stands
-// until the replica holds what it vouched with. A judge that writes every
-// interval answers every interval; the blocks its answer names reach the
-// replica an interval later. Were each answer to replace the last, the
-// replica would hold what the last one vouched with only after the next one
-// moved it on, for as long as the judge writes.
 func TestAJudgeThatKeepsWritingDoesNotStarveARejoin(t *testing.T) {
 	st := newSimTime()
 	a, b, r := st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "r", 0)
@@ -1600,9 +1424,6 @@ func TestAJudgeThatKeepsWritingDoesNotStarveARejoin(t *testing.T) {
 	}
 }
 
-// TestARejoiningReplicaForgetsPeersItNoLongerHears: what a peer said it
-// holds is forgotten G after it was last heard, rejoining or not: a rejoin
-// that lasts keeps no frontier per incarnation it heard once.
 func TestARejoiningReplicaForgetsPeersItNoLongerHears(t *testing.T) {
 	st := newSimTime()
 	a, r := st.replica(t, "a", 0), st.replica(t, "r", 0)
@@ -1624,11 +1445,6 @@ func TestARejoiningReplicaForgetsPeersItNoLongerHears(t *testing.T) {
 	}
 }
 
-// TestAnOkWhoseJudgeForgotPartOfItStillEndsTheRejoin: a judge's first ok
-// stands, and it may carry an entry the replica cannot fetch. Once the judge
-// has forgotten that entry by expiry, a later ok shows it, and the replica,
-// whose own clock stands still while it rejoins, no longer waits for it: it
-// ends its rejoin once it holds the rest.
 func TestAnOkWhoseJudgeForgotPartOfItStillEndsTheRejoin(t *testing.T) {
 	st := newSimTime()
 	w := st.replica(t, "w", 0)
@@ -1657,7 +1473,7 @@ func TestAnOkWhoseJudgeForgotPartOfItStillEndsTheRejoin(t *testing.T) {
 	r.reopen(t)
 	r.beat()
 	st.hear(t, r, []*simReplica{a}, a, b)
-	st.hear(t, a, []*simReplica{r}) // the ok, nothing fetched
+	st.hear(t, a, []*simReplica{r})
 	r.r.mu.Lock()
 	first := r.r.oks[a.incarnation()]
 	pinned := first != nil && first.cc.inc[writer] != nil

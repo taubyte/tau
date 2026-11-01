@@ -15,11 +15,8 @@ import (
 	pb "github.com/taubyte/tau/pkg/kvdb/statetree/pb"
 )
 
-// A Block is a block of a tree, or of kvdb: the pb.Block of the cids it
-// links, in order, then its data, under a CIDv1 raw sha2-256 cid of its
-// bytes. It is an ipld.Node, so a DAG service keeps and fetches it as it
-// does any block; what one returns for its cid is a raw node, which
-// DecodeBlock reads like a Block.
+// A Block is a pb.Block of its links then its data, named by the CIDv1 raw
+// sha2-256 of its bytes.
 type Block struct {
 	c    cid.Cid
 	raw  []byte
@@ -28,10 +25,9 @@ type Block struct {
 
 var _ ipld.Node = (*Block)(nil)
 
-// ErrNotABlock is returned for bytes that are not a Block.
 var ErrNotABlock = errors.New("statetree: not a block")
 
-// NewBlock is the block of data linking links. It keeps neither.
+// NewBlock keeps neither data nor links.
 func NewBlock(data []byte, links []cid.Cid) (*Block, error) {
 	msg := pb.BlockFromVTPool()
 	defer func() {
@@ -52,17 +48,15 @@ func NewBlock(data []byte, links []cid.Cid) (*Block, error) {
 	return &Block{c: c, raw: raw, data: raw[len(raw)-len(data):]}, nil
 }
 
-// BlockPrefix is the first bytes of every Block's cid: CIDv1, raw, and a
-// 32-byte sha2-256.
+// CIDv1, raw, sha2-256 of 32 bytes.
 const BlockPrefix = "\x01\x55\x12\x20"
 
-// BlockBuffer is a buffer for the size bytes of a block, made with room
-// after them for the block's cid, which BlockInBuffer puts there.
+// BlockBuffer leaves room after size bytes for the cid BlockInBuffer writes.
 func BlockBuffer(size int) []byte {
 	return make([]byte, size, size+len(BlockPrefix)+sha256.Size)
 }
 
-// BlockInBuffer is BlockOf for raw, a BlockBuffer.
+// raw must come from BlockBuffer.
 func BlockInBuffer(raw []byte) (*Block, error) {
 	if cap(raw)-len(raw) < len(BlockPrefix)+sha256.Size {
 		return BlockOf(raw)
@@ -71,14 +65,12 @@ func BlockInBuffer(raw []byte) (*Block, error) {
 	return ParseBlock(c, raw)
 }
 
-// sealBlock writes raw's cid in the room after raw's bytes, and returns raw
-// clipped, so no append reaches the cid, with the cid over its bytes.
+// sealBlock writes raw's cid past its end and clips raw so no append reaches
+// it.
 func sealBlock(raw []byte) ([]byte, cid.Cid) {
 	return raw[:len(raw):len(raw)], CastCid(appendBlockCid(raw[len(raw):], raw))
 }
 
-// BlockOf is the Block raw, the bytes of a pb.Block, spells, under raw's
-// cid.
 func BlockOf(raw []byte) (*Block, error) {
 	c, err := blockCid(raw)
 	if err != nil {
@@ -87,26 +79,21 @@ func BlockOf(raw []byte) (*Block, error) {
 	return ParseBlock(c, raw)
 }
 
-// blockCid is the CIDv1 raw sha2-256 cid of raw.
 func blockCid(raw []byte) (cid.Cid, error) {
 	return CastCid(appendBlockCid(make([]byte, 0, len(BlockPrefix)+sha256.Size), raw)), nil
 }
 
-// appendBlockCid appends the bytes of raw's cid to b.
 func appendBlockCid(b, raw []byte) []byte {
 	sum := sha256.Sum256(raw)
 	return append(append(b, BlockPrefix...), sum[:]...)
 }
 
-// IsBlockCid reports whether c names a Block: CIDv1, raw, a 32-byte
-// sha2-256.
 func IsBlockCid(c cid.Cid) bool {
 	k := c.KeyString()
 	return len(k) == len(BlockPrefix)+sha256.Size && k[:len(BlockPrefix)] == BlockPrefix
 }
 
-// ParseBlock is the Block raw spells under c, over raw. It does not check
-// that c is raw's cid.
+// ParseBlock does not check that c is raw's cid.
 func ParseBlock(c cid.Cid, raw []byte) (*Block, error) {
 	b := &Block{c: c, raw: raw}
 	data, err := BlockData(b)
@@ -117,7 +104,7 @@ func ParseBlock(c cid.Cid, raw []byte) (*Block, error) {
 	return b, nil
 }
 
-// BlockData is nd's block's data, over nd's bytes.
+// BlockData aliases nd's bytes.
 func BlockData(nd blocks.Block) ([]byte, error) {
 	if b, ok := nd.(*Block); ok && b.data != nil {
 		return b.data, nil
@@ -136,8 +123,7 @@ func BlockData(nd blocks.Block) ([]byte, error) {
 	return msg.Data, nil
 }
 
-// DecodeBlock reads nd as a Block: its data, over nd's bytes, and its links
-// appended to links.
+// The data aliases nd's bytes; the links are appended to links.
 func DecodeBlock(nd blocks.Block, links []cid.Cid) ([]byte, []cid.Cid, error) {
 	msg := pb.BlockFromVTPool()
 	defer func() {
@@ -161,11 +147,8 @@ func DecodeBlock(nd blocks.Block, links []cid.Cid) ([]byte, []cid.Cid, error) {
 	return msg.Data, links, nil
 }
 
-// CidOver is the cid b spells, over b's bytes, or false when b is not
-// exactly one cid as go-cid reads one: a CIDv0, or a CIDv1 of minimally
-// encoded varints and a multihash of the length it gives. b must never
-// change after. A cid.Cid is a string of a cid's bytes, which the cast
-// relies on and TestCidOverIsACid checks.
+// CidOver aliases b, which must never change after. It relies on a cid.Cid
+// being the cid's bytes as a string, which TestCidOverIsACid checks.
 func CidOver(b []byte) (cid.Cid, bool) {
 	if !isCid(b) {
 		return cid.Undef, false
@@ -173,14 +156,13 @@ func CidOver(b []byte) (cid.Cid, bool) {
 	return CastCid(b), true
 }
 
-// CastCid is the cid b, a cid's bytes, holds, over b's bytes, which must
-// never change after.
+// CastCid aliases b, a cid's bytes, which must never change after.
 func CastCid(b []byte) cid.Cid {
 	s := unsafe.String(unsafe.SliceData(b), len(b))
 	return *(*cid.Cid)(unsafe.Pointer(&s))
 }
 
-// cidBytes is c's bytes, over c's string.
+// cidBytes aliases c's string.
 func cidBytes(c cid.Cid) []byte {
 	k := c.KeyString()
 	return unsafe.Slice(unsafe.StringData(k), len(k))
@@ -218,11 +200,9 @@ func (b *Block) String() string { return "[statetree block " + b.c.String() + "]
 
 func (b *Block) Loggable() map[string]any { return map[string]any{"block": b.c} }
 
-// Data is the block's data.
 func (b *Block) Data() []byte { return b.data }
 
-// Resolve resolves no path: a block's links are named by position, in its
-// data.
+// Links are named by position in the data, so no path resolves.
 func (b *Block) Resolve(path []string) (any, []string, error) {
 	if len(path) == 0 {
 		return b, nil, nil
@@ -241,8 +221,7 @@ func (b *Block) Copy() ipld.Node {
 	return &Block{c: b.c, raw: raw, data: raw[len(raw)-len(b.data):]}
 }
 
-// Links is the block's links. A bad link, which NewBlock never writes, is
-// left out.
+// A bad link, which NewBlock never writes, is left out.
 func (b *Block) Links() []*ipld.Link {
 	links, err := linksOf(b)
 	if err != nil {

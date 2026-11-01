@@ -13,10 +13,9 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 )
 
-// oracle is every element and every removal ever written, as (key, dot).
 // Once every replica has merged every delta, the live set is exactly the
-// elements no removal names: nothing removed comes back and nothing live is
-// lost, whatever the order, duplication, partitions and compactions were.
+// elements no removal names, whatever the order, duplication, partitions and
+// compactions.
 type oracle struct {
 	elems map[string]struct{}
 	tombs map[string]struct{}
@@ -68,8 +67,6 @@ func liveIDs(t testing.TB, r *Datastore) []string {
 	return out
 }
 
-// indexedBlocks is every block r holds that a walk could reach: deltas and
-// snapshots, not the blocks of their states.
 func indexedBlocks(t testing.TB, r *Datastore) []cid.Cid {
 	t.Helper()
 	var out []cid.Cid
@@ -89,8 +86,7 @@ func indexedBlocks(t testing.TB, r *Datastore) []cid.Cid {
 	return out
 }
 
-// tryMergeOne merges one block if it can still be fetched: the replica that
-// held it may have purged it since.
+// The replica that held it may have purged it since.
 func tryMergeOne(r *Datastore, c cid.Cid) {
 	ctx := context.Background()
 	ng := &crdtNodeGetter{NodeGetter: r.dagService}

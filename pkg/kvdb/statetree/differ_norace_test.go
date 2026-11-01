@@ -1,8 +1,7 @@
 //go:build !race
 
-// The race detector makes sync.Pool drop what is put in it at random, and
-// decoding a node takes its message from one, so allocations are counted
-// only without it.
+// sync.Pool drops entries at random under the race detector, so allocations
+// are counted without it.
 
 package statetree
 
@@ -15,13 +14,8 @@ import (
 	cid "github.com/ipfs/go-cid"
 )
 
-// TestDifferAllocatesOnlyItsReads: a Differ that has compared two trees
-// once compares them again allocating no more than reading the nodes it
-// reads does. DiffNodes allocated its cursors, their stacks, the opened
-// lists, a map of one of them and both results on every call.
 func TestDifferAllocatesOnlyItsReads(t *testing.T) {
-	// A collection empties sync.Pool, and either count could take it: the
-	// two are counted with none.
+	// A collection empties sync.Pool; both counts run with none.
 	defer debug.SetGCPercent(debug.SetGCPercent(-1))
 	ctx := context.Background()
 	s := newStore()

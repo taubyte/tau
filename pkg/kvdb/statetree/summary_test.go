@@ -10,8 +10,6 @@ import (
 	"testing"
 )
 
-// maxSummary summarises a run of entries by the largest uint64 their values
-// start with, the shape of "nothing in here expires before t".
 type maxSummary struct{}
 
 func (maxSummary) Leaf(dst, _, v []byte) []byte {
@@ -44,8 +42,6 @@ func TestSummary(t *testing.T) {
 	if plain := build(t, s, m); plain.Root() == ref.Root() {
 		t.Fatal("a summarised tree has the root of an unsummarised one")
 	}
-	// Summaries are a function of the entries: Puts in any order, through
-	// overwrites and deletes, make the same tree.
 	tr := New(s, sum)
 	for _, i := range rng.Perm(4000) {
 		tr = put(t, tr, key(i), stamped(0))
@@ -68,8 +64,6 @@ func TestSummary(t *testing.T) {
 		t.Fatalf("Summary = %x %v, want %d", got, err, top)
 	}
 
-	// Skipping subtrees whose newest stamp is old enough reads fewer nodes
-	// and still finds every entry past the cut.
 	wide := map[string][]byte{}
 	for i := range 20_000 {
 		wide[string(key(i))] = stamped(uint64(rng.IntN(1_000_000)))
@@ -104,7 +98,6 @@ func TestSummary(t *testing.T) {
 	}
 	t.Logf("scan for %d of %d entries read %d of %d nodes", len(want), len(wide), read, len(all))
 
-	// A tree read with another summarizer, or none, is refused.
 	if err := Load(s, tr.Root()).Verify(ctx); !errors.Is(err, ErrMalformed) {
 		t.Fatalf("Verify without the summarizer: %v", err)
 	}
@@ -171,7 +164,6 @@ func TestBuild(t *testing.T) {
 	if tr.Root() != want.Root() {
 		t.Fatalf("built root %s, put root %s", tr.Root(), want.Root())
 	}
-	// A large build adds its nodes in batches.
 	s.reset()
 	big, _ := bigTree(t, s)
 	ns, _ := nodes(t, s, big.Root())
@@ -180,9 +172,6 @@ func TestBuild(t *testing.T) {
 	}
 }
 
-// TestARootSplitKeepsItsSummary puts a key above every level in a tree,
-// before and after all of its keys: the old root becomes a whole subtree of
-// the new one, which must carry its summary as Build writes it.
 func TestARootSplitKeepsItsSummary(t *testing.T) {
 	ctx := context.Background()
 	find := func(first byte, ok func(uint32) bool, n int) [][]byte {

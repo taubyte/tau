@@ -13,11 +13,6 @@ import (
 	dssync "github.com/ipfs/go-datastore/sync"
 )
 
-// TestARetiredRootKeepsWhatAFetchReuses: a fetch reuses the subtrees of
-// this replica's snapshot that a peer's state shares. When that snapshot
-// retires before the fetch is merged, the subtrees it alone reached become
-// the fetch's intents instead of garbage, and the merge then finds the
-// whole closure held.
 func TestARetiredRootKeepsWhatAFetchReuses(t *testing.T) {
 	ctx := context.Background()
 	own := newFetchThrough()
@@ -89,10 +84,6 @@ func TestARetiredRootKeepsWhatAFetchReuses(t *testing.T) {
 	t.Logf("%d reused blocks kept", rescued)
 }
 
-// TestAManifestThatCannotDrainFencesAdmissions: while a manifest cannot be
-// drained, nothing is admitted, pinned or staged: a compaction fails rather
-// than write blocks the manifest may name. Once removals work again, the
-// manifest drains and the store holds exactly what its roots reach.
 func TestAManifestThatCannotDrainFencesAdmissions(t *testing.T) {
 	ctx := context.Background()
 	d := &removesFailing{fetchThroughDAGSvc: newFetchThrough()}
@@ -144,8 +135,6 @@ func TestAManifestThatCannotDrainFencesAdmissions(t *testing.T) {
 	assertHoldsExactly(t, r, d.fetchThroughDAGSvc)
 }
 
-// removesFailing fails every RemoveMany once allowed of them, when not
-// negative, have run.
 type removesFailing struct {
 	*fetchThroughDAGSvc
 	allowed atomic.Int64

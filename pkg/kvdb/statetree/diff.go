@@ -17,16 +17,12 @@ const (
 	Changed
 )
 
-// A Change is one key that differs between two trees: Old is its value in
-// the first, New in the second.
 type Change struct {
 	Kind     Kind
 	Key      []byte
 	Old, New []byte
 }
 
-// An item is what a cursor has yet to visit: an entry, or a subtree it has
-// not opened.
 type item struct {
 	e     entry
 	sub   cid.Cid
@@ -34,15 +30,12 @@ type item struct {
 	n     *node
 }
 
-// A cursor walks one tree in key order, opening a subtree only when asked
-// to, and records every node it opens.
 type cursor struct {
 	t      *Tree
 	stack  []item
 	opened []cid.Cid
 }
 
-// reset starts c on t, keeping its storage.
 func (c *cursor) reset(t *Tree) {
 	c.t, c.stack, c.opened = t, c.stack[:0], c.opened[:0]
 	if t.root.Defined() {
@@ -59,7 +52,6 @@ func (c *cursor) head() *item {
 
 func (c *cursor) pop() { c.stack = c.stack[:len(c.stack)-1] }
 
-// level reads the head subtree's root, once, for its level.
 func (c *cursor) level(ctx context.Context) (uint32, error) {
 	h := c.head()
 	if h.n == nil {
@@ -72,7 +64,6 @@ func (c *cursor) level(ctx context.Context) (uint32, error) {
 	return h.n.level, nil
 }
 
-// open replaces the head subtree with its root's entries and subtrees.
 func (c *cursor) open(ctx context.Context) error {
 	if _, err := c.level(ctx); err != nil {
 		return err
@@ -92,11 +83,9 @@ func (c *cursor) open(ctx context.Context) error {
 	return nil
 }
 
-// walk visits a and b in step. Two subtrees with the same CID hold the same
-// entries and are passed over unread; of two that differ, the one with the
-// higher root level is opened, both when the levels are equal, since only
-// the lower one can equal a subtree of the higher. A subtree facing an entry
-// is opened.
+// walk skips subtrees with equal CIDs. Of two that differ it opens the one
+// with the higher root level, both when equal, since only the lower can equal
+// a subtree of the higher. A subtree facing an entry is opened.
 func walk(ctx context.Context, ca, cb *cursor, fn func(Change) error) error {
 	for {
 		ha, hb := ca.head(), cb.head()
@@ -176,10 +165,8 @@ func emit(fn func(Change) error, kind Kind, old, new entry) error {
 	return fn(ch)
 }
 
-// Diff calls fn, in key order, with every key whose value differs between a
-// and b: Removed when only a holds it, Added when only b does. It reads only
-// the nodes of subtrees whose CIDs differ, which for k changed keys is
-// O(k × depth) nodes. The trees may be over different DAGServices.
+// Diff calls fn in key order with each key whose value differs, reading only
+// subtrees whose CIDs differ. a and b may be over different DAGServices.
 func Diff(ctx context.Context, a, b *Tree, fn func(Change) error) error {
 	var ca, cb cursor
 	ca.reset(a)
@@ -187,24 +174,20 @@ func Diff(ctx context.Context, a, b *Tree, fn func(Change) error) error {
 	return walk(ctx, &ca, &cb, fn)
 }
 
-// DiffNodes returns the CIDs of the nodes only a reaches and those only b
-// reaches. A peer that holds a and is given b's root fetches exactly onlyB.
+// A peer holding a fetches exactly onlyB to hold b.
 func DiffNodes(ctx context.Context, a, b *Tree) (onlyA, onlyB []cid.Cid, err error) {
 	var d Differ
 	return d.Nodes(ctx, a, b)
 }
 
-// A Differ finds the nodes two trees do not share, as DiffNodes does, in
-// storage it keeps from one call to the next: once that has grown to the
-// trees it compares, a call allocates nothing but what reading their nodes
-// does.
+// A Differ is DiffNodes in storage it reuses: once grown, a call allocates only
+// what reading nodes does.
 type Differ struct {
 	a, b         cursor
 	onlyA, onlyB []cid.Cid
 }
 
-// Nodes is DiffNodes in d's storage. What it returns is valid until d's
-// next call.
+// The results are valid until d's next call.
 func (d *Differ) Nodes(ctx context.Context, a, b *Tree) (onlyA, onlyB []cid.Cid, err error) {
 	d.a.reset(a)
 	d.b.reset(b)
@@ -216,9 +199,8 @@ func (d *Differ) Nodes(ctx context.Context, a, b *Tree) (onlyA, onlyB []cid.Cid,
 	if err := walk(ctx, &d.a, &d.b, nil); err != nil {
 		return nil, nil, err
 	}
-	// A node either tree reaches is either inside a subtree both share,
-	// which neither opens, or opened by the walk, so the opened sets alone
-	// tell the trees' nodes apart.
+	// Shared subtrees are never opened, so the opened sets alone tell the trees'
+	// nodes apart.
 	x, y := d.a.opened, d.b.opened
 	slices.SortFunc(x, compareCids)
 	slices.SortFunc(y, compareCids)

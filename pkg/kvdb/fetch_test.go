@@ -17,8 +17,8 @@ import (
 	"github.com/taubyte/tau/pkg/kvdb/statetree"
 )
 
-// rationed serves at most left blocks until refilled: a peer behind a link
-// that delivers only so much within one fetch attempt.
+// rationed serves at most left blocks until refilled, like a link that
+// delivers only so much per fetch attempt.
 type rationed struct {
 	ipld.DAGService
 
@@ -63,8 +63,6 @@ func (r *rationed) servedOf(cids []cid.Cid) map[cid.Cid]int {
 	return out
 }
 
-// stateFetched is how many blocks the state fetches in progress have
-// fetched.
 func (store *Datastore) stateFetched(ctx context.Context) int {
 	store.fetchMu.Lock()
 	fs := slices.Collect(maps.Values(store.fetches))
@@ -82,8 +80,6 @@ func (store *Datastore) stateFetched(ctx context.Context) int {
 	return n
 }
 
-// stateClosure is every block of the state r's only head names that the
-// head does not carry itself: the ones a reader fetches.
 func stateClosure(t testing.TB, r *Datastore) []cid.Cid {
 	t.Helper()
 	ctx := context.Background()
@@ -112,9 +108,6 @@ func stateClosure(t testing.TB, r *Datastore) []cid.Cid {
 	return slices.Collect(maps.Keys(seen))
 }
 
-// catchUpInAttempts walks from's heads on r, then repairs, with maintenance
-// and so reclaim between attempts, until r misses nothing, the link
-// delivering per blocks an attempt. It returns the attempts it took.
 func catchUpInAttempts(t testing.TB, r, from *Datastore, link *rationed, per, limit int) int {
 	t.Helper()
 	n, err := attemptCatchUp(t, r, from, link, per, limit)
@@ -124,7 +117,6 @@ func catchUpInAttempts(t testing.TB, r, from *Datastore, link *rationed, per, li
 	return n
 }
 
-// attemptCatchUp is catchUpInAttempts, giving up after limit attempts.
 func attemptCatchUp(t testing.TB, r, from *Datastore, link *rationed, per, limit int) (int, error) {
 	t.Helper()
 	ctx := context.Background()
@@ -167,10 +159,8 @@ func seedKeys(t testing.TB, r *Datastore, n int, prefix string) {
 	}
 }
 
-// seedLevels writes, in one batch, keys whose elements have exactly the
-// given statetree levels, in key order: the level of an element is a function of
-// its key and the dot the batch carries, so the shape of r's elements tree
-// is the one the levels spell, whatever incarnation r drew.
+// An element's level depends on its key and the batch's dot, so the elements
+// tree has the shape levels spell whatever incarnation r drew.
 func seedLevels(t testing.TB, r *Datastore, levels ...uint32) {
 	t.Helper()
 	r.mu.Lock()
@@ -199,8 +189,6 @@ func seedLevels(t testing.TB, r *Datastore, levels ...uint32) {
 	}
 }
 
-// fan is the levels of a root of level 1 with width leaves: a key of
-// level 0 between and around width-1 keys of level 1.
 func fan(width int) []uint32 {
 	levels := make([]uint32, 2*width-1)
 	for i := 1; i < len(levels); i += 2 {
@@ -209,10 +197,6 @@ func fan(width int) []uint32 {
 	return levels
 }
 
-// TestAStateLargerThanOneAttemptArrives: a state whose closure one fetch
-// attempt cannot fetch arrives over several, with maintenance and its
-// reclaim between them, and no block of it is fetched twice: each attempt
-// goes on from what the last one fetched.
 func TestAStateLargerThanOneAttemptArrives(t *testing.T) {
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 2, noAutoCompact())
 	defer done()
@@ -248,12 +232,6 @@ func TestAStateLargerThanOneAttemptArrives(t *testing.T) {
 	assertNoLeak(t, b, dagsyncs[1])
 }
 
-// TestANewerHeadReusesWhatTheOlderOneStaged: the author compacts again
-// while a replica is still fetching its last snapshot, and that fetch has
-// received nothing for longer than D. The newer snapshot's fetch takes what
-// the older one fetched as held, maintenance and reclaim between attempts
-// included, so no block is fetched twice. Once the newer one is merged what
-// only the older one needed is gone.
 func TestANewerHeadReusesWhatTheOlderOneStaged(t *testing.T) {
 	ctx := context.Background()
 	var up atomic.Int64
@@ -307,9 +285,6 @@ func fetchesInProgress(r *Datastore) int {
 	return len(r.fetches)
 }
 
-// TestAFetchNothingFeedsIsDropped: a fetch whose source is gone keeps what
-// it fetched for D after the last block arrived, then maintenance drops it
-// and reclaims what it staged.
 func TestAFetchNothingFeedsIsDropped(t *testing.T) {
 	ctx := context.Background()
 	var up atomic.Int64
@@ -356,11 +331,10 @@ func TestAFetchNothingFeedsIsDropped(t *testing.T) {
 	assertNoLeak(t, b, dagsyncs[1])
 }
 
-// servingPeer is a replica's DAG service as bitswap makes it: a get of many
-// asks for every block at once, the blocks arrive as the peer sends them,
-// the peer keeps at most limit of them wanted, dropping the others
-// unanswered, and nothing arrives once the get is given up. A block in hold is sent only once a block of release is
-// asked for.
+// servingPeer behaves as bitswap does: a get of many asks for every block at
+// once, blocks arrive as sent, at most limit wants are kept and the rest
+// dropped unanswered, and nothing arrives once the get is abandoned. A block in
+// hold is sent only once a block of release is asked for.
 type servingPeer struct {
 	*fetchThroughDAGSvc
 	limit int
@@ -442,8 +416,6 @@ func (p *servingPeer) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.
 	return out
 }
 
-// stateLevels is the state r's only head carries, level by level from its
-// root.
 func stateLevels(t testing.TB, r *Datastore) [][]ipld.Node {
 	t.Helper()
 	ctx := context.Background()
@@ -474,7 +446,6 @@ func stateLevels(t testing.TB, r *Datastore) [][]ipld.Node {
 	return levels
 }
 
-// catchUpThrough opens a replica whose DAG service is p, fetching from a.
 func catchUpThrough(t *testing.T, a *Datastore, src *fetchThroughDAGSvc, p *servingPeer) *Datastore {
 	t.Helper()
 	p.setRemotes(src.DAGService)
@@ -493,12 +464,6 @@ func catchUpThrough(t *testing.T, a *Datastore, src *fetchThroughDAGSvc, p *serv
 	return b
 }
 
-// TestAFetchWantsNoMoreThanAPeerKeeps: a state with a level wider than
-// wantWindow arrives in one attempt from a peer that keeps only wantWindow
-// wants: the fetch never has more than that many asked for and unanswered.
-// Asking for the whole level at once, as bitswap's 1024-want bound did to
-// a 100k-key state, leaves the wants past the bound unanswered until the
-// attempt runs out.
 func TestAFetchWantsNoMoreThanAPeerKeeps(t *testing.T) {
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 1, noAutoCompact())
 	defer done()
@@ -525,11 +490,6 @@ func TestAFetchWantsNoMoreThanAPeerKeeps(t *testing.T) {
 	assertNoLeak(t, b, p.fetchThroughDAGSvc)
 }
 
-// TestABlockIsAskedForOnceItsParentArrives: a block's children are asked
-// for as soon as it arrives, not once its whole level has. The peer holds
-// back one block of a level until a child of another block of that level
-// is asked for; a fetch that waits for whole levels never asks, and the
-// attempt runs out.
 func TestABlockIsAskedForOnceItsParentArrives(t *testing.T) {
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 1, noAutoCompact())
 	defer done()
@@ -579,7 +539,6 @@ func TestABlockIsAskedForOnceItsParentArrives(t *testing.T) {
 	assertNoLeak(t, b, p.fetchThroughDAGSvc)
 }
 
-// heldNodes serves nodes it holds, as a getter of many hands them out.
 type heldNodes map[cid.Cid]ipld.Node
 
 func (h heldNodes) Get(_ context.Context, c cid.Cid) (ipld.Node, error) {
@@ -599,7 +558,6 @@ func (h heldNodes) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.Nod
 	return out
 }
 
-// bytesPerRun is testing.AllocsPerRun counting bytes.
 func bytesPerRun(runs int, f func()) uint64 {
 	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
 	f()
@@ -612,11 +570,6 @@ func bytesPerRun(runs int, f func()) uint64 {
 	return (after.TotalAlloc - before.TotalAlloc) / uint64(runs)
 }
 
-// TestAFetchAttemptCostsLittleBeyondItsBlocks: an attempt that fetches one
-// block whose links the roots reach allocates a small fixed amount beyond the
-// block, its get and its goroutines: its buffers, the queue its gets read
-// and the channel they answer on are the fetch's, reused from one attempt to
-// the next.
 func TestAFetchAttemptCostsLittleBeyondItsBlocks(t *testing.T) {
 	ctx := context.Background()
 	replicas, _, done := makeNReplicasSeparateStores(t, 1, noAutoCompact())

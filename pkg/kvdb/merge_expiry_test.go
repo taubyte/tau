@@ -5,11 +5,6 @@ import (
 	"time"
 )
 
-// TestAMergeForgetsWhatExpiredBeforeItReads (M4): what a replica's drop
-// clock says has expired is gone before a merge reads its context, whether
-// or not maintenance has run since. A removal's entry kept past its expiry
-// would refuse the element a peer that forgot the removal holds, ancient,
-// and the two would read differently.
 func TestAMergeForgetsWhatExpiredBeforeItReads(t *testing.T) {
 	st := newSimTime()
 	w, a, b := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0)
@@ -33,17 +28,12 @@ func TestAMergeForgetsWhatExpiredBeforeItReads(t *testing.T) {
 	b.wantValue(t, "/k", "v")
 	a.pull(t, b)
 	a.wantValue(t, "/k", "v")
-	// What the merge forgot, the next maintenance compacts away.
 	a.maintain(t)
 	if hs, _ := a.r.heads.List(); len(hs) != 1 || hs[0].Dot.replica != lastDot(a.r).replica {
 		t.Fatalf("what a merge forgot is still in the heads it carries: %v", hs)
 	}
 }
 
-// TestWhatAMergeForgetsIsCompactedAway (M4): an entry a merge's sweep
-// forgets asks for a snapshot as one maintenance forgets does, or the
-// replica's last snapshot, fresh and its only own block, carries the entry
-// until its half-life.
 func TestWhatAMergeForgetsIsCompactedAway(t *testing.T) {
 	st := newSimTime()
 	w, a, b := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0)

@@ -14,8 +14,6 @@ import (
 	"github.com/taubyte/tau/pkg/pebbleds"
 )
 
-// A scan sees the store under the pending writes, deletes included, in key
-// order, and nothing outside its prefix.
 func TestTxnScanMatchesPendingWrites(t *testing.T) {
 	ctx := context.Background()
 	rng := rand.New(rand.NewPCG(1, 2))
@@ -64,10 +62,6 @@ func TestTxnScanMatchesPendingWrites(t *testing.T) {
 	}
 }
 
-// A merge settles every key it touched with one scan of that key's
-// elements, writing as it goes. Each scan visits about a binary search of
-// the pending writes, so settling n keys costs n log n, not n squared: a
-// cold 100k-key catch-up once ran 25 minutes walking its own writes.
 func TestTxnScanWorkStaysLogarithmic(t *testing.T) {
 	ctx := context.Background()
 	const n = 4096
@@ -93,8 +87,6 @@ func TestTxnScanWorkStaysLogarithmic(t *testing.T) {
 	}
 }
 
-// TestCmpAfterIsCompareWithTheByte: cmpAfter(k, p, c) orders k against p
-// followed by c, without making that string.
 func TestCmpAfterIsCompareWithTheByte(t *testing.T) {
 	rng := rand.New(rand.NewPCG(3, 4))
 	word := func() string {
@@ -114,8 +106,6 @@ func TestCmpAfterIsCompareWithTheByte(t *testing.T) {
 	}
 }
 
-// TestAReleasedTxnIsEmpty: a txn handed back is reused with nothing of what
-// it held, and one that grew past reusedWrites is not kept.
 func TestAReleasedTxnIsEmpty(t *testing.T) {
 	ctx := context.Background()
 	store := ds.NewMapDatastore()
@@ -142,9 +132,6 @@ func TestAReleasedTxnIsEmpty(t *testing.T) {
 	}
 }
 
-// A txn over a pebbleds store reads it through one reader, made at its first
-// read: every read sees the store as it was then, under the pending writes.
-// Commit and release close it.
 func TestATxnReadsThroughOneReader(t *testing.T) {
 	ctx := context.Background()
 	store, err := pebbleds.Open(t.TempDir())

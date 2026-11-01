@@ -15,7 +15,7 @@ import (
 )
 
 // A Head is a block no other local block links: what the next local delta
-// will link, and what this replica broadcasts.
+// links and what this replica broadcasts.
 type Head struct {
 	Cid    cid.Cid
 	Height uint64
@@ -30,8 +30,8 @@ func (h Head) String() string {
 
 func (h Head) link() link { return link{cid: h.Cid, dot: h.Dot, at: h.At, ttl: h.TTL} }
 
-// heads is the persisted head set with an in-memory copy. Changes are staged
-// in a merge's txn and applied to the copy once that txn commits.
+// Changes are staged in a merge's txn and applied to the in-memory copy once
+// it commits.
 type heads struct {
 	store     ds.Datastore
 	namespace ds.Key
@@ -61,8 +61,8 @@ func newHeads(ctx context.Context, store ds.Datastore, namespace ds.Key) (*heads
 	return hh, nil
 }
 
-// key is the namespace's child dshelp.MultihashToDsKey names c by, built in
-// one allocation.
+// key is the child dshelp.MultihashToDsKey names c by, built in one
+// allocation.
 func (hh *heads) key(c cid.Cid) ds.Key {
 	return hashKey(hh.prefix, c)
 }
@@ -102,12 +102,10 @@ func (hh *heads) Len() int {
 	return len(hh.cache)
 }
 
-// List returns the heads and the greatest height among them.
 func (hh *heads) List() ([]Head, uint64) {
 	return hh.appendList(nil)
 }
 
-// appendList is List appending the heads to out.
 func (hh *heads) appendList(out []Head) ([]Head, uint64) {
 	hh.mu.RLock()
 	defer hh.mu.RUnlock()
@@ -122,7 +120,6 @@ func (hh *heads) appendList(out []Head) ([]Head, uint64) {
 	return out, maxHeight
 }
 
-// headChanges is a merge's staged edit of the head set.
 type headChanges struct {
 	add    map[cid.Cid]Head
 	remove map[cid.Cid]struct{}
@@ -162,14 +159,14 @@ func (hh *heads) apply(hc *headChanges) {
 	}
 }
 
-// reset forgets every head; the caller has removed them from the store.
+// The caller has removed the heads from the store.
 func (hh *heads) reset() {
 	hh.mu.Lock()
 	defer hh.mu.Unlock()
 	clear(hh.cache)
 }
 
-// add adds one head outside a merge.
+// add adds a head outside a merge.
 func (hh *heads) add(ctx context.Context, h Head) error {
 	if err := hh.store.Put(ctx, hh.key(h.Cid), encodeHead(h)); err != nil {
 		return err

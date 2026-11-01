@@ -36,8 +36,6 @@ func buildTree(t testing.TB, dags ipld.DAGService, entries map[string][]byte) ci
 	return tr.Root()
 }
 
-// putState writes the state whose trees hold the given entries, and returns
-// its StateRoot's CID.
 func putState(t testing.TB, dags ipld.DAGService, elems, pending, cc map[string][]byte) cid.Cid {
 	t.Helper()
 	nd, err := stateRoot{elems: buildTree(t, dags, elems), pending: buildTree(t, dags, pending), ctx: buildTree(t, dags, cc)}.node()
@@ -50,8 +48,6 @@ func putState(t testing.TB, dags ipld.DAGService, elems, pending, cc map[string]
 	return nd.Cid()
 }
 
-// stateBlocks is every block of the state of the snapshot snap, which r
-// holds, the StateRoot first and the deepest nodes last.
 func stateBlocks(t testing.TB, r *Datastore, snap cid.Cid) []cid.Cid {
 	t.Helper()
 	ctx := context.Background()
@@ -78,7 +74,6 @@ func stateBlocks(t testing.TB, r *Datastore, snap cid.Cid) []cid.Cid {
 	return out
 }
 
-// owned is every state block r's roots reach.
 func owned(t testing.TB, r *Datastore) map[cid.Cid]bool {
 	t.Helper()
 	r.gcMu.Lock()
@@ -90,14 +85,12 @@ func owned(t testing.TB, r *Datastore) map[cid.Cid]bool {
 	return out
 }
 
-// reaches reports whether a root of store reaches c.
 func (store *Datastore) reaches(c cid.Cid) bool {
 	store.gcMu.Lock()
 	defer store.gcMu.Unlock()
 	return store.gc.member(keyOf(c))
 }
 
-// heldBesidesState is how many blocks d holds that r does not own as state.
 func heldBesidesState(t testing.TB, r *Datastore, d *fetchThroughDAGSvc) int {
 	t.Helper()
 	return d.blockCount(t) - len(owned(t, r))
@@ -280,9 +273,6 @@ func TestStampsSummarizeTheLeastAndGreatest(t *testing.T) {
 	}
 }
 
-// TestATreeIsTheSameWhateverTheOrderOfItsChanges applies the same records
-// through a journal in two orders, with records added and taken out on the
-// way, and builds them at once: every way gives one root.
 func TestATreeIsTheSameWhateverTheOrderOfItsChanges(t *testing.T) {
 	dags := mdutils.Mock()
 	ctx := context.Background()
@@ -348,10 +338,6 @@ func stateOf(t testing.TB, r *Datastore) cid.Cid {
 	return c
 }
 
-// TestEqualStatesHaveEqualStateRoots: two replicas that came to one state
-// by different histories, each writing its own and merging the other's in
-// another order, with removals on both sides, carry one state CID in the
-// snapshots they then write, though the snapshots themselves differ.
 func TestEqualStatesHaveEqualStateRoots(t *testing.T) {
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 2, noAutoCompact())
 	defer done()
@@ -382,8 +368,6 @@ func TestEqualStatesHaveEqualStateRoots(t *testing.T) {
 	}
 }
 
-// TestTheJournalMarksEveryRecordWrite writes records straight through the
-// journaling store, and reads the marks back.
 func TestTheJournalMarksEveryRecordWrite(t *testing.T) {
 	ctx := context.Background()
 	inner := ds.NewMapDatastore()

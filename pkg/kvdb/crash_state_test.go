@@ -23,18 +23,11 @@ import (
 
 var errCrash = errors.New("crashed")
 
-// A crashPoint counts the writes of one replica, to its datastore and to
-// its blockstore, and at the one numbered at takes a copy of both, which is
-// what a process that died just before that write leaves on disk. That
-// write and every one after it fail.
-//
-// With lose set it is a power loss instead: from the moment it is armed it
-// keeps what is durable apart, and the copy is that, every write no Sync
-// covered lost. A datastore write is durable once a Sync of a prefix above
-// it returns, a block once the blocks are synced. With some set too, the
-// loss keeps a subset of the writes no Sync covered, drawn from some, as a
-// store that keeps no order among them does, and a Sync is a point to
-// crash at as well.
+// A crashPoint counts a replica's datastore and blockstore writes and, at
+// write at, copies both: what a process dying just before that write leaves.
+// That write and every one after fail. With lose it is a power loss: the copy
+// keeps only what a Sync made durable; with some too, it keeps a subset of
+// the unsynced writes, and a Sync is a crash point as well.
 type crashPoint struct {
 	t     testing.TB
 	mu    sync.Mutex
@@ -54,7 +47,6 @@ type crashPoint struct {
 	crashed bool
 }
 
-// A blockEvent is a block written, or removed.
 type blockEvent struct {
 	nd      ipld.Node
 	removed cid.Cid
@@ -80,8 +72,6 @@ func (c *crashPoint) step() error {
 	return nil
 }
 
-// syncPoint fails a Sync once crashed, and with some set is a point to
-// crash at.
 func (c *crashPoint) syncPoint() error {
 	if c.some != nil {
 		return c.step()
@@ -120,8 +110,7 @@ func (c *crashPoint) wroteBlock(e blockEvent) {
 	}
 }
 
-// keepSome applies to what a power loss left a subset of the writes no
-// Sync covered, each kept or lost as some draws. The caller holds c.mu.
+// The caller holds c.mu.
 func (c *crashPoint) keepSome() {
 	if c.some == nil {
 		return
@@ -138,8 +127,6 @@ func (c *crashPoint) keepSome() {
 	}
 }
 
-// covers reports whether a Sync of prefix makes the datastore write e
-// durable.
 func covers(prefix ds.Key, e volatileEvent) bool {
 	return prefix.String() == "/" || prefix == e.key || prefix.IsAncestorOf(e.key)
 }
@@ -173,7 +160,6 @@ func applyBlockEvent(t testing.TB, d *fetchThroughDAGSvc, e blockEvent) {
 	}
 }
 
-// synced makes durable the writes under prefix.
 func (c *crashPoint) synced(prefix ds.Key) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -203,8 +189,8 @@ func (c *crashPoint) syncedBlocks() {
 	c.pendingBlocks = nil
 }
 
-// crashStore has no batches of its own, so a batch commits as the writes
-// it holds, one at a time, and a crash can land between any two.
+// crashStore has no batches, so a batch commits one write at a time and a
+// crash can land between any two.
 type crashStore struct {
 	ds.Datastore
 	c *crashPoint
@@ -247,8 +233,7 @@ func (d *crashDAG) Add(ctx context.Context, nd ipld.Node) error {
 	return d.fetchThroughDAGSvc.Add(ctx, nd)
 }
 
-// Get fetches through to the remotes, as fetchThroughDAGSvc does, and a
-// block it fetches is a write.
+// A block fetched from a remote is a write.
 func (d *crashDAG) Get(ctx context.Context, c cid.Cid) (ipld.Node, error) {
 	held := d.holds(c)
 	nd, err := d.fetchThroughDAGSvc.Get(ctx, c)
@@ -315,10 +300,6 @@ func manualReplica(t testing.TB, store ds.Datastore, dag ipld.DAGService, name s
 	return r
 }
 
-// assertReach checks the members against the roots the store records:
-// every indexed snapshot's state, the base's trees and every pin. The
-// members are exactly what those reach, every one held, and nothing is
-// left of a manifest or of a session that is not in progress.
 func assertReach(t testing.TB, r *Datastore) {
 	t.Helper()
 	ctx := context.Background()
@@ -398,8 +379,6 @@ func assertReach(t testing.TB, r *Datastore) {
 	}
 }
 
-// assertTreesMatch checks that the base with the journal applied is the
-// state the store holds, record for record.
 func assertTreesMatch(t testing.TB, r *Datastore) {
 	t.Helper()
 	ctx := context.Background()
@@ -454,22 +433,14 @@ func assertTreesMatch(t testing.TB, r *Datastore) {
 	}
 }
 
-// TestACrashAtAnyWriteRecovers kills a replica at each write, in turn, of a
-// compaction, the merge of a peer's snapshot that shares most of its state,
-// and a second compaction with what they purge and reclaim, and reopens
-// what it left on disk: it holds the state of before that step or of after
-// it, its trees are its records, its members are what its roots reach, and
-// a clean compaction leaves no block that nothing indexes or reaches. Lost,
-// the crash is a power loss that keeps no write a Sync did not cover; some
-// lost, one that keeps any of them.
 func TestACrashAtAnyWriteRecovers(t *testing.T) {
 	for _, m := range crashModes {
 		t.Run(m.String(), func(t *testing.T) { crashAtAnyWrite(t, m) })
 	}
 }
 
-// A crashMode is what a crash keeps of the writes no Sync covered: all of
-// them, as a process that dies does, none, or some.
+// What a crash keeps of the writes no Sync covered: all (a process dying),
+// none, or some.
 type crashMode int
 
 const (
@@ -482,7 +453,6 @@ var crashModes = []crashMode{keptAll, lostAll, lostSome}
 
 func (m crashMode) String() string { return [...]string{"kept", "lost", "some lost"}[m] }
 
-// crashAt is a crash point at write at, of mode m.
 func crashAt(t testing.TB, m crashMode, at int, store ds.Datastore, dag *fetchThroughDAGSvc) *crashPoint {
 	c := &crashPoint{t: t, at: -1, store: store, dag: dag, lose: m != keptAll}
 	if m == lostSome {
@@ -586,11 +556,8 @@ func crashAtAnyWrite(t *testing.T, m crashMode) {
 
 func sameKV(a, b map[string][]byte) bool { return maps.EqualFunc(a, b, bytes.Equal) }
 
-// A stateFault fails op, on the keys under prefix if it names one.
 type stateFault struct{ op, prefix string }
 
-// stateFaults is every kind of operation on every kind of key a state lives
-// under, and each operation that names no key.
 func stateFaults() []stateFault {
 	keyed := []string{"Get", "Put", "Delete", "Has", "Query", "BatchPut", "BatchDelete"}
 	prefixes := []string{"/j/", "/i/", "/g/", "/p/", "/x/", "/sr", "/w", "/b/", "/s/e/", "/s/t/", "/c/"}
@@ -606,12 +573,6 @@ func stateFaults() []stateFault {
 	return append(faults, stateFault{"none", ""})
 }
 
-// TestAStateStoreFaultIsSurvived fails, in turn, each kind of operation on
-// each kind of key a state lives under while a replica compacts, merges a
-// peer's snapshot that shares part of its state and compacts again. Once
-// the store heals and the replica reopens and does it all again, it holds
-// the peer's state, its trees are its records, its members are what its
-// roots reach, and it holds no block nothing indexes or reaches.
 func TestAStateStoreFaultIsSurvived(t *testing.T) {
 	ctx := context.Background()
 	for _, f := range stateFaults() {
@@ -660,8 +621,7 @@ func TestAStateStoreFaultIsSurvived(t *testing.T) {
 			store.SetFail(nil)
 			own.fail.Store(false)
 
-			// Reopened as after a crash, with no repair loop of its own to
-			// race the walk below for the peer's head.
+			// Reopened with no repair loop of its own to race the walk below.
 			closeStore(t, r)
 			if err := store.Put(ctx, ds.NewKey("crdttest").ChildString(badShutdownKey), nil); err != nil {
 				t.Fatal(err)
@@ -681,15 +641,6 @@ func TestAStateStoreFaultIsSurvived(t *testing.T) {
 	}
 }
 
-// TestACrashInAResumedFetchRecovers kills a replica at each write, in turn,
-// of a catch-up that goes on from an attempt that fetched part of a peer's
-// state, with maintenance and its reclaim between attempts, and of the
-// compaction after it. What it left on disk holds the state of before the
-// merge or of after it, its trees are its records, its members are what
-// its roots reach, and once it catches up again and compacts it holds the
-// peer's state and no block that nothing indexes or reaches. Lost, the
-// crash is a power loss that keeps no write a Sync did not cover; some
-// lost, one that keeps any of them.
 func TestACrashInAResumedFetchRecovers(t *testing.T) {
 	for _, m := range crashModes {
 		t.Run(m.String(), func(t *testing.T) { crashInAResumedFetch(t, m) })
@@ -698,7 +649,6 @@ func TestACrashInAResumedFetchRecovers(t *testing.T) {
 
 func crashInAResumedFetch(t *testing.T, m crashMode) {
 	ctx := context.Background()
-	// The peer only serves its state, so one does for every crash.
 	peer, peerDag := widePeer(t, 100, 4)
 	defer peer.Close()
 	per := len(stateClosure(t, peer))/3 + 1
@@ -781,13 +731,6 @@ func crashInAResumedFetch(t *testing.T, m crashMode) {
 	t.Fatal("the run never ended")
 }
 
-// TestAStateStoreFaultInAResumedFetchIsSurvived fails, in turn, each kind of
-// operation on each kind of key a state lives under while a replica goes on
-// fetching a peer's state that one attempt fetched part of, with maintenance
-// and its reclaim between attempts, and compacts. Once the store heals and
-// the replica reopens and catches up again, it holds the peer's state, its
-// trees are its records, its members are what its roots reach, and it
-// holds no block nothing indexes or reaches.
 func TestAStateStoreFaultInAResumedFetchIsSurvived(t *testing.T) {
 	ctx := context.Background()
 	for _, f := range stateFaults() {
@@ -846,10 +789,9 @@ func TestAStateStoreFaultInAResumedFetchIsSurvived(t *testing.T) {
 	}
 }
 
-// A volatileStore is a datastore that keeps what it was not asked to sync
-// in memory, in no particular order: a power loss keeps any subset of the
-// writes no Sync has covered since, and every write a Sync covered. It
-// records each write and each Sync, in order, while recording is on.
+// A volatileStore keeps unsynced writes in no order: a power loss keeps any
+// subset of them and every write a Sync covered. It records each write and
+// Sync while on.
 type volatileStore struct {
 	ds.Datastore
 	mu     sync.Mutex
@@ -857,9 +799,8 @@ type volatileStore struct {
 	events []volatileEvent
 }
 
-// A volatileEvent is a Put, a Delete, or with sync set a Sync of key. With
-// nd or removed it is a block written or removed, and with blocks a Sync of
-// the blocks.
+// A Put, a Delete, or with sync a Sync of key; with nd or removed, a block
+// written or removed; with blocks, a Sync of the blocks.
 type volatileEvent struct {
 	key       ds.Key
 	value     []byte
@@ -895,9 +836,8 @@ func (s *volatileStore) Sync(ctx context.Context, prefix ds.Key) error {
 	return s.Datastore.Sync(ctx, prefix)
 }
 
-// unsynced is the writes among the first n events no Sync among them
-// covers. A block is durable once the blocks are synced, or, kept in the
-// datastore, once all of it is.
+// A block is durable once the blocks are synced or, kept in the datastore,
+// once all of it is.
 func unsynced(events []volatileEvent, n int) []int {
 	var out []int
 	for i := range n {
@@ -920,9 +860,8 @@ func unsynced(events []volatileEvent, n int) []int {
 	return out
 }
 
-// unsyncedTail is the writes among the first n events after the last
-// Sync: in a store that keeps a prefix of its writes, a Sync of any key
-// makes every write before it durable.
+// In a store that keeps a prefix of its writes, a Sync of any key makes every
+// write before it durable.
 func unsyncedTail(events []volatileEvent, n int) []int {
 	var out []int
 	for i := range n {
@@ -935,8 +874,6 @@ func unsyncedTail(events []volatileEvent, n int) []int {
 	return out
 }
 
-// afterLoss is base with the datastore writes among the first n events
-// applied, but for the unsynced writes lost names.
 func afterLoss(t testing.TB, base ds.Datastore, events []volatileEvent, n int, lost map[int]bool) ds.Datastore {
 	t.Helper()
 	disk := copyStore(t, base)
@@ -948,8 +885,6 @@ func afterLoss(t testing.TB, base ds.Datastore, events []volatileEvent, n int, l
 	return disk
 }
 
-// blocksAfterLoss is base with the blocks among the first n events written
-// and removed, but for the unsynced ones lost names.
 func blocksAfterLoss(t testing.TB, base *fetchThroughDAGSvc, events []volatileEvent, n int, lost map[int]bool) *fetchThroughDAGSvc {
 	t.Helper()
 	blocks := copyBlocks(t, base)
@@ -961,8 +896,7 @@ func blocksAfterLoss(t testing.TB, base *fetchThroughDAGSvc, events []volatileEv
 	return blocks
 }
 
-// volatileDAG records the blocks a replica writes and removes among its
-// store's events. It keeps its blocks in that datastore, synced with all of
+// volatileDAG keeps its blocks in its store's datastore, synced with all of
 // it; syncingVolatileDAG keeps them apart, synced by SyncBlocks.
 type volatileDAG struct {
 	*fetchThroughDAGSvc
@@ -983,7 +917,7 @@ func (d *volatileDAG) AddMany(ctx context.Context, nds []ipld.Node) error {
 	return nil
 }
 
-// Get fetches through to the remotes, and a block it fetches is a write.
+// A block fetched from a remote is a write.
 func (d *volatileDAG) Get(ctx context.Context, c cid.Cid) (ipld.Node, error) {
 	held := d.holds(c)
 	nd, err := d.fetchThroughDAGSvc.Get(ctx, c)
@@ -1021,9 +955,8 @@ func (d *volatileDAG) RemoveMany(ctx context.Context, cids []cid.Cid) error {
 
 type syncingVolatileDAG struct{ *volatileDAG }
 
-// A prefixStore is a volatileStore a power loss leaves a prefix of the
-// writes no Sync covered, as pebble's log does; loggedDAG writes its blocks
-// to it, as a node's DAG writes to the node's store.
+// A prefixStore loses only a suffix of the unsynced writes, as pebble's log
+// does; loggedDAG writes its blocks to it, as a node's DAG does.
 type prefixStore struct{ *volatileStore }
 
 func (prefixStore) KeepsPrefix() bool { return true }
@@ -1040,27 +973,12 @@ func (d syncingVolatileDAG) SyncBlocks(context.Context) error {
 	return nil
 }
 
-// TestAWriteSurvivesAnyLoss powers a replica off after each event of a put,
-// a delete and the merge of a peer's write, every write to its datastore,
-// block and Sync, keeping every subset of the writes no Sync covered, with
-// its blocks in a store of their own and in its datastore; and, in a store
-// that keeps a prefix of them with its blocks, every prefix. It reopens
-// holding the values of before one of them or after it, every block it
-// holds is indexed or a root reaches it, every block it indexes is held,
-// and once it compacts its trees are its records. A block written before
-// its index entry was durable could outlive the entry, a leak; a merge
-// recorded before its block was durable could outlive the block, an entry
-// and a head naming nothing; a record written before its journal mark was
-// durable could outlive the mark, and the trees then miss it.
 func TestAWriteSurvivesAnyLoss(t *testing.T) {
 	t.Run("blocks apart", func(t *testing.T) { writeSurvivesAnyLoss(t, blocksApart) })
 	t.Run("blocks in the datastore", func(t *testing.T) { writeSurvivesAnyLoss(t, blocksIn) })
 	t.Run("a shared log", func(t *testing.T) { writeSurvivesAnyLoss(t, sharedLog) })
 }
 
-// Where a replica's blocks are: apart, synced by SyncBlocks; in its
-// datastore, synced with it; or in a datastore that keeps a prefix of its
-// writes, the blocks among them.
 type blockPlace int
 
 const (
@@ -1172,10 +1090,8 @@ func writeSurvivesAnyLoss(t *testing.T, place blockPlace) {
 	t.Logf("%d events, %d losses", len(events), runs)
 }
 
-// assertPutSyncs checks the Syncs of a put: one for its index entry, one
-// for its block, two when its blocks are apart, and one for its journal
-// marks; in a shared log, only the marks', which follows the block, so a
-// head is never broadcast naming a block a power loss can take.
+// In a shared log a put syncs once, for its journal marks, after its block,
+// so a head is never broadcast naming a block a power loss can take.
 func assertPutSyncs(t *testing.T, place blockPlace, events []volatileEvent) {
 	t.Helper()
 	syncs, block, synced := 0, -1, false
@@ -1194,13 +1110,6 @@ func assertPutSyncs(t *testing.T, place blockPlace, events []volatileEvent) {
 	}
 }
 
-// TestAnAtomicCommitSurvivesAnyLoss powers a replica off after each write
-// and Sync of an atomic commit, keeping every subset of the writes no Sync
-// covered: the replica reopens and holds all of the commit's writes or none.
-// Without a Sync between applying the writes and recording the commit as
-// applied, and another before its record is removed, a loss could keep the
-// mark and lose a write, or lose the mark and keep the record's removal,
-// and the store then would not open.
 func TestAnAtomicCommitSurvivesAnyLoss(t *testing.T) {
 	ctx := context.Background()
 	inner := dssync.MutexWrap(ds.NewMapDatastore())
@@ -1282,9 +1191,6 @@ func onManual(o *Options) *Options {
 	return o
 }
 
-// assertHoldsExactly checks that r holds no block but what its roots reach,
-// what it indexes and what a session in progress means to keep, and that
-// every block its roots reach is held.
 func assertHoldsExactly(t testing.TB, r *Datastore, d *fetchThroughDAGSvc) {
 	t.Helper()
 	ctx := context.Background()
@@ -1308,8 +1214,6 @@ func assertHoldsExactly(t testing.TB, r *Datastore, d *fetchThroughDAGSvc) {
 	}
 }
 
-// abandonFetches drops every state fetch no attempt is using, as their
-// expiry would.
 func abandonFetches(ctx context.Context, r *Datastore) {
 	r.fetchMu.Lock()
 	var dead []*stateFetch
@@ -1327,13 +1231,6 @@ func abandonFetches(ctx context.Context, r *Datastore) {
 	}
 }
 
-// TestTheCollectorKeepsExactlyWhatIsReached runs random sequences of
-// writes, compactions on both sides, merges of a peer's snapshots, fetches
-// abandoned part way, pins taken, released and expired, and crashes at a
-// random write of any of them. After every step, once reclaimed, the
-// replica holds exactly what its roots reach, what it indexes and what its
-// sessions in progress hold, its members are exactly what its roots reach,
-// and its trees are its records.
 func TestTheCollectorKeepsExactlyWhatIsReached(t *testing.T) {
 	for seed := range uint64(16) {
 		t.Run(fmt.Sprint(seed), func(t *testing.T) { collectorRun(t, seed, 200) })

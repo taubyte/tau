@@ -13,7 +13,6 @@ import (
 	"github.com/taubyte/tau/pkg/kvdb/statetree"
 )
 
-// inlineBudget bounds the bytes of the tree blocks a snapshot carries.
 const inlineBudget = 32 << 10
 
 var (
@@ -22,11 +21,9 @@ var (
 	errInlineOversize = errors.New("the blocks a snapshot carries exceed the budget")
 )
 
-// carryState sets in root, the snapshot of the state sr, what lets a
-// reader rebuild sr's StateRoot block, and the top of the tree blocks the
-// snapshot wrote, of written: breadth first from the trees' roots, a block
-// carried only when its parent is and when it fits in what inlineBudget
-// leaves.
+// carryState sets what lets a reader rebuild sr's StateRoot, and the top of the
+// tree blocks written: breadth first from the roots, a block carried only when
+// its parent is and it fits in inlineBudget.
 func carryState(root *pb.Delta, sr stateRoot, written []ipld.Node) {
 	msg := &pb.StateRoot{}
 	present, n := sr.message(msg)
@@ -63,9 +60,9 @@ func carryState(root *pb.Delta, sr stateRoot, written []ipld.Node) {
 	}
 }
 
-// A carried is what a snapshot carries of its state, verified: its
-// StateRoot block, then the tree blocks it carries, in order, and the links
-// of each that no block carried is.
+// A carried is what a snapshot carries of its state, verified: its StateRoot
+// block, then its inline tree blocks in order, with the links of each that no
+// carried block is.
 type carried struct {
 	nodes   []ipld.Node
 	links   []carriedLink
@@ -75,7 +72,6 @@ type carried struct {
 	isNew   []bool
 }
 
-// A carriedLink is a link of nodes[parent].
 type carriedLink struct {
 	k      cidKey
 	c      cid.Cid
@@ -96,9 +92,8 @@ func (cs *carried) putBack() {
 	carriedPool.Put(cs)
 }
 
-// verify rebuilds the StateRoot block the snapshot root carries and checks
-// it is stc, then takes each block root carries inline once a block before
-// it links it, by its hash, within inlineBudget.
+// verify checks the rebuilt StateRoot is stc and takes each inline block once
+// a block before it links it, by its hash, within inlineBudget.
 func (cs *carried) verify(stc cid.Cid, root *pb.Delta) error {
 	sr, err := carriedRoot(root)
 	if err != nil {
@@ -136,7 +131,6 @@ func (cs *carried) verify(stc cid.Cid, root *pb.Delta) error {
 	return nil
 }
 
-// carriedRoot is the state whose StateRoot the snapshot root carries.
 func carriedRoot(root *pb.Delta) (stateRoot, error) {
 	msg := root.GetRoot()
 	if msg == nil {
@@ -152,7 +146,6 @@ func carriedRoot(root *pb.Delta) (stateRoot, error) {
 	})
 }
 
-// linked is the index of the first link to the block k names, or -1.
 func (cs *carried) linked(k cidKey) int {
 	for i := range cs.links {
 		if cs.links[i].k == k {
@@ -162,7 +155,6 @@ func (cs *carried) linked(k cidKey) int {
 	return -1
 }
 
-// take appends nd, and its links.
 func (cs *carried) take(nd ipld.Node) error {
 	var buf [32]cid.Cid
 	links, err := blockLinks(nd, buf[:0])
@@ -179,11 +171,10 @@ func (cs *carried) take(nd ipld.Node) error {
 	return nil
 }
 
-// seed begins f's first attempt with what its snapshot carries, staged as
-// a fetched block is: what the roots do not reach becomes an intent of f
-// before it is written, and what the blocks written link that none carried
-// is discovered. A failure before the blocks are written ends the session,
-// for the next attempt to begin again.
+// seed stages what f's snapshot carries as fetched blocks are staged: what the
+// roots do not reach becomes an intent before it is written, and what those
+// blocks link is discovered. A failure before they are written ends the
+// session for the next attempt.
 func (store *Datastore) seed(ctx context.Context, f *stateFetch, cs *carried, held *heldDAG) error {
 	f.b = takeFetchBuffers()
 	store.gcMu.Lock()
@@ -196,8 +187,6 @@ func (store *Datastore) seed(ctx context.Context, f *stateFetch, cs *carried, he
 	return store.discover(ctx, f, cs.cids)
 }
 
-// stageCarried writes what the snapshot carries that the roots do not
-// reach, and leaves in cs.cids what the blocks it wrote link.
 func (store *Datastore) stageCarried(ctx context.Context, f *stateFetch, cs *carried, held *heldDAG) error {
 	for _, nd := range cs.nodes {
 		cs.cids = append(cs.cids, nd.Cid())

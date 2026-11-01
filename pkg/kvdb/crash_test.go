@@ -15,8 +15,6 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 )
 
-// removeFailing is a DAG service whose RemoveMany can be made to fail, the
-// way a process that dies before deleting anything leaves its blocks.
 type removeFailing struct {
 	*fetchThroughDAGSvc
 	fail atomic.Bool
@@ -38,9 +36,6 @@ func (r *removeFailing) Remove(ctx context.Context, c cid.Cid) error {
 
 var _ ipld.DAGService = (*removeFailing)(nil)
 
-// assertNoLeak checks that every block r holds is indexed or a state block
-// its roots reach, and that every index entry and such block names a block
-// r holds.
 func assertNoLeak(t testing.TB, r *Datastore, d *fetchThroughDAGSvc) {
 	t.Helper()
 	ctx := context.Background()
@@ -101,10 +96,6 @@ func reopen(t testing.TB, old *Datastore, store ds.Datastore, dag ipld.DAGServic
 	return r
 }
 
-// TestCrashMidCompaction kills a compaction at each of its two windows, the
-// snapshot written but not merged and the snapshot merged but nothing
-// purged, and reopens the store: it holds exactly the blocks it indexes, and
-// it ends in the same state as a replica that never crashed.
 func TestCrashMidCompaction(t *testing.T) {
 	for _, window := range []string{"before the merge", "before the purge"} {
 		t.Run(window, func(t *testing.T) {
@@ -163,10 +154,6 @@ func TestCrashMidCompaction(t *testing.T) {
 	}
 }
 
-// TestRestoredBackupNeverReusesAnIncarnation restores a store from a backup
-// taken while it was closed, which is byte-identical to the store at that
-// moment, and writes to it: its writes carry a new incarnation, so they can
-// never be mistaken for the writes the original made after the backup.
 func TestRestoredBackupNeverReusesAnIncarnation(t *testing.T) {
 	ctx := context.Background()
 	live := dssync.MutexWrap(ds.NewMapDatastore())
@@ -243,8 +230,6 @@ func TestRestoredBackupNeverReusesAnIncarnation(t *testing.T) {
 	}
 }
 
-// freshProcess gives the test the empty incarnation registry a new process
-// starts with.
 func freshProcess(t testing.TB) {
 	t.Helper()
 	old := incarnations
@@ -252,8 +237,6 @@ func freshProcess(t testing.TB) {
 	t.Cleanup(func() { incarnations = old })
 }
 
-// onNode is the options of a store these tests reopen, or copy, on the node
-// that wrote it: every open has that node's ReplicaID.
 func onNode(o *Options) *Options {
 	o.ReplicaID = []byte("node")
 	return o
@@ -275,7 +258,6 @@ func closeStore(t testing.TB, r *Datastore) {
 	}
 }
 
-// copyStore is a byte copy of store, the way a backup or a disk image is.
 func copyStore(t testing.TB, store ds.Datastore) ds.Datastore {
 	t.Helper()
 	ctx := context.Background()
@@ -317,8 +299,6 @@ func deltaOf(t testing.TB, r *Datastore, c cid.Cid) (dot, uint64) {
 	return dotFromPB(d.GetDot()), d.GetPrev()
 }
 
-// assertChained checks that r's context holds incarnation's counters up to
-// counter as one unbroken chain.
 func assertChained(t testing.TB, name string, r *Datastore, replica string, counter uint64) {
 	t.Helper()
 	r.mu.Lock()
@@ -336,10 +316,6 @@ func assertChained(t testing.TB, name string, r *Datastore, replica string, coun
 	}
 }
 
-// TestReopenContinuesTheIncarnation closes a store and opens it again in the
-// same process: it goes on writing under the incarnation it closed, and its
-// next delta links the last one it committed, so neither it nor a peer that
-// merged its history grows a vector entry or a gap.
 func TestReopenContinuesTheIncarnation(t *testing.T) {
 	freshProcess(t)
 	store := dssync.MutexWrap(ds.NewMapDatastore())
@@ -377,8 +353,6 @@ func TestReopenContinuesTheIncarnation(t *testing.T) {
 	assertSameState(t, []string{"a", "peer"}, a, peer)
 }
 
-// TestANewProcessDrawsANewIncarnation reopens a store in a new process: the
-// incarnation it closed is not known there, so it draws another.
 func TestANewProcessDrawsANewIncarnation(t *testing.T) {
 	freshProcess(t)
 	store := dssync.MutexWrap(ds.NewMapDatastore())
@@ -404,11 +378,6 @@ func TestANewProcessDrawsANewIncarnation(t *testing.T) {
 	}
 }
 
-// TestAnEarlierCopyNeverContinuesTheIncarnation restores, in the process that
-// wrote it, a copy of a store taken before its last writes, once the original
-// has closed. The copy does not cover the incarnation's last counter, so it
-// draws its own: continuing would chain its writes past the original's, which
-// it never merged.
 func TestAnEarlierCopyNeverContinuesTheIncarnation(t *testing.T) {
 	freshProcess(t)
 	live := dssync.MutexWrap(ds.NewMapDatastore())
@@ -448,9 +417,6 @@ func TestAnEarlierCopyNeverContinuesTheIncarnation(t *testing.T) {
 	}
 }
 
-// TestConcurrentOpensNeverShareAnIncarnation opens identical copies of a
-// closed store at once: every copy covers the incarnation it closed, and only
-// one may continue it.
 func TestConcurrentOpensNeverShareAnIncarnation(t *testing.T) {
 	freshProcess(t)
 	live := dssync.MutexWrap(ds.NewMapDatastore())
@@ -504,9 +470,6 @@ func TestConcurrentOpensNeverShareAnIncarnation(t *testing.T) {
 	}
 }
 
-// TestAClosedStoreWritesNothing: once a store has closed, its incarnation may
-// already be another open's. It must issue no dot, and a second Close must not
-// hand the incarnation out again.
 func TestAClosedStoreWritesNothing(t *testing.T) {
 	freshProcess(t)
 	ctx := context.Background()

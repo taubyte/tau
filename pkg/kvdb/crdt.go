@@ -1,17 +1,14 @@
-// Package kvdb is a replicated go-datastore: an add-wins observed-remove set
-// of key/value elements, replicated as a Merkle-DAG of deltas (Sanjuán,
-// Pöyhtäri, Teixeira, "Merkle-CRDTs: Merkle-DAGs meet CRDTs").
+// Package kvdb is a replicated go-datastore: an add-wins observed-remove set of
+// key/value elements replicated as a Merkle-DAG of deltas (Merkle-CRDTs,
+// Sanjuán et al.).
 //
-// Every delta carries a dot naming it (see dot), the dots of the blocks it
-// links, and its author's previous counter; every replica keeps a causal
-// context of the dots it has merged. That context is what lets a replica fold
-// its whole state into a snapshot (Compact) and drop the history below it,
-// tombstones included, without coordination: a snapshot says which elements
-// are live and which dots it has seen, and an element whose dot it has seen
-// and does not hold is removed, on every replica, in every order.
-//
-// Storage under any put/delete churn is bounded by the live state plus one
-// vector entry per writing incarnation.
+// Each delta carries a dot, the dots it links and its author's previous
+// counter, and every replica keeps a causal context of the dots it merged.
+// That context lets a replica fold its state into a snapshot and drop the
+// history below it, tombstones included, without coordination: an element
+// whose dot a snapshot has seen and does not hold is removed everywhere.
+// Storage is bounded by the live state plus one vector entry per writing
+// incarnation.
 package kvdb
 
 import (
@@ -42,146 +39,102 @@ var (
 	_ ds.Batching  = (*Datastore)(nil)
 )
 
-// datastore namespace keys. Short keys save space and memory.
 const (
-	headsNs           = "h"  // heads
-	setNs             = "s"  // set
-	processedBlocksNs = "b"  // local blocks and their dots
-	missingNs         = "m"  // parents linked by a merged block and not yet covered
-	contextNs         = "c"  // the causal context
-	retryNs           = "r"  // heads heard and not merged yet
-	dirtyBitKey       = "d"  // dirty
-	badShutdownKey    = "bs" // bad-shutdown: set on New, cleared on clean Close
+	headsNs           = "h"
+	setNs             = "s"
+	processedBlocksNs = "b" // local blocks and their dots
+	missingNs         = "m" // parents linked by a merged block, not yet covered
+	contextNs         = "c"
+	retryNs           = "r" // heads heard, not yet merged
+	dirtyBitKey       = "d"
+	badShutdownKey    = "bs" // set on New, cleared on a clean Close
 	versionKey        = "crdt_version"
 )
 
-// formatVersion is the on-disk format, stored as formatVersion+1 the way every
-// earlier format stored its own. A store holding any other version is emptied
-// on open and refills from its peers.
+// Stored as formatVersion+1, as every earlier format was. A store of any other
+// version is emptied on open and refills from its peers.
 const formatVersion uint64 = 9
 
-// Common errors.
 var (
 	ErrNoMoreBroadcast = errors.New("receiving blocks aborted since no new blocks will be broadcasted")
 	ErrClosed          = errors.New("crdt datastore is closed")
 )
 
-// A Broadcaster provides a way to send (notify) an opaque payload to
-// all replicas and to retrieve payloads broadcasted.
 type Broadcaster interface {
-	// Send payload to other replicas.
 	Broadcast(context.Context, []byte) error
-	// Obtain the next payload received from the network.
 	Next(context.Context) ([]byte, error)
 }
 
-// A SessionDAGService is a Sessions-enabled DAGService. This type of DAG-Service
-// provides an optimized NodeGetter to make multiple related requests. The
-// same session-enabled NodeGetter is used to download DAG branches when
-// the DAGSyncer supports it.
 type SessionDAGService interface {
 	ipld.DAGService
 	Session(context.Context) ipld.NodeGetter
 }
 
-// Options holds configurable values for Datastore.
 type Options struct {
 	Logger logging.StandardLogger
-	// RebroadcastInterval specifies how often the system
-	// re-publishes its latest heads so that new replicas can
-	// learn about them. It only broadcasts heads that have not
-	// been already broadcasted by other replicas in the
-	// interval. Default: 1m.
+	// RebroadcastInterval is how often heads not already broadcast by others are
+	// republished. Default: 1m.
 	RebroadcastInterval time.Duration
-	// PutHook is called when a key's value, as Get reads it, appears or
-	// changes, by a local or a remote update, with the new value. A write
-	// of the bytes the key already holds is no change. Default: nil.
+	// PutHook is called when a key's value appears or changes, locally or
+	// remotely; rewriting the same bytes is no change.
 	PutHook func(k ds.Key, v []byte)
-	// DeleteHook is called when a key goes from present to absent, by a
-	// local or a remote update. A key that keeps a concurrent version is
-	// still present: if that version is now its value, PutHook is called
-	// instead. A removal merged before the value it removes is no change
-	// either, since this replica never shows that value. Default: nil.
-	//
-	// Each hook reports what one merge did to one key, after the merge
-	// commits: an overwrite calls PutHook only, and no merge calls both for
-	// one key.
+	// DeleteHook is called when a key goes from present to absent. A key keeping a
+	// concurrent version is still present (PutHook is called if that becomes its
+	// value), and a removal merged before the value it removes is no change. Hooks
+	// run after the merge commits, at most one per key per merge.
 	DeleteHook func(k ds.Key)
-	// NumWorkers specifies the number of workers ready to
-	// retrieve and merge deltas while walking the DAGs. Default:
-	// 5.
 	NumWorkers int
-	// DAGSyncerTimeout specifies how long to wait for a DAGSyncer
-	// to, for example, receive a delta from a different replica.
-	// Set to 0 to disable. Default: 5m.
+	// DAGSyncerTimeout bounds a DAG fetch; 0 disables. Default: 5m.
 	DAGSyncerTimeout time.Duration
-	// MaxBatchDeltaSize will automatically commit any batches whose
-	// delta size gets too big, and is the size of a snapshot's chunks.
-	// Default: 1MiB.
+	// MaxBatchDeltaSize commits a batch whose delta grows past it, and sizes a
+	// snapshot's chunks. Default: 1MiB.
 	MaxBatchDeltaSize int
-	// RepairInterval specifies how often to retry the parents a walk
-	// could not fetch, when the store is marked dirty. 0 to disable. It
-	// should be well under DeliveryBound: a delta is promised to every
-	// replica in contact within D, and a parent whose fetch failed is
-	// fetched again only by repair. Default: 1m.
+	// RepairInterval is how often parents a walk failed to fetch are retried; 0
+	// disables. Keep it well under DeliveryBound: only repair refetches them.
+	// Default: 1m.
 	RepairInterval time.Duration
-	// BroadcastBatchDelay batches the new Head broadcasts when
-	// publishing new deltas into a single message. 0 to
-	// disable. Default: 0.
+	// BroadcastBatchDelay batches head broadcasts into one message; 0 disables.
 	BroadcastBatchDelay time.Duration
-	// CompactAfterBlocks makes a local write compact the store once it
-	// holds at least this many blocks and at least as many blocks as live
-	// elements, so rewriting the live state costs O(1) per write
-	// amortized. 0 disables. Default: 128.
+	// CompactAfterBlocks compacts after a local write once the store holds this
+	// many blocks and at least as many as live elements, so rewriting the state
+	// costs O(1) per write amortized. 0 disables. Default: 128.
 	CompactAfterBlocks int
-	// ReplicaID prefixes every incarnation id this store draws, normally
-	// the node's peer id. Required with a broadcaster: peers tell one
-	// store's incarnations from another's by it, and without it a store is
-	// a new peer at every restart, which every judge waits G for. Default:
-	// none.
+	// ReplicaID prefixes every incarnation id, normally the node's peer id.
+	// Required with a broadcaster: without it a store is a new peer at every
+	// restart, which every judge waits G for.
 	ReplicaID []byte
 
-	// Retention is T: how long what a delta teaches, a removal above all,
-	// is kept after it was written, and so how long a replica can be away
-	// and still rejoin with what it holds. Every delta carries its
-	// author's T, so a change of T applies to what is written from then on
-	// and replicas need not agree on it at any one moment (see
-	// SetRetention). It must be many times the Margin. Default: 30 days.
+	// Retention is T: how long what a delta teaches is kept, and so how long a
+	// replica can be away and still rejoin. Each delta carries its author's T, so
+	// replicas need not agree on it (see SetRetention). It must be many times the
+	// Margin. Default: 30 days.
 	Retention time.Duration
-	// DeliveryBound is D: a delta written by a replica in contact reaches
-	// every replica in contact within it, walk and merge included. It is
-	// at least DAGSyncerTimeout plus RebroadcastInterval. Default: 10m.
+	// DeliveryBound is D: a delta from a replica in contact reaches every replica
+	// in contact within it, walk and merge included. At least DAGSyncerTimeout
+	// plus RebroadcastInterval. Default: 10m.
 	DeliveryBound time.Duration
-	// ClockSkew is S, how far apart the clocks of correct replicas may be.
-	// A block stamped further ahead of this replica's clock waits until
-	// the clock reaches it. Default: 1m.
+	// ClockSkew is S, how far apart correct clocks may be; a block stamped further
+	// ahead waits for the clock. Default: 1m.
 	ClockSkew time.Duration
-	// Margin is m, how long after a judge stops vouching for what may
-	// still need something every replica in contact still holds it. At
-	// least 3D + 2S + 2*RebroadcastInterval; 0 means exactly that.
+	// Margin is m: how long after a judge stops vouching every replica in contact
+	// still holds what may be needed. At least 3D + 2S + 2*RebroadcastInterval; 0
+	// means exactly that.
 	Margin time.Duration
-	// Clock is the wall clock every stamp, expiry and judgement reads.
-	// Default: time.Now.
-	Clock func() time.Time
-	// Uptime is the time since this machine booted, suspend included. It
-	// times this process's own intervals, never anything compared across
-	// replicas. Default: the boot clock.
+	Clock  func() time.Time
+	// Uptime is time since boot, suspend included. It times this process's
+	// intervals, never anything compared across replicas.
 	Uptime func() time.Duration
 
-	// manual leaves what time drives, maintenance, heartbeats and repair,
-	// to the caller: tests drive them step by step.
+	// manual leaves maintenance, heartbeats and repair to the caller.
 	manual bool
-	// treeCache is the budget of the store's cache of tree nodes, in
-	// bytes; 0 for treeCacheBytes.
+	// treeCache is the tree-node cache budget in bytes; 0 for treeCacheBytes.
 	treeCache int
 }
 
-// retentionFactor is how many margins T must be at least: "many times".
 const retentionFactor = 10
 
-// minMargin is the least margin the proofs allow for D, S and the
-// rebroadcast interval: a judge that answers on the last heartbeat it heard,
-// the answer's delivery, the walk that follows, and the skew both ways.
+// minMargin covers a judge answering on the last heartbeat it heard, the
+// answer's delivery, the walk after it, and the skew both ways.
 func (opts *Options) minMargin() time.Duration {
 	return 3*opts.DeliveryBound + 2*opts.ClockSkew + 2*opts.RebroadcastInterval
 }
@@ -193,7 +146,6 @@ func (opts *Options) margin() time.Duration {
 	return opts.Margin
 }
 
-// checkRetention refuses a T that is not many times the margin.
 func (opts *Options) checkRetention(t time.Duration) error {
 	if t < retentionFactor*opts.margin() {
 		return fmt.Errorf("retention %s is under %d margins of %s", t, retentionFactor, opts.margin())
@@ -244,14 +196,13 @@ func (opts *Options) verify() error {
 	return opts.checkRetention(opts.Retention)
 }
 
-// DefaultOptions initializes an Options object with sensible defaults.
 func DefaultOptions() *Options {
 	return &Options{
 		Logger:              logging.Logger("crdt"),
 		RebroadcastInterval: time.Minute,
 		NumWorkers:          5,
 		DAGSyncerTimeout:    5 * time.Minute,
-		MaxBatchDeltaSize:   1 * 1024 * 1024, // 1MB,
+		MaxBatchDeltaSize:   1 * 1024 * 1024,
 		RepairInterval:      time.Minute,
 		CompactAfterBlocks:  128,
 		Retention:           30 * 24 * time.Hour,
@@ -262,8 +213,6 @@ func DefaultOptions() *Options {
 	}
 }
 
-// Datastore makes a go-datastore a distributed Key-Value store using
-// Merkle-CRDTs and IPLD.
 type Datastore struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -271,35 +220,29 @@ type Datastore struct {
 	opts   *Options
 	logger logging.StandardLogger
 
-	// store is raw behind the journal, which marks every state record
-	// written through it.
+	// store is raw behind the journal, which marks every state record written
+	// through it.
 	store   ds.Datastore
 	raw     ds.Datastore
 	journal *journal
-	// logged is set when raw keeps a prefix of its writes and the DAG
-	// service writes its blocks to raw: a write raw keeps then has every
-	// earlier write kept, blocks included, so no Sync is needed to order
-	// them (see sharesLog).
+	// logged is set when raw keeps a prefix of its writes and the DAG writes its
+	// blocks to raw, so no Sync is needed to order them (see sharesLog).
 	logged    bool
 	namespace ds.Key
 	pre       prefixes
 	set       *set
 	heads     *heads
-	// base is the state's trees as they were when the journal was last
-	// emptied. Guarded by mu.
+	// base is the state's trees as of the journal's last emptying. Guarded by mu.
 	base stateBase
-	// gcMu serializes every change of the roots, the sessions and what they
-	// hold, and the removal of what nothing reaches (see gc.go). It is taken
-	// after mu.
+	// gcMu serializes changes of the roots, the sessions and what they hold, and
+	// removal of what nothing reaches (see gc.go). It is taken after mu.
 	gcMu sync.Mutex
 	gc   collector
-	// fetches are the state fetches in progress, by state root (see
-	// stateFetch). fetchMu is taken alone.
+	// fetches are the state fetches in progress, by state root. fetchMu is taken
+	// alone.
 	fetchMu sync.Mutex
 	fetches map[cid.Cid]*stateFetch
 
-	// trees caches the upper levels of the state trees, for every tree the
-	// store reads (see tree).
 	trees *treeCache
 
 	dagService       ipld.DAGService
@@ -309,9 +252,8 @@ type Datastore struct {
 	seenHeadsMux sync.RWMutex
 	seenHeads    map[cid.Cid]struct{}
 
-	// mu serializes every merge, local write and compaction. The
-	// context is replaced, never changed in place, so readers that only
-	// ask whether a dot is covered load it without the lock.
+	// mu serializes merges, local writes and compactions. The context is replaced,
+	// never changed in place, so a covers check loads it without the lock.
 	mu         sync.Mutex
 	cc         *causalContext
 	ccRead     atomic.Pointer[causalContext]
@@ -322,43 +264,38 @@ type Datastore struct {
 	closed     bool
 	liveCount  int
 	blockCount int
-	// purging holds the blocks a purge has taken and is dropping without
-	// mu, which dropping counts until they are gone.
+	// purging holds the blocks a purge took and drops without mu; dropping counts
+	// them until they are gone.
 	purging  *cidSafeSet
 	dropping sync.WaitGroup
 
 	// ttl is the retention this replica stamps, in milliseconds.
 	ttl   atomic.Uint64
 	times times
-	// since is the fleet time this replica last heard, and sinceUp the
-	// uptime it heard it at; horizon is the latest authored time of
-	// anything it forgot. All three are guarded by mu.
+	// since is the fleet time last heard and sinceUp the uptime then; horizon is
+	// the latest authored time of anything forgotten. Guarded by mu.
 	since   uint64
 	sinceUp time.Duration
 	horizon uint64
-	// erased is, for each incarnation a rebase replaced, the dots it wrote
-	// and no longer held (see dropAllButOwn), until they expire. Guarded by
-	// mu.
-	erased map[string]*known
-	// lastWrite is the uptime of this incarnation's last write.
+	// erased holds, per incarnation a rebase replaced, the dots it wrote and no
+	// longer held (see dropAllButOwn), until they expire. Guarded by mu.
+	erased    map[string]*known
 	lastWrite time.Duration
-	// rejoining is set while this replica waits to be judged after a gap,
-	// with the fleet time it had heard before it (see rejoin.go).
+	// rejoining is set while waiting to be judged after a gap (see rejoin.go).
 	rejoining bool
 	gapFrom   uint64
-	// lastHeard is the uptime it last heard a peer that was not rejoining,
-	// counted from its open; liveHeard the same, 0 until one is heard.
-	// answered is when it last answered each rejoining incarnation.
+	// lastHeard is the uptime a non-rejoining peer was last heard, from open;
+	// liveHeard the same, 0 until one is heard; answered is when each rejoining
+	// incarnation was last answered.
 	lastHeard time.Duration
 	liveHeard time.Duration
-	// anyHeard and fleetHeard are the uptimes it last heard a peer whose
-	// clock agrees with this one's, and such a peer that has heard a fleet,
-	// 0 before the first.
+	// anyHeard and fleetHeard are when a peer whose clock agrees, and such a peer
+	// that has heard a fleet, was last heard; 0 before the first.
 	anyHeard   time.Duration
 	fleetHeard time.Duration
 	answered   map[string]time.Duration
-	// merged is when this replica last covered more of each incarnation:
-	// its heartbeats acknowledge those to their authors.
+	// merged is when each incarnation was last covered further; heartbeats
+	// acknowledge those to their authors.
 	merged map[string]time.Duration
 	// contacts are the peers heard without a break of G, frontiers what
 	// each live incarnation last said it holds, listed the peers frontiers
@@ -382,35 +319,33 @@ type Datastore struct {
 	sent         uint64
 	turned       uint64
 	lagged, fell bool
-	// msg is the broadcast message builds, with the heads and dots it
-	// points to, reused: each is marshalled before store.mu is released.
+	// msg is reused for each broadcast with its heads and dots; each is
+	// marshalled before store.mu is released.
 	msg      pb.CRDTBroadcast
 	msgHeads []pb.Head
 	msgDots  []pb.Dot
 	msgReps  []string
 	msgAcks  []pb.Entry
-	// ccWaited is set once someone holds ccChanged to wait on.
+	// ccWaited is set once someone waits on ccChanged.
 	ccWaited bool
-	// spareMerge is a finished delta merge, kept for the next; build is
-	// buildState's storage, and parents the heads a write's block links.
+	// spareMerge is a finished delta merge kept for reuse; build is buildState's
+	// storage, and parents the heads a write's block links.
 	spareMerge *merging
 	parents    []Head
 	build      stateBuild
 	redo       redoScratch
-	// compactDue asks the next maintenance for a snapshot.
 	compactDue bool
-	// lows are lower bounds, kept so the frequent passes skip scans that
-	// would find nothing: the earliest expiry of a pending removal, the
-	// earliest half-life (at + ttl/2) of an indexed block, the earliest
-	// expiry of a kept own operation. Every insertion lowers them; a scan
-	// sets them to what it found, none = unbounded; 0 means unknown.
+	// lows are lower bounds that let frequent passes skip empty scans: the
+	// earliest pending-removal expiry, indexed-block half-life (at + ttl/2) and
+	// kept own-operation expiry. Insertions lower them; a scan sets them, none
+	// meaning unbounded and 0 unknown.
 	lows lows
-	// pendingAt is at or above the latest stamp of a pending removal held
-	// here, none until a scan finds it.
+	// pendingAt is at or above the latest stamp of a pending removal held, none
+	// until a scan finds it.
 	pendingAt uint64
-	// generation changes when a rebase replaces the state: a walk begun
-	// under an older one merges nothing. rebuilding is the generation whose
-	// rebase still walks the judge's state, 0 when none does.
+	// generation changes when a rebase replaces the state; a walk begun under an
+	// older one merges nothing. rebuilding is the generation whose rebase still
+	// walks the judge's state, 0 for none.
 	generation uint64
 	rebuilding uint64
 
@@ -418,18 +353,17 @@ type Datastore struct {
 
 	jobQueue chan *dagJob
 	sendJobs chan *dagJob
-	// keep track of children to be fetched so only one job does every
-	// child
+	// queuedChildren has each child fetched by one job only.
 	queuedChildren *cidSafeSet
 }
 
 type dagJob struct {
-	ctx        context.Context // A job context for tracing
-	session    *sync.WaitGroup // A waitgroup to wait for all related jobs to conclude
-	nodeGetter *crdtNodeGetter // a node getter to use
-	delta      *pb.Delta       // the current delta
-	node       ipld.Node       // the current ipld Node
-	gen        uint64          // the generation the walk began under
+	ctx        context.Context
+	session    *sync.WaitGroup
+	nodeGetter *crdtNodeGetter
+	delta      *pb.Delta
+	node       ipld.Node
+	gen        uint64
 }
 
 type broadcastBatchHead struct {
@@ -437,11 +371,7 @@ type broadcastBatchHead struct {
 	children []Head
 }
 
-// NewDatastore returns a Merkle-CRDT-based Datastore persisting under the
-// given namespace of store. It needs a DAG-Service for IPLD nodes and a
-// Broadcaster to announce and receive heads.
-//
-// The CRDT-Datastore should call Close() before the given store is closed.
+// Close the Datastore before the given store.
 func NewDatastore(
 	store ds.Datastore,
 	namespace ds.Key,
@@ -563,8 +493,7 @@ func NewDatastore(
 }
 
 // open brings the store to the current format, loads its state and takes an
-// incarnation: the one this store closed under earlier in this process, or a
-// new one.
+// incarnation: the one it closed under earlier in this process, or a new one.
 func (store *Datastore) open(ctx context.Context) error {
 	if err := store.checkFormat(ctx); err != nil {
 		return err
@@ -613,10 +542,9 @@ func (store *Datastore) open(ctx context.Context) error {
 		return err
 	}
 
-	// The bad-shutdown key is present at startup only if the previous run
-	// did not Close: mark dirty so the repair loop retries the parents a
-	// walk left missing. Sync it now, or a crash before the next flush
-	// would go undetected.
+	// The bad-shutdown key at startup means the last run did not Close: mark dirty
+	// so repair retries what a walk left missing, and sync now so a crash before
+	// the next flush is not missed.
 	hadBadShutdown, err := store.store.Has(ctx, store.badShutdownKey())
 	if err != nil {
 		return fmt.Errorf("error checking bad-shutdown key: %w", err)
@@ -654,9 +582,8 @@ func (store *Datastore) open(ctx context.Context) error {
 	return nil
 }
 
-// SetRetention changes T for what this replica writes from now on. What it
-// wrote before keeps the T it was written with, so lowering T forgets
-// nothing earlier than it was promised, and raising it keeps more.
+// SetRetention changes T for what is written from now on; what was written
+// keeps its T, so lowering it forgets nothing promised.
 func (store *Datastore) SetRetention(t time.Duration) error {
 	if err := store.opts.checkRetention(t); err != nil {
 		return err
@@ -665,15 +592,13 @@ func (store *Datastore) SetRetention(t time.Duration) error {
 	return nil
 }
 
-// retention is the T this replica stamps, in milliseconds.
 func (store *Datastore) retention() uint64 { return store.ttl.Load() }
 
-// clock is this replica's wall clock in milliseconds.
 func (store *Datastore) clock() uint64 { return millis(store.opts.Clock()) }
 
-// stampNow is the time a block written now carries: its clock, or the fleet
-// time it last heard if that is later, so a clock behind the fleet does not
-// write what is already old. The caller holds store.mu.
+// stampNow is the later of the clock and the fleet time last heard, so a clock
+// behind the fleet does not write what is already old. The caller holds
+// store.mu.
 func (store *Datastore) stampNow() uint64 { return max(store.clock(), store.since) }
 
 func (store *Datastore) incarnationKey() incarnationKey {
@@ -684,9 +609,8 @@ func (store *Datastore) versionKey() ds.Key {
 	return store.namespace.ChildString(versionKey)
 }
 
-// checkFormat empties a store written in another format. There is no
-// migration: a replica that loses its copy this way fetches it again. A
-// store with no version written is a new one.
+// checkFormat empties a store of another format; there is no migration, the
+// replica fetches its copy again. A store with no version is new.
 func (store *Datastore) checkFormat(ctx context.Context) error {
 	data, err := store.store.Get(ctx, store.versionKey())
 	switch {
@@ -724,10 +648,8 @@ func countPrefix(ctx context.Context, store ds.Datastore, prefix ds.Key) (int, e
 	return n, nil
 }
 
-// errFound ends a scan that found what it looked for.
 var errFound = errors.New("found")
 
-// anyUnder reports whether store holds a key under prefix.
 func anyUnder(ctx context.Context, store ds.Datastore, prefix ds.Key) (bool, error) {
 	err := scanBytes(ctx, store, prefix, func(_, _ []byte) error { return errFound })
 	if errors.Is(err, errFound) {
@@ -759,9 +681,9 @@ func (store *Datastore) contextChanged() <-chan struct{} {
 	return store.ccChanged
 }
 
-// cancelWhenCovered cancels a fetch once this replica covers every dot it is
-// fetching: a block nobody holds any more because a snapshot covers it is
-// otherwise waited on until the fetch times out.
+// cancelWhenCovered cancels a fetch once every dot it fetches is covered: a
+// block a snapshot covers may be held by nobody, and the fetch would wait to
+// time out.
 func (store *Datastore) cancelWhenCovered(ctx context.Context, cancel context.CancelFunc, dots []dot) {
 	for {
 		changed := store.contextChanged()
@@ -784,10 +706,8 @@ func (store *Datastore) cancelWhenCovered(ctx context.Context, cancel context.Ca
 	}
 }
 
-// handleNext will loop on broadcaster.Next(), walking every head it hears
-// that this replica does not cover.
 func (store *Datastore) handleNext(ctx context.Context) {
-	if store.broadcaster == nil { // offline
+	if store.broadcaster == nil {
 		return
 	}
 	for {
@@ -839,9 +759,7 @@ func (store *Datastore) adoptHeads(ctx context.Context, received []Head) {
 }
 
 func randomizeInterval(d time.Duration) time.Duration {
-	// 30% of the configured interval
 	leeway := (d * 30 / 100)
-	// A random number between -leeway|+leeway.
 	randGen := mrand.New(mrand.NewSource(time.Now().UnixNano()))
 	randomInterval := time.Duration(randGen.Int63n(int64(leeway*2))) - leeway
 	return d + randomInterval
@@ -903,7 +821,7 @@ func (store *Datastore) repair(ctx context.Context) {
 	if store.opts.RepairInterval == 0 {
 		return
 	}
-	timer := time.NewTimer(0) // fire immediately on start
+	timer := time.NewTimer(0)
 	for {
 		select {
 		case <-ctx.Done():
@@ -925,8 +843,8 @@ func (store *Datastore) repair(ctx context.Context) {
 	}
 }
 
-// rebroadcastHeads sends out the heads not heard from anyone else during the
-// last interval.
+// rebroadcastHeads sends the heads nobody else broadcast during the last
+// interval.
 func (store *Datastore) rebroadcastHeads(ctx context.Context) {
 	heads, _ := store.heads.List()
 
@@ -945,7 +863,6 @@ func (store *Datastore) rebroadcastHeads(ctx context.Context) {
 	}
 }
 
-// Log some stats every 5 minutes.
 func (store *Datastore) logStats(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Minute)
 	for {
@@ -963,8 +880,7 @@ func (store *Datastore) logStats(ctx context.Context) {
 	}
 }
 
-// isIndexed reports whether this replica holds a block: indexed, and not
-// taken by a purge that is dropping it.
+// isIndexed is false for a block a purge is dropping.
 func (store *Datastore) isIndexed(ctx context.Context, c cid.Cid) (bool, error) {
 	if store.purging.Has(c) {
 		return false, nil
@@ -972,8 +888,6 @@ func (store *Datastore) isIndexed(ctx context.Context, c cid.Cid) (bool, error) 
 	return store.store.Has(ctx, store.blockKey(c))
 }
 
-// handleBlock walks the branch under a head unless this replica already
-// covers or holds it.
 func (store *Datastore) handleBlock(ctx context.Context, h Head) error {
 	return store.handleBlockAt(ctx, store.currentGeneration(), h)
 }
@@ -984,7 +898,6 @@ func (store *Datastore) currentGeneration() uint64 {
 	return store.generation
 }
 
-// handleBlockAt is handleBlock for a walk begun under generation gen.
 func (store *Datastore) handleBlockAt(ctx context.Context, gen uint64, h Head) error {
 	if !h.Dot.isZero() && store.covered(h.Dot) {
 		return nil
@@ -1006,8 +919,8 @@ func (store *Datastore) handleBlockAt(ctx context.Context, gen uint64, h Head) e
 	return err
 }
 
-// retryLater records a block whose walk failed so repair retries it: a head
-// heard once may not be heard again.
+// A head heard once may not be heard again, so a failed walk is recorded for
+// repair.
 func (store *Datastore) retryLater(ctx context.Context, l link) {
 	if !l.dot.isZero() {
 		if err := store.store.Put(ctx, store.retryKey(l.dot), encodeLink(l)); err != nil {
@@ -1021,13 +934,9 @@ func (store *Datastore) retryPrefix() ds.Key { return store.namespace.ChildStrin
 
 func (store *Datastore) retryKey(d dot) ds.Key { return dotKey(store.pre.retry, d) }
 
-// handleBranch walks down from the given blocks and returns once the walk is
-// done. A block that cannot be fetched marks the store dirty: it is still
-// missing, and repair retries it.
-//
-// A walk is bounded by D, the delivery bound, as a whole: one that takes
-// longer is abandoned and left to repair, so nothing it fetches late is
-// merged on the strength of a judgement made when it began.
+// A block that cannot be fetched marks the store dirty for repair. A walk is
+// bounded by D as a whole: one that takes longer is left to repair, so nothing
+// fetched late is merged on a judgement made when it began.
 func (store *Datastore) handleBranch(ctx context.Context, from []link) error {
 	return store.handleBranchAt(ctx, store.currentGeneration(), from)
 }
@@ -1047,14 +956,11 @@ func (store *Datastore) handleBranchAt(ctx context.Context, gen uint64, from []l
 	return err
 }
 
-// dagWorker should run in its own goroutine. Workers are launched during
-// initialization in NewDatastore().
 func (store *Datastore) dagWorker() {
 	for job := range store.jobQueue {
 		ctx := job.ctx
 		select {
 		case <-ctx.Done():
-			// drain jobs from queue when we are done
 			store.queuedChildren.Remove(job.node.Cid())
 			job.session.Done()
 			continue
@@ -1083,9 +989,8 @@ func (store *Datastore) dagWorker() {
 	}
 }
 
-// sendNewJobs fetches the given blocks and queues each for a worker, skipping
-// the ones this replica covers by now or another job is already fetching.
-// It blocks until all jobs have been queued.
+// sendNewJobs skips blocks covered by now or fetched by another job, and
+// blocks until every job is queued.
 func (store *Datastore) sendNewJobs(ctx context.Context, gen uint64, session *sync.WaitGroup, ng *crdtNodeGetter, links []link) error {
 	var fetch []cid.Cid
 	dots := map[cid.Cid]dot{}
@@ -1175,15 +1080,13 @@ func (store *Datastore) sendNewJobs(ctx context.Context, gen uint64, session *sy
 	return errors.Join(append(errs, fmt.Errorf("%d blocks could not be fetched", stillMissing))...)
 }
 
-// the only purpose of this worker is to be able to orderly shut-down job
-// workers without races by becoming the only sender for the store.jobQueue
-// channel.
+// sendJobWorker is the jobQueue's only sender, so workers shut down without
+// races.
 func (store *Datastore) sendJobWorker(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
 			if len(store.sendJobs) > 0 {
-				// we left something in the queue
 				store.MarkDirty(ctx)
 			}
 			close(store.jobQueue)
@@ -1198,14 +1101,10 @@ func (store *Datastore) dirtyKey() ds.Key {
 	return store.namespace.ChildString(dirtyBitKey)
 }
 
-// badShutdownKey is written on New and removed on a clean Close. Its presence
-// at startup indicates the previous run did not Close() cleanly, so the store
-// should be treated as dirty and repaired.
 func (store *Datastore) badShutdownKey() ds.Key {
 	return store.namespace.ChildString(badShutdownKey)
 }
 
-// MarkDirty marks the Datastore as dirty.
 func (store *Datastore) MarkDirty(ctx context.Context) {
 	store.logger.Warn("marking datastore as dirty")
 	if err := store.store.Put(ctx, store.dirtyKey(), nil); err != nil {
@@ -1213,7 +1112,6 @@ func (store *Datastore) MarkDirty(ctx context.Context) {
 	}
 }
 
-// IsDirty returns whether the datastore is marked dirty.
 func (store *Datastore) IsDirty(ctx context.Context) bool {
 	ok, err := store.store.Has(ctx, store.dirtyKey())
 	if err != nil {
@@ -1222,7 +1120,6 @@ func (store *Datastore) IsDirty(ctx context.Context) bool {
 	return ok
 }
 
-// MarkClean removes the dirty mark from the datastore.
 func (store *Datastore) MarkClean(ctx context.Context) {
 	store.logger.Info("marking datastore as clean")
 	if err := store.store.Delete(ctx, store.dirtyKey()); err != nil {
@@ -1230,7 +1127,6 @@ func (store *Datastore) MarkClean(ctx context.Context) {
 	}
 }
 
-// processNode merges one fetched block and returns the parents to walk.
 func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNodeGetter, delta *pb.Delta, node ipld.Node) ([]link, error) {
 	current := node.Cid()
 	// Release the reservation whether or not the merge succeeds, or a
@@ -1368,18 +1264,16 @@ func (store *Datastore) processNode(ctx context.Context, gen uint64, ng *crdtNod
 	return walk, nil
 }
 
-// afterMerge is what a merge of another replica's block may complete: a rejoin
-// held open until this replica holds what a judge vouched with. The caller
-// holds store.mu.
+// afterMerge completes a rejoin held open until this replica holds what a
+// judge vouched with. The caller holds store.mu.
 func (store *Datastore) afterMerge(ctx context.Context) {
 	if err := store.endRejoinIfHeld(ctx); err != nil {
 		store.logger.Errorf("ending the rejoin: %s", err)
 	}
 }
 
-// unmerged settles a block that will never be merged: nothing waits for it
-// any more, the block fetched for it goes, and the horizon takes forgot, the
-// time of what it taught if that is being forgotten. The caller holds
+// unmerged settles a block that will never be merged: nothing waits for it,
+// its fetched block goes, and the horizon takes forgot. The caller holds
 // store.mu.
 func (store *Datastore) unmerged(ctx context.Context, c cid.Cid, d dot, forgot uint64) error {
 	m := store.beginMerge()
@@ -1393,9 +1287,9 @@ func (store *Datastore) unmerged(ctx context.Context, c cid.Cid, d dot, forgot u
 	return store.dropUnindexed(ctx, c)
 }
 
-// dropUnindexed removes a block fetched for a dot this replica already
-// covers and never indexed: no purge would find it otherwise. What a
-// snapshot's state brought is its fetch's, and goes once that ends.
+// dropUnindexed removes a block fetched for a covered dot and never indexed:
+// no purge would find it. What a snapshot's state brought goes when its fetch
+// ends.
 func (store *Datastore) dropUnindexed(ctx context.Context, c cid.Cid) error {
 	held, err := store.isIndexed(ctx, c)
 	if err != nil || held {
@@ -1404,16 +1298,16 @@ func (store *Datastore) dropUnindexed(ctx context.Context, c cid.Cid) error {
 	return store.removeBlocks(ctx, []cid.Cid{c})
 }
 
-// dropFailed removes the fetched block of a merge that failed: it is not
-// indexed, so if a snapshot covers it before the retry nothing would.
+// A failed merge's block is not indexed, so if a snapshot covers it before the
+// retry nothing else would remove it.
 func (store *Datastore) dropFailed(ctx context.Context, c cid.Cid) {
 	if err := store.dropUnindexed(ctx, c); err != nil {
 		store.logger.Warnf("error dropping the blocks of a failed merge: %s", err)
 	}
 }
 
-// repairDAG retries every parent a merged block links and this replica does
-// not cover yet, and every head it adopted without merging.
+// repairDAG retries every uncovered parent a merged block links and every head
+// adopted without merging.
 func (store *Datastore) repairDAG(ctx context.Context) error {
 	start := time.Now()
 	defer func() {
@@ -1477,29 +1371,23 @@ func (store *Datastore) repairDAG(ctx context.Context) error {
 	return nil
 }
 
-// Repair retries every parent this replica is missing and marks the store
-// clean once none is left.
+// Repair marks the store clean once nothing is missing.
 func (store *Datastore) Repair(ctx context.Context) error {
 	return store.repairDAG(ctx)
 }
 
-// Get retrieves the object `value` named by `key`.
-// Get will return ErrNotFound if the key is not mapped to a value.
 func (store *Datastore) Get(ctx context.Context, key ds.Key) (value []byte, err error) {
 	return store.set.Element(ctx, key.String())
 }
 
-// Has returns whether the `key` is mapped to a `value`.
 func (store *Datastore) Has(ctx context.Context, key ds.Key) (exists bool, err error) {
 	return store.set.InSet(ctx, key.String())
 }
 
-// GetSize returns the size of the `value` named by `key`.
 func (store *Datastore) GetSize(ctx context.Context, key ds.Key) (size int, err error) {
 	return ds.GetBackedSize(ctx, store, key)
 }
 
-// Query searches the datastore and returns a query result.
 func (store *Datastore) Query(ctx context.Context, q query.Query) (query.Results, error) {
 	qr, err := store.set.Elements(ctx, q)
 	if err != nil {
@@ -1508,12 +1396,10 @@ func (store *Datastore) Query(ctx context.Context, q query.Query) (query.Results
 	return query.NaiveQueryApply(q, qr), nil
 }
 
-// Put stores the object `value` named by `key`.
 func (store *Datastore) Put(ctx context.Context, key ds.Key, value []byte) error {
 	return store.write(ctx, []op{{key: key.String(), value: value, put: true}})
 }
 
-// Delete removes the value for given `key`.
 func (store *Datastore) Delete(ctx context.Context, key ds.Key) error {
 	return store.write(ctx, []op{{key: key.String()}})
 }
@@ -1524,9 +1410,8 @@ type op struct {
 	put   bool
 }
 
-// write publishes one delta for ops. Each op removes every version of its
-// key this replica holds, and a put then adds the new one: a key's live
-// versions are only ever the ones written concurrently.
+// Each op removes every version of its key held here, and a put then adds the
+// new one, so a key's live versions are only ever concurrent ones.
 func (store *Datastore) write(ctx context.Context, ops []op) error {
 	store.mu.Lock()
 	if store.closed {
@@ -1576,9 +1461,9 @@ func (store *Datastore) write(ctx context.Context, ops []op) error {
 	return nil
 }
 
-// idleRetire draws a new incarnation for a write that comes after this one
-// was idle for more than half the retention, so it never writes under an
-// incarnation its peers may have forgotten. The caller holds store.mu.
+// idleRetire draws a new incarnation for a write after more than half the
+// retention idle, so it never writes under one its peers may have forgotten.
+// The caller holds store.mu.
 func (store *Datastore) idleRetire() error {
 	idle := store.times.up() - store.lastWrite
 	if store.counter == 0 || durationMillis(idle) <= store.retention()/2 {
@@ -1587,12 +1472,10 @@ func (store *Datastore) idleRetire() error {
 	return store.drawIncarnation()
 }
 
-// nonceLen is the length of the nonce that ends every incarnation id.
 const nonceLen = 16
 
-// peerOf is the peer an incarnation was drawn by: its ReplicaID, or the
-// incarnation itself when it has none, as nothing then tells the
-// incarnations of one store from those of another.
+// Without a ReplicaID nothing tells one store's incarnations from another's,
+// so an incarnation is its own peer.
 func peerOf(incarnation string) string {
 	if len(incarnation) <= nonceLen {
 		return incarnation
@@ -1600,8 +1483,7 @@ func peerOf(incarnation string) string {
 	return incarnation[:len(incarnation)-nonceLen]
 }
 
-// drawIncarnation starts a new incarnation: the peer id and a nonce drawn
-// at random, its counter at 0. The caller holds store.mu or is opening.
+// The caller holds store.mu or is opening.
 func (store *Datastore) drawIncarnation() error {
 	nonce := make([]byte, nonceLen)
 	if _, err := rand.Read(nonce); err != nil {
@@ -1613,16 +1495,13 @@ func (store *Datastore) drawIncarnation() error {
 	return nil
 }
 
-// nextDot is the dot of this incarnation's next delta and its prev.
 func (store *Datastore) nextDot() (dot, uint64) {
 	return dot{replica: store.replica, counter: store.counter + 1}, store.counter
 }
 
-// publishLocked writes delta as a new block over the current heads and merges
-// it, and returns the block's head and the heads it links, which last until
-// store.mu is released. The counter advances only once the merge commits, so
-// a failed write leaves no gap in this incarnation's chain. The caller holds
-// store.mu.
+// The returned heads last until store.mu is released. The counter advances
+// only once the merge commits, so a failed write leaves no gap. The caller
+// holds store.mu.
 func (store *Datastore) publishLocked(ctx context.Context, delta *pb.Delta) (Head, []Head, error) {
 	d, prev := store.nextDot()
 	hs, height := store.heads.appendList(store.parents[:0])
@@ -1660,13 +1539,10 @@ func parentsOf(hs []Head) []*pb.Parent {
 	return out
 }
 
-// linkOf is the link to a fetched block.
 func linkOf(c cid.Cid, delta *pb.Delta) link {
 	return link{cid: c, dot: dotFromPB(delta.GetDot()), at: delta.GetAt(), ttl: delta.GetTtl()}
 }
 
-// stamped sets a block this replica is about to write to now: when it is
-// written and how long what it teaches is kept.
 func (store *Datastore) stamped(delta *pb.Delta) *pb.Delta {
 	delta.At = store.stampNow()
 	delta.Ttl = store.retention()
@@ -1675,8 +1551,7 @@ func (store *Datastore) stamped(delta *pb.Delta) *pb.Delta {
 	return delta
 }
 
-// tombstoneFor makes tomb the tombstone delta writes for e: needed as long
-// as delta is, and never less long than e is.
+// A tombstone is needed as long as its delta, and never less than its element.
 func tombstoneFor(delta *pb.Delta, e element, tomb *pb.Element) {
 	ttl := delta.Ttl
 	if exp := e.expires(); exp > delta.At+ttl {
@@ -1685,8 +1560,8 @@ func tombstoneFor(delta *pb.Delta, e element, tomb *pb.Element) {
 	tomb.Key, tomb.Dot, tomb.At, tomb.Ttl = bytesOf(e.key), e.dot.pooledPB(), delta.At, ttl
 }
 
-// grow extends *s by one message, reusing the one a pooled message kept in
-// its capacity, or taking one from get.
+// grow reuses a message a pooled delta kept in its capacity, or takes one from
+// get.
 func grow[T any](s *[]*T, get func() *T) *T {
 	n := len(*s)
 	if n < cap(*s) {
@@ -1702,11 +1577,9 @@ func grow[T any](s *[]*T, get func() *T) *T {
 	return m
 }
 
-// releaseDelta returns a write's delta to the pool, once it is published.
-// The messages it holds borrow their bytes (the keys and values written,
-// replicas and cids as they are held as strings); they are cleared first, so
-// the pool keeps none of them and no later use can write into them. Pooled
-// messages are only ever filled and marshalled, never unmarshalled into.
+// The pooled messages borrow their bytes, so they are cleared first and no
+// later use writes into them. Pooled messages are only filled and marshalled,
+// never unmarshalled into.
 func releaseDelta(delta *pb.Delta) {
 	for _, els := range [][]*pb.Element{delta.Elements, delta.Tombstones} {
 		for _, e := range els {
@@ -1728,8 +1601,6 @@ func releaseDelta(delta *pb.Delta) {
 	delta.ReturnToVTPool()
 }
 
-// maybeCompact compacts once the store holds CompactAfterBlocks blocks and
-// at least one block per live element.
 func (store *Datastore) maybeCompact(ctx context.Context) {
 	if store.opts.CompactAfterBlocks == 0 {
 		return
@@ -1745,14 +1616,13 @@ func (store *Datastore) maybeCompact(ctx context.Context) {
 	}
 }
 
-// Sync flushes everything this store has written to the underlying datastore.
-// A key's value cannot be read back without the elements, the context and
-// the heads, so the prefix does not narrow it.
+// A value cannot be read back without the elements, context and heads, so
+// prefix does not narrow the sync.
 func (store *Datastore) Sync(ctx context.Context, prefix ds.Key) error {
 	return store.store.Sync(ctx, store.namespace)
 }
 
-// Close shuts down the CRDT datastore. A write after it fails with ErrClosed.
+// A write after Close fails with ErrClosed.
 func (store *Datastore) Close() error {
 	closeCtx := context.Background()
 	store.cancel()
@@ -1778,8 +1648,7 @@ func (store *Datastore) Close() error {
 	return nil
 }
 
-// Batch accumulates Puts and Deletes and publishes them as one delta on
-// Commit. The last operation on a key wins.
+// The batch publishes one delta on Commit; the last operation on a key wins.
 func (store *Datastore) Batch(ctx context.Context) (ds.Batch, error) {
 	return &crdtBatch{store: store, index: map[string]int{}}, nil
 }
@@ -1818,7 +1687,6 @@ func (b *crdtBatch) Delete(ctx context.Context, key ds.Key) error {
 	return b.add(ctx, op{key: key.String()})
 }
 
-// Commit publishes the batch as one delta.
 func (b *crdtBatch) Commit(ctx context.Context) error {
 	b.mu.Lock()
 	ops := b.ops
@@ -1827,21 +1695,17 @@ func (b *crdtBatch) Commit(ctx context.Context) error {
 	return b.store.write(ctx, ops)
 }
 
-// A BlockWriter stores a block where its DAG service keeps blocks and tells
-// the exchange it is held, without the block service's context and span per
-// block or its asking first whether the block is held. A DAG service that is
-// one is written through it; peer.DAGService is.
+// A BlockWriter stores a block and tells the exchange it is held, without the
+// block service's per-block context and span or its check first.
+// peer.DAGService is one.
 type BlockWriter interface {
 	WriteBlock(ctx context.Context, b blocks.Block) error
 }
 
-// writeBlocks indexes blocks this replica authors, durably, before writing
-// them, as a store may keep any subset of the writes no Sync has covered;
-// the merge that covers them makes them durable before it records them. A
-// crash before that merge leaves index entries whose dot the context does
-// not cover, which the next open drops with whatever of their blocks is
-// held: never a block nothing indexes, nor a merged entry naming a block
-// that is gone.
+// writeBlocks indexes blocks this replica authors before writing them. A crash
+// before the covering merge leaves index entries whose dots are not covered,
+// which the next open drops with their blocks: never a block nothing indexes,
+// nor a merged entry naming a lost block.
 func (store *Datastore) writeBlocks(ctx context.Context, b block, nodes ...ipld.Node) error {
 	t := newTxn(store.store)
 	for _, nd := range nodes {
@@ -1855,8 +1719,7 @@ func (store *Datastore) writeBlocks(ctx context.Context, b block, nodes ...ipld.
 	if err != nil {
 		return err
 	}
-	// Adding a block writes it locally and tells bitswap it is held: no
-	// peer is waited on, so no timeout bounds it.
+	// Adding a block waits on no peer, so no timeout bounds it.
 	for _, nd := range nodes {
 		if err = store.addBlock(ctx, nd); err != nil {
 			break
@@ -1873,15 +1736,12 @@ func (store *Datastore) writeBlocks(ctx context.Context, b block, nodes ...ipld.
 	return nil
 }
 
-// A BlockRemover removes blocks from where its DAG service keeps them,
-// without the block service's context and span per block. A DAG service
-// that is one is removed from through it; peer.DAGService is.
+// A BlockRemover removes blocks without the block service's per-block context
+// and span. peer.DAGService is one.
 type BlockRemover interface {
 	DeleteBlocks(ctx context.Context, cids []cid.Cid) error
 }
 
-// removeBlocks removes cids' blocks from where the DAG service keeps blocks,
-// through its BlockRemover when it is one.
 func (store *Datastore) removeBlocks(ctx context.Context, cids []cid.Cid) error {
 	if r, ok := store.dagService.(BlockRemover); ok {
 		return r.DeleteBlocks(ctx, cids)
@@ -1889,8 +1749,6 @@ func (store *Datastore) removeBlocks(ctx context.Context, cids []cid.Cid) error 
 	return store.dagService.RemoveMany(ctx, cids)
 }
 
-// addBlock writes nd where the DAG service keeps blocks, through its
-// BlockWriter when it is one, else its Add.
 func (store *Datastore) addBlock(ctx context.Context, nd ipld.Node) error {
 	if w, ok := store.dagService.(BlockWriter); ok {
 		return w.WriteBlock(ctx, nd)
@@ -1898,8 +1756,6 @@ func (store *Datastore) addBlock(ctx context.Context, nd ipld.Node) error {
 	return store.dagService.Add(ctx, nd)
 }
 
-// addBlocks writes nodes where the DAG service keeps blocks, through its
-// BlockWriter when it is one, else its AddMany.
 func (store *Datastore) addBlocks(ctx context.Context, nodes []ipld.Node) error {
 	w, direct := store.dagService.(BlockWriter)
 	if !direct {
@@ -1913,8 +1769,7 @@ func (store *Datastore) addBlocks(ctx context.Context, nodes []ipld.Node) error 
 	return nil
 }
 
-// discardBlocks removes blocks this replica wrote and did not merge, with
-// their index entries. A failure leaves them to the next open.
+// A failure leaves them to the next open.
 func (store *Datastore) discardBlocks(ctx context.Context, cids ...cid.Cid) {
 	if err := store.removeBlocks(ctx, cids); err != nil {
 		store.logger.Warnf("error removing unmerged blocks: %s", err)
@@ -1933,9 +1788,8 @@ func (store *Datastore) discardBlocks(ctx context.Context, cids ...cid.Cid) {
 	}
 }
 
-// dropOrphans removes the blocks this replica wrote and never merged: every
-// merged block's dot is covered, so an index entry whose dot is not is one a
-// crash left between writing a block and merging it.
+// Every merged block's dot is covered, so an index entry whose dot is not was
+// left by a crash between writing a block and merging it.
 func (store *Datastore) dropOrphans(ctx context.Context) error {
 	var orphans []cid.Cid
 	prefix := store.blocksPrefix()
@@ -1968,16 +1822,14 @@ func (store *Datastore) dropOrphans(ctx context.Context) error {
 }
 
 func (store *Datastore) broadcastHeads(ctx context.Context, heads []Head) error {
-	if len(heads) == 0 { // nothing to announce
+	if len(heads) == 0 {
 		return nil
 	}
 	return store.send(ctx, heads, false)
 }
 
-// send broadcasts heads, none included, with this replica's fleet time, and
-// its frontier when it is a heartbeat.
 func (store *Datastore) send(ctx context.Context, heads []Head, beat bool) error {
-	if store.broadcaster == nil { // offline
+	if store.broadcaster == nil {
 		return nil
 	}
 	bcastBytes, err := store.encodeBroadcast(ctx, heads, beat)
@@ -1990,13 +1842,11 @@ func (store *Datastore) send(ctx context.Context, heads []Head, beat bool) error
 	return nil
 }
 
-// broadcast calls broadcastHeads directly or batches the the Head when
-// BroadcastBatchDelay is enabled.
 func (store *Datastore) broadcast(ctx context.Context, head Head, children []Head) error {
-	if store.broadcaster == nil { // offline
+	if store.broadcaster == nil {
 		return nil
 	}
-	if head.Cid == cid.Undef { // nothing to rebroadcast
+	if head.Cid == cid.Undef {
 		return nil
 	}
 	select {
@@ -2019,8 +1869,6 @@ func (store *Datastore) broadcast(ctx context.Context, head Head, children []Hea
 	return store.broadcastHeads(ctx, []Head{head})
 }
 
-// PrintDAG pretty prints the blocks this replica holds under its heads, down
-// to what a snapshot covers.
 func (store *Datastore) PrintDAG(ctx context.Context) error {
 	return store.DotDAG(ctx, nopWriter{printer: true})
 }
@@ -2034,8 +1882,6 @@ func (w nopWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// DotDAG writes a dot-format representation of the blocks this replica holds
-// under its heads to w.
 func (store *Datastore) DotDAG(ctx context.Context, w io.Writer) error {
 	heads, _ := store.heads.List()
 	if _, err := fmt.Fprintln(w, "digraph CRDTDAG {"); err != nil {
@@ -2085,21 +1931,18 @@ func (store *Datastore) DotDAG(ctx context.Context, w io.Writer) error {
 	return err
 }
 
-// Stats wraps internal information about the datastore.
 type Stats struct {
 	Heads      []Head
 	MaxHeight  uint64
 	QueuedJobs int
 }
 
-// InternalStats returns internal datastore information like the current heads
-// and max height.
 func (store *Datastore) InternalStats(ctx context.Context) Stats {
 	heads, height := store.heads.List()
 	return Stats{
 		Heads:      heads,
 		MaxHeight:  height,
-		QueuedJobs: len(store.jobQueue), // capacity: numWorkers
+		QueuedJobs: len(store.jobQueue),
 	}
 }
 

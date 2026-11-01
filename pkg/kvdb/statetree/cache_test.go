@@ -13,8 +13,8 @@ import (
 	mh "github.com/multiformats/go-multihash"
 )
 
-// heldDAG serves the very nodes added to it, so a test can tell whether a
-// decoded node points into a block's bytes.
+// heldDAG serves the nodes added to it, so a test can tell whether a decoded
+// node aliases its block.
 type heldDAG struct {
 	ipld.DAGService
 	nodes map[cid.Cid]ipld.Node
@@ -52,7 +52,6 @@ func randomEntries(r *rand.Rand, n int) map[string][]byte {
 	return m
 }
 
-// within reports whether b starts inside block.
 func within(b, block []byte) bool {
 	if len(b) == 0 || len(block) == 0 {
 		return false
@@ -61,7 +60,6 @@ func within(b, block []byte) bool {
 	return p >= lo && p < lo+uintptr(len(block))
 }
 
-// held is what c holds, by CID.
 func (c *Cache) held() map[cid.Cid]*node {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -76,7 +74,6 @@ func (c *Cache) held() map[cid.Cid]*node {
 	return out
 }
 
-// recount is what c's nodes cost, counted from the nodes themselves.
 func (c *Cache) recount() int {
 	total := 0
 	for _, n := range c.held() {
@@ -104,9 +101,6 @@ func (c *Cache) check(t testing.TB) {
 	}
 }
 
-// TestACachedNodeOwnsItsBytes: a node the cache keeps holds no byte of the
-// block it was decoded from, while a node it does not keep aliases the
-// block as before.
 func TestACachedNodeOwnsItsBytes(t *testing.T) {
 	ctx := context.Background()
 	s := newHeldDAG()
@@ -151,9 +145,6 @@ func TestACachedNodeOwnsItsBytes(t *testing.T) {
 	}
 }
 
-// TestACachedTreeReadsOnlyItsLowestLevel: once a tree's upper levels are
-// cached, a lookup reads at most the level-0 node of its key; before, it
-// read its whole path.
 func TestACachedTreeReadsOnlyItsLowestLevel(t *testing.T) {
 	ctx := context.Background()
 	s := newStore()
@@ -181,10 +172,6 @@ func TestACachedTreeReadsOnlyItsLowestLevel(t *testing.T) {
 	}
 }
 
-// TestACacheKeepsTheUpperLevelsWithinItsBudget: a cache too small for a
-// tree's upper levels keeps its highest levels, never a node of level 0
-// that is not a root, and never more than its budget, through runs of
-// changes to the tree.
 func TestACacheKeepsTheUpperLevelsWithinItsBudget(t *testing.T) {
 	ctx := context.Background()
 	r := rand.New(rand.NewPCG(5, 6))
@@ -241,9 +228,6 @@ func TestACacheKeepsTheUpperLevelsWithinItsBudget(t *testing.T) {
 	}
 }
 
-// TestACacheEvictsTheLeastRecentlyUsedOfALevel: a node takes the place of
-// the node of its level used least recently, or of a lower level first,
-// and a node of a level below every one the full cache holds is not kept.
 func TestACacheEvictsTheLeastRecentlyUsedOfALevel(t *testing.T) {
 	type kept struct {
 		id   cid.Cid
@@ -307,9 +291,6 @@ func TestACacheEvictsTheLeastRecentlyUsedOfALevel(t *testing.T) {
 	c.check(t)
 }
 
-// TestACachedNodeIsCheckedAgainstItsParent: a node the cache holds is
-// refused under a parent whose level is not above its own, as a decoded
-// one is.
 func TestACachedNodeIsCheckedAgainstItsParent(t *testing.T) {
 	ctx := context.Background()
 	s := newStore()
@@ -324,8 +305,6 @@ func TestACachedNodeIsCheckedAgainstItsParent(t *testing.T) {
 	}
 }
 
-// TestACacheKeepsOnlyNodesOfItsCIDs: a node named by a CID of another
-// kind than the ones this package writes is not kept.
 func TestACacheKeepsOnlyNodesOfItsCIDs(t *testing.T) {
 	h, err := mh.Sum([]byte("node"), mh.SHA2_256, -1)
 	if err != nil {

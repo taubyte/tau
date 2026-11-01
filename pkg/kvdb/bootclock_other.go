@@ -4,6 +4,5 @@ package kvdb
 
 import "time"
 
-// bootClock is the monotonic clock since this process started where the
-// platform has no boot clock that counts suspend.
+// Without a boot clock that counts suspend, the process's monotonic clock.
 func bootClock() time.Duration { return time.Since(processStart) }

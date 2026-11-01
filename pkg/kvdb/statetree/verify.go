@@ -6,10 +6,8 @@ import (
 )
 
 // Verify reads the whole tree and checks it is the canonical tree of its
-// entries in format profile 1: every node's block is byte for byte the one
-// this package would write for it, every key sits at its level, inside the
-// slot it is in, and every summary is the one t's summarizer gives. A tree
-// from a peer that passes is the tree any writer of the same entries makes.
+// entries: every block is the one this package would write, every key at its
+// level and in its slot, every summary the one t's summarizer gives.
 func (t *Tree) Verify(ctx context.Context) error {
 	_, err := t.verify(ctx, ref{c: t.root}, noLevel, nil, nil)
 	return err

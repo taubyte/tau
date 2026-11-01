@@ -1,8 +1,7 @@
 //go:build !race
 
-// The race detector makes sync.Pool drop what is put in it at random, and
-// decoding a tree node takes its message from one, so allocations are
-// counted only without it.
+// sync.Pool drops entries at random under the race detector, so allocations
+// are counted without it.
 
 package kvdb
 
@@ -16,13 +15,6 @@ import (
 	"github.com/taubyte/tau/pkg/kvdb/statetree"
 )
 
-// TestARetirementAllocatesLittleBeyondItsDiffs: planning what a retired
-// root leaves unreached allocates what its diffs do, which is what reading
-// their nodes does (see statetree.Differ), and a small fixed amount besides,
-// however many nodes it finds unreached: the candidates are digests in
-// storage the collector keeps. Releasing a root walked every node it
-// released and took and gave back a count for each child of each, every
-// one a key, a value and a slot of the commit.
 func TestARetirementAllocatesLittleBeyondItsDiffs(t *testing.T) {
 	ctx := context.Background()
 	check := checkSnapshot

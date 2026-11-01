@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-// pendingOf is the one pending removal r holds.
 func pendingOf(t testing.TB, r *Datastore) removal {
 	t.Helper()
 	r.mu.Lock()
@@ -23,8 +22,6 @@ func pendingOf(t testing.TB, r *Datastore) removal {
 	return out[0]
 }
 
-// refresh writes a snapshot of sr's state even when it holds nothing to fold,
-// as maintenance does to replace an old one.
 func (sr *simReplica) refresh(t testing.TB) {
 	t.Helper()
 	if _, err := sr.r.compact(context.Background(), true); err != nil {
@@ -32,9 +29,6 @@ func (sr *simReplica) refresh(t testing.TB) {
 	}
 }
 
-// untilDropClock advances until sr's drop clock reaches at, a rebroadcast
-// at a time: the speakers beat and everyone hears them, the deaf are heard
-// by nobody, and everyone maintains.
 func (s *simTime) untilDropClock(t testing.TB, sr *simReplica, at uint64, speakers []*simReplica, deaf ...*simReplica) {
 	t.Helper()
 	all := append(append([]*simReplica(nil), speakers...), deaf...)
@@ -65,13 +59,6 @@ func (s *simTime) untilDropClock(t testing.TB, sr *simReplica, at uint64, speake
 	}
 }
 
-// TestAMergeThatLeavesADifferentStateIsCompacted (M4): a replica whose drop
-// clock is behind still refuses an ancient element, by a pending removal the
-// others have already forgotten, from the snapshot that becomes its only
-// head. Once the removal expires there too, the state it compacts lacks the
-// element, and so does every snapshot it merges: the replicas holding it
-// must answer a snapshot that neither holds nor covers what they keep, or
-// they read differently for good.
 func TestAMergeThatLeavesADifferentStateIsCompacted(t *testing.T) {
 	st := newSimTime()
 	w := st.replica(t, "w", 0)

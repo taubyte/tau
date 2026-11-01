@@ -10,8 +10,6 @@ import (
 	"github.com/taubyte/tau/pkg/kvdb/statetree"
 )
 
-// crdtNodeGetter wraps an ipld.NodeGetter with methods that decode the
-// delta a node carries.
 type crdtNodeGetter struct {
 	ipld.NodeGetter
 }
@@ -31,14 +29,8 @@ type deltaOption struct {
 	err   error
 }
 
-// GetDeltas uses GetMany to obtain many deltas.
-//
-// A DELTA FETCHED IN TIME IS KEPT, however long the caller takes to read it.
-// The channel held one delta, and once ctx expired the next was dropped while
-// the caller was still queueing the one before for a worker: a walk whose
-// workers waited on store.mu lost blocks it had fetched, recorded them as
-// missing, and left them to the next repair, a minute later. The channel now
-// holds a delta for every cid, so handing one over never waits on the caller.
+// The channel holds a delta for every cid, so a delta fetched in time is kept
+// however long the caller takes to read it.
 func (ng *crdtNodeGetter) GetDeltas(ctx context.Context, cids []cid.Cid) <-chan *deltaOption {
 	deltaOpts := make(chan *deltaOption, len(cids))
 	go func() {
@@ -68,8 +60,6 @@ func extractDelta(nd ipld.Node) (*pb.Delta, error) {
 	return delta, nil
 }
 
-// makeNode makes the block for delta, linking the given heads, in one
-// marshal of a DeltaBlock.
 func makeNode(delta *pb.Delta, heads []Head) (ipld.Node, error) {
 	msg := pb.DeltaBlockFromVTPool()
 	defer func() {
@@ -89,8 +79,6 @@ func makeNode(delta *pb.Delta, heads []Head) (ipld.Node, error) {
 	return statetree.BlockInBuffer(raw)
 }
 
-// readBlock is the block c names, read through dags' BlockReader when it is
-// one, else decoded by its Get.
 func readBlock(ctx context.Context, dags ipld.NodeGetter, c cid.Cid) (blocks.Block, error) {
 	if r, ok := dags.(statetree.BlockReader); ok {
 		return r.ReadBlock(ctx, c)
@@ -98,19 +86,16 @@ func readBlock(ctx context.Context, dags ipld.NodeGetter, c cid.Cid) (blocks.Blo
 	return dags.Get(ctx, c)
 }
 
-// blockLinks appends the links of nd, one of kvdb's blocks, to into.
 func blockLinks(nd ipld.Node, into []cid.Cid) ([]cid.Cid, error) {
 	_, links, err := statetree.DecodeBlock(nd, into)
 	return links, err
 }
 
-// heldLimit bounds how many blocks a heldDAG keeps.
 const heldLimit = 1 << 12
 
-// A heldDAG is the DAG one snapshot merge reads: it keeps, up to heldLimit,
-// the blocks its state fetch received and those the merge has read, so that
-// a block is decoded once per merge rather than once per tree that reads
-// it. It is used by one goroutine at a time and dropped with the merge.
+// A heldDAG keeps, up to heldLimit, the blocks a snapshot merge's fetch
+// received and those it read, so each is decoded once per merge. One goroutine
+// uses it at a time.
 type heldDAG struct {
 	ipld.DAGService
 	nodes map[cid.Cid]ipld.Node

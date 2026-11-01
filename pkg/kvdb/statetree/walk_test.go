@@ -48,11 +48,9 @@ func TestReachable(t *testing.T) {
 			t.Fatalf("%s is reachable and was not found", c)
 		}
 	}
-	// Nothing was removed: every root ever made is still whole.
 	for _, r := range roots {
 		verify(t, r)
 	}
-	// Collecting what the live roots do not reach leaves them whole.
 	keys, err := s.bs.AllKeysChan(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -113,7 +111,6 @@ func TestMissing(t *testing.T) {
 		t.Fatalf("closure complete after %d rounds, depth %d", rounds, depth)
 	}
 	verify(t, Load(dst, tr.Root()))
-	// A node the caller knows is complete is not read.
 	dst.reset()
 	if got, err := Missing(ctx, dst, tr.Root(), func(cid.Cid) bool { return true }); err != nil || len(got) != 0 || dst.gets.Load() != 0 {
 		t.Fatalf("Missing of a complete root: %v %v, %d gets", got, err, dst.gets.Load())
@@ -121,7 +118,6 @@ func TestMissing(t *testing.T) {
 	if got, err := Missing(ctx, dst, cid.Undef, nil); err != nil || got != nil {
 		t.Fatalf("Missing of the empty tree: %v %v", got, err)
 	}
-	// Reading a tree whose closure is not held fails, it never guesses.
 	partial := newStore()
 	nd, err := src.Get(ctx, tr.Root())
 	if err != nil {
@@ -142,7 +138,6 @@ func TestMissing(t *testing.T) {
 	}
 }
 
-// failing fails every operation after a number of them succeed.
 type failing struct {
 	ipld.DAGService
 	ok int
@@ -166,7 +161,6 @@ func (f *failing) AddMany(ctx context.Context, nds []ipld.Node) error {
 	return f.DAGService.AddMany(ctx, nds)
 }
 
-// Every read the operations make can fail, and each failure is returned.
 func TestStoreErrors(t *testing.T) {
 	ctx := context.Background()
 	base := mdutils.Mock()
@@ -215,8 +209,6 @@ func TestStoreErrors(t *testing.T) {
 	}
 }
 
-// highKey is a key of at least level l, starting with prefix, that no
-// test tree holds.
 func highKey(t *testing.T, prefix string, l uint32) []byte {
 	t.Helper()
 	for i := 0; ; i++ {

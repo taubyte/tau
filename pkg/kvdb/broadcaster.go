@@ -8,7 +8,6 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
 
-// PubSubBroadcaster implements a Broadcaster using libp2p PubSub.
 type PubSubBroadcaster struct {
 	lock  sync.Mutex
 	ctx   context.Context
@@ -17,16 +16,8 @@ type PubSubBroadcaster struct {
 	subs  *pubsub.Subscription
 }
 
-// broadcasterKey identifies a cached broadcaster. It is keyed by the PubSub
-// instance as well as the topic string: the cache exists only to avoid joining
-// the same topic twice on the same PubSub, which is an inherently per-PubSub
-// concern. Keying by topic alone aliased broadcasters across DIFFERENT nodes
-// that happen to share a topic name (e.g. v1's patrick nodes all used
-// "patrick/broadcast"). Because tau runs many nodes in one process under Dream,
-// a live node could be handed a broadcaster bound to another (already-closed)
-// node's context and PubSub — so its CRDT rebroadcasts returned the dead node's
-// "context canceled" and its topic was closed underneath it. Including the
-// PubSub pointer in the key isolates each node's broadcaster.
+// Keyed by PubSub too: tau runs many nodes in one process, and a topic name
+// alone handed one node another's closed broadcaster.
 type broadcasterKey struct {
 	psub  *pubsub.PubSub
 	topic string
@@ -43,9 +34,8 @@ func registerTopic(key broadcasterKey, b *PubSubBroadcaster) {
 	broadcasters[key] = b
 }
 
-// unregisterTopic removes b from the cache only if it is still the registered
-// broadcaster for key. The identity check keeps a late-firing cleanup goroutine
-// from evicting a newer broadcaster that reclaimed the same key.
+// The identity check keeps a late cleanup from evicting a newer broadcaster
+// under the same key.
 func unregisterTopic(key broadcasterKey, b *PubSubBroadcaster) {
 	broadcastersLock.Lock()
 	defer broadcastersLock.Unlock()
@@ -60,14 +50,8 @@ func getTopic(key broadcasterKey) *PubSubBroadcaster {
 	return broadcasters[key]
 }
 
-// NewPubSubBroadcaster returns a new broadcaster using the given PubSub and
-// a topic to subscribe/broadcast to. The given context can be used to cancel
-// the broadcaster.
-// Please register any topic validators before creating the Broadcaster.
-//
-// The broadcaster can be shut down by cancelling the given context.
-// This must be done before Closing the Datastore, otherwise things
-// may hang.
+// Register topic validators first. Cancel ctx to shut it down, before closing
+// the Datastore, or Close may hang.
 func NewPubSubBroadcaster(ctx context.Context, psub *pubsub.PubSub, topic string) (b *PubSubBroadcaster, err error) {
 	key := broadcasterKey{psub: psub, topic: topic}
 
@@ -115,14 +99,8 @@ func (pbc *PubSubBroadcaster) ensureSubscribed() (err error) {
 	return
 }
 
-// Broadcast publishes some data.
-//
-// libp2p Topic.Publish can wedge in the pubsub validation pipeline when the
-// router is tearing down (e.g. a killed node) — it stops observing ctx once past
-// its initial check. Publish detached and return as soon as the broadcaster is
-// shutting down, so a CRDT rebroadcast can never block Datastore.Close()'s
-// wg.Wait (and thus service/universe teardown). The abandoned Publish unwinds on
-// its own when the pubsub finishes closing.
+// Publish can wedge in pubsub's validation pipeline while the router tears
+// down, ignoring ctx; it runs detached so a rebroadcast never blocks Close.
 func (pbc *PubSubBroadcaster) Broadcast(ctx context.Context, data []byte) error {
 	errc := make(chan error, 1)
 	go func() { errc <- pbc.topic.Publish(ctx, data) }()
@@ -136,7 +114,6 @@ func (pbc *PubSubBroadcaster) Broadcast(ctx context.Context, data []byte) error 
 	}
 }
 
-// Next returns published data.
 func (pbc *PubSubBroadcaster) Next(ctx context.Context) ([]byte, error) {
 	for try := 3; try > 0; try-- {
 		msg, err := pbc.next(ctx)
@@ -144,9 +121,8 @@ func (pbc *PubSubBroadcaster) Next(ctx context.Context) ([]byte, error) {
 			return msg, err
 		}
 
-		// Don't re-subscribe a broadcaster that's shutting down: ensureSubscribed
-		// would block on the lock the cleanup goroutine holds while it closes the
-		// topic, hanging this reader (handleNext) and so Close's wg.Wait.
+		// A broadcaster shutting down is not resubscribed: ensureSubscribed would
+		// block on the lock its cleanup holds, hanging Close.
 		select {
 		case <-pbc.ctx.Done():
 			return nil, ErrNoMoreBroadcast
@@ -155,7 +131,6 @@ func (pbc *PubSubBroadcaster) Next(ctx context.Context) ([]byte, error) {
 		default:
 		}
 
-		// try again
 		if pbc.ensureSubscribed() != nil {
 			break
 		}

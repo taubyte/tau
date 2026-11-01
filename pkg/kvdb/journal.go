@@ -55,7 +55,6 @@ func (j *journal) pendingMarkIn(b uint64, key string, d dot) string {
 	return j.jPending + fmt.Sprintf("%020d", b) + "/" + d.segment() + "/" + keySegment(key)
 }
 
-// view reads key from the store the journal marks, for appendMarks.
 func (j *journal) view(ctx context.Context) func(k []byte, fn func(v []byte) error) error {
 	return func(k []byte, fn func(v []byte) error) error {
 		v, err := j.inner.Get(ctx, ds.RawKey(string(k)))
@@ -66,10 +65,9 @@ func (j *journal) view(ctx context.Context) func(k []byte, fn func(v []byte) err
 	}
 }
 
-// appendMarks hands set each journal mark a write of value under key makes,
-// a nil value being a delete: an element's, or a pending removal's under the
-// bucket it had before the write and the one it has after. A mark is built
-// in *buf and lent for the call; view reads the value key holds. It reports
+// appendMarks hands set each mark a write of value under key makes, a nil
+// value being a delete: an element's, or a pending removal's under its buckets
+// before and after. A mark is built in *buf and lent for the call. It reports
 // whether there was any.
 func (j *journal) appendMarks(buf *[]byte, key string, value []byte, view func(k []byte, fn func(v []byte) error) error, set func(m []byte) error) (bool, error) {
 	if rest, ok := strings.CutPrefix(key, j.elems); ok {
@@ -102,21 +100,16 @@ func (j *journal) appendMarks(buf *[]byte, key string, value []byte, view func(k
 	return n > 0, nil
 }
 
-// appendElemMark appends the mark of the element whose key, after the
-// elements' prefix, is rest.
 func (j *journal) appendElemMark(b []byte, rest string) []byte {
 	return append(append(b, j.jElems...), rest...)
 }
 
-// appendPendingMark appends the mark of the pending removal whose key,
-// after the pending removals' prefix, is rest, under bucket bk.
 func (j *journal) appendPendingMark(b []byte, bk uint64, rest string) []byte {
 	return append(append(appendCounter(append(b, j.jPending...), bk), '/'), rest...)
 }
 
-// pendingBuckets is the buckets a write of value marks a pending removal
-// under, given the bucket old it had, when it had one: that one, and the
-// one value has if it is another; a nil value is a delete.
+// A pending removal is marked under the bucket it had and, if different, the
+// one value gives it; a nil value is a delete.
 func pendingBuckets(had bool, old uint64, value []byte) ([2]uint64, int, error) {
 	var bs [2]uint64
 	n := 0
@@ -137,14 +130,12 @@ func pendingBuckets(had bool, old uint64, value []byte) ([2]uint64, int, error) 
 	return bs, n, nil
 }
 
-// stampsBucket is the bucket of a pending removal's stamps.
 func stampsBucket(v []byte) (uint64, error) {
 	at, ttl, err := decodeStamps(v)
 	return bucket(at + ttl), err
 }
 
-// journaled is the store a Datastore writes through: every write of a
-// state record also marks it in the journal.
+// journaled marks every write of a state record in the journal.
 type journaled struct {
 	ds.Datastore
 	j *journal
@@ -175,9 +166,8 @@ func (s *journaled) markDurably(ctx context.Context, key ds.Key, value []byte) e
 	return s.Datastore.Sync(ctx, s.j.root)
 }
 
-// Batch is a batch whose marks are committed, in a batch of their own, and
-// synced before its writes: a store's batch need not apply its writes in
-// order, nor keep them in order once committed.
+// The marks are committed in a batch of their own and synced before the
+// writes: a store's batch need not apply or keep its writes in order.
 func (s *journaled) Batch(ctx context.Context) (ds.Batch, error) {
 	b, err := batchOf(ctx, s.Datastore)
 	if err != nil {

@@ -14,9 +14,8 @@ import (
 	ds "github.com/ipfs/go-datastore"
 )
 
-// holdRemove is a DAG service whose next RemoveMany, once armed, waits to be
-// released, before or after it removes its blocks: a purge caught part way,
-// the way a slow disk catches it.
+// holdRemove's next RemoveMany, once armed, waits to be released before or
+// after removing: a purge caught part way, as a slow disk catches it.
 type holdRemove struct {
 	*fetchThroughDAGSvc
 	armed    atomic.Bool
@@ -48,8 +47,6 @@ type compacted struct {
 	err error
 }
 
-// compactHeld starts a compaction of r and returns once its purge is held in
-// RemoveMany.
 func (h *holdRemove) compactHeld(r *Datastore) <-chan compacted {
 	h.armed.Store(true)
 	done := make(chan compacted, 1)
@@ -61,9 +58,8 @@ func (h *holdRemove) compactHeld(r *Datastore) <-chan compacted {
 	return done
 }
 
-// lockFree reports, once every other goroutine of the bubble is blocked,
-// whether store.mu is free. On a store that holds it while its purge is
-// held, it fails the test, after letting the purge finish and closing r.
+// lockFree checks store.mu once every other goroutine of the bubble is
+// blocked; on failure it lets the purge finish and closes r first.
 func lockFree(t *testing.T, r *Datastore, h *holdRemove, done <-chan compacted) {
 	t.Helper()
 	synctest.Wait()
@@ -106,13 +102,6 @@ func headsHeld(t testing.TB, r *Datastore, d *fetchThroughDAGSvc) {
 	}
 }
 
-// TestAPurgeLetsWalksAndWritesRunWhileItDrops: a compaction held store.mu
-// for the whole of its purge, removing blocks one at a time under it. Under
-// load a hold reached 7.9s, and for all of it the broadcast reader and every
-// walk waited: sends to the replica backed up and fetches stalled. The purge
-// now removes them with the lock released. Meanwhile a walk merges, a write
-// lands, and a second compaction finds nothing to fold in what is being
-// dropped.
 func TestAPurgeLetsWalksAndWritesRunWhileItDrops(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
@@ -152,11 +141,6 @@ func TestAPurgeLetsWalksAndWritesRunWhileItDrops(t *testing.T) {
 	})
 }
 
-// TestABlockFetchedAgainWhileItIsDroppedIsNotLeaked: a walk that saw a block
-// uncovered before the snapshot covered it fetches it again, from a peer,
-// after the purge removed it and before the purge unindexed it. Its merge
-// finds the block covered and drops what it fetched: a block the purge has
-// taken is not held, though its entry is still there.
 func TestABlockFetchedAgainWhileItIsDroppedIsNotLeaked(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
@@ -197,11 +181,6 @@ func TestABlockFetchedAgainWhileItIsDroppedIsNotLeaked(t *testing.T) {
 	})
 }
 
-// TestABlockMergedAgainWhileItIsDroppedWaitsForThePurge: a rebase drops all
-// the replica holds while a purge is removing blocks, and a walk of a peer's
-// heads reaches one of them again. Merged then, it would be indexed and made
-// a head while the purge removes its copy and its entry. It waits instead:
-// the walk records it, and the repair after the purge merges it, held.
 func TestABlockMergedAgainWhileItIsDroppedWaitsForThePurge(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
@@ -248,11 +227,6 @@ func dotOf(t testing.TB, r *Datastore, c cid.Cid) dot {
 	return d
 }
 
-// TestACrashWhileAPurgeDropsLeaksNothing: the process dies while a purge,
-// its lock released, removes blocks, before it removes any and after it
-// removed them all, with a write made meanwhile. Reopened, the store holds
-// no block it does not index and loses nothing; its next compaction drops
-// every entry the crash left naming a block that is gone.
 func TestACrashWhileAPurgeDropsLeaksNothing(t *testing.T) {
 	for _, before := range []bool{true, false} {
 		t.Run(fmt.Sprintf("before the removal %t", before), func(t *testing.T) {
@@ -315,9 +289,6 @@ func TestACrashWhileAPurgeDropsLeaksNothing(t *testing.T) {
 	}
 }
 
-// TestCloseWaitsForAPurgeToDrop: a store closed while its purge drops blocks
-// waits for the purge to remove them and their entries before it returns,
-// as it waited on the lock the purge held: nothing is written after Close.
 func TestCloseWaitsForAPurgeToDrop(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		store := newSortedStore()
@@ -356,8 +327,6 @@ func TestCloseWaitsForAPurgeToDrop(t *testing.T) {
 	})
 }
 
-// TestAPurgeThatFailsCountsWhatItLeaves: a purge whose removal or unindexing
-// fails leaves its blocks indexed, counted again, for the next purge to take.
 func TestAPurgeThatFailsCountsWhatItLeaves(t *testing.T) {
 	t.Run("the removal, after a peer's snapshot", func(t *testing.T) {
 		dag := &removeFailing{fetchThroughDAGSvc: newFetchThrough()}
@@ -418,9 +387,6 @@ func TestAPurgeThatFailsCountsWhatItLeaves(t *testing.T) {
 	})
 }
 
-// TestABlockAPurgeIsDroppingIsNotDueForRefresh: blocks past half their
-// retention are folded into a fresh snapshot. One a purge is dropping is not:
-// it is gone once the purge ends, and the snapshot covering it is young.
 func TestABlockAPurgeIsDroppingIsNotDueForRefresh(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		now := time.Now()

@@ -5,12 +5,6 @@ import (
 	"time"
 )
 
-// TestARemovalThatArrivesExpiredIsNotAppliedWhateverCarriesIt (M7): a removal
-// a replica's drop clock says has expired is not applied, whether it reaches
-// it in the delta that wrote it, which is not merged, or carried by a
-// snapshot written just before it expired. Applied from the snapshot, it
-// would take away an element the replica then forgets it removed, while one
-// that got the delta keeps it.
 func TestARemovalThatArrivesExpiredIsNotAppliedWhateverCarriesIt(t *testing.T) {
 	st := newSimTime()
 	w, a, b, c := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)

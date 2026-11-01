@@ -18,7 +18,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// roundDAG is a peer that records every block it serves, in order.
 type roundDAG struct {
 	ipld.DAGService
 
@@ -36,10 +35,8 @@ func (r *roundDAG) Get(ctx context.Context, c cid.Cid) (ipld.Node, error) {
 	return nd, err
 }
 
-// rounds is how many round trips to the peer the blocks it served took at
-// the least: a block can be asked for only once a block naming it has
-// arrived, so its round is one past the latest round of a block served
-// before it whose bytes hold its cid, or the first.
+// A block can be asked for only once a block naming it has arrived, so its
+// round is one past the latest earlier block whose bytes hold its cid.
 func (r *roundDAG) rounds() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -64,8 +61,6 @@ func (r *roundDAG) reset() {
 	r.served = nil
 }
 
-// carriedBy is the blocks the snapshot root carries: its StateRoot and its
-// inline blocks.
 func carriedBy(root *pb.Delta) map[cid.Cid]bool {
 	out := map[cid.Cid]bool{cid.MustParse(root.GetState()): true}
 	for _, raw := range root.GetInline() {
@@ -74,10 +69,8 @@ func carriedBy(root *pb.Delta) map[cid.Cid]bool {
 	return out
 }
 
-// widePeer is a replica that compacted n keys of wide values once, into a
-// snapshot that leaves at least fetch blocks of its state for a reader to
-// fetch. A tree's shape turns on the incarnation in its keys, so it draws
-// replicas until one does.
+// A tree's shape turns on the incarnation in its keys, so widePeer draws
+// replicas until one leaves at least fetch blocks to fetch.
 func widePeer(t testing.TB, n, fetch int) (*Datastore, *fetchThroughDAGSvc) {
 	t.Helper()
 	for {
@@ -94,8 +87,6 @@ func widePeer(t testing.TB, n, fetch int) (*Datastore, *fetchThroughDAGSvc) {
 	}
 }
 
-// seedWide writes n keys of values wide enough that the state they make is
-// larger than a snapshot carries, in one batch.
 func seedWide(t testing.TB, r *Datastore, n int, prefix string) {
 	t.Helper()
 	ctx := context.Background()
@@ -114,11 +105,6 @@ func seedWide(t testing.TB, r *Datastore, n int, prefix string) {
 	}
 }
 
-// TestAWarmCatchUpOfOneKeyTakesOneRound: a replica one snapshot behind, at
-// 1000 keys with one changed since, gets the snapshot and nothing else:
-// the StateRoot is rebuilt from what the snapshot carries, and the tree
-// nodes on the changed paths are carried inline. Fetching the StateRoot,
-// then each level of the trees from its parent, took five.
 func TestAWarmCatchUpOfOneKeyTakesOneRound(t *testing.T) {
 	ctx := context.Background()
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 2, noAutoCompact())
@@ -150,9 +136,6 @@ func TestAWarmCatchUpOfOneKeyTakesOneRound(t *testing.T) {
 	assertNoLeak(t, b, dagsyncs[1])
 }
 
-// TestASmallStateArrivesWithItsSnapshot: a state within the budget is
-// carried whole, so a replica that holds none of it fetches the snapshot
-// only, and holds the state as a fetched one is held.
 func TestASmallStateArrivesWithItsSnapshot(t *testing.T) {
 	ctx := context.Background()
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 2, noAutoCompact())
@@ -180,8 +163,6 @@ func TestASmallStateArrivesWithItsSnapshot(t *testing.T) {
 	assertNoLeak(t, b, dagsyncs[1])
 }
 
-// headSnapshot is r's only head, a snapshot, decoded into a delta of its
-// own bytes.
 func headSnapshot(t testing.TB, r *Datastore) (cid.Cid, *pb.Delta) {
 	t.Helper()
 	c := onlyHead(t, r)
@@ -195,8 +176,6 @@ func headSnapshot(t testing.TB, r *Datastore) (cid.Cid, *pb.Delta) {
 	return c, proto.Clone(root).(*pb.Delta)
 }
 
-// treeBlocks is every block of the trees of r's head state, breadth first
-// from their roots.
 func treeBlocks(t testing.TB, r *Datastore, root *pb.Delta) [][]byte {
 	t.Helper()
 	var out [][]byte
@@ -216,10 +195,6 @@ func treeBlocks(t testing.TB, r *Datastore, root *pb.Delta) [][]byte {
 	return out
 }
 
-// TestATamperedCarriedStateIsRefused: a snapshot whose carried StateRoot
-// is not its state, or whose inline blocks are not each linked by one
-// before it, or total more than the budget, is refused before any fetch
-// begins.
 func TestATamperedCarriedStateIsRefused(t *testing.T) {
 	ctx := context.Background()
 	replicas, _, done := makeNReplicasSeparateStores(t, 2, noAutoCompact())

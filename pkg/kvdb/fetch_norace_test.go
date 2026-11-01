@@ -1,8 +1,7 @@
 //go:build !race
 
-// The race detector makes sync.Pool drop what is put in it at random, and
-// reading a block's links takes its message from one, so allocations are
-// counted only without it.
+// sync.Pool drops entries at random under the race detector, so allocations
+// are counted without it.
 
 package kvdb
 
@@ -13,9 +12,7 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 )
 
-// TestReceivingABlockAllocatesNothing: once a fetch's buffers have grown,
-// taking a block it asked for and staging what it links allocates nothing:
-// a link's cid is over the block's bytes.
+// A link's cid aliases the block's bytes.
 func TestReceivingABlockAllocatesNothing(t *testing.T) {
 	ctx := context.Background()
 	replicas, _, done := makeNReplicasSeparateStores(t, 1, noAutoCompact())

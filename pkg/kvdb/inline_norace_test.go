@@ -1,8 +1,7 @@
 //go:build !race
 
-// The race detector makes sync.Pool drop what is put in it at random, and
-// verifying what a snapshot carries works in storage taken from one, so
-// allocations are counted only without it.
+// sync.Pool drops entries at random under the race detector, so allocations
+// are counted without it.
 
 package kvdb
 
@@ -14,10 +13,8 @@ import (
 	"github.com/taubyte/tau/pkg/kvdb/statetree"
 )
 
-// TestVerifyingACarriedStateAllocatesWhatItsBlocksDo: checking what a
-// snapshot carries allocates what decoding its blocks does, as a fetched
-// block is decoded, and what rebuilding its StateRoot does, and next to
-// nothing besides: the links it waits for are digests in pooled storage.
+// Verifying allocates what decoding its blocks and rebuilding its StateRoot do,
+// and next to nothing besides.
 func TestVerifyingACarriedStateAllocatesWhatItsBlocksDo(t *testing.T) {
 	replicas, _, done := makeNReplicasSeparateStores(t, 1, noAutoCompact())
 	defer done()

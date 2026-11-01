@@ -5,13 +5,8 @@ import (
 	"time"
 )
 
-// Changing T, and replicas reading different T for a while. Every block
-// carries the T its author held, so what a block teaches expires at the time
-// it says whoever reads it and whatever T the reader holds now; a judge
-// vouches only for what it still holds and has not forgotten. These tests
-// change T on some replicas and not others, in both directions, around a
-// replica that is away, and check nothing removed comes back and every
-// replica agrees.
+// Every block carries the T its author held, so what it teaches expires at the
+// time it says whatever T a reader holds now.
 
 func (sr *simReplica) setRetention(t testing.TB, d time.Duration) {
 	t.Helper()
@@ -26,10 +21,6 @@ func (sr *simReplica) rebases() int {
 	return int(sr.r.generation)
 }
 
-// TestLoweringTForgetsNothingWrittenBefore: a removal written under a long T
-// is kept that long after T is lowered, so a replica away for longer than the
-// new T but not the old one rejoins without being rebased, and what it holds
-// stays removed.
 func TestLoweringTForgetsNothingWrittenBefore(t *testing.T) {
 	st := newSimTime()
 	long := 4 * simRetention
@@ -62,9 +53,6 @@ func TestLoweringTForgetsNothingWrittenBefore(t *testing.T) {
 	assertSameState(t, []string{"a", "b", "c"}, a.r, b.r, c.r)
 }
 
-// TestRaisingTKeepsWhatWasWrittenOnlyAsLongAsItSays: raising T does not
-// stretch what was written before, so a replica away for longer than the old
-// T is judged by it and rebased, and nothing comes back.
 func TestRaisingTKeepsWhatWasWrittenOnlyAsLongAsItSays(t *testing.T) {
 	st := newSimTime()
 	w, a, b, c := st.replica(t, "w", 0), st.replica(t, "a", 0), st.replica(t, "b", 0), st.replica(t, "c", 0)
@@ -90,9 +78,6 @@ func TestRaisingTKeepsWhatWasWrittenOnlyAsLongAsItSays(t *testing.T) {
 	assertSameState(t, []string{"a", "b", "c"}, a.r, b.r, c.r)
 }
 
-// TestReplicasOnDifferentTAgree: two replicas that read different T write
-// under their own, and keep and forget everything at the same moments: the
-// expiry of each thing is the one written in it.
 func TestReplicasOnDifferentTAgree(t *testing.T) {
 	st := newSimTime()
 	a, b := st.replica(t, "a", 0), st.replica(t, "b", 0)

@@ -10,10 +10,6 @@ import (
 	dssync "github.com/ipfs/go-datastore/sync"
 )
 
-// TestE1CompactionKeepsEveryLiveVersion: a key with two concurrent versions
-// must keep both through a compaction. B deletes the only version it has
-// seen; the version C wrote concurrently was never observed by that delete,
-// so it survives on every replica that has the same deltas.
 func TestE1CompactionKeepsEveryLiveVersion(t *testing.T) {
 	replicas, dagsyncs, closeReplicas := makeNReplicasSeparateStores(t, 4, nil)
 	defer closeReplicas()
@@ -62,9 +58,6 @@ func TestE1CompactionKeepsEveryLiveVersion(t *testing.T) {
 	}
 }
 
-// TestE2CompactionDuringAWalkLosesNothing: a merge root becomes a head as soon
-// as one of its branches bottoms out. Compacting in that window must not hide
-// the other branch from replicas that learn the history from the snapshot.
 func TestE2CompactionDuringAWalkLosesNothing(t *testing.T) {
 	replicas, dagsyncs, closeReplicas := makeNReplicasSeparateStores(t, 6, nil)
 	defer closeReplicas()
@@ -92,12 +85,9 @@ func TestE2CompactionDuringAWalkLosesNothing(t *testing.T) {
 	p1, _ := w1.heads.List()
 	p2, _ := w2.heads.List()
 
-	// X merges everything.
 	from(dagsyncs, 4, 3)
 	syncReplicaHeads(t, w3, x)
 
-	// A merges the root and the first branch, and is still walking the
-	// second one when it compacts.
 	from(dagsyncs, 0, 3)
 	mergeOne(t, a, root.Cid)
 	mergeOne(t, a, p1[0].Cid)
@@ -120,8 +110,6 @@ func TestE2CompactionDuringAWalkLosesNothing(t *testing.T) {
 	}
 }
 
-// mergeOne merges the single block c on r without descending into its
-// parents: one step of what dagWorker does.
 func mergeOne(t testing.TB, r *Datastore, c cid.Cid) {
 	t.Helper()
 	ctx := context.Background()
@@ -135,9 +123,6 @@ func mergeOne(t testing.TB, r *Datastore, c cid.Cid) {
 	}
 }
 
-// TestE3AFreshReplicaSyncsFromAReclaimingPeer: B wrote offline on top of h; A's
-// snapshot covers h and B reclaimed it. A fresh replica syncing from B must
-// end up clean, with nobody holding h.
 func TestE3AFreshReplicaSyncsFromAReclaimingPeer(t *testing.T) {
 	replicas, dagsyncs, closeReplicas := makeNReplicasSeparateStores(t, 3, nil)
 	defer closeReplicas()
@@ -178,11 +163,6 @@ func TestE3AFreshReplicaSyncsFromAReclaimingPeer(t *testing.T) {
 	}
 }
 
-// TestACoveredBlockIsNeverFetched: a replica never asks for a block whose dot
-// its context covers. A fresh replica syncing from a compacted peer fetches
-// the snapshot alone and records nothing it covers as missing; and the walk
-// skips a covered link it is handed, as a walk is when a snapshot merged
-// meanwhile covers a parent that was missing when it was linked.
 func TestACoveredBlockIsNeverFetched(t *testing.T) {
 	replicas, dagsyncs, done := makeNReplicasSeparateStores(t, 1, noAutoCompact())
 	defer done()

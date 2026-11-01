@@ -14,22 +14,15 @@ import (
 	"github.com/taubyte/tau/pkg/kvdb/statetree"
 )
 
-// A stateFetch is the fetch of one state's closure, kept across attempts.
-// An attempt is bounded by DAGSyncerTimeout, and a state larger than one
-// attempt can fetch arrives over several: what an attempt fetched stays the
-// fetch's, and the next goes on from the blocks it was still waiting for.
-// Nothing of it is visible until a merge publishes the closure.
-//
-// A fetch is a session of the collector (see gc.go): it reuses every
-// subtree the roots already reach, and records every other block it asks
-// for as an intent before it asks. It is dropped, and what it fetched that
-// no root reaches removed, once none of the snapshots it was begun for can
-// be merged any more (covered or gone), once a newer snapshot of the same
-// author has fetched its whole closure (superseded), or once it has fetched
-// nothing for D: D bounds how long what a replica in contact holds takes to
-// reach this one, so a fetch that has received nothing in D has no source
-// in contact. A superseded fetch is kept until its successor's walk is
-// done. A restart drops every fetch: open removes their intents.
+// A stateFetch fetches one state's closure across attempts, each bounded by
+// DAGSyncerTimeout; an attempt goes on from what the last was waiting for, and
+// nothing is visible until a merge publishes the closure. It is a gc session:
+// it reuses what the roots reach and records every other block as an intent
+// before asking. It is dropped, with what it fetched that no root reaches,
+// once none of its snapshots can be merged, once a newer snapshot of the same
+// author has fetched its whole closure (kept until that walk is done), or once
+// it has fetched nothing for D, when no source is in contact. A restart drops
+// every fetch.
 type stateFetch struct {
 	root cid.Cid
 	busy chan struct{}
@@ -42,25 +35,23 @@ type stateFetch struct {
 	progress time.Duration
 	complete bool
 
-	// Guarded by busy while f has users, and owned by whoever ends it once
-	// it has none. Nil until its first attempt.
+	// Guarded by busy while f has users, then owned by whoever ends it; nil until
+	// its first attempt.
 	b *fetchBuffers
 }
 
-// fetchBuffers is what a state fetch holds and works in, reused from one
-// fetch to the next: receiving a block allocates nothing once they have
-// grown to the size of the states fetched.
+// fetchBuffers are reused from one fetch to the next, so receiving a block
+// allocates nothing once they have grown.
 type fetchBuffers struct {
-	// sess holds every block of the closure the fetch has seen, and
-	// want[next:] are the ones not received yet. unstaged are blocks of
-	// the closure a discover could not record, the next one's to take
-	// first.
+	// sess holds every closure block the fetch has seen; want[next:] are not
+	// received yet; unstaged are blocks a discover could not record, taken first
+	// next time.
 	sess     *gcSession
 	want     []cid.Cid
 	next     int
 	unstaged []cid.Cid
 
-	// Scratch for one attempt, events empty between attempts.
+	// Scratch for one attempt; events is empty between attempts.
 	events                        chan fetchEvent
 	asked                         map[cidKey]struct{}
 	failed, parents, linked, kept []cid.Cid
@@ -81,8 +72,7 @@ func takeFetchBuffers() *fetchBuffers {
 
 func (b *fetchBuffers) wanted() []cid.Cid { return b.want[b.next:] }
 
-// putBack returns b to the pool, keeping its storage and none of the cids
-// it held.
+// putBack keeps b's storage and none of its cids.
 func (b *fetchBuffers) putBack() {
 	for _, s := range []*[]cid.Cid{&b.want, &b.unstaged, &b.failed, &b.parents, &b.linked, &b.kept, &b.fresh} {
 		clear((*s)[:cap(*s)])
@@ -94,9 +84,9 @@ func (b *fetchBuffers) putBack() {
 	fetchBufferPool.Put(b)
 }
 
-// A cidKey is a block's identity as a fixed-size value: the digest of a
-// block's cid (statetree.BlockPrefix), every block a state holds, or the sha2-256
-// of any other cid's bytes. A set of them holds no pointers.
+// A cidKey is a block's identity as a fixed-size value: a state block's
+// digest, or the sha2-256 of any other cid's bytes, so sets of them hold no
+// pointers.
 type cidKey [32]byte
 
 func keyOf(c cid.Cid) cidKey {
@@ -120,7 +110,6 @@ func (f *stateFetch) lock(ctx context.Context) error {
 
 func (f *stateFetch) unlock() { <-f.busy }
 
-// newest is the highest counter among f's snapshots of replica r.
 func (f *stateFetch) newest(r string) (uint64, bool) {
 	var n uint64
 	ok := false
@@ -132,10 +121,8 @@ func (f *stateFetch) newest(r string) (uint64, bool) {
 	return n, ok
 }
 
-// beginFetch returns the fetch of root for the snapshot l, creating it if
-// none is in progress, with the caller counted as one of its users until
-// leaveFetch. The fetch of an author's newest snapshot supersedes the
-// fetches of its older ones.
+// The caller is a user of the returned fetch until leaveFetch. The fetch of an
+// author's newest snapshot supersedes those of its older ones.
 func (store *Datastore) beginFetch(root cid.Cid, l link) *stateFetch {
 	store.fetchMu.Lock()
 	defer store.fetchMu.Unlock()
@@ -156,8 +143,8 @@ func (store *Datastore) beginFetch(root cid.Cid, l link) *stateFetch {
 	return f
 }
 
-// inherit makes the fetch of replica r's newest snapshot the heir of every
-// fetch of an older one. The caller holds fetchMu.
+// inherit makes the fetch of r's newest snapshot the heir of its older ones.
+// The caller holds fetchMu.
 func (store *Datastore) inherit(r string) {
 	var heir *stateFetch
 	var top uint64
@@ -173,9 +160,8 @@ func (store *Datastore) inherit(r string) {
 	}
 }
 
-// leaveFetch ends the caller's use of f: with merged, a merge has settled
-// the snapshot and f is dropped. The last user of a dropped fetch ends its
-// session.
+// With merged, a merge settled the snapshot and f is dropped. The last user of
+// a dropped fetch ends its session.
 func (store *Datastore) leaveFetch(ctx context.Context, f *stateFetch, merged bool) {
 	store.fetchMu.Lock()
 	if merged {
@@ -189,8 +175,7 @@ func (store *Datastore) leaveFetch(ctx context.Context, f *stateFetch, merged bo
 	}
 }
 
-// dropFetchLocked takes f out of the fetches in progress. The caller holds
-// fetchMu.
+// The caller holds fetchMu.
 func (store *Datastore) dropFetchLocked(f *stateFetch) {
 	if store.fetches[f.root] == f {
 		delete(store.fetches, f.root)
@@ -210,8 +195,6 @@ func (store *Datastore) releaseFetch(ctx context.Context, f *stateFetch) {
 	b.putBack()
 }
 
-// sweepFetches drops every fetch no attempt is using that will never be
-// merged, is superseded, or has fetched nothing for D.
 func (store *Datastore) sweepFetches(ctx context.Context, dropClock uint64) {
 	now := store.times.up()
 	store.fetchMu.Lock()
@@ -230,7 +213,7 @@ func (store *Datastore) sweepFetches(ctx context.Context, dropClock uint64) {
 	}
 }
 
-// fetchDead reports whether f is to be dropped. The caller holds fetchMu.
+// The caller holds fetchMu.
 func (store *Datastore) fetchDead(f *stateFetch, now time.Duration, dropClock uint64) bool {
 	wanted := false
 	for _, l := range f.links {
@@ -245,15 +228,11 @@ func (store *Datastore) fetchDead(f *stateFetch, now time.Duration, dropClock ui
 	return now-f.progress > store.opts.DeliveryBound
 }
 
-// fetchState fetches every block of a snapshot's state the roots do not
-// reach, so a peer that shares most of it with this replica sends only the
-// nodes on the paths that changed. Every block is an intent of the fetch
-// before it is fetched, until the merge publishes it or the fetch is
-// dropped. An attempt that runs out of time keeps what it fetched for the
-// next one. Unless the state's cid, or what the snapshot carries of the
-// state (see carried), is malformed, it returns the fetch with the caller
-// as one of its users: the caller leaves it, merged once a merge has
-// settled the snapshot.
+// fetchState fetches the state blocks the roots do not reach, so a peer
+// sharing most of it sends only the changed paths. An attempt that runs out of
+// time keeps what it fetched. Unless the state's cid or what the snapshot
+// carries is malformed, the caller is a user of the returned fetch and leaves
+// it, merged once a merge settled the snapshot.
 func (store *Datastore) fetchState(ctx context.Context, ng *crdtNodeGetter, c cid.Cid, root *pb.Delta, held *heldDAG) (*stateFetch, error) {
 	stc, err := cid.Cast(root.GetState())
 	if err != nil {
@@ -286,11 +265,9 @@ func (store *Datastore) fetchState(ctx context.Context, ng *crdtNodeGetter, c ci
 	return f, nil
 }
 
-// discover takes the blocks of f's closure among cids, and those an
-// earlier discover could not, that it does not hold yet: a subtree the
-// roots reach is reused, and every other block recorded as an intent and
-// wanted. What it cannot record stays f's to take next time, so a failure
-// leaves no block of the closure neither wanted nor held.
+// discover reuses subtrees the roots reach and records every other block as a
+// wanted intent. What it cannot record stays f's to take next time, so a
+// failure leaves no closure block neither wanted nor held.
 func (store *Datastore) discover(ctx context.Context, f *stateFetch, cids []cid.Cid) error {
 	b := f.b
 	b.unstaged = append(b.unstaged, cids...)
@@ -305,35 +282,27 @@ func (store *Datastore) discover(ctx context.Context, f *stateFetch, cids []cid.
 	return nil
 }
 
-// wantWindow bounds how many blocks one fetch has asked for and not yet
-// received. A bitswap server keeps at most 1024 wants from a peer and drops
-// the rest unanswered, and the client asks again only when it rebroadcasts:
-// a fetch that asked for a whole level of a large state at once received
-// 1024 blocks and waited out its attempt for the others. The window leaves
-// room under that bound for the other fetches asking the same peer.
+// A bitswap server keeps at most 1024 wants from a peer and drops the rest
+// unanswered until the client rebroadcasts; the window leaves room under that
+// for other fetches asking the same peer.
 const wantWindow = 512
 
-// wantBatch is the fewest blocks a fetch asks for at once while more are
-// wanted than that: bitswap sends a peer one message of wants every 20ms
-// however many gets they come from, and each get costs a session want and
-// its goroutines.
+// bitswap sends a peer one message of wants every 20ms however many gets they
+// come from, and each get costs a session want and goroutines.
 const wantBatch = wantWindow / 8
 
-// A fetchEvent is a block a fetch received, a get that failed, or, with
-// asked set, the end of one get of many.
+// A fetchEvent is a block received, a failed get, or with asked the end of one
+// get of many.
 type fetchEvent struct {
 	node  ipld.Node
 	err   error
 	asked []cid.Cid
 }
 
-// fetchWanted fetches f's wanted blocks, at most wantWindow at a time, and
-// asks for what each links as soon as it arrives rather than once its whole
-// level has. What a block links is staged before it is asked for, so an
-// attempt that stops anywhere leaves every block it has not received
-// wanted or still to stage, for the next one to go on from. A block that
-// could not be fetched is asked for again while others still arrive; the
-// attempt ends once none does. Gets run under cctx, staging under ctx.
+// fetchWanted asks for what each block links as soon as it arrives, at most
+// wantWindow at a time. Links are staged before they are asked for, so an
+// attempt stopping anywhere leaves every unreceived block wanted or still to
+// stage. Gets run under cctx, staging under ctx.
 func (store *Datastore) fetchWanted(ctx, cctx context.Context, ng ipld.NodeGetter, f *stateFetch, held *heldDAG) error {
 	b := f.b
 	if len(b.unstaged) > 0 {
@@ -441,8 +410,6 @@ func (store *Datastore) fetchWanted(ctx, cctx context.Context, ng ipld.NodeGette
 	}
 }
 
-// received takes nd, if it was asked for, as a parent whose links are to
-// be staged.
 func (b *fetchBuffers) received(nd ipld.Node) bool {
 	c := nd.Cid()
 	k := keyOf(c)
@@ -459,14 +426,12 @@ func (b *fetchBuffers) received(nd ipld.Node) bool {
 	return true
 }
 
-// requeue wants cids again, after those wanted now.
 func (b *fetchBuffers) requeue(cids []cid.Cid) {
 	b.want = append(b.want, cids...)
 	clear(cids)
 }
 
-// settle moves the blocks still wanted to the front of the queue, once no
-// get reads it.
+// settle runs once no get reads the queue.
 func (b *fetchBuffers) settle() {
 	n := copy(b.want, b.want[b.next:])
 	clear(b.want[n:])

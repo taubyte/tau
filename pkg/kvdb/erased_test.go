@@ -6,11 +6,6 @@ import (
 	"time"
 )
 
-// TestARebaseClaimsNoBlockItDidNotMerge (M1): the judge's head is the
-// rebased replica's own old snapshot, which holds the judge's write. The
-// rebase must walk it: a context that claimed it would skip it, and the
-// snapshot the replica writes next would tell the judge it holds that state,
-// so the judge drops the head and keeps a write no head represents.
 func TestARebaseClaimsNoBlockItDidNotMerge(t *testing.T) {
 	ctx := context.Background()
 	st := newSimTime()
@@ -49,10 +44,6 @@ func listHeads(r *Datastore) []Head {
 	return hs
 }
 
-// TestAStaleForeignHeadIsRefreshed (P3): a head that is another
-// incarnation's snapshot, which this replica would now refuse as stale, is
-// folded into a snapshot of its own: a replica that knows what it knows
-// would refuse that head too, and nothing else here carries its state.
 func TestAStaleForeignHeadIsRefreshed(t *testing.T) {
 	ctx := context.Background()
 	st := newSimTime()
@@ -68,8 +59,6 @@ func TestAStaleForeignHeadIsRefreshed(t *testing.T) {
 		t.Fatal("setup: j's head is not x's snapshot")
 	}
 
-	// j learns that something written after x last heard the fleet has
-	// been forgotten: x's snapshot may hold what that removed.
 	for _, sr := range []*simReplica{j, c} {
 		sr.r.mu.Lock()
 		err := sr.r.hearHorizon(ctx, heard)
@@ -86,11 +75,6 @@ func TestAStaleForeignHeadIsRefreshed(t *testing.T) {
 	c.wantValue(t, "/k", "v")
 }
 
-// TestAnOwnHeadWrittenBehindTheFleetIsRefreshed (P3): a snapshot this
-// replica wrote before it heard the fleet again carries the fleet time it
-// had then. Once that is stale by what it knows, a peer that knows as much
-// refuses it, so it is replaced by one that carries the fleet time it has
-// now.
 func TestAnOwnHeadWrittenBehindTheFleetIsRefreshed(t *testing.T) {
 	ctx := context.Background()
 	st := newSimTime()
@@ -119,11 +103,6 @@ func TestAnOwnHeadWrittenBehindTheFleetIsRefreshed(t *testing.T) {
 	c.wantValue(t, "/k", "v")
 }
 
-// TestAHeadIsNotRefreshedIntoOneAsStale: a stale head snapshot is replaced
-// only by one that is not: not while the replica rejoins, when what it
-// writes carries the fleet time it rejoins from, nor while the fleet time
-// it has heard is itself stale by what it knows. Refreshing then would
-// write another such snapshot at every pass.
 func TestAHeadIsNotRefreshedIntoOneAsStale(t *testing.T) {
 	ctx := context.Background()
 	st := newSimTime()

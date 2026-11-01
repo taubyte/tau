@@ -11,12 +11,10 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 )
 
-// Stop ends a Range or Scan early when its function returns it; the
-// iteration then returns nil.
+// Stop ends a Range or Scan early; the iteration then returns nil.
 var Stop = errors.New("statetree: stop")
 
-// A Tree is an immutable handle on one root. Its methods are safe for
-// concurrent use when its DAGService is.
+// A Tree is immutable and safe for concurrent use when its DAGService is.
 type Tree struct {
 	dags  ipld.DAGService
 	sum   Summarizer
@@ -26,19 +24,16 @@ type Tree struct {
 
 type Option func(*Tree)
 
-// WithSummarizer gives every subtree a summary computed by s. A tree must be
-// read with the summarizer it was written with.
+// A tree must be read with the summarizer it was written with.
 func WithSummarizer(s Summarizer) Option {
 	return func(t *Tree) { t.sum = s }
 }
 
-// New is the empty tree over dags.
 func New(dags ipld.DAGService, opts ...Option) *Tree {
 	return Load(dags, cid.Undef, opts...)
 }
 
-// Load is the tree whose root node is root, or the empty tree for cid.Undef.
-// It reads nothing.
+// Load reads nothing; cid.Undef is the empty tree.
 func Load(dags ipld.DAGService, root cid.Cid, opts ...Option) *Tree {
 	t := &Tree{dags: dags, root: root}
 	for _, o := range opts {
@@ -47,11 +42,10 @@ func Load(dags ipld.DAGService, root cid.Cid, opts ...Option) *Tree {
 	return t
 }
 
-// Root is the CID of the root node, cid.Undef for the empty tree.
 func (t *Tree) Root() cid.Cid { return t.root }
 
-// A BlockReader reads a block as it is stored, without decoding it as an
-// IPLD node. A tree whose DAG service is one reads its nodes through it.
+// A tree whose DAG service is a BlockReader reads its nodes as stored blocks,
+// without IPLD decoding.
 type BlockReader interface {
 	ReadBlock(ctx context.Context, c cid.Cid) (blocks.Block, error)
 }
@@ -94,14 +88,12 @@ func (t *Tree) load(ctx context.Context, c cid.Cid, below uint32) (*node, error)
 	return n, err
 }
 
-// Get returns the value of key and whether the tree holds it.
 func (t *Tree) Get(ctx context.Context, key []byte) ([]byte, bool, error) {
 	o := op{ctx: ctx, t: t}
 	return o.get(o.rootRef(), key)
 }
 
-// Summary is the summary of the whole tree, nil when it is empty or has no
-// summarizer.
+// Summary is nil for an empty tree or one with no summarizer.
 func (t *Tree) Summary(ctx context.Context) ([]byte, error) {
 	if t.sum == nil || !t.root.Defined() {
 		return nil, nil
@@ -113,21 +105,16 @@ func (t *Tree) Summary(ctx context.Context) ([]byte, error) {
 	return n.summary(t.sum), nil
 }
 
-// An op is one change, or an Editor's run of them. The nodes it changes
-// stay in memory, unencoded, until it is done: finish encodes each node the
-// result holds once, however many of its changes passed through it, and
-// adds them together, so a failed change writes nothing.
+// An op keeps the nodes it changes in memory, unencoded, until done encodes
+// each once and adds them together, so a failed change writes nothing.
 type op struct {
 	ctx context.Context
 	t   *Tree
 	out []ipld.Node
-	// seen holds the nodes an Editor read, which a later change on the
-	// same path reads again. Nil for a single change.
+	// seen holds the nodes an Editor read; nil for a single change.
 	seen map[cid.Cid]*node
 }
 
-// load is the node r holds. A node it does not hold in memory is decoded
-// afresh, and a change copies it before changing it (see own).
 func (o *op) load(r ref, below uint32) (*node, error) {
 	if r.n != nil {
 		return r.n, nil
@@ -142,8 +129,8 @@ func (o *op) load(r ref, below uint32) (*node, error) {
 	return n, err
 }
 
-// own is n ready to change in place: n itself when r holds it in memory,
-// since nothing else can reach it, and a copy of it otherwise.
+// own returns n itself when r holds it in memory, since nothing else reaches
+// it, and a copy otherwise.
 func (o *op) own(r ref, n *node) *node {
 	if r.n == n {
 		return n
@@ -151,7 +138,6 @@ func (o *op) own(r ref, n *node) *node {
 	return n.copy()
 }
 
-// write encodes n and queues its block.
 func (o *op) write(n *node) (ref, error) {
 	nd, err := encode(n)
 	if err != nil {
@@ -161,8 +147,8 @@ func (o *op) write(n *node) (ref, error) {
 	return ref{c: nd.Cid(), sum: n.summary(o.t.sum)}, nil
 }
 
-// finish encodes every node under r that is still in memory, children
-// first, and returns r as a CID. A root's summary is not kept.
+// finish encodes the in-memory nodes under r, children first. A root's summary
+// is not kept.
 func (o *op) finish(r ref, root bool) (ref, error) {
 	n := r.n
 	if n == nil {
@@ -198,7 +184,6 @@ func (o *op) flush() error {
 	return err
 }
 
-// done finishes r and adds what it wrote, returning the tree it roots.
 func (o *op) done(r ref) (*Tree, error) {
 	fr, err := o.finish(r, true)
 	if err != nil {
@@ -214,8 +199,7 @@ func (o *op) rootRef() ref {
 	return ref{c: o.t.root}
 }
 
-// Put returns the tree with key set to value. The tree is unchanged, and
-// nothing is written, when it already holds that value.
+// Put writes nothing when the tree already holds value at key.
 func (t *Tree) Put(ctx context.Context, key, value []byte) (*Tree, error) {
 	o := &op{ctx: ctx, t: t}
 	r, changed, err := o.insert(o.rootRef(), noLevel, newEntry(key, value), Level(key))
@@ -295,8 +279,7 @@ func (n *node) copy() *node {
 	}
 }
 
-// split divides the subtree r, which does not hold key, into the keys below
-// key and those above it.
+// split divides r, which must not hold key, at key.
 func (o *op) split(r ref, below uint32, key []byte) (ref, ref, error) {
 	if !r.present() {
 		return ref{}, ref{}, nil
@@ -308,8 +291,8 @@ func (o *op) split(r ref, below uint32, key []byte) (ref, ref, error) {
 	return o.splitNode(n, r, key)
 }
 
-// splitNode splits n, whose ref is self. A side that keeps all of n is
-// self, not a copy of it, with n's summary: the ref of a root has none.
+// A side that keeps all of n is self, not a copy, with n's summary; a root's
+// ref has none.
 func (o *op) splitNode(n *node, self ref, key []byte) (ref, ref, error) {
 	i, _ := n.search(key)
 	l, r, err := o.split(n.kids[i], n.level, key)
@@ -345,8 +328,7 @@ func (o *op) splitNode(n *node, self ref, key []byte) (ref, ref, error) {
 	return l, r, nil
 }
 
-// Delete returns the tree without key. The tree is unchanged, and nothing
-// is written, when it does not hold key.
+// Delete writes nothing when the tree does not hold key.
 func (t *Tree) Delete(ctx context.Context, key []byte) (*Tree, error) {
 	o := &op{ctx: ctx, t: t}
 	r, changed, err := o.remove(o.rootRef(), noLevel, key, Level(key))
@@ -399,7 +381,7 @@ func (o *op) remove(r ref, below uint32, key []byte, lvl uint32) (ref, bool, err
 	}}, true, nil
 }
 
-// merge joins two adjacent subtrees, every key of a below every key of b.
+// merge joins adjacent subtrees, every key of a below every key of b.
 func (o *op) merge(a, b ref, below uint32) (ref, error) {
 	if !a.present() {
 		return b, nil
@@ -445,23 +427,19 @@ func (o *op) merge(a, b ref, below uint32) (ref, error) {
 	}}, nil
 }
 
-// An Editor applies a run of changes to a tree as one: a node the run
-// changes many times is read once and encoded once, when Tree is called.
-// The result is the tree the same Puts and Deletes give one at a time. An
-// Editor is not safe for concurrent use, and is not to be used after a
-// method fails.
+// An Editor applies a run of changes, reading and encoding each node once when
+// Tree is called. It is not safe for concurrent use and must not be used after
+// a method fails.
 type Editor struct {
 	o    op
 	root ref
 }
 
-// Edit starts a run of changes to t.
 func (t *Tree) Edit() *Editor {
 	return &Editor{o: op{t: t, seen: map[cid.Cid]*node{}}, root: ref{c: t.root}}
 }
 
-// Put sets key to value. The Editor keeps key and value, which must not
-// change until Tree returns.
+// The Editor keeps key and value, which must not change until Tree returns.
 func (e *Editor) Put(ctx context.Context, key, value []byte) error {
 	e.o.ctx = ctx
 	if len(value) == 0 {
@@ -474,7 +452,6 @@ func (e *Editor) Put(ctx context.Context, key, value []byte) error {
 	return err
 }
 
-// Delete removes key.
 func (e *Editor) Delete(ctx context.Context, key []byte) error {
 	e.o.ctx = ctx
 	r, changed, err := e.o.remove(e.root, noLevel, key, Level(key))
@@ -484,14 +461,12 @@ func (e *Editor) Delete(ctx context.Context, key []byte) error {
 	return err
 }
 
-// Get returns the value of key and whether the edited tree holds it.
 func (e *Editor) Get(ctx context.Context, key []byte) ([]byte, bool, error) {
 	e.o.ctx = ctx
 	return e.o.get(e.root, key)
 }
 
-// Tree writes the nodes the changes made and returns the tree they give.
-// The Editor goes on from that tree.
+// The Editor goes on from the tree Tree returns.
 func (e *Editor) Tree(ctx context.Context) (*Tree, error) {
 	e.o.ctx = ctx
 	t, err := e.o.done(e.root)
@@ -525,21 +500,16 @@ func (o *op) get(r ref, key []byte) ([]byte, bool, error) {
 	return nil, false, nil
 }
 
-// Range calls fn with each entry whose key is in [start, end), in key
-// order. A nil start or end is unbounded. The slices fn gets are its to
-// keep and must not be modified.
+// Range's bounds are [start, end), nil for unbounded. fn may keep the slices
+// but must not modify them.
 func (t *Tree) Range(ctx context.Context, start, end []byte, fn func(key, value []byte) error) error {
 	return t.Scan(ctx, start, end, nil, fn)
 }
 
-// Prefix calls fn with each entry whose key starts with prefix, in key
-// order.
 func (t *Tree) Prefix(ctx context.Context, prefix []byte, fn func(key, value []byte) error) error {
 	return t.Range(ctx, prefix, prefixEnd(prefix), fn)
 }
 
-// prefixEnd is the least key above every key starting with p, nil if there
-// is none.
 func prefixEnd(p []byte) []byte {
 	for i := len(p) - 1; i >= 0; i-- {
 		if p[i] != 0xff {
@@ -551,9 +521,8 @@ func prefixEnd(p []byte) []byte {
 	return nil
 }
 
-// Scan is Range, but it does not enter a subtree whose summary skip
-// returns true for. Entries of the nodes it reads still reach fn, so fn
-// sees a superset of what skip let through.
+// Scan is Range without entering a subtree whose summary skip accepts. Entries
+// of the nodes it reads still reach fn, a superset of what skip lets through.
 func (t *Tree) Scan(ctx context.Context, start, end []byte, skip func(summary []byte) bool, fn func(key, value []byte) error) error {
 	err := t.scan(ctx, t.root, noLevel, start, end, skip, fn)
 	if errors.Is(err, Stop) {

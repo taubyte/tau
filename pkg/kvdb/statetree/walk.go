@@ -8,10 +8,8 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 )
 
-// Reachable is every node any of roots reaches. A node's subtrees are its
-// block's links, walked by merkledag's walk; a subtree two roots share is
-// walked once. The caller collects what it does not hold; this package
-// never removes a node.
+// This package never removes a node; collecting what roots do not reach is the
+// caller's.
 func Reachable(ctx context.Context, ng ipld.NodeGetter, roots ...cid.Cid) (*cid.Set, error) {
 	set := cid.NewSet()
 	links := func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
@@ -32,11 +30,10 @@ func Reachable(ctx context.Context, ng ipld.NodeGetter, roots ...cid.Cid) (*cid.
 	return set, nil
 }
 
-// Missing is the nodes of the tree at root that ng does not hold and that
-// are reached through nodes it does. A tree is complete once Missing returns
-// none; until then, fetching these and asking again moves the frontier down.
-// complete, if not nil, names nodes the caller already knows are held with
-// everything below them, which are not read.
+// Missing is the nodes of the tree at root that ng does not hold but reaches
+// through nodes it does: fetching them and asking again moves the frontier
+// down until none remain. complete, if set, names nodes known held with all
+// below them, which are not read.
 func Missing(ctx context.Context, ng ipld.NodeGetter, root cid.Cid, complete func(cid.Cid) bool) ([]cid.Cid, error) {
 	if !root.Defined() {
 		return nil, nil
@@ -60,7 +57,6 @@ func Missing(ctx context.Context, ng ipld.NodeGetter, root cid.Cid, complete fun
 	return missing, nil
 }
 
-// linksOf is nd's block's links, as the links merkledag's walk follows.
 func linksOf(nd ipld.Node) ([]*ipld.Link, error) {
 	_, cids, err := DecodeBlock(nd, nil)
 	if err != nil {

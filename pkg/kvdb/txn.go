@@ -13,28 +13,23 @@ import (
 	"github.com/taubyte/tau/pkg/pebbleds"
 )
 
-// txn collects every write of one merge and commits them as one batch, so a
-// crash leaves either the whole merge or none of it. A merge decides from
-// what it has already decided, so reads see the pending writes first.
+// txn collects a merge's writes and commits them as one batch, so a crash
+// leaves all of a merge or none. Reads see the pending writes first, since a
+// merge decides from what it has decided.
 type txn struct {
 	store  ds.Datastore
 	writes map[string][]byte // nil value: deleted
 	order  []string
-	// sorted orders the written keys, so a scan reads only the ones under
-	// its prefix: a merge scans once per key it touched.
+	// sorted orders the written keys so a scan reads only those under its prefix.
 	sorted keyIndex
-	// steps counts the index nodes scans visited.
-	steps int
-	// vals holds what reads copied out of the store: a key or value read
-	// lives until t is released.
-	vals []byte
-	// ents is what scan returned last, elems what liveElems did, and
-	// prefix the bytes of the prefix a scan is building.
+	steps  int
+	// vals holds what reads copied out; a key or value read lives until t is
+	// released.
+	vals   []byte
 	ents   []entry
 	elems  []element
 	prefix []byte
-	// marks and batch are the batches commit writes a pebbleds store with,
-	// kept across uses.
+	// The batches commit writes a pebbleds store with, kept across uses.
 	marks, batch *pebbleds.Batch
 	// rd is what reads of a pebbleds store go through, made at the first
 	// and closed at commit or release: every read sees the store as it was
@@ -42,14 +37,12 @@ type txn struct {
 	rd *pebbleds.Reader
 }
 
-// txnPool keeps released txns, with the storage they grew.
 var txnPool = sync.Pool{New: func() any {
 	return &txn{writes: map[string][]byte{}, sorted: keyIndex{root: -1}}
 }}
 
-// reusedWrites bounds the txns kept for reuse: a map keeps its buckets once
-// cleared, and one that held a whole state is not worth keeping. reusedVals
-// bounds the scanned values a kept txn keeps room for.
+// A map keeps its buckets once cleared, so a txn that held a whole state is
+// not kept.
 const (
 	reusedWrites = 1 << 10
 	reusedVals   = 1 << 16
@@ -61,8 +54,7 @@ func newTxn(store ds.Datastore) *txn {
 	return t
 }
 
-// release hands t back for reuse once its owner is done with it: nothing
-// may read or write it after.
+// Nothing may read or write t after release.
 func (t *txn) release() {
 	t.endReads()
 	if len(t.order) > reusedWrites || cap(t.vals) > reusedVals {
@@ -97,18 +89,17 @@ func (t *txn) endReads() {
 	}
 }
 
-// buf is what t's next key or value is appended to; keep then claims it.
+// buf is where t's next key or value is appended; keep claims it.
 func (t *txn) buf() []byte { return t.vals }
 
-// keep claims what was appended to buf: it lives until t is released.
-// Nothing else may append to buf in between.
+// What keep claims lives until t is released; nothing else may append to buf
+// in between.
 func (t *txn) keep(b []byte) []byte {
 	start := len(t.vals)
 	t.vals = b
 	return b[start:len(b):len(b)]
 }
 
-// key is keep for a key.
 func (t *txn) key(b []byte) ds.Key { return dsKey(t.keep(b)) }
 
 func (t *txn) put(k ds.Key, v []byte) {
@@ -130,7 +121,7 @@ func (t *txn) set(k string, v []byte) {
 	t.writes[k] = v
 }
 
-// get returns the value at k, which lives until t is released.
+// The value lives until t is released.
 func (t *txn) get(ctx context.Context, k ds.Key) ([]byte, error) {
 	if v, ok := t.writes[k.String()]; ok {
 		if v == nil {
@@ -179,8 +170,7 @@ type entry struct {
 	value []byte
 }
 
-// scan returns every entry under prefix, pending writes included, in key
-// order, until the next scan on t. Its keys and values live until t is
+// The entries last until the next scan on t; their keys and values until t is
 // released.
 func (t *txn) scan(ctx context.Context, prefix ds.Key) ([]entry, error) {
 	out := t.ents[:0]
@@ -249,7 +239,7 @@ func treapPriority(n int32) uint64 {
 	return z ^ (z >> 31)
 }
 
-// insert adds the last key of keys, which must not already be in the index.
+// The last key of keys must not already be in the index.
 func (x *keyIndex) insert(keys []string) {
 	n := int32(len(keys) - 1)
 	x.left, x.right = append(x.left, -1), append(x.right, -1)
@@ -257,7 +247,6 @@ func (x *keyIndex) insert(keys []string) {
 	x.root = x.join(x.join(l, n), r)
 }
 
-// split cuts the subtree at n into the keys below k and the rest.
 func (x *keyIndex) split(keys []string, n int32, k string) (int32, int32) {
 	if n < 0 {
 		return -1, -1
@@ -272,7 +261,7 @@ func (x *keyIndex) split(keys []string, n int32, k string) (int32, int32) {
 	return l, n
 }
 
-// join joins two subtrees, every key of a below every key of b.
+// Every key of a is below every key of b.
 func (x *keyIndex) join(a, b int32) int32 {
 	if a < 0 {
 		return b
@@ -288,9 +277,8 @@ func (x *keyIndex) join(a, b int32) int32 {
 	return b
 }
 
-// each calls fn, in key order, with every key under prefix p, and returns
-// the number of nodes it visited. Every key under p sorts in [p+"/", p+"0"),
-// '0' being the byte after '/'.
+// Every key under p sorts in [p+"/", p+"0"), '0' being the byte after '/'. It
+// returns the nodes visited.
 func (x *keyIndex) each(keys []string, p string, fn func(k string)) int {
 	return x.walk(keys, x.root, p, fn)
 }
@@ -315,8 +303,7 @@ func (x *keyIndex) walk(keys []string, n int32, p string, fn func(k string)) int
 	return steps
 }
 
-// cmpAfter compares k with p followed by the byte c, without making that
-// string.
+// cmpAfter compares k with p followed by c, without making that string.
 func cmpAfter(k, p string, c byte) int {
 	n := min(len(k), len(p))
 	if r := strings.Compare(k[:n], p[:n]); r != 0 || len(k) <= len(p) {
@@ -367,8 +354,8 @@ func (t *txn) commit(ctx context.Context) error {
 	return b.Commit(ctx)
 }
 
-// commitTo commits t to s in t's own batches, the marks j asks for, when it
-// is not nil, committed and synced first, as journaled's batch does.
+// The marks j asks for, when j is set, are committed and synced first, as
+// journaled's batch does.
 func (t *txn) commitTo(ctx context.Context, s *pebbleds.Store, j *journal) error {
 	var err error
 	if t.marks, err = batchFor(t.marks, s); err != nil {
@@ -407,8 +394,6 @@ func (t *txn) commitTo(ctx context.Context, s *pebbleds.Store, j *journal) error
 	return t.batch.Commit(ctx)
 }
 
-// markTo sets in t's batch of marks each mark a write of v under k makes,
-// as appendMarks does, reading what k holds in s.
 func (t *txn) markTo(s *pebbleds.Store, j *journal, k string, v []byte) (bool, error) {
 	if rest, ok := strings.CutPrefix(k, j.elems); ok {
 		t.prefix = j.appendElemMark(t.prefix[:0], rest)
@@ -440,7 +425,6 @@ func (t *txn) markTo(s *pebbleds.Store, j *journal, k string, v []byte) (bool, e
 	return n > 0, nil
 }
 
-// batchFor is b emptied, or a new batch when b is not one of s's.
 func batchFor(b *pebbleds.Batch, s *pebbleds.Store) (*pebbleds.Batch, error) {
 	if b == nil || b.Store() != s {
 		return s.NewBatch()
@@ -448,8 +432,7 @@ func batchFor(b *pebbleds.Batch, s *pebbleds.Store) (*pebbleds.Batch, error) {
 	return b, b.Reset()
 }
 
-// batchOf is the store's own batch when it has one, and otherwise a batch
-// that applies its writes in order on commit.
+// A store without batches gets one that applies its writes in order on commit.
 func batchOf(ctx context.Context, store ds.Datastore) (ds.Batch, error) {
 	if b, ok := store.(ds.Batching); ok {
 		return b.Batch(ctx)
@@ -457,7 +440,6 @@ func batchOf(ctx context.Context, store ds.Datastore) (ds.Batch, error) {
 	return ds.NewBasicBatch(store), nil
 }
 
-// below is the store a read of store reaches.
 func below(store ds.Datastore) ds.Datastore {
 	if j, ok := store.(*journaled); ok {
 		return j.Datastore
@@ -465,13 +447,11 @@ func below(store ds.Datastore) ds.Datastore {
 	return store
 }
 
-// scanStore calls fn with every entry under prefix, in no order to rely
-// on. v is valid only until fn returns.
+// In no order to rely on; v is valid only until fn returns.
 func scanStore(ctx context.Context, store ds.Datastore, prefix ds.Key, fn func(k string, v []byte) error) error {
 	return scanBytes(ctx, store, prefix, func(k, v []byte) error { return fn(string(k), v) })
 }
 
-// scanPrefix appends to dst the bytes every key under prefix starts with.
 func scanPrefix(dst []byte, prefix ds.Key) []byte {
 	dst = append(dst, prefix.String()...)
 	if len(dst) != 1 {
@@ -480,8 +460,7 @@ func scanPrefix(dst []byte, prefix ds.Key) []byte {
 	return dst
 }
 
-// scanBytes is scanStore lending the key too: k is valid only until fn
-// returns.
+// k is valid only until fn returns.
 func scanBytes(ctx context.Context, store ds.Datastore, prefix ds.Key, fn func(k, v []byte) error) error {
 	if s, ok := below(store).(*pebbleds.Store); ok {
 		var buf [128]byte

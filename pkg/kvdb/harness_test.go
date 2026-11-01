@@ -31,15 +31,10 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 )
 
-// TestMain installs a tracer provider before any replica starts. The
-// blockservice under every replica's DAG starts a span for each block it
-// gets, adds or deletes, and with no provider installed otel answers each of
-// those through one mutex for the whole process. Fifteen replicas walking
-// and purging at once queued a thousand goroutines on it: a compaction
-// purging its blocks held store.mu for up to 20s under -race on a loaded
-// host, the broadcast reader waited on store.mu, and every peer's broadcast
-// to it timed out; fetches waited on it past DAGSyncerTimeout and were left
-// to the next repair, a minute later.
+// A tracer provider is installed before any replica starts: without one otel
+// answers every blockservice span through one process-wide mutex, and fifteen
+// replicas walking and purging at once stalled store.mu on it for seconds
+// under -race.
 func TestMain(m *testing.M) {
 	otel.SetTracerProvider(noop.NewTracerProvider())
 	flag.Parse()
@@ -47,13 +42,12 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// fetchThroughDAGSvc is one replica's own blockstore that, on a local miss,
-// fetches the block from its remotes and keeps a copy, the way a bitswap
-// session finds a block on whichever peer has it. A block this replica
-// purged is gone from its own store, whoever else still has it.
+// fetchThroughDAGSvc is a replica's own blockstore that fetches a local miss
+// from its remotes and keeps a copy, as a bitswap session does. A block it
+// purged is gone from it whoever else holds it.
 type fetchThroughDAGSvc struct {
-	ipld.DAGService // this replica's own blocks
-	bs              blockstore.Blockstore
+	ipld.DAGService
+	bs blockstore.Blockstore
 
 	mu      sync.Mutex
 	remotes []ipld.DAGService
@@ -64,15 +58,13 @@ func newFetchThrough() *fetchThroughDAGSvc {
 	return &fetchThroughDAGSvc{DAGService: merkledag.NewDAGService(bserv), bs: bserv.Blockstore()}
 }
 
-// A nodeFetchThrough is a fetch-through DAG that writes and removes blocks
-// as a node's DAG service does. A wrapper of a fetch-through DAG that
-// counts or fails its writes must not be one, or kvdb writes past it.
+// A nodeFetchThrough writes and removes blocks as a node's DAG service does. A
+// wrapper that counts or fails writes must not be one, or kvdb writes past it.
 type nodeFetchThrough struct {
 	*fetchThroughDAGSvc
 	*peer.BlockWriter
 }
 
-// newFetchThroughOn is a node's fetch-through DAG over bs, offline.
 func newFetchThroughOn(t testing.TB, bs blockstore.Blockstore) nodeFetchThrough {
 	exch := offline.Exchange(bs)
 	w := peer.NewBlockWriter(bs, exch)
@@ -80,8 +72,6 @@ func newFetchThroughOn(t testing.TB, bs blockstore.Blockstore) nodeFetchThrough 
 	return nodeFetchThrough{&fetchThroughDAGSvc{DAGService: merkledag.NewDAGService(blockservice.New(bs, exch)), bs: bs}, w}
 }
 
-// ReadBlock reads a block held from the blockstore, and fetches one that is
-// not as Get does.
 func (n nodeFetchThrough) ReadBlock(ctx context.Context, c cid.Cid) (blocks.Block, error) {
 	b, err := n.bs.Get(ctx, c)
 	if ipld.IsNotFound(err) {
@@ -129,7 +119,6 @@ func (f *fetchThroughDAGSvc) GetMany(ctx context.Context, cids []cid.Cid) <-chan
 	return out
 }
 
-// blockCount is how many blocks this replica holds itself.
 func (f *fetchThroughDAGSvc) blockCount(t testing.TB) int {
 	t.Helper()
 	ch, err := f.bs.AllKeysChan(context.Background())
@@ -148,7 +137,6 @@ func (f *fetchThroughDAGSvc) holds(c cid.Cid) bool {
 	return err == nil && has
 }
 
-// countingDAG counts every block its replica asks for, whoever serves it.
 type countingDAG struct {
 	*fetchThroughDAGSvc
 
@@ -178,7 +166,6 @@ func (c *countingDAG) GetMany(ctx context.Context, cids []cid.Cid) <-chan *ipld.
 	return c.fetchThroughDAGSvc.GetMany(ctx, cids)
 }
 
-// take returns the fetches since the last take.
 func (c *countingDAG) take() map[cid.Cid]int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -187,7 +174,6 @@ func (c *countingDAG) take() map[cid.Cid]int {
 	return out
 }
 
-// from points replica r's fetches at src only.
 func from(dagsyncs []*fetchThroughDAGSvc, r, src int) {
 	dagsyncs[r].setRemotes(dagsyncs[src].DAGService)
 }
@@ -206,20 +192,15 @@ func replicaOptions(opts *Options, name string) *Options {
 	return o
 }
 
-// makeNReplicasSeparateStores makes n replicas that do not broadcast and run
-// nothing on their own (manual): tests drive every exchange with
-// syncReplicaHeads, and every repair, so the order is theirs. A repair loop
-// of their own would walk blocks a test's Repair then skips as already being
-// fetched, and the test would read a state still merging. Each replica has
-// its own blockstore; replica i > 0 fetches from replica 0 until a test
-// points it elsewhere.
+// The replicas are manual: tests drive every exchange and repair, since a
+// repair loop of their own would walk blocks a test's Repair then skips, and
+// the test would read a state still merging. Replica i > 0 fetches from
+// replica 0 until pointed elsewhere.
 func makeNReplicasSeparateStores(t testing.TB, n int, opts *Options) ([]*Datastore, []*fetchThroughDAGSvc, func()) {
 	t.Helper()
 	return makeSeparateStoresWith(t, n, func(int) *Options { return opts })
 }
 
-// makeSeparateStoresWith is makeNReplicasSeparateStores with options of each
-// replica's own.
 func makeSeparateStoresWith(t testing.TB, n int, optsFor func(i int) *Options) ([]*Datastore, []*fetchThroughDAGSvc, func()) {
 	t.Helper()
 	dagsyncs := make([]*fetchThroughDAGSvc, n)
@@ -248,8 +229,8 @@ func makeSeparateStoresWith(t testing.TB, n int, optsFor func(i int) *Options) (
 	return replicas, dagsyncs, closeReplicas
 }
 
-// syncReplicaHeads walks, on "to", every head of "from": exactly what "to"
-// does when it hears them broadcast, without the broadcaster's timing.
+// syncReplicaHeads does what to does on hearing from's heads, without the
+// broadcaster's timing.
 func syncReplicaHeads(t testing.TB, from, to *Datastore) {
 	t.Helper()
 	heads, _ := from.heads.List()
@@ -260,10 +241,8 @@ func syncReplicaHeads(t testing.TB, from, to *Datastore) {
 	}
 }
 
-// hear delivers src's heartbeat to dst, heads left out: its fleet time, its
-// rejoin state and what it has merged of who wrote lately. Tests that walk
-// heads directly exchange heartbeats this way, as replicas in contact do every
-// rebroadcast interval.
+// hear delivers src's heartbeat to dst without heads, as replicas in contact
+// exchange every rebroadcast interval.
 func hear(t testing.TB, dst, src *Datastore) {
 	t.Helper()
 	data, err := src.encodeBroadcast(context.Background(), nil, true)
@@ -277,21 +256,14 @@ func hear(t testing.TB, dst, src *Datastore) {
 	dst.handleBroadcast(context.Background(), msg)
 }
 
-// lastDot is the dot of r's last write.
 func lastDot(r *Datastore) dot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return dot{replica: r.replica, counter: r.counter}
 }
 
-// waitCovered waits until every replica covers every dot.
-//
-// Replication runs on the replicas' own goroutines: a broadcast is heard, a
-// walk fetches and merges, and how long that takes is the machine's business,
-// longer under load. The tests that use this assert what replication converges
-// to, so they wait for the merge itself, woken by every change of a replica's
-// context, and give up only at the test's own deadline. A fixed sleep in its
-// place asserted a latency nothing promises, and failed under load.
+// Replication runs on the replicas' own goroutines, slower under load, so this
+// waits for the merge itself rather than a fixed time.
 func waitCovered(t *testing.T, replicas []*Datastore, dots ...dot) {
 	t.Helper()
 	var deadline <-chan time.Time
@@ -317,8 +289,8 @@ func waitCovered(t *testing.T, replicas []*Datastore, dots ...dot) {
 	}
 }
 
-// syncHeadsLogged is syncReplicaHeads for a source whose heads may name a
-// block nobody holds: the failure is logged and the state is what is judged.
+// For a source whose heads may name a block nobody holds: the failure is
+// logged and the state is judged.
 func syncHeadsLogged(t testing.TB, src, dst *Datastore) {
 	t.Helper()
 	heads, _ := src.heads.List()
@@ -329,7 +301,6 @@ func syncHeadsLogged(t testing.TB, src, dst *Datastore) {
 	}
 }
 
-// queryAll returns every key/value currently in the datastore.
 func queryAll(t testing.TB, r *Datastore) map[string][]byte {
 	t.Helper()
 	res, err := r.Query(context.Background(), query.Query{})
@@ -399,10 +370,7 @@ func valueOf(t testing.TB, r *Datastore, k ds.Key) string {
 	return string(v)
 }
 
-// crdtState is the whole replicated state of a replica, written out: its
-// elements with their dots and priorities, its pending removals, its causal
-// context and its values. Two replicas that merged the same deltas hold the
-// same crdtState.
+// Two replicas that merged the same deltas hold the same crdtState.
 func crdtState(t testing.TB, r *Datastore) string {
 	t.Helper()
 	ctx := context.Background()
@@ -444,7 +412,6 @@ func assertSameState(t testing.TB, names []string, replicas ...*Datastore) {
 	}
 }
 
-// namespaceKeys is how many datastore entries a replica holds.
 func namespaceKeys(t testing.TB, r *Datastore) int {
 	t.Helper()
 	n, err := countPrefix(context.Background(), r.store, r.namespace)
@@ -454,11 +421,9 @@ func namespaceKeys(t testing.TB, r *Datastore) int {
 	return n
 }
 
-// sortedStore is the tests' in-memory datastore: a map datastore that also
-// keeps its keys in order, so a prefix query reads only the keys under the
-// prefix where a map store reads every key it holds. Its results come in no
-// particular order, as a map store's do: the order a query returns is nothing
-// kvdb may rely on.
+// sortedStore keeps its keys in order so a prefix query reads only that
+// prefix. Its results come in no order, as a map store's do: kvdb must not
+// rely on query order.
 type sortedStore struct {
 	mu   sync.RWMutex
 	keys []string
@@ -524,8 +489,8 @@ func (s *sortedStore) GetSize(_ context.Context, k ds.Key) (int, error) {
 	return len(v), nil
 }
 
-// Query narrows to the keys under the prefix, cleaned as the naive query
-// cleans it, and leaves everything else, the prefix check included, to it.
+// Query narrows to the prefix, cleaned as the naive query cleans it, and
+// leaves the rest, the prefix check included, to it.
 func (s *sortedStore) Query(_ context.Context, q query.Query) (query.Results, error) {
 	s.mu.RLock()
 	lo, hi := 0, len(s.keys)
@@ -558,14 +523,12 @@ func (s *sortedStore) Close() error { return nil }
 
 func (s *sortedStore) Batch(context.Context) (ds.Batch, error) { return &sortedBatch{s: s}, nil }
 
-// TestTheSortedStoreIsADatastore holds the tests' store to the suite every
-// datastore is held to, the map store it stands in for included.
 func TestTheSortedStoreIsADatastore(t *testing.T) {
 	dstest.SubtestAll(t, newSortedStore())
 }
 
-// sortedBatch applies its writes in order, all under one lock, as a map
-// store's batch does under its mutex.
+// sortedBatch applies its writes in order under one lock, as a map store's
+// batch does.
 type sortedBatch struct {
 	s   *sortedStore
 	ops []sortedOp
@@ -601,7 +564,6 @@ func (b *sortedBatch) Commit(context.Context) error {
 	return nil
 }
 
-// blockLinksOf is the links of nd, one of kvdb's blocks.
 func blockLinksOf(t testing.TB, nd ipld.Node) []cid.Cid {
 	t.Helper()
 	links, err := blockLinks(nd, nil)
