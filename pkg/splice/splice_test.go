@@ -14,7 +14,7 @@ import (
 )
 
 // pair is two ends of a real socket, not net.Pipe, which cannot half-close.
-func pair(t *testing.T) (client, server net.Conn) {
+func pair(t testing.TB) (client, server net.Conn) {
 	t.Helper()
 
 	l, err := net.Listen("tcp", "127.0.0.1:0")

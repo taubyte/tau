@@ -71,13 +71,18 @@ func Through(a, b net.Conn, aToB, bToA Shaper) error {
 // chunkSize matches io.Copy's buffer, so a shaped stream makes the same syscalls.
 const chunkSize = 32 * 1024
 
+// chunks reuses the read buffers of finished directions.
+var chunks = sync.Pool{New: func() any { return new([chunkSize]byte) }}
+
 func shaped(dst, src net.Conn, shape Shaper) error {
 	if shape == nil {
 		io.Copy(dst, src)
 		return nil
 	}
 
-	buf := make([]byte, chunkSize)
+	chunk := chunks.Get().(*[chunkSize]byte)
+	defer chunks.Put(chunk)
+	buf := chunk[:]
 	for {
 		n, err := src.Read(buf)
 		if n > 0 {
