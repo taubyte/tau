@@ -1,40 +1,13 @@
-// Package cache is the key-value cache a workload reaches, with the two
-// properties the vocabulary attaches to every one of them: an entry lifetime
-// and a ceiling on what the whole cache may hold.
+// Package cache is the key-value cache a workload reaches, with the two properties
+// the vocabulary gives every cache: an entry lifetime and a ceiling on the whole.
 //
-// # It is a cache, so it evicts rather than refuses
+// It is not a system of record, so a put that does not fit evicts rather than
+// refuses: expired entries first, then the oldest-written. It is not LRU: tracking
+// reads would be a write on every read, which two nodes make differently.
 //
-// The vocabulary is explicit that this kind is "not a system of record: losing
-// an entry costs a recomputation, never a fact". A store that answered a full
-// cache with an error would be one where the cheapest possible failure — a
-// miss — is reported as the most expensive one, and every author would have to
-// write the retry that the platform should have done by dropping something old.
-//
-// So a put that does not fit drops expired entries first and then the
-// oldest-written ones until it does. It is not LRU: reads are not tracked,
-// because tracking them means a write on every read, and under a replicated
-// store that is a write two nodes make differently.
-//
-// # Accounting is per node and it is exact for what this node holds
-//
-// The index is in memory, seeded by a scan when a cache is first opened. That
-// scan reads at most `size` bytes — the very field it exists to enforce — so it
-// is bounded by construction rather than by hope.
-//
-// It is NOT a swarm-wide total. Under a replicated cache each peer keeps its
-// own copy, so each peer enforcing its own ceiling is the same ceiling; under
-// an unreplicated one the data is on one node and that node is this one. What
-// it is not is a guarantee about the sum across peers mid-convergence, and no
-// counter maintained in a shared row could be one either — that row would be a
-// key two nodes write differently, which is the one thing a CRDT store must
-// never hold.
-//
-// # v1 did this differently and worse
-//
-// v1's services/substrate/components/database/kv keeps a parallel `size/<key>` row
-// per entry and LISTS AND SUMS ALL OF THEM ON EVERY PUT — O(n) reads per write
-// — then refuses when full, and has no notion of a lifetime at all. None of
-// that is carried here.
+// Accounting is an in-memory index per node, seeded by a scan bounded by `size`.
+// Under a replicated cache each peer enforces the same ceiling on its own copy; a
+// shared counter row would be a key two nodes write differently.
 package cache
 
 import (
@@ -50,9 +23,8 @@ import (
 	"github.com/taubyte/tau/pkg/storekey"
 )
 
-// Store is where entries live: the same four-method door services/secrets
-// keeps over a kvdb, for the same reason — the rules above are testable
-// against a map, and which node's write another sees is the store's business.
+// Store is where entries live: the same four-method door services/secrets keeps
+// over a kvdb.
 type Store interface {
 	Get(ctx context.Context, key string) ([]byte, bool, error)
 	Put(ctx context.Context, key string, value []byte) error
@@ -71,13 +43,9 @@ var (
 	ErrTooLarge = errors.New("cache: that value is larger than the whole cache")
 )
 
-// headerSize is the fixed prefix on every stored value: when it was written
-// and when it expires, both unix nanoseconds, big-endian.
-//
-// IT IS IN THE VALUE AND NOT IN A SECOND ROW. A parallel row is a second write
-// per put, a second delete per delete, and — under a replicated store — a pair
-// that can be seen half-applied, so a reader would find an entry whose lifetime
-// row had not arrived and would have to guess.
+// headerSize is the fixed prefix on every stored value: when it was written and
+// when it expires, both unix nanoseconds, big-endian. It is in the value, not a
+// second row that a replicated store could show half-applied.
 const headerSize = 16
 
 // Cache is one project-environment-resource's entries.
@@ -128,11 +96,8 @@ func WithClock(now func() time.Time) Option {
 	}
 }
 
-// Open builds a cache over a store and seeds its accounting.
-//
-// THE SCAN IS THE PRICE OF THE CEILING and it is paid once per node per cache.
-// Starting empty instead would make the first writes after a restart free, so a
-// node that restarted would hold two ceilings' worth.
+// Open builds a cache over a store and seeds its accounting. Starting empty would
+// let a restarted node hold two ceilings' worth.
 func Open(ctx context.Context, store Store, cfg Config, opts ...Option) (*Cache, error) {
 	if store == nil {
 		return nil, ErrNoStore
@@ -187,11 +152,8 @@ func (c *Cache) seed(ctx context.Context) error {
 	return nil
 }
 
-// Get returns a value, or ErrNotFound.
-//
-// AN EXPIRED ENTRY IS A MISS AND IS DELETED ON THE WAY OUT. Reading it and
-// leaving it would make a cache whose entries nobody reads grow forever, since
-// nothing else walks it.
+// Get returns a value, or ErrNotFound. An expired entry is a miss and is deleted
+// on the way out, since nothing else walks the cache.
 func (c *Cache) Get(ctx context.Context, key string) ([]byte, error) {
 	if key == "" {
 		return nil, ErrNoKey
@@ -289,11 +251,6 @@ func (c *Cache) List(ctx context.Context, prefix string) ([]string, error) {
 
 // makeRoom drops expired entries, then the oldest-written ones, until need
 // fits beside what is already there.
-//
-// IT IS NOT LRU. Tracking reads means a write on every read, and under a
-// replicated store that is a write two nodes make differently — which is the
-// one shape a CRDT store must not hold. Oldest-written is what the header
-// already carries.
 func (c *Cache) makeRoom(ctx context.Context, key string, need int64) error {
 	if c.size == 0 {
 		return nil
@@ -422,12 +379,8 @@ func decode(raw []byte) (written, expires time.Time, value []byte) {
 	return written, expires, raw[headerSize:]
 }
 
-// key is this store's addressing of a key a GUEST supplied: the prefix it
-// belongs to, joined, once it is known the join stays inside that prefix.
-//
-// IT IS ONE METHOD AND NOT A CHECK AT EACH CALL, so a method added later gets
-// the rule by addressing an entry at all rather than by its author remembering
-// to. See pkg/storekey for what the rule is, and what not having it cost.
+// key addresses a guest-supplied key under this cache's prefix, refusing one whose
+// join escapes it. Every method addresses entries through it; see pkg/storekey.
 func (c *Cache) key(k string) (string, error) {
 	if err := storekey.Check(c.prefix, k); err != nil {
 		return "", err

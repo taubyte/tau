@@ -8,20 +8,12 @@ import (
 	"github.com/miekg/dns"
 )
 
-// challenges.go answers DNS-01: the TXT records of `_acme-challenge.<name>`
-// for a name in the cloud's zone, while an order is proving it.
+// DNS-01: the TXT records of `_acme-challenge.<name>` for a name in the cloud's
+// zone, read at query time from the cm service's challenge cache.
 //
-// They are asked for at query time from the reader the node composes — the
-// cm service's challenge cache — rather than carried in the discovery
-// view: a CA looks a handful of times per order, and the values already live
-// in a store with a lifetime of their own.
-//
-// Before every other answer for the name, because `_acme-challenge` sits where
-// a generated name's labels do and would otherwise be routed as one. A
-// reader that cannot answer is SERVFAIL, for the package's first
-// refusal: a CA reading "no record" fails the order, "try again" does not.
-// So is a reader holding no value: a CA asks only while an order proves the
-// name, and its value not being here yet is not its absence.
+// It is answered before everything else for the name, since `_acme-challenge` sits
+// where a generated name's labels do. A reader that cannot answer, or holds no value
+// yet, is SERVFAIL: "no record" would fail the order.
 
 // Challenges reads the DNS-01 values being presented for a name.
 type Challenges interface {

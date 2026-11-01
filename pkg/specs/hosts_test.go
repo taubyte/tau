@@ -8,10 +8,6 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// TestEveryNameTheProjectAnswersOn. This is the table a gateway needs before it
-// can route anything, and the fixture has both halves of the problem: names in
-// a zone the project declares, and generated ones whose last segment is the
-// cloud's and is not in the config.
 func TestEveryNameTheProjectAnswersOn(t *testing.T) {
 	hosts := load(t).Hosts()
 	require.NotEmpty(t, hosts)
@@ -56,9 +52,6 @@ func TestEveryNameTheProjectAnswersOn(t *testing.T) {
 	require.Contains(t, kinds, "proxy")
 }
 
-// TestAHostAddressesSomethingThatCanBeLookedUp. The whole point of reporting
-// kind, scope and name rather than an id is that a gateway which matched a name
-// can read what it matched.
 func TestAHostAddressesSomethingThatCanBeLookedUp(t *testing.T) {
 	p := load(t)
 
@@ -69,15 +62,9 @@ func TestAHostAddressesSomethingThatCanBeLookedUp(t *testing.T) {
 	}
 }
 
-// The ids in the hand-made objects below are real-looking CIDs rather than
-// "rid" and "nsid", and that is load-bearing: tcc decides what is a resource it
-// holds from the id, so a made-up one is walked past and the object reads as
-// empty. Learned the hard way, recorded here so the next short id is not a
-// twenty-minute puzzle.
+// The ids below are real-looking CIDs: tcc decides what is a resource from the id,
+// so a made-up one is walked past and the object reads as empty.
 
-// TestANameWhoseZoneIsUnknownIsNotReported. A partial name in a routing table
-// is a name no request will ever carry, and one that half-matches is worse than
-// one that is absent.
 func TestANameWhoseZoneIsUnknownIsNotReported(t *testing.T) {
 	p, err := specs.Load([]byte(`{
 		"object":{"id":"QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR","gateway":{"QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY":{
@@ -90,8 +77,6 @@ func TestANameWhoseZoneIsUnknownIsNotReported(t *testing.T) {
 	require.Empty(t, p.Hosts())
 }
 
-// TestAHostInsideANamespaceReportsTheScopeByName, because that is what Resource
-// takes and an id would make the caller do the reverse lookup this already did.
 func TestAHostInsideANamespaceReportsTheScopeByName(t *testing.T) {
 	p, err := specs.Load([]byte(`{
 		"object":{"id":"QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR",

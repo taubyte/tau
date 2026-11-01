@@ -9,9 +9,7 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// EVERY TEST HERE READS THE VOCABULARY'S OWN FIXTURE, compiled. What the access
-// block means is decided by the compiler, and a hand-written map would be this
-// package's idea of the shape rather than the shape.
+// Every test reads the vocabulary's own fixture, compiled.
 
 func basic(t *testing.T) *specs.Project {
 	t.Helper()
@@ -37,9 +35,8 @@ func TestAResourceReadsItsOwnAccessBlock(t *testing.T) {
 	require.Equal(t, []string{"get"}, caches[0].Ops)
 	require.Equal(t, "cache", caches[0].Kind)
 
-	// SORTED BY LABEL, and it is asserted over many reads because the map
-	// underneath is not ordered: an unsorted answer differs between two
-	// resolves of one revision, which is a spec that changes without a deploy.
+	// Sorted by label, asserted over many reads because the map underneath is
+	// unordered.
 	for range 20 {
 		databases := r.Reaches("database")
 		require.Len(t, databases, 2)
@@ -54,9 +51,6 @@ func TestAKindNothingWasDeclaredForIsEmpty(t *testing.T) {
 	require.Empty(t, r.Reaches("queue"))
 }
 
-// TestALoweredChildIsNotAGrant. The compiler files a resource lowered into
-// another under the SAME kind key, by its id — so a reader that took every
-// entry would hand a workload access to things nobody granted.
 func TestALoweredResourceIsNotMistakenForAGrant(t *testing.T) {
 	// The agent's `database:` map holds two access entries AND its own lowered
 	// memory database, which is the one keyed by an id.
@@ -74,15 +68,6 @@ func TestALoweredResourceIsNotMistakenForAGrant(t *testing.T) {
 	}
 }
 
-// ── resolving one ────────────────────────────────────────────────────────────
-
-// TestOneLabelResolvesToThreeDIFFERENTCaches, which is the whole reason the
-// access block carries a namespace and the resolver walks outward.
-//
-// The fixture declares a cache called `sessions` in /billing, in /shop and in
-// /shop/eu. A function in each of those namespaces writes the SAME label and
-// must reach its own — and a handle built from the label rather than from the
-// resolved id would hand all three the same store.
 func TestOneLabelResolvesToADifferentCachePerNamespace(t *testing.T) {
 	p := basic(t)
 	r, asker := invoice(t)
@@ -105,8 +90,6 @@ func TestOneLabelResolvesToADifferentCachePerNamespace(t *testing.T) {
 	require.NotEqual(t, theirs, deeper, "and the nested one is its own again")
 }
 
-// TestAnAbsoluteNamespaceIgnoresTheAsker, which is the whole reason the leading
-// slash is in the grammar.
 func TestAnAbsoluteNamespaceIsFromTheRoot(t *testing.T) {
 	p := basic(t)
 
@@ -132,8 +115,6 @@ func TestAnAbsoluteNamespaceIsFromTheRoot(t *testing.T) {
 	}
 }
 
-// TestAnOmittedNamespaceWalksOutward: the asker's own scope first, then its
-// parents, which is what lets a namespace share the project's caches.
 func TestAnOmittedNamespaceResolvesOutward(t *testing.T) {
 	p := basic(t)
 	r, _ := invoice(t)
@@ -148,8 +129,6 @@ func TestAnOmittedNamespaceResolvesOutward(t *testing.T) {
 	require.NotEmpty(t, id)
 }
 
-// TestAGrantForSomethingThatIsNotThereIsAnError, naming the label the author
-// wrote rather than whatever it resolved to.
 func TestAReachThatResolvesToNothingSaysWhichLabel(t *testing.T) {
 	p := basic(t)
 
@@ -160,8 +139,6 @@ func TestAReachThatResolvesToNothingSaysWhichLabel(t *testing.T) {
 	require.ErrorContains(t, err, `cache "nope"`)
 }
 
-// TestNameOverridesTheLabel, which is the one case the label alone cannot
-// hold: two targets sharing a name in different namespaces.
 func TestAnExplicitNameIsWhatIsLookedUp(t *testing.T) {
 	p := basic(t)
 
@@ -172,9 +149,6 @@ func TestAnExplicitNameIsWhatIsLookedUp(t *testing.T) {
 	require.NotEmpty(t, id)
 }
 
-// TestEveryFieldOfAnEntryIsRead, over a document built here because the
-// fixture does not exercise the optional three — and a field that is dropped
-// silently is a per-use modifier nobody can set.
 func TestAnEntryCarriesItsNameNamespaceAndTimeout(t *testing.T) {
 	r := specs.Resource{
 		"cache": map[string]any{
@@ -199,9 +173,6 @@ func TestAnEntryCarriesItsNameNamespaceAndTimeout(t *testing.T) {
 	require.Equal(t, 5*time.Second, reaches[0].Timeout)
 }
 
-// A TOOL BOUND TRAVELS WITH THE GRANT. Dropped here, an entry naming one tool of
-// a catalogue would reach the runtime as an entry on the whole catalogue, and
-// nothing downstream could tell.
 func TestAToolBoundTravelsWithTheGrant(t *testing.T) {
 	r, _, err := basic(t).Resource(nil, "agent", "support")
 	require.NoError(t, err)

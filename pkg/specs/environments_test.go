@@ -45,9 +45,6 @@ const (
 	envsFixture  = "../tcc/taubyte/v2/fixtures/environments"
 )
 
-// THE TABLE SURVIVES THE COMPILE, and that is what makes a code push buildable:
-// a push knows a project and a branch and nothing else, and everything needed
-// to decide what to build for is already in what the register published.
 func TestABranchResolvesToItsDeploymentsFromTheCompiledObject(t *testing.T) {
 	p := loadFixture(t, envsFixture, "production", "main")
 
@@ -78,8 +75,6 @@ func TestABranchResolvesToItsDeploymentsFromTheCompiledObject(t *testing.T) {
 	require.Empty(t, production.Shadows[0].Regions)
 }
 
-// One environment fed by every branch is the whole of what a single-deployment
-// project declares.
 func TestOneEnvironmentFedByEveryBranch(t *testing.T) {
 	p := loadFixture(t, basicFixture, "", "main")
 	require.Len(t, p.Environments(), 1)

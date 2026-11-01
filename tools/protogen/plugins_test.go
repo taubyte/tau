@@ -280,9 +280,6 @@ func TestCheckPluginVersions_GoModMalformed(t *testing.T) {
 	}
 }
 
-// TestCheck_PluginVersionMismatchSurfacesThroughCheck proves the wiring:
-// Check itself, not just checkPluginVersions in isolation, refuses to run
-// buf generate against a mismatched toolchain and names the reason.
 func TestCheck_PluginVersionMismatchSurfacesThroughCheck(t *testing.T) {
 	requirePOSIX(t)
 	requireBuf(t)

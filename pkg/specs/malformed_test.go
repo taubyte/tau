@@ -9,13 +9,8 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// malformed_test.go is the half that cannot come out of a real compile.
-//
-// project_test.go reads what tcc actually produces, which is the right test for
-// the shape. What it cannot produce is a truncated object, an index entry
-// pointing at nothing, or a value of the wrong type — and those are exactly the
-// cases where a reader that assumed instead of checking would panic on the
-// request path.
+// What a real compile cannot produce: a truncated object, an index entry pointing at
+// nothing, a value of the wrong type. A reader must not panic on them.
 
 func TestBytesThatAreNotACompiledProject(t *testing.T) {
 	_, err := specs.Load([]byte("{not json"))
@@ -38,9 +33,6 @@ func TestBytesThatAreNotACompiledProject(t *testing.T) {
 	require.ErrorIs(t, err, specs.ErrNotFound)
 }
 
-// TestAnIndexEntryThatNamesNothing. Both halves have to be checked: a link that
-// is not a well-formed path, and one that is but points where the object has
-// nothing.
 func TestAnIndexEntryThatNamesNothing(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -60,9 +52,6 @@ func TestAnIndexEntryThatNamesNothing(t *testing.T) {
 	}
 }
 
-// TestAMalformedNamespaceLink. A scope that cannot be resolved is not a scope,
-// and it must not silently become the project root — a lookup there would
-// answer with somebody else's resource.
 func TestAMalformedNamespaceLink(t *testing.T) {
 	p, err := specs.Load([]byte(`{"object":{"id":"p1"},"indexes":{"projects/p1/namespace/shop/links":[""]}}`))
 	require.NoError(t, err)
@@ -71,8 +60,6 @@ func TestAMalformedNamespaceLink(t *testing.T) {
 	require.ErrorIs(t, err, specs.ErrBadIndex)
 }
 
-// TestAnIndexEntryWithNoLinks is dropped rather than kept as an empty bucket, so
-// a lookup is a miss instead of an entry that resolves to nothing.
 func TestAnIndexEntryWithNoLinks(t *testing.T) {
 	p, err := specs.Load([]byte(`{"object":{"id":"p1"},"indexes":{
 		"projects/p1/function/f/links": [],
@@ -87,8 +74,6 @@ func TestAnIndexEntryWithNoLinks(t *testing.T) {
 	require.Empty(t, names, "an entry with nothing usable in it is not a resource")
 }
 
-// TestTheLastLinkIsTheCurrentOne. The bucket accumulates one entry per publish;
-// serving the first would serve whatever was published first, forever.
 func TestTheLastLinkIsTheCurrentOne(t *testing.T) {
 	p, err := specs.Load([]byte(`{
 		"object":{"id":"p1","function":{"old":{"name":"f","source":{"image":"v1"}},"new":{"name":"f","source":{"image":"v2"}}}},
@@ -104,9 +89,6 @@ func TestTheLastLinkIsTheCurrentOne(t *testing.T) {
 	require.Equal(t, "v2", r.String("source", "image"))
 }
 
-// TestABranchWithASlashInItStaysOneSegment. tcc percent-encodes it; a path
-// walked without that assumption would be off by one and land on the wrong
-// resource silently.
 func TestABranchWithASlashInItStaysOneSegment(t *testing.T) {
 	p, err := specs.Load([]byte(`{
 		"object":{"id":"p1","function":{"rid":{"name":"f"}}},
@@ -174,11 +156,6 @@ func TestTheAccessorsRefuseTheWrongType(t *testing.T) {
 	require.Equal(t, "", r.String("execution", "memory"))
 }
 
-// TestAListIsNotAMap. The vocabulary has both shapes and they are not
-// interchangeable: `ports` is keyed by name, `transformers` is a sequence
-// because the order they run in is what they mean. Reading a list with Keys
-// returns nothing and silently drops every entry — which cost a gateway its
-// fail-closed transformer before this existed.
 func TestAListIsNotAMap(t *testing.T) {
 	p, err := specs.Load([]byte(`{
 		"object":{"id":"p1","gateway":{"rid":{

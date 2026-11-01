@@ -37,11 +37,6 @@ func view(t *testing.T, c *clock, opts Options) *View {
 	return v
 }
 
-// TestAReportCarriesNoClockOfItsOwn is the census that keeps the local clock
-// the only clock. A Report has no timestamp field, so a peer cannot extend its
-// own validity by claiming to be newer than it is — the same rule membership
-// holds, and it matters more here because a stale load figure is not a missing
-// one, it is a confidently wrong one.
 func TestAReportCarriesNoClockOfItsOwn(t *testing.T) {
 	c := newClock()
 	v := view(t, c, Options{Fresh: 10 * time.Second})
@@ -64,10 +59,6 @@ func TestAReportCarriesNoClockOfItsOwn(t *testing.T) {
 	require.Len(t, v.Fresh(), 1)
 }
 
-// TestRouteMakesTheCallerSayWhatStaleMeans. There is deliberately no default
-// tolerance on the routing read: a DNS answer with a 60s TTL and a gateway
-// picking a backend for one request disagree about staleness, and a package
-// default would silently impose one on the other.
 func TestRouteMakesTheCallerSayWhatStaleMeans(t *testing.T) {
 	c := newClock()
 	v := view(t, c, Options{Fresh: time.Second})
@@ -79,8 +70,6 @@ func TestRouteMakesTheCallerSayWhatStaleMeans(t *testing.T) {
 	require.Len(t, v.Route("shop", time.Minute), 1, "and current for one that said a minute")
 }
 
-// TestRouteAnswersLeastLoadedFirst is the whole reason dns and gateway read
-// this rather than membership.
 func TestRouteAnswersLeastLoadedFirst(t *testing.T) {
 	c := newClock()
 	v := view(t, c, Options{})
@@ -93,9 +82,6 @@ func TestRouteAnswersLeastLoadedFirst(t *testing.T) {
 	require.Equal(t, []string{"idle", "mid", "busy"}, peers(got))
 }
 
-// TestAnOverstatedLoadOnlyCostsTheLiar traffic. This is the trust model stated
-// as a test: a report is a claim, and the worst a node can do by exaggerating
-// is take itself out of the front of the queue.
 func TestAnOverstatedLoadOnlyCostsTheLiar(t *testing.T) {
 	c := newClock()
 	v := view(t, c, Options{})
@@ -108,8 +94,6 @@ func TestAnOverstatedLoadOnlyCostsTheLiar(t *testing.T) {
 		"the exaggerating node sorts last and is still available, which is the whole penalty")
 }
 
-// TestTheOnlyServerIsReturnedEvenAtFullLoad. Refusing to answer is worse than
-// answering with the busy node, and the caller can see the load.
 func TestTheOnlyServerIsReturnedEvenAtFullLoad(t *testing.T) {
 	c := newClock()
 	v := view(t, c, Options{})
@@ -121,8 +105,6 @@ func TestTheOnlyServerIsReturnedEvenAtFullLoad(t *testing.T) {
 	require.Equal(t, float64(1), got[0].Load, "the caller can see it is saturated and decide")
 }
 
-// TestNotReadyIsNotBusy. A draining node reports Ready:false and disappears
-// from routing whatever its load says.
 func TestNotReadyIsNotBusy(t *testing.T) {
 	c := newClock()
 	v := view(t, c, Options{})
@@ -133,7 +115,6 @@ func TestNotReadyIsNotBusy(t *testing.T) {
 	require.Len(t, v.All(), 1, "but it is still remembered and still visible")
 }
 
-// TestRoutingIsScopedToWhatANodeSaysItServes.
 func TestRoutingIsScopedToWhatANodeSaysItServes(t *testing.T) {
 	c := newClock()
 	v := view(t, c, Options{})
@@ -151,8 +132,6 @@ func TestRoutingIsScopedToWhatANodeSaysItServes(t *testing.T) {
 	require.Empty(t, v.Route("shop", time.Minute))
 }
 
-// TestAnOlderIncarnationIsRefused. A report in flight when a node went down
-// must not overwrite the newer one from the run that replaced it.
 func TestAnOlderIncarnationIsRefused(t *testing.T) {
 	c := newClock()
 	v := view(t, c, Options{})
@@ -173,8 +152,6 @@ func TestAnOlderIncarnationIsRefused(t *testing.T) {
 	require.Equal(t, 0.4, n.Load)
 }
 
-// TestAReportIsAuthoritativeForItsOwnPeerOnly is the AGENTS rule this package
-// obeys: there is no key two nodes can write differently.
 func TestAReportIsAuthoritativeForItsOwnPeerOnly(t *testing.T) {
 	c := newClock()
 	v := view(t, c, Options{})
@@ -188,8 +165,6 @@ func TestAReportIsAuthoritativeForItsOwnPeerOnly(t *testing.T) {
 	require.Equal(t, 0.1, a.Load, "b's report cannot move a's row")
 }
 
-// TestASilentPeerIsForgottenEventually, and not before anything could still
-// have routed to it.
 func TestASilentPeerIsForgotten(t *testing.T) {
 	c := newClock()
 	v := view(t, c, Options{Fresh: time.Second, Forget: time.Minute})
@@ -244,8 +219,6 @@ func TestOptionsRefuseAForgetWindowInsideTheFreshOne(t *testing.T) {
 	require.NotNil(t, v, "defaults are a working view, and the clock defaults to the real one")
 }
 
-// TestTheViewDoesNotAliasACallersSlice. A caller that reuses its Serving slice
-// must not be able to change a row it already handed over.
 func TestTheViewDoesNotAliasACallersSlice(t *testing.T) {
 	c := newClock()
 	v := view(t, c, Options{})
@@ -299,10 +272,6 @@ func peers(ns []Node) []string {
 	return out
 }
 
-// TestAddressesAreCarriedAndCopied. Where clients reach a node is reported,
-// not derived from the peerstore, because a peerstore address is how other
-// NODES dial — behind NAT or a container bridge that is an address no client
-// can use. The view carries the claim and parses nothing.
 func TestAddressesAreCarriedAndCopied(t *testing.T) {
 	c := newClock()
 	v := view(t, c, Options{})
@@ -325,7 +294,6 @@ func TestAddressesAreCarriedAndCopied(t *testing.T) {
 		v.Route("shop", time.Minute)[0].Addresses)
 }
 
-// TestWithinIsTheFreshNodes, ordered by peer, and nothing older than asked.
 func TestWithinKeepsFreshNodes(t *testing.T) {
 	now := time.Unix(0, 0)
 	v, err := New(Options{Now: func() time.Time { return now }, Fresh: time.Minute})

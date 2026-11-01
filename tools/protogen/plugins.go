@@ -12,53 +12,28 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// pluginPin ties a local buf plugin binary to the go.mod module whose
-// required version its output is pinned to. Both of pkg/proto's local
-// plugins live inside the module they generate code against — protoc-gen-go
-// in google.golang.org/protobuf, protoc-gen-connect-go in
-// connectrpc.com/connect — so the same go.mod requirement that pins the
-// generated code's runtime dependency also names the version the generator
-// itself is supposed to be.
+// pluginPin ties a local buf plugin binary to the go.mod module whose required
+// version its output is pinned to; each plugin lives inside the module it generates
+// code against.
 type pluginPin struct {
 	Binary string
 	Module string
 }
 
-// pluginPins are pkg/proto/buf.gen.yaml's two local plugins.
-//
-// protoc-gen-go stamps its own version into every file it generates
-// ("// protoc-gen-go vX.Y.Z"), so a version mismatch already surfaces as a
-// byte-for-byte diff against the committed gen/ tree — Check's ordinary
-// path catches it by accident.
-//
-// protoc-gen-connect-go does not stamp anything: it emits only a floor
-// check, `connect.IsAtLeastVersion1_13_0`, no literal version anywhere in
-// its output. Verified directly rather than assumed: a trivial proto and a
-// proto exercising unary, server-stream, client-stream, bidi-stream and a
-// deprecated RPC together produce byte-identical `buf generate` output
-// under connect-go v1.18.1 and v1.19.1. So without checkPluginVersions, the
-// v1.18.1 pin in buf.gen.yaml's comment is advisory only — nothing would
-// notice a different version on PATH. checkPluginVersions asks the binary
-// directly (`--version`) instead of inferring from output, which is the
-// only mechanism that actually enforces it.
+// pluginPins are pkg/proto/buf.gen.yaml's two local plugins. protoc-gen-go stamps
+// its version into its output, so a mismatch already shows as a diff.
+// protoc-gen-connect-go emits only a floor check (connect.IsAtLeastVersion1_13_0),
+// and v1.18.1 and v1.19.1 generate byte-identical output, so only --version can
+// enforce its pin.
 var pluginPins = []pluginPin{
 	{Binary: "protoc-gen-go", Module: "google.golang.org/protobuf"},
 	{Binary: "protoc-gen-connect-go", Module: "connectrpc.com/connect"},
 }
 
-// checkPluginVersions verifies that every plugin absDir's own buf.gen.yaml
-// actually declares — restricted to the ones pluginPins knows how to pin —
-// reports (via its own --version flag) the exact version go.mod requires
-// for the module it is pinned to. Restricting to what buf.gen.yaml declares
-// keeps this reusable across proto modules that use a different plugin set:
-// a module that never lists protoc-gen-connect-go is never asked to have
-// one on PATH.
-//
-// Called from Check before buf generate ever runs, so a wrong-version
-// plugin fails with a message naming the plugin and the fix, rather than
-// either silently generating something nobody asked for
-// (protoc-gen-connect-go) or failing 60 files deep into a diff report that
-// only shows a version-comment mismatch (protoc-gen-go).
+// checkPluginVersions verifies that each plugin absDir's buf.gen.yaml declares,
+// among those pluginPins knows, reports (via --version) the exact version go.mod
+// requires. It runs before buf generate, so a wrong plugin fails with a message
+// naming it.
 func checkPluginVersions(repoRoot, absDir string) error {
 	used, err := modulePlugins(absDir)
 	if err != nil {

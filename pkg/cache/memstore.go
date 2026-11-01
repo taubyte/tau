@@ -6,12 +6,8 @@ import (
 	"sync"
 )
 
-// MemStore is a Store over a map: what a development node and every test in
-// this repository composes a cache against.
-//
-// It returns WHOLE KEYS from List, the way a real kvdb does, so the prefix
-// stripping in seed is exercised against something that behaves like the thing
-// it will meet.
+// MemStore is a Store over a map, for development nodes and tests. List returns
+// whole keys, as a real kvdb does.
 type MemStore struct {
 	mu     sync.RWMutex
 	values map[string][]byte

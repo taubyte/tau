@@ -8,21 +8,9 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// readers_test exercises what the generator emitted for EVERY kind, against the
-// vocabulary's own fixture.
-//
-// # Why this is one test and not ninety
-//
-// The readers are generated, so they are wrong together or right together: a
-// fault is in the model or the renderer, never in one hand-typed line. What a
-// test can still catch is a reader that reads the wrong place — a compiled key
-// that does not exist, a scalar decoded as the wrong type — and that shows up
-// the same way for every kind. So this walks the fixture and reads every
-// resource with the reader for its own kind.
-//
-// IT ALSO KEEPS THE GENERATED SURFACE HONEST. A kind added to the vocabulary
-// arrives here with no edit, because the map is generated from the same walk
-// the readers are.
+// The readers are generated, so they are right or wrong together. This walks the
+// fixture and reads every resource with its own kind's reader; a new kind arrives
+// here with no edit.
 
 func TestEveryGeneratedReaderReadsItsOwnKind(t *testing.T) {
 	p := load(t)
@@ -48,14 +36,8 @@ func TestEveryGeneratedReaderReadsItsOwnKind(t *testing.T) {
 				out := reader(r)
 				require.NotNil(t, out, "%s/%s read as nothing", kind, name)
 
-				// THE NAME IS THE ONE FIELD EVERY KIND CARRIES IN THE OBJECT, so
-				// it is what a walk over all of them can assert: a reader
-				// addressing the wrong place gets it wrong first.
-				//
-				// THE ID IS NOT, and that is the object's shape rather than a
-				// gap: a resource is KEYED by its id, so repeating it inside
-				// would be the same fact twice. It comes back from the lookup,
-				// which is where it actually lives.
+				// The name is the one field every kind carries in the object. The id is not: a
+				// resource is keyed by it, and it comes back from the lookup.
 				require.Equal(t, name, r.String("name"), "%s/%s", kind, name)
 				require.NotEmpty(t, id, "%s/%s has no id in the index", kind, name)
 				read++
@@ -73,8 +55,6 @@ func TestEveryGeneratedReaderReadsItsOwnKind(t *testing.T) {
 	require.Greater(t, read, 40, "the fixture should exercise most of the vocabulary")
 }
 
-// TestTHEUNIONSREADWHATANYKINDDECLARES — the cross-kind questions, over the one
-// kind whose source is written the short way and the one whose build is not.
 func TestTheUnionsReadAcrossKinds(t *testing.T) {
 	p := load(t)
 

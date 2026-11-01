@@ -8,13 +8,9 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// A SOURCE IS AN EITHER AND SO IS A BUILD, and reading one is a switch on the
-// `kind` the compiler flattens beside the branch's own fields — never a test
-// for which fields happen to be present.
+// A source and a build are each an Either, read by switching on the `kind` the
+// compiler writes beside the branch's fields.
 
-// THE BARE PATH IS A STRING WHERE THE OTHERS ARE OBJECTS, which is the
-// vocabulary letting the common case be written the short way. Reading it as an
-// object would find nothing and report a resource with no source at all.
 func TestABarePathIsAPathInTheProjectsOwnRepository(t *testing.T) {
 	p := load(t)
 
@@ -36,9 +32,6 @@ func TestABarePathIsAPathInTheProjectsOwnRepository(t *testing.T) {
 	require.Equal(t, "target/wasm32-wasip2/release/reserve.wasm", build.Output)
 }
 
-// THE URL IS THE PROVIDER. There is no `github:` key and no numeric id: the
-// clone URL carries the host, so GitLab, Gitea, Codeberg and an internal mirror
-// are values rather than schema edits.
 func TestAResourceCanNameItsOwnRepository(t *testing.T) {
 	p := load(t)
 
@@ -60,8 +53,6 @@ func TestAResourceCanNameItsOwnRepository(t *testing.T) {
 	require.Empty(t, build.Run, "a script build declares no commands")
 }
 
-// AN IMAGE IS PULLED AND A COMPONENT IS BUILT AS ITS OWN RESOURCE, so neither
-// is something a push to a code repository rebuilds.
 func TestWhatIsNotBuiltFromSource(t *testing.T) {
 	p := load(t)
 
@@ -89,9 +80,6 @@ func TestWhatIsNotBuiltFromSource(t *testing.T) {
 	require.False(t, r.Source().Built() && r.Build().Declared())
 }
 
-// WHAT A PUSH REBUILDS IS EVERY RESOURCE THE PROJECT MAKES FROM SOURCE, and the
-// caller filters by which repository it was — because which repository a bare
-// path belongs to lives in auth, not in the config.
 func TestBuildablesAreEveryResourceMadeFromSource(t *testing.T) {
 	p := load(t)
 
@@ -118,16 +106,12 @@ func TestBuildablesAreEveryResourceMadeFromSource(t *testing.T) {
 	// Nor is an application running a pulled image.
 	require.NotContains(t, byName, "application/db")
 
-	// THE ORDER IS STABLE, because the source is a map and a build order that
-	// changed between two pushes of one commit is one nobody can read a log of.
+	// The order is stable across reads, though the source is a map.
 	for i := range 5 {
 		require.Equal(t, built, load(t).Buildables(), "run %d", i)
 	}
 }
 
-// A resource that names a repository is separable from one that does not,
-// which is the whole of what a caller needs to decide whether a given push
-// touches it.
 func TestABuildableSaysWhichRepositoryItNeeds(t *testing.T) {
 	byName := map[string]specs.Buildable{}
 	for _, b := range load(t).Buildables() {
@@ -142,11 +126,6 @@ func TestABuildableSaysWhichRepositoryItNeeds(t *testing.T) {
 	require.Equal(t, "https://github.com/acme/paylib", elsewhere.Source.Git)
 }
 
-// A RESOURCE THAT DECLARES NO SOURCE IS NOT ONE WHOSE SOURCE IS THE REPOSITORY
-// ROOT. A bare path is written as a plain string, so an absent source reads as
-// a path of "" — and without a flag saying whether the author wrote one at all,
-// every resource carrying a build stanza and no source would be built from the
-// checkout root.
 func TestAnAbsentSourceIsNotTheRepositoryRoot(t *testing.T) {
 	p := load(t)
 
@@ -164,10 +143,6 @@ func TestAnAbsentSourceIsNotTheRepositoryRoot(t *testing.T) {
 	require.True(t, r.Source().Declared)
 }
 
-// A BUILD-TIME VARIABLE IS NOT A RUN-TIME ONE, and the config says which with
-// `at`. A build that passed everything would leak a runtime secret into a
-// toolchain container; one that passed nothing would drop the token a private
-// dependency needs.
 func TestVariablesSayWhenTheyApply(t *testing.T) {
 	p := load(t)
 

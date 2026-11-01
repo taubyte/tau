@@ -1,52 +1,26 @@
-// Package membership is who is here, on two timescales, decided against one
-// clock — the local one.
+// Package membership is who is here, on two timescales, decided against the local
+// clock.
 //
-// A service that places data by computation (pkg/placement) needs a member
-// list, and the member list is the ONLY input to the answer. So the shape of
-// this package decides two unrelated things at once, and conflating them is
-// what v1 paid for:
+// The member list is the only input to placement (pkg/placement), and it answers
+// two different questions:
 //
 //	LIVE      may I ack a write to this peer RIGHT NOW.  1s beat, 5s expiry.
 //	STABLE    should this peer OWN this data.            60s of continuous
 //	                                                     presence or absence.
 //
-// One timescale cannot answer both. A peer that restarts and is back in four
-// seconds has never stopped being a placement target, and moving its share of
-// a fleet's bytes twice — out and back — is the most expensive thing a storage
-// service can do to itself. v1's hoarder had one timescale and paid for it in
-// placement thrash. Here a node that flaps for 30 seconds moves zero bytes,
-// and that is a test in this package rather than a hope.
+// A peer back within seconds of a restart never stops being a placement target,
+// since moving its share out and back is the most expensive thing a storage service
+// can do. A node that flaps for 30 seconds moves zero bytes.
 //
-// # The clock is local and it is the only one
+// Observe takes no timestamp: a Beat carries who, an incarnation and one
+// declaration, so a peer cannot extend its own expiry and one broken clock cannot
+// drag the fleet. Liveness is now() minus the local instant the beat arrived.
+// Liveness never crosses nodes; two nodes disagreeing under an asymmetric partition
+// is information.
 //
-// Observe takes no timestamp. A Beat carries WHO and an incarnation and one
-// declaration, and nothing that says WHEN — so a peer cannot advance its own
-// expiry by lying about the time, and a fleet cannot be dragged around by one
-// node with a broken clock. Liveness is now() minus the local instant this
-// process received the beat. TestABeatCarriesNoClockOfItsOwn is the census
-// that keeps it that way.
-//
-// This is a different question from the HLC in a storage version record, which
-// must be comparable ACROSS nodes and therefore cannot be local. Liveness never
-// crosses a node boundary: each node decides for itself who it may ack to, and
-// two nodes legitimately disagreeing under an asymmetric partition is
-// information rather than a bug — v1 found that liveness rides multi-hop
-// gossip while a durability barrier needs a direct dial, and the two disagree
-// exactly when it matters (v1's services/hoarder/kvdb.go:292-307).
-//
-// # What is not decided here
-//
-// HOW BEATS ARRIVE. This package has no pubsub, no host, no RPC and no
-// goroutine. It is a state machine over Observe, Evict and a clock. That is
-// what makes "a node that flaps for 30s moves zero bytes" a fast unit test
-// instead of a network fixture, and it is what lets the cluster service, when
-// it exists, become the thing that calls Observe without any consumer of this
-// package changing.
-//
-// WHETHER A MEMBER IS TRUSTED. A beat is a claim. The only claim a member gets
-// to make about itself here is Accepts, and Accepts can only ever remove it
-// from a placement set (pkg/placement). There is no capacity, no load and no
-// weight, so there is nothing to lie usefully about.
+// This package has no pubsub, host, RPC or goroutine: a state machine over
+// Observe, Evict and a clock. The only claim a member makes about itself is
+// Accepts, which can only remove it from a placement set.
 package membership
 
 import (
@@ -60,16 +34,12 @@ import (
 )
 
 // ErrStaleIncarnation is returned by Observe for a beat from an incarnation
-// older than the one already recorded for that peer: a replay, or a message
-// that overtook a restart. It is not a failure of anything — the caller drops
-// the message — but it is returned rather than swallowed so a caller that is
-// seeing a storm of them can say so.
+// older than the one already recorded for that peer: a replay, or a message that
+// overtook a restart. The caller drops it.
 var ErrStaleIncarnation = errors.New("membership: beat from a stale incarnation")
 
-// Beat is one heartbeat, as received.
-//
-// THERE IS NO TIMESTAMP AND NO CAPACITY, and both absences are load-bearing —
-// see the package doc. Adding either fails TestABeatCarriesNoClockOfItsOwn.
+// Beat is one heartbeat, as received. It has no timestamp and no capacity; see the
+// package doc.
 type Beat struct {
 	// Peer is the sender's identity.
 	Peer string
@@ -201,12 +171,9 @@ func (s *Set) Observe(b Beat) error {
 		return fmt.Errorf("%w: %s at %d, on record at %d", ErrStaleIncarnation, b.Peer, b.Incarnation, st.incarnation)
 	}
 
-	// A HIGHER INCARNATION IS A RESTART, NOT A NEW PEER. It refreshes
-	// liveness and it does not reset stability: the peer id is unchanged, so
-	// HRW gives it exactly the shards it had, and re-homing them out and back
-	// because a process restarted is the thrash this package exists to avoid.
-	// What it does do is make the restart visible — Member.Incarnation moves —
-	// so a caller that must refill a peer whose disk is gone can see it.
+	// A higher incarnation is a restart, not a new peer: it refreshes liveness without
+	// resetting stability, since HRW gives the same peer id the same shards. The
+	// incarnation moves, so a caller refilling a lost disk can see it.
 	st.incarnation = b.Incarnation
 	st.accepts = b.Accepts
 	if !live(st, now, s.opts.Liveness) {

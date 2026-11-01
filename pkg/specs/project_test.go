@@ -13,13 +13,9 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// compiled is the real thing: tcc compiling the vocabulary's own fixture, then
-// marshalled the way the build service publishes it.
-//
-// NOTHING HERE IS A HAND-WRITTEN FIXTURE, and that is deliberate. What this
-// package reads is tcc's output shape, so a fixture of my own would be a
-// fixture of what I BELIEVE that shape is, and it would keep passing on the day
-// the compiler stopped producing it.
+// compiled is tcc compiling the vocabulary's own fixture, marshalled as the build
+// service publishes it. A hand-written fixture would keep passing after the compiler
+// changed shape.
 func compiled(t testing.TB) []byte {
 	t.Helper()
 
@@ -68,8 +64,6 @@ func TestAResourceIsFoundByName(t *testing.T) {
 	require.Equal(t, []string{"api.stripe.com"}, api.Strings("egress"))
 }
 
-// TestADurationCarriesItsUnit. tcc compiles a duration to nanoseconds; a reader
-// that took the number raw would run a 5m timeout as 300 of something.
 func TestADurationCarriesItsUnit(t *testing.T) {
 	p := load(t)
 
@@ -81,8 +75,6 @@ func TestADurationCarriesItsUnit(t *testing.T) {
 	require.Equal(t, 5*time.Minute, d)
 }
 
-// TestANameResolvesOutward — a namespace inherits what its parents declare,
-// without restating it.
 func TestANameResolvesOutward(t *testing.T) {
 	p := load(t)
 
@@ -99,8 +91,6 @@ func TestANameResolvesOutward(t *testing.T) {
 	require.Equal(t, rootID, fromEU, "and from a grandchild")
 }
 
-// TestTheNEARESTOneWins. `cache/sessions` is declared at three depths, and a
-// lookup from the deepest must not walk past the one beside it.
 func TestTheNearestDeclarationWins(t *testing.T) {
 	p := load(t)
 
@@ -122,8 +112,6 @@ func TestTheNearestDeclarationWins(t *testing.T) {
 	require.ErrorIs(t, err, specs.ErrNotFound)
 }
 
-// TestAChildsResourceIsNotVisibleFromItsParent. Scoping runs outward and only
-// outward; a name declared in a namespace is that namespace's.
 func TestAChildsResourceIsNotVisibleFromItsParent(t *testing.T) {
 	p := load(t)
 
@@ -165,9 +153,6 @@ func TestWalkingTheProject(t *testing.T) {
 	}
 }
 
-// TestTheEastWestEdgeIsReadable. A channel is how one workload inside the
-// project reaches another without going out to the edge and back in, and this
-// is the read a graph or a worker makes of it.
 func TestTheEastWestEdgeIsReadable(t *testing.T) {
 	p := load(t)
 

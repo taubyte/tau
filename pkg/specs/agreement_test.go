@@ -12,29 +12,11 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// agreement_test holds the two readers of a compiled object to each other.
-//
-// # There are two, and there should be
-//
-// schema.Resources/Scopes walk the object TREE and are part of what tcc-gen
-// publishes for the browser: the wasm client compiles in memory and reads back
-// what it just made, with no register, no deployment and no index to descend.
-//
-// pkg/project descends the INDEX tcc wrote at compile time, because the runtime
-// resolves a name per request and a walk of every resource in the project is not
-// that. Neither is a copy of the other's code, and neither should become one.
-//
-// # What was missing is that nothing made them agree
-//
-// They encode "what is a resource" and "what is a scope" independently, and they
-// have already disagreed: Scopes() reported a container-kind ACCESS ENTRY as a
-// nested scope — an agent a workflow reaches, reported as an agent it contains —
-// where the index walk never saw one. The explorer and the runtime were
-// answering differently about the same project.
-//
-// So this compiles the vocabulary's own fixture and asserts the two answers are
-// the same set. It is the check that makes two readers safe rather than the
-// argument for having one.
+// Two readers of a compiled object, held to each other. schema.Resources/Scopes
+// walk the object tree, for the wasm client reading back what it just compiled;
+// pkg/specs descends the index tcc wrote, for per-request resolution. They encode
+// "resource" and "scope" independently and have disagreed before, so this asserts
+// both report the same set for the vocabulary's fixture.
 
 // tree is what the schema-side walk reports, as scope/kind/name.
 func tree(t *testing.T, flat map[string]any) []string {
@@ -78,7 +60,6 @@ func index(t *testing.T, p *specs.Project) []string {
 	return out
 }
 
-// TestBOTHREADERSOFACOMPILEDOBJECTREPORTTHESAMEPROJECT.
 func TestTheTreeWalkAndTheIndexWalkAgree(t *testing.T) {
 	raw := compiled(t)
 
@@ -93,11 +74,6 @@ func TestTheTreeWalkAndTheIndexWalkAgree(t *testing.T) {
 			"one of them is what the explorer draws and the other is what the cloud serves")
 }
 
-// TestAZONEISREADOFFAREALCOMPILE. hosts.go spells `zone`, `fqdn` and `records`
-// itself, and until this nothing held them to a compiled object: the dns
-// service's tests inject zones through a seam, so they pass with fakes whatever
-// this reader does. A renamed attribute would have produced a cloud
-// authoritative for nothing, silently — every zone simply absent.
 func TestZonesAreReadFromACompiledProject(t *testing.T) {
 	zones := load(t).Zones()
 	require.NotEmpty(t, zones, "the fixture declares a zone and this reader found none")
@@ -110,15 +86,9 @@ func TestZonesAreReadFromACompiledProject(t *testing.T) {
 		found = true
 		require.NotEmpty(t, z.Records, "the zone was found and its records were not")
 
-		// THE LINES OF THE FILE, WHICH IS WHERE THEY COME FROM NOW. The fixture
-		// declares `file:` and no `records:`; the compile reads the file into the
-		// object, so these are the file's lines in the file's order -- comments
-		// and blanks included, because the parser that reads them already knows
-		// what to ignore and a compile deciding what a zone file says would be a
-		// compile with an opinion about DNS.
-		//
-		// NOT Records[0]: a real zone file opens with a comment, and asserting a
-		// position asserts the file's layout rather than its content.
+		// The fixture declares `file:`, and the compile reads the file into the object, so
+		// these are its lines in order, comments and blanks included. Not Records[0]: a real
+		// zone file opens with a comment.
 		joined := strings.Join(z.Records, "\n")
 		require.Regexp(t, `IN\s+MX`, joined, "the records are the zone-file lines the author wrote")
 		require.Contains(t, joined, ";", "and nothing stripped the author's comments")

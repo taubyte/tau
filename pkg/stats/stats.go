@@ -1,58 +1,22 @@
-// Package stats is how loaded everything is, decided against the local clock,
-// and it is the half of the old seer that can be lied to.
+// Package stats is how loaded everything is, decided against the local clock.
 //
-// # Why this is not membership
+// Unlike pkg/membership, whose output is placement and must not be steerable by a
+// node's own claims, routing decides from claims: dns and gateway read this, so
+// every number is self-reported and steers traffic. A report is a claim. A node
+// that overstates its load loses traffic; one that understates it takes traffic it
+// cannot serve, caught only by the caller's health checks.
 //
-// pkg/membership answers who is here and who should own data, and its doc
-// ends by refusing exactly what this package provides:
+// Routing reads are local and never wait for consensus. Each node writes only its
+// own row, so no key is written by two nodes.
 //
-//	There is no capacity, no load and no weight, so there is nothing to lie
-//	usefully about.
+// Observe takes no timestamp, so a peer cannot extend its own validity; age is
+// now() minus the local instant the report arrived. A stale load figure is
+// confidently wrong, so every row carries Age and Route makes the caller state a
+// tolerance.
 //
-// That refusal is right for membership, whose only output is placement:
-// placement must not be steerable by a node's own claims. Routing is the
-// opposite — it is a decision made FROM the claims. dns and gateway both read
-// this to route, so every number here is self-reported, and every number here
-// steers traffic.
-//
-// So the trust question membership dodged is this package's central one, and
-// the answer for now is stated rather than hidden: A REPORT IS A CLAIM. A node
-// that overstates its load loses traffic and nothing else breaks; a node that
-// understates it takes traffic it cannot serve, and only the caller's own
-// health checking catches that. Verified reporting is an interface away, and
-// the trusting implementation is the one that ships.
-//
-// # No consensus, ever
-//
-// Routing reads must be local and cheap, because routing latency is on every
-// request. A view that waited for a quorum before answering "who serves this"
-// would put a consensus round in front of DNS. Each node writes only its own
-// row — the same rule as storage's usage counter, and the reason this is
-// AGENTS-legal: there is no key two nodes can write differently.
-//
-// # A report carries no clock of its own
-//
-// Observe takes no timestamp, for the same reason membership's does not: a peer
-// that could stamp its own report could extend its own validity forever. Age is
-// now() minus the local instant this process received the report.
-//
-// This matters more here than it does for liveness, because a stale load figure
-// is not a missing one — it is a confident wrong one. A node reporting 5% load
-// and then wedging keeps attracting traffic for as long as anything trusts the
-// last thing it said. So Age is on every row this package hands out, and the
-// read that routing uses makes the caller say what age it will tolerate.
-//
-// # What is not decided here
-//
-// HOW REPORTS ARRIVE. No pubsub, no host, no RPC, no goroutine — a state
-// machine over Observe, Evict and a clock, so "a node that overstates its load
-// loses traffic" is a unit test rather than a network fixture.
-//
-// WHAT LOAD MEANS. It is a number between zero and one that the reporter
-// computes about itself. This package compares such numbers; it does not know
-// whether they came from CPU, memory, queue depth or a guess, and it must not
-// grow an opinion, because the right answer differs per workload and the caller
-// is the one who knows.
+// No pubsub, host, RPC or goroutine: a state machine over Observe, Evict and a
+// clock. Load is a number between zero and one the reporter computes; this package
+// only compares such numbers.
 package stats
 
 import (
@@ -106,27 +70,14 @@ type Report struct {
 	// one serving a name.
 	Ready bool
 
-	// Addresses is where CLIENTS reach this node, which is not where the fleet
-	// reaches it. A peerstore address is how other nodes dial, and behind NAT,
-	// a mesh VPN or a container bridge that is routinely unreachable from the
-	// internet — so this is reported rather than derived, and it is a claim in
-	// the same sense as Load.
-	//
-	// This package does not parse them. Whether a string is a usable A record,
-	// an AAAA, or a hostname is the reader's question, and a view that had an
-	// opinion would be deciding for every reader at once.
+	// Addresses is where clients reach this node, which is not where the fleet reaches
+	// it (NAT, a mesh VPN or a container bridge), so it is reported, and is a claim like
+	// Load. This package does not parse them.
 	Addresses []string
 
-	// Sockets is every L4 proxy this node accepts connections for, and the
-	// port each one landed on.
-	//
-	// ONE PORT PER PROXY, NOT ONE PER NODE, and the difference is which layer
-	// demultiplexes. A gateway reads the name out of the request, so every
-	// name it serves shares a port; a raw stream carries no name at all, so a
-	// proxy sharing a port could not tell whose connection it accepted.
-	//
-	// A socket's host also belongs in Serving: a client resolves the name to
-	// an address before it dials the port.
+	// Sockets is every L4 proxy this node accepts connections for, and the port each
+	// landed on: one port per proxy, since a raw stream carries no name to
+	// demultiplex on. A socket's host also belongs in Serving.
 	Sockets []Socket
 
 	// FleetRevision is the revision of the cloud's own document this node last
@@ -315,17 +266,12 @@ func (v *View) Fresh() []Node {
 	return v.snapshot(func(n Node) bool { return n.Age <= v.opts.Fresh })
 }
 
-// Route is the read that dns and gateway make: who can answer for this name,
-// no older than maxAge, least loaded first.
+// Route is the read that dns and gateway make: who can answer for this name, no
+// older than maxAge, least loaded first. The caller states the tolerance, since a
+// 60s DNS TTL and a per-request backend pick disagree about stale.
 //
-// THE CALLER STATES THE TOLERANCE. There is no default here on purpose. A DNS
-// answer with a 60s TTL and a gateway picking a backend for one request are
-// entitled to different definitions of stale, and a package-level default would
-// silently impose one of them on the other.
-//
-// Not-ready nodes are excluded. A node at 0.99 load is still returned when it
-// is the only one serving the name — refusing to answer is worse than answering
-// with the busy node, and the caller can see the load and decide.
+// Not-ready nodes are excluded. A busy node is still returned when it is the only
+// one serving the name.
 func (v *View) Route(name string, maxAge time.Duration) []Node {
 	return v.sortedByLoad(func(n Node) bool {
 		return n.Ready && n.Age <= maxAge && serves(n.Serving, name)

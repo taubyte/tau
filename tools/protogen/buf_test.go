@@ -11,15 +11,6 @@ import (
 	"github.com/taubyte/tau/tools/protogen"
 )
 
-// TestCIPinsTheSameBufThisRepoDoes — two pins, one version, and nothing else
-// makes them agree.
-//
-// The rules in pkg/proto are asked about whatever buf builds, so CI installing
-// one version while every developer's fallback fetches another means the guard
-// passes in one place and fails in the other, over a schema neither of them got
-// wrong. The workflow's `go install` line is where the version used to live
-// alone; protogen.BufVersion is where it lives now, and this is what stops the
-// old copy drifting.
 func TestCIPinsTheSameBufThisRepoDoes(t *testing.T) {
 	root, err := protogen.FindRepoRoot(mustWd(t))
 	require.NoError(t, err)

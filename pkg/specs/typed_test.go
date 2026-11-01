@@ -22,7 +22,6 @@ func resource(t *testing.T, scope []string, kind, name string) specs.Resource {
 	return r
 }
 
-// TestENTRIESAREREADPERENTRY — keyed by name, and in order.
 func TestEntriesAreReadPerEntry(t *testing.T) {
 	api := specs.ReadApplication(resource(t, nil, specs.KindApplication, "api"))
 	require.Equal(t, int64(8080), api.Ports["http"].Number)
@@ -79,7 +78,6 @@ func TestEntriesAreReadPerEntry(t *testing.T) {
 	require.Equal(t, []string{"feat"}, env.Shadows["preview"].Branches)
 }
 
-// TestABSENTISNOTZERO — the reason every optional number and flag is a pointer.
 func TestAbsentIsNotZero(t *testing.T) {
 	db := specs.ReadApplication(resource(t, nil, specs.KindApplication, "db"))
 	require.Equal(t, int64(2000), *db.Execution.Cpu)
@@ -108,8 +106,6 @@ func TestAbsentIsNotZero(t *testing.T) {
 	require.Equal(t, "https://api.anthropic.com", opus.Inference.RemoteEndpoint)
 }
 
-// TestADEFAULTEDBLOCKISNOTADECLAREDONE. The compiler gives every application a
-// liveness failure threshold; only one of them wrote a probe.
 func TestADefaultedBlockIsNotADeclaredOne(t *testing.T) {
 	pool := specs.ReadApplication(resource(t, nil, specs.KindApplication, "worker_pool"))
 	require.NotNil(t, pool.Liveness.Failures, "the default is in the object")
@@ -136,7 +132,6 @@ func TestADefaultedBlockIsNotADeclaredOne(t *testing.T) {
 	require.Equal(t, int64(20_000_000_000), vol.Quota)
 }
 
-// TestATYPEDKINDREADSITSOWNBRANCH, so nobody builds `model + "/engine"`.
 func TestATypedKindReadsItsOwnBranch(t *testing.T) {
 	orders := specs.ReadDatabase(resource(t, nil, specs.KindDatabase, "orders"))
 	require.Equal(t, specs.DatabaseTypeSql, orders.Type)
@@ -172,7 +167,6 @@ func TestATypedKindReadsItsOwnBranch(t *testing.T) {
 	require.Equal(t, int64(1_000_000_000), receipts.Size)
 }
 
-// TestSHAREDBLOCKSREADTHESAMEFROMANYKIND — what a generic consumer relies on.
 func TestSharedBlocksReadTheSameFromAnyKind(t *testing.T) {
 	cache := specs.ReadCache(resource(t, nil, specs.KindCache, "orders"))
 	db := specs.ReadDatabase(resource(t, nil, specs.KindDatabase, "profiles"))
@@ -189,7 +183,6 @@ func TestSharedBlocksReadTheSameFromAnyKind(t *testing.T) {
 	require.Equal(t, specs.FunctionBuildKindCommands, fn.Build.Kind)
 }
 
-// TestTHEKEYSARETHECOMPILEDPATHS — what a grant's Settings are filed under.
 func TestTheKeysAreTheCompiledPaths(t *testing.T) {
 	r := resource(t, nil, specs.KindSync, "orders")
 	n, ok := r.Int(segments(specs.SyncQueueKeyMaxAttempts)...)

@@ -96,11 +96,6 @@ func TestLivenessExpiresFourBeatsAfterTheLast(t *testing.T) {
 	require.False(t, m.Stable)
 }
 
-// TestANodeThatFlapsForThirtySecondsMovesZeroBytes is the reason this package
-// has two timescales at all, from both directions: a newcomer that keeps
-// dropping out never earns a place, and an established member that drops out
-// and comes back keeps its place. Either failure re-homes a share of the
-// fleet's bytes for nothing.
 func TestANodeThatFlapsForThirtySecondsMovesZeroBytes(t *testing.T) {
 	c := &clock{t: time.Unix(1000, 0)}
 	s := newSet(t, c)
@@ -330,11 +325,6 @@ func TestConcurrentObserveAndReadDoNotRace(t *testing.T) {
 	require.Len(t, s.Live(), 4)
 }
 
-// TestABeatCarriesNoClockOfItsOwn is the census behind the package doc's two
-// structural claims: a peer cannot say WHEN, so it cannot extend its own
-// expiry; and it cannot say HOW FULL, so there is nothing for placement to
-// score that a node could lie about. Adding a field to Beat fails here, which
-// is where the argument for adding it has to be written down.
 func TestABeatCarriesNoClockOfItsOwn(t *testing.T) {
 	tp := reflect.TypeOf(Beat{})
 	var fields []string

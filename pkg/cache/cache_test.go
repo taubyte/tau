@@ -81,11 +81,6 @@ func TestAnEmptyKeyIsRefused(t *testing.T) {
 	require.ErrorIs(t, c.Delete(ctx, ""), ErrNoKey)
 }
 
-// ── the lifetime ─────────────────────────────────────────────────────────────
-
-// TestAnExpiredEntryIsAMiss, and it is deleted on the way out: reading it and
-// leaving it would make a cache nobody reads grow forever, since nothing else
-// walks it.
 func TestAnExpiredEntryIsAMissAndIsRemoved(t *testing.T) {
 	clk := newClock()
 	store := NewMemStore()
@@ -116,7 +111,6 @@ func TestAnEntryWithNoTTLDoesNotExpire(t *testing.T) {
 	require.Equal(t, "v", string(value))
 }
 
-// TestExpiryIsAtTheDeadlineAndNotAfterIt.
 func TestAnEntryIsLiveUntilItsDeadline(t *testing.T) {
 	clk := newClock()
 	c := open(t, NewMemStore(), Config{TTL: time.Minute}, clk)
@@ -133,9 +127,6 @@ func TestAnEntryIsLiveUntilItsDeadline(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
-// TestListDoesNotShowExpiredEntriesAndDoesNotDeleteThem. A listing is a read,
-// and a read that wrote would make two peers listing one cache disagree about
-// what they did.
 func TestListHidesExpiredEntriesWithoutRemovingThem(t *testing.T) {
 	clk := newClock()
 	store := NewMemStore()
@@ -169,12 +160,6 @@ func TestListIsScopedByPrefixAndSorted(t *testing.T) {
 	require.Equal(t, []string{"user:1", "user:2"}, names)
 }
 
-// ── the ceiling ──────────────────────────────────────────────────────────────
-
-// TestACacheEvictsRatherThanRefusing. A store that answered a full cache with
-// an error would report the cheapest possible failure — a miss — as the most
-// expensive one, and every author would write the retry the platform should
-// have done by dropping something old.
 func TestAFullCacheEvictsTheOldest(t *testing.T) {
 	clk := newClock()
 	// Each entry is 1 key byte + 9 value bytes = 10; the ceiling holds two.
@@ -198,7 +183,6 @@ func TestAFullCacheEvictsTheOldest(t *testing.T) {
 	require.Equal(t, int64(20), c.Used())
 }
 
-// TestExpiredEntriesGoBeforeLiveOnes, because they are free to lose.
 func TestEvictionTakesExpiredEntriesFirst(t *testing.T) {
 	clk := newClock()
 	c := open(t, NewMemStore(), Config{Size: 20, TTL: 10 * time.Second}, clk)
@@ -217,8 +201,6 @@ func TestEvictionTakesExpiredEntriesFirst(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
-// TestOverwritingGivesBackWhatTheOldEntryHeld, so rewriting one key in a full
-// cache does not evict anything.
 func TestOverwritingDoesNotEvict(t *testing.T) {
 	c := open(t, NewMemStore(), Config{Size: 20}, newClock())
 	ctx := t.Context()
@@ -234,8 +216,6 @@ func TestOverwritingDoesNotEvict(t *testing.T) {
 	require.Equal(t, int64(20), c.Used())
 }
 
-// TestAValueBiggerThanTheWholeCacheIsRefused. Evicting everything would still
-// not make it fit, so emptying the cache to fail anyway is the wrong answer.
 func TestAValueLargerThanTheCacheIsRefusedWithoutEmptyingIt(t *testing.T) {
 	c := open(t, NewMemStore(), Config{Size: 20}, newClock())
 	ctx := t.Context()
@@ -261,19 +241,12 @@ func TestACacheWithNoCeilingHoldsWhateverItIsGiven(t *testing.T) {
 	require.Len(t, names, 50)
 }
 
-// TestTheKeyCountsTowardTheCeiling, because a cache full of long keys and empty
-// values is still a cache full.
 func TestAKeyCountsTowardTheCeiling(t *testing.T) {
 	c := open(t, NewMemStore(), Config{Size: 10}, newClock())
 	require.NoError(t, c.Put(t.Context(), strings.Repeat("k", 10), nil))
 	require.Equal(t, int64(10), c.Used())
 }
 
-// ── what a restart remembers ─────────────────────────────────────────────────
-
-// TestReopeningSeedsTheAccounting. Starting empty would make the first writes
-// after a restart free, so a node that restarted would hold two ceilings'
-// worth.
 func TestReopeningCountsWhatTheStoreAlreadyHolds(t *testing.T) {
 	clk := newClock()
 	store := NewMemStore()
@@ -291,8 +264,6 @@ func TestReopeningCountsWhatTheStoreAlreadyHolds(t *testing.T) {
 	require.Equal(t, "012345678", string(value))
 }
 
-// TestOneStoreHoldsManyCaches, separated by their prefix — which is what lets
-// a node keep one kvdb for every cache it serves.
 func TestTwoCachesInOneStoreDoNotSeeEachOther(t *testing.T) {
 	store := NewMemStore()
 	clk := newClock()
@@ -313,8 +284,6 @@ func TestTwoCachesInOneStoreDoNotSeeEachOther(t *testing.T) {
 	require.Equal(t, []string{"k"}, names)
 }
 
-// TestAPrefixThatIsAPrefixOfAnother, which the trailing separator is what
-// stops: "QmA" must not see "QmAB"'s entries.
 func TestAPrefixCannotReachALongerOne(t *testing.T) {
 	store := NewMemStore()
 	clk := newClock()
@@ -329,8 +298,6 @@ func TestAPrefixCannotReachALongerOne(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, names)
 }
-
-// ── when the store fails ─────────────────────────────────────────────────────
 
 var errUnreachable = errors.New("the store is unreachable")
 
@@ -389,8 +356,6 @@ func TestAStoreThatCannotAnswerIsReportedAndNotTreatedAsAMiss(t *testing.T) {
 	require.ErrorIs(t, c.Delete(ctx, "k"), errUnreachable)
 }
 
-// TestARowThatIsNotOursIsSkippedRatherThanCounted, which is what a value
-// shorter than the header is.
 func TestASeedSkipsARowItCannotRead(t *testing.T) {
 	store := NewMemStore()
 	require.NoError(t, store.Put(context.Background(), "shop/prod/QmCache/junk", []byte("short")))
@@ -402,8 +367,6 @@ func TestASeedSkipsARowItCannotRead(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
-// TestConcurrentPutsAreCountedOnce, because the index is what the ceiling is
-// enforced against and a lost update there is a ceiling that drifts.
 func TestConcurrentWritesKeepTheAccountingHonest(t *testing.T) {
 	c := open(t, NewMemStore(), Config{}, newClock())
 	ctx := t.Context()

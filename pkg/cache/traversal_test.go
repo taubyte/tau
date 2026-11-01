@@ -10,17 +10,6 @@ import (
 	"github.com/taubyte/tau/pkg/storekey"
 )
 
-// TestAGuestKeyCannotReachAnotherTenant.
-//
-// THE KEY IS THE ONE THING A GUEST CONTROLS ENTIRELY, and every store here
-// addresses an entry as `<prefix><key>` with the prefix being the tenant. The
-// stores put that joined string through ds.NewKey, which is path.Clean, so a
-// key holding `..` collapsed the prefix away BEFORE anything was read:
-//
-//	"shopA/prod/cache-id/" + "../../../victim/prod/their-cache/session"
-//	    -> /victim/prod/their-cache/session
-//
-// A cross-tenant read and a cross-tenant write, from text a workload wrote.
 func TestAGuestKeyCannotReachAnotherTenant(t *testing.T) {
 	store := &memStore{held: map[string][]byte{}}
 	c, err := cache.Open(context.Background(), store, cache.Config{Prefix: "shopA/prod/cache-id"})
@@ -37,14 +26,10 @@ func TestAGuestKeyCannotReachAnotherTenant(t *testing.T) {
 	require.ErrorIs(t, c.Delete(context.Background(), escaping), storekey.ErrEscapes,
 		"nor a delete, which is the one that destroys somebody else's data")
 
-	// AND NOTHING WAS WRITTEN ANYWHERE, which is the assertion that would have
-	// failed loudest: a refusal that still touched the store would be a bug
-	// with a reassuring error on top.
+	// And nothing was written anywhere.
 	require.Empty(t, store.held)
 }
 
-// TestAnOrdinaryKeyStillWorks — the other half, so the guard is not a store
-// that refuses everything.
 func TestAHierarchicalKeyIsStillFine(t *testing.T) {
 	store := &memStore{held: map[string][]byte{}}
 	c, err := cache.Open(context.Background(), store, cache.Config{Prefix: "shopA/prod/cache-id"})

@@ -1,14 +1,9 @@
-// Package protogen implements the buf-output drift check: regenerate a buf
-// module with the pinned toolchain into a scratch directory and diff the
-// result, byte for byte, against what is already committed under its gen/
-// directory. It is the buf equivalent of tools/tcc-gen's TestNoDrift — the
-// same shape, for the other generator this repo runs by hand.
+// Package protogen implements the buf-output drift check: regenerate a buf module
+// with the pinned toolchain into a scratch directory and diff the result, byte for
+// byte, against its committed gen/ directory.
 //
-// A byte diff alone cannot see every version drift: protoc-gen-go stamps
-// its own version into what it generates, so a stale copy shows up as a
-// diff on its own, but protoc-gen-connect-go stamps nothing — see
-// pluginPins in plugins.go. checkPluginVersions asks each pinned plugin
-// directly, via --version, rather than relying on that accident.
+// protoc-gen-connect-go stamps no version into its output, so checkPluginVersions
+// asks each pinned plugin with --version (see pluginPins in plugins.go).
 package protogen
 
 import (
@@ -39,29 +34,16 @@ type Result struct {
 	Diffs   []Diff
 }
 
-// Check regenerates the buf module at repoRoot/protoDir into a scratch
-// directory — `buf generate -o <scratch>`, run with that directory as the
-// working directory so it picks up the module's own buf.gen.yaml exactly as
-// a developer running `buf generate` there would; -o prepends to the out:
-// paths in the template rather than replacing them, so the result lands at
-// <scratch>/gen — and diffs it against the tree already committed at
-// protoDir/gen. A module whose buf.gen.yaml generates into "." (beside its
-// sources, as pkg/kvdb/pb does) is diffed at its own root instead, over its
-// *.pb.go files only.
+// Check regenerates the buf module at repoRoot/protoDir into a scratch directory,
+// using the module's own buf.gen.yaml (`buf generate -o <scratch>`, so the output
+// lands at <scratch>/gen), and diffs it against protoDir/gen. A module generating
+// into "." (as pkg/kvdb/pb does) is diffed at its root, over its *.pb.go files.
 //
-// Checked is always the union of both sides, not just what regeneration
-// produced: if the generator silently starts producing nothing, whatever is
-// still committed keeps the count non-zero and every one of those files
-// shows up as a diff, rather than a vacuous 0-checked, 0-diff pass. That
-// silent shrink is a real failure mode in this repo — commit 481fab44 took
-// tools/tcc-gen's own check from 57 files to 2 without going red.
+// Checked is the union of both sides, so a generator that silently produces nothing
+// still reports every committed file as a diff rather than passing over nothing.
 //
-// A module with no .proto sources yet is not run through buf at all (buf
-// generate hard-errors on an empty module); Check instead requires gen/ to
-// be equally empty, which still catches a stale gen/ tree left behind after
-// every .proto in a module was removed. For the same reason, checkPluginVersions
-// only runs once there is source to generate from — there is nothing to pin
-// a toolchain version against otherwise.
+// A module with no .proto sources is not run through buf (which errors on an empty
+// module); its gen/ must be empty too, and plugin versions are not checked.
 func Check(repoRoot, protoDir string) (Result, error) {
 	absDir := filepath.Join(repoRoot, protoDir)
 
@@ -135,9 +117,8 @@ func Check(repoRoot, protoDir string) (Result, error) {
 	return Result{Dir: protoDir, Checked: len(rels), Diffs: diffs}, nil
 }
 
-// lookBuf reports whether a buf can be run at all. It no longer has to be on
-// PATH — see Buf — so the only way this fails now is a Go toolchain that cannot
-// reach the module cache.
+// lookBuf reports whether a buf can be run at all: only a Go toolchain that cannot
+// reach the module cache fails it.
 func lookBuf() (string, error) {
 	if path, err := exec.LookPath("buf"); err == nil {
 		return path, nil
@@ -193,9 +174,8 @@ func FindRepoRoot(dir string) (string, error) {
 	}
 }
 
-// anyProtoFiles reports whether dir (excluding its gen/ subdirectory)
-// contains any .proto source — the same test buf itself makes internally, a
-// module with none is a `buf generate` hard error, not a vacuous success.
+// anyProtoFiles reports whether dir (excluding its gen/ subdirectory) contains any
+// .proto source.
 func anyProtoFiles(dir string) (bool, error) {
 	found := false
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
@@ -217,11 +197,10 @@ func anyProtoFiles(dir string) (bool, error) {
 	return found, err
 }
 
-// moduleOut is the directory, relative to absDir, that absDir's
-// buf.gen.yaml generates into: "gen" for pkg/proto, "." for a module whose
-// generated files sit beside its sources. Every plugin must share it. A
-// module without a buf.gen.yaml has nothing to generate, and is checked as
-// a gen/ module.
+// moduleOut is the directory, relative to absDir, that absDir's buf.gen.yaml
+// generates into: "gen" for pkg/proto, "." for a module whose generated files sit
+// beside its sources. Every plugin must share it. A module without a buf.gen.yaml
+// is checked as a gen/ module.
 func moduleOut(absDir string) (string, error) {
 	data, err := os.ReadFile(filepath.Join(absDir, "buf.gen.yaml"))
 	if os.IsNotExist(err) {

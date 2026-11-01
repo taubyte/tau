@@ -10,32 +10,18 @@ import (
 	pkgregister "github.com/taubyte/tau/pkg/register"
 )
 
-// generated.go answers the cloud's own names: `<label>.<project label>.<cloud>`,
-// the hosts a project answers on without declaring a zone of its own.
+// The cloud's own names: `<label>.<project label>.<cloud>`, the hosts a project
+// answers on without a zone of its own. Any gateway serves one, so the addresses are
+// the nodes reporting the gateway service.
 //
-// # Which names, and who answers them
+// Only a published name resolves; answering every name would make the zone a
+// wildcard a CA would validate. The register's host index decides, as it does for
+// the gateway, and a name it does not hold is NXDOMAIN.
 //
-// A GENERATED NAME IS SERVED BY A GATEWAY, any gateway — the gateway reads the
-// Host header and finds the project itself — so the addresses are those of the
-// nodes reporting the gateway service, from the same discovery read every other
-// answer here is made of.
-//
-// BUT ONLY FOR A NAME SOMEBODY PUBLISHED. Answering every name under the cloud
-// with every gateway would make the zone a wildcard: any name resolves, a CA is
-// happy to validate it, and a typo reaches a gateway that 404s instead of a
-// resolver that says the name is not there. The register's host index is what a
-// gateway reads to route the request, so it is what decides here too, and a
-// name it does not hold is NXDOMAIN — the one statement about existence this
-// server can make from what it knows.
-//
-// # The project label alone is never NXDOMAIN
-//
-// `<project label>.<cloud>` is the parent of every generated name its project
-// publishes, and a resolver minimising its query names (RFC 9156) asks it on the
-// way down. NXDOMAIN there means "nothing exists below this" (RFC 8020), which
-// would cut off every name under it. The host index is keyed by whole name and
-// cannot say what lies below one, so an unpublished name ONE label under the
-// cloud is answered NOERROR with no records: true whether or not it has children.
+// `<project label>.<cloud>` alone is never NXDOMAIN: a resolver minimising query
+// names (RFC 9156) asks it on the way down, and NXDOMAIN would cut off every name
+// below (RFC 8020). An unpublished name one label under the cloud is NOERROR with no
+// records.
 
 // Hosts is the register's host index: which project answers on a name.
 // pkgregister.ErrNoHost is the answer "nobody"; any other error is a register

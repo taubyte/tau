@@ -8,29 +8,14 @@ import (
 	"github.com/miekg/dns"
 )
 
-// services.go answers the cloud's own services by name: `<service>.<cloud>`,
-// e.g. `build-frontend.tau.example.io`, the convention v1 kept as
-// `<service>.tau.<network fqdn>`.
+// The cloud's own services by name: `<service>.<cloud>`, e.g.
+// `build-frontend.tau.example.io`. A service is one label under the cloud fqdn,
+// beside the project labels, which are fixed-width derived labels and cannot collide.
 //
-// # The zone is the cloud's fqdn, not a second one under it
-//
-// v1's network fqdn was the bare domain and the services hung under `tau.` of
-// it. v2's cloud fqdn is already that name — "tau.example.io" is the example
-// every config in the tree uses — so a service is one label under it, beside
-// the project labels of the generated names. They cannot meet: a project label
-// is a fixed-width derived label, and a service name is a word.
-//
-// # Who answers, and what an unknown name is
-//
-// The addresses are those of the nodes reporting the service in discovery, the
-// same read the generated names make for the gateways. A service the cloud
-// knows and nobody is reporting right now is SERVFAIL, for the package's first
-// refusal: unserved is not absent.
-//
-// A LABEL THAT IS NO SERVICE carries on to the generated names when the cloud
-// has them, because one label under the cloud is also where a project label
-// sits and NXDOMAIN there would cut off every name its project publishes (see
-// generated.go). Only a server with no generated names says NXDOMAIN for it.
+// The addresses are the nodes reporting the service in discovery. A known service
+// nobody reports is SERVFAIL: unserved is not absent. A label that is no service
+// carries on to the generated names, since NXDOMAIN there would cut off a project's
+// names; only a server with no generated names says NXDOMAIN.
 
 // Services is the cloud's zone and the services that may be named under it.
 type Services struct {

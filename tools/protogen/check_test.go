@@ -40,13 +40,9 @@ plugins:
     opt: paths=source_relative
 `
 
-// newModule lays out a minimal buf module (one .proto, a buf.gen.yaml with
-// only protoc-gen-go — no network, no connect-go needed to exercise Check's
-// own plumbing) under repoRoot/protoDir, plus a go.mod pinning
-// google.golang.org/protobuf to whatever version protoc-gen-go on PATH
-// actually reports — checkPluginVersions now runs as part of Check, and a
-// go.mod pinned to a version this test made up would fail it for reasons
-// that have nothing to do with what each test is actually exercising.
+// newModule lays out a minimal buf module (one .proto, a buf.gen.yaml with only
+// protoc-gen-go) under repoRoot/protoDir, with a go.mod pinning
+// google.golang.org/protobuf to the version the installed protoc-gen-go reports.
 func newModule(t *testing.T) (repoRoot, protoDir string) {
 	t.Helper()
 	root := t.TempDir()
@@ -66,10 +62,7 @@ func newModule(t *testing.T) (repoRoot, protoDir string) {
 }
 
 // writeGoModPinningInstalledProtocGenGo writes root/go.mod requiring
-// google.golang.org/protobuf at whatever version protoc-gen-go on PATH
-// reports via --version, so checkPluginVersions passes against whatever
-// toolchain a given test run actually has, rather than a version hardcoded
-// in test source that would drift out from under it.
+// google.golang.org/protobuf at the version protoc-gen-go on PATH reports.
 func writeGoModPinningInstalledProtocGenGo(t *testing.T, root string) {
 	t.Helper()
 	path, err := exec.LookPath("protoc-gen-go")
@@ -188,9 +181,6 @@ plugins:
 	}
 }
 
-// TestCheck_FullCycle drives Check through all three diff kinds against a
-// real `buf generate` run: clean, a byte-level mismatch, a file missing from
-// the committed tree, and — once the .proto is removed — the orphan case.
 func TestCheck_FullCycle(t *testing.T) {
 	requireBuf(t)
 	root, dir := newModule(t)
@@ -262,9 +252,8 @@ func TestCheck_FullCycle(t *testing.T) {
 		t.Fatalf("report must state the checked/diff counts, got:\n%s", report.String())
 	}
 
-	// Restore, then delete the .proto entirely: the committed gen/ output
-	// becomes an orphan (Kind "committed"), exactly the half-move commit
-	// 481fab44 describes.
+	// Restore, then delete the .proto: the committed output becomes an orphan (Kind
+	// "committed").
 	if err := os.WriteFile(target, orig, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -476,9 +465,6 @@ plugins:
     opt: paths=source_relative
 `
 
-// TestCheck_BesideSources covers a module that generates into its own
-// directory: only its *.pb.go files are compared, so the .proto, the
-// buf.gen.yaml and any hand-written file beside them are not drift.
 func TestCheck_BesideSources(t *testing.T) {
 	requireBuf(t)
 	root := t.TempDir()
