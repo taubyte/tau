@@ -24,8 +24,9 @@
 package placement
 
 import (
+	"cmp"
 	"encoding/binary"
-	"sort"
+	"slices"
 
 	"github.com/cespare/xxhash/v2"
 )
@@ -47,11 +48,14 @@ type Member struct {
 // length-delimited rather than separated by a byte, so ("a\x00b", "c") and
 // ("a", "b\x00c") score differently.
 func Score(resource, member string) uint64 {
-	b := make([]byte, 0, 8+len(resource)+len(member))
-	b = binary.BigEndian.AppendUint64(b, uint64(len(resource)))
-	b = append(b, resource...)
-	b = append(b, member...)
-	return xxhash.Sum64(b)
+	var n [8]byte
+	binary.BigEndian.PutUint64(n[:], uint64(len(resource)))
+	var d xxhash.Digest
+	d.Reset()
+	d.Write(n[:])
+	d.WriteString(resource)
+	d.WriteString(member)
+	return d.Sum64()
 }
 
 // Rank returns every member ordered by descending score, ties broken by
@@ -61,16 +65,26 @@ func Score(resource, member string) uint64 {
 // It copies rather than sorting the caller's slice: a ranking function that
 // reorders its input makes every caller's second call depend on its first.
 func Rank(resource string, members []Member) []Member {
-	ranked := make([]Member, len(members))
-	copy(ranked, members)
-	sort.Slice(ranked, func(i, j int) bool {
-		si, sj := Score(resource, ranked[i].ID), Score(resource, ranked[j].ID)
-		if si != sj {
-			return si > sj
+	scored := make([]scoredMember, len(members))
+	for i, m := range members {
+		scored[i] = scoredMember{Member: m, score: Score(resource, m.ID)}
+	}
+	slices.SortFunc(scored, func(a, b scoredMember) int {
+		if a.score != b.score {
+			return cmp.Compare(b.score, a.score)
 		}
-		return ranked[i].ID < ranked[j].ID
+		return cmp.Compare(a.ID, b.ID)
 	})
+	ranked := make([]Member, len(scored))
+	for i, s := range scored {
+		ranked[i] = s.Member
+	}
 	return ranked
+}
+
+type scoredMember struct {
+	Member
+	score uint64
 }
 
 // Desired returns the ids of the top `target` accepting members for a resource: the
@@ -84,15 +98,10 @@ func Desired(resource string, members []Member, target int) []string {
 		return nil
 	}
 	out := make([]string, 0, target)
-	seen := make(map[string]struct{}, target)
 	for _, m := range Rank(resource, members) {
-		if !m.Accepts {
+		if !m.Accepts || slices.Contains(out, m.ID) {
 			continue
 		}
-		if _, dup := seen[m.ID]; dup {
-			continue
-		}
-		seen[m.ID] = struct{}{}
 		out = append(out, m.ID)
 		if len(out) == target {
 			break
