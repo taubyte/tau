@@ -9,9 +9,7 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// schedule_test is the cron half of the enumeration, against the vocabulary's
-// own fixture — which is the interesting case rather than a convenient one,
-// because that cron edges to two kinds and this cloud runs one of them.
+// The fixture's cron edges to two kinds and this cloud runs one of them.
 
 func schedulesOf(t *testing.T, h *harness) map[string]Schedule {
 	t.Helper()
@@ -23,15 +21,11 @@ func schedulesOf(t *testing.T, h *harness) map[string]Schedule {
 	return out
 }
 
-// TestNothingIsFiredUntilSomethingHoldsIt, the same rule Consumers keeps.
 func TestAnUnheldDeploymentHasNoSchedules(t *testing.T) {
 	h := newHarness(t)
 	require.Empty(t, h.Worker.Schedules(t.Context()))
 }
 
-// TestTheFIXTURESCronIsRead: every field the vocabulary puts on it reaches the
-// thing that fires it, because a schedule the runtime half-read is a job that
-// happens at the wrong time.
 func TestTheFixturesCronCarriesWhatTheAuthorWrote(t *testing.T) {
 	h := newHarness(t)
 	holding(t, h, "function", "checkout")
@@ -46,8 +40,6 @@ func TestTheFixturesCronCarriesWhatTheAuthorWrote(t *testing.T) {
 	require.Contains(t, got.Handle, "shop/prod/", "scoped to the deployment, like every other handle")
 }
 
-// TestACronFiresWhatItEdgesTo, in the form Invoke takes — the vocabulary's own
-// sentence is "it fires whatever it edges to; the target declares nothing".
 func TestACronsTargetsComeOffItsAccessBlock(t *testing.T) {
 	h := newHarness(t)
 	holding(t, h, "function", "checkout")
@@ -60,9 +52,6 @@ func TestACronsTargetsComeOffItsAccessBlock(t *testing.T) {
 	require.Equal(t, "prod", got.Fires[0].Environment)
 }
 
-// TestACRONMayStartAWorkflow, which is what the fixture's own does — and a
-// workflow is STARTED rather than invoked, because it runs on no tier: it is
-// queues, and a start is a send to the first step's.
 func TestACronStartsAWorkflow(t *testing.T) {
 	h := newHarness(t)
 	holding(t, h, "function", "checkout")
@@ -78,11 +67,7 @@ func TestACronStartsAWorkflow(t *testing.T) {
 		"a start is a SEND, so the entry has to name the queue type and not only the kind")
 	require.Equal(t, "send", start.Settings[settingStartAs])
 
-	// AND THE GRANT ITSELF IS THE FIRST STEP'S QUEUE, which is where a send
-	// actually lands. It used to be the WORKFLOW's — a handle no consumer ever
-	// opens — so a cron that started a pipeline pushed an item nothing drained,
-	// claimed its slot, and reported success. This assertion used to say the
-	// two differ; it now says which one a firer is handed.
+	// The grant is the first step's queue, where a send lands.
 	require.Equal(t, "sync", start.Kind)
 	require.Equal(t, []string{"send"}, start.Ops)
 	require.Equal(t, start.Settings[settingStartHandle], start.Handle,
@@ -90,16 +75,12 @@ func TestACronStartsAWorkflow(t *testing.T) {
 	require.Contains(t, start.Handle, "shop/prod/")
 }
 
-// TestATargetNothingRunsIsSAIDRatherThanDropped, which is still the answer for
-// a kind that runs on nothing and is not started either.
 func TestAnUnrunnableTargetIsReported(t *testing.T) {
 	require.Contains(t,
 		unfireable("zone", specs.Reach{Kind: "zone", Label: "example_com"}),
 		"nothing in this cloud runs a zone")
 }
 
-// TestACronThatEdgesToNothingIsNotAScheduleToRun. A clock nobody set an alarm
-// on is legal and is not something to spend a loop on.
 func TestACronWithNoEdgesIsNotListed(t *testing.T) {
 	h := newHarness(t)
 	holding(t, h, "function", "checkout")
@@ -110,10 +91,6 @@ func TestACronWithNoEdgesIsNotListed(t *testing.T) {
 	}
 }
 
-// TestTHESTARTQueueSCONFIGTravelsWithTheGrant. A queue is opened from the
-// settings on the grant, so a `start` that carried only the entry record opened
-// the first step's queue with pkg/queue's defaults while the dispatcher opened
-// the same queue with what its author wrote.
 func TestAStartCarriesTheQueuesOwnConfig(t *testing.T) {
 	h := newHarness(t)
 	holding(t, h, "function", "checkout")

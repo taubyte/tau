@@ -33,10 +33,6 @@ func invokeOver(t *testing.T, h *harness, tgt *workerv2.Target) *workerv2.Invoke
 	return res.Msg
 }
 
-// TestTheWholeChain: a name arrives over the wire, the register says what the
-// environment runs, the compiled project says what the resource declares, and
-// the tier the vocabulary selected is asked to start it with exactly those
-// numbers.
 func TestTheWholeChain(t *testing.T) {
 	h := newHarness(t)
 
@@ -61,9 +57,6 @@ func TestTheWholeChain(t *testing.T) {
 	require.Equal(t, spec.Artifact, served.Artifact)
 }
 
-// TestTheTierComesFromTheVocabulary. A function is wasm and an application is a
-// container because that is what each kind's Engines() says, and nothing in
-// this package repeats it.
 func TestTheTierComesFromTheVocabulary(t *testing.T) {
 	h := newHarness(t)
 
@@ -71,25 +64,14 @@ func TestTheTierComesFromTheVocabulary(t *testing.T) {
 
 	spec := h.Runtime.specs()[0]
 	require.Equal(t, "wasm", spec.Runtime)
-	// WHAT THE SEAM RESOLVED FOR THE COMPONENT. This line used to be the bare
-	// `QmS4ust…` under the comment "a component's cid", and that comment was the
-	// conflation the bug was made of: `source.component` is a `Ref("component")`,
-	// so the compiled resource carries the COMPONENT RESOURCE's id — a
-	// configuration document id, which the asset store has never held anything
-	// under.
-	//
-	// The harness's resolver answers `registry/<project>/<env>/<kind>@sha256:<id>`,
-	// so both halves of the fix are legible here: the seam was asked at all, and
-	// it was asked as a `component` about the component rather than as this
-	// `function` about itself. The arguments themselves are asserted in
-	// artifact_test.go rather than read back out of a fake's string.
+	// The seam was asked as a `component` about the component; artifact_test.go asserts
+	// the arguments.
 	require.Equal(t, "registry/shop/prod/component@sha256:QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv",
 		spec.Artifact)
 	require.Equal(t, int64(32_000_000), spec.Memory)
 	require.Equal(t, 20*time.Second, spec.Timeout, "a duration compiles to nanoseconds and comes back a duration")
 }
 
-// TestANameResolvesInTheScopeThatAsked, then outward.
 func TestANameResolvesInTheScopeThatAsked(t *testing.T) {
 	h := newHarness(t)
 
@@ -106,8 +88,6 @@ func TestANameResolvesInTheScopeThatAsked(t *testing.T) {
 	require.Len(t, h.Runtime.specs(), 2, "no third cold start: the third call found the api's instance warm")
 }
 
-// TestABuiltResourceIsRefusedRatherThanGuessedAt. A resource whose source is a
-// path in the repository names the source, not what came out of building it.
 func TestABuiltResourceIsRefusedRatherThanGuessedAt(t *testing.T) {
 	h := newBareHarness(t)
 
@@ -124,9 +104,6 @@ func TestABuiltResourceIsRefusedRatherThanGuessedAt(t *testing.T) {
 	require.Contains(t, with.Runtime.specs()[0].Artifact, "registry/shop/prod/application@sha256:")
 }
 
-// TestASecretIsNeverAnEmptyString. A workload started without its database
-// password does not fail where the password is missing; it fails later, in a
-// way that reads as a broken application.
 func TestASecretIsNeverAnEmptyString(t *testing.T) {
 	h := newBareHarness(t, WithArtifacts(artifactFunc(func(context.Context, string, string, string, string) (string, error) {
 		return "an-image", nil
@@ -147,7 +124,6 @@ func TestASecretIsNeverAnEmptyString(t *testing.T) {
 	require.Contains(t, env["STRIPE_KEY"], "sk_live_")
 }
 
-// TestAFailingSecretFailsTheInvocation rather than being dropped.
 func TestAFailingSecretFailsTheInvocation(t *testing.T) {
 	h := newHarness(t, WithSecrets(secretFunc(func(context.Context, string, string, string) (string, error) {
 		return "", errRefused
@@ -160,9 +136,6 @@ func TestAFailingSecretFailsTheInvocation(t *testing.T) {
 	require.Empty(t, h.Runtime.specs(), "nothing was started")
 }
 
-// TestTheCompiledProjectIsFetchedOnce. It is named by its content, so one that
-// has been fetched is correct forever — and it is a whole project on the wire,
-// so fetching it per request is the thing this cache exists to not do.
 func TestTheCompiledProjectIsFetchedOnce(t *testing.T) {
 	h := newHarness(t)
 
@@ -175,8 +148,6 @@ func TestTheCompiledProjectIsFetchedOnce(t *testing.T) {
 	require.Equal(t, 1, resolves, "and the pointer was read once inside its ttl")
 }
 
-// TestThePointerIsRereadWhenItsBudgetIsSpent, and what a deploy changed is what
-// runs. This is the whole meaning of PointerTTL.
 func TestADeployTakesEffectWhenTheBudgetIsSpent(t *testing.T) {
 	h := newHarnessWith(t, Config{PointerTTL: 5 * time.Second})
 
@@ -203,8 +174,6 @@ func TestADeployTakesEffectWhenTheBudgetIsSpent(t *testing.T) {
 	require.NotEqual(t, started[0].Revision, started[1].Revision)
 }
 
-// TestOnlyOneFetchPerObjectUnderLoad. A deploy makes every in-flight request
-// want the same compiled project at the same instant.
 func TestOnlyOneFetchPerObjectUnderLoad(t *testing.T) {
 	h := newHarness(t)
 
@@ -225,8 +194,6 @@ func TestOnlyOneFetchPerObjectUnderLoad(t *testing.T) {
 	require.Equal(t, 1, objects)
 }
 
-// TestTheProjectCacheIsBounded. Every deploy mints a new content address and
-// the old one stays valid forever, so "still correct" is not a bound.
 func TestTheProjectCacheIsBounded(t *testing.T) {
 	h := newHarnessWith(t, Config{MaxProjects: 2, PointerTTL: time.Nanosecond})
 
@@ -244,9 +211,6 @@ func TestTheProjectCacheIsBounded(t *testing.T) {
 	require.LessOrEqual(t, h.Worker.Loaded(), 2)
 }
 
-// TestAFailedLoadIsNotRemembered. The object is immutable so a success is good
-// forever, but a failure is usually the register being unreachable — and
-// caching that would turn one bad moment into a project that never loads again.
 func TestAFailedLoadIsNotRemembered(t *testing.T) {
 	h := newHarness(t)
 	h.Register.breakObjects(true)
@@ -289,9 +253,6 @@ func TestWhatIsMissingSaysWhichKindOfMissing(t *testing.T) {
 	}
 }
 
-// TestTheCodeTableCoversWhatItClaims. The distinction the table exists for is
-// "ask somebody else" versus "stop", and a caller that could not tell them
-// apart would either retry forever on a typo or give up on a blip.
 func TestTheCodeTable(t *testing.T) {
 	for _, c := range []struct {
 		err  error
@@ -353,10 +314,6 @@ func (f secretFunc) Secret(ctx context.Context, project, environment, secretID s
 	return f(ctx, project, environment, secretID)
 }
 
-// TestTheClientIsTheSameWorker — a gateway holds one interface and one error
-// path whether the worker is in this process or across a stream, and the
-// distinction it depends on is "this deployment is missing a piece" versus
-// "this node cannot do it right now".
 func TestTheClientIsTheSameWorker(t *testing.T) {
 	h := newHarness(t)
 	c := newWorkerClient(t, h)
@@ -376,12 +333,6 @@ func TestTheClientIsTheSameWorker(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// A FUNCTION ON A TIER THIS NODE DOES NOT HAVE IS REFUSED BY NAME. `runtime: js` is
-// valid config: tcc compiles it, the default export is its entrypoint, and the
-// resource resolves to a spec naming the js tier. This pool has no js tier, as a
-// node with no asset store builds none, so starting it says which engine is
-// missing, across the wire, and nothing is handed to a tier that would run it as
-// something else.
 func TestAFunctionOnATierThisNodeLacksIsRefusedByName(t *testing.T) {
 	h := build(t, Config{}, resolvers()...)
 	h.Register.Register = publishedDocs(t, map[string]string{
@@ -434,11 +385,6 @@ func TestEverySentinelSurvivesTheWireToTheClient(t *testing.T) {
 		connect.CodeOf(unwire(connect.NewError(connect.CodeUnavailable, errors.New("something else")))))
 }
 
-// A TIER GETS THE `serve` BLOCK, flattened, and nothing else off the resource.
-// It is by definition how a thing is served — a static site's mode and index
-// live there — and passing the whole resource would put every access rule and
-// every variable into every Spec, which is a wider thing to hold for one that
-// is not read.
 func TestTheServeBlockReachesTheTier(t *testing.T) {
 	h := newHarness(t)
 
@@ -455,10 +401,6 @@ func TestTheServeBlockReachesTheTier(t *testing.T) {
 	require.Nil(t, h2.Runtime.specs()[0].Settings)
 }
 
-// THE ENTRYPOINT AND THE WORLD ARE THE VOCABULARY'S OWN WORDS, and a wasm tier
-// cannot run anything without them: without the entrypoint it calls the world's
-// default name instead of the author's, and without the world it calls a
-// component built for another interface with the wrong signature.
 func TestTheEntrypointAndTheWorldReachTheTier(t *testing.T) {
 	h := newHarness(t)
 
@@ -470,9 +412,6 @@ func TestTheEntrypointAndTheWorldReachTheTier(t *testing.T) {
 		"the schema defaults it, so a resource that says nothing still says handler")
 }
 
-// WHERE A WORKLOAD MAY REACH IS THE RESOURCE'S, and empty is nowhere. The tier
-// enforces it; the worker only carries it, because which mechanism does the
-// enforcing is the tier's business and the allowlist is the author's.
 func TestTheEgressAllowlistReachesTheTier(t *testing.T) {
 	h := newHarness(t)
 
@@ -486,11 +425,7 @@ func TestTheEgressAllowlistReachesTheTier(t *testing.T) {
 	require.Empty(t, h2.Runtime.specs()[0].Egress)
 }
 
-// ── what this service accounted for ──────────────────────────────────────
-
-// AN INVOCATION IS THE OTHER OBVIOUSLY BILLED THING A CLOUD DOES. Requests and
-// GB-seconds are what every serverless platform charges in, and this service
-// knew neither — it resolved a spec, ran it, and answered.
+// meter records what the service accounted for.
 type meter struct {
 	mu     sync.Mutex
 	events []Accounted
@@ -524,17 +459,12 @@ func TestAnInvocationIsAccounted(t *testing.T) {
 	require.Equal(t, "application", ev.Kind)
 	require.Equal(t, "api", ev.Name)
 
-	// WHAT IT WAS ALLOWED, not what it used — which is what every platform
-	// bills, because what it used is not observable from here.
+	// What it was allowed, not what it used.
 	require.Equal(t, int64(512_000_000), ev.Memory)
 
-	// A BILL SOMEBODY DISPUTES IS RECONCILED AGAINST A DEPLOY.
 	require.NotEmpty(t, ev.Revision)
 }
 
-// A REFUSAL IS THE EVENT A CALLER MOST WANTS EXPLAINED, and it is the one an
-// invocation counter cannot show: the figures look identical whether a request
-// was served or turned away.
 func TestARefusedInvocationIsAccounted(t *testing.T) {
 	m := &meter{}
 	h := newHarness(t, WithMeter(m))
@@ -551,8 +481,6 @@ func TestARefusedInvocationIsAccounted(t *testing.T) {
 	require.Empty(t, events[0].Revision, "nothing resolved, so nothing to reconcile against")
 }
 
-// A node with no meter invokes exactly as it did, and the events are not
-// constructed at all.
 func TestNoMeterIsTheOrdinaryCase(t *testing.T) {
 	h := newHarness(t)
 	res := invokeOver(t, h, target("application", "api"))

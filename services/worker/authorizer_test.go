@@ -10,14 +10,9 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// The guard resolution, against hand-built projects.
-//
-// NOT THE VOCABULARY'S FIXTURE, for once, and the reason is worth stating: the
-// compiler already refuses a guard that is not an authorizer as `Broken`
-// (checks.go, and TestAuditOfTheExample holds the fixture to it), so the fixture
-// CANNOT carry the cases below. What is tested here is the second line of
-// defence — a compiled object that did not come from tcc, which is the same
-// thing startedBy and servedBy guard against.
+// Guard resolution against hand-built projects. The compiler already refuses a
+// guard that is not an authorizer (checks.go), so the fixture cannot carry these
+// cases; this tests the second line of defence, a compiled object not from tcc.
 
 const (
 	guardProject = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
@@ -60,8 +55,7 @@ func guardedProject(t *testing.T, guard map[string]any) *specs.Project {
 					"name": "local",
 					"cache": map[string]any{
 						nestedCache: map[string]any{
-							// NO NAMESPACE WRITTEN, so it must find the guard in
-							// the parent.
+							// No namespace written, so the guard must be found in the parent.
 							"name": "deep", "size": 1000, "consensus": "crdt",
 							"authorizer": map[string]any{"name": "keeper"},
 						},
@@ -101,7 +95,6 @@ func guardOf(t *testing.T, proj *specs.Project, scope []string, name, id string)
 	return grant
 }
 
-// TestAGuardIsResolvedToTheFunctionThatAnswersIt.
 func TestAGuardResolvesToAnAuthorizer(t *testing.T) {
 	proj := guardedProject(t, map[string]any{"name": "keeper"})
 
@@ -112,10 +105,6 @@ func TestAGuardResolvesToAnAuthorizer(t *testing.T) {
 		"the project root, stated rather than left empty for a reader to guess")
 }
 
-// TestTheWalkIsTheTARGETsAndNotTheCALLERs. A guard belongs to the thing being
-// reached, so an omitted namespace means the target's own scope and then its
-// parents — a cache in /local guarded by `keeper` means the keeper /local can see,
-// whoever is reaching it and from wherever.
 func TestAnOmittedGuardNamespaceWalksOutFromTheTarget(t *testing.T) {
 	proj := guardedProject(t, map[string]any{"name": "keeper"})
 
@@ -126,9 +115,6 @@ func TestAnOmittedGuardNamespaceWalksOutFromTheTarget(t *testing.T) {
 		"where the walk STARTED, which is what the tier needs to resolve it again")
 }
 
-// TestAGuardThatIsNotAnAuthorizerIsRefusedByName. A function implementing the
-// handler world would instantiate and then be handed a question it reads as a
-// request — the failure `implements` exists to prevent.
 func TestAGuardThatImplementsTheHandlerIsRefused(t *testing.T) {
 	proj := guardedProject(t, map[string]any{"name": "plain"})
 
@@ -139,9 +125,6 @@ func TestAGuardThatImplementsTheHandlerIsRefused(t *testing.T) {
 	require.Empty(t, grant.Settings["authorizer/name"], "and carries no guard to be asked")
 }
 
-// TestAGuardThatIsNotThereIsRefusedRatherThanIgnored. This is the one that
-// matters most: a guard nobody can run must not read as a resource nobody
-// guarded.
 func TestAGuardThatResolvesToNothingIsRefused(t *testing.T) {
 	proj := guardedProject(t, map[string]any{"name": "ghost"})
 
@@ -150,8 +133,6 @@ func TestAGuardThatResolvesToNothingIsRefused(t *testing.T) {
 	require.False(t, grant.Allows("get"))
 }
 
-// TestAnUnguardedTargetCarriesNothing, so the settings stay a statement that
-// somebody decides rather than a key every grant has.
 func TestAnUnguardedTargetCarriesNoGuard(t *testing.T) {
 	proj := guardedProject(t, nil)
 
@@ -160,9 +141,6 @@ func TestAnUnguardedTargetCarriesNoGuard(t *testing.T) {
 	require.NotContains(t, grant.Settings, "authorizer/name")
 }
 
-// TestAnAlreadyRefusedGrantKeepsItsFirstSentence. A cache this cloud cannot
-// serve at all, that also names a guard, should say the thing an author has to
-// fix rather than burying it under a second sentence about the guard.
 func TestAGuardDoesNotOverwriteAnExistingRefusal(t *testing.T) {
 	proj := guardedProject(t, map[string]any{"name": "ghost"})
 	target, _, err := proj.Resource(nil, "cache", "one")

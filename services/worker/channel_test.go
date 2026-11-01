@@ -8,7 +8,6 @@ import (
 	"github.com/taubyte/tau/pkg/invoke"
 )
 
-// channelGrants are the channel entries of a resolved spec, by label.
 func channelGrants(t *testing.T, spec invoke.Spec) map[string]invoke.Grant {
 	t.Helper()
 
@@ -21,9 +20,6 @@ func channelGrants(t *testing.T, spec invoke.Spec) map[string]invoke.Grant {
 	return out
 }
 
-// TestAChannelGrantCarriesTheResolvedServer — a dial has to reach a workload,
-// and nothing on the request path can turn a name into one: the tier holds a
-// handle and not the compiled project. So the composer resolves it here.
 func TestAChannelGrantCarriesTheResolvedServer(t *testing.T) {
 	h := newHarness(t)
 	grants := channelGrants(t, resolveIn(t, h, nil, "function", "checkout"))
@@ -39,11 +35,6 @@ func TestAChannelGrantCarriesTheResolvedServer(t *testing.T) {
 		"the author's own word for the conduit, so a server reached on two can tell them apart")
 }
 
-// TestAnOmittedNamespaceResolvesToTheCHANNELsScope, not the dialer's. The
-// fixture's `reserve` names no namespace and sits at the project root, so the
-// chain that travels is the root — and it is a RESOLVED chain rather than the
-// sentence that produced it, because the outward walk belongs where the project
-// is open.
 func TestAnOmittedNamespaceResolvesToTheChannelsScope(t *testing.T) {
 	h := newHarness(t)
 	grants := channelGrants(t, resolveIn(t, h, nil, "function", "checkout"))
@@ -52,9 +43,6 @@ func TestAnOmittedNamespaceResolvesToTheChannelsScope(t *testing.T) {
 		"the project root, stated rather than left empty for a reader to guess")
 }
 
-// TestANamedContainerPortTravelsOnTheGrant — a channel served by a container
-// may say which of its ports the bytes go to. The tier keeps every declared port
-// by name, so the name is carried for the dial to use rather than refused.
 func TestANamedContainerPortTravelsOnTheGrant(t *testing.T) {
 	h := newHarness(t)
 	grants := channelGrants(t, resolveIn(t, h, nil, "function", "checkout"))
@@ -68,15 +56,6 @@ func TestANamedContainerPortTravelsOnTheGrant(t *testing.T) {
 	require.Empty(t, grants["reserve"].Settings["serve/port"], "and a channel naming none carries none")
 }
 
-// TestAnAuthorizerIsHONOUREDOnEveryKindThatCanDeclareOne — attachAccess gives
-// an `authorizer:` block to every kind with Ops(), and the check for one used to
-// sit after unservableKind's switch, which every kind but `cache` returns from
-// first. So a guarded cache was refused and a guarded DATABASE was served wide
-// open, with nothing said either way.
-//
-// It is resolved for all of them now, which is the same claim pointed the other
-// way: if the cross-kind wiring regresses, the database loses its guard silently
-// and this fails.
 func TestAnAuthorizerIsHonouredOnEveryKindThatCanDeclareOne(t *testing.T) {
 	h := newHarness(t)
 

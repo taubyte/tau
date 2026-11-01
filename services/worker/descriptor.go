@@ -27,12 +27,9 @@ type descriptor struct {
 	Ingress  Ingress
 }
 
-// Descriptor states that a worker answers other tau nodes only.
-//
-// A REQUEST FROM THE INTERNET ARRIVES THROUGH A GATEWAY, which is what parses
-// it, matches a route and decides what may be reached. A worker that also
-// listened on the internet would be a second door into every workload with no
-// route, no method matching and no policy in front of it.
+// Descriptor states that a worker answers other tau nodes only. Internet requests
+// arrive through a gateway, which matches routes and applies policy; a worker on
+// the internet would be a second door with none of that.
 var Descriptor = descriptor{
 	Name:     "worker",
 	Protocol: Protocol,

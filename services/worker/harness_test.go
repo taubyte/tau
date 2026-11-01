@@ -25,17 +25,8 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/worker/v2/workerv2connect"
 )
 
-// harness is a worker over a real register holding a really-compiled project,
-// with a runtime that records what it was asked to start.
-//
-// THE PROJECT IS COMPILED BY tcc, not written by hand. What this service reads
-// is the compiled vocabulary, so a fixture of my own would be a fixture of what
-// I believe that vocabulary produces — and it would keep passing on the day it
-// produced something else.
-//
-// The one thing that is fake is the tier. Starting a real container to observe
-// that a memory limit reached it would be testing pkg/containers, and the
-// property here is that the number came off the config and arrived intact.
+// harness is a worker over a real register holding a tcc-compiled project, with a
+// fake tier recording what it was asked to start.
 type harness struct {
 	Worker   *Service
 	Register *countingRegister
@@ -49,11 +40,8 @@ type harness struct {
 	clock *fakeClock
 }
 
-// newHarness is a fully composed node: the fixture project needs both seams —
-// `worker_pool` and every function are built from the repository rather than
-// naming an image, and `api` has a variable whose value is a secret — so a
-// worker with neither resolver can run almost nothing in it. Tests about the
-// refusals use newBareHarness.
+// newHarness is a fully composed node: the fixture needs both the artifact and the
+// secret seams. Tests about the refusals use newBareHarness.
 func newHarness(t testing.TB, opts ...Option) *harness {
 	t.Helper()
 	return newHarnessWith(t, Config{}, opts...)
@@ -95,8 +83,8 @@ func build(t testing.TB, cfg Config, opts ...Option) *harness {
 	require.NoError(t, err)
 
 	counting := &countingRegister{Register: reg}
-	// THE THREE ENGINES THE VOCABULARY NAMES, so a kind's Engines() is what
-	// decides which one runs a resource and this harness never is.
+	// The three engines the vocabulary names, so a kind's Engines() decides which runs a
+	// resource.
 	rt := &fakeRuntime{name: "container"}
 	wasm := &fakeRuntime{name: "wasm"}
 	site := &fakeRuntime{name: "static"}
@@ -211,16 +199,10 @@ func publishedDocs(t testing.TB, docs map[string]string) *register.Register {
 	return reg
 }
 
-// servable takes off what this cloud refuses of the fixture's applications,
-// which are what most of this package's tests run.
-//
-// THE FIXTURE IS THE VOCABULARY'S CATALOGUE, not a deployment this cloud can
-// serve: its applications declare cloud-wide instance ceilings, liveness
-// checks, a readiness function and a registry credential, and nothing here
-// applies any of them — so resolving one is refused by name, which
-// unserved_test asserts against the UNTOUCHED fixture. What the rest of these
-// tests exercise is ports, grants, scopes and the cache, and a refusal would
-// leave none of that to test.
+// servable removes what this cloud refuses of the fixture's applications (instance
+// ceilings, liveness checks, a readiness function, a registry credential), so tests
+// can exercise ports, grants, scopes and the cache. unserved_test asserts the
+// refusals against the untouched fixture.
 func servable(t testing.TB, flat map[string]any) map[string]any {
 	t.Helper()
 
@@ -336,12 +318,9 @@ func (i *fakeInstance) Serve(_ context.Context, req *invoke.Request) (*invoke.Re
 
 func (i *fakeInstance) Close() error { return nil }
 
-// Dial stands in for a workload's listening socket: it echoes what it is sent,
-// uppercased, so a test can tell bytes that crossed from bytes that did not.
-//
-// IT ANSWERS ON A REAL SOCKET rather than a net.Pipe, because the thing under
-// test is a splice between two connections and a pipe has no half-close — the
-// case a query protocol depends on.
+// Dial stands in for a workload's listening socket, echoing what it is sent
+// uppercased. A real socket rather than net.Pipe, since the splice under test needs
+// half-close.
 func (i *fakeInstance) Dial(_ context.Context, port string) (net.Conn, error) {
 	if port == "nope" {
 		return nil, errors.New("no port by that name")

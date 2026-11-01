@@ -15,9 +15,6 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/worker/v2/workerv2connect"
 )
 
-// rpc.go is the wire surface: one call, and the mapping from a failure to a
-// status a caller can act on.
-
 func (s *Service) mount() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle(workerv2connect.NewWorkerServiceHandler(&handler{s}))
@@ -104,8 +101,7 @@ func (h *handler) Transform(ctx context.Context, req *connect.Request[workerv2.T
 		}), nil
 	}
 
-	// AN UNSET oneof IS A MALFORMED ANSWER AND NOT A DEFAULT. Choosing one here
-	// would be this handler deciding whether traffic carries on.
+	// An unset oneof is a malformed answer, not a default.
 	return nil, connect.NewError(connect.CodeInternal, ErrNoOutcome)
 }
 
@@ -274,14 +270,10 @@ func toWire(in map[string][]string) map[string]*workerv2.Headers {
 	return out
 }
 
-// wire is the one code table.
-//
-// THE INTERESTING DISTINCTION IS "ASK SOMEBODY ELSE" VERSUS "STOP". A target
-// that names nothing is the caller's mistake and no other node will answer it
-// differently; a register that could not be reached, or a pool at capacity, is
-// this node's problem and another node has it or does not. Those are
-// NotFound-ish and Unavailable-ish respectively, and a caller that could not
-// tell them apart would either retry forever on a typo or give up on a blip.
+// wire is the one code table. A target naming nothing is the caller's mistake (no
+// other node answers differently); an unreachable register or a pool at capacity is
+// this node's problem. A caller must tell them apart to neither retry a typo forever
+// nor give up on a blip.
 func wire(err error) error {
 	switch {
 	case errors.Is(err, ErrNoTarget):
@@ -292,10 +284,8 @@ func wire(err error) error {
 		errors.Is(err, specs.ErrNotFound):
 		return connect.NewError(connect.CodeNotFound, err)
 
-	// The config selected a tier nothing runs, wants an artifact nobody
-	// resolves, or a secret nobody holds. All three are well-formed requests
-	// against a deployment that is missing a piece, and none of them is fixed
-	// by asking another node.
+	// A deployment missing a piece (tier, artifact or secret); another node will not fix
+	// it.
 	case errors.Is(err, ErrNoRuntime),
 		errors.Is(err, ErrAmbiguous),
 		errors.Is(err, ErrNoArtifact),
@@ -309,9 +299,7 @@ func wire(err error) error {
 	case errors.Is(err, context.DeadlineExceeded):
 		return connect.NewError(connect.CodeDeadlineExceeded, err)
 
-	// A malformed pointer or object is data loss, and it is worth its own code
-	// for the same reason it is in the register: it says the store is the
-	// broken part rather than the deployment.
+	// A malformed pointer or object says the store is broken, not the deployment.
 	case errors.Is(err, register.ErrMalformedPointer),
 		errors.Is(err, specs.ErrBadIndex),
 		errors.Is(err, specs.ErrNoObject),

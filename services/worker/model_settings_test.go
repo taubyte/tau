@@ -8,11 +8,6 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// model_settings_test reads the fixture's models and its mcp through what this
-// package carries onto a grant, so the keys are the generated ones and the
-// values are what the COMPILE wrote rather than what a hand-built map says.
-
-// TestAREMOTEMODELCARRIESWHEREANDHOWITISCALLED.
 func TestARemoteModelCarriesWhereAndHowItIsCalled(t *testing.T) {
 	p := fixture(t)
 	opus, _, err := p.Resource(nil, specs.KindModel, "opus")
@@ -29,8 +24,6 @@ func TestARemoteModelCarriesWhereAndHowItIsCalled(t *testing.T) {
 	require.NotContains(t, got, specs.ModelInferenceKeyLocalName, "a remote model names no workload")
 }
 
-// TestALOCALMODELISRESOLVEDTOTHESCOPEITSWORKLOADISIN, which is the project root
-// for the fixture's: an empty value, and still a value.
 func TestALocalModelIsResolvedToItsWorkloadsScope(t *testing.T) {
 	p := fixture(t)
 	embed, id, err := p.Resource(nil, specs.KindModel, "embed")
@@ -49,8 +42,6 @@ func TestALocalModelIsResolvedToItsWorkloadsScope(t *testing.T) {
 	require.Nil(t, localModelScope(p, embed, "QmNotInThisProject"), "nor does one this project cannot locate")
 }
 
-// TestAMODELSSTOPSEQUENCESARRIVEWHOLE, as one newline-joined key, and a model
-// declaring nothing carries nothing.
 func TestAModelsStopSequencesArriveWhole(t *testing.T) {
 	got := modelSettings(specs.Resource{"parameters": map[string]any{
 		"top_p": 0.9, "stop": []any{"END", "STOP"},
@@ -63,7 +54,6 @@ func TestAModelsStopSequencesArriveWhole(t *testing.T) {
 	require.Nil(t, modelSettings(specs.Resource{}))
 }
 
-// TestANMCPCARRIESHOWWIDELYITSLISTINGMAYBECACHED.
 func TestAnMcpCarriesHowWidelyItsListingMayBeCached(t *testing.T) {
 	p := fixture(t)
 	tools, _, err := p.Resource(nil, specs.KindMcp, "tools")

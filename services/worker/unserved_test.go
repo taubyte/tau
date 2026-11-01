@@ -11,9 +11,8 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// unserved_test holds both halves of what a workload declares about itself:
-// what is carried to a tier, and what is refused by name — and, for each
-// refusal, that a block of DEFAULTS alone is not one.
+// What is carried to a tier, what is refused by name, and for each refusal that a
+// block of defaults alone is not one.
 
 // untouched is the fixture as the author wrote it, servable or not.
 func untouched(t *testing.T) *specs.Project {
@@ -33,9 +32,6 @@ func appliedTo(t *testing.T, p *specs.Project, runtime, kind, name string) (invo
 	return spec, applied(&spec, Target{Kind: kind, Name: name}, p, r, id)
 }
 
-// TestTHEFIXTURESAPPLICATIONSAREREFUSEDBYWHATTHEYDECLARE, against the document
-// as written — the harness serves a copy with these taken off, and this is the
-// test that says why.
 func TestTheFixturesApplicationsAreRefusedByName(t *testing.T) {
 	p := untouched(t)
 
@@ -53,8 +49,6 @@ func TestTheFixturesApplicationsAreRefusedByName(t *testing.T) {
 	require.ErrorContains(t, err, "readiness asks the function")
 }
 
-// TestWHATATIERHONOURSISCARRIED: the fixture's db asks for two cores and a
-// readiness check on its pg port, and the spec says both.
 func TestACPUCeilingAndAReadinessProbeAreCarried(t *testing.T) {
 	spec, err := appliedTo(t, fixture(t), runtimeContainer, specs.KindApplication, "db")
 	require.NoError(t, err, "the harness's copy is servable")
@@ -67,7 +61,7 @@ func TestACPUCeilingAndAReadinessProbeAreCarried(t *testing.T) {
 	require.Zero(t, spec.CPU, "api declares no ceiling, and none is invented")
 }
 
-// resource is one compiled resource, and the project it is judged in.
+// judge applies a resource's own declarations in an empty project.
 func judge(t *testing.T, runtime, kind string, r specs.Resource) (invoke.Spec, error) {
 	t.Helper()
 	p, err := specs.Load([]byte(`{"object":{"id":"Qmp"}}`))
@@ -76,8 +70,6 @@ func judge(t *testing.T, runtime, kind string, r specs.Resource) (invoke.Spec, e
 	return spec, applied(&spec, Target{Kind: kind, Name: "x"}, p, r, "Qmx")
 }
 
-// TestACPUCeilingOnTheWasmTierIsRefused: a guest is metered in fuel and pages,
-// and a millicore figure has nothing to become there.
 func TestACPUCeilingOnTheWasmTierIsRefused(t *testing.T) {
 	_, err := judge(t, "wasm", specs.KindFunction, specs.Resource{"execution": map[string]any{"cpu": float64(250)}})
 	require.ErrorIs(t, err, ErrUnserved)
@@ -87,8 +79,6 @@ func TestACPUCeilingOnTheWasmTierIsRefused(t *testing.T) {
 	require.NoError(t, err, "no ceiling, nothing to refuse")
 }
 
-// TestADEFAULTEDLIVENESSBLOCKISNOTALIVENESSCHECK. The compiler writes
-// `failures: 3` on every application; refusing that would refuse them all.
 func TestADefaultedLivenessBlockIsNotRefused(t *testing.T) {
 	_, err := judge(t, runtimeContainer, specs.KindApplication, specs.Resource{
 		"liveness": map[string]any{"failures": float64(3)},
@@ -102,7 +92,6 @@ func TestADefaultedLivenessBlockIsNotRefused(t *testing.T) {
 	require.ErrorContains(t, err, "liveness (the function Qmcheck in /ops, replaced after 3 failures)")
 }
 
-// TestASandboxsOwnClockIsRefused, and one with no lifetime is not.
 func TestASandboxsOwnClockIsRefused(t *testing.T) {
 	_, err := judge(t, runtimeContainer, specs.KindSandbox, specs.Resource{
 		"lifetime": map[string]any{"idle": float64(10 * time.Minute)},
@@ -114,7 +103,6 @@ func TestASandboxsOwnClockIsRefused(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestAnUnreadDelegatedBlockIsRefused, and one the compile read is served.
 func TestAnUnreadDelegatedBlockIsRefused(t *testing.T) {
 	r := specs.Resource{"source": map[string]any{"kind": "git", "git": "https://example.com/a/b", "config": "taubyte.yaml"}}
 
@@ -128,7 +116,6 @@ func TestAnUnreadDelegatedBlockIsRefused(t *testing.T) {
 	require.NoError(t, applied(&spec, Target{Kind: specs.KindWorker, Name: "x"}, filled, r, "Qmx"))
 }
 
-// TestAPullCredentialInANamespaceSaysWhere.
 func TestAPullCredentialInANamespaceSaysWhere(t *testing.T) {
 	_, err := judge(t, runtimeContainer, specs.KindSandbox, specs.Resource{
 		"source": map[string]any{"kind": "image", "image": "a/b:1", "image_pull_secret": map[string]any{"name": "Qmreg", "namespace": "/ops"}},
@@ -137,22 +124,16 @@ func TestAPullCredentialInANamespaceSaysWhere(t *testing.T) {
 	require.ErrorContains(t, err, "names the secret Qmreg in /ops")
 }
 
-// ── what a REACHED target declares ───────────────────────────────────────
-
 func refusal(kind string, target specs.Resource) string {
 	return unservable(specs.Reach{Kind: kind, Label: "it"}, target)
 }
 
-// TestALocalStreamIsRefusedAndAnUnlocalOneIsServed. `local: false` is what a
-// stream here is.
 func TestALocalStreamIsRefusedAndAnUnlocalOneIsServed(t *testing.T) {
 	require.Contains(t, refusal(streamKind, specs.Resource{"local": true}), "is local")
 	require.Empty(t, refusal(streamKind, specs.Resource{"local": false}))
 	require.Empty(t, refusal(streamKind, specs.Resource{}))
 }
 
-// TestACheckpointBudgetIsRefusedAndTheDefaultsAreNot. Every volume carries an
-// interval and `on_budget_exceeded: alert` from the compiler.
 func TestACheckpointBudgetIsRefusedAndTheDefaultsAreNot(t *testing.T) {
 	defaults := map[string]any{"interval": float64(time.Minute), "on_budget_exceeded": "alert"}
 	require.Empty(t, refusal(volumeKind, specs.Resource{"checkpoint": defaults}))
@@ -163,15 +144,12 @@ func TestACheckpointBudgetIsRefusedAndTheDefaultsAreNot(t *testing.T) {
 	require.Contains(t, why, "never freeze-writes")
 }
 
-// TestAnEncryptedCacheIsRefused, and one that names no key is not.
 func TestAnEncryptedCacheIsRefused(t *testing.T) {
 	require.Empty(t, refusal(cacheKind, specs.Resource{"consensus": "crdt"}))
 	why := refusal(cacheKind, specs.Resource{"consensus": "crdt", "encryption": map[string]any{"key": map[string]any{"name": "Qmkey"}}})
 	require.Contains(t, why, "encrypted with the secret Qmkey")
 }
 
-// TestWHATAWORKFLOWSDRIVERSDONOTDOISREFUSED, each on its own, and a workflow
-// that asks none of it is served.
 func TestWhatAWorkflowsDriversDoNotDoIsRefused(t *testing.T) {
 	reach := specs.Reach{Kind: workflowKind, Label: "checkout"}
 	step := func(call map[string]any) specs.Resource {
@@ -189,8 +167,6 @@ func TestWhatAWorkflowsDriversDoNotDoIsRefused(t *testing.T) {
 	require.Contains(t, refusal(workflowKind, specs.Resource{"concurrency": float64(2)}), "runs in flight")
 }
 
-// TestARegionBlockIsNotRead. Placement in this build is one region, so a grant
-// to a resource pinned somewhere is served like any other rather than refused.
 func TestARegionBlockIsNotRead(t *testing.T) {
 	pinned := specs.Resource{"regions": map[string]any{"policy": "pinned", "in": []any{"region-1"}}}
 	for _, kind := range []string{cacheKind, storageKind, volumeKind, syncKind, workflowKind, databaseKind, functionKind} {

@@ -23,20 +23,9 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// imported_test.go is the competitive claim end to end: a descriptor from
-// somebody else's platform, through an importer, into a config repo, through
-// tcc, into the register, out as something this cloud can START.
-//
-// EVERY OTHER TEST OF THIS STOPS ONE STEP SHORT. pkg/importer/emit proves the
-// files are written and that tcc reads them; pkg/importer/emit/runnable_test
-// proves every KIND an importer emits has a tier. Neither says the RESOURCE is
-// runnable — that the spec a worker resolves carries a runtime, an artifact and
-// the numbers a tier needs — and "it compiled" is exactly the answer that made
-// the last four defects in this tree look like successes.
-//
-// It lives here rather than in pkg/importer because a package must not import a
-// service. The worker is what turns a compiled resource into something a tier
-// runs, so the claim belongs on this side of that line.
+// A foreign descriptor through an importer, tcc and the register, out as something
+// this cloud can start: the resolved spec carries a runtime, an artifact and the
+// numbers a tier needs. It lives here because a package must not import a service.
 
 // theFlyFile, theVercelOutput and theCompose file are one representative
 // descriptor each — enough that every importer emits its kinds.
@@ -88,9 +77,8 @@ Resources:
       Timeout: 30
 `
 
-// filled is a value for one field an import could not supply — what the person
-// reading the to-do list would type. There is nothing clever here: the point is
-// that the LIST is complete, not that these are good values.
+// filled is a value for each field an import could not supply; the point is that
+// the to-do list is complete.
 var filled = map[string]any{
 	"build/commands/image":  "node:22",
 	"build/script/image":    "node:22",
@@ -106,15 +94,9 @@ var filled = map[string]any{
 	"consensus":             "crdt",
 }
 
-// imported runs one importer's output all the way to a published project,
-// FILLING IN EXACTLY WHAT THE IMPORT SAID IT COULD NOT.
-//
-// THAT IS THE CLAIM, and it is stronger than "it compiled". An importer that
-// wrote a hole and did not list it produces a project a person cannot fix,
-// because nothing tells them what is wrong until tcc refuses the whole thing
-// with one error at a time. So the to-do list is filled from `filled` above and
-// nothing else — if the project still does not compile, the list was
-// incomplete, which is the defect this exists to find.
+// imported runs one importer's output to a published project, filling in exactly
+// what the import said it could not. If it still does not compile, the to-do list
+// was incomplete.
 func imported(t *testing.T, results ...importer.Result) *register.Register {
 	t.Helper()
 
@@ -139,10 +121,8 @@ func imported(t *testing.T, results ...importer.Result) *register.Register {
 		require.NoError(t, session.Save(session.FS(), "/"))
 	}
 
-	// THE REAL COMPILER over what the importer wrote plus the to-do list.
-	// Anything it refuses now is an importer emitting config this platform
-	// cannot read, or a hole it did not report — either way a defect in the
-	// importer and not in this test.
+	// Anything the compiler refuses here is an importer defect: unreadable config or an
+	// unreported hole.
 	c, err := schema.New(schema.WithVirtual(fs, "/project"), schema.WithBranch("main"))
 	require.NoError(t, err)
 
@@ -200,21 +180,16 @@ func assertRunnable(t *testing.T, specs map[string]invoke.Spec) {
 		require.Contains(t, implementedTiers, spec.Runtime,
 			"%s: the vocabulary chose %q and nothing implements it", name, spec.Runtime)
 
-		// AN ARTIFACT IS WHAT A TIER FETCHES. Empty means the resource named
-		// no image and no component and the build seam answered with nothing —
-		// which starts and then refuses every request.
+		// Empty means no image, no component and nothing from the build seam.
 		require.NotEmpty(t, spec.Artifact, "%s: nothing to run", name)
 		require.NotEmpty(t, spec.Name, "%s: unnamed", name)
 		require.NotEmpty(t, spec.Revision, "%s: a spec with no revision cannot be told from the next deploy", name)
 	}
 }
 
-// implementedTiers is the same set pkg/importer/emit/runnable_test holds,
-// restated because this file asserts a different thing about it: not that the
-// kind names an implemented engine, but that the resolved SPEC did.
+// implementedTiers restates pkg/importer/emit/runnable_test's set; here it is the
+// resolved spec, not the kind, that must name one.
 var implementedTiers = []string{"container", "js", "static", "wasm"}
-
-// ── one test per platform ────────────────────────────────────────────────────
 
 func TestAFlyAppIsRunnable(t *testing.T) {
 	result, err := fly.Import([]byte(theFlyFile))
@@ -246,8 +221,6 @@ func TestADokployAppIsRunnable(t *testing.T) {
 	assertRunnable(t, runnable(t, imported(t, result)))
 }
 
-// TestSeveralPlatformsBecomeOneRunnableProject, which is what a migration off
-// two of them actually looks like.
 func TestTwoImportsBecomeOneRunnableProject(t *testing.T) {
 	flyResult, err := fly.Import([]byte(theFlyFile))
 	require.NoError(t, err)
@@ -259,18 +232,6 @@ func TestTwoImportsBecomeOneRunnableProject(t *testing.T) {
 	require.Greater(t, len(specs), 1, "both platforms' workloads are there")
 }
 
-// TestALambdaImageRunsOnTheContainerTier.
-//
-// A container-packaged Lambda is the reason the container engine exists as a
-// serverless tier at all, and it used to be the one import this platform could
-// not finish: the image embeds AWS's runtime interface client, which polls for
-// work rather than listening. The tier now serves that protocol
-// (pkg/invoke/container/lambda.go), so the image runs unmodified.
-//
-// WHAT IS ASSERTED IS BOTH HALVES. The resource is emitted on the right tier
-// with the image the file named — and what still DIFFERS is reported, because
-// the event a handler receives is an HTTP one and a handler written for an S3
-// notification will not recognise it.
 func TestALambdaImageStartsOnTheContainerTier(t *testing.T) {
 	result, err := lambda.Import([]byte(theSAMTemplate))
 	require.NoError(t, err)
@@ -288,9 +249,8 @@ func TestALambdaImageStartsOnTheContainerTier(t *testing.T) {
 	}
 	require.True(t, sawContainer, "a Lambda image runs on the container tier: %v", specs)
 
-	// AND IT SAYS WHAT STILL DIFFERS. An import that runs but hands a handler
-	// an event it was never written for fails inside the handler, where the
-	// reason is hardest to see.
+	// An import that runs but hands a handler an unexpected event fails inside the
+	// handler, so the differences are reported.
 	var reported bool
 	for _, f := range result.Findings {
 		if f.Code == "IMAGE_INVOKED_OVER_HTTP" {

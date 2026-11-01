@@ -8,9 +8,6 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// TestANarrowedToolGrantIsRefusedByName — an entry naming some of a server's
-// tools is an authorization bound nothing here applies, so it fails closed
-// rather than being served as every tool.
 func TestANarrowedToolGrantIsRefusedByName(t *testing.T) {
 	why := unservable(specs.Reach{Kind: mcpKind, Label: "tools", Ops: []string{"call"}, Tools: []string{"refund"}}, nil)
 	require.Contains(t, why, "narrowed to the tools [refund]")

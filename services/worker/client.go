@@ -19,13 +19,10 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/worker/v2/workerv2connect"
 )
 
-// client.go is the other side of rpc.go, and it exists for the same reason the
-// register's does: so a caller holds one interface and one error path whether
-// the worker is on this node or another.
-//
-// A gateway is the caller that matters. It has to tell "this deployment is
-// missing a piece" from "this node cannot do it right now", because the first
-// is an answer to the client and the second is a reason to ask another node.
+// Client is the other side of rpc.go, so a caller holds one interface and one error
+// path whether the worker is local or remote. A gateway must tell "this deployment
+// is missing a piece" (an answer for the client) from "this node cannot do it now"
+// (a reason to ask another node).
 
 // Client calls a worker on another peer.
 type Client struct {
@@ -240,12 +237,8 @@ func connectionWire(c *invoke.Connection) *workerv2.Connection {
 	}
 }
 
-// unwire turns a status back into the sentinel a local worker would return.
-//
-// IT MATCHES ON THE MESSAGE AS WELL AS THE CODE, because several sentinels
-// share a code and they tell a caller different things: NotFound is both "no
-// such environment" and "no such resource in it", and FailedPrecondition covers
-// four separate missing pieces.
+// unwire turns a status back into the sentinel a local worker would return. It
+// matches the message as well as the code, since several sentinels share a code.
 func unwire(err error) error {
 	var cerr *connect.Error
 	if !errors.As(err, &cerr) {

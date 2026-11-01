@@ -9,25 +9,13 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// walk.go is the one traversal three questions are asked through: what this
-// node can fire, what it can drain, and what it can accept a connection for.
-//
-// THE LAZINESS IS THE SAME EVERY TIME, and it is not an optimisation. The
-// register does not enumerate, so what a node can answer for is what it is
-// ALREADY SERVING — a deployment nothing has touched is invisible here, and
-// every caller has to be able to say what that costs it. See Schedules, which
-// carries the sharpest case.
-//
-// It was written out three times before it was written down once, and the
-// recursion was the part that kept being got right by copying: a scope is not
-// only a namespace, so a walk asking for namespaces walks straight past every
-// queue and driver a workflow lowered to.
+// The one traversal for what this node can fire, drain, and accept connections for.
+// The register does not enumerate, so it covers only deployments already served. A
+// scope is not only a namespace: a workflow holds the queues and drivers it lowered
+// to.
 
-// eachDeployment calls visit once per (project, environment) this node holds.
-//
-// A DEPLOYMENT WHOSE POINTER IS HELD AND WHOSE OBJECT IS NOT IS SKIPPED. It
-// moved under us, and the next pass is the retry — there is nothing to report
-// about a project this node cannot read.
+// eachDeployment calls visit once per (project, environment) this node holds. A held
+// pointer whose object cannot be read is skipped; the next pass retries.
 func (s *Service) eachDeployment(ctx context.Context, visit func(proj *specs.Project, name, environment string)) {
 	for _, at := range s.projects.Deployments() {
 		proj, _, err := s.projects.At(ctx, at)
@@ -38,11 +26,8 @@ func (s *Service) eachDeployment(ctx context.Context, visit func(proj *specs.Pro
 	}
 }
 
-// eachScope calls visit for the given scope and then for every scope within it.
-//
-// EVERY SCOPE AND NOT ONLY EVERY NAMESPACE. A kind that lowers becomes a
-// container of what it produced — a workflow holds its steps' queues and
-// drivers — so a walk that asked for namespaces missed all of them.
+// eachScope calls visit for the given scope and then every scope within it,
+// including those a lowered kind produced.
 func eachScope(proj *specs.Project, scope []string, visit func(scope []string)) {
 	visit(scope)
 
@@ -69,12 +54,8 @@ type Proxy struct {
 	Name  string
 }
 
-// Proxies is every proxy in the deployments this node already holds.
-//
-// A PROXY IS SERVED BY EVERY NODE THAT HOLDS IT, unlike a cron. There is no
-// claim and no leader here: a listener on each node is what makes an SRV answer
-// have more than one target, and losing a node then costs a client one retry
-// rather than the service.
+// Proxies is every proxy in the deployments this node holds. Every holding node
+// serves it, with no claim or leader, so an SRV answer has several targets.
 func (s *Service) Proxies(ctx context.Context) []Proxy {
 	var out []Proxy
 	s.eachDeployment(ctx, func(proj *specs.Project, name, environment string) {
@@ -103,14 +84,8 @@ func (p Proxy) where() string {
 	return strings.Join(append(parts, p.Name), "/")
 }
 
-// At is the compiled project for one deployment, out of the cache this node
-// already holds.
-//
-// IT IS EXPOSED FOR THE PROXY, which serves the proxies of the deployments this
-// worker holds and would otherwise keep a second cache of the same objects —
-// two caches that can disagree about which revision of one project is current,
-// which for a listener means forwarding to a workload the config no longer
-// names.
+// At is the compiled project for one deployment, from this node's cache, exposed so
+// the proxy does not keep a second cache that could disagree about the revision.
 func (s *Service) At(ctx context.Context, at register.Deployment) (*specs.Project, register.Pointer, error) {
 	return s.projects.At(ctx, at)
 }

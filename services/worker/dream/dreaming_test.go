@@ -28,19 +28,6 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/worker/v2/workerv2connect"
 )
 
-// THIS IS THE WHOLE CHAIN, ON REAL NODES.
-//
-// A project is compiled by tcc and published into a register running on one
-// node. A worker on another node is asked, over a libp2p stream, to invoke a
-// resource by name. To answer, it dials the register across the swarm, reads
-// the compiled project out of a replicated CRDT, resolves the name through the
-// index, and composes a spec from what the author wrote.
-//
-// Every hop there is the production one. Nothing is faked but the universe and
-// the compute tier — and the tier is a deliberate boundary: starting a
-// container needs a daemon, so a universe supplies its own tiers and this test
-// supplies one that records what it was asked to start. What the tier does with
-// a spec is pkg/invoke/container's test, against real backends.
 func TestAWorkerResolvesAgainstARegisterAcrossTheSwarm(t *testing.T) {
 	recorder := &recordingTier{name: "container"}
 	defer workerDream.Runtimes(workerDream.Runtimes(recorder)...)
@@ -96,9 +83,6 @@ func TestAWorkerResolvesAgainstARegisterAcrossTheSwarm(t *testing.T) {
 	require.NotEmpty(t, spec.Revision)
 }
 
-// TestAUniverseWithNoTierSaysSoRatherThanPretending. It is the same chain up to
-// the last step, and the last step is the one a process without a container
-// daemon cannot take.
 func TestAUniverseWithNoTierSaysSo(t *testing.T) {
 	defer workerDream.Runtimes(workerDream.Runtimes()...)
 
@@ -173,10 +157,9 @@ func compiled(t *testing.T) []byte {
 	obj, _, err := c.Compile(context.Background())
 	require.NoError(t, err)
 
-	// THE FIXTURE'S `db` DECLARES TWO THINGS THIS CLOUD REFUSES BY NAME — a
-	// cloud-wide instance ceiling and a registry credential — and these tests
-	// are about the lookup reaching a tier, not about that refusal, which
-	// services/worker's unserved_test asserts against the untouched fixture.
+	// The fixture's `db` declares a cloud-wide instance ceiling and a registry
+	// credential, which this cloud refuses by name (unserved_test asserts that); these
+	// tests are about the lookup reaching a tier.
 	flat := obj.Flat()
 	root, _ := flat["object"].(map[string]any)
 	applications, _ := root["application"].(map[string]any)

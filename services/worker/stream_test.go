@@ -9,16 +9,12 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// A CONNECTION CROSSING A REAL libp2p STREAM, between two real hosts. The
-// harness's mocknet carries it, the worker's own raw listener answers it, and
-// what comes back is what the workload wrote — so a header read wrong, a length
-// prefix off by one, or a splice that swallowed the first bytes all fail here.
+// A connection across a real libp2p stream, answered by the worker's raw listener.
 
 func dbTarget() specs.Address {
 	return specs.Address{Project: "shop", Environment: "prod", Kind: "application", Name: "db"}
 }
 
-// TestBytesCrossAStreamToAWorkloadAndBack.
 func TestAConnectionReachesAWorkload(t *testing.T) {
 	h := newHarness(t)
 
@@ -29,10 +25,8 @@ func TestAConnectionReachesAWorkload(t *testing.T) {
 	_, err = conn.Write([]byte("select 1"))
 	require.NoError(t, err)
 
-	// HALF-CLOSE AND THEN READ, which is the ordinary shape of a query: the
-	// client has finished sending and is waiting to be answered. A splice that
-	// took the first EOF as a close would end the connection here and the
-	// answer would never arrive.
+	// Half-close then read, the shape of a query; a splice treating the first EOF as a
+	// close would never deliver the answer.
 	require.NoError(t, conn.(interface{ CloseWrite() error }).CloseWrite())
 
 	answer, err := io.ReadAll(conn)
@@ -41,8 +35,6 @@ func TestAConnectionReachesAWorkload(t *testing.T) {
 		"the port it was told, and the bytes it was sent, both crossed")
 }
 
-// TestTHEPORTNAMEREACHESTheFarSide — a connection that ignored it would still
-// carry bytes, which is why the fixture echoes the name back.
 func TestTheNamedPortTravels(t *testing.T) {
 	h := newHarness(t)
 
@@ -56,9 +48,6 @@ func TestTheNamedPortTravels(t *testing.T) {
 	require.Equal(t, "ADMIN:", string(answer))
 }
 
-// TestATARGETThatResolvesNowhereIsRefusedAndNotRetried. A name that resolves
-// nowhere resolves nowhere on every node, so walking the fleet to be told so N
-// times is a slower way to reach the same answer.
 func TestAMissingTargetIsNotWorthAnotherNode(t *testing.T) {
 	h := newHarness(t)
 
@@ -69,8 +58,6 @@ func TestAMissingTargetIsNotWorthAnotherNode(t *testing.T) {
 	require.NotErrorIs(t, err, ErrUnreachableNode, "another node would say the same thing")
 }
 
-// TestAWORKLOADThatCannotGiveTheSocketIsWorthAnotherNode, which is the other
-// half of the same distinction: this node failed, not the name.
 func TestAFailedDialIsWorthAnotherNode(t *testing.T) {
 	h := newHarness(t)
 
@@ -79,9 +66,6 @@ func TestAFailedDialIsWorthAnotherNode(t *testing.T) {
 	require.ErrorIs(t, err, ErrUnreachableNode)
 }
 
-// TestTheRAWProtocolIsNotTheRPCOne, so neither can be mistaken for the other on
-// a peer's protocol list — and a caller speaking one at the other fails rather
-// than being half-understood.
 func TestTheStreamProtocolIsItsOwn(t *testing.T) {
 	require.NotEqual(t, Protocol, StreamProtocol)
 	require.Contains(t, string(StreamProtocol), string(Protocol))

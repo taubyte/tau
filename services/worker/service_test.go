@@ -63,9 +63,6 @@ func TestNewRefusesWhatItCannotWorkWithout(t *testing.T) {
 	}
 }
 
-// TestTheConfigRefusesNumbersThatMeanNothing, at construction, with a message
-// about the setting — rather than on the first request, where it reads as a
-// runtime fault.
 func TestTheConfigRefusesNumbersThatMeanNothing(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -120,9 +117,6 @@ func TestTheProtocolIsDerived(t *testing.T) {
 		"a request from the internet arrives through a gateway, which is what decides what may be reached")
 }
 
-// TestARuntimeIsNeverGuessed. Which tier runs a kind is the vocabulary's
-// Engines(); a kind with two authors the choice, and one that names neither is
-// refused rather than defaulted.
 func TestARuntimeIsNeverGuessed(t *testing.T) {
 	got, err := runtimeOf("application", specs.ReadWorkloadBlock(specs.Resource{}))
 	require.NoError(t, err)
@@ -141,8 +135,6 @@ func TestARuntimeIsNeverGuessed(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoRuntime, "nothing runs a cache")
 }
 
-// TestHeadersSurviveTheRoundTrip, including a header with several values —
-// which is the reason the proto needs a message around the list at all.
 func TestHeadersSurviveTheRoundTrip(t *testing.T) {
 	h := newHarness(t)
 
@@ -165,10 +157,6 @@ func TestHeadersSurviveTheRoundTrip(t *testing.T) {
 		fromWire(map[string]*workerv2.Headers{"Accept": {Values: []string{"application/json", "text/plain"}}}))
 }
 
-// TestOnlyRunTimeEnvironmentVariablesAreHandedOver. A `build`-time variable is
-// baked into the artifact, and handing one to a running workload would be
-// handing it a value that may not be the one it was built with. A variable
-// delivered some way other than the environment is not this map's either.
 func TestOnlyRunTimeEnvironmentVariablesAreHandedOver(t *testing.T) {
 	s := &Service{}
 

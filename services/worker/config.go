@@ -12,40 +12,16 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 )
 
-// config.go declares what this service is built from. Every interface here is
-// declared by the consumer and is as narrow as the use.
-//
-// THERE IS NO peer.Node IN THIS PACKAGE. It answers on a host and reads from a
-// register; it does not join a swarm of its own, hold a datastore or bootstrap
-// a DHT, and taking the bundle to get at one of them would make the service
-// impossible to construct in a test without all of it.
-
-// Register is the slice of the register this service needs: two reads, and no
-// publish.
-//
-// A WORKER CANNOT PUBLISH, and the interface is where that is enforced rather
-// than in a comment. Publishing is what a build does; a worker that could move
-// a pointer could deploy, and nothing about running a request needs to.
-//
-// Both *register.Register (this node's own) and *services/register.Client (one
-// on another peer) satisfy it, which is the whole point of the sentinel
-// mapping in that client: a node that runs both services wires them together
-// with no network, and neither this package nor its tests can tell.
+// Register is the slice of the register this service needs: two reads and no
+// publish, since a worker that could move a pointer could deploy. Both
+// *register.Register and *services/register.Client satisfy it.
 type Register interface {
 	Resolve(ctx context.Context, project, environment string) (register.Pointer, error)
 	Object(ctx context.Context, id register.ObjectID) ([]byte, error)
 }
 
-// Pool is the slice of pkg/invoke this service needs: two calls, one per thing
-// a workload can be asked to do.
-//
-// Everything about warm instances, concurrency, cold starts and scale-to-zero
-// is behind it and none of it is this service's business — which is why the
-// interface is what this service CALLS and not the pool's whole surface.
-//
-// TRANSFORM IS HERE AND NOT ON A SECOND INTERFACE because it is the same
-// pooling: a transformer is a workload that runs per request, so it wants warm
-// slots for the same reason a handler does. What differs is only the answer.
+// Pool is the slice of pkg/invoke this service calls. Transform is here because a
+// transformer is pooled per request like a handler; only the answer differs.
 type Pool interface {
 	Do(ctx context.Context, spec invoke.Spec, req *invoke.Request) (*invoke.Response, error)
 	Transform(ctx context.Context, spec invoke.Spec, req *invoke.Request) (*invoke.Outcome, error)
@@ -62,20 +38,13 @@ type Pool interface {
 	Conn(ctx context.Context, spec invoke.Spec, port string) (net.Conn, error)
 }
 
-// Config is what an operator declared, and ONLY that: values somebody writes in
-// yaml, so it decodes, marshals and round-trips. The injected collaborators are
-// not here.
+// Config is only what an operator declares in yaml; injected collaborators are not
+// here.
 type Config struct {
-	// PointerTTL is how long a resolved pointer is trusted before the register
-	// is asked again. Default 5s.
-	//
-	// IT IS THE DEPLOY PROPAGATION BUDGET, and that is the only thing it is.
-	// The compiled object a pointer names is immutable and cached forever, so
-	// this number does not affect how much work a request does — it affects
-	// how long after a deploy the old code keeps being served, and nothing
-	// else. Zero would mean a register round trip on every invocation, which
-	// is a network hop added to the request path to answer a question whose
-	// answer changes on a deploy.
+	// PointerTTL is how long a resolved pointer is trusted before the register is
+	// asked again. Default 5s. It is the deploy propagation budget: compiled objects
+	// are immutable and cached forever, so it only bounds how long old code is served
+	// after a deploy. Zero would add a register round trip to every invocation.
 	PointerTTL time.Duration
 
 	// MaxProjects is how many compiled projects to hold at once. Default 64.
@@ -89,11 +58,8 @@ type Config struct {
 	Engines Engines
 }
 
-// Engines is the engine tuning of one node, not of a project: how fast a node
-// runs code is a property of the machine and of what its operator chose.
-//
-// EMPTY IS EACH ENGINE'S DEFAULT FOR THIS ARCH, and the tier that reads a value
-// refuses one it does not know when the node starts.
+// Engines is one node's engine tuning, a property of the machine. Empty is each
+// engine's default for this arch; an unknown value is refused when the node starts.
 type Engines struct {
 	// JS is how warpjs runs a js function: "bytecode", "native" or
 	// "native+jit". Empty is pkg/invoke/js's DefaultMode, and a native mode on
@@ -105,13 +71,8 @@ type Engines struct {
 	Wasm string
 }
 
-// Pointer is PointerTTL with the default applied.
-//
-// A CONSUMER READING THE RAW FIELD GETS ZERO whenever an operator left it
-// unset, and zero here means "trust nothing, ask every time" — which is the
-// opposite of what an unset field asks for and is a network hop added to the
-// request path. The same shape bit stats.Config.Fresh, where every register in
-// the fleet looked absent because every row was older than nothing.
+// Pointer is PointerTTL with the default applied. The raw field is zero when unset,
+// which would mean asking the register on every request.
 func (c Config) Pointer() time.Duration {
 	if c.PointerTTL <= 0 {
 		return DefaultPointerTTL
@@ -119,7 +80,6 @@ func (c Config) Pointer() time.Duration {
 	return c.PointerTTL
 }
 
-// Defaults.
 const (
 	DefaultPointerTTL  = 5 * time.Second
 	DefaultMaxProjects = 64
@@ -167,9 +127,8 @@ func WithPool(p Pool) Option {
 	}
 }
 
-// WithClock injects the local clock. Tests use it; production does not.
-// WithMeter is where this service says what it accounted for — invocations,
-// what each was allowed and how long it took. Nil emits nothing.
+// WithMeter is where this service reports invocations, what each was allowed and
+// how long it took. Nil emits nothing.
 func WithMeter(m Meter) Option {
 	return func(o *options) error {
 		if m == nil {

@@ -15,11 +15,9 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// EVERY TEST HERE READS THE VOCABULARY'S OWN FIXTURE, compiled. What an access
-// block means is the compiler's, and what a grant carries is what a tier
-// enforces — so a hand-written project would be this package's idea of both.
+// Every test here reads the vocabulary's own fixture, compiled: what an access block
+// means is the compiler's, and what a grant carries is what a tier enforces.
 
-// cacheGrants are the cache entries of a resolved spec, by label.
 func cacheGrants(t *testing.T, spec invoke.Spec) map[string]invoke.Grant {
 	t.Helper()
 
@@ -46,8 +44,6 @@ func resolveIn(t *testing.T, h *harness, scope []string, kind, name string) invo
 	return spec
 }
 
-// TestTheAccessBlockBecomesGrants — the compiled `cache:` block reaches the
-// tier as something it can enforce, with the verbs the author asked for.
 func TestACacheAccessEntryBecomesAGrant(t *testing.T) {
 	h := newHarness(t)
 	spec := resolveIn(t, h, []string{"billing"}, "function", "invoice")
@@ -58,9 +54,6 @@ func TestACacheAccessEntryBecomesAGrant(t *testing.T) {
 	require.Empty(t, grants["sessions"].Refused, "billing's own sessions is crdt and servable")
 }
 
-// TestTheHandleCarriesTheRESOLVEDId, not the label. The fixture has three
-// caches called `sessions` in three namespaces, so a handle built from the
-// label would hand all three the same store.
 func TestOneLabelInTwoNamespacesIsTwoHandles(t *testing.T) {
 	h := newHarness(t)
 
@@ -76,8 +69,6 @@ func TestOneLabelInTwoNamespacesIsTwoHandles(t *testing.T) {
 		"one label, two namespaces, two caches")
 }
 
-// TestAHandleNamesTheDeployment, because a cache is per environment: staging's
-// `sessions` and production's are the same declaration and different data.
 func TestAHandleIsScopedToTheDeployment(t *testing.T) {
 	h := newHarness(t)
 	spec := resolveIn(t, h, []string{"billing"}, "function", "invoice")
@@ -87,18 +78,6 @@ func TestAHandleIsScopedToTheDeployment(t *testing.T) {
 	require.NotContains(t, handle, "sessions", "and the label is not")
 }
 
-// ── what this cloud will not serve ───────────────────────────────────────────
-
-// TestAnAuthorizedCacheIsARefusedGrantAndNotARefusedWorkload.
-//
-// The fixture's `orders` cache names an authorizer, and nothing here calls one.
-// Serving it would grant access the target's own configuration says somebody
-// else decides; refusing the WORKLOAD would take a function down over one of
-// the things it reaches. So the resource runs and that one target does not.
-// TestAGuardedCacheCarriesItsGuardRatherThanARefusal. This used to assert the
-// refusal, which was the honest answer for as long as nothing could run an
-// authorizer. What it asserts now is the thing that replaced it: the guard is
-// RESOLVED at compose time, because the tier holds a handle and not the project.
 func TestAGuardedCacheCarriesItsGuard(t *testing.T) {
 	h := newHarness(t)
 
@@ -114,9 +93,6 @@ func TestAGuardedCacheCarriesItsGuard(t *testing.T) {
 		"resolved where the project is open, not left for the tier to walk")
 }
 
-// TestOneRefusedCacheDoesNotTakeTheOtherDown, which is worth stating: the
-// vocabulary's richest function reaches two caches, one of them unservable, and
-// the function still runs with the other.
 func TestTheCanonicalFixtureServesOneCacheAndRefusesTheOther(t *testing.T) {
 	h := newHarness(t)
 	grants := cacheGrants(t, resolveIn(t, h, nil, "function", "checkout"))
@@ -126,9 +102,6 @@ func TestTheCanonicalFixtureServesOneCacheAndRefusesTheOther(t *testing.T) {
 	require.NotEmpty(t, grants["sessions"].Refused, "raft, which a CRDT store cannot keep")
 }
 
-// TestSingleWriterIsRefusedRatherThanSilentlyDowngraded. An author who wrote
-// raft asked for "nothing is silently discarded"; a CRDT merges
-// concurrent writes last-writer-wins and the loser is gone with no error.
 func TestASingleWriterCacheIsRefusedByName(t *testing.T) {
 	reason := unservable(reachFor("ledger"), specs.Resource{"consensus": specs.CacheConsensusRaft})
 
@@ -137,18 +110,11 @@ func TestASingleWriterCacheIsRefusedByName(t *testing.T) {
 	require.Contains(t, reason, `cache "ledger"`, "and which target")
 }
 
-// TestGossipIsServedRatherThanRefused, because a CRDT is STRONGER than gossip:
-// gossip is eventually consistent and lossy, a CRDT is eventually consistent
-// and not. An author who accepted a dropped entry gets one that arrives.
 func TestAGossipCacheIsServed(t *testing.T) {
 	require.Empty(t, unservable(reachFor("x"), specs.Resource{"consensus": "gossip"}))
 	require.Empty(t, unservable(reachFor("x"), specs.Resource{"consensus": "crdt"}))
 }
 
-// TestAGuardDoesNotRESCUEAnUnservableTarget. A guarded cache that is also raft
-// is still raft: the guard decides who may reach a thing, not whether this
-// cloud can serve it, and saying "ask tier_check" about a store that would lose
-// the write anyway answers the wrong question.
 func TestAnUnservableTargetIsStillRefusedWhenItIsGuarded(t *testing.T) {
 	both := specs.Resource{
 		"consensus": specs.CacheConsensusRaft,
@@ -159,7 +125,6 @@ func TestAnUnservableTargetIsStillRefusedWhenItIsGuarded(t *testing.T) {
 	require.Contains(t, unservable(reachFor("x"), both), "raft")
 }
 
-// TestAResourceThatReachesNothingCarriesNoGrants, which is most of them.
 func TestAResourceWithNoCacheAccessHasNoCacheGrants(t *testing.T) {
 	h := newHarness(t)
 
@@ -167,16 +132,13 @@ func TestAResourceWithNoCacheAccessHasNoCacheGrants(t *testing.T) {
 	spec := resolveIn(t, h, nil, "function", "charge_card")
 	require.Empty(t, cacheGrants(t, spec))
 
-	// EVERY KIND IS CARRIED, not just the ones a tier serves — a tier has to
-	// see what it cannot do for a workload, and it cannot see that from a list
-	// filtered down to what already works.
+	// Every kind is carried, not only those a tier serves, so a tier sees what it
+	// cannot do.
 	require.Len(t, spec.Reaches, 1)
 	require.Equal(t, "secret", spec.Reaches[0].Kind)
 	require.Equal(t, "stripe", spec.Reaches[0].Label)
 }
 
-// TestAMountPathComesOffTheENTRY, because two workloads mounting one volume can
-// put it in different places.
 func TestAVolumeGrantCarriesItsMountPathAndQuota(t *testing.T) {
 	h := newHarness(t)
 	spec := resolveIn(t, h, nil, "application", "db")
@@ -193,18 +155,6 @@ func TestAVolumeGrantCarriesItsMountPathAndQuota(t *testing.T) {
 	require.NotEmpty(t, volume.Settings[settingQuota], "the target's hard quota")
 }
 
-// TestTheFixturesPostgresIsRefusedAllTheWayThrough.
-//
-// `application/db` mounts a volume at /var/lib/postgresql/data — the canonical
-// case where an ephemeral filesystem is not a degraded service but a lost
-// database. It is worth following end to end because every link had to carry
-// something for the refusal to happen at all: the compiler wrote the entry, the
-// access reader told it from a lowered child, the worker resolved it into a
-// grant with its mount path, and the tier recognised the kind.
-//
-// BEFORE THIS, IT STARTED. Postgres came up, wrote into the container's own
-// layer, and lost everything when the container went — with nothing anywhere
-// saying so.
 func TestTheFixturesDatabaseIsRefusedRatherThanStartedWithoutItsDisk(t *testing.T) {
 	h := newHarness(t)
 	spec := resolveIn(t, h, nil, "application", "db")
@@ -219,11 +169,6 @@ func TestTheFixturesDatabaseIsRefusedRatherThanStartedWithoutItsDisk(t *testing.
 	require.ErrorContains(t, err, "pgdata at /var/lib/postgresql/data")
 }
 
-// TestAndWithADiskItSTARTS, which is the other half of the same story and the
-// reason the refusal is conditional rather than permanent. A compose import
-// whose database keeps its data in a named volume is the most common shape
-// there is, and while nothing could give it one, an imported stack could not
-// run at all.
 func TestTheFixturesDatabaseStartsWhenSomethingCanGiveItTheDisk(t *testing.T) {
 	h := newHarness(t)
 	spec := resolveIn(t, h, nil, "application", "db")
@@ -268,18 +213,6 @@ func (refusingBackend) Logs(context.Context, core.ContainerID) (io.ReadCloser, e
 
 var errNoBackend = errors.New("nothing should reach the backend")
 
-// ── instances ────────────────────────────────────────────────────────────────
-
-// TestASTOREThatHoldsManyCarriesTheBlockRatherThanARefusal.
-//
-// `instances:` was a refusal for as long as nothing honoured it: the target
-// named who admits an instance and how many there may be, and serving the grant
-// anyway handed a workload ONE store where the config says many. What honours it
-// now is the tier — the instance travels in the label, the validator is invoked,
-// the ceiling is counted — so what the composer owes is the block, intact.
-//
-// FOUR KINDS CAN DECLARE IT — cache, database, storage and bus — which is why
-// it is merged onto every grant rather than living in one kind's settings.
 func TestAStoreThatHoldsManyInstancesCarriesItsAdmission(t *testing.T) {
 	h := newHarness(t)
 	spec := resolveIn(t, h, nil, "function", "checkout")
@@ -298,15 +231,11 @@ func TestAStoreThatHoldsManyInstancesCarriesItsAdmission(t *testing.T) {
 		require.NotEmpty(t, g.Settings[settingLimit], "the ceiling the author wrote")
 	}
 
-	// AND THE KIND'S OWN SETTINGS SURVIVE THE MERGE. The two maps carry
-	// different keys by construction, and a merge that dropped one would be a
-	// database with no data model.
+	// The kind's own settings survive the merge, or the database loses its data model.
 	g, _ := grantFor(spec, databaseKind, "tokens")
 	require.Equal(t, "kv", g.Settings[settingType])
 }
 
-// TestASTOREThatHoldsONEDeclaresNothing, so a target with no `instances:` block
-// is addressed as itself and the tier knows the difference.
 func TestAStoreThatHoldsOneCarriesNoAdmission(t *testing.T) {
 	h := newHarness(t)
 	spec := resolveIn(t, h, nil, "function", "checkout")
@@ -316,9 +245,6 @@ func TestAStoreThatHoldsOneCarriesNoAdmission(t *testing.T) {
 	require.Empty(t, g.Settings[settingAdmission])
 }
 
-// TestAKINDSOwnReasonStillWins. shop's `sessions` is raft AND a store
-// of many instances; the refusal is about the first, because that is the one an
-// author can act on and the second is no longer a refusal at all.
 func TestAKindsOwnReasonIsStillReported(t *testing.T) {
 	h := newHarness(t)
 
@@ -341,8 +267,6 @@ func grantFor(spec invoke.Spec, kind, label string) (invoke.Grant, bool) {
 	return invoke.Grant{}, false
 }
 
-// ── streams ──────────────────────────────────────────────────────────────────
-
 func streamGrants(t *testing.T, spec invoke.Spec) map[string]invoke.Grant {
 	t.Helper()
 
@@ -355,8 +279,6 @@ func streamGrants(t *testing.T, spec invoke.Spec) map[string]invoke.Grant {
 	return out
 }
 
-// TestAStreamAccessEntryBecomesAGrant. checkout publishes to `orders`, which
-// the fixture puts on the swarm's own engine.
 func TestAStreamAccessEntryBecomesAGrant(t *testing.T) {
 	h := newHarness(t)
 	grants := streamGrants(t, resolveIn(t, h, nil, "function", "checkout"))
@@ -367,10 +289,6 @@ func TestAStreamAccessEntryBecomesAGrant(t *testing.T) {
 	require.Contains(t, grants["orders"].Handle, "shop/prod/")
 }
 
-// TestAnExternalStreamEngineIsRefusedByName. Kafka and NATS are each a wire
-// protocol and a driver — a release, not a config value, which is what the
-// schema says where it closes the set — so publishing into nothing would be
-// the silent kind of failure.
 func TestAStreamOnAnEngineThisCloudLacksIsRefused(t *testing.T) {
 	for _, engine := range []string{"kafka", "nats"} {
 		reason := unservable(
@@ -393,11 +311,6 @@ func TestAStreamOnTheSwarmsOwnEngineIsServed(t *testing.T) {
 		specs.Reach{Kind: streamKind, Label: "orders"}, specs.Resource{}))
 }
 
-// ── storage ──────────────────────────────────────────────────────────────────
-
-// TestASTORAGEAccessEntryBecomesAGrant carrying the data model and the ceiling,
-// which is the same shape a database's does — the type is the key to the block
-// the rest lives under.
 func TestAStorageAccessEntryCarriesItsTypeAndSize(t *testing.T) {
 	h := newHarness(t)
 	spec := resolveIn(t, h, nil, "function", "checkout")
@@ -409,9 +322,6 @@ func TestAStorageAccessEntryCarriesItsTypeAndSize(t *testing.T) {
 	require.Equal(t, "true", g.Settings[settingVersioning])
 }
 
-// TestASTREAMINGStoreIsRefusedByName. Its verbs move bytes a caller does not
-// hold all of at once, so serving it through the object functions would mean a
-// guest holding a whole stream in memory to write it.
 func TestAStreamingStorageIsRefused(t *testing.T) {
 	require.Equal(t, "", unservable(
 		specs.Reach{Kind: storageKind, Label: "receipts"},
@@ -424,9 +334,6 @@ func TestAStreamingStorageIsRefused(t *testing.T) {
 	require.Contains(t, why, "object storage")
 }
 
-// TestALOGISREFUSEDUNLESSITISRAFT, compared against the vocabulary's own value
-// rather than a literal beside it: a log asking for the raft it is served is
-// never refused for it, and one asking to converge is refused by name.
 func TestALogIsRefusedUnlessItIsRaft(t *testing.T) {
 	reach := specs.Reach{Kind: specs.KindSync, Label: "events"}
 	log := func(consensus string) specs.Resource {

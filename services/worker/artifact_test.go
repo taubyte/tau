@@ -10,27 +10,10 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// artifact_test is about the one function that decides WHAT RUNS.
-//
-// It had no test. That is how a component reference shipped resolving to a
-// configuration document id: `source.component` is declared `Ref("component")`,
-// so a compiled resource carries the referenced component's own RESOURCE id, and
-// this function returned it verbatim as the artifact. The tier then asked the
-// asset store for bytes filed under an id the store has never held.
-//
-// The same switch already carried this bug's post-mortem, one case further down:
-// the builtin arm exists because falling through to the artifact seam "asked the
-// build service for the output of" a program that was never built, "which is why
-// every workflow this compiler produced resolved to ErrNoArtifact." Same
-// function, same class, opposite direction.
-//
-// WHAT IS ASSERTED IS WHAT THE SEAM WAS ASKED, and never what a fake answered.
-// The harness's own artifactFunc concocts `registry/<project>/<env>/<kind>@sha256:<id>`
-// — a container-registry reference for what is usually a wasm component — so an
-// assertion on that string would be an assertion about the fake. The arguments
-// are the behaviour: which id, under which kind, and whether it was asked at all.
+// What is asserted is what the seam was asked, never what the fake answered: the
+// harness's artifactFunc concocts a registry reference, so the arguments (which id,
+// under which kind, asked at all) are the behaviour.
 
-// asked records what the artifact seam was asked about.
 type asked struct {
 	project     string
 	environment string
@@ -78,7 +61,6 @@ func source(fields ...string) specs.Resource {
 	return specs.Resource{"source": block}
 }
 
-// TestArtifactOf is every arm of the switch, said as what the seam was asked.
 func TestArtifactOf(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -92,10 +74,8 @@ func TestArtifactOf(t *testing.T) {
 		askedFor string // ...about this id
 		askedAs  string // ...under this kind
 	}{
-		// THE ARM THIS FILE EXISTS FOR. A component's id is asked ABOUT, not
-		// answered WITH — and asked about as a `component`, because the artifact
-		// was published under the component's own id and not under the id of
-		// whichever workload happens to name it.
+		// A component's id is asked about, not answered with, and asked about as a
+		// `component`, since the artifact is published under the component's own id.
 		{
 			name:     "a component reference is resolved through the seam",
 			resource: source("kind", "component", "component", theComponent),
@@ -105,9 +85,8 @@ func TestArtifactOf(t *testing.T) {
 			askedFor: theComponent,
 			askedAs:  "component",
 		},
-		// The half that is easiest to get wrong: `resourceID` is the NAMING
-		// workload's, and passing it here would look right and resolve to a
-		// different build — or to none.
+		// `resourceID` is the naming workload's; passing it here would resolve a different
+		// build, or none.
 		{
 			name:     "and never by the naming workload's own id",
 			resource: source("kind", "component", "component", theComponent),
@@ -125,8 +104,7 @@ func TestArtifactOf(t *testing.T) {
 			err:      ErrNoArtifact,
 			says:     "function/checkout names no component",
 		},
-		// A node that resolves no artifacts cannot run a component, and the
-		// refusal names which one so nobody has to guess which resource stalled.
+		// A node with no artifact seam cannot run a component, and the refusal names which.
 		{
 			name:     "a component with no seam wired is refused naming it",
 			resource: source("kind", "component", "component", theComponent),
@@ -144,8 +122,7 @@ func TestArtifactOf(t *testing.T) {
 			askedAs:  "component",
 		},
 
-		// THE OTHER ARMS ARE UNCHANGED, which is what says this moved one case
-		// and not the switch.
+		// The other arms are unchanged.
 		{
 			name:     "an image is its own reference and asks nothing",
 			resource: source("kind", "image", "image", "ghcr.io/acme/db:16"),
@@ -220,10 +197,6 @@ func TestArtifactOf(t *testing.T) {
 
 var errUnbuilt = errors.New("the build service has no artifact for that resource")
 
-// TestAComponentIsNotTheNamingWorkloadsArtifact is the whole bug in one
-// assertion, separate because it is the one a reader should not have to find in
-// a table: two workloads naming ONE component both run that component's build,
-// and neither runs anything filed under its own id.
 func TestTwoWorkloadsNamingOneComponentRunTheSameBuild(t *testing.T) {
 	seam := &asked{answer: "bafyoneartifact"}
 	s := resolving(seam)

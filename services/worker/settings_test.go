@@ -13,18 +13,8 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// settings_test ties the Settings key space to the vocabulary.
-//
-// # The gap this closes
-//
-// A compiled resource is values at paths. This package files some of them into
-// a `Settings` map keyed by strings, and every tier reads them back by the same
-// strings — declared independently, in another package, with nothing comparing
-// the two. So the ends agreed by copying, and three keys had drifted: `keys/ttl`
-// and `keys/size` where the vocabulary says `ttl` and `size`, and `versioning`
-// where it says `object/versioning`. Nothing failed. What an author wrote simply
-// stopped being applied, and the const block above them claimed they were "the
-// vocabulary's own paths".
+// Ties the Settings key space to the vocabulary: tiers read these keys back by
+// strings declared in other packages, and nothing else compares the two.
 
 // composed are keys this package BUILT rather than copied, so no attribute
 // declares them. Every one needs a reason; a key arriving here without one is
@@ -35,23 +25,14 @@ var composed = map[string]string{
 	"invoke/namespace":   "where that target was found, as a resolved scope chain rather than the sentence that produced it.",
 }
 
-// carries names, per kind, the kinds whose settings may ride its grant.
-//
-// PERFORMING AN OPERATION ON A LOWERED KIND LANDS ON SOMETHING ELSE, and what
-// it lands on has settings of its own that the performer needs. `start` on a
-// workflow is a send to its first step's queue, so startedBy merges that
-// queue's settings onto the workflow's grant — otherwise a tier would open the
-// queue with library defaults while the dispatcher opened the same queue with
-// what its author wrote.
+// carries names, per kind, the kinds whose settings may ride its grant: `start` on a
+// workflow is a send to its first queue, so that queue's settings are merged on.
 var carries = map[string][]string{
 	"workflow": {"sync"},
 }
 
-// entryField reads a key the entry record produced: `entry/<op>/<field>`.
-//
-// THE OPERATION IS AN ITER KEY, so it is chosen per operation and cannot be a
-// static attribute name — `entry/start/kind` and `entry/invoke/kind` are one
-// declaration. What IS declared is the field, so that is what gets checked.
+// entryField reads a key the entry record produced: `entry/<op>/<field>`. The op is
+// an iter key, so only the field is a declared attribute.
 func entryField(key string) (string, bool) {
 	parts := strings.Split(key, "/")
 	if len(parts) != 3 || parts[0] != "entry" {
@@ -60,7 +41,6 @@ func entryField(key string) (string, bool) {
 	return parts[2], true
 }
 
-// TestEVERYKEYTHISPACKAGEEMITSISONETHEVOCABULARYDECLARES.
 func TestEveryEmittedSettingIsAnAttribute(t *testing.T) {
 	h := newHarness(t)
 	holding(t, h, "function", "checkout")
@@ -142,24 +122,11 @@ func TestEveryEmittedSettingIsAnAttribute(t *testing.T) {
 		"these keys are not attributes of the kind they were filed against - either the schema renamed the attribute, or this package invented a path (see `composed` for how to declare one it built on purpose)")
 }
 
-// declared is every setting key this package spells, against the kind whose
-// attribute it is meant to be.
-//
-// # Why this exists beside the test above
-//
-// That one walks what a compile actually EMITTED, so it catches a key this
-// package invented. It cannot catch the opposite and more dangerous case: when
-// the vocabulary renames an attribute, the read returns nothing, the key is
-// simply absent from the map, and a walk over what was emitted sees nothing to
-// object to. The tier then falls back to its own default and an author's
-// declared visibility timeout, retry budget or quota stops taking effect with a
-// green build.
-//
-// So the constants themselves are pinned. Renaming an attribute in the
-// vocabulary now fails HERE, naming the constant that has to move with it.
+// declared is every setting key this package spells, against its kind. The test above
+// walks what a compile emitted and cannot see a key that vanished after a vocabulary
+// rename; pinning the constants catches that.
 var declared = map[string][]string{
-	// instances/* and deliver/* sit on the kinds that HOLD instances and are
-	// delivered to, which is where attachAccess puts them — not on every kind.
+	// instances/* and deliver/* sit only on the kinds attachAccess puts them on.
 	"cache":    {settingTTL, settingSize, settingAdmission, settingLimit, settingValidator, settingValidated, settingDeliverPort, settingDeliverPath},
 	"volume":   {settingQuota, settingCheckpointEvery, settingMountPath},
 	"storage":  {settingStorageType, settingStorageSize, settingVersioning},
@@ -170,7 +137,6 @@ var declared = map[string][]string{
 	"function": {settingDescription, settingAuthorizer, settingAuthorizerScope},
 }
 
-// TestEVERYKEYTHISPACKAGESPELLSSTILLNAMESANATTRIBUTE.
 func TestEveryDeclaredSettingNamesAnAttribute(t *testing.T) {
 	for kind, keys := range declared {
 		for _, key := range keys {
@@ -185,14 +151,6 @@ func TestEveryDeclaredSettingNamesAnAttribute(t *testing.T) {
 	}
 }
 
-// TestEVERYCLOSEDSETVALUETHISPACKAGESPELLSISSTILLINTHESET.
-//
-// A key that stops matching empties a map; a VALUE that stops matching does
-// something worse, because these are compared for equality to decide whether to
-// serve something. Rename `object` in the vocabulary and every storage in the
-// cloud is refused as "not the type we serve"; rename `authorizer` and every
-// guard is refused as not being one. Both are loud, and both blame the wrong
-// thing — which is why the literal is pinned rather than trusted.
 func TestEveryClosedSetValueIsStillInItsSet(t *testing.T) {
 	require.Contains(t, schema.StorageTypes(), objectStorage,
 		"the one storage model this cloud serves is no longer a model the vocabulary has")
@@ -202,9 +160,8 @@ func TestEveryClosedSetValueIsStillInItsSet(t *testing.T) {
 	require.Contains(t, schema.HostWorlds(), wasm.WorldAuthorizer,
 		"the world a guard must be built against is no longer a world")
 
-	// AND THE SWITCH COVERS THE SET. syncSettings carries a type's own fields,
-	// and a type it has no arm for travels with none of them — silently, since
-	// the default arm returns what it has. This is the one place that notices.
+	// The switch covers the set: a type syncSettings has no arm for travels with none of
+	// its fields.
 	covered := map[string]bool{queueType: true, logType: true}
 	for _, model := range schema.SyncTypes() {
 		require.True(t, covered[model],

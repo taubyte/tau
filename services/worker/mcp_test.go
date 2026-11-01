@@ -12,12 +12,8 @@ import (
 	"github.com/taubyte/tau/pkg/mcp"
 )
 
-// mcp_test drives the registry an `mcp` resource becomes: its tools are its
-// access block, and calling one invokes the function it names.
-//
-// IT WORKS OFF A SPEC RATHER THAN A COMPILED FIXTURE, because adding an mcp to
-// fixtures/basic churns the byte-for-byte decompile goldens — and what is being
-// tested here is the mapping from grants to tools, which a spec states exactly.
+// Works off a spec rather than a compiled fixture: adding an mcp to fixtures/basic
+// churns the decompile goldens, and the grants-to-tools mapping is what is tested.
 
 func toolGrant(label, description string, ops ...string) invoke.Grant {
 	g := invoke.Grant{
@@ -38,7 +34,6 @@ func registry(t *testing.T, grants ...invoke.Grant) *mcpTools {
 	}
 }
 
-// TestTOOLSARETHEACCESSBLOCK, and there is no second list.
 func TestAnMcpPublishesTheFunctionsItMayInvoke(t *testing.T) {
 	tools, err := registry(t,
 		toolGrant("checkout", "places an order", "invoke"),
@@ -51,8 +46,6 @@ func TestAnMcpPublishesTheFunctionsItMayInvoke(t *testing.T) {
 	require.Equal(t, "places an order", tools[0].Description)
 }
 
-// TestONLYWHATITMAYINVOKE. A grant for a cache is not a tool, and neither is a
-// function granted without the verb.
 func TestAGrantThatIsNotAnInvokableFunctionIsNotATool(t *testing.T) {
 	cache := invoke.Grant{Kind: "cache", Label: "sessions", Ops: []string{"get", "put"}}
 
@@ -67,8 +60,6 @@ func TestAGrantThatIsNotAnInvokableFunctionIsNotATool(t *testing.T) {
 	require.Equal(t, "checkout", tools[0].Name)
 }
 
-// TestAREFUSEDTARGETISNOTPUBLISHED. Listing a tool this cloud will not serve
-// costs a model a turn to learn what the listing already knew.
 func TestAToolThisCloudWillNotServeIsNotListed(t *testing.T) {
 	refused := toolGrant("legacy", "", "invoke")
 	refused.Refused = "that runtime is not available here"
@@ -80,8 +71,6 @@ func TestAToolThisCloudWillNotServeIsNotListed(t *testing.T) {
 	require.Equal(t, "checkout", tools[0].Name)
 }
 
-// TestCALLINGATOOLTHATWASNOTPUBLISHED is no-such-tool, whatever the reason it
-// is absent.
 func TestCallingSomethingNotPublishedIsNoSuchTool(t *testing.T) {
 	r := registry(t, toolGrant("checkout", "", "invoke"))
 
@@ -94,9 +83,6 @@ func TestCallingSomethingNotPublishedIsNoSuchTool(t *testing.T) {
 	require.ErrorIs(t, err, mcp.ErrNoSuchTool, "a refused tool cannot be called either")
 }
 
-// TestAGETISDECLINEDBYNAME. A client that GETs is asking to open the stream
-// half of Streamable HTTP, which this kind declines — so it is told rather than
-// left waiting on an empty answer.
 func TestAGetIsToldThisServerIsStateless(t *testing.T) {
 	s := &Service{}
 	res, err := s.serveMCP(context.Background(),
@@ -107,7 +93,6 @@ func TestAGetIsToldThisServerIsStateless(t *testing.T) {
 	require.Equal(t, []string{http.MethodPost}, res.Headers["Allow"])
 }
 
-// TestANOTIFICATIONIS202, because a message with no id expects no body.
 func TestANotificationIsAcceptedWithNothingInIt(t *testing.T) {
 	s := &Service{}
 	res, err := s.serveMCP(context.Background(), Target{Kind: mcpKind}, invoke.Spec{},
@@ -118,8 +103,6 @@ func TestANotificationIsAcceptedWithNothingInIt(t *testing.T) {
 	require.Empty(t, res.Body)
 }
 
-// TestTHECACHINGFIELDSARETHEVOCABULARYS, answered as Cache-Control because that
-// is the mechanism everything between here and the caller implements.
 func TestTheListingsCacheScopeReachesTheAnswer(t *testing.T) {
 	for _, c := range []struct {
 		scope, ttl, want string
@@ -140,8 +123,6 @@ func TestTheListingsCacheScopeReachesTheAnswer(t *testing.T) {
 	}
 }
 
-// TestTHEANSWERISJSON, which is what a Streamable HTTP client expects from a
-// POST it did not ask to upgrade.
 func TestTheAnswerSaysItIsJson(t *testing.T) {
 	s := &Service{}
 	res, err := s.serveMCP(context.Background(), Target{Kind: mcpKind}, invoke.Spec{},
@@ -156,15 +137,6 @@ func TestTheAnswerSaysItIsJson(t *testing.T) {
 	require.Equal(t, "2.0", out["jsonrpc"])
 }
 
-// TestAnInvokeGrantCarriesTheFunctionItRESOLVEDTO — the defect this pair of
-// tests exists for, and the reason the ones above did not catch it: they build
-// a spec by hand, so they agree with whatever the code believes a grant holds.
-// These go through Resolve against the vocabulary's own fixture.
-//
-// A TOOL IS PUBLISHED UNDER THE AUTHOR'S LABEL, and Call used to build its
-// target out of that label in the mcp's own scope. `notify` sits in /shop and
-// reaches `relay` in `local`, so the label alone names nothing — resolving it is
-// the composer's job, where the compiled project is open.
 func TestAnInvokeGrantCarriesTheFunctionItResolvedTo(t *testing.T) {
 	h := newHarness(t)
 	spec := resolveIn(t, h, []string{"shop"}, "function", "notify")
@@ -183,8 +155,6 @@ func TestAnInvokeGrantCarriesTheFunctionItResolvedTo(t *testing.T) {
 		"where it was FOUND, not the scope of whoever asked - a caller building a target out of the label alone looked in /shop and found nothing")
 }
 
-// TestTheADDRESSISWHATCALLGOESTO. The registry reads what the composer
-// recorded, so a tool whose target lives elsewhere is invoked where it lives.
 func TestCallTargetsTheResolvedAddressAndNotTheLabel(t *testing.T) {
 	h := newHarness(t)
 	spec := resolveIn(t, h, []string{"shop"}, "function", "notify")

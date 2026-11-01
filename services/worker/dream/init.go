@@ -1,19 +1,7 @@
-// Package dream runs the worker on a peer of an in-process mesh.
-//
-// # What a universe can and cannot prove about a worker
-//
-// IT CAN PROVE THE LOOKUP, which is what this service is. A request naming a
-// resource crosses a real libp2p stream, the worker dials a real register on
-// another node, reads a really-compiled project out of it and composes a spec
-// from what the author wrote. Every hop there is the production one.
-//
-// IT CANNOT PROVE THE TIER unless the machine running the universe has a
-// container backend. Starting a container needs docker or containerd, and a
-// universe is a process — so the pool here is built from the runtimes the
-// composer supplies with Runtimes, and a universe that supplies none reaches
-// the tier and stops there. That is the honest boundary: the tier is proven in
-// pkg/invoke/container's own tests, against real backends, and repeating it
-// here would be repeating it badly.
+// Package dream runs the worker on a peer of an in-process mesh. It proves the
+// lookup over real streams and a real register. It cannot prove the tier without a
+// container backend: the pool is built from the runtimes set with Runtimes, and a
+// universe supplying none stops at the tier (proven in pkg/invoke/container).
 package dream
 
 import (
@@ -32,20 +20,14 @@ import (
 	"github.com/taubyte/tau/services/worker"
 )
 
-// runtimes are the tiers a universe's workers run on.
-//
-// IT IS A PACKAGE-LEVEL HOOK AND THAT IS NOT AN ACCIDENT. A compute tier is a
-// live object holding a connection to a container daemon, shared by every
-// worker a test starts. A composer that has one sets it before starting a
-// universe; a test that does not, does not.
+// runtimes are the tiers a universe's workers run on, package-level because a tier
+// is a live object shared by every worker a test starts.
 var runtimes struct {
 	sync.Mutex
 	list []invoke.Runtime
 }
 
-// Runtimes sets the tiers workers in this process will run on. It replaces
-// whatever was set before, and returns what it replaced so a test can put it
-// back.
+// Runtimes sets the tiers, and returns what it replaced so a test can put it back.
 func Runtimes(rts ...invoke.Runtime) []invoke.Runtime {
 	runtimes.Lock()
 	defer runtimes.Unlock()
@@ -73,11 +55,8 @@ func create(ctx context.Context, h host.Host, at libp2ppeer.ID) (io.Closer, erro
 	tiers := append([]invoke.Runtime(nil), runtimes.list...)
 	runtimes.Unlock()
 
-	// A POOL WITH NO TIERS IS STILL A POOL. pkg/invoke refuses to build one, so
-	// a universe that supplied none gets a pool holding a single tier that
-	// starts nothing and says so — which is what makes "the lookup worked and
-	// the tier was missing" a distinguishable answer rather than a
-	// construction failure at boot.
+	// pkg/invoke refuses a pool with no tiers, so a universe that supplied none gets a
+	// single tier that starts nothing and says so.
 	if len(tiers) == 0 {
 		tiers = []invoke.Runtime{absent{}}
 	}
@@ -107,21 +86,16 @@ type closer struct {
 	pool *invoke.Pool
 }
 
-// Close stops the worker, then the pool it was given.
-//
-// THE POOL IS CLOSED HERE BECAUSE IT WAS BUILT HERE. worker.Service takes a
-// pool and never closes it — a pool is per-node and shared with everything else
-// the node runs — so this is the one place that owns this particular one.
+// Close stops the worker, then the pool: worker.Service never closes its pool, and
+// this pool was built here.
 func (c closer) Close() error {
 	err := c.svc.Close()
 	c.pool.Close()
 	return err
 }
 
-// universeRegister reads from the register on one named peer.
-//
-// IT DIALS ON FIRST USE RATHER THAN AT CONSTRUCTION, so a worker can be up
-// before its register answers; the client is kept once it is made.
+// universeRegister reads from the register on one named peer, dialling on first use
+// so a worker can be up before its register answers.
 type universeRegister struct {
 	host host.Host
 	at   libp2ppeer.ID
@@ -161,14 +135,8 @@ func (r *universeRegister) dial() (*registerService.Client, error) {
 	return c, nil
 }
 
-// absent exists only so that a pool can be built at all: pkg/invoke refuses one
-// with no tiers, which is right for a node and wrong for a universe that is
-// testing the lookup rather than the running.
-//
-// ITS NAME MATCHES NO TIER IN THE VOCABULARY, so it is never selected and the
-// pool answers ErrNoRuntime naming the tier the config actually asked for —
-// which is a better answer than a placebo tier that pretended to start
-// something.
+// absent exists only so a pool can be built. Its name matches no tier in the
+// vocabulary, so the pool answers ErrNoRuntime naming the tier the config asked for.
 type absent struct{}
 
 func (absent) Name() string { return "none" }

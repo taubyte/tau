@@ -9,34 +9,11 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// consume.go answers "what should this node be draining", which is the question
-// a queue dispatcher asks and nothing else could.
-//
-// # Enumeration is the whole problem, and laziness is the answer
-//
-// The register DELIBERATELY DOES NOT ENUMERATE (register.proto: "NOTHING HERE
-// ENUMERATES") — a pointer is read by name, and a node that could list every
-// deployment in the cloud would be a node that could walk somebody else's. So
-// there is no list to ask for.
-//
-// What there IS, is what this node already holds: a compiled project reaches
-// the cache here because something asked for it — a request routed to this
-// node, a publish it saw. So a node drains the queues of the deployments it is
-// ALREADY SERVING, and a deployment nobody has touched drains nowhere until
-// somebody does.
-//
-// THAT IS NOT A GAP so much as the same rule the worker already follows: a
-// queue matters once its project is running somewhere, and the thing that makes
-// it run somewhere is a request. What it does mean is that the FIRST item
-// pushed to a queue in a deployment no node holds waits — which is why the
-// producer is itself a workload, running on a node that by definition holds it.
-//
-// # Every node runs the loop and only one of them does anything
-//
-// A claim is exclusive and leader-only, so no election is needed: every node
-// serving a deployment may run the loop, and all but the raft leader get
-// ErrNotLeader and do nothing. That is cheaper than agreeing on who consumes
-// and it has no split-brain to reason about.
+// The register deliberately does not enumerate, so a node drains the queues of
+// deployments it already serves (held because a request or publish reached it). The
+// first item pushed in a deployment no node holds waits, which is why the producer is
+// itself a workload. Every serving node runs the loop; a claim is exclusive and
+// leader-only, so all but the raft leader get ErrNotLeader and do nothing.
 
 // Consumer is one workload that declared it receives from one queue.
 type Consumer struct {
@@ -57,39 +34,25 @@ type Consumer struct {
 	Builtin string
 
 	// Invokes is what a builtin driver was granted `invoke` on, resolved into
-	// addresses. It is filled here rather than worked out downstream because
-	// the compiled grant carries a LABEL and a namespace, and turning those
-	// into an address needs the project — which this walk has open and a
-	// dispatcher does not.
+	// addresses here because the grant carries a label and namespace and resolving
+	// them needs the project.
 	Invokes []Target
 
 	// Sends is what it was granted `send` on: for a step driver, the next
 	// step's queue. The last step has none, which is exactly where a run ends.
 	Sends []invoke.Grant
 
-	// Concurrency is how many items this workload may hold at once, off its
-	// own `limits/concurrency`.
-	//
-	// IT IS THE CONSUMER'S NUMBER AND NOT THE DISPATCHER'S. The vocabulary
-	// says `limits.concurrency` is "how many items an instance may hold at
-	// once", which is only meaningful if the platform is the one pushing — so
-	// this is where that sentence becomes true. Zero means the author wrote
-	// none, and one at a time is the answer that cannot surprise anybody.
+	// Concurrency is how many items this workload may hold at once, off its own
+	// `limits/concurrency`. Zero means none written: one at a time.
 	Concurrency int
 }
 
 // receiveOp is the vocabulary's own verb for the delivered half of a queue.
 const receiveOp = "receive"
 
-// Consumers is every queue consumer in the deployments this node already holds.
-//
-// IT RESOLVES ONLY WHAT DECLARED ONE. The walk reads the access block off the
-// compiled project, which is already in memory; a full resolve happens for the
-// handful of resources that asked to receive, and for nothing else.
-//
-// A refused grant is RETURNED rather than dropped, because the caller has to be
-// able to say why a queue is not being drained — a consumer silently missing
-// from this list is a queue that fills up with nothing anywhere explaining it.
+// Consumers is every queue consumer in the deployments this node holds. Only
+// resources that declared `receive` are resolved. A refused grant is returned, not
+// dropped, so the caller can say why a queue is not drained.
 func (s *Service) Consumers(ctx context.Context) []Consumer {
 	var out []Consumer
 	s.eachDeployment(ctx, func(proj *specs.Project, name, environment string) {
@@ -116,9 +79,7 @@ func (s *Service) consumersIn(ctx context.Context, proj *specs.Project, name, en
 		return nil
 	}
 	for _, kind := range kinds {
-		// A KIND THAT RUNS NOTHING CANNOT CONSUME. EnginesOf is empty for a
-		// queue, a zone, a volume — reading their access blocks would be
-		// asking a cache what it receives.
+		// A kind that runs nothing (no engines) cannot consume.
 		if len(schema.EnginesOf(kind)) == 0 {
 			continue
 		}
@@ -156,9 +117,7 @@ func (s *Service) consumersOf(ctx context.Context, proj *specs.Project, name, en
 		Scope: scope, Kind: kind, Name: resourceName,
 	}
 
-	// ONE RESOLVE, not one per entry: a spec carries every grant, and resolving
-	// twice for a workload that consumes two queues would read the same
-	// document twice and could read two revisions of it.
+	// One resolve per workload, not per entry, so two entries cannot read two revisions.
 	spec, err := s.Resolve(ctx, target)
 	if err != nil {
 		return nil
@@ -167,11 +126,8 @@ func (s *Service) consumersOf(ctx context.Context, proj *specs.Project, name, en
 	var out []Consumer
 	for _, grant := range spec.Reaches {
 		reach, ok := wanted[grant.Label]
-		// `receive` IS A QUEUE'S VERB AND NO OTHER TYPE'S, so an entry that asks
-		// for it has already selected the type — checkSyncOps refuses one that
-		// asks a log to be received from. The kind check alone is enough here for
-		// that reason, and the type check below is what makes it hold if a third
-		// primitive ever declares a delivery of its own.
+		// `receive` is only a queue's verb (checkSyncOps refuses it on a log); the type
+		// check keeps this true if another primitive ever declares a delivery.
 		if grant.Kind != syncKind || grant.Settings[settingSyncType] != queueType || !ok {
 			continue
 		}
@@ -188,12 +144,8 @@ func (s *Service) consumersOf(ctx context.Context, proj *specs.Project, name, en
 	return out
 }
 
-// invokedBy is every function this resource may invoke, as an address.
-//
-// A DRIVER IS PLATFORM CODE AND THE FUNCTION IS THE AUTHOR'S. What the lowering
-// grants a step's driver is `invoke` on exactly the function the step named, so
-// this is one entry for a step and is a list because nothing about the shape
-// says it has to be.
+// invokedBy is every function this resource may invoke, as an address. A step's
+// driver is granted `invoke` on exactly its step's function.
 func invokedBy(resource specs.Resource, name, environment string, scope []string) []Target {
 	var out []Target
 	for _, reach := range resource.Reaches(functionKind) {
@@ -210,11 +162,7 @@ func invokedBy(resource specs.Resource, name, environment string, scope []string
 }
 
 // sentToBy is every queue this resource may send to, except the one it receives
-// from.
-//
-// THE EXCEPTION IS THE POINT. A step driver holds two queue grants — its own,
-// to receive from, and the next step's, to hand on to — and a driver that sent
-// to its own would be a run that never leaves the step it is on.
+// from: a driver sending to its own queue would never leave its step.
 func sentToBy(spec invoke.Spec, receiving string) []invoke.Grant {
 	var out []invoke.Grant
 	for _, g := range spec.Reaches {
@@ -227,7 +175,7 @@ func sentToBy(spec invoke.Spec, receiving string) []invoke.Grant {
 	return out
 }
 
-// The vocabulary's own words for what a driver is granted.
+// The vocabulary's words for what a driver is granted.
 const (
 	functionKind = specs.KindFunction
 	opInvoke     = "invoke"

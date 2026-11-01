@@ -15,11 +15,9 @@ import (
 	workerv2 "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v2"
 )
 
-// worlds_test.go drives the four worlds a gateway and a proxy reach a worker
-// through: a transformer, a router, a proxy router and a proxy transformer. Each
-// crosses the wire and comes back one arm of its answer at a time, a malformed
-// answer is refused rather than defaulted, and a function named for a world it was
-// not built against is refused at the resolve.
+// The four worlds a gateway and a proxy reach a worker through: transformer, router,
+// proxy router, proxy transformer. Each arm crosses the wire, a malformed answer is
+// refused, and a function built for another world is refused at the resolve.
 
 // The fake tier answers each world from what it was handed, so a test can steer
 // it to every arm. A path, a peek or a chunk naming an arm picks that arm;
@@ -228,7 +226,6 @@ func TestAProxyTransformerShapesOverTheWire(t *testing.T) {
 	require.ErrorIs(t, err, specs.ErrNotFound)
 }
 
-// A CALL WITH NO TARGET IS REFUSED BEFORE ANYTHING IS RESOLVED, on every world.
 func TestAWorldCallWithNoTargetIsRefused(t *testing.T) {
 	h, _ := worldsHarness(t)
 	handler := &handler{s: h.Worker}
@@ -243,8 +240,6 @@ func TestAWorldCallWithNoTargetIsRefused(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoTarget)
 }
 
-// WHAT A NODE ADVERTISES is what it holds: the service alone before any project is
-// read, and each deployment it has read after — with every proxy in it.
 func TestANodeAdvertisesWhatItHolds(t *testing.T) {
 	h := newHarness(t)
 	require.Equal(t, []string{Descriptor.Name}, h.Worker.Serving())

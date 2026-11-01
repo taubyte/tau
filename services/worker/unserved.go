@@ -9,47 +9,24 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// unserved.go is resolve's arm for what a workload declares ABOUT ITSELF.
-//
-// # Carried, or refused by name
-//
-// reachesOf decides per target, and degrades per target: a grant this cloud
-// cannot serve is refused and the workload still runs. A workload's OWN
-// declarations have nothing to degrade to. A ceiling on its CPU, a check of
-// whether it is alive, a registry credential to pull it with — served without
-// them, the workload is a different deployment from the one written, and the
-// author finds out from a bill, a wedged instance or a pull that failed for a
-// reason nobody wrote down.
-//
-// So each one is either CARRIED onto the spec, where a tier applies it, or the
-// resolve fails naming it. Nothing in between: a value this file reads and then
-// drops is the defect the vocabulary's consumed test exists to catch.
-//
-// # A default is never a refusal
-//
-// The compiler materialises defaults — `liveness/failures` is 3 on every
-// application whether anybody wrote a liveness block or not. Every test below
-// is on a value the AUTHOR wrote: a pointer that is non-nil only when the
-// object carries it and no default supplies one, a string the compiler never
-// fills, or a block's Declared, which is false for a block of defaults alone.
+// What a workload declares about itself has nothing to degrade to, unlike a grant: it
+// is either carried onto the spec for a tier to apply, or the resolve fails naming
+// it. A default is never a refusal: every check is on a value the author wrote (a
+// non-nil pointer, a string the compiler never fills, or a block's Declared).
 
 // ErrUnserved is a workload declaring something about itself that this cloud
 // does not do. The message names the attribute and what to change.
 var ErrUnserved = errors.New("worker: the workload declares something this cloud does not do")
 
-// applied carries what a tier honours and refuses what none does.
-//
-// IT RUNS AFTER the spec is otherwise complete, so the runtime it judges by is
-// the one the spec will actually be handed to.
+// applied carries what a tier honours and refuses what none does. It runs after the
+// spec is otherwise complete, so it judges by the real runtime.
 func applied(spec *invoke.Spec, t Target, proj *specs.Project, r specs.Resource, resourceID string) error {
 	var refused []string
 
 	workload := specs.ReadWorkloadBlock(r)
 
-	// A CPU CEILING IS A CFS QUOTA, and only a container has a cgroup to put
-	// one on. A wasm guest is metered in fuel and memory pages; a millicore
-	// figure has no counterpart there, so it is refused rather than read as
-	// "fast enough".
+	// A CPU ceiling is a CFS quota, which only a container has; a wasm guest is metered
+	// in fuel and pages.
 	if cpu := workload.ExecutionCpu; cpu != nil {
 		if spec.Runtime == runtimeContainer {
 			spec.CPU = *cpu
@@ -59,9 +36,7 @@ func applied(spec *invoke.Spec, t Target, proj *specs.Project, r specs.Resource,
 		}
 	}
 
-	// A CEILING ON INSTANCES IS A CLOUD-WIDE COUNT, and the pool that bounds
-	// instances bounds them per node. Applied per node it would allow the
-	// ceiling times the fleet, which is the opposite of what a ceiling is for.
+	// A ceiling on instances is cloud-wide, and the pool bounds them per node.
 	if most := workload.LimitsMaxInstances; most != nil {
 		refused = append(refused, fmt.Sprintf("limits.max_instances is %d, and nothing in this cloud counts a workload's instances across nodes — "+
 			"each node would run up to its own ceiling", *most))
@@ -90,10 +65,8 @@ func applied(spec *invoke.Spec, t Target, proj *specs.Project, r specs.Resource,
 			"push it to a registry that needs no credential", name, inNamespace(source.SourceImagePullSecretNamespace)))
 	}
 
-	// A DELEGATED SERVING BLOCK IS THE COMPILE'S TO READ, and the compiled
-	// object records every one it did. One it did not read means this resource
-	// runs with what the config repository says instead — the compile reported
-	// it, and running it anyway would make that report a footnote.
+	// A delegated serving block the compile did not read means the resource would run
+	// with the config repository's values instead.
 	if config := source.SourceConfig; config != "" && !proj.Filled(resourceID) {
 		refused = append(refused, fmt.Sprintf("source.config names %q, and the compile that produced this deployment did not read it — "+
 			"what it would run is the config repository's block, not that file's", config))
@@ -109,9 +82,8 @@ func applied(spec *invoke.Spec, t Target, proj *specs.Project, r specs.Resource,
 func probes(spec *invoke.Spec, app specs.Application) []string {
 	var refused []string
 
-	// READINESS OVER HTTP IS WHAT THE CONTAINER TIER ALREADY WAITS ON, made
-	// specific: the same wait, asking the path the author named on the port
-	// they named rather than settling for an accepted connection.
+	// Readiness over HTTP is the container tier's existing wait, asking the named path on
+	// the named port.
 	readiness := app.Readiness
 	switch readiness.Kind {
 	case specs.ApplicationReadinessKindHttp:
@@ -121,11 +93,9 @@ func probes(spec *invoke.Spec, app specs.Application) []string {
 			readiness.FunctionName, inNamespace(readiness.FunctionNamespace)))
 	}
 
-	// NOTHING WATCHES A RUNNING INSTANCE. Readiness gates the start; after it,
-	// an instance is replaced when it exits and not when it stops answering —
-	// so a liveness check would be a promise to restart a wedged workload that
-	// nothing keeps. `failures` is defaulted, so Declared is what says a block
-	// was written.
+	// Nothing watches a running instance after readiness: it is replaced when it exits,
+	// not when it stops answering. `failures` is defaulted, so Declared says a block was
+	// written.
 	if liveness := app.Liveness; liveness.Declared {
 		check := fmt.Sprintf("GET %s on port %q", liveness.HttpPath, liveness.HttpPort)
 		if liveness.Kind == specs.ApplicationLivenessKindFunction {
