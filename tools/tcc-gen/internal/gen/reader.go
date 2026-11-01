@@ -10,23 +10,11 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/engine"
 )
 
-// reader.go renders a typed reader over a COMPILED object, from the locations
-// the vocabulary declares.
-//
-// It is the half the flat models could not do. An editor wants a form over
-// authored config; a runtime has the object and wants the value, and the two
-// part exactly where a matcher captures a branch — which is why this renders
-// from Located and not from Field.
+// A typed reader over a compiled object, rendered from Located, since a runtime needs
+// values where they compiled, not where they were authored.
 
-// RenderReaders emits one file holding a reader for every kind.
-//
-// THE ACCESSOR IS NOT GENERATED AND THE FIELDS ARE. `r.String("a","b")` is map
-// descent and knows no vocabulary; which path to descend is the vocabulary and
-// nothing else, so that is the half that comes from here.
-//
-// WHAT A KIND READS AS is in model.go: its own fields, a block per key prefix,
-// a typed entry per nested group, presence for every number and flag that may
-// be absent, and the constants a consumer would otherwise spell by hand.
+// RenderReaders emits one file holding a reader for every kind. The map-descent
+// accessor is the core's; the paths are generated. What a kind reads as is model.go's.
 func RenderReaders(pkg string, root []*engine.Node, kinds []string) []byte {
 	m := buildModel(root, kinds, reservedNames(pkg))
 
@@ -37,10 +25,7 @@ func RenderReaders(pkg string, root []*engine.Node, kinds []string) []byte {
 		body.WriteString("\n")
 	}
 
-	// EVERY READER, BY KIND. A consumer that walks a project meets resources by
-	// kind at runtime and cannot name a type per branch; and a test can exercise
-	// what the generator emitted for every kind rather than for the handful
-	// somebody remembered to call.
+	// Every reader by kind, for consumers that meet resources by kind at runtime.
 	body.WriteString("// Readers is every kind's reader, by the kind's own name.\n")
 	body.WriteString("var Readers = map[string]func(Resource) any{\n")
 	for _, kind := range m.kinds {
@@ -48,15 +33,9 @@ func RenderReaders(pkg string, root []*engine.Node, kinds []string) []byte {
 	}
 	body.WriteString("}\n\n")
 
-	// THE CROSS-KIND QUESTIONS. What a project builds and where its content
-	// comes from are asked of every resource rather than of one kind, so they
-	// get the union of what any kind declares under those keys.
-	//
-	// WorkloadBlock is the third such question: what a tier needs of whatever
-	// it runs. `execution` is a call and a timeout on a function and a cpu on an
-	// application, so no kind's own type answers it for every kind, and a
-	// resolver that knows only "something runnable" would otherwise spell the
-	// paths back out of the vocabulary.
+	// Cross-kind questions (what a project builds, where content comes from, what a tier
+	// needs of anything runnable) get the union of what any kind declares under those
+	// keys.
 	for _, union := range []struct {
 		name string
 		keys []string
@@ -88,14 +67,10 @@ func RenderReaders(pkg string, root []*engine.Node, kinds []string) []byte {
 		fmt.Fprintf(&b, "import \"time\"\n\n")
 	}
 
-	// THE ACCESSOR IS THE CORE'S. These readers need map descent at a path —
-	// String/Strings/Int/Float/Bool/Duration on a Resource — which is mechanism
-	// rather than vocabulary, so it is rendered beside them by RenderCore and
-	// not declared twice here.
+	// The accessor is rendered by RenderCore, not here.
 	b.Write(body.Bytes())
 
-	// FORMATTED HERE, because the drift check is byte-exact and a generator that
-	// emitted unformatted source would fail it the moment anybody ran gofmt.
+	// Formatted here, since the drift check is byte-exact.
 	out, err := format.Source(b.Bytes())
 	if err != nil {
 		return b.Bytes()
@@ -143,22 +118,9 @@ func goIdent(path string) string {
 	return out.String()
 }
 
-// RenderUnion emits one reader over a key PREFIX, across every kind that
-// declares anything under it.
-//
-// # Why a union and not a per-kind reader
-//
-// Some questions are asked of a project rather than of a kind: what does this
-// build, what does it serve. `source/` and `build/` are declared on many kinds
-// and not identically — a function has `source/git`, an application has
-// `source/image`, only a container kind has `build/dockerfile` — so a caller
-// walking every resource wants the union of what any of them can say.
-//
-// THE ALTERNATIVE WAS A HAND-WRITTEN UNION, and that is what this replaces: a
-// struct listing every field somebody remembered, read at paths somebody
-// remembered, which is wrong in both directions at once — it read
-// build/dockerfile off kinds that have none, and it would have missed a field
-// added to any kind.
+// RenderUnion emits one reader over a key prefix across every kind declaring anything
+// under it. `source/` and `build/` differ per kind, so a caller walking every resource
+// wants the union, generated rather than a hand-kept list.
 func RenderUnion(name string, root []*engine.Node, kinds []string, prefixes []string, groups []unionGroup) []byte {
 	under := map[string]bool{}
 	for _, prefix := range prefixes {

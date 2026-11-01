@@ -8,9 +8,7 @@ import (
 	v2 "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// model_test pins the decisions model.go makes about TYPES, against the real
-// vocabulary: which fields are entries, which blocks are one type, and what a
-// reader can and cannot say about what the author wrote.
+// Pins model.go's type decisions against the real vocabulary.
 
 func modelOf(t *testing.T) (*model, map[string]*typeDef) {
 	t.Helper()
@@ -39,8 +37,6 @@ func memberOf(t *testing.T, td *typeDef, name string) member {
 	return member{}
 }
 
-// TestANESTEDGROUPISENTRIESNOTFIELDS — the bug this replaced: a port's number
-// and a step's attempts read off the kind.
 func TestANestedGroupIsEntriesNotFields(t *testing.T) {
 	for _, l := range Locations(v2.GenerationRoot(), "application") {
 		require.NotEqual(t, "number", l.Path(), "a port's number is not the application's")
@@ -55,7 +51,6 @@ func TestANestedGroupIsEntriesNotFields(t *testing.T) {
 	require.True(t, steps.sub.list)
 }
 
-// TestABLOCKEVERYKINDAGREESONISONETYPE, and one they disagree on is not.
 func TestSharedBlocksAreFoundNotListed(t *testing.T) {
 	_, types := modelOf(t)
 
@@ -78,14 +73,11 @@ func TestSharedBlocksAreFoundNotListed(t *testing.T) {
 	require.ElementsMatch(t, []string{"run", "build", "both"}, at.loc.Enum)
 }
 
-// TestANAMETHECORETAKESISNOTSHADOWED. `Host` is the core's.
 func TestACoreNameIsNotShadowed(t *testing.T) {
 	_, types := modelOf(t)
 	require.Equal(t, "HostBlock", memberOf(t, types["Gateway"], "Host").goType())
 }
 
-// TestABLOCKOFDEFAULTSCANNOTSAYITWASWRITTEN, and the generator says so rather
-// than emitting a Declared that is always true.
 func TestABlockOfDefaultsHasNoDeclared(t *testing.T) {
 	_, types := modelOf(t)
 	// A proxy's tls is one defaulted mode: every proxy carries it.
@@ -105,15 +97,12 @@ func TestABlockOfDefaultsHasNoDeclared(t *testing.T) {
 	}
 }
 
-// TestTHESHORTFORMISTHEBLOCKSVALUE. `source: services/api` sits at the key a
-// block of the same name reads under.
 func TestTheShortFormIsTheBlocksValue(t *testing.T) {
 	_, types := modelOf(t)
 	v := memberOf(t, types["FunctionSource"], "Value")
 	require.Equal(t, []string{"source"}, v.key)
 }
 
-// TestCONSTANTSARENAMEDFROMTHESCHEMA.
 func TestConstantsAreNamedFromTheSchema(t *testing.T) {
 	m, types := modelOf(t)
 

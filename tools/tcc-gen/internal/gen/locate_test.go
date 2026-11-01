@@ -9,11 +9,8 @@ import (
 	v2 "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// locate_test pins the thing the flat models cannot say: where a value SITS in a
-// compiled object, as opposed to where it was written.
-//
-// `storage` is the case that proves it, because one authored block becomes three
-// different things — a nested value, a hoisted value and a discriminator:
+// Pins where a value sits in a compiled object. One storage block becomes a nested
+// value, a hoisted value and a discriminator:
 //
 //	object:                 ->  {"object": {"versioning": true},
 //	    versioning: true          "size": 1000000000,
@@ -30,7 +27,6 @@ func locationOf(t *testing.T, kind, path string) Located {
 	return Located{}
 }
 
-// TestAHOISTEDFIELDISFOUNDWHEREITCOMPILES, not where it was written.
 func TestAFieldUnderABranchCompilesSomewhereElse(t *testing.T) {
 	size := locationOf(t, "storage", "size")
 
@@ -42,8 +38,6 @@ func TestAFieldUnderABranchCompilesSomewhereElse(t *testing.T) {
 	require.Equal(t, "Int", size.Read, "1GB compiled to a number")
 }
 
-// TestTHEDISCRIMINATORSAYSWHICHBRANCHWASTAKEN, and there may be more than one
-// on a kind.
 func TestACapturedBranchIsReportedAsTheDiscriminator(t *testing.T) {
 	model := locationOf(t, "storage", "type")
 	require.True(t, model.Captures)
@@ -60,9 +54,6 @@ func TestACapturedBranchIsReportedAsTheDiscriminator(t *testing.T) {
 	require.Equal(t, "regions/failover/main", strings.Join(main.Authored, "/"))
 }
 
-// TestTHECODECCOMESFROMTHEVOCABULARY. A Duration and a Bytes both compile to a
-// number, and reading one as the other hands a caller nanoseconds where it
-// wanted a size.
 func TestTheReaderIsChosenByTheDeclaredType(t *testing.T) {
 	require.Equal(t, "Duration", locationOf(t, "storage", "streaming/ttl").Read)
 	require.Equal(t, "Int", locationOf(t, "storage", "instances/limit").Read)
@@ -71,8 +62,6 @@ func TestTheReaderIsChosenByTheDeclaredType(t *testing.T) {
 	require.Equal(t, "String", locationOf(t, "storage", "name").Read)
 }
 
-// TestTHERENDEREREMITSWHATTHELOCATIONSSAY, against the accessor surface a
-// compiled resource already answers with.
 func TestTheRenderedReaderAddressesCompiledKeys(t *testing.T) {
 	out := string(RenderReaders("specs", v2.GenerationRoot(), []string{"storage"}))
 
@@ -86,11 +75,6 @@ func TestTheRenderedReaderAddressesCompiledKeys(t *testing.T) {
 	require.Contains(t, out, `// which of object, streaming was written`)
 }
 
-// TestAKINDSFIELDSARENOTWHATITHOLDS. A scope holds resources of every kind, a
-// lowering kind's after-shape holds what it produces, and an access block is a
-// group named after the kind it reaches — all three by making that kind's own
-// group a child of this one's node. Walking through them reads another
-// resource's attributes as this one's.
 func TestAKindsFieldsAreNotWhatItHolds(t *testing.T) {
 	root := v2.GenerationRoot()
 
@@ -115,9 +99,6 @@ func TestAKindsFieldsAreNotWhatItHolds(t *testing.T) {
 	}
 }
 
-// TestAUNIONCARRIESAGROUPWHOLE. A resolver that runs "something runnable"
-// meets a function's variables and an application's alike, so the union holds
-// the group in the entry type every kind shares rather than a field per entry.
 func TestAUnionCarriesAGroupWhole(t *testing.T) {
 	out := string(RenderReaders("specs", v2.GenerationRoot(), []string{"application", "function"}))
 
@@ -129,8 +110,6 @@ func TestAUnionCarriesAGroupWhole(t *testing.T) {
 	require.Contains(t, out, `out.Ports[name] = ReadApplicationPortsEntry(r.Sub("ports", name))`)
 }
 
-// TestAGROUPTWOKINDSREADDIFFERENTLYSTOPSTHEGENERATOR, because a union field
-// holds one type and the other kind's entries would decode into the wrong one.
 func TestAGroupTwoKindsReadDifferentlyStopsTheGenerator(t *testing.T) {
 	kind := func(entry string, list bool) *typeDef {
 		return &typeDef{role: "kind", members: []member{{key: []string{"steps"}, sub: &typeDef{role: "entry", name: entry, list: list}}}}
@@ -145,9 +124,6 @@ func TestAGroupTwoKindsReadDifferentlyStopsTheGenerator(t *testing.T) {
 	require.Panics(t, func() { m.groupsUnder([]string{"steps"}) })
 }
 
-// TestAUNIONSDISCRIMINATORNAMESEVERYKINDSVALUES. `source/kind` is image or git
-// on an application and component or builtin on a function; a resolver
-// switching on the union's has to be able to name all four.
 func TestAUnionsDiscriminatorNamesEveryKindsValues(t *testing.T) {
 	out := string(RenderReaders("specs", v2.GenerationRoot(), []string{"application", "function"}))
 

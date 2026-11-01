@@ -7,27 +7,11 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/engine"
 )
 
-// locate.go answers where a field's value SITS in a compiled object.
-//
-// # Why this is not the struct model beside it
-//
-// Structs() and GenerateTS() project a kind into one field per logical
-// attribute, flat, for an editor: the explorer edits AUTHORED config and wants a
-// form, so `limits/timeout` is a `Timeout` input and where it lands is the
-// compiler's business.
-//
-// A reader of a COMPILED object wants the opposite. It has the object and needs
-// the path — and the two differ exactly where a matcher captures a branch. A
-// storage authors `object: {size: 1GB}` and compiles to `{type: "object", size:
-// 1000000000}`: one authored block becomes a nested value, a hoisted value and a
-// discriminator, and a flat model of field names cannot say which is which.
-//
-// Everything needed is already on the attribute and none of it is new: Segments
-// is the compiled key a level per entry, Captures marks the attribute that
-// records which branch was taken, and Path carries the authored location with
-// its matchers intact — and a finite matcher enumerates, which the engine says
-// in as many words is "what lets a consumer outside this package address a
-// branching location instead of giving up on it".
+// Where a field's value sits in a compiled object. The struct model is for editing
+// authored config; a reader of a compiled object needs the path, and the two differ
+// where a matcher captures a branch: `object: {size: 1GB}` compiles to `{type:
+// "object", size: 1000000000}`. The attribute's Segments, Captures and Path, whose
+// finite matchers enumerate, say all of it.
 
 // Located is one field of a kind, as a reader of a compiled object needs it.
 type Located struct {
@@ -68,24 +52,9 @@ type Located struct {
 // Path is the compiled key, joined — the attribute's own identity.
 func (l Located) Path() string { return strings.Join(l.Key, "/") }
 
-// Locations is every field of a kind, sorted by compiled key.
-//
-// IT STOPS AT WHAT THE KIND CONTAINS. A scope holds resources of every kind, and
-// a lowerable kind's after-shape holds the resources it produces — both by
-// making those kinds' own groups children of its node. Walking through them
-// reads another resource's fields as this one's: the namespace reader came out
-// with 215 fields, one per attribute in the vocabulary, addressing keys that in
-// a namespace object are DIRECTORIES of resources rather than values.
-//
-// What separates the two is already on the root: a child that is a top-level
-// group is a kind, and a kind is something this resource holds rather than
-// something it has.
-//
-// IT ALSO STOPS AT A NESTED GROUP. `ports`, `variables` and `transformers` are
-// entries the kind has many of, keyed by name or by position, and their fields
-// sit under an entry rather than on the kind. Flattened, an application read a
-// `number` off its own top level that no application has; Groups is where they
-// are answered instead.
+// Locations is every field of a kind, sorted by compiled key. It stops at kinds the
+// node contains (a top-level group is a kind it holds, not a field it has) and at
+// nested groups (`ports`, `transformers`), which Groups answers.
 func Locations(root []*engine.Node, kind string) []Located {
 	iter := kindNode(root, kind)
 	if iter == nil {

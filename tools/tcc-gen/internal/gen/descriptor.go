@@ -6,9 +6,8 @@ import (
 	engine "github.com/taubyte/tau/pkg/tcc/engine"
 )
 
-// descriptor is the per-resource Go-naming the templates emit. It is built from
-// the DSL's Resource(...) annotation (no hardcoded table): only the irregular
-// facts are declared; the rest derives.
+// descriptor is the per-resource Go naming the templates emit, built from the DSL's
+// Resource(...) annotation: only irregular facts are declared, the rest derives.
 type descriptor struct {
 	Package     string // legacy/schema/<dir> accessor package
 	Iface       string // exported accessor interface, e.g. "Database" ("SmartOps")

@@ -9,10 +9,6 @@ import (
 	"github.com/taubyte/tau/tools/tcc-gen/internal/gen"
 )
 
-// TestNoDrift fails if the committed generated files are out of sync with what
-// tcc-gen produces from the current DSL — the go-test equivalent of
-// `tcc-gen --check`, byte for byte. Regenerate and adopt
-// (`go run ./tools/tcc-gen --out <dir>` then copy in) to fix.
 func TestNoDrift(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {

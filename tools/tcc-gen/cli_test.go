@@ -10,10 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// cli_test drives the command the way a person does, because the parts it
-// exercises — writing the files out, and reading them back to report drift —
-// have no other caller. TestNoDrift beside it asserts the CONTENT; this asserts
-// that the command puts it where the drift check looks.
+// Drives the command as a person does: TestNoDrift asserts the content, this that the
+// command writes it where the drift check looks.
 
 func repoRoot(t *testing.T) string {
 	t.Helper()
@@ -95,9 +93,8 @@ func TestTheDriftReportNamesEveryFileItChecked(t *testing.T) {
 }
 
 func TestAFileThatIsNotThereIsDrift(t *testing.T) {
-	// A tree with none of the generated files in it: every one of them is
-	// missing, which reports the same way a changed one does — there is nothing
-	// on disk that says what the vocabulary now says.
+	// A tree with none of the generated files: every one reports as missing, like a
+	// changed one.
 	empty := t.TempDir()
 
 	stdout := os.Stdout
@@ -122,10 +119,6 @@ func TestAVocabularyThatIsNotOneIsRefused(t *testing.T) {
 	require.ErrorContains(t, err, "v3")
 }
 
-// TestTheTypeScriptIsGeneratedByTheSameCommand. The explorer's schema.ts comes
-// out of this tool too, and `--ts` writes it on its own — the vocabulary's own
-// directory by default, anywhere with --out. It is the half that leaves the Go
-// tree entirely, which is exactly how it gets forgotten.
 func TestTheTypeScriptIsGeneratedByTheSameCommand(t *testing.T) {
 	out := t.TempDir()
 	root := repoRoot(t)
@@ -143,9 +136,6 @@ func TestTheTypeScriptIsGeneratedByTheSameCommand(t *testing.T) {
 	require.True(t, bytes.Equal(got, want), "--ts wrote something other than the committed schema.ts")
 }
 
-// WITH NO --root THE REPOSITORY IS FOUND FROM WHERE THE COMMAND RUNS, which is
-// how a person runs it; outside any checkout of tau there is nothing to find,
-// and it says so.
 func TestTheRootIsFoundFromWhereTheCommandRuns(t *testing.T) {
 	stdout := os.Stdout
 	r, w, err := os.Pipe()
@@ -165,9 +155,6 @@ func TestTheRootIsFoundFromWhereTheCommandRuns(t *testing.T) {
 	require.ErrorContains(t, newApp().Run([]string{"tcc-gen", "--check"}), "could not locate tau module root")
 }
 
-// WITH NO --out EACH MODE WRITES WHERE ITS OWN DEFAULT IS: a full generation
-// into a fresh temporary directory, and --ts into the vocabulary's directory
-// under the root.
 func TestEachModesDefaultOutput(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
@@ -181,8 +168,6 @@ func TestEachModesDefaultOutput(t *testing.T) {
 	require.FileExists(t, filepath.Join(root, "pkg", "tcc", "taubyte", "v2", "explorer", "src", "gen", "schema.ts"))
 }
 
-// WHAT CANNOT BE WRITTEN IS AN ERROR, in every mode, and so is a wasm build
-// that fails.
 func TestWhatTheCommandCannotDoIsAnError(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "a-file")
 	require.NoError(t, os.WriteFile(file, nil, 0o644))
@@ -197,7 +182,6 @@ func TestWhatTheCommandCannotDoIsAnError(t *testing.T) {
 	require.ErrorContains(t, err, "building tcc.wasm failed")
 }
 
-// MAIN IS THE COMMAND, run with the arguments a person types.
 func TestMainRunsTheCommand(t *testing.T) {
 	args := os.Args
 	t.Cleanup(func() { os.Args = args })
@@ -205,16 +189,12 @@ func TestMainRunsTheCommand(t *testing.T) {
 	main()
 }
 
-// A FILE THE CHECK CANNOT READ IS AN ERROR, not drift: a directory where a
-// generated file belongs says nothing about what the vocabulary generates.
 func TestACheckThatCannotReadAFileIsAnError(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "pkg", "specs", "kinds.go"), 0o755))
 	require.Error(t, newApp().Run([]string{"tcc-gen", "--root", root, "--check"}))
 }
 
-// NOWHERE TO WRITE IS AN ERROR: no temporary directory for a full generation,
-// and a directory where schema.ts goes.
 func TestNowhereToWriteIsAnError(t *testing.T) {
 	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "missing"))
 	require.Error(t, newApp().Run([]string{"tcc-gen", "--root", repoRoot(t)}))
@@ -224,10 +204,6 @@ func TestNowhereToWriteIsAnError(t *testing.T) {
 	require.Error(t, newApp().Run([]string{"tcc-gen", "--root", repoRoot(t), "--ts", "--out", out}))
 }
 
-// THE WASM MODULE IS BUILT WITH ITS LOADER BESIDE IT, into the vocabulary's own
-// directory by default. The package built is whatever the root holds at the
-// vocabulary's wasm path, so a one-line main stands in for the real one here
-// and the build costs nothing to speak of.
 func TestTheWasmModuleIsBuiltWithItsLoader(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/wasmonly\n\ngo 1.22\n"), 0o644))

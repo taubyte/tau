@@ -9,9 +9,6 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// THE TWO TYPESCRIPT COPIES ARE ONE GENERATION. The explorer's and the
-// client's are the same bytes, both are written, and a client copy that
-// drifted is reported by name while the explorer's still checks out.
 func TestBothTypeScriptCopiesAreGeneratedAndChecked(t *testing.T) {
 	generated, err := Generate(schema.GenerationRoot())
 	if err != nil {

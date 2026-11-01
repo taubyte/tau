@@ -6,9 +6,6 @@ import (
 	engine "github.com/taubyte/tau/pkg/tcc/engine"
 )
 
-// A container group (its iterator holds resource sub-groups) with no Singular()
-// declaration must be a loud generation error — the generator never guesses a
-// Go name from the plural key. This guards the whole reason Singular exists.
 func TestContainerWithoutSingularErrors(t *testing.T) {
 	child := engine.DefineGroup("things", engine.DefineIter([]*engine.Attribute{engine.String("id")}))
 	container := engine.DefineGroup("boxes",

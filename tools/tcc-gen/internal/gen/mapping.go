@@ -6,15 +6,12 @@ import (
 	engine "github.com/taubyte/tau/pkg/tcc/engine"
 )
 
-// The mapping rules turn one DSL *engine.Attribute into the exported Go accessor
-// (name + type + body) that legacy/schema hand-writes today. See the plan file for
-// the derivation of every rule below.
+// The mapping rules turn one DSL *engine.Attribute into an exported Go accessor:
+// name, type and body.
 
-// commonAttrs are the attributes every resource group shares — the DSL's
-// TaubyteAttributes block (id/name/description/tags) — derived as the attrs
-// present in ALL Resource groups, in DSL order. The generator never restates the
-// common schema; it reads it back off the walk, so it cannot drift. "name" is
-// the resource identity (Name() reads the struct field), never a config accessor.
+// commonAttrs are the attributes present in every Resource group (id, name,
+// description, tags), in DSL order, read off the walk so they cannot drift. "name" is
+// the resource identity, never a config accessor.
 func commonAttrs(root []*engine.Node) []*engine.Attribute {
 	var iters []*engine.Node
 	for _, g := range root {
@@ -99,16 +96,10 @@ func pathSegs(a *engine.Attribute) (segs []string, ok bool) {
 	return []string{a.Name}, true
 }
 
-// accessorName is the exported Go name: an Accessor() override, else the last
-// plain Path segment title-cased, else the attribute name.
-//
-// A nested Key() names itself with the "/" that separates the levels of the
-// compiled object (engine/keys.go), so `Key("serve", "kind")` is the attribute
-// named "serve/kind". That is a path, not an identifier: taken as a name it
-// emits `serve/kind` into Go and TypeScript alike, and neither parses. The
-// engine keeps the decomposition on the attribute (Segments), and holds every
-// segment to a bare identifier — so the accessor is the segments title-cased and
-// joined, ServeKind, which is a legal identifier by construction.
+// accessorName is the exported Go name: an Accessor() override, else the last plain
+// Path segment title-cased, else the attribute name. A nested Key() is named with "/"
+// (`serve/kind`), which no language parses, so its segments are title-cased and
+// joined (ServeKind).
 func accessorName(group string, a *engine.Attribute) string {
 	if ov, ok := a.Meta["accessor"].(string); ok && ov != "" {
 		return ov

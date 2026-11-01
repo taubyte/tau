@@ -7,16 +7,6 @@ import (
 	"testing"
 )
 
-// TestGeneratedClientE2E is an end-to-end check of the whole
-// DSL -> tcc-gen -> generated TypeScript -> wasm pipeline: it generates the wasm
-// module and the TS schema FRESH into a temp package, drops the hand-written
-// runtime and tests alongside, then typechecks (tsc) and runs the tests against
-// that generated code — so the generation is validated, not just the committed
-// src/gen/schema.ts.
-//
-// Everything is driven from Go (buildWasm/writeTS are called directly; tsc/npm
-// via exec). It needs node + the client's dev deps, so it skips gracefully when
-// those aren't present or under -short.
 func TestGeneratedClientE2E(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping generated-client e2e under -short")

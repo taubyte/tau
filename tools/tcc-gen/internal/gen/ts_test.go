@@ -9,8 +9,6 @@ import (
 	v2 "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// The TS emitter must produce an accessor class + a Session factory for every
-// resource the Go generator covers — they share the DSL walk.
 func TestGenerateTSCoversResources(t *testing.T) {
 	models, err := Structs(schema.GenerationRoot())
 	if err != nil {
@@ -54,8 +52,6 @@ func TestGenerateTSCoversResources(t *testing.T) {
 	}
 }
 
-// Accessors must address (resource, field) by path, be async, type InSet fields
-// as unions, and read the legacy key as a fallback.
 func TestGenerateTSAccessors(t *testing.T) {
 	out, err := GenerateTS(schema.CompileRoot())
 	if err != nil {
@@ -107,13 +103,6 @@ func TestTsTypeMapping(t *testing.T) {
 	}
 }
 
-// Nothing had ever run a compiler over this emitter's output, and it showed: an
-// attribute whose key is nested (`Key("serve", "kind")`) names itself with the
-// "/" that separates the levels of the compiled object, and the emitter used
-// that name verbatim — `async serve/kind()`, `type ChannelServe/kind`, neither
-// of which parses. The check is total rather than a list of known names: strip
-// TypeScript's comments and string literals, and a "/" left anywhere in what
-// remains is a path that got emitted where an identifier belongs.
 func TestGeneratedTSEmitsOnlyLegalIdentifiers(t *testing.T) {
 	for _, dsl := range []struct {
 		name string
@@ -178,11 +167,6 @@ func stripTSCommentsAndStrings(src string) string {
 	return b.String()
 }
 
-// A node may hold SEVERAL switches: a database has a type and one engine key per
-// type, an application has a readiness probe and a liveness probe. The emitter
-// used to compute one alias per node, so the last switch named them all —
-// sqlEngine() came back typed by the admission key, and a caller who obeyed the
-// types would pass "validator" where an engine belongs. Each switch names itself.
 func TestTSSwitchAliasIsPerSwitch(t *testing.T) {
 	n := &engine.Node{Attributes: []*engine.Attribute{
 		engine.String(engine.Key("readiness", "kind"), engine.Path("readiness", engine.Either("http", "function")), engine.Captures()),
@@ -226,11 +210,6 @@ func TestTSSwitchAliasIsPerSwitch(t *testing.T) {
 	}
 }
 
-// A union of values is a union of LITERALS. Only a number is a bare one in
-// TypeScript; "GET" emitted as GET names a type that does not exist. The engine's
-// own InSet annotates the string case, but a vocabulary's set-validator over a
-// StringSlice need not know the annotation exists, so the quoting is read off the
-// attribute's declared type instead.
 func TestTSEnumLiteralsAreQuotedByType(t *testing.T) {
 	n := &engine.Node{Attributes: []*engine.Attribute{
 		engine.StringSlice("methods", engine.Annotate("enum", []string{"GET", "POST"})),

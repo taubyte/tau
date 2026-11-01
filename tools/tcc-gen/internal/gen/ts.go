@@ -8,12 +8,9 @@ import (
 	engine "github.com/taubyte/tau/pkg/tcc/engine"
 )
 
-// TypeScript emission. Reuses the same DSL walk primitives as the Go accessor
-// generator (pathSegs / accessorName / the skip tables) and emits a
-// typed facade over a wasm-resident editable session: one accessor class per
-// resource whose async getters/setters read/write fields by (resource, field)
-// path across the wasm boundary. The config representation and all YAML live in
-// wasm (see pkg/tcc/wasm/session_js.go); this is only the typed schema.
+// TypeScript emission: a typed facade over a wasm-resident editable session, one
+// accessor class per resource whose async getters and setters address fields by
+// (resource, field) path. Config and YAML live in wasm (pkg/tcc/wasm/session_js.go).
 
 func tsType(goType string) string {
 	switch goType {
@@ -397,12 +394,8 @@ func GenerateTS(rootNode *engine.Node) ([]byte, error) {
 		resources = append(resources, tsResource{spec: d.Spec, group: name, fields: fields})
 	}
 
-	// container is the config key of the applications-style container group,
-	// derived from the DSL so the app-scoping path is never a literal here;
-	// cSpec is its declared Go name (applications -> Application). The container
-	// and the project root are documents like any other, so they get the same
-	// accessor class — all field walks happen BEFORE emission so every enum
-	// alias they contribute is declared.
+	// The container group and project root are documents too and get accessor classes;
+	// all field walks happen before emission so every enum alias is declared.
 	container := containerKey(root)
 	cSpec, err := containerSpec(root)
 	if err != nil {
@@ -476,10 +469,8 @@ func GenerateTS(rootNode *engine.Node) ([]byte, error) {
 		fmt.Fprintf(&b, "  %s(name: string): %sConfig {\n    return new %sConfig(this, name);\n  }\n", tsName(cSpec), cSpec, cSpec)
 	}
 	fmt.Fprintf(&b, "  project(): %sConfig {\n    return new %sConfig(this);\n  }\n", projectSpec, projectSpec)
-	// ...and the LISTER is named the way every other lister is: <spec>Names(). It used to
-	// be named for the container's group key, which collides with the accessor above the
-	// moment a vocabulary's container is singular-shaped — v2 calls its scopes
-	// `namespace`, and the generated client had two methods called namespace().
+	// The container's lister is <spec>Names(), like every other lister, so it cannot
+	// collide with the accessor.
 	if cSpec != "" {
 		fmt.Fprintf(&b, "  %sNames(): Promise<string[]> {\n    return this.binding.list(this.handle, [%q]);\n  }\n", tsName(cSpec), container)
 	}

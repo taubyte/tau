@@ -5,20 +5,10 @@ import (
 	v2 "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// core.go renders the part of a spec that is not a field list.
-//
-// # Why this is generated when its body never changes with the vocabulary
-//
-// Most of it is mechanism: descending a map at a path, reading an index,
-// walking outward from a scope. None of that moves when a kind is added.
-//
-// What DOES move is every word it addresses by — the key a compiled project
-// sits under, the three words an index key is written between, which kinds are
-// scopes, what an access entry calls its ops. Those were read at runtime from
-// the compiler, which made a node link the DSL to learn four strings, or worse
-// were spelled by hand and drifted. Baking them at generation is what makes a
-// generated spec describe the vocabulary it was generated from, and a stale one
-// obvious rather than silently wrong.
+// core renders the part of a spec that is not a field list. Its mechanism never
+// changes with the vocabulary, but the words it addresses by (the object key, the
+// index segments, which kinds are scopes) are baked in at generation, so a node
+// needs no DSL at runtime to learn them.
 type core struct {
 	Package string
 

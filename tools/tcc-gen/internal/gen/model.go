@@ -13,41 +13,18 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/engine"
 )
 
-// model.go decides what TYPES a compiled object reads as, before anything is
-// rendered.
+// model decides what types a compiled object reads as:
 //
-// # Three shapes, from what the vocabulary already says
-//
-// A kind's fields are not one flat list, and reading them as one put a port's
-// `number` and a step's `attempts` on the kind itself, where no resource has
-// them. The schema already says where the seams are, so nothing here is a list:
-//
-//   - a NESTED GROUP (`ports`, `variables`, DefineList's `steps`) is entries,
-//     and reads as map[string]<Entry> or []<Entry>;
-//   - a KEY PREFIX (`regions/...`, `liveness/...`, `sql/...`) is a block, and
-//     reads as a struct of its own, so a consumer asks `db.Sql.Engine` rather
-//     than building `model + "/engine"`;
+//   - a nested group (`ports`, `variables`, DefineList's `steps`) is entries:
+//     map[string]<Entry> or []<Entry>;
+//   - a key prefix (`regions/...`, `sql/...`) is a block with its own struct;
 //   - everything else is a field of the kind.
 //
-// # Shared types are a finding, not a choice
-//
-// The vocabulary factors a block it means to be the same on every kind into a
-// helper — regionAttributes(), instanceAttributes(), authorizerAttributes() —
-// and that is visible here as every kind declaring IDENTICAL fields under the
-// key. So the rule is structural: a block or a group whose every declaration
-// agrees, on two or more owners, is ONE type named for its key (Regions,
-// Instances, TransformersEntry), which a generic consumer can take whatever kind
-// it came from. Where they disagree — `execution` is a call and a timeout on a
-// function and a cpu on an application — each owner gets its own, named for it
-// (FunctionExecution), because one type over both would carry fields a kind
-// does not have.
-//
-// The comparison ignores what a field is VALIDATED against: `variables/at`
-// accepts run and build on a function and only build on a website, and those
-// are one entry with two legal sets, not two entries. Its constants are the
-// union.
+// A block or group declared identically on two or more owners (the vocabulary's
+// shared helpers) is one type named for its key (Regions, Instances); where owners
+// disagree each gets its own (FunctionExecution). Validation sets are ignored when
+// comparing; their constants are the union.
 
-// typeDef is one emitted struct.
 type typeDef struct {
 	name string
 	role string // "kind", "block" or "entry"
@@ -385,13 +362,6 @@ func noteFor(l Located) string {
 
 type constant struct{ name, value, doc string }
 
-// constants are a type's keys and its fields' legal values.
-//
-// THE KEYS ARE THE COMPILED PATHS, joined by "/" — the spelling a grant's
-// Settings already carries a value under (`queue/max_attempts`,
-// `inference/remote/endpoint`), so a consumer names the attribute rather than
-// typing it. For a block they are from the resource; for an entry, from the
-// entry.
 func (t *typeDef) constants() []constant {
 	var out []constant
 	for _, mem := range t.members {

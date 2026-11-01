@@ -25,21 +25,16 @@ const (
 	// which publishes it to authors. A second copy is a second file to drift.
 	clientTSPath = "pkg/tcc/clients/js/src/gen/schema.ts"
 
-	// readersPath is the typed view of every kind, as it sits in a compiled
-	// object. It is generated for the reason the TS and the JSON Schema are:
-	// the paths are the vocabulary's, and a hand-written copy of them is a copy.
-	//
-	// NOT UNDER pkg/tcc/taubyte/v2. That tree is where the vocabulary is
-	// DEFINED, and generated output living inside its own definition makes the
-	// two impossible to tell apart — which is the failure this generation
-	// exists to end. Generated specs have their own home.
+	// readersPath is the typed view of every kind as it sits in a compiled object,
+	// generated so its paths are the vocabulary's. Not under pkg/tcc/taubyte/v2, where
+	// the vocabulary is defined, so generated and defining code stay distinguishable.
 	readersPath = "pkg/specs/kinds.go"
 	corePath    = "pkg/specs/project.go"
 	readersPkg  = "specs"
 )
 
-// Generate returns a map of repo-relative path -> generated file content: the
-// TypeScript schema, the JSON schema and the specs readers.
+// Generate returns repo-relative path -> content for the TypeScript schema, the JSON
+// schema and the specs readers.
 func Generate(root []*engine.Node) (map[string][]byte, error) {
 	out := make(map[string][]byte, 2)
 	ts, err := GenerateTS(schema.CompileRoot())
@@ -84,11 +79,8 @@ func WriteTo(dir string, gen map[string][]byte) error {
 	return nil
 }
 
-// Check reports which generated files' on-disk copies are not what the
-// vocabulary now says they should be, by repo-relative path.
-//
-// Every file is generated whole and adopted whole, so "the bytes differ" is the
-// entire question.
+// Check reports which generated files on disk differ from what the vocabulary now
+// produces, by repo-relative path.
 func Check(repoRoot string, gen map[string][]byte) ([]string, error) {
 	var drifted []string
 	for rel, b := range gen {

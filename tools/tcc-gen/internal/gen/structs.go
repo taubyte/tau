@@ -7,12 +7,8 @@ import (
 	engine "github.com/taubyte/tau/pkg/tcc/engine"
 )
 
-// Struct generation projects the DSL-derivable field block of each kind; uint64
-// duration/size types are derived from the scalar terms.
-
-// StructModel is one kind, projected into one field per logical attribute.
-//
-// What reads it is the TypeScript generator, which wants the name and the fields.
+// StructModel is one kind projected into one field per logical attribute, for the
+// TypeScript generator.
 type StructModel struct {
 	Spec   string  // the type name, e.g. "Function"
 	Fields []Field // one per logical attribute, common first
@@ -34,9 +30,8 @@ type Field struct {
 	EnumString bool     // enum literals are strings (quote them)
 }
 
-// Structs projects each DSL resource group into a struct proposal. Unlike the
-// accessor walk it includes every attribute (Key/transform/Either too), since the
-// struct has a field per logical attribute regardless of how it is read/written.
+// Structs projects each DSL resource group into a struct, including every attribute
+// regardless of how it is read or written.
 func Structs(root []*engine.Node) ([]*StructModel, error) {
 	var out []*StructModel
 	common := attrSet(commonAttrs(root))
@@ -46,12 +41,9 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 			continue
 		}
 		iter := g.Children[0]
-		// A group emits a struct if the DSL declares it a Resource, or if it's a
-		// nested container group — an iterator that itself holds resource
-		// sub-groups (applications) — which
-		// compiles to a bare struct of the common fields only, named by its
-		// Singular() declaration (applications -> Application). Everything else
-		// is skipped.
+		// A group emits a struct if the DSL declares it a Resource, or if it is a nested
+		// container group holding resource sub-groups, which compiles to a bare struct of the
+		// common fields named by its Singular() (applications -> Application).
 		var m *StructModel
 		if d, ok := descriptorFor(iter); ok {
 			m = &StructModel{Spec: d.Spec, Fields: commonFields(root)}

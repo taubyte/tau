@@ -8,10 +8,8 @@ import (
 	engine "github.com/taubyte/tau/pkg/tcc/engine"
 )
 
-// naming_test covers the engine features the CURRENT vocabulary happens not to
-// use: a Field() override and a hyphenated path. The generator handles both, and
-// v2 declares neither — so without this they are handled by code nothing ever runs, and a vocabulary
-// that started using one tomorrow would find out from a broken console.
+// Covers a Field() override and a hyphenated path, which the generator handles and v2
+// does not use, so the code is still exercised.
 
 func TestAFieldsGoNameComesFromWhereItWasWritten(t *testing.T) {
 	for _, tc := range []struct {
@@ -39,14 +37,10 @@ func TestAFieldsGoNameComesFromWhereItWasWritten(t *testing.T) {
 	}
 }
 
-// TestTheWireKeyIsWhatTheObjectCarries. A struct field decodes from the
-// lower-cased name the compiler writes.
 func TestTheWireKeyIsWhatTheObjectCarries(t *testing.T) {
 	require.Equal(t, "timeout", wireKey(Field{Name: "Timeout"}))
 }
 
-// TestAMatcherIsNotALocation. A path with a matcher in it does not name one
-// place, so nothing that needs a single key can use it.
 func TestAMatcherIsNotALocation(t *testing.T) {
 	either := engine.String("size", engine.Path(engine.Either("object", "streaming"), "size"))
 	_, ok := pathSegs(either)
