@@ -11,10 +11,8 @@ import (
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// What is left here is the wiring: node/cache holds the caches and its own
-// tests hold the rules, and what only this package can say is where the rows
-// actually go — one database, named, opened when something first needs it, and
-// closed with the node that opened it.
+// Only the wiring is tested here: one named database, opened on first need, closed
+// with the node.
 
 // grant is one cache entry as services/worker builds it.
 func grant(handle string, settings map[string]string) invoke.Grant {
@@ -33,8 +31,6 @@ func backing(t *testing.T) (wasmtier.Caches, *memFactory) {
 	return c, factory
 }
 
-// TestONEDATABASEHOLDSEVERYCACHE, and this is the half of that claim the
-// adapter cannot make: which database, by name.
 func TestEveryCacheSharesOneDatabase(t *testing.T) {
 	c, factory := backing(t)
 	ctx := t.Context()
@@ -54,8 +50,6 @@ func TestEveryCacheSharesOneDatabase(t *testing.T) {
 	require.Equal(t, 1, caches, "three caches, one database: %v", opened)
 }
 
-// TestANODEWITHNODATABASEFACTORYCANNOTOPENACACHE, and says so rather than
-// panicking on the first request that reaches one.
 func TestACacheNeedsADatabaseFactory(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -73,8 +67,6 @@ func TestACacheNeedsADatabaseFactory(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoCacheStore)
 }
 
-// TestTHECACHEDATABASEISCLOSEDWITHTHENODE, so a node that opened one on its
-// first request does not leak it.
 func TestTheCacheDatabaseIsClosedWithTheNode(t *testing.T) {
 	n, _, factory := makeNode(t, Config{Services: []string{Worker, Discovery}})
 
@@ -88,12 +80,6 @@ func TestTheCacheDatabaseIsClosedWithTheNode(t *testing.T) {
 	require.Positive(t, closed)
 }
 
-// ── reading a secret at the moment of the call ───────────────────────────────
-
-// TestTheVaultServesBothPaths: the worker resolves a run-time variable from it
-// at start, and the tier reads it per call. Both read the same row, which is
-// what makes a rotation reach one at the next deploy and the other at the next
-// call.
 func TestOneVaultServesTheWorkerAndTheTier(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}})
 	require.NoError(t, n.Start(t.Context()))
@@ -121,8 +107,6 @@ func TestOneVaultServesTheWorkerAndTheTier(t *testing.T) {
 	require.Equal(t, "rotated", string(value))
 }
 
-// TestAMissIsTheTIERSMiss, so a guest is told "nothing is set" rather than "the
-// node is unhappy".
 func TestAnUnsetSecretIsTheTiersArm(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}})
 	require.NoError(t, n.Start(t.Context()))
@@ -133,8 +117,6 @@ func TestAnUnsetSecretIsTheTiersArm(t *testing.T) {
 	require.ErrorIs(t, err, wasmtier.ErrNotSet)
 }
 
-// TestAHandleThatAddressesNothingIsRefused rather than reaching a row composed
-// out of empty segments.
 func TestAMalformedSecretHandleIsRefused(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}})
 	require.NoError(t, n.Start(t.Context()))

@@ -12,42 +12,15 @@ import (
 	"github.com/taubyte/tau/services/worker"
 )
 
-// authorizer.go runs a resource's own `authorizer:` block — the function a
-// target names to decide what a caller may do to it.
+// Runs a resource's `authorizer:` block. It lives in the node because asking means
+// instantiating a different world (`taubyte:authorizer`) through a worker and tier
+// the running guest cannot reach.
 //
-// # It lives here for the reason the instance validator does
-//
-// The wasm tier runs ONE workload and has no way to reach another; the node has
-// both a worker that can resolve a second function and a tier that can
-// instantiate it. node/admit makes that argument for a validator and it
-// holds harder here, because asking means instantiating a DIFFERENT WORLD —
-// `taubyte:authorizer` rather than the handler — which a running guest's tier
-// has no business arranging on its own.
-//
-// # The answer is kept, and the contract is what makes that legitimate
-//
-// An authorizer is asked about one op and answers with every op this caller gets
-// on this target. That is not an optimisation somebody bolted on: it is the WIT,
-// and it is the difference between a decision that costs one cold start and one
-// that costs a wasm instantiation per cache `get`.
-//
-// THE FIRST QUESTION DECIDES EVERY LATER ONE, and that is only sound because
-// the answer is the COMPLETE set. It is worth stating because it is exactly what
-// goes wrong with a guard that returns only the op it was handed: such a guard
-// looks correct until something keeps its answer, and then whichever operation
-// a workload happened to attempt first silently becomes the only one it may
-// ever perform. Nothing here can detect that — the shape is identical — so the
-// obligation lives in the WIT and the fixture demonstrates the right one.
-//
-// KEYED BY THE CALLER'S REVISION, so a redeploy re-asks. A revision is the
-// immutable build identity, so a workload whose code changed is a different
-// caller as far as a guard is concerned — which is the case where a stale answer
-// would be most wrong.
-//
-// WHAT IT COSTS, said plainly: a decision revoked in the guard's own data is not
-// seen until something drops this entry. Nothing does yet. That is the shape of
-// the caching question rather than an answer to it, and it is written down here
-// rather than discovered.
+// An authorizer answers with every op this caller gets on the target, per the WIT,
+// so the answer is kept and the first question decides later ones. That is sound
+// only because the answer is complete. Keyed by the caller's revision, so a redeploy
+// re-asks. A revocation in the guard's own data is not seen until the entry is
+// dropped, which nothing does yet.
 
 // What the composer wrote onto a guarded grant. The namespace arrives RESOLVED
 // — the outward walk from the TARGET happens where the compiled project is
@@ -157,15 +130,9 @@ func instanceOf(handle string) string {
 	return parts[3]
 }
 
-// decides is the part of the component tier this node's own policy needs: the
-// two worlds that are not the handler.
-//
-// NARROW FOR THE REASON registerReader IS. The node does not want a component
-// runtime here, it wants something that can ask a guard and something that can
-// ask a validator — and a policy that took the whole tier could reach for
-// anything else it exposes. It is also what lets the decisions be tested
-// without a wasm toolchain, while the ABI underneath keeps its own tests
-// against real components.
+// decides is the part of the component tier this node's policy needs: the worlds that
+// are not the handler. Narrow, so the policy cannot reach the rest of the tier and
+// can be tested without a wasm toolchain.
 type decides interface {
 	Authorize(ctx context.Context, spec invoke.Spec, q wasmtier.Question) (wasmtier.Decision, error)
 	Admit(ctx context.Context, spec invoke.Spec, o wasmtier.Opening) (wasmtier.Verdict, error)

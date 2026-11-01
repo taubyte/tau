@@ -16,47 +16,12 @@ import (
 	"github.com/taubyte/tau/services/worker"
 )
 
-// channel.go backs `taubyte:channel/dialer` on this node — the vocabulary's
-// `channel` kind, which is what v1 called p2p.
-//
-// # A dial is an invocation, and that is the whole implementation
-//
-// A channel is a named request/response conduit to one other workload in the
-// same project. v2 already moves exactly that between nodes: the worker's own
-// `/tau/worker/v2`, connect-go over a libp2p stream, carrying
-// `(address, request) -> response`. So a dial resolves the address the channel
-// names and invokes it. There is no second protocol, no second discovery and no
-// second timeout.
-//
-// # Why not a protocol per channel, which is what v1 did
-//
-// v1 registered a libp2p protocol id per resource — `hash(project+id)+name` —
-// advertised it on the DHT, and fanned a dial out to whichever peers claimed to
-// answer it, letting the receiver decide whether it actually did. That is a
-// router built out of advertisements, and it was the only one available.
-//
-// v2 has a real one. A node announces the deployments it holds and every
-// locator reads that same view, so the serving workload is ADDRESSED rather
-// than advertised: one hop, to a node that certainly holds the project, chosen
-// by the same placement the edge uses. It also makes the vocabulary's tenancy
-// promise structural instead of lexical — "what goes on the wire has the
-// project's identity prepended" was there so two tenants naming a channel
-// `sync` never meet, and two deployments are different addresses whatever
-// anybody named their channel.
-//
-// WHAT THE PROTOCOL NAME IS FOR, THEN. It travels as a header, so a workload
-// serving several channels can tell which one it was reached on. It is the
-// author's word for the conduit and it is no longer load-bearing for isolation,
-// which is a promise moving to a stronger mechanism rather than one being
-// dropped.
-//
-// # What this does not do
-//
-// It is request and response, which is what `taubyte:channel/dialer` declares
-// and what almost every use of v1's p2p actually was. A genuine conduit — both
-// directions, held open per caller — is a WIT `resource` the ABI deliberately
-// does not have yet, and it is not blocked by anything here: `dial` reads the
-// same when a `connect` lands beside it.
+// Backs `taubyte:channel/dialer`, the `channel` kind (v1's p2p). A dial resolves the
+// address the channel names and invokes it over the worker's own protocol: the
+// serving workload is addressed through the deployment view and placement, not
+// advertised per channel, so tenancy is structural. The channel name travels as a
+// header so a workload serving several can tell them apart. Request and response
+// only; a held-open conduit would need a WIT resource the ABI does not have yet.
 
 // headerChannel is the author's own name for the conduit, so a workload serving
 // more than one can tell them apart. headerDialer is the channel's label as the
@@ -185,15 +150,6 @@ func (c *channels) conn(ctx context.Context, at specs.Address, port string) (net
 	return nil, placement.ErrNoWorkers
 }
 
-// invoke sends through placement when this node can route, and through the
-// local worker when it cannot.
-//
-// PLACEMENT IS THE ONE THAT CAN LEAVE THIS MACHINE, and it already calls a
-// local worker directly rather than opening a stream to itself — so where it
-// exists it is strictly the better of the two. It does not exist on a node that
-// runs no discovery, and there the local worker is the only workload reachable at
-// all: a dial that lands is better than one that cannot be attempted, and one
-// that does not land says so.
 func (c *channels) invoke(ctx context.Context, at specs.Address, req *invoke.Request) (*invoke.Response, error) {
 	if c.node.workers != nil {
 		return c.node.workers.Invoke(ctx, at, req)

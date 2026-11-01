@@ -15,13 +15,6 @@ import (
 	pkgregister "github.com/taubyte/tau/pkg/register"
 )
 
-// THE TWO HALVES OF A PRIVATE CLONE, TOGETHER. A project is linked whose
-// configuration repository is private on an ssh git host that admits exactly
-// one key — the public half of the deploy key `tau link` installs. The private
-// half is stored where a link stores it (the vault, under pkg/linkcreds' name
-// for that repository), and the build backend's own checkout, wired as the
-// backend wires it, clones with it. Without that secret, or with another key
-// in its place, the same clone is refused by the host.
 func TestTheBackendClonesAPrivateRepositoryWithTheDeployKeyALinkStored(t *testing.T) {
 	// No agent: a clone must authenticate with the vault's key or not at all.
 	t.Setenv("SSH_AUTH_SOCK", "")

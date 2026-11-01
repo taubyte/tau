@@ -51,9 +51,6 @@ func accountKey(t *testing.T) string {
 	return string(blob)
 }
 
-// THE BUILD FRONTEND SERVES TLS in a cloud that issues, so a forge's hook
-// reaches https://build-frontend.<cloud fqdn>. With no cm node to keep a
-// certificate in, the handshake fails, which is the proof it was a handshake and not plain HTTP.
 func TestTheBuildFrontendServesTLSWhenTheCloudIssues(t *testing.T) {
 	n, _, _ := makeNode(t, Config{
 		Services:      []string{Discovery, BuildFrontend},
@@ -85,8 +82,6 @@ func TestTheBuildFrontendServesTLSWhenTheCloudIssues(t *testing.T) {
 	require.Nil(t, secure)
 }
 
-// A DNS NODE WITH NO DATABASES holds no copy of the challenge store, so it
-// cannot answer DNS-01 and says so instead of answering empty.
 func TestADNSNodeOfAnIssuingCloudNeedsTheChallengeStore(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })

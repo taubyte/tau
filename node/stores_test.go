@@ -11,8 +11,6 @@ import (
 	"github.com/taubyte/tau/core/kvdb"
 )
 
-// EVERY BACKING OPENS ITS ONE DATABASE THE SAME WAY: by name, from the
-// factory, closed with the node — and says so by name when it cannot.
 func TestEveryBackingOpensItsDatabaseByName(t *testing.T) {
 	type opener func(*Node) (any, error)
 	for name, open := range map[string]opener{
@@ -51,7 +49,6 @@ type failingKV struct {
 func (f failingKV) Get(context.Context, string) ([]byte, error) { return nil, f.err }
 func (f failingKV) Delete(context.Context, string) error        { return f.err }
 
-// A ROW THAT IS NOT THERE IS AN ANSWER; A STORE THAT CANNOT LOOK IS NOT.
 func TestACacheStoreSeparatesAbsentFromUnreadable(t *testing.T) {
 	ctx := t.Context()
 	s := cacheStore{&memKV{rows: map[string][]byte{}, factory: &memFactory{}}}
@@ -77,8 +74,6 @@ func TestACacheStoreSeparatesAbsentFromUnreadable(t *testing.T) {
 	require.ErrorIs(t, cacheStore{failingKV{err: broken}}.Delete(ctx, "/k"), broken)
 }
 
-// A NODE WITH A ROOT HAS ONE VOLUME BACKING, made once and closed with the
-// node; a node without one has none, which is what makes a tier refuse a mount.
 func TestTheVolumeBackingIsOnePerNode(t *testing.T) {
 	none, err := (&Node{}).disksOrNil()
 	require.NoError(t, err)
@@ -94,7 +89,6 @@ func TestTheVolumeBackingIsOnePerNode(t *testing.T) {
 	require.Len(t, n.closers, 1)
 }
 
-// ONE STORE PER DATABASE, opened and released by its own name.
 func TestADatabaseStoreIsOpenedAndReleasedByName(t *testing.T) {
 	ctx := t.Context()
 	_, err := databaseStores{node: &Node{}}.Store("orders")
@@ -114,16 +108,12 @@ func TestADatabaseStoreIsOpenedAndReleasedByName(t *testing.T) {
 		"cannot release")
 }
 
-// A CREDENTIAL IS READ FROM THE FLEET'S VAULT, and a node that can reach none
-// says so rather than handing a connection an empty password.
 func TestADatabaseCredentialNeedsAVault(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register}})
 	_, err := databaseSecrets{node: n}.Secret(t.Context(), "shop", "prod", "dbpass")
 	require.ErrorIs(t, err, ErrNoSecrets)
 }
 
-// A DATABASE NODE KEEPS ITS COPIES IN THE FACTORY, and one built without a
-// factory is refused at boot by name.
 func TestADatabaseNodeNeedsAFactory(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })

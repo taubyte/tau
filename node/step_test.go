@@ -12,9 +12,7 @@ import (
 	"github.com/taubyte/tau/services/worker"
 )
 
-// step_test drives the one program a workflow was missing: receive, invoke,
-// hand on. Everything around it — the retry budget, the backoff, where an
-// exhausted item goes — is the queue's, which the lowering already wired.
+// The one program a workflow was missing: receive, invoke, hand on.
 
 // stepConsumer is a driver as the worker resolves one.
 func stepConsumer(sends bool) worker.Consumer {
@@ -34,15 +32,9 @@ func delivery(id string, body []byte) primitivesService.Delivery {
 	return primitivesService.Delivery{ID: id, Data: body, Attempt: 1, Deadline: time.Now().Add(time.Minute)}
 }
 
-// withStepFunction is a project holding the author's half of a step: the
-// function the driver was granted `invoke` on, and the two queues the lowering
-// gave the step — the one it receives from and the one it hands on to.
-//
-// THE QUEUES ARE DECLARED BECAUSE THE SERVICE READS THEM. A send used to carry
-// its own configuration on the grant, so a handle naming nothing at all opened
-// a queue with pkg/queue's defaults; the primitives service resolves the
-// declaration instead and refuses a resource this deployment does not name. So
-// a fixture that skipped them was testing a send nothing could have received.
+// withStepFunction is a project holding the author's half of a step: the function the
+// driver invokes and the two queues the lowering gave it, declared because the
+// primitives service refuses undeclared resources.
 func withStepFunction() []byte {
 	return []byte(`{
 		"object": {
@@ -102,8 +94,6 @@ func stepping(t *testing.T, answers *answering) (*Node, *dispatcher) {
 	return n, &dispatcher{node: n}
 }
 
-// TestASTEPInvokesItsFunctionAndHandsOnWhatCameBack, which is the whole
-// contract.
 func TestAStepInvokesThenSends(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
 	n, d := stepping(t, answers)
@@ -122,8 +112,6 @@ func TestAStepInvokesThenSends(t *testing.T) {
 	require.Equal(t, 1, ready)
 }
 
-// TestTHERUNSIdTravelsWithIt, so a step whose send landed and whose ack did not
-// hands the next step the same work rather than a second copy.
 func TestTheRunKeepsItsIdAcrossSteps(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
 	n, d := stepping(t, answers)
@@ -136,8 +124,6 @@ func TestTheRunKeepsItsIdAcrossSteps(t *testing.T) {
 	require.Equal(t, 1, ready, "a redelivered step queued the same work twice")
 }
 
-// TestTHELASTStepHandsOnNothing, which is exactly where a run ends — the
-// lowering leaves it no queue to send to and the term does not fill.
 func TestTheLastStepEndsTheRun(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
 	_, d := stepping(t, answers)
@@ -146,8 +132,6 @@ func TestTheLastStepEndsTheRun(t *testing.T) {
 	require.Len(t, answers.seen(), 1)
 }
 
-// TestASTEPThatFailsSettlesNOTHING, so the budget the author wrote for THIS
-// step decides whether it is tried again and where it goes when it is not.
 func TestAFailedStepIsTheQueuesBusiness(t *testing.T) {
 	answers := &answering{name: "wasm", status: 500}
 	n, d := stepping(t, answers)
@@ -160,7 +144,6 @@ func TestAFailedStepIsTheQueuesBusiness(t *testing.T) {
 	require.Zero(t, ready+claimed, "nothing was handed on")
 }
 
-// TestATIERThatCannotStartTheFunctionIsAFailedStep and not a consumed item.
 func TestAStepWhoseFunctionCannotRunFails(t *testing.T) {
 	answers := &answering{name: "wasm", fail: true}
 	_, d := stepping(t, answers)
@@ -168,13 +151,6 @@ func TestAStepWhoseFunctionCannotRunFails(t *testing.T) {
 	require.Error(t, d.runStep(t.Context(), stepConsumer(true), delivery("order-1", []byte("x"))))
 }
 
-// TestASTEPThatOnlyWAITSHandsTheItemOnUnchanged. The vocabulary's own fixture
-// has one — `- name: settle / wait: 30s` — and the lowering gives it a queue
-// whose `delay` IS the pause and a driver with no call to grant. By the time
-// this runs the wait has already been served, so the driver's only job is to
-// pass the item along.
-//
-// Refusing here instead sent every run through such a step to the dead letter.
 func TestAWaitOnlyStepHandsTheItemOn(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
 	n, d := stepping(t, answers)
@@ -192,9 +168,6 @@ func TestAWaitOnlyStepHandsTheItemOn(t *testing.T) {
 	require.Equal(t, "carried", string(claimed[0].Data))
 }
 
-// TestADRIVERGrantedNEITHERIsACompiledObjectThatDidNotComeFromTcc — it is
-// neither a step that calls nor a step that waits — and says so rather than
-// acking work it never ran.
 func TestADriverWithNoTargetAndNoNextFails(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
 	_, d := stepping(t, answers)
@@ -205,9 +178,6 @@ func TestADriverWithNoTargetAndNoNextFails(t *testing.T) {
 	require.ErrorIs(t, d.runStep(t.Context(), consumer, delivery("order-1", nil)), ErrNoStepTarget)
 }
 
-// TestTHEDISPATCHERRunsABuiltinItselfRatherThanStartingAnInstance. There is no
-// artifact for a builtin, so a delivery that went to a tier would ask a store
-// for the output of a build that never happened.
 func TestTheDispatcherRunsTheStepBuiltin(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
 	n, d := stepping(t, answers)

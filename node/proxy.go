@@ -8,28 +8,11 @@ import (
 	v2proxy "github.com/taubyte/tau/services/proxy"
 )
 
-// proxy.go runs the L4 listeners for the proxies this node holds.
-//
-// # It needs a worker, and that is the whole of what it needs
-//
-// What a node can serve is what it is already serving — the register does not
-// enumerate — so the list of proxies comes from the worker's held deployments,
-// and the compiled projects come from the cache that worker already keeps. A
-// second cache of the same objects could disagree with it about which revision
-// is current, which for a listener means forwarding to a workload the config no
-// longer names.
-//
-// Where the connection goes is placement's question, exactly as it is for the
-// gateway: which node answers is decided from live measurements, and half of
-// that decision here would be half of it in two places.
-//
-// # Nothing here names an address or a port
-//
-// Both are the service's own business — it listens on every address this node
-// has and the kernel gives it a port. What this file adds is the report: the
-// names those listeners answer on go into Serving so an A record resolves, and
-// the sockets go into Sockets so an SRV record carries the port. See
-// services/dns, which is the only way a client ever learns it.
+// Runs the L4 listeners for the proxies this node holds, listed from the worker's
+// held deployments and read from its cache, so there is one view of the current
+// revision. Where a connection goes is placement's. The service picks addresses and
+// ports; this reports the names in Serving (A records) and sockets in Sockets (SRV),
+// read by services/dns.
 
 // proxies adapts the worker's view of what this node holds to what the proxy
 // service takes.
@@ -71,14 +54,9 @@ func (n *Node) openProxy() error {
 		v2proxy.WithWarn(func(format string, args ...any) { logger.Warnf(format, args...) }),
 	}
 
-	// THE SAME RESOLVER THE WORKER READS, and by the same rule: an injected
-	// one wins, then this node's own vault or one in the fleet. A certificate
-	// a proxy terminates with is a secret of the deployment, held where every
-	// other one is — and a node with none serves `tls: terminate` only where
-	// the cloud's own wildcard covers the name.
-	//
-	// openProxy runs after openWorker, so whichever of the two the worker
-	// settled on is already there.
+	// The same secret resolver the worker reads: a terminated certificate is a
+	// deployment secret; without one, `tls: terminate` is served only where the cloud's
+	// wildcard covers the name. openProxy runs after openWorker.
 	switch {
 	case n.opts.secrets != nil:
 		options = append(options, v2proxy.WithSecrets(n.opts.secrets))

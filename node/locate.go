@@ -15,20 +15,9 @@ import (
 	registerService "github.com/taubyte/tau/services/register"
 )
 
-// locate.go is how one service on this node finds another.
-//
-// THERE IS ONE RULE AND IT IS THE SAME EVERYWHERE: if this node runs the
-// service, use it directly; otherwise ask discovery which node does and dial that
-// one. Both halves read the same view, so there is one answer to "who does
-// this" and it is a local read rather than a lookup on the request path.
-//
-// THE RULE ITSELF LIVES IN p2p/rpc, as [rpc.Reach]: it is a statement about
-// when a stream is established, so it belongs where streams are established,
-// and it was written five times here before it lived anywhere. What is left in
-// this package is the half that is tau's — WHO to call — because routing by
-// load and freshness is the discovery view's business and a transport package that
-// imported a service to answer it would have the dependency backwards. See
-// [Node.routeTo].
+// How one service on this node finds another: use it directly if this node runs it,
+// otherwise dial the node discovery names. The rule is p2p/rpc's rpc.Reach; this
+// package supplies who to call (Node.routeTo).
 
 var logger = log.Logger("tau.v2.node")
 
@@ -49,15 +38,9 @@ type registerReader interface {
 	ResolveHost(ctx context.Context, fqdn string) (project, environment string, err error)
 }
 
-// registerSeam is the register as the REACH onto it hands it back: this node's
-// own when it runs one, a stream onto the node discovery names when it does not.
-//
-// IT IS THE UNION OF WHAT ITS THREE CALLERS NEED, AND IT IS NOT WHAT ANY OF
-// THEM IS HANDED. registerReader, artifact.Register and deploy.Register are
-// each narrower and each is narrowed FROM this — a deploy is the only thing in
-// this composition allowed to publish, and it is the only one whose seam
-// carries Publish. It is exactly as wide as the concrete client the reach used
-// to hand back, so nothing above this line can reach further than it could.
+// registerSeam is the register as the reach hands it back: this node's own, or a
+// stream to the node discovery names. It is the union its callers need; each is
+// handed a narrower view, and only a deploy's carries Publish.
 type registerSeam interface {
 	registerReader
 	Environments(ctx context.Context, project string) ([]string, error)
@@ -77,23 +60,10 @@ type registerSeam interface {
 	RoleOf(ctx context.Context, project, user string) (pkgregister.Role, error)
 }
 
-// routeTo is the `pick` half of every reach on this node: WHICH node in the
-// fleet runs `service`, LEAST LOADED FIRST — which is the view's own order and
-// not a choice made at a call site.
-//
-// THE TOLERANCE IS THE STATS CONFIG'S EFFECTIVE ONE, not its raw field.
-// Reading Config.Fresh directly gave zero whenever the operator left it unset
-// — every row is older than nothing — so every node in the fleet looked like no
-// node at all. It was written out once per service before this, which is four
-// chances to make that mistake again.
-//
-// WHAT AN EMPTY ROUTE MEANS IS NOT DECIDED HERE. This says "nobody", as
-// `absent`; whether nobody means a refusal or means this node is the reach's,
-// and the two answers in this package are [rpc.Reach]'s and [rpc.ReachRouted]'s.
-//
-// `blind` is what a node with no view of a fleet at all is told, which is a
-// different sentence from an empty view: it is a composition that forgot discovery
-// rather than a fleet that has nothing.
+// routeTo is the pick half of every reach: which node runs `service`, least loaded
+// first. The tolerance is the stats config's effective one; the raw field is zero when
+// unset and would make every node look absent. What an empty route means is the
+// reach's. `blind` is for a node with no fleet view at all.
 func (n *Node) routeTo(service string, absent error, blind string) func() (libp2ppeer.ID, error) {
 	return func() (libp2ppeer.ID, error) {
 		if n.discovery == nil {
@@ -113,15 +83,8 @@ func (n *Node) routeTo(service string, absent error, blind string) func() (libp2
 	}
 }
 
-// rowsFor is every node the view says runs `service`, in the view's own order.
-//
-// IT IS THE ONE PLACE THE TOLERANCE IS READ, and that is the whole of why it
-// exists rather than being two Route calls: build.go's pool resolver wants ALL
-// the rows and a reach wants the first, but both want them judged by the same
-// number, and the one thing that has actually gone wrong here is the number.
-//
-// WHAT A ROW THAT DOES NOT DECODE MEANS IS THE CALLER'S, and the two callers
-// answer differently on purpose — see [Node.routeTo] and fromDiscovery.Known.
+// rowsFor is every node the view says runs `service`, in view order, the one place
+// the tolerance is read. What an undecodable row means is the caller's.
 func (n *Node) rowsFor(service string) []pkgstats.Node {
 	if n.discovery == nil {
 		return nil

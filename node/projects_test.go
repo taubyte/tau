@@ -159,8 +159,6 @@ func TestWithNoRegisterAnywhereTheTableSaysSo(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoRegister)
 }
 
-// A PUSH IS VERIFIED FROM THE LINK ALONE: the register's record and the secret
-// the developer stored, before anything is published.
 func TestAHookIsTheLinkAndItsSecret(t *testing.T) {
 	p := linkedNode(t)
 	ctx := t.Context()
@@ -218,8 +216,6 @@ func TestADeployKeyIsReadFromTheVaultByRepository(t *testing.T) {
 	require.Error(t, err)
 }
 
-// A RECONNECTED STREAM RESYNCS EVERY LINKED REPOSITORY: each project's
-// configuration and code, and nothing when nothing is linked.
 func TestLinkedRepositoriesIsEveryRepositoryOfEveryProject(t *testing.T) {
 	n, _, factory := makeNode(t, Config{Services: []string{Register, Discovery}})
 	require.NoError(t, n.Start(t.Context()))
@@ -275,8 +271,6 @@ func (h historyVault) Previous(_ context.Context, project, environment, name str
 	return v, h.replaced, nil
 }
 
-// A ROTATED HOOK SECRET CARRIES THE ONE IT REPLACED, and when, so the frontend
-// can accept it for its grace.
 func TestAHookCarriesTheSecretItsSecretReplaced(t *testing.T) {
 	p := linkedNode(t)
 	ctx := t.Context()

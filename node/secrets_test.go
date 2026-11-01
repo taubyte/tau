@@ -14,16 +14,9 @@ import (
 	secretsService "github.com/taubyte/tau/services/secrets"
 )
 
-// secrets_test covers the WRITE half of the vault.
-//
-// The read half is covered by fleet_test, which resolves a workload's env from
-// a vault here and from one on another node. Nothing exercised the other three
-// methods, and they are the ones a developer's `tau secret set` reaches — the
-// only write in v2 that is not a git push.
+// The vault's write half, the methods `tau secret set` reaches; fleet_test covers
+// reads.
 
-// TestTheDevelopersHalfWritesWhereTheRequestPathReads. Set/List/Delete and
-// Secret are one store seen from two sides; a write that landed somewhere the
-// read does not look is a secret that exists and cannot be used.
 func TestTheDevelopersHalfWritesWhereTheRequestPathReads(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}})
 	require.NoError(t, n.Start(t.Context()))
@@ -53,10 +46,6 @@ func TestTheDevelopersHalfWritesWhereTheRequestPathReads(t *testing.T) {
 	require.Empty(t, names)
 }
 
-// TestTheWriteHalfGoesToWhicheverNodeHoldsTheVault. `open` is one rule for all
-// four methods — run it here, use it directly; otherwise ask discovery who does —
-// so a build frontend on a node with no vault writes over a stream to one that
-// has it, and the holder reads back what it was sent.
 func TestTheWriteHalfGoesToWhicheverNodeHoldsTheVault(t *testing.T) {
 	nodes := fleet(t,
 		Config{Services: []string{Register, Secrets, Discovery}},
@@ -86,9 +75,6 @@ func TestTheWriteHalfGoesToWhicheverNodeHoldsTheVault(t *testing.T) {
 	require.Empty(t, names)
 }
 
-// TestAWriteWithNoVaultAnywhereIsRefused. The write half refuses for the same
-// reason the read half does: a `tau secret set` that reported success against
-// no vault is a developer who believes the secret is there.
 func TestAWriteWithNoVaultAnywhereIsRefused(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register}})
 	require.NoError(t, n.Start(t.Context()))
@@ -117,9 +103,6 @@ func (f secretFor) Secret(ctx context.Context, project, environment, id string) 
 	return f(ctx, project, environment, id)
 }
 
-// TestAnInjectedResolverOutranksTheNodesOwnVault. Three consumers ask this
-// question, which is why it is a method rather than three copies of the switch
-// — and a copy that disagreed would give one of them a different secret.
 func TestAnInjectedResolverOutranksTheNodesOwnVault(t *testing.T) {
 	injected := secretFor(func(context.Context, string, string, string) (string, error) {
 		return "from the injected one", nil
@@ -143,9 +126,6 @@ func TestAnInjectedResolverOutranksTheNodesOwnVault(t *testing.T) {
 	require.Nil(t, bare.secretResolver())
 }
 
-// TestInitWritesTheCloudsSecretsTheNodeThenServes: what `taud init` writes on
-// a stopped node is in its vault once it starts, in the cloud scope its own
-// services read and no project can name.
 func TestInitWritesTheCloudsSecretsTheNodeThenServes(t *testing.T) {
 	ctx := t.Context()
 	mn := mocknet.New()

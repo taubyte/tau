@@ -20,13 +20,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A FLEET'S WAITS SAY WHY THEY GAVE UP. A report that never arrives and a
-// process the kernel held still past the deadline fail with one message, and
-// only the state at that moment tells them apart: a node with no gossip stream
-// from the reporter never heard it, which is an identify push gone missing; one
-// with streams both ways in a cgroup that stalled was heard too late. Each
-// diagnosis is a Stringer, so it is read when the wait gives up rather than
-// when it starts.
+// A fleet's waits say why they gave up: a node with no gossip stream from the reporter
+// never heard it (a missed identify push), while one with streams both ways in a
+// stalled cgroup heard it too late. Each diagnosis is a Stringer, read when the wait
+// gives up.
 
 // gossipWith is which way a host's gossip runs with each peer it is connected
 // to, and whether its peerstore has the peer gossiping, from identify or from a
@@ -172,8 +169,6 @@ func (s *stall) String() string {
 	return fmt.Sprintf("\ncgroup %s during the wait: %s", s.dir, strings.Join(out, ", "))
 }
 
-// TestAStallIsReportedAsWhatTheWaitUsed, counter by counter, and a counter
-// that cannot be read says so instead of reading as nothing.
 func TestAStallIsReportedAsWhatTheWaitUsed(t *testing.T) {
 	scope := filepath.Join(t.TempDir(), "tau-cap.slice", "tau-cap-1.scope")
 	require.NoError(t, os.MkdirAll(scope, 0o755))
@@ -200,10 +195,6 @@ func TestAStallIsReportedAsWhatTheWaitUsed(t *testing.T) {
 		s.String())
 }
 
-// TestAGossipReportSaysWhichWayEachStreamRuns, built the way a fleet that
-// connected before it gossiped could be left: a host that heard of its peer's
-// gossip from no identify, so its peer has a stream to it and it has none
-// back.
 func TestAGossipReportSaysWhichWayEachStreamRuns(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })

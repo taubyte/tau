@@ -1,35 +1,13 @@
 // Package node is the composition root: it starts the v2 services an operator
-// enabled on one machine and wires them to each other.
+// enabled on one machine and wires them together, the only place in v2 that names
+// more than one service.
 //
-// # What a composition root is for
+// A node broadcasts the services it runs, and every locator reads that same view, so
+// "who does this" is a local read. A node running a service it needs uses it directly.
 //
-// Every v2 service takes narrow interfaces and builds nothing itself — a worker
-// takes a register it can read, a gateway takes something that can invoke, a
-// register takes a store. That is what makes each of them testable against a
-// map and a mocknet, and it leaves exactly one thing undone: somebody has to
-// decide what is connected to what. This is that somebody, and it is the only
-// place in v2 that names more than one service.
-//
-// # A node reports what it runs, and everything routes on that
-//
-// The one non-obvious wire is discovery. A node broadcasts the services it runs;
-// every locator then reads that same view — a worker looking for a register, a
-// gateway looking for a worker — so there is one answer to "who does this" and
-// it is a local read on the request path rather than a lookup.
-//
-// It also means a node that runs a service AND needs it uses it directly, with
-// no stream to itself, without any of them knowing whether that happened.
-//
-// # What it does not do
-//
-// IT BINDS NOTHING. Handler() returns the gateway's http.Handler and the caller
-// serves it, because where and with what certificate is the caller's — see the
-// gateway's own doc on why it does not terminate TLS.
-//
-// IT DOES NOT BUILD A HOST, a pubsub or a datastore. Those are one machine's
-// resources shared by everything on it, and a composition that built its own
-// would make a second node in one process impossible — which is exactly what
-// dream does.
+// It binds nothing (Handler returns the gateway's handler for the caller to serve)
+// and builds no host, pubsub or datastore, so dream can run several nodes in one
+// process.
 package node
 
 import (
@@ -153,13 +131,8 @@ type Node struct {
 	runtimes []invoke.Runtime
 	workers  *placement.Workers
 
-	// closers are everything opened during construction, in the order it was
-	// opened. Close walks them backwards.
-	//
-	// TWO OPENERS ARE ON THE REQUEST PATH — a cache's store and a database's,
-	// each opened lazily under its own mutex — so the slice is shared between
-	// goroutines even though most of it is filled during construction. One lock
-	// for it, taken by addCloser and by Close.
+	// closers are everything opened, in order; Close walks them backwards. Two openers
+	// run lazily on the request path, so the slice is guarded by closersMu.
 	closersMu sync.Mutex
 	closers   []io.Closer
 
@@ -171,15 +144,9 @@ type Node struct {
 	sharedMu sync.Mutex
 	shared   *vault
 
-	// THE THREE LOCATORS, each one rule: if this node runs the service, use it
-	// directly; otherwise ask discovery which node does and dial that one. The rule
-	// is p2p/rpc's — see node/locate.go — and each holds at most one stream,
-	// opened on first use and re-opened when the node it names changes.
-	//
-	// registers is read by everything that reads configuration. sends is the
-	// wasm tier's queue and log path and the dispatcher's claim. clocks is the
-	// one window a minute the leader hands out, and it is the only one of the
-	// three that does NOT prefer this node's own — see [Node.clockNow].
+	// The three locators, each one stream opened on first use: registers for
+	// configuration reads, sends for queues, logs and claims, clocks for the leader's
+	// minute, the one that does not prefer this node (Node.clockNow).
 	registers *rpc.Reacher[registerSeam]
 	sends     *rpc.Reacher[primitive.Seam]
 	clocks    *rpc.Reacher[primitivesService.Clocks]
@@ -232,11 +199,8 @@ func New(cfg Config, opts ...Option) (*Node, error) {
 // open constructs in dependency order. Anything opened is recorded as it is
 // opened, so a failure half way closes what it made.
 func (n *Node) open() error {
-	// THE LOCATORS FIRST, because everything opened below may be handed one and
-	// because a vault built during composition builds its own. Nothing they
-	// read is read yet: each closure reads a field of this node at CALL time,
-	// so a service opened after this is still found through a reach made before
-	// it — including the discovery view the next line opens.
+	// The locators first: each closure reads a node field at call time, so services
+	// opened later are still found.
 	n.openReach()
 
 	// STATS NEXT. Everything else routes on the view it maintains, including
@@ -357,12 +321,8 @@ func (n *Node) openRegister() error {
 	return nil
 }
 
-// openSecrets starts this node's vault.
-//
-// ITS OWN DATABASE, not a table beside the register's. The two stores have
-// different writers, different lifecycles and different trust properties —
-// see services/secrets' package doc — and sharing one would have made a
-// rotation a redeploy.
+// openSecrets starts this node's vault, in its own database: different writers,
+// lifecycle and trust than the register's.
 func (n *Node) openSecrets() error {
 	if !n.cfg.runs(Secrets) {
 		return nil
@@ -446,34 +406,18 @@ func (n *Node) openWorker() error {
 		tiers = append(tiers, tier)
 	}
 
-	// NEITHER A SITE, A COMPONENT NOR A SCRIPT NEEDS A DAEMON OR AN OPERATOR
-	// CHOICE. All three cold-start out of the asset store, so a node that can
-	// reach it serves all three — which means the smallest possible cloud runs
-	// a static website, a wasm function and a js one, and that is most of what
-	// anybody deploys. A node with no asset store has none of them, and refuses
-	// a js function by name as it refuses a wasm one.
-	//
-	// AN INJECTED TIER WINS OVER A BUILT ONE, by name. Somebody who handed this
-	// node a wasm runtime meant that one — a test observing what a node asks to
-	// start, a composer with an engine this package does not know about — and
-	// building a second under the same name is not a choice between them, it is
-	// a pool that refuses to open.
+	// Static sites, components and scripts cold-start from the asset store with no daemon,
+	// so a node with one serves all three. An injected tier wins over a built one of the
+	// same name.
 	if n.opts.assets != nil {
 		site, err := static.New(n.opts.assets)
 		if err != nil {
 			return err
 		}
 
-		// A FUNCTION'S println GOES SOMEWHERE. It is the first thing anybody
-		// reaches for and it went nowhere; a node's log is not where a
-		// developer would look first, but it is somewhere, and what it takes to
-		// do better — per-invocation attribution — is a change to every tier's
-		// interface rather than to this wiring.
-		// THE BACKINGS ARE ALWAYS GIVEN, and each opens nothing until a
-		// workload actually reaches one. A tier composed without them refuses
-		// every resource that declares a cache, a stream, a database, a queue
-		// or a secret — which on a node that has the resources for them would
-		// be a refusal for no reason.
+		// A function's println goes to the node's log. The backings are always given and open
+		// nothing until reached; without them the tier would refuse resources the node could
+		// serve.
 		publisher, err := n.streamBacking(stream.Stream)
 		if err != nil {
 			return err
@@ -549,19 +493,12 @@ func (n *Node) openWorker() error {
 			wasm.WithStreams(publisher),
 			wasm.WithBus(bus),
 			wasm.WithSQL(servers),
-			// KV GOES THROUGH THE DATABASE SERVICE, and the other three do not
-			// YET: services/database serves one cell of the grid — tau's own kv
-			// over the replicated store — and the rest move as they are served.
-			// A partial cutover is visible here rather than hidden behind a
-			// backing that silently answers either way.
+			// KV goes through the database service; the other models do not yet.
 			wasm.WithKV(n.kvBacking(servers)),
 			wasm.WithDocuments(servers),
 			wasm.WithVectors(servers),
-			// AND THE `sync` KIND GOES THROUGH THE PRIMITIVES SERVICE, both
-			// types of it, which is what takes the namespace out of whichever
-			// machine happened to run the code. There is no fallback to the
-			// node's own queues here and node/primitives.go says why: a queue
-			// answered either way is two queues that cannot see each other.
+			// The `sync` kind goes through the primitives service with no local fallback, which
+			// would be two queues that cannot see each other.
 			wasm.WithQueues(syncs),
 			wasm.WithLogs(syncs),
 			wasm.WithStorage(objects),
@@ -677,13 +614,8 @@ func workloadLog(spec invoke.Spec) (stdout, stderr io.Writer) {
 		logLine(func(line string) { logger.Warnf("%s: %s", spec.Name, line) })
 }
 
-// logLine turns a stream of bytes into whole lines.
-//
-// A LOGGER TAKES A MESSAGE AND A WRITER TAKES BYTES, and a guest writes
-// whenever its buffer flushes — so without this one println can arrive as three
-// log entries and two printlns as one. What is left unflushed when an instance
-// goes away is lost, which is the same bargain every line-buffered logger
-// makes.
+// logLine turns a stream of bytes into whole lines, since a guest's writes follow its
+// buffer flushes.
 func logLine(emit func(string)) io.Writer {
 	return &lineWriter{emit: emit}
 }
@@ -712,17 +644,9 @@ func (w *lineWriter) Write(p []byte) (int, error) {
 	}
 }
 
-// openPlacement builds the router that turns an address into a node.
-//
-// IT IS NOT THE GATEWAY'S, THOUGH THE GATEWAY WAS ONCE THE ONLY CALLER. A
-// workload dialling a channel asks the same question the edge asks — which node
-// runs this workload — and a node running a worker and no gateway had nothing
-// to ask, so a dial could reach only the machine it started on.
-//
-// A NODE THAT RUNS NO STATS GETS NONE, and that is not an error here: routing
-// reads the view discovery maintains, and a node without one is a node that can
-// only reach itself. Whoever needs it to leave the machine says so — the
-// gateway below refuses to start without it.
+// openPlacement builds the router that turns an address into a node, used by the
+// gateway and by channel dials alike. A node without stats gets none and can only
+// reach itself; the gateway refuses to start without it.
 func (n *Node) openPlacement() error {
 	if n.discovery == nil {
 		return nil
@@ -834,13 +758,8 @@ func (n *Node) secretResolver() model.Secrets {
 	return nil
 }
 
-// registerSource is how this node reads the register: directly when it runs
-// one, and over the swarm otherwise.
-//
-// THE LOCAL CASE IS NOT AN OPTIMISATION SO MUCH AS THE ABSENCE OF A HOP. A
-// register is a state machine over a replicated store, so a node running one
-// already has every answer locally; dialling itself to ask would add a stream
-// and a serialization to a read that happens on every request.
+// registerSource is how this node reads the register: directly when it runs one, no
+// hop, and over the swarm otherwise.
 func (n *Node) registerSource() *source {
 	return &source{node: n}
 }
@@ -870,20 +789,13 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.cm != nil {
 		order = append(order, n.cm)
 	}
-	// THE DATABASE BEFORE THE WORKER THAT READS THROUGH IT. It was in neither
-	// this list nor any other, which is two failures at once: its listener was
-	// never bound, so every peer that tried to reach it got "protocols not
-	// supported" — invisible for as long as the only caller was the node's own
-	// Local() — and its maintenance sweep never ran, so nothing on a composed
-	// node ever reconsidered what it held.
+	// The database before the worker that reads through it; Start binds its listener and
+	// runs its maintenance sweep.
 	if n.database != nil {
 		order = append(order, n.database)
 	}
-	// AND THE PRIMITIVES SERVICE BEFORE THE WORKER THAT SENDS THROUGH IT, for
-	// the reason above it: Start binds the listener, begins forming the group
-	// off the request path and starts the lifecycle pass, and a service in
-	// neither this list nor any other is one whose peers get "protocols not
-	// supported" and whose queues nothing ever sweeps.
+	// The primitives service before the worker that sends through it; Start binds the
+	// listener, forms the group in the background and starts the lifecycle pass.
 	if n.primitives != nil {
 		order = append(order, n.primitives)
 	}
@@ -947,25 +859,14 @@ func (n *Node) Start(ctx context.Context) error {
 		}()
 	}
 
-	// THE DISPATCHER, on any node that runs a worker. It reads what the worker
-	// holds and claims the queues those consumers name, so a node running no
-	// worker has nothing to drain.
-	//
-	// AND IT IS NOT GATED ON RAFT ANY MORE. It used to be, and the reason it
-	// gave — "a node running a worker without raft opens no queue and simply
-	// finds none" — went stale with the cutover: a queue is the primitives
-	// service's now, and node/primitives.go resolves it through discovery to a
-	// service on ANOTHER node when this one runs none. A compute node with no
-	// consensus of its own can claim, and under the old gate it never tried.
+	// The dispatcher runs on any node with a worker, with or without local raft: queues
+	// are the primitives service's, reached through discovery when not local.
 	if n.worker != nil {
 		n.dispatchDone = make(chan struct{})
 		go (&dispatcher{node: n}).loop(loopCtx, n.dispatchDone)
 
-		// THE CLOCK IS NOT A LOOP HERE ANY MORE. A schedule is claimed and
-		// fired by the primitives service, on the one ticker it already runs —
-		// see services/primitives/cron.go. What this node contributes is which
-		// crons exist and how to reach a workload, both of which
-		// openPrimitives hands over.
+		// The clock is the primitives service's (services/primitives/cron.go); this node only
+		// supplies which crons exist and how to reach a workload.
 	}
 
 	// THE CHECKPOINTS, which is what makes a volume survive its node — and
@@ -1088,19 +989,9 @@ func (n *Node) Snapshot(context.Context) (discovery.Snapshot, error) {
 	return snapshot, nil
 }
 
-// addresses is where CLIENTS reach this node — the IPs a DNS answer is made of.
-//
-// THEY ARE NOT THE MULTIADDRS THE FLEET GOSSIPS OVER, and conflating the two is
-// a real bug rather than a tidiness point, which is what this did: it reported
-// `/ip6/…/tcp/4242` verbatim, and services/dns parsed every one of them as an
-// address, failed, and answered A queries with no records at all. The proto
-// field says so in its own documentation and the code did it anyway.
-//
-// A PEERSTORE ADDRESS IS ALSO NOT ALWAYS A CLIENT ADDRESS. Behind NAT, a mesh
-// VPN or a container bridge it is routinely unreachable from the internet, so
-// what is published here is the IP half of what this host believes it is
-// listening on — a claim, in the same sense the load figure is, and the best
-// this node can make without being told.
+// addresses is where clients reach this node, the IPs a DNS answer is made of, not the
+// multiaddrs the fleet gossips over. It is the IP half of what this host listens on,
+// which behind NAT or a bridge may be unreachable: a claim, like the load figure.
 func (n *Node) addresses() []string {
 	seen := map[string]bool{}
 	var routable, loopback []string
@@ -1131,13 +1022,8 @@ func (n *Node) addresses() []string {
 		routable = append(routable, s)
 	}
 
-	// LOOPBACK ONLY WHEN THERE IS NOTHING ELSE, which is the rule that serves
-	// both ends of the range this runs on. A node with a real address that also
-	// listens on 127.0.0.1 would otherwise publish it, and some clients take
-	// the first record they are given — so a share of the fleet's traffic goes
-	// to whichever machine asked. A development cloud bound only to loopback
-	// has no other answer, and refusing to give it would mean its own names
-	// resolve to nothing on the one machine where they should.
+	// Loopback only when nothing else is available, so a node with a real address never
+	// publishes 127.0.0.1, while a loopback-only development cloud still resolves.
 	if len(routable) > 0 {
 		return routable
 	}
@@ -1199,25 +1085,10 @@ func (n *Node) Discovery() *discovery.Service { return n.discovery }
 // published.
 func (n *Node) PubSub() discovery.PubSub { return n.opts.pubsub }
 
-// QueueDepth is what one declared queue holds: items waiting and items claimed.
-//
-// IT IS FOR AN OPERATOR AND FOR A TEST, like Loaded and Held, and it reads
-// local state without a barrier — so on a follower it can lag. Nothing decides
-// anything on it.
-//
-// THE HANDLE IS ALL A CALLER GIVES, which is what keeps it usable from outside:
-// the service reads everything else about the queue out of the declaration, so
-// a grant carrying only the handle is the whole of the address. `ok` is false
-// for a handle this deployment declares no queue for, for a node that can reach
-// no primitives service, and for one whose group has not formed — three
-// different facts that a depth cannot tell apart and that nothing here decides
-// on.
-//
-// A DEAD LETTER IS READ AS THE QUEUE IT IS, by the handle of the queue an
-// author named in `dead_letter`, because that is where exhausted items land.
-// A queue whose author declared none has a dead letter derived from its name,
-// which nothing declares and this cannot name — see the service's Depth.Dead
-// for the half that can.
+// QueueDepth is what one declared queue holds: items waiting and claimed. For
+// operators and tests; it reads local state without a barrier. `ok` is false for an
+// undeclared handle, an unreachable service or an unformed group alike. A dead letter
+// is read by the handle of the queue named in `dead_letter`.
 func (n *Node) QueueDepth(handle string) (ready, claimed int, ok bool) {
 	if n.syncs == nil {
 		return 0, 0, false
@@ -1263,15 +1134,9 @@ func (s *source) Object(ctx context.Context, id pkgregister.ObjectID) ([]byte, e
 	return c.Object(ctx, id)
 }
 
-// ResolveFleet is what the cloud declares about itself: the replication floor
-// every node has to compute placement with identically.
-//
-// THE LOCAL REGISTER ONLY, and that is a gap rather than a design. The document
-// is published, replicated and read the way a project is, but the register's
-// wire carries no call for it — so a node that runs no register of its own
-// cannot learn it and falls back to the default, which is at least a number
-// every such node reaches the same way. Closing it is an RPC on the register,
-// not a second path to the same bytes.
+// ResolveFleet is the cloud's replication floor. Only the local register can answer:
+// the register's wire has no call for it, so a node without one falls back to the
+// default.
 func (s *source) ResolveFleet(ctx context.Context) (pkgregister.Pointer, error) {
 	if s.node.register == nil {
 		return pkgregister.Pointer{}, fmt.Errorf("%w: this node runs no register to read the fleet from", ErrNoRegister)

@@ -9,27 +9,10 @@ import (
 	"github.com/taubyte/tau/services/dns"
 )
 
-// dns.go answers queries from what this node's discovery view holds.
-//
-// # It is the last link, and without it the rest publishes into nothing
-//
-// A proxy binds a port the kernel chose and reports it; discovery carries that to
-// every node; and a client learns it by looking up an SRV record. Nothing in
-// that chain is reachable until something binds a socket and answers — so a
-// fleet with no dns node has a routing table nobody can read.
-//
-// # Where it listens is a port, and only a port
-//
-// Same rule as the proxy's: the addresses are the machine's and nothing here
-// names one. What an operator does choose is the PORT, because 53 is the one
-// number in this system that is not allocated — a resolver dials it by
-// convention and there is no record that could tell it otherwise.
-//
-// THE DEFAULT IS :53 AND BINDING IT NEEDS PRIVILEGE. Below 1024 a process needs
-// root or CAP_NET_BIND_SERVICE, which a development node has neither of, so the
-// failure is reported rather than swallowed: a node told to serve dns and
-// silently serving nothing is a fleet whose names resolve until the one node
-// that could answer them restarts.
+// Answers queries from this node's discovery view: the last link, without which
+// proxies' ports published through discovery are unreadable. Only the port is
+// configurable, since 53 is dialled by convention. The default :53 needs privilege,
+// and a failed bind is reported rather than swallowed.
 
 // DefaultDNSListen is every address this machine has, on the port a resolver
 // dials by convention.
@@ -98,10 +81,8 @@ func (n *Node) openDNS() error {
 	return nil
 }
 
-// listenDNS binds the server. It is separate from openDNS for the reason the
-// gateway's handler is separate from its construction: building a service and
-// taking a socket are different failures, and a composition that did both at
-// once could not be tested without one.
+// listenDNS binds the server, separate from openDNS so building and binding fail
+// separately.
 func (n *Node) listenDNS() error {
 	if n.dns == nil {
 		return nil

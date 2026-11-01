@@ -21,14 +21,9 @@ import (
 	authService "github.com/taubyte/tau/services/auth"
 )
 
-// forge.go says which git hosts this cloud serves, and which driver speaks for
-// each.
-//
-// THE HOST IS THE PROVIDER, and a binding is the one place that has to say more
-// than the host: gitlab.example.com could be a GitLab or a Gitea, and nothing
-// about the name tells them apart. So a deployment names the DRIVER per host,
-// here, once — and everything downstream asks the registry by host and never
-// learns there was a choice.
+// Which git hosts this cloud serves and the driver for each. The host alone cannot
+// tell a GitLab from a Gitea, so the driver is named per host once, and everything
+// downstream asks the registry by host.
 
 // Forge is one git host this cloud serves.
 type Forge struct {
@@ -188,12 +183,8 @@ func parseHostKey(line string) (gossh.PublicKey, error) {
 	return key, err
 }
 
-// forges builds the registry every provider question in this node is asked
-// through, under the zero Policy — the only one: a delivery is accepted only
-// under a scheme that binds the body, and a forge that cannot sign is bound
-// with no hook faces rather than refused.
-// WithForges replaces the forges the config declares with a registry built
-// elsewhere — an in-memory forge in a test. Production binds forges from config.
+// WithForges replaces the configured forges with a registry built elsewhere (an
+// in-memory forge in a test).
 func WithForges(r *forge.Registry) Option {
 	return func(o *options) error {
 		if r == nil {

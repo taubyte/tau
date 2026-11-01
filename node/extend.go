@@ -20,19 +20,10 @@ import (
 	"github.com/taubyte/tau/services/discovery"
 )
 
-// extend.go lets a composer add a service this package does not name.
-//
-// The built-in services are a closed set on purpose — see config.go on why a
-// misspelled name must be refused rather than ignored. An added service keeps
-// that property: it is registered BY NAME with WithService before the config
-// is checked, so a config naming it is valid and a config naming anything else
-// still is not.
-//
-// WHAT IT IS HANDED IS THE NODE'S, NOT ITS OWN. A service that minted its own
-// host, its own listener or its own database factory would be a second node in
-// the process; Host is the narrow slice of this one an added service may use,
-// and everything it opens through Host is closed with the node, before the
-// built-in services it may still be calling.
+// Lets a composer add a service this package does not name, registered by name with
+// WithService before the config is checked, so a misspelled name is still refused.
+// An added service gets the node's resources through Host, all closed with the node
+// before the built-in services.
 
 // Service is a service added to a node by name.
 type Service struct {

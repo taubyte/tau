@@ -23,12 +23,6 @@ import (
 	"github.com/taubyte/tau/services/worker"
 )
 
-// ── the one combination a node refuses ───────────────────────────────────
-
-// THE PUBLIC HALF EXISTS SO THAT THE PROCESS A STRANGER'S POST REACHES HOLDS
-// NOTHING WORTH STEALING. One node running both would put the queue's writer,
-// every repository's deploy key and the register's writer in exactly that
-// process, and reduce the split to a directory layout.
 func TestANodeRefusesBothHalvesOfTheBuildService(t *testing.T) {
 	_, err := Config{Services: []string{BuildFrontend, BuildBackend}}.withDefaults()
 	require.ErrorIs(t, err, ErrBothHalves)
@@ -42,9 +36,6 @@ func TestANodeRefusesBothHalvesOfTheBuildService(t *testing.T) {
 	}
 }
 
-// THE DEFAULT SHAPE MUST NOT BE THE REFUSED ONE, which is why the public half
-// is not in All: an operator who names no services gets a development cloud,
-// and a development cloud that would not start is not one.
 func TestTheDefaultShapeStarts(t *testing.T) {
 	require.NotContains(t, All, BuildFrontend)
 	require.Contains(t, All, BuildBackend)
@@ -55,15 +46,10 @@ func TestTheDefaultShapeStarts(t *testing.T) {
 	require.Equal(t, All, cfg.Services)
 }
 
-// The names come from the build service, not from a second spelling here: a
-// rename there would otherwise leave an operator's config naming a service
-// nothing starts.
 func TestTheRoleNamesAreTheBuildServicesOwn(t *testing.T) {
 	require.Equal(t, "build-frontend", BuildFrontend)
 	require.Equal(t, "build-backend", BuildBackend)
 }
-
-// ── what each role cannot be built without ───────────────────────────────
 
 func TestTheBackendNeedsARaft(t *testing.T) {
 	mn := mocknet.New()
@@ -79,8 +65,6 @@ func TestTheBackendNeedsARaft(t *testing.T) {
 	require.ErrorIs(t, WithRaft(nil)(&options{}), ErrNoRaft)
 }
 
-// ── a node runs them, and says it does ───────────────────────────────────
-
 func TestANodeAdvertisesTheRolesItRuns(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Discovery, Auth, BuildBackend}})
 	require.NoError(t, n.Start(t.Context()))
@@ -95,8 +79,6 @@ func TestANodeAdvertisesTheRolesItRuns(t *testing.T) {
 	require.Nil(t, n.buildFrontend)
 }
 
-// THE PUBLIC HALF DIALS THE PRIVATE ONE AND AUTH, both over the swarm, so a
-// node that runs only it holds neither.
 func TestTheFrontendHoldsNeitherStore(t *testing.T) {
 	// THE PUBLIC ROLE BINDS ITS OWN LISTENER and there is no default port for
 	// it — a port baked into a service is why sibling worktrees collide — so an
@@ -118,10 +100,6 @@ func TestANodeWithNoFrontendHasNoFrontendAddress(t *testing.T) {
 	require.Nil(t, (&Node{}).BuildFrontendAddr())
 }
 
-// ── finding who runs what ────────────────────────────────────────────────
-
-// THERE IS ONE ANSWER TO "WHO DOES THIS" and it is the view every other locator
-// on this node reads.
 func TestTheResolverReadsTheSameViewAsEverythingElse(t *testing.T) {
 	nodes := fleet(t,
 		Config{Services: []string{Discovery, Auth}},
@@ -152,8 +130,6 @@ func TestTheResolverReadsTheSameViewAsEverythingElse(t *testing.T) {
 	require.Equal(t, peers, from.Known(), "the view decides who runs what, not a failed dial")
 }
 
-// A service nobody runs is a wait that ends with the caller's deadline and says
-// what it was looking for.
 func TestTheResolverGivesUp(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Discovery}})
 	require.NoError(t, n.Start(t.Context()))
@@ -166,8 +142,6 @@ func TestTheResolverGivesUp(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
-// A node with no discovery can locate nothing, and says so rather than blocking
-// until a deadline that will never produce an answer.
 func TestTheResolverOnANodeWithNoStats(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register}})
 
@@ -180,17 +154,10 @@ func TestTheResolverOnANodeWithNoStats(t *testing.T) {
 	require.Error(t, err)
 }
 
-// A row whose peer does not decode is skipped rather than failing the lookup,
-// so one bad row cannot hide the good ones beside it.
 func TestARowThatIsNotAPeerIsSkipped(t *testing.T) {
 	require.Equal(t, []libp2ppeer.ID(nil), (&fromDiscovery{node: &Node{}, name: Auth}).Known())
 }
 
-// ── the register's one writer ────────────────────────────────────────────
-
-// A DEPLOY IS THE ONLY THING IN THIS COMPOSITION ALLOWED TO PUBLISH, and on a
-// node running its own register that is a local call rather than a stream to
-// itself.
 func TestThePublisherIsLocalWhenThisNodeHasTheRegister(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
 
@@ -206,11 +173,6 @@ func TestThePublisherIsLocalWhenThisNodeHasTheRegister(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoRegister)
 }
 
-// ── the code build's read of what is deployed ────────────────────────────
-
-// IT RESOLVES PER CALL for the same reason the deploy's publisher does: which
-// node answers is a routing question, and one held from construction would be
-// whichever node this dialled at boot, forever.
 func TestTheBuildRegisterReadsLocallyWhenThisNodeHasOne(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
 	require.NoError(t, n.Start(t.Context()))
@@ -242,9 +204,6 @@ func TestTheBuildRegisterReadsLocallyWhenThisNodeHasOne(t *testing.T) {
 	require.Contains(t, string(compiled), "shop")
 }
 
-// A NODE WITH NO REGISTER ANYWHERE cannot read what is deployed, and every one
-// of the three reads says so rather than answering emptily — an empty answer
-// would look like a project that was never deployed.
 func TestTheBuildRegisterWithNoRegisterAnywhere(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Discovery}})
 	require.NoError(t, n.Start(t.Context()))
@@ -261,18 +220,12 @@ func TestTheBuildRegisterWithNoRegisterAnywhere(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoRegister)
 }
 
-// A NODE THAT CANNOT RUN A CONTAINER CANNOT BUILD CODE, and it says so on the
-// push rather than starting and refusing every one. The two halves of what a
-// push can be are independent: a node with no container backend still deploys
-// configuration, which is most of what a small cloud does.
 func TestABuildBackendWithNoContainerBackend(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Discovery, BuildBackend}})
 	require.NoError(t, n.Start(t.Context()))
 	require.NotNil(t, n.buildBackend, "it still runs, and still deploys configuration")
 }
 
-// A CONTAINER BACKEND NAMED AND NOT BUILDABLE IS REFUSED AT BOOT rather than at
-// the first push, which is the same rule the worker's tier follows.
 func TestABuildBackendWithABackendThatIsNotOne(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -288,9 +241,6 @@ func TestABuildBackendWithABackendThatIsNotOne(t *testing.T) {
 	require.ErrorIs(t, err, ErrUnknownBackend)
 }
 
-// A node given an asset store hands it to the build backend, which is the
-// difference between a job that records what it produced and one whose logs and
-// artifacts live and die with the run.
 func TestWithAssets(t *testing.T) {
 	require.ErrorContains(t, WithAssets(nil)(&options{}), "asset store")
 
@@ -300,10 +250,6 @@ func TestWithAssets(t *testing.T) {
 	require.NotNil(t, n.buildBackend)
 }
 
-// A SITE NEEDS NO DAEMON AND NO OPERATOR CHOICE: its cold start is a fetch and
-// an unpack, so a node that can reach the asset store can serve one. That is
-// what lets a static website run on the smallest possible cloud, which is most
-// of what an imported project is.
 func TestAnAssetStoreIsEnoughToServeASite(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -350,10 +296,6 @@ func (c *countingAssets) Get(context.Context, string) (io.ReadSeekCloser, error)
 	return nil, errors.New("nothing stored")
 }
 
-// A CONTAINER BACKEND IS BUILT ONCE AND SHARED, because the tier that runs
-// workloads and the engine that runs builds must be the same daemon — a build
-// that auto-detected its own would run on one nobody configured while the
-// workloads ran on the one they did.
 func TestTheContainerBackendIsTheOperatorsChoice(t *testing.T) {
 	_, err := containerBackend(ContainerConfig{Backend: "not-a-backend"})
 	require.ErrorIs(t, err, ErrUnknownBackend)
@@ -375,12 +317,6 @@ func TestTheContainerBackendIsTheOperatorsChoice(t *testing.T) {
 	}
 }
 
-// ── what a built resource runs ───────────────────────────────────────────
-
-// THE ANSWER IS CACHED, briefly, because a worker resolves it per invocation
-// and the row only moves when a build finishes. The TTL is the deploy
-// propagation budget — how long a node may keep running the previous artifact —
-// which is the same thing the register's pointer TTL is.
 func TestTheArtifactLookupIsCachedForTheDeployBudget(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	n, _, _ := makeNode(t,
@@ -405,9 +341,6 @@ func TestTheArtifactLookupIsCachedForTheDeployBudget(t *testing.T) {
 	require.Error(t, err)
 }
 
-// A FAILED LOOKUP IS NOT CACHED. "Nothing has built this yet" ends the moment a
-// build finishes, and remembering it would keep a node refusing a resource for
-// a whole TTL after it became runnable.
 func TestAFailedArtifactLookupIsNotRemembered(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Discovery}})
 	require.NoError(t, n.Start(t.Context()))
@@ -421,18 +354,12 @@ func TestAFailedArtifactLookupIsNotRemembered(t *testing.T) {
 	require.Empty(t, a.seen)
 }
 
-// A CONSUMER READING THE RAW TTL GETS ZERO whenever an operator left it unset,
-// and zero means "ask every time" — the opposite of what an unset field asks
-// for. It is the same shape that made every register in the fleet look absent.
 func TestTheDeployBudgetHasAnEffectiveValue(t *testing.T) {
 	require.Equal(t, worker.DefaultPointerTTL, worker.Config{}.Pointer())
 	require.Equal(t, worker.DefaultPointerTTL, worker.Config{PointerTTL: -1}.Pointer())
 	require.Equal(t, time.Minute, worker.Config{PointerTTL: time.Minute}.Pointer())
 }
 
-// A NODE WIRES THE BUILD SERVICE AS ITS ARTIFACT RESOLVER, unless a composer
-// injected one — an injected one wins because it is the more specific
-// statement.
 func TestTheWorkerResolvesArtifactsThroughTheBuildService(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Discovery, Worker}})
 	require.NotNil(t, n.worker)
@@ -459,9 +386,6 @@ func tierNames(n *Node) []string {
 	return out
 }
 
-// AN INJECTED TIER WINS OVER A BUILT ONE, by name. Somebody who handed this
-// node a wasm runtime meant that one — and building a second under the same
-// name is not a choice between them, it is a pool that refuses to open.
 func TestAnInjectedTierWins(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -482,10 +406,6 @@ func TestAnInjectedTierWins(t *testing.T) {
 	require.Same(t, n.opts.runtimes[0], n.tiers()[0])
 }
 
-// A FUNCTION'S println GOES SOMEWHERE. A logger takes a message and a writer
-// takes bytes, and a guest writes whenever its buffer flushes — so without
-// line assembly one println arrives as three log entries and two printlns as
-// one.
 func TestAWorkloadsOutputIsAssembledIntoLines(t *testing.T) {
 	var lines []string
 	w := logLine(func(line string) { lines = append(lines, line) })
@@ -522,8 +442,6 @@ func TestAWorkloadsOutputIsAssembledIntoLines(t *testing.T) {
 	require.Equal(t, []string{"still typing"}, lines)
 }
 
-// BOTH STREAMS GO TO THE SAME PLACE and the level is the difference, so an
-// operator filtering on level sees a guest saying something went wrong.
 func TestAWorkloadsStreamsAreNamedByTheWorkload(t *testing.T) {
 	stdout, stderr := workloadLog(invoke.Spec{Name: "shop/prod/function/checkout"})
 	require.NotNil(t, stdout)
@@ -540,10 +458,6 @@ func TestAWorkloadsStreamsAreNamedByTheWorkload(t *testing.T) {
 	require.Equal(t, 16, n)
 }
 
-// TestAWorkerAsksTheBuildBackendOnAnotherNode. The lookup is the same rule the
-// register and the vault keep — run it here, use it directly; otherwise ask the
-// view who does and dial that one — and here it crosses the wire: the worker
-// node runs no build service at all.
 func TestAWorkerAsksTheBuildBackendOnAnotherNode(t *testing.T) {
 	nodes := fleet(t,
 		Config{Services: []string{Register, Discovery, BuildBackend}},
@@ -567,8 +481,6 @@ func TestAWorkerAsksTheBuildBackendOnAnotherNode(t *testing.T) {
 	require.Empty(t, a.seen)
 }
 
-// WHERE A PROJECT RUNS IS THE COMPOSER'S ANSWER: a node given Regions hands them to
-// its deploys, and a nil one is refused rather than read as "the default".
 func TestWithRegions(t *testing.T) {
 	var o options
 	require.Error(t, WithRegions(nil)(&o))
@@ -576,9 +488,6 @@ func TestWithRegions(t *testing.T) {
 	require.Equal(t, schema.WithNoRegions(), o.regions)
 }
 
-// WHICH VIEW A NODE READS: its destination's, DefaultRegion unless it is told another —
-// so an OSS node needs no region in its configuration to read the one view its deploy
-// published.
 func TestAsDestination(t *testing.T) {
 	var o options
 	require.Error(t, AsDestination("")(&o))
@@ -587,9 +496,6 @@ func TestAsDestination(t *testing.T) {
 	require.Equal(t, "region-1", (&Node{opts: o}).destination())
 }
 
-// A DEVELOPMENT CLOUD PUTS ITS OWN SEAMS IN FRONT OF THE NODE'S: it is handed
-// the clone the node would have used — and, on a node that runs no containers,
-// no engine — and what it hands back is what the backend reads and runs with.
 func TestBuildSeamsAreLayeredOverTheNodesOwn(t *testing.T) {
 	require.Error(t, WithBuildSeams(nil)(&options{}))
 	require.Error(t, WithUploads(nil)(&options{}))
@@ -615,7 +521,6 @@ func (f engineFunc) Make(ctx context.Context, s artifact.Spec, log io.Writer) (i
 	return f(ctx, s, log)
 }
 
-// WHAT A DEPLOYMENT RUNS reads back as the object its pointer names.
 func TestTheBuildRegisterReadsAPublishedObjectBack(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
 	require.NoError(t, n.Start(t.Context()))
@@ -634,9 +539,6 @@ func TestTheBuildRegisterReadsAPublishedObjectBack(t *testing.T) {
 	require.Error(t, err)
 }
 
-// A NODE THAT RUNS THE BUILD BACKEND READS ITS OWN, in-process: a host does not
-// dial itself, so a single-node cloud asking the swarm found only itself and
-// never resolved anything. Its answer stands — here, that nothing was built.
 func TestANodeReadsItsOwnBuildBackend(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Discovery, BuildBackend, Worker}})
 	require.NoError(t, n.Start(t.Context()))
@@ -652,7 +554,6 @@ type following struct{ *raft.MockCluster }
 
 func (following) IsLeader() bool { return false }
 
-// A FOLLOWER ASKS THE FLEET, as before: only the leader answers.
 func TestAFollowerAsksTheFleetForAnArtifact(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{BuildBackend}},
 		WithRaft(func(string) (raft.Cluster, error) { return following{raft.NewMockCluster()}, nil }))

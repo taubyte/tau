@@ -22,12 +22,8 @@ import (
 	"github.com/taubyte/tau/services/worker"
 )
 
-// TWO NODES IS WHERE THE COMPOSITION IS ACTUALLY TESTED.
-//
-// One node proves the wiring; it does not prove the part that matters, which is
-// that a node finds what it does not run. A worker with no register has to
-// learn from discovery which node has one and dial it — and every hop below is the
-// production one: a real gossipsub, a real p2p stream, the real client.
+// Two nodes test the composition: a node finding what it does not run, over real
+// gossipsub, streams and clients.
 
 // fleet is n nodes on one mocknet, each told what to run.
 func fleet(t *testing.T, configs ...Config) []*Node {
@@ -36,13 +32,9 @@ func fleet(t *testing.T, configs ...Config) []*Node {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
 
-	// EVERY HOST GOSSIPS BEFORE IT IS CONNECTED. A pubsub opens its stream to a
-	// peer when it starts or when identify says the peer gossips, and never
-	// retries one that failed. A host connected before its peer gossiped hears
-	// of it only from an identify push: sent once, limited per subnet (every
-	// mocknet peer is in one), and ignored if it lands while the attempt that
-	// will fail is in flight. Miss it and that host never sends the peer
-	// anything, reports included.
+	// Every host gossips before it is connected: a pubsub stream is opened at start or
+	// when identify reports gossip, never retried, and a late identify push is limited
+	// per subnet (every mocknet peer shares one).
 	hosts := make([]host.Host, len(configs))
 	gossip := make([]*pubsub.PubSub, len(configs))
 	for i := range configs {
@@ -54,10 +46,8 @@ func fleet(t *testing.T, configs ...Config) []*Node {
 	require.NoError(t, mn.LinkAll())
 	require.NoError(t, mn.ConnectAllButSelf())
 
-	// AND EVERY STREAM IS UP BEFORE A NODE IS BUILT. Identify answers from a
-	// snapshot its own goroutine refreshes, so under load a connection can still
-	// be told "no pubsub" and left to a push; building nodes pushes to every
-	// peer and would spend the budget that push needs.
+	// Every stream is up before a node is built; building nodes would spend the identify
+	// push budget.
 	stalled := stallSince()
 	for i, ps := range gossip {
 		for j, h := range hosts {
@@ -78,12 +68,8 @@ func fleet(t *testing.T, configs ...Config) []*Node {
 			cfg.DNSListen = "127.0.0.1:0"
 		}
 
-		// EVERY NODE IN A FLEET CAN RESOLVE WHAT A RESOURCE RUNS, because a
-		// fleet's tests are about finding what this node does not run — a
-		// register, a vault, a worker — and a workload that cannot be resolved
-		// at all fails before the question is reached. The one test here that
-		// is ABOUT the build backend builds the real resolver itself, so this
-		// does not stand in for it.
+		// Every fleet node can resolve artifacts, since these tests are about finding what a
+		// node does not run.
 		n, err := New(cfg,
 			WithHost(hosts[i]),
 			WithPubSub(gossip[i]),
@@ -112,11 +98,6 @@ func sees(t *testing.T, watcher *Node, name string) {
 	}, 30*time.Second, 100*time.Millisecond, "%s never appeared in the view%s%s%s", name, viewOf{watcher}, gossipWith{watcher.opts.host}, stalled)
 }
 
-// TestEveryNodeOfALargeFleetHasAStreamToEveryOther when the fleet is handed
-// over. A host accepts ten identify pushes in a burst from one subnet, then one
-// every five seconds, and every mocknet peer is in one subnet, so sixteen nodes
-// are well past it. A fleet that relied on the push hands over nodes some
-// others never send to; with two it did so only now and then, under load.
 func TestEveryNodeOfALargeFleetHasAStreamToEveryOther(t *testing.T) {
 	configs := make([]Config, 16)
 	for i := range configs {
@@ -134,8 +115,6 @@ func TestEveryNodeOfALargeFleetHasAStreamToEveryOther(t *testing.T) {
 	}
 }
 
-// TestAWorkerFindsARegisterItDoesNotRun. The whole point of a composition that
-// reports what it runs.
 func TestAWorkerFindsARegisterOnAnotherNode(t *testing.T) {
 	nodes := fleet(t,
 		Config{Services: []string{Register, Discovery}},
@@ -156,8 +135,6 @@ func TestAWorkerFindsARegisterOnAnotherNode(t *testing.T) {
 	require.Equal(t, int64(33554432), spec.Memory)
 }
 
-// TestTheStreamToARemoteRegisterIsKept, so a read on the request path is not a
-// dial on the request path.
 func TestTheStreamToARemoteRegisterIsKept(t *testing.T) {
 	nodes := fleet(t,
 		Config{Services: []string{Register, Discovery}},
@@ -179,8 +156,6 @@ func TestTheStreamToARemoteRegisterIsKept(t *testing.T) {
 	require.Same(t, first, again, "a second read opened a second stream")
 }
 
-// TestAGatewayReachesAWorkerOnAnotherNode — the request path across the swarm,
-// with placement choosing the node.
 func TestAGatewayReachesAWorkerOnAnotherNode(t *testing.T) {
 	nodes := fleet(t,
 		Config{Services: []string{Register, Discovery, Gateway}},
@@ -206,11 +181,6 @@ func TestAGatewayReachesAWorkerOnAnotherNode(t *testing.T) {
 	require.NotContains(t, err.Error(), "no worker is ready", "a worker was found and asked")
 }
 
-// TestAChannelDialCrossesToAnotherNode — the point of the kind. The dialing
-// node runs no worker at all, so an answer can only have been sought over the
-// swarm; what proves it is the error, which is the far node's tier failing
-// rather than `no-answer`. `no-answer` is what this would say if the dial had
-// never left the machine.
 func TestAChannelDialCrossesToAnotherNode(t *testing.T) {
 	nodes := fleet(t,
 		Config{Services: []string{Register, Discovery, Gateway}},
@@ -234,8 +204,6 @@ func TestAChannelDialCrossesToAnotherNode(t *testing.T) {
 	require.NotContains(t, err.Error(), "no worker is ready")
 }
 
-// TestAWarmWorkerIsAdvertisedAndPreferred. A worker that has already loaded an
-// environment says so, and placement asks for that name first.
 func TestAWarmWorkerIsAdvertised(t *testing.T) {
 	nodes := fleet(t,
 		Config{Services: []string{Register, Discovery}},
@@ -256,7 +224,6 @@ func TestAWarmWorkerIsAdvertised(t *testing.T) {
 	sees(t, registry, worker.Descriptor.Name+"/shop/prod")
 }
 
-// TestANodeThatRunsBothUsesNeitherTheSwarmNorAStream.
 func TestOneNodeRunningEverythingNeedsNoStream(t *testing.T) {
 	nodes := fleet(t, Config{})
 	only := nodes[0]
@@ -273,8 +240,6 @@ func TestOneNodeRunningEverythingNeedsNoStream(t *testing.T) {
 	require.False(t, dialled, "it dialled itself")
 }
 
-// TestTheSeamsAreHandedThrough: an artifact resolver and a secret resolver
-// reach the worker that needs them.
 func TestTheSeamsReachTheWorker(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -324,10 +289,6 @@ func (f secretFunc) Secret(ctx context.Context, project, environment, secretID s
 	return f(ctx, project, environment, secretID)
 }
 
-// TestAWorkerResolvesASecretFromItsOwnVault — the composed path, with nothing
-// injected. A project whose function names a secret is the ordinary case for
-// anything imported from a platform that had environment variables, so this is
-// the wiring between "it compiles" and "it runs".
 func TestAWorkerResolvesASecretFromItsOwnVault(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}}, prebuilt())
 	require.NoError(t, n.Start(t.Context()))
@@ -344,9 +305,6 @@ func TestAWorkerResolvesASecretFromItsOwnVault(t *testing.T) {
 	require.Equal(t, "sk_live", spec.Env["TOKEN"])
 }
 
-// TestAWorkerFindsAVaultOnAnotherNode. A node that runs compute and no vault
-// learns from discovery which node holds one and dials it — the same rule as the
-// register, over the real gossipsub and the real stream.
 func TestAWorkerFindsAVaultOnAnotherNode(t *testing.T) {
 	nodes := fleet(t,
 		Config{Services: []string{Register, Secrets, Discovery}},
@@ -369,9 +327,6 @@ func TestAWorkerFindsAVaultOnAnotherNode(t *testing.T) {
 	require.Equal(t, "sk_live", spec.Env["TOKEN"])
 }
 
-// TestAWorkerWithNoVaultAnywhereRefusesRatherThanRunning. A workload started
-// without its database password does not fail where the password is missing;
-// it fails somewhere else, later, as an application that looks broken.
 func TestAWorkerWithNoVaultAnywhereRefusesRatherThanRunning(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery}}, prebuilt())
 	require.NoError(t, n.Start(t.Context()))
@@ -385,10 +340,6 @@ func TestAWorkerWithNoVaultAnywhereRefusesRatherThanRunning(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoSecrets)
 }
 
-// TestABuiltResourceWithNoBuildServiceIsRefusedRatherThanWaited. This runs on
-// the request path: a lookup that waits until its context ends is a request
-// that hangs until the client gives up, on a cloud where nothing was ever
-// going to answer.
 func TestABuiltResourceWithNoBuildServiceIsRefused(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Secrets}})
 	require.NoError(t, n.Start(t.Context()))
@@ -443,16 +394,6 @@ func withKvDatabase() []byte {
 	return raw
 }
 
-// TestADATABASESERVICEISREACHABLEFROMANOTHERNODE.
-//
-// It was not, and nothing noticed: the service was built and never started, so
-// its listener was never bound. Every caller so far was the node's own Local()
-// seam, which is the absence of a hop — so the first peer to dial one got
-// "protocols not supported" from a node that was, by every other measure,
-// running the database service.
-//
-// A SWEEP THAT NEVER RAN IS THE OTHER HALF. Start is also what begins
-// reconsidering what this node holds, so a composed fleet moved nothing, ever.
 func TestADatabaseServiceIsReachableFromAnotherNode(t *testing.T) {
 	nodes := fleet(t,
 		Config{Services: []string{Register, Discovery, Database}},

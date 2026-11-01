@@ -8,14 +8,8 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/container"
 )
 
-// volume.go opens the one place this node records where a volume's bytes went.
-//
-// The adapter that holds the directories is node/volume. What is left here is the
-// part only the root can do: reach the root directory and the asset store an
-// operator gave this node, reach the database factory, name the database, and
-// register what it opened with the closers — none of which a volume has an
-// opinion about, which is why the store is asked for through one method and
-// opened on the first checkpoint that needs it.
+// The directories are node/volume's; the root reaches the root directory, the asset
+// store and the factory, names the database, and registers it to close.
 
 // volumeDatabase is the one database's name, for cacheDatabase's reason.
 const volumeDatabase = "volumes"

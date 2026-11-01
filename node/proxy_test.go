@@ -14,11 +14,8 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// proxy_test is about the WIRING, not about moving bytes — services/proxy
-// carries those over real sockets. What is proved here is that a node holding a
-// deployment finds its proxies, listens for them, and says so in the one report
-// everything else routes on: the name in Serving so an A record resolves, and
-// the socket in Sockets so an SRV record carries the port.
+// The wiring: a node holding a deployment finds its proxies, listens, and reports the
+// name in Serving and the socket in Sockets. Moving bytes is services/proxy's test.
 
 const (
 	proxyResourceID = "QmPZv3VQe4s7A18auX3Tjnc3Bxd6cURg94qXCJ2Smbdvqf"
@@ -72,16 +69,8 @@ func proxying(t *testing.T, compiled []byte) *Node {
 	cfg := Config{Services: []string{Register, Worker, Discovery, Proxy}}
 	cfg.Proxy.CloudFqdn = "tau.example.io"
 
-	// SWEEP FAST, BECAUSE THE SWEEP IS WHAT IS BEING TESTED. DefaultSweep is ten
-	// seconds and the deployment below is held AFTER Start, so the loop's first
-	// pass finds nothing and the second is past any sane deadline.
-	//
-	// Without this the assertion passed on a race: `go n.proxy.Run(loopCtx)` and
-	// the rest of this function are unordered, so the first sweep usually landed
-	// after the hold and the test observed a first pass it had no right to. It
-	// held until the vocabulary grew by one sync type, which was enough to make
-	// the goroutine win — a test that fails when an unrelated package gets
-	// slower was never testing what its name says.
+	// A fast sweep, since the deployment is held after Start and the sweep is what is
+	// tested; with the default the first pass would race the hold.
 	cfg.Proxy.Sweep = 20 * time.Millisecond
 
 	n, _, _ := makeNode(t, cfg)
@@ -102,8 +91,6 @@ func proxying(t *testing.T, compiled []byte) *Node {
 	return n
 }
 
-// TestANODESERVESTHEPROXIESOFWHATITHOLDS, and reports them the two ways a
-// client needs: the name resolves to this node, and the port comes back in SRV.
 func TestANodeListensForItsHeldProxiesAndReportsThem(t *testing.T) {
 	n := proxying(t, withProxy(nil))
 
@@ -125,8 +112,6 @@ func TestANodeListensForItsHeldProxiesAndReportsThem(t *testing.T) {
 		"and so is the name, or a client resolves the machine and never finds it")
 }
 
-// TestAPROXYTHISCLOUDCANNOTSERVE holds no port and appears in no report. The
-// reason went to the operator; there is nowhere on a raw socket to put it.
 func TestANodeDoesNotListenForAProxyItCannotServe(t *testing.T) {
 	n := proxying(t, withProxy(func(r map[string]any) {
 		r["tls"] = map[string]any{"mode": "terminate"}
@@ -139,8 +124,6 @@ func TestANodeDoesNotListenForAProxyItCannotServe(t *testing.T) {
 	require.Empty(t, snap.Sockets)
 }
 
-// TestANODEWITHNOWORKER cannot serve a proxy and says so when it is built,
-// rather than starting a sweep that would find nothing forever.
 func TestAProxyWithoutAWorkerIsRefusedAtConstruction(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -151,8 +134,6 @@ func TestAProxyWithoutAWorkerIsRefusedAtConstruction(t *testing.T) {
 	require.ErrorContains(t, err, "a worker holds")
 }
 
-// A PROXY REACHES A WORKLOAD THROUGH PLACEMENT, so a worker with no discovery
-// cannot serve one and is refused when it is built.
 func TestAProxyWithoutPlacementIsRefusedAtConstruction(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -164,13 +145,10 @@ func TestAProxyWithoutPlacementIsRefusedAtConstruction(t *testing.T) {
 	require.ErrorContains(t, err, "through placement")
 }
 
-// A NODE WITH NO WORKER HOLDS NO PROXY to listen for.
 func TestANodeWithNoWorkerHoldsNoProxy(t *testing.T) {
 	require.Nil(t, (&proxies{node: &Node{}}).Proxies(t.Context()))
 }
 
-// AN INJECTED RESOLVER IS THE ONE A PROXY TERMINATES WITH, as it is the
-// worker's.
 func TestAProxyTakesTheInjectedResolver(t *testing.T) {
 	injected := secretFor(func(context.Context, string, string, string) (string, error) { return "", nil })
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery, Proxy}}, WithSecrets(injected))

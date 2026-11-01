@@ -15,30 +15,15 @@ import (
 	databaseService "github.com/taubyte/tau/services/database"
 )
 
-// database.go names what this node's databases are made of.
-//
-// The adapters are node/database: the four data models the wasm tier opens, and
-// the stores their entries go into. What is left here is the part only the root
-// can do — reach the database factory an operator gave this node, name a store,
-// register what it opened with the closers, reach the raft opener, reach the
-// vault, and hand the composer's own registry over — none of which a database has
-// an opinion about.
-//
-// AND STARTING THE DATABASE SERVICE, which is the other half of this file: a node
-// that runs one serves its project's databases from there, and a node that does
-// not falls back to these engines. See kvBacking for how much of that cutover has
-// happened.
+// The database adapters are node/database's; the root reaches the factory, names
+// stores, registers closers, and hands over raft, the vault and the composer's
+// registry. It also starts the database service; a node without one falls back to
+// these engines (see kvBacking).
 
-// databaseBacking is one consumer's databases on this node: the connections it
-// opens, the stores their entries go into, and the groups a ledger is ordered in.
-//
-// ONE PER CONSUMER AND NOT ONE FOR THE NODE, which is what it already was and is
-// worth saying out loud: the wasm tier's fallback engines and the database
-// service's own engines are built separately and so each keeps its own store
-// table. Nothing crosses between them today because the service serves one cell
-// of the grid — tau's own kv — and the adapter refuses a ledger through these
-// engines by name before a store is ever asked for. It is a seam to watch rather
-// than a bug.
+// databaseBacking is one consumer's databases: connections, their stores, and the
+// groups ledgers are ordered in. One per consumer, so the wasm tier's fallback and the
+// database service keep separate store tables; nothing crosses today since the
+// adapter refuses a ledger before asking for a store.
 type databaseBacking struct {
 	*nodeDatabase.Databases
 
@@ -100,13 +85,8 @@ func (b *databaseBacking) Close() error {
 	return err
 }
 
-// databaseSecrets reads the secret a connection's credentials were declared as.
-//
-// ONE VAULT PER READ AND NOT THE NODE'S, which is what this did before the
-// adapter left and is kept deliberately: n.vault is built with the wasm tier, and
-// a node running the database service alone has none — so sharing it would make
-// whether a credential can be resolved depend on which other services this node
-// happens to run.
+// databaseSecrets reads the secret a connection's credentials were declared as, with
+// its own vault per read so resolving does not depend on which other services run.
 type databaseSecrets struct{ node *Node }
 
 var _ nodeDatabase.Secrets = databaseSecrets{}
@@ -200,25 +180,15 @@ func (n *Node) openDatabase(ctx context.Context) error {
 		return nil
 	}
 
-	// BOTH HALVES OF THE CONSENSUS AXIS, from the two things this node already
-	// has: the replicated CRDT store every other v2 store is built on, and the
-	// raft cluster the queues and crons run in. A node missing either serves
-	// the other and refuses what it cannot keep, which is the point — a ledger
-	// that asked for raft must not be merged.
+	// Both consensus resolutions, from the replicated store and the raft opener; a node
+	// missing one refuses what it cannot keep, so a raft ledger is never merged.
 	if n.opts.databases == nil {
 		return fmt.Errorf("node: %s: %w", Database, ErrNoCacheStore)
 	}
 
-	// THE GROUP IS OPENED ON FIRST USE AND NOT HERE. A node builds its services
-	// before it starts them, and raft finds its peers over a swarm that is not
-	// up yet — a group opened at construction sits with no known peers, aborts
-	// its election, and answers every write with "no leader". node/queue.go
-	// opens its own in the background for the same reason.
-	//
-	// ONE STORE TABLE FOR THE NODE, shared by the engine that serves this
-	// node's databases and the holdings that let go of them. Two tables is how
-	// a destroyed store stays warm and serving: the eviction lands in one of
-	// them and every later open comes out of the other.
+	// The group is opened on first use, not here: raft finds peers over a swarm not yet
+	// up, and a group opened now would abort its election. One store table for the
+	// engine and holdings, so a destroyed store cannot stay warm in another table.
 	stores, err := newDatabases(n)
 	if err != nil {
 		return err
@@ -275,18 +245,9 @@ func (n *Node) openDatabase(ctx context.Context) error {
 	return nil
 }
 
-// kvBacking is what the wasm tier opens a kv through.
-//
-// THE SERVICE WHEN THERE IS ONE, and this node's own engines otherwise. The
-// second half is what v1 did everywhere and is kept only for a node that runs
-// no database service and can reach none — a single-process test, a composition
-// that predates the service. A node that runs the service takes Local(), which
-// is the absence of a hop rather than a shortcut.
-//
-// REACHING ONE IN THE FLEET IS NOT HERE YET. A node with no database service of
-// its own still falls back, so the data plane is still the worker's on that
-// node — that is the remaining half of the cutover, and it is stated rather
-// than papered over.
+// kvBacking is what the wasm tier opens a kv through: the local database service
+// when there is one (Local(), no hop), otherwise this node's own engines. Reaching a
+// remote database service is not wired yet.
 func (n *Node) kvBacking(own wasmtier.KVs) wasmtier.KVs {
 	if n.database != nil {
 		return n.database.Local()

@@ -17,7 +17,6 @@ import (
 	pkgregister "github.com/taubyte/tau/pkg/register"
 )
 
-// TestANodeRunsWhatItWasToldTo, and nothing else.
 func TestANodeRunsWhatItWasToldTo(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
 
@@ -28,8 +27,6 @@ func TestANodeRunsWhatItWasToldTo(t *testing.T) {
 	require.Equal(t, []string{Register, Discovery}, n.Services())
 }
 
-// TestAnEmptyServiceListIsEveryService, which is the single-node development
-// shape and the one a first `tau` run gets.
 func TestAnEmptyServiceListIsEveryService(t *testing.T) {
 	n, _, _ := makeNode(t, Config{})
 
@@ -40,8 +37,6 @@ func TestAnEmptyServiceListIsEveryService(t *testing.T) {
 	require.NotNil(t, n.Handler())
 }
 
-// TestAMisspelledServiceIsRefused. A name that starts nothing is a node that
-// looks healthy and answers nothing.
 func TestAMisspelledServiceIsRefused(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -53,7 +48,6 @@ func TestAMisspelledServiceIsRefused(t *testing.T) {
 	require.Contains(t, err.Error(), Register, "and it says what this node can run")
 }
 
-// TestEachServiceSaysWhatItCannotStartWithout.
 func TestEachServiceSaysWhatItCannotStartWithout(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -78,8 +72,6 @@ func TestEachServiceSaysWhatItCannotStartWithout(t *testing.T) {
 	require.Contains(t, err.Error(), "discovery")
 }
 
-// TestNothingIsOpenedTwiceAndEverythingIsClosed. A composition that failed part
-// way used to leave a database open and a pool running.
 func TestWhatWasBuiltIsClosed(t *testing.T) {
 	n, _, factory := makeNode(t, Config{Services: []string{Register}})
 
@@ -94,8 +86,6 @@ func TestWhatWasBuiltIsClosed(t *testing.T) {
 	require.NoError(t, n.Close(), "close is idempotent")
 }
 
-// TestAHalfBuiltNodeCloncesWhatItMade. The worker is built after the register,
-// so a worker that cannot be built must not leave the register's database open.
 func TestAHalfBuiltNodeClosesWhatItMade(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -113,7 +103,6 @@ func TestAHalfBuiltNodeClosesWhatItMade(t *testing.T) {
 	require.Equal(t, 1, closed, "and it was closed when the worker failed")
 }
 
-// TestStartIsOnceAndOrdered.
 func TestStartIsOnce(t *testing.T) {
 	n, _, _ := makeNode(t, Config{})
 
@@ -122,8 +111,6 @@ func TestStartIsOnce(t *testing.T) {
 	require.NoError(t, n.Close())
 }
 
-// TestANodeReportsWhatItRuns, which is what every locator in the fleet routes
-// on — a worker looking for a register, a gateway looking for a worker.
 func TestANodeReportsWhatItRuns(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery}})
 
@@ -141,8 +128,6 @@ func TestANodeReportsWhatItRuns(t *testing.T) {
 	require.True(t, slices.IsSorted(snapshot.Serving), "%v", snapshot.Serving)
 }
 
-// TestAWorkerAdvertisesTheEnvironmentsItHolds, so a router can send a request
-// where the compiled project is already warm.
 func TestAWorkerAdvertisesWhatItHolds(t *testing.T) {
 	n, _, _ := makeNode(t, Config{}, prebuilt())
 	require.NoError(t, n.Start(t.Context()))
@@ -162,9 +147,6 @@ func TestAWorkerAdvertisesWhatItHolds(t *testing.T) {
 	require.Contains(t, snapshot.Serving, Worker+"/shop/prod")
 }
 
-// TestALocalRegisterIsUsedWithoutAStream. A register is a state machine over a
-// replicated store, so a node running one already holds every answer; dialling
-// itself would add a stream and a serialization to a read on every request.
 func TestALocalRegisterNeedsNoStream(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery}}, prebuilt())
 
@@ -179,7 +161,6 @@ func TestALocalRegisterNeedsNoStream(t *testing.T) {
 	require.Equal(t, "wasm", spec.Runtime)
 }
 
-// TestANodeWithNoRegisterSaysSoRatherThanHanging.
 func TestANodeWithNoRegisterSaysSo(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Worker, Discovery}})
 
@@ -187,7 +168,6 @@ func TestANodeWithNoRegisterSaysSo(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoRegister)
 }
 
-// TestANodeWithNeitherARegisterNorStatsSaysBoth.
 func TestANodeWithNoWayToFindARegister(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -203,8 +183,6 @@ func TestANodeWithNoWayToFindARegister(t *testing.T) {
 	require.Contains(t, err.Error(), "discovery")
 }
 
-// TestTheGatewayIsServedByTheCaller. Handler() is what a composer serves,
-// because where and with what certificate is the composer's.
 func TestTheGatewayIsServedByTheCaller(t *testing.T) {
 	n, _, _ := makeNode(t, Config{})
 	require.NoError(t, n.Start(t.Context()))
@@ -220,9 +198,6 @@ func TestTheGatewayIsServedByTheCaller(t *testing.T) {
 	require.NotContains(t, w.Body.String(), "shop")
 }
 
-// TestAWholeRequestPathOnOneNode: publish through this node's register, claim a
-// name, and ask its gateway for it. Nothing leaves the process, and every hop
-// is the production one.
 func TestAWholeRequestPathOnOneNode(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Gateway: gatewayConfig()}, prebuilt())
 	require.NoError(t, n.Start(t.Context()))
@@ -245,8 +220,6 @@ func TestAWholeRequestPathOnOneNode(t *testing.T) {
 	require.NotContains(t, w.Body.String(), "shop", "and it says nothing about the deployment")
 }
 
-// TestTheClockReachesEverythingThatKeepsTime, so a test can move a node's
-// caches forward without sleeping.
 func TestTheClockReachesEverything(t *testing.T) {
 	at := time.Unix(1_700_000_000, 0)
 	n, _, _ := makeNode(t, Config{}, WithClock(func() time.Time { return at }))
@@ -269,8 +242,6 @@ func TestWhatTheOptionsRefuse(t *testing.T) {
 	}
 }
 
-// TestADatabaseThatWillNotOpenIsReported rather than a register with nothing
-// behind it.
 func TestADatabaseThatWillNotOpen(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -303,9 +274,6 @@ func listeningOn(t *testing.T, on ...string) []ma.Multiaddr {
 	return out
 }
 
-// TestWhatThisNodePublishesAsItsAddress. What goes into an A record is a CLAIM,
-// in the same sense the load figure is — the IP half of what this host believes
-// it is listening on — and three kinds of address are not one.
 func TestWhatThisNodePublishesAsItsAddress(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register}})
 
@@ -326,12 +294,6 @@ func TestWhatThisNodePublishesAsItsAddress(t *testing.T) {
 	require.Equal(t, []string{"203.0.113.9"}, n.addresses())
 }
 
-// TestLoopbackIsAnAnswerOnlyWhenThereIsNoOther. A node with a real address that
-// also listens on 127.0.0.1 would otherwise publish it, and some clients take
-// the first record they are given — so a share of the fleet's traffic goes to
-// whichever machine asked. A development cloud bound only to loopback has no
-// other answer, and refusing to give it would mean its own names resolve to
-// nothing on the one machine where they should.
 func TestLoopbackIsAnAnswerOnlyWhenThereIsNoOther(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register}})
 
@@ -342,7 +304,6 @@ func TestLoopbackIsAnAnswerOnlyWhenThereIsNoOther(t *testing.T) {
 	require.Empty(t, n.addresses(), "every address is no address")
 }
 
-// WHAT A COMPOSER READS OFF A NODE is the service it runs, or nothing.
 func TestTheAccessorsAreTheServicesItRuns(t *testing.T) {
 	bare, _, _ := makeNode(t, Config{Services: []string{Register}})
 	require.Nil(t, bare.Secrets())
@@ -361,8 +322,6 @@ func TestTheAccessorsAreTheServicesItRuns(t *testing.T) {
 	require.Equal(t, uint16(tls.VersionTLS12), tlsConfig.MinVersion)
 }
 
-// THE FLEET DOCUMENT IS READ FROM THIS NODE'S OWN REGISTER, and a node without
-// one says so rather than answering a default as if it had looked.
 func TestTheFleetIsReadFromTheLocalRegister(t *testing.T) {
 	ctx := t.Context()
 	with, _, _ := makeNode(t, Config{Services: []string{Register}})
@@ -380,8 +339,6 @@ func TestTheFleetIsReadFromTheLocalRegister(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoRegister)
 }
 
-// A GATEWAY SERVED OVER TLS IS TOLD SO by the composer, which is the one that
-// binds the listener.
 func TestWithTLSReachesTheGateway(t *testing.T) {
 	var o options
 	require.NoError(t, WithTLS()(&o))

@@ -12,13 +12,8 @@ import (
 	pkgcache "github.com/taubyte/tau/pkg/cache"
 )
 
-// cache.go opens the one database every cache on this node lives in.
-//
-// The adapter that keeps the caches is node/cache. What is left here is the part
-// only the root can do: reach the database factory an operator gave this node,
-// name the database, and register what it opened with the closers — none of
-// which a cache has an opinion about, which is why it is asked for through one
-// method and opened on the first request that needs it.
+// The caches are node/cache's; the root reaches the database factory, names the
+// database, and registers what it opened to close.
 
 // ErrNoCacheStore is a node asked for a cache with no database factory. It is
 // a composition fault: WithDatabases is what a node is given, and a node
@@ -49,11 +44,8 @@ func (s cacheStores) Store() (pkgcache.Store, error) {
 
 func isNotFound(err error) bool { return errors.Is(err, ds.ErrNotFound) }
 
-// cacheStore adapts a kvdb to what a cache needs — the same four methods
-// services/secrets keeps, and the same separation of "not there" from "could
-// not look". node/database.go keeps its own stores through it too, and
-// node/admit's rows are three of the four, which is why it did not leave with
-// the adapter and why its sentences name no kind.
+// cacheStore adapts a kvdb to the four methods a cache needs, separating "not there"
+// from "could not look". node/database.go and node/admit use it too.
 type cacheStore struct{ db kvdb.KVDB }
 
 func (s cacheStore) Get(ctx context.Context, key string) ([]byte, bool, error) {

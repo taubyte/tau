@@ -10,8 +10,7 @@ import (
 	authService "github.com/taubyte/tau/services/auth"
 )
 
-// identity.go wires who may use this cloud: auth answers from the Identity its
-// node was composed with.
+// Who may use this cloud: auth answers from the Identity this node was composed with.
 
 // WithIdentity builds the identity auth answers admission from, on a node that
 // runs auth. It is handed the node the way an added service is, so it can

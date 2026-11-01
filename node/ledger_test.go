@@ -13,17 +13,10 @@ import (
 	"github.com/taubyte/tau/pkg/raft"
 )
 
-// ledger_test is what the ROOT decides about `consensus: raft`: which of the two
-// things this node holds keeps a database's entries, what a node holding neither
-// answers, and that the groups a backing opened go when it does.
-//
-// WHAT A LEDGER ANSWERS IS NOT HERE. The store, the leadership, the barrier and
-// the table of groups are node/ledger's, tested there against one function
-// instead of against a composed node.
+// What the root decides about `consensus: raft`: which held thing keeps a database's
+// entries, what a node holding neither answers, and that a backing's groups close with
+// it. Ledger behaviour is node/ledger's.
 
-// TestTHEGROUPANDTHESTOREAGREEONTHENAME, by construction rather than by two
-// expressions that happen to match: both are Spec.Prefix under a different root,
-// and the root is the only place that sees both.
 func TestTheGroupAndTheStoreAgreeOnTheNameADatabaseHas(t *testing.T) {
 	spec := ledgerSpec()
 
@@ -36,10 +29,6 @@ func TestTheGroupAndTheStoreAgreeOnTheNameADatabaseHas(t *testing.T) {
 	require.Equal(t, nodeDatabase.Prefix+"/shop/prod/kv/QmLedger", store)
 }
 
-// TestWHICHSTOREADATABASEGETSISITSOWNDECLARATION, and not a second engine: the
-// schema declares ONE engine for tau's own, with a consensus beside it. What the
-// root decides is only which of the two things it holds answers — the crdt store
-// it opens through the factory, or a group node/ledger forms.
 func TestTheRootPicksBetweenACrdtStoreAndAGroup(t *testing.T) {
 	cluster := &closing{MockCluster: raft.NewMockCluster()}
 
@@ -79,11 +68,6 @@ func TestTheRootPicksBetweenACrdtStoreAndAGroup(t *testing.T) {
 	require.True(t, cluster.shut(), "the backing closed without closing the group it opened")
 }
 
-// TestANODEWITHNOWHERETOOPENAGROUPKEEPSNOLEDGER, which is what makes the
-// service's refusal by name true: the composer either handed this node a way to
-// open a group or it did not. ErrNoRaft and not a ledger's own sentence, because
-// four things on this node need consensus and what is missing is the same in
-// every case — see config.go.
 func TestANodeWithNowhereToOpenAGroupKeepsNoLedger(t *testing.T) {
 	// BUILT WITHOUT THE HARNESS, which always hands a node a raft opener: what
 	// is under test here is the composition that has none.

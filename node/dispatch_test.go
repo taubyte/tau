@@ -18,10 +18,8 @@ import (
 	"github.com/taubyte/tau/pkg/stats"
 )
 
-// dispatch_test drives the claim loop synchronously, which is the whole reason
-// step and loop are separate: a background goroutine reached only through a real
-// clock has branches nothing can get to, and every branch here is one that
-// decides whether somebody's work is lost.
+// Drives the claim loop synchronously; every branch here decides whether work is
+// lost.
 
 const queueID = "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zq"
 
@@ -63,12 +61,8 @@ func withConsumer(c consumer) []byte {
 		workload["limits"] = map[string]any{"concurrency": float64(c.Concurrency)}
 	}
 
-	// The visibility timeout is a minute so nothing expires mid-test: what a
-	// test drives is the DELIVERY, and an expiry racing it would make the
-	// counts depend on how long a step took.
-	//	THE FIELDS SIT UNDER THE TYPE'S BLOCK, because `sync` is a typed kind and
-	//	the block that is written IS the type — the same shape a database's `sql`
-	//	block has.
+	// A one-minute visibility timeout so nothing expires mid-test. The fields sit under
+	// the type's block, as `sync` is a typed kind.
 	queue := map[string]any{
 		"consensus":          "raft",
 		"visibility_timeout": float64(time.Minute),
@@ -143,11 +137,8 @@ func consuming(t *testing.T, answers *answering, compiled []byte) (*Node, *dispa
 	return n, &dispatcher{node: n}
 }
 
-// push puts one item on the queue the fixture declares.
-//
-// IT USES THE CONSUMER'S OWN GRANT, which is what a producing workload would
-// send with — a grant assembled here would carry no settings, and the queue
-// would be opened with pkg/queue's defaults rather than what the author wrote.
+// push puts one item on the fixture's queue with the consumer's own grant, so the
+// author's settings apply.
 func push(t *testing.T, n *Node, id string, data []byte) {
 	t.Helper()
 
@@ -156,8 +147,6 @@ func push(t *testing.T, n *Node, id string, data []byte) {
 	require.NoError(t, n.syncs.Send(t.Context(), consumers[0].Queue, id, data))
 }
 
-// TestAnItemPushedIsAnItemDelivered — the whole point of the file: something
-// claims, and the workload that declared `receive` is invoked with the payload.
 func TestAnItemPushedReachesTheConsumer(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
 	n, d := consuming(t, answers, withConsumer(consumer{Attempts: 5}))
@@ -175,8 +164,6 @@ func TestAnItemPushedReachesTheConsumer(t *testing.T) {
 	require.Equal(t, 0, d.step(t.Context()))
 }
 
-// TestAConsumerIsToldWhichQueueAndWhichItem. A workload consuming two queues is
-// dispatched at one path and has nothing else to tell them apart by.
 func TestTheDeliveryNamesItself(t *testing.T) {
 	answers := &answering{name: "wasm", status: 204}
 	n, d := consuming(t, answers, withConsumer(consumer{Attempts: 5}))
@@ -190,8 +177,6 @@ func TestTheDeliveryNamesItself(t *testing.T) {
 	require.Equal(t, []string{"1"}, req.Headers[headerAttempt], "counting from one")
 }
 
-// TestTheDeclaredPathIsWhereItIsPosted. A container answers on a path it chose;
-// a workload that declared none is called at the root.
 func TestAnItemIsPostedWhereTheEntrySaid(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
 	n, d := consuming(t, answers, withConsumer(consumer{Attempts: 5, Path: "/work"}))
@@ -201,13 +186,6 @@ func TestAnItemIsPostedWhereTheEntrySaid(t *testing.T) {
 	require.Equal(t, "/work", answers.seen()[0].Path)
 }
 
-// TestAFailedDeliveryIsLEFTCLAIMED when the author declared no retry interval.
-//
-// The vocabulary says an absent `retry.interval` means "the visibility timeout
-// alone governs", and this is where that sentence is true or is not: a nack
-// gives the item back NOW, so with no interval it would land ready inside the
-// same cycle and a consumer failing in a millisecond would spend every attempt
-// the author allowed in a millisecond.
 func TestAFailureWithNoIntervalWaitsOutTheVisibilityTimeout(t *testing.T) {
 	answers := &answering{name: "wasm", status: 500}
 	n, d := consuming(t, answers, withConsumer(consumer{Attempts: 5}))
@@ -222,9 +200,6 @@ func TestAFailureWithNoIntervalWaitsOutTheVisibilityTimeout(t *testing.T) {
 	require.Equal(t, 1, claimed, "still held, waiting out the timeout its author asked for")
 }
 
-// TestAFailedDeliveryComesBack when there IS an interval to space it by, and
-// comes back with its attempt count moved on — which is what makes a consumer
-// that crashed a retry rather than a loss.
 func TestAConsumerThatRefusesGetsTheItemAgain(t *testing.T) {
 	answers := &answering{name: "wasm", status: 500}
 	n, d := consuming(t, answers, withConsumer(consumer{Attempts: 3, RetryEvery: time.Nanosecond}))
@@ -238,9 +213,6 @@ func TestAConsumerThatRefusesGetsTheItemAgain(t *testing.T) {
 	require.Equal(t, []string{"3"}, seen[2].Headers[headerAttempt], "the consumer can see it is a retry")
 }
 
-// TestAnItemThatExhaustsItsAttemptsIsNotRetriedForever. The author wrote how
-// many deliveries an item gets; after them pkg/queue moves it aside rather than
-// handing it round again.
 func TestAnExhaustedItemStopsBeingDelivered(t *testing.T) {
 	answers := &answering{name: "wasm", status: 500}
 	n, d := consuming(t, answers, withConsumer(consumer{Attempts: 2, RetryEvery: time.Nanosecond}))
@@ -256,9 +228,6 @@ func TestAnExhaustedItemStopsBeingDelivered(t *testing.T) {
 	require.Zero(t, claimed)
 }
 
-// TestATierThatFailsIsAFailedDelivery, and not a swallowed one: a workload that
-// cannot even be started must not consume the item that would have been given
-// to it.
 func TestAnInvocationThatErrorsIsNotAnAcknowledgement(t *testing.T) {
 	answers := &answering{name: "wasm", fail: true}
 	n, d := consuming(t, answers, withConsumer(consumer{Attempts: 5, RetryEvery: time.Hour}))
@@ -270,9 +239,6 @@ func TestAnInvocationThatErrorsIsNotAnAcknowledgement(t *testing.T) {
 	require.Equal(t, 1, ready, "the item is still there, waiting out its backoff")
 }
 
-// TestANodeDrainsOnlyWhatItHolds. The register does not enumerate, so what a
-// node drains is what it is already serving — and a published deployment
-// nothing has resolved is not that.
 func TestANodeDrainsOnlyWhatItHolds(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery}},
@@ -291,8 +257,6 @@ func TestANodeDrainsOnlyWhatItHolds(t *testing.T) {
 	require.Len(t, n.Worker().Consumers(t.Context()), 1, "and now the node holds it")
 }
 
-// TestAProjectWithNoConsumerDrainsNothing, so a node holding an ordinary
-// deployment does no work per cycle.
 func TestAProjectThatConsumesNothingIsNotWalkedForItems(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
 	n, d := consuming(t, answers, compiled())
@@ -301,10 +265,6 @@ func TestAProjectThatConsumesNothingIsNotWalkedForItems(t *testing.T) {
 	require.Equal(t, 0, d.step(t.Context()))
 }
 
-// TestAsManyAtOnceAsTheWorkloadSaidItMayHold. `limits/concurrency` is the
-// vocabulary's own number for how many items an instance may hold, which is
-// only meaningful if the platform is the one pushing — so this is where that
-// sentence becomes true.
 func TestConcurrencyIsTheWorkloadsOwnNumber(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200, block: make(chan struct{})}
 	n, d := consuming(t, answers, withConsumer(consumer{Attempts: 5, Concurrency: 8}))
@@ -329,8 +289,6 @@ func TestConcurrencyIsTheWorkloadsOwnNumber(t *testing.T) {
 	require.Equal(t, 20, <-drained, "one cycle drains what is there")
 }
 
-// TestAWorkloadThatDeclaredNoConcurrencyGetsOneAtATime, which is the answer
-// that cannot surprise anybody.
 func TestNoDeclaredConcurrencyIsOneAtATime(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
 	n, _ := consuming(t, answers, withConsumer(consumer{Attempts: 5}))
@@ -338,8 +296,6 @@ func TestNoDeclaredConcurrencyIsOneAtATime(t *testing.T) {
 	require.Zero(t, n.Worker().Consumers(t.Context())[0].Concurrency)
 }
 
-// TestTheLoopStopsWithTheNode, so a claim is never in flight against a store
-// that is being torn down.
 func TestTheClaimLoopStopsWhenTheNodeCloses(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker, Discovery}},
@@ -356,13 +312,6 @@ func TestTheClaimLoopStopsWhenTheNodeCloses(t *testing.T) {
 	}
 }
 
-// TestACOMPUTENODEWITHNOCONSENSUSOFITSOWNSTILLCLAIMS. The loop used to be gated
-// on this node having raft, on the reasoning that "a node running a worker
-// without raft opens no queue and simply finds none" — which was true while the
-// queue was the worker's own group and stopped being true with the cutover: a
-// queue is the primitives service's, and node/primitives.go resolves it through
-// discovery to a service on another node. Under the old gate such a node could
-// claim and never tried, silently.
 func TestAWorkerWithNoRaftStillRunsTheClaimLoop(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -455,19 +404,6 @@ type nowhere struct{}
 
 func (nowhere) Route(string, time.Duration) []stats.Node { return nil }
 
-// TestADELIVERYISPLACEDANDNOTRUNWHEREITWASCLAIMED.
-//
-// A claim is leader-only — pkg/queue refuses a write off the leader, which is
-// what makes it exclusive without a second election. So a dispatcher that also
-// RAN what it claimed put every step of every workflow in the cloud on one
-// node, with the rest of the fleet idle: the queue was distributed and the work
-// was not. Every other path — a gateway request, a proxy connection, a channel
-// dial — already placed the same workloads.
-//
-// IT IS TESTED BY TAKING THE CANDIDATES AWAY. With one node, placement keeps
-// the local worker as a candidate and chooses it, so a passing delivery cannot
-// tell the two apart. A placement that can reach nobody can: the delivery has
-// to fail, and on the old code it would have quietly succeeded locally.
 func TestADeliveryIsPlacedRatherThanRunWhereItWasClaimed(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
 	n, d := consuming(t, answers, withConsumer(consumer{}))
@@ -487,10 +423,6 @@ func TestADeliveryIsPlacedRatherThanRunWhereItWasClaimed(t *testing.T) {
 	require.Equal(t, 1, ready+claimed, "the item is still the queue's")
 }
 
-// TestANODEWITHNOPLACEMENTSTILLRUNSWHATITHOLDS. openPlacement skips a node
-// that runs no discovery, and says why: such a node "can only reach itself". It
-// must still drain the queues it holds rather than refuse work for want of a
-// fleet to spread it over.
 func TestANodeThatCanOnlyReachItselfStillRunsWhatItHolds(t *testing.T) {
 	answers := &answering{name: "wasm", status: 200}
 	n, d := consuming(t, answers, withConsumer(consumer{}))

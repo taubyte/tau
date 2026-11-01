@@ -11,23 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// inert_test is one rule, as a test rather than as a convention:
-//
-//	A CONFIG IS INERT DATA. It survives a round trip through yaml, it is what an
-//	operator wrote and only that, and it CONSTRUCTS NOTHING.
-//
-// v1's pkg/config built the p2p node. Once a config type owns a live resource,
-// every consumer of that type has to be handed one — so a struct an operator
-// writes becomes something no test can make without a daemon running, and the
-// layer that reads a file becomes the layer that owns the machine.
-//
-// The failure is quiet and arrives one method at a time: a `tier()` here, a
-// `store()` there, each obviously convenient where it is written. This is the
-// check that notices.
-//
-// IT READS THE PACKAGE'S OWN SOURCE rather than using reflection, because the
-// property is about what is DECLARED — a method that exists is the problem,
-// whether or not anything calls it.
+// A config is inert data: it round-trips through yaml and constructs nothing, or every
+// consumer of the type needs a live resource. This reads the package source, since a
+// declared method is the problem whether or not it is called.
 
 // inert is what a method on a config type may hand back: the operator's own
 // data, and an answer about it. Anything else is a resource.

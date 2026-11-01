@@ -15,10 +15,7 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// dns_test closes the loop the proxy opened: a proxy binds a port the kernel
-// chose, discovery carries it, and a REAL resolver query gets it back. Every link
-// asserted on its own would leave the one that matters — that the three agree
-// about a name — untested.
+// The proxy's port, carried by discovery, comes back from a real resolver query.
 
 // serving is a node that runs the whole chain and answers on an ephemeral port,
 // because :53 needs a privilege a test does not have.
@@ -29,11 +26,7 @@ func serving(t *testing.T, compiled []byte, hosts ...string) *Node {
 	cfg.Proxy.CloudFqdn = "tau.example.io"
 	cfg.DNS.NodeZone = "nodes.tau.example.io"
 
-	// A DEPLOY REACHES A RESOLVER IN TWO HOPS, and both are timers: the proxy
-	// notices what this node holds on its sweep, and the report carrying that
-	// goes out on the discovery tick. Left at their defaults — ten seconds and five
-	// — this test would spend fifteen waiting for two clocks, so both are wound
-	// down rather than waited out.
+	// Both timers (proxy sweep and discovery tick) are wound down rather than waited out.
 	cfg.Proxy.Sweep = 100 * time.Millisecond
 	cfg.Discovery.Interval = 200 * time.Millisecond
 
@@ -85,8 +78,6 @@ func resolver(t *testing.T, n *Node) func(string, uint16) *dns.Msg {
 	}
 }
 
-// TestASRVQUERYANSWERSWITHTHEPORTTHEKERNELGAVETHEPROXY. Nothing else can carry
-// it: it is not authored, not derivable, and gone when the node restarts.
 func TestAResolverLearnsTheProxysPortOverDns(t *testing.T) {
 	n := serving(t, withProxy(nil))
 
@@ -111,9 +102,6 @@ func TestAResolverLearnsTheProxysPortOverDns(t *testing.T) {
 	require.NotEmpty(t, answer.Extra, "the target's addresses ride along")
 }
 
-// TestTHENAMEALSORESOLVESTOTHISNODE. A client resolves the host to an address
-// before it dials the port, so a socket published without its name in Serving
-// is a port nobody can find the machine for.
 func TestTheProxysNameResolvesToTheNodeServingIt(t *testing.T) {
 	n := serving(t, withProxy(nil))
 
@@ -127,9 +115,6 @@ func TestTheProxysNameResolvesToTheNodeServingIt(t *testing.T) {
 	}, 15*time.Second, 100*time.Millisecond, "the proxy's own name does not resolve")
 }
 
-// TestANAMENOBODYSERVES is SERVFAIL and not NXDOMAIN, because "nothing is
-// serving it right now" is not "it does not exist" — and the difference is how
-// long a resolver remembers.
 func TestANameNothingServesIsServfail(t *testing.T) {
 	n := serving(t, withProxy(nil))
 	ask := resolver(t, n)
@@ -137,8 +122,6 @@ func TestANameNothingServesIsServfail(t *testing.T) {
 	require.Equal(t, dns.RcodeServerFailure, ask("nothing.example.com", dns.TypeA).Rcode)
 }
 
-// TestADNSNODENEEDSTHEVIEWITANSWERSFROM, and says so when it is built rather
-// than binding a port and answering with nothing.
 func TestDnsWithoutStatsIsRefusedAtConstruction(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -149,8 +132,6 @@ func TestDnsWithoutStatsIsRefusedAtConstruction(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoDiscoveryForDNS)
 }
 
-// TestTHEPORTISREPORTEDBACK, which is how anything asking for :0 finds out —
-// and what makes a node able to say where it is answering.
 func TestADnsNodeSaysWhereItBound(t *testing.T) {
 	n := serving(t, withProxy(nil))
 
@@ -166,10 +147,6 @@ func TestADnsNodeSaysWhereItBound(t *testing.T) {
 	}
 }
 
-// TestWHATTHISNODESAYSACLIENTCANREACHITAT. The proto field's own documentation
-// says these are the IPs a DNS answer is made of and NOT the multiaddrs the
-// fleet gossips over — and the code reported `/ip6/…/tcp/4242` verbatim, so
-// every A query answered with no records at all.
 func TestTheReportCarriesAddressesAndNotMultiaddrs(t *testing.T) {
 	n, h, _ := makeNode(t, Config{Services: []string{Register, Discovery}})
 	require.NoError(t, n.Start(t.Context()))
@@ -222,9 +199,6 @@ func withZone(apex string, records []any) []byte {
 
 const zoneResourceID = "QmU1Vy6xqpYjRFFZqucyZULup6svHhsajomz71zWnSz9gk"
 
-// TestARECORDANAUTHORWROTEISSERVED, end to end, through a real resolver. It is
-// the only way this cloud answers a type it cannot route — and a project that
-// moved its domain here and lost its mail has not moved its domain.
 func TestAResolverGetsTheRecordsAProjectDeclares(t *testing.T) {
 	n := serving(t, withZone("example.com", []any{
 		"@ 3600 IN MX 10 mail.example.com.",
@@ -243,8 +217,6 @@ func TestAResolverGetsTheRecordsAProjectDeclares(t *testing.T) {
 	require.Equal(t, "1.2.3.4", a.Answer[0].(*dns.A).A.String())
 }
 
-// TestTHEWALKGOESUPTHELABELS: a record at `www.example.com` is found from a
-// zone declared at the apex, which is what a zone file means.
 func TestANameDeepInAZoneFindsIt(t *testing.T) {
 	n := serving(t, withZone("example.com", []any{"a.b.c 300 IN TXT \"deep\""}), "example.com")
 
@@ -254,8 +226,6 @@ func TestANameDeepInAZoneFindsIt(t *testing.T) {
 	require.Equal(t, []string{"deep"}, reply.Answer[0].(*dns.TXT).Txt)
 }
 
-// TestEVERYSERVICEANODECANRUNISANAME, the public build role and added services
-// included, so none of them is refused as absent.
 func TestEveryServiceANodeCanRunIsAName(t *testing.T) {
 	n := &Node{opts: options{extra: []Service{{Name: "billing"}}}}
 	names := n.knownServices()

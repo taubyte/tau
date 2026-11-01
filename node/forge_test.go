@@ -108,9 +108,6 @@ func TestForges(t *testing.T) {
 	require.ErrorContains(t, err, `forge "Gitlab.com"`)
 }
 
-// EVERY FORGE A NODE SERVES IS CLONED FROM ONLY BY ITS PINNED HOST KEYS: the
-// public forges by the keys they publish, any other by the keys its operator
-// named, and a forge with none by nothing at all.
 func TestHostKeys(t *testing.T) {
 	keys, err := hostKeys(nil)
 	require.NoError(t, err)
@@ -195,10 +192,6 @@ func TestAnInjectedForgeRegistryWins(t *testing.T) {
 	require.NotSame(t, reg, got)
 }
 
-// THE CLI SIGNS WHAT THE CLOUD VERIFIES. `tau link` installs a hook through
-// pkg/forge/public, deriving the wire secret under each driver's scheme; a
-// cloud with no forges declared verifies under DefaultForges. The two must
-// agree on every host, or every delivery a developer's link installs fails.
 func TestTheCLIsPublicForgesSignAsTheDefaultCloudVerifies(t *testing.T) {
 	cloud, err := forges(nil, nil)
 	require.NoError(t, err)
@@ -214,9 +207,6 @@ func TestTheCLIsPublicForgesSignAsTheDefaultCloudVerifies(t *testing.T) {
 	}
 }
 
-// A FRONTEND SERVING A FORGE WITH AN EVENT FEED SUBSCRIBES TO IT: the stream
-// is dialled at the address the operator declared, which is the only evidence
-// that the second source of a push was wired at all.
 func TestAFrontendFollowsAForgesEventStream(t *testing.T) {
 	sshd, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

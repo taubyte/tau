@@ -11,16 +11,9 @@ import (
 	"github.com/taubyte/tau/core/kvdb"
 )
 
-// database_test is what the ROOT owes node/database: a store opened through the
-// factory an operator gave this node and registered with the closers, a copy
-// released through the one thing that can actually remove bytes, and the disk
-// surface asserted off a factory that may not have one.
-//
-// WHAT A DATABASE ANSWERS IS NOT HERE. The four data models, the registry and the
-// table of stores are node/database's, tested there against fakes rather than
-// against a composed node.
-
-// ── letting go of a copy ─────────────────────────────────────────────────────
+// What the root owes node/database: stores opened through the operator's factory and
+// closed with the node, release through the one path that removes bytes, and the disk
+// surface asserted off a factory that may lack it.
 
 // releasing is a kvdb.Factory whose stores can be destroyed, which memFactory's
 // cannot. Destroying behaves like the real one: the store is closed and dropped
@@ -71,13 +64,6 @@ func (r *releasable) Destroy(context.Context) error {
 	return nil
 }
 
-// TestARELEASEISTHEFACTORYSANDNOTTHEADAPTERS.
-//
-// What node/database keeps is a table of stores it serves from; what can
-// actually remove bytes is the factory an operator gave this node, and only the
-// root holds that. NOT OPEN IS NOT ABSENT — a restarted node holds bytes it has
-// never opened — so the release opens it for exactly as long as the destroy
-// takes, and does NOT register a closer for a store that is about to be gone.
 func TestTheRootReleasesThroughTheFactoryItWasGiven(t *testing.T) {
 	factory := &releasing{}
 	n := &Node{opts: options{databases: factory}}
@@ -103,9 +89,6 @@ func TestTheRootReleasesThroughTheFactoryItWasGiven(t *testing.T) {
 	require.Nil(t, released)
 }
 
-// TestASTORETHATCANNOTBERELEASEDSAYSSO, rather than reporting a drop that never
-// happened — which would advertise this node as no longer a holder while its
-// bytes are still here.
 func TestAStoreThatCannotBeReleasedIsNamed(t *testing.T) {
 	n, _, factory := makeNode(t, Config{Services: []string{Register, Worker, Discovery}})
 	seam := databaseStores{node: n}
@@ -117,8 +100,6 @@ func TestAStoreThatCannotBeReleasedIsNamed(t *testing.T) {
 	require.Contains(t, opened, "databases/shop/prod/kv/QmA")
 }
 
-// TestANODEWITHNODATABASEFACTORYNEITHERSERVESNORRELEASES, which is a composition
-// fault and is named as one rather than panicking on the first write.
 func TestTheStoreSeamNeedsAFactory(t *testing.T) {
 	seam := databaseStores{node: &Node{opts: options{}}}
 
@@ -127,8 +108,6 @@ func TestTheStoreSeamNeedsAFactory(t *testing.T) {
 	require.ErrorIs(t, seam.Release(t.Context(), "databases/shop/prod/kv/QmA"), ErrNoCacheStore)
 }
 
-// TestAFACTORYTHATCANNOTBEASKEDWHATITHOLDSISNOTONE, so the node hands the
-// adapter nothing rather than a surface that would have to guess.
 func TestTheDiskSurfaceIsAssertedAndMayBeAbsent(t *testing.T) {
 	require.Nil(t, databaseDisk(nil), "a node with no factory has no disk to ask")
 	require.Nil(t, databaseDisk(&memFactory{}), "a factory that keeps no bytes answered as a disk")

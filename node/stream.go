@@ -4,13 +4,8 @@ import (
 	"github.com/taubyte/tau/node/stream"
 )
 
-// stream.go builds this node's stream and bus backings.
-//
-// The adapter is node/stream. What is decided here is the part only the root
-// knows: which gossip an operator gave this node, which cloud it is in, and that
-// a bus has ONE backing shared by the wasm tier and the gateway — a second would
-// be a second join of the same topic, a mesh each, with the browser on the one
-// the workload is not.
+// The stream and bus adapters are node/stream's; the root decides which gossip and
+// cloud, and that a bus has one backing shared by the wasm tier and the gateway.
 
 // streamBacking is a backing for one kind over this node's gossip.
 //

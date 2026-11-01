@@ -6,14 +6,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// What is left here is the wiring: node/model speaks the three formats and its
-// own tests hold them, and what only this package can say is WHEN each of the
-// backing's two collaborators exists.
+// Only the wiring: when each of the backing's collaborators exists.
 
-// TestTHEBACKINGREADSTHENODELATERATHERTHANATCONSTRUCTION. Both halves are
-// functions and not values copied out of the node: a vault and a placement router
-// are wired while services start, so a backing built during composition would
-// capture nil and keep it.
 func TestTheInferenceBackingReadsTheNodeLate(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register}})
 

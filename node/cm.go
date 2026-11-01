@@ -14,15 +14,10 @@ import (
 	"github.com/taubyte/tau/services/dns"
 )
 
-// cm.go wires the cm service — the store of the cloud's
-// certificates, for now — and the one client every public listener on this
-// node takes its certificates from.
-//
-// A node naming `cm` in its services hosts the store; the cloud's
-// `cm.certificate.acme` turning on makes every node a client that orders
-// what it needs itself. DNS-01 values are cache entries over their own
-// replicated database (challengeDatabase), opened by every node that orders
-// or answers them.
+// Wires the cm service (the cloud's certificate store) and the one client every
+// public listener takes certificates from. A node naming `cm` hosts the store;
+// `cm.certificate.acme` makes every node a client ordering its own. DNS-01 values
+// are cache entries over their own replicated database (challengeDatabase).
 
 // CM is the service that holds what the cloud keeps once for every
 // region.

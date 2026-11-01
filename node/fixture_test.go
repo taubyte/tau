@@ -5,13 +5,8 @@ import (
 	gateway "github.com/taubyte/tau/services/gateway"
 )
 
-// fixture_test.go is the smallest compiled project that exercises the whole
-// path: one function, one gateway, one name.
-//
-// IT IS HAND-WRITTEN AND THAT IS THE ONE PLACE IT IS RIGHT TO BE. Every other
-// test of this shape compiles the vocabulary's own fixture; here the point is
-// the wiring, and a project small enough to read in one screen makes what the
-// node did with it obvious.
+// The smallest compiled project exercising the whole path, hand-written so the
+// wiring is readable in one screen.
 
 const (
 	projectID = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
@@ -94,13 +89,8 @@ func needsASecret() []byte {
 	}`)
 }
 
-// needsBothSeams is a project whose one function is built by the platform and
-// wants a secret — the two things a worker refuses to invent.
-//
-// IT IS NO LONGER THE ONLY FIXTURE THAT NEEDS THE ARTIFACT SEAM: every workload
-// here does, because every source is a path in a repository and what came out of
-// building one is nothing a compiled document holds. What this one still says on
-// its own is BOTH refusals at once.
+// needsBothSeams is a project whose one function is built by the platform and wants a
+// secret: both refusals at once.
 func needsBothSeams() []byte {
 	return []byte(`{
 		"object": {

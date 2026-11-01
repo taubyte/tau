@@ -18,34 +18,20 @@ import (
 	secretsService "github.com/taubyte/tau/services/secrets"
 )
 
-// secrets.go wires the one store in v2 that git does not write.
-//
-// It is locate.go's rule again — run it here, use it directly; otherwise ask
-// discovery who does — and the only thing that makes it its own file is that the
-// consumer is an interface services/worker declares rather than one this
-// package does.
+// Wires the secrets store with locate.go's rule; its consumer is an interface
+// services/worker declares.
 
-// ErrNoSecrets is a node that needs a vault and can find none.
-//
-// IT IS A REFUSAL AND NOT AN EMPTY VALUE, which is the same rule the vault
-// itself keeps: a workload started without its database password fails
-// somewhere else, later, as an application that looks broken.
+// ErrNoSecrets is a node that needs a vault and can find none: a refusal, not an
+// empty value.
 var ErrNoSecrets = errors.New("node: no secrets service is reachable")
 
 // holder is the vault as every caller on this node sees it.
 type holder = Vault
 
-// vault resolves a secret for whichever of this node's services needs one.
-//
-// It satisfies services/worker's Secrets interface — the read on the request
-// path — and services/build/frontend's Vault, which is the write. The write
-// half is deliberately NOT the read half's mirror: the frontend's interface has
-// no Get, because nothing on a public ingress reads a value back.
-//
-// IT IS THE SECRETS SERVICE'S OWN CLIENT, on every node alike: a write is
-// encrypted here before it leaves, and a read is opened here from a threshold
-// of members' partial decryptions, so no member — this node's own included,
-// when it runs one — is handed a plaintext.
+// vault resolves a secret for this node's services: services/worker's Secrets (the
+// read) and services/build/frontend's Vault (the write, with no Get, since nothing on
+// a public ingress reads a value back). It is the secrets service's own client, so
+// writes are encrypted and reads opened here, and no member sees plaintext.
 type vault struct {
 	client *secretsService.Client
 }

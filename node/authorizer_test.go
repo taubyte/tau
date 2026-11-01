@@ -14,14 +14,8 @@ import (
 	pkgregister "github.com/taubyte/tau/pkg/register"
 )
 
-// The three policy calls this file makes, each pinned by a test, because none
-// of them is forced by the ABI and all three are the kind of thing that gets
-// quietly reversed:
-//
-//   - an answer is KEPT per caller and target, which is what keeps a wasm
-//     instantiation off a cache's hot path
-//   - the key carries the caller's REVISION, so a redeploy re-asks
-//   - an UNDECIDED answer is not kept, because a guard that declined may decide
+// The three policy choices this file pins: an answer is kept per caller and target,
+// the key carries the caller's revision, and an undecided answer is not kept.
 
 func guardedGrant() invoke.Grant {
 	return invoke.Grant{
@@ -46,9 +40,6 @@ func keyFor(spec invoke.Spec, grant invoke.Grant) string {
 	return strings.Join([]string{spec.Revision, spec.Kind, spec.Label, strings.Join(spec.Scope, "/"), grant.Handle}, "\x00")
 }
 
-// TestAKeptAnswerIsReturnedWithoutRunningAnything. The node here has no
-// component tier at all, so an answer that comes back proves it came from the
-// cache — asking would have failed.
 func TestAKeptAnswerNeedsNoTier(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Worker}})
 	require.Nil(t, n.wasmTier(), "this node runs no components")
@@ -62,9 +53,6 @@ func TestAKeptAnswerNeedsNoTier(t *testing.T) {
 	require.Equal(t, []string{"get", "put"}, ops)
 }
 
-// TestAREDEPLOYREASKS. A revision is the immutable build identity, so a
-// workload whose code changed is a different caller as far as a guard is
-// concerned — which is the case where a stale answer would be most wrong.
 func TestANewRevisionIsANewQuestion(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Worker}})
 
@@ -77,8 +65,6 @@ func TestANewRevisionIsANewQuestion(t *testing.T) {
 	require.Contains(t, err.Error(), "cannot run one", "it fell through to asking")
 }
 
-// TestTheTARGETISPARTOFTHEKEYTOO, so one guarded resource's answer is never
-// handed out for another.
 func TestADifferentTargetIsADifferentQuestion(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Worker}})
 
@@ -93,8 +79,6 @@ func TestADifferentTargetIsADifferentQuestion(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestANodeThatCannotAskSaysSo rather than granting. addressed turns this into
-// a denial, which is the fail-closed half of the policy.
 func TestANodeWithNoTierCannotAnswer(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Worker}})
 
@@ -103,7 +87,6 @@ func TestANodeWithNoTierCannotAnswer(t *testing.T) {
 	require.Contains(t, err.Error(), "keeper", "and names the guard it could not run")
 }
 
-// TestAHandleThatNamesNoDeploymentIsNotAskedAbout.
 func TestAGuardedHandleMustNameADeployment(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Worker}})
 	a := &authorizers{node: n}
@@ -116,8 +99,6 @@ func TestAGuardedHandleMustNameADeployment(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestAnInstanceTravelsToTheGuard, so a guard on a store that holds many can
-// decide per instance rather than per store.
 func TestTheInstanceIsReadOffTheHandle(t *testing.T) {
 	require.Equal(t, "room-42", instanceOf("shop/prod/QmChat/room-42"))
 	require.Empty(t, instanceOf("shop/prod/QmChat"), "a store that holds one has none")
@@ -212,9 +193,6 @@ func guardedBy(name string) invoke.Grant {
 	}
 }
 
-// TestTheGuardIsAskedAboutTheCallerAndTheTarget, and its answer REPLACES the
-// grant's own ops rather than being intersected with them — the grant says what
-// the author allowed, and the guard says what this caller gets.
 func TestTheGuardIsAskedAboutTheCallerAndTheTarget(t *testing.T) {
 	answers := &guarding{decision: wasmtier.Decision{Granted: []string{"get"}}}
 	_, a := guardingNode(t, answers)
@@ -240,9 +218,6 @@ func TestTheGuardIsAskedAboutTheCallerAndTheTarget(t *testing.T) {
 	require.Len(t, answers.questions(), 1, "the second call was answered from the cache")
 }
 
-// TestAGuardThatDoesNotDecideIsNotARefusalAndIsNotKept. A guard that declined
-// may decide next time, so remembering "no answer" would turn one bad moment
-// into a lasting one.
 func TestAGuardThatDoesNotDecideIsNotKept(t *testing.T) {
 	answers := &guarding{decision: wasmtier.Decision{Undecided: "the plan service did not answer"}}
 	_, a := guardingNode(t, answers)
@@ -256,9 +231,6 @@ func TestAGuardThatDoesNotDecideIsNotKept(t *testing.T) {
 	require.Len(t, answers.questions(), 2, "nothing was remembered, so it was asked again")
 }
 
-// TestAGuardThatFailsIsNotADecision. The tier could not run it — which is an
-// operator's problem and not the caller's answer — so it is reported as the
-// failure it is rather than as a refusal.
 func TestAGuardThatFailsIsNotADecision(t *testing.T) {
 	answers := &guarding{err: errors.New("the component trapped")}
 	_, a := guardingNode(t, answers)
@@ -268,9 +240,6 @@ func TestAGuardThatFailsIsNotADecision(t *testing.T) {
 	require.ErrorContains(t, err, "the component trapped")
 }
 
-// TestAGuardThatIsNotInTheProjectIsReported. An authorizer is resolved like any
-// other function, so naming one that was never deployed fails where every other
-// missing resource does — by name, not as a refusal the caller could act on.
 func TestAGuardThatIsNotInTheProjectIsReported(t *testing.T) {
 	answers := &guarding{decision: wasmtier.Decision{Granted: []string{"get"}}}
 	_, a := guardingNode(t, answers)
@@ -281,9 +250,6 @@ func TestAGuardThatIsNotInTheProjectIsReported(t *testing.T) {
 	require.Empty(t, answers.questions(), "nothing was asked, because there was nothing to ask")
 }
 
-// TestAnUnguardedGrantKeepsItsOwnOps. addressed does not call here for a target
-// that declares no authorizer, so reaching it means a grant changed shape
-// underneath us — and the honest answer is what the author wrote.
 func TestAnUnguardedGrantKeepsItsOwnOps(t *testing.T) {
 	answers := &guarding{}
 	_, a := guardingNode(t, answers)

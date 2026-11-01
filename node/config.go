@@ -33,8 +33,6 @@ import (
 	"github.com/taubyte/tau/services/worker"
 )
 
-// config.go declares what a node is built from.
-
 // Services a node can run. They are named here so an operator's list is checked
 // at construction against a closed set rather than silently ignored — a
 // misspelled service that starts nothing is a node that looks healthy and
@@ -55,26 +53,13 @@ const (
 	Database = "database"
 )
 
-// Primitives holds a project's `sync` kind — its queues and its logs — for the
-// reason Database exists: v1 opened both inside the worker's own process, so
-// the thing that decides who writes next was a property of whichever machine
-// happened to run the code.
-//
-// IT IS BORROWED AND NOT SPELLED AGAIN, exactly as the two build roles below
-// are: a rename there would otherwise leave an operator's config naming a
-// service nothing starts.
+// Primitives holds a project's `sync` kind (queues and logs), borrowed from the
+// service's descriptor so a rename cannot leave config naming nothing.
 var Primitives = primitives.Descriptor.Name
 
-// The two halves of the build service, named by the build service itself
-// rather than spelled again here — a rename there would otherwise leave an
-// operator's config naming a service nothing starts.
-//
-// THEY ARE TWO NAMES BECAUSE THEY MUST BE TWO PROCESSES.
-// services/build/boundary_test.go holds the import half of that: the public
-// role may not import the private one, so the process a stranger's POST
-// reaches does not hold the queue's writer or a repository's deploy key. One
-// node running both would put all of it there and reduce the split to a
-// directory layout, so withDefaults refuses the combination.
+// The two halves of the build service, named by the build service itself. Two
+// processes: the public role may not import the private one
+// (services/build/boundary_test.go), and withDefaults refuses one node running both.
 var (
 	// BuildFrontend is the webhook a provider posts to and the job API a
 	// developer reads. It is the only public role in this composition.
@@ -135,13 +120,9 @@ type Config struct {
 	Auth auth.Config
 	DNS  dns.Config
 
-	// DNSListen is the port this node's dns server answers on, e.g. ":53" or
-	// ":5353". Default DefaultDNSListen.
-	//
-	// A PORT AND NOT AN ADDRESS, like everywhere else here — but unlike
-	// everywhere else the port is an operator's, because 53 is the one number
-	// in this system nothing allocates: a resolver dials it by convention and
-	// there is no record that could tell it otherwise.
+	// DNSListen is the port this node's dns server answers on, e.g. ":53" or ":5353".
+	// Default DefaultDNSListen. The operator's, since 53 is the one port a resolver dials
+	// by convention.
 	DNSListen string
 
 	// BuildFrontend and BuildBackend are the two halves' own configuration.
@@ -160,17 +141,9 @@ var (
 	ErrNoHost      = errors.New("node: no host to answer on")
 	ErrNoDatabases = errors.New("node: a register needs somewhere to keep what is published")
 	ErrNoPubSub    = errors.New("node: discovery needs somewhere to gossip")
-	// ErrNoRaft is a node that needs consensus and was given none. FOUR THINGS
-	// need it: the build backend's job queue, the primitives service — whose
-	// whole kind is decisions about who writes next, so a node that cannot hold
-	// an election serves neither a queue nor a log — any queue a project
-	// declares, and a database whose author wrote `consensus: raft`, whose
-	// entries are ordered by a group.
-	//
-	// IT NAMES NO ONE OF THEM, because an operator whose ledger was refused
-	// being told about a queue reads it as a bug in something else. What is
-	// missing is the same thing in every case and the fix is the same: a
-	// composition that opens a group.
+	// ErrNoRaft is a node that needs consensus and was given none: the build backend's
+	// queue, the primitives service, a project's queue, or a raft database. It names none
+	// of them, since the fix is the same: a composition that opens a group.
 	ErrNoRaft = errors.New("node: this needs raft consensus, and nothing here opens a group")
 
 	// ErrBothHalves is the one service combination this composition refuses.
@@ -178,7 +151,6 @@ var (
 		" must not run in one process; the public half exists so a stranger's POST does not reach the queue or the clone credentials")
 )
 
-// Option injects what a node is built from.
 type Option func(*options) error
 
 type options struct {
@@ -209,10 +181,8 @@ type options struct {
 	terminates bool
 }
 
-// WithHost is the libp2p host every p2p service answers on. Required.
-//
-// A NODE DOES NOT MINT ITS OWN IDENTITY. A composition that could would have
-// two ways to start, one of which is never how production starts it.
+// WithHost is the libp2p host every p2p service answers on. Required; a node never
+// mints its own identity.
 func WithHost(h host.Host) Option {
 	return func(o *options) error {
 		if h == nil {
@@ -234,15 +204,9 @@ func WithPubSub(ps discovery.PubSub) Option {
 	}
 }
 
-// WithDatabases is where a register keeps what has been published. Required
-// when this node runs one.
-// WithDatabaseEngines is what a workload's `database:` access is served from.
-//
-// IT IS A REGISTRY AND NOT A DRIVER, because database/sql is itself a registry:
-// a deployment imports the driver it wants, registers an engine over it, and
-// hands the result here. This repository links none, which is what lets one
-// binary serve a cloud that has Postgres and a cloud that does not — see
-// pkg/database's own doc, which decided this before this option existed.
+// WithDatabaseEngines is what a workload's `database:` access is served from: a
+// registry, since a deployment imports and registers the drivers it wants and this
+// repository links none.
 func WithDatabaseEngines(r *database.Registry) Option {
 	return func(o *options) error {
 		if r == nil {
@@ -292,14 +256,9 @@ type Assets interface {
 	Get(ctx context.Context, id string) (io.ReadSeekCloser, error)
 }
 
-// WithAssets is where a build's output goes and where a built site is read
-// from.
-//
-// OPTIONAL, AND WHAT IS LOST WITHOUT IT IS STATED RATHER THAN GUESSED: a
-// backend built without one still builds, and its logs and artifacts live and
-// die with the run. It is injected rather than built here for the same reason
-// raft is — the store is content-addressed over the machine's DAG, and only
-// whoever holds the machine's resources has one.
+// WithAssets is where a build's output goes and a built site is read from. Optional:
+// without it a backend still builds, and logs and artifacts live and die with the
+// run.
 func WithAssets(a Assets) Option {
 	return func(o *options) error {
 		if a == nil {
@@ -310,17 +269,9 @@ func WithAssets(a Assets) Option {
 	}
 }
 
-// WithRoot is where this node keeps what has to be a real directory.
-//
-// ONE THING NEEDS IT AND THAT IS THE POINT: a volume is a POSIX filesystem a
-// container mounts, so it cannot live in the DAG the way everything else this
-// node keeps does. Everything else — the register's rows, a cache, a queue, an
-// artifact — is content-addressed or replicated, which is why a node has had no
-// directory of its own until now.
-//
-// A NODE WITHOUT ONE MOUNTS NOTHING, and says so: a container declaring a
-// volume is refused rather than started with an empty layer, which is the one
-// unserved capability that loses data instead of failing.
+// WithRoot is where this node keeps what has to be a real directory: volumes, the one
+// POSIX filesystem a container mounts. Without it a container declaring a volume is
+// refused rather than started on an empty layer.
 func WithRoot(dir string) Option {
 	return func(o *options) error {
 		if dir == "" {
@@ -331,12 +282,8 @@ func WithRoot(dir string) Option {
 	}
 }
 
-// WithTLS says the composer serves this node's gateway over TLS as well as
-// whatever plain listener it binds, answering handshakes with TLSConfig.
-//
-// IT IS THE COMPOSER'S TO SAY because it is the composer that binds: a node
-// does not know what sockets it is served on, and a gateway told nothing
-// refuses in the clear a name that provides a certificate of its own.
+// WithTLS says the composer serves this node's gateway over TLS as well, answering
+// with TLSConfig. The composer binds the sockets, so it says.
 func WithTLS() Option {
 	return func(o *options) error {
 		o.terminates = true
@@ -344,12 +291,8 @@ func WithTLS() Option {
 	}
 }
 
-// WithRuntimes are the compute tiers this node can run. Required when it runs a
-// worker.
-//
-// THEY ARE INJECTED BECAUSE A TIER IS A LIVE OBJECT — a connection to a
-// container daemon, a wasm engine — and which ones a node has is a property of
-// the machine rather than of the configuration.
+// WithRuntimes are the compute tiers this node can run. Required with a worker. A tier
+// is a live object, a property of the machine.
 func WithRuntimes(rts ...invoke.Runtime) Option {
 	return func(o *options) error {
 		for _, rt := range rts {
@@ -382,9 +325,8 @@ type BuildSeams struct {
 	Engine   artifact.Engine
 }
 
-// WithBuildSeams puts a development cloud's own seams in front of the node's:
-// a universe reading a developer's upload as a commit, and running what was
-// built from it. NO CLOUD PASSES ONE; it exists for node/dream.
+// WithBuildSeams puts a development cloud's seams in front of the node's (an upload
+// read as a commit, and run). For node/dream only.
 func WithBuildSeams(layer func(BuildSeams) BuildSeams) Option {
 	return func(o *options) error {
 		if layer == nil {
@@ -395,9 +337,8 @@ func WithBuildSeams(layer func(BuildSeams) BuildSeams) Option {
 	}
 }
 
-// WithUploads gives this node's build frontend a universe's door for a
-// developer's build (frontend.Uploads). NO CLOUD PASSES ONE; it exists for
-// node/dream.
+// WithUploads gives the build frontend a universe's door for a developer's build
+// (frontend.Uploads). For node/dream only.
 func WithUploads(u frontend.Uploads) Option {
 	return func(o *options) error {
 		if u == nil {
@@ -419,7 +360,6 @@ func WithSecrets(s worker.Secrets) Option {
 	}
 }
 
-// WithClock injects the local clock. Tests use it; production does not.
 func WithClock(now func() time.Time) Option {
 	return func(o *options) error {
 		if now == nil {
@@ -430,9 +370,8 @@ func WithClock(now func() time.Time) Option {
 	}
 }
 
-// withDefaults fills and checks the service list. added are the names of the
-// services a composer added with WithService: an empty list runs them too, and
-// a list may name them.
+// withDefaults fills and checks the service list. added are the names of services
+// added with WithService: an empty list runs them, and a list may name them.
 func (c Config) withDefaults(added ...string) (Config, error) {
 	if len(c.Services) == 0 {
 		c.Services = append(append([]string(nil), All...), added...)

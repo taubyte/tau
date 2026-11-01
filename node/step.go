@@ -12,38 +12,13 @@ import (
 	"github.com/taubyte/tau/services/worker"
 )
 
-// step.go is the program a workflow's steps run.
-//
-// # A workflow is already queues; this is the only thing it was missing
-//
-// tcc LOWERS a workflow before anything runs it: one queue per step carrying
-// that step's retry budget, one driver function per step, and a dead-letter
-// queue at the end. The routing is the queues' own — a failed delivery is
-// redelivered, an exhausted one is dead-lettered into the next step's queue or
-// into the terminal one — so nothing here re-implements retries, ordering or
-// error routing.
-//
-// What the lowering leaves is a driver whose `source: {kind: builtin, builtin:
-// step}` names a program the runtime ships. This is that program, and its whole
-// contract is the vocabulary's own sentence: RECEIVE ONE ITEM, INVOKE THE
-// FUNCTION IT WAS GRANTED, SEND WHAT CAME BACK TO THE QUEUE IT WAS GRANTED.
-//
-// # It runs here rather than on a tier
-//
-// A driver is platform code, and running it as a workload would mean compiling
-// this into a component, shipping it, and starting an instance to do what the
-// dispatcher is already standing in front of. The queue delivery that would
-// have started it is the delivery this handles.
-//
-// The function it invokes IS run on a tier, with its own memory, timeout and
-// grants — which is the half that is the author's.
-//
-// # The run's state is the message
-//
-// What a run carries travels from one step's queue to the next, and WHICH QUEUE
-// IT IS IN is which step it is at. There is no run record and there is nothing
-// to keep in agreement with one. What is genuinely missing is run HISTORY —
-// what ran, when, and what it returned — which is a database and a decision.
+// The program a workflow's steps run. tcc lowers a workflow into one queue per step
+// (with its retry budget), one driver per step and a dead-letter queue, so routing is
+// the queues'. The driver's `source: {kind: builtin, builtin: step}` is this program:
+// receive one item, invoke the granted function, send what came back to the granted
+// queue. It runs here, in the dispatcher, rather than as a workload; the author's
+// function runs on a tier. The run's state is the message and which queue holds it;
+// there is no run history yet.
 
 // stepBuiltin is the vocabulary's name for this program.
 const stepBuiltin = "step"
@@ -69,17 +44,8 @@ var ErrNoStepTarget = errors.New("node: a workflow step's driver was granted no 
 // declared — see node/dispatch.go, which acks on success and leaves a failure
 // to the queue exactly as it does for any other consumer.
 func (d *dispatcher) runStep(ctx context.Context, consumer worker.Consumer, item primitivesService.Delivery) error {
-	// A STEP THAT ONLY WAITS INVOKES NOTHING, and the vocabulary's own fixture
-	// has one: `- name: settle / wait: 30s`. The lowering gives such a step a
-	// queue with the wait as its `delay` and a driver with no `call` to grant,
-	// so THE PAUSE HAS ALREADY BEEN SERVED by the time this runs — the item was
-	// held back for the delay before it could be claimed. All that is left is
-	// to hand it on unchanged.
-	//
-	// Refusing here instead sent every run through such a step to the dead
-	// letter: no interval is declared on the produced queue, so nothing was
-	// nacked, the claim expired, and `max_attempts` of 1 buried it. The author
-	// saw a run that stopped existing.
+	// A step that only waits invokes nothing: its queue's `delay` already held the item
+	// back, so it is handed on unchanged.
 	if len(consumer.Invokes) == 0 {
 		if len(consumer.Sends) == 0 {
 			return fmt.Errorf("%w: %s", ErrNoStepTarget, consumer.Target.Name)

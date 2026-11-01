@@ -14,9 +14,6 @@ import (
 	"github.com/taubyte/tau/services/worker"
 )
 
-// A JS FUNCTION RUNS WHERE A WASM ONE DOES: on a node with an asset store, from
-// which the tier fetches its archive. A node without one has no js tier, and a
-// js function is refused there by name rather than handed to another tier.
 func TestAJSFunctionRunsWhereTheAssetStoreIs(t *testing.T) {
 	greet := invoke.Spec{Name: "shop/prod/function/greet", Runtime: js.Name, Artifact: "bafyarchive", Revision: "r1"}
 	req := &invoke.Request{Method: "GET", Path: "/"}
@@ -36,9 +33,6 @@ func TestAJSFunctionRunsWhereTheAssetStoreIs(t *testing.T) {
 	require.ErrorContains(t, err, `"js"`)
 }
 
-// HOW A NODE'S ENGINES RUN CODE IS ITS OPERATOR'S, written under the worker. An
-// unset mode is each engine's own default, and one that no engine knows is
-// refused when the node starts rather than at the first request.
 func TestTheWorkersEnginesAreTheOperators(t *testing.T) {
 	modes := func(n *Node) (js.Mode, wasm.Mode) {
 		var script js.Mode
@@ -82,8 +76,6 @@ func TestTheWorkersEnginesAreTheOperators(t *testing.T) {
 	}
 }
 
-// THE ENGINES ARE WRITTEN UNDER THE WORKER in a node's file, beside the rest of
-// what the worker's operator declares.
 func TestTheEnginesAreWrittenUnderTheWorker(t *testing.T) {
 	var c Config
 	require.NoError(t, yaml.Unmarshal([]byte("worker:\n  maxprojects: 8\n  engines:\n    js: native\n    wasm: interpreter\n"), &c))

@@ -10,30 +10,13 @@ import (
 	"github.com/taubyte/tau/pkg/invoke/container"
 )
 
-// container.go builds the container tier from what an operator declared.
+// Builds the container tier from what an operator declared: a tier is a live object,
+// but which daemon a machine has is configuration.
 //
-// # Why the tier is configuration and not only an option
-//
-// A tier is a live object — a connection to a container daemon — so it is
-// injected, and WithRuntimes stays the way a composer registers one it already
-// holds. But which daemon a MACHINE has is exactly the kind of thing an
-// operator writes down, and requiring every caller to build the backend
-// themselves means every caller reproduces the same twenty lines and one of
-// them gets the isolation wrong.
-//
-// # The isolation setting is here on purpose
-//
-// containerd's default runtime handler is runc, and under runc the host kernel
-// is the only boundary a container has. A node running code somebody else wrote
-// should name a sandboxed handler — `io.containerd.runsc.v1` for gVisor — and
-// the field is a handler NAME rather than a flag so that swapping the
-// implementation later is configuration rather than a code change.
-//
-// It is not defaulted to a sandbox, because a handler that is not installed
-// fails at container start rather than at boot, and a node that silently could
-// not start anything is worse than one that runs what the operator asked for.
-// What this does instead is make the choice visible: the field is in the config
-// an operator writes, with this doc beside it.
+// containerd's default handler is runc, where the host kernel is the only boundary.
+// A node running others' code should name a sandboxed handler
+// (`io.containerd.runsc.v1` for gVisor). Not defaulted: an uninstalled handler fails
+// at container start, not boot.
 
 // Backends this node knows how to build.
 const (
@@ -62,12 +45,8 @@ type ContainerConfig struct {
 // ErrUnknownBackend is a backend name this node cannot build.
 var ErrUnknownBackend = errors.New("node: not a container backend this node can build")
 
-// containerBackend is the daemon an operator named.
-//
-// IT IS SEPARATE FROM THE TIER because two things want it and they must be the
-// same one: the tier that runs workloads, and the engine that runs builds. A
-// build that auto-detected its own would run on a daemon nobody configured
-// while the workloads ran on the one they did.
+// containerBackend is the daemon an operator named, shared by the workload tier and
+// the build engine so both use the same one.
 func containerBackend(c ContainerConfig) (core.Backend, error) {
 	var cfg core.BackendConfig
 
@@ -95,17 +74,8 @@ func containerBackend(c ContainerConfig) (core.Backend, error) {
 // declared reports whether an operator asked for a container tier.
 func (c ContainerConfig) declared() bool { return c.Backend != "" }
 
-// containerTier builds the runtime a ContainerConfig describes.
-//
-// IT IS A FUNCTION AND NOT A METHOD ON THE CONFIG, and the difference is the
-// rule this whole layer is held to: a config is INERT DATA that survives a
-// round trip through yaml and constructs nothing. v1's pkg/config built the
-// p2p node, and once a config type owns a live resource every consumer of that
-// type has to be handed one — which is how a struct an operator writes becomes
-// something a test cannot make without a daemon running.
-//
-// config_test.go's census holds it: no method on a config type in this package
-// returns a resource.
+// containerTier builds the runtime a ContainerConfig describes. A function, not a
+// method: config is inert data that constructs nothing (config_test.go's census).
 func containerTier(c ContainerConfig, disks container.Volumes) (invoke.Runtime, error) {
 	backend, err := containerBackend(c)
 	if err != nil {

@@ -26,22 +26,17 @@ func sqlWorker(t *testing.T, extra ...Option) *Node {
 	return n
 }
 
-// A WORKER WITH A ROOT OPENS tau's OWN sql ENGINE, in a registry of its own
-// when the composer gave none.
 func TestAWorkerWithARootServesDistributedSQL(t *testing.T) {
 	n := sqlWorker(t, WithRoot(t.TempDir()))
 	require.NotNil(t, n.opts.engines)
 	require.Contains(t, n.opts.engines.EnginesFor(database.SQL), distributed.Name)
 }
 
-// WITHOUT A ROOT IT REGISTERS NONE: rows kept in a temporary directory would
-// die with the process.
 func TestAWorkerWithNoRootServesNoDistributedSQL(t *testing.T) {
 	n := sqlWorker(t)
 	require.Nil(t, n.opts.engines, "no root, so no registry was made to hold one")
 }
 
-// A COMPOSER'S OWN distributed ENGINE IS KEPT, not replaced by this node's.
 func TestAComposersDistributedEngineIsKept(t *testing.T) {
 	reg := database.NewRegistry()
 	mine, err := distributed.New(distributed.UnderRoot(t.TempDir()))

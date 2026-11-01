@@ -7,11 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A DECLARED TIER IS BUILT FROM CONFIG AND AN INJECTED ONE IS NOT.
-//
-// What is tested here is the decision, not the daemon: building a real backend
-// needs docker or containerd on the machine, and what that backend does with a
-// container is pkg/invoke/container's test against a real one.
+// A declared tier is built from config and an injected one is not; the daemon itself
+// is pkg/invoke/container's test.
 
 func TestAnUnknownBackendIsRefusedAtBoot(t *testing.T) {
 	mn := mocknet.New()
@@ -28,7 +25,6 @@ func TestAnUnknownBackendIsRefusedAtBoot(t *testing.T) {
 	require.Contains(t, err.Error(), BackendContainerd)
 }
 
-// TestAWorkerWithNoTierSaysBothWaysToGiveItOne.
 func TestAWorkerWithNoTier(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -38,15 +34,11 @@ func TestAWorkerWithNoTier(t *testing.T) {
 	require.Contains(t, err.Error(), "declare a container backend, give it an asset store, or inject one")
 }
 
-// TestAnInjectedTierNeedsNoDeclaration, which is how dream and a test give a
-// node one without a daemon.
 func TestAnInjectedTierIsEnough(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register, Worker}})
 	require.NotNil(t, n.Worker())
 }
 
-// TestTheBackendIsOnlyBuiltWhenDeclared. A node that runs no worker must not
-// reach for a container daemon.
 func TestNoWorkerMeansNoBackend(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -62,10 +54,6 @@ func TestNoWorkerMeansNoBackend(t *testing.T) {
 	t.Cleanup(func() { n.Close() })
 }
 
-// TestTheIsolationHandlerIsCarried. containerd's default is runc, under which
-// the host kernel is the only boundary a container has — so a node running code
-// somebody else wrote names a sandboxed handler, and it has to reach the
-// backend.
 func TestTheIsolationHandlerIsCarried(t *testing.T) {
 	cfg := ContainerConfig{
 		Backend:   BackendContainerd,

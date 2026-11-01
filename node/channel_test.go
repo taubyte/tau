@@ -29,10 +29,6 @@ func channelGrant() invoke.Grant {
 	}
 }
 
-// TestAChannelWithNoServerIsNoAnswerAndNotAnError — a grant that names nothing
-// to reach is the far end not being there, which is the arm a caller RETRIES.
-// It is not `unavailable`, which is this cloud being unable to serve the kind
-// at all, and telling them apart is the whole reason the variant has both.
 func TestAChannelWithNoServerIsNoAnswer(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Worker}})
 	c := &channels{node: n}
@@ -44,10 +40,6 @@ func TestAChannelWithNoServerIsNoAnswer(t *testing.T) {
 	require.ErrorIs(t, err, wasmtier.ErrNoAnswer)
 }
 
-// TestAHandleThatNamesNoDeploymentIsRefused. The handle is where the project
-// and environment come from, so one that is not a deployment cannot be routed
-// anywhere — and answering "nothing serves it" would blame the far end for a
-// composition fault.
 func TestAHandleThatNamesNoDeploymentIsRefused(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Worker}})
 	c := &channels{node: n}
@@ -61,9 +53,6 @@ func TestAHandleThatNamesNoDeploymentIsRefused(t *testing.T) {
 	require.Contains(t, err.Error(), "does not name a deployment")
 }
 
-// TestANodeThatRunsNoWorkerAndCannotRouteAnswersNothing — a dial has to reach a
-// workload somewhere, and a node with neither a worker of its own nor a way to
-// find one has nowhere to send it. It says so rather than hanging.
 func TestANodeThatCanReachNoWorkerAnswersNothing(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register}})
 	require.Nil(t, n.worker, "this node runs none")
@@ -87,8 +76,6 @@ func dialingNode(t *testing.T, answers *answering) *channels {
 	return &channels{node: n}
 }
 
-// A FUNCTION SERVES A CHANNEL BY BEING INVOKED, and what it answered is what
-// the dialer reads.
 func TestAChannelToAFunctionIsItsAnswer(t *testing.T) {
 	c := dialingNode(t, &answering{name: "wasm", status: 200})
 
@@ -97,8 +84,6 @@ func TestAChannelToAFunctionIsItsAnswer(t *testing.T) {
 	require.Equal(t, []byte("200"), got)
 }
 
-// A SERVER THAT ANSWERED WITH A FAILURE IS A FAILED CHANNEL, not a body the
-// dialer reads as if it had worked.
 func TestAFailingServerIsAFailedChannel(t *testing.T) {
 	c := dialingNode(t, &answering{name: "wasm", status: 503})
 
@@ -107,10 +92,6 @@ func TestAFailingServerIsAFailedChannel(t *testing.T) {
 	require.Contains(t, err.Error(), "503")
 }
 
-// A CONNECTED KIND IS DIALLED ON A PORT. A node that can reach no worker has
-// nowhere to dial, and a worker whose deployment holds no such resource has
-// nothing to dial: both are no answer — the arm a caller retries — and not a
-// dialling fault.
 func TestAConnectedKindIsDialled(t *testing.T) {
 	grant := channelGrant()
 	grant.Settings["serve/kind"] = "application"
@@ -128,7 +109,6 @@ func TestAConnectedKindIsDialled(t *testing.T) {
 	require.NotContains(t, err.Error(), "dialling")
 }
 
-// AN INVOKED KIND THE DEPLOYMENT DOES NOT HOLD is no answer too.
 func TestAFunctionNothingDeploysIsNoAnswer(t *testing.T) {
 	c := dialingNode(t, &answering{name: "wasm", status: 200})
 	grant := channelGrant()
@@ -138,8 +118,6 @@ func TestAFunctionNothingDeploysIsNoAnswer(t *testing.T) {
 	require.ErrorIs(t, err, wasmtier.ErrNoAnswer)
 }
 
-// WITH DISCOVERY A CONNECTED KIND IS DIALLED THROUGH PLACEMENT, and one
-// nothing in the fleet deploys is still no answer.
 func TestAPlacedDialToNothingIsNoAnswer(t *testing.T) {
 	n, _ := consuming(t, &answering{name: "wasm", status: 200}, compiled())
 	require.NotNil(t, n.workers)

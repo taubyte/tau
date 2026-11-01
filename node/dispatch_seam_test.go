@@ -42,7 +42,6 @@ func (s *refusingSeam) Settle(_ context.Context, _ invoke.Grant, _ primitivesSer
 	return s.err
 }
 
-// WHAT CLEARS ON ITS OWN IS ORDINARY, and what does not is worth a line.
 func TestWhichRefusalsAreOrdinary(t *testing.T) {
 	for err, want := range map[error]bool{
 		ErrNoPrimitives:                      true,
@@ -58,14 +57,11 @@ func TestWhichRefusalsAreOrdinary(t *testing.T) {
 	}
 }
 
-// A NODE WITH NO WORKER DRAINS NOTHING: there is nothing it could deliver to.
 func TestADispatcherWithNoWorkerDeliversNothing(t *testing.T) {
 	n, _, _ := makeNode(t, Config{Services: []string{Register}})
 	require.Zero(t, (&dispatcher{node: n}).step(t.Context()))
 }
 
-// A REFUSED CLAIM ENDS THE DRAIN FOR THIS CYCLE, ordinary or not: the next
-// cycle is the retry, and asking again at once would spin.
 func TestARefusedClaimEndsTheDrain(t *testing.T) {
 	for _, err := range []error{errors.New("disk full"), ErrNoPrimitives} {
 		seam := &refusingSeam{err: err}
@@ -75,8 +71,6 @@ func TestARefusedClaimEndsTheDrain(t *testing.T) {
 	}
 }
 
-// A REFUSED SETTLEMENT IS SAID AND NOT RETRIED: the claim expires on its own,
-// and what follows is a redelivery the queue already knows how to make.
 func TestARefusedSettlementIsNotRetried(t *testing.T) {
 	seam := &refusingSeam{err: errors.New("not the leader")}
 	d := &dispatcher{node: &Node{}}
@@ -88,8 +82,6 @@ func TestARefusedSettlementIsNotRetried(t *testing.T) {
 	require.Equal(t, []bool{true, false}, seam.settled)
 }
 
-// A HANDLE THAT NAMES NO QUEUE HAS NO DEPTH, said as "not known" rather than
-// as an empty queue.
 func TestAHandleThatNamesNoQueueHasNoDepth(t *testing.T) {
 	n, _ := consuming(t, &answering{name: "wasm", status: 200}, compiled())
 	require.NotNil(t, n.syncs)
@@ -99,14 +91,11 @@ func TestAHandleThatNamesNoQueueHasNoDepth(t *testing.T) {
 	require.Zero(t, claimed)
 }
 
-// A STEP ON A NODE WITH NO SYNC BACKING HAS NOWHERE TO HAND ITS RESULT.
 func TestAStepWithNoBackingCannotSendOn(t *testing.T) {
 	err := (&dispatcher{node: &Node{}}).sendOn(t.Context(), invoke.Grant{Label: "next"}, "1", nil)
 	require.ErrorIs(t, err, ErrNoPrimitives)
 }
 
-// A STREAM BACKING SERVES THE TWO GOSSIP KINDS and refuses any other by name,
-// so nothing is registered with the closers for it.
 func TestAStreamBackingIsOneOfTwoKinds(t *testing.T) {
 	n := &Node{}
 	_, err := n.streamBacking("queue")

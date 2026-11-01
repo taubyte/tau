@@ -14,17 +14,9 @@ import (
 	secretsService "github.com/taubyte/tau/services/secrets"
 )
 
-// projects.go is the register's project table as build's two roles ask it.
-//
-// EVERY QUESTION ABOUT WHO A PROJECT IS GOES TO ONE PLACE. Which repository a
-// push belongs to, whether it is the project's configuration, which
-// repositories gate a caller, and what a link writes are all reads and one
-// write of the table pkg/register's projects.go keeps — reached per call
-// through the same reach every configuration read uses, so the answer comes
-// from whichever register node is routable now.
-//
-// The credentials a link stored are the vault's, under pkg/linkcreds' names;
-// the table says which project a repository is, and the vault holds its keys.
+// projectTable is the register's project table as build's two roles ask it, reached
+// per call through the configuration reach. A link's credentials are the vault's,
+// under pkg/linkcreds' names.
 type projectTable struct{ node *Node }
 
 func (p projectTable) table(ctx context.Context) (registerSeam, error) {

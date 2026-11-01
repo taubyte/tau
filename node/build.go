@@ -31,8 +31,7 @@ import (
 	"github.com/taubyte/tau/services/worker"
 )
 
-// build.go composes the two halves of the build service and the auth they both
-// ask.
+// Composes the two halves of the build service and the auth they both ask:
 //
 //	auth           who is admitted to this cloud, once a forge said who a caller is.
 //	build-backend  the queue, the job records, and the runners that clone a
@@ -40,11 +39,8 @@ import (
 //	build-frontend the webhook a provider posts to, and the job API a
 //	               developer reads.
 //
-// BOTH HALVES REACH AUTH AS A CLIENT OVER THE SWARM, even on a node that runs
-// auth itself. It is the one place this composition does not take the local
-// shortcut it takes for the register, and the reason is the boundary the split
-// exists for: a role that could reach auth's store in-process would be a role
-// holding auth's store.
+// Both halves reach auth as a client over the swarm even when it runs locally, so no
+// role holds auth's store.
 
 // maxAuthConnections bounds the streams one node keeps to auth. It is small
 // because every answer is cached in front of it — the frontend caches hook
@@ -67,11 +63,7 @@ var ErrNoBuildBackend = errors.New("node: no build service is reachable")
 var ErrNotBuilt = errors.New("node: nothing has built this resource yet")
 
 // fromDiscovery is a discovery.Resolver over the view every other locator on this
-// node reads.
-//
-// THERE IS ONE ANSWER TO "WHO DOES THIS" AND THIS IS IT. A second lookup
-// mechanism for the build service would be a second answer that could disagree
-// with the one a worker and a gateway already use.
+// node reads: one answer to "who does this".
 type fromDiscovery struct {
 	node *Node
 	name string
@@ -128,13 +120,8 @@ func (f *fromDiscovery) Peers(ctx context.Context, want int) ([]libp2ppeer.ID, e
 	}
 }
 
-// Failed does nothing, and the nothing is the point.
-//
-// A DIAL THAT FAILED IS NOT EVIDENCE THE NODE STOPPED RUNNING THE SERVICE. The
-// view already ages a row out when its node stops reporting, which is the one
-// signal that means what "this peer is gone" would mean here. Dropping a peer
-// on a failed dial would let one bad connection remove the only node running a
-// service from every lookup after it.
+// Failed does nothing: a failed dial is not evidence the node stopped running the
+// service, and the view already ages out rows whose node stopped reporting.
 func (f *fromDiscovery) Failed(libp2ppeer.ID) {}
 
 // dial opens a pool onto whichever node runs `service`, on `p`.
@@ -152,11 +139,7 @@ func (n *Node) openAuth() error {
 		return nil
 	}
 
-	// AUTH KEEPS THIS CLOUD'S USERS in a database of its own, and its keys —
-	// each node's token-signing key and pepper, and the operator's OAuth
-	// client secrets — in the vault. Who a project is lives in the register;
-	// whether a caller is admitted is answered from the users, or from
-	// whatever identity this node was composed with.
+	// Auth keeps users in its own database and keys and OAuth client secrets in the vault.
 	if n.opts.databases == nil {
 		return ErrNoDatabases
 	}
@@ -307,11 +290,6 @@ func (n *Node) openBuildBackend() error {
 			artifact.WithEngine(seams.Engine),
 			artifact.WithKeys(registry),
 		}
-		// THE SAME VAULT THE WORKER READS, and by the same rule — an injected
-		// resolver wins, then this node's own or one in the fleet. What
-		// differs is which variables reach it: `at: build` says the value is
-		// baked into the artifact, and the config decides that, not this
-		// wiring.
 		if v := vaults(); v != nil {
 			buildOptions = append(buildOptions, artifact.WithSecrets(v))
 		}
@@ -408,32 +386,22 @@ func (n *Node) openBuildFrontend() error {
 		frontend.WithTenancy(served),
 		frontend.WithCloudFqdn(n.cfg.Gateway.CloudFqdn),
 	}
-	// A FORGE WITH NO SIGNED WEBHOOK REPORTS PUSHES ON ITS OWN FEED (Gerrit's
-	// stream-events), which this frontend subscribes to as a second source of
-	// the same push — see frontend/streams.go.
-	// A FINISHED JOB'S LOGS AND ARTIFACTS are read by the cid the job records,
-	// from the store the backend put them in.
+	// A forge with no signed webhook reports pushes on its own feed (Gerrit's
+	// stream-events), subscribed to as a second source (frontend/streams.go). A finished
+	// job's logs and artifacts are read by cid from the backend's store.
 	if n.opts.assets != nil {
 		frontendOptions = append(frontendOptions, frontend.WithAssets(n.opts.assets))
 	}
 	if len(registry.EventHosts()) > 0 {
 		frontendOptions = append(frontendOptions, frontend.WithStreams(forges, projects))
 	}
-	// WHAT A DEPLOYMENT RUNS is the register's, read back to a viewer for a
-	// developer's build against it.
+	// What a deployment runs, read back for a developer's build against it.
 	frontendOptions = append(frontendOptions, frontend.WithPublished(buildRegister{n}))
 	if n.opts.uploads != nil {
 		frontendOptions = append(frontendOptions, frontend.WithUploads(n.opts.uploads))
 	}
-	// THE PUBLIC ROLE NEVER HOLDS A VAULT ITSELF. It is the one process a
-	// stranger reaches, and withDefaults already refuses it running the
-	// backend for the same reason — so this is always the stream onto a node
-	// that does, and it exists at all only because a node running discovery can
-	// find one.
-	//
-	// THE HOOK SECRETS ARE READ THROUGH IT, and only those: verifying a push
-	// needs the pushed repository's secret, which the developer's link stored
-	// there. Nothing a caller sends reads a value back.
+	// The public role never holds a vault: it is the process strangers reach. This is
+	// always a stream to a node that does, used only for hook secrets.
 	var linked secretReader
 	switch {
 	case n.opts.secrets != nil:
@@ -451,11 +419,8 @@ func (n *Node) openBuildFrontend() error {
 	}
 	frontendOptions = append(frontendOptions, frontend.WithDomains(domainClaims{domains}))
 
-	// A CONSOLE AUTH MAY RETURN A SIGN-IN TO is a console that may call this
-	// ingress from a browser: its callbacks' origins are the CORS allow-list.
-	// OVER TLS WHEN THE CLOUD ISSUES CERTIFICATES: a forge's hook is
-	// installed at https://build-frontend.<cloud fqdn>, and the certificate
-	// for that name comes from the same client every listener here uses.
+	// A console auth may redirect to is a console that may call this ingress: its
+	// origins are the CORS allow-list. TLS when the cloud issues certificates.
 	secure, err := n.ServiceTLS()
 	if err != nil {
 		return err
@@ -514,8 +479,6 @@ func (b buildRegister) Object(ctx context.Context, id pkgregister.ObjectID) ([]b
 	return r.Object(ctx, id)
 }
 
-// reader is the register this node reads, local when it runs one. It is
-// node/locate.go's one reach, narrowed to what a build may ask.
 // Compiled is frontend.Published: the object a deployment's pointer names.
 func (b buildRegister) Compiled(ctx context.Context, project, environment string) ([]byte, error) {
 	pointer, err := b.Resolve(ctx, project, environment)
@@ -529,19 +492,9 @@ func (b buildRegister) reader(ctx context.Context) (artifact.Register, error) {
 	return b.node.registers.Now(ctx)
 }
 
-// artifacts is what a BUILT resource currently runs.
-//
-// IT DROPS THE KIND, and that is this composer's line to write rather than a
-// shape either side bends to: a resource id is already unique, so it is not
-// part of the key a build wrote, and the worker passes a kind because a caller
-// looking up a resource has one in hand.
-//
-// THE ANSWER IS CACHED, briefly. A worker resolves this per invocation and the
-// row only moves when a build finishes, so a lookup per request would be an
-// RPC per request for an answer that changes on a deploy's timescale. The TTL
-// IS THAT TIMESCALE — how long a node may keep running the previous artifact
-// after a new one is built — which is the same thing the register's pointer TTL
-// is, and it is set from the same place.
+// artifacts is what a built resource currently runs. It drops the kind, since a
+// resource id is unique. The answer is cached for the register pointer's TTL, how
+// long a node may run the previous artifact after a build.
 type artifacts struct {
 	node *Node
 
@@ -583,17 +536,9 @@ func (a *artifacts) Artifact(ctx context.Context, project, environment, kind, re
 		}
 	}
 
-	// THE VIEW IS ASKED BEFORE THE POOL IS, and the reason is that this runs on
-	// the REQUEST PATH. fromDiscovery.Peers waits until a peer appears or the
-	// context ends, which is right for a pool opened at startup — services come
-	// up concurrently — and wrong here: on a cloud running no build backend at
-	// all there is nothing to wait for, and a request whose context has no
-	// deadline waits forever instead of being refused.
-	//
-	// So it is the same rule the register and the vault already keep: ask the
-	// view, and if the view knows nobody, say so. A backend that appears a
-	// moment later is picked up by the next request, because a failed lookup is
-	// not cached.
+	// The view is asked before the pool, since this is the request path:
+	// fromDiscovery.Peers would wait forever on a cloud with no build backend. A failed
+	// lookup is not cached.
 	if len((&fromDiscovery{node: a.node, name: BuildBackend}).Known()) == 0 {
 		return "", fmt.Errorf("%w: %s/%s is built by the platform and no build service is reachable",
 			ErrNoBuildBackend, project, environment)

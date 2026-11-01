@@ -21,13 +21,8 @@ import (
 	"github.com/taubyte/tau/pkg/raft"
 )
 
-// A NODE IS TESTED WITH REAL SERVICES AND FAKE RESOURCES.
-//
-// What a composition root can get wrong is what is connected to what, in which
-// order, and what happens when one piece is missing — none of which a mock of
-// the services would show. So every service below is the real one; what is
-// faked is the machine's resources: a mocknet host, a gossipsub over it, an
-// in-memory kvdb and a tier that records rather than starts.
+// A node is tested with real services and fake resources: a mocknet host, gossipsub
+// over it, an in-memory kvdb and a recording tier.
 
 func newHost(t testing.TB, mn mocknet.Mocknet) host.Host {
 	t.Helper()
@@ -128,16 +123,9 @@ func (k *memKV) List(_ context.Context, prefix string) ([]string, error) {
 	return out, nil
 }
 
-// datastoreKey is what pkg/kvdb does to every key it is handed: it wraps it in
-// a datastore path, which makes the key absolute and path-CLEANS it.
-//
-// THE DOUBLE HAS TO DO IT TOO. Without it this fake was more permissive than
-// the store it stands in for, in both directions at once — a listed key came
-// back without the leading slash a real one carries, which made a prefix trim
-// look correct when in production it trimmed nothing; and a key holding `..`
-// was a distinct map entry here while a real store resolves it into somebody
-// else's. Both of those are bugs this package shipped, and this fake is why
-// their tests passed.
+// datastoreKey does what pkg/kvdb does to every key: make it absolute and path-clean
+// it. The double must too, or listed keys lack the leading slash and `..` is a
+// distinct entry, hiding the bugs a real store exposes.
 func datastoreKey(key string) string {
 	cleaned := path.Clean("/" + key)
 	if cleaned == "/" {
@@ -225,19 +213,9 @@ func (t *tier) Start(context.Context, invoke.Spec) (invoke.Instance, error) {
 	return nil, errors.New("tier: nothing is started in this test")
 }
 
-// prebuilt is the artifact seam of a node whose cloud has already built
-// everything, and it is an EXPLICIT option rather than one of makeNode's
-// defaults: whether a node can resolve what a resource runs is exactly what
-// several tests here are about.
-//
-// EVERY BUILT RESOURCE NEEDS ONE, and the fixtures in this package used to
-// pretend otherwise. They wrote `source: {kind: component, component: Qm…}` and
-// the worker handed that id to the tier verbatim, so naming a component was how a
-// fixture skipped the seam. It was never an artifact: `source.component` is a
-// `Ref("component")`, so the id is a configuration document's and the asset store
-// has never held anything under it — see services/worker/artifact_test.go. The
-// fixtures now name a path the way an author does, and a node expected to RUN
-// one of them is handed this.
+// prebuilt is the artifact seam of a cloud that has built everything, explicit rather
+// than a makeNode default since several tests are about its absence. Every built
+// resource needs it: a `source.component` is a configuration id, not an artifact.
 func prebuilt() Option {
 	return WithArtifacts(artifactsFunc(func(_ context.Context, _, _, _, resource string) (string, error) {
 		return "bafy" + resource, nil
@@ -254,14 +232,9 @@ func makeNode(t *testing.T, cfg Config, extra ...Option) (*Node, host.Host, *mem
 	h := newHost(t, mn)
 	factory := &memFactory{}
 
-	// A DNS NODE TAKES A REAL SOCKET, and the default is :53 — which needs
-	// root or CAP_NET_BIND_SERVICE, and which a test must not take even when it
-	// has them: a suite that answered for the machine it runs on would be
-	// answering for the developer's own resolver. An ephemeral loopback port
-	// is the composer's choice here, exactly as :53 is the operator's there.
-	// An empty Services list means All, which is where the DNS node comes from
-	// in most of these tests — so the question is asked the way withDefaults
-	// answers it rather than of the list as written.
+	// A DNS node gets an ephemeral loopback port: :53 needs privilege and would answer for
+	// the developer's resolver. An empty Services list means All, so ask as withDefaults
+	// does.
 	if (len(cfg.Services) == 0 || cfg.runs(DNS)) && cfg.DNSListen == "" {
 		cfg.DNSListen = "127.0.0.1:0"
 	}

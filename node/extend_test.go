@@ -217,10 +217,6 @@ func TestAnAddedServiceThatFailsToStartFailsTheNode(t *testing.T) {
 	require.Contains(t, err.Error(), addedName)
 }
 
-// TestAnAddedServiceDecodesItsOwnConfig: an added service's entry in
-// Config.Added reaches it through Host.Config by its yaml tags, whether the
-// entry came from a file (generic values) or from Go (the service's struct),
-// and a service with no entry keeps its defaults.
 func TestAnAddedServiceDecodesItsOwnConfig(t *testing.T) {
 	type settings struct {
 		Host  string   `yaml:"host"`
