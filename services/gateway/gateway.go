@@ -65,7 +65,15 @@ type Service struct {
 	mu    sync.Mutex
 	owner map[string]ownerEntry
 	order []string
+
+	// cands memoises candidatesAt per compiled project, which never changes once
+	// loaded; the candidates are shared, so nothing may write through them.
+	candMu sync.Mutex
+	cands  map[*specs.Project]map[string][]candidate
 }
+
+// maxCandidateProjects bounds cands; past it the table starts over.
+const maxCandidateProjects = 256
 
 type ownerEntry struct {
 	project     string
@@ -491,8 +499,34 @@ func (s *Service) unbuilt(m match) (int, string) {
 
 // candidatesAt is every gateway resource in this project answering on a name.
 func (s *Service) candidatesAt(p *specs.Project, name, projectName string) []candidate {
+	lookup := s.lookupName(name)
+
+	s.candMu.Lock()
+	out, ok := s.cands[p][lookup]
+	s.candMu.Unlock()
+	if ok {
+		return out
+	}
+
+	out = readCandidates(p, lookup)
+
+	s.candMu.Lock()
+	byName := s.cands[p]
+	if byName == nil {
+		if s.cands == nil || len(s.cands) >= maxCandidateProjects {
+			s.cands = map[*specs.Project]map[string][]candidate{}
+		}
+		byName = map[string][]candidate{}
+		s.cands[p] = byName
+	}
+	byName[lookup] = out
+	s.candMu.Unlock()
+	return out
+}
+
+func readCandidates(p *specs.Project, lookup string) []candidate {
 	var out []candidate
-	for _, h := range p.At(s.lookupName(name)) {
+	for _, h := range p.At(lookup) {
 		if h.Kind != gatewayKind {
 			continue
 		}

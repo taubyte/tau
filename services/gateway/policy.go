@@ -3,6 +3,7 @@ package gateway
 import (
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -21,7 +22,7 @@ func cors(w http.ResponseWriter, r *http.Request, policy specs.GatewayCors, self
 		return
 	}
 
-	allowed := policy.Origins
+	allowed := slices.Clip(policy.Origins)
 	if own := policy.AllowSelf; own != nil && *own && self != "" {
 		// The name this gateway itself answers on. It is the only way to say
 		// it when the name is generated, because the cloud's half of it is not
