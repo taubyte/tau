@@ -11,10 +11,6 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// TestAPlacementThisBuildDoesNotServeIsRefused holds projects/with/placement: a
-// project that says where it runs, on a build with no regions. The project's
-// allowance and its cache's pin are each Broken by name, so a deploy is refused
-// before it publishes rather than running somewhere it was told not to be.
 func TestAPlacementThisBuildDoesNotServeIsRefused(t *testing.T) {
 	c, err := schema.New(schema.WithLocal(projectDir("with/placement")), schema.WithBranch("main"))
 	require.NoError(t, err)
@@ -39,8 +35,6 @@ func TestAPlacementThisBuildDoesNotServeIsRefused(t *testing.T) {
 	}
 }
 
-// A DREAM TEST CAN BE ONE REGION OF A LARGER CLOUD: as region-1, the cache pinned to region-1 is
-// placed there and naming region-2 is not an error — region-2 exists, this build is not it.
 func TestDreamCanMockARegion(t *testing.T) {
 	c, err := schema.New(schema.WithLocal(projectDir("with/placement")), schema.WithBranch("main"))
 	require.NoError(t, err)

@@ -18,10 +18,8 @@ const projectID = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
 // more than one fixture in this package puts a name in it.
 const zoneID = "QmRgVLmWTBpgTbCPnHRUvKGnHqHf7Yd7t8ZffKeRXPkRLL"
 
-// checkoutID is the one function compiled() declares. It is a constant because
-// it is what the ARTIFACT SEAM is asked about for it: a resource id is what a
-// build publishes under, and a test that stages a component has to say which
-// resource runs it.
+// checkoutID is the one function compiled() declares, the resource id the artifact
+// seam is asked about.
 const checkoutID = "QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY"
 
 // anArtifact is a cid for a fixture whose tier never reads the bytes. A test
@@ -29,13 +27,8 @@ const checkoutID = "QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY"
 // the id it came back with instead.
 const anArtifact = "bafyanartifactnothingreads"
 
-// stagedOn hands every node's artifact seam what a build would have published:
-// which component each resource runs, keyed by resource id.
-//
-// A UNIVERSE RUNS NO BUILD SERVICE, and this is where that shows. It is not
-// written into the compiled document — see nodeDream.Built for the bug that came
-// of doing it there — and it goes on EVERY node because placement chooses which
-// one runs a workload.
+// stagedOn hands every node's artifact seam what a build would publish, keyed by
+// resource id; every node, since placement chooses where a workload runs.
 func stagedOn(t *testing.T, pids []string, project string, byResource map[string]string) {
 	t.Helper()
 
@@ -88,10 +81,6 @@ func compiled() []byte {
 	}`)
 }
 
-// TestAnUnstagedResourceIsRefusedByName. A seam that answered "" for a resource
-// nobody staged would send the tier to the asset store for nothing, and the
-// failure would land somewhere else — reading as a broken runtime rather than as
-// a project the test forgot to stage.
 func TestAnUnstagedResourceIsRefusedByName(t *testing.T) {
 	var held nodeDream.Built
 	held.Publish("shop", "prod", map[string]string{"QmOne": "bafyone"})

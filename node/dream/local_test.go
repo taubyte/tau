@@ -36,8 +36,6 @@ func gitIn(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// A REPOSITORY IN A FOLDER IS CLONED AND CONFIRMED FROM IT, at the commit asked,
-// and every other repository is the node's own seam's.
 func TestALocalFolderIsCheckedOutAtTheCommitAsked(t *testing.T) {
 	dir := t.TempDir()
 	gitIn(t, dir, "init", "-q", "-b", "main")

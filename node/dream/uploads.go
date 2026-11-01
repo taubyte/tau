@@ -15,21 +15,13 @@ import (
 	"github.com/taubyte/tau/services/build/deploy"
 )
 
-// uploads is a universe's door for a developer's build: `tau build` carries
-// the tree it built and what it built from it, and the universe takes the
-// bundle in as a commit of the project's configuration repository.
-//
-// FROM THERE IT IS A PUSH. The frontend queues it the way it queues a verified
-// webhook, and the backend's deploy reads the tree, compiles and publishes it,
-// and plans the builds from what it compiled — exactly as a cloud does. Only
-// three seams answer differently for an uploaded commit, and only for one:
-// the checkout is the unpacked tree, the confirmation is that the universe
-// holds it, and the engine hands back the product the developer built for the
-// recipe the UNIVERSE planned. A product built from any other recipe is not
-// found, so an upload deploys only what a cloud would have built.
-//
-// No cloud has this: it is composed here, and node.WithUploads and
-// node.WithBuildSeams are passed by nothing else.
+// uploads is a universe's door for a developer's build: `tau build` carries the tree
+// and what it built, taken in as a commit of the configuration repository. From
+// there it is a push. Three seams answer differently for an uploaded commit: the
+// checkout is the unpacked tree, confirmation is that the universe holds it, and the
+// engine hands back the developer's product for the recipe the universe planned. A
+// product from any other recipe is not found. Only dream passes node.WithUploads and
+// node.WithBuildSeams.
 type uploads struct {
 	root string
 
@@ -53,11 +45,8 @@ func newUploads() (*uploads, error) {
 
 func (u *uploads) Close() error { return os.RemoveAll(u.root) }
 
-// Put is frontend.Uploads.
-//
-// THE COMMIT IS THE BUNDLE'S OWN HASH, so the same build uploaded twice is one
-// commit — and so one job, since a job is named by its commit — and any change
-// to the tree or to what was built is another.
+// Put is frontend.Uploads. The commit is the bundle's hash, so the same build
+// uploaded twice is one commit, and one job.
 func (u *uploads) Put(_ context.Context, _, repositoryKey, ref string, bundle io.Reader) (string, error) {
 	dir, err := os.MkdirTemp(u.root, "upload-")
 	if err != nil {
@@ -119,9 +108,8 @@ type uploadCheckout struct {
 	inner deploy.Checkout
 }
 
-// Checkout is the unpacked tree for an uploaded commit. It is released with the
-// universe rather than the job, because a deploy and the build after it read
-// the one tree.
+// Checkout is the unpacked tree for an uploaded commit, released with the universe
+// since a deploy and the build after it read the same tree.
 func (c uploadCheckout) Checkout(ctx context.Context, repositoryKey, branch, commit string) (string, func(), error) {
 	if up, ok := c.u.held(repositoryKey, commit); ok {
 		return up.bundle.Tree, func() {}, nil

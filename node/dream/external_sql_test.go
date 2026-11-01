@@ -22,16 +22,9 @@ import (
 	"github.com/taubyte/tau/pkg/containers/core"
 )
 
-// external_sql_test runs projects/with/database/{postgres,mysql}/sql: a function
-// and a `sql` database on somebody else's engine, compiled from yaml, published,
-// and asked to create a table, write a row and read it back — against a real
-// server this test starts in docker.
-//
-// THE PATH IS THE AUTHOR'S: host, database, credentials and tls come off the
-// compiled resource, the credentials are a `secret` resolved through the node's
-// vault as "user:password", and the connection is the driver boot links. Only
-// the host's port is rewritten, in a copy, because the server's is the test's to
-// pick.
+// projects/with/database/{postgres,mysql}/sql against a real server in docker:
+// host, database, credentials (a `secret` resolved as "user:password") and tls come
+// off the compiled resource; only the port is rewritten, in a copy.
 
 // server is a database server one test started.
 type server struct {
@@ -137,9 +130,8 @@ func externalSQL(t *testing.T, name string, s server, port int) {
 	r := deployServing(t, pointedAt(t, name, port), "orders.example.com", kitchenSinkWASM(t), nil,
 		node.Register, node.Worker, node.Discovery, node.Gateway, node.Database, node.Primitives, node.Secrets)
 
-	// THE CREDENTIALS ARE A SECRET THE AUTHOR NAMED, set the way a developer
-	// sets one. Without it the open is refused, which the first exec proves by
-	// retrying until this has landed.
+	// The credentials are a secret set the way a developer sets one; the first exec
+	// retries until it lands.
 	ctx := t.Context()
 	require.NoError(t, r.node.Vault().Set(ctx, "shop", "prod", r.idOf(t, "secret", "dbcreds"), []byte("tau:s3cret")))
 

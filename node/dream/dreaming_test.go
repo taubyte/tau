@@ -18,26 +18,17 @@ import (
 	pkgregister "github.com/taubyte/tau/pkg/register"
 )
 
-// THIS IS THE WHOLE OF v2, RUNNING.
-//
-// A universe of nodes, each told which services it runs. A project is published
-// through one node's register; a request arrives at another node's gateway,
-// which asks the fleet who owns the name, reads the compiled project out of a
-// replicated store, matches the route, and hands the target to a worker on a
-// third node — over real hosts, a real gossipsub, real p2p streams.
-//
-// Nothing is faked but the universe and the compute tier, and the tier is the
-// honest boundary: starting a container needs a daemon, so the tier here
-// records what it was asked to start. What it does with a spec is
-// pkg/invoke/container's test against a real backend.
+// All of v2 running: a project published through one node's register; a request at
+// another node's gateway resolves the name through the fleet, reads the compiled
+// project from replicated storage, matches the route and hands the target to a
+// worker on a third node. Only the compute tier is faked: it records what it was
+// asked to start.
 
 func TestAFleetServesARequestEndToEnd(t *testing.T) {
 	recorder := &recordingTier{name: "wasm"}
 	defer nodeDream.Runtimes(nodeDream.Runtimes(recorder)...)
 
-	// THREE NODES, EACH RUNNING ONE THING. Nothing here can answer its own
-	// question: the gateway runs no worker and no register, the worker runs no
-	// register, and the register serves neither.
+	// Three nodes, each running one thing, so none can answer its own question.
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Services: []string{node.Register, node.Discovery},
 	})
@@ -65,15 +56,12 @@ func TestAFleetServesARequestEndToEnd(t *testing.T) {
 	require.Equal(t, "prod", environment)
 }
 
-// TestAGatewayNodeReachesAWorkerNode. The composition's actual claim: a node
-// finds what it does not run.
 func TestAGatewayNodeReachesAWorkerNode(t *testing.T) {
 	recorder := &recordingTier{name: "wasm"}
 	defer nodeDream.Runtimes(nodeDream.Runtimes(recorder)...)
 
-	// TWO NODES OF ONE SHAPE is all a universe can express in one config, so
-	// both run everything — and what is proven is that the gateway on one
-	// reaches a worker, wherever placement decides it is.
+	// Two nodes of one shape both run everything; the gateway on one reaches a worker
+	// wherever placement puts it.
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{Copies: 2})
 	require.NoError(t, err)
 	defer u.Close()
@@ -83,9 +71,7 @@ func TestAGatewayNodeReachesAWorkerNode(t *testing.T) {
 
 	edge, compute := nodeOf(t, pids[0]), nodeOf(t, pids[1])
 
-	// WHAT THE FUNCTION RUNS, which a universe has no build service to say. The
-	// tier here records rather than starts, so the cid is never read -- what
-	// matters is that the worker resolved one at all.
+	// A universe has no build service; the recording tier never reads the cid.
 	stagedOn(t, pids, "shop", map[string]string{checkoutID: anArtifact})
 
 	_, err = edge.Register().Local().Publish(t.Context(), pkgregister.Publication{

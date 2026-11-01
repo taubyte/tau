@@ -17,19 +17,10 @@ import (
 	pkgregister "github.com/taubyte/tau/pkg/register"
 )
 
-// THE WHOLE EDGE PATH, WITH EVERY COMPONENT REAL.
-//
-// A transformer and a router are each proven twice elsewhere and neither proof
-// is this one: against the tier with a real component but no gateway
-// (pkg/invoke/wasm), and against the gateway with the worker faked
-// (services/gateway). What neither can show is the path BETWEEN them — an
-// HTTP request reaching a gateway, the gateway calling a worker over a new RPC,
-// placement choosing a node, the pool starting a component in a world that is
-// not the handler, and the answer coming back far enough to change what the
-// client gets.
-//
-// So this runs three real components behind one request: shaper transforms,
-// picker routes, cacher handles.
+// The whole edge path with every component real: an HTTP request reaching a
+// gateway, the gateway calling a worker, placement choosing a node, and the pool
+// starting components in non-handler worlds. shaper transforms, picker routes,
+// cacher handles.
 
 // routedHost is the name the corpus project's gateway answers on: its zone is
 // `example.com` and the gateway's host label is `routed`.
@@ -49,7 +40,6 @@ func pickerWASM(t *testing.T) []byte {
 	return code
 }
 
-// TestARequestPassesThroughARealTransformerAndARealRouter.
 func TestAGatewayRoutedByAFunctionRunsRealComponents(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
@@ -73,10 +63,7 @@ func TestAGatewayRoutedByAFunctionRunsRealComponents(t *testing.T) {
 	pickerCID, err := store.Put(t.Context(), bytes.NewReader(pickerWASM(t)))
 	require.NoError(t, err)
 
-	// THREE ARTIFACTS, one per world. This and projects/with/authorizer are the
-	// only projects that need more than one: everywhere else a single binary
-	// runs under several names, and here each of the three is built against a
-	// different host interface.
+	// Three artifacts, one per world.
 	compiled, _, pointed := project(t, "with/gateway/router", artifacts{
 		"": handlerCID, "shaper": shaperCID, "picker": pickerCID,
 	})

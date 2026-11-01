@@ -16,36 +16,17 @@ import (
 	pkgregister "github.com/taubyte/tau/pkg/register"
 )
 
-// instance_test is the vocabulary's `instances:` block end to end: a guest
-// naming one of many, a REAL validator function deciding, and two instances
-// that cannot see each other.
-//
-// WHAT ONLY A UNIVERSE CAN SHOW is that the validator is a workload. Every
-// other test of this path fakes the thing that decides — and what the config
-// declares is a function, invoked through the worker, whose answer is the
-// admission. Nothing short of a real component running it proves the two halves
-// meet.
+// The `instances:` block end to end: a guest naming one of many, a real validator
+// function deciding, and two instances isolated from each other.
 
 const (
 	manyCacheID = "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zi"
 	mayOpenFunc = "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zj"
 )
 
-// withInstances is a project whose one function reaches a cache that holds
-// many, and is also the validator that admits them.
-//
-// TWO COMPONENTS, TWO WORLDS. The guest is a handler and the validator declares
-// `implements: instance-validator` and exports `admit(opening) -> verdict`.
-//
-// WHICH COMPONENT EACH ONE RUNS IS NOT IN HERE. Both name a path in a repository
-// the way an author writes it, and the artifacts they were staged with reach the
-// worker through the seam a cloud's build service fills — see stagedOn.
-//
-// It used to be ONE component in both roles, because that world was named by the
-// vocabulary and built by nothing — a validator had to BE a handler, told which
-// instance by a header and answering with an HTTP status. This test said so in
-// this comment. The world exists now, so the fixture's own shape is the one the
-// config describes.
+// withInstances is a project whose function reaches a many-instance cache, plus the
+// validator (`implements: instance-validator`, exporting `admit`). Their artifacts
+// reach the worker through the staged seam (stagedOn).
 func withInstances() []byte {
 	doc := map[string]any{
 		"object": map[string]any{
@@ -99,7 +80,6 @@ func withInstances() []byte {
 	return raw
 }
 
-// TestAGuestOpensOneOfManyAndAFunctionDecides.
 func TestAnInstanceIsAdmittedByARealFunction(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
@@ -173,7 +153,6 @@ func TestAnInstanceIsAdmittedByARealFunction(t *testing.T) {
 	require.Contains(t, string(res.Body), "holds many instances")
 }
 
-// TestTHECEILINGHoldsAgainstARealValidator. `limit: 3` and a fourth room.
 func TestTheInstanceLimitHoldsEndToEnd(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 

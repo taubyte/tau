@@ -57,8 +57,6 @@ func deployAs(t *testing.T, n *node.Node, regions schema.Regions) string {
 	return log.String()
 }
 
-// A REGION THE CLOUD STOPS SERVING STOPS RESOLVING, while the one it keeps serves on: each
-// universe is one region and receives the same two deploys, region-2 dropped by the second.
 func TestADroppedRegionStopsResolving(t *testing.T) {
 	for _, region := range []string{"region-1", "region-2"} {
 		t.Run(region, func(t *testing.T) {

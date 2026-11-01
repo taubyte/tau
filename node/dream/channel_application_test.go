@@ -16,21 +16,6 @@ import (
 	nodeDream "github.com/taubyte/tau/node/dream"
 )
 
-// channel_application_test runs projects/with/channel/application: a channel
-// served by a CONTAINER on one of its named ports. channel_test proves the half
-// where a function answers, dispatched as a call; this is the half where the
-// server is a process with a socket, and a channel is what the schema says it
-// is — a byte channel. The dialer's bytes are written to the container's `http`
-// port and what it writes back is the answer, with nothing wrapped around either.
-//
-// THE PAYLOAD IS A RAW HTTP/1.0 REQUEST because whoami is an HTTP server. Two
-// things in the answer could only come from these bytes reaching its socket:
-// the dialed path, which whoami echoes (re-serialized by Go, so as HTTP/1.1 and
-// with Go's default User-Agent — whoami's rendering, not ours), and the status
-// line's HTTP/1.0, which Go's server writes only to a 1.0 request. An
-// invocation would have arrived as an HTTP/1.1 POST to "/".
-//
-// It runs under `make test-application`, for application_test's reason.
 func TestAChannelServedByAContainerDeliversToItsNamedPort(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Services:  []string{node.Register, node.Worker, node.Discovery},

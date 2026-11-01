@@ -17,36 +17,11 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// THE ONLY PLACE BOTH HALVES ARE REAL. Everything else about an authorizer is
-// proven with its neighbour faked: the ABI against a fake seam
-// (pkg/invoke/wasm), the seam against a node with no tier (node), the grant
-// against a hand-built project (services/worker). What none of them can show is
-// that a guest reaching a guarded cache causes a SECOND component, built against
-// a DIFFERENT world, to be resolved, instantiated and asked — and that what it
-// answers is what the first one is allowed to do.
-//
-// So this runs two real components: fixtures/cacher reaches the cache, and
-// fixtures/guard decides.
-//
-// AND THE PROJECT IS AUTHORED RATHER THAN TRANSCRIBED, for project_test's
-// reason. The object this file used to publish was written by hand, so it was a
-// statement of what the compiler was believed to produce and nothing ever
-// checked it — and it had drifted in both of the ways every conversion before it
-// found. Neither function carried `execution/timeout`, which is Required(), so
-// tcc would have REFUSED the very project this test claimed to be running; and
-// all five resource ids were minted rather than derived — the two functions a
-// two-character edit of fixture_test's own id, the three caches an incrementing
-// base58 tail over one digest. projects/with/authorizer is compiled instead.
-//
-// THE ONE FIELD THIS TEST IS ABOUT IS THE ONE THE LITERAL GOT RIGHT, and it had
-// no choice: `implements: authorizer` is the only non-default world in the
-// corpus, and a guard that says anything else is refused at resolve rather than
-// instantiated and handed a question it would read as a request
-// (services/worker/resolve.go:507). What the literal left to the default was the
-// CALLER's — the reaching function carried no `implements` at all, so the
-// setting reached the tier absent and ran as a handler only because an empty
-// world IS the handler (pkg/invoke/wasm/wasm.go:386). Compiled, it says
-// `handler` out loud, which is what the assertions below now read.
+// Both halves of an authorizer real: fixtures/cacher reaches a guarded cache and
+// fixtures/guard, a second component in another world, is resolved, instantiated
+// and asked, its answer deciding the first's access. projects/with/authorizer is
+// compiled, so the guard's `implements: authorizer` and the caller's default
+// `handler` come from the compiler.
 
 func guardWASM(t *testing.T) []byte {
 	t.Helper()
@@ -55,10 +30,8 @@ func guardWASM(t *testing.T) []byte {
 	return code
 }
 
-// guardedTarget is the guest, and keeperTarget the function that decides for it.
-//
-// BOTH ARE FILENAMES UNDER projects/with/authorizer/function, and a rename there
-// stops these resolving.
+// guardedTarget is the guest and keeperTarget the function deciding for it,
+// filenames under projects/with/authorizer/function.
 func guardedTarget() specs.Address {
 	return specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "reacher"}
 }
@@ -67,12 +40,6 @@ func keeperTarget() specs.Address {
 	return specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "keeper"}
 }
 
-// TestAGuestReachesAGuardedCacheAndASecondComponentDecides.
-//
-// THE THREE CACHES ARE THE GUARD FIXTURE'S THREE ARMS, selected by the cache's
-// NAME — which is what the caller writes in its access block and therefore what
-// travels to the guard as the target's label. Renaming one in the corpus moves
-// it to a different arm.
 func TestAGuardDecidesForARealGuest(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
@@ -94,13 +61,9 @@ func TestAGuardDecidesForARealGuest(t *testing.T) {
 	keeper, err := store.Put(t.Context(), bytes.NewReader(guardWASM(t)))
 	require.NoError(t, err)
 
-	// TWO ARTIFACTS, WHICH IS WHY THIS PROJECT CANNOT GO THROUGH deploy. Every
-	// other corpus project runs one binary under several names; here the guard
-	// is a different component built against a different world, and pointing it
-	// at the cacher would be the very substitution `implements` exists to refuse.
-	//
-	// AND THE UNIVERSE IS THE SMALLEST ONE THAT ANSWERS: no gateway, no zone and
-	// no host, because both halves of this are put to the worker directly.
+	// Two artifacts, so this cannot go through deploy: the guard is a different
+	// component in a different world. No gateway or zone; both halves are put to the
+	// worker directly.
 	compiled, _, pointed := project(t, "with/cache/authorizer", artifacts{"": reacher, "keeper": keeper})
 	stagedOn(t, pids, "shop", pointed)
 
@@ -119,12 +82,7 @@ func TestAGuardDecidesForARealGuest(t *testing.T) {
 		require.Equal(t, "keeper", g.Settings["authorizer/name"], g.Label)
 	}
 
-	// AND THE TWO WORLDS SURVIVED THE COMPILE, which is what the hand-built
-	// object could only assert about itself. The guard's is the corpus's one
-	// non-default `implements`, and it is the string the tier instantiates it
-	// under; the guest's is the default the vocabulary fills in, and the
-	// difference between the two is what keeps a handler from standing in for an
-	// authorizer.
+	// The compiled worlds: the guard's `authorizer`, the guest's defaulted `handler`.
 	require.Equal(t, "handler", spec.Settings["implements"])
 
 	guard, err := n.Worker().Resolve(t.Context(), keeperTarget())
@@ -161,11 +119,8 @@ func TestAGuardDecidesForARealGuest(t *testing.T) {
 	require.Contains(t, string(res.Body), "denied", string(res.Body))
 	require.Contains(t, string(res.Body), "opinion", string(res.Body))
 
-	// AN OP OUTSIDE THE KEPT SET IS DENIED FROM THE SET, not by asking again.
-	// The guard grants get and put and never delete, and the answer it gave to
-	// the very first question — a `put` — is what refuses this one. That is the
-	// whole reason the contract says the answer is the complete set: a host
-	// entitled to keep it keeps ALL of it, including what it does not grant.
+	// An op outside the kept set is denied from the set, not by asking again: the
+	// first answer was complete.
 	res = ask("/delete/sessions/a", nil)
 	require.Contains(t, string(res.Body), "denied", string(res.Body))
 	require.Contains(t, string(res.Body), "delete", string(res.Body))
@@ -176,9 +131,7 @@ func TestAGuardDecidesForARealGuest(t *testing.T) {
 	require.Equal(t, "alice", string(ask("/get/sessions/a", nil).Body))
 }
 
-// admitterWASM is the instance validator fixture — a real component exporting
-// `admit`, which is what the `instances:` block's validator has to be now that
-// its world is built.
+// admitterWASM is the instance validator fixture, exporting `admit`.
 func admitterWASM(t *testing.T) []byte {
 	t.Helper()
 	code, err := os.ReadFile(filepath.Join("..", "..", "pkg", "invoke", "wasm", "fixtures", "admitter.wasm"))

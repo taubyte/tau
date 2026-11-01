@@ -48,8 +48,6 @@ func bundleOf(t *testing.T, recipe artifact.Spec, product string) *bytes.Buffer 
 	return &b
 }
 
-// AN UPLOADED COMMIT IS ANSWERED BY THE UNIVERSE, and every other commit by the
-// forge and the node's own engine, unchanged.
 func TestAnUploadIsACommitTheUniverseHolds(t *testing.T) {
 	u, err := newUploads()
 	require.NoError(t, err)
@@ -103,8 +101,6 @@ func TestAnUploadIsACommitTheUniverseHolds(t *testing.T) {
 	require.Len(t, forge.checked, 1)
 }
 
-// A UNIVERSE WITH NO CONTAINERS builds only uploads, and declines anything
-// else by name.
 func TestAUniverseWithNoContainersDeclinesWhatWasNotUploaded(t *testing.T) {
 	u, err := newUploads()
 	require.NoError(t, err)
@@ -127,8 +123,6 @@ func TestABundleThatIsNotOneIsNoCommit(t *testing.T) {
 	require.Empty(t, entries, "nothing of it is kept")
 }
 
-// WHAT NOTHING STAGED IS ASKED OF THE BUILD SERVICE, and a resource neither has
-// says both.
 func TestBuiltFallsBackToTheBuildService(t *testing.T) {
 	b := &Built{fallback: artifactsFunc(func(_ context.Context, project, _, _, resource string) (string, error) {
 		if resource == "QmBuilt" {

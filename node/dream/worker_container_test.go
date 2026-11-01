@@ -17,19 +17,6 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// worker_container_test runs projects/with/worker/container: a `worker` with
-// `runtime: container`, compiled from yaml, published, and invoked the way a cron
-// or a grant invokes one — through the worker service, with a payload.
-//
-// THE CONTRACT IS pkg/invoke/container/job.go's: the payload is the run's stdin,
-// exit 0 is an answer whose body is stdout, a non-zero exit is a refusal that
-// says the code and what the run wrote to stderr. The image is busybox, whose
-// default command is sh, so the payload is the script the container runs — and
-// every byte of an answer below was computed inside it.
-//
-// It needs a docker daemon and CAP_NET_ADMIN, for application_test's reason:
-// a run is a stranger's code, and the tier will not start one it cannot
-// firewall. `make test-application` runs it.
 func TestAContainerWorkerRunsToCompletionPerInvocation(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Services:  []string{node.Register, node.Worker, node.Discovery},
@@ -44,9 +31,8 @@ func TestAContainerWorkerRunsToCompletionPerInvocation(t *testing.T) {
 	at := publish(t, pids[:1], deployed{project: "shop", name: "with/worker/container", host: "exporter.example.com"}, artifacts{})[0]
 	exporter := specs.Address{Project: "shop", Environment: "prod", Kind: "worker", Name: "exporter"}
 
-	// A RUN THAT SUCCEEDS answers with what it printed. The arithmetic and the
-	// variable are evaluated by the container's shell, so the body could not
-	// have come from anywhere else.
+	// A successful run answers with what it printed; the container's shell evaluates the
+	// arithmetic and variable.
 	var last string
 	var answer string
 	require.Eventually(t, func() bool {

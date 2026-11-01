@@ -23,11 +23,6 @@ import (
 	"github.com/taubyte/tau/services/secrets"
 )
 
-// TestSignInAcrossAFleet: the built-in admin signs in on one auth node, mints
-// an invite there, and a person a forge vouches for redeems it on the OTHER
-// node; each node's token verifies on the other. That is the whole of what a
-// fleet adds — keys and pepper in the real vault, users in the replicated
-// store, two signing keys with nothing written by both.
 func TestSignInAcrossAFleet(t *testing.T) {
 	f := fake.New(fake.GitHubLike)
 	reg, err := f.Registry(forge.Policy{})
@@ -124,9 +119,6 @@ func TestSignInAcrossAFleet(t *testing.T) {
 	require.NotContains(t, person.GetSession().GetRefreshToken(), f.TokenString())
 }
 
-// TestTheAdminSignsInOnceItsPasswordIsWritten: a cloud started without the
-// admin's hash refuses the admin as not set, and admits it the moment the hash
-// is written, with no restart.
 func TestTheAdminSignsInOnceItsPasswordIsWritten(t *testing.T) {
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
 		Copies:   2,

@@ -30,10 +30,6 @@ func (e echoes) Unary(_ context.Context, req *connect.Request[echov1.EchoRequest
 	return connect.NewResponse(&echov1.EchoResponse{Payload: req.Msg.GetPayload(), Note: e.peer}), nil
 }
 
-// TestAnAddedServiceJoinsAFleet: a service this repository does not name is
-// added through node.WithService, named in the universe's service list, found
-// by another node through discovery, and answers it over p2p/rpc and on the
-// node's public handler.
 func TestAnAddedServiceJoinsAFleet(t *testing.T) {
 	const name = "added"
 	protocol := rpc.Protocol(echov1connect.EchoServiceName)

@@ -20,14 +20,9 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// views_test holds projects/with/views and projects/refused/views: a project cut into
-// one view per region, deployed into a universe standing in for each region in turn.
-//
-// THE CUT IS THE ONE A DEPLOY PUBLISHES (schema.Views, through publish), and a node
-// reads its own region's view (node.AsDestination). So what a region serves here is
-// what it would serve on a cloud with both: region-1 answers the route, because the function
-// and the gateway in front of it are placed there; region-2 holds the cache and the zone and
-// no route at all.
+// projects/with/views and projects/refused/views: a project cut into one view per
+// region (schema.Views), each node reading its own (node.AsDestination). region-1
+// answers the route; region-2 holds the cache and zone and no route.
 var twoRegions = schema.Preview("region-1", "region-2")
 
 // inRegion starts a universe that is one region of a cloud with region-1 and region-2, and
@@ -111,8 +106,6 @@ func TestEachRegionServesItsOwnView(t *testing.T) {
 	require.Equal(t, map[string]bool{"zone/example_com": true}, held)
 }
 
-// AN EDGE ACROSS REGIONS IS REFUSED: the cut a deploy publishes cannot be made, so
-// nothing is published for either region.
 func TestAProjectReachingAcrossRegionsIsRefused(t *testing.T) {
 	c, err := schema.New(schema.WithLocal(projectDir("refused/views/across")), schema.WithBranch("main"))
 	require.NoError(t, err)

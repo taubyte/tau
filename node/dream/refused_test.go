@@ -15,21 +15,6 @@ import (
 	buildDeploy "github.com/taubyte/tau/services/build/deploy"
 )
 
-// refused_test holds the projects under projects/refused: each is something an
-// author can write, and the vocabulary claims to refuse. A claim nobody asks the
-// vocabulary to keep is one nothing notices it stopped keeping.
-//
-// THE REFUSAL IS THE AUDIT'S: these compile. A container with no image and no
-// build is a statement the config itself can answer, so it is checkBuild's
-// (pkg/tcc/taubyte/v2/schema/checks.go) to call broken, and the deploy cuts views
-// through that same audit, so nothing is published.
-//
-// IT IS PAIRED WITH THE PROJECT THAT WORKS. The refused one is also unrouted,
-// which the audit says too; that is not what it is about. Neither writes any
-// `regions`, and both are placed — in the one region a build that serves one
-// places everything in — so being unplaced is not a reason either is broken. The
-// same audit over projects/with/application finds nothing broken at all, so the
-// finding asserted here is the one thing the two differ in.
 func TestAnApplicationWithNothingToRunIsBroken(t *testing.T) {
 	broken := brokenIn(t, "refused/application/noartifact")
 	require.Contains(t, broken, "application: names no image and declares no build")
@@ -58,9 +43,6 @@ func TestAnApplicationWithNothingToRunIsBroken(t *testing.T) {
 	require.Empty(t, envs, "nothing is published for a refused project")
 }
 
-// A PROJECT THAT SAYS NO BRANCH DEPLOYS ANYWHERE IS REFUSED, by the compiler and
-// so by the deploy, and nothing is published. It is with/function/wasm minus its
-// table.
 func TestAProjectWithNoEnvironmentsIsRefused(t *testing.T) {
 	const id = "QmZDqydqrb5sFAbuqHeNPuQQpAHWbBHLUcPkM9gDeuSY6D"
 	dir := filepath.Join("projects", "refused/environments/missing")
@@ -89,10 +71,6 @@ func TestAProjectWithNoEnvironmentsIsRefused(t *testing.T) {
 	require.Empty(t, envs, "nothing is published for a refused project")
 }
 
-// A FUNCTION SAYS WHICH TIER RUNS IT. wasm and js are both functions, so the runtime
-// is the author's to write, and a value the kind does not run is refused naming the
-// ones it does. Both are the compiler's refusals, so the deploy makes them too and
-// nothing is published. Each project is with/function/wasm with one line changed.
 func TestAFunctionWithoutATierItRunsOnIsRefused(t *testing.T) {
 	for _, tc := range []struct{ project, id, reason string }{
 		{"refused/function/noruntime", "QmckTZTPqB6a5thN1vZNAjoXUBdEUXWL3vA1gFxcx3xBk9", "required attribute 'runtime'"},

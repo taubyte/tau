@@ -1,22 +1,8 @@
-// Package dream runs a fleet of whole v2 nodes inside one process: v2's
-// end-to-end test harness.
-//
-// # Why the node and not each service
-//
-// Each v2 service already has its own dream registration, and those prove the
-// service. What they cannot prove is the composition: that a worker finds a
-// register it does not run, that a gateway routes to a worker on another node,
-// that what a node broadcasts is what the next node looks for. Those are
-// properties of how the pieces are wired, and the only way to test wiring is to
-// wire it.
-//
-// So a universe here is N whole nodes, each on its own libp2p peer, meshed on
-// loopback (p2p/mesh). Which services each node runs comes from the universe's
-// Config, so a test writes the shape it wants to prove.
-//
-// IT USED TO BE A SERVICE REGISTERED WITH v1's dream, and that is why it is not
-// any more: dream's universe is built around v1's service registry and clients,
-// so every v2 test binary that wanted a mesh linked all of v1.
+// Package dream runs a fleet of whole v2 nodes inside one process, v2's end-to-end
+// harness. Per-service dream registrations prove a service; this proves the
+// composition (a worker finding a register it does not run, a gateway routing to a
+// worker elsewhere). A universe is N nodes, each on its own libp2p peer meshed on
+// loopback (p2p/mesh), running the services its Config names.
 package dream
 
 import (
@@ -49,12 +35,8 @@ import (
 	"github.com/taubyte/tau/services/worker"
 )
 
-// runtimes are the tiers nodes in this process run on.
-//
-// A COMPUTE TIER IS A LIVE OBJECT shared by every node a test starts, so it is
-// set for the process rather than per universe. A composer that has one sets it
-// before starting a universe; a test that wants to see what a node asked to
-// start supplies a recorder.
+// runtimes are the tiers nodes in this process run on, process-wide since a tier is
+// a live object every node shares.
 var runtimes struct {
 	sync.Mutex
 	list []invoke.Runtime
@@ -70,17 +52,9 @@ func Runtimes(rts ...invoke.Runtime) []invoke.Runtime {
 	return was
 }
 
-// clock is what nodes in this process believe the time is.
-//
-// IT IS SET THE WAY runtimes IS, and for the same reason: a clock is a live
-// object shared by every node. Unset means the wall clock, which is what a
-// machine has.
-//
-// WHY A UNIVERSE WANTS ONE: anything a node does on a schedule — a cron slot, a
-// deploy budget expiring, a volume checkpoint coming due — otherwise has to be
-// WAITED FOR at whatever pace the wall clock runs, and a test that waits for a
-// cadence fails on a busy machine while passing on an idle one. With a clock it
-// is advanced instead, and what is left to wait for is the node's own answer.
+// clock is what nodes in this process believe the time is, process-wide like
+// runtimes; nil is the wall clock. It lets tests advance scheduled work rather than
+// wait for it.
 var clock struct {
 	sync.Mutex
 	now func() time.Time
@@ -109,38 +83,11 @@ type running struct {
 	artifacts *Built
 }
 
-// Built is what a build service would have published, staged by a test that
-// runs none.
-//
-// THIS IS NOT A WAY TO GIVE A UNIVERSE A BUILD SERVICE; a universe that wants one
-// runs the build service and is pushed to, or takes a developer's `tau build` in
-// (see uploads). Staging is for a test about the runtime, where what each resource
-// runs is a component this tree already ships — which is a DEPLOYMENT fact, and the
-// artifact seam is precisely where a deployment fact belongs. In a cloud the
-// build service writes the component into the asset store and its cid reaches the
-// worker through worker.Artifacts; here the TEST writes it into the asset store
-// and hands the same mapping through the same seam. The project keeps the
-// `source:` its author wrote.
-//
-// IT REPLACED A REWRITE OF THE COMPILED DOCUMENT, and that is the whole reason it
-// exists. The corpus used to overwrite every resource's source with
-// `{kind: component, component: <cid>}` before publishing, which made `component`
-// mean "this already IS an artifact, skip the build" — a meaning the vocabulary
-// never gave it (`source.component` is a `Ref("component")`, so it carries a
-// configuration document's id) and which only worked because the worker handed
-// that id straight to the asset store. That was a bug, and the corpus was
-// incapable of catching it: the one source kind an author can write there was
-// only ever exercised with something that already was an artifact. See
-// services/worker/artifact_test.go.
-//
-// THE KIND IS DROPPED, exactly as the real resolver drops it (node/build.go): a
-// resource id is already unique, so a component asked about under kind
-// `component` and a workload asked about under its own kind are one lookup.
-//
-// WHAT NOTHING STAGED IS THE BUILD SERVICE'S, as on a node with no seam
-// injected: a universe that runs one builds a push or a developer's upload and
-// files the artifact there, and a resource the test staged nothing for is
-// asked of it.
+// Built is what a build service would have published, staged by a test running
+// none: the test writes a component into the asset store and hands the mapping
+// through worker.Artifacts, the seam a cloud's build service fills, leaving the
+// project's `source:` as written. The kind is dropped, as node/build.go does, since
+// a resource id is unique. Whatever is not staged is asked of the build service.
 type Built struct {
 	mu       sync.Mutex
 	cids     map[string]string
@@ -162,11 +109,8 @@ func (b *Built) Publish(project, environment string, byResource map[string]strin
 	}
 }
 
-// Artifact is worker.Artifacts: what this resource currently runs.
-//
-// AN UNKNOWN RESOURCE IS A REFUSAL NAMING IT, never an empty string. A tier
-// handed "" asks the asset store for nothing and fails somewhere else, which is
-// how a project the test forgot to stage would read as a broken runtime.
+// Artifact is worker.Artifacts: what this resource runs. An unknown resource is a
+// refusal naming it, never "".
 func (b *Built) Artifact(ctx context.Context, project, environment, kind, resource string) (string, error) {
 	b.mu.Lock()
 	cid, ok := b.cids[builtKey(project, environment, resource)]
@@ -198,14 +142,8 @@ func Node(peerID string) (*node.Node, bool) {
 	return r.node, ok
 }
 
-// Assets is the content store that node reads a component out of.
-//
-// IT IS HERE SO A TEST CAN PUT ONE IN. Everything else a node runs is reachable
-// through the node; the asset store is built for it rather than handed to it,
-// and a test that wants a REAL component to run has to be able to address one.
-// In a cloud the build service writes here and a cid reaches the worker through
-// the artifact seam; in a universe the test writes here, and the cid reaches the
-// worker through the same seam — see Artifacts.
+// Assets is the content store that node reads components from, exposed so a test
+// can put a real component in (see Artifacts).
 func Assets(peerID string) (*assets.Store, bool) {
 	built.Lock()
 	defer built.Unlock()
@@ -223,103 +161,35 @@ func Artifacts(peerID string) (*Built, bool) {
 	return r.artifacts, ok
 }
 
-// A DREAM FLEET IS ONE PROCESS ON LOOPBACK, AND raft.DefaultTimeoutConfig IS
-// NOT. That default is sized for nodes on separate continents, and in a
-// universe most of it is dead wait: a group's voters find each other inside a
-// single 200ms discovery poll (BootstrapCheckInterval, pkg/raft/vars.go:7) and
-// then sit out a 30s bootstrap window before anyone is allowed to found the
-// group. Production keeps the default — see node/boot/boot.go, which passes no
-// timeouts at all. Only dream tunes.
-//
-// TUNING DREAM'S RAFT IS NOT NEW HERE: v1's dream has always done it
-// (dream/common/raft.go, 50ms timeouts and a 1s window) and so does the CLI's
-// dev cloud (cli/node/start.go, a 5s window and a 1s heartbeat). Both are sized
-// for a group that bootstraps alone — v1's own comment says as much — while a
-// v2 universe forms real multi-voter groups, so this is the same idea with the
-// founding window taken seriously.
-//
-// EVERY NUMBER BELOW IS A MEASURED FLOOR TIMES THE DEFAULT'S OWN RATIO, never a
-// value that made a test pass. The measurement is 20 group openings across
-// three universes on the build server at load 7, with raft-cluster logging on:
-// discovery (the cluster's own start to its first sighting of a peer) p50
-// 0.202s, p90 0.401s, max 0.802s, and a worst case of 3.2s seen in a run of the
-// whole package.
+// Dream's raft timeouts. raft.DefaultTimeoutConfig is sized for distant nodes; in
+// a loopback universe voters find each other within one 200ms discovery poll and
+// would otherwise sit out a 30s bootstrap window. Production keeps the default
+// (node/boot/boot.go). Each number is a measured floor times the default's own
+// ratio; discovery measured p50 0.2s, p90 0.4s, worst 3.2s.
 const (
-	// dreamBootstrapTimeout is the window raft.New waits for peers before it
-	// decides who founds the group (pkg/raft/cluster.go:193-221).
-	//
-	// IT IS TWO MARGINS ON TWO DIFFERENT QUANTITIES, and only one of them can
-	// wedge a group:
-	//
-	//   - A node whose peers are ALL first seen after 0.8*timeout
-	//     (bootstrapThreshold, cluster.go:81, applied at :222) is a late
-	//     joiner: it is left out of the founder set and asks to be added as a
-	//     voter once the group exists (cluster.go:224-228). Slower, still
-	//     correct. 4s against the worst per-node discovery measured here (3.2s)
-	//     is 1.25x — thin, and deliberately so; see below.
-	//   - A universe where EVERY node is late founds nothing at all, and that
-	//     is the one that hangs. It needs the whole mesh to be late rather than
-	//     one node, and in every universe measured at least one node had seen a
-	//     peer inside 0.80s, so the margin on the quantity that can actually
-	//     wedge a group is 5x.
-	//
-	// THE THIN MARGIN IS THE CHEAP ONE TO LOSE, which is why the window is not
-	// wider. Nothing leaves this window early unless there is already a leader
-	// to join, so a fresh universe pays it in full on every group and every
-	// second added here is a second added to most tests in the package — while
-	// the cost of crossing the thin margin is one node joining a beat late.
+	// dreamBootstrapTimeout is the window raft.New waits for peers before deciding who
+	// founds the group. A node seeing peers only after 0.8x of it joins late (slower,
+	// still correct; 4s vs the worst 3.2s measured). Only a universe where every node is
+	// late founds nothing, and at least one node always saw a peer within 0.8s (5x). A
+	// wider window would add its full length to most tests.
 	dreamBootstrapTimeout = 5 * time.Second
 
-	// dreamHeartbeat is what a follower waits without a leader before standing
-	// for election, and it is the timeout the FIRST election after a bootstrap
-	// has to run out (hashicorp randomizes it over 1x-2x).
-	//
-	// ITS FLOOR IS ONE COLD RPC, and pkg/raft already names that floor:
-	// minTransportTimeout is 1s (cluster.go:390) for "a dial + libp2p stream
-	// negotiation on a cold peer", and createTransport (:393) holds the I/O
-	// deadline at it however low the heartbeat goes. Below that floor a
-	// follower would be calling elections against RPCs still in flight. 2s is
-	// twice it, and the first election after a bootstrap has been measured at
-	// 2-4s, which is the 1x-2x randomization and nothing else.
+	// dreamHeartbeat is how long a leaderless follower waits before standing; the first
+	// election after bootstrap runs it out (1x-2x randomised). Its floor is one cold
+	// RPC (pkg/raft's 1s minTransportTimeout); 2s is twice that.
 	dreamHeartbeat = 2 * time.Second
 )
 
-// dreamStabilize is how long a peer must be continuously present before this
-// universe will place data on it. It is ONE LIVENESS WINDOW, which is the
-// shortest pkg/membership permits and, measurably, the only term in the settle
-// barrier that is not already sub-second.
-//
-// ★ WHY A UNIVERSE MAY GO THIS LOW AND A CLOUD MAY NOT. Stabilize buys off
-// placement thrash: a peer that restarts and is back in four seconds must not
-// have its share of the fleet's bytes moved out and back, so a cloud refuses to
-// move on anything shorter than a minute (services/discovery/config.go). A universe
-// is one process on loopback whose nodes are goroutines that do not restart, so
-// there is no thrash to buy and the minute is a minute of nothing happening.
-//
-// ★ SHORTENING IT IS NOT A WIDER BUDGET, IT IS A NARROWER PROMISE. A peer
-// enters the placement set after being CONTINUOUSLY live for this long, so the
-// window is also the length of the run a starved node has to complete without
-// missing three consecutive beats — 3 beats at 15s rather than 12 at a minute.
-// A shorter window is therefore strictly harder to interrupt, which is why this
-// is the direction the fix goes rather than a longer wait for it.
-//
-// MEASURED on an idle build server, five runs: node/dream's settle barrier
-// (project_test.go's deployFleetOf) sat at 1m5.001s, of which 60s was this
-// window and 5.00s the first peer report heard, while the register's CRDT and
-// the fleet document were both there at 1.0s. The barrier's budget is 120s, so
-// a minute-long window left 55s for everything else and a loaded box spent it.
-// One liveness window puts the same barrier at 20.000s.
+// dreamStabilize is how long a peer must be continuously present before data is
+// placed on it: one liveness window, pkg/membership's minimum. A cloud waits a
+// minute to avoid placement thrash on restarting peers; a universe's goroutine
+// nodes never restart. A shorter window is also harder to interrupt. It took the
+// settle barrier from 65s to 20s.
 var dreamStabilize = discovery.Config{}.Freshness()
 
-// dreamTimeouts is DefaultTimeoutConfig's shape at dream's scale: election is
-// twice heartbeat and commit and lease equal it, exactly as the default has
-// 30s/15s/15s/15s. The lease is not a free choice either — hashicorp rejects a
-// LeaderLeaseTimeout larger than the heartbeat outright (raft/config.go:369),
-// so equal to it is the ceiling.
-//
-// THE SNAPSHOT NUMBERS ARE THE DEFAULT'S, UNTOUCHED. No universe lives ten
-// minutes or writes 32768 entries, so a smaller interval or threshold could
-// only add snapshot work to tests that never reach one.
+// dreamTimeouts is DefaultTimeoutConfig's shape at dream's scale: election twice
+// heartbeat, commit and lease equal to it (hashicorp rejects a lease above the
+// heartbeat). Snapshot settings are the default's.
 var dreamTimeouts = raft.TimeoutConfig{
 	HeartbeatTimeout:   dreamHeartbeat,
 	ElectionTimeout:    2 * dreamHeartbeat,
@@ -329,8 +199,7 @@ var dreamTimeouts = raft.TimeoutConfig{
 	SnapshotThreshold:  raft.DefaultTimeoutConfig.SnapshotThreshold,
 }
 
-// Config is the shape of a universe: how many nodes, and what each runs and
-// where it is.
+// Config is the shape of a universe: how many nodes, and what each runs.
 type Config struct {
 	// Services each node runs. None named means all of them, which is what
 	// node.Config already says an empty list means.
@@ -339,15 +208,9 @@ type Config struct {
 	// Copies is how many nodes. Zero is one.
 	Copies int
 
-	// Container is the daemon the nodes run container workloads on —
-	// node.BackendDocker or node.BackendContainerd — the way a machine's
-	// config names one.
-	//
-	// A UNIVERSE HAS NONE UNLESS IT ASKS, because a daemon is a property of
-	// the machine running the test and most of them have none. A node without
-	// one runs wasm and static sites and refuses a container workload by name;
-	// a universe that names one builds the same tier a machine's config builds
-	// (node/container.go).
+	// Container is the daemon nodes run container workloads on (node.BackendDocker or
+	// node.BackendContainerd). None unless asked: without one a node runs wasm and
+	// static sites and refuses container workloads by name.
 	Container string
 
 	// Options are added to every node's own, such as services added with
@@ -387,9 +250,8 @@ func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
 		return nil, err
 	}
 
-	// ONE ACME ACCOUNT PER UNIVERSE, as an operator configures one per cloud,
-	// sealed once and written by every node that keeps secrets before it
-	// starts, the way `taud init` does on a machine.
+	// One ACME account per universe, sealed once and written by every secrets-keeping
+	// node before it starts, as `taud init` does.
 	_, minted, err := acme.MintKey()
 	if err != nil {
 		m.Close()
@@ -402,9 +264,8 @@ func Start(ctx context.Context, name string, cfg Config) (*Universe, error) {
 	}
 	account := []*secretsv2.InitSecret{sealed}
 
-	// ONE UPLOAD DOOR PER UNIVERSE, shared by every node in it: the frontend
-	// that takes a bundle in and the backend that builds it are often two
-	// nodes, and in one process they read one store.
+	// One upload door per universe, shared by every node, since the frontend and the
+	// backend that builds are often two nodes.
 	held, err := newUploads()
 	if err != nil {
 		m.Close()
@@ -460,10 +321,7 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	clock.Unlock()
 
 	if len(tiers) == 0 {
-		// A universe with no compute backend still composes: the lookup is
-		// what a node proves, and the tier is where a process without a
-		// container daemon stops. See services/worker/dream for the same
-		// boundary stated at more length.
+		// A universe with no compute backend still composes; the tier is where it stops.
 		tiers = []invoke.Runtime{absent{}}
 	}
 
@@ -472,8 +330,8 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		return err
 	}
 
-	// THE SEAM A CLOUD FILLS WITH ITS BUILD SERVICE, filled first by whoever
-	// staged components and otherwise by the build service — see Built.
+	// The artifact seam, filled by staged components and otherwise by the build service
+	// (Built).
 	staged := &Built{}
 
 	// A DIRECTORY PER PEER, so two nodes in one universe do not share a volume
@@ -484,13 +342,8 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		return err
 	}
 
-	// A UNIVERSE CANNOT HAVE :53, AND SHOULD NOT WANT IT. The default is the
-	// port a resolver dials by convention, which needs root or
-	// CAP_NET_BIND_SERVICE — and even where a test has them, a universe
-	// answering on the machine's own resolver port would be answering for the
-	// developer running it. So every node here takes an ephemeral loopback
-	// port, which is also what makes a FLEET of them possible: two nodes
-	// cannot share one port, and :0 is how every other one is allocated.
+	// Every node takes an ephemeral loopback DNS port: :53 needs privileges, would
+	// answer for the developer's own resolver, and two nodes cannot share one.
 	nodeConfig := node.Config{
 		Services:  append([]string(nil), cfg.Services...),
 		Cloud:     m.Name(),
@@ -498,11 +351,9 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 	}
 	nodeConfig.DNSListen = "127.0.0.1:0"
 	nodeConfig.Discovery.Stabilize = dreamStabilize
-	// A UNIVERSE IS ONE DEVELOPER'S CLOUD, so whoever its forges vouch for may
-	// use it, as before it had users; a test that wants invites says so.
+	// A universe is one developer's cloud, so sign-up is open.
 	nodeConfig.Auth.SignUp = auth.SignUpOpen
-	// A UNIVERSE IS A DEVELOPMENT CLOUD, so the zones its projects declare are
-	// served unproven, as v1's dev mode did; a test that proves them says so.
+	// A development cloud serves declared zones unproven.
 	nodeConfig.CM.Domains.Trusted = true
 	if cfg.Configure != nil {
 		cfg.Configure(index, &nodeConfig)
@@ -518,17 +369,10 @@ func create(m *mesh.Mesh, p peer.Node, cfg Config, index int, account []*secrets
 		node.WithHost(h),
 		node.WithPubSub(p.Messaging()),
 		node.WithDatabases(kvdb.New(p)),
-		// THE SAME RAFT A MACHINE OPENS, over the universe's own peer. A
-		// universe is not a machine but it does have a peer.Node, which is the
-		// whole of what raft.New wants — so parity here is the real thing
-		// rather than a stand-in, and a build queue in a universe replicates
-		// the way it does in a fleet.
+		// The same raft a machine opens, over the universe's own peer.
 		node.WithRaft(func(namespace string) (raft.Cluster, error) {
-			// SNAPSHOTS GO UNDER THIS NODE'S OWN ROOT. The default is a
-			// machine-wide /tmp path keyed by namespace alone, so two nodes
-			// that open the same group name share one snapshot store and
-			// write each other's state — latent while there was one group
-			// per node, and multiplied by a group per database.
+			// Snapshots under this node's own root: the default /tmp path is keyed by namespace
+			// alone, so nodes would share one store.
 			return raft.New(p, namespace,
 				raft.WithSnapshotRoot(filepath.Join(root, "raft")),
 				raft.WithTimeouts(dreamTimeouts),

@@ -20,33 +20,14 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// workflow_test runs a whole pipeline, compiled by tcc from the vocabulary's
-// own fixture rather than assembled here.
-//
-// THAT IS THE POINT. A workflow LOWERS before anything runs it — one queue per
-// step carrying that step's retry budget, one driver per step, a dead-letter
-// queue at the end — so a hand-written compiled object would be a fixture of
-// what I believe the lowering produces and would keep passing on the day it
-// produced something else. What this shows is that what tcc ACTUALLY produces
-// runs: the drivers are found at all (they live in a scope that is not a
-// namespace), each invokes the function its step named, and the run advances
-// from one step's queue to the next.
-//
-// THE ONE THING SUBSTITUTED IS WHICH ARTIFACT each function runs, which is a
-// deployment fact and not a lowering one: the fixture's functions name paths in
-// a repository nobody built here, so they are pointed at the component this
-// package already ships. That fact is said through the ARTIFACT SEAM rather than
-// written into the document — see nodeDream.Built — so the fixture's own sources
-// are untouched, the drivers' `source: {kind: builtin}` included, which is the
-// thing under test.
+// A whole pipeline compiled by tcc from the vocabulary's fixture. A workflow lowers
+// (one queue and driver per step, a dead-letter queue at the end), so this shows
+// what tcc produces runs. Only each function's artifact is substituted, through the
+// artifact seam; the drivers' builtin sources are untouched.
 
-// runnableFixture is the vocabulary's project, and the mapping saying which
-// component each of its authored functions runs.
-//
-// THE ENTRYPOINT IS STILL REWRITTEN, and it is the one rewrite that has to be:
-// the exported symbol belongs to the ARTIFACT, so pointing a function at a
-// different component and keeping the author's `call` names an export that is not
-// there. Nothing outside the document can say that.
+// runnableFixture is the vocabulary's project and the mapping of each authored
+// function to its component. The entrypoint is rewritten: the export belongs to the
+// artifact, so a different component needs a different `call`.
 func runnableFixture(t *testing.T, componentCID string) ([]byte, map[string]string) {
 	t.Helper()
 
@@ -75,10 +56,8 @@ func runnableFixture(t *testing.T, componentCID string) ([]byte, map[string]stri
 				if !ok {
 					continue
 				}
-				// THE WORKFLOW'S RUN CEILING AND ITS STEPS' SELECTORS ARE TAKEN
-				// OFF: a driver hands on the whole message, and nothing counts
-				// runs, so worker refuses the start by name over each
-				// (unservableWorkflow). What this test runs is the hand-on.
+				// The workflow's run ceiling and the steps' selectors are removed: nothing counts
+				// runs, so the worker would refuse the start (unservableWorkflow).
 				if kind == "workflow" {
 					delete(res, "concurrency")
 					steps, _ := res["steps"].([]any)
@@ -92,13 +71,10 @@ func runnableFixture(t *testing.T, componentCID string) ([]byte, map[string]stri
 				}
 				if kind == "function" {
 					source, _ := res["source"].(map[string]any)
-					// A DRIVER IS LEFT ALONE. Its source is the builtin this
-					// whole test is about, and a builtin has no artifact.
+					// A driver runs a builtin, which has no artifact.
 					if s, _ := source["kind"].(string); s != "builtin" {
-						// A FUNCTION THAT NAMES A COMPONENT RUNS THE
-						// COMPONENT'S BUILD, so that is the id the artifact is
-						// filed under -- which is what this fixture's `checkout`
-						// and `edge_router` do: they name `paylib`.
+						// A function naming a component runs the component's build, filed under that id
+						// (checkout and edge_router name paylib).
 						if component, _ := source["component"].(string); component != "" {
 							pointed[component] = componentCID
 						} else {
@@ -121,8 +97,6 @@ func runnableFixture(t *testing.T, componentCID string) ([]byte, map[string]stri
 	return raw, pointed
 }
 
-// TestAWholePipelineRuns: a workload starts it, every driver invokes the
-// function its step named, and the run advances to the end.
 func TestAWorkflowRunsEndToEnd(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
@@ -150,8 +124,8 @@ func TestAWorkflowRunsEndToEnd(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// THE DEPLOYMENT HAS TO BE HELD BEFORE ANYTHING IS DRAINED, which is the
-	// enumeration rule: a node drains the queues of what it is already serving.
+	// The deployment must be held before anything drains: a node drains the queues of
+	// what it serves.
 	producer := specs.Address{Project: "shop", Environment: "prod", Kind: "function", Name: "checkout"}
 	spec, err := n.Worker().Resolve(t.Context(), producer)
 	require.NoError(t, err)
@@ -166,12 +140,8 @@ func TestAWorkflowRunsEndToEnd(t *testing.T) {
 	}
 	require.NotEmpty(t, start.Settings["entry/start/handle"], "the composer resolved no entry point")
 
-	// A WORKLOAD STARTS IT, through the host function the vocabulary declares.
-	// Nothing here sends to a queue.
-	//
-	// RETRIED, because a cloud's consensus for queues forms in the background
-	// and a send that arrives first is told `unavailable` rather than made to
-	// wait out raft's bootstrap.
+	// A workload starts it through the vocabulary's host function. Retried, since queue
+	// consensus forms in the background.
 	var last string
 	require.Eventually(t, func() bool {
 		res, err := n.Worker().Invoke(t.Context(), producer, &invoke.Request{
@@ -185,13 +155,8 @@ func TestAWorkflowRunsEndToEnd(t *testing.T) {
 		return res.Status == 204
 	}, formingBudget, time.Second, "the run could never be started: %s", &lastOf{&last})
 
-	// AND THE PIPELINE RUNS ITSELF. `reserve` invokes `reserve_stock` and hands
-	// on, `settle` waits the 30s its author wrote, `charge` invokes
-	// `charge_card` and the run ends with nothing left anywhere.
-	//
-	// The 30s delay is why this is generous: it is the vocabulary's own number
-	// and waiting it out is what proves a step that waits is a queue that holds
-	// its work back.
+	// The pipeline runs itself: reserve invokes reserve_stock, settle waits its 30s,
+	// charge invokes charge_card.
 	steps := map[string]string{}
 	for _, step := range []string{"reserve", "settle", "charge"} {
 		steps["checkout_"+step] = handleOf(t, n, "checkout_"+step)
@@ -208,10 +173,7 @@ func TestAWorkflowRunsEndToEnd(t *testing.T) {
 		return ready + claimed
 	}
 
-	// THE RUN REACHES THE LAST STEP. `reserve` invokes `reserve_stock` and
-	// hands on, `settle` waits the 30s its author wrote, `charge` invokes
-	// `charge_card` — so this waits out a real delay, which is what shows a
-	// step that waits is a queue that holds its work back.
+	// The run reaches the last step, waiting out settle's real 30s delay.
 	var seen []string
 	require.Eventually(t, func() bool {
 		for name, handle := range steps {
@@ -223,43 +185,22 @@ func TestAWorkflowRunsEndToEnd(t *testing.T) {
 			depth(steps["checkout_reserve"]) == 0 && depth(steps["checkout_settle"]) == 0
 	}, 180*time.Second, time.Second, "the run never finished; it was seen in %v", &seenSteps{&seen})
 
-	// SETTLE IS OBSERVED BECAUSE IT HOLDS. Its queue carries the 30s delay its
-	// author wrote, so an item sits in it far longer than this poll — which is
-	// what makes "the run passed through the step that waits" something that
-	// can be watched at all.
+	// Settle is observed because its 30s delay holds the item longer than the poll.
 	require.Contains(t, seen, "checkout_settle", "the run never reached the step that waits")
 
-	// AND `charge` IS NOT ASSERTED THE SAME WAY, deliberately: it drains as soon
-	// as it is claimed, so a poll never catches it holding anything and an
-	// assertion that it was seen occupied would fail on a run that worked. What
-	// shows the run reached it is below — the settle queue emptied and NOTHING
-	// WAS BURIED, so the item left settle and no step gave up on it.
+	// charge drains as soon as it is claimed, so it is never seen holding anything; the
+	// settle queue emptying with nothing buried shows the run reached it.
 
-	// NOTHING REACHED THE DEAD LETTER, which is where a run stops when a step
-	// exhausts its attempts — so every step succeeded rather than going quiet.
-	//
-	// THIS IS THE ASSERTION THAT WAS VACUOUS, and it is why the wait-only step
-	// that buried every run through it shipped: the handle it read named
-	// nothing, so an unopened queue and an empty one were the same answer. It
-	// resolves the real handle now and asserts the queue was never opened at
-	// all — nothing was ever buried, rather than nothing is buried right now.
+	// Nothing reached the dead letter: the queue was never opened, so nothing was ever
+	// buried.
 	ready, claimed, ok := n.QueueDepth(deadLetterOf(t, n))
 	require.True(t, ok, "this node cannot read what was buried")
 	require.Zero(t, ready+claimed, "a step gave up and the run was buried")
 }
 
-// handleOf is the handle one of the workflow's produced queues is opened under.
-//
-// IT RESOLVES THROUGH THE READ PATH rather than being built here, which is the
-// thing that was broken: the queues live at `workflow/<id>/queue/<name>`, and
-// nothing could address them while every scope segment was assumed to be a
-// namespace.
-//
-// IT FAILS THE TEST RATHER THAN ANSWERING SOMETHING. An earlier version fell
-// back to a handle it assembled itself when a queue had no driver — which the
-// dead letter deliberately does not — and that handle named nothing, so
-// QueueDepth reported "never opened", the assertion read it as empty, and a
-// run that was being buried on every pass looked like a run that finished.
+// handleOf is the handle a workflow's produced queue opens under, resolved through
+// the read path (queues live at `workflow/<id>/queue/<name>`). It fails the test
+// rather than assembling a handle, which would name nothing and read as empty.
 func handleOf(t *testing.T, n *node.Node, step string) string {
 	t.Helper()
 

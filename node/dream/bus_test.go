@@ -17,33 +17,14 @@ import (
 	nodeDream "github.com/taubyte/tau/node/dream"
 )
 
-// bus_test is the claim a user can see: a browser opens a websocket at a name
-// and gets what a workload publishes, with nothing deployed beside it.
-//
-// EVERY OTHER TEST OF THIS PATH FAKES ITS NEIGHBOUR. The gateway's fakes an
-// attachment, the node's fakes a browser, and the guest's fakes the topic. What
-// none of them can show is that a REAL browser, on a node that runs no part of
-// the workload, is listening to the topic a guest's grant resolved to — and
-// that is the whole of the feature.
-//
-// AND THE PROJECT IS AUTHORED RATHER THAN TRANSCRIBED, for project_test's
-// reason: the object this test used to publish was written by hand, so it was a
-// statement of what the compiler was believed to produce and nothing ever
-// checked it. It had drifted the same two ways the queue's had — it omitted
-// `execution/timeout`, which is Required(), so tcc would have refused the very
-// project this test claimed to be running, and it omitted `implements`, which
-// the vocabulary fills in as `handler`. The yaml under projects/with/bus is
-// compiled here, which is the only way a bus's declaration and a bus's
-// behaviour are tested as one thing.
+// A browser opens a websocket at a name and receives what a workload publishes,
+// with the browser on a node that runs no part of the workload. projects/with/bus
+// is compiled.
 
-// busFor is the name the bus answers on: the label `live` in the zone the
-// project declares. IT IS NOT COMPUTED HERE AND IT IS NOT LOOKED UP — a zone
-// the project owns makes the fqdn complete without the cloud's own, which is
-// why this project declares one rather than taking a generated name.
+// busFor is the label `live` in the project's own zone, complete without the
+// cloud's fqdn.
 const busFor = "live.example.com"
 
-// TestABrowserOnOneNodeGetsWhatAGuestPublishesOnAnother — the whole claim, over
-// a real websocket and real gossipsub.
 func TestABrowserAttachesAndAGuestReachesIt(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 
@@ -51,17 +32,12 @@ func TestABrowserAttachesAndAGuestReachesIt(t *testing.T) {
 		map[string][]byte{"doorman": doormanWASM(t)})
 	publishing, edge := cloud[0], cloud[1]
 
-	// THE BROWSER ATTACHES TO THE OTHER NODE, which runs no part of this
-	// workload's invocation. A gateway that had to be the node the workload
-	// ran on would be a placement decision made by a browser.
+	// The browser attaches to the other node.
 	srv := httptest.NewServer(edge.node.Handler())
 	defer srv.Close()
 
-	// The publish has to reach the edge node's register before its gateway can
-	// resolve the name at all. deployFleet already waits for exactly that, so
-	// this is expected to succeed on its first tick; it is a retry because a
-	// resolvable project and a routable one are two facts and only the first is
-	// what the barrier watched.
+	// deployFleet waited for resolution, so the first try should succeed; it retries
+	// since resolvable and routable are two facts.
 	var conn *websocket.Conn
 	require.Eventually(t, func() bool {
 		c, res, err := websocket.DefaultDialer.Dial(
@@ -87,25 +63,10 @@ func TestABrowserAttachesAndAGuestReachesIt(t *testing.T) {
 		}
 	}()
 
-	// A gossipsub mesh needs both sides joined before a publish reaches
-	// anybody, so the invocation is retried until it does — the same shape the
-	// stream test uses, for the same reason.
-	//
-	// NEITHER NAMED BUDGET PRICES THIS ONE. formingBudget and electionBudget
-	// are both the cost of a raft group, and there is no raft anywhere on this
-	// path: a bus keeps nothing, orders nothing and elects nobody. What is
-	// being waited out is the swarm's own — a gossipsub heartbeat is 1s and a
-	// mesh needs a few of them once both ends have subscribed, so a few seconds
-	// is the shape of it. The 60s here is the cost of REPORTING a mesh that
-	// never formed rather than a bound on one that does, and it is the number
-	// this assertion has always carried.
-	// THE PUBLISH GOES THROUGH THE GATEWAY TOO, and that is the difference
-	// between this project and what it used to prove. The workload used to be
-	// invoked straight on the worker, so the gateway was only ever tested on the
-	// attachment half; now ONE NAME carries both -- `/broadcast` reaches the
-	// function and everything else attaches to the bus -- and the whole chain a
-	// user actually has is real: HTTP in, a grant resolved, a topic published,
-	// a websocket out, on two different nodes.
+	// A gossipsub mesh needs both ends joined, so the publish is retried; 60s is a
+	// report bound, not a raft budget. The publish goes through the gateway too: one
+	// name carries `/broadcast` to the function and attaches everything else to the
+	// bus.
 	require.Eventually(t, func() bool {
 		res := publishing.askCarrying(t, http.MethodPost, "/broadcast/live/", "deploy finished")
 		require.Equal(t, 204, res.Code, res.Body.String())
@@ -120,11 +81,8 @@ func TestABrowserAttachesAndAGuestReachesIt(t *testing.T) {
 	}, 60*time.Second, 500*time.Millisecond, "a guest's message never reached the browser")
 }
 
-// TestABusIsNotAnHttpRoute. The name resolves and the request is the wrong one,
-// which is a different answer from "nothing serves this" — and the difference
-// is whether somebody goes looking for a typo.
-// doormanWASM is the guard the corpus route names: it denies when told to by
-// header and otherwise grants `subscribe` and never `publish`.
+// doormanWASM is the route's guard: it denies by header and otherwise grants
+// `subscribe` and never `publish`.
 func doormanWASM(t *testing.T) []byte {
 	t.Helper()
 	code, err := os.ReadFile(filepath.Join("..", "..", "pkg", "invoke", "wasm", "fixtures", "doorman.wasm"))
@@ -132,14 +90,6 @@ func doormanWASM(t *testing.T) []byte {
 	return code
 }
 
-// TestAGuardCanRefuseAnAttachmentBeforeItUpgrades — the claim the vocabulary
-// now REQUIRES, run end to end.
-//
-// An attachment is a standing subscription: whoever completes the handshake
-// receives everything published from then on, and nothing downstream gets a
-// second chance. So the route names a guard, and this is the guard saying no —
-// with a real component, in the http-authorizer world, on the request itself,
-// before any upgrade happened.
 func TestAGuardRefusesAnAttachmentBeforeTheUpgrade(t *testing.T) {
 	defer nodeDream.Runtimes(nodeDream.Runtimes()...)
 

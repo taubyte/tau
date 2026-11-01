@@ -13,10 +13,6 @@ import (
 	nodeDream "github.com/taubyte/tau/node/dream"
 )
 
-// dns_services_test asks a fleet's dns, over UDP, for one of its own services
-// by name: `<service>.<cloud>`. The answer can only be right if discovery
-// carried the other node's report to the dns node, so it is the wiring between
-// the two that is proven, not either one.
 func TestAServiceIsResolvedByNameToTheNodeRunningIt(t *testing.T) {
 	const cloud = "tau.dream.test"
 

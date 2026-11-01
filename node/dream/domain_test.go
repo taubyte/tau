@@ -65,10 +65,6 @@ type buildLog struct{ strings.Builder }
 
 func (*buildLog) Asset(context.Context, string, string, io.Reader) error { return nil }
 
-// A CUSTOM DOMAIN DEPLOYS ONCE ITS TXT RECORD PROVES IT, as in v1: the cloud's
-// cm nodes sign the claim, the owner sets it, and the deploy looks it up. The
-// same domain declared by another project is refused, with the first project's
-// record in place, because a claim is for one project.
 func TestACustomDomainDeploysOnlyOnceProven(t *testing.T) {
 	dns := &txtZone{m: map[string][]string{}}
 	u, err := nodeDream.Start(t.Context(), t.Name(), nodeDream.Config{
