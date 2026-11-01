@@ -119,8 +119,6 @@ func TestAClaimInTheTXTRecordProvesTheDomain(t *testing.T) {
 	require.ErrorIs(t, d.Prove(t.Context(), projectID, "garbage.test"), ErrUnproven)
 }
 
-// TWO PROOFS OF ONE ZONE are two keys, and every node reads the same owner:
-// the earliest, the project id breaking a tie.
 func TestTheFirstProofOfAZoneOwnsIt(t *testing.T) {
 	f := newFleet(t, 1, false)
 	s := f.nodes[0]
@@ -257,8 +255,6 @@ func TestACustomDomainIsCertifiedOnlyOnceProven(t *testing.T) {
 	require.ErrorIs(t, s.keep(t.Context(), rec), ErrUnproven)
 }
 
-// THE OUTCOMES OF ONE PAIR DO NOT GROW: each write leaves only the newest,
-// and one written ahead of it by another node is kept rather than this one.
 func TestAPairKeepsOnlyItsLatestOutcome(t *testing.T) {
 	f := newFleet(t, 1, false)
 	s := f.nodes[0]

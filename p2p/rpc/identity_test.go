@@ -16,9 +16,6 @@ import (
 	"github.com/taubyte/tau/p2p/rpc/testdata/gen/echo/v1/echov1connect"
 )
 
-// TestRemotePeerIsTheDialler checks both routes to the caller's identity —
-// rpc.RemotePeer(ctx) and connect's own req.Peer().Addr — name the host
-// that opened the stream.
 func TestRemotePeerIsTheDialler(t *testing.T) {
 	h := newHarness(t)
 
@@ -35,8 +32,6 @@ func TestRemotePeerIsTheDialler(t *testing.T) {
 	assert.NotEqual(t, h.serverH.ID(), id)
 }
 
-// TestRemotePeerIsPerCaller checks the identity travels with the connection:
-// two hosts calling the same server each get their own answer.
 func TestRemotePeerIsPerCaller(t *testing.T) {
 	h := newHarness(t)
 
@@ -80,9 +75,6 @@ func (f *forger) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f.inner.RoundTrip(r)
 }
 
-// TestRemotePeerCannotBeForged points a client at the server with every
-// caller-controlled channel claiming a different peer, and checks the handler
-// still names the host that actually opened the stream.
 func TestRemotePeerCannotBeForged(t *testing.T) {
 	h := newHarness(t)
 
@@ -112,8 +104,6 @@ func TestRemotePeerCannotBeForged(t *testing.T) {
 	assert.NotEqual(t, h.serverH.ID().String(), res.Msg.Note)
 }
 
-// TestRemotePeerFailsClosed checks a handler served over anything but one of
-// this package's listeners gets no identity at all, rather than a guess.
 func TestRemotePeerFailsClosed(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.Handle(echov1connect.NewEchoServiceHandler(newEchoService()))

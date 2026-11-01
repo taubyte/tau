@@ -35,9 +35,6 @@ func TestListenRejectsNonsense(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// TestListenWillNotStealAProtocol: libp2p would let a second listener replace
-// the first without a word, and the first service would simply stop hearing
-// anything.
 func TestListenWillNotStealAProtocol(t *testing.T) {
 	h := newHost(t)
 	first := serve(t, h, newEchoService())
@@ -76,11 +73,6 @@ func TestCloseStopsServing(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// TestStoppingReleasesTheProtocolAtOnce: Listen hands Serve to a goroutine,
-// and net/http closes only the listeners Serve has begun to track, so a Close
-// or a Shutdown that ran before that goroutine left the protocol registered
-// until it did: a service that failed straight after listening went on
-// answering, and listening again was refused as a protocol taken.
 func TestStoppingReleasesTheProtocolAtOnce(t *testing.T) {
 	stops := map[string]func(*rpc.Server) error{
 		"close":    (*rpc.Server).Close,
@@ -141,23 +133,10 @@ func TestServerStopsWithItsContext(t *testing.T) {
 	assert.NoError(t, srv.Err())
 }
 
-// clientPreface is what a cleartext HTTP/2 client opens with. It is written
-// out here, rather than reached for inside the package, so that these tests
-// speak the wire's 24 bytes and would notice the package drifting from them.
+// clientPreface is written out so these tests speak the wire's 24 bytes and notice
+// the package drifting from them.
 const clientPreface = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 
-// TestAnUnfinishedPrefaceIsDropped covers every way of not finishing, not
-// just the silent one. net/http peeks all 24 preface bytes before it will
-// hand the conn to http2, and every timeout http2 owns is armed on the far
-// side of that handoff — so a peer stopped at one byte or at twenty-three is
-// exactly as unbounded as a peer that said nothing, and only the deadline
-// this package sets can end it.
-//
-// Nothing sets a deadline on this side of the conn, deliberately: the only
-// thing that can return these reads is the server dropping the stream, so a
-// read that returns is proof and not a coincidence. The lower bound on how
-// long it took is the second half of the proof — it says the drop was the
-// preface deadline rather than anything else going wrong.
 func TestAnUnfinishedPrefaceIsDropped(t *testing.T) {
 	const timeout = 500 * time.Millisecond
 
@@ -204,11 +183,6 @@ func TestAnUnfinishedPrefaceIsDropped(t *testing.T) {
 	}
 }
 
-// TestASlowPrefaceIsNotDropped is the other half of the bound, and the half
-// that keeps it honest. The deadline exists to end streams that never finish
-// a preface; one that also ended slow ones would be the same defect facing
-// the other way. This peer delivers all 24 bytes a byte at a time, taking
-// well over half the window to do it, and then makes a real call.
 func TestASlowPrefaceIsNotDropped(t *testing.T) {
 	const timeout = 3 * time.Second
 
@@ -261,12 +235,6 @@ func (c *dribbleConn) Write(b []byte) (int, error) {
 	return n + w, err
 }
 
-// TestThePrefaceDeadlineDoesNotOutliveThePreface: it bounds a preface, not a
-// connection. A conn that finished one and then went quiet for longer than
-// the whole window — which is every conn between two calls, since one stream
-// carries them all — must still be there for the next call, on the same
-// stream. A deadline that was merely pushed back instead of lifted would end
-// the connection here.
 func TestThePrefaceDeadlineDoesNotOutliveThePreface(t *testing.T) {
 	const timeout = 250 * time.Millisecond
 
@@ -288,10 +256,8 @@ func TestThePrefaceDeadlineDoesNotOutliveThePreface(t *testing.T) {
 	assert.Equal(t, 1, opened(), "the call after the wait had to open a second connection")
 }
 
-// acceptCounter serves an echo service and hands back how many connections it
-// has accepted so far. Counting on the server is what distinguishes a
-// connection that survived from one that was replaced by a redial the client
-// made without telling anybody.
+// acceptCounter serves an echo service and returns how many connections it has
+// accepted, which tells a surviving connection from a silent redial.
 func acceptCounter(t testing.TB, h host.Host, opts ...rpc.ServerOption) func() int {
 	t.Helper()
 	var mu sync.Mutex
@@ -312,14 +278,6 @@ func acceptCounter(t testing.TB, h host.Host, opts ...rpc.ServerOption) func() i
 	}
 }
 
-// TestWithHTTPServerTunesTheServer: net/http and http2 already have the knobs
-// an operator wants — concurrent streams, header size, flow-control windows,
-// idle time — so this package hands over the http.Server rather than growing
-// an option for each of them. IdleTimeout is the one to prove it with,
-// because its effect shows up at the far end: with it, the connection that
-// carried the first call is gone before the second, which has to open
-// another. Without it the two share one, which is what says the second
-// connection was the timeout and not just how calls behave.
 func TestWithHTTPServerTunesTheServer(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -367,12 +325,6 @@ func TestWithHTTPServerTunesTheServer(t *testing.T) {
 	}
 }
 
-// TestAMessageCeilingIsTheServicesToSet is the executable half of what the
-// package doc says: the pipe does not cap a message, and the reason is that
-// the cap is a connect option applied where the handler is built, one method
-// at a time. Nothing here has to help — a ceiling set on the service is
-// enforced over this transport, and it arrives as connect's own
-// CodeResourceExhausted rather than as a broken connection.
 func TestAMessageCeilingIsTheServicesToSet(t *testing.T) {
 	const ceiling = 1 << 10
 
@@ -397,12 +349,6 @@ func TestAMessageCeilingIsTheServicesToSet(t *testing.T) {
 	assert.Equal(t, connect.CodeResourceExhausted, connect.CodeOf(err))
 }
 
-// TestWithHTTPServerCannotTakeWhatThePipeOwns: four fields are what this
-// package's promises are made of, so a tuner that sets one would get a pipe
-// that no longer keeps them — HTTP/1 let back in, or a handler that cannot
-// name its caller. Listen says which field rather than overwriting it in
-// silence, and it says so before the protocol is registered, so the host is
-// left as it was found.
 func TestWithHTTPServerCannotTakeWhatThePipeOwns(t *testing.T) {
 	for name, take := range map[string]func(*http.Server){
 		"Handler":   func(s *http.Server) { s.Handler = http.NewServeMux() },
@@ -426,9 +372,6 @@ func TestWithHTTPServerCannotTakeWhatThePipeOwns(t *testing.T) {
 	}
 }
 
-// TestHTTP1IsRefused: connect over HTTP/1.1 would answer unary calls and then
-// hand back "streams" that only arrive once the handler returns. Better to
-// have no connection than a quietly degraded one.
 func TestHTTP1IsRefused(t *testing.T) {
 	h1, h2 := twoHosts(t)
 	serve(t, h1, newEchoService())
@@ -444,8 +387,6 @@ func TestHTTP1IsRefused(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// TestOneStreamCarriesEveryCall is the whole reason for HTTP/2 here: the cbor
-// stack opens a libp2p stream per call.
 func TestOneStreamCarriesEveryCall(t *testing.T) {
 	h1, h2 := twoHosts(t)
 	serve(t, h1, newEchoService())
@@ -493,8 +434,6 @@ func TestClientRejectsNonsense(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// TestClientCloseDropsTheStream: after Close the next call opens a new one
-// rather than failing.
 func TestClientCloseDropsTheStream(t *testing.T) {
 	h := newHarness(t)
 
@@ -517,8 +456,6 @@ func TestClientURLNamesThePeer(t *testing.T) {
 	assert.NotNil(t, c.HTTP())
 }
 
-// TestUnreachablePeerFailsTheCall: nothing is dialled until the first call,
-// so an unreachable peer surfaces there.
 func TestUnreachablePeerFailsTheCall(t *testing.T) {
 	h1, h2 := twoHosts(t)
 	serve(t, h1, newEchoService())
@@ -536,8 +473,6 @@ func TestUnreachablePeerFailsTheCall(t *testing.T) {
 	assert.NotErrorIs(t, err, io.EOF)
 }
 
-// TestCloseCutsShortADrain: Shutdown waits for calls in flight, and Close is
-// how an operator stops waiting. They share no latch.
 func TestCloseCutsShortADrain(t *testing.T) {
 	h := newHarness(t)
 

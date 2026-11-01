@@ -13,11 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The branches below are guards on things gostream and libp2p do not
-// currently do — a listener that yields a conn which is not a libp2p stream,
-// a conn that will not take a deadline, a listener that dies for a reason
-// other than shutdown. They are reached here directly because the guards are
-// the point: the day one of them fires, it should not be a crash.
+// Guards on things gostream and libp2p do not do today: a non-stream conn, a conn
+// refusing a deadline, a listener dying for another reason. They must not crash.
 
 type fakeListener struct {
 	conn net.Conn
@@ -99,12 +96,6 @@ func TestAcceptPassesItsErrorUp(t *testing.T) {
 	assert.ErrorIs(t, err, want)
 }
 
-// TestTheDeadlineSurvivesEveryByteButTheLast pins the threshold itself,
-// byte by byte, because every value below it is a hole and the tests that
-// would catch a hole in the open cost a timeout each. net/http will not hand
-// the conn to http2 until it has the whole preface, so lifting the deadline
-// at byte one — or at byte twenty-three — lifts it while nothing at all is
-// bounding the conn.
 func TestTheDeadlineSurvivesEveryByteButTheLast(t *testing.T) {
 	// A read that returns nothing, then the preface one byte at a time, then
 	// one byte past it.
@@ -144,8 +135,6 @@ func TestTheDeadlineSurvivesEveryByteButTheLast(t *testing.T) {
 	assert.Equal(t, 1, cleared, "the deadline should be lifted once, not on every read")
 }
 
-// TestAPrefaceInOneReadLiftsIt: the byte-at-a-time case above is the
-// adversary's; a peer whose preface lands in a single read is everybody else.
 func TestAPrefaceInOneReadLiftsIt(t *testing.T) {
 	cleared := 0
 	inner := &countingDeadlineConn{plainConn: plainConn{reads: [][]byte{[]byte(clientPreface)}}}
@@ -162,9 +151,6 @@ func TestAPrefaceInOneReadLiftsIt(t *testing.T) {
 	assert.Equal(t, 1, cleared)
 }
 
-// TestAConnWithNoDeadlineIsNeverTouched: a conn that would not take a
-// deadline, or a server told not to set one, must not have SetReadDeadline
-// called on it later either.
 func TestAConnWithNoDeadlineIsNeverTouched(t *testing.T) {
 	inner := &countingDeadlineConn{plainConn: plainConn{reads: [][]byte{[]byte(clientPreface)}}}
 	inner.onDeadline = func(time.Time) { t.Fatal("the deadline was cleared on a conn that never had one") }
@@ -184,8 +170,6 @@ func (c *countingDeadlineConn) SetReadDeadline(d time.Time) error {
 	return nil
 }
 
-// TestServeRemembersWhyItStopped: a listener that dies for a reason other
-// than the server being asked to stop leaves that reason behind.
 func TestServeRemembersWhyItStopped(t *testing.T) {
 	want := errors.New("the listener fell over")
 	s := &Server{
@@ -203,8 +187,6 @@ func TestServeRemembersWhyItStopped(t *testing.T) {
 	assert.ErrorIs(t, s.Err(), want)
 }
 
-// TestWatchReturnsWhenTheServerStops: the goroutine that ties the server to
-// its context must not outlive the server.
 func TestWatchReturnsWhenTheServerStops(t *testing.T) {
 	s := &Server{done: make(chan struct{})}
 

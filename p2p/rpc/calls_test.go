@@ -29,13 +29,6 @@ func TestUnary(t *testing.T) {
 	}
 }
 
-// TestServerStreamIsIncremental proves the client sees a message while the
-// handler is still parked before the next one, rather than the whole stream
-// landing at once when the handler returns. The handler cannot reach its
-// second Send until the gate closes, and the gate does not close until the
-// first message is in the client's hands — so a first Receive that returns at
-// all is the proof, and the timing assertion measures how far ahead of the
-// gate it was.
 func TestServerStreamIsIncremental(t *testing.T) {
 	h := newHarness(t)
 
@@ -87,8 +80,6 @@ func TestServerStreamIsIncremental(t *testing.T) {
 	assert.GreaterOrEqual(t, time.Since(start), gateHold)
 }
 
-// TestClientStreamLargeBody pushes several MiB up in chunks and checks the
-// server's sha256 of what it received against the client's of what it sent.
 func TestClientStreamLargeBody(t *testing.T) {
 	h := newHarness(t)
 
@@ -113,9 +104,6 @@ func TestClientStreamLargeBody(t *testing.T) {
 	assert.Equal(t, int32(chunk*chunks), res.Msg.Index)
 }
 
-// TestBidiInterleaved sends and receives one at a time: every Receive here
-// answers the Send immediately before it, which cannot happen unless both
-// directions are live at once.
 func TestBidiInterleaved(t *testing.T) {
 	h := newHarness(t)
 
@@ -137,8 +125,6 @@ func TestBidiInterleaved(t *testing.T) {
 	assert.ErrorIs(t, err, io.EOF)
 }
 
-// TestClientCancelReachesHandler is the property tau's own tunnels do not
-// have: the handler's context ends when the caller's does.
 func TestClientCancelReachesHandler(t *testing.T) {
 	h := newHarness(t)
 
@@ -173,8 +159,6 @@ func TestClientCancelReachesHandler(t *testing.T) {
 	}
 }
 
-// TestHandlerErrorKeepsItsCode checks a connect error survives the pipe with
-// its code, message and metadata.
 func TestHandlerErrorKeepsItsCode(t *testing.T) {
 	h := newHarness(t)
 

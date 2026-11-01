@@ -579,8 +579,6 @@ func TestChallengesAreOnePerPresentationAndWaitedFor(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoChallenges)
 }
 
-// TestAKeyNotReadableYetIsWaitedFor: a CA reaching a node whose vault has not
-// caught up is still answered.
 func TestAKeyNotReadableYetIsWaitedFor(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })

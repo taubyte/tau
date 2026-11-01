@@ -11,10 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The branches below are guards rather than paths: a peer id that is empty or
-// our own, an event of a type nobody subscribed to, a set already at its cap.
-// Nothing outside can produce them today, which is exactly why they are worth
-// pinning — the day one of them fires it should be a no-op, not a surprise.
+// Guards nothing outside can reach today: an empty or own peer id, an unsubscribed
+// event type, a full set. Each must be a no-op.
 
 const guardProtocol = "/tau/test/discovery/guards"
 
@@ -54,12 +52,9 @@ func TestAnEventOfSomeOtherKind(t *testing.T) {
 func TestNobodyAndOurselvesAreNotPeers(t *testing.T) {
 	d, h := guarded(t)
 
-	// Our own record is what our own advertisement looks like coming back out
-	// of routing, and it answers everything else admissible asks: libp2p
-	// leaves the local host's protocols out of its own peerstore — measured,
-	// GetProtocols on our own id is empty — which is precisely the case an
-	// advertisement is allowed to carry, and our own addresses are reachable
-	// by every test this package can make.
+	// Our own record looks like our advertisement coming back from routing: libp2p
+	// leaves the local host's protocols out of its own peerstore, and our addresses are
+	// reachable.
 	require.NotEmpty(t, h.Addrs())
 	h.Peerstore().AddAddrs(h.ID(), h.Addrs(), time.Hour)
 	protos, err := h.Peerstore().GetProtocols(h.ID())
@@ -75,14 +70,6 @@ func TestNobodyAndOurselvesAreNotPeers(t *testing.T) {
 	assert.False(t, d.admissible(h.ID(), true))
 }
 
-// TestTheQuarantineIsSweptRatherThanKept is about the map, not the peer. Every
-// Failed and every lost connection writes an entry keyed by peer id, and
-// admissible only ever reads them: the entry for a peer that comes back is
-// cleared by its own reconnection, and the entry for a peer that does not come
-// back is cleared by nothing. On a long-lived node in a swarm with churn that
-// is one entry per peer it ever failed to reach, held for the life of the
-// process. The reap is what forgets them, so this runs at the interval the
-// reap runs at in production.
 func TestTheQuarantineIsSweptRatherThanKept(t *testing.T) {
 	d, _ := guarded(t, WithRetryInterval(DefaultRetryInterval))
 
@@ -122,17 +109,6 @@ func TestTheCapHoldsWhereverAPeerArrives(t *testing.T) {
 	assert.True(t, d.peers[first].advertised)
 }
 
-// TestAnEventDoesNotEraseWhyAPeerWasAdmitted is about the memory in the entry.
-// A peer found through routing is admitted on the advertisement alone —
-// nothing has identified it, so the peerstore's protocol list for it is empty
-// — and entry.advertised is the only place that fact is kept.
-//
-// Every event then arrives as reconsider(pid, false), because an event carries
-// a peer id and this package reads the peerstore for everything else. One of
-// them arriving before identify does is ordinary: the connectedness change
-// when the caller finally dials the peer beats the identify that follows it by
-// a round trip. Reading the entry back is what stops that event dropping the
-// peer it is announcing.
 func TestAnEventDoesNotEraseWhyAPeerWasAdmitted(t *testing.T) {
 	d, h := guarded(t)
 	pid := someone(t)

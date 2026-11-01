@@ -11,22 +11,15 @@ import (
 // static is a Resolver over a list that never changes.
 type static []peer.ID
 
-// Static resolves to the peers it is given, in the order it is given them.
-//
-// It is what a service test injects when the question under test is not
-// discovery — a handler's authorization branch does not need a swarm — and
-// what a deployment uses when the peers are named in configuration rather than
-// found. Because nothing about the list can change, it never waits: asking for
-// more than it holds returns what it holds, immediately, rather than blocking
-// until the caller's deadline the way a live Discovery must.
+// Static resolves to the peers it is given, in order: for a service test whose
+// subject is not discovery, or peers named in configuration. It never waits; asking
+// for more than it holds returns what it holds.
 func Static(peers ...peer.ID) Resolver { return static(slices.Clone(peers)) }
 
 func (s static) Known() []peer.ID { return slices.Clone(s) }
 
-// Failed does nothing here. A list that was handed in cannot be re-derived, so
-// dropping a peer from it would leave a Resolver that quietly resolves to less
-// than it was configured with — which is worse than handing back a peer whose
-// last call failed.
+// Failed does nothing: dropping a configured peer would quietly resolve to less than
+// configured.
 func (s static) Failed(peer.ID) {}
 
 func (s static) Any(ctx context.Context) (peer.ID, error) {

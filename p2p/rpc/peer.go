@@ -27,21 +27,13 @@ func carryRemotePeer(ctx context.Context, c net.Conn) context.Context {
 	return ctx
 }
 
-// RemotePeer returns the libp2p peer that opened the stream this request
-// arrived on. Pass a connect handler's ctx, or an http.Handler's
-// r.Context().
+// RemotePeer returns the libp2p peer that opened the stream this request arrived
+// on. Pass a connect handler's ctx, or an http.Handler's r.Context().
 //
-// The value is the identity libp2p established when it secured the
-// connection, taken from the stream at accept time. Nothing the caller writes
-// — no header, no body, no authority — can reach it, and a request that came
-// in over anything but one of this package's listeners returns
-// ErrNoRemotePeer rather than an identity. This is what v2 services
-// authenticate on.
-//
-// connect's own req.Peer().Addr also holds the peer id, because that is what
-// gostream reports as the conn's remote address. It is the same fact arriving
-// as a string that has to be parsed and that a plain TCP listener would fill
-// with something else entirely; prefer this.
+// The identity is the one libp2p established when securing the connection, taken at
+// accept time; nothing the caller writes can reach it. A request that arrived any
+// other way is ErrNoRemotePeer. v2 services authenticate on this, not on connect's
+// req.Peer().Addr string.
 func RemotePeer(ctx context.Context) (peer.ID, error) {
 	id, ok := ctx.Value(remotePeerKey{}).(peer.ID)
 	if !ok || id == "" {

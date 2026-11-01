@@ -18,13 +18,9 @@ import (
 	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
-// clientPreface is the greeting a cleartext HTTP/2 client opens with. It is
-// spelled out here because it is the threshold this package's own deadline
-// runs to, and it has to be the same 24 bytes net/http waits for: net/http
-// peeks the whole preface through a bufio.Reader — one conn read at a time,
-// with no deadline of its own — and only hands the conn to http2 once it has
-// all of them. Every timeout http2 owns, firstSettingsTimeout included, is
-// armed on the far side of that handoff.
+// clientPreface is the greeting a cleartext HTTP/2 client opens with, and the
+// threshold this package's deadline runs to. net/http peeks all 24 bytes with no
+// deadline of its own before handing the conn to http2, whose timeouts start after.
 const clientPreface = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 
 // DefaultPrefaceTimeout is how long a freshly accepted stream has to deliver
@@ -51,21 +47,15 @@ func WithPrefaceTimeout(d time.Duration) ServerOption {
 }
 
 // WithHTTPServer tunes the http.Server before it serves: MaxHeaderBytes,
-// IdleTimeout, ErrorLog, ConnState, and through HTTP2Config the concurrent
-// stream limit and the flow-control windows. Everything net/http and http2
-// bound is reachable here, and nothing has to be mirrored into an option of
-// this package's own.
+// IdleTimeout, ErrorLog, ConnState, and through HTTP2Config the concurrent stream
+// limit and flow-control windows.
 //
-// Four fields are not yours to set, because the package's guarantees are made
-// out of them: Handler and Protocols are what keep the pipe HTTP/2-only,
-// BaseContext ties serving to Listen's context and ConnContext is how
-// RemotePeer learns who called. Setting any of them is ErrServerFieldOwned
-// from Listen rather than a silently different pipe.
+// Handler, Protocols, BaseContext and ConnContext are owned by this package (they
+// keep the pipe HTTP/2-only, tie serving to Listen's context, and carry RemotePeer);
+// setting one is ErrServerFieldOwned.
 //
-// Note that ReadTimeout and WriteTimeout are per stream under HTTP/2, so a
-// number chosen for unary calls will cut off the streaming ones. IdleTimeout
-// is the safer reach: it drops a connection carrying no streams, at the cost
-// of the next call redialling.
+// ReadTimeout and WriteTimeout are per stream under HTTP/2, so a unary-sized number
+// cuts off streaming calls; IdleTimeout is safer.
 func WithHTTPServer(f func(*http.Server)) ServerOption {
 	return func(s *Server) { s.tune = f }
 }
@@ -171,14 +161,11 @@ func (s *Server) watch(ctx context.Context) {
 // Addr is the host's peer id: that is the only address a libp2p listener has.
 func (s *Server) Addr() net.Addr { return s.listener.Addr() }
 
-// Close drops the listener and every stream on it at once. It is safe to
-// call more than once, and to call on a server that is already draining, to
-// stop waiting for it.
+// Close drops the listener and every stream on it at once. It is safe to call more
+// than once, and on a server already draining.
 //
-// THE LISTENER IS CLOSED HERE TOO, after net/http has begun to shut down:
-// net/http closes only the listeners Serve has started to track, and Serve
-// runs on a goroutine that may not have started yet, so a server stopped
-// straight after Listen would keep its protocol until that goroutine ran.
+// The listener is closed here too: net/http closes only listeners Serve has started
+// tracking, and Serve's goroutine may not have started yet.
 func (s *Server) Close() error { return errors.Join(s.http.Close(), s.listener.Close()) }
 
 // Shutdown stops accepting and waits for the calls already in flight, or for
@@ -250,14 +237,10 @@ type serverConn struct {
 // was accepted rather than off anything the peer sent.
 func (c *serverConn) RemotePeerID() peer.ID { return c.remote }
 
-// Read lifts the preface deadline once the peer has delivered a whole client
-// preface, and not one byte sooner. Lifting it on the first byte would leave
-// a peer that writes some of the preface and stops holding a goroutine with
-// nothing bounding it at all: net/http is still inside its own Peek, and the
-// timeouts http2 would apply do not exist until the peek completes. Counting
-// to the full preface is exact rather than approximate, because net/http caps
-// its own reads at the preface length, so this total reaches it when and only
-// when net/http has what it was waiting for.
+// Read lifts the preface deadline once the peer has delivered the whole client
+// preface, not one byte sooner: net/http is still inside its own Peek until then,
+// and http2's timeouts do not exist yet. net/http caps its reads at the preface
+// length, so the count is exact.
 func (c *serverConn) Read(b []byte) (int, error) {
 	n, err := c.Conn.Read(b)
 	if n > 0 && c.deadlined && !c.lifted.Load() {
