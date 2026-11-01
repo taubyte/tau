@@ -221,16 +221,13 @@ func (hi *hostInst) handleCommand(c string, stdin []byte) []byte {
 	hi.lock.Lock()
 	defer hi.lock.Unlock()
 	hi.commands = append(hi.commands, command{line: c, stdin: stdin})
-	// The deploy probes DNS resolvers with `dig +short ... @<resolver> google.com`
-	// and keeps a resolver only when the first output line is a valid IP. Answer
-	// that probe so the mock host looks like it can reach the public resolvers
-	// (otherwise the deploy stops at "none reachable" before the stages under test).
+	// The deploy keeps a resolver only if `dig +short ... google.com` answers with an
+	// IP; answering it lets the deploy pass the reachability check.
 	if strings.HasPrefix(c, "dig ") && strings.Contains(c, "google.com") {
 		return []byte("142.250.190.78\n")
 	}
-	// A deploy uploads to /tmp over sftp and installs with `cp`, so the copy
-	// is carried out on the host's disk; without it nothing a deploy installs
-	// would be there to read back. Every other command only is recorded.
+	// A deploy uploads to /tmp and installs with `cp`, so the copy is carried out on the
+	// host's disk; other commands are only recorded.
 	if args, ok := words(c); ok {
 		if len(args) > 0 && args[0] == "sudo" {
 			args = args[1:]

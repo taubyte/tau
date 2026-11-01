@@ -48,7 +48,6 @@ func TestProgress_Error(t *testing.T) {
 
 	assert.EqualError(t, p.Error(), "test error", "Error() did not return the expected error")
 
-	// Test with no error
 	p = &progress{}
 	assert.Nil(t, p.Error(), "Error() should return nil when no error is set")
 }

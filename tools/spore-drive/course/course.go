@@ -79,7 +79,6 @@ func Concurrency(count int) Option {
 }
 
 func (c *course) Hyphae() (hyphae Hyphae) {
-	// current strategy is simple: each jump is a shape
 	for _, shape := range c.shapes {
 		stag := fmt.Sprintf("shape[%s]", shape)
 		hyphae = append(hyphae, &Hypha{

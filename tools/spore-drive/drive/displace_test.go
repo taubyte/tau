@@ -40,9 +40,6 @@ func TestDisplace(t *testing.T) {
 	testDisplace(t, sd, DefaultRoot, nil, 0)
 }
 
-// TestDisplaceCountsTheReportsOfItsOwnClock: the upload's reports are timed by
-// the drive's clock, so a host slow to open the file (100ms here, on the
-// bubble's clock) adds no report the drive's clock did not allow.
 func TestDisplaceCountsTheReportsOfItsOwnClock(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		_, p := fixtures.VirtConfig()
@@ -60,9 +57,6 @@ func TestDisplaceWithoutUpdatingTau(t *testing.T) {
 	testDisplace(t, sd, DefaultRoot, nil, 0)
 }
 
-// TestDisplaceStreamsTheSecretsToInit: one bundle, sealed once, reaches every
-// secrets node on stdin before it starts, under the configured root, and no
-// file on any host holds a secret.
 func TestDisplaceStreamsTheSecretsToInit(t *testing.T) {
 	fs, p := fixtures.VirtConfig()
 	assert.NilError(t, afero.WriteFile(fs, "/keys/acme.key", []byte("ACCOUNT KEY"), 0o600))
@@ -91,7 +85,6 @@ func testDisplace(t *testing.T, sd Spore, root string, secrets []string, openDel
 
 		rhfs := afero.NewMemMapFs()
 
-		// deps
 		rh.On("Execute", ctx, "command", "-v", "systemctl").Once().Return(nil, nil)
 		rh.On("Execute", ctx, "command", "-v", "apt").Once().Return(nil, nil)
 		rh.On("Execute", ctx, "command", "-v", "docker").Once().Return(nil, errors.New("no docker"))
@@ -123,7 +116,6 @@ func testDisplace(t *testing.T, sd Spore, root string, secrets []string, openDel
 			rh.On("Execute", ctx, "md5sum", "-bz", root+"/bin/tau").Once().Return(nil, nil)
 		}
 
-		// upload tau
 		if updatingTau {
 			tauf, _ := rhfs.OpenFile("/tmp/tau", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0750)
 			rh.On("OpenFile", "/tmp/tau", os.O_CREATE|os.O_RDWR|os.O_TRUNC, fs.FileMode(0750)).Once().Run(func(mock.Arguments) {
@@ -183,11 +175,9 @@ func testDisplace(t *testing.T, sd Spore, root string, secrets []string, openDel
 			rh.On("Sudo", ctx, "systemctl", "start", "tau@"+inst).Return(nil, nil)
 		}
 
-		// clean up
 		rh.On("Remove", "/tmp/tau").Return(nil)
 		rh.On("Remove", "/tmp/tau@.service").Return(nil)
 
-		// firewall
 		rh.On("Execute", ctx, "command", "-v", "ufw").Once().Return(nil, nil)
 		rh.On("Sudo", ctx, "ufw", "status", "numbered").Return(nil, nil)
 		rh.On("Sudo", ctx, "ufw", "status", "|", "grep", mock.Anything).Return(nil, errors.New("not found"))
@@ -322,10 +312,6 @@ WantedBy = multi-user.target
 	}
 }
 
-// TestRelayUploadKeepsReportsMadeBeforeTheUploadEnded: the reader's last
-// reports and the end of the upload are ready together, and a select may take
-// the end first. Each round offers it that choice; without the drain, a round
-// keeps all its reports with a chance of one in two.
 func TestRelayUploadKeepsReportsMadeBeforeTheUploadEnded(t *testing.T) {
 	for range 200 {
 		pCh := make(chan int, 2)

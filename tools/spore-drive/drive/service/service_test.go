@@ -111,8 +111,6 @@ func serve(t *testing.T, displace func(ctx context.Context) <-chan drive.Progres
 
 func code(err error) connect.Code { return connect.CodeOf(err) }
 
-// TestARealConfigShapeValidatesUnchangedAndPlans: the on-disk layout an
-// operator already has is the document, read as it is.
 func TestARealConfigShapeValidatesUnchangedAndPlans(t *testing.T) {
 	_, c := serve(t, nil)
 	doc := acdz(t)
@@ -147,7 +145,6 @@ func TestARealConfigShapeValidatesUnchangedAndPlans(t *testing.T) {
 	assert.Equal(t, h.Nodes[1].Port, int32(4243))
 }
 
-// TestValidateGeneratesWhatADocumentLeavesOut, and Plan refuses until it has.
 func TestValidateGeneratesWhatADocumentLeavesOut(t *testing.T) {
 	_, c := serve(t, nil)
 	doc := acdz(t)
@@ -219,7 +216,6 @@ func TestWhatADocumentCannotBe(t *testing.T) {
 	assert.ErrorContains(t, err, "gatewya")
 }
 
-// TestDocumentsNoV2NodeReadsAreReportedNotRefused.
 func TestDocumentsNoV2NodeReadsAreReportedNotRefused(t *testing.T) {
 	_, c := serve(t, nil)
 	doc := with(acdz(t), "accounts.yaml", "session-ttl: 168h\n")
@@ -258,7 +254,6 @@ func plan(t *testing.T, c pbconnect.DriveServiceClient) string {
 	return res.Msg.Id
 }
 
-// TestApplyStreamsTheCourseToItsEndAndTheCourseEndsWithIt.
 func TestApplyStreamsTheCourseToItsEndAndTheCourseEndsWithIt(t *testing.T) {
 	_, c := serve(t, func(context.Context) <-chan drive.Progress {
 		ch := make(chan drive.Progress, 2)
@@ -291,7 +286,6 @@ func TestApplyStreamsTheCourseToItsEndAndTheCourseEndsWithIt(t *testing.T) {
 	assert.Equal(t, code(stream.Err()), connect.CodeNotFound)
 }
 
-// TestACourseIsAppliedOnceAndAbortStopsIt.
 func TestACourseIsAppliedOnceAndAbortStopsIt(t *testing.T) {
 	started := make(chan struct{})
 	_, c := serve(t, func(ctx context.Context) <-chan drive.Progress {
@@ -329,7 +323,6 @@ func TestACourseIsAppliedOnceAndAbortStopsIt(t *testing.T) {
 	assert.NilError(t, <-done, "an aborted course ends its stream")
 }
 
-// TestAClientThatGoesAwayAbortsItsCourse.
 func TestAClientThatGoesAwayAbortsItsCourse(t *testing.T) {
 	started, stopped := make(chan struct{}), make(chan struct{})
 	_, c := serve(t, func(ctx context.Context) <-chan drive.Progress {
@@ -362,7 +355,6 @@ func TestAClientThatGoesAwayAbortsItsCourse(t *testing.T) {
 	}
 }
 
-// TestAnUnappliedCourseExpires.
 func TestAnUnappliedCourseExpires(t *testing.T) {
 	s, c := serve(t, nil)
 	s.expiry = 10 * time.Millisecond

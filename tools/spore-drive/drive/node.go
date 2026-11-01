@@ -21,21 +21,15 @@ import (
 	"github.com/taubyte/tau/tools/spore-drive/config"
 )
 
-// node.go turns a spore-drive cloud config — written for v1, where a host ran
-// one tau process per shape — into the v2 node files a host runs.
+// node.go turns a spore-drive cloud config, written for v1 (one tau process per
+// shape), into the v2 node files a host runs. The input format does not change.
 //
-// THE INPUT FORMAT DOES NOT CHANGE. Operators' cloud configs are authoritative
-// and keep parsing as they are; what changes is what is emitted from them:
-//
-//   - ONE NODE PER HOST. A v2 node runs any set of services in one process, so
-//     the services of every shape on a host are unioned into one node. The
-//     exception is the one combination a node refuses (node.ErrBothHalves):
-//     when the union holds both build halves, build-frontend runs as a second
-//     node of its own (see frontendInstance).
-//   - v1 SERVICE NAMES ARE MAPPED onto the v2 services that do their work
-//     (v1Services); a v2 name passes through as written.
-//   - WHAT HAS NO v2 HOME IS READ AND NOT EMITTED, and each deploy logs which
-//     of those fields a host's config set (ignoredFields).
+//   - One node per host: every shape's services are unioned, except that both build
+//     halves cannot share a node (node.ErrBothHalves), so build-frontend gets its
+//     own (frontendInstance).
+//   - v1 service names map onto the v2 services doing their work (v1Services).
+//   - What has no v2 home is read, not emitted, and logged per host
+//     (ignoredFields).
 
 var logger = log.Logger("tau.spore-drive")
 

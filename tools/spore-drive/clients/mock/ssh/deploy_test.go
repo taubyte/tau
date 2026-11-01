@@ -79,8 +79,6 @@ func files(t *testing.T, m mockv1connect.MockSSHServiceClient, host string) map[
 	}
 }
 
-// TestADeployWritesTheNodeFileItPlanned: the boot file a host ends up with,
-// read back off the host's disk, is the node the cloud config describes.
 func TestADeployWritesTheNodeFileItPlanned(t *testing.T) {
 	d, m := mock(t)
 	ctx := context.Background()

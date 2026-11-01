@@ -67,7 +67,7 @@ func (d *sporedrive) Displace(ctx context.Context, course course.Course) <-chan 
 
 	pCh := make(chan Progress, hyphae.Size()*1024)
 
-	if cap(pCh) == 0 { // course is empty
+	if cap(pCh) == 0 {
 		close(pCh)
 		return pCh
 	}
@@ -82,10 +82,7 @@ func (d *sporedrive) Displace(ctx context.Context, course course.Course) <-chan 
 			errCh := hypha.Subnet.Run(dCtx, uint16(hypha.Concurrency), d.displaceHandler(hypha, pCh, seal))
 			err := <-errCh
 			if err != nil {
-				// only errors in errCh
-				// call it
 				dCtxC()
-				// forward
 				pCh <- &progress{
 					hypha:    hypha,
 					host:     err.Host,
@@ -93,8 +90,7 @@ func (d *sporedrive) Displace(ctx context.Context, course course.Course) <-chan 
 					progress: 100,
 					err:      err.Error,
 				}
-				// some jobs might still be running
-				// let's make sure we wait until they all done
+				// Jobs may still be running; wait for all of them.
 				for err := range errCh {
 					pCh <- &progress{
 						hypha:    hypha,
@@ -342,26 +338,21 @@ func (d *sporedrive) uploadSystemdFile(h remoteHost) error {
 }
 
 func listTauInstances(ctx context.Context, h remoteHost) ([]string, error) {
-	// Execute the systemctl command to list all tau@*.service units
 	output, err := h.Sudo(ctx, "systemctl", "list-units", "--type=service", "--quiet", "--no-pager", "--all", "tau@*.service")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tau instances: %w", err)
 	}
 
-	// Convert the output from bytes to a string
 	outputStr := string(output)
 
-	// Split the output into lines
 	lines := strings.Split(outputStr, "\n")
 
 	var instances []string
 
-	// Iterate over each line to extract service names
 	for _, line := range lines {
-		// Fields are separated by whitespace
 		fields := strings.Fields(line)
 		if len(fields) > 0 {
-			unitName := fields[0] // The first field is the UNIT name
+			unitName := fields[0]
 			if strings.HasPrefix(unitName, "tau@") && strings.HasSuffix(unitName, ".service") {
 				instances = append(instances, strings.TrimSuffix(strings.TrimPrefix(unitName, "tau@"), ".service"))
 			}
@@ -420,7 +411,6 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 			return err
 		}
 
-		// Check for critical tools: systemctl and apt
 		if _, err = r.Execute(ctx, "command", "-v", "systemctl"); err != nil {
 			return pushError("dependencies", fmt.Errorf("systemctl is not installed: %w", err))
 		}
@@ -431,9 +421,7 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 		}
 		pushProgress("dependencies", 20)
 
-		// Check and install Docker if not available
 		if _, err = r.Execute(ctx, "command", "-v", "docker"); err != nil {
-			// Docker is not installed, proceed to install
 			_, err = r.Execute(ctx, "curl", "-fsSL", "https://get.docker.com", "-o", "/tmp/get-docker.sh")
 			if err != nil {
 				return pushError("dependencies", fmt.Errorf("failed to download Docker install script: %w", err))
@@ -447,20 +435,17 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 		}
 		pushProgress("dependencies", 70)
 
-		// Update package lists
 		if _, err := r.Sudo(ctx, "apt-get", "update"); err != nil {
 			return pushError("dependencies", fmt.Errorf("failed to update package lists: %w", err))
 		}
 		pushProgress("dependencies", 75)
 
-		// Dependencies to be checked and installed if necessary
 		i := 0
 		for cmd, pkg := range map[string]string{
 			"dig":     "dnsutils",
 			"netstat": "net-tools",
 		} {
 			if _, err := r.Execute(ctx, "command", "-v", cmd); err != nil {
-				// Command not found, install the package
 				if _, err := r.Sudo(ctx, "apt-get", "install", "-y", pkg); err != nil {
 					return pushError("dependencies", fmt.Errorf("failed to install %s: %w", pkg, err))
 				}
@@ -470,15 +455,12 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 		}
 		pushProgress("dependencies", 85)
 
-		// Check for availability of ports 53 and 953
 		netstatOutput, err := r.Sudo(ctx, "netstat", "-lnp")
 		if err != nil {
 			return pushError("dependencies", fmt.Errorf("failed to run netstat: %w", err))
 		}
 
-		// Probe candidate DNS resolvers from the host. We only keep the ones
-		// that actually answer, so a host that can't reach (e.g.) 1.1.1.1
-		// still gets a usable resolver list.
+		// Keep only resolvers that answer from this host.
 		workingResolvers := probeDNSResolvers(ctx, r)
 		if len(workingResolvers) == 0 {
 			return pushError("dependencies", fmt.Errorf("DNS resolution test failed: none of %v are reachable", dnsResolvers))
@@ -487,17 +469,14 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 
 		netstatStr := string(netstatOutput)
 		if systemdResolvedRegexp.MatchString(netstatStr) {
-			// systemd-resolved is using port 53, updating DNS settings using ini package
 			if err := updateResolvedConf(ctx, r, workingResolvers); err != nil {
 				return pushError("dependencies", fmt.Errorf("failed to update /etc/systemd/resolved.conf: %w", err))
 			}
 
-			// Restart systemd-resolved.service
 			if _, err := r.Sudo(ctx, "systemctl", "restart", "systemd-resolved.service"); err != nil {
 				return pushError("dependencies", fmt.Errorf("failed to restart systemd-resolved.service: %w", err))
 			}
 
-			// Update /etc/resolv.conf symlink
 			if _, err := r.Sudo(ctx, "ln", "-sf", "/run/systemd/resolve/resolv.conf", "/etc/resolv.conf"); err != nil {
 				return pushError("dependencies", fmt.Errorf("failed to update /etc/resolv.conf symlink: %w", err))
 			}
@@ -508,11 +487,8 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 		updatingTau = updatingTau && !d.isSameTau(ctx, r)
 		pushProgress("checking state", 50)
 
-		// TODO: check config changes
-
 		pushProgress("checking state", 100)
 
-		// Upload to /tmp
 		if updatingTau {
 			pushProgress("upload tau", 0)
 			pCh, eCh, err := d.uploadTau(ctx, r, "/tmp/tau")
@@ -629,22 +605,18 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 		}
 		pushProgress("clean up", 100)
 
-		// Check if ufw is installed
 		if _, err := r.Execute(ctx, "command", "-v", "ufw"); err == nil {
 			pushProgress("firewall", 10)
 
 			portsToCheck := defaultPortsToOpen()
 
-			// Add each node's p2p port to the list of ports to check
 			for _, inst := range nodes.instances {
 				portsToCheck[inst.port] = struct{}{}
 			}
 
-			// Calculate progress increment
 			totalPorts := len(portsToCheck)
-			progressIncrement := 90 / totalPorts // 90 because we start at 10
+			progressIncrement := 90 / totalPorts
 
-			// Check and open each port if necessary
 			currentProgress := 10
 			for port := range portsToCheck {
 				if _, err := r.Sudo(ctx, "ufw", "status", "numbered"); err == nil {
@@ -657,7 +629,6 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 					return pushError("firewall", fmt.Errorf("failed to check ufw status: %w", err))
 				}
 
-				// Update progress
 				currentProgress += progressIncrement
 				pushProgress("firewall", currentProgress)
 			}

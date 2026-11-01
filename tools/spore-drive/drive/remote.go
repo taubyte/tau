@@ -10,9 +10,6 @@ import (
 	"github.com/taubyte/tau/pkg/mycelium/host"
 )
 
-// //go:generate mockery --name=remoteHost --output=mocks --outpkg=mocks  --filename=remote.go
-
-// helpers wrapper
 type remoteHost interface {
 	Sudo(ctx context.Context, name string, args ...string) ([]byte, error)
 	// SudoInput is Sudo with stdin, so what it is handed never touches the

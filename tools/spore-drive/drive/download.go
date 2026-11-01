@@ -60,7 +60,6 @@ func downloadTau(version, arch string) ([]byte, error) {
 	asset := fmt.Sprintf("tau_%s_linux_%s.tar.gz", version, arch)
 	defer os.Remove(asset)
 
-	// Download
 	downloadUrl := fmt.Sprintf("%s/v%s/%s", releasesDownload, version, asset)
 	tauBin, err := httpDownload(downloadUrl)
 	if err != nil {
@@ -99,7 +98,7 @@ func httpDownload(downloadUrl string) ([]byte, error) {
 	for {
 		header, err := tarReader.Next()
 		if err == io.EOF {
-			break // End of tar archive
+			break
 		}
 		if err != nil {
 			return nil, fmt.Errorf("failed to read tar header: %w", err)

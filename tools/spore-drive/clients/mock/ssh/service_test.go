@@ -27,8 +27,6 @@ func commands(t *testing.T, m mockv1connect.MockSSHServiceClient, host string) [
 	return out
 }
 
-// TestACommandsStdinIsRecorded: what a command reads on stdin is recorded
-// with it, byte for byte, and a command handed none records none.
 func TestACommandsStdinIsRecorded(t *testing.T) {
 	_, m := mock(t)
 	h, err := m.New(context.Background(), connect.NewRequest(&pb.HostConfig{Host: &pb.Host{Name: "stdin"}, AuthUsername: "tau", AuthPassword: "testtest"}))
@@ -96,8 +94,6 @@ func TestHostsAreLookedUpAndFreed(t *testing.T) {
 	assert.NilError(t, err)
 }
 
-// TestAHostAcceptsOnlyItsOwnCredentials: the key it generated for a user,
-// with or without a passphrase, and the user's password.
 func TestAHostAcceptsOnlyItsOwnCredentials(t *testing.T) {
 	_, m := mock(t)
 	ctx := context.Background()
@@ -132,8 +128,6 @@ func TestAHostAcceptsOnlyItsOwnCredentials(t *testing.T) {
 	}
 }
 
-// TestAHostRefusesWhatItDoesNotServe: only sessions, and in them only exec
-// and sftp.
 func TestAHostRefusesWhatItDoesNotServe(t *testing.T) {
 	_, m := mock(t)
 	h, err := m.New(context.Background(), connect.NewRequest(&pb.HostConfig{Host: &pb.Host{Name: "refuse"}, AuthUsername: "tau", AuthPassword: "testtest"}))

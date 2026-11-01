@@ -1,8 +1,7 @@
-// Package randname produces friendly "adjective_noun" names. It replaces
-// moby's github.com/moby/moby/pkg/namesgenerator, which moved under an
-// internal/ path (unimportable) when the Docker SDK split into submodules at
-// v29. ponytail: fixed word lists (~1k combos) is plenty for naming mock
-// hosts and course hyphae; callers that need uniqueness dedupe themselves.
+// Package randname produces friendly "adjective_noun" names, replacing moby's
+// namesgenerator, which became unimportable when the Docker SDK split into
+// submodules at v29. The fixed word lists give about 1k combinations, enough for
+// mock hosts and course hyphae; callers needing uniqueness dedupe themselves.
 package randname
 
 import (

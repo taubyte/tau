@@ -9,7 +9,7 @@ import (
 )
 
 type Progress interface {
-	Path() string // example: /hypha-generated-name/host/stepId
+	Path() string
 	Hop() string
 	Host() string
 	Name() string
@@ -22,11 +22,11 @@ type progress struct {
 	hypha    *course.Hypha
 	host     host.Host
 	stepName string
-	progress int //percentage
+	progress int
 	err      error
 }
 
-func (p *progress) Path() string { // example: /hypha-generated-name/host/stepId
+func (p *progress) Path() string {
 	return "/" + path.Join(p.hypha.Name, p.host.String(), p.stepName)
 }
 

@@ -38,7 +38,6 @@ func TestReader_WithReader(t *testing.T) {
 			break
 		}
 		if n == 0 && readErr == nil {
-			// No more data to read and no error; break the loop.
 			break
 		}
 		assert.NilError(t, readErr)
@@ -173,8 +172,6 @@ func TestReader_WithoutPercentage(t *testing.T) {
 	<-done
 }
 
-// TestReader_ReportsByItsClock: a report is due when the reader's clock has
-// moved an interval since the last one, and only then.
 func TestReader_ReportsByItsClock(t *testing.T) {
 	for _, tc := range []struct {
 		name string

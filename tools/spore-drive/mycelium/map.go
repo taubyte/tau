@@ -24,13 +24,13 @@ func Map(parser config.Parser) (network *mycelium.Network, err error) {
 				if a, err := auth.New(ap.Username(), auth.Password(p)); err == nil {
 					mhauth = append(mhauth, a)
 				} else {
-					return nil, err // Add details to error
+					return nil, err
 				}
 			} else if key, err := ap.Open(); err == nil {
 				if a, err := auth.New(ap.Username(), auth.Key(key)); err == nil {
 					mhauth = append(mhauth, a)
 				} else {
-					return nil, err // Add details to error
+					return nil, err
 				}
 			} else {
 				return nil, fmt.Errorf("failed to parse auth %s: no password and no key", a)
@@ -50,7 +50,7 @@ func Map(parser config.Parser) (network *mycelium.Network, err error) {
 			host.Tags(tags...),
 		)
 		if err != nil {
-			return nil, err // Add details to error
+			return nil, err
 		}
 
 		hosts = append(hosts, mh)

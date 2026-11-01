@@ -29,8 +29,8 @@ type InstanceParser interface {
 	Key() string
 	Id() string
 
-	SetKey(string) error // will also set ID
-	GenerateKey() error  // will also set ID
+	SetKey(string) error // sets the ID too
+	GenerateKey() error  // sets the ID too
 }
 
 type SSHParser interface {
@@ -182,7 +182,7 @@ func (hs *instShape) Id() (i string) {
 	return
 }
 
-// will also set ID
+// SetKey also sets the ID.
 func (hs *instShape) SetKey(key string) error {
 	i, _, err := generateNodeKeyAndID(key)
 	if err != nil {
@@ -195,7 +195,7 @@ func (hs *instShape) SetKey(key string) error {
 	return err
 }
 
-// will also set ID
+// GenerateKey also sets the ID.
 func (hs *instShape) GenerateKey() error {
 	i, key, err := generateNodeKeyAndID("")
 	if err != nil {

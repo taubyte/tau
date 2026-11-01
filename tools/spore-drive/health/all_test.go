@@ -9,7 +9,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// Helper function to initialize the service and mock dependencies.
 func setupService() *Service {
 	svc := &Service{
 		ctx:     context.TODO(),
@@ -29,21 +28,18 @@ func TestService_Ping(t *testing.T) {
 func TestService_Supports(t *testing.T) {
 	svc := setupService()
 
-	// Test valid version that is supported
 	_, err := svc.Supports(context.TODO(), connect.NewRequest(&pb.SupportsRequest{
-		Version: "98.0.0", // Service version is 99.0.0
+		Version: "98.0.0",
 	}))
 	assert.NilError(t, err)
 
-	// Test invalid version format
 	_, err = svc.Supports(context.TODO(), connect.NewRequest(&pb.SupportsRequest{
 		Version: "invalid",
 	}))
 	assert.ErrorContains(t, err, "invalid version")
 
-	// Test version higher than supported
 	_, err = svc.Supports(context.TODO(), connect.NewRequest(&pb.SupportsRequest{
-		Version: "100.0.0", // Service version is 99.0.0
+		Version: "100.0.0",
 	}))
 	assert.ErrorContains(t, err, "is not supported")
 }

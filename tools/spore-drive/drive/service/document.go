@@ -16,12 +16,8 @@ import (
 	pb "github.com/taubyte/tau/tools/spore-drive/proto/gen/drive/v2"
 )
 
-// document.go turns a Document — the config directory, file by file — into
-// the parser drive reads, and back.
-//
-// THE FILES ARE THE FORMAT. An operator's config directory is read exactly as
-// it sits on disk, so nothing here knows a field: config.Parser does, and a
-// field it learns is learned once.
+// document.go turns a Document (the config directory, file by file) into the parser
+// drive reads, and back; config.Parser alone knows the fields.
 
 // notRead are documents of the on-disk layout a v2 node has no use for. They
 // are accepted and reported, never refused: a config written for v1 keeps

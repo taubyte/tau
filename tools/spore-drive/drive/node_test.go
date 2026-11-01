@@ -20,7 +20,6 @@ func driveFor(p config.Parser) *sporedrive {
 	return &sporedrive{parser: p, root: DefaultRoot, now: time.Now}
 }
 
-// TestAHostWithoutBothBuildHalvesIsOneNode, and v2 service names pass through.
 func TestAHostWithoutBothBuildHalvesIsOneNode(t *testing.T) {
 	_, p := fixtures.VirtConfig()
 	assert.NilError(t, p.Shapes().Shape("shape2").Services().Set("gateway", "monkey", "proxy"))
@@ -33,7 +32,6 @@ func TestAHostWithoutBothBuildHalvesIsOneNode(t *testing.T) {
 		[]string{node.Auth, node.Secrets, node.Discovery, node.DNS, node.Gateway, node.BuildBackend, node.Proxy})
 }
 
-// TestEveryNodeRunsDiscovery, even when no shape asked for seer.
 func TestEveryNodeRunsDiscovery(t *testing.T) {
 	_, p := fixtures.VirtConfig()
 	assert.NilError(t, p.Shapes().Shape("shape1").Services().Set("tns"))
@@ -52,7 +50,6 @@ func TestAnUnknownServiceIsRefused(t *testing.T) {
 	assert.ErrorContains(t, err, `"gatewya"`)
 }
 
-// TestWhatHasNoV2HomeIsReported.
 func TestWhatHasNoV2HomeIsReported(t *testing.T) {
 	_, p := fixtures.VirtConfig()
 	assert.NilError(t, p.Cloud().Domain().SetHost("admin.test.com", "gateway"))
@@ -72,7 +69,6 @@ func TestWhatHasNoV2HomeIsReported(t *testing.T) {
 	assert.Assert(t, !slices.Contains(nodes.ignored, "shapes.shape1.ports.main"))
 }
 
-// TestTheSplitIdentityIsStable: the same key every deploy, never the primary.
 func TestTheSplitIdentityIsStable(t *testing.T) {
 	_, p := fixtures.VirtConfig()
 	primary := p.Hosts().Host("host1").Shapes().Instance("shape1").Key()
@@ -117,9 +113,6 @@ func TestAMissingKeyFileIsAnError(t *testing.T) {
 	assert.ErrorContains(t, err, "the cloud's CA")
 }
 
-// TestAddedServicesConfigurationReachesEveryNode, copied and never read: the
-// split-off build-frontend node gets it too, because every node of a binary
-// adds the same services.
 func TestAddedServicesConfigurationReachesEveryNode(t *testing.T) {
 	fs, p := fixtures.VirtConfig()
 	assert.NilError(t, afero.WriteFile(fs, "/added.yaml", []byte("svc:\n    host: example.com\n    admins: [a, b]\n"), 0600))
@@ -136,7 +129,6 @@ func TestAddedServicesConfigurationReachesEveryNode(t *testing.T) {
 	}
 }
 
-// TestNodesIsThePlanOfOneHost.
 func TestNodesIsThePlanOfOneHost(t *testing.T) {
 	_, p := fixtures.VirtConfig()
 	plan, err := driveFor(p).Nodes("host1")
@@ -152,8 +144,6 @@ func TestNodesIsThePlanOfOneHost(t *testing.T) {
 	assert.ErrorContains(t, err, "gatewya")
 }
 
-// TestTheTenancyReachesEveryNode, canonical, in both of the file's forms, and
-// an app credential no node reads is reported.
 func TestTheTenancyReachesEveryNode(t *testing.T) {
 	fs, p := fixtures.VirtConfig()
 	assert.NilError(t, afero.WriteFile(fs, "/tenancy.yaml", []byte("provider: github\nowner: Acme\nnamespaces: [GitLab.example.com/Team]\napp:\n    client-id: x\n"), 0600))
@@ -198,8 +188,6 @@ func TestIssueRefusesAKeyThatIsNotOne(t *testing.T) {
 	assert.ErrorContains(t, err, "private key")
 }
 
-// TestAShapeMustNameAUnitAndADirectory: the main node takes its primary shape's
-// name, so a shape cannot take the split-off frontend's, nor spell a path.
 func TestAShapeMustNameAUnitAndADirectory(t *testing.T) {
 	for shape, want := range map[string]string{
 		node.BuildFrontend: "cannot be named",

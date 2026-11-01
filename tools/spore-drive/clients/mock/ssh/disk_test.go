@@ -35,8 +35,6 @@ func run(t *testing.T, c *gossh.Client, cmd string) string {
 	return string(out)
 }
 
-// TestAHostsDiskOutlivesAConnection: what one connection writes, the next
-// reads, and `cp` is carried out on it.
 func TestAHostsDiskOutlivesAConnection(t *testing.T) {
 	_, m := mock(t)
 	h, err := m.New(context.Background(), connect.NewRequest(&pb.HostConfig{Host: &pb.Host{Name: "disk"}, AuthUsername: "tau", AuthPassword: "testtest"}))

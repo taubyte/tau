@@ -53,8 +53,8 @@ type DomainParser interface {
 	SetRoot(string) error
 	SetGenerated(string) error
 
-	// Hosts binds custom domains to services (domains.hosts): e.g.
-	// "console.<fqdn>" -> "gateway". Generic (any domain -> any service).
+	// Hosts binds custom domains to services (domains.hosts), e.g. "console.<fqdn>" ->
+	// "gateway".
 	Hosts() map[string]string
 	SetHost(domain, service string) error
 	DeleteHost(domain string) error
@@ -83,8 +83,8 @@ func (d *domain) Generated() (g string) {
 	return
 }
 
-// Hosts stores the whole domain->service map in one node (domains contain dots,
-// which yaseer would treat as path separators if used as keys).
+// Hosts stores the whole map in one node, since yaseer would read the dots in a
+// domain key as path separators.
 func (d *domain) Hosts() map[string]string {
 	m := make(map[string]string)
 	d.Query.Get("hosts").Value(&m)

@@ -22,7 +22,6 @@ type parser struct {
 }
 
 type leaf struct {
-	//mode leafMode
 	root *parser
 	*seer.Query
 }
