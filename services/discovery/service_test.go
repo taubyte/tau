@@ -166,9 +166,12 @@ func TestAnotherNodesReportIsFoldedIn(t *testing.T) {
 	require.NoError(t, err)
 	bus.deliver(b)
 
-	eventually(t, "the other node to be heard", func() bool {
-		_, ok := s.Get("other")
-		return ok
+	// This node's own report is folded in by its first broadcast, which
+	// runs beside the listener: either may land first.
+	eventually(t, "the other node to be heard beside this one", func() bool {
+		_, other := s.Get("other")
+		_, self := s.Get(s.Peer())
+		return other && self
 	})
 
 	got := s.Route("shop", time.Minute)
