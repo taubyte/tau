@@ -15,8 +15,8 @@ import (
 	dssync "github.com/ipfs/go-datastore/sync"
 )
 
-// heard records what an exchange is told; release, when set, holds each
-// call until it is closed.
+// heard records what an exchange is told; release, when set, holds each call
+// until it is closed.
 type heard struct {
 	exchange.Interface
 	mu      sync.Mutex
@@ -82,8 +82,6 @@ func TestBlockWriterStoresThenTells(t *testing.T) {
 	eventually(t, func() bool { _, n := h.told(); return n == 1 })
 }
 
-// While the exchange hears of one block, every block written meanwhile
-// waits and is told of in one call.
 func TestBlockWriterTellsInBatches(t *testing.T) {
 	ctx := context.Background()
 	h := &heard{release: make(chan struct{}), entered: make(chan struct{}, notifyBatch*2)}
@@ -105,8 +103,6 @@ func TestBlockWriterTellsInBatches(t *testing.T) {
 	}
 }
 
-// With notifyBatch blocks waiting, a writer tells the exchange itself
-// rather than wait.
 func TestBlockWriterTellsItselfWhenFull(t *testing.T) {
 	ctx := context.Background()
 	h := &heard{release: make(chan struct{}), entered: make(chan struct{}, notifyBatch*2), err: errors.New("told")}

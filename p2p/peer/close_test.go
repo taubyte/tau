@@ -18,8 +18,7 @@ var (
 	localListenAddr = []string{"/ip4/127.0.0.1/tcp/0"}
 )
 
-// storeThatFailsToClose closes the store it wraps and reports a failure anyway,
-// so a test sees the error without leaving a store open.
+// storeThatFailsToClose closes the store it wraps and reports a failure anyway.
 type storeThatFailsToClose struct {
 	datastore.Batching
 	closed bool
@@ -40,7 +39,7 @@ func (p peeringThatFailsToStop) Stop() error {
 	return errPeeringStop
 }
 
-// ephemeral is a peer made without a repository, which makes it one in TMPDIR.
+// Made without a repository, the peer makes one in TMPDIR.
 func ephemeral(t *testing.T) *node {
 	t.Helper()
 	n, err := New(t.Context(), nil, keypair.NewRaw(), nil, localListenAddr, nil, true, false)

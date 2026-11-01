@@ -8,14 +8,12 @@ import (
 	"sync/atomic"
 )
 
-// A held block is known in memory, so that Has, the call bitswap makes for
-// every block a peer wants, rarely reads the store: a bloom filter of every
-// block held answers most of the blocks not held, and a table of recent
-// blocks the ones held lately. Neither allocates. The filter is built by one
-// scan of the store's block keys, answering nothing until it is done.
+// Has, the call bitswap makes for every block a peer wants, rarely reads the
+// store: a bloom filter of every block held answers most blocks not held, and
+// a table of recent blocks the ones held lately. Neither allocates. The filter
+// is built by one scan of the block keys and answers nothing until done.
 
-// bloomBits is the size of a store's first filter. A filter holding a key
-// per bloomLoad bits is rebuilt twice the size.
+// A filter holding a key per bloomLoad bits is rebuilt twice the size.
 const (
 	bloomLoad   = 10
 	bloomProbes = 7
@@ -25,7 +23,6 @@ var bloomBits uint64 = 1 << 24
 
 var bloomSeed = maphash.MakeSeed()
 
-// A blockBloom is a bloom filter of multihashes.
 type blockBloom struct {
 	words []atomic.Uint64
 	mask  uint64
@@ -76,11 +73,9 @@ type hitTable struct {
 
 type hitSet struct {
 	ways [hitWays][4]atomic.Uint64
-	// next is the way the next digest taken replaces.
 	next atomic.Uint32
 }
 
-// digestOf is the sha2-256 digest h, a multihash, names, if it is one.
 func digestOf(h []byte) ([]byte, bool) {
 	if len(h) != 34 || h[0] != 0x12 || h[1] != 32 {
 		return nil, false
@@ -101,7 +96,6 @@ func holds(w *[4]atomic.Uint64, d []byte) bool {
 	return true
 }
 
-// way is the way of s holding d, or -1.
 func (s *hitSet) way(d []byte) int {
 	for i := range s.ways {
 		if holds(&s.ways[i], d) {
@@ -131,7 +125,6 @@ func (t *hitTable) add(h []byte) {
 	}
 }
 
-// clear empties every way.
 func (t *hitTable) clear() {
 	for i := range t.sets {
 		for j := range t.sets[i].ways {
@@ -142,8 +135,7 @@ func (t *hitTable) clear() {
 	}
 }
 
-// drop empties the way holding h, if one does. An empty way matches
-// nothing: no digest is zero.
+// An empty way matches nothing: no digest is zero.
 func (t *hitTable) drop(h []byte) {
 	d, ok := digestOf(h)
 	if !ok {
@@ -157,7 +149,6 @@ func (t *hitTable) drop(h []byte) {
 	}
 }
 
-// blockMemory is what a store knows in memory of the blocks it holds.
 type blockMemory struct {
 	hits hitTable
 	// deletes counts block deletes, each once it is done, so a Has that
@@ -171,7 +162,6 @@ type blockMemory struct {
 	once        sync.Once
 }
 
-// start builds the first filter, once.
 func (m *blockMemory) start(s *Store) {
 	m.once.Do(func() {
 		m.bloom.Store(newBlockBloom(bloomBits))
@@ -205,8 +195,7 @@ func (m *blockMemory) filter(s *Store, h []byte) {
 	}
 }
 
-// mayHave reports whether h may be held, false only for a block that is
-// not.
+// false only for a block that is not held.
 func (m *blockMemory) mayHave(h []byte) bool {
 	return !m.ready.Load() || m.bloom.Load().mayHave(h)
 }

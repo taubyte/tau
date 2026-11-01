@@ -1,14 +1,9 @@
-// Package pebbleds is a go-datastore over pebble, with a native API that
-// lends the store's own bytes instead of copying them, and a block store
-// over it.
-//
-// Keys are stored as the bytes of their ds.Key string, so a store written by
-// any go-datastore over pebble that does the same opens unchanged. Writes are
-// not synced unless Sync is called; Sync makes every earlier write durable.
-//
-// The native API (View, Scan, Range, Batch.Set and Batch.Remove) takes and
-// lends []byte. A lent slice is valid only until the callback returns: copy
-// what must outlive it.
+// Package pebbleds is a go-datastore over pebble, with a native API that lends
+// the store's own bytes, and a block store over it. Keys are their ds.Key
+// string's bytes, so a store any such go-datastore over pebble wrote opens
+// unchanged. Writes are not synced unless Sync is called. A slice the native
+// API lends (View, Scan, Range, Batch.Set, Batch.Remove) is valid only until
+// the callback returns.
 package pebbleds
 
 import (
@@ -25,12 +20,10 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 )
 
-// ErrClosed is returned by every call made after Close.
 var ErrClosed = errors.New("pebbleds: closed")
 
 var logger = logging.Logger("pebble")
 
-// Store is a pebble database behind the go-datastore interfaces.
 type Store struct {
 	db    *pebble.DB
 	write *pebble.WriteOptions
@@ -39,19 +32,16 @@ type Store struct {
 	// closes; nil when the caller gave one.
 	cache *pebble.Cache
 
-	// written counts the bytes of the keys and values written.
 	written atomic.Int64
 	// users counts the calls in flight; Close waits for them.
 	users  atomic.Int64
 	closed atomic.Bool
 	mu     sync.Mutex
 	idle   *sync.Cond
-	// queries are the open query results, and readers the open readers,
-	// which Close ends.
+	// The open queries and readers, which Close ends.
 	queries map[*queryIter]struct{}
 	readers map[*Reader]struct{}
-	// blocks is what the store knows in memory of the blocks it holds.
-	blocks blockMemory
+	blocks  blockMemory
 }
 
 var (
@@ -59,7 +49,6 @@ var (
 	_ ds.PersistentDatastore = (*Store)(nil)
 )
 
-// Option configures Open.
 type Option func(*config)
 
 type config struct {
@@ -67,8 +56,7 @@ type config struct {
 	write  *pebble.WriteOptions
 }
 
-// WithPebbleOptions opens the database with o. Fields left zero take
-// pebble's defaults.
+// Fields left zero take pebble's defaults.
 func WithPebbleOptions(o *pebble.Options) Option {
 	return func(c *config) { c.pebble = o }
 }
@@ -78,10 +66,8 @@ func WithWriteOptions(o *pebble.WriteOptions) Option {
 	return func(c *config) { c.write = o }
 }
 
-// defaultCacheSize is the block cache of a store not given one or its size.
 const defaultCacheSize = 64 << 20
 
-// Open opens, or creates, the store at path.
 func Open(path string, opts ...Option) (*Store, error) {
 	c := config{write: pebble.NoSync}
 	for _, o := range opts {
@@ -125,8 +111,7 @@ func Open(path string, opts ...Option) (*Store, error) {
 	return s, nil
 }
 
-// enter admits a call, unless the store is closed. Every admitted call
-// leaves.
+// Every admitted call leaves.
 func (s *Store) enter() bool {
 	s.users.Add(1)
 	if s.closed.Load() {
@@ -144,14 +129,13 @@ func (s *Store) leave() {
 	}
 }
 
-// keyBytes lends k's bytes. pebble only reads a key it is given, or copies
-// it, so nothing writes through the slice.
+// pebble only reads or copies a key, so nothing writes through the lent slice.
 func keyBytes(k ds.Key) []byte {
 	s := k.String()
 	return unsafe.Slice(unsafe.StringData(s), len(s))
 }
 
-// View calls fn with the value stored at key, or returns ds.ErrNotFound.
+// View returns ds.ErrNotFound for a key not stored.
 func (s *Store) View(key []byte, fn func(v []byte) error) error {
 	if !s.enter() {
 		return ErrClosed
@@ -171,7 +155,7 @@ func (s *Store) View(key []byte, fn func(v []byte) error) error {
 	return err
 }
 
-// Get returns a copy of the value stored at key.
+// Get copies the value.
 func (s *Store) Get(ctx context.Context, key ds.Key) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -184,7 +168,7 @@ func (s *Store) Get(ctx context.Context, key ds.Key) ([]byte, error) {
 	return out, err
 }
 
-// Has reports whether key is stored. It costs a Get.
+// Has costs a Get.
 func (s *Store) Has(ctx context.Context, key ds.Key) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -196,7 +180,6 @@ func (s *Store) Has(ctx context.Context, key ds.Key) (bool, error) {
 	return err == nil, err
 }
 
-// GetSize returns the length of the value stored at key.
 func (s *Store) GetSize(ctx context.Context, key ds.Key) (int, error) {
 	if err := ctx.Err(); err != nil {
 		return -1, err
@@ -209,7 +192,6 @@ func (s *Store) GetSize(ctx context.Context, key ds.Key) (int, error) {
 	return size, err
 }
 
-// Put stores value at key.
 func (s *Store) Put(ctx context.Context, key ds.Key, value []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -226,11 +208,10 @@ func (s *Store) Put(ctx context.Context, key ds.Key, value []byte) error {
 	return nil
 }
 
-// Written is how many bytes of keys and values the store has written:
-// every Put, and every Set of a committed batch.
+// Every Put, and every Set of a committed batch.
 func (s *Store) Written() int64 { return s.written.Load() }
 
-// Delete removes key. Removing an absent key is not an error.
+// Removing an absent key is not an error.
 func (s *Store) Delete(ctx context.Context, key ds.Key) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -248,10 +229,9 @@ func (s *Store) Delete(ctx context.Context, key ds.Key) error {
 	return nil
 }
 
-// Sync makes every write made before it durable, whatever its prefix:
-// pebble has one log. It writes an empty synced log record, since pebble
-// syncs its log only as part of a write. Without a log there is nothing to
-// sync.
+// Sync makes every earlier write durable whatever its prefix: pebble has one
+// log, synced only as part of a write, so it writes an empty synced record.
+// Without a log there is nothing to sync.
 func (s *Store) Sync(ctx context.Context, _ ds.Key) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -274,7 +254,6 @@ func (s *Store) Sync(ctx context.Context, _ ds.Key) error {
 // run of it, and it flushes its memtables in order.
 func (s *Store) KeepsPrefix() bool { return true }
 
-// DiskUsage is the space pebble's files take.
 func (s *Store) DiskUsage(context.Context) (uint64, error) {
 	if !s.enter() {
 		return 0, ErrClosed
@@ -283,9 +262,8 @@ func (s *Store) DiskUsage(context.Context) (uint64, error) {
 	return s.db.Metrics().DiskSpaceUsage(), nil
 }
 
-// Close ends open queries and readers, waits for calls in flight, flushes
-// and closes the database. Calls made after it return ErrClosed. It must
-// not be called from inside a callback the store is running.
+// Close ends open queries and readers, waits for calls in flight, flushes and
+// closes. It must not be called from inside a callback the store is running.
 func (s *Store) Close() error {
 	if !s.closed.CompareAndSwap(false, true) {
 		return nil

@@ -11,10 +11,8 @@ import (
 	raftv2 "github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2"
 )
 
-// TestEncryptedConn_AFrameReadInPiecesArrivesWhole: raft reads its transport
-// through a buffered reader, whose buffer is only partly free once it holds
-// unread bytes. A frame read into a smaller buffer is handed out over as many
-// reads as it takes, and the frames after it follow in order.
+// raft reads its transport through a buffered reader, whose buffer is only
+// partly free once it holds unread bytes.
 func TestEncryptedConn_AFrameReadInPiecesArrivesWhole(t *testing.T) {
 	key := make([]byte, AESKeySize)
 	_, err := rand.Read(key)
@@ -49,8 +47,6 @@ func TestEncryptedConn_AFrameReadInPiecesArrivesWhole(t *testing.T) {
 	require.Equal(t, want, got)
 }
 
-// TestEncryptedConn_AFrameCutShortIsAnError: a peer that goes away partway
-// through a frame leaves a read that fails, not one that returns what came.
 func TestEncryptedConn_AFrameCutShortIsAnError(t *testing.T) {
 	key := make([]byte, AESKeySize)
 	_, err := rand.Read(key)
@@ -80,9 +76,6 @@ func TestEncryptedConn_AFrameCutShortIsAnError(t *testing.T) {
 	}
 }
 
-// TestEncryptedConn_AWriteToAPeerThatLeftFails: a frame goes out as its
-// length, its nonce and its sealed payload, and a write that cannot finish
-// any of them fails.
 func TestEncryptedConn_AWriteToAPeerThatLeftFails(t *testing.T) {
 	key := make([]byte, AESKeySize)
 	_, err := rand.Read(key)
@@ -120,8 +113,6 @@ func TestEncryptedConn_AWriteToAPeerThatLeftFails(t *testing.T) {
 	}
 }
 
-// TestEncryptedConn_AFrameSealedUnderAnotherKeyIsRefused: a peer holding
-// another key gets nothing it sends read as plaintext.
 func TestEncryptedConn_AFrameSealedUnderAnotherKeyIsRefused(t *testing.T) {
 	ours, theirs := make([]byte, AESKeySize), make([]byte, AESKeySize)
 	_, err := rand.Read(ours)
@@ -145,8 +136,6 @@ func TestEncryptedConn_AFrameSealedUnderAnotherKeyIsRefused(t *testing.T) {
 	require.Zero(t, n)
 }
 
-// TestSealedCodec_RefusesWhatProtoCannotEncode: a message proto refuses, such
-// as a string that is not UTF-8, is refused before anything is sealed.
 func TestSealedCodec_RefusesWhatProtoCannotEncode(t *testing.T) {
 	key := make([]byte, AESKeySize)
 	_, err := rand.Read(key)

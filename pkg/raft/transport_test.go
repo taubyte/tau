@@ -18,7 +18,6 @@ import (
 	taupeer "github.com/taubyte/tau/p2p/peer"
 )
 
-// transportLog is what the raft-transport logger printed while a test ran.
 type transportLog struct {
 	mu    sync.Mutex
 	lines []map[string]any
@@ -57,7 +56,6 @@ func captureTransportLog(t *testing.T) *transportLog {
 	return captured
 }
 
-// line is the level and message of the line logged with marker in it.
 func (l *transportLog) line(t *testing.T, marker string) (level, msg string) {
 	t.Helper()
 	require.Eventually(t, func() bool {
@@ -74,9 +72,6 @@ func (l *transportLog) line(t *testing.T, marker string) (level, msg string) {
 	return level, msg
 }
 
-// TestTransportLogger_LogsEachLevelAtItsOwn: raft's transport logs through
-// hclog, and each of its levels lands on go-log's nearest; a level the adapter
-// does not know is a warning rather than a line dropped.
 func TestTransportLogger_LogsEachLevelAtItsOwn(t *testing.T) {
 	captured := captureTransportLog(t)
 	var lg hclog.Logger = &hcLogToLogger{}
@@ -117,9 +112,6 @@ func TestTransportLogger_LogsEachLevelAtItsOwn(t *testing.T) {
 	}
 }
 
-// TestTransportLogger_CarriesItsNameAndArgs: a logger made by Named or With
-// prints its name and its pairs on every line, as hclog's own do, and passes
-// both to the loggers made from it.
 func TestTransportLogger_CarriesItsNameAndArgs(t *testing.T) {
 	captured := captureTransportLog(t)
 	var root hclog.Logger = &hcLogToLogger{}
@@ -148,9 +140,6 @@ func TestTransportLogger_CarriesItsNameAndArgs(t *testing.T) {
 	require.Equal(t, []interface{}{"k", "v", hclog.MissingKey, "dangling"}, root.With("k", "v", "dangling").ImpliedArgs())
 }
 
-// TestTransportLogger_LeavesLevelsToGoLog: what is printed is decided per
-// subsystem by go-log, so the adapter claims every level and ignores hclog's
-// setting, and it offers no standard library logger in its place.
 func TestTransportLogger_LeavesLevelsToGoLog(t *testing.T) {
 	var lg hclog.Logger = &hcLogToLogger{}
 	require.True(t, lg.IsTrace())
@@ -166,9 +155,6 @@ func TestTransportLogger_LeavesLevelsToGoLog(t *testing.T) {
 	require.Nil(t, lg.StandardWriter(nil))
 }
 
-// TestTransport_DialsOnlyAPeer: raft dials server addresses, and the
-// transport's are peer ids; anything else is refused before a stream is
-// opened, as is a dial on a layer that was never built.
 func TestTransport_DialsOnlyAPeer(t *testing.T) {
 	_, err := (&namespaceStreamLayer{}).Dial(raft.ServerAddress(newMockNode(t).ID().String()), time.Second)
 	require.ErrorContains(t, err, "not initialized")
@@ -182,9 +168,6 @@ func TestTransport_DialsOnlyAPeer(t *testing.T) {
 	require.Nil(t, conn)
 }
 
-// TestCluster_AnEncryptedPairReplicates: with a key, every raft message is
-// sealed on the way out and opened on the way in, and a pair keyed alike
-// elects, joins and replicates as an unkeyed one does.
 func TestCluster_AnEncryptedPairReplicates(t *testing.T) {
 	const namespace = "encrypted-pair"
 	key := make([]byte, AESKeySize)

@@ -19,7 +19,6 @@ import (
 
 var healLogger = logging.Logger("raft-healing")
 
-// healer monitors the cluster for split-brain and orchestrates merge/rejoin.
 type healer struct {
 	cluster *cluster
 	member  *member
@@ -54,8 +53,7 @@ func (h *healer) signalHealAck(from peer.ID) {
 	}
 }
 
-// notifyForeignVote is called when we observe a vote/pre-vote from a peer
-// not in our raft configuration. Non-blocking: drops if the channel is full.
+// Never blocks raft: a full channel drops the report.
 func (h *healer) notifyForeignVote(pid peer.ID) {
 	select {
 	case h.foreignVoteCh <- pid:
@@ -190,9 +188,8 @@ func (h *healer) noteDropped() {
 	}
 }
 
-// handleForeignVote reacts to a vote/pre-vote from a non-member peer.
-// Ensures the peer is tracked so findForeignPeers can discover it,
-// and if we're the leader, absorbs the orphan immediately.
+// The peer is tracked so findForeignPeers finds it, and a leader absorbs it at
+// once.
 func (h *healer) handleForeignVote(ctx context.Context, pid peer.ID) {
 	if h.cluster.closed.Load() {
 		return
@@ -211,10 +208,8 @@ func (h *healer) handleForeignVote(ctx context.Context, pid peer.ID) {
 	h.absorbOrphan(ctx, pid)
 }
 
-// registerObserver registers a raft Observer that watches for
-// RequestPreVoteRequest and RequestVoteRequest from peers not in the
-// current configuration and notifies the healer, and for every change of
-// leader.
+// The observer reports votes and pre-votes from peers outside the
+// configuration, and every change of leader.
 func (h *healer) registerObserver() {
 	ch := make(chan hraft.Observation, 16)
 	observer := hraft.NewObserver(ch, false, func(o *hraft.Observation) bool {
@@ -517,12 +512,10 @@ func warnForeignWallClockDrift(self peer.ID, foreign map[string]CRDTEntry) {
 	}
 }
 
-// absorbOrphan merges FSM state from a leaderless foreign node, then sends it
-// a healAck so it wipes its stale raft state and re-initialises. The orphan's
-// handleBootstrap will call requestVoterJoin, which triggers AddVoter on us
-// once the orphan has clean state — avoiding the term-conflict that would
-// destabilise our cluster if we called AddVoter while the orphan still runs
-// a conflicting raft instance.
+// absorbOrphan merges a leaderless foreign node's state, then sends it a
+// healAck so it wipes its raft state and asks to join. AddVoter waits for that
+// join: added while the orphan still ran a conflicting raft, it would
+// destabilise this group with its term.
 func (h *healer) absorbOrphan(ctx context.Context, orphan peer.ID) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -646,10 +639,9 @@ func (h *healer) yieldAndRejoin(ctx context.Context, winnerLeader peer.ID) {
 		return
 	}
 
-	// EVERYTHING INITIALIZE BUILDS IS TAKEN DOWN BEFORE IT IS BUILT AGAIN. The
-	// stream service holds the group's protocol, so a second one cannot listen
-	// beside it, and a raft that is not waited for can still apply into the
-	// state being wiped.
+	// Everything initialize builds is taken down before it is built again: the
+	// stream service holds the group's protocol, and a raft not waited for can
+	// still apply into the state being wiped.
 	healLogger.Infof("[%s] taking down raft for rejoin", h.cluster.node.ID().ShortString())
 	m := h.cluster.current()
 	m.takeDown()
@@ -667,27 +659,16 @@ func (h *healer) yieldAndRejoin(ctx context.Context, winnerLeader peer.ID) {
 		healLogger.Infof("[%s] re-initialize succeeded — should rejoin cluster", h.cluster.node.ID().ShortString())
 	}
 
-	// initialize() created a new healer; mark ourselves as superseded
-	// so the run() loop exits and the old goroutine doesn't interfere
-	// with the new healer.
+	// initialize built a new healer, so this one's run loop exits.
 	h.superseded.Store(true)
 }
 
-// wipeRaftState clears everything the yielding node believed about the cluster
-// it is leaving: its log, its stable state, and the state machine those two
-// produced.
-//
-// THE APPLIED DATA GOES TOO, and leaving it was the hole. A node that yields
-// rejoins as a voter and takes the winner's state from the leader — by snapshot
-// when the leader has one, and Restore already clears this prefix before
-// loading it, or by log replication from the first index when it does not. On
-// that second path the entries this node applied in the cluster it is leaving
-// are still in the store, under keys the winning group never committed. It is a
-// voter; the next election it wins serves them, behind a barrier, as committed
-// state.
-// wipeRaftState removes the member's logs, stable state and applied data.
-// It finishes whatever cancels ctx, as Close does: a raft built over a store
-// it half wiped finds logs it cannot read, and panics.
+// wipeRaftState removes the member's logs, stable state and applied data. The
+// applied data must go: rejoining by log replication from the first index would
+// otherwise leave entries the winning group never committed in the store, which
+// this voter would serve once it led. It finishes whatever cancels ctx, as Close
+// does: a raft built over a store it half wiped finds logs it cannot read, and
+// panics.
 func (h *healer) wipeRaftState(ctx context.Context) {
 	ctx = context.WithoutCancel(ctx)
 	store := h.cluster.node.Store()

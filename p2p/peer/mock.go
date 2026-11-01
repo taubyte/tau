@@ -18,8 +18,8 @@ import (
 var (
 	mocknet     netmock.Mocknet
 	mocknetLock sync.Mutex
-	// mocks are the mock nodes LinkAllPeers links, until they close: the
-	// mocknet keeps every peer it ever made.
+	// mocks are the mock nodes LinkAllPeers links until they close; the mocknet
+	// itself keeps every peer it ever made.
 	mocks = map[peer.ID]*node{}
 )
 
@@ -63,7 +63,6 @@ func Mock(ctx context.Context) Node {
 		panic(err)
 	}
 
-	// Create ipfs node
 	p.dag, err = newDAG(p.ctx, p.store, p.host, p.dht)
 	if err != nil {
 		panic(err)
@@ -73,7 +72,6 @@ func Mock(ctx context.Context) Node {
 
 	p.topics = make(map[string]*pubsub.Topic)
 
-	// Prep messaging PUBSUB
 	p.messaging, err = pubsub.NewGossipSub(
 		p.ctx,
 		p.host,
@@ -95,10 +93,9 @@ func Mock(ctx context.Context) Node {
 	return &p
 }
 
-// LinkAllPeers links every two open mock nodes that are not linked yet, and
-// unlinks the ones that closed. The mocknet's LinkAll adds a link for every
-// ordered pair of every peer it ever made on each call, so a process that
-// links as it goes held a quadratic number of them, of peers long closed.
+// LinkAllPeers links each pair of open mock nodes once and unlinks closed
+// ones: the mocknet's LinkAll links every ordered pair of every peer it ever
+// made on each call.
 func LinkAllPeers() error {
 	mocknetLock.Lock()
 	defer mocknetLock.Unlock()

@@ -343,7 +343,6 @@ func TestOpenFails(t *testing.T) {
 	}
 }
 
-// A store written by go-ds-pebble opens unchanged, and the other way round.
 func TestSameLayoutAsGoDsPebble(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -430,7 +429,6 @@ func TestBatchResetClosed(t *testing.T) {
 	}
 }
 
-// A scan of every key, its scratch reused from a scan with a prefix.
 func TestScanEverythingAfterAPrefix(t *testing.T) {
 	ctx := context.Background()
 	s := open(t)
@@ -448,7 +446,6 @@ func TestScanEverythingAfterAPrefix(t *testing.T) {
 	}
 }
 
-// A store filters its tables with bloom filters unless told otherwise.
 func TestBloomFilters(t *testing.T) {
 	o := &pebble.Options{FS: vfs.NewMem()}
 	s, err := Open("db", WithPebbleOptions(o))
@@ -466,8 +463,7 @@ func TestBloomFilters(t *testing.T) {
 	}
 }
 
-// A store's block cache keeps what it reads: pebble's own, made from
-// CacheSize, keeps nothing.
+// pebble's own cache, made from CacheSize, keeps nothing.
 func TestBlockCacheKeeps(t *testing.T) {
 	ctx := context.Background()
 	for _, o := range []*pebble.Options{{}, {CacheSize: 32 << 20}} {

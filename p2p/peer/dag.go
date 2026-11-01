@@ -30,14 +30,12 @@ import (
 	"github.com/taubyte/tau/pkg/pebbleds"
 )
 
-// DAGService is tau's in-house replacement for ipfs-lite's Peer: the minimal
-// boxo glue (blockstore + bitswap + merkledag + unixfs + reprovider) that
-// provides an ipld.DAGService plus UnixFS Add/Get. Defaults are frozen to match
-// ipfs-lite v1.8.6 exactly (CIDv1, sha2-256, balanced layout, default chunker,
-// 12h reprovide) so CIDs and on-disk/wire formats stay interoperable with
-// nodes still running ipfs-lite.
+// DAGService replaces ipfs-lite's Peer: blockstore, bitswap, merkledag, unixfs
+// and reprovider. Its defaults match ipfs-lite v1.8.6 exactly (CIDv1, sha2-256,
+// balanced layout, default chunker, 12h reprovide), so CIDs and formats stay
+// interoperable.
 type DAGService struct {
-	ipld.DAGService // merkledag: Add/Get/Remove/...
+	ipld.DAGService
 
 	bstore     blockstore.Blockstore
 	store      datastore.Batching
@@ -52,14 +50,11 @@ type DAGService struct {
 	closeErr  error
 }
 
-// newDAG replicates ipfslite.New(ctx, store, nil, host, dht, &Config{}) with the
-// default (online) config both tau call sites used.
 func newDAG(ctx context.Context, store datastore.Batching, host host.Host, dht routing.Routing) (*DAGService, error) {
 	ctx, cancel := context.WithCancel(ctx)
 
-	// Blockstore: identity multihash support over the store's blocks. A
-	// pebbleds store answers HasBlock, the hot path, from its tables' bloom
-	// filters; any other store gets boxo's ARC/bloom cache.
+	// A pebbleds store answers HasBlock from its own filters; any other store gets
+	// boxo's ARC/bloom cache.
 	var bs blockstore.Blockstore
 	var bloom bloomBuild = noBloom{}
 	if pst, ok := store.(*pebbleds.Store); ok {
@@ -78,7 +73,7 @@ func newDAG(ctx context.Context, store datastore.Batching, host host.Host, dht r
 		bs, bloom = cached, built
 	}
 
-	// Bitswap (providerFinder nil: blocks found via broadcast to connected peers).
+	// providerFinder nil: blocks are found by broadcast to connected peers.
 	bswapnet := bsnet.NewFromIpfsHost(host)
 	bswap := bitswap.New(ctx, bswapnet, nil, bs,
 		bitswap.ProviderSearchDelay(1000*time.Millisecond),
@@ -121,9 +116,8 @@ func newDAG(ctx context.Context, store datastore.Batching, host host.Host, dht r
 		writer:     NewBlockWriter(bs, bswap),
 	}
 
-	// autoclose: mirror ipfs-lite so a cancelled context still tears down.
-	// Close is idempotent (sync.Once), so an explicit Close() and this goroutine
-	// racing is safe.
+	// A cancelled context still tears down, as ipfs-lite does; Close is
+	// idempotent, so racing an explicit Close is safe.
 	go func() {
 		<-ctx.Done()
 		_ = d.Close()
@@ -132,20 +126,18 @@ func newDAG(ctx context.Context, store datastore.Batching, host host.Host, dht r
 	return d, nil
 }
 
-// bloomBuild is the bloom cache, built by a goroutine that reads the whole
-// store and is done once Wait returns.
+// bloomBuild is a bloom cache built by a goroutine reading the whole store,
+// done once Wait returns.
 type bloomBuild interface {
 	Wait(context.Context) error
 }
 
-// noBloom is no bloom cache: nothing to wait for.
 type noBloom struct{}
 
 func (noBloom) Wait(context.Context) error { return nil }
 
-// Close tears down the reprovider and blockservice, and returns once nothing
-// it started reads the store: its caller closes the store next, and pebble
-// panics on a read of a closed one. Idempotent.
+// Close returns once nothing it started reads the store: its caller closes the
+// store next, and pebble panics on reading a closed one. Idempotent.
 func (d *DAGService) Close() error {
 	d.closeOnce.Do(func() {
 		d.cancel()
@@ -156,9 +148,8 @@ func (d *DAGService) Close() error {
 	return d.closeErr
 }
 
-// AddFile chunks and stores a reader as a UnixFS DAG, returning the root node.
-// Frozen ipfs-lite defaults: CIDv1, sha2-256, balanced layout, default chunker,
-// RawLeaves=false — these determine the CID and MUST NOT change.
+// The frozen ipfs-lite defaults (CIDv1, sha2-256, balanced layout, default
+// chunker, RawLeaves false) determine the CID and must not change.
 func (d *DAGService) AddFile(ctx context.Context, r io.Reader, _ any) (ipld.Node, error) {
 	prefix, err := merkledag.PrefixForCidVersion(1)
 	if err != nil {
@@ -179,7 +170,6 @@ func (d *DAGService) AddFile(ctx context.Context, r io.Reader, _ any) (ipld.Node
 	return balanced.Layout(dbh)
 }
 
-// GetFile returns a reader to a UnixFS file identified by its root CID.
 func (d *DAGService) GetFile(ctx context.Context, c cid.Cid) (ufsio.ReadSeekCloser, error) {
 	n, err := d.Get(ctx, c)
 	if err != nil {
@@ -188,15 +178,12 @@ func (d *DAGService) GetFile(ctx context.Context, c cid.Cid) (ufsio.ReadSeekClos
 	return ufsio.NewDagReader(ctx, n, d)
 }
 
-// BlockStore exposes the underlying blockstore.
 func (d *DAGService) BlockStore() blockstore.Blockstore { return d.bstore }
 
-// WriteBlock stores b and tells bitswap it is held, in batches (BlockWriter).
 func (d *DAGService) WriteBlock(ctx context.Context, b blocks.Block) error {
 	return d.writer.WriteBlock(ctx, b)
 }
 
-// DeleteBlocks removes cids' blocks from the store (BlockWriter).
 func (d *DAGService) DeleteBlocks(ctx context.Context, cids []cid.Cid) error {
 	return d.writer.DeleteBlocks(ctx, cids)
 }
@@ -205,8 +192,8 @@ func (d *DAGService) DeleteBlocks(ctx context.Context, cids []cid.Cid) error {
 // over, in order with the store's other writes.
 func (d *DAGService) BlockLog() datastore.Datastore { return d.store }
 
-// ReadBlock is the block c names, read from the store without decoding it
-// as an IPLD node; a block not held is fetched as Get fetches it.
+// ReadBlock reads c's stored block without IPLD decoding; a block not held is
+// fetched as Get fetches it.
 func (d *DAGService) ReadBlock(ctx context.Context, c cid.Cid) (blocks.Block, error) {
 	b, err := d.bstore.Get(ctx, c)
 	if ipld.IsNotFound(err) {
@@ -215,25 +202,18 @@ func (d *DAGService) ReadBlock(ctx context.Context, c cid.Cid) (blocks.Block, er
 	return b, err
 }
 
-// HasBlock reports whether a block is available locally.
 func (d *DAGService) HasBlock(ctx context.Context, c cid.Cid) (bool, error) {
 	return d.bstore.Has(ctx, c)
 }
 
-// Session returns a session-based NodeGetter. Required: go-ds-crdt type-asserts
-// SessionDAGService on the value kvdb passes it, and degrades to non-session
-// fetching without it.
+// kvdb fetches through a session when its DAG service offers one.
 func (d *DAGService) Session(ctx context.Context) ipld.NodeGetter {
 	return merkledag.NewSession(ctx, d.DAGService)
 }
 
-// Exchange returns the underlying bitswap exchange.
 func (d *DAGService) Exchange() exchange.Interface { return d.exch }
 
-// BlockService returns the underlying blockservice.
 func (d *DAGService) BlockService() blockservice.BlockService { return d.bserv }
-
-// --- node file operations (UnixFS over the DAG service) ---
 
 type ReadSeekCloser interface {
 	io.ReadSeekCloser
@@ -273,7 +253,7 @@ func (p *node) AddFile(r io.Reader) (_cid string, err error) {
 	return
 }
 
-// Note: context should have a timeout and depend on the peer context as parent
+// ctx should have a timeout and derive from the peer's context.
 func (p *node) GetFile(ctx context.Context, id string) (ReadSeekCloser, error) {
 	if p.closed.Load() {
 		return nil, errorClosed

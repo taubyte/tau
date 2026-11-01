@@ -12,10 +12,8 @@ import (
 )
 
 const (
-	// AESKeySize is the size of the AES-256 key in bytes
 	AESKeySize = 32
-	// nonceSize is the size of the nonce for AES-GCM
-	nonceSize = 12
+	nonceSize  = 12
 )
 
 type encryptedConn struct {

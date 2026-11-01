@@ -10,9 +10,9 @@ import (
 	query "github.com/ipfs/go-datastore/query"
 )
 
-// Query runs q on a pebble iterator, pulled by the caller: there is no
-// goroutine behind the results. Ordering by key, either way, is the
-// iterator's own; any other order sorts every match in memory.
+// Results are pulled by the caller, with no goroutine behind them. Key order
+// either way is the iterator's own; any other order sorts every match in
+// memory.
 func (s *Store) Query(ctx context.Context, q query.Query) (query.Results, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -71,8 +71,7 @@ func (s *Store) query(q query.Query, desc bool) (query.Results, error) {
 	return query.ResultsFromIterator(q, query.Iterator{Next: it.next, Close: it.close}), nil
 }
 
-// queryIter is one query's position. Its lock orders the caller's pulls
-// against Close ending it.
+// Its lock orders the caller's pulls against Close ending the query.
 type queryIter struct {
 	s        *Store
 	mu       sync.Mutex
@@ -166,8 +165,6 @@ func (q *queryIter) match(e query.Entry) bool {
 	return true
 }
 
-// finish ends the query at its last match, reporting the iterator's error
-// if it stopped on one.
 func (q *queryIter) finish() (query.Result, bool) {
 	if err := q.release(); err != nil {
 		return query.Result{Error: fmt.Errorf("pebbleds: iterate: %w", err)}, true
@@ -175,7 +172,7 @@ func (q *queryIter) finish() (query.Result, bool) {
 	return query.Result{}, false
 }
 
-// release closes the iterator and forgets the query. q.mu is held.
+// q.mu is held.
 func (q *queryIter) release() error {
 	if q.it == nil {
 		return nil
@@ -194,7 +191,6 @@ func (q *queryIter) close() error {
 	return q.release()
 }
 
-// end is Close ending a query its caller has not finished.
 func (q *queryIter) end() {
 	q.mu.Lock()
 	defer q.mu.Unlock()

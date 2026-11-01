@@ -17,7 +17,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// keyToCipher converts a key to a GCM cipher for testing
 func keyToCipher(t *testing.T, key []byte) cipher.AEAD {
 	block, err := aes.NewCipher(key)
 	require.NoError(t, err, "failed to create cipher")
@@ -30,7 +29,6 @@ func TestNewEncryptedConn(t *testing.T) {
 	key := make([]byte, AESKeySize)
 	rand.Read(key)
 
-	// Create a mock connection
 	conn1, conn2 := net.Pipe()
 
 	encConn, err := newEncryptedConn(conn1, keyToCipher(t, key))
@@ -40,17 +38,13 @@ func TestNewEncryptedConn(t *testing.T) {
 }
 
 func TestNewEncryptedConn_InvalidKey(t *testing.T) {
-	shortKey := make([]byte, 16) // Too short
+	shortKey := make([]byte, 16)
 	conn1, _ := net.Pipe()
 
-	// This should fail when creating the GCM with invalid nonce size
 	block, err := aes.NewCipher(shortKey)
-	require.NoError(t, err) // aes.NewCipher doesn't fail for short keys
+	require.NoError(t, err)
 	_, err = cipher.NewGCMWithNonceSize(block, nonceSize)
-	// GCM creation might succeed even with short key, but encryption will fail
-	// So we test that newEncryptedConn handles nil cipher gracefully
 	if err == nil {
-		// If it succeeds, the connection should still work (just not encrypted)
 		encConn, err := newEncryptedConn(conn1, nil)
 		require.NoError(t, err)
 		assert.Assert(t, encConn != nil)
@@ -61,21 +55,17 @@ func TestEncryptedConn_WriteRead(t *testing.T) {
 	key := make([]byte, AESKeySize)
 	rand.Read(key)
 
-	// Create pipe connections
 	conn1, conn2 := net.Pipe()
 
-	// Create encrypted connections on both ends
 	encConn1, err := newEncryptedConn(conn1, keyToCipher(t, key))
 	require.NoError(t, err)
 
 	encConn2, err := newEncryptedConn(conn2, keyToCipher(t, key))
 	require.NoError(t, err)
 
-	// Test data
 	testData := []byte("Hello, encrypted world!")
 	expectedLen := len(testData)
 
-	// Write from one side
 	go func() {
 		defer encConn1.Close()
 		n, err := encConn1.Write(testData)
@@ -83,8 +73,7 @@ func TestEncryptedConn_WriteRead(t *testing.T) {
 		assert.Equal(t, n, expectedLen)
 	}()
 
-	// Read from the other side
-	buf := make([]byte, len(testData)+100) // Extra space
+	buf := make([]byte, len(testData)+100)
 	n, err := encConn2.Read(buf)
 	require.NoError(t, err)
 	assert.Equal(t, n, expectedLen)
@@ -105,7 +94,6 @@ func TestEncryptedConn_WriteRead_LargeData(t *testing.T) {
 	encConn2, err := newEncryptedConn(conn2, keyToCipher(t, key))
 	require.NoError(t, err)
 
-	// Large test data
 	testData := make([]byte, 10000)
 	rand.Read(testData)
 
@@ -133,7 +121,6 @@ func TestEncryptedConn_Read_DecryptionFailure(t *testing.T) {
 	encConn, err := newEncryptedConn(conn1, keyToCipher(t, key))
 	require.NoError(t, err)
 
-	// Write invalid encrypted data
 	go func() {
 		defer conn2.Close()
 		conn2.Write([]byte{0, 0, 0, 10}) // Length
@@ -166,7 +153,6 @@ func TestEncryptedConn_Read_ShortBuffer(t *testing.T) {
 		encConn1.Write(testData)
 	}()
 
-	// Read with smaller buffer
 	buf := make([]byte, 10)
 	n, err := encConn2.Read(buf)
 	require.NoError(t, err)
@@ -181,7 +167,7 @@ func TestEncryptedConn_Write_Error(t *testing.T) {
 	rand.Read(key)
 
 	conn1, conn2 := net.Pipe()
-	conn2.Close() // Close one end
+	conn2.Close()
 
 	encConn, err := newEncryptedConn(conn1, keyToCipher(t, key))
 	require.NoError(t, err)
@@ -195,7 +181,7 @@ func TestEncryptedConn_Read_Error(t *testing.T) {
 	rand.Read(key)
 
 	conn1, conn2 := net.Pipe()
-	conn2.Close() // Close one end
+	conn2.Close()
 
 	encConn, err := newEncryptedConn(conn1, keyToCipher(t, key))
 	require.NoError(t, err)
@@ -205,7 +191,6 @@ func TestEncryptedConn_Read_Error(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestCluster_WithEncryption tests encryption with an actual cluster
 func TestCluster_WithEncryption(t *testing.T) {
 	key := make([]byte, AESKeySize)
 	rand.Read(key)
@@ -238,14 +223,12 @@ func TestCluster_WithEncryption(t *testing.T) {
 	assert.Assert(t, !found, "key should be gone after delete")
 }
 
-// TestCluster_Encryption_Transport tests that transport layer encryption works
 func TestCluster_Encryption_Transport(t *testing.T) {
 	key := make([]byte, AESKeySize)
 	rand.Read(key)
 
 	node := newMockNode(t)
 
-	// Create cluster with encryption - this tests transport encryption
 	cl, err := New(node, "/raft/transport-enc-test", WithEncryptionKey(key), WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err, "failed to create encrypted cluster")
 	defer cl.Close()

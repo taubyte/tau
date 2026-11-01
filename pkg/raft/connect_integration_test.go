@@ -22,15 +22,12 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// connectWait bounds how long a node takes to serve what a test waits on and
-// to be connected, the bound the tests gave a connection before.
 const connectWait = 10 * time.Second
 
 func addrOf(node taupeer.Node) peercore.AddrInfo {
 	return peercore.AddrInfo{ID: node.ID(), Addrs: node.Peer().Addrs()}
 }
 
-// listsAll reports whether listed holds every protocol of want.
 func listsAll(listed, want []protocol.ID) bool {
 	for _, p := range want {
 		if !slices.Contains(listed, p) {
@@ -83,7 +80,6 @@ func link(ctx context.Context, node taupeer.Node, members ...taupeer.Node) error
 	return connectAll(ctx, node, members...)
 }
 
-// connectAll connects node to each of members at once.
 func connectAll(ctx context.Context, node taupeer.Node, members ...taupeer.Node) error {
 	errs := make([]error, len(members))
 	var wg sync.WaitGroup
@@ -107,7 +103,6 @@ func linkTo(t *testing.T, node taupeer.Node, members ...taupeer.Node) {
 	assert.NilError(t, link(t.Context(), node, members...))
 }
 
-// serves returns once node's mux lists the group's protocols.
 func serves(ctx context.Context, node taupeer.Node, namespace string) error {
 	group := []protocol.ID{protocol.ID(Protocol(namespace)), protocol.ID(TransportProtocol(namespace))}
 	deadline := time.Now().Add(connectWait)
@@ -183,12 +178,8 @@ func pushlessNode(t *testing.T) taupeer.Node {
 	return node
 }
 
-// TestCluster_AGroupFormsWithNoIdentifyPush_Integration: a member's bootstrap
-// finds the others through the protocols its peerstore lists for its
-// connected peers. With no push, the peerstore of a node connected before a
-// peer served the group does not list it, and the tracker's probe finds it.
-// Connected before or after the peer serves it, whether joining a leader or
-// starting alongside the others, a node joins.
+// With no push, the peerstore of a node connected before a peer served the
+// group does not list it, and the tracker's probe finds it.
 func TestCluster_AGroupFormsWithNoIdentifyPush_Integration(t *testing.T) {
 	const namespace = "pushless"
 	leading := func(t *testing.T, node taupeer.Node) Cluster {

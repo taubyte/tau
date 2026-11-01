@@ -20,14 +20,13 @@ var discoveryLogger = logging.Logger("raft-discovery")
 // every settledDiscoveryInterval once a group has it.
 const settledDiscoveryInterval = 30 * time.Second
 
-// peerTracker tracks discovered peers and their discovery times
 type peerTracker struct {
 	mu             sync.RWMutex
 	startTime      time.Time
 	peers          map[peer.ID]time.Duration // peer ID -> time since start when first seen
 	selfID         peer.ID
-	lastPeerCount  int       // last known peer count for stability detection
-	lastChangeTime time.Time // when peer count last changed
+	lastPeerCount  int
+	lastChangeTime time.Time
 	probed         map[peer.ID]struct{}
 
 	discoveryInterval atomic.Int64
@@ -48,17 +47,14 @@ func newPeerTracker(selfID peer.ID) *peerTracker {
 	return pt
 }
 
-// setDiscoveryInterval sets the discovery interval (how often to run discovery)
 func (pt *peerTracker) setDiscoveryInterval(d time.Duration) {
 	pt.discoveryInterval.Store(d.Milliseconds())
 }
 
-// getDiscoveryInterval returns the current discovery interval
 func (pt *peerTracker) getDiscoveryInterval() time.Duration {
 	return time.Duration(pt.discoveryInterval.Load()) * time.Millisecond
 }
 
-// addPeer adds a discovered peer if not already known
 func (pt *peerTracker) addPeer(pid peer.ID) {
 	if pid == pt.selfID {
 		return
@@ -74,8 +70,8 @@ func (pt *peerTracker) addPeer(pid peer.ID) {
 	}
 }
 
-// mergePeers merges peer info from another node and returns newly discovered peer IDs
-// theirStart is when the other node started, theirPeers maps peer ID string to ms since their start
+// mergePeers returns the peers new to pt. theirPeers maps a peer id to ms after
+// theirStart.
 func (pt *peerTracker) mergePeers(theirStart time.Time, theirPeers map[string]int64) []peer.ID {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
@@ -112,7 +108,6 @@ func (pt *peerTracker) mergePeers(theirStart time.Time, theirPeers map[string]in
 	return newPeers
 }
 
-// getPeersMap returns our peer map for exchange
 func (pt *peerTracker) getPeersMap() (time.Time, map[string]int64) {
 	pt.mu.RLock()
 	defer pt.mu.RUnlock()
@@ -162,7 +157,6 @@ func (pt *peerTracker) isLateJoiner(threshold time.Duration) bool {
 	return true
 }
 
-// allPeers returns all known peer IDs
 func (pt *peerTracker) allPeers() []peer.ID {
 	pt.mu.RLock()
 	defer pt.mu.RUnlock()
@@ -188,13 +182,10 @@ func (pt *peerTracker) firstProbe(pid peer.ID) bool {
 	return true
 }
 
-// probe asks a peer whether it serves the group by opening a stream on the
-// group's protocol, and reports whether it does. The peerstore learns what a
-// peer serves from the identify run on connecting, so a peer that began to
-// serve after the two connected is listed only once identify's push arrives:
-// one best-effort attempt, which an identify answer built before the push can
-// still overwrite. A stream that negotiates the protocol is recorded in the
-// peerstore (basichost's NewStream), which lists the peer from then on.
+// probe asks pid whether it serves the group by opening a stream on its
+// protocol. The peerstore lists a peer that began to serve after connecting
+// only once identify's push arrives, which is best effort; a stream that
+// negotiates the protocol is recorded in the peerstore from then on.
 func (pt *peerTracker) probe(ctx context.Context, h host.Host, pid peer.ID, raftProtocol protocol.ID) bool {
 	ctx, cancel := context.WithTimeout(ctx, sendToPeerTimeout)
 	defer cancel()
@@ -207,7 +198,6 @@ func (pt *peerTracker) probe(ctx context.Context, h host.Host, pid peer.ID, raft
 	return true
 }
 
-// supportsRaftProtocol checks if a peer explicitly supports the given raft protocol
 func supportsRaftProtocol(h host.Host, pid peer.ID, raftProtocol protocol.ID) bool {
 	protocols, err := h.Peerstore().GetProtocols(pid)
 	if err != nil || len(protocols) == 0 {

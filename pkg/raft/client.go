@@ -23,40 +23,29 @@ import (
 
 var clientLogger = logging.Logger("raft-client")
 
-// sendToPeerTimeout bounds one call to one peer, dial included. A write is
-// given its own apply timeout on top of it.
+// One call to one peer, dial included; a write adds its own apply timeout.
 const sendToPeerTimeout = 10 * time.Second
 
-// Client represents a Raft p2p client for external use
 type Client interface {
-	// Set stores a key-value pair
 	Set(key string, value []byte, timeout time.Duration, peers ...peer.ID) error
-	// Get retrieves a value by key
-	// barrierNs is the barrier timeout in nanoseconds. If > 0, ensures consistency before reading.
-	// Must be > 0 and <= MaxGetHandlerBarrierTimeout, otherwise returns ErrInvalidBarrier.
+	// A barrierNs above 0, at most MaxGetHandlerBarrierTimeout, reads behind a
+	// barrier; 0 reads without one; anything else is ErrInvalidBarrier.
 	Get(key string, barrierNs int64, peers ...peer.ID) ([]byte, bool, error)
-	// Delete removes a key
 	Delete(key string, timeout time.Duration, peers ...peer.ID) error
-	// Keys returns all keys matching a prefix
 	Keys(prefix string, peers ...peer.ID) ([]string, error)
-	// Close closes the client
 	Close() error
 }
 
-// internalClient represents a Raft p2p client for internal cluster operations
 type internalClient interface {
-	// JoinVoter requests to join as a voter, within ctx
 	JoinVoter(ctx context.Context, peerID peer.ID, timeout time.Duration, peers ...peer.ID) error
-	// ExchangePeers exchanges peer discovery information
 	ExchangePeers(ourStart time.Time, ourPeers map[string]int64, target peer.ID) (time.Time, map[string]int64, error)
 	ClusterInfo(target peer.ID) (*ClusterInfoResponse, error)
 	ExportFSM(target peer.ID) (map[string]CRDTEntry, uint64, error)
 	HealAck(target peer.ID) error
-	// Close closes the client
 	Close() error
 }
 
-// client reaches one group's members, holding one connection per peer.
+// client holds one connection per peer of one group.
 type client struct {
 	node     taupeer.Node
 	protocol protocol.ID
@@ -74,7 +63,6 @@ type peerConn struct {
 	svc  raftv2connect.RaftServiceClient
 }
 
-// newInternalClient creates a new internal raft p2p client for the given namespace
 func newInternalClient(node taupeer.Node, namespace string, encryptionCipher cipher.AEAD) (internalClient, error) {
 	if node == nil {
 		return nil, errors.New("no node to call from")
@@ -94,7 +82,6 @@ func newInternalClient(node taupeer.Node, namespace string, encryptionCipher cip
 	}, nil
 }
 
-// NewClient creates a new raft p2p client for the given namespace
 func NewClient(node taupeer.Node, namespace string, encryptionCipher cipher.AEAD) (Client, error) {
 	cli, err := newInternalClient(node, namespace, encryptionCipher)
 	if err != nil {
@@ -121,9 +108,9 @@ func (c *client) to(pid peer.ID) (raftv2connect.RaftServiceClient, error) {
 	return pc.svc, nil
 }
 
-// first sends call to every peer at once and returns the first success. With
-// every peer failing it returns the first failure, so a caller can tell a
-// refusal (no leader) from an unreachable peer.
+// first calls every peer at once and returns the first success; with every
+// peer failing, the first failure, so a refusal (no leader) can be told from an
+// unreachable peer.
 func first[T any](ctx context.Context, c *client, peers []peer.ID, timeout time.Duration,
 	call func(context.Context, raftv2connect.RaftServiceClient) (*connect.Response[T], error)) (*connect.Response[T], error) {
 	if len(peers) == 0 {
@@ -161,8 +148,8 @@ func first[T any](ctx context.Context, c *client, peers []peer.ID, timeout time.
 	return nil, errs[0]
 }
 
-// sentinel turns a remote refusal back into the error the remote returned, so
-// errors.Is works across the wire for the ones callers branch on.
+// sentinel restores the remote errors callers branch on, so errors.Is works
+// across the wire.
 func sentinel(err error) error {
 	for _, s := range []error{ErrNoLeader, ErrInvalidBarrier, ErrNotLeader, raft.ErrLeadershipLost} {
 		if strings.Contains(err.Error(), s.Error()) {

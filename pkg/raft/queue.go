@@ -23,9 +23,6 @@ type queue struct {
 	mu          sync.Mutex
 }
 
-// NewQueue returns a Queue backed by the cluster's KV primitives.
-// The name identifies this queue within the cluster — the internal key prefix
-// is derived from it automatically.
 func NewQueue(cluster Cluster, name string) Queue {
 	prefix := path.Join(queueKeyPrefix, name)
 	return &queue{

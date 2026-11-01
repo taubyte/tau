@@ -26,10 +26,6 @@ func applied(t *testing.T, fsm FSM, cmd Command) FSMResponse {
 	return resp
 }
 
-// TestAStoreErrorDoesNotReadAsAnAbsentKey. A read that could not reach the
-// store says so, because a caller that allocates from an absent key — the
-// authority reading its head is the one that does — allocates over state it
-// could not see.
 func TestAStoreErrorDoesNotReadAsAnAbsentKey(t *testing.T) {
 	store := newFaultStore()
 	fsm := newKVFSM(t.Context(), store, faultPrefix)
@@ -53,9 +49,6 @@ func TestAStoreErrorDoesNotReadAsAnAbsentKey(t *testing.T) {
 	}
 }
 
-// TestAKeyNobodyWroteIsAbsentAndNotAnError. The other half of the same split:
-// an absent head is a database nobody has written to, and it has to stay
-// distinguishable from one that could not be read.
 func TestAKeyNobodyWroteIsAbsentAndNotAnError(t *testing.T) {
 	fsm := newKVFSM(t.Context(), newFaultStore(), faultPrefix)
 
@@ -75,9 +68,6 @@ func TestAKeyNobodyWroteIsAbsentAndNotAnError(t *testing.T) {
 	}
 }
 
-// TestAnEntryThatWillNotDecodeIsAnErrorAndNotAnAbsence. A key whose bytes are
-// not an entry is corruption, and corruption reported as "nothing here" is a
-// key the next writer will overwrite without ever knowing it was occupied.
 func TestAnEntryThatWillNotDecodeIsAnErrorAndNotAnAbsence(t *testing.T) {
 	store := newFaultStore()
 	fsm := newKVFSM(t.Context(), store, faultPrefix)
@@ -91,9 +81,8 @@ func TestAnEntryThatWillNotDecodeIsAnErrorAndNotAnAbsence(t *testing.T) {
 	}
 }
 
-// TestABatchWithAMalformedMemberWritesNoneOfIt. The cheapest way to see a
-// half-applied batch: no store has to fail, only the third member has to be
-// refused after the first two were already durable.
+// No store has to fail: the third member is refused after the first two were
+// staged.
 func TestABatchWithAMalformedMemberWritesNoneOfIt(t *testing.T) {
 	store := newTestStore()
 	fsm := newKVFSM(t.Context(), store, faultPrefix)
@@ -117,10 +106,6 @@ func TestABatchWithAMalformedMemberWritesNoneOfIt(t *testing.T) {
 	}
 }
 
-// TestABatchThatCannotCommitWritesNoneOfIt. The same guarantee against the
-// store failing rather than the command being malformed — the case the
-// authority's head and its ops depend on, since a head that moved without its
-// ops is a hole nothing repairs.
 func TestABatchThatCannotCommitWritesNoneOfIt(t *testing.T) {
 	store := newFaultStore()
 	fsm := newKVFSM(t.Context(), store, faultPrefix)
@@ -144,9 +129,7 @@ func TestABatchThatCannotCommitWritesNoneOfIt(t *testing.T) {
 	}
 }
 
-// TestARefusedBatchDoesNotSpendTheClock. A batch that wrote nothing must leave
-// nothing, and the Lamport clock is state too: timestamps that no entry
-// carries are what the healing merge arbitrates on.
+// The Lamport clock is state too: the healing merge arbitrates on timestamps.
 func TestARefusedBatchDoesNotSpendTheClock(t *testing.T) {
 	store := newTestStore()
 	fsm := newKVFSM(t.Context(), store, faultPrefix)
@@ -183,10 +166,6 @@ func TestARefusedBatchDoesNotSpendTheClock(t *testing.T) {
 	}
 }
 
-// TestAMergeIsNotABatchMember. A merge arbitrates against the entry it is
-// replacing, and the open store batch cannot serve that read — a go-datastore
-// batch is write-only and cannot see its own staged writes. Cluster.Batch
-// builds no merge, but Cluster.Apply carries whatever a caller encoded.
 func TestAMergeIsNotABatchMember(t *testing.T) {
 	store := newTestStore()
 	fsm := newKVFSM(t.Context(), store, faultPrefix)

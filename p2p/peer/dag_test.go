@@ -43,12 +43,10 @@ func TestDAG_HasBlock(t *testing.T) {
 	c, err := node.AddFileForCid(bytes.NewReader([]byte("has block content")))
 	require.NoError(t, err)
 
-	// Present locally after add.
 	has, err := dag.HasBlock(ctx, c)
 	require.NoError(t, err)
 	assert.True(t, has, "added block should be present")
 
-	// Same answer via the blockstore accessor (mirrors dfs backend usage).
 	has, err = dag.BlockStore().Has(ctx, c)
 	require.NoError(t, err)
 	assert.True(t, has)
@@ -76,8 +74,6 @@ func TestDAG_ReadBlock(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// A node's DAG writes its blocks to the node's store, the log kvdb orders
-// its own writes and the blocks' by.
 func TestDAG_BlockLogIsTheNodesStore(t *testing.T) {
 	node := Mock(context.Background())
 	require.NotNil(t, node)
@@ -103,9 +99,8 @@ func TestDefaultBootstrapPeers(t *testing.T) {
 	assert.NotEmpty(t, peers, "should return the public IPFS bootstrap peers")
 }
 
-// lateQueryStore holds each query of the blocks until its context ends, and
-// remembers one that went on to read a store already closed: pebble panics
-// there.
+// lateQueryStore holds each block query until its context ends and records
+// one that went on to read a closed store, where pebble panics.
 type lateQueryStore struct {
 	datastore.Batching
 	closed atomic.Bool
@@ -128,10 +123,6 @@ func (s *lateQueryStore) Close() error {
 	return s.Batching.Close()
 }
 
-// TestDAG_CloseWaitsForTheBloomBuild: the blockstore's bloom filter is built
-// by a goroutine that queries the store, and Close returned without it. Under
-// load that goroutine first ran after the node had closed its store, and the
-// query panicked with "pebble: closed", taking the process with it.
 func TestDAG_CloseWaitsForTheBloomBuild(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

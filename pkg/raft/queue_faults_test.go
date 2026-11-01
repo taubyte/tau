@@ -33,10 +33,6 @@ func queueOnFaults(t *testing.T, name string) (Queue, Cluster, *faultStore, func
 
 var errDisk = errors.New("pebble error during get: input/output error")
 
-// TestQueue_ACounterThatCannotBeReadAllocatesNothing: Push takes the next
-// position from the counter. Read through Get, a counter the store could not
-// read was a counter of zero, and the push landed on position one — over the
-// item still waiting there.
 func TestQueue_ACounterThatCannotBeReadAllocatesNothing(t *testing.T) {
 	q, _, store, storeKey := queueOnFaults(t, "jobs")
 	require.NoError(t, q.Push("first", []byte("1"), time.Second))
@@ -51,9 +47,6 @@ func TestQueue_ACounterThatCannotBeReadAllocatesNothing(t *testing.T) {
 	require.Equal(t, 1, q.Len())
 }
 
-// TestQueue_ACorruptCounterAllocatesNothing: a counter is always eight bytes,
-// so one of any other length is damage, and reading it as zero allocates over
-// what the queue holds just the same.
 func TestQueue_ACorruptCounterAllocatesNothing(t *testing.T) {
 	q, cl, _, _ := queueOnFaults(t, "jobs")
 	require.NoError(t, q.Push("first", []byte("1"), time.Second))
@@ -67,9 +60,6 @@ func TestQueue_ACorruptCounterAllocatesNothing(t *testing.T) {
 	require.Equal(t, 1, q.Len())
 }
 
-// TestQueue_AnIndexThatCannotBeReadPushesNothing: the index is how Push knows
-// an id is already queued, and an index read that failed read as "not queued"
-// queued it a second time.
 func TestQueue_AnIndexThatCannotBeReadPushesNothing(t *testing.T) {
 	q, _, store, storeKey := queueOnFaults(t, "jobs")
 	require.NoError(t, q.Push("only", []byte("1"), time.Second))
@@ -79,10 +69,7 @@ func TestQueue_AnIndexThatCannotBeReadPushesNothing(t *testing.T) {
 	require.Equal(t, 1, q.Len(), "an id was queued twice")
 }
 
-// TestQueue_AHeadThatCannotBeReadIsNotAnEmptyQueue: Pop says why it returned
-// nothing. A queue whose head the store could not read is not empty, and a
-// consumer told it was would stop draining it. Peek has no error to give and
-// answers that it has nothing.
+// Peek has no error to give and answers that it has nothing.
 func TestQueue_AHeadThatCannotBeReadIsNotAnEmptyQueue(t *testing.T) {
 	q, _, store, storeKey := queueOnFaults(t, "jobs")
 	require.NoError(t, q.Push("first", []byte("1"), time.Second))
@@ -98,8 +85,6 @@ func TestQueue_AHeadThatCannotBeReadIsNotAnEmptyQueue(t *testing.T) {
 	require.Equal(t, 1, q.Len(), "a pop that could not read its item removed it")
 }
 
-// TestQueue_APopThatCannotRemoveItsItemReturnsNothing: an item handed to a
-// consumer while it stays queued is handed out twice.
 func TestQueue_APopThatCannotRemoveItsItemReturnsNothing(t *testing.T) {
 	q, _, store, storeKey := queueOnFaults(t, "jobs")
 	require.NoError(t, q.Push("first", []byte("1"), time.Second))
@@ -117,9 +102,7 @@ func TestQueue_APopThatCannotRemoveItsItemReturnsNothing(t *testing.T) {
 	require.Equal(t, "first", id)
 }
 
-// TestQueue_ACorruptEntryIsNeitherPoppedNorPeeked: an entry is a length, an id
-// of that length, then data. One too short to hold its length, or shorter than
-// the id it announces, is refused by Pop and stays where it is.
+// An entry is a length, an id of that length, then data.
 func TestQueue_ACorruptEntryIsNeitherPoppedNorPeeked(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -144,8 +127,6 @@ func TestQueue_ACorruptEntryIsNeitherPoppedNorPeeked(t *testing.T) {
 	}
 }
 
-// TestQueue_NoTimeoutIsTheLongestOne: a zero or negative timeout is the
-// longest an apply may take, not one that has already run out.
 func TestQueue_NoTimeoutIsTheLongestOne(t *testing.T) {
 	q, _, _, _ := queueOnFaults(t, "jobs")
 
@@ -160,8 +141,6 @@ func TestQueue_NoTimeoutIsTheLongestOne(t *testing.T) {
 	require.Equal(t, "negative", id)
 }
 
-// TestQueue_PeekSeesNothingInAnEmptyOrClosedQueue: Peek reports the head, so
-// an empty queue and a closed one report none.
 func TestQueue_PeekSeesNothingInAnEmptyOrClosedQueue(t *testing.T) {
 	q := NewQueue(NewMockCluster(), "peek")
 

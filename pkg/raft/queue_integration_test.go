@@ -15,15 +15,12 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// throughLeader is a group as one client that always writes through whichever
-// member leads sees it, which is how a queue is used across a change of
-// leader. A batch refused with ErrNotLeader applied nothing and is made again
-// on the next leader. One whose leader lost its lease mid-commit
-// (raft.ErrLeadershipLost) may still commit under the next leader, so it is
-// settled there, behind a barrier, by whether its writes are all present; a
-// queue's pop is not safe to make twice. A read is answered by the member that
-// last applied this client's batch or barrier, which holds every write made
-// through it.
+// throughLeader is a group as one client writing through whichever member
+// leads. A batch refused with ErrNotLeader is made again on the next leader;
+// one lost mid-commit (raft.ErrLeadershipLost) may still commit, so it is
+// settled behind a barrier by whether its writes are all present, since a pop
+// is not safe to make twice. A read goes to the member that last applied this
+// client's batch or barrier.
 type throughLeader struct {
 	Cluster
 
@@ -113,7 +110,6 @@ func (g *throughLeader) Batch(ops []BatchOp, timeout time.Duration) error {
 	}
 }
 
-// landed reports whether every write of ops is in the reader's state.
 func (g *throughLeader) landed(ops []BatchOp) bool {
 	cl := g.reader()
 	for _, op := range ops {
@@ -138,7 +134,6 @@ func (g *throughLeader) TryGet(key string) ([]byte, bool, error) { return g.read
 
 func (g *throughLeader) Keys(prefix string) []string { return g.reader().Keys(prefix) }
 
-// waitForLen polls q.Len() until it is want, or the timeout elapses.
 func waitForLen(t *testing.T, q Queue, want int, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(t.Context(), timeout)
 	defer cancel()

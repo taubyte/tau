@@ -26,7 +26,6 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2/raftv2connect"
 )
 
-// strangerID is the id of a peer no group has heard of.
 func strangerID(t *testing.T) peer.ID {
 	t.Helper()
 	_, pub, err := crypto.GenerateEd25519Key(rand.Reader)
@@ -36,10 +35,9 @@ func strangerID(t *testing.T) peer.ID {
 	return id
 }
 
-// TestCluster_AWriteInFlightWhenTheRaftShutsDownIsAnswered: raft drops the
-// future of a log it committed but had not applied when it shuts down, so a
-// write waiting on one never returned. Here the state machine holds the first
-// write while ten more commit behind it, and the member is closed.
+// The state machine holds the first write while ten more commit behind it, and
+// the member is closed: raft drops the futures of logs it committed but had not
+// applied.
 func TestCluster_AWriteInFlightWhenTheRaftShutsDownIsAnswered(t *testing.T) {
 	const (
 		namespace = "write-across-shutdown"
@@ -79,9 +77,6 @@ func TestCluster_AWriteInFlightWhenTheRaftShutsDownIsAnswered(t *testing.T) {
 	}
 }
 
-// TestCluster_AWriteTheStoreRefusesIsRefused: a write raft committed but the
-// state machine could not apply comes back with the store's reason from every
-// write path, and Apply hands it over in the response.
 func TestCluster_AWriteTheStoreRefusesIsRefused(t *testing.T) {
 	store := newFaultStore()
 	cl, err := New(storeNode{Node: newMockNode(t), store: store}, "cluster-refused-write",
@@ -111,12 +106,6 @@ func TestCluster_AWriteTheStoreRefusesIsRefused(t *testing.T) {
 	}
 }
 
-// TestCluster_AMemberLeftAloneInAPairAcknowledgesNoWrite: a group of two
-// commits nothing with one member gone. Every write the other is asked for,
-// whether it still leads when asked or has already stepped down, fails as a
-// leadership move, and none of it is ever applied. Membership changes that
-// still need the gone member fail too: adding a third, directly or for a peer
-// asking to join, or the one left removing itself.
 func TestCluster_AMemberLeftAloneInAPairAcknowledgesNoWrite(t *testing.T) {
 	a, b := joinedPair(t, "cluster-left-alone", sameStore)
 
@@ -179,9 +168,6 @@ func TestCluster_AMemberLeftAloneInAPairAcknowledgesNoWrite(t *testing.T) {
 	require.False(t, found, "a write nobody acknowledged was applied")
 }
 
-// TestNew_RefusesWhatItCannotRun: New fails, and returns no cluster and leaves
-// nothing of itself on the node, for an option it cannot honour and for a
-// configuration raft will not start with.
 func TestNew_RefusesWhatItCannotRun(t *testing.T) {
 	notADir := filepath.Join(t.TempDir(), "file")
 	require.NoError(t, os.WriteFile(notADir, []byte("x"), 0o644))
@@ -211,7 +197,6 @@ func TestNew_RefusesWhatItCannotRun(t *testing.T) {
 	}
 }
 
-// groupProtocols is which of namespace's two protocols node answers on.
 func groupProtocols(node taupeer.Node, namespace string) []protocol.ID {
 	var served []protocol.ID
 	for _, id := range node.Peer().Mux().Protocols() {
@@ -222,7 +207,6 @@ func groupProtocols(node taupeer.Node, namespace string) []protocol.ID {
 	return served
 }
 
-// writesSeen counts the writes made through it.
 type writesSeen struct {
 	ds.Batching
 	writes atomic.Int32
@@ -243,13 +227,8 @@ func (s *writesSeen) Batch(ctx context.Context) (ds.Batch, error) {
 	return s.Batching.Batch(ctx)
 }
 
-// TestNew_ANamespaceTheNodeAlreadyRunsIsRefused: gostream.Listen replaces a
-// handler already on its protocol, so a second New on a node already running
-// the namespace took the group's transport and started a second raft on the
-// group's store, then failed at the stream service with that raft running. The
-// transport refuses the protocol now, before anything is built, and the group
-// keeps it: a member that never dialled it reaches it for a vote, and for the
-// writes it then leads.
+// gostream.Listen replaces a handler already on its protocol, so the transport
+// refuses the protocol before anything is built, and the group keeps it.
 func TestNew_ANamespaceTheNodeAlreadyRunsIsRefused(t *testing.T) {
 	const namespace = "namespace-already-run"
 	// A leadership transfer has one election timeout to finish in.
@@ -303,11 +282,6 @@ func TestNew_ANamespaceTheNodeAlreadyRunsIsRefused(t *testing.T) {
 	}, 10*time.Second, 20*time.Millisecond, "a write b leads never reached a")
 }
 
-// TestNew_AFailedNewLeavesNothingRunning: initialize returned at the first step
-// that failed and left running what the steps before it had built: the
-// transport, a raft on the node's store, the peer tracker, the client and the
-// stream service. It takes all of them down now, so the node answers neither
-// of the group's protocols, and the group starts once what stopped it is gone.
 func TestNew_AFailedNewLeavesNothingRunning(t *testing.T) {
 	t.Run("a stream protocol another service holds", func(t *testing.T) {
 		const namespace = "new-stream-protocol-taken"
@@ -345,9 +319,6 @@ func TestNew_AFailedNewLeavesNothingRunning(t *testing.T) {
 	})
 }
 
-// TestCluster_CloseReleasesAWaitForALeader: a member that removed itself hears
-// from no leader again, so a caller waiting on it for one waits until it is
-// closed, and is then told it is shut down.
 func TestCluster_CloseReleasesAWaitForALeader(t *testing.T) {
 	a, b := joinedPair(t, "close-releases-wait", sameStore)
 	removed, _ := removeTheLeader(t, a, b)
@@ -373,11 +344,6 @@ func TestCluster_CloseReleasesAWaitForALeader(t *testing.T) {
 	}
 }
 
-// TestCluster_BatchAndMembershipRefuseWhatTheyCannotDo: a batch member is a
-// set or a delete, so one naming neither refuses the whole batch on the
-// leader; a member that cannot lead refuses sets, deletes and batches as
-// ErrNotLeader; and a closed member refuses batches and new voters as shut
-// down.
 func TestCluster_BatchAndMembershipRefuseWhatTheyCannotDo(t *testing.T) {
 	a, b := joinedPair(t, "cluster-refusals", sameStore)
 	removed, left := removeTheLeader(t, a, b)
@@ -399,16 +365,11 @@ func TestCluster_BatchAndMembershipRefuseWhatTheyCannotDo(t *testing.T) {
 	require.ErrorIs(t, removed.AddVoter(idOf(left), time.Second), ErrShutdown)
 }
 
-// TestCluster_AMembershipChangeThatLosesTheLeadIsNotLeader: every write path
-// answers raft's refusal of a member that does not lead as ErrNotLeader, and
-// AddVoter and RemoveServer passed it through as raft's own when the lead was
-// lost between their check and raft's answer; TransferLeadership always did.
-//
-// A leader alone commits a second voter on its own say, and then needs a
-// voter nobody can reach for everything after: the third voter's change stays
-// uncommitted, raft holds the next change back until it commits, and the
-// leader steps down at its next lease check. A change asked for meanwhile
-// passes the check, waits in raft and is refused once the member follows.
+// A leader alone commits a second voter on its own say, then needs a voter
+// nobody can reach: the third voter's change stays uncommitted, raft holds the
+// next change back, and the leader steps down at its next lease check. A change
+// asked for meanwhile passes the check, waits in raft and is refused once the
+// member follows.
 func TestCluster_AMembershipChangeThatLosesTheLeadIsNotLeader(t *testing.T) {
 	lease := time.Second
 	cl, err := New(newMockNode(t), "membership-loses-the-lead", WithTimeouts(TimeoutConfig{

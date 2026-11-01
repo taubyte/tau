@@ -27,7 +27,6 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2/raftv2connect"
 )
 
-// healingTestOptions uses fast timeouts and force-bootstrap so each mock node is its own single-node cluster.
 func healingTestOptions() []Option {
 	return []Option{
 		WithTimeouts(TimeoutConfig{
@@ -243,7 +242,6 @@ func splitPair(t *testing.T, namespace string) (a, b Cluster) {
 	return a, b
 }
 
-// winnerOf is the side of a split that negotiateWinner keeps.
 func winnerOf(a, b Cluster) (winner, loser *cluster) {
 	ca, cb := a.(*cluster), b.(*cluster)
 	if negotiateWinner(ca.current().healer.Load().localClusterInfo(), cb.current().healer.Load().localClusterInfo()) == ca.node.ID().String() {
@@ -252,16 +250,12 @@ func winnerOf(a, b Cluster) (winner, loser *cluster) {
 	return cb, ca
 }
 
-// holdsEverything reports whether cl holds both sides' writes.
 func holdsEverything(cl Cluster) bool {
 	va, okA := cl.Get("from-a")
 	vb, okB := cl.Get("from-b")
 	return okA && okB && string(va) == "a" && string(vb) == "b"
 }
 
-// TestHealing_ALoserRejoinsTheGroupItYieldedTo: the winner of a split merges
-// the loser's writes and tells it to yield, and the loser wipes its state and
-// joins the winner's group.
 func TestHealing_ALoserRejoinsTheGroupItYieldedTo(t *testing.T) {
 	a, b := splitPair(t, "heal-rejoin")
 	winner, loser := winnerOf(a, b)
@@ -278,9 +272,6 @@ func TestHealing_ALoserRejoinsTheGroupItYieldedTo(t *testing.T) {
 	leaderOf(t, a, b)
 }
 
-// TestHealing_AYieldWaitsForTheRaftItReplaces: a yield shut its raft down
-// without waiting for it, so an apply still in flight landed after the wipe,
-// in state the yielding node had just thrown away.
 func TestHealing_AYieldWaitsForTheRaftItReplaces(t *testing.T) {
 	node := newMockNode(t)
 	namespace := "yield-waits"
@@ -315,10 +306,6 @@ func TestHealing_AYieldWaitsForTheRaftItReplaces(t *testing.T) {
 	assert.False(t, found, "an apply of the replaced raft outlived the wipe")
 }
 
-// TestHealing_AJoinEndsWithTheMemberAYieldTakesDown: a member's ask to be let
-// in read the cluster's raft, client and tracker each time it asked, and a
-// yield replaces all three, so the ask of the member taken down went on asking
-// for the member built in its place until its 10s ran out.
 func TestHealing_AJoinEndsWithTheMemberAYieldTakesDown(t *testing.T) {
 	c, err := New(newMockNode(t), "yield-ends-join",
 		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
@@ -339,11 +326,6 @@ func TestHealing_AJoinEndsWithTheMemberAYieldTakesDown(t *testing.T) {
 	assert.Less(t, time.Since(start), 10*time.Second, "the ask of the member taken down ran its whole course")
 }
 
-// TestHealing_AYieldRebuildsTheMemberItsReadersRead: a yield wrote the
-// cluster's raft, state machine, client and tracker while its methods, its
-// stream handlers and its healer's vote observer read them, with nothing
-// ordering the two: a data race -race reports, and a reader could pair the raft
-// of one member with the state machine of the next.
 func TestHealing_AYieldRebuildsTheMemberItsReadersRead(t *testing.T) {
 	const namespace = "yield-under-readers"
 	c, err := New(newMockNode(t), namespace,
@@ -414,11 +396,6 @@ func (p *holdingPeer) ExchangePeers(ctx context.Context, _ *connect.Request[raft
 	return nil, ctx.Err()
 }
 
-// TestHealing_AnExchangeAYieldCutsShortKeepsToItsMembersClient: a tracker's
-// round read the cluster's client for each peer it exchanged with, and a yield
-// replaces the client while the round under way runs to its end, so the round
-// it cut short read the field the yield writes with nothing ordering the two:
-// a data race -race reports.
 func TestHealing_AnExchangeAYieldCutsShortKeepsToItsMembersClient(t *testing.T) {
 	const namespace = "yield-mid-exchange"
 	held := &holdingPeer{entered: make(chan struct{})}
@@ -465,9 +442,6 @@ func (s *heldWipe) Delete(ctx context.Context, key ds.Key) error {
 
 func (s *heldWipe) letGo() { s.out.Do(func() { close(s.release) }) }
 
-// TestCluster_CloseWaitsForAYieldInProgress: Close did not wait for a yield,
-// which rebuilt a raft after Close returned, one nothing would ever shut down
-// and which ran past the close of the store under it.
 func TestCluster_CloseWaitsForAYieldInProgress(t *testing.T) {
 	node := newMockNode(t)
 	namespace := "close-during-yield"
@@ -508,16 +482,12 @@ func TestCluster_CloseWaitsForAYieldInProgress(t *testing.T) {
 	assert.Equal(t, raft.Shutdown, cl.current().raft.State(), "a raft the yield built is still running after Close")
 }
 
-// probeEvery runs the healers a test starts at interval, for the test.
 func probeEvery(t *testing.T, interval time.Duration) {
 	before := HealingProbeInterval
 	HealingProbeInterval = interval
 	t.Cleanup(func() { HealingProbeInterval = before })
 }
 
-// TestHealing_ASplitHealsByItself: each side's healer finds the other, the
-// side negotiateWinner keeps merges the other's writes, and the other yields
-// and joins it, with nothing but the healers driving it.
 func TestHealing_ASplitHealsByItself(t *testing.T) {
 	probeEvery(t, 50*time.Millisecond)
 	a, b := splitPair(t, "heal-by-itself")
@@ -533,11 +503,6 @@ func TestHealing_ASplitHealsByItself(t *testing.T) {
 	leaderOf(t, a, b)
 }
 
-// TestHealing_ASettingChangedAfterNewIsNotReadByItsHealer: a healer read the
-// package's healing variables while it ran, and it runs on after Close
-// returns, so a test that set them for itself wrote under the healers of the
-// tests before it, which -race reported. A healer reads what its cluster was
-// built with.
 func TestHealing_ASettingChangedAfterNewIsNotReadByItsHealer(t *testing.T) {
 	c, err := New(newMockNode(t), "heal-settings",
 		WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
@@ -577,13 +542,9 @@ func formedPair(t *testing.T, namespace string) (a, b Cluster) {
 	return a, b
 }
 
-// TestHealing_AnOrphanThePeerstoreDoesNotListIsAbsorbed: the healer looked for
-// foreign peers only among those the peerstore lists as serving the group, and
-// identify can leave a peer unlisted for good: a peer that begins to serve right
-// after connecting is listed only once its push lands, and an identify answer
-// built from the snapshot before it can land after it. The joiner of a formed
-// pair is such a peer, its one discovery probe spent before it served, and a
-// group that removed it never absorbed it.
+// The joiner of a formed pair spends its one discovery probe before it serves,
+// and identify can leave it unlisted for good, so only a probe from the healer
+// finds it.
 func TestHealing_AnOrphanThePeerstoreDoesNotListIsAbsorbed(t *testing.T) {
 	probeEvery(t, 50*time.Millisecond)
 	namespace := "heal-orphan-unlisted"
@@ -602,9 +563,6 @@ func TestHealing_AnOrphanThePeerstoreDoesNotListIsAbsorbed(t *testing.T) {
 	leaderOf(t, a, b)
 }
 
-// TestHealing_AnOrphanIsAbsorbed: a member removed from its group keeps
-// running with no leader, and the group's healer finds it and has it wipe its
-// state and join again.
 func TestHealing_AnOrphanIsAbsorbed(t *testing.T) {
 	probeEvery(t, 50*time.Millisecond)
 	a, b := formedPair(t, "heal-orphan")
@@ -626,13 +584,8 @@ func TestHealing_AnOrphanIsAbsorbed(t *testing.T) {
 	leaderOf(t, a, b)
 }
 
-// TestHealing_AGroupWithoutQuorumYieldsToTheGroupAheadOfIt: a member left
-// alone by its group's other member has no leader, and once it can see a
-// group of the same size that has committed more, its healer yields and the
-// member joins that group. One leaderless cycle is a split, so a cycle is a
-// second: the group ahead runs leases of 25ms, which under load leave it
-// without a leader for longer than a 50ms cycle, and its healer took that for
-// a split and wiped it.
+// A split needs two leaderless cycles: the group ahead runs 25ms leases, which
+// under load leave it leaderless for longer than one 50ms cycle.
 func TestHealing_AGroupWithoutQuorumYieldsToTheGroupAheadOfIt(t *testing.T) {
 	probeEvery(t, time.Second)
 	before := SplitBrainDetectionCycles
@@ -674,10 +627,6 @@ func TestHealing_AGroupWithoutQuorumYieldsToTheGroupAheadOfIt(t *testing.T) {
 
 func nodeOfCluster(cl Cluster) taupeer.Node { return cl.(*cluster).node }
 
-// TestHealing_AVoteFromANonMemberIsReported: the healer sees every vote and
-// pre-vote raft receives; one from a peer outside the configuration is
-// reported, and one from a member, from nobody or from a name that is not a
-// peer is not.
 func TestHealing_AVoteFromANonMemberIsReported(t *testing.T) {
 	node := newMockNode(t)
 	c, err := New(node, "foreign-votes", WithTimeouts(testTimeoutConfig()), WithForceBootstrap(), WithSnapshotRoot(t.TempDir()))
@@ -727,10 +676,6 @@ func TestHealing_AVoteFromANonMemberIsReported(t *testing.T) {
 	assert.Len(t, h.foreignVoteCh, cap(h.foreignVoteCh))
 }
 
-// TestHealing_AnObservationRaftDroppedCountsAsALeaderChange: raft drops an
-// observation the healer's channel has no room for, and the healer, which
-// learns of a change of leader only by observation, took a cycle whose
-// leader it lost for leaderless.
 func TestHealing_AnObservationRaftDroppedCountsAsALeaderChange(t *testing.T) {
 	var dropped atomic.Uint64
 	h := &healer{dropped: dropped.Load}
@@ -765,10 +710,6 @@ func TestHealing_AnObservationRaftDroppedCountsAsALeaderChange(t *testing.T) {
 	assert.Equal(t, counted, h.leaderChanged.Load(), "a drop counted again")
 }
 
-// TestHealing_ADropCountedAfterTheWatcherLooksStillCounts: raft counts a
-// drop after it fails to deliver it, so the watcher can drain the channel
-// and read the count before it grows; with nothing delivered after, the
-// drop went uncounted. Asking whether a cycle had a leader counts it.
 func TestHealing_ADropCountedAfterTheWatcherLooksStillCounts(t *testing.T) {
 	c := &cluster{}
 	c.closed.Store(true) // knows no leader
@@ -782,9 +723,6 @@ func TestHealing_ADropCountedAfterTheWatcherLooksStillCounts(t *testing.T) {
 	assert.False(t, h.hadLeaderSince(time.Now().Add(time.Second)), "a drop counted again")
 }
 
-// TestHealing_AForeignVoterIsTrackedAndAbsorbedByTheLeader: a follower only
-// remembers a foreign voter, so that its own probes can find it; a leader
-// takes it in at once.
 func TestHealing_AForeignVoterIsTrackedAndAbsorbedByTheLeader(t *testing.T) {
 	a, b := formedPair(t, "foreign-voter")
 	stranger := newMockNode(t).ID()
@@ -810,9 +748,6 @@ func TestHealing_AForeignVoterIsTrackedAndAbsorbedByTheLeader(t *testing.T) {
 	a.(*cluster).current().healer.Load().handleForeignVote(t.Context(), stranger)
 }
 
-// TestHealing_AMergeNeedsTheLeadAndTheOtherSide: a member that does not lead
-// merges nothing, and neither does a leader that cannot read the other side;
-// either leaves its group as it was.
 func TestHealing_AMergeNeedsTheLeadAndTheOtherSide(t *testing.T) {
 	a, b := formedPair(t, "merge-preconditions")
 	stranger := newMockNode(t).ID()
@@ -900,11 +835,6 @@ func oneWriteOfTheirs(t *testing.T) []byte {
 	return state
 }
 
-// TestHealing_AMergeTheStoreRefusesTellsNobodyToYield: Apply reports what the
-// state machine refused in its response and not in its error, so a merge the
-// winner's store refused was still followed by the healAck that has the other
-// side wipe the only copy of what it held, whether it was the loser of a split
-// or an orphan.
 func TestHealing_AMergeTheStoreRefusesTellsNobodyToYield(t *testing.T) {
 	const namespace = "merge-refused"
 	store := newFaultStore()
@@ -923,10 +853,6 @@ func TestHealing_AMergeTheStoreRefusesTellsNobodyToYield(t *testing.T) {
 	assert.False(t, found)
 }
 
-// TestHealing_AnOrphanWhoseStateIsNotTakenIsNotToldToYield: absorbOrphan sent
-// its healAck whatever became of the orphan's state, so an orphan whose export
-// failed, or whose state the leader could not merge against its own, wiped the
-// only copy of what it held.
 func TestHealing_AnOrphanWhoseStateIsNotTakenIsNotToldToYield(t *testing.T) {
 	t.Run("its export fails", func(t *testing.T) {
 		other := &exportingPeer{refuse: connect.NewError(connect.CodeUnavailable, errDisk)}
@@ -948,11 +874,7 @@ func TestHealing_AnOrphanWhoseStateIsNotTakenIsNotToldToYield(t *testing.T) {
 	})
 }
 
-// TestHealing_AnOrphansWritesAreMergedBeforeItYields: a member that knows no
-// leader forwarded ExportFSM to the leader it did not have, so absorbOrphan,
-// which only ever asks a member that knows none, never merged an orphan's
-// state, and the healAck it sent anyway had the orphan wipe writes no other
-// member held. The default probe interval keeps the orphan's own healer quiet.
+// The default probe interval keeps the orphan's own healer quiet.
 func TestHealing_AnOrphansWritesAreMergedBeforeItYields(t *testing.T) {
 	const namespace = "orphan-writes"
 	a, b := formedPair(t, namespace)
@@ -1019,11 +941,6 @@ func (p *joiningPeer) HealAck(context.Context, *connect.Request[raftv2.HealAckRe
 	return connect.NewResponse(&raftv2.HealAckResponse{}), nil
 }
 
-// TestHealing_AJoinerIsNotTakenForAnOrphan: a node still joining serves the
-// group's protocol and knows no leader, and the leader's healer took it for
-// an orphan and sent it a healAck, which, landing once the join was done,
-// had the new member wipe itself and join again. A peer in no configuration
-// is left to its join.
 func TestHealing_AJoinerIsNotTakenForAnOrphan(t *testing.T) {
 	joiner := &joiningPeer{}
 	leader, _ := facing(t, "heal-joiner", newFaultStore(), joiner)
@@ -1033,9 +950,6 @@ func TestHealing_AJoinerIsNotTakenForAnOrphan(t *testing.T) {
 	assert.Zero(t, joiner.exports.Load(), "a joiner was absorbed as an orphan")
 }
 
-// TestHealing_AHealAckFromTheMembersOwnLeaderIsIgnored: a healAck its own
-// leader sent before the member joined it, or before it rejoined, arrives at a
-// member of the sender's group, and the member wiped itself and joined again.
 func TestHealing_AHealAckFromTheMembersOwnLeaderIsIgnored(t *testing.T) {
 	a, b := formedPair(t, "heal-ack-own-leader")
 	require.NoError(t, onLeader(t, []Cluster{a, b}, func(leader Cluster) error {
@@ -1060,10 +974,6 @@ func TestHealing_AHealAckFromTheMembersOwnLeaderIsIgnored(t *testing.T) {
 	assert.True(t, held, "the member wiped what its group holds")
 }
 
-// TestHealing_AWipeFinishesWhateverCancelsItsContext: a yield wiped the
-// member's raft state with the cluster's context, which a Close during the
-// yield cancels; a store that honours its context then kept part of it, and
-// the raft built over it found a log it could not read and panicked.
 func TestHealing_AWipeFinishesWhateverCancelsItsContext(t *testing.T) {
 	node := newMockNode(t)
 	namespace := "heal-wipe-cancelled"
@@ -1087,11 +997,6 @@ func TestHealing_AWipeFinishesWhateverCancelsItsContext(t *testing.T) {
 	assert.Empty(t, left, "a wipe under a cancelled context left raft state behind")
 }
 
-// TestHealing_ACycleWithALeaderInItIsNotSplit: the healer sampled the leader
-// once per cycle, so a member caught between one leader stepping down and the
-// next one elected counted a leaderless cycle, and with a leaderless peer in
-// sight it wiped a group that was only holding an election. A cycle counts
-// only when the member knew no leader at any moment of it.
 func TestHealing_ACycleWithALeaderInItIsNotSplit(t *testing.T) {
 	a, b := formedPair(t, "heal-cycle-with-leader")
 	stranded := a.(*cluster)

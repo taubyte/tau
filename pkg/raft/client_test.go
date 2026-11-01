@@ -22,9 +22,6 @@ func TestNewClient(t *testing.T) {
 	defer client.Close()
 }
 
-// TestSentinel_RestoresWhatCrossedTheWireAsText: a remote error arrives as its
-// text alone, and a write forwarded to a leader that lost its lease mid-commit
-// could not be told from a failure that applied nothing.
 func TestSentinel_RestoresWhatCrossedTheWireAsText(t *testing.T) {
 	for _, sent := range []error{ErrNoLeader, ErrInvalidBarrier, ErrNotLeader, raft.ErrLeadershipLost} {
 		received := connect.NewError(connect.CodeUnknown, errors.New(sent.Error()))
@@ -43,8 +40,6 @@ func TestClient_Close(t *testing.T) {
 	require.NoError(t, err, "close should succeed")
 }
 
-// TestClient_SetGetDelete_Integration: what a client on another node writes
-// reads back and is listed, and once it deletes a key the key is gone.
 func TestClient_SetGetDelete_Integration(t *testing.T) {
 	cl, cli := callerOf(t, "client-round-trip", sameStore)
 	member := idOf(cl)
@@ -70,8 +65,6 @@ func TestClient_SetGetDelete_Integration(t *testing.T) {
 	require.Equal(t, []string{"client/b"}, keys)
 }
 
-// TestClient_ExchangePeers: the member comes away from an exchange knowing the
-// peers its caller had seen, and the caller with the member's.
 func TestClient_ExchangePeers(t *testing.T) {
 	cl, cli := callerOf(t, "client-exchange-seen", sameStore)
 	seen := newMockNode(t)
@@ -87,8 +80,6 @@ func TestClient_ExchangePeers(t *testing.T) {
 	require.Contains(t, cl.(*cluster).current().tracker.allPeers(), seen.ID())
 }
 
-// TestClient_WithEncryption: a client holding the group's key reads and writes
-// it from another node, and one without the key is answered with nothing.
 func TestClient_WithEncryption(t *testing.T) {
 	const namespace = "client-encrypted"
 	key := make([]byte, 32)

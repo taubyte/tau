@@ -47,13 +47,10 @@ func TestTransportProtocol(t *testing.T) {
 	}
 }
 
-// getClusterInternal returns the internal cluster struct for testing
 func getClusterInternal(c Cluster) *cluster {
 	return c.(*cluster)
 }
 
-// leaderService starts a single-node group, waits for it to lead, and returns
-// it with its call handler.
 func leaderService(t *testing.T) (Cluster, *raftStreamService) {
 	t.Helper()
 	cl, err := New(newMockNode(t), "/raft/test", testOptions()...)
@@ -189,10 +186,8 @@ func TestStreamService_Stop(t *testing.T) {
 	c := getClusterInternal(cl)
 	require.NotNil(t, c.current().streamService, "stream service should be initialized")
 
-	// Stop should not panic
 	c.current().streamService.stop()
 
-	// Stop again should not panic
 	c.current().streamService.stop()
 
 	cl.Close()
@@ -212,7 +207,6 @@ func TestStreamService_HandleExchangePeers_WithTracker(t *testing.T) {
 	require.NoError(t, err)
 	assert.Assert(t, resp.Msg != nil)
 
-	// Verify the peer was merged
 	assert.Equal(t, len(c.current().tracker.peers), 2) // self + peer1
 }
 

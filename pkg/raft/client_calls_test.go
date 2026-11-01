@@ -18,7 +18,6 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/raft/v2/raftv2connect"
 )
 
-// connected links n to each of the nodes behind clusters.
 func connected(t *testing.T, n taupeer.Node, clusters ...Cluster) {
 	t.Helper()
 	for _, cl := range clusters {
@@ -27,9 +26,9 @@ func connected(t *testing.T, n taupeer.Node, clusters ...Cluster) {
 	}
 }
 
-// callerOf is a group of one on its own mock node, running on the store wrap
-// makes of the node's own, and a client of the group on a second node: a
-// caller from outside the group, the way a node running no member reaches it.
+// callerOf is a group of one on its own mock node, over the store wrap makes
+// of the node's, and a client on a second node: a caller from outside the
+// group.
 func callerOf(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batching) (Cluster, *client) {
 	t.Helper()
 	member := newMockNode(t)
@@ -51,9 +50,6 @@ func callerOf(t *testing.T, namespace string, wrap func(ds.Batching) ds.Batching
 
 func sameStore(store ds.Batching) ds.Batching { return store }
 
-// TestClient_ClusterInfoIsTheMembersOwnView: ClusterInfo is how the healer
-// learns another member's leader, term, log and membership, and each comes
-// back as that member sees it.
 func TestClient_ClusterInfoIsTheMembersOwnView(t *testing.T) {
 	cl, cli := callerOf(t, "client-cluster-info", sameStore)
 	require.NoError(t, cl.Set("k", []byte("v"), time.Second))
@@ -70,9 +66,6 @@ func TestClient_ClusterInfoIsTheMembersOwnView(t *testing.T) {
 	require.NotZero(t, info.LastIndex, "the write above is in the log")
 }
 
-// TestClient_ACallWithNowhereToGoFails: a call addressed to nobody, to a peer
-// id that is not one, or made on a closed client, fails at once rather than
-// waiting out its timeout.
 func TestClient_ACallWithNowhereToGoFails(t *testing.T) {
 	cl, cli := callerOf(t, "client-nowhere", sameStore)
 
@@ -97,9 +90,6 @@ func TestClient_ACallWithNowhereToGoFails(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestClient_AnEmptyValueReadsBackPresent: proto does not tell an empty bytes
-// field from an absent one, so the client restores what the found flag says:
-// a key holding nothing is a key that is there.
 func TestClient_AnEmptyValueReadsBackPresent(t *testing.T) {
 	cl, cli := callerOf(t, "client-empty-value", sameStore)
 
@@ -116,8 +106,6 @@ func TestClient_AnEmptyValueReadsBackPresent(t *testing.T) {
 	require.Nil(t, value)
 }
 
-// TestClient_KeysMatchingNothingIsAnEmptyList: proto sends no list for an
-// empty one, and the client answers with an empty list rather than none.
 func TestClient_KeysMatchingNothingIsAnEmptyList(t *testing.T) {
 	cl, cli := callerOf(t, "client-empty-keys", sameStore)
 	require.NoError(t, cl.Set("held/1", []byte("v"), time.Second))
@@ -132,8 +120,6 @@ func TestClient_KeysMatchingNothingIsAnEmptyList(t *testing.T) {
 	require.Equal(t, []string{"held/1"}, keys)
 }
 
-// TestClient_CallsToAPeerThatRunsNoMemberFail: a peer that does not serve the
-// group's protocol answers no call of it, and each says it failed.
 func TestClient_CallsToAPeerThatRunsNoMemberFail(t *testing.T) {
 	cl, _ := callerOf(t, "client-served", sameStore)
 	caller := newMockNode(t)
@@ -162,8 +148,6 @@ func TestClient_CallsToAPeerThatRunsNoMemberFail(t *testing.T) {
 	require.Error(t, cli.HealAck(target))
 }
 
-// TestClient_ExchangePeersWithNoneOfItsOwn: a caller that has seen no peers
-// still learns the member's, and the member learns the caller from the call.
 func TestClient_ExchangePeersWithNoneOfItsOwn(t *testing.T) {
 	cl, cli := callerOf(t, "client-exchange", sameStore)
 
@@ -174,7 +158,6 @@ func TestClient_ExchangePeersWithNoneOfItsOwn(t *testing.T) {
 	require.Contains(t, theirPeers, cli.node.ID().String(), "the member did not learn its caller")
 }
 
-// garbledExport answers ExportFSM with bytes that are not a state.
 type garbledExport struct {
 	raftv2connect.UnimplementedRaftServiceHandler
 }
@@ -183,9 +166,6 @@ func (garbledExport) ExportFSM(context.Context, *connect.Request[raftv2.ExportFS
 	return connect.NewResponse(&raftv2.ExportFSMResponse{FsmState: []byte{0xff, 0xfe}, Clock: 3}), nil
 }
 
-// TestClient_AStateThatWillNotDecodeIsAnError: the healer merges what
-// ExportFSM returns, so a state that cannot be read is an error and never an
-// empty one, which would merge as nothing at all.
 func TestClient_AStateThatWillNotDecodeIsAnError(t *testing.T) {
 	const namespace = "client-garbled-export"
 	server := newMockNode(t)
@@ -210,8 +190,6 @@ func TestClient_AStateThatWillNotDecodeIsAnError(t *testing.T) {
 	require.Zero(t, clock)
 }
 
-// TestStream_AWriteTheLeadersStoreRefusesComesBackRefused: a write carried
-// over the wire fails with the store's reason, not as an acknowledgement.
 func TestStream_AWriteTheLeadersStoreRefusesComesBackRefused(t *testing.T) {
 	store := newFaultStore()
 	cl, cli := callerOf(t, "stream-refused-write", func(ds.Batching) ds.Batching { return store })
@@ -225,9 +203,6 @@ func TestStream_AWriteTheLeadersStoreRefusesComesBackRefused(t *testing.T) {
 	require.False(t, found)
 }
 
-// TestStream_AnExportTheLeaderCannotReadIsRefused: the side that loses a split
-// is told to wipe itself once its export is merged, so an export cut short by
-// the store has to fail rather than hand over part of the state.
 func TestStream_AnExportTheLeaderCannotReadIsRefused(t *testing.T) {
 	store := newFaultStore()
 	cl, cli := callerOf(t, "stream-refused-export", func(ds.Batching) ds.Batching { return store })
@@ -239,9 +214,6 @@ func TestStream_AnExportTheLeaderCannotReadIsRefused(t *testing.T) {
 	require.Nil(t, state)
 }
 
-// TestStream_AConsistentReadFromAMemberThatCannotBarrierIsRefused: a read that
-// asks for a barrier is served only by a member that can raise one; a member
-// that cannot answers ErrNotLeader rather than its own, possibly stale, state.
 func TestStream_AConsistentReadFromAMemberThatCannotBarrierIsRefused(t *testing.T) {
 	caller := newMockNode(t)
 	a, b := joinedPair(t, "stream-barrier-refused", sameStore)
@@ -266,9 +238,6 @@ func TestStream_AConsistentReadFromAMemberThatCannotBarrierIsRefused(t *testing.
 	require.Equal(t, []byte("v"), value)
 }
 
-// TestStream_JoinVoterNamingNobodyJoinsTheCaller: a join that names no peer is
-// the caller asking for itself, and the group adds the caller, not some other
-// member, so asking again from inside the group changes nothing.
 func TestStream_JoinVoterNamingNobodyJoinsTheCaller(t *testing.T) {
 	a, b := joinedPair(t, "stream-join-caller", sameStore)
 
@@ -286,9 +255,6 @@ func TestStream_JoinVoterNamingNobodyJoinsTheCaller(t *testing.T) {
 	require.ElementsMatch(t, []peer.ID{idOf(a), idOf(b)}, ids)
 }
 
-// TestStream_JoinVoterNamingNoPeerIsRefused: a join names a peer id, or
-// arrives over a stream whose caller it can name instead; one that does
-// neither is refused before anything is asked of the group.
 func TestStream_JoinVoterNamingNoPeerIsRefused(t *testing.T) {
 	cl, ss := leaderService(t)
 
@@ -302,9 +268,6 @@ func TestStream_JoinVoterNamingNoPeerIsRefused(t *testing.T) {
 	require.Len(t, members, 1)
 }
 
-// TestStream_ExportFSMAskedOfEitherMemberIsTheGroupsState: the healer asks a
-// group for its state through whichever member it reaches, and a follower
-// forwards the call to its leader.
 func TestStream_ExportFSMAskedOfEitherMemberIsTheGroupsState(t *testing.T) {
 	caller := newMockNode(t)
 	a, b := joinedPair(t, "stream-export-either", sameStore)
@@ -325,9 +288,6 @@ func TestStream_ExportFSMAskedOfEitherMemberIsTheGroupsState(t *testing.T) {
 	}
 }
 
-// TestStream_AJoinAskedOfAFollowerIsForwardedToItsLeader: a peer asking to
-// join may reach any member, and one that follows hands the request to its
-// leader, which lets the peer in.
 func TestStream_AJoinAskedOfAFollowerIsForwardedToItsLeader(t *testing.T) {
 	const namespace = "stream-join-forwarded"
 	caller := newMockNode(t)
@@ -353,10 +313,6 @@ func TestStream_AJoinAskedOfAFollowerIsForwardedToItsLeader(t *testing.T) {
 	require.ElementsMatch(t, []peer.ID{idOf(a), idOf(b), joiner}, ids)
 }
 
-// TestStream_AJoinAskedOfAFollowerBetweenLeadersWaitsForTheNext: a follower
-// whose leader is gone knows no leader until the group elects the next, and a
-// join asked of it meanwhile waits for that leader instead of being refused.
-// Three of four voters elect without the fourth, and commit a fifth.
 func TestStream_AJoinAskedOfAFollowerBetweenLeadersWaitsForTheNext(t *testing.T) {
 	const namespace = "stream-join-between-leaders"
 	caller := newMockNode(t)
@@ -396,15 +352,6 @@ func TestStream_AJoinAskedOfAFollowerBetweenLeadersWaitsForTheNext(t *testing.T)
 	require.Contains(t, ids, joiner)
 }
 
-// TestStream_AJoinAskedOfAMemberLetInBeforeItsLogWaitsForTheLeader: a leader
-// commits a joiner's admission once a quorum holds it, and can be gone before
-// its log reaches the joiner, which is then a voter in the group's
-// configuration holding none of its own. Asked to add a voter, it said "no
-// leader" at once, as a founder does, though the group's next election needs
-// its vote. Here its store refuses the log and its vote, so the group can
-// neither reach it nor elect without it: it waits out the join's budget, and
-// once its store takes them it waits for the leader the group elects, which
-// adds the voter.
 func TestStream_AJoinAskedOfAMemberLetInBeforeItsLogWaitsForTheLeader(t *testing.T) {
 	const (
 		namespace = "stream-join-before-log"
@@ -467,11 +414,6 @@ func TestStream_AJoinAskedOfAMemberLetInBeforeItsLogWaitsForTheLeader(t *testing
 	require.Contains(t, ids, joiner)
 }
 
-// TestStream_AJoinAskedOfAMemberAYieldTookOutOfItsGroupIsRefusedAtOnce: a
-// member the group let in waits for the group's next leader when asked to add
-// a voter. A yield wipes the member out of its group, and the member it
-// rebuilt kept the mark of having been let in: in no group, it waited out
-// each join's budget instead of saying at once that it knows no leader.
 func TestStream_AJoinAskedOfAMemberAYieldTookOutOfItsGroupIsRefusedAtOnce(t *testing.T) {
 	const (
 		namespace = "stream-join-after-yield"
@@ -503,12 +445,6 @@ func TestStream_AJoinAskedOfAMemberAYieldTookOutOfItsGroupIsRefusedAtOnce(t *tes
 	<-yielded
 }
 
-// TestStream_AJoinWhoseLeaderStopsLeadingIsAddedByTheNext: a leader that lost
-// the lead while adding a voter answered the join with raft's refusal, though
-// the join had budget left and the group a next leader. It now waits for that
-// leader, as any member between leaders does, and hands the join on. Here one
-// member's store refuses the voter's change, which the leader holds
-// uncommitted when it hands the lead to the other.
 func TestStream_AJoinWhoseLeaderStopsLeadingIsAddedByTheNext(t *testing.T) {
 	const namespace = "stream-join-leader-steps-down"
 	// No member loses its leader on its own: the test moves the lead.

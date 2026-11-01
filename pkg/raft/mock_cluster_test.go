@@ -12,9 +12,6 @@ import (
 
 var _ Cluster = (*MockCluster)(nil)
 
-// TestMockCluster_HoldsWhatItIsGiven pins the store half of the double other
-// packages' tests stand on: writes land in its map at once, a value is the
-// mock's own copy, and reads answer from the map.
 func TestMockCluster_HoldsWhatItIsGiven(t *testing.T) {
 	m := NewMockCluster()
 
@@ -61,9 +58,6 @@ func TestMockCluster_HoldsWhatItIsGiven(t *testing.T) {
 	require.False(t, found)
 }
 
-// TestMockCluster_IsALeaderThatNeverRefuses pins the consensus half: the mock
-// is one member that always leads, so nothing a caller asks of the group
-// fails, waits or moves.
 func TestMockCluster_IsALeaderThatNeverRefuses(t *testing.T) {
 	m := NewMockCluster()
 

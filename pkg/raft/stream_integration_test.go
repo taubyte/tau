@@ -20,16 +20,13 @@ func TestStreamService_HandleGet_WithBarrier_Integration(t *testing.T) {
 	require.NoError(t, err, "failed to create cluster")
 	defer cl.Close()
 
-	// Wait for leader
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
-	// Set a value first
 	require.NoError(t, cl.Set("barrier-key", []byte("barrier-value"), time.Second), "failed to set value")
 
-	// Test get through internal stream service handler with barrier
 	c := getClusterInternal(cl)
 	barrier := time.Second.Nanoseconds()
 	resp, err := c.current().streamService.Get(context.Background(), connect.NewRequest(&raftv2.GetRequest{Key: "barrier-key", BarrierNs: &barrier}))
@@ -45,7 +42,6 @@ func TestStreamService_HandleGet_WithBarrier_Invalid_Integration(t *testing.T) {
 	require.NoError(t, err, "failed to create cluster")
 	defer cl.Close()
 
-	// Wait for leader
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -53,13 +49,11 @@ func TestStreamService_HandleGet_WithBarrier_Invalid_Integration(t *testing.T) {
 
 	c := getClusterInternal(cl)
 
-	// Test with barrier <= 0
 	negative := int64(-1)
 	_, err = c.current().streamService.Get(context.Background(), connect.NewRequest(&raftv2.GetRequest{Key: "test-key", BarrierNs: &negative}))
 	require.Error(t, err, "handleGet with negative barrier should fail")
 	require.ErrorIs(t, err, ErrInvalidBarrier, "should return ErrInvalidBarrier")
 
-	// Test with barrier > MaxGetHandlerBarrierTimeout
 	over := (MaxGetHandlerBarrierTimeout + time.Second).Nanoseconds()
 	_, err = c.current().streamService.Get(context.Background(), connect.NewRequest(&raftv2.GetRequest{Key: "test-key", BarrierNs: &over}))
 	require.Error(t, err, "handleGet with barrier > max should fail")

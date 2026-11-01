@@ -19,7 +19,6 @@ func TestMakeAddrsFactory_AnnounceOnly(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, factory)
 
-	// Create some input addresses
 	inputAddrs := []ma.Multiaddr{
 		mustMultiaddr(t, "/ip4/127.0.0.1/tcp/4001"),
 		mustMultiaddr(t, "/ip4/192.168.1.1/tcp/4001"),
@@ -27,7 +26,6 @@ func TestMakeAddrsFactory_AnnounceOnly(t *testing.T) {
 
 	result := factory(inputAddrs)
 
-	// Should return announce addresses, not input addresses
 	assert.Len(t, result, 2)
 	assert.Equal(t, "/ip4/1.2.3.4/tcp/4001", result[0].String())
 	assert.Equal(t, "/ip4/5.6.7.8/tcp/4001", result[1].String())
@@ -48,7 +46,6 @@ func TestMakeAddrsFactory_NoAnnounce(t *testing.T) {
 
 	result := factory(inputAddrs)
 
-	// Should return input addresses when no announce addresses
 	assert.Len(t, result, 2)
 }
 
@@ -67,7 +64,6 @@ func TestMakeAddrsFactory_WithNoAnnounceList(t *testing.T) {
 
 	result := factory(inputAddrs)
 
-	// Should filter out the noAnnounce address
 	assert.Len(t, result, 1)
 	assert.Equal(t, "/ip4/192.168.1.1/tcp/4001", result[0].String())
 }
@@ -90,7 +86,7 @@ func TestMakeAddrsFactory_InvalidNoAnnounce(t *testing.T) {
 
 func TestMakeAddrsFactory_CIDRMask(t *testing.T) {
 	announce := []string{}
-	noAnnounce := []string{"/ip4/10.0.0.0/ipcidr/8"} // Block 10.x.x.x
+	noAnnounce := []string{"/ip4/10.0.0.0/ipcidr/8"}
 
 	factory, err := makeAddrsFactory(announce, noAnnounce)
 	require.NoError(t, err)
@@ -103,7 +99,6 @@ func TestMakeAddrsFactory_CIDRMask(t *testing.T) {
 
 	result := factory(inputAddrs)
 
-	// 10.0.0.1 should be filtered out
 	assert.Len(t, result, 1)
 	assert.Equal(t, "/ip4/192.168.1.1/tcp/4001", result[0].String())
 }
@@ -152,7 +147,6 @@ func TestSimpleAddrsFactory_InvalidAnnounce(t *testing.T) {
 	require.NotNil(t, mockNode)
 	defer mockNode.Close()
 
-	// Invalid addresses should be skipped
 	announce := []string{"invalid-addr", "/ip4/1.2.3.4/tcp/4001"}
 	opt := mockNode.SimpleAddrsFactory(announce, false)
 	assert.NotNil(t, opt)
@@ -165,9 +159,6 @@ func mustMultiaddr(t *testing.T, s string) ma.Multiaddr {
 	return addr
 }
 
-// A node told to listen on a kernel-picked port announces the port it got, not
-// the zero it asked with — otherwise every address it publishes is undialable
-// and nothing can mesh with it.
 func TestANodeThatLetTheKernelPickAnnouncesThePortItBound(t *testing.T) {
 	unbound := []string{"/ip4/127.0.0.1/tcp/0"}
 
@@ -204,8 +195,6 @@ func TestANodeThatLetTheKernelPickAnnouncesThePortItBound(t *testing.T) {
 	require.Equal(t, bound, listening, "announced a port other than the one bound")
 }
 
-// An announce that names a real port still wins over the host's own addresses,
-// which is what override has always meant.
 func TestAnAnnouncedPortStillOverridesWhatTheHostBound(t *testing.T) {
 	node := Mock(t.Context())
 	defer node.Close()
@@ -218,7 +207,6 @@ func TestAnAnnouncedPortStillOverridesWhatTheHostBound(t *testing.T) {
 	require.Equal(t, "/ip4/1.2.3.4/tcp/4001", result[0].String())
 }
 
-// A zero port is a request for a port, not a port.
 func TestHasUnboundPort(t *testing.T) {
 	for _, addr := range []string{"/ip4/127.0.0.1/tcp/0", "/ip4/127.0.0.1/udp/0/quic-v1"} {
 		require.True(t, hasUnboundPort(mustMultiaddr(t, addr)), addr)

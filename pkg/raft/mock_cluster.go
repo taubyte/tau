@@ -10,8 +10,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-// MockCluster is an in-memory Cluster implementation for unit tests (e.g. non-dreaming build tests).
-// It is a no-op leader: Set/Delete/Batch succeed; Get/Keys read from local map.
+// NewMockCluster is a Cluster over a map that always leads: every write lands
+// at once.
 func NewMockCluster() *MockCluster {
 	return &MockCluster{data: make(map[string][]byte)}
 }
@@ -37,9 +37,7 @@ func (m *MockCluster) Get(key string) ([]byte, bool) {
 	return v, ok
 }
 
-// TryGet answers as Get does. THE MOCK HAS NO FAILING READ — the map behind it
-// cannot fail — so a test that needs one builds its own store rather than
-// reaching for this.
+// TryGet never fails: a test needing a failing read builds its own store.
 func (m *MockCluster) TryGet(key string) ([]byte, bool, error) {
 	value, held := m.Get(key)
 	return value, held, nil

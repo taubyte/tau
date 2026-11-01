@@ -30,10 +30,8 @@ var ProtocolRaftPrefix = string(rpc.Protocol(raftv2connect.RaftServiceName))
 // request names no timeout.
 const defaultApplyTimeout = 5 * time.Second
 
-// MaxGetHandlerBarrierTimeout is the maximum barrier timeout for Get operations
 const MaxGetHandlerBarrierTimeout = 30 * time.Second
 
-// raftStreamService answers one group's calls on Protocol(namespace).
 type raftStreamService struct {
 	cluster *cluster
 	server  *rpc.Server
@@ -50,7 +48,6 @@ func TransportProtocol(namespace string) string {
 	return path.Join(ProtocolRaftPrefix, namespace, "transport")
 }
 
-// codecOptions seals every message with the group's key when it has one.
 func codecOptions(gcm cipher.AEAD) (connect.Option, bool) {
 	if gcm == nil {
 		return nil, false
@@ -181,8 +178,6 @@ func (s *raftStreamService) Keys(ctx context.Context, req *connect.Request[raftv
 	return connect.NewResponse(&raftv2.KeysResponse{Keys: keys}), nil
 }
 
-// forwardToLeader sends a call this member cannot answer to the current
-// leader and returns the leader's answer as its own.
 func forwardToLeader[T any](ctx context.Context, s *raftStreamService, what string,
 	call func(context.Context, raftv2connect.RaftServiceClient) (*connect.Response[T], error)) (*connect.Response[T], error) {
 	leader, err := s.cluster.Leader()
@@ -270,12 +265,10 @@ func (s *raftStreamService) JoinVoter(ctx context.Context, req *connect.Request[
 	})
 }
 
-// awaitLeader returns once this member knows a leader, which may be itself. A
-// member of a group is between leaders and waits for the next, within ctx: one
-// in a configuration, and one the group let in before its log, and the
-// configuration in it, reached it. One in no group, a founder or a joiner not
-// let in yet, has no election to wait for: it says so at once, and the joiner
-// asks again on its own schedule.
+// awaitLeader returns once this member knows a leader, maybe itself. A member
+// of a group, or one let in before its configuration reached it, waits within
+// ctx for the next; one in no group has no election to wait for and says so at
+// once.
 func (s *raftStreamService) awaitLeader(ctx context.Context) error {
 	if _, err := s.cluster.Leader(); err == nil {
 		return nil
@@ -300,7 +293,6 @@ func peerFromRequestOrCaller(ctx context.Context, named string) (peer.ID, error)
 	return "", fmt.Errorf("missing peer id")
 }
 
-// ClusterInfo returns this node's cluster view; does not require leadership.
 func (s *raftStreamService) ClusterInfo(ctx context.Context, req *connect.Request[raftv2.ClusterInfoRequest]) (*connect.Response[raftv2.ClusterInfoResponse], error) {
 	m := s.cluster.current()
 	leaderID := ""

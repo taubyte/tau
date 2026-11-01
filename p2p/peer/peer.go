@@ -27,17 +27,13 @@ import (
 	discovery "github.com/libp2p/go-libp2p/p2p/discovery/routing"
 )
 
-// DiscoveryBackoffMin/Max bound how long failed peer-discovery lookups are
-// cached before the DHT is asked again. Dream lowers them so freshly booted
-// test universes recover from empty-routing-table lookups in seconds instead
-// of minutes.
+// DiscoveryBackoffMin/Max bound how long a failed peer-discovery lookup is
+// cached; dream lowers them so fresh universes recover in seconds.
 var (
 	DiscoveryBackoffMin = 60 * time.Second
 	DiscoveryBackoffMax = time.Hour
 )
 
-// DefaultBootstrapPeers returns the public IPFS bootstrap peers. Drop-in
-// replacement for ipfslite.DefaultBootstrapPeers().
 func DefaultBootstrapPeers() []peer.AddrInfo {
 	peers, _ := peer.AddrInfosFromP2pAddrs(dht.DefaultBootstrapPeers...)
 	return peers
@@ -59,7 +55,7 @@ func init() {
 
 func (p *node) Close() {
 	if p.closed.Swap(true) {
-		return // Already closed
+		return
 	}
 
 	if err := p.cleanup(); err != nil {
@@ -67,9 +63,8 @@ func (p *node) Close() {
 	}
 }
 
-// cleanup closes whatever the node has opened, a half-built one included, and
-// goes on past a step that fails: a step left out would leave its part open and
-// the temporary repository behind it.
+// cleanup closes whatever the node opened, a half-built one included, and goes
+// on past a failing step so nothing is left open.
 func (p *node) cleanup() error {
 	p.topicsMutex.Lock()
 	defer p.topicsMutex.Unlock()
@@ -96,9 +91,8 @@ func (p *node) cleanup() error {
 		}
 	}
 
-	// Cancel context first, then deterministically close the DAG service
-	// (reprovider + blockservice) before the store it reads from. Close is
-	// idempotent, so racing the autoclose goroutine is safe.
+	// The context goes first, then the DAG service, before the store it reads.
+	// Close is idempotent, so racing the autoclose is safe.
 	p.ctx_cancel()
 	if p.dag != nil {
 		if err := p.dag.Close(); err != nil {
@@ -124,7 +118,6 @@ func (p *node) Done() <-chan struct{} {
 	return p.ctx.Done()
 }
 
-// Create a folder inside node root folder
 func (p *node) NewFolder(name string) (dirutils.Directory, error) {
 	return dirutils.New(fmt.Sprintf("%s/local/%s", p.repo_path, name))
 }
@@ -224,19 +217,16 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, admission
 		return nil, fmt.Errorf("creating datastore failed with %w", err)
 	}
 
-	// Read key
 	p.key, err = crypto.UnmarshalPrivateKey(privateKey)
 	if err != nil {
 		return nil, fmt.Errorf("processing private key failed with %w", err)
 	}
 
-	// Generate ID
 	p.id, err = peer.IDFromPublicKey(p.key.GetPublic())
 	if err != nil {
 		return nil, fmt.Errorf("parsing pid failed with %w", err)
 	}
 
-	// https://github.com/libp2p/go-libp2p/blob/d4d6adff6e3260792cb4514c27368059f2558530/options.go
 	if opts == nil {
 		opts = make([]libp2p.Option, 0)
 	}
@@ -248,12 +238,10 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, admission
 		opts = append(opts, p.SimpleAddrsFactory(swarmAnnounce, server))
 	}
 
-	// Gossipsub is up before the first connection. A peer learns this node
-	// speaks it from the identify it runs on connecting; one that connected
-	// earlier hears it only from a best-effort push, and if it misses that it
-	// never opens its pubsub stream here and nothing it publishes arrives. The
-	// DHT dials its bootstrap peers as soon as it exists, so it gets none until
-	// then.
+	// Gossipsub is up before the first connection: a peer learns this node speaks
+	// it from identify on connecting, and one connected earlier hears it only from
+	// a best-effort push it may miss. The DHT dials its bootstrap peers as soon as
+	// it exists, so it gets none until then.
 	var gossiping atomic.Bool
 	bootstrapHandler := func() []peer.AddrInfo {
 		if !gossiping.Load() {
@@ -274,7 +262,6 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, admission
 		return nil, fmt.Errorf("setting up libp2p failed: %w", err)
 	}
 
-	// Prep Discoverer
 	rng := rand.New(rand.NewSource(rand.Int63()))
 	p.drouter, err = discoveryBackoff.NewBackoffDiscovery(
 		discovery.NewRoutingDiscovery(p.dht),
@@ -284,7 +271,6 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, admission
 		return nil, fmt.Errorf("creating backoff discovery failed: %w", err)
 	}
 
-	// Prep messaging PUBSUB
 	p.messaging, err = pubsub.NewGossipSub(
 		p.ctx,
 		p.host,
@@ -299,7 +285,6 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, admission
 	p.topics = make(map[string]*pubsub.Topic)
 	gossiping.Store(true)
 
-	// Create DAG service (blockstore + bitswap + merkledag + unixfs)
 	p.dag, err = newDAG(p.ctx, p.store, p.host, p.dht)
 	if err != nil {
 		return nil, fmt.Errorf("creating DAG service failed: %w", err)
@@ -312,13 +297,11 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, admission
 	}
 
 	if bootstrap.Enable {
-		// Bootstrap
 		bnodes, err := helpers.Bootstrap(p.ctx, p.host, p.dht, bootstrap.Peers)
 		if err != nil {
 			return nil, fmt.Errorf("bootstrap failed: %w", err)
 		}
 
-		// TODO: get the peering service out of bootsrap
 		for _, n := range bnodes {
 			p.peering.AddPeer(n)
 		}
@@ -333,8 +316,8 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, admission
 	return &p, nil
 }
 
-// security admits only peers holding a certificate from the cloud's CA. A node
-// with no credentials is an open one, and speaks stock libp2p TLS.
+// Only peers with a certificate from the cloud's CA are admitted; a node
+// without credentials is open and speaks stock libp2p TLS.
 func security(admission *sectls.Credentials) libp2p.Option {
 	if admission == nil {
 		return libp2p.Security(libp2ptls.ID, libp2ptls.New)

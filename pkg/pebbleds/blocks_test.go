@@ -116,8 +116,6 @@ func TestBlockstoreAllKeysStops(t *testing.T) {
 	}
 }
 
-// boxo's block store over go-ds-pebble and this one read each other's
-// blocks from one directory.
 func TestBlockstoreSameLayoutAsBoxo(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -225,7 +223,6 @@ func BenchmarkBlockstoreHas(b *testing.B) {
 	}
 }
 
-// fill writes the blocks of 0 .. n-1 and flushes them to tables.
 func fill(b *testing.B, s *Store, n int) {
 	b.Helper()
 	ctx := context.Background()

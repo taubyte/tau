@@ -20,10 +20,8 @@ type Reader struct {
 	lower, upper []byte
 }
 
-// readerPool keeps closed readers, with the bounds they grew.
 var readerPool = sync.Pool{New: func() any { return new(Reader) }}
 
-// NewReader makes a reader of the store as it is now.
 func (s *Store) NewReader() (*Reader, error) {
 	if !s.enter() {
 		return nil, ErrClosed
@@ -41,7 +39,6 @@ func (s *Store) NewReader() (*Reader, error) {
 	return r, nil
 }
 
-// View calls fn with the value stored at key, as View of the store does.
 func (r *Reader) View(key []byte, fn func(v []byte) error) error {
 	if !r.s.enter() {
 		return ErrClosed
@@ -64,8 +61,6 @@ func (r *Reader) View(key []byte, fn func(v []byte) error) error {
 	return fn(v)
 }
 
-// Scan calls fn with every key starting with prefix and its value, as Scan
-// of the store does.
 func (r *Reader) Scan(prefix []byte, fn func(k, v []byte) error) error {
 	if !r.s.enter() {
 		return ErrClosed

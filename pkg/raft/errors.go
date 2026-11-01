@@ -3,46 +3,33 @@ package raft
 import "errors"
 
 var (
-	// ErrNotLeader is returned when a write is attempted on a non-leader
 	ErrNotLeader = errors.New("not leader")
 
-	// ErrNoLeader is returned when no leader is known
 	ErrNoLeader = errors.New("no leader")
 
-	// ErrShutdown is returned when the cluster is shutting down
 	ErrShutdown = errors.New("cluster shutdown")
 
-	// ErrInvalidCommand is returned for malformed commands
 	ErrInvalidCommand = errors.New("invalid command")
 
 	// ErrNoFSM is returned by a read on a cluster that has no state machine to
 	// read from, which is a cluster that never finished initializing
 	ErrNoFSM = errors.New("cluster has no FSM")
 
-	// ErrAlreadyClosed is returned when operating on a closed cluster
 	ErrAlreadyClosed = errors.New("cluster already closed")
 
-	// ErrInvalidNamespace is returned for invalid namespace format
 	ErrInvalidNamespace = errors.New("invalid namespace")
 
-	// ErrInvalidBarrier is returned when barrier is zero or exceeds maximum
 	ErrInvalidBarrier = errors.New("invalid barrier: must be > 0 and <= MaxGetHandlerBarrierTimeout")
 
-	// ErrInvalidTimeout is returned when timeout is zero or exceeds maximum
 	ErrInvalidTimeout = errors.New("invalid timeout: must be > 0 and <= MaxApplyTimeout")
 
-	// ErrItemNotFound is returned when DequeueItem is called with an ID not in the queue index
 	ErrItemNotFound = errors.New("item not found in queue")
 
-	// ErrQueueEmpty is returned when Pop is called on an empty queue
 	ErrQueueEmpty = errors.New("queue is empty")
 
-	// ErrSplitBrain indicates disjoint Raft leadership
 	ErrSplitBrain = errors.New("split-brain detected")
 
-	// ErrMergeFailed indicates a failed healing merge apply
 	ErrMergeFailed = errors.New("FSM merge failed")
 
-	// ErrHealingInProgress indicates concurrent healing
 	ErrHealingInProgress = errors.New("healing already in progress")
 )

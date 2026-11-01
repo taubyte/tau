@@ -11,9 +11,7 @@ import (
 	taupeer "github.com/taubyte/tau/p2p/peer"
 )
 
-// callerOfNode is a client of namespace on a second node, linked to node once
-// node serves it: a client on node itself would have to dial node, and a host
-// refuses to dial itself.
+// A client on node itself would dial node, and a host refuses to dial itself.
 func callerOfNode(t *testing.T, node taupeer.Node, namespace string) Client {
 	t.Helper()
 	caller := newTestNode(t)
@@ -72,22 +70,18 @@ func TestClient_Get_WithBarrier_Zero_Integration(t *testing.T) {
 func TestClient_Get_WithBarrier_Invalid_Negative_Integration(t *testing.T) {
 	node := newTestNode(t)
 
-	// Create cluster first
 	cl, err := New(node, "/raft/test-barrier-invalid", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 	defer cl.Close()
 
-	// Wait for leader
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
-	// Create client
 	client, err := NewClient(node, "/raft/test-barrier-invalid", nil)
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 
-	// Test Get with barrierNs < 0 (should return error)
 	_, _, err = client.Get("test-key", -1, node.ID())
 	require.Error(t, err, "Get with negative barrierNs should return error")
 	require.ErrorIs(t, err, ErrInvalidBarrier, "should return ErrInvalidBarrier")
@@ -96,25 +90,20 @@ func TestClient_Get_WithBarrier_Invalid_Negative_Integration(t *testing.T) {
 func TestClient_Get_WithBarrier_Invalid_Zero_Integration(t *testing.T) {
 	node := newTestNode(t)
 
-	// Create cluster first
 	cl, err := New(node, "/raft/test-barrier-invalid-zero", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 	defer cl.Close()
 
-	// Wait for leader
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
-	// Create client
 	client, err := NewClient(node, "/raft/test-barrier-invalid-zero", nil)
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 
-	// Note: barrierNs = 0 is allowed (means no barrier)
-	// This test verifies that 0 is handled correctly (no error, no barrier call)
+	// barrierNs 0 means no barrier.
 	_, _, err = client.Get("test-key", 0, node.ID())
-	// Should not return ErrInvalidBarrier for 0
 	if err != nil && err == ErrInvalidBarrier {
 		t.Errorf("barrierNs=0 should not return ErrInvalidBarrier, got: %v", err)
 	}
@@ -123,22 +112,18 @@ func TestClient_Get_WithBarrier_Invalid_Zero_Integration(t *testing.T) {
 func TestClient_Get_WithBarrier_Invalid_ExceedsMax_Integration(t *testing.T) {
 	node := newTestNode(t)
 
-	// Create cluster first
 	cl, err := New(node, "/raft/test-barrier-exceeds", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 	defer cl.Close()
 
-	// Wait for leader
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
-	// Create client
 	client, err := NewClient(node, "/raft/test-barrier-exceeds", nil)
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 
-	// Test Get with barrierNs > MaxGetHandlerBarrierTimeout (should return error)
 	barrierNs := int64((MaxGetHandlerBarrierTimeout + time.Second).Nanoseconds())
 	_, _, err = client.Get("test-key", barrierNs, node.ID())
 	require.Error(t, err, "Get with barrierNs > MaxGetHandlerBarrierTimeout should return error")
@@ -148,24 +133,19 @@ func TestClient_Get_WithBarrier_Invalid_ExceedsMax_Integration(t *testing.T) {
 func TestClient_Get_WithBarrier_AtMax_Integration(t *testing.T) {
 	node := newTestNode(t)
 
-	// Create cluster first
 	cl, err := New(node, "/raft/test-barrier-max", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 	defer cl.Close()
 
-	// Wait for leader
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
-	// Set a value first
 	err = cl.Set("barrier-key-max", []byte("barrier-value-max"), time.Second)
 	require.NoError(t, err, "failed to set value")
 
-	// Create client
 	client := callerOfNode(t, node, "/raft/test-barrier-max")
 
-	// Test Get with barrierNs exactly at MaxGetHandlerBarrierTimeout (should work)
 	barrierNs := int64(MaxGetHandlerBarrierTimeout.Nanoseconds())
 	val, found, err := client.Get("barrier-key-max", barrierNs, node.ID())
 	require.NoError(t, err, "Get with barrierNs at max should succeed")

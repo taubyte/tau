@@ -15,7 +15,6 @@ import (
 
 var errNoSpace = errors.New("pebble error during commit: no space left on device")
 
-// timestampOf reads back the Lamport timestamp the FSM stored for key.
 func timestampOf(t *testing.T, store ds.Batching, key string) uint64 {
 	t.Helper()
 	raw, err := store.Get(t.Context(), ds.NewKey(faultPrefix+"/data/"+key))
@@ -25,10 +24,6 @@ func timestampOf(t *testing.T, store ds.Batching, key string) uint64 {
 	return entry.Timestamp
 }
 
-// TestAMergeThatCannotLandWritesNoneOfIt: a merge is the delta of a group
-// that is about to wipe itself, and raft never offers an applied entry again.
-// Written key by key, a merge the store refused partway left the keys that map
-// order happened to reach first, and moved the clock to theirs.
 func TestAMergeThatCannotLandWritesNoneOfIt(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -59,8 +54,6 @@ func TestAMergeThatCannotLandWritesNoneOfIt(t *testing.T) {
 	}
 }
 
-// TestAMergeTheStoreWillNotOpenWritesNothing: the batch a merge lands in is
-// refused before anything is staged.
 func TestAMergeTheStoreWillNotOpenWritesNothing(t *testing.T) {
 	store := newFaultStore()
 	fsm := newKVFSM(t.Context(), store, faultPrefix)
@@ -73,8 +66,6 @@ func TestAMergeTheStoreWillNotOpenWritesNothing(t *testing.T) {
 	require.True(t, absent(t, store, faultPrefix, "a"))
 }
 
-// TestAMergeKeepsWhatItLoses: a merge replaces an entry only with one that
-// wins against it, and the clock follows the entries that landed.
 func TestAMergeKeepsWhatItLoses(t *testing.T) {
 	store := newFaultStore()
 	fsm := newKVFSM(t.Context(), store, faultPrefix)
@@ -101,12 +92,6 @@ func TestAMergeKeepsWhatItLoses(t *testing.T) {
 	require.Equal(t, uint64(10), timestampOf(t, store, "after"))
 }
 
-// TestAMergeOverAnEntryItCannotReadIsRefused: a merge arbitrates each entry it
-// carries against the one the store holds, and took any failure to read that
-// entry for an absent key, so an entry the store could not read, or one that
-// would not decode, was replaced by whatever the merge carried, winning or
-// not. Only an absent key loses unseen now; anything else refuses the merge,
-// which writes none of itself and leaves the clock where it was.
 func TestAMergeOverAnEntryItCannotReadIsRefused(t *testing.T) {
 	garbage := []byte("not an entry")
 	for _, tc := range []struct {
@@ -157,8 +142,6 @@ func TestAMergeOverAnEntryItCannotReadIsRefused(t *testing.T) {
 	}
 }
 
-// TestABatchTheStoreWillNotStageWritesNoneOfIt: a staging write that fails
-// abandons the batch before its commit, and leaves the clock where it was.
 func TestABatchTheStoreWillNotStageWritesNoneOfIt(t *testing.T) {
 	store := newFaultStore()
 	fsm := newKVFSM(t.Context(), store, faultPrefix)
@@ -178,8 +161,6 @@ func TestABatchTheStoreWillNotStageWritesNoneOfIt(t *testing.T) {
 	require.Equal(t, uint64(1), timestampOf(t, store, "after"))
 }
 
-// TestABatchTheStoreWillNotOpenWritesNothing: a store that will not open a
-// batch refuses the whole of it.
 func TestABatchTheStoreWillNotOpenWritesNothing(t *testing.T) {
 	store := newFaultStore()
 	fsm := newKVFSM(t.Context(), store, faultPrefix)
@@ -193,9 +174,8 @@ func TestABatchTheStoreWillNotOpenWritesNothing(t *testing.T) {
 	require.True(t, absent(t, store, faultPrefix, "a"))
 }
 
-// TestASnapshotOfAStoreThatCannotBeReadFails: raft compacts the log behind
-// every snapshot it takes, so a snapshot of what the store happened to return
-// before it failed is a snapshot that has forgotten the rest for good.
+// raft compacts the log behind every snapshot, so a snapshot of what the store
+// returned before it failed forgets the rest for good.
 func TestASnapshotOfAStoreThatCannotBeReadFails(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -223,8 +203,6 @@ func TestASnapshotOfAStoreThatCannotBeReadFails(t *testing.T) {
 	}
 }
 
-// failingSink is a snapshot sink whose writes fail, recording how the
-// snapshot finished.
 type failingSink struct {
 	err               error
 	closed, cancelled bool
@@ -235,9 +213,8 @@ func (s *failingSink) Write(p []byte) (int, error) { return 0, s.err }
 func (s *failingSink) Close() error                { s.closed = true; return nil }
 func (s *failingSink) Cancel() error               { s.cancelled = true; return nil }
 
-// TestASnapshotThatCannotBeWrittenIsCancelled: a sink closed after a failed
-// write is a snapshot raft would keep, and restore from, holding part of a
-// state.
+// A sink closed after a failed write is a snapshot raft would keep and restore
+// from, holding part of a state.
 func TestASnapshotThatCannotBeWrittenIsCancelled(t *testing.T) {
 	fsm := newKVFSM(t.Context(), newFaultStore(), faultPrefix)
 	require.Nil(t, applied(t, fsm, Command{Type: CommandSet, Set: &SetCommand{Key: "a", Value: []byte("1")}}).Error)
@@ -252,7 +229,6 @@ func TestASnapshotThatCannotBeWrittenIsCancelled(t *testing.T) {
 	require.False(t, sink.closed, "a failed snapshot was closed as if it were whole")
 }
 
-// snapshotOf encodes a snapshot holding data, the way Persist writes one.
 func snapshotOf(t *testing.T, data map[string]CRDTEntry, clock uint64) io.ReadCloser {
 	t.Helper()
 	raw, err := cbor.Marshal(snapshotPayload{Data: data, Clock: clock})
@@ -260,9 +236,8 @@ func snapshotOf(t *testing.T, data map[string]CRDTEntry, clock uint64) io.ReadCl
 	return io.NopCloser(bytes.NewReader(raw))
 }
 
-// TestARestoreTheStoreRefusesSaysSo: raft takes a failed Restore to mean the
-// state machine does not hold the snapshot, and installs it again; one that
-// reported success over a store that refused it would serve whatever was left.
+// raft takes a failed Restore to mean the snapshot is not held, and installs it
+// again; a false success would serve whatever was left.
 func TestARestoreTheStoreRefusesSaysSo(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -285,8 +260,6 @@ func TestARestoreTheStoreRefusesSaysSo(t *testing.T) {
 	}
 }
 
-// TestARestoreReplacesTheState: what the store held before a snapshot is gone
-// after it, and the clock is the snapshot's.
 func TestARestoreReplacesTheState(t *testing.T) {
 	store := newFaultStore()
 	fsm := newKVFSM(t.Context(), store, faultPrefix)

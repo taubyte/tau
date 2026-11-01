@@ -21,10 +21,8 @@ func storedLogs(t *testing.T, logs *datastoreLogStore, indexes ...uint64) {
 	}
 }
 
-// TestLogStore_ALogTheStoreCannotReadIsNotAnEmptyOne: raft takes index zero
-// for an empty log and a missing entry for one compacted away; a disk that
-// failed is neither, and answering as if it were sends raft down the path for
-// a log that has nothing in it.
+// raft takes index zero for an empty log and a missing entry for one compacted
+// away; a failed disk is neither.
 func TestLogStore_ALogTheStoreCannotReadIsNotAnEmptyOne(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -60,8 +58,6 @@ func TestLogStore_ALogTheStoreCannotReadIsNotAnEmptyOne(t *testing.T) {
 	require.NotErrorIs(t, err, raft.ErrLogNotFound, "an entry the disk could not read answered as one compacted away")
 }
 
-// TestLogStore_AWriteTheStoreRefusesStoresNothing: raft appends a run of
-// entries at once and takes an error to mean none of them is there.
 func TestLogStore_AWriteTheStoreRefusesStoresNothing(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -87,9 +83,6 @@ func TestLogStore_AWriteTheStoreRefusesStoresNothing(t *testing.T) {
 	}
 }
 
-// TestLogStore_ADeleteTheStoreRefusesDeletesNothing: raft deletes a range to
-// compact or to truncate a conflicting suffix, and an error leaves the whole
-// range where it was.
 func TestLogStore_ADeleteTheStoreRefusesDeletesNothing(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -113,9 +106,8 @@ func TestLogStore_ADeleteTheStoreRefusesDeletesNothing(t *testing.T) {
 	}
 }
 
-// TestStableStore_AValueTheStoreCannotReadIsNotAZero: raft keeps its term and
-// its vote here, and reads an absent one as zero. A disk error read the same
-// way is a node that forgot it already voted in this term, and votes again.
+// raft keeps its term and vote here: a disk error read as zero forgets a vote,
+// and votes again.
 func TestStableStore_AValueTheStoreCannotReadIsNotAZero(t *testing.T) {
 	store := newFaultStore()
 	stable := newStableStore(store, "/raft/test/stable")
@@ -149,10 +141,6 @@ func writtenSnapshot(t *testing.T, snaps *fileSnapshotStore, index uint64) strin
 	return sink.ID()
 }
 
-// TestSnapshotStore_ADirectoryThatIsNotThereOrNotADirectory: a store whose
-// directory is gone has no snapshots, raft's answer for a node starting fresh;
-// one whose directory is something else cannot say what it holds, and says so
-// rather than claiming nothing.
 func TestSnapshotStore_ADirectoryThatIsNotThereOrNotADirectory(t *testing.T) {
 	snaps, dir := newSnapshotStoreIn(t)
 	writtenSnapshot(t, snaps, 5)
@@ -171,8 +159,6 @@ func TestSnapshotStore_ADirectoryThatIsNotThereOrNotADirectory(t *testing.T) {
 	require.Error(t, err, "a snapshot was begun where none can be written")
 }
 
-// TestSnapshotStore_ListsOnlySnapshots: what else sits in the directory is not
-// a snapshot raft may restore from.
 func TestSnapshotStore_ListsOnlySnapshots(t *testing.T) {
 	snaps, dir := newSnapshotStoreIn(t)
 	id := writtenSnapshot(t, snaps, 5)
@@ -184,9 +170,6 @@ func TestSnapshotStore_ListsOnlySnapshots(t *testing.T) {
 	require.Equal(t, id, listed[0].ID)
 }
 
-// TestSnapshotStore_ADamagedSnapshotDoesNotOpen: raft restores what Open hands
-// it, so a snapshot whose metadata will not decode, or whose state is missing,
-// is an error and never an empty state.
 func TestSnapshotStore_ADamagedSnapshotDoesNotOpen(t *testing.T) {
 	snaps, dir := newSnapshotStoreIn(t)
 
@@ -205,9 +188,7 @@ func TestSnapshotStore_ADamagedSnapshotDoesNotOpen(t *testing.T) {
 	require.Nil(t, state)
 }
 
-// TestSnapshotSink_ASnapshotThatCannotBeWrittenIsNotTaken: raft compacts its
-// log once a sink closes cleanly, so a close that could not write the state or
-// its metadata has to fail.
+// raft compacts its log once a sink closes cleanly.
 func TestSnapshotSink_ASnapshotThatCannotBeWrittenIsNotTaken(t *testing.T) {
 	t.Run("state", func(t *testing.T) {
 		snaps, dir := newSnapshotStoreIn(t)

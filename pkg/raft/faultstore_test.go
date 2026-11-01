@@ -10,11 +10,8 @@ import (
 	dsync "github.com/ipfs/go-datastore/sync"
 )
 
-// faultStore is a datastore that fails on the keys a test names, because
-// NOTHING ELSE IN THIS PACKAGE'S TESTS CAN MAKE A STORE FAIL. Every other test
-// here runs on a map datastore, which always succeeds, so a swallowed store
-// error and a store that is fine read exactly alike — which is how two of the
-// defects these tests pin stayed invisible.
+// faultStore fails on the keys a test names: a map datastore always succeeds,
+// so a swallowed store error and a healthy store read alike.
 type faultStore struct {
 	ds.Batching
 
@@ -57,7 +54,6 @@ func (s *faultStore) failPut(key string, err error) {
 	s.putFail[key] = err
 }
 
-// failDelete makes every later delete of key fail.
 func (s *faultStore) failDelete(key string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -72,8 +68,6 @@ func (s *faultStore) failStaging(key string, err error) {
 	s.stageFail[key] = err
 }
 
-// failQuery makes every later query of prefix fail before it returns
-// anything.
 func (s *faultStore) failQuery(prefix string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -88,7 +82,6 @@ func (s *faultStore) failScan(prefix string, err error) {
 	s.scanFail[prefix] = err
 }
 
-// failBatches makes the store refuse to open a batch at all.
 func (s *faultStore) failBatches(err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -166,13 +159,9 @@ func (s *faultStore) Batch(ctx context.Context) (ds.Batch, error) {
 	return &faultBatch{store: s}, nil
 }
 
-// faultBatch is ALL-OR-NOTHING ON PURPOSE, and that is the whole reason this
-// fake exists rather than a map datastore with a hook on it. Production runs
-// on pebble, whose Batch.Commit is one WAL record applied under one sequence
-// number; go-datastore's basic batch, which is what a map datastore hands out,
-// replays the staged operations one at a time and stops on the first error. A
-// fake copying the basic batch would measure the fix's shape and not its
-// effect, so this one models the store a node actually has.
+// faultBatch is all-or-nothing, as pebble's Batch.Commit is one WAL record.
+// go-datastore's basic batch, which a map datastore hands out, replays its
+// operations one at a time and stops on the first error.
 type faultBatch struct {
 	store  *faultStore
 	staged []stagedWrite

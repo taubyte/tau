@@ -40,8 +40,6 @@ func admittedNode(t *testing.T, ca *sectls.CA) Node {
 	return n
 }
 
-// TestAdmittedNodesMeetAndKeepEachOtherAlive: two nodes with certificates from
-// one CA connect, and the keep-alive topic protects the connection.
 func TestAdmittedNodesMeetAndKeepEachOtherAlive(t *testing.T) {
 	ca, err := sectls.NewCA("cloud", time.Hour)
 	require.NoError(t, err)
@@ -79,7 +77,6 @@ func TestAdmittedNodesMeetAndKeepEachOtherAlive(t *testing.T) {
 	}, 10*time.Second, 100*time.Millisecond)
 	subCancel()
 
-	// A stranger from another CA is not admitted.
 	other, err := sectls.NewCA("cloud", time.Hour)
 	require.NoError(t, err)
 	stranger := admittedNode(t, other)
@@ -123,11 +120,6 @@ func TestAFileNobodyHasIsNotFound(t *testing.T) {
 	require.ErrorIs(t, err, errorClosed)
 }
 
-// TestABootstrapPeerGossipsToANodeThatJoins. The peer a node bootstraps from
-// learns it speaks gossipsub from the identify run as they connect, so it opens
-// its stream back without the identify push a late learner depends on. Here it
-// never gets one: a push is sent once and is limited per subnet, so a seed
-// taking many joiners at once misses most of them.
 func TestABootstrapPeerGossipsToANodeThatJoins(t *testing.T) {
 	seed, err := New(t.Context(), t.TempDir(), keypair.NewRaw(), nil, []string{"/ip4/127.0.0.1/tcp/0"}, nil, true, false)
 	require.NoError(t, err)

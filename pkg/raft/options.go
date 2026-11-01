@@ -9,10 +9,8 @@ import (
 	"time"
 )
 
-// Option configures optional cluster behavior
 type Option func(*cluster) error
 
-// WithTimeouts sets custom timeout configuration
 func WithTimeouts(cfg TimeoutConfig) Option {
 	return func(c *cluster) error {
 		c.timeoutConfig = cfg
@@ -20,10 +18,8 @@ func WithTimeouts(cfg TimeoutConfig) Option {
 	}
 }
 
-// WithForceBootstrap forces immediate bootstrap as a single-node cluster,
-// skipping peer discovery entirely.
-// Default: false (discover peers first, auto-bootstrap only if none found)
-// Use this only when you KNOW this should be the first node in a new cluster.
+// WithForceBootstrap bootstraps a group of one at once, skipping discovery.
+// Only for a node known to be the first of a new group.
 func WithForceBootstrap() Option {
 	return func(c *cluster) error {
 		c.forceBootstrap = true
@@ -31,9 +27,8 @@ func WithForceBootstrap() Option {
 	}
 }
 
-// WithBootstrapTimeout sets how long to wait for peers before auto-bootstrapping.
-// If no peers are discovered within this timeout, the node will bootstrap itself.
-// Default: 30s
+// WithBootstrapTimeout is how long to look for peers before bootstrapping
+// alone. Default: 30s.
 func WithBootstrapTimeout(d time.Duration) Option {
 	return func(c *cluster) error {
 		c.bootstrapTimeout = d
@@ -53,14 +48,10 @@ func WithSnapshotDir(dir string) Option {
 	}
 }
 
-// WithSnapshotRoot puts this cluster's snapshots under a directory the CALLER
-// owns, in a subdirectory named after the namespace. Without it they go in a
-// folder of the node's own (node.NewFolder), beside the store that holds the
-// log they compact, so two nodes never share one.
-//
-// THE NAMESPACE STILL NAMES THE SUBDIRECTORY, because one node opens many
-// groups — one per resource in the case of a database — and a root shared
-// between them would be the same collision one level down.
+// WithSnapshotRoot puts snapshots under root/<namespace>, a directory the
+// caller owns. Without it they go in a folder of the node's own, so two nodes
+// never share one. The namespace still names the subdirectory because one node
+// runs many groups.
 func WithSnapshotRoot(root string) Option {
 	return func(c *cluster) error {
 		if root == "" {
@@ -71,12 +62,8 @@ func WithSnapshotRoot(root string) Option {
 	}
 }
 
-// WithEncryptionKey enables AES-256-GCM encryption for all transport and stream service messages.
-// The key must be 32 bytes. All cluster members must use the same key.
-// This protects:
-// - Raft RPC traffic (transport layer)
-// - Stream service commands (set, get, delete, keys, joinVoter, exchangePeers)
-// - Cluster join operations
+// WithEncryptionKey seals the raft transport and every call with AES-256-GCM.
+// The key is 32 bytes, the same on every member.
 func WithEncryptionKey(key []byte) Option {
 	return func(c *cluster) error {
 		if key != nil {

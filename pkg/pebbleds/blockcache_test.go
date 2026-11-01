@@ -29,9 +29,6 @@ func blockKey(c cid.Cid) ds.Key {
 	return ds.RawKey(blocksPrefix + keyEncoding.EncodeToString(hashOf(c)))
 }
 
-// What a store holds is known in memory once its filter is built, from
-// the blocks it held at open and those written since, whichever call
-// wrote them.
 func TestBlockMemory(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -85,7 +82,6 @@ func TestBlockMemory(t *testing.T) {
 	has(old.Cid(), false)
 }
 
-// A filter that fills is rebuilt twice the size, losing no block.
 func TestBlockFilterRebuilds(t *testing.T) {
 	defer func(b uint64) { bloomBits = b }(bloomBits)
 	bloomBits = 1 << 10
@@ -111,8 +107,6 @@ func TestBlockFilterRebuilds(t *testing.T) {
 	}
 }
 
-// Writes, deletes and Has racing each other: once they are done, Has says
-// what the store holds.
 func TestBlockMemoryRaces(t *testing.T) {
 	ctx := context.Background()
 	s := open(t)
@@ -154,7 +148,6 @@ func TestBlockMemoryRaces(t *testing.T) {
 	}
 }
 
-// A store closed while its filter is built stops building it.
 func TestBlockFilterStopsOnClose(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -172,7 +165,6 @@ func TestBlockFilterStopsOnClose(t *testing.T) {
 	must(t, s.Close())
 }
 
-// A call made with a done context does nothing and says so.
 func TestDoneContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

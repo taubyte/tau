@@ -12,9 +12,6 @@ import (
 	keypair "github.com/taubyte/tau/p2p/keypair"
 )
 
-// hasTopicPeer reports whether id is currently known to n's pubsub instance
-// as subscribed to topic (i.e. a subscription announcement from id has been
-// received).
 func hasTopicPeer(n Node, topic string, id peercore.ID) bool {
 	for _, p := range n.Messaging().ListPeers(topic) {
 		if p == id {
@@ -24,18 +21,15 @@ func hasTopicPeer(n Node, topic string, id peercore.ID) bool {
 	return false
 }
 
-// TestPubSubShutdownKVDBDesync tests for pubsub shutdown causing kvdb desync
-// This reproduces the production issue where pubsub connections shutdown cause kvdb desync
 func TestPubSubShutdownKVDBDesync(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Create two peers
 	dir1 := t.TempDir()
 	dir2 := t.TempDir()
 
-	// AN UNBOUND PORT, so the kernel picks one free: a random one collided with whatever
-	// else the machine was running. The peers dial each other by what they announce.
+	// An unbound port, so the kernel picks a free one; the peers dial what they
+	// announce.
 
 	p1, err := New(
 		ctx,
@@ -67,7 +61,6 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 	}
 	defer p2.Close()
 
-	// Connect peers
 	time.Sleep(2 * time.Second)
 	p1.Peering().AddPeer(peercore.AddrInfo{
 		ID:    p2.ID(),
@@ -78,7 +71,6 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 		Addrs: p1.Peer().Addrs(),
 	})
 
-	// Wait for connection
 	timeout := 10 * time.Second
 	start := time.Now()
 	for time.Since(start) < timeout {
@@ -89,13 +81,11 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Subscribe to a topic on both peers
 	topicName := "test-kvdb-topic"
 	var p1Messages, p2Messages []string
 	var p1Mu, p2Mu sync.Mutex
 	var p1Err, p2Err error
 
-	// Peer 1 subscription
 	err = p1.PubSubSubscribe(topicName,
 		func(msg *pubsub.Message) {
 			p1Mu.Lock()
@@ -112,7 +102,6 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 		t.Fatalf("Failed to subscribe peer 1: %v", err)
 	}
 
-	// Peer 2 subscription
 	err = p2.PubSubSubscribe(topicName,
 		func(msg *pubsub.Message) {
 			p2Mu.Lock()
@@ -138,7 +127,6 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Publish messages from peer 1
 	for i := 0; i < 5; i++ {
 		msg := fmt.Sprintf("message-%d", i)
 		err := p1.PubSubPublish(ctx, topicName, []byte(msg))
@@ -148,8 +136,6 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Wait for messages to propagate (poll; the count check below reports
-	// any shortfall once the timeout hits).
 	propagateTimeout := 4 * time.Second
 	propagateStart := time.Now()
 	for time.Since(propagateStart) < propagateTimeout {
@@ -162,9 +148,8 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Verify both peers received messages
 	p1Mu.Lock()
-	_ = len(p1Messages) // p1Count
+	_ = len(p1Messages)
 	p1Mu.Unlock()
 
 	p2Mu.Lock()
@@ -175,7 +160,6 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 		t.Errorf("Peer 2 did not receive all messages: got %d, expected 5", p2Count)
 	}
 
-	// Simulate connection shutdown by disconnecting peers
 	p1.Peering().RemovePeer(p2.ID())
 	p2.Peering().RemovePeer(p1.ID())
 
@@ -193,7 +177,6 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Check for subscription errors
 	p1Mu.Lock()
 	hasP1Err := p1Err != nil
 	p1Mu.Unlock()
@@ -202,7 +185,6 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 	hasP2Err := p2Err != nil
 	p2Mu.Unlock()
 
-	// Reconnect peers
 	p1.Peering().AddPeer(peercore.AddrInfo{
 		ID:    p2.ID(),
 		Addrs: p2.Peer().Addrs(),
@@ -212,7 +194,6 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 		Addrs: p1.Peer().Addrs(),
 	})
 
-	// Wait for reconnection
 	reconnectTimeout := 6 * time.Second
 	reconnectStart := time.Now()
 	for time.Since(reconnectStart) < reconnectTimeout {
@@ -224,7 +205,6 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Try to publish more messages
 	for i := 5; i < 10; i++ {
 		msg := fmt.Sprintf("message-%d", i)
 		err := p1.PubSubPublish(ctx, topicName, []byte(msg))
@@ -234,8 +214,6 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Wait for messages (poll; the count check below reports any shortfall
-	// once the timeout hits).
 	afterTimeout := 4 * time.Second
 	afterStart := time.Now()
 	for time.Since(afterStart) < afterTimeout {
@@ -248,7 +226,6 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Check if messages were received after reconnection
 	p2Mu.Lock()
 	p2CountAfter := len(p2Messages)
 	p2Mu.Unlock()
@@ -262,15 +239,14 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 	}
 }
 
-// TestPubSubTopicReuseAfterError tests topic reuse after errors
 func TestPubSubTopicReuseAfterError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	dir1 := t.TempDir()
 
-	// AN UNBOUND PORT, so the kernel picks one free: a random one collided with whatever
-	// else the machine was running. The peers dial each other by what they announce.
+	// An unbound port, so the kernel picks a free one; the peers dial what they
+	// announce.
 
 	p1, err := New(
 		ctx,
@@ -293,10 +269,8 @@ func TestPubSubTopicReuseAfterError(t *testing.T) {
 	errorCount := 0
 	var mu sync.Mutex
 
-	// Subscribe with error handler
 	err = p1.PubSubSubscribe(topicName,
 		func(msg *pubsub.Message) {
-			// Do nothing
 		},
 		func(err error) {
 			mu.Lock()
@@ -308,7 +282,6 @@ func TestPubSubTopicReuseAfterError(t *testing.T) {
 		t.Fatalf("Failed to subscribe: %v", err)
 	}
 
-	// Publish a message
 	err = p1.PubSubPublish(ctx, topicName, []byte("test"))
 	if err != nil {
 		t.Errorf("Failed to publish: %v", err)
@@ -316,10 +289,8 @@ func TestPubSubTopicReuseAfterError(t *testing.T) {
 
 	time.Sleep(500 * time.Millisecond)
 
-	// Try to reuse the topic by subscribing again
 	err = p1.PubSubSubscribe(topicName,
 		func(msg *pubsub.Message) {
-			// Do nothing
 		},
 		func(err error) {
 			mu.Lock()
@@ -331,7 +302,6 @@ func TestPubSubTopicReuseAfterError(t *testing.T) {
 		t.Errorf("Failed to reuse topic after first subscription: %v", err)
 	}
 
-	// Publish again
 	err = p1.PubSubPublish(ctx, topicName, []byte("test2"))
 	if err != nil {
 		t.Errorf("Failed to publish after topic reuse: %v", err)
@@ -348,15 +318,14 @@ func TestPubSubTopicReuseAfterError(t *testing.T) {
 	}
 }
 
-// TestPubSubMultipleSubscriptionsSameTopic tests multiple subscriptions to same topic
 func TestPubSubMultipleSubscriptionsSameTopic(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	dir1 := t.TempDir()
 
-	// AN UNBOUND PORT, so the kernel picks one free: a random one collided with whatever
-	// else the machine was running. The peers dial each other by what they announce.
+	// An unbound port, so the kernel picks a free one; the peers dial what they
+	// announce.
 
 	p1, err := New(
 		ctx,
@@ -379,7 +348,6 @@ func TestPubSubMultipleSubscriptionsSameTopic(t *testing.T) {
 	messageCount := 0
 	var mu sync.Mutex
 
-	// Create multiple subscriptions to the same topic
 	numSubs := 3
 	for i := 0; i < numSubs; i++ {
 		err = p1.PubSubSubscribe(topicName,
@@ -399,7 +367,6 @@ func TestPubSubMultipleSubscriptionsSameTopic(t *testing.T) {
 
 	time.Sleep(1 * time.Second)
 
-	// Publish messages
 	for i := 0; i < 5; i++ {
 		err := p1.PubSubPublish(ctx, topicName, []byte(fmt.Sprintf("msg-%d", i)))
 		if err != nil {
@@ -408,8 +375,6 @@ func TestPubSubMultipleSubscriptionsSameTopic(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Wait for delivery across all subscriptions (poll; the count check
-	// below reports any shortfall once the timeout hits).
 	expectedCount := 5 * numSubs
 	deliverTimeout := 4 * time.Second
 	deliverStart := time.Now()
@@ -427,7 +392,6 @@ func TestPubSubMultipleSubscriptionsSameTopic(t *testing.T) {
 	count := messageCount
 	mu.Unlock()
 
-	// Each message should be received by each subscription
 	if count < expectedCount {
 		t.Errorf("Expected %d message deliveries, got %d", expectedCount, count)
 	}

@@ -21,13 +21,10 @@ import (
 var clusterLogger = logging.Logger("raft-cluster")
 
 const (
-	// defaultRetainSnapshots is the default number of snapshots to retain
 	defaultRetainSnapshots = 3
 
-	// MaxApplyTimeout is the maximum timeout for Apply operations
 	MaxApplyTimeout = 60 * time.Second
 
-	// RaftStoragePrefix is the prefix used for all Raft storage paths
 	RaftStoragePrefix = "/raft/"
 )
 
@@ -67,7 +64,7 @@ type member struct {
 	fsm        FSM
 	snaps      *fileSnapshotStore
 	tracker    *peerTracker
-	raftClient internalClient // Client for remote Raft operations (joining voters, forwarding to leader, etc.)
+	raftClient internalClient
 
 	stopTracker context.CancelFunc
 	// streamService is set by initialize after the member is published, and
@@ -84,8 +81,7 @@ type member struct {
 	downOnce sync.Once
 }
 
-// New creates a new Raft cluster with the given namespace
-// Nodes with the same namespace discover each other automatically
+// Nodes with the same namespace discover each other.
 func New(node taupeer.Node, namespace string, opts ...Option) (Cluster, error) {
 	if node == nil {
 		return nil, fmt.Errorf("node is required")
@@ -126,12 +122,10 @@ func New(node taupeer.Node, namespace string, opts ...Option) (Cluster, error) {
 	return c, nil
 }
 
-// initialize builds the group's member, and takes down what it built when a
-// step fails: New returns no cluster to close, and a yield that rebuilds has
-// already taken down the one it replaces.
-//
-// THE MEMBER IS PUBLISHED BEFORE ITS STREAM SERVICE LISTENS, so a call the
-// new service answers reads the new member and not the one taken down.
+// initialize takes down what it built when a step fails: New returns no
+// cluster to close, and a yield that rebuilds has already taken down the one
+// it replaces. The member is published before its stream service listens, so a
+// call the new service answers reads the new member.
 func (c *cluster) initialize() (err error) {
 	store := c.node.Store()
 	storagePrefix := path.Join(RaftStoragePrefix, c.namespace)
@@ -215,12 +209,10 @@ func (c *cluster) initialize() (err error) {
 	return nil
 }
 
-// current is the member the cluster runs now.
 func (c *cluster) current() *member {
 	return c.member.Load()
 }
 
-// handleBootstrap implements autonomous bootstrap with peer consensus
 func (c *cluster) handleBootstrap(m *member, raftConfig *raft.Config, transport raft.Transport) error {
 	var (
 		successfullyCompleted bool
@@ -362,7 +354,6 @@ func (c *cluster) handleBootstrap(m *member, raftConfig *raft.Config, transport 
 	return nil
 }
 
-// bootstrapWithPeers bootstraps a cluster with the agreed-upon peer list
 func (c *cluster) bootstrapWithPeers(r *raft.Raft, transport raft.Transport, peers []peer.ID) error {
 	servers := make([]raft.Server, 0, len(peers))
 
@@ -443,11 +434,9 @@ func (c *cluster) getTimeoutConfig() TimeoutConfig {
 	return DefaultTimeoutConfig
 }
 
-// minTransportTimeout floors the transport I/O deadline so it is never tied to
-// an aggressive HeartbeatTimeout. A heartbeat as low as tens of ms would make
-// every RPC (a dial + libp2p stream negotiation on a cold peer) race that same
-// budget; raft-level liveness stays fast via HeartbeatTimeout/ElectionTimeout
-// regardless. No effect on production (default HeartbeatTimeout is 15s).
+// The transport deadline is floored so a dial and stream negotiation on a cold
+// peer never race an aggressive HeartbeatTimeout; liveness stays with the raft
+// timeouts. The default HeartbeatTimeout, 15s, is above it.
 const minTransportTimeout = time.Second
 
 func (c *cluster) createTransport() (*raft.NetworkTransport, error) {
@@ -465,13 +454,9 @@ func (c *cluster) requestVoterJoin(m *member, timeout time.Duration) {
 	go c.askToJoin(m, timeout)
 }
 
-// askToJoin asks the group to let this member in every 500ms, until it does or
-// 10s pass.
-//
-// IT ASKS FOR THE MEMBER THAT STARTED IT AND ENDS WITH THAT MEMBER. A yield
-// takes the member down and builds another in the same cluster while this
-// goroutine runs on: it reads only the member it is handed, and stops once
-// that member's raft is shut down. The member a yield builds asks for itself.
+// askToJoin asks every 500ms until the group lets m in or 10s pass. It reads
+// only m and stops once m's raft is shut down: a yield builds another member,
+// which asks for itself.
 func (c *cluster) askToJoin(m *member, timeout time.Duration) {
 	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
 	defer cancel()
@@ -514,9 +499,8 @@ func (c *cluster) askToJoin(m *member, timeout time.Duration) {
 	}
 }
 
-// tryJoinExistingCluster asks peers to let this node in until one does, one
-// says there is no leader to ask, or two seconds pass, within ctx. It reports
-// whether the node joined and whether it was told there is no leader.
+// It stops once a peer lets this node in, one says there is no leader to ask,
+// or two seconds pass, and reports which.
 func (c *cluster) tryJoinExistingCluster(ctx context.Context, m *member, peers []peer.ID, timeout time.Duration) (bool, bool) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
@@ -559,8 +543,7 @@ func (c *cluster) tryJoinExistingCluster(ctx context.Context, m *member, peers [
 	}
 }
 
-// protocolPeers are the peers listed as serving protocolID among those
-// connected and, given a tracker, those it tracks.
+// Among the connected peers and, given a tracker, those it tracks.
 func (c *cluster) protocolPeers(protocolID protocol.ID, tracker *peerTracker) []peer.ID {
 	targets := make(map[peer.ID]struct{})
 
@@ -600,13 +583,10 @@ func (c *cluster) voterJoinTargets(tracker *peerTracker) []peer.ID {
 	return c.protocolPeers(protocol.ID(Protocol(c.namespace)), tracker)
 }
 
-// raftProtocolPeers are the connected peers listed as serving the group's
-// protocol, the one a join is asked over.
 func (c *cluster) raftProtocolPeers() []peer.ID {
 	return c.protocolPeers(protocol.ID(Protocol(c.namespace)), nil)
 }
 
-// Close gracefully shuts down the Raft node
 func (c *cluster) Close() error {
 	if c.closed.Swap(true) {
 		return ErrAlreadyClosed
@@ -625,7 +605,6 @@ func (c *cluster) Close() error {
 	return c.current().takeDown()
 }
 
-// takeDown stops everything initialize builds and waits for the raft.
 func (m *member) takeDown() error {
 	if m.stopTracker != nil {
 		m.stopTracker()
@@ -644,21 +623,11 @@ func (m *member) takeDown() error {
 	return err
 }
 
-// wait is f's answer, or ErrShutdown once the member's raft is shut down
-// without giving one, which leaves the outcome unknown.
-//
-// RAFT DROPS A LOG IT COMMITTED BUT HAD NOT APPLIED WHEN IT SHUT DOWN: the
-// batch waits in the state machine's queue, which raft stops reading at
-// shutdown, and the future of a write, a barrier or a change of members in it
-// is never answered. A call in flight across a yield or a Close waited for it
-// forever. The goroutine waiting on a dropped future stays blocked: one per
-// log raft dropped, which only a shutdown does.
-//
-// AN ANSWER RAFT GAVE BEFORE IT SHUT DOWN IS READ, NOT RACED. down closes
-// once raft's goroutines have exited, so a log the state machine was given
-// has had its future answered by then; but the goroutine reading that answer
-// may not have run yet, and a write that landed was reported as ErrShutdown.
-// A future whose log the state machine was given is waited for.
+// wait is f's answer, or ErrShutdown once the raft is shut down without one.
+// raft drops a log it committed but had not applied at shutdown, and never
+// answers its future; the goroutine waiting on it stays blocked. A future whose
+// log the state machine was given is waited for: down closes once raft's
+// goroutines exit, so its answer is there to read.
 func (m *member) wait(f raft.Future) error {
 	answer := make(chan error, 1)
 	go func() { answer <- f.Error() }()
@@ -735,12 +704,9 @@ func (c *cluster) Get(key string) ([]byte, bool) {
 	return value, found
 }
 
-// TryGet answers as Get does, plus the reason a read came back empty.
-//
-// A CLUSTER THAT CANNOT READ SAYS SO RATHER THAN SAYING THE KEY IS FREE. A
-// closed cluster and a cluster with no state machine both answered false
-// through Get, which a caller allocating from an absent key reads as an empty
-// keyspace.
+// TryGet is Get plus why a read came back empty: a closed cluster or one with
+// no state machine says so, rather than look like an empty keyspace to a
+// caller allocating from absent keys.
 func (c *cluster) TryGet(key string) ([]byte, bool, error) {
 	if c.closed.Load() {
 		return nil, false, ErrShutdown
@@ -878,8 +844,6 @@ func (c *cluster) Barrier(timeout time.Duration) error {
 	return mapNotLeader(m.wait(m.raft.Barrier(timeout)))
 }
 
-// mapNotLeader answers raft's refusal of a member that does not lead as
-// ErrNotLeader, which is the error callers test for.
 func mapNotLeader(err error) error {
 	if errors.Is(err, raft.ErrNotLeader) {
 		return ErrNotLeader
@@ -910,7 +874,6 @@ func (c *cluster) Leader() (peer.ID, error) {
 	return leaderKnownTo(c.current().raft)
 }
 
-// leaderKnownTo is the leader r knows of.
 func leaderKnownTo(r *raft.Raft) (peer.ID, error) {
 	addr, _ := r.LeaderWithID()
 	if addr == "" {
@@ -959,7 +922,6 @@ func (c *cluster) Members() ([]Member, error) {
 	return c.current().members()
 }
 
-// members are the servers in the configuration m's raft holds.
 func (m *member) members() ([]Member, error) {
 	configFuture := m.raft.GetConfiguration()
 	if err := configFuture.Error(); err != nil {

@@ -234,11 +234,8 @@ func newNamespaceTransport(h host.Host, namespace string, timeout time.Duration,
 		ServerAddressProvider: provider,
 		Logger:                &hcLogToLogger{},
 		Stream:                stream,
-		// Pool connections (hashicorp's own default) so heartbeats and
-		// AppendEntries reuse an open stream instead of dialing + negotiating a
-		// fresh libp2p stream per RPC. With MaxPool 0 every heartbeat was a cold
-		// dial, which races an aggressive HeartbeatTimeout the moment any layer
-		// (storage/DHT/CPU) adds a few ms of tail latency.
+		// Pooled, so heartbeats reuse an open stream: a cold dial per RPC races an
+		// aggressive HeartbeatTimeout once anything adds tail latency.
 		MaxPool: 3,
 		Timeout: timeout,
 	}

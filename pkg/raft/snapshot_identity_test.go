@@ -10,7 +10,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// fastSingleNode timeouts: quick election so single-node bootstrap settles fast.
 var fastSingleNode = TimeoutConfig{
 	HeartbeatTimeout:   50 * time.Millisecond,
 	ElectionTimeout:    50 * time.Millisecond,
@@ -40,16 +39,12 @@ func bootstrapAndSnapshot(t *testing.T, snapDir, namespace string) {
 	assert.NilError(t, c.WaitForLeader(ctx))
 	assert.NilError(t, c.Set("k", []byte("v"), 2*time.Second))
 
-	// Force a snapshot: snapDir now carries a configuration listing this node.
 	assert.NilError(t, c.(*cluster).current().raft.Snapshot().Error())
 	assert.NilError(t, c.Close())
 }
 
-// TestSharedSnapshotDir_StaleIdentity_Wedges reproduces #431. Two nodes with
-// different identities share one snapshot dir (as dream did via the global /tmp
-// default). The second node restores the first's snapshot — whose configuration
-// does not include it — enters follower state "not part of stable configuration"
-// and can never elect a leader.
+// #431: a second identity sharing one snapshot dir restores the first's
+// configuration, which lacks it, and can never elect a leader.
 func TestSharedSnapshotDir_StaleIdentity_Wedges(t *testing.T) {
 	shared := t.TempDir()
 	const ns = "main"
@@ -75,16 +70,11 @@ func TestSharedSnapshotDir_StaleIdentity_Wedges(t *testing.T) {
 		"#431: node B inherited node A's snapshot and should not be able to elect a leader")
 }
 
-// TestScopedSnapshotDir_FreshIdentity_Bootstraps is the fix guard: when the
-// snapshot dir is scoped per root (WithSnapshotRoot), a fresh node in its own
-// root bootstraps cleanly regardless of a prior node's leftover snapshot.
 func TestScopedSnapshotDir_FreshIdentity_Bootstraps(t *testing.T) {
 	const ns = "main"
 
-	// A prior run leaves a snapshot under its own root.
 	bootstrapAndSnapshot(t, t.TempDir(), ns)
 
-	// New run: its own root → its own snapshot dir → no contamination.
 	nodeB := newTestNode(t)
 	cB, err := New(nodeB, ns,
 		WithForceBootstrap(),
