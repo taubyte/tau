@@ -205,8 +205,8 @@ func (c *cluster) initialize() (err error) {
 	}
 
 	h := newHealer(c, m)
-	m.healer.Store(h)
 	h.registerObserver()
+	m.healer.Store(h)
 	go h.run(c.ctx)
 
 	clusterLogger.Infof("[%s] raft initialization complete for namespace %s",

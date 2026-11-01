@@ -732,13 +732,13 @@ func TestHealing_AVoteFromANonMemberIsReported(t *testing.T) {
 // learns of a change of leader only by observation, took a cycle whose
 // leader it lost for leaderless.
 func TestHealing_AnObservationRaftDroppedCountsAsALeaderChange(t *testing.T) {
-	h := &healer{}
-	ch := make(chan raft.Observation)
 	var dropped atomic.Uint64
+	h := &healer{dropped: dropped.Load}
+	ch := make(chan raft.Observation)
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	go func() {
-		h.watch(ctx, ch, dropped.Load)
+		h.watch(ctx, ch)
 		close(done)
 	}()
 	defer func() {
@@ -763,6 +763,23 @@ func TestHealing_AnObservationRaftDroppedCountsAsALeaderChange(t *testing.T) {
 	ch <- raft.Observation{Data: raft.RequestVoteRequest{}}
 	ch <- raft.Observation{Data: raft.RequestVoteRequest{}}
 	assert.Equal(t, counted, h.leaderChanged.Load(), "a drop counted again")
+}
+
+// TestHealing_ADropCountedAfterTheWatcherLooksStillCounts: raft counts a
+// drop after it fails to deliver it, so the watcher can drain the channel
+// and read the count before it grows; with nothing delivered after, the
+// drop went uncounted. Asking whether a cycle had a leader counts it.
+func TestHealing_ADropCountedAfterTheWatcherLooksStillCounts(t *testing.T) {
+	c := &cluster{}
+	c.closed.Store(true) // knows no leader
+	var dropped atomic.Uint64
+	h := &healer{cluster: c, dropped: dropped.Load}
+	cycleStart := time.Now()
+	assert.False(t, h.hadLeaderSince(cycleStart), "a cycle with no leader and no drop had one")
+
+	dropped.Add(1)
+	assert.True(t, h.hadLeaderSince(cycleStart), "a drop no observation followed went uncounted")
+	assert.False(t, h.hadLeaderSince(time.Now().Add(time.Second)), "a drop counted again")
 }
 
 // TestHealing_AForeignVoterIsTrackedAndAbsorbedByTheLeader: a follower only

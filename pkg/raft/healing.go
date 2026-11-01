@@ -32,6 +32,10 @@ type healer struct {
 	// leaderChanged is when raft last reported this member gaining or losing
 	// a leader, in unix nanoseconds: up to then it knew one.
 	leaderChanged atomic.Int64
+	// dropped is raft's count of the observations it dropped, set before the
+	// healer is published; droppedSeen is the count noteDropped last took.
+	dropped     func() uint64
+	droppedSeen atomic.Uint64
 }
 
 func newHealer(c *cluster, m *member) *healer {
@@ -159,7 +163,31 @@ func (h *healer) hadLeaderSince(t time.Time) bool {
 	if _, err := h.cluster.Leader(); err == nil {
 		return true
 	}
+	h.noteDropped()
 	return h.leaderChanged.Load() >= t.UnixNano()
+}
+
+// noteDropped counts the observations raft dropped since the count it last
+// took as a change of leader, now: a dropped one may have been one. Raft
+// counts a drop after it fails to deliver it, so the watcher can drain the
+// channel and read the count before it grows, and hear nothing after; so
+// hadLeaderSince takes the count too, and each drop counts once whoever
+// takes it first.
+func (h *healer) noteDropped() {
+	if h.dropped == nil {
+		return
+	}
+	d := h.dropped()
+	for {
+		seen := h.droppedSeen.Load()
+		if d <= seen {
+			return
+		}
+		if h.droppedSeen.CompareAndSwap(seen, d) {
+			h.leaderChanged.Store(time.Now().UnixNano())
+			return
+		}
+	}
 }
 
 // handleForeignVote reacts to a vote/pre-vote from a non-member peer.
@@ -200,31 +228,28 @@ func (h *healer) registerObserver() {
 	// The observer is deregistered from the raft it watches, its member's: a
 	// yield builds a new member, whose healer registers its own.
 	on := h.member.raft
+	h.dropped = observer.GetNumDropped
 	on.RegisterObserver(observer)
 
 	go func() {
-		h.watch(h.cluster.ctx, ch, observer.GetNumDropped)
+		h.watch(h.cluster.ctx, ch)
 		on.DeregisterObserver(observer)
 	}()
 }
 
 // watch processes what the observer delivers until ctx is done. Raft drops
 // an observation the channel has no room for, and one it dropped may have
-// been a change of leader: once dropped, which counts what it dropped, has
-// grown, the leader counts as changed then, so a cycle is never taken for
-// leaderless on an observation the healer did not get.
-func (h *healer) watch(ctx context.Context, ch <-chan hraft.Observation, dropped func() uint64) {
-	var seen uint64
+// been a change of leader: each drop counts as one (see noteDropped), so a
+// cycle is never taken for leaderless on an observation the healer did not
+// get.
+func (h *healer) watch(ctx context.Context, ch <-chan hraft.Observation) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case obs := <-ch:
 			h.processObservation(obs)
-			if d := dropped(); d != seen {
-				seen = d
-				h.leaderChanged.Store(time.Now().UnixNano())
-			}
+			h.noteDropped()
 		}
 	}
 }
