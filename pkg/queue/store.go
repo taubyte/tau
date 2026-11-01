@@ -9,15 +9,9 @@ import (
 	"github.com/taubyte/tau/pkg/raft"
 )
 
-// Store is the part of a replicated key-value cluster this queue needs, and no
-// more of it: a leader, a consistent read, a prefix listing, and a write of
-// several keys that is one entry in the log. raft.Cluster satisfies it, and so
-// does raft.MockCluster; neither is named here, because a queue does not need a
-// consensus implementation, a transport, or a membership list.
-//
-// Batch MUST be atomic — every operation applied or none. Every state
-// transition in this package is one Batch, and that is what makes an item
-// impossible to lose between two places.
+// Store is the part of a replicated key-value cluster this queue needs: a leader, a
+// consistent read, a prefix listing, and a multi-key write that is one log entry.
+// raft.Cluster and raft.MockCluster satisfy it. Batch must be atomic.
 type Store interface {
 	// Get reads a key from local committed state.
 	Get(key string) ([]byte, bool)

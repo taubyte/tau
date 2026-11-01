@@ -6,14 +6,6 @@ import (
 	"time"
 )
 
-// The interleaving that matters: a second claimer reads the ready set while the
-// first is between its read and its write. There is one item, so the second
-// must come away with nothing.
-//
-// The hook holds the first claimer inside its write and waits for the second to
-// have had its chance. It waits on a deadline rather than on a signal from the
-// second claimer, because when the queue is correct the second claimer is
-// parked and has no signal to send — which is the whole point.
 func TestASecondClaimerCannotTakeAClaimedItem(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.mustPush(t, "job-1", "one")
@@ -58,8 +50,6 @@ func TestASecondClaimerCannotTakeAClaimedItem(t *testing.T) {
 	}
 }
 
-// Every item is delivered to exactly one consumer, and every consumer's claim is
-// its own.
 func TestConcurrentClaimersShareNothing(t *testing.T) {
 	const (
 		items     = 200
@@ -114,7 +104,6 @@ func TestConcurrentClaimersShareNothing(t *testing.T) {
 	}
 }
 
-// Concurrent producers: nothing is dropped and nothing is doubled.
 func TestConcurrentPushesKeepEveryItem(t *testing.T) {
 	const (
 		producers = 8
@@ -146,9 +135,6 @@ func id(i int) string {
 	return "job-" + string(rune('a'+i/26)) + string(rune('a'+i%26))
 }
 
-// Two Queue values for one name are one writer. Nothing stops a caller from
-// opening a queue twice, so the lock cannot be the queue's — this is the same
-// interleaving as above with the second claimer holding its own value.
 func TestTwoValuesForOneNameAreOneWriter(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.mustPush(t, "job-1", "one")

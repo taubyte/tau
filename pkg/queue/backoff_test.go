@@ -49,8 +49,6 @@ func TestAddClamped(t *testing.T) {
 	}
 }
 
-// A backoff that runs off the end of time must park the item, not wrap it round
-// to the front of the queue.
 func TestAnOverflowingBackoffDoesNotWrap(t *testing.T) {
 	h := newHarness(t, Config{
 		VisibilityTimeout: time.Second,

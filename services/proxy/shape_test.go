@@ -17,9 +17,8 @@ import (
 	"github.com/taubyte/tau/services/proxy"
 )
 
-// shape_test carries real bytes through a real chain, because what a
-// transformer does is change what arrives — a test that asserted on how many
-// times it was called would pass for a proxy that threw the answers away.
+// Real bytes through a real chain: a call count would pass for a proxy that threw the
+// answers away.
 
 // sieving is a transformer fake: one entry per function name, each with its own
 // behaviour, and every call recorded.
@@ -59,12 +58,8 @@ func upper(st *invoke.Stream) (*invoke.Shaping, error) {
 	return &invoke.Shaping{Pass: &invoke.Shaped{Out: bytes.ToUpper(st.Chunk)}}, nil
 }
 
-// lines holds bytes until a newline, which is what the STATE is for: a
-// transformer that could not remember could not do this at all.
-//
-// IT SHAPES ONLY THE INBOUND HALF, which is also the assertion that `way`
-// arrives: a fake that ignored it would uppercase the answer too, and the test
-// would be unable to tell the two directions apart.
+// lines holds bytes until a newline, which needs state. It shapes only the inbound
+// half, which proves `way` arrives.
 func lines(st *invoke.Stream) (*invoke.Shaping, error) {
 	if st.Way != invoke.Inbound {
 		return &invoke.Shaping{Pass: &invoke.Shaped{Out: st.Chunk}}, nil
@@ -119,7 +114,6 @@ func entry(name string, fail string) map[string]any {
 	return e
 }
 
-// TestBYTESAREWHATTHETRANSFORMERMADETHEM, in both directions.
 func TestAChainShapesWhatCrossesInBothDirections(t *testing.T) {
 	sv := newSieving()
 	sv.by["shout"] = upper
@@ -132,7 +126,6 @@ func TestAChainShapesWhatCrossesInBothDirections(t *testing.T) {
 	require.Contains(t, sv.calls(), "shout")
 }
 
-// TestACHAINISAPIPELINE: what the second sees is what the first produced.
 func TestASecondTransformerSeesWhatTheFirstProduced(t *testing.T) {
 	sv := newSieving()
 	sv.by["shout"] = upper
@@ -149,8 +142,6 @@ func TestASecondTransformerSeesWhatTheFirstProduced(t *testing.T) {
 	require.Equal(t, "[PONG:[PING]]", says(t, sock, "ping"))
 }
 
-// TestTHESTATEISCARRIEDBYTHEHOST, which is what lets a transformer buffer at
-// all — and what keeps it off any one node.
 func TestATransformerBuffersAcrossChunks(t *testing.T) {
 	sv := newSieving()
 	sv.by["lines"] = lines
@@ -175,8 +166,6 @@ func TestATransformerBuffersAcrossChunks(t *testing.T) {
 	require.Equal(t, "pong:SELECT 1\n", string(got))
 }
 
-// TestTHELASTCHUNKFLUSHES. Whatever is held has no newline coming, so it goes
-// out rather than being swallowed.
 func TestTheEndOfAStreamFlushesWhatIsHeld(t *testing.T) {
 	sv := newSieving()
 	sv.by["lines"] = lines
@@ -185,8 +174,6 @@ func TestTheEndOfAStreamFlushesWhatIsHeld(t *testing.T) {
 	require.Equal(t, "pong:QUIT", says(t, sock, "quit"), "no newline ever arrived and the bytes still did")
 }
 
-// TestACLOSEISADECISION, not a failure, and it ends the conversation whatever
-// `fail` says.
 func TestATransformerThatClosesEndsTheConnection(t *testing.T) {
 	sv := newSieving()
 	sv.by["guard"] = func(*invoke.Stream) (*invoke.Shaping, error) {
@@ -200,8 +187,6 @@ func TestATransformerThatClosesEndsTheConnection(t *testing.T) {
 	require.Contains(t, said.first(), "closed the connection")
 }
 
-// TestFAILCLOSEDCUTSIT, because a filter that stopped filtering exactly when
-// something was wrong is the failure the word exists to prevent.
 func TestATransformerThatCannotRunAndIsFailClosedCutsTheConnection(t *testing.T) {
 	sv := newSieving() // nothing registered: every call errors
 
@@ -214,8 +199,6 @@ func TestATransformerThatCannotRunAndIsFailClosedCutsTheConnection(t *testing.T)
 	require.Equal(t, "db", at.Name, "the workload was dialled before the first chunk was shaped")
 }
 
-// TestFAILOPENCARRIESON, because an enrichment that took the connection down to
-// add a header is the failure in the other direction.
 func TestATransformerThatCannotRunAndIsFailOpenIsSkipped(t *testing.T) {
 	sv := newSieving() // nothing registered: every call errors
 
@@ -223,8 +206,6 @@ func TestATransformerThatCannotRunAndIsFailOpenIsSkipped(t *testing.T) {
 	require.Equal(t, "pong:ping", says(t, sock, "ping"), "untransformed, which is what open means")
 }
 
-// TestFAILCLOSEDISTHEDEFAULT, which is what the vocabulary says and the safer
-// of the two to guess wrong.
 func TestAnEntryWithNoFailWordIsClosed(t *testing.T) {
 	sv := newSieving()
 
@@ -233,9 +214,6 @@ func TestAnEntryWithNoFailWordIsClosed(t *testing.T) {
 	require.Eventually(t, func() bool { return said.len() > 0 }, 2*time.Second, 10*time.Millisecond)
 }
 
-// TestEVERYLINKISASKED, even with nothing: one holding bytes may have a reason
-// to release them, and a chain that skipped it would let "did anything arrive"
-// decide whether the rest runs.
 func TestEveryTransformerIsCalledEvenWithAnEmptyChunk(t *testing.T) {
 	sv := newSieving()
 	sv.by["hold"] = func(st *invoke.Stream) (*invoke.Shaping, error) {
@@ -254,8 +232,6 @@ func TestEveryTransformerIsCalledEvenWithAnEmptyChunk(t *testing.T) {
 	require.Contains(t, sv.calls(), "after", "the second link ran on the empty chunks too")
 }
 
-// TestANENTRYWITHNONAME is skipped rather than resolved as the empty name,
-// which would search every kind for nothing.
 func TestAnEntryWithNoNameIsNotACallAtAll(t *testing.T) {
 	sv := newSieving()
 

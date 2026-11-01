@@ -16,9 +16,8 @@ import (
 	"github.com/taubyte/tau/services/proxy"
 )
 
-// route_test drives a router over a real socket, because the peek loop is the
-// interesting part: the proxy reads exactly what the router asked for, replays
-// it to the workload, and everything after it is an ordinary splice.
+// The peek loop is the interesting part: the proxy reads what the router asked for,
+// replays it to the workload, then splices.
 
 func routed(r map[string]any) {
 	r["routing"] = "router"
@@ -90,10 +89,8 @@ func says(t *testing.T, sock proxy.Socket, body string) string {
 	require.NoError(t, err)
 	defer c.Close()
 
-	// NEITHER WRITE NOR HALF-CLOSE IS REQUIRED TO SUCCEED. A refused connection
-	// is closed before the client has finished saying anything, which is
-	// exactly the case half of these tests drive — and what is being asserted
-	// is what came back, which is nothing.
+	// Neither write nor half-close must succeed: a refused connection closes early, and
+	// what is asserted is what came back.
 	c.SetDeadline(time.Now().Add(3 * time.Second))
 	c.Write([]byte(body))
 	c.(*net.TCPConn).CloseWrite()
@@ -102,9 +99,6 @@ func says(t *testing.T, sock proxy.Socket, body string) string {
 	return string(got)
 }
 
-// TestAROUTERREADSASMUCHASITASKSFORANDNOMORE, and what it read still reaches
-// the workload — otherwise a protocol's greeting would be eaten by the
-// classifier that read it.
 func TestARouterPeeksAndThePeekedBytesStillArrive(t *testing.T) {
 	sock, st, w, _ := routing(t, func(peeked []byte) *invoke.Direction {
 		if len(peeked) < 6 {
@@ -126,7 +120,6 @@ func TestARouterPeeksAndThePeekedBytesStillArrive(t *testing.T) {
 	require.Equal(t, "pgwire", string(peeks[1]))
 }
 
-// TestTHEROUTERISTOLDWHOISCALLINGANDWHATTHEYASKEDFOR.
 func TestARouterIsToldTheSourceAndTheName(t *testing.T) {
 	sock, st, _, _ := routing(t, func([]byte) *invoke.Direction {
 		return &invoke.Direction{To: &invoke.Endpoint{Kind: "application", Name: "db", Port: "pg"}}
@@ -142,8 +135,6 @@ func TestARouterIsToldTheSourceAndTheName(t *testing.T) {
 	require.True(t, strings.HasSuffix(conn.Host, ".tau.example.io"), "the name it answers on, got %q", conn.Host)
 }
 
-// TestAREFUSALCLOSESWITHNOTHINGWRITTEN, and the reason goes to the operator
-// because a raw socket has nowhere to put one.
 func TestARouterCanRefuseAConnection(t *testing.T) {
 	sock, _, w, said := routing(t, func([]byte) *invoke.Direction {
 		return &invoke.Direction{Refused: "not from there"}
@@ -156,8 +147,6 @@ func TestARouterCanRefuseAConnection(t *testing.T) {
 	require.Eventually(t, func() bool { return said.len() > 0 }, 2*time.Second, 10*time.Millisecond)
 }
 
-// TestAROUTERMAYNOTREADFOREVER. A router asking for more is a client holding
-// this listener open by sending nothing, so the ceiling is the proxy's.
 func TestARouterCannotAskForMoreThanTheProxyAllows(t *testing.T) {
 	sock, _, w, said := routing(t, func([]byte) *invoke.Direction {
 		return &invoke.Direction{More: 1 << 20}
@@ -169,8 +158,6 @@ func TestARouterCannotAskForMoreThanTheProxyAllows(t *testing.T) {
 	require.Eventually(t, func() bool { return said.len() > 0 }, 2*time.Second, 10*time.Millisecond)
 }
 
-// TestAROUTERTHATNEVERGETSTHERE. A router asking for no more than it has
-// already been shown would spin the peek loop on one prefix forever.
 func TestARouterThatWantsNoMoreThanItHasIsRefused(t *testing.T) {
 	sock, _, w, said := routing(t, func(peeked []byte) *invoke.Direction {
 		return &invoke.Direction{More: uint32(len(peeked))}
@@ -182,8 +169,6 @@ func TestARouterThatWantsNoMoreThanItHasIsRefused(t *testing.T) {
 	require.Eventually(t, func() bool { return said.len() > 0 }, 2*time.Second, 10*time.Millisecond)
 }
 
-// TestACLIENTTHATSENDSNOTHING is not a connection the router can classify, and
-// it must not hold a slot until something else times out.
 func TestAConnectionThatSaysNothingIsNotWaitedOnForever(t *testing.T) {
 	sock, _, w, _ := routing(t, func(peeked []byte) *invoke.Direction {
 		return &invoke.Direction{More: uint32(len(peeked) + 16)}
@@ -201,8 +186,6 @@ func TestAConnectionThatSaysNothingIsNotWaitedOnForever(t *testing.T) {
 	require.Empty(t, at.Name)
 }
 
-// TestTHELASTWORD: a protocol whose whole greeting is shorter than the router
-// guessed still gets an answer, rather than being cut off at EOF.
 func TestARouterIsAskedOnceMoreWhenTheClientIsDone(t *testing.T) {
 	var asked int
 	sock, st, w, _ := routing(t, func(peeked []byte) *invoke.Direction {
@@ -220,8 +203,6 @@ func TestARouterIsAskedOnceMoreWhenTheClientIsDone(t *testing.T) {
 	require.GreaterOrEqual(t, len(st.peeks()), 2)
 }
 
-// TestAROUTERNAMESANAMESPACE, resolved from the proxy's own scope the way an
-// omitted namespace is everywhere in this vocabulary.
 func TestARouterCanNameANamespace(t *testing.T) {
 	sock, _, w, _ := routing(t, func([]byte) *invoke.Direction {
 		return &invoke.Direction{To: &invoke.Endpoint{
@@ -235,7 +216,6 @@ func TestARouterCanNameANamespace(t *testing.T) {
 	require.Equal(t, []string{"local"}, at.Scope)
 }
 
-// TestAPROXYWITHNOROUTERNAMED is refused rather than forwarded somewhere.
 func TestARouterRoutedProxyThatNamesNoRouterIsRefused(t *testing.T) {
 	res := servable()
 	routed(res)

@@ -5,42 +5,23 @@ import (
 	"time"
 )
 
-// reconcile.go keeps what this node is listening for equal to what it holds.
+// A deployment arrives by a pointer moving, with no event to react to, so this is a
+// sweep: one step a test can call, and a loop that calls it. A sweep also converges
+// after a missed change.
 //
-// # It is a sweep and not an event
-//
-// A deployment arrives by a pointer moving, and nothing hands this service an
-// edge to react to. So the shape is the one node/cron.go already uses: one
-// step, reachable from a test with no goroutine and no clock, and a loop whose
-// only job is to call it. A sweep also converges after a missed edge, which an
-// event-driven listener table does not.
-//
-// # A node serves every proxy it holds, and no leader decides it
-//
-// This is the difference from a cron, where exactly one node in the fleet may
-// fire. A listener on each node is what gives an SRV answer more than one
-// target, so losing a node costs a client one retry rather than the service.
-//
-// # A proxy that stops being held stops listening
-//
-// Otherwise a node that dropped a deployment would keep a port open, keep
-// reporting it, and keep accepting connections it would then refuse — which is
-// worse than not answering, because DNS would go on sending clients to it.
+// Every node serves every proxy it holds, with no leader, so an SRV answer has more
+// than one target. A proxy no longer held stops listening, or DNS would keep sending
+// clients to a node that refuses them.
 
-// Deployments is what this node holds, in the terms Serve takes.
-//
-// services/worker answers it: what a node can serve is what it is already
-// serving, because the register does not enumerate. A proxy in a deployment
-// nothing has touched does not listen anywhere.
+// Deployments is what this node holds, in the terms Serve takes. services/worker
+// answers it, since the register does not enumerate; a proxy in a deployment nothing
+// has touched does not listen anywhere.
 type Deployments interface {
 	Proxies(ctx context.Context) []Bind
 }
 
-// DefaultSweep is how often this node compares what it serves to what it holds.
-//
-// A DEPLOY IS NOTICED WITHIN ONE SWEEP, which is the cost of having no edge to
-// react to. Ten seconds is node/cron.go's tick for the same reason: it bounds
-// the lateness of noticing and costs one map read per proxy.
+// DefaultSweep is how often this node compares what it serves to what it holds,
+// which bounds how late a deploy is noticed.
 const DefaultSweep = 10 * time.Second
 
 // WithDeployments is where the list of proxies to serve comes from. A service
@@ -56,12 +37,8 @@ func WithDeployments(d Deployments) Option {
 }
 
 // Sweep serves every proxy this node holds and stops the ones it no longer
-// does. It reports how many listeners it started.
-//
-// A PROXY THAT CANNOT BE SERVED IS NOT RETRIED IN A TIGHTER LOOP. The next
-// sweep is the retry, and the reason went to the operator the first time — a
-// service that logged an unservable resource every ten seconds would bury the
-// deploy that fixed it.
+// does. It reports how many listeners it started. An unservable proxy is retried by
+// the next sweep, and reported once per reason.
 func (s *Service) Sweep(ctx context.Context) int {
 	if s.opts.deployments == nil {
 		return 0
@@ -78,9 +55,7 @@ func (s *Service) Sweep(ctx context.Context) int {
 	var started int
 	for key, b := range wanted {
 		if s.holds(key) {
-			// AN EDITED LIMIT TAKES EFFECT WITHIN ONE SWEEP. It is read here
-			// rather than per connection because the accept path consults it
-			// before it reads anything else — see limits.go.
+			// An edited limit takes effect within one sweep.
 			s.refreshLimits(ctx, key, b)
 			continue
 		}
@@ -140,12 +115,8 @@ func (s *Service) stopUnheld(wanted map[string]Bind) {
 	}
 }
 
-// refused says whether this proxy has already been reported as unservable with
-// this same reason, and records it if not.
-//
-// THE REASON IS PART OF THE KEY, so an author who fixes one refusal and creates
-// another is told about the second — only a repeat of the same sentence about
-// the same resource is silence.
+// refused says whether this proxy has already been reported as unservable with this
+// same reason, and records it if not. A new reason is reported.
 func (s *Service) refused(key string, err error) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -165,9 +136,8 @@ func (s *Service) forget(key string) {
 }
 
 // refreshLimits re-reads what one source may open on a proxy already being
-// served. A deployment that cannot be read leaves the last limits in place,
-// which is the safe direction: the alternative is dropping a ceiling because a
-// register read failed.
+// served. A deployment that cannot be read leaves the last limits in place rather
+// than dropping a ceiling.
 func (s *Service) refreshLimits(ctx context.Context, key string, b Bind) {
 	_, r, _, err := s.resource(ctx, b)
 	if err != nil {

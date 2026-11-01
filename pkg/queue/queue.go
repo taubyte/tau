@@ -33,9 +33,7 @@ type Delivery struct {
 // Option adjusts a group at construction.
 type Option func(*Group) error
 
-// WithClock replaces the source of time. Everything this package decides —
-// whether an item is deliverable, whether a claim has expired, when a retry is
-// due — is decided against it, so a test can move time without sleeping.
+// WithClock replaces the source of time every decision here is made against.
 func WithClock(now func() time.Time) Option {
 	return func(g *Group) error {
 		if now == nil {
@@ -46,21 +44,12 @@ func WithClock(now func() time.Time) Option {
 	}
 }
 
-// Group is the set of queues over one store, and the composition root for them:
-// a queue is opened from a group, never built on its own.
-//
-// The group is what makes a claim exclusive. Every queue it opens takes the
-// SAME lock, so two consumers of one queue exclude each other even when they
-// hold two different Queue values for it — which a per-queue lock would not,
-// and which nothing stops a caller from doing. It also covers the one write a
-// queue makes outside its own keys, the move into the dead-letter queue. Writes
-// commit only on the leader, so one process holds every writer, and this is
-// that process's half of the mutual exclusion.
-//
-// The cost is that queues over one store do not write concurrently. They never
-// could: their writes are entries in one replicated log, serialized by one
-// leader, and the lock is held across a store call precisely so that the read
-// it decided on cannot go stale before the write lands.
+// Group is the set of queues over one store; a queue is opened from a group, never
+// built on its own. Every queue it opens takes the same lock, so two Queue values for
+// one name exclude each other, and the lock covers the move into the dead letter.
+// Queues over one store never wrote concurrently anyway: their writes are entries in
+// one log. The lock is held across a store call so the read it decided on cannot go
+// stale before the write lands.
 type Group struct {
 	store Store
 	now   func() time.Time
@@ -99,9 +88,6 @@ func (g *Group) Open(cfg Config) (*Queue, error) {
 
 // Queue is a replicated work queue. See the package documentation for the state
 // machine.
-//
-// A Queue holds no state of its own. Everything is in the store, so a process
-// that dies mid-claim leaves the item claimed and the claim expires.
 type Queue struct {
 	group *Group
 	cfg   Config
@@ -129,25 +115,14 @@ func (q *Queue) Push(id string, data []byte) error {
 	return q.PushWith([]Item{{ID: id, Data: data}})
 }
 
-// PushWith adds items and applies the caller's OWN operations in the same
-// replicated entry, so a producer gets both or neither.
+// PushWith adds items and applies the caller's own operations in the same
+// replicated entry, so a producer gets both or neither. It is for a key outside this
+// queue that means "the push happened": a clock claiming a period must not record the
+// claim without the work.
 //
-// IT EXISTS BECAUSE A PRODUCER'S RECORD OF A PUSH MUST NOT OUTLIVE THE PUSH. A
-// clock claims a period and then pushes the work that period owes; as two
-// entries, a leader that dies between them has spent the period and produced
-// nothing, and no later turn can tell — the claim it left behind says the work
-// was already done. As one entry there is no between. That is the caller shape
-// this is for and the only one: a key OUTSIDE this queue whose whole meaning is
-// "the push happened".
-//
-// THE OPERATIONS MAY NOT TOUCH THIS QUEUE OR ITS DEAD LETTER, refused with
-// [ErrReservedKey]. Every state transition in this package is one Batch and
-// that is what makes an item impossible to lose between two places; a caller
-// writing into the middle of those keys would be a second author of them with
-// none of the rules.
-//
-// Everything else is [Queue.Push]'s: an id this queue already holds is skipped
-// rather than refused, and no items at all still commits the operations.
+// The operations may not touch this queue or its dead letter ([ErrReservedKey]).
+// Otherwise it is [Queue.Push]: an id already held is skipped, and no items still
+// commits the operations.
 func (q *Queue) PushWith(items []Item, also ...raft.BatchOp) error {
 	for _, item := range items {
 		if item.ID == "" {
@@ -175,11 +150,9 @@ func (q *Queue) PushWith(items []Item, also ...raft.BatchOp) error {
 	at := addClamped(q.group.now(), q.cfg.Delay)
 	seen := make(map[string]bool, len(items))
 	for _, item := range items {
-		// AN ID TWICE IN ONE CALL IS ONE ITEM, for the same reason an id
-		// already in the queue is one. The index read below is of COMMITTED
-		// state, which nothing in this batch has reached, so without this the
-		// same id would land under two ready keys with one index naming
-		// whichever the apply wrote last — an item nothing can ever claim.
+		// An id twice in one call is one item. The index read below sees committed state
+		// only, so without this one id would land under two ready keys and become
+		// unclaimable.
 		if seen[item.ID] {
 			continue
 		}
@@ -221,19 +194,12 @@ func touched(op raft.BatchOp) (string, error) {
 	return "", ErrMalformedOp
 }
 
-// Remove withdraws an item nobody has claimed: Push's counterpart, for a
-// producer that no longer wants the work done. Ready, delayed and backing off
-// are all the same case — the item is deleted and its id is pushable again.
+// Remove withdraws an item nobody has claimed: Push's counterpart. Ready, delayed and
+// backing off are all deleted, and the id is pushable again.
 //
-// AN ITEM A CONSUMER HOLDS IS REFUSED, with [ErrClaimed]. The claim is this
-// package's mutual exclusion, and deleting one would let the same id be pushed
-// and claimed a second time while the first consumer is still working on it —
-// two consumers of one item, which is the whole thing this queue exists to
-// prevent. A claimed item leaves by its holder's Ack or by its deadline, and a
-// producer that wants it gone waits for one of those.
-//
-// [ErrNotFound] for an id the queue does not hold, so a producer that cannot
-// tell whether its withdrawal landed may repeat it.
+// A claimed item is refused with [ErrClaimed]: deleting it would let the id be
+// claimed twice. [ErrNotFound] for an id the queue does not hold, so a producer may
+// repeat a withdrawal.
 func (q *Queue) Remove(id string) error {
 	q.group.mu.Lock()
 	defer q.group.mu.Unlock()
@@ -262,15 +228,11 @@ func (q *Queue) Remove(id string) error {
 }
 
 // Claim hands out the item that has been deliverable longest, and makes it
-// invisible until its deadline. It returns [ErrNoItem] when nothing is
-// deliverable — the queue may still hold items that are delayed, backing off or
-// claimed by somebody else — and [ErrNotLeader] on a follower, which claims
-// nothing.
+// invisible until its deadline. It returns [ErrNoItem] when nothing is deliverable
+// and [ErrNotLeader] on a follower.
 //
-// Before it looks, it moves every expired claim on: back to ready after its
-// retry delay, or to the dead-letter queue if its attempts are spent. That is
-// where the visibility timeout is enforced; there is no sweeper. [Queue.Sweep]
-// runs the same pass without claiming.
+// It first moves every expired claim back to ready after its retry delay, or to the
+// dead letter if its attempts are spent.
 func (q *Queue) Claim() (Delivery, error) {
 	q.group.mu.Lock()
 	defer q.group.mu.Unlock()
@@ -330,15 +292,9 @@ func (q *Queue) Claim() (Delivery, error) {
 	}, nil
 }
 
-// Ack removes an item for good. It is the only thing that discards a CLAIMED
-// one — everything else moves it — and [Queue.Remove] is the only thing that
-// discards an item nobody holds.
-//
-// It succeeds after the claim's deadline has passed, so long as the item has not
-// actually been redelivered — a consumer that ran late has still done the work,
-// and refusing it would only cause the job to run twice. Once somebody else has
-// claimed the item the token no longer matches and the ack is refused with
-// [ErrStaleDelivery].
+// Ack removes a claimed item for good. It succeeds after the deadline as long as the
+// item has not been redelivered, since the late consumer still did the work; once
+// somebody else claims it, the ack is [ErrStaleDelivery].
 func (q *Queue) Ack(d Delivery) error {
 	q.group.mu.Lock()
 	defer q.group.mu.Unlock()
@@ -396,14 +352,9 @@ func (q *Queue) Depth() (ready, claimed int) {
 	return len(q.group.store.Keys(q.keys.readyPrefix())), len(q.group.store.Keys(q.keys.claimedPrefix()))
 }
 
-// prepare refuses a write on a follower and then makes the local state current.
-//
-// The leader check is not the authority — the store's own Batch is, and it
-// fails the same way — but it stops a follower from scanning for an item it
-// could never claim. The barrier is load-bearing: a node that has just become
-// leader may hold committed entries it has not applied yet, and without it a
-// fresh leader could read a stale ready set and hand out an item its predecessor
-// already claimed.
+// prepare refuses a write on a follower, then barriers so a fresh leader does not
+// read a stale ready set and hand out an item its predecessor claimed. The store's
+// Batch is the real authority on leadership; the check saves a useless scan.
 func (q *Queue) prepare() error {
 	if !q.group.store.IsLeader() {
 		return ErrNotLeader
@@ -462,19 +413,13 @@ func (q *Queue) fail(key string, rec record, failedAt, now time.Time) error {
 	}, q.cfg.ApplyTimeout)
 }
 
-// bury moves an exhausted item into the dead-letter queue, in the same entry
-// that takes it out of this one — so it is never in both and never in neither.
-// It lands deliverable, with its attempts reset, because the dead-letter queue
-// counts its own deliveries.
-//
-// This reads and writes another queue's keys. The group's lock covers both, so
-// whoever is draining the dead-letter queue is excluded for the whole of it.
+// bury moves an exhausted item into the dead-letter queue in the same entry that
+// takes it out of this one. It lands deliverable with attempts reset, because the
+// dead letter counts its own deliveries. The group's lock covers both queues' keys.
 func (q *Queue) bury(key string, rec record, now time.Time) error {
 	ops := []raft.BatchOp{del(key), del(q.keys.index(rec.ID))}
 
-	// The dead-letter queue deduplicates by id like any other queue, so an id it
-	// already holds keeps the payload it arrived with rather than being written
-	// twice under two keys — the same identity rule Push applies.
+	// The dead letter deduplicates by id like any queue.
 	if _, exists := q.group.store.Get(q.dead.index(rec.ID)); !exists {
 		value, err := record{ID: rec.ID, Data: rec.Data, DeliverAt: now.UnixNano()}.encode()
 		if err != nil {

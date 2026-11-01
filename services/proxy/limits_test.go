@@ -11,10 +11,8 @@ import (
 	"github.com/taubyte/tau/services/proxy"
 )
 
-// limits_test dials real sockets, because what a limit does to a connection is
-// the whole of what it does: a refused one is closed with nothing written, and
-// a test asserting on a counter would not notice a proxy that carried it
-// anyway.
+// Real sockets: a refused connection is closed with nothing written, which a counter
+// assertion would not notice.
 
 // limited is a proxy whose rate_limit block says what the test needs.
 func limited(t *testing.T, block map[string]any) (*proxy.Service, proxy.Socket, *workers) {
@@ -51,7 +49,6 @@ func dial(t *testing.T, sock proxy.Socket) bool {
 	return n > 0
 }
 
-// TestARATEISSPENTPERCONNECTION, and the burst is what may arrive at once.
 func TestConnectionsPerMinuteAreEnforced(t *testing.T) {
 	_, sock, _ := limited(t, map[string]any{
 		"connections_per_minute": 60, "burst": 2,
@@ -62,8 +59,6 @@ func TestConnectionsPerMinuteAreEnforced(t *testing.T) {
 	require.False(t, dial(t, sock), "the third is refused with nothing written")
 }
 
-// TestTHELIMITARATECANNOTEXPRESS: a client pool opens three connections once
-// and holds them. The rate never bites — the count does.
 func TestConcurrentConnectionsAreEnforcedWhereARateWouldNot(t *testing.T) {
 	_, sock, _ := limited(t, map[string]any{"concurrent": 2})
 
@@ -85,8 +80,6 @@ func TestConcurrentConnectionsAreEnforcedWhereARateWouldNot(t *testing.T) {
 		"and a closed one gives its slot back")
 }
 
-// TestNOBLOCKISNOLIMIT, which is what the vocabulary means by leaving all four
-// fields out.
 func TestAProxyWithNoRateLimitBlockRefusesNothing(t *testing.T) {
 	w := &workers{said: "pong:"}
 	s, _ := service(t, proxy.Config{CloudFqdn: "tau.example.io"}, servable(), w)
@@ -99,14 +92,6 @@ func TestAProxyWithNoRateLimitBlockRefusesNothing(t *testing.T) {
 	}
 }
 
-// TestANEDITEDLIMITTAKESEFFECTWITHINONESWEEP. It is read off the resource by
-// the sweep rather than per connection, because the accept path consults it
-// before it reads anything else.
-//
-// THE CONCURRENCY IS WHAT THIS DRIVES, and deliberately: a token bucket keeps
-// its level when its ceiling moves, so raising a rate does not retroactively
-// hand out tokens and there would be nothing to observe without waiting out a
-// refill. A gauge has no clock in it.
 func TestASweepPicksUpAnEditedLimit(t *testing.T) {
 	res := servable()
 	res["rate_limit"] = map[string]any{"concurrent": 1}

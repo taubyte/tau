@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-// The whole point: a consumer that never comes back loses nothing.
 func TestAnUnackedClaimComesBackAfterTheVisibilityTimeout(t *testing.T) {
 	h := newHarness(t, Config{VisibilityTimeout: 30 * time.Second})
 	h.mustPush(t, "job-1", "one")
@@ -33,7 +32,6 @@ func TestAnUnackedClaimComesBackAfterTheVisibilityTimeout(t *testing.T) {
 	}
 }
 
-// The claim of one item must not disturb another whose claim is still live.
 func TestOnlyExpiredClaimsAreTakenBack(t *testing.T) {
 	h := newHarness(t, Config{VisibilityTimeout: 10 * time.Second})
 	h.mustPush(t, "job-1", "one")
@@ -86,7 +84,6 @@ func TestNackReturnsTheItemImmediatelyWhenNoRetryIntervalIsSet(t *testing.T) {
 	}
 }
 
-// interval * factor^(n-1), checked to the nanosecond on both sides.
 func TestRetryBackoffSchedule(t *testing.T) {
 	h := newHarness(t, Config{
 		VisibilityTimeout: time.Hour,
@@ -159,8 +156,6 @@ func TestRetryCeilingCapsTheBackoff(t *testing.T) {
 	}
 }
 
-// The backoff is measured from when the delivery failed, not from when somebody
-// noticed. A sweep that runs late must not push the item further out.
 func TestExpiryBackoffIsMeasuredFromTheDeadline(t *testing.T) {
 	h := newHarness(t, Config{VisibilityTimeout: 10 * time.Second, RetryInterval: 5 * time.Second})
 	h.mustPush(t, "job-1", "one")
@@ -182,7 +177,6 @@ func TestExpiryBackoffIsMeasuredFromTheDeadline(t *testing.T) {
 	}
 }
 
-// A sweep that arrives long after the deadline finds the backoff already spent.
 func TestALateSweepDoesNotStretchTheBackoff(t *testing.T) {
 	h := newHarness(t, Config{VisibilityTimeout: 10 * time.Second, RetryInterval: 5 * time.Second})
 	h.mustPush(t, "job-1", "one")
@@ -245,8 +239,6 @@ func TestExhaustionThroughExpiry(t *testing.T) {
 	}
 }
 
-// Nobody is claiming any more, so the sweep is the only thing that can move an
-// exhausted item where somebody will find it.
 func TestSweepAloneReachesTheDeadLetter(t *testing.T) {
 	h := newHarness(t, Config{MaxAttempts: 1, VisibilityTimeout: time.Second})
 	h.mustPush(t, "job-1", "one")
@@ -284,7 +276,6 @@ func TestAnExhaustedItemIsNeverRedelivered(t *testing.T) {
 	}
 }
 
-// The dead-letter queue deduplicates by id like any other queue.
 func TestTheDeadLetterQueueDeduplicates(t *testing.T) {
 	h := newHarness(t, Config{MaxAttempts: 1, VisibilityTimeout: time.Second})
 	for range 2 {
@@ -305,7 +296,6 @@ func TestTheDeadLetterQueueDeduplicates(t *testing.T) {
 	}
 }
 
-// A queue may be pointed at a queue that is not its default.
 func TestAConfiguredDeadLetterQueue(t *testing.T) {
 	h := newHarness(t, Config{Name: "build", DeadLetter: "build/failed", MaxAttempts: 1, VisibilityTimeout: time.Second})
 	h.mustPush(t, "job-1", "one")
@@ -327,8 +317,6 @@ func TestAConfiguredDeadLetterQueue(t *testing.T) {
 	}
 }
 
-// A queue whose name is a prefix of another's must not see its keys, and a name
-// that looks like the layout's own segments must not forge one.
 func TestQueuesDoNotSeeEachOther(t *testing.T) {
 	group, err := NewGroup(newStore(), WithClock(newClock().now))
 	if err != nil {
@@ -365,7 +353,6 @@ func TestQueuesDoNotSeeEachOther(t *testing.T) {
 	}
 }
 
-// An id is a key segment, and a key segment is where an injection would land.
 func TestAwkwardIdsSurviveTheKeyLayout(t *testing.T) {
 	ids := []string{
 		"a/b", "..", ".", "%2F", "with space", "\x00", "ready", "claimed", "index",
@@ -463,10 +450,6 @@ func TestSweepReportsACorruptClaimedRecord(t *testing.T) {
 	}
 }
 
-// A requeued item belongs to no delivery. The record it leaves on the ready side
-// carries neither a token nor a deadline, so nothing that once held it can be
-// mistaken for holding it now — and it keeps the attempt count, which is the one
-// thing that must survive a redelivery.
 func TestARequeuedRecordCarriesNoDelivery(t *testing.T) {
 	h := newHarness(t, Config{VisibilityTimeout: time.Second})
 	h.mustPush(t, "job-1", "one")

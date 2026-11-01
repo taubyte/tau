@@ -10,22 +10,9 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// tls.go answers the handshake when a proxy says it terminates one.
-//
-// # A proxy has to do this itself, where a gateway does not
-//
-// services/gateway binds nothing: it hands back an http.Handler, and the
-// node that serves it binds the socket and asks the gateway which certificate
-// answers each name (Service.Certificate there). A proxy has no such layer —
-// it IS the socket — so `tls: terminate` has to mean something here or mean
-// nothing anywhere.
-//
-// # Where the certificate comes from is pkg/certificate's
-//
-// `provided` is the secret the resource names and `generated` is the
-// operator's wildcard for the cloud's own zone; the package says why neither
-// invents one. A gateway's names are terminated by the node with the same
-// code, so the two cannot disagree about what a wildcard covers.
+// A proxy is the socket, so it terminates TLS itself. `provided` is the secret the
+// resource names; `generated` is the operator's wildcard for the cloud's zone, via
+// pkg/certificate, the same code that terminates a gateway's names.
 
 // Secrets resolves a secret a proxy refers to. It is the same seam
 // services/worker takes, and a node hands both the same thing.

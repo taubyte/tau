@@ -9,12 +9,8 @@ import (
 	"github.com/taubyte/tau/pkg/raft"
 )
 
-// raft.MockCluster is enough to hold state — it has Get, Keys and an atomic
-// Batch — but it is a no-op leader (IsLeader is hardcoded true, Batch always
-// succeeds, Barrier does nothing), so on its own it cannot exercise a follower,
-// a failed write, or the ordering of a barrier against a read. fakeStore wraps
-// it with exactly those three, and nothing else: the state still lives in the
-// mock.
+// fakeStore wraps raft.MockCluster, whose leader is a no-op, with a follower, a
+// failing write and barrier ordering. The state still lives in the mock.
 type fakeStore struct {
 	*raft.MockCluster
 

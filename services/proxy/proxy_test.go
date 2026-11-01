@@ -21,14 +21,10 @@ import (
 	"github.com/taubyte/tau/services/proxy"
 )
 
-// EVERY TEST HERE CARRIES REAL BYTES OVER REAL SOCKETS. What this service does
-// is move bytes it cannot read, so a test that asserted on a decision without
-// moving any would prove the half that is easy.
+// Every test carries real bytes over real sockets.
 
-// Every id here is a real CID, and that is not decoration: a compiled resource
-// is told apart from an access entry at the same key BY its id passing the
-// identity validator, so a made-up "QmApp" is silently not a resource and the
-// project answers on no names at all.
+// Every id is a real CID: a compiled resource is told apart from an access entry by
+// its id passing the identity validator, so a made-up one is silently no resource.
 const (
 	projectID = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
 	appID     = "QmZCstKkwsL212pMaf4xk4V5AbgVfJC2NNSJdu8UZtqSpS"
@@ -90,11 +86,8 @@ func (s projects) At(context.Context, register.Deployment) (*specs.Project, regi
 	return s.p, register.Pointer{}, nil
 }
 
-// workers records what it was asked for and answers on a real socket.
-//
-// WHAT IT RECORDS IS GUARDED, because a proxy carries every connection on its
-// own goroutine and a test that opens two at once has two writers — the same
-// reason `warnings` below is a type rather than a slice.
+// workers records what it was asked for, under a lock since each connection is
+// carried on its own goroutine, and answers on a real socket.
 type workers struct {
 	mu   sync.Mutex
 	at   specs.Address
@@ -165,18 +158,14 @@ func (w *workers) Conn(_ context.Context, at specs.Address, port string) (net.Co
 	return net.Dial("tcp", l.Addr().String())
 }
 
-// warnings collects what the service told the operator. It is a type rather
-// than a slice because a connection is carried on its own goroutine: a test
-// holding the slice HEADER would be holding a copy taken before anything was
-// appended to it, which is how the first version of this passed nothing.
+// warnings collects what the service told the operator, shared across connection
+// goroutines.
 type warnings struct {
 	mu   sync.Mutex
 	said []string
 }
 
-// add FORMATS what it was given rather than keeping the template. Recording
-// the format string looked identical in a test that only counted warnings, and
-// made every assertion about a REASON impossible.
+// add formats what it was given, so tests can assert on the reason.
 func (w *warnings) add(format string, args ...any) {
 	w.mu.Lock()
 	w.said = append(w.said, fmt.Sprintf(format, args...))
@@ -221,7 +210,6 @@ func serve(t *testing.T, p *specs.Project, w *workers) (net.Listener, *warnings)
 	return l, said
 }
 
-// TestBytesCrossTheProxyToTheWorkload.
 func TestAConnectionIsCarriedToTheWorkload(t *testing.T) {
 	w := &workers{said: "pong:"}
 	l, _ := serve(t, compiled(t, servable()), w)
@@ -244,8 +232,6 @@ func TestAConnectionIsCarriedToTheWorkload(t *testing.T) {
 	require.Equal(t, "pg", w.port, "the workload's own port, by the name the author declared")
 }
 
-// TestTHEFORWARDSNamespaceIsTheProxysOwnScope, not the operator's bind — the
-// rule an omitted namespace follows everywhere in this vocabulary.
 func TestAnOmittedForwardNamespaceResolvesFromTheProxy(t *testing.T) {
 	w := &workers{}
 	l, _ := serve(t, compiled(t, servable()), w)
@@ -259,8 +245,6 @@ func TestAnOmittedForwardNamespaceResolvesFromTheProxy(t *testing.T) {
 	at, _ := w.asked()
 	require.Empty(t, at.Scope, "the proxy is at the root, so its forward resolves there")
 }
-
-// ── what it refuses at the connection, and why each is a refusal ──
 
 func refusedBy(t *testing.T, change func(map[string]any)) {
 	t.Helper()
@@ -284,19 +268,6 @@ func refusedBy(t *testing.T, change func(map[string]any)) {
 	require.Empty(t, at.Name, "and no workload was reached")
 }
 
-// TLS TERMINATION IS NOT REFUSED ANY MORE — it is served, and tls_test.go is
-// where that lives. What is refused is terminating with no certificate to do
-// it with, which is a refusal at the BIND rather than at the connection: a
-// proxy that asked for TLS and held a plaintext port would be a security
-// control silently not applied.
-
-// A ROUTER AND TRANSFORMERS ARE NOT REFUSED ANY MORE — route_test.go and
-// shape_test.go are where those live. What is still refused is a transformer
-// that cannot be RUN and is declared fail-closed, which is a decision at the
-// chunk rather than at the bind.
-
-// TestAWORKLOADThatCannotBeReachedClosesTheConnection, because there is nowhere
-// to put a reason on a raw socket.
 func TestAnUnreachableWorkloadClosesTheConnection(t *testing.T) {
 	w := &workers{err: context.DeadlineExceeded}
 	l, said := serve(t, compiled(t, servable()), w)
@@ -312,8 +283,6 @@ func TestAnUnreachableWorkloadClosesTheConnection(t *testing.T) {
 		"and the operator is told")
 }
 
-// TestCLOSEStopsAcceptingAndLeavesOpenConnectionsAlone: cutting a live psql
-// session to reload would be worse than refusing a new one.
 func TestCloseStopsAcceptingNewConnections(t *testing.T) {
 	s, err := proxy.New(proxy.Config{},
 		proxy.WithProjects(projects{p: compiled(t, servable())}),
@@ -357,9 +326,6 @@ func service(t *testing.T, cfg proxy.Config, res map[string]any, w *workers) (*p
 	return s, said
 }
 
-// TestNOTHINGNAMESANADDRESS: the operator gave tau its addresses long before a
-// proxy existed, and the kernel gives out the port. What Serve answers with is
-// the pair DNS publishes — the name, and the port it landed on.
 func TestServeBindsEveryAddressOnAnAllocatedPort(t *testing.T) {
 	s, _ := service(t, proxy.Config{CloudFqdn: "tau.example.io"}, servable(), &workers{said: "pong:"})
 
@@ -376,9 +342,6 @@ func TestServeBindsEveryAddressOnAnAllocatedPort(t *testing.T) {
 	require.Equal(t, []proxy.Socket{sock}, s.Serving(), "and that is what this node reports")
 }
 
-// TestBOTHFAMILIES: an empty host is every address this machine has, which is
-// the whole of what "support ipv4" needs — v4 and v6 are two spellings of a
-// listener nobody configured.
 func TestAProxyAnswersOnV4AndV6(t *testing.T) {
 	for _, dial := range []string{"127.0.0.1", "::1"} {
 		t.Run(dial, func(t *testing.T) {
@@ -406,10 +369,6 @@ func TestAProxyAnswersOnV4AndV6(t *testing.T) {
 	}
 }
 
-// TestANAMETHISCLOUDCANNOTSPELL: a generated host needs the cloud's own zone,
-// and a node that was told none would publish half a name. It serves anyway —
-// the listener is up and the bytes cross — but it says so, because a proxy
-// nothing can resolve is a proxy nobody reaches.
 func TestAGeneratedNameWithNoCloudZoneIsReportedNowhere(t *testing.T) {
 	s, said := service(t, proxy.Config{}, servable(), &workers{})
 
@@ -421,7 +380,6 @@ func TestAGeneratedNameWithNoCloudZoneIsReportedNowhere(t *testing.T) {
 	require.Equal(t, 1, said.len(), "and the operator is told")
 }
 
-// TestAZONETHEPROJECTDECLARESNEEDSNOTHINGFROMTHEOPERATOR.
 func TestADeclaredZoneIsCompleteOnItsOwn(t *testing.T) {
 	res := servable()
 	res["host"] = map[string]any{
@@ -435,9 +393,6 @@ func TestADeclaredZoneIsCompleteOnItsOwn(t *testing.T) {
 	require.Equal(t, "db.shop.example.com", sock.Host)
 }
 
-// TestAREFUSALBINDSNOTHING: what this cloud cannot serve is decided before the
-// listener exists, so a proxy it cannot serve does not hold a port while
-// refusing every connection that arrives on it.
 func TestServeRefusesBeforeItBinds(t *testing.T) {
 	res := servable()
 	res["tls"] = map[string]any{"mode": "terminate"}
@@ -448,9 +403,6 @@ func TestServeRefusesBeforeItBinds(t *testing.T) {
 	require.Empty(t, s.Serving(), "and nothing is published")
 }
 
-// TestWHATACLIENTLOOKSITUPAS: the vocabulary says an omitted service is the
-// resource's own name and an omitted protocol is tcp, and the SRV label a
-// client dials is assembled from exactly those two.
 func TestTheSrvLabelsFallBackToTheVocabularysDefaults(t *testing.T) {
 	res := servable()
 	delete(res, "service")
@@ -462,8 +414,6 @@ func TestTheSrvLabelsFallBackToTheVocabularysDefaults(t *testing.T) {
 	require.Equal(t, proxy.Transport, sock.Transport, "which the kind states, because no resource does")
 }
 
-// TestAPROXYONNONAME is allowed by the vocabulary — `host` is optional — and it
-// simply answers to nobody until something points a record at it.
 func TestAProxyThatDeclaresNoHostPublishesNothing(t *testing.T) {
 	res := servable()
 	delete(res, "host")
@@ -477,8 +427,6 @@ func TestAProxyThatDeclaresNoHostPublishesNothing(t *testing.T) {
 	require.Equal(t, 1, said.len())
 }
 
-// TestASERVEONADEPLOYMENTTHATISNOTTHERE fails rather than binding a port for a
-// resource nothing can read.
 func TestServeFailsWhenTheProjectCannotBeRead(t *testing.T) {
 	s, err := proxy.New(proxy.Config{},
 		proxy.WithProjects(projects{p: compiled(t, servable())}),
@@ -492,15 +440,10 @@ func TestServeFailsWhenTheProjectCannotBeRead(t *testing.T) {
 	require.Empty(t, s.Serving())
 }
 
-// TestAPROXYTHATFORWARDSTONOTHING is refused at the connection rather than at
-// the bind: `forward` is only required once `routing: forward` is chosen, so a
-// half-written resource compiles and has to be caught where it is used.
 func TestAProxyThatForwardsToNothingClosesTheConnection(t *testing.T) {
 	refusedBy(t, func(r map[string]any) { delete(r, "forward") })
 }
 
-// TestSERVEAFTERCLOSE publishes nothing: a service that is done accepting must
-// not leave a listener behind that nothing will ever read from.
 func TestServeAfterCloseBindsNothing(t *testing.T) {
 	s, _ := service(t, proxy.Config{CloudFqdn: "tau.example.io"}, servable(), &workers{})
 	require.NoError(t, s.Close())

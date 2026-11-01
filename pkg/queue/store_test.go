@@ -26,8 +26,6 @@ func TestEscape(t *testing.T) {
 	}
 }
 
-// The three ways a segment can be eaten by a path cleaner, and the one way two
-// ids can end up sharing a key.
 func TestEscapeProducesASafeSegment(t *testing.T) {
 	inputs := []string{"a/b", "a%2Fb", ".", "..", "", "x", "%", "//", "a.b", "\xff\xfe", "ready"}
 	seen := map[string]string{}
@@ -66,8 +64,6 @@ func TestStampIsOrderedAndFixedWidth(t *testing.T) {
 	}
 }
 
-// A clock before the epoch would otherwise produce a minus sign, which sorts
-// below every digit and would make such an item permanently first.
 func TestStampClampsBelowTheEpoch(t *testing.T) {
 	if got := stamp(time.Unix(0, -1)); got != strings.Repeat("0", stampWidth) {
 		t.Fatalf("stamp: got %q, want zero", got)

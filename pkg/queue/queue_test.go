@@ -122,8 +122,6 @@ func TestClaimIsFirstInFirstOut(t *testing.T) {
 	}
 }
 
-// Two items pushed in the same instant must both survive: the key that holds an
-// item is the item's id, so there is no counter for two pushes to share.
 func TestPushesInTheSameInstantBothSurvive(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.mustPush(t, "a", "one")
@@ -156,8 +154,6 @@ func TestPushDeduplicatesById(t *testing.T) {
 	h.mustNotClaim(t)
 }
 
-// An id being worked on is still in the queue, so pushing it again is the same
-// no-op — a second job with the same id must not start while the first runs.
 func TestPushIsANoOpWhileTheItemIsClaimed(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.mustPush(t, "job-1", "one")
@@ -217,8 +213,6 @@ func TestAckIsFinal(t *testing.T) {
 	}
 }
 
-// A consumer that overran its visibility timeout has still done the work; as
-// long as nobody else took the item, its ack counts.
 func TestAckAfterTheDeadlineWithNoRedelivery(t *testing.T) {
 	h := newHarness(t, Config{VisibilityTimeout: time.Second})
 	h.mustPush(t, "job-1", "one")
@@ -231,8 +225,6 @@ func TestAckAfterTheDeadlineWithNoRedelivery(t *testing.T) {
 	h.mustNotClaim(t)
 }
 
-// Once the item has actually been given to somebody else, the late ack must not
-// delete their work.
 func TestAckWithAStaleTokenIsRefused(t *testing.T) {
 	h := newHarness(t, Config{VisibilityTimeout: time.Second})
 	h.mustPush(t, "job-1", "one")
@@ -268,8 +260,6 @@ func TestNackWithAStaleTokenIsRefused(t *testing.T) {
 	}
 }
 
-// After a requeue the item is on the ready side, so a delivery that names it is
-// stale even though the id is still in the queue.
 func TestAckAfterARequeueIsRefused(t *testing.T) {
 	h := newHarness(t, Config{VisibilityTimeout: time.Second, RetryInterval: time.Hour})
 	h.mustPush(t, "job-1", "one")
@@ -298,8 +288,6 @@ func TestAckAndNackUnknownItem(t *testing.T) {
 	}
 }
 
-// Every mutating method refuses on a follower, and says which failure it is.
-// Reads still answer.
 func TestAFollowerWritesNothing(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.mustPush(t, "job-1", "one")
@@ -328,13 +316,6 @@ func TestAFollowerWritesNothing(t *testing.T) {
 	}
 }
 
-// An empty queue would answer ErrNoItem if the leader were only checked by the
-// write, so this pins the check ahead of the scan — and a follower does not even
-// reach the store, which is what the check is for.
-//
-// Remove is the same shape and the stakes are higher: a follower that looked
-// would answer ErrNotFound out of state it has not applied yet, and ErrNotFound
-// is what tells a producer its withdrawal has already landed.
 func TestAFollowerRefusesBeforeItLooks(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.store.stepDown()
@@ -356,8 +337,6 @@ func TestAFollowerRefusesBeforeItLooks(t *testing.T) {
 	}
 }
 
-// A node that has just become leader can hold committed entries it has not
-// applied, so every read-then-write starts with a barrier.
 func TestEveryMutationBarriersBeforeItReads(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.mustPush(t, "job-1", "one")
@@ -426,7 +405,6 @@ func TestStoreFailurePropagates(t *testing.T) {
 	}
 }
 
-// The claim's own write, with nothing expired for the sweep to trip over.
 func TestClaimReportsTheStoreFailingItsWrite(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.mustPush(t, "job-1", "one")
@@ -446,9 +424,6 @@ func TestClaimReportsTheStoreFailingItsWrite(t *testing.T) {
 	}
 }
 
-// The three things that make a delivery current are checked independently, so
-// each is planted here on its own. A state the queue cannot reach by itself is
-// still a state an ack must refuse, because the guard is what says so.
 func TestOnlyAClaimedItemCanBeAcked(t *testing.T) {
 	h := newHarness(t, Config{})
 	key := "queue/build/ready/00000000000000000001/job"
@@ -468,8 +443,6 @@ func TestOnlyAClaimedItemCanBeAcked(t *testing.T) {
 	}
 }
 
-// An item with no token belongs to no delivery, so an empty token must not
-// match it.
 func TestADeliveryWithNoTokenMatchesNothing(t *testing.T) {
 	h := newHarness(t, Config{})
 	key := "queue/build/claimed/09223372036854775807/job"
@@ -485,8 +458,6 @@ func TestADeliveryWithNoTokenMatchesNothing(t *testing.T) {
 	}
 }
 
-// Remove is Push's counterpart: the producer takes back work nobody has started,
-// and the id is free to be pushed again.
 func TestRemoveWithdrawsAnItemNobodyHasClaimed(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.mustPush(t, "job-1", "one")
@@ -510,8 +481,6 @@ func TestRemoveWithdrawsAnItemNobodyHasClaimed(t *testing.T) {
 	}
 }
 
-// An item that is not deliverable yet is withdrawn on the same terms: waiting,
-// delayed and backing off are one state, and it is the one nobody holds.
 func TestRemoveWithdrawsAnItemThatIsStillBackingOff(t *testing.T) {
 	h := newHarness(t, Config{VisibilityTimeout: time.Second, RetryInterval: time.Hour})
 	h.mustPush(t, "job-1", "one")
@@ -527,10 +496,6 @@ func TestRemoveWithdrawsAnItemThatIsStillBackingOff(t *testing.T) {
 	}
 }
 
-// AN ITEM A CONSUMER HOLDS IS NOT THE PRODUCER'S TO TAKE. Withdrawing a claim
-// would let the same id be pushed and claimed beside the consumer still working
-// on it, which is the one thing this queue exists to prevent — so the claim is
-// left, and its holder's ack still lands.
 func TestRemoveRefusesAnItemAConsumerHolds(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.mustPush(t, "job-1", "one")
@@ -550,7 +515,6 @@ func TestRemoveRefusesAnItemAConsumerHolds(t *testing.T) {
 	}
 }
 
-// A producer that cannot tell whether its withdrawal landed may repeat it.
 func TestRemoveOfAnItemTheQueueDoesNotHold(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.mustPush(t, "job-1", "one")

@@ -1,48 +1,16 @@
-// Package proxy serves the vocabulary's `proxy` kind: a raw TCP connection
-// accepted at the edge and carried to a workload's listening socket.
+// Package proxy serves the vocabulary's `proxy` kind: a raw TCP connection accepted
+// at the edge and carried to a workload's listening socket, for protocols a gateway
+// cannot parse (Postgres, Redis, MQTT, game servers).
 //
-// # The front door for everything that is not HTTP
+// A proxy listens on every address of the node, on a kernel-picked port that clients
+// find through DNS (socket.go). It terminates TLS itself, since it is the socket
+// (tls.go). `routing: router` lets a function choose the destination from the
+// source address and leading bytes (route.go); `transformers:` pass the bytes
+// through functions in both directions (shape.go). Both run on a worker.
 //
-// A gateway can only route what it can parse — a path, a method, a Host header —
-// and Postgres, Redis, MQTT and a game server offer none of those. This accepts
-// a connection, decides nothing about what is inside it, and moves the bytes.
-//
-// # Nothing here names an address or a client port
-//
-// A proxy listens on every address this node has, on a port the kernel picked,
-// and clients find that port through DNS. No address is authored anywhere,
-// because an address has to be routed to a machine before it can be bound —
-// see socket.go. The only port in the vocabulary is the one a container binds
-// inside itself, which never leaves the machine it runs on.
-//
-// # It terminates TLS, because nothing else can
-//
-// services/gateway deliberately terminates nothing — it hands back an
-// http.Handler and whatever binds the socket owns the certificate. A proxy IS
-// the socket, so `tls: terminate` has to mean something here or mean nothing
-// anywhere. See tls.go for where the two kinds of certificate come from.
-//
-// # A function may decide where a connection goes, and shape what crosses it
-//
-// `routing: router` names a function that is handed the source address and the
-// leading bytes and answers with a destination — see route.go. `transformers:`
-// names functions the bytes pass through, in order, in both directions — see
-// shape.go. Both run on a worker, placed exactly as the workload is, because
-// both are workloads of the same deployment.
-//
-// # There is no longer a kind of proxy this refuses
-//
-// `protocol` was a set of three and two of them were never servable: a tunnel
-// here is a reliable ordered stream, and carrying a datagram protocol over one
-// turns packet loss into a latency spike and hands it head-of-line blocking.
-// The set is `tcp` alone now, so what this refuses is not a shape the config
-// can state — it is a certificate that is missing, a forward that names
-// nothing, a router that will not decide.
-//
-// Each of those closes the connection with nothing written. There is nowhere to
-// put a reason — a raw socket has no status line — so it goes to the operator's
-// log and the client gets what any unreachable service gives it. A connection
-// refused by a RATE LIMIT is not logged at all: see limits.go.
+// A connection that cannot be served is closed with nothing written, since a raw
+// socket has no status line; the reason goes to the operator's log. Rate-limit
+// refusals are not logged (limits.go).
 package proxy
 
 import (
@@ -64,17 +32,13 @@ import (
 	"github.com/taubyte/tau/pkg/splice"
 )
 
-// Workers opens a connection to a workload, wherever it runs.
-//
-// THE PROXY DOES NOT CHOOSE A NODE, for the reason the gateway's own Workers
-// states: which node answers is a routing decision made from live measurements,
-// and half of it here would be half of it in two places.
+// Workers opens a connection to a workload, wherever it runs. The proxy does not
+// choose a node: that is a routing decision made from live measurements.
 type Workers interface {
 	Conn(ctx context.Context, at specs.Address, port string) (net.Conn, error)
 
 	// Direct asks a proxy router where one connection goes, and Shape runs one
-	// chunk of it through a transformer. Both are placed exactly as the
-	// workload is, because both are workloads of the same deployment.
+	// chunk of it through a transformer. Both are placed as the workload is.
 	Direct(ctx context.Context, at specs.Address, conn *invoke.Connection, peeked []byte) (*invoke.Direction, error)
 	Shape(ctx context.Context, at specs.Address, s *invoke.Stream) (*invoke.Shaping, error)
 }
@@ -84,12 +48,8 @@ type Projects interface {
 	At(ctx context.Context, at register.Deployment) (*specs.Project, register.Pointer, error)
 }
 
-// Bind is one socket and the proxy resource it serves.
-//
-// IT NAMES THE RESOURCE because a raw connection carries nothing that could
-// identify one. That is the whole reason the vocabulary gives each proxy its own
-// address: at L4 there is no Host header to demultiplex on, so one listener
-// serves exactly one proxy.
+// Bind is one socket and the proxy resource it serves. At L4 there is no Host header
+// to demultiplex on, so one listener serves exactly one proxy.
 type Bind struct {
 	Project     string
 	Environment string
@@ -99,10 +59,8 @@ type Bind struct {
 	Scope []string
 }
 
-// Key is what tells two proxies apart across deployments and namespaces: the
-// four fields joined, none of which may hold a "/". It exists so that what is
-// already being served can be held in a map without a second spelling of one
-// resource's identity.
+// Key tells two proxies apart across deployments and namespaces: the four fields
+// joined, none of which may hold a "/".
 func (b Bind) Key() string {
 	parts := make([]string, 0, len(b.Scope)+3)
 	parts = append(parts, b.Project, b.Environment)
@@ -112,48 +70,32 @@ func (b Bind) Key() string {
 
 // Config is what an operator declared.
 type Config struct {
-	// ConnectTimeout bounds reaching the workload — NOT the connection, which
-	// has no duration this service could know. A psql session is measured in
-	// hours.
+	// ConnectTimeout bounds reaching the workload, not the connection: a psql
+	// session lasts hours.
 	ConnectTimeout time.Duration `yaml:"connectTimeout"`
 
 	// Sweep is how often this node compares what it is listening for to what
 	// it holds. Default DefaultSweep.
 	Sweep time.Duration `yaml:"sweep"`
 
-	// Wildcard is the certificate for this cloud's own zone, which is what a
-	// generated host terminates TLS with.
-	//
-	// IT IS THE OPERATOR'S FOR THE REASON CloudFqdn IS: a generated name ends
-	// in a zone no project declares, so no project can hold a key for it. A
-	// node with none serves `tls: terminate` only where the resource names a
-	// certificate of its own.
+	// Wildcard is the certificate for this cloud's own zone, which a generated host
+	// terminates TLS with. No project can hold a key for that zone.
 	Wildcard Certificate `yaml:"wildcard"`
 
 	// Peek is how many bytes a router may ask to see before deciding, and
 	// Decide is how long the whole decision may take. Defaults DefaultPeek and
-	// DefaultDecide.
-	//
-	// BOTH CEILINGS ARE THIS SERVICE'S AND NEITHER IS THE ROUTER'S TO RAISE. A
-	// router asking for more is a client holding this listener open by sending
-	// nothing.
+	// DefaultDecide. Neither is the router's to raise: a router asking for more is a
+	// client holding the listener open by sending nothing.
 	Peek   int           `yaml:"peek"`
 	Decide time.Duration `yaml:"decide"`
 
-	// MaxSources bounds the rate-limit table. Default DefaultMaxSources.
-	//
-	// A PROXY UNDER A SPRAY OF ONE-CONNECTION-PER-ADDRESS TRAFFIC would
-	// otherwise grow a bucket per source forever, which turns a limit meant to
-	// shed load into a way to spend this node's memory.
+	// MaxSources bounds the rate-limit table, so a spray of one connection per address
+	// cannot spend this node's memory. Default DefaultMaxSources.
 	MaxSources int `yaml:"maxSources"`
 
-	// CloudFqdn is the zone this cloud serves, e.g. "tau.example.io".
-	//
-	// IT IS THE ONE PIECE OF DNS THIS SERVICE IS TOLD, and it is operator
-	// config for the same reason the gateway's field of this name is: a
-	// generated host compiles to `<label>.<project label>` and the rest of it
-	// is not the project's to assert. With none, only the names whose zones the
-	// projects themselves declare can be published.
+	// CloudFqdn is the zone this cloud serves, e.g. "tau.example.io". A generated host
+	// compiles to `<label>.<project label>` and the rest is not the project's to assert.
+	// With none, only names in zones the projects declare can be published.
 	CloudFqdn string `yaml:"cloudFqdn"`
 }
 
@@ -192,13 +134,12 @@ var (
 	ErrNoProjects = errors.New("proxy: a proxy with no register cannot read a project")
 
 	// ErrNoDeployments is a nil source of what to serve, which is not the same
-	// as no source at all — see WithDeployments.
+	// as no source at all; see WithDeployments.
 	ErrNoDeployments = errors.New("proxy: a nil source holds no proxies")
 
 	// ErrUnservable is a resource this cloud cannot serve as written: a
 	// certificate it has no way to obtain, a forward that names nothing, a
-	// router it cannot find. NOT a shape the vocabulary offers and nothing
-	// implements — there is no longer one of those.
+	// router it cannot find.
 	ErrUnservable = errors.New("proxy: this cloud cannot serve that proxy as declared")
 )
 
@@ -266,14 +207,12 @@ type Service struct {
 	served map[string]*bound
 	closed bool
 
-	// refusals is the last reason each proxy could not be served, so a sweep
-	// every ten seconds does not repeat one sentence until it buries the
-	// deploy that fixes it.
+	// refusals is the last reason each proxy could not be served, so a sweep does not
+	// repeat it every ten seconds.
 	refusals map[string]string
 
 	// buckets is how fast connections may arrive, per proxy per source; open
-	// is how many may be held at once. Two limits because a connection that is
-	// HELD is not counted by a rate — see limits.go.
+	// is how many may be held at once.
 	buckets *ratelimit.Buckets
 	open    *ratelimit.Gauge
 }
@@ -283,17 +222,13 @@ type bound struct {
 	listener net.Listener
 	socket   Socket
 
-	// limits is what one source may open on it. It is held here rather than
-	// read per connection because it has to be consulted BEFORE the project
-	// is — a limit that cost a project read to enforce would be load rather
-	// than a way to shed it. The sweep refreshes it, so an edited limit takes
-	// effect within one.
+	// limits is what one source may open on it. It is held here because it is consulted
+	// before the project is read; the sweep refreshes it.
 	limits limits
 }
 
-// Serving is every proxy this node accepts connections for, for whatever
-// reports this node to the fleet. It is the whole of what DNS needs from here:
-// the name, what a client looks it up as, and the port the kernel gave it.
+// Serving is every proxy this node accepts connections for: what DNS needs, the
+// name, what a client looks up, and the port the kernel gave it.
 func (s *Service) Serving() []Socket {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -342,12 +277,8 @@ func New(cfg Config, opts ...Option) (*Service, error) {
 	}, nil
 }
 
-// Serve binds this proxy and carries every connection on it.
-//
-// IT ANSWERS WHERE IT LANDED, because that is what DNS has to publish: an SRV
-// carrying the port this proxy actually got, beside the addresses the node
-// already reports. Serving() is the same answer for everything this service
-// holds, which is what a periodic report reads.
+// Serve binds this proxy and carries every connection on it. It answers where it
+// landed, which DNS publishes as an SRV record.
 func (s *Service) Serve(ctx context.Context, b Bind) (Socket, error) {
 	proj, r, id, err := s.resource(ctx, b)
 	if err != nil {
@@ -358,10 +289,8 @@ func (s *Service) Serve(ctx context.Context, b Bind) (Socket, error) {
 		return Socket{}, err
 	}
 
-	// THE CERTIFICATE IS RESOLVED AFTER THE BIND AND BEFORE ANYTHING IS
-	// ACCEPTED, so a proxy that asked for TLS and cannot have it holds no port
-	// — rather than answering the handshake with nothing, or worse, in the
-	// clear.
+	// The certificate is resolved after the bind and before anything is accepted, so a
+	// proxy that asked for TLS and cannot have it holds no port.
 	cfg, err := s.certificateFor(ctx, r, b, sock.Host)
 	if err != nil {
 		l.Close()
@@ -419,11 +348,8 @@ func (s *Service) accept(ctx context.Context, l net.Listener, sock Socket, lim l
 				return
 			}
 
-			// THE BUDGET IS SPENT BEFORE THE PROJECT IS READ. A refused
-			// connection costs a map lookup and a close — a raw socket has no
-			// status line, so there is nothing to write and nothing is
-			// written, and nothing is logged either: a line per refusal is a
-			// log amplifier pointed at this node by whoever is being refused.
+			// The budget is spent before the project is read, and a refusal is neither
+			// written to nor logged.
 			done, ok := s.admit(key, s.limitsFor(key), conn.RemoteAddr())
 			if !ok {
 				conn.Close()
@@ -449,25 +375,20 @@ func (s *Service) limitsFor(key string) limits {
 	return limits{}
 }
 
-// carry takes one connection to wherever it goes.
-//
-// THE ORDER IS ROUTE, THEN SHAPE, and it is the inverse of the gateway's — see
-// route.go, which says why. What the transformers see is the whole stream, the
-// bytes the router peeked at included.
+// carry takes one connection to wherever it goes: route, then shape (route.go says
+// why). The transformers see the whole stream, the router's peek included.
 func (s *Service) carry(ctx context.Context, from net.Conn, b Bind) {
 	defer from.Close()
 
 	proj, r, id, err := s.resource(ctx, b)
 	if err != nil {
-		// A RAW SOCKET HAS NO STATUS LINE, so the client gets what any
-		// unreachable service gives it and the reason goes to the operator.
+		// A raw socket has no status line, so the reason goes to the operator.
 		s.opts.warn("proxy: %s/%s: %s", b.Environment, b.Name, err)
 		return
 	}
 
-	// WHERE THE PROXY ITSELF IS, which is not where the bind says: an omitted
-	// namespace means the proxy's own scope and then its parents, which is the
-	// rule servedBy states for a channel.
+	// Where the proxy itself is, not the bind: an omitted namespace means the proxy's
+	// own scope and then its parents.
 	_, scope, _, ok := proj.Locate(id)
 	if !ok {
 		s.opts.warn("proxy: %s could not be located in this project", b.Name)
@@ -504,10 +425,8 @@ func (s *Service) carry(ctx context.Context, from net.Conn, b Bind) {
 	inbound := s.chain(ctx, r, b, scope, conn, invoke.Inbound)
 	outbound := s.chain(ctx, r, b, scope, conn, invoke.Outbound)
 
-	// WHAT THE ROUTER READ IS STILL THE CLIENT'S BYTES, so it goes to the
-	// workload — through the chain, because a transformer that missed a
-	// protocol's greeting would be shaping a conversation it never saw the
-	// start of.
+	// What the router read is still the client's bytes, and it goes through the chain
+	// so a transformer sees the protocol's greeting.
 	if len(peeked) > 0 {
 		out := peeked
 		if inbound != nil {
@@ -528,14 +447,12 @@ func (s *Service) carry(ctx context.Context, from net.Conn, b Bind) {
 	}
 }
 
-// connectionOf is what a router or a transformer is told about this
-// connection: a peer address, the name it arrived on, and the handshake if
-// there was one.
+// connectionOf is what a router or a transformer is told about this connection: a
+// peer address, the name it arrived on, and the handshake if there was one.
 func (s *Service) connectionOf(r specs.Resource, b Bind, from net.Conn) *invoke.Connection {
-	// THE LABELS COME OFF THE RESOURCE and the NAME off the listener, because
-	// only the listener knows what the cloud's zone made of a generated host.
-	// A proxy served by hand through Accept has no listener entry, and then
-	// the name is simply empty rather than invented.
+	// The labels come off the resource and the name off the listener, which alone knows
+	// what the cloud's zone made of a generated host. Without a listener entry (Accept)
+	// the name is empty.
 	declared := specs.ReadProxy(r)
 	conn := &invoke.Connection{Protocol: declared.Service, Transport: Transport}
 	if conn.Protocol == "" {
@@ -551,9 +468,8 @@ func (s *Service) connectionOf(r specs.Resource, b Bind, from net.Conn) *invoke.
 		conn.Source = addr.String()
 	}
 	if tlsConn, ok := from.(*tls.Conn); ok {
-		// THE HANDSHAKE HAS ALREADY HAPPENED by the time anything is read, and
-		// asking for it here is what makes the name the client asked for
-		// visible to a router without it having to parse a ClientHello.
+		// Completing the handshake here exposes the requested name to a router without it
+		// parsing a ClientHello.
 		if err := tlsConn.HandshakeContext(context.Background()); err == nil {
 			conn.ServerName = tlsConn.ConnectionState().ServerName
 		}

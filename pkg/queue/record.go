@@ -6,12 +6,9 @@ import (
 	"github.com/fxamacker/cbor/v2"
 )
 
-// record is what a ready or claimed key holds. It carries the payload, so a
-// transition never has to read a second key, and the attempt count, so the
-// history of an item survives every redelivery.
-//
-// cbor with integer keys, which is what pkg/raft stores its own values in.
-// This never crosses a wire and no other language reads it.
+// record is what a ready or claimed key holds: the payload, so a transition never
+// reads a second key, and the attempt count. cbor with integer keys, as pkg/raft
+// stores its values; it never crosses a wire.
 type record struct {
 	ID        string `cbor:"1,keyasint"`
 	Data      []byte `cbor:"2,keyasint"`

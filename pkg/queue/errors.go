@@ -34,10 +34,7 @@ var (
 	ErrEmptyID = errors.New("queue: item id must not be empty")
 
 	// ErrReservedKey is returned by PushWith for an operation that writes into
-	// this queue's own keyspace or its dead letter's. What a caller commits
-	// alongside a push is its own record that the push happened; these keys are
-	// this package's state machine, and a second author of them has none of its
-	// rules.
+	// this queue's own keyspace or its dead letter's.
 	ErrReservedKey = errors.New("queue: that key belongs to this queue")
 
 	// ErrMalformedOp is returned by PushWith for an operation that is neither a

@@ -9,12 +9,9 @@ import (
 const maxDuration = time.Duration(math.MaxInt64)
 
 // backoff is the delay before delivery n+1, given that delivery n just failed:
-// RetryInterval * RetryFactor^(n-1), capped by RetryCeiling. A zero interval
-// means the visibility timeout alone governs, which is what happened before
-// these fields existed, so it returns zero.
-//
-// attempts is the number of deliveries so far, so it is at least one whenever a
-// delivery has failed; a zero is treated as the first.
+// RetryInterval * RetryFactor^(n-1), capped by RetryCeiling. A zero interval means
+// the visibility timeout alone governs, so it returns zero. A zero attempts is
+// treated as the first.
 func backoff(cfg Config, attempts uint32) time.Duration {
 	if cfg.RetryInterval == 0 {
 		return 0

@@ -8,47 +8,16 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// socket.go decides where a proxy answers, which is: on every address this node
-// has, on a port the kernel picked.
+// An address must be routed to the machine before it can be bound, so a proxy
+// listens on all of them and dns answers with the ones the node reports. The only
+// port an author writes is one their container binds inside itself.
 //
-// # There are no addresses here, and there is nowhere to put one
-//
-// An address has to be ROUTED to this machine and present on an interface
-// before anything can bind it — an operational fact no config can invent. So
-// tau listens on all of them, dns answers with the ones the node reports, and
-// nothing in between ever names one. The vocabulary agrees: `proxy` declares a
-// host, a service and a protocol, and not one address or client-facing port.
-// The only port an author writes is the one their container binds INSIDE
-// itself, which never leaves the machine.
-//
-// AN EARLIER VERSION DERIVED AN ADDRESS PER PROXY inside an operator's prefix.
-// It passed its tests because those asserted the derived socket as a STRING and
-// bound 127.0.0.1 separately — one level too shallow to ever attempt the bind
-// that would have failed with "cannot assign requested address".
-//
-// # The port is the kernel's, and SRV carries it
-//
-// At L4 the port IS the address, so an authored one would be the first value in
-// this vocabulary with a global collision domain. Asking the kernel for a free
-// one leaves no table to replicate, reconcile or leak, and what it hands back
-// is a fact about this node — which is the granularity an SRV record publishes
-// at, and why the schema derives `_<service>._<protocol>` for every proxy.
-//
-// # Both families, for free
-//
-// An empty host binds every address, v4 and v6 both, on every platform this
-// runs on. Ports are not scarce the way addresses are — there are 65535 on each
-// — so neither family needs an allocator, and neither needs saying twice.
+// The client-facing port is the kernel's, published by SRV, so there is no
+// collision domain or table to replicate. An empty host binds v4 and v6 alike.
 
-// Transport is what every proxy carries, and it is a constant because the kind
-// is.
-//
-// THE VOCABULARY HAS NO `protocol` FIELD. It had one, as a set of three, and
-// two of them were never servable — a tunnel here is a reliable ordered stream,
-// and carrying a datagram protocol over one turns packet loss into a latency
-// spike. With one value left it was a field nobody could get wrong, so the
-// transport moved to where the kind is implemented: here, once, rather than in
-// every resource that declares a proxy.
+// Transport is what every proxy carries. The vocabulary has no `protocol` field: a
+// tunnel here is a reliable ordered stream, so a datagram protocol was never
+// servable.
 const Transport = "tcp"
 
 // Socket is where a proxy ended up listening, and how a client finds it: an
@@ -88,12 +57,8 @@ func (s *Service) listen(proj *specs.Project, r specs.Resource, id, name string)
 	return l, sock, nil
 }
 
-// socketOf is how a client looks this proxy up.
-//
-// AN OMITTED SERVICE IS THE RESOURCE'S OWN NAME, which is what the vocabulary
-// says — not the name the caller looked it up by, which may have resolved
-// through a parent scope and be neither the resource's nor a service anybody
-// has heard of.
+// socketOf is how a client looks this proxy up. An omitted service is the resource's
+// own name, not the name it was looked up by through a parent scope.
 func (s *Service) socketOf(proj *specs.Project, r specs.Resource, id, name string) Socket {
 	declared := specs.ReadProxy(r)
 	sock := Socket{
@@ -110,16 +75,9 @@ func (s *Service) socketOf(proj *specs.Project, r specs.Resource, id, name strin
 	return sock
 }
 
-// hostOf is the complete name this proxy answers on.
-//
-// THE NAME IS ASSEMBLED ONCE, BY THE VOCABULARY. project.Hosts puts the
-// resource's label, its zone and the project's own label together; this adds
-// the one part a compiled project cannot know — the cloud's own zone, which is
-// operator config for exactly the reason the gateway's CloudFqdn is.
-//
-// An empty answer means nothing here can spell the name: a generated host on a
-// node that was told no zone. Publishing a partial one would put a name in DNS
-// that no client will ever ask for.
+// hostOf is the complete name this proxy answers on: project.Hosts plus the cloud's
+// zone. Empty when a generated host meets a node told no zone, rather than publishing
+// a partial name.
 func (s *Service) hostOf(proj *specs.Project, id string) string {
 	kind, scope, name, ok := proj.Locate(id)
 	if !ok {

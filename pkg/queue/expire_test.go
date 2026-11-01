@@ -6,8 +6,6 @@ import (
 	"time"
 )
 
-// TestExpireDropsWhatIsOlderThanTheAge. The age is measured from when an item
-// became deliverable, which for a buried one is when it was buried.
 func TestExpireDropsWhatIsOlderThanTheAge(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.mustPush(t, "job-1", "old")
@@ -29,8 +27,6 @@ func TestExpireDropsWhatIsOlderThanTheAge(t *testing.T) {
 	}
 }
 
-// TestExpireKeepsTheNewestItemsThatFitTheSize, dropping from the front — the
-// same drop-oldest a log's retention means.
 func TestExpireKeepsTheNewestItemsThatFitTheSize(t *testing.T) {
 	h := newHarness(t, Config{})
 	for _, id := range []string{"job-1", "job-2", "job-3"} {
@@ -50,10 +46,6 @@ func TestExpireKeepsTheNewestItemsThatFitTheSize(t *testing.T) {
 	}
 }
 
-// TestASizeTooSmallForOneItemStillKeepsTheNewest, for the reason node/log.go
-// keeps its newest record: a budget that cannot hold one item is a
-// misconfiguration, and emptying the queue over it discards work that was just
-// accepted.
 func TestASizeTooSmallForOneItemStillKeepsTheNewest(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.mustPush(t, "job-1", "0123456789")
@@ -66,9 +58,6 @@ func TestASizeTooSmallForOneItemStillKeepsTheNewest(t *testing.T) {
 	}
 }
 
-// TestExpireLeavesAClaimedItemAlone. A claimed item is somebody's work in
-// flight; if its consumer is gone the claim expires by itself and the item
-// comes back ready, where the next pass can see it.
 func TestExpireLeavesAClaimedItemAlone(t *testing.T) {
 	h := newHarness(t, Config{VisibilityTimeout: time.Hour})
 	h.mustPush(t, "job-1", "one")
@@ -87,8 +76,6 @@ func TestExpireLeavesAClaimedItemAlone(t *testing.T) {
 	}
 }
 
-// TestAnAbsentBudgetKeepsEverything, which is the vocabulary's own sentence for
-// a log and means the same here.
 func TestAnAbsentBudgetKeepsEverything(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.mustPush(t, "job-1", "one")
@@ -102,8 +89,6 @@ func TestAnAbsentBudgetKeepsEverything(t *testing.T) {
 	}
 }
 
-// TestExpireRefusesOffTheLeader, like every other write in this package: a
-// follower that deleted would be deleting what the leader still holds.
 func TestExpireRefusesOffTheLeader(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.mustPush(t, "job-1", "one")
@@ -115,8 +100,6 @@ func TestExpireRefusesOffTheLeader(t *testing.T) {
 	}
 }
 
-// TestAnExpiredIdMayBePushedAgain, which is what tells a drop from a withdrawal:
-// both remove the index key, so nothing is left claiming the id is still held.
 func TestAnExpiredIdMayBePushedAgain(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.mustPush(t, "job-1", "one")
@@ -132,8 +115,6 @@ func TestAnExpiredIdMayBePushedAgain(t *testing.T) {
 	}
 }
 
-// TestDeadNamesTheQueueExhaustedItemsMoveTo, so nothing has to reproduce
-// withDefaults' derivation by hand.
 func TestDeadNamesTheQueueExhaustedItemsMoveTo(t *testing.T) {
 	h := newHarness(t, Config{MaxAttempts: 1, VisibilityTimeout: time.Second})
 	h.mustPush(t, "job-1", "doomed")
@@ -156,11 +137,6 @@ func TestDeadNamesTheQueueExhaustedItemsMoveTo(t *testing.T) {
 	}
 }
 
-// TestAnExpirePassThatStopsEarlyReportsNothingDropped. Every drop the pass
-// decides on goes into one entry at the end, so a pass that stops before it
-// applied nothing — and the count of what it had decided on by then would be a
-// number no store ever saw, and a caller logging it would read a queue that
-// shrank when nothing moved.
 func TestAnExpirePassThatStopsEarlyReportsNothingDropped(t *testing.T) {
 	h := newHarness(t, Config{})
 	for _, id := range []string{"job-1", "job-2", "job-3"} {
@@ -169,11 +145,9 @@ func TestAnExpirePassThatStopsEarlyReportsNothingDropped(t *testing.T) {
 	}
 	h.clock.advance(time.Hour)
 
-	// A key under this queue's ready prefix that this queue did not write is the
-	// fault ErrForeignKey names. Its stamp is older than any real one, so the
-	// newest-first walk reaches it LAST — after it has already decided to drop
-	// all three items, which is the only arrangement that can tell a count of
-	// what was applied from a count of what was planned.
+	// A foreign key under the ready prefix with the oldest stamp: the newest-first walk
+	// reaches it last, after deciding to drop all three, which tells a count of what was
+	// applied from a count of what was planned.
 	foreign := h.keys.readyPrefix() + "0000000000000000000x/x"
 	if err := h.store.Set(foreign, []byte("{}"), time.Second); err != nil {
 		t.Fatalf("Set: %v", err)

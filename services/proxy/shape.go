@@ -10,38 +10,15 @@ import (
 	"github.com/taubyte/tau/pkg/splice"
 )
 
-// shape.go runs a proxy's transformers over the bytes crossing it.
+// The chain runs in order, as a gateway's: each transformer sees what the previous
+// one produced. Every transformer is called even with an empty chunk, since it may
+// hold bytes of its own to release.
 //
-// # A chain, in order, exactly as a gateway's
+// What a failure means is the author's, per entry (`fail`). A transformer that
+// closes ran and decided, which ends the connection whatever `fail` says.
 //
-// What the second transformer sees is what the first produced, and what the
-// workload sees is what the last one did. A chain that handed each transformer
-// the ORIGINAL chunk would be a list of independent opinions, none of which
-// could build on another.
-//
-// # Every transformer is called, even with nothing
-//
-// A transformer that buffers passes an empty chunk on, and the next one in the
-// chain is still asked about it: it may be holding bytes of its own with a
-// reason to release them, and a chain that skipped it would make "did anything
-// arrive" decide whether the rest of the chain runs.
-//
-// # What happens when one fails is the author's, per entry
-//
-// It is the one decision here that is dangerous in both directions — a filter
-// that fails open stops filtering exactly when something is wrong, and an
-// enrichment that fails closed cuts the connection to add a header — so `fail`
-// is one of two words and neither is guessed.
-//
-// A transformer that CLOSES is a different thing from one that failed: it ran,
-// read the bytes and decided. That ends the connection whatever `fail` says.
-//
-// # The state is the host's, which is what makes this survivable
-//
-// Each transformer's state comes back with its answer and is handed in with the
-// next chunk, so nothing is pinned to an instance — see the proxy-transformer
-// world. Two chunks of one conversation may legitimately be shaped on two
-// nodes, which is what lets a transformer outlive the node it started on.
+// Each transformer's state returns with its answer and is handed in with the next
+// chunk, so two chunks may be shaped on two nodes.
 
 // ErrClosedByTransformer is a transformer that decided the conversation stops.
 var ErrClosedByTransformer = errors.New("proxy: a transformer closed the connection")

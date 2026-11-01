@@ -64,8 +64,6 @@ func listening(t *testing.T, port uint16) bool {
 	return true
 }
 
-// TestASWEEPSTARTSWHATTHISNODEHOLDS, and starts it once: a second listener for
-// one resource would take half the connections and appear in DNS for none.
 func TestASweepServesWhatIsHeldExactlyOnce(t *testing.T) {
 	s, _, _ := sweeping(t, servable(), pgwire())
 
@@ -76,9 +74,6 @@ func TestASweepServesWhatIsHeldExactlyOnce(t *testing.T) {
 	require.Len(t, s.Serving(), 1)
 }
 
-// TestAPROXYTHATSTOPSBEINGHELDSTOPSLISTENING. A node that dropped a deployment
-// and kept the port would go on being sent clients by DNS and refusing every
-// one of them, which is worse than not answering.
 func TestAProxyNoLongerHeldIsClosed(t *testing.T) {
 	s, d, _ := sweeping(t, servable(), pgwire())
 
@@ -93,8 +88,6 @@ func TestAProxyNoLongerHeldIsClosed(t *testing.T) {
 	require.False(t, listening(t, port), "the socket is gone")
 }
 
-// TestADEPLOYISNOTICEDBYTHENEXTSWEEP — there is no edge to react to, so the
-// sweep is what converges.
 func TestAProxyDeployedBetweenSweepsIsPickedUp(t *testing.T) {
 	s, d, _ := sweeping(t, servable())
 
@@ -106,8 +99,6 @@ func TestAProxyDeployedBetweenSweepsIsPickedUp(t *testing.T) {
 	require.Len(t, s.Serving(), 1)
 }
 
-// TestONEREASONISSAIDONCE. A sweep every ten seconds repeating one sentence
-// would bury the deploy that fixes it.
 func TestAnUnservableProxyIsReportedOnceAndRetriedForever(t *testing.T) {
 	res := servable()
 	res["tls"] = map[string]any{"mode": "terminate"}
@@ -120,9 +111,6 @@ func TestAnUnservableProxyIsReportedOnceAndRetriedForever(t *testing.T) {
 	require.Empty(t, s.Serving())
 }
 
-// TestARUNSWEEPSUNTILITSCONTEXTISDONE, and the first sweep happens immediately
-// rather than one interval later — a node that had to wait would answer no
-// connections for its whole first tick.
 func TestRunSweepsImmediatelyAndThenOnTheInterval(t *testing.T) {
 	d := &deployments{}
 	d.set(pgwire())
@@ -155,8 +143,6 @@ func TestRunSweepsImmediatelyAndThenOnTheInterval(t *testing.T) {
 	}
 }
 
-// TestASERVICEWITHNOSOURCE serves only what it was told to by hand, which is
-// what a composer with its own listener does.
 func TestASweepWithNoDeploymentsDoesNothing(t *testing.T) {
 	s, _ := service(t, proxy.Config{CloudFqdn: "tau.example.io"}, servable(), &workers{})
 	require.Equal(t, 0, s.Sweep(t.Context()))
@@ -171,8 +157,6 @@ func TestANilDeploymentSourceIsRefusedAtConstruction(t *testing.T) {
 	require.ErrorIs(t, err, proxy.ErrNoDeployments)
 }
 
-// TestONELISTENERPERRESOURCE, whichever way it was asked for: two would each
-// take half the connections and only one of them would be in DNS.
 func TestServingOneProxyTwiceIsRefused(t *testing.T) {
 	s, _, _ := sweeping(t, servable(), pgwire())
 

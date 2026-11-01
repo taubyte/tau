@@ -22,9 +22,7 @@ import (
 	"github.com/taubyte/tau/services/proxy"
 )
 
-// tls_test does a real handshake against a real listener, because what
-// `terminate` means is that a TLS client reaches a plaintext workload — and a
-// test that asserted on configuration would pass for a proxy that answered in
+// A real handshake: a test on configuration alone would pass for a proxy answering in
 // the clear.
 
 // selfSigned is one PEM blob holding a chain and its key, which is the single
@@ -126,9 +124,6 @@ func speaks(t *testing.T, sock proxy.Socket, pool *x509.CertPool, serverName str
 
 func terminates(res map[string]any) { res["tls"] = map[string]any{"mode": "terminate"} }
 
-// TestAPROVIDEDCERTIFICATEISONESECRET holding both halves — they are issued
-// together, they expire together, and rotating them in two places leaves a
-// window where they do not match.
 func TestATlsProxyAnswersWithTheCertificateItsSecretHolds(t *testing.T) {
 	res := servable()
 	terminates(res)
@@ -154,8 +149,6 @@ func TestATlsProxyAnswersWithTheCertificateItsSecretHolds(t *testing.T) {
 	require.Equal(t, "pg", port)
 }
 
-// TestAGENERATEDNAMEUSESTHECLOUDSOWNCERTIFICATE. A generated host ends in a
-// zone no project declares, so no project can hold a key for it.
 func TestAGeneratedNameTerminatesWithTheCloudsWildcard(t *testing.T) {
 	res := servable()
 	terminates(res)
@@ -176,8 +169,6 @@ func TestAGeneratedNameTerminatesWithTheCloudsWildcard(t *testing.T) {
 	require.Equal(t, "pong:ping", got)
 }
 
-// TestNOCERTIFICATEISAREFUSALANDNOTAPLAINTEXTSOCKET. A proxy that asked for
-// TLS and got an open socket is a security control silently not applied.
 func TestTerminatingWithNoCertificateIsRefusedAndBindsNothing(t *testing.T) {
 	res := servable()
 	terminates(res)
@@ -190,8 +181,6 @@ func TestTerminatingWithNoCertificateIsRefusedAndBindsNothing(t *testing.T) {
 	require.Empty(t, s.Serving(), "and nothing is published")
 }
 
-// TestTHEWILDCARDCOVERSTHECLOUDSZONEANDNOTHINGELSE. A name in a zone somebody
-// delegated is not this cloud's to answer for with its own certificate.
 func TestTheWildcardIsNotUsedForAZoneTheProjectDeclares(t *testing.T) {
 	res := servable()
 	terminates(res)
@@ -213,7 +202,6 @@ func TestTheWildcardIsNotUsedForAZoneTheProjectDeclares(t *testing.T) {
 	require.ErrorContains(t, err, "db.shop.example.com is not under")
 }
 
-// TestAPROVIDEDCERTIFICATENEEDSSOMEWHERETOREADITFROM.
 func TestProvidedWithNoSecretResolverIsRefused(t *testing.T) {
 	res := servable()
 	terminates(res)
@@ -229,8 +217,6 @@ func TestProvidedWithNoSecretResolverIsRefused(t *testing.T) {
 	require.ErrorContains(t, err, "resolves no secret")
 }
 
-// TestASECRETWITHHALFACERTIFICATE is refused by name, because "that key did
-// not match" three frames later is not a sentence anybody can act on.
 func TestASecretMissingEitherHalfIsRefusedByName(t *testing.T) {
 	blob, _ := selfSigned(t, "db.tau.example.io")
 	cert, key := split(t, blob)
@@ -259,8 +245,6 @@ func TestASecretMissingEitherHalfIsRefusedByName(t *testing.T) {
 	}
 }
 
-// TestAPLAINPROXYISSTILLPLAIN: `tls: none` is an opaque pipe, and whatever the
-// protocol does about TLS is its own business.
 func TestAProxyThatTerminatesNothingNeedsNoCertificate(t *testing.T) {
 	s, _ := terminating(t, servable(), proxy.Config{CloudFqdn: "tau.example.io"}, nil)
 
@@ -268,10 +252,8 @@ func TestAProxyThatTerminatesNothingNeedsNoCertificate(t *testing.T) {
 	require.NoError(t, err)
 	require.NotZero(t, sock.Port)
 
-	// THE DEADLINE IS THE ASSERTION. A plaintext proxy forwards the
-	// ClientHello to the workload as the bytes it is, and the handshake this
-	// client is waiting for never arrives — so what proves there is no TLS
-	// here is that the dial times out rather than completing.
+	// The deadline is the assertion: a plaintext proxy forwards the ClientHello and the
+	// handshake never completes.
 	_, err = tls.DialWithDialer(&net.Dialer{Timeout: time.Second},
 		"tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(int(sock.Port))), &tls.Config{InsecureSkipVerify: true})
 	require.Error(t, err, "there is no handshake to have")

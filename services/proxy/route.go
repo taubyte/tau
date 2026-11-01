@@ -12,34 +12,16 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// route.go decides where one connection goes when a function decides it.
+// The router sees the raw bytes, before the transformers: the inverse of a gateway.
+// A proxy transformer is a stateful stream filter, and starting it before the
+// destination is known could starve the router of the bytes it classifies (a TLS
+// ClientHello, a postgres startup packet). The transformers still see every byte.
 //
-// # The router sees the RAW bytes, and the gateway's rule is inverted here
-//
-// A gateway runs its transformers first, because a router that saw the request
-// before the chain would decide from a body somebody was about to redact. A
-// proxy does the opposite, and the reason is what the two things are: a gateway
-// transformer shapes one whole request, and a proxy transformer is a STREAM
-// FILTER WITH STATE. Running the filter first would mean starting it before the
-// destination is known, and a filter that buffers a frame would starve the
-// router of the very bytes it needs to classify the connection.
-//
-// A proxy router classifies — a TLS ClientHello, a postgres startup packet —
-// and nothing a downstream filter does to the payload changes what protocol
-// arrived. The transformers still see every byte, prefix included.
-//
-// # The peek is bounded twice, in bytes and in time
-//
-// A router asking for more is a client holding this listener open by sending
-// nothing, so both ceilings are the proxy's and neither is the router's to
-// raise. Past either, the connection is closed.
+// The peek is bounded in bytes and in time, and neither is the router's to raise;
+// past either, the connection is closed.
 
-// DefaultPeek is how many bytes a router may ask to see.
-//
-// A TLS ClientHello with a long SNI and a full cipher list fits in a couple of
-// kilobytes, and a postgres startup packet in a few hundred. 8 KiB leaves room
-// for a protocol nobody here has thought of without letting a router ask a
-// client to fill this node's memory.
+// DefaultPeek is how many bytes a router may ask to see. A ClientHello fits in a
+// couple of kilobytes, a postgres startup packet in a few hundred.
 const DefaultPeek = 8 * 1024
 
 // DefaultDecide is how long the whole decision may take, from the first byte

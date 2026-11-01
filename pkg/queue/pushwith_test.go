@@ -7,9 +7,8 @@ import (
 	"github.com/taubyte/tau/pkg/raft"
 )
 
-// pushwith_test is about the ONE guarantee PushWith adds over Push: the
-// caller's own record of the push commits in the same replicated entry as the
-// push, or neither does. Everything else it does is Push's and is tested there.
+// PushWith's one guarantee over Push: the caller's record commits in the same
+// replicated entry as the push, or neither does.
 
 func TestPushWithCommitsTheCallersOperationInTheSameEntry(t *testing.T) {
 	h := newHarness(t, Config{})
@@ -21,8 +20,7 @@ func TestPushWithCommitsTheCallersOperationInTheSameEntry(t *testing.T) {
 		t.Fatalf("PushWith: %v", err)
 	}
 
-	// ONE BATCH AND NOT TWO. The whole point is that no crash fits between the
-	// record and the work it is a record of.
+	// One batch, not two: no crash fits between the record and the work.
 	batches := 0
 	for _, op := range h.store.trace() {
 		if op == "batch" {
@@ -59,9 +57,6 @@ func TestARefusedEntryCommitsNeitherThePushNorTheRecord(t *testing.T) {
 	}
 }
 
-// TestNOITEMSSTILLCOMMITSTHEOPERATIONS, because a caller whose work is empty
-// this turn still has a record to write — a cron whose targets this cloud
-// refuses still spends its slot.
 func TestPushWithNoItemsStillCommitsTheOperations(t *testing.T) {
 	h := newHarness(t, Config{})
 
@@ -75,9 +70,6 @@ func TestPushWithNoItemsStillCommitsTheOperations(t *testing.T) {
 	}
 }
 
-// TestANIDTHISQUEUEALREADYHOLDSSTILLCOMMITSTHERECORD. The push is a no-op and
-// the record is not: a producer repeating a push it could not tell had landed
-// must still end up with its record written.
 func TestPushWithADuplicateIdStillCommitsTheRecord(t *testing.T) {
 	h := newHarness(t, Config{})
 	h.mustPush(t, "job-1", "one")
@@ -95,14 +87,10 @@ func TestPushWithADuplicateIdStillCommitsTheRecord(t *testing.T) {
 	}
 }
 
-// TestACALLERMAYNOTWRITEINTOTHISQUEUESOWNKEYS. Every state transition here is
-// one Batch and that is what makes an item impossible to lose between two
-// places; a second author of those keys would have none of the rules.
 func TestPushWithRefusesAnOperationOnThisQueuesKeys(t *testing.T) {
 	h := newHarness(t, Config{})
 
-	// DERIVED AND NOT SPELLED: the keyspace escapes a name, so a spelled key
-	// would be testing this test's copy of that encoding.
+	// Derived, not spelled: the keyspace escapes a name.
 	mine := newKeyspace(h.Config().Name)
 	dead := newKeyspace(h.Config().DeadLetter)
 
@@ -119,10 +107,6 @@ func TestPushWithRefusesAnOperationOnThisQueuesKeys(t *testing.T) {
 	}
 }
 
-// TestANOPERATIONTHATISNEITHERASETNORADELETE is refused rather than applied as
-// whatever the store makes of it. raft.BatchOp is a struct a caller fills in by
-// hand, so the shapes it can express and this package cannot accept are
-// refused at the door.
 func TestPushWithRefusesAMalformedOperation(t *testing.T) {
 	h := newHarness(t, Config{})
 
