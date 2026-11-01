@@ -6,9 +6,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestASTORENAMECARRIESTHEINSTANCE, because a store whose config says it holds
-// many is many stores: two instances of one declaration must not be one set of
-// bytes.
 func TestAnInstanceIsPartOfTheName(t *testing.T) {
 	one := address{project: "shop", environment: "prod", id: "QmSessions"}
 	many := address{project: "shop", environment: "prod", id: "QmSessions", instance: "eu-1"}

@@ -12,7 +12,7 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 )
 
-// declared is a cloud that answers whatever a test needs about itself.
+// fleetSaying is a cloud that answers whatever a test needs about itself.
 type fleetSaying struct {
 	doc      []byte
 	revision uint64
@@ -45,12 +45,6 @@ func document(t *testing.T, replication int) []byte {
 	return b
 }
 
-// TestTheFloorIsWHATTHECLOUDPUBLISHED, not what this node was configured with.
-//
-// It was per-node config, which made two nodes given different numbers disagree
-// about who should hold a database FOREVER — unlike every other placement input,
-// which heals as views converge — and made what an operator is billed for depend
-// on which node was asked.
 func TestTheFloorComesFromTheFleetDocument(t *testing.T) {
 	at := &fleetFloor{from: &fleetSaying{doc: document(t, 3), revision: 7}}
 
@@ -60,8 +54,6 @@ func TestTheFloorComesFromTheFleetDocument(t *testing.T) {
 	require.Equal(t, uint64(7), at.revisionSeen(), "a node behind is behind by a revision it can name")
 }
 
-// TestACLOUDTHATSAIDNOTHINGISSTILLAGREEMENT: every node reads the same absence
-// and reaches the same default, so they still compute the same placement.
 func TestAnUnpublishedFleetIsTheDefault(t *testing.T) {
 	at := &fleetFloor{from: &fleetSaying{}}
 
@@ -70,12 +62,6 @@ func TestAnUnpublishedFleetIsTheDefault(t *testing.T) {
 	require.Equal(t, DefaultReplication, floor)
 }
 
-// TestANODETHATHASNEVERREADTHEFLOORRELEASESNOTHING.
-//
-// The whole of release is a comparison against the floor. A node that has never
-// learned it would be guessing — and guessing is how a node deletes the second
-// of two copies believing the floor was one. Unreachable is not "say nothing";
-// it is "change nothing".
 func TestUnreachableMeansThisNodeMayNotRelease(t *testing.T) {
 	at := &fleetFloor{from: &fleetSaying{err: errors.New("no route to the register")}}
 
@@ -83,8 +69,6 @@ func TestUnreachableMeansThisNodeMayNotRelease(t *testing.T) {
 	require.False(t, known, "a node released data on a floor it had never read")
 }
 
-// TestONCEREADITSURVIVESANOUTAGE, because the value did not change — only this
-// node's ability to re-check it did.
 func TestAKnownFloorSurvivesTheRegisterGoingAway(t *testing.T) {
 	source := &fleetSaying{doc: document(t, 3), revision: 1}
 	at := &fleetFloor{from: source}
@@ -99,9 +83,6 @@ func TestAKnownFloorSurvivesTheRegisterGoingAway(t *testing.T) {
 	require.Equal(t, 3, floor)
 }
 
-// TestACORRUPTDOCUMENTISNOTSILENCE. Falling back to the default would have this
-// node place differently from one that read the document before it broke, which
-// is the disagreement the published floor exists to end.
 func TestAMalformedFleetDocumentDoesNotBecomeTheDefault(t *testing.T) {
 	at := &fleetFloor{from: &fleetSaying{doc: []byte("{not json"), revision: 1}}
 
@@ -109,8 +90,6 @@ func TestAMalformedFleetDocumentDoesNotBecomeTheDefault(t *testing.T) {
 	require.False(t, known)
 }
 
-// TestTHEOBJECTISREADONCE, since it is content-addressed: a pointer naming what
-// this node already decoded has nothing new to say.
 func TestAnUnchangedFleetIsNotDecodedAgain(t *testing.T) {
 	source := &fleetSaying{doc: document(t, 3), revision: 1}
 	at := &fleetFloor{from: source}
@@ -123,8 +102,6 @@ func TestAnUnchangedFleetIsNotDecodedAgain(t *testing.T) {
 	require.Equal(t, 5, source.reads, "the pointer is cheap and is read every time")
 }
 
-// TestNOFLEETSOURCEISTHEDEFAULT, and it is agreed for the same reason an
-// unpublished one is: every such node reaches it identically.
 func TestAServiceWithNoFleetSourceKnowsTheDefault(t *testing.T) {
 	var at *fleetFloor
 	floor, known := at.read(t.Context())

@@ -8,43 +8,18 @@ import (
 	"github.com/taubyte/tau/pkg/placement"
 )
 
-// maintain.go is what a node does about a database whose placement moved.
+// Acquire is opening the database; on a converging store the rows then arrive.
+// Release deletes the local copy and is gated on facts, never placement alone.
 //
-// # Two decisions, and only one of them can lose anything
-//
-// ACQUIRE is opening the database. On a store whose writes converge that is the
-// whole of it: opening subscribes to that database's own topic and the rows
-// arrive.
-//
-// RELEASE deletes the local copy, and it is the one that can cost the data. So
-// it is gated on facts and never on placement alone — see release.
-//
-// # Nobody agrees about placement, and that is fine
-//
-// holds() is deterministic, not agreed: same inputs, same answer, with no
-// coordination. But the inputs are PER-NODE views — the floor, the declaration
-// at a register revision, and a freshness-filtered membership — so two nodes
-// can and do compute different desired sets.
-//
-// Membership divergence alone cannot produce a cycle. If P is desired by A and
-// A is not, P outranks A; symmetrically A outranks P; contradiction. The others
-// CAN: a floor that moved between revisions, or two nodes draining at once —
-// which is just a rolling restart — each leave both nodes computing the other
-// desired, both converged, and both dropping.
-//
-// ONE RULE CLOSES THEM: a keeper counts only if it answers `keeps` — its
-// OWN holds() from its own inputs, decided under the same lock as its own
-// release. In every cycle each node is releasing BECAUSE it computed itself not
-// desired, so it answers keeps=false and the other stays. No two nodes have to
-// agree on anything; each answer is a commitment about the answerer's own
-// future, and a committed node can only drop through its own gated release.
+// holds() is deterministic, not agreed: its inputs (floor, declaration revision,
+// freshness-filtered membership) are per-node views. Membership divergence alone
+// cannot cycle, but a moved floor or two nodes draining at once can leave each
+// computing the other desired. One rule closes it: a keeper counts only if it
+// answers `keeps`, its own holds() decided under the lock of its own release. A
+// releasing node answers keeps=false, so the other stays.
 
-// keeper is what one node answers about one database: whether it has the bytes,
-// and whether it means to keep them.
-//
-// HELD AND KEEPS ARE DIFFERENT QUESTIONS. A node can hold a copy it is about to
-// let go of — that is exactly a node mid-release — and counting it as a keeper
-// is how two nodes both drop.
+// keeper is what one node answers about one database: whether it has the bytes, and
+// whether it means to keep them. A node mid-release holds but does not keep.
 type keeper struct {
 	keys  uint64
 	sum   []byte
@@ -57,26 +32,17 @@ type keeper struct {
 // not exist.
 type digester func(ctx context.Context, peer string, at address) (keeper, error)
 
-// release reports whether this node may stop holding a database.
-//
-// IT IS THE ONLY THING THAT MAY AUTHORISE A DELETE ON A MOVE, and the argument
-// for it is a failure it prevents rather than a property it has:
+// release reports whether this node may stop holding a database, the only authority
+// for a delete on a move. It prevents this:
 //
 //	the holders go dark; membership moves the database to other nodes, which
 //	are alive and now desired, but their source is down so they receive
 //	nothing; the old holders come back, read the new placement, and drop the
 //	only copies that ever existed.
 //
-// So this asks. Equal digests mean that node holds the same keys with the same
-// values, which for a store whose writes converge is a proof and not a sample —
-// and `keeps` means it is not about to let go of them itself.
-//
-// A NODE THAT CANNOT BE REACHED HAS NOT CONVERGED. An error is not a maybe: the
-// answer to "may I delete the data" defaults to no, every time, for every reason.
-//
-// THE BAR IS THE FLOOR, or every replacement when fewer exist: requiring the
-// floor where the fleet holds fewer nodes than that is a bar nothing can clear,
-// and the copy would be held forever.
+// Equal digests prove a converging store holds the same rows, and `keeps` that the
+// node will not let go itself. An unreachable node has not converged. The bar is the
+// floor, or every replacement when fewer exist.
 func release(ctx context.Context, at address, keys uint64, sum []byte, desired []string, replication int, ask digester) bool {
 	if len(desired) == 0 {
 		// NOBODY ELSE IS SUPPOSED TO HOLD THIS, which is not a move. Letting go
@@ -98,10 +64,8 @@ func release(ctx context.Context, at address, keys uint64, sum []byte, desired [
 	return converged >= want
 }
 
-// moved reports whether this node should still hold a database, and who should.
-//
-// The desired set EXCLUDES this node: a node comparing its digest against its
-// own would converge with itself and let go.
+// moved reports whether this node should still hold a database, and who should. The
+// desired set excludes this node, which would otherwise converge with itself.
 func moved(at address, members []placement.Member, replication int, me string) (desired []string, keep bool) {
 	if holds(at, members, replication, me) {
 		return nil, true
@@ -137,32 +101,16 @@ type state struct {
 	// go: nothing may start writing into it.
 	sealed bool
 
-	// writing is how many writes are in flight, and written records that one
-	// completed since this node began letting the database go.
-	//
-	// THE GATE'S ANSWER IS ABOUT A MOMENT. A replacement proved it holds the
-	// same rows as of the digest taken when the release began; a row accepted
-	// after that is in neither copy it vouched for, so the release has to take
-	// the answer again over the copy including it rather than delete it.
+	// writing is how many writes are in flight, and written records that one completed
+	// since the release began: the gate's answer is about the digest taken then.
 	writing int
 	written bool
 }
 
-// holdings is what this node is doing about each database it holds.
-//
-// IT EXISTS TO MAKE `keeps` HONEST. A node answers keeps=false while it is
-// leaving, so a second node cannot count it as a reason to leave too. Two nodes
-// that both begin leaving therefore both stay, and the next sweep resolves it
-// once their inputs heal — which is how a rolling restart stops being a way to
-// delete a database.
-//
-// IT IS ALSO THE WRITE FENCE, for the same reason and in the same place: what a
-// peer is entitled to rely on and what this node is still accepting rows into
-// are one decision, and deciding them in two tables is deciding them twice.
-//
-// THE LOCK IS NEVER HELD ACROSS THE NETWORK. A release takes it to mark
-// `leaving`, releases it to go ask, and takes it again to commit or back out.
-// Holding it across the asks would make two nodes probing each other deadlock.
+// holdings is what this node is doing about each database it holds. It makes `keeps`
+// honest (two nodes both leaving both stay) and is the write fence, one decision in
+// one table. The lock is never held across the network, or two nodes probing each
+// other would deadlock.
 type holdings struct {
 	mu sync.Mutex
 	at map[string]*state
@@ -205,17 +153,9 @@ func (h *holdings) begin(key string) bool {
 	return true
 }
 
-// seal stops this database accepting writes, and reports what the gate's answer
-// is still about.
-//
-// It refuses to seal over a HALF-DONE write: that row is already past the fence
-// and would land after the digest the replacements answered, so it would go
-// with the delete. The release backs out and asks again next sweep.
-//
-// A sealed copy is CLEAN when nothing was written into it since the release
-// began. A dirty one is sealed all the same — the caller takes the gate's
-// answer again over the copy including the new rows, which cannot be overtaken
-// a second time because nothing can be written into a sealed copy.
+// seal stops this database accepting writes, and reports what the gate's answer is
+// still about. It refuses over a half-done write. A copy written into since the
+// release began is sealed but not clean; the caller asks again.
 func (h *holdings) seal(key string) (sealed, clean bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -228,13 +168,8 @@ func (h *holdings) seal(key string) (sealed, clean bool) {
 	return true, !at.written
 }
 
-// writing takes a write slot, and reports whether the write may proceed.
-//
-// A WRITE IS REFUSED ONLY WHILE THE BYTES ARE GOING, which is the sealed
-// window. A node letting go of a database is still that database's holder until
-// it is not, and refusing writes for the length of a digest round would be an
-// outage per sweep — so everything before the seal is accepted, and makes the
-// release take its answer again instead.
+// writing takes a write slot, and reports whether the write may proceed. Only the
+// sealed window refuses; earlier writes make the release ask again.
 func (h *holdings) writing(key string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -243,8 +178,7 @@ func (h *holdings) writing(key string) bool {
 	if at.sealed {
 		return false
 	}
-	// WRITING IS HOLDING, the same statement hold() makes: this node is serving
-	// the database, so it means to keep it until its own release says otherwise.
+	// Writing is holding.
 	if at.intent != leaving {
 		at.intent = kept
 	}

@@ -19,9 +19,8 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 )
 
-// rpc_test drives the service over a real libp2p stream, because the thing
-// under test is a SERVICE: what a caller can reach, what it is refused, and
-// what the refusal is called.
+// Drives the service over a real libp2p stream: what a caller can reach and what it
+// is refused.
 
 const (
 	projectID = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
@@ -61,10 +60,7 @@ func compiled() []byte {
 			},
 		},
 
-		// THE INDEX IS WHAT MAKES AN ID ADDRESSABLE. tcc emits
-		// `projects/<pid>/<kind>/<name>/links` per resource, and pkg/specs reads
-		// it backwards to answer "what is this id" — which is the only question
-		// this service asks of a project.
+		// The index makes an id addressable (pkg/specs reads it backwards).
 		"indexes": map[string]any{
 			"projects/" + projectID + "/database/sessions/links": []any{
 				"branches/main/projects/" + projectID + "/database/" + kvID},
@@ -117,7 +113,7 @@ func (p *published) ResolveFleet(context.Context) (register.Pointer, error) {
 	return register.Pointer{Object: register.IDOf(p.fleetDoc), Revision: 1}, nil
 }
 
-// declaring is a cloud that has published a floor.
+// declaringFloor is a cloud that has published a floor.
 func declaringFloor(t *testing.T, object []byte, replication int) *published {
 	t.Helper()
 	doc, err := fleet.Encode(fleet.Fleet{Replication: replication})
@@ -162,8 +158,6 @@ func ref(id string) *databasev2.Ref {
 	return &databasev2.Ref{Project: "shop", Environment: "prod", Id: id}
 }
 
-// TestADatabaseRoundTripsOverTheWire, which is the whole service: a caller
-// names a database, the service reads what it is, opens it and answers.
 func TestADatabaseRoundTripsOverTheWire(t *testing.T) {
 	client, s := serving(t)
 
@@ -193,9 +187,6 @@ func TestADatabaseRoundTripsOverTheWire(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestAModelThisServiceDoesNotServeIsRefusedByName. `database` is four models
-// on one axis and a consensus on another; this serves one cell and says so
-// rather than answering and doing the wrong thing.
 func TestAModelThisServiceDoesNotServeIsRefusedByName(t *testing.T) {
 	client, _ := serving(t)
 
@@ -207,13 +198,6 @@ func TestAModelThisServiceDoesNotServeIsRefusedByName(t *testing.T) {
 	require.ErrorContains(t, err, "does not serve that model")
 }
 
-// TestANodeThatCannotKeepAConsensusRefusesByName.
-//
-// raft IS served — see raftstore.go — but only by a node that has a raft
-// cluster to keep it in. This one has only the crdt store, so a ledger asking
-// for raft is refused BY NAME rather than registered under it and merged, which
-// is the defect the vocabulary carried while `consensus` was RequiredWhen and
-// read by nobody.
 func TestANodeThatCannotKeepAConsensusRefusesByName(t *testing.T) {
 	client, _ := serving(t)
 
@@ -225,8 +209,6 @@ func TestANodeThatCannotKeepAConsensusRefusesByName(t *testing.T) {
 	require.ErrorContains(t, err, "raft", "the refusal names what was asked for")
 }
 
-// TestAnIdThisDeploymentDoesNotDeclareIsNotFound, and never an empty answer: a
-// caller writing into a database that does not exist would believe it had.
 func TestAnIdThisDeploymentDoesNotDeclareIsNotFound(t *testing.T) {
 	client, _ := serving(t)
 
@@ -236,7 +218,6 @@ func TestAnIdThisDeploymentDoesNotDeclareIsNotFound(t *testing.T) {
 	require.Equal(t, connect.CodeNotFound, connect.CodeOf(err))
 }
 
-// TestAnAddressWithAHoleInItSaysWhichPart.
 func TestAnAddressWithAHoleInItSaysWhichPart(t *testing.T) {
 	client, _ := serving(t)
 
@@ -260,8 +241,6 @@ func TestAnAddressWithAHoleInItSaysWhichPart(t *testing.T) {
 	}
 }
 
-// TestListPagesByKey, so a page is stable under concurrent writes: a row
-// inserted before the cursor cannot shift the window.
 func TestListPagesByKey(t *testing.T) {
 	client, _ := serving(t)
 

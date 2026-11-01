@@ -10,41 +10,18 @@ import (
 	"github.com/taubyte/tau/pkg/placement"
 )
 
-// loop.go is the thing that calls the decisions.
+// The sweep walks what this node holds, not what exists: O(held), no shared index,
+// and every database is watched by its holders. Nobody watches a database whose
+// holders are all gone; past the floor that is a backup question.
 //
-// # It walks what this node HOLDS, not what exists
-//
-// A fleet's databases are not this node's business; its own copies are. That
-// makes the sweep O(held) rather than O(fleet), it needs no shared index of
-// who-holds-what, and it distributes naturally — every database is watched by
-// the nodes holding it.
-//
-// It also means nobody watches a database whose holders are all gone. That is
-// stated rather than solved: after the last holder is lost, an empty store on
-// the desired nodes is indistinguishable from a database nobody ever wrote,
-// by digest or by heads. The fleet's promise is the floor, and the case where
-// the floor was exceeded is a backup question.
-//
-// # Two sweeps, and only one of them can delete anything
-//
-// REPAIR asks the OTHER desired holders whether they have a database this node
-// holds and should keep. A peer that says it does not is nudged — and it opens
-// only on its own computation, never on this node's word, which is the decline
-// asymmetry in reverse. Nothing is deleted, so nothing has to be gated.
-//
-// RELEASE is the other direction, for a database this node should no longer
-// hold, and it is gated on the digest — see maintain.go.
-//
-// WHY REPAIR EXISTS AT ALL, given "nobody lets go until somebody else has it":
-// that argument covers MOVES and not node LOSS. A crashed node's copies are
-// simply gone, and opening-on-demand restores the floor only for databases
-// somebody happens to ask for. Repair is what notices.
+// Repair asks the other desired holders whether they have a database this node keeps;
+// a peer that says no is nudged and opens only on its own computation. Nothing is
+// deleted. Release, the other direction, is gated on the digest (maintain.go). Repair
+// exists because node loss, unlike a move, loses copies nobody asks for.
 
-// pending is how many of this node's databases are below their floor as far as
-// it can tell: a co-holder that answered it does not hold one, or could not be
-// reached at all. It is ONE NUMBER on purpose — the fleet figure is the sum over
-// fresh nodes, so it costs O(1) per node per interval, and anybody who wants to
-// know WHICH asks this node directly.
+// pending is how many of this node's databases are below their floor as far as it
+// can tell (a co-holder said no or was unreachable). One number, so the fleet total
+// is cheap; which ones is asked of the node.
 func (s *Service) pending() int {
 	s.pendingMu.Lock()
 	defer s.pendingMu.Unlock()
@@ -102,28 +79,11 @@ func (s *Service) reconsider(ctx context.Context) {
 	s.reconsiderLedgers(ctx)
 }
 
-// reconsiderLedgers asks the other voters of every raft database this node has
-// opened a group for whether they have opened theirs.
-//
-// IT IS THE ONLY THING THAT RE-CHECKS, and without it a ledger runs forever as
-// whatever its first round of asking produced. Membership is established once,
-// by a best-effort round on a request that failed: warm fires when the local
-// group has no leader, and once a leader exists nothing calls it again. A node
-// whose peers were booting when it asked bootstraps a cluster of ONE, leads it,
-// answers every write from its own disk -- and the declared floor is three. "A
-// write costs a round trip" costs none, and losing that node discards writes
-// that were acked as committed.
-//
-// IT WALKS WHAT THIS NODE OPENED AND NOT WHAT IS ON DISK. OnDisk answers about
-// the replicated store, which a ledger does not live in, so the sweep above
-// never names one.
-//
-// WHAT IT COSTS, SAID RATHER THAN HIDDEN: one call per other voter per ledger
-// per sweep, which is the same order as the repair sweep's -- it asks every
-// co-holder about every database this node holds. The cheaper rule is to ask
-// only when the group is short of its floor, and the group's own membership is
-// not a thing this service can see: pkg/raft answers it to a Cluster holder,
-// and what this service holds is a database.Store in front of one.
+// reconsiderLedgers asks the other voters of every raft database this node opened a
+// group for whether they have opened theirs. warm fires only while a group has no
+// leader, so without this a node whose peers were booting would lead a group of one
+// forever, acking writes nothing replicated. It walks opened groups, not OnDisk,
+// which never names a ledger. Cost: one call per other voter per ledger per sweep.
 func (s *Service) reconsiderLedgers(ctx context.Context) {
 	for _, at := range s.ledgers() {
 		select {
@@ -134,16 +94,12 @@ func (s *Service) reconsiderLedgers(ctx context.Context) {
 
 		declaration, err := s.declared(ctx, at)
 		if err != nil {
-			// A LEDGER THIS NODE CANNOT RESOLVE IS NOT ONE IT MAY LEAVE. A
-			// transport error is not a fact about the declaration, and leaving
-			// a group is a membership change rather than something a failed
-			// lookup decides.
+			// A ledger this node cannot resolve is not one it may leave.
 			continue
 		}
 
-		// THE OTHERS AND NOT "THE OTHERS IF THIS NODE IS STILL ONE OF THEM".
-		// The group has this node in it either way, and the voters placement
-		// names today are who it has to converge with.
+		// The others whether or not this node is still desired: it is in the group either
+		// way.
 		others, _ := s.desired(ctx, at, declaration)
 		s.warm(ctx, at, others)
 	}
@@ -157,30 +113,19 @@ func (s *Service) reconsiderOne(ctx context.Context, members []placement.Member,
 	at := address{project: spec.Project, environment: spec.Environment, id: spec.Name}
 	key := at.key()
 
-	// ON DISK IS THE AUTHORITY ON WHAT THIS NODE HOLDS, so the sweep records it
-	// before deciding anything. Without this a restarted node — which holds
-	// everything it held and has served none of it — answers keeps=false about
-	// every copy it has, which both freezes every move in the fleet that needs
-	// one of them and leaves this node unable to begin releasing its own.
+	// On disk is the authority on what this node holds, recorded before deciding, or a
+	// restarted node answers keeps=false about every copy and freezes the fleet's moves.
 	s.own.hold(key)
 
 	declaration, err := s.declared(ctx, at)
 	if err != nil {
-		// A COPY THIS NODE CANNOT RESOLVE IS NOT A COPY IT MAY DELETE. Bytes
-		// nobody declares are reclaim's business and reclaim is gated on a
-		// revision rather than on a failed lookup; a transport error is not a
-		// fact about the declaration at all.
+		// A copy this node cannot resolve is not one it may delete.
 		return false
 	}
 
-	// A RAFT DATABASE'S COPIES ARE ITS GROUP'S MEMBERSHIP, and this half of the
-	// sweep has nothing it may do about one. Its floor is met by voters rather
-	// than by converged digests, and letting go of it is RemoveServer rather
-	// than a local drop — so a sweep that treated it like a crdt copy would
-	// compare a digest nobody keeps and then delete bytes the group still
-	// counts on. The rows on disk here are a database that USED to be crdt;
-	// reclaiming those is reclaim's business, which is gated on a revision
-	// rather than on this. What DOES watch a ledger is reconsiderLedgers.
+	// A raft database's copies are its group's membership: its floor is met by voters
+	// and leaving is RemoveServer, so this half of the sweep does nothing about one.
+	// reconsiderLedgers watches ledgers.
 	if declaration.spec.Consensus == database.Raft {
 		return false
 	}
@@ -191,17 +136,13 @@ func (s *Service) reconsiderOne(ctx context.Context, members []placement.Member,
 		return s.repair(ctx, at, members, floor)
 	}
 
-	// ADDITIVE-ONLY UNTIL THE FLOOR IS KNOWN. A node that has never read what
-	// the cloud declared does not know how many copies a database is supposed
-	// to have, and the whole of release is a comparison against that number.
-	// It keeps serving and keeps what it holds.
+	// Additive-only until the floor is known.
 	if !known {
 		return false
 	}
 
-	// ONE RELEASE AT A TIME PER DATABASE, and from here until it resolves this
-	// node answers keeps=false — so a peer asking cannot count this copy as a
-	// reason to let go of its own.
+	// One release at a time per database; until it resolves this node answers
+	// keeps=false.
 	if !s.own.begin(key) {
 		return false
 	}
@@ -211,17 +152,12 @@ func (s *Service) reconsiderOne(ctx context.Context, members []placement.Member,
 		return false
 	}
 
-	// THE ANSWER IS ABOUT THE COPY AS IT WAS WHEN THE ASKING STARTED, and every
-	// RTT of that asking is a window this node was still accepting rows in. So
-	// writes are shut off here, before anything is deleted — and a copy written
-	// into meanwhile is asked about AGAIN rather than deleted on an answer that
-	// is no longer about it. The second round cannot be overtaken in turn,
-	// because nothing can be written into a sealed copy.
+	// Writes are sealed before anything is deleted; a copy written into during the
+	// asking is asked about again, which cannot be overtaken since a sealed copy takes
+	// no writes.
 	sealed, clean := s.own.seal(key)
 	if !sealed {
-		// A WRITE IS HALF DONE. It is already past the fence and would land
-		// after the digest the replacements answered, so this node keeps the
-		// copy and asks again next sweep.
+		// A write is half done and would land after the answered digest, so the copy stays.
 		s.own.stay(key)
 		return false
 	}
@@ -230,19 +166,13 @@ func (s *Service) reconsiderOne(ctx context.Context, members []placement.Member,
 		return false
 	}
 
-	// THE RESIDENT ENGINE IS A HANDLE ON THE STORE THIS IS ABOUT TO DESTROY,
-	// and destroying closes it. Dropped before, so nothing is served from a
-	// store being deleted, and again after, because a read in between reopens
-	// it — a table that kept it would answer not-found for rows the fleet still
-	// holds, and put this store's own bookkeeping back under the prefix that
-	// was just removed.
+	// The resident engine is a handle on the store about to be destroyed: dropped before,
+	// and again after since a read in between reopens it.
 	s.engines.forget(key)
 	err = s.holdings.Destroy(ctx, spec)
 	s.engines.forget(key)
 	if err != nil {
-		// THE BYTES ARE STILL HERE, so this node still holds the database and
-		// says so. Recording it gone would make it answer held=false about data
-		// it has, which is how a fleet loses track of a copy that exists.
+		// The bytes are still here, so this node still holds the database.
 		s.own.stay(key)
 		return false
 	}
@@ -250,19 +180,10 @@ func (s *Service) reconsiderOne(ctx context.Context, members []placement.Member,
 	return false
 }
 
-// repair asks this database's OTHER holders whether they have it, and reports
-// whether the floor is met as far as this node can tell.
-//
-// A PEER THAT SAYS NO IS NUDGED AND NEVER TOLD. Hold opens the database on the
-// answering node only if that node computes itself desired — its own placement
-// answer, from its own inputs. Acquiring on a stranger's word is the decline
-// asymmetry running backwards, and it is how a node that placement never chose
-// becomes a holder.
-//
-// UNREACHABLE COUNTS AS SHORT, because it is: a copy this node cannot confirm
-// is a copy it cannot count on. This number is advisory, so erring toward
-// "somebody look at this" is the right direction — unlike release, where the
-// same uncertainty must mean "change nothing".
+// repair asks this database's other holders whether they have it, and reports whether
+// the floor is met as far as this node can tell. A peer saying no opens only on its
+// own placement answer. Unreachable counts as short: this number is advisory, unlike
+// release.
 func (s *Service) repair(ctx context.Context, at address, members []placement.Member, floor int) (short bool) {
 	held := 1 // this node
 	others := 0
@@ -311,12 +232,8 @@ func (s *Service) mayGo(ctx context.Context, at address, desired []string, floor
 	return release(ctx, at, keys, sum, desired, floor, s.ask)
 }
 
-// ask is one peer's answer about one database.
-//
-// DIALLED PER ASK AND NOT KEPT. A sweep asks a handful of peers about a handful
-// of databases every half minute; a pool would be a second thing to expire, and
-// a stale connection to a node that has gone is exactly the case where the
-// answer must be an error rather than a cached yes.
+// ask is one peer's answer about one database, dialled per ask so a gone node is an
+// error rather than a cached yes.
 func (s *Service) ask(ctx context.Context, peer string, at address) (keeper, error) {
 	id, err := libp2ppeer.Decode(peer)
 	if err != nil {

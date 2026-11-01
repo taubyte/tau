@@ -12,9 +12,8 @@ import (
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// reaching is a real service on one host and this package's own Client on
-// another, which is the seam a worker uses: the guest calls kv::get and the
-// bytes come from a node that owns the engine.
+// reaching is a real service on one host and this package's Client on another, the
+// seam a worker uses.
 func reaching(t *testing.T, holds *says) *Client {
 	t.Helper()
 
@@ -49,7 +48,6 @@ func sessionsGrant() invoke.Grant {
 	return invoke.Grant{Kind: "database", Label: "sessions", Handle: projectID + "/prod/" + kvID}
 }
 
-// TestTHEWHOLEKVSURFACEOVERTHEWIRE, which is what a worker actually uses.
 func TestAClientReadsAndWritesThroughTheService(t *testing.T) {
 	client := reaching(t, &says{held: true})
 	ctx := t.Context()
@@ -57,8 +55,7 @@ func TestAClientReadsAndWritesThroughTheService(t *testing.T) {
 	kv, err := client.OpenKV(ctx, sessionsGrant())
 	require.NoError(t, err)
 
-	// A MISS IS THE TIER'S MISS and never an outage, or a workload would
-	// retry a key that is simply not there.
+	// A miss is the tier's miss and never an outage.
 	_, err = kv.Get(ctx, "absent")
 	require.ErrorIs(t, err, wasmtier.ErrNotFound)
 
@@ -80,9 +77,6 @@ func TestAClientReadsAndWritesThroughTheService(t *testing.T) {
 	require.NoError(t, kv.Delete(ctx, "absent"))
 }
 
-// TestAGRANTISTHEADDRESSANDNOTHINGELSE. Everything else a grant carries — the
-// engine, the host, the tls mode — is deliberately not sent, so a worker cannot
-// describe a database into being something else.
 func TestAMalformedHandleOpensNothing(t *testing.T) {
 	client := reaching(t, &says{held: true})
 
@@ -92,7 +86,6 @@ func TestAMalformedHandleOpensNothing(t *testing.T) {
 	}
 }
 
-// TestTHECLIENTASKSWHATAHOLDERANSWERS, which is what a departing node uses.
 func TestAClientAsksForADigestAndAHold(t *testing.T) {
 	client := reaching(t, &says{held: true})
 	ctx := t.Context()
@@ -107,9 +100,7 @@ func TestAClientAsksForADigestAndAHold(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, first.held)
 
-	// AND THE DIGEST FOLLOWS THE DATA. Two nodes comparing equal digests is the
-	// whole release gate, so a write that did not change it would let a node
-	// leave on the strength of a stale comparison.
+	// The digest follows the data, since equal digests are the release gate.
 	kv, err := client.OpenKV(ctx, sessionsGrant())
 	require.NoError(t, err)
 	require.NoError(t, kv.Put(ctx, "session:1", []byte("alice")))
@@ -120,8 +111,6 @@ func TestAClientAsksForADigestAndAHold(t *testing.T) {
 	require.Equal(t, first.keys+1, second.keys)
 }
 
-// TestANODETHATHOLDSNOTHINGSAYSSO over the wire, rather than the caller
-// inferring it from an error.
 func TestAClientHearsHeldFalse(t *testing.T) {
 	client := reaching(t, &says{held: false})
 
@@ -131,8 +120,6 @@ func TestAClientHearsHeldFalse(t *testing.T) {
 	require.Empty(t, answer.sum)
 }
 
-// TestAREFUSALCROSSESTHEWIREASITSELF, or a caller cannot tell a database that
-// does not exist from one this cloud will not serve.
 func TestAClientSeesWhyItWasRefused(t *testing.T) {
 	client := reaching(t, &says{held: true})
 	ctx := t.Context()

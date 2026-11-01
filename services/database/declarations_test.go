@@ -53,9 +53,6 @@ func sessions(t *testing.T, d *declarations) declared {
 	return got
 }
 
-// TestARegionBlockIsNotRead. Placement in this build is one region: a database
-// pinned outside its project's regions is declared like any other rather than
-// refused, and nothing about where it was pinned reaches the declaration.
 func TestARegionBlockIsNotRead(t *testing.T) {
 	d := declaring(t, map[string]any{
 		"id": projectID, "name": "shop",
@@ -68,12 +65,6 @@ func TestARegionBlockIsNotRead(t *testing.T) {
 	require.Equal(t, kvID, got.spec.Name)
 }
 
-// TestWHATONLYONEMODELUNDERSTANDSTRAVELSASANOPTION.
-//
-// A vector's width and its distance metric mean nothing to the other three
-// models, so they do not get a field each on the spec — they are carried under
-// the vocabulary's own attribute names, which is what lets a reader find the
-// attribute by searching the schema for the string.
 func TestPerModelDeclarationsTravelAsOptions(t *testing.T) {
 	d := declaring(t, map[string]any{
 		"id": projectID, "name": "shop",
@@ -89,9 +80,7 @@ func TestPerModelDeclarationsTravelAsOptions(t *testing.T) {
 		},
 	})
 
-	// READING A DECLARATION IS NOT AGREEING TO SERVE IT. `of` reads what the
-	// author wrote; whether this cloud serves that model is asked separately,
-	// so a model nothing here implements still resolves.
+	// Reading a declaration is not agreeing to serve it.
 	got, err := d.of(context.Background(),
 		address{project: projectID, environment: "prod", id: vectorID})
 	require.NoError(t, err)
@@ -103,11 +92,6 @@ func TestPerModelDeclarationsTravelAsOptions(t *testing.T) {
 	require.ErrorIs(t, got.serves(servedConsensus), ErrModelUnserved)
 }
 
-// TestACONSENSUSNOBODYWROTEISTHEDEFAULT, which is what a connector gets: it
-// resolves nothing, because somebody else's server does.
-//
-// IT IS RESOLVED ONTO THE SPEC AND NOT ASKED FOR LATER, so the provider that
-// picks a store is handed a spec that always says which one.
 func TestAnUnwrittenConsensusIsTheDefault(t *testing.T) {
 	d := declaring(t, map[string]any{
 		"id": projectID, "name": "shop",
@@ -122,10 +106,6 @@ func TestAnUnwrittenConsensusIsTheDefault(t *testing.T) {
 	require.Equal(t, database.Raft, declared{spec: database.Spec{Consensus: database.Raft}}.wants())
 }
 
-// TestWHATTHISNODECANKEEPISTHECOMPOSERSANSWER. Both resolutions are served by
-// this package; which of them a NODE can keep depends on whether it was handed
-// somewhere to open a group, and a node that was not refuses by name rather
-// than answering unavailable forever.
 func TestAConsensusThisNodeWasNotGivenIsRefusedByName(t *testing.T) {
 	d := declaring(t, map[string]any{
 		"id": projectID, "name": "shop",
@@ -141,9 +121,6 @@ func TestAConsensusThisNodeWasNotGivenIsRefusedByName(t *testing.T) {
 	require.NoError(t, ledger.serves([]string{database.CRDT, database.Raft}))
 }
 
-// TestEVERYMODELSCONNECTIONISREADOFFITSOWNBLOCK. The engines a model may have
-// differ, so each reads its own block, and a model that has no address, no
-// credential and no tls reads them empty rather than off another model's.
 func TestEveryModelsConnectionIsReadOffItsOwnBlock(t *testing.T) {
 	size := int64(42)
 	sql := blockOf(specs.Database{Type: specs.DatabaseTypeSql, Sql: specs.DatabaseSql{

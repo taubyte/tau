@@ -15,12 +15,7 @@ import (
 )
 
 // pair is two real services that can reach each other, both holding the same
-// database — which is what the release gate needs, since it is not a decision a
-// node makes alone.
-//
-// THE FLEET IS BUILT BEFORE THE SERVICES, and nothing about a service is
-// mutated after Start: the sweep is already running by then, so a test that
-// assigned to a field afterwards would be racing its own subject.
+// database. The fleet is built before the services, since the sweep runs from Start.
 type pair struct {
 	at      address
 	nodes   map[string]*Service
@@ -100,10 +95,6 @@ func (p *pair) write(t *testing.T, peer, key, value string) {
 	require.NoError(t, kv.Put(t.Context(), key, []byte(value)))
 }
 
-// TestANODEHANDSOVERTOONETHATHASIT, over the wire, with the gate deciding —
-// which is the whole arc: placement says this node should no longer hold it, the
-// node asks its replacement, the replacement proves it has the same rows and
-// means to keep them, and only then is anything deleted.
 func TestADatabaseIsReleasedOnlyToANodeThatHasIt(t *testing.T) {
 	p := pairOf(t, 1)
 
@@ -117,10 +108,6 @@ func TestADatabaseIsReleasedOnlyToANodeThatHasIt(t *testing.T) {
 	require.Equal(t, kvID, p.saying.destroyed[0].Name)
 }
 
-// TestITSTAYSWHENTHEREPLACEMENTHASNOTCAUGHTUP, which is the failure the gate
-// exists for: the holders go dark, membership moves the database, the new
-// holders are alive and received nothing, and the old holders come back and
-// must not drop the only copies.
 func TestADatabaseIsNotReleasedToANodeThatIsBehind(t *testing.T) {
 	p := pairOf(t, 1)
 
@@ -132,7 +119,6 @@ func TestADatabaseIsNotReleasedToANodeThatIsBehind(t *testing.T) {
 		"the only copy was deleted because its replacement was merely alive")
 }
 
-// TestTHESWEEPRUNSONITSOWN, or every one of these decisions is one nobody makes.
 func TestTheSweepRunsOnItsInterval(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -203,10 +189,6 @@ func bothDesired(t *testing.T, otherHolds bool) (*Service, *says) {
 	return build(hosts[0], mine), mine
 }
 
-// TestAHOLDERTHATCANSEEITSCOHOLDERREPORTSNOTHINGPENDING.
-//
-// This is repair's quiet case and it has to be quiet, or the number means
-// "this cloud is running" rather than "something needs attention".
 func TestACoHolderThatAnswersIsNotPending(t *testing.T) {
 	s, holds := bothDesired(t, true)
 
@@ -215,13 +197,6 @@ func TestACoHolderThatAnswersIsNotPending(t *testing.T) {
 	require.Empty(t, holds.destroyed, "repair deleted something")
 }
 
-// TestACOHOLDERTHATHASNOTGOTITISPENDING.
-//
-// "Nobody lets go until somebody else has it" covers a MOVE and says nothing
-// about node LOSS: a crashed node's copies are gone, and opening on demand
-// restores the floor only for databases somebody happens to ask for. This is
-// what notices — from the node that has the data, which is why it needs no
-// shared index of who-holds-what.
 func TestACoHolderThatDoesNotHoldItIsPending(t *testing.T) {
 	s, holds := bothDesired(t, false)
 
@@ -231,14 +206,6 @@ func TestACoHolderThatDoesNotHoldItIsPending(t *testing.T) {
 	require.Empty(t, holds.destroyed, "repair is not allowed to delete anything")
 }
 
-// TestTHEENGINEGOESWITHTHECOPY.
-//
-// Destroying a database closes the store behind the connection this node was
-// serving it from. A resident table that kept that connection would answer
-// every later call out of a destroyed store — not-found for rows another node
-// holds, and, on a write, the store's own bookkeeping back under the prefix
-// that was just removed, which is a node advertising a database it does not
-// have.
 func TestAReleasedDatabaseIsNoLongerResident(t *testing.T) {
 	p := pairOf(t, 1)
 
@@ -257,13 +224,6 @@ func TestAReleasedDatabaseIsNoLongerResident(t *testing.T) {
 	}, time.Second, 5*time.Millisecond, "the connection to the destroyed store was left open")
 }
 
-// TestAWRITEACCEPTEDDURINGARELEASEISNOTDELETEDBYIT.
-//
-// The gate proves a replacement holds the same rows AS OF THE MOMENT IT ASKS. A
-// write accepted after that is in neither copy the replacement vouched for, so
-// the only other copy of it is the single delta this node published — and a
-// node that has stopped holding the database rebroadcasts no heads, so a
-// dropped delivery is permanent loss of an acked write.
 func TestAWriteDuringAReleaseIsNotDeletedByIt(t *testing.T) {
 	p := pairOf(t, 1)
 

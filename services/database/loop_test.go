@@ -40,8 +40,6 @@ func sessionsSpec() database.Spec {
 	return database.Spec{Type: database.KV, Project: projectID, Environment: "prod", Name: kvID}
 }
 
-// TestASWEEPKEEPSWHATITSHOULD, and records that it does — which is what makes
-// its answer to a peer asking mean anything.
 func TestASweepKeepsWhatItShould(t *testing.T) {
 	holds := &says{held: true, onDisk: []database.Spec{sessionsSpec()}}
 	fleet := members("me")
@@ -57,8 +55,6 @@ func TestASweepKeepsWhatItShould(t *testing.T) {
 		"a node holding a database did not record keeping it, so no peer could ever leave")
 }
 
-// TestASWEEPWILLNOTLETGOWITHOUTANANSWER, which is the whole gate: the
-// replacement here cannot be reached at all.
 func TestASweepHoldsOnWhenItsReplacementCannotBeReached(t *testing.T) {
 	holds := &says{held: true, onDisk: []database.Spec{sessionsSpec()}}
 	// `other` is desired and is not this node — and is not dialable either.
@@ -71,14 +67,11 @@ func TestASweepHoldsOnWhenItsReplacementCannotBeReached(t *testing.T) {
 	require.Empty(t, holds.destroyed,
 		"the data was deleted although its replacement never answered")
 
-	// AND IT IS STILL HELD, so the next sweep tries again rather than this one
-	// having quietly given the copy up.
+	// And it is still held, so the next sweep tries again.
 	at := address{project: projectID, environment: "prod", id: kvID}
 	require.True(t, s.own.keeps(at.key()))
 }
 
-// TestASWEEPDOESNOTWALKWHATITDOESNOTHOLD. The sweep is O(held), not O(fleet),
-// which is what lets it need no shared index of who-holds-what.
 func TestASweepWalksOnlyWhatThisNodeHolds(t *testing.T) {
 	holds := &says{held: true}
 	s := sweeping(t, holds, members("other"), 1)
@@ -88,8 +81,6 @@ func TestASweepWalksOnlyWhatThisNodeHolds(t *testing.T) {
 	require.Empty(t, holds.destroyed)
 }
 
-// TestANODETHATCANNOTSEEAFLEETMOVESNOTHING, which is the honest answer for a
-// node that cannot tell who else is there.
 func TestASweepWithoutAFleetDoesNothing(t *testing.T) {
 	holds := &says{held: true, onDisk: []database.Spec{sessionsSpec()}}
 
@@ -121,13 +112,6 @@ func TestASweepWithoutAFleetDoesNothing(t *testing.T) {
 	require.Empty(t, holds.destroyed)
 }
 
-// TestAHOLDERWATCHESITSCOHOLDERS.
-//
-// "Nobody lets go until somebody else has it" covers a MOVE and says nothing
-// about node LOSS: a crashed node's copies are simply gone, and opening on
-// demand restores the floor only for databases somebody happens to ask for.
-// Repair is what notices, and it notices from the node that has the data —
-// which is why it needs no shared index of who-holds-what.
 func TestASweepCountsACoHolderItCannotConfirm(t *testing.T) {
 	holds := &says{held: true, onDisk: []database.Spec{sessionsSpec()}}
 	// Two desired at a floor of two, and the other one is not dialable.
@@ -142,10 +126,6 @@ func TestASweepCountsACoHolderItCannotConfirm(t *testing.T) {
 		"a database whose second copy could not be confirmed was counted as fine")
 }
 
-// TestAFLEETSMALLERTHANTHEFLOORISNOTSHORT. A one-node fleet asked for two
-// copies has one, which is what it has — reporting it as pending forever would
-// make the number mean "this cloud is small" rather than "something needs
-// repair".
 func TestASweepDoesNotReportASmallFleetAsShort(t *testing.T) {
 	holds := &says{held: true, onDisk: []database.Spec{sessionsSpec()}}
 	fleet := members("me")
@@ -157,9 +137,6 @@ func TestASweepDoesNotReportASmallFleetAsShort(t *testing.T) {
 	require.Zero(t, s.Pending())
 }
 
-// TestTHEFLEETREVISIONISONTHEWIRE, which is how a node computing placement with
-// a stale floor becomes visible to every other node. The rest of placement's
-// inputs heal on their own; this is the one they must all agree on.
 func TestASweepReportsTheFleetRevisionItComputedWith(t *testing.T) {
 	holds := &says{held: true, onDisk: []database.Spec{sessionsSpec()}}
 	s := sweeping(t, holds, members("me"), 1)
@@ -169,12 +146,6 @@ func TestASweepReportsTheFleetRevisionItComputedWith(t *testing.T) {
 	require.Equal(t, uint64(1), s.FleetRevision())
 }
 
-// TestACOPYTHISNODECANNOTRESOLVEISNOTACOPYITMAYDELETE.
-//
-// Bytes nobody declares are reclaim's business, and reclaim is gated on a
-// revision rather than on a failed lookup — a transport error is not a fact
-// about the declaration at all. So an unresolvable copy is left exactly alone:
-// not released, not counted as pending.
 func TestASweepLeavesWhatItCannotResolve(t *testing.T) {
 	holds := &says{held: true, onDisk: []database.Spec{{
 		Type: database.KV, Project: projectID, Environment: "prod", Name: "QmNobodyDeclaresThis",

@@ -11,27 +11,10 @@ import (
 	"github.com/taubyte/tau/pkg/database"
 )
 
-// resident.go is what makes this a service rather than a library the worker
-// links.
-//
-// # The mechanism the note asked for, instead of the word "hot"
-//
-// A bucket's current version is DERIVED from its keys, so whichever node holds
-// the blocks can answer. A database's is an open engine — a sql pool, a vector
-// index, a document collection — which costs more to build than the request
-// that needs it. So a database has to be served where its engine already is,
-// and something has to own the engines to be able to say where that is.
-//
-// # What v1 did, and what node/database.go still does
-//
-// Opened on first use, keyed by handle, held until the process stopped. No
-// bound, no expiry, and — because the key carries no revision — no reopen: an
-// author who changed a database's host or rotated its credentials was ignored
-// by every node that had already opened it, until that node restarted.
-//
-// All three are fixed here by the same table, and none of them is a wire
-// concern: a caller names a database per call and never holds one, so warming
-// policy changes without a proto change.
+// A database's current version is an open engine (a sql pool, a vector index), costly
+// to build, so it is served where the engine already is, and this table owns the
+// engines. It is bounded, expires idle engines, and reopens on a newer revision so
+// changed hosts and rotated credentials take effect without a restart.
 
 var (
 	// ErrTooManyResident is a node asked to hold more engines than it may.
@@ -41,9 +24,8 @@ var (
 	// what v1 shipped, not because this number is knowable in advance.
 	DefaultMaxResident = 256
 
-	// DefaultIdle is how long an engine with no traffic stays open. A database
-	// nobody has asked for in this long is one whose next request can afford to
-	// open it; holding it costs a connection on somebody else's server.
+	// DefaultIdle is how long an engine with no traffic stays open; holding it costs a
+	// connection on somebody else's server.
 	DefaultIdle = 10 * time.Minute
 )
 
@@ -63,10 +45,8 @@ type engines struct {
 type resident struct {
 	ref string
 
-	// revision is the deployment the declaration came from. An engine opened
-	// from an older one is CLOSED rather than reused: that is the reopen v1
-	// never did, and it is why a rotated credential takes effect on the next
-	// call instead of on the next restart.
+	// revision is the deployment the declaration came from. An engine from an older one
+	// is closed, not reused, so a rotated credential takes effect on the next call.
 	revision uint64
 
 	conn database.Conn
@@ -104,18 +84,12 @@ func (e *engines) open(ctx context.Context, key string, revision uint64, spec da
 			return conn, nil
 		}
 
-		// A NEWER DEPLOYMENT IS A DIFFERENT DATABASE. The id is stable across
-		// an edit — "stable across renames" is the vocabulary's promise — so a
-		// changed host, a rotated credential or a new tls mode arrives under
-		// the same key and would otherwise be served by the connection it
-		// replaced.
+		// A newer deployment is a different database: the id is stable across edits.
 		e.drop(el)
 	}
 	e.mu.Unlock()
 
-	// OPENED OUTSIDE THE LOCK, because opening dials somebody else's server and
-	// a node holding this mutex through a network timeout would stop answering
-	// for every other database it holds.
+	// Opened outside the lock: opening may dial a remote server.
 	conn, err := e.registry.Open(ctx, spec)
 	if err != nil {
 		return nil, fmt.Errorf("database: opening %s %q: %w", spec.Engine, spec.Name, err)
@@ -124,9 +98,7 @@ func (e *engines) open(ctx context.Context, key string, revision uint64, spec da
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	// SOMEBODY ELSE MAY HAVE WON THE RACE while this was dialling. Theirs is as
-	// good as ours and is already in the table, so ours is closed rather than
-	// leaked — two connections under one key is the leak with extra steps.
+	// Somebody else won the race while this dialled; ours is closed rather than leaked.
 	if el, held := e.byRef[key]; held {
 		r := el.Value.(*resident)
 		if r.revision == revision {
@@ -171,21 +143,13 @@ func (e *engines) drop(el *list.Element) {
 	delete(e.byRef, r.ref)
 	e.order.Remove(el)
 
-	// CLOSED OFF THE CALLER'S PATH. A close on a dead connection blocks until
-	// its own timeout, and the request that happened to evict it is not the
-	// request that should pay for that.
+	// Closed off the caller's path: a close on a dead connection blocks until timeout.
 	go r.conn.Close()
 }
 
-// forget drops one database's engine, closing it.
-//
-// IT IS NOT AN EXPIRY AND NOT A BOUND. Those two let go of a connection that is
-// merely cold, and the table is still right about it. This is the one case
-// where the table is WRONG: the node has stopped holding the database and the
-// store behind the connection has been destroyed, so serving one more call from
-// it would answer not-found for rows another node holds — and a write would put
-// the store's own bookkeeping back under the prefix that was just removed,
-// which is how a node ends up advertising a database it does not have.
+// forget drops one database's engine because the node stopped holding it and the
+// store was destroyed: serving from it would answer not-found for rows another node
+// holds, and a write would recreate bookkeeping under the removed prefix.
 func (e *engines) forget(key string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()

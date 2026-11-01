@@ -19,13 +19,8 @@ import (
 	"github.com/taubyte/tau/pkg/placement"
 )
 
-// forward_test is about WHO ANSWERS for a raft database, which is the one thing
-// its consensus changes about this service.
-//
-// The store is not here: a raft store lives where the raft cluster does, and
-// what this package sees of it is a refusal that names the leader. So these
-// drive the real routing over a real pair of services, with an engine that
-// refuses the way a follower's store does.
+// Who answers for a raft database: real routing over real services, with an engine
+// refusing the way a follower's store does.
 
 // ledgers is n database services on one mocknet, each with its own engine, all
 // reading the same deployment and all able to keep raft.
@@ -78,12 +73,6 @@ func ledgerAt() address {
 	return address{project: projectID, environment: "prod", id: raftID}
 }
 
-// TestALEDGERISANSWEREDBYTHENODETHATLEADSITSGROUP.
-//
-// A raft group has one writer and this fleet has many doors, so a call lands on
-// the leader by accident and on somebody else the rest of the time. What the
-// promise needs is that the write goes where the order is decided — not that it
-// is refused, and above all not that it is accepted here and merged later.
 func TestALedgerIsAnsweredByTheNodeThatLeadsItsGroup(t *testing.T) {
 	services, engines := ledgers(t, 2)
 	follower, leader := services[0], services[1]
@@ -119,12 +108,6 @@ func TestALedgerIsAnsweredByTheNodeThatLeadsItsGroup(t *testing.T) {
 	require.Error(t, err, "the delete was answered by a node that then had nothing to delete")
 }
 
-// TestACALLTWONODESHAVEALREADYSENTONISSERVEDORREFUSEDANDNEVERSENTAGAIN.
-//
-// Two nodes whose membership views differ can each believe the other should
-// answer. Counting hops is what makes that a retryable refusal instead of a
-// loop, and it is counted from a number on the wire rather than from anybody's
-// claim about who they are.
 func TestACallAlreadyForwardedTwiceIsRefusedRatherThanSentOnAgain(t *testing.T) {
 	services, engines := ledgers(t, 3)
 
@@ -142,12 +125,6 @@ func TestACallAlreadyForwardedTwiceIsRefusedRatherThanSentOnAgain(t *testing.T) 
 		"the call was stopped by something other than the hop count")
 }
 
-// TestANODEPLACEMENTDIDNOTCHOOSEDOESNOTOPENTHEGROUP.
-//
-// Opening a raft group makes this node a VOTER in it. A node that opened
-// because somebody asked would be a voter in a group nobody placed it in, which
-// is the same act Holdings.Held refuses for a crdt copy and a heavier one: it
-// changes the quorum.
 func TestANodePlacementDidNotChooseNeverOpensTheGroup(t *testing.T) {
 	services, engines := ledgers(t, 2)
 	outsider, chosen := services[0], services[1]
@@ -171,9 +148,6 @@ func TestANodePlacementDidNotChooseNeverOpensTheGroup(t *testing.T) {
 	require.Equal(t, []byte("one"), value)
 }
 
-// TestANODETHATCANNAMENOBODYREFUSESRATHERTHANOPENING, which is the same rule
-// with nowhere to send the call: a group opened here would be a quorum of one
-// that the fleet's real voters know nothing about.
 func TestANodeThatCanNameNobodyRefusesRatherThanOpening(t *testing.T) {
 	services, engines := ledgers(t, 1)
 	alone := services[0]
@@ -194,10 +168,6 @@ func TestANodeThatCanNameNobodyRefusesRatherThanOpening(t *testing.T) {
 	require.Zero(t, opened)
 }
 
-// TestAGROUPTHATHASNOTFORMEDISARETRYANDNEVERAMISS. A ledger's reader acts on
-// "no such key", so answering one for a group that has not formed is worse than
-// refusing — and waiting is the thirty seconds raft.New spends looking for
-// peers, which is a gateway timeout.
 func TestAGroupThatHasNotFormedIsARetryAndNeverAMiss(t *testing.T) {
 	services, engines := ledgers(t, 1)
 	engines[0].refusing(ErrGroupForming)
@@ -226,12 +196,6 @@ func TestAGroupThatHasNotFormedIsARetryAndNeverAMiss(t *testing.T) {
 	require.Contains(t, NotLeading{}.Error(), "no node leads it yet")
 }
 
-// TestTHEWIREANDTHEREFUSALAREONETABLEREADBOTHWAYS.
-//
-// wire() decides what a refusal becomes on the way out and refusal() decides
-// what it becomes on the way back. A forwarded answer has to reach the caller
-// as the arm a local one would have produced, so what must survive the round
-// trip is the CODE — which is the thing a caller decides with.
 func TestARefusalSurvivesBeingForwardedBack(t *testing.T) {
 	for _, err := range []error{
 		ErrNoKey,
@@ -260,9 +224,6 @@ func TestARefusalSurvivesBeingForwardedBack(t *testing.T) {
 	require.NoError(t, refusal(nil))
 }
 
-// TestANUNNAMEDCONSENSUSISREFUSEDATCONSTRUCTION, because a node that was told
-// it keeps "" would answer every database that declared nothing and nothing
-// else.
 func TestAnUnnamedConsensusIsRefusedAtConstruction(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -279,9 +240,6 @@ func TestAnUnnamedConsensusIsRefusedAtConstruction(t *testing.T) {
 	require.ErrorContains(t, err, "unnamed consensus")
 }
 
-// TestWHATANODEISASKEDABOUTALEDGERISWHETHERITISAVOTER, and the asking is what
-// makes it one when placement says it should be. A crdt copy is bytes on a
-// disk; a ledger is membership in a group, which Holdings cannot see at all.
 func TestANodeAnswersALedgerAsAVoterAndNotAsBytesOnDisk(t *testing.T) {
 	services, engines := ledgers(t, 2)
 	asked, elsewhere := services[0], services[1]
@@ -298,12 +256,7 @@ func TestANodeAnswersALedgerAsAVoterAndNotAsBytesOnDisk(t *testing.T) {
 	opened, _ := engines[0].counts()
 	require.Equal(t, 1, opened, "answering as a voter did not open the group")
 
-	// And a node placement did not choose answers no, WITHOUT opening.
-	//
-	// A SERVICE THAT HAS NEVER OPENED THIS GROUP, because opening one is not an
-	// act a later placement answer undoes: a node that has become a voter says
-	// so for as long as it is one, which is the other half of this rule and is
-	// TestAGroupThisNodeOpenedIsStillAnsweredWhenPlacementMovesOn.
+	// And a node placement did not choose answers no without opening.
 	elsewhere.members = func() []placement.Member {
 		return []placement.Member{{ID: asked.peer, Accepts: true}}
 	}
@@ -318,13 +271,6 @@ func TestANodeAnswersALedgerAsAVoterAndNotAsBytesOnDisk(t *testing.T) {
 	require.Equal(t, 1, again, "one voter opened its group twice")
 }
 
-// TestANODEWHOSEGROUPHASNOLEADERASKSTHEOTHERVOTERS.
-//
-// A group nobody has opened forms only when its voters open theirs, and nothing
-// in the maintenance sweep walks a ledger — its bytes are not in the replicated
-// store, so OnDisk never names one. Asking is what starts the other voters, and
-// each of them opens on its OWN placement answer rather than on this node's
-// word.
 func TestANodeWhoseGroupHasNoLeaderAsksTheOtherVoters(t *testing.T) {
 	services, engines := ledgers(t, 2)
 	asking, other := services[0], services[1]
@@ -353,8 +299,6 @@ func TestANodeWhoseGroupHasNoLeaderAsksTheOtherVoters(t *testing.T) {
 		"the other voter was never asked, so its group would never form")
 }
 
-// TestONEROUNDOFASKINGATATIME, because a group forms in tens of seconds and
-// every request in that window would otherwise start its own.
 func TestOneRoundOfAskingAtATime(t *testing.T) {
 	services, _ := ledgers(t, 1)
 	s := services[0]
@@ -378,9 +322,6 @@ func TestOneRoundOfAskingAtATime(t *testing.T) {
 	require.True(t, still, "a second round was started over the first")
 }
 
-// TestAROUTETONOWHEREREFUSESRATHERTHANANSWERING. A connection with no local
-// group and nobody to send to has no way to be right, and answering a miss
-// would be a fact a ledger's reader acts on.
 func TestARouteToNowhereRefusesRatherThanAnswering(t *testing.T) {
 	services, _ := ledgers(t, 1)
 	nowhere := &routed{service: services[0], at: ledgerAt()}
@@ -400,19 +341,6 @@ func TestARouteToNowhereRefusesRatherThanAnswering(t *testing.T) {
 	require.NoError(t, nowhere.Close())
 }
 
-// TestAVOTERTHATHASGONEDOESNOTTAKETHELEDGERWITHIT.
-//
-// A node outside the group sends to the first voter placement ranked, which is
-// what keeps two hops two hops. If that were the only node it ever tried, one
-// machine going would take every ledger call made through every node outside
-// the group with it, for as long as membership takes to notice — and membership
-// deliberately takes minutes.
-//
-// THE GONE VOTER IS A REAL PEER, which is the only version of this that tests
-// anything. A name that is not a peer id at all fails to decode and never
-// reaches a wire; a peer id that decodes is dialled, and a dial that fails
-// arrives as the same Unavailable a voter's own refusal arrives as. Telling
-// those two apart is the whole mechanism — see refusal().
 func TestAVoterThatHasGoneDoesNotTakeTheLedgerWithIt(t *testing.T) {
 	services, _ := ledgers(t, 2)
 	outsider, chosen := services[0], services[1]
@@ -436,10 +364,6 @@ func TestAVoterThatHasGoneDoesNotTakeTheLedgerWithIt(t *testing.T) {
 
 }
 
-// TestAVOTERTHATANSWERSENDSTHEWALK, even when the answer is a refusal: that is
-// the group talking, and the next voter would only say it again. Walking on
-// would turn one node's "not me" into a second node's write, which for a ledger
-// is an entry nothing ordered.
 func TestAVoterThatAnswersEndsTheWalk(t *testing.T) {
 	services, engines := ledgers(t, 3)
 	outsider, refuses, would := services[0], services[1], services[2]
@@ -452,9 +376,7 @@ func TestAVoterThatAnswersEndsTheWalk(t *testing.T) {
 		others: []string{refuses.peer, would.peer},
 	}
 
-	// WHAT SURVIVES THE ROUND TRIP IS THE CODE AND THE ANSWERING NODE'S OWN
-	// SENTENCE, which is refusal()'s rule: Unavailable is a retry wherever it
-	// came from, and this one came from a voter rather than from a silence.
+	// The code and the answering node's sentence survive the round trip.
 	err := through.Put(t.Context(), "entry-1", []byte("one"))
 	require.ErrorContains(t, err, ErrNotLeading.Error())
 	require.NotErrorIs(t, err, ErrNotHere,
@@ -467,9 +389,6 @@ func TestAVoterThatAnswersEndsTheWalk(t *testing.T) {
 	require.Error(t, err, "the walk went past a refusal and wrote through the next voter")
 }
 
-// TestAHOPCOUNTTHISNODECANNOTREADISTHECEILING. The count is what stops a call
-// going round a disagreement forever, so a header this node cannot understand
-// must not be the thing that lets it.
 func TestAHopCountThisNodeCannotReadIsTheCeiling(t *testing.T) {
 	for _, tc := range []struct {
 		header string
@@ -488,8 +407,6 @@ func TestAHopCountThisNodeCannotReadIsTheCeiling(t *testing.T) {
 	}
 }
 
-// TestALEDGERTHATCANNOTBEOPENEDISNOTHELD, and is not answered either: a node
-// whose engine refuses has nothing to vote with.
 func TestALedgerThatCannotBeOpenedIsNotHeld(t *testing.T) {
 	services, engines := ledgers(t, 1)
 	s := services[0]
@@ -505,19 +422,6 @@ func TestALedgerThatCannotBeOpenedIsNotHeld(t *testing.T) {
 	require.ErrorContains(t, err, "no disk")
 }
 
-// TestAGROUPTHISNODEOPENEDISSTILLANSWEREDWHENPLACEMENTMOVESON.
-//
-// Placement decides what a node OPENS. Raft decides who may answer, and it
-// decides it from the group's own configuration — which nothing here
-// reconciles: there is no RemoveServer on this path and the sweep does not
-// touch a ledger's membership. So a node ranked out of the desired set by a
-// fleet that merely GREW is still a voter, still the leader, and still the only
-// node whose applied state is everything committed.
-//
-// A node that refused the one group it leads would refuse it forever: the call
-// goes to a voter, the voter says "you lead it", and the hop count stops the
-// second pass. Raft leadership is sticky and placement is recomputed per call,
-// so nothing about that disagreement converges.
 func TestAGroupThisNodeOpenedIsStillAnsweredWhenPlacementMovesOn(t *testing.T) {
 	services, engines := ledgers(t, 2)
 	leads, elsewhere := services[0], services[1]
@@ -557,14 +461,6 @@ func TestAGroupThisNodeOpenedIsStillAnsweredWhenPlacementMovesOn(t *testing.T) {
 	require.Error(t, err, "a node that leads a group forwarded a call it could answer")
 }
 
-// TestTHESWEEPKEEPSASKINGTHEOTHERVOTERSABOUTALEDGER.
-//
-// Membership is otherwise established by exactly ONE best-effort round, on a
-// request that failed: warm fires when the local group has no leader, and once
-// a leader exists nothing calls it again. A node whose peers were booting when
-// it asked bootstraps a cluster of ONE, leads it, answers every write from its
-// own disk — and the declared floor is three. Losing it discards writes that
-// were acked as committed, and nothing anywhere would have noticed.
 func TestTheSweepKeepsAskingTheOtherVotersAboutALedger(t *testing.T) {
 	services, engines := ledgers(t, 2)
 	opened, other := services[0], services[1]
@@ -595,11 +491,6 @@ func TestTheSweepKeepsAskingTheOtherVotersAboutALedger(t *testing.T) {
 		"nothing ever re-checked, so this ledger is a cluster of one for the life of the process")
 }
 
-// TestANANSWERANDASILENCEARENOTTHESAMEUNAVAILABLE.
-//
-// A voter's refusal and a voter that is not there arrive as one status code, and
-// a call walking the voters has to continue past one and stop at the other. The
-// mark the answering node puts on what it wrote is what separates them.
 func TestAnAnswerAndASilenceAreNotTheSameUnavailable(t *testing.T) {
 	// Anything this service wrote carries the mark and keeps its own sentinel.
 	require.ErrorIs(t, refusal(wire(ErrNotLeading)), ErrNotLeading)
@@ -618,11 +509,6 @@ func TestAnAnswerAndASilenceAreNotTheSameUnavailable(t *testing.T) {
 	}
 }
 
-// TestANODETHATHASCLOSEDITSGROUPSSENDSTHECALLON.
-//
-// A node on its way out closes the groups it opened, and a call already past
-// the resident lookup finds a route with a local connection that has nothing
-// behind it. "Still forming" would send the caller back to the same door.
 func TestANodeThatHasClosedItsGroupsSendsTheCallOn(t *testing.T) {
 	services, engines := ledgers(t, 2)
 	leaving, other := services[0], services[1]
@@ -649,9 +535,6 @@ func TestANodeThatHasClosedItsGroupsSendsTheCallOn(t *testing.T) {
 	require.Equal(t, []byte("one"), value)
 }
 
-// TestTHESWEEPDOESNOTLEAVEALEDGERITCANNOTRESOLVE. Leaving a group is a
-// membership change; a transport error is not a fact about the declaration, and
-// it is certainly not a reason to stop asking about a group this node is in.
 func TestTheSweepDoesNotLeaveALedgerItCannotResolve(t *testing.T) {
 	services, _ := ledgers(t, 1)
 	s := services[0]

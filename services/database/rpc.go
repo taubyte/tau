@@ -14,13 +14,8 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/database/v2/databasev2connect"
 )
 
-// rpc.go is the whole wire surface: four calls, each one resolution and one
-// operation.
-//
-// NO HANDLER VALIDATES AN ADDRESS. address.valid() is the one check, run where
-// a Ref becomes an address. A check repeated here would be a second opinion,
-// and the day the two disagreed the answer would depend on which call a caller
-// used.
+// The wire surface. No handler validates an address: address.valid() is the one
+// check.
 
 // maxKeys is both the default page and the ceiling on a larger ask. A caller
 // that wants everything asks repeatedly; a caller that asks for everything at
@@ -96,13 +91,9 @@ func (h *handler) KVDelete(ctx context.Context, req *connect.Request[databasev2.
 	return connect.NewResponse(&databasev2.Empty{}), nil
 }
 
-// KVList pages the keys under a prefix.
-//
-// THE ENGINE ANSWERS THE WHOLE PREFIX and the page is taken here, which is a
-// cost this service pays rather than the caller: pkg/database's KVConn has no
-// paging, and inventing one per engine is a bigger change than this call is
-// worth today. The wire shape already carries `after` and `more`, so the day an
-// engine pages, nothing above changes.
+// KVList pages the keys under a prefix. The engine answers the whole prefix and the
+// page is taken here, since pkg/database's KVConn has no paging; the wire already
+// carries `after` and `more`.
 func (h *handler) KVList(ctx context.Context, req *connect.Request[databasev2.KVListRequest]) (*connect.Response[databasev2.KVKeys], error) {
 	at := addressOf(req.Msg.GetRef())
 	ctx = hopsIn(ctx, req.Header())
@@ -145,16 +136,9 @@ func wire(err error) error {
 	return answered(code(err))
 }
 
-// answerHeader marks a refusal as this service's own answer.
-//
-// WHAT IT SEPARATES IS AN ANSWER FROM A SILENCE, which no status code can: a
-// node that refuses a ledger and a node that is not there both reach the caller
-// as Unavailable, and the caller has to walk on from one and stop at the other.
-// A voter that ANSWERS ends the walk even when the answer is a refusal — that
-// is the group talking, and the next voter would only say it again.
-//
-// A HEADER AND NOT A CODE, because the code is the instruction and this is
-// about who produced it. p2p/rpc already carries error metadata end to end.
+// answerHeader marks a refusal as this service's own answer, separating an answer
+// from a silence, which both reach the caller as Unavailable. A header, since the
+// code is the instruction and this is about who produced it.
 const answerHeader = "Tau-Database-Answer"
 
 // answered puts this service's mark on a refusal it wrote. See refusal().
@@ -166,13 +150,8 @@ func answered(err error) error {
 	return err
 }
 
-// code is the one status table: every connect.NewError in this package goes
-// through it, so the mapping from a failure to a wire status is decided once.
-//
-// THE DEFAULT IS Unavailable AND NOT Internal, for the reason services/register
-// gives: everything not named below came out of an engine or a store, and that
-// is the caller's cue to retry somewhere else. Internal says "stop, this
-// request is broken", which for a replicated store is the wrong instruction.
+// code is the one status table. The default is Unavailable, not Internal: what is not
+// named came from an engine or store, a cue to retry elsewhere.
 func code(err error) error {
 	switch {
 	case errors.Is(err, ErrNoProject), errors.Is(err, ErrNoEnvironment),
@@ -182,38 +161,28 @@ func code(err error) error {
 	case errors.Is(err, ErrNotADatabase), errors.Is(err, ErrWrongModel):
 		return connect.NewError(connect.CodeFailedPrecondition, err)
 
-	// UNIMPLEMENTED AND NOT FailedPrecondition, because nothing the caller can
-	// change makes the call succeed: this cloud does not serve that model or
-	// that consensus, and the fix is a release rather than a retry.
+	// Unimplemented: the fix is a release, not anything the caller can change.
 	case errors.Is(err, ErrModelUnserved), errors.Is(err, ErrConsensusUnserved):
 		return connect.NewError(connect.CodeUnimplemented, err)
 
 	case errors.Is(err, ErrNotDeclared):
 		return connect.NewError(connect.CodeNotFound, err)
 
-	// A MISS IS RECOGNISED BY ITS SENTINEL AND NEVER BY ITS SENTENCE. tau's own
-	// kv is the engine named here; a connector that answers a miss with an error
-	// of its own falls through to Unavailable until pkg/database carries one
-	// shared sentinel for every engine to wrap. That is a gap worth naming
-	// rather than papering over with a string match, which is how v1's substrate
-	// cache ended up whitelisting a sentence nothing had produced in months.
+	// A miss is recognised by sentinel, never by sentence. A connector with its own miss
+	// error falls through to Unavailable until pkg/database has a shared sentinel.
 	case errors.Is(err, ErrNotSet), errors.Is(err, kvengine.ErrNotFound):
 		return connect.NewError(connect.CodeNotFound, err)
 
 	case errors.Is(err, ErrTooManyResident):
 		return connect.NewError(connect.CodeResourceExhausted, err)
 
-	// A NODE MID-RELEASE IS UNAVAILABLE FOR THAT DATABASE AND NOT BROKEN. It
-	// lands on the default's code and is named anyway: the default is about
-	// what came out of an engine, and this is a decision this service made.
+	// Mid-release is unavailable for that database, not broken; named because it is this
+	// service's decision.
 	case errors.Is(err, ErrReleasing):
 		return connect.NewError(connect.CodeUnavailable, err)
 
-	// A RAFT DATABASE THIS NODE CANNOT ANSWER FOR RIGHT NOW is the same kind of
-	// sentence and is named for the same reason: a group that has not formed, a
-	// node that does not lead one, and a node that is not in one are three
-	// facts about WHERE the answer is, not about whether there is one. The
-	// caller retries and the gateway places the next call somewhere else.
+	// Facts about where a raft answer is, not whether there is one: the caller retries
+	// elsewhere.
 	case errors.Is(err, ErrGroupForming), errors.Is(err, ErrNotLeading), errors.Is(err, ErrNotHere):
 		return connect.NewError(connect.CodeUnavailable, err)
 
@@ -222,12 +191,9 @@ func code(err error) error {
 	}
 }
 
-// KVDigest is what this node holds for one database, as one comparable value.
-//
-// IT DOES NOT OPEN. A node that answered by opening the database would become a
-// holder BECAUSE IT WAS ASKED, and would then answer a digest that looks
-// converged — which is how a node placement never chose ends up authorising
-// another node's drop. Not held is an answer, not a miss.
+// KVDigest is what this node holds for one database, as one comparable value. It does
+// not open: a node answering by opening would become a holder because it was asked.
+// Not held is an answer, not a miss.
 func (h *handler) KVDigest(ctx context.Context, req *connect.Request[databasev2.Ref]) (*connect.Response[databasev2.KVDigestValue], error) {
 	at := addressOf(req.Msg)
 
@@ -248,18 +214,13 @@ func (h *handler) KVDigest(ctx context.Context, req *connect.Request[databasev2.
 		return nil, wire(err)
 	}
 
-	// KEEPS IS READ AFTER THE OPEN, not before it. Serving a database records
-	// that this node holds it, so a keeps taken beforehand answers false for
-	// the first ask about every database — and the first ask is the one a
-	// departing node makes.
+	// Keeps is read after the open, since serving records holding.
 	return connect.NewResponse(&databasev2.KVDigestValue{
 		Keys: keys, Digest: sum, Held: true, Keeps: h.s.own.keeps(at.key()),
 	}), nil
 }
 
-// Hold is KVDigest without the digest: whether this node has a database and
-// means to keep it. It is what the repair sweep asks of co-holders, which needs
-// presence rather than proof of convergence.
+// Hold is KVDigest without the digest, for the repair sweep.
 func (h *handler) Hold(ctx context.Context, req *connect.Request[databasev2.Ref]) (*connect.Response[databasev2.Holding], error) {
 	holding, err := h.holding(ctx, addressOf(req.Msg))
 	if err != nil {
@@ -268,22 +229,16 @@ func (h *handler) Hold(ctx context.Context, req *connect.Request[databasev2.Ref]
 	return connect.NewResponse(holding), nil
 }
 
-// holding answers both without opening anything.
-//
-// KEEPS IS THIS NODE'S OWN ANSWER and never a report of somebody else's: it is
-// what this node has decided about its own copy, under the same lock as its own
-// release. That is what makes it something a peer may rely on — a node that
-// says it keeps a database will not let go without its own gated release.
+// holding answers both without opening anything. Keeps is this node's own decision,
+// made under the lock of its own release.
 func (h *handler) holding(ctx context.Context, at address) (*databasev2.Holding, error) {
 	declaration, err := h.s.declared(ctx, at)
 	if err != nil {
 		return nil, err
 	}
 
-	// A RAFT DATABASE IS HELD BY ITS GROUP'S VOTERS, and a node becomes one by
-	// opening the group rather than by having bytes on a disk. Holdings answers
-	// about the replicated store, which a ledger does not live in, so it would
-	// answer no about every ledger in the cloud.
+	// A raft database is held by its voters, not bytes on disk; Holdings would answer no
+	// about every ledger.
 	if declaration.spec.Consensus == database.Raft {
 		return h.s.voting(ctx, at, declaration), nil
 	}

@@ -20,16 +20,13 @@ func at(project, id string) address {
 	return address{project: project, environment: "prod", id: id}
 }
 
-// TestADatabaseLandsOnTheReplicationFloor.
 func TestADatabaseLandsOnTheReplicationFloor(t *testing.T) {
 	members := members("n1", "n2", "n3", "n4", "n5")
 
 	held := holders(at("shop", "QmSessions"), members, DefaultReplication)
 	require.Len(t, held, DefaultReplication, "the default is two, because one is not replication")
 
-	// AND EVERY NODE AGREES, without asking anybody. That is the whole reason
-	// this is computed: a caller finds the holders with no round trip, and a
-	// node being down cannot make a database unfindable.
+	// Every node agrees without asking anybody.
 	for _, id := range []string{"n1", "n2", "n3", "n4", "n5"} {
 		require.Equal(t, held, holders(at("shop", "QmSessions"), members, DefaultReplication),
 			"%s computed a different set", id)
@@ -40,9 +37,6 @@ func TestADatabaseLandsOnTheReplicationFloor(t *testing.T) {
 	}
 }
 
-// TestTwoDatabasesWithOneNameInTwoProjectsDoNotShareASet. A label is local to
-// whoever wrote it; placing on it would put two tenants' data on one pair of
-// machines because they picked the same word.
 func TestTwoDatabasesInTwoProjectsDoNotShareASet(t *testing.T) {
 	members := members("n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8")
 
@@ -51,13 +45,6 @@ func TestTwoDatabasesInTwoProjectsDoNotShareASet(t *testing.T) {
 	require.NotEqual(t, shop, books)
 }
 
-// TestANodeGoingAwayMovesOnlyWhatItHeld.
-//
-// This is the property that makes a fleet survivable: when a member leaves,
-// only the databases it held move, and each moves exactly one slot — the
-// departed node is replaced by the next in the same ranking and the other
-// holders do not budge. A naive hash-and-mod reshuffles the whole key space on
-// every restart, which is a fleet-wide data movement storm.
 func TestANodeGoingAwayMovesOnlyWhatItHeld(t *testing.T) {
 	before := members("n1", "n2", "n3", "n4", "n5")
 	after := members("n1", "n2", "n3", "n4")
@@ -80,8 +67,6 @@ func TestANodeGoingAwayMovesOnlyWhatItHeld(t *testing.T) {
 	require.NotZero(t, untouched, "the fixture never exercised a non-loss")
 }
 
-// TestANodeThatDeclinesIsSkipped, which is the only thing a member gets to say
-// about itself: a node can lie itself OUT of a set and never into one.
 func TestANodeThatDeclinesIsSkipped(t *testing.T) {
 	all := members("n1", "n2", "n3", "n4")
 	held := holders(at("shop", "QmSessions"), members("n1", "n2", "n3", "n4"), 2)
@@ -99,8 +84,6 @@ func TestANodeThatDeclinesIsSkipped(t *testing.T) {
 	require.Len(t, now, 2, "the slot was left empty rather than filled")
 }
 
-// TestAFleetSmallerThanTheFloorIsHeldByAllOfIt, rather than refusing: a
-// two-node cloud asked for three copies keeps two, which is what it has.
 func TestAFleetSmallerThanTheFloorIsHeldByAllOfIt(t *testing.T) {
 	members := members("n1", "n2")
 	require.Len(t, holders(at("shop", "QmSessions"), members, 3), 2)

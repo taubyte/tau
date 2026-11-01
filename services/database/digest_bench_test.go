@@ -9,14 +9,6 @@ import (
 	"github.com/cespare/xxhash/v2"
 )
 
-// BenchmarkTheDigestUnderBothHashes measures what a proof of possession would
-// cost. The gate compares digests to decide whether a node may delete its copy,
-// and an echo of somebody else's answer satisfies it — so the fix is a
-// nonce-salted digest, which xxhash cannot carry and a cryptographic hash can.
-//
-// THE QUESTION IS WHETHER THE SCAN OR THE HASH DOMINATES. digestOf already does
-// a List plus a Get per key, so if the hash is noise against the scan the change
-// costs nothing that matters.
 func BenchmarkTheDigestUnderBothHashes(b *testing.B) {
 	for _, rows := range []int{1_000, 100_000} {
 		keys := make([]string, rows)
@@ -61,10 +53,6 @@ func BenchmarkTheDigestUnderBothHashes(b *testing.B) {
 	}
 }
 
-// BenchmarkDigestOfAgainstItsScan puts the hash next to the work it rides on.
-// digestOf does a List and then a Get PER KEY, so the question the hash choice
-// turns on is which of the two dominates — and this is against an in-memory map,
-// which is the most favourable case a real replicated store will never match.
 func BenchmarkDigestOfAgainstItsScan(b *testing.B) {
 	engine := &accounting{}
 	conn := &accounted{e: engine, rows: map[string][]byte{}}

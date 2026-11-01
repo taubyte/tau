@@ -15,55 +15,17 @@ import (
 	databasev2 "github.com/taubyte/tau/pkg/proto/gen/tau/database/v2"
 )
 
-// forward.go is who answers for a raft database, which is the one thing its
-// consensus changes about this service.
-//
-// # A group has one writer and this fleet has many doors
-//
-// `consensus: raft` promises that a write costs a round trip and that nothing
-// is silently discarded. Keeping it means one holder at a time: the leader
-// orders the writes and, behind a barrier, is the only node whose applied state
-// is everything committed. Every other node in the fleet is still a door — the
-// gateway places an invocation wherever it likes — so a call lands on the
-// leader by accident and on somebody else the rest of the time.
-//
-// A crdt database has no such problem, which is why none of this is on that
-// path: its copies converge, so whichever node holds one answers from its own.
-//
-// # The store refuses and this service forwards
-//
-// node/queue.go's rule is kept exactly: a store that dialled would be a second
-// write path with its own failure modes, reaching back up through the service
-// that composed it. What is different is that this service HAS somewhere to
-// send the call — it already dials peers for the repair sweep — so the store's
-// refusal carries the leader's name and the call is re-issued once.
-//
-// # It is bounded by hops and not by trust
-//
-// Two nodes whose membership views differ can each believe the other should
-// answer. Counting hops is what makes that cost a retryable refusal instead of
-// a loop: a forwarded call carries how far it has come, and a call that has
-// come far enough is served here or refused here. Nothing decides that from the
-// caller's claim about who it is — only from a number that can never go down.
-//
-// # Nobody opens a group because somebody asked
-//
-// Opening a raft group makes this node a VOTER in it, which is a heavier
-// version of the act Holdings.Held refuses for a crdt copy: a node that
-// answered a question by opening would become a holder because it was asked.
-// So a node opens only what its OWN placement answer says it should hold, and a
-// node that should not forwards instead.
-//
-// What still has to happen is that the other voters open theirs, or a group of
-// one is all there ever is. warm is that: when the group this node opened has
-// no leader, it asks the other desired holders about the database, and each of
-// them opens on its own answer. Asking is the nudge; the answer is theirs.
+// Who answers for a raft database. Raft means one holder at a time: the leader
+// orders writes and, behind a barrier, is the only node whose state is everything
+// committed. Any node is a door, so the store refuses with the leader's name and
+// this service re-issues the call. Forwarding is bounded by a hop count that only
+// grows, so disagreeing membership views cost a retryable refusal, not a loop.
+// Opening a group makes this node a voter, so it opens only what its own placement
+// answer says; warm nudges the other desired voters to open theirs.
 
-// maxHops is how many nodes a call may be sent through. Two is the shape the
-// fleet actually has: a node that is not a voter knows who the voters are but
-// not which of them leads, and a voter knows the leader — so origin, voter,
-// leader, and no further. A third hop would be two nodes disagreeing, which is
-// what retrying is for.
+// maxHops: origin, voter, leader. A non-voter knows the voters but not the leader; a
+// voter knows the leader. A third hop would be views disagreeing, which retrying
+// handles.
 const maxHops = 2
 
 // hopHeader carries how many nodes a call has already been sent through.
@@ -102,25 +64,15 @@ func hopsOf(ctx context.Context) int {
 func (s *Service) voters(ctx context.Context, at address) []string {
 	members := s.fleet()
 	if len(members) == 0 {
-		// A NODE THAT CANNOT SEE A FLEET IS THE WHOLE FLEET as far as it knows,
-		// and saying "somebody else holds this" would refuse a database nobody
-		// else can answer for. It keeps its own group.
-		//
-		// IT IS THE ANSWER THAT IS EMPTY AND NOT THE FUNCTION THAT IS ABSENT.
-		// Every composition hands this service a closure; a node whose stats
-		// have seen nobody yet gets a closure that returns nothing, which is
-		// the same fact and was the arm nobody reached.
+		// A node that sees no fleet is the whole fleet as far as it knows, and keeps its own
+		// group.
 		return nil
 	}
 
 	floor, known := s.floor.read(ctx)
 	if !known {
-		// A NODE THAT HAS NEVER LEARNED THE FLOOR IS NOT A NODE WHOSE FLOOR IS
-		// ZERO. Placement over a target of zero desires nobody, and a group
-		// nobody is desired for is one EVERY node opens for itself — which is
-		// the opposite of the conservative answer. The default is what every
-		// node reading a definitive absence also reaches, so nodes that cannot
-		// see the document still agree with each other.
+		// A node that has never learned the floor uses the default rather than zero: a
+		// target of zero desires nobody, and then every node opens a group for itself.
 		floor = DefaultReplication
 	}
 
@@ -136,13 +88,9 @@ func (s *Service) fleet() []placement.Member {
 	return s.members()
 }
 
-// desired splits this database's voters into "this node" and "the others".
-//
-// ONE PREDICATE FOR ROUTING AND FOR ANSWERING. route decides where a call goes
-// and voting decides what this node says about itself, and a node that opened a
-// group it then told its peers it did not hold would be a voter the rest of the
-// fleet cannot count. An empty voter list is the same fact in both: nobody is
-// placed, so this node is the whole fleet.
+// desired splits this database's voters into this node and the others. One predicate
+// serves routing and answering, so a node never opens a group it then denies
+// holding.
 func (s *Service) desired(ctx context.Context, at address, d declared) (others []string, mine bool) {
 	voters := s.voters(ctx, at)
 
@@ -158,21 +106,15 @@ func (s *Service) desired(ctx context.Context, at address, d declared) (others [
 	return others, mine
 }
 
-// route is a raft database as this node can reach it: its own group when
-// placement says this node is a voter, and the node that should answer when it
-// says otherwise.
+// route is a raft database as this node can reach it: its own group when it is a
+// voter, otherwise the node that should answer.
 func (s *Service) route(ctx context.Context, at address, d declared) (database.KVConn, error) {
 	others, mine := s.desired(ctx, at, d)
 
-	// A GROUP THIS NODE HAS ALREADY OPENED IS ANSWERED FROM, whatever placement
-	// says today. Placement decides what to OPEN; raft decides who may answer,
-	// and it decides it from the group's own configuration -- which is add-only
-	// here, because nothing reconciles it. A node that dropped out of the
-	// desired set while still leading the group would otherwise refuse the one
-	// group it leads, forward to a voter that refuses back, and every read and
-	// every write of that ledger would fail until somebody restarted something.
-	// Placement is recomputed per call and raft leadership is sticky, so that
-	// disagreement is permanent and retrying never converges.
+	// A group this node already opened is answered from, whatever placement says today.
+	// Raft membership is add-only here, and leadership is sticky while placement is
+	// recomputed per call, so refusing a group this node leads would fail every call
+	// until a restart.
 	if !mine {
 		mine = s.opened(at.key())
 	}
@@ -182,9 +124,7 @@ func (s *Service) route(ctx context.Context, at address, d declared) (database.K
 		return conn, nil
 	}
 
-	// OPENED BEFORE ANYTHING IS ASKED OF IT, because opening is what starts the
-	// group forming and forming is a background job — so the first call is the
-	// one that begins the wait rather than the one that serves it.
+	// Opened first: opening starts the group forming in the background.
 	local, err := s.here(ctx, at, d)
 	if err != nil {
 		return nil, err
@@ -194,15 +134,9 @@ func (s *Service) route(ctx context.Context, at address, d declared) (database.K
 	return conn, nil
 }
 
-// opening records that this node has a group for one raft database, and opened
-// and ledgers read it back.
-//
-// A GROUP OUTLIVES THE ANSWER THAT OPENED IT, which is what this exists to
-// remember. Opening makes this node a voter; the resident table may evict the
-// engine in front of it and placement may rank somebody else tomorrow, and
-// neither of those removes a voter from a raft configuration. So the set is
-// what this node has actually become part of, and it is what the sweep keeps
-// asking about and what route answers from.
+// opening records that this node has a group for one raft database. A group outlives
+// the answer that opened it: neither eviction nor a new placement removes a voter,
+// so this set is what the sweep asks about and route answers from.
 func (s *Service) opening(at address) {
 	s.ledgerMu.Lock()
 	defer s.ledgerMu.Unlock()
@@ -253,11 +187,7 @@ type routed struct {
 
 var _ database.KVConn = (*routed)(nil)
 
-// run puts one operation where it can be answered.
-//
-// THE LOCAL GROUP FIRST, ALWAYS, when there is one: a node that leads answers
-// without a hop, which is the whole point of placing a database rather than
-// proxying it.
+// run puts one operation where it can be answered, trying the local group first.
 func (r *routed) run(ctx context.Context, op func(database.KVConn) error) error {
 	if r.local == nil {
 		return r.anywhere(ctx, op)
@@ -280,31 +210,17 @@ func (r *routed) run(ctx context.Context, op func(database.KVConn) error) error 
 		return r.anywhere(ctx, op)
 
 	case errors.As(err, &elsewhere), errors.Is(err, ErrGroupForming):
-		// NOBODY LEADS THIS GROUP, which for a group that has not formed means
-		// its other voters have not opened theirs. Asking them is what makes
-		// them, and this call is refused so the caller retries — a write held
-		// here and applied once a leader appeared would be accepted before
-		// anything ordered it, which is the promise this consensus exists to
-		// keep.
+		// Nobody leads this group, so its other voters are asked (warm) and the call is
+		// refused for retry: a write held until a leader appeared would be accepted before
+		// anything ordered it.
 		r.service.warm(ctx, r.at, r.others)
 	}
 	return err
 }
 
-// anywhere sends the call to a voter: the first placement ranked, and the next
-// one only when that node cannot be reached at all.
-//
-// THE FIRST ONE, SO TWO HOPS STAY TWO HOPS. A node outside the group cannot
-// know which voter leads, and the voter it reaches does — so one address is
-// enough and walking the list per call would be two hops that could have been
-// one.
-//
-// A REACH FAILURE IS NOT AN ANSWER, which is why the walk exists at all. A
-// voter that has gone would otherwise take every ledger call made through every
-// node outside the group with it, for as long as it takes membership to notice
-// — and membership deliberately takes minutes, because moving data on a blip is
-// worse. A voter that ANSWERS ends the walk even when the answer is a refusal:
-// that is the group talking.
+// anywhere sends the call to the first voter placement ranked, so two hops stay two,
+// and to the next only when a voter cannot be reached. A voter that answers ends the
+// walk, even with a refusal.
 func (r *routed) anywhere(ctx context.Context, op func(database.KVConn) error) error {
 	if len(r.others) == 0 {
 		return ErrNotHere
@@ -382,25 +298,12 @@ func (r *routed) Watch(ctx context.Context, prefix string) (<-chan string, error
 	return out, err
 }
 
-// Close releases nothing.
-//
-// THE RESIDENT TABLE OWNS THE CONNECTION UNDERNEATH, and closing it here would
-// close a database another caller is holding — this is a route to one, built
-// per call, and the table decides how long the thing it routes to lives.
+// Close releases nothing: the resident table owns the connection underneath.
 func (r *routed) Close() error { return nil }
 
-// warm asks this database's other desired voters about it, which is what makes
-// each of them open its own group.
-//
-// ONE ROUND AT A TIME AND NEVER ON THE CALLER'S PATH. A group forms in tens of
-// seconds and every request in that window would otherwise start its own round
-// of asking; what the caller gets instead is the refusal, immediately, and a
-// retry that finds a leader.
-//
-// THE ANSWER IS DISCARDED BECAUSE THE ASKING IS THE POINT. A peer opens on its
-// own placement answer or not at all — acquiring on a stranger's word is the
-// decline asymmetry running backwards — so what it says about itself changes
-// nothing here.
+// warm asks this database's other desired voters about it, which makes each open its
+// own group. One round at a time and off the caller's path. The answer is discarded:
+// a peer opens on its own placement answer.
 func (s *Service) warm(ctx context.Context, at address, peers []string) {
 	if len(peers) == 0 {
 		return
@@ -437,14 +340,8 @@ func (s *Service) warm(ctx context.Context, at address, peers []string) {
 	}()
 }
 
-// voting is what this node answers about a raft database, and the one place it
-// may become one of its voters.
-//
-// IT OPENS ON THIS NODE'S OWN ANSWER AND NEVER ON THE ASKER'S. A peer asking
-// "have you got this" is why this runs, but what decides is placement computed
-// here, from this node's own membership view and the floor the cloud published.
-// A node that opened because it was asked would be a voter in a group nobody
-// placed it in, which is how a fleet ends up with a quorum it did not choose.
+// voting is what this node answers about a raft database, and the one place it may
+// become a voter: on its own placement answer, never the asker's.
 func (s *Service) voting(ctx context.Context, at address, d declared) *databasev2.Holding {
 	_, mine := s.desired(ctx, at, d)
 	if !mine && !s.opened(at.key()) {
@@ -455,9 +352,7 @@ func (s *Service) voting(ctx context.Context, at address, d declared) *databasev
 	}
 	s.opening(at)
 
-	// HELD AND KEEPS ARE BOTH TRUE FOR A VOTER, and they are not the question
-	// they are for a crdt copy: leaving a raft group is a membership change and
-	// not a local drop, so nothing in the maintenance sweep ever asks this in
-	// order to delete anything.
+	// Leaving a raft group is a membership change, not a local drop, so the sweep never
+	// asks this to delete.
 	return &databasev2.Holding{Held: true, Keeps: true}
 }

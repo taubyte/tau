@@ -1,70 +1,18 @@
-// Package database serves a project's databases, and the reason it exists is
-// that v1 made the compute node do it.
+// Package database serves a project's kv databases, so compute nodes no longer hold
+// them. A database's engine is costly to open, so it is served where it is already
+// resident (resident.go).
 //
-// # What v1 did
+// One model, kv, on both resolutions: crdt over the replicated store every node has,
+// and raft over a group per database on a node composed with somewhere to open one.
+// Every other model is refused by name, and the refusals are told apart: an unserved
+// model is Unimplemented, a wrong surface FailedPrecondition. A crdt copy answers
+// from its own; a raft group is answered by its leader (forward.go). If a namespace
+// ever ends up with two raft groups, pkg/raft merges them last-writer-wins; the
+// promise here is that of one group.
 //
-// v1's substrate opened the database. Every node that ever served a request for
-// a project held that project's connection, its indexes and, for tau's own
-// engines, its rows — so the data plane was every node that had ever run code,
-// the connection table was unbounded and never expired, and a database's
-// warmth was an accident of which node got the traffic. node/database.go is
-// still that shape.
-//
-// # Why it is its own service and not part of storage
-//
-// data-services.md decided three data services because their requirements
-// differ at scale, and the mechanism — rather than the word "hot" — is
-// residency. A bucket's current version is DERIVED from its keys, so whichever
-// node holds the blocks can answer it. A database's is an open engine, which
-// costs more to build than the request that needs it. So a database has to be
-// served where its engine already is, and something has to own the engines to
-// be able to say where that is. resident.go is that table.
-//
-// # One column of the grid, and it says so
-//
-// The `database` kind is four models — kv, sql, document, vector — on one axis
-// and a consensus on another. THIS SERVICE SERVES ONE MODEL, kv, on BOTH
-// resolutions: crdt over the replicated store every node has, and raft over a
-// group per database on a node composed with somewhere to open one. Everything
-// else is refused BY NAME, which is the rule node/queue.go already keeps for a
-// crdt queue and node/cache.go for a cache, and the one the database kind was
-// missing entirely while `consensus` was RequiredWhen and honoured by nobody.
-//
-// The two resolutions differ in WHO MAY ANSWER, which is what this service
-// decides. A crdt copy converges, so every node holding one answers from its
-// own. A raft group decides an order, so exactly one node — the leader, behind
-// a barrier — may answer at a time, and a call that lands anywhere else is sent
-// to it. See forward.go.
-//
-// WHAT THIS SERVICE DOES NOT DECIDE, said rather than implied: the order itself
-// is the group's, and so is what happens to it when a namespace ends up with
-// two groups that each believe they are it. pkg/raft reconciles that pair by
-// merging their state last-writer-wins — which is the resolution `consensus:
-// raft` exists to avoid — and the fix is that a namespace only ever has one
-// group, which is an owner this cloud has not settled. Until it has, the
-// promise held here is the one a single group keeps: one writer, a round trip
-// per write, and no merge on any path this service takes.
-//
-// A service that answered every call it was given and quietly did the wrong
-// thing for three quarters of them would be worse than one that refuses, and
-// the refusals are told apart: "this service does not serve that model yet" is
-// an operator's problem and Unimplemented, while "that database is not a kv" is
-// the caller's and FailedPrecondition. declarations.go holds the list, so
-// growing it is one edit rather than a sweep.
-//
-// # What an operator declares about a database node
-//
-// How much it may hold and for how long: WithMaxResident and WithIdle. Both
-// have defaults, because a node that refused to start without them would be a
-// node an operator has to tune before it runs at all.
-//
-// # The thing this package does not do
-//
-// AUTHORIZATION. Any peer that can reach this service can read and write any
-// project's data. That is v2's OSS trust model stated where it applies — swarm
-// membership is the boundary and the cloud's CA enforces it — and a
-// deployment that does not trust its own nodes needs a caller identity on every
-// request, not a flag here. The register and the secrets service say the same.
+// No authorization: any peer that can reach this service can read and write any
+// project's data. Swarm membership, enforced by the cloud's CA, is the boundary, as
+// for the register and secrets.
 package database
 
 import (
@@ -106,9 +54,8 @@ type Service struct {
 	// peer is who this node is in that fleet.
 	peer string
 
-	// consensus is what this node can KEEP, which is a narrower question than
-	// what this package implements: a raft database needs a group to be opened
-	// in, and a composition either handed this service one or did not.
+	// consensus is what this node can keep: raft needs a group opener, which a
+	// composition may or may not hand this service.
 	consensus []string
 
 	// warming is which databases this node is currently asking the other
@@ -123,8 +70,7 @@ type Service struct {
 	ledgerMu    sync.Mutex
 	ledgersOpen map[string]address
 
-	// floor is how many nodes hold each database, read
-	// from what the cloud published rather than from this node's config.
+	// floor is how many nodes hold each database, read from what the cloud published.
 	floor *fleetFloor
 
 	// sweep is how often this node reconsiders what it holds.
@@ -168,12 +114,8 @@ type options struct {
 	serverOptions []rpc.ServerOption
 }
 
-// WithMembers is how this node sees the fleet: the member set a placement runs
-// over.
-//
-// A FUNCTION AND NOT A LIST, because membership changes under the service and a
-// snapshot taken at construction would place every database on the fleet as it
-// was when the process started.
+// WithMembers is the member set a placement runs over, a function since membership
+// changes under the service.
 func WithMembers(members func() []placement.Member) Option {
 	return func(o *options) error {
 		o.members = members
@@ -181,17 +123,8 @@ func WithMembers(members func() []placement.Member) Option {
 	}
 }
 
-// WithConsensus is what this node can keep: the resolutions a database may
-// declare and still be served here.
-//
-// IT IS THE COMPOSER'S ANSWER AND NOT THIS PACKAGE'S. Both halves of the axis
-// are implemented — a crdt database over the replicated store, a raft one over
-// a group per database — but a group has to be opened in something, and a node
-// composed without that cannot keep a ledger. A service told it could would
-// answer "unavailable" forever; told the truth, it refuses by name and an
-// operator knows to change the cloud rather than the config.
-//
-// The default is crdt alone, which is what every node has.
+// WithConsensus is what this node can keep. A node without a group opener cannot keep
+// a ledger and refuses it by name. The default is crdt alone.
 func WithConsensus(kinds ...string) Option {
 	return func(o *options) error {
 		for _, kind := range kinds {
@@ -270,7 +203,6 @@ func WithIdle(d time.Duration) Option {
 	}
 }
 
-// WithClock injects the local clock. Tests use it; production does not.
 func WithClock(now func() time.Time) Option {
 	return func(o *options) error {
 		if now == nil {
@@ -289,9 +221,8 @@ func WithServerOptions(opts ...rpc.ServerOption) Option {
 	}
 }
 
-// New validates and allocates. It binds nothing and opens nothing — no listener
-// until Start and no engine until a call asks for one — so a node can construct
-// every service before starting any of them.
+// New validates and allocates. It binds nothing and opens nothing until Start or a
+// call.
 func New(h host.Host, opts ...Option) (*Service, error) {
 	if h == nil {
 		return nil, ErrNoHost
@@ -359,9 +290,7 @@ func (s *Service) Start(ctx context.Context) error {
 	}
 	s.server = server
 
-	// THE SWEEP RUNS FOR AS LONG AS THIS SERVICE DOES, not for as long as the
-	// caller's context: a Start whose ctx ends when the caller returns would
-	// leave a node that serves and never reconsiders anything.
+	// The sweep lives as long as the service, not the caller's context.
 	sweepCtx, stopSweep := context.WithCancel(context.WithoutCancel(ctx))
 	s.stopSweep = stopSweep
 	go s.run(sweepCtx)
@@ -397,18 +326,10 @@ func (s *Service) Close() error {
 // what a node is holding, and for a test of the bound.
 func (s *Service) Held() int { return s.engines.held() }
 
-// declared resolves one database to what its author wrote, WITHOUT opening it.
-//
-// IT IS THE HALF kv() DOES FIRST, split out because three callers must not
-// open: a node asked whether it holds a database would become a holder by
-// answering, the maintenance sweep decides about databases it may be letting go
-// of, and a write resolves before it may take the release fence.
-//
-// WHAT THIS CLOUD SERVES, BEFORE WHAT THE CALLER ASKED FOR. A postgres reached
-// through KVGet is two different mistakes depending on the order these are
-// checked, and the one worth reporting is that this service does not serve sql
-// — not that the caller used the wrong verb on a database it could never have
-// used the right one on.
+// declared resolves one database to what its author wrote, without opening it: for a
+// holding ask, the maintenance sweep, and a write before the release fence. What this
+// cloud serves is checked before what the caller asked, so a postgres via KVGet
+// reports the unserved model.
 func (s *Service) declared(ctx context.Context, at address) (declared, error) {
 	declaration, err := s.declare.of(ctx, at)
 	if err != nil {
@@ -432,12 +353,8 @@ func (s *Service) kv(ctx context.Context, at address) (database.KVConn, error) {
 	return s.open(ctx, at, declaration)
 }
 
-// open answers the kv surface of a database that has already been resolved.
-//
-// WHERE A DATABASE IS ANSWERED FROM IS DECIDED BY ITS CONSENSUS, and by nothing
-// else in this function. A crdt copy is answered by every node that holds one,
-// so this node answers its own; a raft one is answered by one node at a time,
-// so the connection knows who that is — see forward.go.
+// open answers the kv surface of a resolved database. Its consensus alone decides
+// where it is answered from (see forward.go).
 func (s *Service) open(ctx context.Context, at address, declaration declared) (database.KVConn, error) {
 	if declaration.spec.Consensus == database.Raft {
 		return s.route(ctx, at, declaration)
@@ -452,37 +369,22 @@ func (s *Service) here(ctx context.Context, at address, declaration declared) (d
 		return nil, err
 	}
 
-	// SERVING A DATABASE IS HOLDING IT, and a node that holds one means to keep
-	// it until its own release says otherwise. Without this a node answers
-	// keeps=false forever and no move anywhere in the fleet could ever complete
-	// — the gate would refuse every drop on the word of nodes that all claim to
-	// be leaving.
+	// Serving a database is holding it, or this node answers keeps=false forever and no
+	// move completes.
 	s.own.hold(at.key())
 
 	kv, ok := conn.(database.KVConn)
 	if !ok {
-		// Unreachable while Registry.Register proves an engine answers its
-		// type's operations. Kept rather than dropped so a change to that rule
-		// cannot pass silently through here.
+		// Unreachable while Registry.Register proves an engine's surface; kept so a change
+		// there cannot pass silently.
 		return nil, fmt.Errorf("%w: %s answers no kv surface", ErrWrongModel, declaration.spec.Engine)
 	}
 	return kv, nil
 }
 
-// mutate runs one write against a database, behind the release fence.
-//
-// THE FENCE IS HERE AND NOT IN THE ENGINE, because what it protects is not the
-// store's own consistency but the release gate's: a replacement proved it holds
-// the same rows as of the moment this node began letting go, and a row accepted
-// after that is in neither copy it vouched for. See maintain.go.
-//
-// THE FENCE IS UP BEFORE THE STORE IS OPENED, and not checked beside an open
-// connection: opening answers a handle on a store, and between answering it and
-// writing through it a release could clear its gate and destroy that store.
-//
-// RESOLVING COMES FIRST ALL THE SAME, because the key is the caller's. A fence
-// that admitted an entry per address asked for would be a table any peer could
-// grow by naming databases this deployment does not declare.
+// mutate runs one write behind the release fence, which protects the gate's answer,
+// not the store. The fence is up before the store is opened. Resolving comes first,
+// so a peer cannot grow the fence table with undeclared names.
 func (s *Service) mutate(ctx context.Context, at address, do func(database.KVConn) error) error {
 	declaration, err := s.declared(ctx, at)
 	if err != nil {
@@ -502,14 +404,8 @@ func (s *Service) mutate(ctx context.Context, at address, do func(database.KVCon
 	return do(kv)
 }
 
-// Local is this service as the compute tier's own seam, with no stream.
-//
-// IT IS THE ABSENCE OF A HOP AND NOT A SHORTCUT. A node that runs the database
-// service already holds the engines, so dialling itself to reach them would add
-// a stream and a serialization to every call — the same rule node/secrets.go
-// keeps for a vault and services/worker keeps for a register. A node that does
-// NOT run the service uses Client, and nothing above the seam can tell which it
-// got.
+// Local is this service as the compute tier's seam, with no stream; a node not
+// running the service uses Client.
 func (s *Service) Local() wasmtier.KVs { return &localKV{service: s} }
 
 type localKV struct{ service *Service }

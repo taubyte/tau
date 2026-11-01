@@ -7,11 +7,7 @@ import (
 	databasev2 "github.com/taubyte/tau/pkg/proto/gen/tau/database/v2"
 )
 
-// address.go is the one place a Ref becomes something this package uses.
-//
-// IT IS PARSED ONCE, AT THE DOOR. Every handler takes the same four fields off
-// the wire, and a check repeated per call is a second opinion — the day the two
-// disagreed, the answer would depend on which RPC the caller used.
+// An address is parsed once, at the door, so every RPC applies the same check.
 
 // address is one database, in one environment of one project.
 type address struct {
@@ -30,12 +26,8 @@ func addressOf(ref *databasev2.Ref) address {
 	}
 }
 
-// valid refuses an address with a hole in it, naming which part is missing so a
-// caller is told rather than left with a miss.
-//
-// A SEPARATOR IN A SEGMENT IS REFUSED for the reason the secrets service gives:
-// the separator between the parts is this service's, and a segment carrying one
-// is a readable path into somebody else's key space.
+// valid refuses an address with a hole in it, naming the missing part. A separator
+// in a segment is refused: it would be a readable path into another key space.
 func (a address) valid() error {
 	switch {
 	case a.project == "":
@@ -57,9 +49,9 @@ func (a address) valid() error {
 	return nil
 }
 
-// key is what the resident table holds this database under. The revision is NOT
-// in it: a newer deployment replaces what it names rather than sitting beside
-// it, which is what makes a rotated credential take effect.
+// key is what the resident table holds this database under. The revision is not in
+// it, so a newer deployment replaces what it names (a rotated credential takes
+// effect).
 func (a address) key() string {
 	return a.project + "/" + a.environment + "/" + a.storeName()
 }

@@ -10,30 +10,9 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// declarations.go turns "which database" into "what that database is".
-//
-// # The caller does not get a say
-//
-// A call carries a deployment and a resource id and nothing else. Everything
-// about the database — its model, its engine, where it lives, what it is
-// allowed to grow to, how concurrent writes resolve — is read HERE, out of the
-// compiled project. That is the difference between a service and a proxy: a
-// caller that described the database could describe a different one, and the
-// service would have no way to tell.
-//
-// # It is also where size and consensus stop being decoration
-//
-// Both are RequiredWhen the engine is distributed, and neither used to reach a
-// runtime: services/worker carried engine, host, database, tls, dimensions and
-// metric onto the grant, and nothing carried the other two. Reading the
-// DECLARATION rather than the grant reads all of it, which is why they appear
-// below and did not appear there.
-//
-// `consensus` is on the grant now as well, and for the other half of the same
-// rule: a node that runs no database service opens a kv through its own
-// engines, and one that could not see the word would keep a ledger as a crdt
-// without saying so. Carrying it there buys a refusal by name, not a second
-// opinion — what this service serves from is still read here.
+// A call carries a deployment and a resource id; everything about the database
+// (model, engine, location, size, consensus) is read here from the compiled
+// project, so a caller cannot describe a different database.
 
 // declared is one database as its author wrote it, plus the deployment that
 // wrote it — the revision is what tells a warm engine it has been replaced.
@@ -46,19 +25,13 @@ type declared struct {
 	size int64
 }
 
-// served is what this service implements today.
-//
-// THE NAMES ARE THE SCHEMA'S. `database` declares a model — kv, sql, document,
-// vector — and, for tau's own engine, how concurrent writes resolve. Those are
-// the words an author writes and they are the words here; nothing is renamed on
-// the way in and there is no second vocabulary to map between.
+// served is what this service implements, in the schema's own words.
 var (
 	servedModels = []database.Type{database.KV}
 
-	// servedConsensus is what a node keeps when its composer said nothing. A
-	// crdt store is the one every node has — it is the replicated store every
-	// other v2 store is built on — and raft needs a group to be opened in,
-	// which a composition either hands this service or does not.
+	// servedConsensus is what a node keeps when its composer said nothing: crdt, which
+	// every node has. raft needs a group to open in, which a composition may hand this
+	// service.
 	servedConsensus = []string{database.CRDT}
 )
 
@@ -67,19 +40,9 @@ var (
 // resolves nothing because somebody else's server does.
 const defaultConsensus = database.CRDT
 
-// serves refuses a declaration this node cannot honour, naming which half of it
-// is the problem.
-//
-// WHAT THIS NODE KEEPS AND NOT WHAT THE PACKAGE IMPLEMENTS. raft is served
-// here, over a group per database — but only by a node that was composed with
-// something to open a group in. Refusing at the door means an operator is told
-// "this cloud does not keep that consensus" rather than discovering it as an
-// unavailable database, which is the rule node/queue.go keeps for a crdt queue
-// and node/cache.go for a cache.
-//
-// RAFT IS REFUSED AND NOT MERGED, wherever it is refused. An author writes it
-// when entries must not resolve by merge — a ledger — and serving it as crdt
-// would answer the one thing the field exists to prevent.
+// serves refuses a declaration this node cannot honour, naming which half. It is
+// what this node keeps, not what the package implements: raft needs a group opener.
+// Raft is refused rather than merged as crdt.
 func (d declared) serves(consensus []string) error {
 	if !slices.Contains(servedModels, d.spec.Type) {
 		return fmt.Errorf("%w: %s", ErrModelUnserved, d.spec.Type)
@@ -95,12 +58,10 @@ func (d declared) serves(consensus []string) error {
 // spec that always says.
 func (d declared) wants() string { return d.spec.Consensus }
 
-// declarations reads compiled projects.
 type declarations struct {
 	projects *register.Cache[*specs.Project]
 }
 
-// of resolves one database.
 func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 	if err := ref.valid(); err != nil {
 		return declared{}, err
@@ -126,10 +87,7 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 		return declared{}, fmt.Errorf("%w: %s: %w", ErrNotDeclared, ref.id, err)
 	}
 
-	// THE MODEL IS THE DISCRIMINATOR THE COMPILER WROTE. `kv: {distributed: …}`
-	// compiles to a `type` of "kv", which is how a reader knows which of the
-	// four operation surfaces this resource has without guessing from which
-	// block is present.
+	// The model is the compiled `type`.
 	db := specs.ReadDatabase(resource)
 	model := db.Type
 	if model == "" {
@@ -145,16 +103,12 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 			Project:     ref.project,
 			Environment: ref.environment,
 
-			// THE ID AND NEVER THE LABEL, for the reason node/database
-			// already gives: two workloads may call one database different
-			// things, and two databases may both be called `tokens`.
+			// The id, never the label: labels are per workload and not unique.
 			Name:     ref.storeName(),
 			Address:  block.host,
 			Database: block.database,
 
-			// RESOLVED HERE AND NOWHERE LATER. The store a resident engine is
-			// handed is chosen by this word, so a hole in it would be a
-			// database kept by whichever branch happened to be first.
+			// Resolved here, since this word chooses the store a resident engine is handed.
 			Consensus: consensusOf(block.consensus),
 		},
 	}
@@ -162,14 +116,12 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 		out.size = *n
 	}
 
-	// TLS IS ON UNLESS THE AUTHOR WROTE `disable`, which is the vocabulary's own
-	// polarity, and `require` is served as verify-full because pkg/database
-	// carries a bool and serving the weaker of the two would quietly accept a
-	// network attacker as the server.
+	// TLS is on unless the author wrote `disable`. `require` is served as verify-full,
+	// since pkg/database carries a bool and the weaker reading would accept a network
+	// attacker.
 	out.spec.Credentials.TLS = !block.plaintext
 
-	// PER-MODEL DECLARATIONS TRAVEL AS OPTIONS. A vector's width and metric mean
-	// nothing to the other three.
+	// Per-model declarations travel as options.
 	if n := db.Vector.Dimensions; model == specs.DatabaseTypeVector && n != nil {
 		out.option("dimensions", fmt.Sprint(*n))
 	}
@@ -180,10 +132,8 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 	return out, nil
 }
 
-// typeBlock is the fields every data model's own block may carry, off
-// whichever block the type names: the engines a type may have differ, which is
-// the vocabulary's reason for putting them under the type, and a model that
-// does not declare one reads it empty.
+// typeBlock is the fields every model's own block may carry, read off whichever
+// block the type names.
 type typeBlock struct {
 	engine, host, database, consensus string
 	size                              *int64

@@ -36,12 +36,6 @@ func local(t *testing.T, opts ...Option) *Service {
 	return s
 }
 
-// TestTHESAMESURFACEWITHOUTTHEHOP.
-//
-// A node that runs the database service already holds the engines, so dialling
-// itself would add a stream and a serialization to every call. Nothing above
-// the seam can tell which it got, which is what this asserts: the same
-// operations, the same answers, the same miss.
 func TestTheLocalSurfaceAnswersLikeTheWire(t *testing.T) {
 	kvs := local(t).Local()
 	ctx := t.Context()
@@ -76,8 +70,6 @@ func TestTheLocalSurfaceRefusesAMalformedHandle(t *testing.T) {
 	}
 }
 
-// TestWHATTHISCLOUDSERVESISREFUSEDBYNAME, so an operator reading the error
-// knows whether to change the config or the cloud.
 func TestTheLocalSurfaceSaysWhyItRefuses(t *testing.T) {
 	kvs := local(t).Local()
 	ctx := t.Context()
@@ -101,8 +93,6 @@ func TestTheLocalSurfaceSaysWhyItRefuses(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotDeclared)
 }
 
-// TestEVERYREFUSALCROSSESTHEWIREASITSOWNCODE, or a caller retries what will
-// never succeed and gives up on what would.
 func TestTheWireCodeSaysWhatToDoAboutIt(t *testing.T) {
 	for _, c := range []struct {
 		err  error
@@ -115,8 +105,7 @@ func TestTheWireCodeSaysWhatToDoAboutIt(t *testing.T) {
 		{ErrNotADatabase, connect.CodeFailedPrecondition},
 		{ErrWrongModel, connect.CodeFailedPrecondition},
 
-		// NOTHING THE CALLER CAN CHANGE MAKES THESE SUCCEED: the fix is a
-		// release, not a retry.
+		// Nothing the caller can change makes these succeed.
 		{ErrModelUnserved, connect.CodeUnimplemented},
 		{ErrConsensusUnserved, connect.CodeUnimplemented},
 
@@ -128,15 +117,12 @@ func TestTheWireCodeSaysWhatToDoAboutIt(t *testing.T) {
 		require.Equal(t, c.want, wired.Code(), "%v", c.err)
 	}
 
-	// AND AN ERROR NOBODY NAMED IS UNAVAILABLE, which is a retry — the safe
-	// default for something this package does not recognise.
+	// An unnamed error is Unavailable, a retry.
 	var wired *connect.Error
 	require.True(t, errors.As(wire(errors.New("the disk is on fire")), &wired))
 	require.Equal(t, connect.CodeUnavailable, wired.Code())
 }
 
-// TestTHEOPTIONSAREREFUSEDWHENTHEYCANNOTBEMET, at construction rather than on
-// the call that would have found out.
 func TestTheServiceRefusesOptionsItCannotHonour(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -167,8 +153,6 @@ func TestTheServiceRefusesOptionsItCannotHonour(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoRegister)
 }
 
-// TestTHEOPTIONSTHATARETAKEN, so a composer's choices reach the service rather
-// than being silently the default.
 func TestTheServiceTakesWhatItIsGiven(t *testing.T) {
 	s := local(t,
 		WithSweep(17*time.Second),

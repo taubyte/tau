@@ -9,29 +9,13 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 )
 
-// fleet.go is where the replication floor comes from.
+// The replication floor is published like a project (content-addressed, monotone
+// revision, read from the register) so nodes cannot disagree about it forever:
 //
-// # It is one value the fleet shares, and it used to be each node's config
-//
-// Placement takes three inputs and all three are per-node views. Two of them
-// heal: a declaration read at an older register revision, and a membership
-// view that has not caught up. The floor did not. Two nodes
-// configured differently disagreed about who should hold a database forever,
-// and how many copies a database had depended on which node was asked.
-//
-// So it is published like a project: content-addressed, monotone revision, read
-// from the register every node already polls. A node that is behind is behind
-// by a revision it can name.
-//
-// # Absent, unreachable, and never read are three different answers
-//
-//	NOT PUBLISHED   this cloud has said nothing -> the default, which every
-//	                node reaches identically, so they still agree
-//	UNREACHABLE     change nothing; keep the last value read
-//	NEVER READ      the node may ACQUIRE but may not RELEASE -- reclaim's
-//	                "cannot see is not gone", generalised. A node that has
-//	                never learned the floor must not delete data on a guess
-//	                about it.
+//	NOT PUBLISHED   the default, which every node reaches identically
+//	UNREACHABLE     keep the last value read
+//	NEVER READ      the node may acquire but not release: it must not delete data
+//	                on a guess about the floor
 
 // fleetSource is the slice of a register this needs. It is asserted rather than
 // required of register.Registry, because a consumer that only resolves projects
@@ -52,12 +36,8 @@ type fleetFloor struct {
 	value    int
 }
 
-// read answers the floor, and whether this node has ever learned one.
-//
-// THE SECOND RETURN IS NOT A CONVENIENCE. A node that has never read the floor
-// does not know how many copies a database is supposed to have, and the whole
-// of release is a comparison against that number. Guessing it is how a node
-// deletes the second of two copies believing the floor was one.
+// read answers the floor, and whether this node has ever learned one; release is a
+// comparison against it, so never having read it forbids release.
 func (f *fleetFloor) read(ctx context.Context) (int, bool) {
 	if f == nil || f.from == nil {
 		// A SERVICE COMPOSED WITHOUT A FLEET SOURCE knows the default and

@@ -66,10 +66,7 @@ func (s *says) OnDisk(context.Context) []database.Spec {
 	return s.onDisk
 }
 
-// Destroy behaves like the real one: what has been released is no longer held
-// and is no longer on disk. A fake that kept answering "held" would let a sweep
-// release the same database on every tick, which is a test asserting against a
-// node that cannot exist.
+// Destroy behaves like the real one: released means no longer held.
 func (s *says) Destroy(_ context.Context, spec database.Spec) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -121,13 +118,6 @@ func sessionsRef() *databasev2.Ref {
 	return &databasev2.Ref{Project: projectID, Environment: "prod", Id: kvID}
 }
 
-// TestASKINGDOESNOTMAKEITSO.
-//
-// KVDigest used to answer by opening the database, and opening subscribes — so
-// a node asked "do you hold this?" BECAME a holder by being asked, and then
-// answered a digest that looked converged. That is how a node placement never
-// chose ends up authorising another node's drop, and it is the mechanism behind
-// every interleaving where two nodes delete a database between them.
 func TestAskingANodeDoesNotMakeItAHolder(t *testing.T) {
 	client, engine := asking(t, &says{held: false})
 
@@ -140,7 +130,6 @@ func TestAskingANodeDoesNotMakeItAHolder(t *testing.T) {
 	require.Zero(t, opened, "asking whether a node holds a database opened it")
 }
 
-// TestHoldIsTheCheapHalf, which is what repair asks: presence, not proof.
 func TestHoldAnswersWithoutADigest(t *testing.T) {
 	client, engine := asking(t, &says{held: true})
 
@@ -152,7 +141,6 @@ func TestHoldAnswersWithoutADigest(t *testing.T) {
 	require.Zero(t, opened, "a presence check computed a digest")
 }
 
-// TestANodeHoldingACopyDigestsIt, so the gate has something to compare.
 func TestAHeldDatabaseIsDigested(t *testing.T) {
 	client, _ := asking(t, &says{held: true})
 
@@ -161,9 +149,6 @@ func TestAHeldDatabaseIsDigested(t *testing.T) {
 	require.True(t, out.Msg.GetHeld())
 	require.NotEmpty(t, out.Msg.GetDigest(), "a held database answered no digest")
 
-	// AND IT KEEPS IT. Serving a database is holding it, and a node holding one
-	// means to keep it until its own release says otherwise — a node that
-	// answered keeps=false here would make every move in the fleet impossible,
-	// since the gate counts only keepers.
+	// Serving a database is holding it and keeping it; the gate counts only keepers.
 	require.True(t, out.Msg.GetKeeps())
 }

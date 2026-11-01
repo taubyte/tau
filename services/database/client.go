@@ -20,21 +20,10 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/database/v2/databasev2connect"
 )
 
-// client.go is the other side of rpc.go, and it is what lets a worker stop
-// holding databases.
-//
-// IT SATISFIES THE TIER'S OWN SEAM. pkg/invoke/wasm asks for a KVs — "open the
-// kv this grant names" — and node/database.go answers it today by opening the
-// engine in the worker's own process. This answers the same seam by asking the
-// database service, so the swap is one option at composition and nothing above
-// the seam changes: the guest calls kv::get exactly as before and the bytes
-// come from a node that owns the engine.
-//
-// THE GRANT IS THE ADDRESS AND THE SERVICE READS THE REST. A grant carries the
-// handle — project, environment, resource id — which is precisely the Ref the
-// wire takes. Everything else on the grant (the engine, the host, the tls mode)
-// is deliberately NOT sent: the service reads the declaration itself, so a
-// worker cannot describe a database into being something else.
+// Client satisfies the tier's KVs seam by asking the database service, so a worker
+// need not hold databases: the guest calls kv::get as before and the bytes come from
+// the node owning the engine. Only the grant's handle is sent; the service reads the
+// declaration itself, so a worker cannot describe a database into something else.
 
 // Client reaches a database service.
 type Client struct {
@@ -42,9 +31,7 @@ type Client struct {
 	svc  databasev2connect.DatabaseServiceClient
 }
 
-// NewClient dials one. The peer is the caller's to choose — placement, or a
-// view of who runs the service — because which node holds an engine is a
-// routing question and not this package's.
+// NewClient dials one. Which peer holds an engine is the caller's routing question.
 func NewClient(h host.Host, at libp2ppeer.ID) (*Client, error) {
 	conn, err := rpc.NewClient(h, at, Protocol)
 	if err != nil {
@@ -57,9 +44,7 @@ func (c *Client) Close() error { c.conn.Close(); return nil }
 
 var _ wasmtier.KVs = (*Client)(nil)
 
-// OpenKV answers the tier's seam. It opens NOTHING: the handle is carried and
-// every operation names it, because what is resident is the service's business
-// and a handle here would be this process holding a database again.
+// OpenKV answers the tier's seam. It opens nothing: every operation names the handle.
 func (c *Client) OpenKV(_ context.Context, grant invoke.Grant) (wasmtier.KV, error) {
 	project, environment, id := splitHandle(grant.Handle)
 	if project == "" || environment == "" || id == "" {
@@ -116,24 +101,14 @@ func (r *remoteKV) Keys(ctx context.Context, prefix string) ([]string, error) {
 	}
 }
 
-// tierError turns a wire status back into the error the tier's own ABI answers
-// with, so a guest sees the same arm whether the engine was in this process or
-// on another node.
-//
-// THE CODE AND NOT THE SENTENCE. rpc.go decides the mapping out; this is the
-// mapping back, and the two are the one table read in both directions.
+// tierError turns a wire status back into the tier ABI's error, so a guest sees the
+// same arm whether the engine is local or remote. It is rpc.go's table read back.
 func tierError(err error) error {
 	if err == nil {
 		return nil
 	}
-	// A MISS IS THE ONE ARM THE ABI NAMES, so it is the one translated: a guest
-	// asking for a key nobody wrote must see the same variant whether the engine
-	// was in this process or on another node.
-	//
-	// EVERYTHING ELSE PASSES THROUGH WITH THE SERVICE'S OWN SENTENCE. Folding a
-	// refusal this tier has no arm for into one it does — malformed, say —
-	// would tell a guest its json was bad when the truth is that this cloud does
-	// not serve raft.
+	// A miss is the one arm the ABI names, so it is the one translated; everything else
+	// passes through with the service's own sentence.
 	if connect.CodeOf(err) == connect.CodeNotFound {
 		return fmt.Errorf("%w: %s", wasmtier.ErrNotFound, err)
 	}
@@ -159,16 +134,9 @@ func splitHandle(handle string) (project, environment, id string) {
 	return parts[0], parts[1], parts[2]
 }
 
-// kv is one database on the node this client reaches, in THIS package's own
-// vocabulary rather than the tier's.
-//
-// IT IS FOR A FORWARD AND NOT FOR A WORKER. OpenKV above answers the compute
-// tier's seam, where a miss is the tier's miss; this answers database.KVConn,
-// so a routed connection can put the same operation somewhere else without the
-// two surfaces having to agree about anything but the wire.
-//
-// THE HOP COUNT TRAVELS WITH THE CALL, which is what bounds forwarding — see
-// forward.go.
+// kv is one database on the node this client reaches, as a database.KVConn for a
+// forward rather than the tier's seam. The hop count travels with the call (see
+// forward.go).
 func (c *Client) kv(at address, hops int) database.KVConn {
 	return &oneKV{svc: c.svc, ref: c.ref(at), hops: hops}
 }
@@ -212,9 +180,7 @@ func (o *oneKV) Delete(ctx context.Context, key string) error {
 	return refusal(err)
 }
 
-// List asks for every key under a prefix, paging until the node says there are
-// no more — the surface this answers has no paging and the wire deliberately
-// does, exactly as remoteKV.Keys resolves it for the tier.
+// List pages until the node says there are no more.
 func (o *oneKV) List(ctx context.Context, prefix string) ([]string, error) {
 	var out []string
 	after := ""
@@ -235,9 +201,7 @@ func (o *oneKV) List(ctx context.Context, prefix string) ([]string, error) {
 	}
 }
 
-// Watch is not carried over the wire, because nothing carries it: the engine
-// underneath answers the same refusal and a channel that never delivers would
-// be worse than being told.
+// Watch is not carried over the wire; the engine refuses it too.
 func (o *oneKV) Watch(context.Context, string) (<-chan string, error) {
 	return nil, kvengine.ErrNoWatch
 }
@@ -246,31 +210,16 @@ func (o *oneKV) Watch(context.Context, string) (<-chan string, error) {
 func (o *oneKV) Close() error { return nil }
 
 // refusal is wire() read backwards: a status from another node becomes this
-// package's own sentinel, so a forwarded answer reaches the caller as the arm a
-// local one would have produced.
-//
-// THE CODE AND NOT THE SENTENCE, which is what tierError already says in the
-// other direction. The two are the one table read both ways, and the sentence
-// the answering node wrote travels along with it so an operator reads what
-// actually happened rather than this node's guess at it.
-//
-// ONE CODE CAN STAND FOR TWO SENTINELS — NotFound is a key nobody wrote and an
-// id nobody declared — and this picks the one a caller acts on. What survives
-// the round trip is the CODE, which is the thing a caller decides with; naming
-// that here is better than a second wire field nobody else would read.
+// package's sentinel, carrying the answering node's sentence. Where one code stands
+// for two sentinels (NotFound), it picks the one a caller acts on.
 func refusal(err error) error {
 	if err == nil {
 		return nil
 	}
 
-	// AN ANSWER OR A SILENCE, BEFORE ANY CODE IS READ. A peer that is gone, a
-	// peer that never ran this service, a stream that died mid-call -- all of
-	// them arrive as Unavailable, which is the same code a voter's own refusal
-	// arrives as, and the caller has to walk on from one and stop at the other.
-	// What tells them apart is the mark the answering node put on it.
-	//
-	// IT WRAPS ErrNotHere, so a walk over the voters continues past a node that
-	// did not answer exactly as it continues past one that answered "not me".
+	// A gone peer, a peer without this service and a dead stream all arrive as
+	// Unavailable, like a voter's own refusal; the mark the answering node set tells
+	// them apart. A silence wraps ErrNotHere, so a walk over voters continues past it.
 	var status *connect.Error
 	if !errors.As(err, &status) || status.Meta().Get(answerHeader) == "" {
 		return fmt.Errorf("%w: %w", ErrUnreachable, err)
@@ -288,21 +237,13 @@ func refusal(err error) error {
 	case connect.CodeResourceExhausted:
 		return fmt.Errorf("%w: %s", ErrTooManyResident, err)
 	default:
-		// UNAVAILABLE AND EVERYTHING UNNAMED ARE A RETRY, which is what wire()
-		// answers for both — so passing it through unchanged reproduces the
-		// code it came in as.
+		// Unavailable and everything unnamed are a retry, passed through unchanged.
 		return err
 	}
 }
 
-// Digest is what the node this client reaches holds for one database, and
-// whether it means to keep it.
-//
-// IT IS THE QUESTION A DEPARTING NODE ASKS ITS REPLACEMENTS. Placement says who
-// SHOULD hold a database; this says who DOES, and whether they are about to
-// stop. Dropping on the strength of the first loses the data when the second has
-// not caught up; dropping on the strength of `held` alone loses it when the
-// other node is leaving too.
+// Digest is what the reached node holds for one database, and whether it means to
+// keep it: the question a departing node asks its replacements before dropping.
 func (c *Client) Digest(ctx context.Context, at address) (keeper, error) {
 	out, err := c.svc.KVDigest(ctx, connect.NewRequest(c.ref(at)))
 	if err != nil {

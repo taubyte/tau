@@ -7,9 +7,7 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/database/v2/databasev2connect"
 )
 
-// Protocol is the libp2p protocol id this service listens on: "/" plus the
-// proto package with dots as slashes, walked off the schema rather than typed
-// here.
+// Protocol is the libp2p protocol id this service listens on, walked off the schema.
 var Protocol = rpc.Protocol(databasev2connect.DatabaseServiceName)
 
 // Ingress states which side of the trust boundary a service is on.
@@ -28,13 +26,9 @@ type descriptor struct {
 	Ingress  Ingress
 }
 
-// Descriptor states that the database service answers other tau nodes only.
-//
-// IT HOLDS EVERY PROJECT'S DATA, which makes the reason short: a public ingress
-// would put every row every project has written on the internet. Authorization
-// is the swarm's membership, exactly as it is for the register and the secrets
-// service — see those packages for why that is the OSS trust model rather than
-// an omission.
+// Descriptor states that the database service answers other tau nodes only: it holds
+// every project's data. Authorization is swarm membership, as for the register and
+// secrets.
 var Descriptor = descriptor{
 	Name:     "database",
 	Protocol: Protocol,
