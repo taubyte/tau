@@ -14,13 +14,6 @@ func addressed(t *testing.T, s Spec) string {
 	return prefix
 }
 
-// TestOneIdUnderTwoModelsIsTwoStores.
-//
-// THIS IS THE COLLISION THE MODEL IS IN THE PATH FOR. A resource id survives an
-// edit — that is what lets a rotated credential arrive under the same key — so
-// an author who rewrites `kv:` as `vector:` keeps it, and the engines share one
-// store on a node. Without the model in the path the vector store opened onto
-// the kv store's bytes, and a change of mind read back as corruption.
 func TestOneIdUnderTwoModelsIsTwoStores(t *testing.T) {
 	same := func(model Type) Spec {
 		return Spec{Type: model, Project: "shop", Environment: "prod", Name: "QmSessions"}
@@ -47,9 +40,6 @@ func TestOneIdUnderTwoModelsIsTwoStores(t *testing.T) {
 	}
 }
 
-// TestASeparatorInAnySegmentIsRefused, which is the isolation: without it a
-// database literally named "../production/ledger" in staging would be a
-// readable path into production's.
 func TestASeparatorInAnySegmentIsRefused(t *testing.T) {
 	for _, s := range []Spec{
 		{Type: KV, Project: "shop", Environment: "staging", Name: "../production/ledger"},
@@ -62,9 +52,6 @@ func TestASeparatorInAnySegmentIsRefused(t *testing.T) {
 	}
 }
 
-// TestASpecWithAHoleAddressesNothing. The registry's probe is one of these — it
-// opens with no project and no environment to prove the SURFACE — so this is a
-// refusal the engines report on use rather than on open.
 func TestASpecWithAHoleAddressesNothing(t *testing.T) {
 	for _, s := range []Spec{
 		{Type: KV, Environment: "prod", Name: "ledger"},

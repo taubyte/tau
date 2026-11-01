@@ -107,9 +107,6 @@ func TestTheEngineSatisfiesTheRegistry(t *testing.T) {
 	require.Contains(t, registry.EnginesFor(database.Vector), vector.Name)
 }
 
-// ── the search ───────────────────────────────────────────────────────────────
-
-// TestTheNEARESTComesBackFirst, which is the whole of what this type does.
 func TestSearchRanksByCloseness(t *testing.T) {
 	c := open(t, newStore(), spec("", "2"))
 	ctx := t.Context()
@@ -129,7 +126,6 @@ func TestSearchRanksByCloseness(t *testing.T) {
 	require.Equal(t, map[string]any{"where": "east"}, found[0].Meta, "and the meta comes back")
 }
 
-// TestKBoundsTheAnswer, and k<=0 is everything.
 func TestKTakesTheTop(t *testing.T) {
 	c := open(t, newStore(), spec("", "2"))
 	ctx := t.Context()
@@ -148,7 +144,6 @@ func TestKTakesTheTop(t *testing.T) {
 	require.Len(t, all, 3, "k<=0 is everything")
 }
 
-// TestEveryMetricIsServed, and each ranks by what it measures.
 func TestTheThreeMetrics(t *testing.T) {
 	ctx := context.Background()
 
@@ -179,8 +174,6 @@ func TestTheThreeMetrics(t *testing.T) {
 	}
 }
 
-// TestCosineTIESForOneDIRECTION, whatever the magnitude — which is the property
-// the test above had to work around, and is worth stating on its own.
 func TestCosineIgnoresMagnitudeEntirely(t *testing.T) {
 	c := open(t, newStore(), spec(vector.Cosine, "2"))
 	ctx := t.Context()
@@ -195,8 +188,6 @@ func TestCosineIgnoresMagnitudeEntirely(t *testing.T) {
 	require.InDelta(t, 1.0, found[0].Score, 0.0001)
 }
 
-// TestEuclideanScoresAreNegativeDistances, which is the one surprising number
-// and is what keeps ordering and reading a score under one rule.
 func TestEuclideanScoreIsNegatedDistance(t *testing.T) {
 	c := open(t, newStore(), spec(vector.Euclidean, "2"))
 	ctx := t.Context()
@@ -211,8 +202,6 @@ func TestEuclideanScoreIsNegatedDistance(t *testing.T) {
 	require.InDelta(t, -5.0, found[1].Score, 0.0001, "3-4-5")
 }
 
-// TestAZeroVectorIsNoDistanceFromAnything rather than NaN, which sorts
-// unpredictably.
 func TestAZeroVectorScoresZeroUnderCosine(t *testing.T) {
 	c := open(t, newStore(), spec(vector.Cosine, "2"))
 	ctx := t.Context()
@@ -225,7 +214,6 @@ func TestAZeroVectorScoresZeroUnderCosine(t *testing.T) {
 	require.Equal(t, float32(0), found[0].Score)
 }
 
-// TestTiesAreBrokenByIdSoTwoSearchesAgree.
 func TestEqualScoresAreOrderedByID(t *testing.T) {
 	c := open(t, newStore(), spec("", "2"))
 	ctx := t.Context()
@@ -241,10 +229,6 @@ func TestEqualScoresAreOrderedByID(t *testing.T) {
 	}
 }
 
-// ── the width ────────────────────────────────────────────────────────────────
-
-// TestTheWidthIsENFORCED: a 1536-wide query against 768-wide vectors is not a
-// bad answer, it is a meaningless one.
 func TestAVectorOfAnotherWidthIsRefused(t *testing.T) {
 	c := open(t, newStore(), spec("", "3"))
 	ctx := t.Context()
@@ -256,8 +240,6 @@ func TestAVectorOfAnotherWidthIsRefused(t *testing.T) {
 	require.ErrorIs(t, err, vector.ErrWidth)
 }
 
-// TestAStoredVectorOfAnotherWidthIsNotSCORED, because scoring it against a
-// truncated copy would rank a wrong answer above a right one.
 func TestAWrongWidthRowIsSkipped(t *testing.T) {
 	store := newStore()
 	c := open(t, store, spec("", "2"))
@@ -290,8 +272,6 @@ func TestAnUnknownMetricIsRefusedByName(t *testing.T) {
 	require.ErrorIs(t, err, vector.ErrNoMetric)
 	require.ErrorContains(t, err, "jaccard")
 }
-
-// ── the rest ─────────────────────────────────────────────────────────────────
 
 func TestUpsertReplaces(t *testing.T) {
 	c := open(t, newStore(), spec("", "2"))

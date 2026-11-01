@@ -106,9 +106,6 @@ func TestAnEngineNeedsAStore(t *testing.T) {
 	require.ErrorIs(t, err, database.ErrNoStore)
 }
 
-// TestItRegisters, which is what proves the surface: Register opens a probe and
-// type-asserts it, so an engine that answered no kv methods would be refused
-// here rather than at the first call.
 func TestTheEngineSatisfiesTheRegistry(t *testing.T) {
 	engine, err := kv.New(database.OneStore(newStore()))
 	require.NoError(t, err)
@@ -135,8 +132,6 @@ func TestPutGetDelete(t *testing.T) {
 	require.NoError(t, c.Delete(ctx, "order:1"), "deleting what is gone succeeds")
 }
 
-// TestAMissIsNotAnEmptyValue, the same rule the secrets vault keeps: a caller
-// handed "" acts on it and fails somewhere else, later.
 func TestAMissIsItsOwnAnswer(t *testing.T) {
 	c := open(t, newStore(), spec("shop", "prod", "ledger"))
 	ctx := t.Context()
@@ -150,8 +145,6 @@ func TestAMissIsItsOwnAnswer(t *testing.T) {
 	require.Empty(t, value)
 }
 
-// TestNOTHINGEXPIRES, which is the difference between this and a cache. A
-// record that deletes itself is not a record.
 func TestThereIsNoLifetime(t *testing.T) {
 	store := newStore()
 	c := open(t, store, spec("shop", "prod", "ledger"))
@@ -175,9 +168,6 @@ func TestListIsScopedSortedAndStripped(t *testing.T) {
 		"sorted, and without this database's own prefix")
 }
 
-// ── isolation ────────────────────────────────────────────────────────────────
-
-// TestTwoDatabasesDoNotSeeEachOther, and neither do two deployments of one.
 func TestEachDatabaseIsItsOwnKeySpace(t *testing.T) {
 	store := newStore()
 	ctx := context.Background()
@@ -204,9 +194,6 @@ func TestEachDatabaseIsItsOwnKeySpace(t *testing.T) {
 	require.Equal(t, []string{"k"}, keys, "one key, its own")
 }
 
-// TestANameCannotClimb, which is the same check a secret's key makes and for
-// the same reason: a database named "../production/ledger" would otherwise be a
-// path into production's.
 func TestASeparatorInANameIsRefused(t *testing.T) {
 	engine, err := kv.New(database.OneStore(newStore()))
 	require.NoError(t, err)
@@ -216,9 +203,7 @@ func TestASeparatorInANameIsRefused(t *testing.T) {
 		spec("shop", "a/b", "ledger"),
 		spec("a/b", "prod", "ledger"),
 	} {
-		// THE OPEN SUCCEEDS AND EVERY OPERATION FAILS — see Open: the registry
-		// probes with an address-less spec, so refusing one here would make
-		// this engine unregistrable.
+		// The open succeeds and every operation fails (see Open).
 		conn, err := engine.Open(context.Background(), s)
 		require.NoError(t, err)
 
@@ -244,8 +229,6 @@ func TestAnEmptySegmentAddressesNothing(t *testing.T) {
 	}
 }
 
-// TestOneDatabaseCannotReachALongerName: "ledger" must not list "ledgers"'
-// entries, which the trailing separator is what stops.
 func TestAPrefixCannotReachALongerOne(t *testing.T) {
 	store := newStore()
 	ctx := context.Background()
@@ -259,8 +242,6 @@ func TestAPrefixCannotReachALongerOne(t *testing.T) {
 	require.Empty(t, keys)
 }
 
-// ── what it refuses ──────────────────────────────────────────────────────────
-
 func TestAnEmptyKeyIsRefused(t *testing.T) {
 	c := open(t, newStore(), spec("shop", "prod", "ledger"))
 	ctx := t.Context()
@@ -271,8 +252,6 @@ func TestAnEmptyKeyIsRefused(t *testing.T) {
 	require.ErrorIs(t, c.Delete(ctx, ""), kv.ErrNoKey)
 }
 
-// TestWatchIsAnErrorAndNotASilentEmptyChannel. A caller handed a channel that
-// never delivers waits forever for a change it would have been told about.
 func TestWatchSaysItIsNotServed(t *testing.T) {
 	c := open(t, newStore(), spec("shop", "prod", "ledger"))
 
@@ -293,7 +272,6 @@ func TestTheWrongTypeIsRefused(t *testing.T) {
 	require.ErrorContains(t, err, "backs kv")
 }
 
-// TestAStoreThatCannotAnswerIsReported rather than read as a miss.
 func TestAStoreFailureIsNotAMiss(t *testing.T) {
 	store := newStore()
 	c := open(t, store, spec("shop", "prod", "ledger"))
@@ -311,13 +289,6 @@ func TestAStoreFailureIsNotAMiss(t *testing.T) {
 	require.ErrorIs(t, err, store.err)
 }
 
-// TestTheKeyOnTheWireCarriesTheDeployment, which is what keeps one store
-// holding every database on a node.
-//
-// AND THE MODEL, which is what keeps it holding databases of every KIND. A
-// resource id survives an edit, so an author who rewrites `kv:` as `vector:`
-// keeps it — and the three engines sharing this store once shared this path,
-// so the vector store would have opened onto the kv store's bytes.
 func TestTheStoredKeyIsScoped(t *testing.T) {
 	store := newStore()
 	c := open(t, store, spec("shop", "prod", "ledger"))
@@ -326,14 +297,6 @@ func TestTheStoredKeyIsScoped(t *testing.T) {
 	require.Equal(t, []string{"shop/prod/kv/ledger/order:1"}, store.keys())
 }
 
-// TestEachDatabaseGetsItsOwnStore.
-//
-// THIS IS WHAT A TOPIC PER DATABASE MEANS IN THIS PACKAGE: the provider is asked
-// PER SPEC, so which replicas a write or a delete reaches is decided per
-// database. With one store for all of them, every subscriber held every
-// database's rows — placement decided nothing — and a Delete was a tombstone
-// every replica applied, so a node dropping a copy it no longer holds deleted
-// the copy the node that had just acquired it was holding.
 func TestEachDatabaseGetsItsOwnStore(t *testing.T) {
 	stores := map[string]*memStore{}
 	var asked []string
@@ -377,9 +340,6 @@ func TestEachDatabaseGetsItsOwnStore(t *testing.T) {
 	require.Equal(t, []byte("v"), value, "a drop in one database reached another")
 }
 
-// TestTheRegistrationProbeAsksForNoStore. Register opens one connection per type
-// with no project and no environment to prove the SURFACE, not an address — so
-// an engine whose provider refused that spec would be unregistrable.
 func TestTheRegistrationProbeAsksForNoStore(t *testing.T) {
 	asked := 0
 	engine, err := kv.New(func(context.Context, database.Spec) (database.Store, error) {

@@ -1,33 +1,10 @@
-// Package kv backs the `kv` data model with a replicated key-value store.
+// Package kv backs the `kv` data model with a replicated key-value store: tau's own,
+// so a declared kv database needs no connection string or credential.
 //
-// # It is what makes a database work with nothing to bring
-//
-// Every other engine in this tree reaches a server somebody else runs: a
-// Postgres, a MySQL, a Mongo. This one is tau's own — `engine: distributed` —
-// so a project that declares a `kv` database gets one from the swarm it is
-// already on, with no connection string, no credential and nothing to
-// provision. That is the whole of the difference between "declare a database"
-// and "go and get a database first".
-//
-// # A system of record, which a cache is not
-//
-// The vocabulary is explicit that these are different kinds for a reason: a
-// cache may lose an entry and a database may not. So there is NO ttl here and
-// NO eviction — the two things pkg/cache exists to do — and a full store
-// refuses a write rather than dropping somebody's record to make room.
-//
-// # What it does not promise, said here rather than discovered
-//
-// CONCURRENT WRITES TO ONE KEY MERGE LAST-WRITER-WINS, and the loser is gone
-// with no error. That is the CRDT underneath and it is what `consensus: crdt`
-// asks for; the vocabulary says the same thing where it declares the type. The
-// rule that falls out is AGENTS.md's: never a key two writers can write
-// differently. `consensus: raft` orders writes to a key and is NOT served here
-// — it needs the writes routed through a raft leader, which is a different
-// store.
-//
-// THERE IS NO COMPARE-AND-SWAP AND NO TRANSACTION, and no kind in this
-// vocabulary offers one.
+// A system of record, not a cache: no ttl, no eviction, and a full store refuses a
+// write. Concurrent writes to one key merge last-writer-wins (`consensus: crdt`);
+// `consensus: raft` needs writes routed through a leader and is not served here. No
+// compare-and-swap, no transactions.
 package kv
 
 import (
@@ -42,10 +19,6 @@ import (
 	"github.com/taubyte/tau/pkg/storekey"
 )
 
-// Store is where entries live: the same four-method door services/secrets and
-// pkg/cache keep over a kvdb, and for the same reason — the rules above are
-// testable against a map, and which node's write another sees is the store's
-// business rather than this package's.
 // Name is the engine name the vocabulary uses for tau's own.
 const Name = "distributed"
 
@@ -56,11 +29,8 @@ var (
 	ErrNoWatch  = errors.New("kv: watch is not served yet")
 )
 
-// Engine opens kv databases, each over the store its provider hands out.
-//
-// A PROVIDER AND NOT A STORE: see database.Stores. One store for every database
-// on a node is one pubsub topic carrying every database's rows, which makes
-// placement a decoration and makes a local drop a fleet-wide delete.
+// Engine opens kv databases, each over the store its provider hands out (see
+// database.Stores).
 type Engine struct{ stores database.Stores }
 
 // New builds the engine. It is handed a provider rather than building one: what
@@ -75,16 +45,9 @@ func New(stores database.Stores) (*Engine, error) {
 func (e *Engine) Name() string           { return Name }
 func (e *Engine) Types() []database.Type { return []database.Type{database.KV} }
 
-// Open answers a connection scoped to one database of one deployment.
-//
-// NOTHING IS DIALLED AND NOTHING IS ALLOCATED. A kv database is a prefix over a
-// store that is already open, so opening one is composing a string.
-//
-// AN UNADDRESSABLE SPEC IS A CONNECTION THAT FAILS, NOT AN OPEN THAT DOES.
-// pkg/database's registration probe opens one connection per type with no
-// project and no environment — it is proving the SURFACE, not an address — and
-// an engine that refused it could not be registered at all. So the address is
-// checked here and reported where it is used.
+// Open answers a connection scoped to one database. Nothing is dialled: a database is
+// a prefix over an open store. An unaddressable spec yields a connection that fails,
+// since the registry's probe has no address.
 func (e *Engine) Open(ctx context.Context, spec database.Spec) (database.Conn, error) {
 	if spec.Type != database.KV {
 		return nil, fmt.Errorf("kv: this engine backs %s and not %s", database.KV, spec.Type)
@@ -92,11 +55,7 @@ func (e *Engine) Open(ctx context.Context, spec database.Spec) (database.Conn, e
 
 	prefix, err := spec.Prefix()
 	if err != nil {
-		// THE REGISTRATION PROBE LANDS HERE. pkg/database opens one connection
-		// per type with no project and no environment to prove the SURFACE, not
-		// an address — so asking the provider for that database's store would
-		// refuse to register an engine that is perfectly good. The address is
-		// reported where it is used instead.
+		// The registration probe has no address; it is reported where used.
 		return &conn{err: err}, nil
 	}
 
@@ -107,13 +66,6 @@ func (e *Engine) Open(ctx context.Context, spec database.Spec) (database.Conn, e
 	return &conn{store: store, prefix: prefix}, nil
 }
 
-// prefixOf is where this database's entries live.
-//
-// THE SEPARATOR CHECK IS THE ISOLATION, exactly as it is for a secret: without
-// it a database literally named "../production/ledger" in staging would be a
-// readable path into production's.
-
-// conn is one database.
 type conn struct {
 	store  database.Store
 	prefix string
@@ -209,12 +161,8 @@ func (c *conn) List(ctx context.Context, prefix string) ([]string, error) {
 	return out, nil
 }
 
-// Watch is declared by the type and not served.
-//
-// IT IS AN ERROR AND NOT A SILENT EMPTY CHANNEL. A caller handed a channel that
-// never delivers waits forever for a change it would have been told about; one
-// handed an error knows the platform does not do this yet. What it needs is a
-// change feed out of the store underneath, which the CRDT does not expose.
+// Watch is declared by the type and not served: an error rather than a channel that
+// never delivers. It needs a change feed the CRDT does not expose.
 func (c *conn) Watch(context.Context, string) (<-chan string, error) {
 	return nil, ErrNoWatch
 }
@@ -223,12 +171,8 @@ func (c *conn) Watch(context.Context, string) (<-chan string, error) {
 // whoever composed the engine and is shared by every database on the node.
 func (c *conn) Close() error { return nil }
 
-// key is this store's addressing of a key a GUEST supplied: the prefix it
-// belongs to, joined, once it is known the join stays inside that prefix.
-//
-// IT IS ONE METHOD AND NOT A CHECK AT EACH CALL, so a method added later gets
-// the rule by addressing an entry at all rather than by its author remembering
-// to. See pkg/storekey for what the rule is, and what not having it cost.
+// key addresses a guest-supplied key under this database's prefix, refusing one that
+// escapes it (pkg/storekey). One method, so every operation gets the rule.
 func (c *conn) key(k string) (string, error) {
 	if err := storekey.Check(c.prefix, k); err != nil {
 		return "", err

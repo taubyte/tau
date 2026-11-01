@@ -30,10 +30,6 @@ func TestAnEngineWithNoDirectoryProviderIsRefused(t *testing.T) {
 	}
 }
 
-// TestRegisteringProvesTheSurfaceWithoutTouchingTheDisk is the registration
-// probe's whole point on this engine: pkg/database opens a connection with no
-// project and no environment, and an engine that asked its provider for a
-// directory then would leave a `probe` database on the node's disk.
 func TestRegisteringProvesTheSurfaceWithoutTouchingTheDisk(t *testing.T) {
 	dir := t.TempDir()
 
@@ -141,8 +137,6 @@ func TestADatabaseKeepsItsRowsAcrossOpens(t *testing.T) {
 	}
 }
 
-// TestTwoDatabasesOfOneProjectAreSeparateFiles is the isolation Spec.Prefix
-// exists for, at the level this engine works at: directories, not key prefixes.
 func TestTwoDatabasesOfOneProjectAreSeparateFiles(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -181,8 +175,6 @@ func TestTwoDatabasesOfOneProjectAreSeparateFiles(t *testing.T) {
 	}
 }
 
-// TestADatabaseNamedWithASeparatorIsRefused is the escape hatch out of a
-// project's own directory, and it is closed by Spec.Prefix rather than here.
 func TestADatabaseNamedWithASeparatorIsRefused(t *testing.T) {
 	ctx := context.Background()
 
@@ -213,16 +205,6 @@ func names(entries []os.DirEntry) []string {
 	return out
 }
 
-// TestConcurrentWritersThroughOneConnectionAllLand is not a musql unit test
-// wearing tau's clothes: it is the shape every tau sql database is used in.
-// One database.SQLConn is shared by every guest invocation placed on the node,
-// so its *sql.DB pool hands out several connections at once and several
-// statements write the same file at the same time.
-//
-// musql's driver doc says a second writer's commit fails with engine.ErrBusy
-// and that autocommit statements retry it — this is what asks whether the
-// retry is enough, since `exec` in this vocabulary is one statement with no
-// transaction around it.
 func TestConcurrentWritersThroughOneConnectionAllLand(t *testing.T) {
 	ctx := context.Background()
 

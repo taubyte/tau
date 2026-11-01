@@ -12,14 +12,8 @@ import (
 	"github.com/taubyte/tau/pkg/database/engines/sql/distributed"
 )
 
-// replication_test is the engine's database on TWO nodes: two engines, each
-// with its own directory, joined by musql's in-memory network on the topic
-// the engine derives from the database itself.
-//
-// THE SCHEMA A GUEST WRITES IS THE SCHEMA THAT REPLICATES. The table is created
-// after the database is open, with the integer key and the UNIQUE column
-// ordinary application code reaches for — the shape the old wrapper refused
-// outright, which is why this engine used to serve from one node's disk.
+// One database on two engines joined by musql's in-memory network. The guest's schema
+// (an integer key and a UNIQUE column, created after open) is what replicates.
 
 // meshed is a sync option that joins every engine handed one to one network,
 // and the topics it was asked for.
@@ -75,8 +69,6 @@ func TestAWriteOnOneNodeIsReadOnTheOther(t *testing.T) {
 	}, 20*time.Second, 100*time.Millisecond, "the row written on one node never reached the other")
 }
 
-// A RAFT SQL DATABASE IS REFUSED BY NAME, and so is a consensus nobody serves:
-// served as crdt, either would be a weaker promise than the one declared.
 func TestADatabaseIsServedOnlyWithTheConsensusItDeclared(t *testing.T) {
 	e, err := distributed.New(distributed.InDir(t.TempDir()))
 	require.NoError(t, err)
@@ -91,8 +83,6 @@ func TestADatabaseIsServedOnlyWithTheConsensusItDeclared(t *testing.T) {
 	require.ErrorContains(t, err, `consensus "gossip"`)
 }
 
-// THE DECLARED SIZE IS A CEILING musql HOLDS: a write that would leave the
-// database over it fails with SQLite's own "full" and nothing of it lands.
 func TestADatabaseStopsAtItsDeclaredSize(t *testing.T) {
 	e, err := distributed.New(distributed.InDir(t.TempDir()))
 	require.NoError(t, err)

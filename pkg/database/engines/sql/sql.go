@@ -1,33 +1,12 @@
-// Package sql backs the `sql` data model with any database/sql driver.
-//
-// # The driver is not a dependency of this package
-//
-// database/sql is a registry: a driver registers itself from its own init, and
-// whoever composes a node imports the one it wants —
+// Package sql backs the `sql` data model with any database/sql driver. The driver is
+// the composer's import:
 //
 //	import _ "github.com/jackc/pgx/v5/stdlib"   // registers "pgx"
 //	registry.Register(ctx, sql.Postgres("pgx"))
 //
-// So this repository carries no driver, and adding Postgres to a deployment is
-// an import in that deployment rather than a dependency everybody links whether
-// they use it or not. It is also the only shape that lets an operator swap
-// `pgx` for `postgres`, or point at a proxy, without this package knowing.
-//
-// # What an engine is allowed to be
-//
-// The vocabulary names which engines back a type — `sql` is backed by
-// `postgres` and `mysql` — and pkg/database's Registry decides what a node can
-// do by what got registered. An engine here is therefore a NAME plus a way to
-// reach it, and nothing about it is a policy: a build that registers a managed
-// Postgres beside these is a registration, not a fork.
-//
-// # A connection string is built, never taken
-//
-// A Spec carries an address, a database name and credentials, and this turns
-// them into a DSN. It does not accept a DSN, and that is deliberate: a DSN is a
-// place to put `sslmode=disable`, and TLS is a field on Credentials precisely so
-// that turning it off is a thing somebody wrote rather than a default nobody
-// read.
+// so this repository carries none. A connection string is built from the Spec, never
+// accepted, so TLS off is something somebody wrote (Credentials.TLS), not a hidden
+// `sslmode=disable`.
 package sql
 
 import (
@@ -58,11 +37,8 @@ var (
 	ErrWrongType = errors.New("sql: this engine backs sql and nothing else")
 )
 
-// New builds an engine over a registered database/sql driver.
-//
-// engine is the name the vocabulary uses (`postgres`); driver is the name the
-// driver registered itself under (`pgx`). They differ often enough that
-// conflating them would make swapping the driver a schema change.
+// New builds an engine over a registered database/sql driver. engine is the
+// vocabulary's name (`postgres`), driver the registered one (`pgx`).
 func New(engine, driver string, dsn DSN) (*Engine, error) {
 	if engine == "" {
 		return nil, ErrNoName
@@ -89,19 +65,14 @@ func MySQL(driver string) *Engine {
 	return e
 }
 
-// Name is the engine name the vocabulary uses.
 func (e *Engine) Name() string { return e.name }
 
 // Types is sql and only sql. A driver that also answered document queries would
 // be claiming a data model whose verbs it does not have.
 func (e *Engine) Types() []database.Type { return []database.Type{database.SQL} }
 
-// Open connects.
-//
-// IT DOES NOT PING. database/sql opens lazily and a pool that has not been used
-// has nothing to say; the first query is what finds a server that is not there,
-// and it reports it to the caller that asked rather than to whoever happened to
-// be composing the node.
+// Open connects without pinging: the first query finds a missing server and reports it
+// to the caller who asked.
 func (e *Engine) Open(ctx context.Context, spec database.Spec) (database.Conn, error) {
 	if spec.Type != database.SQL {
 		return nil, fmt.Errorf("%w: was asked for %q", ErrWrongType, spec.Type)
@@ -119,7 +90,6 @@ func (e *Engine) Open(ctx context.Context, spec database.Spec) (database.Conn, e
 	return &conn{db: db}, nil
 }
 
-// PostgresDSN builds libpq's URL form.
 func PostgresDSN(spec database.Spec) (string, error) {
 	if spec.Address == "" {
 		return "", ErrNoAddress
@@ -191,13 +161,9 @@ func (c *conn) Query(ctx context.Context, statement string, args ...any) (databa
 	return &rows{Rows: r, binary: binary}, nil
 }
 
-// Exec answers what the statement changed.
-//
-// A DRIVER THAT CANNOT SAY IS NOT AN ERROR, and each half is asked
-// independently: several drivers support RowsAffected and not LastInsertId,
-// PostgreSQL supports neither and answers the second question with `RETURNING`,
-// and failing a statement that RAN because its result cannot be counted would
-// be reporting success as failure.
+// Exec answers what the statement changed. Each half is asked independently, and a
+// driver that cannot say is not an error (PostgreSQL answers LastInsertId with
+// RETURNING instead).
 func (c *conn) Exec(ctx context.Context, statement string, args ...any) (database.Outcome, error) {
 	result, err := c.db.ExecContext(ctx, statement, args...)
 	if err != nil {
@@ -216,15 +182,9 @@ func (c *conn) Exec(ctx context.Context, statement string, args ...any) (databas
 
 func (c *conn) Close() error { return c.db.Close() }
 
-// rows adapts database/sql's result set to the seam's, which is deliberately
-// not database/sql's: pkg/database has no driver dependency, and this wrapper
-// is what that costs.
-//
-// IT ALSO SAYS WHICH BYTES ARE TEXT. A driver may hand a text column over as
-// []byte — go-sql-driver/mysql does for every VARCHAR on the text protocol — and
-// a caller told only "bytes" reports it as a blob, so a MySQL `payee` came back
-// to a guest as `blob:5`. The column's declared type is the only thing that
-// knows, so it is asked once per result set.
+// rows adapts database/sql's result set to the seam's. It also says which bytes are
+// text: a driver may hand a text column over as []byte (go-sql-driver/mysql does for
+// VARCHAR), so the column's declared type decides.
 type rows struct {
 	*sql.Rows
 	binary []bool
@@ -232,8 +192,8 @@ type rows struct {
 
 func (r *rows) Columns() ([]string, error) { return r.Rows.Columns() }
 
-// Scan is database/sql's, then turns bytes scanned into an `any` back into the
-// string they are, unless their column is binary.
+// Scan is database/sql's, turning bytes scanned into an `any` back into a string
+// unless the column is binary.
 func (r *rows) Scan(dest ...any) error {
 	if err := r.Rows.Scan(dest...); err != nil {
 		return err

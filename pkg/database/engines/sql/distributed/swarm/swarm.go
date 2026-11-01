@@ -239,13 +239,9 @@ func (t *transport) GetSnapshot(ctx context.Context, p replication.PeerID, part 
 	return pageFromPB(res.Msg), nil
 }
 
-// PushOp publishes op on the database's topic. The peer is ignored: gossip is
-// topic-wide.
-//
-// THE PUBLISH IS DETACHED. libp2p's Publish can wedge in the validation
-// pipeline while the router tears down and stop observing its context, and a
-// caller blocked there blocks the database's Close. pkg/kvdb's broadcaster was
-// changed the same way after the wedge hung a node's shutdown.
+// PushOp publishes op on the database's topic; gossip is topic-wide, so the peer is
+// ignored. The publish is detached: libp2p's Publish can wedge during router teardown
+// and would block Close.
 func (t *transport) PushOp(ctx context.Context, _ replication.PeerID, op replication.Op) error {
 	data, err := proto.Marshal(&sqlsyncv2.Push{Op: opToPB(op)})
 	if err != nil {

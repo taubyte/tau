@@ -66,10 +66,6 @@ func service(t *testing.T, n, of node) sqlsyncv2connect.SQLSyncServiceClient {
 	return sqlsyncv2connect.NewSQLSyncServiceClient(c.HTTP(), c.URL())
 }
 
-// A COPY OPENED AFTER THE WRITE CATCHES UP THROUGH ANTI-ENTROPY: there was no
-// copy to push the write to when it was made, and the copy that wrote never
-// runs a round of its own, so the late copy's rounds — version vectors, then the
-// ops it lacks, then acks — are the only way the row reaches it.
 func TestALateCopyCatchesUpThroughAntiEntropy(t *testing.T) {
 	left, right := pair(t)
 
@@ -77,10 +73,6 @@ func TestALateCopyCatchesUpThroughAntiEntropy(t *testing.T) {
 	holdsTheRow(t, copyOf(t, right, 20*time.Millisecond), "the late copy never pulled the row")
 }
 
-// A COPY WHOSE PEER PRUNED WHAT IT LACKS TAKES A SNAPSHOT. A copy alone prunes
-// its op log at its next round, since every member it knows of has seen
-// everything; a copy that opens after that is told so by GetOps and bootstraps
-// from the pages of GetSnapshot instead.
 func TestALateCopyOfAPrunedLogTakesASnapshot(t *testing.T) {
 	left, right := pair(t)
 
@@ -101,8 +93,6 @@ func TestALateCopyOfAPrunedLogTakesASnapshot(t *testing.T) {
 	holdsTheRow(t, copyOf(t, right, 20*time.Millisecond), "the late copy never took the snapshot")
 }
 
-// A NODE ASKED FOR A DATABASE IT DOES NOT HOLD SAYS SO, on every call, rather
-// than answering for an empty one.
 func TestEveryCallForADatabaseANodeDoesNotHoldIsNotFound(t *testing.T) {
 	left, right := pair(t)
 	asked := service(t, right, left)
@@ -132,8 +122,6 @@ func TestEveryCallForADatabaseANodeDoesNotHoldIsNotFound(t *testing.T) {
 	}
 }
 
-// A SNAPSHOT PART THE STORE DOES NOT HAVE IS ITS ERROR, passed back as the
-// service's own failure.
 func TestASnapshotPartTheStoreDoesNotHaveIsRefused(t *testing.T) {
 	left, right := pair(t)
 	copyOf(t, left, time.Hour)
@@ -142,10 +130,6 @@ func TestASnapshotPartTheStoreDoesNotHaveIsRefused(t *testing.T) {
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
 }
 
-// A MALFORMED PUSH IS DROPPED, and the subscription goes on to deliver the
-// next one: a node that is on the topic without a copy publishes garbage and an
-// empty push, and the write after them still reaches the other copy, with no
-// round to carry it but the push.
 func TestAMalformedPushIsDroppedAndTheNextStillLands(t *testing.T) {
 	nodes := swarmOf(t, 3)
 	left, right, stranger := nodes[0], nodes[1], nodes[2]
@@ -169,8 +153,6 @@ func TestAMalformedPushIsDroppedAndTheNextStillLands(t *testing.T) {
 	holdsTheRow(t, r, "the push after the malformed ones never landed")
 }
 
-// A MESH NEEDS A HOST TO ANSWER ON AND A ROUTER TO GOSSIP ON, and a host
-// answers for one mesh only.
 func TestAMeshIsRefusedWithoutAHostARouterOrAFreeProtocol(t *testing.T) {
 	left, _ := pair(t)
 
@@ -202,9 +184,6 @@ func (c closing) Join(topic string, opts ...pubsub.TopicOpt) (*pubsub.Topic, err
 	return t, t.Close()
 }
 
-// A COPY WHOSE TOPIC CANNOT BE JOINED OR SUBSCRIBED TO IS NOT OPENED, and the
-// mesh forgets it, so the service answers for it as for any database it does
-// not hold.
 func TestACopyThatCannotGossipIsNotOpened(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

@@ -28,22 +28,11 @@ type node struct {
 	mesh   *swarm.Mesh
 }
 
-// swarmOf is n nodes on one mocknet, every one with a gossip stream to every
-// other before a mesh is built on it.
-//
-// EVERY HOST GOSSIPS BEFORE IT IS CONNECTED. A gossipsub opens its stream to a
-// peer when it starts or when identify says the peer gossips, and never retries
-// one that failed. A host connected before its peer gossiped hears of it only
-// from an identify push: sent once, and limited per subnet, which every mocknet
-// peer shares. Miss it and that host never sends the peer a write, nor tells it
-// that it holds the database.
-//
-// AND IDENTIFY SAYS SO BEFORE IT IS CONNECTED. Identify answers from a
-// snapshot of the host's protocols that a goroutine of its own refreshes once
-// gossip registers, so a starved host can answer without gossip; the push that
-// corrects it is the one limited per subnet. Host 0 and each other host
-// identify each other until both answers carry gossip, and only then does the
-// swarm connect, every host answering with gossip.
+// swarmOf is n nodes on one mocknet, each gossiping to every other before a mesh is
+// built. A gossipsub stream is opened only at start or when identify reports gossip,
+// and identify can answer from a stale snapshot, with the corrective push limited per
+// subnet (all mocknet peers share one). So hosts identify each other as gossiping
+// before the swarm connects.
 func swarmOf(t *testing.T, n int) []node {
 	t.Helper()
 	ctx := t.Context()
@@ -122,10 +111,6 @@ func pair(t *testing.T) (node, node) {
 	return nodes[0], nodes[1]
 }
 
-// EVERY NODE OF A LARGE SWARM HAS A STREAM TO EVERY OTHER when it is handed
-// over. A host takes ten identify pushes in a burst from one subnet, then one
-// every five seconds, so sixteen mocknet hosts are past it: a swarm that
-// connected before it gossiped left some nodes never sending to others.
 func TestEveryNodeOfALargeSwarmHasAStreamToEveryOther(t *testing.T) {
 	nodes := swarmOf(t, 16)
 
@@ -146,10 +131,6 @@ func ledger() database.Spec {
 	}
 }
 
-// A WRITE ON ONE NODE IS READ ON THE OTHER, over the real stack: gossipsub
-// carries the push well inside musql's first anti-entropy round, so the
-// generated service is sync_test.go's to prove, with copies opened apart. The
-// schema is a guest's, created after the database is open.
 func TestTwoNodesHoldOneDatabase(t *testing.T) {
 	left, right := pair(t)
 	ctx := context.Background()
@@ -180,8 +161,6 @@ func TestTwoNodesHoldOneDatabase(t *testing.T) {
 	}, 30*time.Second, 100*time.Millisecond, "the row never crossed the swarm")
 }
 
-// A database is opened once per node: musql refuses a second open of one file,
-// so its topic is never joined twice on one router.
 func TestADatabaseIsOpenOncePerNode(t *testing.T) {
 	left, _ := pair(t)
 	ctx := context.Background()

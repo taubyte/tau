@@ -1,38 +1,13 @@
-// Package document backs the `document` data model with a replicated store.
+// Package document backs the `document` data model with a replicated store: tau's
+// own, nothing to provision. Beyond kv it finds documents by fields.
 //
-// # Another database with nothing to provision
+// There is no index: Query scans the collection, so cost is the collection's size,
+// fine for thousands of documents. A secondary index (`field/value/<id>`) would lift
+// it, but what to index is something the vocabulary cannot state yet.
 //
-// This is the kv engine's argument again: `engine: distributed` is tau's own,
-// so a project that declares a document database gets one from the swarm it is
-// already on. What it adds over kv is the second verb the type declares —
-// finding a document by its FIELDS rather than by its id.
-//
-// # A query is a scan, and that is a ceiling rather than a defect
-//
-// There is no index. `Query` walks the collection and matches, so the cost is
-// the collection's size and not the answer's. That is fine for what a
-// system-of-record document store usually holds — thousands of orders, not
-// billions of events — and it is stated here because the alternative is
-// somebody discovering it at a million documents.
-//
-// WHAT WOULD LIFT IT is a secondary index, which is a second key space kept in
-// step with the first: `field/value/<id>` beside `<id>`. That is a real design
-// — what to index is a decision the vocabulary does not currently let an author
-// state — so it is named rather than half-built.
-//
-// # What a filter means
-//
-// EQUALITY ON EVERY FIELD NAMED, and nothing else. `{status: "paid", region:
-// "eu"}` finds documents that have both. There are no operators, no ranges and
-// no nesting into arrays, because the vocabulary declares one verb called
-// `query` and says nothing about a query LANGUAGE — inventing one here would be
-// putting a grammar in a map that no config can describe and no other engine
-// would implement the same way.
-//
-// A DOTTED NAME REACHES INTO A NESTED OBJECT — `{"address.city": "algiers"}` —
-// which is the one exception, and it is not an operator: it is how every
-// document store spells a path, and without it a nested document could only be
-// matched whole.
+// A filter is equality on every field named; no operators, ranges or array matching,
+// since the vocabulary declares `query` but no query language. A dotted name reaches
+// into a nested object (`{"address.city": "algiers"}`).
 package document
 
 import (
@@ -48,7 +23,6 @@ import (
 	"github.com/taubyte/tau/pkg/storekey"
 )
 
-// Store is the same four-method door the kv engine keeps.
 // Name is the engine name the vocabulary uses for tau's own.
 const Name = "distributed"
 
@@ -58,11 +32,8 @@ var (
 	ErrNotAnObject = errors.New("document: a document is an object")
 )
 
-// Engine opens document databases, each over the store its provider hands out.
-//
-// A PROVIDER AND NOT A STORE: see database.Stores. One store for every database
-// on a node is one pubsub topic carrying every database's rows, which makes
-// placement a decoration and makes a local drop a fleet-wide delete.
+// Engine opens document databases, each over the store its provider hands out (see
+// database.Stores).
 type Engine struct{ stores database.Stores }
 
 // New builds the engine. It is handed a provider rather than building one: what
@@ -77,9 +48,9 @@ func New(stores database.Stores) (*Engine, error) {
 func (e *Engine) Name() string           { return Name }
 func (e *Engine) Types() []database.Type { return []database.Type{database.Document} }
 
-// Open answers a connection scoped to one database of one deployment. An
-// unaddressable spec is a connection that fails rather than an open that does —
-// the registry probes with one, proving the surface and not an address.
+// Open answers a connection scoped to one database. An unaddressable spec yields a
+// connection that fails rather than a failed open, since the registry probes with
+// one.
 func (e *Engine) Open(ctx context.Context, spec database.Spec) (database.Conn, error) {
 	if spec.Type != database.Document {
 		return nil, fmt.Errorf("document: this engine backs %s and not %s", database.Document, spec.Type)
@@ -87,11 +58,7 @@ func (e *Engine) Open(ctx context.Context, spec database.Spec) (database.Conn, e
 
 	prefix, err := spec.Prefix()
 	if err != nil {
-		// THE REGISTRATION PROBE LANDS HERE. pkg/database opens one connection
-		// per type with no project and no environment to prove the SURFACE, not
-		// an address — so asking the provider for that database's store would
-		// refuse to register an engine that is perfectly good. The address is
-		// reported where it is used instead.
+		// The registration probe has no address; it is reported where used.
 		return &conn{err: err}, nil
 	}
 
@@ -132,11 +99,8 @@ func (c *conn) Get(ctx context.Context, id string) (map[string]any, error) {
 	return decode(raw)
 }
 
-// Put writes a document. It is an upsert, like every other Put in this tree.
-//
-// JSON AND NOT A GO ENCODING. What is stored has to be readable by something
-// that is not this process — another node, a different build, a person looking
-// at the store — and gob would make the rows a Go program's private business.
+// Put writes a document (an upsert) as JSON, so other nodes, builds and people can
+// read it.
 func (c *conn) Put(ctx context.Context, id string, doc map[string]any) error {
 	if c.err != nil {
 		return c.err
@@ -173,11 +137,8 @@ func (c *conn) Delete(ctx context.Context, id string) error {
 	return c.store.Delete(ctx, at)
 }
 
-// Query walks the collection and returns what matches, ordered by id so two
-// runs of one query answer the same way.
-//
-// AN EMPTY FILTER IS EVERYTHING, which is what a document store's own APIs mean
-// by it and what makes "list this collection" expressible without a second verb.
+// Query walks the collection and returns matches ordered by id. An empty filter is
+// everything.
 func (c *conn) Query(ctx context.Context, filter map[string]any) ([]map[string]any, error) {
 	if c.err != nil {
 		return nil, c.err
@@ -253,12 +214,8 @@ func at(doc map[string]any, path string) (any, bool) {
 	return current, true
 }
 
-// equal compares a stored value with a filter's.
-//
-// EVERY NUMBER THAT CAME OUT OF JSON IS A float64, and a filter written in Go
-// carries whatever the caller had — an int, an int64, a float. Comparing them
-// with == answers false for 1 against 1.0, which is a query that silently finds
-// nothing. So numbers are compared as numbers.
+// equal compares a stored value with a filter's. JSON numbers are float64 and a Go
+// filter carries any numeric type, so numbers are compared as numbers.
 func equal(got, want any) bool {
 	if a, ok := number(got); ok {
 		if b, ok := number(want); ok {
@@ -290,12 +247,8 @@ func number(v any) (float64, bool) {
 	}
 }
 
-// key is this store's addressing of a key a GUEST supplied: the prefix it
-// belongs to, joined, once it is known the join stays inside that prefix.
-//
-// IT IS ONE METHOD AND NOT A CHECK AT EACH CALL, so a method added later gets
-// the rule by addressing an entry at all rather than by its author remembering
-// to. See pkg/storekey for what the rule is, and what not having it cost.
+// key addresses a guest-supplied key under this database's prefix, refusing one that
+// escapes it (pkg/storekey). One method, so every operation gets the rule.
 func (c *conn) key(k string) (string, error) {
 	if err := storekey.Check(c.prefix, k); err != nil {
 		return "", err

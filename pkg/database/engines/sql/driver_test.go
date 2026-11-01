@@ -7,15 +7,8 @@ import (
 	"sync"
 )
 
-// driver_test.go is a database/sql driver in forty lines.
-//
-// IT EXISTS SO THIS PACKAGE NEEDS NO REAL ONE. What the engine does is build a
-// connection string and wrap a pool, and both are testable against anything that
-// registers itself — so the test registers something rather than the repository
-// depending on Postgres.
-//
-// It records every DSN it was opened with, which is how the tests below check a
-// connection string without a server to send it to.
+// A database/sql driver in forty lines, so this package needs no real one. It records
+// every DSN it is opened with.
 
 type recorder struct {
 	mu   sync.Mutex

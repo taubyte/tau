@@ -6,8 +6,7 @@ import (
 	sqlsyncv2 "github.com/taubyte/tau/pkg/proto/gen/tau/sqlsync/v2"
 )
 
-// convert.go maps musql's replication values to the generated wire messages
-// and back, field for field.
+// Field-for-field mapping between musql's replication values and the wire messages.
 
 func vvToPB(vv replication.VersionVector) []*sqlsyncv2.VVEntry {
 	out := make([]*sqlsyncv2.VVEntry, 0, len(vv))

@@ -107,7 +107,6 @@ func TestAnEngineNeedsAStore(t *testing.T) {
 	require.ErrorIs(t, err, database.ErrNoStore)
 }
 
-// TestItRegisters, which is what proves the surface.
 func TestTheEngineSatisfiesTheRegistry(t *testing.T) {
 	engine, err := document.New(database.OneStore(newStore()))
 	require.NoError(t, err)
@@ -132,8 +131,6 @@ func TestPutGetDelete(t *testing.T) {
 	require.ErrorIs(t, err, document.ErrNotFound)
 }
 
-// TestItIsJsonOnDisk, so what is stored is readable by something that is not
-// this process — another node, a different build, a person looking.
 func TestADocumentIsStoredAsJson(t *testing.T) {
 	store := newStore()
 	c := open(t, store, spec("shop", "prod", "orders"))
@@ -142,9 +139,6 @@ func TestADocumentIsStoredAsJson(t *testing.T) {
 	require.JSONEq(t, `{"status":"paid"}`, string(store.values["shop/prod/document/orders/order:1"]))
 }
 
-// ── the query ────────────────────────────────────────────────────────────────
-
-// TestAFilterIsEqualityOnEveryFieldItNames, and every field it names.
 func TestAQueryMatchesOnEveryNamedField(t *testing.T) {
 	c := open(t, newStore(), spec("shop", "prod", "orders"))
 	seed(t, c)
@@ -160,8 +154,6 @@ func TestAQueryMatchesOnEveryNamedField(t *testing.T) {
 	require.Equal(t, "algiers", both[0]["address"].(map[string]any)["city"])
 }
 
-// TestAnEmptyFilterIsEverything, which is how "list this collection" is
-// expressible without a second verb.
 func TestAnEmptyFilterReturnsAll(t *testing.T) {
 	c := open(t, newStore(), spec("shop", "prod", "orders"))
 	seed(t, c)
@@ -175,8 +167,6 @@ func TestAnEmptyFilterReturnsAll(t *testing.T) {
 	require.Equal(t, "open", all[2]["status"])
 }
 
-// TestADottedNameReachesIntoANestedObject, which is how every document store
-// spells a path — without it a nested document could only be matched whole.
 func TestADottedPathDescends(t *testing.T) {
 	c := open(t, newStore(), spec("shop", "prod", "orders"))
 	seed(t, c)
@@ -187,9 +177,6 @@ func TestADottedPathDescends(t *testing.T) {
 	require.Equal(t, "us", found[0]["region"])
 }
 
-// TestANumberIsComparedAsANUMBER. Everything out of JSON is a float64 and a
-// filter written in Go carries whatever the caller had — comparing them with ==
-// answers false for 1 against 1.0, which is a query that silently finds nothing.
 func TestAnIntegerFilterMatchesAJsonNumber(t *testing.T) {
 	c := open(t, newStore(), spec("shop", "prod", "orders"))
 	seed(t, c)
@@ -207,7 +194,6 @@ func TestAnIntegerFilterMatchesAJsonNumber(t *testing.T) {
 	require.Empty(t, found)
 }
 
-// TestAFieldThatIsNotThereMatchesNothing, rather than matching a null.
 func TestAnAbsentFieldDoesNotMatch(t *testing.T) {
 	c := open(t, newStore(), spec("shop", "prod", "orders"))
 	seed(t, c)
@@ -216,8 +202,6 @@ func TestAnAbsentFieldDoesNotMatch(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, found)
 }
-
-// ── isolation ────────────────────────────────────────────────────────────────
 
 func TestEachDatabaseIsItsOwnCollection(t *testing.T) {
 	store := newStore()
@@ -253,8 +237,6 @@ func TestASeparatorInANameIsRefused(t *testing.T) {
 	require.ErrorIs(t, err, database.ErrSeparator)
 }
 
-// ── what it refuses ──────────────────────────────────────────────────────────
-
 func TestAnEmptyIdIsRefused(t *testing.T) {
 	c := open(t, newStore(), spec("shop", "prod", "orders"))
 	ctx := t.Context()
@@ -266,8 +248,6 @@ func TestAnEmptyIdIsRefused(t *testing.T) {
 	require.ErrorIs(t, c.Put(ctx, "x", nil), document.ErrNotAnObject)
 }
 
-// TestARowThisEngineDidNotWriteIsSkipped, so one unreadable document does not
-// make the collection unqueryable.
 func TestAnUnreadableRowDoesNotBreakAQuery(t *testing.T) {
 	store := newStore()
 	c := open(t, store, spec("shop", "prod", "orders"))
@@ -307,8 +287,6 @@ func TestTheWrongTypeIsRefused(t *testing.T) {
 	require.ErrorContains(t, err, "backs document")
 }
 
-// TestEveryOperationAnswersAnUnaddressableConnection, so the deferred error is
-// not only on the read path.
 func TestAnUnaddressableConnectionFailsEverything(t *testing.T) {
 	engine, err := document.New(database.OneStore(newStore()))
 	require.NoError(t, err)
@@ -326,7 +304,6 @@ func TestAnUnaddressableConnectionFailsEverything(t *testing.T) {
 	require.ErrorContains(t, err, "addresses nothing")
 }
 
-// TestADocumentThatCannotBeEncodedIsRefused rather than stored half-written.
 func TestAnUnencodableDocumentIsRefused(t *testing.T) {
 	c := open(t, newStore(), spec("shop", "prod", "orders"))
 
@@ -339,7 +316,6 @@ func TestAnUnencodableDocumentIsRefused(t *testing.T) {
 	require.ErrorIs(t, err, document.ErrNotFound, "nothing was written")
 }
 
-// TestEveryNumericKindIsComparedAsANumber, in both directions.
 func TestNumbersOfEveryKindCompare(t *testing.T) {
 	c := open(t, newStore(), spec("shop", "prod", "counts"))
 	ctx := t.Context()
@@ -358,8 +334,6 @@ func TestNumbersOfEveryKindCompare(t *testing.T) {
 	require.Empty(t, found)
 }
 
-// TestADottedPathThroughSomethingThatIsNotAnObject matches nothing rather than
-// panicking.
 func TestADottedPathIntoAScalarDoesNotMatch(t *testing.T) {
 	c := open(t, newStore(), spec("shop", "prod", "orders"))
 	ctx := t.Context()
@@ -371,8 +345,6 @@ func TestADottedPathIntoAScalarDoesNotMatch(t *testing.T) {
 	require.Empty(t, found)
 }
 
-// TestAConcurrentDeleteDuringAQueryIsNotAnError: the document is not in the
-// collection any more, which is an answer rather than a failure.
 func TestARowTakenBetweenTheListAndTheReadIsSkipped(t *testing.T) {
 	store := newStore()
 	c := open(t, store, spec("shop", "prod", "orders"))

@@ -12,20 +12,9 @@ import (
 	v2 "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// TestTheTypesAreTheVocabularysTypes. This package names four data models; the
-// schema declares them. If somebody adds a fifth to the vocabulary, this fails
-// rather than the new type silently having no seam.
 func TestTheTypesAreTheVocabularysTypes(t *testing.T) {
-	// IT USED TO COMPARE THIS PACKAGE'S LIST TO A COPY OF THIS PACKAGE'S LIST.
-	// The old body checked that `Kinds()` still contains "database", that each
-	// type is lowercase, and that `Types()` equals a hand-written
-	// `[]Type{Document, KV, SQL, Vector}` — three assertions, none of which
-	// reads the set the vocabulary declares. A fifth data model would have left
-	// it green, which is the opposite of what the doc above it promises.
-	//
-	// DatabaseEngines IS THAT SET, keyed by model, and it is exported for
-	// exactly this: "whatever has to answer 'can this cloud open one of those'
-	// must be asking the same question the compiler answers".
+	// DatabaseEngines is the set the vocabulary declares, keyed by model; checking against
+	// it, not a copy of this package's list, catches a new data model.
 	declared := map[string]bool{}
 	for model := range v2.DatabaseEngines() {
 		declared[model] = true
@@ -46,8 +35,6 @@ func TestTheTypesAreTheVocabularysTypes(t *testing.T) {
 			"the vocabulary declares a %q data model and this package has no type for it, so nothing here can open one", model)
 	}
 }
-
-// ─────────────────────────────── fake engines ───────────────────────────────
 
 type conn struct{ closed bool }
 
@@ -133,11 +120,6 @@ func tauEngine() *fakeEngine {
 	return &fakeEngine{name: Tau, types: Types(), open: byType}
 }
 
-// ─────────────────────────────────── tests ───────────────────────────────────
-
-// TestAnEngineIsProvedAtRegistrationRatherThanTrusted. The whole point: a
-// mismatch is a startup failure naming the engine and the type, not a
-// method-not-found on somebody's first query.
 func TestAnEngineIsProvedAtRegistrationRatherThanTrusted(t *testing.T) {
 	r := NewRegistry()
 	e := tauEngine()
@@ -150,7 +132,6 @@ func TestAnEngineIsProvedAtRegistrationRatherThanTrusted(t *testing.T) {
 	require.Len(t, e.specs(), len(Types()))
 }
 
-// TestAnEngineThatClaimsATypeItCannotServeIsRefused — the failure this catches.
 func TestAnEngineThatClaimsATypeItCannotServeIsRefused(t *testing.T) {
 	r := NewRegistry()
 	// It says it does sql, and hands back a kv connection.
@@ -167,8 +148,6 @@ func TestAnEngineThatClaimsATypeItCannotServeIsRefused(t *testing.T) {
 	require.Empty(t, r.EnginesFor(SQL), "and nothing was registered")
 }
 
-// TestAnEngineIsRefusedForALLTypesIfOneFails, so a partial registration cannot
-// leave a registry half-configured.
 func TestAnEngineIsRefusedForAllTypesIfOneFails(t *testing.T) {
 	r := NewRegistry()
 	half := &fakeEngine{
@@ -187,9 +166,6 @@ func TestAnEngineIsRefusedForAllTypesIfOneFails(t *testing.T) {
 	require.Empty(t, r.EnginesFor(SQL))
 }
 
-// TestTheProbeConnectionIsClosed. Registration must not leak a connection per
-// engine per type, which on a node registering several engines is a handle leak
-// nobody would look for.
 func TestTheProbeConnectionIsClosed(t *testing.T) {
 	var conns []*kvConn
 	var mu sync.Mutex
@@ -208,9 +184,6 @@ func TestTheProbeConnectionIsClosed(t *testing.T) {
 	require.True(t, conns[0].closed, "the probe was closed")
 }
 
-// TestTheProbeIsNotMistakenForARealDatabase. It names itself, so an engine that
-// creates on connect does not create a database called after a caller's
-// resource.
 func TestTheProbeIsNotMistakenForARealDatabase(t *testing.T) {
 	e := tauEngine()
 	require.NoError(t, NewRegistry().Register(t.Context(), e))
@@ -232,8 +205,6 @@ func TestAnEngineThatCannotOpenAtAllIsRefused(t *testing.T) {
 	require.Contains(t, err.Error(), "postgres")
 }
 
-// TestTwoEnginesBackOneType — the point of the matrix. sql is served by tau's
-// own engine and by postgres, and a database says which it wants.
 func TestTwoEnginesBackOneType(t *testing.T) {
 	r := NewRegistry()
 	require.NoError(t, r.Register(t.Context(), tauEngine()))
@@ -281,8 +252,6 @@ func TestAnOpenFailureReachesTheCaller(t *testing.T) {
 	require.Contains(t, err.Error(), "kv/distributed")
 }
 
-// TestTheSpecCarriesTheResolvedCredentialAndNotAReference. This package must
-// never become a thing that reads secrets, so what arrives is already a value.
 func TestTheSpecCarriesTheResolvedCredentialAndNotAReference(t *testing.T) {
 	e := &fakeEngine{name: "postgres", types: []Type{SQL},
 		open: func(Spec) (Conn, error) { return &sqlConn{}, nil }}
@@ -350,8 +319,6 @@ func TestAnEmptyRegistryBacksNothing(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoEngine)
 }
 
-// TestConcurrentRegistrationAndLookup. A node registers engines while serving,
-// and the registry is read on every database open.
 func TestConcurrentRegistrationAndLookup(t *testing.T) {
 	r := NewRegistry()
 	require.NoError(t, r.Register(t.Context(), tauEngine()))
@@ -371,9 +338,6 @@ func TestConcurrentRegistrationAndLookup(t *testing.T) {
 	require.Equal(t, []string{Tau}, r.EnginesFor(KV))
 }
 
-// TestEveryTypeHasASurfaceAndTheyAreDistinct. A Conn satisfying one type's
-// surface must not accidentally satisfy another's, or the registration proof
-// proves nothing.
 func TestEveryTypeHasASurfaceAndTheyAreDistinct(t *testing.T) {
 	cases := map[Type]Conn{KV: &kvConn{}, SQL: &sqlConn{}, Document: &docConn{}, Vector: &vecConn{}}
 
@@ -392,10 +356,6 @@ func TestEveryTypeHasASurfaceAndTheyAreDistinct(t *testing.T) {
 	require.False(t, implements(KV, &conn{}), "a bare Conn satisfies no type")
 }
 
-// TestAnExternalEngineCanBeRegistered. The probe used to be a spec with no
-// address, which is openable by an engine that runs here and by none that
-// connects to a server — so postgres, mysql, mongo and every other external
-// engine in the vocabulary could not be registered at all.
 func TestAnExternalEngineCanBeRegistered(t *testing.T) {
 	seen := make(chan Spec, 4)
 

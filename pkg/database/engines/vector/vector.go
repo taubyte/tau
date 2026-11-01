@@ -1,32 +1,10 @@
-// Package vector backs the `vector` data model with a replicated store.
+// Package vector backs the `vector` data model with a replicated store. There is no
+// index: a search scores every vector, fine for a catalogue or docs corpus. An
+// approximate index (HNSW, IVF) would lift that and can replace this behind Engine.
 //
-// # Nearest neighbour by scanning, and that is a ceiling rather than a defect
-//
-// There is no index. A search reads every vector in the collection and scores
-// it, so the cost is the collection's size and not the answer's. For what a
-// project's own retrieval set holds — a product catalogue, a documentation
-// corpus, a support history — that is fast enough and needs nothing to
-// provision, which is the whole point of tau's own engine.
-//
-// WHAT WOULD LIFT IT IS AN APPROXIMATE INDEX (HNSW or IVF), and it is a real
-// piece of work rather than a flag: an index has to be built, kept in step with
-// writes, and replicated or rebuilt per node. It is named here rather than
-// half-built, and the shape that would replace this is the Engine interface it
-// already sits behind.
-//
-// # The metric is the model's, not a tuning knob
-//
-// The vocabulary says it: cosine for a model trained on normalized embeddings,
-// dot where magnitude carries meaning, euclidean for raw distance. Getting it
-// wrong does not error, it just ranks badly — which is why it is declared on
-// the resource and read here rather than guessed.
-//
-// # Every score is "higher is closer"
-//
-// Cosine and dot already are. Euclidean is a DISTANCE, so what is returned is
-// its negative — which is the smallest transformation that keeps one rule for
-// ordering and for reading a score, and is stated because -3.2 is otherwise a
-// surprising number to get back.
+// The metric is the model's (cosine for normalized embeddings, dot where magnitude
+// matters, euclidean for raw distance), declared on the resource. Every score is
+// higher-is-closer, so euclidean's is negated.
 package vector
 
 import (
@@ -44,7 +22,6 @@ import (
 	"github.com/taubyte/tau/pkg/storekey"
 )
 
-// Store is the same four-method door every other engine here keeps.
 // Name is the engine name the vocabulary uses for tau's own.
 const Name = "distributed"
 
@@ -70,11 +47,8 @@ var (
 	ErrNoDimension = errors.New("vector: this database declares no width")
 )
 
-// Engine opens vector databases, each over the store its provider hands out.
-//
-// A PROVIDER AND NOT A STORE: see database.Stores. One store for every database
-// on a node is one pubsub topic carrying every database's rows, which makes
-// placement a decoration and makes a local drop a fleet-wide delete.
+// Engine opens vector databases, each over the store its provider hands out (see
+// database.Stores).
 type Engine struct{ stores database.Stores }
 
 // New builds the engine. It is handed a provider rather than building one: what
@@ -89,9 +63,8 @@ func New(stores database.Stores) (*Engine, error) {
 func (e *Engine) Name() string           { return Name }
 func (e *Engine) Types() []database.Type { return []database.Type{database.Vector} }
 
-// Open answers a connection scoped to one database of one deployment. An
-// unaddressable spec is a connection that fails rather than an open that does —
-// the registry probes with one.
+// Open answers a connection scoped to one database; an unaddressable spec yields a
+// failing connection, since the registry probes with one.
 func (e *Engine) Open(ctx context.Context, spec database.Spec) (database.Conn, error) {
 	if spec.Type != database.Vector {
 		return nil, fmt.Errorf("vector: this engine backs %s and not %s", database.Vector, spec.Type)
@@ -99,11 +72,7 @@ func (e *Engine) Open(ctx context.Context, spec database.Spec) (database.Conn, e
 
 	prefix, err := spec.Prefix()
 	if err != nil {
-		// THE REGISTRATION PROBE LANDS HERE. pkg/database opens one connection
-		// per type with no project and no environment to prove the SURFACE, not
-		// an address — so asking the provider for that database's store would
-		// refuse to register an engine that is perfectly good. The address is
-		// reported where it is used instead.
+		// The registration probe has no address; it is reported where used.
 		return &conn{err: err}, nil
 	}
 
@@ -298,12 +267,8 @@ func norm(v []float32) float32 {
 	return float32(math.Sqrt(sum))
 }
 
-// key is this store's addressing of a key a GUEST supplied: the prefix it
-// belongs to, joined, once it is known the join stays inside that prefix.
-//
-// IT IS ONE METHOD AND NOT A CHECK AT EACH CALL, so a method added later gets
-// the rule by addressing an entry at all rather than by its author remembering
-// to. See pkg/storekey for what the rule is, and what not having it cost.
+// key addresses a guest-supplied key under this database's prefix, refusing one that
+// escapes it (pkg/storekey). One method, so every operation gets the rule.
 func (c *conn) key(k string) (string, error) {
 	if err := storekey.Check(c.prefix, k); err != nil {
 		return "", err

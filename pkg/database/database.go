@@ -1,44 +1,18 @@
-// Package database is the seam every database engine plugs into.
-//
-// The vocabulary already decides the shape, and this package follows it rather
-// than inventing one. A database declares a TYPE — the data model — and within
-// that type an ENGINE:
+// Package database is the seam every database engine plugs into. A database
+// declares a type (data model) and, within it, an engine:
 //
 //	kv        distributed
 //	document  distributed, mongo
 //	sql       distributed, postgres, mysql
 //	vector    distributed
 //
-// `distributed` is tau's own, replicated across the swarm. The rest are external
-// servers reached over the network, and for those the answer is an adapter over
-// the driver everyone already uses rather than a reimplementation.
+// `distributed` is tau's own, replicated across the swarm; the rest are external
+// servers reached through adapters over their usual drivers.
 //
-// # A type is an operation set, so there is no one Conn interface
-//
-// The four types do genuinely different things: kv gets and puts by key, sql
-// queries and executes, document finds by a query over fields, vector searches
-// by nearest neighbour. A single interface spanning all four would be four
-// interfaces wearing a trenchcoat, and every implementation would have to answer
-// methods it has no meaning for.
-//
-// So an engine returns a Conn that carries only Close, and a consumer asks for
-// the surface it needs. That asking is checked ONCE, at registration, rather
-// than on the first query — see Register.
-//
-// # What registration proves
-//
-// AN ENGINE THAT CLAIMS A TYPE MUST ACTUALLY IMPLEMENT THAT TYPE'S SURFACE, and
-// it is proved by opening a probe connection at registration and type-asserting
-// it. The alternative is discovering at the first query, in production, that the
-// postgres adapter registered for `document` answers no document methods — a
-// failure that reads as a bug in the caller.
-//
-// # What is not here
-//
-// NO DRIVER, NO IMPLEMENTATION. This package has no dependency on a database of
-// any kind, which is what lets it be the thing both tau's own engine and a
-// third-party adapter are written against. An engine lives beside its driver;
-// the seam does not.
+// The four types do different things, so a Conn carries only Close and a consumer
+// asks for the surface it needs. Register proves an engine implements each type it
+// claims by opening a probe connection, so a mismatch fails at startup rather than on
+// a first query. This package depends on no driver.
 package database
 
 import (
@@ -55,9 +29,7 @@ import (
 // Type is a data model, spelled as the vocabulary spells it.
 type Type string
 
-// The types the vocabulary declares. They are constants here so a consumer
-// names one rather than a string literal, and a test asserts this set matches
-// the schema.
+// The types the vocabulary declares; a test asserts this set matches the schema.
 const (
 	KV       Type = "kv"
 	Document Type = "document"
@@ -69,9 +41,7 @@ const (
 // engines carry the name of the server they speak to.
 const Tau = "distributed"
 
-// How concurrent writes to one key resolve. The names are the schema's own, so
-// nothing is renamed on the way in and there is no second vocabulary to map
-// between.
+// How concurrent writes to one key resolve, in the schema's own words.
 const (
 	// CRDT merges them. No write is lost on the wire, but two writes to one key
 	// are resolved into one and the loser is gone with no error to anybody.
@@ -100,14 +70,11 @@ var (
 	// ErrUnaddressable is a spec with a hole where an address segment belongs.
 	ErrUnaddressable = errors.New("database: a spec with no project, environment, model or name addresses nothing")
 
-	// ErrNoStore is an engine with nowhere to keep entries. It was one per
-	// resident engine; the door is shared, so the refusal is too.
+	// ErrNoStore is an engine with nowhere to keep entries.
 	ErrNoStore = errors.New("database: no store to open onto")
 )
 
-// Spec is which database to open.
 type Spec struct {
-	// Type is the data model.
 	Type Type
 
 	// Engine is which engine backs it — Tau, or the name of an external server.
@@ -119,15 +86,9 @@ type Spec struct {
 	Environment string
 	Name        string
 
-	// Consensus is how two concurrent writes to one key resolve, spelled as the
-	// schema spells it. Empty is CRDT, which is what a database that wrote
-	// none gets.
-	//
-	// BESIDE Engine AND NOT IN Options, because it is the same KIND of fact: it
-	// says what the connection IS rather than what one data model understands
-	// about itself. Every model tau's own engine backs declares it, a store is
-	// chosen by it before a single per-model field is read, and a vector's
-	// `dimensions` is true of nothing but a vector.
+	// Consensus is how concurrent writes to one key resolve. Empty is CRDT. Beside Engine
+	// rather than in Options: it says what the connection is, and a store is chosen by it
+	// before any per-model field is read.
 	Consensus string
 
 	// Size is the ceiling the author declared, in bytes, for tau's own engine.
@@ -146,19 +107,11 @@ type Spec struct {
 	// must never become a thing that reads secrets.
 	Credentials Credentials
 
-	// Options are what the resource declared that only its own TYPE
-	// understands — a vector's width and metric, and whatever the next type
-	// brings.
-	//
-	// A MAP AND NOT A FIELD EACH, for the reason the Conn interface is not one
-	// interface: the four types genuinely do different things, and a Spec with
-	// `Dimensions` on it would carry a number that means nothing to three of
-	// them. The keys are the vocabulary's own attribute names, so a reader
-	// finds the attribute by searching the schema for the string.
+	// Options are what only the resource's own type understands (a vector's width and
+	// metric), keyed by the vocabulary's attribute names.
 	Options map[string]string
 }
 
-// Credentials open an external server.
 type Credentials struct {
 	Username string
 	Password string
@@ -175,12 +128,9 @@ type Conn interface {
 	io.Closer
 }
 
-// Engine opens connections for one or more types.
 type Engine interface {
-	// Name is the engine name the vocabulary uses.
 	Name() string
 
-	// Types are the data models this engine backs.
 	Types() []Type
 
 	// Open connects. The returned Conn must implement the operation surface of
@@ -188,12 +138,8 @@ type Engine interface {
 	Open(ctx context.Context, spec Spec) (Conn, error)
 }
 
-// ─────────────────────── the per-type operation surfaces ───────────────────────
-//
-// These mirror the verbs the vocabulary declares for each type, and nothing
-// else. A method here that no `Ops()` entry names would be a capability config
-// cannot grant, which is a hole in the authorization story rather than a
-// convenience.
+// The per-type operation surfaces mirror the verbs the vocabulary declares; a method
+// no `Ops()` entry names would be a capability config cannot grant.
 
 // KVConn is `kv`: get, list, watch, put, delete.
 type KVConn interface {
@@ -212,14 +158,9 @@ type SQLConn interface {
 	Exec(ctx context.Context, statement string, args ...any) (Outcome, error)
 }
 
-// Outcome is what a write changed, in the shape every SQL client already
-// reports it: `database/sql.Result`, DBAPI's `rowcount` and `lastrowid`,
-// node-postgres's `rowCount`.
-//
-// BOTH FIELDS ARE 0 WHEN THE DRIVER DID NOT SAY, which is not an error. Several
-// drivers report neither, PostgreSQL answers the last-insert question with
-// `RETURNING` instead, and failing a statement that RAN because its result
-// cannot be counted would be reporting success as failure.
+// Outcome is what a write changed, in the shape SQL clients report it. Both fields
+// are 0 when the driver did not say, which is not an error: failing a statement that
+// ran because its result cannot be counted would report success as failure.
 type Outcome struct {
 	Affected     int64
 	LastInsertID int64
@@ -278,7 +219,6 @@ func implements(t Type, c Conn) bool {
 	return false
 }
 
-// Types is every data model this package knows, sorted.
 func Types() []Type { return []Type{Document, KV, SQL, Vector} }
 
 func known(t Type) bool { return slices.Contains(Types(), t) }
@@ -287,22 +227,16 @@ func known(t Type) bool { return slices.Contains(Types(), t) }
 type Registry struct {
 	mu sync.RWMutex
 
-	// by type, then by engine name.
 	engines map[Type]map[string]Engine
 }
 
-// NewRegistry builds an empty registry.
 func NewRegistry() *Registry {
 	return &Registry{engines: map[Type]map[string]Engine{}}
 }
 
-// Register adds an engine, proving it can do what it claims.
-//
-// IT OPENS A PROBE CONNECTION PER TYPE. That is the only way to know the Conn an
-// engine hands back implements the type's surface — the check cannot be done on
-// the Engine, because Open's return type is the interface, not the concrete one.
-// Doing it here means a mismatch is a startup failure naming the engine and the
-// type, instead of a method-not-found on somebody's first query.
+// Register adds an engine, proving it can do what it claims by opening a probe
+// connection per type: Open returns the interface, so the surface can only be checked
+// on a real Conn.
 func (r *Registry) Register(ctx context.Context, e Engine) error {
 	if e == nil {
 		return errors.New("database: a nil engine")
@@ -331,9 +265,7 @@ func (r *Registry) Register(ctx context.Context, e Engine) error {
 	}
 	r.mu.Unlock()
 
-	// The probe is outside the lock: opening a connection may touch the
-	// network, and holding the registry across it would block every other
-	// registration and lookup on one slow server.
+	// The probe is outside the lock: opening may touch the network.
 	for _, t := range types {
 		conn, err := e.Open(ctx, probeSpec(t, name))
 		if err != nil {
@@ -360,19 +292,9 @@ func (r *Registry) Register(ctx context.Context, e Engine) error {
 	return nil
 }
 
-// probeSpec is a well-formed spec that names nowhere.
-//
-// IT CARRIES AN ADDRESS BECAUSE AN EXTERNAL ENGINE NEEDS ONE. The probe used to
-// be `{Type, Engine, Name}` and nothing else, which is openable by an engine
-// that runs here and by none that connects to a server — so postgres, mysql,
-// mongo and every other external engine in the vocabulary could not be
-// registered at all. The address is in the reserved `.invalid` TLD (RFC 2606),
-// so it can never resolve and nothing can be reached through it by accident.
-//
-// WHICH MEANS AN ENGINE MUST NOT CONNECT IN Open. That is the ordinary shape —
-// database/sql opens lazily and so does every client library worth using — and
-// it is what makes this a proof of the SURFACE rather than a health check
-// against a server that has nothing to do with whether the code is correct.
+// probeSpec is a well-formed spec naming nowhere: an address in the reserved
+// `.invalid` TLD (RFC 2606), so external engines can register. An engine must
+// therefore not connect in Open, which database/sql and good clients do lazily anyway.
 func probeSpec(t Type, engine string) Spec {
 	return Spec{
 		Type:     t,
@@ -383,7 +305,6 @@ func probeSpec(t Type, engine string) Spec {
 	}
 }
 
-// Open connects to what spec names.
 func (r *Registry) Open(ctx context.Context, spec Spec) (Conn, error) {
 	if !known(spec.Type) {
 		return nil, fmt.Errorf("%w: %q", ErrUnknownType, spec.Type)
@@ -403,7 +324,6 @@ func (r *Registry) Open(ctx context.Context, spec Spec) (Conn, error) {
 	return conn, nil
 }
 
-// EnginesFor is every engine name registered for a type, sorted.
 func (r *Registry) EnginesFor(t Type) []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -428,22 +348,10 @@ func (r *Registry) String() string {
 	return b.String()
 }
 
-// Prefix is where a resident engine keeps this database's entries, and it is
-// the ONE addressing rule all of them share. It was three copies of itself, one
-// per engine, which is how they came to share a namespace.
-//
-// THE MODEL IS IN THE PATH, and that is not tidiness. A resource id is stable
-// across an edit — that is what lets a rotated credential arrive under the same
-// key — so an author who changes `kv:` to `vector:` keeps the id, and a path
-// without the model hands the vector store the kv store's bytes. The three
-// engines over one node's store collided the same way, on nothing worse than
-// two resources with the same name.
-//
-// WHAT IT DOES NOT FIX is an id declared, deleted, and declared again as the
-// same model: same path, so rows nobody declared are read by whatever took the
-// id back. Closing that needs durable per-id state, which is itself something
-// to reclaim; what closes it instead is the sweep, and the window is how long
-// the sweep takes to run.
+// Prefix is where a resident engine keeps this database's entries, the one addressing
+// rule all engines share. The model is in the path: an id is stable across edits, so
+// changing `kv:` to `vector:` must not hand the vector store the kv rows. An id
+// deleted and redeclared as the same model shares a path until the sweep runs.
 func (s Spec) Prefix() (string, error) {
 	segments := []string{s.Project, s.Environment, string(s.Type), s.Name}
 	for _, segment := range segments {

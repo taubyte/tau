@@ -19,9 +19,6 @@ func spec() database.Spec {
 	}
 }
 
-// TestTheRegistryProvesTheSurfaceOnce. Registering opens a probe connection per
-// claimed type and type-asserts it, so an engine that claims sql and cannot
-// query is refused where it is registered rather than where it is used.
 func TestTheRegistryAcceptsIt(t *testing.T) {
 	registry.reset()
 
@@ -32,9 +29,6 @@ func TestTheRegistryAcceptsIt(t *testing.T) {
 	require.Empty(t, r.EnginesFor(database.KV), "it claims one model and backs one")
 }
 
-// TestTLSIsSpelledOutInBothDirections. libpq's default is `prefer`, which falls
-// back to plaintext without saying so — the exact shape of a security decision
-// made by omission.
 func TestTheConnectionStringIsBuilt(t *testing.T) {
 	registry.reset()
 
@@ -77,7 +71,6 @@ func TestTheMySQLForm(t *testing.T) {
 	require.Equal(t, "tcp(db.internal:5432)/app?tls=false", dsn)
 }
 
-// TestAnExternalDatabaseNeedsAnAddress. Connecting to nothing is not a default.
 func TestAnAddressIsRequired(t *testing.T) {
 	bare := spec()
 	bare.Address = ""
@@ -92,8 +85,6 @@ func TestAnAddressIsRequired(t *testing.T) {
 	require.ErrorIs(t, err, sqlengine.ErrNoAddress)
 }
 
-// TestItBacksSqlAndNothingElse. A driver that also answered document queries
-// would be claiming a data model whose verbs it does not have.
 func TestItBacksSqlOnly(t *testing.T) {
 	wrong := spec()
 	wrong.Type = database.Document
@@ -102,8 +93,6 @@ func TestItBacksSqlOnly(t *testing.T) {
 	require.ErrorIs(t, err, sqlengine.ErrWrongType)
 }
 
-// TestQueryAndExecAreTheWholeSurface, and the rows adapter carries what the seam
-// declares.
 func TestQueryAndExec(t *testing.T) {
 	registry.reset()
 	registry.answer([]string{"id", "total"}, []any{int64(1), int64(100)}, []any{int64(2), int64(250)})
@@ -137,9 +126,6 @@ func TestQueryAndExec(t *testing.T) {
 	require.Equal(t, int64(3), outcome.Affected)
 }
 
-// TestAnEngineNeedsANameAndADriver, and they are two names on purpose: a
-// vocabulary engine is `postgres` and a driver registers itself as `pgx`, so
-// conflating them would make swapping the driver a schema change.
 func TestWhatItRefuses(t *testing.T) {
 	_, err := sqlengine.New("", "pgx", sqlengine.PostgresDSN)
 	require.ErrorIs(t, err, sqlengine.ErrNoName)
@@ -156,7 +142,6 @@ func TestWhatItRefuses(t *testing.T) {
 	require.Equal(t, []database.Type{database.SQL}, engine.Types())
 }
 
-// TestADriverNobodyRegisteredIsReportedWhereItIsAsked.
 func TestAnUnregisteredDriver(t *testing.T) {
 	_, err := sqlengine.Postgres("nobody-registered-this").Open(t.Context(), spec())
 	require.Error(t, err)
@@ -174,9 +159,6 @@ func ping(t *testing.T, conn database.Conn) error {
 	return rows.Close()
 }
 
-// TEXT A DRIVER HANDS OVER AS BYTES IS TEXT, and a BLOB stays bytes: only the
-// column's declared type can tell them apart. go-sql-driver/mysql returns every
-// VARCHAR as []byte, which reached a guest as a blob before this.
 func TestBytesAreTextUnlessTheColumnIsBinary(t *testing.T) {
 	registry.reset()
 	registry.answer([]string{"payee", "photo"}, []any{[]byte("alice"), []byte{0xff, 0x00}})
