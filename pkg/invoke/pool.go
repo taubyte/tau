@@ -116,7 +116,7 @@ type Pool struct {
 	runtimes map[string]Runtime
 
 	mu     sync.Mutex
-	groups map[string]*group
+	groups map[specKey]*group
 	closed bool
 }
 
@@ -155,7 +155,7 @@ func NewPool(opts ...Option) (*Pool, error) {
 		return nil, err
 	}
 
-	p := &Pool{opts: o, runtimes: map[string]Runtime{}, groups: map[string]*group{}}
+	p := &Pool{opts: o, runtimes: map[string]Runtime{}, groups: map[specKey]*group{}}
 	for _, rt := range o.runtimes {
 		if _, dup := p.runtimes[rt.Name()]; dup {
 			return nil, fmt.Errorf("invoke: %q registered twice", rt.Name())
@@ -372,20 +372,23 @@ func (p *Pool) on(ctx context.Context, spec Spec, fn func(context.Context, Insta
 		timeout = p.opts.timeout
 	}
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
-	l := &linger{settled: make(chan bool, 1)}
+	l := &linger{}
 	err = fn(context.WithValue(callCtx, lingerKey{}, l), s.inst)
 	cancel()
 
-	done := func(failed bool) {
-		p.release(spec, s, failed)
-		<-sem
-	}
 	if err == nil && l.claimed.Load() {
-		go func() { done(<-l.settled) }()
+		go p.settle(spec, s, sem, l)
 		return nil
 	}
-	done(err != nil)
+	p.release(spec, s, err != nil)
+	<-sem
 	return err
+}
+
+// settle releases a lingering call's slot once the work it kept going is done.
+func (p *Pool) settle(spec Spec, s *slot, sem chan struct{}, l *linger) {
+	p.release(spec, s, <-l.settled)
+	<-sem
 }
 
 // Linger keeps the instance serving ctx's call checked out after it answered, until
@@ -396,13 +399,16 @@ func Linger(ctx context.Context) (done func(failed bool), ok bool) {
 	if !ok {
 		return nil, false
 	}
+	l.claim.Do(func() { l.settled = make(chan bool, 1) })
 	l.claimed.Store(true)
 	return l.done, true
 }
 
 type lingerKey struct{}
 
+// settled is made at the claim, so a call that never lingers allocates no channel.
 type linger struct {
+	claim   sync.Once
 	claimed atomic.Bool
 	once    sync.Once
 	settled chan bool
@@ -588,7 +594,7 @@ func (p *Pool) Close() error {
 			dead = append(dead, s.inst)
 		}
 	}
-	p.groups = map[string]*group{}
+	p.groups = map[specKey]*group{}
 	p.mu.Unlock()
 
 	for _, inst := range dead {

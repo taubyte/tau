@@ -193,7 +193,9 @@ func (s Spec) validate() error {
 // key is the pool's identity for a spec. Concurrency and Timeout are excluded:
 // they are how the pool treats an instance, not what the instance IS, and
 // changing a timeout should not force a cold start.
-func (s Spec) key() string { return s.Runtime + "\x00" + s.Name + "\x00" + s.Revision }
+func (s Spec) key() specKey { return specKey{s.Runtime, s.Name, s.Revision} }
+
+type specKey struct{ runtime, name, revision string }
 
 // Request is one call into an instance; not net/http, since pubsub deliveries and
 // p2p calls are invocations too.
