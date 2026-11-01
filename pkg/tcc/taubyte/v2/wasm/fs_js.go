@@ -14,16 +14,8 @@ import (
 	"github.com/spf13/afero"
 )
 
-// jsFs adapts a set of JS filesystem primitives into an afero.Fs, so the compiler,
-// the decompiler and a session — all of which read and write YAML through yaseer ->
-// afero — run against a filesystem the page owns.
-//
-// IT EXISTS FOR THE SESSION, which is what makes it more than a convenience. A
-// compile is one shot over a snapshot and a plain {path: contents} map serves it; a
-// session is edited and then SAVED, so the bytes have to go back where they came
-// from, and that is a filesystem or it is nothing.
-//
-// The JS side must provide an object with synchronous methods:
+// jsFs adapts synchronous JS filesystem primitives into an afero.Fs, so a session
+// edited in the page can save back where it read from.
 //
 //	readFile(path)        -> Uint8Array | string | null   (null if missing)
 //	writeFile(path, data) -> void                          (data is a Uint8Array)
@@ -31,10 +23,8 @@ import (
 //	stat(path)            -> { isDir: bool, size: number } | null
 //	mkdir(path)           -> void                          (idempotent; may no-op)
 //
-// yaseer only ever calls Open (read-all), OpenFile (create+truncate+write), Stat and
-// afero.ReadDir, so the surface here is deliberately minimal: the mutating ops that
-// path never reaches are best-effort no-ops rather than half-written implementations
-// nobody exercises.
+// yaseer only calls Open, OpenFile (create+truncate+write), Stat and
+// afero.ReadDir; other mutating ops are no-ops.
 type jsFs struct {
 	p js.Value // the primitives object
 }
@@ -125,11 +115,9 @@ func (f *jsFs) Open(name string) (afero.File, error) {
 func (f *jsFs) OpenFile(name string, flag int, _ os.FileMode) (afero.File, error) {
 	name = normalize(name)
 	if flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC|os.O_APPEND) != 0 {
-		// THE EMPTY FILE IS PERSISTED NOW, not at Close, because the seer reads
-		// the document back within the same operation — afero.MemMapFs, which
-		// yaseer is written against, creates the entry on OpenFile. Truncating
-		// unconditionally is correct only because yaseer always opens with
-		// O_TRUNC; an append path would have to preserve what is there.
+		// The empty file is persisted now, not at Close, because yaseer reads it back
+		// within the same operation. Truncating is safe only because yaseer always opens
+		// with O_TRUNC.
 		if _, err := f.safeCall("writeFile", name, bytesToJS(nil)); err != nil {
 			return nil, err
 		}

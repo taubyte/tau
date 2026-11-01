@@ -18,10 +18,6 @@ func compiledExample(t *testing.T) map[string]any {
 	return obj.Flat()
 }
 
-// WHAT A RESOURCE IS is the schema's answer, and a consumer that walks the compiled
-// object itself gets a different one: an access block is a map of maps keyed by a kind,
-// exactly like a nested group, so `cache: { orders: {ops: [get]} }` reads as a cache
-// called orders unless you know the schema. Resources exists so nobody has to.
 func TestResourcesAreResourcesOnly(t *testing.T) {
 	all := schema.Resources(compiledExample(t))
 	assert.Assert(t, len(all) > 0)
@@ -45,9 +41,6 @@ func TestResourcesAreResourcesOnly(t *testing.T) {
 	}
 }
 
-// A RELATION POINTS AT RESOURCES, both ends, always. An id that resolves to nothing is a
-// relation a consumer silently drops — which is how a missing edge looks in a drawing:
-// like a config that does not use anything there.
 func TestRelationsResolveBothEnds(t *testing.T) {
 	obj := compiledExample(t)
 	byID := map[string]schema.Instance{}
@@ -66,9 +59,6 @@ func TestRelationsResolveBothEnds(t *testing.T) {
 	}
 }
 
-// A NAMESPACE BESIDE A NAME IS RELATIVE. `notify` lives in `shop` and reaches `relay`
-// with `namespace: local`, which means `shop/local` — a resolver that starts looking at `local`
-// finds nothing, and the use disappears without a word.
 func TestRelationsResolveARelativeNamespace(t *testing.T) {
 	obj := compiledExample(t)
 	byID := map[string]schema.Instance{}
@@ -88,9 +78,6 @@ func TestRelationsResolveARelativeNamespace(t *testing.T) {
 	assert.Assert(t, found, "notify -> relay, declared with a relative namespace, resolved to nothing")
 }
 
-// A DELIVERED VERB RUNS THE OTHER WAY. `subscribe` is declared by the consumer and the
-// work travels toward it: drawn from the declaration, a subscriber has an arrow out and
-// none in, and reads as a workload nothing ever starts.
 func TestRelationsTurnDeliveredVerbsAround(t *testing.T) {
 	obj := compiledExample(t)
 	byID := map[string]schema.Instance{}
@@ -111,13 +98,6 @@ func TestRelationsTurnDeliveredVerbsAround(t *testing.T) {
 	assert.Assert(t, found)
 }
 
-// A NAMED ENTRY'S REFERENCE IS AN EDGE, and it says which entry it came from.
-//
-// A reference declared inside a nested group was only ever walked when the group was an
-// ordered LIST, so every `variables: {NAME: {secret: {name: …}}}` drew nothing on any of
-// the six kinds that carry a variables block — while the schema said out loud that naming
-// a secret there is a use of it. Silent, and the drawing was the only place it would have
-// shown: nothing else reads that reference.
 func TestANamedEntryReferenceDrawsAnEdge(t *testing.T) {
 	obj := compiledExample(t)
 	byID := map[string]schema.Instance{}

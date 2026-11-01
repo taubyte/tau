@@ -106,8 +106,6 @@ func TestCorpusWithoutEnvironmentsIsRefused(t *testing.T) {
 	assert.ErrorContains(t, r.Validate(doc), "minProperties")
 }
 
-// A FUNCTION WITHOUT A TIER IT RUNS ON is refused by the published schema as it is by
-// the compiler, so an editor says so before a build does.
 func TestCorpusFunctionWithoutATierItRunsOnIsRefused(t *testing.T) {
 	r := published(t)
 	docs := projects(t, "refused/function")

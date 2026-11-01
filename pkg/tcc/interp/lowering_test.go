@@ -12,9 +12,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// A vocabulary tcc has never heard of. The point of these tests is that lowering is the
-// INTERPRETER's feature: nothing here is a workflow, a queue or an entity, and the
-// expansion works anyway because the vocabulary declares what it becomes.
+// A vocabulary tcc has never heard of: lowering is the interpreter's feature.
 func pipelineSchema() (engine.Schema, *engine.Node) {
 	root := engine.Root(
 		[]*engine.Attribute{engine.String("id")},
@@ -54,14 +52,11 @@ func pipelineSchema() (engine.Schema, *engine.Node) {
 	return engine.SchemaDefinition(root), root
 }
 
-// Compiled through the INTERPRETER, not the engine alone: a compiled resource is keyed
-// by its id, and that keying is one of the interpreter's transforms. Reading the plan
-// off a raw engine object would key instances by filename and quietly derive the same
-// id for two different resources — which is how this helper was wrong to begin with.
+// Compiled through the interpreter, which keys resources by id; a raw engine
+// object keys by filename.
 func lowerDoc(t *testing.T, doc string) []interp.Derived { return lowerNamed(t, "build", doc) }
 
-// A resource's NAME is its filename in this vocabulary, so renaming one means moving the
-// file — which is exactly what a derived id has to survive.
+// A resource's name is its filename here, so a rename is a move.
 func lowerNamed(t *testing.T, file, doc string) []interp.Derived {
 	t.Helper()
 	project, root := pipelineSchema()
@@ -73,14 +68,12 @@ func lowerNamed(t *testing.T, file, doc string) []interp.Derived {
 	c, err := interp.New(project, root, interp.WithVirtual(fs, "/"),
 		interp.WithLayout(interp.Layout{Resource: "{kind}/{name}.yaml"}))
 	assert.NilError(t, err)
-	// AUTHORED, because a plan is what the written config becomes — reading it off the
-	// compiled object would be reading it off the answer.
+	// Authored: a plan is what the written config becomes.
 	obj, _, err := c.Authored(context.Background())
 	assert.NilError(t, err)
 	return interp.LoweringPlan(root, obj.Flat())
 }
 
-// One per element of a list, one per resource, and the names come from the templates.
 func TestLoweringPlan(t *testing.T) {
 	plan := lowerDoc(t, "id: one\nname: build\nstages:\n    - name: compile\n      run: cc\n    - name: test\n      run: ct\n")
 
@@ -92,8 +85,6 @@ func TestLoweringPlan(t *testing.T) {
 	assert.Equal(t, plan[2].Kind+"/"+plan[2].Name, "log/build-log", "one per resource, not per element")
 }
 
-// The wiring is what makes a plan drawable rather than a list of names: a consumer can
-// show what is INSIDE a pipeline without knowing what a pipeline is.
 func TestLoweringWrites(t *testing.T) {
 	plan := lowerDoc(t, "id: one\nname: build\nstages:\n    - name: compile\n      run: cc\n    - name: bare\n")
 
@@ -122,7 +113,6 @@ func byName(t *testing.T, plan []interp.Derived, name string) interp.Derived {
 	return interp.Derived{}
 }
 
-// The plan is a pure function of the config: same in, same out, every time.
 func TestLoweringPlanIsStable(t *testing.T) {
 	const doc = "id: one\nname: build\nstages:\n    - name: b\n    - name: a\n"
 	first, second := lowerDoc(t, doc), lowerDoc(t, doc)
@@ -130,9 +120,6 @@ func TestLoweringPlanIsStable(t *testing.T) {
 	assert.Equal(t, first[0].Name, "build-a", "sorted, so a map's iteration order cannot leak in")
 }
 
-// A lowering into a kind the vocabulary does not have is a plan nothing can carry out.
-// Catching it at BUILD time is the difference between the vocabulary author seeing it
-// and a user seeing it.
 func TestCheckLowerings(t *testing.T) {
 	_, root := pipelineSchema()
 	assert.Equal(t, len(interp.CheckLowerings(root)), 0)
@@ -149,13 +136,11 @@ func TestCheckLowerings(t *testing.T) {
 	assert.Equal(t, len(problems), 3, "got %v", problems)
 	assert.Equal(t, problems[0], "lowering into nonesuch, which is not a kind")
 	assert.Equal(t, problems[1], "lowering into pipeline produces no name")
-	// ...and a kind that lowers into itself produces resources forever. The runtime cap
-	// stops the hang and nothing else: the plan it returns is silently short, which is a
-	// lie about what a config becomes.
+	// A kind lowering into itself: the runtime cap stops the hang but returns a
+	// silently short plan.
 	assert.Equal(t, problems[2], "lowerings cycle: pipeline -> pipeline")
 }
 
-// A schema that declares no lowering pays nothing and answers nothing.
 func TestNoLoweringDeclared(t *testing.T) {
 	root := engine.Root(
 		[]*engine.Attribute{engine.String("id")},
@@ -165,9 +150,6 @@ func TestNoLoweringDeclared(t *testing.T) {
 	assert.Equal(t, len(interp.LoweringPlan(root, map[string]any{})), 0)
 }
 
-// A list lowers into a CHAIN, not into independent things: an element can name the one
-// after it. Without that, an ordered list produces N unconnected resources and the
-// order it was written in means nothing.
 func TestLoweringChainsToTheNextElement(t *testing.T) {
 	plan := lowerDoc(t, "id: one\nname: build\nstages:\n    - name: compile\n      run: cc\n    - name: test\n      run: ct\n    - name: ship\n      run: cs\n")
 
@@ -184,10 +166,6 @@ func TestLoweringChainsToTheNextElement(t *testing.T) {
 	assert.Equal(t, next("build-ship"), "", "the last element has no next, and that is where the chain ends")
 }
 
-// A lowering has to produce a resource that could EXIST: a kind's required fields are
-// required of anything of that kind, including what a compiler wrote. The mistake this
-// catches is real — a workflow lowering into a code-bearing kind and setting none of
-// the code.
 func TestCheckLoweringsRefusesAnUnbuildableResource(t *testing.T) {
 	root := engine.Root(
 		[]*engine.Attribute{engine.String("id")},
@@ -219,10 +197,6 @@ func TestCheckLoweringsRefusesAnUnbuildableResource(t *testing.T) {
 	assert.Equal(t, len(interp.CheckLowerings(ok)), 0, "got %v", interp.CheckLowerings(ok))
 }
 
-// An edge may start somewhere other than the resource that carries it. Without that, a
-// lowering can only draw what the derived resource does, and some of what it would draw
-// is false: a queue handing work to another queue is not a thing that happens — the
-// function that consumed the first one is what sends to the second.
 func TestLoweringWritesIntoSomethingElse(t *testing.T) {
 	plan := lowerDoc(t, "id: one\nname: build\nstages:\n    - name: compile\n      run: cc\n    - name: test\n      run: ct\n")
 
@@ -234,9 +208,6 @@ func TestLoweringWritesIntoSomethingElse(t *testing.T) {
 	}
 }
 
-// A WRITE WITH NO TARGET GOES INTO THE RESOURCE THE LOWERING PRODUCED; one that names a
-// resource goes into that. Which of the two is the whole reason On() exists — and the
-// difference decides whose document carries the value.
 func TestLoweringSaysWhereTheValueGoes(t *testing.T) {
 	root := engine.Root(
 		[]*engine.Attribute{engine.String("id")},
@@ -277,10 +248,6 @@ func TestLoweringSaysWhereTheValueGoes(t *testing.T) {
 	assert.Equal(t, elsewhere, 1)
 }
 
-// A resource a compiler wrote is stored under its id and referred to by it, so the id
-// has to be the SAME every time the config is compiled — otherwise every build looks
-// like a delete and a create, and two clouds compiling one project disagree about what
-// is the same resource.
 func TestDerivedIDIsDeterministic(t *testing.T) {
 	const doc = "id: one\nname: build\nstages:\n    - name: compile\n      run: cc\n"
 	first, second := lowerDoc(t, doc), lowerDoc(t, doc)
@@ -302,10 +269,6 @@ func TestDerivedIDIsDeterministic(t *testing.T) {
 	assert.Assert(t, byName(t, pair, "build-a").ID != byName(t, pair, "build-b").ID)
 }
 
-// A LOWERING IS A FUNCTION OF THE SHELL, so every field it reads has to be one the shell
-// has. A template naming a field that does not exist is not an error anywhere else —
-// expand leaves the unfilled `{each.attemps}` in the value, and it travels into a
-// derived resource looking like config — so it is caught where the mistake is.
 func TestCheckLoweringsRefusesAnInputThatDoesNotExist(t *testing.T) {
 	root := engine.Root(
 		[]*engine.Attribute{engine.String("id")},
@@ -355,11 +318,6 @@ func TestCheckLoweringsRefusesAnInputThatDoesNotExist(t *testing.T) {
 	assert.Equal(t, len(interp.CheckLowerings(ok)), 0, "got %v", interp.CheckLowerings(ok))
 }
 
-// testVerbs is a verb set the way a vocabulary declares one: the generic layer asks it
-// for the names and knows nothing else about a verb.
-
-// Lowerable carries two shapes of the SAME kind. CheckLowerings rejects an after shape
-// that cannot act as a container, without requiring a second group in the vocabulary.
 func TestLowerableTakesBeforeAndAfterShapes(t *testing.T) {
 	jobs := engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{engine.String("id")}))
 	build := func(after *engine.Node) *engine.Node {
@@ -378,8 +336,6 @@ func TestLowerableTakesBeforeAndAfterShapes(t *testing.T) {
 		[]string{"a lowered shape holds no resources of its own, so nothing could be placed in it"})
 }
 
-// WHAT A LOWERING PRODUCES GOES INSIDE ITS SOURCE. The source's own id and kind identify
-// the container; only the job receives a derived id.
 func TestLowerableProducesAScope(t *testing.T) {
 	after := engine.DefineIterGroup([]*engine.Attribute{
 		engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
@@ -453,15 +409,6 @@ func TestLowerableProducesAScope(t *testing.T) {
 	}
 }
 
-// THE DIAGNOSTIC FORM IS NOT A VALUE. `{each.x}` is how a term PRINTS — it is what
-// CheckLowerings shows a vocabulary author who named a field the shell does not have —
-// and for a while it was also what a field got SET to when the element had nothing behind
-// it. A produced resource came back holding `note: "{each.nodefault}"`, which reads as
-// config, compiles, and is a string nobody wrote.
-//
-// The sibling path never did this: a write whose value cannot be filled is dropped. A
-// field is the same question and gets the same answer, so what a produced resource holds
-// is only ever values that came from somewhere.
 func TestLoweringNeverWritesTheDiagnosticForm(t *testing.T) {
 	root := engine.Root(
 		[]*engine.Attribute{engine.String("id")},
@@ -532,11 +479,6 @@ func TestLoweringNeverWritesTheDiagnosticForm(t *testing.T) {
 	assert.DeepEqual(t, plan[0].Fields, map[string]any{"note": "failed", "factor": "2.5"})
 }
 
-// A NAME IS AN ADDRESS. The same leak in `Named(...)` did not put a string in a field, it
-// put one in the resource's address — `build-{each.label}` is a file nobody could author,
-// a key the by-name index would hand back, and nothing can refer to it. Refused before
-// anything is written, and reported against what somebody wrote: the pipeline, and the
-// stage inside it.
 func TestALoweringWhoseNameCannotBeFilledIsRefused(t *testing.T) {
 	root := engine.Root(
 		[]*engine.Attribute{engine.String("id")},

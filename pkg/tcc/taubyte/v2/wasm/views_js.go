@@ -9,18 +9,11 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// THE VIEWS, as every consumer of this module gets them: the explorer through compile,
-// a console through a session. Both ask schema.Views, which is what a deploy publishes,
-// so no page cuts a project its own way.
+// regionsFrom reads which regions to cut views by:
 //
-// WHICH REGIONS is the caller's to say:
-//
-//	(nothing)        the build with no regions — one view, `default`, the OSS deploy
+//	(nothing)        the build with no regions: one view, `default`
 //	"named"          a preview of every region the project names
 //	["eu", "us"]     a preview of exactly these
-//
-// A preview refuses no region; the build with none refuses a project it cannot place,
-// which is reported as the views' error beside everything else the compile returned.
 func regionsFrom(opts js.Value, flat map[string]any) schema.Regions {
 	if opts.IsUndefined() || opts.IsNull() || !opts.Truthy() {
 		return schema.WithNoRegions()

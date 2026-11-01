@@ -1,10 +1,7 @@
-// Package interp is the generic tcc interpreter: the compile/decompile entry and
-// the schema-driven transform drivers (CompileDriver, ResolveRefs, AttachAll,
-// IndexDriver and their decompile inverses), parameterized by an injected schema
-// root and project. It deliberately does NOT import the schema package — the
-// schema imports THIS package for its capability terms (Cap) and index/group
-// annotations, so the dependency is strictly one-way. The public compile/decompile
-// API is re-exposed as a thin facade in pkg/tcc/taubyte/v2/schema.
+// Package interp is the generic tcc interpreter: compile and decompile, and the
+// schema-driven transform drivers, parameterized by an injected schema root and
+// project. It does not import the schema package, which imports this one, so
+// the dependency is one-way; pkg/tcc/taubyte/v2/schema re-exposes the API.
 package interp
 
 import (
@@ -20,10 +17,8 @@ import (
 	yaseer "github.com/taubyte/tau/pkg/yaseer"
 )
 
-// Object is an alias for the compiled configuration object.
 type Object = object.Object[object.Refrence]
 
-// NextValidation is an alias for a single external validation request.
 type NextValidation = engine.NextValidation
 
 type Compiler struct {
@@ -69,10 +64,8 @@ type Compiler struct {
 
 var DefaultBranch = "main"
 
-// New builds a Compiler bound to a schema project and its CompileRoot node. The
-// project and compileRoot are supplied by the caller (the schema facade passes
-// schema.TaubyteProject + schema.CompileRoot()) rather than referenced here, so
-// this package never imports schema — the crux that keeps the dependency one-way.
+// New builds a Compiler bound to a schema project and its CompileRoot node,
+// supplied by the caller so this package never imports schema.
 func New(project engine.Schema, compileRoot *engine.Node, options ...Option) (c *Compiler, err error) {
 	c = &Compiler{
 		env:         Env{"branch": DefaultBranch},
@@ -91,14 +84,10 @@ func New(project engine.Schema, compileRoot *engine.Node, options ...Option) (c 
 		}
 	}
 
-	// EVERY ANSWERED FILL IS MERGED BEFORE THE ENGINE IS BUILT, so the loader reads
-	// one tree and nothing downstream can tell a delegated block from an authored
-	// one. The view replaces the filesystem option rather than being layered after
-	// it: WithLocal and WithVirtual are the only writers of seerOptions, and two
-	// filesystems for one compile is the ambiguity this exists to remove.
-	// Merged HERE only when the caller answered by hand; with a mounter, mountAll
-	// merges once after it has asked. Merging in both places would layer a view over
-	// a view, and a fill would then read as conflicting with itself.
+	// Every answered fill is merged before the engine is built, so the loader reads
+	// one tree. Merged here only when the caller answered by hand; with a mounter,
+	// mountAll merges once, since merging in both places would layer a view over a
+	// view.
 	if len(c.mounted) > 0 && c.mounter == nil {
 		view, from, mErr := c.mountedView()
 		if mErr != nil {
@@ -119,12 +108,8 @@ func New(project engine.Schema, compileRoot *engine.Node, options ...Option) (c 
 	return c, nil
 }
 
-// Compile is the configuration AS IT RUNS.
-//
-// Some kinds are rewritten at compile time — a workflow is not run by anything; what runs
-// is the queues and functions it becomes — so compiling means lowering. There is no
-// second call to remember: a caller who forgot one would be holding an object that is
-// missing the resources it needs, and nothing about it would say so.
+// Compile is the configuration as it runs: some kinds are rewritten at compile
+// time, so compiling means lowering.
 func (c *Compiler) Compile(ctx context.Context) (Object, []NextValidation, error) {
 	return c.CompileFor(ctx, c.bound())
 }
@@ -144,32 +129,23 @@ func (c *Compiler) CompileFor(ctx context.Context, b engine.Bound) (Object, []Ne
 			return obj, validations, err
 		}
 	}
-	// THE FILES THE DOCUMENT POINTS AT, read in AFTER lowering for the reason the
-	// provenance below is: lowerFor rebuilds the object from the documents, so
-	// anything written before it is discarded. That cost one confusing hour --
-	// the write succeeded, the selector read it back, and Flat() showed nothing.
+	// The files the document points at, read in after lowering: lowerFor rebuilds the
+	// object from the documents, discarding anything written before it.
 	if err := c.inlineFiles(obj); err != nil {
 		return obj, validations, err
 	}
 
-	// WHERE EACH DELEGATED BLOCK CAME FROM, recorded last so it survives a lowering
-	// that rebuilt the object. A consumer answers "which commit is this serving" from
-	// the object alone, which is the only thing that keeps the whole visible when part
-	// of it was written somewhere else.
+	// Where each delegated block came from, recorded last so it survives the
+	// lowering, so a consumer can say which commit is served from the object alone.
 	if err := c.recordMounts(obj); err != nil {
 		return nil, nil, err
 	}
 	return obj, validations, nil
 }
 
-// bound is what the compile variables ARE for this compiler: the compile-environment
-// bag, narrowed to the keys the SCHEMA ROOT declares as variables.
-//
-// THIS IS WHY interp SPELLS NO VARIABLE NAME. The root already states which of its
-// compile parameters are axes, so the binding is an intersection rather than a literal;
-// a vocabulary that adds a second variable needs no line here. Everything else in the
-// bag — a cloud, a branch — is a compile parameter some declaration reads, not an axis a
-// key may be suffixed with.
+// bound is the compile variables' values: the compile environment narrowed to
+// the keys the schema root declares as variables, so interp spells no variable
+// name.
 func (c *Compiler) bound() engine.Bound {
 	names := engine.VariablesOf(c.compileRoot)
 	if len(names) == 0 || len(c.env) == 0 {
@@ -203,10 +179,8 @@ func (c *Compiler) Authored(ctx context.Context) (Object, []NextValidation, erro
 	return c.AuthoredFor(ctx, c.bound())
 }
 
-// AuthoredFor is Authored under one BINDING. One parse serves several readings, so the
-// binding is an argument: the documents are parsed once by the engine this compiler
-// holds and read once per binding, rather than a compiler built per binding re-reading
-// the tree each time.
+// AuthoredFor is Authored under one binding: the documents are parsed once and
+// read once per binding.
 func (c *Compiler) AuthoredFor(ctx context.Context, b engine.Bound) (Object, []NextValidation, error) {
 	obj, err := c.engine.ProcessFor(b)
 	if err != nil {
@@ -223,23 +197,16 @@ func (c *Compiler) AuthoredFor(ctx context.Context, b engine.Bound) (Object, []N
 		return nil, nil, err
 	}
 
-	// Collect validations from transform context store
 	validationsStore := transformCtx.Store().Validators()
 	validations := validationsStore.Get()
 
 	return result, validations, nil
 }
 
-// Validate runs the full compile pipeline (load -> assemble -> resolve refs ->
-// index) purely to surface diagnostics, discarding the compiled object. It is the
-// only honest whole-config validator: the generated structureSpec structs model
-// the COMPILED-WIRE shape (resolved ids, projected keys), so they cannot check
-// authored-config or cross-element constraints (e.g. "source is '.' or a library",
-// "a function's domains are defined domains"). This entry does — it reports load-
-// time validation errors and referential-integrity errors as err, and returns the
-// deferred external checks (DNS, project_id) the caller must still run. External
-// tools (UIs, agents, the wasm build) call this to validate a config tree without
-// building artifacts.
+// Validate runs the full compile pipeline only for its diagnostics: load and
+// referential-integrity errors as err, plus the deferred external checks the
+// caller must still run. It is the one whole-config validator, since the
+// generated structs model the compiled shape.
 func (c *Compiler) Validate(ctx context.Context) ([]NextValidation, error) {
 	_, validations, err := c.Compile(ctx)
 	return validations, err
@@ -250,27 +217,19 @@ func (c *Compiler) Validate(ctx context.Context) ([]NextValidation, error) {
 // CompileDriver always runs; the rest are gated on generic predicates over the
 // root's DSL annotations.
 func compilePipe(root *engine.Node, env Env) []transform.Transformer[object.Refrence] {
-	// The CompileDriver: one generic transform that interprets the schema DSL to do
-	// every structural projection.
 	pipe := []transform.Transformer[object.Refrence]{
 		newCompileDriver(root),
 	}
 
-	// ResolveRefs: resolve every Ref(...)-annotated attribute against the
-	// name->id index the CompileDriver populated. Only needed if the schema has refs.
 	if usesRefs(root) {
 		pipe = append(pipe, ResolveRefs(root))
 	}
 
-	// The chroot wraps the project under `object` so a sibling can sit beside it. Two
-	// things want one: the index subtree, and the record of what a compile lowered.
-	// Without it that record would be a top-level key among the resource groups, and
-	// every walk over the object would read it as a group of resources called `lowered`.
+	// The chroot wraps the project under `object` so a sibling (the index subtree,
+	// the lowering record) does not read as a resource group.
 	if UsesIndexing(root) || UsesLowering(root) {
 		pipe = append(pipe, chrootEnvelope())
 	}
-	// IndexDriver: interpret the DSL's per-resource index-footprint closures to build
-	// the compiled `indexes` subtree.
 	if UsesIndexing(root) {
 		pipe = append(pipe, NewIndexDriver(root, env["branch"]))
 	}

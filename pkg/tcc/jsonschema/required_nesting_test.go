@@ -8,11 +8,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// JSON Schema's `required` names a property of the OBJECT IT SITS ON. A field
-// authored at execution/call is not a top-level property, so listing its bare
-// name at the root makes every valid document fail to validate — the emitter
-// did exactly that, and it went unnoticed while only `id` (top-level, and named
-// `id`) was required.
 func TestRequiredIsRecordedAtTheLevelTheFieldLivesAt(t *testing.T) {
 	root := []*engine.Node{
 		engine.DefineGroup("things", engine.DefineIter(
@@ -64,9 +59,6 @@ func TestRequiredIsRecordedAtTheLevelTheFieldLivesAt(t *testing.T) {
 	assert.DeepEqual(t, exec.Required, []string{"call"})
 }
 
-// A DEFAULT SCOPED TO A BRANCH says which branch. `default` alone is unconditional
-// in JSON Schema, so an editor reading it would offer a js function's entrypoint
-// convention to a wasm one, which the compiler then refuses for having none.
 func TestAConditionalDefaultCarriesItsCondition(t *testing.T) {
 	root := []*engine.Node{
 		engine.DefineGroup("things", engine.DefineIter(

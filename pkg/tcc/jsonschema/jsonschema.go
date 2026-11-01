@@ -1,8 +1,7 @@
-// Package jsonschema renders a tcc DSL definition as a Draft 2020-12 JSON Schema
-// (structure + constraints). It imports only the generic engine, so it runs at
-// runtime (including in the browser wasm build) as well as in the generator — the
-// schema always matches the DSL the caller holds. It is DSL-instance agnostic:
-// all Taubyte-specific labels come in through JSONSchemaOptions.
+// Package jsonschema renders a tcc DSL definition as a Draft 2020-12 JSON Schema.
+// It imports only the generic engine, so it runs in the browser wasm build as
+// well as the generator; instance-specific labels come through
+// JSONSchemaOptions.
 package jsonschema
 
 import (
@@ -14,8 +13,6 @@ import (
 
 	engine "github.com/taubyte/tau/pkg/tcc/engine"
 )
-
-// --- DSL-introspection helpers (self-contained; read only engine types/Meta) ---
 
 // resourceSpec is the structureSpec type name a resource iterator declares via
 // Resource(...) (e.g. "Function"); ok is false for non-resource groups.
@@ -80,25 +77,12 @@ func pathSegs(a *engine.Attribute) (segs []string, ok bool) {
 	return segs, true
 }
 
-// JSON Schema emission. Walks the DSL and projects
-// the AUTHORED config shape (nested by Path) plus every constraint the DSL
-// declares as a single Draft 2020-12 document. Standard keywords carry what JSON
-// Schema expresses exactly (type/enum/pattern/format/minimum/oneOf/required); the
-// vendor-extension prefix (opts.ExtPrefix) carries what it cannot statically
-// enforce (cross-element references, compiler-only checks like DNS). UIs ignore
-// unknown keywords and agents read x-* happily, so one document serves both. The
-// cross-file referential integrity these ref keys describe is enforced by the
-// compiler (Compiler.Validate), not by any JSON Schema validator.
-//
-// The emitter is DSL-instance agnostic: it reads only the engine's generic
-// annotation keys and takes all instance-specific labels (extension prefix,
-// $id, title) as options. It hardcodes no resource names and has no per-resource
-// switch.
-//
-// Fidelity note: attributes at a dynamic/map-keyed location (Either/Key paths)
-// can't be a clean nested property, so they are emitted at the object root marked
-// <ext>dynamic with their real <ext>path. additionalProperties is left open so
-// those and any unmodeled keys still pass.
+// The emitter projects the authored shape (nested by Path) and every constraint.
+// Standard keywords carry what JSON Schema expresses exactly; the vendor prefix
+// carries what it cannot (cross-element references and compiler-only checks,
+// enforced by Compiler.Validate). Attributes at a dynamic location are emitted
+// at the root, marked dynamic with their real path; additionalProperties stays
+// open.
 
 // JSONSchemaOptions carries the instance-specific labels the generic emitter
 // cannot derive from the DSL: the vendor-extension keyword prefix and the
@@ -114,11 +98,8 @@ type JSONSchemaOptions struct {
 // emit vendor keys without threading it through every call.
 type jsonSchemaGen struct{ ext string }
 
-// omap is an insertion-ordered string map used for `properties`, so fields appear
-// in DSL declaration order (Go's map marshaling sorts keys, which JSON Schema
-// consumers render as an alphabetized form — incoherent for UIs). JSON member
-// order is insignificant per spec but preserved by every mainstream parser, so
-// emitting in order is what keeps a generated UI's field order matching the DSL.
+// omap is an insertion-ordered map for `properties`, so fields appear in DSL
+// order rather than alphabetized by Go's map marshaling.
 type omap struct {
 	keys []string
 	vals map[string]any
@@ -255,8 +236,6 @@ func GenerateJSONSchema(root []*engine.Node, opts JSONSchemaOptions) ([]byte, er
 	return buf.Bytes(), nil
 }
 
-// resourceMap is the "<group>: map of name -> resource" property: each authored
-// file under the group dir is one entry keyed by its name.
 // groupDoc is a group iterator's own documentation, if it declared any.
 func groupDoc(iter *engine.Node) string {
 	d, _ := iter.Meta["doc"].(string)
@@ -285,11 +264,9 @@ func (g jsonSchemaGen) table(node *engine.Node) map[string]any {
 	return t
 }
 
-// objectSchema projects one resource/container iterator into an object schema:
-// its attributes nested by authored Path, plus (for a container) a map per nested
-// resource group. title is the singular the DSL declares for one instance, with
-// its declared casing — the only place that casing
-// survives, since it is otherwise just a $defs key nobody should have to parse.
+// objectSchema projects one resource or container iterator into an object
+// schema: attributes nested by Path, plus a map per nested resource group for a
+// container. title is the declared singular, with its casing.
 func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, title string) map[string]any {
 	props := newOmap()
 	var required []string
@@ -308,11 +285,8 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, ti
 		if a.Required {
 			switch {
 			case !ok || a.Captures:
-				// A dynamic (Either/Key) location is emitted as a FLAT marker
-				// property, not at its real path, so naming it in `required`
-				// would demand a top-level property that does not exist and
-				// reject every valid document. The requirement rides the
-				// marker.
+				// A dynamic location is a flat marker property, so naming it in `required` would
+				// reject every valid document; the requirement rides the marker.
 				leaf[g.ext+"required"] = true
 			default:
 				markRequired(props, &required, segs)
@@ -354,12 +328,8 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, ti
 		if node.Required {
 			addOnce(&required, name)
 		}
-		// A KEY CAN HOLD BOTH. A kind and an attribute may be called the same thing —
-		// `model` is a kind, and an agent has a `model` — so the attribute's own
-		// properties sit under that key beside the group's entries. JSON Schema says
-		// exactly this: `properties` names the declared ones, `additionalProperties`
-		// governs every other key. Overwriting instead published a schema in which the
-		// authored resource was invalid, while the compiler accepted it.
+		// A key can hold both an attribute's properties and a group's entries (`model`):
+		// `properties` names the declared ones, `additionalProperties` the rest.
 		if prev, had := props.get(name); had {
 			existing, ok := prev.(map[string]any)
 			if !ok {
@@ -386,11 +356,8 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, ti
 	if cat, ok := iter.Meta["category"].(string); ok && cat != "" {
 		out[g.ext+"category"] = cat // what the kind is FOR; see Category() — no consumer hardcodes this
 	}
-	// Display sections: a presentation overlay a UI/CLI reads to render fields in
-	// human sections. It rides ALONGSIDE properties (which stay faithful to the
-	// authored nesting) — each field carries <ext>section, and this registry gives
-	// the sections their order, titles, and descriptions. Membership is whatever
-	// the fields declared, so a section can cut across the authored Path nesting.
+	// Display sections ride alongside properties: each field carries <ext>section,
+	// and this registry gives their order, titles and descriptions.
 	if secs, ok := iter.Meta["sections"].([]engine.SectionSpec); ok && len(secs) > 0 {
 		list := make([]any, 0, len(secs))
 		for _, s := range secs {
@@ -405,24 +372,16 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, ti
 	if len(required) > 0 {
 		out["required"] = required
 	}
-	// A SWITCH IS A CLOSED CHOICE, so say so in the standard keywords. A required field
-	// whose path runs through an Either — a storage's `size`, under `object` or
-	// `streaming` — cannot be named in `required`, because the property it names does
-	// not exist at a static path. It rode a vendor marker alone, which meant the
-	// published schema accepted a storage with no size at all while the compiler
-	// refused it: the two disagreed about the same document.
-	//
-	// `oneOf` expresses exactly what the vocabulary means — one branch, and that
-	// branch's own required fields — and rides alongside the flat properties rather
-	// than replacing them.
+	// A switch is a closed choice, said with `oneOf`: one branch and its own required
+	// fields. A required field under an Either cannot be named in `required`, so a
+	// marker alone left the schema accepting what the compiler refuses.
 	switch cs := g.branchConstraints(iter); len(cs) {
 	case 0:
 	case 1:
 		out["oneOf"] = cs[0]
 	default:
-		// ONE oneOf PER SWITCH. A proxy chooses a host (generated|zone) AND a forward
-		// target, which are two independent choices — flattening both into one oneOf
-		// means a valid document matches two branches and "exactly one" rejects it.
+		// One oneOf per switch: a proxy's host and forward are independent choices, and
+		// one flattened oneOf would match two branches.
 		all := make([]any, 0, len(cs))
 		for _, branches := range cs {
 			all = append(all, map[string]any{"oneOf": branches})
@@ -445,12 +404,8 @@ func (g jsonSchemaGen) branchConstraints(iter *engine.Node) [][]any {
 	switches := map[string]*switchAt{}
 	under := map[string]map[string][]string{} // switch key -> option -> required leaves
 
-	// THE SWITCHES ARE THE Captures() ATTRIBUTES, not the fields that happen to sit
-	// under one. Deriving them from the leaves published a choice only where some
-	// field was required inside a branch, so a switch with nothing required under it
-	// — `source`, whose branches are one value each — was emitted as no constraint at
-	// all, and `source: {}` or `source: {branch: main}` validated against a schema
-	// the compiler refuses. A vocabulary states its switches; this reads them.
+	// The switches are the Captures() attributes, so a switch with nothing required
+	// under it (`source`) is still published as a choice.
 	for _, a := range iter.Attributes {
 		if !a.Captures {
 			continue
@@ -482,12 +437,8 @@ func (g jsonSchemaGen) branchConstraints(iter *engine.Node) [][]any {
 		switches[key] = &switchAt{
 			prefix:  prefix,
 			options: fm.Values(),
-			// OPTIONAL UNLESS SOMETHING INSIDE A BRANCH IS REQUIRED. The capturing
-			// attribute is not the only thing that can make a switch mandatory: a
-			// Required() attribute inside a branch makes the block it hangs off
-			// mandatory too. Publishing that
-			// switch as optional hands an editor a schema more permissive than the
-			// compiler — the drift this file exists to close, not to move elsewhere.
+			// Optional unless the capturing attribute or something inside a branch is
+			// required.
 			optional: !a.Required && !requiredUnderBranch(iter, prefix, fm.Values()),
 			bare:     bareValueType(iter, prefix),
 		}
@@ -510,10 +461,7 @@ func (g jsonSchemaGen) branchConstraints(iter *engine.Node) [][]any {
 		if at < 0 || len(opts) == 0 || at+1 >= len(a.Path) {
 			continue // no switch, or the switch IS the leaf (that is the Captures attr)
 		}
-		// Required in EVERY branch, or required in the ones a RequiredWhen names. The
-		// second is the same statement said conditionally: `engine-host` is required
-		// when the engine is postgres or mysql, which is "required inside those
-		// branches" and nothing else.
+		// Required in every branch, or in the branches a RequiredWhen names.
 		want := opts
 		if !a.Required {
 			cond, ok := a.Meta["requiredWhen"].(engine.ConditionSpec)
@@ -545,11 +493,8 @@ func (g jsonSchemaGen) branchConstraints(iter *engine.Node) [][]any {
 			}
 			leaf = append(leaf, str)
 		}
-		// THE SWITCH'S OPTIONS ARE THE ONES IT CAPTURES, not the ones this field
-		// happens to list. A database's `engine` is distributed|postgres|mysql, and
-		// `engine-host` is declared over the external two alone — so grouping by the
-		// field's own Either would publish a oneOf with no `distributed` branch and
-		// reject a perfectly good distributed database.
+		// The switch's options are the ones it captures, not the ones this field lists
+		// (`engine-host` covers two of `engine`'s three).
 		all := capturedOptions(iter, a.Path, at)
 		if len(all) == 0 {
 			all = opts
@@ -567,22 +512,14 @@ func (g jsonSchemaGen) branchConstraints(iter *engine.Node) [][]any {
 	for _, key := range order {
 		sw := switches[key]
 		var branches []any
-		// The switch's own key holding a VALUE is a branch of its own, and it is the
-		// one an author writes most: `source: agents/support`. Typed, so it is
-		// distinguishable from the block forms — without the type a string satisfies
-		// every branch vacuously (`required` says nothing about a non-object) and a
-		// oneOf that matches four ways rejects a correct document.
+		// A value at the switch's own key is a branch (`source: agents/support`), typed
+		// so a string does not satisfy every block branch vacuously.
 		if sw.bare != "" {
 			branches = append(branches, nest(sw.prefix, map[string]any{"type": sw.bare}))
 		}
 		for _, opt := range sw.options {
-			// the branch itself has to be present, and whatever is required inside it
-			// A BLOCK BRANCH IS AN OBJECT, always. `required` says nothing about a
-			// non-object, so without this a scalar satisfies every branch vacuously —
-			// harmless where several branches then match and the oneOf fails, and not
-			// harmless at all where the switch has ONE option: `forward: db` matched
-			// exactly once and validated, while the compiler refuses it. The guard was
-			// written for the bare-value case and the reason applies to every case.
+			// A block branch is always an object: otherwise a scalar satisfies a
+			// one-option switch's branch vacuously.
 			inner := map[string]any{"type": "object", "required": []string{opt}}
 			if leaves := under[key][opt]; len(leaves) > 0 {
 				branch := map[string]any{}
@@ -593,10 +530,7 @@ func (g jsonSchemaGen) branchConstraints(iter *engine.Node) [][]any {
 			}
 			branches = append(branches, nest(sw.prefix, inner))
 		}
-		// AN OPTIONAL SWITCH IS ONE THE DOCUMENT MAY NOT MENTION. Without this every
-		// choice reads as mandatory, so a gateway with no `host` — reachable only by
-		// being mounted inside another, which is why the field is optional — compiled
-		// clean and failed the schema published for it.
+		// An optional switch is one the document may not mention.
 		if sw.optional && len(sw.prefix) > 0 {
 			last := len(sw.prefix) - 1
 			branches = append(branches, softNest(sw.prefix[:last],
@@ -814,14 +748,8 @@ func (g jsonSchemaGen) attrSchema(a *engine.Attribute) map[string]any {
 	}
 	if r, ok := a.Meta["ref"].(engine.RefSpec); ok {
 		ref := map[string]any{"group": r.Group}
-		// A REFERENCE WHOSE TARGET KIND IS ANOTHER FIELD'S VALUE HAS NO GROUP
-		// OF ITS OWN, and dropping that made the emitted schema say `{"group":
-		// ""}` — a reference to nothing. A consumer reading it could neither
-		// complete it nor check it, which is every handler block in the
-		// vocabulary: a gateway's route, a proxy's forward, a channel's serve.
-		//
-		// So the sibling that decides is named, and a consumer reads that
-		// field's current value to know which group to look in.
+		// A reference whose target kind is another field's value names that field, so a
+		// consumer reads its value to know which group to look in.
 		if r.KindFrom != "" {
 			ref["kind-from"] = r.KindFrom
 		}
@@ -847,12 +775,9 @@ func condition(c engine.ConditionSpec) map[string]any {
 	return map[string]any{"field": c.Field, "in": c.In}
 }
 
-// markRequired records a required field at the level it actually lives.
-// JSON Schema's `required` names a property of the OBJECT IT SITS ON, so a
-// nested path listed at the root ("call" for a field authored at
-// execution/call) makes every valid document fail: no such top-level property
-// exists. Each intermediate key becomes required on its parent too — a required
-// execution/call means `execution` itself must be there to hold it.
+// markRequired records a required field at the level it lives, each containing
+// key required on its parent: `required` names properties of the object it sits
+// on.
 func markRequired(props *omap, own *[]string, segs []string) {
 	addOnce(own, segs[0])
 	if len(segs) == 1 {
@@ -885,10 +810,7 @@ func addOnce(list *[]string, v string) {
 // intermediate ordered object schemas as needed (order = first-seen).
 func setNested(props *omap, segs []string, leaf map[string]any) {
 	if len(segs) == 1 {
-		// The same key can be a VALUE or a BLOCK: an optional switch whose default
-		// branch takes one argument is written as a bare value at the switch's own
-		// key (`source: agents/support`), and as a mapping for every other branch.
-		// Whichever side is emitted second finds the other already there.
+		// A key can be a value or a block (an optional switch's bare-value branch).
 		if existing, ok := props.get(segs[0]); ok {
 			if obj := objectMember(existing); obj != nil {
 				props.set(segs[0], map[string]any{"oneOf": []any{leaf, obj}})

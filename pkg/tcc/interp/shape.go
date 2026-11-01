@@ -2,11 +2,9 @@ package interp
 
 import "github.com/taubyte/tau/pkg/tcc/engine"
 
-// This file holds the generic "schema shape" queries the interpreter uses to stay
-// schema-driven: it inspects the injected root's DSL annotations rather than
-// restating a fixed shape. The compiler uses the usesX predicates to select
-// which passes to run; ContainerKeys derives the nested-container config keys so
-// "applications" is declared only in the schema, never here.
+// Generic schema-shape queries: the compiler selects passes from these
+// predicates, and ContainerKeys keeps container keys declared only in the
+// schema.
 
 // eachIter calls fn for every group iterator reachable from root — each top-level
 // group's iterator, and recursively the iterators of a container group's nested
@@ -59,22 +57,11 @@ func UsesIndexing(root *engine.Node) bool {
 	})
 }
 
-// ContainerKeys returns the config keys of every group whose instances are SCOPES — a
-// top-level group whose iterator is itself a group with children — in the order the vocabulary declares them. Empty when the schema
-// declares none. It is the same structural test the generator uses (tools/tcc-gen
-// containerKey), kept in sync so "applications" is declared only in the schema, never
-// restated here.
-//
-// PLURAL, AND THAT IS THE POINT. This answered with the FIRST such group, and everything
-// downstream — reference resolution, the index, decompile, the lowering walk — was handed
-// that one key and walked only it. One container was the whole truth while a scope was
-// something an author writes; it stopped being true the moment a lowering could
-// synthesize a scope of a DIFFERENT kind (interp.Lowerable). A vocabulary declaring a
-// second one used to compile clean and then resolve no names inside it, which reads as
-// the reference being wrong rather than as half the walk being missing.
-//
-// The order is the declaration order, and it is load-bearing for the same reason the
-// order of indexed groups is: buckets accumulate across scopes as they are visited.
+// ContainerKeys returns the config keys of every group whose instances are
+// scopes (its iterator a group with children), in declaration order: the same
+// test tcc-gen uses, so containers are declared only in the schema. Plural,
+// since a lowering can synthesize a scope of another kind. The order is
+// load-bearing, as for indexed groups.
 func ContainerKeys(root *engine.Node) []string {
 	var out []string
 	for _, g := range root.Children {
@@ -91,12 +78,9 @@ func ContainerKeys(root *engine.Node) []string {
 	return out
 }
 
-// ownGroups is the child groups a kind declares for ITSELF — what `Nested(...)` attached:
-// its access blocks, its ports, its variables. For an ordinary resource that is all of
-// them. For a kind that is ALSO a container it is the half that is not the resource groups
-// it holds, and telling the two apart matters at every walk: what is nested is data
-// belonging to the instance, and what is held is a resource the scope walk visits on its
-// own. Walking the held ones as nested data ran every projection over them twice.
+// ownGroups is the child groups a kind declares for itself, what Nested(...)
+// attached. For a kind that is also a container it excludes the resource groups
+// it holds, which the scope walk visits on its own.
 func ownGroups(iter *engine.Node) []*engine.Node {
 	if iter == nil || !iter.Nested {
 		return nil
@@ -110,12 +94,9 @@ func ownGroups(iter *engine.Node) []*engine.Node {
 	return out
 }
 
-// HeldResource is the same question asked by a CONSUMER walking a compiled object: an
-// entry filed under `kind` inside a resource is either something that resource declares
-// for itself — an access entry, keyed by the label of what it reaches — or a resource the
-// container HOLDS, when that kind is a container as well as a resource. Both land at the
-// one key, and a consumer that guessed would report an agent's tool as a function it
-// contains.
+// HeldResource tells a consumer walking a compiled object whether an entry filed
+// under kind inside a resource is a resource the container holds, or an entry
+// the resource declares for itself (an agent's tool).
 func HeldResource(root *engine.Node, kind, key string) bool {
 	if root == nil {
 		return false
@@ -137,23 +118,9 @@ func heldUnder(groups []*engine.Node, idField, key, entry string) bool {
 	return false
 }
 
-// keyedByIdentity answers, of one entry under a group key, whether it is a RESOURCE the
-// scope holds rather than an entry the holder declares for itself.
-//
-// The two land at one key and nothing else separates them: a kind's name is what an
-// access block is filed under and what a resource group is called, so a container that is
-// also a resource has `function: {<produced id>: …, checkout: {ops: […]}}` — the loop it
-// became beside the tool it reaches.
-//
-// THE IDENTITY IS THE WHOLE ANSWER, and it is not a new rule. A compiled resource is
-// keyed by the id the schema names (engine.Identity, which is what RenameById keyed it
-// by); an entry is keyed by a label the author chose and never had one. decompile's
-// `strip` already states exactly this and relies on it — "an id is the one key nothing
-// else in the tree is keyed by" — so this asks the schema's own validator for that field
-// rather than inventing a second test.
-//
-// A vocabulary that puts no validator on its identity keeps the walk it had: nothing can
-// be told apart, and nothing in such a schema merges two things at one key either.
+// keyedByIdentity: a held resource is keyed by the id the schema names, which an
+// entry never has, so the identity's validator tells them apart. A vocabulary
+// with no validator on its identity merges nothing at one key either.
 func keyedByIdentity(iter *engine.Node, idField, key string) bool {
 	if iter == nil {
 		return false

@@ -7,7 +7,6 @@ import (
 )
 
 func TestDefineIterGroup(t *testing.T) {
-	// Setup: Create attributes and children
 	attrs := []*Attribute{
 		{Name: "attr1", Type: TypeString},
 		{Name: "attr2", Type: TypeInt},
@@ -16,10 +15,8 @@ func TestDefineIterGroup(t *testing.T) {
 	child1 := &Node{Group: false}
 	child2 := &Node{Group: true}
 
-	// Execute
 	node := DefineIterGroup(attrs, child1, child2)
 
-	// Verify
 	assert.Assert(t, node != nil)
 	assert.Equal(t, node.Group, true)
 	assert.Equal(t, len(node.Attributes), 2)
@@ -31,7 +28,6 @@ func TestDefineIterGroup(t *testing.T) {
 }
 
 func TestFloat_Helper(t *testing.T) {
-	// Use case: Testing Float helper function
 	attr := Float("myFloat", Captures(), Default(3.14))
 
 	assert.Equal(t, attr.Name, "myFloat")
@@ -41,14 +37,12 @@ func TestFloat_Helper(t *testing.T) {
 }
 
 func TestStringSlice_Helper(t *testing.T) {
-	// Use case: Testing StringSlice helper function
 	defaultVal := []string{"item1", "item2"}
 	attr := StringSlice("mySlice", Required(), Default(defaultVal))
 
 	assert.Equal(t, attr.Name, "mySlice")
 	assert.Equal(t, attr.Type, TypeStringSlice)
 	assert.Equal(t, attr.Required, true)
-	// Compare slice elements individually since slices aren't directly comparable
 	defaultSlice := attr.Default.([]string)
 	assert.Equal(t, len(defaultSlice), 2)
 	assert.Equal(t, defaultSlice[0], "item1")
@@ -56,7 +50,6 @@ func TestStringSlice_Helper(t *testing.T) {
 }
 
 func TestDefine_Helper(t *testing.T) {
-	// Use case: Testing Define helper function
 	attrs := []*Attribute{
 		{Name: "attr1", Type: TypeString},
 	}

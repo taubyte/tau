@@ -15,16 +15,10 @@ type FiniteMatcher interface {
 	Values() []string
 }
 
-// SuffixMatcher is a matcher that can spell ITSELF suffixed with one value.
-//
-// A value that varies is written at `<key>_<value>` beside the key. When the key
-// is one the document CHOSE out of a set rather than one the schema named, the
-// suffix lands on whichever alternative was written — so the schema has to admit
-// every alternative it could be, suffixed. Only the matcher knows what it admits,
-// so only the matcher can say what its suffixed spelling is.
-//
-// StringMatchAll deliberately does not implement this: it admits keys nobody can
-// enumerate, so there is no set to suffix.
+// SuffixMatcher can spell itself suffixed with one value: a varying value under
+// a key the document chose from a set may sit under any alternative, suffixed.
+// StringMatchAll admits keys nobody can enumerate, so it does not implement
+// this.
 type SuffixMatcher interface {
 	StringMatcher
 	Suffixed(value string) StringMatcher

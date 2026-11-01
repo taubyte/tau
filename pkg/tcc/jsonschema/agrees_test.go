@@ -11,16 +11,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// THE PUBLISHED SCHEMA AND THE COMPILER HAVE TO AGREE ABOUT THE SAME DOCUMENT.
-//
-// They disagreed: a required field whose path runs through an Either — a storage's
-// size, a database's host — could not be named in `required`, so it rode a vendor
-// marker and the schema accepted a document the compiler refuses. The compiler is the
-// authority; a schema that is more permissive is one an editor validates against and
-// then watches the build fail.
-//
-// This dumps the fixture as one document and hands it to whatever validates the
-// published schema, which is the only way to catch the two drifting apart.
 func TestSchemaAndCompilerAgree(t *testing.T) {
 	b, err := jsonschema.GenerateJSONSchema(v2.V2Resources, jsonschema.JSONSchemaOptions{})
 	assert.NilError(t, err)
@@ -56,11 +46,9 @@ func TestSchemaAndCompilerAgree(t *testing.T) {
 			continue
 		}
 		switches++
-		// one alternative is legitimate — a proxy forwards to an application and to
-		// nothing else — so what is checked is that every branch ASSERTS something:
-		// it demands its own key, or (for an optional switch) it is the alternative
-		// that says the switch is absent. A branch asserting neither accepts every
-		// document and makes the whole choice vacuous.
+		// Every branch must assert something: demand its own key, or be the alternative
+		// saying an optional switch is absent. A branch asserting neither makes the
+		// choice vacuous.
 		for _, br := range branches {
 			assert.Assert(t, asserts(br.(map[string]any)),
 				"%s has a branch that asserts nothing", kind)

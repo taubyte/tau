@@ -67,8 +67,6 @@ func findingsTitled(found []schema.Finding, sev schema.Severity) []string {
 	return out
 }
 
-// A BUILD THAT SERVES ONE REGION PLACES EVERYTHING THERE, and refuses whenever the
-// config named another — once per resource, naming it.
 func TestNoRegionsRefusesAndPlacesInDefault(t *testing.T) {
 	r, severity := schema.WithNoRegions(), schema.Broken
 	for _, tc := range []struct {
@@ -108,9 +106,6 @@ func TestNoRegionsRefusesAndPlacesInDefault(t *testing.T) {
 	require.Equal(t, `allows region "region-1", which this build does not serve; everything under it runs in "default"`, allow[0].Title)
 }
 
-// THE AUDIT FILES WHAT ONEREGION SAYS against what said it: the resource, the
-// namespace, the project and the environment, each by name. It is the default, and
-// passing a nil Regions is the default too.
 func TestTheAuditHearsNoRegionsByDefault(t *testing.T) {
 	docs := map[string]string{
 		"/project.yaml": regionsProject + "regions: [region-1]\n" +
@@ -144,8 +139,6 @@ func TestTheAuditHearsNoRegionsByDefault(t *testing.T) {
 	require.Empty(t, schema.Place(clean))
 }
 
-// ONE EFFECTIVE PLACEMENT: what the resource states, its scope chain's ceiling, and
-// the environment the audit reads narrowing it.
 func TestThePlacementTheRegionsIsAsked(t *testing.T) {
 	docs := map[string]string{
 		"/project.yaml": regionsProject + "regions: [region-1, region-2]\n" +
@@ -225,8 +218,6 @@ func TestTheAuditFilesWhatTheRegionsSays(t *testing.T) {
 	require.Contains(t, findingsTitled(found, schema.Broken), "project/p: allowance refused")
 }
 
-// AS A REGION, a build is one region of a cloud that has more: naming the others is
-// not an error, and it answers where things run as the cloud would.
 func TestWithRegionIsOneRegionOfMany(t *testing.T) {
 	r := schema.WithRegion("region-1")
 	require.Equal(t, []string{"region-1"}, r.Serves())

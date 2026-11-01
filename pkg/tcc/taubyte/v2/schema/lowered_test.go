@@ -15,9 +15,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// COMPILING IS LOWERING. Nothing executes a workflow: what executes is the queues and
-// functions it becomes, so an object without them is an object missing what it needs.
-// There is no second call to remember.
 func TestCompileHoldsWhatRuns(t *testing.T) {
 	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
 	assert.NilError(t, err)
@@ -58,16 +55,12 @@ func TestCompileHoldsWhatRuns(t *testing.T) {
 	assert.Assert(t, entry != nil, "nothing says this driver receives from its step's queue: %v", queues)
 	assert.DeepEqual(t, entry["ops"], []string{"receive"})
 
-	// THE AUTHOR'S FUNCTION KNOWS NO QUEUES. It is invoked by the driver; the pipeline
-	// used to be stated a second time as grants on it, outside the workflow, where the
-	// first copy could not be seen beside it.
+	// The author's function knows no queues: the driver invokes it.
 	fn := resource(t, flat, "function", "reserve_stock")
 	_, hasQueues := fn["sync"]
 	assert.Assert(t, !hasQueues, "the step's function carries queue access it should know nothing about: %v", fn)
 }
 
-// THE FILES ARE NOT TOUCHED. The view a lowering is applied to is in memory; a compiler
-// that wrote to the repository would be one nobody could trust with a repository.
 func TestCompileLeavesTheProjectAlone(t *testing.T) {
 	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
 	assert.NilError(t, err)
@@ -80,9 +73,6 @@ func TestCompileLeavesTheProjectAlone(t *testing.T) {
 		"reading the project again found a queue nobody wrote: the view leaked onto disk")
 }
 
-// THE OBJECT SAYS WHAT NOBODY WROTE. Without that record it cannot be taken apart again:
-// decompile would write a queue into somebody's repository as though they had asked for
-// it, and a console could not tell a generated resource from an authored one.
 func TestObjectRecordsWhatItLowered(t *testing.T) {
 	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
 	assert.NilError(t, err)
@@ -127,8 +117,6 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 	assert.Equal(t, len(alsoNone), 0)
 }
 
-// GROUP IS A ROLE, NOT A KIND. Authored workflow/agent stay leaf resources in the editor
-// schema; the compiled kind root presents those same kinds as containers.
 func TestWhatALoweringBecomesKeepsItsKindAndTakesTheContainerRole(t *testing.T) {
 	obj := compileFor(t, schema.WithLocal("../fixtures/basic"))
 
@@ -170,19 +158,6 @@ func TestWhatALoweringBecomesKeepsItsKindAndTakesTheContainerRole(t *testing.T) 
 	assert.Assert(t, namespace, "the authored scope went missing from the schema")
 }
 
-// A CONTAINER THAT IS ALSO A RESOURCE KEEPS WHAT IT REACHES, and what it reaches shares
-// a key with what it holds.
-//
-// An agent's tools ARE its access block, so `agent/support` declares `function:
-// {checkout: {ops: [invoke]}}` — and its lowering produces `function/support_infer`, the
-// loop. Once the agent takes the container shape both are at the key `function` in one
-// compiled resource: the loop keyed by its id, the tool by the label of what it reaches.
-//
-// The two are told apart by the identity the schema names, which is the same rule
-// decompile's strip already leans on. Getting it wrong is SILENT in both directions — the
-// directory suppressed the document key and the tool simply vanished, and an agent whose
-// declared tools are gone is an agent that reaches nothing, in the object, in the graph
-// and at deploy.
 func TestAContainerKeepsWhatItReachesBesideWhatItHolds(t *testing.T) {
 	obj := compileFor(t, schema.WithLocal("../fixtures/basic"))
 	flat := obj.Flat()
@@ -214,9 +189,6 @@ func TestAContainerKeepsWhatItReachesBesideWhatItHolds(t *testing.T) {
 	}
 }
 
-// A LOWERABLE RESOURCE IN A NAMESPACE produces into a scope of its own, INSIDE that
-// one. Scope arithmetic is where a path builder goes wrong, and it goes wrong silently: a
-// resource placed one level up is a resource in the wrong namespace, and it compiles.
 func TestLoweringInsideANamespace(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
@@ -249,12 +221,6 @@ func TestLoweringInsideANamespace(t *testing.T) {
 	t.Fatal("sync/ship_pack is not in the compiled object")
 }
 
-// TWO LOWERINGS WRITE INTO ONE PRODUCED RESOURCE, AND BOTH SURVIVE. A step becomes a
-// queue and a driver, and the entries the driver ends up with come from BOTH: the queue's
-// lowering says the driver receives from it, the driver's own says it sends to the next
-// one and invokes the step's function. Written one at a time into the same document, the
-// second silently replaced the first — and what was lost is the `receive`: the queue keeps
-// its work and nothing consumes it, which is a deadlock that compiles.
 func TestTwoLoweringsWriteIntoOneProducedResource(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
@@ -295,11 +261,6 @@ func TestTwoLoweringsWriteIntoOneProducedResource(t *testing.T) {
 	assert.DeepEqual(t, ran["ops"], []string{"invoke"})
 }
 
-// WHAT THE AUTHOR WROTE IS THEIRS. A lowering writes onto one resource somebody else
-// wrote — the shell itself, where it records that starting this workflow means sending to
-// the start step's queue. A value goes into a scalar only when the field is empty, so an
-// author who wrote it themselves keeps what they wrote; a compiler that replaced it would
-// be taking away a line, and decompile would hand back a document they never authored.
 func TestAnAuthoredValueIsNotReplaced(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
@@ -331,9 +292,6 @@ func TestAnAuthoredValueIsNotReplaced(t *testing.T) {
 	assert.Equal(t, start["as"], "send")
 }
 
-// COMPILING TWICE GIVES THE SAME OBJECT. Ids are derived, names are templated, and the
-// order things are placed in is fixed — so a build that looked like a delete and a create
-// every time would be a build nothing downstream could trust.
 func TestLoweringIsDeterministic(t *testing.T) {
 	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
 	assert.NilError(t, err)
@@ -392,9 +350,6 @@ func rootOf(flat map[string]any) map[string]any {
 	return flat
 }
 
-// AN OP THE AUTHOR ALSO WROTE IS NOT THE COMPILER'S TO TAKE BACK. A lowering that grants
-// what somebody already granted adds nothing — and must record nothing, or decompiling to
-// what was written would delete a line out of their repository.
 func TestAnAuthoredOpIsNotRecordedAsGranted(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
@@ -431,11 +386,6 @@ func TestAnAuthoredOpIsNotRecordedAsGranted(t *testing.T) {
 	}
 }
 
-// AN ENTRY CAN LAND ON A RESOURCE THE SAME LOWERING PRODUCED. An agent's loop is
-// generated, and the entry saying it searches the memory that lowering also generated
-// belongs on the loop. A check that looked only at what somebody WROTE deleted it, and
-// the memory became a resource nothing reaches — which reads, in a drawing and in a
-// deploy, as a feature that was never wired up.
 func TestAnEntryLandsOnAProducedResource(t *testing.T) {
 	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
 	assert.NilError(t, err)
@@ -450,10 +400,6 @@ func TestAnEntryLandsOnAProducedResource(t *testing.T) {
 	assert.DeepEqual(t, entry["ops"], []string{"search"})
 }
 
-// THE ROOT DOCUMENT IS WHAT THE SCHEMA SAYS IT IS. This vocabulary declares
-// Leaf("project"), so its root is project.yaml — and a binding that answered with the
-// engine's fallback named a file that does not exist, which made the project's own
-// document unaddressable and unreadable through the session.
 func TestSessionKnowsTheRootDocument(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
@@ -467,10 +413,6 @@ func TestSessionKnowsTheRootDocument(t *testing.T) {
 	assert.Assert(t, id != "")
 }
 
-// A RESOURCE TWO SCOPES DEEP IS STILL A RESOURCE. Scopes nest — v2 allows eight levels —
-// and the session read only the shapes that fit in four segments, so anything inside a
-// namespace inside a namespace answered "too deep". Became() accepted the address that
-// Get and Serialize rejected.
 func TestSessionAddressesNestedScopes(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
@@ -498,15 +440,6 @@ func TestSessionAddressesNestedScopes(t *testing.T) {
 	assert.DeepEqual(t, scope, []string{"namespace", "shop", "namespace", "local"})
 }
 
-// A NAME A LOWERING TAKES IS NOT A NAME AN AUTHOR CAN LOSE. A workflow is a scope for
-// what it becomes, so a queue somebody wrote at the root and a queue the compiler wrote
-// inside `checkout` are two resources that never meet — the collision that used to be a
-// refused compile is not a collision at all any more.
-//
-// The scope's own name can still collide with an authored scope, and that is reported
-// where it happens. What needs no rule at all any more is somebody hand-writing into the
-// compiler's space: a workflow is one flat document in the authored schema, so a
-// directory where that document belongs is refused by the shape itself.
 func TestAProducedNameCannotTakeAnAuthoredOne(t *testing.T) {
 	free := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(free, "../fixtures/basic", "/"))
@@ -529,12 +462,8 @@ func TestAProducedNameCannotTakeAnAuthoredOne(t *testing.T) {
 	assert.Assert(t, scopes[""] && scopes["checkout"],
 		"both queues called checkout_reserve should exist, in different scopes: %v", scopes)
 
-	// THE SCOPE'S NAME IS STILL TAKEN, and being a different KIND of scope does not
-	// untake it. Every name resolution in tcc walks a chain of scope NAMES — the by-name
-	// index is keyed by them and so is the outward walk a bare reference does — so an
-	// authored `namespace/checkout` and the scope `workflow/checkout` becomes are one name
-	// with two directories behind it, and which of them a reference means is not a
-	// question the compiler should be answering by accident.
+	// The scope's name is still taken: resolution walks scope names, so an authored
+	// `namespace/checkout` and a lowered `workflow/checkout` would be one name.
 	taken := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(taken, "../fixtures/basic", "/"))
 	assert.NilError(t, afero.WriteFile(taken, "/namespace/checkout/meta.yaml", []byte(
@@ -545,10 +474,8 @@ func TestAProducedNameCannotTakeAnAuthoredOne(t *testing.T) {
 	_, _, err = c.Compile(context.Background())
 	assert.ErrorContains(t, err, "namespace/checkout is written here AND is the scope workflow/checkout becomes")
 
-	// WRITING INTO THE COMPILER'S SPACE NEEDS NO RULE. The container shape belongs to the
-	// second pass; the authored schema says a workflow is one flat document, so a
-	// directory where that document belongs is not a kind the compiler has to defend —
-	// it is a document that does not load, reported at the file.
+	// Writing into the compiler's space needs no rule: a directory where a flat
+	// workflow document belongs does not load.
 	written := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(written, "../fixtures/basic", "/"))
 	assert.NilError(t, afero.WriteFile(written, "/workflow/checkout/queue/mine.yaml", []byte(
@@ -561,11 +488,6 @@ func TestAProducedNameCannotTakeAnAuthoredOne(t *testing.T) {
 	assert.ErrorContains(t, err, "required attribute 'id'")
 }
 
-// A REFERENCE BETWEEN TWO PRODUCED RESOURCES RESOLVES BY ITSELF. A queue carries a
-// `dead_letter` that is a Ref like any other, and the queue it names is one the same
-// lowering made — so it resolves the way a bare name always resolves: in the scope it is
-// written in, which is the scope the lowering produced. Nothing needed a second shape to
-// dodge the index, which was the first answer and the wrong one.
 func TestAProducedReferenceResolvesInTheProducedScope(t *testing.T) {
 	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
 	assert.NilError(t, err)
@@ -603,15 +525,6 @@ func TestAProducedReferenceResolvesInTheProducedScope(t *testing.T) {
 	assert.DeepEqual(t, out["ops"], []string{"invoke"})
 }
 
-// A STEP'S DRIVER CAN FIND ITS OWN STEP, and that is what makes a field the driver reads
-// carried rather than inert.
-//
-// `wait`, `call/input` and `call/result` are copied onto no produced resource, on purpose:
-// the shell keeps its steps, so copying them would be the same fact in two places for two
-// edits to disagree about. What makes them reachable instead is the record — a produced
-// driver's provenance says which resource it came from and WHERE INSIDE IT, so a consumer
-// holding the compiled object walks `from` to the workflow and `at` to the element. If
-// that ever stops being true, the fields become decoration and this test is what says so.
 func TestADriverCanFindTheStepItCameFrom(t *testing.T) {
 	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
 	assert.NilError(t, err)
@@ -654,28 +567,6 @@ func TestADriverCanFindTheStepItCameFrom(t *testing.T) {
 	assert.Assert(t, !invokes, "a wait step's driver was granted a call: %v", drv["function"])
 }
 
-// AN AGENT NAMES ANOTHER AGENT, which is an INVOKE and not a handoff: the parent keeps
-// the answer and the sub-agent returns a value. The settled pattern everywhere is that
-// a sub-agent is a tool, and in this vocabulary a tool is an access entry, so it should
-// already work. It did not.
-//
-// The distinction is worth keeping straight, because the other thing exists and this
-// vocabulary cannot say it. A HANDOFF transfers control — the target owns the final
-// response, and the platform re-binds the conversation's future turns to it. That is a
-// capability boundary a target can grant or refuse separately from `invoke`, not a
-// calling convention, and what blocks it is that a transfer has to say what becomes of
-// the thread, and this vocabulary says nothing about a thread at all — where a
-// conversation lives is the runtime's, so a handoff verb here would name a transfer
-// of something the config cannot see. Shipping it before deciding that is how the
-// market got "handoffs lose context".
-//
-// A kind that lowers becomes a CONTAINER, and its after shape was given every resource
-// group there is — including its own. So inside `agent/triage` the key `agent:` was two
-// things at once: the access entry naming the agent it hands off to, and a directory of
-// agents contained within it. The walk took the entry for a resource and stopped at
-// `promoting agent support failed with id is not a string`. The second reading cannot
-// exist — a lowering never produces a resource of the kind it is lowering — so the
-// kind's own group is not in its own after shape, and the key means the one thing it can.
 func TestAnAgentCanHandOffToAnotherAgent(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
@@ -714,10 +605,6 @@ func TestAnAgentCanHandOffToAnotherAgent(t *testing.T) {
 	assert.Assert(t, handoff, "nothing draws the handoff")
 }
 
-// AN MCP SERVER IS A TOOL REGISTRY, so an agent names one the way it names any other
-// tool: an access entry, with the verbs the protocol itself uses. Before `mcp` declared
-// ops there was no access block for the kind at all, so the only way to reach one was out
-// through its own gateway route — leaving the cloud to call something inside it.
 func TestAnAgentCanUseAnMcpServer(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
@@ -787,17 +674,6 @@ func TestAnAgentCanUseAnMcpServer(t *testing.T) {
 	assert.ErrorContains(t, err, "subscribe")
 }
 
-// AN AGENT DECLARES NO CONVERSATION STATE, and this is the pin that keeps `sessions:`
-// from coming back as a field somebody adds because the word is missing. It was one
-// ceiling that doubled as a switch — writing it turned session storage on — so the
-// config was deciding whether a thread is kept and where it lives, which is
-// orchestration and belongs to the runtime.
-//
-// ASSERTED AS A REJECTION rather than as an absent attribute, because a compile is what
-// an author meets: Strict() answers `unknown key 'sessions'` on the document, which is
-// also what proves nothing quietly drops it. And the count of what an agent BECOMES is
-// asserted whole — two produced resources, the loop and the vector — so a third arriving
-// is a line in a diff rather than a resource nobody ordered.
 func TestAnAgentDeclaresNoConversationState(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))

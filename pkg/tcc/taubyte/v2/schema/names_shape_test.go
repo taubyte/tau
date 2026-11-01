@@ -8,12 +8,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// AN ATTRIBUTE'S KEY IS SEGMENTS, and its identity is those segments joined. Nothing in
-// the DSL ever writes the "/" — `Key("execution", "call")` does, and the engine joins it.
-//
-// This used to say the opposite: that a name is flat and Path() says where it is
-// authored. That produced `execution-call`, a path spelled into a name, which compiles
-// onto one opaque leaf a CRDT can only replace whole.
 func TestAKeyIsSegmentsNeverASlashedString(t *testing.T) {
 	var walk func(nodes []*schema.Node)
 	walk = func(nodes []*schema.Node) {

@@ -100,8 +100,6 @@ func rolesByName(t *testing.T, v schema.View) map[string]schema.Role {
 	return out
 }
 
-// THE OSS BUILD HAS ONE VIEW, AND IT IS THE PROJECT. Nothing is cut away from a build
-// that has no regions: the one view is the whole compiled object, ids and index intact.
 func TestNoRegionsIsOneViewOfEverything(t *testing.T) {
 	docs := map[string]string{
 		"/project.yaml":          regionsProject + everyBranch,
@@ -127,7 +125,6 @@ func TestNoRegionsIsOneViewOfEverything(t *testing.T) {
 	}, rolesByName(t, v))
 }
 
-// EVERY POLICY HAS ITS ROLE, in every region it is held in.
 func TestEachPolicyIsHeldInItsRole(t *testing.T) {
 	views, findings, err := viewsOf(t, several{"region-1", "region-2", "region-3"}, map[string]string{
 		"/project.yaml":          regionsProject + everyBranch,
@@ -167,7 +164,6 @@ func TestEachPolicyIsHeldInItsRole(t *testing.T) {
 	}
 }
 
-// A CDN NOTHING SEEDS HERE IS SEEDED BY THE PLATFORM, wherever it runs.
 func TestACdnWithNoServedSeedIsSeededEverywhere(t *testing.T) {
 	views, _, err := viewsOf(t, several{"region-1", "region-2"}, map[string]string{
 		"/project.yaml":    regionsProject + everyBranch,
@@ -178,8 +174,6 @@ func TestACdnWithNoServedSeedIsSeededEverywhere(t *testing.T) {
 	require.Equal(t, map[string]schema.Role{"cache/edge": schema.RoleSeed}, rolesByName(t, views["region-2"]))
 }
 
-// A BUILD SERVING FEWER REGIONS THAN THE PROJECT NAMES HOLDS IT WHERE IT PUT IT, and the
-// role says that is not where the project asked.
 func TestARelocatedResourceIsPlaced(t *testing.T) {
 	views, findings, err := viewsOf(t, relocates{}, map[string]string{
 		"/project.yaml":    regionsProject + everyBranch,
@@ -196,7 +190,6 @@ func TestARelocatedResourceIsPlaced(t *testing.T) {
 	}, rolesByName(t, views[schema.DefaultRegion]))
 }
 
-// AN EDGE ACROSS REGIONS IS REFUSED, by name, and nothing is projected.
 func TestAnEdgeAcrossRegionsIsRefused(t *testing.T) {
 	views, findings, err := viewsOf(t, several{"region-1", "region-2"}, map[string]string{
 		"/project.yaml":        regionsProject + everyBranch,
@@ -218,7 +211,6 @@ func TestAnEdgeAcrossRegionsIsRefused(t *testing.T) {
 	require.Empty(t, findings)
 }
 
-// WHAT HAS NO FOOTPRINT AND REACHES ACROSS REGIONS IS HELD NOWHERE, which is refused.
 func TestAnUnplacedResourceReachingTwoRegionsIsRefused(t *testing.T) {
 	_, findings, err := viewsOf(t, several{"region-1", "region-2"}, map[string]string{
 		"/project.yaml":          regionsProject + everyBranch,
@@ -232,7 +224,6 @@ func TestAnUnplacedResourceReachingTwoRegionsIsRefused(t *testing.T) {
 		findingsTitled(findings, schema.Broken))
 }
 
-// AN EMPTY VIEW IS A REGION THAT HOLDS NOTHING; AN UNKNOWN ONE IS NOT A REGION.
 func TestAnEmptyViewIsNotAnUnknownOne(t *testing.T) {
 	views, _, err := viewsOf(t, several{"region-1", "region-2"}, map[string]string{
 		"/project.yaml":   regionsProject + everyBranch,
@@ -249,8 +240,6 @@ func TestAnEmptyViewIsNotAnUnknownOne(t *testing.T) {
 	require.ErrorIs(t, err, schema.ErrUnknownDestination)
 }
 
-// A PLACEMENT FINDING THAT IS BROKEN STOPS THE VIEWS. A region the Regions answers but
-// does not render is placed there all the same, and is simply not a view here.
 func TestBrokenPlacementStopsTheViews(t *testing.T) {
 	_, findings, err := viewsOf(t, several{"region-1"}, map[string]string{
 		"/project.yaml":   regionsProject + everyBranch,
@@ -274,7 +263,6 @@ func (liar) Serves() []string                       { return []string{"region-2"
 func (liar) Allow([]string) []schema.Concern        { return nil }
 func (liar) Place(p schema.Placement) schema.Answer { return schema.Answer{In: p.Named()} }
 
-// A SCOPE IS KEPT FOR WHAT IS IN IT, and a resource that is a scope says so.
 func TestAScopeIsKeptForWhatIsInIt(t *testing.T) {
 	views, _, err := viewsOf(t, several{"region-1", "region-2"}, map[string]string{
 		"/project.yaml":                regionsProject + everyBranch,
@@ -294,8 +282,6 @@ func TestAScopeIsKeptForWhatIsInIt(t *testing.T) {
 	require.False(t, errors.Is(err, schema.ErrUnviewable))
 }
 
-// THE WHOLE CORPUS FIXTURE, AS ITS region-1 PREVIEW SEES IT: every kind, lowerings included,
-// and the one view is the object. A build with no regions refuses it, since it pins region-1.
 func TestTheBasicFixtureIsOneViewInRegion1(t *testing.T) {
 	flat := basicFixture(t)
 
@@ -308,7 +294,6 @@ func TestTheBasicFixtureIsOneViewInRegion1(t *testing.T) {
 	require.Len(t, views["region-1"].Roles, len(schema.Resources(flat)))
 }
 
-// AS ONE REGION OF THE CLOUD IT IS WRITTEN FOR, each build renders its own view.
 func TestTheBasicFixtureRendersPerRegion(t *testing.T) {
 	flat := basicFixture(t)
 
@@ -362,8 +347,6 @@ func keysOf(views map[string]schema.View) []string {
 	return out
 }
 
-// ENVIRONMENTS FIRST, THEN PLACEMENT: a view is (environment, region), and the
-// environment's own regions narrow where what says nothing goes.
 func TestAnEnvironmentNarrowsItsViews(t *testing.T) {
 	docs := map[string]string{
 		"/project.yaml": regionsProject +
@@ -380,9 +363,6 @@ func TestAnEnvironmentNarrowsItsViews(t *testing.T) {
 	}
 }
 
-// THROUGH THE SESSION, which is how a CLI, a console and the explorer ask: the same
-// views, the canonical object beside them, and the environment bound the way a deploy
-// binds it.
 func TestTheSessionAsksForTheSameViews(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	for path, body := range map[string]string{
@@ -431,8 +411,6 @@ func TestTheSessionAsksForTheSameViews(t *testing.T) {
 
 const cidOfCache = "QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB"
 
-// A PREVIEW SHOWS THE REGIONS IT IS GIVEN AND REFUSES NOTHING: what a tool offers
-// before any cloud is chosen, from the regions the project itself names.
 func TestAPreviewOfTheRegionsTheProjectNames(t *testing.T) {
 	flat := compileDocs(t, "", map[string]string{
 		"/project.yaml":    regionsProject + "regions: [region-1, region-2, region-3, mars]\n" + everyBranch,
@@ -458,9 +436,6 @@ func TestAPreviewOfTheRegionsTheProjectNames(t *testing.T) {
 	require.Equal(t, []string{"region-2"}, schema.Preview("region-1", "region-2").Place(schema.Placement{Allowed: []string{"region-2"}}).In)
 }
 
-// WHAT A PINNED SHELL LOWERS TO IS PINNED THE SAME, in the compiled object itself:
-// workflow/checkout and agent/support are pinned to region-1, and so is every function,
-// sync and database they became.
 func TestALoweredResourceIsPlacedWithItsShell(t *testing.T) {
 	flat := basicFixture(t)
 	byID := map[string]schema.Instance{}

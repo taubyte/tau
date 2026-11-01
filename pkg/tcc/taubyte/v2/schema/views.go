@@ -9,35 +9,12 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/interp"
 )
 
-// ONE VIEW PER REGION: the compiled project as the place it runs in holds it.
-//
-// A region receives what runs there and nothing it would have to filter out on every
-// read. The cut is taken here, once, from the object as it RUNS — compiled, lowered and
-// placed by the Regions the audit asks — and tcc's Project does the structural half.
-// What this file decides is the vocabulary's half: which resources a region holds, and
-// in what ROLE.
-//
-// A ROLE, NOT JUST MEMBERSHIP. Being in a region means different things by policy, and
-// a view that only listed members would erase the difference: a failover database is in
-// two regions and serves from one of them; a cdn is seeded in some and arrives in the
-// rest on demand. So every resource a view holds says how it is there (Role).
-//
-// WHAT HAS NO FOOTPRINT FOLLOWS WHAT IT REACHES. A gateway, a zone, a secret runs
-// nowhere of its own (FootprintKinds says which kinds do), unless it states a placement,, so it is held where something
-// placed needs it, and wherever everything placed it reaches already is: a gateway in
-// front of a function pinned to region-1 is in region-1's view, and a zone nothing ties to a place
-// is in every view.
-//
-// AN EDGE ACROSS REGIONS IS REFUSED. A resource held in one region that reaches a
-// placed resource held only in another would resolve to nothing in its own view, and
-// there is no contract for reaching across: no protocol, no route. So it is Broken,
-// named, before anything is projected — never a stub, and never a silent drop. A kind
-// that can be reached remotely would be a statement on the kind, and none makes one.
-//
-// AN EMPTY VIEW IS NOT AN UNKNOWN ONE. A region the Regions serves gets a view even when
-// nothing is placed there, so a resource REMOVED from a region is the region's view
-// losing it rather than the region falling silent; a region it does not serve has no
-// view at all, and asking for one is an error.
+// One view per region, cut from the object as it runs (compiled, lowered,
+// placed). Each held resource has a Role, since membership means different things
+// by policy. What has no footprint follows what it reaches; a zone nothing ties
+// down is in every view. An edge to a resource held only in another region is
+// Broken, never stubbed or dropped. Every served region gets a view, even empty;
+// asking for an unserved one is an error.
 
 // Role is how a resource is held in one region.
 type Role string
@@ -88,10 +65,9 @@ var ErrUnknownDestination = errors.New("schema: no view for a region this build 
 // audit, or an edge across regions.
 var ErrUnviewable = errors.New("schema: this project cannot be cut into one view per region")
 
-// Views is every view of a compiled object, keyed by the regions the Regions serves —
-// one each, empty or not — with the audit's findings and every edge refused for
-// crossing regions. External questions are not asked here: they are the runtime's. It errors, wrapping ErrUnviewable, when any finding is Broken; the
-// findings are returned either way, so a caller can say all of them.
+// Views is every view of a compiled object, one per served region, with the
+// audit's findings and every edge refused for crossing regions. It wraps
+// ErrUnviewable when any finding is Broken; findings are returned either way.
 func Views(obj map[string]any, opts ...AuditOption) (map[string]View, []Finding, error) {
 	plan := PlanViews(obj, opts...)
 	for _, f := range Audit(obj, StubResolver(), opts...) {

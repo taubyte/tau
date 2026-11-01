@@ -9,16 +9,12 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// The same project has the same name on every cloud that hosts it, which is the point
-// of deriving the label instead of assigning it.
 func TestProjectLabelIsDeterministic(t *testing.T) {
 	const id = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
 	assert.Equal(t, schema.ProjectLabel(id), schema.ProjectLabel(id))
 	assert.Assert(t, schema.ProjectLabel(id) != schema.ProjectLabel(id+"x"))
 }
 
-// A DNS label is case-insensitive, so the alphabet has to be too, and it may hold only
-// letters and digits here. Anything outside that is a name that does not resolve.
 func TestProjectLabelIsADnsLabel(t *testing.T) {
 	label := schema.ProjectLabel("QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR")
 	assert.Equal(t, len(label), schema.ProjectLabelLength)
@@ -29,17 +25,12 @@ func TestProjectLabelIsADnsLabel(t *testing.T) {
 	}
 }
 
-// A CID's leading bytes are the multihash prefix and codec — identical for every
-// project made the same way. Hashing first is what stops the label being a constant.
 func TestProjectLabelDoesNotInheritTheCidPrefix(t *testing.T) {
 	a := schema.ProjectLabel("QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR")
 	b := schema.ProjectLabel("QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxQ")
 	assert.Assert(t, a[:4] != b[:4], "two CIDs sharing a prefix produced labels sharing one: %s %s", a, b)
 }
 
-// The length exists to make collisions cold. This does not prove the bound — it checks
-// the encoding actually spends the entropy it claims to, which a truncation bug would
-// break silently and which no other test would notice.
 func TestProjectLabelsDoNotCollideAtScale(t *testing.T) {
 	const n = 200_000
 	seen := make(map[string]string, n)

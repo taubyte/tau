@@ -37,16 +37,6 @@ func regionsAsked(v []schema.NextValidation) []string {
 
 const projectID = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"
 
-// TestAnOptionalNestedLabelCanDeferItsValidation.
-//
-// TWO ENGINE LIMITS KEPT THIS FIELD FROM DECLARING ONE, and both were in the
-// emitters: a missing key was an error, so an OPTIONAL attribute broke every
-// resource that omitted it; and the read was a flat lookup of the joined name,
-// so a NESTED one addressed nothing. A region label is both.
-//
-// A region name is an opaque label the config can never check — the schema holds
-// no list of regions and never will — so this is the only seam where being wrong
-// about one can ever be reported.
 func TestARegionLabelIsHandedToTheCaller(t *testing.T) {
 	cache := func(regions string) string {
 		return "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nsize: 1MB\nconsensus: crdt\n" + regions
@@ -67,8 +57,6 @@ func TestARegionLabelIsHandedToTheCaller(t *testing.T) {
 	require.ElementsMatch(t, []string{"region-2", "region-3"}, asked)
 }
 
-// TestAnAbsentBlockAsksNothingAndCompiles, which is the limit that made an
-// optional attribute unable to declare a deferred validation at all.
 func TestAnAbsentBlockAsksNothing(t *testing.T) {
 	require.Empty(t, regionsAsked(validating(t, map[string]string{
 		"/project.yaml": projectID,

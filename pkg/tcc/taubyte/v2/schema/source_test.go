@@ -11,10 +11,8 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// One `source` switch, and it is optional. Absent means this repository at the
-// resource's own location, which is the common case and writes nothing — the state
-// that used to be unwritable on a component and a website, and that a monorepo makes
-// ordinary.
+// sourceOf compiles one document and returns its `source`; absent means this
+// repository at the resource's own location.
 func sourceOf(t *testing.T, doc string) (any, error) {
 	t.Helper()
 	fs := afero.NewMemMapFs()
@@ -54,9 +52,6 @@ func TestSourceSwitch(t *testing.T) {
 	}
 }
 
-// The switch is what makes each of these an error at its own line instead of a key
-// nothing ever reads. `source: "."` compiled clean before and meant nothing; it is
-// now refused by IsRepoPath, which is the same check the bare path form gets.
 func TestSourceSwitchRefuses(t *testing.T) {
 	for _, tc := range []struct{ name, doc, contains string }{
 		{"two branches at once", "source:\n    builtin: agent\n    component: paylib\n", "only one may be set"},
@@ -90,12 +85,6 @@ func TestSourceSwitchRefuses(t *testing.T) {
 	}
 }
 
-// A SCALAR where a switch's block belongs is legitimate only where the vocabulary
-// declares a value at that key — `source` does, and nothing else here does. Engine
-// change 12 made the scalar case legal; it must not have made it legal everywhere,
-// because every field under a branch hangs off a RequiredWhen that a switch which
-// captured nothing never fires. Compiling these clean produces a database with no
-// engine, a gateway with no host, a proxy forwarding to nothing — silently.
 func TestAScalarWhereABlockBelongsIsStillAnError(t *testing.T) {
 	const gwID = "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zg\n"
 	for _, tc := range []struct{ name, path, doc, contains string }{
@@ -122,14 +111,6 @@ func TestAScalarWhereABlockBelongsIsStillAnError(t *testing.T) {
 	}
 }
 
-// AN EMPTY VALUE IS TOLD WHAT THE FIELD CAN TAKE, AND NOTHING ELSE. One checker serves
-// every field that takes a repository path, and it knows exactly one thing about them:
-// the grammar. What OMITTING one means is different on each — the bare `source` is the
-// resource's own location, `build/output` is the directory the builder hands the build,
-// `source.git.path` is that repository's root — and each says so in its own Doc. The
-// sentence used to end "or leave it out for this resource's own location": one field's
-// meaning of absent, delivered by a shared checker to fields where it is not true. It
-// also offered `.` to the fields that refuse it.
 func TestAnEmptyValueIsToldOnlyWhatTheFieldTakes(t *testing.T) {
 	loc := schema.RepoLocationChecker()("")
 	assert.ErrorContains(t, loc, "empty: write a path")
@@ -143,13 +124,6 @@ func TestAnEmptyValueIsToldOnlyWhatTheFieldTakes(t *testing.T) {
 	}
 }
 
-// THE PATTERN AND THE CHECKER ARE ONE GRAMMAR, with no string excused from the
-// comparison. It carved out "" on both sides, which is the one string they disagreed
-// about — a test that proves agreement by removing the disagreement proves nothing. They were written to mirror each other
-// and drifted in both directions at once — the pattern took `a/../b` the checker
-// refused, the checker took `café/x` and a whole English sentence the pattern refused.
-// An editor validates against the pattern and the compiler enforces the checker, so
-// every disagreement is a document one of them accepts and the other rejects.
 func TestRepoPathPatternAndCheckerAgree(t *testing.T) {
 	for _, g := range []struct {
 		name    string
@@ -182,10 +156,6 @@ func grammarAgrees(t *testing.T, name string, pattern *regexp.Regexp, check func
 	}
 }
 
-// "THE RESOURCE'S OWN LOCATION" HAS TO BE SOMETHING A CONSUMER CAN COMPUTE. `source`
-// omitted means this repository at that location, and an agent's `instructions` is a
-// path against it — so a phrase alone would leave every consumer inventing the same
-// rule privately, which is the second copy Layout exists to prevent.
 func TestAResourcesOwnLocationIsATemplate(t *testing.T) {
 	l := schema.LayoutOf()
 	assert.Equal(t, l.Content, "{kind}/{name}")

@@ -2,21 +2,13 @@ package schema
 
 import "strings"
 
-// WHERE A NAME IS LOOKED FOR, which is one rule and was four implementations.
-//
-// A resource reaches another by naming it, and says where to look with the namespace
-// beside the name:
+// scopeChain is where a name is looked for, given the namespace beside it, in the
+// order to try:
 //
 //	(absent)   its own scope, then each parent, then the root
 //	/          the root
 //	/billing   that scope, exactly
-//	local         a scope BELOW its own, exactly
-//
-// The last line is the one every copy got wrong: `namespace: local` written in `shop` means
-// `shop/local`, and a resolver that starts at `local` finds nothing — so the reference silently
-// disappears from a graph, an audit, or both.
-//
-// Returned in the order they should be tried, so a caller stops at the first hit.
+//	local      a scope below its own, exactly (`local` in `shop` is `shop/local`)
 func scopeChain(own, ns string) []string {
 	switch {
 	case ns == "/":

@@ -9,16 +9,8 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// EITHER A ROUTER OR ROUTES, and inside a route either a handler or a router.
-//
-// A gateway with a `router` has no static routes at all: the function is handed every
-// request and says where it goes. That is what makes one gateway able to serve a site,
-// where a static route serves one path.
-//
-// Nothing checks this afterwards. It is the Either()+Captures() switch the vocabulary
-// already uses for a storage's type and a database's engine — the loader refuses a
-// document that opens two branches or none, so "exactly one" is a property of the
-// declaration rather than a finding about the result.
+// gatewayWith compiles one gateway. A gateway has a router or a route, and a route
+// a handler or a router; the captured switch refuses two or none.
 func gatewayWith(t *testing.T, body string) error {
 	t.Helper()
 	fs := afero.NewMemMapFs()
@@ -58,9 +50,6 @@ func TestAGatewayRoutesOneWay(t *testing.T) {
 	assert.ErrorContains(t, err, "handler and router each match, and only one may be set")
 }
 
-// A ROUTER IS BUILT AGAINST ITS OWN WORLD: it answers with a destination, not a
-// response, and a gateway's router is handed a parsed request where a proxy's gets
-// bytes. Naming an ordinary handler as a router compiles and fails on live traffic.
 func TestARouterIsTypedByItsWorld(t *testing.T) {
 	assert.NilError(t, gatewayWith(t, "router:\n    name: edge\n"))
 
@@ -91,10 +80,6 @@ func auditGateway(t *testing.T, body string) []schema.Finding {
 	return schema.Audit(obj.Flat(), nil)
 }
 
-// A ROUTER LIVES SOMEWHERE, and the namespace beside its name is how the gateway says
-// where. Without it the name resolves outward from the gateway's own scope and quietly
-// finds a different function, or none — the failure a `{namespace, name}` block exists
-// to prevent, and the one a `<kind>/<name>` string could not even express.
 func TestARouterCanLiveInAnotherNamespace(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	for path, doc := range map[string]string{
@@ -132,14 +117,6 @@ func TestARouterCanLiveInAnotherNamespace(t *testing.T) {
 	}
 }
 
-// EVERY REFERENCE SAYS WHERE. A block that names a resource and cannot name its
-// namespace resolves outward from the declarer's own scope and silently finds a
-// different resource — which is the failure `<kind>/<name>` could not even express, and
-// the reason a reference is a block at all.
-//
-// Seventeen of them had only a name: the conversion added `{name}` and stopped. Three
-// more had a namespace the discovery could not see, because it looked for the sibling by
-// trimming a "name" suffix that `source/component` does not have.
 func TestEveryReferenceCanSayWhere(t *testing.T) {
 	var missing []string
 	for _, r := range schema.References() {

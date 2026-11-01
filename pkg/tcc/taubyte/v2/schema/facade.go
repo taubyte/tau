@@ -9,9 +9,8 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/interp/decompile"
 )
 
-// The thin public facade over the generic interpreter, same shape as v1's. It binds
-// the interpreter to THIS vocabulary's project + CompileRoot(); interp never imports
-// a schema, which is what keeps the dependency one-way.
+// The public facade binding the generic interpreter to this vocabulary; interp
+// never imports a schema.
 
 type (
 	NextValidation = interp.NextValidation

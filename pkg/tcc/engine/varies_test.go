@@ -73,8 +73,6 @@ solo_a1: for the other value
 	assert.Equal(t, one["solo"], "base")
 }
 
-// The capability this change exists for: ONE attribute, TWO axes, either of which may
-// be the one written.
 func TestAnAttributeMayVaryByMoreThanOneVariable(t *testing.T) {
 	for _, tc := range []struct {
 		bound Bound
@@ -95,9 +93,6 @@ func TestAnAttributeMayVaryByMoreThanOneVariable(t *testing.T) {
 	}
 }
 
-// PRECEDENCE IS NOT THE ANSWER TO TWO VARIANTS AT ONCE. The author stated two values
-// for one field, and quietly taking the root's first variable would be a decision
-// nobody wrote.
 func TestTwoVariantsWrittenAtOnceIsAConflictThatNamesBoth(t *testing.T) {
 	_, err := readWith(t, variableSchema("alpha", "beta"), twoVariables(), Bound{"alpha": "a1", "beta": "b1"}, `
 id: one
@@ -110,8 +105,6 @@ both_b1: by beta
 	assert.ErrorContains(t, err, "both_b1")
 }
 
-// A matcher spells its own suffix, so a variant lands on whichever alternative the
-// document chose — and the bare alternative still names the choice.
 func TestAVariantLandsOnTheAlternativeTheDocumentChose(t *testing.T) {
 	one, err := readWith(t, variableSchema("alpha", "beta"), twoVariables(), Bound{"alpha": "a1"}, `
 id: one
@@ -125,8 +118,6 @@ pick:
 	assert.Equal(t, one["switched"], "two", "the unsuffixed alternative is what was taken")
 }
 
-// A VARIANT OF AN UNMARKED KEY IS STILL A TYPO. Strict claims the suffixed spelling
-// only where the attribute says it varies.
 func TestASuffixOnAKeyThatDoesNotVaryIsUnknown(t *testing.T) {
 	_, err := readWith(t, variableSchema("alpha", "beta"), twoVariables(), Bound{"alpha": "a1"}, `
 id: one
@@ -136,8 +127,6 @@ fixed_a1: not a thing
 	assert.ErrorContains(t, err, "fixed_a1")
 }
 
-// Strict claims the UNION of every variant of every variable, not the cross product:
-// there are no compound suffixes, so `both_a1_b1` is nobody's key.
 func TestStrictClaimsEachVariantAndNoCompoundOfThem(t *testing.T) {
 	_, err := readWith(t, variableSchema("alpha", "beta"), twoVariables(), Bound{"alpha": "a1"}, `
 id: one
@@ -167,25 +156,18 @@ func TestValuesForAVariableTheRootDoesNotDeclareAreRefused(t *testing.T) {
 	assert.ErrorContains(t, err, `values given for "gamma"`)
 }
 
-// Two axes are free to admit the same word — until ONE attribute varies by both, where
-// the key would mean two things.
 func TestTwoVariablesOfOneAttributeMayNotShareAValue(t *testing.T) {
 	_, err := readWith(t, variableSchema("alpha", "beta"), map[string][]string{"alpha": {"shared"}, "beta": {"shared"}}, nil, "id: one\n")
 	assert.ErrorContains(t, err, "both admit the value \"shared\"")
 	assert.ErrorContains(t, err, "both_shared would mean two things")
 }
 
-// THE ERROR POINTS AT THE OPTIONS, NOT AT SOMEBODY'S DOCUMENT. Without this the read
-// succeeds, claims no suffix, and strict rejects the author's own override as an
-// unknown key — an error about the wrong file entirely.
 func TestBindingAVariableWithNoValuesIsRefusedLoudly(t *testing.T) {
 	_, err := readWith(t, variableSchema("alpha", "beta"), map[string][]string{"alpha": {"a1"}}, Bound{"beta": "b1"}, "id: one\n")
 	assert.ErrorContains(t, err, `bound "beta" to "b1"`)
 	assert.ErrorContains(t, err, "declares no values for it")
 }
 
-// An EMPTY value is how a caller says "the bare key", which is what a project with no
-// values reads anyway — so it is not a binding and not an error.
 func TestAnEmptyValueIsNotABinding(t *testing.T) {
 	one, err := readWith(t, variableSchema("alpha", "beta"), nil, Bound{"alpha": ""}, `
 id: one
@@ -195,8 +177,6 @@ solo: base
 	assert.Equal(t, one["solo"], "base")
 }
 
-// A vocabulary that declares no variable is untouched by all of it: no suffix is
-// claimed, so every one is a typo, and an unbound read is the only read there is.
 func TestAVocabularyWithNoVariablesReadsTheBareKeys(t *testing.T) {
 	plain := SchemaDefinition(Root(
 		Attributes(String("id")),
@@ -211,10 +191,6 @@ func TestAVocabularyWithNoVariablesReadsTheBareKeys(t *testing.T) {
 	assert.ErrorContains(t, err, "solo_a1")
 }
 
-// Varying states PRECEDENCE, and precedence is the root's to state: the order a caller
-// passed its values in must not reach the resolution. Two roots differing only in the
-// order they list their variables are two different readings of one document — which is
-// only observable where the reader looks, since two variants at once is a conflict.
 func TestTheRootsOrderIsWhatIsTriedFirst(t *testing.T) {
 	onDisk := yaseer.VirtualFS(afero.NewMemMapFs(), "/")
 
@@ -235,8 +211,6 @@ func namesOf(vars Vars) []string {
 	return out
 }
 
-// Varies APPENDS, because Annotate overwrites and two marks on one attribute mean two
-// axes rather than the second one only.
 func TestTwoVariesOnOneAttributeMeanBothOfThem(t *testing.T) {
 	a := String("x", Varies("alpha"), Varies("beta"))
 	assert.DeepEqual(t, []string{"alpha", "beta"}, VariesBy(a))

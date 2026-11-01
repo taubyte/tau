@@ -19,8 +19,6 @@ func fixtureOver() afero.Fs {
 	)
 }
 
-// A file written on Windows is the same zone: a line is a line, not a line and a \r
-// that the zone parser would then read as part of the record.
 func TestZoneFileLinesAreLines(t *testing.T) {
 	fs := fixtureOver()
 	assert.NilError(t, afero.WriteFile(fs, "/dns/example.com.zone",
@@ -33,9 +31,6 @@ func TestZoneFileLinesAreLines(t *testing.T) {
 	})
 }
 
-// A FILE THE COMPILE CANNOT SEE IS NOT A REFUSAL -- it is the mount protocol's case --
-// and it must not be invented on the way back either: a decompile that wrote an empty
-// file for it would turn "not fetched yet" into "a zone with no records".
 func TestUnreachableZoneFileIsNeitherRefusedNorInvented(t *testing.T) {
 	// Pointed elsewhere rather than deleted: a copy-on-write layer cannot remove what
 	// only its read-only base holds.
@@ -55,8 +50,6 @@ func TestUnreachableZoneFileIsNeitherRefusedNorInvented(t *testing.T) {
 	assert.Assert(t, err != nil, "the decompile invented the file the compile never read")
 }
 
-// A tree that cannot be written is an error, not a decompile that reports success
-// having written nothing.
 func TestDecompileIntoReadOnlyTreeFails(t *testing.T) {
 	d, err := schema.NewDecompiler(decompile.WithVirtual(afero.NewReadOnlyFs(afero.NewMemMapFs()), "/"))
 	assert.NilError(t, err)

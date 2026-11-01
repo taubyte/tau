@@ -9,10 +9,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// ONE RULE: a path segment may carry an environment suffix, and `segment_env`
-// overrides `segment`. The same document serves every environment — nothing is
-// duplicated, nothing is patched, and what production runs is the unsuffixed line
-// sitting right there beside it.
+// compileInEnv compiles one document for env: `segment_env` overrides `segment`.
 func compileInEnv(t *testing.T, env, doc string) (map[string]any, error) {
 	t.Helper()
 	fs := afero.NewMemMapFs()
@@ -74,8 +71,6 @@ func TestAnEnvironmentReadsItsOwnValue(t *testing.T) {
 	}
 }
 
-// A key the vocabulary does NOT mark cannot be enved — `id` is identity, and two
-// environments of one resource share it.
 func TestAnUnmarkedKeyCannotBeEnved(t *testing.T) {
 	_, err := compileInEnv(t, "preview", "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n"+
 		"id_preview: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Za\n"+
@@ -84,8 +79,6 @@ func TestAnUnmarkedKeyCannotBeEnved(t *testing.T) {
 	assert.ErrorContains(t, err, "unknown key 'id_preview'")
 }
 
-// A suffix naming an environment the project does NOT declare is a typo, and it says
-// so with the schema's own list — the closed set is what separates the two.
 func TestAnUndeclaredEnvironmentIsATypo(t *testing.T) {
 	_, err := compileInEnv(t, "preview", "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n"+
 		"runtime: wasm\n"+
@@ -93,9 +86,6 @@ func TestAnUndeclaredEnvironmentIsATypo(t *testing.T) {
 	assert.ErrorContains(t, err, "unknown key 'timeout_prevew'")
 }
 
-// TestAPlacementDiffersPerEnvironment. What a preview deployment costs to place is a
-// CEILING and reads exactly like `size` does — `[region-1, region-2]` at a floor of two is four
-// nodes, and a throwaway environment should not be billed for production's residency.
 func TestAPlacementDiffersPerEnvironment(t *testing.T) {
 	const doc = "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n" +
 		"runtime: wasm\n" +
@@ -122,14 +112,6 @@ func TestAPlacementDiffersPerEnvironment(t *testing.T) {
 	}
 }
 
-// TestAPolicyIsTheSameInEveryDeployment.
-//
-// The branch takes a suffix, which makes the incoherent thing SAYABLE: `failover:`
-// with a `pinned_preview:` beside it resolves to one branch's policy and another
-// branch's regions. It is a different resource in each deployment, which is the
-// rule PerEnv states one segment up — write the whole resource for that
-// environment instead. The schema cannot see it (both keys are legal on their
-// own), so the audit does.
 func TestAPolicyIsTheSameInEveryDeployment(t *testing.T) {
 	fn, err := compileInEnv(t, "preview", "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n"+
 		"runtime: wasm\n"+

@@ -30,11 +30,6 @@ func buildDoc(t *testing.T, path, body string) (map[string]any, error) {
 
 const probeFn = "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLi\nruntime: wasm\nexecution:\n    call: c\n    timeout: 1s\n    memory: 1MB\n"
 
-// THE ABSENT BLOCK IS THE ZERO-CONFIG CASE, and it has to cost nothing. Everything
-// about the build stanza rests on this: a repository that says nothing is built the way
-// it is built today, so adding the vocabulary changes no existing project and the
-// question "does the config win or does the file win" never arises — the block's
-// PRESENCE is the switch, which is the rule `instances:` already states.
 func TestABuildIsAbsentUntilItIsWritten(t *testing.T) {
 	flat, err := buildDoc(t, "/function/probe.yaml", probeFn)
 	assert.NilError(t, err)
@@ -43,10 +38,6 @@ func TestABuildIsAbsentUntilItIsWritten(t *testing.T) {
 	assert.Assert(t, !present, "an unwritten build left something in the object: %v", fn)
 }
 
-// Every branch, compiled, on the kinds that carry it. These are read off the FIXTURE
-// rather than off documents written here, because the fixture is the example somebody
-// reads to learn the vocabulary and a branch nothing exercises there is a branch nobody
-// has seen work.
 func TestEveryWayOfBuildingCompiles(t *testing.T) {
 	flat := compileBasic(t)
 
@@ -79,19 +70,11 @@ func TestEveryWayOfBuildingCompiles(t *testing.T) {
 	assert.Assert(t, !built, "a pulled image has no build")
 }
 
-// A BLOCK THAT IS THERE AND NAMES NO WAY IS A TYPO, NOT A HALF-DECLARED BUILD. There is
-// no third state between "the repository decides" and "this says how", which is what
-// makes the absent block above mean exactly one thing.
 func TestABuildMustSayHow(t *testing.T) {
 	_, err := buildDoc(t, "/function/probe.yaml", probeFn+"build: {}\n")
 	assert.ErrorContains(t, err, "attribute build/kind has an empty key")
 }
 
-// A WRONG PAIR IS UNREPRESENTABLE, and no cross-field check says so — the branch set is
-// declared per kind and the fields are declared under their branch, so strict mode
-// answers with the keys that actually exist there. This is §4's rule ("a mutual
-// exclusion is Either(), never a check") applied twice: once across ways, once across
-// kinds.
 func TestAWrongPairIsRefusedByShape(t *testing.T) {
 	for _, tc := range []struct{ name, path, body, want string }{
 		{"a script has no install step", "/function/probe.yaml",
@@ -135,17 +118,6 @@ func TestAWrongPairIsRefusedByShape(t *testing.T) {
 	}
 }
 
-// A BUILD MAY PUBLISH IN PLACE, which is the plainest static site there is and was the
-// one shape this block could not carry. THREE STATES, ALL DISTINCT: omitted is the
-// output directory the builder hands the build, `.` is the source tree's own root, a
-// path is somewhere under it. `output` took the path grammar at first, which refuses the
-// root, on the reasoning that omitted already named it — it does not, it names a
-// directory outside the source tree entirely. So a build that writes beside its own
-// index.html had no spelling, and the build half of any descriptor publishing to the
-// root could not be stated.
-//
-// The compiled object has to keep the two absences apart as well, or the vocabulary can
-// say the thing and nothing downstream can read it back.
 func TestABuildMayPublishToTheRoot(t *testing.T) {
 	const head = "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVt\nserve:\n    mode: spa\n"
 	const cmds = "build:\n    commands:\n        image: node:22\n        install: npm ci\n        run: npm run build\n"
@@ -164,12 +136,6 @@ func TestABuildMayPublishToTheRoot(t *testing.T) {
 	assert.Assert(t, !present, "an unwritten output left something in the object: %v", site["build"])
 }
 
-// A CONSTRAINT, NOT A PREFERENCE, so it is held by a test rather than by a sentence.
-// An Either() segment is matched LITERALLY, so the branch key cannot carry an
-// environment suffix: `commands_preview` is not a spelling of `commands`, it is a key
-// the schema does not have. A preview deployment differs in the FIELDS under the
-// branch, never in which branch it takes — which is also the right answer, since taking
-// a different way of building in preview is building something else.
 func TestABuildBranchCannotBeEnvironmentSuffixed(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
@@ -182,9 +148,6 @@ func TestABuildBranchCannotBeEnvironmentSuffixed(t *testing.T) {
 	assert.ErrorContains(t, err, "unknown key 'commands_preview'")
 }
 
-// The axis every other platform spells as a per-context build override, arriving here
-// with nothing to invent: `run_preview` beside `run`. One document, one resource, one
-// id — what production builds is the unsuffixed line sitting right there.
 func TestABuildDiffersPerEnvironment(t *testing.T) {
 	at := func(env string) map[string]any {
 		t.Helper()
@@ -215,15 +178,6 @@ func TestABuildDiffersPerEnvironment(t *testing.T) {
 	assert.Equal(t, at("staging")["run"], "cargo build --release")
 }
 
-// THE ENGINE SEAM, held as a property rather than as a promise. Three things have to be
-// true for a third tier to be a VALUE:
-//
-//   - every kind that is built says which tiers may run it, ON the kind, so no consumer
-//     keeps a table of "a function is wasm" (§8c);
-//   - every tier has a way of being produced, so declaring one is never declaring
-//     something with no build;
-//   - the kind that CHOOSES between tiers offers exactly the tiers it declares, from one
-//     slice, so the enum and the annotation cannot drift.
 func TestTheEngineSeamIsAValue(t *testing.T) {
 	built := schema.BuiltKinds()
 	sort.Strings(built)
@@ -243,14 +197,8 @@ func TestTheEngineSeamIsAValue(t *testing.T) {
 		assert.Assert(t, len(schema.EnginesOf(kind)) == 0, "%s declares an engine and is not built", kind)
 	}
 
-	// AND A KIND WITH A CHOICE HAS SOMETHING TO MAKE IT WITH. runsAsContainer reads
-	// `runtime` first and falls back to a kind's single engine, so a kind declaring two
-	// tiers and no attribute choosing between them would answer "not a container" for
-	// both of them — the safe direction, and silent. checks.go says that is unreachable
-	// because every kind with a choice carries `runtime`; this is what makes that true
-	// rather than observed. And the attribute's set IS the kind's set — `enum` is what
-	// InSet leaves behind, and also what a JSON Schema and a completion read, so this
-	// asserts the same list an editor offers.
+	// A kind with a choice of tier has `runtime` to choose with, and its set is the
+	// kind's: runsAsContainer falls back to a kind's single engine.
 	choosers := map[string][]string{}
 	for _, g := range schema.V2Resources {
 		kind, _ := g.Match.(string)
@@ -278,10 +226,6 @@ func TestTheEngineSeamIsAValue(t *testing.T) {
 	assert.DeepEqual(t, schema.BuildWaysOf("js"), []string{"commands", "script"})
 }
 
-// THE THREE THINGS ABOUT A BUILD THAT ARE TRUE ACROSS TWO BLOCKS. `source:` and
-// `build:` are different attributes at different paths, so §3's switch has no single
-// key to hang the exclusion on and the audit owes them — the same seam checkVariables
-// sits on, for the same reason.
 func TestAuditBuild(t *testing.T) {
 	const appHead = "id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPZ\nexecution:\n    memory: 1MB\nports:\n    http:\n        number: 80\n"
 	route := "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdH\nhost:\n    generated:\n        name: probe\nroute:\n    path: /\n    handler:\n        application:\n            name: a\n            port: http\n"
@@ -324,10 +268,6 @@ func TestAuditBuild(t *testing.T) {
 	hasNo(t, found, "is built with")
 }
 
-// A CONTAINER BUILT HERE HAS NO IMAGE REFERENCE, so "is this a container" stopped being
-// answerable by looking for one. Every check that asked it now asks the vocabulary, and
-// this is the case that used to slip through: a queue consumer with no deliver port,
-// built from a Dockerfile, reported as though it were a dispatched WASM component.
 func TestAContainerIsKnownByItsKindNotByAnImage(t *testing.T) {
 	found := auditDocs(t, nil, map[string]string{
 		"/sync/work.yaml": "id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o\nqueue:\n    consensus: raft\n    visibility_timeout: 30s\n",
@@ -338,9 +278,6 @@ func TestAContainerIsKnownByItsKindNotByAnImage(t *testing.T) {
 	has(t, found, schema.Broken, "declares no deliver port")
 }
 
-// WHEN A VALUE IS HANDED OVER, and the legal set is the kind's. A build argument and a
-// runtime variable are one entry with two lifetimes — which is what gives a build-time
-// credential the `secret:` branch it never had while it lived in a shell script.
 func TestAVariableSaysWhenItIsHandedOver(t *testing.T) {
 	flat := compileBasic(t)
 
@@ -363,15 +300,6 @@ func TestAVariableSaysWhenItIsHandedOver(t *testing.T) {
 	assert.ErrorContains(t, err, "invalid value")
 }
 
-// A SECTION IS DECLARED ONCE PER KIND, and this is here because the build stanza
-// nearly broke it: `secBuild` was passed in six kinds' option lists AND registered by
-// attachBuild, so six kinds carried the same heading twice. Nothing failed — a section
-// is presentation, so a duplicate compiles, generates and renders as two identical
-// panels with the fields split between them.
-//
-// The rule the trap comes from is attachPlacement's: a block attached to a set of kinds
-// registers its own section, because the attach pass is the one place that knows which
-// kinds got it. A kind that also declares it is the second copy.
 func TestNoKindDeclaresASectionTwice(t *testing.T) {
 	for _, g := range schema.V2Resources {
 		if len(g.Children) == 0 {

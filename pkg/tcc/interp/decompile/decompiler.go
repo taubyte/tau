@@ -15,7 +15,6 @@ import (
 	yaseer "github.com/taubyte/tau/pkg/yaseer"
 )
 
-// Object is an alias for the compiled configuration object.
 type Object = object.Object[object.Refrence]
 
 type Decompiler struct {
@@ -35,10 +34,8 @@ type Decompiler struct {
 
 type Option func(d *Decompiler) error
 
-// New builds a Decompiler bound to a schema project and its CompileRoot node.
-// Both are supplied by the caller (the schema facade passes schema.TaubyteProject
-// + schema.CompileRoot()) rather than referenced here, so this package never
-// imports schema — keeping the interpreter dependency one-way.
+// New builds a Decompiler bound to a schema project and its CompileRoot node,
+// supplied by the caller so this package never imports schema.
 func New(project engine.Schema, compileRoot *engine.Node, options ...Option) (d *Decompiler, err error) {
 	d = &Decompiler{compileRoot: compileRoot}
 
@@ -60,14 +57,9 @@ func New(project engine.Schema, compileRoot *engine.Node, options ...Option) (d 
 	return d, nil
 }
 
-// Decompile converts a compiled object back to YAML files using the engine's schema.
-//
-// It writes what somebody WROTE: the resources a lowering produced, and the access
-// entries it granted, are taken back out first — see lowered.go, and WithAsLowered for
-// the depth that keeps them.
-//
-// Note: This modifies the input object in place (same as regular compilation transforms),
-// so a caller that still needs the compiled object as it was compiles again.
+// Decompile writes a compiled object back as YAML files: what somebody wrote,
+// with the lowering's resources and grants taken out first (lowered.go). It
+// modifies obj in place.
 func (d *Decompiler) Decompile(obj Object) error {
 	// The record sits BESIDE the project, so it has to be read before the unwrap keeps
 	// the project and drops everything else.
@@ -80,7 +72,6 @@ func (d *Decompiler) Decompile(obj Object) error {
 		return fmt.Errorf("reverse pipeline failed: %w", err)
 	}
 
-	// Use engine's Dump to write object back to filesystem using schema (syncs automatically)
 	if err := d.engine.Dump(restored); err != nil {
 		return err
 	}
@@ -109,18 +100,9 @@ func (d *Decompiler) writeInlined(files map[string][]string) error {
 	return nil
 }
 
-// pipe is the reverse pipeline: chroot unwrap -> lowering removal -> DecompileDriver. The
-// generic DecompileDriver is the mechanical inverse of the forward CompileDriver +
-// ResolveRefs, driven by the same schema DSL; it replaces the hand-written id->name ref
-// resolution and per-resource inverse projection.
-//
-// The chroot-unwrap is only needed when the forward path chrooted, and it chroots to make
-// room for a sibling: the `indexes` subtree, or the record of what was lowered. When it
-// did not there is no `object` wrapper and the unwrap is a no-op, so gating it skips dead work for a schema with neither sibling.
-//
-// The lowering removal runs BEFORE the driver: the record addresses resources and
-// accessors by their compiled id, and the driver's last act is to key every resource by
-// its name instead.
+// pipe is the reverse pipeline: chroot unwrap (only if the forward path
+// chrooted), lowering removal, then DecompileDriver. The removal runs before the
+// driver, which keys every resource by name while the record speaks in ids.
 func (d *Decompiler) pipe(lowered interp.Lowered) []transform.Transformer[object.Refrence] {
 	pipe := []transform.Transformer[object.Refrence]{}
 	if interp.UsesIndexing(d.compileRoot) || interp.UsesLowering(d.compileRoot) {

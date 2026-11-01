@@ -49,8 +49,6 @@ func hasNo(t *testing.T, found []schema.Finding, substr string) {
 
 const appBody = "id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\nsource:\n    image: img\nexecution:\n    memory: 1MB\n"
 
-// An http workload nothing fronts answers nobody. A consumer in the same position is
-// correct, and the difference is the whole reason severity is not a count.
 func TestAuditReachability(t *testing.T) {
 	found := auditDocs(t, nil, map[string]string{"/application/lonely.yaml": appBody})
 	has(t, found, schema.Broken, "nothing reaches it")
@@ -63,8 +61,6 @@ func TestAuditReachability(t *testing.T) {
 	hasNo(t, found, "nothing reaches it")
 }
 
-// A container told to consume has to say where each item goes; a WASM workload is
-// dispatched and needs no port at all.
 func TestAuditDelivery(t *testing.T) {
 	found := auditDocs(t, nil, map[string]string{
 		"/sync/work.yaml":     "id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o\nqueue:\n    consensus: raft\n    visibility_timeout: 30s\n",
@@ -79,7 +75,6 @@ func TestAuditDelivery(t *testing.T) {
 	hasNo(t, found, "deliver port")
 }
 
-// The mutual exclusion the DSL cannot state.
 func TestAuditVariables(t *testing.T) {
 	found := auditDocs(t, nil, map[string]string{
 		"/secret/k.yaml":      "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n",
@@ -89,8 +84,8 @@ func TestAuditVariables(t *testing.T) {
 	has(t, found, schema.Broken, "has neither a value nor a secret")
 }
 
-// What tcc cannot see, it asks. The stub says yes so an unwired check never blocks a
-// compile; a resolver that says no is how the edge case is exercised, with no network.
+// refusing says no to every external question, so the edge cases run with no
+// network.
 type refusing struct{}
 
 func (refusing) ZoneDelegated(fqdn string) error { return errors.New("no NS records point here") }
@@ -117,24 +112,20 @@ func TestAuditAsksTheResolver(t *testing.T) {
 	has(t, found, schema.Broken, "cannot be pulled")
 }
 
-// The fixture is the example the tests compile, so it should stay clean of anything
-// broken — and its two standing findings are both deliberate.
 func TestAuditOfTheExample(t *testing.T) {
 	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
 	assert.NilError(t, err)
 	obj, _, err := c.Compile(context.Background())
 	assert.NilError(t, err)
 
-	// A PREVIEW of the regions it names: the example is written for a cloud with more
-	// regions than one, to exercise the region syntax; what it must not be is broken.
+	// The example names more regions than one cloud has, to exercise the syntax; it
+	// must not be broken.
 	flat := obj.Flat()
 	for _, f := range schema.Audit(flat, nil, schema.WithRegions(schema.Preview(schema.RegionsNamed(flat)...))) {
 		assert.Assert(t, f.Severity != schema.Broken, "the example must compile to something that works: %v", f)
 	}
 }
 
-// A site built for / and mounted at /docs 404s every page while the config reads as
-// correct. Both halves are in the compiled object, so tcc is what can say so.
 func TestAuditMountedWebsite(t *testing.T) {
 	site := "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\nsource:\n    git: https://github.com/acme/docs\n    branch: main\n"
 	gw := func(extra string) string {
@@ -155,7 +146,6 @@ func TestAuditMountedWebsite(t *testing.T) {
 	hasNo(t, found, "strip the prefix")
 }
 
-// An SPA and a 404 page are the same document with opposite status codes.
 func TestWebsiteServingMode(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
@@ -172,9 +162,6 @@ func TestWebsiteServingMode(t *testing.T) {
 	assert.Equal(t, nested(site, "serve", "index"), "index.html", "the default a directory request returns")
 }
 
-// Every USE of a function is a place tcc can see, and the function says which world it
-// was built against — so "compiles clean, fails on live traffic" becomes an error at
-// compile.
 func TestAuditHostWorlds(t *testing.T) {
 	fn := func(world string) string {
 		body := "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nruntime: wasm\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"
@@ -207,11 +194,6 @@ func TestAuditHostWorlds(t *testing.T) {
 	has(t, found, schema.Broken, "is used as a proxy-transformer")
 }
 
-// EVERY USE OF A FUNCTION IS A PLACE THE AUDIT CAN SEE — and two of them were not
-// being looked at. A per-route router is a second router site beside the gateway-wide
-// one, and an admission validator is the only use of `instance-validator`, the world
-// that exists so a validator need not be a kind. Both compiled clean naming a function
-// built against something else, which is the failure this check exists to prevent.
 func TestAuditHostWorldsReachesEveryUse(t *testing.T) {
 	fn := func(world string) string {
 		b := "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nruntime: wasm\nexecution:\n    call: c\n    timeout: 1s\n    memory: 1MB\n"
@@ -251,9 +233,6 @@ func TestAuditHostWorldsReachesEveryUse(t *testing.T) {
 	has(t, found, schema.Broken, "does not exist")
 }
 
-// Only a container listens on ports. A route naming one on a website points at
-// something that does not exist — the field is on the handler block for every kind
-// because which kinds have ports is not something the schema can condition on.
 func TestAuditHandlerPorts(t *testing.T) {
 	found := auditDocs(t, nil, map[string]string{
 		"/website/w.yaml": "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\nsource:\n    git: https://github.com/acme/w\n    branch: main\n",
@@ -262,7 +241,6 @@ func TestAuditHandlerPorts(t *testing.T) {
 	has(t, found, schema.Broken, "names port \"http\" on a website")
 }
 
-// A file has to be mounted somewhere the workload can open it.
 func TestAuditVariableAsFile(t *testing.T) {
 	found := auditDocs(t, nil, map[string]string{
 		"/secret/k.yaml":      "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n",
@@ -277,9 +255,6 @@ func TestAuditVariableAsFile(t *testing.T) {
 	hasNo(t, found, "names no path")
 }
 
-// The entry's KEY is the function's name, and a key is not a value — nothing resolves
-// it — so a typo compiles clean and the step never runs. In the authorizer's case, it
-// never runs and the resource is silently unguarded.
 func TestAuditGhostFunctions(t *testing.T) {
 	found := auditDocs(t, nil, map[string]string{
 		"/application/a.yaml": appBody + "ports:\n    p:\n        number: 80\n",
@@ -290,12 +265,6 @@ func TestAuditGhostFunctions(t *testing.T) {
 	has(t, found, schema.Broken, "is named as a authorizer by cache/c authorizer, and does not exist")
 }
 
-// A VOLUME CAN BE SHARED, so nothing here has anything to say about two workloads
-// mounting one read-write, or about one workload the platform may run ten instances of.
-// This is the audit that used to refuse both, kept as the case with its expectation
-// flipped: POSIX answers concurrent access — flock, fcntl, atomic rename — and a lease
-// above the filesystem would be a second, weaker answer to a question the layer below
-// already answers.
 func TestAVolumeMayBeSharedByManyWriters(t *testing.T) {
 	const vol = "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nquota: 1GB\n"
 	mount := func(op string) string {
@@ -316,7 +285,6 @@ func TestAVolumeMayBeSharedByManyWriters(t *testing.T) {
 	})
 	hasNo(t, found, "instances")
 
-	// The two verbs still mean different things, which is why they stay two verbs.
 	ro, rw := false, false
 	for _, v := range schema.OpsOf("volume") {
 		switch v.Name {
@@ -329,10 +297,6 @@ func TestAVolumeMayBeSharedByManyWriters(t *testing.T) {
 	assert.Assert(t, ro && rw, "a volume declares a read mount and a write mount: %v", schema.OpsOf("volume"))
 }
 
-// A fault INSIDE a lowering is reported against what the AUTHOR wrote. The broken
-// thing is a queue nobody wrote and cannot find; the finding has to name the workflow,
-// the step, and which part of the lowering failed — or a generated-config diagnostic is
-// worth nothing.
 func TestAuditReportsALoweringFaultAgainstItsSource(t *testing.T) {
 	const wf = "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nstart: reserve\nsteps:\n    - name: reserve\n      call:\n          function: %s\n      attempts: 2\n"
 
@@ -364,10 +328,6 @@ func findOne(t *testing.T, found []schema.Finding, contains string) schema.Findi
 	return schema.Finding{}
 }
 
-// The verb check AGENTS.md promised and nothing implemented: a lowering that asks for an
-// op the target kind does not declare. It cannot live in interp — whether "receive" is
-// something a queue does is this vocabulary's question — so it is asked here, and the
-// vocabulary as shipped has to pass it.
 func TestLoweredOpsAreVerbsOfTheirTarget(t *testing.T) {
 	assert.DeepEqual(t, schema.CheckLoweredOps(schema.CompileRoot()), []string(nil))
 
@@ -385,7 +345,6 @@ func TestLoweredOpsAreVerbsOfTheirTarget(t *testing.T) {
 	assert.Assert(t, strings.Contains(problems[0], "receive"), "it names what a queue does: %s", problems[0])
 }
 
-// recorder remembers what the audit actually handed the resolver.
 type recorder struct{ pulls map[string]string }
 
 func (r *recorder) ZoneDelegated(string) error { return nil }
@@ -397,9 +356,6 @@ func (r *recorder) ImagePullable(image, pullSecret string) error {
 	return nil
 }
 
-// A PULL SECRET REACHES THE RESOLVER. It is a reference, so what compiles out is the
-// secret's ID; if the audit reads the wrong place it hands the resolver "" and asks
-// whether the image pulls ANONYMOUSLY — a different question, answered yes by every stub.
 func TestPullSecretReachesTheResolver(t *testing.T) {
 	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
 	assert.NilError(t, err)
@@ -422,10 +378,6 @@ func TestPullSecretReachesTheResolver(t *testing.T) {
 	assert.Equal(t, withSecret, 1, "the audit asked about every image anonymously: %v", r.pulls)
 }
 
-// A lowering may write `source: {builtin: …}`; an author may not. The set is closed by
-// what the runtime ships, so a name an author invents is a workload whose code does
-// not exist — and the compiler cannot tell one from the other by looking at the value,
-// only by asking who wrote the resource.
 func TestAuditAuthoredBuiltin(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
@@ -458,10 +410,6 @@ func TestAuditAuthoredBuiltin(t *testing.T) {
 	}
 }
 
-// A ROUTE OR A PROXY POINTING AT NOTHING. `handler: {agent: {}}` names a kind and no
-// resource: the branch key is there, so the switch captures, and every field inside it
-// was optional. A router-only gateway or proxy has no such block at all, which is why
-// the name is required by the branch rather than outright.
 func TestATargetWithNoNameIsRefused(t *testing.T) {
 	for _, tc := range []struct{ name, path, doc, contains string }{
 		{"a gateway's handler", "/gateway/ask.yaml",
@@ -483,14 +431,6 @@ func TestATargetWithNoNameIsRefused(t *testing.T) {
 	}
 }
 
-// THE VERB SET IS THE TYPE'S, AND THE UNION IS ONLY WHAT THE LOADER CAN HOLD IT TO.
-//
-// `database` declares nine verbs because it holds four data models, and an access block
-// is loaded before anything knows which database an entry names. That is not a hole in
-// the per-kind verb rule; it moves the question to where the target is known. This is
-// the test that says so: the same document that COMPILES is the one the audit refuses,
-// so it pins both halves at once — take the check out and the first assertion still
-// passes, which is exactly the failure this is here to catch.
 func TestDatabaseOpsAreItsTypesNotTheUnion(t *testing.T) {
 	const fn = "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nruntime: wasm\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"
 	kv := "id: QmVLDAzEjEbfBPuoyLPWnPMhKp8ceDXwGdmMKY5W3nZWfF\nkv:\n    distributed:\n        size: 1MB\n        consensus: crdt\n"
@@ -519,11 +459,8 @@ func TestDatabaseOpsAreItsTypesNotTheUnion(t *testing.T) {
 	has(t, found, schema.Broken, "asks to exec database/mem, which is a vector database and has search, upsert, delete")
 	hasNo(t, found, "asks to search")
 
-	// A TARGET IN ANOTHER SCOPE resolves the way every other reference does, and both
-	// directions matter: a written namespace, and the outward walk a bare name takes.
-	// Without them the check quietly stops applying the moment a project has
-	// namespaces — which is also every project a lowering has produced into, since a
-	// lowered resource lives in a scope of its own.
+	// A target in another scope resolves like every other reference: a written
+	// namespace, and the outward walk of a bare name.
 	const meta = "id: QmPChzsSKcAiSFqNqrH7LM4t9GhqfHmi3ihn7C9hNc8Vg1\nname: billing\n"
 	found = auditDocs(t, nil, map[string]string{
 		"/namespace/billing/meta.yaml":           meta,
@@ -553,11 +490,6 @@ func TestDatabaseOpsAreItsTypesNotTheUnion(t *testing.T) {
 	assert.ErrorContains(t, err, `"fetch" is not something a database does`)
 }
 
-// AND IT COVERS WHAT A LOWERING WROTE. An agent's memory is a vector database nobody
-// authored, reached by a function nobody authored, with an entry nobody authored — and
-// all three are in the compiled object, so the same pass checks them. A lowering that
-// asked for the wrong verb would be a fault in something an author cannot edit, which
-// is the case worth having a test for.
 func TestALoweredDatabaseEntryIsCheckedToo(t *testing.T) {
 	docs := map[string]string{
 		"/secret/k.yaml":   "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n",
@@ -589,10 +521,6 @@ func TestALoweredDatabaseEntryIsCheckedToo(t *testing.T) {
 	hasNo(t, schema.Audit(obj.Flat(), nil), "which is a vector database")
 }
 
-// THE CEILING, WHICH ONLY THE AUDIT CAN HOLD. A scope's allowance and a resource's
-// placement are in different documents, so neither the schema nor load time sees both
-// ends — and a widening that compiled silently would mean a child running where its
-// parent said nothing may.
 func TestAuditRegions(t *testing.T) {
 	const proj = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\nregions: [region-1, region-2]\n"
 	const shopID = "id: QmQPeNsJPyVWPFDVHb77w8G42Fvo15z4bmmjRoBHfW1YZv\n"
@@ -664,9 +592,8 @@ func TestAuditRegions(t *testing.T) {
 	has(t, found, schema.Broken, `is placed in region "region-2", which its scope does not allow`)
 }
 
-// auditDocsInEnv is auditDocs for ONE environment, which is the only way a
-// per-environment placement is visible to the audit: it reads a COMPILED resource, and
-// a compile is for one environment at a time.
+// auditDocsInEnv audits a compile for one environment, the only way a
+// per-environment placement is visible.
 func auditDocsInEnv(t *testing.T, env string, docs map[string]string) []schema.Finding {
 	t.Helper()
 	fs := afero.NewMemMapFs()
@@ -685,12 +612,6 @@ func auditDocsInEnv(t *testing.T, env string, docs map[string]string) []schema.F
 	return schema.Audit(obj.Flat(), nil, schema.AuditIn(env))
 }
 
-// TestTheSuffixIsNotAWayAroundTheCeiling.
-//
-// PER-ENVIRONMENT PLACEMENT IS A SCOPE'S `regions`, a plain list, so it takes a
-// suffix — and a suffixed list is a placement like any other, bounded by the
-// scope above it. Otherwise `regions_preview` would be the spelling that walks
-// regulated data out of the region a project was written to keep it in.
 func TestAPerEnvironmentPlacementIsBoundedToo(t *testing.T) {
 	const shopID = "id: QmQPeNsJPyVWPFDVHb77w8G42Fvo15z4bmmjRoBHfW1YZv\n"
 	docs := map[string]string{
@@ -707,11 +628,6 @@ func TestAPerEnvironmentPlacementIsBoundedToo(t *testing.T) {
 		`allows region "region-2", which the scope above it does not`)
 }
 
-// TestAnythingWithAFootprintIsPlaced.
-//
-// WHERE SOMETHING RUNS IS THE REGIONS' ANSWER, not an authored line: the default
-// (WithNoRegions) places everything in DefaultRegion, so a project that writes no `regions` anywhere is
-// placed, and only a Regions that places a resource nowhere makes it Broken.
 func TestAnythingWithAFootprintIsPlaced(t *testing.T) {
 	const bare = "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"
 	cache := func(region string) string {
@@ -751,12 +667,6 @@ func TestAnythingWithAFootprintIsPlaced(t *testing.T) {
 	}), "is not placed anywhere")
 }
 
-// TestAnEnvironmentNarrowsTheProjectAndNeverWidensIt.
-//
-// AN ENVIRONMENT IS ON MANY REGIONS — that is why the field is a list — and the
-// regions it keeps its state in are still bounded by what the project allows.
-// Nothing checked this, so an environment could quietly widen the one statement
-// a project makes about where its data may ever be, and the runtime honoured it.
 func TestAnEnvironmentCannotWidenTheProject(t *testing.T) {
 	proj := func(envRegions string) string {
 		return "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nregions: [region-1, region-2]\n" +
@@ -772,12 +682,6 @@ func TestAnEnvironmentCannotWidenTheProject(t *testing.T) {
 	}), "which the project does not allow")
 }
 
-// TestAResourceIsPlacedWhereItsDeploymentKeepsState.
-//
-// THE AUDIT HAS TO BE TOLD WHICH DEPLOYMENT IT IS READING. A compile is for one
-// environment and the object does not say which — `name_preview` and `name` are
-// indistinguishable once resolved — so without the name there is no way to know
-// whose region list to check against.
 func TestAResourceIsPlacedWhereItsDeploymentKeepsState(t *testing.T) {
 	docs := map[string]string{
 		"/project.yaml": "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nregions: [region-1, region-2]\n" +

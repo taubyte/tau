@@ -1,11 +1,7 @@
 //go:build js && wasm
 
-// Command v2-wasm exposes the v2 DSL to the browser: compile a set of YAML files,
-// read the JSON Schema, read the verb table. Built with GOOS=js GOARCH=wasm.
-//
-// It takes the config as a plain {path: contents} object rather than a JS
-// filesystem, because the explorer edits the tree in memory — no lightning-fs, no
-// hydration step, and every compile is over exactly what is on screen.
+// Command v2-wasm exposes the v2 DSL to the browser: compile, decompile, sessions,
+// the JSON Schema and the verb table. Built with GOOS=js GOARCH=wasm.
 package main
 
 import (
@@ -49,21 +45,15 @@ func main() {
 	// Computing a derived value is the engine's, so a consumer asks rather than
 	// reimplementing the derivation it just read about.
 	api.Set("derive", js.FuncOf(deriveFn))
-	// The shapes a consumer cannot infer: where a document lives, and which fields a kind
-	// derives. Read off the schema, so a graph, a CLI or a console handles a vocabulary
-	// it has never seen.
+	// Where a document lives and which fields a kind derives, read off the schema.
 	api.Set("shapes", js.FuncOf(shapesFn))
-	// What a resource nobody wrote WOULD be, as config: decompile, all the way. The
-	// compiler renders no yaml — writing config is the decompiler's job, and this is the
-	// only place that does it.
+	// What a resource nobody wrote would be, as config: a full decompile.
 	api.Set("generated", js.FuncOf(generatedFn))
 	// A compiled object back to config, written through the caller's own filesystem.
 	api.Set("decompile", js.FuncOf(decompileFn))
 
-	// THE EDITABLE HALF, and it is not a second compiler. A session keeps the config
-	// resident here and hands out a handle, so the page never holds a parsed copy its
-	// next keystroke makes stale and comments survive an edit — the bytes are never
-	// re-rendered from a JS object. See session_js.go.
+	// A session keeps the config resident here behind a handle, so the page holds no
+	// stale parsed copy and comments survive edits. See session_js.go.
 	api.Set("openSession", js.FuncOf(openSessionFn))
 	api.Set("decompileSession", js.FuncOf(decompileSessionFn))
 	api.Set("sessionGet", js.FuncOf(sessionGetFn))
@@ -89,12 +79,7 @@ func main() {
 	api.Set("sessionFork", js.FuncOf(sessionForkFn))
 	api.Set("sessionMerge", js.FuncOf(sessionMergeFn))
 	api.Set("sessionClose", js.FuncOf(sessionCloseFn))
-	// ONE NAME, AND THIS IS IT. Two consumers read this global — the generated
-	// npm client and the explorer — and they had drifted onto two spellings of
-	// it, so the client threw "tcc wasm did not register globalThis.tcc"
-	// against a binary that had registered everything it was asked to under
-	// another name. A version suffix on a runtime global is the transition that
-	// is over.
+	// The one global name both the npm client and the explorer read.
 	js.Global().Set("tcc", api)
 	select {}
 }
@@ -115,16 +100,9 @@ func toJS(v any) any {
 	return js.Global().Get("JSON").Call("parse", string(b))
 }
 
-// sourceFs is the config a caller handed over, whichever of the two shapes it used.
-//
-// TWO CONSUMERS, TWO SHAPES, AND BOTH ARE RIGHT. The explorer edits the tree in
-// memory and passes { path: contents } — no filesystem, no hydration step, and a
-// compile over exactly what is on screen. The npm client owns a real browser
-// filesystem (lightning-fs) and passes the sync primitives, because it also opens
-// SESSIONS, which have to write back where they read from. Accepting one shape and
-// silently mis-reading the other is what this function exists to stop: Object.keys
-// over a filesystem yields its METHOD NAMES, so the compile ran against files called
-// `readFile` and `stat` and failed somewhere far from the cause.
+// sourceFs accepts either shape: the explorer passes { path: contents }, the npm
+// client passes sync filesystem primitives. Object.keys over a filesystem would
+// yield its method names as files.
 func sourceFs(v js.Value) (afero.Fs, error) {
 	if isSyncFs(v) {
 		return &jsFs{p: v}, nil
@@ -169,20 +147,15 @@ func compileFn(_ js.Value, args []js.Value) any {
 	if err != nil {
 		return errResult(err.Error())
 	}
-	// ...and as it RUNS. Compiling lowers, so this is where the queues a workflow becomes
-	// exist. Two compiles rather than one because the page needs both: an editor that
-	// only had the second would show its user resources they cannot edit, mixed in with
-	// the ones they wrote.
+	// And as it runs, where lowered resources exist; the page needs both, so its
+	// editor never mixes uneditable resources into what was written.
 	loweredObj, _, err := c.Compile(context.Background())
 	if err != nil {
 		return errResult(err.Error())
 	}
 	lowered := loweredObj.Flat()
 
-	// THE LOWERED FILESYSTEM ITSELF — every document the second pass actually wrote, not
-	// the compiled object's shape of it: a relocated source's own leaf document, and each
-	// produced child, exactly as read back. Nil for a project that lowers nothing, which
-	// LoweredFS says by returning nil rather than an empty filesystem.
+	// The documents the second pass wrote, as read back; nil when nothing lowers.
 	loweredFiles := map[string]any{}
 	if fs := c.LoweredFS(); fs != nil {
 		afero.Walk(fs, "/", func(path string, info os.FileInfo, err error) error {
@@ -198,14 +171,8 @@ func compileFn(_ js.Value, args []js.Value) any {
 		})
 	}
 
-	// The project's label in a cloud's generated zone is a pure function of its id, so
-	// it can be shown rather than guessed at. Only the cloud's own fqdn is unknown
-	// here, and that stays unknown.
-	// Flat() IS { object, indexes }, AND THEY ARE SIBLINGS OF validations — the shape
-	// the client's CompileResult declares. Nesting the whole of it under `object`
-	// again put the project one level deeper than every consumer reads it and dropped
-	// `indexes` off the top level entirely, which the explorer never noticed because
-	// it renders the result as an untyped JSON tree.
+	// Flat() is { object, indexes }, siblings of validations, as the client's
+	// CompileResult declares.
 	flat := obj.Flat()
 	out := map[string]any{}
 	for k, v := range flat {
@@ -218,18 +185,10 @@ func compileFn(_ js.Value, args []js.Value) any {
 	if id, ok := root["id"].(string); ok && id != "" {
 		out["projectLabel"] = schema.ProjectLabel(id)
 	}
-	// The audit runs HERE, not in the page. Every one of its checks needs a second
-	// resource to answer, and the compiled object is what has them — so a second
-	// implementation in TypeScript would be the same reasoning written twice, drifting
-	// the first time a kind changed. The page renders findings; it does not decide
-	// them.
-	//
-	// The stub resolver: what tcc cannot see — is this zone delegated, is this image
-	// pullable — nothing in a browser can see either.
+	// The audit runs here, not in the page, so its reasoning is not duplicated in
+	// TypeScript. The stub resolver: what tcc cannot see, a browser cannot either.
 	flatObj := obj.Flat()
-	// The audit runs over what RUNS: a lowering that produced something broken is a
-	// config that cannot be deployed, and an author told their own files are fine would
-	// find that out from a failed deploy.
+	// Over what runs: a broken lowering is undeployable config.
 	findings := schema.Audit(lowered, schema.StubResolver())
 	found := make([]map[string]any, 0, len(findings))
 	for _, f := range findings {
@@ -241,10 +200,7 @@ func compileFn(_ js.Value, args []js.Value) any {
 	out["findings"] = found
 	out["loweredFiles"] = loweredFiles
 
-	// WHAT NOBODY WROTE, and where it came from. The page draws the project as it was
-	// WRITTEN — that is what an author is editing — and asks for the lowered one only
-	// when a box is opened. Both are the same shapes, because a produced resource is an
-	// ordinary resource; the difference is only which of them exist.
+	// What nobody wrote and where it came from, for when a box is opened.
 	rec := interp.LoweredOf(lowered)
 	made := map[string]any{}
 	for id, p := range rec.Resources {
@@ -280,10 +236,8 @@ func compileFn(_ js.Value, args []js.Value) any {
 		"resources": loweredResources, "relations": loweredRelations,
 	}
 
-	// WHAT EACH RESOURCE IS REACHED AT. A name is the label it chose, the zone that
-	// answers for it and the project's own label — three places, so whoever assembles
-	// them decides what the name is, and a view assembling its own is a second answer.
-	// The cloud's fqdn stays absent, because it is not in the config.
+	// What each resource is reached at, assembled by the schema; the cloud's fqdn
+	// stays absent.
 	names := map[string]any{}
 	for id, r := range schema.ReachableNames(flatObj) {
 		names[id] = map[string]any{
@@ -292,9 +246,7 @@ func compileFn(_ js.Value, args []js.Value) any {
 	}
 	out["names"] = names
 
-	// WHAT RESOURCES THERE ARE, and the namespace each lives in. Finding them means
-	// telling a nested group from an access block from a list, which is schema knowledge:
-	// the walk lives with the schema and every consumer gets the same answer.
+	// The resources and their namespaces, from the schema's walk.
 	res := []map[string]any{}
 	for _, r := range schema.Resources(flatObj) {
 		res = append(res, map[string]any{
@@ -303,12 +255,8 @@ func compileFn(_ js.Value, args []js.Value) any {
 	}
 	out["resources"] = res
 
-	// AND WHAT THE SCOPES ARE, which is a different question from what resources there
-	// are: Resources() lists what is INSIDE a scope, on purpose. A scope path is a path
-	// of NAMES and a document address is a path of DIRECTORIES named after the kind —
-	// `shop/checkout` is `namespace/shop/workflow/checkout` — so a consumer filling in
-	// LayoutOf().Scope's `{kind}` asks here rather than assuming every level is the one
-	// container it happens to know about.
+	// The scopes, which Resources() does not list, with their kinds for filling
+	// LayoutOf().Scope.
 	scopes := []map[string]any{}
 	for _, s := range schema.Scopes(flatObj) {
 		scopes = append(scopes, map[string]any{
@@ -317,9 +265,7 @@ func compileFn(_ js.Value, args []js.Value) any {
 	}
 	out["scopes"] = scopes
 
-	// EVERY RELATIONSHIP BETWEEN TWO RESOURCES, already resolved: a name is resolved
-	// against a scope, and a consumer that does its own resolving is one that will
-	// disagree with the compiler about what a name means.
+	// Every relationship, already resolved.
 	rels := []map[string]any{}
 	for _, r := range schema.Relations(flatObj) {
 		rels = append(rels, map[string]any{
@@ -329,17 +275,14 @@ func compileFn(_ js.Value, args []js.Value) any {
 	}
 	out["relations"] = rels
 
-	// ONE VIEW PER REGION, cut from what RUNS — the same cut a deploy publishes. The
-	// page picks a region and draws what that region holds.
+	// One view per region, cut as a deploy publishes.
 	var opts js.Value
 	if len(args) > 1 {
 		opts = args[1]
 	}
 	out["views"] = viewsResult(lowered, "", regionsFrom(opts, lowered))
 
-	// ALWAYS PRESENT, EMPTY WHEN THERE ARE NONE. The client declares validations as a
-	// list, not an optional one, so omitting the key made a clean compile the case
-	// where reading the result threw.
+	// Always present, empty when there are none: the client types it as a list.
 	vs := make([]map[string]any, 0, len(validations))
 	for _, v := range validations {
 		vs = append(vs, map[string]any{"key": v.Key, "value": v.Value, "validator": v.Validator})
@@ -386,15 +329,8 @@ func verbsFn(js.Value, []js.Value) any {
 
 // kinds() -> [{group, singular, container, category, doc, icon, fields}] read off the schema.
 func shapesFn(js.Value, []js.Value) any {
-	// WHAT A CONSUMER CANNOT INFER, and nothing else. Where a document lives, and which
-	// fields a kind derives — the second because deriving one is the engine's, so a
-	// consumer asks rather than reimplementing a derivation it just read about.
-	//
-	// Four more facts were here: every reference a kind declares, the blocks that hand
-	// traffic on, what an access entry is called, and where each kind states the name it
-	// answers on. Nothing reads them now — tcc answers those questions directly, as
-	// resources, relations and names — and a shape nobody reads is a second definition
-	// waiting to disagree with the first.
+	// Only what a consumer cannot infer: where a document lives, and which fields a
+	// kind derives.
 	kinds := map[string]any{}
 	for _, g := range schema.KindRoot() {
 		key, _ := g.Match.(string)
@@ -479,14 +415,8 @@ func kindsFn(js.Value, []js.Value) any {
 		if schema.ServedByRoute(name) {
 			reach = append(reach, "route")
 		}
-		// `name` IS THE DECLARED SINGULAR, LOWERCASED, and both halves of that
-		// matter. loader.ts types this call's result as Kind{name, group,
-		// container} and the SESSION's own kinds() already answers that way, so
-		// emitting `singular` left a typed consumer reading `kind.name` as
-		// undefined while the compiler told it the field was a string. The case
-		// is the session's too: the DSL declares `Function` as a display label,
-		// and the kind resolver matches a lowercased name — so a rich kind list
-		// that said `Function` disagreed with the session about one concept.
+		// `name` is the declared singular, lowercased, matching the session's kinds() and
+		// loader.ts's Kind type.
 		out = append(out, map[string]any{
 			"group": name, "name": strings.ToLower(singular), "container": iter.Group,
 			"category": category, "doc": doc, "icon": icon, "fields": fields,
@@ -498,12 +428,8 @@ func kindsFn(js.Value, []js.Value) any {
 
 // generated(files, {branch}) -> { "<path>": "<yaml>", ... } | { error }
 //
-// Decompiling ALL THE WAY: the authored documents plus the ones a lowering produced. The
-// authored half is thrown away here — the page already has those, they are what the user
-// is editing — so what comes back is exactly the config nobody wrote.
-//
-// It is a separate call, made when a box is opened rather than on every keystroke,
-// because it is a whole decompile and nothing needs it until somebody looks.
+// A full decompile with the authored documents dropped: exactly the config nobody
+// wrote. Separate from compile because nothing needs it until a box is opened.
 func generatedFn(_ js.Value, args []js.Value) any {
 	if len(args) < 1 || !args[0].Truthy() {
 		return errResult("generated: expected (files, options?)")

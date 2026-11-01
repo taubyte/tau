@@ -6,26 +6,11 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/transform"
 )
 
-// HOW DEEP A DECOMPILE GOES.
-//
-// Compiling lowers, so the object holds resources nobody wrote and access entries nobody
-// granted. Written back as they stand they land in somebody's repository as though they
-// had been asked for, and the next compile lowers them again — the round trip stops being
-// one the first time it runs.
-//
-// So the default is HALF WAY: what somebody wrote, and nothing else. The object says what
-// the compile lowered (interp.Lowered, recorded beside the project) and this takes it back
-// out — the produced resources go, and a resource that was handed an entry gives back the
-// op that was handed to it. Just that op: the entry may name a target the author also
-// reaches for reasons of their own, and dropping the whole entry would delete config
-// nobody generated.
-//
-// ALL THE WAY is the other depth, reached with WithAsLowered, for a reader that wants what
-// the compiler produced rather than what an author would recognise — a console showing
-// what one workflow became, a diff against what is deployed.
-//
-// Either way the record itself is not config: no vocabulary declares a `lowered` group, so
-// writing it out would produce a file that cannot be read back.
+// How deep a decompile goes. Compiling lowers, so the object holds resources
+// nobody wrote; written back they would be lowered again. By default only what
+// somebody wrote is kept: produced resources go, and a granted op is taken back,
+// just that op. WithAsLowered keeps everything the compiler produced. The record
+// itself is never written out.
 
 // authoredOnly is the half-way depth as a transform: it runs over the project, after the
 // chroot unwrap so the ids are still ids — the driver that follows renames every resource
@@ -89,7 +74,6 @@ func revoke(res object.Object[object.Refrence], g interp.Granted) {
 		return
 	}
 
-	// walk in, keeping every container on the way so an emptied one can be pruned
 	holders := []object.Object[object.Refrence]{res}
 	at := res
 	for _, seg := range g.Path[:len(g.Path)-1] {

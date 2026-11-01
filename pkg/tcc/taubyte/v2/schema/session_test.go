@@ -11,11 +11,8 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// A SESSION IS BOUND TO A VOCABULARY, and every part of that binding is optional to the
-// generic session — so a part nobody wired is not an error anywhere. It reads as "this
-// vocabulary has no rule": ValidateField returned nil for anything at all, and Generate
-// answered "no generator wired" for the one field nobody authors. These are the tests
-// that say the binding is there, and they are what fails when a part of it goes missing.
+// Every session binding is optional, so an unwired one reads as "no rule"; these
+// tests fail when a part of the binding goes missing.
 
 func session(t *testing.T) *schema.Session {
 	t.Helper()
@@ -24,9 +21,6 @@ func session(t *testing.T) *schema.Session {
 	return s
 }
 
-// The vocabulary's own per-value checks, run with no compile. Each of these is a rule
-// the compiler enforces at load; the point of the binding is that they answer the same
-// way between keystrokes, for a fraction of the cost.
 func TestValidateFieldRefusesWhatTheVocabularyRefuses(t *testing.T) {
 	s := session(t)
 	fn := []string{"function", "checkout"}
@@ -67,10 +61,6 @@ func TestValidateFieldRefusesWhatTheVocabularyRefuses(t *testing.T) {
 		"a misspelled field validated clean")
 }
 
-// `source` is one key that is either a value or a block (source.go), and the block's
-// leaves are checked at their own paths. Reading the block as a bad string is what a
-// validator wired straight through does, and it called every component-sourced resource
-// in the fixtures broken.
 func TestValidateFieldReadsABlockAsABlock(t *testing.T) {
 	s := session(t)
 	fn := []string{"function", "checkout"}
@@ -87,12 +77,6 @@ func TestValidateFieldReadsABlockAsABlock(t *testing.T) {
 		"any mapping at all now validates clean")
 }
 
-// THE FIXTURE COMPILES, so partial validation must find nothing in it. This is the half
-// that is easy to lose: a check that fires on valid config is worse than no check, and
-// every variant of "wire the validators" that got this wrong was rejected here first —
-// a list read as the wrong type, a block read as a string, and a reference resolved by
-// v1's scope rule instead of this vocabulary's (`authorizer: {name: tier_check,
-// namespace: /shop}` in cache/orders.yaml is the one that catches that last one).
 func TestValidateResourceFindsNothingInAConfigThatCompiles(t *testing.T) {
 	const base = "../fixtures/basic"
 	s := session(t)
@@ -113,8 +97,6 @@ func TestValidateResourceFindsNothingInAConfigThatCompiles(t *testing.T) {
 	}))
 }
 
-// ...and it does find something once something is wrong, attributed to the field that is
-// wrong, which is what an editor underlines.
 func TestValidateResourceAttributesWhatIsWrong(t *testing.T) {
 	s := session(t)
 	fn := []string{"function", "checkout"}
@@ -133,9 +115,6 @@ func TestValidateResourceAttributesWhatIsWrong(t *testing.T) {
 	assert.Assert(t, found, "a required field went missing and nothing said so")
 }
 
-// An id is minted, never asked for, and the vocabulary says which fields those are — so
-// no consumer carries its own "how do I make an id", which is how the two that did ended
-// up disagreeing about it.
 func TestGenerateMintsWhatNobodyAuthors(t *testing.T) {
 	s := session(t)
 	fn := []string{"function", "checkout"}

@@ -7,31 +7,12 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/engine"
 )
 
-// A PROJECTION IS THE COMPILED OBJECT AS ONE DESTINATION HOLDS IT.
-//
-// A compile produces one object for a whole project, and some consumers are not the
-// whole project: a place that runs part of it should receive the part it runs and
-// nothing it would have to filter out on every read. Projecting is that cut, taken
-// once, from the object as it RUNS — compiled and lowered — so the part is exactly
-// what the whole would have said about it.
-//
-// IT KNOWS NOTHING ABOUT WHY a resource belongs to a destination. Which resources go
-// where, and what one needs beside it to resolve, is the vocabulary's to answer; this
-// is handed the answer as a set of ids and does the structural half, which is the
-// same for every vocabulary:
-//
-//   - a resource the destination does not hold is dropped, and a group left empty
-//     goes with it, so the projection has the shape a compile of a smaller project
-//     would have had;
-//   - a SCOPE stays while anything inside it does — it is where a name inside it
-//     resolves, and its own fields are what everything under it inherits — even when
-//     the scope is a resource the destination does not otherwise hold;
-//   - ids are never rewritten: a resource is the same resource in every projection;
-//   - the index and the records beside the object lose every entry that names
-//     something dropped, so nothing in a projection points at a resource it lacks.
-//
-// The original is not touched: a projection is a copy, and the whole object stays the
-// canonical one for anything that needs every resource.
+// A projection is the compiled object as one destination holds it, cut once from
+// the object as it runs. The vocabulary says which ids a destination holds; this
+// does the structural half: a resource not held is dropped, and an emptied group
+// with it; a scope stays while anything in it does; ids are never rewritten; the
+// index and records lose entries naming anything dropped. The original is
+// untouched.
 
 // Project returns flat as the destination holding exactly the resources `holds`
 // answers true for, plus the scopes they sit in. root is the shape the object was
@@ -78,11 +59,8 @@ func Held(root *engine.Node, flat map[string]any) []string {
 	return out
 }
 
-// newProjector reads which groups hold resources, and which of those are scopes.
-//
-// A GROUP THAT DECLARES NO RESOURCE IS CONFIGURATION, not something a destination
-// holds: an entry under it is a setting of whatever it sits in — a table of
-// deployments, say — and it travels with that, whole.
+// newProjector reads which groups hold resources and which are scopes. A group
+// declaring no resource is configuration and travels whole with what holds it.
 func newProjector(root *engine.Node) projector {
 	p := projector{root: root, groups: map[string]bool{}, containers: map[string]bool{}, dropped: map[string]bool{}}
 	for _, key := range ContainerKeys(root) {

@@ -8,20 +8,6 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// TestANACCESSENTRYISNOTASCOPE — the "one key, two things" rule, on the walk
-// that was not applying it.
-//
-// An entry filed under a kind inside a resource is either a resource the
-// container HOLDS or something that resource declares for ITSELF, keyed by the
-// label of what it reaches. Resources() has asked interp.HeldResource since it
-// was written. Scopes() asked only whether the entry had a `name` — so a
-// container-kind access entry carrying the optional `name` override was
-// reported as a nested scope, with the access LABEL standing in for a resource
-// id, and ScopeKinds() then mapped a path that does not exist to a kind.
-//
-// IT IS A DISAGREEMENT AND NOT ONLY A WRONG ANSWER. pkg/project reads the index
-// and never sees such an entry, so the explorer and the runtime were answering
-// differently about what one project contains.
 func TestAnAccessEntryIsNotReportedAsAScope(t *testing.T) {
 	const (
 		workflowID = "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zb"

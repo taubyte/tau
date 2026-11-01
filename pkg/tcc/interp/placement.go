@@ -7,16 +7,9 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/engine"
 )
 
-// WHERE WHAT A LOWERING PRODUCES GOES, and what it adds to what already exists.
-//
-// A lowering produces two kinds of change, and the compiler applies both to an in-memory
-// layer over the project: resources that did not exist — the queues a workflow runs on —
-// and values written into resources that did, because the function that runs a step is
-// what has to say it receives from that step's queue.
-//
-// Both are addressed the way a document is addressed, because that is what they are.
-// Nothing here renders yaml: the tree goes to yaseer, which is the same thing an editor
-// hands it, and the layer is thrown away when the compile ends.
+// Where what a lowering produces goes: new resources and values written into
+// existing ones, applied to an in-memory layer over the project, addressed as
+// documents and serialised by yaseer.
 
 // placement is one resource a lowering produces, and where it belongs.
 type placement struct {
@@ -26,9 +19,8 @@ type placement struct {
 	id, kind, name, scope string
 	from                  string // the authored resource's id
 	part                  string // where inside it — "steps/0"
-	// src is that resource as a person would look for it — "workflow/checkout
-	// (steps/0)". The id says which resource; only this says which STEP, and a
-	// collision between two parts of one lowering has the same id on both sides.
+	// src is that resource as a person looks for it, "workflow/checkout (steps/0)":
+	// two parts of one lowering share an id.
 	src string
 }
 
@@ -46,30 +38,16 @@ type granted struct {
 	from  string // the authored resource whose lowering wrote it
 	scope string // where that resource lives, for finding its compiled id
 
-	// scopes is where the name might resolve, innermost first — the scope a lowering
-	// produced INTO, then outward to the one its source was written in. Filled by
-	// placements and collapsed to the single `scope` above by onlyOnWhatExists, which
-	// is the first point that knows what exists.
-	//
-	// It is the same outward walk a reference does, and it is needed for the same
-	// reason: with Lowerable, one lowering writes onto resources on both sides of the
-	// scope it made — a step's function, which the author wrote outside, and an
-	// agent's loop, which the lowering made inside.
+	// scopes is where the name might resolve, innermost first, collapsed to scope by
+	// onlyOnWhatExists. One lowering writes on both sides of the scope it made, so it
+	// walks outward as a reference does.
 	scopes []string
 }
 
-// scopeKinds is what KIND of scope each scope path is — `shop` is a namespace, `checkout`
-// is the workflow that became a container — keyed by the path of names the rest of the lowering
-// speaks in.
-//
-// It exists because a document address is not a path of names: a scope is a DIRECTORY
-// named after the container it belongs to, so `shop/checkout` is
-// `namespace/shop/workflow/checkout` on disk and nothing in the name path says which is
-// which. The scope path stays names everywhere else — that is what a reference resolves
-// through, and a name has no kind — and only addressing asks this.
-//
-// Both halves are here: the scopes the project already has, walked off the compiled
-// object, and the ones this compile is about to produce, overlaid from the plan.
+// scopeKinds is what kind of scope each scope path is: a scope is a directory
+// named after its container, so `shop/checkout` is
+// `namespace/shop/workflow/checkout` on disk. It covers existing scopes and the
+// ones this compile will produce.
 func scopeKinds(root *engine.Node, obj map[string]any, plan []Derived) map[string]string {
 	containers := ContainerKeys(root)
 	_, nameField := engine.IdentityOf(root)
@@ -116,9 +94,8 @@ func scopeKinds(root *engine.Node, obj map[string]any, plan []Derived) map[strin
 	return out
 }
 
-// placements is everything a project's lowerings produce, in a stable order, and what
-// kind of scope each scope path is — which is what turns a path of names into a document
-// address.
+// placements is everything a project's lowerings produce, in a stable order, and
+// what kind of scope each scope path is.
 func placements(root *engine.Node, obj map[string]any, layout Layout) ([]placement, []granted, map[string]string, []relocation) {
 	var docs []placement
 	var adds []granted
@@ -138,10 +115,8 @@ func placements(root *engine.Node, obj map[string]any, layout Layout) ([]placeme
 			if w.On.Kind == "" {
 				continue // it is in the resource above, where an author would have written it
 			}
-			// A scope a lowering names is read the way a scope is read anywhere: absolute
-			// from the root with a leading slash, and otherwise relative to where the
-			// resource being lowered lives. Taking it as absolute put `local` at the root,
-			// which is a resource in the wrong namespace and compiles.
+			// A scope a lowering names is absolute with a leading slash and otherwise
+			// relative to the lowered resource.
 			adds = append(adds, granted{
 				on:     End{Kind: w.On.Kind, Name: w.On.Name},
 				path:   w.Path,
@@ -185,13 +160,8 @@ func relocations(root *engine.Node, obj map[string]any, layout Layout, kinds map
 	return out
 }
 
-// outward is where a name a lowering wrote might resolve, innermost first: the scope it
-// produced into, then each scope above it up to the one its source was written in. An
-// ABSOLUTE name resolves in one place and gets one candidate.
-//
-// The same rule references already follow — here, then up — and it is what lets one
-// lowering write onto the function an author put outside the scope it made AND onto the
-// loop it made inside, with neither of them spelling out where the other is.
+// outward is where a name a lowering wrote might resolve, innermost first, up to
+// the source's scope; an absolute name has one candidate.
 func outward(produced, source, named string) []string {
 	if strings.HasPrefix(named, "/") {
 		return []string{within(produced, named)}
@@ -245,14 +215,8 @@ func loweredAddress(root *engine.Node, layout Layout, scope, kind, name string, 
 	return out
 }
 
-// scopeDirs is the directories a scope path walks through, by the vocabulary's layout.
-//
-// A LEVEL IS ADDRESSED BY ITS KIND, not by the fact that it is a scope. The layout's
-// scope template used to name one container outright (`namespace/{name}`), which was the
-// whole truth while a vocabulary had one kind of scope; it is `{kind}/{name}` now and each
-// level says which. A level whose kind is unknown is not addressable, and there is no
-// default to fall back on — guessing one would write a produced group's queues into some
-// other scope's directory, which loads and compiles and is a different project.
+// scopeDirs is the directories a scope path walks through, each level addressed
+// by its kind; an unknown kind is not addressable, with no default to guess.
 func scopeDirs(layout Layout, scope string, kinds map[string]string) []string {
 	if scope == "" {
 		return nil
@@ -270,19 +234,9 @@ func fill(tmpl, kind, name string) string {
 	return strings.NewReplacer("{kind}", kind, "{name}", name).Replace(tmpl)
 }
 
-// onlyOnWhatExists RESOLVES each entry's accessor and drops the ones that are nowhere —
-// not in the project, and not among the resources this lowering produces. What such an
-// entry names is wrong, and saying so is the audit's job; writing to it here would answer
-// a bad name by creating the resource it named.
-//
-// The produced half is not an afterthought: an agent's loop is generated, and the entry
-// saying it searches the memory the same lowering generated lands ON it. Checking only
-// what was written silently deleted that, and the agent's memory became a resource
-// nothing reaches.
-//
-// Resolving is HERE rather than in placements because this is the first point that knows
-// what exists — both halves of it. Each entry arrives with the scopes its name could
-// resolve in, innermost first, and leaves with the one it did.
+// onlyOnWhatExists resolves each entry's accessor against the project and the
+// resources this lowering produces, dropping those found nowhere; the audit
+// reports them. It is the first point that knows what exists.
 func onlyOnWhatExists(root *engine.Node, layout Layout, flat map[string]any, docs []placement, adds []granted, kinds map[string]string) []granted {
 	if inner, ok := flat[ProjectKey].(map[string]any); ok {
 		flat = inner

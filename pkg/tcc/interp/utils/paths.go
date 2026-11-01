@@ -66,12 +66,10 @@ func localResolveNameToId(store transform.Store[object.Refrence], ctp []any, gro
 	return store.String(op).Get(), nil
 }
 
-// ResolveNameToId resolves a referenced name to its compiled id, honoring optional
-// scope qualifiers on the name. The scoping is generic (every Ref benefits) and
-// filesystem-like — a name is never a bare "/" or ".." (names are variable-names),
-// so the qualifiers can't collide:
+// ResolveNameToId resolves a referenced name to its compiled id, honouring scope
+// qualifiers (a name is a variable name, so they cannot collide):
 //
-//   - "name"      current scope, then fall back to ancestors up to root (default)
+//   - "name"      current scope, then ancestors up to root (default)
 //   - "/name"     the root/global scope only (absolute)
 //   - "../name"   the parent scope, exact (repeatable: "../../name")
 func ResolveNameToId(ct transform.Context[object.Refrence], group, name, nameField string) (string, error) {

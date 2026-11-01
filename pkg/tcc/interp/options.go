@@ -7,11 +7,9 @@ import (
 
 type Option func(c *Compiler) error
 
-// Env is the compile environment: named compile-time parameters that DSL
-// declarations reference by name. interp spells none of these keys: the VARIABLES
-// among them are the ones the schema root declares with Varying, which is where the
-// compile binding comes from, and every other key is owned by the schema that reads
-// it.
+// Env is the compile environment, named parameters DSL declarations read.
+// interp spells no key: the variables among them are those the root declares
+// with Varying, and every other key belongs to the schema reading it.
 type Env map[string]string
 
 func WithLocal(path string) Option {
@@ -30,9 +28,7 @@ func WithVirtual(fs afero.Fs, path string) Option {
 	}
 }
 
-// WithEnv sets a compile-environment variable. WithBranch is a thin wrapper over
-// it; a schema exposes its own wrappers (e.g. WithCloud) for the keys its own
-// declarations read, so interp needs no knowledge of those domain vars.
+// WithEnv sets a compile-environment variable; a schema wraps its own keys.
 func WithEnv(key, val string) Option {
 	return func(c *Compiler) error {
 		c.env[key] = val
@@ -40,10 +36,8 @@ func WithEnv(key, val string) Option {
 	}
 }
 
-// WithLayout tells the compiler where this vocabulary keeps its documents, which is what
-// a lowering needs to write one. A schema that declares lowerings and no layout cannot be
-// compiled — loudly, because the alternative is an object silently missing the resources
-// a workflow becomes.
+// WithLayout says where this vocabulary keeps its documents, which a lowering
+// needs; a schema with lowerings and no layout refuses to compile.
 func WithLayout(l Layout) Option {
 	return func(c *Compiler) error {
 		c.layout = l
@@ -54,13 +48,9 @@ func WithLayout(l Layout) Option {
 // WithBranch pins the compile branch, which the IndexDriver bakes into index paths.
 func WithBranch(branch string) Option { return WithEnv("branch", branch) }
 
-// WithVariable names every value one of the schema's variables may take in THIS
-// project. One document serves them all, so it carries every value's spelling of a
-// field at once and each compile reads one — which means the loader needs the whole set
-// to tell an override from a typo, and WithEnv alone cannot supply it.
-//
-// Repeatable, one call per variable: the values are a property of the project, and the
-// variables themselves are the root's to declare.
+// WithVariable names every value one of the schema's variables may take in this
+// project, which the loader needs to tell an override from a typo. One call per
+// variable.
 func WithVariable(name string, values ...string) Option {
 	return func(c *Compiler) error {
 		if c.varValues == nil {

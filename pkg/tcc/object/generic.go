@@ -28,7 +28,6 @@ func New[T DataTypes]() Object[T] {
 }
 
 func (o *object[T]) Map() map[string]any {
-	// Pre-allocate map with capacity for attributes + children
 	m := make(map[string]any, 1+len(o.children))
 	m["attributes"] = o.data
 	for n, o := range o.children {
@@ -38,7 +37,6 @@ func (o *object[T]) Map() map[string]any {
 }
 
 func (o *object[T]) Flat() map[string]any {
-	// Pre-allocate map with capacity for data + children
 	m := make(map[string]any, len(o.data)+len(o.children))
 	for n, o := range o.data {
 		m[n] = o
@@ -61,7 +59,7 @@ func (o *object[T]) Child(sel any) Selector[T] {
 	switch _sel := sel.(type) {
 	case string:
 		return o.newNameSelector(_sel)
-	case *object[T]: // save interface conv
+	case *object[T]:
 		return o.newPtrSelector(_sel)
 	case Object[T]:
 		obj, ok := _sel.(*object[T])
@@ -139,7 +137,6 @@ func (o *object[T]) GetString(name string) (string, error) {
 		return "", ErrNotExist
 	}
 
-	// Handle Refrence type (any)
 	if str, ok := any(val).(string); ok {
 		return str, nil
 	}
@@ -153,7 +150,6 @@ func (o *object[T]) GetInt(name string) (int, error) {
 		return 0, ErrNotExist
 	}
 
-	// Handle Refrence type (any)
 	switch v := any(val).(type) {
 	case int:
 		return v, nil
@@ -198,7 +194,6 @@ func (o *object[T]) GetBool(name string) (bool, error) {
 		return false, ErrNotExist
 	}
 
-	// Handle Refrence type (any)
 	if b, ok := any(val).(bool); ok {
 		return b, nil
 	}
@@ -290,7 +285,6 @@ func (o *object[T]) Match(expr string, mtype MatchType) ([]Object[T], error) {
 			if err != nil {
 				return nil, err
 			}
-			// Cache the compiled regex at object level
 			if o.regexCache == nil {
 				o.regexCache = make(map[string]*regexp.Regexp)
 			}
@@ -303,7 +297,6 @@ func (o *object[T]) Match(expr string, mtype MatchType) ([]Object[T], error) {
 		return nil, errors.New("unknown match type")
 	}
 
-	// Pre-allocate matches slice with estimated capacity
 	matches := make([]Object[T], 0, len(o.children))
 	for name, _obj := range o.children {
 		if cmp(name, expr) {

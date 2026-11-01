@@ -9,14 +9,8 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// The fixture holds three caches called `sessions` — one in `shop`, one in `billing`,
-// one in `shop/local` — which is what makes it worth indexing at all: the name alone says
-// nothing, and the scope has to be in the key or a lookup returns somebody else's cache.
-//
-// The nested one is the interesting case. Before this, the interpreter worked a
-// resource's scope out by asking the ROOT's container for the name of the object it had
-// been handed, which is a direct child only one level down: everything inside `shop/local`
-// was indexed with an empty scope, i.e. under the same keys as the project root's own.
+// The fixture holds three caches called `sessions` (shop, billing, shop/local), so
+// the scope has to be in the key; the nested one checks scope beyond one level.
 func compileIndex(t *testing.T) (map[string]any, string) {
 	t.Helper()
 	c, err := schema.New(schema.WithLocal("../fixtures/basic"))
@@ -75,21 +69,11 @@ func TestIndexResolvesANameInItsOwnScope(t *testing.T) {
 		"the nested cache is indexed at %s", inEU)
 }
 
-// A workflow's queues are not written by anybody, and something still has to find them
-// by name: a lowered resource is a resource, so it is indexed like one.
-//
-// AND IT IS INDEXED WHERE IT LIVES. A workflow is a scope for what it becomes, so its
-// queues answer under that scope's id and not at the project root — which is the whole
-// reason `checkout_reserve` cannot collide with a queue somebody wrote, and the reason
-// its dead-letter reference resolves to a sibling with no help from anything.
 func TestIndexCoversWhatALoweringProduced(t *testing.T) {
 	idx, project := compileIndex(t)
 
-	// the scope itself is indexed by name, the way an authored namespace is — which is
-	// what turns the written `/checkout` on an access entry into the id below.
-	//
-	// UNDER THE SOURCE KIND. Workflow is both the indexed resource and the scope its
-	// queues live in; no `group` vocabulary entry exists.
+	// The scope is indexed by name under the source kind: workflow is both the
+	// resource and the scope its queues live in.
 	checkout := link(t, idx, "projects/"+project+"/workflow/checkout/links")
 	nsID := checkout[strings.LastIndex(checkout, "/")+1:]
 	assert.Assert(t, nsID != "")

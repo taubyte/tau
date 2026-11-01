@@ -32,10 +32,9 @@ type Object[T DataTypes] interface {
 	GetString(string) (string, error)
 	GetInt(string) (int, error)
 	GetBool(string) (bool, error)
-	// DeleteValue drops the VALUE at a name and leaves any subtree under it. The two
-	// live in separate maps, so a name can hold both — a resolved reference nests
-	// `{kind: id}` under the same name the authored string sat at, and dropping the
-	// name whole would take an access block written there with it.
+	// DeleteValue drops the value at a name and keeps any subtree under it: a
+	// resolved reference nests `{kind: id}` under the name an access block may also
+	// sit at.
 	DeleteValue(string)
 	Delete(string)
 	Move(string, string) error // rename attribute

@@ -8,7 +8,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// load one attribute out of a one-line YAML document.
 func loadAttr(t *testing.T, body string, attr *Attribute) (any, error) {
 	t.Helper()
 	fs := afero.NewMemMapFs()
@@ -23,10 +22,6 @@ func loadAttr(t *testing.T, body string, attr *Attribute) (any, error) {
 	return obj.Get(attr.Name), nil
 }
 
-// YAML infers a scalar's type from how it was written; the DSL declares what the
-// field means. Where the two disagree only about notation, the value is
-// converted rather than dropped — a repository id authored unquoted used to fail
-// its string read and vanish from the compiled object entirely.
 func TestScalarNotationIsTolerated(t *testing.T) {
 	t.Run("an unquoted number satisfies a string field", func(t *testing.T) {
 		v, err := loadAttr(t, "485476045\n", String("s"))
@@ -53,9 +48,7 @@ func TestScalarNotationIsTolerated(t *testing.T) {
 	})
 
 	t.Run("a mistyped value is reported, not dropped", func(t *testing.T) {
-		// The field is optional, so the old behaviour was to swallow the read
-		// failure and carry on — which is how a mistyped domains list deployed
-		// an unroutable function. Present-and-wrong is now an error.
+		// Present and wrong is an error, though the field is optional.
 		_, err := loadAttr(t, "notanumber\n", Int("i"))
 		assert.ErrorContains(t, err, "wrong type")
 	})
@@ -72,8 +65,6 @@ func TestScalarNotationIsTolerated(t *testing.T) {
 	})
 }
 
-// Partial validation must accept exactly what will compile, or an editor reports
-// an error on a document the compiler is about to take.
 func TestCheckTypeAgreesWithCoercion(t *testing.T) {
 	root := []*Node{DefineGroup("g", DefineIter([]*Attribute{
 		String("s"), Int("i"), Bool("b"),
@@ -84,9 +75,7 @@ func TestCheckTypeAgreesWithCoercion(t *testing.T) {
 	assert.ErrorContains(t, ValidateField(root, "g", []string{"s"}, true), "expects string")
 	assert.ErrorContains(t, ValidateField(root, "g", []string{"b"}, 1), "expects boolean")
 
-	// Numeric-ness is decided by KIND on both sides. Two hand-written type lists
-	// had already drifted: int32 was an acceptable integer but not an acceptable
-	// string, so the same value passed one field and failed the other.
+	// Numeric-ness is decided by kind on both sides.
 	for _, n := range []any{int8(5), int16(5), int32(5), int64(5), uint(5), uint32(5), float32(1.5), 5.5} {
 		assert.NilError(t, ValidateField(root, "g", []string{"s"}, n),
 			"every numeric kind renders into a string field: %T", n)

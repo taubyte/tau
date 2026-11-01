@@ -20,7 +20,6 @@ type NextValidation struct {
 	Context   map[string]any `json:"context"`   // extra context for validation
 }
 
-// NewNextValidation creates a new NextValidation instance.
 func NewNextValidation(key string, value any, validator string, context map[string]any) NextValidation {
 	return NextValidation{
 		Key:       key,
@@ -152,7 +151,6 @@ func isDomainName(s string) bool {
 			nonNumeric = true
 			partlen++
 		case '0' <= c && c <= '9':
-			// fine
 			partlen++
 		case c == '-':
 			// Byte before dash cannot be dot.

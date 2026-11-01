@@ -4,22 +4,9 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/engine"
 )
 
-// WHAT EACH RESOURCE IS REACHED AT, computed here.
-//
-// A name is not one resource's business: it is the label the resource chose, the zone
-// that answers for it, and — for a generated one — the project's own label, which is
-// derived from its id. Three places, so whoever assembles them decides what the name is.
-//
-// A drawing was assembling them. It read the naming block, looked the zone up, glued the
-// label to the zone's apex, and printed the result: a name the config never states,
-// invented by a view, agreeing with anything else that needed it only by coincidence.
-// The vocabulary already knew how (GeneratedHost); the view had its own copy of half of
-// it.
-//
-// The cloud's own fqdn is still not here, and never will be: it is not in the config and
-// is not the project's to assert. What is returned is the part that IS knowable, with
-// the zone that supplies the rest named separately, so a consumer renders the gap rather
-// than guessing at it.
+// What each resource is reached at, assembled once here from the label it chose,
+// the zone answering for it, and (for a generated name) the project label. The
+// cloud's fqdn is never known; the knowable part is returned and the gap named.
 
 // Reachable is what one resource answers at.
 type Reachable struct {

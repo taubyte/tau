@@ -7,12 +7,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// "/" IS THE ONE SYMBOL A KEY MAY NOT CONTAIN, because it is what separates one level
-// of the compiled object from the next. A key that spells its own hierarchy reads as a
-// path everywhere it is printed and is one opaque leaf everywhere it is stored.
-//
-// Refused at construction, so a vocabulary that would compile into an unmergeable shape
-// is a build failure rather than a config nobody can merge.
 func refuses(t *testing.T, what string, build func()) {
 	t.Helper()
 	defer func() {
@@ -50,17 +44,12 @@ func TestAKeyIsAName(t *testing.T) {
 	// a KEY segment is a name, strictly: it addresses a level of the compiled object
 	refuses(t, "a dashed key segment", func() { String(Key("execution", "max-attempts")) })
 
-	// a key is a NAME, the same rule a resource's name follows: compound ones join
-	// with "_", and a path is declared with Key(...) rather than spelled into one
 	for _, ok := range []string{"id", "max_attempts", "useRegex", "webSocket", "_x"} {
 		String(ok) // must not panic
 	}
 	String(Key("route", "handler", "name")) // and this is how a nested one is said
 }
 
-// NESTING IS DECLARED, and the key IS the nesting. The identity is those segments
-// joined — the engine writes that "/", a vocabulary never does — and where the value is
-// AUTHORED defaults to the same place, so Path is declared only when the two differ.
 func TestTheKeyIsTheNesting(t *testing.T) {
 	a := String(Key("execution", "call"))
 	assert.Equal(t, a.Name, "execution/call")

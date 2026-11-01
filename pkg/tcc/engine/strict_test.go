@@ -45,9 +45,6 @@ func compileDoc(t *testing.T, doc string) error {
 	return err
 }
 
-// Everything the schema CAN read is accepted — including the shapes that are easy to
-// reject by accident: an Either() branch and an All() level where the
-// key is the author's to choose.
 func TestStrictAcceptsEverythingTheSchemaReads(t *testing.T) {
 	assert.NilError(t, compileDoc(t, `
 id: one
@@ -68,7 +65,6 @@ uses:
 `))
 }
 
-// The defect this exists for: a key nothing reads, dropped in silence.
 func TestStrictRejectsUnknownKey(t *testing.T) {
 	err := compileDoc(t, "id: one\nsource: true\n")
 	assert.ErrorContains(t, err, "unknown key 'source'")
@@ -77,24 +73,18 @@ func TestStrictRejectsUnknownKey(t *testing.T) {
 	assert.ErrorContains(t, err, "valid keys here:", "and saying what was allowed")
 }
 
-// A typo one level down is the same mistake and has to fail the same way — this is
-// where a flat key list would quietly stop working.
 func TestStrictRejectsUnknownNestedKey(t *testing.T) {
 	err := compileDoc(t, "id: one\nexecution:\n    entrypoint: main\n")
 	assert.ErrorContains(t, err, "unknown key 'entrypoint'")
 	assert.ErrorContains(t, err, "call, memory", "the suggestion is scoped to this level")
 }
 
-// An Either() enumerates its branches, so an unlisted one is refused by name rather
-// than compiling into a switch that captures nothing.
 func TestStrictRejectsUnlistedEitherBranch(t *testing.T) {
 	err := compileDoc(t, "id: one\nengine:\n    sideways:\n        host: here\n")
 	assert.ErrorContains(t, err, "unknown key 'sideways'")
 	assert.ErrorContains(t, err, "local, remote")
 }
 
-// A nested group's ENTRIES are keyed by a name the author picks, but the fields
-// inside one are the schema's.
 func TestStrictChecksInsideNestedGroupEntries(t *testing.T) {
 	const withEngine = "id: one\nengine:\n    local:\n        host: here\n"
 	assert.NilError(t, compileDoc(t, withEngine+"uses:\n    anything:\n        ops: get\n"))
@@ -103,8 +93,6 @@ func TestStrictChecksInsideNestedGroupEntries(t *testing.T) {
 	assert.ErrorContains(t, err, "unknown key 'opz'")
 }
 
-// A node that declares nothing has no opinion to violate. Rejecting every key there
-// would be vacuous rather than stricter, and it would break a partial schema.
 func TestStrictIgnoresANodeThatClaimsNothing(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/config.yaml", []byte("whatever: 1\n"), 0o644))
@@ -115,11 +103,6 @@ func TestStrictIgnoresANodeThatClaimsNothing(t *testing.T) {
 	assert.NilError(t, err)
 }
 
-// A config tree lives inside a real repository, so the project root holds `.git`, a
-// README, whatever else — none of it named by the schema and none of it a mistake.
-// Query.List() falls back to directory entries when a node is not a mapping, so a
-// check that did not tell those apart refused every project on disk. The dreaming
-// suite is what found it: `unknown key '.git'`.
 func TestStrictIgnoresNeighbouringFilesOnDisk(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/config.yaml", []byte("id: root\n"), 0o644))
@@ -135,8 +118,6 @@ func TestStrictIgnoresNeighbouringFilesOnDisk(t *testing.T) {
 	assert.NilError(t, err, "a neighbouring directory is not an unknown key")
 }
 
-// There is no opt-out: a vocabulary that declares nothing about strictness still refuses
-// a key it cannot read.
 func TestEveryVocabularyRefusesAnUnknownKey(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/config.yaml", []byte("id: root\n"), 0o644))
@@ -158,8 +139,6 @@ func TestEveryVocabularyRefusesAnUnknownKey(t *testing.T) {
 	assert.ErrorContains(t, err, "unknown key 'replicas'")
 }
 
-// The other half of the silence: the key is real, but a BLOCK was written where a
-// value belongs. Nothing reads it, no key is unknown, and the field is simply absent.
 func TestStrictRejectsBlockWhereValueBelongs(t *testing.T) {
 	err := compileDoc(t, "id: one\nname:\n    first: x\n")
 	assert.ErrorContains(t, err, "'name' takes a value, not a block")
@@ -167,8 +146,6 @@ func TestStrictRejectsBlockWhereValueBelongs(t *testing.T) {
 	assert.NilError(t, compileDoc(t, "id: one\nname: x\n"))
 }
 
-// The first unknown key reported must not depend on map order: an editor showing it
-// would otherwise flicker between two lines of one document.
 func TestStrictReportsTheSameUnknownKeyEveryTime(t *testing.T) {
 	const doc = "id: one\nzeta: 1\nalpha: 2\nmid: 3\n"
 	first := compileDoc(t, doc)
@@ -178,8 +155,6 @@ func TestStrictReportsTheSameUnknownKeyEveryTime(t *testing.T) {
 	}
 }
 
-// A branch that takes no fields is written as an empty block, and that is the branch,
-// not a block where a value belongs.
 func TestAnEmptyBranchIsABlock(t *testing.T) {
 	schema := SchemaDefinition(Root(Attributes(String("id")),
 		DefineGroup("things", DefineIter([]*Attribute{

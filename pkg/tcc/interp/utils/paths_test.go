@@ -23,7 +23,6 @@ func TestIndexById_IndexesResource(t *testing.T) {
 
 	assert.NilError(t, err)
 
-	// Verify indexed (path is built from obj's name: "project/functions/myFunction")
 	indexPath := "project/functions/myFunction"
 	assert.Assert(t, ctx.Store().String(indexPath).Exist())
 	assert.Equal(t, ctx.Store().String(indexPath).Get(), "func-id-123")
@@ -39,11 +38,9 @@ func TestResolveNameToId_LocalResolution(t *testing.T) {
 	ctx := transform.NewContext[object.Refrence](context.Background(), root)
 	ctx = ctx.Fork(obj)
 
-	// Index resource (path: "project/domains/myDomain")
 	err := IndexById(ctx, "domains", "myDomain", "domain-id-456", "name")
 	assert.NilError(t, err)
 
-	// Resolve name to ID
 	id, err := ResolveNameToId(ctx, "domains", "myDomain", "name")
 
 	assert.NilError(t, err)
@@ -58,17 +55,13 @@ func TestResolveNameToId_GlobalFallback(t *testing.T) {
 	app.Set("name", "app")
 
 	ctx := transform.NewContext[object.Refrence](context.Background(), root)
-	// Index at root level
-	// Path is [root], so ctp[1:] is [] -> "libraries/myLib"
 	err := IndexById(ctx, "libraries", "myLib", "lib-id-789", "name")
 	assert.NilError(t, err)
 
-	// Verify it was indexed at the expected path
 	indexPath := "libraries/myLib"
 	assert.Assert(t, ctx.Store().String(indexPath).Exist())
 	assert.Equal(t, ctx.Store().String(indexPath).Get(), "lib-id-789")
 
-	// Fork to app context (path is now [root, app])
 	ctxApp := ctx.Fork(app)
 
 	// Resolve should fallback to parent scope (root)
@@ -81,7 +74,6 @@ func TestResolveNameToId_GlobalFallback(t *testing.T) {
 }
 
 func TestResolveNameToId_ProjectScopeFallbackFromApp(t *testing.T) {
-	// Index at project scope, resolve from app context (aligns with the worker: app -> project -> root).
 	root := object.New[object.Refrence]()
 	root.Set("name", "root")
 
@@ -94,7 +86,6 @@ func TestResolveNameToId_ProjectScopeFallbackFromApp(t *testing.T) {
 	ctx := transform.NewContext[object.Refrence](context.Background(), root)
 	ctxProject := ctx.Fork(project)
 
-	// Index library at project level -> "myproject/libraries/mylib"
 	err := IndexById(ctxProject, "libraries", "mylib", "lib-id-project", "name")
 	assert.NilError(t, err)
 
@@ -107,8 +98,6 @@ func TestResolveNameToId_ProjectScopeFallbackFromApp(t *testing.T) {
 	assert.Equal(t, id, "lib-id-project")
 }
 
-// Scope qualifiers: a global "foo" and an app-local "foo" coexist; the qualifier
-// on the name selects which one, generically (any Ref).
 func TestResolveNameToId_ScopeQualifiers(t *testing.T) {
 	root := object.New[object.Refrence]()
 	root.Set("name", "root")
@@ -138,8 +127,6 @@ func TestResolveNameToId_ScopeQualifiers(t *testing.T) {
 	assert.Equal(t, id, "global-id")
 }
 
-// Generic cross-app isolation: the resolver climbs ancestors only, never
-// sideways — so a resource in app2 cannot resolve one that lives only in app1.
 func TestResolveNameToId_NoSiblingAppResolution(t *testing.T) {
 	root := object.New[object.Refrence]()
 	root.Set("name", "root")
@@ -180,12 +167,10 @@ func TestResolveNamesToId_MultipleNames(t *testing.T) {
 	ctx := transform.NewContext[object.Refrence](context.Background(), root)
 	ctx = ctx.Fork(obj)
 
-	// Index multiple resources
 	IndexById(ctx, "domains", "domain1", "domain-id-1", "name")
 	IndexById(ctx, "domains", "domain2", "domain-id-2", "name")
 	IndexById(ctx, "domains", "domain3", "domain-id-3", "name")
 
-	// Resolve multiple names
 	ids, err := ResolveNamesToId(ctx, "domains", []string{"domain1", "domain2", "domain3"}, "name")
 
 	assert.NilError(t, err)
@@ -205,7 +190,6 @@ func TestResolveNameToId_NotFound(t *testing.T) {
 	ctx := transform.NewContext[object.Refrence](context.Background(), root)
 	ctx = ctx.Fork(obj)
 
-	// Try to resolve non-indexed resource
 	_, err := ResolveNameToId(ctx, "domains", "nonExistent", "name")
 
 	assert.ErrorContains(t, err, "not indexed")
@@ -234,9 +218,7 @@ func TestIndexById_ObjectWithoutName(t *testing.T) {
 	root := object.New[object.Refrence]()
 	root.Set("name", "root")
 
-	// Create obj without name - this will be in ctp[1:]
 	obj := object.New[object.Refrence]()
-	// Don't set name on obj
 
 	ctx := transform.NewContext[object.Refrence](context.Background(), root)
 	ctx = ctx.Fork(obj)
@@ -272,7 +254,6 @@ func TestResolveNamesToId_ErrorInResolve(t *testing.T) {
 	ctx := transform.NewContext[object.Refrence](context.Background(), root)
 	ctx = ctx.Fork(obj)
 
-	// Try to resolve non-indexed resources
 	_, err := ResolveNamesToId(ctx, "domains", []string{"nonExistent1", "nonExistent2"}, "name")
 
 	assert.ErrorContains(t, err, "not indexed")
@@ -288,11 +269,9 @@ func TestLocalResolveNameToId_Success(t *testing.T) {
 	ctx := transform.NewContext[object.Refrence](context.Background(), root)
 	ctx = ctx.Fork(obj)
 
-	// Index resource
 	err := IndexById(ctx, "domains", "myDomain", "domain-id-456", "name")
 	assert.NilError(t, err)
 
-	// Use localResolveNameToId directly
 	ctp := ctx.Path()
 	id, err := localResolveNameToId(ctx.Store(), ctp, "domains", "myDomain", "name")
 	assert.NilError(t, err)
@@ -305,7 +284,6 @@ func TestLocalResolveNameToId_EmptyContextPath(t *testing.T) {
 
 	ctx := transform.NewContext[object.Refrence](context.Background(), root)
 
-	// Empty path should return error
 	_, err := localResolveNameToId(ctx.Store(), []any{}, "domains", "myDomain", "name")
 	assert.ErrorContains(t, err, "context path is empty")
 }
@@ -320,7 +298,6 @@ func TestLocalResolveNameToId_NotFound(t *testing.T) {
 	ctx := transform.NewContext[object.Refrence](context.Background(), root)
 	ctx = ctx.Fork(obj)
 
-	// Try to resolve non-indexed resource
 	ctp := ctx.Path()
 	_, err := localResolveNameToId(ctx.Store(), ctp, "domains", "nonExistent", "name")
 	assert.ErrorContains(t, err, "not indexed")
@@ -332,7 +309,6 @@ func TestLocalResolveNameToId_InvalidPathType(t *testing.T) {
 
 	ctx := transform.NewContext[object.Refrence](context.Background(), root)
 
-	// Path with invalid type
 	invalidPath := []any{root, "invalid-type"}
 	_, err := localResolveNameToId(ctx.Store(), invalidPath, "domains", "myDomain", "name")
 	assert.ErrorContains(t, err, "path contains invalid type")
@@ -342,14 +318,11 @@ func TestLocalResolveNameToId_ObjectWithoutName(t *testing.T) {
 	root := object.New[object.Refrence]()
 	root.Set("name", "root")
 
-	// Create obj without name
 	obj := object.New[object.Refrence]()
-	// Don't set name on obj
 
 	ctx := transform.NewContext[object.Refrence](context.Background(), root)
 	ctx = ctx.Fork(obj)
 
-	// Path contains object without name
 	ctp := ctx.Path()
 	_, err := localResolveNameToId(ctx.Store(), ctp, "domains", "myDomain", "name")
 	assert.ErrorContains(t, err, "path contains no name")

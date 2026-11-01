@@ -9,9 +9,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// A COLLISION NAMES THE TWO THINGS CAUSING IT. Both sides of a name a workflow produces
-// twice are the same workflow, so reporting the source's id said "by X and by X" — the
-// author is told which name collided and never which step.
 func TestProducedTwiceNamesTheStep(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	for path, body := range map[string]string{

@@ -6,22 +6,10 @@ import (
 	"strings"
 )
 
-// EVERY RELATIONSHIP BETWEEN TWO RESOURCES, resolved.
-//
-// A name in this vocabulary is resolved against a scope: "/billing/x" is absolute, "local/x"
-// is relative to the resource's own namespace, and a bare "x" is looked for here and then
-// in each parent. That rule was written three times — the interpreter's reference
-// resolver, this package's audit, and the explorer's graph — and the third copy is the
-// one that made it obvious: a consumer implementing name resolution is a consumer that
-// will disagree with the compiler about what a name means.
-//
-// So it is answered once, here, for everything that points at something: access entries,
-// references that keep a name, and the blocks where a resource hands traffic on. What a
-// consumer receives is a pair of ids and what the edge means.
-//
-// Direction is applied HERE too, because it is part of the relationship rather than a
-// rendering choice: a delivered verb runs toward the consumer (work arrives), and an
-// inbound reference runs toward the resource that declared it.
+// Every relationship between two resources, resolved once here with the
+// compiler's scoping rules so no consumer resolves names differently. Direction is
+// applied here too: a delivered verb runs toward the consumer, an inbound
+// reference toward its declarer.
 
 // Relation is one resolved relationship.
 type Relation struct {
@@ -123,14 +111,9 @@ func declaredRelations(all []compiled) []declared {
 	return out
 }
 
-// accessRelations: what a resource asked to do to another, one per verb.
-//
-// AN INBOUND VERB IS TURNED AROUND HERE. `receive` on a queue and `subscribe` on a
-// stream are declared by the consumer, and the work travels the other way — drawn from
-// the declaration, a queue worker has two arrows out and none in, which reads as a
-// workload nothing ever starts. `get` on a secret is the same shape without the push:
-// the value is DELIVERED to the workload that named it, and nothing writes into a
-// secret, so an arrow pointing at one draws a flow that cannot happen.
+// accessRelations: what a resource asked to do to another, one per verb. An
+// inbound verb is turned around: `receive` and `subscribe` bring work to the
+// declarer, and a secret's `get` delivers its value to it.
 func accessRelations(res compiled, find func(kind, name, own, ns string) (compiled, bool)) []declared {
 	var out []declared
 	for kind, val := range res.fields {
@@ -188,13 +171,8 @@ func referenceRelations(res compiled, byID map[string]compiled, find func(kind, 
 			}
 			continue
 		}
-		// THE ENTRIES OF A NESTED GROUP CARRY REFERENCES OF THEIR OWN, and there are two
-		// kinds of entry: a list's, which are ORDERED, and a named group's, which are
-		// KEYED. Both compile — one to a []any, one to a map — and only the first was
-		// walked, so every `variables: {NAME: {secret: {name: …}}}` drew no arrow at all
-		// on six kinds while the schema said out loud that naming a secret there is a use
-		// of it. What tells them apart is what the entry is CALLED: a position has no
-		// name, so the verb numbers it; a named entry says its own name.
+		// Nested-group entries carry references too: a list's entries are numbered, a
+		// named group's go by their key.
 		for _, e := range entriesOf(res, ref.In) {
 			r, ok := resolveReference(res, e.fields, ref, byID, find)
 			if !ok {
@@ -254,18 +232,14 @@ func resolveReference(res compiled, from map[string]any, ref Reference, byID map
 	if !found {
 		return declared{}, false
 	}
-	// WHERE TRAFFIC GOES IS DECLARED. It used to be read off KindFrom — the author
-	// picking the kind stood in for "this is a handoff" — which a router breaks: its
-	// kind is fixed and it is still where the request goes.
+	// Where traffic goes is declared on the reference, not inferred from KindFrom: a
+	// router's kind is fixed and it is still a handoff.
 	class := Policy
 	if ref.Serves {
 		class, verb = Handoff, "serves"
 	}
 	r := declared{Relation: Relation{From: res.id, To: to.id, Kind: kind, Verb: verb, Class: class}}
-	// Direction is a property of the REFERENCE, not of how its value happens to be
-	// stored. This branch used to drop Inbound on the floor, so `Ref(k, ByName(),
-	// Inbound())` compiled, read back true from References(), and drew the arrow the
-	// wrong way round — a term that means nothing in half the cases it is legal in.
+	// Direction belongs to the reference, however its value is stored.
 	if ref.Inbound {
 		r.From, r.To, r.turned = to.id, res.id, true
 	}

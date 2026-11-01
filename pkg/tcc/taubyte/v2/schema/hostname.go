@@ -6,18 +6,11 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/engine"
 )
 
-// The label a project occupies in a cloud's generated zone.
+// The label a project occupies in a cloud's generated zone, derived from its id
+// (engine.DeriveDNSLabel) so every cloud and client computes the same name:
 //
 //	<name>.<ProjectLabel(id)>.<cloud fqdn>
 //	 db     tdw4ygm23gwgn      tau.somecloud.io
-//
-// A pure function of the project id, which is a CID and therefore already unique — so
-// the middle label is DERIVED, not assigned, and the same project has the same label
-// on every cloud that hosts it. Only the cloud's own fqdn is resolved at deploy.
-//
-// The derivation itself lives in the engine's registry (engine.DeriveDNSLabel), not
-// here, so tau-cli, the web console and dns compute this name the same way instead of
-// each carrying their own. Why base32 and why 13 characters are documented there.
 
 // ProjectLabelLength is the label's width; see engine.DeriveDNSLabel.
 const ProjectLabelLength = 13

@@ -1,10 +1,8 @@
 package engine
 
-// Document layout introspection: where a DSL's resources keep their fields on
-// disk. The engine already encodes this in dump.go (a container's instances are
-// directories, each with the document its Leaf() names; every other resource is
-// one file). These read it back out so a caller — a session, a CLI, a UI — maps
-// a resource address to its document without re-deriving the convention.
+// Where a DSL's resources keep their fields on disk, read back from the schema
+// so a caller maps a resource address to its document without re-deriving
+// dump.go's convention.
 
 // ContainerDoc returns the document name a container group's instances keep
 // their own fields in — whatever the DSL named it with Leaf(...) — or "" when group

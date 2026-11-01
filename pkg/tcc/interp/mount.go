@@ -15,48 +15,23 @@ import (
 	yaseer "github.com/taubyte/tau/pkg/yaseer"
 )
 
-// mount.go is how configuration that lives with the THING IT DESCRIBES reaches a
-// compile that has no way to fetch it.
-//
-// # The problem
-//
-// A resource whose content is in its own repository has serving behaviour that is a
-// property of the BUILD: what a directory returns, what an unknown path returns.
-// Those change when the site changes and are decided by whoever writes the site. Put
-// them in the configuration repository and every such change is a cross-repository
-// one, owned by somebody else.
-//
-// # Why it is two passes and not a fetch
-//
-// tcc reads a filesystem. It has no network, no credentials and no git, on purpose:
-// a compiler that fetched would be non-reproducible, would need secrets, and could
-// not be run by an editor. So the compile SAYS WHAT IT NEEDS and the caller — which
-// already has a checkout, a token and a cache — answers.
+// mount.go is how configuration living with the thing it describes (a site's
+// serving behaviour, decided by the build) reaches a compile that cannot fetch.
+// tcc has no network, credentials or git, so the compile says what it needs and
+// the caller answers:
 //
 //	mounts, _ := c.Mounts(ctx)        // pass one: what is needed, for THIS environment
 //	for _, m := range mounts { ... }  // the caller fetches, however it likes
 //	c2, _ := New(..., WithMounted(m.At, fs, commit)...)
 //	obj, _, _ := c2.Compile(ctx)      // pass two: one tree, one object
 //
-// This is the shape Resolver and NextValidation already have — tcc states a question
-// it cannot answer and the caller answers it — with one difference that matters: a
-// validation's answer does not change the object, and a mount's does. So an
-// unanswered mount must not silently pass the way an unwired Resolver does; see
-// Unfulfilled.
-//
-// # Two passes, never three
-//
-// A fill may not mint a resource, so pass two cannot discover a mount pass one did
-// not already ask for. That is not a convention this enforces afterwards — it is why
-// the walk below reads the AUTHORED object, which is complete without any fill.
+// Unlike a validation, a mount's answer changes the object, so an unanswered one
+// must not pass silently (see Unfulfilled). A fill cannot mint a resource, so
+// two passes suffice: the walk reads the authored object.
 
-// Mount is one request: a resource whose serving block is to be read from the
-// repository its content comes from.
-//
-// Branch is already resolved for the environment this compiler was built for, so a
-// caller checks out what it is told rather than re-deriving it. At is where tcc will
-// put the answer in its own view, and it is tcc's to choose because it becomes the
-// path an error is reported against.
+// Mount is one request: a resource whose serving block is read from its content
+// repository. Branch is resolved for this compiler's environment. At is where
+// tcc puts the answer, tcc's to choose since errors are reported against it.
 type Mount struct {
 	Kind  string
 	Name  string
@@ -87,13 +62,9 @@ func (m Mount) String() string {
 	return where + " reads " + m.Config + " from " + at
 }
 
-// Mounts is every resource in this project that delegates a block to its source, read
-// for the environment this compiler was built for.
-//
-// IT COMPILES THE AUTHORED OBJECT AND NOT THE LOWERED ONE. A lowering produces
-// resources, and a produced resource has no repository of its own — its source is the
-// thing that produced it. Reading the authored object is also what makes the walk
-// complete before any fill exists, which is what bounds this to two passes.
+// Mounts is every resource delegating a block to its source, for this compiler's
+// environment. It compiles the authored object: a produced resource has no
+// repository of its own, and the authored object is complete before any fill.
 func (c *Compiler) Mounts(ctx context.Context) ([]Mount, error) {
 	obj, _, err := c.Authored(ctx)
 	if err != nil {
@@ -134,11 +105,8 @@ func (c *Compiler) Mounts(ctx context.Context) ([]Mount, error) {
 	return out, nil
 }
 
-// MountPoint is where a resource's fill lands in tcc's view.
-//
-// IT IS DERIVED AND NOT CHOSEN, by tcc and not by the caller, because it is the path
-// an error carries: a fill that declares something it may not is reported against
-// this, and two callers of the same project have to produce the same message.
+// MountPoint is where a resource's fill lands in tcc's view, derived so two
+// callers produce the same error message.
 func MountPoint(scope, kind, name string) string {
 	parts := []string{mountRoot}
 	if scope != "" {
@@ -158,14 +126,10 @@ type filled struct {
 	commit string
 }
 
-// WithMounted answers one Mount: the filesystem its repository was checked out to,
-// and the COMMIT that checkout is of.
-//
-// THE COMMIT IS NOT OPTIONAL. It is what the compiled object records as provenance,
-// and it is the only thing that makes "this serving block came from there" a fact
-// rather than a claim — a branch name says what was asked for, a commit says what was
-// read. A caller that cannot say which commit it fetched has not fetched
-// reproducibly, and the compile refuses rather than recording a blank.
+// WithMounted answers one Mount with the filesystem its repository was checked
+// out to and the commit of that checkout. The commit is required: it is the
+// recorded provenance, and a caller that cannot name it has not fetched
+// reproducibly.
 func WithMounted(m Mount, fs afero.Fs, commit string) Option {
 	return func(c *Compiler) error {
 		at := m.At
@@ -189,12 +153,8 @@ func WithMounted(m Mount, fs afero.Fs, commit string) Option {
 	}
 }
 
-// delegableTop is every TOP-LEVEL key of a kind that carries a delegable attribute.
-//
-// The schema marks leaves — `serve/index`, `serve/mode` — and a fill writes blocks,
-// so the answer is the first segment of each marked name. Read off the compile root
-// every time rather than cached: a vocabulary that marks another field gets it here
-// with nothing to update.
+// delegableTop is every top-level key of a kind carrying a delegable attribute:
+// the schema marks leaves, a fill writes blocks.
 func delegableTop(root *engine.Node, kind string) map[string]bool {
 	out := map[string]bool{}
 	for _, g := range root.Children {
@@ -222,18 +182,13 @@ func delegableTop(root *engine.Node, kind string) map[string]bool {
 	return out
 }
 
-// ErrFill is a fill that says something it may not. Every one of these is a refusal
-// and never a warning: a fill that was partly applied is a configuration nobody
-// wrote and nobody can read back.
+// ErrFill is a fill saying something it may not, always a refusal: a partly
+// applied fill is configuration nobody wrote.
 var ErrFill = errors.New("interp: that file may not say this")
 
-// mountedView is the project with every answered fill merged into it.
-//
-// THE FILL IS MERGED BEFORE THE FIRST PASS AND NOT AFTER, which is the whole reason
-// this is not part of lowering. A delegated block is AUTHORED configuration that
-// happens to live elsewhere; everything downstream — references, the lowering plan,
-// the audit — has to see it exactly as if it had been written here. Merging it
-// afterwards would give the first pass one project and the second another.
+// mountedView is the project with every answered fill merged in, before the
+// first pass: a delegated block is authored configuration living elsewhere, and
+// everything downstream must see it as written here.
 func (c *Compiler) mountedView() (afero.Fs, map[string]string, error) {
 	base := c.baseFs
 	if c.basePath != "" {
@@ -285,9 +240,7 @@ func (c *Compiler) mountedView() (afero.Fs, map[string]string, error) {
 				return nil, nil, fmt.Errorf("%w: %s/%s sets %q, which is not delegated — %s may carry %s",
 					ErrFill, m.At, m.Config, key, m.Kind, names(allowed))
 			}
-			// A FIELD WITH TWO AUTHORS IS THE SAME DEFECT AS A SWITCH WITH TWO
-			// BRANCHES OPEN: there is no rule for which wins that is not a
-			// surprise to one of them. Refused naming both, never merged.
+			// A field with two authors is refused naming both, never merged.
 			if _, already := doc[key]; already {
 				return nil, nil, fmt.Errorf("%w: %q is set both here and in %s of %s — only one may say it",
 					ErrFill, key, m.Config, m.Repo)
@@ -334,16 +287,12 @@ func names(set map[string]bool) string {
 	return strings.Join(out, ", ")
 }
 
-// MountedKey is the record of what this compile read from somewhere else. It sits
-// beside the project the way LoweredKey does, and for the same reason: a consumer
-// has to be able to answer "where did this come from" without re-running anything.
+// MountedKey is the record of what this compile read from elsewhere, beside the
+// project like LoweredKey.
 const MountedKey = "mounted"
 
-// Fill is where one resource's delegated block was read from.
-//
-// THE COMMIT IS THE POINT. A branch says what was asked for and moves; a commit says
-// what was read and does not. An object that recorded only the branch would make
-// "this deployment serves what that repository said" unfalsifiable a week later.
+// Fill is where one resource's delegated block was read from. The commit is the
+// point: a branch moves.
 type Fill struct {
 	Repo   string `json:"repo"`
 	Branch string `json:"branch,omitempty"`
@@ -411,18 +360,9 @@ func (c *Compiler) recordMounts(obj Object) error {
 	return obj.Child(MountedKey).Add(rec)
 }
 
-// Mounter answers a Mount while the compile is running, so a caller makes ONE call
-// instead of driving two passes itself.
-//
-// IT IS THE SHAPE Resolver HAS and deliberately not Resolver itself: a resolver
-// answers a question ABOUT a value tcc already read, and its stub says yes on
-// purpose. This answers with configuration, so a stub that said yes would compile a
-// project missing the blocks somebody delegated. There is no stub; absent, the
-// mounts go unanswered and the audit says so.
-//
-// TCC STILL DOES NO GIT. The callback is the caller's, with the caller's credentials
-// and the caller's cache; tcc only says which repository at which commit-ish it needs
-// and where the answer goes.
+// Mounter answers a Mount during the compile, so a caller makes one call. Unlike
+// Resolver it has no permissive stub: absent, mounts go unanswered and the audit
+// says so. tcc still does no git; the callback is the caller's.
 type Mounter interface {
 	// Mount checks out what a Mount names and answers with the filesystem it landed
 	// in and the COMMIT that checkout is of. An error fails the compile: a caller
@@ -430,10 +370,8 @@ type Mounter interface {
 	Mount(ctx context.Context, m Mount) (afero.Fs, string, error)
 }
 
-// WithMounter makes the two passes internal: Compile discovers what it needs, asks
-// this, merges the answers and compiles the whole. A caller that wants to check out on
-// its own terms — in parallel, from a warm cache, or not at all — uses Mounts and
-// WithMounted instead, which is what this is built on.
+// WithMounter makes the two passes internal. A caller checking out on its own
+// terms uses Mounts and WithMounted instead.
 func WithMounter(f Mounter) Option {
 	return func(c *Compiler) error {
 		if f == nil {
@@ -444,13 +382,9 @@ func WithMounter(f Mounter) Option {
 	}
 }
 
-// mountAll is the first pass, run once, when a Mounter is wired.
-//
-// IT IS LAZY AND NOT PART OF New, because discovering what to mount is itself a
-// compile: the engine has to exist before it can say which resources delegate. So
-// the compiler is built unmounted, asks, and rebuilds itself over the merged view —
-// which is the same thing a caller driving both passes does by hand, with the same
-// two compiles, done where a caller cannot forget one.
+// mountAll is the first pass, run once when a Mounter is wired, lazily: finding
+// what to mount is itself a compile, so the compiler asks, then rebuilds over the
+// merged view.
 func (c *Compiler) mountAll(ctx context.Context) error {
 	if c.mounter == nil || c.mountedOnce {
 		return nil
@@ -489,10 +423,7 @@ func (c *Compiler) mountAll(ctx context.Context) error {
 	c.baseFs, c.basePath = view, "/"
 	c.from = from
 
-	// The engine reads documents, so it is the thing that has to be looking at the
-	// merged tree. Rebuilt rather than patched: one engine over one filesystem is
-	// the invariant that makes a delegated block indistinguishable from an authored
-	// one everywhere downstream.
+	// Rebuilt rather than patched: one engine over one filesystem.
 	c.engine, err = engine.NewWith(c.project, c.varValues, c.seerOptions...)
 	return err
 }

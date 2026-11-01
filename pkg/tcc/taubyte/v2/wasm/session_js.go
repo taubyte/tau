@@ -15,16 +15,8 @@ import (
 	tccConvert "github.com/taubyte/tau/utils/tcc/convert"
 )
 
-// An EDITABLE session, as against the one-shot compile main.go serves.
-//
-// The session itself is pkg/tcc/session, re-exported as schema.Session, so the same
-// code answers a Go caller (tau-cli) and this wasm — everything here is JS<->Go
-// marshaling over a handle table. A second implementation of "what an edit means"
-// is the drift this arrangement exists to prevent.
-//
-// THE CONFIG STAYS IN WASM. A handle is all that crosses, so the page never holds a
-// parsed copy that its next keystroke makes stale, and comments survive an edit
-// because the bytes are never re-rendered from a JS object.
+// An editable session (pkg/tcc/session via schema.Session) behind a handle table;
+// this file is only JS<->Go marshaling. The config stays in wasm.
 
 var (
 	sessions   = map[int]*schema.Session{}
@@ -530,8 +522,6 @@ func sessionCloseFn(_ js.Value, args []js.Value) any {
 	}
 	return js.Null()
 }
-
-// --- JS <-> Go marshaling ---
 
 func strsToAny(in []string) []any {
 	out := make([]any, len(in))

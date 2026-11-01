@@ -10,13 +10,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// A TERM CAN BE ASKED WHAT IT REFERENCES, WITHOUT BEING RUN.
-//
-// This is the property the string templates could not have and the reason Named's doc has
-// always said a term rather than a closure: a lowering has to be printable, inspectable
-// and — the new part — reversible, and all three are questions asked of the DECLARATION
-// with no config anywhere in the room. There is no way to evaluate a term from outside
-// this package at all: `env` is unexported, so this test could not cheat if it wanted to.
 func TestATermSaysWhatItReadsWithoutBeingRun(t *testing.T) {
 	// the exact shape the vocabulary declares for a step's failure queue
 	name := interp.Concat(interp.Attr("name"), interp.Text("_"), interp.Each("on_error"))
@@ -40,10 +33,7 @@ func TestATermSaysWhatItReadsWithoutBeingRun(t *testing.T) {
 		{Field: "on_error", Origin: interp.OfElement},
 	})
 
-	// ONE FIELD OR A BUILT STRING, which is a question about the term rather than about
-	// its punctuation. It used to be "the template is `{`, one key, `}` and nothing else",
-	// and it decided whether a scalar kept its type and whether a value could be given
-	// back.
+	// One field or a built string is a question about the term.
 	_, sole := name.Sole()
 	assert.Assert(t, !sole, "a join has no single value behind it")
 
@@ -55,8 +45,7 @@ func TestATermSaysWhatItReadsWithoutBeingRun(t *testing.T) {
 	assert.DeepEqual(t, interp.Attr(engine.Key("memory", "size")).Key(), []string{"memory", "size"})
 	assert.Equal(t, interp.Attr(engine.Key("memory", "size")).Field(), "memory/size")
 
-	// and it still PRINTS the way it always did, which is what diagnostics and the record
-	// of what a lowering declared are made of
+	// It still prints the way it always did.
 	assert.Equal(t, name.String(), "{name}_{each.on_error}")
 	assert.Equal(t, interp.Next("name").String(), "{each.next.name}")
 	assert.Equal(t, interp.Scope().String(), "{scope}")
@@ -68,18 +57,6 @@ func TestATermSaysWhatItReadsWithoutBeingRun(t *testing.T) {
 	assert.DeepEqual(t, folded, one)
 }
 
-// THE SEPARATOR IS NOT GUESSED, and this is the test that says so.
-//
-// `.notes/v2/shell-dedup.md` §2: "reading `checkout_reserve` back means knowing it splits
-// at the first underscore, which is a guess as soon as a name contains one. Invertibility
-// has to be a property the DSL states, not one inferred from the template string."
-//
-// So: a pipeline called `my_build` with a stage called `run_tests`, which the lowering
-// composes into `my_build_run_tests`. Splitting at the first underscore gives
-// `build_run_tests`; at the last, `tests`. Both are wrong, and both are what a scanner
-// over the finished string is reduced to. The term knows the prefix is
-// `Attr("name")` + `Text("_")`, fills it in, and cuts there — so what comes back is
-// `run_tests`, exactly.
 func TestAComposedNameGivesBackThePartThatWasComposedIn(t *testing.T) {
 	root := engine.Root(
 		[]*engine.Attribute{engine.String("id")},

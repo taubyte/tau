@@ -13,19 +13,10 @@ func New(schema Schema, options ...yaseer.Option) (Engine, error) {
 	return NewWith(schema, nil, options...)
 }
 
-// NewWith is New for a project that gives its variables VALUES. `values` is the closed
-// set each may take here, which the loader needs whichever binding is being read: one
-// document carries every value's spelling at once, so without the whole set a read for
-// one value rejects another's key as a typo.
-//
-// WHICH value each variable holds is not here — it is an argument to ProcessFor, because
-// one parse serves several readings and they share this engine and its parsed documents.
-// Binding it to the instance would mean re-reading the tree once per reading, which is
-// the cost that shows up first when this is compiled to wasm and asked to answer in
-// under 20ms.
-//
-// The order is the ROOT'S, not the caller's: a map has none, and precedence between two
-// variables is a statement the vocabulary makes with Varying.
+// NewWith is New for a project giving its variables values: the closed set each
+// may take, which the loader needs since one document carries every value's
+// spelling. Which value each holds is ProcessFor's argument, so one parse serves
+// several readings. Precedence is the root's (Varying).
 func NewWith(schema Schema, values map[string][]string, options ...yaseer.Option) (Engine, error) {
 	sr, err := yaseer.New(options...)
 	if err != nil {
@@ -169,16 +160,9 @@ func (s *instance) ProcessFor(b Bound) (object.Object[object.Refrence], error) {
 	return load(s.schema.root, s.seer.Query(), s.walk(bound))
 }
 
-// bind drops the variables this read says nothing about and refuses the one binding that
-// cannot be honoured.
-//
-// A BINDING FOR A VARIABLE WITH NO VALUES IS REFUSED HERE, not swallowed. Nothing claims
-// a suffix for it, so strict mode would reject the author's own override as an unknown
-// key — an error against the config for a mistake made in the options. It is checked at
-// the read rather than in NewWith because the binding is the read's argument.
-//
-// An EMPTY value is not a binding: it is how a caller says "the bare key", which is what
-// a project that has no values for the variable reads anyway.
+// bind drops variables this read says nothing about. A binding for a variable
+// with no values is refused: nothing claims its suffix, so strict mode would
+// reject the author's own override. An empty value means the bare key.
 func (s *instance) bind(b Bound) (Bound, error) {
 	if len(b) == 0 {
 		return nil, nil

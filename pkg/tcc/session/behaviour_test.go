@@ -198,8 +198,6 @@ func TestResourceAt(t *testing.T) {
 	assert.Assert(t, !ok)
 }
 
-// apps/x.yaml is beside the scope x, not its document; reading it as [apps, x]
-// named a resource whose document is apps/x/config.yaml.
 func TestResourceAtInvertsLocation(t *testing.T) {
 	s := newSession(t, fullBindings(), map[string]string{
 		"/apps/x/config.yaml":        "id: x\n",

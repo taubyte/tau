@@ -10,14 +10,9 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/transform"
 )
 
-// ResolveRefs is the reference-resolution transform. For every attribute annotated
-// with Ref(...), it reads the compiled value and resolves the referenced name(s) to the target group's compiled id(s) against
-// the name->id index the CompileDriver already populated.
-//
-// It is wrapped in utils.Global so it walks the project root, then each
-// application, which is what makes utils.ResolveNamesToId
-// key the store identically (app -> project -> root scope walk). Resolution runs
-// after the CompileDriver, so the index is complete before any ref is read.
+// ResolveRefs resolves every Ref(...)-annotated attribute's name(s) to the target
+// group's compiled id(s), against the name->id index CompileDriver populated.
+// Wrapped in utils.Global, so it walks the project root then each scope.
 func ResolveRefs(root *engine.Node) transform.Transformer[object.Refrence] {
 	idField, nameField := engine.IdentityOf(root)
 	return utils.Global(ContainerKeys(root), &resolveRefs{groups: root.Children, idField: idField, nameField: nameField})

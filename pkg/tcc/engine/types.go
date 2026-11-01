@@ -5,17 +5,9 @@ import (
 	yaseer "github.com/taubyte/tau/pkg/yaseer"
 )
 
-// IDENTITY: which attribute is a resource's id, and which field receives the name of the
-// document it was written in.
-//
-// The interpreter keys a compiled resource by the first and resolves references against
-// the second, so it has to know both — and it used to know them as the string literals
-// "id" and "name", in a dozen places, which is one vocabulary's choice written into the
-// layer that must not have one. Naming them as constants only made the assumption easier
-// to find; the schema says it now.
-//
-// Stated ONCE, on the root, because it is a convention of the whole vocabulary rather
-// than of any kind in it.
+// Identity names which attribute is a resource's id and which field receives the
+// name of the document it was written in, once on the root: the interpreter keys
+// resources by the first and resolves references against the second.
 func Identity(id, name string) NodeOption {
 	return GroupAnnotate("identity", [2]string{id, name})
 }
@@ -33,10 +25,8 @@ func IdentityOf(root *Node) (id, name string) {
 type instance struct {
 	schema *schemaDef
 	seer   *yaseer.Seer
-	// vars is every variable the vocabulary declares, in its order, with the closed set
-	// of values each may take in THIS project — the whole set of suffixes a document may
-	// carry. WHICH value each variable holds for a given read is an argument to
-	// ProcessFor.
+	// vars is every declared variable, in order, with the values each may take in
+	// this project; which value each holds for a read is ProcessFor's argument.
 	vars Vars
 }
 
@@ -48,9 +38,7 @@ type Var struct {
 	Values []string
 }
 
-// Vars is every variable, IN THE ROOT'S ORDER. Built by the engine rather than handed to
-// it, so precedence is the vocabulary's to state and never a caller's to choose by the
-// order it happened to pass its options in.
+// Vars is every variable in the root's order, so precedence is the vocabulary's.
 type Vars []Var
 
 // Values is the closed set this variable may take, nil when it is not one of ours.
@@ -90,10 +78,8 @@ type Schema interface {
 
 type Engine interface {
 	Process() (object.Object[object.Refrence], error) // load & process
-	// ProcessFor is Process UNDER ONE BINDING: an attribute that varies takes its
-	// `<key>_<value>` spelling where the document writes one. An argument rather than
-	// instance state, because one parse serves every binding and they share the parsed
-	// documents.
+	// ProcessFor is Process under one binding; an argument because one parse serves
+	// every binding.
 	ProcessFor(b Bound) (object.Object[object.Refrence], error)
 	Dump(obj object.Object[object.Refrence]) error // dump object to filesystem using engine's seer and sync
 }
@@ -137,33 +123,18 @@ type Attribute struct {
 type Option func(*Attribute)
 
 type Node struct {
-	// Leaf is the document this group's instances keep their own fields in —
-	// `namespace` gives namespaces/shop/namespace.yaml. Empty means
-	// the document a container instance keeps its own fields in; see Leaf.
-	//
-	// It exists because that name was a GLOBAL, and a global reserved the word
-	// everywhere: a nested group called `config` under a resource was silently
-	// skipped, because somewhere else in the tree a container keeps its fields in a
-	// file by that name. Naming it per group makes the reservation local to the group
-	// that actually has one, and puts the layout in the DSL with everything else about
-	// the layout.
+	// Leaf is the document this group's instances keep their own fields in
+	// (`namespace` gives namespaces/shop/namespace.yaml). Per group, so the name is
+	// reserved only where a group has one.
 	Leaf  string
 	Group bool
-	// Nested marks a RESOURCE iterator that also carries child groups, authored
-	// inside its own document. Distinct from Group, whose instances are scopes:
-	// a nested group is data belonging to the instance, so the instance keeps its
-	// scalar parsing, its wire-key renames and its name->id index, and names inside
-	// the group resolve where the resource was authored.
+	// Nested marks a resource iterator that also carries child groups authored in
+	// its own document. Unlike Group, a nested group is data of the instance, so names
+	// in it resolve where the resource was authored.
 	Nested bool
-	// Sequence marks a group authored as a YAML SEQUENCE rather than a mapping —
-	// an ORDERED list of objects. Its instances have no names, only positions, so
-	// it compiles to one ordered value instead of children keyed by name.
-	//
-	// It is a group like any other underneath: each element is loaded through the
-	// same iterator, so per-field types, defaults, required, validators, unknown-key
-	// rejection and per-field error locations all work inside an element. The only
-	// difference is where the key comes from — the author writes the order, the
-	// engine reads it back as the index.
+	// Sequence marks a group authored as a YAML sequence: an ordered list of objects
+	// with positions, not names, compiled to one ordered value. Each element loads
+	// through the same iterator.
 	Sequence bool
 	// Required marks a group that must be authored with at least one entry.
 	Required   bool

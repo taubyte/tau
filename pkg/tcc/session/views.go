@@ -7,17 +7,9 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/interp"
 )
 
-// WHAT EACH DESTINATION HOLDS.
-//
-// A compiled configuration is one object, and the places it runs are not always one:
-// each receives its own cut of it. What the cut is — which resources go where, and in
-// what role — is the DSL's answer, wired as a Viewer; the session asks it the same way
-// for a CLI, a console and an explorer, so none of them computes a cut of its own and
-// none can disagree with what a deploy publishes.
-//
-// THE CANONICAL OBJECT TRAVELS WITH THE VIEWS. Tooling that edits or explains the whole
-// configuration still needs all of it; a view is what one destination receives, never
-// a replacement for the config.
+// What each destination holds: the DSL's Viewer cuts a compiled configuration
+// into one view per destination, the same for every consumer. The canonical
+// object travels with the views.
 
 // Viewer cuts a compiled configuration — compiled for one environment, or for none —
 // into one view per destination.

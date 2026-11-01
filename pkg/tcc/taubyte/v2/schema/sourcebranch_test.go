@@ -34,16 +34,6 @@ func compileSourceIn(t *testing.T, env, body string) map[string]any {
 	return only(t, sites)
 }
 
-// TestAGitSourceReadsADifferentBranchPerEnvironment.
-//
-// `environments[].branches` already says which branches feed a deployment, and
-// that rule stopped at the CONFIG repository. A resource whose content lives in
-// its own repo had ONE branch for every environment, so a staging deployment
-// built whatever production builds — which makes a staging deployment of a site
-// change impossible to express.
-//
-// The environment is the axis this whole schema varies on (`Varying(EnvironmentVar)`
-// on the root), so it is the axis this varies on too.
 func TestAGitSourceReadsADifferentBranchPerEnvironment(t *testing.T) {
 	body := "source:\n" +
 		"    git: https://github.com/acme/docs\n" +
@@ -58,8 +48,6 @@ func TestAGitSourceReadsADifferentBranchPerEnvironment(t *testing.T) {
 		"a staging deployment has to be able to build a different commit than production")
 }
 
-// TestAnUnsuffixedBranchStillServesEveryEnvironment — the common case has to
-// keep working: one branch, written once, read by every deployment.
 func TestAnUnsuffixedBranchServesEveryEnvironment(t *testing.T) {
 	body := "source:\n" +
 		"    git: https://github.com/acme/docs\n" +
@@ -71,12 +59,6 @@ func TestAnUnsuffixedBranchServesEveryEnvironment(t *testing.T) {
 	}
 }
 
-// TestAnEnvironmentWithNothingSaidAboutItTakesTheDefaultBranch.
-//
-// THE ABSENCE IS THE ANSWER AND NOT A FALLBACK TO ANOTHER ENVIRONMENT'S. An
-// omitted branch means "the repository's default branch", which is what the
-// field has always meant; it must not quietly mean "whatever production reads",
-// because that would deploy production's code to staging on a typo.
 func TestAnEnvironmentWithNoBranchOfItsOwnTakesNone(t *testing.T) {
 	body := "source:\n" +
 		"    git: https://github.com/acme/docs\n" +

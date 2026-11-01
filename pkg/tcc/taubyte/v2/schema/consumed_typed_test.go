@@ -13,22 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// consumed_typed_test follows a consumer through pkg/specs' GENERATED types,
-// which is how the runtime reads a compiled resource: `specs.ReadGateway(r)`
-// and then `gw.Route.Path`, rather than `r.String("route", "path")`.
-//
-// A FIELD NAMED IS A KEY READ. What the field decodes is taken off the
-// generated reader itself — ReadGatewayRoute assigns `out.Path` from
-// `r.String("route", "path")` — so a regenerated reader moves both halves at
-// once and nothing here repeats a path.
-//
-// It tracks types the way a reader of the file would, and no further: a value
-// is a generated type when a ReadX call produced it, when it was declared as
-// one (a parameter, a struct field, a function's result), or when it was
-// reached through one (`gw.Route`, `app.Ports["http"]`, a range over
-// `wf.Steps`). That is not the type checker — it is enough because the runtime
-// reads these the plain way, and a read this cannot see shows up as an
-// attribute nobody reads, which is the direction that gets looked at.
+// Follows a consumer through pkg/specs' generated types (`specs.ReadGateway(r)`
+// then `gw.Route.Path`). A named field is a key read, with the key taken off the
+// generated reader. A value is a generated type when a ReadX produced it, it was
+// declared as one, or it was reached through one; not a type checker, but a
+// missed read surfaces as an unread attribute.
 
 // genField is one field of a generated type: a leaf at a key, or a nested type
 // read under a prefix.

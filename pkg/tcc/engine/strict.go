@@ -9,25 +9,11 @@ import (
 	yaseer "github.com/taubyte/tau/pkg/yaseer"
 )
 
-// An authored key the schema does not have is an ERROR, reported at its own line.
-//
-// It used to be dropped in silence. Every misspelled field asserted something the
-// compiler agreed with by saying nothing: this repo's own fixtures carried
-// `source: true` on a connector whose attribute is `polls`, compiled clean, and the
-// field was simply absent from the compiled object. The failure then surfaces as
-// absent BEHAVIOUR — a connector that never polls, a workload with no limit — a long
-// way from the line that caused it.
-//
-// That is the inverse of what the DSL is for. Per-field validation, completion,
-// JSON-Schema emission and per-field error locations are most of the reason it exists,
-// and a field name nothing ever looks for defeats all four at once.
-//
-// The check reads the schema rather than a list: every path an attribute can be read
-// from is claimed, `Either(...)` contributes each of its branches, `All()` marks a level
-// where any key is legal, and a child group claims its own name. So a kind that gains an
-// attribute gains the key for free, and there is no second place to update.
+// An authored key the schema does not have is an error at its own line: dropped
+// in silence, a misspelled field surfaces as absent behaviour far from its
+// cause. The claims are read from the schema: every attribute path, each
+// Either() branch, All() for any key, and each child group's name.
 
-// claim is a prefix tree of the key paths one document may hold.
 type claim struct {
 	kids map[string]*claim
 	// any: an All() matcher reaches this level, so any key here is legal. Also set
@@ -136,12 +122,9 @@ func attrClaims(n *Node, vars Vars) *claim {
 		} else {
 			c.insert(path)
 		}
-		// EVERY VARIANT SPELLING OF THIS FIELD IS A KEY THE SCHEMA CAN READ, so each is
-		// claimed like any other — otherwise every override is an unknown key. The
-		// UNION, not the cross product: there are no compound suffixes, so an attribute
-		// that varies by two variables claims each value of each, and nothing more.
-		// Claimed only where the attribute is marked, so a suffix on an unmarked key
-		// stays a typo.
+		// Every variant spelling of this field is claimed, or every override is an
+		// unknown key: the union of each variable's values, not the cross product, and
+		// only where the attribute is marked.
 		for _, name := range VariesBy(attr) {
 			for _, value := range vars.Values(name) {
 				if vp := variantPath(path, value); vp != nil {
@@ -173,9 +156,9 @@ func checkKeys(n *Node, query *yaseer.Query, vars Vars) error {
 		return c.walk(query)
 	}
 
-	// A container holds its own fields under the config leaf and its child groups
-	// beside it — and a child group may ALSO be authored inside config, which
-	// loadChildren accepts, so both levels admit both.
+	// A container holds its own fields under the leaf and its child groups beside
+	// it, and a child group may also be authored inside the leaf, so both levels
+	// admit both.
 	leaf := LeafOf(n)
 	outer := newClaim()
 	outer.child(leaf).leaf = true // its contents are the inner pass
@@ -198,21 +181,9 @@ func (c *claim) walk(query *yaseer.Query) error {
 		return nil
 	}
 
-	// STRICT INSIDE A DOCUMENT, PERMISSIVE ON THE FILESYSTEM.
-	//
-	// Query.List() enumerates a mapping's keys, and falls back to a DIRECTORY's
-	// entries when the node is not a mapping. Those are not the same claim: a config
-	// tree lives inside a real repository, so the project root legitimately contains
-	// `.git`, `docs/`, a README — none of which the schema names and none of which is
-	// a mistake. Rejecting them refuses every project on disk, which is how the
-	// dreaming suite found this.
-	//
-	// A key typed into a yaml document has no such excuse. So the check applies only
-	// where the node genuinely IS a mapping.
-	//
-	// The cost, recorded: a mistyped DIRECTORY name — `fuctions/` — is still silent.
-	// That one belongs to the publish-time pass, which can see that a project declares
-	// no functions at all.
+	// Strict inside a document, permissive on the filesystem: a project root holds
+	// `.git`, `docs/` and a README the schema never names. A mistyped directory name
+	// is still silent; that belongs to the publish-time pass.
 	var doc any
 	if err := query.Value(&doc); err != nil {
 		return nil
@@ -223,8 +194,7 @@ func (c *claim) walk(query *yaseer.Query) error {
 
 	keys, err := query.List()
 	if err != nil {
-		// nothing to enumerate. An absent required field is already the business
-		// of setAttributes.
+		// Nothing to enumerate; an absent required field is setAttributes' business.
 		return nil
 	}
 	keys = slices.Sorted(slices.Values(keys))
@@ -234,16 +204,8 @@ func (c *claim) walk(query *yaseer.Query) error {
 			if c.any {
 				continue
 			}
-			// Resolve the node before asking where it is. Query.location() walks up
-			// to the nearest RESOLVED ancestor, so an unread Get inherits the
-			// document's own position and every top-level mistake reports 1:1.
-			//
-			// Resolving sets the position of the VALUE, which is the same convention
-			// every other error here follows ("3:7: invalid variable name" points at
-			// the value too). For a scalar that is the offending line exactly; for a
-			// key whose value is a block mapping it is the mapping's first child, one
-			// line below. yaml.v3 exposes no position for the key itself, so that is
-			// the closest available and it stays inside the block it names.
+			// Resolve the node first, so the error points at its value, the convention
+			// every other error here follows; yaml.v3 gives no position for the key.
 			at := query.Get(key)
 			var ignored any
 			at.Value(&ignored)
@@ -252,15 +214,8 @@ func (c *claim) walk(query *yaseer.Query) error {
 				fmt.Errorf("unknown key '%s'%s", key, c.suggest()))
 		}
 		if sub.leaf && len(sub.kids) == 0 {
-			// The key is real, and the walk would stop here — which left the OTHER
-			// half of the same silence: a BLOCK written where a value belongs.
-			//
-			//	transformers:      the attribute is a list; a mapping here reads as
-			//	    redact:        nothing, so the transformers simply never run and
-			//	        order: 1   no key in the document is unknown
-			//
-			// A wrong-typed scalar is already an error (setAttributes), and no
-			// attribute type is a mapping, so this needs no exception.
+			// A block written where a value belongs (a mapping under a list attribute) would
+			// read as nothing with no key unknown. No attribute type is a mapping.
 			if !sub.any && isBlockAt(query, key) {
 				at := query.Get(key)
 				filePath, line, column := at.Location()

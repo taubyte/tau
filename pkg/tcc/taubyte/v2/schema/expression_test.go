@@ -13,9 +13,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// The point of an expression field being a real language rather than a notation of our
-// own is that it is PARSED where it is written. A mistake has to be a compile failure
-// with a position, or the field is structure smuggled into a string after all.
 func TestExpressionSyntaxIsChecked(t *testing.T) {
 	check := validatorOf(t, schema.IsExpression())
 
@@ -49,15 +46,6 @@ func TestExpressionSyntaxIsChecked(t *testing.T) {
 	assert.Assert(t, strings.Contains(err.Error(), "at character"), "no position in %q", err)
 }
 
-// THE POSITION IS IN THE YAML, not in the expression. The parser counts from the start of
-// what it was handed; the engine records where the VALUE begins. Neither is an answer on
-// its own, and printing both reads as two coordinate systems. They compose by addition,
-// and this is the test that says so: the column has to land on the character that is
-// actually wrong.
-//
-// Over a scratch vocabulary rather than the real one, because no v2 field takes an
-// expression yet — this proves the composition against the real engine and the real
-// loader without deciding which field goes first.
 func TestExpressionFaultPointsIntoTheYaml(t *testing.T) {
 	root := engine.Root(nil,
 		engine.DefineGroup("thing",

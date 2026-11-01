@@ -22,8 +22,6 @@ func has(names []string, want string) bool {
 	return false
 }
 
-// A fork's edits (set / new resource / delete) stay isolated until Merge, then
-// collapse onto the parent — writes and deletes both.
 func TestSessionForkMerge(t *testing.T) {
 	src := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(src, "/functions/foo.yaml", []byte("id: fooid\n"), 0o644))

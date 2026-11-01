@@ -14,10 +14,7 @@ import (
 // one of them, and two documents that suffix keys for four names.
 const envFixture = "../fixtures/environments"
 
-// envsOfFixture reads the table the way a caller does — off a filesystem and a path,
-// with no compiler in the way. That is the whole point of EnvironmentsOf: a compile
-// cannot start until the declared names are known, and the names are in the document
-// the compile is about to read.
+// envsOfFixture reads the table off a filesystem and path, with no compiler.
 func envsOfFixture(t *testing.T) []schema.Environment {
 	t.Helper()
 	envs, err := schema.EnvironmentsOf(afero.NewOsFs(), envFixture)
@@ -25,10 +22,7 @@ func envsOfFixture(t *testing.T) []schema.Environment {
 	return envs
 }
 
-// byName, because the table comes back in whatever order the map yielded — yaseer's
-// List ranges a Go map, so the top-level order varies run to run. Nothing downstream
-// depends on it (the declared set is a set, and a shadow is found nested rather than by
-// position), so the tests sort rather than pinning an order the reader cannot rely on.
+// byName, because the table's order varies with map iteration.
 func byName(envs []schema.Environment) map[string]schema.Environment {
 	out := make(map[string]schema.Environment, len(envs))
 	for _, e := range envs {
@@ -37,10 +31,6 @@ func byName(envs []schema.Environment) map[string]schema.Environment {
 	return out
 }
 
-// THE TABLE IS READ WHOLE, nesting included. Branches are globs and one environment may
-// be fed by several; regions are a constraint the project states and a shadow never
-// has, which is exactly why a shadow is written INSIDE the one it shadows instead of
-// naming it.
 func TestTheEnvironmentTableIsReadOffTheProject(t *testing.T) {
 	envs := envsOfFixture(t)
 	assert.Equal(t, len(envs), 3, "three deployments stand alone; the fourth is nested")
@@ -75,10 +65,6 @@ func TestTheEnvironmentTableIsReadOffTheProject(t *testing.T) {
 	assert.DeepEqual(t, production.Branches[:1], ab.Branches)
 }
 
-// `Of` IS WHERE THE SHADOW WAS WRITTEN, not something anybody authored. It is the only
-// way a caller holding a flat Environment can tell "attached to production's state"
-// from "stands alone", and a shadow's own fields cannot say it: the shape has no key
-// for it, deliberately.
 func TestOfIsSetOnAShadowAndEmptyOnADeployment(t *testing.T) {
 	envs := envsOfFixture(t)
 	for _, e := range envs {
@@ -93,8 +79,6 @@ func TestOfIsSetOnAShadowAndEmptyOnADeployment(t *testing.T) {
 	}
 }
 
-// A PROJECT MUST SAY WHICH BRANCHES DEPLOY WHERE: no table, or an empty one, is refused
-// at compile, and the refusal names the missing table.
 func TestAProjectWithNoEnvironmentsIsRefused(t *testing.T) {
 	for name, doc := range map[string]string{
 		"absent": "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nname: p\n",
@@ -111,11 +95,6 @@ func TestAProjectWithNoEnvironmentsIsRefused(t *testing.T) {
 	}
 }
 
-// EnvironmentNames IS THE CLOSED SET OF SUFFIXES, and shadows are in it. A shadow is a
-// deployment — its own release, its own artifact — so `timeout_ab` is a field. Left out
-// of the set it would be a typo instead, which is the failure this pins: the same tree
-// with only the three top-level names rejects the shadow's own key, and says so with
-// the set it does have.
 func TestEnvironmentNamesIncludeShadows(t *testing.T) {
 	got := schema.EnvironmentNames(envsOfFixture(t))
 	sort.Strings(got)
@@ -128,12 +107,6 @@ func TestEnvironmentNamesIncludeShadows(t *testing.T) {
 	assert.ErrorContains(t, err, "unknown key 'timeout_ab'")
 }
 
-// WithProjectEnvironments IS THE TABLE AND THE DECLARATION IN ONE CALL: a caller says
-// where the project is, not which environments it has — the two can never disagree
-// because only one of them is written down.
-//
-// Without it the same tree does not compile, which is the point. A suffixed key is a
-// field only because the project declared the name.
 func TestWithProjectEnvironmentsMakesASuffixedKeyAField(t *testing.T) {
 	undeclared, err := schema.New(schema.WithLocal(envFixture), schema.WithBranch("main"))
 	assert.NilError(t, err)
@@ -156,14 +129,6 @@ func TestWithProjectEnvironmentsMakesASuffixedKeyAField(t *testing.T) {
 	}
 }
 
-// ONE COMPILER, EVERY DEPLOYMENT. The documents are parsed once and read once per
-// environment, so which one is being read is an argument rather than a compiler built
-// per environment re-reading the tree — and a caller resolving a branch to several
-// deployments (`main` feeds production and `ab`) compiles each off the one it has.
-//
-// The table below is the whole per-environment rule in one place: an unsuffixed line is
-// what every environment gets until one of them says otherwise, and "otherwise" is the
-// line sitting right beside it.
 func TestOneCompilerReadsEveryEnvironment(t *testing.T) {
 	c, err := schema.New(schema.WithLocal(envFixture), schema.WithBranch("main"),
 		schema.WithProjectEnvironments(afero.NewOsFs(), envFixture))

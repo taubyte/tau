@@ -29,11 +29,9 @@ func decompileOrder(root *engine.Node) []string {
 	return out
 }
 
-// NewDecompileDriver returns the mechanical inverse of CompileDriver+ResolveRefs,
-// driven by the SAME DSL node tree. It replaces the whole id->name ref resolution and
-// per-resource wire-projection-inverse layers with one generic transform. The chroot
-// unwrap and engine.Dump (the nested-YAML writer) stay: this driver only rewrites the
-// flat compiled keys back to their authored shape, exactly as the old passes did.
+// NewDecompileDriver is the inverse of CompileDriver and ResolveRefs, driven by
+// the same DSL tree: it rewrites the flat compiled keys back to their authored
+// shape. The chroot unwrap and engine.Dump stay separate.
 func NewDecompileDriver(root *engine.Node) transform.Transformer[object.Refrence] {
 	return &decompileDriver{root: root}
 }
@@ -43,12 +41,8 @@ type decompileDriver struct {
 }
 
 func (d *decompileDriver) Process(ct transform.Context[object.Refrence], o object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
-	// The pipe:
-	//   - ref inversion first, over the whole object, BEFORE any id->name key swap
-	//     renames the ref-target groups out from under the id->name map; then
-	//   - the per-resource inverse, applications first so
-	//     the resource walks that follow can iterate apps by whatever key they now
-	//     carry (the walk is key-agnostic).
+	// Refs are inverted first, over the whole object, before any id->name key swap
+	// renames their target groups; then the per-resource inverse, containers first.
 	containers := ContainerKeys(d.root)
 	idField, nameField := engine.IdentityOf(d.root)
 	resourceContainers := map[string]bool{}
@@ -78,11 +72,9 @@ func (d *decompileDriver) Process(ct transform.Context[object.Refrence], o objec
 	return transform.Pipe(ct, o, pipe...)
 }
 
-// decompileRefs is the inverse of ResolveRefs: for every Ref(...)-annotated
-// attribute it maps the compiled id(s) back to the referenced instance's authored
-// name(s). Unlike the forward resolver (which reads the compile-time store index),
-// it rebuilds an id->name map straight off the target group's objects — the store
-// is empty on decompile — with the app-local-then-project-root scope.
+// decompileRefs is the inverse of ResolveRefs: compiled ids back to authored
+// names, from an id->name map rebuilt off each target group (the store is empty
+// on decompile), scope first, then the project root.
 type decompileRefs struct {
 	groups  []*engine.Node
 	idField string
@@ -100,17 +92,9 @@ func (r *decompileRefs) Process(ct transform.Context[object.Refrence], scope obj
 		}
 		iter := g.Children[0]
 		refs := collectRefAttrs(iter.Attributes)
-		// A NESTED GROUP'S ENTRIES CARRY REFERENCES TOO — a variables entry naming the
-		// secret it takes its value from — and they compile to ids like any other. The
-		// inversion walked the resource's own attributes and stopped, so a project
-		// decompiled with `secret: secret/Qm…` in it: a document that reads like config
-		// and does not compile, because a name is what a reference resolves FROM.
-		// Only a resource that declares NESTED DATA groups — `Nested(...)` — has entries
-		// of its own to invert. A container's children are SCOPES, and the scope walk
-		// already visits those: descending into them here inverted every id twice, and
-		// the second pass looked up a name as though it were an id and failed.
-		// A kind that is BOTH a resource and a container carries both kinds of child, so
-		// the test is per-child rather than on the iterator.
+		// A nested group's entries carry references too. Only children marked Nested are
+		// the resource's own data; a container's other children are scopes the scope
+		// walk visits, and inverting them here too would invert every id twice.
 		nested := map[string][]refAttr{}
 		for _, child := range iter.Children {
 			if !iter.Nested {
@@ -275,9 +259,9 @@ func invertRefAttr(sel object.Selector[object.Refrence], ra refAttr, getMap func
 	return nil
 }
 
-// decompileApps inverts the CompileDriver's container id-promotion: it swaps each
-// application's compiled id key back to its authored name (restoring the id field).
-// It does NOT recurse — the per-resource walks that follow handle each app's nested resources via utils.Global.
+// decompileApps swaps each container instance's compiled id key back to its
+// name, restoring the id field. It does not recurse; the resource walks handle
+// nested resources.
 type decompileApps struct {
 	containers         []string
 	resources          map[string]bool
@@ -313,9 +297,8 @@ func (a *decompileApps) Process(ct transform.Context[object.Refrence], o object.
 	return o, nil
 }
 
-// decompileResource walks a resource group at one scope and runs the per-instance inverse
-// projections. Wrapped in utils.Global so it covers the project scope and every
-// application scope.
+// decompileResource runs the per-instance inverse projections over one resource
+// group, at every scope via utils.Global.
 type decompileResource struct {
 	groupKey string
 	iter     *engine.Node
@@ -341,12 +324,8 @@ func (ri *decompileResource) Process(ct transform.Context[object.Refrence], o ob
 			continue
 		}
 		sel := groupObj.Child(key)
-		// A NESTED GROUP's entries carry the same wire projections the resource's own
-		// attributes do — an access entry's `timeout` is nanoseconds on the wire and a
-		// human string in the document — and nothing was putting them back. The forward
-		// pass walks them (driver.go's iter.Nested branch); the inverse has to walk them
-		// too, or a resource with an access block cannot be written out at all.
-		//
+		// A nested group's entries carry the same wire projections as the resource's own
+		// attributes (an access entry's timeout), so the inverse walks them too.
 		if !ri.nestedOnly {
 			if err := applyInstanceInverse(sel, ri.iter, ri.idField, ri.nameField); err != nil {
 				return nil, fmt.Errorf("%s %s: %w", ri.groupKey, key, err)
@@ -366,17 +345,10 @@ func (ri *decompileResource) Process(ct transform.Context[object.Refrence], o ob
 	return o, nil
 }
 
-// applyNestedInverse walks a resource's own child groups — its access blocks, ports,
-// variables — and undoes the wire projections on each entry. An entry is not a resource:
-// it is keyed by a name the author chose and never had an id, so there is no key swap to
-// invert, only the scalar and rename work.
-//
-// ONLY THE KIND'S OWN. A kind that is also a container carries both: the groups it
-// declares for itself, and the resource groups it holds because it is a scope. Those are
-// resources, walked by the scope walk, and inverting them here as well ran every scalar
-// through its codec twice — a `timeout` already back to "5m" and read again as
-// nanoseconds, reported as "timeout is not an integer". Nested() marks the ones that are
-// the kind's, which is the same marker the loader routes by.
+// applyNestedInverse undoes the wire projections on a resource's own child
+// groups' entries, which have no id to swap. Only children marked Nested: a
+// container's held resources are walked by the scope walk, and inverting them
+// here too would run each scalar's codec twice.
 func applyNestedInverse(inst object.Object[object.Refrence], children, groups []*engine.Node, idField string) error {
 	for _, g := range children {
 		key, _ := g.Match.(string)
@@ -421,11 +393,8 @@ func applyNestedInverse(inst object.Object[object.Refrence], children, groups []
 func applyInstanceInverse(sel object.Selector[object.Refrence], iter *engine.Node, idField, nameField string) error {
 	attrs := iter.Attributes
 
-	// 0. Inlined: drop the key a pointed-at FILE was read into (a zone's
-	//    `records`); the source (`file`) survived compile, and the decompiler
-	//    writes the file itself back from those lines (interp.InlinedFiles).
-	//    Kept in the document as well, it would say what the author wrote AND
-	//    what was read for them.
+	// 0. Drop the key a pointed-at file was read into; the decompiler writes the
+	// file itself back (interp.InlinedFiles).
 	for _, a := range attrs {
 		if into := engine.InlinedInto(a); into != "" {
 			sel.Delete(into)

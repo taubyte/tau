@@ -15,10 +15,8 @@ type CompileDriver struct {
 	root *engine.Node
 }
 
-// newCompileDriver builds a CompileDriver from the schema root node. `root` carries
-// the project-scope attributes (id -> project_id validation, tags -> wire drop via
-// annotations) and the resource/container groups as its children. Takes the node
-// tree as data so this package never imports schema.
+// newCompileDriver builds a CompileDriver from the schema root node, whose
+// attributes are the project scope's and whose children are the groups.
 func newCompileDriver(root *engine.Node) transform.Transformer[object.Refrence] {
 	return &CompileDriver{root: root}
 }
@@ -43,12 +41,9 @@ func (d *CompileDriver) Process(ct transform.Context[object.Refrence], o object.
 	return o, nil
 }
 
-// processGroups runs each group at the given scope (project root or an app).
-//
-// mixed is a hybrid container's scope, where its own nested entries and the resources
-// it holds share a key. They are told apart by the id field BEFORE anything runs:
-// promoting a held resource deletes its id, so a group walked after that would take
-// it for an entry and project it a second time.
+// processGroups runs each group at one scope. In a hybrid container's scope its
+// own entries and its held resources share a key, so they are told apart by id
+// before anything runs: promoting a held resource deletes its id.
 func (d *CompileDriver) processGroups(ct transform.Context[object.Refrence], scope object.Object[object.Refrence], groups []*engine.Node, mixed bool) error {
 	var own map[string]bool
 	if mixed {
@@ -62,8 +57,8 @@ func (d *CompileDriver) processGroups(ct transform.Context[object.Refrence], sco
 	return nil
 }
 
-// ownEntries is every "<group>/<entry>" in scope that carries no id: the entries a
-// hybrid container declares for itself rather than the resources it holds.
+// ownEntries is every "<group>/<entry>" in scope with no id: the entries a
+// hybrid container declares for itself.
 func ownEntries(scope object.Object[object.Refrence], groups []*engine.Node, root *engine.Node) map[string]bool {
 	idField, _ := engine.IdentityOf(root)
 	own := map[string]bool{}
@@ -101,10 +96,8 @@ func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scop
 		return fmt.Errorf("fetching %s failed with %w", groupKey, err)
 	}
 
-	// A container group (its iterator is itself a group holding nested resource
-	// groups — the applications container). Each instance is id-promoted with NO
-	// index (no Resource descriptor), then its
-	// nested resource groups are processed in that instance's scope.
+	// A container group: each instance is id-promoted with no index, then its nested
+	// resource groups are processed in its scope.
 	if iter.Group && len(iter.Children) > 0 {
 		idField, nameField := engine.IdentityOf(d.root)
 		for _, instName := range groupObj.Children() {
@@ -134,11 +127,8 @@ func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scop
 		return nil
 	}
 
-	// A resource group: per-instance attribute projections, then id-promotion,
-	// then (for Resource groups) the name->id index.
-	// WHICH ATTRIBUTE IS THE IDENTITY is the schema's to say (engine.Identity, on the
-	// root): a group whose iterator declares it is keyed by it, and the document's own
-	// name becomes the resource's.
+	// A resource group: per-instance projections, id promotion, then the name->id
+	// index. The identity attribute is the schema's (engine.Identity).
 	idField, nameField := engine.IdentityOf(d.root)
 	promote := idField != "" && hasAttr(iter, idField)
 	for _, instName := range groupObj.Children() {
@@ -161,12 +151,9 @@ func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scop
 			}
 		}
 
-		// A nested resource's own groups (a resource's `caches:`) are processed in
-		// the INSTANCE's object but the ENCLOSING scope's context — deliberately not
-		// forked. A nested group is data belonging to the instance, not a scope: the
-		// instance has already had its per-instance ops, its id promotion and its
-		// index, and names inside the group resolve where the resource was authored.
-		// Forking here would make the resource a scope and break both.
+		// A nested resource's own groups are processed in the instance's object but the
+		// enclosing scope's context, not forked: a nested group is data of the instance,
+		// and names in it resolve where the resource was authored.
 		if iter.Nested {
 			instObj, err := sel.Object()
 			if err != nil {
@@ -224,10 +211,8 @@ func holderOf(sel object.Selector[object.Refrence], a *engine.Attribute) (object
 func (d *CompileDriver) applyRootOps(ct transform.Context[object.Refrence], o object.Object[object.Refrence], attrs []*engine.Attribute) error {
 	for _, a := range attrs {
 		if ve, ok := a.Meta["emitValidation"].(engine.ValidationEmit); ok {
-			// THE SAME READ emitAttrValidations does, through the same helper:
-			// by the PATH the key is, and absent emits nothing. It was a second
-			// copy of the flat lookup, so the project's own region block — which
-			// is nested and optional — failed every compile that omitted it.
+			// The same read emitAttrValidations does, by the path the key is; absent emits
+			// nothing.
 			val, held := attrString(o, a)
 			if !held {
 				continue

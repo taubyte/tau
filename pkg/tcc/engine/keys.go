@@ -6,31 +6,11 @@ import (
 	"strings"
 )
 
-// A KEY MAY NOT CONTAIN "/".
-//
-// The compiled configuration is an OBJECT, and "/" is what separates one level of it
-// from the next — in a register path, in a lowering's `At(path…)`, in every walk over the
-// tree. A key with a slash in it is a key pretending to be a path: it reads as
-// hierarchy everywhere it is printed and is one opaque leaf everywhere it is stored,
-// so a CRDT can only replace it whole and two writers touching different halves of it
-// collide over the same cell.
-//
-// This is the whole reason `Path(...)` exists. Nesting is declared with segments —
-// `Path("execution", "call")` — and the engine builds the levels. A vocabulary that
-// wants `execution` to hold `call` says so with Path and never by spelling a key
-// "execution/call".
-//
-// A KEY IS A VARIABLE NAME, the same rule a resource's name follows — `dead_letter`,
-// not `dead-letter`. Held strictly on the segments of a `Key(...)`, which is what the
-// compiled object is addressed by.
-//
-// A bare string name is held only to the "/" ban. It is an IDENTIFIER — what ShowWhen
-// and KindFrom call the attribute — and it is the compiled key only when nothing else
-// says otherwise.
-//
-// REFUSED AT CONSTRUCTION, loudly, like DefineList's unsupported terms: a schema that
-// cannot express a legal object is a build failure, not a config that compiles into a
-// shape nothing can merge.
+// A key may not contain "/": the compiled configuration is an object and "/"
+// separates its levels, so a slashed key reads as hierarchy but is stored as one
+// leaf a CRDT can only replace whole. Nesting is declared with Path. A Key(...)
+// segment is held to a variable name; a bare string name, an identifier, only
+// to the "/" ban. Refused at construction.
 var keyRegex = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 // mustNotSpellAPath refuses the one character that separates levels of the object.

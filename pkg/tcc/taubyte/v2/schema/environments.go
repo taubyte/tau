@@ -28,16 +28,9 @@ type Environment struct {
 	Of string
 }
 
-// EnvironmentsOf reads the environment table out of a project's own document, without
-// compiling it.
-//
-// A COMPILE NEEDS THE TABLE BEFORE IT CAN READ THE PROJECT, which is why this exists
-// separately: the loader has to know every declared name to tell an override from a
-// typo, and the names are in the document it is about to read. So the table is read
-// first, from the one place it lives, by the one query that reaches it.
-//
-// Cheap on purpose: one document, no schema walk, no lowering. It is called once per
-// compile and once per push by whatever resolves a branch to its deployments.
+// EnvironmentsOf reads the environment table out of a project's own document
+// without compiling it: a compile needs the declared names before it can tell an
+// override from a typo. One document, no schema walk.
 func EnvironmentsOf(fs afero.Fs, path string) ([]Environment, error) {
 	s, err := yaseer.New(yaseer.VirtualFS(fs, path))
 	if err != nil {
@@ -72,12 +65,8 @@ func environmentsIn(q *yaseer.Query, of string) ([]Environment, error) {
 		out = append(out, env)
 	}
 
-	// SORTED, BECAUSE THE SOURCE ORDER IS A GO MAP'S. yaseer's List ranges a
-	// map, so reading the same document twice yields the same set in a
-	// different order — and a deploy that publishes production, then preview,
-	// then production-first next time is one whose output nobody can diff and
-	// whose failures land on a different deployment each run. The document's
-	// own order is not recoverable here, so name order is what there is.
+	// Sorted: yaseer's List ranges a map, and an unstable deployment order cannot be
+	// diffed.
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
@@ -95,16 +84,9 @@ func EnvironmentNames(envs []Environment) []string {
 	return out
 }
 
-// EnvironmentsIn reads the table out of a COMPILED object.
-//
-// THE TABLE SURVIVES THE COMPILE, which is what lets a consumer that holds only
-// what the register published resolve a branch without going back to git. A
-// build triggered by a push to a CODE repository needs exactly that: it knows
-// the project and the branch, and everything else it needs is already in the
-// object the deploy left behind.
-//
-// It takes the object with or without its `object` wrapper, the same way
-// ReachableNames does, because a caller holding one rarely knows which it has.
+// EnvironmentsIn reads the table out of a compiled object, with or without its
+// `object` wrapper, so a consumer holding what the register published can resolve
+// a branch without git.
 func EnvironmentsIn(object map[string]any) []Environment {
 	root := object
 	if inner, ok := object[interp.ProjectKey].(map[string]any); ok {
@@ -118,11 +100,8 @@ func EnvironmentsIn(object map[string]any) []Environment {
 	return environmentsFrom(table, "")
 }
 
-// environmentsFrom is environmentsIn over a decoded map rather than a yaseer
-// query. The two readers are deliberately separate — one reads a document
-// before a compile and one reads what the compile produced, and neither is a
-// special case of the other — but they answer the same shape, in the same
-// order, and the tests hold them to it.
+// environmentsFrom is environmentsIn over a decoded map; the tests hold the two
+// readers to the same shape and order.
 func environmentsFrom(table map[string]any, of string) []Environment {
 	out := make([]Environment, 0, len(table))
 	for name, raw := range table {
@@ -147,19 +126,8 @@ func environmentsFrom(table map[string]any, of string) []Environment {
 	return out
 }
 
-// stringsIn reads a list of strings out of a compiled value, in EITHER of the
-// two shapes a compiled object arrives in.
-//
-// A COMPILE IN THIS PROCESS YIELDS []string; THE SAME OBJECT THROUGH THE
-// REGISTER YIELDS []any, because it went through JSON on the way. This read
-// handled only the second, and returned nil for the first — silently, since a
-// table with no branches and no regions is indistinguishable from one nobody
-// wrote.
-//
-// What that cost: Project.Environments() answered with empty Branches for an
-// in-process compile, so Deployments(branch) matched NOTHING and a push
-// resolved to no deployment at all; and empty Regions, so every consumer
-// reading an environment's allowance read no allowance.
+// stringsIn reads a string list in either shape a compiled object arrives in:
+// []string from an in-process compile, []any after the register's JSON.
 func stringsIn(v any) []string {
 	switch list := v.(type) {
 	case []string:
@@ -177,20 +145,8 @@ func stringsIn(v any) []string {
 }
 
 // Deployments is every deployment a pushed branch feeds, shadows included, in
-// declaration order.
-//
-// THIS IS THE FUNCTION EnvironmentsOf's DOC PROMISES — "called once per push by
-// whatever resolves a branch to its deployments" — and until it existed a push
-// had nowhere to send its build and a publish had to be told an environment by
-// hand.
-//
-// ONE BRANCH FEEDS SEVERAL. `main` feeds production AND the `ab` shadow written
-// inside it, because a shadow is its own release over its parent's state; a
-// caller that took the first match would silently stop deploying one of them.
-//
-// A project that declares no table declares one deployment, and this returns
-// nothing for it: there is no name to return, and inventing one here would be
-// this package naming a deployment the author did not.
+// declaration order. A project with no table returns nothing rather than an
+// invented name.
 func Deployments(envs []Environment, branch string) []Environment {
 	var out []Environment
 	for _, e := range envs {
@@ -224,18 +180,10 @@ func matchesAny(globs []string, branch string) bool {
 	return false
 }
 
-// MatchBranch is the glob a `branches` entry is.
-//
-// `*` CROSSES `/`, AND THAT IS THE WHOLE REASON THIS IS NOT path.Match. The
-// fixture's preview environment is `branches: ["*"]` and means every branch,
-// including `feature/checkout` — under path.Match's separator-aware `*` it
-// would match none of the branches anybody actually pushes, and `release/*`
-// would stop at `release/1.0` while missing `release/1/0`. Git's own refspec
-// globbing crosses separators for the same reason.
-//
-// `?` is one character. Nothing else is special, and nothing needs escaping:
-// git-check-ref-format already forbids `*` and `?` in a branch name, so a glob
-// character in a `branches` entry is always a glob character.
+// MatchBranch is the glob a `branches` entry is. `*` crosses `/` (unlike
+// path.Match), so `["*"]` matches `feature/checkout`; `?` is one character.
+// git-check-ref-format forbids `*` and `?` in branch names, so nothing needs
+// escaping.
 func MatchBranch(glob, branch string) bool {
 	if glob == "" {
 		return false

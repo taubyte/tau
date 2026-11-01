@@ -12,16 +12,14 @@ import (
 )
 
 func TestDump_WithRootConfigOnly(t *testing.T) {
-	// Create in-memory filesystem
 	memFs := afero.NewMemMapFs()
 
-	// Create schema with root attributes
 	schema := &schemaDef{
 		root: &Node{
 			Group: true,
-			Leaf:  "config", // the schema says it now; the engine has no default
+			Leaf:  "config",
 
-			Match: nil, // Root node
+			Match: nil,
 			Attributes: []*Attribute{
 				{Name: "id", Type: TypeString, Required: true},
 				{Name: "name", Type: TypeString},
@@ -30,26 +28,21 @@ func TestDump_WithRootConfigOnly(t *testing.T) {
 		},
 	}
 
-	// Create engine
 	eng, err := New(schema, yaseer.VirtualFS(memFs, "/"))
 	assert.NilError(t, err)
 
-	// Create object with data
 	obj := object.New[object.Refrence]()
 	obj.Set("id", "project-123")
 	obj.Set("name", "Test Project")
 	obj.Set("description", "A test project")
 
-	// Dump
 	err = eng.Dump(obj)
 	assert.NilError(t, err)
 
-	// Verify config.yaml was created
 	exists, err := afero.Exists(memFs, "/config.yaml")
 	assert.NilError(t, err)
 	assert.Assert(t, exists, "config.yaml should exist")
 
-	// Read and verify content
 	content, err := afero.ReadFile(memFs, "/config.yaml")
 	assert.NilError(t, err)
 	assert.Assert(t, len(content) > 0, "config.yaml should have content")
@@ -58,11 +51,10 @@ func TestDump_WithRootConfigOnly(t *testing.T) {
 func TestDump_WithNestedResources(t *testing.T) {
 	memFs := afero.NewMemMapFs()
 
-	// Create schema with root + functions group
 	schema := &schemaDef{
 		root: &Node{
 			Group: true,
-			Leaf:  "config", // the schema says it now; the engine has no default
+			Leaf:  "config",
 
 			Match: nil,
 			Attributes: []*Attribute{
@@ -90,11 +82,9 @@ func TestDump_WithNestedResources(t *testing.T) {
 	eng, err := New(schema, yaseer.VirtualFS(memFs, "/"))
 	assert.NilError(t, err)
 
-	// Create object
 	obj := object.New[object.Refrence]()
 	obj.Set("id", "project-123")
 
-	// Add functions
 	funcsObj := object.New[object.Refrence]()
 	func1 := object.New[object.Refrence]()
 	func1.Set("name", "myFunction")
@@ -104,11 +94,9 @@ func TestDump_WithNestedResources(t *testing.T) {
 	err = obj.Child("functions").Add(funcsObj)
 	assert.NilError(t, err)
 
-	// Dump
 	err = eng.Dump(obj)
 	assert.NilError(t, err)
 
-	// Verify function file was created
 	exists, err := afero.Exists(memFs, "/functions/myFunction.yaml")
 	assert.NilError(t, err)
 	assert.Assert(t, exists, "functions/myFunction.yaml should exist")
@@ -120,7 +108,7 @@ func TestDump_WithMissingRequiredAttribute(t *testing.T) {
 	schema := &schemaDef{
 		root: &Node{
 			Group: true,
-			Leaf:  "config", // the schema says it now; the engine has no default
+			Leaf:  "config",
 
 			Match: nil,
 			Attributes: []*Attribute{
@@ -135,7 +123,6 @@ func TestDump_WithMissingRequiredAttribute(t *testing.T) {
 
 	obj := object.New[object.Refrence]()
 	obj.Set("id", "project-123")
-	// name is missing
 
 	err = eng.Dump(obj)
 	assert.ErrorContains(t, err, "required attribute 'name' is missing")
@@ -147,7 +134,7 @@ func TestDump_WithValidationError(t *testing.T) {
 	schema := &schemaDef{
 		root: &Node{
 			Group: true,
-			Leaf:  "config", // the schema says it now; the engine has no default
+			Leaf:  "config",
 
 			Match: nil,
 			Attributes: []*Attribute{
@@ -183,7 +170,7 @@ func TestDump_SkipsDefaultAttributeValues(t *testing.T) {
 	schema := &schemaDef{
 		root: &Node{
 			Group: true,
-			Leaf:  "config", // the schema says it now; the engine has no default
+			Leaf:  "config",
 
 			Match: nil,
 			Attributes: []*Attribute{
@@ -203,15 +190,11 @@ func TestDump_SkipsDefaultAttributeValues(t *testing.T) {
 	err = eng.Dump(obj)
 	assert.NilError(t, err)
 
-	// Read config and check that enabled is not in there
 	content, err := afero.ReadFile(memFs, "/config.yaml")
 	assert.NilError(t, err)
-	// The file should contain id but not enabled
 	assert.Assert(t, len(content) > 0)
 }
 
-// A DEFAULT SCOPED TO A BRANCH is left out only where that branch is taken: there it
-// is filled in again on the next load, and anywhere else it is the author's value.
 func TestDump_KeepsADefaultItsBranchDoesNotTake(t *testing.T) {
 	for _, tc := range []struct {
 		tier    string
@@ -257,7 +240,7 @@ func TestDump_WithEmptyGroup(t *testing.T) {
 	schema := &schemaDef{
 		root: &Node{
 			Group: true,
-			Leaf:  "config", // the schema says it now; the engine has no default
+			Leaf:  "config",
 
 			Match: nil,
 			Attributes: []*Attribute{
@@ -286,12 +269,10 @@ func TestDump_WithEmptyGroup(t *testing.T) {
 
 	obj := object.New[object.Refrence]()
 	obj.Set("id", "test")
-	// No functions group - should be fine
 
 	err = eng.Dump(obj)
 	assert.NilError(t, err)
 
-	// Only config.yaml should exist
 	exists, err := afero.Exists(memFs, "/config.yaml")
 	assert.NilError(t, err)
 	assert.Assert(t, exists)
@@ -300,11 +281,10 @@ func TestDump_WithEmptyGroup(t *testing.T) {
 func TestDump_WithCustomPath(t *testing.T) {
 	memFs := afero.NewMemMapFs()
 
-	// Attribute with custom path
 	schema := &schemaDef{
 		root: &Node{
 			Group: true,
-			Leaf:  "config", // the schema says it now; the engine has no default
+			Leaf:  "config",
 
 			Match: nil,
 			Attributes: []*Attribute{
@@ -328,7 +308,6 @@ func TestDump_WithCustomPath(t *testing.T) {
 	err = eng.Dump(obj)
 	assert.NilError(t, err)
 
-	// Verify config was created
 	content, err := afero.ReadFile(memFs, "/config.yaml")
 	assert.NilError(t, err)
 	assert.Assert(t, len(content) > 0)
@@ -353,7 +332,6 @@ func TestWriteValueToPath_WithSimpleString(t *testing.T) {
 	err = seer.Sync()
 	assert.NilError(t, err)
 
-	// Verify file exists
 	exists, err := afero.Exists(memFs, "/test.yaml")
 	assert.NilError(t, err)
 	assert.Assert(t, exists)
@@ -366,7 +344,6 @@ func TestWriteValueToPath_WithEitherAndKey(t *testing.T) {
 
 	query := seer.Query().Get("test").Document()
 
-	// Key attribute with Either() path
 	attr := &Attribute{
 		Name:     "source",
 		Type:     TypeString,
@@ -445,9 +422,6 @@ func TestWriteValueToPath_WithEitherNoMatch(t *testing.T) {
 	assert.ErrorContains(t, err, "does not match Either() options")
 }
 
-// The branch a non-Key attribute is written into comes from the Captures() attribute that
-// captured the switch — read off the schema, not from a field conventionally named
-// `type`.
 func TestBranchKeyValue_FromTheKeyAttribute(t *testing.T) {
 	n := &Node{Attributes: []*Attribute{
 		String(Key("engine", "kind"), Path("engine", Either("distributed", "postgres")), Captures()),
@@ -470,10 +444,6 @@ func TestBranchKeyValue_FromTheKeyAttribute(t *testing.T) {
 	assert.Equal(t, got, "generated")
 }
 
-// A SWITCH IS DECIDED BY Captures(), and by nothing else. There used to be a fallback to a
-// field literally called `type` — one vocabulary's word, in the layer that must not have
-// one, on the path that writes config back out. A vocabulary whose `type` means something
-// else would have taken the wrong branch and said nothing.
 func TestBranchKeyValue_NeedsAKey(t *testing.T) {
 	obj := object.New[object.Refrence]()
 	obj.Set("type", "http")
@@ -504,7 +474,6 @@ func TestDumpChild_WithNonGroupError(t *testing.T) {
 	instance := eng.(*instance)
 	query := instance.seer.Query()
 
-	// Create child that is not a group
 	child := &Node{
 		Group: false,
 		Match: "functions",
@@ -532,7 +501,6 @@ func TestDumpChild_WithUnsupportedMatchType(t *testing.T) {
 	instance := eng.(*instance)
 	query := instance.seer.Query()
 
-	// Child with unsupported match type (integer)
 	child := &Node{
 		Group: true,
 		Match: 12345, // Invalid match type
@@ -547,7 +515,6 @@ func TestDumpChild_WithUnsupportedMatchType(t *testing.T) {
 func TestDump_WithApplications(t *testing.T) {
 	memFs := afero.NewMemMapFs()
 
-	// Schema with applications (DefineIterGroup)
 	appResources := []*Node{
 		{
 			Group: true,
@@ -567,7 +534,7 @@ func TestDump_WithApplications(t *testing.T) {
 	schema := &schemaDef{
 		root: &Node{
 			Group: true,
-			Leaf:  "config", // the schema says it now; the engine has no default
+			Leaf:  "config",
 
 			Match: nil,
 			Attributes: []*Attribute{
@@ -597,7 +564,6 @@ func TestDump_WithApplications(t *testing.T) {
 	eng, err := New(schema, yaseer.VirtualFS(memFs, "/"))
 	assert.NilError(t, err)
 
-	// Build object with applications
 	obj := object.New[object.Refrence]()
 	obj.Set("id", "project-123")
 
@@ -623,12 +589,10 @@ func TestDump_WithApplications(t *testing.T) {
 	err = eng.Dump(obj)
 	assert.NilError(t, err)
 
-	// Verify application config
 	exists, err := afero.Exists(memFs, "/applications/MyApp/config.yaml")
 	assert.NilError(t, err)
 	assert.Assert(t, exists, "applications/MyApp/config.yaml should exist")
 
-	// Verify application function
 	exists, err = afero.Exists(memFs, "/applications/MyApp/functions/appFunc.yaml")
 	assert.NilError(t, err)
 	assert.Assert(t, exists, "applications/MyApp/functions/appFunc.yaml should exist")
@@ -640,7 +604,7 @@ func TestDump_WithMultipleResources(t *testing.T) {
 	schema := &schemaDef{
 		root: &Node{
 			Group: true,
-			Leaf:  "config", // the schema says it now; the engine has no default
+			Leaf:  "config",
 
 			Match: nil,
 			Attributes: []*Attribute{
@@ -683,7 +647,6 @@ func TestDump_WithMultipleResources(t *testing.T) {
 	err = eng.Dump(obj)
 	assert.NilError(t, err)
 
-	// Verify all function files
 	for _, name := range []string{"func1", "func2", "func3"} {
 		exists, err := afero.Exists(memFs, "/functions/"+name+".yaml")
 		assert.NilError(t, err)

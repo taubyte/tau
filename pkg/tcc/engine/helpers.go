@@ -10,20 +10,16 @@ import (
 // with a plain string, as it always was.
 type AKey []string
 
-// Key declares the key an attribute compiles to, in segments.
+// Key declares the key an attribute compiles to, in segments:
 //
 //	String(Key("execution", "call"))
 //
-// The compiled configuration is an object and "/" separates its levels, so the key is
-// SEGMENTS rather than a string spelling them — a key may never contain "/" (keys.go).
-//
-// Where the value is AUTHORED is the same place unless the vocabulary says otherwise:
-// `Path(...)` is declared only when the two differ.
+// A key may never contain "/" (keys.go). It is authored at the same place unless
+// Path(...) says otherwise.
 func Key(segments ...string) AKey { return AKey(segments) }
 
-// keyOf normalises either spelling of an attribute's key.
-// fieldName is how one term names another attribute: a plain key, or the segments of a
-// nested one joined. The engine writes that "/"; a vocabulary never does.
+// FieldName is how one term names another attribute: a plain key, or a nested
+// one's segments joined. The engine writes that "/"; a vocabulary never does.
 func FieldName[T string | AKey](field T) string {
 	switch f := any(field).(type) {
 	case string:
@@ -66,9 +62,8 @@ func defAttr[T string | AKey](name T, _type Type, options []Option) *Attribute {
 		opt(a)
 	}
 
-	// WHERE IT IS AUTHORED IS WHERE IT COMPILES, unless the vocabulary says otherwise.
-	// Path(...) is declared only when the two differ. Resolved here rather than at load because the strict
-	// key check reads Path before any document is opened.
+	// Authored where it compiles unless Path says otherwise. Resolved here because
+	// the strict key check reads Path before any document is opened.
 	if len(a.Path) == 0 {
 		a.Path = make([]StringMatch, 0, len(segments)+1)
 		if len(segments) == 0 {
@@ -155,12 +150,9 @@ func DefineIter(attrs []*Attribute, extra ...any) *Node {
 func Nested(children ...*Node) NodeOption {
 	return func(n *Node) {
 		n.Nested = true
-		// Keep which children belong to the instance's OWN document on the child too.
-		// Most resources have only that kind of child, so the distinction used to be
-		// implicit in the parent being a leaf resource. A resource that is also a
-		// container has both: nested data in its leaf document and resource groups in
-		// directories below it. Marking the former lets the shared loader and dumper
-		// route both without knowing what any group is called.
+		// Marking which children belong to the instance's own document lets the loader
+		// and dumper route a resource that is also a container: nested data in its leaf
+		// document, resource groups in directories below it.
 		for _, child := range children {
 			child.Nested = true
 		}
@@ -168,8 +160,8 @@ func Nested(children ...*Node) NodeOption {
 	}
 }
 
-// DefineList declares an ORDERED LIST OF OBJECTS: a group authored as a YAML
-// sequence, each element carrying the given attributes.
+// DefineList declares an ordered list of objects, a group authored as a YAML
+// sequence:
 //
 //	DefineList("transformers", []*Attribute{
 //	    String("namespace"), String("name", Required()),
@@ -180,13 +172,8 @@ func Nested(children ...*Node) NodeOption {
 //	    - namespace: /shop
 //	      name: tier_header
 //
-// Reach for it when the entries are a PIPELINE — when running them in a different
-// order means something different. A name-keyed group (DefineGroup + DefineIter) is
-// the right shape when entries are addressed rather than sequenced, and it is the
-// better default: a name is a handle, an index is not.
-//
-// The list is a group plus its iterator, the same two nodes any other group is; the
-// marker only says where the keys come from.
+// For a pipeline, where order means something. A name-keyed group is the better
+// default: a name is a handle, an index is not.
 func DefineList(name string, attrs []*Attribute, extra ...any) *Node {
 	mustBeKey("list", name)
 	for _, a := range attrs {
@@ -204,25 +191,16 @@ func DefineList(name string, attrs []*Attribute, extra ...any) *Node {
 	}
 }
 
-// listUnsupported names the terms whose work happens ABOVE the engine — the wire
-// projections and ref resolution the interpreter runs per object instance. A list
-// element is one ordered VALUE, not an instance, so those passes never see it:
-// a Duration inside a list would stay "50ms" where every other Duration is
-// nanoseconds, and a Ref would stay a name where every other ref is an id.
-//
-// Everything the ENGINE does works normally inside an element — type, Required,
-// Default, Validator, Path, InSet, unknown-key rejection, per-field locations.
-// The line is exactly the layer boundary, so it is drawn from the Meta keys the
-// interpreter dispatches on rather than from a hand-kept list of types.
+// listUnsupported names the terms whose work happens above the engine, in the
+// per-instance passes a list element (one ordered value) never gets: a Duration
+// would stay "50ms" and a Ref a name. Drawn from the Meta keys the interpreter
+// dispatches on.
 func listUnsupported(a *Attribute) (string, bool) {
 	for _, term := range []string{"scalar", "ref"} {
 		if _, ok := a.Meta[term]; !ok {
 			continue
 		}
-		// A ByName reference is the exception, and only because nothing has to run for
-		// it: it declares what the field points at and keeps the authored name, so the
-		// resolver skips it wherever it appears. The others all need the per-instance
-		// pass a list element never gets.
+		// A ByName reference needs no pass: the resolver skips it wherever it appears.
 		if term == "ref" {
 			if spec, ok := a.Meta["ref"].(RefSpec); ok && spec.ByName {
 				continue
@@ -242,20 +220,15 @@ func DefineIterGroup(attrs []*Attribute, children ...*Node) *Node {
 	}
 }
 
-// With applies node options to an already-built node and returns it, for the
-// ctors that take only children (DefineGroup / DefineIterGroup) and so can't
-// take options inline. Generation-only metadata; no runtime effect.
 // Leaf names the document this group's instances keep their own fields in.
 func Leaf(name string) NodeOption {
 	mustBeKey("leaf", name)
 	return func(n *Node) { n.Leaf = name }
 }
 
-// LeafOf is the document a group's instances keep their own fields in, as the schema
-// declares it with Leaf(). Empty when it declares none — which used to fall back to
-// "config", a layout rule invented by the thing whose whole job is to carry the one the
-// schema states. Exported because a consumer mapping an address to a file — a session, a
-// CLI, a UI — must not re-derive the convention.
+// LeafOf is the document a group's instances keep their own fields in, as Leaf()
+// declares, or "". Exported so a consumer mapping an address to a file does not
+// re-derive the convention.
 func LeafOf(n *Node) string {
 	if n == nil {
 		return ""
@@ -270,14 +243,9 @@ func (n *Node) With(opts ...NodeOption) *Node {
 	return n
 }
 
-// AnswersAt declares the block where a kind says WHAT NAME IT ANSWERS ON — the
-// generated one, or a label in a zone the project owns. Same arrangement as HandsTo:
-// the prefix is declared, the shape under it is the vocabulary's convention
-// (`<prefix>/kind` is the switch, `<prefix>/name` the label, `<prefix>/zone` the zone it
-// is in), and no consumer holds the spelling.
-//
-// It is what lets a drawing put the internet in front of the right resources without a
-// list of which kinds have names.
+// AnswersAt declares the block where a kind says what name it answers on:
+// `<prefix>/kind` the switch, `<prefix>/name` the label, `<prefix>/zone` the
+// zone. It lets a drawing put the internet in front of the right resources.
 func AnswersAt(prefix string) NodeOption { return GroupAnnotate("answersAt", prefix) }
 
 // AnswersAtOf reports the naming block of a kind, or "".

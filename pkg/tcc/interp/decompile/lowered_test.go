@@ -148,11 +148,9 @@ func run(t *testing.T, obj Object, keep bool) Object {
 	return out
 }
 
-// Half way: what somebody wrote, and only that.
 func TestAuthoredOnly_DropsWhatNobodyWrote(t *testing.T) {
 	out := run(t, compiled(t), false)
 
-	// The envelope and both siblings are behind us: what is left is the project.
 	gone(t, out, "object")
 	gone(t, out, interp.LoweredKey)
 	gone(t, out, "indexes")
@@ -183,8 +181,6 @@ func TestAuthoredOnly_DropsWhatNobodyWrote(t *testing.T) {
 	gone(t, out, "namespace", nsEu, "function", fnEu, "queue")
 }
 
-// All the way: the same object the compiler produced, minus the record, which is not
-// config in either depth.
 func TestAuthoredOnly_WithAsLoweredKeepsEverything(t *testing.T) {
 	out := run(t, compiled(t), true)
 
@@ -201,8 +197,6 @@ func TestAuthoredOnly_WithAsLoweredKeepsEverything(t *testing.T) {
 	at(t, out, "namespace", nsEu, "function", fnEu, "queue", "local_reserve")
 }
 
-// An object that carries a record without an envelope — nothing chrooted it — still must
-// not have the record written out as though it were a group.
 func TestAuthoredOnly_DropsTheRecordWithoutAnEnvelope(t *testing.T) {
 	for _, keep := range []bool{false, true} {
 		root := object.New[object.Refrence]()
@@ -234,8 +228,6 @@ func TestLoweredOf(t *testing.T) {
 	assert.Equal(t, len(loweredOf(object.New[object.Refrence]()).Resources), 0)
 }
 
-// The chroot-unwrap is gated on the schema declaring a sibling to make room for, and
-// lowering is one — a v2 vocabulary that indexes nothing is still chrooted.
 func TestPipe_UnwrapGate(t *testing.T) {
 	id := []*engine.Attribute{engine.String("id", engine.Required())}
 

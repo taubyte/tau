@@ -11,7 +11,6 @@ import (
 )
 
 func TestNode_HasRequiredAttributes(t *testing.T) {
-	// Use case: Testing hasRequiredAttributes
 	node1 := &Node{
 		Attributes: []*Attribute{
 			{Name: "attr1", Required: true},
@@ -33,7 +32,6 @@ func TestNode_HasRequiredAttributes(t *testing.T) {
 }
 
 func TestInferPathQuery_StringPath(t *testing.T) {
-	// Use case: Testing inferPathQuery with string path
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/test/path1/path2", 0755)
 
@@ -53,7 +51,6 @@ func TestInferPathQuery_StringPath(t *testing.T) {
 }
 
 func TestInferPathQuery_StringMatcher(t *testing.T) {
-	// One branch present: it resolves, and reports which one.
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/test/match2", 0755)
 
@@ -67,12 +64,6 @@ func TestInferPathQuery_StringMatcher(t *testing.T) {
 	assert.DeepEqual(t, resolved, []string{"match2"})
 }
 
-// Two branches of the same Either present is ambiguous and must be rejected,
-// not resolved. Document keys arrive in unspecified order (yaseer mapKeys), so
-// "take the first match" would pick differently between runs — and differently
-// from any consumer that enumerates the branches statically, which is exactly
-// how a required field can be reported clean by one path and rejected by the
-// other.
 func TestInferPathQuery_AmbiguousMatchIsRejected(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/test/match1", 0755)
@@ -88,7 +79,6 @@ func TestInferPathQuery_AmbiguousMatchIsRejected(t *testing.T) {
 }
 
 func TestInferPathQuery_StringMatcherNotFound(t *testing.T) {
-	// Use case: Testing inferPathQuery when StringMatcher finds no match
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/test/other", 0755)
 
@@ -96,7 +86,7 @@ func TestInferPathQuery_StringMatcherNotFound(t *testing.T) {
 	assert.NilError(t, err)
 
 	query := sr.Query()
-	matcher := Either("match1", "match2") // Won't match "other"
+	matcher := Either("match1", "match2")
 
 	path := []StringMatch{matcher}
 	_, _, err = inferPathQuery(path, query)
@@ -105,7 +95,6 @@ func TestInferPathQuery_StringMatcherNotFound(t *testing.T) {
 }
 
 func TestGetValue_AllTypes(t *testing.T) {
-	// Use case: Testing getValue with all supported types
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/test/type1/it1", 0755)
 	afero.WriteFile(fs, "/test/type1/it1/name.yaml", []byte("it1"), 0644)
@@ -115,32 +104,27 @@ func TestGetValue_AllTypes(t *testing.T) {
 	sr, err := yaseer.New(yaseer.VirtualFS(fs, "/test"))
 	assert.NilError(t, err)
 
-	// Test String
 	query := sr.Query().Get("type1").Get("it1").Get("name")
 	val, err := getValue(query, &Attribute{Type: TypeString})
 	assert.NilError(t, err)
 	assert.Equal(t, val, "it1")
 
-	// Test Bool (nested under question)
 	query = sr.Query().Get("type1").Get("it1").Get("question").Get("really")
 	val, err = getValue(query, &Attribute{Type: TypeBool})
 	assert.NilError(t, err)
 	assert.Equal(t, val, true)
 
-	// Test Int
 	query = sr.Query().Get("type1").Get("it1").Get("count")
 	val, err = getValue(query, &Attribute{Type: TypeInt})
 	assert.NilError(t, err)
 	assert.Equal(t, val, 1)
 
-	// Test Float
 	afero.WriteFile(fs, "/test/type1/it1/float.yaml", []byte("3.14"), 0644)
 	query = sr.Query().Get("type1").Get("it1").Get("float")
 	val, err = getValue(query, &Attribute{Type: TypeFloat})
 	assert.NilError(t, err)
 	assert.Equal(t, val, 3.14)
 
-	// Test StringSlice
 	afero.WriteFile(fs, "/test/type1/it1/slice.yaml", []byte("- item1\n- item2"), 0644)
 	query = sr.Query().Get("type1").Get("it1").Get("slice")
 	val, err = getValue(query, &Attribute{Type: TypeStringSlice})
@@ -152,7 +136,6 @@ func TestGetValue_AllTypes(t *testing.T) {
 }
 
 func TestGetValue_UnsupportedType(t *testing.T) {
-	// Use case: Testing getValue with unsupported type
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/test/type1/it1", 0755)
 	afero.WriteFile(fs, "/test/type1/it1/name.yaml", []byte("it1"), 0644)
@@ -161,13 +144,12 @@ func TestGetValue_UnsupportedType(t *testing.T) {
 	assert.NilError(t, err)
 
 	query := sr.Query().Get("type1").Get("it1").Get("name")
-	_, err = getValue(query, &Attribute{Type: Type(999)}) // Invalid type
+	_, err = getValue(query, &Attribute{Type: Type(999)})
 
 	assert.ErrorIs(t, err, errors.ErrUnsupported)
 }
 
 func TestSetAttributes_KeyAttribute(t *testing.T) {
-	// Use case: Testing setAttributes with Key attribute
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/test/keyname", 0755)
 
@@ -195,23 +177,19 @@ func TestSetAttributes_KeyAttribute(t *testing.T) {
 }
 
 func TestSetAttributes_KeyAttributeEmpty(t *testing.T) {
-	// Use case: Testing setAttributes with key attribute where path resolves but last_match is empty
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/test/type1", 0755)
 
 	sr, err := yaseer.New(yaseer.VirtualFS(fs, "/test"))
 	assert.NilError(t, err)
 
-	// Create a scenario where path query succeeds but returns empty string
-	// This would require a custom StringMatcher that matches but returns empty
-	// For now, we'll test that key attributes work correctly with valid paths
 	node := &Node{
 		Attributes: []*Attribute{
 			{
 				Name:     "keyAttr",
 				Type:     TypeString,
 				Captures: true,
-				Path:     []StringMatch{"type1"}, // Valid path
+				Path:     []StringMatch{"type1"},
 			},
 		},
 	}
@@ -221,13 +199,11 @@ func TestSetAttributes_KeyAttributeEmpty(t *testing.T) {
 
 	err = setAttributes(node, obj, query, walk{})
 
-	// Should succeed and set the key
 	assert.NilError(t, err)
 	assert.Equal(t, obj.Get("keyAttr"), object.Refrence("type1"))
 }
 
 func TestSetAttributes_WithDefault(t *testing.T) {
-	// Use case: Testing setAttributes with default value when value not found
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/test", 0755)
 
@@ -254,7 +230,6 @@ func TestSetAttributes_WithDefault(t *testing.T) {
 }
 
 func TestSetAttributes_WithValidator(t *testing.T) {
-	// Use case: Testing setAttributes with validator
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/test/type1/it1", 0755)
 	afero.WriteFile(fs, "/test/type1/it1/name.yaml", []byte("valid"), 0644)
@@ -290,7 +265,6 @@ func TestSetAttributes_WithValidator(t *testing.T) {
 }
 
 func TestSetAttributes_RequiredError(t *testing.T) {
-	// Use case: Testing setAttributes with required attribute that fails
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/test", 0755)
 
@@ -312,11 +286,10 @@ func TestSetAttributes_RequiredError(t *testing.T) {
 
 	err = setAttributes(node, obj, query, walk{})
 
-	assert.ErrorContains(t, err, "") // Should return error for required attribute
+	assert.ErrorContains(t, err, "")
 }
 
 func TestSetAttributes_NoAttributes(t *testing.T) {
-	// Use case: Testing setAttributes with no attributes
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/test", 0755)
 
@@ -336,7 +309,6 @@ func TestSetAttributes_NoAttributes(t *testing.T) {
 }
 
 func TestSetAttributes_NoPathUsesName(t *testing.T) {
-	// Use case: Testing setAttributes when Path is empty, uses Name
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/test/type1/it1", 0755)
 	afero.WriteFile(fs, "/test/type1/it1/name.yaml", []byte("it1"), 0644)
@@ -349,7 +321,6 @@ func TestSetAttributes_NoPathUsesName(t *testing.T) {
 			{
 				Name: "name",
 				Type: TypeString,
-				// No Path specified - will use "name"
 			},
 		},
 	}

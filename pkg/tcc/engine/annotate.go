@@ -1,8 +1,7 @@
 package engine
 
-// Annotate attaches opaque metadata to an attribute. The engine stores it and
-// never interprets it — only code generators (and other out-of-band tooling)
-// read it. This is the generic hook that domain-specific vocabulary is built on.
+// Annotate attaches opaque metadata to an attribute, read only by code
+// generators and other tooling; the engine never interprets it.
 func Annotate(key string, val any) Option {
 	return func(a *Attribute) {
 		if a.Meta == nil {
@@ -12,18 +11,10 @@ func Annotate(key string, val any) Option {
 	}
 }
 
-// Duration and Bytes are String attributes tagged with a ScalarSpec — the codec
-// (authored "20s"/"32GB" <-> typed wire value) and the Go type a generator emits.
-// The engine itself treats them exactly as strings; the ScalarSpec is inert data
-// the driver (Parse/Format) and tcc-gen (GoType) read, so each scalar's meaning
-// lives in one place instead of a switch in every consumer.
-// durationPattern mirrors time.ParseDuration's own grammar (a signed sequence of
-// decimal numbers, each with an optional fraction and a unit — ns/us/µs/ms/s/m/h —
-// or the bare "0"), so a JSON Schema validator can reject the same malformed
-// strings the load-time durationValidator does, without pulling in a registered
-// "duration" FORMAT keyword — that name is ISO-8601 ("P3Y6M4DT12H30M5S"), a
-// different grammar entirely, and a validator that enforces known formats would
-// reject every valid tau duration under that name.
+// Duration and Bytes are String attributes tagged with a ScalarSpec, read by the
+// driver and tcc-gen; the engine treats them as strings. durationPattern
+// mirrors time.ParseDuration's grammar, so a JSON Schema validator rejects what
+// the load-time validator does; the "duration" format keyword is ISO-8601.
 const durationPattern = `^[-+]?(([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+|0)$`
 
 func Duration[T string | AKey](name T, opts ...Option) *Attribute {
@@ -41,12 +32,9 @@ func Bytes[T string | AKey](name T, opts ...Option) *Attribute {
 	)...)
 }
 
-// Doc documents an attribute for schema export: title is the human display name
-// (how a UI/CLI titles the field, when the raw name reads poorly — id -> "ID",
-// ttl -> "Time-To-Live"), desc the longer description. They become JSON Schema
-// `title` and `description`. Either may be "" to omit it. Documentation-only:
-// the engine and compiler ignore both. Distinct from the `description` CONFIG
-// attribute some resources declare — this documents the field; that one IS a field.
+// Doc documents an attribute for schema export, as JSON Schema title and
+// description; either may be "". Documentation only, and unrelated to a
+// resource's description field.
 func Doc(title, desc string) Option {
 	return func(a *Attribute) {
 		if a.Meta == nil {
@@ -67,12 +55,9 @@ func GroupDoc(text string) NodeOption {
 	return GroupAnnotate("doc", text)
 }
 
-// Icon is a SEMANTIC icon hint for a resource group — "bolt", "database",
-// "globe" — surfaced on its schema object so a UI/CLI picks a glyph from the
-// DSL instead of keeping its own kind->icon table (three of them, in the web
-// console's case). Deliberately a neutral key, not an asset path or an icon-set
-// class: which library draws it stays the consumer's business, and a consumer
-// that doesn't know the key just falls back to its default. Presentation-only.
+// Icon is a semantic icon hint for a resource group ("bolt", "database"), so a
+// UI picks a glyph from the DSL; which icon set draws it is the consumer's.
+// Presentation only.
 func Icon(name string) NodeOption {
 	return GroupAnnotate("icon", name)
 }
@@ -92,36 +77,22 @@ func ShowWhen[T string | AKey](field T, in ...string) Option {
 	return Annotate("showWhen", ConditionSpec{Field: FieldName(field), In: in})
 }
 
-// RequiredWhen makes a field required only when a sibling attribute holds one of
-// the given values — a function's pubsub channel matters when its trigger type
-// is pubsub and is meaningless otherwise, so requiring it unconditionally would
-// reject every http function. Unlike ShowWhen this is NOT presentation: it is
-// enforced at load exactly like Required(), and reported by partial validation.
-//
-// Deliberately separate from ShowWhen. A field can be shown and optional (a
-// timeout), so "required" cannot be inferred from "visible".
+// RequiredWhen makes a field required only when a sibling attribute holds one
+// of in. Unlike ShowWhen it is enforced at load like Required, and reported by
+// partial validation: a field can be visible and optional.
 func RequiredWhen[T string | AKey](field T, in ...string) Option {
 	return Annotate("requiredWhen", ConditionSpec{Field: FieldName(field), In: in})
 }
 
-// DefaultWhen scopes a default to a branch: the value is materialised only when the
-// sibling discriminator holds one of these values, and the attribute is left absent
-// otherwise.
-//
-// IT EXISTS FOR DISCRIMINATED KINDS. A kind whose `type` selects a block — `database`,
-// `storage`, `sync` — has per-type attributes, and an unconditional default on one of
-// them is written into every resource of every OTHER type: a log would carry a queue's
-// visibility timeout, which invents a branch its author never took and makes the type
-// ambiguous. See defaultHere.
+// DefaultWhen materialises a default only when the sibling discriminator holds
+// one of in. For discriminated kinds: an unconditional default on a per-type
+// attribute would be written into every other type's resources.
 func DefaultWhen[T string | AKey](field T, in ...string) Option {
 	return Annotate("defaultWhen", ConditionSpec{Field: FieldName(field), In: in})
 }
 
-// SectionSpec declares a human-facing section for a resource's fields — how a UI
-// or CLI groups them for display. It is presentation-only (no compile effect) and
-// does NOT have to align with the authored nesting: a field under one Path can sit
-// in a section with a field from another. Membership is explicit (see InSection),
-// never derived from Path. Title is the short heading; Doc the longer blurb.
+// SectionSpec is a display section for a resource's fields, presentation only
+// and independent of Path; membership is explicit (InSection).
 type SectionSpec struct {
 	ID    string
 	Title string
@@ -183,11 +154,8 @@ func GroupAnnotate(key string, val any) NodeOption {
 	}
 }
 
-// Capability is an opaque object-addressing tag. The engine requires only that it
-// name itself; the meaning of each value (e.g. "wasm" -> WasmModulePath) lives
-// entirely in the code generator. It is an interface rather than a string alias so
-// callers pass typed capability values, not arbitrary strings, and so richer
-// behaviour can be added later without touching the engine.
+// Capability is an opaque object-addressing tag whose meaning lives in the code
+// generator; an interface so callers pass typed values.
 type Capability interface {
 	String() string
 }
@@ -205,32 +173,17 @@ func Singular(goName string) NodeOption {
 type RefSpec struct {
 	Group string
 
-	// Inbound reverses the DIRECTION of the relationship. A reference is normally
-	// declared by the thing that depends on the target — a function names the module it
-	// is built from, and the arrow runs function -> module. Some run the other way: a
-	// gateway names the ZONE it answers in, and the zone is what answers FOR the
-	// gateway, so an arrow drawn from the declarer says the opposite of what happens.
-	//
-	// Direction is the whole claim an edge makes, so it is declared rather than guessed
-	// — the same reason a verb says whether it is Delivered.
+	// Inbound reverses the relationship's direction: a gateway names its zone, but
+	// the zone answers for the gateway.
 	Inbound bool
 
-	// Serves: TRAFFIC GOES THERE. A gateway's route hands a request to its handler; a
-	// proxy forwards a connection; a route with no handler hands the whole decision to
-	// a router function. It used to be inferred from KindFrom being set — "the author
-	// picked the kind, so it must be where traffic goes" — which is a proxy for the
-	// fact and stops being true the moment a handoff has a FIXED kind, as a router
-	// does. What is worth an arrow, and which arrow, is declared.
+	// Serves: traffic goes there, a handoff rather than a dependency (a route's
+	// handler, a proxy's forward, a router).
 	Serves bool
 
-	// ByName: the value stays a NAME. Most references resolve to the target's id at
-	// compile; some deliberately do not — an authorizer, a workflow step's function, a
-	// transformer entry — because they cross scopes the resolver does not follow, or
-	// because the vocabulary wants the authored word kept.
-	//
-	// They are still references, and that is the point: "this field points at a
-	// resource of kind K" is ONE fact, and a second term for the unresolved half would
-	// mean every consumer asking two questions to learn one thing.
+	// ByName: the value stays a name rather than resolving to the target's id, for
+	// references crossing scopes the resolver does not follow or where the authored
+	// word is wanted. It is still a reference.
 	ByName bool
 
 	// KindFrom names a sibling attribute holding the target's KIND, for a reference
@@ -239,7 +192,6 @@ type RefSpec struct {
 	KindFrom string
 }
 
-// RefOpt tunes a RefSpec.
 type RefOpt func(*RefSpec)
 
 // Inbound marks a reference whose relationship runs TOWARD the resource declaring it.
@@ -261,8 +213,7 @@ func KindFrom[T string | AKey](field T) RefOpt {
 // dependency. See RefSpec.Serves.
 func Serves() RefOpt { return func(s *RefSpec) { s.Serves = true } }
 
-// Ref declares that this attribute's value is a reference into another resource
-// group. Inert driver data — no generation or runtime effect this phase.
+// Ref declares that this attribute's value references another resource group.
 func Ref(group string, opts ...RefOpt) Option {
 	s := RefSpec{Group: group}
 	for _, o := range opts {
@@ -279,14 +230,14 @@ type ValidationEmit struct {
 }
 
 // EmitValidation declares a deferred validation to attach at compile time
-// (domains -> EmitValidation("domain","dns")). Distinct from the load-time
-// Validator(). Inert driver data — no effect this phase.
+// (domains -> EmitValidation("domain","dns")), distinct from the load-time
+// Validator().
 func EmitValidation(key, validator string) Option {
 	return Annotate("emitValidation", ValidationEmit{Key: key, Validator: validator})
 }
 
-// WireDrop marks an attribute whose compiled wire key a driver should delete
-// after consuming it. Inert driver data — no effect this phase.
+// WireDrop marks an attribute whose compiled wire key a driver deletes after
+// consuming it.
 func WireDrop() Option {
 	return Annotate("wireDrop", true)
 }
@@ -305,23 +256,10 @@ func Resource(schemaPkg, iface, specType, specPkg string) NodeOption {
 	return GroupAnnotate("resource", [4]string{schemaPkg, iface, specType, specPkg})
 }
 
-// Varies says this attribute may be written per VARIABLE, as `<key>_<value>` beside
-// the key itself. Marked rather than universal because not every field may vary: a
-// key that IDENTIFIES the thing it is written on cannot, and two readings of one
-// resource share it — a suffix there would make them two resources wearing one name.
-// Where a field that cannot vary has to differ, the whole resource is written again,
-// which is the same rule one segment up the path.
-//
-// Each name must be one the root declares with Varying; an attribute that varies by a
-// variable the vocabulary does not have is a definition error, reported when the
-// engine is built rather than at the line of the document that trips over it.
-//
-// APPENDS rather than sets, because Annotate overwrites and two Varies() on one
-// attribute mean two axes, not the second one only.
-//
-// The mark has two consumers: the loader (node.go's variant-first resolution) and
-// strict mode (which claims the suffixed key so it is not "unknown"). One
-// declaration, and neither of them a list.
+// Varies lets an attribute be written per variable, as `<key>_<value>` beside
+// the key. Not universal: a key identifying the thing it is on cannot vary. Each
+// name must be declared on the root with Varying, checked when the engine is
+// built. It appends: two Varies are two axes.
 func Varies(vars ...string) Option {
 	return func(a *Attribute) {
 		if a.Meta == nil {
@@ -332,16 +270,9 @@ func Varies(vars ...string) Option {
 	}
 }
 
-// VariesBy is the mark read back: the variables this attribute may be written per, in
-// declaration order. nil when the attribute does not vary.
-// Delegable marks an attribute whose value MAY come from the repository a
-// resource's content comes from, rather than from the configuration document.
-//
-// IT IS THE SCHEMA'S ANSWER AND NOT THE AUTHOR'S. A resource says only WHETHER it
-// delegates (`source.config`); WHAT may be delegated is this, so no document can
-// widen it. Identity, references and access blocks carry no such mark and
-// therefore cannot be written from somewhere else, which is what keeps the
-// resource list a property of the configuration repository alone.
+// Delegable marks an attribute whose value may come from the repository a
+// resource's content comes from. The schema decides what may be delegated, not
+// the document: identity, references and access blocks cannot be.
 func Delegable() Option { return Annotate("delegable", true) }
 
 // IsDelegable reports whether this attribute carries that mark.
@@ -353,28 +284,10 @@ func IsDelegable(a *Attribute) bool {
 	return ok
 }
 
-// Inlined marks an attribute that names a FILE whose CONTENT belongs in the
-// compiled object, under `into`.
-//
-// # Why the content and not the path
-//
-// A path is only useful to something that can open it, and nothing downstream of
-// a compile can: a node holds the compiled object and an artifact store, not the
-// repository. So an attribute that names a file either has its content read here
-// or names something nobody will ever read -- which is what a declared-and-dead
-// attribute is.
-//
-// # What `into` is for
-//
-// The content lands under a DIFFERENT key from the path, and that key is the one
-// consumers already read. The author writes a file; the object carries what was in
-// it; and nothing downstream learns a second shape. Which key is the VOCABULARY'S
-// choice and not this package's -- engine carries the string and does not know what
-// it means.
-//
-// IT IS NOT A LOWERING. Sets/Attr/Text/Concat compose values the object already
-// holds; this reaches outside the document for one it does not, which is why it is
-// a mark read by a compile pass rather than a term in that vocabulary.
+// Inlined marks an attribute naming a file whose content belongs in the compiled
+// object under `into`: nothing downstream of a compile can open the repository,
+// so a path alone would be dead. It is a mark read by a compile pass, not a
+// lowering.
 func Inlined(into string) Option { return Annotate("inlined", into) }
 
 // InlinedInto is the key this attribute's file content belongs under, or "" when
@@ -395,12 +308,8 @@ func VariesBy(a *Attribute) []string {
 	return vars
 }
 
-// Varying declares the variables of this vocabulary, IN PRECEDENCE ORDER: when one
-// attribute varies by several, this is the order they are tried in.
-//
-// Stated ONCE, on the root, like Identity, because which axes a configuration has is a
-// convention of the whole vocabulary rather than of any kind in it — and because the
-// loader has to know the set before it can tell an override from a typo.
+// Varying declares the vocabulary's variables in precedence order, once on the
+// root: the loader must know the set to tell an override from a typo.
 func Varying(names ...string) NodeOption {
 	return GroupAnnotate("variables", append([]string(nil), names...))
 }

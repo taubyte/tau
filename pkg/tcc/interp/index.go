@@ -12,17 +12,10 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/transform"
 )
 
-// AN INDEX IS PATHS AND VALUES, and which paths is the vocabulary's business.
-//
-// This driver used to carry six annotations — by-name, foreign-key, repository, name,
-// by-scope, placeholder — and each one computed a tau TNS path: it imported
-// specs/methods, specs/common and core/common/repositorytype, which is one vocabulary's
-// address space compiled into the layer that must serve every vocabulary. A second one
-// could not have an index at all without editing the interpreter.
-//
-// What is left is the mechanics, which really are generic: walk the indexed groups in
-// their declared order, over the project scope and every scope inside it; for each
-// resource work out its identity and hand it to the vocabulary; write what comes back.
+// An index is paths and values, and which paths is the vocabulary's business.
+// The driver walks the indexed groups in their declared order over every scope,
+// works out each resource's identity, hands it to the vocabulary and writes what
+// comes back.
 
 // ScopeLevel is one scope between the project root and a resource: the KIND of container
 // it was found in, and its own id.
@@ -33,12 +26,9 @@ import (
 // is a namespace, which is the one thing it is not.
 type ScopeLevel struct{ Kind, ID string }
 
-// ScopeChain is where a resource lives: the chain of scopes from the project root down to
-// it, outermost first, and empty at the root.
-//
-// ONE FIELD, TWO READINGS. A vocabulary that has one kind of scope wants the ids and
-// nothing else, and reads IDs(); one that has more asks each level what it is. A second
-// field carrying the same fact in a second shape is the thing that drifts.
+// ScopeChain is where a resource lives: the scopes from the project root down to
+// it, outermost first, empty at the root. A vocabulary with one kind of scope
+// reads IDs().
 type ScopeChain []ScopeLevel
 
 // IDs is the scope ids joined by "/", empty at the root.
@@ -109,13 +99,8 @@ func indexAll(fns ...Indexer) Indexer {
 	}
 }
 
-// Each resolves a reference field to the values it points at: for every id in refField,
-// the resource it names, and one of ITS fields. That fan-out — a resource indexed under
-// something another resource is called — is the one shape that needs the lookup, and
-// leaving it to each vocabulary means each one rewrites the same three failures.
-//
-// A field that is absent is no values rather than an error: nothing referenced, nothing
-// to fan out to.
+// Each resolves a reference field to the values it points at: for every id in
+// refField, that resource's targetKey field. An absent field is no values.
 func (ic IndexCtx) Each(refField, targetGroup, targetKey string) ([]string, error) {
 	refs, ok := ic.Obj.Get(refField).([]string)
 	if !ok {
@@ -143,12 +128,9 @@ type indexSpec struct {
 	index    Indexer
 }
 
-// Indexes declares that a group contributes to the index, at a position, by a function
-// the vocabulary supplies.
-//
-// The POSITION is load-bearing and is why it is not simply declaration order: buckets
-// shared across scopes accumulate in the order groups are visited, so a different
-// sequence is a different artifact.
+// Indexes declares that a group contributes to the index, at a position: buckets
+// shared across scopes accumulate in visit order, so the order is part of the
+// artifact.
 func Indexes(position int, index ...Indexer) engine.NodeOption {
 	return engine.GroupAnnotate("indexes", indexSpec{position: position, index: indexAll(index...)})
 }
@@ -162,11 +144,7 @@ func indexerOf(iter *engine.Node) (indexSpec, bool) {
 	return spec, ok
 }
 
-// indexedGroups is every group that declares an index footprint, in the order the
-// vocabulary put them in.
-//
-// The order is load-bearing: buckets shared across scopes accumulate in it, so a
-// different sequence is a different artifact.
+// indexedGroups is every group declaring an index footprint, in position order.
 func indexedGroups(root *engine.Node) []string {
 	type at struct {
 		key      string
@@ -191,32 +169,27 @@ func indexedGroups(root *engine.Node) []string {
 	return out
 }
 
-// IndexDriver replaces the whole pass4 layer with one generic transform. It
-// ensures the root `indexes` object exists, then walks each indexed group (in the
-// fixed order above) across the project scope and every application scope,
-// running that group's DSL-declared index-footprint closures per instance. It is
-// driven entirely by the node tree it is handed, so it never restates the schema.
+// IndexDriver ensures the root `indexes` object exists, then walks each indexed
+// group across every scope, running its declared footprints per instance.
 type IndexDriver struct {
 	root   *engine.Node
 	branch string
 }
 
-// NewIndexDriver builds the driver from the schema root node (the same node the
-// CompileDriver consumes). branch is threaded into every IndexValue.
+// NewIndexDriver builds the driver from the schema root node; branch reaches
+// every IndexCtx.
 func NewIndexDriver(root *engine.Node, branch string) transform.Transformer[object.Refrence] {
 	return &IndexDriver{root: root, branch: branch}
 }
 
 func (d *IndexDriver) Process(ct transform.Context[object.Refrence], o object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
-	// Ensure `indexes` always exists, even with no resources (absorbs
-	// pass4/init_indexes.go).
+	// `indexes` exists even with no resources.
 	if _, err := o.CreatePath(IndexesKey); err != nil {
 		return nil, fmt.Errorf("creating indexes path failed with %w", err)
 	}
 
-	// Build the pass4-shaped pipe: each group is Sub("object")+Global so the
-	// context path (root, project-object-subtree[, app]) and the project-then-apps
-	// accumulation order are byte-for-byte what the hand-written passes produced.
+	// Each group is Sub("object")+Global, so the context path and the
+	// project-then-scopes accumulation order are fixed.
 	containers := ContainerKeys(d.root)
 	groups := indexedGroups(d.root)
 	pipe := make([]transform.Transformer[object.Refrence], 0, len(groups))
@@ -246,9 +219,8 @@ func findGroup(root *engine.Node, key string) *engine.Node {
 	return nil
 }
 
-// groupIndexer indexes one resource group at one scope. It is the generic form of
-// every pass4/<resource>.go file: it computes the identity/IndexValue/Lookup each
-// pass4 file computed by hand, then runs the group's declared closures.
+// groupIndexer indexes one resource group at one scope: it computes each
+// resource's identity and lookup, then runs the group's footprints.
 type groupIndexer struct {
 	// what the schema calls a resource's id and its name (engine.Identity): an index is
 	// keyed by one and carries the other, and neither word is this package's
@@ -351,15 +323,9 @@ func appendLink(index object.Object[object.Refrence], key, val string) {
 	index.Set(key, links)
 }
 
-// scopeOf is where a scope sits: the chain from the project root down to it, each level
-// carrying the container it was found in and its own id. It walks DOWN because the
-// reverse lookup it replaced asked the root's container for the name of the object it had
-// been handed, and an object is a direct child of that container only at the first level.
-// Namespaces nest, and everything two deep was indexed as though it sat at the project
-// root — under a scope of "", against the same keys the root's own resources use.
-//
-// Every container is searched at every level, because a scope of one kind holds scopes of
-// the other: an authored namespace holds the scope a lowering made inside it.
+// scopeOf is the chain from the project root down to a scope, each level with
+// its container kind and id. It walks down, searching every container at every
+// level, since scopes nest and of either kind.
 func scopeOf(from, target object.Object[object.Refrence], containers []string) ScopeChain {
 	for _, container := range containers {
 		scopes, err := from.Child(container).Object()
@@ -405,12 +371,8 @@ func makeLookup(scopes []any) func(string, string) (object.Object[object.Refrenc
 	}
 }
 
-// attrValues is every value an attribute contributes to a deferred validation.
-//
-// ONE PER ELEMENT FOR A LIST, because each element is checked on its own: a
-// resource naming three labels has three chances to be wrong about one, and a
-// single validation carrying the whole list would make the answer "one of these
-// is bad" rather than which.
+// attrValues is every value an attribute contributes to a deferred validation:
+// one per list element, so the answer names which one is wrong.
 func attrValues(instObj object.Object[object.Refrence], a *engine.Attribute) []string {
 	key := a.Segments
 	if len(key) == 0 {
@@ -445,15 +407,8 @@ func attrValues(instObj object.Object[object.Refrence], a *engine.Attribute) []s
 	return nil
 }
 
-// attrString reads an attribute off a compiled instance BY THE PATH ITS KEY IS.
-//
-// Segments is the key as declared — one level of the compiled object per entry —
-// so `region/name` is a level called `region` holding `name`. A flat lookup of
-// the joined name finds nothing there, which is the second reason a nested
-// attribute could not declare a deferred validation. An attribute whose key has
-// one segment carries no Segments and is its Name.
-//
-// Absent is reported as not-held rather than as an error: see the caller.
+// attrString reads an attribute off a compiled instance by the path its key is:
+// `region/name` is a level holding `name`. Absent is not-held, not an error.
 func attrString(instObj object.Object[object.Refrence], a *engine.Attribute) (string, bool) {
 	key := a.Segments
 	if len(key) == 0 {

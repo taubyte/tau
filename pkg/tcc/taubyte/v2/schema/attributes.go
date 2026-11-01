@@ -7,34 +7,10 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/engine"
 )
 
-// attributes.go is how a consumer asks what a kind's fields are CALLED.
-//
-// # Why this exists
-//
-// A compiled resource is a tree of values at paths, and everything downstream of
-// the compiler addresses those paths as strings: services/worker files a
-// target's fields into a `Settings` map keyed by them, and every tier reads them
-// back out. Until this, both ends spelled the path by hand — so they agreed with
-// each other, and with the vocabulary, only by copying.
-//
-// That is not a hypothetical failure. Three keys had already drifted under a
-// comment claiming they were "the vocabulary's own paths": `keys/ttl` and
-// `keys/size` where the attributes are `ttl` and `size`, and `versioning` where
-// it is `object/versioning`. Nothing failed, because the reader had copied the
-// same invention. What an author wrote simply stopped taking effect.
-//
-// # What a compiled key IS, since three things look like one
-//
-//	Key("object","versioning")   the COMPILED key — "object/versioning". This.
-//	InSection("keys")            a UI grouping. Not a path. This is what
-//	                             "keys/ttl" was: a section name glued to a field.
-//	Path("queue","consensus")    where the value is AUTHORED, which differs from
-//	                             the compiled key wherever a matcher captures a
-//	                             branch — `storage` authors `object:` and
-//	                             compiles `type: object`.
-//
-// Attribute.Name is the first of those, already joined with "/" by the engine.
-// Nothing here computes it; this only collects what the vocabulary declared.
+// attributes.go is how a consumer asks what a kind's fields are called, so code
+// filing values under compiled keys asserts them instead of copying the
+// spelling. A compiled key is Key(...)'s joined form, not an InSection name and
+// not the authored Path.
 
 // AttributeNames is every compiled key a resource of this kind may carry,
 // sorted. An unknown kind has none rather than being an error: a caller asking

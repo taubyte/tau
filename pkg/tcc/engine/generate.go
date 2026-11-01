@@ -12,10 +12,8 @@ import (
 	mh "github.com/multiformats/go-multihash"
 )
 
-// Generated fields: values a consumer must MINT rather than ask the user for —
-// a resource id today. The DSL says which fields those are and which known
-// generator makes them, so tau-cli and the web console stop each carrying their
-// own "how do I mint an id" (both currently do, and they disagree on the seed).
+// Generated fields are values a consumer mints rather than asks for, such as a
+// resource id; the DSL names the generator so consumers agree.
 
 // Known generator ids. A generated field names one of these; a consumer that
 // doesn't recognize the id treats the field as read-only and leaves it alone.
@@ -35,12 +33,9 @@ const (
 // whatever validator it declares).
 func Generated(kind string) Option { return Annotate("generated", kind) }
 
-// GeneratedBy reports the generator id declared for a field of a resource group,
-// or "" when the field is authored (or unknown).//
-// Addresses a field of a GROUP. The project root's own attributes are not reachable
-// through it — findAttr walks groups — so the project id's generator and the project
-// label's derivation are both invisible here. Pre-existing, not introduced by the
-// derivation: a consumer that needs a root field reads Root().Attributes directly.
+// GeneratedBy reports the generator declared for a field of a resource group,
+// or "" when authored. The project root's own attributes are not reachable
+// through it; read Root().Attributes.
 
 func GeneratedBy(root []*Node, group string, field []string) string {
 	a := findAttr(root, group, field)
@@ -65,23 +60,10 @@ func Generate(kind string, seed ...any) (string, error) {
 	return "", fmt.Errorf("unknown generator %q", kind)
 }
 
-// Derived fields: values that are a PURE FUNCTION of the document — same input, same
-// output, forever. The sibling of Generated, and deliberately not the same thing:
-//
-//	Generated  mints. Fresh entropy every call, never reproducible, unique per
-//	           resource. An id.
-//	Derived    computes. No entropy at all, and reproducing it is the entire point.
-//	           A name that has to be the same everywhere the project is read.
-//
-// Running one through the other's helper would be a bug in whichever direction it
-// went: a minted id that reproduced would collide, and a derived name that did not
-// would resolve differently in two consumers.
-//
-// Same reason both exist here rather than in each consumer: tau-cli, the web console
-// and seer all need a project's zone label, and three implementations of "hash the id
-// and encode it" is three chances to disagree about a name that must match.
+// Derived fields are a pure function of the document; Generated ones mint fresh
+// entropy. A minted id that reproduced would collide, and a derived name that
+// did not would resolve differently in two consumers.
 
-// Known derivation ids.
 const (
 	// DeriveDNSLabel turns an identifier into one DNS label: sha2-256, base32, 13
 	// characters. See dnsLabel for why base32 and why 13.
@@ -123,14 +105,8 @@ func Derive(kind string, from ...string) (string, error) {
 // characters a DNS label allows, which nothing else is competing for.
 const dnsLabelLength = 13
 
-// BASE32, not base62. DNS labels are CASE-INSENSITIVE (RFC 4343), so "Ab" and "aB"
-// are the same name: an encoding spending upper and lower case would not have 62
-// symbols, it would have 36 with an invisible collision between every pair differing
-// only in case — the worst kind, because the alphabet claims it cannot happen.
-//
-// Base32 (RFC 4648) is the standard answer, and the reason IPFS subdomain gateways
-// serve <cidv1base32>.ipfs.dweb.link rather than the base58 a CID is normally written
-// in.
+// Base32, not base62: DNS labels are case-insensitive (RFC 4343), so a
+// case-spending alphabet collides invisibly.
 var dnsLabelEncoding = base32.NewEncoding("abcdefghijklmnopqrstuvwxyz234567").WithPadding(base32.NoPadding)
 
 // The input is HASHED rather than re-encoded. A CID's leading bytes are its multihash
@@ -144,17 +120,9 @@ func dnsLabel(from ...string) (string, error) {
 	return dnsLabelEncoding.EncodeToString(sum[:])[:dnsLabelLength], nil
 }
 
-// derivedCID is GenCID without the randomness, and the difference is the whole point.
-//
-// A resource a compiler wrote has to have the SAME id every time the config is
-// compiled: it is stored under that id, referred to by it, and re-minting it on every
-// compile would make each build look like a delete and a create. So it is a pure
-// function of what produced it — the source resource's id, the kind, and the part —
-// which also means it survives a rename of anything that is not one of those, and that
-// two clouds compiling the same project agree without coordinating.
-//
-// Same multihash shape as a minted id (sha2-256, base58), so nothing downstream can
-// tell the two apart by looking, and IsCID accepts it.
+// derivedCID is GenCID without the randomness: a compiler-written resource must
+// keep its id across compiles, so it is a pure function of the source resource's
+// id, the kind and the part. Same multihash shape as a minted id.
 func derivedCID(from ...string) (string, error) {
 	if len(from) == 0 {
 		return "", errors.New("a derived id needs something to derive from")

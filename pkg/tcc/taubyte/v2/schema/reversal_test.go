@@ -13,13 +13,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// WHAT A LOWERING GIVES BACK, pinned.
-//
-// A shell keeps the remainder — the authored fields nothing it produced carries — so
-// what is carried is exactly what a shell may stop storing. This test is the guard on
-// that list: a lowering that stops carrying a field, or starts composing one it used to
-// copy whole, moves a line here. Without it that is a silent change, and the field it
-// moves is one a shell has already dropped.
 func TestWorkflowCarriesBackWhatItCarriesAway(t *testing.T) {
 	got := schema.Carriages("workflow")
 	by := map[string]interp.Carriage{}
@@ -35,13 +28,8 @@ func TestWorkflowCarriesBackWhatItCarriesAway(t *testing.T) {
 	}, cmpopts.IgnoreUnexported(interp.Term{}, interp.Carriage{}))
 	assert.Assert(t, !attempts.Composed())
 
-	// A step's NAME is COMPOSED into the name of the queue it becomes, and comes back
-	// anyway. That is the whole of what the typed terms bought: `{name}_{each.name}` was
-	// a string that had already been concatenated, so recovering `reserve` from
-	// `checkout_reserve` meant guessing which underscore was the separator — and the
-	// guess is wrong the moment either half contains one. `Concat(Attr("name"),
-	// Text("_"), Each("name"))` still knows which underscore it wrote, so the prefix is
-	// filled in, its length is the cut, and nothing is guessed.
+	// A step's name is composed into its queue's name and still comes back: the
+	// Concat term knows which underscore it wrote.
 	name := by["name steps -> sync/@"]
 	assert.Equal(t, name.Field, "name")
 	assert.Equal(t, name.In, "steps")
@@ -75,20 +63,13 @@ func TestWorkflowCarriesBackWhatItCarriesAway(t *testing.T) {
 	for _, carried := range []string{"steps/attempts", "steps/name", "steps/on_error"} {
 		assert.Assert(t, !remainder[carried], "%s is carried, so a shell storing it stores it twice", carried)
 	}
-	// The function a step calls is NOT carried, and that is the composition's doing: it
-	// used to be the NAME of the resource the lowering wrote into, back when a step's
-	// entries landed on the author's own function. The driver is what they land on now,
-	// and the function is named in the write's PATH instead — which a carriage does not
-	// read. A shell keeps it, which is what a shell is for; so are the two fields that
-	// only the driver reads, `input` and `result`, which no produced resource carries.
+	// The function a step calls is in the write's path, not carried, so the shell
+	// keeps it, along with `input` and `result`, which only the driver reads.
 	for _, kept := range []string{"steps/call/function", "steps/call/input", "steps/call/result"} {
 		assert.Assert(t, remainder[kept], "%s comes back from nothing: %v", kept, schema.Remainder("workflow"))
 	}
 }
 
-// AND THE VALUES REALLY COME BACK — checked against the fixture's own document, read off
-// disk. Comparing the read-back to the compiled object would be the same computation run
-// twice; comparing it to what somebody wrote is the claim.
 func TestWorkflowValuesReadBackFromWhatItBecame(t *testing.T) {
 	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
 	assert.NilError(t, err)
@@ -142,9 +123,6 @@ func TestWorkflowValuesReadBackFromWhatItBecame(t *testing.T) {
 	assert.DeepEqual(t, got, want)
 }
 
-// An agent carries values out of a NESTED block rather than a list, and gets them back
-// the same way: `memory/size` is authored as `2GB`, compiles to a byte count, and lands
-// in the vector as `2GB` again — the scalar's own inverse, not a second table.
 func TestAgentValuesReadBackInAuthoredForm(t *testing.T) {
 	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
 	assert.NilError(t, err)

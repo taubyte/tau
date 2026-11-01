@@ -18,113 +18,18 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// consumed_test runs the hygiene check the OTHER WAY ROUND.
-//
-// # The gap this closes
-//
-// services/worker/settings_test.go holds both ends of the Settings key space to
-// the vocabulary: every key the compiler emits is an attribute, and every key
-// the package spells still names one. Both walk from the RUNTIME to the
-// vocabulary, so both are silent about the opposite drift — an attribute the
-// vocabulary declares that nothing anywhere reads. An author writes it, the
-// compiler files it into the object, the audit says nothing, the build is green,
-// and the cloud does not do the thing the document says.
-//
-// The sharp one when this was written was `gateway.certificate.*`: a gateway
-// may declare where its certificate comes from and which secret holds it, and
-// the only reader of those keys was services/proxy, for a proxy's own copy
-// of them. node/boot bound a gateway with an http.Server carrying no
-// TLSConfig, so a gateway that declared TLS was served in the clear. The
-// gateway now answers each handshake (services/gateway/tls.go).
-//
-// # What "read" means here, and what it deliberately excludes
-//
-// The runtime reads a compiled resource through pkg/specs' GENERATED readers —
-// `specs.ReadGateway(r).Route.Path` — and generated_readers_test.go holds it to
-// that. So an attribute is READ when at least one of these holds:
-//
-//   - A TYPED READ. A file in `readers` names a generated field whose reader
-//     decodes the attribute's compiled key — followed through ReadX calls,
-//     declared parameters, struct fields and results, blocks, entries and the
-//     ranges over them. See consumed_typed_test.go.
-//   - A SPELLED READ. A file in `readers` performs a reader-method call on a
-//     resource whose path matches the attribute's compiled key — literals, this
-//     package's own string consts, a `Sub(...)` prefix it was reached through,
-//     the elements of a literal list a loop reads it under, and the call sites
-//     of a helper in the same file that reads at a path its caller supplies.
-//     What is left of these is pkg/specs' own and the keys no field covers.
-//   - A KEY THE VOCABULARY HANDS THE READER. Three shapes are addressed by
-//     asking the schema for the field name rather than spelling it, so no file
-//     mentions them: the identity pair (engine.IdentityOf), the access entry
-//     (schema.AccessEntryShape, read by Resource.Reaches) and the block a kind
-//     answers on a name in (engine.AnswersAtOf, read by schema.ReachableNames
-//     for Project.Hosts).
-//   - A GENERATED STRUCT HANDED OUT BY pkg/specs, whose field the attribute
-//     decodes into is named in one of the files listed in `exposed` for it.
-//   - A NESTED GROUP'S FIELD, read where it actually sits. AttributeNames
-//     flattens the fields of a group the author keys — `variables`, `ports`,
-//     `entry` — into the kind's list without the group's path, so `kind` is an
-//     attribute of a workflow and `entry/start/kind` is where worker reads it.
-//     See reaches for how those are told apart from a block's fields.
-//
-// Three consumers are NOT reads, on purpose:
-//
-//   - THE AUDIT. pkg/tcc/.../checks.go reads attributes to judge a config.
-//     Being judged is not being applied: an attribute only the audit reads still
-//     changes nothing about what the cloud does, which is exactly the class of
-//     defect this test is for.
-//   - THE EDITOR. tau-cli, the decompiler and the generator round-trip every
-//     attribute by construction, so counting them would make every attribute
-//     read and this test vacuous.
-//   - THE LOWERING. What a lowered kind declares is compiled away into the keys
-//     of the resources it produces, and those are what a tier reads. The
-//     interpreter's Lowering keeps its terms unexported, so this cannot be asked
-//     — those attributes are listed in `unread` with that as the reason, which
-//     has the useful side effect of naming them.
-//
-// # Which way it errs
-//
-// Toward READ. A computed segment matches any segment, a block read whole counts
-// for everything under it, and a file's reads count for every kind it is listed
-// against — so a `*` file like services/worker/resolve.go, which resolves every
-// kind, lends one kind's read to all of them: `host` is read for a database and
-// therefore counts for a stream. That is the safe direction here. A false "read"
-// costs one finding; a false "unread" would force an allowlist entry whose
-// reason is not true, and an allowlist of untrue reasons is worse than none.
-//
-// Two things are deliberately NOT loosened, because they are what makes the
-// findings real: a pattern is anchored at the start of the key and never matched
-// as a suffix — suffix matching makes `certificate/secret/name` "read" by any
-// file that reads a `name` — and a read with no literal segment in it at all
-// says nothing, because the path came from a caller and the caller is where this
-// can see it.
+// Holds the vocabulary to its readers: every declared attribute must be read
+// somewhere, or excused in `unread`. An attribute is read by a typed read
+// through pkg/specs' generated readers, a spelled read at its compiled key, a key
+// the vocabulary hands the reader (identity, access entry, answers-at block), a
+// generated struct named in `exposed`, or a nested group's field where it sits.
+// The audit, the editor and the lowering are not readers. Matching errs toward
+// read, but patterns are anchored, never suffix-matched.
 
-// # What an excuse can say, and what it cannot
-//
-// An excuse is one of these four:
-//
-//   - HANDLED. The value is not ignored; it is used somewhere this scan cannot
-//     see. The compile consumed it (a reference's namespace, a lowering's
-//     terms), or the runtime refuses by name the branch that holds it.
-//   - INERT. It asks the cloud to do nothing: a label, an advisory note. There
-//     is nothing for a runtime to apply, so there is nothing to ignore.
-//   - NOT SERVED BY THIS BUILD. A whole concept this build does not have, on
-//     every kind that declares it: placement here is one region and reads no
-//     region, so a `regions` block is accepted and ignored on purpose rather
-//     than served weaker than written. It is a property of the build, not of
-//     any one runtime, which is why it is its own class.
-//   - PREPARATORY, which is said of a KIND and not an attribute: see
-//     preparatoryKinds. Every declaration on it is ignored, and may be, because
-//     the kind has NO RUNTIME AT ALL — no tier runs it and nothing dispatches
-//     it. Its name must be spelled nowhere in services/ or node/; the day it
-//     is, the kind has a runtime and the excuse fails.
-//
-// What an entry CANNOT say is that a RUNNABLE kind ignores a declaration. That
-// is a deployment lie — the author writes it, it compiles, it deploys, and the
-// cloud does something else — and the fix is in the runtime serving the kind:
-// apply the value, or refuse it by name (worker's unservableKind is the
-// pattern), which is itself a read this test sees. It is never tcc's to refuse:
-// the compile answers what the config says, not what the platform can do.
+// An excuse is HANDLED (used where the scan cannot see), INERT (asks nothing of
+// the cloud), NOT SERVED BY THIS BUILD (a whole concept this build lacks), or a
+// preparatory kind with no runtime. A runnable kind ignoring a declaration is
+// never excusable: its runtime must apply it or refuse it by name.
 type class int
 
 const (
@@ -173,15 +78,8 @@ var preparatoryKinds = map[string]string{
 	"agent": "nothing runs an agent's loop. The lowering produces a function with `source: {builtin: agent}`, and no service or node dispatches that builtin — so which model it answers with, what it is told, and how far it may go reach nothing.",
 }
 
-// unread is every attribute the vocabulary declares that nothing reads, and
-// WHY that is acceptable. A `*` kind excuses the attribute on every kind where
-// nothing reads it.
-//
-// An entry here is a decision; a name missing from both this and a read is the
-// drift this test exists to catch. An entry that stops being needed — because
-// something started reading the attribute, or because no kind declares it any
-// more — fails too, which is how the change that wires one up is made to take
-// its excuse out.
+// unread is every declared attribute nothing reads, and why; `*` excuses it on
+// every kind. An entry no longer needed fails too.
 var unread = map[string]excuse{
 	"*/tags":             noTagReader,
 	"*/secret/namespace": secretScopeConsumed,
@@ -221,20 +119,11 @@ var unread = map[string]excuse{
 	"workflow/call/namespace":   workflowLowered,
 }
 
-// readers names every non-test file that reads a compiled resource, and the
-// kinds whose resources it reads. `*` is a file that reads every kind.
-//
-// THE ATTRIBUTION IS THE POINT. `certificate/source` is read in
-// services/proxy/tls.go, for a proxy; a check that only asked whether the
-// string appears somewhere would report a gateway's identically named attribute
-// as read and the config would go on saying TLS while the socket stays plain.
-//
-// A file that reads a resource and is missing here fails this test with what it
-// reads, which is the prompt to say which kinds it serves.
+// readers names every non-test file reading a compiled resource and the kinds it
+// reads; `*` is every kind. Attribution matters: a proxy's `certificate/source`
+// read must not count for a gateway's.
 var readers = map[string][]string{
-	// pkg/specs is where a compiled project is read from at all: Source() and
-	// Build() answer what a build needs of ANY kind, and the zone walk is the
-	// one generated reader with a consumer.
+	// Source() and Build() answer what a build needs of any kind.
 	"pkg/specs/project.go": everyKind,
 
 	// services/worker resolves a target of every kind onto a grant, which is
@@ -276,24 +165,20 @@ var readers = map[string][]string{
 
 var everyKind = []string{"*"}
 
-// exposed names generated structs a consumer reaches through an accessor of
-// pkg/specs' own, which the typed scan does not follow, and the files that
-// consume them. A field none of them names is decoded and dropped, however
-// faithfully the generated reader read it.
+// exposed names generated structs reached through pkg/specs accessors, which the
+// typed scan does not follow, and the files consuming them.
 var exposed = map[string][]string{
 	// Project.Zones() is the one accessor in pkg/specs that hands a generated
 	// struct out, and these two are what read it.
 	"zone": {"node/zone/zone.go", "services/build/deploy/deploy.go"},
 }
 
-// TestEVERYATTRIBUTETHEVOCABULARYDECLARESISREADBYSOMETHING.
 func TestEveryDeclaredAttributeIsReadBySomething(t *testing.T) {
 	root := repoRoot(t)
 	found := scan(t, root)
 
-	// THE TABLE IS HELD TO THE TREE IN BOTH DIRECTIONS. A reader file nobody
-	// classified would silently count for no kind, and a classified file that
-	// stopped reading would keep a kind alive that nothing reads any more.
+	// The table is held to the tree both ways: an unclassified reader counts for no
+	// kind, and a classified file that stopped reading keeps a kind alive.
 	var unclassified []string
 	for file := range found {
 		if _, known := readers[file]; !known {
@@ -382,9 +267,7 @@ func TestEveryDeclaredAttributeIsReadBySomething(t *testing.T) {
 		}
 	}
 
-	// A PREPARATORY KIND THAT HAS A RUNTIME has become the lie the class exists
-	// to keep out: the kind runs now, and its declarations are ignored by what
-	// runs it. And one nothing needed has expired, like any other excuse.
+	// A preparatory kind that has a runtime is no longer preparatory.
 	for kind, reason := range preparatoryKinds {
 		require.NotEmpty(t, reason, "preparatory kind %s has no reason", kind)
 		require.Empty(t, runtimeSpells(t, root, kind),
@@ -409,10 +292,7 @@ func TestEveryDeclaredAttributeIsReadBySomething(t *testing.T) {
 				"If it IS read and this test cannot see it, the reader is missing from `readers` or is reached in a way the scan does not follow; fix that rather than allowlisting a live attribute.")
 	}
 
-	// AND THE ALLOWLIST IS HELD TO THE TREE. An excuse nothing needed has
-	// expired - the attribute is read now, or it is gone - and the next reader
-	// takes an expired decision for a current one. This is what fails when the
-	// change that makes an attribute live forgets to take its entry out.
+	// An excuse nothing needs has expired and must be taken out.
 	var expired []string
 	for entry, reason := range unread {
 		require.NotEmpty(t, reason.reason,
@@ -439,18 +319,10 @@ func allowed(kind, key string) (string, bool) {
 	return "", false
 }
 
-// reaches reports whether any pattern addresses this compiled key.
-//
-// heads is every first segment any kind declares, and it is what tells a nested
-// GROUP apart from a nested block. AttributeNames flattens a group's fields into
-// a kind's list without the group's path - `entry/start/kind` is where the value
-// sits and `kind` is what the vocabulary calls it, because the segment between
-// them is an author's own word - so a pattern whose first segment is nowhere an
-// attribute is read for its tail as well: `variables`, `ports` and `entry` are
-// groups and nothing else. A pattern under a BLOCK is not read that way:
-// `certificate/secret/name` is not a read of `name` and `sql/credentials/name`
-// is not a read of `credentials/name`, which is what lets this test tell a
-// gateway's unread certificate from a proxy's read one.
+// reaches reports whether any pattern addresses key. heads is every first segment
+// any kind declares: a pattern whose first segment is no attribute is a nested
+// group (`variables`, `ports`, `entry`) and is matched on its tail too; one under
+// a block is not, so `certificate/secret/name` is not a read of `name`.
 func reaches(patterns map[string]bool, key string, heads map[string]bool) bool {
 	for pattern := range patterns {
 		if matches(pattern, key) {
@@ -507,8 +379,6 @@ func repoRoot(t *testing.T) string {
 	}
 }
 
-// ---- reading the tree ----
-
 // The Resource methods a read goes through. Sub is here because it is how a read
 // of a nested block starts, and Map/List/Keys because they take a block whole -
 // every attribute under the path they name travels with it.
@@ -533,10 +403,9 @@ var skipped = map[string]bool{
 	"node_modules": true, "vendor": true, "testdata": true, "legacy": true,
 }
 
-// scan is every non-test file that reads a compiled resource, and the paths it
-// reads. A file qualifies by speaking pkg/specs - the CLI's `ctx.String("name")`
-// is the same call shape on a different receiver, and reading it as a resource
-// read would make half the vocabulary look consumed.
+// scan is every non-test file that reads a compiled resource and the paths it
+// reads. A file must speak pkg/specs: the CLI's `ctx.String("name")` has the same
+// shape on another receiver.
 func scan(t *testing.T, root string) map[string]map[string]bool {
 	spelled, typed := scanReads(t, root)
 	out := map[string]map[string]bool{}
@@ -553,10 +422,8 @@ func scan(t *testing.T, root string) map[string]map[string]bool {
 	return out
 }
 
-// scanReads is scan's two halves apart: what each file reads by a SPELLED path,
-// and what it reads through a generated type. The guard in
-// generated_readers_test.go holds the first half to what nothing generated
-// covers.
+// scanReads splits scan into spelled and typed reads; generated_readers_test.go
+// holds the spelled half to what nothing generated covers.
 func scanReads(t *testing.T, root string) (spelledReads, typedReads map[string]map[string]bool) {
 	out := map[string]map[string]bool{}
 	typedOut := map[string]map[string]bool{}
@@ -690,29 +557,19 @@ func stringLit(e ast.Expr) (string, bool) {
 	return text, true
 }
 
-// readsIn is every path one file reads, as patterns.
-//
-// Three things beyond the literal arguments, each of which was a whole class of
-// live attribute this test would otherwise have called dead:
+// readsIn is every path one file reads, as patterns. Beyond literal arguments it
+// follows:
 //
 //	prefixes  `route := r.Sub("route")` then `route.Sub("handler").String("name")`
-//	          is a read of route/handler/name, which is how a gateway reads its
-//	          handler. A name's prefix is scoped: see readsIn.
-//	helpers   `value := func(path ...string) int { n, _ := r.Int(path...) }` moves
-//	          the literal to the CALL, which is where services/proxy reads its
-//	          rate limit.
-//	loops     `for _, field := range []string{"identifier", "format"}` reads two
-//	          attributes at one call site, which is how a model's are read.
+//	helpers   `value := func(path ...string) int { ... }` moves the literal to the call
+//	loops     `for _, field := range []string{"identifier", "format"}`
 func readsIn(file *ast.File, consts map[string]string) map[string]bool {
 	options := loopValues(file, consts)
 	helpers := dynamicReaders(file)
 
-	// FIELDS ARE FILE-SCOPED, LOCALS ARE NOT. `Handler: route.Sub("handler")` is
-	// filled in one function and read in another, so a field's prefix has to
-	// outlive the function that set it. A local's must not: one function's `v`
-	// is a variable block's entry and another's is the resource itself, and a
-	// prefix that leaked between them reported the resource's own `secret/name`
-	// as read because a VARIABLE's is.
+	// Field prefixes are file-scoped, local ones are not: a field is filled in one
+	// function and read in another, while a leaked local `v` would credit a
+	// variable's `secret/name` to the resource.
 	fields := map[string][]string{}
 	out := map[string]bool{}
 
@@ -796,10 +653,8 @@ func collectPrefixes(body ast.Node, consts map[string]string, options map[string
 				}
 			}
 		case *ast.KeyValueExpr:
-			// A STRUCT LITERAL'S FIELD NAME IS AN IDENT, not a selector, so
-			// `Handler: route.Sub("handler")` looks exactly like a local unless
-			// the composite literal it sits in says otherwise. It is the shape a
-			// gateway's handler is reached through.
+			// A struct literal's field name is an ident, so `Handler: route.Sub("handler")`
+			// only reads as a field through its composite literal.
 			record(value.Key, value.Value, true)
 		}
 		return true
@@ -895,9 +750,7 @@ func pathsOf(call *ast.CallExpr, consts map[string]string, options map[string][]
 				grow(one(text))
 				continue
 			}
-			// A LOOP OVER A LIST OF PATHS IS ONE CALL SITE READING SEVERAL
-			// ATTRIBUTES, spread or not: services/worker reads six of a model's
-			// inference fields at one `target.String(path...)`.
+			// A loop over a list of paths is one call site reading several attributes.
 			if choices, ok := options[value.Name]; ok {
 				grow(choices)
 				continue
@@ -980,10 +833,8 @@ func loopValues(file *ast.File, consts map[string]string) map[string][][]string 
 				return true
 			}
 		}
-		// ACCUMULATED AND NOT REPLACED: one name is the loop variable of several
-		// loops in a file - `field` reads a model's two labels in one function
-		// and a database's seven in another - and keeping only the last read
-		// would report the first function's attributes as unread.
+		// Accumulated, not replaced: one name can be the loop variable of several loops
+		// in a file.
 		out[name] = append(out[name], choices...)
 		return true
 	})

@@ -9,10 +9,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// Derive is a pure function: same input, same output, on every machine, forever.
-// Generate is the opposite by contract, and confusing the two is a real bug in either
-// direction — a minted id that reproduced would collide, a derived name that did not
-// would resolve differently in two consumers.
 func TestDeriveIsPureAndGenerateIsNot(t *testing.T) {
 	const id = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
 
@@ -29,8 +25,6 @@ func TestDeriveIsPureAndGenerateIsNot(t *testing.T) {
 	assert.Assert(t, g1 != g2, "a generator that reproduces its output would mint colliding ids")
 }
 
-// A DNS label is case-insensitive, so the alphabet has to be too, and it may hold
-// only letters and digits.
 func TestDeriveDNSLabelShape(t *testing.T) {
 	label, err := Derive(DeriveDNSLabel, "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR")
 	assert.NilError(t, err)
@@ -47,11 +41,6 @@ func TestDeriveDNSLabelShape(t *testing.T) {
 	assert.ErrorContains(t, err, "unknown derivation")
 }
 
-// RequiredWhen naming a Captures() sibling used to be a promise the loader did not keep:
-// the condition read the sibling's document VALUE, and a Key's path ends in the
-// Either() where the document holds the branch, so the comparison never matched and
-// the field was never required. `engine/distributed/size` said RequiredWhen and a
-// database with no size compiled clean.
 func TestRequiredWhenReadsAKeysBranch(t *testing.T) {
 	schema := SchemaDefinition(Root(
 		Attributes(String("id")),
@@ -83,10 +72,6 @@ func TestRequiredWhenReadsAKeysBranch(t *testing.T) {
 	}
 }
 
-// An Either()+Captures() switch on an OPTIONAL block. Absent and wrong are different
-// documents and were getting the same answer, which is why every switch in the tau
-// vocabulary sits on a block that must be there — not by design, but because the
-// others could not be written.
 func TestKeySwitchOnAnOptionalBlock(t *testing.T) {
 	schema := SchemaDefinition(Root(
 		Attributes(String("id")),
@@ -132,10 +117,6 @@ func TestKeySwitchOnAnOptionalBlock(t *testing.T) {
 	}
 }
 
-// A group names the document its instances keep their own fields in. Before, that name
-// was a package-level global, so it was reserved EVERYWHERE: a nested group called
-// `config` under a resource was skipped in silence, because somewhere else in the tree
-// a container keeps its fields in a file by that name.
 func TestAGroupNamesItsOwnDocument(t *testing.T) {
 	schema := SchemaDefinition(Root(
 		Attributes(String("id")),

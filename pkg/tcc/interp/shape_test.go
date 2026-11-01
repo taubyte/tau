@@ -36,10 +36,7 @@ func mkRoot(groups ...*engine.Node) *engine.Node {
 	return &engine.Node{Group: true, Children: groups}
 }
 
-// A root with no Ref/index annotations must yield a pipe with none of those passes;
-// turning each feature on adds exactly its pass.
 func TestCompilePipe_SelectsPassesFromSchema(t *testing.T) {
-	// Bare schema: one resource group, plain id/name attrs, no annotations.
 	bare := mkRoot(mkResGroup("widgets", []*engine.Attribute{
 		{Name: "id"}, {Name: "name"},
 	}, nil))
@@ -78,11 +75,7 @@ func TestCompilePipe_SelectsPassesFromSchema(t *testing.T) {
 	assert.Equal(t, len(compilePipe(full, Env{"branch": "main"})), 4)
 }
 
-// ContainerKeys derives the nested-container config keys structurally (a top-level
-// group whose iterator is itself a group with children and no Resource
-// descriptor), so "applications" need never be restated in the interpreter.
 func TestContainerKey_DerivesNestedContainer(t *testing.T) {
-	// No container group -> "".
 	assert.Equal(t, len(ContainerKeys(mkRoot(mkResGroup("widgets", nil, nil)))), 0)
 
 	// Container: iterator is a group with children and carries no Resource meta.

@@ -49,11 +49,6 @@ var (
 	At         = interp.At
 	AtProduced = interp.AtProduced
 
-	// The VALUE terms — what a lowering says a name, a field or a written value is made
-	// of. `Attr` is the resource being lowered, `Each` the element, `Next` the one after
-	// it, `Scope` where the produced resources were put, `Text` fixed text and `Concat`
-	// several of those in a row. Attr/Each/Next are generic over the key spelling, so
-	// they are functions below rather than values here.
 	Text             = interp.Text
 	Concat           = interp.Concat
 	Scope            = interp.Scope
@@ -150,16 +145,6 @@ func KindFrom[T string | AKey](field T) engine.RefOpt { return engine.KindFrom(f
 // every place that spells it reads this constant.
 const EnvironmentVar = "environment"
 
-// PerEnv says this attribute may be written per ENVIRONMENT, as `<key>_<env>` beside the
-// key itself. It is the vocabulary's reading of the engine's generic Varies: environment
-// is the one axis tau configuration has, and naming it here rather than in the engine is
-// what lets a second axis be added by a declaration instead of a patch.
-//
-// Marked rather than universal because not every field may vary: an `id` or a `name` is
-// IDENTITY, and two environments of one resource share it — a suffix there would make
-// them two resources wearing one name. Where a field that cannot vary has to differ, the
-// whole resource is written for that environment instead, which is the same rule one
-// segment up the path.
 func PerEnv() AttrOption { return engine.Varies(EnvironmentVar) }
 
 // Delegable marks a value that may be written in the repository the resource's

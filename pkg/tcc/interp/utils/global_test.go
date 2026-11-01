@@ -10,27 +10,22 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// Mock transformer for testing
 type mockTransformer struct{}
 
 func (m *mockTransformer) Process(ct transform.Context[object.Refrence], o object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
-	// Simple transformer that just sets a marker
 	o.Set("processed", true)
 	return o, nil
 }
 
 func TestGlobal_ProcessProjectAndApps(t *testing.T) {
-	// Setup: Create project with applications
 	obj := object.New[object.Refrence]()
 	obj.Set("id", "project-id-123")
 
-	// Create global functions
 	funcsObj, _ := obj.CreatePath("functions")
 	globalFuncSel := funcsObj.Child("globalFunc")
 	globalFuncSel.Set("id", "global-func-id")
 	globalFuncSel.Set("type", "http")
 
-	// Create applications with functions
 	appsObj, _ := obj.CreatePath("applications")
 	appObj := object.New[object.Refrence]()
 	appSel := appsObj.Child("app-id-456")
@@ -40,19 +35,15 @@ func TestGlobal_ProcessProjectAndApps(t *testing.T) {
 	appFuncSel.Set("id", "app-func-id")
 	appFuncSel.Set("type", "https")
 
-	// Execute: Use Global wrapper with mock transformer
 	wrapped := Global([]string{"applications"}, transform.Transformer[object.Refrence](&mockTransformer{}))
 	ctx := transform.NewContext[object.Refrence](context.Background(), obj)
 	result, err := wrapped.Process(ctx, obj)
 
-	// Verify: Both global and app objects processed
 	assert.NilError(t, err)
 
-	// Verify global object processed (has processed marker)
 	processed := result.Get("processed")
 	assert.Equal(t, processed.(bool), true)
 
-	// Verify app object processed
 	appsObjAfter, _ := result.Child("applications").Object()
 	appObjAfter, _ := appsObjAfter.Child("app-id-456").Object()
 	appProcessed := appObjAfter.Get("processed")
@@ -82,7 +73,6 @@ func TestGlobal_MultipleApplications(t *testing.T) {
 	obj := object.New[object.Refrence]()
 	obj.Set("id", "project-id-123")
 
-	// Create multiple applications
 	appsObj, _ := obj.CreatePath("applications")
 
 	app1Obj := object.New[object.Refrence]()
@@ -110,7 +100,6 @@ func TestGlobal_MultipleApplications(t *testing.T) {
 
 }
 
-// Error transformer for testing error paths
 type errorTransformer struct{}
 
 func (m *errorTransformer) Process(ct transform.Context[object.Refrence], o object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
@@ -128,7 +117,6 @@ func TestGlobal_ProcessError(t *testing.T) {
 	assert.ErrorContains(t, err, "processing global object failed")
 }
 
-// Transformer that succeeds on global but fails on applications
 type appErrorTransformer struct{}
 
 func (m *appErrorTransformer) Process(ct transform.Context[object.Refrence], o object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
@@ -137,7 +125,6 @@ func (m *appErrorTransformer) Process(ct transform.Context[object.Refrence], o o
 	if len(ct.Path()) > 2 {
 		return nil, fmt.Errorf("application processing error")
 	}
-	// For global, just set a marker
 	o.Set("processed", true)
 	return o, nil
 }
@@ -146,19 +133,15 @@ func TestGlobal_ApplicationProcessError(t *testing.T) {
 	obj := object.New[object.Refrence]()
 	obj.Set("id", "project-id-123")
 
-	// Create application
 	appsObj, _ := obj.CreatePath("applications")
 	appObj := object.New[object.Refrence]()
 	appSel := appsObj.Child("app-id-456")
 	appSel.Add(appObj)
 
-	// Use app error transformer
 	wrapped := Global([]string{"applications"}, transform.Transformer[object.Refrence](&appErrorTransformer{}))
 	ctx := transform.NewContext[object.Refrence](context.Background(), obj)
 	_, err := wrapped.Process(ctx, obj)
 
-	// Should fail when processing the application
-	// "scope", not "application": this layer processes whatever a vocabulary nests
-	// resources under, and one of them calls it a namespace.
+	// "scope", not "application": vocabularies name it differently.
 	assert.ErrorContains(t, err, "processing scope")
 }

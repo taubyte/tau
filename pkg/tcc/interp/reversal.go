@@ -7,33 +7,11 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/engine"
 )
 
-// WHAT A LOWERING GIVES BACK, and what it does not.
-//
-// A lowering copies values out of the resource it lowers: a step's `attempts` becomes a
-// queue's `max-attempts`, a step's `run` becomes the name at the end of a link. Once the
-// resources it produced are stored, those values exist twice — and two copies of a value
-// are two values the moment one of them is edited, with nothing to say which one the
-// author meant.
-//
-// So the rule is that the shell keeps the REMAINDER: the authored fields nothing it
-// produced carries. Everything else is read back out of what it became.
-//
-// That only works for a term that INVERTS. `Each("attempts")` does: the whole value lands
-// in one field, and reading the field gives the value.
-//
-// A COMPOSED name used to not, and the reason was the string. `"{name}_{each.name}"`
-// produced `checkout_reserve`, and recovering `reserve` from it meant knowing it splits at
-// the first underscore — a guess the moment either half contains one, so composition was
-// declared one-way and everything it read stayed in the shell.
-//
-// `Concat(Attr("name"), Text("_"), Each("name"))` is the same three characters of output
-// and a different statement: the underscore is a separator the LOWERING wrote, and it says
-// so. So the split is not a guess. The parts around the composed one are filled in — text
-// is known, and so is the name of the resource being lowered, which is not config in the
-// document but what the document IS — their lengths are the cut, and what is between them
-// is the value, whatever it contains. Invertibility became a property the DSL states,
-// which is what `.notes/v2/shell-dedup.md` asked for and could not have while a value was
-// a string that had already been concatenated.
+// What a lowering gives back. A carried value would otherwise exist twice, so
+// the shell keeps only the remainder and the rest is read back from what it
+// became. That needs terms that invert: a whole value lands in one field, and a
+// Concat states its separators, so a composed name is cut at their filled-in
+// lengths rather than guessed.
 
 // Carriage is one authored field a lowering carries out, and where it lands.
 type Carriage struct {
@@ -122,10 +100,8 @@ func Carriages(root *engine.Node, kind string) []Carriage {
 				Before: before, After: after, nameField: nameField,
 			})
 		}
-		// A value carried WHOLE, and one composed into something larger, are the same
-		// question asked of the term: which one part of it was read off the config. A term
-		// that reads one field is that part; a join has one when everything else in it is
-		// known.
+		// Carried whole or composed, the question is the same: which one part of the term
+		// was read off the config.
 		carry := func(t Term, as string) {
 			if part, before, after, ok := t.composed(nameField); ok {
 				add(part, as, before, after)
@@ -140,15 +116,8 @@ func Carriages(root *engine.Node, kind string) []Carriage {
 		// WHAT THE PRODUCED RESOURCE IS CALLED is a place a value lands. A step's name is
 		// written down exactly once, as part of the name of the queue it becomes.
 		carry(l.name, producedName)
-		// The NAME of the resource a lowering writes into is another: a step's `run` is
-		// only ever written as the resource that carries what the step produced. Several
-		// writes may go into that same resource — the queue it receives from and the one
-		// it sends to are both entries on the function — and any of them gives the name
-		// back.
-		//
-		// But only when they all name the SAME one. A lowering that writes into two
-		// different resources has two names at that address and neither can be read
-		// back from it.
+		// The name of the resource a lowering writes into is another place a value lands
+		// (a step's `run`), readable only when every write names the same one.
 		if t, only := soleTarget(l.writes); only {
 			carry(t, targetName)
 		}
@@ -163,11 +132,8 @@ func Carriages(root *engine.Node, kind string) []Carriage {
 	return out
 }
 
-// Remainder is what a shell has to keep: every authored field of a kind that no lowering
-// of it carries out whole, so nothing it produced can give the value back.
-//
-// The identity a resource is stored under — its name and id — is not here. That is not
-// config the author wrote into the document, it is what the document IS.
+// Remainder is what a shell keeps: every authored field no lowering carries out
+// whole. A resource's name and id are not config written in it.
 func Remainder(root *engine.Node, kind string) []string {
 	iter := iterOfKind(root, kind)
 	if iter == nil {
@@ -205,13 +171,9 @@ func Remainder(root *engine.Node, kind string) []string {
 	return out
 }
 
-// ReadBack recovers the authored values a lowering carried away, out of the resources it
-// produced. Keyed by where the value belongs in the authored document — "attempts" for a
-// field of the resource, "steps/0/attempts" for one of a list element — which is the
-// same address `Source.Path` gives, so order survives a rebuild.
-//
-// A value that is not there is not in the map: a step with no `on-error` produced no
-// failure link, and an absent value is absent rather than empty.
+// ReadBack recovers the values a lowering carried away from the resources it
+// produced, keyed by their authored address ("attempts", "steps/0/attempts"). An
+// absent value is not in the map.
 func ReadBack(plan []Derived, cs []Carriage) map[string]string {
 	out := map[string]string{}
 	for _, d := range plan {

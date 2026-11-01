@@ -12,43 +12,18 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/engine"
 )
 
-// inline.go reads the files a document POINTS AT into the document.
-//
-// # Why a compile has to do this
-//
-// An attribute marked Inlined names a file. A path is only useful to something
-// that can open it, and nothing downstream of a compile can: a node holds the
-// compiled object and an artifact store, never the repository. So the content is
-// read here or it is read nowhere — which is exactly what happened to a zone's
-// `file`, declared and decoded and consumed by nobody while the server went on
-// answering from a list of strings in yaml.
-//
-// # Why it is not a lowering
-//
-// The lowering vocabulary composes values the document already holds — Sets takes
-// Attr, Text and Concat. This reaches OUTSIDE the document for a value it does not
-// have, which no term in that vocabulary can express and none should: a lowering
-// is a rewrite of what was written, and this is a read.
-//
-// # Why the compile can see the file at all
-//
-// overlay() copies the whole repository into the compile's view, so a file beside
-// the configuration is already in hand. A file that is NOT there is the mount
-// protocol's case, not an error: see Mounts.
-//
-// # It speaks no vocabulary
-//
-// Which attributes carry content and which key that content lands under are the
-// SCHEMA's answers, read off the annotation. Nothing here knows what a zone is.
+// inline.go reads the files a document points at into the document: nothing
+// downstream of a compile can open the repository, so the content is read here
+// or nowhere. It is a read, not a lowering. overlay() puts the repository in the
+// compile's view; a file not there is the mount protocol's case. Which attributes
+// carry content is the schema's answer.
 
 // ErrInline is a pointed-at file that could not be read, or a document that says
 // the same thing twice.
 var ErrInline = errors.New("interp: that file could not be read into the object")
 
-// inlineFiles reads every Inlined attribute's file into the object.
-//
-// ORDERED, because two resources naming the same unreadable file must produce the
-// same first refusal whichever order a map happened to iterate in.
+// inlineFiles reads every Inlined attribute's file into the object, in a fixed
+// order so the first refusal is the same every run.
 func (c *Compiler) inlineFiles(obj Object) error {
 	var failed error
 	eachInlined(c.compileRoot, obj, func(kind, id, name, at string, mark inlineMark, path string, _ map[string]any) {
@@ -56,61 +31,33 @@ func (c *Compiler) inlineFiles(obj Object) error {
 			return
 		}
 
-		// THE FILE WINS, AND records IS RECOMPUTED EVERY COMPILE.
-		//
-		// This used to refuse a document that wrote both, on the grounds that
-		// there is no rule for which one wins that is not a surprise. There
-		// is: the file is where the author put the records, so the key they
-		// land under is DERIVED and a compile overwrites it. The refusal also
-		// could not survive a round trip -- decompiling a compiled zone yields
-		// a document carrying both, and a compile cannot tell that from a
-		// person writing both.
+		// The file wins, and the content key is recomputed every compile: it is derived.
+		// A decompiled zone carries both, and a compile cannot tell that from a person
+		// writing both.
 		lines, err := readLines(c.inlineFS(), path)
 		if err != nil {
-			// NOT REACHABLE IS NOT A REFUSAL. A file this compile cannot see
-			// is the mount protocol's case -- it lives in a repository nobody
-			// has fetched -- and the whole point of that protocol is that tcc
-			// reports what it needs rather than failing. Left for the check
-			// that reports an unanswered mount, exactly as a delegated block
-			// that was never filled is left.
-			//
-			// A compile that refused here would also refuse every project
-			// whose zone file is somewhere else, which is the shape this is
-			// for.
+			// Not reachable is not a refusal: a file in a repository nobody fetched is the
+			// mount protocol's case, reported by the unanswered-mount check.
 			return
 		}
 
-		// WRITTEN THROUGH THE OBJECT AND NOT INTO THE FLATTENED MAP. Flat()
-		// builds a fresh map every call, so a value written into it goes into
-		// a copy that is thrown away -- which the first shape here did,
-		// silently, while the selector read it back correctly.
+		// Written through the object, not the flattened map: Flat() returns a fresh copy.
 		held, err := resourceIn(c.compileRoot, obj, at, kind, id)
 		if err != nil {
 			failed = fmt.Errorf("%w: %s/%s: %v", ErrInline, kind, name, err)
 			return
 		}
-		// SET ON THE RESOURCE, NOT ON ITS PARENT. Selector.Set writes the
-		// NAMED CHILD -- so setting through it replaced the whole resource
-		// with an object holding one key, and a zone came out of the compile
-		// with its records and no fqdn. Object.Set adds a field to what is
-		// already there.
+		// Object.Set adds a field; Selector.Set would replace the whole resource with a
+		// one-key object.
 		held.Set(mark.into, lines)
 	})
 	return failed
 }
 
-// InlinedFiles is the inverse of the compile's read: every file an Inlined attribute
-// names, with the content the compile carried for it, keyed by the repository path the
-// attribute holds. It is what a decompile writes back beside the documents, because
-// the document keeps only the path and a repository holding a path to nothing does not
-// compile to what it came from.
-//
-// A resource whose content key is absent names a file this compile never read -- the
-// mount protocol's case -- and so has nothing to give back; it is left out rather than
-// written as an empty file that would then be served as an empty zone.
-//
-// Asked of the COMPILED object, before a decompile rewrites it: the walk is keyed by
-// id, and the decompile's last act is to key every resource by name instead.
+// InlinedFiles is every file an Inlined attribute names, with the content the
+// compile carried, keyed by repository path: what a decompile writes back. A
+// resource whose content key is absent is left out rather than written empty.
+// Asked of the compiled object, which is keyed by id.
 func InlinedFiles(root *engine.Node, obj Object) map[string][]string {
 	files := map[string][]string{}
 	eachInlined(root, obj, func(_, _, _, _ string, mark inlineMark, path string, res map[string]any) {
@@ -146,13 +93,9 @@ func eachInlined(root *engine.Node, obj Object, fn func(kind, id, name, at strin
 	})
 }
 
-// inlineFS is the filesystem a pointed-at file is read from: the merged view when
-// mounts were answered, the project's own tree otherwise.
-//
-// ALWAYS ROOTED, even at "/". A repository path is relative, and a MemMapFs does
-// not resolve a relative name against anything -- it is simply a different key --
-// so an unrooted in-memory view reads nothing, which is exactly what recompiling a
-// decompiled project did. Rooting also keeps a path from reading outside the tree.
+// inlineFS is where a pointed-at file is read: the merged view when mounts were
+// answered, the project's tree otherwise. Always rooted, since a MemMapFs
+// resolves no relative name, and rooting keeps a path inside the tree.
 func (c *Compiler) inlineFS() afero.Fs {
 	return afero.NewBasePathFs(c.baseFs, cmp.Or(c.basePath, "/"))
 }
@@ -164,14 +107,7 @@ type inlineMark struct {
 	into      string
 }
 
-// inlinedIn is every Inlined attribute under one kind's iterator.
-//
-// READ OFF THE NODE THE WALK ALREADY HANDS US, which is what delegableTop does for
-// the mount protocol: the schema is the only thing that knows which attributes
-// carry content, and asking it per resource costs a walk of one kind's attributes.
-//
-// ORDERED, so two attributes on one resource are read in one order and a failure
-// names the same one twice.
+// inlinedIn is every Inlined attribute under one kind's iterator, in order.
 func inlinedIn(iter *engine.Node) []inlineMark {
 	if iter == nil {
 		return nil
@@ -201,18 +137,9 @@ func inlinedIn(iter *engine.Node) []inlineMark {
 	return marks
 }
 
-// readLines is the file, split into the lines a consumer reads.
-//
-// LINES AND NOT BYTES, because every consumer of an inlined file in this
-// vocabulary reads lines — a zone file is parsed one record at a time on purpose,
-// so that one syntax error costs one record instead of a whole zone. Carrying the
-// bytes would make each consumer split them again and invite two answers about
-// what a line is.
-//
-// NOTHING IS STRIPPED. Comments and blank lines travel, because the thing that
-// parses these is the same parser the author's own tooling uses and it already
-// knows what to ignore — dropping them here would mean a compile deciding what a
-// zone file says.
+// readLines is the file as lines, since every consumer reads lines (a zone file
+// is parsed a record at a time). Nothing is stripped: the consumer's parser
+// knows what to ignore.
 func readLines(fs afero.Fs, path string) ([]any, error) {
 	body, err := afero.ReadFile(fs, path)
 	if err != nil {
@@ -232,16 +159,9 @@ func readLines(fs afero.Fs, path string) ([]any, error) {
 	return lines, nil
 }
 
-// resourceIn selects one resource in the object: its scope chain, then its kind,
-// then its id.
-//
-// The scope chain is NAMES, as walkResources hands it over, while a compiled
-// container is keyed by its id under its group like any other resource. Each segment
-// is the container whose name field holds it.
-//
-// BY ID AND NOT BY NAME for the resource itself. A resource's name comes from the
-// file it was written in, so the document need not carry a `name` key at all -- a
-// selector keyed on one matches nothing while looking correct.
+// resourceIn selects one resource: its scope chain of container names, then its
+// kind, then its id. By id: a resource's name comes from its file, so the
+// document may carry no `name` key.
 func resourceIn(root *engine.Node, obj Object, at, kind, id string) (Object, error) {
 	held := obj
 	// The same wrapper Flat() is unwrapped for: a compiled object nests everything

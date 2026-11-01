@@ -11,16 +11,11 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// A PUSH IS ALREADY AN ANSWER TO "DEPLOY WHERE". The table says which branches
-// feed which deployments; this is the read of it that a push makes.
 func TestABranchResolvesToItsDeployments(t *testing.T) {
 	envs := envsOfFixture(t)
 
-	// main feeds production AND the shadow written inside it. A caller taking
-	// the first match would quietly stop deploying one of the two.
-	//
-	// The order is by name — the document's own is a Go map's and is not
-	// recoverable — with each shadow kept right after the parent it shadows.
+	// main feeds production and its shadow. Ordered by name (the document's order is
+	// a map's), each shadow right after its parent.
 	assert.DeepEqual(t, schema.DeploymentNames(envs, "main"), []string{"preview", "production", "ab"})
 
 	// master is production's other branch, and the shadow does not take it.
@@ -33,9 +28,6 @@ func TestABranchResolvesToItsDeployments(t *testing.T) {
 	assert.DeepEqual(t, schema.DeploymentNames(envs, "feature/checkout"), []string{"preview"})
 }
 
-// `*` CROSSES `/`, and path.Match's does not — which is the whole reason this
-// matcher exists. Under path.Match, `preview: ["*"]` would match none of the
-// branches anybody pushes and `release/*` would miss `release/1/0`.
 func TestTheGlobCrossesSlashes(t *testing.T) {
 	assert.Assert(t, schema.MatchBranch("*", "feature/checkout"))
 	assert.Assert(t, schema.MatchBranch("release/*", "release/1/0"))
@@ -59,17 +51,10 @@ func TestTheGlobCrossesSlashes(t *testing.T) {
 	assert.Assert(t, !schema.MatchBranch("", "main"))
 }
 
-// A project with no table declares one deployment, and this names none: there
-// is no name in the document to return, and inventing one here would be the
-// schema naming a deployment its author did not.
 func TestNoTableFeedsNothing(t *testing.T) {
 	assert.Assert(t, schema.Deployments(nil, "main") == nil)
 }
 
-// THE TWO READERS ANSWER THE SAME SHAPE. One reads a document before a compile
-// and one reads what the compile produced; neither is a special case of the
-// other, and a drift between them would mean a config repository's deploy and a
-// code repository's build disagreed about which deployments a branch feeds.
 func TestTheTableReadsTheSameBeforeAndAfterACompile(t *testing.T) {
 	before := envsOfFixture(t)
 
@@ -101,9 +86,6 @@ func TestTheTableReadsTheSameBeforeAndAfterACompile(t *testing.T) {
 	}
 }
 
-// An object with no table, and one whose table is not one, are both "no
-// deployments declared" rather than a panic — the input is a decoded JSON map
-// and nothing has vetted its shape.
 func TestATableThatIsNotOne(t *testing.T) {
 	assert.Assert(t, schema.EnvironmentsIn(nil) == nil)
 	assert.Assert(t, schema.EnvironmentsIn(map[string]any{}) == nil)

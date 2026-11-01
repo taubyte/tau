@@ -5,15 +5,10 @@ import (
 	"strings"
 )
 
-// Partial validation: run a resource's declared single-value validators (enum,
-// string shape, cid, fqdn, variable-name, minimum, ...) against one field or one
-// resource, WITHOUT a compile. This is the cheap path for live editing (UI, IDE,
-// tau-cli) — O(fields), no whole-config assembly.
-//
-// It deliberately covers only single-value constraints. Cross-element constraints
-// (Ref existence, cross-app scope) need the assembled name->id index and stay a
-// whole-config concern (Compiler.Validate). A caller that wants full coverage runs
-// the field/resource check for instant feedback and a whole-config Validate on save.
+// Partial validation runs a resource's single-value validators against one
+// field or resource without a compile: the cheap path for live editing.
+// Cross-element constraints (Ref existence, cross-app scope) need the whole
+// config (Compiler.Validate).
 
 // ValidatedField pairs a resource field's authored path with the single-value
 // validator the DSL declared for it.
@@ -65,14 +60,11 @@ func CheckFields(root []*Node, group string) [][]string {
 	return out
 }
 
-// FieldRef is where a field may be authored.
 type FieldRef struct {
 	Path []string
-	// AnyOf is every plain location the field may be authored at, when its
-	// declared path contains a FINITE matcher (Either). A storage's size lives
-	// at object/size or streaming/size depending on which block the author
-	// wrote — two static locations, not a dynamic one. AnyOf[0] == Path; nil
-	// when the path has no matcher.
+	// AnyOf is every plain location the field may be authored at when its path
+	// holds a finite matcher (object/size or streaming/size); AnyOf[0] == Path, nil
+	// without a matcher.
 	AnyOf [][]string
 }
 
@@ -84,38 +76,22 @@ type RequiredField struct {
 	When   *FieldRef // the discriminator to read, nil when unconditional
 	WhenIn []string  // ...required only if its value is one of these
 
-	// WhenBranchAt is set when the discriminator has NO value of its own: its
-	// path ends in a finite matcher and it Captures(), which means the value IS
-	// THE KEY an author wrote under this prefix.
+	// WhenBranch: the discriminator has no value of its own, its path ending in a
+	// finite matcher it Captures(), so its value is the key written under
+	// WhenBranchAt:
 	//
 	//	build:                 # WhenBranchAt = ["build"]
 	//	    commands:          # ...and the discriminator's value is "commands"
 	//	        image: node:22
 	//
-	// WITHOUT THIS, EVERY REQUIRED FIELD ON A BRANCH WAS SILENTLY DROPPED. The
-	// discriminator's own path is dynamic, so reading it as a field returned
-	// nothing and the condition could never be true — which took `build/image`,
-	// `build/run`, `build/script` and `build/dockerfile` out of the required
-	// set entirely. An importer emitting a build block therefore produced a
-	// project that would not compile and a to-do list that named nothing.
-	//
-	// When WhenBranch is true, When is nil: there is nothing to read as a
-	// field. WhenBranchAt may be EMPTY and that is meaningful — the branch key
-	// sits at the resource's own root, which is where a stream's engine and a
-	// gateway's routing live. A caller testing len(WhenBranchAt) instead of
-	// this bool makes every one of those unconditionally required.
+	// When is nil then. WhenBranchAt may be empty, the branch sitting at the
+	// resource's root, so test this bool, not its length.
 	WhenBranch   bool
 	WhenBranchAt []string
 }
 
-// fieldPaths is every plain authored location of an attribute: a static path
-// yields one, and each FINITE matcher segment multiplies into its values. An
-// unbounded matcher (All) yields nil — such a field has no enumerable location
-// and stays unaddressable.
-//
-// This is the whole trick behind required fields at a "dynamic" path: Either is
-// declared, so the set of locations is known statically. Nothing has to resolve
-// a matcher against a document outside the engine.
+// fieldPaths is every plain authored location of an attribute: each finite
+// matcher segment multiplies into its values; an unbounded one (All) yields nil.
 func fieldPaths(a *Attribute) [][]string {
 	path := a.Path
 	if len(path) == 0 {
@@ -145,15 +121,9 @@ func fieldPaths(a *Attribute) [][]string {
 	return out
 }
 
-// RequiredFields returns a resource group's REQUIRED fields — the ones whose
-// absence the compiler rejects at load — each with the condition that governs
-// it. Partial validation has to ask for these separately: every other check runs
-// against a value, and a missing field has none, so a loop over present values
-// can only ever report a resource with nothing in it as valid.
-//
-// A field at a dynamic (Either/Key) path is skipped, as everywhere else: it has
-// no plain authored path to report against. Such a field can still be required
-// in effect — a Key attribute with no match already fails at load.
+// RequiredFields returns a resource group's required fields with the condition
+// governing each: a missing field has no value, so a loop over present values
+// can never report it. A field at a dynamic path is skipped.
 func RequiredFields(root []*Node, group string) []RequiredField {
 	var out []RequiredField
 	for _, g := range root {
@@ -201,14 +171,9 @@ func RequiredFields(root []*Node, group string) []RequiredField {
 	return out
 }
 
-// branchPrefix is the path under which a CAPTURED discriminator's value is the
-// key, and whether the attribute is one.
-//
-// It is exactly the shape `String(Key("build","kind"), Path("build",
-// Either(ways...)), Captures())` has: plain segments, then one finite matcher,
-// and nothing after it. Anything else is a dynamic path this cannot resolve —
-// a matcher in the middle would make the prefix itself depend on a branch, and
-// a non-finite one enumerates nothing.
+// branchPrefix is the path under which a captured discriminator's value is the
+// key: plain segments, then one finite matcher, then nothing, as in
+// `String(Key("build","kind"), Path("build", Either(ways...)), Captures())`.
 func branchPrefix(a *Attribute) ([]string, bool) {
 	if !a.Captures || len(a.Path) == 0 {
 		return nil, false
@@ -240,21 +205,10 @@ func attrByName(attrs []*Attribute, name string) *Attribute {
 	return nil
 }
 
-// ValidateField runs the single-value validator for one field (by authored path)
-// of a resource group against value. It distinguishes three outcomes so a caller
-// can tell "valid" from "not recognized":
-//   - the field is unknown (no attribute at that plain path) -> an "unknown field"
-//     error, so a typo'd path isn't silently reported as OK;
-//   - the field is known but carries no single-value validator -> nil (valid,
-//     unconstrained);
-//   - the field has a validator -> its result.
-//
-// Before the validator, the value is checked against the field's DECLARED TYPE
-// (bool / integer / string / string-array), so a type-only field — one whose sole
-// constraint is its type — is still type-safe (a "true6" into a boolean, or a bare
-// string into an array, is rejected, not stored as-is).
-//
-// Fields at a dynamic (Either/Key) path have no plain path and read as unknown.
+// ValidateField runs one field's single-value validator against value: an
+// unknown field (no attribute at that plain path, including a dynamic one) is an
+// error; a known field with no validator is nil. The value is first checked
+// against the field's declared type.
 func ValidateField(root []*Node, group string, field []string, value any) error {
 	a, element := matchField(root, group, field)
 	if a == nil {
@@ -287,7 +241,7 @@ func checkType(a *Attribute, element bool, value any) error {
 	case TypeInt:
 		// isInteger covers every whole-number kind, so this cannot drift out of
 		// step with what coerceScalar will render for a string field.
-		if !isInteger(value) && !convertible(value, TypeInt) { // a quoted number is still a number
+		if !isInteger(value) && !convertible(value, TypeInt) {
 			return typeErr(a, "integer", value)
 		}
 	case TypeStringSlice:

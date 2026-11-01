@@ -10,18 +10,9 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// generated_readers_test holds the runtime to pkg/specs' GENERATED readers.
-//
-// A path spelled by hand is a second statement of where a value sits in a
-// compiled object, and the two drift exactly where it matters: a captured
-// branch compiles somewhere other than where it was written, and a reader that
-// guesses reads the wrong place and reports nothing. The generated reader says
-// it once, from the vocabulary, and moves when the vocabulary does.
-//
-// So a consumer — any non-test, non-generated file outside pkg/tcc and pkg/specs
-// that reads a compiled resource — may not spell a path a generated field
-// covers. It reads the field. What it may still spell is a key the vocabulary
-// does not generate, and only by name, below, with the reason.
+// Holds the runtime to pkg/specs' generated readers: a consumer outside pkg/tcc
+// and pkg/specs may not spell a path a generated field covers, since a hand
+// spelled path drifts from where a captured branch actually compiles.
 
 // spelledAllowed is every spelled read a consumer keeps, by "<file> <path>", and
 // why no generated field covers it. Empty is the goal and the current state; an
@@ -29,7 +20,6 @@ import (
 // somebody did not get round to.
 var spelledAllowed = map[string]string{}
 
-// TestNOCONSUMERSPELLSAPATHAGENERATEDFIELDCOVERS.
 func TestNoConsumerSpellsAPathAGeneratedFieldCovers(t *testing.T) {
 	root := repoRoot(t)
 	spelled, _ := scanReads(t, root)
@@ -111,8 +101,6 @@ func overlaps(read, key []string) bool {
 	return len(read) == len(key)
 }
 
-// TestTHEGUARDSEESASPELLEDREAD, on the shapes the runtime used to read by: a
-// literal path, a block taken whole, and a computed segment beside literal ones.
 func TestTheGuardSeesASpelledRead(t *testing.T) {
 	keys := map[string]bool{"route/path": true, "ports/*/number": true, "sql/engine": true}
 

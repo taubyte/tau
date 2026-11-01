@@ -29,20 +29,14 @@ func simplifyYAMLError(err error) error {
 
 	errStr := err.Error()
 
-	// Check if this is a YAML parsing error with technical details
 	if strings.Contains(errStr, "decode(") || strings.Contains(errStr, "yaml: unmarshal errors") {
-		// Extract location information if present
-		// Format: "decode(*string) failed in file '/path' at line X, column Y: yaml: unmarshal errors:\n  line X: cannot unmarshal !!map into string"
-		// We want to simplify this to just indicate the type mismatch or missing value
+		// A scalar read that got a map: the field is missing or has the wrong
+		// structure.
 
-		// Check for type mismatch patterns
 		if strings.Contains(errStr, "cannot unmarshal !!map into") {
-			// This means we're trying to read a scalar value but got a map/object
-			// The user-friendly message is that the field is missing or has wrong structure
 			return errors.New("field is missing or has incorrect structure")
 		}
 
-		// For other YAML errors, return a generic message
 		return errors.New("invalid YAML format")
 	}
 
@@ -57,7 +51,6 @@ func wrapErrorWithLocation(query *yaseer.Query, err error, context string) error
 		return nil
 	}
 
-	// Simplify low-level YAML errors before wrapping
 	err = simplifyYAMLError(err)
 
 	wrapped := fmt.Errorf("%s: %w", context, err)
@@ -71,46 +64,27 @@ func wrapErrorWithLocation(query *yaseer.Query, err error, context string) error
 	return located(filePath, line, column, wrapped)
 }
 
-// inferPathQuery walks a declared path against the document, resolving each
-// matcher segment to the key actually present. It returns the RESOLVED segments
-// so a caller can report where it really looked ("streaming/size"), not the
-// declared shape — the two differ exactly where a matcher is involved.
-// ambiguousPath marks the one resolution failure that is a CONFLICT rather than an
-// absence: two branches of a switch open at once.
+// ambiguousPath marks the one resolution failure that is a conflict rather than
+// an absence: two branches of a switch open at once.
 const ambiguousPath = "ambiguous path"
 
 // walk is what a load carries down that the schema cannot state: the per-compile
 // decisions.
 type walk struct {
-	// bound is what the variables ARE for this read, nil for a read that binds none. A
-	// vocabulary that declares no variable is unaffected by every line below that reads
-	// it — which is why variant resolution needs no opt-in: an empty binding resolves
-	// exactly as a schema with no variables does.
+	// bound is the variables' values for this read, nil when it binds none; an empty
+	// binding resolves as a schema with no variables does.
 	bound Bound
-	// vars is every variable the vocabulary declares with the values this project gives
-	// it, and it is a different question from `bound`. One document serves them all, so
-	// a document written for three values carries all three spellings at once and each
-	// read takes one of them — which means strict has to know the whole set, or one
-	// read rejects another's line as an unknown key. The set is closed and declared, so
-	// `id_a` is still a typo and so is `<key>_typo`.
+	// vars is every declared variable with this project's values. One document
+	// carries every value's spelling, so strict must know the whole set or one read
+	// rejects another's line; `<key>_typo` is still a typo.
 	vars Vars
 }
 
-// variantPath is attr's path with a variable's value appended to its LAST segment — the
-// path `x/y` under the value `a` is `x/y_a`.
-//
-// A MATCHER IS SUFFIXED TOO, and it matches a key the DOCUMENT chooses rather than one
-// the schema names. The schema cannot say in advance which alternative will be there,
-// but a matcher can spell every one it admits — see SuffixMatcher.
-//
-// THE UNSUFFIXED ALTERNATIVE STILL NAMES THE CHOICE. An attribute that captures WHICH
-// alternative was taken does not itself vary, so it reads the bare key — which is the
-// Varies contract everywhere else too: `<key>_<value>` sits BESIDE the key, overriding
-// its value and never replacing its declaration.
-//
-// nil when there is nothing to suffix: no value, or a matcher that cannot spell itself —
-// All() admits keys nobody can enumerate, so there is no set to suffix and no variant
-// spelling to ask it for.
+// variantPath is attr's path with value appended to its last segment: `x/y`
+// under `a` is `x/y_a`. A matcher spells its own suffixed form. An attribute
+// capturing which alternative was taken does not vary and reads the bare key.
+// nil when there is nothing to suffix: no value, or All(), which cannot spell
+// itself.
 func variantPath(path []StringMatch, value string) []StringMatch {
 	if value == "" || len(path) == 0 {
 		return nil
@@ -123,9 +97,7 @@ func variantPath(path []StringMatch, value string) []StringMatch {
 	case string:
 		out[len(out)-1] = last + "_" + value
 	case SuffixMatcher:
-		// THE MATCHER SPELLS ITSELF. Only it knows what it admits, so only it
-		// can say what its suffixed spelling is — rebuilding one here would
-		// be this function knowing the shape of every matcher there will ever be.
+		// Only the matcher knows what it admits, so only it can spell its suffixed form.
 		out[len(out)-1] = last.Suffixed(value)
 	default:
 		return nil
@@ -143,10 +115,8 @@ func inferPathQuery(path []StringMatch, query *yaseer.Query) (*yaseer.Query, []s
 		case string:
 			query = query.Get(pitm)
 			resolved = append(resolved, pitm)
-			// Invalidate cache since query state changed
 			cacheValid = false
 		case StringMatcher:
-			// Reuse cached list if available and query state hasn't changed
 			var list []string
 			var err error
 			if cacheValid && cachedList != nil {
@@ -156,16 +126,13 @@ func inferPathQuery(path []StringMatch, query *yaseer.Query) (*yaseer.Query, []s
 				if err != nil {
 					return nil, nil, wrapErrorWithLocation(query, err, "list path matches failed")
 				}
-				// Cache the list for potential reuse (only valid until query state changes)
 				cachedList = list
 				cacheValid = true
 			}
 
-			// Exactly one key may match. Taking "the first" would be a coin
-			// flip: mapKeys returns document keys in unspecified order (see
-			// yaseer/utils.go), so a document that opens BOTH branches of an
-			// Either would resolve differently between runs — and differently
-			// from any consumer that enumerates the branches statically.
+			// Exactly one key may match: mapKeys returns keys in unspecified order, so
+			// taking the first would resolve a document with two branches open differently
+			// between runs.
 			var matched []string
 			for _, l := range list {
 				if pitm.Match(l) {
@@ -177,7 +144,7 @@ func inferPathQuery(path []StringMatch, query *yaseer.Query) (*yaseer.Query, []s
 				return nil, nil, errorWithLocation(query, "can't find match for path")
 			case 1:
 			default:
-				slices.Sort(matched) // stable message, whatever the map order was
+				slices.Sort(matched)
 				return nil, nil, errorWithLocation(query,
 					"%s: %s each match, and only one may be set", ambiguousPath, strings.Join(matched, " and "))
 			}
@@ -294,17 +261,10 @@ func requiredHere(n *Node, attr *Attribute, query *yaseer.Query) bool {
 	return conditionHolds(n, c, query)
 }
 
-// defaultHere is whether an absent attribute's default belongs in THIS document.
-//
-// A DEFAULT UNDER A BRANCH NOBODY TOOK IS A VALUE FILED IN THE WRONG PLACE, and it is
-// worse than a stray key: a discriminated kind reads its type off which block exists, so
-// materialising `queue/visibility_timeout` on a resource whose block is `log:` invents
-// the queue branch and makes the type ambiguous. The same defect the vocabulary refuses
-// to let an AUTHOR write — `postgres: { size: 1GB }` is an unknown key rather than a
-// number under a branch nobody took — the loader was creating for itself.
-//
-// An attribute with no `defaultWhen` keeps its default unconditionally, which is every
-// attribute that had one before this existed.
+// defaultHere is whether an absent attribute's default belongs in this document.
+// A default under a branch nobody took invents that branch, making a
+// discriminated kind's type ambiguous. Without defaultWhen a default always
+// applies.
 func defaultHere(n *Node, attr *Attribute, query *yaseer.Query) bool {
 	c, conditional := attr.Meta["defaultWhen"].(ConditionSpec)
 	if !conditional {
@@ -325,14 +285,8 @@ func conditionHolds(n *Node, c ConditionSpec, query *yaseer.Query) bool {
 		if len(path) == 0 {
 			path = []StringMatch{sib.Name}
 		}
-		// A Key() sibling has no value of its own: its path ends in the Either() and
-		// the document holds the BRANCH there, so reading it as a string fails and the
-		// condition silently never fires. What the condition means by that field is
-		// which branch matched, which is the resolved last segment — the same thing
-		// setAttributes files as the key.
-		//
-		// Without this, `RequiredWhen("engine/kind", "distributed")` was a promise the
-		// loader did not keep: a distributed database with no size compiled clean.
+		// A Captures() sibling has no value of its own: the document holds the branch
+		// at its path, so the condition means which branch matched.
 		if sib.Captures {
 			_, resolved, err := inferPathQuery(path, query)
 			if err != nil || len(resolved) == 0 {
@@ -371,17 +325,11 @@ func parentExists(n *Node, path []StringMatch, query *yaseer.Query) bool {
 	case map[string]any, map[any]any:
 		return true
 	}
-	// A SCALAR sits where the switch's block belongs, and that is legitimate only
-	// when the vocabulary ALSO declares a value at exactly this key — an optional
-	// switch whose default branch takes one argument, written as the value itself
-	// (`source: agents/support`). That attribute reads it and validates it.
-	//
-	// Where nothing claims the bare key there is no such branch, so the scalar is a
-	// mistake — `engine: postgres` where a `postgres:` block belongs — and this is
-	// the error that catches it. Letting the scalar through there compiles a
-	// database with no engine, a gateway with no host and a proxy forwarding to
-	// nothing, all silently, because every field under the branch hangs off a
-	// RequiredWhen that a captured-nothing switch never fires.
+	// A scalar where the switch's block belongs is legitimate only when the
+	// vocabulary also declares a value at exactly this key (`source:
+	// agents/support`). Otherwise it is a mistake, `engine: postgres` where a block
+	// belongs, which would compile with every field under the branch silently
+	// absent.
 	return !claimsBareKey(n, parent)
 }
 
@@ -447,21 +395,10 @@ func requiredName(attr *Attribute, resolved []string) string {
 	return attr.Name
 }
 
-// variantOf is which of this attribute's variant keys the document actually writes, nil
-// for none — in which case the attribute reads its declared path.
-//
-// THE ROOT'S ORDER IS THE PRECEDENCE, and it is the only place an order is stated: the
-// variables are tried as the vocabulary listed them with Varying, so which axis wins is
-// never decided by the order a caller passed its options in.
-//
-// TWO VARIANTS WRITTEN AT ONCE IS A CONFLICT, NOT A PRECEDENCE QUESTION. An attribute
-// that varies by two variables and is written for both has two answers in the document,
-// and the author stated both deliberately; quietly taking whichever the root listed first
-// would be a decision nobody wrote. This is the same stance ambiguousPath takes for a
-// switch with two of its alternatives open.
-//
-// NO COMPOUND SUFFIX. `<key>_<a>_<b>` is not a thing: a value that needs two variables at
-// once is a different resource, which is the rule Varies already states one segment up.
+// variantOf is which of this attribute's variant keys the document writes, nil
+// for none. Variables are tried in the root's Varying order. Two variants
+// written at once is a conflict, as ambiguousPath is for a switch. There is no
+// compound suffix.
 func variantOf(attr *Attribute, query *yaseer.Query, w walk) ([]StringMatch, error) {
 	if len(w.bound) == 0 {
 		return nil, nil
@@ -509,15 +446,9 @@ func setAttributes(n *Node, obj object.Object[object.Refrence], query *yaseer.Qu
 		if len(attr.Path) == 0 {
 			attr.Path = []StringMatch{attr.Name}
 		}
-		// THE VARIANT'S VALUE FIRST. `<key>_<value>` beside `<key>` is the same field
-		// said for one value of one variable, so it is a path tried BEFORE the declared
-		// one.
-		//
-		// PRESENCE decides, not validity. If something is written at the suffixed key
-		// the attribute reads THERE, and a wrong type or an empty value is reported
-		// against the override's own line, rather than falling back to the base and
-		// deploying a value nobody chose. `resolved` follows, so every message names
-		// the key the author actually wrote.
+		// The variant's value first. Presence decides, not validity: a wrong value at
+		// the suffixed key is reported against that line, never falling back to the
+		// base.
 		path := attr.Path
 		if found, err := variantOf(attr, query, w); err != nil {
 			return err
@@ -526,10 +457,7 @@ func setAttributes(n *Node, obj object.Object[object.Refrence], query *yaseer.Qu
 		}
 		aq, resolved, err := inferPathQuery(path, query)
 		if err != nil {
-			// AN AMBIGUOUS PATH IS NEVER A MISSING ONE. A switch with two of its
-			// branches open is a conflict, and falling back to the document root swallowed
-			// it: the conflict was reported later, and elsewhere, as "has an empty key". A path that simply is not there still falls through —
-			// an optional block that nobody wrote is not a mistake.
+			// An ambiguous path is never a missing one: two branches open is a conflict.
 			if strings.Contains(err.Error(), ambiguousPath) {
 				return err
 			}
@@ -544,22 +472,9 @@ func setAttributes(n *Node, obj object.Object[object.Refrence], query *yaseer.Qu
 				}
 				continue
 			}
-			// Nothing matched the Either(). Two very different documents reach here and
-			// they were being given the same answer:
-			//
-			//	handler:              the block is THERE and names something the switch
-			//	    kv: {…}           does not have — a mistake, and the error that says
-			//	                      "empty key" is the one that catches it
-			//
-			//	(no liveness at all)  the block is ABSENT, which for an optional switch
-			//	                      is a legitimate document: a workload with no
-			//	                      liveness probe is simply never restarted
-			//
-			// Erroring on both is what made an Either()+Key() switch unusable on
-			// anything optional, so every switch in the vocabulary sits on a mandatory
-			// block — not by design, but because the others could not be written.
-			//
-			// The parent tells them apart: if the block exists, some key in it is wrong.
+			// Nothing matched the Either(). If the block exists, some key in it is wrong; if
+			// it is absent, an optional switch is a legitimate document (a workload with no
+			// liveness probe).
 			if attr.Required || parentExists(n, attr.Path, query) {
 				return errorWithLocation(aq, "attribute %s has an empty key", attr.Name)
 			}
@@ -572,11 +487,8 @@ func setAttributes(n *Node, obj object.Object[object.Refrence], query *yaseer.Qu
 			aq = query
 		}
 
-		// A value that is THERE but of the wrong type is a mistake, not an
-		// omission: coercion already accepted every difference that is merely
-		// notation, so what is left is a real disagreement about the field.
-		// Reporting it beats the old behaviour of dropping it — a mistyped
-		// domains list used to silently deploy an unroutable function.
+		// A value present but of the wrong type is a mistake: coercion already accepted
+		// every difference of mere notation.
 		if err != nil && hasScalar(origAq) {
 			filePath, line, column := origAq.Location()
 			return located(filePath, line, column,
@@ -585,8 +497,6 @@ func setAttributes(n *Node, obj object.Object[object.Refrence], query *yaseer.Qu
 
 		if err != nil {
 			if attr.Required || requiredHere(n, attr, query) {
-				// For required attributes, format as: filepath:line:column: required attribute 'name'
-				// Don't include underlying YAML processing error details
 				filePath, line, column := aq.Location()
 				return located(filePath, line, column, fmt.Errorf("required attribute '%s'", requiredName(attr, resolved)))
 			}
@@ -600,16 +510,13 @@ func setAttributes(n *Node, obj object.Object[object.Refrence], query *yaseer.Qu
 		}
 
 		if (attr.Required || requiredHere(n, attr, query)) && isBlank(val) {
-			// Present but empty: an empty domains list routes nothing, an empty
-			// entrypoint invokes nothing. Same defect as the absent key.
+			// Present but empty: an empty domains list routes nothing.
 			filePath, line, column := aq.Location()
 			return located(filePath, line, column, fmt.Errorf("required attribute '%s' is empty", requiredName(attr, resolved)))
 		}
 
 		if attr.Validator != nil {
 			if err = attr.Validator(val); err != nil {
-				// For validation errors, format as: filepath:line:column: message
-				// Don't include "validation failed for attribute" wrapper, just the location and validator error
 				filePath, line, column := aq.Location()
 				return located(filePath, line, column, err)
 			}
@@ -624,18 +531,10 @@ func setAttributes(n *Node, obj object.Object[object.Refrence], query *yaseer.Qu
 	return nil
 }
 
-// WHERE A VALUE LANDS IN THE COMPILED OBJECT.
-//
-// `Path(...)` is the address, and the compiled object is a tree, so an attribute
-// authored under a nested block compiles INTO that block: `Path("execution","call")`
-// puts the value at execution -> call, two levels a CRDT merges independently. It used
-// to land on a flat key named after the attribute, which is why a vocabulary that wanted
-// the nesting to survive had to spell the path into the name — `execution-call` — and
-// end up with one opaque leaf that can only be replaced whole.
-//
-// A Captures() attribute is the odd one: its path ENDS in the Either it captured, so the
-// branch name is the value rather than a level to write under. It lands beside the
-// branch, under its own name.
+// place writes a value at its Path in the compiled object, so a nested block
+// compiles into nested levels a CRDT merges independently. A Captures()
+// attribute's path ends in the Either it captured, so it lands beside the branch
+// under its own name.
 func place(o object.Object[object.Refrence], attr *Attribute, val any) {
 	segments := CompiledSegments(attr)
 	last := len(segments) - 1
@@ -660,15 +559,10 @@ func CompiledSegments(attr *Attribute) []string {
 	return []string{attr.Name}
 }
 
-// loadSequence reads a group authored as a YAML sequence. Each element goes through
-// the SAME iterator as a name-keyed entry — types, defaults, required, validators and
-// unknown-key rejection all apply, and each error points at the element's own line.
-//
-// What differs is the result. A name-keyed group becomes children the object model
-// files under their names; a list has no names, and filing elements under "0", "1",
-// "2" would leave every reader to sort them back — numerically, or "10" lands between
-// "1" and "2" and the pipeline silently runs in the wrong order. So the sequence
-// compiles to ONE ordered value, and the order is the document's.
+// loadSequence reads a group authored as a YAML sequence; each element goes
+// through the same iterator as a name-keyed entry. It compiles to one ordered
+// value: filing elements under "0", "1" would leave readers to sort them, and
+// "10" lands between "1" and "2".
 func loadSequence(n *Node, obj object.Object[object.Refrence], query *yaseer.Query, w walk) error {
 	name, ok := n.Match.(string)
 	if !ok || len(n.Children) == 0 {
@@ -680,9 +574,8 @@ func loadSequence(n *Node, obj object.Object[object.Refrence], query *yaseer.Que
 	if at.Value(&doc) != nil {
 		return nil // absent, which for a list means empty
 	}
-	// A mapping here is the shape mistake the DSL exists to catch: the entries would
-	// load, in whatever order the map yielded, and the pipeline would run in an order
-	// nobody wrote.
+	// A mapping would load in map order, running the pipeline in an order nobody
+	// wrote.
 	if isMapping(doc) {
 		filePath, line, column := at.Location()
 		return located(filePath, line, column,
@@ -734,7 +627,6 @@ func load(n *Node, query *yaseer.Query, w walk, claimed ...map[string]bool) (obj
 		return obj, loadChildren(n, obj, query, w, claimed...)
 	}
 
-	// file might or might not have config, so we ignore error
 	err := setAttributes(n, obj, query.Get(LeafOf(n)), w)
 	if err != nil && n.hasRequiredAttributes() {
 		return nil, err
@@ -788,16 +680,9 @@ func claimedUnder(n *Node, key string, vars Vars) map[string]bool {
 			continue
 		}
 		claim(second)
-		// AND ITS VARIANT SPELLINGS, where a block and an access GROUP share a name.
-		// A `model:` can be both — the block naming which one answers, and the group
-		// granting access to them — so what is not claimed here is walked as an access
-		// entry. `model/name` was claimed and `model/name_a` was not, which made an
-		// override of a varying field read as an entry named `name_a` and fail with
-		// `required attribute 'ops'`: an error about a shape the author never wrote.
-		//
-		// Only where the second segment is also the LAST: a suffix lands on the leaf,
-		// so a three-segment path suffixes its leaf and claiming the middle segment
-		// would reserve a key nothing writes.
+		// And its variant spellings, where a block and an access group share a name: an
+		// unclaimed `model/name_a` would read as an entry. Only where the second segment
+		// is the last, since a suffix lands on the leaf.
 		if len(a.Path) == 2 {
 			for _, name := range VariesBy(a) {
 				for _, value := range vars.Values(name) {
@@ -818,32 +703,20 @@ func claimedUnder(n *Node, key string, vars Vars) map[string]bool {
 // are keys of the resource's own document).
 func loadChildren(n *Node, obj object.Object[object.Refrence], query *yaseer.Query, w walk, claimed ...map[string]bool) error {
 	list, _ := query.List()
-	// A resource-container has two channels below one instance: directories are the
-	// resources it contains, while keys in its leaf document are the nested data of
-	// the resource itself. A plain resource only has the latter and a plain container
-	// only the former, so they never needed to be told apart before.
+	// A resource-container has two channels: directories are the resources it
+	// contains, keys in its leaf document are its own nested data.
 	hybrid := n.Group && n.Nested
 
-	// A KEY AN ATTRIBUTE DECLARED IS NOT AN ENTRY OF THE GROUP THAT SHARES ITS NAME.
-	//
-	// A kind and an attribute may be called the same thing — `model` is a kind, and an
-	// agent has a `model`. The attribute writes at model/name and model/namespace; the
-	// access group generated for the kind holds one entry per target, keyed by the
-	// target's name. Both live under `model`, and they do not collide unless the group
-	// is allowed to read the attribute's own keys as entries — which it was, so
-	// `model: {name: opus}` came back as an entry called "name" with no ops.
-	//
-	// Same rule as the leaf below, and for the same reason: this key belongs to
-	// something else at this level.
+	// A key an attribute declared is not an entry of the group sharing its name: an
+	// agent's `model: {name: opus}` is the attribute's, not an access entry called
+	// "name".
 	var mine map[string]bool
 	if len(claimed) > 0 {
 		mine = claimed[0]
 	}
 
-	// Also enumerate keys nested inside the level's config.yaml so
-	// `DefineGroup("clouds", DefineIter(...))` matches a `clouds:` map
-	// authored as nested YAML, not just as a `clouds/<key>.yaml` directory.
-	// Filesystem entries take precedence.
+	// Also keys nested inside the level's leaf document, so a group matches a map
+	// authored as nested YAML as well as a directory. Filesystem entries win.
 	leaf := LeafOf(n)
 	configList, _ := query.Get(leaf).List()
 	inFS := make(map[string]bool, len(list))
@@ -877,10 +750,8 @@ func loadChildren(n *Node, obj object.Object[object.Refrence], query *yaseer.Que
 		if err != nil {
 			return err
 		}
-		// MERGE, never replace. Two declarations can land at one key — an attribute
-		// writing at model/name and the access group generated for the kind `model`,
-		// which holds one entry per target. Adding over the top made whichever ran
-		// second the only survivor, silently.
+		// Merge, never replace: two declarations can land at one key, and adding over
+		// the top kept only whichever ran second.
 		if into, err := obj.Child(match).Object(); err == nil {
 			mergeInto(into, cobj)
 			return nil
@@ -901,10 +772,8 @@ func loadChildren(n *Node, obj object.Object[object.Refrence], query *yaseer.Que
 		}
 		if !hybrid || !itm.Nested {
 			for _, l := range list {
-				// Only a GROUP keeps its own fields in a leaf document, so only a group
-				// reserves that name. A nested resource reads its attributes from its own
-				// document root and has no leaf at all — skipping the name there deleted a
-				// legitimate child group, silently.
+				// Only a group keeps its fields in a leaf document; a nested resource reads its
+				// own document root.
 				if n.Group && l == leaf {
 					continue
 				}
@@ -915,12 +784,9 @@ func loadChildren(n *Node, obj object.Object[object.Refrence], query *yaseer.Que
 		}
 		if !hybrid || itm.Nested {
 			for _, l := range configList {
-				// Filesystem entries take precedence — for the child that READS them.
-				// Under a hybrid node the directory belongs to the resource group and the
-				// document key to the kind's own group, so letting the directory suppress
-				// the document key dropped the block in silence: an agent declaring
-				// `function: {checkout: {ops: [invoke]}}` that lowers into a function of
-				// its own kept the function and lost the tool.
+				// Filesystem entries win for the child that reads them. Under a hybrid node the
+				// directory belongs to the resource group and the document key to the kind's own
+				// group.
 				if (inFS[l] && !(hybrid && itm.Nested)) || (n.Group && l == leaf) {
 					continue
 				}

@@ -40,7 +40,7 @@ var testSchemaDef = SchemaDefinition(
 				resSchemaDef...,
 			),
 		)...,
-	).With(Leaf("config")), // the root document, which the schema names rather than the engine
+	).With(Leaf("config")),
 )
 
 func TestSchema_Process(t *testing.T) {

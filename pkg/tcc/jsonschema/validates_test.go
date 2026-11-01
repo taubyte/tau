@@ -10,12 +10,8 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// THE SCHEMA HAS TO REFUSE WHAT THE COMPILER REFUSES, and the only way to know is to
-// hand it a document. Its neighbour checks the SHAPE of the emitted choices; nothing
-// checked what they accept, which is how a switch with nothing required inside its
-// branches came to be published as no constraint at all — `source: {}` and
-// `source: {branch: main}` validated clean against a schema for a compiler that
-// rejects both.
+// The schema has to refuse what the compiler refuses, which only handing it a
+// document proves.
 func resolved(t *testing.T) *gjs.Resolved {
 	t.Helper()
 	b, err := jsonschema.GenerateJSONSchema(v2.V2Resources, jsonschema.JSONSchemaOptions{})
@@ -75,9 +71,6 @@ func TestSchemaRefusesWhatTheCompilerRefuses(t *testing.T) {
 	}
 }
 
-// An OPTIONAL switch is one a document may not mention. A gateway with no `host` is
-// reachable only by being mounted inside another, which is the whole reason the field
-// is optional — and it compiled clean while failing the schema published for it.
 func TestSchemaAcceptsAnOptionalSwitchLeftOut(t *testing.T) {
 	r := resolved(t)
 	assert.NilError(t, r.Validate(doc("gateway", "inner", map[string]any{
@@ -90,10 +83,6 @@ func TestSchemaAcceptsAnOptionalSwitchLeftOut(t *testing.T) {
 	})), "a gateway with no host compiles; the schema must accept it")
 }
 
-// A SCALAR WHERE A BLOCK BELONGS is a compile error, and the schema has to say so for
-// a switch with ONE option too. `required` is vacuous on a non-object, so a one-option
-// oneOf matched a bare string exactly once and validated it — the multi-option
-// switches were only rejecting scalars by the accident of matching more than once.
 func TestSchemaRefusesAScalarWhereABlockBelongs(t *testing.T) {
 	r := resolved(t)
 	for _, tc := range []struct {

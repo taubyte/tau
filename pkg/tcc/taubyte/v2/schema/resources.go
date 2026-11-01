@@ -7,19 +7,8 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/interp"
 )
 
-// WHAT RESOURCES A COMPILED PROJECT HOLDS, and where each one lives.
-//
-// Walking the compiled object to find them looks trivial and is not: a map of maps is a
-// nested group of resources, an access block, a list, or a namespace holding more of the
-// same, and telling them apart is schema knowledge. A consumer that walks it itself is
-// re-deciding what a resource IS — and the explorer's copy did exactly that, drawing a
-// node for every access entry as though `caches: { orders: {...} }` declared a cache
-// called orders.
-//
-// It is the same walk the checks and the relations run, so it is the same function.
-//
-// Instance rather than Resource because the vocabulary already spends that word on the
-// term that DECLARES a kind; this is one of them, compiled.
+// Instance is one compiled resource and where it lives. Telling a resource from an
+// access block, list or namespace is schema knowledge, so consumers use this walk.
 type Instance struct {
 	ID    string
 	Kind  string
@@ -53,22 +42,10 @@ func Resources(obj map[string]any) []Instance {
 	return out
 }
 
-// Scopes is every scope in a compiled project — a namespace somebody wrote, or a
-// lowerable resource in its compiled container role — as the same Instance a resource
-// is reported as, in a stable order. Its Scope is the one HOLDING it, so a scope at the
-// root reports "".
-//
-// It is the one thing Resources() does not list: that lists what is INSIDE a scope, on
-// purpose, because a scope is a place rather than a thing an edge points at. Asking for
-// the places is a different question, and this is it.
-//
-// THE KIND IS WHY THIS EXISTS. A scope path is a path of NAMES — `shop/checkout` — which
-// is what a reference resolves through and what everything downstream reads, and a name
-// carries no kind. A DOCUMENT address does: a scope is a directory named after the
-// container it belongs to, so the same path is `namespace/shop/workflow/checkout` on disk.
-// LayoutOf().Scope says `{kind}/{name}`, and this is where a consumer gets the `{kind}` —
-// rather than keeping its own list of which kinds are scopes, which is the hole §8c is
-// about.
+// Scopes is every scope in a compiled project (an authored namespace, or a
+// lowered resource in its container role), in a stable order; Scope is the one
+// holding it. It supplies the `{kind}` of LayoutOf().Scope, since a scope path is
+// names only.
 func Scopes(obj map[string]any) []Instance {
 	root := obj
 	if inner, ok := obj[interp.ProjectKey].(map[string]any); ok {
@@ -93,20 +70,8 @@ func Scopes(obj map[string]any) []Instance {
 					continue
 				}
 
-				// ONE KEY, TWO THINGS — and this is the half that was guessing.
-				// An entry filed under a kind inside a resource is either a
-				// resource the container HOLDS or something that resource
-				// declares for ITSELF, keyed by the label of what it reaches.
-				// collect() has asked HeldResource since it was written; this
-				// walk asked only whether the entry had a `name`, so a
-				// container-kind access entry carrying the optional `name`
-				// override was reported as a nested scope — with the access
-				// LABEL as its id.
-				//
-				// It mattered beyond tidiness: ScopeKinds() then mapped a path
-				// that does not exist to a kind, and pkg/project reads the index
-				// and never saw it. Two readers of one compiled object,
-				// answering differently about what the project contains.
+				// An entry under a kind inside a resource is either a held resource or an access
+				// entry keyed by label; HeldResource decides, as collect() does.
 				if !interp.HeldResource(kindRootNode(), group, id) {
 					continue
 				}

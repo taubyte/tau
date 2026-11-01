@@ -1,11 +1,7 @@
-// Package session is a Go-usable editable configuration session over a yaseer
-// document tree: read/write/delete fields and resources by path, compile or
-// validate the whole config, and fork copy-on-write to validate speculative
-// edits before merging them back. It is the same abstraction the browser wasm
-// exposes, usable directly from Go (e.g. tau-cli).
-//
-// The core (edit, fork, merge, save) is DSL-agnostic; compilation is injected via
-// CompilerFor, so the Taubyte binding lives in pkg/tcc/taubyte/v2/schema, not here.
+// Package session is an editable configuration session over a yaseer document
+// tree: fields and resources by path, compile or validate, and copy-on-write
+// forks merged back. The browser wasm exposes the same abstraction. The core is
+// DSL-agnostic; compilation is injected via CompilerFor.
 package session
 
 import (
@@ -45,31 +41,22 @@ type FieldValidator interface {
 // FieldRef is where a field may be authored.
 type FieldRef struct {
 	Path []string
-	// AnyOf is every location the field may be authored at, when the DSL gives
-	// it more than one — a storage's size lives at object/size or
-	// streaming/size depending on which block the author wrote. AnyOf[0] ==
-	// Path; nil when there is only one location.
+	// AnyOf is every location the field may be authored at when the DSL gives more
+	// than one (object/size or streaming/size); AnyOf[0] == Path.
 	AnyOf [][]string
 }
 
-// RequiredField is a field whose absence is an error, and the condition under
-// which that applies. When is nil when the field is always required; otherwise
-// it names the sibling to read, and WhenIn the values that make it required —
-// a function's pubsub channel is required for a pubsub trigger and meaningless
-// for an http one.
+// RequiredField is a field whose absence is an error. When is nil when always
+// required; otherwise it names the sibling to read, and WhenIn the values that
+// require it.
 type RequiredField struct {
 	FieldRef
 	When   *FieldRef
 	WhenIn []string
 
-	// WhenBranch says the discriminator's value is the KEY an author wrote
-	// under WhenBranchAt rather than a field with a value — `build: {commands:
-	// {...}}` selects the "commands" branch by being written. When it is true,
-	// When is nil.
-	//
-	// WhenBranchAt MAY BE EMPTY and that is meaningful: the branch key sits at
-	// the resource's own root, which is where a stream's engine and a gateway's
-	// routing live.
+	// WhenBranch: the discriminator's value is the key written under WhenBranchAt
+	// (`build: {commands: {...}}`); When is nil then. WhenBranchAt may be empty, the
+	// branch sitting at the resource's root.
 	WhenBranch   bool
 	WhenBranchAt []string
 }
@@ -84,11 +71,8 @@ type Completer interface {
 	Field(group string, field []string) (values []string, refGroup string, found bool)
 }
 
-// Layout describes the DSL's document layout so the session can map a resource
-// address to the document that holds it. Injected by the binding: "a container's
-// instances are directories with a config document inside" is DSL knowledge, and
-// the session core stays layout-agnostic without it (nil Layout = every resource
-// address is a leaf document, the pre-Layout behaviour).
+// Layout maps a resource address to its document. nil means every address is a
+// leaf document.
 type Layout interface {
 	// ContainerDoc returns the document name (e.g. "config") a container group's
 	// instances keep their own fields in; "" if group is not a container.
@@ -107,23 +91,10 @@ type IdentifiedLayout interface {
 	Identity() (id, name string)
 }
 
-// Kind is one kind of thing the DSL names. Group is the canonical key (the
-// config directory it is authored under); Name is the singular the DSL declares
-// for one instance, lowercased, and is accepted as an alias wherever a kind is
-// named.
-//
-// Container is NOT cosmetic, and a consumer should branch on it rather than
-// treat every kind alike. A container's instances hold resources of their own;
-// in this DSL that is the application, and it is deliberately not declared as a
-// resource — it has no compiled resource type and never appears in the compiled
-// object as one. What IS uniform is everything about editing it: its address,
-// its document, its file, its local validation. So:
-//
-//	address / doc / serialize / validate  — same for every kind, container or not
-//	"which kinds can I create as resources" — filter out Container
-//
-// Branching on Container is right; branching on a kind's NAME is what this
-// exists to remove.
+// Kind is one kind the DSL names: Group is its directory key, Name the declared
+// singular, accepted as an alias. Container kinds hold resources of their own
+// and are not compiled resources; editing is uniform, so branch on Container,
+// never on a kind's name.
 type Kind struct {
 	Name      string `json:"name"`
 	Group     string `json:"group"`
@@ -199,15 +170,10 @@ func Adopt(fs afero.Fs, bind Bindings) (*Session, error) {
 // inspection).
 func (s *Session) FS() afero.Fs { return s.fs }
 
-// docPath canonicalizes a resource address to the segments of the document that
-// holds it, and rejects structurally bogus addresses. THE canonical address of a
-// container instance is its DSL-group form ([applications, x]) — the container
-// IS the resource; that its fields live in applications/x/config.yaml is layout,
-// mapped here. The config-suffixed form is accepted as a legacy alias.
-//
-// Rejecting the malformed shapes here is what closes the silent-corruption hole:
-// Set(["applications"], ["a","id"], v) used to create /applications.yaml, a
-// sibling of the real directory, with no error.
+// docPath maps a resource address to the segments of its document, rejecting
+// malformed addresses (which once created files beside the real directory). A
+// container instance's address is its group form; its fields' document is
+// layout. The leaf-suffixed form is a legacy alias.
 func (s *Session) docPath(res []string) ([]string, error) {
 	if len(res) == 0 {
 		return nil, errors.New("session: empty resource address")
@@ -220,10 +186,7 @@ func (s *Session) docPath(res []string) ([]string, error) {
 		return fmt.Errorf("session: %q is not a resource address (%s)", strings.Join(res, "/"), why)
 	}
 
-	// SCOPES NEST, so an address does too: [namespace, shop, namespace, local, function,
-	// notify] is `notify` in `shop/local`. Reading only the shapes that fit in four segments
-	// answered "too deep" for anything two scopes down — a limit on the vocabulary
-	// invented by the reader, and one the compiler does not share.
+	// Scopes nest, so addresses do too.
 	rest := res
 	for len(rest) >= 2 && l.ContainerDoc(rest[0]) != "" {
 		rest = rest[2:]
@@ -327,16 +290,8 @@ func (s *Session) List(p []string) ([]string, error) {
 	return q.List()
 }
 
-// Compile assembles the whole config; returns the object, deferred checks, and
-// any error.
-// Compile is the configuration as it RUNS: lowerings applied, so the object holds the
-// queues and functions a workflow becomes rather than the workflow.
-//
-// This is the default on purpose. Some kinds are rewritten at compile time and nothing
-// executes what was written — so a caller who compiled and forgot to lower would get an
-// object that silently lacks the resources it needs, which is a mistake nobody should be
-// able to make by omission. A DSL with no lowerings compiles to exactly what it always
-// did.
+// Compile is the configuration as it runs, lowerings applied, so nobody can
+// forget to lower.
 func (s *Session) Compile(ctx context.Context, opts CompileOptions) (interp.Object, []interp.NextValidation, error) {
 	c, err := s.compiler(opts)
 	if err != nil {
@@ -356,13 +311,8 @@ func (s *Session) Authored(ctx context.Context, opts CompileOptions) (interp.Obj
 	return c.Authored(ctx)
 }
 
-// Validate re-runs the compiler for diagnostics only: it returns the deferred
-// checks and any error, discarding the artifact. Values can't be validated in
-// isolation, so this is the honest whole-config check.
-//
-// It validates what RUNS, which is the only useful answer: a lowering that produces a
-// document the compiler rejects is a config that cannot be deployed, and an author who
-// was told their own files are fine would find that out from a failed deploy.
+// Validate compiles for diagnostics only, validating what runs: a lowering that
+// produces a rejected document cannot be deployed.
 func (s *Session) Validate(ctx context.Context, opts CompileOptions) ([]interp.NextValidation, error) {
 	_, validations, err := s.Compile(ctx, opts)
 	return validations, err
@@ -375,12 +325,10 @@ func (s *Session) compiler(opts CompileOptions) (*interp.Compiler, error) {
 	return s.bind.CompilerFor(s.fs, opts)
 }
 
-// ValidateField checks one field of a resource against value WITHOUT compiling —
-// the cheap live-edit path. It runs the DSL's single-value validator (enum, string
-// shape, cid, fqdn, ...) AND, for a reference field, that the value names a
-// resource that actually exists IN SCOPE (the resource's own app + root/global —
-// the same scope the compiler resolves against, so siblings don't count). Returns
-// nil when partial validation isn't wired or the field carries no constraint.
+// ValidateField checks one field against value without compiling: the DSL's
+// single-value validator and, for a reference, that the name exists in scope
+// (the resource's own app, then root). nil when partial validation is not wired
+// or the field has no constraint.
 func (s *Session) ValidateField(res, field []string, value any) error {
 	group := s.resGroup(res)
 	if s.bind.FieldValidator != nil {
@@ -442,23 +390,17 @@ type FieldIssue struct {
 	Message string   `json:"message"`
 }
 
-// ValidateResource checks every constrained field of one resource against its
-// current values — single-value validators and reference existence — returning
-// every failure ATTRIBUTED to its field (empty slice = valid). Scoped to the one
-// file and compile-free. It does not run whole-config concerns beyond references
-// (e.g. deferred external checks); those stay in Validate.
-//
-// Attribution is per declared field ("domains", not "domains/0"); the message
-// already names the offending value.
+// ValidateResource checks every constrained field of one resource, compile-free,
+// returning each failure attributed to its declared field; deferred external
+// checks stay in Validate.
 func (s *Session) ValidateResource(res []string) []FieldIssue {
 	if s.bind.FieldValidator == nil {
 		return nil
 	}
 	group := s.resGroup(res)
 	var issues []FieldIssue
-	// A required field that is absent has no value to check, so it must be
-	// looked for by name — otherwise a resource with nothing in it validates
-	// clean here and is then rejected by the compiler.
+	// A required field that is absent has no value to check, so it is looked for by
+	// name.
 	for _, rf := range s.bind.FieldValidator.RequiredFields(group) {
 		if !s.requiredNow(res, rf) || s.hasValue(res, rf.FieldRef) {
 			continue
@@ -551,14 +493,8 @@ func isBlank(v any) bool {
 // with no trigger type owes no trigger-specific field, and saying otherwise
 // would flood a half-created resource with issues it cannot act on yet.
 func (s *Session) requiredNow(res []string, rf RequiredField) bool {
-	// A CAPTURED BRANCH IS READ AS A KEY AND NOT AS A VALUE. The discriminator
-	// has no field of its own — an author selects the branch BY WRITING IT — so
-	// the question is which key is present under the prefix.
-	//
-	// THIS WAS THE HOLE. With no answer for it, every conditional required
-	// field on a branch was dropped from the set, so `ValidateResource`
-	// reported nothing while the compiler refused the resource over exactly
-	// those fields.
+	// A captured branch is read as a key, not a value: the author selects it by
+	// writing it.
 	if rf.WhenBranch {
 		return s.branchIn(res, rf.WhenBranchAt, rf.WhenIn)
 	}
@@ -593,11 +529,8 @@ func (s *Session) branchIn(res []string, at, in []string) bool {
 	return false
 }
 
-// Location reports where a resource's document lives — the repo-relative path
-// Serialize returns — WITHOUT flushing, reading or rendering it. A caller that
-// only wants the path (an inventory keyed on the git file list, a rename) pays
-// neither the sync nor the file read, and the answer is still the DSL's rather
-// than a path the caller guessed.
+// Location reports where a resource's document lives, the path Serialize returns,
+// without flushing or reading it.
 func (s *Session) Location(res []string) (string, error) {
 	q, err := s.query(res, nil)
 	if err != nil {
@@ -615,10 +548,8 @@ func (s *Session) Location(res []string) (string, error) {
 	return strings.TrimPrefix(fp, "/"), nil
 }
 
-// Serialize flushes pending edits and returns ONE resource's document: its
-// repo-relative path and its exact YAML, comments preserved. Where the document
-// lives is the DSL's business, so the caller never names the file — which is how
-// a caller ends up reading a path tcc never wrote.
+// Serialize flushes pending edits and returns one resource's document: its
+// repo-relative path and its exact YAML, comments preserved.
 func (s *Session) Serialize(res []string) (path string, data []byte, err error) {
 	if err = s.seer.Sync(); err != nil {
 		return "", nil, err
@@ -632,13 +563,10 @@ func (s *Session) Serialize(res []string) (path string, data []byte, err error) 
 	return path, data, nil
 }
 
-// SetResource makes res's document equal doc, as the minimal set of field writes
-// and deletes: maps recurse, arrays and scalars are leaves, and a key missing
-// from doc is deleted. Untouched YAML — comments included — survives. An
-// explicit nil writes a null; absence deletes.
-//
-// The ops are applied through a fork so a diff that fails partway can't leave
-// the resource half-written.
+// SetResource makes res's document equal doc with the minimal field writes and
+// deletes, so untouched YAML and comments survive; explicit nil writes a null,
+// absence deletes. Applied through a fork so a failure leaves nothing half
+// written.
 func (s *Session) SetResource(res []string, doc map[string]any) error {
 	if _, err := s.docPath(res); err != nil {
 		return err
@@ -778,11 +706,9 @@ func (s *Session) Root() []string {
 	return []string{s.bind.Layout.RootDoc()}
 }
 
-// Address is the canonical address of one resource, by kind. This is the entry
-// point for a caller that knows a kind only as a string: it needs no group-name
-// table, no plural rule, and no special case for the container kind (an
-// application is addressed like anything else — passing app for one is an
-// error, since containers don't nest). An empty app means project scope.
+// Address is the canonical address of one resource by kind. A container kind is
+// addressed like any other; passing app for one is an error, since containers do
+// not nest. An empty app means project scope.
 func (s *Session) Address(kind, name, app string) ([]string, error) {
 	k, err := s.kind(kind)
 	if err != nil {
@@ -816,14 +742,9 @@ func (s *Session) Address(kind, name, app string) ([]string, error) {
 	return append(out, k.Group, name), nil
 }
 
-// Names lists the instances of a kind in scope — the whole project when app is
-// empty, one application's own otherwise. An absent directory is simply empty.
-//
-// Scoping a CONTAINER kind is an error, exactly as it is in Address: containers
-// don't nest, so "the applications inside this application" is not a question
-// with an answer. Answering it anyway — by quietly ignoring app and returning
-// all of them — would hide the caller's bug, and is the flattening of the
-// container/resource distinction this API exists to avoid.
+// Names lists a kind's instances in scope: the project when app is empty, one
+// application's own otherwise. Scoping a container kind is an error, as in
+// Address.
 func (s *Session) Names(kind, app string) ([]string, error) {
 	k, err := s.kind(kind)
 	if err != nil {
@@ -867,9 +788,7 @@ func (s *Session) Exists(res []string) bool {
 }
 
 // ResourceAt maps a repo-relative YAML path to its canonical resource address;
-// ok is false when the path is not a resource document under the DSL's layout
-// (an unknown directory, a non-YAML file, .git, ...). The inverse of the
-// addressing Serialize returns.
+// ok is false for anything not a resource document under the layout:
 //
 //	config.yaml                     -> [rootDoc]
 //	functions/x.yaml                -> [functions, x]
@@ -926,11 +845,9 @@ func (s *Session) hasGroup(name string) bool {
 	return false
 }
 
-// Generate mints a value for one of a resource's DSL-generated fields (its id),
-// so no consumer carries its own "how do I make an id". The resource's address
-// is mixed in, plus any seed the caller adds; a generator is required to supply
-// its own entropy on top (see engine.Generate), so uniqueness never depends on
-// the seed — which is why this needs to know nothing about the DSL's fields.
+// Generate mints a value for one of a resource's generated fields, mixing in the
+// address and any seed; the generator supplies its own entropy, so uniqueness
+// never depends on the seed.
 func (s *Session) Generate(res, field []string, seed ...any) (string, error) {
 	if s.bind.Generator == nil {
 		return "", errors.New("session: no generator wired")
@@ -960,12 +877,10 @@ func (s *Session) resGroup(res []string) string {
 	return res[len(res)-2]
 }
 
-// Complete returns completion candidates for a field's value, filtered by the
-// partial string the user has typed (case-insensitive prefix; "" = all). Fixed
-// candidates come from the DSL (enum members); reference fields also offer the
-// target group's instances IN SCOPE (the resource's own app plus root/global). An unknown field path is an error (so a typo isn't
-// mistaken for "no suggestions"); a known field with no candidates returns an
-// empty slice. Returns (nil, nil) if completion isn't wired.
+// Complete returns completion candidates for a field's value matching partial
+// (case-insensitive prefix): enum members, and for a reference the target
+// group's instances in scope. An unknown field is an error; (nil, nil) when
+// completion is not wired.
 func (s *Session) Complete(res, field []string, partial string) ([]string, error) {
 	if s.bind.Completer == nil {
 		return nil, nil

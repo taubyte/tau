@@ -16,13 +16,10 @@ func (s *instance) Dump(obj object.Object[object.Refrence]) error {
 	query := s.seer.Query()
 	n := s.schema.root
 	if !n.Group {
-		// Leaf node - write attributes
 		return s.dumpAttributes(n, obj, query)
 	}
 
-	// Group node - handle config file and children
 	if n.Match == nil {
-		// Root node - write root attributes to config.yaml
 		configQuery := query.Get(LeafOf(n)).Document()
 		if err := s.dumpAttributes(n, obj, configQuery); err != nil {
 			return err
@@ -37,7 +34,6 @@ func (s *instance) Dump(obj object.Object[object.Refrence]) error {
 		}
 	}
 
-	// Process children
 	for _, child := range n.Children {
 		if n.Match == nil && s.isTable(child, obj) {
 			continue
@@ -47,21 +43,12 @@ func (s *instance) Dump(obj object.Object[object.Refrence]) error {
 		}
 	}
 
-	// Sync seer to filesystem
 	return s.seer.Sync()
 }
 
-// ONE KEY, TWO THINGS, AND THE IDENTITY TELLS THEM APART.
-//
-// A kind that is both a resource and a container has group keys that hold both: the
-// entries it declares for ITSELF — an access block, keyed by the label of what it
-// reaches — and the resources it HOLDS because it is a scope. A resource carries the
-// identity the schema names (engine.Identity); an entry never has one, because an entry
-// is not a resource and was never keyed by an id. That is the only fact needed, and it is
-// the same one RenameById keyed the resource by on the way in.
-//
-// Nothing else in a schema has this shape, so the split is asked for only under such a
-// node — `mixed` below — and every other dump is byte-identical to what it was.
+// heldResource: a kind that is both resource and container has group keys
+// holding its own entries and the resources it holds. A resource carries the
+// schema's identity; an entry never does.
 func (s *instance) heldResource(entry object.Object[object.Refrence]) bool {
 	idField, _ := IdentityOf(s.schema.root)
 	return idField != "" && entry.Get(idField) != nil
@@ -120,45 +107,34 @@ func (s *instance) dumpTable(child *Node, obj object.Object[object.Refrence], qu
 func (s *instance) dumpChild(child *Node, obj object.Object[object.Refrence], query *yaseer.Query, mixed bool) error {
 	groupName, ok := child.Match.(string)
 	if !ok {
-		// Handle StringMatchAll or other matchers
 		if _, ok := child.Match.(StringMatchAll); ok {
-			// DefineIter or DefineIterGroup - check if it's a group
 			if child.Group {
-				// DefineIterGroup - used for applications
 				return s.dumpApplications(child, obj, query)
 			}
-			// DefineIter - should not be called directly from dumpChild
 			return fmt.Errorf("DefineIter should not be called directly from dumpChild")
 		}
 		return fmt.Errorf("unsupported child match type")
 	}
 
-	// Get the group object
 	groupObj, err := obj.Child(groupName).Object()
 	if err == object.ErrNotExist {
-		return nil // No resources of this type
+		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("fetching %s failed: %w", groupName, err)
 	}
 
 	if child.Group {
-		// DefineGroup - create directory structure
 		if len(child.Children) == 0 {
 			return nil
 		}
 
-		// Get the DefineIter node
 		iterNode := child.Children[0]
 
-		// Check if this is a DefineIterGroup (e.g., applications)
-		// DefineIterGroup has StringMatchAll and Group=true
 		if _, isIterGroup := iterNode.Match.(StringMatchAll); isIterGroup && iterNode.Group {
-			// This is a group like "applications" with nested IterGroup
 			return s.dumpApplications(iterNode, groupObj, query.Get(groupName))
 		}
 
-		// Regular DefineIter - write each resource as {groupName}/{name}.yaml
 		for _, name := range groupObj.Children() {
 			resObj, err := groupObj.Child(name).Object()
 			if err != nil {
@@ -168,7 +144,6 @@ func (s *instance) dumpChild(child *Node, obj object.Object[object.Refrence], qu
 				continue // an entry the holder declares for itself; dumpNested writes it
 			}
 
-			// Create document: {groupName}/{name}.yaml
 			docQuery := query.Get(groupName).Get(name).Document()
 			if err := s.dumpAttributes(iterNode, resObj, docQuery); err != nil {
 				return fmt.Errorf("dumping attributes for %s/%s failed: %w", groupName, name, err)
@@ -184,7 +159,6 @@ func (s *instance) dumpChild(child *Node, obj object.Object[object.Refrence], qu
 			}
 		}
 	} else {
-		// Single resource - should not happen for groups
 		return fmt.Errorf("non-group child in group context")
 	}
 
@@ -243,10 +217,8 @@ func (s *instance) dumpNested(n *Node, obj object.Object[object.Refrence], query
 	return nil
 }
 
-// dumpApplications writes applications to the filesystem.
-// appsObj is the applications object (keyed by name), query points to the applications directory.
+// dumpApplications writes appsObj, keyed by name, under query.
 func (s *instance) dumpApplications(iterGroupNode *Node, appsObj object.Object[object.Refrence], query *yaseer.Query) error {
-	// Get resource nodes (TaubyteRessources)
 	resourceNodes := iterGroupNode.Children
 
 	for _, appName := range appsObj.Children() {
@@ -255,7 +227,6 @@ func (s *instance) dumpApplications(iterGroupNode *Node, appsObj object.Object[o
 			return fmt.Errorf("fetching scope %s failed: %w", appName, err)
 		}
 
-		// Write application config.yaml: {appName}/config.yaml
 		appConfigQuery := query.Get(appName).Get(LeafOf(iterGroupNode)).Document()
 		if err := s.dumpAttributes(iterGroupNode, appObj, appConfigQuery); err != nil {
 			return fmt.Errorf("dumping scope %s failed: %w", appName, err)
@@ -270,7 +241,6 @@ func (s *instance) dumpApplications(iterGroupNode *Node, appsObj object.Object[o
 			return fmt.Errorf("committing application %s config failed: %w", appName, err)
 		}
 
-		// Write application resources
 		for _, resourceNode := range resourceNodes {
 			if resourceNode.Nested {
 				continue
@@ -288,33 +258,27 @@ func (s *instance) dumpAttributes(n *Node, obj object.Object[object.Refrence], q
 	for _, attr := range n.Attributes {
 		val := read(obj, attr)
 		if val == nil {
-			// Check if required
 			if attr.Required {
 				return fmt.Errorf("required attribute '%s' is missing", attr.Name)
 			}
-			// Skip nil values
 			continue
 		}
 
-		// Skip values that equal the default (no need to write them)
 		if attr.Default != nil && val == attr.Default && defaultApplies(n, attr, obj) {
 			continue
 		}
 
-		// Validate value using schema validator if present
 		if attr.Validator != nil {
 			if err := attr.Validator(val); err != nil {
 				return fmt.Errorf("attribute '%s' validation failed: %w", attr.Name, err)
 			}
 		}
 
-		// Build path from Path() definition
 		path := attr.Path
 		if len(path) == 0 {
 			path = []StringMatch{attr.Name}
 		}
 
-		// Write value to path
 		if err := writeValueToPath(n, query, path, attr, val, obj); err != nil {
 			return fmt.Errorf("writing attribute '%s' failed: %w", attr.Name, err)
 		}
@@ -373,7 +337,6 @@ func writeValueToPath(n *Node, query *yaseer.Query, path []StringMatch, attr *At
 		case string:
 			q = q.Get(pt)
 		case StringMatcher:
-			// Handle Either() matcher
 			matcherStr := pt.String()
 			if strings.HasPrefix(matcherStr, "Either(") && strings.HasSuffix(matcherStr, ")") {
 				// Parse "Either([value1 value2])" format
@@ -381,13 +344,11 @@ func writeValueToPath(n *Node, query *yaseer.Query, path []StringMatch, attr *At
 				valuesStr = strings.Trim(valuesStr, "[]")
 				values := strings.Fields(valuesStr)
 
-				// For Captures() attributes, use the stored key value to determine the branch
 				if attr.Captures {
 					keyVal, err := readString(obj, attr)
 					if err != nil {
 						return fmt.Errorf("key attribute '%s' is not a string", attr.Name)
 					}
-					// Validate and use the key value
 					matched := false
 					for _, option := range values {
 						if keyVal == option {
@@ -400,16 +361,12 @@ func writeValueToPath(n *Node, query *yaseer.Query, path []StringMatch, attr *At
 						return fmt.Errorf("key attribute '%s' value '%s' does not match Either() options %v", attr.Name, keyVal, values)
 					}
 				} else {
-					// For a non-Key Either(), the branch is whatever the Key()
-					// attribute on this same switch captured. Which attribute that is
-					// comes from the SCHEMA — the sibling whose path has the same
-					// Either at the same depth and carries Key() — not from a field
-					// conventionally called `type`.
+					// For a non-Key Either(), the branch is what the switch's Captures() attribute
+					// captured, found from the schema.
 					typeVal, err := branchKeyValue(n, obj, path, depth)
 					if err != nil {
 						return fmt.Errorf("cannot determine Either() branch for attribute '%s': %w", attr.Name, err)
 					}
-					// Find matching option
 					matched := false
 					for _, option := range values {
 						if typeVal == option {
@@ -430,15 +387,12 @@ func writeValueToPath(n *Node, query *yaseer.Query, path []StringMatch, attr *At
 		}
 	}
 
-	// A CAPTURED VALUE IS THE KEY, so writing it back would write the key's own name
-	// INTO it: `router: router`, on top of the block. The branch is already selected
-	// above — reaching it is the whole write — and the fields underneath fill it in.
-	//
+	// A captured value is the key: writing it back would write the key's name into
+	// it. Reaching the branch is the write.
 	if attr.Captures {
 		return nil
 	}
 
-	// Set the final value
 	if err := q.Set(val).Commit(); err != nil {
 		return fmt.Errorf("setting value failed: %w", err)
 	}
@@ -469,11 +423,8 @@ func branchKeyValue(n *Node, obj object.Object[object.Refrence], path []StringMa
 		}
 		return v, nil
 	}
-	// No fallback. There WAS one — a field literally called `type`, which is one
-	// vocabulary's word in the layer that must not have one, and on a live path: any
-	// other vocabulary with a `type` attribute meaning something else would have taken
-	// the wrong branch on write-back, silently. Key() is how a schema says which
-	// attribute decides a switch, and a schema that does not say cannot be written back.
+	// No fallback to a field called `type`: Captures() is how a schema says which
+	// attribute decides a switch.
 	return "", fmt.Errorf("no Captures() attribute captured this switch")
 }
 

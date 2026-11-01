@@ -7,28 +7,13 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/object"
 )
 
-// WHAT THE OBJECT SAYS ABOUT WHAT NOBODY WROTE.
-//
-// Compiling lowers, so the object holds resources the author never wrote and access
-// entries they never granted. Without a record of that, the object cannot be taken apart
-// again: decompile would write a queue into somebody's repository as though they had
-// asked for it.
-//
-// So the compile records it, beside the object rather than inside the resources —
-// exactly where the index subtree sits, and for the same reason. A resource must remain
-// the shape the schema declares: a `lowered-from` key on one would be a key the
-// vocabulary does not have, rejected by the strictness that makes an unknown key an
-// error at all.
-//
-// Read it with LoweredOf. What it makes possible: decompile that stops at what somebody
-// wrote, a console that shows what one workflow became, and — later — a shell that stores
-// only what its lowering cannot give back.
+// The compile records what it lowered beside the object, as it does the index,
+// so decompile can take it back out; a key on the resources themselves would be
+// one the vocabulary does not have. Read it with LoweredOf.
 
-// THE SHAPE OF A COMPILED ARTIFACT. Three keys, and they are tcc's rather than any
-// vocabulary's: whatever a schema calls its kinds, what comes out is the project under
-// one key with the index and the lowering record beside it. tau reads the first two off
-// every artifact it publishes, which is what makes them
-// a contract and not a convention.
+// The shape of a compiled artifact: the project under one key, the index and the
+// lowering record beside it. tau reads the first two off every artifact, so they
+// are a contract.
 const (
 	// ProjectKey is where the compiled project sits.
 	ProjectKey = "object"
@@ -51,11 +36,9 @@ type Provenance struct {
 	Scope string `json:"scope,omitempty"`
 }
 
-// Granted is one value a lowering wrote into a resource somebody DID write.
-//
-// A path and a value, and nothing about what either MEANS. Taking it back off is walking
-// the same path — which is why decompile can undo a lowering for a vocabulary it has
-// never seen, and why this record says nothing about verbs, access or reaching.
+// Granted is one value a lowering wrote into a resource somebody did write: a
+// path and a value, nothing about what either means, so decompile can undo it
+// for any vocabulary.
 type Granted struct {
 	// On is the compiled id of the resource that now carries it.
 	On string `json:"on"`
@@ -151,22 +134,16 @@ func str(m map[string]any, key string) string {
 	return s
 }
 
-// recordOf is what the compile just did, in the terms the object records: ids, because a
-// name is only unique in a scope and an object outlives the names in it.
-//
-// The accessor of an added entry is looked up in the COMPILED object rather than carried
-// from the plan — the plan knows it as a name in a scope, which is the same lookup the
-// compiler already did, and doing it again here against the result is the only way to be
-// sure the two agree.
+// recordOf records the compile in ids, since a name is unique only in a scope.
+// An added entry's accessor is looked up in the compiled object, so the record
+// and the result agree.
 func recordOf(root *engine.Node, obj Object, docs []placement, adds []granted) Lowered {
 	l := Lowered{Resources: make(map[string]Provenance, len(docs))}
 	for _, d := range docs {
 		l.Resources[d.id] = Provenance{From: d.from, At: d.part, Kind: d.kind, Name: d.name, Scope: d.scope}
 	}
 
-	// Scopes nest, and a name is only unique inside one: keyed without the scope, an
-	// entry on `shop/local/function/relay` was recorded against whichever `relay` the map
-	// happened to yield.
+	// Keyed with the scope: a name is unique only inside one.
 	_, nameField := engine.IdentityOf(root)
 	byName := map[string]string{}
 	flat := obj.Flat()

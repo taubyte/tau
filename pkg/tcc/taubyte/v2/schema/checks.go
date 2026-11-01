@@ -9,24 +9,10 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/interp"
 )
 
-// The cross-resource checks, run by tcc over the compiled object.
-//
-// Every one of them needs a SECOND resource to answer — is anything in front of this
-// workload, does the port something targets exist, does the access entry spell a verb
-// the database it names actually has — and an attribute Validator sees one value at a
-// time. That is why they were repeatedly deferred to a hypothetical publish-time pass
-// that nobody owned. They belong here: tcc holds the whole object, so tcc can answer.
-//
-// A check that needs knowledge tcc does NOT have — is this DNS name delegated, is this
-// image pullable — emits a NextValidation instead and the caller answers it. That seam
-// already exists for `zone`/`dns`; Resolver below is the caller's side of it, with a
-// stub that says yes so a compile is never blocked on something nobody has wired yet.
-//
-// Severity is deliberate and not a count. `Broken` is a config that cannot work — an
-// http application no ingress names answers nobody. `Check` is a config that probably
-// is not what was meant. `Note` is a fact worth seeing: a queue consumer no ingress
-// names is CORRECT, and saying so is how the absence stops being something a reviewer
-// has to remember.
+// The cross-resource checks, run by tcc over the compiled object: each needs a
+// second resource to answer, which an attribute Validator cannot. What tcc
+// cannot know becomes a NextValidation answered by the caller's Resolver.
+// Broken cannot work, Check is probably not meant, Note is a fact worth seeing.
 
 type Severity string
 
@@ -58,13 +44,8 @@ func (f Finding) String() string {
 	return fmt.Sprintf("%s: %s: %s", f.Severity, where, f.Title)
 }
 
-// Resolver answers what tcc cannot see. Every method takes the value tcc found and
-// returns nil when it is fine.
-//
-// The stub says yes to everything, on purpose: an unwired external check must not
-// block a compile, and a caller that has not implemented one should get the same
-// answer as a caller that has none. Tests swap in a resolver that says no, which is
-// how the edge cases are exercised without a network.
+// Resolver answers what tcc cannot see, nil when fine. The stub says yes to
+// everything so an unwired check never blocks a compile.
 type Resolver interface {
 	// ZoneDelegated reports whether this cloud is authoritative for the zone apex.
 	ZoneDelegated(fqdn string) error
@@ -118,15 +99,8 @@ func projectOf(obj map[string]any) map[string]any {
 	return obj
 }
 
-// AuditIn names the environment the object was compiled FOR.
-//
-// A COMPILE IS FOR ONE DEPLOYMENT and the object does not say which — the values
-// in it are already resolved, so `name_preview` and `name` are indistinguishable
-// once compiled. Without the name there is no way to ask whether a placement is
-// inside the regions THAT environment keeps its state in, because there is no way
-// to know which environment's list to read.
-//
-// Omitted, every check that does not need it still runs.
+// AuditIn names the environment the object was compiled for, which the object
+// itself no longer says; without it the region checks cannot pick a list.
 func AuditIn(environment string) AuditOption {
 	return func(a *auditOf) { a.environment = environment }
 }
@@ -176,13 +150,9 @@ func Audit(obj map[string]any, r Resolver, opts ...AuditOption) []Finding {
 	return out
 }
 
-// ScopeKindNames is every kind whose instances are SCOPES: a namespace, and
-// every kind that lowers into a container of its own.
-//
-// EXPORTED BECAUSE THE READ PATH NEEDS IT. A consumer resolving `(scope, kind,
-// name)` walks index segments of the form `<scope-kind>/<id>`, and until this
-// was askable outside the package every such consumer assumed the literal
-// `namespace` — which made every resource a lowering produced unreachable.
+// ScopeKindNames is every kind whose instances are scopes: namespace, and every
+// kind lowering into a container of its own. Exported so a reader resolving
+// `<scope-kind>/<id>` segments does not assume `namespace`.
 func ScopeKindNames() []string {
 	out := make([]string, 0, len(scopeGroups()))
 	for kind := range scopeGroups() {
@@ -221,11 +191,8 @@ func collect(scope map[string]any, path string) []compiled {
 			if !ok {
 				continue
 			}
-			// ONE KEY, TWO THINGS. Inside a kind that is also a container, `function`
-			// holds both the loop it became and the function it reaches — the produced
-			// resource keyed by its id, the access entry by the target's label. Asking tcc
-			// which is which is the point of the walk living here: a consumer guessing
-			// would report an agent's tool as something it contains.
+			// One key, two things: inside a kind that is also a container, a group key holds
+			// produced resources and access entries.
 			if !interp.HeldResource(kindRootNode(), group, id) {
 				continue
 			}
@@ -524,21 +491,9 @@ func checkDelivery(all []compiled) []Finding {
 	return out
 }
 
-// runsAsContainer answers "does this have a host ABI, or does something have to be
-// posted to a port". It used to be answered by looking for an `image:` field, which was
-// true only while a container was always somebody else's: a workload BUILT from a
-// Dockerfile has no image reference and would have read as a dispatched WASM component,
-// so a queue consumer missing its deliver port would have gone unreported.
-//
-// The tier is the KIND's, read back off Engines(), or `runtime` where the kind declares
-// more than one and therefore has a choice to make. That is the §8c rule applied to a
-// check: a consumer — and an audit is one — does not keep its own table of which kinds
-// are containers.
-//
-// A kind that declared two engines and no way to choose between them would answer no
-// here, which is the safe direction (nothing is reported) and is unreachable because
-// every kind declaring more than one carries `runtime` — TestTheEngineSeamIsAValue
-// holds that.
+// runsAsContainer: whether something must be posted to a port. The tier is the
+// kind's (Engines()), or `runtime` where it declares more than one; an image
+// field is not the test, since a Dockerfile-built workload has none.
 func runsAsContainer(res compiled) bool {
 	if tier := res.str("runtime"); tier != "" {
 		return tier == containerEngine
@@ -581,19 +536,12 @@ func checkVariables(all []compiled) []Finding {
 	return out
 }
 
-// checkBuild: three statements about a build that need TWO BLOCKS to make, which is one
-// more than a switch can reach. `source:` and `build:` are different attributes at
-// different paths, so §3's Either has no single key to hang an exclusion between them
-// on, and they land here beside the other cross-block exclusions this file already
-// owes — checkVariables' value-or-secret is the same shape.
+// checkBuild: exclusions spanning `source:` and `build:`, two attributes no
+// single switch reaches:
 //
 //	an image AND a build      the image is finished; nothing the build says would run
 //	neither, on a container   there is no artifact and no recipe for one
 //	a build the tier cannot use   a Dockerfile makes an image, not a component
-//
-// The last one reads `runtime` because that is this vocabulary's word for "which of my
-// engines", and only a kind declaring more than one has it to answer. Which kinds those
-// are is EnginesOf's, not a list here.
 func checkBuild(all []compiled) []Finding {
 	var out []Finding
 	for _, res := range all {
@@ -724,21 +672,13 @@ func checkHostWorlds(all []compiled) []Finding {
 				uses = append(uses, use{n, res.scope, res.at("router", "namespace"), w, res.kind + "/" + res.name + " router"})
 			}
 		}
-		// A ROUTE MAY HAND ITS OWN DECISION TO A ROUTER instead of naming a handler,
-		// and that is a SECOND site — `route/router/name`, beside the gateway-wide
-		// `router/name` above. Both are declared by one helper that takes the world as
-		// an argument (routerAttributes, definition.go:334) and writes it into the
-		// field's own documentation, so the vocabulary states `gateway-router` at both
-		// and only one of them was read.
+		// A route may hand its decision to a router, a second site beside the
+		// gateway-wide one.
 		if n := res.at("route", "router", "name"); n != "" && res.kind == "gateway" {
 			uses = append(uses, use{n, res.scope, res.at("route", "router", "namespace"), "gateway-router", res.kind + "/" + res.name + " route router"})
 		}
-		// AN ADMISSION VALIDATOR IS THE ONE WORLD WITH ITS OWN WORD AND NO AUDIT.
-		// `instance-validator` is in hostWorlds precisely so a validator need not be a
-		// kind (instanceAttributes, definition.go:400-408), and instances/validator/name
-		// is its only use site — spliced into four kinds, and read by nothing until now.
-		// The world is not the resource's to vary: whatever holds instances, what admits
-		// one is handed the same thing.
+		// An admission validator: instances/validator/name is its only use site, and its
+		// world is the same whatever holds the instances.
 		if n := res.at("instances", "validator", "name"); n != "" {
 			uses = append(uses, use{n, res.scope, res.at("instances", "validator", "namespace"), "instance-validator", res.kind + "/" + res.name + " instances validator"})
 		}
@@ -748,13 +688,8 @@ func checkHostWorlds(all []compiled) []Finding {
 	for _, u := range uses {
 		found, known := lookupWorld(world, u.name, u.own, u.ns)
 		if !known {
-			// A NAME THAT RESOLVES TO NOTHING IS DROPPED, NOT REFUSED. Every site here
-			// carries Ref("function", ByName()), and an unresolvable one leaves the
-			// field empty and compiles clean — verified, on each branch. So a typo is
-			// silent in exactly the way it must not be: the transformer never runs, the
-			// route's router never routes, and the authorizer never guards, each of
-			// which reads as working. Nothing compiled answers to this name, so there is
-			// no id to point at either.
+			// A name resolving to nothing compiles clean as an empty field, so it is
+			// reported here: the transformer, router or authorizer would never run.
 			out = append(out, Finding{Broken, "function", u.name, u.ns,
 				fmt.Sprintf("is named as a %s by %s, and does not exist", u.wants, u.where),
 				"The name is the key of the entry, and a key is not a reference the compiler resolves — so this one names nothing and the step never runs.", ""})
@@ -812,12 +747,9 @@ func checkWorkflows(all []compiled) []Finding {
 			named[field(step, "name")] = true
 		}
 
-		// WHICH KEY IS PRESENT IS THE TYPE, so exactly one of them has to be. This is the
-		// one mutual exclusion in this vocabulary that is a check rather than an Either()
-		// — see the comment on stepsGroup: a captured branch key is the only projection
-		// that happens inside a list element, and decompile skips elements precisely
-		// because it assumes none does, so the switch would compile and then fail to
-		// write itself back.
+		// Which key is present is the step's type, so exactly one must be: a captured
+		// branch inside a list element would not decompile, so this is a check rather
+		// than an Either().
 		for _, step := range steps {
 			name := field(step, "name")
 			// a step element nests, so the call's fields are a level down
@@ -899,9 +831,6 @@ func startedBy(all []compiled, target compiled) bool {
 	return false
 }
 
-// checkLoweringCollisions: a lowered resource takes a name, and an authored resource
-// can already have it. The two would be the same key in the compiled object, and which
-// one wins is not something an author should have to know.
 // scopeAllowance is one scope's own `regions` line, and where it sits.
 type scopeAllowance struct {
 	parent   string // the scope path above this one; "" is the project root
@@ -910,15 +839,10 @@ type scopeAllowance struct {
 	regions  []string // as declared here; empty means "whatever the parent allows"
 }
 
-// scopeAllowances walks every scope in the compiled object and records the allowance it
-// declares, keyed by the same scope path collect() files resources under.
-//
-// It has to be its own walk: a namespace is a container and NOT a resource kind, so it
-// never appears in `all` — collect only emits an entry for a container that is also a
-// kind, which is what a lowered workflow or agent is. And it walks GENERICALLY, over
-// every group ContainerKeys answers with, because the chain has more than one kind of
-// level: a walk that knew only the word `namespace` would step over `workflow/checkout`
-// and hand what it produced the wrong ceiling.
+// scopeAllowances records the allowance each scope declares, keyed by the scope
+// path collect() files resources under. A namespace is a container, not a kind,
+// so it never appears in `all`; and the walk covers every group ContainerKeys
+// names, since a chain also passes through levels like `workflow/checkout`.
 func scopeAllowances(root map[string]any) map[string]scopeAllowance {
 	scopes := scopeGroups()
 	out := map[string]scopeAllowance{"": {regions: listAt(root, "regions")}}
@@ -970,24 +894,11 @@ func effectiveAllowance(scopes map[string]scopeAllowance, path string) []string 
 	}
 }
 
-// checkRegions: the ceiling, and the only thing that enforces it.
-//
-// A region name is an opaque label the implementation defines, so the schema cannot
-// refuse one. What it CAN be held to is the project's own statement about itself: a
-// scope narrows the regions it inherits and never widens them, and a resource is placed
-// inside the allowance of the chain it sits in. Both are cross-document — the parent is
-// another file, and so is the scope a resource is placed under — so neither the schema
-// nor load time can see both ends, which is what puts them here.
-//
-// Both are Broken rather than Check. A widening that compiled silently means a child
-// runs where its parent said nothing may, which is the entire point of declaring an
-// allowance; and a placement outside the chain is a resource that has nowhere to run.
-//
-// Where NO scope in a chain declares an allowance there is nothing to check against,
-// and that is the zero-config project: it writes nothing and is placed wherever the
-// Regions places it. This doubles as a typo-catcher — once a ceiling exists, `eu-wst`
-// is simply not within it — and the Regions is the other one: it answers every label
-// against what the platform compiling the project serves (place, in regions.go).
+// checkRegions: a scope narrows the regions it inherits and never widens them,
+// and a resource is placed inside its chain's allowance. Both span documents, so
+// only the audit sees both ends; both are Broken, since a widening runs a child
+// where its parent forbade and an outside placement has nowhere to run. A chain
+// with no allowance anywhere is the zero-config project and is not checked.
 func checkRegions(root map[string]any, all []compiled, in auditOf) []Finding {
 	scopes := scopeAllowances(root)
 	out := checkEnvironmentRegions(root)
@@ -1030,15 +941,10 @@ func checkRegions(root map[string]any, all []compiled, in auditOf) []Finding {
 				"Placement is bounded by every scope above it. Widen the scope's regions, or place this within them.", res.id})
 		}
 
-		// FAILOVER TAKES TWO REGIONS. That there are exactly two is the declaration's
-		// own property — two named fields, both required on the branch — but that they
-		// are DIFFERENT is not something the schema can say, and a standby equal to its
-		// main is a failover plan that fails to the thing that is already gone.
-		// A POLICY DOES NOT CHANGE BETWEEN ENVIRONMENTS, and the branch suffix
-		// makes that sayable by accident: `failover:` with a `pinned_preview:`
-		// beside it resolves to one policy and the other branch's regions. It is
-		// a different resource in each deployment, which is what writing the
-		// whole resource for that environment is for.
+		// Failover's two regions must differ: a standby equal to its main fails over to
+		// what is already gone. And a policy does not change between environments:
+		// `failover:` beside a `pinned_preview:` would resolve one policy with the other
+		// branch's regions.
 		if res.str("regions/policy") == "failover" && len(listAt(res.fields, "regions/in")) > 0 {
 			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 				"fails over in one environment and is pinned in another",
@@ -1057,13 +963,8 @@ func checkRegions(root map[string]any, all []compiled, in auditOf) []Finding {
 }
 
 // checkEnvironmentRegions: an environment narrows the project's allowance and
-// never widens it, exactly as a namespace does.
-//
-// AN ENVIRONMENT IS ON MANY REGIONS — that is why the field is a list — and the
-// regions it keeps its state in are still bounded by what the project allows.
-// Nothing checked this, so `regions: [ap]` under a project allowing only `eu`
-// compiled clean AND was honoured at runtime: the environment quietly widened
-// the one statement the project makes about where its data may ever be.
+// never widens it, as a namespace does; otherwise `regions: [ap]` under a
+// project allowing only `eu` would be honoured at runtime.
 func checkEnvironmentRegions(root map[string]any) []Finding {
 	allowed := listAt(root, "regions")
 	if len(allowed) == 0 {
@@ -1084,21 +985,16 @@ func checkEnvironmentRegions(root map[string]any) []Finding {
 	return out
 }
 
-// checkPlacedInsideTheEnvironment: a resource is placed within the regions the
-// environment it is deployed to keeps its state in.
-//
-// IT NEEDS THE ENVIRONMENT'S NAME and says nothing without one — see AuditIn.
-// The placement being read is already resolved for whichever environment this
-// compile was for, so checking it against a different environment's list would
-// report the wrong deployment.
+// checkPlacedInsideTheEnvironment: a resource is placed within the regions its
+// environment keeps state in. Silent without the environment's name (AuditIn):
+// the placement read is already resolved for this compile's environment.
 func checkPlacedInsideTheEnvironment(root map[string]any, all []compiled, environment string) []Finding {
 	if environment == "" {
 		return nil
 	}
 
-	// A SHADOW KEEPS NO STATE OF ITS OWN, so it is bounded by the environment it
-	// was written inside — which is also why the vocabulary gives it no regions
-	// field to disagree with. See environmentRegions.
+	// A shadow keeps no state of its own, so it is bounded by the environment it was
+	// written inside; see environmentRegions.
 	allowed := environmentRegions(root, environment)
 	if len(allowed) == 0 {
 		return nil
@@ -1118,10 +1014,8 @@ func checkPlacedInsideTheEnvironment(root map[string]any, all []compiled, enviro
 	return out
 }
 
-// placedIn is every region a resource's own block names, across the branch it
-// took. `pinned` and `cdn` carry a LIST — a resource is in many regions, the
-// same way a scope allows many — and `failover` carries its two by name,
-// because which one is main is the statement rather than a position.
+// placedIn is every region a resource's block names across the branch it took:
+// `pinned` and `cdn` carry a list, `failover` its two by name.
 func placedIn(res compiled) []string {
 	out := listAt(res.fields, "regions/in")
 	for _, field := range []string{"regions/main", "regions/standby"} {
@@ -1160,15 +1054,10 @@ func checkLoweringCollisions(root map[string]any, produced interp.Lowered, all [
 	return out
 }
 
-// checkLoweredLinks: a fault INSIDE something nobody wrote, reported against something
-// somebody did.
-//
-// A workflow becomes queues, and one of those queues invokes the function its step
-// named. If that function does not exist, the thing that is broken is a queue the
-// author cannot find in their repository — so the finding names the WORKFLOW and the
-// step, and the trail says which part of the lowering failed. That is the whole reason
-// a plan carries its source: a diagnostic about generated config is worthless if it
-// only names generated config.
+// checkLoweredLinks reports a fault inside lowered config against what the author
+// wrote: a workflow step naming a missing function leaves a produced queue with
+// no consumer, so the finding names the workflow and step, with the lowering
+// trail.
 func checkLoweredLinks(root map[string]any, all []compiled) []Finding {
 	// Keyed SCOPE-first, because lookupName walks up the scope and appends the rest of
 	// the identity: the parts have to be in that order or every lookup misses.
@@ -1185,10 +1074,8 @@ func checkLoweredLinks(root map[string]any, all []compiled) []Finding {
 
 	var out []Finding
 	for _, d := range plan {
-		// A resource a lowering WRITES INTO has to exist. It is the half a reader cannot
-		// see: the queue is produced with a name they chose, but the function it says
-		// receives from it is one they named in a step — and a name that matches nothing
-		// leaves the queue with no consumer at all.
+		// A resource a lowering writes into has to exist: a step naming no function
+		// leaves the produced queue with no consumer.
 		for _, w := range d.Writes {
 			if w.On.Kind == "" || derived[w.On.Kind+"\x00"+w.On.Name] {
 				continue // the derived resource, or another part of the same lowering
@@ -1206,12 +1093,9 @@ func checkLoweredLinks(root map[string]any, all []compiled) []Finding {
 					". The name is carried through the lowering unchanged, so fixing it where it is written fixes this.", d.Source.ID})
 		}
 
-		// AND SO DOES THE RESOURCE IT POINTS AT. An access entry is `<kind>/<label>/ops`
-		// on the accessor, so the target is in the write's PATH rather than in what it
-		// writes into — and when the accessor is itself produced (a driver reaching the
-		// function a step named), the path is the ONLY place a misspelling shows. It used
-		// to be caught by accident, back when the entry landed on the author's own
-		// function and the missing name was the accessor.
+		// So does the resource an access entry points at. The target is in the write's
+		// path (`<kind>/<label>/ops`), and when the accessor is itself produced the path
+		// is the only place a misspelling shows.
 		for _, w := range d.Writes {
 			if len(w.Path) != 3 || w.Path[2] != accessOps {
 				continue
@@ -1270,12 +1154,9 @@ func lookupName(known map[string]bool, name, scope string) bool {
 	}
 }
 
-// checkAccessDuplicates: two entries in one resource's own access group that resolve to
-// the SAME target are two labels for one fact — `accessName` exists precisely so two
-// entries CAN share a target's real name across namespaces, but nothing stops the author
-// writing two different labels for the same one by mistake, and a map has no order an
-// author controls: whichever entry's ops the compiler visits last silently wins, and the
-// document reads as if both grants apply.
+// checkAccessDuplicates: two labels in one access group resolving to the same
+// target. Map order is not the author's, so whichever entry's ops are visited
+// last would silently win.
 func checkAccessDuplicates(all []compiled) []Finding {
 	byName := map[string]compiled{}
 	for _, res := range all {
@@ -1320,25 +1201,11 @@ func checkAccessDuplicates(all []compiled) []Finding {
 	return out
 }
 
-// checkDatabaseOps: AN ENTRY MAY ONLY ASK FOR VERBS THE TARGET DATABASE'S TYPE HAS.
-//
-// `database` declares the UNION of its four data models' verb sets, because an access
-// block is loaded long before anything has resolved which database an entry names — so
-// AreVerbsOf can hold `ops` to that union and no further. Left there, the per-kind verb
-// rule would be gone in all but name: `ops: [query]` on a kv store, or `[search]` on a
-// table, would compile and mean nothing at run time.
-//
-// So it is asked HERE, where the target has been resolved and its `type` is a field on
-// it. That is the same seam CheckLoweredOps already uses and for the same reason, stated
-// in AGENTS.md §8b: the generic layer carries values at paths and has no word for a
-// verb, so what a verb MEANS is this vocabulary's to check.
-//
-// It covers what a LOWERING wrote as well as what an author did — a produced database
-// and the entries pointing at it are in the compiled object like everything else, so an
-// agent's memory index being reached with `search` is checked by the same pass that
-// checks a hand-written entry.
-//
-// An entry that resolves to nothing is checkReachable's business, not this one's.
+// checkDatabaseOps: an entry may only ask for verbs its target database's type
+// has. `database` declares the union of its data models' verbs because an access
+// block loads before its target resolves, so `ops: [query]` on a kv store passes
+// load and is refused here, where the target's `type` is known. Lowered entries
+// are checked the same way; an unresolved entry is checkReachable's.
 func checkDatabaseOps(all []compiled) []Finding {
 	byName := map[string]compiled{}
 	for _, res := range all {
@@ -1399,10 +1266,8 @@ func checkDatabaseOps(all []compiled) []Finding {
 	return out
 }
 
-// checkHandlerPorts: only a workload that LISTENS has ports. A route naming a port on
-// a website or a function is pointing at something that does not exist — the field is
-// on the handler block for every kind, because which kinds have ports is not something
-// the schema can condition on.
+// checkHandlerPorts: only a workload that listens has ports; the schema cannot
+// condition the handler's port field on the kind.
 func checkHandlerPorts(all []compiled) []Finding {
 	var out []Finding
 	for _, res := range all {
@@ -1420,25 +1285,11 @@ func checkHandlerPorts(all []compiled) []Finding {
 	return out
 }
 
-// checkTransformerWorlds: a transformer on a gateway is handed a parsed HTTP request
-// and one on a proxy is handed bytes on a stream. They are different host interfaces,
-// and a function does not say which it was built for — so the most tcc can do is
-// report a function used as BOTH, which cannot be right whichever world it was built
-// against.
-// checkDelegatedFills: a resource that says its serving block lives in its own
-// repository, compiled without that block having been read.
-//
-// IT IS A FINDING AND NOT A REFUSAL, because the compile is legitimate: what it
-// produced is the configuration repository's own values, which is exactly what a
-// project got before it delegated anything, and the first deploy of a resource has
-// no artifact to read a commit from yet.
-//
-// IT IS ALSO NOT SILENCE, which is the whole point. "First deploy, correctly using
-// the defaults" and "the fill has been broken for six weeks" produce the same object
-// and are not the same thing, so the difference is said out loud. An unwired caller
-// gets this finding rather than a green compile that quietly dropped somebody's
-// serving rules -- which is the one place this must NOT behave like Resolver, whose
-// stub says yes on purpose.
+// checkDelegatedFills: a resource whose serving block lives in its own repository,
+// compiled without that block. A finding rather than a refusal, since a first
+// deploy has no artifact yet; never silence, since a fill broken for weeks
+// produces the same object. Unlike Resolver's stub, an unwired caller gets the
+// finding.
 func checkDelegatedFills(obj map[string]any, all []compiled) []Finding {
 	filled := interp.MountedOf(obj)
 
@@ -1457,39 +1308,12 @@ func checkDelegatedFills(obj map[string]any, all []compiled) []Finding {
 	return out
 }
 
-// checkBusIsGuarded: a route that attaches a browser to a bus has to name an
-// AUTHORIZER on that bus.
-//
-// WHY A BUS AND NOT EVERY HANDLER. A request is one-shot and answers to whoever
-// asked; an ATTACHMENT IS A STANDING SUBSCRIPTION to an n:n topic, so whoever
-// completes the handshake receives everything published from then on, including
-// what was meant for somebody else. An unguarded route to a bus is not a page
-// left public -- it is the whole topic left readable by anyone who knows the
-// name, and nothing downstream gets a second chance to say no.
-//
-// AND A TRANSFORMER IS NOT AN AUTHORIZER, which is the distinction this check
-// exists to hold. A transformer SHAPES traffic and may answer instead of
-// forwarding, so a chain CAN refuse -- but refusing is a side effect of a
-// pipeline stage, and what guards the topic is then only discoverable by
-// reading that stage's code. An authorizer is the policy itself: it is asked
-// who is calling and what they are attempting, and it answers with THE OPS THEY
-// GET. A bus declares Ops(subscribe, publish), so the question is exactly the
-// one the authorizer world already answers, and `authorizer:` is already on the
-// kind because attachAccess gives one to everything with verbs.
-//
-// IT IS DECLARED ON THE ROUTE AND NOT ON THE BUS, which is the half that took
-// two tries to get right. A bus has Ops(subscribe, publish) so it carries an
-// `authorizer:` of its own -- but that one is the `authorizer` world, asked
-// `who: caller` about a WORKLOAD. Whoever completed the handshake is a browser,
-// which has no project, no environment and no scope, so a bus-side guard would
-// be handed a caller nobody filled in and would have to guess whether the
-// traffic was HTTP at all. The guard that can answer is the route's, in the
-// `http-authorizer` world, because that one is asked about the request.
-//
-// EITHER SITE SATISFIES IT. A gateway that guards everything it serves says so
-// once at the top; a route that needs its own says so where the route is
-// written. That is the shape routerAttributes already has, and it is what
-// "unless the gateway has an authorizer for all routes" means.
+// checkBusIsGuarded: a route attaching a browser to a bus must name an authorizer.
+// An attachment is a standing subscription to an n:n topic, so an unguarded one
+// leaves the topic readable by anyone who knows the name. A transformer can
+// refuse but is not the policy. The guard sits on the route (http-authorizer
+// world), not the bus, whose authorizer is asked about a workload caller a
+// browser cannot fill. A gateway-wide authorizer satisfies it too.
 func checkBusIsGuarded(all []compiled, byKind map[string][]compiled) []Finding {
 	var out []Finding
 	for _, res := range all {
@@ -1532,10 +1356,8 @@ func checkTransformerWorlds(all []compiled) []Finding {
 		if len(w) < 2 {
 			continue
 		}
-		// worlds is keyed by name alone, with no scope — a real pre-existing gap this
-		// finding already had (two functions of this name in different namespaces would
-		// be conflated). Not fixed here: an id would have the same ambiguity a scope-blind
-		// lookup would, so "" is the honest answer rather than a guess.
+		// worlds is keyed by name alone, so same-named functions in different namespaces
+		// conflate; an id would be just as ambiguous, so "" rather than a guess.
 		out = append(out, Finding{Broken, "function", name, "",
 			"is a transformer on both a gateway and a proxy",
 			"Those are different host interfaces — one is handed a parsed HTTP request, the other bytes on a stream — so one of the two uses is being handed a world the function cannot read.", ""})
@@ -1555,9 +1377,8 @@ func checkExternal(all []compiled, r Resolver) []Finding {
 			}
 		}
 		if image := res.at("source", "image"); image != "" {
-			// The pull secret is a REFERENCE, so it is `{secret: <id>}` — reading it as
-			// a string hands the resolver an empty credential and asks whether the image
-			// pulls anonymously, which is a different question.
+			// The pull secret is a reference, `{secret: <id>}`; read as a string it would
+			// ask whether the image pulls anonymously.
 			if err := r.ImagePullable(image, res.at("source", "image_pull_secret", "name")); err != nil {
 				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
 					fmt.Sprintf("image %q cannot be pulled", image),
@@ -1568,16 +1389,9 @@ func checkExternal(all []compiled, r Resolver) []Finding {
 	return out
 }
 
-// EVERY OP A LOWERING ASKS FOR IS A VERB THE TARGET DECLARES.
-//
-// A lowering writes access entries — `Reaches("receive", …)` puts `receive` in a queue
-// entry's ops — and whether `receive` is something a queue DOES is this vocabulary's
-// question, not the interpreter's. interp.CheckLowerings deliberately cannot ask it: the
-// generic layer knows a value goes at a path and has no word for a verb.
-//
-// So it is asked here, over what the schema declares, with no config in the room. Without
-// it a mistyped op reaches the second compile and fails as a load error against a
-// document nobody wrote.
+// CheckLoweredOps: every op a lowering asks for is a verb its target kind
+// declares. interp.CheckLowerings cannot ask, having no word for a verb; without
+// this a mistyped op fails the second compile against a document nobody wrote.
 func CheckLoweredOps(root *Node) []string {
 	ops := AccessEntryShape().Ops
 	var problems []string
@@ -1590,10 +1404,8 @@ func CheckLoweredOps(root *Node) []string {
 		if last, fixed := w.Path[2].Literal(); !fixed || last != ops {
 			continue
 		}
-		// The kind is a fixed segment or it is nothing static to check. It used to be
-		// the string "{into}" here, which this had to know by heart; a write that lands
-		// on what its own lowering produced arrives with the produced KIND already in
-		// it, because that one is known without any config.
+		// A write landing on what its own lowering produced arrives with the produced
+		// kind already in the path.
 		kind, fixed := w.Path[0].Literal()
 		if !fixed {
 			continue
@@ -1612,16 +1424,9 @@ func CheckLoweredOps(root *Node) []string {
 	return slices.Compact(problems)
 }
 
-// `source: {builtin: …}` NAMES A PROGRAM THE PLATFORM SHIPS, and its doc says it is
-// not for authors: a lowering sets it, and the set is closed by what exists. Nothing
-// performed that. An author could write `builtin: does_not_exist` on an ordinary
-// function and compile clean, producing a workload whose code is a name the platform
-// has never heard of — a value promising something nothing delivers, which is the
-// defect the deleted `auth: oauth` field is remembered for.
-//
-// The check is the one question that separates the two cases and it is already
-// answered: a resource nobody wrote is in the lowering record. So the branch is legal
-// exactly where the compiler itself put it.
+// checkAuthoredBuiltins: `source: {builtin: …}` names a program the platform
+// ships and only a lowering may set it, so the branch is legal exactly where the
+// lowering record shows the compiler put it.
 func checkAuthoredBuiltins(low interp.Lowered, all []compiled) []Finding {
 	var out []Finding
 	for _, res := range all {

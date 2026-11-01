@@ -11,36 +11,14 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/object"
 )
 
-// LOWERING: a kind that is REWRITTEN rather than run.
-//
-// The word is the compiler's, not the web's. "Transpile" is source-to-source between
-// two LANGUAGES; this expresses a high-level construct in terms of the lower-level
-// primitives of the SAME vocabulary, which is what LLVM does to IR and rustc does from
-// HIR to MIR. A workflow is not translated into another config format — it is spelled
-// out in queues and an entity.
-//
-// Every other kind in a vocabulary names something a component holds — a queue is a
-// queue because something in the platform keeps one. A transpiled kind names none:
-// it is a way of WRITING resources that already exist, and it lowers into them at
-// compile. The vocabulary gains a construct; operations gains nothing to deploy.
-//
-// The interpreter owns the mechanism and knows nothing about what any kind means. A
-// vocabulary DECLARES its lowering as data — which kind, one per resource or one per
-// element of a list, what the derived resource is called — and this file carries it out.
-// The alternative, a hook the vocabulary fills with Go code, was the first cut: it put
-// a `switch kind { case "workflow": … }` inside the schema package, which makes
-// lowering something one vocabulary does rather than something tcc offers.
-//
-// The line: a Lowering says WHAT is produced and what it is called. It does not carry
-// arithmetic, conditionals or a second document to consult, because each of those is a
-// language, and the point of declaring a lowering is that a reader can see what a
-// construct becomes without running it.
+// Lowering: a kind rewritten rather than run, expressed in the same vocabulary's
+// lower-level primitives (a workflow becomes queues and an entity). A vocabulary
+// declares its lowering as data, what is produced and what it is called, and
+// this file carries it out. No arithmetic, conditionals or second documents: a
+// reader can see what a construct becomes without running it.
 
-// Lowering is one resource — or one per element of a list — that a lowered kind
-// becomes. Its fields are unexported ON PURPOSE: this DSL is written in terms, not in
-// struct literals, and the only way to build one is the terms below. The same rule the
-// rest of the vocabulary follows — `String("x", Required(), InSection("y"))`, never a
-// literal.
+// Lowering is one resource, or one per list element, that a lowered kind
+// becomes. Its fields are unexported: it is built only from the terms below.
 type Lowering struct {
 	into    string
 	perEach string
@@ -56,13 +34,6 @@ type Lowering struct {
 }
 
 // write is one value a lowering puts into a resource, at an attribute path.
-//
-// It used to be a `reach`: an accessor, a target and an op — one vocabulary's model of
-// "this resource may do that to that one" sitting in the layer that must not have a
-// model. Everything downstream inherited it: the engine grew terms for what an access
-// entry is called, the record spoke in verbs, and the decompiler knew how to take one
-// back off. None of that is the interpreter's business. What IS its business is smaller
-// and says the same thing: put this value in that field.
 type write struct {
 	value Term
 	// which resource. The KIND is a plain name — a kind is one of the vocabulary's own
@@ -73,10 +44,8 @@ type write struct {
 	// where inside it: nested group keys, entry names, and finally the field. Every
 	// segment is a term.
 	path []Term
-	// atProduced: the path starts by naming the resource THIS lowering produced — its
-	// kind, then its name. Neither is a value a lowering can state, because neither
-	// exists until the plan has run; saying it structurally is what replaced a pair of
-	// `{into}`/`{produced}` tokens threaded through a resolver.
+	// atProduced: the path starts by naming the resource this lowering produced, its
+	// kind then its name; neither exists until the plan has run.
 	atProduced bool
 }
 
@@ -87,7 +56,7 @@ type (
 	WriteOption func(*write)
 )
 
-// Into declares that a resource of this kind is produced.
+// Into declares that a resource of this kind is produced:
 //
 //	Into("queue",
 //	    PerEach("steps"),
@@ -96,8 +65,7 @@ type (
 //	    Sets("max-attempts", Each("attempts")),
 //	)
 //
-// The kind has to be one the vocabulary really has: lowering into something undeclared
-// is a plan nothing can carry out, and CheckLowerings says so at build time.
+// CheckLowerings refuses a kind the vocabulary does not have.
 func Into(kind string, opts ...LoweringOption) Lowering {
 	l := Lowering{into: kind}
 	for _, o := range opts {
@@ -117,15 +85,9 @@ func When[T string | engine.AKey](field T) LoweringOption {
 	return func(l *Lowering) { l.when = read }
 }
 
-// Acts marks the part that does what the SOURCE declares.
-//
-// An agent's access block is its tools, and it is the LOOP that calls them: opened, the
-// box should read model-and-memory-and-tools around the thing doing the calling, not a
-// box with arrows leaving it for reasons the picture does not give. A workflow marks
-// nothing, because no single part acts for it — each step's own function does.
-//
-// It changes no compiled value. It says which derived resource a consumer should hang
-// the source's own edges on while it is showing the inside.
+// Acts marks the part that does what the source declares (an agent's loop, which
+// calls its tools), so a consumer hangs the source's own edges on it. It changes
+// no compiled value.
 func Acts() LoweringOption {
 	return func(l *Lowering) { l.acts = true }
 }
@@ -137,15 +99,9 @@ func PerEach(list string) LoweringOption {
 	return func(l *Lowering) { l.perEach = list }
 }
 
-// Named is what the derived resource is called: `Attr(f)` is a field of the source,
-// `Each(f)` one of the element, `Next(f)` one of the element after it, and `Concat` puts
-// them together with the `Text` between them.
-//
-// A TERM rather than a closure, so a lowering can be printed — and a term rather than a
-// string, so what it is made of survives being written down. `Concat(Attr("name"),
-// Text("_"), Each("name"))` and `"{name}_{each.name}"` produce the same name; only the
-// first one can be read backwards, because only the first one still knows which
-// underscore it wrote.
+// Named is what the derived resource is called: `Attr(f)` a field of the source,
+// `Each(f)` one of the element, `Next(f)` one of the next element, joined by
+// `Concat` with `Text`. A term, so a lowering can be printed and read backwards.
 func Named(t Term) LoweringOption {
 	return func(l *Lowering) { l.name = t }
 }
@@ -157,14 +113,9 @@ func Carries(t Term) LoweringOption {
 	return func(l *Lowering) { l.why = t }
 }
 
-// Sets gives the derived resource one of its own fields. Without these a plan is a list
-// of names: nothing downstream can tell a queue that retries four times from one that
-// retries once, and — the reason this is not optional — a lowering cannot NEST, because
-// the next lowering down has no values to read.
-//
-// A term that reads exactly one field — `Each("attempts")`, not a Concat — CARRIES that
-// value rather than building a string out of it, which is what lets a scalar keep its
-// type on the way through and what lets the value be read back out again.
+// Sets gives the derived resource one of its own fields; without them a nested
+// lowering has no values to read. A term reading exactly one field carries that
+// value, keeping its type, rather than building a string.
 func Sets[T string | engine.AKey](field T, value Term) LoweringOption {
 	name := fieldName(field)
 	return func(l *Lowering) {
@@ -179,23 +130,14 @@ func Sets[T string | engine.AKey](field T, value Term) LoweringOption {
 // or the segments of a nested one. Same rule the engine's own terms use.
 func fieldName[T string | engine.AKey](field T) string { return engine.FieldName(field) }
 
-// LinksTo is what this derived resource connects to — the wiring INSIDE the construct.
-// Without it a plan is a list of names, and a consumer that wanted to show what a
-// workflow actually does would have to know what a workflow is, which is the knowledge
-// that must not leave the vocabulary.
-//
-// Writes puts a value into a resource, at the path an author would have written it at:
+// Writes puts a value into a resource, at the path an author would write it at:
 //
 //	Writes(Text("receive"), On("function", Each("run"), Each("namespace")),
 //	    At(Text("queue"), Concat(Attr("name"), Text("_"), Each("name")), Text("ops")))
 //
-// It says nothing about what that means. Whether those three segments are an access
-// entry, a routing table or something no vocabulary has invented yet is the vocabulary's
-// affair — it builds its own term out of this one, and the interpreter carries the value.
-//
-// Two rules, both from the schema rather than from a convention here: a value goes into a
-// LIST by being appended when it is not already there, and into a scalar only when the
-// field is empty. Whichever it is, an author's own value is never replaced.
+// What those segments mean is the vocabulary's affair. A list gets the value
+// appended when absent; a scalar is set only when empty. An author's own value
+// is never replaced.
 func Writes(value Term, opts ...WriteOption) LoweringOption {
 	w := write{value: value}
 	for _, o := range opts {
@@ -204,12 +146,9 @@ func Writes(value Term, opts ...WriteOption) LoweringOption {
 	return func(l *Lowering) { l.writes = append(l.writes, w) }
 }
 
-// On is the resource written INTO. Omitted means the one the lowering produced, which is
-// the common case; naming another is how a lowering wires something it produced to
-// something that already exists.
-//
-// The scope is optional and says where the name resolves: absolute from the root with a
-// leading slash, and otherwise relative to where the lowered resource lives.
+// On is the resource written into; omitted means the one the lowering produced.
+// The optional scope says where the name resolves: absolute with a leading
+// slash, otherwise relative to where the lowered resource lives.
 func On(kind string, name Term, scope ...Term) WriteOption {
 	return func(w *write) {
 		w.onKind, w.onName = kind, name
@@ -219,32 +158,22 @@ func On(kind string, name Term, scope ...Term) WriteOption {
 	}
 }
 
-// At is the path inside that resource: the keys of whatever it is nested in, and last the
-// field itself. Every segment is a term, because a segment can be a fixed key or something
-// read off the config — AtProduced (below) is how a write points back at what this same
-// lowering made, when the path needs to start there.
+// At is the path inside that resource, the field last; every segment is a term.
 func At(path ...Term) WriteOption {
 	return func(w *write) { w.path = path }
 }
 
-// AtProduced is At(...) for a path that begins by NAMING the resource this lowering
-// produced: its kind, then its name, then whatever these segments say.
+// AtProduced is At(...) for a path beginning at the resource this lowering
+// produced, its kind then its name, which only the plan holds:
 //
 //	Writes(Text("receive"), On("function", Each("run")), AtProduced(Text("ops")))
-//
-// It is how a lowering wires something that already exists to the thing it just made,
-// and it exists because neither the kind nor the name is a value a lowering can state.
-// Both are the PLAN's, held in a local by the time a write is filled in, and this option
-// says "start there" so the plan can put its own two strings in front — rather than the
-// lowering stating two placeholder tokens for a resolver to substitute back.
 func AtProduced(path ...Term) WriteOption {
 	return func(w *write) {
 		w.path, w.atProduced = path, true
 	}
 }
 
-// Lowers declares that a kind lowers into others. Declared on the kind's iterator,
-// beside Verbs() and Resource(), because it is a statement about the kind.
+// Lowers declares that a kind lowers into others, on the kind's iterator:
 //
 //	Lowers(
 //	    Into("queue", PerEach("steps"), Named(Concat(Attr("name"), Text("_"), Each("name"))), …),
@@ -335,17 +264,15 @@ func attrOf(res map[string]any, a *engine.Attribute) (any, bool) {
 	return v, ok && v != nil
 }
 
-// Lowerable declares the two shapes of one kind: before lowering it is an ordinary
-// authored resource; after lowering the SAME resource is a container for what it became.
+// Lowerable declares the two shapes of one kind: authored, an ordinary resource;
+// lowered, a container for what it became.
 //
 //	DefineGroup("workflow", Lowerable(
 //	    DefineIter(attrs, Lowers(Into("queue", …))),
 //	    DefineIterGroup(attrs, resourceGroups...).With(Leaf("meta")),
 //	))
 //
-// The authored node is returned so the declaration can sit directly inside
-// DefineGroup. The compiled shape is carried as schema data until c.lower builds the
-// second-pass root; Authored and every authoring consumer therefore see only before.
+// The authored node is returned; only the compile's second pass sees the other.
 func Lowerable(before, after *engine.Node) *engine.Node {
 	if before == nil {
 		return nil
@@ -376,18 +303,10 @@ type nodeIn struct {
 	node, container *engine.Node
 }
 
-// LoweredRoot is the schema Compile's SECOND pass reads, and the only place the after
-// shape of a Lowerable kind is ever selected. Every before-node is replaced by its
-// after-node, at the same key, so `workflow` stays `workflow` and gains the container
-// role — the authored root, and therefore every editor, JSON Schema and completion list,
-// is untouched.
-//
-// Inside a kind's after shape, a held kind is expanded only if that kind's lowerings
-// produce it: nothing else can sit in its container, and expanding everything would never
-// end, since an after shape holds every resource group.
-//
-// A subtree with no Lowerable node in it comes back as itself, so only the spine down to
-// each lowering kind is new; copying v2's whole tree took over a second per compile.
+// LoweredRoot is the schema Compile's second pass reads: each Lowerable kind's
+// before-node replaced by its after-node at the same key, the authored root
+// untouched. Inside an after shape a held kind is expanded only if that kind's
+// lowerings produce it. A subtree with no Lowerable node comes back as itself.
 func LoweredRoot(root *engine.Node) *engine.Node {
 	memo, open := map[nodeIn]*engine.Node{}, map[nodeIn]bool{}
 	var rewrite func(n, container *engine.Node, kind string) *engine.Node
@@ -424,9 +343,7 @@ func LoweredRoot(root *engine.Node) *engine.Node {
 		}
 
 		out := *base
-		// The after shape carries the SHAPE and the kind carries everything else it is —
-		// its resource descriptor, its index footprint, its verbs, its documentation. A
-		// second copy of any of that would be a second place to change it.
+		// The after shape carries the shape; the kind carries everything else it is.
 		out.Meta = make(map[string]any, len(base.Meta))
 		for _, from := range []*engine.Node{before, base} {
 			if from == nil {
@@ -449,23 +366,15 @@ func produces(container *engine.Node, kind string) bool {
 	return slices.ContainsFunc(LoweringsOf(container), func(l Lowering) bool { return l.into == kind })
 }
 
-// DeclaredWrite is one value a lowering says it will put somewhere, read off the schema
-// with no config in the room. It is here so a VOCABULARY can check its own lowerings —
-// whether an op is one the target kind declares is a question only the vocabulary can
-// answer, and CheckLowerings must not learn the word for it.
+// DeclaredWrite is one value a lowering will put somewhere, read off the schema,
+// so a vocabulary can check its own lowerings.
 type DeclaredWrite struct {
 	// From is the kind whose lowering declares this, Into the kind it produces.
 	From, Into string
 	// OnKind is the kind of the resource written into; empty means the produced one.
 	OnKind string
-	// Path is where inside it, and Value what goes there. Both as DECLARED — terms, not
-	// the strings they will become, so a consumer can ask a segment whether it is a fixed
-	// key or something the plan fills in instead of scanning it for punctuation.
-	//
-	// A path that starts at what the lowering produced arrives here with the two segments
-	// the plan would put in front already in it: the kind, which is known statically and
-	// is text, and the name, which is the lowering's own Named term. So a consumer sees
-	// one shape and never has to know that a write can begin somewhere implicit.
+	// Path and Value as declared terms. A path starting at what the lowering
+	// produced arrives with the produced kind and Named term already in front.
 	Path  []Term
 	Value Term
 }
@@ -517,43 +426,16 @@ func UsesLoweringScopes(root *engine.Node) bool {
 	return eachIter(root, func(iter *engine.Node) bool { return loweredShapeOf(iter) != nil })
 }
 
-// Derived is one resource a lowered resource becomes.
-//
-// It is a PLAN, not an emission: this reports what the compiled object would gain, and
-// does not add it. What is missing before it can be emitted is not code — it is
-// decisions. What id does a derived resource get, and does it survive a rename of its
-// source. Does a derived queue count against the project's quota. What happens when an
-// author writes a resource whose name a lowering also produces (an audit check answers
-// that one already). Emitting first and deciding later would put those answers in
-// whatever the first implementation happened to do.
-//
-// ONE OF THEM IS NOT A DECISION BUT A REQUIREMENT, and it is why Source is on this
-// struct rather than computed on demand: whatever is emitted has to carry where it came
-// from, because tcc DECOMPILES. A compiled project goes back to yaml, and a compiled
-// project holding three queues that nobody wrote must produce a workflow — not three
-// queue documents and a workflow that has quietly become something else. The marker is
-// what lets the decompiler drop the derived and keep the authored, and a lowering that
-// emitted anonymous resources would be a one-way door.
-//
-// A LOWERING ADDS; IT NEVER REPLACES. The authored resource stays exactly where it was,
-// and that is what makes the round trip possible: it is the shell, and the shell is the
-// metadata. Its steps are still written down, so decompiling is "keep what is authored,
-// drop what is marked" rather than a reconstruction that has to infer a workflow from
-// the queues it happened to produce. It is also what everything else keeps pointing at
-// — a cron declares `start` on the workflow, not on the first queue.
+// Derived is one resource a lowered resource becomes: a plan, not an emission.
+// It carries Source because tcc decompiles: a compiled project holding queues
+// nobody wrote must come back as the workflow. A lowering adds and never
+// replaces, so the authored shell stays and is what everything points at.
 type Derived struct {
 	Kind string // the kind produced
 	Name string // its name
 
-	// ID is deterministic: the same config compiles to the same id, forever, on every
-	// machine. A resource a compiler wrote is stored under its id and referred to by
-	// it, so minting a fresh one each compile would make every build look like a delete
-	// and a create — and two clouds compiling the same project would disagree about
-	// what is the same resource.
-	//
-	// Derived from the SOURCE's id (not its name, which can be renamed), the kind, and
-	// the part — a step name where there is one, and the lowering's own name template
-	// where there is not, so a workflow rename does not re-key what it produced.
+	// ID is deterministic, from the source's id (not its name), the kind and the
+	// part, so builds do not re-key what they produced and two clouds agree.
 	ID     string
 	Of     string         // "<kind>/<name>" of the resource it was lowered from
 	Scope  string         // the namespace that resource lives in
@@ -561,12 +443,8 @@ type Derived struct {
 	Fields map[string]any // its own values, from Set
 	Writes []Written      // the values it puts into resources, templates filled in
 
-	// Source is the AUTHORED config responsible for this, and it is the reason a
-	// derived resource is not anonymous. An error found in something nobody wrote has
-	// to be reported against something somebody did: not "queue/checkout_reserve is
-	// wrong" — which names a resource the author cannot find in their repository — but
-	// "workflow/checkout, step 0, is wrong". The plan carries the way back or the
-	// diagnostics are useless.
+	// Source is the authored config responsible, so an error is reported against
+	// what the author can find ("workflow/checkout, step 0").
 	Source Source
 
 	// Via is the chain of lowerings above this one, outermost first, so a nested
@@ -582,17 +460,13 @@ type Derived struct {
 type Source struct {
 	Kind string // the authored resource's kind
 	Name string // its name
-	// ID is its compiled id. A lowering that produced something which lowers in turn
-	// still points HERE: what a reader asks is what exists because they wrote this, and
-	// the intermediate is not something they wrote.
+	// ID is its compiled id. A nested lowering still points here, at what the reader
+	// wrote.
 	ID    string
 	Scope string // its namespace
 	Path  string // where inside its document, e.g. "steps/0". Empty for the whole resource.
 
-	// Part is the element itself, when this came from one. It is here so a consumer can
-	// show the construct AS WRITTEN — a workflow's steps, wired to each other — and not
-	// only what it becomes. Both views are the same computation read from opposite
-	// ends, and neither should need a second implementation that knows what a step is.
+	// Part is the element itself, so a consumer can show the construct as written.
 	Part map[string]any
 }
 
@@ -640,21 +514,9 @@ func (e End) Self() bool { return e.Kind == "" }
 
 func (d Derived) String() string { return d.Kind + "/" + d.Name + " (" + d.Why + ")" }
 
-// Doc is the document this derived resource would BE — what an author would have had to
-// write to get it by hand — and it is built at PLAN time because that is where the
-// schema is.
-//
-// It has to be authorable, not merely readable. A field's compiled key is not its
-// authored path: `execution/call` is one name for one attribute and two levels of
-// document (`execution:` / `  call:`), and writing the flat key produced a resource that
-// failed to compile with "unknown key 'execution/call'". Generated config that would be
-// rejected if anyone authored it is worse than none, so the paths come off the schema.
-//
-// It is a TREE, not text. Nothing here renders yaml: this goes to yaseer over an in-memory
-// layer, the same way an editor hands it a document, and yaseer is what serialises. Doing
-// it by hand was a second yaml writer with its own way of getting duplicate keys wrong —
-// two accesses to one kind wrote `queue:` twice, and in yaml the second is the only one
-// there is.
+// Doc is the document this derived resource would be, built at plan time from
+// the schema's authored paths: a field's compiled key is not its path. It is a
+// tree that yaseer serialises, not text.
 
 // authored is the resource as it would have been written: every field at the path its
 // attribute declares, every access the resource itself grants, and its deterministic id.
@@ -718,10 +580,9 @@ func put(tree map[string]any, path []string, value string) {
 	}
 }
 
-// authoredPath is where a field is WRITTEN, which is its attribute's Path — not its
-// compiled name. A matcher in the path (an Either branch) is the branch the attribute
-// capturing it holds in fields; with none, the field has no single authored location,
-// so it stays flat and the document says what it can.
+// authoredPath is where a field is written: its attribute's Path, with each
+// matcher the branch its capturing attribute holds; with none, the field stays
+// flat.
 func authoredPath(iter *engine.Node, name string, fields map[string]any) []string {
 	if iter == nil {
 		return []string{name}
@@ -831,9 +692,8 @@ func LoweringPlan(root *engine.Node, obj map[string]any) []Derived {
 	// Each round reads the fields the round above produced, which is why Set exists.
 	out = append(out, nest(root, out)...)
 
-	// A TOTAL order. Sorting on a pair that two derived resources can share leaves the
-	// rest to map iteration, and the plan stops being a pure function of the config —
-	// which is what decides collisions, grant order and every id downstream of them.
+	// A total order: a pair two derived resources can share would leave the rest to
+	// map iteration.
 	sort.SliceStable(out, func(i, j int) bool {
 		a, b := out[i], out[j]
 		if a.Scope != b.Scope {
@@ -858,16 +718,9 @@ func LoweringPlan(root *engine.Node, obj map[string]any) []Derived {
 	return out
 }
 
-// setFor fills in a lowering's fields and puts any SCALAR back into the form an author
-// writes. A compiled value is the wire form — a Duration is nanoseconds, a Bytes is a
-// count — and a lowering copies from a compiled resource into a document that is
-// supposed to be authorable. Copying `size` straight through produced
-// `size: 2000000000`, which is not merely ugly: it does not compile, because Bytes
-// requires a unit. Generated config that would be rejected if anyone authored it is
-// worse than none.
-//
-// The inverse is the same one decompile uses — the scalar term carries both directions
-// — so there is no second table of "how do I turn nanoseconds back into 20s".
+// setFor fills in a lowering's fields and puts any scalar back into its authored
+// form: a compiled Duration is nanoseconds and `size: 2000000000` does not
+// compile. The inverse is the one decompile uses.
 func setFor(root *engine.Node, into string, fields map[string]Term, e env) map[string]any {
 	out := set(fields, e)
 	if len(out) == 0 {
@@ -886,12 +739,8 @@ func setFor(root *engine.Node, into string, fields map[string]Term, e env) map[s
 		if !isScalar {
 			continue
 		}
-		// Format reads the WIRE value — nanoseconds, a byte count — and filling a term in
-		// has already turned everything into a string. So a scalar field takes the raw
-		// value straight from the source, which is only meaningful when the term reads one
-		// field and states nothing else: `Attr(Key("memory","size"))` is a value being
-		// carried, a Concat is a string being built. That used to be a question about a
-		// template's punctuation; it is a question about the term now.
+		// A scalar takes the raw wire value from the source, meaningful only when the
+		// term reads one field and states nothing else.
 		if _, sole := fields[a.Name].Sole(); !sole {
 			continue
 		}
@@ -899,8 +748,7 @@ func setFor(root *engine.Node, into string, fields map[string]Term, e env) map[s
 		if !ok {
 			continue
 		}
-		// Format takes a selector to the object HOLDING the field, which is how the
-		// decompiler calls it, so it gets a one-field object to hold.
+		// Format takes a selector to the object holding the field.
 		holder := object.New[object.Refrence]()
 		one := object.New[object.Refrence]()
 		one.Set(a.Name, raw)
@@ -919,13 +767,9 @@ func setFor(root *engine.Node, into string, fields map[string]Term, e env) map[s
 	return out
 }
 
-// from is everything one resource lowers into, placed where its kind says it goes: inside
-// the source itself when it declares Lowerable, beside it otherwise.
-//
-// THE SCOPE IS PRODUCED ONLY WHEN SOMETHING GOES INTO IT. A lowering every part of which
-// is gated on a field nobody set produces nothing, and an empty scope is a directory that
-// says a construct exists where none does — visible in a graph, in a decompile and in the
-// index, with nothing in it.
+// from is everything one resource lowers into, inside the source when it
+// declares Lowerable, beside it otherwise. The scope is produced only when
+// something goes into it.
 func from(root, iter *engine.Node, kind, name, id string, res map[string]any, at string, src Source, via []string) []Derived {
 	ls := LoweringsOf(iter)
 	if len(ls) == 0 {
@@ -955,16 +799,14 @@ func plan(root *engine.Node, l Lowering, kind, name, srcID string, res map[strin
 	of := kind + "/" + name
 
 	if l.perEach == "" {
-		// This env carries no scope and nothing about what the lowering produced: a name
-		// that read its own scope, or pointed at AtProduced, would be circular — both only
-		// exist once this Derived does. A Scope() used inside a Named() here fills with
-		// nothing, so the name is EMPTY and the compile refuses it by name (see lower()).
+		// No scope here: a name reading its own scope would be circular, so it fills
+		// empty and the compile refuses it (see lower()).
 		e := env{res: res}
 		named, _ := l.name.fill(e)
 		return []Derived{{
 			Kind: l.into, Name: named, Of: of, Scope: scope,
-			// The id is hung off the lowering's own name AS DECLARED — the term, printed —
-			// so a rename of the source does not re-key what it produced.
+			// Hung off the lowering's declared name, so renaming the source does not re-key
+			// what it produced.
 			ID:  derivedID(srcID, l.into, l.name.String()),
 			Why: describe(l.why, e), Fields: inherit(root, kind, l.into, res, setFor(root, l.into, l.set, e)),
 			Writes: writes(l.writes, l.into, named, scope, e), Source: src, Via: via, Acts: l.acts,
@@ -1064,25 +906,15 @@ func iterOfKind(root *engine.Node, kind string) *engine.Node {
 	return found
 }
 
-// describe is what Carries() says about this derived resource: prose for a human. A
-// description that cannot be filled in WHOLE is dropped rather than shown half-written —
-// it is not config, nothing reads it back and no resource carries it, so an empty line
-// costs a reader a sentence while a `{each.x}` in it costs them the belief that the rest
-// of what they are reading is real.
+// describe is what Carries() says, dropped unless it can be filled in whole.
 func describe(why Term, e env) string {
 	s, _ := why.fill(e)
 	return s
 }
 
-// set fills in the derived resource's own fields. A field whose value cannot be filled is
-// DROPPED, exactly as writes() drops a write it cannot address: a term that resolved to
-// nothing has nothing to put there, and the printed form — `{each.attempts}` — is a
-// DIAGNOSTIC. Setting a field to it wrote a string nobody authored into a resource that
-// then compiles and deploys, which is worse than the field being absent.
-//
-// Absent is also what the rest of the machinery already reasons about: CheckLowerings
-// refuses at build time a lowering that leaves a REQUIRED field of the produced kind
-// unset, so a field that can go missing here is an optional one.
+// set fills in the derived resource's own fields, dropping one that cannot be
+// filled rather than writing its printed form. CheckLowerings already refuses a
+// lowering leaving a required field unset.
 func set(fields map[string]Term, e env) map[string]any {
 	if len(fields) == 0 {
 		return nil
@@ -1101,38 +933,19 @@ func set(fields map[string]Term, e env) map[string]any {
 	return out
 }
 
-// writes fills in each declared write. One whose value or target cannot be filled is
-// DROPPED rather than emitted half-written: a step with no `on_error` has no failure
-// edge, and that is the common case rather than a mistake.
-//
-// into/produced are the kind and name of the resource this lowering makes, which a write
-// needs when it points AT it: a value written into somebody else's resource that names
-// this one has to name it, and only the plan knows what it ended up called. They are
-// STRINGS the plan is holding, put in front of a path that says it starts there —
-// AtProduced — and never terms a lowering could have stated.
+// writes fills in each declared write, dropping one whose value or target cannot
+// be filled (a step with no on_error). into and produced are what this lowering
+// made, which only the plan holds.
 func writes(ws []write, into, produced, scope string, e env) []Written {
-	// ProducedScope() is WHERE WHAT THIS LOWERING PRODUCED LIVES, absolute from the
-	// project root — the one fact a write into somebody else's resource cannot work out
-	// for itself once Lowerable moves the produced resources into a scope of their own. An
-	// entry on a function at the root that names a queue two levels in has to say so, and
-	// only the plan knows where the queue ended up.
-	//
-	// ABSOLUTE, not relative: the resource an entry lands on may be in the source's scope
-	// (a step's function, which the author wrote) or in the produced scope (an agent's
-	// loop, which the same lowering made), and one spelling has to be right from both.
-	//
-	// Empty when nothing was scoped, which drops the write entirely — so a vocabulary
-	// that declares no Lowerable writes exactly what it wrote before.
+	// ProducedScope() is where the produced resources live, absolute from the root,
+	// so one spelling is right from the source's scope and the produced one. Empty
+	// when nothing was scoped, which drops the write.
 	if scope != "" {
 		e.scope = "/" + scope
 	}
 	out := make([]Written, 0, len(ws))
 	for _, w := range ws {
-		// A value that cannot be filled is a write that does not happen: the last step
-		// has no next, so there is no queue for it to send to. Dropped, not written
-		// half-finished. It used to be said by looking for a leftover brace in the
-		// filled-in string, which also dropped a value that legitimately contained one;
-		// a term simply reports that a part of it had nothing behind it.
+		// A value that cannot be filled is a write that does not happen.
 		value, ok := w.value.fill(e)
 		if !ok || value == "" {
 			continue
@@ -1150,8 +963,8 @@ func writes(ws []write, into, produced, scope string, e env) []Written {
 		}
 
 		path := make([]string, 0, len(w.path)+2)
-		// A path that starts at what this lowering produced starts at two strings the
-		// plan is already holding. Assigned, not substituted.
+		// A path starting at what this lowering produced starts at the plan's two
+		// strings.
 		if w.atProduced {
 			if into == "" || produced == "" {
 				continue
@@ -1179,20 +992,14 @@ func writes(ws []write, into, produced, scope string, e env) []Written {
 	return out
 }
 
-// walkResources visits every compiled resource, carrying the kind's iterator node so a
-// caller can read its annotations, and the scope it was authored in. Which groups ARE
-// scopes is read off the schema (ContainerKeys), never named here.
+// walkResources visits every compiled resource with its kind's iterator and the
+// scope it was authored in; which groups are scopes comes from ContainerKeys.
 func walkResources(root *engine.Node, scope map[string]any, at string, fn func(kind string, iter *engine.Node, id, name string, res map[string]any, at string)) {
 	walkGroups(root, root.Children, scope, at, fn)
 }
 
-// walkGroups is the walk itself. The ROOT is carried through unchanged and only the group
-// list descends, because what a resource's name is called and which group is the scope
-// container are the ROOT's answers: this used to recurse on a synthetic
-// `&Node{Children: …}`, which carries no Meta, so `IdentityOf` returned "" and every
-// resource inside a namespace was walked with an empty name. Nothing noticed while the
-// name was only used for provenance — templates read the resource map directly — and it
-// became visible the moment the name decided WHERE what a resource lowers into goes.
+// walkGroups carries the root through unchanged and descends only the group
+// list: the name field and the scope container are the root's answers.
 func walkGroups(root *engine.Node, groups []*engine.Node, scope map[string]any, at string, fn func(kind string, iter *engine.Node, id, name string, res map[string]any, at string)) {
 	containers := ContainerKeys(root)
 	_, nameField := engine.IdentityOf(root)
@@ -1284,10 +1091,8 @@ func unknownInputs(root, iter *engine.Node, l Lowering) []string {
 
 	var unknown []string
 	seen := map[string]bool{}
-	// A term reports the fields it reads and nothing else, so there is no list of names
-	// to skip: what the plan fills in — where it put what it produced — is not a field
-	// read and never turns up here. That list used to be three strings, and a fourth
-	// would have had to be remembered.
+	// A term reports the fields it reads and nothing else, so there is no list of
+	// names to skip.
 	check := func(t Term) {
 		for _, r := range t.Reads() {
 			scope := has
@@ -1356,10 +1161,8 @@ func loweringCycles(root *engine.Node) []string {
 	return slices.Compact(found)
 }
 
-// CheckLowerings verifies at BUILD time that every lowering names a kind the
-// vocabulary has and fills a name. A lowering into a kind nobody declared is a plan
-// that cannot be carried out, and finding that when someone runs the compiler is
-// finding it in the wrong place.
+// CheckLowerings verifies at build time that every lowering names a kind the
+// vocabulary has and fills a name.
 func CheckLowerings(root *engine.Node) []string {
 	kinds := map[string]bool{}
 	for _, g := range root.Children {
@@ -1370,21 +1173,9 @@ func CheckLowerings(root *engine.Node) []string {
 
 	var problems []string
 	eachIter(root, func(iter *engine.Node) bool {
-		// A SCOPE A LOWERING PRODUCES HAS TO BE ONE. The shape is handed over rather
-		// than named so that what is synthesized is loaded, indexed and resolved
-		// through by the same definition an authored scope is, and two things have to
-		// hold for that.
-		//
-		// THE NODE IS THE ROOT'S OWN GROUP BY THAT KEY. Its key and its Leaf are read
-		// off the node handed over, and the directory they describe is loaded by
-		// whatever group the ROOT has under that key — so a copy, however identical,
-		// is a plan that reads fine and may be describing something else.
-		//
-		// AND IT IS A CONTAINER. `shape.Children[0].Group` is the same structural test
-		// ContainerKeys uses and the same one a consumer sees as `container` on the
-		// kind, which is what makes this a check about SHAPE rather than about which
-		// group it is: any kind the vocabulary declares as a scope will do, and v2
-		// takes on the container role rather than borrowing another kind's.
+		// A scope a lowering produces must be the root's own group by that key, and a
+		// container, so what is synthesized is loaded, indexed and resolved by the same
+		// definition as an authored scope.
 		if shape := loweredShapeOf(iter); shape != nil {
 			switch {
 			case !shape.Group:
@@ -1408,30 +1199,13 @@ func CheckLowerings(root *engine.Node) []string {
 			if l.name.Empty() {
 				problems = append(problems, "lowering into "+l.into+" produces no name")
 			}
-			// A lowering has to produce a resource that could actually EXIST. A kind's
-			// required fields are required of anything of that kind, including what a
-			// compiler wrote — and the mistake this catches is a real one: a workflow
-			// lowering into an `entity` for its run state, when an entity is a
-			// code-bearing compute instance whose source, entrypoint, timeout and
-			// memory nothing was setting. That is a resource nobody could instantiate,
-			// and without this check it was a plan that read fine.
+			// A lowering must produce a resource that could exist: the produced kind's
+			// required fields are required of it too.
 			for _, missing := range unsatisfied(root, l) {
 				problems = append(problems, "lowering into "+l.into+" leaves "+missing+" unset, which that kind requires")
 			}
-			// EVERY INPUT MUST EXIST ON THE SHELL. A lowering is a function of the
-			// resource it lowers, so its terms name that resource's fields — and a name
-			// that is not one is not an error anywhere else: a field nothing has resolves
-			// to nothing, is left showing as `{each.attemps}` in the value, and travels
-			// into a derived resource looking like config.
-			//
-			// A term makes the STRUCTURE of a reference unrepresentable-if-wrong — there
-			// is no missing brace and no misspelt `each.` prefix to make any more — and
-			// this is what still catches the other half, a field name that is simply not
-			// one. Both are found here, with no config in the room.
-			//
-			// It is also what makes the lowering reversible in the way that matters:
-			// what the shell becomes is computed from the shell's own attributes, all
-			// of them declared, so nothing arrives from somewhere a reader cannot see.
+			// Every input must exist on the shell: a field name that is not one would
+			// resolve to nothing and travel into a derived resource as `{each.attemps}`.
 			for _, unknown := range unknownInputs(root, iter, l) {
 				problems = append(problems, "lowering into "+l.into+" reads "+unknown+", which is not a field of what it lowers")
 			}

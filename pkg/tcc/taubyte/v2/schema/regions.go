@@ -9,13 +9,8 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/interp"
 )
 
-// WHICH REGIONS EXIST IS NOT THE CONFIG'S TO SAY, and not tcc's either. A region name
-// is an opaque label the implementation defines (see regionAttributes), so the audit
-// can hold a project to what it states about itself — a scope narrows and never widens,
-// failover takes two — but not to what the platform can do with it. That question is
-// answered by whoever compiles, through Regions, and the audit uses its answer as the
-// effective placement: one calculation, the same one for every check that asks where
-// something runs.
+// Which regions exist is the implementation's to say, through Regions; the audit
+// uses its answer as the one effective placement every check asks about.
 
 // Placement is everything the config states about where one resource runs.
 type Placement struct {
@@ -74,14 +69,9 @@ type Regions interface {
 // is a name for "where this build runs", not a region a cloud declares.
 const DefaultRegion = "default"
 
-// WithNoRegions is the Regions of a build that has no regions — the OSS build. Everything
-// is placed in DefaultRegion, and a placement or allowance naming any region is Broken:
-// the author stated a place this build cannot put it.
-//
-// IT IS THE DEFAULT, so an audit nobody configured refuses what it cannot honour
-// rather than accepting it quietly. A project writing no `regions` anywhere — or
-// naming DefaultRegion — compiles clean, which is what "an absent block is anywhere
-// the allowance permits" promises.
+// WithNoRegions is the Regions of a build with no regions, the OSS build and the
+// default: everything is placed in DefaultRegion, and naming any other region is
+// Broken.
 func WithNoRegions() Regions { return oneRegion{region: DefaultRegion} }
 
 // WithRegion is the Regions of one region of a cloud that has more: a build or a
@@ -324,16 +314,9 @@ func stringAt(m map[string]any, key string) string {
 	return s
 }
 
-// Preview is the Regions of no build at all: an author's look at how a project would
-// be cut across the regions named, for tooling that shows views before any cloud is
-// chosen. It places like a cloud that has exactly those regions — what says nothing
-// runs wherever its ceiling allows, a cdn wherever it is seeded and may follow demand —
-// and it never refuses: a region outside the list is a Check, because a preview has no
-// authority to say a region does not exist.
-//
-// A BUILD NEVER USES IT. Which regions a cloud serves is the cloud's to say, and the
-// one that says it is whatever the build composes; this is what an explorer passes
-// when the question is "what would each region hold".
+// Preview is the Regions of no build: how a project would be cut across the named
+// regions, for tooling. It never refuses; a region outside the list is a Check. A
+// build never uses it.
 func Preview(regions ...string) Regions {
 	p := preview{}
 	for _, r := range regions {

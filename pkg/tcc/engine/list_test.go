@@ -48,8 +48,6 @@ func steps(t *testing.T, doc string) []any {
 	return s
 }
 
-// The order is the document's, and it survives past nine elements — which an
-// index-keyed map would not, since "10" sorts before "2".
 func TestListKeepsAuthoredOrder(t *testing.T) {
 	doc := "id: one\nsteps:\n"
 	for i := 0; i < 12; i++ {
@@ -62,9 +60,6 @@ func TestListKeepsAuthoredOrder(t *testing.T) {
 	}
 }
 
-// An element is a full resource: defaults, InSet, Required and unknown keys all
-// apply INSIDE it, which is the whole reason a list of objects beats a list of
-// strings with a convention.
 func TestListElementIsCheckedLikeAnyResource(t *testing.T) {
 	got := steps(t, "id: one\nsteps:\n    - name: redact\n    - name: stamp\n      when: response\n")
 	assert.Equal(t, got[0].(map[string]any)["when"], "request", "the default applies inside an element")
@@ -81,8 +76,6 @@ func TestListElementIsCheckedLikeAnyResource(t *testing.T) {
 	assert.ErrorContains(t, err, "invalid value", "InSet applies inside an element")
 }
 
-// A list authored as a mapping used to be the silent case: the entries would load
-// and run in whatever order the map yielded.
 func TestListRejectsAMapping(t *testing.T) {
 	_, err := loadList(t, "id: one\nsteps:\n    redact:\n        name: redact\n")
 	assert.ErrorContains(t, err, "ordered list")
@@ -111,9 +104,6 @@ func TestListRoundTrips(t *testing.T) {
 		"a list must come back a sequence, in order — not a map keyed by index")
 }
 
-// The terms that run ABOVE the engine cannot run on a value, and a list is a value.
-// Refusing at construction is the difference between a build failure the author
-// reads and a compiled object where one Duration is a string.
 func TestDefineListRefusesTermsItCannotRun(t *testing.T) {
 	defer func() {
 		r := recover()

@@ -9,15 +9,8 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// The branch is the only thing in an index value that a human chose freely, and git lets
-// that choice hold a `/`. Joined raw it stopped being one segment: `release/1.2` made
-// `branches/release/1.2/projects/…`, which a reader matching `branches/([^/]+)/…projects/`
-// does not parse into a wrong branch — it does not parse at all, and answers with an
-// empty everything.
-//
-// So these are the shapes that actually turn up in a repository, not invented ones:
-// the branch every project has, a topic branch, a release line, what a bot opens, and one
-// holding the escape character itself.
+// Branch shapes that turn up in real repositories: the default, a topic branch, a
+// release line, a bot's, and one holding the escape character.
 var branchShapes = []struct {
 	branch, segment string
 }{
@@ -40,9 +33,6 @@ var branchShapes = []struct {
 	{"feature/café", "feature%2Fcafé"},
 }
 
-// The encoded form is pinned by the literals above, not just round-tripped, because it is
-// written into a persisted index: a change to what this produces is a change to keys
-// already stored, and it should have to be typed here to happen.
 func TestBranchIsOneSegmentAndComesBack(t *testing.T) {
 	seen := map[string]string{}
 	for _, shape := range branchShapes {
@@ -61,9 +51,6 @@ func TestBranchIsOneSegmentAndComesBack(t *testing.T) {
 	}
 }
 
-// A segment nothing here produced is refused rather than guessed at, because the encoded
-// form is what the index is keyed by: reading `%6Dain` as `main` would invent a second
-// spelling of a branch that no lookup finds.
 func TestBranchDecodeRefusesWhatItNeverWrote(t *testing.T) {
 	for _, segment := range []string{
 		"%6Dain",     // a valid escape this encoding never emits
@@ -77,9 +64,6 @@ func TestBranchDecodeRefusesWhatItNeverWrote(t *testing.T) {
 	}
 }
 
-// And the same shapes through the compiler, which is where it matters: the index value is
-// built by byName, and the branch in it has to survive being one of the `/`-joined
-// segments of a real compiled path.
 func TestCompiledIndexKeepsTheBranchInOneSegment(t *testing.T) {
 	for _, shape := range branchShapes {
 		t.Run(shape.branch, func(t *testing.T) {

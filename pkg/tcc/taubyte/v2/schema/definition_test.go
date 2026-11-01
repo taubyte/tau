@@ -79,10 +79,8 @@ func namedResource(t *testing.T, group map[string]any, name string) map[string]a
 	return nil
 }
 
-// compileBasic is the fixture AS WRITTEN. Compiling lowers, so the object a runtime gets
-// also holds the queues a workflow becomes — which is right, and is not what most of
-// these tests are about: they check what the vocabulary does with what somebody wrote.
-// The tests that are about lowering ask for the lowered object by name.
+// compileBasic is the fixture as written, lowered resources left out; lowering
+// tests ask for the lowered object by name.
 func compileBasic(t *testing.T) map[string]any {
 	t.Helper()
 	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
@@ -92,9 +90,6 @@ func compileBasic(t *testing.T) map[string]any {
 	return obj.Flat()
 }
 
-// The whole point of v2: a function is code and limits. If any of these keys comes
-// back, the trigger block was extended rather than deleted and reachability is
-// still the function's business.
 func TestFunctionHasNoTrigger(t *testing.T) {
 	fn := namedResource(t, resources(t, compileBasic(t), "function"), "checkout")
 
@@ -103,12 +98,8 @@ func TestFunctionHasNoTrigger(t *testing.T) {
 		assert.Assert(t, !present, "functions carries %q; the trigger block is meant to be deleted, not extended", gone)
 	}
 
-	// The pubsub kind is the one v1 trigger that survives on a function, and it means
-	// the opposite of what it meant there. In v1 it was a TRIGGER — a scalar naming the
-	// channel that fired this function. Here it is an ACCESS BLOCK — entries keyed by
-	// the stream's name, each with its ops — so the direction is the function declaring
-	// what it reaches. The shape is what tells them apart, so the shape is what this
-	// asserts.
+	// On a function `stream` is an access block keyed by stream name, not v1's
+	// trigger scalar; the shape tells them apart.
 	if ch, present := fn["stream"]; present {
 		_, isBlock := ch.(map[string]any)
 		assert.Assert(t, isBlock, "functions carries a scalar %q: that is v1's trigger coming back", "stream")
@@ -119,9 +110,6 @@ func TestFunctionHasNoTrigger(t *testing.T) {
 	assert.Equal(t, nested(fn, "execution", "memory"), int64(32000000), "32MB parses to bytes")
 }
 
-// `libraries` -> `component` carries into the reference form: a named component
-// resolves against the compiled index — and compiles to `{component: <id>}`,
-// two levels, because a kind and an id are two facts rather than one string to split.
 func TestComponentSourceResolves(t *testing.T) {
 	flat := compileBasic(t)
 	modID := ""
@@ -134,11 +122,6 @@ func TestComponentSourceResolves(t *testing.T) {
 	assert.DeepEqual(t, fn["source"], map[string]any{"kind": "component", "component": modID})
 }
 
-// A queue's dead-letter is a ref to another queue, so a typo is a compile error
-// rather than a silently undelivered item.
-//
-// THE FIELDS ARE UNDER `queue/` NOW, because `sync` is a typed kind and the block that
-// is written IS the type — the same shape a database's `sql/` block has.
 func TestQueueDeadLetterResolves(t *testing.T) {
 	queues := map[string]any{}
 	for id, v := range resources(t, compileBasic(t), "sync") {
@@ -163,24 +146,6 @@ func TestQueueDeadLetterResolves(t *testing.T) {
 	assert.Assert(t, exists, "dead-letter %q did not resolve to a compiled queue id", dl)
 }
 
-// A CREDENTIAL NEVER ENTERS THE CONFIG, and the two ways of naming one are both here
-// with the difference between them stated, because it is easy to read them as the same
-// thing.
-//
-// This used to be asserted on `connector.credentials` — a field on a kind since
-// deleted. Both halves of what it held survive, in the places they belong:
-//
-//   - A REFERENCE resolves. `stream/shipments` names the secret its kafka authenticates
-//     with, the attribute is a `Ref("secret")`, and what compiles out is the secret's
-//     ID. The name is checked at compile: a secret that is not there is an error.
-//   - AN ACCESS ENTRY does not, and is keyed by the NAME of what it reaches (§8b of
-//     AGENTS.md). `function/poll_mentions` — the poller the fixture's connector became
-//     — reaches `secret/slack` this way, which is how every workload reaches a secret
-//     it reads at run time.
-//
-// The cost of the second is real and is the vocabulary's, not this deletion's: nothing
-// resolves or checks an entry's key, so a typo in one is not a compile error the way a
-// bad `credentials:` was.
 func TestACredentialIsNeverAValue(t *testing.T) {
 	flat := compileBasic(t)
 
@@ -200,18 +165,6 @@ func TestACredentialIsNeverAValue(t *testing.T) {
 	assert.Assert(t, namedResource(t, resources(t, flat, "secret"), "slack") != nil)
 }
 
-// A database's engine key IS the engine, from a closed set, so an external system
-// that is not a database cannot be named as one. This replaced a `provides` role list
-// on the `connector` kind — since deleted whole — which asked the author to restate a
-// fact about software they did not write, and would have compiled just as happily when
-// they got it wrong.
-//
-// THE SET IS PER TYPE, and that is what keeps a WRONG PAIR unrepresentable rather than
-// merely checkable: a Mongo is not a thing a `sql:` block can name, and a Postgres is
-// not a thing a `document:` block can, because neither is a key that exists there. One
-// `engine:` beside one `type:` would have made both values legal on their own and only
-// the pair wrong — a rule somebody has to remember to write, and a document that
-// compiles until they do.
 func TestDatabaseEngineIsClosed(t *testing.T) {
 	compile := func(body string) error {
 		fs := afero.NewMemMapFs()
@@ -248,17 +201,6 @@ func TestDatabaseEngineIsClosed(t *testing.T) {
 	assert.ErrorContains(t, compile("description: nothing\n"), "attribute type has an empty key")
 }
 
-// THE ENTRYPOINT FOLLOWS THE TIER, on both kinds that run code. A component has no
-// convention for what the host calls, so wasm demands `execution/call`; a module has
-// one, its default export, so js defaults to it; a container's entrypoint is the
-// image's, so it is neither demanded nor filled in.
-//
-// The tier is Required() with no default, and that is the load-bearing half.
-// RequiredWhen reads the discriminator FROM THE DOCUMENT — an absent one means the
-// condition cannot hold — so `runtime` defaulting to wasm would have gated the
-// entrypoint on a value the loader never sees, and every workload that wrote no
-// `runtime:` line would have quietly stopped being asked for one. This pins every
-// combination because the trap here is a check that passes by checking less.
 func TestTheEntrypointFollowsTheTier(t *testing.T) {
 	head := "id: " + cidFor("probe") + "\n"
 	compile := func(kind, body string) (map[string]any, error) {
@@ -303,20 +245,12 @@ func TestTheEntrypointFollowsTheTier(t *testing.T) {
 	_, defaulted := nestedOK(res, "execution", "call")
 	assert.Assert(t, !defaulted, "a container is given no entrypoint it did not write")
 
-	// A CONTAINER WITH NEITHER AN IMAGE NOR A BUILD IS NO LONGER A LOAD ERROR, and
-	// that is the price of unifying the two ways of having something to run. `image:`
-	// used to be a field of this kind with a RequiredWhen on the tier; it is a branch of
-	// `source:` now, and the other way — declaring the build that produces one — lives
-	// in a second block, so no single key can demand "one of these two". It is
-	// checkBuild's, which is where every other cross-block exclusion in this vocabulary
-	// already is.
+	// A container with neither image nor build loads: the exclusion spans two blocks
+	// and is checkBuild's.
 	_, err = compile("worker", "runtime: container\n"+limits)
 	assert.NilError(t, err)
 }
 
-// An external engine carries its own connection; tau's own carries a size and no
-// host at all, so neither borrows the other's fields. And the TYPE is the block that
-// was written rather than a word anybody typed.
 func TestDatabaseEngineCarriesItsOwnConnection(t *testing.T) {
 	flat := compileBasic(t)
 	dbs := resources(t, flat, "database")
@@ -359,12 +293,6 @@ func TestDatabaseEngineCarriesItsOwnConnection(t *testing.T) {
 	}
 }
 
-// A FIELD REQUIRED ONLY ON ONE Either() BRANCH IS ENFORCED, and this is where that
-// claim is kept. `engine/distributed/size` says RequiredWhen against a Captures()
-// sibling; that read the branch's CONTENTS rather than its name until 2026-08-18
-// (ENGINE-CHANGES.md #5), so a distributed database with no size compiled clean. The
-// comment beside engine/tls recorded it as a live defect long after it was fixed,
-// which is the reason a constraint belongs in a test and not in prose.
 func TestRequiredOnOneEngineBranchIsEnforced(t *testing.T) {
 	compile := func(body string) error {
 		fs := afero.NewMemMapFs()
@@ -390,11 +318,7 @@ func TestRequiredOnOneEngineBranchIsEnforced(t *testing.T) {
 		"required attribute 'vector/dimensions'")
 	assert.NilError(t, compile("vector:\n    dimensions: 8\n    distributed:\n        size: 1GB\n        consensus: crdt\n"))
 
-	// NO DEFAULT ON `metric`, and this is the constraint that decided it: a default
-	// fires whenever the value is absent, whatever else the document says, so one on a
-	// field of the vector block would write `metric: cosine` onto every kv, sql and
-	// document database in the project. It says what omitting it means instead, the way
-	// `tls` does.
+	// No default on `metric`: it would land on every non-vector database.
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
@@ -409,19 +333,6 @@ func TestRequiredOnOneEngineBranchIsEnforced(t *testing.T) {
 	assert.Assert(t, !leaked, "a kv database carries no claim about a vector metric: %v", d)
 }
 
-// CONSENSUS IS A FIELD OF `distributed`, AND IT IS ONLY THERE. What an author states
-// is what the store has to do with the second of two writes that land on one key;
-// which shape of raft delivers `raft` — a synchronous replica set, or one
-// master and followers — is a runtime decision and is never in the document.
-//
-// Two things are pinned because both can rot silently. That the field reaches EVERY
-// type's own `distributed` block, because it is declared once in
-// databaseType.attributes() and a fifth data model gets it by arriving; and that an
-// external engine's block REFUSES it, because a Postgres has whatever consistency
-// Postgres has and a key claiming otherwise is a promise this project cannot keep. The
-// second is the literal path doing its work — `Path(t.name, tauEngine, "consensus")`
-// names the branch rather than matching the engine set, so the wrong branch is an
-// unknown key instead of a value filed where nothing reads it.
 func TestDatabaseConsensusIsUnderTheDistributedEngineOnly(t *testing.T) {
 	compile := func(path, body string) (map[string]any, error) {
 		fs := afero.NewMemMapFs()
@@ -466,10 +377,7 @@ func TestDatabaseConsensusIsUnderTheDistributedEngineOnly(t *testing.T) {
 	_, err = db("consensus: crdt\nkv:\n    distributed:\n        size: 1MB\n")
 	assert.ErrorContains(t, err, "unknown key 'consensus'")
 
-	// A CACHE ASKS THE SAME QUESTION AT THE DOCUMENT ROOT, because it has no engine
-	// axis to hang it under and none is invented for it. Nothing external backs a
-	// cache, so there is no branch the answer could be wrong on — which is exactly the
-	// reason a database's answer has to be inside one.
+	// A cache asks the same question at the document root; it has no engine axis.
 	flat, err := compile("/cache/c.yaml", "size: 1MB\nconsensus: crdt\n")
 	assert.NilError(t, err)
 	assert.Equal(t, namedResource(t, resources(t, flat, "cache"), "c")["consensus"], "crdt")
@@ -478,21 +386,6 @@ func TestDatabaseConsensusIsUnderTheDistributedEngineOnly(t *testing.T) {
 		"a cache has no engine block for this to sit in")
 }
 
-// A CACHE SAYS WHERE ITS DATA LIVES, WHICH IS NOT WHAT IT SAYS ABOUT COORDINATION.
-// The two fields are easy to conflate and they answer different questions, so both
-// halves are pinned: `replicated` is a cache's and a database has no such key, and
-// `consensus` — which both kinds now have — sits in a different PLACE on each, which
-// the test above holds.
-//
-// THE ABSENT VALUE IS `false`, and unlike `consensus` that is a defensible silence:
-// node-local is what doing nothing gets you, and replication is what an author asks
-// for. The compiled object carries no key at all when nothing is written, so a
-// consumer reads Go's zero value and gets the cheap one.
-//
-// AND IT IS NOT REACHABILITY. Who may read a cache is the access block another
-// resource writes — per resource and per verb — and this says only where the data
-// sits. `reach: { network: all | subnet | host }` used to be a second, coarser answer
-// to the first question; it is gone, and this pins that it is.
 func TestCacheSaysWhereItsDataLives(t *testing.T) {
 	compile := func(path, body string) (map[string]any, error) {
 		fs := afero.NewMemMapFs()
@@ -542,9 +435,7 @@ func TestCacheSaysWhereItsDataLives(t *testing.T) {
 	_, err = compile("/storage/s.yaml", "object:\n    size: 1MB\nreach:\n    network: all\n")
 	assert.ErrorContains(t, err, "unknown key 'reach'")
 
-	// A DATABASE HAS NO SUCH KEY. Replication is not the axis a system of record
-	// chooses on — it chooses consensus alone, and a database that is not replicated is
-	// not something this platform offers.
+	// A database has no such key: it chooses consensus alone.
 	_, err = compile("/database/d.yaml", "kv:\n    distributed:\n        size: 1MB\n        consensus: crdt\n        replicated: true\n")
 	assert.ErrorContains(t, err, "unknown key 'replicated'")
 	_, err = compile("/database/d.yaml", "replicated: true\nkv:\n    distributed:\n        size: 1MB\n        consensus: crdt\n")
@@ -558,21 +449,6 @@ func TestCacheSaysWhereItsDataLives(t *testing.T) {
 	assert.Equal(t, orders["replicated"], true)
 }
 
-// A CACHE SAYS WHAT HAPPENS TO TWO WRITES AT ONE KEY, from a set one wider than a
-// database's — and the extra value is the whole reason the two sets differ.
-//
-// `gossip` is eventually consistent AND LOSSY: an entry can fail to arrive or be
-// dropped, where `crdt` merges concurrent writes and discards the loser and
-// `raft` discards nothing. That is affordable exactly where losing an entry
-// costs a recomputation, which is the line this kind's GroupDoc already draws, and it
-// is unaffordable in a system of record — so `database` refuses the value and this
-// kind takes it. Both halves are asserted, because a set that quietly drifted into
-// being the same set on both kinds is the sloppiness this pins against.
-//
-// REQUIRED, WITH NO DEFAULT, for the reason `database.consensus` is: two writes arrive
-// at one key whether or not anybody chose, so there is no value that means "nothing
-// extra happens" the way `replicated`'s absence does. Whichever answer a silence
-// carried would be wrong for somebody who never read the line.
 func TestCacheConsensusIsRequiredAndTakesTheLossyValue(t *testing.T) {
 	compile := func(path, body string) error {
 		fs := afero.NewMemMapFs()
@@ -603,8 +479,7 @@ func TestCacheConsensusIsRequiredAndTakesTheLossyValue(t *testing.T) {
 			"invalid value", "consensus: %q is not one of the three answers", v)
 	}
 
-	// THE SETS DIFFER ON PURPOSE. A database refuses the lossy one: a dropped write in
-	// a system of record is a dropped fact and nothing re-derives it.
+	// A database refuses the lossy one.
 	assert.ErrorContains(t, compile("/database/d.yaml", "kv:\n    distributed:\n        size: 1MB\n        consensus: gossip\n"),
 		"invalid value", "a system of record must not be able to lose a write")
 
@@ -620,20 +495,6 @@ func TestCacheConsensusIsRequiredAndTakesTheLossyValue(t *testing.T) {
 	assert.Equal(t, namedResource(t, billing["cache"].(map[string]any), "sessions")["consensus"], "crdt")
 }
 
-// REQUIRED, AND CLOSED — the two halves that leave no answer the schema has not been
-// told about. This is the property a boolean could not have: `crdt: bool` had an
-// absent state, and whichever way that state was read it was the wrong answer for
-// somebody who never saw the field. There is no absent state now; there is an error
-// that names the field, at the document that owes it.
-//
-// The other half is the value set. `raft` is the plausible wrong answer — it is what
-// an author reaches for when the field asks about consensus — and it is exactly what
-// this vocabulary refuses to be told, because the algorithm behind `raft` is
-// the platform's to change without touching anybody's config.
-//
-// AN EXTERNAL ENGINE STILL OWES NOTHING, which is the half `Required()` could not
-// express: the requirement rides the engine branch, so a postgres compiles clean
-// without it and a kv database is not asked for `sql/distributed/consensus`.
 func TestDatabaseConsensusIsRequiredAndClosed(t *testing.T) {
 	compile := func(body string) error {
 		fs := afero.NewMemMapFs()
@@ -664,9 +525,7 @@ func TestDatabaseConsensusIsRequiredAndClosed(t *testing.T) {
 	assert.ErrorContains(t, compile("kv:\n    distributed:\n        size: 1MB\n        consensus:\n"),
 		"required attribute 'kv/distributed/consensus'")
 
-	// A VALUE OUTSIDE THE SET IS REFUSED — including `single-writer`, which is what
-	// `raft` used to be spelled here: a config written against the old name is told so
-	// rather than compiling to something this store does not do.
+	// A value outside the set is refused, including the old `single-writer`.
 	for _, v := range []string{"single-writer", "true", "single_writer", "eventual", "crdt "} {
 		assert.ErrorContains(t, compile("kv:\n    distributed:\n        size: 1MB\n        consensus: \""+v+"\"\n"),
 			"invalid value", "consensus: %q is not one of the two answers", v)
@@ -692,7 +551,6 @@ func TestDatabaseConsensusIsRequiredAndClosed(t *testing.T) {
 	assert.Equal(t, nested(ledger, "sql", "consensus"), "raft")
 }
 
-// The new kinds load at all, with their scalars parsed.
 func TestNewKindsCompile(t *testing.T) {
 	flat := compileBasic(t)
 
@@ -701,9 +559,6 @@ func TestNewKindsCompile(t *testing.T) {
 	assert.Equal(t, namedResource(t, resources(t, flat, "secret"), "stripe")["source"], "value", "default applies")
 }
 
-// `namespaces` is the SCOPE container: its instances hold resources of their own,
-// compiled in their own scope. An inline source (".") is left alone by ref
-// resolution. `applications` is a compute kind here, not a scope.
 func TestNamespaceScope(t *testing.T) {
 	obj := root(t, compileBasic(t))
 	shop := namespace(t, obj, "shop")
@@ -726,9 +581,6 @@ func TestNamespaceScope(t *testing.T) {
 	}
 }
 
-// Access is declared per TARGET, named once, with its ops beside it and a namespace
-// path when it lives somewhere else. The block is a group nested in the resource's
-// own document, so the resource stays a plain file with its id at the root.
 func TestAccessIsPerTarget(t *testing.T) {
 	flat := compileBasic(t)
 	fn := namedResource(t, resources(t, flat, "function"), "checkout")
@@ -769,20 +621,11 @@ cache:
 	assert.ErrorContains(t, err, "\"query\" is not something a cache does")
 }
 
-// Ingress lives on the gateway, in its own flat document, the way a v1 function
-// carried its whole trigger block in one file.
-//
-// The handler is a switch on the target kind — an Either() in the attribute path
-// with Captures() capturing the branch — so `handler: { function: { namespace, name } }`
-// compiles to the kind, the namespace path and the name, and a key outside the
-// closed set is a compile error rather than a route that never fires.
 func TestGatewayRoute(t *testing.T) {
 	flat := compileBasic(t)
 
 	gw := namedResource(t, resources(t, flat, "gateway"), "shop")
-	// The name lives on the gateway, and it names a ZONE plus a label rather than a
-	// flat fqdn — so a project moved to another cloud does not carry a name it does
-	// not have there.
+	// The name names a zone plus a label, not a flat fqdn.
 	assert.Equal(t, nested(gw, "host", "kind"), "zone")
 	assert.Equal(t, nested(gw, "host", "name"), "shop")
 	host, _ := gw["host"].(map[string]any)
@@ -812,11 +655,6 @@ func TestGatewayRoute(t *testing.T) {
 	}
 }
 
-// The handler set is NARROWER than the vocabulary, and that is the property worth
-// asserting: `kv` is a perfectly real kind and it is not something an HTTP request
-// can be handed to. The Either() matches no key, so there is nothing for the switch
-// to capture and the compile fails — an unroutable handler cannot become a route
-// that silently never fires.
 func TestNonHTTPHandlerKindIsRefused(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
@@ -832,9 +670,7 @@ route:
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
 	_, _, err = c.Compile(context.Background())
-	// The Either() enumerates what a handler may be, so an unlisted key is now
-	// rejected as an unknown key BEFORE the switch fails to capture one — same
-	// refusal, at the offending line, naming what was allowed instead.
+	// An unlisted handler key is refused as unknown, at the offending line.
 	assert.ErrorContains(t, err, "unknown key 'kv'",
 		"a real but non-HTTP kind must not be a handler")
 	assert.ErrorContains(t, err, "agent, application, bus, function, gateway, mcp, website",
@@ -845,9 +681,6 @@ route:
 		"and where")
 }
 
-// Namespaces nest — v1's applications did not. A tenant can hold its own tenants,
-// down to MaxNamespaceDepth, which is a declared cap because the schema is a finite
-// node tree rather than a recursive grammar.
 func TestNamespacesNest(t *testing.T) {
 	shop := namespace(t, root(t, compileBasic(t)), "shop")
 
@@ -862,10 +695,6 @@ func TestNamespacesNest(t *testing.T) {
 	assert.Equal(t, nested(kv, "size"), int64(2000000))
 }
 
-// The cost of nesting, asserted so it cannot change silently: the interpreter's
-// scope walk covers the project root and ONE level of the container, so a reference
-// written inside a namespace below the first level is not resolved. It is not an
-// error and nothing reports it — the config compiles and the name stays a name.
 func TestDeepNamespaceRefsAreNotResolved(t *testing.T) {
 	flat := compileBasic(t)
 
@@ -882,8 +711,6 @@ func TestDeepNamespaceRefsAreNotResolved(t *testing.T) {
 	assert.Equal(t, len(local["cache"].(map[string]any)), 1)
 }
 
-// Every verb has an effect class, assigned once, in the table next to the kind.
-// invoke is write: a call may do anything the callee can do.
 func TestEffectClasses(t *testing.T) {
 	for _, c := range []struct {
 		kind, verb, effect string
@@ -924,14 +751,9 @@ func TestEffectClasses(t *testing.T) {
 	}
 }
 
-// ---- namespaces ------------------------------------------------------------
-//
-// `namespaces` is a CONTAINER group: its iterator is itself a group holding a
-// nested copy of every resource group, which is what gives each instance its own
-// scope. These tests exercise that scope rather than just its existence.
+// `namespaces` is a container group: each instance holds a nested copy of every
+// resource group, its own scope.
 
-// The same NAME in two namespaces is two different resources. If this ever
-// collapsed, every multi-tenant claim in v2 would be false.
 func TestNamespacesIsolateNames(t *testing.T) {
 	obj := root(t, compileBasic(t))
 	assert.Equal(t, len(obj["namespace"].(map[string]any)), 2, "fixture should carry two namespaces")
@@ -952,14 +774,6 @@ func TestNamespacesIsolateNames(t *testing.T) {
 		"cache/sessions in two namespaces must compile to two different resources")
 }
 
-// Where a target lives is now stated, not inferred: an entry with no `namespace` is
-// in the resource's own scope, and one with a namespace path names another. That is
-// what makes a sibling namespace reachable at all — the ref resolver understands the
-// current scope, the root and parents, and nothing else.
-//
-// The cost, asserted so it cannot change silently: an access target is a map KEY, so
-// nothing resolves it at compile time. A typo in a target name is not a compile error
-// the way a component reference to a name nothing declares is.
 func TestAccessNamesItsScope(t *testing.T) {
 	flat := compileBasic(t)
 
@@ -981,11 +795,6 @@ func TestAccessNamesItsScope(t *testing.T) {
 	}
 }
 
-// A sibling namespace IS nameable now, and that is a change worth stating: v1 had no
-// syntax for it, so isolation held by absence of grammar. `namespace: /billing` is
-// grammar. Nothing in the compiler decides whether it is ALLOWED — the connection and
-// the target-side grant that are supposed to bound it do not exist yet, so this
-// compiles and the check has to live at publish or at runtime.
 func TestSiblingNamespaceIsNameableAndUnchecked(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
@@ -1030,19 +839,13 @@ func copyTree(dst afero.Fs, from, to string) error {
 	})
 }
 
-// A zone is authoritative DNS, which is a different job from routing: it says what
-// a name resolves to at all — mail, verification, a third-party CNAME, a box that
-// is not tau. Folding it into the gateway would have deleted the whole surface.
 func TestZoneIsNotRouting(t *testing.T) {
 	flat := compileBasic(t)
 
 	zone := only(t, resources(t, flat, "zone"))
 	assert.Equal(t, zone["fqdn"], "example.com")
-	// A FILE AND NOT LINES IN YAML, which is what "kept verbatim" finally means:
-	// a zone exported from another provider is a zone file, and this points at
-	// it rather than asking an author to unpick it into strings. $ORIGIN, $TTL,
-	// the parentheses that carry an SOA across lines and `@` for the apex all
-	// survive, because the file is the thing that is served.
+	// A file, not lines in yaml: $ORIGIN, $TTL, multi-line SOA and `@` survive
+	// because the file is what is served.
 	assert.Equal(t, zone["file"], "dns/example.com.zone")
 
 	// A zone still carries no ROUTING -- it says what a name resolves to, not
@@ -1051,15 +854,8 @@ func TestZoneIsNotRouting(t *testing.T) {
 		assert.Assert(t, !strings.HasPrefix(k, "use-"), "a zone declared %q", k)
 	}
 
-	// AND NOTHING IS POINTED AT IT EITHER. A zone is an INGRESS kind, like the
-	// gateway, the proxy and the website it sits beside: it is how a name
-	// enters this cloud, not a thing a workload holds and calls. So it declares
-	// no verbs, and with no verbs attachAccess gives it no authorizer -- "a
-	// kind nothing can reach has no authorizer to declare".
-	//
-	// A RECORD NOBODY KNOWS AT DEPLOY IS THE RESOLVER'S, which is what that arm
-	// is for: asked per query, answering from whatever it can read. That is the
-	// dynamic half, and it needs no verbs on the zone to do it.
+	// Nothing points at a zone: it is an ingress, so no verbs and no authorizer. A
+	// record unknown at deploy is the resolver's.
 	_, ok := schema.EffectOf("zone", "get")
 	assert.Assert(t, !ok, "zones must not be a target kind")
 
@@ -1068,9 +864,6 @@ func TestZoneIsNotRouting(t *testing.T) {
 	assert.Equal(t, nested(gw, "host", "name"), "shop")
 }
 
-// A namespace path is absolute with a leading "/" and relative without one — the same
-// two forms the name resolver already uses for references. "/" is the project root
-// itself; omitted means the resource's own scope, then its parents.
 func TestNamespacePathForms(t *testing.T) {
 	obj := root(t, compileBasic(t))
 
@@ -1106,10 +899,6 @@ func TestNamespacePathForms(t *testing.T) {
 	}
 }
 
-// Per-use modifiers: an access entry is a place to put them, which a verb-keyed list
-// of names never had. They get the same treatment as any other attribute — the
-// duration parses — because a nested group is processed as an ordinary group, per
-// entry.
 func TestAccessEntryModifiers(t *testing.T) {
 	flat := compileBasic(t)
 
@@ -1123,9 +912,6 @@ func TestAccessEntryModifiers(t *testing.T) {
 	assert.Assert(t, !present, "an unauthored modifier must not appear")
 }
 
-// The target owns the policy, the accessor only states intent: a reachable resource
-// declares the authorizer that decides what a caller gets, and a caller declares the
-// ops it asks for. The caller cannot name its own judge.
 func TestTargetOwnsThePolicy(t *testing.T) {
 	flat := compileBasic(t)
 
@@ -1149,9 +935,6 @@ func TestTargetOwnsThePolicy(t *testing.T) {
 	assert.Assert(t, !present, "a kind with no ops is not reachable, so it authorises nothing")
 }
 
-// Ports are named because the external one is dynamic and there may be several
-// instances of the same workload on one host — so there is no single external number
-// to write down. Everything else refers to a port by name.
 func TestPortsAreNamed(t *testing.T) {
 	flat := compileBasic(t)
 
@@ -1192,12 +975,6 @@ func TestPortsAreNamed(t *testing.T) {
 	}
 }
 
-// --- what the multi-profile review changed, asserted so it cannot drift back ---
-
-// Egress is a property of a WORKLOAD, not of containers. It used to be on
-// `applications` alone, which said a container reaching the internet is a decision and
-// a function doing the same is not — while the guest HTTP client is exactly as real as
-// the container's socket.
 func TestEveryWorkloadCanDeclareEgress(t *testing.T) {
 	for _, kind := range []string{"application", "function", "worker", "sandbox"} {
 		var found bool
@@ -1215,8 +992,6 @@ func TestEveryWorkloadCanDeclareEgress(t *testing.T) {
 	}
 }
 
-// A cron expression alone does not name a moment: "0 3 * * *" is a different instant
-// in every zone.
 func TestCronCarriesItsTimezone(t *testing.T) {
 	cron := only(t, resources(t, compileBasic(t), "cron"))
 	assert.Equal(t, cron["schedule"], "0 3 * * *")
@@ -1236,9 +1011,6 @@ func TestCronCarriesItsTimezone(t *testing.T) {
 	assert.Equal(t, only(t, resources(t, obj.Flat(), "cron"))["timezone"], "UTC")
 }
 
-// Whether credentials cross a network in the clear is not a question to answer with a
-// default nobody reads — and a default would also land on a distributed database that
-// never opens a socket.
 func TestExternalDatabaseMustStateItsTransport(t *testing.T) {
 	orders := namedResource(t, resources(t, compileBasic(t), "database"), "orders")
 	assert.Equal(t, nested(orders, "sql", "tls"), "verify-full")
@@ -1270,10 +1042,6 @@ sql:
 	assert.Assert(t, !present, "a distributed database opens no socket")
 }
 
-// Every attribute names a section, and a section has a title and a doc that a UI
-// groups by. An attribute in a section its kind never declared lands in a group with
-// no name — invisible in Go, and the reason `egress` arrived on four kinds inside a
-// "network" section that only two of them had.
 func TestEverySectionAnAttributeClaimsIsDeclared(t *testing.T) {
 	walk := func(t *testing.T, kind string, it *engine.Node) {
 		t.Helper()
@@ -1300,9 +1068,6 @@ func TestEverySectionAnAttributeClaimsIsDeclared(t *testing.T) {
 	}
 }
 
-// F8: a workload can be configured. It could declare an image, ports, ceilings and
-// which secrets it may read — but not a log level, so the only place to put one was
-// inside the image, which makes one image per environment.
 func TestWorkloadVariables(t *testing.T) {
 	api := namedResource(t, resources(t, compileBasic(t), "application"), "api")
 	vars, ok := api["variables"].(map[string]any)
@@ -1336,9 +1101,6 @@ func TestWorkloadVariables(t *testing.T) {
 	}
 }
 
-// A Default() and a Required() on one attribute contradict each other: Required is
-// checked first, so the default never applies and the JSON Schema publishes a value
-// the compiler rejects.
 func TestDefaultsThatWereUnreachable(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
@@ -1347,9 +1109,7 @@ func TestDefaultsThatWereUnreachable(t *testing.T) {
 		"id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\nsource:\n    image: img\nexecution:\n    memory: 1MB\nports:\n    p:\n        number: 80\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/sync/q.yaml",
 		[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nqueue:\n    consensus: raft\n"), 0o644))
-	// A LOG BESIDE IT, which is what makes the assertion below about SCOPE and not
-	// only about reachability: the queue's defaults must land on the queue and on
-	// nothing else, or a default invents a branch its author never took.
+	// A log beside it, so the queue's defaults are shown to land on the queue only.
 	assert.NilError(t, afero.WriteFile(fs, "/sync/l.yaml",
 		[]byte("id: QmPq5xVnB7LtWcHdKzR3JgEyUM8fasNbT2vXrQwCk6hDZm\nlog:\n    consensus: crdt\n"), 0o644))
 	// a generated host needs no certificate even when TLS stops here — the cloud
@@ -1374,8 +1134,6 @@ func TestDefaultsThatWereUnreachable(t *testing.T) {
 	assert.Equal(t, nested(p, "certificate", "source"), "generated")
 }
 
-// The workflow's lowering, on the real vocabulary: what it becomes, and the wiring that
-// lets a consumer draw the inside of one without knowing what a workflow is.
 func TestWorkflowLowers(t *testing.T) {
 	plan := schema.LoweringPlan(compileBasic(t))
 
@@ -1388,29 +1146,18 @@ func TestWorkflowLowers(t *testing.T) {
 	assert.Assert(t, got["sync/checkout_settle"] != "", "a wait is a step, so it becomes a queue and a driver like any other: %v", got)
 	assert.Assert(t, got["sync/checkout_failed"] != "", "somewhere for a step that gave up")
 
-	// AND ONE DRIVER PER STEP, which is what makes the box readable when it is opened:
-	// the queues are wired to something that lives in there with them, rather than to
-	// functions at the root that the pipeline's every edge has to leave the frame to
-	// reach. It carries the step's name and no suffix — the kind is already part of a
-	// resource's identity here.
+	// One driver per step, named after the step.
 	assert.Assert(t, got["function/checkout_reserve"] != "", "one driver per step: %v", got)
 	assert.Assert(t, got["function/checkout_charge"] != "")
 	assert.Assert(t, got["function/checkout_settle"] != "")
-	// AND NOTHING ELSE. A stream was produced here so that finishing had an address,
-	// and nothing authored asked for it — which is the rule everywhere else in this
-	// vocabulary, and what every durable engine in the market does: step history for
-	// replay and a UI, never an application-facing bus by default.
+	// And nothing else: no completion stream.
 	for k := range got {
 		assert.Assert(t, !strings.HasPrefix(k, "stream/"),
 			"a workflow produced a stream nobody asked for: %v", got)
 	}
 
-	// AND NOTHING ELSE AT ALL, as the WHOLE set rather than as the absence of one kind.
-	// A workflow briefly lowered into a store for the run's state, and this used to be
-	// pinned by naming that kind — which is a guard that goes quiet the day the kind is
-	// deleted, and passes on a tree where a workflow produces some other thing nobody
-	// asked for. There is no store because the state IS the message: which queue it is
-	// in is which step it is at.
+	// The whole produced set, not the absence of one kind: the run's state is the
+	// message.
 	var produced []string
 	for _, d := range plan {
 		if d.Of == "workflow/checkout" {
@@ -1424,9 +1171,7 @@ func TestWorkflowLowers(t *testing.T) {
 		"sync/checkout_settle",
 	})
 
-	// EVERY WRITE THE PLAN CARRIES, keyed by what it lands on and where. That the value
-	// is a verb and the path an access entry is this vocabulary's reading of it — the
-	// compiler carries a value at a path and nothing else.
+	// Every write the plan carries, keyed by what it lands on and where.
 	writes := map[string]string{}
 	for _, d := range plan {
 		if d.Of != "workflow/checkout" {
@@ -1461,19 +1206,13 @@ func TestWorkflowLowers(t *testing.T) {
 	// function is theirs, and other things may call it too.
 	assert.Equal(t, writes["function/checkout_reserve function/reserve_stock/ops"], "invoke")
 
-	// THE AUTHOR'S FUNCTION GAINS NOTHING. It used to carry the whole pipeline as grants
-	// — receive from its own queue, send to the next — which is the pipeline stated a
-	// second time, on resources outside the workflow, where the first copy could not be
-	// seen next to it.
+	// The author's function gains no pipeline grants.
 	for k := range writes {
 		assert.Assert(t, !strings.HasPrefix(k, "function/reserve_stock ") && !strings.HasPrefix(k, "function/charge_card "),
 			"the step's own function was written into: %s", k)
 	}
 
-	// The dead-letter queue is NOT an entry: it is the queue's own `dead_letter` field,
-	// which is already config, and it fires at the one moment no code of the step is
-	// running. A second statement of it was the whole reason the arrow between two
-	// queues read as unexplained.
+	// The dead letter is the queue's own field, not an entry.
 	for _, d := range plan {
 		if d.Kind != "sync" || d.Name != "checkout_reserve" {
 			continue
@@ -1486,20 +1225,10 @@ func TestWorkflowLowers(t *testing.T) {
 	}
 }
 
-// A lowering into a kind the vocabulary does not have is a plan nothing can carry out,
-// and the vocabulary author is the one who should hear about it.
 func TestEveryLoweringNamesARealKind(t *testing.T) {
 	assert.DeepEqual(t, interp.CheckLowerings(schema.CompileRoot()), []string(nil))
 }
 
-// THE STANDING RULE: no consumer hardcodes this vocabulary, so a graph, a CLI or a
-// console draws a version of it they have never seen. Icon() and Category() and Ops()
-// were the first of these; these are the rest.
-//
-// AND THERE IS ONE WAY TO SAY EACH THING. Pointing at another resource was briefly
-// three terms — Ref, plus one for fields that keep a name, plus one for blocks whose
-// kind the author picks — which is three places to add a case and two to forget. It is
-// Ref with modifiers, and this asserts that the whole vocabulary is readable through it.
 func TestConsumersNeedNoHardcodedShapes(t *testing.T) {
 	refs := schema.References()
 	find := func(on, field string) schema.Reference {
@@ -1540,11 +1269,8 @@ func TestConsumersNeedNoHardcodedShapes(t *testing.T) {
 	assert.Equal(t, step.In, "steps")
 	assert.Equal(t, step.Namespace, "call/namespace")
 
-	// the inbound blocks are derived from the references, not listed anywhere
-	// `resolver` is here because a zone's is REACHED the way a gateway's router
-	// is: a query arrives and that function answers it. It is not a guard, which
-	// is asked about traffic without being its destination -- an http-authorizer
-	// is named the same way and is deliberately absent from this list.
+	// The inbound blocks are derived from the references. `resolver` is reached like
+	// a router; an http-authorizer is a guard, not a destination, so it is absent.
 	assert.DeepEqual(t, schema.InboundBlocks(), []string{"forward", "resolver", "route/handler", "route/router", "router", "serve"})
 
 	// how an access entry is written, and where a document lives
@@ -1557,10 +1283,6 @@ func TestConsumersNeedNoHardcodedShapes(t *testing.T) {
 	assert.Equal(t, layout.Scope, "{kind}/{name}")
 }
 
-// A NAME IS THREE PLACES GLUED: the label a resource chose, the zone that answers for
-// it, and — for a generated one — the project's own label, derived from its id. Whoever
-// glues them decides what the name is, so it is glued here and nowhere else. A drawing
-// was doing its own version, which agreed with this one by coincidence.
 func TestReachableNames(t *testing.T) {
 	names := schema.ReachableNames(compileBasic(t))
 
@@ -1615,17 +1337,6 @@ func nested(res map[string]any, segments ...string) any {
 	return at[segments[len(segments)-1]]
 }
 
-// A CROSS-NAMESPACE ACCESS COMPILES AND NOTHING AUTHORISES IT.
-//
-// `namespace: /billing` is grammar for naming a sibling scope, which v1 did not have —
-// isolation used to hold because there was no way to write it down. Now there is, and
-// nothing decides whether it is allowed: the connection between two scopes, and the
-// target-side grant meant to bound it, are control-plane objects that do not exist.
-// The check has to live at publish or at runtime.
-//
-// Asserted rather than left in prose, because a security property nothing enforces is
-// one somebody will assume is enforced. The day this fails is the day something DID
-// authorise it, and this test is where to record what.
 func TestACrossNamespaceAccessIsNotAuthorised(t *testing.T) {
 	flat := compileBasic(t)
 	shop := namespace(t, root(t, flat), "shop")
@@ -1646,12 +1357,6 @@ func TestACrossNamespaceAccessIsNotAuthorised(t *testing.T) {
 	assert.Assert(t, !resolved, "the cross-scope target now resolves - what authorised it? record that, and delete this test")
 }
 
-// A RESOURCE'S OWN NAME IS NEVER VALIDATED, and the two ends disagree about it.
-//
-// The name comes from the FILE name and the compile driver sets it without checking,
-// so `paid-tier.yaml` yields `paid-tier` — which IsVariableName() rejects, and which a
-// reference written to it is checked against and fails. Anything that resolves a
-// reference to such a resource cannot reach it, and nothing said so at compile time.
 func TestAResourceNameIsNotValidated(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
@@ -1679,9 +1384,6 @@ func TestAResourceNameIsNotValidated(t *testing.T) {
 		"a reference to a name the driver accepted must still be refused - if this changed, the two ends agree now")
 }
 
-// `instructions` names a FILE, so the repository root is not a value it can take —
-// `.` is legal on the bare `source`, which names a directory, and legalizing it in a
-// shared grammar put it on every field that grammar reaches.
 func TestInstructionsCannotBeTheRepositoryRoot(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
@@ -1694,12 +1396,6 @@ func TestInstructionsCannotBeTheRepositoryRoot(t *testing.T) {
 	assert.ErrorContains(t, err, "not a place this field can name")
 }
 
-// THE UNION IS ORDERED AND ITS EFFECTS AGREE ACROSS TYPES. `delete` is a verb of three
-// data models and it is a write in all three; `get` is a read in two; `query` is a read
-// for both sql and document. A verb that meant one class on one type and another class
-// elsewhere would make the union meaningless — the effect is the join key every
-// cross-cutting query groups by — so databaseOps() refuses to build one, and this is
-// what says the table it builds from has not drifted.
 func TestDatabaseVerbsAreTheFourTypesUnioned(t *testing.T) {
 	got := make([]string, 0, 9)
 	for _, v := range schema.OpsOf("database") {
@@ -1717,12 +1413,6 @@ func TestDatabaseVerbsAreTheFourTypesUnioned(t *testing.T) {
 	assert.Assert(t, got[0] == "get" && got[len(got)-1] == "upsert")
 }
 
-// `kv` HAS NO `ttl`, AND THAT IS THE STRUCTURAL DIFFERENCE FROM `cache`, not a
-// difference in prose. A cache entry has a lifetime — losing one costs a recomputation
-// — and a record that deletes itself is not a record. The distinction was undermined
-// once already by the two kinds being documented apart and shaped the same, so it is
-// pinned here: the field is not merely undocumented on a kv, it is not a key that can
-// be written.
 func TestADurableKvHasNoLifetime(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
@@ -1738,15 +1428,6 @@ func TestADurableKvHasNoLifetime(t *testing.T) {
 	assert.Equal(t, only(t, resources(t, compileBasic(t), "cache"))["ttl"], int64(86400000000000))
 }
 
-// BOTH NAMES, ASSERTED BY MEANING, because the two of them swapped and a half-done swap
-// reads as correct in either direction: `channel` and `stream` are both valid
-// identifiers, so a tree where only one side moved still compiles and still passes any
-// test that names only one of them.
-//
-// So this asserts what each name MEANS. A `channel` is 1:1 — it names a protocol and
-// exactly one workload that answers it, and its verb is `dial`. A `stream` fans out — it
-// matches a name or a pattern, it has no server at all, and its verbs are `publish` and
-// a `subscribe` the platform DELIVERS. Neither document loads against the other kind.
 func TestChannelIsOneToOneAndStreamFansOut(t *testing.T) {
 	const id = "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEC\n"
 	compile := func(path, body string) error {
@@ -1767,12 +1448,8 @@ func TestChannelIsOneToOneAndStreamFansOut(t *testing.T) {
 	assert.NilError(t, compile("/channel/sync.yaml", conduit), "a channel names a protocol and one server")
 	assert.NilError(t, compile("/stream/orders.yaml", fanout), "a stream is named by its own name")
 
-	// The other way round is not a document either kind can read, which is what makes a
-	// half-applied swap a failure instead of a silence.
-	//
-	// ONE offending key per probe, deliberately: strict mode walks the document's keys
-	// in map order and reports the first one it does not know, so a body carrying two
-	// of them names a different key run to run.
+	// One offending key per probe: strict mode reports the first unknown key in map
+	// order.
 	assert.ErrorContains(t, compile("/stream/x.yaml", fanout+"protocol: pgwire\n"), "unknown key 'protocol'")
 	assert.ErrorContains(t, compile("/channel/x.yaml", conduit+"distributed:\n    local: true\n"), "unknown key 'distributed'")
 
@@ -1791,15 +1468,6 @@ func TestChannelIsOneToOneAndStreamFansOut(t *testing.T) {
 	assert.Equal(t, fan[1].Effect, schema.Write)
 }
 
-// A STREAM'S ENGINE IS A KEY FROM A CLOSED SET, and each branch owns its own fields.
-// Same construct a database's engine is, for the same reason: an engine that is a free
-// string or a reference to some other resource compiles when it names something that
-// answers nothing, and the closed key is what makes that unwritable rather than
-// merely detectable.
-//
-// The bridge booleans are gone with it. They are asserted absent rather than left to
-// the comment, because a deleted field that quietly still loads is the deletion not
-// having happened.
 func TestStreamEngineIsClosedAndBranchScoped(t *testing.T) {
 	compile := func(body string) error {
 		fs := afero.NewMemMapFs()
@@ -1852,14 +1520,6 @@ func TestStreamEngineIsClosedAndBranchScoped(t *testing.T) {
 	assert.Assert(t, !leaked, "a kafka-backed stream carries no claim about node-local scope")
 }
 
-// A STREAM IS NAMED, NOT MATCHED. `match`/`regex` was v1's `messaging` pair and this
-// was the last kind carrying it; what it added over the resource's own name was the
-// ability to DISAGREE with it, and the ability for two streams to both claim one topic
-// with nothing deciding which gets the message but walk order.
-//
-// The replacement is not a new field — it is the name every other part of this
-// vocabulary was already using. So the test is in two halves: the pair is refused, and
-// the name is what everything reaches the stream by.
 func TestAStreamIsNamedNotMatched(t *testing.T) {
 	compile := func(body string) error {
 		fs := afero.NewMemMapFs()
@@ -1879,9 +1539,7 @@ func TestAStreamIsNamedNotMatched(t *testing.T) {
 		assert.ErrorContains(t, compile(body), "unknown key", "a stream still takes %q", body)
 	}
 
-	// AND NOTHING IS OWED IN ITS PLACE. A stream with an engine and nothing else is a
-	// complete document — `match` was Required(), so this is the half of the deletion
-	// that would be missed if the key were merely made optional.
+	// Nothing is owed in its place: a stream with only an engine is complete.
 	assert.NilError(t, compile("distributed: {}\n"))
 
 	// THE NAME IS THE HANDLE, and it comes from the file rather than from a field: the
@@ -1903,19 +1561,6 @@ func TestAStreamIsNamedNotMatched(t *testing.T) {
 	assert.DeepEqual(t, entry["ops"], []string{"publish"})
 }
 
-// A BUS IS A STREAM THAT CAN NEVER BECOME A LOG, AND THE SCHEMA SAYS SO RATHER THAN
-// THE PROSE. Two kinds that fan out to everyone attached will be read as duplicates
-// and merged by somebody unless what separates them is structural, so this pins the
-// three places it is: a bus can name no engine at all — not because a stream's
-// engines are all durable, `distributed` keeps nothing either, but because a bus has
-// nothing to choose and so can never be moved onto Kafka or JetStream the way a
-// stream can — a bus admits many instances by validator where a stream is one topic
-// named by the resource, and a bus has a host, the websocket a browser attaches to,
-// where a stream has none.
-//
-// Not one assertion below changed when the reason did, which is the tell that the
-// reason was the only thing wrong: every one of them is about which keys the compiler
-// accepts, and the compiler never believed the durability story.
 func TestABusIsAStreamThatCannotBecomeALog(t *testing.T) {
 	compile := func(path, body string) error {
 		fs := afero.NewMemMapFs()
@@ -1955,10 +1600,7 @@ func TestABusIsAStreamThatCannotBecomeALog(t *testing.T) {
 	assert.ErrorContains(t, compile("/stream/s.yaml", "distributed: {}\ninstances:\n    validator:\n        name: f\n"),
 		"unknown key 'instances'")
 
-	// A BUS OWNS NO NAME. The websocket is an address, and an address on this
-	// vocabulary is a gateway's -- a bus is reached by a route naming it as the
-	// handler, which is how it gains the path, the methods, the rate limit and the
-	// transformer chain it used to skip by having a `host:` of its own.
+	// A bus owns no name: it is reached by a route naming it as the handler.
 	assert.ErrorContains(t, compile("/bus/chat.yaml", "host:\n    generated:\n        name: chat\n"),
 		"unknown key 'host'")
 	assert.ErrorContains(t, compile("/stream/s.yaml", "distributed: {}\nhost:\n    generated:\n        name: x\n"),
@@ -1969,9 +1611,7 @@ func TestABusIsAStreamThatCannotBecomeALog(t *testing.T) {
 	chat := namedResource(t, resources(t, compileBasic(t), "bus"), "chat")
 	assert.Assert(t, nested(chat, "host", "kind") == nil, "a bus owns no name of its own")
 
-	// THE NAME BELONGS TO WHAT ROUTES TO IT, and a client is still told what to
-	// dial rather than guessing -- gateway/presence declares a generated name and
-	// names the bus as its handler, so the reachable name is the gateway's.
+	// The reachable name is the gateway's that routes to the bus.
 	found := false
 	for _, r := range schema.ReachableNames(rootOf(compileBasic(t))) {
 		if r.Name == "presence" && r.Generated {
@@ -1995,18 +1635,6 @@ func opsOf(t *testing.T, kind string) []string {
 	return out
 }
 
-// EVERY ENGINE KEY IS CLOSED, AND THERE IS NO LONGER AN OPEN KIND BESIDE THEM.
-//
-// This used to pin an asymmetry: engines closed, `connector.type` open, with the reason
-// each way. Half of it is gone. A closed set is what makes a wrong pair unrepresentable
-// and it is affordable exactly where the set is knowable — an engine is a wire protocol
-// and a driver tau ships, so adding one is a release. "An external system you receive
-// events from" is not knowable, which is why `connector` was open; but every case it
-// carried is now written with kinds that already exist, so the kind is gone and the
-// openness moved one construct out, to a workload's `egress` allowlist and a `secret`.
-//
-// BOTH HALVES ARE ASSERTED, because a deletion that quietly still loads is the deletion
-// not having happened — the same reason the stream bridges are pinned absent below.
 func TestEveryEngineIsClosedAndNoKindIsOpen(t *testing.T) {
 	compile := func(path, body string) error {
 		fs := afero.NewMemMapFs()
@@ -2022,11 +1650,8 @@ func TestEveryEngineIsClosedAndNoKindIsOpen(t *testing.T) {
 		return err
 	}
 
-	// THE KIND IS GONE, and what that looks like is worth knowing: a directory named
-	// after a kind the vocabulary does not have is walked past, so the document that
-	// used to be the fixture's own connector compiles to NOTHING — no error, and no
-	// resource. Strict keys are a property of a document the loader reads; a directory
-	// nothing reads has no keys to be strict about.
+	// A directory named after a kind the vocabulary lacks is walked past: no error,
+	// no resource.
 	stray := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(stray, "/project.yaml",
 		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
@@ -2039,11 +1664,8 @@ func TestEveryEngineIsClosedAndNoKindIsOpen(t *testing.T) {
 	_, present := rootOf(obj.Flat())["connector"]
 	assert.Assert(t, !present, "a connector still compiles to a resource: %v", rootOf(obj.Flat()))
 
-	// AND IT IS GONE FROM THE VOCABULARY ITSELF, which is the list every consumer walks
-	// — the JSON Schema, completion, the graph. Asserted over V2Resources and over the
-	// root the loader is built from, and NOT over `Kinds()`: that answers with the kinds
-	// declaring Ops, which `connector` never did, so a check there would have passed on
-	// the day the kind was written.
+	// Asserted over V2Resources and the loader's root, not Kinds(), which lists only
+	// kinds declaring Ops.
 	for _, g := range schema.V2Resources {
 		name, _ := g.Match.(string)
 		assert.Assert(t, name != "connector", "connector is still a group in V2Resources")
@@ -2059,35 +1681,12 @@ func TestEveryEngineIsClosedAndNoKindIsOpen(t *testing.T) {
 	assert.ErrorContains(t, compile("/stream/s.yaml", "slack:\n    host: h\n"), "unknown key 'slack'")
 	assert.ErrorContains(t, compile("/database/d.yaml", "sql:\n    s3:\n        host: h\n"), "unknown key 's3'")
 
-	// WHAT STAYS OPEN, and it is one construct further out: a workload names the host
-	// it may reach and the secret it authenticates with, and nothing has to declare the
-	// vendor as a resource first. This is the poller the fixture's connector became.
+	// What stays open: a workload names the host it reaches and the secret it uses.
 	assert.NilError(t, compile("/function/p.yaml",
 		"runtime: wasm\nexecution:\n    call: p\n    timeout: 5s\n    memory: 8MB\negress:\n    - some-vendor-api.example.com\nsecret:\n    k:\n        ops: [get]\n"),
 		"a workload reaching an external system needs no kind for it")
 }
 
-// ORCHESTRATION IS THE RUNTIME'S, AND `entity` IS WHERE THIS VOCABULARY SAID OTHERWISE.
-// It was a named, durably-stored, raft compute instance: a WASM entrypoint, a
-// per-instance storage ceiling, a `durable` bit journalling host calls for replay, and a
-// quorum lease as the fence. Every one of those is HOW something is run, decided while it
-// runs; none is a shape a compiler can hand a deployer. So the kind is gone, and this is
-// what stops it returning.
-//
-// FOUR LISTS AND A COMPILE, and they are ONE CHAIN rather than four independent checks:
-// `CompileRoot`, `KindRoot` and `Kinds` are all derived from `V2Resources`, so today they
-// fail together. Each is named anyway because each is a different consumer's list — the
-// authored vocabulary, the loader's root, the shape a lowered kind compiles in, and the set
-// that declares verbs — and `Lowerable` states a before and an after shape separately, so
-// the lowered root is a place a kind CAN survive its own deletion.
-//
-// `Kinds()` is spelled out because it is the check somebody reaches for first and it is
-// the one that can be vacuous: it answers with the kinds declaring Ops. Here it is live —
-// this kind declared `get` and `call` — and it is a trap on a kind that declared none,
-// which is what the connector guard records.
-//
-// AND A DOCUMENT THAT WOULD HAVE BEEN ONE, because the four lists are the vocabulary's own
-// account of itself and a compile is the author's.
 func TestThereIsNoEntityKind(t *testing.T) {
 	for _, g := range schema.V2Resources {
 		name, _ := g.Match.(string)
@@ -2105,9 +1704,7 @@ func TestThereIsNoEntityKind(t *testing.T) {
 		assert.Assert(t, k != "entity", "entity still declares verbs")
 	}
 
-	// A directory named after a kind the vocabulary does not have is walked past, so this
-	// is SILENT rather than an error — which is exactly why it has to be asserted. Strict
-	// keys are a property of a document the loader reads, and nothing reads this one.
+	// Silent rather than an error, which is why it is asserted.
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nenvironments:\n    prod:\n        branches: [\"*\"]\n"), 0o644))
@@ -2122,35 +1719,14 @@ func TestThereIsNoEntityKind(t *testing.T) {
 	_, present := root(t, obj.Flat())["entity"]
 	assert.Assert(t, !present, "an entity still compiles to a resource: %v", root(t, obj.Flat()))
 
-	// AND NOTHING LOWERS INTO IT, which needs no assertion of its own: the generic check
-	// refuses a lowering naming a kind that is not there, so the agent's `sessions`
-	// lowering coming back on its own is caught by TestEveryLoweringNamesARealKind and
-	// caught HERE only in the sense that the four lists above are what make it not a kind.
 }
 
-// NO SHIPPED STRING NAMES A KIND THAT IS NOT HERE. Deleting a kind is three tiers and only
-// the first is mechanical: the declaration comes out, everything derived from it follows,
-// and then there is the PROSE — and prose that sent an author somewhere keeps sending them
-// after the somewhere is gone. Three doc strings did exactly that here. `database` and
-// `cache` each said an `entity` was what served a linearizable counter, which was never
-// true of it — its verbs were `get` and `call` — and `queue`'s GroupDoc sent an author
-// there for per-key ordering. Two were Go comments. The third SHIPS.
-//
-// That is the line this draws: a Go comment is read by whoever edits this file and a
-// GroupDoc or a Doc is read by an author who has no way to find out the kind is gone. So
-// the assertion is over the emitted schema — the same strings a console, a CLI and the
-// completion in an editor render — and not over this file.
-//
-// THE LIST IS HAND-WRITTEN, because the set of names this vocabulary does NOT have cannot
-// be derived from the vocabulary. It is the deleted kinds, and adding to it is what a
-// deletion owes.
 func TestNoShippedStringNamesADeletedKind(t *testing.T) {
 	b, err := schema.JSONSchema()
 	assert.NilError(t, err)
 	shipped := string(b)
 
-	// `entities` is here for the same reason `entity` is: the plural was the word the
-	// access-block descriptions were generated from, so it would come back with the kind.
+	// The plurals too: access-block descriptions were generated from them.
 	for _, gone := range []string{"entity", "entities", "connector", "connectors", "smartops"} {
 		word := regexp.MustCompile(`(?i)\b` + gone + `\b`)
 		hit := word.FindStringIndex(shipped)
@@ -2184,14 +1760,6 @@ func excerpt(s string, at []int) string {
 	return "…" + s[lo:hi] + "…"
 }
 
-// APPEND-ONLY IS STATED BY THE VERB SET AND NOWHERE ELSE. `append` alone is the type's
-// whole claim, and the absence of `put` and `delete` is where "append-only" is said
-// rather than described: a record that can be overwritten or removed is not one.
-//
-// It was its own KIND until 2026-09-05, with no fields at all and a note saying the
-// shape was owed. The shape is given now and it is a TYPE of `sync` — so what this
-// pins moved with it, and the thing it still stops is somebody adding a write verb
-// that makes the name a lie.
 func TestALogIsAppendOnlyAndOtherwiseUnspecified(t *testing.T) {
 	ops, known := schema.SyncTypeOf("log")
 	assert.Assert(t, known, "the log type is gone")
@@ -2227,12 +1795,7 @@ func TestALogIsAppendOnlyAndOtherwiseUnspecified(t *testing.T) {
 		"required attribute",
 		"what happens to two concurrent appends is not a question silence may answer")
 
-	// And it is a real target: something appends to it in the fixture, which is the
-	// difference between a type and a name nothing can reach.
-	//
-	// A LOG DOES NOT SILENTLY CARRY A QUEUE'S DEFAULTS either. A default under a
-	// branch nobody took invents that branch, and a resource with two type blocks has
-	// no type — see DefaultWhen.
+	// Something appends to it in the fixture, and it carries no queue defaults.
 	audit := namedResource(t, byType(t, compileBasic(t), "log"), "audit")
 	assert.Equal(t, audit["name"], "audit")
 	_, strayed := audit["queue"]
@@ -2253,17 +1816,6 @@ func byType(t *testing.T, flat map[string]any, want string) map[string]any {
 	return out
 }
 
-// A MULTI-INSTANCE STORE SAYS HOW MANY AND WHO, AND NEITHER IS OPTIONAL.
-//
-// Both hang off the one thing that knows the block was written — the `Captures()`
-// switch on `instances/admission` — so this pins the three answers that shape gives and
-// the two it refuses. A limit with no validator does not compile, because the block
-// still owes its admission branch; a validator with no limit does not compile, because
-// an unbounded store has to be a sentence somebody wrote. `0` is that sentence.
-//
-// And an instance name is a KEY: the pattern pair v1 carried has no spelling here, at
-// the top level or inside the block. A pattern answers "which instance is this?" with a
-// set, which is both ambiguous — two patterns claiming one name — and unindexable.
 func TestInstancesTakeALimitAndAreNamedByAKey(t *testing.T) {
 	compile := func(body string) (map[string]any, error) {
 		fs := afero.NewMemMapFs()
@@ -2321,11 +1873,6 @@ func TestInstancesTakeALimitAndAreNamedByAKey(t *testing.T) {
 	}
 }
 
-// EVERY KIND MAY SAY WHERE IT RUNS, in both shapes, and the kinds with a footprint are
-// the whole list, so a kind joining or leaving it is a deliberate line in a diff.
-//
-// A footprint decides only what an absent block means — anywhere, or wherever what
-// reaches it is. `website`, `model`, `channel` and `secret` have none.
 func TestRegionIsDeclaredOnEveryKind(t *testing.T) {
 	assert.DeepEqual(t, schema.FootprintKinds(), []string{
 		"application", "function", "worker", "sandbox",
@@ -2333,9 +1880,8 @@ func TestRegionIsDeclaredOnEveryKind(t *testing.T) {
 		"agent", "workflow",
 	})
 
-	// BOTH SHAPES. V2Resources is what an author writes against; KindRoot is what a
-	// lowered kind becomes, built from a COPY of the iterator's attributes — so a block
-	// attached after that copy is taken exists only in the authored half.
+	// Both shapes: KindRoot copies the iterator's attributes, so a block attached
+	// after the copy exists only in V2Resources.
 	kinds := map[string]bool{}
 	for _, g := range schema.V2Resources {
 		if kind, _ := g.Match.(string); !g.Children[0].Group {
@@ -2358,10 +1904,6 @@ func TestRegionIsDeclaredOnEveryKind(t *testing.T) {
 	}
 }
 
-// THE PLACEMENT SWITCH, verified against the compiler rather than against the note that
-// designed it. Three branches, `failover`'s two regions spelled by NAME so that "the
-// first one is main" is not a position a reader has to know the significance of, and a
-// `name` on the two branches where a single region means something and nowhere else.
 func TestRegionPlacementIsASwitch(t *testing.T) {
 	compile := func(body string) (map[string]any, error) {
 		fs := afero.NewMemMapFs()
@@ -2395,11 +1937,7 @@ func TestRegionPlacementIsASwitch(t *testing.T) {
 	assert.Equal(t, nested(res, "regions", "main"), "region-1")
 	assert.Equal(t, nested(res, "regions", "standby"), "region-2")
 
-	// AN ABSENT BLOCK IS THE DEFAULT, and it writes nothing: anywhere the allowance
-	// permits is what the common case gets for free. It is the ONLY spelling of
-	// "anywhere", which is what dropping `auto` bought — that branch said "anywhere"
-	// without a name and "only here" with one, so the residency line depended on
-	// which of the two a reader assumed.
+	// An absent block writes nothing: the only spelling of "anywhere".
 	res, err = compile("")
 	assert.NilError(t, err)
 	_, present := res["region"]
@@ -2439,68 +1977,6 @@ func TestRegionPlacementIsASwitch(t *testing.T) {
 	assert.ErrorContains(t, err, "attribute regions/policy has an empty key")
 }
 
-// THE SPELLED-OUT COUNT IN index.go IS AN ARGUMENT, NOT A CAPTION. "v2 has twenty-four
-// kinds sharing one namespace where v1 had eight" is the whole justification for putting
-// the kind in the key, so a number that quietly goes wrong turns a reasoned decision into
-// a claim nobody can check. It was exact at every commit until a kind was deleted and it
-// was not, which is the drift this pins.
-//
-// Spelled out rather than a digit because that is how the file writes, so the test reads
-// the word and the comment stays prose.
-func TestTheKindCountInProseIsTheRealOne(t *testing.T) {
-	words := []string{
-		"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
-		"ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
-		"seventeen", "eighteen", "nineteen", "twenty", "twenty-one", "twenty-two",
-		"twenty-three", "twenty-four", "twenty-five", "twenty-six", "twenty-seven",
-		"twenty-eight", "twenty-nine", "thirty",
-	}
-
-	// The second site says "when the twenty-fifth is added", an ordinal rather than a
-	// cardinal, so it needs its own spelling — and it is the site most likely to be left
-	// behind, because it reads as rhetoric rather than as a number.
-	ordinals := []string{
-		"zeroth", "first", "second", "third", "fourth", "fifth", "sixth", "seventh",
-		"eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth",
-		"fifteenth", "sixteenth", "seventeenth", "eighteenth", "nineteenth", "twentieth",
-		"twenty-first", "twenty-second", "twenty-third", "twenty-fourth", "twenty-fifth",
-		"twenty-sixth", "twenty-seventh", "twenty-eighth", "twenty-ninth", "thirtieth",
-	}
-
-	n := len(schema.V2Resources)
-	assert.Assert(t, n > 1 && n < len(words)-2, "kind count %d is outside what this test can spell", n)
-
-	src, err := os.ReadFile("index.go")
-	assert.NilError(t, err)
-	text := string(src)
-
-	assert.Assert(t, strings.Contains(text, words[n]),
-		"index.go does not say %q, and there are %d kinds", words[n], n)
-	assert.Assert(t, strings.Contains(text, ordinals[n+1]),
-		"index.go does not say %q, which is what the next kind added would be", ordinals[n+1])
-
-	// AND THE SCAN IS LIVE: the neighbouring numbers must NOT appear, or the assertions
-	// above would pass on a file that had drifted by one in either direction — which is
-	// exactly how it drifted in the first place. Checked as whole words, because
-	// "twenty-four" is a substring of nothing but "twenty-four" while "four" is a
-	// substring of "fourteen".
-	for _, wrong := range []string{words[n-1], words[n+1], ordinals[n], ordinals[n+2]} {
-		w := regexp.MustCompile(`\b` + regexp.QuoteMeta(wrong) + `\b`)
-		assert.Assert(t, !w.MatchString(text),
-			"index.go still says %q, but there are %d kinds", wrong, n)
-	}
-}
-
-// A FINDING'S PROSE SHIPS, and that is why this is not covered by the JSON Schema scan
-// above. `Audit` returns Title and Detail, wasm/main.go hands both to the browser, and an
-// author reads a remedy in the explorer exactly the way they read a field description.
-// One of those strings told an author a workflow becomes "the queues and the entity" long
-// after nothing lowered into an entity, and the JSON Schema scan could not see it because
-// a Finding is not in the schema.
-//
-// Read off the SOURCE rather than by triggering every check: these are authored constants,
-// a check that fires needs a project shaped to break it, and a scan that only sees the
-// findings some fixture happens to raise proves the least about the ones it does not.
 func TestNoAuthoredFindingNamesADeletedKind(t *testing.T) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "checks.go", nil, 0)
@@ -2540,14 +2016,6 @@ func TestNoAuthoredFindingNamesADeletedKind(t *testing.T) {
 	}
 }
 
-// A BUS HAS NO CONSISTENCY AXIS, and the reason is the transport rather than a preference:
-// it is libp2p pubsub, which orders nothing and keeps nothing, so a field naming how two
-// writes resolve would be a promise the thing underneath cannot make. `cache` and
-// `database` carry `consensus` because something down there can honour it.
-//
-// Pinned because prose could not stop it. The bus's comment argues at length that the kind
-// has no engine axis, and that argument is pinned — but a `consensus` key is not an engine
-// key, and one could be added with the whole suite green.
 func TestABusDeclaresNoConsistency(t *testing.T) {
 	var bus *engine.Node
 	for _, g := range schema.V2Resources {
