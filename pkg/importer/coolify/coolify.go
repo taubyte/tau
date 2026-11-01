@@ -1,34 +1,9 @@
-// Package coolify imports a Coolify application.
+// Package coolify imports a Coolify application. Coolify's app definition is a compose
+// file, so this delegates to pkg/importer/compose and reports what Coolify keeps
+// elsewhere: environment, domains, certificates (Elsewhere findings).
 //
-// # Coolify's app definition IS a compose file
-//
-// Coolify hands the user's compose file to real `docker compose` with no
-// filtering, so there is no Coolify-specific application format to parse: this
-// importer delegates to pkg/importer/compose and then says what Coolify keeps
-// that the file does not.
-//
-// That delegation is the point. A second parser for the same format would drift
-// from the first, and every fidelity finding compose already makes — the
-// healthcheck contract, depends_on conditions, published ports — is exactly as
-// true here.
-//
-// # What Coolify keeps outside the file
-//
-// Environment variables, domains, certificates and per-resource settings live in
-// Coolify's database, reachable with a team-scoped token. Those are Elsewhere
-// findings: real values, not in this file, and not a gap in tau's vocabulary.
-//
-// # The one that is a trap
-//
-// A COOLIFY `read` TOKEN SILENTLY RETURNS REDACTED ENVIRONMENT VALUES. It does
-// not error; it answers with blanks. An importer that accepted that would
-// produce a project whose every secret is the empty string, and the failure
-// would surface later as an application that cannot reach its database.
-//
-// So `read:sensitive` is required, and this package says so up front rather than
-// leaving it to be discovered. Importing blanks is worse than refusing: a
-// refusal is a five-minute fix, and a project full of empty secrets is a day of
-// debugging something that was never broken.
+// A Coolify `read` token silently returns redacted environment values, so
+// `read:sensitive` is required; importing blank secrets is worse than refusing.
 package coolify
 
 import (

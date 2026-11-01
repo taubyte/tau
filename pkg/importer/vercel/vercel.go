@@ -1,30 +1,9 @@
-// Package vercel imports a vercel.json, and is precise about the half it cannot
-// see.
+// Package vercel imports a vercel.json. Environment, secrets, domains and settings live
+// in Vercel's API and are reported as Elsewhere; the file decides what the project is.
 //
-// # A file-only Vercel import is partial, and says so
-//
-// Vercel keeps environment variables, secrets, project domains and deployment
-// settings in its API, not in vercel.json. So this importer produces what the
-// file says and reports the rest as Elsewhere — a level that exists exactly for
-// this: it is not a gap in tau's vocabulary and it must not appear on the list
-// of things to build. The fix is an account connection.
-//
-// That is worth doing rather than waiting, because the file half is the half
-// that decides what the project IS — build settings, function limits, routing —
-// and a person can see whether tau fits before they hand over a token.
-//
-// # Routing splits in two, and only one half is an edge
-//
-// importers.md is explicit about this and it is the subtlest thing here. A
-// `rewrite` whose source path selects a target is ROUTING: it becomes an edge
-// from a domain to a resource. A `redirect`, a `header` or a status is NOT
-// routing — it has no target, it modifies a response — and there is nothing in
-// the vocabulary for it. Reading the whole block as routing would produce edges
-// that send traffic somewhere on the strength of a rule that was only ever
-// meant to set a header.
-//
-// PCRE source patterns are unexpressible either way, and are reported as such
-// rather than approximated into a prefix that matches different things.
+// A `rewrite` selecting a target is routing and becomes an edge; a redirect, header or
+// status has no target and no vocabulary. PCRE source patterns are reported, not
+// approximated into prefixes.
 package vercel
 
 import (
@@ -101,7 +80,6 @@ type headerRule struct {
 	} `json:"headers"`
 }
 
-// Import reads a vercel.json.
 func Import(data []byte) (importer.Result, error) {
 	var f file
 	if err := json.Unmarshal(data, &f); err != nil {
@@ -110,10 +88,7 @@ func Import(data []byte) (importer.Result, error) {
 
 	r := importer.Result{Source: Source}
 
-	// THE BUILD HALF IS WHAT THE FILE IS FOR, and what it describes is a
-	// website: a repository built by a command into a directory that is then
-	// served. That is the `build/commands` branch of the website kind, and the
-	// field names are the vocabulary's own rather than Vercel's.
+	// What the file describes is a website built by `build/commands`.
 	commands := map[string]any{}
 	if f.InstallCommand != nil && *f.InstallCommand != "" {
 		commands["install"] = *f.InstallCommand
@@ -125,18 +100,9 @@ func Import(data []byte) (importer.Result, error) {
 		commands["output"] = *f.OutputDirectory
 	}
 	if len(commands) > 0 {
-		// THE BUILD IMAGE IS REQUIRED AND VERCEL DOES NOT NAME ONE. Vercel
-		// picks a Node version from a project setting and a package.json
-		// field, neither of which is in this file.
-		//
-		// SO ONE IS WRITTEN, AND THAT IS A REVERSAL. This emitted the block
-		// without an image and reported the hole, which read as the careful
-		// choice and was the worst of the three: the project imported, the
-		// to-do list was EMPTY — a dynamic path is invisible to the session's
-		// required-field check — and tcc then refused the whole thing over a
-		// field nothing had named. Between a build against a runtime nobody
-		// chose and a project that cannot compile at all, the first is the one
-		// a person can see and change.
+		// The build image is required and Vercel does not name one, so one is written and
+		// reported: emitted without, the project imported with an empty to-do list (a dynamic
+		// path escapes the session's required-field check) and then failed to compile.
 		commands["image"] = defaultBuildImage
 
 		r.Set(siteKind, SiteName, map[string]any{

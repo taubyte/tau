@@ -43,8 +43,6 @@ func has(r importer.Result, key string) bool {
 	return false
 }
 
-// TestTheFileIsTheInputAndTheApiIsTheTruth, said first, because everything else
-// this importer reports is qualified by it.
 func TestTheFileIsTheInputAndTheApiIsTheTruth(t *testing.T) {
 	r := importOf(t, `app = "shop"
 [build]
@@ -58,7 +56,6 @@ func TestTheFileIsTheInputAndTheApiIsTheTruth(t *testing.T) {
 	require.Equal(t, importer.Elsewhere, finding(t, r, "secrets").Level)
 }
 
-// TestWhatCarriesAcross — build, env and limits are the clean rows.
 func TestWhatCarriesAcross(t *testing.T) {
 	r := importOf(t, `
 app = "shop"
@@ -89,13 +86,10 @@ app = "shop"
 	// where the vocabulary puts them, not where fly.toml does.
 	require.Equal(t, map[string]any{"DATABASE_URL": map[string]any{"value": "postgres://db/app"}}, doc["variables"])
 
-	// AND THE SIZE IS RESPELLED. Fly writes "512mb"; this vocabulary parses
-	// with a case-sensitive reader that wants "512MB", so carrying the string
-	// across unchanged produced a project that imported and would not compile.
+	// The size is respelled: "512mb" would import and not compile.
 	require.Equal(t, map[string]any{"memory": "512MB"}, doc["execution"])
 }
 
-// TestFlySizesAreRespelled, in every spelling fly.toml uses.
 func TestFlySizesAreRespelled(t *testing.T) {
 	for _, c := range []struct{ in, want string }{
 		{"512mb", "512MB"},
@@ -118,8 +112,6 @@ func TestFlySizesAreRespelled(t *testing.T) {
 	}
 }
 
-// TestASizeThatCannotBeReadIsReportedRatherThanWritten, so a resource never
-// carries a value the compiler will refuse.
 func TestAnUnreadableSizeIsReported(t *testing.T) {
 	r := importOf(t, `
 app = "shop"
@@ -135,8 +127,6 @@ app = "shop"
 		"a value the compiler would refuse is never written")
 }
 
-// TestOneAppFansOutIntoNResources — the main structural transform, and the
-// sharing that does not survive it is reported.
 func TestOneAppFansOutIntoNResources(t *testing.T) {
 	r := importOf(t, `
 app = "shop"
@@ -152,10 +142,7 @@ app = "shop"
 	require.Equal(t, map[string]any{"image": "acme/shop:1"}, docOf(t, r, "shop_web")["source"],
 		"each carries the app's build")
 
-	// THE COMMAND IS WHAT MADE THEM DIFFERENT AND IT IS NOT CARRIED. There is
-	// no command field on a container workload, so N processes become N
-	// resources that are otherwise identical — worse than it looks, and said
-	// rather than discovered.
+	// The command is not carried, so N processes become N otherwise identical resources.
 	for _, process := range []string{"shop_web", "shop_worker"} {
 		require.NotContains(t, docOf(t, r, process), "command", process)
 	}
@@ -167,8 +154,6 @@ app = "shop"
 		"a process that reached a sibling over localhost will not find it, and that must be said")
 }
 
-// TestASizePresetIsNotCarriedAsAName. A Fly size is a name for a CPU and memory
-// pair; tau declares the numbers, and the name would mean nothing here.
 func TestASizePresetIsNotCarriedAsAName(t *testing.T) {
 	r := importOf(t, `
 app = "shop"
@@ -184,7 +169,6 @@ app = "shop"
 	require.Contains(t, f.Detail, "shared-cpu-1x")
 }
 
-// TestHardwareClassesAreRefused rather than promised.
 func TestHardwareClassesAreRefused(t *testing.T) {
 	r := importOf(t, `
 app = "shop"
@@ -197,7 +181,6 @@ app = "shop"
 	require.Equal(t, "REFUSED:hardware-class", f.Code)
 }
 
-// TestABuildpackBuilderIsNotADockerfile.
 func TestABuildpackBuilderIsNotADockerfile(t *testing.T) {
 	r := importOf(t, `
 app = "shop"
@@ -212,8 +195,6 @@ app = "shop"
 	require.False(t, ok, "a builder is not a source, so there is nothing to run")
 }
 
-// TestTheScalingModelDiffersAndSaysSo. Fly starts and stops machines it already
-// has; tau creates and destroys them, so these have no equivalent.
 func TestTheScalingModelDiffersAndSaysSo(t *testing.T) {
 	r := importOf(t, `
 app = "shop"
@@ -230,8 +211,6 @@ app = "shop"
 	require.Equal(t, "ROUTING_BECOMES_AN_EDGE", finding(t, r, "http_service").Code)
 }
 
-// TestAReleaseCommandIsNamedAsTheMigrationPathItIs. Without it, importing
-// anything with a migration is broken, and that is worth saying in the finding.
 func TestAReleaseCommandIsNamedAsTheMigrationPathItIs(t *testing.T) {
 	r := importOf(t, `
 app = "shop"
@@ -269,10 +248,6 @@ app = "shop"
 	require.Contains(t, s.Needs, "snapshot chain")
 }
 
-// TestAStaticIsInsideTheImageAndIsNotAWebsite. A Fly static serves a directory
-// out of the app's own image; a website here is a repository built into one.
-// Emitting a website whose build says nothing would produce a site that serves
-// nothing.
 func TestAStaticIsNotAWebsite(t *testing.T) {
 	r := importOf(t, `
 app = "shop"
@@ -347,7 +322,6 @@ func TestAnAppWithNoNameStillImports(t *testing.T) {
 	require.Equal(t, []string{"app"}, r.Names("application"))
 }
 
-// TestAnAppNameThatIsNotAV2NameIsRenamedLoudly.
 func TestAnAppNameIsSanitised(t *testing.T) {
 	r := importOf(t, `
 app = "my-shop"
@@ -376,9 +350,6 @@ func TestAMinimalFileReportsOnlyWhatIsElsewhere(t *testing.T) {
 	require.Equal(t, Source, r.Source)
 }
 
-// TestAnAppThatNamesNothingToRunIsNotEmitted. A fly.toml can be a stub whose
-// build lives only in the Machines API, and an empty resource is one that runs
-// nothing while looking like it runs something.
 func TestAnAppThatNamesNothingToRunIsNotEmitted(t *testing.T) {
 	r := importOf(t, `app = "shop"`)
 	require.Empty(t, r.Resources)

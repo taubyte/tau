@@ -45,8 +45,6 @@ func imported(t *testing.T) importer.Result {
 	return r
 }
 
-// TestAComposeFileBecomesAProject, laid out the way the vocabulary lays one
-// out, with ids the schema's own generator minted.
 func TestAComposeFileBecomesAProject(t *testing.T) {
 	fs := afero.NewMemMapFs()
 
@@ -60,17 +58,13 @@ func TestAComposeFileBecomesAProject(t *testing.T) {
 	require.Contains(t, report.Written, "application/api.yaml")
 	require.Contains(t, report.Written, "application/db.yaml")
 
-	// A compose file names no memory limit and a compose volume names no size,
-	// so this does NOT compile yet — and that is the ordinary outcome of an
-	// import rather than a failure. What matters is that it says so and names
-	// every field.
+	// No memory limit or volume size, so this does not compile yet; it must say so and
+	// name every field.
 	require.False(t, report.Compiles)
 	require.NotEmpty(t, report.Why)
 	require.NotEmpty(t, report.Missing)
 }
 
-// TestAProjectWithNothingMissingCompiles. The other half of the claim: what is
-// written is a project the compiler accepts once the holes are filled.
 func TestAProjectWithNothingMissingCompiles(t *testing.T) {
 	fs := afero.NewMemMapFs()
 
@@ -88,8 +82,6 @@ func TestAProjectWithNothingMissingCompiles(t *testing.T) {
 	compiles(t, fs, "/project")
 }
 
-// TestIdsAreMintedByTheSchemasOwnGenerator, not by this package inventing a
-// shape that looks right — and every resource gets its own.
 func TestIdsAreMintedAndDistinct(t *testing.T) {
 	fs := afero.NewMemMapFs()
 
@@ -109,8 +101,6 @@ func TestIdsAreMintedAndDistinct(t *testing.T) {
 	require.Len(t, ids, 3)
 }
 
-// TestTheImportersFindingsCarryThrough, so a caller has one thing to show
-// rather than two.
 func TestTheFindingsCarryThrough(t *testing.T) {
 	fs := afero.NewMemMapFs()
 
@@ -131,9 +121,6 @@ func TestTheFindingsCarryThrough(t *testing.T) {
 	}
 }
 
-// TestSeveralResultsBecomeOneProject. A Coolify app is a compose file plus what
-// its API holds, and a repository that arrived from Vercel may also have a
-// Dockerfile.
 func TestSeveralResultsBecomeOneProject(t *testing.T) {
 	fs := afero.NewMemMapFs()
 
@@ -151,8 +138,6 @@ func TestSeveralResultsBecomeOneProject(t *testing.T) {
 	require.Contains(t, report.Written, "volume/pgdata.yaml")
 }
 
-// TestWhatTheImportCouldNotFillIsReported, per field, by the same validator an
-// editor uses. That list is the actual product of an import.
 func TestWhatCouldNotBeFilledIsReported(t *testing.T) {
 	fs := afero.NewMemMapFs()
 
@@ -198,7 +183,6 @@ func TestWhatItRefuses(t *testing.T) {
 	require.Empty(t, report.Missing)
 }
 
-// TestTwoRunsProduceTheSameReport, so a corpus diff means something.
 func TestTheReportIsStable(t *testing.T) {
 	first, err := emit.To(afero.NewMemMapFs(), "/project", "shop", imported(t))
 	require.NoError(t, err)
@@ -224,17 +208,12 @@ func idIn(t *testing.T, doc string) string {
 	return ""
 }
 
-// TestAFilesystemThatWillNotTakeItSaysSo rather than reporting a project that
-// is not on disk.
 func TestAFilesystemThatWillNotTakeItSaysSo(t *testing.T) {
 	_, err := emit.To(afero.NewReadOnlyFs(afero.NewMemMapFs()), "/project", "shop", imported(t))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "writing the project")
 }
 
-// TestTheAccountConnectionsAreReportedSeparately. What a source keeps outside
-// its file is not a gap in tau — filing it as blocked would put "connect your
-// account" on the list of things to build.
 func TestElsewhereIsItsOwnList(t *testing.T) {
 	fs := afero.NewMemMapFs()
 
@@ -253,8 +232,6 @@ func TestElsewhereIsItsOwnList(t *testing.T) {
 	require.Equal(t, "command", report.Blocked()[0].Key)
 }
 
-// TestAMissingListIsSortedAndAddressable, so two runs diff cleanly and a caller
-// can group by resource.
 func TestTheMissingListIsSorted(t *testing.T) {
 	source := importer.Result{Source: "hand"}
 	source.Set("application", "zebra", map[string]any{"source": map[string]any{"image": "x"}})
@@ -273,8 +250,6 @@ func TestTheMissingListIsSorted(t *testing.T) {
 	require.Contains(t, report.Missing[0].String(), "application/alpha")
 }
 
-// TestTheMissingListSortsAcrossKindsAndFields, which is what makes it readable
-// when an import produces a hundred of them.
 func TestTheMissingListSortsAcrossKindsAndFields(t *testing.T) {
 	source := importer.Result{Source: "hand"}
 	source.Set("volume", "data", map[string]any{})
@@ -298,8 +273,6 @@ func TestTheMissingListSortsAcrossKindsAndFields(t *testing.T) {
 	require.Equal(t, sortedCopy(applicationFields), applicationFields)
 }
 
-// TestADocumentTheSessionRefusesIsReportedAgainstItsResource, so an importer
-// that produced a shape the vocabulary cannot hold is findable.
 func TestADocumentTheSessionRefusesIsReported(t *testing.T) {
 	source := importer.Result{Source: "hand"}
 	source.Set("application", "api", map[string]any{

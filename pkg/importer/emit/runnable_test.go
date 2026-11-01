@@ -21,19 +21,8 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// runnable_test is the competitive claim, checked rather than asserted: a
-// project imported from somewhere else must not merely COMPILE, it must be
-// something this platform can actually run.
-//
-// THOSE ARE DIFFERENT PROPERTIES and only the first was ever tested. An
-// importer emitting a kind whose engine nothing implements produces a project
-// that passes every test in this package, deploys, and then refuses every
-// request with "no engine registered for this spec" — which is discovered by a
-// user rather than by us.
-//
-// So this walks every importer's output back through the vocabulary: which
-// kinds did it emit, which engine does each kind declare, and is there a tier
-// that answers to that name.
+// An imported project must be runnable, not merely compile: every emitted kind must
+// declare an engine this repository has a tier for.
 
 // implemented is every engine this repository has a tier for, by the name the
 // vocabulary uses. A tier added here without a kind, or a kind added there
@@ -99,9 +88,6 @@ func emitted(t *testing.T, results ...importer.Result) map[string][]string {
 	return byKind
 }
 
-// EVERY KIND EVERY IMPORTER EMITS HAS A TIER THAT RUNS IT. This is the whole of
-// "can import projects from vercel, fly.io, dokploy and coolify with ease",
-// reduced to the one thing that can be checked mechanically.
 func TestEverythingAnImporterEmitsCanBeRun(t *testing.T) {
 	fly, err := fly.Import([]byte(theFlyFile))
 	require.NoError(t, err)
@@ -157,10 +143,6 @@ func TestEverythingAnImporterEmitsCanBeRun(t *testing.T) {
 	}
 }
 
-// AND THE OTHER DIRECTION: every engine the vocabulary names is either
-// implemented or listed here as knowingly absent. A third engine added to the
-// schema with no tier is a project that deploys and does not run, and this is
-// where that is noticed.
 func TestEveryEngineTheVocabularyNamesIsImplemented(t *testing.T) {
 	named := map[string]bool{}
 	for _, kind := range schema.Kinds() {

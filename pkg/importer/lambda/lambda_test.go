@@ -44,8 +44,6 @@ func count(r importer.Result, key string) int {
 	return n
 }
 
-// TestTheShapeMismatchIsSaidOnce, up front. Every function in the file has it,
-// and repeating it per function would bury the findings that differ.
 func TestTheShapeMismatchIsSaidOnce(t *testing.T) {
 	r := importOf(t, `
 functions:
@@ -62,8 +60,6 @@ functions:
 	require.Contains(t, f.Detail, "(event, context)")
 }
 
-// TestBothDialectsAreRead, because a caller has one file and should not have to
-// know which parser to reach for.
 func TestBothDialectsAreRead(t *testing.T) {
 	sam := importOf(t, `
 Transform: AWS::Serverless-2016-10-31
@@ -92,8 +88,6 @@ functions:
 		docOf(t, sls, "checkout")["execution"])
 }
 
-// TestGlobalsAndProviderSupplyDefaults, or a function that set nothing would
-// import with no limits at all.
 func TestGlobalsAndProviderSupplyDefaults(t *testing.T) {
 	r := importOf(t, `
 Globals:
@@ -110,9 +104,6 @@ Resources:
 		docOf(t, r, "Worker")["execution"])
 }
 
-// TestACloudFormationIntrinsicIsNotAValue. !Ref and Fn::GetAtt resolve against a
-// stack that will not exist here, so carrying one would put a dangling
-// reference in the config.
 func TestACloudFormationIntrinsicIsNotAValue(t *testing.T) {
 	r := importOf(t, `
 Resources:
@@ -135,13 +126,6 @@ Resources:
 	require.Equal(t, "CLOUDFORMATION_INTRINSIC", finding(t, r, "Api", "environment.QUEUE_URL").Code)
 }
 
-// TestAContainerImageRunsAndSaysWhatDiffers.
-//
-// It embeds AWS's runtime client and polls for work rather than listening —
-// which used to make it the one import this platform could not finish. The
-// container tier now serves the Lambda Runtime API, so the image runs
-// unmodified; what is left is the shape of the event it receives, and that is
-// a real difference rather than a caveat.
 func TestAContainerImageIsTheHarderOneNotTheEasier(t *testing.T) {
 	r := importOf(t, `
 Resources:
@@ -159,8 +143,6 @@ Resources:
 	require.Contains(t, f.Detail, "API Gateway payload format 2.0")
 }
 
-// TestSnapStartIsFlaggedLoudly. Nothing else in the manifest reveals that a
-// function's cold-start profile changes by an order of magnitude.
 func TestSnapStartIsFlaggedLoudly(t *testing.T) {
 	r := importOf(t, `
 Resources:
@@ -176,8 +158,6 @@ Resources:
 	require.Contains(t, f.Detail, "order of magnitude")
 }
 
-// TestEachTriggerSaysWhatItWouldNeed — this is where "not Fetch-shaped" becomes
-// concrete, because a Lambda's event shape is per trigger.
 func TestEachTriggerSaysWhatItWouldNeed(t *testing.T) {
 	r := importOf(t, `
 Resources:
@@ -222,8 +202,6 @@ functions:
 	require.Equal(t, importer.Blocked, finding(t, r, "api", "vpc").Level)
 }
 
-// TestPluginsAreNotData. A serverless plugin rewrites the deployment at package
-// time, and what it produces cannot be read from the file.
 func TestPluginsAreNotData(t *testing.T) {
 	r := importOf(t, `
 service: shop
@@ -240,8 +218,6 @@ functions:
 	require.Empty(t, f.Needs, "arbitrary code is a refusal, not a gap")
 }
 
-// TestIamIsElsewhere. What a function may reach is defined in the account, not
-// in the manifest — and that is an account connection, not something to build.
 func TestIamIsElsewhere(t *testing.T) {
 	r := importOf(t, "functions:\n  api:\n    handler: api.handler\n")
 	f := finding(t, r, "", "iam")
@@ -249,8 +225,6 @@ func TestIamIsElsewhere(t *testing.T) {
 	require.Empty(t, f.Needs)
 }
 
-// TestNonFunctionResourcesAreSkipped. A SAM template is CloudFormation and
-// carries tables, queues and buckets that are not functions.
 func TestNonFunctionResourcesAreSkipped(t *testing.T) {
 	r := importOf(t, `
 Resources:
@@ -275,7 +249,6 @@ func TestAFileWithNoFunctionsIsRefused(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestNothingBlockedReachesTheEmittedConfig — the rule every importer holds.
 func TestNothingBlockedReachesTheEmittedConfig(t *testing.T) {
 	r := importOf(t, `
 functions:
@@ -293,8 +266,6 @@ functions:
 	require.Equal(t, "512MB", doc["execution"].(map[string]any)["memory"])
 }
 
-// TestTheThinEdges — a function declared with nothing under it, the same
-// trigger twice, and a plain YAML map that only looks like an intrinsic.
 func TestTheThinEdges(t *testing.T) {
 	r := importOf(t, `
 Globals:
@@ -330,8 +301,6 @@ Resources:
 	require.Equal(t, "ENV_NOT_A_SCALAR", finding(t, r, "Twice", "environment.SHAPE").Code)
 }
 
-// TestScalarEnvValuesCarry — a YAML number or bool is a legitimate environment
-// value and must not be refused alongside the structures.
 func TestScalarEnvValuesCarry(t *testing.T) {
 	r := importOf(t, `
 functions:
@@ -351,8 +320,6 @@ functions:
 	}, docOf(t, r, "api")["variables"])
 }
 
-// TestDefaultsInheritDownBothDialects — env set once at the top applies to every
-// function, and a Serverless event list reads the same as a SAM event map.
 func TestDefaultsInheritDownBothDialects(t *testing.T) {
 	sam := importOf(t, `
 Globals:

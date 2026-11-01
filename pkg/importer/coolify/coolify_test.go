@@ -26,8 +26,6 @@ func finding(t *testing.T, r importer.Result, key string) importer.Finding {
 	return importer.Finding{}
 }
 
-// TestTheAppDefinitionIsTheComposeFile, so every fidelity finding compose makes
-// is made here too — a second parser would drift from the first.
 func TestTheAppDefinitionIsTheComposeFile(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -47,9 +45,6 @@ services:
 	require.Equal(t, importer.Blocked, finding(t, r, "healthcheck").Level)
 }
 
-// TestTheReadOnlyTokenTrapIsNamedUpFront. A Coolify `read` token returns
-// REDACTED env values rather than an error, so an importer that accepted it
-// would produce a project whose every secret is the empty string.
 func TestTheReadOnlyTokenTrapIsNamedUpFront(t *testing.T) {
 	r := importOf(t, "services:\n  api:\n    image: x\n")
 
@@ -63,9 +58,6 @@ func TestTheReadOnlyTokenTrapIsNamedUpFront(t *testing.T) {
 	require.Equal(t, []string{"read", "read:sensitive"}, RequiredScopes)
 }
 
-// TestServicePasswordsMustBeReadNotRegenerated. Coolify generates them once and
-// the running service is already using them; minting new ones produces a
-// service whose credentials no longer match its own data.
 func TestServicePasswordsMustBeReadNotRegenerated(t *testing.T) {
 	r := importOf(t, "services:\n  db:\n    image: postgres\n")
 
@@ -79,8 +71,6 @@ func TestDomainsAreElsewhere(t *testing.T) {
 	require.Equal(t, importer.Elsewhere, finding(t, r, "domains").Level)
 }
 
-// TestTheStructureMapsOneToOne — the rare thing that carries perfectly, and
-// worth saying so the reader knows which parts are easy.
 func TestTheStructureMapsOneToOne(t *testing.T) {
 	r := importOf(t, "services:\n  api:\n    image: x\n")
 	f := finding(t, r, "environments")

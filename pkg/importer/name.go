@@ -2,19 +2,9 @@ package importer
 
 import "strings"
 
-// name.go is the one place a source's name becomes a v2 name.
-//
-// EVERY SOURCE ALLOWS NAMES v2 DOES NOT. A compose service may be called
-// `my-api`, a Fly process `web-1`, a Vercel function `api/users/[id]`. v2 names
-// are `IsVariableName()` — a letter or underscore, then letters, digits and
-// underscores — because a name is a path segment, an environment-variable stem
-// and a DNS label in different places, and each of those forbids something
-// different.
-//
-// SO A RENAME IS REPORTED, ALWAYS. An importer that quietly turned `my-api`
-// into `my_api` would produce config whose names do not match the ones in the
-// user's compose file, their dashboards or their runbooks — and the first sign
-// would be an edge pointing at nothing.
+// Source names allow what v2 names do not (`my-api`, `api/users/[id]`); a v2 name is a
+// path segment, an environment-variable stem and a DNS label. A rename is always
+// reported, or edges written against the original names point at nothing.
 
 // Name is s as a v2 name, and whether it had to be changed.
 //

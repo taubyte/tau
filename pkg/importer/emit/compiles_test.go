@@ -29,17 +29,6 @@ func compiles(t *testing.T, fs afero.Fs, dir string) {
 	require.NotNil(t, obj)
 }
 
-// TestTheToDoListNamesWhatBlocksTheCompile.
-//
-// THIS IS THE PROPERTY THE WHOLE REPORT EXISTS FOR, and it did not hold. A
-// required field at a DYNAMIC path — every attribute under `build:`, whose
-// branch is selected by which key an author wrote — was invisible to the
-// session's required-field check, because the discriminator has no value of its
-// own to read. So an importer that wrote a build block without its toolchain
-// image produced exactly this: Compiles false, and Missing EMPTY.
-//
-// The person holding that report has a project that will not deploy and a
-// to-do list that names nothing.
 func TestAHoleInTheOutputIsNamedInTheReport(t *testing.T) {
 	fs := afero.NewMemMapFs()
 
@@ -66,14 +55,6 @@ func TestAHoleInTheOutputIsNamedInTheReport(t *testing.T) {
 		"the to-do list must name what blocks the compile; it named %v", named)
 }
 
-// TestABranchNOBODYWroteRequiresNothing, which is the other half and the one
-// that made the first fix wrong twice.
-//
-// A stream's engine and a gateway's routing are branches AT THE RESOURCE'S OWN
-// ROOT, so the prefix under which the key sits is EMPTY. A check that read an
-// empty prefix as "there is no branch" made every field of every branch
-// unconditionally required — and a config that compiles reported five missing
-// fields it did not need.
 func TestABranchThatWasNotSelectedRequiresNothing(t *testing.T) {
 	fs := afero.NewMemMapFs()
 

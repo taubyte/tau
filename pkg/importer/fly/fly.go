@@ -1,21 +1,9 @@
-// Package fly imports a fly.toml.
+// Package fly imports a fly.toml. A Fly app's effective configuration is its machine
+// config (standbys, schedules, per-process secrets), so a file import is a first pass,
+// reported as an Elsewhere finding.
 //
-// # The file is the input; the Machines API is the truth
-//
-// importers.md is explicit: a Fly app's effective configuration is its machine
-// config, which carries standbys, schedules, per-process secrets and a
-// containers array a hand-written toml simply omits. So a file-only import of
-// Fly is a good first pass and not the whole picture, and that is reported as an
-// Elsewhere finding rather than left for somebody to discover.
-//
-// # One Fly app fans out into N tau resources
-//
-// `[processes]` is the main structural transform here. A Fly app with a web
-// process and a worker process is ONE app sharing one filesystem and one
-// network; in tau those are separate placed resources. The fan-out is a
-// synthesis rather than an inference — the processes really did share
-// everything, so every edge among the resulting resources is real — but the
-// sharing itself does not survive, and a process that reached a sibling through
+// `[processes]` fans one app into N tau resources. The processes really shared a
+// filesystem and network, which does not survive: a process reaching a sibling over
 // localhost will not find it.
 package fly
 
@@ -106,7 +94,6 @@ type metrics struct {
 	Path string `toml:"path"`
 }
 
-// Import reads a fly.toml.
 func Import(data []byte) (importer.Result, error) {
 	var f file
 	if err := toml.Unmarshal(data, &f); err != nil {
@@ -139,8 +126,7 @@ func Import(data []byte) (importer.Result, error) {
 		importBuild(&r, base, f.Build)
 	}
 	if len(f.Env) > 0 {
-		// A VARIABLE IS A BLOCK, not a bare value: `at` says build or run and
-		// `as` says how it is delivered, both defaulted by the vocabulary.
+		// A variable is a block; `at` and `as` are defaulted.
 		variables := map[string]any{}
 		for _, key := range sortedKeys(f.Env) {
 			stem, renamed := importer.Name(key)
@@ -182,11 +168,8 @@ func Import(data []byte) (importer.Result, error) {
 			process, _ := importer.Name(name + "_" + p)
 			r.Set(appKind, process, clone(base))
 
-			// THE COMMAND IS WHAT MADE THEM DIFFERENT AND IT IS NOT CARRIED.
-			// There is no command field on a container workload — what runs is
-			// what the image says — so N processes become N resources that are
-			// otherwise identical, which is worse than it looks and is said
-			// here rather than discovered.
+			// The command is what distinguished the processes, and a container workload has no
+			// command field, so the N resources are otherwise identical.
 			r.Add(importer.Finding{Resource: process, Key: "processes." + p, Level: importer.Blocked,
 				Code:   "NO_TAU_FEATURE:command",
 				Needs:  "a command override on the compute kind",
@@ -262,12 +245,8 @@ func importBuild(r *importer.Result, doc map[string]any, b *build) {
 	}
 }
 
-// flySize turns a Fly memory string into one tau's vocabulary parses.
-//
-// Fly writes "512mb", "1gb", or a BARE NUMBER, which its own documentation
-// defines as megabytes. tau parses with units.ParseStrictBytes, which is
-// case-sensitive — so every one of those three needs work and the bare number
-// needs a unit invented for it, from Fly's rule rather than from a guess.
+// flySize turns a Fly memory string ("512mb", "1gb", or a bare number meaning
+// megabytes) into the case-sensitive spelling units.ParseStrictBytes reads.
 func flySize(s string) (string, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -304,11 +283,7 @@ func flySize(s string) (string, bool) {
 func importVM(r *importer.Result, doc map[string]any, vms []vm) {
 	for _, v := range vms {
 		if v.Memory != "" {
-			// FLY'S SPELLING IS NOT TAU'S, and carrying it across unchanged
-			// produced a project that IMPORTED and would not compile —
-			// `512mb` against a parser that wants `512MB`. It is a
-			// translation and not an approximation: the same number of bytes,
-			// written the way this vocabulary writes it.
+			// Respelled, not approximated: `512mb` would import and fail to compile.
 			if size, ok := flySize(v.Memory); ok {
 				doc["execution"] = map[string]any{"memory": size}
 			} else {

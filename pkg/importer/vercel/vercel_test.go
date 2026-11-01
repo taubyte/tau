@@ -26,7 +26,6 @@ func finding(t *testing.T, r importer.Result, resource, key string) importer.Fin
 	return importer.Finding{}
 }
 
-// TestTheBuildHalfIsWhatTheFileIsFor, and it maps onto the build stanza.
 func TestTheBuildHalfIsWhatTheFileIsFor(t *testing.T) {
 	r := importOf(t, `{
       "buildCommand": "next build",
@@ -41,11 +40,8 @@ func TestTheBuildHalfIsWhatTheFileIsFor(t *testing.T) {
 	require.True(t, ok, "got %v", r.Resources)
 	require.Equal(t, map[string]any{
 		"commands": map[string]any{
-			// THE IMAGE IS WRITTEN, not left out. Vercel names none, and
-			// emitting the block without one produced a project that imported
-			// and would not compile — with an EMPTY to-do list, because a
-			// required field at a dynamic path is invisible to the session's
-			// own required-field check.
+			// The image is written: without it the project imported with an empty to-do list and
+			// failed to compile.
 			"image":   defaultBuildImage,
 			"install": "pnpm i",
 			"run":     "next build",
@@ -59,9 +55,6 @@ func TestTheBuildHalfIsWhatTheFileIsFor(t *testing.T) {
 	require.Equal(t, "SOURCE_IN_API:node-version", f.Code)
 }
 
-// TestTheHalfThatIsNotInTheFileIsReportedAsElsewhere, not as a gap in tau.
-// Filing it as Blocked would put "connect your account" on the list of things
-// to build.
 func TestTheHalfThatIsNotInTheFileIsReportedAsElsewhere(t *testing.T) {
 	r := importOf(t, `{"buildCommand": "next build"}`)
 
@@ -76,8 +69,6 @@ func TestTheHalfThatIsNotInTheFileIsReportedAsElsewhere(t *testing.T) {
 	require.Subset(t, keys, []string{"env", "domains"})
 }
 
-// TestFunctionLimitsAreTheOneCleanMapping. tau has per-resource limits and they
-// are the same two numbers.
 func TestFunctionLimitsAreTheOneCleanMapping(t *testing.T) {
 	r := importOf(t, `{
       "functions": {
@@ -102,7 +93,6 @@ func TestFunctionLimitsAreTheOneCleanMapping(t *testing.T) {
 	require.Equal(t, "GLOB_IS_NOT_A_RESOURCE", f.Code)
 }
 
-// TestAnEdgeFunctionIsFetchShapedAndSaysSo, and a Node one needs a JS tier.
 func TestARuntimeIsClassifiedHonestly(t *testing.T) {
 	r := importOf(t, `{
       "functions": {
@@ -121,10 +111,6 @@ func TestARuntimeIsClassifiedHonestly(t *testing.T) {
 	require.NotEmpty(t, node.Needs)
 }
 
-// TestRoutingSplitsInTwo — the subtlest thing here. A rewrite selects a target
-// and becomes an edge; a redirect or a header modifies a response and has no
-// target at all. Reading the whole block as routing would create edges from
-// rules that were only ever meant to set a header.
 func TestRoutingSplitsInTwo(t *testing.T) {
 	r := importOf(t, `{
       "rewrites":  [ { "source": "/api/:path", "destination": "/api-handler" } ],
@@ -144,9 +130,6 @@ func TestRoutingSplitsInTwo(t *testing.T) {
 	}
 }
 
-// TestAPatternIsNotApproximatedIntoAPrefix. A PCRE source matches different
-// requests than any prefix does, and quietly turning one into the other sends
-// traffic somewhere nobody asked for.
 func TestAPatternIsNotApproximatedIntoAPrefix(t *testing.T) {
 	r := importOf(t, `{
       "rewrites": [ { "source": "/(products|items)/(.*)", "destination": "/catalog" } ]
@@ -157,8 +140,6 @@ func TestAPatternIsNotApproximatedIntoAPrefix(t *testing.T) {
 	require.Equal(t, "PATTERN_NOT_EXPRESSIBLE", f.Code)
 }
 
-// TestANamedSegmentIsNotAPattern. Vercel's own :param syntax is an ordinary
-// segment, and treating it as a regex would refuse the common case.
 func TestANamedSegmentIsNotAPattern(t *testing.T) {
 	require.False(t, isPCRE("/api/:path"))
 	require.False(t, isPCRE("/blog/:slug/comments"))
@@ -179,9 +160,6 @@ func TestCronsParseCleanlyAndHaveNowhereToGo(t *testing.T) {
 	require.NotEmpty(t, f.Needs)
 }
 
-// TestAFrameworkPresetIsNotExpanded. The name stands for build defaults Vercel
-// supplies; carrying the word would put something in the config nothing reads,
-// and anything the preset supplied silently is simply missing.
 func TestAFrameworkPresetIsNotExpanded(t *testing.T) {
 	r := importOf(t, `{"framework": "nextjs"}`)
 
@@ -201,8 +179,6 @@ func TestMalformedJsonIsRefused(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestAnEmptyFileStillReportsWhatIsElsewhere. Even a vercel.json with nothing
-// in it means a project whose env and domains live in the API.
 func TestAnEmptyFileStillReportsWhatIsElsewhere(t *testing.T) {
 	r := importOf(t, `{}`)
 	require.Empty(t, r.Resources)

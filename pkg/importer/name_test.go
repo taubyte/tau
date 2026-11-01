@@ -8,9 +8,6 @@ import (
 	"github.com/taubyte/tau/pkg/importer"
 )
 
-// TestASourceNameBecomesAV2Name. Every source allows names v2 does not: a
-// compose service `my-api`, a Fly process `web-1`, a Vercel glob
-// `api/users/[id]`.
 func TestASourceNameBecomesAV2Name(t *testing.T) {
 	for _, c := range []struct {
 		in      string
@@ -42,8 +39,6 @@ func TestASourceNameBecomesAV2Name(t *testing.T) {
 	}
 }
 
-// TestTheSameNameEveryTime. Two runs of an import must produce the same
-// project, or an edge written against one run does not resolve in the next.
 func TestNameIsDeterministic(t *testing.T) {
 	for range 10 {
 		got, _ := importer.Name("my-api.v2")
@@ -51,9 +46,6 @@ func TestNameIsDeterministic(t *testing.T) {
 	}
 }
 
-// TestDistinctNamesStayDistinct for the shapes a real source produces. Two
-// compose services cannot collide after sanitising unless they differed only by
-// a character that is not a name character.
 func TestRenamingSaysWhatChanged(t *testing.T) {
 	f := importer.Renamed("my_api", "services", "my-api", "my_api")
 

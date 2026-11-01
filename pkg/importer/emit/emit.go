@@ -1,36 +1,10 @@
-// Package emit turns an import into a project on disk.
+// Package emit turns an import into a project on disk through pkg/tcc/session, so
+// the layout is the DSL's, ids are minted by the schema's generator, and every
+// required field left empty is reported by the editor's validator.
 //
-// # Why this is not "write some yaml"
-//
-// An importer produces resource documents; a v2 project is a directory whose
-// layout, ids and required fields are the vocabulary's, and every one of those
-// is already answered by pkg/tcc/session. Writing files by hand here would mean
-// a second copy of where a document goes, a second answer to how an id is
-// minted, and no idea whether the result compiles.
-//
-// So this composes a session, sets each resource through it, and asks it what
-// is still missing. Three things fall out for free, and they are the whole
-// reason:
-//
-//   - THE LAYOUT IS THE DSL'S. A resource lands where an author would have put
-//     it, because Address and Save are the same code a decompile writes by.
-//   - IDS ARE MINTED BY THE GENERATOR the schema declares, not by this package
-//     inventing a CID shape that looks right.
-//   - WHAT THE IMPORT COULD NOT FILL IN IS REPORTED, per field, by the same
-//     validator an editor uses. That list is the actual product of an import:
-//     a config plus exactly what a person has to go and decide.
-//
-// # It writes what it has, and says whether it compiles
-//
-// AN IMPORT THAT LEAVES REQUIRED FIELDS EMPTY IS THE ORDINARY CASE, not a
-// failure. A compose file names no memory limit and a compose volume names no
-// size, and neither has an honest value to infer — so refusing to write the
-// project would make the tool useless on the first file anybody tries.
-//
-// What must never happen is writing it and being silent. So the project lands,
-// every empty required field is in Missing with the field named, and Compiles
-// says plainly whether tcc accepts the result yet. A caller shows the to-do
-// list; a caller that wants a gate has one.
+// Empty required fields are the ordinary case (compose names no memory or volume
+// size), so the project is written anyway, with every hole in Missing and Compiles
+// saying whether tcc accepts it yet.
 package emit
 
 import (
@@ -119,9 +93,8 @@ func To(dst afero.Fs, dir, name string, results ...importer.Result) (Report, err
 		return Report{}, fmt.Errorf("emit: a project needs a name")
 	}
 
-	// AdoptSession over an empty in-memory filesystem cannot fail — there is
-	// nothing to read — but the error is threaded rather than dropped, because
-	// what it can fail at is pkg/tcc's to change.
+	// AdoptSession over an empty filesystem cannot fail today; the error is threaded since
+	// pkg/tcc may change.
 	s, err := schema.AdoptSession(afero.NewMemMapFs())
 	if err != nil {
 		return Report{}, fmt.Errorf("emit: opening a session: %w", err)
@@ -188,8 +161,7 @@ func To(dst afero.Fs, dir, name string, results ...importer.Result) (Report, err
 // identify writes the project's own document: its name, one environment every
 // branch feeds, and the id the schema's generator mints for it.
 func identify(s *session.Session, name string) error {
-	// The root address is never empty: this package opens the session itself,
-	// through schema.AdoptSession, which wires the layout that answers it.
+	// The root address is never empty: AdoptSession wires the layout that answers it.
 	root := s.Root()
 
 	if err := s.Set(root, []string{"name"}, name); err != nil {
@@ -243,11 +215,8 @@ func mint(s *session.Session, at []string, seed ...any) error {
 	return nil
 }
 
-// walk lists the project's files, relative to its root, so a caller can show
-// them.
-//
-// It reads the session's own in-memory filesystem, which cannot fail: nothing
-// else writes to it and every path in it was put there by a Set above.
+// walk lists the project's files, relative to its root, from the session's own
+// in-memory filesystem, which cannot fail.
 func walk(fs afero.Fs) []string {
 	var out []string
 	afero.Walk(fs, "/", func(path string, info os.FileInfo, err error) error {

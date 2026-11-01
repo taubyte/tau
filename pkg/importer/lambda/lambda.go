@@ -1,34 +1,8 @@
-// Package lambda reads an AWS SAM template or a serverless.yml and says, per
-// function, what it would take to run it here.
-//
-// # This is an importer, not a runtime
-//
-// tau's runtime contract is request-in, response-out. A Lambda handler is
-// `(event, context) -> result` with a DIFFERENT JSON event shape per trigger,
-// and it does not take a request at all — an image built for Lambda polls a
-// platform endpoint for work. Serving that endpoint would be the runtime bending
-// to a vendor, which is refused; what belongs here is reading the manifest and
-// reporting honestly what moves and what does not.
-//
-// So this package emits configuration for the parts that map, and a finding for
-// every part that needs the handler rewritten. It never claims a Lambda will
-// run unchanged, because it will not.
-//
-// # The shape mismatch is the whole story
-//
-// importers.md files AWS Lambda as "its own project, not a v2 importer", and the
-// reason is one line: `(event, context) -> result` with a per-trigger JSON event
-// is not Fetch-shaped. That verdict is about the HANDLER, not the manifest —
-// a manifest is a manifest, and reading it tells somebody exactly how big the
-// job is before they start. This importer is that estimate, and it is careful
-// never to look like more.
-//
-// # SnapStart is flagged loudly
-//
-// A SnapStart function's cold-start profile is an order of magnitude different
-// from a cold one, and tau has no snapshot tier. A function tuned around
-// SnapStart will behave nothing like it did, and that is not visible from
-// anything else in the manifest.
+// Package lambda reads an AWS SAM template or serverless.yml and says, per function,
+// what it would take to run it here. A Lambda handler is `(event, context) -> result`
+// with a per-trigger event shape, not request-in, response-out, so this emits config
+// for what maps and a finding for every part needing the handler rewritten; it never
+// claims a Lambda runs unchanged. SnapStart is flagged: tau has no snapshot tier.
 package lambda
 
 import (
@@ -137,7 +111,6 @@ type fn struct {
 	image string
 }
 
-// Import reads a SAM template or a serverless.yml.
 func Import(data []byte) (importer.Result, error) {
 	var f file
 	if err := yaml.Unmarshal(data, &f); err != nil {
@@ -151,9 +124,7 @@ func Import(data []byte) (importer.Result, error) {
 
 	r := importer.Result{Source: Source}
 
-	// SAID ONCE, UP FRONT, AND NOT PER FUNCTION. Every function in the file has
-	// the same shape problem, and repeating it N times would bury the findings
-	// that differ.
+	// The handler shape is reported once, not per function.
 	r.Add(importer.Finding{Key: "handler", Level: importer.Blocked,
 		Code:  "HANDLER_NOT_FETCH_SHAPED",
 		Needs: "a handler rewrite, or a compatibility layer that is somebody's own project",
@@ -256,14 +227,8 @@ func collect(f file) []fn {
 	return out
 }
 
-// What a Lambda becomes, and it is TWO KINDS because the packaging really is
-// two different things.
-//
-// A zip-packaged Lambda is source that a handler runs out of — tau's `function`,
-// which the vocabulary runs on wasm. A container-packaged one is an IMAGE, and
-// the only kind here that starts from an image is `application`, on the
-// container tier. Emitting both as `function` dropped the image entirely and
-// left a wasm resource with nothing to run.
+// A zip-packaged Lambda becomes a `function` (wasm); a container-packaged one an
+// `application` (the only kind starting from an image).
 const (
 	functionKind  = "function"
 	containerKind = "application"
@@ -336,9 +301,7 @@ func importFunction(r *importer.Result, x fn) {
 			if renamedKey {
 				r.Add(importer.Renamed(name, "environment."+k, k, stem))
 			}
-			// A VARIABLE IS A BLOCK, not a bare value: `at` says build or run
-			// and `as` says how it is delivered, both defaulted by the
-			// vocabulary.
+			// A variable is a block; `at` and `as` are defaulted.
 			variables[stem] = map[string]any{"value": t}
 		}
 		if len(variables) > 0 {
@@ -352,11 +315,8 @@ func importFunction(r *importer.Result, x fn) {
 			doc["source"] = map[string]any{"image": x.image}
 		}
 
-		// AN application HAS NO PER-REQUEST TIMEOUT, because it is not invoked
-		// per request — its execution block is a cpu and a memory ceiling and
-		// nothing else. A Lambda's Timeout is real information this kind
-		// cannot hold, so it is dropped LOUDLY: a function tuned around a
-		// 30-second ceiling now runs until it stops.
+		// An application is not invoked per request and has no timeout, so a Lambda's Timeout
+		// is dropped and reported.
 		if execution, ok := doc["execution"].(map[string]any); ok {
 			if _, had := execution["timeout"]; had {
 				delete(execution, "timeout")
@@ -386,15 +346,8 @@ func importFunction(r *importer.Result, x fn) {
 	}
 
 	if x.container {
-		// A LAMBDA CONTAINER IMAGE POLLS FOR WORK rather than listening for a
-		// request, and this platform SPEAKS THAT PROTOCOL — the container tier
-		// serves the Lambda Runtime API on a loopback port and puts its address
-		// in AWS_LAMBDA_RUNTIME_API, so the image runs unmodified with nothing
-		// injected into it.
-		//
-		// WHAT IS LEFT IS THE EVENT'S SHAPE, and it is a real difference rather
-		// than a caveat: a handler written for an S3 notification or an SQS
-		// batch will not recognise what arrives.
+		// The container tier serves the Lambda Runtime API on loopback (AWS_LAMBDA_RUNTIME_API),
+		// so the image runs unmodified; the event shape still differs per trigger.
 		r.Add(importer.Finding{Resource: name, Key: "image", Level: importer.Approximated,
 			Code: "IMAGE_INVOKED_OVER_HTTP",
 			Detail: "this image polls the Lambda Runtime API, which the container tier serves — so it runs " +

@@ -1,31 +1,10 @@
-// Package compose imports a docker-compose file, and is as loud about what it
-// could not bring as about what it could.
+// Package compose imports a docker-compose file, the one source whose manifest is the
+// whole deployment (other platforms keep env, secrets and domains outside it).
 //
-// Compose is the first importer for one reason: it is the only source that is
-// honestly FILE-ONLY. Vercel, Fly, Dokploy and Coolify all keep environment
-// variables, secrets, domains, certificates and branch settings OUTSIDE the
-// manifest, so an importer for those needs an API client and an account
-// connection before it can produce anything that runs. A compose file is the
-// whole truth of a compose deployment.
-//
-// # The two rules, from importers.md
-//
-// AN IMPORTER NEVER EMITS A FIELD THE RUNTIME CANNOT HONOUR — not as a comment,
-// not as "advisory". A config carrying `restart: always` into a system with no
-// restart controller is worse than a refusal line, because the next person to
-// read it believes it.
-//
-// EVERY BLOCKED FIELD NAMES THE CONTRACT IT WOULD NEED. `NO_TAU_FEATURE:
-// healthcheck` on its own is a shrug; naming the field that would unblock it
-// makes the finding a to-do item, and counting those across a corpus is how the
-// missing vocabulary gets prioritised by evidence rather than by taste.
-//
-// # The findings are the product
-//
-// A silent importer is the dangerous kind. Every compose key that is dropped,
-// approximated, or that means something subtly different here produces a
-// Finding, and the caller is expected to show them. An import that reports
-// nothing on a file using healthchecks and depends_on conditions has lied.
+// An importer never emits a field the runtime cannot honour, and every blocked field
+// names the contract it would need, so findings are a prioritised to-do list. Every
+// key dropped, approximated or meaning something different here produces a Finding;
+// an import that reports nothing on a file using healthchecks has lied.
 package compose
 
 import (
@@ -51,14 +30,8 @@ var (
 	ErrNoKind     = errors.New("compose: this vocabulary has no kind that runs a container")
 )
 
-// containerKind is what a compose service becomes.
-//
-// IT IS VERIFIED AGAINST THE VOCABULARY RATHER THAN ASSUMED. The schema answers
-// which kinds run a container (application, worker, sandbox); this importer
-// wants the long-running one that listens on HTTP, which is `application`, and
-// it checks that the vocabulary still says so. If the kind is renamed or stops
-// running containers, this fails loudly at import instead of emitting a
-// document for a kind that cannot run it.
+// containerKind is what a compose service becomes: the long-running, HTTP-listening
+// container kind, checked against the vocabulary so a rename fails at import.
 const containerKind = "application"
 
 func targetKind() (string, error) {
@@ -139,7 +112,6 @@ type service struct {
 	ExtraHosts      []string  `yaml:"extra_hosts"`
 }
 
-// Import reads a compose file and produces v2 configuration plus every finding.
 func Import(data []byte) (importer.Result, error) {
 	kind, err := targetKind()
 	if err != nil {
@@ -206,10 +178,8 @@ func importVolumes(r *importer.Result, declared map[string]any) map[string]strin
 		}
 		out[source] = name
 
-		// SIZE IS REQUIRED AND COMPOSE DOES NOT SAY ONE. A compose volume grows
-		// into whatever the host has; a placed one has to be asked for. There
-		// is no honest number to invent, so the field is left for a person and
-		// reported.
+		// Size is required and compose has none; there is no honest number, so it is left for
+		// a person and reported.
 		r.Set(volumeKind, name, map[string]any{
 			"description": "imported from a compose named volume",
 		})
@@ -272,17 +242,12 @@ func importService(r *importer.Result, kind, source string, s service, volumes m
 
 	doc := map[string]any{}
 
-	// SOURCE IS A BLOCK AND `image` IS ONE OF ITS BRANCHES. The first version
-	// of this wrote `image:` at the top level, which is not a key this
-	// vocabulary has — the emitter refused to compile it, which is exactly what
-	// the emitter is for.
+	// `source` is a block and `image` is one of its branches.
 	switch {
 	case s.Image != "":
 		doc["source"] = map[string]any{"image": s.Image}
 	case !s.Build.IsZero():
-		// THE CONTEXT IS `source` AND NOT PART OF THE BUILD STANZA. A build
-		// says HOW to build; where in the repository is the resource's source,
-		// which is the same field an image-less workload would use anyway.
+		// The context is `source`, not part of the build stanza.
 		build := buildToDockerfile(s.Build)
 		if context, ok := build["context"].(string); ok && context != "" && context != "." {
 			doc["source"] = strings.TrimPrefix(context, "./")
@@ -297,10 +262,8 @@ func importService(r *importer.Result, kind, source string, s service, volumes m
 		return
 	}
 
-	// A COMMAND IS NOT CARRIED, and it was before this was checked against the
-	// vocabulary. There is no command field on a container workload: what runs
-	// is what the image says, which is the same reason an entrypoint override
-	// cannot be expressed.
+	// A command is not carried: a container workload has no command field; what runs is
+	// what the image says.
 	if cmd := stringsOf(s.Command); len(cmd) > 0 {
 		r.Add(importer.Finding{Resource: name, Key: "command", Level: importer.Blocked,
 			Code:   "NO_TAU_FEATURE:command",
@@ -322,9 +285,8 @@ func importService(r *importer.Result, kind, source string, s service, volumes m
 			Detail: "the image's own WORKDIR is what applies"})
 	}
 
-	// A VARIABLE IS A BLOCK, not a bare value: `at` says whether it exists at
-	// build or at run, and `as` says how it is delivered. Both are defaulted by
-	// the vocabulary, so what is written here is the value.
+	// A variable is a block; `at` and `as` are defaulted by the vocabulary, so only the
+	// value is written.
 	if env := envOf(s.Environment); len(env) > 0 {
 		variables := map[string]any{}
 		for _, key := range sortedKeys(env) {
@@ -363,11 +325,8 @@ func importService(r *importer.Result, kind, source string, s service, volumes m
 	if execution == nil {
 		execution = map[string]any{}
 	}
-	// THE VOCABULARY REQUIRES A CEILING AND COMPOSE DOES NOT, so one is chosen
-	// here and SAID. A compose service with no `deploy.resources.limits.memory`
-	// gets the host's memory, which is not a number tau can write — and
-	// emitting the resource without one produced a project that imported and
-	// then would not compile, which is the worst of the three outcomes.
+	// The vocabulary requires a memory ceiling and compose has none, so one is chosen and
+	// reported; omitting it produced a project that would not compile.
 	if _, ok := execution["memory"]; !ok {
 		execution["memory"] = defaultMemory
 		r.Add(importer.Finding{Resource: name, Key: "deploy.resources.limits.memory", Level: importer.Approximated,
@@ -538,17 +497,13 @@ func importMounts(r *importer.Result, resource string, declared yaml.Node, volum
 	return out
 }
 
-// importLimits carries the one part of compose's deploy stanza that has an
-// equivalent.
-//
-// REPLICAS IS REFUSED RATHER THAN DROPPED. It is the field somebody will look
-// for first, and its absence is a decision: how many instances run and where is
-// the platform's, not the config's.
-// defaultMemory is what a service with no declared limit is given. It is not a
-// measurement of anything: it is a number small enough to be noticed and large
-// enough to start most images, and the finding beside it says so.
+// defaultMemory is what a service with no declared limit gets: small enough to be
+// noticed, large enough to start most images, and reported.
 const defaultMemory = "512MB"
 
+// importLimits carries the one part of compose's deploy stanza that has an
+// equivalent. Replicas is refused rather than dropped: how many instances run is the
+// platform's.
 func importLimits(r *importer.Result, resource string, d deploy) map[string]any {
 	if d.isZero() {
 		return nil

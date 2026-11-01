@@ -1,19 +1,9 @@
-// Package importer is what every importer shares: how it says what it could not
-// bring across.
+// Package importer is what every importer shares: how it reports what it could not
+// bring across. The findings are the product: a corpus run counts them, and a field
+// blocked across importers is how missing vocabulary gets prioritised.
 //
-// The types are here rather than copied per source because the FINDINGS are the
-// product. A caller shows them, a corpus run counts them, and a field appearing
-// in three importers' blocked lists is how the missing vocabulary gets
-// prioritised. Three private copies of this type would make that impossible.
-//
-// # The two rules every importer holds
-//
-// AN IMPORTER NEVER EMITS A FIELD THE RUNTIME CANNOT HONOUR — not as a comment,
-// not as "advisory". Config carrying a setting into a system that ignores it is
-// worse than a refusal line, because the next person to read it believes it.
-//
-// EVERY BLOCKED FIELD NAMES THE CONTRACT THAT WOULD UNBLOCK IT. A bare
-// NO_TAU_FEATURE is a shrug; naming the field makes it a to-do item.
+// An importer never emits a field the runtime cannot honour, and every blocked field
+// names the contract that would unblock it.
 package importer
 
 import "sort"
@@ -34,15 +24,9 @@ const (
 	// with no runtime consequence for tau.
 	Ignored Level = "ignored"
 
-	// Elsewhere: the value is real and is NOT IN THIS FILE. It lives in the
-	// source platform's API, behind credentials.
-	//
-	// IT IS ITS OWN LEVEL BECAUSE IT IS NOT A GAP IN TAU. Filing it as Blocked
-	// would put it on the list of things to build, and there is nothing to
-	// build: the fix is an account connection, not a vocabulary. Vercel, Fly,
-	// Dokploy and Coolify all keep environment variables, secrets and domains
-	// outside their manifests, which is the whole reason a file-only import of
-	// those is partial rather than wrong.
+	// Elsewhere: the value is real and not in this file; it lives behind the source
+	// platform's API. Its own level because it is not a gap in tau: the fix is an account
+	// connection.
 	Elsewhere Level = "elsewhere"
 )
 
@@ -81,20 +65,14 @@ func (f Finding) String() string {
 	return s + " — " + f.Detail
 }
 
-// Resource is one thing an import produced: a v2 kind, a name, and the document
-// as the vocabulary spells it.
-//
-// THE KIND IS PER RESOURCE AND NOT PER RESULT. One compose file becomes
-// applications AND the volumes they mount; a Vercel project becomes functions
-// and a website. A Result that named one kind for all of them forced an
-// importer to either drop what did not fit or lie about it.
+// Resource is one thing an import produced: a v2 kind, a name, and the document. The
+// kind is per resource: one compose file becomes applications and their volumes.
 type Resource struct {
 	Kind string
 	Name string
 	Doc  map[string]any
 }
 
-// Result is what an import produced.
 type Result struct {
 	// Source names where it came from: "compose", "vercel", "fly".
 	Source string
@@ -107,7 +85,6 @@ type Result struct {
 	Findings []Finding
 }
 
-// Add records a finding.
 func (r *Result) Add(f Finding) { r.Findings = append(r.Findings, f) }
 
 // Set records an imported resource, replacing one already recorded under the
@@ -155,7 +132,6 @@ func (r *Result) Sort() {
 	})
 }
 
-// AtLevel is every finding at one level.
 func (r Result) AtLevel(l Level) []Finding {
 	var out []Finding
 	for _, f := range r.Findings {

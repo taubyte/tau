@@ -55,9 +55,6 @@ func hasFinding(r importer.Result, service, key string) bool {
 	return false
 }
 
-// TestTheTargetKindIsVerifiedAgainstTheVocabulary. If the kind is renamed or
-// stops running containers, the import fails loudly instead of emitting a
-// document for a kind that cannot run it.
 func TestTheTargetKindIsVerifiedAgainstTheVocabulary(t *testing.T) {
 	kind, err := targetKind()
 	require.NoError(t, err)
@@ -65,7 +62,6 @@ func TestTheTargetKindIsVerifiedAgainstTheVocabulary(t *testing.T) {
 		"the importer's target must be a kind the vocabulary says runs containers")
 }
 
-// TestWhatCarriesAcrossFaithfully — the accept rows of the fidelity matrix.
 func TestWhatCarriesAcrossFaithfully(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -79,10 +75,7 @@ services:
 `)
 	api := docOf(t, r, "api")
 
-	// `source` IS A BLOCK AND `image` IS ONE OF ITS BRANCHES. The first version
-	// of this importer wrote `image:` at the top level, which is not a key this
-	// vocabulary has, and nothing caught it until an emitter tried to compile
-	// the result.
+	// `source` is a block and `image` is one of its branches.
 	require.Equal(t, map[string]any{"image": "acme/api:1.2.3"}, api["source"])
 
 	// A VARIABLE IS A BLOCK, not a bare value: `at` says build or run and `as`
@@ -92,16 +85,12 @@ services:
 		"LOG_LEVEL":    map[string]any{"value": "debug"},
 	}, api["variables"])
 
-	// And a command and a working directory are NOT carried, because there is
-	// no field for either — see TestACommandIsNotCarried.
+	// A command and a working directory are not carried (TestACommandIsNotCarried).
 	require.NotContains(t, api, "command")
 	require.NotContains(t, api, "workdir")
 	require.NotContains(t, api, "working_dir")
 }
 
-// TestEnvironmentIsReadInBothSpellings. Compose accepts a mapping and a
-// KEY=VALUE list, and an importer that handled one would silently drop the
-// other's variables.
 func TestEnvironmentIsReadInBothSpellings(t *testing.T) {
 	list := importOf(t, `
 services:
@@ -130,9 +119,6 @@ services:
 	}, docOf(t, mapping, "api")["variables"])
 }
 
-// TestAValuelessVariableIsNotInvented. `KEY:` with no value means "take it from
-// my shell", and that value is not in this file — emitting an empty string
-// would be inventing configuration.
 func TestAValuelessVariableIsNotInvented(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -146,7 +132,6 @@ services:
 		docOf(t, r, "api")["variables"])
 }
 
-// TestABuildBecomesTheDockerfileBranchOfTheBuildStanza.
 func TestABuildBecomesTheDockerfileBranchOfTheBuildStanza(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -158,9 +143,7 @@ services:
 `)
 	api := docOf(t, r, "api")
 
-	// THE CONTEXT IS `source` AND NOT PART OF THE BUILD. A build says HOW; where
-	// in the repository is the resource's source, which is the field an
-	// image-less workload uses anyway.
+	// The context is `source`, not part of the build.
 	require.Equal(t, "api", api["source"])
 	require.Equal(t, map[string]any{
 		"dockerfile": map[string]any{
@@ -178,7 +161,6 @@ services:
 	require.NotContains(t, docOf(t, short, "api"), "build", "a context alone says nothing about how")
 }
 
-// TestAServiceWithNoSourceIsRefused rather than imported as an empty resource.
 func TestAServiceWithNoSourceIsRefused(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -193,9 +175,6 @@ services:
 	require.Equal(t, "NO_SOURCE", f.Code)
 }
 
-// TestEveryBlockedFieldNamesTheContractItNeeds. importers.md's second rule:
-// NO_TAU_FEATURE on its own is a shrug; naming the field makes it a to-do item,
-// and counting those across a corpus prioritises the vocabulary by evidence.
 func TestEveryBlockedFieldNamesTheContractItNeeds(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -229,9 +208,6 @@ services:
 	}
 }
 
-// TestNothingBlockedReachesTheEmittedConfig. importers.md's first rule: a
-// config carrying restart: always into a system with no restart controller is
-// worse than a refusal, because the next reader believes it.
 func TestNothingBlockedReachesTheEmittedConfig(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -259,14 +235,11 @@ services:
 	}
 	require.Equal(t, map[string]any{"image": "x"}, api["source"], "and what CAN be honoured is still there")
 
-	// The named volume IS carried now — it is a resource of its own and the
-	// service mounts it. See TestANamedVolumeBecomesAResource.
+	// The named volume is a resource of its own and the service mounts it.
 	require.Equal(t, map[string]any{"data": map[string]any{"ops": []string{"mount-rw"}, "path": "/var/lib/data"}},
 		api["volume"])
 }
 
-// TestPrivilegeEscalationIsRefusedOnPurpose, not merely unsupported — so the
-// finding says so rather than promising it later.
 func TestPrivilegeEscalationIsRefusedOnPurpose(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -285,9 +258,6 @@ services:
 	}
 }
 
-// TestPublishedPortsAreApproximatedLoudly. tau routes to a workload by name;
-// a host port mapping has no equivalent, and dropping it silently is how
-// somebody's published service becomes unreachable without a word.
 func TestPublishedPortsAreApproximatedLoudly(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -301,20 +271,14 @@ services:
 	require.Equal(t, importer.Approximated, f.Level)
 	require.Contains(t, f.Detail, "8080:80")
 
-	// THE CONTAINER PORT IS CARRIED and the host half is not. A tau port is
-	// NAMED so everything else refers to it without repeating a number, and
-	// compose ports have none — so the name is derived from the number,
-	// deterministically, because a name that changed between two imports would
-	// break every edge written against the first.
+	// The container port is carried under a name derived from its number; the host half
+	// is not.
 	require.Equal(t, map[string]any{
 		"port_80":   map[string]any{"number": 80},
 		"port_8443": map[string]any{"number": 8443},
 	}, docOf(t, r, "api")["ports"])
 }
 
-// TestACommandIsNotCarried. There is no command field on a container workload:
-// what runs is what the image says. This importer emitted one until the
-// vocabulary was actually consulted.
 func TestACommandIsNotCarried(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -330,9 +294,6 @@ services:
 	require.NotContains(t, docOf(t, r, "api"), "command")
 }
 
-// TestDependsOnConditionsAreNamed, because service_healthy and
-// service_completed_successfully are readiness and one-shot dependencies rather
-// than ordering, and reading them as ordering is the classic import bug.
 func TestDependsOnConditionsAreNamed(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -358,7 +319,6 @@ services:
 	require.Contains(t, finding(t, list, "api", "depends_on").Detail, "db")
 }
 
-// TestTopLevelConcernsAreReported.
 func TestTopLevelConcernsAreReported(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -378,9 +338,6 @@ configs:
 	require.Equal(t, importer.Blocked, finding(t, r, "", "configs").Level)
 }
 
-// TestMetadataIsIgnoredRatherThanBlocked. Labels and profiles cost the import
-// nothing, and reporting them at the same level as a missing health contract
-// would bury the findings that matter.
 func TestMetadataIsIgnoredRatherThanBlocked(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -397,8 +354,6 @@ services:
 	require.Empty(t, r.Blocked())
 }
 
-// TestEveryServiceIsImported, and the findings are stable so a diff of two
-// import runs is readable.
 func TestEveryServiceIsImportedInAStableOrder(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -414,10 +369,8 @@ services:
 `)
 	require.Len(t, r.Names("application"), 3)
 
-	// EVERY SERVICE APPEARS, IN ORDER, AND MORE THAN ONCE. Each carries a
-	// restart-policy finding and a defaulted-memory one, so what is asserted is
-	// the ORDER rather than the count — a service's findings sit together and
-	// the services are sorted.
+	// Each service carries several findings, so the order is asserted: a service's
+	// findings together, services sorted.
 	var order []string
 	for _, f := range r.Findings {
 		if len(order) == 0 || order[len(order)-1] != f.Resource {
@@ -444,8 +397,6 @@ func TestAFindingReadsAsASentence(t *testing.T) {
 	require.Equal(t, "NO_TAU_FEATURE:networks — not modelled", top.String())
 }
 
-// TestARealisticComposeFileImportsAndReportsEverything — the shape of what
-// somebody actually arrives with.
 func TestARealisticComposeFileImportsAndReportsEverything(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -501,10 +452,6 @@ volumes:
 	require.Subset(t, keys, []string{"restart", "depends_on", "healthcheck", "command"})
 }
 
-// TestANamedVolumeBecomesAResource. This is the difference between importing a
-// Postgres and importing a Postgres that loses everything the first time it is
-// re-placed, and it was reported as blocked until the vocabulary grew a volume
-// kind and this importer was told.
 func TestANamedVolumeBecomesAResource(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -532,9 +479,6 @@ volumes:
 	require.Equal(t, "VOLUME_HAS_NO_SIZE", f.Code)
 }
 
-// TestComposeDeclaresAVolumeByUsingIt. `- data:/var/lib/data` with no top-level
-// entry is a named volume; reading only the top-level block made every one of
-// them a bind mount.
 func TestAnImplicitlyDeclaredVolumeIsStillOne(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -547,7 +491,6 @@ services:
 	require.Contains(t, docOf(t, r, "db")["volume"], "data")
 }
 
-// TestABindMountIsHostStateAndDoesNotSurvivePlacement.
 func TestABindMountIsRefused(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -571,9 +514,6 @@ services:
 	require.Equal(t, "NO_TAU_FEATURE:anonymous-volume", f.Code)
 }
 
-// TestResourceLimitsCarryAndReplicasDoNot. deploy.resources.limits is the one
-// part with an equivalent; replicas is refused rather than dropped, because it
-// is the field somebody looks for first and its absence is a decision.
 func TestResourceLimitsCarry(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -597,8 +537,6 @@ services:
 	require.Equal(t, importer.Blocked, finding(t, r, "api", "deploy.resources.reservations").Level)
 }
 
-// TestSizesAreRespelled. Compose writes 512M where the vocabulary writes 512MB,
-// and both mean the same thing.
 func TestSizesAreRespelled(t *testing.T) {
 	for _, c := range []struct{ in, want string }{
 		{"512M", "512MB"},
@@ -628,12 +566,7 @@ services:
 `)
 	require.Equal(t, "CPUS_NOT_READABLE", finding(t, r, "api", "deploy.resources.limits.cpus").Code)
 
-	// THE UNREADABLE SIZE IS REPORTED AND THEN DEFAULTED, which is two
-	// findings on one field and both are wanted: the first says the value in
-	// the file could not be read, the second says what was written instead.
-	// Emitting no ceiling at all was the old behaviour and it produced a
-	// project that imported and would not compile — `execution/memory` is
-	// required on this kind.
+	// An unreadable size is reported and then defaulted: two findings on one field.
 	var codes []string
 	for _, f := range r.Findings {
 		if f.Resource == "api" && f.Key == "deploy.resources.limits.memory" {
@@ -648,7 +581,6 @@ services:
 	require.Equal(t, defaultMemory, execution["memory"])
 }
 
-// TestAPortSpecIsReadInEveryComposeSpelling.
 func TestAPortSpecIsReadInEveryComposeSpelling(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -672,10 +604,6 @@ services:
 	require.Equal(t, "PORT_NOT_A_NUMBER", finding(t, r, "api", "ports.8000-8010:8000-8010").Code)
 }
 
-// TestANameThatIsNotAV2NameIsRenamedLoudly. A compose service may be called
-// `my-api`; a v2 name may not. Renaming silently would produce config whose
-// names do not match the user's dashboards, and the first sign would be an edge
-// pointing at nothing.
 func TestANameThatIsNotAV2NameIsRenamedLoudly(t *testing.T) {
 	r := importOf(t, `
 services:

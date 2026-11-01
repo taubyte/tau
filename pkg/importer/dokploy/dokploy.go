@@ -1,26 +1,8 @@
-// Package dokploy imports a Dokploy application.
-//
-// # Dokploy's app definition IS a compose file
-//
-// Like Coolify, Dokploy hands the user's compose file to real `docker compose`
-// with no filtering, so this importer delegates to pkg/importer/compose and then
-// reports what Dokploy keeps that the file does not. A second parser for the
-// same format would drift from the first.
-//
-// # Two things Dokploy has that compose does not
-//
-// VARIABLE INHERITANCE. Dokploy resolves `${{project.KEY}}` and
-// `${{environment.KEY}}` from levels above the resource. A compose file full of
-// those references is not self-contained: the values are in the project and
-// environment rows, and importing the file alone gives you the references with
-// nothing behind them.
-//
-// AN OUT-OF-BAND FILE OVERLAY. A Dokploy `patch` writes files into the cloned
-// repository before the build runs. It is the hardest thing in this importer to
-// see, because the compose file and the repository both look complete and the
-// built image is neither of them. It cannot be inferred from anything in the
-// file, so it is reported unconditionally: a person importing a Dokploy app
-// needs to be asked whether they have one.
+// Package dokploy imports a Dokploy application. Its app definition is a compose file,
+// so this delegates to pkg/importer/compose and reports what Dokploy keeps elsewhere:
+// variables inherited from project and environment (`${{project.KEY}}`), and a
+// `patch` that writes files into the clone before the build, which cannot be seen in
+// the file and is reported unconditionally.
 package dokploy
 
 import (

@@ -6,10 +6,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestElsewhereIsNotBlocked. The distinction is the point of the level: a value
-// that lives in the source platform's API is not a gap in tau's vocabulary, and
-// filing it as Blocked would put "connect your account" on the list of things to
-// build.
 func TestElsewhereIsNotBlocked(t *testing.T) {
 	var r Result
 	r.Add(Finding{Key: "healthcheck", Level: Blocked, Code: "NO_TAU_FEATURE:healthcheck",
@@ -27,7 +23,6 @@ func TestElsewhereIsNotBlocked(t *testing.T) {
 	require.Empty(t, r.AtLevel(Approximated))
 }
 
-// TestAnElsewhereFindingNamesNoContract, because there is nothing to build.
 func TestAnElsewhereFindingNamesNoContract(t *testing.T) {
 	f := Finding{Key: "env", Level: Elsewhere, Code: "SOURCE_WRITE_ONLY:secret",
 		Detail: "values are write-only in the source"}
@@ -43,8 +38,6 @@ func TestAFindingReadsAsASentence(t *testing.T) {
 			Detail: "no vocabulary"}.String())
 }
 
-// TestFindingsSortStably, so two runs of one importer diff cleanly and a corpus
-// report reads the same twice.
 func TestFindingsSortStably(t *testing.T) {
 	var r Result
 	r.Add(Finding{Resource: "web", Key: "restart"})

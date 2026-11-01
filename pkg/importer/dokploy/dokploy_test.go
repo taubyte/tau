@@ -55,9 +55,6 @@ services:
 	require.Equal(t, importer.Blocked, finding(t, r, "restart").Level)
 }
 
-// TestInheritedVariablesAreNamed. A compose file full of ${{project.KEY}} is not
-// self-contained: the values are a level up, and importing the file alone gives
-// the references with nothing behind them.
 func TestInheritedVariablesAreNamed(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -74,8 +71,6 @@ services:
 		"whitespace inside the braces is Dokploy-legal and must still match")
 }
 
-// TestAFileWithNoInheritanceSaysNothingAboutIt. Reporting it unconditionally
-// would train people to skip the findings.
 func TestAFileWithNoInheritanceSaysNothingAboutIt(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -87,8 +82,6 @@ services:
 	require.False(t, has(r, "inherited_variables"))
 }
 
-// TestComposesOwnInterpolationIsNotMistakenForDokploys. ${VAR} is compose's and
-// is reported through that path; only ${{...}} is a level-up reference.
 func TestComposesOwnInterpolationIsNotMistakenForDokploys(t *testing.T) {
 	r := importOf(t, `
 services:
@@ -98,10 +91,6 @@ services:
 	require.False(t, has(r, "inherited_variables"))
 }
 
-// TestTheFileOverlayIsReportedUnconditionally. A patch writes files into the
-// cloned repo before the build, so the compose file and the repository can both
-// look complete and the built image be neither. Nothing reveals one, so the
-// only way to know is to ask.
 func TestTheFileOverlayIsReportedUnconditionally(t *testing.T) {
 	r := importOf(t, "services:\n  api:\n    image: x\n")
 
