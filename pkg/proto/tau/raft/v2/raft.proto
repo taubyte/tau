@@ -24,6 +24,8 @@ syntax = "proto3";
 // in the clear and a peer without the key cannot be understood at all.
 package tau.raft.v2;
 
+import "tau/raft/v2/state.proto";
+
 service RaftService {
   rpc Set(SetRequest) returns (SetResponse);
   rpc Get(GetRequest) returns (GetResponse);
@@ -107,8 +109,8 @@ message ClusterInfoResponse {
 message ExportFSMRequest {}
 
 message ExportFSMResponse {
-  // The FSM's entries, as pkg/raft encodes them for its own snapshots.
-  bytes fsm_state = 1;
+  // Every entry the FSM holds, tombstones included.
+  map<string, Entry> entries = 1;
   uint64 clock = 2;
 }
 

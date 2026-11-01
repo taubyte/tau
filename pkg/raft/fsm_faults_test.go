@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/hashicorp/raft"
 	ds "github.com/ipfs/go-datastore"
 )
@@ -15,7 +14,7 @@ const faultPrefix = "/raft/test"
 func applied(t *testing.T, fsm FSM, cmd Command) FSMResponse {
 	t.Helper()
 
-	data, err := cbor.Marshal(cmd)
+	data, err := encodeCommand(cmd)
 	if err != nil {
 		t.Fatalf("encoding the command: %v", err)
 	}
@@ -154,8 +153,8 @@ func TestARefusedBatchDoesNotSpendTheClock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading back the entry: %v", err)
 	}
-	var entry CRDTEntry
-	if err := cbor.Unmarshal(raw, &entry); err != nil {
+	entry, err := decodeFSMEntry(raw)
+	if err != nil {
 		t.Fatalf("decoding the entry: %v", err)
 	}
 	if entry.Timestamp != 1 {

@@ -174,7 +174,7 @@ func TestSnapshotStore_ADamagedSnapshotDoesNotOpen(t *testing.T) {
 	snaps, dir := newSnapshotStoreIn(t)
 
 	corrupt := writtenSnapshot(t, snaps, 5)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, corrupt, "meta.cbor"), []byte{0xff, 0x00}, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, corrupt, metaFile), []byte{0xff, 0x00}, 0o644))
 	meta, state, err := snaps.Open(corrupt)
 	require.Error(t, err)
 	require.Nil(t, meta)
@@ -208,7 +208,7 @@ func TestSnapshotSink_ASnapshotThatCannotBeWrittenIsNotTaken(t *testing.T) {
 		snaps, dir := newSnapshotStoreIn(t)
 		sink, err := snaps.Create(raft.SnapshotVersionMax, 5, 1, raft.Configuration{}, 1, nil)
 		require.NoError(t, err)
-		require.NoError(t, os.Mkdir(filepath.Join(dir, sink.ID(), "meta.cbor"), 0o755))
+		require.NoError(t, os.Mkdir(filepath.Join(dir, sink.ID(), metaFile), 0o755))
 
 		require.Error(t, sink.Close())
 		listed, err := snaps.List()

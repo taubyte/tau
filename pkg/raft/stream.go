@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/fxamacker/cbor/v2"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -346,11 +345,6 @@ func (s *raftStreamService) ExportFSM(ctx context.Context, req *connect.Request[
 		return nil, fmt.Errorf("exporting FSM state: %w", err)
 	}
 
-	stateBytes, err := cbor.Marshal(state)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling FSM state: %w", err)
-	}
-
 	fsm := m.fsm.(*kvFSM)
 	fsm.mu.RLock()
 	clock := fsm.clock
@@ -358,7 +352,7 @@ func (s *raftStreamService) ExportFSM(ctx context.Context, req *connect.Request[
 
 	streamLogger.Infof("[%s] exportFSM: %d keys, clock=%d", s.cluster.node.ID().ShortString(), len(state), clock)
 
-	return connect.NewResponse(&raftv2.ExportFSMResponse{FsmState: stateBytes, Clock: clock}), nil
+	return connect.NewResponse(&raftv2.ExportFSMResponse{Entries: entriesProto(state), Clock: clock}), nil
 }
 
 // HealAck wakes losers blocked in yieldAndRejoin after the winner merged.

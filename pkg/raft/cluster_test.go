@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/fxamacker/cbor/v2"
 	"github.com/hashicorp/raft"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -735,7 +734,7 @@ func TestCluster_Apply(t *testing.T) {
 		Type: CommandSet,
 		Set:  &SetCommand{Key: "applytest", Value: []byte("applyvalue")},
 	}
-	data, _ := cbor.Marshal(cmd)
+	data, _ := encodeCommand(cmd)
 
 	_, err = cluster.Apply(data, time.Second)
 	if err != nil {
@@ -968,7 +967,7 @@ func TestCluster_Apply_InvalidCommand(t *testing.T) {
 		require.NoError(t, err, "failed to wait for leader")
 	}
 
-	resp, err := cluster.Apply([]byte("invalid cbor data"), time.Second)
+	resp, err := cluster.Apply([]byte("not a command"), time.Second)
 	if err != nil {
 		t.Logf("Apply error: %v", err)
 	}
@@ -1225,7 +1224,7 @@ func TestFsmAdapter_Apply_ViaCluster(t *testing.T) {
 		Type: CommandSet,
 		Set:  &SetCommand{Key: "adapter-key", Value: []byte("adapter-value")},
 	}
-	data, err := cbor.Marshal(cmd)
+	data, err := encodeCommand(cmd)
 	require.NoError(t, err)
 
 	log := &raft.Log{Data: data, Index: 1}
@@ -1421,7 +1420,7 @@ func TestCluster_Apply_InvalidTimeout(t *testing.T) {
 		Type: CommandSet,
 		Set:  &SetCommand{Key: "test", Value: []byte("value")},
 	}
-	data, _ := cbor.Marshal(cmd)
+	data, _ := encodeCommand(cmd)
 
 	_, err = cluster.Apply(data, 0)
 	require.Error(t, err, "Apply with timeout=0 should fail")
@@ -1442,7 +1441,7 @@ func TestCluster_Apply_InvalidTimeout(t *testing.T) {
 		Type: CommandSet,
 		Set:  &SetCommand{Key: "test2", Value: []byte("value2")},
 	}
-	data2, _ := cbor.Marshal(cmd2)
+	data2, _ := encodeCommand(cmd2)
 	_, err = cluster.Apply(data2, time.Second)
 	require.NoError(t, err, "Apply with valid timeout should succeed")
 
@@ -1466,7 +1465,7 @@ func TestCluster_ApplyAsLeader(t *testing.T) {
 		Type: CommandSet,
 		Set:  &SetCommand{Key: "apply-test", Value: []byte("apply-value")},
 	}
-	cmdBytes, _ := cbor.Marshal(cmd)
+	cmdBytes, _ := encodeCommand(cmd)
 
 	resp, err := cl.Apply(cmdBytes, time.Second)
 	require.NoError(t, err)

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/fxamacker/cbor/v2"
 	"github.com/hashicorp/raft"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -304,10 +303,7 @@ func (c *client) ExportFSM(target peer.ID) (map[string]CRDTEntry, uint64, error)
 		return nil, 0, fmt.Errorf("exportFSM failed: %w", err)
 	}
 
-	var state map[string]CRDTEntry
-	if err := cbor.Unmarshal(res.Msg.GetFsmState(), &state); err != nil {
-		return nil, 0, fmt.Errorf("unmarshaling FSM state: %w", err)
-	}
+	state := entriesFrom(res.Msg.GetEntries())
 
 	clientLogger.Infof("exportFSM from %s: %d keys, clock=%d", target.ShortString(), len(state), res.Msg.GetClock())
 

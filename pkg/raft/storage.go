@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/hashicorp/raft"
 	"github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
@@ -120,7 +119,7 @@ func (l *datastoreLogStore) GetLog(index uint64, log *raft.Log) error {
 		return err
 	}
 
-	return cbor.Unmarshal(data, log)
+	return decodeLog(data, log)
 }
 
 // StoreLog stores a single log entry
@@ -139,7 +138,7 @@ func (l *datastoreLogStore) StoreLogs(logs []*raft.Log) error {
 	}
 
 	for _, log := range logs {
-		data, err := cbor.Marshal(log)
+		data, err := encodeLog(log)
 		if err != nil {
 			return err
 		}
@@ -252,15 +251,18 @@ func newSnapshotStore(dir string, retain int) (*fileSnapshotStore, error) {
 	}, nil
 }
 
+// metaFile is a snapshot's metadata, beside its state.bin.
+const metaFile = "meta.pb"
+
 // snapshotMeta stores metadata about a snapshot
 type snapshotMeta struct {
-	ID                 string               `cbor:"1,keyasint"`
-	Index              uint64               `cbor:"2,keyasint"`
-	Term               uint64               `cbor:"3,keyasint"`
-	Configuration      raft.Configuration   `cbor:"4,keyasint"`
-	ConfigurationIndex uint64               `cbor:"5,keyasint"`
-	Size               int64                `cbor:"6,keyasint"`
-	Version            raft.SnapshotVersion `cbor:"7,keyasint"`
+	ID                 string
+	Index              uint64
+	Term               uint64
+	Configuration      raft.Configuration
+	ConfigurationIndex uint64
+	Size               int64
+	Version            raft.SnapshotVersion
 }
 
 func (f *fileSnapshotStore) snapshotDir(id string) string {
@@ -316,14 +318,14 @@ func (f *fileSnapshotStore) List() ([]*raft.SnapshotMeta, error) {
 			continue
 		}
 
-		metaPath := filepath.Join(f.dir, entry.Name(), "meta.cbor")
+		metaPath := filepath.Join(f.dir, entry.Name(), metaFile)
 		data, err := os.ReadFile(metaPath)
 		if err != nil {
 			continue
 		}
 
-		var meta snapshotMeta
-		if err := cbor.Unmarshal(data, &meta); err != nil {
+		meta, err := decodeMeta(data)
+		if err != nil {
 			continue
 		}
 
@@ -352,14 +354,14 @@ func (f *fileSnapshotStore) Open(id string) (*raft.SnapshotMeta, io.ReadCloser, 
 
 	dir := f.snapshotDir(id)
 
-	metaPath := filepath.Join(dir, "meta.cbor")
+	metaPath := filepath.Join(dir, metaFile)
 	metaData, err := os.ReadFile(metaPath)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	var meta snapshotMeta
-	if err := cbor.Unmarshal(metaData, &meta); err != nil {
+	meta, err := decodeMeta(metaData)
+	if err != nil {
 		return nil, nil, err
 	}
 
@@ -413,12 +415,12 @@ func (s *fileSnapshotSink) Close() error {
 	s.meta.Size = int64(s.buf.Len())
 
 	// Write metadata
-	metaData, err := cbor.Marshal(s.meta)
+	metaData, err := encodeMeta(s.meta)
 	if err != nil {
 		return err
 	}
 
-	metaPath := filepath.Join(s.dir, "meta.cbor")
+	metaPath := filepath.Join(s.dir, metaFile)
 	if err := os.WriteFile(metaPath, metaData, 0644); err != nil {
 		return err
 	}

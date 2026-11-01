@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/hashicorp/raft"
 	peercore "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/p2p/keypair"
@@ -674,7 +673,7 @@ func TestCluster_MultiNode_Apply_InvalidTimeout_Integration(t *testing.T) {
 		Type: CommandSet,
 		Set:  &SetCommand{Key: "apply-timeout-key", Value: []byte("apply-timeout-value")},
 	}
-	data, _ := cbor.Marshal(cmd)
+	data, _ := encodeCommand(cmd)
 
 	_, err = cluster1.Apply(data, 0)
 	assert.Assert(t, err != nil, "Apply with timeout=0 should fail")
@@ -694,7 +693,7 @@ func TestCluster_MultiNode_Apply_InvalidTimeout_Integration(t *testing.T) {
 		Type: CommandSet,
 		Set:  &SetCommand{Key: "apply-timeout-key2", Value: []byte("apply-timeout-value2")},
 	}
-	data2, _ := cbor.Marshal(cmd2)
+	data2, _ := encodeCommand(cmd2)
 	err = onLeader(t, clusters, func(leader Cluster) error {
 		_, err := leader.Apply(data2, time.Second)
 		return err
@@ -710,7 +709,7 @@ func TestCluster_MultiNode_Apply_InvalidTimeout_Integration(t *testing.T) {
 		Type: CommandSet,
 		Set:  &SetCommand{Key: "apply-timeout-key3", Value: []byte("apply-timeout-value3")},
 	}
-	data3, _ := cbor.Marshal(cmd3)
+	data3, _ := encodeCommand(cmd3)
 	err = onLeader(t, clusters, func(leader Cluster) error {
 		_, err := leader.Apply(data3, MaxApplyTimeout)
 		return err

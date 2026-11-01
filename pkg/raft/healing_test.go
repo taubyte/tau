@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/fxamacker/cbor/v2"
 	"github.com/hashicorp/raft"
 	ds "github.com/ipfs/go-datastore"
 	query "github.com/ipfs/go-datastore/query"
@@ -781,7 +780,7 @@ func TestHealing_AMergeNeedsTheLeadAndTheOtherSide(t *testing.T) {
 // sent, each of which would have it wipe that write.
 type exportingPeer struct {
 	raftv2connect.UnimplementedRaftServiceHandler
-	state    []byte
+	state    map[string]CRDTEntry
 	refuse   error
 	healAcks atomic.Int32
 }
@@ -790,7 +789,7 @@ func (p *exportingPeer) ExportFSM(context.Context, *connect.Request[raftv2.Expor
 	if p.refuse != nil {
 		return nil, p.refuse
 	}
-	return connect.NewResponse(&raftv2.ExportFSMResponse{FsmState: p.state, Clock: 1}), nil
+	return connect.NewResponse(&raftv2.ExportFSMResponse{Entries: entriesProto(p.state), Clock: 1}), nil
 }
 
 func (p *exportingPeer) HealAck(context.Context, *connect.Request[raftv2.HealAckRequest]) (*connect.Response[raftv2.HealAckResponse], error) {
@@ -826,13 +825,11 @@ func facing(t *testing.T, namespace string, store ds.Batching, other raftv2conne
 	return winner, otherNode.ID()
 }
 
-func oneWriteOfTheirs(t *testing.T) []byte {
+func oneWriteOfTheirs(t *testing.T) map[string]CRDTEntry {
 	t.Helper()
-	state, err := cbor.Marshal(map[string]CRDTEntry{
+	return map[string]CRDTEntry{
 		"theirs": {Value: []byte("v"), Timestamp: 1, WallClock: time.Now().UnixNano()},
-	})
-	require.NoError(t, err)
-	return state
+	}
 }
 
 func TestHealing_AMergeTheStoreRefusesTellsNobodyToYield(t *testing.T) {
@@ -929,11 +926,7 @@ func (p *joiningPeer) ClusterInfo(context.Context, *connect.Request[raftv2.Clust
 
 func (p *joiningPeer) ExportFSM(context.Context, *connect.Request[raftv2.ExportFSMRequest]) (*connect.Response[raftv2.ExportFSMResponse], error) {
 	p.exports.Add(1)
-	state, err := cbor.Marshal(map[string]CRDTEntry{})
-	if err != nil {
-		return nil, err
-	}
-	return connect.NewResponse(&raftv2.ExportFSMResponse{FsmState: state}), nil
+	return connect.NewResponse(&raftv2.ExportFSMResponse{}), nil
 }
 
 func (p *joiningPeer) HealAck(context.Context, *connect.Request[raftv2.HealAckRequest]) (*connect.Response[raftv2.HealAckResponse], error) {

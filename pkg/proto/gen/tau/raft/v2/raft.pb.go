@@ -770,9 +770,9 @@ func (*ExportFSMRequest) Descriptor() ([]byte, []int) {
 
 type ExportFSMResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The FSM's entries, as pkg/raft encodes them for its own snapshots.
-	FsmState      []byte `protobuf:"bytes,1,opt,name=fsm_state,json=fsmState,proto3" json:"fsm_state,omitempty"`
-	Clock         uint64 `protobuf:"varint,2,opt,name=clock,proto3" json:"clock,omitempty"`
+	// Every entry the FSM holds, tombstones included.
+	Entries       map[string]*Entry `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Clock         uint64            `protobuf:"varint,2,opt,name=clock,proto3" json:"clock,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -807,9 +807,9 @@ func (*ExportFSMResponse) Descriptor() ([]byte, []int) {
 	return file_tau_raft_v2_raft_proto_rawDescGZIP(), []int{15}
 }
 
-func (x *ExportFSMResponse) GetFsmState() []byte {
+func (x *ExportFSMResponse) GetEntries() map[string]*Entry {
 	if x != nil {
-		return x.FsmState
+		return x.Entries
 	}
 	return nil
 }
@@ -897,7 +897,7 @@ var File_tau_raft_v2_raft_proto protoreflect.FileDescriptor
 
 const file_tau_raft_v2_raft_proto_rawDesc = "" +
 	"\n" +
-	"\x16tau/raft/v2/raft.proto\x12\vtau.raft.v2\"b\n" +
+	"\x16tau/raft/v2/raft.proto\x12\vtau.raft.v2\x1a\x17tau/raft/v2/state.proto\"b\n" +
 	"\n" +
 	"SetRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x19\n" +
@@ -949,10 +949,13 @@ const file_tau_raft_v2_raft_proto_rawDesc = "" +
 	"last_index\x18\x03 \x01(\x04R\tlastIndex\x12!\n" +
 	"\fmember_count\x18\x04 \x01(\x03R\vmemberCount\x12\x17\n" +
 	"\anode_id\x18\x05 \x01(\tR\x06nodeId\"\x12\n" +
-	"\x10ExportFSMRequest\"F\n" +
-	"\x11ExportFSMResponse\x12\x1b\n" +
-	"\tfsm_state\x18\x01 \x01(\fR\bfsmState\x12\x14\n" +
-	"\x05clock\x18\x02 \x01(\x04R\x05clock\"\x10\n" +
+	"\x10ExportFSMRequest\"\xc0\x01\n" +
+	"\x11ExportFSMResponse\x12E\n" +
+	"\aentries\x18\x01 \x03(\v2+.tau.raft.v2.ExportFSMResponse.EntriesEntryR\aentries\x12\x14\n" +
+	"\x05clock\x18\x02 \x01(\x04R\x05clock\x1aN\n" +
+	"\fEntriesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12(\n" +
+	"\x05value\x18\x02 \x01(\v2\x12.tau.raft.v2.EntryR\x05value:\x028\x01\"\x10\n" +
 	"\x0eHealAckRequest\"\x11\n" +
 	"\x0fHealAckResponse2\x89\x05\n" +
 	"\vRaftService\x128\n" +
@@ -979,7 +982,7 @@ func file_tau_raft_v2_raft_proto_rawDescGZIP() []byte {
 	return file_tau_raft_v2_raft_proto_rawDescData
 }
 
-var file_tau_raft_v2_raft_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_tau_raft_v2_raft_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_tau_raft_v2_raft_proto_goTypes = []any{
 	(*SetRequest)(nil),            // 0: tau.raft.v2.SetRequest
 	(*SetResponse)(nil),           // 1: tau.raft.v2.SetResponse
@@ -1001,33 +1004,37 @@ var file_tau_raft_v2_raft_proto_goTypes = []any{
 	(*HealAckResponse)(nil),       // 17: tau.raft.v2.HealAckResponse
 	nil,                           // 18: tau.raft.v2.ExchangePeersRequest.SeenAtEntry
 	nil,                           // 19: tau.raft.v2.ExchangePeersResponse.SeenAtEntry
+	nil,                           // 20: tau.raft.v2.ExportFSMResponse.EntriesEntry
+	(*Entry)(nil),                 // 21: tau.raft.v2.Entry
 }
 var file_tau_raft_v2_raft_proto_depIdxs = []int32{
 	18, // 0: tau.raft.v2.ExchangePeersRequest.seen_at:type_name -> tau.raft.v2.ExchangePeersRequest.SeenAtEntry
 	19, // 1: tau.raft.v2.ExchangePeersResponse.seen_at:type_name -> tau.raft.v2.ExchangePeersResponse.SeenAtEntry
-	0,  // 2: tau.raft.v2.RaftService.Set:input_type -> tau.raft.v2.SetRequest
-	2,  // 3: tau.raft.v2.RaftService.Get:input_type -> tau.raft.v2.GetRequest
-	4,  // 4: tau.raft.v2.RaftService.Delete:input_type -> tau.raft.v2.DeleteRequest
-	6,  // 5: tau.raft.v2.RaftService.Keys:input_type -> tau.raft.v2.KeysRequest
-	8,  // 6: tau.raft.v2.RaftService.ExchangePeers:input_type -> tau.raft.v2.ExchangePeersRequest
-	10, // 7: tau.raft.v2.RaftService.JoinVoter:input_type -> tau.raft.v2.JoinVoterRequest
-	12, // 8: tau.raft.v2.RaftService.ClusterInfo:input_type -> tau.raft.v2.ClusterInfoRequest
-	14, // 9: tau.raft.v2.RaftService.ExportFSM:input_type -> tau.raft.v2.ExportFSMRequest
-	16, // 10: tau.raft.v2.RaftService.HealAck:input_type -> tau.raft.v2.HealAckRequest
-	1,  // 11: tau.raft.v2.RaftService.Set:output_type -> tau.raft.v2.SetResponse
-	3,  // 12: tau.raft.v2.RaftService.Get:output_type -> tau.raft.v2.GetResponse
-	5,  // 13: tau.raft.v2.RaftService.Delete:output_type -> tau.raft.v2.DeleteResponse
-	7,  // 14: tau.raft.v2.RaftService.Keys:output_type -> tau.raft.v2.KeysResponse
-	9,  // 15: tau.raft.v2.RaftService.ExchangePeers:output_type -> tau.raft.v2.ExchangePeersResponse
-	11, // 16: tau.raft.v2.RaftService.JoinVoter:output_type -> tau.raft.v2.JoinVoterResponse
-	13, // 17: tau.raft.v2.RaftService.ClusterInfo:output_type -> tau.raft.v2.ClusterInfoResponse
-	15, // 18: tau.raft.v2.RaftService.ExportFSM:output_type -> tau.raft.v2.ExportFSMResponse
-	17, // 19: tau.raft.v2.RaftService.HealAck:output_type -> tau.raft.v2.HealAckResponse
-	11, // [11:20] is the sub-list for method output_type
-	2,  // [2:11] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	20, // 2: tau.raft.v2.ExportFSMResponse.entries:type_name -> tau.raft.v2.ExportFSMResponse.EntriesEntry
+	21, // 3: tau.raft.v2.ExportFSMResponse.EntriesEntry.value:type_name -> tau.raft.v2.Entry
+	0,  // 4: tau.raft.v2.RaftService.Set:input_type -> tau.raft.v2.SetRequest
+	2,  // 5: tau.raft.v2.RaftService.Get:input_type -> tau.raft.v2.GetRequest
+	4,  // 6: tau.raft.v2.RaftService.Delete:input_type -> tau.raft.v2.DeleteRequest
+	6,  // 7: tau.raft.v2.RaftService.Keys:input_type -> tau.raft.v2.KeysRequest
+	8,  // 8: tau.raft.v2.RaftService.ExchangePeers:input_type -> tau.raft.v2.ExchangePeersRequest
+	10, // 9: tau.raft.v2.RaftService.JoinVoter:input_type -> tau.raft.v2.JoinVoterRequest
+	12, // 10: tau.raft.v2.RaftService.ClusterInfo:input_type -> tau.raft.v2.ClusterInfoRequest
+	14, // 11: tau.raft.v2.RaftService.ExportFSM:input_type -> tau.raft.v2.ExportFSMRequest
+	16, // 12: tau.raft.v2.RaftService.HealAck:input_type -> tau.raft.v2.HealAckRequest
+	1,  // 13: tau.raft.v2.RaftService.Set:output_type -> tau.raft.v2.SetResponse
+	3,  // 14: tau.raft.v2.RaftService.Get:output_type -> tau.raft.v2.GetResponse
+	5,  // 15: tau.raft.v2.RaftService.Delete:output_type -> tau.raft.v2.DeleteResponse
+	7,  // 16: tau.raft.v2.RaftService.Keys:output_type -> tau.raft.v2.KeysResponse
+	9,  // 17: tau.raft.v2.RaftService.ExchangePeers:output_type -> tau.raft.v2.ExchangePeersResponse
+	11, // 18: tau.raft.v2.RaftService.JoinVoter:output_type -> tau.raft.v2.JoinVoterResponse
+	13, // 19: tau.raft.v2.RaftService.ClusterInfo:output_type -> tau.raft.v2.ClusterInfoResponse
+	15, // 20: tau.raft.v2.RaftService.ExportFSM:output_type -> tau.raft.v2.ExportFSMResponse
+	17, // 21: tau.raft.v2.RaftService.HealAck:output_type -> tau.raft.v2.HealAckResponse
+	13, // [13:22] is the sub-list for method output_type
+	4,  // [4:13] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_tau_raft_v2_raft_proto_init() }
@@ -1035,6 +1042,7 @@ func file_tau_raft_v2_raft_proto_init() {
 	if File_tau_raft_v2_raft_proto != nil {
 		return
 	}
+	file_tau_raft_v2_state_proto_init()
 	file_tau_raft_v2_raft_proto_msgTypes[0].OneofWrappers = []any{}
 	file_tau_raft_v2_raft_proto_msgTypes[2].OneofWrappers = []any{}
 	type x struct{}
@@ -1043,7 +1051,7 @@ func file_tau_raft_v2_raft_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tau_raft_v2_raft_proto_rawDesc), len(file_tau_raft_v2_raft_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   20,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

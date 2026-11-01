@@ -476,7 +476,7 @@ func TestSnapshotStore_List_EmptyDir(t *testing.T) {
 		t.Fatalf("failed to create dir: %v", err)
 	}
 
-	// List should ignore directories without meta.cbor
+	// List should ignore directories without a meta file
 	snapshots, err := snapStore.List()
 	if err != nil {
 		t.Fatalf("failed to list: %v", err)
@@ -669,7 +669,7 @@ func TestSnapshotStore_List_CorruptedMeta(t *testing.T) {
 	}
 
 	// Create invalid meta file
-	if err := os.WriteFile(filepath.Join(corruptedDir, "meta.cbor"), []byte("invalid cbor"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(corruptedDir, metaFile), []byte("not a meta record"), 0644); err != nil {
 		t.Fatalf("failed to create corrupted meta: %v", err)
 	}
 

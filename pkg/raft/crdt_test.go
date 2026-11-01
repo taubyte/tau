@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/hashicorp/raft"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -43,7 +42,7 @@ func TestCommandMerge_LWW(t *testing.T) {
 		Type: CommandSet,
 		Set:  &SetCommand{Key: "key1", Value: []byte("local")},
 	}
-	data, _ := cbor.Marshal(setCmd)
+	data, _ := encodeCommand(setCmd)
 	fsm.Apply(&raft.Log{Data: data, Index: 1})
 
 	val, found := fsm.Get("key1")
@@ -75,7 +74,7 @@ func TestCommandMerge_LowerTimestampLoses(t *testing.T) {
 		Type: CommandSet,
 		Set:  &SetCommand{Key: "key1", Value: []byte("local")},
 	}
-	data, _ := cbor.Marshal(setCmd)
+	data, _ := encodeCommand(setCmd)
 	fsm.Apply(&raft.Log{Data: data, Index: 1})
 
 	delta := map[string]CRDTEntry{
@@ -98,7 +97,7 @@ func TestCommandMerge_Tombstone(t *testing.T) {
 		Type: CommandSet,
 		Set:  &SetCommand{Key: "key1", Value: []byte("alive")},
 	}
-	data, _ := cbor.Marshal(setCmd)
+	data, _ := encodeCommand(setCmd)
 	fsm.Apply(&raft.Log{Data: data, Index: 1})
 
 	delta := map[string]CRDTEntry{
@@ -124,7 +123,7 @@ func TestExportState(t *testing.T) {
 			Type: CommandSet,
 			Set:  &SetCommand{Key: key, Value: []byte("val-" + key)},
 		}
-		data, _ := cbor.Marshal(cmd)
+		data, _ := encodeCommand(cmd)
 		fsm.Apply(&raft.Log{Data: data, Index: uint64(i + 1)})
 	}
 
@@ -144,11 +143,11 @@ func TestFSM_Delete_CreatesTombstone(t *testing.T) {
 	fsm := newKVFSM(t.Context(), store, "/raft/test")
 
 	setCmd := Command{Type: CommandSet, Set: &SetCommand{Key: "k", Value: []byte("v")}}
-	data, _ := cbor.Marshal(setCmd)
+	data, _ := encodeCommand(setCmd)
 	fsm.Apply(&raft.Log{Data: data, Index: 1})
 
 	delCmd := Command{Type: CommandDelete, Delete: &DeleteCommand{Key: "k"}}
-	data, _ = cbor.Marshal(delCmd)
+	data, _ = encodeCommand(delCmd)
 	fsm.Apply(&raft.Log{Data: data, Index: 2})
 
 	_, found := fsm.Get("k")
@@ -171,7 +170,7 @@ func TestFSM_LamportClock_Increments(t *testing.T) {
 			Type: CommandSet,
 			Set:  &SetCommand{Key: "k", Value: []byte("v")},
 		}
-		data, _ := cbor.Marshal(cmd)
+		data, _ := encodeCommand(cmd)
 		fsm.Apply(&raft.Log{Data: data, Index: uint64(i + 1)})
 	}
 
@@ -190,7 +189,7 @@ func TestFSM_SnapshotRestorePreservesClock(t *testing.T) {
 			Type: CommandSet,
 			Set:  &SetCommand{Key: "k", Value: []byte("v")},
 		}
-		data, _ := cbor.Marshal(cmd)
+		data, _ := encodeCommand(cmd)
 		fsm1.Apply(&raft.Log{Data: data, Index: uint64(i + 1)})
 	}
 
@@ -209,7 +208,7 @@ func TestFSM_SnapshotRestorePreservesClock(t *testing.T) {
 		Type: CommandSet,
 		Set:  &SetCommand{Key: "new", Value: []byte("v")},
 	}
-	data, _ := cbor.Marshal(cmd)
+	data, _ := encodeCommand(cmd)
 	fsm2.Apply(&raft.Log{Data: data, Index: 4})
 
 	state, err := fsm2.ExportState()
@@ -256,7 +255,7 @@ func TestCommandMerge_Empty(t *testing.T) {
 		Type:  CommandMerge,
 		Merge: &MergeCommand{Delta: map[string]CRDTEntry{}},
 	}
-	data, _ := cbor.Marshal(mergeCmd)
+	data, _ := encodeCommand(mergeCmd)
 	resp := fsm.Apply(&raft.Log{Data: data, Index: 1})
 	fsmResp := resp.(FSMResponse)
 	assert.Error(t, fsmResp.Error)
@@ -273,7 +272,7 @@ func TestCommandMerge_AdvancesClock(t *testing.T) {
 	fsm.Apply(&raft.Log{Data: mergeData, Index: 1})
 
 	cmd := Command{Type: CommandSet, Set: &SetCommand{Key: "k2", Value: []byte("v2")}}
-	data, _ := cbor.Marshal(cmd)
+	data, _ := encodeCommand(cmd)
 	fsm.Apply(&raft.Log{Data: data, Index: 2})
 
 	state, err := fsm.ExportState()

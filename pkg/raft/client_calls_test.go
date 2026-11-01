@@ -158,12 +158,10 @@ func TestClient_ExchangePeersWithNoneOfItsOwn(t *testing.T) {
 	require.Contains(t, theirPeers, cli.node.ID().String(), "the member did not learn its caller")
 }
 
-type garbledExport struct {
-	raftv2connect.UnimplementedRaftServiceHandler
-}
-
-func (garbledExport) ExportFSM(context.Context, *connect.Request[raftv2.ExportFSMRequest]) (*connect.Response[raftv2.ExportFSMResponse], error) {
-	return connect.NewResponse(&raftv2.ExportFSMResponse{FsmState: []byte{0xff, 0xfe}, Clock: 3}), nil
+// garbledExport answers ExportFSM with bytes that are not a protobuf message.
+func garbledExport(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/proto")
+	w.Write([]byte{0xff, 0xfe})
 }
 
 func TestClient_AStateThatWillNotDecodeIsAnError(t *testing.T) {
@@ -173,9 +171,8 @@ func TestClient_AStateThatWillNotDecodeIsAnError(t *testing.T) {
 	require.NoError(t, taupeer.LinkAllPeers())
 	require.NoError(t, caller.Peer().Connect(t.Context(), peer.AddrInfo{ID: server.ID(), Addrs: server.Peer().Addrs()}))
 
-	route, handler := raftv2connect.NewRaftServiceHandler(garbledExport{})
 	mux := http.NewServeMux()
-	mux.Handle(route, handler)
+	mux.HandleFunc(raftv2connect.RaftServiceExportFSMProcedure, garbledExport)
 	srv, err := rpc.Listen(t.Context(), server.Peer(), protocol.ID(Protocol(namespace)), mux)
 	require.NoError(t, err)
 	defer srv.Close()
@@ -185,7 +182,7 @@ func TestClient_AStateThatWillNotDecodeIsAnError(t *testing.T) {
 	defer cliOf.Close()
 
 	state, clock, err := cliOf.ExportFSM(server.ID())
-	require.ErrorContains(t, err, "unmarshaling FSM state")
+	require.ErrorContains(t, err, "exportFSM failed")
 	require.Nil(t, state)
 	require.Zero(t, clock)
 }

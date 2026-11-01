@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/hashicorp/raft"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
@@ -29,10 +28,10 @@ const (
 
 // CRDTEntry is LWW with Lamport Timestamp; WallClock breaks ties on equal Timestamp.
 type CRDTEntry struct {
-	Value     []byte `cbor:"1,keyasint"`
-	Timestamp uint64 `cbor:"2,keyasint"`
-	WallClock int64  `cbor:"3,keyasint"`
-	Deleted   bool   `cbor:"4,keyasint"`
+	Value     []byte
+	Timestamp uint64
+	WallClock int64
+	Deleted   bool
 }
 
 func crdtEntryWins(a, b CRDTEntry) bool {
@@ -43,24 +42,24 @@ func crdtEntryWins(a, b CRDTEntry) bool {
 }
 
 type SetCommand struct {
-	Key   string `cbor:"1,keyasint"`
-	Value []byte `cbor:"2,keyasint"`
+	Key   string
+	Value []byte
 }
 
 type DeleteCommand struct {
-	Key string `cbor:"1,keyasint"`
+	Key string
 }
 
 type MergeCommand struct {
-	Delta map[string]CRDTEntry `cbor:"1,keyasint"`
+	Delta map[string]CRDTEntry
 }
 
 type Command struct {
-	Type   CommandType    `cbor:"1,keyasint"`
-	Set    *SetCommand    `cbor:"2,keyasint,omitempty"`
-	Delete *DeleteCommand `cbor:"3,keyasint,omitempty"`
-	Batch  []Command      `cbor:"4,keyasint,omitempty"`
-	Merge  *MergeCommand  `cbor:"5,keyasint,omitempty"`
+	Type   CommandType
+	Set    *SetCommand
+	Delete *DeleteCommand
+	Batch  []Command
+	Merge  *MergeCommand
 }
 
 type kvFSM struct {
@@ -90,8 +89,8 @@ func (f *kvFSM) dataKey(key string) ds.Key {
 func (f *kvFSM) Apply(log *raft.Log) interface{} {
 	defer f.applied.Store(log.Index)
 
-	var cmd Command
-	if err := cbor.Unmarshal(log.Data, &cmd); err != nil {
+	cmd, err := decodeCommand(log.Data)
+	if err != nil {
 		return FSMResponse{Error: ErrInvalidCommand}
 	}
 
@@ -114,7 +113,7 @@ func (f *kvFSM) applyCommand(ctx context.Context, cmd *Command) FSMResponse {
 			WallClock: time.Now().UnixNano(),
 			Deleted:   false,
 		}
-		raw, err := cbor.Marshal(entry)
+		raw, err := encodeFSMEntry(entry)
 		if err != nil {
 			return FSMResponse{Error: err}
 		}
@@ -131,7 +130,7 @@ func (f *kvFSM) applyCommand(ctx context.Context, cmd *Command) FSMResponse {
 			WallClock: time.Now().UnixNano(),
 			Deleted:   true,
 		}
-		raw, err := cbor.Marshal(entry)
+		raw, err := encodeFSMEntry(entry)
 		if err != nil {
 			return FSMResponse{Error: err}
 		}
@@ -203,7 +202,7 @@ func (f *kvFSM) applyBatch(ctx context.Context, cmds []Command) FSMResponse {
 		clock++
 		entry.Timestamp = clock
 
-		raw, err := cbor.Marshal(entry)
+		raw, err := encodeFSMEntry(entry)
 		if err != nil {
 			return FSMResponse{Error: err}
 		}
@@ -248,7 +247,7 @@ func (f *kvFSM) applyMerge(ctx context.Context, delta map[string]CRDTEntry) FSMR
 		case !errors.Is(err, ds.ErrNotFound):
 			return FSMResponse{Error: err}
 		}
-		raw, err := cbor.Marshal(incoming)
+		raw, err := encodeFSMEntry(incoming)
 		if err != nil {
 			return FSMResponse{Error: err}
 		}
@@ -271,11 +270,7 @@ func (f *kvFSM) getEntry(ctx context.Context, key string) (CRDTEntry, error) {
 	if err != nil {
 		return CRDTEntry{}, err
 	}
-	var entry CRDTEntry
-	if err := cbor.Unmarshal(raw, &entry); err != nil {
-		return CRDTEntry{}, err
-	}
-	return entry, nil
+	return decodeFSMEntry(raw)
 }
 
 func (f *kvFSM) Snapshot() (raft.FSMSnapshot, error) {
@@ -298,8 +293,8 @@ func (f *kvFSM) Restore(snapshot io.ReadCloser) error {
 		return err
 	}
 
-	var snap snapshotPayload
-	if err := cbor.Unmarshal(raw, &snap); err != nil {
+	entries, clock, err := decodeSnapshot(raw)
+	if err != nil {
 		return err
 	}
 
@@ -327,8 +322,8 @@ func (f *kvFSM) Restore(snapshot io.ReadCloser) error {
 	}
 	results.Close()
 
-	for key, entry := range snap.Data {
-		raw, err := cbor.Marshal(entry)
+	for key, entry := range entries {
+		raw, err := encodeFSMEntry(entry)
 		if err != nil {
 			return err
 		}
@@ -337,7 +332,7 @@ func (f *kvFSM) Restore(snapshot io.ReadCloser) error {
 		}
 	}
 
-	f.clock = snap.Clock
+	f.clock = clock
 
 	return nil
 }
@@ -389,8 +384,8 @@ func (f *kvFSM) Keys(prefix string) []string {
 		if result.Error != nil {
 			break
 		}
-		var entry CRDTEntry
-		if err := cbor.Unmarshal(result.Value, &entry); err != nil {
+		entry, err := decodeFSMEntry(result.Value)
+		if err != nil {
 			continue
 		}
 		if entry.Deleted {
@@ -427,8 +422,8 @@ func (f *kvFSM) exportStateLocked() (map[string]CRDTEntry, error) {
 		if result.Error != nil {
 			return nil, result.Error
 		}
-		var entry CRDTEntry
-		if err := cbor.Unmarshal(result.Value, &entry); err != nil {
+		entry, err := decodeFSMEntry(result.Value)
+		if err != nil {
 			continue
 		}
 		key := strings.TrimPrefix(result.Key, trimPrefix)
@@ -437,19 +432,13 @@ func (f *kvFSM) exportStateLocked() (map[string]CRDTEntry, error) {
 	return data, nil
 }
 
-type snapshotPayload struct {
-	Data  map[string]CRDTEntry `cbor:"1,keyasint"`
-	Clock uint64               `cbor:"2,keyasint"`
-}
-
 type kvSnapshot struct {
 	data  map[string]CRDTEntry
 	clock uint64
 }
 
 func (s *kvSnapshot) Persist(sink raft.SnapshotSink) error {
-	payload := snapshotPayload{Data: s.data, Clock: s.clock}
-	data, err := cbor.Marshal(payload)
+	data, err := encodeSnapshot(s.data, s.clock)
 	if err != nil {
 		sink.Cancel()
 		return err
@@ -465,20 +454,14 @@ func (s *kvSnapshot) Persist(sink raft.SnapshotSink) error {
 
 func (s *kvSnapshot) Release() {}
 
-func encodeSetCommand(key string, value []byte) ([]byte, error) {
-	cmd := Command{
-		Type: CommandSet,
-		Set:  &SetCommand{Key: key, Value: value},
-	}
-	return cbor.Marshal(cmd)
-}
+func encodeSetCommand(key string, value []byte) ([]byte, error) { return encodeSet(key, value) }
 
 func encodeDeleteCommand(key string) ([]byte, error) {
 	cmd := Command{
 		Type:   CommandDelete,
 		Delete: &DeleteCommand{Key: key},
 	}
-	return cbor.Marshal(cmd)
+	return encodeCommand(cmd)
 }
 
 func encodeBatchCommand(cmds []Command) ([]byte, error) {
@@ -486,7 +469,7 @@ func encodeBatchCommand(cmds []Command) ([]byte, error) {
 		Type:  CommandBatch,
 		Batch: cmds,
 	}
-	return cbor.Marshal(cmd)
+	return encodeCommand(cmd)
 }
 
 func encodeMergeCommand(delta map[string]CRDTEntry) ([]byte, error) {
@@ -494,5 +477,5 @@ func encodeMergeCommand(delta map[string]CRDTEntry) ([]byte, error) {
 		Type:  CommandMerge,
 		Merge: &MergeCommand{Delta: delta},
 	}
-	return cbor.Marshal(cmd)
+	return encodeCommand(cmd)
 }

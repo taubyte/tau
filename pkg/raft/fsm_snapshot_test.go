@@ -5,7 +5,6 @@ import (
 	"io"
 	"testing"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/hashicorp/raft"
 	"github.com/stretchr/testify/require"
 	"gotest.tools/v3/assert"
@@ -66,7 +65,7 @@ func TestKVSnapshot_Persist_Comprehensive(t *testing.T) {
 		assert.Assert(t, sink.buf.Len() > 0)
 
 		var restored snapshotPayload
-		err = cbor.Unmarshal(sink.buf.Bytes(), &restored)
+		err = unmarshalPayload(sink.buf.Bytes(), &restored)
 		require.NoError(t, err)
 		assert.Equal(t, len(restored.Data), 2)
 		assert.Equal(t, string(restored.Data["key1"].Value), "value1")
@@ -82,7 +81,7 @@ func TestKVSnapshot_Persist_Comprehensive(t *testing.T) {
 		require.NoError(t, err)
 
 		var restored snapshotPayload
-		err = cbor.Unmarshal(sink.buf.Bytes(), &restored)
+		err = unmarshalPayload(sink.buf.Bytes(), &restored)
 		require.NoError(t, err)
 		assert.Equal(t, len(restored.Data), 0)
 	})
@@ -114,7 +113,7 @@ func TestKVFSM_Restore_Comprehensive(t *testing.T) {
 			},
 			Clock: 2,
 		}
-		data, err := cbor.Marshal(payload)
+		data, err := marshalPayload(payload)
 		require.NoError(t, err)
 
 		err = fsm.Restore(io.NopCloser(bytes.NewReader(data)))
@@ -137,7 +136,7 @@ func TestKVFSM_Restore_Comprehensive(t *testing.T) {
 			Type: CommandSet,
 			Set:  &SetCommand{Key: "oldkey", Value: []byte("oldvalue")},
 		}
-		cmdData, _ := cbor.Marshal(cmd)
+		cmdData, _ := encodeCommand(cmd)
 		fsm.Apply(&raft.Log{Data: cmdData, Index: 1})
 
 		_, found := fsm.Get("oldkey")
@@ -150,7 +149,7 @@ func TestKVFSM_Restore_Comprehensive(t *testing.T) {
 			},
 			Clock: 2,
 		}
-		data, err := cbor.Marshal(payload)
+		data, err := marshalPayload(payload)
 		require.NoError(t, err)
 
 		err = fsm.Restore(io.NopCloser(bytes.NewReader(data)))
@@ -172,11 +171,11 @@ func TestKVFSM_Restore_Comprehensive(t *testing.T) {
 			Type: CommandSet,
 			Set:  &SetCommand{Key: "key", Value: []byte("value")},
 		}
-		cmdData, _ := cbor.Marshal(cmd)
+		cmdData, _ := encodeCommand(cmd)
 		fsm.Apply(&raft.Log{Data: cmdData, Index: 1})
 
 		payload := snapshotPayload{Data: map[string]CRDTEntry{}}
-		data, err := cbor.Marshal(payload)
+		data, err := marshalPayload(payload)
 		require.NoError(t, err)
 
 		err = fsm.Restore(io.NopCloser(bytes.NewReader(data)))
@@ -186,11 +185,11 @@ func TestKVFSM_Restore_Comprehensive(t *testing.T) {
 		assert.Assert(t, !found)
 	})
 
-	t.Run("invalid_cbor", func(t *testing.T) {
+	t.Run("undecodable", func(t *testing.T) {
 		store := newTestStore()
 		fsm := newKVFSM(t.Context(), store, "/raft/test")
 
-		err := fsm.Restore(io.NopCloser(bytes.NewReader([]byte("invalid cbor data"))))
+		err := fsm.Restore(io.NopCloser(bytes.NewReader([]byte("not a snapshot"))))
 		require.Error(t, err)
 	})
 
@@ -227,7 +226,7 @@ func TestKVFSM_Restore_WithManyKeys(t *testing.T) {
 	}
 
 	payload := snapshotPayload{Data: entries, Clock: 100}
-	data, err := cbor.Marshal(payload)
+	data, err := marshalPayload(payload)
 	require.NoError(t, err)
 
 	err = fsm.Restore(io.NopCloser(bytes.NewReader(data)))
@@ -252,7 +251,7 @@ func TestKVFSM_SnapshotAndRestore_RoundTrip_Comprehensive(t *testing.T) {
 			Type: CommandSet,
 			Set:  &SetCommand{Key: key, Value: []byte("value-" + key)},
 		}
-		cmdData, _ := cbor.Marshal(cmd)
+		cmdData, _ := encodeCommand(cmd)
 		fsm1.Apply(&raft.Log{Data: cmdData, Index: uint64(len(keys))})
 	}
 
@@ -288,7 +287,7 @@ func TestFsmAdapter_Restore_Comprehensive(t *testing.T) {
 		},
 		Clock: 2,
 	}
-	data, err := cbor.Marshal(payload)
+	data, err := marshalPayload(payload)
 	require.NoError(t, err)
 
 	err = fsm.Restore(io.NopCloser(bytes.NewReader(data)))

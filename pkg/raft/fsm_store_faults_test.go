@@ -7,7 +7,6 @@ import (
 	"io"
 	"testing"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/hashicorp/raft"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/stretchr/testify/require"
@@ -19,8 +18,8 @@ func timestampOf(t *testing.T, store ds.Batching, key string) uint64 {
 	t.Helper()
 	raw, err := store.Get(t.Context(), ds.NewKey(faultPrefix+"/data/"+key))
 	require.NoError(t, err)
-	var entry CRDTEntry
-	require.NoError(t, cbor.Unmarshal(raw, &entry))
+	entry, err := decodeFSMEntry(raw)
+	require.NoError(t, err)
 	return entry.Timestamp
 }
 
@@ -231,7 +230,7 @@ func TestASnapshotThatCannotBeWrittenIsCancelled(t *testing.T) {
 
 func snapshotOf(t *testing.T, data map[string]CRDTEntry, clock uint64) io.ReadCloser {
 	t.Helper()
-	raw, err := cbor.Marshal(snapshotPayload{Data: data, Clock: clock})
+	raw, err := marshalPayload(snapshotPayload{Data: data, Clock: clock})
 	require.NoError(t, err)
 	return io.NopCloser(bytes.NewReader(raw))
 }
