@@ -10,10 +10,8 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/build/v2/buildv2connect"
 )
 
-// The three rows of service-conventions.md §2d's table that exist today,
-// asserted against the generated names rather than against a string typed
-// here twice: whatever the schema declares is what these constants say, so a
-// package rename shows up as a failure at exactly one place.
+// The protocol ids are asserted against the generated names, so a package
+// rename fails in exactly one place.
 func TestProtocolIsTheProtoPackage(t *testing.T) {
 	require.EqualValues(t, "/tau/auth/v2", rpc.Protocol(authv2connect.IdentityServiceName))
 	require.EqualValues(t, "/tau/build/v2", rpc.Protocol(buildv2connect.QueueServiceName))

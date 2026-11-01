@@ -308,8 +308,6 @@ func TestListenReportsAFailureToBind(t *testing.T) {
 	s.Close()
 }
 
-// ───────────────────────────────── SRV ─────────────────────────────────
-//
 // A workload's own port never leaves its node: the container engine allocates a
 // host port and a proxy on that node forwards to it over p2p. Nobody authors
 // the port a client dials either — the kernel gives it to whichever listener

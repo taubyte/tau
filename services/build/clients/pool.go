@@ -176,8 +176,7 @@ func (p *Pool) drop(pid peer.ID) {
 
 // Close drops every held stream. It is idempotent, and Do afterwards returns
 // ErrClosed rather than quietly opening a new stream. It does not close the
-// Resolver: the pool was handed one and does not own its lifetime
-// (service-conventions.md §2e).
+// Resolver: the pool was handed one and does not own its lifetime.
 func (p *Pool) Close() {
 	p.mu.Lock()
 	defer p.mu.Unlock()

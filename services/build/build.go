@@ -21,8 +21,7 @@ var Protocol = rpc.Protocol(buildv2connect.QueueServiceName)
 // build.proto. Exported so the composer knows which domain to open.
 const QueueDomain = "build/queue"
 
-// Ingress states which side of the trust boundary a role is on
-// (service-conventions.md §5a).
+// Ingress states which side of the trust boundary a role is on.
 type Ingress int
 
 const (

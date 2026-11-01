@@ -143,9 +143,8 @@ func TestThePublicRoleServesNoP2PRPC(t *testing.T) {
 	requireNoImport(t, paths, "gopkg.in/go-playground/webhooks.v5",
 		"the library v1 verifies webhooks with is sha1-only and skips the MAC on an empty secret")
 
-	// The mechanical half of service-conventions.md §5a, in the direction the
-	// backend's test runs the other way: a listener added here without touching
-	// the descriptor is caught by the source, not by a convention.
+	// A listener added here without touching the descriptor is caught by the
+	// source; the backend's test checks the other direction.
 	for name, src := range sources(t, "frontend") {
 		require.NotContains(t, src, "rpc.Listen(",
 			"%s mounts a p2p listener on the public role; build.proto's header is explicit that it has none", name)

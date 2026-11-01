@@ -32,14 +32,9 @@ type Router interface {
 	Get(peer string) (stats.Node, bool)
 }
 
-// Config is what an operator declared, and ONLY that: every field below is a
-// value somebody writes in yaml, so it decodes, marshals and round-trips.
-//
-// THE INJECTED DEPENDENCY IS NOT HERE. Where the answers come from is handed
-// over at construction with WithRouter, because a live object cannot be
-// decoded from a config file and a struct that mixes the two has no honest
-// serialized form. That split was put to codex@xhigh and agreed:
-// "operator configuration is data, not constructor customization".
+// Config is what an operator declared: values written in yaml, so it decodes,
+// marshals and round-trips. Where answers come from is injected with WithRouter,
+// since a live object cannot be decoded.
 type Config struct {
 	// TTL is what this server tells resolvers about how long to cache an
 	// answer. Default 30s.
