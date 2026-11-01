@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"sort"
 	"strings"
 
 	"github.com/taubyte/tau/utils/regex"
@@ -42,12 +41,7 @@ func (m match) handler() specs.GatewayRoute { return m.gateway.Route }
 //	           sends a caller looking for a bug in their URL
 //	neither    404
 func pick(candidates []candidate, path, method string) (m match, found, methodOnly bool) {
-	type scored struct {
-		match
-		score int
-	}
-
-	var wins []scored
+	best := -1
 	for _, c := range candidates {
 		// Declared alone would miss a compiler-written route: `match` is defaulted, so
 		// `route: {match: prefix}` declares nothing.
@@ -70,28 +64,23 @@ func pick(candidates []candidate, path, method string) (m match, found, methodOn
 			continue
 		}
 
-		wins = append(wins, scored{
-			match: match{
-				candidate: c,
-				Path:      declared,
-				Strip:     route.StripPrefix != nil && *route.StripPrefix,
-			},
-			score: score,
-		})
+		// The most specific wins, ties broken by name, so every node resolves the same
+		// way; among exact equals the first declared stays.
+		if best >= 0 && (score < best || score == best && c.host.Name >= m.host.Name) {
+			continue
+		}
+		best = score
+		m = match{
+			candidate: c,
+			Path:      declared,
+			Strip:     route.StripPrefix != nil && *route.StripPrefix,
+		}
 	}
 
-	if len(wins) == 0 {
+	if best < 0 {
 		return match{}, false, methodOnly
 	}
-
-	// The most specific wins, ties broken by name, so every node resolves the same way.
-	sort.SliceStable(wins, func(i, j int) bool {
-		if wins[i].score != wins[j].score {
-			return wins[i].score > wins[j].score
-		}
-		return wins[i].host.Name < wins[j].host.Name
-	})
-	return wins[0].match, true, false
+	return m, true, false
 }
 
 // pathScore says whether a route matches and how specifically. An exact match beats
