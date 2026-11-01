@@ -355,8 +355,9 @@ func (p *Project) scopeCursor(scope []string) ([]string, error) {
 // The compiler refuses that collision; the order is here so that a compiled
 // object which somehow carries one is not resolved by a map walk.
 func (p *Project) scopeAt(cursor []string, name string) (kind, id string, ok bool) {
+	var buf [256]byte
 	for _, candidate := range scopeKinds() {
-		links := p.index[strings.Join(append(append([]string{}, cursor...), candidate, name), "/")]
+		links := p.index[string(appendKey(buf[:0], cursor, candidate, name))]
 		if len(links) == 0 {
 			continue
 		}
@@ -401,40 +402,76 @@ func (p *Project) Scopes(scope []string) ([]string, error) {
 
 // at reads one resource at exactly this scope, with no outward walk.
 func (p *Project) at(cursor []string, kind, name string) (Resource, string, error) {
-	links := p.index[strings.Join(append(append([]string{}, cursor...), kind, name), "/")]
+	var buf [256]byte
+	links := p.index[string(appendKey(buf[:0], cursor, kind, name))]
 	if len(links) == 0 {
-		return nil, "", fmt.Errorf("%w: %s/%s", ErrNotFound, kind, name)
+		return nil, "", notFound{kind: kind, name: name}
 	}
 
 	// The bucket accumulates one entry per publish and the current one is the
 	// last written. Taking the first would serve whatever was published first
 	// and never move again.
-	target := links[len(links)-1]
-	path, err := objectPath(target)
-	if err != nil {
-		return nil, "", err
-	}
-
-	r, ok := descend(p.root, path...).(map[string]any)
-	if !ok {
-		return nil, "", fmt.Errorf("%w: %s names nothing in the object", ErrBadIndex, target)
-	}
-	return Resource(r), path[len(path)-1], nil
+	return p.targetOf(links[len(links)-1])
 }
 
-// objectPath strips `branches/<branch>/projects/<pid>/` off an index value and
-// returns what is left, which is a path into the object.
+// appendKey is cursor, kind and name joined by "/", as the index keys them.
+func appendKey(b []byte, cursor []string, kind, name string) []byte {
+	for _, c := range cursor {
+		b = append(b, c...)
+		b = append(b, '/')
+	}
+	b = append(b, kind...)
+	b = append(b, '/')
+	return append(b, name...)
+}
+
+// notFound is ErrNotFound naming what was asked for, formatted only when read.
+type notFound struct{ kind, name string }
+
+func (e notFound) Error() string { return ErrNotFound.Error() + ": " + e.kind + "/" + e.name }
+
+func (e notFound) Unwrap() error { return ErrNotFound }
+
+// targetOf strips `branches/<branch>/projects/<pid>/` off an index value and walks
+// what is left into the object, answering the resource and its id.
 //
 // THE BRANCH IS ONE SEGMENT WHATEVER IT IS. tcc percent-encodes it for exactly
 // this reason (schema/index.go): `release/1.2` joined raw would turn one
 // segment into two and every path after it would be off by one — silently, in
 // the direction of the wrong resource.
-func objectPath(target string) ([]string, error) {
-	seg := strings.Split(target, "/")
-	if len(seg) < 5 || seg[0] != branchesSeg || seg[2] != projectsSeg {
-		return nil, fmt.Errorf("%w: %q", ErrBadIndex, target)
+func (p *Project) targetOf(target string) (Resource, string, error) {
+	rest := target
+	var seg [4]string
+	for i := range seg {
+		var found bool
+		seg[i], rest, found = strings.Cut(rest, "/")
+		if !found {
+			return nil, "", fmt.Errorf("%w: %q", ErrBadIndex, target)
+		}
 	}
-	return seg[4:], nil
+	if seg[0] != branchesSeg || seg[2] != projectsSeg {
+		return nil, "", fmt.Errorf("%w: %q", ErrBadIndex, target)
+	}
+
+	var cur any = p.root
+	var step string
+	for more := true; more; {
+		step, rest, more = strings.Cut(rest, "/")
+		next, ok := cur.(map[string]any)
+		if !ok {
+			cur = nil
+			break
+		}
+		if cur, ok = next[step]; !ok {
+			cur = nil
+			break
+		}
+	}
+	r, ok := cur.(map[string]any)
+	if !ok {
+		return nil, "", fmt.Errorf("%w: %s names nothing in the object", ErrBadIndex, target)
+	}
+	return Resource(r), step, nil
 }
 
 func lastSegment(path string) string {
@@ -661,6 +698,22 @@ func (r Reach) target() string {
 	return r.Label
 }
 
+// accessShape is the vocabulary's access entry shape, with the nested paths split
+// once.
+var accessShape = sync.OnceValue(func() splitShape {
+	shape := schema.AccessEntryShape()
+	return splitShape{
+		AccessShape: shape,
+		deliverPort: strings.Split(shape.DeliverPort, "/"),
+		deliverPath: strings.Split(shape.DeliverPath, "/"),
+	}
+})
+
+type splitShape struct {
+	schema.AccessShape
+	deliverPort, deliverPath []string
+}
+
 // Reaches are the access entries of one kind, sorted by label.
 //
 // A kind with no block is an empty slice and not an error: most resources
@@ -681,7 +734,7 @@ func (r Resource) Reaches(kind string) []Reach {
 	// for every kind, and every workload in the cloud resolves with no grants at
 	// all — and starts, because a resource that reaches nothing is a legal
 	// resource. There is no error anywhere in that.
-	shape := schema.AccessEntryShape()
+	shape := accessShape()
 
 	out := make([]Reach, 0, len(entries))
 	for _, label := range r.Keys(kind) {
@@ -709,8 +762,8 @@ func (r Resource) Reaches(kind string) []Reach {
 		// its author said, and nothing anywhere reports it.
 		reach.Timeout, _ = entry.Duration(shape.Timeout)
 		reach.Path = entry.String(shape.MountPath)
-		reach.DeliverPort = entry.String(strings.Split(shape.DeliverPort, "/")...)
-		reach.DeliverPath = entry.String(strings.Split(shape.DeliverPath, "/")...)
+		reach.DeliverPort = entry.String(shape.deliverPort...)
+		reach.DeliverPath = entry.String(shape.deliverPath...)
 		reach.Tools = entry.Strings(shape.Tools)
 		out = append(out, reach)
 	}

@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/interp"
@@ -124,7 +126,9 @@ func ServedByRoute(kind string) bool {
 }
 
 // Kinds lists every kind that declares ops — i.e. everything a resource can reach.
-func Kinds() []string {
+func Kinds() []string { return slices.Clone(kinds()) }
+
+var kinds = sync.OnceValue(func() []string {
 	out := []string{}
 	for _, g := range V2Resources {
 		name, _ := g.Match.(string)
@@ -136,7 +140,7 @@ func Kinds() []string {
 		}
 	}
 	return out
-}
+})
 
 // EffectOf reports a verb's effect class for one kind.
 func EffectOf(kind, verb string) (string, bool) {
@@ -618,7 +622,9 @@ type AccessShape struct {
 
 // AccessEntryShape reports it, by looking at the access group the vocabulary attaches to
 // every reachable kind: the attribute carrying that kind's verb enum is the ops field.
-func AccessEntryShape() AccessShape {
+func AccessEntryShape() AccessShape { return accessEntryShape() }
+
+var accessEntryShape = sync.OnceValue(func() AccessShape {
 	return AccessShape{
 		Ops:       accessOps,
 		Namespace: accessScope,
@@ -632,7 +638,7 @@ func AccessEntryShape() AccessShape {
 		DeliverPath: engine.FieldName(Key(accessDeliver, accessPath)),
 		Tools:       accessTools,
 	}
-}
+})
 
 // The access entry's field names, stated once as constants: deriving them by
 // walking the schema would be a package-level cycle while it is built.
