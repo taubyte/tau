@@ -20,9 +20,12 @@
 package stats
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -285,7 +288,7 @@ func serves(serving []string, name string) bool {
 
 func (v *View) sortedByLoad(keep func(Node) bool) []Node {
 	out := v.snapshot(keep)
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Load < out[j].Load })
+	slices.SortStableFunc(out, func(a, b Node) int { return cmp.Compare(a.Load, b.Load) })
 	return out
 }
 
@@ -298,12 +301,11 @@ func (v *View) snapshot(keep func(Node) bool) []Node {
 
 	out := make([]Node, 0, len(v.rows))
 	for peer, r := range v.rows {
-		n := node(peer, r, now)
-		if keep(n) {
-			out = append(out, n)
+		if n := shared(peer, r, now); keep(n) {
+			out = append(out, owned(n))
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Peer < out[j].Peer })
+	slices.SortFunc(out, func(a, b Node) int { return strings.Compare(a.Peer, b.Peer) })
 	return out
 }
 
@@ -317,21 +319,34 @@ func (v *View) forget(now time.Time) {
 	}
 }
 
-func node(peer string, r *row, now time.Time) Node {
+func node(peer string, r *row, now time.Time) Node { return owned(shared(peer, r, now)) }
+
+// shared is a row as a Node still sharing the row's slices, for a filter to read
+// before anything is copied.
+func shared(peer string, r *row, now time.Time) Node {
 	return Node{
 		Peer:        peer,
 		Incarnation: r.incarnation,
 		Load:        r.load,
-		Serving:     append([]string(nil), r.serving...),
+		Serving:     r.serving,
 		Ready:       r.ready,
-		Addresses:   append([]string(nil), r.addresses...),
-		Sockets:     append([]Socket(nil), r.sockets...),
+		Addresses:   r.addresses,
+		Sockets:     r.sockets,
 
 		FleetRevision:    r.fleet,
 		DatabasesPending: r.pending,
 
 		Age: now.Sub(r.received),
 	}
+}
+
+// owned gives a Node its own copies of the row's slices, so a caller holding it
+// never sees a later report.
+func owned(n Node) Node {
+	n.Serving = append([]string(nil), n.Serving...)
+	n.Addresses = append([]string(nil), n.Addresses...)
+	n.Sockets = append([]Socket(nil), n.Sockets...)
+	return n
 }
 
 // Within is every node reported no longer ago than maxAge, ordered by peer.
