@@ -4,10 +4,9 @@ on:
     tags:
       - '*'
 
-# GoReleaser publishes with GORELEASER_TOKEN (see env below); the default
-# token is only used by checkout, so read is enough.
+# GoReleaser publishes the GitHub release with the job's own token.
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   tau:
@@ -31,4 +30,4 @@ jobs:
           version: latest
           args: release --clean --config .goreleaser.yml
         env:
-          GITHUB_TOKEN: ${{ secrets.GORELEASER_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
