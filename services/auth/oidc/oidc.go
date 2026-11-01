@@ -29,7 +29,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// Document is the part of a discovery document a sign-in reads.
 type Document struct {
 	Issuer                string `json:"issuer"`
 	AuthorizationEndpoint string `json:"authorization_endpoint"`
@@ -47,7 +46,6 @@ var Algorithms = []string{"RS256", "RS384", "RS512", "PS256", "ES256", "ES384", 
 // Skew is the clock skew allowed on an ID token.
 const Skew = time.Minute
 
-// Provider is one discovered issuer.
 type Provider struct {
 	doc    Document
 	client *http.Client
@@ -76,7 +74,6 @@ func Client(client *http.Client) *http.Client {
 	return &c
 }
 
-// Discover fetches issuer's discovery document.
 func Discover(ctx context.Context, client *http.Client, issuer string, now func() time.Time) (*Provider, error) {
 	u, err := url.Parse(issuer)
 	if err != nil || u.Scheme != "https" && !loopback(u) || u.Host == "" {
@@ -111,7 +108,6 @@ func loopback(u *url.URL) bool {
 	return h == "127.0.0.1" || h == "::1" || h == "localhost"
 }
 
-// Document is what discovery returned.
 func (p *Provider) Document() Document { return p.doc }
 
 func (p *Provider) get(ctx context.Context, u string, into any) error {
@@ -168,7 +164,6 @@ func (p *Provider) key(ctx context.Context, kid string) (any, error) {
 	return nil, fmt.Errorf("oidc: no signing key %q", kid)
 }
 
-// Identity is what a verified ID token says.
 type Identity struct {
 	Issuer        string
 	Subject       string
@@ -187,7 +182,6 @@ type idClaims struct {
 	PreferredName string `json:"preferred_username"`
 }
 
-// ErrInvalid is an ID token that does not verify.
 var ErrInvalid = errors.New("oidc: invalid id token")
 
 // Verify checks raw as an ID token issued to clientID in answer to a request

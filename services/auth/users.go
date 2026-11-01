@@ -17,8 +17,6 @@ import (
 	"github.com/taubyte/tau/services/secrets"
 )
 
-// users.go is who this cloud's users are.
-
 // AdminID is the built-in admin's user id. It is fixed, so every node names
 // the admin alike without anything having been written.
 const AdminID = "admin"
@@ -68,7 +66,6 @@ func newID() string {
 // validName is a local user's name: what they type to sign in.
 var validName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
-// admin is the configured admin, or false.
 func (s *Service) admin() (user, bool) {
 	a := s.cfg.Admin
 	if a.Name == "" {
@@ -217,7 +214,6 @@ func (s *Service) link(ctx context.Context, id, issuer, subject, login string) e
 	return s.store.put(ctx, userKey(id, fieldLinks)+"/"+digest(issuer, subject), c)
 }
 
-// linked is the user issuer's subject resolves to.
 func (s *Service) linked(ctx context.Context, issuer, subject string) (user, error) {
 	id, _, err := s.store.winner(ctx, linkKey(issuer, subject), s.live(ctx))
 	if err != nil {
@@ -298,7 +294,6 @@ func (s *Service) list(ctx context.Context) ([]user, error) {
 	return out, nil
 }
 
-// setPassword hashes pw with this node's pepper and stores it.
 func (s *Service) setPassword(ctx context.Context, id, pw string) error {
 	if err := password.Check(pw); err != nil {
 		return connect.NewError(connect.CodeInvalidArgument, err)
@@ -329,7 +324,6 @@ func (s *Service) hash(ctx context.Context) (func(), error) {
 	}
 }
 
-// checkPassword verifies pw for u.
 func (s *Service) checkPassword(ctx context.Context, u user, pw string) error {
 	var h password.Hash
 	var pepper []byte

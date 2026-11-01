@@ -18,7 +18,6 @@ type Config struct {
 	// A token from another cloud does not verify here.
 	Issuer string
 
-	// Admin is the built-in administrator.
 	Admin Admin
 
 	// SignUp says who may become a user by signing in. The default is
@@ -70,7 +69,6 @@ func HashAdminPassword(pw string) (string, error) {
 	return h.Encode()
 }
 
-// SignUp is who may become a user by signing in.
 type SignUp string
 
 const (
@@ -80,13 +78,11 @@ const (
 	SignUpOpen SignUp = "open"
 )
 
-// ForgeApp is one forge's OAuth app.
 type ForgeApp struct {
 	Host     string
 	ClientID string
 }
 
-// OIDCProvider is a bring-your-own OpenID Connect provider.
 type OIDCProvider struct {
 	// Name is how a client names it, and the vault name of its secret.
 	Name     string

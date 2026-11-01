@@ -160,8 +160,6 @@ func (f *failing) List(ctx context.Context, p string) ([]string, error) {
 	return f.KVDB.List(ctx, p)
 }
 
-// Every operation surfaces a store that cannot answer as an error, and none
-// mistakes it for "not there".
 func TestStoreOutagesAreErrors(t *testing.T) {
 	f := newFx(t, func(c *Config) { c.SignUp = SignUpOpen })
 	ctx := t.Context()

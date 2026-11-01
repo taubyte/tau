@@ -49,7 +49,6 @@ func inviteProto(r inviteRow) *authv2.Invite {
 	return p
 }
 
-// invite is the invite code redeems, if it may still be redeemed.
 func (s *Service) invite(ctx context.Context, code string) (inviteRow, error) {
 	if code == "" {
 		return inviteRow{}, ErrNotFound

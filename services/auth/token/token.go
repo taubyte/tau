@@ -48,14 +48,12 @@ func KeyID(pub ed25519.PublicKey) string {
 	return base64.RawURLEncoding.EncodeToString(sum[:16])
 }
 
-// Signer signs with one key.
 type Signer struct {
 	key    ed25519.PrivateKey
 	kid    string
 	issuer string
 }
 
-// NewSigner signs as issuer with key.
 func NewSigner(issuer string, key ed25519.PrivateKey) (*Signer, error) {
 	if len(key) != ed25519.PrivateKeySize {
 		return nil, errors.New("token: not an ed25519 private key")
@@ -66,10 +64,8 @@ func NewSigner(issuer string, key ed25519.PrivateKey) (*Signer, error) {
 	return &Signer{key: key, kid: KeyID(key.Public().(ed25519.PublicKey)), issuer: issuer}, nil
 }
 
-// KeyID is the kid this signer's tokens carry.
 func (s *Signer) KeyID() string { return s.kid }
 
-// Claims are what a token says.
 type Claims struct {
 	Subject string
 	ID      string
@@ -79,13 +75,11 @@ type Claims struct {
 	Session string
 }
 
-// claims is the JWT body: the registered claims plus the session.
 type claims struct {
 	jwt.RegisteredClaims
 	Session string `json:"sid,omitempty"`
 }
 
-// Sign mints a token.
 func (s *Signer) Sign(c Claims) (string, error) {
 	if c.Subject == "" || c.ID == "" || !c.Expires.After(c.Issued) {
 		return "", errors.New("token: a token needs a subject, an id and an expiry after its issue")
@@ -107,14 +101,12 @@ func (s *Signer) Sign(c Claims) (string, error) {
 // Keys resolves a kid to the public key that signs under it.
 type Keys func(kid string) (ed25519.PublicKey, error)
 
-// Verifier checks tokens issued by issuer.
 type Verifier struct {
 	issuer string
 	keys   Keys
 	now    func() time.Time
 }
 
-// NewVerifier verifies tokens issued by issuer, with keys from keys.
 func NewVerifier(issuer string, keys Keys, now func() time.Time) (*Verifier, error) {
 	if issuer == "" || keys == nil {
 		return nil, errors.New("token: a verifier needs an issuer and keys")
@@ -125,7 +117,6 @@ func NewVerifier(issuer string, keys Keys, now func() time.Time) (*Verifier, err
 	return &Verifier{issuer: issuer, keys: keys, now: now}, nil
 }
 
-// Verify checks raw and returns its claims.
 func (v *Verifier) Verify(raw string) (Claims, error) {
 	var rc claims
 	opts := []jwt.ParserOption{

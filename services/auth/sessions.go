@@ -95,7 +95,6 @@ func (s *Service) access(ctx context.Context, u user, sid string, until time.Tim
 	return &authv2.Session{AccessToken: raw, AccessExpiresUnix: exp.Unix(), User: p}, nil
 }
 
-// principal is who a verified credential is.
 type principal struct {
 	user    user
 	tokenID string
@@ -105,7 +104,6 @@ type principal struct {
 	session string
 }
 
-// verify says who raw belongs to, as of now.
 func (s *Service) verify(ctx context.Context, raw string) (principal, error) {
 	if s.store == nil {
 		return principal{}, errNoUsers
@@ -234,8 +232,6 @@ func (s *Service) session(ctx context.Context, sid string) (sessionRow, error) {
 	return row, nil
 }
 
-// refresh mints a new access token from a refresh token, for the same
-// session.
 func (s *Service) refresh(ctx context.Context, raw string) (*authv2.Session, error) {
 	if !strings.HasPrefix(raw, refreshPrefix) {
 		return nil, errUnauthenticated
@@ -256,7 +252,6 @@ func (s *Service) refresh(ctx context.Context, raw string) (*authv2.Session, err
 	return sess, nil
 }
 
-// logout revokes a refresh token's session.
 func (s *Service) logout(ctx context.Context, raw string) error {
 	d := digest(raw)
 	var row sessionRow
@@ -269,7 +264,6 @@ func (s *Service) logout(ctx context.Context, raw string) error {
 	return s.store.revoke(ctx, revokedSession, d, s.now(), row.Expires)
 }
 
-// createAPIKey mints an API token for u.
 func (s *Service) createAPIKey(ctx context.Context, u user, name string, ttl time.Duration) (*authv2.Token, error) {
 	if !u.can(capAPIKey) {
 		return nil, connect.NewError(connect.CodePermissionDenied, fmt.Errorf("auth: %s may not hold API tokens", u.Name))

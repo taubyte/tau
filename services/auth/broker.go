@@ -21,38 +21,28 @@ import (
 	"github.com/taubyte/tau/services/auth/oidc"
 )
 
-// broker.go signs people in through a provider: a forge, through this
-// cloud's own OAuth app there, or a bring-your-own OIDC provider.
+// broker.go signs people in through a provider: a forge, through this cloud's own
+// OAuth app there, or a bring-your-own OIDC provider.
 //
-// THE FLOW, for a browser or the CLI's loopback listener:
-//
-//  1. Authorize: the client names a provider, where to come back to, and a
-//     binding challenge — the SHA-256 of a secret only it holds. Auth checks
-//     the redirect against the allow-list, makes the state, the PKCE verifier
-//     it will send the provider and (OIDC) the nonce, keeps them in a pending
-//     row keyed by the state's digest, and returns the provider's URL.
+//  1. Authorize: the client names a provider, where to come back to, and a binding
+//     challenge (the SHA-256 of a secret only it holds). Auth checks the redirect
+//     against the allow-list, makes the state, the PKCE verifier and (OIDC) the
+//     nonce, keeps them in a pending row keyed by the state's digest, and returns
+//     the provider's URL.
 //  2. The provider sends the browser back with a code and the state.
-//  3. Exchange: the client sends both and its binding secret. The pending row
-//     says which provider, which redirect and which verifier; the binding
-//     secret proves the redeemer is whoever started the sign-in, so a code
-//     intercepted on the way back is useless to anyone else. Auth redeems the
-//     code with its client secret, asks the forge who the token is (or
-//     verifies the ID token), signs the user in, and hands back a tau session
-//     beside the forge's own token, which it keeps no copy of. A caller
-//     already signed in is connecting instead: no session, only the forge
-//     token (connect.go).
+//  3. Exchange: the client sends both and its binding secret, which proves the
+//     redeemer started the sign-in, so an intercepted code is useless. Auth redeems
+//     the code with its client secret, learns who the token is (or verifies the ID
+//     token), signs the user in, and returns a tau session beside the forge's token,
+//     which it keeps no copy of. A signed-in caller is connecting instead
+//     (connect.go).
 //
-// The pending row is replicated, so Exchange may land on another node than
-// Authorize did. It is not a one-time primitive — the store has none — and
-// does not need to be: the provider redeems a code once, and the row only
-// says how.
+// The pending row is replicated, so Exchange may land on another node. It need not
+// be one-time: the provider redeems a code once.
 //
-// THE DEVICE FLOW (RFC 8628) is the CLI's other way in on a forge that offers
-// one, and a PASTED token is the way in on every forge: a forge's identity
-// face is mandatory, so any token the forge accepts says who it is.
-//
-// A caller names a provider, never a URL: every URL fetched here is one an
-// operator configured or a driver derived from its host.
+// The device flow (RFC 8628) and a pasted token are the CLI's other ways in. A
+// caller names a provider, never a URL: every URL fetched is operator-configured or
+// derived from a driver's host.
 
 const (
 	pendingTTL = 10 * time.Minute
@@ -63,7 +53,6 @@ const (
 // pollFor bounds one DevicePoll; the client calls again while pending.
 var pollFor = 25 * time.Second
 
-// provider is one way to sign in, resolved.
 type provider struct {
 	id     string
 	oauth  *oauth2.Config
@@ -76,7 +65,6 @@ type provider struct {
 	secret string
 }
 
-// providers lists every way to sign in.
 func (s *Service) providerList() []*authv2.Provider {
 	var out []*authv2.Provider
 	apps := map[string]bool{}
@@ -105,7 +93,6 @@ func invalid(format string, a ...any) error {
 	return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("auth: "+format, a...))
 }
 
-// resolve finds a configured provider by id.
 func (s *Service) resolve(ctx context.Context, id, redirect string) (*provider, error) {
 	for _, f := range s.cfg.Forges {
 		if f.Host != id {
@@ -224,7 +211,6 @@ func (s *Service) authorize(ctx context.Context, req *authv2.AuthorizeRequest) (
 	return &authv2.AuthorizeResponse{Url: p.oauth.AuthCodeURL(state, opts...), State: state, ExpiresUnix: now.Add(pendingTTL).Unix()}, nil
 }
 
-// signedInAs is an identity a provider vouched for.
 type signedInAs struct {
 	issuer, subject, login, email string
 }
@@ -292,7 +278,6 @@ func (s *Service) exchange(ctx context.Context, as *principal, req *authv2.Excha
 	return s.signInForge(ctx, as, p.forge, tok, row.Invite)
 }
 
-// withSecret reads the provider's client secret from the vault.
 func (s *Service) withSecret(ctx context.Context, p *provider) error {
 	secret, err := s.keys.Secret(ctx, p.secret)
 	if err != nil {
@@ -329,7 +314,6 @@ func (s *Service) signInForge(ctx context.Context, as *principal, host string, t
 	return s.forgeSignedIn(ctx, u.ID, sess, ft)
 }
 
-// scopes are what the forge said tok was granted.
 func scopes(tok *oauth2.Token) []string {
 	sc, _ := tok.Extra("scope").(string)
 	return strings.FieldsFunc(sc, func(r rune) bool { return r == ' ' || r == ',' })
@@ -348,7 +332,6 @@ func (s *Service) expiry(tok *oauth2.Token) int64 {
 	return 0
 }
 
-// whoOnForge is who host says token belongs to.
 func (s *Service) whoOnForge(ctx context.Context, host, token string) (signedInAs, error) {
 	if s.forges == nil {
 		return signedInAs{}, invalid("no forge %q", host)

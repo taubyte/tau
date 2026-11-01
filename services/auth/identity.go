@@ -9,24 +9,20 @@ import (
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
 
-// identity.go is where a module outside this package decides who may use the
-// cloud. Auth itself has no opinion: a forge has already said who holds a
-// credential, and what that person may do here is the Identity's answer.
+// An Identity, outside this package, decides who may use the cloud; auth has no
+// opinion.
 
-// Caller is someone a forge vouched for.
 type Caller struct {
 	// Forge is the host that answered for the credential, e.g. "github.com".
 	Forge string
 	// Subject is the forge's stable id for the account.
 	Subject string
-	// Login is the account's name on the forge.
-	Login string
+	Login   string
 	// User is the tau user the caller's own tau token verified as, or empty
 	// when they sent none.
 	User string
 }
 
-// Admission is what an Identity concluded about a Caller.
 type Admission struct {
 	Admitted bool
 	// Reason says why a caller was not admitted, in words it can act on.
@@ -36,7 +32,6 @@ type Admission struct {
 	Accounts []string
 }
 
-// Identity decides whether a caller may use this cloud's API.
 type Identity interface {
 	Admit(ctx context.Context, c Caller) (Admission, error)
 }

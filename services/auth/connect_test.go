@@ -11,8 +11,6 @@ import (
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
 
-// A forge sign-in made with a bearer hands back the credential and its
-// connection, links the unheld identity, and leaves the caller's session be.
 func TestConnectWithABearerReturnsNoSession(t *testing.T) {
 	f := newFx(t, func(c *Config) { c.SignUp = SignUpOpen })
 	ctx := t.Context()
@@ -43,8 +41,6 @@ func TestConnectWithABearerReturnsNoSession(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// A token that does not verify is refused, never ignored in favour of a
-// fresh sign-in.
 func TestConnectWithABadTokenIsRefused(t *testing.T) {
 	f := newFx(t, func(c *Config) { c.SignUp = SignUpOpen })
 	f.forge.give("one", identity("42", "alice"))
@@ -52,7 +48,6 @@ func TestConnectWithABadTokenIsRefused(t *testing.T) {
 	require.Equal(t, connect.CodeUnauthenticated, code(t, err))
 }
 
-// Connecting with an API token links its user and revokes nothing.
 func TestConnectWithAnAPIToken(t *testing.T) {
 	f := newFx(t)
 	ctx := t.Context()
@@ -73,8 +68,6 @@ func TestConnectWithAnAPIToken(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// An identity another user holds is connected without being re-linked, and
-// the connection says so.
 func TestConnectLeavesAnotherUsersLink(t *testing.T) {
 	f := newFx(t, func(c *Config) { c.SignUp = SignUpOpen })
 	ctx := t.Context()
@@ -104,7 +97,6 @@ func TestExpiryReadsTheServiceClock(t *testing.T) {
 	require.Equal(t, f.now.Unix()+60, f.s.expiry(&oauth2.Token{ExpiresIn: 60, Expiry: at}))
 }
 
-// Renew refreshes the client's credential with the cloud's OAuth app.
 func TestRenew(t *testing.T) {
 	f := newFx(t, func(c *Config) { c.SignUp = SignUpOpen })
 	ctx := t.Context()
@@ -145,7 +137,6 @@ func TestRenew(t *testing.T) {
 	require.ErrorIs(t, err, errNoUsers)
 }
 
-// Renewal needs the OAuth app's secret.
 func TestRenewWithoutTheSecret(t *testing.T) {
 	f := newFx(t)
 	delete(f.vault.m, OAuthSecretName(testHost))
@@ -154,7 +145,6 @@ func TestRenewWithoutTheSecret(t *testing.T) {
 	require.Equal(t, connect.CodeUnavailable, code(t, err))
 }
 
-// Signing out retires the session the access token came from, too.
 func TestLogoutRetiresTheCallersSession(t *testing.T) {
 	f := newFx(t, func(c *Config) { c.SignUp = SignUpOpen })
 	ctx := t.Context()

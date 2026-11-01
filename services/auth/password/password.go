@@ -28,7 +28,6 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-// Params are Argon2id's cost parameters.
 type Params struct {
 	Time    uint32 `cbor:"t"`
 	Memory  uint32 `cbor:"m"` // KiB
@@ -40,7 +39,6 @@ type Params struct {
 // with two lanes.
 var Default = Params{Time: 3, Memory: 64 * 1024, Threads: 2, KeyLen: 32}
 
-// Hash is a stored password.
 type Hash struct {
 	// Pepper is the id of the pepper the hash was made with; empty is none.
 	Pepper string `cbor:"pepper"`
@@ -49,17 +47,14 @@ type Hash struct {
 	Sum    []byte `cbor:"sum"`
 }
 
-// ErrMismatch is a password that is not the one hashed.
 var ErrMismatch = errors.New("password: mismatch")
 
-// MinLength is the shortest password accepted.
 const MinLength = 8
 
 // MaxLength bounds what is hashed. Argon2 accepts any length, but a request
 // should not be able to make a node hash a megabyte.
 const MaxLength = 1024
 
-// Check refuses a password too short or too long to keep.
 func Check(pw string) error {
 	switch {
 	case len(pw) < MinLength:
@@ -70,7 +65,6 @@ func Check(pw string) error {
 	return nil
 }
 
-// New hashes pw with the pepper whose id is pepperID.
 func New(pw string, pepperID string, pepper []byte, p Params) (Hash, error) {
 	if err := Check(pw); err != nil {
 		return Hash{}, err
@@ -144,7 +138,6 @@ func (h Hash) Encode() (string, error) {
 		argon2.Version, h.Params.Memory, h.Params.Time, h.Params.Threads, b64.EncodeToString(h.Salt), b64.EncodeToString(h.Sum)), nil
 }
 
-// Parse reads a PHC-form argon2id hash.
 func Parse(s string) (Hash, error) {
 	parts := strings.Split(s, "$")
 	if len(parts) != 6 || parts[0] != "" || parts[1] != "argon2id" {

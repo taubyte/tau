@@ -1,15 +1,8 @@
-// Package auth is v2's authorization and identity service: the one RPC
-// declared in pkg/proto/tau/auth/v2/auth.proto, served to other tau nodes over
-// p2p/rpc (ConnectRPC on a libp2p stream).
-//
-// It keeps this cloud's users — the built-in admin from configuration, local
-// users, and people who sign in through a forge or an OIDC provider — issues
-// and verifies their tau tokens, brokers sign-in through the cloud's own OAuth
-// apps, and answers whether someone a forge vouched for is admitted. Projects and repositories are the register's (services/register), a
-// project's webhook secret and deploy keys are the secrets service's, and
-// whether a caller may write to a repository is the forge's answer, asked by
-// the build frontend. auth.proto's package doc says why each lives where it
-// does.
+// Package auth is v2's identity service, served to other tau nodes over p2p/rpc.
+// It keeps this cloud's users (the configured admin, local users, and people signed
+// in through a forge or OIDC provider), issues and verifies their tau tokens,
+// brokers sign-in through the cloud's own OAuth apps, and answers whether someone a
+// forge vouched for is admitted. auth.proto's package doc says what lives elsewhere.
 package auth
 
 import (
@@ -32,7 +25,6 @@ import (
 
 var serviceLog = logging.Logger("tau.auth.service")
 
-// Service is auth's whole state.
 type Service struct {
 	host host.Host
 
@@ -61,10 +53,8 @@ type Service struct {
 	closed    atomic.Bool
 }
 
-// Option configures a Service at construction.
 type Option func(*Service) error
 
-// WithServerOptions passes p2p/rpc.ServerOption values through to rpc.Listen.
 func WithServerOptions(opts ...rpc.ServerOption) Option {
 	return func(s *Service) error {
 		s.serverOptions = append(s.serverOptions, opts...)
@@ -89,7 +79,6 @@ func WithUsers(db kvdb.KVDB, v Vault, cfg Config) Option {
 	}
 }
 
-// WithForges is the registry sign-in asks who a forge credential is.
 func WithForges(r *forge.Registry) Option {
 	return func(s *Service) error {
 		if r == nil {
@@ -112,7 +101,6 @@ func WithHTTPClient(c *http.Client) Option {
 	}
 }
 
-// WithClock replaces time.Now.
 func WithClock(now func() time.Time) Option {
 	return func(s *Service) error {
 		if now == nil {

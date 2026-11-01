@@ -61,7 +61,6 @@ func OAuthSecretName(host string) string { return secretOAuth + host }
 // OIDCSecretName is the same for an OIDC provider.
 func OIDCSecretName(provider string) string { return secretOIDC + provider }
 
-// keyring caches what it read.
 type keyring struct {
 	vault Vault
 	store store
@@ -150,7 +149,6 @@ func (k *keyring) Signer(ctx context.Context, issuer string) (*token.Signer, err
 	return s, nil
 }
 
-// PublicKey resolves a kid from the store.
 func (k *keyring) PublicKey(ctx context.Context, kid string) (ed25519.PublicKey, error) {
 	var row keyRow
 	if err := k.store.get(ctx, prefixKeys+kid, &row); err != nil {

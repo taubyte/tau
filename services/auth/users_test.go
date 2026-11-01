@@ -220,8 +220,6 @@ func TestLocalUsers(t *testing.T) {
 	}
 }
 
-// Two nodes creating one name at once both succeed, and every node resolves
-// the name to the same, earlier, user.
 func TestConcurrentNameClaimsResolveTheSameEverywhere(t *testing.T) {
 	f := newFx(t)
 	ctx := t.Context()
@@ -371,8 +369,6 @@ func TestRefreshAndLogout(t *testing.T) {
 	require.Equal(t, connect.CodeUnauthenticated, code(t, err))
 }
 
-// A token signed on one node verifies on another, which holds a different
-// key, because the kid resolves through the shared store.
 func TestTokensVerifyAcrossNodes(t *testing.T) {
 	f := newFx(t)
 	tok := f.adminToken()

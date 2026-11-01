@@ -12,12 +12,8 @@ import (
 	authv2 "github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2"
 )
 
-// connect.go is a forge credential handed to the client: linking the forge
-// account it was obtained with, describing it, and renewing it.
-//
-// THE CLOUD KEEPS NO FORGE CREDENTIAL. A forge sign-in returns the one it
-// obtained, and the client holds it; Renew refreshes it with this cloud's
-// OAuth app, whose client secret only the cloud holds.
+// The cloud keeps no forge credential: a forge sign-in returns it to the client, and
+// Renew refreshes it with this cloud's OAuth app, whose secret only the cloud holds.
 
 // connectForge links the forge identity to the caller when no user holds it
 // yet, so a later sign-in with that forge finds them; a link another user
@@ -67,8 +63,6 @@ func (s *Service) describe(ctx context.Context, userID string, ft *authv2.ForgeT
 	return d, nil
 }
 
-// renew refreshes a client's forge credential at host with this cloud's
-// OAuth app there.
 func (s *Service) renew(ctx context.Context, host, refreshToken string) (*authv2.ForgeToken, error) {
 	if refreshToken == "" {
 		return nil, invalid("no refresh token")

@@ -49,7 +49,6 @@ const (
 	prefixKeys     = "/keys/"
 )
 
-// ErrNotFound is a row that is not there.
 var ErrNotFound = errors.New("auth: not found")
 
 // digest is a fixed-width, segment-safe stand-in for a value that is either
@@ -62,7 +61,6 @@ func digest(parts ...string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// store is auth's rows over kvdb.
 type store struct{ db kvdb.KVDB }
 
 func (s store) put(ctx context.Context, key string, v any) error {
@@ -130,9 +128,6 @@ func (s store) children(ctx context.Context, prefix string) ([]string, error) {
 	return slices.Compact(out), nil
 }
 
-// ─────────────────────────────── claims ───────────────────────────────
-
-// claim is one index entry: a user claiming a name, an email or an identity.
 type claim struct {
 	Created int64 `cbor:"created"` // unix nanoseconds
 	// Issuer, Subject and Login are an identity link's, kept so a user's
@@ -181,8 +176,6 @@ func linkKey(issuer, subject string) string {
 	return prefixLinks + digest(issuer) + "/" + digest(subject) + "/"
 }
 
-// ─────────────────────────────── users ───────────────────────────────
-
 // A user's fields, one key each.
 const (
 	fieldProfile  = "profile"
@@ -214,9 +207,6 @@ type flagRow struct {
 
 type passwordRow = password.Hash
 
-// ─────────────────────────────── credentials ───────────────────────────────
-
-// sessionRow is a refresh token, keyed by its digest.
 type sessionRow struct {
 	User    string `cbor:"user"`
 	Created int64  `cbor:"created"`

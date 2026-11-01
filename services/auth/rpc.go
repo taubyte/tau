@@ -16,7 +16,6 @@ import (
 	"github.com/taubyte/tau/services/auth/password"
 )
 
-// mount is the one handler rpc.Listen serves.
 func (s *Service) mount() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle(authv2connect.NewIdentityServiceHandler(&identityHandler{s}))
@@ -25,7 +24,6 @@ func (s *Service) mount() http.Handler {
 	return mux
 }
 
-// caller is who the request's bearer token says it is.
 func (s *Service) caller(ctx context.Context, h http.Header) (principal, error) {
 	raw, ok := strings.CutPrefix(h.Get("Authorization"), "Bearer ")
 	if !ok || raw == "" {

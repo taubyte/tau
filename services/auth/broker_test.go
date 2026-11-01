@@ -225,8 +225,6 @@ func TestPastedSignIn(t *testing.T) {
 	require.Equal(t, connect.CodeUnavailable, code(t, err))
 }
 
-// Two users can never share a forge identity silently: a link is a claim of
-// its own, and the earlier one wins on every node.
 func TestDoubleLinkResolvesToTheEarlier(t *testing.T) {
 	f := newFx(t, func(c *Config) { c.SignUp = SignUpOpen })
 	ctx := t.Context()
@@ -305,8 +303,6 @@ func TestDevicePollPending(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, poll.Msg.GetPending())
 }
-
-// ─────────────────────────────── OIDC ───────────────────────────────
 
 type idp struct {
 	key *ecdsa.PrivateKey

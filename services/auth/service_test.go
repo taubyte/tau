@@ -17,19 +17,6 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/auth/v2/authv2connect"
 )
 
-// TestServiceNeedsOnlyAMocknetHost is the narrow-dependency rule in its
-// falsifiable form (.notes/v2/service-conventions.md, "The narrowest dependency
-// is a REQUIREMENT"):
-//
-//	Can this service be constructed against mocknet.GenPeer(), with nothing
-//	else standing up?
-//
-// Everything it needs is written out inline here rather than taken from
-// helpers_test.go, because the point of the test is exactly the list of
-// things it does NOT do: no kvdb.Factory, no DHT, no IPFS DAG, no
-// gossipsub, no temp directory, no config bag, no port. If someone later
-// widens what New takes, this is the test that stops compiling, and it is
-// meant to be read as the spec for the other seven services.
 func TestServiceNeedsOnlyAMocknetHost(t *testing.T) {
 	mn := mocknet.New()
 	defer mn.Close()
@@ -71,9 +58,6 @@ func TestNew_OptionFailure(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// TestNew_BindsNothing is the observable half of service-conventions.md
-// §2a: two Services can be constructed on the SAME host and protocol,
-// because construction opens no listener. Start is what would collide.
 func TestNew_BindsNothing(t *testing.T) {
 	host := newHost(t, newMocknet(t))
 
@@ -118,11 +102,6 @@ func TestWithServerOptions(t *testing.T) {
 	require.NoError(t, s.Start(t.Context()))
 }
 
-// TestStart_ListenFails reaches Start's own error return: p2p/rpc.Listen
-// refuses a ServerOption that sets a field it owns (WithHTTPServer setting
-// Handler — p2p/rpc/server.go's refuseOwnedFields), which is the cheapest
-// way to make the real rpc.Listen call fail without needing a second
-// listener already bound on the same protocol.
 func TestStart_ListenFails(t *testing.T) {
 	s := newTestService(t, WithServerOptions(rpc.WithHTTPServer(func(hs *http.Server) {
 		hs.Handler = http.NewServeMux()
@@ -136,18 +115,6 @@ func TestDescriptor(t *testing.T) {
 	assert.Equal(t, Protocol, Descriptor.Protocol)
 }
 
-// TestStart_RefusedOnceTheFirstListenerIsGone and
-// TestStart_RefusedAfterCloseWithoutStart are the two halves of "Start once"
-// that TestStartAndClose cannot separate: there, each of Start's two guards
-// is standing in front of the other, so removing either one on its own still
-// leaves an error coming back. Neither of the states below is reachable with
-// both guards in place, which is the point — Start's contract is its own,
-// not something inherited from whatever rpc.Listen happens to refuse.
-
-// Once the context Start was given ends, the server closes itself
-// (p2p/rpc's watch) and hands the protocol back to the host — so rpc.Listen
-// would happily bind a second time. Start must not: a Service that already
-// ran is spent.
 func TestStart_RefusedOnceTheFirstListenerIsGone(t *testing.T) {
 	s := newTestService(t)
 
@@ -159,8 +126,6 @@ func TestStart_RefusedOnceTheFirstListenerIsGone(t *testing.T) {
 	assert.Error(t, s.Start(t.Context()), "a spent Service must not quietly start a second listener")
 }
 
-// And a Service closed before it ever served has no listener to collide
-// with, so only the closed flag can refuse it.
 func TestStart_RefusedAfterCloseWithoutStart(t *testing.T) {
 	s := newTestService(t)
 	require.NoError(t, s.Close())

@@ -10,9 +10,8 @@ import (
 	"github.com/taubyte/tau/p2p/rpc"
 )
 
-// wireHarness is a running Service on one mocknet host reached from a second
-// one over the real transport — connect-go, over go-libp2p-gostream, over
-// libp2p's mocknet (service-conventions.md §0's measurement #1).
+// wireHarness is a running Service on one mocknet host reached from a second one
+// over the real transport.
 type wireHarness struct {
 	Service    *Service
 	Mocknet    mocknet.Mocknet
