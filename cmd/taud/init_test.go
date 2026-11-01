@@ -39,8 +39,6 @@ func sealedBundle(t *testing.T, project, value string) []byte {
 	return data
 }
 
-// TestInitWritesWhatStartThenServes: the bundle arrives on stdin, as
-// spore-drive streams it, and from a file; the node then serves both.
 func TestInitWritesWhatStartThenServes(t *testing.T) {
 	config := secretsConfig(t)
 

@@ -13,8 +13,6 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 )
 
-// TestAMeshAdmitsOnlyItsOwn: every mesh has its own CA, so a peer of one
-// cannot join another even on the same loopback.
 func TestAMeshAdmitsOnlyItsOwn(t *testing.T) {
 	a, err := New(t.Context(), "A")
 	require.NoError(t, err)

@@ -1,35 +1,15 @@
-// Package assets is where a build's output goes: the log it wrote and the
-// artifacts it produced.
+// Package assets is where a build's output goes: the log it wrote and the artifacts
+// it produced, in the node's own content-addressed store. Bytes go in, a content id
+// comes back, and any node that can reach a holder reads them by that id.
 //
-// # What it is
+// It does not promise durability beyond the writing node: Put returns once the bytes
+// are addressable here, and another node fetches them from this one, so a cid stops
+// resolving if its writer is gone and nobody fetched it. Closing that (push to R
+// holders, ack from K before Put returns) is the storage service's. Nothing pins
+// against garbage collection either; there is no sweep over this blockstore yet.
 //
-// The node's own content-addressed store. Bytes go in, a content id comes back,
-// and any node that can reach a holder can read them by that id. It is the
-// mechanism v1 used and it is correct as far as it goes.
-//
-// # What it does NOT promise, said here rather than discovered
-//
-// DURABILITY ON A NODE OTHER THAN THE ONE THAT WROTE IT. A Put returns when the
-// bytes are addressable from THIS node. Another node reads them by fetching
-// them from this one, so a cid handed out in a replicated record — which any
-// node may answer a read for — stops resolving if the node that wrote it is
-// gone and nothing else has fetched it since.
-//
-// That is a real gap and it is the storage service's to close (see
-// services/storage: the key grammar, placement and reclamation are written, the
-// byte plane is not). What closes it is a push to R holders and an
-// acknowledgement from K of them before Put returns — v1's pushStash with the
-// wait v1 never did. When that lands, this package is the seam it replaces.
-//
-// PINNING AGAINST GARBAGE COLLECTION. Nothing here holds a reference the
-// node's own sweep would honour, because there is no sweep over this
-// blockstore yet.
-//
-// # It is handed bytes and nothing else
-//
-// No job id, no project, no caller. An asset store that took an identity would
-// be a second place authorization could be decided, and authorization belongs
-// to whoever accepted the push. A cid is an address, not a credential.
+// It takes bytes and no identity: authorization belongs to whoever accepted the push,
+// and a cid is an address, not a credential.
 package assets
 
 import (
@@ -49,13 +29,8 @@ type Store struct {
 	node peer.Node
 }
 
-// New builds a store over a peer.
-//
-// IT TAKES A peer.Node RATHER THAN A host.Host, which is the one place in v2
-// that does — every service takes the narrow thing it needs, and the narrow
-// thing here IS the DAG, which only a peer has. So this is constructed by
-// whoever has the machine's resources and injected as an interface, exactly
-// like the kvdb factory beside it.
+// New builds a store over a peer. It takes a peer.Node, unlike other v2 services,
+// because the narrow thing it needs is the DAG, which only a peer has.
 func New(node peer.Node) (*Store, error) {
 	if node == nil {
 		return nil, ErrNoNode
@@ -63,26 +38,16 @@ func New(node peer.Node) (*Store, error) {
 	return &Store{node: node}, nil
 }
 
-// Put stores content and returns the id it is addressed by.
-//
-// IT READS TO EOF AND STREAMS, with no length known in advance, because a build
-// log has no size until it ends and requiring one would mean holding the whole
-// of it in memory to find out.
-//
-// THE SAME BYTES ALWAYS YIELD THE SAME ID, which is what makes storing an
-// artifact during a run that later fails harmless, and a retry of an identical
-// build free.
+// Put stores content and returns the id it is addressed by. It streams to EOF with no
+// length known in advance, as a build log has none. The same bytes always yield the
+// same id.
 func (s *Store) Put(ctx context.Context, content io.Reader) (string, error) {
 	if content == nil {
 		return "", errors.New("assets: nothing to store")
 	}
 
-	// THE CONTEXT IS CHECKED BEFORE THE WRITE AND NOT DURING IT. AddFile does
-	// not take one — it reads to EOF on the calling goroutine — so what this
-	// can honour is a deadline that had already passed when it was called. A
-	// Put that must abandon a half-written DAG mid-stream is the storage
-	// service's problem to solve properly; pretending to solve it here with a
-	// goroutine and an abandoned reader would leak the reader and the blocks.
+	// The context is checked before the write, not during it: AddFile takes none and
+	// reads to EOF on this goroutine.
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -94,11 +59,8 @@ func (s *Store) Put(ctx context.Context, content io.Reader) (string, error) {
 	return id, nil
 }
 
-// Get reads content back by id.
-//
-// A CID THIS NODE DOES NOT HOLD IS FETCHED FROM WHOEVER DOES, which is the
-// whole reason a cid is worth putting in a replicated record — and the whole
-// reason the durability gap above matters, since "whoever does" can be nobody.
+// Get reads content back by id, fetching a cid this node does not hold from whoever
+// does.
 func (s *Store) Get(ctx context.Context, id string) (io.ReadSeekCloser, error) {
 	if id == "" {
 		return nil, errors.New("assets: no content id")

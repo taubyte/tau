@@ -29,8 +29,6 @@ func clone(t *testing.T, s *gittest.Server, path, key string) (string, error) {
 	return r.Dir(), nil
 }
 
-// A clone of what the server holds, with the one key it accepts, is a real
-// checkout; any other key, or a repository it does not hold, is refused.
 func TestAServerServesOnlyTheKeyItAccepts(t *testing.T) {
 	t.Setenv("SSH_AUTH_SOCK", "")
 	good, pub := gittest.KeyPair(t)
@@ -54,7 +52,6 @@ func TestAServerServesOnlyTheKeyItAccepts(t *testing.T) {
 	require.Equal(t, 1, s.Served(), "neither refusal read a pack")
 }
 
-// With no allow, any key gets in.
 func TestANilAllowAcceptsAnyKey(t *testing.T) {
 	t.Setenv("SSH_AUTH_SOCK", "")
 	key, _ := gittest.KeyPair(t)
@@ -83,9 +80,6 @@ func dial(t *testing.T, s *gittest.Server) *gossh.Client {
 	return c
 }
 
-// The server answers one exec of git-upload-pack and nothing else: another
-// channel type, another request, another command or a malformed one are each
-// refused, and none of them reads a pack.
 func TestTheServerAnswersOnlyUploadPack(t *testing.T) {
 	s := gittest.NewServer(t, nil)
 	st, _ := gittest.Repository(t, map[string]string{"a": "b"})
@@ -110,8 +104,6 @@ func TestTheServerAnswersOnlyUploadPack(t *testing.T) {
 	require.Equal(t, 0, s.Served())
 }
 
-// An upload-pack for a repository the server does not hold exits non-zero
-// and says why on stderr.
 func TestAnUnknownRepositoryExitsNonZero(t *testing.T) {
 	s := gittest.NewServer(t, nil)
 	sess, err := dial(t, s).NewSession()

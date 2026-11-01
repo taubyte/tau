@@ -17,7 +17,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// A clone lands in the root it was given, on main, with the remote's files.
 func TestNewClonesIntoRoot(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "clone")
 	repo, err := New(context.Background(), URL(localRemote(t)), Root(root), Output(io.Discard))
@@ -33,8 +32,6 @@ func TestNewClonesIntoRoot(t *testing.T) {
 	assert.Equal(t, head.Name(), plumbing.NewBranchReferenceName("main"))
 }
 
-// A named branch is checked out after the clone, and asking for the branch
-// already checked out is a no-op rather than a second checkout.
 func TestNewChecksOutTheBranch(t *testing.T) {
 	remote := localRemote(t)
 	root := t.TempDir()
@@ -52,19 +49,16 @@ func TestNewChecksOutTheBranch(t *testing.T) {
 	assert.Equal(t, again.Dir(), root)
 }
 
-// A branch the remote does not have is refused by name.
 func TestNewRefusesAMissingBranch(t *testing.T) {
 	_, err := New(context.Background(), URL(localRemote(t)), Root(t.TempDir()), Branch("nope"), Output(io.Discard))
 	assert.ErrorContains(t, err, "nope")
 }
 
-// A remote that is not there fails the clone; nothing is retried.
 func TestNewFailsOnAMissingRemote(t *testing.T) {
 	_, err := New(context.Background(), URL("file://"+filepath.Join(t.TempDir(), "absent")), Root(t.TempDir()), Output(io.Discard))
 	assert.Assert(t, err != nil)
 }
 
-// An option that fails stops New before anything is cloned.
 func TestNewStopsOnAFailingOption(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "never")
 	_, err := New(context.Background(), URL(localRemote(t)), Root(root), SSHKeyAs("git", "not a key", githubHostKeys(t)))
@@ -73,8 +67,6 @@ func TestNewStopsOnAFailingOption(t *testing.T) {
 	assert.Assert(t, os.IsNotExist(statErr))
 }
 
-// TestCheckoutEmptyRepo asserts that Checkout on an empty repo (no commits) only sets HEAD
-// and does not create symrefs to origin or call worktree checkout.
 func TestCheckoutEmptyRepo(t *testing.T) {
 	dir := t.TempDir()
 	r, err := gogit.PlainInit(dir, false)
@@ -102,8 +94,6 @@ func TestCheckoutEmptyRepo(t *testing.T) {
 	assert.Equal(t, ref.Target(), plumbing.NewBranchReferenceName("main"))
 }
 
-// TestOpenWithSSHKeyKeepsTheRemote asserts that opening an existing clone
-// leaves its origin as it was: the transport is the caller's, never rewritten.
 func TestOpenWithSSHKeyKeepsTheRemote(t *testing.T) {
 	secKey := clientKey(t)
 
@@ -138,8 +128,6 @@ func TestOpenWithSSHKeyKeepsTheRemote(t *testing.T) {
 	assert.Assert(t, strings.HasPrefix(urls[0], "git@"), "origin URL should remain SSH, got %s", urls[0])
 }
 
-// TestNewEmptyRemote asserts that New with an empty remote (no refs) runs the init path
-// and Checkout succeeds so the repo is ready for the first commit.
 func TestNewEmptyRemote(t *testing.T) {
 	emptyBare := t.TempDir()
 	_, err := gogit.PlainInit(emptyBare, true)

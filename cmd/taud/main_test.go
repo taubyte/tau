@@ -65,7 +65,6 @@ func TestVersion(t *testing.T) {
 	require.Equal(t, "tau dev (none, unknown)\n", out)
 }
 
-// TestConfigPrintsSomethingStartAccepts once its placeholder key is filled.
 func TestConfigRoundTripsIntoRead(t *testing.T) {
 	printed, err := runApp(t, "config")
 	require.NoError(t, err)
@@ -108,9 +107,6 @@ func TestPrintExampleReportsAWriteFailure(t *testing.T) {
 	require.ErrorIs(t, printExample(failingWriter{}), os.ErrClosed)
 }
 
-// TestStartServesTheGatewayAndStops runs the command the way systemd does —
-// a config file and a root — sees the gateway answer on loopback, and stops it
-// first with its context and then with a signal.
 func TestStartServesTheGatewayAndStops(t *testing.T) {
 	key, root, cert := admitted(t, "test")
 	config := writeConfig(t, ""+

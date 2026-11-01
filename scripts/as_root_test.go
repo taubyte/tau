@@ -71,8 +71,6 @@ func TestAsRootKeepsGOTMPDIR(t *testing.T) {
 	assert.Equal(t, gotmp, values["gotmpdir"])
 }
 
-// TestWhatARootRunLeavesIsRemovedByTheNextRun leaves a directory only root can
-// remove in the run's TMPDIR, which is what a killed run under as-root leaves.
 func TestWhatARootRunLeavesIsRemovedByTheNextRun(t *testing.T) {
 	root := asRoot(t)
 	c := newCapped(t)

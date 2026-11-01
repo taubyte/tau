@@ -137,7 +137,6 @@ func TestHostCommandExecutionTimeout(t *testing.T) {
 func TestHostInvalidAuth(t *testing.T) {
 	port := newSSHServer(t)
 
-	// Create Host with invalid authentication
 	h, err := New(
 		Address("127.0.0.1:"+port),
 		Password("wronguser", "wrongpassword"),
@@ -157,7 +156,6 @@ func TestHostWithMultipleAuthMethods(t *testing.T) {
 	privateKey, _ := generatePrivateKey(t, "")
 	privateKeyReader := strings.NewReader(privateKey)
 
-	// Create Host with both password and key authentication
 	h, err := New(
 		Address("127.0.0.1:"+port),
 		Password("testuser", "password"),
@@ -182,7 +180,6 @@ func TestHostWithKeyPassphrase(t *testing.T) {
 	privateKey, _ := generatePrivateKey(t, "testpassphrase")
 	privateKeyReader := strings.NewReader(privateKey)
 
-	// Create Host with key authentication with passphrase
 	h, err := New(
 		Address("127.0.0.1:"+port),
 		Key("testuser", "testpassphrase", privateKeyReader),
@@ -249,7 +246,6 @@ func TestHostClone(t *testing.T) {
 	)
 	assert.NilError(t, err, "Failed to create original Host")
 
-	// Clone the original host with additional attributes
 	clonedHost, err := originalHost.Clone(
 		Timeout(10 * time.Second),
 	)

@@ -302,11 +302,6 @@ func TestARunHasATMPDIRNamedForItsScope(t *testing.T) {
 	}
 }
 
-// TestTheDefaultTMPDIRHasRoomForASocketInATempDir binds a socket as deep as
-// t.TempDir can put one: a 64-byte test name, the widest random suffix and the
-// sequence directory, with the longest socket name a test here binds. The run
-// is in the real namespace, so it stays alive while the socket is bound, which
-// is what keeps another cap call from removing its directory.
 func TestTheDefaultTMPDIRHasRoomForASocketInATempDir(t *testing.T) {
 	c := newCapped(t)
 	c.ns = ""
@@ -346,9 +341,6 @@ func TestTheSliceIsOnlyLoweredWhenNothingIsInIt(t *testing.T) {
 	assert.Equal(t, limits{fmt.Sprint(gib), fmt.Sprint(512 * mib), "1s"}, c.limits(t))
 }
 
-// TestASliceIsNeverGivenMoreThanItsHostHas gives cap a host of 4G and asks
-// for a terabyte: the slice gets its share of the 4G, half of it where a
-// desktop session runs, and what fits is still taken as asked.
 func TestASliceIsNeverGivenMoreThanItsHostHas(t *testing.T) {
 	c := newCapped(t)
 	c.meminfo = filepath.Join(t.TempDir(), "meminfo")
@@ -398,8 +390,6 @@ func TestAKilledRunsTMPDIRIsRemovedByTheNextRun(t *testing.T) {
 	assert.FileExists(t, filepath.Join(outside, "data"), "nothing outside the namespace is removed")
 }
 
-// TestACallWaitsWhileTheLockIsHeld holds the lock every cap call takes, as a
-// call does from looking at the other runs until its own is in its scope.
 func TestACallWaitsWhileTheLockIsHeld(t *testing.T) {
 	c := newCapped(t)
 	lock, err := os.OpenFile(filepath.Join(c.runtime, "tau-cap.lock"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
@@ -418,9 +408,6 @@ func TestACallWaitsWhileTheLockIsHeld(t *testing.T) {
 	assert.FileExists(t, ran)
 }
 
-// TestRunsStartedTogetherEachKeepTheirTMPDIR starts runs side by side. Each
-// claims its TMPDIR and checks a second later that the claim is still there:
-// a directory removed under a run, or given to two runs at once, fails it.
 func TestRunsStartedTogetherEachKeepTheirTMPDIR(t *testing.T) {
 	c := newCapped(t)
 

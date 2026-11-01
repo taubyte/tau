@@ -61,9 +61,6 @@ func TestAWaitingGateIsNotStarvedBySmallRuns(t *testing.T) {
 	late.await(t)
 }
 
-// TestAWaiterNamesARunWhoseCommandHasNewlines starts a run whose script is
-// two lines. systemd shows a description holding a newline as [unprintable],
-// so the scope is described with the command on one line.
 func TestAWaiterNamesARunWhoseCommandHasNewlines(t *testing.T) {
 	c := newCapped(t)
 	in := c.start(t, small, nil, "true\ntrue")
@@ -85,8 +82,6 @@ func TestGatesRunOneAtATime(t *testing.T) {
 	second.await(t)
 }
 
-// TestAMakeRunIsAGateUnlessToldOtherwise runs a stand-in make, which is all a
-// run's class is read from.
 func TestAMakeRunIsAGateUnlessToldOtherwise(t *testing.T) {
 	c := newCapped(t)
 	makeBin := filepath.Join(t.TempDir(), "make")
@@ -111,8 +106,6 @@ func TestAnUnknownClassIsRefused(t *testing.T) {
 	assert.Contains(t, string(out), `TAU_CAP_CLASS is gate or small, not "heavy"`)
 }
 
-// TestAGateHoldsTheSliceUntilItsLastProcessIsGone ends the gate's own process
-// and leaves one it started, which is how a run whose make was killed goes on.
 func TestAGateHoldsTheSliceUntilItsLastProcessIsGone(t *testing.T) {
 	c := newCapped(t)
 	gate := c.launch(t, "gate", small, nil, "(sleep 300 </dev/null >/dev/null 2>&1 &)").await(t)
@@ -126,8 +119,6 @@ func TestAGateHoldsTheSliceUntilItsLastProcessIsGone(t *testing.T) {
 	waiting.await(t)
 }
 
-// TestAGateWaitsForWhatIsLeftInTheSlice leaves a process in the slice that
-// holds no lock, as a run an older cap started does.
 func TestAGateWaitsForWhatIsLeftInTheSlice(t *testing.T) {
 	c := newCapped(t)
 	left := c.start(t, small, nil, "(exec 7>&- 8>&- sleep 300 </dev/null >/dev/null 2>&1 &)")
@@ -142,9 +133,6 @@ func TestAGateWaitsForWhatIsLeftInTheSlice(t *testing.T) {
 	gate.await(t)
 }
 
-// TestARunInsideARunTakesNoLock caps runs from inside runs in the same slice.
-// Each inner call is part of the run it is in, and one that took the slice's
-// lock would wait for that run, which waits for it.
 func TestARunInsideARunTakesNoLock(t *testing.T) {
 	c := newCapped(t)
 

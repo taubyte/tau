@@ -10,9 +10,6 @@ import (
 
 const prefix = "shopA/prod/kv/cache-id/"
 
-// TestAKeyCannotLeaveItsTenant — the whole point. Every one of these reached
-// another project's entries before this existed, because the stores put the
-// joined string through ds.NewKey and path.Clean collapsed the traversal.
 func TestAKeyCannotLeaveItsPrefix(t *testing.T) {
 	for _, key := range []string{
 		"../../../victim/prod/kv/their-id/session",
@@ -25,8 +22,6 @@ func TestAKeyCannotLeaveItsPrefix(t *testing.T) {
 	}
 }
 
-// TestAnOrdinaryKeyIsUntouched, including the hierarchy List depends on: a key
-// may contain "/" and must, or a prefix scan has nothing to scan.
 func TestAKeyThatStaysIsAllowed(t *testing.T) {
 	for _, key := range []string{
 		"session",
@@ -41,9 +36,6 @@ func TestAKeyThatStaysIsAllowed(t *testing.T) {
 	}
 }
 
-// TestAKeyBuiltFromAFixedPrefixHasToBeCanonical — the register's shape, where
-// there is no tenant prefix to stay inside and the question is whether the key
-// is the one it looks like.
 func TestCanonicalRefusesWhatCleanWouldChange(t *testing.T) {
 	for _, key := range []string{
 		"h/../p/victim/prod",

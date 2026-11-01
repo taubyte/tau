@@ -13,10 +13,7 @@ import (
 
 type Option func(c *Repository) error
 
-/* URL is an Option to set the repository URL.
- *
- * url: The URL to use.
- */
+// URL sets the repository URL.
 func URL(url string) Option {
 	return func(c *Repository) error {
 		c.url = url
@@ -24,10 +21,7 @@ func URL(url string) Option {
 	}
 }
 
-/* Output is an Option to set the repository output.
- *
- * output: The output to use.
- */
+// Output sets where progress is written.
 func Output(output io.Writer) Option {
 	return func(c *Repository) error {
 		c.output = output
@@ -35,17 +29,10 @@ func Output(output io.Writer) Option {
 	}
 }
 
-// SSHKeyAs authenticates as account with key, and only to a host presenting one
-// of hostKeys.
-//
-// THE ACCOUNT IS A HOST FACT: GitHub and GitLab answer ssh as "git", and a forge
-// that does not is named by its driver (pkg/forge's Address.SSHAccount) rather
-// than assumed here.
-//
-// THE HOST KEYS ARE REQUIRED. An ssh connection that accepts any host key is
-// authenticated in one direction only: the forge learns who is cloning, and the
-// clone learns nothing about who answered — so whoever sits on the path can hand
-// a build different code. No keys is refused rather than read as "any".
+// SSHKeyAs authenticates as account with key, and only to a host presenting one of
+// hostKeys. The account is a host fact, named by the forge driver. Host keys are
+// required: an ssh connection accepting any host key would let whoever sits on the
+// path hand a build different code.
 func SSHKeyAs(account, key string, hostKeys []gossh.PublicKey) Option {
 	if len(hostKeys) == 0 {
 		return func(*Repository) error {
@@ -74,13 +61,11 @@ func sshKey(account, key string, hostKey gossh.HostKeyCallback) Option {
 		if account == "" {
 			return errors.New("an ssh key needs the account it authenticates as")
 		}
-		// Parse the private key first to ensure it's valid
 		_, err := gossh.ParsePrivateKey([]byte(key))
 		if err != nil {
 			return fmt.Errorf("parsing private key failed with %w", err)
 		}
 
-		// Create SSH authentication using the parsed private key
 		auth, err := ssh.NewPublicKeys(account, []byte(key), "")
 		if err != nil {
 			return fmt.Errorf("adding SSH Key failed with %w", err)
@@ -92,10 +77,7 @@ func sshKey(account, key string, hostKey gossh.HostKeyCallback) Option {
 	}
 }
 
-/* Root is an Option to set the repository root.
- *
- * root: The root to use.
- */
+// Root sets the directory the repository lives in.
 func Root(root string) Option {
 	return func(c *Repository) error {
 		c.root = root
@@ -103,10 +85,7 @@ func Root(root string) Option {
 	}
 }
 
-/* Branch is an Option to set the repository branch.
- *
- * branch: The branch to use.
- */
+// Branch sets the branch to check out.
 func Branch(branch string) Option {
 	return func(c *Repository) error {
 		c.branches = []string{branch}

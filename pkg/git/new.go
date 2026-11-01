@@ -13,23 +13,14 @@ import (
 	"github.com/pterm/pterm"
 )
 
-/* Info uses pterm to display info messages.
- *
- * format: The format to use.
- * args: The arguments to use.
- */
+// Info prints an info message with pterm.
 func Info(args ...interface{}) {
 	pterm.EnableDebugMessages()
 	pterm.Info.Println(args...)
 }
 
-/*
-New creates a new repository.
-  - ctx: The context to use.
-  - options: The options to use.
-    *
-  - Returns the repository and error if something goes wrong.
-*/
+// New opens the repository at the configured root, cloning or initialising it as
+// needed.
 func New(ctx context.Context, options ...Option) (c *Repository, err error) {
 	c = &Repository{
 		ctx:    ctx,
@@ -76,9 +67,8 @@ func (c *Repository) open_or_clone() error {
 func (c *Repository) clone() (err error) {
 	Info("Cloning from " + c.url + " on branch " + c.branches[0] + " into " + c.root + "\n")
 
-	// ONE TRANSPORT, ONE ATTEMPT. The caller chose the address and the
-	// credential together; a clone that fails is reported as it failed, never
-	// retried anonymously over another transport that might read something else.
+	// One transport, one attempt: a failed clone is never retried anonymously over
+	// another transport.
 	c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
 		URL:      c.url,
 		Progress: c.output,

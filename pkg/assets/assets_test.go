@@ -30,9 +30,6 @@ func store(t *testing.T) (*assets.Store, peer.Node) {
 	return s, node
 }
 
-// THE SAME BYTES ALWAYS YIELD THE SAME ID, which is what makes storing an
-// artifact during a run that later fails harmless, and a retry of an identical
-// build free.
 func TestContentIsItsOwnAddress(t *testing.T) {
 	s, _ := store(t)
 
@@ -52,8 +49,7 @@ func TestContentIsItsOwnAddress(t *testing.T) {
 func TestWhatGoesInComesBack(t *testing.T) {
 	s, _ := store(t)
 
-	// NO LENGTH IS KNOWN IN ADVANCE. A build log has no size until it ends, and
-	// requiring one would mean holding the whole of it in memory to find out.
+	// No length is known in advance.
 	content := bytes.Repeat([]byte("a line of build output\n"), 4096)
 
 	id, err := s.Put(t.Context(), bytes.NewReader(content))
@@ -68,8 +64,6 @@ func TestWhatGoesInComesBack(t *testing.T) {
 	require.Equal(t, content, got)
 }
 
-// A reader that fails part way is the caller's, and comes back as an error
-// rather than a truncated object with an id somebody will later trust.
 func TestAReaderThatBreaks(t *testing.T) {
 	s, _ := store(t)
 
@@ -96,10 +90,6 @@ func TestWhatItRefuses(t *testing.T) {
 	require.Error(t, err)
 }
 
-// A DEADLINE THAT HAS ALREADY PASSED IS HONOURED, and the doc says why that is
-// the whole of what a context can do here: AddFile reads to EOF on the calling
-// goroutine, and abandoning a half-written DAG mid-stream would leak the reader
-// and the blocks.
 func TestAContextThatHasAlreadyEnded(t *testing.T) {
 	s, _ := store(t)
 
@@ -110,7 +100,6 @@ func TestAContextThatHasAlreadyEnded(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 }
 
-// MANY RUNS ON ONE NODE CALL IT AT ONCE.
 func TestConcurrentPuts(t *testing.T) {
 	s, _ := store(t)
 

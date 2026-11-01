@@ -22,8 +22,7 @@ type Command struct {
 	env        map[string]string
 }
 
-// Create a command executor
-// Note: this will close the session after execution
+// New builds a command executor. It closes the session after execution.
 func New(ctx context.Context, sess RemoteSession, name string, options ...Option) (*Command, error) {
 	c := &Command{
 		ctx:       ctx,
@@ -47,7 +46,6 @@ func New(ctx context.Context, sess RemoteSession, name string, options ...Option
 		}
 	}
 
-	// free env
 	c.env = nil
 
 	return c, nil

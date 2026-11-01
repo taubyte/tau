@@ -211,7 +211,7 @@ func TestCommandsessionWrapContextCancellation(t *testing.T) {
 	// Cancelled while the command runs, so the cancellation path signals it.
 	err := cmd.sessionWrap(func() error {
 		cancel()
-		time.Sleep(100 * time.Millisecond) // Simulate some work
+		time.Sleep(100 * time.Millisecond)
 		return nil
 	})
 	assert.ErrorContains(t, err, "context done")
@@ -230,14 +230,12 @@ func TestCommandsessionWrapContextCancellationFailedInt(t *testing.T) {
 	// Cancelled while the command runs, so the cancellation path signals it.
 	err := cmd.sessionWrap(func() error {
 		cancel()
-		time.Sleep(100 * time.Millisecond) // Simulate some work
+		time.Sleep(100 * time.Millisecond)
 		return nil
 	})
 	assert.ErrorContains(t, err, "context done")
 }
 
-// A command whose context is already done is not run, however quickly it
-// would finish: the session's call is never made.
 func TestACommandPastItsContextIsNotRun(t *testing.T) {
 	mockSession := new(mocks.RemoteSession)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -311,10 +309,6 @@ func TestCommand_ArgumentsHandling(t *testing.T) {
 	assert.Equal(t, `echo "a rg1" "arg2"`, cmd.String(), "Arguments should be correctly formatted and stored")
 }
 
-// TestAnOutputAbandonedToItsContextWritesNothingTheCallerRead. A command whose
-// context ends while its output is still coming returns at once, and the call
-// it left running must finish without writing what the caller already read,
-// and without blocking forever on a result nobody will take.
 func TestAnOutputAbandonedToItsContextWritesNothingTheCallerRead(t *testing.T) {
 	for _, method := range []string{"CombinedOutput", "Output"} {
 		t.Run(method, func(t *testing.T) {

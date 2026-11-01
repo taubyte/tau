@@ -74,10 +74,7 @@ func newSSHServer(t *testing.T) string {
 
 	config.AddHostKey(privateKey)
 
-	// Port 0: the kernel picks one that is free, and the test uses whatever it got.
-	// A fixed port makes the test fail when ANY other process happens to hold it —
-	// which is what 2222 did here, against a VM's ssh forward that had nothing to do
-	// with this package.
+	// Port 0, so a port another process holds cannot fail the test.
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	assert.NilError(t, err, "Failed to listen for connection")
 	t.Cleanup(func() { listener.Close() })
@@ -172,10 +169,7 @@ func newSFTPServer(t *testing.T) string {
 
 	config.AddHostKey(privateKey)
 
-	// Port 0: the kernel picks one that is free, and the test uses whatever it got.
-	// A fixed port makes the test fail when ANY other process happens to hold it —
-	// which is what 2222 did here, against a VM's ssh forward that had nothing to do
-	// with this package.
+	// Port 0, so a port another process holds cannot fail the test.
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	assert.NilError(t, err, "Failed to listen for connection")
 	t.Cleanup(func() { listener.Close() })

@@ -1,23 +1,11 @@
-// Package mesh runs a set of libp2p peers inside one process, on loopback,
-// meshed to each other — the network a v2 end-to-end test stands its services
-// on.
+// Package mesh runs a set of libp2p peers inside one process, on loopback, meshed to
+// each other: the network a v2 end-to-end test stands its services on, without the
+// v1 service registry dream carries.
 //
-// # Why this and not dream
-//
-// v1's dream universe does this too, and a great deal more: a registry of v1
-// service factories, simples carrying v1 clients, a fixture runner, an HTTP
-// api. Importing it for the mesh alone dragged every v1 service package into
-// v2's test binaries. What a v2 test needs from it is a handful of peers that
-// can find each other, which is all this is.
-//
-// # What is kept from dream, and why
-//
-// The things about a universe's network that were measured rather than chosen
-// are kept: one dial per pair from a canonical side, and nothing else dialing
-// (see dial and Add), and the bounded WaitForSwarm after it. Each is commented
-// where it lives. A peer's services also start before it joins, as in dream.
-// dream's 750ms settle is NOT here, because dream only ever paid it for a
-// simple — a client node — and a mesh has none.
+// It keeps what was measured in dream's network: one dial per pair from a canonical
+// side with nothing else dialing (see dial and Add), and the bounded WaitForSwarm
+// after it. A peer's services start before it joins. dream's 750ms settle is not
+// here: it was only ever for a simple, and a mesh has none.
 package mesh
 
 import (
@@ -85,8 +73,8 @@ func New(ctx context.Context, name string) (*Mesh, error) {
 		return nil, err
 	}
 
-	// A CA PER MESH, so a peer of one mesh cannot join another even when both
-	// dial the same loopback ports in turn.
+	// A CA per mesh, so a peer of one mesh cannot join another on the same loopback
+	// ports.
 	ca, err := sectls.NewCA(name, certificateValidity)
 	if err != nil {
 		os.RemoveAll(root)
@@ -114,12 +102,9 @@ func (m *Mesh) Peers() []peer.Node {
 	return append([]peer.Node(nil), m.peers...)
 }
 
-// Add makes a peer, starts what runs on it, and then dials it to every peer
-// already here.
-//
-// WHAT RUNS ON A PEER STARTS BEFORE IT JOINS, which is the order dream always
-// had: a service's first moves happen against a peer that is about to be
-// connected rather than racing the connection. start may be nil.
+// Add makes a peer, starts what runs on it, and then dials it to every peer already
+// here. Starting first means a service's first moves do not race the connection.
+// start may be nil.
 func (m *Mesh) Add(start func(peer.Node) error) (peer.Node, error) {
 	existing := m.Peers()
 
@@ -131,12 +116,10 @@ func (m *Mesh) Add(start func(peer.Node) error) (peer.Node, error) {
 		return nil, err
 	}
 
-	// NO BOOTSTRAP LIST. The dial below is the one way a peer joins, because a
-	// bootstrap dial runs in the background and races it: the two cross, both
-	// handshakes park in dial backoff, and a CRDT on the pair never fetches
-	// the heads it is told about. Measured with two register nodes: bootstrap
-	// plus dial resolved a publish on the other node about one run in three,
-	// the dial alone every run.
+	// No bootstrap list: the dial below is the one way a peer joins. A background
+	// bootstrap dial crosses it, both handshakes park in dial backoff, and a CRDT on the
+	// pair never fetches its heads (bootstrap plus dial resolved a publish one run in
+	// three; the dial alone, every run).
 	key := keypair.NewRaw()
 	admission, err := m.Credentials(key)
 	if err != nil {
@@ -166,13 +149,10 @@ func (m *Mesh) Add(start func(peer.Node) error) (peer.Node, error) {
 	return n, nil
 }
 
-// dial connects the new peer to every existing one.
-//
-// EACH PAIR IS DIALED ONCE, FROM A CANONICAL SIDE. Concurrent crossed dials
-// make both TLS handshakes act as the client and park both sides in the
-// swarm's dial backoff, wedging the pair for tens of seconds. A failed dial is
-// retried with freshly resolved addresses before falling back to the peering
-// service, whose reconnect backoff can leave a mesh half-meshed for a minute.
+// dial connects the new peer to every existing one, once per pair from a canonical
+// side: crossed dials make both TLS handshakes the client and park both sides in dial
+// backoff for tens of seconds. A failed dial is retried with fresh addresses before
+// falling back to the peering service, whose backoff can leave a mesh half-meshed.
 func (m *Mesh) dial(n peer.Node, existing []peer.Node) {
 	ctx, cancel := context.WithTimeout(m.ctx, meshTimeout)
 	defer cancel()
@@ -214,12 +194,9 @@ func (m *Mesh) OnClose(c io.Closer) {
 	m.closers = append(m.closers, c)
 }
 
-// Close stops everything handed to OnClose, then the peers, then removes the
-// mesh's directory.
-//
-// SERVICES FIRST, THEN PEERS, with a drain between: a service still publishing
-// or answering when its host goes turns an orderly shutdown into a run of
-// errors from a closed host.
+// Close stops everything handed to OnClose, then the peers, then removes the mesh's
+// directory. Services go first, with a drain, so none is still talking to a closed
+// host.
 func (m *Mesh) Close() {
 	m.mu.Lock()
 	closers, peers := m.closers, m.peers

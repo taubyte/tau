@@ -109,8 +109,7 @@ func startCommand(started func(*boot.Running)) *cli.Command {
 				started(running)
 			}
 
-			// UNTIL A SIGNAL OR THE CONTEXT ENDS. Returning closes everything
-			// that was just started.
+			// Until a signal or the context ends; returning closes everything started.
 			stop := make(chan os.Signal, 1)
 			signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 			defer signal.Stop(stop)

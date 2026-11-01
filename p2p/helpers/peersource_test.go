@@ -41,8 +41,6 @@ func drain(ch <-chan peer.AddrInfo) []peer.AddrInfo {
 	return out
 }
 
-// TestThePeerSourceOffersRelaysTheDHTKnows: autorelay asks it for candidates,
-// and it answers with the closest peers that have an address.
 func TestThePeerSourceOffersRelaysTheDHTKnows(t *testing.T) {
 	ctx := context.Background()
 

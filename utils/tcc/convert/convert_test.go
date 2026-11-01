@@ -7,9 +7,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// After a JSON round-trip (as at the wasm/register boundary) []string erodes to
-// []any and int erodes to float64; normalizeMap must restore them so the
-// decompiler's []string / int assertions hold.
 func TestNormalizeRestoresErodedTypes(t *testing.T) {
 	src := map[string]any{
 		"domains": []string{"a", "b"},

@@ -19,9 +19,6 @@ func size() int {
 	return len(cache)
 }
 
-// TestTheSecondAskIsTheSameProgram -- the whole point. Memoizing is only
-// memoizing if the compile is not paid again, and identity is the only way to
-// say that without timing anything.
 func TestAPatternIsCompiledOnce(t *testing.T) {
 	reset()
 	first, err := Compile(`^room/[a-z0-9]+$`)
@@ -37,8 +34,6 @@ func TestAPatternIsCompiledOnce(t *testing.T) {
 	}
 }
 
-// TestItAnswersWhatTheOneShotFormAnswered, which is what makes it a drop-in at
-// the call sites that had one: same verdict, same error on a bad pattern.
 func TestItAgreesWithTheStdlibOneShotForm(t *testing.T) {
 	reset()
 	cases := []struct{ pattern, subject string }{
@@ -58,9 +53,6 @@ func TestItAgreesWithTheStdlibOneShotForm(t *testing.T) {
 	}
 }
 
-// TestABadPatternIsAnErrorANDISNOTREMEMBERED. A typo in one project's config
-// must not take a slot that another project's working matcher needs, and the
-// caller has to see the same error the one-shot form gave it.
 func TestAnUncompilablePatternIsNotCached(t *testing.T) {
 	reset()
 	if _, err := Compile(`([a-z`); err == nil {
@@ -74,9 +66,6 @@ func TestAnUncompilablePatternIsNotCached(t *testing.T) {
 	}
 }
 
-// TestPASTTHECAPITSTOPSREMEMBERING and does not stop working -- the degraded
-// behaviour is exactly what every one of these call sites did before, so the
-// cap can never be the thing that breaks one.
 func TestOverTheCapItStillAnswers(t *testing.T) {
 	reset()
 	for i := range max + 50 {
@@ -95,9 +84,6 @@ func TestOverTheCapItStillAnswers(t *testing.T) {
 	}
 }
 
-// TestTHESHAREDPROGRAMISSHAREDSAFELY. The whole value of this is handing the
-// same *regexp.Regexp to every goroutine, so the race detector has to see that
-// happen under contention rather than be told it is fine.
 func TestConcurrentUseIsSafe(t *testing.T) {
 	reset()
 	const goroutines = 32
@@ -119,7 +105,6 @@ func TestConcurrentUseIsSafe(t *testing.T) {
 	wg.Wait()
 }
 
-// The number the change was made for.
 func BenchmarkOneShotStdlib(b *testing.B) {
 	for b.Loop() {
 		_, _ = regexp.MatchString(`^room/[a-z0-9]+$`, "room/lobby42")

@@ -1,17 +1,13 @@
 // Package tenancy says which forge namespaces a cloud serves.
 //
-// A namespace is a forge host and the owning segment under it — a GitHub org,
-// a GitLab group — written "github.com/acme". A cloud that declares any serves
-// repositories under those and refuses every other by name; a cloud that
-// declares none serves whatever its forges grant, which is the development
-// shape and the default.
+// A namespace is a forge host and the owning segment under it (a GitHub org, a GitLab
+// group), written "github.com/acme". A cloud that declares any serves repositories
+// under those and refuses every other by name; one that declares none serves whatever
+// its forges grant, the default.
 //
-// THE NAMESPACE IS THE UNIT, NOT THE CALLER. Whoever registers or pushes a
-// repository has already been granted write access to it by its forge, so a
-// repository inside a served namespace is one somebody in that namespace let
-// them touch. Asking the forge whether the caller is a member as well would
-// need a credential the namespace itself grants the cloud, which this check
-// does not hold.
+// The namespace is the unit, not the caller: the forge already granted the caller
+// write access, and checking membership would need a credential the cloud does not
+// hold.
 package tenancy
 
 import (

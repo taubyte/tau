@@ -1,11 +1,6 @@
-// Package splice carries bytes between two connections until both directions
-// are finished.
-//
-// IT IS ITS OWN PACKAGE BECAUSE THE HALF-CLOSE RULE IS ONE RULE. Two copies of
-// it would be two chances to make the mistake this package was extracted after:
-// taking the first EOF as the end of the connection ends the half a query
-// protocol is waiting on, so the request is delivered and the answer never
-// comes — with no error anywhere, because a clean EOF is what the client reads.
+// Package splice carries bytes between two connections until both directions are
+// finished. Taking the first EOF as the end would cut off the answer a query protocol
+// is waiting for, with no error anywhere.
 package splice
 
 import (
@@ -14,12 +9,9 @@ import (
 	"sync"
 )
 
-// Both copies a to b and b to a, and returns when both directions have ended.
-//
-// A HALF-CLOSE IS NOT A CLOSE for a protocol that uses one. A client that has
-// finished sending and is waiting to be answered is the ordinary shape of a
-// query — psql, redis, an HTTP request on a raw socket — so each direction ends
-// on its own and the connection ends when both have.
+// Both copies a to b and b to a, and returns when both directions have ended. A
+// half-close is not a close: a client done sending and waiting for its answer is the
+// ordinary shape of a query.
 func Both(a, b net.Conn) {
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -35,27 +27,15 @@ func Both(a, b net.Conn) {
 	wg.Wait()
 }
 
-// Shaper turns one chunk into what should be passed on. It is called with
-// last=true once, when the source is done writing, so that a shaper holding
-// bytes has somewhere to emit them.
-//
-// AN ERROR ENDS THE WHOLE CONNECTION AND NOT ONE DIRECTION. A shaper that
-// refuses has decided about the conversation, not about the half of it that
-// happened to be carrying bytes when it decided.
+// Shaper turns one chunk into what should be passed on. It is called with last=true
+// once, when the source is done writing, so a shaper holding bytes can emit them. An
+// error ends the whole connection, not one direction.
 type Shaper func(chunk []byte, last bool) ([]byte, error)
 
 // Through copies a to b and b to a as Both does, passing each chunk through the
-// matching shaper first. A nil shaper is a plain copy of that direction.
-//
-// It returns the first error a shaper gave, or nil.
-//
-// # It is a chunk loop and not an io.Copy, which costs something
-//
-// Both hands the kernel two file descriptors and gets out of the way. This has
-// to see every byte, so it reads into a buffer, calls out, and writes what
-// comes back. That is the price of declaring a transformer on a proxy, and it
-// is paid per chunk rather than per request — see the proxy-transformer world,
-// which says the same thing from the other end.
+// matching shaper first. A nil shaper is a plain copy of that direction. It returns
+// the first error a shaper gave, or nil. Seeing every byte costs a buffered chunk
+// loop rather than a kernel copy.
 func Through(a, b net.Conn, aToB, bToA Shaper) error {
 	var (
 		wg   sync.WaitGroup
@@ -73,9 +53,7 @@ func Through(a, b net.Conn, aToB, bToA Shaper) error {
 			}
 			mu.Unlock()
 
-			// A REFUSAL ENDS BOTH DIRECTIONS. Half-closing would leave the
-			// other side waiting on a conversation something has already
-			// decided about.
+			// A refusal ends both directions.
 			a.Close()
 			b.Close()
 			return
@@ -90,11 +68,7 @@ func Through(a, b net.Conn, aToB, bToA Shaper) error {
 	return fail
 }
 
-// chunkSize is how much is read at a time when a shaper is in the way.
-//
-// 32 KiB IS io.Copy'S OWN BUFFER, and matching it means a transformed stream
-// makes the same number of syscalls as an untransformed one — the shaper is the
-// cost, not the loop around it.
+// chunkSize matches io.Copy's buffer, so a shaped stream makes the same syscalls.
 const chunkSize = 32 * 1024
 
 func shaped(dst, src net.Conn, shape Shaper) error {
@@ -118,8 +92,8 @@ func shaped(dst, src net.Conn, shape Shaper) error {
 			}
 		}
 		if err != nil {
-			// THE LAST CALL HAPPENS ON EVERY END, clean or not: a shaper
-			// holding a partial frame has to be told the bytes are not coming.
+			// The last call happens on every end, clean or not, so a shaper holding a partial
+			// frame learns the bytes are not coming.
 			out, shapeErr := shape(nil, true)
 			if shapeErr != nil {
 				return shapeErr
@@ -132,12 +106,8 @@ func shaped(dst, src net.Conn, shape Shaper) error {
 	}
 }
 
-// DoneWriting tells the far end that this direction is finished.
-//
-// THE FALLBACK IS A FULL CLOSE AND IT IS A REAL LOSS, so it is taken only when
-// the connection genuinely cannot half-close. A wrapper that SAYS it can and
-// does nothing is worse than one that admits it cannot: the far end waits for an
-// EOF nobody sent.
+// DoneWriting tells the far end that this direction is finished, falling back to a
+// full close only when the connection cannot half-close.
 func DoneWriting(c net.Conn) {
 	if cw, ok := c.(interface{ CloseWrite() error }); ok {
 		if cw.CloseWrite() == nil {

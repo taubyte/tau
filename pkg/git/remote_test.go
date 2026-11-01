@@ -13,12 +13,8 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// localRemote is a bare repository on disk with one commit on main and a
-// "dream" branch beside it, as a file:// URL.
-//
-// LOCAL, NOT A HOSTED TEST REPOSITORY: a clone, a branch, a commit and a push
-// are what this package does, and none of them needs a forge or a token to be
-// exercised for real.
+// localRemote is a bare repository on disk with one commit on main and a "dream"
+// branch beside it, as a file:// URL.
 func localRemote(t *testing.T) string {
 	t.Helper()
 	bare := t.TempDir()

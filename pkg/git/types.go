@@ -8,16 +8,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 )
 
-/* Repository represents a repository.
- *
- * ctx: The context to use.
- * repo: The repository.
- * url: The url to the repository.
- * auth: The authentication to use.
- * root: The root of the repository.
- * branches: The branches to use.
- * usingSpecifcBranch: If a specific branch is used.
- */
+// Repository is a git repository on disk.
 type Repository struct {
 	ctx                 context.Context
 	repo                *git.Repository

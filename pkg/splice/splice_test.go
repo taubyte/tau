@@ -13,8 +13,7 @@ import (
 	"github.com/taubyte/tau/pkg/splice"
 )
 
-// pair is two ends of a real socket. NOT net.Pipe: a pipe cannot half-close,
-// which is the whole property this package is about.
+// pair is two ends of a real socket, not net.Pipe, which cannot half-close.
 func pair(t *testing.T) (client, server net.Conn) {
 	t.Helper()
 
@@ -41,10 +40,6 @@ func pair(t *testing.T) (client, server net.Conn) {
 	return client, server
 }
 
-// TestAQUERYSurvivesTheSplice: send, finish sending, wait to be answered. It is
-// the shape psql and redis and an HTTP request on a raw socket all have, and the
-// one a splice that ends on the first EOF destroys — the request is delivered
-// and the answer never comes, with no error anywhere.
 func TestAHalfCloseDoesNotEndTheConnection(t *testing.T) {
 	clientSide, edge := pair(t)
 	workload, far := pair(t)
@@ -67,9 +62,6 @@ func TestAHalfCloseDoesNotEndTheConnection(t *testing.T) {
 	require.Equal(t, "answered:a query", string(got))
 }
 
-// TestBYTESGoBothWaysAtOnce, which a request/response test alone does not show:
-// a protocol that streams in both directions at the same time is the case a
-// half-duplex implementation would still pass.
 func TestBothDirectionsCarryAtOnce(t *testing.T) {
 	clientSide, edge := pair(t)
 	workload, far := pair(t)
@@ -101,8 +93,6 @@ func TestBothDirectionsCarryAtOnce(t *testing.T) {
 	}
 }
 
-// TestACONNECTIONThatCannotHalfCloseIsClosed, rather than left waiting for an
-// EOF nobody can send.
 func TestAPipeIsFullyClosed(t *testing.T) {
 	a, b := net.Pipe()
 	defer b.Close()
@@ -115,10 +105,7 @@ func TestAPipeIsFullyClosed(t *testing.T) {
 	require.Error(t, err)
 }
 
-// ─────────────────────────── Through ───────────────────────────
-//
-// A shaper sees every byte, which is a different guarantee from Both's: there
-// the kernel moves them and this package only decides when a direction ends.
+// A shaper sees every byte, unlike Both, where the kernel moves them.
 
 // upper is the simplest shaper that changes what arrives.
 func upper(chunk []byte, last bool) ([]byte, error) {
@@ -129,7 +116,6 @@ func upper(chunk []byte, last bool) ([]byte, error) {
 	return out, nil
 }
 
-// TestASHAPERSEESEVERYBYTEANDITSOUTPUTISWHATARRIVES.
 func TestThroughShapesOneDirectionAndCopiesTheOther(t *testing.T) {
 	clientA, serverA := pair(t)
 	clientB, serverB := pair(t)
@@ -153,8 +139,6 @@ func TestThroughShapesOneDirectionAndCopiesTheOther(t *testing.T) {
 	require.Equal(t, "saw:HELLO", string(got), "shaped on the way in, untouched on the way back")
 }
 
-// TestASHAPERMAYHOLDBYTESANDISTOLDWHENTHEYSTOP. Without the final call a
-// buffering shaper would swallow whatever had no delimiter coming.
 func TestThroughCallsAShaperOnceMoreAtTheEnd(t *testing.T) {
 	clientA, serverA := pair(t)
 	clientB, serverB := pair(t)
@@ -190,8 +174,6 @@ func TestThroughCallsAShaperOnceMoreAtTheEnd(t *testing.T) {
 	require.Equal(t, "one two three", string(got), "nothing moved until the end, and then all of it did")
 }
 
-// TestASHAPERSREFUSALENDSBOTHDIRECTIONS. Half-closing would leave the other
-// side waiting on a conversation something has already decided about.
 func TestAShaperThatFailsEndsTheWholeConnection(t *testing.T) {
 	clientA, serverA := pair(t)
 	clientB, serverB := pair(t)
@@ -219,8 +201,6 @@ func TestAShaperThatFailsEndsTheWholeConnection(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestTWONILSHAPERSARESIMPLYBOTH, so a proxy with no transformers pays nothing
-// for the shape of the call.
 func TestThroughWithNoShapersIsAPlainCopy(t *testing.T) {
 	clientA, serverA := pair(t)
 	clientB, serverB := pair(t)

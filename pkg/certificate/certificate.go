@@ -1,26 +1,13 @@
-// Package certificate is how a v2 service that terminates TLS gets the
-// certificate it answers with.
+// Package certificate is how a v2 service that terminates TLS gets the certificate
+// it answers with.
 //
-// # Two ways to have one, and neither invents one
+// A resource's `certificate` block says `provided` (a secret holding chain and key)
+// or `generated` (a name under the cloud's own zone, whose wildcard the operator hands
+// a node in its config, since no project can hold a key for it). Issuance is
+// pkg/certificate/acme's. A name the wildcard does not cover is an error, never
+// plaintext.
 //
-// A resource's `certificate` block says `provided` — a secret holding the
-// chain and the key, the vocabulary's own answer and the one that works for a
-// zone somebody delegated — or `generated`, which means the name is under the
-// cloud's own zone. That zone has a wildcard, and the wildcard is the
-// OPERATOR'S, handed to a node in its own config for the same reason the
-// cloud's fqdn is: a generated name ends in a zone no project declares, so no
-// project can hold a key for it.
-//
-// NOTHING HERE ISSUES A CERTIFICATE; pkg/certificate/acme does, for a name
-// under the cloud's zone, when the operator enables it. A name the wildcard
-// does not cover is otherwise an
-// error rather than a wrong certificate or plaintext: a resource that asked
-// for TLS and got an open socket would be a security control silently not
-// applied.
-//
-// It is shared because two services terminate — a proxy is its own socket,
-// and a gateway's handler is served on the node's — and two copies of "does
-// this wildcard cover that name" would be two answers to it.
+// Shared because a proxy and a gateway both terminate.
 package certificate
 
 import (
@@ -40,9 +27,7 @@ var (
 	// wildcard does not cover.
 	ErrNotCovered = errors.New("the cloud's own certificate does not cover it")
 
-	// ErrNoChain and ErrNoKey are a secret holding half a certificate. Said by
-	// name, because "that key did not match" three frames later is not a
-	// sentence anybody can act on.
+	// ErrNoChain and ErrNoKey are a secret holding half a certificate, said by name.
 	ErrNoChain = errors.New("that certificate secret holds no certificate")
 	ErrNoKey   = errors.New("that certificate secret holds no private key")
 )
@@ -57,11 +42,8 @@ type Pair struct {
 // Held says the operator gave this node a certificate at all.
 func (p Pair) Held() bool { return p.Certificate != "" && p.Key != "" }
 
-// Wildcard is the cloud's own certificate for host, when it covers it.
-//
-// COVERED MEANS UNDER THE ZONE, and the zone is cloudFqdn: a generated host
-// is `<label>.<project label>.<the cloud's zone>`, and the operator's
-// certificate is issued for that zone.
+// Wildcard is the cloud's own certificate for host, when it covers it: when host is
+// under the zone cloudFqdn.
 func Wildcard(p Pair, cloudFqdn, host string) (tls.Certificate, error) {
 	if !p.Held() {
 		return tls.Certificate{}, ErrNoWildcard
@@ -78,13 +60,9 @@ func Under(cloudFqdn, host string) bool {
 	return cloudFqdn != "" && strings.HasSuffix(strings.ToLower(host), "."+strings.ToLower(cloudFqdn))
 }
 
-// KeyPair splits one PEM blob into the chain and the key.
-//
-// ONE SECRET HOLDS BOTH, which is what the vocabulary says and what a
-// Kubernetes TLS secret does: they are issued together, they expire together,
-// and rotating them in two places leaves a window where they do not match.
-// Splitting on the block type rather than on order means a blob written
-// key-first works, which is how half of them are written.
+// KeyPair splits one PEM blob into the chain and the key. One secret holds both, as a
+// Kubernetes TLS secret does. Splitting by block type, not order, accepts a key-first
+// blob.
 func KeyPair(blob []byte) (tls.Certificate, error) {
 	var chain, key []byte
 

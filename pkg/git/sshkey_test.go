@@ -16,22 +16,15 @@ import (
 	"github.com/taubyte/tau/pkg/git/gittest"
 )
 
-// The account is a host fact, and an empty one would authenticate as nobody.
 func TestSSHKeyAsNeedsAnAccount(t *testing.T) {
 	_, host := hostKey(t)
 	assert.ErrorContains(t, SSHKeyAs("", clientKey(t), []gossh.PublicKey{host})(&Repository{}), "account")
 }
 
-// No host keys is refused rather than read as "any".
 func TestSSHKeyAsNeedsHostKeys(t *testing.T) {
 	assert.ErrorContains(t, SSHKeyAs("git", clientKey(t), nil)(&Repository{}), "host keys")
 }
 
-// THE PIN IS WHAT THE CLONE ACTUALLY CHECKS. A real ssh server is dialled by a
-// real clone: under the wrong pin the handshake is refused by name, and under
-// the right one it gets past the host check and fails later, on a
-// repository this server does not hold. A callback that was never wired in would
-// let both through.
 func TestACloneIsOnlyAnsweredByThePinnedHost(t *testing.T) {
 	server := gittest.NewServer(t, nil)
 	host := server.HostKey

@@ -82,8 +82,6 @@ func TestLeakcheckKeepsAGOTMPDIRTheCallerSet(t *testing.T) {
 	assert.Equal(t, gotmp, strings.TrimSpace(string(out)))
 }
 
-// TestGoTestFailsAPackageThatLeaksAPeer runs leakcheck the way the Makefile
-// does, on a package whose test passes and leaves a peer's repository behind.
 func TestGoTestFailsAPackageThatLeaksAPeer(t *testing.T) {
 	gobin, err := exec.LookPath("go")
 	require.NoError(t, err)

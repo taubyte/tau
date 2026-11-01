@@ -8,11 +8,6 @@ import (
 	"github.com/taubyte/tau/tools/protogen"
 )
 
-// TestNoDrift fails if the committed pkg/proto/gen tree is out of sync
-// with what the pinned buf toolchain (see buf.gen.yaml) produces from the
-// committed .proto sources — the buf equivalent of tools/tcc-gen's own
-// TestNoDrift, part of the ordinary `go test ./...` sweep so CI runs it too.
-// Regenerate and adopt with `make proto-v2`.
 func TestNoDrift(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {

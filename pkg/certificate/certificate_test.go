@@ -35,7 +35,6 @@ func pair(t *testing.T, name string) Pair {
 	}
 }
 
-// TestTheWildcardCoversTheZoneAndNothingElse, whatever the case it was asked in.
 func TestTheWildcardCoversTheZoneAndNothingElse(t *testing.T) {
 	p := pair(t, "*.shop.tau.example.io")
 	require.True(t, p.Held())
@@ -46,8 +45,7 @@ func TestTheWildcardCoversTheZoneAndNothingElse(t *testing.T) {
 
 	_, err = Wildcard(p, "tau.example.io", "shop.example.com")
 	require.ErrorIs(t, err, ErrNotCovered)
-	// THE ZONE ITSELF IS NOT UNDER THE ZONE, and neither is a name that merely
-	// ends in the same letters.
+	// The zone itself is not under the zone, nor is a name that only ends the same way.
 	_, err = Wildcard(p, "tau.example.io", "tau.example.io")
 	require.ErrorIs(t, err, ErrNotCovered)
 	_, err = Wildcard(p, "tau.example.io", "eviltau.example.io")
@@ -59,7 +57,6 @@ func TestTheWildcardCoversTheZoneAndNothingElse(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoWildcard)
 }
 
-// TestONESECRETHOLDSBOTHHALVES, in either order, and half of one is said by name.
 func TestOneSecretHoldsBothHalves(t *testing.T) {
 	p := pair(t, "shop.example.com")
 

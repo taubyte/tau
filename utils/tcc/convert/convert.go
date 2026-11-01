@@ -10,16 +10,12 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/object"
 )
 
-// MapToTCCObject converts a map to a TCC object.Object[object.Refrence]
-// This is needed because TCC decompiler expects an object, but the register returns a map
-// The map structure from the register matches the Flat() output structure
-// Handles both map[string]any and map[any]any
+// MapToTCCObject converts a register map (map[string]any or map[any]any, shaped as
+// Flat() output) into the object the tcc decompiler expects.
 func MapToTCCObject(m any) object.Object[object.Refrence] {
-	// Normalize the map first
 	normalized := normalizeMap(m)
 	normalizedMap, ok := normalized.(map[string]any)
 	if !ok {
-		// If normalization failed, try to create empty object
 		return object.New[object.Refrence]()
 	}
 
@@ -28,14 +24,11 @@ func MapToTCCObject(m any) object.Object[object.Refrence] {
 	for key, value := range normalizedMap {
 		switch v := value.(type) {
 		case map[string]any:
-			// Recursively convert nested maps to child objects
 			childObj := MapToTCCObject(v)
 			sel := obj.Child(key)
 			// If child exists, try to get it and merge, otherwise just add
 			if sel.Exists() {
-				// Try to get existing and merge data/children
 				if existing, err := sel.Object(); err == nil {
-					// Merge: copy data attributes and recursively merge children
 					mergeObjectRecursive(existing, childObj)
 				} else {
 					// If we can't get existing, try to add (may fail if exists)
@@ -45,7 +38,6 @@ func MapToTCCObject(m any) object.Object[object.Refrence] {
 				sel.Add(childObj)
 			}
 		default:
-			// For all other values (primitives, slices, etc.), store as data attribute
 			obj.Set(key, object.Refrence(v))
 		}
 	}
@@ -121,7 +113,6 @@ func mergeObjectRecursive(dst, src object.Object[object.Refrence]) {
 	for _, key := range src.Children() {
 		srcChildSel := src.Child(key)
 		if srcChildSel.Exists() {
-			// This is a child object, merge recursively
 			if srcChild, err := srcChildSel.Object(); err == nil {
 				dstChildSel := dst.Child(key)
 				if dstChildSel.Exists() {
