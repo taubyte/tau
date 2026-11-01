@@ -10,13 +10,6 @@ import (
 	"github.com/taubyte/tau/pkg/stats"
 )
 
-// TestPLACEMENTRUNSONASETTLEDVIEW, not on the fresh one.
-//
-// Routing wants fresh and placement wants settled, and the difference is what a
-// blip costs. A node that stops reporting for one interval should stop
-// receiving requests at once — but it must NOT move a database, because moving
-// one costs a copy handed over and a copy deleted. A fleet that placed on the
-// fresh view would spend its day rebalancing on jitter.
 func TestPlacementIsTheStableSetAndNotTheFreshOne(t *testing.T) {
 	var mu sync.Mutex
 	now := time.Unix(0, 0)
@@ -42,8 +35,7 @@ func TestPlacementIsTheStableSetAndNotTheFreshOne(t *testing.T) {
 		s.beat(peer, 1, true)
 	}
 
-	// A PEER THAT HAS JUST APPEARED OWNS NOTHING YET. It is routable — it
-	// answered — and it is not somewhere to put data.
+	// A peer that has just appeared is routable but owns nothing yet.
 	require.Empty(t, s.Placement(), "data was placed on a peer that had just appeared")
 
 	// Kept reporting, it settles, and only then does it enter the placement set.
@@ -56,18 +48,12 @@ func TestPlacementIsTheStableSetAndNotTheFreshOne(t *testing.T) {
 
 	require.Len(t, s.Placement(), 3)
 
-	// AND A BLIP DOES NOT MOVE ANYTHING. One missed interval drops a peer out
-	// of the fresh view; the placement set does not notice.
+	// A blip does not move anything: one missed interval drops a peer from the fresh
+	// view, not the placement set.
 	advance(3 * time.Second)
 	require.Len(t, s.Placement(), 3, "a blip moved data")
 }
 
-// TestTheStabilizeWindowIsTheMinuteFloorUnlessTheConfigSaysOtherwise.
-//
-// The floor is a FLEET POLICY and not a property of the mechanism — a cloud
-// refuses to move data on anything shorter however fast it gossips — so the
-// default has to stay exactly where it was while a caller that has a reason can
-// still name a shorter one.
 func TestTheStabilizeWindowIsTheMinuteFloorUnlessTheConfigSaysOtherwise(t *testing.T) {
 	// Unset: the minute, at every interval a fleet would plausibly run.
 	for _, interval := range []time.Duration{time.Second, 5 * time.Second, 15 * time.Second} {
@@ -89,9 +75,6 @@ func TestTheStabilizeWindowIsTheMinuteFloorUnlessTheConfigSaysOtherwise(t *testi
 	require.Equal(t, 15*time.Second, c.Stabilize)
 }
 
-// TestAStabilizeShorterThanFreshnessIsRefused, with the operator's own field
-// named: pkg/membership refuses it too, but about a liveness window the
-// operator never wrote.
 func TestAStabilizeShorterThanFreshnessIsRefused(t *testing.T) {
 	_, err := New(newHost(t), Config{Interval: time.Second, Stabilize: time.Second},
 		WithBus(&memBus{}), WithReporter(fixedSnapshot(Snapshot{Ready: true})))
@@ -99,9 +82,6 @@ func TestAStabilizeShorterThanFreshnessIsRefused(t *testing.T) {
 	require.ErrorContains(t, err, "faster than acknowledgement")
 }
 
-// TestAConfiguredStabilizeIsWhatPlacementRunsOn — the seam end to end, because
-// a field that defaults correctly and reaches nothing is the failure this test
-// exists for.
 func TestAConfiguredStabilizeIsWhatPlacementRunsOn(t *testing.T) {
 	var mu sync.Mutex
 	now := time.Unix(0, 0)

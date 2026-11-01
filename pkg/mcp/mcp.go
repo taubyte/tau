@@ -1,36 +1,15 @@
-// Package mcp serves the Model Context Protocol over one request and one
-// answer.
+// Package mcp serves the Model Context Protocol over one request and one answer.
 //
-// # What it is for here
+// The `mcp` kind groups functions as tools, and what it groups is what it declares
+// access to: no separate `tools:` list, which would be a grant path the target's
+// authorizer never sees.
 //
-// The vocabulary's `mcp` kind is "an MCP server grouping functions as tools",
-// and what it groups is what it declares access to: an mcp that may `invoke`
-// three functions publishes three tools. There is no second list — the same
-// rule an agent's tools follow, and for the same reason: a separate `tools:`
-// block would be a grant path the authorizer on the target never sees.
+// It serves stateless Streamable HTTP (a POST answered with JSON): no session, no
+// `Mcp-Session-Id`, so any node answers any call. What a tool is and how it runs are
+// behind Tools.
 //
-// # Stateless, which the protocol allows and this kind requires
-//
-// Streamable HTTP has two shapes: a POST that answers with JSON, and one that
-// upgrades to a stream for server-initiated messages. This serves the first.
-// The kind's own doc says "stateless Streamable HTTP; subscriptions are
-// declined in v1", so there is no session to keep, no `Mcp-Session-Id` to mint,
-// and nothing that outlives the request — which is what lets any node answer
-// any call.
-//
-// # It speaks JSON-RPC and knows nothing about tau
-//
-// What a tool IS and how one runs are behind Tools. This package parses, routes
-// and answers; whoever implements Tools decides that calling one is invoking a
-// function on whichever node is warm for it.
-//
-// # Errors are the protocol's, in the place the protocol puts them
-//
-// A method that does not exist is a JSON-RPC error. A TOOL that failed is NOT:
-// it is a successful result carrying `isError`, because the call was made and
-// what came back is what the model has to read. Conflating the two makes a
-// tool's own failure look like a broken server and takes the agent's ability to
-// react to it away.
+// A missing method is a JSON-RPC error. A tool that failed is a successful result
+// with `isError`, so the model can read it and react.
 package mcp
 
 import (
@@ -40,11 +19,8 @@ import (
 	"fmt"
 )
 
-// Version is the protocol revision this server implements.
-//
-// IT IS ANSWERED RATHER THAN NEGOTIATED. A client asks for one; a server that
-// speaks a different one says which it speaks, and the client decides. Echoing
-// whatever was asked for would claim support for revisions that do not exist.
+// Version is the protocol revision this server implements. It is answered, not
+// negotiated: echoing the client's request would claim unsupported revisions.
 const Version = "2025-06-18"
 
 // Tool is one thing a client may call.
@@ -52,10 +28,8 @@ type Tool struct {
 	Name        string
 	Description string
 
-	// Schema is JSON Schema for the arguments, as raw JSON. Empty is an object
-	// with no declared properties — which is what a tau function is: it takes a
-	// body, and this vocabulary has no way for it to say what shape that body
-	// has.
+	// Schema is JSON Schema for the arguments, as raw JSON. Empty is an object with no
+	// declared properties: a tau function takes a body of undeclared shape.
 	Schema json.RawMessage
 }
 
@@ -108,11 +82,8 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
-// Serve answers one POSTed message.
-//
-// IT RETURNS NO BYTES FOR A NOTIFICATION, which is the protocol's rule and not
-// an optimisation: a message with no id expects no answer, and HTTP's way of
-// saying that is 202 with an empty body.
+// Serve answers one POSTed message. A notification gets no bytes: it expects no
+// answer, which HTTP says with 202 and an empty body.
 func Serve(ctx context.Context, tools Tools, body []byte) (answer []byte, notification bool, err error) {
 	var req request
 	if unmarshalErr := json.Unmarshal(body, &req); unmarshalErr != nil {
@@ -158,10 +129,7 @@ func initialized() map[string]any {
 	return map[string]any{
 		"protocolVersion": Version,
 		"serverInfo":      map[string]any{"name": "tau", "version": "v2"},
-		// TOOLS AND NOTHING ELSE. Declaring `resources` or `prompts` would
-		// promise two methods this server answers with "not implemented" — and
-		// the vocabulary has no field for either, so there is nothing an author
-		// could publish through them.
+		// Tools only: the vocabulary has nothing to publish as resources or prompts.
 		"capabilities": map[string]any{
 			// `listChanged` is false: a stateless server has nobody to notify.
 			"tools": map[string]any{"listChanged": false},
@@ -174,10 +142,7 @@ func listing(tools []Tool) map[string]any {
 	for _, t := range tools {
 		schema := t.Schema
 		if len(schema) == 0 {
-			// A TAU FUNCTION TAKES A BODY and this vocabulary has no way for it
-			// to say what shape that body has. An object with no declared
-			// properties says exactly that, rather than claiming it takes
-			// nothing.
+			// An object with no declared properties: the body's shape is unknown, not empty.
 			schema = json.RawMessage(`{"type":"object"}`)
 		}
 		out = append(out, map[string]any{
@@ -201,9 +166,8 @@ func callTool(ctx context.Context, tools Tools, req request) []byte {
 	out, err := tools.Call(ctx, params.Name, params.Arguments)
 	switch {
 	case errors.Is(err, ErrNoSuchTool):
-		// NOT A RESULT WITH isError. The tool does not exist, so nothing ran —
-		// and a model told "that failed" would try it again with different
-		// arguments.
+		// Not a result with isError: nothing ran, and a model told "that failed" would retry
+		// with different arguments.
 		return reply(req.ID, nil, &rpcError{Code: codeInvalidParams, Message: err.Error()})
 	case err != nil:
 		return reply(req.ID, nil, &rpcError{Code: codeInternal, Message: err.Error()})

@@ -18,18 +18,12 @@ func TestADocumentRoundTrips(t *testing.T) {
 	require.Equal(t, 3, back.Replication)
 }
 
-// TestACLOUDTHATSAIDNOTHINGREADSASZERO, which the reader turns into its own
-// default — and every reader reaches the same one, so they still agree.
 func TestAnEmptyDocumentIsZeroAndNotAnError(t *testing.T) {
 	back, err := fleet.Decode([]byte(`{}`))
 	require.NoError(t, err)
 	require.Zero(t, back.Replication)
 }
 
-// TestAMALFORMEDDOCUMENTISANERROR AND NEVER A DEFAULT. A fleet whose
-// declaration is corrupt has not said nothing, and reading it as silence would
-// have every node quietly pick its own floor — the disagreement this document
-// exists to end.
 func TestAMalformedDocumentIsRefused(t *testing.T) {
 	for _, bad := range [][]byte{
 		[]byte("{not json"),
@@ -41,8 +35,6 @@ func TestAMalformedDocumentIsRefused(t *testing.T) {
 	}
 }
 
-// TestTHESTORAGEBLOCKROUNDTRIPS, and it is nested rather than spelled flat
-// beside replication because Barrier <= Replicas is a relation between the two.
 func TestTheStorageBlockRoundTrips(t *testing.T) {
 	raw, err := fleet.Encode(fleet.Fleet{
 		Replication: 3,
@@ -57,9 +49,6 @@ func TestTheStorageBlockRoundTrips(t *testing.T) {
 	require.Equal(t, 3, back.Storage.Barrier)
 }
 
-// TestACLOUDTHATSAIDNOTHINGABOUTOBJECTSSAYSSO. omitempty has never omitted a
-// struct, so the tag is omitzero: an operator reading the document can tell a
-// cloud that declared nothing about objects from one that did.
 func TestAFleetThatDeclaresNothingAboutObjectsOmitsTheBlock(t *testing.T) {
 	raw, err := fleet.Encode(fleet.Fleet{Replication: 3})
 	require.NoError(t, err)
@@ -71,9 +60,6 @@ func TestAFleetThatDeclaresNothingAboutObjectsOmitsTheBlock(t *testing.T) {
 	require.Zero(t, back.Storage.Barrier)
 }
 
-// TestZEROMEANSTHEREADERSDEFAULT, per field. A cloud that raised only the
-// replica target still promises the reader's barrier, and every reader fills it
-// the same way — so they still agree.
 func TestResolvedFillsEachZeroSeparately(t *testing.T) {
 	both, err := fleet.Storage{}.Resolved(3, 2)
 	require.NoError(t, err)
@@ -88,12 +74,6 @@ func TestResolvedFillsEachZeroSeparately(t *testing.T) {
 	require.Equal(t, fleet.Storage{Replicas: 3, Barrier: 1}, onlyK)
 }
 
-// TestAPAIRTHATCANNOTBECORRECTISREFUSED, and it has to be Resolved rather than
-// Decode that refuses it: {Replicas: 0, Barrier: 5} is valid field by field and
-// is only impossible once a reader says what its zero is.
-//
-// It wraps ErrMalformed so a reader needs no second rule — an impossible pair
-// is refused exactly like a document that will not parse.
 func TestAPairThatCannotBeCorrectIsRefused(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -113,8 +93,6 @@ func TestAPairThatCannotBeCorrectIsRefused(t *testing.T) {
 	}
 }
 
-// TestDECODECHECKSSHAPEANDNOTTHEPAIR. A negative is wrong at every reader's
-// defaults, so it is refused here; the pair is not, so it is not.
 func TestAMalformedStorageBlockIsRefusedAtDecode(t *testing.T) {
 	for _, bad := range [][]byte{
 		[]byte(`{"storage":{"replicas":-1}}`),
@@ -131,9 +109,6 @@ func TestAMalformedStorageBlockIsRefusedAtDecode(t *testing.T) {
 	require.Equal(t, 5, back.Storage.Barrier)
 }
 
-// TestRetentionIsWrittenAsAnOperatorWritesIt: T round-trips as a duration
-// string, a cloud that says nothing says zero, and a negative or unreadable
-// one is refused like any corrupt document.
 func TestRetentionIsWrittenAsAnOperatorWritesIt(t *testing.T) {
 	raw, err := fleet.Encode(fleet.Fleet{Retention: fleet.Duration(720 * time.Hour)})
 	require.NoError(t, err)

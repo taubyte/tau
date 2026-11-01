@@ -7,9 +7,6 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// ONE REPOSITORY, ONE KEY. Each group is a list of legal spellings of a single
-// repository; every member has to produce the same key, because the whole point
-// of the package is that an index built by one consumer is readable by another.
 func TestEverySpellingOfOneRepositoryIsOneKey(t *testing.T) {
 	for want, spellings := range map[string][]string{
 		"github.com/acme/pay": {
@@ -57,9 +54,6 @@ func TestEverySpellingOfOneRepositoryIsOneKey(t *testing.T) {
 	}
 }
 
-// THE SCP FORM HAS NO PORT — git's rule, not a choice made here. Everything after
-// the first ":" is the path, so this names a repository called `22/acme/pay` and
-// reading it as a port would file it under a key a clone never fetches.
 func TestScpFormHasNoPort(t *testing.T) {
 	k, err := repokey.Parse("git@github.com:22/acme/pay")
 	if err != nil {
@@ -99,9 +93,6 @@ func TestParts(t *testing.T) {
 	}
 }
 
-// The refusals, each with the substring a caller's own test pins. A key that is
-// not derivable is a URL that is not legal, which is the property that lets one
-// function be both the validator and the index.
 func TestRefusals(t *testing.T) {
 	for _, tc := range []struct{ url, contains string }{
 		{"", "names no repository"},
@@ -131,9 +122,6 @@ func TestRefusals(t *testing.T) {
 	}
 }
 
-// Valid and Parse are one function: a string has a key exactly when it validates.
-// Two readings of one grammar is the defect the package exists to prevent, so the
-// property is asserted rather than assumed.
 func TestValidAndParseAreOneGrammar(t *testing.T) {
 	for _, s := range []string{
 		"", "https://github.com/acme/pay", "git@github.com:acme/pay", "acme/pay",
@@ -148,10 +136,6 @@ func TestValidAndParseAreOneGrammar(t *testing.T) {
 	}
 }
 
-// A key is idempotent under its own grammar in the shapes that matter: whatever a
-// spelling produces, re-deriving from the canonical https URL gives it back. This
-// is what a consumer relies on when it stores a key and later re-derives one from
-// a webhook payload's clone URL.
 func TestKeyIsStableUnderReDerivation(t *testing.T) {
 	for _, s := range []string{
 		"git@github.com:Acme/Pay.git",

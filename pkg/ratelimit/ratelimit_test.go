@@ -31,7 +31,6 @@ func at(t time.Time) *clock { return &clock{at: t} }
 
 var epoch = time.Unix(1_700_000_000, 0)
 
-// TestTHEBUCKETREFILLSATTHERATETHEAUTHORWROTE, and is capped at the burst.
 func TestABucketRefillsAtItsRateAndIsCappedAtItsBurst(t *testing.T) {
 	c := at(epoch)
 	b := ratelimit.NewBuckets(c.Now, 16)
@@ -52,8 +51,6 @@ func TestABucketRefillsAtItsRateAndIsCappedAtItsBurst(t *testing.T) {
 	require.False(t, b.Allow("k", 60, 3), "an hour idle still only buys the burst")
 }
 
-// TestAZERORATEISNOLIMIT, which is what a resource that wrote no rate_limit
-// block means.
 func TestAZeroRateIsNoLimit(t *testing.T) {
 	b := ratelimit.NewBuckets(at(epoch).Now, 16)
 	for range 1000 {
@@ -61,8 +58,6 @@ func TestAZeroRateIsNoLimit(t *testing.T) {
 	}
 }
 
-// TestANABSENTBURSTISTHERATE, so `rate: 60` on its own admits 60 at once and
-// then refills — rather than admitting one and refusing the rest.
 func TestAnAbsentBurstIsTheRate(t *testing.T) {
 	b := ratelimit.NewBuckets(at(epoch).Now, 16)
 	for range 60 {
@@ -71,8 +66,6 @@ func TestAnAbsentBurstIsTheRate(t *testing.T) {
 	require.False(t, b.Allow("k", 60, 0))
 }
 
-// TestKEYSARESEPARATEANDTHETABLEISBOUNDED. A spray of one-request-per-key
-// traffic must not grow a bucket per source forever.
 func TestKeysAreSeparateAndTheTableIsBounded(t *testing.T) {
 	b := ratelimit.NewBuckets(at(epoch).Now, 2)
 
@@ -84,9 +77,6 @@ func TestKeysAreSeparateAndTheTableIsBounded(t *testing.T) {
 	require.LessOrEqual(t, b.Len(), 2)
 }
 
-// TestAGAUGEHOLDSWHATISOPEN, which is the limit a rate cannot express: a
-// connection that arrives once and is held for an hour costs one token and the
-// whole of its slot.
 func TestAGaugeCountsWhatIsOpenRatherThanWhatArrived(t *testing.T) {
 	g := ratelimit.NewGauge()
 
@@ -110,9 +100,6 @@ func TestAGaugeCountsWhatIsOpenRatherThanWhatArrived(t *testing.T) {
 	require.Zero(t, g.Held("k"), "an empty key is forgotten rather than kept at zero")
 }
 
-// TestARELEASEISIDEMPOTENT. The caller is a deferred close on a connection
-// path where a second close is ordinary, and a gauge that decremented twice
-// would leak capacity to whoever connected next.
 func TestReleasingTwiceDoesNotLeakCapacity(t *testing.T) {
 	g := ratelimit.NewGauge()
 
@@ -133,7 +120,6 @@ func TestReleasingTwiceDoesNotLeakCapacity(t *testing.T) {
 	require.False(t, ok)
 }
 
-// TestAZEROLIMITISNOLIMIT for a gauge too.
 func TestAZeroConcurrencyIsNoLimit(t *testing.T) {
 	g := ratelimit.NewGauge()
 	for range 1000 {
@@ -143,8 +129,6 @@ func TestAZeroConcurrencyIsNoLimit(t *testing.T) {
 	require.Zero(t, g.Held("k"), "an unlimited key is not counted at all")
 }
 
-// TestITISSAFEFROMEVERYGOROUTINE: a proxy admits on the accept goroutine and
-// releases on each connection's own.
 func TestBothAreSafeUnderConcurrency(t *testing.T) {
 	b := ratelimit.NewBuckets(at(epoch).Now, 64)
 	g := ratelimit.NewGauge()
@@ -168,14 +152,6 @@ func TestBothAreSafeUnderConcurrency(t *testing.T) {
 	}
 }
 
-// TestALimitedCallerIsNotTheOneEvicted.
-//
-// A caller over its budget is the one bucket worth keeping, and the table is
-// bounded — so which entry the bound drops decides whether the limit holds. It
-// used to drop whichever was inserted first, however hard it was being spent,
-// which meant a spray of one-request-per-key traffic evicted every established
-// caller and handed each of them a full burst back. That is the exact traffic
-// the bound exists for.
 func TestALimitedCallerIsNotTheOneEvicted(t *testing.T) {
 	now := time.Unix(0, 0)
 	l := ratelimit.NewBuckets(func() time.Time { return now }, 3)
@@ -185,9 +161,8 @@ func TestALimitedCallerIsNotTheOneEvicted(t *testing.T) {
 	}
 	require.False(t, l.Allow("heavy", 2, 2), "the third attempt is over it")
 
-	// A SPRAY OF ONE-REQUEST SOURCES, more of them than the table holds. The
-	// heavy caller keeps trying throughout — a refused caller still calls —
-	// so it is never the least recently used.
+	// A spray of one-request sources, more than the table holds. The heavy caller keeps
+	// trying throughout, so it is never the least recently used.
 	for _, key := range []string{"spray-1", "spray-2", "spray-3", "spray-4", "spray-5"} {
 		l.Allow(key, 2, 2)
 		require.False(t, l.Allow("heavy", 2, 2), "the heavy caller got its budget back after %s", key)
@@ -195,13 +170,10 @@ func TestALimitedCallerIsNotTheOneEvicted(t *testing.T) {
 
 	require.Equal(t, 3, l.Len(), "and the table is still bounded")
 
-	// WHAT EVICTION REACHED WAS IDLE, and an idle bucket has refilled to full
-	// anyway — so dropping it cost nothing.
+	// What eviction reached was idle and had refilled anyway.
 	require.True(t, l.Allow("spray-1", 2, 2))
 }
 
-// TestTimePassingStillRefills, so the eviction order is the only thing that
-// changed.
 func TestTimePassingStillRefills(t *testing.T) {
 	now := time.Unix(0, 0)
 	l := ratelimit.NewBuckets(func() time.Time { return now }, 8)

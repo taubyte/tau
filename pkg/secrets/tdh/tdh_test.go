@@ -355,9 +355,6 @@ func TestWrapRejectsDegenerateKey(t *testing.T) {
 	require.ErrorContains(t, err, "degenerate group public key")
 }
 
-// TestRewrapKeepsCiphertext is the property rotation rests on: a data key can
-// be moved to a new epoch's group key without the ciphertext being touched, and
-// therefore without the plaintext ever being recovered.
 func TestRewrapKeepsCiphertext(t *testing.T) {
 	old := runDKG(t, 3, 2)
 	new := runDKG(t, 3, 2)
@@ -392,15 +389,6 @@ func TestPartialDecryptRejectsDegenerateEphemeral(t *testing.T) {
 	require.ErrorContains(t, err, "identity element")
 }
 
-// TestVerifyShareCatchesAForgedContribution is the check that the group public
-// key cannot do.
-//
-// A dealer replaying a contribution knows its own seed, so it can keep its
-// constant term and change a higher coefficient. The result passes Receive's
-// Feldman check (the pair is self-consistent) and reproduces the exact same
-// group public key (only constant terms are summed into it) -- while putting
-// the recipient's share off the polynomial every other member is on. Only the
-// full verification vector pins it.
 func TestVerifyShareCatchesAForgedContribution(t *testing.T) {
 	members := []string{"a", "b", "c"}
 	const threshold = 2

@@ -11,14 +11,8 @@ import (
 	discoveryDream "github.com/taubyte/tau/services/discovery/dream"
 )
 
-// THIS IS WHAT "PARITY" MEANS FOR A V2 SERVICE, and it is why it is a test
-// rather than a claim: the service running here is the same code a node runs,
-// constructed the same way, over a real libp2p host and a real gossipsub topic.
-// Nothing is faked but the universe.
-//
-// It proves the SPLIT as much as the service: a v2 service takes only a
-// host.Host and must never take the peer.Node bundle, and Start is where the
-// mesh's peer is taken apart to hand it one.
+// The service runs the same code a node runs, over a real libp2p host and gossipsub
+// topic, taking only a host.Host and never the peer.Node bundle.
 
 func TestAV2ServiceRunsUnderDream(t *testing.T) {
 	m, err := mesh.New(t.Context(), t.Name())

@@ -9,23 +9,11 @@ import (
 	"github.com/taubyte/tau/pkg/stats"
 )
 
-// config.go declares what this service is built from, and every interface here
-// is declared by the consumer and is as narrow as the use.
-//
-// THERE IS NO peer.Node ANYWHERE IN THIS PACKAGE, for the reason storage gives
-// in the same file: peer.Node bundles a host, a DHT, a datastore, a DAG and
-// pubsub, and a test that wanted any one of them got a DHT bootstrap and an
-// on-disk datastore with it. What this service needs is somewhere to broadcast
-// a small message and somewhere to receive other nodes' broadcasts. That is one
-// interface with two methods, and it has an in-memory implementation in this
-// package's tests.
+// Every interface here is declared by the consumer and as narrow as the use. No
+// peer.Node: it bundles a DHT and an on-disk datastore this service does not need.
 
-// Bus is the slice of publish/subscribe this service needs.
-//
-// It is deliberately not "a pubsub": no topic management, no peer scoring, no
-// join/leave. The service is handed something already scoped to one topic,
-// because which topic discovery gossips on is a composition decision and not a
-// thing this package should be able to get wrong.
+// Bus is the slice of publish/subscribe this service needs, already scoped to one
+// topic, since the topic is a composition decision.
 type Bus interface {
 	// Publish broadcasts one encoded report. A failure is not fatal — the
 	// next tick will try again, and every reader already knows how old the
@@ -38,11 +26,8 @@ type Bus interface {
 	Subscribe(ctx context.Context) (<-chan []byte, error)
 }
 
-// Reporter is what this node knows about itself. It is injected because a
-// number this service computed itself would be a number this service has an
-// opinion about, and the package doc of pkg/stats says why it must not:
-// load means something different per workload, and the node is the only party
-// that knows its own.
+// Reporter is what this node knows about itself. Load means something different per
+// workload, and only the node knows its own (see pkg/stats).
 type Reporter interface {
 	Snapshot(ctx context.Context) (Snapshot, error)
 }
@@ -65,18 +50,12 @@ type Snapshot struct {
 	// Ready is false while draining, warming or degraded.
 	Ready bool
 
-	// Addresses is where clients reach this node. It is reported rather than
-	// read off the host's peerstore: a peerstore address is how other NODES
-	// dial, and behind NAT or a container bridge that is an address no client
-	// can use. See the proto field for the full argument.
+	// Addresses is where clients reach this node, reported rather than read off the
+	// peerstore, whose addresses are how other nodes dial.
 	Addresses []string
 
-	// Sockets is every L4 proxy this node accepts connections for, and the
-	// port each one landed on. Empty says this node is not accepting raw
-	// connections, which is better than being routed to and refusing.
-	//
-	// See the proto field: one port per proxy and not one per node, because a
-	// raw stream carries no name to demultiplex on.
+	// Sockets is every L4 proxy this node accepts connections for, and the port each
+	// landed on. Empty says this node accepts no raw connections.
 	Sockets []stats.Socket
 }
 
@@ -85,20 +64,13 @@ type ReporterFunc func(context.Context) (Snapshot, error)
 
 func (f ReporterFunc) Snapshot(ctx context.Context) (Snapshot, error) { return f(ctx) }
 
-// Config is what an operator declared, and ONLY that: three durations somebody
-// writes in yaml, so it decodes, marshals and round-trips.
-//
-// THE INJECTED COLLABORATORS ARE NOT HERE. The bus, this node's reporter and the
-// clock are handed over at construction with With… , because a live object
-// cannot be decoded from a config file. Put to codex@xhigh and agreed:
-// "operator configuration is data, not constructor customization".
+// Config is what an operator declared: durations that decode from yaml. The bus,
+// reporter and clock are injected with With… options, since a live object cannot be
+// decoded.
 type Config struct {
-	// Interval is how often this node broadcasts. Default 5s.
-	//
-	// IT IS THE FRESHNESS BUDGET, not a tuning knob in isolation: a reader
-	// deciding what age it tolerates is choosing a multiple of this. Fresh
-	// defaults to three intervals so two lost reports do not make a healthy
-	// node vanish.
+	// Interval is how often this node broadcasts. Default 5s. It is the freshness
+	// budget: Fresh defaults to three intervals so two lost reports do not make a
+	// healthy node vanish.
 	Interval time.Duration
 
 	// Fresh is how old a row may be and still be current. Default 3x Interval.
@@ -112,13 +84,8 @@ type Config struct {
 	// may be placed on it, and continuously absent before it leaves. Default
 	// max(4x Fresh, one minute); it must be at least Fresh.
 	//
-	// IT IS THE ONLY WAY DOWN FROM THE MINUTE, and the minute is a fleet
-	// policy rather than a property of the mechanism: a cloud pays one copy
-	// handed over and one copy deleted every time placement moves, so it
-	// refuses to move on anything shorter however fast the fleet gossips. A
-	// universe is one process on loopback whose nodes do not restart, so it
-	// has no thrash to buy off and a minute is a minute of nothing happening —
-	// see node/dream, which is the only thing in this repo that sets it.
+	// The minute is fleet policy: every placement move costs a copy handed over and one
+	// deleted. node/dream sets it lower, since a universe's nodes do not restart.
 	Stabilize time.Duration
 }
 
@@ -204,18 +171,15 @@ func (c Config) withDefaults() (Config, error) {
 			c.Fresh, c.Interval)
 	}
 	if c.Stabilize == 0 {
-		// FOUR FRESHNESS WINDOWS, FLOORED AT THE FLEET POLICY, so a fleet that
-		// gossips slowly settles slowly and one that gossips quickly still
-		// waits a minute before data moves onto a peer.
+		// Four freshness windows, floored at the fleet policy.
 		c.Stabilize = stabilizeFreshWindows * c.Fresh
 		if c.Stabilize < defaultStabilize {
 			c.Stabilize = defaultStabilize
 		}
 	}
 	if c.Stabilize < c.Fresh {
-		// pkg/membership refuses this in so many words, and it is refused here
-		// too so the operator hears it about the field they wrote rather than
-		// about a liveness window they never named.
+		// pkg/membership refuses this too; refusing it here names the field the operator
+		// wrote.
 		return Config{}, fmt.Errorf("discovery: stabilize %s is shorter than the %s freshness window: placement would move faster than acknowledgement",
 			c.Stabilize, c.Fresh)
 	}
@@ -226,15 +190,9 @@ func (c Config) viewOptions(now func() time.Time) stats.Options {
 	return stats.Options{Fresh: c.Fresh, Forget: c.Forget, Now: now}
 }
 
-// Freshness is how old a row may be and still be current under this config,
-// with the same defaults New applies.
-//
-// IT IS EXPORTED BECAUSE A CONSUMER CHOOSING A ROUTING TOLERANCE MUST NOT
-// RE-DERIVE IT. A caller that read Config.Fresh directly got zero whenever the
-// operator left it unset — every row is older than nothing, so every lookup
-// found no candidates and the service it was looking for appeared not to exist.
-// That is exactly the failure a defaulted value is supposed to prevent, and the
-// only way to prevent it once is to answer the question here.
+// Freshness is how old a row may be and still be current under this config, with
+// the same defaults New applies. Consumers choosing a routing tolerance use this
+// rather than Config.Fresh, which is zero when unset.
 func (c Config) Freshness() time.Duration {
 	defaulted, err := c.withDefaults()
 	if err != nil {

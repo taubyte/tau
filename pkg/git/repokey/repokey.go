@@ -1,16 +1,8 @@
 // Package repokey derives one canonical identity from any spelling of a git
 // clone URL.
 //
-// V2'S CONFIG NAMES A REPOSITORY BY CLONE URL. There is no provider field and no
-// numeric repository id anywhere in the vocabulary — the host in the URL is the
-// provider, which is what makes GitLab, Gitea, Codeberg and an internal mirror
-// values rather than schema edits. The cost of that is that the same repository
-// has many legal spellings, and everything that indexes one — the auth store, the
-// sources index, a webhook adapter deciding which project a push belongs to — has
-// to agree on which of them it is filed under. Two of those computing "the same"
-// name privately is two grammars, and they drift.
-//
-// So there is one grammar, here, and it produces one key:
+// v2 names a repository by clone URL, so the host is the provider and one repository
+// has many spellings. Everything that indexes one must agree on a key:
 //
 //	https://github.com/acme/pay          -> github.com/acme/pay
 //	https://github.com/Acme/Pay.git      -> github.com/acme/pay
@@ -20,23 +12,14 @@
 //	git@github.com:acme/pay              -> github.com/acme/pay
 //	git@github.com:/acme/pay.git         -> github.com/acme/pay
 //
-// THE SCP FORM AND THE ssh:// FORM ARE THE SAME REPOSITORY, and that is the pair
-// that had to be decided. `git@host:owner/repo` is git's own second spelling of
-// `ssh://git@host/owner/repo`; the leading `/` the URL form needs and the scp form
-// does not is punctuation, and the `git@` is the SSH ACCOUNT — an identity, not
-// part of the repository's name — so both forms drop it. They agree because the
-// key keeps only the host and the path.
+// The scp form and the ssh:// form are the same repository: the `git@` is the SSH
+// account, not part of the name, and the key keeps only host and path.
 //
-// They disagree in exactly one place, and git decides it, not this package: THE
-// SCP FORM HAS NO PORT. Git only recognises that form when there is no `/` before
-// the first `:`, and everything after the `:` is the path, so `git@host:22/a/b` is
-// the repository `22/a/b` and not `a/b` on port 22. Reading it as a port here
-// would file a repository under a key naming a repository a clone would never
-// fetch. Write `ssh://git@host:22/a/b` when a port is meant.
+// The scp form has no port: git reads everything after the first `:` as the path,
+// so `git@host:22/a/b` is the repository `22/a/b`. Write `ssh://git@host:22/a/b`
+// when a port is meant.
 //
-// The package imports nothing outside the standard library — deliberately, the
-// same reason core/common/repositorytype exists. Every consumer of the key is on
-// one side or the other of the wasm boundary, and a leaf builds under GOOS=js.
+// Standard library only, so it builds under GOOS=js.
 package repokey
 
 import (
@@ -66,9 +49,8 @@ type Key struct {
 	Name string
 }
 
-// String is the key: host, then the path under it. This is the form that goes in
-// an index, a job id or a kvdb key path — one line, no punctuation that needs
-// escaping beyond the ":" a non-default port brings.
+// String is the key: host, then the path under it, for an index, a job id or a
+// kvdb key path.
 func (k Key) String() string {
 	if k.Owner == "" {
 		return k.Host + "/" + k.Name
@@ -76,10 +58,8 @@ func (k Key) String() string {
 	return k.Host + "/" + k.Owner + "/" + k.Name
 }
 
-// FullName is what a provider calls the repository — `owner/name`, the shape the
-// GitHub API returns and the shape a tenancy check has always been written
-// against. It drops the host, so it is NOT an identity across providers; use
-// String for that.
+// FullName is what a provider calls the repository: `owner/name`. It drops the
+// host, so it is not an identity across providers; use String for that.
 func (k Key) FullName() string {
 	if k.Owner == "" {
 		return k.Name
@@ -116,9 +96,7 @@ var defaultPort = map[string]string{
 }
 
 // Parse derives the canonical key from a clone URL, or says why the string is not
-// one. It resolves nothing: the host is not looked up, not reached, and the
-// repository is not checked to exist. That is the platform's job at publish, with
-// credentials this has no business holding.
+// one. It resolves nothing and checks no repository exists.
 func Parse(cloneURL string) (Key, error) {
 	if cloneURL == "" {
 		return Key{}, fmt.Errorf("names no repository; write the clone URL, e.g. https://gitlab.com/acme/repo")
@@ -173,10 +151,8 @@ func String(cloneURL string) (string, error) {
 	return k.String(), nil
 }
 
-// Valid reports the error a clone URL has, or nil. It is Parse with the key
-// dropped, and it exists so a validator cannot be a SECOND reading of the same
-// grammar — the check and the key are one function, and a string that validates
-// is exactly a string that has a key.
+// Valid reports the error a clone URL has, or nil. It is Parse with the key dropped,
+// so validation is not a second reading of the grammar.
 func Valid(cloneURL string) error {
 	_, err := Parse(cloneURL)
 	return err
@@ -212,17 +188,9 @@ func hostAndPath(cloneURL string) (host, path string, err error) {
 		return "", "", fmt.Errorf("%q names no host", cloneURL)
 	}
 
-	// A TOKEN IN A CLONE URL. `https://user:ghp_xxx@github.com/acme/repo` is a
-	// working clone URL and, once written down, a secret at rest — and it is the
-	// one shape of this field that rotating something else cannot fix. The
-	// identity a clone needs is held beside the deployment, never in the string
-	// that names the repository.
-	//
-	// THE PASSWORD, NOT THE USER. `ssh://git@github.com/acme/repo` carries a
-	// username because that is how the transport is spelled, and it is the same
-	// `git` the scp form puts before the "@" for the same repository. Refusing the
-	// whole userinfo refused every ssh URL while accepting the scp form beside it,
-	// which is one rule applied to one spelling of one thing.
+	// A password in a clone URL is a secret at rest; the identity a clone needs is held
+	// beside the deployment. A username alone is how ssh is spelled (`ssh://git@...`),
+	// matching the scp form, and is allowed.
 	if pw, has := u.User.Password(); has && pw != "" {
 		return "", "", credentialError(cloneURL)
 	}

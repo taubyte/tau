@@ -1,28 +1,11 @@
-// Package ratelimit counts two different things, because a rate and a
-// concurrency are two different limits and neither substitutes for the other.
+// Package ratelimit counts two different things: a rate (how fast) and a gauge (how
+// many at once). A gateway counts requests per minute; a proxy holds connections
+// whose count is the resource. Neither has a default.
 //
-// # A rate is how fast, a gauge is how many at once
+// Both are per node: N edges enforcing `600` admit up to 600N. A shared counter
+// would put a round trip before every connection a limit exists to shed.
 //
-// A gateway counts REQUESTS PER MINUTE, and that is the right question for
-// something that arrives, is answered and goes. A proxy carries connections
-// that are held — a database client pool, a subscriber — where the arrival rate
-// sits near zero and the COUNT is the resource. The vocabulary asks for both on
-// a proxy for exactly that reason, and neither has a default: a ceiling nobody
-// chose is a ceiling nobody can defend.
-//
-// # Both are per node, and that is a real limit rather than a detail
-//
-// A fleet of N edges enforcing `600` each admits up to 600N, so the number an
-// author writes is a per-node ceiling and not a fleet-wide one. A shared counter
-// would put a round trip in front of every connection in the system to enforce a
-// limit whose whole purpose is to shed load, which is the wrong trade at the
-// edge. Say so rather than let it be discovered.
-//
-// # It counts, and it does not decide what a key is
-//
-// What a limit is counted PER — an address, a subnet, a header — is the
-// caller's vocabulary, and a package that had an opinion would be deciding for
-// every caller at once. Everything here takes a string.
+// What a limit is counted per is the caller's; everything here takes a string.
 package ratelimit
 
 import (
@@ -37,21 +20,9 @@ type Buckets struct {
 
 	mu      sync.Mutex
 	buckets map[string]*list.Element
-	// order is least-recently-used first, so the table cannot grow a bucket per
-	// source forever AND the bound never drops the bucket doing the work.
-	//
-	// IT USED TO BE INSERTION ORDER, which is blind to use — and a caller over
-	// its budget is the one bucket worth keeping. Under a spray of
-	// one-request-per-key traffic, which is the exact traffic this bound exists
-	// for, the first-inserted entries are the established callers: `max` new
-	// sources evicted every one of them, and each came back with a full burst.
-	// The limit stopped holding under load, which is when it is the only thing
-	// holding.
-	//
-	// A caller being refused still calls, so it is the most recently used and is
-	// never the victim. What eviction reaches instead is idle, and an idle
-	// bucket has refilled to full anyway — so dropping it costs nothing, which
-	// is the whole argument for spending a list here.
+	// order is least-recently-used first, so the table is bounded without dropping the
+	// bucket doing the work: a refused caller still calls, so it is never the victim,
+	// and an evicted idle bucket had refilled to full anyway.
 	order *list.List
 	max   int
 }
@@ -122,21 +93,15 @@ func (l *Buckets) Allow(key string, rate, burst int) bool {
 	return true
 }
 
-// Len is how many keys are held. It exists for a test of the bound and for an
-// operator asking how big the table has grown.
+// Len is how many keys are held.
 func (l *Buckets) Len() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return len(l.buckets)
 }
 
-// Gauge is how many of something are open at once, per key.
-//
-// IT NEEDS NO EVICTION, unlike Buckets, and the difference is what is being
-// held. A bucket has to outlive the request it counted or the next one refills
-// from full; a gauge entry exists only while something is open under it, so the
-// map is bounded by what is actually in flight rather than by who has ever
-// connected.
+// Gauge is how many of something are open at once, per key. An entry exists only
+// while something is open under it, so it needs no eviction.
 type Gauge struct {
 	mu   sync.Mutex
 	open map[string]int
@@ -144,12 +109,8 @@ type Gauge struct {
 
 func NewGauge() *Gauge { return &Gauge{open: map[string]int{}} }
 
-// Enter takes a slot for key and hands back the release. A zero or negative
-// limit is no limit.
-//
-// THE RELEASE IS IDEMPOTENT, because the caller is a deferred close on a
-// connection path where a second close is ordinary — and a gauge that
-// decremented twice would leak capacity to whoever connected next.
+// Enter takes a slot for key and hands back the release. A zero or negative limit is
+// no limit. The release is idempotent: a deferred close may run twice.
 func (g *Gauge) Enter(key string, limit int) (leave func(), ok bool) {
 	if limit <= 0 {
 		return func() {}, true
@@ -177,8 +138,7 @@ func (g *Gauge) Enter(key string, limit int) (leave func(), ok bool) {
 	}, true
 }
 
-// Held is how many are open under key. It exists for a test and for an operator
-// asking why a source is being refused.
+// Held is how many are open under key.
 func (g *Gauge) Held(key string) int {
 	g.mu.Lock()
 	defer g.mu.Unlock()

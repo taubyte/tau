@@ -8,8 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestARoundCompletesOnlyWithEveryContribution pins that Complete and Finalize
-// agree: joint-Feldman has no complaint round, so one missing dealer aborts.
 func TestARoundCompletesOnlyWithEveryContribution(t *testing.T) {
 	members := []string{"a", "b", "c"}
 	dealers := make(map[string]*Dealer, len(members))

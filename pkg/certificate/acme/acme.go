@@ -160,9 +160,8 @@ func New(cfg certificate.ACME, dir string, opts ...Option) (*Issuer, error) {
 		opt(i)
 	}
 
-	// THE DIRECTORY IS NEEDED ONLY FOR WHAT NOTHING ELSE WAS GIVEN: the
-	// certificates when no store was, and the account key when no option
-	// holds one.
+	// The directory is needed only for what nothing else was given: the certificates
+	// when no store was, and the account key when no option holds one.
 	needDir := i.store == nil || i.client.Key == nil
 	if needDir {
 		if dir == "" {
@@ -510,13 +509,9 @@ func (i *Issuer) issue(name string) (*tls.Certificate, error) {
 	return cert, nil
 }
 
-// finalize submits the CSR and fetches the chain.
-//
-// A CA WAITING TO ISSUE answers the finalize with an order still processing,
-// and x/crypto polls it by the URL in that answer's Location header — which
-// RFC 8555 does not require on a finalize, and pebble does not send. The order
-// URL is known from the order itself, so a finalize that fails that way is
-// finished by polling it there.
+// finalize submits the CSR and fetches the chain. A CA still processing answers
+// with an order x/crypto polls by its Location header, which RFC 8555 does not
+// require on a finalize (pebble omits it), so the order URL is polled instead.
 func (i *Issuer) finalize(ctx context.Context, orderURL, finalizeURL string, csr []byte) ([][]byte, error) {
 	chain, _, err := i.client.CreateOrderCert(ctx, finalizeURL, csr, true)
 	if err == nil {

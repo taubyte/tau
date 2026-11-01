@@ -1,9 +1,5 @@
-// Package dream runs the discovery service on a peer of an in-process mesh.
-//
-// It is the first v2 service to run under dream, and it is what makes "parity"
-// a thing that can be tested rather than asserted: the service that runs here is
-// the same code, built the same way, with a real libp2p host and a real
-// gossipsub topic under it.
+// Package dream runs the discovery service on a peer of an in-process mesh, with a
+// real libp2p host and gossipsub topic.
 package dream
 
 import (
@@ -53,13 +49,8 @@ func create(ctx context.Context, h host.Host, node peer.Node, scope string) (io.
 	return svc, nil
 }
 
-// reporter is what this node says about itself inside a universe.
-//
-// IT REPORTS A REAL ADDRESS AND NO LOAD IT HAS NOT MEASURED. A dream node is
-// reachable at the host's own addresses, so those are what it advertises; load
-// stays zero because nothing here measures it yet, and a made-up number would
-// steer routing on fiction. Zero is honest: it says "as available as anything
-// else", which inside a universe is true.
+// reporter is what this node says about itself inside a universe: the host's real
+// addresses, and zero load, since nothing measures it.
 func reporter(h host.Host) discovery.Reporter {
 	return discovery.ReporterFunc(func(context.Context) (discovery.Snapshot, error) {
 		addrs := make([]string, 0, len(h.Addrs()))

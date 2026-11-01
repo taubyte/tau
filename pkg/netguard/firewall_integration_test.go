@@ -39,10 +39,6 @@ func delTestTable(t *testing.T) {
 	}
 }
 
-// The installers must program nftables without error under CAP_NET_ADMIN, and
-// the deny sets must land with elements. This is also the regression test for
-// the element encoding: the kernel rejects the library's Key/KeyEnd interval
-// form with EINVAL, so deniedElements emits boundary pairs instead.
 func TestInstall_Integration(t *testing.T) {
 	if err := InstallBridgeFilter("docker0"); err != nil {
 		t.Fatalf("InstallBridgeFilter: %v", err)
@@ -81,11 +77,6 @@ func TestInstall_Integration(t *testing.T) {
 	}
 }
 
-// The definitive check: a socket in a cgroup under the matched parent must be
-// dropped when it dials a denied (loopback) destination, and must still reach a
-// permitted one. This validates the `socket cgroupv2 level N` parent match —
-// the piece that installs cleanly but could match nothing (fail-open), or
-// everything (drops the build's legitimate downloads).
 func TestCgroupEgressDrop_Integration(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -206,16 +197,6 @@ func TestCgroupEgressDrop_Integration(t *testing.T) {
 	}
 }
 
-// THE HOST MUST STILL REACH WHAT IT STARTED. The egress rules drop what a
-// restricted workload SENDS toward a local or private address, and a reply is
-// something it sends: the host dials the workload, the workload answers to the
-// host's own address, and a rule that looked only at the destination dropped
-// the answer. Every restricted container was therefore unreachable from the
-// node that ran it -- found by the first end-to-end application test
-// (node/dream/application_test.go), with the container up and listening.
-//
-// So a connection the HOST opened is answered, and one the workload opens to the
-// same address is still refused.
 func TestARestrictedWorkloadAnswersTheHost_Integration(t *testing.T) {
 	const parent = "/sys/fs/cgroup/ngtest-in"
 	const child = parent + "/child"

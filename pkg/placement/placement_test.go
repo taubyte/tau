@@ -27,8 +27,7 @@ func resources(n int) []string {
 }
 
 func TestScoreIsInjectiveOverSeparators(t *testing.T) {
-	// A 0x00 join — v1's — scores these two pairs identically. This one does
-	// not, because the resource is length-delimited.
+	// A 0x00 join scores these two pairs identically; length-delimiting does not.
 	a := Score("a\x00b", "c")
 	b := Score("a", "b\x00c")
 	require.NotEqual(t, a, b, "length delimiting is what makes the two inputs distinct")
@@ -151,9 +150,6 @@ func TestTargetBeyondTheFleetReturnsTheFleet(t *testing.T) {
 	require.Empty(t, Desired("index/s001", nil, 3))
 }
 
-// TestOneMemberLeavingMovesOnlyWhatItHeld is the reshuffle bound, and it is the
-// property a "hash mod N" placement fails outright: there, one departure
-// re-homes almost the whole keyspace.
 func TestOneMemberLeavingMovesOnlyWhatItHeld(t *testing.T) {
 	const target = 3
 	members := fleet(12)
@@ -261,10 +257,6 @@ func TestHoldsAgreesWithDesired(t *testing.T) {
 	}
 }
 
-// TestMemberCarriesNothingAMemberCouldLieItselfInWith is the census that holds
-// the package doc's claim structural rather than aspirational: if a Capacity,
-// a Load or a Weight is ever added to Member, this fails and whoever added it
-// has to say so here.
 func TestMemberCarriesNothingAMemberCouldLieItselfInWith(t *testing.T) {
 	tp := reflect.TypeOf(Member{})
 	var fields []string

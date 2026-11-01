@@ -108,11 +108,10 @@ func ifname(name string) []byte {
 }
 
 // installTable programs the whole taubyte_netguard table in a single netlink
-// transaction: any pre-existing table of the same name is deleted and the new
-// one created in the same batch, which nftables applies atomically — there is
-// no window in which the filter is absent (a del+add of a table replaces it in
-// place). addChainsAndRules appends the backend-specific chains and rules to the
-// same batch before the single Flush.
+// transaction: any existing table of the same name is deleted and the new one
+// created in the same batch, which nftables applies atomically, so the filter is
+// never absent. addChainsAndRules appends the backend-specific chains and rules to
+// the same batch before the single Flush.
 //
 // The returned error is the fail-closed signal: EPERM means the tau process
 // lacks CAP_NET_ADMIN.
@@ -171,22 +170,12 @@ func Uninstall() error {
 	return c.Flush()
 }
 
-// acceptAnswersExprs is a whole rule that accepts a packet belonging to a
-// connection that already exists, and it is FIRST in every chain this package
-// installs.
-//
-// The drops below look at a packet's destination and nothing else, and a REPLY
-// has the asker's address as its destination. So without this the host could
-// open a connection to a restricted workload -- which is how every request
-// reaches one -- and the workload's answer, addressed to the host, was dropped
-// as egress to a local address. Every restricted container was unreachable from
-// the node that started it.
-//
-// IT OPENS NOTHING THE RULES CLOSE. A connection the workload opens toward a
-// denied address has its first packet in state NEW, and that packet is dropped,
-// so the connection never comes to exist and none of its packets is ever
-// ESTABLISHED. RELATED covers the ICMP errors that belong to a connection the
-// host opened. It assumes register 1 is free for reuse.
+// acceptAnswersExprs is a whole rule accepting packets of an existing connection,
+// first in every chain. The drops look only at destination, and a reply to a host
+// connection is addressed to the host, so without it a restricted workload could
+// not answer the node that started it. A connection the workload opens to a denied
+// address has its NEW packet dropped, so it never becomes ESTABLISHED. RELATED
+// covers ICMP errors for host connections. It assumes register 1 is free for reuse.
 func acceptAnswersExprs() []expr.Any {
 	return []expr.Any{
 		&expr.Ct{Register: 1, Key: expr.CtKeySTATE},
