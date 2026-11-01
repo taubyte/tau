@@ -16,33 +16,14 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v2/primitivesv2connect"
 )
 
-// client.go is the other side of rpc.go, and it is what lets a worker stop
-// holding queues and logs.
-//
-// IT SATISFIES THE TIER'S OWN SEAMS. pkg/invoke/wasm asks for a Queues — "send
-// to the queue this grant names" — and a Logs, and node/queue.go and node/log.go
-// answer them today by opening a raft cluster in the worker's own process. Both
-// surfaces below answer the SAME seams by asking this service, so the swap is
-// one option at composition and nothing above the seam changes: the guest calls
-// queue.send exactly as before and the item lands on a node that owns the
-// namespace. Nothing in pkg/invoke/wasm changes. That is the value of the seam.
-//
-// THE GRANT IS THE ADDRESS AND THE SERVICE READS THE REST. A grant carries the
-// handle — project, environment, resource id — which is precisely the Ref the
-// wire takes. Everything else on it (the visibility timeout, the retry budget,
-// the dead letter, the retention) is deliberately NOT sent: the service reads
-// the declaration itself, so a worker cannot describe a queue into being
-// something else.
+// Client and Tier answer the compute tier's Queues and Logs seams by asking this
+// service, so a worker no longer holds queues and logs; pkg/invoke/wasm is unchanged.
+// Only the grant's handle is sent; the service reads the declaration itself, so a
+// worker cannot describe a queue into something else.
 
-// Consumers is the claim/settle seam a dispatcher uses.
-//
-// IT IS NOT AN ABI AND IT IS NOT A HOST FUNCTION, which node/dispatch.go already
-// says: `send` is something a guest calls and `receive` is a DELIVERY — something
-// claims an item and invokes a workload with it. That claiming half is the
-// worker's, so this service defines the seam and drives nothing through it.
-//
-// THE GRANT IS THE ADDRESS HERE TOO, so a dispatcher holding what it needs to
-// invoke a workload already holds what it needs to claim for one.
+// Consumers is the claim/settle seam a dispatcher uses. Not a host function: claiming
+// an item and invoking a workload with it is the worker's; this service defines the
+// seam.
 type Consumers interface {
 	// Claim hands out up to max items. An empty answer means nothing is
 	// deliverable, which is NOT an empty queue.
@@ -57,27 +38,15 @@ type Consumers interface {
 }
 
 // Clocks is the tasking seam: one window of the clock, handed to a node that
-// will generate and distribute what it owes.
-//
-// IT IS THE SAME SEAM LOCAL AND REMOTE, which is what lets the composer decide
-// WHICH node without this package knowing whether that means a stream. Both
-// *Tier and *Client answer it, so the leader's own node is the absence of a hop
-// rather than a second code path.
+// generates and distributes what it owes. *Tier and *Client both answer it.
 type Clocks interface {
 	// CronTask hands the window `(since, upto]` to this node. A refusal is a
 	// window nothing spent: the leader hands it out again, widened.
 	CronTask(ctx context.Context, since, upto time.Time) error
 }
 
-// ---------------------------------------------------------------- local
-
-// Local is this service as the compute tier's own seam, with no stream.
-//
-// IT IS THE ABSENCE OF A HOP AND NOT A SHORTCUT. A node that runs the primitives
-// service already holds the namespace, so dialling itself to reach it would add
-// a stream and a serialization to every call — the rule node/secrets.go keeps
-// for a vault and services/database keeps for an engine. A node that does NOT
-// run the service uses Client, and nothing above the seam can tell which it got.
+// Local is this service as the compute tier's seam, with no stream; a node not
+// running the service uses Client.
 func (s *Service) Local() *Tier { return &Tier{service: s} }
 
 // Tier answers every seam a compute node needs, in this process.
@@ -90,22 +59,14 @@ var (
 	_ Clocks          = (*Tier)(nil)
 )
 
-// CronTask takes one window of the clock in this process.
-//
-// IT IS THE HANDLER'S OWN CALL WITHOUT THE STREAM. rpc.go reads how far the
-// tasking has come off a header and then reaches [crons.accept]; a window that
-// never left this node has come nowhere, so it reaches the same door with a
-// hop count of zero and everything after it is decided in one place.
+// CronTask takes one window of the clock in this process, through crons.accept with a
+// hop count of zero.
 func (t *Tier) CronTask(ctx context.Context, since, upto time.Time) error {
 	return t.service.crons.accept(ctx, since, upto)
 }
 
-// EVERY METHOD BELOW IS AN ADAPTER, exactly as rpc.go's handlers are: take the
-// address off the grant, call the ONE implementation in service.go, put the
-// tier's arm on what comes back. The wire adapter differs in two lines — it
-// takes the address off a Ref and encodes a status instead — and in nothing
-// else, which is what makes "the local arm and the remote arm agree" a property
-// of the code rather than of two authors' attention.
+// Every method below adapts the grant to the one implementation in service.go, as
+// rpc.go's handlers adapt a Ref, so the local and remote arms agree by construction.
 
 func (t *Tier) Send(ctx context.Context, grant invoke.Grant, id string, data []byte) error {
 	at, err := addressFrom(grant.Handle)
@@ -159,17 +120,14 @@ func (t *Tier) Read(ctx context.Context, grant invoke.Grant, after string, limit
 	return read, tierError(err)
 }
 
-// ---------------------------------------------------------------- remote
-
 // Client reaches a primitives service.
 type Client struct {
 	conn *rpc.Client
 	svc  primitivesv2connect.PrimitivesServiceClient
 }
 
-// NewClient dials one. The peer is the caller's to choose — placement, or a view
-// of who runs the service — because which node holds the namespace is a routing
-// question and not this package's.
+// NewClient dials one. Which node holds the namespace is the caller's routing
+// question.
 func NewClient(h host.Host, at libp2ppeer.ID) (*Client, error) {
 	conn, err := rpc.NewClient(h, at, Protocol)
 	if err != nil {
@@ -190,12 +148,8 @@ var (
 	_ Clocks          = (*Client)(nil)
 )
 
-// CronTask hands one window of the clock to the node this client reaches.
-//
-// THE HOP COUNT IS THE CALLER'S ROUTE AND NOT THE WINDOW'S, so it travels as a
-// header — services/database/forward.go's rule — and it is read off the
-// context rather than taken as an argument, so a node passing a tasking on
-// cannot forget to say that it did.
+// CronTask hands one window to the node this client reaches. The hop count travels as
+// a header, read off the context so a forwarding node cannot forget it.
 func (c *Client) CronTask(ctx context.Context, since, upto time.Time) error {
 	req := connect.NewRequest(&primitivesv2.CronTaskRequest{
 		Since: since.Unix(), Upto: upto.Unix(),

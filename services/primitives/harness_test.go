@@ -23,10 +23,8 @@ import (
 	"github.com/taubyte/tau/pkg/register"
 )
 
-// harness_test builds a primitives service over a mock consensus and an
-// in-memory record store, because what these tests are about is what the
-// SERVICE decides — which declaration a call resolves to, which node may write,
-// and what the lifecycle pass ends — and none of that needs a real election.
+// A primitives service over a mock consensus and an in-memory record store: these
+// tests are about what the service decides, which needs no real election.
 
 const (
 	projectID = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
@@ -137,12 +135,8 @@ func (p *published) Object(_ context.Context, id register.ObjectID) ([]byte, err
 	return nil, fmt.Errorf("no such object")
 }
 
-// fakeCluster is raft.MockCluster with the one thing it does not have: a node
-// that is not the leader.
-//
-// THE MOCK IS A NO-OP LEADER — IsLeader is hardcoded true and every write
-// succeeds — so on its own it cannot exercise the refusal this service's whole
-// write path is built around. The state still lives in the mock.
+// fakeCluster is raft.MockCluster plus a node that is not the leader; the mock alone
+// always leads.
 type fakeCluster struct {
 	*raft.MockCluster
 
@@ -201,21 +195,16 @@ func (c *fakeCluster) State() hraft.RaftState {
 	return hraft.Follower
 }
 
-// elsewhere is the node this fixture's group says may write. It is a stranger
-// on no swarm, which is what makes it useful twice over: a refusal that names
-// it proves the refusal carries a destination, and a tasking sent to it CANNOT
-// arrive — so a test can tell "this node sent the window on" from "this node
-// did the work anyway".
+// elsewhere is the node this fixture's group says may write: on no swarm, so a
+// refusal naming it proves the destination travels and a tasking sent to it cannot
+// arrive.
 var elsewhere = libp2ppeer.ID("the-other-node")
 
 // Leader names whoever may write, so a refusal can carry it.
 func (c *fakeCluster) Leader() (libp2ppeer.ID, error) { return elsewhere, nil }
 
-// brittle is a leader whose replicated write can fail, which the mock cannot do
-// and which every write path here is built around: cluster.Batch answers
-// ErrNotLeader the moment leadership moves, and a timeout when one entry
-// out-runs applyTimeout. Retention builds the largest entry this service ever
-// writes, so it is the likeliest to meet both.
+// brittle is a leader whose replicated write can fail (ErrNotLeader, or a timeout),
+// which the mock cannot do.
 type brittle struct {
 	*fakeCluster
 
@@ -246,16 +235,8 @@ type leader interface {
 	stepDown()
 }
 
-// stores is the record store a log's bytes go through here: pkg/kvdb/mock, plus
-// the one behaviour of a real store the mock does not have and the one failure
-// it cannot have.
-//
-// A MISS ANSWERS THE DATASTORE'S OWN ERROR, because log.go tells a miss from a
-// store that cannot answer at all — a hole is a record on its way, and a failure
-// is a node whose "there is nothing more" nobody should believe. core/kvdb is
-// implemented over go-datastore and answers ds.ErrNotFound; kvdbmock answers a
-// sentinel of its own, so a test over the bare mock would be exercising a store
-// nobody runs.
+// stores is pkg/kvdb/mock answering a miss with ds.ErrNotFound, as core/kvdb does,
+// and able to fail outright: log.go reads the two differently.
 type stores struct {
 	kvdb.Factory
 
@@ -350,12 +331,8 @@ func starting(t *testing.T, opts ...Option) *harness {
 	return startingOn(t, newCluster(), opts...)
 }
 
-// startingOn starts a service and waits for its consensus to form, because the
-// group forms OFF the request path — a test that called straight into it would
-// be testing ErrForming.
-//
-// The cluster is the test's, so a case about what happens when a replicated
-// write is refused can say so rather than arranging it from outside.
+// startingOn starts a service and waits for its consensus to form, since the group
+// forms off the request path. The cluster is the test's.
 func startingOn(t *testing.T, cluster leader, opts ...Option) *harness {
 	t.Helper()
 
@@ -373,11 +350,7 @@ func startingOn(t *testing.T, cluster leader, opts ...Option) *harness {
 		WithRecords(records),
 		WithClock(tick.now),
 
-		// A PERIOD LONG ENOUGH NEVER TO FIRE ON ITS OWN. It is the service's
-		// ONE period — the lifecycle pass and the leader's look at the clock
-		// both ride it — and every test below drives the pass it is about
-		// directly, so what it asserts is what the pass DOES rather than
-		// whether a ticker beat it there.
+		// A period long enough never to fire; tests drive the pass directly.
 		WithSweep(time.Hour),
 	}, opts...)...)
 	require.NoError(t, err)

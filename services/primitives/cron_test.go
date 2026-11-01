@@ -16,15 +16,9 @@ import (
 	"github.com/taubyte/tau/pkg/raft"
 )
 
-// cron_test drives the clock rather than waiting for it, which is the whole
-// reason the leader's turn takes a `now`: every branch that decides whether
-// somebody's job runs — and how many times — is reachable without a sleep.
-//
-// WHAT A TURN IS HERE IS TWO ACTS AND NOT ONE. The leader hands a WINDOW of
-// minutes to a node, and the node works out what the window owes, pushes it and
-// claims it back. The second act is a CronTask call, so most tests below keep
-// both in this process — a service composed with no view of a fleet tasks
-// itself — and the ones about the tasking itself say where the window went.
+// Drives the clock rather than waiting for it. Most tests keep both acts (the
+// leader's tasking and the tasked pass) in this process; a service with no fleet view
+// tasks itself.
 
 const cronID = "QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc"
 
@@ -81,12 +75,8 @@ func at(hour, minute int) time.Time {
 	return time.Date(2026, 9, 5, hour, minute, 0, 0, time.UTC)
 }
 
-// turn is one whole turn of the leader's clock at a stated moment: the tasking,
-// and the pass the tasked node runs.
-//
-// IT MOVES THE SERVICE'S CLOCK AND NOT A SECOND ONE. Everything a queue decides
-// — when a claim expires, when a backoff is up — is decided against the same
-// time the schedule is, which is what a universe driving the clock also gets.
+// turn is one whole turn of the leader's clock at a stated moment, moving the
+// service's own clock so queue deadlines and schedules agree.
 func (h *harness) turn(t *testing.T, now time.Time) {
 	t.Helper()
 
@@ -98,9 +88,7 @@ func (h *harness) turn(t *testing.T, now time.Time) {
 		return
 	}
 
-	// NO BARRIER HERE, WHICH IS THE SERVICE'S OWN SHAPE. The leader's turn
-	// reads nothing replicated; the barrier belongs to the pass the tasked node
-	// runs, and [crons.accept] takes it where that pass happens.
+	// No barrier: the leader's turn reads nothing replicated; crons.accept takes it.
 	h.crons.tick(t.Context(), now)
 }
 
@@ -124,10 +112,6 @@ func primed(t *testing.T, s Schedule, since time.Time) (*harness, *fires) {
 	return h, fired
 }
 
-// TestTHEFIRSTTURNALEADERTAKESFIRESNOTHING. Deploying a nightly job at noon
-// must not immediately run last night — and a node that has just won an
-// election must not re-run the minute its predecessor was already handing out,
-// which is the same sentence read from the other side.
 func TestTheFirstTurnALeaderTakesFiresNothing(t *testing.T) {
 	// A minutely cron is due in every minute there is, so anything that fired
 	// on a first turn would fire here.
@@ -145,7 +129,6 @@ func TestTheFirstTurnALeaderTakesFiresNothing(t *testing.T) {
 	require.Equal(t, []string{"2026-09-05T12:01:00Z"}, fired.seen()[0].Headers[headerFiredAt])
 }
 
-// TestTheClockCOMESROUNDAndTheTargetIsInvoked, with nothing asking for it.
 func TestACronFiresItsTarget(t *testing.T) {
 	h, fired := primed(t, nightly("0 3 * * *"), at(2, 30))
 
@@ -165,8 +148,6 @@ func TestACronFiresItsTarget(t *testing.T) {
 		"the SLOT and not now, so a late run says what it is a run of")
 }
 
-// TestAFIREISANITEMBeforeItIsAnInvocation: the tasked node pushes, and
-// something else invokes.
 func TestAFireIsAnItemInTheSchedulesOwnQueue(t *testing.T) {
 	h, fired := primed(t, nightly("0 3 * * *"), at(2, 30))
 	fired.hold()
@@ -190,9 +171,6 @@ func TestAFireIsAnItemInTheSchedulesOwnQueue(t *testing.T) {
 	}, 5*time.Second, 10*time.Millisecond, "a fire that answered 2xx was not acknowledged")
 }
 
-// TestONCEPerMinute, however often the clock is looked at. A turn that finds
-// the clock still inside a minute it has already handed out does nothing at
-// all.
 func TestAMinuteIsHandedOutOnceHoweverOftenItIsChecked(t *testing.T) {
 	h, fired := primed(t, nightly("0 3 * * *"), at(2, 30))
 
@@ -204,11 +182,6 @@ func TestAMinuteIsHandedOutOnceHoweverOftenItIsChecked(t *testing.T) {
 	require.Never(t, func() bool { return len(fired.seen()) > 1 }, time.Second, 50*time.Millisecond)
 }
 
-// TestTHECLOCKSMEMORYISONELEADERSPROCESSANDITFAILSBYLOSING. There is no
-// replicated record of a tick, so a node that wins an election has no memory of
-// the minute its predecessor was handing out — and what it does about that is
-// record where the clock is and hand out nothing, which loses at most one
-// minute's slots rather than running somebody's billing twice.
 func TestAFreshLeaderDoesNotRefireTheMinuteItInherited(t *testing.T) {
 	h, fired := primed(t, nightly("* * * * *"), at(2, 59))
 
@@ -224,7 +197,6 @@ func TestAFreshLeaderDoesNotRefireTheMinuteItInherited(t *testing.T) {
 		"the minute its predecessor had already handed out was handed out again")
 }
 
-// TestTHENEXTSlotDoesFire, so one tasking bounds one run and not all of them.
 func TestTheFollowingDayFiresAgain(t *testing.T) {
 	h, fired := primed(t, nightly("0 3 * * *"), at(2, 30))
 
@@ -235,9 +207,6 @@ func TestTheFollowingDayFiresAgain(t *testing.T) {
 	require.Eventually(t, func() bool { return len(fired.seen()) == 2 }, 5*time.Second, 10*time.Millisecond)
 }
 
-// TestAMISSEDGapIsCaughtUpONCE. A cloud down from 03:00 to 03:55 owes the job
-// one run, not eleven — the window is handed over whole and the tasked node
-// takes the most recent slot in it.
 func TestAMissedGapFiresOnceWhenTheCloudComesBack(t *testing.T) {
 	h, fired := primed(t, nightly("*/5 * * * *"), at(3, 1))
 
@@ -249,8 +218,6 @@ func TestAMissedGapFiresOnceWhenTheCloudComesBack(t *testing.T) {
 	require.Never(t, func() bool { return len(fired.seen()) > 1 }, time.Second, 50*time.Millisecond)
 }
 
-// TestAGAPLongerThanADayIsNotMadeUp. A cloud that was down for a month should
-// come back and do today's work.
 func TestAVeryLateScheduleIsNotReplayed(t *testing.T) {
 	h, fired := primed(t, nightly("0 3 * * *"), at(3, 30).Add(-30*24*time.Hour))
 
@@ -260,9 +227,6 @@ func TestAVeryLateScheduleIsNotReplayed(t *testing.T) {
 		"today's run, not a month of them")
 }
 
-// TestTHEZONEIsTheSchedulesOwn. "0 3 * * *" is a different instant in every
-// zone, and a fleet spread across regions firing at whichever local time each
-// node held would be a job that happens several times.
 func TestTheScheduleFiresInTheZoneItWasWrittenIn(t *testing.T) {
 	s := nightly("0 3 * * *")
 	s.Timezone = "Europe/Paris"
@@ -274,7 +238,6 @@ func TestTheScheduleFiresInTheZoneItWasWrittenIn(t *testing.T) {
 	require.Equal(t, []string{"2026-09-05T01:00:00Z"}, fired.seen()[0].Headers[headerFiredAt])
 }
 
-// TestAZoneThisMachineDoesNotHaveIsNotAGuess.
 func TestAnUnknownTimezoneFiresNothing(t *testing.T) {
 	s := nightly("0 3 * * *")
 	s.Timezone = "Mars/Olympus"
@@ -284,8 +247,6 @@ func TestAnUnknownTimezoneFiresNothing(t *testing.T) {
 	require.Empty(t, fired.seen())
 }
 
-// TestAnExpressionThatIsNotOneFiresNothing, rather than being read as some
-// other schedule.
 func TestAMalformedScheduleFiresNothing(t *testing.T) {
 	h, fired := primed(t, nightly("every tuesday-ish"), at(2, 30))
 
@@ -293,9 +254,6 @@ func TestAMalformedScheduleFiresNothing(t *testing.T) {
 	require.Empty(t, fired.seen())
 }
 
-// TestFIVEFIELDSAndNotSix. A parser with a seconds field silently reads
-// "0 3 * * *" as 03:00 on every minute of the third second, which is a
-// different job entirely.
 func TestTheExpressionIsTheFiveFieldForm(t *testing.T) {
 	_, err := cronParser.Parse("0 3 * * *")
 	require.NoError(t, err)
@@ -304,8 +262,6 @@ func TestTheExpressionIsTheFiveFieldForm(t *testing.T) {
 	require.Error(t, err, "six fields would mean every existing expression changed meaning")
 }
 
-// TestSLOTATIsTheMostRecentSlotInTheWINDOW, which is the whole of what a
-// tasking hands over and the whole of what it answers.
 func TestSlotAtIsTheMostRecentSlotInTheWindow(t *testing.T) {
 	slot, ok := slotAt(Schedule{Name: "t", Spec: "*/15 * * * *", Timezone: "UTC"}, at(3, 1), at(3, 44))
 	require.True(t, ok)
@@ -320,15 +276,6 @@ func TestSlotAtIsTheMostRecentSlotInTheWindow(t *testing.T) {
 	require.Equal(t, at(3, 0), slot)
 }
 
-// ------------------------------------------------------------------ overlap
-
-// TestOVERLAPIsSkippedByDefault, which is the only value that cannot make
-// things worse.
-//
-// AND THE FACT IT DECIDES ON IS THE QUEUE'S. What says "a run is still going"
-// is an item this namespace holds, not a flag in the memory of whichever node
-// led when the run started — so a schedule that is skipped is skipped on the
-// evidence and not on a guess.
 func TestASecondTickIsSkippedWhileTheFirstRuns(t *testing.T) {
 	h, fired := primed(t, nightly("* * * * *"), at(2, 59))
 	fired.hold()
@@ -345,13 +292,6 @@ func TestASecondTickIsSkippedWhileTheFirstRuns(t *testing.T) {
 	require.Never(t, func() bool { return len(fired.seen()) > 1 }, time.Second, 50*time.Millisecond)
 }
 
-// TestOVERLAPQueuedRunsAfterwards, and it runs the period it was queued FOR.
-//
-// THE QUEUE IS THE BACKLOG, which is the one thing that changed with the
-// replicated hold this replaces: a slot that comes round while a run is going
-// is pushed as an item behind it rather than kept as a key one deep. The
-// vocabulary's own warning about this value — that it "turns a slow job into an
-// unbounded backlog" — is now literally what it does.
 func TestAQueuedTickRunsWhenTheFirstEnds(t *testing.T) {
 	s := nightly("* * * * *")
 	s.OnOverlap = overlapQueue
@@ -380,7 +320,6 @@ func TestAQueuedTickRunsWhenTheFirstEnds(t *testing.T) {
 		"the period that was queued, and not the one that came round since")
 }
 
-// TestOVERLAPAllowedRunsAlongside.
 func TestAnAllowedOverlapRunsAlongside(t *testing.T) {
 	s := nightly("* * * * *")
 	s.OnOverlap = overlapAllow
@@ -396,10 +335,6 @@ func TestAnAllowedOverlapRunsAlongside(t *testing.T) {
 	fired.release()
 }
 
-// ------------------------------------------------------- who may fire at all
-
-// TestAFOLLOWERTASKSNOTHING, which is what makes a fleet fire once: raft
-// already elected one node to be the clock.
 func TestAFollowerFiresNothing(t *testing.T) {
 	h, fired := primed(t, nightly("0 3 * * *"), at(2, 30))
 
@@ -413,9 +348,6 @@ func TestAFollowerFiresNothing(t *testing.T) {
 	require.Equal(t, at(2, 30), h.tasked())
 }
 
-// TestACLOCKWITHONLYONEOFITSHALVESISREFUSED. A service told which schedules
-// exist and given no way to fire one hands out every minute in the cloud and
-// delivers nothing, which is worse than not running a clock at all.
 func TestAServiceGivenHalfAClockIsRefused(t *testing.T) {
 	_, err := New(nil)
 	require.ErrorIs(t, err, ErrNoHost)
@@ -429,8 +361,6 @@ func TestAServiceGivenHalfAClockIsRefused(t *testing.T) {
 	require.ErrorIs(t, err, ErrHalfAClock)
 }
 
-// TestANODEWITHNOSCHEDULESOURCERUNSNOCLOCK, which is the composition a node
-// that holds the namespace and no worker has.
 func TestAServiceWithNoScheduleSourceRunsNoClock(t *testing.T) {
 	h := starting(t)
 	require.Nil(t, h.Service.schedules)
@@ -439,10 +369,6 @@ func TestAServiceWithNoScheduleSourceRunsNoClock(t *testing.T) {
 	h.cycle(t.Context())
 }
 
-// TestAWINDOWNOTHINGCOULDCOMMITISNOTSPENT. Every push being refused is one
-// condition and not many — this node stopped being the one that may write — so
-// the window goes back unspent, with nothing already committed for the next
-// tasking to duplicate.
 func TestAWindowNothingCouldCommitIsNotSpent(t *testing.T) {
 	cluster := &brittle{fakeCluster: newCluster()}
 	h, fired := clockingOn(t, cluster, nightly("0 3 * * *"))
@@ -462,12 +388,6 @@ func TestAWindowNothingCouldCommitIsNotSpent(t *testing.T) {
 	require.Never(t, func() bool { return len(fired.seen()) > 1 }, time.Second, 50*time.Millisecond)
 }
 
-// ------------------------------------------------------------- the tasking
-
-// TestTHEWINDOWLEAVESTHELEADER, which is the whole point of the minute being a
-// MESSAGE: the walk over every schedule belongs to the node that was tasked,
-// and the leader's turn is one call whether the cloud holds ten crons or ten
-// million.
 func TestTheWindowLeavesTheLeaderThroughTheTaskingItWasGiven(t *testing.T) {
 	sent, h, fired := tasking(t, nightly("0 3 * * *"))
 
@@ -482,9 +402,6 @@ func TestTheWindowLeavesTheLeaderThroughTheTaskingItWasGiven(t *testing.T) {
 	require.Empty(t, fired.seen())
 }
 
-// TestAWINDOWNOBODYTOOKISNOTSPENT. Re-tasking is the whole of the recovery —
-// there is no task record, no lease and no retry queue — so a leader that
-// advanced past a refused window would lose the minute outright.
 func TestAWindowTheTaskedNodeWouldNotTakeIsNotSpent(t *testing.T) {
 	sent, h, _ := tasking(t, nightly("0 3 * * *"))
 	h.turn(t, at(2, 30))
@@ -504,9 +421,6 @@ func TestAWindowTheTaskedNodeWouldNotTakeIsNotSpent(t *testing.T) {
 	require.Equal(t, at(3, 1), h.tasked())
 }
 
-// TestATASKINGTHATLANDSWHEREITCANNOTCOMMITISSENTON. A fire is a write and a
-// write is refused off the leader, so a node that generated anyway would make
-// work that cannot land — services/database/forward.go's shape, and its reason.
 func TestATaskingThatLandsWhereItCannotCommitIsSentToTheNodeThatCan(t *testing.T) {
 	h, fired := clocking(t, nightly("0 3 * * *"))
 	h.clock.set(at(3, 0))
@@ -522,9 +436,6 @@ func TestATaskingThatLandsWhereItCannotCommitIsSentToTheNodeThatCan(t *testing.T
 	require.Empty(t, fired.seen())
 }
 
-// TestATASKINGTHATHASCOMEFARENOUGHISSERVEDHEREORREFUSEDHERE. Two nodes whose
-// views of the group differ would otherwise pass one window to each other for
-// as long as they disagreed; a refusal costs the leader one more minute.
 func TestATaskingThatHasComeFarEnoughIsRefusedRatherThanSentOnAgain(t *testing.T) {
 	h, fired := clocking(t, nightly("0 3 * * *"))
 	h.clock.set(at(3, 0))
@@ -535,8 +446,6 @@ func TestATaskingThatHasComeFarEnoughIsRefusedRatherThanSentOnAgain(t *testing.T
 	require.Empty(t, fired.seen())
 }
 
-// TestAHOPCOUNTTHISNODECANNOTREADISTHECEILING. A header a node cannot
-// understand must not be the thing that lets a window go round again.
 func TestAnUnreadableHopCountIsReadAsTheCeiling(t *testing.T) {
 	for _, raw := range []string{"not a number", "-1"} {
 		require.Equal(t, maxHops,
@@ -548,19 +457,11 @@ func TestAnUnreadableHopCountIsReadAsTheCeiling(t *testing.T) {
 	require.Equal(t, 0, hopsOf(hopsIn(t.Context(), http.Header{})))
 }
 
-// TestAWINDOWHANDEDTOANODETHATRUNSNOCLOCKISREFUSEDBYNAME. It holds the
-// namespace and runs no compute, so it has no deployments to enumerate crons
-// from — and answering "done" would be a minute nobody ever fires.
 func TestAWindowHandedToANodeThatRunsNoClockIsRefusedByName(t *testing.T) {
 	h := starting(t)
 	require.ErrorIs(t, h.Local().CronTask(t.Context(), at(2, 59), at(3, 0)), ErrNoClock)
 }
 
-// --------------------------------------------------------------- the handoff
-
-// TestAFIRETHATFAILSISDELIVEREDAGAIN, which is the whole reason a fire is an
-// item: before this, a failed invocation was a log line, a spent slot and work
-// that silently never happened.
 func TestAFireThatFailsIsDeliveredAgain(t *testing.T) {
 	h, fired := primed(t, nightly("* * * * *"), at(2, 59))
 	fired.answer(500)
@@ -584,9 +485,6 @@ func TestAFireThatFailsIsDeliveredAgain(t *testing.T) {
 		"the redelivery is a run of the same period")
 }
 
-// TestAMINUTEISHANDEDOUTONCEEVENWHENITSFIREISDELIVEREDTWICE. The guarantee this
-// mechanism makes is worth writing down from both sides: the MINUTE is handed
-// out exactly once and the FIRE is delivered at least once.
 func TestASlotIsSpentOnceEvenWhenItsFireIsDeliveredTwice(t *testing.T) {
 	h, fired := primed(t, nightly("* * * * *"), at(2, 59))
 	fired.answer(500)
@@ -594,12 +492,8 @@ func TestASlotIsSpentOnceEvenWhenItsFireIsDeliveredTwice(t *testing.T) {
 	h.turn(t, at(3, 0))
 	require.Eventually(t, func() bool { return len(fired.seen()) == 1 }, 5*time.Second, 10*time.Millisecond)
 
-	// THE NACK IS WAITED FOR AND NOT ASSUMED, which is the wait the test above
-	// already makes for the same reason. `fired.seen()` records that the
-	// invocation STARTED; the item is given back afterwards, by the goroutine
-	// that drove it. A second turn taken in between claims nothing — the item
-	// is still invisible — and a redelivery that never comes then waits out a
-	// deadline for an item nothing will hand out again on this clock.
+	// The nack is waited for: the invocation starts before the goroutine gives the item
+	// back.
 	held, err := h.crons.open(nightly("* * * * *"))
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
@@ -618,7 +512,6 @@ func TestASlotIsSpentOnceEvenWhenItsFireIsDeliveredTwice(t *testing.T) {
 	require.Equal(t, []string{"2026-09-05T03:00:00Z"}, fired.seen()[1].Headers[headerFiredAt])
 }
 
-// TestAFIRETHATKEEPSFAILINGENDSSOMEWHEREVISIBLE rather than in a log line.
 func TestAFireThatExhaustsItsBudgetIsDeadLettered(t *testing.T) {
 	s := nightly("0 3 * * *")
 	h, fired := primed(t, s, at(2, 59))
@@ -629,10 +522,8 @@ func TestAFireThatExhaustsItsBudgetIsDeadLettered(t *testing.T) {
 	held, err := h.crons.open(s)
 	require.NoError(t, err)
 
-	// Every attempt the platform allows, each after its backoff. The pass that
-	// hands a fire out is driven directly here, because what is being exercised
-	// is the attempt budget rather than the clock: this schedule's next slot is
-	// a day away.
+	// The delivery pass is driven directly: this exercises the attempt budget, and the
+	// next slot is a day away.
 	now := at(3, 0)
 	for range queue.DefaultMaxAttempts {
 		require.Eventually(t, func() bool {
@@ -652,9 +543,6 @@ func TestAFireThatExhaustsItsBudgetIsDeadLettered(t *testing.T) {
 	}, 5*time.Second, 10*time.Millisecond, "a fire that gave up vanished instead of being buried")
 }
 
-// TestJITTERIsWaitedOutAFTERTheCLAIM. A node that slept before claiming would
-// leave the fire unclaimed for the length of the window, which is exactly long
-// enough for somebody else to be handed the same work.
 func TestTheSlotIsClaimedBeforeTheJitterIsWaitedOut(t *testing.T) {
 	s := nightly("0 3 * * *")
 	s.Jitter = 300 * time.Millisecond
@@ -676,10 +564,6 @@ func TestTheSlotIsClaimedBeforeTheJitterIsWaitedOut(t *testing.T) {
 	require.Never(t, func() bool { return len(fired.seen()) > 1 }, time.Second, 50*time.Millisecond)
 }
 
-// TestEVERYTARGETOFASLOTFIRESINTHESAMEPASS. A slot's targets are one run of
-// the cron — "it fires whatever it edges to" is a sentence about one moment —
-// so handing them out one per turn would spread a single slot over a minute per
-// target and leave the schedule reading as busy for the whole of it.
 func TestEveryTargetOfASlotFiresInTheSameTurn(t *testing.T) {
 	s := nightly("0 3 * * *")
 	s.Fires = []Target{
@@ -696,8 +580,6 @@ func TestEveryTargetOfASlotFiresInTheSameTurn(t *testing.T) {
 	require.Never(t, func() bool { return len(fired.seen()) > 3 }, time.Second, 50*time.Millisecond)
 }
 
-// -------------------------------------------------------------- a run begins
-
 // beginning is a cron that begins a workflow run and fires nothing, which is
 // the shape the fixture's own cron has: a clock that kicks off a pipeline.
 func beginning(id string) Schedule {
@@ -709,10 +591,6 @@ func beginning(id string) Schedule {
 	}
 }
 
-// TestASTARTISANITEMLIKEEVERYOTHERFIRE. It used to be sent straight out of the
-// turn that spent the slot — a write with no queue of its own — so a send
-// refused by a group still forming spent the period and started nothing, with
-// nothing anywhere to try it again.
 func TestACronThatStartsAWorkflowSendsFromTheDelivery(t *testing.T) {
 	s := beginning(jobsID)
 	h, _ := primed(t, s, at(2, 30))
@@ -736,8 +614,6 @@ func TestACronThatStartsAWorkflowSendsFromTheDelivery(t *testing.T) {
 	require.Equal(t, startRunID("nightly", at(3, 0)), item.ID)
 }
 
-// TestASTARTTHATCOULDNOTBESENTCOMESBACK, which is what being an item buys it:
-// the work is retried by the queue rather than lost with the turn that made it.
 func TestAStartThatCouldNotBeSentIsDeliveredAgain(t *testing.T) {
 	// A handle naming nothing this project declares: the send is refused every
 	// time, exactly as a group still forming would refuse it once.
@@ -754,19 +630,6 @@ func TestAStartThatCouldNotBeSentIsDeliveredAgain(t *testing.T) {
 	}, 5*time.Second, 10*time.Millisecond, "a start that was refused was acknowledged anyway")
 }
 
-// TestACRONTHATSTARTSANDFIRESOWESTWOITEMS, so one failure does not nack the
-// other and each gets its own attempt budget.
-//
-// THE TWO ITEMS ARE CAUGHT IN TWO STATES THAT LAST, which is what makes this a
-// test of the claim rather than of the machine it runs on. It used to hold the
-// fire and let the START SUCCEED, so the two-item depth it asserted existed for
-// the few hundred microseconds between the drain's claim and the start's ack —
-// measured at ~600µs — and passed only while testify's first check won that
-// race. Under contention the check lost it and the case failed describing
-// nothing. So the start here names a queue nothing declares: it is refused,
-// nacked back to ready behind its retry interval, and STAYS there, beside a
-// fire still inside its invocation. One item failed, the other did not, and
-// both are still the slot's own.
 func TestAStartAndAFireOfOneSlotAreTwoItems(t *testing.T) {
 	s := nightly("0 3 * * *")
 	s.Starts = []invoke.Grant{grantFor("QmYwAPJzv5CZsnAzt8auVTL6aKYQYiKRcHTbLuxSXKZJgp")}
@@ -790,8 +653,6 @@ func TestAStartAndAFireOfOneSlotAreTwoItems(t *testing.T) {
 		return ready != 1 || claimed != 1
 	}, time.Second, 50*time.Millisecond, "the two items settled as one")
 }
-
-// --------------------------------------------------------------- fixtures
 
 // idle is whether this schedule has no fire out with anybody, which is what
 // "the previous run has ended" means to everything that reads it.

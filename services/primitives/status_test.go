@@ -18,12 +18,8 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v2/primitivesv2connect"
 )
 
-// status_test is the one check that replaces per-method vigilance.
-//
-// Every refusal this service names travels a REAL stream here, because the
-// thing being tested is exactly what a wire throws away: connect.NewError wraps
-// the sentinel in this process, so an encode-then-decode that never left would
-// find the name still in the chain and pass for the wrong reason.
+// Every refusal travels a real stream, since an in-process encode-decode would find
+// the sentinel still in the chain.
 
 // refusingService answers every QueueSend with whatever refusal the case is
 // about, encoded the way a handler encodes one.
@@ -78,17 +74,6 @@ func refusing(t *testing.T) (*Client, *refusingService) {
 	return client, svc
 }
 
-// TestEVERYREFUSALREACHESAREMOTECALLERASITREACHESALOCALONE.
-//
-// This is the property the short-circuit rests on. p2p/rpc hands a caller this
-// node's own service or a stream onto another node's and nothing above this
-// package can tell which it got — so for every row of the table, what a caller
-// can DECIDE on has to be the same either way: the tier's arm a guest's ABI
-// has a variant for, the connect status a dispatcher filters on, and the
-// service's own name where the status carries one.
-//
-// node/dispatch.go is the caller that made this necessary: it filtered ordinary
-// refusals on ErrNotLeading, which only the local arm produced.
 func TestEveryRefusalReachesARemoteCallerAsItReachesALocalOne(t *testing.T) {
 	client, svc := refusing(t)
 	grant := grantFor("QmSomeQueueTheHandlerNeverLooksAt")
@@ -142,8 +127,6 @@ func armIn(err error) error {
 	return nil
 }
 
-// TestANUNNAMEDFAILUREISUNAVAILABLEANDNOTINTERNAL, which is the default the
-// table states and the one thing no row can assert.
 func TestAnUnnamedFailureIsUnavailableAndNotInternal(t *testing.T) {
 	client, svc := refusing(t)
 	svc.refuse(errors.New("the store fell over"))
@@ -154,9 +137,6 @@ func TestAnUnnamedFailureIsUnavailableAndNotInternal(t *testing.T) {
 	assert.Nil(t, armIn(err), "an unnamed failure was given a guest's variant")
 }
 
-// TestATASKINGKEEPSTHENAMEANDNOTTHEGUESTSARM. A window has no guest behind it,
-// so the clock's decode is the table's backwards read without the arm — and the
-// name it needs is exactly the one a status names alone.
 func TestATaskingKeepsTheNameAndNotTheGuestsArm(t *testing.T) {
 	refused := taskError(wire(NotLeading{Leader: "12D3KooWSomebodyElse"}))
 

@@ -11,26 +11,10 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// declarations.go turns "which resource" into "what that resource is".
-//
-// # The caller does not get a say
-//
-// A call carries a deployment and a resource id and nothing else. Everything
-// about the primitive — its type, how concurrent writes resolve, how long a
-// claim is invisible for, how many attempts it gets, where an exhausted item
-// goes, what retention keeps — is read HERE, out of the compiled project.
-// node/queue.go read all of it off the GRANT, which is the caller's side of the
-// conversation: a worker that described the queue could describe a different
-// one.
-//
-// # The table, and what it is for
-//
-// What this service serves is a TABLE keyed by (kind, type) rather than a
-// switch inlined in the resolve path. The vocabulary's own shape says why: a
-// lock, a counter and a barrier are each one more row in `syncTypes`, and a
-// cache is a kind of its own with the same question to answer. A row carries
-// what differs — which resolutions it keeps, and whether the lifecycle loop
-// walks it — so growing this service is an entry rather than a sweep.
+// A call carries a deployment and a resource id; everything about the primitive is
+// read here from the compiled project. What is served is a table keyed by (kind,
+// type), so a new sync type is one row: which resolutions it keeps, and whether the
+// lifecycle loop walks it.
 
 // serving is one row: what this service does with a (kind, type).
 type serving struct {
@@ -39,20 +23,13 @@ type serving struct {
 	// written.
 	consensus []string
 
-	// retained says the lifecycle loop walks resources of this type. It is a
-	// COLUMN rather than something the loop assumes, because the next type will
-	// not want the same answer: a cache wants eviction on its own terms and a
-	// lock wants none at all, and a loop that assumed would have to be edited
-	// to add one rather than a row.
+	// retained says the lifecycle loop walks resources of this type, a column because a
+	// cache or a lock will want a different answer.
 	retained bool
 }
 
-// served is what this service implements today.
-//
-// BOTH TYPES ARE RAFT-ONLY, and that is a promise rather than a limitation.
-// `crdt` is append-anywhere with an order that converges; every mechanism below
-// — one head, one claim, one leader — is the other answer, and serving a crdt
-// declaration on it would answer an author's question with the wrong one.
+// served is what this service implements: both types raft-only, since every mechanism
+// here (one head, one claim, one leader) is the opposite of crdt's convergent order.
 var served = map[[2]string]serving{
 	{syncKind, queueType}: {consensus: []string{consensusRaft}, retained: true},
 	{syncKind, logType}:   {consensus: []string{consensusRaft}, retained: true},
@@ -83,14 +60,8 @@ type retention struct {
 
 func (r retention) bounded() bool { return r.age > 0 || r.size > 0 }
 
-// serves refuses a declaration this service cannot honour, naming which half of
-// it is the problem.
-//
-// WHAT THIS CLOUD SERVES, BEFORE WHAT THE CALLER ASKED FOR. A lock reached
-// through QueueSend is two different mistakes depending on the order these are
-// checked, and the one worth reporting is that this service does not serve a
-// lock — not that the caller used the wrong verb on a resource it could never
-// have used the right one on.
+// serves refuses a declaration this service cannot honour, naming which half. What
+// this cloud serves is checked before what the caller asked.
 func (d declared) serves(want string) error {
 	row, held := served[[2]string{syncKind, d.spec.Type}]
 	if !held {
@@ -105,12 +76,10 @@ func (d declared) serves(want string) error {
 	return nil
 }
 
-// declarations reads compiled projects.
 type declarations struct {
 	projects *register.Cache[*specs.Project]
 }
 
-// of resolves one sync resource.
 func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 	if err := ref.valid(); err != nil {
 		return declared{}, err
@@ -136,10 +105,7 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 		return declared{}, fmt.Errorf("%w: %s: %w", ErrNotDeclared, ref.id, err)
 	}
 
-	// THE TYPE IS THE DISCRIMINATOR THE COMPILER WROTE. `queue: {…}` compiles to
-	// a `type` of "queue", which is how a reader knows which of the two
-	// operation surfaces this resource has without guessing from which block is
-	// present.
+	// The type is the compiled discriminator.
 	primitive := specs.ReadSync(resource)
 	kindOf := primitive.Type
 	if kindOf == "" {
@@ -153,16 +119,11 @@ func (d *declarations) of(ctx context.Context, ref address) (declared, error) {
 			Environment: ref.environment,
 			Type:        kindOf,
 
-			// THE ID AND NEVER THE LABEL, for the reason node/queue.go already
-			// gives: two workloads may call one queue different things, and two
-			// projects may both call one `jobs`. And the id ALONE, which is
-			// what lets the lifecycle pass resolve a place back to this
-			// declaration — see [Spec.at].
+			// The id, never the label, and the id alone, so the lifecycle pass can resolve a place
+			// back to this declaration (see Spec.at).
 			Name: ref.id,
 
-			// RESOLVED HERE AND NOWHERE LATER, so nothing below has to decide
-			// what silence meant. `consensus` is RequiredWhen the type is
-			// written, so a hole in it is a resource the compiler let through.
+			// Resolved here, so nothing below decides what silence meant.
 			Consensus: consensusOf(consensusIn(primitive)),
 		},
 	}
@@ -184,10 +145,8 @@ func consensusIn(primitive specs.Sync) string {
 	return primitive.Queue.Consensus
 }
 
-// consensusOf is what the author wrote, or what a resource that wrote nothing
-// gets. `consensus` is RequiredWhen the type is written, so this is the arm for
-// a declaration that reached a runtime without passing the compiler's check —
-// and it defaults to the promise this service can actually keep.
+// consensusOf is what the author wrote, or for a declaration that skipped the
+// compiler's check, the promise this service keeps.
 func consensusOf(written string) string {
 	if written == "" {
 		return consensusRaft
@@ -203,12 +162,8 @@ func consensusOf(written string) string {
 func deliveryOf(spec Spec, declared specs.SyncQueue) queue.Config {
 	cfg := queue.Config{Name: spec.Prefix()}
 
-	// A DEAD LETTER IS A REFERENCE TO ANOTHER QUEUE, and the compiled value is
-	// that queue's id. It is scoped exactly as this queue is, so it lands beside
-	// the one it drains and two projects' dead letters never meet. An absent one
-	// leaves pkg/queue to derive a keyspace from this queue's name — which
-	// nothing declares and therefore nothing can drain, which is why
-	// retention.go bounds it.
+	// A dead letter compiles to another queue's id, scoped as this queue is. Without one,
+	// pkg/queue derives an undeclared keyspace, which retention.go bounds.
 	if dead := declared.DeadLetterName; dead != "" {
 		cfg.DeadLetter = Spec{
 			Project: spec.Project, Environment: spec.Environment,

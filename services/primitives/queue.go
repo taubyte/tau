@@ -11,32 +11,11 @@ import (
 	"github.com/taubyte/tau/pkg/raft"
 )
 
-// queue.go is the `sync` kind at `type: queue` — work handed from one workload
-// to another, where a claim is exclusive and an unacknowledged item comes back.
-//
-// # The state machine is pkg/queue's and this service does not re-derive it
-//
-// Claim, visibility timeout, ack, attempt counting, backoff and the dead letter
-// are implemented, tested and driven end to end in pkg/queue. Writing a second
-// copy of those transitions here would be a second place the rules live, for no
-// behaviour change. What this service adds is the three things a package with
-// no lifecycle cannot have: the namespace the queues run in, the declaration
-// they are configured from, and the pass that moves them along when nobody is
-// claiming — see retention.go.
-//
-// # A write off the leader is refused and NOT forwarded
-//
-// That is pkg/queue's rule, and node/queue.go states the reason: a follower
-// consumes nothing, and forwarding would be a second write path with its own
-// failure modes. What is different here is that the refusal NAMES the leader,
-// so a caller has somewhere to go rather than only something to try again.
-//
-// # Nothing is opened per queue, and the config is never cached
-//
-// A Queue value holds no state — everything is in the store — so opening one
-// per call costs a struct. Caching by id would PIN THE FIRST CALLER'S CONFIG:
-// an id does not change when its `max_attempts` does, so a node would keep
-// enforcing the number from before the redeploy until it restarted.
+// The `sync` queue. The state machine (claim, visibility timeout, ack, attempts,
+// backoff, dead letter) is pkg/queue's; this adds the namespace, the declaration and
+// the pass that moves idle queues along (retention.go). Writes off the leader are
+// refused with the leader's name. A Queue is opened per call and never cached by id,
+// which would pin the config from before a redeploy.
 
 // work is the queue half of this service.
 type work struct {
@@ -121,12 +100,8 @@ func (w *work) send(d declared, id string, data []byte) error {
 	return nil
 }
 
-// claim hands out up to max items.
-//
-// ONE AT A TIME, IN A LOOP, because that is pkg/queue's exclusion: every claim
-// takes the group's lock and writes one entry, and a batch that handed out
-// several in one entry would be a second transition rule beside the tested one.
-// What the loop buys the caller is one round trip instead of max of them.
+// claim hands out up to max items one at a time in a loop, keeping pkg/queue's
+// one-entry-per-claim exclusion, in one round trip for the caller.
 func (w *work) claim(d declared, max int) ([]Delivery, error) {
 	if max <= 0 {
 		max = 1
@@ -190,12 +165,8 @@ func (w *work) settle(d declared, delivery Delivery, done bool) error {
 	return w.refusal(opened.Nack(handed))
 }
 
-// depth is what a queue and its dead letter hold.
-//
-// IT IS NOT GATED ON THIS NODE HAVING SENT TO THE QUEUE, and that gate was a
-// real mistake in node/queue.go's ancestor: a dead letter is never opened by
-// anybody, so "this node never opened it" and "it is empty" were one answer and
-// an assertion that nothing had been buried could not fail.
+// depth is what a queue and its dead letter hold, whether or not this node ever
+// opened them, so "never opened" cannot read as "empty".
 func (w *work) depth(d declared) (Depth, error) {
 	opened, err := w.open(d)
 	if err != nil {
@@ -238,18 +209,10 @@ func (w *work) refusal(err error) error {
 	}
 }
 
-// index records that this namespace holds a queue, so the lifecycle pass can
-// find one nobody is claiming from.
-//
-// # Why there is an index here and none for a log
-//
-// A log's head IS its index — one key per log, at a prefix a walk can find. A
-// queue's keys are pkg/queue's, and pkg/queue escapes the whole name into ONE
-// segment, so a walk of its keyspace answers escaped names this package would
-// have to un-escape by reproducing a private encoding. Writing one key per queue
-// is the smaller and more honest thing: it is derived from the prefix, so two
-// nodes cannot write it differently, and it is written once and never changed —
-// the same rule that makes a log's record keys safe.
+// index records that this namespace holds a queue, so the lifecycle pass can find
+// one nobody claims from. A log's head is its index; pkg/queue escapes a queue's name
+// into one private-encoded segment, so a key per queue, derived from the prefix and
+// written once, is simpler than un-escaping.
 func (w *work) index(spec Spec) {
 	cluster, err := w.service.consensus()
 	if err != nil {

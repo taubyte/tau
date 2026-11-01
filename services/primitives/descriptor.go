@@ -7,9 +7,7 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v2/primitivesv2connect"
 )
 
-// Protocol is the libp2p protocol id this service listens on: "/" plus the
-// proto package with dots as slashes, walked off the schema rather than typed
-// here.
+// Protocol is the libp2p protocol id this service listens on, walked off the schema.
 var Protocol = rpc.Protocol(primitivesv2connect.PrimitivesServiceName)
 
 // Ingress states which side of the trust boundary a service is on.
@@ -28,13 +26,9 @@ type descriptor struct {
 	Ingress  Ingress
 }
 
-// Descriptor states that the primitives service answers other tau nodes only.
-//
-// IT CARRIES EVERY PROJECT'S WORK, which makes the reason short: a public
-// ingress would let a stranger claim another project's jobs and acknowledge
-// them, which is not reading data but destroying it. Authorization is the
-// swarm's membership, exactly as it is for the register, the secrets service
-// and the database service.
+// Descriptor states that the primitives service answers other tau nodes only: a
+// public ingress would let a stranger claim and acknowledge another project's jobs.
+// Authorization is swarm membership.
 var Descriptor = descriptor{
 	Name:     "primitives",
 	Protocol: Protocol,

@@ -37,53 +37,32 @@ type Service struct {
 	records *records
 	work    *work
 
-	// crons is the clock. schedules is what it reads its work from, fire is how
-	// a claimed fire reaches the workload it names, and task is how a window
-	// leaves the leader; all three are the composer's, and a service given
-	// neither of the first two keeps queues and logs and runs no clock at all.
-	// See cron.go.
+	// crons is the clock. schedules, fire and task are the composer's; without schedules
+	// and fire no clock runs. See cron.go.
 	crons     *crons
 	schedules func(context.Context) []Schedule
 	fire      func(context.Context, Target, *invoke.Request) (*invoke.Response, error)
 	task      func(context.Context, time.Time, time.Time) error
 
-	// deliveries is every fire this node is still invoking. THE PASS CLAIMS AND
-	// A GOROUTINE INVOKES — see [crons.drain] — so Close has to wait for them
-	// rather than tearing the group down underneath one.
-	//
-	// AND THE CYCLE ITSELF IS WAITED OUT FIRST — see cycling. A WaitGroup whose
-	// Add races the Wait that drained it is a panic and not a leak, which is
-	// what cancelling the loop and waiting on this alone would be: the tick
-	// already inside a cycle goes on to claim one more fire.
+	// deliveries is every fire still being invoked, so Close waits for them. The loop is
+	// waited out first (cycling): an Add racing the drained Wait panics.
 	deliveries sync.WaitGroup
 
 	// cycling is closed once the clock's loop has returned, so Close can stop
 	// the only thing that adds to deliveries before it waits on them.
 	cycling chan struct{}
 
-	// working is this service's own lifetime, as a context: cancelled by Close
-	// and by nothing else.
-	//
-	// IT EXISTS BECAUSE A TASKING ARRIVES OVER A STREAM. The fires a pass hands
-	// out outlive the call that asked for them — a caller that gave up, or
-	// simply got its answer, must not cancel an invocation already in flight —
-	// so what they run under is the SERVICE's life and not the request's. Each
-	// one is still bounded by its own claim deadline; see [crons.drain].
+	// working is this service's lifetime, cancelled only by Close. Fires run under it,
+	// not the tasking request's context, bounded by their own claim deadlines.
 	working context.Context
 
 	now   func() time.Time
 	sweep time.Duration
 	dead  retention
 
-	// forming is closed once the group has been opened or has failed to open,
-	// so a caller can tell "not yet" from "not ever" without waiting.
-	//
-	// THE GROUP FORMS OFF THE REQUEST PATH. raft.New BLOCKS for up to its
-	// bootstrap timeout — thirty seconds — waiting for peers to appear so that a
-	// cloud does not bootstrap a single-node cluster it later has to heal. That
-	// is right at boot and wrong on a request path: node/queue.go was written
-	// around the day the first queue.send in a cloud paid it, held every other
-	// caller behind one lock, and timed the invocation out.
+	// forming is closed once the group has opened or failed, so "not yet" is told from
+	// "not ever" without waiting. The group forms off the request path, since raft.New
+	// blocks up to its 30s bootstrap timeout looking for peers.
 	formMu  sync.Mutex
 	forming chan struct{}
 	cluster raft.Cluster
@@ -143,9 +122,8 @@ func WithConsensus(open func(namespace string) (raft.Cluster, error)) Option {
 	}
 }
 
-// WithRecords is where a log's records live. Required, for the reason
-// node/log.go gives: raft decides the order and the swarm carries the bytes, so
-// a node with no replicated store has nowhere to put a log at all.
+// WithRecords is where a log's records live. Required: raft orders, the replicated
+// store carries the bytes.
 func WithRecords(f kvdb.Factory) Option {
 	return func(o *options) error {
 		if f == nil {
@@ -168,12 +146,8 @@ func WithSweep(d time.Duration) Option {
 	}
 }
 
-// WithDeadLetterRetention bounds what a dead letter keeps.
-//
-// IT IS AN OPERATOR'S AND NOT AN AUTHOR'S, and that is a gap rather than a
-// design: the vocabulary has no word for it, so there is nowhere for an author
-// to write one. See DefaultDeadLetterRetention for why the default is a bound
-// and not forever, and why the author's half is still owed.
+// WithDeadLetterRetention bounds what a dead letter keeps. An operator setting, since
+// the vocabulary has no author word for it yet; see DefaultDeadLetterRetention.
 func WithDeadLetterRetention(age time.Duration, size int64) Option {
 	return func(o *options) error {
 		if age < 0 || size < 0 {
@@ -184,17 +158,9 @@ func WithDeadLetterRetention(age time.Duration, size int64) Option {
 	}
 }
 
-// WithTasking is how a window leaves the leader.
-//
-// IT IS INJECTED BECAUSE WHICH NODE IS A ROUTING QUESTION. node/primitives.go
-// already reads the fleet's view to find a primitives service and already keeps
-// the stream to it; a picker in here would be a second discovery path, and the
-// day the two disagreed the clock would task a node nothing else could reach.
-// What this package decides is what a tasked node DOES — see [crons.accept].
-//
-// WITHOUT ONE THE ONLY NODE THIS CLOCK CAN TASK IS ITSELF, and that is the
-// honest answer rather than a fallback: a service composed with no view of a
-// fleet — a single-node cloud, a test — has nowhere else to send the window.
+// WithTasking is how a window leaves the leader, injected because the composer
+// already discovers primitives nodes and keeps streams to them. Without one the clock
+// tasks itself.
 func WithTasking(to func(ctx context.Context, since, upto time.Time) error) Option {
 	return func(o *options) error {
 		if to == nil {
@@ -205,7 +171,6 @@ func WithTasking(to func(ctx context.Context, since, upto time.Time) error) Opti
 	}
 }
 
-// WithClock injects the local clock. Tests use it; production does not.
 func WithClock(now func() time.Time) Option {
 	return func(o *options) error {
 		if now == nil {
@@ -392,17 +357,9 @@ func (s *Service) consensus() (raft.Cluster, error) {
 	return cluster, nil
 }
 
-// Formed is closed once this service's consensus group has been opened or has
-// failed to open. It is nil on a service that was never started, which is the
-// same fact and never a wait.
-//
-// IT EXISTS BECAUSE THE COMPOSER HAS TO BE ABLE TO TELL. The group forms OFF
-// the request path — see [Service.form] — so "not yet" and "not ever" are
-// different answers a caller acts on differently, and a composition root that
-// could not tell them apart would have to poll a call it does not want to make.
-// node/queue.go held the same channel for the same reason, in the process that
-// owned it; this is the one thing that move puts on the other side of a package
-// boundary.
+// Formed is closed once the consensus group has opened or failed; nil on a service
+// never started. The group forms off the request path, so a composer needs this to
+// tell "not yet" from "not ever".
 func (s *Service) Formed() <-chan struct{} {
 	s.formMu.Lock()
 	defer s.formMu.Unlock()
@@ -448,23 +405,9 @@ func (s *Service) declared(ctx context.Context, at address, want string) (declar
 	return d, nil
 }
 
-// ────────────────────── one implementation per operation ──────────────────────
-//
-// THE SIX BELOW ARE THE WHOLE OF WHAT A CALL DOES, and BOTH arms call them: the
-// compute tier after taking the address off a grant, and the wire handler after
-// taking it off a Ref. What is left on either side is decoding an address and
-// encoding a refusal, which is what makes a handler an ADAPTER rather than a
-// second implementation that happens to agree with the first.
-//
-// IT MATTERS BECAUSE THE CHOICE BETWEEN THE ARMS IS INVISIBLE ABOVE THIS
-// PACKAGE. p2p/rpc's short-circuit hands a caller this node's own service or a
-// stream onto another node's, and neither the caller nor the guest behind it
-// can tell which it got — so the two arms agreeing cannot be something each is
-// written to do, because nothing would notice the day one of them stopped.
-//
-// The address is NOT validated here. address.valid() runs where a Ref becomes
-// an address and again inside declarations.of; a third opinion is the second
-// answer rpc.go's doc refuses.
+// The six operations below are the whole of what a call does, and both arms (compute
+// tier and wire handler) call them. p2p/rpc's short-circuit makes the arm invisible
+// to callers, so the arms must share the implementation, not merely agree.
 
 func (s *Service) send(ctx context.Context, at address, id string, data []byte) error {
 	d, err := s.declared(ctx, at, queueType)

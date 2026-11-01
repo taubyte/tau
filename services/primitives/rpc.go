@@ -11,24 +11,10 @@ import (
 	"github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v2/primitivesv2connect"
 )
 
-// rpc.go is the whole wire surface: six calls on a named primitive, each one
-// resolution and one operation — and a seventh that names none.
-//
-// EVERY HANDLER IS AN ADAPTER AND NOTHING ELSE: decode an address off the Ref,
-// call the same [Service] method the compute tier calls, encode the refusal.
-// Nothing here resolves, checks or operates, because the arm a caller gets is
-// chosen by p2p/rpc's short-circuit and is invisible above this package — so
-// two implementations that merely AGREE would drift the day one was edited and
-// nothing would notice. See the operations section of service.go.
-//
-// NO HANDLER VALIDATES AN ADDRESS. address.valid() is the one check, run where
-// a Ref becomes an address. A check repeated here would be a second opinion, and
-// the day the two disagreed the answer would depend on which call a caller used.
-//
-// CronTask IS THE ODD ONE AND IT IS ODD ON PURPOSE. It carries no Ref, because
-// a window is not about a resource: what it names is a stretch of the clock,
-// and which crons fall inside it is the tasked node's own deployments to say.
-// So it resolves nothing and routes instead — see [crons.accept].
+// The wire surface. Every handler is an adapter: decode the address off the Ref,
+// call the same Service method the compute tier calls, encode the refusal. No handler
+// validates an address (address.valid is the one check). CronTask carries no Ref: a
+// window names a stretch of the clock, so it routes rather than resolves.
 
 // mount is the one handler rpc.Listen serves.
 func (s *Service) mount() http.Handler {

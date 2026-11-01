@@ -53,7 +53,7 @@ func logLinesOf(t *testing.T, body []byte) []logLine {
 }
 
 // onLimited is onCarrying with a page size, sent as the fixture's header, so the
-// paging arm of node/log.go is reachable.
+// log's paging arm is reachable.
 func (r *running) onLimited(ctx context.Context, at specs.Address, path string, limit int) (*invoke.Response, error) {
 	return r.node.Worker().Invoke(ctx, at, &invoke.Request{
 		Method:  http.MethodPost,

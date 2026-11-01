@@ -16,10 +16,6 @@ import (
 	"github.com/taubyte/tau/pkg/raft"
 )
 
-// rpc_test drives the service over a real libp2p stream, because the thing
-// under test is a SERVICE: what a caller can reach, what it is refused, and
-// whether the arm it gets is the one a local caller would have got.
-
 // wired is the service on one host and a client on another, over mocknet.
 func wired(t *testing.T) (*Client, *harness) {
 	t.Helper()
@@ -67,12 +63,6 @@ func wiredWith(t *testing.T, opts ...Option) (*Client, *harness) {
 	return client, &harness{Service: s, cluster: cluster, clock: tick}
 }
 
-// TestTheWireAnswersLikeTheSeamItReplaces.
-//
-// A node that runs this service reaches it in-process and one that does not
-// dials it, and NOTHING ABOVE THE SEAM CAN TELL WHICH IT GOT. That is the whole
-// point of the swap: the guest calls queue.send and log.append exactly as
-// before.
 func TestTheWireAnswersLikeTheSeamItReplaces(t *testing.T) {
 	client, _ := wired(t)
 	ctx := t.Context()
@@ -111,8 +101,6 @@ func TestTheWireAnswersLikeTheSeamItReplaces(t *testing.T) {
 	require.EqualValues(t, 0, depth.Ready+depth.Claimed+depth.Dead)
 }
 
-// TestAWriteOffTheLeaderReachesTheCallerAsTheArmItRetries. The code is what
-// survives the round trip, and this is the table read backwards.
 func TestAWriteOffTheLeaderReachesTheCallerAsTheArmItRetries(t *testing.T) {
 	client, h := wired(t)
 	ctx := t.Context()
@@ -128,7 +116,6 @@ func TestAWriteOffTheLeaderReachesTheCallerAsTheArmItRetries(t *testing.T) {
 	require.ErrorIs(t, err, wasmtier.ErrNotWritable)
 }
 
-// TestAResourceThisDeploymentDoesNotDeclareIsNotFoundOverTheWireEither.
 func TestAResourceThisDeploymentDoesNotDeclareIsNotFoundOverTheWireEither(t *testing.T) {
 	client, _ := wired(t)
 	ctx := t.Context()
@@ -142,8 +129,6 @@ func TestAResourceThisDeploymentDoesNotDeclareIsNotFoundOverTheWireEither(t *tes
 	require.ErrorIs(t, err, wasmtier.ErrNotFound)
 }
 
-// TestARefusalThisCloudCannotRetryIsUnimplementedAndNotUnavailable, so an
-// operator reading it knows to change the release rather than to wait.
 func TestARefusalThisCloudCannotRetryIsUnimplementedAndNotUnavailable(t *testing.T) {
 	client, _ := wired(t)
 
@@ -151,7 +136,6 @@ func TestARefusalThisCloudCannotRetryIsUnimplementedAndNotUnavailable(t *testing
 	require.Equal(t, connect.CodeUnimplemented, connect.CodeOf(err))
 }
 
-// TestAnOversizedRecordIsRefusedOverTheWireWithTheTiersOwnArm.
 func TestAnOversizedRecordIsRefusedOverTheWireWithTheTiersOwnArm(t *testing.T) {
 	client, _ := wired(t)
 
@@ -159,9 +143,6 @@ func TestAnOversizedRecordIsRefusedOverTheWireWithTheTiersOwnArm(t *testing.T) {
 	require.ErrorIs(t, err, wasmtier.ErrRecordTooLarge)
 }
 
-// TestAMalformedHandleNeverLeavesTheCaller. Three empty strings on the wire
-// would be a refusal the service has to write; refusing here is the same answer
-// without the round trip.
 func TestAMalformedHandleNeverLeavesTheCaller(t *testing.T) {
 	client, _ := wired(t)
 
@@ -169,11 +150,6 @@ func TestAMalformedHandleNeverLeavesTheCaller(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoID)
 }
 
-// TestACallBeforeTheConsensusHasFormedIsToldSoRatherThanHeld.
-//
-// raft.New blocks for up to thirty seconds looking for peers, which is right at
-// boot and wrong on a request path — the day the first send in a cloud paid it,
-// it held every other caller behind one lock and timed the invocation out.
 func TestACallBeforeTheConsensusHasFormedIsToldSoRatherThanHeld(t *testing.T) {
 	mn := mocknet.New()
 	t.Cleanup(func() { mn.Close() })
@@ -194,10 +170,6 @@ func TestACallBeforeTheConsensusHasFormedIsToldSoRatherThanHeld(t *testing.T) {
 	require.ErrorIs(t, err, ErrForming)
 }
 
-// TestAWINDOWCROSSESTHEWIREANDISGENERATEDWHERITLANDS — which is the whole of
-// the clock's second act being a MESSAGE rather than a function call. The
-// leader that handed this window out never opened a queue or looked at a
-// schedule; the node that took it did both.
 func TestAWindowCrossesTheWireAndIsGeneratedWhereItLands(t *testing.T) {
 	fired := &fires{status: 200}
 	held := &listing{schedules: []Schedule{nightly("0 3 * * *")}}
@@ -213,10 +185,6 @@ func TestAWindowCrossesTheWireAndIsGeneratedWhereItLands(t *testing.T) {
 	require.Equal(t, []string{"2026-09-05T03:00:00Z"}, fired.seen()[0].Headers[headerFiredAt])
 }
 
-// TestAWINDOWTHENODEATTHEOTHERENDCANNOTGENERATECOMESBACKASAREFUSAL, by name
-// and over the wire. A node that holds the namespace and runs no compute has no
-// deployments to enumerate crons from, and an empty answer would tell the
-// leader a minute had been fired that never was.
 func TestAWindowHandedOverTheWireToANodeWithNoClockIsRefusedByName(t *testing.T) {
 	client, _ := wired(t)
 
@@ -226,9 +194,6 @@ func TestAWindowHandedOverTheWireToANodeWithNoClockIsRefusedByName(t *testing.T)
 	require.ErrorContains(t, err, ErrNoClock.Error())
 }
 
-// TestTHEHOPCOUNTTRAVELSWITHTHETASKINGANDONLYGOESUP, which is what bounds a
-// window to the two nodes the fleet actually has: the one the leader chose, and
-// the one its group says may write.
 func TestATaskingSaysHowFarItHasCome(t *testing.T) {
 	fired := &fires{status: 200}
 	held := &listing{schedules: []Schedule{nightly("0 3 * * *")}}

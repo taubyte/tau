@@ -9,49 +9,14 @@ import (
 	"github.com/taubyte/tau/pkg/raft"
 )
 
-// retention.go is the lifecycle: the pass that ends what a primitive no longer
-// keeps, and moves along what nobody is claiming.
-//
-// # It exists because both halves were lazy, and laziness has a hole
-//
-// A LOG'S RETENTION RAN ON THE APPENDER. node/log.go swept from Append and from
-// nowhere else, which is the one node that may write and the one moment the log
-// is known to have changed — and therefore never for a log that went quiet. An
-// author who wrote `age: 24h` on a log that stopped receiving got forever.
-//
-// A QUEUE'S ENFORCEMENT RUNS ON THE CLAIMER. pkg/queue moves expired claims and
-// buries exhausted items at the top of Claim, deliberately and for a good
-// reason — a sweeper is a second lifecycle to get wrong, and enforcement on the
-// path that can violate the invariant cannot silently stop. What it cannot do
-// is reach a queue nobody is claiming from, which is where an exhausted item
-// waits to be buried.
-//
-// AND THE DEAD LETTER HAD NOTHING AT ALL. A buried item is in a keyspace derived
-// from its queue's name, which is not a declared resource, so no consumer can be
-// declared for it and none ever will be — and it sits inline in a state machine
-// every voter holds in memory. See DefaultDeadLetterRetention.
-//
-// # It is leader-only, and that is the whole of its coordination
-//
-// Everything below writes, and a write commits only on the leader. So the pass
-// runs everywhere and does nothing anywhere but on the one node that may — no
-// election of its own, no lease, nothing to watch. A node that loses leadership
-// mid-pass gets a refusal from the store and stops, and the node that won runs
-// the same pass on the next tick from the same replicated state.
+// The lifecycle pass: end what a primitive no longer keeps and move along what nobody
+// claims. pkg/queue enforces on Claim, which cannot reach an idle queue; a log that
+// stopped receiving still needs its age budget; a dead letter has no consumer at all
+// (see DefaultDeadLetterRetention). Leader-only: the pass runs everywhere, writes only
+// on the leader, and a new leader runs it next tick from the same state.
 
-// run is this service's ONE turn, and everything periodic it does hangs off it.
-//
-// ONE PERIOD AND NOT TWO. The clock and the lifecycle used to be two numbers —
-// a ten-second tick that did per-schedule work and a thirty-second sweep riding
-// every third turn of it — because the clock's cost was paid per turn. It is
-// not any more: the leader's whole turn is a comparison of two minutes and, at
-// most once a minute, one tasking. So a turn that has no minute to hand out
-// costs a leader check and returns, and the one number left is [WithSweep].
-//
-// WHAT IT BOUNDS IS THE LATENESS OF A FIRE, and it is the only thing that does:
-// a cron expression's finest grain is a minute, so a period shorter than that
-// decides how promptly the minute is NOTICED rather than what the clock can
-// express.
+// run is this service's one periodic turn, every WithSweep. It bounds how late a fire
+// is noticed; a cron's grain is a minute.
 func (s *Service) run(ctx context.Context) {
 	t := time.NewTicker(s.sweep)
 	defer t.Stop()
@@ -82,11 +47,8 @@ func (s *Service) cycle(ctx context.Context) {
 		// exclusion and there is nothing else to arrange.
 		return
 	}
-	// THE TASKING READS NOTHING REPLICATED, so it goes before the barrier. The
-	// leader's whole turn is a comparison of two minutes and one message; what
-	// decides on replicated state is the pass the TASKED node runs, and that
-	// pass takes its own barrier where it runs — see [crons.accept], which is
-	// reached over a stream and so cannot inherit anybody's read.
+	// The tasking reads nothing replicated, so it goes before the barrier; the tasked
+	// node's pass takes its own (crons.accept).
 	if s.schedules != nil {
 		s.crons.tick(ctx, s.clock())
 	}
@@ -117,18 +79,9 @@ func (s *Service) retain(ctx context.Context, cluster raft.Cluster) {
 	}
 }
 
-// unresolved says why a place the pass walked was not retained.
-//
-// A LIFECYCLE THAT STOPPED IS INDISTINGUISHABLE FROM ONE WITH NOTHING TO DO,
-// and that is the whole reason this is here rather than a bare return. A
-// register this node cannot read stops retention on every resource it holds,
-// silently, for as long as it lasts. The one thing this is NOT is an operator's
-// step: nothing waits on somebody reading it, the next tick tries again by
-// itself. It is evidence, which a silence cannot be.
-//
-// A RESOURCE NOBODY DECLARES ANY MORE IS NOT THAT. It is a redeploy that
-// removed one, its state is reclaim's to end, and saying so every thirty
-// seconds would bury the case above in the case that is working as intended.
+// unresolved says why a place the pass walked was not retained. A register this node
+// cannot read stops retention silently, so it is logged; the next tick retries. A
+// resource no longer declared is reclaim's and not logged.
 func unresolved(spec Spec, err error) {
 	if errors.Is(err, ErrNotDeclared) {
 		return

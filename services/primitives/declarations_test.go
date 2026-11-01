@@ -14,20 +14,6 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
 
-// TestEVERYPATHTHISSERVICEREADSNAMESANATTRIBUTE.
-//
-// WHAT ROT LOOKS LIKE IS WHY THIS IS A TEST AND NOT A COMMENT. Every field of a
-// queue and of a log is read here as a nested path off the compiled resource,
-// and a renamed attribute does not fail: the read misses, the zero value comes
-// back, and pkg/queue fills its own default — so an author's visibility
-// timeout, attempt budget, backoff and dead letter silently stop taking effect
-// with nothing red anywhere. The node-side guard this replaces
-// (node/settings_test.go) covered these paths while they were flat keys on a
-// grant; it cannot reach them now that they are read off the declaration.
-//
-// THREE KEYS HAD ALREADY DRIFTED under a comment claiming they were "the
-// vocabulary's own paths" — see pkg/tcc/taubyte/v2/schema/attributes.go, which
-// is the index this asks.
 func TestEveryDeclarationPathNamesAnAttribute(t *testing.T) {
 	for _, path := range [][]string{
 		{queueType, "consensus"},
@@ -52,12 +38,6 @@ func TestEveryDeclarationPathNamesAnAttribute(t *testing.T) {
 // every refusal here is one a caller could otherwise have mistaken for an empty
 // resource.
 
-// TestAResourceThisDeploymentDoesNotDeclareIsNotSilentlyAnEmptyOne.
-//
-// A reader handed an empty page for a log that does not exist believes it is
-// caught up; a producer handed success for a queue that does not exist believes
-// it sent work nobody will ever run. Both are worse than an error, and both are
-// what an "open it if it is there" resolution produces.
 func TestAResourceThisDeploymentDoesNotDeclareIsNotSilentlyAnEmptyOne(t *testing.T) {
 	tier := starting(t).Local()
 	ctx := t.Context()
@@ -78,8 +58,6 @@ func TestAResourceThisDeploymentDoesNotDeclareIsNotSilentlyAnEmptyOne(t *testing
 	require.ErrorIs(t, err, ErrNotDeclared)
 }
 
-// TestAnIdThatNamesSomethingElseSaysSo, rather than being reported as a sync
-// resource that happens to be empty.
 func TestAnIdThatNamesSomethingElseSaysSo(t *testing.T) {
 	tier := starting(t).Local()
 
@@ -87,9 +65,6 @@ func TestAnIdThatNamesSomethingElseSaysSo(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotASync)
 }
 
-// TestAQueueReachedAsALogIsTheCallersMistake, and it is told apart from a type
-// this service does not serve at all: one says the caller used the wrong
-// surface, the other says this cloud has not implemented that primitive.
 func TestAQueueReachedAsALogIsTheCallersMistake(t *testing.T) {
 	tier := starting(t).Local()
 	ctx := t.Context()
@@ -101,13 +76,6 @@ func TestAQueueReachedAsALogIsTheCallersMistake(t *testing.T) {
 	require.ErrorIs(t, err, ErrWrongType)
 }
 
-// TestAConsensusThisServiceDoesNotKeepIsRefusedByName, for BOTH types.
-//
-// THE ASYMMETRY IS THE POINT. node/log.go refused a crdt log by name and
-// node/queue.go served a crdt queue as raft without a word, so an author who
-// wrote the field got the opposite of what it says and the only way to find out
-// was to observe the behaviour. A crdt primitive is a different promise —
-// append anywhere, an order that converges — not a slower one.
 func TestAConsensusThisServiceDoesNotKeepIsRefusedByName(t *testing.T) {
 	tier := starting(t).Local()
 	ctx := t.Context()
@@ -125,10 +93,6 @@ func TestAConsensusThisServiceDoesNotKeepIsRefusedByName(t *testing.T) {
 	require.ErrorIs(t, err, ErrConsensusUnserved)
 }
 
-// TestAMalformedHandleIsRefusedAtTheDoor. The handle is three segments and the
-// separator between them is this service's: a segment carrying one is a
-// readable path into somebody else's keyspace, and Spec.Prefix is built out of
-// exactly these.
 func TestAMalformedHandleIsRefusedAtTheDoor(t *testing.T) {
 	tier := starting(t).Local()
 
@@ -138,10 +102,6 @@ func TestAMalformedHandleIsRefusedAtTheDoor(t *testing.T) {
 	}
 }
 
-// TestTheServiceReadsTheDeclarationAndNotTheGrant, which is the difference
-// between a service and a proxy. node/queue.go read the visibility timeout, the
-// retry budget and the dead letter off the GRANT — the caller's side of the
-// conversation — so a worker could have described a different queue.
 func TestTheServiceReadsTheDeclarationAndNotTheGrant(t *testing.T) {
 	h := starting(t)
 	ctx := t.Context()
@@ -167,20 +127,6 @@ func TestTheServiceReadsTheDeclarationAndNotTheGrant(t *testing.T) {
 	require.Empty(t, again, "the caller's settings must not have shortened the queue's timeout")
 }
 
-// TestAnInstanceIsRefusedUntilTheVocabularyCanDeclareOne.
-//
-// THE FIELD IS ON THE WIRE AND NOTHING CAN DESCRIBE WHAT IT NAMES. `instances:`
-// is a real block in the vocabulary — its presence is what says a resource
-// holds many, and it carries both the validator that admits one and the limit
-// on how many there are — and the `sync` kind does not carry it. So an
-// instanced queue would be a keyspace no project declared, nobody admitted and
-// no limit bounds: any caller could mint them one raft key at a time, and the
-// lifecycle pass could resolve not one of them back to a declaration, so none
-// of them would ever be retained.
-//
-// It is reached through the handler because the handle a tier holds is three
-// segments and cannot carry an instance at all — the wire is the only door this
-// comes through.
 func TestAnInstanceIsRefusedUntilTheVocabularyCanDeclareOne(t *testing.T) {
 	h := starting(t)
 	ctx := t.Context()
@@ -212,8 +158,6 @@ func TestAnInstanceIsRefusedUntilTheVocabularyCanDeclareOne(t *testing.T) {
 	require.Empty(t, read)
 }
 
-// TestAQUEUESBUDGETANDALOGSRETENTIONAREREADOFFTHEIROWNBLOCKS, and what the
-// author did not write is left for pkg/queue's own defaults.
 func TestAQueuesBudgetAndALogsRetentionAreReadOffTheirOwnBlocks(t *testing.T) {
 	d := func(v time.Duration) *time.Duration { return &v }
 	attempts, factor := int64(7), 1.5

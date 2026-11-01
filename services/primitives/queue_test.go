@@ -9,10 +9,6 @@ import (
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// TestAQueueDeliversAnItemToExactlyOneConsumer, which is the whole of what a
-// queue promises and the one thing a stream deliberately does not: a claim is
-// exclusive, so a second consumer asking while the first holds the item gets
-// nothing rather than a copy of the work.
 func TestAQueueDeliversAnItemToExactlyOneConsumer(t *testing.T) {
 	tier := starting(t).Local()
 	ctx := t.Context()
@@ -47,8 +43,6 @@ func TestAQueueDeliversAnItemToExactlyOneConsumer(t *testing.T) {
 		"an acknowledged item is gone, not moved")
 }
 
-// TestARepeatedSendIsNotASecondCopyOfTheWork. The id is the caller's, which is
-// what lets a producer that cannot tell whether its last send landed repeat it.
 func TestARepeatedSendIsNotASecondCopyOfTheWork(t *testing.T) {
 	tier := starting(t).Local()
 	ctx := t.Context()
@@ -62,17 +56,12 @@ func TestARepeatedSendIsNotASecondCopyOfTheWork(t *testing.T) {
 	require.EqualValues(t, 1, depth.Ready)
 }
 
-// TestASendWithNoIdIsRefused. A queue cannot invent an identity: without one,
-// two sends of the same work are two items and nothing can say otherwise.
 func TestASendWithNoIdIsRefused(t *testing.T) {
 	tier := starting(t).Local()
 
 	require.ErrorIs(t, tier.Send(t.Context(), grantFor(jobsID), "  ", []byte("work")), ErrNoItemID)
 }
 
-// TestAnItemLargerThanTheCeilingIsRefused, which node/queue.go never did: a
-// guest's bytes went straight to Push, where they live INLINE in a state machine
-// every voter holds in memory.
 func TestAnItemLargerThanTheCeilingIsRefused(t *testing.T) {
 	tier := starting(t).Local()
 	ctx := t.Context()
@@ -85,9 +74,6 @@ func TestAnItemLargerThanTheCeilingIsRefused(t *testing.T) {
 	require.EqualValues(t, 0, depth.Ready, "a refused send must leave nothing behind")
 }
 
-// TestASendOffTheLeaderIsRefusedAndNamesWhoMayWrite. pkg/queue refuses a write
-// off the leader and this service does not forward it — so the caller is told to
-// retry, and told where.
 func TestASendOffTheLeaderIsRefusedAndNamesWhoMayWrite(t *testing.T) {
 	h := starting(t)
 	ctx := t.Context()
@@ -102,8 +88,6 @@ func TestASendOffTheLeaderIsRefusedAndNamesWhoMayWrite(t *testing.T) {
 	require.NotEmpty(t, elsewhere.Leader)
 }
 
-// TestAClaimOffTheLeaderConsumesNothing. A follower that handed an item out
-// would be a second claimer of work the leader still believes is ready.
 func TestAClaimOffTheLeaderConsumesNothing(t *testing.T) {
 	h := starting(t)
 	ctx := t.Context()
@@ -116,9 +100,6 @@ func TestAClaimOffTheLeaderConsumesNothing(t *testing.T) {
 	require.ErrorIs(t, err, wasmtier.ErrNotWritable)
 }
 
-// TestASettleWhoseClaimIsGoneIsRefusedAndNotAppliedSilently. The token is the
-// exclusion: once the item has been handed to somebody else, the previous
-// holder's work was NOT applied and must not be treated as if it were.
 func TestASettleWhoseClaimIsGoneIsRefusedAndNotAppliedSilently(t *testing.T) {
 	h := starting(t)
 	tier := h.Local()
@@ -146,8 +127,6 @@ func TestASettleWhoseClaimIsGoneIsRefusedAndNotAppliedSilently(t *testing.T) {
 	require.NoError(t, tier.Settle(ctx, jobs, second[0], true))
 }
 
-// TestTwoQueuesDoNotSeeEachOther. Every queue's keys hang off Spec.Prefix, so
-// two queues in one project share a namespace and never an item.
 func TestTwoQueuesDoNotSeeEachOther(t *testing.T) {
 	tier := starting(t).Local()
 	ctx := t.Context()

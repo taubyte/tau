@@ -5,11 +5,7 @@ import (
 	"fmt"
 )
 
-// errors.go is this package's vocabulary of refusals, in one place so the wire
-// mapping in status.go is a table over named things rather than string
-// matching. That table is the one place a refusal is turned into a status and
-// back, in both directions, for both arms — see status.go for why there is only
-// one of it.
+// Named refusals; status.go is the one table turning them into statuses and back.
 
 var (
 	// ErrNoHost is a service with nothing to answer on.
@@ -67,18 +63,12 @@ var (
 	// looking for a config mistake they did not make.
 	ErrTypeUnserved = errors.New("primitives: this service does not serve that sync type yet")
 
-	// ErrConsensusUnserved is a resource whose author asked for a resolution
-	// this service does not keep. It is refused BY NAME rather than served
-	// weaker than written — the rule node/log.go already kept for a crdt log,
-	// and the one a crdt QUEUE never got.
+	// ErrConsensusUnserved is a resolution this service does not keep, refused by name
+	// rather than served weaker than written.
 	ErrConsensusUnserved = errors.New("primitives: this service does not keep that consensus")
 
-	// ErrInstanceUnserved is a Ref naming one instance of many. The `sync` kind
-	// does not carry `instances:` — the block whose presence declares that a
-	// resource holds more than one, and which names both who admits an instance
-	// and how many there may be — so an instanced sync resource is something no
-	// project can describe. It is refused BY NAME rather than served as a
-	// keyspace nobody declared and nothing bounds: see address.valid.
+	// ErrInstanceUnserved is a Ref naming one instance of many. The `sync` kind has no
+	// `instances:` block, so no project can declare one; see address.valid.
 	ErrInstanceUnserved = errors.New("primitives: this service does not serve one instance of many yet")
 
 	// ErrNoItemID is a send with no identity. The id is what makes a repeated
@@ -106,13 +96,9 @@ var (
 	ErrStaleDelivery = errors.New("primitives: that delivery is stale")
 )
 
-// ErrForming is a call that arrived before this node's consensus had formed.
-//
-// IT IS A RETRY AND NOT A FAILURE, and it is never a miss. raft.New blocks for
-// up to its bootstrap timeout looking for peers, which is right at boot and
-// wrong on a request path — node/queue.go was written around exactly that — so
-// the group forms in the background and a call that beats it is told so rather
-// than held.
+// ErrForming is a call that arrived before this node's consensus formed: a retry,
+// never a miss. The group forms in the background rather than blocking a request on
+// raft.New's bootstrap timeout.
 var ErrForming = errors.New("primitives: this node's consensus is still forming")
 
 // ErrClosed is a call on a node that is shutting down. It is NOT ErrForming,
@@ -125,13 +111,8 @@ var ErrClosed = errors.New("primitives: this node has closed its consensus")
 // fact the caller can act on rather than a failure of the resource.
 var ErrNotLeading = errors.New("primitives: this node is not the one that may write")
 
-// NotLeading is that refusal with the leader's name on it, which is what lets a
-// caller go somewhere instead of only trying again.
-//
-// THE SERVICE NAMES THE LEADER AND DOES NOT DIAL IT. Forwarding would be a
-// second write path with its own failure modes — pkg/queue's rule and
-// node/queue.go's, kept — but a refusal that says WHO can serve it costs
-// nothing and turns a blind retry into a placement.
+// NotLeading is that refusal with the leader's name on it. The service names the
+// leader and does not dial it: forwarding would be a second write path.
 type NotLeading struct{ Leader string }
 
 func (e NotLeading) Error() string {

@@ -7,11 +7,7 @@ import (
 	primitivesv2 "github.com/taubyte/tau/pkg/proto/gen/tau/primitives/v2"
 )
 
-// address.go is the one place a Ref becomes something this package uses.
-//
-// IT IS PARSED ONCE, AT THE DOOR. Every handler takes the same four fields off
-// the wire, and a check repeated per call is a second opinion — the day the two
-// disagreed, the answer would depend on which RPC the caller used.
+// An address is parsed once, at the door, so every RPC applies the same check.
 
 // address is one sync resource, in one environment of one project.
 type address struct {
@@ -30,9 +26,7 @@ func addressOf(ref *primitivesv2.Ref) address {
 	}
 }
 
-// addressFrom takes a grant's handle apart. It is the same three segments
-// node/queue.go and node/log.go read, spelled once here because this package is
-// the other end of that move.
+// addressFrom takes a grant's handle (project, environment, resource id) apart.
 func addressFrom(handle string) (address, error) {
 	parts := strings.Split(handle, "/")
 	if len(parts) != 3 {
@@ -42,25 +36,10 @@ func addressFrom(handle string) (address, error) {
 	return at, at.valid()
 }
 
-// valid refuses an address with a hole in it, naming which part is missing so a
-// caller is told rather than left with a miss.
-//
-// A SEPARATOR IN A SEGMENT IS REFUSED for the reason the secrets service gives:
-// the separator between the parts is this service's, and a segment carrying one
-// is a readable path into somebody else's key space. Here it is load-bearing
-// twice over, because [Spec.Prefix] is what a raft key and a queue name are
-// built out of.
-//
-// AN INSTANCE IS REFUSED OUTRIGHT, AND THE VOCABULARY IS WHY. `instances:` is a
-// real block — its presence is what says a resource holds many, and it carries
-// both the validator that admits one and the limit on how many there may be —
-// and the `sync` kind does not carry it. So no project can say that a queue or
-// a log holds more than one, which leaves nothing to read: a service that took
-// the field anyway would let any caller mint keyspaces nothing declared, nobody
-// admitted and no limit bounds, one raft key apiece, none of which the
-// lifecycle pass could resolve back to a declaration to retain. Refused by name
-// is the honest answer until `sync` carries instanceAttributes(); [Spec.at] is
-// the other half of what that day changes.
+// valid refuses an address with a hole in it, naming the missing part. A separator in
+// a segment is refused: Spec.Prefix builds raft keys and queue names from these. An
+// instance is refused outright: the `sync` kind carries no `instances:` block, so an
+// instance would mint undeclared, unbounded keyspaces.
 func (a address) valid() error {
 	switch {
 	case a.project == "":

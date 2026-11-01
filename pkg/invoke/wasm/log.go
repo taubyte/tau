@@ -65,8 +65,8 @@ type Record struct {
 	Data []byte
 }
 
-// Logs is what a guest appends to and reads; ordering and retention are the node's
-// (node/log.go serialises appends through the raft leader).
+// Logs is what a guest appends to and reads; ordering and retention are the
+// primitives service's, which serialises appends through the raft leader.
 type Logs interface {
 	// Append adds one record and answers the cursor it landed at.
 	Append(ctx context.Context, grant invoke.Grant, data []byte) (string, error)

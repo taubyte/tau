@@ -6,12 +6,9 @@ import (
 	"github.com/taubyte/tau/pkg/specs"
 )
 
-// spec.go is what a sync resource IS, and the one name every layer below
-// derives its keys from.
+// What a sync resource is, and the one name every layer derives its keys from.
 
-// The `sync` kind and the two types under it, spelled as the vocabulary spells
-// them. Nothing is renamed on the way in and there is no second vocabulary to
-// map between.
+// The `sync` kind and its two types, as the vocabulary spells them.
 const (
 	syncKind  = specs.KindSync
 	queueType = specs.SyncTypeQueue
@@ -25,13 +22,9 @@ const (
 	consensusCRDT = specs.SyncQueueConsensusCrdt
 )
 
-// Spec is one sync resource as the store layer needs it.
-//
-// IT CARRIES NO SETTINGS. A visibility timeout, a retention and a dead letter
-// change nothing about WHERE a resource's state lives, so a spec that carried
-// them would be a second thing to keep in step with a redeploy — and the one
-// place that mattered, node/queue.go's per-call open, says so already: caching a
-// queue by its id pinned the config from before the redeploy.
+// Spec is one sync resource as the store layer needs it. It carries no settings:
+// they do not change where state lives, and carrying them would pin a pre-redeploy
+// config.
 type Spec struct {
 	Project     string
 	Environment string
@@ -78,20 +71,10 @@ func specFrom(prefix string) (Spec, bool) {
 	return Spec{Type: parts[0], Project: parts[1], Environment: parts[2], Name: parts[3]}, true
 }
 
-// at is the address a spec was built from.
-//
-// IT ROUND-TRIPS BECAUSE THE NAME IS THE ID, and that is load-bearing rather
-// than incidental: the lifecycle pass reads a PLACE out of the keyspace and
-// then has to resolve it back to the declaration that says what to retain, so a
-// name carrying anything the project does not index is a resource the pass
-// looks up, misses, and silently walks past — retention, the claim sweep and
-// the dead letter's bound all stopping for it with nothing said. An earlier
-// shape folded an instance in behind a separator and did exactly that.
-//
-// So the day `sync` carries `instances:`, the instance takes a SEGMENT OF ITS
-// OWN in [Spec.Prefix] — parsed back by [specFrom] like every other — and this
-// stays the inverse of what built it. Folding it back into the id here is the
-// one thing that cannot work. Until then address.valid refuses one.
+// at is the address a spec was built from. It round-trips because the name is the id:
+// the lifecycle pass resolves a place back to its declaration, and anything unindexed
+// in the name would make it silently skip the resource. When `sync` carries
+// `instances:`, the instance needs a segment of its own in Spec.Prefix.
 func (s Spec) at() address {
 	return address{project: s.Project, environment: s.Environment, id: s.Name}
 }

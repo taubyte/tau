@@ -9,36 +9,14 @@ import (
 	wasmtier "github.com/taubyte/tau/pkg/invoke/wasm"
 )
 
-// status.go is the one table, and it is read in BOTH directions.
+// The one refusal table, read in both directions: the handler encodes a status, the
+// tier maps to a guest's arm, the client and clock restore a sentinel. The arm a
+// caller gets is chosen by p2p/rpc's short-circuit and invisible above this package,
+// so the arms must share one table.
 //
-// A refusal leaves this service three ways and arrives back two, and before
-// this they were five hand-written switches: the handler encoded a Go error as
-// a status, the tier translated the same Go error into the arm a guest sees,
-// the client translated a status back into that arm, and the clock translated a
-// status back into a sentinel. Nothing checked that any of them agreed.
-//
-// IT IS NOT A TIDINESS POINT, AND ONE OF THEM ALREADY SHIPPED WRONG.
-// node/dispatch.go filtered ordinary refusals on primitives.ErrNotLeading,
-// which only the LOCAL arm ever produced — the remote arm dropped the sentinel
-// and arrived as a bare connect status — so the filter was silent in-process
-// and warned every two seconds on exactly the composition it was written for.
-// That is what a mapping written twice costs, and it is invisible until a node
-// is composed the other way.
-//
-// IT MATTERS BECAUSE THE ARM IS NOT THE CALLER'S CHOICE. p2p/rpc's short-circuit
-// hands a caller this node's own service or a stream onto another node's, and
-// nothing above this package can tell which it got. So the two arms agreeing
-// cannot be something each is written to do — it has to be something neither
-// can express differently.
-//
-// # What a status can and cannot carry
-//
-// The code is all that survives a wire; the sentinel does not. So a status that
-// exactly one refusal in the table claims comes back AS that refusal, and a
-// status several share comes back as none of them — the sentence the answering
-// node wrote says which, and a guess would be worse than silence. Which of the
-// two a refusal is, is derived from the table rather than asserted in a
-// comment: see [restores] and the property test over every row.
+// Only the code survives a wire. A status exactly one row claims comes back as that
+// refusal; a status several share comes back as none, with the answering node's
+// sentence. See restores and the property test over every row.
 
 // refusal is one row: a refusal this service names, the status it travels as,
 // and the arm the compute tier answers a guest with.
@@ -52,13 +30,8 @@ type refusal struct {
 	arm error
 }
 
-// refusals is the table.
-//
-// THE DEFAULT — everything not named here — IS Unavailable AND NOT Internal,
-// for the reason services/database gives: an unnamed failure came out of a
-// store, and that is the caller's cue to retry somewhere else. Internal says
-// "stop, this request is broken", which for a replicated store is the wrong
-// instruction.
+// refusals is the table. Anything unnamed is Unavailable, not Internal: it came from
+// a store and the caller should retry elsewhere.
 var refusals = []refusal{
 	// AN ADDRESS WITH A HOLE IN IT is the caller's, and the four are told apart
 	// by their sentence rather than by their status.
@@ -111,15 +84,9 @@ var refusals = []refusal{
 	{err: ErrClosed, code: connect.CodeUnavailable},
 }
 
-// restores is the sentinel a status comes back as: the refusal that status
-// names ALONE. A status two rows share is absent from this map, because
-// restoring one of the two would assert something the wire did not say.
-//
-// armByCode is the same lookup for the tier's arm. Two rows sharing a status
-// must share an arm, or a caller's variant would depend on which of the two
-// refusals the answering node had — which is the disagreement this file exists
-// to make impossible, so it is refused where the table is built rather than
-// found on a request.
+// restores is the sentinel a status comes back as, present only for a status one row
+// claims alone. armByCode is the tier's arm by status; rows sharing a status must
+// share an arm, enforced at init.
 var (
 	restores  = map[connect.Code]error{}
 	armByCode = map[connect.Code]error{}
@@ -150,8 +117,6 @@ func init() {
 	}
 }
 
-// ─────────────────────────────── forwards ────────────────────────────────
-
 // wire is how a failure leaves this service: the table read forwards. Every
 // connect.NewError in this package goes through it.
 func wire(err error) error {
@@ -179,13 +144,8 @@ func rowOf(err error) (refusal, bool) {
 	return refusal{}, false
 }
 
-// tierError puts the tier's arm on a refusal this process produced, so a guest
-// sees the same variant whether the namespace was here or on another node.
-//
-// EVERYTHING ELSE PASSES THROUGH WITH THIS SERVICE'S OWN SENTENCE. Folding a
-// refusal the tier has no arm for into one it does — too-large, say — would
-// tell a guest its record was oversized when the truth is that this cloud does
-// not serve a crdt log.
+// tierError puts the tier's arm on a refusal this process produced; anything without
+// an arm passes through with its own sentence.
 func tierError(err error) error {
 	if err == nil {
 		return nil
@@ -193,8 +153,6 @@ func tierError(err error) error {
 	r, _ := rowOf(err)
 	return armed(r.arm, err)
 }
-
-// ─────────────────────────────── backwards ───────────────────────────────
 
 // restored is the table read backwards: a status from another node becomes the
 // refusal a local call would have produced, where the status names one.
