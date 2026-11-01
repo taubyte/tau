@@ -84,13 +84,10 @@ func createStressNodes(t *testing.T, count int) []taupeer.Node {
 	nodes := make([]taupeer.Node, count)
 
 	for i := 0; i < count; i++ {
-		ctx, cancel := context.WithCancel(t.Context())
-		_ = cancel
-
 		dir := t.TempDir()
 		start := time.Now()
 		node, err := taupeer.New(
-			ctx,
+			t.Context(),
 			dir,
 			keypair.NewRaw(),
 			nil,

@@ -731,8 +731,7 @@ func setFor(root *engine.Node, into string, fields map[string]Term, e env) map[s
 		return out
 	}
 	for _, a := range iter.Attributes {
-		v, ok := out[a.Name]
-		if !ok {
+		if _, ok := out[a.Name]; !ok {
 			continue
 		}
 		sc, isScalar := a.Meta["scalar"].(engine.ScalarSpec)
@@ -762,7 +761,6 @@ func setFor(root *engine.Node, into string, fields map[string]Term, e env) map[s
 		if formatted, err := sel.GetString(a.Name); err == nil && formatted != "" {
 			out[a.Name] = formatted
 		}
-		_ = v
 	}
 	return out
 }

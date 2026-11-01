@@ -107,13 +107,13 @@ func TestConcurrentUseIsSafe(t *testing.T) {
 
 func BenchmarkOneShotStdlib(b *testing.B) {
 	for b.Loop() {
-		_, _ = regexp.MatchString(`^room/[a-z0-9]+$`, "room/lobby42")
+		regexp.MatchString(`^room/[a-z0-9]+$`, "room/lobby42")
 	}
 }
 
 func BenchmarkCached(b *testing.B) {
 	reset()
 	for b.Loop() {
-		_, _ = MatchString(`^room/[a-z0-9]+$`, "room/lobby42")
+		MatchString(`^room/[a-z0-9]+$`, "room/lobby42")
 	}
 }

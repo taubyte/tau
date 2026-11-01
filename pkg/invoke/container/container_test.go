@@ -745,7 +745,7 @@ func TestAnEgressAllowlistIsReportedRatherThanEnforced(t *testing.T) {
 		})}
 	})
 
-	_, _ = e.Start(t.Context(), invoke.Spec{
+	e.Start(t.Context(), invoke.Spec{
 		Name:     "shop/prod/application/api",
 		Artifact: "ghcr.io/acme/api:1.4",
 		Egress:   []string{"api.stripe.com", "hooks.slack.com"},
@@ -766,7 +766,7 @@ func TestNoAllowlistIsNotWarnedAbout(t *testing.T) {
 		})}
 	})
 
-	_, _ = e.Start(t.Context(), invoke.Spec{Name: "fn", Artifact: "ghcr.io/acme/api:1.4"})
+	e.Start(t.Context(), invoke.Spec{Name: "fn", Artifact: "ghcr.io/acme/api:1.4"})
 	require.Empty(t, said)
 }
 
@@ -782,7 +782,7 @@ func TestADeclaredPortIsTranslated(t *testing.T) {
 	backend := newFakeBackend()
 	e := newRuntime(t, backend, Image{Ref: "ghcr.io/acme/postgres:16"}, nil)
 
-	_, _ = e.Start(t.Context(), invoke.Spec{
+	e.Start(t.Context(), invoke.Spec{
 		Name:     "shop/prod/application/db",
 		Artifact: "ghcr.io/acme/postgres:16",
 		Ports:    map[string]int{"pg": 5432},
@@ -802,7 +802,7 @@ func TestEveryDeclaredPortIsMapped(t *testing.T) {
 	backend := newFakeBackend()
 	e := newRuntime(t, backend, Image{Ref: "ghcr.io/acme/many:1"}, nil)
 
-	_, _ = e.Start(t.Context(), invoke.Spec{
+	e.Start(t.Context(), invoke.Spec{
 		Name:     "shop/prod/application/many",
 		Artifact: "ghcr.io/acme/many:1",
 		Ports:    map[string]int{"http": 8080, "admin": 9090, "metrics": 9100},
@@ -830,8 +830,8 @@ func TestTheMappingIsOrderedByName(t *testing.T) {
 		Artifact: "ghcr.io/acme/many:1",
 		Ports:    map[string]int{"http": 8080, "admin": 9090, "metrics": 9100},
 	}
-	_, _ = e.Start(t.Context(), spec)
-	_, _ = e.Start(t.Context(), spec)
+	e.Start(t.Context(), spec)
+	e.Start(t.Context(), spec)
 
 	created, _, _ := backend.snapshot()
 	require.Len(t, created, 2)
@@ -852,7 +852,7 @@ func TestNoDeclaredPortsKeepsTheEphemeralContract(t *testing.T) {
 	backend := newFakeBackend()
 	e := newRuntime(t, backend, Image{Ref: "ghcr.io/acme/api:1.4"}, nil)
 
-	_, _ = e.Start(t.Context(), invoke.Spec{Name: "fn", Artifact: "ghcr.io/acme/api:1.4"})
+	e.Start(t.Context(), invoke.Spec{Name: "fn", Artifact: "ghcr.io/acme/api:1.4"})
 
 	created, _, _ := backend.snapshot()
 	require.Len(t, created, 1)
@@ -867,7 +867,7 @@ func TestPortIsSetToADeclaredPortsHostSide(t *testing.T) {
 	backend := newFakeBackend()
 	e := newRuntime(t, backend, Image{Ref: "ghcr.io/acme/postgres:16"}, nil)
 
-	_, _ = e.Start(t.Context(), invoke.Spec{
+	e.Start(t.Context(), invoke.Spec{
 		Name: "db", Artifact: "ghcr.io/acme/postgres:16",
 		Ports: map[string]int{"pg": 5432},
 	})

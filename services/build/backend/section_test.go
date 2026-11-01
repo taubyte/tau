@@ -78,7 +78,7 @@ func TestAGoroutineThatHoldsNothingHasNothingToWriteWith(t *testing.T) {
 	entered := make(chan struct{})
 	go func() {
 		<-entered
-		rec, found, err := h.readRecord(id)
+		_, found, err := h.readRecord(id)
 		if err != nil || !found {
 			done <- err
 			return
@@ -88,7 +88,6 @@ func TestAGoroutineThatHoldsNothingHasNothingToWriteWith(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 		// And the only handle this goroutine can put the record behind cannot be pointed
 		// at the job it read: there is no id field.
-		_ = rec
 		done <- (&held{s: h.Service}).finish(buildv2.JobStatus_JobStatusCancelled, "cancelled")
 	}()
 

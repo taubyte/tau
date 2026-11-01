@@ -148,10 +148,6 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	p1Mu.Lock()
-	_ = len(p1Messages)
-	p1Mu.Unlock()
-
 	p2Mu.Lock()
 	p2Count := len(p2Messages)
 	p2Mu.Unlock()

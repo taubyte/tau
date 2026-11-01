@@ -226,10 +226,8 @@ func TestSnapshotSink_Write_AfterClose(t *testing.T) {
 
 	// Writing after close should still work (buffer is still writable)
 	// but the data won't be persisted
-	n, err := sink.Write([]byte("after close"))
 	// This might succeed or fail depending on implementation
-	_ = n
-	_ = err
+	sink.Write([]byte("after close"))
 }
 
 // TestSnapshotStore_Reap_Comprehensive tests the reap function

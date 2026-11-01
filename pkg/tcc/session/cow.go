@@ -65,7 +65,7 @@ func enoent(op, name string) error { return &os.PathError{Op: op, Path: name, Er
 // Changed returns the changeset over the base: paths written in the overlay and
 // paths whiteouted (deleted). Used to collapse a fork onto its parent on merge.
 func (c *CoW) Changed() (written []string, deleted []string) {
-	_ = afero.Walk(c.layer, "/", func(p string, info os.FileInfo, err error) error {
+	afero.Walk(c.layer, "/", func(p string, info os.FileInfo, err error) error {
 		if err == nil && info != nil && !info.IsDir() {
 			written = append(written, norm(p))
 		}
@@ -84,7 +84,7 @@ func (c *CoW) Remove(name string) error {
 	if _, err := c.Fs.Stat(name); err != nil {
 		return err
 	}
-	_ = c.layer.Remove(name) // drop any copy-up
+	c.layer.Remove(name) // drop any copy-up
 	c.deleted[norm(name)] = true
 	return nil
 }
@@ -93,7 +93,7 @@ func (c *CoW) RemoveAll(name string) error {
 	if c.hidden(name) {
 		return nil
 	}
-	_ = c.layer.RemoveAll(name)
+	c.layer.RemoveAll(name)
 	c.deleted[norm(name)] = true // whiteout the whole subtree (see hidden)
 	return nil
 }

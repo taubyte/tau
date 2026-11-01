@@ -25,13 +25,13 @@ func twoConnectedHosts(t *testing.T) (host.Host, host.Host) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = h1.Close() })
+	t.Cleanup(func() { h1.Close() })
 
 	h2, err := libp2p.New(libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = h2.Close() })
+	t.Cleanup(func() { h2.Close() })
 
 	h1.Peerstore().AddAddrs(h2.ID(), h2.Addrs(), time.Hour)
 	h2.Peerstore().AddAddrs(h1.ID(), h1.Addrs(), time.Hour)

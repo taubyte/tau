@@ -102,9 +102,8 @@ func TestARowOutsideItsNamespaceIsRefused(t *testing.T) {
 	_, err := i.Usage(ctx, a)
 	require.ErrorIs(t, err, ErrNotThisServicesRow)
 
-	l, err := NewLocal(newOrderedMem(), nil)
+	_, err = NewLocal(newOrderedMem(), nil)
 	require.NoError(t, err)
-	_ = l
 
 	rogue, err := NewLocal(roguePrefix{Datastore: newOrderedMem(), key: localDirty + "/a/b"}, nil)
 	require.NoError(t, err)

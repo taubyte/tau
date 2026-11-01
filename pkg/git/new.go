@@ -80,7 +80,7 @@ func (c *Repository) clone() (err error) {
 	} else if errors.Is(err, plumbing.ErrReferenceNotFound) || errors.Is(err, transport.ErrEmptyRemoteRepository) {
 		defer func() {
 			if err != nil {
-				_ = os.RemoveAll(c.root)
+				os.RemoveAll(c.root)
 			}
 		}()
 

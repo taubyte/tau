@@ -300,10 +300,8 @@ func TestPlacementViewsCarryTheDeclineThrough(t *testing.T) {
 func TestConcurrentObserveAndReadDoNotRace(t *testing.T) {
 	// -race turns this into the assertion; without it, it is still a check
 	// that nothing deadlocks between advance() and the doors that call it.
-	c := &clock{t: time.Unix(1000, 0)}
 	s, err := New(Options{Liveness: 5 * time.Second, Stabilize: 60 * time.Second, Now: time.Now})
 	require.NoError(t, err)
-	_ = c
 
 	done := make(chan struct{})
 	for w := 0; w < 4; w++ {

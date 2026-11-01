@@ -235,11 +235,6 @@ func TestWhatItRefuses(t *testing.T) {
 	require.ErrorIs(t, err, wasm.ErrNoArtifact)
 
 	// An artifact the store cannot fetch is a cold start that failed, named.
-	gone := tier(t, nil)
-	_, err = wasm.New(&store{err: errors.New("no provider for that cid")})
-	require.NoError(t, err)
-	_ = gone
-
 	missing, err := wasm.New(&store{err: errors.New("no provider for that cid")})
 	require.NoError(t, err)
 	defer missing.Close()

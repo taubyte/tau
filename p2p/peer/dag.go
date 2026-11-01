@@ -120,7 +120,7 @@ func newDAG(ctx context.Context, store datastore.Batching, host host.Host, dht r
 	// idempotent, so racing an explicit Close is safe.
 	go func() {
 		<-ctx.Done()
-		_ = d.Close()
+		d.Close()
 	}()
 
 	return d, nil

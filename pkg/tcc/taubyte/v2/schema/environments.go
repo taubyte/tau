@@ -57,9 +57,9 @@ func environmentsIn(q *yaseer.Query, of string) ([]Environment, error) {
 	for _, name := range names {
 		at := q.Get(name)
 		env := Environment{Name: name, Of: of}
-		_ = at.Get(branchesKey).Value(&env.Branches)
+		at.Get(branchesKey).Value(&env.Branches)
 		if of == "" {
-			_ = at.Get(regionsKey).Value(&env.Regions)
+			at.Get(regionsKey).Value(&env.Regions)
 			env.Shadows, _ = environmentsIn(at.Get(shadowsKey), name)
 		}
 		out = append(out, env)

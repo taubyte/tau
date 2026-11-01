@@ -1060,7 +1060,7 @@ func (p *Project) Zones() []Zone {
 func (p *Project) walkZones() []Zone {
 	var out []Zone
 
-	for id, where := range p.located {
+	for _, where := range p.located {
 		if where.kind != zoneKind {
 			continue
 		}
@@ -1085,8 +1085,6 @@ func (p *Project) walkZones() []Zone {
 			// otherwise claim every name at once.
 			continue
 		}
-		_ = id
-
 		out = append(out, zone)
 	}
 

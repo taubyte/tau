@@ -832,7 +832,7 @@ func TestClosingAConnectionTwiceReleasesOnce(t *testing.T) {
 	require.NoError(t, c.Close())
 
 	// The second Close may error; what must not happen is a second release.
-	_ = c.Close()
+	c.Close()
 
 	// If the second Close released again, this one would find a free slot that
 	// does not exist and the ceiling would be two.

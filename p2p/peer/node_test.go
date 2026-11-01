@@ -40,8 +40,7 @@ func TestMock(t *testing.T) {
 	nodeCtx := node.Context()
 	assert.NotNil(t, nodeCtx, "Context should not be nil")
 
-	peering := node.Peering()
-	_ = peering
+	node.Peering()
 }
 
 func TestMock_NewChildContextWithCancel(t *testing.T) {
@@ -466,6 +465,5 @@ func TestWaitForSwarm_Timeout(t *testing.T) {
 	require.NotNil(t, node)
 	defer node.Close()
 
-	err := node.WaitForSwarm(100 * time.Millisecond)
-	_ = err
+	node.WaitForSwarm(100 * time.Millisecond)
 }

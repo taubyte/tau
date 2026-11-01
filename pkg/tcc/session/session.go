@@ -540,7 +540,7 @@ func (s *Session) Location(res []string) (string, error) {
 	// document resolves to no value but still has one, so the read error is
 	// not fatal — an absent path is the honest "no such document".
 	var v any
-	_ = q.Value(&v)
+	q.Value(&v)
 	fp := q.FilePath()
 	if fp == "" {
 		return "", fmt.Errorf("session: no document for %q", strings.Join(res, "/"))

@@ -207,7 +207,7 @@ func TestANodeDoesNotFavourItself(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 
-	_, _ = w.Invoke(ctx, at(), &invoke.Request{})
+	w.Invoke(ctx, at(), &invoke.Request{})
 	require.Equal(t, 1, local.count(), "this node was reached only after the other one failed")
 }
 

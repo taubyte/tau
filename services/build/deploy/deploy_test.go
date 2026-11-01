@@ -278,8 +278,6 @@ func TestWhatElseItRefuses(t *testing.T) {
 	require.ErrorIs(t, err, deploy.ErrNotABranch)
 
 	// A branch no deployment claims, on a project whose table claims some.
-	strict := &checkout{dir: fixture(t, envsFixture)}
-
 	// Every branch is a preview in that fixture, so the case needs a table
 	// with no catch-all. This is the message an author sees when they push a
 	// branch nothing is wired to.
@@ -299,8 +297,6 @@ func TestWhatElseItRefuses(t *testing.T) {
 	err = runner(t, &checkout{err: errors.New("no such ref")}, r).Run(t.Context(), work(), &out{})
 	require.ErrorContains(t, err, "no such ref")
 	require.ErrorContains(t, err, "0f1e2d3c", "the commit is named, so a rewritten branch is diagnosable")
-
-	_ = strict
 }
 
 func TestWhatItCannotBeBuiltWithout(t *testing.T) {

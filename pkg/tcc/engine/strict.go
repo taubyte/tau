@@ -103,7 +103,6 @@ func (c *claim) claimGroup(child *Node) {
 			c.child(v).any = true
 		}
 	default:
-		_ = m
 		c.any = true
 	}
 }

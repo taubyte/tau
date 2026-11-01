@@ -685,9 +685,8 @@ func TestCluster_TransferLeadership(t *testing.T) {
 		require.NoError(t, err, "failed to wait for leader")
 	}
 
-	err = cluster.TransferLeadership()
 	// Error is expected for single node cluster
-	_ = err
+	cluster.TransferLeadership()
 }
 
 func TestCluster_Leader(t *testing.T) {
@@ -769,9 +768,8 @@ func TestCluster_RemoveServer(t *testing.T) {
 	}
 
 	dummyPeer, _ := peer.Decode("12D3KooWGzBkj7vvP52A5RRMgQJ4xm4mLe8L1VRyxkj4mHpvT4Yx")
-	err = cluster.RemoveServer(dummyPeer, time.Second)
 	// Error is acceptable - server doesn't exist
-	_ = err
+	cluster.RemoveServer(dummyPeer, time.Second)
 }
 
 func TestCluster_Get_Closed(t *testing.T) {
@@ -1021,9 +1019,8 @@ func TestCluster_RemoveServer_NotLeader(t *testing.T) {
 	defer cluster.Close()
 
 	dummyPeer, _ := peer.Decode("12D3KooWGzBkj7vvP52A5RRMgQJ4xm4mLe8L1VRyxkj4mHpvT4Yx")
-	err = cluster.RemoveServer(dummyPeer, 10*time.Millisecond)
 	// Either ErrNotLeader or timeout is acceptable
-	_ = err
+	cluster.RemoveServer(dummyPeer, 10*time.Millisecond)
 }
 
 func TestBuildRaftConfig(t *testing.T) {
@@ -1082,9 +1079,8 @@ func TestCluster_Apply_NotLeader(t *testing.T) {
 	require.NoError(t, err, "failed to create cluster")
 	defer cl.Close()
 
-	_, err = cl.Apply([]byte("test-command"), 10*time.Millisecond)
 	// May fail with ErrNotLeader or timeout - either is acceptable
-	_ = err
+	cl.Apply([]byte("test-command"), 10*time.Millisecond)
 }
 
 func TestCluster_Apply_AsLeader(t *testing.T) {
@@ -1292,9 +1288,8 @@ func TestCluster_TransferLeadership_SingleNode(t *testing.T) {
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
-	err = cl.TransferLeadership()
 	// Error is expected for single node
-	_ = err
+	cl.TransferLeadership()
 }
 
 func TestCluster_Members_AsLeader(t *testing.T) {

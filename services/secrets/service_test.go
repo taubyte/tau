@@ -677,7 +677,7 @@ func TestRetirementNeedsNoAgreement(t *testing.T) {
 	// the superseded wrapping without asking anybody.
 	var second *KeyMeta
 	require.Eventually(t, func() bool {
-		_ = c.services[0].reconcile(ctx)
+		c.services[0].reconcile(ctx)
 
 		active, err := c.services[0].ActiveKey(ctx)
 		if err != nil || active.Epoch == first.Epoch {
