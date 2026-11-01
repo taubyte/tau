@@ -253,22 +253,41 @@ func lambdaEvent(req *invoke.Request, id string) ([]byte, error) {
 		}
 	}
 
-	return json.Marshal(map[string]any{
-		"version":         "2.0",
-		"rawPath":         raw,
-		"rawQueryString":  query,
-		"headers":         headers,
-		"body":            body,
-		"isBase64Encoded": encoded,
-		"requestContext": map[string]any{
-			"requestId": id,
-			"http": map[string]any{
-				"method":   method,
-				"path":     raw,
-				"protocol": "HTTP/1.1",
-			},
+	return json.Marshal(lambdaPayload{
+		Body:            body,
+		Headers:         headers,
+		IsBase64Encoded: encoded,
+		RawPath:         raw,
+		RawQueryString:  query,
+		RequestContext: lambdaContext{
+			HTTP:      lambdaHTTP{Method: method, Path: raw, Protocol: "HTTP/1.1"},
+			RequestID: id,
 		},
+		Version: "2.0",
 	})
+}
+
+// The event's fields are declared in sorted order, the order encoding/json writes a
+// map's keys in, so the bytes are what a map would have produced.
+type lambdaPayload struct {
+	Body            string            `json:"body"`
+	Headers         map[string]string `json:"headers"`
+	IsBase64Encoded bool              `json:"isBase64Encoded"`
+	RawPath         string            `json:"rawPath"`
+	RawQueryString  string            `json:"rawQueryString"`
+	RequestContext  lambdaContext     `json:"requestContext"`
+	Version         string            `json:"version"`
+}
+
+type lambdaContext struct {
+	HTTP      lambdaHTTP `json:"http"`
+	RequestID string     `json:"requestId"`
+}
+
+type lambdaHTTP struct {
+	Method   string `json:"method"`
+	Path     string `json:"path"`
+	Protocol string `json:"protocol"`
 }
 
 // lambdaResponse reads what the handler returned; anything not a proxy response is

@@ -528,3 +528,32 @@ func TestTheApiStopsAnsweringWhenItIsClosed(t *testing.T) {
 	_, err = http.DefaultClient.Do(req)
 	require.Error(t, err, "the listener is gone")
 }
+
+// The typed payload writes the bytes the map form wrote: encoding/json sorts a map's
+// keys, and the struct declares its fields in that order.
+func TestTheLambdaEventIsTheBytesTheMapFormWrote(t *testing.T) {
+	for _, req := range []*invoke.Request{
+		{Method: "POST", Path: "/orders/1?expand=items&x=1", Headers: map[string][]string{"X-A": {"1", "2"}, "Content-Type": {"application/json"}}, Body: []byte(`{"a":1}`)},
+		{Path: "", Body: []byte{0xff, 0xfe, 0x00}},
+		{Method: "GET", Path: "/"},
+	} {
+		got, err := lambdaEvent(req, "req-1")
+		require.NoError(t, err)
+
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(got, &m))
+		want, err := json.Marshal(m)
+		require.NoError(t, err)
+		require.Equal(t, string(want), string(got))
+	}
+}
+
+func BenchmarkLambdaEvent(b *testing.B) {
+	req := &invoke.Request{Method: "POST", Path: "/orders/1?expand=items", Headers: map[string][]string{"Content-Type": {"application/json"}, "X-Request-Id": {"abc"}}, Body: []byte(`{"order":1,"items":[1,2,3]}`)}
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := lambdaEvent(req, "req-1"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
