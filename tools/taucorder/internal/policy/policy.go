@@ -17,7 +17,6 @@ import (
 	"strings"
 )
 
-// Class is how much authority a method exercises.
 type Class int
 
 const (

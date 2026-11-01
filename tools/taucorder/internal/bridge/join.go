@@ -12,7 +12,6 @@ import (
 	"github.com/taubyte/tau/p2p/sectls"
 )
 
-// Config is what joining a cloud takes.
 type Config struct {
 	// Key is this client's libp2p identity, marshalled. CA and Certificate
 	// are PEM: the cloud's root, and a certificate from it for Key. They are
@@ -20,8 +19,7 @@ type Config struct {
 	Key         []byte
 	CA          []byte
 	Certificate []byte
-	// Bootstrap are the nodes dialled first.
-	Bootstrap []peer.AddrInfo
+	Bootstrap   []peer.AddrInfo
 	// Cloud scopes the discovery topic, as node.Config.Cloud does.
 	Cloud string
 	// Listen are the swarm listen addresses. Empty is an ephemeral loopback
@@ -29,7 +27,6 @@ type Config struct {
 	Listen []string
 }
 
-// Joined is a bridge that owns its peer.
 type Joined struct {
 	*Bridge
 	node p2p.Node

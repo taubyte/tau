@@ -20,12 +20,10 @@ import (
 	"github.com/taubyte/tau/pkg/stats"
 )
 
-// Fleet is the bridge's view of the nodes.
 type Fleet interface {
 	Nodes() []stats.Node
 }
 
-// Client reads a cloud.
 type Client struct {
 	fleet    Fleet
 	register registerv2connect.RegisterServiceClient
@@ -43,7 +41,6 @@ func New(f Fleet, hc connect.HTTPClient, base string) *Client {
 
 var _ connect.HTTPClient = (*http.Client)(nil)
 
-// Node is one row of the fleet.
 type Node struct {
 	Peer     string   `json:"peer"`
 	Ready    bool     `json:"ready"`
@@ -70,7 +67,6 @@ func (d *Duration) UnmarshalText(b []byte) error {
 	return err
 }
 
-// Nodes is the fleet, by peer id.
 func (c *Client) Nodes() []Node {
 	var out []Node
 	for _, n := range c.fleet.Nodes() {
@@ -147,7 +143,6 @@ func (c *Client) Projects(ctx context.Context) ([]Project, error) {
 	return out, nil
 }
 
-// Job is one build.
 type Job struct {
 	ID         string    `json:"id"`
 	Project    string    `json:"project"`

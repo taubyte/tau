@@ -22,7 +22,6 @@ type fleet []stats.Node
 
 func (f fleet) Nodes() []stats.Node { return f }
 
-// Fleet is a fixed fleet for golden output.
 var Fleet = fleet{
 	{Peer: "12D3KooWBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Ready: true, Load: 0.25, Age: 3 * time.Second, Serving: []string{"register", "worker"}, Addresses: []string{"10.0.0.2"}},
 	{Peer: "12D3KooWAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Ready: false, Load: 0.9, Age: 21 * time.Second, Serving: []string{"register"}},

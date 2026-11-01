@@ -19,8 +19,6 @@ import (
 	_ "github.com/taubyte/tau/pkg/proto/gen/tau/worker/v2"
 )
 
-// The table and the generated descriptors are one list: every tau v2 method
-// is classified, and nothing classified is a method that does not exist.
 func TestTableMatchesDescriptors(t *testing.T) {
 	seen := map[string]bool{}
 	protoregistry.GlobalFiles.RangeFiles(func(fd protoreflect.FileDescriptor) bool {

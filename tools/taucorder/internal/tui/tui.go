@@ -28,7 +28,6 @@ import (
 	"github.com/taubyte/tau/tools/taucorder/internal/query"
 )
 
-// Source is what the views read.
 type Source interface {
 	Nodes() []query.Node
 	Services() []query.Service
@@ -36,7 +35,6 @@ type Source interface {
 	Jobs(ctx context.Context, project string) ([]query.Job, error)
 }
 
-// Tab is one view.
 type Tab int
 
 const (
@@ -85,7 +83,6 @@ var (
 	boxStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("240"))
 )
 
-// loadedMsg is one view's data arriving.
 type loadedMsg struct {
 	tab   Tab
 	table query.Table
@@ -93,10 +90,8 @@ type loadedMsg struct {
 	err   error
 }
 
-// tickMsg is the refresh clock.
 type tickMsg time.Time
 
-// Model is the program's state.
 type Model struct {
 	src      Source
 	interval time.Duration
@@ -363,7 +358,6 @@ func setTable(t *table.Model, q query.Table, width int) {
 	}
 }
 
-// View draws the model.
 func (m Model) View() string {
 	var tabs []string
 	for t := Fleet; t <= Jobs; t++ {

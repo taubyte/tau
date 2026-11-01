@@ -25,7 +25,6 @@ import (
 	"github.com/taubyte/tau/tools/taucorder/internal/route"
 )
 
-// Options is what the operator opened.
 type Options struct {
 	Allow policy.Allow
 	// Origins are the browser origins allowed to call, exactly as a browser
@@ -35,7 +34,6 @@ type Options struct {
 	Hosts []string
 }
 
-// Handler is the listener's http.Handler.
 type Handler struct {
 	opts  Options
 	proxy *httputil.ReverseProxy

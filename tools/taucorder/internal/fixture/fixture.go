@@ -57,7 +57,6 @@ func Serve(t testing.TB, h host.Host, mount func() (string, http.Handler)) proto
 	return id
 }
 
-// Cloud is the fakes' state.
 type Cloud struct {
 	mu       sync.Mutex
 	Projects map[string]string   // id -> config repository
