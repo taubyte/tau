@@ -61,11 +61,13 @@ func (k keyspace) readyPrefix() string   { return k.prefix + readySegment + "/" 
 func (k keyspace) claimedPrefix() string { return k.prefix + claimedSegment + "/" }
 
 func (k keyspace) ready(at time.Time, id string) string {
-	return k.readyPrefix() + stamp(at) + "/" + escape(id)
+	t := stampDigits(at)
+	return k.prefix + readySegment + "/" + string(t[:]) + "/" + escape(id)
 }
 
 func (k keyspace) claimed(deadline time.Time, id string) string {
-	return k.claimedPrefix() + stamp(deadline) + "/" + escape(id)
+	t := stampDigits(deadline)
+	return k.prefix + claimedSegment + "/" + string(t[:]) + "/" + escape(id)
 }
 
 func (k keyspace) index(id string) string {
@@ -86,29 +88,40 @@ func (k keyspace) parse(key string) (stateKey, error) {
 	if !ok {
 		return stateKey{}, fmt.Errorf("%w: %q is not under %q", ErrForeignKey, key, k.prefix)
 	}
-	parts := strings.Split(rest, "/")
-	if len(parts) != 3 || (parts[0] != readySegment && parts[0] != claimedSegment) {
+	state, rest, _ := strings.Cut(rest, "/")
+	at, id, ok := strings.Cut(rest, "/")
+	if !ok || strings.Contains(id, "/") || (state != readySegment && state != claimedSegment) {
 		return stateKey{}, fmt.Errorf("%w: %q", ErrForeignKey, key)
 	}
-	if len(parts[1]) != stampWidth {
+	if len(at) != stampWidth {
 		return stateKey{}, fmt.Errorf("%w: %q has a malformed timestamp", ErrForeignKey, key)
 	}
-	nanos, err := strconv.ParseInt(parts[1], 10, 64)
+	nanos, err := strconv.ParseInt(at, 10, 64)
 	if err != nil || nanos < 0 {
 		return stateKey{}, fmt.Errorf("%w: %q has a malformed timestamp", ErrForeignKey, key)
 	}
-	return stateKey{state: parts[0], at: time.Unix(0, nanos)}, nil
+	return stateKey{state: state, at: time.Unix(0, nanos)}, nil
 }
 
 // stamp encodes a time as a fixed-width decimal so that lexical order is
 // chronological order. Times before the epoch clamp to it; a queue whose clock
 // reports 1969 has a worse problem than ordering.
 func stamp(t time.Time) string {
+	d := stampDigits(t)
+	return string(d[:])
+}
+
+func stampDigits(t time.Time) [stampWidth]byte {
 	nanos := t.UnixNano()
 	if nanos < 0 {
 		nanos = 0
 	}
-	return fmt.Sprintf("%0*d", stampWidth, nanos)
+	var d [stampWidth]byte
+	for i := len(d) - 1; i >= 0; i-- {
+		d[i] = byte('0' + nanos%10)
+		nanos /= 10
+	}
+	return d
 }
 
 const hexDigits = "0123456789ABCDEF"
@@ -119,6 +132,9 @@ const hexDigits = "0123456789ABCDEF"
 // ways a segment can be eaten by a path cleaner. '%' escapes itself, so the
 // encoding is injective and two ids can never share a key.
 func escape(s string) string {
+	if !needsEscape(s) {
+		return s
+	}
 	var b strings.Builder
 	b.Grow(len(s))
 	for i := 0; i < len(s); i++ {
@@ -133,6 +149,16 @@ func escape(s string) string {
 		}
 	}
 	return b.String()
+}
+
+func needsEscape(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+			return true
+		}
+	}
+	return false
 }
 
 func set(key string, value []byte) raft.BatchOp {

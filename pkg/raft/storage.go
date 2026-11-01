@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -37,7 +36,13 @@ func newLogStore(store datastore.Batching, prefix string) *datastoreLogStore {
 }
 
 func (l *datastoreLogStore) logKey(index uint64) datastore.Key {
-	return datastore.NewKey(path.Join(l.prefix, fmt.Sprintf("%020d", index)))
+	// Twenty digits, zero-padded: a uint64's widest, so byte order is numeric order.
+	var b [20]byte
+	for i := len(b) - 1; i >= 0; i-- {
+		b[i] = byte('0' + index%10)
+		index /= 10
+	}
+	return datastore.NewKey(l.prefix + "/" + string(b[:]))
 }
 
 // FirstIndex returns the first index written
@@ -181,7 +186,7 @@ func newStableStore(store datastore.Batching, prefix string) *datastoreStableSto
 }
 
 func (s *datastoreStableStore) stableKey(key []byte) datastore.Key {
-	return datastore.NewKey(path.Join(s.prefix, string(key)))
+	return datastore.NewKey(s.prefix + "/" + string(key))
 }
 
 // Set stores a key-value pair

@@ -84,7 +84,7 @@ func newKVFSM(ctx context.Context, store ds.Batching, prefix string) FSM {
 }
 
 func (f *kvFSM) dataKey(key string) ds.Key {
-	return ds.NewKey(path.Join(f.prefix, "data", key))
+	return ds.NewKey(f.prefix + "/data/" + key)
 }
 
 func (f *kvFSM) Apply(log *raft.Log) interface{} {

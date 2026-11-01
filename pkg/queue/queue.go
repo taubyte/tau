@@ -473,5 +473,8 @@ func (q *Queue) sorted(prefix string) []string {
 // one item, so that a consumer whose claim expired cannot acknowledge the
 // delivery that replaced it.
 func newToken(now time.Time) string {
-	return strconv.FormatInt(now.UnixNano(), 36) + "-" + strconv.FormatUint(rand.Uint64(), 36)
+	var b [32]byte
+	t := strconv.AppendInt(b[:0], now.UnixNano(), 36)
+	t = append(t, '-')
+	return string(strconv.AppendUint(t, rand.Uint64(), 36))
 }
