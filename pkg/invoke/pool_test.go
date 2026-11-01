@@ -111,7 +111,7 @@ func (c *testClock) advance(d time.Duration) {
 	c.t = c.t.Add(d)
 }
 
-func newPool(t *testing.T, e Runtime, adjust func() []Option) (*Pool, *testClock) {
+func newPool(t testing.TB, e Runtime, adjust func() []Option) (*Pool, *testClock) {
 	t.Helper()
 	c := newTestClock()
 	opts := []Option{WithRuntime(e), WithClock(c.now)}
