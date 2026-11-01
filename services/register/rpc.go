@@ -34,10 +34,9 @@ var _ registerv2connect.RegisterServiceHandler = (*handler)(nil)
 
 // Publish stores a compiled project and points an environment at it.
 //
-// AUTHORIZATION IS NOT HERE, and the omission is stated rather than implied:
-// any peer that can reach this service can move any pointer. That is the OSS
-// trust model — swarm membership is the boundary and a certificate from the
-// cloud's CA, checked in the libp2p handshake, is what enforces it. See .notes/tee/v2-seam.md.
+// Authorization is not here: any peer that reaches this service can move any
+// pointer. Swarm membership is the boundary, enforced by the cloud CA's
+// certificate in the libp2p handshake.
 func (h *handler) Publish(ctx context.Context, req *connect.Request[registerv2.PublishRequest]) (*connect.Response[registerv2.PublishResponse], error) {
 	id, err := h.s.reg.Publish(ctx, pkgregister.Publication{
 		Project:     req.Msg.GetProject(),

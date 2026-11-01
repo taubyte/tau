@@ -12,8 +12,8 @@ import (
 
 // host.go is the register of capabilities this tier serves, one row per world under
 // wit/deps; adding a capability is one row and one file. A component's imports
-// name only what it calls, but wazy cannot decode them without instantiating
-// (.notes/v2/wazy-request.md), so every capability is registered for every
+// name only what it calls, but wazy cannot decode them without instantiating,
+// so every capability is registered for every
 // workload. Registering even ungranted ones matters: a missing import traps and
 // kills the instance, while a registered one can refuse per call.
 

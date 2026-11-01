@@ -12,8 +12,6 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 )
 
-// The holes H1-H5 and counterexamples of .notes/v2/kvdb-tombstone-reclaim.md.
-
 func onlyHead(t testing.TB, r *Datastore) cid.Cid {
 	t.Helper()
 	hs, _ := r.heads.List()
