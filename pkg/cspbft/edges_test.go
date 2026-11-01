@@ -8,19 +8,13 @@ import (
 )
 
 func TestEveryActionTypeReallyImplementsTheActionInterface(t *testing.T) {
-	// The AST census in census_test.go says which types claim to be actions;
-	// this says the claim compiles and is reachable, so a type that is in the
-	// set by name and not by method cannot exist.
+	// Every action type compiles and is reachable.
 	all := []Action{
 		Send{}, Broadcast{}, Persist{}, Execute{}, TakeCheckpoint{},
 		FetchState{}, SetTimer{}, CancelTimer{}, Evidence{}, Notice{},
 	}
-	// The interface is unexported and satisfied by an unexported method, so a
-	// type that is in the census by name and not by method is a compile error
-	// in the line above. What is left to check is that the two lists are the
-	// same list: the census parses the source for isAction receivers, and a
-	// type nobody constructs here is a type the census counts and the protocol
-	// never emits.
+	// The census parses the source for isAction receivers; this checks it lists exactly
+	// the types constructed here.
 	named := map[string]bool{}
 	for _, a := range all {
 		named[fmt.Sprintf("%T", a)] = true
@@ -150,10 +144,7 @@ func TestACustomHasherIsUsedForEveryDigestThisPackageComputes(t *testing.T) {
 }
 
 func TestTheMemoryOfWhatWasExecutedEndsAtTheStableCheckpointAndNowhereElse(t *testing.T) {
-	// It has to end at a point every replica agrees on. A replica that took
-	// the state at a checkpoint by transfer never executed anything below it,
-	// so a memory reaching further back would be held by the replicas that
-	// were there and not by the one that was not.
+	// It must end at a point every replica agrees on.
 	r := mkReplica(t, 4, "b")
 	r.executedAt[Digest{1}] = 3
 	r.executedAt[Digest{2}] = 7
@@ -168,9 +159,8 @@ func TestTheMemoryOfWhatWasExecutedEndsAtTheStableCheckpointAndNowhereElse(t *te
 }
 
 func TestTheSetOfHeldAssignmentsIsBoundedInMessagesAndNotOnlyInDigests(t *testing.T) {
-	// The bound that used to be here counted map keys, which is the one thing
-	// a faulty primary does not have to grow: it can retransmit ONE assignment
-	// forever, and the slice under that key is what fills.
+	// A faulty primary can retransmit one assignment forever, so the bound counts held
+	// assignments, not map keys.
 	r := mkReplica(t, 4, "b") // K=4, so at most 16 assignments may be held
 	one := Digest{1}
 	for i := 0; i < 5000; i++ {

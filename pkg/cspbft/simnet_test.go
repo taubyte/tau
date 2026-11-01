@@ -67,12 +67,6 @@ func forger(as ReplicaID) mutator {
 	}
 }
 
-// doubleVoter contradicts its own PREPARE and COMMIT: every recipient is sent
-// the real vote AND a second one for the same (view, sequence) under the same
-// signature. liar() cannot produce this — it rewrites every vote to one
-// constant digest, so one sender never emits two that disagree — and
-// transferable proof is this package's headline security property, so two
-// thirds of it would otherwise go unexercised end to end.
 func doubleVoter() mutator {
 	return func(s *sim, from, to ReplicaID, m Message) (Message, bool) {
 		if m.Kind == KindPrepare || m.Kind == KindCommit {
@@ -173,12 +167,6 @@ func TestAPartitionedReplicaRejoinsAndCatchesUp(t *testing.T) {
 				s.request("c1", i, fmt.Sprintf("p%d", i))
 				s.settle(30)
 			}
-			// THIS MEASURES CATCHING UP AND NOT TAKING PART, and the two are
-			// not the same: a replica that changed view while it was alone
-			// cannot vote until some view change completes, and state transfer
-			// keeps it current the whole time.
-			// TestAReplicaThatChangedViewWhileAloneTakesPartAgainAtTheNextViewChange
-			// is the one that measures taking part.
 			if s.lastExec[s.ids[6]] < 12 {
 				t.Fatalf("the rejoining replica is at %d, want it caught up", s.lastExec[s.ids[6]])
 			}
@@ -207,8 +195,6 @@ func TestAReplicaThatCrashesAndRestoresItsJournalDoesNotContradictItself(t *test
 		})
 	}
 }
-
-// --- the scoring layer, end to end ---------------------------------------
 
 type favourScorer struct{ first ReplicaID }
 
@@ -315,17 +301,6 @@ func TestThePrimaryIsTheReplicaWhoseRestartMustNotLoseWhatItAssigned(t *testing.
 	}
 }
 
-// TestAReplicaThatChangedViewWhileAloneTakesPartAgainAtTheNextViewChange is
-// the recovery path for the cost doc.go names under "an abort for a view
-// change".
-//
-// A replica cut off on its own times out, asks for a new view and stops voting
-// in the old one. It cannot take that back — a VIEW-CHANGE is a promise that
-// makes the next primary's O set complete — so while the rest of the cluster
-// stays healthy it is kept current by state transfer and counts toward n
-// without counting toward a quorum. What gets it back is that its VIEW-CHANGE
-// is already in every other replica's hand: the moment the cluster does change
-// view, the new primary counts it and sends it the NEW-VIEW.
 func TestAReplicaThatChangedViewWhileAloneTakesPartAgainAtTheNextViewChange(t *testing.T) {
 	for seed := int64(1); seed <= 5; seed++ {
 		t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) {

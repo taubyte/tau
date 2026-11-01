@@ -289,9 +289,6 @@ func TestARequestRestoredWithNoAssignmentBehindItCanStillBeOrdered(t *testing.T)
 }
 
 func TestRestoreSaysSoWhenItComesBackWithADegradedRotation(t *testing.T) {
-	// Clause 6 of the Scorer contract is that garbage degrades to round-robin
-	// AND is announced. Restore was the one entry point that could reach the
-	// scorer with nothing to say it with.
 	r := mkReplica(t, 4, "b", WithScorer(nilScorer{}))
 	var records []Record
 	for _, id := range ids(4)[:Quorum(4)] {

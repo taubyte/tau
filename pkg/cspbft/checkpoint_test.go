@@ -138,12 +138,8 @@ func TestInstalledIsRefusedWhenItDigestsToSomethingTheQuorumDidNotCertify(t *tes
 }
 
 func TestAPrimaryOrdersARetransmissionItsOwnCheckpointMadeItForget(t *testing.T) {
-	// The memory of what was executed has to end where every replica's ends. A
-	// replica that took the state at a checkpoint by transfer never executed
-	// anything below it, so a primary remembering further back drops a
-	// retransmission that the transferred backup is holding outstanding — and
-	// the backup then forces a view change every timeout, forever, over a
-	// request nobody will ever assign.
+	// The memory of what was executed must end where every replica's ends, or a primary
+	// drops a retransmission a transferred backup still holds outstanding.
 	p := mkReplica(t, 4, "a") // the primary of view 0
 	req := clientRequest("c", 1, "one")
 	p.executedAt[req.Digest] = 3

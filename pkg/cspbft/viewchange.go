@@ -5,16 +5,9 @@ import (
 	"sort"
 )
 
-// viewchange.go is how a faulty primary is replaced without losing anything a
-// correct replica has already been promised.
-//
-// THE ONE oSet FUNCTION IS THE POINT OF THIS FILE. The new primary builds the
-// O set with it, and every backup INDEPENDENTLY RECOMPUTES the same O from the
-// same V with the same function and refuses a NEW-VIEW that does not match. If
-// the two sides were written twice they could differ, and the difference would
-// be a safety failure rather than a mismatch — a backup accepting an O that
-// quietly dropped a prepared certificate is a backup agreeing to forget an
-// assignment a quorum already made.
+// The new primary builds the O set with oSet, and every backup recomputes it from
+// the same V with the same function and refuses a mismatching NEW-VIEW. One function,
+// so the two sides cannot differ.
 
 // startViewChange moves toward target.
 //
@@ -26,13 +19,8 @@ func (r *Replica) startViewChange(target View) []Action {
 		return nil
 	}
 	if !r.roomForViewChange(target, r.self) {
-		// ASKING FOR A VIEW FURTHER OUT THAN THIS BUYS NOTHING. A run of
-		// faulty primaries is at most 2f views long, so one of the 2f+2 views
-		// this replica is already asking for has a correct primary: the answer
-		// is inside that window or it is not coming. The budget can only be
-		// full because this replica filled it, so it is already waiting — and
-		// what it must not do is stop, because Timeout has already marked the
-		// timer stopped and nothing else re-arms it.
+		// A run of faulty primaries is at most 2f views, so one of the 2f+2 views already
+		// asked for has a correct primary. Keep waiting: Timeout already stopped the timer.
 		return r.restartNewViewTimer()
 	}
 	r.viewChanging = true
@@ -70,18 +58,9 @@ func (r *Replica) restartNewViewTimer() []Action {
 	return []Action{SetTimer{Which: TimerNewView, After: r.timeout}}
 }
 
-// roomForViewChange is the water mark a VIEW-CHANGE would otherwise not have.
-//
-// It is the only message in the protocol whose position is a view rather than
-// a sequence number, so nothing else bounds how far ahead one may name — and
-// every one that is accepted costs a map entry and a JOURNAL RECORD on every
-// correct replica, which is unbounded disk at one cheap packet each.
-//
-// THE BOUND IS PER SENDER, so no replica can crowd out another's, and what
-// fits is the first 2f+2 views a sender asks for above this one. 2f is the
-// longest run of faulty primaries the scoring layer allows, so a correct
-// primary is always inside that window: a view past it is not an answer this
-// replica is waiting for.
+// roomForViewChange is a VIEW-CHANGE's water mark: nothing else bounds how far ahead
+// a view may be named, and each accepted one costs a journal record. Per sender, the
+// first 2f+2 views above this one, which always includes a correct primary.
 func (r *Replica) roomForViewChange(v View, from ReplicaID) bool {
 	if _, ok := r.viewChanges[v][from]; ok {
 		return true
@@ -125,12 +104,8 @@ func (r *Replica) onViewChange(m Message) ([]Action, error) {
 	return acts, nil
 }
 
-// hearsay is Castro-Liskov's f+1 rule: f+1 replicas asking for a higher view
-// includes at least one correct replica, so this one is behind and moves
-// without waiting for its own timer.
-//
-// WITHOUT IT A LAGGING REPLICA IS STRANDED. The quorum that already moved will
-// not talk to it about the old view, and its own timer may be long.
+// hearsay is Castro-Liskov's f+1 rule: f+1 replicas asking for a higher view include
+// a correct one, so this one is behind and moves without its own timer.
 func (r *Replica) hearsay() []Action {
 	senders := map[ReplicaID]bool{}
 	smallest := View(0)
@@ -138,11 +113,8 @@ func (r *Replica) hearsay() []Action {
 		if v <= r.view {
 			continue
 		}
-		// THE RULE IS f+1 OTHERS, AND THE SMALLEST VIEW IN THEIR SET. Counting
-		// this replica's own asks weakens f+1 to f, which f faulty replicas
-		// reach by themselves; and letting a view only this replica asked for
-		// be the smallest pins it to a view nobody else is joining, so the
-		// claim it is supposed to be acting on is never acted on at all.
+		// f+1 others, and the smallest view in their set: counting this replica weakens it to
+		// f, and a view only it asked for is one nobody joins.
 		others := 0
 		for id := range byID {
 			if id == r.self {
@@ -225,14 +197,9 @@ func (r *Replica) selectViewChanges(byID map[ReplicaID]Message) []Message {
 	return out
 }
 
-// oSet is the O set: what the new view re-proposes.
-//
-// min-s is the highest stable checkpoint anyone in V has, max-s the highest
-// sequence anyone prepared. For every sequence between them, the digest from
-// the HIGHEST-VIEW prepared certificate wins — that is the cross-view
-// stickiness the whole protocol turns on — and a sequence nobody prepared is
-// filled with a null request, because leaving a hole would stop execution
-// forever.
+// oSet is what the new view re-proposes. Between min-s (highest stable checkpoint in
+// V) and max-s (highest prepared sequence), the highest-view prepared certificate
+// wins each sequence, and a sequence nobody prepared gets a null request.
 func (r *Replica) oSet(v0 []Message, newView View) ([]Message, Sequence, Sequence, error) {
 	var minS, maxS Sequence
 	best := map[Sequence]Message{}
@@ -270,19 +237,9 @@ func (r *Replica) oSet(v0 []Message, newView View) ([]Message, Sequence, Sequenc
 	return out, minS, maxS, nil
 }
 
-// bytesLess breaks a tie between two certificates from the same view.
-//
-// IT CANNOT FIRE WHILE THE FAULT BUDGET HOLDS, and the argument is worth
-// writing down because it is the budget and not the arithmetic that makes it
-// true. Two prepared certificates for one (view, sequence) need an
-// equivocating primary AND a backup willing to prepare both digests, which is
-// two faulty replicas; with one, the correct backups each prepare once and
-// there are not enough votes to go round. The budget is intact only because a
-// correct replica never signs two assignments for one (view, sequence) — which
-// is what restoring lastAssigned from the journal is for, and why an amnesiac
-// primary is a safety failure and not a lost message. "Impossible" is still no
-// reason for two replicas to compute different O sets, so the tie-break is
-// explicit.
+// bytesLess breaks a tie between two certificates from one view. That needs two
+// faulty replicas (an equivocating primary and a backup preparing both), so it cannot
+// fire within the fault budget, but replicas must still compute the same O set.
 func bytesLess(a, b Digest) bool {
 	for i := range a {
 		if a[i] != b[i] {
@@ -393,13 +350,8 @@ func (r *Replica) installNewView(v View, v0 []Message, o []Message, minS, maxS S
 	return append(acts, r.reconsider()...)
 }
 
-// reconsider asks the two questions entering a view may have just answered.
-//
-// NOTHING ELSE ASKS THEM AGAIN. hearsay and maybeSendNewView are otherwise
-// reachable only from an inbound VIEW-CHANGE, so a quorum of them that
-// arrived while this replica was still in a lower view sits in the map unread
-// — and the view this replica is the primary of never starts, although every
-// vote it needs is already here.
+// reconsider re-asks hearsay and maybeSendNewView on entering a view; otherwise only
+// an inbound VIEW-CHANGE asks, and a quorum that arrived earlier sits unread.
 func (r *Replica) reconsider() []Action {
 	acts := r.hearsay()
 	for _, v := range sortedViews(r.viewChanges) {

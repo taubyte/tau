@@ -5,30 +5,13 @@ import (
 	"sort"
 )
 
-// rotation.go is the ONLY file in this package that holds a Scorer.
-//
-// certificate.go and log.go take no scorer parameter and have no path to one,
-// so scoring a vote — weighting a quorum by reputation, which is the way this
-// idea usually goes wrong — is a compile error rather than a comment.
-// TestTheCertificateFileNamesNoScorer parses the package's own source and
-// holds it.
+// The only file holding a Scorer; certificate.go and log.go have no path to one
+// (TestTheCertificateFileNamesNoScorer).
 
-// Scorer ranks replicas for leader selection. It is a LIVENESS heuristic and
-// nothing else: it decides whose turn comes first, never whose vote counts.
-//
-// Its contract is the seven clauses in the package doc. Three of them are
-// worth repeating where an implementer will read them:
-//
-//   - It must return a permutation of ALL of Snapshot.Replicas. A short slice,
-//     a duplicate or an unknown id is not "mostly right"; it is discarded in
-//     favour of the identity permutation.
-//   - It may read the caller's application state AS OF Snapshot.StateDigest
-//     and nothing else. Not a round-trip time, not a timeout count, not "I did
-//     not hear from j" — any local observation makes two correct replicas
-//     compute different primaries for the same view.
-//   - Integer arithmetic only, and ties broken on ReplicaID. A float that
-//     differs in its last bit across two machines silently produces two
-//     different leaders.
+// Scorer ranks replicas for leader selection: a liveness heuristic deciding whose
+// turn comes first, never whose vote counts. See the package doc's contract. It must
+// return a permutation of all Snapshot.Replicas, read only application state as of
+// Snapshot.StateDigest, and use integer arithmetic with ReplicaID tie-breaks.
 type Scorer interface {
 	Rank(Snapshot) []ReplicaID
 }
@@ -55,11 +38,10 @@ type Snapshot struct {
 	Replicas []ReplicaID
 }
 
-// RoundRobin is the identity permutation: primary(v) is replicas[v mod n], the
-// textbook rule. It is the default, and it is what every fallback lands on.
+// RoundRobin is the identity permutation, the textbook rule, the default and every
+// fallback.
 type RoundRobin struct{}
 
-// Rank returns the configuration unchanged.
 func (RoundRobin) Rank(s Snapshot) []ReplicaID { return s.Replicas }
 
 type rotation struct {

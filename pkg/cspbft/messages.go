@@ -19,7 +19,6 @@ type ClientID string
 // increases.
 type View uint64
 
-// Sequence is the position of a proposal in the total order.
 type Sequence uint64
 
 // Digest is what replicas actually agree about. Proposals are opaque, so
@@ -35,7 +34,6 @@ type Proposal []byte
 // preimage, which is what stops a PREPARE being replayed as a COMMIT.
 type Kind uint8
 
-// The protocol messages.
 const (
 	KindRequest Kind = iota + 1
 	KindPrePrepare
@@ -67,16 +65,9 @@ func (k Kind) String() string {
 	}
 }
 
-// Message is every protocol message, as one struct with a Kind.
-//
-// IT IS ONE STRUCT BECAUSE THE CALLER OWNS THE WIRE, and one struct is one
-// codec registration rather than seven. Validate is what keeps that from
-// meaning "any field may hold anything": a field that does not belong to the
-// Kind is ErrMalformed, checked before the message reaches any log.
-//
-// Note what is not here: no timestamp, no deadline, no sender-asserted
-// anything beyond the vote itself. TestNoProtocolMessageCarriesAClock is the
-// census that keeps it that way.
+// Message is every protocol message, one struct with a Kind, since the caller owns
+// the wire. Validate makes a field outside its Kind ErrMalformed. No message carries a
+// clock (TestNoProtocolMessageCarriesAClock).
 type Message struct {
 	Kind   Kind
 	From   ReplicaID // empty on a KindRequest, which a client signs
@@ -99,14 +90,8 @@ type Message struct {
 	Signature []byte
 }
 
-// Certificate is a prepared certificate: a PRE-PREPARE and the matching
-// PREPAREs that make it prepared.
-//
-// It is a named type rather than two loose fields so that an aggregate or
-// threshold signature can one day replace Quorum(n)-1 individual signatures
-// without the state machine changing shape. That is the change that takes a
-// large configuration's view change from seconds to milliseconds, and keeping
-// the seam open costs nothing today.
+// Certificate is a prepared certificate: a PRE-PREPARE and its matching PREPAREs, a
+// named type so an aggregate signature can later replace the individual ones.
 type Certificate struct {
 	PrePrepare Message
 	Prepares   []Message
@@ -116,7 +101,6 @@ type Certificate struct {
 // gap in the O set. It executes as nothing.
 var nullDigest Digest
 
-// IsNull reports whether d is the null request's digest.
 func (d Digest) IsNull() bool { return d == nullDigest }
 
 // Validate refuses a message carrying fields that do not belong to its Kind.

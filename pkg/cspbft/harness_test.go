@@ -11,17 +11,11 @@ import (
 	"time"
 )
 
-// harness_test.go is the whole test network: a map of inboxes, a seeded
-// scheduler and a fake signature scheme. There is no socket, no goroutine and
-// no sleep in it, which is why "an equivocating primary against a partitioned
-// backup at seed 41" is a table entry here rather than a flaky integration
-// test.
+// The whole test network: a map of inboxes, a seeded scheduler and a fake signature
+// scheme, with no socket, goroutine or sleep.
 
-// --- signatures -----------------------------------------------------------
-//
-// A signature is sha256(domain | id | preimage). It is not cryptography and is
-// not meant to be: what the tests need is a function only the holder of an id
-// computes correctly, so that forging is expressible.
+// A signature is sha256(domain | id | preimage): not cryptography, just a function
+// only the holder of an id computes, so forging is expressible.
 
 func sigFor(domain, id string, pre []byte) []byte {
 	h := sha256.New()
@@ -62,8 +56,6 @@ func resign(id ReplicaID, m Message) Message {
 	return m
 }
 
-// --- the network ----------------------------------------------------------
-
 type envelope struct {
 	from ReplicaID
 	to   ReplicaID
@@ -91,11 +83,8 @@ type sim struct {
 	state    map[ReplicaID]map[Sequence]string
 	lastExec map[ReplicaID]Sequence
 
-	// held is the caller-side half of ErrFutureView: a message for a view this
-	// replica has not entered is kept and re-stepped once it has. The package
-	// says so in the error's own comment, and a caller that drops instead
-	// deadlocks whenever a NEW-VIEW loses a race with the first PRE-PREPARE
-	// the new primary sends after it.
+	// held is the caller-side half of ErrFutureView: messages for a view not yet entered
+	// are re-stepped once it is.
 	held map[ReplicaID][]envelope
 
 	digests  []Digest

@@ -6,8 +6,6 @@ import (
 	"testing"
 )
 
-// --- the scoring layer's contract ----------------------------------------
-
 type reverseScorer struct{ calls int }
 
 func (s *reverseScorer) Rank(sn Snapshot) []ReplicaID {
@@ -189,13 +187,6 @@ func TestABackupRejectsANewViewWhoseRotationItDoesNotAgreeWith(t *testing.T) {
 	}
 }
 
-// TestAFaultyReplicaIsPrimaryForAtMostTwoFConsecutiveViewsAcrossAnEpochBoundary
-// is the bound the scoring layer costs, run rather than argued.
-//
-// Within one permutation a run of consecutive faulty primaries is at most f,
-// because L consecutive views map to L distinct positions and so to L distinct
-// replicas. An epoch boundary splits a run into a suffix of one permutation
-// and a prefix of the next, so the worst case is exactly twice that.
 func TestAFaultyReplicaIsPrimaryForAtMostTwoFConsecutiveViewsAcrossAnEpochBoundary(t *testing.T) {
 	for n := 4; n <= 16; n++ {
 		f := Faults(n)

@@ -73,8 +73,6 @@ func findBroadcast(acts []Action, k Kind) (Message, bool) {
 	return Message{}, false
 }
 
-// --- quorum arithmetic ----------------------------------------------------
-
 func TestQuorumIntersectsInACorrectReplicaForEveryNUpToOneHundred(t *testing.T) {
 	for n := 4; n <= 100; n++ {
 		f := Faults(n)
@@ -207,8 +205,6 @@ func TestTheReplicaSetIsCanonicalisedSoTwoReplicasAgreeOnThePrimary(t *testing.T
 		}
 	}
 }
-
-// --- acceptance rules -----------------------------------------------------
 
 func TestABackupRefusesASecondPrePrepareForTheSameViewAndSequenceWithADifferentDigest(t *testing.T) {
 	r := mkReplica(t, 4, "b")

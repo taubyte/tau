@@ -6,21 +6,10 @@ import (
 	"fmt"
 )
 
-// preimage.go is the canonical encoding a signature is taken over.
-//
-// THE SIGNATURE IS NEVER OVER THE BYTES THAT ARRIVED. The caller owns the wire
-// and may use protobuf or cbor, and both admit more than one encoding of one
-// value — so "verify the bytes I received" and "verify the bytes I would
-// re-encode" can disagree, and a replica could be made to accept a message its
-// neighbour rejects. Everything signs Preimage(m).
-//
-// EVERY VARIABLE-LENGTH FIELD IS LENGTH-DELIMITED, for exactly the reason
-// pkg/placement.Score is: a separator is only injective if neither side can
-// contain it, and here a VIEW-CHANGE nests messages that themselves nest
-// messages, so there is no byte that is safe to use as one.
-//
-// The domain prefix and the leading Kind byte together are what make a signed
-// PREPARE useless as a COMMIT.
+// The canonical encoding signatures are taken over, never the received bytes, since
+// protobuf and cbor admit several encodings of one value. Every variable-length field
+// is length-delimited because messages nest and no separator byte is safe. The domain
+// prefix and leading Kind byte make a PREPARE useless as a COMMIT.
 
 const (
 	preimageDomain = "cspbft/preimage/v1\x00"

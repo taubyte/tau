@@ -2,16 +2,10 @@ package cspbft
 
 import "fmt"
 
-// checkpoint.go is how the log stays bounded and how a replica that fell
-// behind catches up.
-//
-// A checkpoint is the application's own digest of its state at a sequence
-// number. This package never computes one — it asks, with TakeCheckpoint, and
-// is answered with Checkpointed. When a quorum of replicas answer the same
-// thing, the checkpoint is STABLE, and that single fact does four jobs at
-// once: it moves the low water mark, it truncates the log, it becomes the
-// proof a VIEW-CHANGE carries, and it is the one agreed state the rotation's
-// epoch may be bound to.
+// A checkpoint is the application's digest of its state at a sequence number, asked
+// for with TakeCheckpoint and answered with Checkpointed. Once a quorum agree it is
+// stable, which moves the low water mark, truncates the log, becomes a VIEW-CHANGE's
+// proof, and is the one agreed state the rotation's epoch binds to.
 
 type checkpointKey struct {
 	seq    Sequence
@@ -42,10 +36,8 @@ func (r *Replica) Checkpointed(seq Sequence, d Digest) ([]Action, error) {
 }
 
 func (r *Replica) onCheckpoint(m Message) ([]Action, error) {
-	// A checkpoint is the one message that is not bound to a view — states are
-	// agreed across view changes — so it is bounded by sequence alone. The
-	// upper bound is two log lengths ahead, which is as far as a replica can
-	// legitimately be behind and still be talked to rather than transferred.
+	// A checkpoint is not bound to a view, so it is bounded by sequence alone, up to two
+	// log lengths ahead.
 	if m.Seq <= r.lastStable {
 		return nil, fmt.Errorf("%w: checkpoint %d is at or below the stable one, %d", ErrOutOfWatermarks, m.Seq, r.lastStable)
 	}
@@ -152,13 +144,8 @@ func (r *Replica) gcRequests(through Sequence) {
 	r.arrival = kept
 }
 
-// gcViewChanges drops what belongs to a view this replica has left. The two
-// "did I already" maps go with it: startViewChange and maybeSendNewView both
-// refuse a view at or below the current one anyway, so a remembered yes about
-// an older view answers a question nobody asks again — and this package bounds
-// the log, the checkpoints and the held assignments, so two maps that grow one
-// entry per view for the life of the process would be the exception with no
-// reason behind it.
+// gcViewChanges drops what belongs to a view this replica has left, including the two
+// "did I already" maps, which would otherwise grow one entry per view forever.
 func (r *Replica) gcViewChanges() {
 	for v := range r.viewChanges {
 		if v < r.view {
@@ -198,19 +185,10 @@ func (r *Replica) Installed(seq Sequence, d Digest) ([]Action, error) {
 		}
 	}
 
-	// A TRANSFER ENDS THIS REPLICA'S KNOWLEDGE OF WHAT IT WAS WAITING FOR, and
-	// saying so is the only honest thing it can do. The transferred state
-	// covers every request ordered at or below seq, but this replica never saw
-	// those assignments, so it cannot tell which of the requests it is holding
-	// are in there. Keeping them marked outstanding is the failure that
-	// actually bites: the request timer can then never be cancelled, so the
-	// replica forces a view change every timeout, forever, over a request that
-	// was executed before it even arrived.
-	//
-	// What stays outstanding is exactly what is visibly still in flight: a
-	// request named by a log entry above the transferred point. Anything else
-	// is dropped, and a client that really is still waiting retransmits — which
-	// is the client's job in this protocol and not a replica's.
+	// After a transfer this replica cannot tell which held requests the transferred
+	// state already covers; kept outstanding, one would force a view change every
+	// timeout forever. Only requests named by a log entry above seq stay outstanding; a
+	// client still waiting retransmits.
 	keep := map[Digest]bool{}
 	for _, e := range r.log.entries {
 		if e.seq > seq && !e.digest.IsNull() {

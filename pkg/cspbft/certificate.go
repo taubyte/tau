@@ -5,15 +5,9 @@ import (
 	"sort"
 )
 
-// certificate.go is the arithmetic of agreement: when a set of messages is
-// enough to decide something, and when a set of messages someone else sent me
-// is enough to make me believe they decided something.
-//
-// LIKE log.go, THIS FILE TAKES NO Scorer AND HAS NO PATH TO ONE. Every
-// function here counts distinct senders, uniformly, one vote each. That is the
-// property the whole fault model rests on, and the scoring layer is kept out
-// of this file structurally so that no future change can quietly weight a
-// vote. TestTheCertificateFileNamesNoScorer is the census.
+// The arithmetic of agreement. This file takes no Scorer: every function counts
+// distinct senders, one vote each, so no change can weight a vote
+// (TestTheCertificateFileNamesNoScorer).
 
 // prepared is Castro-Liskov's prepared(v,n,d): a PRE-PREPARE and q-1 matching
 // PREPAREs from distinct OTHER replicas — 2f of them when n is 3f+1.
@@ -52,14 +46,10 @@ func countMatching(votes map[ReplicaID]Message, d Digest, exclude ReplicaID) int
 	return n
 }
 
-// validateCertificate checks a prepared certificate somebody else is asserting.
-//
-// It does NOT check that the PRE-PREPARE came from the primary of its view,
-// and that is deliberate: q-1 PREPAREs from distinct replicas already include
-// at least one correct one, and a correct replica only prepares what its own
-// primary sent. Re-deriving the primary here would instead make certificate
-// validity depend on the rotation, which is the one thing that may legitimately
-// have moved between the certificate's view and this one.
+// validateCertificate checks a prepared certificate somebody else asserts. It does
+// not check that the PRE-PREPARE came from its view's primary: q-1 PREPAREs from
+// distinct replicas include a correct one, which prepares only what its primary
+// sent, and re-deriving the primary would make validity depend on the rotation.
 func validateCertificate(c Certificate, q int, verify Verifier, known func(ReplicaID) bool) error {
 	if err := c.validate(); err != nil {
 		return err
@@ -144,14 +134,9 @@ func validateViewChange(m Message, q int, verify Verifier, known func(ReplicaID)
 	if err != nil {
 		return err
 	}
-	// THE CLAIM AND THE EVIDENCE MUST NAME THE SAME STATE. This is the one
-	// field a sender asserts that is used rather than merely carried: a new
-	// view adopts it as the low water mark and asks the caller to fetch the
-	// bytes behind it. A view-change naming a state its own quorum did not
-	// certify therefore makes every replica that is behind adopt a checkpoint
-	// nobody holds, discard its log through it, and then refuse the real state
-	// as disagreeing — and the lie travels on, because the victim's own later
-	// view-changes carry it with a proof that verifies.
+	// The claimed state must be the certified one: a new view adopts it as the low water
+	// mark, so a false digest makes lagging replicas discard their log for a checkpoint
+	// nobody holds, and the lie propagates in their own later view-changes.
 	if certified != m.Digest {
 		return fmt.Errorf("%w: a view-change names a state at %d that its own checkpoint proof does not certify", ErrBadCertificate, m.Seq)
 	}

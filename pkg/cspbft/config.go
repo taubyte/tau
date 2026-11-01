@@ -29,7 +29,6 @@ type ClientVerifier func(from ClientID, preimage, sig []byte) error
 // Hasher digests a proposal or a preimage. Default sha256.
 type Hasher func(b []byte) Digest
 
-// Defaults.
 const (
 	// DefaultCheckpointInterval is K, the paper's own example. It is the
 	// cheapest steady state — a checkpoint makes the application digest its
@@ -41,12 +40,9 @@ const (
 	// execute before it gives up on the primary.
 	DefaultBaseTimeout = 4 * time.Second
 
-	// MaxCheckpointInterval is the ceiling on K. The log holds L = 2K entries
-	// and onCheckpoint reaches 4K, so an unbounded K is two things at once: a
-	// promise of memory nobody has, and — past a quarter of the sequence
-	// space — an arithmetic wrap that puts the high water mark BELOW the low
-	// one, at which point the replica refuses every sequence number there is
-	// and says only that it is out of the water marks.
+	// MaxCheckpointInterval is the ceiling on K. The log holds 2K entries and
+	// onCheckpoint reaches 4K, so past a quarter of the sequence space the high water
+	// mark would wrap below the low one.
 	MaxCheckpointInterval = 1 << 20
 
 	// DefaultMaxTimeout is the ceiling on the doubling. Without one, a
@@ -55,10 +51,8 @@ const (
 	DefaultMaxTimeout = 5 * time.Minute
 )
 
-// Option configures a Replica. The replica set and self stay positional
-// because they cannot be defaulted; everything else is a With…, validated in
-// the option so a nonsense value fails at construction with a message about
-// that setting rather than on the first vote.
+// Option configures a Replica. The replica set and self stay positional because they
+// cannot be defaulted; the rest are validated in the option.
 type Option func(*options) error
 
 type options struct {
@@ -200,13 +194,9 @@ func (o *options) withDefaults() error {
 	return nil
 }
 
-// New builds a replica.
-//
-// THE REPLICA SET IS CANONICALISED HERE — deduped and sorted — and v mod n is
-// over that canonical order, so two replicas handed the same set in different
-// orders compute the same primary. The index is never exported: a caller that
-// could see it would start relying on it, and then a re-sort would move every
-// quorum.
+// New builds a replica. The replica set is deduped and sorted here, so replicas
+// given the same set in different orders compute the same primary. The index is
+// never exported.
 func New(replicas []ReplicaID, self ReplicaID, opts ...Option) (*Replica, error) {
 	o := &options{}
 	for _, opt := range opts {
@@ -283,11 +273,8 @@ func Quorum(n int) int {
 	return (n + f + 2) / 2
 }
 
-// Advice is what a human should be told about a proposed n, in sentences. It
-// is a function rather than documentation because the two mistakes it catches
-// — paying for replicas that buy no fault tolerance, and choosing an n whose
-// view change is the dominant cost — are both made at configuration time by
-// someone who will not read the package doc.
+// Advice is what a human should be told about a proposed n: replicas that buy no
+// fault tolerance, and an n whose view change dominates the cost.
 func Advice(n int) []string {
 	var out []string
 	if n < 4 {

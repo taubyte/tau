@@ -2,35 +2,18 @@ package cspbft
 
 import "fmt"
 
-// evidence.go is the only thing in this package that produces a fact about a
-// replica rather than about the protocol.
-//
-// AN EQUIVOCATION IS THE ONLY SOUND INPUT TO A PUNISHMENT. Everything else a
-// replica might hold against a peer — it was slow, it went quiet, it missed a
-// view — is local observation, and asynchrony is indistinguishable from
-// failure, so acting on it lets a network hiccup evict a correct replica.
-// Two conflicting messages under one signature are different in kind: anyone
-// can check them, including someone who was not there.
-//
-// This package DETECTS equivocation and hands out the proof. It does not feed
-// it back into the rotation, because whether replica i has SEEN a proof is
-// local, and a rotation driven by locally-held proofs diverges. The caller
-// closes the loop by submitting the proof as an ordinary proposal: once it
-// commits, every replica's application state holds it and their Scorer reads
-// it from an agreed StateDigest.
+// An equivocation (two conflicting messages under one signature) is the only sound
+// input to a punishment: anyone can check it, while slowness or silence is
+// indistinguishable from asynchrony. See the package doc for how a caller closes the
+// loop.
 
 // Equivocation is transferable proof that one replica signed two conflicting
 // messages for one (view, sequence).
 type Equivocation struct{ A, B Message }
 
-// Verify checks the proof from scratch, the way a third party who was not
-// present must: same sender, same kind, same view and sequence, different
-// digests, and both signatures good.
-//
-// A CALLER MUST RUN THIS BEFORE ACTING ON AN Evidence IT DID NOT PRODUCE
-// ITSELF. A proof that arrives over the network is a claim until it verifies,
-// and "replica j equivocated" is precisely the claim an adversary would most
-// like to be believed about a correct replica.
+// Verify checks the proof from scratch: same sender, kind, view and sequence,
+// different digests, both signatures good. Run it before acting on Evidence this
+// replica did not produce.
 func (e Equivocation) Verify(v Verifier) error {
 	if e.A.From == "" || e.A.From != e.B.From {
 		return fmt.Errorf("%w: an equivocation naming two different senders", ErrBadCertificate)

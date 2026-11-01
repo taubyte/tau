@@ -6,9 +6,7 @@ import (
 	"fmt"
 )
 
-// Example is the driver the package doc says the caller writes: a loop, a
-// queue, and nothing else. It is here compiled and run rather than described,
-// because "about forty lines" is a claim until somebody writes them.
+// Example is the driver a caller writes: a loop, a queue, nothing else.
 func Example() {
 	set := []ReplicaID{"r0", "r1", "r2", "r3"}
 
@@ -81,11 +79,7 @@ func Example() {
 			}
 		}
 	}
-	// ErrFutureView is the one error this loop may not drop. A new primary
-	// broadcasts its NEW-VIEW and then assigns in that view immediately, so a
-	// recipient that throws away the assignment because it won the race will
-	// never be sent it again — and the cluster waits for a replica that is
-	// waiting for a message it has already discarded.
+	// ErrFutureView is the one error this loop may not drop (see its doc).
 	held := map[ReplicaID][]letter{}
 	run := func() {
 		for len(queue) > 0 {

@@ -1,21 +1,9 @@
 package cspbft
 
-// log.go is the bounded message log: what this replica has accepted, between
-// the low water mark and the high one, and nothing else.
-//
-// IT TAKES NO Scorer AND HAS NO PATH TO ONE. Counting votes is the one place
-// where a reputation system would be catastrophic rather than merely wrong,
-// so the file that counts them cannot reach the file that ranks.
-//
-// Two rules live here and only here:
-//
-//	ONE VOTE PER (sender, kind, view, sequence). A second vote that agrees is a
-//	retransmission; a second vote that disagrees is equivocation, and the pair
-//	is handed out as transferable proof.
-//
-//	NOTHING BELOW THE LAST STABLE CHECKPOINT. Discard is what makes the log
-//	bounded, and L = 2K is what lets a replica that is one checkpoint behind
-//	still be talked to.
+// The bounded message log between the water marks. It takes no Scorer: vote counting
+// cannot reach ranking. One vote per (sender, kind, view, sequence): a repeat that
+// agrees is a retransmission, one that disagrees is equivocation. Nothing below the
+// last stable checkpoint.
 
 type logKey struct {
 	view View
@@ -131,16 +119,10 @@ func (l *messageLog) discardThrough(n Sequence) {
 	}
 }
 
-// compactBelow drops what entering a view has made unreachable.
-//
-// A message for a view below the current one is refused at the door, so an
-// entry from an older view can never gain another vote: one that is not
-// prepared now never will be, and it can appear in no certificate. Of the
-// prepared ones only the highest view at each sequence is ever used — that is
-// exactly what preparedCertificates picks — so the rest are equally
-// unreachable. What survives is at most one old entry per sequence in the
-// window, which is what keeps a long run of view changes from growing the log
-// without bound while nothing is being checkpointed.
+// compactBelow drops what entering a view made unreachable: older-view entries can
+// gain no votes, and only the highest prepared view per sequence is ever used. At
+// most one old entry per sequence survives, bounding the log across long runs of
+// view changes.
 func (l *messageLog) compactBelow(v View, q int) {
 	best := map[Sequence]View{}
 	for k, e := range l.entries {

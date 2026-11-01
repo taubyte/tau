@@ -2,13 +2,9 @@ package cspbft
 
 import "errors"
 
-// errors.go is this package's vocabulary of refusals, in one place.
-//
-// The ones that look alike are kept apart on purpose, because they mean
-// different things to whoever is reading a log line: ErrStaleView says the
-// SENDER is behind and is completely normal during a view change; ErrFutureView
-// says THIS replica is behind; ErrNotInConfiguration says the sender is not a
-// replica here at all; ErrMalformed says the sender has a bug, or is attacking.
+// Refusals that look alike are kept apart: ErrStaleView means the sender is behind
+// (normal during a view change), ErrFutureView this replica is, ErrNotInConfiguration
+// the sender is not a replica, ErrMalformed the sender is buggy or attacking.
 var (
 	// ErrTooFewReplicas is returned by New for n < 4. Three replicas tolerate
 	// zero faults, which is a majority protocol wearing a costume.
@@ -63,15 +59,9 @@ var (
 	// NORMAL: a view change leaves messages in flight. The caller drops it.
 	ErrStaleView = errors.New("cspbft: message is from an older view")
 
-	// ErrFutureView is returned by Step for a message from a view this replica
-	// has not entered. This replica is behind.
-	//
-	// THE CALLER MUST BUFFER THE MESSAGE AND RE-STEP IT once the view moves.
-	// Dropping it is not merely lossy: a new primary broadcasts its NEW-VIEW
-	// and then immediately assigns in that view, and a recipient that drops
-	// the assignment because it lost the race with the NEW-VIEW will never be
-	// sent it again. The cluster then waits for a replica that is waiting for
-	// a message it already threw away.
+	// ErrFutureView is returned by Step for a message from a view this replica has not
+	// entered. The caller must buffer it and re-step it once the view moves: a new
+	// primary assigns right after its NEW-VIEW, and a dropped assignment is never resent.
 	ErrFutureView = errors.New("cspbft: message is from a view not yet entered")
 
 	// ErrOutOfWatermarks is returned by Step for a sequence number outside

@@ -7,16 +7,13 @@ import (
 	"time"
 )
 
-// replica.go is the state machine: four inputs, one closed set of outputs, and
-// no way to reach anything else. No goroutine, no socket, no clock read, no
-// disk write.
+// The state machine: four inputs, a closed set of outputs.
 
 // Timer is one of the two local timers PBFT needs. Both are logical: the core
 // says how long, the caller says when it elapsed, and no wall clock is ever
 // compared across replicas.
 type Timer uint8
 
-// The two timers.
 const (
 	// TimerRequest is a backup waiting for a request it knows about to be
 	// executed. Its expiry is how a silent or censoring primary is noticed.
@@ -39,9 +36,8 @@ func (w Timer) String() string {
 	}
 }
 
-// Action is something the caller must do. The set is closed — ten types, and
-// adding an eleventh is a deliberate review against the protocol's invariants
-// rather than a convenience.
+// Action is something the caller must do. The set is closed; adding one is a
+// deliberate review against the protocol's invariants.
 type Action interface{ isAction() }
 
 // Send delivers one message to one replica.
@@ -58,18 +54,10 @@ type Broadcast struct{ Message Message }
 // sent but not remembered is how a crashed replica contradicts itself.
 type Persist struct{ Records []Record }
 
-// Execute is the ordering decision, which is all this package produces. It
-// carries everything a reply needs; the caller signs and sends that itself,
-// because this package never sees an application result.
-//
-// EXACTLY-ONCE IS THE APPLICATION'S, AND DELIBERATELY SO. A view change can
-// legitimately order one request twice — the new primary re-proposes what it
-// cannot prove was executed — so Execute carries Client and Serial and the
-// application's reply table suppresses the repeat. This package keeps no such
-// table, because its table would not be part of the state a checkpoint
-// digests, and after a state transfer it would be empty on one replica and
-// full on the others. Two replicas suppressing different executions is
-// divergence, which is worse than an application doing the same check twice.
+// Execute is the ordering decision. It carries what a reply needs; the caller signs
+// and sends it. Exactly-once is the application's: a view change can order one
+// request twice, and a table here would not be in the checkpointed state, so replicas
+// would diverge after a transfer.
 type Execute struct {
 	Seq      Sequence
 	View     View
@@ -97,7 +85,6 @@ type SetTimer struct {
 	After time.Duration
 }
 
-// CancelTimer stops a timer.
 type CancelTimer struct{ Which Timer }
 
 // Evidence hands out transferable proof that a replica equivocated. The caller
@@ -149,20 +136,10 @@ type Replica struct {
 	outstanding map[Digest]bool
 	assigned    map[Digest]bool
 
-	// executedAt is what this replica has executed ABOVE THE LAST STABLE
-	// CHECKPOINT, and it is what stops a client's retransmission being ordered
-	// a second time inside one checkpoint interval.
-	//
-	// ITS LIFETIME IS AGREED RATHER THAN LOCAL, and that is the whole point. A
-	// replica that took the state at a checkpoint by transfer never executed
-	// anything below it, so any memory reaching further back would be held by
-	// the replicas that were there and not by the one that was not — and then
-	// a retransmission is dropped by a primary that remembers and held
-	// outstanding by a backup that does not, which is a request that can never
-	// be ordered and a backup that forces a view change every timeout over it.
-	// Cut at the checkpoint, every replica forgets the same digests at the
-	// same point, and a retransmission that arrives after it costs one
-	// sequence number on every replica alike.
+	// executedAt is what this replica executed above the last stable checkpoint, stopping
+	// a retransmission being ordered twice within one interval. It is cut at the
+	// checkpoint so every replica, including one that took state by transfer, forgets the
+	// same digests at the same point.
 	executedAt map[Digest]Sequence
 
 	lastStable   Sequence
@@ -204,10 +181,8 @@ func (r *Replica) isPrimary() bool { return r.rot.primary(r.view) == r.self }
 
 func (r *Replica) known(id ReplicaID) bool { return contains(r.replicas, id) }
 
-// sign is the one place a Signer is called. Its failure is recorded rather
-// than returned from a dozen helpers, and then refused at the entry point,
-// because by the time a vote cannot be signed the replica is already unable to
-// take part.
+// sign is the one place a Signer is called. A failure is recorded and refused at the
+// entry point: a replica that cannot sign cannot take part.
 func (r *Replica) sign(m Message) Message {
 	sig, err := r.opts.sign(Preimage(m))
 	if err != nil {
@@ -220,13 +195,9 @@ func (r *Replica) sign(m Message) Message {
 
 func rec(m Message) Record { return Record{Kind: RecordMessage, Message: m} }
 
-// Step is the one input every protocol message goes through.
-//
-// VERIFICATION HAPPENS HERE, BEFORE THE MESSAGE TOUCHES ANY LOG. A message
-// that has not been verified must never be able to influence non-equivocation
-// state — otherwise an unsigned forgery naming replica j can make this replica
-// refuse j's real messages as equivocation, which turns one forged packet into
-// a permanent accusation.
+// Step is the one input every protocol message goes through. Verification happens
+// before the message touches any log, or a forgery naming j could make j's real
+// messages read as equivocation.
 func (r *Replica) Step(m Message) ([]Action, error) {
 	r.started = true
 	if r.broken != nil {
@@ -301,12 +272,9 @@ func (r *Replica) Timeout(w Timer) []Action {
 			target = r.pendingView + 1
 		}
 	}
-	// A VIEW THIS REPLICA HAS ALREADY ASKED FOR IS NOT ASKED FOR AGAIN, AND
-	// THE NEXT ONE IS ASKED FOR INSTEAD. The timer is already marked stopped
-	// by the time this runs, and nothing but an inbound assignment re-arms it,
-	// so a replica that escalated past a view and then entered that view
-	// through a NEW-VIEW would find startViewChange refusing and be left
-	// holding an unexecuted request with no fault detector at all.
+	// A view already asked for is not asked for again; the next is. The timer is already
+	// stopped and only an inbound assignment re-arms it, so refusing would leave the
+	// replica with no fault detector.
 	for r.sentViewChange[target] {
 		target++
 	}
@@ -333,12 +301,9 @@ func (r *Replica) onRequest(m Message) ([]Action, error) {
 		acts = append(acts, Persist{Records: []Record{rec(m)}})
 	}
 
-	// HOLDING THE BYTES IS NOT THE SAME QUESTION AS STILL WAITING FOR THEM,
-	// and reading the one as the other loses requests in both directions. A
-	// restored journal hands back payloads with nothing outstanding behind
-	// them, and a new primary legitimately re-proposes at a second sequence a
-	// request this replica already holds — so what decides is whether this
-	// replica is waiting for it, has assigned it, or has executed it.
+	// Holding the bytes is not still waiting for them: a restored journal returns
+	// payloads with nothing outstanding, and a new primary may re-propose a held request.
+	// Whether this replica waits for, assigned or executed it decides.
 	_, done := r.executedAt[m.Digest]
 	known := done || r.outstanding[m.Digest] || r.assigned[m.Digest]
 	if !known {
@@ -381,11 +346,8 @@ func (r *Replica) assignPending() []Action {
 		if r.broken != nil {
 			return nil
 		}
-		// THE LOG DECIDES BEFORE THE VOTE LEAVES, not after. A contradiction
-		// found once the Broadcast is already in the slice is a second signed
-		// assignment of one sequence number that the caller has been told to
-		// send — which is the fault the whole protocol is built to make
-		// impossible, produced by a replica that is otherwise correct.
+		// The log decides before the vote leaves, or a contradiction found after would
+		// already be a second signed assignment in the slice.
 		e, eq, err := r.log.accept(pp)
 		if eq != nil {
 			acts = append(acts, Evidence{Proof: *eq}, Notice{Err: err})
@@ -416,11 +378,8 @@ func (r *Replica) onPrePrepare(m Message) ([]Action, error) {
 		return nil, err
 	}
 	if e := r.log.at(m.View, m.Seq); e != nil && e.prePrepare != nil && e.prePrepare.Digest != m.Digest {
-		// A SECOND ASSIGNMENT IS A CONTRADICTION WHETHER OR NOT THE PAYLOAD
-		// BEHIND IT IS HERE. Held below until the bytes arrive, the proof
-		// would depend on the network delivering a request this replica has
-		// no other use for — and the primary that equivocated is the one
-		// deciding whether it ever does.
+		// A second assignment is a contradiction whether or not its payload is here, so the
+		// proof does not depend on the equivocating primary sending the bytes.
 		return []Action{Evidence{Proof: Equivocation{A: *e.prePrepare, B: m}}}, ErrEquivocation
 	}
 	if _, ok := r.requests[m.Digest]; !ok && !m.Digest.IsNull() {
@@ -442,11 +401,8 @@ func (r *Replica) acceptPrePrepare(m Message) ([]Action, error) {
 	if err != nil {
 		return nil, err
 	}
-	// THE ASSIGNMENT IS JOURNALLED, NOT ONLY THE VOTE ON IT. A prepared
-	// certificate is a pre-prepare plus the prepares that match it, and a
-	// replica that restarted holding only its own vote could not produce the
-	// certificate its next VIEW-CHANGE has to carry — which is the same thing
-	// as agreeing to forget an assignment a quorum already made.
+	// The assignment is journalled, not only the vote, so a restarted replica can still
+	// produce the certificate its next VIEW-CHANGE carries.
 	records := []Record{rec(m)}
 	var acts []Action
 	var out []Message
@@ -471,15 +427,10 @@ func (r *Replica) acceptPrePrepare(m Message) ([]Action, error) {
 	return acts, nil
 }
 
-// hold keeps an assignment until its payload arrives.
-//
-// THE BOUND IS ON MESSAGES AND NOT ON DIGESTS. One digest can be assigned at
-// every sequence in the window, and a faulty primary can retransmit any of
-// them forever, so counting distinct digests bounds nothing an adversary
-// controls — the slice under one key grows instead. What is kept is at most
-// one assignment per (view, sequence) per digest, and at most 4K in total:
-// twice the window, which leaves exactly the room a second digest at one
-// sequence needs, because that pair is the proof the primary equivocated.
+// hold keeps an assignment until its payload arrives. The bound counts messages, not
+// digests, since a faulty primary can retransmit one digest forever: at most one per
+// (view, sequence) per digest and 4K total, room for the second digest that proves
+// equivocation.
 func (r *Replica) hold(m Message) {
 	for _, h := range r.orphans[m.Digest] {
 		if h.View == m.View && h.Seq == m.Seq {
@@ -669,14 +620,9 @@ func (r *Replica) inWatermarks(n Sequence) error {
 	return nil
 }
 
-// RequestDigest is what replicas agree about when they order a request: the
-// client, its counter and the payload, length-delimited so no two distinct
-// requests can produce one digest.
-//
-// A CLIENT COMPUTES THIS ITSELF and puts it in Message.Digest; Step refuses a
-// request whose digest is not the digest of its content, because a request
-// that says it is something else would be ordered under one name and executed
-// under another.
+// RequestDigest is what replicas agree about when ordering a request: client,
+// counter and payload, length-delimited. A client computes it; Step refuses a request
+// whose digest does not match its content.
 func RequestDigest(h Hasher, client ClientID, serial uint64, p Proposal) Digest {
 	b := make([]byte, 0, 32+len(client)+len(p))
 	b = append(b, "cspbft/request/v1\x00"...)
