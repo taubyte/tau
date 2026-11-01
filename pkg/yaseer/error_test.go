@@ -106,14 +106,14 @@ func TestFork_Query(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// Both should exist
-		var origVal, forkVal string
-		seer.Get("fork").Get("test").Value(&origVal)
-		seer.Get("fork").Get("test").Value(&forkVal)
-
-		// The last commit wins, but both queries should work independently
-		_ = origVal
-		_ = forkVal
+		// The last commit wins.
+		var got string
+		if err := seer.Get("fork").Get("test").Value(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != "forked_value" {
+			t.Fatalf("got %q, want the last commit's %q", got, "forked_value")
+		}
 	})
 
 	t.Run("branching is independent (immutable queries)", func(t *testing.T) {

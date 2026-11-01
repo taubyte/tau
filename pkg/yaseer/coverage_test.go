@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"hash/crc32"
-	"io/fs"
 	"os"
 	"strings"
 	"testing"
@@ -697,12 +696,6 @@ func TestSyncReadOnlyFails(t *testing.T) {
 		t.Error("expected Sync to fail on read-only FS")
 	}
 }
-
-// Compile-time check for sentinel errors we test against.
-var _ = errors.New
-
-// Sanity: fs.ErrNotExist still resolves.
-var _ = fs.ErrNotExist
 
 // ---------------------------------------------------------------
 //  yaml.Marshal error path in encodeOpsFrame

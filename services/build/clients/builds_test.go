@@ -13,7 +13,6 @@ import (
 	buildv2 "github.com/taubyte/tau/pkg/proto/gen/tau/build/v2"
 	"github.com/taubyte/tau/services/build"
 	"github.com/taubyte/tau/services/build/frontend"
-	"github.com/taubyte/tau/services/worker"
 )
 
 var _ frontend.Backend = (*BuildClient)(nil)
@@ -355,9 +354,6 @@ func TestFollowNeedsSomewhereToPutIt(t *testing.T) {
 	_, err := c.Follow(t.Context(), "job", 1, 0, nil)
 	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
 }
-
-// Not worker.Artifacts: that seam also passes a kind, which the composer drops.
-var _ = worker.Artifacts(nil)
 
 func TestArtifact(t *testing.T) {
 	c := newBuilds(t, &fakeBackend{built: func(project, environment, resource string) (string, error) {

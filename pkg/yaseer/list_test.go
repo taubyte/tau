@@ -219,9 +219,8 @@ func TestRootList(t *testing.T) {
 	t.Run("List handles empty root", func(t *testing.T) {
 		emptySeer := newTestSeer(t)
 
-		list, err := emptySeer.List()
+		_, err := emptySeer.List()
 		assert.NilError(t, err)
-		_ = list // May be empty or nil
 	})
 
 	t.Run("List handles ReadDir error gracefully", func(t *testing.T) {

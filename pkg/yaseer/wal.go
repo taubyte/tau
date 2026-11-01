@@ -134,10 +134,10 @@ func (s *Seer) appendCommitWAL(ops []op) error {
 	// bytes.Buffer.Write never fails; assembly is in-memory only.
 	var buf bytes.Buffer
 	buf.WriteString(frameMagic)
-	_ = binary.Write(&buf, binary.BigEndian, uint32(len(body)))
+	binary.Write(&buf, binary.BigEndian, uint32(len(body)))
 	buf.Write(body)
 	sum := crc32.ChecksumIEEE(buf.Bytes()[4:]) // frameLen..end-of-body
-	_ = binary.Write(&buf, binary.BigEndian, sum)
+	binary.Write(&buf, binary.BigEndian, sum)
 
 	f, err := s.fs.OpenFile(s.walPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o640)
 	if err != nil {
@@ -163,7 +163,7 @@ func encodeOpsFrame(ops []op) ([]byte, error) {
 	// function can fail are opToWire (unknown handler), explicit
 	// length checks, and yaml.Marshal — handled below.
 	var buf bytes.Buffer
-	_ = binary.Write(&buf, binary.BigEndian, uint16(len(ops)))
+	binary.Write(&buf, binary.BigEndian, uint16(len(ops)))
 	for _, o := range ops {
 		wire, err := opToWire(o)
 		if err != nil {
@@ -173,7 +173,7 @@ func encodeOpsFrame(ops []op) ([]byte, error) {
 		if len(o.name) > 0xFFFF {
 			return nil, fmt.Errorf("op name too long (%d bytes)", len(o.name))
 		}
-		_ = binary.Write(&buf, binary.BigEndian, uint16(len(o.name)))
+		binary.Write(&buf, binary.BigEndian, uint16(len(o.name)))
 		buf.WriteString(o.name)
 		var val []byte
 		if o.value != nil {
@@ -183,7 +183,7 @@ func encodeOpsFrame(ops []op) ([]byte, error) {
 			}
 			val = marshalled
 		}
-		_ = binary.Write(&buf, binary.BigEndian, uint32(len(val)))
+		binary.Write(&buf, binary.BigEndian, uint32(len(val)))
 		buf.Write(val)
 	}
 	return buf.Bytes(), nil
