@@ -10,11 +10,8 @@ import (
 	"strings"
 )
 
-// THE PATH OF A REQUEST IS A TEMPLATE FROM A CLOSED SET, never a string a call
-// site pasted together, for the reason pkg/forge/bitbucket gives: a segment
-// reaches a path through exactly one function, which escapes it and refuses a
-// segment that would not address itself, and a query parameter a route did not
-// declare is refused rather than sent.
+// A request path is a template from a closed set, for pkg/forge/bitbucket's
+// reasons.
 type route struct {
 	method   string
 	template string
@@ -22,7 +19,6 @@ type route struct {
 	params   []string
 }
 
-// hole is the template segment a call fills in.
 const hole = "{}"
 
 func newRoute(method, template string, params ...string) *route {
@@ -35,8 +31,7 @@ const (
 	repo = "projects/" + hole + "/repos/" + hole
 )
 
-// THE ROUTING TABLE. Everything this driver asks a Bitbucket Server is here.
-// A collection pages with "start" and "limit".
+// The routing table. A collection pages with "start" and "limit".
 var (
 	// whoami answers the authenticated user's slug as plain text; it is the
 	// one question REST 1.0 has no resource for.
@@ -59,7 +54,6 @@ var (
 	routeRemovePushHook   = newRoute(http.MethodDelete, api+repo+"/webhooks/"+hole)
 )
 
-// request is one route with the arguments its holes take.
 type request struct {
 	route *route
 	args  []string
@@ -73,7 +67,6 @@ func (rq request) with(query url.Values) request {
 	return rq
 }
 
-// escapedSegments is the one place a string becomes part of a path here.
 func escapedSegments(segments []string) (string, error) {
 	escaped := make([]string, len(segments))
 	for i, s := range segments {
@@ -86,8 +79,7 @@ func escapedSegments(segments []string) (string, error) {
 }
 
 // addressesItself refuses a segment that, escaped perfectly, still names
-// something else once a resolver removes dot segments: ".." in a delete is the
-// collection above it, with the caller's credential attached.
+// something else once dot segments are removed.
 func addressesItself(segment string) error {
 	if segment == "" {
 		return errors.New("an empty path segment addresses the collection the request is under")
@@ -98,7 +90,6 @@ func addressesItself(segment string) error {
 	return nil
 }
 
-// bounded cuts a string somebody else chose to a length an error may carry.
 func bounded(s string) string {
 	if len(s) <= maxHostString {
 		return s
@@ -106,7 +97,6 @@ func bounded(s string) string {
 	return s[:maxHostString] + "…"
 }
 
-// path is the escaped path this request names.
 func (rq request) path() (string, error) {
 	r := rq.route
 	segments := make([]string, 0, len(r.segments))

@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// A request is only ever the route it was declared as.
 func TestARequestIsItsRoute(t *testing.T) {
 	_, err := routeRepository.at("ACME").path()
 	assert.ErrorContains(t, err, "takes 2 arguments and was given 1")

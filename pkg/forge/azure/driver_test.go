@@ -60,8 +60,6 @@ func TestNewRefusesAnIncompleteDeployment(t *testing.T) {
 	}
 }
 
-// Azure DevOps cannot sign a delivery, so the hook faces are absent and asking
-// for one is a refusal by name rather than a hook tau could not verify.
 func TestPushHooksAreUnsupported(t *testing.T) {
 	f := newFixture(t)
 	s, k := session(t, f, "acme/site/_git/site", goodToken)
@@ -134,8 +132,6 @@ func TestWhoami(t *testing.T) {
 	assert.ErrorContains(t, err, "belongs to nobody")
 }
 
-// TestA203IsARefusedCredential: Azure DevOps answers a credential it will not
-// take with 203 and a sign-in page. Read as success, a deletion "succeeds".
 func TestA203IsARefusedCredential(t *testing.T) {
 	f := newFixture(t)
 	s, k := session(t, f, "acme/scratch/_git/scratch", sickToken)
@@ -225,7 +221,6 @@ func TestTheListingSkipsWhatItCannotName(t *testing.T) {
 	assert.ElementsMatch(t, []string{"pay", "public", "site", "scratch"}, seen, "the disabled and the foreign are skipped")
 }
 
-// session2 is a host session for tok.
 func session2(t *testing.T, f *fixture, tok string) *forge.Session {
 	t.Helper()
 	s, err := registry(t, f).Host(f.Host(), forge.Token(tok))
@@ -338,7 +333,6 @@ func TestCloneAddresses(t *testing.T) {
 	_, err = c.CloneAddress(dot, forge.HTTPS)
 	assert.Error(t, err)
 
-	// The client refuses a key its session would have refused, too.
 	_, err = client(t, drv).Repository(ctx, other)
 	assert.Error(t, err)
 	_, err = client(t, drv).(forge.Creator).Create(ctx, other, forge.CreateOptions{})

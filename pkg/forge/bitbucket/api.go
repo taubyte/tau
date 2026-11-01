@@ -29,9 +29,8 @@ const (
 	maxDrainOnError = 4 << 10
 )
 
-// client is a driver acting as one credential. It is stateless, and it holds
-// no copy of the credential: the token reaches exactly one place, the closure
-// in bind that writes the header.
+// client holds no copy of the credential: only the closure in bind that writes
+// the header does.
 type client struct {
 	d    *driver
 	http *http.Client
@@ -47,10 +46,8 @@ var (
 	_ forge.CloneAddresses = (*client)(nil)
 )
 
-// bind builds the client for one token. The credential is pinned to the API
-// host, and no redirect is followed at all: Bitbucket answers nothing tau asks
-// with a redirect it needs, and a followed one is a write landing on whatever
-// the forge named, or a GET reading somebody else's 200 as success.
+// The credential is pinned to the API host and no redirect is followed: a
+// followed one lands a write wherever the forge named.
 func (d *driver) bind(token string) *client {
 	return &client{
 		d: d,
@@ -80,14 +77,12 @@ type statusError struct {
 	Status int
 }
 
-// Refused is a 4xx: the forge's own answer refusing the request.
 func (e *statusError) Refused() bool { return e.Status >= 400 && e.Status < 500 }
 
 func (e *statusError) Error() string {
 	return fmt.Sprintf("forge/bitbucket: %s %s answered %d %s", e.Method, e.Path, e.Status, http.StatusText(e.Status))
 }
 
-// send is the ONE place this driver builds an HTTP request.
 func (c *client) send(ctx context.Context, rq request, in, out any) error {
 	path, err := rq.path()
 	if err != nil {
@@ -143,15 +138,9 @@ func (c *client) send(ctx context.Context, rq request, in, out any) error {
 	return nil
 }
 
-// classify maps a status onto forge's taxonomy, and only the two statuses that
-// mean one thing:
-//
-//	401  the forge refused this credential
-//	404  the host serves no such repository — which on Bitbucket also covers a
-//	     private one this credential may not see
-//
-// A 403 is NOT a CredentialError: on Bitbucket it is a token missing a scope or
-// a workspace that refuses the caller, and it is returned as what it is.
+// 401 is the credential refused, 404 no such repository (or a private one this
+// credential may not see). A 403 is a missing scope or a refusing workspace,
+// and stays what it is.
 func (c *client) classify(err error, key repokey.Key) error {
 	var se *statusError
 	if !errors.As(err, &se) {
@@ -170,7 +159,6 @@ func (c *client) classifyResource(err error) error {
 	return c.classify(err, repokey.Key{})
 }
 
-// repoJSON is the whole of what this driver reads out of a repository answer.
 type repoJSON struct {
 	FullName   string `json:"full_name"`
 	IsPrivate  bool   `json:"is_private"`
@@ -194,13 +182,9 @@ func (r repoJSON) clone(name string) string {
 	return ""
 }
 
-// repository turns Bitbucket's answer into forge's, deriving the key from the
-// https clone link the forge returned and never from the question.
-//
-// Bitbucket writes the caller's username into that link ("https://alice@…").
-// A username is an identity and not a secret, so repokey accepts it — and it is
-// removed from the address this driver hands on, because the identity a clone
-// spends is the platform's to choose.
+// repository derives the key from the https clone link the forge returned.
+// Bitbucket writes the caller's username into that link; it is removed from the
+// address handed on.
 func (c *client) repository(r repoJSON, asked string) (forge.Repository, error) {
 	href := r.clone("https")
 	switch {

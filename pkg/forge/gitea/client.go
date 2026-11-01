@@ -12,23 +12,13 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// listPageSize is Gitea's default MAX_RESPONSE_ITEMS. It is an ASK, not a
-// promise: an instance configured lower answers fewer and says nothing, which is
-// why the pager below stops on an EMPTY page and never on a short one.
-// Pagination is a page counter rather than a walk of the Link header: the header's
-// next URL is a string the host chooses, and following one is following a host
-// wherever it points. The pin would refuse another host, but a page counter
-// cannot be pointed anywhere at all.
+// listPageSize is an ask: an instance with a lower MAX_RESPONSE_ITEMS answers
+// fewer, so the pager stops on an empty page, never a short one. It counts pages
+// rather than following the Link header, a URL the host chooses.
 const listPageSize = 50
 
-// deployKeyReadOnly is written true at the one place it exists.
-//
-// The interface has no parameter for it and this constant is not configurable.
-// tau's deploy key exists so a builder can CLONE; nothing under services/ pushes
-// with one. v1 installs a write key on every repository it registers — not by
-// decision but because it sets a title and a key and its SDK's zero value for
-// read_only is false — and removes none, so every repository it has ever
-// registered carries a standing write credential it issued and forgot.
+// There is no parameter for it: a builder only clones, and a write key nothing
+// removes is a standing credential.
 const deployKeyReadOnly = true
 
 // Whoami is who this credential belongs to, and it doubles as the only honest
@@ -57,23 +47,9 @@ type userJSON struct {
 	Email string `json:"email"`
 }
 
-// Access is the authorization question, answered from the repository fetch
-// itself: Gitea returns the caller's own permissions with the repository, so
-// this is one request and not two.
-//
-// A definitive answer is a value, INCLUDING (AccessNone, nil). Everything that
-// is not an answer is an error — see classify — so an outage, a rate limit or a
-// blocked OAuth app can never arrive at a consumer as a denial.
-//
-// AND IT IS BOUND TO THE KEY IT WAS ASKED ABOUT. `permissions` is a nameless
-// field: it describes whatever repository the body describes, so reading it as
-// the answer for a different key answers a question nobody asked. A forge that
-// answers a renamed or TRANSFERRED repository by naming the one it became — and
-// a transferred name is free for anyone to re-register the moment it is
-// transferred, so "admin on whatever victim/pay currently points at" is a grant
-// on a name an attacker may already hold. The same fetch already carries
-// clone_url and get already derives a key from it; all that was missing was
-// asking whether that key is the one this call was about.
+// Gitea returns the caller's permissions with the repository, so this is one
+// request. The verdict is bound to the key asked about: permissions is nameless,
+// and a transferred name may be re-registered by anyone.
 func (c *client) Access(ctx context.Context, key repokey.Key) (forge.Access, error) {
 	r, repo, err := c.get(ctx, key)
 	if err != nil {
@@ -85,13 +61,8 @@ func (c *client) Access(ctx context.Context, key repokey.Key) (forge.Access, err
 	return r.Permissions.access(), nil
 }
 
-// Repository REPORTS, and so it does not bind. A forge.Repository names itself:
-// the key is derived from the clone address the forge returned, so a rename
-// arrives as a different key rather than as an error, and a consumer that reads
-// it sees the move the forge is reporting. That asymmetry with Access is the
-// point — a value that names itself may differ from the question; a VERDICT may
-// not, because the verdict carries no name and would be filed under the
-// question's.
+// Repository reports, so it does not bind: a record names itself, and a rename
+// arrives as a different key. A verdict carries no name, so Access must bind.
 func (c *client) Repository(ctx context.Context, key repokey.Key) (forge.Repository, error) {
 	_, repo, err := c.get(ctx, key)
 	if err != nil {
@@ -100,13 +71,8 @@ func (c *client) Repository(ctx context.Context, key repokey.Key) (forge.Reposit
 	return repo, nil
 }
 
-// get is the one fetch behind both Access and Repository. It returns the body
-// AND the repository derived from it, so the key the forge named is computed
-// once, by the same code, whichever of the two asked — and the two then differ
-// only in what they do about a disagreement, which is a decision each states
-// for itself rather than a second derivation that could drift from this one.
-//
-// Case is not a disagreement: both keys come from repokey, which lowercases.
+// get derives the repository once for Access and Repository, which differ only
+// in what they do about a disagreement. Case is none: repokey lowercases.
 func (c *client) get(ctx context.Context, key repokey.Key) (repoJSON, forge.Repository, error) {
 	var r repoJSON
 	if err := c.send(ctx, routeRepository.at(key.Owner, key.Name), nil, &r); err != nil {
@@ -119,14 +85,9 @@ func (c *client) get(ctx context.Context, key repokey.Key) (repoJSON, forge.Repo
 	return r, repo, nil
 }
 
-// ListRepositories walks the repositories this credential can reach.
-//
-// /user/repos is every repository the credential owns, collaborates on, or
-// reaches through an organization team — Gitea's own default and the
-// interface's "readable by this credential". A repository whose clone URL this layer cannot name, or
-// whose shape this driver cannot address, is skipped rather than yielded with a
-// key nothing could act on — the alternative is failing a whole listing over
-// one repository the caller never asked about.
+// /user/repos is every repository the credential owns, collaborates on or
+// reaches through a team. One whose clone URL cannot be named or whose shape
+// cannot be addressed is skipped.
 func (c *client) ListRepositories(ctx context.Context, yield func(forge.Repository) bool) error {
 	stopped := false
 	err := pages(c.d.host, func(page int) (int, error) {
@@ -161,14 +122,9 @@ type createRepoRequest struct {
 	Private     bool   `json:"private"`
 }
 
-// Create makes the repository AT THE KEY IT WILL BE ADDRESSED BY, namespace
-// included. v1 cannot express that — both of its create paths pass an empty org
-// and can therefore only create under the authenticated account, even where its
-// tenancy names one — so the owner is read here and the endpoint chosen from it.
-//
-// The extra Whoami is what buys that: POST /orgs/{me}/repos is a 404 because a
-// user is not an organization, so which endpoint applies genuinely depends on
-// who the credential is.
+// Create makes the repository at its key, namespace included. Which endpoint
+// applies depends on who the credential is: POST /orgs/{me}/repos is a 404 for a
+// user.
 func (c *client) Create(ctx context.Context, key repokey.Key, opts forge.CreateOptions) (forge.Repository, error) {
 	me, err := c.Whoami(ctx)
 	if err != nil {
@@ -190,19 +146,14 @@ func (c *client) Create(ctx context.Context, key repokey.Key, opts forge.CreateO
 	if err != nil {
 		return forge.Repository{}, err
 	}
-	// The derived key is checked against the argument, the same way get() checks
-	// it for a read. Here it is a repository MADE somewhere nobody asked for, and
-	// returning it would file it under a name that does not name it — which on a
-	// forge that silently created it elsewhere means tau holds a name it does not
-	// own and anyone may register.
+	// A repository made somewhere nobody asked for would be filed under a name that
+	// does not name it, one anyone may register.
 	if repo.Key != key {
 		return forge.Repository{}, fmt.Errorf("forge/gitea: asked for %q and the forge created %q", key, repo.Key)
 	}
 	return repo, nil
 }
 
-// Delete is what makes AccessAdmin a real rung rather than a speculative one.
-// v1's CLI discovers it lacked admin by string-matching an error body.
 func (c *client) Delete(ctx context.Context, key repokey.Key) error {
 	if err := c.send(ctx, routeDeleteRepository.at(key.Owner, key.Name), nil, nil); err != nil {
 		return c.classify(err, key)
@@ -264,7 +215,6 @@ type deployKeyJSON struct {
 	Key   string `json:"key"`
 }
 
-// ListDeployKeys pages the repository's deploy keys.
 func (c *client) ListDeployKeys(ctx context.Context, key repokey.Key) ([]forge.InstalledDeployKey, error) {
 	var out []forge.InstalledDeployKey
 	err := pages(c.d.host, func(page int) (int, error) {
@@ -292,7 +242,6 @@ type hookJSON struct {
 	} `json:"config"`
 }
 
-// ListPushHooks pages the repository's webhooks.
 func (c *client) ListPushHooks(ctx context.Context, key repokey.Key) ([]forge.InstalledPushHook, error) {
 	var out []forge.InstalledPushHook
 	err := pages(c.d.host, func(page int) (int, error) {
@@ -351,16 +300,9 @@ type hookConfig struct {
 	Secret      string `json:"secret"`
 }
 
-// RegisterPushHook subscribes to pushes and NOTHING ELSE. The events list is
-// one element because every additional event is a delivery this deployment then
-// has to have an opinion about. The type is "gitea", the hook kind whose
-// deliveries carry the payload and the signature this driver and the core
-// read; Forgejo accepts the same name.
-//
-// wire is passed through verbatim. It is the string forge.Scheme.Wire derived
-// from a Secret this driver has never seen and cannot reach, and re-encoding it
-// here would register a hook that looks perfect and rejects every delivery it
-// ever receives.
+// RegisterPushHook subscribes to pushes and nothing else. The type is "gitea",
+// whose deliveries carry the payload and signature read here; Forgejo accepts
+// it. wire is passed through verbatim.
 func (c *client) RegisterPushHook(ctx context.Context, key repokey.Key, callback *url.URL, wire string) (forge.Handle, error) {
 	var out resourceJSON
 	body := createHookRequest{
@@ -400,26 +342,11 @@ func handle(id int64) (forge.Handle, error) {
 	return forge.Handle(strconv.FormatInt(id, 10)), nil
 }
 
-// handleSegment says what a handle IS: the name of ONE resource under the ONE
-// collection its route names, and therefore ONE path segment.
-//
-// An empty handle addresses the COLLECTION and would answer a removal of one
-// thing with an answer about all of them. A handle spanning a "/" addresses a
-// resource under a collection nobody named — .../keys/a/b is not a key under
-// .../keys — and it does that with no dot segment in it, so the traversal rule
-// the route layer holds does not reach it. The route layer cannot hold this one
-// either: a "/" inside a segment is legitimate there, which is the whole of how
-// GitLab addresses a project, so the rule lives where the value's SHAPE is
-// known and that is here.
-//
-// THE DOT-SEGMENT REFUSAL IS HERE TOO, at the door, and again at the route. See
-// addressesItself for what it is and IsActiveMember for why a refusal at the
-// route alone is too late: an operation is a sequence, and the last request is
-// not the first one to spend the credential.
-//
-// It does not escape. Escaping is what the route does with every argument it is
-// given, and a second escape here would be one this driver has to remember and
-// Gitea would receive doubled.
+// handleSegment: a handle names one resource under one collection, so one
+// segment. An empty one addresses the collection, and one spanning a "/"
+// addresses a resource under a collection nobody named, with no dot segment for
+// the route layer to catch; dot segments are refused here too, before the first
+// request spends the credential. It does not escape: the route does.
 func handleSegment(h forge.Handle) (string, error) {
 	if h == "" {
 		return "", errors.New("forge/gitea: removing a resource needs the handle the forge gave it")
@@ -433,28 +360,13 @@ func handleSegment(h forge.Handle) (string, error) {
 	return string(h), nil
 }
 
-// CloneAddress is the address a clone uses and the account it presents as, both
-// derived from the key with no request and no credential in the URL.
-//
-// No token is spliced into the remote — a token there lands in .git/config on disk, in process arguments, and
-// in every error quoting the remote. What crosses here are facts; the token
-// belongs in the transport.
-//
-// A HOST CARRYING A PORT CAN ONLY HAVE ONE OF THESE TWO RIGHT, and the key
-// cannot say which. repokey has one host string, and the port in it came from
-// whichever transport the clone URL that named the repository used — so on
-// https://git.example:8443/... the ssh spelling below carries 8443, which is
-// an https port. Repository() returns the addresses the FORGE gives, which are
-// authoritative; this method is the offline derivation, and a caller that needs
-// certainty on a ported host should ask the forge.
+// CloneAddress is derived from the key with no request and no credential in the
+// URL. On a host with a port only one of the two addresses can be right, since
+// the key's port came from whichever transport named the repository;
+// Repository() returns the forge's own addresses.
 func (c *client) CloneAddress(key repokey.Key, over forge.Protocol) (forge.Address, error) {
-	// A CLONE ADDRESS IS NOT A REQUEST AND IS STILL A URL WITH A KEY IN IT.
-	// repokey's grammar accepts a "?" and a "#" inside a segment — it splits on
-	// "/" and refuses whitespace, and says nothing about the characters a URL
-	// gives meaning to — so a name spelled pay%23evil arrives here as "pay#evil"
-	// and, pasted in raw, would name the repository BEFORE the "#" to every
-	// clone tau ever runs with this address. So it goes through the same
-	// function a request path's segments go through.
+	// repokey lets "?" and "#" through inside a segment, so a clone address goes
+	// through the same escaping as a request path.
 	escaped, err := escapedSegments([]string{key.Owner, key.Name})
 	if err != nil {
 		return forge.Address{}, err

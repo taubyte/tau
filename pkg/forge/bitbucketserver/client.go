@@ -16,10 +16,8 @@ import (
 )
 
 const (
-	// maxResponseBody bounds what this driver will decode.
 	maxResponseBody = 8 << 20
 
-	// maxHostString bounds a string a HOST chose before it reaches an error.
 	maxHostString = 256
 
 	// maxErrorBody is how much of a non-2xx body is read: enough for the
@@ -31,9 +29,8 @@ const (
 	authorisationException = "AuthorisationException"
 )
 
-// client is a driver acting as one credential. It holds no copy of the
-// credential: the token reaches exactly one place, the closure that writes the
-// header.
+// client holds no copy of the credential: only the closure writing the header
+// does.
 type client struct {
 	d    *driver
 	http *http.Client
@@ -49,9 +46,8 @@ var (
 	_ forge.CloneAddresses = (*client)(nil)
 )
 
-// bind pins the credential to the host and follows no redirect: nothing tau
-// asks is answered with one it needs, and a followed one is a write landing
-// wherever the forge named.
+// bind pins the credential to the host and follows no redirect: a followed one
+// lands a write wherever the forge named.
 func (d *driver) bind(token string) *client {
 	return &client{
 		d: d,
@@ -81,7 +77,6 @@ type statusError struct {
 	Authz bool
 }
 
-// Refused is a 4xx: the forge's own answer refusing the request.
 func (e *statusError) Refused() bool { return e.Status >= 400 && e.Status < 500 }
 
 func (e *statusError) Error() string {
@@ -92,7 +87,6 @@ func (e *statusError) Error() string {
 	return fmt.Sprintf("forge/bitbucketserver: %s %s answered %d %s", e.Method, e.Path, e.Status, reason)
 }
 
-// errorBody is the one thing read out of a refusal: which exceptions it names.
 type errorBody struct {
 	Errors []struct {
 		ExceptionName string `json:"exceptionName"`
@@ -108,8 +102,7 @@ func (b errorBody) authz() bool {
 	return false
 }
 
-// send is the ONE place this driver builds an HTTP request. out may be a
-// *string, for the one route that answers plain text.
+// out may be a *string, for the one route that answers plain text.
 func (c *client) send(ctx context.Context, rq request, in, out any) error {
 	path, err := rq.path()
 	if err != nil {
@@ -195,13 +188,11 @@ func (c *client) classify(err error, key repokey.Key) error {
 	return err
 }
 
-// link is one of Bitbucket's named links.
 type link struct {
 	Href string `json:"href"`
 	Name string `json:"name"`
 }
 
-// repoJSON is the whole of what this driver reads out of a repository.
 type repoJSON struct {
 	Slug    string `json:"slug"`
 	Name    string `json:"name"`
@@ -223,14 +214,9 @@ func (r repoJSON) clone(name string) string {
 	return ""
 }
 
-// repository turns Bitbucket's answer into forge's, deriving the key from the
-// https clone link the forge returned — through this driver's own spelling —
-// and checking that the project and slug the answer names are the repository
-// that link is.
-//
-// Bitbucket writes the caller's username into that link ("https://alice@…").
-// It is an identity and not a secret, and it is removed from the address
-// handed on: the identity a clone spends is the platform's to choose.
+// repository derives the key from the https clone link through this driver's
+// spelling, and checks the project and slug the answer names are that
+// repository. The caller's username in the link is removed from the address.
 func (c *client) repository(r repoJSON, asked string) (forge.Repository, error) {
 	href := r.clone("http")
 	switch {

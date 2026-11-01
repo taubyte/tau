@@ -1,54 +1,20 @@
 // Package bitbucketserver is the forge driver for Bitbucket Server and Data
-// Center, which speak /rest/api/1.0 on a host of their own. It is not
-// Bitbucket Cloud: that is api.bitbucket.org/2.0, other nouns, and
-// pkg/forge/bitbucket.
+// Center, /rest/api/1.0 on a host of their own (Cloud is pkg/forge/bitbucket).
 //
-// # One repository, two addresses, one key
+// A repository is cloned at https://{host}/scm/{PROJECT}/{slug}.git and
+// ssh://git@{host}:7999/{PROJECT}/{slug}.git, which repokey reads as two
+// repositories; the driver's Spellings files both under {host}/{project}/{slug}.
+// A personal project is "~{user}". A project key is stored upper case, so a
+// request upper-cases it back. A server under a context path is not addressed.
 //
-// A repository is a project and a slug, and Bitbucket serves its clones at
+// Permission is a filter, not a field: /repos?permission=REPO_ADMIN, and a
+// visible repository in neither listing is AccessRead. A 401 naming an
+// AuthorisationException refuses a permission, not the credential. A deploy key
+// is an access key under /rest/keys/1.0, sent as REPO_READ only. A push is
+// repo:refs_changed, signed X-Hub-Signature sha256=.
 //
-//	https://{host}/scm/{PROJECT}/{slug}.git
-//	ssh://git@{host}:7999/{PROJECT}/{slug}.git
-//
-// which repokey, knowing no forge, reads as two repositories — one under an
-// extra "scm" segment, one on another port. The driver's forge.Spellings says
-// what both are: the key {host}/{project}/{slug}, lowercased like every key. The
-// registry binds the ssh host:port to this driver for spelling alone, so every
-// consumer keying an address through forge.Registry.Key files both addresses,
-// and every push, under one key. A personal repository's project is "~{user}".
-//
-// Bitbucket stores a project key in upper case and a key is lowercase, so a
-// request upper-cases it back; a personal project's "~{user}" is a user slug,
-// already lowercase. A server under a context path (https://host/bitbucket/)
-// spells its paths differently and is not addressed.
-//
-// # Where Bitbucket Server differs
-//
-//   - PERMISSION IS A FILTER, NOT A FIELD. A repository answer says nothing
-//     about what the caller may do to it; /repos?permission=REPO_ADMIN lists
-//     the repositories the caller administers. A visible repository in neither
-//     the admin nor the write listing is AccessRead — VISIBILITY IS NOT
-//     PERMISSION.
-//   - A 401 IS TWO THINGS. Bitbucket answers both a refused credential and an
-//     authenticated caller lacking a permission with 401, and tells them apart
-//     only by the exception it names. An AuthorisationException is a refusal
-//     about the repository, not about the credential, and is returned as what
-//     it is rather than as a *forge.CredentialError.
-//   - A DEPLOY KEY IS AN ACCESS KEY under /rest/keys/1.0, and it carries its
-//     permission. This driver sends REPO_READ and nothing else.
-//   - A PUSH IS repo:refs_changed, signed X-Hub-Signature with "sha256=" and
-//     lowercase hex — forge.SchemeBitbucketSHA256, verified by the core. The
-//     delivery names its repository by project key and slug.
-//
-// # What it cannot answer
-//
-//   - MEMBERSHIP. A project's members are permissions granted to users and
-//     groups, read only by a project administrator; a deployment credential
-//     that is not one reads every non-member as "cannot look", which the
-//     Memberships contract forbids reading as "not a member".
-//   - A PUSH PROBE. The driver speaks REST, not git.
-//
-// No SDK: what tau asks Bitbucket is the requests in route.go.
+// Membership is not answered (only a project administrator reads it), nor a
+// push probe.
 package bitbucketserver
 
 import (
@@ -72,8 +38,6 @@ const (
 	scmSegment = "scm"
 )
 
-// driver is one Bitbucket Server, constructed for the host it answers for. It
-// carries no caller credential.
 type driver struct {
 	host string
 	// sshHost is the repokey host the server's ssh addresses are on: the same
@@ -92,10 +56,8 @@ var (
 	_ forge.Spellings  = (*driver)(nil)
 )
 
-// Option is a deployment fact about one Bitbucket Server.
 type Option func(*driver) error
 
-// Transport is the RoundTripper UNDER the credential pin.
 func Transport(rt http.RoundTripper) Option {
 	return func(d *driver) error {
 		if rt == nil {
@@ -118,7 +80,6 @@ func SSHPort(port int) Option {
 	}
 }
 
-// New builds the driver for one host.
 func New(host string, opts ...Option) (forge.Driver, error) {
 	if host == "" {
 		return nil, errors.New("forge/bitbucketserver: a driver names the host it answers for")
@@ -186,8 +147,6 @@ func (d *driver) Addressable(key repokey.Key) error {
 	return err
 }
 
-// coords are the two names a request addresses a repository by, spelled the
-// way Bitbucket stores them.
 type coords struct{ project, slug string }
 
 func (d *driver) coords(key repokey.Key) (coords, error) {
@@ -211,7 +170,6 @@ func projectKey(owner string) string {
 	return strings.ToUpper(owner)
 }
 
-// keyOf is the key of the repository Bitbucket names by project key and slug.
 func (d *driver) keyOf(project, slug string) (repokey.Key, error) {
 	if project == "" || slug == "" {
 		return repokey.Key{}, errors.New("names no project or no slug")
@@ -227,7 +185,6 @@ func (d *driver) keyOf(project, slug string) (repokey.Key, error) {
 	return k, nil
 }
 
-// Bind returns a client acting as cred and only as cred.
 func (d *driver) Bind(cred forge.Credential) (forge.Client, error) {
 	if cred.IsZero() {
 		return nil, forge.ErrNoCredential

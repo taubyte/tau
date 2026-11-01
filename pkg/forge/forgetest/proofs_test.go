@@ -9,46 +9,22 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// A proof is one subject that is WRONG in a named way, and the complete list of
-// complaints the suite must make about it. Each entry in says NAMES ONE
-// ASSERTION by a fragment of its message, and the list is exact: what fires is
-// what is named, or the proof fails.
-//
-// stops is the other half of exact, and it is a different list on purpose. A
-// subject that is wrong does not only make the suite complain — it can also
-// STOP it: a hook the forge filed under another handle is a hook no delivery
-// can be built for, a capability a Subject over-claims is a call that answers
-// *UnsupportedError where the suite was on its way somewhere. Those are the
-// steps of plumbing.go, and they are written down here so that "what fired is
-// what was named" stays true without a step having to pretend to be a claim.
-//
-// THE TWO LISTS ARE NOT INTERCHANGEABLE and the ledger will not let them be: a
-// saying in says must name a real assertion, a saying in stops must name a step
-// or a held assertion. Moving one to the other is a visible edit in a review
-// and the only way to make it, which is the point — an assertion quietly
-// reclassified is the defect this whole file exists to close, one level up.
+// A proof is one subject wrong in a named way and the exact complaints the suite
+// makes about it, each naming one assertion by a fragment of its message. stops
+// lists the steps the subject prevents, kept apart so a claim cannot pass as a
+// step.
 type proof struct {
 	name string
 
-	// subject builds this proof's subject with a GIVEN set of faults, rather
-	// than closing over one. That is what makes the fault closure CAUSAL: the
-	// ledger can build the same subject WITHOUT one of the faults, run the
-	// suite over it again, and ask what stopped being said. A fault that is
-	// merely in a list is evidence of nothing — measured, a fault moved into a
-	// neighbouring proof's list left the whole tree at exit 0 with the
-	// assertion it was written for deleted.
+	// subject builds with a given set of faults, so the ledger can rebuild it
+	// without one and ask what stopped being said.
 	subject func(t *testing.T, faults []fake.Fault) Subject
 
 	says  []string
 	stops []string
 
-	// faults is what this proof injects, and it is written down so the ledger
-	// can read the population of FAULTS the way it reads the population of
-	// assertions. The two closures are inverses: the ledger requires every
-	// assertion to have a fault behind it, and every fault to have a proof in
-	// front of it. Without the second, demoting an assertion to a step and
-	// deleting its proof leaves the fault stranded and the tree green — which
-	// is exactly how a live contract was measured dead.
+	// faults is written down so every fault must have a proof in front of it, the
+	// inverse of every assertion having a fault behind it.
 	faults []fake.Fault
 }
 
@@ -59,16 +35,13 @@ func allProofs() []proof {
 	return out
 }
 
-// faultProofs is a driver that is wrong, one named mistake at a time.
 func faultProofs() []proof {
 	var out []proof
 	add := func(name string, sh fake.Shape, faults []fake.Fault, says ...string) {
 		out = append(out, proof{
 			name: name,
-			// The faults are read off the argument and not off the closure, so
-			// that a subject with one of them taken away is the SAME subject
-			// built the same way, and the difference between the two runs is
-			// the fault and nothing else.
+			// Faults come from the argument, so a subject without one is the same subject
+			// built the same way.
 			subject: func(t *testing.T, fs []fake.Fault) Subject {
 				shape := sh
 				for _, f := range fs {
@@ -80,8 +53,6 @@ func faultProofs() []proof {
 			faults: faults,
 		})
 	}
-
-	// ─── the mandatory contract ───
 
 	add("binds-a-zero-credential", fake.GitHubLike, []fake.Fault{fake.FaultBindsAZeroCredential},
 		"Driver.Bind built a client")
@@ -134,8 +105,6 @@ func faultProofs() []proof {
 		"an unreachable forge answered a membership question",
 		"an unreachable forge answered a membership a caller could act on",
 		"an unreachable forge listed repositories")
-
-	// ─── the record, and the addresses in it ───
 
 	add("echoes-key", fake.GitHubLike, []fake.Fault{fake.FaultEchoesKey},
 		"must be derived from the clone address the forge returned",
@@ -192,10 +161,8 @@ func faultProofs() []proof {
 		"a recorded request went to %q, which is not the host this credential is for, of everything the subject sent",
 		"a recorded request went to %q, which is not the host this credential is for, of the requests an operation made")
 
-	// THE NESTED RECORD IS A RECORD TOO. Each of these is the fault above it
-	// run on a forge that addresses a nested owner, which is the only shape
-	// that reaches the nested fixture's own round trip — without them, the four
-	// questions asked about that record could each be deleted unnoticed.
+	// The nested record is a record too: only a nesting forge reaches the nested
+	// fixture's round trip.
 	add("a-nesting-forges-record-has-no-default-branch", fake.GitLabLike, []fake.Fault{fake.FaultTheRecordHasNoDefaultBranch},
 		"a record the listing yielded has no default branch",
 		"the record of the repository just created has no default branch",
@@ -215,9 +182,8 @@ func faultProofs() []proof {
 		"clone address in the record of the nested fixture for",
 		"clone address in the record the forge answers for a repository that moved for")
 
-	// And the record a FOLLOWED same-host redirect answers with, which no
-	// correct driver ever produces — so the only way to reach the four
-	// questions asked about it is to break the driver twice.
+	// The record a followed same-host redirect answers with is reachable only by
+	// breaking the driver twice.
 	add("follows-same-host-redirect+the-record-has-no-default-branch", fake.GitHubLike,
 		[]fake.Fault{fake.FaultFollowsSameHostRedirect, fake.FaultTheRecordHasNoDefaultBranch},
 		"an Access has nowhere to say it is about another repository",
@@ -245,18 +211,13 @@ func faultProofs() []proof {
 		"clone address in the record the forge answers for a repository that moved, %q, does not parse",
 		"clone address in the record a followed same-host redirect answered with, %q, does not parse")
 
-	// ─── where a request goes ───
-
 	add("follows-redirect", fake.GitHubLike, []fake.Fault{fake.FaultFollowsRedirect},
 		"succeeded anyway, so an answer from another host was taken for the forge's",
 		"a request arrived at",
 		"and it carried the credential there",
 		"a recorded request went to %q, which is not the host this credential is for, of the requests an operation made")
-	// No "and it carried the credential there" here, and the absence is the
-	// point: the credential on that hop is the DEPLOYMENT'S, which no Subject
-	// hands over, so the suite catches this one by the arrival and not by what
-	// it says. Which is the right way round — a request at a host this
-	// credential is not for is already wrong, whatever it carries.
+	// The credential on this hop is the deployment's, which no Subject hands over,
+	// so it is caught by the arrival, not by what it carries.
 	add("follows-redirect-on-the-deployment-credential", fake.GitHubLike, []fake.Fault{fake.FaultFollowsRedirectOnTheDeploymentCredential},
 		"succeeded anyway, so an answer from another host was taken for the forge's",
 		"a request arrived at",
@@ -294,8 +255,6 @@ func faultProofs() []proof {
 		// driver. Both, or neither is load-bearing.
 		"the live credential is in an error string")
 
-	// ─── listing, creating, deleting ───
-
 	add("lists-nothing", fake.GitHubLike, []fake.Fault{fake.FaultListsNothing},
 		"the listing yielded nothing")
 	add("list-omits-what-can-be-written", fake.GitHubLike, []fake.Fault{fake.FaultListOmitsWhatCanBeWritten},
@@ -310,8 +269,6 @@ func faultProofs() []proof {
 		"deleted a repository this credential holds only")
 	add("delete-forgets-the-repository", fake.GitHubLike, []fake.Fault{fake.FaultDeleteForgetsTheRepository},
 		"the repository is still there after a successful delete")
-
-	// ─── the resources a driver installs and must be able to take back ───
 
 	add("deploy-key-handle-is-empty", fake.GitHubLike, []fake.Fault{fake.FaultDeployKeyHandleIsEmpty},
 		"an empty handle is a key nothing can ever remove")
@@ -330,15 +287,9 @@ func faultProofs() []proof {
 	add("removing-an-unknown-hook-succeeds", fake.GitHubLike, []fake.Fault{fake.FaultRemovingAnUnknownHookSucceeds},
 		"removing a hook that is not there succeeded")
 
-	// Three faults, and each is load-bearing. Without removes-without-a-handle
-	// the subject refuses "" where it stands and nothing here fires at all.
-	// Without the two "an unknown removal succeeds" faults the request goes out
-	// and the far end then says no, so the wire half fires and the "succeeded"
-	// half does not — which is exactly the gap a fixture that answers a
-	// collection URL with an error leaves behind, and the reason the wire half
-	// exists. Those two also carry the "not there" claims into this proof, so
-	// this proof names them: an assertion a proof makes fire and does not name
-	// is one whose deletion the proof would not notice.
+	// Each of the three faults is load-bearing: without removes-without-a-handle
+	// nothing fires; without the two "unknown removal succeeds" faults only the
+	// wire half fires.
 	add("removes-without-a-handle", fake.GitHubLike, []fake.Fault{
 		fake.FaultRemovesWithoutAHandle,
 		fake.FaultRemovingAnUnknownDeployKeySucceeds,
@@ -354,8 +305,6 @@ func faultProofs() []proof {
 		"the hook is still registered after a successful removal",
 		"the listing still names a key that was removed",
 		"the listing still names a hook that was removed")
-
-	// ─── webhooks ───
 
 	// A mangled wire is two complaints and not one: the forge was handed a
 	// string the verifier will not key its MAC with, and then every delivery it
@@ -382,8 +331,6 @@ func faultProofs() []proof {
 	add("any-delivery-reads-as-a-push", fake.GitHubLike, []fake.Fault{fake.FaultAnyDeliveryReadsAsAPush},
 		"a delivery that is not a push read as one")
 
-	// ─── the questions git answers and the ones a namespace does ───
-
 	add("push-probe-says-no-to-a-key-that-may", fake.GitHubLike, []fake.Fault{fake.FaultPushProbeSaysNoToAKeyThatMay},
 		"a credential that may push read as one that may not")
 	add("push-probe-says-yes-to-a-key-that-may-not", fake.GitHubLike, []fake.Fault{fake.FaultPushProbeSaysYesToAKeyThatMayNot},
@@ -401,22 +348,14 @@ func faultProofs() []proof {
 // driver does not have, and every probe the suite cannot run without.
 func subjectProofs() []proof {
 	var out []proof
-	// These proofs inject no fault: the SUBJECT is what is wrong, so there is
-	// nothing to take away and the fault list stays empty. A subject proof given
-	// a fault would be one whose builder ignores it, and the causal rule says so
-	// out loud — taking it away changes nothing the proof claims.
+	// Subject proofs inject no fault: the subject is what is wrong.
 	add := func(name string, build func(t *testing.T) Subject, says ...string) {
 		out = append(out, proof{name: name,
 			subject: func(t *testing.T, _ []fake.Fault) Subject { return build(t) },
 			says:    says})
 	}
 
-	// A capability set that does not match the driver, from both directions. A
-	// face whose method signature is one type wrong compiles, fails its type
-	// assertion in silence and disappears from the computed set — which reads
-	// exactly like the first of these; the second is the same discrepancy the
-	// other way up, and it is what stands under Require and under the whole
-	// "absence is a tested contract" half of the suite.
+	// A capability set that does not match the driver, both ways round.
 	add("overclaims-a-capability", func(t *testing.T) Subject {
 		s := subjectFor(t, "overclaims", without(fake.GitHubLike, forge.CapPushHooks))
 		s.Expect[forge.CapPushHooks] = struct{}{}
@@ -429,12 +368,8 @@ func subjectProofs() []proof {
 		"registering the hook every delivery below is signed for",
 		"learning the address this operation uses for")
 
-	// A capability the driver HAS and the Subject does not declare, ONE PROOF
-	// PER CAPABILITY. Each takes a different absent branch, in a different
-	// place, calling a different method — nine separate contracts. One proof
-	// standing for all of them left eight deletable, which is the same defect
-	// as a table row with no proof: what fires is one case, and the site was
-	// counted.
+	// One proof per capability the driver has and the Subject does not declare:
+	// each takes a different absent branch.
 	for _, tc := range []struct {
 		cap   forge.Capability
 		calls []string
@@ -506,17 +441,9 @@ func subjectProofs() []proof {
 	broken("no-membership-fixtures", func(s *Subject) { s.Member = "" }, "CapMembership needs")
 	broken("no-push-probe-keys", func(s *Subject) { s.PushKey = nil }, "CapPushProbe needs")
 
-	// THE PROBES ARE PART OF THE SUBJECT, AND A PROBE THAT LIES IS A FAULT.
-	//
-	// A driver author wires these up by hand, and several of the suite's
-	// questions are only questions because a probe built what it says it built.
-	// A DeliveryFor that quietly speaks for the hook's own repository turns
-	// "the hook may only speak for its own repository" into a delivery that
-	// was always going to verify; a DeliveryAt that ignores the date turns the
-	// replay window into two more copies of the delivery that already passed.
-	// Neither is a driver being wrong, and both make the suite green for a
-	// reason nobody wrote down — which is the failure mode this whole file is
-	// against.
+	// The probes are part of the subject, and a probe that lies is a fault: a
+	// DeliveryFor naming the hook's own repository, or a DeliveryAt ignoring the
+	// date, makes the suite green for no stated reason.
 
 	add("a-deputy-delivery-that-names-this-very-repository", func(t *testing.T) Subject {
 		s := subjectFor(t, "deputy-names-this-one", fake.GitHubLike)

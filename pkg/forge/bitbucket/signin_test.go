@@ -8,8 +8,6 @@ import (
 	"github.com/taubyte/tau/pkg/forge"
 )
 
-// The sign-in endpoints are on the driver's own host, so a sign-in cannot be
-// aimed at another server.
 func TestOAuthEndpointsAreTheHosts(t *testing.T) {
 	d, err := New("bitbucket.org")
 	require.NoError(t, err)

@@ -10,10 +10,9 @@ import (
 	"strings"
 )
 
-// A request path is a template from a closed set, never a string a call site
-// pasted together: every segment reaches a path through escapedSegments, which
-// escapes it and refuses one that would not address itself. This is the gitea
-// driver's rule, for its reasons.
+// A request path is a template from a closed set: every segment goes through
+// escapedSegments, which escapes it and refuses one that would not address
+// itself.
 type route struct {
 	method   string
 	template string
@@ -42,7 +41,6 @@ const (
 	preview = "7.1-preview.1"
 )
 
-// THE ROUTING TABLE: everything this driver asks an Azure DevOps.
 var (
 	routeConnectionData = newRoute(http.MethodGet, hole+"/_apis/connectionData", preview)
 

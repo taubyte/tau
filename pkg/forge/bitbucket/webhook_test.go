@@ -1,11 +1,6 @@
 package bitbucket_test
 
-// A SIGNATURE CHECK THAT IS ONLY TESTED ON ITS HAPPY PATH IS NOT TESTED. What
-// follows is one vector computed OUTSIDE Go — python's hmac, hashlib and base64
-// — and then every way a delivery can be wrong, and then every way a verified
-// Bitbucket payload can say something this driver must not read as a push.
-//
-// The recipe, verbatim, to be pasted into python3:
+// One vector computed outside Go, in python3:
 //
 //	import base64, hashlib, hmac
 //
@@ -21,9 +16,8 @@ package bitbucket_test
 //	print(hmac.new(wire, body, hashlib.sha256).hexdigest())  # vectorSHA256
 //	print(hmac.new(wire, body, hashlib.sha1).hexdigest())    # vectorSHA1
 //
-// Bitbucket Cloud sends "X-Hub-Signature: sha256=<hex>" — GitHub's
-// construction in GitHub's SHA-1 header name — which is why the scheme is its
-// own and not SchemeHubSHA256. The SHA-1 vector is here to be REJECTED.
+// Bitbucket sends GitHub's construction under GitHub's SHA-1 header name, so
+// the scheme is its own. The SHA-1 vector is there to be rejected.
 
 import (
 	"net/http"
@@ -80,8 +74,6 @@ func pushHeader(sig string) http.Header {
 	return h
 }
 
-// TestTheVectorBitbucketWouldSendIsAccepted. If this fails, no delivery from
-// Bitbucket Cloud would ever verify.
 func TestTheVectorBitbucketWouldSendIsAccepted(t *testing.T) {
 	reg, hook := cloudRegistry(t)
 	push, err := reg.VerifyPush(hook, forge.Delivery{Header: pushHeader("sha256=" + vectorSHA256), Body: []byte(vectorBody)})
@@ -89,8 +81,6 @@ func TestTheVectorBitbucketWouldSendIsAccepted(t *testing.T) {
 	assert.Equal(t, forge.Push{Key: hook.Key, Ref: vectorRef, Commit: vectorCommit}, push)
 }
 
-// TestTheWireStringThisDriverHandsBitbucketIsTheVector: the secret this driver
-// registers a hook with is the one the vector's HMAC is keyed by.
 func TestTheWireStringThisDriverHandsBitbucketIsTheVector(t *testing.T) {
 	drv, err := bitbucket.New("bitbucket.org")
 	require.NoError(t, err)
@@ -130,8 +120,6 @@ func TestEveryWayASignatureCanBeWrongIsRejected(t *testing.T) {
 	})
 }
 
-// TestWhatAVerifiedPayloadIsReadFor. Everything below is a correctly signed
-// delivery, so what is asserted is the reading and not the checking.
 func TestWhatAVerifiedPayloadIsReadFor(t *testing.T) {
 	reg, hook := cloudRegistry(t)
 

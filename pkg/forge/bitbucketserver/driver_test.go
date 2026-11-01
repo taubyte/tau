@@ -40,8 +40,6 @@ func TestNewRefusesWhatIsNotADeployment(t *testing.T) {
 	}
 }
 
-// BOTH ADDRESSES ARE ONE REPOSITORY, through the registry and through nothing
-// else: repokey alone reads them as two.
 func TestBothAddressesNameOneRepository(t *testing.T) {
 	drv, err := bitbucketserver.New("bb.example.com")
 	require.NoError(t, err)
@@ -222,7 +220,6 @@ func (s *cannedServer) repo(project, slug, href string) string {
 	return string(b)
 }
 
-// EVERY ANSWER A FORGE CAN GET WRONG IS REFUSED, NOT READ.
 func TestAMalformedAnswerIsRefused(t *testing.T) {
 	var answer string
 	var status int
@@ -352,8 +349,6 @@ func TestWhoamiRefusesNobody(t *testing.T) {
 	}
 }
 
-// A 401 THAT NAMES AN AuthorisationException IS ABOUT THE REPOSITORY, not the
-// credential.
 func TestAPermissionRefusalIsNotACredentialRefusal(t *testing.T) {
 	s := canned(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -365,8 +360,6 @@ func TestAPermissionRefusalIsNotACredentialRefusal(t *testing.T) {
 	assert.False(t, errors.As(err, &ce))
 	assert.Contains(t, err.Error(), "holds no permission")
 }
-
-// ─────────────────────────────── deliveries ───────────────────────────────
 
 func TestAPushIsReadOnlyAsOneRef(t *testing.T) {
 	f := newFixture(t)

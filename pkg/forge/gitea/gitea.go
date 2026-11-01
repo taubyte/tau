@@ -1,48 +1,14 @@
 // Package gitea is the forge driver for the Gitea API: every Gitea, every
-// Forgejo (a fork that kept the API), and codeberg.org, which is a Forgejo.
+// Forgejo, and codeberg.org. It is one API, so one driver; the host tells them
+// apart. The container suite (tag forges) runs it against a real Gitea and a
+// real Forgejo.
 //
-// ONE DRIVER, THREE NAMES, BECAUSE IT IS ONE API. Forgejo forked Gitea and kept
-// /api/v1 and the webhook payload, and Codeberg runs Forgejo; a "forgejo"
-// driver would be this file copied with the import path changed. What tells
-// them apart is the host, and the host is a Binding's business — so adding
-// Codeberg is Binding{Host: "codeberg.org", Driver: gitea.New("codeberg.org")}.
-// The container suite (tag forges) runs this one driver against a real Gitea
-// and a real Forgejo for exactly that reason: the claim that they are one API
-// is a claim about two servers, and only both servers can make it.
-//
-// # Gitea is shaped like GitHub, and the differences are where it bites
-//
-// The API is GitHub's v3 surface with the paths moved under /api/v1, and this
-// driver is the github driver's structure for that reason. Four things differ,
-// and each is a place a copy would be quietly wrong:
-//
-//   - PAGES ARE CLAMPED BY THE SERVER. Gitea caps "limit" at its own
-//     MAX_RESPONSE_ITEMS (50 by default, an operator's setting) and answers a
-//     bigger ask with fewer items and no error. A pager that stops on a page
-//     shorter than it asked for therefore stops after the first page on every
-//     instance whose cap is below the ask — a truncated listing that reads as
-//     a complete one. This pager stops on an EMPTY page, which is right under
-//     any cap.
-//
-//   - A DEPLOY KEY SAYS WHETHER IT IS READ-ONLY, and the answer is read. A
-//     key Gitea reports as writable is removed again and the install refused,
-//     the gitlab driver's rule: a standing write credential is exactly what the
-//     interface has no parameter for.
-//
-//   - MEMBERSHIP IS ONE REQUEST WITH A DEPLOYMENT TOKEN, not an app
-//     installation: GET /orgs/{org}/members/{user} answers 204 or 404. A
-//     caller who is not a member of the organization is REDIRECTED to the
-//     public-members list rather than refused — so the redirect this driver
-//     never follows is what keeps "you may not look" from reading as "not a
-//     member".
-//
-//   - THE EVENT HEADER IS X-Gitea-Event, which Forgejo still sends beside its
-//     own X-Forgejo-Event. The signature is X-Hub-Signature-256, byte for byte
-//     GitHub's, so this driver names forge.SchemeHubSHA256 and verifies nothing.
-//
-// No SDK, for the github driver's reason: code.gitea.io/sdk would put its types
-// one careless signature away from this boundary, and the whole of what tau
-// asks is thirteen requests.
+// It is the github driver's structure under /api/v1, except: pages are clamped
+// by the server's MAX_RESPONSE_ITEMS, so the pager stops on an empty page; a
+// deploy key reported writable is removed and the install refused; membership
+// is one request with a deployment token, and a caller who may not look is
+// redirected to the public members, which the driver never follows; and the
+// event header is X-Gitea-Event, with GitHub's X-Hub-Signature-256.
 package gitea
 
 import (
@@ -56,12 +22,9 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// acceptJSON is the only media type the Gitea API speaks.
 const acceptJSON = "application/json"
 
-// driver is one Gitea, constructed for the host it answers for. It carries no
-// caller credential; the deployment's membership token, when there is one, is
-// reachable only through memberDriver.
+// The deployment's membership token is reachable only through memberDriver.
 type driver struct {
 	host string
 	// base is the API root, absolute and ending in "/". Gitea serves it from
@@ -74,9 +37,8 @@ type driver struct {
 	member string            // the deployment's membership token; "" means none
 }
 
-// memberDriver is a driver that also answers membership. It is a separate type
-// because forge computes capabilities by type assertion, and "did the operator
-// configure a membership token" is decided once, at New.
+// memberDriver also answers membership: capabilities come from type assertions,
+// and whether a membership token is configured is decided at New.
 type memberDriver struct{ *driver }
 
 var (
@@ -169,7 +131,6 @@ func (d *driver) Addressable(key repokey.Key) error {
 	return nil
 }
 
-// Bind returns a client acting as cred and only as cred.
 func (d *driver) Bind(cred forge.Credential) (forge.Client, error) {
 	if cred.IsZero() {
 		return nil, forge.ErrNoCredential

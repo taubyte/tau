@@ -13,19 +13,16 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// Request is what this forge records instead of sending. A real driver's tests
-// record the http.Requests an httptest server saw; the fields are the ones the
-// conformance suite's credential canary reads, so the two are interchangeable
-// to it.
+// Request is what this forge records instead of sending: the fields the suite's
+// credential canary reads.
 type Request struct {
 	Method string
 	URL    string
 	Header http.Header
 }
 
-// Keys are the fixtures every shape seeds, named by what the conformance suite
-// asks of them. They exist here rather than in a test so that a consumer's
-// tests and the suite's tests name the same repositories.
+// Keys are the fixtures every shape seeds, here so a consumer's tests and the
+// suite name the same repositories.
 type Keys struct {
 	Writable repokey.Key // >= AccessWrite for Token
 	ReadOnly repokey.Key // public, no grant: EXACTLY AccessRead
@@ -42,16 +39,12 @@ type Keys struct {
 	Creatable   repokey.Key
 	Uncreatable repokey.Key
 
-	// Moved is a repository that was RENAMED. This forge still answers for it
-	// and answers WITH MovedTo, the way every real forge keeps an old path
-	// resolving after a rename. It is the only fixture on which echoing the
-	// argument back and deriving the key from the answer produce different
-	// values, which makes it the only one that can assert the difference.
+	// Moved was renamed: this forge answers for it with MovedTo, so it is the one
+	// fixture where echoing the argument and deriving the key differ.
 	Moved   repokey.Key
 	MovedTo repokey.Key
 }
 
-// Membership fixtures.
 const (
 	Namespace = "acme"
 	Member    = "alice"
@@ -139,7 +132,6 @@ type keyRec struct {
 	readOnly bool
 }
 
-// New builds a forge of the given shape, seeded with the fixtures in Keys.
 func New(sh Shape) *Forge {
 	if sh.Host == "" {
 		panic("fake: a shape names no host")
@@ -213,8 +205,6 @@ func (f *Forge) Keys() Keys   { return f.c.keys }
 func (f *Forge) Token() forge.Credential    { return forge.Token(goodToken) }
 func (f *Forge) BadToken() forge.Credential { return forge.Token(badToken) }
 
-// TokenString and BadTokenString are the raw values, for a test that needs to
-// look for one where it must never appear.
 func (f *Forge) TokenString() string    { return goodToken }
 func (f *Forge) BadTokenString() string { return badToken }
 
@@ -234,14 +224,9 @@ func (f *Forge) Requests() []Request {
 func (f *Forge) Break()   { f.c.mu.Lock(); f.c.broken = true; f.c.mu.Unlock() }
 func (f *Forge) Unbreak() { f.c.mu.Lock(); f.c.broken = false; f.c.mu.Unlock() }
 
-// RedirectOnce makes the next call answer with status, pointing at loc.
-//
-// THIS FORGE SENDS NOTHING, so following one is modelled rather than performed:
-// a correct driver refuses the hop and this forge says so with an error naming
-// the status, and the following faults instead act as an http.Client would.
-// Either way the destination ends up somewhere the conformance suite can read
-// it, which is the whole point: where a request WENT is not something the
-// receiving end can report.
+// RedirectOnce makes the next call answer with status, pointing at loc. This
+// forge sends nothing, so a followed hop is modelled; a correct driver refuses
+// it, and this forge says so with an error naming the status.
 func (f *Forge) RedirectOnce(loc string, status int) {
 	f.c.mu.Lock()
 	f.c.redirect = loc
@@ -288,8 +273,6 @@ func (f *Forge) HookInstalled(h forge.Handle) bool {
 func (f *Forge) PushKey() []byte   { return []byte("fake-ssh-key-may-push") }
 func (f *Forge) NoPushKey() []byte { return []byte("fake-ssh-key-read-only") }
 
-// ─────────────────────────── the shared implementation ───────────────────────────
-
 // identityPath is where this forge answers "who is this credential", and it is
 // named because one fault sends that one request somewhere else.
 const identityPath = "/api/user"
@@ -324,16 +307,9 @@ func (c *core) call(method, path, token string) (bool, error) {
 	return c.callAbout(method, path, token, repokey.Key{})
 }
 
-// callAbout is every request this forge serves: it records, then says whether
-// the operation may GO ON.
-//
-// THE BOOL IS NOT A DUPLICATE OF THE ERROR. It is false with a nil error in
-// exactly one situation, and that situation is a defect this suite exists to
-// name: the driver followed a hop, something that is not this forge answered
-// it, and the driver took that answer. A 204 from another host parses as
-// nothing, so the operation reports success having done nothing at all — which
-// is a `nil` error and no state change, and there is no error value that says
-// so.
+// callAbout records, then says whether the operation may go on. False with a
+// nil error is the defect: the driver followed a hop and took another host's
+// answer, which parses as nothing.
 func (c *core) callAbout(method, path, token string, about repokey.Key) (bool, error) {
 	c.mu.Lock()
 	// One operation, one hop: whatever the last call was redirected to has no
@@ -373,18 +349,10 @@ func (c *core) callAbout(method, path, token string, about repokey.Key) (bool, e
 // all — can change where the hop goes.
 var hopper = &http.Client{Transport: &http.Transport{}}
 
-// answerRedirect is what this forge does once RedirectOnce armed it: it answers
-// somewhere else, and what happens next is the driver's choice. A correct one
-// refuses the hop, and this says so with an error.
-//
-// FaultFollowsRedirect REALLY SENDS, and it is the only thing in this package
-// that sends anything. It has to: the whole point of that fault is a request
-// arriving somewhere it was not meant to, and an arrival nobody can observe is
-// the defect being modelled rather than a test of it. The credential goes with
-// it, because a header attached by a RoundTripper is attached again on the next
-// hop — which is exactly how a driver that dropped its pinned transport leaks
-// one. loc is whatever armed this, in practice a loopback server the caller
-// started to watch.
+// answerRedirect answers somewhere else, and a correct driver refuses the hop.
+// FaultFollowsRedirect really sends, credential included, the only thing here
+// that does: an arrival nobody can observe would test nothing. loc is a
+// loopback server the caller started.
 func (c *core) answerRedirect(method, loc string, status int, token string) (bool, error) {
 	if c.onThisHost(loc) {
 		if !c.shape.faulty(FaultFollowsSameHostRedirect) {
@@ -417,12 +385,8 @@ func (c *core) answerRedirect(method, loc string, status int, token string) (boo
 	c.requests = append(c.requests, Request{Method: method, URL: loc, Header: hdr})
 	c.mu.Unlock()
 
-	// AND THE ANSWER FROM THERE IS THE ANSWER. This is what a driver that
-	// follows a redirect actually does: the hop returns 204, which parses as
-	// nothing, and the operation reports success having done nothing. Returning
-	// an error here instead would model a driver that followed the hop and then
-	// happened to fail — which is the milder half, and the half that leaves "an
-	// answer from another host was taken for the forge's" unassertable.
+	// The answer from there is the answer: a 204 parses as nothing, so the
+	// operation reports success having done nothing.
 	return false, nil
 }
 
@@ -435,16 +399,9 @@ func (c *core) onThisHost(loc string) bool {
 	return err == nil && u.Host == c.shape.Host
 }
 
-// followSameHost is the hop a credential pin permits: same host, credential
-// attached again, and a repository at the other end that the caller never named.
-//
-// NOTHING IS SENT, because there is nothing to send to — this forge is a map.
-// What a real driver's http.Client would do is done here directly: the request
-// is written down as having gone to loc with the credential on it, and the
-// operation now acts on whatever repository loc addresses. Everything the
-// operation returns still describes the repository the CALLER named, because
-// that is the argument it was given, and that is precisely what makes the defect
-// invisible from above.
+// followSameHost is the hop a credential pin permits. Nothing is sent, the
+// forge being a map: the request is written down as gone to loc, and the
+// operation acts on what loc addresses while returning what the caller named.
 func (c *core) followSameHost(method, loc string, status int, token string) (bool, error) {
 	hdr := make(http.Header)
 	if token != "" {
@@ -555,16 +512,9 @@ func (c *core) cloneURL(k repokey.Key, over forge.Protocol) string {
 	return scheme + "://" + c.shape.Host + "/" + k.FullName() + ".git"
 }
 
-// servedCloneURL is a clone address this forge REPORTS, under whichever fault
-// governs the surface asking for it: the record a repository answer carries, or
-// the address the CloneAddress face hands a builder. Under that fault it names a
-// different repository on this host — a legal address, well formed, and not the
-// one it is supposed to be about.
-//
-// It is deliberately not cloneURL itself: a delivery's payload also carries a
-// clone address, and a payload naming another repository is the confused-deputy
-// defect, which has its own fixture and its own assertion. One fault, one
-// mistake.
+// servedCloneURL is a clone address this forge reports, under the fault that
+// governs the surface asking. It is not cloneURL: a payload naming another
+// repository is a separate defect with its own fault.
 func (c *core) servedCloneURL(k repokey.Key, over forge.Protocol, under Fault) string {
 	if c.shape.faulty(under) {
 		k = c.parse("acme/elsewhere")
@@ -625,7 +575,6 @@ func (c *core) nextHandle(kind string) forge.Handle {
 	return forge.Handle(strconv.Itoa(1000 + c.seq))
 }
 
-// addressable is Driver.Addressable's body, shared so the fault has one home.
 func (c *core) addressable(k repokey.Key) error {
 	if !strings.Contains(k.Owner, "/") {
 		return nil

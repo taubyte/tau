@@ -16,71 +16,11 @@ import (
 	"github.com/taubyte/tau/pkg/forge/fake"
 )
 
-// THE LEDGER IS A PROGRAM, AND IT HAD NO GUARDS OF ITS OWN.
-//
-// Every rule in this file says the same thing about the suite: a rule with no
-// fault behind it is decoration. The rules themselves were exempt from it.
-// Measured, one at a time, twelve of twelve survived being hollowed —
-// `if len(orphans) > 0` changed to `if false && len(orphans) > 0`, which is
-// the orphan report switched off entirely, and the tree stayed at exit 0. So
-// did the capability-refusal rule, which was the whole of the previous round's
-// fix; so did the collateral rule; so did every complaint names(), stops() and
-// attribute() make. Nothing here could tell a rule that holds from a rule that
-// has been turned off.
-//
-// So a rule is a VALUE now, with three parts and no way to have two of them:
-//
-//	its name, which is what a failure is reported under;
-//	its check, a function of the ledger that answers with what it has to say;
-//	its violation, a ledger that breaks it, which the self-test below runs it
-//	against and requires it to complain about.
-//
-// A rule whose violation it stays quiet about fails by name. A rule declared
-// with no violation fails by name. And the violations are not sketches: a rule
-// that reads the SOURCE is shown a real extra file in this very package,
-// type-checked by the same loader — the ledger's own version of injecting a
-// fault into the fake forge and requiring the suite to catch it.
-//
-// Twenty-four rules and their faults, and a rule may have more than one: a rule
-// evaded in four shapes needs four, or the three nobody showed it are three it
-// does not hold against. Hollowed one at a time, all of them fail here.
-//
-// AND THE THINGS THAT RUN THE RULES ARE HELD THE SAME WAY, because each of them
-// could disable every rule at once and no rule can see it happen from inside
-// the registry. Round six closed the rules and left these open; measured, each
-// could be hollowed on its own with the whole forge tree at exit 0. So each is
-// a HARNESS with a registry that breaks it, in the shape a rule has:
-//
-//	the REPORT. obey is the one path a complaint travels, and a loop that
-//	hears a rule and drops what it says is hollowing one level further out.
-//	Handed a rule that complains about every ledger there is, it must complain.
-//
-//	the SELF-TEST. Handed a rule that is decoration — one that says nothing
-//	about the ledger it is given — it must say so, which is the whole of what
-//	it exists for.
-//
-//	the REGISTRY. A rule not in it does not run, so an emptied registry is
-//	every rule turned off and nothing left to notice. It is asked from outside
-//	it, over the rule names read out of this file's own source with go/types —
-//	the same closure the faults get — and handed a registry one entry short, it
-//	must name the entry that went.
-//
-//	the LIST OF HARNESSES, closed the way the registry is: the names are read
-//	out of source, so dropping one, or emptying the list, is visible from
-//	outside it.
-//
-//	the LOADER. If the source cannot be type-checked the ledger fails loudly
-//	rather than computing its rules over a smaller population.
-//
-// WHAT IT STILL DOES NOT COVER, said plainly. Deleting a rule OUTRIGHT — its
-// name, its entry, its check and its violation, in one hunk — leaves nothing
-// declared for the registry check to miss. That is the same exposure as
-// deleting a test, and it is four coordinated deletions rather than the one
-// character that used to do it. And the regress stops at hold and
-// TestTheLedgerHolds below; the package doc in subject.go names the five points
-// that are left, says why that set cannot be smaller counted in points rather
-// than in lines, and says — measured rather than asserted — what the equivalent
-// exposure is elsewhere.
+// The ledger's rules are values: a name, a check, and violations it must
+// complain about, so a hollowed rule fails by name. What runs the rules (the
+// report, the self-test, the registry, the list of harnesses, the loader) is
+// held the same way. Deleting a rule outright, in one hunk, is not covered:
+// the same exposure as deleting a test.
 
 // complaint is one thing the ledger has to say. It carries the rule that said
 // it so that a rule proven by the self-test is proven under its own name and
@@ -91,10 +31,8 @@ type complaint struct {
 	text string
 }
 
-// ruleName is what a rule is called. It is a TYPE so that the ledger can read
-// the rules it declares out of its own source, the way it reads the faults out
-// of the fake forge's — a registry is a list, and a list is a thing somebody
-// can shorten without anything noticing.
+// ruleName is a type so the ledger can read the rules it declares out of its
+// own source.
 type ruleName string
 
 func (c complaint) String() string { return c.at + ": " + c.text }
@@ -137,11 +75,9 @@ type ledger struct {
 	proofs []proof
 	said   map[string]*recorder
 
-	// unwalked is every body in the suite that the walk does not enter, by the
-	// site it is written at. It is empty by construction, and it is computed
-	// and carried anyway: "by construction" is a claim about code somebody will
-	// edit, and an assertion in a body nothing walks is in no population and no
-	// rule below is computed over it.
+	// unwalked is every suite body the walk does not enter: empty by construction,
+	// and carried anyway, since an assertion in a body nothing walks is in no
+	// rule's population.
 	unwalked []string
 
 	// loads is every call to packages.Load written in the forge tree that is
@@ -158,21 +94,14 @@ type ledger struct {
 	without map[string]map[fake.Fault]*recorder
 }
 
-// rule is a check and the faults behind it.
-//
-// violates is a LIST because a rule can be evaded in more than one shape, and a
-// shape nothing is shown is a shape nothing holds against. The walk was
-// measured going round four of them at once — a literal bound by a var, a claim
-// written inside a marker, a failure handed over without its reporter, and
-// testify given a shorter name — and each is a case of the orphan rule, not a
-// paraphrase of the others.
+// violates is a list: a rule evaded in more than one shape needs each shape
+// shown.
 type rule struct {
 	name     ruleName
 	check    func(*ledger) []complaint
 	violates []func(*testing.T) *ledger
 }
 
-// breaks is the ledgers that break a rule, written where the rule is declared.
 func breaks(fs ...func(*testing.T) *ledger) []func(*testing.T) *ledger { return fs }
 
 // theShapeOf is what a violation is reported under: its own identifier, read
@@ -218,14 +147,8 @@ func ledgerRules() []rule {
 	}
 }
 
-// obey reads ONE rule over a ledger and reports what it has to say. It is the
-// ONE path a failure travels, and the self-test below travels it too: a rule
-// that complains into a loop which drops what it says is a rule nobody hears,
-// and that is hollowing one level further out than hollowing the rule.
-//
-// It took a SLICE, and both its call sites handed it a one-element one — so its
-// loop was a third range over rules with nothing watching the range expression.
-// A loop nothing needs is a loop somebody can shorten, so it is gone.
+// obey reads one rule over a ledger and reports what it says: the one path a
+// failure travels, the self-test included.
 func obey(t reporter, l *ledger, r rule) int {
 	said := 0
 	for _, c := range r.check(l) {
@@ -235,50 +158,11 @@ func obey(t reporter, l *ledger, r rule) int {
 	return said
 }
 
-// ──────────── the three things that run the rules, and their faults ────────────
-//
-// EVERY RULE HAD A FAULT BEHIND IT AND THE LOOPS THAT EXECUTE THEM HAD NONE.
-//
-// Round six made a rule a value with a violating ledger, and left the three
-// things that run those rules exactly as exposed as the rules had been.
-// Measured, one at a time: the report's loop emptied to `_ = r`, the
-// self-test's condition switched off with `false &&`, and the registry check
-// reading `unreadRules(src, nil)` — three separate hollowings, three times
-// GO_TEST_EXIT=0 over the whole forge tree. A rule proven by a loop that does
-// not run it is proven by nothing, and no rule can see that from inside the
-// registry.
-//
-// So each of the three is a HARNESS now, in the same shape a rule is: a name, a
-// run that is a function of the rule it is asked about, and a registry that
-// breaks it.
-//
-// AND THERE IS ONE CALL THAT RUNS ONE, because two of them was the last
-// off-switch. Round seven ran every harness twice from two places: the real one
-// passed nil and the rules as they stand, the self-test passed a recorder and a
-// registry that breaks it. The self-test proved the path IT used and the suite
-// hung off the other one, so `nil` written as `&recorder{}` — one token, gofmt
-// clean, vet clean — sent every complaint from all twenty-two rules over the
-// real suite into a recorder nobody reads. Measured with the
-// LastDeployKeyReadOnly contract deleted from optional.go: GO_TEST_EXIT=0 over
-// the whole forge tree, where that deletion alone is GO_TEST_EXIT=1, the census
-// still printing "183 cases", all twenty-two named subtests still green.
-// `ledgerHarnesses()[1:]` did the same, and nothing noticed either: the checks
-// that existed asked whether every declared name was CARRIED BY the list, which
-// stays true when the loop goes round a subset of it.
-//
-// So there is ONE call now — hold — and it is the only place a harness is ever
-// run and the only place what a harness said is read. It takes no reporter: the
-// listener is made inside it and is always compared against what the registry
-// it was handed must come to. Both directions go through it, so the call the
-// suite is held by IS the call the self-test exercises. And what actually ran
-// is written down INSIDE that call and read back against the harness names in
-// source, so a loop round a subset of the harnesses — or round nothing — is
-// named rather than silent. The rules that loop goes round are counted the same
-// way and for the same reason; see unvisited, below.
+// Each of the three things that run the rules is a harness with a registry that
+// breaks it, and hold is the one call that runs one, so the call the suite is
+// held by is the call the self-test exercises. What ran is counted inside hold.
 
-// harnessName is what one of the three is called, and it is a TYPE for the same
-// reason ruleName is: a list is a thing somebody can shorten. The type token is
-// not what finds it — see constantsOf, which reads a constant by what it IS.
+// harnessName is a type for ruleName's reason.
 type harnessName string
 
 const (
@@ -287,46 +171,16 @@ const (
 	harnessEveryRuleDeclaredIsRead   harnessName = "every rule the ledger declares is read"
 )
 
-// harness is one of the three, and the registry that breaks it.
-//
-// A HARNESS HAS NO LOOP. Handing one a slice of rules put a range expression
-// inside it, and a range expression is a thing one token shortens: measured,
-// `rules[:1]` in either of the two per-rule harnesses was GO_TEST_EXIT=0 with a
-// real contract deleted, because every fault registry returns exactly ONE rule
-// and so `[:1]` is a no-op in the direction that must complain.
-//
-// Counting what a harness handed itself did not close it either. A harness can
-// go round in full to fill a tally and then do the work over a subset, or
-// shorten the slice before going round — both measured GREEN against the tally
-// this round first wrote. So the loop is gone from a harness altogether. hold
-// goes round the rules, and a harness is asked about one at a time.
+// harness has no loop: hold goes round the rules and asks a harness about one at
+// a time, since a range expression is a thing one token shortens.
 type harness struct {
 	name harnessName
-	// run is asked about ONE rule, and says what it has to say to the listener
-	// it is handed — never to t, which is why the type is the recorder and not
-	// an interface with a nil in it. A harness that reported straight to t
-	// could only ever be run in the direction that must be silent, and that is
-	// what made two call sites necessary in the first place.
-	//
-	// IT ANSWERS WITH THE RULE IT WAS ASKED ABOUT, and that answer is what hold
-	// tallies. A tally written beside the call rather than out of it is a tally
-	// anything between the two can diverge from: measured, `if h.run != nil &&
-	// i == 0` in hold's loop — the tally kept, the call guarded — was
-	// GO_TEST_EXIT=0 with a real contract deleted. There is nothing between
-	// them now; skipping a rule means not answering for it, and not answering
-	// for it is named.
-	//
-	// Answering for a rule and then doing nothing with it is the one shape left,
-	// and it is not free either: it takes naming a rule, and the registry that
-	// breaks a harness is a rule with a name of its own, so a harness that
-	// answers about one name only says nothing in the direction that must
-	// complain.
+	// run is asked about one rule and reports to the listener it is handed. It
+	// answers with the rule it was asked about, which hold tallies, so skipping a
+	// rule is named.
 	run func(t *testing.T, heard *recorder, r rule) ruleName
-	// after is asked once, about the whole SET hold went round — a registry
-	// check is a question about all of them and not about any one. It is handed
-	// the set hold BUILT while going round, in the same loop as the tally, so a
-	// shortened loop shortens this too: the tally names the rules that went
-	// missing, and the harness that reads the set names them again.
+	// after is asked once, about the set hold built while going round, so a
+	// shortened loop shortens it too.
 	after func(t *testing.T, heard *recorder, read map[string]bool)
 	// breaks is a registry this harness must complain about — its fault, in
 	// the same sense a rule's violating ledger is one.
@@ -341,18 +195,9 @@ func ledgerHarnesses() []harness {
 	}
 }
 
-// ───────────────────── the one call a harness is run by ─────────────────────
-
-// registry is a set of rules AND what running a harness over them must come to.
-// There are two answers and there is no third, and which one applies is a
-// property of the MATERIAL and not of the plumbing: over the rules as they
-// stand a harness must be silent, over a registry that breaks it a harness must
-// complain.
-//
-// Neither answer can be written the other way round without a named failure,
-// because each is the other's control. The real rules under "must complain" say
-// nothing and fail; a registry that breaks a harness under "must be silent"
-// complains and fails. That is what makes it safe for the direction to be data.
+// registry is a set of rules and what running a harness over them must come to:
+// silent over the rules as they stand, complaining over a registry that breaks
+// it. Each is the other's control.
 type registry struct {
 	rules     []rule
 	complains bool
@@ -373,16 +218,9 @@ func whatBreaksIt(t *testing.T, h harness) registry {
 	return registry{h.breaks(t), true}
 }
 
-// unvisited is every rule HANDED IN that going round did not reach the same
-// number of times — a loop that stopped short, a loop that never ran, and a
-// tally somebody filled in by hand, which is what going round a subset looks
-// like once you have started counting.
-//
-// The base it compares against is the list hold was handed, read again here
-// rather than taken from the loop, so shortening the range expression shortens
-// one side only and every rule that went missing is named. And the list itself
-// is closed one level out: readEveryRuleDeclared is a harness, so a registry
-// with an entry taken out of it fails under its own name.
+// unvisited is every rule handed in that going round did not reach the same
+// number of times. The base is the list hold was handed, read again here, so a
+// shortened range is named.
 func unvisited(rules []rule, went map[ruleName]int) []string {
 	want := map[ruleName]int{}
 	for _, r := range rules {
@@ -409,15 +247,8 @@ func unvisited(rules []rule, went map[ruleName]int) []string {
 	return out
 }
 
-// hold runs one harness over one registry. IT IS THE ONLY PLACE A HARNESS IS
-// EVER RUN, and the only place what a harness said is read.
-//
-// It takes no reporter. The listener is made here and is compared, here,
-// against what the registry it was handed must come to — so "discard" is not
-// something this file can express: there is no argument to write it as, and the
-// only listener there is gets read two lines after it is made. The call the
-// suite is held by is this one; the call the self-test exercises is this one;
-// proving either proves both.
+// hold runs one harness over one registry: the only place a harness runs and
+// what it said is read. It takes no reporter, so discarding is inexpressible.
 func hold(t *testing.T, ran *census, h harness, over registry) {
 	ran.write(heldRun{h.name, over.complains})
 	heard := &recorder{}
@@ -435,12 +266,8 @@ func hold(t *testing.T, ran *census, h harness, over registry) {
 	}
 }
 
-// wrong is what a harness that came out the other way is reported as.
-//
-// It is deliberately NOT load-bearing and it is a separate function for exactly
-// that reason: Errorf fails the test whatever string it is handed, so a
-// hollowed message is still a red test, and the lines that must be correct stay
-// the five statements above and no more.
+// wrong is deliberately not load-bearing: Errorf fails the test whatever it is
+// handed.
 func (over registry) wrong(h harness, heard *recorder, missed []string) string {
 	if len(missed) > 0 {
 		return fmt.Sprintf("%q was run %s and was not asked about every rule it was handed:\n\t%s\nso whatever it did say was said over a subset, and the rules it was never asked about were read over nothing. It also said:\n%s",
@@ -472,22 +299,9 @@ type heldRun struct {
 	complains bool
 }
 
-// census is what actually ran, written down INSIDE hold and not by the loop
-// that calls it.
-//
-// MEMBERSHIP WAS THE HOLE. unreadHarnesses asked whether every declared name
-// was carried by an entry in the list — which stays true when the loop goes
-// round `ledgerHarnesses()[1:]`, and stays true when a call reaches past hold
-// to h.run with a listener nobody reads. This asks the other question: did this
-// run actually hold it, both ways.
-//
-// IT COUNTS RATHER THAN TICKING, because a set can be filled in advance.
-// Measured: four lines writing every declared harness into the census before
-// the loop, plus `ledgerHarnesses()[1:]`, hid the deleted LastDeployKeyReadOnly
-// contract at GO_TEST_EXIT=0. hold writes exactly once per call, so a run
-// written down twice is a run somebody recorded without running — and the same
-// count catches a list carrying one harness twice and another not at all, which
-// a membership check calls complete.
+// census is what ran, written inside hold. It counts rather than ticks, since a
+// set can be filled in advance: a run written twice was recorded without
+// running.
 type census struct {
 	mu   sync.Mutex
 	held map[heldRun]int
@@ -524,14 +338,6 @@ func (c *census) unaccounted(src *source) []string {
 	return out
 }
 
-// TestTheLedgerHolds is the whole invocation: every harness, both ways, through
-// the one call.
-//
-// There is no second call site. The direction that must be silent and the
-// direction that must complain are two calls to the same function, one line
-// apart, so a listener nobody reads is not expressible — and the census below
-// names a loop that went round a subset of the harnesses instead of letting it
-// pass.
 func TestTheLedgerHolds(t *testing.T) {
 	l := theLedger(t)
 	counts := map[kind]int{}
@@ -553,15 +359,6 @@ func TestTheLedgerHolds(t *testing.T) {
 	}
 }
 
-// TestTheCensusIsNotSatisfiedByAnythingButOneRunEach is the census's own fault,
-// and it is why the loop above cannot be shortened or written into. A census
-// that answers "nothing to report" whatever it is shown is the membership check
-// all over again, so it is shown four things: a run of every declared harness
-// both ways, which it must call complete; the same with one single run taken
-// away, which it must name; the same with one run written down twice, which it
-// must name, because that is what filling the census in advance looks like from
-// here; and a source declaring a harness nothing ever ran, which it must name
-// too.
 func TestTheCensusIsNotSatisfiedByAnythingButOneRunEach(t *testing.T) {
 	src := suiteSource(t)
 	everyRun := func() *census {
@@ -607,13 +404,7 @@ const harnessNobodyRuns harnessName = "a way of running the rules nothing ever r
 		t.Fatalf("a harness declared and never run went unnoticed, so declaring one and leaving it out of the list would too")
 	}
 
-	// AND ONE DECLARED WITHOUT THE TYPE ON ITS LINE, which is the same
-	// declaration with one token deleted. Measured: untyping
-	// harnessTheSuiteObeysTheLedger — which leaves it a perfectly good harness
-	// name, because the field it is written into is one — took that harness out
-	// of the census's population while leaving it in the program, and
-	// `ledgerHarnesses()[1:]` beside it hid the deleted LastDeployKeyReadOnly
-	// contract at GO_TEST_EXIT=0.
+	// And one declared without the type on its line.
 	stripped := src.with(t, "ledger_fault_unheld_untyped_harness_test.go", `package forgetest
 
 const harnessNobodyRunsEither = "a way of running the rules nothing ever runs, declared without the type on the line"
@@ -625,16 +416,6 @@ var _ = harness{name: harnessNobodyRunsEither}
 	}
 }
 
-// TestTheRulesReachedAreCountedAgainstTheRulesHandedIn is the tally's own
-// fault, and it is why hold's verdict can carry it: a tally that answers
-// "nothing to report" whatever it is shown is the membership check all over
-// again.
-//
-// So it is shown four tallies: one complete, which it must call complete; one
-// short by a single rule, which it must name — that is `over.rules[:1]` in
-// hold, and it is the hole this closes; one empty, which is a loop that never
-// ran; and one written into without going round, which is what filling it in
-// advance looks like from here.
 func TestTheRulesReachedAreCountedAgainstTheRulesHandedIn(t *testing.T) {
 	rules := ledgerRules()
 	if len(rules) < 2 {
@@ -677,7 +458,6 @@ func TestTheRulesReachedAreCountedAgainstTheRulesHandedIn(t *testing.T) {
 	}
 }
 
-// readOneRuleOverTheSuite is one rule read over the suite as it stands.
 func readOneRuleOverTheSuite(t *testing.T, heard *recorder, r rule) ruleName {
 	l := theLedger(t)
 	t.Run(string(r.name), func(t *testing.T) { obey(heard, l, r) })
@@ -723,13 +503,7 @@ func aRegistryOneShort(t *testing.T) []rule {
 }
 
 // proveOneRule hands a rule every ledger that breaks it and requires the rule to
-// say so, under its own name, THROUGH the loop that reports it.
-//
-// It is a function of ONE rule so that the thing running the rules can itself be
-// handed a rule that breaks it — see the harnesses above — without there being a
-// loop in here to shorten. A rule that has been hollowed says nothing and fails
-// here; a rule declared with no violation behind it fails here too; and so does
-// a reporting loop that hears a rule and drops what it says.
+// say so, under its own name, through the loop that reports it.
 func proveOneRule(t *testing.T, heard *recorder, r rule) ruleName {
 	t.Run(string(r.name), func(t *testing.T) {
 		if len(r.violates) == 0 {
@@ -755,23 +529,12 @@ func proveOneRule(t *testing.T, heard *recorder, r rule) ruleName {
 	return r.name
 }
 
-// reporter is where a complaint goes: obey takes one so that a rule can be read
-// over a ledger that breaks it and what it said can be looked at rather than
-// ending the test.
-//
-// It used to be what a HARNESS took as well, with nil meaning "report to t" —
-// which is how one token came to silence the whole suite. A harness now always
-// says what it has to say to the recorder hold made for it, and hold always
-// reads it; there is no nil and no choice of listener anywhere.
+// reporter is where obey sends a complaint, so a rule read over a breaking
+// ledger can be looked at rather than ending the test.
 type reporter interface{ Errorf(string, ...any) }
 
-// readEveryRuleDeclared closes the registry, which is the last list in this file
-// that a hand maintains. A rule constant no entry carries is a rule nothing
-// runs, and an empty registry is every rule at once — neither is visible from
-// inside the registry, because a rule that is not in it does not run. So this is
-// asked from outside it, over the rule names read out of this file's own source,
-// and it is asked of the registry it is HANDED so that a registry one entry
-// short is a thing it can be shown.
+// readEveryRuleDeclared closes the registry from outside it: a rule constant no
+// entry carries is a rule nothing runs.
 func readEveryRuleDeclared(t *testing.T, heard *recorder, read map[string]bool) {
 	src := suiteSource(t)
 	t.Run("as it stands", func(t *testing.T) {
@@ -789,14 +552,8 @@ const ruleNobodyReads ruleName = "a rule the registry never looks at"
 		}
 	})
 	t.Run("one more rule declared without the type on the line", func(t *testing.T) {
-		// AND A DECLARATION IS NOT A TYPE ANNOTATION. constantsOf used to ask
-		// for constants written `ruleName = ...`, so deleting that one token
-		// took a rule out of the population without taking it out of the
-		// program: measured, untyping ruleOrphan and dropping its registry
-		// entry left a live orphan assertion in optional.go at GO_TEST_EXIT=0,
-		// gofmt clean and vet clean. A constant has a type where it is USED,
-		// and that is what is read now — so this fault is spelled the way the
-		// evasion was.
+		// A constant has a type where it is used, which is what is read, so this fault
+		// is untyped.
 		broken := src.with(t, "ledger_fault_unread_untyped_rule_test.go", `package forgetest
 
 const ruleNobodyReadsEither = "a rule the registry never looks at, declared without the type on the line"
@@ -863,8 +620,6 @@ func theLedger(t *testing.T) *ledger {
 	return theOne
 }
 
-// ─────────────────────────────── the rules ───────────────────────────────
-
 // checkSaysNothing. An assertion with no message cannot be named by a proof,
 // so nothing can know it is load-bearing.
 func checkSaysNothing(l *ledger) []complaint {
@@ -898,12 +653,9 @@ func checkSayingsCollide(l *ledger) []complaint {
 	return out
 }
 
-// checkStepGoesNowhere. A step is exempt from needing a fault because it is not
-// a claim — it is how the suite GETS to a claim. So there has to be one: a real
-// assertion after it in the same function, or a function that hands its caller
-// the value a question is asked with. A step that is the last thing a subtest
-// does was never a step; it is a claim wearing a name that excuses it from
-// proof, which is this file's own defect one level up.
+// checkStepGoesNowhere: a step is exempt from needing a fault because it leads
+// to a claim, so it must: a real assertion after it in the same function, or a
+// function returning the value a question is asked with.
 func checkStepGoesNowhere(l *ledger) []complaint {
 	var out []complaint
 	for _, bad := range stepsGoingNowhere(l.src) {
@@ -1036,12 +788,8 @@ func runProof(l *ledger, p proof) []complaint {
 	return out
 }
 
-// checkProofProvesNothing. stops accounts for what a broken subject PREVENTS;
-// says is what the suite SAYS about it. A proof that only prevents has proved
-// nothing — the fault it injects produced no complaint, and an assertion whose
-// only proof is a proof like that has no fault behind it after all. It is also
-// the shape a demotion leaves behind when the demoted claim was the whole of
-// what a fault was written for.
+// checkProofProvesNothing: a proof whose fault produced no complaint, only
+// prevented steps, has proved nothing.
 func checkProofProvesNothing(l *ledger) []complaint {
 	var out []complaint
 	for _, p := range l.proofs {
@@ -1077,24 +825,9 @@ func checkOrphan(l *ledger) []complaint {
 	return out
 }
 
-// checkStrandedFault is the inverse closure, and it is what makes a demotion
-// impossible to hide.
-//
-// The orphan rule reads one way round: every assertion must have a fault behind
-// it. Nothing read the other way, and the other way is where the last defect
-// went. Measured: turning `require.NotEmpty(t, h, "an empty handle is a key
-// nothing can ever remove")` into a step and deleting the four lines of the
-// proof that named it left the tree at exit 0, and then replacing the step's
-// condition with a constant left it at exit 0 again — a contract fully dead,
-// with fake.FaultDeployKeyHandleIsEmpty still in the fake forge, still
-// answering an installation with an empty handle, and nothing at all asking it
-// to.
-//
-// Deleting the proof ALONE was caught, because the assertion orphaned. The
-// DEMOTION is what laundered it: a step needs no proof, so the assertion
-// stopped needing one, and the fault was left with nobody to notice. A fault
-// that no proof injects is either a mistake nothing checks for or a proof
-// somebody deleted, and from out here those are the same thing.
+// checkStrandedFault is the inverse closure: a fault no proof injects is a
+// mistake nothing checks for or a proof somebody deleted. It stops a demoted
+// assertion from hiding.
 func checkStrandedFault(l *ledger) []complaint {
 	named := map[string]bool{}
 	for _, p := range l.proofs {
@@ -1114,19 +847,8 @@ func checkStrandedFault(l *ledger) []complaint {
 	return out
 }
 
-// checkUnwalkedBody. Go holds a body in exactly two places — a declaration and
-// a literal — and every one of them has to be inside something this file walks,
-// or the assertions written in it are invisible: not exempt, not counted, not
-// anywhere, and no rule below computed over them. Four shapes were measured
-// doing exactly that, and the fix for each of them was to state where a body
-// can be rather than to add one more place to a list. This is what says the
-// statement still holds.
-// checkFailurePutDown. A way to fail that is stored rather than handed over is
-// one the walk cannot follow, and at the call site its type says only
-// "callback" — so an assertion made through it is in no population, needs no
-// message, no proof and no fault. Refusing it where it is put down is the whole
-// of what keeps "a value does not stop being testify by being given a shorter
-// name" true of values that are given no name at all.
+// checkFailurePutDown: a way to fail that is stored rather than handed over is
+// one the walk cannot follow, so it is refused where it is put down.
 func checkFailurePutDown(l *ledger) []complaint {
 	var out []complaint
 	for _, p := range l.src.waysToFailPutDown() {
@@ -1136,23 +858,8 @@ func checkFailurePutDown(l *ledger) []complaint {
 	return out
 }
 
-// checkLooseLoad. A test that reads its own source is a closure over whatever
-// source it was handed, so the environment is part of the check. GOPROXY=off is
-// what makes a module the cache does not have a loud failure rather than a
-// network fetch from inside a test; GOWORK=off is what keeps a workspace
-// somebody happens to have from deciding which tree is read.
-//
-// Three tests in this tree read source and only one of the three set either.
-// Measured, with the test binaries built first and then run under a GOWORK
-// naming a file that is not a workspace: the github and gitlab route tests both
-// die on the load, and the ledger's own load does not notice. Writing the
-// environment into each config would be a fix for the configs that exist, so
-// the fix is hermetic.Pin, which sets it on the PROCESS — and a driver's tests
-// get it by linking this suite, which pins in an init.
-//
-// This is the closure over what is left: a load site in a package whose binary
-// links neither the loader nor the pin runs under whatever the machine has, and
-// it is named here, at the line it is written on, before it has read anything.
+// checkLooseLoad: a load site in a package whose binary links neither hermetic's
+// loader nor its pin runs under the machine's environment, and is named here.
 func checkLooseLoad(l *ledger) []complaint {
 	var out []complaint
 	for _, site := range l.loads {
@@ -1171,29 +878,9 @@ func checkUnwalkedBody(l *ledger) []complaint {
 	return out
 }
 
-// checkFaultDoesNothing is the fault closure made CAUSAL, and causation is the
-// half a list could never be.
-//
-// The stranded-fault rule reads the population of faults and requires each one
-// to appear in SOME proof's faults. Appearing in a list is not evidence of
-// anything, and the last defect went straight through the middle of it.
-// Measured, three edits: delete the assertion that the installed deploy key is
-// read-only, delete the two-line proof that named it, and append its fault to
-// the neighbouring proof's list. Every fault still named, every rule still
-// quiet, gofmt clean, vet clean, GO_TEST_EXIT=0 — a driver that installs a
-// WRITABLE deploy key passing the whole conformance suite, with the only trace
-// an unasserted census line moving 183 to 182.
-//
-// So the question is not whether a fault is NAMED but whether it is WHY. Build
-// the same subject without it, run the suite again, and require at least one of
-// the complaints this proof names to stop being made. A fault whose absence the
-// suite cannot tell proves nothing about anything the proof names, and the
-// assertion it was written for has nothing behind it any more.
-//
-// It is asked of each fault ON ITS OWN, over a subject that still has the
-// others, so a proof that honestly needs two faults — a redirect that has to be
-// followed before the record it answers with can be wrong — holds: take either
-// away and a complaint the proof names goes with it.
+// checkFaultDoesNothing makes the fault closure causal: build the subject
+// without each fault on its own, rerun the suite, and require a complaint the
+// proof names to stop. Naming a fault is not evidence.
 func checkFaultDoesNothing(l *ledger) []complaint {
 	var out []complaint
 	for _, p := range l.proofs {
@@ -1243,7 +930,6 @@ func dropping(faults []fake.Fault, drop fake.Fault) []fake.Fault {
 	return out
 }
 
-// distinctFaults is the mistakes a proof injects, each asked about once.
 func distinctFaults(faults []fake.Fault) []fake.Fault {
 	seen := map[fake.Fault]bool{}
 	var out []fake.Fault
@@ -1267,8 +953,6 @@ func filterBy(only ruleName, said []complaint) []complaint {
 	}
 	return out
 }
-
-// ───────────────────── naming, and the two lists that do it ─────────────────────
 
 // names maps a proof's sayings onto the assertions they name, and refuses a
 // saying that names anything but one contract assertion. A proof that can name
@@ -1365,8 +1049,6 @@ func sayingAt(pop []assertion, id string) string {
 	}
 	return "?"
 }
-
-// ─────────────────────── reading the shape of the source ───────────────────────
 
 type stray struct{ site, fn string }
 

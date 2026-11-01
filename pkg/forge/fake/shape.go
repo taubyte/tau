@@ -1,36 +1,14 @@
-// Package fake is an in-memory git forge that is SHAPE-PARAMETERISED, so one
-// implementation stands in for four real ones.
-//
-// It exists for two jobs and is honest about both.
-//
-// The first is to be the forge every consumer's tests use. services/auth
-// reaches its coverage with a libp2p mocknet and an in-memory store and no
-// network at all; a forge dependency that needed an HTTP server would break
-// that house style, so this one holds its repositories in a map and records
-// what it WOULD have sent rather than sending it. Requests() is therefore a
-// faithful description and not a capture — for the real drivers it is an
-// httptest recorder, and that is where the wire is actually exercised.
-//
-// The second is to be the thing the conformance suite is proven against. A
-// suite that only ever sees a correct driver proves nothing, so this forge can
-// be told to be WRONG in specific, named ways (see Fault), and forgetest's own
-// tests assert that the suite catches each one. Every fault here is a mistake a
-// real driver author can make and a compiler cannot see.
-//
-// The shapes are not decoration. Nested is GitLab's variable depth,
-// HandlesUUID is Bitbucket's hook id, PayloadCarriesCloneURL false is
-// Bitbucket's push payload — which names a repository by full_name and leaves
-// the driver to supply the host — and the four Schemes are the four real
-// signature conventions. Running the suite in every shape is how the interface
-// is proven against divergences we are not paying to write drivers for.
+// Package fake is an in-memory git forge, parameterised by Shape so one
+// implementation stands in for several real ones. It is the forge consumers'
+// tests use, holding repositories in a map and recording what it would have
+// sent; and it is what the conformance suite is proven against, wrong in named
+// ways (see Fault) that forgetest asserts the suite catches.
 package fake
 
 import "github.com/taubyte/tau/pkg/forge"
 
-// Handles is how this forge numbers the resources it owns. It is a shape
-// because Bitbucket's webhook id is a UUID where GitHub's, GitLab's and
-// Gitea's are integers, and a Handle that a consumer parsed as a number would
-// work on three forges and lose data on the fourth.
+// Handles is a shape because Bitbucket's webhook id is a UUID where the others'
+// are integers.
 type Handles uint8
 
 const (
@@ -38,16 +16,13 @@ const (
 	HandlesUUID
 )
 
-// Shape is what makes one in-memory forge stand in for several real ones.
 type Shape struct {
-	// Host is the repokey host spelling this forge answers for.
 	Host string
 
 	// Nested is a forge that addresses a nested owner — GitLab's subgroups. A
 	// forge that is not nested REFUSES a deep key rather than flattening it.
 	Nested bool
 
-	// Handles is the id form this forge assigns.
 	Handles Handles
 
 	// Scheme is what this forge's driver registers new hooks with, and — unless
@@ -59,23 +34,15 @@ type Shape struct {
 	// must combine with its own host (Bitbucket).
 	PayloadCarriesCloneURL bool
 
-	// Omit lists capabilities this forge does not answer, so a partial forge
-	// and a partial fake are the same thing to a consumer.
-	//
-	// Only three patterns exist as concrete types, because a Go type either
-	// implements an interface or does not and there is no way to decide that at
-	// runtime: all of them, none of them, or all but one. New panics on any
-	// other combination rather than silently giving you a different forge than
-	// you asked for. Omitting CapSignatures or CapMembership is independent of
-	// the client-side count, since those two hang off the driver.
+	// Omit lists capabilities this forge does not answer. A Go type implements an
+	// interface or not, so only all, none or all but one of the client faces exist,
+	// and New panics on any other combination. CapSignatures and CapMembership hang
+	// off the driver.
 	Omit []forge.Capability
 
-	// Faults make this forge WRONG in named ways. See Fault.
 	Faults []Fault
 }
 
-// The named shapes the conformance suite runs. A consumer testing degradation
-// against Minimal is testing exactly the machinery a real partial forge uses.
 var (
 	GitHubLike = Shape{
 		Host:                   "fake.github",
@@ -98,9 +65,8 @@ var (
 		Handles: HandlesUUID,
 		Scheme:  forge.SchemeBitbucketSHA256,
 	}
-	// Minimal answers only the three mandatory questions. It is what a host
-	// with no API beyond authentication looks like from here, and it is the
-	// shape that proves absence is a tested contract rather than an omission.
+	// Minimal answers only the three mandatory questions, proving absence is a
+	// tested contract.
 	Minimal = Shape{
 		Host: "fake.bare",
 		Omit: []forge.Capability{
@@ -111,10 +77,8 @@ var (
 	}
 )
 
-// Fault is a way this forge is deliberately WRONG. Each one is a mistake a real
-// driver author can make that compiles, and each one has a test in forgetest
-// asserting the suite catches it. A fault the suite cannot catch is a hole in
-// the suite, and the only way to know is to write it down and try.
+// Fault is a way this forge is deliberately wrong: a mistake a driver author can
+// make that compiles. forgetest asserts the suite catches each.
 type Fault string
 
 const (
@@ -134,50 +98,18 @@ const (
 	FaultOutageIsRefusal Fault = "outage-is-refusal"
 
 	// FaultEchoesKey returns Repository.Key echoed from the argument instead of
-	// derived from the clone URL the forge returned, so a rename, a redirect or
-	// a case-folding disagreement is invisible.
-	//
-	// It is ONE defect. It used to point the clone addresses at another
-	// repository as well, and the suite caught that second defect and reported
-	// it as this one — so the echo the contract actually forbids went unchecked
-	// on every driver while a test said it did not. A fault carrying two
-	// mistakes proves the suite catches the easier one.
-	//
-	// SPLITTING IT LEFT THE OTHER HALF WITH NO FAULT AT ALL, which is a hole of
-	// the same kind: the clone-address assertion could be deleted from the suite
-	// and every test still passed. The half it lost is
-	// FaultRepositoryAddressNamesAnother below.
+	// derived from the clone URL the forge returned. It is one defect: a fault
+	// carrying two proves the suite catches the easier one.
 	FaultEchoesKey Fault = "echoes-key"
 
-	// FaultRepositoryAddressNamesAnother serves a repository RECORD whose key is
-	// right and whose clone addresses name a different repository on this host.
-	// It is FaultEchoesKey's other half, which used to ride along inside it —
-	// and the suite reported the pair as an echo, so the half nobody was
-	// checking was the address. They are two defects, and two defects need two
-	// faults: a fault carrying both proves the suite catches one of them.
-	//
-	// A forge's answer carries more than one clone address: the project's, its
-	// fork parent's, its mirror's. A driver that reads the wrong field files the
-	// repository under one name and hands a builder the address of another, and
-	// every value it returns looks entirely well formed. The only thing between
-	// that driver and a pass is the assertion that a record's key and its
-	// addresses name the same repository.
+	// FaultRepositoryAddressNamesAnother serves a record whose key is right and
+	// whose clone addresses name another repository on this host, as a driver
+	// reading the fork parent's field would.
 	FaultRepositoryAddressNamesAnother Fault = "repository-address-names-another"
 
-	// FaultTheRecordNamesAnotherRepository serves a record whose KEY names a
-	// repository that is not the one it describes — the mistake a driver makes
-	// by reading the wrong object out of an answer that carries several: the
-	// project and its fork parent, the repository and the one it was
-	// transferred from.
-	//
-	// It is not FaultEchoesKey, and the difference is what each proves. An echo
-	// answers with the key it was ASKED about, which is the right answer
-	// everywhere except a repository that moved — so it proves only the
-	// derivation contract, on the one fixture where argument and answer differ.
-	// This names a THIRD repository, so it is wrong on every record the suite
-	// reads: the listing's, the created one's, the writable fixture's, the
-	// nested one's. Each of those is a separate contract and each needs a fault
-	// that reaches it.
+	// FaultTheRecordNamesAnotherRepository serves a record whose key names a third
+	// repository: wrong on every record the suite reads, where an echo is wrong
+	// only on Moved.
 	FaultTheRecordNamesAnotherRepository Fault = "the-record-names-another-repository"
 
 	// FaultAsksAnotherHostWhoThisIs sends the identity request to a host this
@@ -187,13 +119,8 @@ const (
 	// credential spent at whatever answers there.
 	FaultAsksAnotherHostWhoThisIs Fault = "asks-another-host-who-this-is"
 
-	// FaultCloneAddressNamesAnother is the same mistake on the OTHER surface
-	// that produces a clone address: the CloneAddress face, which is what a
-	// builder is actually handed. The two surfaces are separate code in every
-	// driver — one reads a field out of an answer, the other builds a URL from a
-	// key — so one fault covering both would leave whichever assertion runs
-	// second unproven, which is exactly how the record's half came to be
-	// unchecked.
+	// FaultCloneAddressNamesAnother is the same mistake on the CloneAddress face,
+	// separate code in every driver.
 	FaultCloneAddressNamesAnother Fault = "clone-address-names-another"
 
 	// FaultLeaksTokenInError quotes the credential in an error string, which is
@@ -221,54 +148,24 @@ const (
 	// exist, collapsing "there is nothing here" into "you may not".
 	FaultMissingIsNone Fault = "missing-is-none"
 
-	// FaultFollowsRedirect takes a forge's redirect to another host and sends
-	// the request there with the credential still on it. It is the fault
-	// forge.PinnedTransport exists to make impossible, and it is what a driver
-	// that attaches its credential on an unpinned transport does: the header is
-	// set by a RoundTripper, and a RoundTripper runs on every hop.
-	//
-	// It follows a hop to ANOTHER HOST and nothing else. A hop to another
-	// repository on this host is a different defect against a different
-	// defence, and it has its own fault below.
+	// FaultFollowsRedirect sends a forge's redirect to another host with the
+	// credential still on it, as a driver attaching its credential on an unpinned
+	// transport does. A same-host hop has its own fault.
 	FaultFollowsRedirect Fault = "follows-redirect"
 
-	// FaultFollowsRedirectOnTheDeploymentCredential follows a hop off this host
-	// on the one client NO SESSION CAN REACH: the credential the deployment
-	// itself holds, which answers the membership question and nothing else.
-	//
-	// It is a redirect policy written per call site instead of per client, or
-	// written on the client a driver's author was looking at. Every session call
-	// refuses the hop; the membership walk does not, and it is walking with a
-	// credential that speaks for the whole deployment rather than for one user.
-	// A probe that arms one method finds nothing here, which is what it was
-	// added for.
+	// FaultFollowsRedirectOnTheDeploymentCredential follows an off-host hop on the
+	// deployment's own client, which answers membership: a redirect policy set per
+	// call site rather than per client.
 	FaultFollowsRedirectOnTheDeploymentCredential Fault = "follows-redirect-on-the-deployment-credential"
 
-	// FaultFollowsSameHostRedirect takes a forge's redirect to ANOTHER
-	// REPOSITORY ON THIS HOST and acts on the one the redirect names, while
-	// every value it hands back still describes the one the caller asked about.
-	//
-	// IT IS THE HOP A CREDENTIAL PIN PERMITS BY DESIGN. A pin decides one thing
-	// per hop — is this the host the credential is for — and the answer here is
-	// yes, so nothing below a driver refuses this and nothing above it can see
-	// it. The forge is free to answer 301 to a renamed path, 302 to anything,
-	// and 307 to a write with the body replayed; what comes back is a
-	// repository the caller never named, with its permissions, its hooks, its
-	// deletion. The only place the refusal can live is the driver's own
-	// redirect policy.
-	//
-	// The credential goes on the hop, because the hop is to the host the
-	// credential is for. That is not the defect. Acting on somebody else's
-	// repository is.
+	// FaultFollowsSameHostRedirect acts on the repository a same-host redirect
+	// names, while every value returned describes the one asked about. A credential
+	// pin permits the hop by design, so only the driver's redirect policy can
+	// refuse it.
 	FaultFollowsSameHostRedirect Fault = "follows-same-host-redirect"
 
-	// ─── the mandatory contract ───
-
-	// FaultBindsAZeroCredential builds a client for a Credential nobody filled
-	// in. The registry refuses one before Bind is reached, so this is the half
-	// of Driver.Bind's contract no Session can reach — and a driver that binds
-	// one is a driver that will act as nobody the moment a configuration value
-	// goes missing.
+	// FaultBindsAZeroCredential builds a client for an unfilled Credential: the half
+	// of Bind's contract no Session reaches, since the registry refuses one first.
 	FaultBindsAZeroCredential Fault = "binds-a-zero-credential"
 
 	// FaultRefusesAnonymousAtTheDoor refuses Anonymous() at Bind rather than at
@@ -297,11 +194,8 @@ const (
 	// check — acts on an answer no forge gave.
 	FaultAnswersBesideItsError Fault = "answers-beside-its-error"
 
-	// FaultWritableReadsAsReadOnly is visibility-is-permission's mirror: a
-	// repository this credential may push to reads as one it may only see. It is
-	// the failure that stops a registration rather than the one that permits it,
-	// and a suite that only catches the dangerous direction catches half a
-	// driver.
+	// FaultWritableReadsAsReadOnly is visibility-is-permission's mirror: it stops a
+	// registration rather than permitting one.
 	FaultWritableReadsAsReadOnly Fault = "writable-reads-as-read-only"
 
 	// FaultAHiddenRepositoryIsARawError answers a repository this credential
@@ -356,8 +250,6 @@ const (
 	// nests, which is GitLab's whole subgroup story reported as an unaddressable
 	// key.
 	FaultANestingForgeRefusesADepth Fault = "a-nesting-forge-refuses-a-depth"
-
-	// ─── the optional faces ───
 
 	// FaultListsNothing yields nothing from a listing this credential can
 	// certainly reach, so a consumer walking a namespace finds it empty.
@@ -414,19 +306,9 @@ const (
 	// never there.
 	FaultRemovingAnUnknownHookSucceeds Fault = "removing-an-unknown-hook-succeeds"
 
-	// FaultRemovesWithoutAHandle sends a removal that names no handle instead
-	// of refusing it where it stands.
-	//
-	// AN EMPTY HANDLE ADDRESSES THE COLLECTION. Every forge with a REST shape
-	// spells one key as .../keys/<id>, so .../keys/ with nothing after it is
-	// every key at once, and a removal of one thing is answered by an answer
-	// about all of them. A correct driver refuses it BEFORE anything leaves the
-	// process, because a write cannot be undone by checking afterwards — so
-	// this fake refuses it too, and this is the fault that makes it stop.
-	//
-	// It is reachable without a hostile forge: an install that names no id
-	// hands a caller "", and a caller that stored what it was handed arrives
-	// here with it.
+	// FaultRemovesWithoutAHandle sends a removal naming no handle instead of
+	// refusing it: an empty handle addresses the collection, .../keys/ being every
+	// key. An install that names no id hands a caller one.
 	FaultRemovesWithoutAHandle Fault = "removes-without-a-handle"
 
 	// FaultHTTPSAddressHasNoUsername hands back an https clone address with no
@@ -459,19 +341,13 @@ const (
 	// grants.
 	FaultANonMemberReadsAsAMember Fault = "a-non-member-reads-as-a-member"
 
-	// FaultPushReadsTheBaseRef reads the wrong field out of a verified payload:
-	// the branch a change was aimed AT rather than the ref that moved. The
-	// delivery is genuine, the signature is genuine, and the build runs on a
-	// branch nobody pushed.
+	// FaultPushReadsTheBaseRef reads the branch a change was aimed at rather than
+	// the ref that moved: the signature is genuine and the build is not.
 	FaultPushReadsTheBaseRef Fault = "push-reads-the-base-ref"
 
-	// FaultPushReadsTheCommitItMovedFrom reads the wrong commit out of a
-	// verified payload: the object the ref moved FROM rather than the one it
-	// moved to. It is the same class of mistake as reading the base ref, and it
-	// has a second victim — a ref DELETION is spelled as an after of all
-	// zeroes, so a driver reading before instead reports an ordinary push of
-	// the last commit that was there, and tau builds a branch that no longer
-	// exists.
+	// FaultPushReadsTheCommitItMovedFrom reads the commit the ref moved from. A
+	// deletion's after is all zeroes, so reading before reports an ordinary push of
+	// a branch that no longer exists.
 	FaultPushReadsTheCommitItMovedFrom Fault = "push-reads-the-commit-it-moved-from"
 
 	// FaultAnyDeliveryReadsAsAPush ignores what KIND of event arrived and reads

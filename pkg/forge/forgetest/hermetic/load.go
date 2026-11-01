@@ -1,31 +1,7 @@
-// Package hermetic is where the forge tree's source-reading tests get their
-// environment.
-//
-// Three tests here read their own package's source rather than trusting a
-// comment about it: the ledger's population, and each driver's "this driver
-// builds an HTTP request in exactly one place". Each one wrote its own
-// packages.Config and only one of the three set an environment.
-//
-// MEASURED. Test binaries built first, then run with GOWORK naming a file that
-// is not a workspace — a workspace somebody happens to have is not a
-// hypothetical on a machine that develops two modules at once. The github and
-// gitlab route tests both die on the load; the ledger's own load, which set
-// GOWORK=off, does not notice. A test that reads source is only as trustworthy
-// as the source it was handed, and a load that answers with somebody else's
-// tree, or reaches the network for a module, is a closure over the wrong
-// program.
-//
-// AN ENVIRONMENT IS A PROPERTY OF A PROCESS, NOT OF A CALL SITE, and that is
-// why the fix is not three configs written the same way. Pin does it once for
-// the whole test binary, so a load site nobody routed through Load is hermetic
-// anyway — including one somebody adds tomorrow, and including the two that
-// never set anything. Load is the same two settings written where a caller
-// cannot decline them: appended AFTER whatever Env a config arrives with,
-// because appended last is what wins.
-//
-// The ledger next door reads this tree's source for calls to packages.Load and
-// names every one that is neither the call below nor in a binary this package
-// has pinned.
+// Package hermetic is the environment for the forge tree's source-reading tests.
+// GOWORK and GOPROXY are properties of a process, so Pin sets them once for the
+// whole test binary, and Load appends them after whatever Env a config carries,
+// where they win.
 package hermetic
 
 import (

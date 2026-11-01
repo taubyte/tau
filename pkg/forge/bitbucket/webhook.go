@@ -11,17 +11,14 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// Scheme is what this driver registers NEW hooks with. Bitbucket Cloud signs a
-// delivery from a hook with a secret as X-Hub-Signature: "sha256=" and the
-// lowercase hex HMAC-SHA256 of the raw body, keyed by the secret's bytes —
-// forge.SchemeBitbucketSHA256. There is no verification code here.
+// Bitbucket Cloud signs a delivery as X-Hub-Signature: "sha256=" and the
+// lowercase hex HMAC-SHA256 of the body. Verification is the core's.
 func (d *driver) Scheme() forge.Scheme { return forge.SchemeBitbucketSHA256 }
 
 // zeroCommit is what a deletion is reported as: the core turns it into
 // forge.ErrRefDeleted.
 var zeroCommit = strings.Repeat("0", 40)
 
-// refJSON is one side of a ref change.
 type refJSON struct {
 	Type   string `json:"type"`
 	Name   string `json:"name"`
@@ -30,10 +27,8 @@ type refJSON struct {
 	} `json:"target"`
 }
 
-// pushPayload is the whole of what this driver reads out of a repo:push
-// delivery. Bitbucket sends the actor, the commit list, links and the
-// repository's UUID besides; every field that survived into a Push would be one
-// more thing something downstream comes to trust.
+// pushPayload reads only what a Push needs: every field kept is one more thing
+// downstream comes to trust.
 type pushPayload struct {
 	Repository struct {
 		Links struct {
@@ -50,18 +45,10 @@ type pushPayload struct {
 	} `json:"push"`
 }
 
-// Push reads a delivery the core HAS ALREADY VERIFIED and returns what it
-// claims. It decides nothing: the core compares the repository claimed here
-// against the one the hook was registered for.
-//
-// THE REPOSITORY IS NAMED BY ITS HTML LINK, because a Bitbucket push payload
-// carries no clone URL; "https://bitbucket.org/acme/pay" is the same key
-// repokey derives from the clone URL, which is what makes the comparison hold.
-//
-// ONE DELIVERY, ONE REF. Bitbucket batches several ref changes into a single
-// delivery when one git push moves several refs. A claim has room for one ref,
-// and picking one would drop the others without a word — so a delivery carrying
-// more than one change is REFUSED, loudly, rather than half-read.
+// Push reads a delivery the core has verified and returns what it claims; the
+// core compares the repository with the hook's. The repository is named by its
+// HTML link, which keys like a clone URL. A delivery moving several refs is
+// refused: a claim has room for one, and picking one would drop the rest.
 func (d *driver) Push(body forge.VerifiedBody, header http.Header) (forge.PushClaim, error) {
 	if header.Get("X-Event-Key") != "repo:push" {
 		return forge.PushClaim{}, forge.ErrNotAPush

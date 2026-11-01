@@ -7,15 +7,8 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// The failure taxonomy IS the security contract of this package. Every question
-// has three outcomes and not two: yes, no, and "I could not ask". Only the first
-// two are values. The third is always an error, and never a zero value dressed
-// as an answer.
-//
-// v1 already fixed this contract for one question — a 404 is the only definitive
-// non-member, "because a 403 can mean the app was blocked, which is an operator
-// problem, not a verdict on the user" — and everything below is that same rule
-// stated once for every question this package asks.
+// Every question has three outcomes: yes, no, and "could not ask". The third is
+// always an error, never a zero value dressed as an answer.
 
 var (
 	// ErrNoCredential is a zero Credential. There is no implicit anonymity;
@@ -27,7 +20,6 @@ var (
 	// principal.
 	ErrAnonymous = errors.New("forge: an anonymous session cannot answer an authorization question")
 
-	// ErrNotAPush is a verified delivery that is not a push event.
 	ErrNotAPush = errors.New("forge: delivery is not a push")
 
 	// ErrRefDeleted is a push that deletes a ref. It is separate from
@@ -36,15 +28,11 @@ var (
 	// then chase.
 	ErrRefDeleted = errors.New("forge: push deletes the ref")
 
-	// ErrSecretNotSerializable is what every marshaller on Secret returns.
 	ErrSecretNotSerializable = errors.New("forge: a Secret cannot be serialized; call Expose")
 )
 
-// NoDriverError is a host this deployment has no driver for. IT IS NOT A
-// FALLBACK POINT: there is no generic driver behind it, because a driver that
-// answers "may this caller write" by shrugging is worse than no answer. What a
-// consumer does with it is a policy the consumer writes down, in its own code,
-// where a reviewer finds it.
+// NoDriverError is not a fallback point: there is no generic driver, since one
+// answering "may this caller write" by shrugging is worse than none.
 type NoDriverError struct{ Host string }
 
 func (e *NoDriverError) Error() string { return fmt.Sprintf("forge: no driver for host %q", e.Host) }
@@ -61,12 +49,8 @@ func (e *UnsupportedError) Error() string {
 	return fmt.Sprintf("forge: %s cannot answer %s", e.Host, e.Capability)
 }
 
-// UnaddressableError is a key whose SHAPE this forge cannot address — a GitLab
-// subgroup handed to a driver whose API takes exactly one owner and one name. A
-// driver refuses; it never joins the segments into a name no repository has,
-// because that is how a request ends up addressing something other than what
-// the caller named. Raised by the registry before any request leaves the
-// process.
+// UnaddressableError is a key whose shape this forge cannot address. A driver
+// never joins segments into a name no repository has.
 type UnaddressableError struct {
 	Host   string
 	Key    repokey.Key
@@ -90,11 +74,8 @@ func (e *WrongHostError) Error() string {
 	return fmt.Sprintf("forge: session is bound to %s and cannot act on %q", e.Session, e.Key)
 }
 
-// NotFoundError is the host saying it serves no such repository. IT IS NOT A
-// REFUSAL, and the ambiguity is documented rather than papered over: a host
-// hides a repository the credential may not read, so "no such repository" and
-// "you may not see it" are indistinguishable from outside. A consumer that
-// needs them separated cannot get that from any forge.
+// NotFoundError: a host hides a repository the credential may not read, so "no
+// such repository" and "you may not see it" are one answer.
 type NotFoundError struct {
 	Host string
 	Key  repokey.Key
@@ -104,12 +85,8 @@ func (e *NotFoundError) Error() string {
 	return fmt.Sprintf("forge: %s serves no repository %q", e.Host, e.Key)
 }
 
-// CredentialError is the credential being refused — expired, revoked, wrong
-// scope. It is not a verdict about the repository, and a consumer that reads it
-// as one denies a legitimate writer whose token merely lapsed.
-//
-// Reason is a driver's own words and MUST NOT quote the credential: an error
-// string is the most-copied thing in a log.
+// CredentialError is the credential refused (expired, revoked, wrong scope),
+// not a verdict on the repository. Reason must not quote the credential.
 type CredentialError struct {
 	Host   string
 	Reason string

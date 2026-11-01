@@ -259,13 +259,9 @@ func handleSegment(h forge.Handle) (string, error) {
 	return string(h), nil
 }
 
-// CloneAddress is the address a clone of key uses: https under /scm/, and ssh
-// on the ssh port, both of which the driver's Spellings files under key.
-//
-// Over HTTPS an HTTP access token is the password. A project or repository
-// token accepts any user name; a personal token wants its owner's, which this
-// layer does not know, so the name below is the placeholder Atlassian's own
-// tooling uses for a token.
+// Over HTTPS an HTTP access token is the password. A personal token wants its
+// owner's name, which this layer does not know, so the name is the placeholder
+// Atlassian's own tooling uses.
 func (c *client) CloneAddress(key repokey.Key, over forge.Protocol) (forge.Address, error) {
 	at, err := c.d.coords(key)
 	if err != nil {

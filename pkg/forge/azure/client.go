@@ -32,8 +32,8 @@ const (
 	permManagePermissions = 8192 // ManagePermissions: the repository's admin
 )
 
-// client is a driver acting as one credential. It holds no copy of the
-// credential: the closure writing the header is the only place it lives.
+// client holds no copy of the credential: only the closure writing the header
+// does.
 type client struct {
 	d    *driver
 	http *http.Client
@@ -63,10 +63,9 @@ func (d *driver) bind(token string) *client {
 	}
 }
 
-// noRedirect: THIS DRIVER FOLLOWS NO REDIRECT. Azure DevOps answers a request
-// it will not authenticate with a 302 to its sign-in page, and a write
-// replayed by a 307 lands wherever the answer chose. Either way the 3xx is
-// handed to send, which reports it as the non-2xx it is.
+// Azure DevOps answers an unauthenticated request with a 302 to its sign-in
+// page, and a 307 replays a write wherever it points, so send reports a 3xx as
+// the non-2xx it is.
 func noRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
 func (c *client) Host() string { return c.d.host }
@@ -77,7 +76,6 @@ type statusError struct {
 	Status int
 }
 
-// Refused is a 4xx: the forge's own answer refusing the request.
 func (e *statusError) Refused() bool { return e.Status >= 400 && e.Status < 500 }
 
 func (e *statusError) Error() string {
@@ -92,12 +90,8 @@ func statusOf(err error) int {
 	return 0
 }
 
-// send issues one request and decodes a 2xx body into out.
-//
-// 203 IS NOT SUCCESS HERE. Azure DevOps answers a credential it does not
-// accept with 203 Non-Authoritative Information and its HTML sign-in page; a
-// driver that took every 2xx as an answer would try to decode that page, or —
-// with no body expected — report a deletion that never happened.
+// 203 is not success: Azure DevOps answers a credential it does not accept with
+// 203 and its sign-in page.
 func (c *client) send(ctx context.Context, rq request, in, out any) error {
 	p, err := rq.path()
 	if err != nil {
@@ -146,10 +140,8 @@ func (c *client) send(ctx context.Context, rq request, in, out any) error {
 	return nil
 }
 
-// classify maps a failure about one repository into the taxonomy: 401 and 203
-// are the credential, 404 is "no such repository" (which on Azure DevOps also
-// covers one this credential may not see). Everything else — a 403 in
-// particular — stays an error and is not a verdict.
+// 401 and 203 are the credential, 404 is no such repository (or one this
+// credential may not see); anything else, a 403 included, stays an error.
 func (c *client) classify(err error, key repokey.Key) error {
 	switch s := statusOf(err); {
 	case s == http.StatusUnauthorized || s == http.StatusNonAuthoritativeInfo:
@@ -159,8 +151,6 @@ func (c *client) classify(err error, key repokey.Key) error {
 	}
 	return err
 }
-
-// ─────────────────────────────── identity ───────────────────────────────
 
 type connectionData struct {
 	AuthenticatedUser struct {
@@ -191,8 +181,6 @@ func (c *client) Whoami(ctx context.Context) (forge.Identity, error) {
 	}
 	return id, nil
 }
-
-// ─────────────────────────────── repositories ───────────────────────────────
 
 type repoJSON struct {
 	ID            string `json:"id"`
@@ -245,7 +233,6 @@ func (c *client) repository(r repoJSON, asked string) (forge.Repository, error) 
 	}, nil
 }
 
-// get fetches one repository and derives its record.
 func (c *client) get(ctx context.Context, key repokey.Key) (repoJSON, forge.Repository, error) {
 	at, err := c.d.coords(key)
 	if err != nil {
@@ -294,13 +281,10 @@ type evaluationBatch struct {
 	Evaluations               []evaluation `json:"evaluations"`
 }
 
-// Access asks the security service what THIS credential holds on the
-// repository's ACL token, repoV2/{project id}/{repository id}. Azure DevOps
-// returns no permissions with a repository, so this is two requests.
-//
-// Every answer is matched back to the question by token and bit rather than
-// by position, and a bit the forge did not answer is an error — never a
-// false — so a short answer cannot read as a denial.
+// Access asks the security service what this credential holds on the
+// repository's ACL token, repoV2/{project id}/{repository id}. Answers are
+// matched back by token and bit, and a bit not answered is an error, never a
+// false.
 func (c *client) Access(ctx context.Context, key repokey.Key) (forge.Access, error) {
 	at, r, err := c.bound(ctx, key)
 	if err != nil {
@@ -342,10 +326,8 @@ type repoList struct {
 	Value []repoJSON `json:"value"`
 }
 
-// ListRepositories lists every repository readable in each organization this
-// deployment answers in. Azure DevOps returns an organization's repositories
-// in one answer, unpaged. A disabled repository, or one this layer cannot
-// name, is skipped rather than yielded with a key nothing could act on.
+// Azure DevOps returns an organization's repositories unpaged. A disabled
+// repository, or one this layer cannot name, is skipped.
 func (c *client) ListRepositories(ctx context.Context, yield func(forge.Repository) bool) error {
 	for _, org := range c.d.orgs {
 		var out repoList
@@ -380,13 +362,8 @@ type createRequest struct {
 	} `json:"project"`
 }
 
-// Create makes the repository at its key, inside the project the key names.
-//
-// VISIBILITY IS THE PROJECT'S on Azure DevOps, not the repository's, so a
-// request for a private repository in a public project — or the reverse — is
-// refused rather than created with the visibility nobody asked for. A
-// repository has no description field, so CreateOptions.Description has
-// nowhere to go and is not sent.
+// Visibility is the project's on Azure DevOps, so a request for the other one
+// is refused rather than created. A repository has no description field.
 func (c *client) Create(ctx context.Context, key repokey.Key, opts forge.CreateOptions) (forge.Repository, error) {
 	at, err := c.d.coords(key)
 	if err != nil {
@@ -432,14 +409,9 @@ func (c *client) Delete(ctx context.Context, key repokey.Key) error {
 	return nil
 }
 
-// ─────────────────────────────── clone addresses ───────────────────────────────
-
-// CloneAddress derives the address from the key with no request.
-//
-// HTTPS authenticates a PAT as the password and ignores the user name, so the
-// one below is a label. SSH on a Server is ssh://{host}/{collection}/{project}/_git/{repo};
-// on Services it is ANOTHER HOST, ssh.dev.azure.com, under v3/{org}/{project}/{repo},
-// which the driver's Spellings maps back onto this key through Registry.Key.
+// HTTPS takes a PAT as the password, so the user name is a label. SSH on
+// Services is another host, ssh.dev.azure.com/v3/{org}/{project}/{repo}, which
+// Canonical maps back onto this key.
 func (c *client) CloneAddress(key repokey.Key, over forge.Protocol) (forge.Address, error) {
 	at, err := c.d.coords(key)
 	if err != nil {

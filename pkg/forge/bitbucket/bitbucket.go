@@ -1,52 +1,14 @@
-// Package bitbucket is the forge driver for Bitbucket Cloud: bitbucket.org,
-// whose API is api.bitbucket.org/2.0.
+// Package bitbucket is the forge driver for Bitbucket Cloud, whose API is
+// api.bitbucket.org/2.0; Bitbucket Server speaks another API. A credential
+// bound for bitbucket.org is pinned to api.bitbucket.org, and any other host is
+// taken to serve /2.0/ itself.
 //
-// IT IS NOT A DRIVER FOR BITBUCKET SERVER OR DATA CENTER. Those speak
-// /rest/api/1.0, a different API with different nouns (projects, not
-// workspaces), and a driver for them is its own package. Bitbucket Cloud is one
-// service with one API, so the host decides everything here.
-//
-// # The API host is not the repository host
-//
-// bitbucket.org serves repositories and api.bitbucket.org serves the API, the
-// github driver's shape for github.com. A credential bound for bitbucket.org is
-// therefore pinned to api.bitbucket.org, the only host it may ever reach. Any
-// other host — a test server, a proxy in front of Bitbucket Cloud — is taken to
-// serve the same /2.0/ API on itself.
-//
-// # Where Bitbucket differs, and where a copy of the github driver would be wrong
-//
-//   - PERMISSION IS NOT ON THE REPOSITORY. A repository answer says nothing
-//     about what the caller may do to it; /user/permissions/repositories does,
-//     filtered by full name. An empty answer for a repository the caller could
-//     read is a public repository with no grant, which is AccessRead and
-//     nothing more — VISIBILITY IS NOT PERMISSION.
-//
-//   - EVERY DEPLOY KEY IS READ-ONLY. Bitbucket Cloud has no writable deploy key
-//     and no field to ask for one, so the interface's rule holds by the forge's
-//     own construction rather than by a field this driver sets and reads back.
-//
-//   - A HOOK'S HANDLE IS A UUID IN BRACES, "{…}". It is opaque here and escaped
-//     like every other segment.
-//
-//   - PAGES CARRY A "next" URL. This driver does not request what a forge
-//     wrote: it reads the page number out of "next", refuses anything else
-//     "next" says, and asks for that page through its own route table.
-//
-//   - MEMBERSHIP IS NOT ANSWERED. /workspaces/{w}/members/{member} addresses a
-//     member by UUID or Atlassian account id; Bitbucket removed usernames from
-//     its API, and the Memberships contract is a username. A driver that sent a
-//     username there would read every 404 as "not a member", which is exactly
-//     the answer the contract forbids an outage of meaning to produce. The face
-//     is absent, so a session answers *forge.UnsupportedError.
-//
-//   - A PUSH DELIVERY NAMES ITS REPOSITORY BY ITS HTML LINK, not by a clone
-//     URL, and carries a LIST of ref changes. It is signed X-Hub-Signature,
-//     sha256= and lowercase hex — forge.SchemeBitbucketSHA256 — and verified by
-//     the core, never here.
-//
-// No SDK: the whole of what tau asks Bitbucket is eleven requests, all of them
-// in route.go.
+// Permission is not on the repository: /user/permissions/repositories answers
+// it, and no grant on a readable repository is AccessRead only. Every deploy key
+// is read-only by construction. A hook's handle is a braced UUID. A page's
+// "next" URL is read for its page number only. Membership is not answered: the
+// API addresses members by UUID, never by the username the contract asks
+// about. A push delivery is signed X-Hub-Signature, sha256=.
 package bitbucket
 
 import (
@@ -61,16 +23,12 @@ import (
 )
 
 const (
-	// acceptJSON is the only media type the Bitbucket API speaks.
 	acceptJSON = "application/json"
 
-	// cloud and its API host.
 	cloud    = "bitbucket.org"
 	cloudAPI = "api.bitbucket.org"
 )
 
-// driver is one Bitbucket Cloud, constructed for the host it answers for. It
-// carries no caller credential.
 type driver struct {
 	host string
 	// apiHost is the host every request goes to, and the one the credential is
@@ -103,7 +61,6 @@ func Transport(rt http.RoundTripper) Option {
 	}
 }
 
-// New builds the driver for one host.
 func New(host string, opts ...Option) (forge.Driver, error) {
 	if host == "" {
 		return nil, errors.New("forge/bitbucket: a driver names the host it answers for")
@@ -141,7 +98,6 @@ func (d *driver) Addressable(key repokey.Key) error {
 	return nil
 }
 
-// Bind returns a client acting as cred and only as cred.
 func (d *driver) Bind(cred forge.Credential) (forge.Client, error) {
 	if cred.IsZero() {
 		return nil, forge.ErrNoCredential

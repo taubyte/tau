@@ -18,10 +18,8 @@ type createRepoRequest struct {
 	IsPrivate   bool   `json:"is_private"`
 }
 
-// Create creates the repository at the key it will be addressed by. Bitbucket
-// creates under any workspace through one endpoint — the caller's personal
-// workspace is a workspace like any other — so there is no second branch here
-// to take the wrong one of.
+// Bitbucket creates under any workspace, the caller's personal one included,
+// through one endpoint.
 func (c *client) Create(ctx context.Context, key repokey.Key, opts forge.CreateOptions) (forge.Repository, error) {
 	var r repoJSON
 	body := createRepoRequest{SCM: "git", Description: opts.Description, IsPrivate: opts.Private}
@@ -192,7 +190,6 @@ func uuidHandle(id string) (forge.Handle, error) {
 	return forge.Handle(id), nil
 }
 
-// handleSegment is a handle as the one path segment its route has.
 func handleSegment(h forge.Handle) (string, error) {
 	if h == "" {
 		return "", errors.New("forge/bitbucket: removing a resource needs the handle the forge gave it")
@@ -206,8 +203,8 @@ func handleSegment(h forge.Handle) (string, error) {
 	return string(h), nil
 }
 
-// CloneAddress is the address a clone of key uses. Over HTTPS a Bitbucket
-// access token authenticates as the literal user x-token-auth.
+// Over HTTPS a Bitbucket access token authenticates as the literal user
+// x-token-auth.
 func (c *client) CloneAddress(key repokey.Key, over forge.Protocol) (forge.Address, error) {
 	escaped, err := escapedSegments([]string{key.Owner, key.Name})
 	if err != nil {

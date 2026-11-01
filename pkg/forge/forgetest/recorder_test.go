@@ -6,13 +6,9 @@ import (
 	"strings"
 )
 
-// recorder is a tb that remembers instead of failing, so this package can
-// assert that the suite CATCHES a broken driver. A suite that has only ever
-// been run against a correct driver has been shown to compile, not to check.
-//
-// FailNow is runtime.Goexit, exactly as testing's is, so require's short-circuit
-// behaves the way it does under go test; each subtest therefore runs in its own
-// goroutine and is waited for.
+// recorder is a tb that remembers instead of failing, so this package can assert
+// the suite catches a broken driver. FailNow is runtime.Goexit, as testing's
+// is, so each subtest runs in its own goroutine.
 type recorder struct {
 	failed bool
 	msgs   []string
@@ -49,7 +45,6 @@ func (r *recorder) Run(name string, f func(tb)) bool {
 	return !child.failed
 }
 
-// record runs the whole suite against a subject and reports what it said.
 func record(s Subject) *recorder {
 	r := &recorder{}
 	r.Run("suite", func(t tb) { run(t, s) })

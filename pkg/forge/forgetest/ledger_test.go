@@ -23,221 +23,16 @@ import (
 	"github.com/taubyte/tau/pkg/forge/forgetest/hermetic"
 )
 
-// THE INVERSE GUARD.
+// The inverse guard. Every contract case must be named by a proof, a subject
+// wrong in a named way plus the exact complaints the suite makes about it, and
+// every fault must be named by a proof. A marker step needs no fault and must
+// have none. The population is found by type with go/types, not by spelling,
+// and every body is walked: a declaration or a literal, wherever it is bound.
 //
-// The package comment states the rule one way round: every FAULT must fail the
-// suite, which is the only way to know that an assertion asserts. Nothing
-// enforced the other way round, and that is the direction the defects kept
-// arriving from — an assertion with NO FAULT BEHIND IT, which cannot fail for
-// any subject, which reads as a check and is decoration. Three rounds running,
-// one was added or a live one was deleted, and every test stayed green: a
-// vacuous canary, an assertion replaced by one asserting the opposite, five new
-// ones each individually deletable with the tree still at exit 0.
-//
-// So the suite's assertions are now themselves a population this file walks.
-//
-//	EVERY CONTRACT CASE MUST BE NAMED BY A PROOF, and a proof is a subject that
-//	is wrong in a named way plus the COMPLETE list of complaints the suite makes
-//	about it. Naming is by message fragment, and a fragment must match exactly
-//	one case in the source — so a saying that is a substring of somebody else's
-//	message is a build failure and not a test that passes on the wrong
-//	assertion.
-//
-//	AND EVERY FAULT MUST BE NAMED BY A PROOF, which is the same closure read
-//	backwards and the half that was missing. Demoting an assertion to a step and
-//	deleting the proof that named it left a contract dead, a fault stranded and
-//	the tree at exit 0 — measured. An assertion needs a fault behind it; a fault
-//	needs a proof in front of it; neither direction alone closes the loop.
-//
-//	THE LIST IS EXACT. What fired under a proof must be what the proof names,
-//	no more and no less. That is what makes each named assertion LOAD-BEARING:
-//	delete it and the set no longer matches, which is precisely "the self-test
-//	notices". A proof naming a complaint some other assertion also makes proves
-//	that other assertion instead, and the exactness is what says so.
-//
-//	AN ASSERTION NO PROOF NAMES FAILS THE BUILD. It is either an assertion no
-//	subject can reach, or one whose deletion nothing would notice, and there is
-//	no way to tell those apart from the outside — which is the whole point.
-//
-// TWO KINDS, AND ONLY ONE OF THEM NEEDS A FAULT. Holding a step to the same
-// bar as a claim produces faults nobody wants; letting a claim call itself a
-// step is the same defect this file exists to close, one level up. So the one
-// exemption is spelled, it is narrow, and it is checked.
-//
-//	CONTRACT — a call that fails the suite. A claim about the SUBJECT: the
-//	driver, and the probes its author wired up. Needs a fault.
-//
-//	PLUMBING — a marker, which is any function asking for a step. A step the
-//	suite takes on its way to a question; see plumbing.go. Needs no fault, and
-//	MUST NOT HAVE ONE: a step a proof can kill was a claim somebody demoted,
-//	and that is a build failure naming the proof. It must also be ON ITS WAY
-//	somewhere — a real assertion after it in the same function, or a function
-//	that returns the value a caller asks its question with.
-//
-//	THE ONE EXCUSE FOR A STEP THAT FIRES, and the two things that hold it shut.
-//	A proof may list a step it STOPS, because an honest cascade exists: a
-//	Subject declaring a capability its driver has not got turns the next call
-//	into an *UnsupportedError and the suite really did not get there. Left free,
-//	that list was a way to hide a live claim — respell it as a step, move its
-//	saying one list over, tree green. So a stop must now be BOTH a capability
-//	refusal, which only a marker emits and only for an *UnsupportedError, and
-//	COLLATERAL, in a function this proof does not also name a claim in.
-//
-// ─────────────────────────────────────────────────────────────────────────────
-//
-// THE POPULATION IS FOUND BY TYPE, AND IT USED TO BE FOUND BY SPELLING.
-//
-// This file matched the literal identifiers "assert", "require" and "t" at the
-// call site and had a table of call names beside them. Anything spelled
-// otherwise was not in the population at all — and the population is what every
-// rule below is computed over, so an assertion outside it needs no message, no
-// proof and no fault, and nothing anywhere says so.
-//
-// Measured: a conformance subtest in a new file importing testify as `check`,
-// with three assertions no proof could kill, left the tree at exit 0, gofmt
-// clean and vet clean, and left this file's own census UNCHANGED at "145
-// assertions: 105 contract, 40 plumbing" while `go test -v` showed the subtest
-// running. Renaming a tb receiver from `t` to `tt` did the same. The ledger was
-// BLIND, not permissive; the exemption had moved from a comment to an import
-// alias and got cheaper to type than the comment had been.
-//
-// So the population is resolved with go/types, and a call is an assertion
-// because of WHAT IT IS:
-//
-//	a call to a function DECLARED OUTSIDE THIS PACKAGE that takes something it
-//	can fail through — a parameter whose type has an Errorf. That is testify's
-//	TestingT, and it is testify under any alias, any dot-import, any fork and
-//	any wrapper written outside this package.
-//
-//	a call to one of the methods that fail a TB — Error, Errorf, Fatal, Fatalf,
-//	Fail, FailNow — on a receiver that has an Errorf, whatever the receiver is
-//	named at the call site.
-//
-//	a call to a MARKER, which is any function asking for a step. Not three
-//	names: a type, so the fourth marker is seen the day it is written.
-//
-// A function declared INSIDE this package is never a leaf: its body is walked,
-// so a wrapper does not hide the assertion in it — the assertion is counted
-// where it is written, and the wrapper is the place a proof must name.
-//
-// THE THREE ANCHORS THIS LEAVES are a type name, six method names and "outside
-// this package", and none of them is a call-site spelling. `step` is looked up
-// by name and its absence is a failure of its own; Errorf cannot be renamed and
-// still fail a test; and "outside this package" is not a name at all.
-//
-// ─────────────────────────────────────────────────────────────────────────────
-//
-// AND THE WALK WENT ROUND FOUR OF THEM, BECAUSE IT WAS A LIST OF PLACES A BODY
-// HAD BEEN SEEN RATHER THAN THE STATEMENT THAT A BODY IS A BODY.
-//
-// The resolution was by type and the WALK was still by shape. Four measured, all
-// four live in the shared suite, all four with this file's own census unchanged
-// at 144 contract cases and the tree at exit 0, gofmt clean, vet clean:
-//
-//	a package-level `var f = func(t tb, ...) { assert... }`. The walk matched
-//	*ast.FuncDecl and *ast.AssignStmt, and a *ast.ValueSpec is neither, so the
-//	body was never entered at all.
-//
-//	an assertion written inside a MARKER, whose body the walk stepped over
-//	entirely — and a marker is "any function that asks for a step", so adding a
-//	step parameter exempted everything written beside it.
-//
-//	a call into another package handed the METHOD that fails a test rather than
-//	the reporter: outside.Check(t.Errorf, cond, msg). The callee's signature has
-//	no Errorf in it, so nothing about the declaration said it could fail
-//	anything. The same helper taking a reporter was caught.
-//
-//	`var truthy = assert.True`, then truthy(t, cond, msg). The name resolved to
-//	a *types.Var and the walk stopped there. The exemption had moved from an
-//	import alias to a one-line var and got cheaper to type than the alias was.
-//
-// THE CLASS IS "A CALL THAT CAN FAIL THE TEST, HOWEVER IT WAS NAMED OR BOUND",
-// and it is stated in three parts rather than patched in four places:
-//
-//	A BODY IS A BODY WHEREVER IT IS. Go holds one in exactly two places — a
-//	declaration and a literal. Every declaration is walked, markers included; a
-//	literal is walked by the function that contains it, and a literal nothing
-//	contains is walked in its own right, whatever it was bound to or bound into.
-//	That is not a list of binding forms: it is the lexical statement that
-//	nothing is left over, and the ledger reports any body it does not reach.
-//
-//	A MARKER IS A FUNCTION LIKE ANY OTHER. Its OWN failure — a failure made
-//	through the reporter it was handed, reporting the QUESTION it was handed —
-//	is the marker firing, and that one call is the step. Everything else written
-//	in a marker is a claim and is in the population like any other claim.
-//
-//	A VALUE DOES NOT STOP BEING TESTIFY BY BEING GIVEN A SHORTER NAME, and a
-//	failure handed over without its reporter is still a failure. A name is
-//	followed to what it was bound to; a method value of one of the six is a way
-//	to fail the test wherever it is passed or called; and where the binding
-//	cannot be seen at all, Errorf's own shape answers.
-//
-// WHAT THIS DOES NOT COVER, said plainly.
-//
-// A failure produced by something that is neither a testify-shaped call, a TB
-// failure method nor a marker — a panic, an os.Exit, a t.Skip that hides a
-// question — is not in the population and no rule here is computed over it.
-//
-// A value that reaches a call through a struct field, a map, a slice or a
-// channel used to be followed only as far as its TYPE: Errorf's shape was read
-// as a failure and the other five methods' shapes — func(...any) and func() —
-// were not, because those are the shape of every callback in the language and
-// reading them as failures would make every deferred close a claim. Measured,
-// that was reachable: a struct holding assert.NotEmpty and a tb's FailNow,
-// called in a walked body, carried two claims with the census unchanged and the
-// tree at exit 0. It is closed at the other end now — a way to fail may be
-// handed over and may be given a name, but it may not be PUT DOWN in a field,
-// an element, a channel or a caller's hands, where it is still a selector and
-// answers for what it is. See waysToFailPutDown. A PARAMETER was never in this
-// hole: a parameter is followed to what its call sites hand it.
-//
-// AND THE MARKER EXEMPTION IS NARROWER THAN IT WAS, NOT GONE. A claim written
-// as a marker's OWN firing — through the reporter the marker was handed,
-// reporting the question it was handed — is still read as the marker firing and
-// is still not in the population. It is silent only while NO fault reaches it:
-// the moment one does, the failure attributes to the step at the marker's call
-// site, which no proof names, and the fired-unnamed rule fails the build naming
-// the proof — measured. What is left is a claim no fault in this suite can
-// reach, which is the orphan condition, in the one place the orphan rule cannot
-// see it.
-//
-// MEASURED AS AN A/B, so the size of it is on the record. One claim, two
-// spellings, in mustReach. As an assertion —
-//
-//	assert.NotContains(t, err.Error(), "ledger-fault-canary", "...")
-//
-// — the orphan rule names it at plumbing.go:103 and the tree is GO_TEST_EXIT=1.
-// As the marker's own firing, `if strings.Contains(err.Error(), canary) { the
-// same Fatalf the marker already makes }`, the tree is GO_TEST_EXIT=0.
-//
-// AND IT IS NOT CLOSABLE BY SHAPE, which is worth stating rather than leaving
-// as an open item somebody will try to close. Every candidate rule was
-// considered against that measurement and each fails:
-//
-//	"a marker's firing may be guarded only by its own parameters" — the
-//	evasion above reads err, which is a parameter. So does every honest
-//	firing. The two are the same shape.
-//
-//	"a marker fires in exactly one place" — costs mustReach a refactor and
-//	buys one token: the smuggled condition moves into the guard of the single
-//	firing, `if err != nil || <the claim>`.
-//
-//	"a marker's firing must be reachable by a fault" — closes it completely,
-//	and is the exact reverse of the argument plumbing.go is built on, which is
-//	that demanding a fault behind "the harness started" produces faults nobody
-//	wants. That is a decision about what this suite's vocabulary IS, and it is
-//	the owner's, not this file's.
-//
-// So the bound is stated instead: the exemption is worth one condition inside
-// three functions of ten lines each, every one of which is read as plumbing by
-// anyone who opens the file it lives in.
-//
-// Nothing in a _test.go file beside this one is in the population either: those
-// are the thing doing the asserting. And the loader is the go command, so a
-// source this package cannot type-check is a loud failure of the ledger rather
-// than a quietly smaller population.
+// Not covered: a failure that is no testify-shaped call, TB failure method or
+// marker (a panic, an os.Exit), and a claim written as a marker's own firing,
+// which no rule of shape can close.
 
-// kind is which of the two an entry is.
 type kind int
 
 const (
@@ -252,26 +47,9 @@ func (k kind) String() string {
 	return "a contract assertion"
 }
 
-// assertion is one CASE: a failure-producing call in this suite's own source,
-// reached through one particular chain of call sites.
-//
-// A case and a site are not the same thing, and the ledger used to count the
-// site. reject in optional.go is one closure with two assertion sites shared by
-// nine table rows; assertRepository is one function with five, reached from six
-// places. A proof needed ONE row to fire and the site was proven, so every one
-// of the nine rows and half the six call sites could be deleted with the tree
-// at exit 0 — measured. A table-driven assertion is one site and many
-// contracts.
-//
-// So the unit is the case, the words of a case are its format with the constant
-// arguments of its own call chain substituted in, and a proof names a case by
-// those words. Deleting a row deletes the case, the words its proof names stop
-// existing, and the proof fails saying so.
-//
-// A helper reached from several places therefore has to carry which place it
-// was reached from into what it says — the row's name, the fixture's name, the
-// capability. Where it does not, two cases say the same thing, and that is the
-// collision rule, which fails the build naming both.
+// assertion is one case: a failing call reached through one chain of call
+// sites, since a table-driven assertion is one site and many contracts. A
+// case's words are its format with its chain's constants substituted.
 type assertion struct {
 	id    string // the case: this site, and the chain that reaches it
 	site  string // "run.go:729", the way a stack frame spells it
@@ -293,7 +71,6 @@ type callable struct {
 	lit    *ast.FuncLit // set for a named closure, so its parent skips its body
 }
 
-// edge is one call of one callable.
 type edge struct {
 	from *callable
 	to   *callable
@@ -331,11 +108,8 @@ type source struct {
 	firingOnce sync.Once
 	firing     map[*ast.CallExpr]bool
 
-	// faults is every fault the fake forge can be told to have, by the value
-	// it carries and the constant it is declared as. It is read out of that
-	// package's source rather than kept in a list here, because a list is a
-	// thing you can forget to add to — which is the whole reason the
-	// population is read out of source too.
+	// faults is read out of the fake forge's source rather than listed: a list is a
+	// thing you can forget to add to.
 	faults map[string]string
 
 	// rules is every rule name this file DECLARES, read the same way and for
@@ -359,29 +133,13 @@ var (
 	overlaidLRU []string
 )
 
-// overlayCacheSize is how many overlaid type-checks are kept alive at once.
-//
-// THIS NUMBER IS A MEMORY BOUND AND NOT A TUNING KNOB. Each entry is a full
-// type-check of the suite — syntax, types and per-expression type info for
-// every package — and this cache used to be unbounded. Fifteen call sites each
-// use a distinct filename, so every key is distinct and nothing was ever
-// evicted: the run ended with sixteen live type-checks in it, which measured
-// 2.85 GB of LIVE heap and is why a soft memory limit could not move the peak.
-// Nothing was leaking; it was all reachable, on purpose, forever.
-//
-// The cache still earns its place, because the same overlay IS asked for again
-// — the subtests that build one run under more than one harness. What it does
-// not need is to remember all of them. Three is enough for consecutive reuse
-// and bounds retention at four loads including the base.
+// overlayCacheSize bounds memory, not speed: each entry is a full type-check of
+// the suite, and an unbounded cache held sixteen, 2.85 GB live. Three covers
+// consecutive reuse.
 const overlayCacheSize = 3
 
-// suiteSource type-checks the suite's own source. Test files are not part of
-// it: this file, and the proofs beside it, are the thing doing the asserting.
-//
-// The load goes through hermetic.Load, which is the ONE place in this tree that
-// calls packages.Load and the only place the environment it needs is written.
-// See checkLooseLoad for what makes that "the one place" a fact of the program
-// rather than a sentence in a comment.
+// suiteSource type-checks the suite's own source, test files excluded, through
+// hermetic.Load.
 func suiteSource(t *testing.T) *source {
 	t.Helper()
 	loadOnce.Do(func() { loaded, loadErr = loadSuite(nil) })
@@ -391,15 +149,8 @@ func suiteSource(t *testing.T) *source {
 	return loaded
 }
 
-// with is this same package with one more file in it, type-checked the same
-// way and read by the same rules.
-//
-// It is how a rule that reads the SOURCE gets a fault behind it. The suite
-// proves an assertion by injecting a driver fault and requiring the assertion
-// to fire; a rule about the shape of the source is proven the same way, by
-// showing the ledger a source that violates it and requiring the ledger to say
-// so. A rule whose violating source it stays quiet about is decoration, which
-// is the sentence this whole file is built on.
+// with is this package with one more file, so a rule about the source gets a
+// fault: a violating source it must complain about.
 func (s *source) with(t *testing.T, name, content string) *source {
 	t.Helper()
 	return s.withIn(t, ".", name, content)
@@ -502,7 +253,6 @@ func loadSuite(overlay map[string][]byte) (*source, error) {
 		step: obj.Type(), faults: faults, rules: rules, harnesses: harnesses}, nil
 }
 
-// suitePath is this package, taken from a type in it rather than written out.
 var suitePath = reflect.TypeOf(assertion{}).PkgPath()
 
 // theForgeTree is every package this suite and the drivers it holds live in,
@@ -517,21 +267,9 @@ var (
 	thePin       = runtime.FuncForPC(reflect.ValueOf(hermetic.Pin).Pointer()).Name()
 )
 
-// looseLoads is every call to packages.Load written anywhere in the forge tree
-// that runs under an environment nobody chose, by the site it is written at.
-//
-// TWO THINGS MAKE A LOAD HERMETIC and both are counted here. Going through
-// hermetic.Load is one. Being in a binary hermetic.Pin has pinned is the other,
-// and it is what actually holds the two drivers' route tables: their tests link
-// this suite, this suite pins the process in an init, and the environment is a
-// property of the process rather than of the config a call site happened to
-// write. A load site in a package whose binary links neither is a load site
-// under whatever the machine running it has, and it is named.
-//
-// It is resolved through go/types rather than matched as a spelling, so an
-// aliased import, a dot-import, a variable bound to the loader and a call
-// through that variable are all the same reach underneath — the same reading
-// the drivers' own route tables get.
+// looseLoads is every packages.Load in the forge tree under an environment
+// nobody chose: neither through hermetic.Load nor in a binary hermetic.Pin
+// pinned. Resolved through go/types, so aliases and bound variables count.
 func looseLoads(t *testing.T, overlay map[string][]byte) []string {
 	t.Helper()
 	mode := packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
@@ -553,12 +291,8 @@ func looseLoads(t *testing.T, overlay map[string][]byte) []string {
 		}
 		for _, file := range p.Syntax {
 			ast.Inspect(file, func(n ast.Node) bool {
-				// EVERY REFERENCE, not every call. A load site written as a
-				// call is the ordinary shape; `var load = packages.Load` and
-				// then calling the variable is the same load one name further
-				// away, and matching CallExpr missed it — measured, GO_TEST_EXIT=0
-				// with such a site live in an unpinned package. What is named is
-				// wherever the loader is REACHED, which is where it escapes.
+				// Every reference, not every call: `var load = packages.Load` is the same load
+				// one name away.
 				id, ok := n.(*ast.Ident)
 				if !ok {
 					return true
@@ -585,15 +319,8 @@ func looseLoads(t *testing.T, overlay map[string][]byte) []string {
 	return out
 }
 
-// pinnersIn is every package in the tree that calls hermetic.Pin from an init,
-// by import path.
-//
-// It is read out of source and not written down here for the reason everything
-// else in this file is: the exemption above says "in a binary something pinned",
-// and a package that merely IMPORTS the suite pins nothing if the call went
-// away. Measured: with `func init() { hermetic.Pin() }` hollowed to a reference,
-// an exemption keyed on the import graph alone still excused both drivers'
-// route tables, and both were back under whatever environment the machine had.
+// pinnersIn is read out of source: a package merely importing the suite pins
+// nothing if the call went away.
 func pinnersIn(pkgs []*packages.Package) map[string]bool {
 	out := map[string]bool{}
 	for _, p := range pkgs {
@@ -679,38 +406,10 @@ var (
 )
 
 // constantsOf is every constant of one named string type in a package, by value
-// and by the name it is declared under. It reads the fake forge's faults, this
-// file's own rule names and the names of the three things that run them, and
-// for the same reason in all three cases: a population kept in a list beside
-// the code is a population somebody forgets to add to, or quietly shortens.
-//
-// A DECLARATION IS NOT A TYPE ANNOTATION, and asking for one made this a
-// closure over a SPELLING. It used to keep a constant only when its own line
-// read `X harnessName = "..."`, so deleting that one token took a thing out of
-// the population without taking it out of the program. Measured, all three
-// uses, each gofmt clean and vet clean and each GO_TEST_EXIT=0 over the whole
-// forge tree:
-//
-//	harnessTheSuiteObeysTheLedger untyped, plus ledgerHarnesses()[1:] — the
-//	  census no longer had that harness in its population, so it did not name
-//	  the run that never happened, and the deleted LastDeployKeyReadOnly
-//	  contract rode home green
-//	ruleOrphan untyped, plus its registry entry dropped — the orphan rule was
-//	  off and a live orphan assertion in optional.go went unnamed
-//	a LIVE fake.Fault untyped, making RemoveDeployKey a no-op — the ledger went
-//	  on reporting 58 faults and ruleStrandedFault stayed quiet about a mistake
-//	  no proof injects
-//
-// So a constant is found by what it IS. An untyped constant declared in a const
-// block still has a type where it is USED — go/types records the converted type
-// of every expression — and a constant nothing uses is a constant no harness
-// runs, no registry reads and no fake forge can be told to have. Both readings
-// are taken and unioned: the typed declaration for the ones nothing uses yet,
-// and the use for the ones whose line has been stripped.
-//
-// Types are compared by their fully qualified NAME rather than by identity,
-// because a package loaded as a root and the same package seen through an
-// importer's export data are two *types.Named values that are not identical.
+// and name. A constant is also found by its type where it is used, so stripping
+// the type from its declaration does not drop it. Types are compared by
+// qualified name: a root package and the same package seen through export data
+// are not identical.
 func constantsOf(decl *packages.Package, typeName string, alsoUsedIn ...*packages.Package) (map[string]string, error) {
 	scope := decl.Types.Scope()
 	obj := scope.Lookup(typeName)
@@ -777,21 +476,15 @@ func reporterInterface() *types.Interface {
 	return iface
 }
 
-// failure is what one call in the source turns out to be.
 type failure struct {
 	spelling string // how it reads at the call site, for a message
 	at       int    // which argument carries the message, or -1
 	kind     kind
 }
 
-// howItFails resolves a call and says whether it is one of the ways this suite
-// fails, where its message sits, and which of the two kinds it is.
-//
-// It answers by what a call IS and not by how it reads: an alias, a renamed
-// receiver, a dot-import, a fork, a shorter name given to testify by a var, and
-// a failure handed over without the reporter it belongs to are all the same
-// thing underneath, and each of them was once an exemption nobody had to write
-// down.
+// howItFails says whether a call is one of the ways this suite fails, where its
+// message sits, and which kind it is, by what the call is rather than how it
+// reads.
 func (s *source) howItFails(call *ast.CallExpr) (failure, bool) {
 	// A marker's OWN failure — through the reporter it was handed, reporting
 	// the question it was handed — is the marker firing, and the marker is
@@ -838,11 +531,7 @@ func (s *source) howItFails(call *ast.CallExpr) (failure, bool) {
 	return failure{}, false
 }
 
-// callee resolves what a call actually calls, and the receiver it is called on.
-// A name bound to a function is followed to that function: a value does not
-// stop being testify by being given a shorter name, and `var truthy =
-// assert.True` was measured moving the exemption from an import alias to a
-// one-line var.
+// callee follows a name bound to a function to that function.
 func (s *source) callee(call *ast.CallExpr) (*types.Func, types.Type) {
 	info := s.pkg.TypesInfo
 	switch fun := ast.Unparen(call.Fun).(type) {
@@ -924,15 +613,9 @@ func (s *source) signatureOf(call *ast.CallExpr, fn *types.Func) (*types.Signatu
 	return sig, ok
 }
 
-// isAWayToFail reports whether an expression IS one: a reporter, or one of the
-// six methods that fail one, however it is named or bound.
-//
-// outside.Check(t.Errorf, cond, msg) hands the failure over WITHOUT handing the
-// reporter over, and what it is handed to can fail the test as surely as if it
-// had been handed t. A name bound to that method is the same value with a
-// shorter name. Where the binding cannot be seen at all — a struct field, a map
-// entry, another package's var — Errorf's own SHAPE answers, and only Errorf's:
-// the other five are shaped like every callback in the language.
+// isAWayToFail: a reporter, or one of the six methods that fail one, however
+// named or bound. Where the binding is invisible only Errorf's shape answers:
+// the other five are shaped like every callback.
 func (s *source) isAWayToFail(e ast.Expr, depth int) bool {
 	if e == nil || depth > 4 {
 		return false
@@ -987,38 +670,15 @@ func (s *source) handedAWayToFail(call *ast.CallExpr) bool {
 	return false
 }
 
-// putDown is one place a way to fail was left where nothing follows it.
 type putDown struct {
 	site  string
 	where string
 }
 
-// waysToFailPutDown is every one of them: a struct field, a map or a slice
-// element, a channel, or a caller's hands.
-//
-// THIS IS THE OTHER HALF OF "A VALUE DOES NOT STOP BEING TESTIFY BY BEING GIVEN
-// A SHORTER NAME". A name is followed to what it was bound to, and a parameter
-// is followed to what its call sites hand it; both are bindings this package
-// can read. A FIELD IS NOT. At the call site the value's type is func(...any)
-// or func() — the shape of every callback in the language — so reading those
-// shapes as failures would make every deferred close a claim, and reading only
-// Errorf's shape, which is what the walk does, leaves the other five and every
-// testify function invisible.
-//
-// Measured before this existed: a struct holding assert.NotEmpty and a tb's
-// FailNow, built and called in a walked body of a non-test file, carried two
-// claims about the subject — one with a message, one bare — with this file's
-// census unchanged at 183 cases and the tree at GO_TEST_EXIT=0. Neither was in
-// the population, so neither needed a fault, a message or a proof.
-//
-// So it is refused where the value is PUT DOWN rather than guessed at where it
-// is called. There it is still a selector or a name and answers for what it is.
-// A way to fail is handed over, never stored.
-//
-// A REPORTER is not one of these. A call through a tb is answered by its type
-// wherever the tb was kept, so keeping one is followed and is allowed; what is
-// refused is one of the six METHODS, and any function that takes a reporter,
-// left somewhere the walk cannot reach.
+// waysToFailPutDown is every way to fail left in a struct field, a map or slice
+// element, a channel, or a caller's hands: its type there is a callback's shape,
+// so it is refused where it is put down. Keeping a reporter is allowed, since a
+// call through one answers by its type.
 func (s *source) waysToFailPutDown() []putDown {
 	var out []putDown
 	look := func(e ast.Expr, where string) {
@@ -1070,7 +730,6 @@ func (s *source) waysToFailPutDown() []putDown {
 	return out
 }
 
-// objectOf is what an expression names, where it names anything.
 func (s *source) objectOf(e ast.Expr) types.Object {
 	info := s.pkg.TypesInfo
 	switch v := ast.Unparen(e).(type) {
@@ -1132,16 +791,9 @@ func (s *source) bindings() map[types.Object][]ast.Expr {
 	return s.bound
 }
 
-// markerFirings is every call that IS a marker rather than a claim written in
-// one: a failure made through the reporter the marker was handed, reporting the
-// QUESTION it was handed.
-//
-// The walk used to step over a marker's whole body, which meant a step
-// parameter exempted everything written beside it — and a marker is any
-// function that asks for a step, so the exemption cost one parameter. A marker
-// is a function like any other now: its own firing is the step, already one
-// entry at each of its call sites, and every other assertion in it is a claim
-// with a fault to find.
+// markerFirings is every call that is a marker firing rather than a claim
+// written in one: a failure through the reporter the marker was handed,
+// reporting the question it was handed.
 func (s *source) markerFirings() map[*ast.CallExpr]bool {
 	s.firingOnce.Do(func() {
 		out := map[*ast.CallExpr]bool{}
@@ -1173,7 +825,6 @@ func (s *source) markerFirings() map[*ast.CallExpr]bool {
 	return s.firing
 }
 
-// mentions reports whether a call names an object anywhere in it.
 func (s *source) mentions(call *ast.CallExpr, obj types.Object) bool {
 	found := false
 	ast.Inspect(call, func(n ast.Node) bool {
@@ -1302,7 +953,6 @@ func (s *source) site(p token.Pos) string {
 	return fmt.Sprintf("%s:%d", filepath.Base(pos.Filename), pos.Line)
 }
 
-// population is every CASE in the suite, read out of the type-checked source.
 func population(t *testing.T) []assertion {
 	t.Helper()
 	return populationOf(suiteSource(t))
@@ -1356,7 +1006,6 @@ func populationOf(src *source) []assertion {
 	return out
 }
 
-// walk is every body in the suite and the way in to each of them.
 type walk struct {
 	byObj map[types.Object]*callable
 	byLit map[*ast.FuncLit]*callable
@@ -1364,25 +1013,9 @@ type walk struct {
 }
 
 // walk is every function, method, named closure and stray literal in the suite,
-// in a stable order — and it is EVERY body, which is the part that was missing.
-//
-// Go holds a body in exactly two places: a declaration and a literal. So:
-//
-//	every declaration is a root, markers included. A marker is a function like
-//	any other and a claim written in one is a claim.
-//
-//	every literal a NAME is bound to is a root, so a case can pass through the
-//	name — that is what makes the nine rows behind one closure nine cases.
-//
-//	every other literal is walked by the function that contains it, and a
-//	literal that nothing contains is a root in its own right, whatever it was
-//	bound to or bound into: a var, a map, a slice, a struct field, an argument.
-//
-// The third clause is not a list of binding forms; it is the lexical statement
-// that nothing is left over, and unwalkedBodies below reports any body it does
-// not reach. A package-level `var f = func(t tb) { assert... }` was measured
-// living in the shared suite with the census unchanged, because the walk knew
-// two of the places a name can be bound and a ValueSpec was neither.
+// in a stable order. Every declaration is a root; every literal bound to a name
+// is a root, so a case passes through the name; every other literal is walked
+// by its container, and one nothing contains is a root of its own.
 func (s *source) walk() *walk {
 	s.walkOnce.Do(func() { s.theWalk = s.everyBody() })
 	return s.theWalk
@@ -1472,7 +1105,6 @@ func (s *source) everyBody() *walk {
 	return w
 }
 
-// aBodyNothingWalks is the outermost function literal no root reaches, or nil.
 func (s *source) aBodyNothingWalks(w *walk) *ast.FuncLit {
 	reached := s.reaches(w)
 	var found *ast.FuncLit
@@ -1566,7 +1198,6 @@ func (s *source) walkOwn(c *callable, w *walk, f func(ast.Node) bool) {
 	})
 }
 
-// assertionsIn is every failing call written in a callable's own body.
 func (s *source) assertionsIn(c *callable, w *walk) []*ast.CallExpr {
 	var out []*ast.CallExpr
 	s.walkOwn(c, w, func(n ast.Node) bool {
@@ -1582,22 +1213,10 @@ func (s *source) assertionsIn(c *callable, w *walk) []*ast.CallExpr {
 	return out
 }
 
-// chainsFor is every way the suite reaches ONE assertion, as a chain of call
-// sites, and it climbs exactly as far as that assertion's WORDS need and no
-// further.
-//
-// The rule is the whole design. An assertion's message may name things its own
-// function was handed — the table row, the fixture, the capability, the label a
-// caller supplied — and until those are constants the ledger cannot tell one
-// case from another. So: while a word is still a parameter somebody else
-// decides, climb to whoever decides it; when nothing is left to decide, stop.
-//
-// Climbing further would be wrong, not merely wasteful. Run calls run from two
-// branches, so climbing to the top multiplies EVERY assertion in the suite by
-// two, and those are not two contracts — it is one suite started two ways. And
-// stopping short would be wrong too: assertRecord is reached through
-// assertRepository, which passes down its own caller's word, so one level
-// leaves six records saying the same thing.
+// chainsFor is every chain of call sites reaching one assertion, climbing only
+// while a word of its message is still a parameter someone else decides.
+// Further would multiply cases (Run is called from two branches); shorter would
+// leave cases saying the same thing.
 func (s *source) chainsFor(c *callable, args []ast.Expr, callers map[*callable][]edge) [][]edge {
 	type frame struct {
 		at    *callable
@@ -1780,16 +1399,10 @@ func constantArg(info *types.Info, arg ast.Expr) (string, bool) {
 // frame, because everything above it is the suite's own stack.
 var trace = regexp.MustCompile(`Error Trace:\s+\S*?([^/\s]+\.go:\d+)`)
 
-// attribute turns what the recorder captured into the CASES that produced it,
-// and keeps the words each one said — the ledger reads those words to tell a
-// step the suite could not take from a claim somebody demoted. A failure it
-// cannot place is a failure this file cannot reason about, so it says so rather
-// than dropping it.
-//
-// The trace names the SITE. Where a site holds one case that is the answer;
-// where it holds several — a helper reached from six places, a closure called
-// by nine table rows — the case is the one whose words the message says, which
-// is why two cases saying the same thing is a build failure.
+// attribute turns what the recorder captured into the cases that produced it,
+// keeping each one's words. The trace names the site; where a site holds
+// several cases, the message's words pick one. A failure it cannot place is
+// reported.
 func attribute(pop []assertion, msgs []string) (map[string][]string, []complaint) {
 	atSite := map[string][]assertion{}
 	for _, a := range pop {

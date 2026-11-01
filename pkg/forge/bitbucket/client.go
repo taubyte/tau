@@ -18,12 +18,8 @@ const listPageSize = 100
 // maxPages bounds a listing a forge never ends.
 const maxPages = 1000
 
-// Whoami says who this credential is.
-//
-// Subject is the account's UUID, the one identifier Bitbucket never reassigns;
-// a username can be changed and Bitbucket stopped treating it as an identifier.
-// Bitbucket keeps the email behind a separate scope and endpoint, so Email is
-// empty rather than guessed.
+// Subject is the account's UUID, which Bitbucket never reassigns. Email sits
+// behind a separate scope, so it is empty rather than guessed.
 func (c *client) Whoami(ctx context.Context) (forge.Identity, error) {
 	var u userJSON
 	if err := c.send(ctx, routeCurrentUser.at(), nil, &u); err != nil {
@@ -40,10 +36,8 @@ type userJSON struct {
 	UUID     string `json:"uuid"`
 }
 
-// Access is the authorization question. The repository is fetched first —
-// which is what tells a missing or hidden repository (404, NotFoundError) from
-// a visible one — and then the caller's grant is asked for by the full name
-// the FORGE spelled, never the one the caller did.
+// The repository is fetched first, telling a missing or hidden one from a
+// visible one, then the grant is asked for by the full name the forge spelled.
 func (c *client) Access(ctx context.Context, key repokey.Key) (forge.Access, error) {
 	r, repo, err := c.get(ctx, key)
 	if err != nil {
@@ -93,7 +87,6 @@ func (c *client) Access(ctx context.Context, key repokey.Key) (forge.Access, err
 	return level, nil
 }
 
-// Repository is what only the forge knows, with the key derived from its answer.
 func (c *client) Repository(ctx context.Context, key repokey.Key) (forge.Repository, error) {
 	_, repo, err := c.get(ctx, key)
 	if err != nil {
@@ -147,23 +140,14 @@ func (c *client) ListRepositories(ctx context.Context, yield func(forge.Reposito
 	return err
 }
 
-// pageOf is one page of a Bitbucket collection.
 type pageOf[T any] struct {
 	Values []T    `json:"values"`
 	Next   string `json:"next"`
 }
 
-// pages walks a Bitbucket collection.
-//
-// IT DOES NOT REQUEST THE "next" URL. That URL is a string the forge wrote, and
-// requesting it would be a request this driver did not compose, outside its
-// route table. What "next" is trusted for is one thing — that there IS a next
-// page, and its number — and it must say so in the shape this driver asked in:
-// the same path, and a page one greater. Anything else is refused rather than
-// guessed at, because a pager that guesses either truncates a listing silently
-// or asks for pages forever.
-//
-// each returning false stops the walk and is not an error.
+// walkPages does not request the "next" URL, a string the forge wrote: it
+// trusts it only to say there is a next page and its number, in the shape
+// asked, and refuses anything else. each returning false stops the walk.
 func walkPages[T any](ctx context.Context, c *client, at func(page int) request, key repokey.Key, each func(page int, values []T) bool) error {
 	for page := 1; ; page++ {
 		if page > maxPages {

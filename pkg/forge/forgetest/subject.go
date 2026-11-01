@@ -1,210 +1,20 @@
 // Package forgetest is the conformance suite every forge driver runs against
-// itself.
+// itself. It asserts behaviour, not shape: a public repository reads as read, an
+// outage is an error and never a definitive no, a key is derived from the
+// forge's answer, a hook speaks only for its own repository, a declared
+// capability works, and a credential never reaches an error, a URL or a host it
+// is not for. It never skips: an undeclared capability must answer
+// *forge.UnsupportedError. It reaches no real forge.
 //
-// IT ASSERTS BEHAVIOUR AND NOT SHAPE. That a driver satisfies forge.Client is
-// the compiler's job and needs no suite; what needs one is that a public
-// repository reads as read and not write, that an outage returns an error and
-// never a definitive no, that a repository key is DERIVED from the answer the
-// forge gave rather than echoed back from the argument, that a delivery whose
-// body moved by one byte is rejected, that a hook can only speak for its own
-// repository, that a capability a driver appears to have is one it can actually
-// perform, and that a credential never turns up in an error string, in a URL,
-// or at a host it is not for. Every one of those is a thing a driver can get
-// wrong while compiling perfectly.
+// The suite is tested against pkg/forge/fake's faults, and every assertion in it
+// must have a fault behind it (ledger_test.go; plumbing.go tells a step from a
+// claim). The tower of guards ends at five points in guard_test.go: hold's
+// verdict condition and its Errorf, the unvisited clause, and
+// TestTheLedgerHolds's census loop and its Errorf. A TestMain returning before
+// m.Run() is the same exposure.
 //
-// TWO OF THOSE NEED A FIXTURE THAT DISAGREES, and for a long time neither had
-// one, so neither was checked. A key round-tripping unchanged is what an
-// ECHOING driver produces too, and only Moved — a repository the forge answers
-// for under one key and answers WITH under another — tells the two apart. A
-// credential's destination cannot be read off a fixture at all: a fixture
-// records what ARRIVED at it, so the one request it can never see is the
-// request that went somewhere else. RedirectOnce and the decoy the suite starts
-// against it are where that request becomes visible.
-//
-// AND A REDIRECT HAS A SECOND EDGE THE DECOY IS BLIND TO. A hop to another host
-// is refused by forge.PinnedTransport under every driver; a hop to another
-// REPOSITORY ON THE SAME HOST is permitted by it, correctly, because a per-hop
-// host check is the whole of what a pin can decide. Every request stays on the
-// host the credential is for, every recorded URL passes the canary, and the
-// forge has just chosen which repository the caller's question was about. The
-// suite aims RedirectOnce at both, and the same-host probe reads the ANSWER an
-// operation produced rather than the destination — because there is nothing
-// wrong with the destination.
-//
-// THE SUITE NEVER SKIPS. For each optional capability it runs one of two
-// contracts — the capability's own, or the contract that absence is
-// *forge.UnsupportedError and that Require refuses — so a driver cannot hide a
-// broken capability by not declaring one. Nothing here is conditional on a
-// forge being reachable, because nothing here reaches one: a Subject is
-// supplied by the driver's own tests, over httptest or over memory.
-//
-// The suite is itself tested, and then the test is tested. pkg/forge/fake can
-// be told to be wrong in named ways, and this package's tests assert that each
-// one fails the suite — which is the only way to know that an assertion asserts.
-//
-// AND THE OTHER WAY ROUND, which is the direction the defects kept arriving
-// from: every assertion here must have a FAULT BEHIND IT. An assertion nothing
-// can make fire is decoration, it reads exactly like a check, and three
-// separate rounds added one or deleted a live one with every test still green.
-// So the suite's own assertions are a population the ledger walks, and each one
-// is a claim needing a fault, a STEP that is on its way to a claim, or a value
-// this package does not produce at all — with the test in pkg/forge that
-// holds it named on the line. See ledger_test.go, and plumbing.go for the
-// spelling that tells a step from a claim.
-//
-// WHERE THE TOWER ENDS. Every round of this package's history added a level.
-// The suite is held by the ledger; the ledger's rules are held by faults; the
-// three things that RUN the rules are held by faults of their own; the rules
-// each of them was actually asked about are counted against the rules it was
-// handed; and the one call that runs a harness is held by a census read back
-// against the names in source. "What guards the guard" has to stop somewhere, and this is where,
-// said exactly rather than left for somebody to find.
-//
-// FIVE POINTS, on four lines, in two places in guard_test.go. A POINT is one
-// edit that leaves a green run with a real defect live — not a line: two of the
-// five sit on one line, as two clauses of one condition, and each can be
-// deleted without the other. Counting lines is what let the last round call
-// this set four when it is five, and call it closed when two more were open.
-//
-// In hold:
-//
-//	if heard.failed != over.complains || len(unvisited(over.rules, went)) > 0 {
-//		t.Errorf("%s", over.wrong(h, heard, unvisited(over.rules, went)))
-//
-// and in TestTheLedgerHolds:
-//
-//	for _, wrong := range ran.unaccounted(suiteSource(t)) {
-//		t.Errorf("%s", wrong)
-//
-// The first pair is the only place a ledger complaint becomes a test failure
-// and the only place a harness asked about a subset of the rules it was handed
-// becomes one. The second is the only place the census of what actually ran is read.
-// Nothing in this package notices any of the five being switched off.
-//
-// MEASURED, one at a time, over
-//
-//	go test -count=1 -p 4 ./pkg/forge/forgetest/... ./pkg/forge/fake/... ./pkg/forge/
-//
-// with the LastDeployKeyReadOnly contract deleted from optional.go, which on
-// its own is GO_TEST_EXIT=1:
-//
-//	the verdict clause written `false`            GO_TEST_EXIT=0
-//	that Errorf written Logf                      GO_TEST_EXIT=0
-//	the census loop written `range []string(nil)` GO_TEST_EXIT=0, with
-//	  ledgerHarnesses()[1:] beside it
-//	that Errorf written Logf                      GO_TEST_EXIT=0, likewise
-//
-// and the fifth with hold's own loop calling the harness for one rule only:
-//
-//	`|| len(unvisited(...)) > 0` deleted          GO_TEST_EXIT=0
-//
-// EVERYTHING TOUCHING THEM IS HELD, which is why the set is five and not fifty.
-// Measured one at a time, each of these fails BY NAME rather than passing:
-//
-//	hold's ran.write hollowed             every declared run is named as never
-//	                                      having happened
-//	hold's h.run call deleted             the direction that must complain says
-//	                                      nothing, and the tally names every rule
-//	hold listening to a recorder the      the same
-//	  harness never writes to
-//	over.wrong hollowed to ""             still red: Errorf fails the test
-//	                                      whatever string it is handed
-//	theRulesAsTheyStand emptied           readEveryRuleDeclared names every rule
-//	                                      this file declares
-//	either direction flag written the     each direction is the other's control
-//	  other way round
-//	one of the two hold calls deleted     the census names that direction for
-//	                                      every harness
-//	ledgerHarnesses()[1:]                 the census names the harness that went,
-//	                                      both ways
-//	the census filled in before the loop  hold writes once per call, so a run
-//	                                      written down twice is named
-//	a harness reporting to t instead of   the fault registry's own complaint
-//	  to the listener it was handed       lands on t: red on a CLEAN tree
-//	h.run called past hold                nothing is written down and all three
-//	                                      harnesses are named
-//	a discarding reporter at the call     "too many arguments in call to hold"
-//	  site
-//	hold's loop shortened to rules[:1]    every rule it did not reach is named,
-//	                                      for all three harnesses
-//	the call guarded and the tally kept   the tally is the harness's own answer
-//	  (`if i == 0`)                       about the rule, so a rule not asked
-//	                                      about is a rule not answered for
-//	the read-set line guarded             the registry check names every rule
-//	a harness answering for a rule it     the tally names one never handed in and
-//	  was not asked about                 one never reached
-//	h.after guarded off                   the registry check's own fault is
-//	                                      silent in the direction that must
-//	                                      complain
-//	unvisited hollowed to nil             its own fault names it
-//	census.unaccounted hollowed to nil    its own fault names it
-//	obey's Errorf written Logf            it does not compile: the listener is
-//	                                      `interface{ Errorf(...) }`
-//	constantsOf's reading of a constant   the untyped rule, the untyped harness
-//	  at its USE deleted                  and the untyped fault all name it
-//	hermetic.Pin's body emptied           the loader's own fault reads the
-//	                                      process environment back
-//	hermetic.Load's override deleted      the same fault, under a workspace it
-//	                                      was handed
-//	the init that calls hermetic.Pin      both drivers' route tables are named
-//	  hollowed                            as loads nothing pinned
-//	a load reached through a value or a   named at the line the loader is
-//	  dot-import, in an unpinned package  reached on, not at the call
-//
-// WHAT SURVIVED THE ATTACK ON THIS ROUND'S OWN FIX, measured and not argued.
-// The first shape of it counted what a harness handed ITSELF, and two evasions
-// went straight through: going round in full to fill the tally and then doing
-// the work over a subset, and shortening the slice before going round — both
-// GO_TEST_EXIT=0 with a real contract deleted. That is why a harness has no loop
-// and no slice at all now, and why the tally is the answer a harness gives about
-// the rule it was asked about rather than a line beside the call.
-//
-// One shape still passes: hold's loop rewritten to call the harness for one rule
-// and to write the tally BY HAND for the rest — five lines, a `continue`, and a
-// map written with a count nothing produced. It is not a token and it is not a
-// slip; it is the same class as deleting a rule outright, which this file has
-// always said it does not cover, and it is said here rather than left out.
-//
-// WHY IT CANNOT BE SMALLER, counted in points. A Go test fails by calling
-// Errorf. Somewhere there has to be a first call to it that nothing else is
-// watching — one point — and a condition deciding whether to make it, which is
-// a second, because the two are independently deletable and a check on either
-// is another Errorf with the same property one level further out. That is the
-// regress this file's history walked seven times. Two pairs and not one,
-// because the verdict on the ledger runs INSIDE the very thing the census
-// counts, so it cannot also be what reports the count. The fifth point is a
-// clause and not a pair: the tally reuses the verdict's Errorf rather than
-// adding a third, which is the whole reason it is written as one condition.
-//
-// WHAT THIS IS THE SAME AS — and two of the three things this doc used to claim
-// it was the same as are FALSE HERE, which is what happens when an equivalence
-// is asserted rather than run. Each measured, with the same contract deleted:
-//
-//	a TestMain that returns before m.Run()   GO_TEST_EXIT=0. HOLDS: silent, green,
-//	                                         no trace. It is the same exposure.
-//	a build tag on guard_test.go             GO_TEST_EXIT=1, and not a failing
-//	                                         test: "undefined: complaint",
-//	                                         "undefined: ledger" — a build error
-//	a _test.go file renamed out of the       GO_TEST_EXIT=1, the same build error
-//	  package
-//
-// The last two are loud because the test files here are mutually load-bearing
-// at compile time: guard_test.go declares the types ledger_test.go and
-// violations_test.go are written in. Taking one out of the package does not
-// quietly shrink what runs, it stops the package building. So the exposure this
-// tower ends on is ONE of the four things that sentence used to list, not four,
-// and the census read could NOT simply be moved into TestMain — a TestMain is
-// the one shape here that fails silently.
-//
-// MEASURE IT WITH -coverpkg. Plain -cover counts only the statements a
-// package's OWN tests reach, and the two packages a conformance suite is made
-// of are run by everybody else: pkg/forge/fake is exercised by this
-// package's tests and by consumers', so plain -cover calls it 28.0% where the
-// pinned measurement says 96.1%. This package reads about the same either way
-// (99.3% plain, 99.3% pinned) only because its tests run the whole suite
-// themselves; pinned to the tree it sits in, which adds the loader beside it,
-// it is 98.5%, and the loader on its own is 100.0%. One command is true for all
-// of them, and it names the package being measured:
+// Measure coverage with -coverpkg, since the fake and the suite are run by other
+// packages' tests:
 //
 //	go test -count=1 -p 4 -coverpkg=./pkg/forge/forgetest/...          ./pkg/forge/...
 //	go test -count=1 -p 4 -coverpkg=./pkg/forge/forgetest/hermetic     ./pkg/forge/...
@@ -228,12 +38,9 @@ type Request struct {
 	Header http.Header
 }
 
-// Subject is one forge driver, plus the fixtures on it the suite names and the
-// probes it cannot get through the interface.
-//
-// Everything marked REQUIRED is a t.Fatalf when missing: a Subject that leaves
-// one out has not been checked, it has been skipped, and the difference is
-// invisible in a green test run.
+// Subject is one forge driver, the fixtures the suite names, and the probes it
+// cannot get through the interface. A missing REQUIRED field is a t.Fatalf, not
+// a skip.
 type Subject struct {
 	// Name labels the run. Empty is fine.
 	Name string
@@ -244,11 +51,8 @@ type Subject struct {
 	Registry *forge.Registry
 	Host     string
 
-	// Expect is the EXACT capability set a session for Credential must compute.
-	// The suite asserts EQUALITY and not superset, because that is the only
-	// thing that catches a face whose method signature is one type wrong: it
-	// compiles, the type assertion silently fails, and the capability
-	// disappears without a word.
+	// Expect is the exact capability set a session for Credential must compute:
+	// equality catches a face whose signature is one type wrong.
 	Expect forge.Set
 
 	// Credential is spent on every call. BadCredential is one the forge
@@ -280,23 +84,10 @@ type Subject struct {
 	Uncreatable repokey.Key
 	Deep        repokey.Key
 
-	// Moved is a key this forge STILL ANSWERS FOR and does not answer AS:
-	// asking about it yields the repository MovedTo names, readable by
-	// Credential. A rename is the usual way a forge comes to have one, and
-	// there are others — a transfer, a case fold, an instance behind a path
-	// rewrite — so HOW the fixture arranges the disagreement is its own
-	// business. A driver that follows no redirect (which is a defensible
-	// policy, and one driver here holds it) needs the answer to arrive in one
-	// hop, so a fixture serves the moved repository rather than pointing at it.
-	//
-	// IT IS THE ONLY FIXTURE THAT CAN ASSERT DERIVATION. forge.Client's own
-	// contract says Repository's Key must be derived from the clone URL the
-	// forge returned and never echoed back from the argument, and on every
-	// other fixture in this Subject the two are the same string — so the
-	// forbidden echo and the required derivation produce identical answers and
-	// the contract is unassertable. The suite therefore REQUIRES them, and
-	// requires them to differ: Moved == MovedTo is a Subject that has quietly
-	// opted out of the assertion.
+	// Moved is a key this forge still answers for and does not answer as: asking
+	// about it yields MovedTo's repository, in one hop. It is the only fixture where
+	// echoing the argument and deriving the key differ, so it is required and must
+	// differ from MovedTo.
 	Moved   repokey.Key
 	MovedTo repokey.Key
 
@@ -317,60 +108,17 @@ type Subject struct {
 	Break   func()
 	Unbreak func()
 
-	// RedirectOnce makes the forge answer the NEXT request it is given with
-	// status, pointing at loc, once. REQUIRED.
-	//
-	// IT IS ARMED ONCE PER OPERATION, not once per run, and every operation
-	// this subject declares gets a turn — the deployment's own credential
-	// included, which rides a client no session can reach. A driver is not one
-	// method, and a redirect policy written at one call site is not a policy the
-	// next call site has.
-	//
-	// THE SUITE ARMS IT WITH TWO KINDS OF loc, AND THEY PROVE DIFFERENT THINGS.
-	//
-	// A HOST NOBODY HERE HOLDS A CREDENTIAL FOR. This is the only way the suite
-	// can see where a request went: Requests reports what a fixture observed,
-	// and a fixture observes arrivals, so a request that went to another host
-	// arrives nowhere it can report and "every recorded request went to Host" is
-	// a sentence that cannot fail for a driver that sent one elsewhere. A forge
-	// answering 302 to somewhere else is the whole threat forge.PinnedTransport
-	// exists for — every SDK runs on an http.Client and an http.Client follows
-	// redirects — so the suite starts a server of its own at loc and reads what
-	// showed up. A driver must send NOTHING there.
-	//
-	// AN ADDRESS ON Host NAMING ANOTHER REPOSITORY, one this subject itself
-	// reported, so the suite invents no URL shapes. The pin permits that hop and
-	// must: a per-hop host check is the whole of what a pin decides, and this is
-	// the host the credential is for. Nothing under a driver refuses it, nothing
-	// over a driver can see it, and what comes back is another repository's
-	// permissions, another repository's hook, another repository's deletion. The
-	// suite reads the ANSWER the operation produced rather than the destination,
-	// because there is nothing wrong with the destination.
-	//
-	// THE STATUS IS THE SUITE'S CHOICE AND IT DECIDES WHICH HALF IS REACHED,
-	// which is why it is a parameter and not a fixture's constant. A 301, 302
-	// or 303 makes Go rewrite the request to a GET: a write following one lands
-	// nowhere, and the driver reads somebody else's 200 and reports success
-	// having done nothing. A 307 or 308 replays method and body, so the write
-	// lands on the repository the redirect named. A fixture that only ever
-	// answered 302 left the second half unreached — and worse, it made a
-	// replayed POST arrive at an endpoint that answers only GET, so the call
-	// failed on ENDPOINT SHAPE and the probe passed without ever reaching the
-	// question it asks.
-	//
-	// A subject that speaks no HTTP implements it by recording the request it
-	// WOULD have sent to loc, which the same subtest reads out of Requests, and
-	// by acting on the repository loc names — under the same rule about the
-	// status, since that rule is the stdlib's and not a fixture's. Either way
-	// what happened is observed rather than assumed.
+	// RedirectOnce makes the forge answer its next request with status, pointing at
+	// loc, once. REQUIRED. The suite arms it per operation, at a host nobody holds a
+	// credential for (nothing may arrive there) and at another repository on Host
+	// (the answer must not describe it). The status is the suite's: 301, 302 and 303
+	// make Go rewrite a write to a GET, 307 and 308 replay it. A subject speaking no
+	// HTTP records the request it would have sent to loc and acts on the repository
+	// loc names.
 	RedirectOnce func(loc string, status int)
 
-	// Required when Expect has CapDeployKeys.
-	//
-	// LastDeployKeyReadOnly is a probe the SUBJECT supplies, so a driver author
-	// who supplies a lying one passes. It is required and it is not verifiable
-	// from outside — the interface has no parameter to inspect — and saying so
-	// is more honest than a test that pretends otherwise.
+	// Required when Expect has CapDeployKeys. The subject supplies this probe, so a
+	// lying one passes: the interface has nothing to inspect.
 	LastDeployKeyReadOnly func() bool
 	DeployKeyInstalled    func(forge.Handle) bool
 
@@ -380,17 +128,10 @@ type Subject struct {
 	LastHookWire  func() string
 	HookInstalled func(forge.Handle) bool
 
-	// Required when Expect has CapSignatures. Each builds a REAL, correctly
-	// signed delivery in this forge's own payload shape — real HMAC over real
-	// bytes — so that what is being tested is verification and not a stub.
-	//
-	// DeliveryFor names a DIFFERENT repository under the same hook's secret and
-	// scheme: the confused-deputy case, a delivery that is perfectly signed and
-	// speaks for somebody else's repository.
-	//
-	// DeliveryAt is required only when the driver's scheme signs a timestamp
-	// (forge.SchemeStandardWebhooks today); it is what the replay-window cases
-	// need and nothing else calls it.
+	// Required when Expect has CapSignatures: real, correctly signed deliveries in
+	// this forge's payload shape. DeliveryFor names another repository under the
+	// same hook's secret and scheme. DeliveryAt is required only for a scheme that
+	// signs a timestamp.
 	Delivery        func(h forge.Hook, ref, commit string) (forge.Delivery, error)
 	DeliveryFor     func(h forge.Hook, other repokey.Key, ref, commit string) (forge.Delivery, error)
 	NonPushDelivery func(h forge.Hook) (forge.Delivery, error)

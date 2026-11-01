@@ -8,14 +8,6 @@ import (
 	"github.com/taubyte/tau/pkg/forge"
 )
 
-// THE WORDS A STEP SAYS ARE LOAD-BEARING NOW, so they are tested here rather
-// than assumed. The ledger tells a step the suite could not take from a claim
-// somebody demoted by reading refusedCapability out of what the step actually
-// said: a stop that does not carry it is a complaint about the subject wearing
-// a step's name. If mustReach stopped spelling a capability refusal differently
-// from every other failure, that rule would quietly pass everything, and no
-// proof in the suite would notice — a proof only ever runs the suite, and the
-// suite's steps are the one thing no proof may make fire.
 func TestAStepSaysWhichKindOfFailureStoppedIt(t *testing.T) {
 	const question = "asking the question this step was on its way to"
 	refusal := &forge.UnsupportedError{Host: "forge.invalid", Capability: forge.CapPushHooks}

@@ -8,23 +8,13 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// CapPushEvents is a driver that can hold the forge's own push feed open.
 const CapPushEvents Capability = "push-events"
 
-// PushEvents is the second way a push reaches this layer, for a forge that has
-// no webhook it can sign: the forge's own event feed, read over a channel the
-// DEPLOYMENT opened and authenticated (Gerrit's `stream-events`, over ssh, to
-// a pinned host key). The trust is the channel's, not a signature's: nothing a
-// stranger sends arrives on it, so there is nothing to verify per event, and a
-// claim read from it is as good as one read from a verified body.
-//
-// IT HANGS OFF THE DRIVER, like Memberships, because the credential that opens
-// the feed is the deployment's and no caller-bound session may reach it.
-//
-// What a claim says is still checked by Registry.StreamPushes exactly as
-// VerifyPush checks a delivery's: the host, the key's shape, the ref grammar
-// and the commit's width. The feed is authenticated; its contents are a forge's
-// bytes, and a forge bug must not become a build of the wrong thing.
+// PushEvents is a forge's own event feed, for one that cannot sign a webhook,
+// read over a channel the deployment opened and authenticated (Gerrit's
+// stream-events over ssh to a pinned host key). It hangs off the driver: the
+// credential is the deployment's. StreamPushes still checks each claim as
+// VerifyPush checks a delivery.
 type PushEvents interface {
 	// StreamPushes holds ONE subscription: it calls ready once the forge has
 	// accepted it, then emit for each push it reports, and returns when ctx
@@ -38,7 +28,6 @@ type PushEvents interface {
 	Heads(ctx context.Context, key repokey.Key) ([]PushClaim, error)
 }
 
-// EventHosts is every host whose driver offers a push feed, sorted.
 func (r *Registry) EventHosts() []string {
 	var out []string
 	for _, h := range r.Hosts() {
@@ -49,10 +38,8 @@ func (r *Registry) EventHosts() []string {
 	return out
 }
 
-// StreamPushes holds one subscription to host's push feed. Each claim is
-// checked (see check) before it reaches emit: a valid one arrives as a Push and
-// a nil error, an invalid one as a zero Push and the reason, and a ref deletion
-// not at all.
+// Each claim is checked before it reaches emit: a valid one arrives as a Push,
+// an invalid one as a zero Push and the reason, a ref deletion not at all.
 func (r *Registry) StreamPushes(ctx context.Context, host string, ready func(), emit func(Push, error)) error {
 	ev, err := r.events(host)
 	if err != nil {

@@ -10,9 +10,6 @@ import (
 	"github.com/taubyte/tau/pkg/forge/gerrit"
 )
 
-// TestConformance runs the whole suite twice, because whether this deployment
-// holds a membership credential is a Go type here and both types have a
-// contract: without one, membership is *UnsupportedError and never false.
 func TestConformance(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -38,10 +35,8 @@ func TestConformance(t *testing.T) {
 	}
 }
 
-// subject describes this driver to the suite. Expect is the EXACT set: deploy
-// keys, push hooks, signatures and the push probe are absent because Gerrit
-// has no answer for them (see the package comment), and the suite asserts each
-// is *UnsupportedError rather than a zero value.
+// Expect is the exact set: Gerrit has no answer for deploy keys, push hooks,
+// signatures or the push probe.
 func (f *fixture) subject(t *testing.T, reg *forge.Registry, extra ...forge.Capability) forgetest.Subject {
 	t.Helper()
 	expect := forge.Set{

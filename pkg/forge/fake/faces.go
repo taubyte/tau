@@ -28,8 +28,6 @@ type bound struct {
 	token string
 }
 
-// ─────────────────────────── the mandatory client ───────────────────────────
-
 type cBase struct{ bound }
 
 func (b cBase) Host() string { return b.c.shape.Host }
@@ -112,8 +110,6 @@ func (b cBase) Repository(_ context.Context, k repokey.Key) (forge.Repository, e
 	}
 	return b.c.repository(r, k), nil
 }
-
-// ─────────────────────────── the optional client faces ───────────────────────────
 
 type fList struct{ bound }
 
@@ -245,7 +241,6 @@ func (b fKeys) RemoveDeployKey(_ context.Context, k repokey.Key, h forge.Handle)
 	return nil
 }
 
-// ListDeployKeys is every key on k, in handle order.
 func (b fKeys) ListDeployKeys(_ context.Context, k repokey.Key) ([]forge.InstalledDeployKey, error) {
 	if ok, err := b.c.callAbout("GET", "/api/repos/"+k.FullName()+"/keys", b.token, k); !ok {
 		return nil, err
@@ -271,7 +266,6 @@ func (b fKeys) ListDeployKeys(_ context.Context, k repokey.Key) ([]forge.Install
 
 type fHooks struct{ bound }
 
-// ListPushHooks is every hook on k, in handle order.
 func (b fHooks) ListPushHooks(_ context.Context, k repokey.Key) ([]forge.InstalledPushHook, error) {
 	if ok, err := b.c.callAbout("GET", "/api/repos/"+k.FullName()+"/hooks", b.token, k); !ok {
 		return nil, err
@@ -391,11 +385,8 @@ func (b fProbe) CanPush(_ context.Context, k repokey.Key, sshPrivateKey []byte) 
 	return string(sshPrivateKey) == "fake-ssh-key-may-push", nil
 }
 
-// ─────────────────────────── the client variants ───────────────────────────
-//
-// A Go type either implements an interface or does not, so "which faces does
-// this client have" is a choice of TYPE and not of field. Each variant below is
-// one composition; there is no runtime switch and nothing that can be nil.
+// Which faces a client has is a choice of type: each variant is one
+// composition, with no runtime switch and nothing nil.
 
 type cAll struct {
 	cBase
@@ -478,8 +469,7 @@ type cNoProbe struct {
 	fAddr
 }
 
-// clientFaces are the optional client-side capabilities, in the bit order the
-// variant table below is written against.
+// In the bit order the variant table is written against.
 var clientFaces = []forge.Capability{
 	forge.CapList, forge.CapCreate, forge.CapDelete,
 	forge.CapDeployKeys, forge.CapPushHooks, forge.CapCloneAddr, forge.CapPushProbe,
@@ -519,8 +509,6 @@ func newClient(c *core, token string) (forge.Client, error) {
 	return nil, fmt.Errorf("fake: Omit %v is not a shape that exists; omit none, omit all, or omit exactly one client-side capability", missing)
 }
 
-// ─────────────────────────── the driver ───────────────────────────
-
 type dBase struct{ c *core }
 
 func (d dBase) Host() string { return d.c.shape.Host }
@@ -547,15 +535,9 @@ func (d dBase) Canonical(k repokey.Key) (repokey.Key, bool) {
 
 func (d dBase) Addressable(k repokey.Key) error {
 	err := d.c.addressable(k)
-	// A driver that goes and ASKS. The refusal is right and the request is the
-	// defect: a shape this forge cannot express is not a question the forge can
-	// be asked, and asking anyway puts a caller's repository name on a wire
-	// before anything has agreed it is addressable.
-	//
-	// It is recorded HERE, at the driver's own entry point, and not in the
-	// shared body: the listing reads that body while it holds the core's lock,
-	// and a fault that took the lock again would be a deadlock in the fake
-	// rather than a defect in a driver.
+	// The refusal is right and the request is the defect: asking puts a caller's
+	// repository name on a wire before it is agreed addressable. Recorded here, not
+	// in the shared body, which runs under the core's lock.
 	if err != nil && d.c.shape.faulty(FaultAsksBeforeRefusingADepth) {
 		d.c.mu.Lock()
 		d.c.record("GET", "/api/repos/"+k.FullName(), goodToken, k)
@@ -668,8 +650,6 @@ func newDriver(c *core) forge.Driver {
 	}
 }
 
-// payload is this forge's push event. It carries both spellings so one struct
-// serves both shapes; which one is read is the shape's decision.
 type payload struct {
 	Repository struct {
 		CloneURL string `json:"clone_url"`
@@ -687,8 +667,6 @@ type payload struct {
 	After  string `json:"after"`
 }
 
-// ─────────────────────────── deliveries ───────────────────────────
-
 // Delivery builds a REAL, correctly signed push delivery for a hook this forge
 // holds — real HMAC over real bytes, produced the way the forge would produce
 // it, so a consumer testing verification is testing verification.
@@ -703,7 +681,6 @@ func (f *Forge) DeliveryFor(h forge.Hook, other repokey.Key, ref, commit string)
 	return f.deliver(h, other, ref, commit, time.Now(), true)
 }
 
-// NonPushDelivery is a correctly signed delivery that is not a push.
 func (f *Forge) NonPushDelivery(h forge.Hook) (forge.Delivery, error) {
 	return f.deliver(h, h.Key, "", "", time.Now(), false)
 }
@@ -715,19 +692,14 @@ func (f *Forge) DeliveryAt(h forge.Hook, ref, commit string, at time.Time) (forg
 }
 
 func (f *Forge) deliver(h forge.Hook, names repokey.Key, ref, commit string, at time.Time, isPush bool) (forge.Delivery, error) {
-	// A HOOK, AND NOT A HANDLE THIS FORGE HOLDS. The check used to be the
-	// second, and it made a driver that answers with a handle the forge never
-	// assigned — a real defect, with its own fault — arrive as a fixture that
-	// could not build a delivery, which reads as the harness breaking rather
-	// than as the suite naming a driver. What a delivery actually needs is a
-	// hook with a secret and a scheme, so that is what is required.
+	// A delivery needs a hook with a secret and a scheme, not a handle this forge
+	// holds: a driver answering a foreign handle is its own fault.
 	if h.Secret.Empty() || h.Scheme == "" {
 		return forge.Delivery{}, fmt.Errorf("fake: %q is not a hook anything can be signed for: no secret or no scheme", h.Handle)
 	}
 
-	// The record is consulted for one thing: the WIRE STRING the forge was
-	// actually given. Its absence means signing with the wire this hook's own
-	// secret derives, which is what a forge holding it would have been given.
+	// The forge signs with the wire string it was given, so a mangled registration
+	// shows as a delivery nothing verifies.
 	f.c.mu.Lock()
 	rec, held := f.c.hooks[h.Handle]
 	f.c.mu.Unlock()
@@ -748,10 +720,6 @@ func (f *Forge) deliver(h forge.Hook, names repokey.Key, ref, commit string, at 
 	if f.c.shape.faulty(FaultSignsWithAnotherScheme) {
 		scheme = otherScheme(scheme)
 	}
-	// The forge holds the WIRE string, not the secret. When a driver mangled
-	// the wire on the way in, the forge signs with what it was actually given —
-	// which is how a mangled registration shows up as a delivery nothing can
-	// verify, rather than as nothing at all.
 	secret := h.Secret
 	if held {
 		if want, err := h.Scheme.Wire(h.Secret); err != nil || want != rec.wire {
@@ -804,7 +772,6 @@ func beside[T any](c *core, filled T, err error) (T, error) {
 	return zero, err
 }
 
-// refused is the fake forge's own 4xx.
 type refused struct{ msg string }
 
 func (r refused) Error() string { return r.msg }

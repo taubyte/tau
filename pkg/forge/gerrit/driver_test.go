@@ -94,9 +94,6 @@ func TestAddressableAcceptsEveryDepthOnItsOwnHost(t *testing.T) {
 	assert.Error(t, d.Addressable(repokey.Key{Host: "gerrit.example", Owner: "a"}))
 }
 
-// AN ANONYMOUS SESSION USES THE PATHS WITHOUT /a/ AND SENDS NO CREDENTIAL,
-// which is how Gerrit is told a request is anonymous; /a/ with no
-// Authorization is a 401.
 func TestAnAnonymousSessionReadsWithoutTheAuthenticatedPrefix(t *testing.T) {
 	var seen []string
 	o := serve(t, func(w http.ResponseWriter, r *http.Request) {
@@ -129,8 +126,6 @@ func TestAnAnonymousSessionReadsWithoutTheAuthenticatedPrefix(t *testing.T) {
 	assert.ErrorContains(t, err, "anonymous")
 }
 
-// A BODY NAMING A PROJECT THIS LAYER HAS NO KEY FOR IS REFUSED, never filed
-// under the nearest key — and its name is not quoted, because the forge chose it.
 func TestAProjectNameWithNoKeyIsRefused(t *testing.T) {
 	for name, body := range map[string]string{
 		"empty":       `{"name":""}`,
@@ -162,8 +157,6 @@ func TestAHeadThatIsNotABranchIsRefused(t *testing.T) {
 	assert.ErrorContains(t, err, "not a branch")
 }
 
-// EVERY HALF OF THE RECORD IS FETCHED, AND A FAILURE IN ANY OF THEM IS AN
-// ERROR, never a record with a hole in it.
 func TestAFailureFetchingHalfARecordIsAnError(t *testing.T) {
 	for _, broken := range []string{"/HEAD", "/access"} {
 		t.Run(broken, func(t *testing.T) {
@@ -198,9 +191,6 @@ func TestAnAccountWithNoUsernameIsNobodyThisLayerCanName(t *testing.T) {
 	assert.ErrorContains(t, err, "no username")
 }
 
-// THE LISTING PAGES BY OFFSET UNTIL A PAGE STOPS SAYING _more_projects, skips
-// a name with no key, and fails rather than drop a project it could not
-// describe.
 func TestTheListingPagesAndSkipsOnlyWhatHasNoKey(t *testing.T) {
 	const total = 120
 	described := 0
@@ -269,8 +259,6 @@ func TestAListingThatNeverEndsIsRefused(t *testing.T) {
 	assert.Equal(t, 1000, pages)
 }
 
-// A PRIVATE CREATE THAT COULD NOT BE RESTRICTED IS AN ERROR, saying the
-// project exists and how readable it is, never a record that says Private.
 func TestAPrivateCreateThatCouldNotBeRestrictedIsAnError(t *testing.T) {
 	o := serve(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -316,9 +304,6 @@ func TestACreateWhoseRecordCannotBeReadIsAnError(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// MEMBERSHIP IS CHECKED AGAINST THE QUESTION: a group or account Gerrit
-// resolved to something else is an error, and so is any answer that is not a
-// visible group plus a 200 or a 404 on the member.
 func TestMembershipRefusesAnAnswerAboutSomebodyElse(t *testing.T) {
 	cases := map[string]struct {
 		group, member func(w http.ResponseWriter)

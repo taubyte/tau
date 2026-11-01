@@ -1,14 +1,10 @@
 package bitbucketserver_test
 
-// The Bitbucket Server this package's tests talk to is an httptest server and
-// nothing else: no network and no container. It replays the shapes Bitbucket
-// Data Center's REST 1.0 documents (developer.atlassian.com/server/bitbucket/rest)
-// — {values, isLastPage, nextPageStart} pages clamped below what is asked, an
-// upper-case project key, clone links named "http" and "ssh" with the caller's
-// username in the first and the ssh port in the second, 401 naming an
-// AuthorisationException for a caller lacking a permission and another
-// exception for a refused credential, 404 for a repository the caller may not
-// see, 409 for a slug already taken, and access keys carrying a permission.
+// An httptest server replaying Bitbucket Data Center's REST 1.0 shapes:
+// clamped pages, an upper-case project key, clone links with the caller's
+// username and the ssh port, 401 naming an AuthorisationException for a missing
+// permission, 404 for a hidden repository, 409 for a taken slug, and access
+// keys carrying a permission.
 
 import (
 	"encoding/json"
@@ -113,7 +109,6 @@ func (f *fixture) seed(p, slug string, public bool, perm string) {
 func (f *fixture) Host() string                 { return f.host }
 func (f *fixture) Transport() http.RoundTripper { return f.rt }
 
-// sshHost is the fixture's ssh host: its name, on the ssh port.
 func (f *fixture) sshHost() string {
 	name, _, _ := strings.Cut(f.host, ":")
 	return name + ":" + sshPort
@@ -166,7 +161,6 @@ func (f *fixture) HookInstalled(h forge.Handle) bool {
 	return ok
 }
 
-// breakableRT is the outage and the recorder, under forge.PinnedTransport.
 type breakableRT struct {
 	base   http.RoundTripper
 	broken atomic.Bool
@@ -192,8 +186,6 @@ func (b *breakableRT) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	return b.base.RoundTrip(r)
 }
-
-// ─────────────────────────────── the server ───────────────────────────────
 
 func (f *fixture) handler() http.Handler {
 	mux := http.NewServeMux()
@@ -349,7 +341,6 @@ func (f *fixture) defaultBranch(w http.ResponseWriter, r *http.Request) {
 	f.ok(w, http.StatusOK, map[string]any{"id": "refs/heads/main", "displayId": "main", "type": "BRANCH", "isDefault": true})
 }
 
-// rank orders the permissions /repos filters by.
 var rank = map[string]int{"REPO_READ": 1, "REPO_WRITE": 2, "REPO_ADMIN": 3}
 
 func (r *fRepo) holds(perm string) bool {
@@ -418,7 +409,6 @@ func (f *fixture) createRepo(w http.ResponseWriter, r *http.Request) {
 	f.ok(w, http.StatusCreated, created)
 }
 
-// adminRepo is the guard every write shares.
 func (f *fixture) adminRepo(w http.ResponseWriter, r *http.Request) (string, bool) {
 	repo, ok := f.lookup(r)
 	switch {

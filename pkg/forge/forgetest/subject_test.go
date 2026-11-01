@@ -9,10 +9,8 @@ import (
 	"github.com/taubyte/tau/pkg/forge/fake"
 )
 
-// subjectFor is the adapter a driver's own tests write once: it wires a forge
-// implementation's handles into a Subject. It is ~40 lines here and would be
-// ~40 lines over an httptest recorder, which is the point — the suite asks for
-// facts, not for a particular way of producing them.
+// subjectFor is the adapter a driver's own tests write once, wiring a forge's
+// handles into a Subject.
 func subjectFor(t *testing.T, name string, sh fake.Shape) Subject {
 	t.Helper()
 	f := fake.New(sh)
@@ -111,7 +109,6 @@ func without(sh fake.Shape, c forge.Capability) fake.Shape {
 	return sh
 }
 
-// faulty copies a shape with a deliberate defect.
 func faulty(sh fake.Shape, f fake.Fault) fake.Shape {
 	sh.Faults = append(append([]fake.Fault(nil), sh.Faults...), f)
 	return sh

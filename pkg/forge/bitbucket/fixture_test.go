@@ -1,18 +1,8 @@
 package bitbucket_test
 
-// The Bitbucket Cloud this package's tests talk to is an httptest server and
-// nothing else. NOTHING HERE REACHES bitbucket.org, and there is no container
-// suite for this driver because Bitbucket Cloud is not software anybody can
-// run: what stands in for it is this server replaying the API's own documented
-// shapes (developer.atlassian.com/cloud/bitbucket/rest) — paged {values, next}
-// envelopes, the clone links with the caller's username in them, a hook's
-// handle as a braced UUID, 400 for a slug already taken, 403 for a workspace
-// the caller may not create in, 404 for a repository it may not see.
-//
-// ONE DEVIATION, and it is the fixture's and not the driver's: Bitbucket spells
-// a repository's SSH link scp-style, git@bitbucket.org:acme/pay.git. A loopback
-// test host carries a port, and host:port:path is not a spelling anything can
-// read back, so the SSH link here is the ssh:// form of the same address.
+// Bitbucket Cloud cannot be run, so this server replays the API's documented
+// shapes. One deviation: the SSH link is the ssh:// form, since a loopback host
+// carries a port and host:port:path does not read back.
 
 import (
 	"encoding/json"
@@ -70,7 +60,6 @@ type fKey struct {
 	pub   string
 }
 
-// fixture is one in-memory Bitbucket Cloud behind a TLS httptest server.
 type fixture struct {
 	srv  *httptest.Server
 	rt   *breakableRT
@@ -199,8 +188,6 @@ func (b *breakableRT) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	return b.base.RoundTrip(r)
 }
-
-// ─────────────────────────────── the server ───────────────────────────────
 
 func (f *fixture) handler() http.Handler {
 	mux := http.NewServeMux()
@@ -353,8 +340,6 @@ func (f *fixture) listRepos(w http.ResponseWriter, r *http.Request) {
 	f.page(w, r, out)
 }
 
-// permissions answers /user/permissions/repositories?q=repository.full_name="…",
-// the only filter this fixture understands.
 func (f *fixture) permissions(w http.ResponseWriter, r *http.Request) {
 	if !f.user(w, r) {
 		return
@@ -431,7 +416,6 @@ func (f *fixture) deleteRepo(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// adminRepo is the guard every sub-resource shares.
 func (f *fixture) adminRepo(w http.ResponseWriter, r *http.Request) (string, bool) {
 	full := r.PathValue("owner") + "/" + r.PathValue("name")
 	f.mu.Lock()

@@ -1,9 +1,5 @@
 package azure_test
 
-// The Azure DevOps these tests talk to is an httptest server serving recorded
-// response shapes of the REST API (api-version 7.1) and nothing else. Nothing
-// here reaches a real Azure DevOps.
-
 import (
 	"encoding/base64"
 	"encoding/json"
@@ -60,7 +56,6 @@ type fixture struct {
 	redirect       string
 	redirectStatus int
 
-	// faults the driver tests arm.
 	evalDrop     bool // answer the permission batch with one evaluation missing
 	evalForeign  bool // answer it about another token
 	listExtra    []map[string]any
@@ -152,8 +147,6 @@ func (b *breakableRT) RoundTrip(r *http.Request) (*http.Response, error) {
 	return b.base.RoundTrip(r)
 }
 
-// ─────────────────────────────── the server ───────────────────────────────
-
 func (f *fixture) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{org}/_apis/connectionData", f.connectionData)
@@ -242,7 +235,6 @@ func (f *fixture) connectionData(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// repoBody is a GitRepository as Azure DevOps answers one.
 func (f *fixture) repoBody(r *fRepo) map[string]any {
 	p := f.projects[r.project]
 	path := org + "/" + r.project + "/_git/" + r.name

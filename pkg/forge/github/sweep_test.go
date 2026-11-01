@@ -1,53 +1,11 @@
 package github_test
 
-// THE SWEEP: every request this driver issues, DISCOVERED rather than listed.
-//
-// Five rounds of a hand-written redirect table produced a hole every round, and
-// each hole was the same shape — the table named OPERATIONS, so a multi-request
-// operation was armed at one of its requests and unarmed at the others, and an
-// operation nobody thought of was armed nowhere. Round 6 found the last two by
-// sweeping all thirteen request shapes instead of reading the table. This file
-// makes that sweep the test.
-//
-// HOW THE POPULATION IS FOUND. Every operation is run once against a forge that
-// answers everything correctly, and what the driver put on the wire is read off
-// the recorder UNDER the credential pin: a shape here is a method and the
-// escaped path this driver composed, and nothing in this file may name an
-// endpoint that did not arrive there. The properties below then run over one
-// (operation, request) pair at a time — the population is a SITE IN A SEQUENCE,
-// not an operation — so a request that is second or third in its operation is
-// armed on its own, and an operation that grows a fourth request grows a row
-// with it.
-//
-// WHAT THAT WOULD HAVE CAUGHT. POST /api/v3/user/repos — the endpoint Create
-// takes when the key names the credential's own account — was armed by nothing
-// for five rounds, because the one probe that reached Create answered
-// /api/v3/user with a login that was never the key's owner, so the personal
-// branch of client.go was never taken. Here BOTH branches are operations, and
-// which endpoint each one reached is a fact this file reads rather than states.
-//
-// WHAT DISCOVERY STILL COULD NOT SEE, AND WHERE THAT IS ANSWERED. Running every
-// operation finds every request some input reaches, and says nothing about a
-// BRANCH no input reaches — which is the same hole as the personal create
-// endpoint, one level in. Round 7 measured it: adding
-//
-//	if strings.HasPrefix(key.Name, "z") { path = "user/repos?legacy=1" }
-//
-// to an existing operation left the whole forge tree at exit 0. That is not
-// answered here, because it cannot be: no sample proves what a program can do.
-// It is answered by the driver's ROUTING TABLE and the closure over it in
-// route_test.go — a path is a route registered by being constructed, and a
-// route the sweep never reached fails by name.
-//
-// THE SECOND HOP DESCRIBES THE REPOSITORY THAT WAS ASKED ABOUT even though it
-// is served under attacker/. This driver checks the key it derives from a clone
-// URL against the key it asked about — Access and Create both do — so a
-// successor that named ITSELF would make these rows pass on that check instead
-// of on the redirect rule. Naming the victim closes it: if a hop is followed,
-// the operation succeeds and returns what a consumer would have believed.
-//
-// Everything here is httptest and in-process. Nothing dials anything that is
-// not a loopback listener this file started.
+// The sweep: every request this driver issues, discovered by running every
+// operation against a forge that answers correctly and reading the recorder
+// under the credential pin. Rows run per (operation, request) site. A branch no
+// input reaches is the routing table's to catch, in route_test.go. The second
+// hop describes the repository asked about, so a followed redirect succeeds and
+// shows.
 
 import (
 	"context"
@@ -86,47 +44,18 @@ var redirectStatuses = []int{
 	http.StatusPermanentRedirect,
 }
 
-// sweepArgs are the strings a CONSUMER hands this driver, as opposed to the
-// ones repokey vouched for and Addressable checked: an opaque forge.Handle and
-// the two halves of a membership question. Each operation below takes the whole
-// struct and uses whichever of them it has a parameter for, which is what lets
-// one table drive both the redirect sweep and the escaping sweep.
+// sweepArgs are the strings a consumer hands this driver: an opaque
+// forge.Handle and the two halves of a membership question.
 type sweepArgs struct{ handle, namespace, username string }
 
-// THE POPULATION IS IN TWO HALVES, AND IT USED TO BE IN ONE. A string a
-// consumer or a forge hands this driver either can be escaped into a name — and
-// then it must be sent, because a forge may legitimately spell a handle with a
-// "%", a "?" or a "#" in it and refusing those would refuse real forges — or it
-// cannot, and then it must be REFUSED before any request leaves. One string
-// standing for both is one property standing for two, and the second one was
-// missing: url.PathEscape("..") is "..", so the escaping sweep watched ".." go
-// out escaped-and-unchanged and called that holding.
-//
-// walkingSpelling is the FIRST half: the characters escaping is the answer to.
-// "?" ends a path, so an unescaped one turns the rest into query parameters this
-// driver never wrote; "#" ends a URL, so an unescaped one silently TRUNCATES the
-// request; "%2f" is a "/" the forge decodes after this driver has stopped
-// looking. It is the same spelling walkingSegmentSpelt yields through repokey,
-// so all five slots below carry ONE string and one needle decides all of them.
-//
-// traversalSpellings is the SECOND half, and it is asserted against a different
-// property in a different test: not "it went out escaped" but "no request went
-// out at all". See TestNoStringThisDriverPastesIntoAURLCanMoveThePathItIsIn.
+// walkingSpelling is what escaping answers: "?" ends a path, "#" ends a URL, and
+// "%2f" is a "/" decoded after this driver stops looking. traversalSpellings
+// must instead send no request at all.
 const walkingSpelling = walkingSegment
 
-// traversalSpellings are the strings that ADDRESS SOMETHING ELSE however
-// perfectly they are escaped, which is the whole of why escaping was never the
-// property.
-//
-// ".." resolves to the parent — DELETE .../repos/acme/site/keys/.. is DELETE
-// .../repos/acme/site, which is delete-a-repository, and Go's own httptest
-// server answered exactly that with a 307 to the cleaned path. "." resolves to
-// the COLLECTION, which is the threat handleSegment was already written
-// against. "../.." escapes to "..%2F..", one segment on the wire and two dot
-// components to anything that decodes before it routes.
-//
-// EVERY SLOT TAKES THESE, because a dot segment is an instruction to a resolver
-// wherever it is put and no forge has a name that is one.
+// traversalSpellings address something else however they are escaped: ".."
+// resolves to the parent, "." to the collection, and "../.." escapes to one
+// segment on the wire. Every slot takes them.
 var traversalSpellings = map[string]string{
 	"a segment that climbs to the parent":         "..",
 	"a segment that names the collection":         ".",
@@ -134,28 +63,19 @@ var traversalSpellings = map[string]string{
 	"a climb with the rest of a real path behind": "../../attacker?a#b",
 }
 
-// spanningSpellings carry NO DOT AT ALL and still name a resource under a
-// collection nobody asked about: .../keys/a/b is not a key under .../keys. They
-// are a slot's SHAPE rather than the resolver's arithmetic, so they are asked
-// only of a slot that does not nest — see consumerSlot.nests. On this driver
-// nothing nests: Addressable already refuses a key whose owner does, and an
-// organization login and a user login are the same shape.
+// spanningSpellings carry no dot and still name a resource under a collection,
+// so they are asked only of a slot that does not nest.
 var spanningSpellings = map[string]string{
 	"a name that spans two collections": "a/b",
 }
 
 const (
-	// sweepCallback and sweepSecret are FIXED rather than minted, because the
-	// body sweep below pins what this driver composes by value and a freshly
-	// minted secret derives a different wire string every run. Nothing about
-	// arbitrary key material is given up here: the conformance suite signs real
-	// deliveries with real minted secrets, and this file is about the request.
+	// Fixed rather than minted: the body sweep pins what this driver composes by
+	// value.
 	sweepCallback = "https://build.example.invalid/hook"
 	sweepSecret   = "github-sweep-hook-secret-0123456789abcdef"
 
-	// sweepDescription is a create option that is neither empty nor the name, so
-	// a driver that dropped it or sent something else in its place is visible in
-	// the body sweep. It was dropped, and nothing said so.
+	// Neither empty nor the name, so a dropped description shows.
 	sweepDescription = "the repository tau was asked to make"
 )
 
@@ -163,16 +83,10 @@ var (
 	benignArgs = sweepArgs{handle: "7", namespace: namespace, username: member}
 )
 
-// consumerSlot is one string a CONSUMER hands this driver, named by where it
-// goes and paired with the args that put it there. It is what makes the
-// traversal rows a population rather than three hand-written calls: the same
-// three slots the escaping sweep runs over, driven by a different value.
 type consumerSlot struct {
 	name string
-	// nests says a "/" in this slot is DATA rather than a second segment. It is
-	// false everywhere on this driver and true for the gitlab driver's group,
-	// where acme/team is the ordinary case — which is why the spanning row is a
-	// property of the SLOT and not of the string.
+	// nests: a "/" in this slot is data, not a second segment, as in gitlab's
+	// group.
 	nests bool
 	args  func(value string) sweepArgs
 }
@@ -189,8 +103,6 @@ var consumerSlots = []consumerSlot{
 	}},
 }
 
-// spellingsFor is the population one slot is asked about: every dot spelling,
-// and the spanning ones too unless a "/" is a name in this slot.
 func spellingsFor(slot consumerSlot) map[string]string {
 	out := map[string]string{}
 	for name, spelling := range traversalSpellings {
@@ -205,10 +117,9 @@ func spellingsFor(slot consumerSlot) map[string]string {
 	return out
 }
 
-// sweepOp is one operation a consumer can ask a session for. This list is the
-// only hand-written thing in the file, it is closed against
-// forge.Session.Capabilities by TestEveryCapabilityThisDriverAnswersIsSwept,
-// and it names no endpoint: which requests an operation makes is discovered.
+// sweepOp is one operation a session offers. The list is closed against
+// Session.Capabilities by TestEveryCapabilityThisDriverAnswersIsSwept, and names
+// no endpoint.
 type sweepOp struct {
 	name string
 	caps []forge.Capability
@@ -274,16 +185,9 @@ var sweepOps = []sweepOp{
 		},
 	},
 	{
-		// AND THE OTHER BRANCH. POST /orgs/{me}/repos is a 404 because a user is
-		// not an organization, so a key naming the credential's own account
-		// takes a different endpoint — the one that was armed by nothing for
-		// five rounds, because the only probe that reached Create answered
-		// /api/v3/user with a login the key's owner never was.
-		// It also asks for a PUBLIC repository, so that between the two rows both
-		// values of the option are on the wire: a driver that ignores Private is
-		// a driver that publishes a configuration repository, and one that always
-		// sends true is a driver that cannot make the public one tau was asked
-		// for.
+		// The other branch: POST /orgs/{me}/repos is a 404 for a user, so the
+		// caller's own account takes the personal endpoint. It asks for a public
+		// repository, so both values of Private are on the wire.
 		name: "Create under the caller's own account", caps: []forge.Capability{forge.CapCreate},
 		owner: login,
 		call: func(ctx context.Context, _ *forge.Registry, s *forge.Session, k repokey.Key, _ sweepArgs) (any, error) {
@@ -339,11 +243,9 @@ var sweepOps = []sweepOp{
 		},
 	},
 	{
-		// THE ONE CALL MADE WITH THE DEPLOYMENT'S OWN CREDENTIAL, on a client no
-		// session can reach: three requests, the middle of which is the only
-		// request tau makes that HANDS BACK a credential. It is taken through the
-		// registry for that reason — a redirect policy living on one client and
-		// not the other would be invisible from a session.
+		// The one call made with the deployment's own credential, through the registry:
+		// a redirect policy on one client and not the other is invisible from a
+		// session.
 		name: "IsActiveMember", caps: []forge.Capability{forge.CapMembership}, pastes: true, deployment: true,
 		call: func(ctx context.Context, reg *forge.Registry, s *forge.Session, _ repokey.Key, a sweepArgs) (any, error) {
 			return reg.IsActiveMember(ctx, s.Host(), a.namespace, a.username)
@@ -370,8 +272,6 @@ var sweepOps = []sweepOp{
 		},
 	},
 }
-
-// ─────────────────────────── what went on the wire ───────────────────────────
 
 // hop is one request this driver made, as the recorder UNDER the credential pin
 // saw it — so the header here is the one the pin attached, on the hop it
@@ -429,7 +329,6 @@ func (w *wire) shapes() []string {
 	return out
 }
 
-// queries is every request that carried one, as "shape?query".
 func (w *wire) queries() []string {
 	out := []string{}
 	for _, h := range w.sent() {
@@ -450,7 +349,6 @@ func parsedQuery(t *testing.T, raw string) url.Values {
 	return v
 }
 
-// bodies is every request that carried one, as "shape\n\tbody".
 func (w *wire) bodies() []string {
 	out := []string{}
 	for _, h := range w.sent() {
@@ -507,17 +405,14 @@ func bodyOf(r *http.Request) string {
 // that a bug producing an unbounded one is a failure rather than a hang.
 const maxSweepBody = 1 << 20
 
-// ─────────────────────────────── the forge ───────────────────────────────
-
 // sweepForge is a GitHub that answers everything correctly, and answers ONE
 // request shape with a 3xx when it is armed to.
 type sweepForge struct {
 	srv       *httptest.Server
 	elsewhere *httptest.Server
 
-	// owner and name are the repository every answer describes, whatever path
-	// the request arrived on. See the file comment: the successor names the
-	// victim.
+	// The repository every answer describes, whatever path the request arrived on:
+	// the successor names the victim.
 	owner, name string
 
 	mu       sync.Mutex
@@ -543,14 +438,8 @@ func newSweepForge(t *testing.T, op sweepOp) *sweepSubject {
 	return newSweepForgeNaming(t, op, "", "")
 }
 
-// newSweepForgeNaming is the same subject with the session's key SPELLED
-// differently in the clone URL it is derived from.
-//
-// The key is parsed rather than built, so a hostile spelling here is a key
-// repokey really produces and not one a test imagined: whatever survives
-// repokey's grammar is exactly the population this driver has to escape. The
-// forge keeps describing the benign repository, because what a hostile key is
-// about is the REQUEST this driver composes from it.
+// newSweepForgeNaming spells the session's key differently in the clone URL it
+// is parsed from, so the hostile key is one repokey really produces.
 func newSweepForgeNaming(t *testing.T, op sweepOp, ownerSpelling, nameSpelling string) *sweepSubject {
 	t.Helper()
 
@@ -614,10 +503,7 @@ func (f *sweepForge) serve(w http.ResponseWriter, r *http.Request) {
 	f.arrived = append(f.arrived, shape)
 	move := f.armed != "" && shape == f.armed && !f.fired
 	if move {
-		// ONCE. A location that is the same shape again — which is what a path
-		// with no namespace in it gets — would otherwise be an infinite loop
-		// that Go stops at ten hops, and a row that passed on THAT would be
-		// saying nothing about this driver.
+		// Once: a location of the same shape would loop until Go stops at ten hops.
 		f.fired = true
 	}
 	status, offHost := f.status, f.offHost
@@ -723,12 +609,6 @@ func (f *sweepForge) reachedElsewhere() []string {
 	return append([]string(nil), f.elsewhen...)
 }
 
-// ─────────────────────────────── discovery ───────────────────────────────
-
-// sweepShapes runs every operation against a forge that answers everything
-// correctly and reports, per operation, the ordered shapes it put on the wire.
-// It is the population every property below runs over, and it is read off the
-// driver rather than written down.
 func sweepShapes(t *testing.T) map[string][]string {
 	t.Helper()
 	out := map[string][]string{}
@@ -748,7 +628,6 @@ func sweepShapes(t *testing.T) map[string][]string {
 	return out
 }
 
-// sweepPopulation is the distinct shapes, sorted.
 func sweepPopulation(shapes map[string][]string) []string {
 	seen := map[string]bool{}
 	out := []string{}
@@ -764,12 +643,8 @@ func sweepPopulation(shapes map[string][]string) []string {
 	return out
 }
 
-// sweptShapes is what the sweep found last time it was read, and it is here so
-// that a REQUEST APPEARING OR VANISHING is a failure somebody has to look at
-// rather than a silent change in what is armed. It is not a list of endpoints
-// this file believes in: everything below is driven from the discovered set, so
-// a new endpoint is swept whether or not it is written here — this is the line
-// that makes it also VISIBLE.
+// sweptShapes makes a request appearing or vanishing a failure; the rows are
+// driven from the discovered set either way.
 var sweptShapes = []string{
 	"DELETE /api/v3/repos/acme/pay",
 	"DELETE /api/v3/repos/acme/pay/hooks/7",
@@ -788,7 +663,6 @@ var sweptShapes = []string{
 	"POST /api/v3/user/repos",
 }
 
-// TestTheSweepDiscoversEveryRequestShapeThisDriverIssues.
 func TestTheSweepDiscoversEveryRequestShapeThisDriverIssues(t *testing.T) {
 	shapes := sweepShapes(t)
 	found := sweepPopulation(shapes)
@@ -799,20 +673,8 @@ func TestTheSweepDiscoversEveryRequestShapeThisDriverIssues(t *testing.T) {
 		"the requests this driver makes changed; every property in this file runs over the discovered set, so read the diff and say whether the new one is armed the way the others are")
 }
 
-// sweptBodies is every request this driver composes that CARRIES a body,
-// pinned by value.
-//
-// A path says which resource a request is about; a body says what it asks to be
-// done to it, and until this list nothing read most of one. Measured: the hook's
-// name stopped being "web", the deploy key stopped carrying the title its caller
-// chose, Create stopped sending Private and stopped sending Description — four
-// separate mutations, four times the whole tree at exit 0. A repository created
-// public when the caller asked for private is the sharpest of them, because tau
-// creates configuration repositories.
-//
-// IT IS THE WHOLE BODY AND NOT A FIELD LIST, for the reason the gitlab driver's
-// hook test gives: a field ADDED here is a value nobody decided, and only
-// equality fails on one.
+// sweptBodies pins every request body whole, by value: a field added is a value
+// nobody decided, and only equality fails on one.
 var sweptBodies = []string{
 	"POST /api/v3/app/installations/4242/access_tokens\n\t" +
 		`{"permissions":{"members":"read"}}`,
@@ -837,7 +699,6 @@ func sweepHookWire() string {
 	return wire
 }
 
-// TestTheSweepPinsEveryRequestBodyThisDriverComposes.
 func TestTheSweepPinsEveryRequestBodyThisDriverComposes(t *testing.T) {
 	found := []string{}
 	for _, op := range sweepOps {
@@ -855,22 +716,14 @@ func TestTheSweepPinsEveryRequestBodyThisDriverComposes(t *testing.T) {
 		"a request body this driver composes changed; every field in one is a decision, so read the diff and say which decision this is")
 }
 
-// sweptQueries is every request this driver composes that CARRIES a query,
-// pinned by value.
-//
-// A path says which resource, a body says what to do to it, and a query says
-// which slice of it — and until this list nothing read one. The listing's
-// per_page is the only thing that makes the page counter terminate on a short
-// page, and a driver that stopped sending it would page a hundred repositories
-// at GitHub's default thirty and stop after the first page believing it had
-// them all.
+// sweptQueries pins every query by value. per_page is what makes the page
+// counter stop on a short page; without it GitHub pages at thirty.
 var sweptQueries = []string{
 	"GET /api/v3/repos/acme/pay/hooks?page=1&per_page=100",
 	"GET /api/v3/repos/acme/pay/keys?page=1&per_page=100",
 	"GET /api/v3/user/repos?page=1&per_page=100",
 }
 
-// TestTheSweepPinsEveryQueryThisDriverComposes.
 func TestTheSweepPinsEveryQueryThisDriverComposes(t *testing.T) {
 	found := []string{}
 	for _, op := range sweepOps {
@@ -888,10 +741,6 @@ func TestTheSweepPinsEveryQueryThisDriverComposes(t *testing.T) {
 		"a query this driver composes changed; every parameter in one is a decision, so read the diff and say which decision this is")
 }
 
-// TestEveryCapabilityThisDriverAnswersIsSwept is the closure on the one
-// hand-written list here. A face this driver grows is a capability
-// forge.Session.Capabilities computes from a type assertion, and an operation
-// nobody added for it would be a question the sweep never asks.
 func TestEveryCapabilityThisDriverAnswersIsSwept(t *testing.T) {
 	s := newSweepForge(t, sweepOps[0])
 
@@ -905,18 +754,9 @@ func TestEveryCapabilityThisDriverAnswersIsSwept(t *testing.T) {
 		"the sweep's operations and this driver's capabilities are not the same set")
 }
 
-// ─────────────────────────────── the properties ───────────────────────────────
-
-// sweepRows runs fn over every (operation, request) pair the sweep discovered.
-// The unit is a SITE IN A SEQUENCE: index is how many requests the operation
-// makes before this one, which is also the hop budget a refusal has to keep to.
-//
-// AND IT CHECKS ITSELF. The rows are generated from the discovered set, so a
-// shape cannot go unarmed by being forgotten — but it could go unarmed by
-// something here skipping it, which is the same hole with a different cause. So
-// what was actually armed is collected and compared with what was discovered: a
-// request this driver makes and this loop does not reach fails the property
-// rather than quietly shrinking it.
+// sweepRows runs fn over every (operation, request) site the sweep discovered:
+// index is how many requests come before it. What was armed is compared with
+// what was discovered.
 func sweepRows(t *testing.T, fn func(t *testing.T, op sweepOp, index int, shape string)) {
 	t.Helper()
 	shapes := sweepShapes(t)
@@ -943,9 +783,6 @@ func sweepRows(t *testing.T, fn func(t *testing.T, op sweepOp, index int, shape 
 		"a request this driver makes was armed by no row, so this property holds for the others and says nothing about it")
 }
 
-// TestNoRequestThisDriverMakesFollowsASameHostRedirect. A 3xx to another path on
-// the SAME host is the hop a pin cannot refuse, so every request this driver
-// makes must stop at it rather than act on whatever the forge pointed at.
 func TestNoRequestThisDriverMakesFollowsASameHostRedirect(t *testing.T) {
 	sweepRows(t, func(t *testing.T, op sweepOp, index int, shape string) {
 		s := newSweepForge(t, op)
@@ -976,10 +813,6 @@ func TestNoRequestThisDriverMakesFollowsASameHostRedirect(t *testing.T) {
 	})
 }
 
-// TestNoRequestThisDriverMakesFollowsARedirectOffTheHost is the other half, and
-// the assertion that the refusal is the DRIVER's rather than the pin's: the pin
-// would have refused this hop, but only after being asked to make it, and by
-// then a 307 has already replayed the body once for every host that answers.
 func TestNoRequestThisDriverMakesFollowsARedirectOffTheHost(t *testing.T) {
 	sweepRows(t, func(t *testing.T, op sweepOp, index int, shape string) {
 		s := newSweepForge(t, op)
@@ -1006,19 +839,6 @@ func TestNoRequestThisDriverMakesFollowsARedirectOffTheHost(t *testing.T) {
 	})
 }
 
-// TestAnAnonymousSessionPutsNoCredentialHeaderOnAnyRequest.
-//
-// An anonymous session is a real state — GitHub answers public repositories to
-// nobody in particular — and the driver's own line for it is `if token != ""`
-// around the header. Deleting that guard left the whole tree at exit 0, because
-// the assertion an anonymous test can most easily make reads the header's VALUE:
-// "Authorization: Bearer " is empty by that reading and present by GitHub's, and
-// GitHub answers a present-but-meaningless credential with a 401. The public
-// read then fails as if the repository were gone.
-//
-// So this reads presence, and it reads it on every request the sweep found
-// rather than on one. Whichever operations an anonymous session is allowed to
-// make, none of their hops may carry the header at all.
 func TestAnAnonymousSessionPutsNoCredentialHeaderOnAnyRequest(t *testing.T) {
 	reached := 0
 	for _, op := range sweepOps {
@@ -1054,34 +874,9 @@ func TestAnAnonymousSessionPutsNoCredentialHeaderOnAnyRequest(t *testing.T) {
 	assert.Positive(t, reached, "no operation reached the wire, so nothing here was read")
 }
 
-// ───────────────────────── every string that reaches a URL ─────────────────────────
-
-// A SLOT is one string this driver is handed and pastes into a URL, and the
-// five below are the whole population.
-//
-// WHAT COUNTS AS ONE IS WHERE THE STRING GOES, NOT WHERE IT CAME FROM, and that
-// distinction is the defect this replaced. The previous mechanism swept three
-// slots — an opaque handle and the two halves of a membership question — on the
-// stated ground that they are "strings a consumer typed", as opposed to a key
-// "repokey vouched for and Addressable checked". Neither vouching is about a
-// path. repokey splits on "/", refuses whitespace, and refuses a segment that
-// IS "." or ".."; it says nothing about "?", "#" or "%", and it decodes what a
-// clone URL escaped — so https://h/acme/pay%23evil is a key whose Name is
-// "pay#evil". Addressable refuses an owner with a "/" in it and says nothing
-// about the name at all. The two halves of a key are therefore exactly as
-// consumer-supplied as a handle is — a consumer types the clone URL — and they
-// were left out by provenance rather than by destination.
-//
-// Measured before this: with the key left out, five of this driver's seven
-// url.PathEscape calls could be deleted one at a time with the WHOLE forge tree
-// at exit 0 — repoPath's two, Create's organization path, and both halves of
-// the clone address.
-//
-// AND A CLONE ADDRESS IS IN THE POPULATION. It is not a request, so the sweep's
-// request rows never reach it, and it is a URL this driver composes out of a
-// key and hands to whoever clones with it. The property below therefore runs
-// over every path an operation COMPOSED, which is the requests it made plus the
-// addresses it returned.
+// A slot is one string this driver pastes into a URL, defined by where it goes:
+// a key's halves are as consumer-supplied as a handle, since a consumer types
+// the clone URL. A clone address is a composed URL too.
 type sweepSlot struct {
 	name string
 
@@ -1114,8 +909,6 @@ const walkingSegment = "..%2f..%2fattacker?a#b"
 // repokey really produces this one.
 const walkingSegmentSpelt = "..%252f..%252fattacker%3Fa%23b"
 
-// keySweepSlots are the two halves of the KEY, which reach this driver through
-// repokey rather than from a consumer directly.
 func keySweepSlots() []sweepSlot {
 	return []sweepSlot{
 		{
@@ -1137,9 +930,6 @@ func sweepSlots() []sweepSlot {
 	return out
 }
 
-// TestTheHostileKeyIsOneRepokeyReallyProduces. The two key slots above are
-// worth nothing if the spelling they use is one no clone URL yields, so this is
-// the row that says the population is real.
 func TestTheHostileKeyIsOneRepokeyReallyProduces(t *testing.T) {
 	k, err := repokey.Parse("https://h.example/" + walkingSegmentSpelt + "/" + walkingSegmentSpelt)
 	require.NoError(t, err, "repokey refuses the spelling the escaping sweep is written against")
@@ -1222,31 +1012,6 @@ func decodedSegments(t *testing.T, path string) []string {
 	return out
 }
 
-// TestEveryStringThisDriverPastesIntoAURLStaysInsideOnePathSegment is ONE
-// MECHANISM over the whole population, and the population is discovered the
-// same way the request shapes are: each slot is made hostile ON ITS OWN and
-// every operation is run twice, so whether a slot reaches a given operation's
-// URLs is READ rather than declared.
-//
-// THE ASSERTION IS THE SEGMENT AND NOT A NEEDLE. A path is split and each piece
-// decoded once, which is what the forge on the other end does, and the hostile
-// value must come back out of exactly that. Escaping it correctly is the only
-// way that happens: pasted raw, "..%2f..%2fattacker?a#b" arrives as the segment
-// "../../attacker" with a query and a fragment the driver never wrote — and
-// note that it arrives with the SAME NUMBER OF SEGMENTS, which is why counting
-// separators is not enough and was not enough.
-//
-// AND THE VERDICT IS UNIVERSAL, WHICH IT WAS NOT. It used to be one `held`
-// boolean ORed over every URL an operation composed, so a URL that walked was
-// EXCUSED BY A CORRECTLY-ESCAPED URL BESIDE IT. Measured: making the ssh half of
-// CloneAddress escape the key TWICE — the exact hazard escapedSegments' own
-// comment warns about — while the https half stayed right was GO_TEST_EXIT=0 on
-// both drivers. An existential check cannot express a universal property.
-//
-// So the verdict is per-URL. Benign and hostile are paired by position, and every
-// URL the hostile run composed that DIFFERS from the benign one in the same
-// position must hold the string itself: a URL the string did not change is a URL
-// it is not in, and one it did change is one it has to be found in.
 func TestEveryStringThisDriverPastesIntoAURLStaysInsideOnePathSegment(t *testing.T) {
 	for _, slot := range sweepSlots() {
 		t.Run(slot.name, func(t *testing.T) {
@@ -1265,23 +1030,15 @@ func TestEveryStringThisDriverPastesIntoAURLStaysInsideOnePathSegment(t *testing
 					urls := composed(t, s.wire.sent(), s.drv, got)
 					t.Logf("the driver composed %v", urls)
 
-					// FEWER IS FINE AND MORE IS NOT. A hostile value can make
-					// this driver stop earlier than a benign one — Create's own
-					// "the forge resolved something else" refusal does exactly
-					// that — and that is a refusal rather than a defect. An
-					// EXTRA URL is a request a consumer's string caused.
+					// Fewer is fine, more is not: a hostile value may stop the driver earlier, but
+					// an extra URL is a request the string caused.
 					require.LessOrEqualf(t, len(urls), len(benign),
 						"%s composed more URLs for a hostile %s than for a benign one", op.name, slot.name)
 
 					changed := []composedURL{}
 					for i, u := range urls {
-						// A REQUEST STILL NAMES ONLY WHAT ITS ROUTE DECLARES.
-						// That is "the string opened nothing of its own" said
-						// against the driver's own routing rather than against a
-						// benign twin — and the twin is the wrong comparison,
-						// because a hostile owner legitimately flips Create from
-						// the personal endpoint to the organization one, which
-						// has a segment more.
+						// A request names only what its route declares. A benign twin is the wrong
+						// comparison: a hostile owner may flip Create to the organization endpoint.
 						if u.what == "ADDRESS" {
 							assert.Emptyf(t, u.query, "a clone address carries a query: %v", u)
 						} else {
@@ -1293,24 +1050,14 @@ func TestEveryStringThisDriverPastesIntoAURLStaysInsideOnePathSegment(t *testing
 							}
 						}
 
-						// A URL THE HOSTILE STRING DID NOT CHANGE IS A URL IT
-						// IS NOT IN. Create's first request reads who the
-						// credential is and names no repository; the mint in the
-						// middle of the membership walk names only an id the
-						// forge chose. Those are not this row's business, and
-						// pairing by position is what tells them from a URL the
-						// string reached.
+						// A URL the hostile string did not change is a URL it is not in.
 						if i < len(benign) && u.String() == benign[i].String() {
 							continue
 						}
 						changed = append(changed, u)
 
-						// WHERE THE STRING HAS TO BE FOUND: inside one path
-						// segment, or as one whole query value. CONTAINS rather
-						// than EQUALS for the segment, because a clone address
-						// appends ".git" to the last one — which is the one
-						// thing this driver adds to a name after escaping it,
-						// and adding it before would have been the bug.
+						// Inside one path segment, or as one whole query value. Contains, not equals,
+						// for a segment: a clone address appends ".git" after escaping.
 						assert.Truef(t, holdsTheString(t, u, slot.value),
 							"%s composed %v out of a hostile %s and it does not hold the string as one path segment or one whole query value, so the string was truncated, re-encoded, or spread across segments",
 							op.name, u, slot.name)
@@ -1333,10 +1080,8 @@ func TestEveryStringThisDriverPastesIntoAURLStaysInsideOnePathSegment(t *testing
 	}
 }
 
-// holdsTheString is one composed URL carrying the value WHOLE: inside one path
-// segment, or as one whole query value. It is the needle the sweep above is
-// written against, lifted out of the loop so the verdict can be per-URL rather
-// than per-operation.
+// holdsTheString: u carries value whole, inside one path segment or as one
+// whole query value.
 func holdsTheString(t *testing.T, u composedURL, value string) bool {
 	t.Helper()
 	for _, segment := range decodedSegments(t, u.path) {
@@ -1352,29 +1097,6 @@ func holdsTheString(t *testing.T, u composedURL, value string) bool {
 	return false
 }
 
-// TestNoStringThisDriverPastesIntoAURLCanMoveThePathItIsIn is the OTHER HALF of
-// the property, and the half that was missing. Escaping answers a string that
-// can be made into a name; nothing answers a string that IS an instruction to
-// the resolver, and this driver was sending those.
-//
-// MEASURED ON THE CLEAN TREE, both drivers, RemoveDeployKey and RemovePushHook:
-//
-//	DELETE /api/v3/repos/acme/site/keys/..    path.Clean -> /api/v3/repos/acme/site
-//	DELETE /api/v3/repos/acme/site/keys/.     path.Clean -> /api/v3/repos/acme/site/keys
-//
-// The first is GitHub's delete-a-repository endpoint and the second is the
-// collection. Go's own httptest server answered the first with a 307 to the
-// cleaned path, so this is not a claim about hypothetical proxies: it is what
-// the wire carried.
-//
-// THE ASSERTION IS ABOUT EVERY URL AND NOT ONLY THE REFUSED ONE. IsActiveMember
-// with a hostile username still makes the two requests that come before the one
-// it refuses, so "no request at all" would be false and would have to be
-// weakened per-operation. What holds everywhere is that NOTHING THIS DRIVER
-// COMPOSED CAN BE MOVED BY A RESOLVER — a fixed point under RFC 3986 dot-segment
-// removal, in the escaped spelling an intermediary resolves and in the decoded
-// spelling a server holds. The refusal is then asserted where the string really
-// arrives, so no row passes by the string never having been read.
 func TestNoStringThisDriverPastesIntoAURLCanMoveThePathItIsIn(t *testing.T) {
 	for _, slot := range consumerSlots {
 		t.Run(slot.name, func(t *testing.T) {
@@ -1402,16 +1124,9 @@ func TestNoStringThisDriverPastesIntoAURLCanMoveThePathItIsIn(t *testing.T) {
 	}
 }
 
-// assertStaysPut is the RFC 3986 property, said about one composed URL: a
-// resolver removing dot segments leaves it exactly where this driver put it.
-//
-// THE DECODED SPELLING IS THE ONE ASKED ABOUT, because it is what a server holds
-// after the one decode it performs — and because it SUBSUMES the escaped one. An
-// escaped component is a dot segment only when its decoded form is, and the
-// decoded spelling additionally catches "../..", which escapes to "..%2F..": one
-// innocent segment on the wire and two dot components to anything that decodes
-// before it routes. Asserting the escaped path beside it would be asserting this
-// twice, which is how a line comes to be deletable at exit 0.
+// assertStaysPut: a resolver removing dot segments (RFC 3986) leaves u where
+// this driver put it. The decoded spelling is the one asked about: it is what a
+// server holds, and it subsumes the escaped one.
 func assertStaysPut(t *testing.T, op string, u composedURL) {
 	t.Helper()
 	decoded := strings.Join(decodedSegments(t, u.path), "/")

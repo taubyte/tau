@@ -1,46 +1,13 @@
-// Package github is the forge driver for GitHub: github.com, and every GitHub
-// Enterprise Server an operator runs.
+// Package github is the forge driver for GitHub: github.com and every GitHub
+// Enterprise Server. A second GitHub is a second Binding.
 //
-// IT IS A VALUE AND NOT A CASE. Nothing here is reachable except by binding it
-// to a host, and adding a second GitHub — an enterprise instance, a mirror — is
-// a second Binding with a different host string. There is no provider enum
-// anywhere in this package, no "github" literal on any route or in any stored
-// row, and no numeric repository id in any signature: a repository is a
-// repokey.Key and the API path is derived from it, which is why v1's
-// "current repository" field and its numeric-id lookups have no counterpart
-// here.
+// No SDK: go-github types must never cross the interface, and tau asks eleven
+// endpoints. golang-jwt signs the app assertion.
 //
-// # No SDK
-//
-// go-github v71 is in this module and v1 uses it, so choosing net/http needs a
-// reason. It is this: go-github is in the EXPORTED signatures of three v1
-// packages, which is the coupling this layer exists to end, and the whole of
-// what tau asks GitHub is eleven endpoints and a dozen JSON fields. An SDK here
-// would buy pagination and cost a type that must never cross the interface — a
-// *github.Repository is exactly the shape forge.Repository refuses to be. What
-// is left is a Link-free page counter and one status-to-taxonomy table, both of
-// which are in this package where they can be read and both of which are
-// tested. golang-jwt IS used, for the app assertion, because signing RS256 by
-// hand would be re-implementing a wire format.
-//
-// # The API host is not the repository host
-//
-// github.com serves its API from api.github.com; an enterprise instance serves
-// it from /api/v3/ on the host the repositories are on. So the host a key names
-// and the host a request goes to are two values here, and PinnedTransport is
-// given the SECOND. A credential for github.com is therefore pinned to
-// api.github.com, which is the only host it may ever reach — a redirect
-// anywhere else is refused before the header is written, not after.
-//
-// # What a forge says does not choose what lands in a log
-//
-// A non-2xx response carries a message this driver never reads. An error here
-// names the method, the path this driver built and the status, and nothing
-// else — because a host that can choose what lands in your logs can choose to
-// put your own credential there, and an error string is the most-copied thing
-// in a log. The two host-written fields that DO reach an error, a clone URL and
-// a full name when a repository cannot be named, are bounded first: a host that
-// picks how long a log line is picks how much of a disk it costs.
+// github.com serves its API from api.github.com, Enterprise from /api/v3/ on the
+// repository host, so the credential is pinned to the API host. A non-2xx body
+// is never read: an error names the method, the path and the status, and the
+// host-written strings that reach one are bounded.
 package github
 
 import (
@@ -66,12 +33,8 @@ const (
 	acceptJSON = "application/vnd.github+json"
 )
 
-// driver is one GitHub, constructed for the host it answers for.
-//
-// It carries no caller credential. The deployment's app credential, when there
-// is one, is reachable only through the Memberships face on the driver — never
-// through a Session — which is what makes "a caller's token cannot answer a
-// membership question" structural rather than a rule.
+// The deployment's app credential is reachable only through memberDriver,
+// never through a Session.
 type driver struct {
 	host    string
 	apiHost string
@@ -85,11 +48,8 @@ type driver struct {
 	app *app
 }
 
-// memberDriver is a driver that also answers membership. It is a SEPARATE TYPE
-// because forge computes capabilities by type assertion: a driver with no app
-// credential must not appear to answer a question it would then have to answer
-// with a shrug, and "did the operator configure an app" is not a thing a type
-// can decide at runtime.
+// memberDriver also answers membership: capabilities come from type assertions,
+// and whether an app credential is configured is decided at New.
 type memberDriver struct{ *driver }
 
 var (
@@ -100,10 +60,8 @@ var (
 	_ forge.Memberships = (*memberDriver)(nil)
 )
 
-// Option is a deployment fact about one GitHub. There is deliberately no option
-// for the API base URL: the host decides it, which is the whole doctrine, and a
-// knob that let the two disagree would be a knob that aims a credential at
-// another server.
+// There is no option for the API base: the host decides it, and a knob letting
+// the two disagree would aim a credential at another server.
 type Option func(*driver) error
 
 // Transport is the RoundTripper UNDER the credential pin — a private CA for an
@@ -119,11 +77,8 @@ func Transport(rt http.RoundTripper) Option {
 	}
 }
 
-// New builds the driver for one GitHub host.
-//
-// It returns forge.Driver rather than a concrete type because whether this
-// deployment can answer a membership question is decided here, once, by whether
-// an app credential was supplied — and that decision is a Go type.
+// New returns forge.Driver because whether it answers membership is a Go type,
+// decided here.
 func New(host string, opts ...Option) (forge.Driver, error) {
 	if host == "" {
 		return nil, errors.New("forge/github: a driver names the host it answers for")
@@ -155,14 +110,9 @@ func New(host string, opts ...Option) (forge.Driver, error) {
 
 func (d *driver) Host() string { return d.host }
 
-// Addressable refuses what GitHub cannot address, and refuses it here so that
-// the registry raises it before any request leaves the process.
-//
-// GITHUB TAKES EXACTLY ONE OWNER AND ONE NAME. A GitLab subgroup key has a "/"
-// in its Owner, and joining those segments would build a path naming a
-// repository that either does not exist or, worse, belongs to somebody else. A
-// key with no owner at all is a repository served at a host's root, which
-// self-hosted git does and GitHub does not.
+// GitHub takes exactly one owner and one name: joining a subgroup's segments
+// would name a repository that is missing or somebody else's. A key with no
+// owner is served at a host root, which GitHub does not do.
 func (d *driver) Addressable(key repokey.Key) error {
 	if key.Host != d.host {
 		return fmt.Errorf("this driver answers for %s", d.host)
@@ -176,7 +126,6 @@ func (d *driver) Addressable(key repokey.Key) error {
 	return nil
 }
 
-// Bind returns a client acting as cred and only as cred.
 func (d *driver) Bind(cred forge.Credential) (forge.Client, error) {
 	if cred.IsZero() {
 		return nil, forge.ErrNoCredential

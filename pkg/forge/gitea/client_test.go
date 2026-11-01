@@ -1,10 +1,5 @@
 package gitea
 
-// From inside the package: what the driver keeps a credential in. The rest of
-// this package's tests are gitea_test, and this one is not, because the thing
-// it asserts is a struct field nobody outside can see — which is exactly why it
-// could sit there unnoticed.
-
 import (
 	"fmt"
 	"io"
@@ -21,15 +16,6 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// TestTheDriverKeepsNoCopyOfTheCredential.
-//
-// forge.Credential exists to close EVERY way of rendering key material: Format
-// catches every verb, and the marshallers fail rather than redact. bind unwraps
-// it to a string at the door, and a client that stored that string beside its
-// http.Client rendered it under %v like any other field — key material kept in
-// the one shape the package went to trouble to make impossible. It was also
-// never read: the Authorization header is written by a closure that captures
-// the parameter.
 func TestTheDriverKeepsNoCopyOfTheCredential(t *testing.T) {
 	const secret = "gt-tok-INTERNAL-1a2b3c4d5e6f"
 	d := &driver{host: "gitea.example", base: apiRoot("https://gitea.example/api/v1/")}
@@ -55,28 +41,6 @@ func (r *recordingRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 	}, nil
 }
 
-// TestTheTransportBindInstallsIsPinnedToTheAPIHost is the assertion that
-// forge.PinnedTransport is load-bearing HERE, in this driver, and not merely
-// somewhere in the module.
-//
-// IT IS DRIVEN AT THE TRANSPORT AND NOT THROUGH A DRIVER CALL, and that is a
-// deliberate retreat that should be read rather than tidied away. The pin's
-// original route into this package was a redirect: an http.Client follows one,
-// so a forge answering 302 handed the next hop the Authorization header unless
-// the pin refused it. noRedirect closed that route — the client now stops at
-// the 3xx and never asks the pin to make a second request — and it closed it
-// for a better reason than the pin had, because a redirect to another
-// REPOSITORY on the SAME host is one the pin permits by design. So every
-// request this driver builds now goes to exactly one host, over https, and no
-// sequence of answers from a fixture can make it build another: send() composes
-// d.base with an escaped path, and there is no option that lets the two
-// disagree. There is no public seam left through which the pin can be made to
-// fire.
-//
-// What is left is still behaviour and not a type assertion: the transport that
-// bind() actually installed is driven with the hops a redirect WOULD have
-// produced, and it must refuse them. That fails if the wrap is dropped, and it
-// fails if the wrap is kept but bound to another host.
 func TestTheTransportBindInstallsIsPinnedToTheAPIHost(t *testing.T) {
 	const secret = "gt-tok-PINNED-9f8e7d6c"
 
@@ -120,8 +84,6 @@ func TestTheTransportBindInstallsIsPinnedToTheAPIHost(t *testing.T) {
 	}
 }
 
-// apiRoot is the parsed API base a driver built by New holds, for the two tests
-// above that build one by hand.
 func apiRoot(raw string) *url.URL {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -129,8 +91,6 @@ func apiRoot(raw string) *url.URL {
 	}
 	return u
 }
-
-// ─────────────────────────── the routing table ───────────────────────────
 
 // routeWithAMethodThatIsNotOne is declared here, at package level, so that the
 // route table's own closure test can tell it from the routes this driver ships:
@@ -142,11 +102,6 @@ var routeWithAMethodThatIsNotOne = newRoute("not a method", "user")
 // way a path could reach the wire without the sweep having been told about it.
 var routeNobodyDeclared = &route{method: http.MethodGet, template: "user", segments: []string{"user"}}
 
-// TestRequestsThatCannotBeBuiltAreErrorsAndNotPanics is the gitlab driver's row
-// of the same name, which this package did not have. Every one of these is a
-// way the routing table can be asked for something it cannot compose, and the
-// answer has to be an error a caller sees rather than a panic in a request path
-// or — worse — a request that goes out anyway.
 func TestRequestsThatCannotBeBuiltAreErrorsAndNotPanics(t *testing.T) {
 	c := (&driver{host: "gitea.example", base: apiRoot("https://gitea.example/api/v1/")}).bind("tok")
 
@@ -156,10 +111,8 @@ func TestRequestsThatCannotBeBuiltAreErrorsAndNotPanics(t *testing.T) {
 	// A method that is not one.
 	assert.Error(t, c.send(t.Context(), routeWithAMethodThatIsNotOne.at(), nil, nil))
 
-	// A route nobody declared. Every request this driver makes is armed by the
-	// sweep because the sweep runs over the ROUTE TABLE, so a path composed
-	// outside it is a request nothing arms — and it is refused here rather than
-	// sent.
+	// The sweep arms what is in the route table, so a path composed outside it is
+	// refused.
 	err := c.send(t.Context(), routeNobodyDeclared.at(), nil, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "newRoute")
@@ -180,9 +133,6 @@ func TestRequestsThatCannotBeBuiltAreErrorsAndNotPanics(t *testing.T) {
 	assert.Contains(t, err.Error(), "legacy")
 }
 
-// TestARouteMatchesOnlyWhatWentThroughIt. The route table's closures rest on
-// matching what went out against what was declared, so the two ways that match
-// can be wrong are worth a row.
 func TestARouteMatchesOnlyWhatWentThroughIt(t *testing.T) {
 	base := apiRoot("https://gitea.example/api/v1/")
 
@@ -195,10 +145,6 @@ func TestARouteMatchesOnlyWhatWentThroughIt(t *testing.T) {
 	assert.False(t, routeRepository.matches(base, http.MethodGet, "/repos/acme/pay"))
 }
 
-// TestARouteIsEscapedByTheOneFunctionThatEscapesSegments. The clone address is
-// not a request, so no row about requests reaches it, and both halves of a key
-// used to be escaped there by their own line — one of the five that could be
-// deleted with the whole tree at exit 0.
 func TestARouteIsEscapedByTheOneFunctionThatEscapesSegments(t *testing.T) {
 	base := apiRoot("https://gitea.example/api/v1/")
 	rq := routeRepository.at("acme", "pay#evil")
@@ -213,19 +159,6 @@ func TestARouteIsEscapedByTheOneFunctionThatEscapesSegments(t *testing.T) {
 	assert.Equal(t, "https://gitea.example/acme/pay%23evil.git", addr.URL)
 }
 
-// TestEveryHoleOfEveryRouteRefusesASegmentThatNamesSomethingElse is the
-// BACKSTOP, and it is a different statement from the refusals at the doors.
-//
-// A door refuses so that an operation's LATER requests never happen — measured,
-// a refusal at the route alone comes after earlier requests already spent the credential.
-// This one refuses so that a HOLE ADDED TOMORROW is covered by nothing having
-// been remembered: it runs over the ROUTE TABLE ITSELF, every route this driver
-// declared and every hole in it, so a route registered next round is in this
-// population the moment it is constructed.
-//
-// The benign fill is what proves the row is read: the same route with a real
-// name composes a path, so a failure here is the refusal and not a route that
-// could never be built.
 func TestEveryHoleOfEveryRouteRefusesASegmentThatNamesSomethingElse(t *testing.T) {
 	for _, r := range declaredRoutesForTest() {
 		holes := strings.Count(r.template, hole)
@@ -257,44 +190,14 @@ func TestEveryHoleOfEveryRouteRefusesASegmentThatNamesSomethingElse(t *testing.T
 	}
 }
 
-// declaredRoutesForTest is the table as this package holds it, under the lock
-// the table is written behind.
 func declaredRoutesForTest() []*route {
 	routesMu.Lock()
 	defer routesMu.Unlock()
 	return append([]*route(nil), routeTable...)
 }
 
-// composeForTest is the path one request names, which is where a segment
-// becomes part of a URL in this driver.
 func composeForTest(rq request) (string, error) { return rq.path() }
 
-// TestCheckingTheEscapedSpellingWouldBeCheckingTheRawOneTwice is the row
-// addressesItself's ONE line rests on.
-//
-// It was written with two, one per spelling, on the argument that the two
-// resolvers in a request's chain read different ones. Measured: deleting the
-// escaped half left the whole forge tree at GO_TEST_EXIT=0 — a line deletable at
-// exit 0, which is the defect this branch keeps finding, in the fix for this
-// branch's own defect.
-//
-// The reason it is dead is stated here rather than argued: url.PathEscape emits
-// no "/", so its output is always ONE component, and it leaves an unreserved dot
-// alone, so that component is "." or ".." exactly when its input is. Therefore a
-// segment that survives dot-segment removal RAW survives it ESCAPED, and
-// checking the escaped one adds nothing — while the converse is false, which is
-// why the raw one is the one kept: "../.." does not survive raw and does survive
-// escaped, as "..%2F..".
-//
-// THE POPULATION IS EXHAUSTIVE AND NOT A SAMPLE, over the characters that decide
-// this: every string of up to three of them.
-//
-// AND THE SIZE IS PINNED AS A LITERAL, because a walk whose extent is computed
-// from its own depth is a walk that can be shortened without saying so.
-// Measured: with the count unpinned, changing walk("", 3) to walk("", 1) was
-// GO_TEST_EXIT=0 — nine strings claiming to be five hundred and eighty-five.
-// Widening the alphabet costs the author this arithmetic, which is the right
-// price for an exhaustiveness claim.
 func TestCheckingTheEscapedSpellingWouldBeCheckingTheRawOneTwice(t *testing.T) {
 	survives := func(s string) bool { return path.Clean("/"+s) == "/"+s }
 

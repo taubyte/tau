@@ -32,18 +32,8 @@ const (
 	maxDrainOnError = 4 << 10
 )
 
-// client is a driver acting as one credential. It is stateless: there is no
-// "current repository", so no method can silently depend on a fetch having
-// happened first, which is the shape v1's client has and the reason its
-// CreateDeployKey has a "no repository selected" error at all.
-//
-// AND IT HOLDS NO COPY OF THE CREDENTIAL. The credential reaches exactly one
-// place, the closure below that writes the header, which captures the parameter
-// — so there is no field for %v to render, nothing for a struct dump to carry
-// into a log, and nothing to forget to redact. forge.Credential goes to the
-// trouble of closing every verb through enclosing structs, slices, maps and
-// pointers; a driver that unwraps one at the door and keeps the string beside
-// it undoes that in one line, and the line bought nothing.
+// client is stateless and holds no copy of the credential: only the closure
+// writing the header does, so nothing can render it.
 type client struct {
 	d    *driver
 	http *http.Client
@@ -59,19 +49,16 @@ var (
 	_ forge.CloneAddresses = (*client)(nil)
 )
 
-// bind builds the client for one token. The credential is attached by
-// PinnedTransport and by nothing else, so there is no path by which a request
-// this driver builds carries it to a host other than the API host, and no path
-// by which a redirect carries it off one.
+// The credential is attached by PinnedTransport and nothing else, so no request
+// carries it off the API host.
 func (d *driver) bind(token string) *client {
 	return &client{
 		d: d,
 		http: &http.Client{
 			CheckRedirect: noRedirect,
 			Transport: forge.PinnedTransport(d.host, d.rt, func(h http.Header) {
-				// An anonymous session binds an empty credential; sending
-				// "token " would turn a public read into a 401. "token" and not
-				// "Bearer" because every Gitea and Forgejo release accepts it.
+				// An anonymous session sends nothing, since "token " turns a public read into a
+				// 401. "token", not "Bearer", is accepted by every Gitea and Forgejo release.
 				if token != "" {
 					h.Set("Authorization", "token "+token)
 				}
@@ -80,46 +67,24 @@ func (d *driver) bind(token string) *client {
 	}
 }
 
-// noRedirect stops at the 3xx instead of replaying the request wherever the
-// answer points. THIS DRIVER FOLLOWS NO REDIRECT AT ALL.
-//
-// Gitea answers a request for a renamed or TRANSFERRED repository with a 307 to
-// its current path, which Go replays method and body against. PinnedTransport permits that hop and must: it is the
-// same host, and a per-hop host check is the whole of what a pin can decide.
-// So without this, a request built for one repository is answered by another —
-// the permissions read are that other repository's, the hook is installed on
-// it, the deletion lands on it — while every value this driver returns still
-// carries the key the CALLER named. A transferred name is free to re-register
-// the moment it is transferred, which is what turns that into a grant.
-//
-// A WRITE CANNOT BE UNDONE BY CHECKING AFTERWARDS, which is why the refusal is
-// before the second request rather than a re-verification after it: by the time
-// a re-fetch could notice, the hook is installed and the repository is gone.
-// 301 makes it worse, not better — Go rewrites a non-HEAD request to GET on
-// 301/302/303, so a Delete would have followed the redirect, read a 200 and
-// reported success having deleted nothing.
-//
-// It is one rule on the client rather than a check per call because it must hold
-// for every request this driver makes, the deployment's membership check
-// included — where a redirect is Gitea's answer to a caller who may not list
-// an organization's members, and following it would read the PUBLIC members
-// as the whole of them — and because a rule with no host arithmetic in it cannot disagree
-// with the pin. ErrUseLastResponse hands the 3xx to send, which treats it as the
-// non-2xx it is: one error path, and the status is the fact an operator needs.
+// This driver follows no redirect. Gitea answers a renamed or transferred
+// repository with a 307 that Go replays, and the pin permits a same-host hop, so
+// a request for one repository would be answered by another while returning the
+// caller's key; a transferred name is free to re-register. A write cannot be
+// undone by checking afterwards. The rule is on the client, so the membership
+// check holds it too: there a redirect would read public members as all of
+// them.
 func noRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
 func (c *client) Host() string { return c.d.host }
 
-// statusError is a non-2xx answer, carrying the request this driver made and
-// the code it got back — and nothing the host chose. Every mapping into the
-// forge taxonomy reads it and only it.
+// statusError carries the request and its code, nothing the host chose.
 type statusError struct {
 	Method string
 	Path   string
 	Status int
 }
 
-// Refused is a 4xx: the forge's own answer refusing the request.
 func (e *statusError) Refused() bool { return e.Status >= 400 && e.Status < 500 }
 
 func (e *statusError) Error() string {
@@ -137,17 +102,8 @@ func statusOf(err error) int {
 	return 0
 }
 
-// send issues one request against the API base and decodes a 2xx body into out.
-//
-// IT TAKES A ROUTE AND NOT A PATH, and that is the whole of why there is a
-// route type: this is the only place in the package that builds an
-// *http.Request, so a path that reaches the wire is a path some route composed,
-// with every segment escaped by the one function that escapes segments. A call
-// site cannot spell a path of its own without declaring the route it belongs
-// to, and a declared route the sweep never reaches fails the sweep.
-//
-// A non-2xx becomes a *statusError; a transport failure stays whatever it was,
-// wrapped, so that an outage can never be pattern-matched into a verdict.
+// send takes a route, not a path: it is the only place an *http.Request is
+// built. A non-2xx is a *statusError; a transport failure stays what it was.
 func (c *client) send(ctx context.Context, rq request, in, out any) error {
 	path, err := rq.path()
 	if err != nil {
@@ -202,19 +158,9 @@ func (c *client) send(ctx context.Context, rq request, in, out any) error {
 	return nil
 }
 
-// classify maps a failure about ONE REPOSITORY into the taxonomy.
-//
-//	401  the credential was refused. A statement about the credential, never a
-//	     verdict on the repository: a consumer that read it as one would deny a
-//	     legitimate writer whose token merely lapsed.
-//	404  the host serves no such repository — which on Gitea also covers a
-//	     private repository this credential may not see, and those two are
-//	     indistinguishable from outside on every forge.
-//
-// EVERYTHING ELSE STAYS AN ERROR AND IS NOT A VERDICT. A 403 in particular is
-// not "you may not push": on Gitea it is a token missing a scope, a disabled
-// account, or a reverse proxy's policy — an operator problem, not an answer about
-// this caller.
+// 401 is the credential refused, never a verdict on the repository; 404 is no
+// such repository, or a private one this credential may not see. Anything else,
+// a 403 included (a missing scope, a disabled account, a proxy), stays an error.
 func (c *client) classify(err error, key repokey.Key) error {
 	var se *statusError
 	if !errors.As(err, &se) {
@@ -260,12 +206,8 @@ type permissions struct {
 	Pull  bool `json:"pull"`
 }
 
-// access maps Gitea's three flags onto tau's four rungs.
-//
-// push|admin is write. What matters is the rung below it: PULL IS AccessRead AND NOT AccessWrite. A public
-// repository returns pull:true to every token on earth, and reading that as
-// permission is what let an unrelated caller reach another project's
-// repositories.
+// push or admin is write. pull is AccessRead, not AccessWrite: a public
+// repository returns pull:true to every token.
 func (p permissions) access() forge.Access {
 	switch {
 	case p.Admin:
@@ -278,38 +220,13 @@ func (p permissions) access() forge.Access {
 	return forge.AccessNone
 }
 
-// repository turns Gitea's answer into forge's, deriving the key from the
-// CLONE URL the forge returned rather than echoing the argument. That is what
-// makes a rename, a redirect or a case-folding disagreement visible instead of
-// silently absorbed: a caller that echoed its own argument would never know.
-//
-// asked IS WHAT TAU CALLED THIS REPOSITORY, and every error below names it
-// rather than the full_name the forge sent, and carries no reason repokey gave.
-// The forge chose both of those strings while holding the caller credential,
-// and repokey QUOTES WHAT IT WAS GIVEN — so a clone URL with an identity half,
-// which is the one shape repokey calls a secret at rest, was the forge writing
-// a credential of its choosing into tau logs through the one path that refuses
-// them. Measured: a 200 answering
-// clone_url https://x-access-token:<token>@host/acme/pay.git put that token in
-// the error. A caller always has a name of its own — the key it asked about, or
-// the coordinates of the listing entry — and it is the more useful half of the
-// mismatch anyway. This is the gitlab driver rule, and two drivers over one
-// interface may not disagree about a threat the layer has written down.
-//
-// A CLONE URL ON ANOTHER HOST IS REFUSED, and the gitlab driver refuses the same
-// thing for the same reason — it calls it not hypothetical, because an instance
-// behind a proxy that was told the wrong external URL emits exactly that. Two
-// things go wrong when it is accepted. The key derived from it files the
-// repository under a host this deployment has no driver for, which is a
-// repository nothing can ever act on again; and HTTPS below is the address a
-// builder clones with a credential, so a host that gets to name it gets to name
-// where that credential is spent — 169.254.169.254 included.
-//
-// The SSH URL is passed through unchecked, deliberately and for the reason the
-// gitlab driver states: a forge may legitimately serve SSH on another name or
-// port, which is a good clone address and a different repokey key. Nothing
-// clones it with a bearer credential, so it is a fact reported rather than a
-// place a secret goes.
+// repository derives the key from the clone URL the forge returned. Errors name
+// asked, never the forge's full_name or repokey's reason: repokey quotes what
+// it was given, and a clone URL with an identity half would put a credential
+// the forge chose into tau logs. A clone URL on another host is refused: it
+// would file the repository where nothing can act on it, and HTTPS is where a
+// builder spends a credential. The SSH URL passes unchecked; nothing clones it
+// with a bearer credential.
 func (c *client) repository(r repoJSON, asked string) (forge.Repository, error) {
 	switch {
 	case r.CloneURL == "":

@@ -94,11 +94,9 @@ func (c *client) describe(ctx context.Context, name string, key repokey.Key, ask
 	return a, repo, err
 }
 
-// ListRepositories walks every project this credential can see. A project
-// whose name has no key here is skipped rather than yielded with a key that
-// may address another; a failure to describe one that does have a key is an
-// error, because a listing that silently drops what it could not fetch reads
-// as a complete one.
+// A project whose name has no key here is skipped; failing to describe one that
+// has a key is an error, since a listing silently dropping it reads as
+// complete.
 func (c *client) ListRepositories(ctx context.Context, yield func(forge.Repository) bool) error {
 	for page := 0; ; page++ {
 		if page == maxPages {
@@ -145,17 +143,11 @@ type createProjectRequest struct {
 	Owners            []string `json:"owners"`
 }
 
-// restrictedRead is the exclusive read rule a private project gets on each
-// pattern a parent may grant read on. Gerrit has no visibility flag: a project
-// is visible to whoever may read any of its refs, and an exclusive rule
-// overrides only the SAME pattern inherited, not a more specific one — so
-// refs/* alone leaves refs/heads/* readable to everybody All-Projects lets read
-// it. Measured on 3.12.3: refs/* alone left the project at 200 for anonymous
-// and for another account; these four made it 404 to both.
-//
-// ITS CEILING IS THE PARENT. A parent granting read on a pattern not listed
-// here — refs/heads/release/* — still grants it. The upgrade is reading the
-// inherited rules, which needs config access a project creator does not have.
+// Gerrit has no visibility flag: a project is visible to whoever may read any of
+// its refs, and an exclusive rule overrides only the same inherited pattern. On
+// 3.12.3, refs/* alone left the project readable; these four made it 404 to
+// anonymous and to another account. A parent granting read on a pattern not
+// listed here still grants it.
 var restrictedPatterns = []string{"refs/*", "refs/heads/*", "refs/tags/*", "refs/meta/version"}
 
 func restrictedRead() map[string]any {
@@ -170,11 +162,9 @@ func restrictedRead() map[string]any {
 	return map[string]any{"add": add}
 }
 
-// Create makes the project AT THE KEY IT WILL BE ADDRESSED BY, owned by the
-// creator. Gerrit does not make the creator an owner by default (measured:
-// is_owner absent on a project the caller just created), so the owner is named
-// as the creator's single-user group, "user:<username>", which the
-// singleusergroup plugin bundled with Gerrit provides.
+// Gerrit does not make the creator an owner, so the owner is named as the
+// creator's single-user group, "user:<username>", from the bundled
+// singleusergroup plugin.
 func (c *client) Create(ctx context.Context, key repokey.Key, opts forge.CreateOptions) (forge.Repository, error) {
 	if c.user == "" {
 		return forge.Repository{}, errors.New("forge/gerrit: an anonymous session cannot own what it creates")
@@ -212,10 +202,8 @@ func (c *client) Delete(ctx context.Context, key repokey.Key) error {
 	return nil
 }
 
-// CloneAddress is derived from the key with no request and no credential in
-// the URL. Gerrit serves git over HTTP at /{project} and authenticates with the
-// same username and HTTP password the API takes, so the username is a real
-// identity here and not a label.
+// Gerrit serves git over HTTP at /{project} with the API's username and HTTP
+// password, so the username is a real identity here, not a label.
 func (c *client) CloneAddress(key repokey.Key, over forge.Protocol) (forge.Address, error) {
 	escaped, err := projectPath(key.FullName())
 	if err != nil {

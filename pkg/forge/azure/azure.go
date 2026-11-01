@@ -1,52 +1,13 @@
-// Package azure is the forge driver for Azure DevOps: Services on dev.azure.com
-// and Server on a host of its own. One REST API (_apis, api-version 7.1) serves
-// both, so it is one driver, and which one a host runs is decided by the host.
+// Package azure is the forge driver for Azure DevOps, Services and Server, over
+// one REST API (api-version 7.1).
 //
-// # A repository is four segments, and the key keeps all of them
+// A key is Owner "{org}/{project}/_git", Name "{repo}"; every other shape is
+// refused rather than guessed at. The deployment names the organizations it
+// answers in, since dev.azure.com serves them all.
 //
-// Azure DevOps addresses a repository as organization (a collection on Server),
-// project, and repository, and serves its clone at
-//
-//	https://dev.azure.com/{org}/{project}/_git/{repo}
-//
-// so the repokey key is Owner "{org}/{project}/_git", Name "{repo}". The driver
-// addresses exactly that shape and refuses every other one rather than guessing
-// which segment is the project. A Server behind a virtual directory (the legacy
-// /tfs/ prefix) and the legacy {org}.visualstudio.com hosts spell the path
-// differently and are refused by the same rule. A project or repository whose
-// name holds a space has no repokey key at all, so it is not addressable either.
-//
-// # The deployment names its organizations
-//
-// Two questions take no repository and still need an organization on the wire:
-// who the credential is (connectionData) and what it can list. dev.azure.com
-// serves every organization on earth, so the deployment says which ones it
-// answers in, and a key in any other is refused before a request leaves.
-//
-// # What it cannot answer, and why
-//
-//   - DEPLOY KEYS. Azure DevOps has no per-repository machine key: an SSH key is
-//     a user's, and reaches every repository that user can. There is nothing a
-//     read-only per-repository install could map to.
-//   - MEMBERSHIP. The user and entitlement APIs live on vssps.dev.azure.com and
-//     vsaex.dev.azure.com. A driver's credential is pinned to its one host, so
-//     answering it would mean carrying a credential to a second host.
-//   - A PUSH PROBE. The driver speaks REST, not git.
-//
-// # It takes no push hooks, because Azure DevOps cannot sign one
-//
-// A push hook would be a service-hook subscription (publisher "tfs", event
-// "git.push", consumer "webHooks"). Azure DevOps offers no HMAC over a
-// delivery: a web hook authenticates only with HTTP basic auth or with custom
-// headers, and neither binds the body or a time, so a captured or leaked
-// credential lets anyone deliver any push. tau does not accept a delivery it
-// cannot verify by a signature over the body, so this driver implements
-// neither forge.PushHooks nor forge.Signatures and the registry reports both as
-// *forge.UnsupportedError. An Azure DevOps repository is reachable through
-// every other face; a build is not triggered by its pushes.
-//
-// No SDK, for the other drivers' reason: the whole of what tau asks is a dozen
-// requests.
+// It answers no deploy keys (an SSH key is a user's), no membership (those APIs
+// live on hosts the credential is not pinned to), no push probe, and no push
+// hooks: Azure DevOps signs no delivery, and tau accepts none it cannot verify.
 package azure
 
 import (
@@ -111,7 +72,6 @@ func (d *driver) Canonical(k repokey.Key) (repokey.Key, bool) {
 	return repokey.Key{Host: servicesHost, Owner: parts[1] + "/" + parts[2] + "/_git", Name: k.Name}, true
 }
 
-// Option is a deployment fact about one Azure DevOps host.
 type Option func(*driver) error
 
 // Organizations names the organizations (collections, on a Server) this
@@ -156,7 +116,6 @@ func Bearer() Option {
 	}
 }
 
-// New builds the driver for one Azure DevOps host.
 func New(host string, opts ...Option) (forge.Driver, error) {
 	if host == "" {
 		return nil, errors.New("forge/azure: a driver names the host it answers for")
@@ -179,11 +138,8 @@ func New(host string, opts ...Option) (forge.Driver, error) {
 
 func (d *driver) Host() string { return d.host }
 
-// coords are the three names a request addresses a repository by.
 type coords struct{ org, project, repo string }
 
-// Addressable refuses every shape but {org}/{project}/_git/{repo} in an
-// organization this deployment answers in.
 func (d *driver) Addressable(key repokey.Key) error {
 	_, err := d.coords(key)
 	return err
@@ -203,7 +159,6 @@ func (d *driver) coords(key repokey.Key) (coords, error) {
 	return coords{org: parts[0], project: parts[1], repo: key.Name}, nil
 }
 
-// Bind returns a client acting as cred and only as cred.
 func (d *driver) Bind(cred forge.Credential) (forge.Client, error) {
 	if cred.IsZero() {
 		return nil, forge.ErrNoCredential
@@ -211,7 +166,6 @@ func (d *driver) Bind(cred forge.Credential) (forge.Client, error) {
 	return d.bind(string(cred.Expose())), nil
 }
 
-// authorization is the header a credential travels as.
 func (d *driver) authorization(token string) string {
 	if d.bearer {
 		return "Bearer " + token

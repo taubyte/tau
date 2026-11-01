@@ -1,8 +1,5 @@
 package forge
 
-// ADVERSARIAL. Attempts to defeat the verification path, to make a secret
-// render, and to aim a request at a host nobody bound.
-
 import (
 	"crypto/hmac"
 	"crypto/sha1"
@@ -35,9 +32,6 @@ func advHubMAC(t *testing.T, body string) string {
 	return "sha256=" + hex.EncodeToString(m.Sum(nil))
 }
 
-// TestAdvNoForgeryWithoutTheSecret is every shape of a signature an attacker
-// who does not hold the secret can produce, plus the ones an attacker who holds
-// a signature over OTHER bytes can produce.
 func TestAdvNoForgeryWithoutTheSecret(t *testing.T) {
 	good := advHubMAC(t, advBody)
 	otherBody := advHubMAC(t, "{}")
@@ -151,9 +145,6 @@ func TestAdvNoForgeryWithoutTheSecret(t *testing.T) {
 
 }
 
-// TestAdvTheHubSchemesDoNotShareAKey. SchemeHubSHA256 and SchemeBitbucketSHA256
-// are one construction in two headers; keyed identically, a MAC captured for
-// one would be a MAC for the other.
 func TestAdvTheHubSchemesDoNotShareAKey(t *testing.T) {
 	hubKey, err := SchemeHubSHA256.key(advSecret)
 	require.NoError(t, err)
@@ -163,11 +154,6 @@ func TestAdvTheHubSchemesDoNotShareAKey(t *testing.T) {
 		"one MAC is valid under two schemes, so a signature captured for one is a signature for the other")
 }
 
-// TestAdvARefIsNotValidatedTheWayACommitIs. VerifyPush requires the commit to be
-// a whole 40- or 64-hex object id and requires the ref to be merely non-empty,
-// so anything at all rides out of the verified payload in Push.Ref — including
-// the shapes that are dangerous exactly where a ref is spent, on a git command
-// line.
 func TestAdvARefIsNotValidatedTheWayACommitIs(t *testing.T) {
 	k := key(t, "https://"+stubHost+"/acme/pay")
 	body := []byte(`{"whatever":true}`)
@@ -197,10 +183,6 @@ func TestAdvARefIsNotValidatedTheWayACommitIs(t *testing.T) {
 	}
 }
 
-// TestAdvACraftedCloneURLCannotAimARequestAtAHostNobodyBound is the SSRF
-// question. A clone URL is caller-supplied at registration; the key derived
-// from it selects the driver, and there is no default driver, so an internal
-// address is a refusal and never a request.
 func TestAdvACraftedCloneURLCannotAimARequestAtAHostNobodyBound(t *testing.T) {
 	reg, err := New(Policy{}, Binding{Host: stubHost, Driver: &stub{host: stubHost, scheme: SchemeHubSHA256}})
 	require.NoError(t, err)
@@ -231,8 +213,6 @@ func TestAdvACraftedCloneURLCannotAimARequestAtAHostNobodyBound(t *testing.T) {
 			var nd *NoDriverError
 			require.ErrorAs(t, err, &nd, "a session was built for host %q", k.Host)
 
-			// And a credential cannot be aimed there through a bound driver's
-			// own transport either.
 			rt := PinnedTransport(stubHost, nil, func(h http.Header) { h.Set("Authorization", "Bearer secret") })
 			req, rerr := http.NewRequest(http.MethodGet, "https://"+k.Host+"/x", nil)
 			if rerr == nil {
@@ -244,8 +224,6 @@ func TestAdvACraftedCloneURLCannotAimARequestAtAHostNobodyBound(t *testing.T) {
 	}
 }
 
-// TestAdvASecretNeverRendersThroughAnEnclosingValue: a Hook holds the secret,
-// and a Hook is exactly the sort of value a consumer logs whole.
 func TestAdvASecretNeverRendersThroughAnEnclosingValue(t *testing.T) {
 	const material = "sup3r-s3cret-hook-material-000000"
 	s := SecretFrom([]byte(material))
@@ -270,15 +248,6 @@ func TestAdvASecretNeverRendersThroughAnEnclosingValue(t *testing.T) {
 	}
 }
 
-// TestAdvAOneByteSecretIsAcceptedEverywhereButOneScheme.
-//
-// NewSecret mints 32 bytes, but SecretFrom takes any non-empty slice and
-// RegisterPushHook checks only Empty(). So a consumer that reads a secret out of
-// a config file, or reuses a short string, registers a hook whose HMAC key is
-// two base64 characters — brute-forceable offline from a single captured
-// delivery, after which every push to that repository can be forged. Only
-// SchemeStandardWebhooks refuses it, and it refuses it for a formatting reason
-// (GitLab's own whsec_ shape) rather than a strength one.
 func TestAdvAOneByteSecretIsAcceptedEverywhereButOneScheme(t *testing.T) {
 	weak := SecretFrom([]byte("x"))
 	k := key(t, "https://"+stubHost+"/acme/pay")

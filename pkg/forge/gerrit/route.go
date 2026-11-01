@@ -10,13 +10,9 @@ import (
 	"strings"
 )
 
-// THE PATH OF A REQUEST IS A TEMPLATE FROM A CLOSED SET, never a string a call
-// site pasted together: every segment reaches a path through segment(), which
-// escapes it, and every query parameter is declared by the route that may
-// carry it. This is the gitea driver's rule; what differs is the hole. A
-// Gerrit project name is a PATH that fills ONE segment, so "acme/pay" is
-// escaped to acme%2Fpay — which is exactly what the API expects, and exactly
-// why a "/" inside a hole is not refused here the way gitea refuses it.
+// A request path is a template from a closed set, the gitea driver's rule. A
+// project name fills one segment, so "acme/pay" escapes to acme%2Fpay, as the
+// API expects, and a "/" in a hole is not refused.
 type route struct {
 	method   string
 	template string
@@ -72,13 +68,9 @@ func (rq request) with(query url.Values) request {
 	return rq
 }
 
-// segment IS THE ONE PLACE A STRING BECOMES PART OF A PATH IN THIS PACKAGE.
-//
-// It refuses what escaping does not fix: an empty segment addresses the
-// collection, and a value a resolver would move — "..", ".", "acme/../x" —
-// addresses something the caller never named. url.PathEscape leaves dots
-// alone, and Gerrit decodes the segment back into exactly the string checked
-// here, so the raw spelling is the one that matters.
+// segment is the one place a string becomes part of a path. It refuses an empty
+// segment, which addresses the collection, and one a resolver would move; Gerrit
+// decodes the segment back to exactly the string checked here.
 func segment(s string) (string, error) {
 	if s == "" {
 		return "", errors.New("forge/gerrit: an empty path segment addresses the collection the request is under")
@@ -89,7 +81,6 @@ func segment(s string) (string, error) {
 	return url.PathEscape(s), nil
 }
 
-// bounded cuts a string SOMEBODY ELSE CHOSE to a length an error may carry.
 func bounded(s string) string {
 	if len(s) <= maxHostString {
 		return s
@@ -97,7 +88,6 @@ func bounded(s string) string {
 	return s[:maxHostString] + "…"
 }
 
-// path is the escaped path this request names, or the reason it is not one.
 func (rq request) path() (string, error) {
 	r := rq.route
 	out := make([]string, 0, len(r.segments))

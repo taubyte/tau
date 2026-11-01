@@ -10,10 +10,8 @@ import (
 	"github.com/taubyte/tau/pkg/forge/forgetest"
 )
 
-// This forge runs the conformance suite against itself, the way
-// pkg/forge/github and pkg/forge/gitlab do. forgetest runs it too, to prove the
-// suite is runnable; this run is the fake's own claim that every shape the
-// node, build and CLI tests stand on is a forge that behaves like one.
+// The fake runs the conformance suite as its claim to behave like a forge for
+// every test standing on it.
 
 var optional = []forge.Capability{
 	forge.CapList, forge.CapCreate, forge.CapDelete, forge.CapDeployKeys,
@@ -33,8 +31,6 @@ func TestEveryShapeConforms(t *testing.T) {
 	}
 }
 
-// TestEachAbsenceConforms: a shape missing one capability must answer the
-// absence contract for it, and the full contract for everything else.
 func TestEachAbsenceConforms(t *testing.T) {
 	for _, c := range optional {
 		sh := fake.GitHubLike

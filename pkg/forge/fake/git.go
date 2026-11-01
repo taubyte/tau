@@ -20,13 +20,9 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// git.go is a fake forge that also serves git: its host is a loopback
-// listener answering git's smart HTTP protocol for the repositories it holds,
-// with go-git's own server behind it. Every repository starts empty and keeps
-// what is pushed to it. A clone reads what the token may read and a push
-// takes write, by the same grants every face answers with.
+// A fake forge can also serve git's smart HTTP protocol on loopback, go-git
+// behind it; a clone and a push take the grants every face answers with.
 
-// Served is a fake forge listening on loopback.
 type Served struct {
 	*Forge
 	srv *http.Server
@@ -53,18 +49,15 @@ func Serve(sh Shape) (*Served, error) {
 	return s, nil
 }
 
-// Close stops serving, over http and over ssh.
 func (s *Served) Close() error {
 	return errors.Join(s.srv.Close(), s.ssh.ln.Close())
 }
 
-// gitStores is every served repository's objects, by key.
 type gitStores struct {
 	mu     sync.Mutex
 	stores map[string]*memory.Storage
 }
 
-// Load is go-git's server loader: the store a repository's path names.
 func (c *core) Load(ep *transport.Endpoint) (storer.Storer, error) {
 	c.git.mu.Lock()
 	defer c.git.mu.Unlock()

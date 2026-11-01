@@ -156,7 +156,6 @@ func (r *runner) preflight(t tb) {
 	s.Requests()
 }
 
-// scheme is the driver's own, or "" when it has no Signatures face.
 func (r *runner) scheme(t tb) forge.Scheme {
 	t.Helper()
 	sig, ok := r.driver.(forge.Signatures)
@@ -174,8 +173,6 @@ func (r *runner) session(t tb, k repokey.Key) *forge.Session {
 	mustReach(t, err, "binding a session for %q, which every question below is asked through", k)
 	return sess
 }
-
-// ─────────────────────────── the mandatory contract ───────────────────────────
 
 // addressableDepth is the anti-GitHub assertion: a forge that takes exactly one
 // owner and one name must REFUSE a nested key, before any request, rather than
@@ -205,23 +202,16 @@ func (r *runner) addressableDepth(t tb) {
 
 func (r *runner) zeroCredential(t tb) {
 	t.Helper()
-	// A Session never reaches this: forge.Registry refuses a zero Credential
-	// before Bind is called, and TestAZeroCredentialIsRefusedBeforeAnyDriverSeesIt
-	// stands on that. What is left is the driver's OWN half of the same
-	// contract, which nothing above can ask on its behalf, so it is asked here
-	// directly.
+	// The registry refuses a zero Credential before Bind; this asks the driver's own
+	// half of that contract directly.
 	require.ErrorIs(t, r.note(second(r.driver.Bind(forge.Credential{}))), forge.ErrNoCredential,
 		"Driver.Bind built a client for a credential nobody filled in")
 }
 
 func (r *runner) anonymous(t tb) {
 	t.Helper()
-	// Anonymous() reaches the driver's Bind, and that is the half a driver can
-	// get wrong: refusing it at the door turns "read a public repository with no
-	// credential" into an error nobody can act on. What an anonymous session
-	// then refuses to answer is forge.Session's guard, which runs before any
-	// driver code and which
-	// TestAnAnonymousSessionAnswersNoAuthorizationQuestion stands on.
+	// Refusing Anonymous() at Bind would make reading a public repository with no
+	// credential an error; what an anonymous session refuses is forge.Session's.
 	_, err := r.s.Registry.For(r.s.Writable, forge.Anonymous())
 	require.NoError(t, err, "Anonymous() must bind; it is refused at the question, not at the door")
 }
@@ -323,18 +313,9 @@ func (r *runner) repository(t tb) {
 	assert.Equal(t, forge.Repository{}, repo, "a failed Repository returned a value beside its error")
 }
 
-// derivedKey is the OTHER half of the round trip, and the half that was
-// missing. Repository's contract is that Key is DERIVED from the clone URL the
-// forge returned and never echoed back from the argument — and on a fixture the
-// forge answers for under its own name, the two are the same string, so a
-// driver doing the forbidden thing produces exactly the answer a correct one
-// does. Moved is the fixture where they differ: the forge still answers for a
-// repository that has been renamed, and answers with the one it became.
-//
-// A rename is not a hypothetical. It is the case that makes a builder clone the
-// address of one repository and file it under the name of another, and it is
-// the case a consumer never sees coming, because the forge reports the move and
-// the driver is the thing that threw the report away.
+// derivedKey: Key must be derived from the clone URL the forge returned, not
+// echoed. Only on Moved do the two differ, and a rename is what makes a builder
+// clone one repository under another's name.
 func (r *runner) derivedKey(t tb) {
 	t.Helper()
 	sess := r.session(t, r.s.Moved)
@@ -350,51 +331,11 @@ func (r *runner) derivedKey(t tb) {
 	r.assertRepository(t, repo, r.s.MovedTo, "the record the forge answers for a repository that moved")
 }
 
-// redirectOffHost is the one destination assertion in this suite that a fixture
-// cannot make for itself.
-//
-// A FIXTURE SEES ARRIVALS. It records the requests that reached it, so the
-// request that reached somebody else is precisely the one missing from its
-// report, and "every recorded request went to Host" is a sentence that is true
-// for a driver that sent one somewhere else. The threat is not exotic: a forge —
-// or an instance an operator named, or anything answering as one — replies 302,
-// every SDK runs on an http.Client, an http.Client follows redirects, and a
-// credential attached by a RoundTripper is attached again on the next hop.
-// forge.PinnedTransport refuses that hop; a driver that drops it does not, and
-// nothing here could tell.
-//
-// So the suite stops reading a fixture's report and starts a host of its own.
-// RedirectOnce points the forge's next answer at it, and what shows up there is
-// observed rather than inferred. Nothing may.
-//
-// IT ARMS EVERY OPERATION AND NOT ONE. It used to arm Whoami and stop, which
-// asserted that ONE method refuses the hop — and a driver is not one method. It
-// is several clients: a session's, and on some deployments a second one holding
-// the credential the deployment itself owns, which no session can reach and
-// which the membership walk spends. A forge that answers 302 answers it to
-// whichever request arrives, so the probe has to be armed at each of them. A
-// fake told to refuse the hop on Whoami alone and follow it everywhere else
-// passed this suite, which is what that costs.
-//
-// WHAT IT CANNOT ASSERT IS THAT THE PIN IS THERE, and pretending otherwise
-// would be worse than saying so. This asserts the END — no request this driver
-// makes reaches a host its credential is not for, whatever the forge answers,
-// on every operation it has — and not the MEANS. A driver whose http.Client
-// refuses every 3xx, which is what both drivers in this tree do and a defensible
-// policy, never hands the transport an off-host request at all, so removing the
-// pin from it changes nothing observable from out here. Nor can the suite
-// manufacture one: a driver's base URL is fixed when it is built, a key on
-// another host is refused before the wire by forge.Session, and a clone URL on
-// another host is refused by the drivers themselves. Demanding
-// *forge.CredentialLeakError from these calls would not prove the pin either —
-// it would FORBID the stricter policy, by requiring that the hop reach the
-// transport before it is refused.
-//
-// The pin itself is covered where it can be: forge's own tests drive
-// PinnedTransport directly, across hosts, ports and cleartext, and a driver's
-// tests drive the transport its constructor actually installed. That last one is
-// a fact about a driver's construction, and this suite asserts behaviour rather
-// than shape — see the package comment, which says so first.
+// redirectOffHost starts a host of its own, since a fixture sees only arrivals,
+// and points every operation's answer at it: nothing may arrive. It asserts the
+// end, not the pin: a driver refusing every 3xx never hands the transport an
+// off-host request, so the pin is tested in pkg/forge and the drivers' own
+// tests.
 func (r *runner) redirectOffHost(t tb) {
 	t.Helper()
 	d := newDecoy()
@@ -423,18 +364,8 @@ func (r *runner) redirectOffHost(t tb) {
 	t.Run("nothing-arrived-at-the-other-host", func(t tb) {
 		for _, got := range d.seen() {
 			t.Errorf("a request arrived at %q, which is not the host this credential is for: %s %s", d.host(), got.Method, got.URL)
-			// EVERY header, not the Authorization one. Go strips Authorization on a
-			// cross-host redirect and strips nothing else, so a forge whose header
-			// is PRIVATE-TOKEN or X-Token hands the credential over where GitHub's
-			// spelling would have been dropped — the stdlib's rule is about a name,
-			// and a credential does not care what it is called.
-			//
-			// THE ARRIVAL IS THE ASSERTION AND THIS IS THE DETAIL. The suite
-			// knows Token and BadToken, which are a session's; the credential a
-			// DEPLOYMENT holds is one no Subject hands over, so a membership hop
-			// that carried it is caught by having arrived and not by what it
-			// says. Which is the right way round: a request at a host this
-			// credential is not for is already wrong, whatever it carries.
+			// Every header, not just Authorization: Go strips only that one on a cross-host
+			// redirect, and a PRIVATE-TOKEN header goes along.
 			for name, values := range got.Header {
 				for _, v := range values {
 					if strings.Contains(v, r.s.Token) {
@@ -453,16 +384,9 @@ type operation struct {
 	call func() error
 }
 
-// everyOperation is every call this subject can be asked to make that reaches
-// the wire, and only those.
-//
-// A capability the driver does not have is left out on purpose rather than
-// asserted absent here: the refusal comes from forge.Session before any request
-// exists, so there would be no hop to redirect — and arming one that is never
-// taken would leave the forge armed for whatever ran next. Absence has its own
-// contract, asserted where the capability is. CloneAddress is left out for the
-// same reason from the other direction: it talks to nothing, which is why it
-// keeps working while the forge is unreachable.
+// everyOperation is every call that reaches the wire. An absent capability is
+// refused before any request, and CloneAddress talks to nothing, so neither is
+// armed.
 func (r *runner) everyOperation(t tb) []operation {
 	t.Helper()
 	// Every session is bound HERE, on the goroutine and the tb this function was
@@ -537,72 +461,13 @@ func (r *runner) everyOperation(t tb) []operation {
 	return ops
 }
 
-// ─────────────────── the hop a credential pin permits ───────────────────
-
-// sameHostRedirect is the redirect probe's other half, and the half the decoy
-// above can say NOTHING about.
-//
-// THE DECOY ASSERTS THE PROPERTY A PIN ALREADY HAS. forge.PinnedTransport
-// decides one thing per hop — is this the host the credential is for — so a
-// redirect to somewhere else is refused underneath every driver, and the decoy
-// watches that happen. A redirect to ANOTHER REPOSITORY ON THIS HOST is the
-// same host. The pin permits it, by design and correctly: a per-hop host check
-// is the whole of what a pin can decide. Nothing below a driver refuses it and
-// nothing above a driver can see it, because every request stays on the host
-// the credential is for and every recorded URL passes the canary.
-//
-// So the forge gets to choose which repository a request is about. It answers
-// 301 to a renamed path, 302 to anything at all, and 307 to a write with the
-// method and body replayed — and what comes back is a repository the caller
-// never named: its permissions read as the named one's, its hooks installed as
-// the named one's, its deletion reported as the named one's. A name that has
-// been transferred away is free to be re-registered by anybody, which is what
-// turns "the forge redirected us" into a grant.
-//
-// WHAT THE CONTRACT REQUIRES IS DECIDED BY WHERE THE ANSWER CAN PUT IT.
-//
-//	Repository answers with a Key the driver DERIVES, so it has somewhere to
-//	say "what you asked about is over there" — which is exactly the rename this
-//	suite already requires a driver to resolve. Refusing the hop and resolving
-//	it are both honest. Answering with the key that was ASKED about, over
-//	another repository's body, is not.
-//
-//	Everything else has nowhere to put it. Access answers a level. Delete
-//	answers an error. InstallDeployKey answers a Handle. RegisterPushHook
-//	answers a Hook whose Key is stamped by forge.Session FROM THE ARGUMENT — so
-//	a hook that lands on another repository CANNOT be reported honestly, no
-//	matter what the driver does. For those the only answer that is not a lie is
-//	a refusal, and that is what is asserted.
-//
-// FIVE OPERATIONS ARE ARMED, AND THEY ARE THE FIVE WHERE THE HOP HAS A
-// CONSEQUENCE THAT CAN BE NAMED. Repository is the only answer with room to
-// resolve the hop; Access is the read that has none; and the three writes are
-// where the hop lands a side effect on a repository the caller never mentioned.
-// The rest are armed by the probe above, at the decoy, which covers every
-// operation there is — a redirect policy is per client and not per method, so
-// the five are where the ANSWER differs and not where the policy does. A
-// removal names a handle the other repository does not hold, so a followed hop
-// is a 404 there rather than a deletion; whoami and list are about no
-// repository at all; and create names one that does not exist yet.
-//
-// EACH OPERATION IS AIMED AT THE ADDRESS ITS OWN ENDPOINT WOULD USE, and that
-// is the difference between a probe about policy and a probe about spelling.
-// Aiming every one of them at the repository path — which is what one learned
-// address amounts to — means a replayed POST arrives where only a GET is
-// answered, so the call fails on ENDPOINT SHAPE, the assertion passes, and
-// nothing about the redirect was ever asked. So each operation is made once
-// against `other` WITH THE WIRE BROKEN: the request is composed and recorded,
-// nothing happens at the far end, and the address it would have used is read
-// back out of Requests. The suite knows no forge's URL shapes and must not
-// invent one.
-//
-// AND THE STATUS DIFFERS BY OPERATION, for the same reason. A read is armed
-// with 302, which is what a forge really answers a moved read with and which Go
-// replays as the GET it already was. A WRITE is armed with 307, which preserves
-// method and body: under 302 Go rewrites the POST to a GET, the far end answers
-// that its write endpoint takes no GET, and the write fails for a reason that
-// has nothing to do with the hop. 307 puts the write at the other repository's
-// own write endpoint, where the only thing that can refuse it is policy.
+// sameHostRedirect: a hop to another repository on this host passes the pin by
+// design, so only the driver's redirect policy can refuse it. Repository may
+// resolve the hop through its derived key; Access and the three writes have
+// nowhere to report it, so they must refuse. Each operation is aimed at the
+// address its own endpoint would use, read back from Requests with the wire
+// broken; a read is armed with 302 and a write with 307, so a write fails on
+// policy rather than endpoint shape.
 func (r *runner) sameHostRedirect(t tb) {
 	t.Helper()
 	// Deletable is the one fixture nothing else in the suite has touched yet,
@@ -716,19 +581,10 @@ func (r *runner) sameHostRedirect(t tb) {
 	t.Run("delete", func(t tb) {
 		sess := r.session(t, r.s.Admin)
 		if !r.s.Expect.Has(forge.CapDelete) {
-			// Nothing reaches the wire, so there is no hop to arm — and arming
-			// one a driver will never take would leave it live for whatever
-			// runs next.
-			//
-			// IT IS AIMED AT other AND NOT AT Admin, because "nothing reaches
-			// the wire" is only true of an honest Subject. One that declares
-			// less than its driver has really does delete what this names, and
-			// Admin is the fixture every deploy-key and hook question below is
-			// asked about — so aiming it there turned an under-declared
-			// capability into three steps that could not be taken, for a reason
-			// that has nothing to do with the capability. other is the fixture
-			// this suite is allowed to destroy, and this runs after everything
-			// that needs it.
+			// Aimed at other, not Admin: a Subject declaring less than its driver has
+			// really deletes what this names, and Admin is what every later question is
+			// about. other is the fixture the suite may destroy, and this runs after
+			// everything needing it.
 			r.absent(t, forge.CapDelete, sess.Delete(r.ctx, other), "Delete under a same-host redirect")
 			return
 		}
@@ -753,22 +609,10 @@ func (r *runner) sameHostRedirect(t tb) {
 	})
 }
 
-// whereItWouldGo is the address THIS OPERATION uses for k — the driver's own,
-// read back out of what the subject reported rather than built here. A URL this
-// suite invented would be a 404 at the far end, and a driver that followed a
-// redirect to it would look exactly like one that refused.
-//
-// IT LEARNS THE ADDRESS WITH THE WIRE BROKEN, which is the only way to ask a
-// DESTRUCTIVE operation where it would go without letting it go there: the
-// request is composed, the subject records it, and nothing at the far end ever
-// sees it. Requests reports what the SUBJECT sent rather than what a server
-// received — which is what a Subject's Requests is documented to be, and what
-// makes this possible.
-//
-// The LAST request is the operation's own. An operation that needs a lookup
-// first has that lookup fail under the outage, so a driver whose write is
-// preceded by one would be probed at its lookup instead — weaker, and visible
-// here rather than silently wrong, because the address is read and not guessed.
+// whereItWouldGo is the address this operation uses for k, read back from what
+// the subject reported with the wire broken, so a destructive operation is never
+// let go there. A URL the suite invented would 404 and hide a followed redirect.
+// The last request is the operation's own.
 func (r *runner) whereItWouldGo(t tb, k repokey.Key, do func() error) string {
 	t.Helper()
 	r.s.Requests()
@@ -788,29 +632,18 @@ func (r *runner) whereItWouldGo(t tb, k repokey.Key, do func() error) string {
 }
 
 // assertRepository is the round trip: both clone addresses must re-derive the
-// key the forge says the repository has, so "the forge and tau agree which
-// repository this is" is a checked fact. repokey refuses a URL carrying a
-// credential, so a successful re-parse is also the check that neither address
-// has one spliced into it.
-//
-// about is WHICH RECORD, and it is not decoration. Six places in the suite ask
-// these four questions and each is a separate contract; without a word saying
-// which one is speaking they are four assertions instead of twenty-four, a
-// proof needs one of the six to fire, and the other five can be deleted with
-// the tree green. Measured, before this argument existed: three of the six.
+// key the forge says the repository has, and repokey refuses a URL carrying a
+// credential. about names which of the six records is speaking, so each is a
+// separate case.
 func (r *runner) assertRepository(t tb, repo forge.Repository, want repokey.Key, about string) {
 	t.Helper()
 	assert.Equal(t, want, repo.Key, "the forge and the caller disagree about which repository %s is", about)
 	r.assertRecord(t, repo, about)
 }
 
-// assertRecord is the half of it that asks only whether a record AGREES WITH
-// ITSELF: the key it carries, the branch, and the two addresses. It is separate
-// because the listing has nothing to compare a record's key against — it finds
-// each record BY that key — so asking there whether the key is the key it was
-// asked about compares a value to itself. That assertion was vacuous in the
-// listing's case and provable in nobody's, which is the definition this file
-// works from.
+// assertRecord asks only whether a record agrees with itself: the listing finds
+// each record by its key, so comparing that key to the one asked about would be
+// vacuous.
 func (r *runner) assertRecord(t tb, repo forge.Repository, about string) {
 	t.Helper()
 	assert.NotEmpty(t, repo.DefaultBranch, "%s has no default branch; a builder has nothing to check out", about)
@@ -883,11 +716,8 @@ func (r *runner) credentialNeverTravels(t tb) {
 	}
 }
 
-// assertRequestsStayHome is what every request a subject REPORTS must satisfy.
-// It is the whole check for a subject that reports what it would have sent, and
-// half of it for one that reports what a server received — the other half being
-// what the decoy saw, which is the only place a request to another host is
-// visible at all.
+// assertRequestsStayHome is what every reported request must satisfy; for a
+// subject reporting what a server received, the decoy covers the rest.
 func (r *runner) assertRequestsStayHome(t tb, reqs []Request, about string) {
 	t.Helper()
 	for _, req := range reqs {
@@ -904,13 +734,9 @@ func (r *runner) assertRequestsStayHome(t tb, reqs []Request, about string) {
 // reads as one line.
 func second[T any](_ T, err error) error { return err }
 
-// absent asserts the two halves of a capability a driver does not have: the
-// Session method returns *UnsupportedError naming it, and Require refuses.
-//
-// about is WHICH CALL was supposed to refuse. Eleven places ask this and the
-// capability alone does not tell them apart — two of them are the two halves of
-// deploy keys, and two more are handed a capability chosen at run time — so
-// without it, one proof stood for all eleven.
+// absent asserts both halves of a missing capability: the Session method returns
+// *UnsupportedError naming it, and Require refuses. about names which of the
+// eleven calls refused.
 func (r *runner) absent(t tb, c forge.Capability, err error, about string) {
 	t.Helper()
 	var un *forge.UnsupportedError

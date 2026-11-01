@@ -15,11 +15,6 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// ─────────────────────────────── deliveries ───────────────────────────────
-//
-// REAL deliveries, real HMAC over real bytes, in Bitbucket Server's own
-// repo:refs_changed shape, keyed by the wire string the driver handed it.
-
 func (f *fixture) Delivery(h forge.Hook, ref, commit string) (forge.Delivery, error) {
 	return f.deliver(h, h.Key, ref, commit, "repo:refs_changed")
 }
@@ -91,8 +86,6 @@ func (f *fixture) deliver(h forge.Hook, names repokey.Key, ref, commit, event st
 	return forge.Delivery{Header: hdr, Body: body}, nil
 }
 
-// ─────────────────────────────── the suite ───────────────────────────────
-
 func newDriver(t *testing.T, f *fixture, opts ...bitbucketserver.Option) forge.Driver {
 	t.Helper()
 	drv, err := bitbucketserver.New(f.Host(), append([]bitbucketserver.Option{bitbucketserver.Transport(f.Transport())}, opts...)...)
@@ -107,9 +100,6 @@ func registry(t *testing.T, f *fixture) *forge.Registry {
 	return reg
 }
 
-// TestConformance runs the whole suite. Membership and the push probe are
-// absent, for the reasons the package comment gives, and the suite asserts
-// each answers *forge.UnsupportedError.
 func TestConformance(t *testing.T) {
 	f := newFixture(t)
 	forgetest.Run(t, f.subject(t, registry(t, f)))

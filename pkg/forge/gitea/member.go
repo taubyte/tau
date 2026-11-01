@@ -8,15 +8,10 @@ import (
 	"strings"
 )
 
-// IsActiveMember answers with the DEPLOYMENT's token, never a caller's: a
-// caller-bound session has no path to it, which is why this hangs off the
-// driver.
-//
-// Gitea answers 204 for a member and 404 for anyone else. A token that may not
-// list the organization's members is answered with a redirect to the PUBLIC
-// members — which this driver does not follow, so it arrives as an error and
-// "we could not look" never reads as "not a member". (false, nil) is a 404 and
-// nothing else.
+// IsActiveMember answers with the deployment's token, never a caller's. Gitea
+// answers 204 for a member and 404 otherwise; a token that may not list members
+// is redirected to the public ones, which this driver does not follow, so it
+// arrives as an error.
 func (m *memberDriver) IsActiveMember(ctx context.Context, namespace, username string) (bool, error) {
 	if namespace == "" || username == "" {
 		return false, errors.New("forge/gitea: a membership question names a namespace and a username")

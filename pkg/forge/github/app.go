@@ -22,24 +22,16 @@ const (
 	appJWTBackdate = 30 * time.Second
 )
 
-// app is THE DEPLOYMENT'S credential, and where it lives is the point. It is
-// baked into the driver at construction, so a caller-bound Session has no path
-// to it and it has no path to acting as a caller. That is structural rather
-// than a rule somebody has to keep.
+// app is the deployment's credential, baked into the driver, so no
+// caller-bound Session can reach it.
 type app struct {
 	clientID string
 	key      *rsa.PrivateKey
 }
 
-// App gives this driver the deployment's GitHub App credential, which is what
-// makes it able to answer a membership question at all.
-//
-// IT FAILS HERE, AT STARTUP, ON AN UNUSABLE KEY, rather than deferring the
-// failure to whichever registration first needs it — an unreadable key
-// discovered then is an outage in the middle of an interactive flow, and it is
-// indistinguishable there from "this user is not a member".
-//
-// The PEM is never quoted in an error.
+// App gives the driver the deployment's GitHub App credential, which answers
+// membership. An unusable key fails here at startup, not mid-registration where
+// it would look like "not a member". The PEM is never quoted in an error.
 func App(clientID string, pemKey []byte) Option {
 	return func(d *driver) error {
 		if clientID == "" {
@@ -84,49 +76,23 @@ type membershipJSON struct {
 	State string `json:"state"`
 }
 
-// IsActiveMember answers the one question a caller's own token cannot.
-//
-// A user token carries whatever scopes that user happened to grant, and GitHub
-// answers 404 for both "not a member" and "you may not look" — which are not
-// the same answer, and a gate built on the second one is a gate that opens for
-// whoever asks with a narrow token. So this is answered with the DEPLOYMENT's
-// app credential, over three requests: find the installation on the namespace,
-// mint a token for it scoped to members:read and nothing else, and ask.
-//
-// THE CONTRACT IS v1'S, UNCHANGED. (false, nil) is a definitive non-member —
-// only a 404 on the membership itself, and only after the first two requests
-// succeeded — and everything else is an error. A 403 means the namespace
-// blocked the app, which is an operator problem and not a verdict on this user;
-// answering false there would deny a legitimate member because of a setting
-// they do not control.
-//
-// NOTHING IS CACHED HERE. v1 caches both the installation token and the verdict,
-// and the argument for either TTL is a revocation-window argument that belongs
-// to whoever owns the gate — so it stays with the consumer, and this driver
-// costs two extra requests on a rare interactive path instead of holding a
-// staleness policy it cannot justify.
+// IsActiveMember answers with the deployment's app credential, since GitHub
+// answers 404 to a user token for both "not a member" and "you may not look":
+// find the installation, mint a token scoped to members:read, and ask. Only a
+// 404 on the membership itself is (false, nil); a 403 means the namespace
+// blocked the app. Nothing is cached: a revocation window is the consumer's
+// policy.
 func (m *memberDriver) IsActiveMember(ctx context.Context, namespace, username string) (bool, error) {
 	if namespace == "" || username == "" {
 		return false, errors.New("forge/github: a membership question names a namespace and a username")
 	}
-	// EACH HALF IS ONE PATH SEGMENT. Addressable already refuses a key whose
-	// owner nests, with the sentence "GitHub addresses exactly one owner and one
-	// name"; an organization login and a user login are the same shape, and a
-	// "/" in either would fill one hole of orgs/{}/memberships/{} with two
-	// segments — a question asked about a route nobody named. It is a SHAPE rule
-	// and it lives here, where the shape is known; the dot-segment rule below
-	// belongs to every hole of every route and is stated at both ends for the
-	// reason given there.
+	// Each half is one path segment: a "/" would fill one hole with two segments.
 	for what, half := range map[string]string{"namespace": namespace, "username": username} {
 		if strings.Contains(half, "/") {
 			return false, fmt.Errorf("forge/github: the %s %q nests, and GitHub addresses exactly one organization and one login", what, bounded(half))
 		}
-		// AND THE DOT SEGMENTS, HERE RATHER THAN AT THE ROUTE. The route refuses
-		// them too, and for this operation that is too late: measured, a
-		// username of "." reached the route's refusal only on the THIRD request,
-		// after the installation lookup and after the mint — the one request tau
-		// makes that hands back a credential. A question that cannot be asked
-		// costs nothing here and costs an installation token there.
+		// Dot segments are refused here: at the route a "." reaches the refusal only on
+		// the third request, after the mint hands back a credential.
 		if err := addressesItself(half); err != nil {
 			return false, fmt.Errorf("forge/github: the %s of a membership question: %w", what, err)
 		}

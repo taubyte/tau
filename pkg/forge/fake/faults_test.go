@@ -18,11 +18,8 @@ import (
 	"github.com/taubyte/tau/pkg/forge/fake"
 )
 
-// Every fault is observed TWICE: once on the shape as written, where the answer
-// must be the right one, and once with the fault set, where it must be the
-// named wrong one. forgetest proves the suite catches each fault; this proves
-// each fault is the mistake its name says, and nothing else, against the very
-// call it corrupts.
+// Every fault is observed twice: on the shape as written, giving the right
+// answer, and with the fault set, giving the named wrong one.
 
 type env struct {
 	t   *testing.T
@@ -39,7 +36,6 @@ func (e env) client(cred forge.Credential) forge.Client {
 	return c
 }
 
-// kind names an error by what a caller can tell about it.
 func kind(err error) string {
 	var nf *forge.NotFoundError
 	var ce *forge.CredentialError
@@ -102,7 +98,6 @@ func TestEachFaultIsTheMistakeItNames(t *testing.T) {
 		right   string
 		wrong   string
 	}{
-		// ─── identity and binding ───
 		{fault: fake.FaultWhoamiHasNoLogin,
 			observe: func(e env) string { id, err := e.c.Whoami(e.ctx); return o(id.Login, err) },
 			right:   "fake-user nil", wrong: " nil"},
@@ -142,7 +137,6 @@ func TestEachFaultIsTheMistakeItNames(t *testing.T) {
 			},
 			right: "false unreachable", wrong: "true unreachable"},
 
-		// ─── access ───
 		{fault: fake.FaultOutageIsRefusal,
 			observe: func(e env) string { e.f.Break(); return o(e.c.Access(e.ctx, e.k.Writable)) },
 			right:   o(forge.AccessNone, errors.New("unreachable")), wrong: o(forge.AccessNone, nil)},
@@ -174,7 +168,6 @@ func TestEachFaultIsTheMistakeItNames(t *testing.T) {
 			observe: func(e env) string { return o(e.c.Access(e.ctx, e.k.Writable)) },
 			right:   o(forge.AccessWrite, nil), wrong: o(forge.AccessRead, nil)},
 
-		// ─── depth ───
 		{fault: fake.FaultFlattensDeepKey,
 			observe: func(e env) string { return kind(e.d.Addressable(e.k.Deep)) },
 			right:   "other", wrong: "nil"},
@@ -191,7 +184,6 @@ func TestEachFaultIsTheMistakeItNames(t *testing.T) {
 			},
 			right: "0", wrong: "1"},
 
-		// ─── the repository record ───
 		{fault: fake.FaultAnswersFromCacheWhileUnreachable,
 			observe: func(e env) string { e.f.Break(); id, err := e.c.Whoami(e.ctx); return o(id.Login, err) },
 			right:   " unreachable", wrong: "fake-user nil"},
@@ -245,7 +237,6 @@ func TestEachFaultIsTheMistakeItNames(t *testing.T) {
 			observe: func(e env) string { r, err := e.c.Repository(e.ctx, e.k.Moved); return o(r.Key.FullName(), err) },
 			right:   "acme/pay nil", wrong: "acme/billing nil"},
 
-		// ─── listing ───
 		{fault: fake.FaultListsNothing,
 			observe: func(e env) string {
 				n := 0
@@ -268,7 +259,6 @@ func TestEachFaultIsTheMistakeItNames(t *testing.T) {
 			},
 			right: "1 nil", wrong: "3 nil"},
 
-		// ─── create and delete ───
 		{fault: fake.FaultCreatesTheSameRepositoryTwice,
 			observe: func(e env) string {
 				_, err := e.c.(forge.Creator).Create(e.ctx, e.k.Writable, forge.CreateOptions{})
@@ -292,7 +282,6 @@ func TestEachFaultIsTheMistakeItNames(t *testing.T) {
 			},
 			right: "notfound", wrong: "nil"},
 
-		// ─── deploy keys ───
 		{fault: fake.FaultWritableDeployKey,
 			observe: func(e env) string {
 				_, err := e.c.(forge.DeployKeys).InstallDeployKey(e.ctx, e.k.Admin, "t", "ssh-ed25519 AAAA")
@@ -330,7 +319,6 @@ func TestEachFaultIsTheMistakeItNames(t *testing.T) {
 			},
 			right: "0", wrong: "1"},
 
-		// ─── hooks ───
 		{fault: fake.FaultManglesWire,
 			observe: func(e env) string {
 				_, err := e.c.(forge.PushHooks).RegisterPushHook(e.ctx, e.k.Admin, cb, "wire-abc")
@@ -379,7 +367,6 @@ func TestEachFaultIsTheMistakeItNames(t *testing.T) {
 			},
 			right: "0", wrong: "1"},
 
-		// ─── clone addresses ───
 		{fault: fake.FaultCloneAddressNamesAnother,
 			observe: func(e env) string {
 				a, err := e.c.(forge.CloneAddresses).CloneAddress(e.k.Writable, forge.SSH)
@@ -411,7 +398,6 @@ func TestEachFaultIsTheMistakeItNames(t *testing.T) {
 			},
 			right: "https://fake.github/acme/pay.git nil", wrong: "https://x-access-token:fake-token-6f1c8a2e@fake.github/acme/pay.git nil"},
 
-		// ─── the push probe ───
 		{fault: fake.FaultPushProbeSaysNoToAKeyThatMay,
 			observe: func(e env) string { return o(e.c.(forge.PushProber).CanPush(e.ctx, e.k.Admin, e.f.PushKey())) },
 			right:   "true nil", wrong: "false nil"},
@@ -422,7 +408,6 @@ func TestEachFaultIsTheMistakeItNames(t *testing.T) {
 			observe: func(e env) string { return o(e.c.(forge.PushProber).CanPush(e.ctx, e.k.Missing, e.f.NoPushKey())) },
 			right:   "false notfound", wrong: "false nil"},
 
-		// ─── membership ───
 		{fault: fake.FaultAMemberReadsAsANonMember,
 			observe: func(e env) string {
 				return o(e.d.(forge.Memberships).IsActiveMember(e.ctx, fake.Namespace, fake.Member))
@@ -440,7 +425,6 @@ func TestEachFaultIsTheMistakeItNames(t *testing.T) {
 			},
 			right: "false unreachable", wrong: "true unreachable"},
 
-		// ─── deliveries ───
 		{fault: fake.FaultPushReadsTheBaseRef,
 			observe: func(e env) string { p, err := e.verified("refs/heads/main", commit); return o(p.Ref, err) },
 			right:   "refs/heads/main nil", wrong: "refs/heads/somewhere-else nil"},
@@ -465,7 +449,6 @@ func TestEachFaultIsTheMistakeItNames(t *testing.T) {
 			observe: func(e env) string { _, err := e.verified("refs/heads/main", commit); return fmt.Sprint(err == nil) },
 			right:   "true", wrong: "false"},
 
-		// ─── redirects ───
 		{fault: fake.FaultFollowsRedirect,
 			observe: func(e env) string {
 				srv, hits := watched(e.t)
@@ -524,9 +507,6 @@ func TestEachFaultIsTheMistakeItNames(t *testing.T) {
 	}
 }
 
-// TestAFollowedRedirectThatNamesNoRequestIsAnError: the one sending fault dials
-// whatever armed it, and an address that is not a request is refused before
-// anything is sent.
 func TestAFollowedRedirectThatNamesNoRequestIsAnError(t *testing.T) {
 	sh := fake.GitHubLike
 	sh.Faults = []fake.Fault{fake.FaultFollowsRedirect}
@@ -539,8 +519,6 @@ func TestAFollowedRedirectThatNamesNoRequestIsAnError(t *testing.T) {
 	assert.Contains(t, err.Error(), "not a request")
 }
 
-// TestAHostRepokeyCannotSpellIsRefused: the fixtures are keys, so a host that
-// cannot be one is a shape that cannot exist.
 func TestAHostRepokeyCannotSpellIsRefused(t *testing.T) {
 	defer func() {
 		require.NotNil(t, recover(), "a forge was built on a host no key can name")
@@ -548,9 +526,6 @@ func TestAHostRepokeyCannotSpellIsRefused(t *testing.T) {
 	fake.New(fake.Shape{Host: "Not A Host", Scheme: forge.SchemeHubSHA256})
 }
 
-// TestTheAdminFacesRefuseWhatIsMissingAndWhatIsNotAdministered: a repository
-// that is not there is a NotFoundError, and one the credential only writes to
-// is refused outright, on every face that needs admin.
 func TestTheAdminFacesRefuseWhatIsMissingAndWhatIsNotAdministered(t *testing.T) {
 	f := fake.New(fake.GitHubLike)
 	c, err := f.Driver().Bind(f.Token())

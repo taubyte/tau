@@ -10,8 +10,6 @@ import (
 	"github.com/taubyte/tau/pkg/forge/forgetest"
 )
 
-// ─────────────────────────────── the suite ───────────────────────────────
-
 func newDriver(t *testing.T, f *fixture, opts ...azure.Option) forge.Driver {
 	t.Helper()
 	all := append([]azure.Option{azure.Transport(f.Transport()), azure.Organizations(org)}, opts...)
@@ -20,7 +18,6 @@ func newDriver(t *testing.T, f *fixture, opts ...azure.Option) forge.Driver {
 	return drv
 }
 
-// TestConformance runs the whole suite under the zero policy.
 func TestConformance(t *testing.T) {
 	f := newFixture(t)
 	drv := newDriver(t, f)

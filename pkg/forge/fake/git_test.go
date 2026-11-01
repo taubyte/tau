@@ -23,8 +23,6 @@ func runGit(t *testing.T, dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-// A served forge is a git remote: what the token may write it pushes, what
-// it may read it clones, and the grants are the ones every face answers with.
 func TestAServedForgeServesGit(t *testing.T) {
 	s, err := fake.Serve(fake.GitHubLike)
 	require.NoError(t, err)
@@ -78,7 +76,6 @@ func TestAServedForgeServesGit(t *testing.T) {
 	require.Error(t, err, out)
 }
 
-// The served host speaks smart http and nothing else.
 func TestAServedForgeAnswersOnlySmartHTTP(t *testing.T) {
 	s, err := fake.Serve(fake.GitHubLike)
 	require.NoError(t, err)

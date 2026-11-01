@@ -25,21 +25,16 @@ const (
 	// maxHostString bounds a string a HOST chose before it reaches an error.
 	maxHostString = 256
 
-	// maxDrainOnError is how much of a non-2xx body is read so the connection
-	// can be reused. The body itself is never used: Gerrit answers errors in
-	// plain text, and plain text a forge chose is not a reason.
+	// maxDrainOnError is how much of a non-2xx body is read so the connection can
+	// be reused. Gerrit's plain-text error bodies are never used.
 	maxDrainOnError = 4 << 10
 
 	// xssiGuard is the line Gerrit prefixes every JSON body with.
 	xssiGuard = ")]}'"
 )
 
-// client is a driver acting as one credential, or as nobody.
-//
-// It holds the USERNAME, which is not a secret — it is the account an ssh
-// clone presents as and the label an HTTPS clone carries — and no copy of the
-// password: that reaches exactly one place, the closure that writes the
-// header.
+// client holds the username, which is not a secret, and no copy of the
+// password: only the closure writing the header does.
 type client struct {
 	d      *driver
 	http   *http.Client
@@ -76,12 +71,8 @@ func basicAuth(user, password string) string {
 	return base64.StdEncoding.EncodeToString([]byte(user + ":" + password))
 }
 
-// noRedirect stops at the 3xx instead of replaying the request wherever the
-// answer points. THIS DRIVER FOLLOWS NO REDIRECT AT ALL, for the gitea
-// driver's reason: a same-host redirect is a request built for one project
-// answered by another, and a write cannot be undone by checking afterwards.
-// Gerrit's REST API does not redirect, so a 3xx is never the answer to a
-// question this driver asked.
+// No redirect is followed, for the gitea driver's reason; Gerrit's REST API
+// does not redirect.
 func noRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
 func (c *client) Host() string { return c.d.host }
@@ -94,7 +85,6 @@ type statusError struct {
 	Status int
 }
 
-// Refused is a 4xx: the forge's own answer refusing the request.
 func (e *statusError) Refused() bool { return e.Status >= 400 && e.Status < 500 }
 
 func (e *statusError) Error() string {
@@ -177,14 +167,8 @@ func decode(r io.Reader, out any) error {
 	return json.NewDecoder(br).Decode(out)
 }
 
-// classify maps a failure about ONE PROJECT into the taxonomy.
-//
-//	401  the credential was refused — never a verdict on the project.
-//	404  no such project, which on Gerrit also covers a project this
-//	     credential may not see; the two are indistinguishable from outside.
-//
-// EVERYTHING ELSE STAYS AN ERROR AND IS NOT A VERDICT. A 403 is a missing
-// capability or a proxy's policy, not an answer about this caller's grant.
+// 401 is the credential refused; 404 is no such project, or one this credential
+// may not see. Anything else, a 403 included, stays an error.
 func (c *client) classify(err error, key repokey.Key) error {
 	var se *statusError
 	if !errors.As(err, &se) {
@@ -243,12 +227,8 @@ func (a accessJSON) access() forge.Access {
 	return forge.AccessRead
 }
 
-// repository turns a project NAME the forge returned into forge's record. The
-// key is derived from that name, through the clone URL it composes, and never
-// echoed from the argument.
-//
-// asked is what tau called this project, and every error names it rather than
-// the name the forge sent, which the forge chose.
+// repository derives the key from the project name the forge returned, never
+// from the argument. Errors name asked, not the forge's chosen name.
 func (c *client) repository(name, head string, private bool, asked string) (forge.Repository, error) {
 	key, escaped, err := c.keyOf(name, asked)
 	if err != nil {
@@ -307,14 +287,10 @@ func projectPath(name string) (string, error) {
 	return strings.Join(parts, "/"), nil
 }
 
-// sshURL is the offline ssh address: the account is the caller's own username,
-// because Gerrit's sshd authenticates accounts and not a shared "git" user.
-//
-// THE PORT IS THE KEY'S, which is the gitea driver's caveat and a sharper one
-// here: Gerrit's sshd listens on 29418 by default and the key's host carries
-// the HTTP port or none. A spelling with 29418 would derive a different key, so
-// this cannot be both right and agree with the key; a deployment that clones
-// over ssh supplies its address, the way the live suite does.
+// The ssh account is the caller's username: Gerrit's sshd authenticates
+// accounts, not a shared "git" user. The port is the key's, though Gerrit's sshd
+// listens on 29418; a spelling with 29418 would derive another key, so a
+// deployment cloning over ssh supplies its address.
 func (c *client) sshURL(escaped string) string {
 	return "ssh://" + url.User(c.user).String() + "@" + c.d.host + "/" + escaped
 }

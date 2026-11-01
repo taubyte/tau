@@ -15,13 +15,8 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// ─────────────────────────────── deliveries ───────────────────────────────
-//
-// The fixture signs REAL deliveries with real HMAC over real bytes, in GitHub's
-// own push-payload shape, keyed by the wire string the driver actually handed
-// it. So what the suite exercises is verification and not a stub: change one
-// byte of the body and the delivery stops verifying, because the MAC was
-// genuinely computed over that byte.
+// The fixture signs real deliveries with real HMAC, in GitHub's push-payload
+// shape, keyed by the wire string the driver handed it.
 
 func (f *fixture) Delivery(h forge.Hook, ref, commit string) (forge.Delivery, error) {
 	return f.deliver(h, h.Key, ref, commit, "push", time.Now())
@@ -92,13 +87,6 @@ func (f *fixture) deliver(h forge.Hook, names repokey.Key, ref, commit, event st
 	return forge.Delivery{Header: hdr, Body: body}, nil
 }
 
-// ─────────────────────────────── the suite ───────────────────────────────
-
-// TestConformance runs the whole suite twice, because whether this deployment
-// holds an app credential is a Go type here and both types have a contract.
-// Without one, membership must be *UnsupportedError and NEVER false: "we could
-// not ask" arriving at a caller as "they are not a member" is a thing the
-// caller will act on.
 func TestConformance(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -175,9 +163,7 @@ func (f *fixture) subject(t *testing.T, reg *forge.Registry, extra ...forge.Capa
 		// repository has.
 		Deep:      f.key(t, "acme/team/widget"),
 		DeepNests: false,
-		// acme/billing was renamed to acme/pay and GitHub still answers for it,
-		// with a redirect. A driver that echoes the key it was asked about
-		// answers acme/billing here and is wrong about which repository this is.
+		// acme/billing was renamed to acme/pay and GitHub still answers for it.
 		Moved:   f.key(t, "acme/billing"),
 		MovedTo: f.key(t, "acme/pay"),
 

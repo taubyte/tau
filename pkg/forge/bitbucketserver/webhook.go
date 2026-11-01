@@ -10,14 +10,10 @@ import (
 	"github.com/taubyte/tau/pkg/forge"
 )
 
-// Scheme is what this driver registers NEW hooks with. Bitbucket Server signs
-// a delivery from a hook with a secret as X-Hub-Signature: "sha256=" and the
-// lowercase hex HMAC-SHA256 of the raw body — forge.SchemeBitbucketSHA256.
-// There is no verification code here.
+// Bitbucket Server signs a delivery as X-Hub-Signature: "sha256=" and the
+// lowercase hex HMAC-SHA256 of the body. Verification is the core's.
 func (d *driver) Scheme() forge.Scheme { return forge.SchemeBitbucketSHA256 }
 
-// pushPayload is the whole of what this driver reads out of a
-// repo:refs_changed delivery.
 type pushPayload struct {
 	Repository struct {
 		Slug    string `json:"slug"`
@@ -32,14 +28,8 @@ type pushPayload struct {
 	} `json:"changes"`
 }
 
-// Push reads a delivery the core HAS ALREADY VERIFIED and returns what it
-// claims; the core compares the repository claimed against the hook's.
-//
-// The repository is named by project key and slug, which is this driver's key
-// exactly. A deletion carries the all-zero toHash, which the core turns into
-// forge.ErrRefDeleted. ONE DELIVERY, ONE REF: a push moving several refs is
-// one delivery, and a claim has room for one, so more than one is refused
-// rather than half-read.
+// Push reads a delivery the core has verified. A deletion carries the all-zero
+// toHash. A delivery moving several refs is refused: a claim has room for one.
 func (d *driver) Push(body forge.VerifiedBody, header http.Header) (forge.PushClaim, error) {
 	if header.Get("X-Event-Key") != pushEvent {
 		return forge.PushClaim{}, forge.ErrNotAPush

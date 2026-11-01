@@ -1,11 +1,5 @@
 package bitbucket_test
 
-// What the conformance suite cannot reach: the branches a correct forge never
-// takes. A forge that answers a repository with a clone URL naming another
-// repository, one that 302s a credentialed request off its own host, one that
-// returns an id of zero for a hook nothing could then remove. Each is a thing
-// this driver has a line for, and a line with no test is a line nobody has run.
-
 import (
 	"context"
 	"fmt"
@@ -23,8 +17,6 @@ import (
 	"github.com/taubyte/tau/pkg/forge/bitbucket"
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
-
-// ─────────────────────────────── helpers ───────────────────────────────
 
 func stubServer(t *testing.T, h http.Handler) (string, bitbucket.Option) {
 	t.Helper()
@@ -53,7 +45,6 @@ func sessionOn(t *testing.T, h http.Handler, full string, opts ...bitbucket.Opti
 	return sess, k
 }
 
-// answer is a server that gives one status and one body to everything.
 func answer(status int, body string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -63,8 +54,6 @@ func answer(status int, body string) http.Handler {
 }
 
 func ctx() context.Context { return context.Background() }
-
-// ─────────────────────────────── construction ───────────────────────────────
 
 func TestNewRefusesAHostNoKeyWillEverMatch(t *testing.T) {
 	for _, host := range []string{
@@ -87,9 +76,6 @@ func TestTransportNeedsARoundTripper(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestAddressableRefusesWhatBitbucketCannotAddress. The nested case is the one the
-// suite covers; these two are the others, and Addressable is exported so they
-// are reachable.
 func TestAddressableRefusesWhatBitbucketCannotAddress(t *testing.T) {
 	drv, err := bitbucket.New("bitbucket.example")
 	require.NoError(t, err)
@@ -118,13 +104,6 @@ func TestBindRefusesACredentialNobodySet(t *testing.T) {
 	require.ErrorIs(t, err, forge.ErrNoCredential, "an unset credential must never degrade into anonymity")
 }
 
-// ─────────────────────────── the credential never leaves ───────────────────────────
-
-// TestTheCredentialNeverReachesAnErrorString drives every method against a
-// host that fails in every way and reads the whole error — Error(), %v and
-// %+v — for the token. An error string is the most-copied thing in a log, and
-// a host that gets to choose what lands in one would choose to put the
-// caller's own credential there.
 func TestTheCredentialNeverReachesAnErrorString(t *testing.T) {
 	for name, h := range map[string]http.Handler{
 		"401": answer(http.StatusUnauthorized, `{}`),
@@ -174,14 +153,3 @@ func TestTheCredentialNeverReachesAnErrorString(t *testing.T) {
 		})
 	}
 }
-
-// TestNoRedirectIsFollowed. An http.Client replays a request wherever a 3xx
-// points, and Bitbucket answers a renamed or TRANSFERRED repository with 301 to
-// its current path — so a request built for one repository comes back answered
-// by another, carrying that other repository's `permissions`.
-//
-// PinnedTransport is not the answer to that and cannot be. It refuses the hop
-// that leaves the host, which is the whole of what a per-hop host check can
-// decide; a redirect to another repository on the SAME host is one it permits
-// by design. So the driver refuses to follow at all, and this asserts both
-// halves: for the off-host redirect the error is no longer the pin's, because

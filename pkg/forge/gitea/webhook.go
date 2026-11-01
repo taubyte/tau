@@ -11,21 +11,12 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// Scheme is what this driver registers NEW hooks with. It does not implement
-// one: Gitea and Forgejo send X-Hub-Signature-256 byte for byte the way GitHub
-// does — beside their own X-Gitea-Signature, the same MAC without the
-// "sha256=" prefix — so this is the github driver's constant and there is no
-// verification code here. The container suite proves it against a delivery
-// a real Gitea and a real Forgejo signed.
+// Gitea and Forgejo send X-Hub-Signature-256 exactly as GitHub does, so this is
+// the github driver's scheme; verification is the core's.
 func (d *driver) Scheme() forge.Scheme { return forge.SchemeHubSHA256 }
 
-// pushPayload is the whole of what this driver reads out of a push delivery.
-//
-// Gitea sends dozens of fields; the commit list, the pusher, the sender,
-// the timestamps, the repository's numeric id and its owner object are all
-// absent here on purpose. A delivery is a stranger's bytes that a forge
-// relayed, and every field that survives into a Push is one more thing
-// something downstream comes to trust.
+// pushPayload reads only what a Push needs: every field kept is one more thing
+// downstream comes to trust.
 type pushPayload struct {
 	Ref        string `json:"ref"`
 	After      string `json:"after"`
@@ -38,17 +29,9 @@ type pushPayload struct {
 	} `json:"head_commit"`
 }
 
-// Push reads a delivery the core HAS ALREADY VERIFIED — the parameter type is
-// the proof, since VerifiedBody's fields are unexported and no package outside
-// forge can build a non-empty one — and returns what the payload CLAIMS. It
-// decides nothing: the core compares the repository claimed here against the
-// one the hook was registered for, and rejects a mismatch.
-//
-// THE REPOSITORY IS NAMED BY ITS CLONE URL AND BY NOTHING ELSE. Gitea also
-// sends full_name and a numeric id; full_name is a name with no host, and the
-// id is the thing v2's vocabulary does not have. The clone URL is what repokey
-// derives a key from everywhere else in this tree, so the delivery and the
-// registration are filed under the same grammar.
+// Push reads a delivery the core has verified and returns what it claims; the
+// core compares the repository with the hook's. The repository is named by its
+// clone URL, keyed by the same grammar as the registration.
 func (d *driver) Push(body forge.VerifiedBody, header http.Header) (forge.PushClaim, error) {
 	// Gitea names the event in a header, not in the payload. Forgejo sends
 	// its own X-Forgejo-Event and still sends this one, so one header serves
@@ -67,14 +50,8 @@ func (d *driver) Push(body forge.VerifiedBody, header http.Header) (forge.PushCl
 	case len(p.Repository.CloneURL) > maxHostString:
 		return forge.PushClaim{}, errors.New("forge/gitea: push payload names a repository by an implausibly long clone URL")
 	}
-	// THE REASON IS NOT CARRIED, which is the same rule repository() keeps. A
-	// delivery is a stranger bytes that a signature proves the forge RELAYED,
-	// up to the core cap, and repokey quotes what it was given — so a clone URL
-	// with an identity half, the one shape repokey calls a secret at rest,
-	// would be written into a tau log by whoever composed the payload.
-	// Measured: a delivery naming
-	// https://token:<token>@gitea.example/acme/pay.git put that token in
-	// the error.
+	// The reason is not carried: repokey quotes what it was given, and a clone URL
+	// with an identity half would put a credential into a tau log.
 	key, err := repokey.Parse(p.Repository.CloneURL)
 	if err != nil {
 		return forge.PushClaim{}, errors.New("forge/gitea: push payload names no repository this layer can address")

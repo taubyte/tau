@@ -11,8 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A project name fills ONE segment, escaped, so the "/" inside it is %2F —
-// the shape the API takes — while a dot segment is still refused.
 func TestAProjectNameIsOneEscapedSegment(t *testing.T) {
 	p, err := routeProject.at("acme/team/widget").path()
 	require.NoError(t, err)

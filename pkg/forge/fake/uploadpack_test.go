@@ -85,12 +85,6 @@ func commitInto(t *testing.T, st *memory.Storage) plumbing.Hash {
 	return h
 }
 
-// THE PACK GOES AFTER THE CLIENT HAS CLOSED ITS INPUT, NOT AFTER ITS WANTS.
-// Over ssh the session is one stream: a server that answers at the end of the
-// wants and hangs up closes the channel while the client is still writing its
-// haves and done, or closing its input after them, and the client fails with
-// "sending done message: EOF" or "closing input: EOF" — a clone that fails or
-// not depending on which side the scheduler ran first.
 func TestUploadPackOverSSHAnswersOnlyOnceTheRequestHasEnded(t *testing.T) {
 	c := New(GitHubLike).c
 	ep, err := transport.NewEndpoint("/acme/repo")
@@ -114,8 +108,6 @@ func TestUploadPackOverSSHAnswersOnlyOnceTheRequestHasEnded(t *testing.T) {
 	require.Contains(t, client.out.String(), "PACK")
 }
 
-// A connection that breaks before the request has ended is answered with
-// nothing.
 func TestUploadPackOverSSHAnswersNothingToABrokenRequest(t *testing.T) {
 	c := New(GitHubLike).c
 	ep, err := transport.NewEndpoint("/acme/repo")

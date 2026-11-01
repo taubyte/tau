@@ -11,11 +11,6 @@ import (
 	"github.com/taubyte/tau/pkg/forge/fake"
 )
 
-// The conformance suite is where this forge is really exercised
-// (pkg/forge/forgetest). What is left here is the handful of things a
-// consumer meets before the suite does: how it refuses a shape that cannot
-// exist, and what an anonymous session can and cannot see.
-
 func TestAShapeThatCannotExistIsRefusedLoudly(t *testing.T) {
 	for name, sh := range map[string]fake.Shape{
 		"no host":                                {Scheme: forge.SchemeHubSHA256},
@@ -32,11 +27,6 @@ func TestAShapeThatCannotExistIsRefusedLoudly(t *testing.T) {
 	}
 }
 
-// TestAnOmissionPatternThatIsNotATypeIsAnError: a Go type either implements an
-// interface or it does not, so the powerset of optional faces is not
-// constructible. The three patterns that ARE types cover both contracts the
-// suite runs; anything else is refused where a client is built, rather than
-// quietly handing back a different forge than was asked for.
 func TestAnOmissionPatternThatIsNotATypeIsAnError(t *testing.T) {
 	f := fake.New(fake.Shape{
 		Host:   "fake.partial",
@@ -58,10 +48,6 @@ func TestBindRefusesACredentialNobodySet(t *testing.T) {
 	assert.Equal(t, f.Host(), c.Host())
 }
 
-// TestAnAnonymousSessionSeesOnlyWhatIsPublic: the anonymous guard lives in the
-// core and stops the authorization questions, but a public repository is still
-// a public repository, and a private one is not merely refused — it is not
-// there.
 func TestAnAnonymousSessionSeesOnlyWhatIsPublic(t *testing.T) {
 	f := fake.New(fake.GitHubLike)
 	reg, err := f.Registry(forge.Policy{})
@@ -82,15 +68,6 @@ func TestAnAnonymousSessionSeesOnlyWhatIsPublic(t *testing.T) {
 	require.ErrorAs(t, err, &nf, "a private repository was described to nobody in particular")
 }
 
-// TestDeliveriesNeedAHookAndNotAHandle: the builders sign for a hook that has a
-// secret and a scheme, so a test cannot accidentally verify against a zero
-// value.
-//
-// They deliberately do NOT require the handle to be one this forge assigned. A
-// driver that answers with a handle the forge never gave it is a defect the
-// conformance suite names in two places — the forge holds no hook under it, and
-// nothing can remove it — and a builder that refused to sign there would turn
-// that named defect into a fixture failure, which reads as the harness breaking.
 func TestDeliveriesNeedAHookAndNotAHandle(t *testing.T) {
 	f := fake.New(fake.GitHubLike)
 	_, err := f.Delivery(forge.Hook{Handle: "never-registered"}, "refs/heads/main", "abc")

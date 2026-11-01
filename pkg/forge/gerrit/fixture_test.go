@@ -1,13 +1,8 @@
 package gerrit_test
 
-// The Gerrit this package's tests talk to is an httptest server and nothing
-// else; pkg/forge/live is where a real one is. What it serves is the endpoints
-// the driver calls, in Gerrit's own shapes — the )]}' guard on every JSON body,
-// project names as one %2F-escaped segment, basic auth under /a/, plain-text
-// errors — with the status codes measured against gerritcodereview/gerrit
-// 3.12.3: 401 on a refused password, 404 on a project the caller cannot see,
-// 403 on a create or delete it may not make, 409 on a name already taken, and
-// 404 on a group the credential cannot see.
+// An httptest server in Gerrit's shapes: the )]}' guard, project names as one
+// %2F-escaped segment, basic auth under /a/, plain-text errors, and the status
+// codes measured against Gerrit 3.12.3. pkg/forge/live has a real one.
 
 import (
 	"encoding/base64"
@@ -134,8 +129,6 @@ func (b *breakableRT) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	return b.base.RoundTrip(r)
 }
-
-// ─────────────────────────────── the server ───────────────────────────────
 
 func (f *fixture) handler() http.Handler {
 	mux := http.NewServeMux()

@@ -11,7 +11,6 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// feed is a driver with a push feed: it replays claims and reports heads.
 type feed struct {
 	plain
 	claims   []PushClaim

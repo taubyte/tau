@@ -16,15 +16,10 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// THE EVENT STREAM IS HOW A GERRIT TRIGGERS A BUILD. Gerrit has no webhook a
-// body signature covers (see the package comment), so the push feed is
-// `gerrit stream-events` over Gerrit's own sshd, authenticated as the
-// deployment's account and against a pinned host key. The channel is the
-// authentication: nothing arrives on it that Gerrit did not write.
-//
-// The account needs the Stream Events global capability (an administrator has
-// it). It sees only the events of projects it may read, which is what a
-// deployment wants: a project the cloud cannot read is one it cannot build.
+// Gerrit has no signed webhook, so the push feed is `gerrit stream-events` over
+// its sshd, as the deployment's account, against a pinned host key: the channel
+// is the authentication. The account needs the Stream Events capability and
+// sees only events of projects it may read.
 
 // streamCommand asks for ref updates and nothing else — a submitted change and
 // a direct push both arrive as one.
@@ -35,7 +30,6 @@ const streamCommand = "gerrit stream-events -s ref-updated"
 // buffer without limit.
 const maxEventLine = 1 << 20
 
-// streamer is the deployment's ssh account on one Gerrit's sshd.
 type streamer struct {
 	d        *driver
 	addr     string // host:port of the sshd, 29418 by default
@@ -149,11 +143,8 @@ func (s *streamer) StreamPushes(ctx context.Context, ready func(), emit func(for
 	if err := lines.Err(); err != nil {
 		return fmt.Errorf("forge/gerrit: reading the event stream: %w", err)
 	}
-	// The command ended on its own: Gerrit refused it (no Stream Events
-	// capability) or the server went away. Wait is what makes stderr whole —
-	// stdout's EOF can arrive before the last of it is copied. What Gerrit
-	// said is a host's words and is bounded before it reaches an error; the
-	// exit status itself adds nothing to them.
+	// The command ended on its own: refused, or the server went away. Wait makes
+	// stderr whole; what Gerrit said is bounded before it reaches an error.
 	session.Wait()
 	return fmt.Errorf("forge/gerrit: the event stream ended: %s", bounded(strings.TrimSpace(stderr.String())))
 }

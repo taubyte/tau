@@ -1,11 +1,7 @@
 package github_test
 
-// Membership is answered with the DEPLOYMENT's credential over three requests,
-// and the whole contract is that (false, nil) means one thing and one thing
-// only: the app asked, and GitHub said this person is not a member. Everything
-// else — the app not installed, a token that could not be minted, a namespace
-// that blocked the app, an unreachable host — is an error, because a caller
-// acts on a false.
+// (false, nil) means only that the app asked and GitHub said not a member;
+// everything else is an error, because a caller acts on a false.
 
 import (
 	"context"
@@ -28,8 +24,6 @@ func appRegistry(t *testing.T, h http.Handler) (*forge.Registry, string) {
 	return registryOn(t, h, github.App(appClientID, testKeyPEM()))
 }
 
-// TestOnlyA404OnTheMembershipItselfIsANonMember walks the three requests and
-// asserts what each of them being wrong produces. Not one of them is a false.
 func TestOnlyA404OnTheMembershipItselfIsANonMember(t *testing.T) {
 	for name, tc := range map[string]struct {
 		handler    http.HandlerFunc
@@ -50,13 +44,8 @@ func TestOnlyA404OnTheMembershipItselfIsANonMember(t *testing.T) {
 				io.WriteString(w, `{"id":0}`)
 			},
 			wantErr: true,
-			// AND THE WALK STOPS THERE. Without the id check the next request is
-			// POST /app/installations/0/access_tokens — this deployment's most
-			// privileged credential, the app assertion, spent asking an
-			// installation that does not exist to hand back a token. It still
-			// ends in an error, which is why deleting the check left the tree at
-			// exit 0; the fact worth holding is that the assertion never went out
-			// a second time.
+			// The walk stops there: without the id check the app assertion is spent asking
+			// installation 0 for a token.
 			wantRequests: 1,
 		},
 		"the installation token could not be minted": {
@@ -142,8 +131,6 @@ func TestOnlyA404OnTheMembershipItselfIsANonMember(t *testing.T) {
 	}
 }
 
-// TestAnUnacceptedInvitationIsNotMembership. GitHub answers 200 with
-// state:"pending" for someone who was invited and never accepted.
 func TestAnUnacceptedInvitationIsNotMembership(t *testing.T) {
 	f := newFixture(t)
 	reg, err := forge.New(forge.Policy{}, forge.Binding{
@@ -168,7 +155,6 @@ func TestAnUnacceptedInvitationIsNotMembership(t *testing.T) {
 	}
 }
 
-// TestAMembershipQuestionNamesBothHalves.
 func TestAMembershipQuestionNamesBothHalves(t *testing.T) {
 	reg, host := appRegistry(t, answer(http.StatusOK, `{"id":4242}`))
 	for _, tc := range [][2]string{{"", member}, {namespace, ""}} {
@@ -178,7 +164,6 @@ func TestAMembershipQuestionNamesBothHalves(t *testing.T) {
 	}
 }
 
-// TestAnUnreachableForgeAnswersNoMembershipQuestion.
 func TestAnUnreachableForgeAnswersNoMembershipQuestion(t *testing.T) {
 	f := newFixture(t)
 	reg, err := forge.New(forge.Policy{}, forge.Binding{
@@ -194,7 +179,6 @@ func TestAnUnreachableForgeAnswersNoMembershipQuestion(t *testing.T) {
 	assert.False(t, ok)
 }
 
-// TestADeploymentWithNoAppCannotBeAskedAtAll: *UnsupportedError, never false.
 func TestADeploymentWithNoAppCannotBeAskedAtAll(t *testing.T) {
 	reg, host := registryOn(t, answer(http.StatusOK, `{}`))
 	ok, err := reg.IsActiveMember(context.Background(), host, namespace, member)
@@ -204,10 +188,6 @@ func TestADeploymentWithNoAppCannotBeAskedAtAll(t *testing.T) {
 	assert.False(t, ok)
 }
 
-// TestTheAppAssertionIsSignedTheWayGitHubRequires. The fixture verifies it with
-// the public half — RS256, this app's issuer, unexpired — so a driver that
-// signed with the wrong algorithm or the wrong issuer would be refused here the
-// way GitHub refuses it.
 func TestTheAppAssertionIsSignedTheWayGitHubRequires(t *testing.T) {
 	f := newFixture(t)
 	reg, err := forge.New(forge.Policy{}, forge.Binding{
@@ -231,9 +211,6 @@ func TestTheAppAssertionIsSignedTheWayGitHubRequires(t *testing.T) {
 	assert.False(t, ok)
 }
 
-// TestTheInstallationTokenIsTheNarrowestOneTheQuestionNeeds: the fixture
-// refuses anything but members:read, so asking for everything the app holds
-// would fail here.
 func TestTheInstallationTokenIsTheNarrowestOneTheQuestionNeeds(t *testing.T) {
 	f := newFixture(t)
 	reg, err := forge.New(forge.Policy{}, forge.Binding{
@@ -246,7 +223,6 @@ func TestTheInstallationTokenIsTheNarrowestOneTheQuestionNeeds(t *testing.T) {
 	assert.True(t, ok)
 }
 
-// TestAMembershipQuestionAboutAnotherNamespaceIsNotAnswered.
 func TestAMembershipQuestionAboutAnotherNamespaceIsNotAnswered(t *testing.T) {
 	f := newFixture(t)
 	reg, err := forge.New(forge.Policy{}, forge.Binding{
@@ -266,23 +242,6 @@ func mustDriver(t *testing.T, host string, opts ...github.Option) forge.Driver {
 	return d
 }
 
-// THE WALK'S TWO HALVES OF THE QUESTION ARE ESCAPED, OR THEY ARE REFUSED, and
-// which of the two depends on the string rather than on the caller. A namespace
-// and a username are strings a CONSUMER handed this driver — not keys repokey
-// vouched for and not addresses Addressable checked — and they are pasted into
-// two API paths.
-//
-// "?" and "#" are characters a path gives meaning to, and escaping is the answer
-// to those: they are sent, as themselves, inside one segment. ".." is not a
-// character, it is an INSTRUCTION to whoever resolves the path, and escaping is
-// no answer at all — url.PathEscape("..") is ".." — so it is refused before the
-// deployment's app credential is spent on a request nobody composed. So is a "/",
-// because a GitHub login has none and one hole would be filled with two segments.
-//
-// Unlike the gitlab driver there is no nesting ordinary case here, which is why
-// the "/" rows below are refusals on this driver and the group row is an
-// ordinary case on that one. Measured: dropping url.PathEscape from both halves
-// left the whole forge tree at exit 0, and so did sending "..".
 func TestTheMembershipWalkKeepsEachHalfInsideOneSegment(t *testing.T) {
 	for name, tc := range map[string]struct {
 		namespace, username string
@@ -333,9 +292,6 @@ func TestTheMembershipWalkKeepsEachHalfInsideOneSegment(t *testing.T) {
 	}
 }
 
-// TestAMembershipAnswerThisDriverCannotReadIsNotAFalse. The 404 shortcut reads
-// a STATUS; a failure that never carried one — an unreadable body, a dropped
-// connection — must fall through to the error and not to the shortcut.
 func TestAMembershipAnswerThisDriverCannotReadIsNotAFalse(t *testing.T) {
 	reg, host := appRegistry(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {

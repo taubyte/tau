@@ -1,55 +1,19 @@
 // Package gerrit is the forge driver for the Gerrit Code Review REST API.
 //
-// GERRIT IS NOT SHAPED LIKE GITHUB, and every difference below is a place a
-// copy of the gitea driver would be quietly wrong.
+// A project name is a path, "acme/team/widget" one project addressed as one
+// escaped segment, so every depth is addressable. Names are case-sensitive and
+// keys are not, so a project whose name is not lowercase has no key. The
+// credential is "username:http-password", sent as basic auth under /a/; an
+// anonymous session uses the paths without it. Every JSON body starts with the
+// )]}' XSSI guard.
 //
-//   - A PROJECT NAME IS A PATH, NOT AN OWNER AND A NAME. "acme/team/widget" is
-//     one project, addressed as one URL-encoded segment
-//     (/projects/acme%2Fteam%2Fwidget), and a name with no "/" at all is a
-//     project too. So this driver addresses every depth repokey can spell and
-//     never splits a key into an owner and a name the API does not have.
+// A caller's push grant is not answerable (/access reports only is_owner, and
+// check.access needs View Access), so owner is AccessAdmin, visible is
+// AccessRead, and AccessWrite is never returned: the safe direction.
 //
-//   - NAMES ARE CASE-SENSITIVE AND KEYS ARE NOT. repokey lowercases, Gerrit
-//     does not, so "Acme/Pay" and "acme/pay" are two projects that would file
-//     under one key. A project whose name is not already lowercase therefore
-//     has no key here: it is skipped by the listing and refused when a body
-//     names one, rather than filed under a key that may address another.
-//
-//   - THE CREDENTIAL IS A USERNAME AND AN HTTP PASSWORD, sent as HTTP basic auth
-//     under the /a/ prefix, which is how Gerrit is told a request is
-//     authenticated. forge.Credential holds one string, so the token is
-//     "username:http-password", split once at Bind. An anonymous session uses
-//     the paths without /a/ and sends no Authorization at all.
-//
-//   - EVERY JSON BODY STARTS WITH )]}' — Gerrit's XSSI guard — which is
-//     removed before decoding.
-//
-//   - THE CALLER'S OWN PUSH GRANT IS NOT ANSWERABLE. GET /projects/{p}/access
-//     reports is_owner and nothing about Push; check.access is refused to
-//     anyone without the View Access capability (measured on 3.12.3: "view
-//     access not permitted"). So the mapping is owner → AccessAdmin, visible →
-//     AccessRead, and AccessWrite is never returned. That denies a contributor
-//     who holds Push without ownership, which is the safe direction; reading
-//     Create Reference (can_add) as write would grant somebody who may only
-//     point a new ref at commits that already exist. Ownership is not Push
-//     either (measured: an owner's push of a new commit is refused unless
-//     Push is granted), but it is the right to write the access config that
-//     grants Push, which is what AccessAdmin means.
-//
-// # The faces Gerrit does not have
-//
-// DEPLOY KEYS: Gerrit has no repository-scoped key. SSH keys belong to
-// ACCOUNTS (/accounts/{id}/sshkeys), and installing one would give a builder
-// everything that account may do on every project — the standing write
-// credential the read-only rule exists to refuse. PUSH HOOKS AND SIGNATURES:
-// core Gerrit has no webhooks; the bundled webhooks plugin
-// (/config/server/webhooks~projects/{p}/remotes/{r}) posts events with NO
-// secret and NO signature, so no delivery it sends can be verified by any
-// forge.Scheme, and registering one would hand tau a callback anyone can
-// forge. What triggers a build on Gerrit instead is the event stream —
-// `gerrit stream-events` over ssh, the Events option (events.go). PUSH
-// PROBE: there is no API for it; it is a git-level question. All four are left unimplemented, so a Session
-// answers them with *forge.UnsupportedError.
+// No deploy keys (SSH keys are an account's), no push hooks or signatures (the
+// webhooks plugin signs nothing; builds come from the event stream, events.go),
+// and no push probe.
 package gerrit
 
 import (
@@ -62,9 +26,8 @@ import (
 	"github.com/taubyte/tau/pkg/git/repokey"
 )
 
-// driver is one Gerrit, constructed for the host it answers for. It carries no
-// caller credential; the deployment's membership credential, when there is
-// one, is reachable only through memberDriver.
+// The deployment's membership credential is reachable only through
+// memberDriver.
 type driver struct {
 	host   string
 	rt     http.RoundTripper // under the pin; nil means http.DefaultTransport
@@ -99,7 +62,6 @@ func parseToken(token string) (*basic, error) {
 	return &basic{user: user, password: password}, nil
 }
 
-// Option is a deployment fact about one Gerrit.
 type Option func(*driver) error
 
 // Transport is the RoundTripper UNDER the credential pin — a private CA, a
@@ -179,7 +141,6 @@ func (d *driver) Addressable(key repokey.Key) error {
 	return nil
 }
 
-// Bind returns a client acting as cred and only as cred.
 func (d *driver) Bind(cred forge.Credential) (forge.Client, error) {
 	if cred.IsZero() {
 		return nil, forge.ErrNoCredential

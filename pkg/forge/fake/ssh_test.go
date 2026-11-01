@@ -34,9 +34,6 @@ func deployKeyPair(t *testing.T) (string, string) {
 	return string(pem.EncodeToMemory(block)), strings.TrimSpace(string(gossh.MarshalAuthorizedKey(sp)))
 }
 
-// A served forge answers git over ssh to a repository's deploy key, and to
-// nothing else: another key, a removed key, a push and a host that is not the
-// one pinned are each refused.
 func TestAServedForgeServesGitOverSSHToDeployKeys(t *testing.T) {
 	ctx := context.Background()
 	s, err := fake.Serve(fake.GitHubLike)
@@ -135,7 +132,6 @@ func TestAServedForgeServesGitOverSSHToDeployKeys(t *testing.T) {
 	require.Error(t, lsRemote(priv, pinned), "a removed deploy key is revoked")
 }
 
-// A nesting forge creates under a subgroup of its namespace.
 func TestANestingForgeCreatesUnderASubgroup(t *testing.T) {
 	f := fake.New(fake.GitLabLike)
 	reg, err := f.Registry(forge.Policy{})
@@ -156,8 +152,6 @@ func pushOptions(t *testing.T, priv string, pinned []gossh.PublicKey) *gogit.Pus
 	return &gogit.PushOptions{Auth: auth, RefSpecs: []gitconfig.RefSpec{"refs/heads/main:refs/heads/other"}}
 }
 
-// The ssh endpoint is one more spelling of the forge's own repositories, and
-// an unserved forge has none.
 func TestTheSSHEndpointIsASpellingOfTheForge(t *testing.T) {
 	s, err := fake.Serve(fake.GitHubLike)
 	require.NoError(t, err)
@@ -179,8 +173,6 @@ func TestTheSSHEndpointIsASpellingOfTheForge(t *testing.T) {
 	require.False(t, ok)
 }
 
-// Over ssh the forge runs git's upload-pack and nothing else, to a deploy key
-// on the repository named, and an empty repository lists as empty.
 func TestTheSSHEndpointRunsUploadPackOnly(t *testing.T) {
 	ctx := context.Background()
 	s, err := fake.Serve(fake.GitHubLike)

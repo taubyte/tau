@@ -25,10 +25,8 @@ const (
 	permRead  = "REPO_READ"
 )
 
-// Whoami says who this credential is. The slug comes from the whoami servlet,
-// which is the only thing that answers "who am I" on Bitbucket Server; the
-// user record then gives the numeric id, which Bitbucket never reassigns —
-// a slug follows a rename.
+// The slug comes from the whoami servlet, the only "who am I" on Bitbucket
+// Server; the user record gives the numeric id, which is never reassigned.
 func (c *client) Whoami(ctx context.Context) (forge.Identity, error) {
 	var slug string
 	if err := c.send(ctx, routeWhoami.at(), nil, &slug); err != nil {
@@ -52,10 +50,9 @@ func (c *client) Whoami(ctx context.Context) (forge.Identity, error) {
 	return forge.Identity{Login: u.Slug, Subject: strconv.FormatInt(u.ID, 10), Email: u.Email}, nil
 }
 
-// Access is the authorization question. The repository is fetched first —
-// which is what tells a missing or hidden repository (404) from a visible one —
-// and then the listings filtered by permission are asked whether it is among
-// the repositories this credential administers, or writes to.
+// The repository is fetched first, telling a missing or hidden one from a
+// visible one, then the permission-filtered listings are asked whether it is
+// among those this credential administers or writes to.
 func (c *client) Access(ctx context.Context, key repokey.Key) (forge.Access, error) {
 	r, repo, err := c.get(ctx, key)
 	if err != nil {
@@ -102,7 +99,6 @@ func (c *client) holds(ctx context.Context, r repoJSON, key repokey.Key, perm st
 	return found, err
 }
 
-// Repository is what only the forge knows, with the key derived from its answer.
 func (c *client) Repository(ctx context.Context, key repokey.Key) (forge.Repository, error) {
 	_, repo, err := c.get(ctx, key)
 	return repo, err
@@ -146,10 +142,8 @@ func (c *client) defaultBranch(ctx context.Context, r repoJSON, repo *forge.Repo
 	return nil
 }
 
-// ListRepositories yields every repository this credential can read, public
-// ones included. A repository answer carries no default branch, so each
-// yielded entry costs one more request for it: a record without one gives a
-// builder nothing to check out.
+// A repository answer carries no default branch, so each entry costs one more
+// request: a record without one gives a builder nothing to check out.
 func (c *client) ListRepositories(ctx context.Context, yield func(forge.Repository) bool) error {
 	stopped := false
 	var failed error
@@ -184,7 +178,6 @@ func (c *client) ListRepositories(ctx context.Context, yield func(forge.Reposito
 	return err
 }
 
-// pageOf is one page of a Bitbucket Server collection.
 type pageOf[T any] struct {
 	Values        []T  `json:"values"`
 	IsLastPage    bool `json:"isLastPage"`

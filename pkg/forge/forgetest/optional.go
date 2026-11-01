@@ -138,21 +138,10 @@ func (r *runner) deployKeys(t tb) {
 	assert.Error(t, r.note(sess.RemoveDeployKey(r.ctx, r.s.Admin, "forgetest-no-such-handle")),
 		"removing a key that is not there succeeded")
 
-	// AND A HANDLE THAT IS NOT A HANDLE. An empty last path segment addresses
-	// the COLLECTION on every forge with a REST shape, so a driver that pastes
-	// one into its route answers a removal of ONE key with an answer about all
-	// of them. It is reachable without a hostile forge: InstallDeployKey above
-	// returns ("", err) when the forge names no id for what it just created,
-	// and a consumer that stored what it was handed arrives here with "". The
-	// two drivers disagreed about exactly this for as long as the suite did not
-	// ask.
-	//
-	// IT IS ASKED IN TWO HALVES, AND THE SECOND IS THE ONE THAT TRAVELS. That
-	// the call errors is only as strong as what the subject's fixture happens
-	// to answer for a collection URL — measured, gitlab's own instance answers
-	// one with an error, so the driver bug hides behind it. That NOTHING LEFT
-	// THE PROCESS holds whatever the far end would have said, because a write
-	// cannot be undone by checking afterwards.
+	// A handle that is not one: an empty segment addresses the collection, and
+	// InstallDeployKey returns "" when the forge names no id. Asked in two halves:
+	// that the call errors, and that nothing left the process, which holds
+	// whatever the far end would say.
 	r.s.Requests()
 	assert.Error(t, r.note(sess.RemoveDeployKey(r.ctx, r.s.Admin, "")),
 		"removing a deploy key with no handle at all succeeded")
@@ -279,11 +268,8 @@ func (r *runner) pushHooks(t tb) {
 
 	hook, err := sess.RegisterPushHook(r.ctx, r.s.Admin, callback, secret)
 	mustReach(t, r.note(err), "registering the hook every delivery below is signed for")
-	// Key, scheme, secret and a non-empty handle are stamped by forge.Session
-	// itself, from the argument and from the driver's own Scheme();
-	// TestAHookIsStampedWithWhatItWasAskedFor and
-	// TestRegisterPushHookRefusesEveryUnsafeRegistration stand on that. What is
-	// the driver's is the handle naming something the forge will answer for.
+	// Key, scheme, secret and a non-empty handle are stamped by forge.Session; what
+	// is the driver's is the handle naming a hook the forge answers for.
 	assert.True(t, r.s.HookInstalled(hook.Handle), "the handle names no hook on the forge")
 
 	// The listing names it by handle AND by where it delivers, which is what a
@@ -339,21 +325,10 @@ func (r *runner) deliveries(t tb, hook forge.Hook) {
 	assert.Equal(t, forge.Push{Key: hook.Key, Ref: ref, Commit: commitA}, push,
 		"the driver read a push the payload does not describe")
 
-	// EVERY WAY A DELIVERY CAN BE MALFORMED IS ASSERTED ONE PACKAGE DOWN, in
-	// pkg/forge's TestEverySchemeRefusesEveryWayADeliveryCanBeWrong, and it
-	// belongs there. A flipped byte, a truncated header, a signature under
-	// another secret: the core refuses all of them BEFORE any driver code runs,
-	// so no fault a driver or a probe can carry reaches those assertions. Here
-	// they were seven rows nothing could kill and every one of them was
-	// individually deletable with the tree green; there the code that refuses is
-	// the code under test, and they run against all four schemes instead of
-	// against whichever one this driver happens to use.
-	//
-	// What stays here is what the SUBJECT decides: the correctly signed
-	// delivery, the deputy that names another repository, the deletion
-	// sentinel, the delivery that is not a push, and the dated ones — each of
-	// them built by a probe a driver author wired up, each of them with a fault
-	// behind it in this suite's own table.
+	// Malformed deliveries are asserted in pkg/forge, against every scheme: the
+	// core refuses them before any driver code runs, so no fault here reaches them.
+	// What stays is what the subject decides: the signed delivery, the deputy, the
+	// deletion sentinel, the non-push, and the dated ones.
 	reject := func(name string, h forge.Hook, d forge.Delivery) {
 		t.Helper()
 		got, err := r.s.Registry.VerifyPush(h, d)

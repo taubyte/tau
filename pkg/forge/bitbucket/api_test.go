@@ -1,9 +1,5 @@
 package bitbucket_test
 
-// What the conformance suite cannot reach, in Bitbucket Cloud's own shapes: the
-// permission lookup, the clone links, the "next" pager, braced hook UUIDs, and
-// every answer a correct Bitbucket never gives.
-
 import (
 	"encoding/json"
 	"errors"
@@ -66,8 +62,6 @@ const (
 	pathList = "GET /2.0/repositories"
 )
 
-// ─────────────────────────────── the API host ───────────────────────────────
-
 type recordingRT struct {
 	mu   sync.Mutex
 	sent []*http.Request
@@ -96,8 +90,6 @@ func hostSession(t *testing.T, host string, rt http.RoundTripper) *forge.Session
 	return sess
 }
 
-// TestBitbucketOrgIsAskedAtItsAPIHostWithABearerToken: bitbucket.org's API is
-// api.bitbucket.org/2.0, and an access token is a bearer token there.
 func TestBitbucketOrgIsAskedAtItsAPIHostWithABearerToken(t *testing.T) {
 	rt := &recordingRT{body: `{"username":"octo","uuid":"{u}"}`}
 	sess := hostSession(t, "bitbucket.org", rt)
@@ -119,8 +111,6 @@ func TestBitbucketOrgIsAskedAtItsAPIHostWithABearerToken(t *testing.T) {
 	assert.Equal(t, forge.Address{URL: "ssh://git@bitbucket.org/acme/pay.git", SSHAccount: "git"}, ssh)
 }
 
-// TestAnyOtherHostServesTheSameAPIOnItself: a test server or a proxy in front
-// of Bitbucket Cloud is asked at /2.0/ on the host the key names.
 func TestAnyOtherHostServesTheSameAPIOnItself(t *testing.T) {
 	rt := &recordingRT{body: `{"username":"octo","uuid":"{u}"}`}
 	sess := hostSession(t, "bitbucket.example", rt)
@@ -141,8 +131,6 @@ func TestWhoamiRefusesACredentialBelongingToNobody(t *testing.T) {
 		})
 	}
 }
-
-// ─────────────────────────────── access ───────────────────────────────
 
 func TestAccessMapsBitbucketsPermissionOntoTausRungs(t *testing.T) {
 	for _, tc := range []struct {
@@ -188,8 +176,6 @@ func TestAccessRefusesAnAnswerItCannotStandBehind(t *testing.T) {
 	}
 }
 
-// ─────────────────────────────── repositories ───────────────────────────────
-
 func TestARepositoryIsReadFromItsHTTPSCloneLink(t *testing.T) {
 	sess, key, _ := on(t, map[string]string{pathRepo: repoPay})
 	repo, err := sess.Repository(ctx(), key)
@@ -226,8 +212,6 @@ func TestARepositoryWhoseCloneLinkNamesNothingIsRefused(t *testing.T) {
 	}
 }
 
-// ─────────────────────────────── listing ───────────────────────────────
-
 func TestTheListingPagesThroughNextAndSkipsWhatItCannotName(t *testing.T) {
 	sess, _, rs := on(t, map[string]string{
 		pathList + "?page=1": `{"values":[` + repoPay + `,{"links":{"clone":[]}}],"next":"https://HOST/2.0/repositories?page=2&pagelen=100&role=member"}`,
@@ -254,10 +238,6 @@ func TestTheListingStopsWhenTheCallerStops(t *testing.T) {
 	assert.Len(t, rs.seen, 1)
 }
 
-// TestANextLinkThisDriverDidNotAskInTheShapeOfIsRefused: "next" is a string the
-// forge wrote, and this driver never requests it. It reads one page number out
-// of it, and anything else it says ends the listing with an error rather than
-// a guess.
 func TestANextLinkThisDriverDidNotAskInTheShapeOfIsRefused(t *testing.T) {
 	for name, next := range map[string]string{
 		"another host":             "https://elsewhere.example/2.0/repositories?page=2&pagelen=100&role=member",
@@ -301,8 +281,6 @@ func TestAListingThatFailsIsAnError(t *testing.T) {
 	require.ErrorAs(t, err, &ce)
 }
 
-// ─────────────────────────────── create ───────────────────────────────
-
 func TestCreatePostsToTheKeyItWillBeAddressedBy(t *testing.T) {
 	sess, key, rs := on(t, map[string]string{"POST /2.0/repositories/acme/pay": repoPay})
 	repo, err := sess.Create(ctx(), key, forge.CreateOptions{Description: "d", Private: true})
@@ -327,8 +305,6 @@ func TestCreatePostsToTheKeyItWillBeAddressedBy(t *testing.T) {
 		assert.Contains(t, err.Error(), "403")
 	})
 }
-
-// ─────────────────────────── deploy keys and hooks ───────────────────────────
 
 func TestTheDeployKeyBodyHasNoWayToAskForWrite(t *testing.T) {
 	var body map[string]any
@@ -445,9 +421,6 @@ func TestRemovingByAHandleThatNamesSomethingElseIsRefusedBeforeTheWire(t *testin
 	}
 }
 
-// TestA404OnAResourceIsNotAVerdictAboutTheRepository: removing a key or hook
-// that is already gone is a 404 about the RESOURCE, never a NotFoundError about
-// the repository.
 func TestA404OnAResourceIsNotAVerdictAboutTheRepository(t *testing.T) {
 	sess, key, _ := on(t, map[string]string{})
 	for _, err := range []error{
@@ -460,8 +433,6 @@ func TestA404OnAResourceIsNotAVerdictAboutTheRepository(t *testing.T) {
 	}
 }
 
-// TestAnAnswerThisDriverWillNotFinishReadingIsAnError: a body past the bound
-// is cut off and fails to decode rather than being allocated whole.
 func TestAnAnswerThisDriverWillNotFinishReadingIsAnError(t *testing.T) {
 	big := `{"username":"` + strings.Repeat("a", 9<<20) + `"}`
 	sess, _ := sessionOn(t, answer(http.StatusOK, big), "acme/pay")

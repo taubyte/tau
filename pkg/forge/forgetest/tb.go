@@ -2,13 +2,8 @@ package forgetest
 
 import "testing"
 
-// tb is the sliver of *testing.T this suite uses. It exists so the suite can be
-// run against a recorder and its own negative cases asserted — a conformance
-// suite that has only ever seen a correct driver has not been shown to catch
-// anything, and "it would have failed" is exactly the claim a test is for.
-//
-// It is unexported: Run's signature is *testing.T, which is what a driver
-// author writes.
+// tb is the part of *testing.T this suite uses, so the suite can run against a
+// recorder and its negative cases be asserted.
 type tb interface {
 	Helper()
 	Errorf(format string, args ...any)
@@ -18,7 +13,6 @@ type tb interface {
 	Run(name string, f func(tb)) bool
 }
 
-// realTB adapts *testing.T. Everything but Run is promoted.
 type realTB struct{ *testing.T }
 
 func (r realTB) Run(name string, f func(t tb)) bool {

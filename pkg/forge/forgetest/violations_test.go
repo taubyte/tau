@@ -10,24 +10,10 @@ import (
 	"github.com/taubyte/tau/pkg/forge/fake"
 )
 
-// THE FAULTS BEHIND THE LEDGER'S OWN RULES.
-//
-// Each of these is a ledger that breaks exactly one rule, and the self-test in
-// guard_test.go requires that rule to say so. They are the ledger's version of
-// fake.Fault: the fault is injected, the thing that is supposed to notice is
-// run, and a rule that stays quiet is decoration.
-//
-// The ones about the SOURCE are real source. `with` type-checks this very
-// package with one more file in it, so the rule reads a violation through the
-// same loader, the same go/types resolution and the same walk as the honest
-// code — there is no second implementation to drift.
-//
-// The ones about a PROOF perturb the real ledger where they can: an existing
-// proof with one saying taken away, or one added, over the real population and
-// the real recorded run. Where a real perturbation cannot reach the case — a
-// step firing for a reason no subject in the suite produces, a suite that did
-// not fail at all — the ledger is built by hand over the real population, and
-// that is said here rather than implied.
+// The faults behind the ledger's own rules: each ledger breaks one rule, which
+// the self-test in guard_test.go requires to say so. Source violations are real
+// source type-checked through with; proof violations perturb the real ledger,
+// or are built by hand where no perturbation reaches the case.
 
 // but is this ledger with a different set of proofs, and whatever the suite is
 // recorded as having said about them.
@@ -46,8 +32,6 @@ func (l *ledger) but(proofs []proof, said map[string]*recorder) *ledger {
 	}
 	return out
 }
-
-// ─────────────────────────── the source ones ───────────────────────────
 
 func violateSaysNothing(t *testing.T) *ledger {
 	src := suiteSource(t).with(t, "ledger_fault_says_nothing.go", `package forgetest
@@ -99,14 +83,7 @@ func (r *runner) ledgerFaultOrphan(t tb) {
 	return &ledger{src: src, pop: populationOf(src), proofs: allProofs()}
 }
 
-// THE FOUR SHAPES THE WALK WENT ROUND, each as real source in this very
-// package, each an assertion no proof can name.
-//
-// They are violations of the ORPHAN rule and not of a rule of their own,
-// because that is what they are: once the walk reaches them they are ordinary
-// claims about the subject with no fault behind them, and the rule that has
-// always said so says so. Each was measured living in the shared suite with
-// this file's census unchanged and the tree at exit 0.
+// The shapes the walk once went round, each real source and an orphan.
 
 // violateOrphanInATopLevelLiteral: a function literal is a function literal
 // wherever it is bound, and the walk knew two of the places a name can be bound.
@@ -137,12 +114,9 @@ func ledgerFaultOrphanInAMarker(t tb, r *runner, question step) {
 	return &ledger{src: src, pop: populationOf(src), proofs: allProofs()}
 }
 
-// violateOrphanThroughAMethodValue: the reporter is never handed over, the
-// METHOD that fails through it is. Nothing about the callee's signature says it
-// can fail a test; everything about the call site does. It is the one violation
-// that cannot be written inside this package — a body here is walked, and the
-// evasion evaporates before the rule can be shown it — so the helper it calls
-// lives in forgetest/outside and nothing else uses it.
+// violateOrphanThroughAMethodValue hands over the method that fails, not the
+// reporter. It must live outside this package, since a body here is walked;
+// the helper is forgetest/outside.
 func violateOrphanThroughAMethodValue(t *testing.T) *ledger {
 	src := suiteSource(t).with(t, "ledger_fault_orphan_through_a_method_value.go", `package forgetest
 
@@ -171,12 +145,8 @@ func (r *runner) ledgerFaultOrphanThroughAName(t tb) {
 	return &ledger{src: src, pop: populationOf(src), proofs: allProofs()}
 }
 
-// violateUnwalkedBody is the real coverage computation over the real source
-// with one ROOT taken away, which is what the walk losing a way in looks like.
-// No source this package can be handed produces an unwalked body while the walk
-// is what it is — that is the point of the third clause — and an unwalked body
-// is precisely the state in which an assertion is not exempt, not counted and
-// not anywhere.
+// violateUnwalkedBody is the real coverage computation with one root taken away:
+// no source this package can be handed produces an unwalked body.
 func violateUnwalkedBody(t *testing.T) *ledger {
 	l := theLedger(t)
 	full := l.src.walk()
@@ -207,8 +177,6 @@ func violateUnwalkedBody(t *testing.T) *ledger {
 func violateEmptyPopulation(t *testing.T) *ledger {
 	return &ledger{src: suiteSource(t), pop: nil, proofs: allProofs()}
 }
-
-// ─────────────────────────── the proof ones ───────────────────────────
 
 func violateUnknownSaying(t *testing.T) *ledger {
 	l := theLedger(t)
@@ -261,8 +229,6 @@ func violateProofProvesNothing(t *testing.T) *ledger {
 	s := aPlumbing(t, l.pop)
 	return l.but([]proof{{name: "a-proof-that-only-prevents", stops: []string{s.says}}}, nil)
 }
-
-// ─────────────────────────── the run ones ───────────────────────────
 
 // violateProofPassed is by hand: every proof in the suite fails, which is what
 // TestTheSuiteObeysTheLedger keeps true, so the one state this rule is about
@@ -381,11 +347,8 @@ func ledgerFaultLooseLoad() ([]*packages.Package, error) {
 	})}
 }
 
-// violateLooseLoadThroughAValue is the same rule evaded by putting one name
-// between the call and the loader. Measured living in the fake forge — `var
-// loadSomething = packages.Load` and a call through it — with the rule matching
-// call expressions, at GO_TEST_EXIT=0; what is named now is wherever the loader
-// is REACHED, so the site is the line the value was bound on.
+// violateLooseLoadThroughAValue puts one name between the call and the loader;
+// the site named is the line the value was bound on.
 func violateLooseLoadThroughAValue(t *testing.T) *ledger {
 	dir, err := filepath.Abs("../fake")
 	if err != nil {
@@ -405,17 +368,9 @@ func ledgerFaultLooseLoadThroughAValue() ([]*packages.Package, error) {
 	})}
 }
 
-// violateStrandedFaultDeclaredWithoutItsType is the same rule evaded by
-// SPELLING rather than by deletion: a fault the fake forge can be told to have,
-// declared without the type on its line and typed where it is used, which is
-// where an untyped constant gets its type.
-//
-// Measured living in the real fake forge — a live fault making RemoveDeployKey
-// a no-op, wired into faces.go — with the ledger still reporting 58 faults, this
-// rule silent, and the whole tree at GO_TEST_EXIT=0. Written with the type on
-// the line, the same fault is named here immediately. That is a population read
-// off a spelling, and it is a hole in the census, in the registry check and in
-// this rule at once.
+// violateStrandedFaultDeclaredWithoutItsType: a fault declared without the type
+// on its line and typed where it is used, which is where an untyped constant
+// gets its type.
 func violateStrandedFaultDeclaredWithoutItsType(t *testing.T) *ledger {
 	src := suiteSource(t).withIn(t, "../fake", "ledger_fault_untyped_fault.go", `package fake
 
@@ -426,20 +381,9 @@ var _ Fault = faultDeclaredWithoutItsType
 	return &ledger{src: src, pop: populationOf(src), proofs: allProofs()}
 }
 
-// violateFaultDoesNothing is the laundering that started this round, run for
-// real: a proof carrying one more fault than anything it says depends on.
-//
-// It is built out of the suite's own material rather than by hand. A proof that
-// injects a fault is given a SECOND one, taken from another proof, and both
-// runs the rule compares are really recorded — the subject with both, and the
-// subject with the borrowed one taken away. The second is the proof's own run,
-// so every complaint it names is still made, and the borrowed fault is behind
-// none of them. That is a fault moved into a neighbouring proof's list, which
-// is exactly the edit that laundered a live contract out of the suite.
-//
-// The pair is chosen by what it does and not by what it is called: any proof
-// whose complaints survive being given the extra fault will do, and one that
-// does not survive is skipped rather than argued with.
+// violateFaultDoesNothing gives a proof a second fault borrowed from another
+// proof, and records both runs: every complaint the proof names is still made,
+// and the borrowed fault is behind none of them.
 func violateFaultDoesNothing(t *testing.T) *ledger {
 	l := theLedger(t)
 	for _, p := range l.proofs {
@@ -497,8 +441,6 @@ func aFaultNotIn(faults, exclude []fake.Fault) (fake.Fault, bool) {
 	}
 	return "", false
 }
-
-// ─────────────────────── finding real material to break ───────────────────────
 
 func aContract(t *testing.T, pop []assertion) assertion {
 	t.Helper()
